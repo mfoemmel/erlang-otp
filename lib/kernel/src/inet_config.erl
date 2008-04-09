@@ -83,14 +83,14 @@ init() ->
 			"" ->
 			    case inet:gethostbyname(inet_db:gethostname()) of
 				{ok,#hostent{h_name = []}} ->
-				    true;
+				    ok;
 				{ok,#hostent{h_name = HostName}} ->
 				    set_hostname({ok,HostName});
 				_ ->
-				    true
+				    ok
 			    end;
 			_ ->
-			    true
+			    ok
 		    end;
 	       true -> ok
 	    end,    
@@ -308,13 +308,13 @@ set_search_dom([$.|Domain]) ->
     %% leading . not removed by dropwhile above.
     inet_db:set_domain(Domain),
     inet_db:ins_search(Domain),
-    Domain;
+    ok;
 set_search_dom([]) ->
-    [];
+    ok;
 set_search_dom(Domain) ->
     inet_db:set_domain(Domain),
     inet_db:ins_search(Domain),
-    Domain.
+    ok.
 
 %%
 %% Load resolver data

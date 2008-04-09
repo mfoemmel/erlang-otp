@@ -35,7 +35,7 @@ pp(Defun, MFA, Options) ->
     {file,FileName} ->
       {ok, File} = file:open(FileName, [write,append]),
       hipe_arm_pp:pp(File, Defun),
-      file:close(File);
+      ok = file:close(File);
     _ ->
-      []
+      ok
   end.

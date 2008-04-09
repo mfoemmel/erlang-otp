@@ -18,15 +18,15 @@
 %% Exported functions
 %%---------------------------------------------------------------------------
 
--spec(process/0 :: () -> {#args{}, #analysis{}}).
+-spec(process/0 :: () -> {#args{}, #typer_analysis{}}).
 
 process() ->
   ArgList = init:get_plain_arguments(),
   %% io:format("Args is ~p\n",[Args]),
-  {Args, Analysis} = analyze_args(ArgList, #args{}, #analysis{}),
+  {Args, Analysis} = analyze_args(ArgList, #args{}, #typer_analysis{}),
   %% if the mode has not been set, set it to the default mode (show)
-  {Args, case Analysis#analysis.mode of
-	   undefined -> Analysis#analysis{mode=?SHOW};
+  {Args, case Analysis#typer_analysis.mode of
+	   undefined -> Analysis#typer_analysis{mode=?SHOW};
 	   Mode when is_atom(Mode) -> Analysis
 	 end}.
 
@@ -106,29 +106,32 @@ analyze_result({trust,Val}, Args, Analysis) ->
   NewVal = Args#args.trust ++ Val,
   {Args#args{trust=NewVal}, Analysis};
 analyze_result(comments, Args, Analysis) ->
-  {Args, Analysis#analysis{contracts=false}};
+  {Args, Analysis#typer_analysis{contracts=false}};
 %% Get useful information for actual analysis
 analyze_result({mode, Val}, Args, Analysis) -> 
-  case Analysis#analysis.mode of
-    undefined -> {Args, Analysis#analysis{mode=Val}};
+  case Analysis#typer_analysis.mode of
+    undefined -> {Args, Analysis#typer_analysis{mode=Val}};
     _ -> mode_error()
   end;
 analyze_result({macros,Val}, Args, Analysis) ->
-  NewVal = Analysis#analysis.macros ++ [Val],
-  {Args, Analysis#analysis{macros=NewVal}};
+  NewVal = Analysis#typer_analysis.macros ++ [Val],
+  {Args, Analysis#typer_analysis{macros=NewVal}};
 analyze_result({inc,Val}, Args, Analysis) -> 
-  NewVal = Analysis#analysis.includes ++ [Val],
-  {Args, Analysis#analysis{includes=NewVal}}.
+  NewVal = Analysis#typer_analysis.includes ++ [Val],
+  {Args, Analysis#typer_analysis{includes=NewVal}}.
 
 %%--------------------------------------------------------------------
 
+-spec(mode_error/0 :: () -> no_return()).
 mode_error() ->
   typer:error("can not do \"show\", \"show-exported\", \"annotate\", and \"annotate-inc-files\" at the same time").
-  
+
+-spec(version_message/0 :: () -> no_return()).
 version_message() ->
   io:format("TypEr version "++?VSN++"\n"),
   erlang:halt(0).
 
+-spec(help_message/0 :: () -> no_return()).
 help_message() ->
   S = " Usage: typer [--help] [--version] [--comments]
               [--show | --show-exported | --annotate | --annotate-inc-files]

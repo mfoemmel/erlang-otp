@@ -741,11 +741,11 @@ select_steal(ErlDrvPort ix, ErtsDrvEventState *state, int mode, int on)
 
 #ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
 static void
-large_fd_error_common(erts_dsprintf_buf_t *dsbufp)
+large_fd_error_common(erts_dsprintf_buf_t *dsbufp, ErtsSysFdType fd)
 {
     erts_dsprintf(dsbufp,
 		  "fd=%d is larger than the largest allowed fd=%d\n",
-		  max_fds - 1);
+		  (int) fd, max_fds - 1);
 }
 
 static void
@@ -754,7 +754,7 @@ select_large_fd_error(ErlDrvPort ix, ErtsSysFdType fd, int mode, int on)
     erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
     print_select_op(dsbufp, ix, fd, mode, on);
     erts_dsprintf(dsbufp, "failed: ");
-    large_fd_error_common(dsbufp);
+    large_fd_error_common(dsbufp, fd);
     erts_send_error_to_logger_nogl(dsbufp);
 }
 #endif
@@ -796,7 +796,7 @@ event_large_fd_error(ErlDrvPort ix, ErtsSysFdType fd, ErlDrvEventData event_data
     erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
     print_event_op(dsbufp, ix, fd, event_data);
     erts_dsprintf(dsbufp, "failed: ");
-    large_fd_error_common(dsbufp);
+    large_fd_error_common(dsbufp, fd);
     erts_send_error_to_logger_nogl(dsbufp);
 }
 #endif

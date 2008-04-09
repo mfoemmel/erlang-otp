@@ -455,13 +455,8 @@ erts_cleanup_mso(ProcBin* pb)
 {
     while (pb != NULL) {
 	ProcBin* next = pb->next;
-	if (erts_refc_dectest(&pb->val->refc, 0) == 0) {
-	    if (pb->val->flags & BIN_FLAG_MATCH_PROG) {
-		erts_match_set_free(pb->val);
-	    } else {
-		erts_bin_free(pb->val);
-	    }
-	}
+	if (erts_refc_dectest(&pb->val->refc, 0) == 0)
+	    erts_bin_free(pb->val);
 	pb = next;
     }
 }

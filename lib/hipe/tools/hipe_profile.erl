@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
 %% Time-stamp: <2002-09-13 15:32:45 richardc>
@@ -5,20 +6,16 @@
 %%  Filename : 	hipe_profile.erl
 %%  Module   :	hipe_profile
 %%  Purpose  :  
-%%  History  :	* 2001-07-12 Erik Johansson (happi@csd.uu.se): 
-%%               Created.
+%%  History  :	* 2001-07-12 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2007/02/21 20:54:28 $
-%%              $Revision: 1.5 $
+%%              $Date: 2008/03/07 23:05:03 $
+%%              $Revision: 1.8 $
 %% ====================================================================
-%%  Exports  :
-%%
-%%  @doc
-%%  Notes    :  
-%@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 -module(hipe_profile).
+
 -export([%% profile/1, mods_profile/1,
 	 prof/0, prof_off/0, clear/0, res/0,
 	 mods_res/0,
@@ -43,22 +40,21 @@
 %%   prof_off(), 
 %%   R.
 
-%% @spec mods_res() -> [{Mod,Calls}]
+-spec(mods_res/0 :: () -> [{atom(), non_neg_integer()}]).
 %% @doc  Returns the number of calls per module currently 
 %%       recordeed since hipe_bifs:call_count_on().
-%%       The resulting lists is sorted with the most called
+%%       The resulting list is sorted with the most called
 %%       module first.
 mods_res() ->
-  lists:reverse(lists:keysort(2,calls())).
+  lists:reverse(lists:keysort(2, calls())).
 
-%% @spec () -> [{mod,calls}]
+-spec(calls/0 :: () -> [{atom(), non_neg_integer()}]).
 %% @doc  Returns the number of calls per module currently 
 %%       recordeed since hipe_bifs:call_count_on().
 calls() ->
-  [{Mod,total_calls(Mod)} || Mod <- mods(),
-			     total_calls(Mod) > 1,
-			     Mod =/= hipe_profile].
-
+  [{Mod, total_calls(Mod)} || Mod <- mods(),
+			      total_calls(Mod) > 1,
+			      Mod =/= hipe_profile].
 
 %% %% @spec profile(F) -> [{mfa(),calls()}]
 %% %%       F = ()    -> term()
@@ -84,96 +80,79 @@ calls() ->
 %%   prof_off(),
 %%   R.
 
-%% @spec () -> ok
+-spec(prof/0 :: () -> 'ok').
 %% @doc Turns on profiling of all loaded modules.
 prof() ->
-  mods(fun prof_module/1),ok.
+  lists:foreach(fun prof_module/1, mods()).
 
-%% @spec () -> ok
+-spec(prof_off/0 :: () -> 'ok').
 %% @doc Turns off profiling of all loaded modules.
-prof_off() ->
-  mods(fun prof_module_off/1),ok.
+ prof_off() ->
+  lists:foreach(fun prof_module_off/1, mods()).
 
-%% @spec () -> ok
+-spec(clear/0 :: () -> 'ok').
 %% @doc Clears all counters.
-clear()->
-  mods(fun clear_module/1),ok.
+clear() ->
+  lists:foreach(fun clear_module/1, mods()).
 
-%% @spec () -> [{mfa(),calls()}]
+-spec(res/0 :: () -> [{mfa(), non_neg_integer()}]).
 %% @doc Returns a list of the numbers of calls to each profiled function.
 %%      The list is sorted with the most called function first.
 res() ->
-  lists:reverse(lists:keysort(2,lists:flatten(mods(fun res_module/1)))).
+  lists:reverse(lists:keysort(2, lists:flatten(lists:map(fun res_module/1,
+							 mods())))).
 
-%% ____________________________________________________________________
-%% @spec mods(F) -> [T]    
-%%       F = (mod()) -> T
-%%       T = term()
-%% @doc  Applies F to all loaded modules. 
-%@ ____________________________________________________________________
-mods(F) ->
-  [F(X) || X <- mods()].
-
-%% ____________________________________________________________________
-%% @spec () -> [mod()]    
+%% --------------------------------------------------------------------
+-spec(mods/0 :: () -> [atom()]).
 %% @doc	 Returns a list of all loaded modules. 
-%@ ____________________________________________________________________
-mods() ->
-  [element(1,X) || X <- code:all_loaded()].
+%@ --------------------------------------------------------------------
 
-%% ____________________________________________________________________
-%% @spec (mod()) -> ok    
+mods() ->
+  [Mod || {Mod,_} <- code:all_loaded()].
+
+%% --------------------------------------------------------------------
+-spec(prof_module/1 :: (atom()) -> 'ok').
 %% @doc	 Turns on profiling for given module. 
 %@ ____________________________________________________________________
+
 prof_module(Mod) ->
   Funs = Mod:module_info(functions),
-  lists:foreach(
-    fun ({F,A}) ->
-	catch hipe_bifs:call_count_on({Mod,F,A})
-    end,
-    Funs),
+  lists:foreach(fun ({F,A}) -> catch hipe_bifs:call_count_on({Mod,F,A}) end,
+		Funs),
   ok.
 
 %% --------------------------------------------------------------------
-%% @spec (Mod) -> ok    
-%%       Mod = mod()
+-spec(prof_module_off/1 :: (atom()) -> 'ok').
 %% @doc	 Turns off profiling of the module Mod. 
 %@ --------------------------------------------------------------------
+
 prof_module_off(Mod) ->
   Funs = Mod:module_info(functions),
-  lists:foreach(
-    fun ({F,A}) ->
-	catch hipe_bifs:call_count_off({Mod,F,A})
-    end,
-    Funs),
+  lists:foreach(fun ({F,A}) -> catch hipe_bifs:call_count_off({Mod,F,A}) end,
+		Funs),
   ok.
 
 %% --------------------------------------------------------------------
-%% @spec (Mod)->ok
-%%       Mod = mod()
+-spec(clear_module/1 :: (atom()) -> 'ok').
 %% @doc  Clears the call counters for all functions in module Mod.
 %@ --------------------------------------------------------------------
+
 clear_module(Mod) ->
   Funs = Mod:module_info(functions),
-  lists:foreach(
-    fun ({F,A}) ->
-	catch hipe_bifs:call_count_clear({Mod,F,A})
-    end,
-    Funs),
+  lists:foreach(fun ({F,A}) -> catch hipe_bifs:call_count_clear({Mod,F,A}) end,
+		Funs),
   ok.
 
 %% --------------------------------------------------------------------
-%% @spec (Mod)->[{MFA,calls()}]    
-%%        Mod = mod()
-%%        MFA = mfa()
+-spec(res_module/1 :: (atom()) -> [{mfa(), non_neg_integer()}]).
 %% @doc	  Returns the number of profiled calls to each function (MFA) 
 %%        in the module Mod.
 %@ --------------------------------------------------------------------
 
 res_module(Mod) ->
   Funs = Mod:module_info(functions),
-  lists:reverse(lists:keysort(2,lists:map(
-    fun ({F,A}) ->
+  lists:reverse(lists:keysort(2, lists:map(
+    fun ({F,A}) when is_atom(F), is_integer(A) ->
 	MFA = {Mod,F,A},
 	{MFA, case catch hipe_bifs:call_count_get(MFA) of 
 	        N when is_integer(N) -> N; 
@@ -182,6 +161,8 @@ res_module(Mod) ->
 	}
     end,
     Funs))).
+
+-spec(total_calls/1 :: (atom()) -> non_neg_integer()).
 
 total_calls(Mod) ->
   Funs = Mod:module_info(functions),
@@ -194,4 +175,3 @@ total_calls(Mod) ->
 	     (_, Acc) -> Acc
 	end,
   lists:foldl(SumF, 0, Funs).
-

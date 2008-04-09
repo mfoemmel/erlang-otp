@@ -66,23 +66,24 @@ graf1(Width, Height, {Xmin, Ymin, Xmax, Ymax}, Data) ->
     
     %% Initiate Image
 
-    Image = image:start(Width, Height),
-    
+    Image = egd:create(Width, Height),
+   
+ 
     %% Set colors
     
-    Bkgr = image:color(Image, 200, 200, 200),
-    Black = image:color(Image, 0, 0, 0),
-    ProcColor = image:color(Image, 0, 255, 0),
-    PortColor = image:color(Image, 255, 0, 0),
+    Black = egd:color(Image, {0, 0, 0}),
+    ProcColor = egd:color(Image, {0, 255, 0}),
+    PortColor = egd:color(Image, {255, 0, 0}),
     
-    image:fill(Image, 10,10, Bkgr),
     %% Draw graf, xticks and yticks
     draw_graf(Image, Data, {Black, ProcColor, PortColor}, GrafArea, {Xmin, Ymin, Xmax, Ymax}),
     draw_xticks(Image, Black, XticksArea, {Xmin, Xmax}, Data),
     draw_yticks(Image, Black, YticksArea, {Ymin, Ymax}),
     
     %% Kill image and return binaries
-    image:stop(Image).
+    Binary = egd:render(Image, png),
+    egd:destroy(Image),
+    Binary.
 
 %% draw_graf(Image, Data, Color, GraphArea, DataBounds)
 %% Image, port to Image
@@ -111,36 +112,29 @@ draw_graf(Gif, [{SX,SY1,SY2}|Data], Colors, GraphArea, {Xmin, _Ymin, Xmax, Ymax}
 		    ZLY = trunc(Y0 + Height),
 	    
 		    % Fill procs
-		    image:filledRectangle(
+		    egd:filledRectangle(
 		    	Gif,
-			NX1,
-			ZLY,
-			NX2,
-			NY2,
+			{NX1,ZLY},
+			{NX2,NY2},
 		        ProcColor),
 	    
 		    % fill ports
-		    image:filledRectangle(
+		    egd:filledRectangle(
 		    	Gif,
-			NX1,
-			NY2,
-			NX2,
-			NY3,
+			{NX1,NY2},
+			{NX2,NY3},
 		    	PortColor),
 		    % top line
-		    image:line(
+		    egd:line(
 		    	Gif,
-			NX1,
-			NY3,
-			NX2,
-			NY3,
+			{NX1,NY3},
+			{NX2,NY3},
 			Black),
 		    % left line
-		    image:line(Gif,
-		    	NX1,
-			NY1,
-			NX1,
-			NY3,
+		    egd:line(
+			Gif,
+		    	{NX1,NY1},
+			{NX1,NY3},
 			Black),
 		    {X, Y1 + Y2};
 		true ->
@@ -154,9 +148,9 @@ draw_xticks(Image, Color, XticksArea, {Xmin, Xmax}, Data) ->
     DX = Width/(Xmax - Xmin),
     Offset = X0 - Xmin*DX, 
     Y = trunc(Y0),
-    Font = small,
-    {FontW, _FontH} = image:fontSize(Image, Font),
-    image:line(Image, trunc(X0), Y, trunc(X0 + Width), Y, Color), 
+    Font = load_font(),
+    {FontW, _FontH} = egd_font:size(Font),
+    egd:filledRectangle(Image, {trunc(X0), Y}, {trunc(X0 + Width), Y}, Color), 
     lists:foldl(
     	fun ({X,_,_}, PX) ->
 	    X1 = trunc(Offset + X*DX),
@@ -173,8 +167,8 @@ draw_xticks(Image, Color, XticksArea, {Xmin, Xmax}, Data) ->
 		    Spacing = 2,
 		    if 
 		    	X1 > PX + round(TextWidth/2) + Spacing ->
-		    	    image:line(Image, X1, Y - 3, X1, Y + 3, Color),
-		    	    image:text(Image, Font, X1 - round(TextWidth/2), Y + 2, Text, Color),
+		    	    egd:line(Image, {X1, Y - 3}, {X1, Y + 3}, Color),
+		    	    text(Image, {X1 - round(TextWidth/2), Y + 2}, Font, Text, Color),
 			    X1 + round(TextWidth/2) + Spacing;
 			true ->
 			    PX
@@ -189,13 +183,14 @@ draw_yticks(Gif, Color, YticksArea, {_, Ymax}) ->
     DY = (Height)/(Ymax),
     Ys = lists:seq(0, trunc(Ymax)),
     X = trunc(X0 + Width),
-    image:line(Gif, X, trunc(0 + Y0), X, trunc(Y0 + Height), Color),
+    Font = load_font(),
+    egd:filledRectangle(Gif, {X, trunc(0 + Y0)}, {X, trunc(Y0 + Height)}, Color),
     lists:foreach(
     	fun (Y) ->
 	    Y1 = trunc(Y0 + Height -  Y*DY),
-	    image:line(Gif, X - 3, Y1, X + 3, Y1, Color), 
+	    egd:filledRectangle(Gif, {X - 3, Y1}, {X + 3, Y1}, Color), 
 	    Text = lists:flatten(io_lib:format("~p", [Y])),
-	    image:text(Gif, small, 0, Y1 - 4, Text, Color)
+	    text(Gif, {0, Y1 - 4}, Font, Text, Color)
 	end, Ys).
 
 %%% -------------------------------------
@@ -225,20 +220,22 @@ activities(Width, Height, Activities) ->
 
 activities0(Width, Height, {Xmin, Xmax}, Activities) ->
     
-    Image = image:start(Width, Height),
-    Grey = image:color(Image, 200, 200, 200),
+    Image = egd:create(Width, Height),
+    Grey = egd:color(Image, {200, 200, 200}),
     HO = 20,
     ActivityArea = #graph_area{x = HO, y = 0, width = Width - 2*HO, height = Height},
-    image:filledRectangle(Image, 0, 0, Width, Height, Grey),
+    egd:filledRectangle(Image, {0, 0}, {Width, Height}, Grey),
     draw_activity2(Image, {Xmin, Xmax}, ActivityArea, Activities),
-    image:stop(Image).
+    Binary = egd:render(Image, png),
+    egd:destroy(Image),
+    Binary.
 
 draw_activity2(Image, {Xmin, Xmax}, ActivityArea, [{X, Activity}|Activities]) ->
     #graph_area{width = Width} = ActivityArea,
 
-    White = image:color(Image, 255, 255, 255),
-    Green = image:color(Image, 0, 255, 0),
-    Black = image:color(Image, 0, 0, 0),
+    White = egd:color(Image, {255, 255, 255}),
+    Green = egd:color(Image, {0, 255, 0}),
+    Black = egd:color(Image, {0, 0, 0}),
     
     DX = (Width)/(Xmax - Xmin),
     draw_activity2(Image, {DX, X, Activity}, ActivityArea, {Green, White, Black}, Activities).
@@ -250,12 +247,12 @@ draw_activity2(Image, {DX, PX, PA}, ActivityArea, {C1, C2, C3}=Colors, [{X, Act}
     X2 = erlang:trunc(X0 + DX*X),
     case PA of 
 	inactive ->
-	    image:filledRectangle(Image, X1, 0, X2, Height - 1, C2),
-	    image:rectangle(Image, X1, 0, X2, Height - 1, C3),
+	    egd:filledRectangle(Image, {X1, 0}, {X2, Height - 1}, C2),
+	    egd:rectangle(Image, {X1, 0}, {X2, Height - 1}, C3),
 	    draw_activity2(Image, {DX, X, Act}, ActivityArea, Colors, Data);
 	active ->
-	    image:filledRectangle(Image, X1, 0, X2, Height - 1, C1),
-	    image:rectangle(Image, X1, 0, X2, Height - 1, C3),
+	    egd:filledRectangle(Image, {X1, 0}, {X2, Height - 1}, C1),
+	    egd:rectangle(Image, {X1, 0}, {X2, Height - 1}, C3),
     	    draw_activity2(Image, {DX, X, Act}, ActivityArea, Colors, Data)
     end.
 
@@ -266,15 +263,10 @@ draw_activity2(Image, {DX, PX, PA}, ActivityArea, {C1, C2, C3}=Colors, [{X, Act}
 %%% -------------------------------------
 
 proc_lifetime(Width, Height, Start, End, ProfileTime) ->
-    Im = image:start(round(Width), round(Height)),
-    Grey = image:color(Im, 200,200,200),
-    Black = image:color(Im, 0, 0, 0),
-    Green = image:color(Im, 0, 255, 0),
+    Im = egd:create(round(Width), round(Height)),
+    Black = egd:color(Im, {0, 0, 0}),
+    Green = egd:color(Im, {0, 255, 0}),
 
-    % Background
-
-    image:fill(Im, round(Width/2), round(Height/2), Grey),
-    
     % Ratio and coordinates
 
     DX = (Width-1)/ProfileTime,
@@ -282,10 +274,12 @@ proc_lifetime(Width, Height, Start, End, ProfileTime) ->
     X2 = round(DX*End),
 
     % Paint
-    image:filledRectangle(Im, X1, 0, X2, Height - 1, Green),
-    image:rectangle(Im, X1, 0, X2, Height - 1, Black),
+    egd:filledRectangle(Im, {X1, 0}, {X2, Height - 1}, Green),
+    egd:rectangle(Im, {X1, 0}, {X2, Height - 1}, Black),
 
-    image:stop(Im).
+    Binary = egd:render(Im, png),
+    egd:destroy(Im),
+    Binary.
 
 %%% -------------------------------------
 %%% Percentage
@@ -293,31 +287,35 @@ proc_lifetime(Width, Height, Start, End, ProfileTime) ->
 %%% Percentage should be 0.0 -> 1.0
 %%% -------------------------------------
 percentage(Width, Height, Percentage) ->
-    Im = image:start(round(Width), round(Height)),
-    Grey = image:color(Im, 200,200,200),
-    Black = image:color(Im, 0, 0, 0),
-    Green = image:color(Im, 0, 255, 0),
+    Im = egd:create(round(Width), round(Height)),
+    Font = load_font(),
+    Black = egd:color(Im, {0, 0, 0}),
+    Green = egd:color(Im, {0, 255, 0}),
 
-    % Background
-
-    image:fill(Im, round(Width/2), round(Height/2), Grey),
-    
     % Ratio and coordinates
 
     X = round(Width - 1 - Percentage*(Width - 1)),
 
     % Paint
-    image:filledRectangle(Im, X, 0, Width - 1, Height - 1, Green),
-    {FontW, _} = image:fontSize(Im, tiny), 
+    egd:filledRectangle(Im, {X, 0}, {Width - 1, Height - 1}, Green),
+    {FontW, _} = egd_font:size(Font), 
     String = lists:flatten(io_lib:format("~.10B %", [round(100*Percentage)])),
 
-    image:text(	Im, 
-    		tiny,
-		round(Width/2 - (FontW*length(String)/2)), 
-		1, 
+    text(	Im, 
+		{round(Width/2 - (FontW*length(String)/2)), 0}, 
+    		Font,
 		String,
 		Black),
-    image:rectangle(Im, X, 0, Width - 1, Height - 1, Black),
+    egd:rectangle(Im, {X, 0}, {Width - 1, Height - 1}, Black),
+    
+    Binary = egd:render(Im, png),
+    egd:destroy(Im),
+    Binary.
 
-    image:stop(Im).
 
+load_font() ->
+    Filename = filename:join([code:priv_dir(percept),"fonts", "6x11_latin1.wingsfont"]),
+    egd_font:load(Filename).
+    
+text(Image, {X,Y}, Font, Text, Color) ->
+    egd:text(Image, {X,Y-2}, Font, Text, Color).

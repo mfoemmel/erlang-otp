@@ -134,6 +134,12 @@
          compact_otp6017_msg01/1,
          compact_otp6017_msg02/1,
          compact_otp6017_msg03/1,
+         compact_otp7138_msg01/1,
+         compact_otp7138_msg02/1,
+
+	 flex_compact_tickets/1, 
+	 flex_compact_otp7138_msg01/1, 
+	 flex_compact_otp7138_msg02/1, 
 
 	 pretty_tickets/1, 
 	 pretty_otp4632_msg1/1, 
@@ -171,6 +177,7 @@
 	 pretty_otp6490_msg04/1, 
 	 pretty_otp6490_msg05/1, 
 	 pretty_otp6490_msg06/1, 
+	 pretty_otp7249_msg01/1,
 	 
 	 flex_pretty_tickets/1, 
 	 flex_pretty_otp5042_msg1/1, 
@@ -409,8 +416,9 @@ erl_dist_m(suite) ->
 
 tickets(suite) ->
     [
-     compact_tickets,
+     compact_tickets, 
      pretty_tickets,
+     flex_compact_tickets,
      flex_pretty_tickets
     ].
 
@@ -460,7 +468,20 @@ compact_tickets(suite) ->
      compact_otp5993_msg03,
      compact_otp6017_msg01,
      compact_otp6017_msg02,
-     compact_otp6017_msg03
+     compact_otp6017_msg03,
+     compact_otp7138_msg01,
+     compact_otp7138_msg02
+    ].
+
+flex_compact_tickets(suite) ->
+    {req, [], 
+     {conf, flex_compact_init, flex_compact_tickets_cases(), 
+      flex_compact_finish}}.
+
+flex_compact_tickets_cases() ->
+    [
+     flex_compact_otp7138_msg01,
+     flex_compact_otp7138_msg02
     ].
 
 pretty_tickets(suite) ->
@@ -499,7 +520,8 @@ pretty_tickets(suite) ->
      pretty_otp6490_msg03,
      pretty_otp6490_msg04,
      pretty_otp6490_msg05,
-     pretty_otp6490_msg06
+     pretty_otp6490_msg06,
+     pretty_otp7249_msg01
     ].
 
 flex_pretty_tickets(suite) ->
@@ -2325,6 +2347,90 @@ compact_otp6017_msg(CID) when is_integer(CID) ->
         "{SC=root{SV{MT=RS,RE=901}}}}".
 
 
+%% --------------------------------------------------------------
+
+compact_otp7138_msg01(suite) ->
+    [];
+compact_otp7138_msg01(Config) when list(Config) ->
+%%     put(dbg, true),
+%%     put(severity, trc),
+    d("compact_otp7138_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg = compact_otp7138_msg01(),
+    EC  = [],
+    ok = compact_otp7138(EC, Msg),
+    ok.
+
+compact_otp7138_msg02(suite) ->
+    [];
+compact_otp7138_msg02(Config) when list(Config) ->
+%%     put(dbg, true),
+%%     put(severity, trc),
+    d("compact_otp7138_msg02 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg = compact_otp7138_msg02(),
+    EC  = [],
+    ok = compact_otp7138(EC, Msg),
+    ok.
+
+compact_otp7138_msg01() ->
+    <<"!/2 <gw>\nT=1111{C=1{N=mgw2dev1/1{OE=16777985{ctyp/dtone{dtt=CT}}}}}">>.
+
+compact_otp7138_msg02() ->
+    <<"!/2 <gw>\nT=1111{C=1{N=mgw2dev1/1{OE=16777985{ctyp/dtone{dtt=\"CT\"}}}}}">>.
+
+compact_otp7138(EC, BinMsg) ->
+    d("compact_otp7138 -> "
+      "~n   ~p", [binary_to_list(BinMsg)]),
+    Codec = megaco_compact_text_encoder,
+    case decode_message(Codec, false, EC, BinMsg) of
+	{ok, Msg} ->
+	    case encode_message(Codec, EC, Msg) of
+		{ok, BinMsg} ->
+		    d("compact_otp7138 -> encode successfull: "
+		      "~n   ~p", [binary_to_list(BinMsg)]),
+		    ok;
+		{ok, BinMsg2} ->
+		    d("compact_otp7138 -> encode successfull but result differ: "
+		      "~n   ~p", [binary_to_list(BinMsg2)]),
+		    ok;
+		{error, Reason} ->
+		    e("encode failed: ~p", [Reason]),
+		    {error, Reason}
+	    end;
+	{error, Reason} ->
+	    e("decode failed: ~p", [Reason]),
+	    {error, Reason}
+    end.
+
+	    
+
+%% ==============================================================
+%%
+%% F l e x   C o m p a c t   T e s t c a s e s
+%%
+
+flex_compact_otp7138_msg01(suite) ->
+    [];
+flex_compact_otp7138_msg01(Config) when list(Config) ->
+    %%     put(dbg, true),
+    %%     put(severity, trc),
+    d("flex_compact_otp7138_msg01 -> entry", []),
+    Msg  = compact_otp7138_msg01(),
+    Conf = flex_scanner_conf(Config),
+    compact_otp7138([Conf], Msg).
+
+flex_compact_otp7138_msg02(suite) ->
+    [];
+flex_compact_otp7138_msg02(Config) when list(Config) ->
+    %%     put(dbg, true),
+    %%     put(severity, trc),
+    d("flex_compact_otp7138_msg02 -> entry", []),
+    Msg  = compact_otp7138_msg02(),
+    Conf = flex_scanner_conf(Config),
+    compact_otp7138([Conf], Msg).
+
+
 %% ==============================================================
 %%
 %% P r e t t y   T e s t c a s e s
@@ -3695,6 +3801,43 @@ pretty_otp6490_msg06() ->
     EBD      = ?MSG_LIB:cre_EventBufferDescriptor(EvSpecs),
     pretty_otp6490_msg(EBD).
     
+
+%% --------------------------------------------------------------
+%% 
+pretty_otp7249_msg01(suite) ->
+    [];
+pretty_otp7249_msg01(doc) ->
+    "Ticket OTP-7249 has really nothing to to with just version 2 "
+	"although the test message is version 2. Instead the decode "
+	"is actually done by the mini decoder, which is where the bug "
+	"manifests itself. The bug is in effect located in the (plain) "
+	"text scanner. ";
+pretty_otp7249_msg01(Config) when is_list(Config) ->
+    %% put(severity, trc),
+    %% put(dbg,      true),
+    d("pretty_otp7249_msg01 -> entry", []),
+    ok = pretty_otp7249( pretty_otp7249_msg01() ),
+    %% erase(dbg),
+    %% erase(severity),
+    ok.
+    
+
+pretty_otp7249_msg01() ->
+    "MEGACO/2 <AGW95_DCT_2_DPNSS>\r\nTransaction = 500017 { \r\nContext =  - { ServiceChange = ROOT { Services { \r\nMethod =  Disconnected, Reason =  900, 20070116T15233997 } \r\n }  }  } \r\n".
+
+pretty_otp7249(EncodedMsg) ->
+    Codec = megaco_pretty_text_encoder, 
+    Conf  = [], 
+    Bin   = list_to_binary(EncodedMsg), 
+    case decode_mini_message(Codec, Conf, Bin) of
+	{ok, Msg} when is_record(Msg, 'MegacoMessage') ->
+	    %% 	    io:format("Msg: ~n~p"
+	    %% 		      "~n", [Msg]),
+	    ok;
+	{error, Reason} ->
+	    exit({unexpected_decode_failure, EncodedMsg, Reason})
+    end.
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -5448,6 +5591,12 @@ encode_message(Codec, Conf, Msg) ->
 test_msgs(Codec, DynamicDecode, Conf, Msgs) ->
     megaco_codec_test_lib:test_msgs(Codec, DynamicDecode, ?VERSION, Conf, 
 				    fun chk_MegacoMessage/2, Msgs).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+decode_mini_message(Codec, Conf, Bin) ->
+    Codec:decode_mini_message(Conf, dynamic, Bin).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

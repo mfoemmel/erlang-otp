@@ -32,6 +32,23 @@
   <p>This document describes the changes made to the DocBuilder
      application.</p>
 
+<section><title>Docbuilder 0.9.8.4</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    The element "code" with multiple CDATA or CDATA plus
+	    other data now works as expected, previously it caused a
+	    crash.</p>
+          <p>
+	    Own Id: OTP-7236</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Docbuilder 0.9.8</title>
 
     <section><title>Improvements and New Features</title>

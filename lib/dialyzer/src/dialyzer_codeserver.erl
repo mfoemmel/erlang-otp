@@ -11,9 +11,9 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006-2008, Tobias Lindahl and Kostis Sagonas
 %% 
-%%     $Id$
+%% $Id$
 %%
 
 %%%-------------------------------------------------------------------
@@ -27,10 +27,10 @@
 
 -export([all_exports/1, 
 	 delete/1,
-	 insert/3, 
+	 insert/2, 
 	 insert_exports/2,	 
 	 is_exported/2,
-	 lookup/3, 
+	 lookup/2, 
 	 lookup_records/2,
 	 lookup_contracts/2,
 	 lookup_contract/2,
@@ -40,44 +40,56 @@
 	 store_contracts/3,
 	 update_next_core_label/2]).
 
+-include("dialyzer.hrl").
 
--record(dialyzer_codeserver, {table, exports, next_core_label, records, contracts}).
+%%--------------------------------------------------------------------
 
+-spec(new/0 :: () -> #dialyzer_codeserver{}).
 new() ->
   Table = table__new(),
   Exports = sets:new(),
   #dialyzer_codeserver{table=Table, exports=Exports, next_core_label=0,
 		       records=dict:new(), contracts=dict:new()}.
 
+-spec(delete/1 :: (#dialyzer_codeserver{}) -> 'ok').
 delete(#dialyzer_codeserver{table=Table}) ->
   table__delete(Table).
 
-insert(List, Tag, CS) ->
-  %% Note that ID is a MFA in icode and a module in core.
-  List1 = [{{ID, Tag}, Code}||{ID, Code} <- List],
-  NewTable = table__insert(CS#dialyzer_codeserver.table, List1),
+-spec(insert/2:: ([_], #dialyzer_codeserver{}) -> #dialyzer_codeserver{}).
+insert(List, CS) ->
+  NewTable = table__insert(CS#dialyzer_codeserver.table, List),
   CS#dialyzer_codeserver{table=NewTable}.
 
+-spec(insert_exports/2 ::
+      ([mfa()], #dialyzer_codeserver{}) -> #dialyzer_codeserver{}).
 insert_exports(List, CS = #dialyzer_codeserver{exports=Exports}) ->
   Set = sets:from_list(List),
   NewExports = sets:union(Exports, Set),
   CS#dialyzer_codeserver{exports=NewExports}.
 
+-spec(is_exported/2 :: (mfa(), #dialyzer_codeserver{}) -> bool()).
 is_exported(MFA, #dialyzer_codeserver{exports=Exports}) ->
   sets:is_element(MFA, Exports).
 
+-spec(all_exports/1 :: (#dialyzer_codeserver{}) -> set()).
 all_exports(#dialyzer_codeserver{exports=Exports}) ->
   Exports.
 
-lookup(Id, Tag, CS) ->
-  table__lookup(CS#dialyzer_codeserver.table, {Id, Tag}).
+-spec(lookup/2 :: (_, #dialyzer_codeserver{}) -> any()).
+lookup(Id, CS) ->
+  table__lookup(CS#dialyzer_codeserver.table, Id).
 
+-spec(next_core_label/1 :: (#dialyzer_codeserver{}) -> non_neg_integer()).
 next_core_label(#dialyzer_codeserver{next_core_label=NCL}) ->
   NCL.
 
+-spec(update_next_core_label/2 ::
+      (non_neg_integer(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}).
 update_next_core_label(NCL, CS = #dialyzer_codeserver{}) ->
   CS#dialyzer_codeserver{next_core_label=NCL}.
 
+-spec(store_records/3 ::
+      (atom(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}).
 store_records(Module, Dict, 
 	      CS=#dialyzer_codeserver{records=RecDict}) when is_atom(Module) ->
   case dict:size(Dict) =:= 0 of
@@ -86,6 +98,7 @@ store_records(Module, Dict,
       CS#dialyzer_codeserver{records=dict:store(Module, Dict, RecDict)}
   end.
 
+-spec(lookup_records/2 :: (atom(), #dialyzer_codeserver{}) -> dict()). 
 lookup_records(Module, 
 	       #dialyzer_codeserver{records=RecDict}) when is_atom(Module) ->
   case dict:find(Module, RecDict) of
@@ -93,7 +106,8 @@ lookup_records(Module,
     {ok, Dict} -> Dict
   end.
 
-
+-spec(store_contracts/3 ::
+      (atom(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}). 
 store_contracts(Module, Dict, 
 		CS=#dialyzer_codeserver{contracts=C}) when is_atom(Module) ->
   case dict:size(Dict) =:= 0 of
@@ -101,6 +115,7 @@ store_contracts(Module, Dict,
     false -> CS#dialyzer_codeserver{contracts=dict:store(Module, Dict, C)}
   end.
 
+-spec(lookup_contracts/2 :: (atom(), #dialyzer_codeserver{}) -> dict()). 
 lookup_contracts(Mod, 
 		 #dialyzer_codeserver{contracts=ContDict}) when is_atom(Mod) ->
   case dict:find(Mod, ContDict) of
@@ -108,17 +123,20 @@ lookup_contracts(Mod,
     {ok, Dict} -> Dict
   end.
 
-lookup_contract({M,F,A}, #dialyzer_codeserver{contracts=ContDict}) ->
+-spec(lookup_contract/2 ::
+      (mfa(), #dialyzer_codeserver{}) -> 'error' | {'ok',_}).
+lookup_contract(MFA={M,_F,_A}, #dialyzer_codeserver{contracts=ContDict}) ->
   case dict:find(M, ContDict) of
     error -> error;
-    {ok, Dict} -> dict:find({M, F,A}, Dict)
+    {ok, Dict} -> dict:find(MFA, Dict)
   end.
 
 table__new() ->
-  spawn_link(fun() -> table__loop(none, dict:new())end).
+  spawn_link(fun() -> table__loop(none, dict:new()) end).
 
 table__delete(TablePid) ->
-  TablePid ! stop.
+  TablePid ! stop,
+  ok.
 
 table__lookup(TablePid, Key) ->
   TablePid ! {self(), lookup, Key},
@@ -134,7 +152,7 @@ table__insert(Table, List) ->
 table__loop(Cached, Map) ->
   receive
     stop -> ok;
-    {Pid, lookup, Key = {{M, F, A}, core}} ->
+    {Pid, lookup, Key = {M, F, A}} ->
       {NewCached, Ans} =
 	case Cached of
 	  {M, Tree} ->
@@ -143,7 +161,7 @@ table__loop(Cached, Map) ->
 				   cerl:fname_arity(Var) =:= A],
 	    {Cached, Val};
 	  _ ->
-	    Tree = fetch_and_expand({M, core}, Map),
+	    Tree = fetch_and_expand(M, Map),
 	    [Val] = [{Var, Fun} || {Var, Fun} <- cerl:module_defs(Tree),
 				   cerl:fname_id(Var) =:= F,
 				   cerl:fname_arity(Var) =:= A],
@@ -151,17 +169,13 @@ table__loop(Cached, Map) ->
 	end,
       Pid ! {self(), Key, {ok, Ans}},
       table__loop(NewCached, Map);
-    {Pid, lookup, Key = {M, core}} ->
+    {Pid, lookup, Key} ->
       Ans = case Cached of
-	      {M, Tree} -> Tree;
-	      _ -> fetch_and_expand({M, core}, Map)
+	      {Key, Tree} -> Tree;
+	      _ -> fetch_and_expand(Key, Map)
 	    end,
       Pid ! {self(), Key, {ok, Ans}},
-      table__loop({M, Ans}, Map);
-    {Pid, lookup, Key} ->
-      Ans = fetch_and_expand(Key, Map),
-      Pid ! {self(), Key, {ok, Ans}},
-      table__loop(Cached, Map);
+      table__loop({Key, Ans}, Map);
     {insert, List} ->
       NewMap = lists:foldl(fun({Key, Val}, AccMap) -> 
 			       dict:store(Key, Val, AccMap)

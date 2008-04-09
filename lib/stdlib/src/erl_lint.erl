@@ -39,6 +39,8 @@
 %%              Value.
 %%  The option handling functions.
 
+-spec(bool_option/4 :: (atom(), atom(), bool(), [_]) -> bool()).
+
 bool_option(On, Off, Default, Opts) ->
     foldl(fun (Opt, _Def) when Opt =:= On -> true;
               (Opt, _Def) when Opt =:= Off -> false;
@@ -81,7 +83,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 %% Define the lint state record.
 %% 'called' and 'exports' contain {Line, {Function, Arity}},
 %% the other function collections contain {Function, Arity}.
--record(lint, {state=start,                     %start | attribute | function
+-record(lint, {state=start		:: 'start' | 'attribute' | 'function',
                module=[],                       %Module
                package="",                      %Module package
                extends=[],                      %Extends
@@ -100,15 +102,15 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                errors=[],                       %Current errors
                warnings=[],                     %Current warnings
 	       global_vt=[],                    %The global VarTable
-               file=[],                         %From last file attribute
-               recdef_top=false,                %true in record initialisation
-                                                %outside any fun or lc
-               xqlc=false,                      %true if qlc.hrl included
-               new = false,                     %Has user-defined 'new/N'
-               called=[],			%Called functions
+               file = ""        :: string(),	%From last file attribute
+               recdef_top=false :: bool(),	%true in record initialisation
+						%outside any fun or lc
+               xqlc= false :: bool(),		%true if qlc.hrl included
+               new = false :: bool(),		%Has user-defined 'new/N'
+               called= [],			%Called functions
                usage = #usage{},
-	       specs=dict:new(),                %Type specifications
-	       types=dict:new()                 %Type definitions
+	       specs = dict:new(),		%Type specifications
+	       types = dict:new()		%Type definitions
               }).
 
 %% format_error(Error)
@@ -124,9 +126,8 @@ format_error(redefine_extends) ->
     "redefining extends attribute";
 format_error(extends_self) ->
     "cannot extend from self";
-%%% format_error({redefine_mod_import, M, P}) ->
-%%%     io_lib:format("module '~s' already imported from package '~s'",
-%%%               [M, P]);
+%% format_error({redefine_mod_import, M, P}) ->
+%%     io_lib:format("module '~s' already imported from package '~s'", [M, P]);
 
 format_error(invalid_call) ->
     "invalid function call";
@@ -140,8 +141,7 @@ format_error({attribute,A}) ->
 format_error({missing_qlc_hrl,A}) ->
     io_lib:format("qlc:q/~w called, but \"qlc.hrl\" not included", [A]);
 format_error({redefine_import,{bif,{F,A},M}}) ->
-    io_lib:format("function ~w/~w already auto-imported from ~w",
-                  [F,A,M]);
+    io_lib:format("function ~w/~w already auto-imported from ~w", [F,A,M]);
 format_error({redefine_import,{{F,A},M}}) ->
     io_lib:format("function ~w/~w already imported from ~w", [F,A,M]);
 format_error({bad_inline,{F,A}}) ->
@@ -153,8 +153,7 @@ format_error(invalid_extends) ->
 format_error(define_instance) ->
     "defining instance function not allowed in abstract module";
 format_error({bad_deprecated,{F,A}}) ->
-    io_lib:format("deprecated function ~w/~w undefined or not exported", 
-                  [F, A]);
+    io_lib:format("deprecated function ~w/~w undefined or not exported", [F,A]);
 format_error({bad_nowarn_unused_function,{F,A}}) ->
     io_lib:format("function ~w/~w undefined", [F,A]);
 format_error({bad_nowarn_bif_clash,{F,A}}) ->
@@ -196,17 +195,18 @@ format_error({obsolete_guard, {F, A}}) ->
     io_lib:format("~p/~p obsolete", [F, A]);
 format_error({reserved_for_future,K}) ->
     io_lib:format("atom ~w: future reserved keyword - rename or quote", [K]);
-
+%% --- patterns and guards ---
 format_error(illegal_pattern) -> "illegal pattern";
 format_error(illegal_bin_pattern) ->
     "binary patterns cannot be matched in parallel using '='";
 format_error(illegal_expr) -> "illegal expression";
 format_error(illegal_guard_expr) -> "illegal guard expression";
+%% --- exports ---
 format_error({explicit_export,F,A}) ->
     io_lib:format("in this release, the call to ~w/~w must be written "
 		  "like this: erlang:~w/~w",
 		  [F,A,F,A]);
-
+%% --- records ---
 format_error({undefined_record,T}) ->
     io_lib:format("record ~w undefined", [T]);
 format_error({redefine_record,T}) ->
@@ -223,7 +223,9 @@ format_error({wildcard_in_update,T}) ->
     io_lib:format("meaningless use of _ in update of record ~w", [T]);
 format_error({unused_record,T}) ->
     io_lib:format("record ~w is unused", [T]);
-
+format_error({untyped_record,T}) ->
+    io_lib:format("record ~w has field(s) without type information", [T]);
+%% --- variables ----
 format_error({unbound_var,V}) ->
     io_lib:format("variable ~w is unbound", [V]);
 format_error({unsafe_var,V,{What,Where}}) ->
@@ -236,7 +238,7 @@ format_error({unused_var, V}) ->
     io_lib:format("variable ~w is unused", [V]);
 format_error({variable_in_record_def,V}) ->
     io_lib:format("variable ~w in record definition", [V]);
-
+%% --- binaries ---
 format_error({undefined_bittype,Type}) ->
     io_lib:format("bit type ~w undefined", [Type]);
 format_error({bittype_mismatch,T1,T2,What}) ->
@@ -251,12 +253,7 @@ format_error(typed_literal_string) ->
     "a literal string in a binary pattern must not have a type or a size";
 format_error({bad_bitsize,Type}) ->
     io_lib:format("bad ~s bit size", [Type]);
-
-format_error({format_error,{Fmt,Args}}) ->
-    io_lib:format(Fmt, Args);
-format_error({mnemosyne,What}) ->
-    "mnemosyne " ++ What ++ ", missing transformation";
-
+%% --- behaviours ---
 format_error({conflicting_behaviours,{Name,Arity},B,FirstL,FirstB}) ->
     io_lib:format("conflicting behaviours - callback ~w/~w required by both '~p' "
 		  "and '~p' (line ~p)", [Name,Arity,B,FirstB,FirstL]);
@@ -269,8 +266,8 @@ format_error({undefined_behaviour_callbacks,Behaviour}) ->
     io_lib:format("behaviour ~w callback functions are undefined",
                   [Behaviour]);
 format_error({ill_defined_behaviour_callbacks,Behaviour}) ->
-    io_lib:format("behaviour ~w callback functions erroneously defined",
-                  [Behaviour]);
+    io_lib:format("behaviour ~w callback functions erroneously defined", [Behaviour]);
+%% --- types and specs ---
 format_error({singleton_typevar, Name}) ->
     io_lib:format("type variable ~w is only used once (is unbound)", [Name]);
 format_error({type_ref, {TypeName, Arity}}) ->
@@ -286,8 +283,15 @@ format_error({redefine_spec, {M, F, A}}) ->
     io_lib:format("spec for ~w:~w/~w already defined", [M, F, A]);
 format_error({spec_fun_undefined, {M, F, A}}) ->
     io_lib:format("spec for undefined function ~w:~w/~w", [M, F, A]);
+format_error({missing_spec, {F,A}}) ->
+    io_lib:format("missing specification for function ~w/~w", [F, A]);
 format_error(spec_wrong_arity) ->
-    "spec has the wrong arity".
+    "spec has the wrong arity";
+%% --- obsolete? unused? ---
+format_error({format_error,{Fmt,Args}}) ->
+    io_lib:format(Fmt, Args);
+format_error({mnemosyne,What}) ->
+    "mnemosyne " ++ What ++ ", missing transformation".
 
 gen_type_paren(Arity) when is_integer(Arity), Arity >= 0 ->
     gen_type_paren_1(Arity, ")").
@@ -398,7 +402,16 @@ start(File, Opts) ->
 		      true, Opts)},
          {obsolete_guard,
           bool_option(warn_obsolete_guard, nowarn_obsolete_guard,
-                      false, Opts)}
+                      false, Opts)},
+	 {untyped_record,
+	  bool_option(warn_untyped_record, nowarn_untyped_record,
+		      false, Opts)},
+	 {missing_spec,
+	  bool_option(warn_missing_spec, nowarn_missing_spec,
+		      false, Opts)},
+	 {missing_spec_exported,
+	  bool_option(warn_missing_spec_exported, nowarn_missing_spec_exported,
+		      false, Opts)}
 	],
     Enabled1 = [Category || {Category,true} <- Enabled0],
     Enabled = ordsets:from_list(Enabled1),
@@ -408,17 +421,16 @@ start(File, Opts) ->
 		false ->
 		    undefined
 	    end,
-    #lint{state=start,
-          exports=gb_sets:from_list([{module_info,0},
-                                     {module_info,1}]),
-          mod_imports=dict:from_list([{erlang,erlang}]),
-          compile=Opts,
+    #lint{state = start,
+          exports = gb_sets:from_list([{module_info,0},{module_info,1}]),
+          mod_imports = dict:from_list([{erlang,erlang}]),
+          compile = Opts,
           %% Internal pseudo-functions must appear as defined/reached.
-          defined=gb_sets:from_list(pseudolocals()),
+          defined = gb_sets:from_list(pseudolocals()),
 	  called = [{F,0} || F <- pseudolocals()],
           usage = #usage{calls=Calls},
-          warn_format=value_option(warn_format, 1, warn_format, 1,
-                                   nowarn_format, 0, Opts),
+          warn_format = value_option(warn_format, 1, warn_format, 1,
+				     nowarn_format, 0, Opts),
 	  enabled_warnings = Enabled,
           file = File,
 	  types = default_types()
@@ -678,8 +690,10 @@ post_traversal_check(Forms, St0) ->
     St6 = check_unused_functions(Forms, St5),
     St7 = check_bif_clashes(Forms, St6),
     St8 = check_specs_without_function(St7),
-    St9 = check_unused_types(Forms, St8),
-    check_unused_records(Forms, St9).
+    St9 = check_functions_without_spec(Forms, St8),
+    StA = check_unused_types(Forms, St9),
+    StB = check_untyped_records(Forms, StA),
+    check_unused_records(Forms, StB).
 
 %% check_behaviour(State0) -> State
 %% Check that the behaviour attribute is valid.
@@ -917,6 +931,31 @@ func_line_warning(Type, Fs, St) ->
 func_line_error(Type, Fs, St) ->
     foldl(fun ({F,Line}, St0) -> add_error(Line, {Type,F}, St0) end, St, Fs).
 
+check_untyped_records(Forms, St0) ->
+    case is_warn_enabled(untyped_record, St0) of
+	true ->
+	    %% One possibility is to use the names of all records
+	    %%   RecNames = dict:fetch_keys(St0#lint.records),
+	    %% but I think it's better to keep those that are used by the file
+	    Usage = St0#lint.usage,
+            UsedRecNames = sets:to_list(Usage#usage.used_records),
+	    %% these are the records with field(s) containing type info
+	    TRecNames = [Name ||
+			    {attribute,_,type,{{record,Name},Fields,_}} <- Forms,
+			    lists:all(fun ({typed_record_field,_,_}) -> true;
+					  (_) -> false
+				      end, Fields)],
+	    foldl(fun (N, St) ->
+			  {L, Fields} = dict:fetch(N, St0#lint.records),
+			  case Fields of
+			      [] -> St; % exclude records with no fields
+			      [_|_] -> add_warning(L, {untyped_record, N}, St)
+			  end
+		  end, St0, UsedRecNames -- TRecNames);
+	false ->
+	    St0
+    end.
+
 check_unused_records(Forms, St0) ->
     AttrFiles = [File || {attribute,_L,file,{File,_Line}} <- Forms],
     case {is_warn_enabled(unused_record, St0),AttrFiles} of
@@ -932,7 +971,7 @@ check_unused_records(Forms, St0) ->
                          {Name,{Line,_Fields}} <- dict:to_list(URecs),
                          element(1, Line) =:= FirstFile],
             foldl(fun ({N,L}, St) ->
-                          add_warning(L, {unused_record,N}, St)
+                          add_warning(L, {unused_record, N}, St)
                   end, St0, Unused);
         _ ->
             St0
@@ -1045,7 +1084,6 @@ is_function_exported(Name, Arity, #lint{exports=Exports,compile=Compile}) ->
         member(export_all, Compile).
     
 %% function(Line, Name, Arity, Clauses, State) -> State.
-
 
 function(Line, instance, _Arity, _Cs, St) when St#lint.global_vt =/= [] ->
     add_error(Line, define_instance, St);
@@ -1190,10 +1228,22 @@ pattern_list(Ps, Vt, Old, Bvt0, St) ->
                   {vtmerge_pat(Pvt, Psvt),vtmerge_pat(Bvt,Bvt1),St1}
           end, {[],[],St}, Ps).
 
+%% reject_bin_alias(Pat, Expr, St) -> St'
+%%  Reject aliases for binary patterns at the top level.
+
+reject_bin_alias_expr({bin,_,_}=P, {match,_,P0,E}, St0) ->
+    St = reject_bin_alias(P, P0, St0),
+    reject_bin_alias_expr(P, E, St);
+reject_bin_alias_expr({match,_,_,_}=P, {match,_,P0,E}, St0) ->
+    St = reject_bin_alias(P, P0, St0),
+    reject_bin_alias_expr(P, E, St);
+reject_bin_alias_expr(_, _, St) -> St.
+
+
 %% reject_bin_alias(Pat1, Pat2, St) -> St'
 %%  Aliases of binary patterns, such as <<A:8>> = <<B:4,C:4>> or even
 %%  <<A:8>> = <<A:8>>, are not allowed. Traverse the patterns in parallel
-%%  and generate an error if any error binary aliases are found.
+%%  and generate an error if any binary aliases are found.
 %%    We generate an error even if is obvious that the overall pattern can't
 %%  possibly match, for instance, {a,<<A:8>>,c}={x,<<A:8>>} WILL generate an
 %%  error.
@@ -1215,7 +1265,12 @@ reject_bin_alias({record,_,Name1,Pfs1}, {record,_,Name2,Pfs2},
 	    %% already been generated, so we are done here.)
 	    St
     end;
-reject_bin_alias(_, _, St) -> St.
+reject_bin_alias({match,_,P1,P2}, P, St0) ->
+    St = reject_bin_alias(P1, P, St0),
+    reject_bin_alias(P2, P, St);
+reject_bin_alias(P, {match,_,_,_}=M, St) ->
+    reject_bin_alias(M, P, St);
+reject_bin_alias(_P1, _P2, St) -> St.
 
 reject_bin_alias_list([E1|Es1], [E2|Es2], St0) ->
     St = reject_bin_alias(E1, E2, St0),
@@ -1883,7 +1938,8 @@ expr({'catch',Line,E}, Vt, St0) ->
 expr({match,_Line,P,E}, Vt, St0) ->
     {Evt,St1} = expr(E, Vt, St0),
     {Pvt,Bvt,St2} = pattern(P, vtupdate(Evt, Vt), St1),
-    {vtupdate(Bvt, vtmerge(Evt, Pvt)),St2};
+    St = reject_bin_alias_expr(P, E, St2),
+    {vtupdate(Bvt, vtmerge(Evt, Pvt)),St};
 %% No comparison or boolean operators yet.
 expr({op,_Line,_Op,A}, Vt, St) ->
     expr(A, Vt, St);
@@ -2186,7 +2242,7 @@ find_field(_F, []) -> error.
 %% Checks that a type definition is valid.
 
 type_def(_Line, {record, _RecName}, Fields, [], St0) ->
-    %% The record field names and such is checked in the record format.
+    %% The record field names and such are checked in the record format.
     %% We only need to check the types.
     Types = [T || {typed_record_field, _, T} <- Fields],
     check_type({type, -1, product, Types}, St0);
@@ -2199,7 +2255,8 @@ type_def(Line, TypeName, ProtoType, Args, St0) ->
 	    add_error(Line, {redefine_type, {TypeName, Arity}}, St0);
 	false ->
 	    NewDefs = dict:store({TypeName, Arity}, Line, TypeDefs),
-	    check_type(ProtoType, St0#lint{types=NewDefs})
+	    CheckType = {type, -1, product, [ProtoType|Args]},
+	    check_type(CheckType, St0#lint{types=NewDefs})
     end.
 
 check_type(Types, St) ->
@@ -2277,12 +2334,13 @@ check_record_types(Line, Name, Fields, SeenVars, St) ->
 	    case lists:all(fun({type, _, field_type, _}) -> true;
 			      (_) -> false
 			   end, Fields) of
-		true -> check_record_types(Fields, Name, DefFields, 
-					   SeenVars, St, []);
-		false -> {SeenVars, add_error(Line, {type_syntax, record}, St)}
+		true -> 
+		    check_record_types(Fields, Name, DefFields, SeenVars, St, []);
+		false ->
+		    {SeenVars, add_error(Line, {type_syntax, record}, St)}
 	    end;
         error -> 
-	    {SeenVars, add_error(Line, {undefined_record,Name}, St)}
+	    {SeenVars, add_error(Line, {undefined_record, Name}, St)}
     end.
 
 check_record_types([{type, _, field_type, [{atom, AL, FName}, Type]}|Left],
@@ -2299,7 +2357,7 @@ check_record_types([{type, _, field_type, [{atom, AL, FName}, Type]}|Left],
 	  end,
     %% Check Type
     {NewSeenVars, St3} = check_type(Type, SeenVars, St2),
-    NewSeenFields = ordsets:add_element(Name, SeenFields),
+    NewSeenFields = ordsets:add_element(FName, SeenFields),
     check_record_types(Left, Name, DefFields, NewSeenVars, St3, NewSeenFields);
 check_record_types([], _Name, _DefFields, SeenVars, St, _SeenFields) ->
     {SeenVars, St}.
@@ -2396,6 +2454,37 @@ check_specs_without_function(St = #lint{module=Mod, defined=Funcs}) ->
 	     ({_M, _F, _A}, _Line, AccSt) -> AccSt
 	  end,
     dict:fold(Fun, St, St#lint.specs).
+
+%% This generates warnings for functions without specs; if the user has
+%% specified both options, we do not generate the same warnings twice.
+check_functions_without_spec(Forms, St0) ->
+    case is_warn_enabled(missing_spec, St0) of
+	true ->
+	    add_missing_spec_warnings(Forms, St0, all);
+	false ->
+	    case is_warn_enabled(missing_spec_exported, St0) of
+		true ->
+		    add_missing_spec_warnings(Forms, St0, exported);
+		false ->
+		    St0
+	    end
+    end.
+
+add_missing_spec_warnings(Forms, St0, Type) ->
+    Specs = [{F,A} || {_M,F,A} <- dict:fetch_keys(St0#lint.specs)],
+    Warns = %% functions + line numbers for which we should warn
+	case Type of
+	    all ->
+		[{FA,L} || {function,L,F,A,_} <- Forms,
+			   not lists:member(FA = {F,A}, Specs)];
+	    exported ->
+		Exps = gb_sets:to_list(St0#lint.exports) -- pseudolocals(),
+		[{FA,L} || {function,L,F,A,_} <- Forms,
+			   member(FA = {F,A}, Exps -- Specs)]
+	end,
+    foldl(fun ({FA,L}, St) ->
+		  add_warning(L, {missing_spec,FA}, St)
+	  end, St0, Warns).
 
 check_unused_types(Forms, St = #lint{usage=Usage, types=Types}) ->
     case [File || {attribute,_L,file,{File,_Line}} <- Forms] of

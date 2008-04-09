@@ -9,9 +9,9 @@
 %%  History  :	* 2001-02-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2007/12/18 09:13:34 $
-%%              $Revision: 1.7 $
+%%              $Author: kostis $
+%%              $Date: 2008/03/07 15:46:06 $
+%%              $Revision: 1.8 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -25,11 +25,10 @@
 
 pp(Dev, Table, CodeType, Pre) ->
   Ls = hipe_consttab:labels(Table),
-  lists:map(fun ({{_,ref},_}) -> ok;
-		({L,E}) -> 
-		    pp_element(Dev, L, E, CodeType, Pre)
-	    end, 
-	    [{L,hipe_consttab:lookup(L, Table)} || L <- Ls]).
+  lists:foreach(fun ({{_,ref},_}) -> ok;
+		    ({L,E}) -> pp_element(Dev, L, E, CodeType, Pre)
+		end, 
+		[{L,hipe_consttab:lookup(L, Table)} || L <- Ls]).
 
 pp_element(Dev, Name, Element, CodeType, Prefix) ->
   %% Alignment
@@ -38,20 +37,19 @@ pp_element(Dev, Name, Element, CodeType, Prefix) ->
     Alignment -> 
       io:format(Dev, "    .align~w\n", [Alignment])
   end,
-
   %% Local or exported?
   Exported = hipe_consttab:const_exported(Element), 
   case CodeType of
     rtl ->
-      if Exported==true ->
+      case Exported of
+	true ->
 	  io:format(Dev, "DL~w: ", [Name]);
-	 true ->
+	false ->
 	  io:format(Dev, ".DL~w: ", [Name])
       end;
     _ -> 
       io:format(Dev, "~w ", [Name])
   end,
-
   %% Type and data...
   case hipe_consttab:const_type(Element) of
     term ->
@@ -61,12 +59,9 @@ pp_element(Dev, Name, Element, CodeType, Prefix) ->
       end;
     sorted_block ->
       Data = hipe_consttab:const_data(Element),
-      pp_block(Dev, {word, lists:sort(Data)}, CodeType,
-	       Prefix);
+      pp_block(Dev, {word, lists:sort(Data)}, CodeType, Prefix);
     block ->
-      pp_block(Dev, hipe_consttab:const_data(Element), CodeType,
-	       Prefix)
-
+      pp_block(Dev, hipe_consttab:const_data(Element), CodeType, Prefix)
   end.
 
 pp_block(Dev, {word, Data, SortOrder}, CodeType, Prefix) ->

@@ -31,6 +31,7 @@
 	 encode_transaction/3,
 	 encode_action_requests/3,
 	 encode_action_request/3,
+	 encode_action_reply/3,
 
 	 version_of/2]).
 
@@ -281,19 +282,19 @@ encode_transaction(_EC, 3, _Trans) ->
 %% Convert a list of ActionRequest record's into a binary
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
-encode_action_requests(_EC, 1, ActReqs) when list(ActReqs) ->
+encode_action_requests(_EC, 1, ActReqs) when is_list(ActReqs) ->
     %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
     %% 						 ?V1_ASN1_MOD, 
     %% 						 ?V1_TRANS_MOD,
     %% 						 io_list);
     {error, not_implemented};
-encode_action_requests(_EC, 2, ActReqs) when list(ActReqs) ->
+encode_action_requests(_EC, 2, ActReqs) when is_list(ActReqs) ->
     %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
     %% 						 ?V1_ASN1_MOD, 
     %% 						 ?V1_TRANS_MOD,
     %% 						 io_list).
     {error, not_implemented};
-encode_action_requests(_EC, 3, ActReqs) when list(ActReqs) ->
+encode_action_requests(_EC, 3, ActReqs) when is_list(ActReqs) ->
     %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
     %% 						 ?V1_ASN1_MOD, 
     %% 						 ?V1_TRANS_MOD,
@@ -322,6 +323,16 @@ encode_action_request(_EC, 3, _ActReq) ->
     %% 						?V1_ASN1_MOD, 
     %% 						?V1_TRANS_MOD,
     %% 						io_list).
+    {error, not_implemented}.
+
+
+%%----------------------------------------------------------------------
+%% Convert a action reply into a deep io list
+%% Not yest supported by this binary codec!
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+
+encode_action_reply(_EC, _V, _AcionReply) ->
     {error, not_implemented}.
 
 

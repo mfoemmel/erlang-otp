@@ -242,7 +242,7 @@ check_definition(E,[],BlockLabel,Cfg,XsiGraph)->
   %% No more instructions in that block
   %% No definition found in that block
   %% Search is previous blocks
-  Preds = ?CFG:pred(?CFG:pred_map(Cfg),BlockLabel),
+  Preds = ?CFG:pred(Cfg, BlockLabel),
   %%  ?pp_debug("~n CHECKING DEFINITION  ####### Is L~w a merge block? It has ~w preds. So far E=",[BlockLabel,length(Preds)]),pp_expr(E),
   case Preds of
     [] ->
@@ -423,7 +423,7 @@ find_operands_for_active_list(Cfg,_XsiGraph,[],ActiveListAcc) ->
 find_operands_for_active_list(Cfg,XsiGraph,[K|Ks],ActiveListAcc) ->
   {_Key,Xsi} = ?GRAPH:vertex(XsiGraph,K),
   ?pp_debug("~n Inspecting operands of : ~n",[]),pp_xsi(Xsi),
-  Preds = ?CFG:pred(?CFG:pred_map(Cfg),Xsi#xsi.label),
+  Preds = ?CFG:pred(Cfg, Xsi#xsi.label),
   {NewCfg,NewActiveListAcc}=determine_operands(Xsi,Preds,Cfg,K,XsiGraph,ActiveListAcc),
   {_Key2,Xsi2} = ?GRAPH:vertex(XsiGraph,K),
   ?pp_debug("~n ** Final Xsi: ~n",[]),pp_xsi(Xsi2),
@@ -607,7 +607,7 @@ check_one_operand(E, [], BlockLabel, Cfg, XsiKey, XsiGraph) ->
   %% No more instructions in that block
   %% No definition found in that block
   %% Search is previous blocks
-  Preds = ?CFG:pred(?CFG:pred_map(Cfg), BlockLabel),
+  Preds = ?CFG:pred(Cfg, BlockLabel),
   case Preds of
     [] ->
       %% Entry Point
@@ -772,22 +772,22 @@ create_cfggraph([],_Cfg,CFGGraph,ToBeFactorizedAcc,MPAcc,LateEdges,_XsiGraph) ->
   factorize(ToBeFactorizedAcc,CFGGraph),
   MPAcc;
 create_cfggraph([Label|Ls],Cfg,CFGGraph,ToBeFactorizedAcc,MPAcc,LateEdges,XsiGraph) ->
-  Preds = ?CFG:pred(?CFG:pred_map(Cfg),Label),
+  Preds = ?CFG:pred(Cfg, Label),
   case Preds of
     [] ->
       exit({?MODULE,do_not_call_on_top,{"Why the hell do we call that function on the start label???",Label}});
     [P] ->
-      Code = ?BB:code(?CFG:bb(Cfg,Label)),
-      Defs = get_defs_in_non_merge_block(Code,[]),
-      ?pp_debug("~nAdding a vertex for ~w",[Label]),
-      Succs = ?CFG:succ(?CFG:succ_map(Cfg),Label),
+      Code = ?BB:code(?CFG:bb(Cfg, Label)),
+      Defs = get_defs_in_non_merge_block(Code, []),
+      ?pp_debug("~nAdding a vertex for ~w", [Label]),
+      Succs = ?CFG:succ(Cfg, Label),
       case Succs of
         [] -> %% Exit point
-          ?GRAPH:add_vertex(CFGGraph,Label,#block{type=exit}),
-          NewToBeFactorizedAcc=ToBeFactorizedAcc;
+          ?GRAPH:add_vertex(CFGGraph, Label, #block{type=exit}),
+          NewToBeFactorizedAcc = ToBeFactorizedAcc;
         _ -> %% Split point
           ?GRAPH:add_vertex(CFGGraph,Label,#block{type=not_mp,attributes={P,Succs}}),
-          NewToBeFactorizedAcc=[Label|ToBeFactorizedAcc]
+          NewToBeFactorizedAcc = [Label|ToBeFactorizedAcc]
       end,
       ?pp_debug("~nAdding an edge ~w -> ~w (~w)",[P,Label,Defs]),
       case ?GRAPH:add_edge(CFGGraph,P,Label,Defs) of

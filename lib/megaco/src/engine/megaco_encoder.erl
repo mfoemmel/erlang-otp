@@ -26,8 +26,11 @@
 -export([behaviour_info/1]).
 
 behaviour_info(callbacks) ->
-    [{encode_message,3}, 
-     {decode_message,3},
-     {decode_mini_message, 3}];
+    [{encode_message,         3}, 
+     {decode_message,         3},
+     {decode_mini_message,    3},
+     {encode_transaction,     3},
+     {encode_action_requests, 3},
+     {encode_action_reply,    3}];
 behaviour_info(_) ->
     undefined.

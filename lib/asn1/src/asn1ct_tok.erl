@@ -23,7 +23,7 @@
 
 
 file(File) ->
-    case file:open(File, read)  of
+    case file:open(File, [read])  of
 	{error, Reason} ->
 	    {error,{File,file:format_error(Reason)}};
 	{ok,Stream} ->

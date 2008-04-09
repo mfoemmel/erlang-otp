@@ -30,7 +30,7 @@ load_textfile(File) ->
     end.
 
 dump_to_textfile(File) ->
-    dump_to_textfile(mnesia_lib:is_running(), file:open(File, write)).
+    dump_to_textfile(mnesia_lib:is_running(), file:open(File, [write])).
 dump_to_textfile(yes, {ok, F}) ->
     Tabs = lists:delete(schema, mnesia_lib:local_active_tables()),
     Defs = lists:map(fun(T) -> {T, [{record_name, mnesia_lib:val({T, record_name})},
@@ -146,7 +146,7 @@ collect_data(_Tabs, [H|_T]) ->
 error(What) -> throw({error, What}).
 
 file(File) ->
-    case file:open(File, read) of
+    case file:open(File, [read]) of
 	{ok, Stream} ->
 	    Res = read_terms(Stream, File, 1, []),
 	    file:close(Stream),

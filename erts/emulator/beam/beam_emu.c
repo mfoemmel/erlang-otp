@@ -1988,8 +1988,14 @@ void process_main(void)
 	ERTS_HOLE_CHECK(c_p);
 	POST_BIF_GC_SWAPIN_0(c_p, r(0));
 	FCALLS = c_p->fcalls;
-	CHECK_TERM(r(0));
-	Next(1);
+	if (is_value(r(0))) {
+	    CHECK_TERM(r(0));
+	    Next(1);
+	}
+	else {
+	    ASSERT(c_p->freason == TRAP);
+	    goto call_bif_trap3;
+	}
     }
 
  OpCase(call_bif1_e):
@@ -3471,6 +3477,7 @@ void process_main(void)
 		 ms = (ErlBinMatchState *) boxed_val(tmp_arg1);
 		 dst = (ErlBinMatchState *) HTOP;
 		 *dst = *ms;
+		 *HTOP = HEADER_BIN_MATCHSTATE(slots);
 		 HTOP += wordsneeded;
 		 StoreResult(make_matchstate(dst), Arg(3));
 	     }

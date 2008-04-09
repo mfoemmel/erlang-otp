@@ -370,13 +370,14 @@ nbif_3_simple_exception:
 
 	/*
 	 * A BIF failed with freason TRAP:
-	 * - the BIF stored the callee's Export* in p->def_arg_reg[3]
-	 * - the BIF stored the callee's parameters in p->def_arg_reg[0..2]
 	 * - the BIF's arity is in %o1
 	 * - the native RA was saved in TEMP_RA before the BIF call
 	 * - HP has not been read from P
 	 * - NSP has not been saved in P
 	 */
+	.global	nbif_0_trap_exception
+nbif_0_trap_exception:
+	mov	0, %o1
 .handle_trap:
 	mov	HIPE_MODE_SWITCH_RES_TRAP, %o0
 .bif_exit:

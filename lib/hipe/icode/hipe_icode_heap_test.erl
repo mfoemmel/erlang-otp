@@ -44,7 +44,6 @@ cfg(CFG) ->
   %% hipe_icode_cfg:pp(NewCFG),
   NewCFG.
 
-
 ebbs([EBB|EBBs], Visited, CFG) ->
   case hipe_icode_ebb:type(EBB) of
     node ->
@@ -57,7 +56,7 @@ ebbs([EBB|EBBs], Visited, CFG) ->
 	  case hipe_icode_ebb:node_successors(EBB) of
 	    [Succ|Succs]  ->
 	      {[SuccCode|More], Visited1} = 
-		ebbs([Succ] , [L|Visited], CFG),
+		ebbs([Succ], [L|Visited], CFG),
 	      {[OtherCode|MoreOther], Visited2} = 
 		ebbs(Succs ++ EBBs, Visited1, CFG),
 	      {[[hipe_icode:mk_label(L)|EBBCode] ++ SuccCode|
@@ -73,7 +72,6 @@ ebbs([EBB|EBBs], Visited, CFG) ->
   end;
 ebbs([], Visited,_) ->
   {[[]], Visited}.
-
 
 visited(L, Visited) ->
   lists:member(L, Visited).
@@ -92,12 +90,11 @@ add_gc_tests([EBBCode|EBBCodes]) ->
   end;
 add_gc_tests([]) -> [].
 
-  
 need([I|Is] , Need, Code) ->
   case split(I) of 
     true -> 
       case I of
-	#call{} ->
+	#icode_call{} ->
 	  case hipe_icode:call_continuation(I) of
 	    [] -> %% Was fallthrough.
 	      NewLab = hipe_icode:mk_new_label(),
@@ -118,9 +115,9 @@ need([], Need, Code) ->
 
 need(I) ->
   case I of 
-    #call{} ->
+    #icode_call{} ->
       primop_need(hipe_icode:call_fun(I), hipe_icode:call_args(I));
-    #enter{} ->
+    #icode_enter{} ->
       primop_need(hipe_icode:enter_fun(I), hipe_icode:enter_args(I));
     _ -> 
       0
@@ -141,7 +138,6 @@ primop_need(Op, As) ->
       0
   end.
 
-
 gc_test(Need) ->
   L = hipe_icode:mk_new_label(),
   [hipe_icode:mk_primop([], #gc_test{need=Need}, [],
@@ -151,8 +147,8 @@ gc_test(Need) ->
 
 split(I) ->
   case I of
-    #call{} -> not known_heap_need(hipe_icode:call_fun(I));
-    #enter{} -> not known_heap_need(hipe_icode:enter_fun(I));
+    #icode_call{} -> not known_heap_need(hipe_icode:call_fun(I));
+    #icode_enter{} -> not known_heap_need(hipe_icode:enter_fun(I));
     _ -> false
   end.
 

@@ -9,8 +9,8 @@
 %%  History  :	* 2002-03-14 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2007/05/10 16:29:26 $
-%%              $Revision: 1.3 $
+%%              $Date: 2008/03/07 22:40:33 $
+%%              $Revision: 1.4 $
 %% ====================================================================
 %% @doc
 %%    A tool to enable using the HiPE compiler as an automatic JIT
@@ -19,23 +19,23 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_jit).
+
 -export([start/0]).
 
--record(state, {mode=start,
-	       	threshold=5000 :: integer(),
-		sleep=5000     :: integer(),
-		time=1000      :: integer()}).
+-record(state, {mode = start     :: 'sleep' | 'start' | 'wait',
+	       	threshold = 5000 :: non_neg_integer(),
+		sleep = 5000     :: non_neg_integer(),
+		time = 1000      :: non_neg_integer()}).
 
-%% @spec start() -> pid()
-%%
+%%---------------------------------------------------------------------
+
+-spec(start/0 :: () -> pid()).
 %% @doc
 %%    Starts an Erlang process which calls the HiPE compiler every
 %%    now and then (when it sees it fit to do so).
 %% @end
 start() ->
-  spawn(fun() ->
-	  loop(#state{})
-	end).
+  spawn(fun () -> loop(#state{}) end).
 
 loop(State) ->
   case State#state.mode of

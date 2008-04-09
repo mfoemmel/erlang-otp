@@ -16,7 +16,6 @@
 %%     $Id$
 %% 
 
-%% @author Björn-Egil Dahlberg
 %% @doc Utility functions to operate on percept data. These functions should
 %%	be considered experimental. Behaviour may change in future releases.
 

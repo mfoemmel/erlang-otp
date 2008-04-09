@@ -13,7 +13,7 @@
 %% 
 %% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
-%%     $Id$
+%% $Id$
 %%
 
 %%%-------------------------------------------------------------------
@@ -27,20 +27,22 @@
 %%%-------------------------------------------------------------------
 -module(dialyzer_dep).
 
--define(NO_UNUSED, true).
-
 -export([analyze/1]).
+-define(NO_UNUSED, true).
 -ifndef(NO_UNUSED).
 -export([test/1]).
 -endif.
+
+-include("dialyzer.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% analyze(CoreTree) -> {Deps, Esc, Calls}.
 %%                
-%% Deps =  a dict mapping labels of functions to a ordset of functions it calls.
+%% Deps =  a dict mapping labels of functions to an ordset of functions
+%%         it calls.
 %%
-%% Esc =   a set (ordsets) of the labels of escaping functions. A function
+%% Esc =   an ordset of the labels of escaping functions. A function
 %%         is considered to escape if the control escapes a function,
 %%         i.e., this analysis is not module-local but rather
 %%         function-local.
@@ -50,8 +52,10 @@
 %%         set the operation can be externally defined.
 %%
 
+-spec(analyze/1 :: (core_module()) -> {dict(), [_], dict()}).
+
 analyze(Tree) ->
-  %%io:format("Handling ~w\n", [cerl:atom_val(cerl:module_name(Tree))]),
+  %% io:format("Handling ~w\n", [cerl:atom_val(cerl:module_name(Tree))]),
   {_, State} = traverse(Tree, map__new(), state__new(Tree), top),
   Esc = state__esc(State), 
   %% Add dependency from 'external' to all escaping function
@@ -61,7 +65,7 @@ analyze(Tree) ->
   {map__finalize(Deps), set__to_ordsets(Esc), map__finalize(Calls)}.
 
 traverse(Tree, Out, State, CurrentFun) ->
-  %%io:format("Type: ~w\n", [cerl:type(Tree)]),
+  %% io:format("Type: ~w\n", [cerl:type(Tree)]),
   case cerl:type(Tree) of
     apply ->
       Op = cerl:apply_op(Tree),
@@ -285,7 +289,7 @@ primop(Tree, ArgFuns, State) ->
 %% Set
 %%
 
--record(set, {set}).
+-record(set, {set :: set()}).
 
 set__singleton(Val) ->
   #set{set=sets:add_element(Val, sets:new())}.
@@ -322,7 +326,7 @@ set__filter(#set{set=X}, Fun) ->
 %%
 
 -record(output, {type    :: 'single' | 'list', 
-		 content :: 'none' | #set{} | [#output{}]}).
+		 content :: 'none' | #set{} | [{output,_,_}]}).
 
 output(none) -> #output{type=single, content=none};
 output(S = #set{}) -> #output{type=single, content=S};
@@ -455,7 +459,12 @@ all_vars(Tree, AccIn) ->
 %%
 %% The state
 
--record(state, {deps, esc, call, arities}).
+-type(local_set() :: 'none' | #set{}).
+
+-record(state, {deps    :: dict(), 
+		esc     :: local_set(), 
+		call    :: dict(), 
+		arities :: dict()}).
 
 state__new(Tree) ->
   Exports = set__from_list([X || X <- cerl:module_exports(Tree)]),

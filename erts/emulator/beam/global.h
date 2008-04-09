@@ -292,6 +292,20 @@ typedef struct binary {
  * 32-bits architectures and 8 bytes on 64-bits architectures.
  */
 
+/*
+ * "magic" binary.
+ */
+typedef struct {
+    void (*destructor)(Binary *);
+    char magic_bin_data[1];
+} ErtsBinaryMagicPart;
+
+#define ERTS_MAGIC_BIN_DESTRUCTOR(BP) \
+  (((ErtsBinaryMagicPart *) (BP)->orig_bytes)->destructor)
+#define ERTS_MAGIC_BIN_DATA(BP) \
+  ((void *) (((ErtsBinaryMagicPart *) (BP)->orig_bytes)->magic_bin_data))
+#define ERTS_MAGIC_BIN_DATA_SIZE(BP) \
+  ((BP)->orig_size - (sizeof(ErtsBinaryMagicPart) - 1))
 
 #define Binary2ErlDrvBinary(B) ((ErlDrvBinary *) (&((B)->orig_size)))
 #define ErlDrvBinary2Binary(D) ((Binary *) \
@@ -299,7 +313,7 @@ typedef struct binary {
 				 ((char *) &(((Binary *) 0)->orig_size))))
 
 /* A "magic" binary flag */
-#define BIN_FLAG_MATCH_PROG 1
+#define BIN_FLAG_MAGIC      1
 #define BIN_FLAG_USR1       2 /* Reserved for use by different modules too mark */
 #define BIN_FLAG_USR2       4 /*  certain binaries as special (used by ets) */
 #define BIN_FLAG_DRV        8
@@ -325,6 +339,39 @@ typedef struct proc_bin {
  */
 #define PROC_BIN_SIZE (sizeof(ProcBin)/sizeof(Eterm))
 
+ERTS_GLB_INLINE Eterm erts_mk_magic_binary_term(Eterm **hpp,
+						ErlOffHeap *ohp,
+						Binary *mbp);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE Eterm
+erts_mk_magic_binary_term(Eterm **hpp, ErlOffHeap *ohp, Binary *mbp)
+{
+    ProcBin *pb = (ProcBin *) *hpp;
+    *hpp += PROC_BIN_SIZE;
+
+    ASSERT(mbp->flags & BIN_FLAG_MAGIC);
+
+    pb->thing_word = HEADER_PROC_BIN;
+    pb->size = 0;
+    pb->next = ohp->mso;
+    ohp->mso = pb;
+    pb->val = mbp;
+    pb->bytes = (byte *) mbp->orig_bytes;
+    pb->flags = 0;
+
+    erts_refc_inc(&mbp->refc, 1);
+
+    return make_binary(pb);    
+}
+
+#endif
+
+#define ERTS_TERM_IS_MAGIC_BINARY(T) \
+  (is_binary((T)) \
+   && (thing_subtag(*binary_val((T))) == REFC_BINARY_SUBTAG) \
+   && (((ProcBin *) binary_val((T)))->val->flags & BIN_FLAG_MAGIC))
 
 /* arrays that get malloced at startup */
 extern Port* erts_port;
@@ -481,6 +528,8 @@ do {										\
     ESTK_SUBSCRIPT(s,ESTK_CONCAT(s,_sp)) = (x);					\
     ESTK_CONCAT(s,_sp) += sizeof(Eterm);					\
 } while(0)
+
+#define ESTACK_COUNT(s) (ESTK_CONCAT(s,_sp) / sizeof(Eterm))
 
 #define ESTACK_ISEMPTY(s) (ESTK_CONCAT(s,_sp) == 0)
 #define ESTACK_POP(s)								\
@@ -814,7 +863,6 @@ Eterm erts_gc_after_bif_call(Process* p, Eterm result, Eterm* regs, Uint arity);
 void erts_garbage_collect_literals(Process* p, Eterm* literals, Uint lit_size);
 Uint erts_next_heap_size(Uint, Uint);
 Eterm erts_heap_sizes(Process* p);
-void erts_shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj);
 
 void erts_offset_off_heap(ErlOffHeap *, Sint, Eterm*, Eterm*);
 void erts_offset_heap_ptr(Eterm*, Uint, Sint, Eterm*, Eterm*);
@@ -1104,10 +1152,17 @@ erts_is_valid_tracer_port(Eterm id)
 ERTS_GLB_INLINE void
 erts_dist_op_prepare(DistEntry *dep, Process *proc, ErtsProcLocks proc_locks)
 {
-    erts_smp_dist_entry_lock(dep);
 #ifdef ERTS_SMP
-    dep->port = erts_de2port(dep, proc, proc_locks);
+    Port *port;
+    erts_smp_dist_entry_lock(dep);
+    port = erts_de2port(dep, proc, proc_locks);
+    while (dep->port) {
+	erts_smp_dist_entry_unlock(dep);
+	erts_smp_dist_entry_lock(dep);
+    }
+    dep->port = port;
 #else
+    ASSERT(!dep->port);
     dep->port = erts_id2port(dep->cid, NULL, 0);
 #endif
 }
@@ -1225,6 +1280,29 @@ void erts_get_timeval(SysTimeval *tv);
 #endif
 long erts_get_time(void);
 
+extern SysTimeval erts_first_emu_time;
+
+void erts_get_emu_time(SysTimeval *);
+
+ERTS_GLB_INLINE int erts_cmp_timeval(SysTimeval *t1p, SysTimeval *t2p);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE int
+erts_cmp_timeval(SysTimeval *t1p, SysTimeval *t2p)
+{
+    if (t1p->tv_sec == t2p->tv_sec) {
+	if (t1p->tv_usec < t2p->tv_usec)
+	    return -1;
+	else if (t1p->tv_usec > t2p->tv_usec)
+	    return 1;
+	return 0;
+    }
+    return t1p->tv_sec < t2p->tv_sec ? -1 : 1;
+}
+
+#endif
+
 #ifdef DEBUG
 void p_slpq(_VOID_);
 #endif
@@ -1297,7 +1375,8 @@ int term_to_Uint(Eterm term, Uint *up);
 #ifdef HAVE_ERTS_NOW_CPU
 extern int erts_cpu_timestamp;
 #endif
-
+/* erl_bif_chksum.c */
+void erts_init_bif_chksum(void);
 /* erl_trace.c */
 void erts_init_trace(void);
 void erts_trace_check_exiting(Eterm exiting);
@@ -1482,7 +1561,7 @@ do {						\
 #define MatchSetUnref(MPSP)					\
 do {								\
     if (((MPSP) != NULL) && erts_refc_dectest(&(MPSP)->refc, 0) <= 0) { \
-	erts_match_set_free(MPSP);				\
+	erts_bin_free(MPSP);					\
     }								\
 } while(0)
 
@@ -1494,7 +1573,6 @@ extern void erts_match_set_release_result(Process* p);
 extern Eterm erts_match_set_run(Process *p, Binary *mpsp, 
 				Eterm *args, int num_args,
 				Uint32 *return_flags);
-extern void erts_match_set_free(Binary *mpsp);
 extern Eterm erts_match_set_get_source(Binary *mpsp);
 extern void erts_match_prog_foreach_offheap(Binary *b,
 					    void (*)(ErlOffHeap *, void *),

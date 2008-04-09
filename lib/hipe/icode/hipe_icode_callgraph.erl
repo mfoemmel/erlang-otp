@@ -1,50 +1,43 @@
 %% -*- erlang-indent-level: 2 -*-
-%%%-------------------------------------------------------------------
-%%% File    : hipe_icode_callgraph.erl
-%%% Author  : Tobias Lindahl <tobiasl@csd.uu.se>
-%%% Description : Create a call graph to find out in what order functions in 
-%%%               a module have to be compiled to gain best information in 
-%%%               hipe_icode_type.erl.
-%%%
-%%% Created :  7 Jun 2004 by Tobias Lindahl <tobiasl@csd.uu.se>
-%%%
-%%% CVS: $Id$
-%%%-------------------------------------------------------------------
+%%-----------------------------------------------------------------------
+%% File    : hipe_icode_callgraph.erl
+%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
+%% Purpose : Creates a call graph to find out in what order functions
+%%           in a module have to be compiled to gain best information
+%%           in hipe_icode_type.erl.
+%%
+%% Created :  7 Jun 2004 by Tobias Lindahl <tobiasl@it.uu.se>
+%%
+%% $Id$
+%%-----------------------------------------------------------------------
 -module(hipe_icode_callgraph).
--define(NO_UNUSED, true).
 
 -export([construct/1, 
 	 get_called_modules/1,
-	 is_empty/1,
-	 take_first/1,
 	 to_list/1,
 	 construct_callgraph/1]).
 
+-define(NO_UNUSED, true).
+
 -ifndef(NO_UNUSED).
--export([pp/1]).
+-export([is_empty/1, take_first/1, pp/1]).
 -endif.
 
 -include("hipe_icode.hrl").
 -include("hipe_icode_primops.hrl").
+-include("../util/hipe_digraph.hrl").
 
--record(callgraph, {codedict, scc_order}).
+%%------------------------------------------------------------------------
 
-is_empty(#callgraph{scc_order=SCCs}) ->
-  length(SCCs) =:= 0.
+-type(mfa_icode() :: {mfa(), #icode{}}).
 
-take_first(CG=#callgraph{scc_order=SCCs, codedict=Dict}) when length(SCCs)>0 ->
-  [H|T] = SCCs,
-  SCCCode = [{X, dict:fetch(X, Dict)}||X <- H],
-  {SCCCode, CG#callgraph{scc_order=T}}.
+-record(icode_callgraph, {codedict :: dict(), ordered_sccs :: [[atom()]]}).
 
-to_list(#callgraph{scc_order=SCCs, codedict=Dict})->
-  FlatList = lists:flatten(SCCs),
-  [{X, dict:fetch(X, Dict)}||X <- FlatList].
+%%------------------------------------------------------------------------
+%% Exported functions
+%%------------------------------------------------------------------------
 
--ifndef(NO_UNUSED).
-pp(#callgraph{scc_order=SCCs})->
-  io:format("Callgraph ~p\n", [SCCs]).
--endif.
+-spec(construct/1 :: ([mfa_icode()]) -> #icode_callgraph{}).
 
 construct(List) ->
   Calls = get_local_calls(List),
@@ -55,17 +48,51 @@ construct(List) ->
   Nodes = ordsets:from_list([MFA || {MFA, _} <- List]),
   DiGraph1 = hipe_digraph:add_node_list(Nodes, DiGraph),
   SCCs = hipe_digraph:reverse_preorder_sccs(DiGraph1),
-  #callgraph{scc_order=SCCs, codedict=dict:from_list(List)}.
+  #icode_callgraph{codedict=dict:from_list(List), ordered_sccs=SCCs}.
+
+-spec(construct_callgraph/1 :: ([mfa_icode()]) -> #hipe_digraph{}).
 
 construct_callgraph(List) ->
   Calls = get_local_calls2(List),
   Edges = get_edges(Calls),  
   hipe_digraph:from_list(Edges).
 
-%%---------------------------------------------------------------------
+-spec(to_list/1 :: (#icode_callgraph{}) -> [mfa_icode()]).
+
+to_list(#icode_callgraph{codedict=Dict, ordered_sccs=SCCs}) ->
+  FlatList = lists:flatten(SCCs),
+  [{Mod, dict:fetch(Mod, Dict)} || Mod <- FlatList].
+
+%%------------------------------------------------------------------------
+
+-ifndef(NO_UNUSED).
+
+-spec(is_empty/1 :: (#icode_callgraph{}) -> bool()).
+
+is_empty(#icode_callgraph{ordered_sccs=SCCs}) ->
+  length(SCCs) =:= 0.
+
+-spec(take_first/1 ::
+      (#icode_callgraph{}) -> {[mfa_icode()], #icode_callgraph{}}).
+
+take_first(CG=#icode_callgraph{codedict=Dict, ordered_sccs=SCCs})
+  when length(SCCs) > 0 ->
+  [H|T] = SCCs,
+  SCCCode = [{Mod, dict:fetch(Mod, Dict)} || Mod <- H],
+  {SCCCode, CG#icode_callgraph{ordered_sccs=T}}.
+
+-spec(pp/1 :: (#icode_callgraph{}) -> 'ok').
+
+pp(#icode_callgraph{ordered_sccs=SCCs}) ->
+  io:format("Callgraph ~p\n", [SCCs]).
+-endif.
+
+%%------------------------------------------------------------------------
 %% Get the modules called from this module
 
-get_called_modules(List)->
+-spec(get_called_modules/1 :: ([mfa_icode()]) -> ordset(atom())).
+
+get_called_modules(List) ->
   get_remote_calls(List, []).
 
 get_remote_calls([{_MFA, Icode}|Left], Acc) ->
@@ -77,7 +104,7 @@ get_remote_calls([], Acc) ->
 get_remote_calls_1([I|Left], Set) ->
   NewSet =
     case I of
-      #call{} ->
+      #icode_call{} ->
 	case hipe_icode:call_type(I) of
 	  remote ->
 	    {M, _F, _A} = hipe_icode:call_fun(I),
@@ -85,7 +112,7 @@ get_remote_calls_1([I|Left], Set) ->
 	  _ ->
 	    Set
 	end;
-      #enter{} ->
+      #icode_enter{} ->
 	case hipe_icode:enter_type(I) of
 	  remote ->
 	    {M, _F, _A} = hipe_icode:enter_fun(I),
@@ -100,8 +127,7 @@ get_remote_calls_1([I|Left], Set) ->
 get_remote_calls_1([], Set) ->
   Set.
 
-
-%%---------------------------------------------------------------------
+%%------------------------------------------------------------------------
 %% Find functions called (or entered) by each function.
 
 get_local_calls(List) ->
@@ -128,7 +154,7 @@ get_local_calls_1(Icode) ->
 get_local_calls_1([I|Left], Set) ->
   NewSet =
     case I of
-      #call{} ->
+      #icode_call{} ->
 	case hipe_icode:call_type(I) of
 	  local ->
 	    Fun = hipe_icode:call_fun(I),
@@ -140,10 +166,10 @@ get_local_calls_1([I|Left], Set) ->
 	      _ ->
 		Set
 	    end;
-	  _ ->
+	  remote ->
 	    Set
 	end;
-      #enter{} ->
+      #icode_enter{} ->
 	case hipe_icode:enter_type(I) of
 	  local ->
 	    Fun = hipe_icode:enter_fun(I),
@@ -155,7 +181,7 @@ get_local_calls_1([I|Left], Set) ->
 	      _ ->
 		Set
 	    end;
-	  _ ->
+	  remote ->
 	    Set
 	end;
       _ ->
@@ -165,8 +191,7 @@ get_local_calls_1([I|Left], Set) ->
 get_local_calls_1([], Set) ->
   Set.
 
-
-%%---------------------------------------------------------------------
+%%------------------------------------------------------------------------
 %% Find the edges in the callgraph.
 
 get_edges(Calls) ->

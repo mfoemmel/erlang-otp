@@ -1655,6 +1655,54 @@ add_4tup(Uint **hpp, Uint *szp, Eterm *lp,
 }
 
 static Eterm
+sz_info_carriers(Allctr_t *allctr,
+		 CarriersStats_t *cs,
+		 char *prefix,
+		 int *print_to_p,
+		 void *print_to_arg,
+		 Uint **hpp,
+		 Uint *szp)
+{
+    Eterm res = THE_NON_VALUE;
+    Uint curr_size = cs->curr_mseg.size + cs->curr_sys_alloc.size;
+
+    if (print_to_p) {
+	int to = *print_to_p;
+	void *arg = print_to_arg;
+	erts_print(to,
+		   arg,
+		   "%sblocks size: %bpu %bpu %bpu\n",
+		   prefix,
+		   cs->blocks.curr.size,
+		   cs->blocks.max.size,
+		   cs->blocks.max_ever.size);
+	erts_print(to,
+		   arg,
+		   "%scarriers size: %bpu %bpu %bpu\n",
+		   prefix,
+		   curr_size,
+		   cs->max.size,
+		   cs->max_ever.size);
+    }
+
+    if (hpp || szp) {
+	res = NIL;
+	add_4tup(hpp, szp, &res,
+		 am.carriers_size,
+		 bld_unstable_uint(hpp, szp, curr_size),
+		 bld_unstable_uint(hpp, szp, cs->max.size),
+		 bld_unstable_uint(hpp, szp, cs->max_ever.size));
+	add_4tup(hpp, szp, &res,
+		 am.blocks_size,
+		 bld_unstable_uint(hpp, szp, cs->blocks.curr.size),
+		 bld_unstable_uint(hpp, szp, cs->blocks.max.size),
+		 bld_unstable_uint(hpp, szp, cs->blocks.max_ever.size));
+    }
+
+    return res;
+}
+
+static Eterm
 info_carriers(Allctr_t *allctr,
 	      CarriersStats_t *cs,
 	      char *prefix,
@@ -2091,6 +2139,67 @@ erts_alcu_info_options(Allctr_t *allctr,
 }
 
 /* ----------------------------------------------------------------------- */
+
+Eterm
+erts_alcu_sz_info(Allctr_t *allctr,
+		  int begin_max_period,
+		  int *print_to_p,
+		  void *print_to_arg,
+		  Uint **hpp,
+		  Uint *szp)
+{
+    Eterm res, mbcs, sbcs;
+
+    res  = THE_NON_VALUE;
+
+    if (!allctr) {
+	if (print_to_p)
+	    erts_print(*print_to_p, print_to_arg, "false\n");
+	if (szp)
+	    *szp = 0;
+	return am_false;
+    }
+
+#ifdef USE_THREADS
+    if (allctr->thread_safe)
+	erts_mtx_lock(&allctr->mutex);
+#endif
+
+    if (hpp || szp)
+	ensure_atoms_initialized(allctr);
+
+    /* Update sbc values not continously updated */
+    allctr->sbcs.blocks.curr.no
+	= allctr->sbcs.curr_mseg.no + allctr->sbcs.curr_sys_alloc.no;
+    allctr->sbcs.blocks.max.no = allctr->sbcs.max.no;
+
+    update_max_ever_values(&allctr->mbcs);
+    update_max_ever_values(&allctr->sbcs);
+
+    mbcs  = sz_info_carriers(allctr, &allctr->mbcs, "mbcs ", print_to_p,
+			     print_to_arg, hpp, szp);
+    sbcs  = sz_info_carriers(allctr, &allctr->sbcs, "sbcs ", print_to_p,
+			     print_to_arg, hpp, szp);
+
+    if (hpp || szp) {
+	res = NIL;
+	add_2tup(hpp, szp, &res, am.sbcs, sbcs);
+	add_2tup(hpp, szp, &res, am.mbcs, mbcs);
+    }
+
+    if (begin_max_period) {
+	reset_max_values(&allctr->mbcs);
+	reset_max_values(&allctr->sbcs);
+    }
+
+
+#ifdef USE_THREADS
+    if (allctr->thread_safe)
+	erts_mtx_unlock(&allctr->mutex);
+#endif
+
+    return res;
+}
 
 Eterm
 erts_alcu_info(Allctr_t *allctr,

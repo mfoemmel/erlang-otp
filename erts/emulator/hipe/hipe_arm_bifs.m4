@@ -96,6 +96,35 @@ $1:
 #endif')
 
 /*
+ * trap_bif_interface_0(nbif_name, cbif_name)
+ *
+ * Generate native interface for a BIF with 0 parameters and
+ * trap-only failure mode.
+ */
+define(trap_bif_interface_0,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.global	$1
+$1:
+	/* Set up C argument registers. */
+	mov	r0, P
+
+	/* Save caller-save registers and call the C function. */
+	SAVE_CONTEXT_BIF
+	bl	$2
+	TEST_GOT_MBUF(0)
+
+	/* Restore registers. Check for exception. */
+	cmp	r0, #THE_NON_VALUE
+	RESTORE_CONTEXT_BIF
+	beq	nbif_0_trap_exception
+	NBIF_RET(0)
+	.size	$1, .-$1
+	.type	$1, %function
+#endif')
+
+/*
  * expensive_bif_interface_1(nbif_name, cbif_name)
  * expensive_bif_interface_2(nbif_name, cbif_name)
  * expensive_bif_interface_3(nbif_name, cbif_name)
@@ -664,10 +693,5 @@ $1:
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')
-
-/*
- * Implement standard_bif_interface_0 as nofail_primop_interface_0.
- */
-define(standard_bif_interface_0,`nofail_primop_interface_0($1, $2)')
 
 include(`hipe/hipe_bif_list.m4')

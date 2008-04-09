@@ -34,6 +34,7 @@
 #include "beam_catches.h"
 #include "erl_instrument.h"
 #include "erl_threads.h"
+#include "erl_binary.h"
 
 #ifdef HIPE
 #include "hipe_mode_switch.h"	/* for hipe_init_process() */
@@ -63,6 +64,14 @@
 	   (((qmask >> PRIORITY_NORMAL) & 1) == 0) && \
            (queued_low == 0) &&                       \
            (queued_normal == 0))
+
+
+#define ERTS_MAYBE_SAVE_TERMINATING_PROCESS(P)			\
+do {								\
+    ERTS_SMP_LC_ASSERT(erts_lc_mtx_is_locked(&proc_tab_mtx));	\
+    if (saved_term_procs.end)					\
+	save_terminating_process((P));				\
+} while (0)
 
 extern Eterm beam_apply[];
 extern Eterm beam_exit[];
@@ -152,6 +161,28 @@ Process** erts_active_procs;
 
 static erts_smp_atomic_t process_count;
 
+typedef struct ErtsTermProcElement_ ErtsTermProcElement;
+struct ErtsTermProcElement_ {
+    ErtsTermProcElement *next;
+    ErtsTermProcElement *prev;
+    int ix;
+    union {
+	struct {
+	    Eterm pid;
+	    SysTimeval spawned;
+	    SysTimeval exited;
+	} process;
+	struct {
+	    SysTimeval time;
+	} bif_invocation;
+    } u;
+};
+
+static struct {
+    ErtsTermProcElement *start;
+    ErtsTermProcElement *end;
+} saved_term_procs;
+
 #define ERTS_MAX_MISC_OPS 5
 
 typedef struct ErtsMiscOpList_ ErtsMiscOpList;
@@ -169,6 +200,9 @@ ERTS_QUALLOC_IMPL(misc_op_list, ErtsMiscOpList, 10, ERTS_ALC_T_MISC_OP_LIST)
 /*
  * Local functions.
  */
+
+static void init_processes_bif(void);
+static void save_terminating_process(Process *p);
 static void exec_misc_ops(void);
 static void print_function_from_pc(int to, void *to_arg, Eterm* x);
 static int stack_element_dump(int to, void *to_arg, Process* p, Eterm* sp,
@@ -294,6 +328,12 @@ erts_init_process(void)
     last_reds = 0;
     last_exact_reds = 0;
     erts_default_process_flags = 0;
+}
+
+void
+erts_late_init_process(void)
+{
+    init_processes_bif();
 }
 
 #ifdef ERTS_SMP
@@ -2440,7 +2480,8 @@ erts_test_next_pid(int set, Uint next)
     Sint res;
     Sint p_prev;
 
-    erts_smp_proc_tab_lock();
+
+    erts_smp_mtx_lock(&proc_tab_mtx);
 
     if (!set) {
 	res = p_next < 0 ? -1 : (p_serial << p_serial_shift | p_next);
@@ -2473,7 +2514,7 @@ erts_test_next_pid(int set, Uint next)
 
     }
 
-    erts_smp_proc_tab_unlock();
+    erts_smp_mtx_unlock(&proc_tab_mtx);
 
     return res;
 
@@ -2484,18 +2525,6 @@ Uint erts_process_count(void)
     long res = erts_smp_atomic_read(&process_count);
     ASSERT(res >= 0);
     return (Uint) res;
-}
-
-void
-erts_smp_proc_tab_lock(void)
-{
-    erts_smp_mtx_lock(&proc_tab_mtx);
-}
-
-void
-erts_smp_proc_tab_unlock(void)
-{
-    erts_smp_mtx_unlock(&proc_tab_mtx);
 }
 
 void
@@ -2518,7 +2547,7 @@ alloc_process(void)
     Process* p;
     int p_prev;
 
-    erts_smp_proc_tab_lock();
+    erts_smp_mtx_lock(&proc_tab_mtx);
 
     if (p_next == -1) {
 	p = NULL;
@@ -2531,11 +2560,13 @@ alloc_process(void)
 
     p_last = p_next;
 
+    erts_get_emu_time(&p->started);
+
 #ifdef ERTS_SMP
     pix_lock = ERTS_PIX2PIXLOCK(p_next);
     erts_pix_lock(pix_lock);
 #endif
-
+    ASSERT(!process_tab[p_next]);
 
     process_tab[p_next] = p;
     erts_smp_atomic_inc(&process_count);
@@ -2585,7 +2616,7 @@ alloc_process(void)
 
  error:
 
-    erts_smp_proc_tab_unlock();
+    erts_smp_mtx_unlock(&proc_tab_mtx);
 
     return p;
 
@@ -2790,7 +2821,6 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->seq_trace_clock = 0;
     SEQ_TRACE_TOKEN(p) = NIL;
     p->parent = parent->id == ERTS_INVALID_PID ? NIL : parent->id;
-    p->started = erts_get_time();
 
 #ifdef HYBRID
     p->rrma  = NULL;
@@ -2800,6 +2830,9 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 #endif
 
     INIT_HOLE_CHECK(p);
+#ifdef DEBUG
+    p->last_old_htop = NULL;
+#endif
 
     if (IS_TRACED(parent)) {
 	if (parent->trace_flags & F_TRACE_SOS) {
@@ -3027,7 +3060,8 @@ void erts_init_empty_process(Process *p)
     p->def_arg_reg[5] = 0;
 
     p->parent = NIL;
-    p->started = 0;
+    p->started.tv_sec = 0;
+    p->started.tv_usec = 0;
 
 #ifdef HIPE
     hipe_init_process(&p->hipe);
@@ -3045,6 +3079,10 @@ void erts_init_empty_process(Process *p)
     p->rrsz  = 0;
 #endif
     INIT_HOLE_CHECK(p);
+#ifdef DEBUG
+    p->last_old_htop = NULL;
+#endif
+
 
 #ifdef ERTS_SMP
     p->scheduler_data = NULL;
@@ -3972,7 +4010,7 @@ erts_do_exit_process(Process* p, Eterm reason)
 	ASSERT(internal_pid_index(p->id) < erts_max_processes);
 	pix = internal_pid_index(p->id);
 
-	erts_smp_proc_tab_lock();
+	erts_smp_mtx_lock(&proc_tab_mtx);
 	erts_smp_sched_lock();
 
 #ifdef ERTS_SMP
@@ -4003,7 +4041,9 @@ erts_do_exit_process(Process* p, Eterm reason)
 	    p_next = pix;
 	}
 
-	erts_smp_proc_tab_unlock();
+	ERTS_MAYBE_SAVE_TERMINATING_PROCESS(p);
+
+	erts_smp_mtx_unlock(&proc_tab_mtx);
     }
 
     /*
@@ -4200,4 +4240,1027 @@ stack_element_dump(int to, void *to_arg, Process* p, Eterm* sp, int yreg)
     return yreg;
 }
 
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
+ * The processes/0 BIF implementation.                                       *
+\*                                                                           */
 
+
+#define ERTS_PROCESSES_BIF_TAB_INSPECT_INDICES_PER_RED 25
+#define ERTS_PROCESSES_BIF_TAB_CHUNK_SIZE 1000
+#define ERTS_PROCESSES_BIF_MIN_START_REDS		\
+ (ERTS_PROCESSES_BIF_TAB_CHUNK_SIZE			\
+  / ERTS_PROCESSES_BIF_TAB_INSPECT_INDICES_PER_RED)
+
+#define ERTS_PROCESSES_BIF_TAB_FREE_TERM_PROC_REDS 1
+
+#define ERTS_PROCESSES_BIF_INSPECT_TERM_PROC_PER_RED 10
+
+#define ERTS_PROCESSES_INSPECT_TERM_PROC_MAX_REDS \
+ (ERTS_PROCESSES_BIF_TAB_CHUNK_SIZE			\
+  / ERTS_PROCESSES_BIF_TAB_INSPECT_INDICES_PER_RED)
+ 
+
+#define ERTS_PROCESSES_BIF_BUILD_RESULT_CONSES_PER_RED 75
+
+#define ERTS_PROCS_DBG_DO_TRACE 0
+
+#ifdef DEBUG
+#  define ERTS_PROCESSES_BIF_DEBUGLEVEL 100
+#else
+#  define ERTS_PROCESSES_BIF_DEBUGLEVEL 0
+#endif
+
+#define ERTS_PROCS_DBGLVL_CHK_HALLOC 1
+#define ERTS_PROCS_DBGLVL_CHK_FOUND_PIDS 5
+#define ERTS_PROCS_DBGLVL_CHK_PIDS 10
+#define ERTS_PROCS_DBGLVL_CHK_TERM_PROC_LIST 20
+#define ERTS_PROCS_DBGLVL_CHK_RESLIST 20
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL == 0
+#  define ERTS_PROCS_ASSERT(EXP)
+#else
+#  define ERTS_PROCS_ASSERT(EXP) \
+    ((void) ((EXP) \
+	     ? 1 \
+	     : (debug_processes_assert_error(#EXP, __FILE__, __LINE__), 0)))
+#endif
+
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >=  ERTS_PROCS_DBGLVL_CHK_HALLOC
+#  define ERTS_PROCS_DBG_SAVE_HEAP_ALLOC(PBDP, HP, SZ)			\
+do {									\
+    ERTS_PROCS_ASSERT(!(PBDP)->debug.heap);				\
+    ERTS_PROCS_ASSERT(!(PBDP)->debug.heap_size);			\
+    (PBDP)->debug.heap = (HP);						\
+    (PBDP)->debug.heap_size = (SZ);					\
+} while (0)
+#  define ERTS_PROCS_DBG_VERIFY_HEAP_ALLOC_USED(PBDP, HP)		\
+do {									\
+    ERTS_PROCS_ASSERT((PBDP)->debug.heap);				\
+    ERTS_PROCS_ASSERT((PBDP)->debug.heap_size);				\
+    ERTS_PROCS_ASSERT((PBDP)->debug.heap + (PBDP)->debug.heap_size == (HP));\
+    (PBDP)->debug.heap = NULL;						\
+    (PBDP)->debug.heap_size = 0;					\
+} while (0)
+#  define ERTS_PROCS_DBG_HEAP_ALLOC_INIT(PBDP)				\
+do {									\
+    (PBDP)->debug.heap = NULL;						\
+    (PBDP)->debug.heap_size = 0;					\
+} while (0)
+#else
+#  define ERTS_PROCS_DBG_SAVE_HEAP_ALLOC(PBDP, HP, SZ)
+#  define ERTS_PROCS_DBG_VERIFY_HEAP_ALLOC_USED(PBDP, HP)
+#  define ERTS_PROCS_DBG_HEAP_ALLOC_INIT(PBDP)
+#endif
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_RESLIST
+#  define ERTS_PROCS_DBG_CHK_RESLIST(R) debug_processes_check_res_list((R))
+#else
+#  define ERTS_PROCS_DBG_CHK_RESLIST(R)
+#endif
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_PIDS
+#  define ERTS_PROCS_DBG_SAVE_PIDS(PBDP) debug_processes_save_all_pids((PBDP))
+#  define ERTS_PROCS_DBG_VERIFY_PIDS(PBDP)		\
+do {							\
+    if (!(PBDP)->debug.correct_pids_verified)		\
+	debug_processes_verify_all_pids((PBDP));	\
+} while (0)
+#  define ERTS_PROCS_DBG_CLEANUP_CHK_PIDS(PBDP)		\
+do {							\
+    if ((PBDP)->debug.correct_pids) {			\
+	erts_free(ERTS_ALC_T_PROCS_PIDS,		\
+		  (PBDP)->debug.correct_pids);		\
+	(PBDP)->debug.correct_pids = NULL;		\
+    }							\
+} while(0)
+#  define ERTS_PROCS_DBG_CHK_PIDS_INIT(PBDP)		\
+do {							\
+    (PBDP)->debug.correct_pids_verified = 0;		\
+    (PBDP)->debug.correct_pids = NULL;			\
+} while (0)
+#else
+#  define ERTS_PROCS_DBG_SAVE_PIDS(PBDP)
+#  define ERTS_PROCS_DBG_VERIFY_PIDS(PBDP)
+#  define ERTS_PROCS_DBG_CLEANUP_CHK_PIDS(PBDP)
+#  define ERTS_PROCS_DBG_CHK_PIDS_INIT(PBDP)
+#endif
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_FOUND_PIDS
+#  define ERTS_PROCS_DBG_CHK_PID_FOUND(PBDP, PID) \
+  debug_processes_check_found_pid((PBDP), (PID), 1)
+#  define ERTS_PROCS_DBG_CHK_PID_NOT_FOUND(PBDP, PID) \
+  debug_processes_check_found_pid((PBDP), (PID), 0)
+#else
+#  define ERTS_PROCS_DBG_CHK_PID_FOUND(PBDP, PID)
+#  define ERTS_PROCS_DBG_CHK_PID_NOT_FOUND(PBDP, PID)
+#endif
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_TERM_PROC_LIST
+#  define ERTS_PROCS_DBG_CHK_TPLIST() \
+  debug_processes_check_term_proc_list()
+#  define ERTS_PROCS_DBG_CHK_FREELIST(FL) \
+  debug_processes_check_term_proc_free_list(FL)
+#else
+#  define ERTS_PROCS_DBG_CHK_TPLIST()
+#  define ERTS_PROCS_DBG_CHK_FREELIST(FL)
+#endif
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL == 0
+#if ERTS_PROCS_DBG_DO_TRACE
+#    define ERTS_PROCS_DBG_INIT(P, PBDP) (PBDP)->debug.caller = (P)->id
+#  else
+#    define ERTS_PROCS_DBG_INIT(P, PBDP)
+#  endif
+#  define ERTS_PROCS_DBG_CLEANUP(PBDP)
+#else
+#  define ERTS_PROCS_DBG_INIT(P, PBDP)			\
+do {							\
+    (PBDP)->debug.caller = (P)->id;			\
+    ERTS_PROCS_DBG_HEAP_ALLOC_INIT((PBDP));		\
+    ERTS_PROCS_DBG_CHK_PIDS_INIT((PBDP));		\
+} while (0)
+#  define ERTS_PROCS_DBG_CLEANUP(PBDP)			\
+do {							\
+    ERTS_PROCS_DBG_CLEANUP_CHK_PIDS((PBDP));		\
+} while (0)
+#endif
+
+#if ERTS_PROCS_DBG_DO_TRACE
+#  define ERTS_PROCS_DBG_TRACE(PID, FUNC, WHAT)			\
+     erts_fprintf(stderr, "%T %s:%d:%s(): %s\n",		\
+		  (PID), __FILE__, __LINE__, #FUNC, #WHAT)
+#else
+#  define ERTS_PROCS_DBG_TRACE(PID, FUNC, WHAT)
+#endif
+
+static Uint processes_bif_tab_chunks;
+static Export processes_trap_export;
+
+typedef struct {
+    SysTimeval time;
+} ErtsProcessesBifChunkInfo;
+
+typedef enum {
+    INITIALIZING,
+    INSPECTING_TABLE,
+    INSPECTING_TERMINATED_PROCESSES,
+    BUILDING_RESULT,
+    RETURN_RESULT
+} ErtsProcessesBifState;
+
+typedef struct {
+    ErtsProcessesBifState state;
+    Eterm caller;
+    ErtsProcessesBifChunkInfo *chunk;
+    int tix;
+    int pid_ix;
+    int pid_sz;
+    Eterm *pid;
+    ErtsTermProcElement *bif_invocation; /* Only used when > 1 chunk */
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL != 0 || ERTS_PROCS_DBG_DO_TRACE
+    struct {
+	Eterm caller;
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >=  ERTS_PROCS_DBGLVL_CHK_HALLOC
+	Eterm *heap;
+	Uint heap_size;
+#endif
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_PIDS
+	int correct_pids_verified;
+	Eterm *correct_pids;
+#endif
+    } debug;
+#endif
+
+} ErtsProcessesBifData;
+
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL != 0
+static void debug_processes_assert_error(char* expr, char* file, int line);
+#endif
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_RESLIST
+static void debug_processes_check_res_list(Eterm list);
+#endif
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_PIDS
+static void debug_processes_save_all_pids(ErtsProcessesBifData *pbdp);
+static void debug_processes_verify_all_pids(ErtsProcessesBifData *pbdp);
+#endif
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_FOUND_PIDS
+static void debug_processes_check_found_pid(ErtsProcessesBifData *pbdp,
+					    Eterm pid,
+					    int pid_should_be_found);
+#endif
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_TERM_PROC_LIST
+static SysTimeval debug_tv_start;
+static void debug_processes_check_term_proc_list(void);
+static void debug_processes_check_term_proc_free_list(ErtsTermProcElement *tpep);
+#endif
+
+static void
+save_terminating_process(Process *p)
+{
+    ErtsTermProcElement *tpep = erts_alloc(ERTS_ALC_T_PROCS_TPROC_EL,
+					   sizeof(ErtsTermProcElement));
+    ERTS_PROCS_ASSERT(saved_term_procs.start && saved_term_procs.end);
+    ERTS_SMP_LC_ASSERT(erts_lc_mtx_is_locked(&proc_tab_mtx));
+
+    ERTS_PROCS_DBG_CHK_TPLIST();
+
+    tpep->prev = saved_term_procs.end;
+    tpep->next = NULL;
+    tpep->ix = internal_pid_index(p->id);
+    tpep->u.process.pid = p->id;
+    tpep->u.process.spawned = p->started;
+    erts_get_emu_time(&tpep->u.process.exited);
+
+    saved_term_procs.end->next = tpep;
+    saved_term_procs.end = tpep;
+
+    ERTS_PROCS_DBG_CHK_TPLIST();
+
+    ERTS_PROCS_ASSERT((tpep->prev->ix >= 0
+		       ? erts_cmp_timeval(&tpep->u.process.exited,
+					  &tpep->prev->u.process.exited)
+		       : erts_cmp_timeval(&tpep->u.process.exited,
+					  &tpep->prev->u.bif_invocation.time)) > 0);
+}
+
+static void
+cleanup_processes_bif_data(Binary *bp)
+{
+    ErtsProcessesBifData *pbdp = ERTS_MAGIC_BIN_DATA(bp);
+
+    ERTS_PROCS_DBG_TRACE(pbdp->debug.caller, cleanup_processes_bif_data, call);
+
+    if (pbdp->state != INITIALIZING) {
+
+	if (pbdp->chunk) {
+	    erts_free(ERTS_ALC_T_PROCS_CNKINF, pbdp->chunk);
+	    pbdp->chunk = NULL;
+	}
+	if (pbdp->pid) {
+	    erts_free(ERTS_ALC_T_PROCS_PIDS, pbdp->pid);
+	    pbdp->pid = NULL;
+	}
+	if (pbdp->bif_invocation) {
+	    ErtsTermProcElement *tpep;
+
+	    erts_smp_mtx_lock(&proc_tab_mtx);
+
+	    ERTS_PROCS_DBG_TRACE(pbdp->debug.caller,
+				 cleanup_processes_bif_data,
+				 term_proc_cleanup);
+
+	    tpep = pbdp->bif_invocation;
+	    pbdp->bif_invocation = NULL;
+
+	    ERTS_PROCS_DBG_CHK_TPLIST();
+
+	    if (tpep->prev) {
+		/*
+		 * Only remove this bif invokation when we
+		 * have preceding invokations.
+		 */
+		tpep->prev->next = tpep->next;
+		if (tpep->next)
+		    tpep->next->prev = tpep->prev;
+		else {
+		    /*
+		     * At the time of writing this branch cannot be
+		     * reached. I don't want to remove this code though
+		     * since it may be possible to reach this line
+		     * in the future if the cleanup order in
+		     * erts_do_exit_process() is changed. The ASSERT(0)
+		     * is only here to make us aware that the reorder
+		     * has happened. /rickard
+		     */
+		    ASSERT(0);
+		    saved_term_procs.end = tpep->prev;
+		}
+		erts_free(ERTS_ALC_T_PROCS_TPROC_EL, tpep);
+	    }
+	    else {
+		/*
+		 * Free all elements until next bif invokation
+		 * is found.
+		 */
+		ERTS_PROCS_ASSERT(saved_term_procs.start == tpep);
+		do {
+		    ErtsTermProcElement *ftpep = tpep;
+		    tpep = tpep->next;
+		    erts_free(ERTS_ALC_T_PROCS_TPROC_EL, ftpep);
+		} while (tpep && tpep->ix >= 0);
+		saved_term_procs.start = tpep;
+		if (tpep)
+		    tpep->prev = NULL;
+		else
+		    saved_term_procs.end = NULL;
+	    }
+
+	    ERTS_PROCS_DBG_CHK_TPLIST();
+
+	    erts_smp_mtx_unlock(&proc_tab_mtx);
+
+	}
+    }
+
+    ERTS_PROCS_DBG_TRACE(pbdp->debug.caller,
+			 cleanup_processes_bif_data,
+			 return);
+    ERTS_PROCS_DBG_CLEANUP(pbdp);
+}
+
+static int
+processes_bif_engine(Process *p, Eterm *res_accp, Binary *mbp)
+{
+    ErtsProcessesBifData *pbdp = ERTS_MAGIC_BIN_DATA(mbp);
+    int have_reds;
+    int reds;
+    int locked = 0;
+
+    do {
+	switch (pbdp->state) {
+	case INITIALIZING:
+	    pbdp->chunk = erts_alloc(ERTS_ALC_T_PROCS_CNKINF,
+				     (sizeof(ErtsProcessesBifChunkInfo)
+				      * processes_bif_tab_chunks));
+	    pbdp->tix = 0;
+	    pbdp->pid_ix = 0;
+
+	    erts_smp_mtx_lock(&proc_tab_mtx);
+	    locked = 1;
+
+	    ERTS_PROCS_DBG_TRACE(p->id, processes_bif_engine, init);
+
+	    pbdp->pid_sz = erts_process_count();
+	    pbdp->pid = erts_alloc(ERTS_ALC_T_PROCS_PIDS,
+				   sizeof(Eterm)*pbdp->pid_sz);
+
+	    ERTS_PROCS_DBG_SAVE_PIDS(pbdp);
+
+	    if (processes_bif_tab_chunks == 1)
+		pbdp->bif_invocation = NULL;
+	    else {
+		/*
+		 * We will have to access the table multiple times
+		 * releasing the table lock in between chunks.
+		 */
+		pbdp->bif_invocation = erts_alloc(ERTS_ALC_T_PROCS_TPROC_EL,
+						  sizeof(ErtsTermProcElement));
+		pbdp->bif_invocation->ix = -1;
+		erts_get_emu_time(&pbdp->bif_invocation->u.bif_invocation.time);
+		ERTS_PROCS_DBG_CHK_TPLIST();
+
+		pbdp->bif_invocation->next = NULL;
+		if (saved_term_procs.end) {
+		    pbdp->bif_invocation->prev = saved_term_procs.end;
+		    saved_term_procs.end->next = pbdp->bif_invocation;
+		    ERTS_PROCS_ASSERT(saved_term_procs.start);
+		}
+		else {
+		    pbdp->bif_invocation->prev = NULL;
+		    saved_term_procs.start = pbdp->bif_invocation;
+		}
+		saved_term_procs.end = pbdp->bif_invocation;
+
+		ERTS_PROCS_DBG_CHK_TPLIST();
+
+	    }
+
+	    pbdp->state = INSPECTING_TABLE;
+	    /* Fall through */
+
+	case INSPECTING_TABLE: {
+	    int ix = pbdp->tix;
+	    int indices = ERTS_PROCESSES_BIF_TAB_CHUNK_SIZE;
+	    int cix = ix / ERTS_PROCESSES_BIF_TAB_CHUNK_SIZE;
+	    int end_ix = ix + indices;
+	    SysTimeval *invocation_timep;
+
+	    invocation_timep = (pbdp->bif_invocation
+				? &pbdp->bif_invocation->u.bif_invocation.time
+				: NULL);
+
+	    ERTS_PROCS_ASSERT(is_nil(*res_accp));
+	    if (!locked) {
+		erts_smp_mtx_lock(&proc_tab_mtx);
+		locked = 1;
+	    }
+
+	    ERTS_PROCS_DBG_TRACE(p->id, processes_bif_engine, insp_table);
+
+	    if (cix != 0)
+		erts_get_emu_time(&pbdp->chunk[cix].time);
+	    else if (pbdp->bif_invocation)
+		pbdp->chunk[0].time = *invocation_timep;
+	    /* else: Time is irrelevant */
+
+	    if (end_ix >= erts_max_processes) {
+		ERTS_PROCS_ASSERT(cix+1 == processes_bif_tab_chunks);
+		end_ix = erts_max_processes;
+		indices = end_ix - ix;
+		/* What to do when done with this chunk */
+		pbdp->state = (processes_bif_tab_chunks == 1
+			       ? BUILDING_RESULT
+			       : INSPECTING_TERMINATED_PROCESSES);
+	    }
+    
+	    for (; ix < end_ix; ix++) {
+		Process *rp = process_tab[ix];
+		if (rp
+		    && (!invocation_timep
+			|| erts_cmp_timeval(&rp->started,
+					    invocation_timep) < 0)) {
+		    ERTS_PROCS_ASSERT(is_internal_pid(rp->id));
+		    pbdp->pid[pbdp->pid_ix++] = rp->id;
+		    ERTS_PROCS_ASSERT(pbdp->pid_ix <= pbdp->pid_sz);
+		}
+	    }
+
+	    pbdp->tix = end_ix;
+	    
+	    erts_smp_mtx_unlock(&proc_tab_mtx);
+	    locked = 0;
+
+	    reds = indices/ERTS_PROCESSES_BIF_TAB_INSPECT_INDICES_PER_RED;
+	    BUMP_REDS(p, reds);
+
+	    have_reds = ERTS_BIF_REDS_LEFT(p);
+
+	    if (have_reds && pbdp->state == INSPECTING_TABLE) {
+		ix = pbdp->tix;
+		indices = ERTS_PROCESSES_BIF_TAB_CHUNK_SIZE;
+		end_ix = ix + indices;
+		if (end_ix > erts_max_processes) {
+		    end_ix = erts_max_processes;
+		    indices = end_ix - ix;
+		}
+		
+		reds = indices/ERTS_PROCESSES_BIF_TAB_INSPECT_INDICES_PER_RED;
+
+		/* Bump all reds if we haven't got enough reductions
+		   to complete next chunk */
+		if (reds > have_reds) {
+		    BUMP_ALL_REDS(p);
+		    have_reds = 0;
+		}
+	    }
+
+	    break;
+	}
+
+	case INSPECTING_TERMINATED_PROCESSES: {
+	    int i;
+	    int max_reds;
+	    int free_term_procs = 0;
+	    SysTimeval *invocation_timep;
+	    ErtsTermProcElement *tpep;
+	    ErtsTermProcElement *free_list = NULL;
+
+	    tpep = pbdp->bif_invocation;
+	    ERTS_PROCS_ASSERT(tpep);
+	    invocation_timep = &tpep->u.bif_invocation.time;
+
+	    max_reds = have_reds = ERTS_BIF_REDS_LEFT(p);
+	    if (max_reds > ERTS_PROCESSES_INSPECT_TERM_PROC_MAX_REDS)
+		max_reds = ERTS_PROCESSES_INSPECT_TERM_PROC_MAX_REDS;
+
+	    reds = 0;
+	    erts_smp_mtx_lock(&proc_tab_mtx);
+	    ERTS_PROCS_DBG_TRACE(p->id, processes_bif_engine, insp_term_procs);
+
+	    ERTS_PROCS_DBG_CHK_TPLIST();
+
+	    if (tpep->prev)
+		tpep->prev->next = tpep->next;
+	    else {
+		ERTS_PROCS_ASSERT(saved_term_procs.start == tpep);
+		saved_term_procs.start = tpep->next;
+
+		if (saved_term_procs.start && saved_term_procs.start->ix >= 0) {
+		    free_list = saved_term_procs.start;
+		    free_term_procs = 1;
+		}
+	    }
+
+	    if (tpep->next)
+		tpep->next->prev = tpep->prev;
+	    else
+		saved_term_procs.end = tpep->prev;
+
+	    tpep = tpep->next;
+
+	    i = 0;
+	    while (reds < max_reds && tpep) {
+		if (tpep->ix < 0) {
+		    if (free_term_procs) {
+			ERTS_PROCS_ASSERT(free_list);
+			ERTS_PROCS_ASSERT(tpep->prev);
+
+			tpep->prev->next = NULL; /* end of free_list */
+			saved_term_procs.start = tpep;
+			tpep->prev = NULL;
+			free_term_procs = 0;
+		    }
+		}
+		else {
+		    int cix = tpep->ix/ERTS_PROCESSES_BIF_TAB_CHUNK_SIZE;
+		    SysTimeval *chunk_timep = &pbdp->chunk[cix].time;
+		    Eterm pid = tpep->u.process.pid;
+		    ERTS_PROCS_ASSERT(is_internal_pid(pid));
+
+		    if (erts_cmp_timeval(&tpep->u.process.spawned,
+					 invocation_timep) < 0) {
+			if (erts_cmp_timeval(&tpep->u.process.exited,
+					     chunk_timep) < 0) {
+			    ERTS_PROCS_DBG_CHK_PID_NOT_FOUND(pbdp, pid);
+			    pbdp->pid[pbdp->pid_ix++] = pid;
+			    ERTS_PROCS_ASSERT(pbdp->pid_ix <= pbdp->pid_sz);
+			}
+			else {
+			    ERTS_PROCS_DBG_CHK_PID_FOUND(pbdp, pid);
+			}
+		    }
+		    else {
+			ERTS_PROCS_DBG_CHK_PID_NOT_FOUND(pbdp, pid);
+		    }
+
+		    i++;
+		    if (i == ERTS_PROCESSES_BIF_INSPECT_TERM_PROC_PER_RED) {
+			reds++;
+			i = 0;
+		    }
+		    if (free_term_procs)
+			reds += ERTS_PROCESSES_BIF_TAB_FREE_TERM_PROC_REDS;
+		}
+		tpep = tpep->next;
+	    }
+
+	    if (free_term_procs) {
+ 		ERTS_PROCS_ASSERT(free_list);
+		saved_term_procs.start = tpep;
+		if (!tpep)
+		    saved_term_procs.end = NULL;
+		else {
+		    ERTS_PROCS_ASSERT(tpep->prev);
+		    tpep->prev->next = NULL; /* end of free_list */
+		    tpep->prev = NULL;
+		}
+	    }
+
+	    if (!tpep) {
+		/* Done */
+		ERTS_PROCS_ASSERT(pbdp->pid_ix == pbdp->pid_sz);
+		pbdp->state = BUILDING_RESULT;
+		pbdp->bif_invocation->next = free_list;
+		free_list = pbdp->bif_invocation;
+		pbdp->bif_invocation = NULL;
+	    }
+	    else {
+		/* Link in bif_invocation again where we left off */
+		pbdp->bif_invocation->prev = tpep->prev;
+		pbdp->bif_invocation->next = tpep;
+		tpep->prev = pbdp->bif_invocation;
+		if (pbdp->bif_invocation->prev)
+		    pbdp->bif_invocation->prev->next = pbdp->bif_invocation;
+		else {
+		    ERTS_PROCS_ASSERT(saved_term_procs.start == tpep);
+		    saved_term_procs.start = pbdp->bif_invocation;
+		}
+	    }
+
+	    ERTS_PROCS_DBG_CHK_TPLIST();
+	    ERTS_PROCS_DBG_CHK_FREELIST(free_list);
+	    erts_smp_mtx_unlock(&proc_tab_mtx);
+
+	    /*
+	     * We do the actual free of term proc structures now when we
+	     * have released the table lock instead of when we encountered
+	     * them. This since free() isn't for free and we don't want to
+	     * unnecessarily block other schedulers.
+	     */
+	    while (free_list) {
+		tpep = free_list;
+		free_list = tpep->next;
+		erts_free(ERTS_ALC_T_PROCS_TPROC_EL, tpep);
+	    }
+
+	    have_reds -= reds;
+	    if (have_reds < 0)	
+		have_reds = 0;
+	    BUMP_REDS(p, reds);
+	    break;
+	}
+
+	case BUILDING_RESULT: {
+	    int conses, ix, min_ix;
+	    Eterm *hp;
+	    Eterm res = *res_accp;
+
+	    ERTS_PROCS_DBG_VERIFY_PIDS(pbdp);
+	    ERTS_PROCS_DBG_CHK_RESLIST(res);
+
+	    ERTS_PROCS_DBG_TRACE(p->id, processes_bif_engine, begin_build_res);
+
+	    have_reds = ERTS_BIF_REDS_LEFT(p);
+	    conses = ERTS_PROCESSES_BIF_BUILD_RESULT_CONSES_PER_RED*have_reds;
+	    min_ix = pbdp->pid_ix - conses;
+	    if (min_ix < 0) {
+		min_ix = 0;
+		conses = pbdp->pid_ix;
+	    }
+
+	    hp = HAlloc(p, conses*2);
+	    ERTS_PROCS_DBG_SAVE_HEAP_ALLOC(pbdp, hp, conses*2);
+
+	    for (ix = pbdp->pid_ix - 1; ix >= min_ix; ix--) {
+		ERTS_PROCS_ASSERT(is_internal_pid(pbdp->pid[ix]));
+		res = CONS(hp, pbdp->pid[ix], res);
+		hp += 2;
+	    }
+
+	    ERTS_PROCS_DBG_VERIFY_HEAP_ALLOC_USED(pbdp, hp);
+
+	    pbdp->pid_ix = min_ix;
+	    if (min_ix == 0)
+		pbdp->state = RETURN_RESULT;
+	    else {
+		pbdp->pid_sz = min_ix;
+		pbdp->pid = erts_realloc(ERTS_ALC_T_PROCS_PIDS,
+					 pbdp->pid,
+					 sizeof(Eterm)*pbdp->pid_sz);
+	    }
+	    reds = conses/ERTS_PROCESSES_BIF_BUILD_RESULT_CONSES_PER_RED;
+	    BUMP_REDS(p, reds);
+	    have_reds -= reds;
+
+	    ERTS_PROCS_DBG_CHK_RESLIST(res);
+	    ERTS_PROCS_DBG_TRACE(p->id, processes_bif_engine, end_build_res);
+	    *res_accp = res;
+	    break;
+	}
+	case RETURN_RESULT:
+	    cleanup_processes_bif_data(mbp);
+	    return 1;
+
+	default:
+	    erl_exit(ERTS_ABORT_EXIT,
+		     "erlang:processes/0: Invalid state: %d\n",
+		     (int) pbdp->state);
+	}
+
+	
+    } while (have_reds || pbdp->state == RETURN_RESULT);
+
+    return 0;
+}
+
+/*
+ * processes_trap/2 is a hidden BIF that processes/0 traps to.
+ */
+
+static BIF_RETTYPE processes_trap(BIF_ALIST_2)
+{
+    Eterm res_acc;
+    Binary *mbp;
+
+    /*
+     * This bif cannot be called from erlang code. It can only be
+     * trapped to from processes/0; therefore, a bad argument
+     * is a processes/0 internal error.
+     */
+
+    ERTS_PROCS_DBG_TRACE(BIF_P->id, processes_trap, call);
+    ERTS_PROCS_ASSERT(is_nil(BIF_ARG_1) || is_list(BIF_ARG_1));
+
+    res_acc = BIF_ARG_1;
+
+    ERTS_PROCS_ASSERT(ERTS_TERM_IS_MAGIC_BINARY(BIF_ARG_2));
+
+    mbp = ((ProcBin *) binary_val(BIF_ARG_2))->val;
+
+    ERTS_PROCS_ASSERT(ERTS_MAGIC_BIN_DESTRUCTOR(mbp)
+		      == cleanup_processes_bif_data);
+    ERTS_PROCS_ASSERT(
+	((ErtsProcessesBifData *) ERTS_MAGIC_BIN_DATA(mbp))->debug.caller
+	== BIF_P->id);
+
+    if (processes_bif_engine(BIF_P, &res_acc, mbp)) {
+	ERTS_PROCS_DBG_TRACE(BIF_P->id, processes_trap, return);
+	BIF_RET(res_acc);
+    }
+    else {
+	ERTS_PROCS_DBG_TRACE(BIF_P->id, processes_trap, trap);
+	BIF_TRAP2(&processes_trap_export, BIF_P, res_acc, BIF_ARG_2);
+    }
+}
+
+
+/*
+ * The actual processes/0 BIF.
+ */
+
+BIF_RETTYPE processes_0(BIF_ALIST_0)
+{
+    /*
+     * A requirement: The list of pids returned should be a consistent
+     *                snapshot of all processes existing at some point
+     *                in time during the execution of processes/0. Since
+     *                processes might terminate while processes/0 is
+     *                executing, we have to keep track of terminated
+     *                processes and add them to the result. We also
+     *                ignore processes created after processes/0 has
+     *                begun executing.
+     */
+    int have_reds = ERTS_BIF_REDS_LEFT(BIF_P);
+    Eterm res_acc = NIL;
+    Binary *mbp = erts_create_magic_binary(sizeof(ErtsProcessesBifData),
+					   cleanup_processes_bif_data);
+    ErtsProcessesBifData *pbdp = ERTS_MAGIC_BIN_DATA(mbp);
+
+    ERTS_PROCS_DBG_TRACE(BIF_P->id, processes_0, call);
+    pbdp->state = INITIALIZING;
+    ERTS_PROCS_DBG_INIT(BIF_P, pbdp);
+
+    if (have_reds < ERTS_PROCESSES_BIF_MIN_START_REDS) {
+	BUMP_ALL_REDS(BIF_P);
+	have_reds = 0;
+    }
+    if (have_reds && processes_bif_engine(BIF_P, &res_acc, mbp)) {
+	erts_bin_free(mbp);
+	ERTS_PROCS_DBG_CHK_RESLIST(res_acc);
+	ERTS_PROCS_DBG_TRACE(BIF_P->id, processes_0, return);
+	BIF_RET(res_acc);
+    }
+    else {
+	Eterm *hp;
+	Eterm magic_bin;
+	ERTS_PROCS_DBG_CHK_RESLIST(res_acc);
+	hp = HAlloc(BIF_P, PROC_BIN_SIZE);
+	ERTS_PROCS_DBG_SAVE_HEAP_ALLOC(pbdp, hp, PROC_BIN_SIZE);
+	magic_bin = erts_mk_magic_binary_term(&hp, &MSO(BIF_P), mbp);
+	ERTS_PROCS_DBG_VERIFY_HEAP_ALLOC_USED(pbdp, hp);
+	ERTS_PROCS_DBG_TRACE(BIF_P->id, processes_0, trap);
+	BIF_TRAP2(&processes_trap_export, BIF_P, res_acc, magic_bin);
+    }
+}
+
+static void
+init_processes_bif(void)
+{
+    saved_term_procs.start = NULL;
+    saved_term_procs.end = NULL;
+    processes_bif_tab_chunks = (((erts_max_processes - 1)
+				 / ERTS_PROCESSES_BIF_TAB_CHUNK_SIZE)
+				+ 1);
+
+    /* processes_trap/2 is a hidden BIF that the processes/0 BIF traps to. */
+    sys_memset((void *) &processes_trap_export, 0, sizeof(Export));
+    processes_trap_export.address = &processes_trap_export.code[3];
+    processes_trap_export.code[0] = am_erlang;
+    processes_trap_export.code[1] = am_processes_trap;
+    processes_trap_export.code[2] = 2;
+    processes_trap_export.code[3] = (Eterm) em_apply_bif;
+    processes_trap_export.code[4] = (Eterm) &processes_trap;
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_TERM_PROC_LIST
+    erts_get_emu_time(&debug_tv_start);
+#endif
+
+}
+
+/*
+ * Debug stuff
+ */
+
+Eterm
+erts_debug_processes(Process *c_p)
+{
+    /* This is the old processes/0 BIF. */
+    int i;
+    Uint need;
+    Eterm res;
+    Eterm* hp;
+    Process *p;
+#ifdef DEBUG
+    Eterm *hp_end;
+#endif
+
+    erts_smp_mtx_lock(&proc_tab_mtx);
+
+    res = NIL;
+    need = erts_process_count() * 2;
+    hp = HAlloc(c_p, need); /* we need two heap words for each pid */
+#ifdef DEBUG
+    hp_end = hp + need;
+#endif
+     
+    /* make the list by scanning bakward */
+
+
+    for (i = erts_max_processes-1; i >= 0; i--) {
+	if ((p = process_tab[i]) != NULL) {
+	    res = CONS(hp, process_tab[i]->id, res);
+	    hp += 2;
+	}
+    }
+    ASSERT(hp == hp_end);
+
+    erts_smp_mtx_unlock(&proc_tab_mtx);
+
+    return res;
+}
+
+Eterm
+erts_debug_processes_bif_info(Process *c_p)
+{
+    ERTS_DECL_AM(processes_bif_info);
+    Eterm elements[] = {
+	AM_processes_bif_info,
+	make_small((Uint) ERTS_PROCESSES_BIF_MIN_START_REDS),
+	make_small((Uint) processes_bif_tab_chunks),
+	make_small((Uint) ERTS_PROCESSES_BIF_TAB_CHUNK_SIZE),
+	make_small((Uint) ERTS_PROCESSES_BIF_TAB_INSPECT_INDICES_PER_RED),
+	make_small((Uint) ERTS_PROCESSES_BIF_TAB_FREE_TERM_PROC_REDS),
+	make_small((Uint) ERTS_PROCESSES_BIF_INSPECT_TERM_PROC_PER_RED),
+	make_small((Uint) ERTS_PROCESSES_INSPECT_TERM_PROC_MAX_REDS),
+	make_small((Uint) ERTS_PROCESSES_BIF_BUILD_RESULT_CONSES_PER_RED),
+	make_small((Uint) ERTS_PROCESSES_BIF_DEBUGLEVEL)
+    };
+    Uint sz = 0;
+    Eterm *hp;
+    (void) erts_bld_tuplev(NULL, &sz, sizeof(elements)/sizeof(Eterm), elements);
+    hp = HAlloc(c_p, sz);
+    return erts_bld_tuplev(&hp, NULL, sizeof(elements)/sizeof(Eterm), elements);
+}
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_FOUND_PIDS
+static void
+debug_processes_check_found_pid(ErtsProcessesBifData *pbdp,
+				Eterm pid,
+				int pid_should_be_found)
+{
+    int i;
+    for (i = 0; i < pbdp->pid_ix; i++) {
+	if (pbdp->pid[i] == pid) {
+	    ERTS_PROCS_ASSERT(pid_should_be_found);
+	    return;
+	}
+    }
+    ERTS_PROCS_ASSERT(!pid_should_be_found);
+}
+#endif
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_RESLIST
+static void
+debug_processes_check_res_list(Eterm list)
+{
+    while (is_list(list)) {
+	Eterm* consp = list_val(list);
+	Eterm hd = CAR(consp);
+	ERTS_PROCS_ASSERT(is_internal_pid(hd));
+	list = CDR(consp);
+    }
+
+    ERTS_PROCS_ASSERT(is_nil(list));
+}
+#endif
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_PIDS
+
+static void
+debug_processes_save_all_pids(ErtsProcessesBifData *pbdp)
+{
+    int ix, tix, cpix;
+    pbdp->debug.correct_pids_verified = 0;
+    pbdp->debug.correct_pids = erts_alloc(ERTS_ALC_T_PROCS_PIDS,
+					  sizeof(Eterm)*pbdp->pid_sz);
+
+    for (tix = 0, cpix = 0; tix < erts_max_processes; tix++) {
+	Process *rp = process_tab[tix];
+	if (rp) {
+	    ERTS_PROCS_ASSERT(is_internal_pid(rp->id));
+	    pbdp->debug.correct_pids[cpix++] = rp->id;
+	    ERTS_PROCS_ASSERT(cpix <= pbdp->pid_sz);
+	}
+    }
+    ERTS_PROCS_ASSERT(cpix == pbdp->pid_sz);
+
+    for (ix = 0; ix < pbdp->pid_sz; ix++)
+	pbdp->pid[ix] = make_small(ix);
+}
+
+static void
+debug_processes_verify_all_pids(ErtsProcessesBifData *pbdp)
+{
+    int ix, cpix;
+
+    ERTS_PROCS_ASSERT(pbdp->pid_ix == pbdp->pid_sz);
+
+    for (ix = 0; ix < pbdp->pid_sz; ix++) {
+	int found = 0;
+	Eterm pid = pbdp->pid[ix];
+	ERTS_PROCS_ASSERT(is_internal_pid(pid));
+	for (cpix = ix; cpix < pbdp->pid_sz; cpix++) {
+	    if (pbdp->debug.correct_pids[cpix] == pid) {
+		pbdp->debug.correct_pids[cpix] = NIL;
+		found = 1;
+		break;
+	    }
+	}
+	if (!found) {
+	    for (cpix = 0; cpix < ix; cpix++) {
+		if (pbdp->debug.correct_pids[cpix] == pid) {
+		    pbdp->debug.correct_pids[cpix] = NIL;
+		    found = 1;
+		    break;
+		}
+	    }
+	}
+	ERTS_PROCS_ASSERT(found);
+    }
+    pbdp->debug.correct_pids_verified = 1;
+
+    erts_free(ERTS_ALC_T_PROCS_PIDS, pbdp->debug.correct_pids);
+    pbdp->debug.correct_pids = NULL;
+}
+#endif /* ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_PIDS */
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL >= ERTS_PROCS_DBGLVL_CHK_TERM_PROC_LIST
+static void
+debug_processes_check_term_proc_list(void)
+{
+    if (!saved_term_procs.start)
+	ERTS_PROCS_ASSERT(!saved_term_procs.end);
+    else {
+	SysTimeval tv_now;
+	SysTimeval *prev_xtvp = NULL;
+	ErtsTermProcElement *tpep;
+	erts_get_emu_time(&tv_now);
+
+	for (tpep = saved_term_procs.start; tpep; tpep = tpep->next) {
+	    if (!tpep->prev)
+		ERTS_PROCS_ASSERT(saved_term_procs.start == tpep);
+	    else
+		ERTS_PROCS_ASSERT(tpep->prev->next == tpep);
+	    if (!tpep->next)
+		ERTS_PROCS_ASSERT(saved_term_procs.end == tpep);
+	    else
+		ERTS_PROCS_ASSERT(tpep->next->prev == tpep);
+	    if (tpep->ix < 0) {
+		SysTimeval *tvp = &tpep->u.bif_invocation.time;
+		ERTS_PROCS_ASSERT(erts_cmp_timeval(&debug_tv_start, tvp) < 0
+				  && erts_cmp_timeval(tvp, &tv_now) < 0);
+	    }
+	    else {
+		SysTimeval *stvp = &tpep->u.process.spawned;
+		SysTimeval *xtvp = &tpep->u.process.exited;
+		
+		ERTS_PROCS_ASSERT(erts_cmp_timeval(&debug_tv_start,
+						   stvp) < 0);
+		ERTS_PROCS_ASSERT(erts_cmp_timeval(stvp, xtvp) < 0);
+		if (prev_xtvp)
+		    ERTS_PROCS_ASSERT(erts_cmp_timeval(prev_xtvp, xtvp) < 0);
+		prev_xtvp = xtvp;
+		ERTS_PROCS_ASSERT(is_internal_pid(tpep->u.process.pid));
+		ERTS_PROCS_ASSERT(tpep->ix
+				  == internal_pid_index(tpep->u.process.pid));
+	    }
+	}
+	
+    }
+}
+
+static void
+debug_processes_check_term_proc_free_list(ErtsTermProcElement *free_list)
+{
+    if (saved_term_procs.start) {
+	ErtsTermProcElement *ftpep;
+	ErtsTermProcElement *tpep;
+
+	for (ftpep = free_list; ftpep; ftpep = ftpep->next) {
+	    for (tpep = saved_term_procs.start; tpep; tpep = tpep->next)
+		ERTS_PROCS_ASSERT(ftpep != tpep);
+	}
+    }
+}
+
+#endif
+
+#if ERTS_PROCESSES_BIF_DEBUGLEVEL != 0
+
+static void
+debug_processes_assert_error(char* expr, char* file, int line)
+{   
+    fflush(stdout);
+    erts_fprintf(stderr, "%s:%d: Assertion failed: %s\n", file, line, expr);
+    fflush(stderr);
+    abort();
+}
+
+#endif
+
+/*                                                                           *\
+ * End of the processes/0 BIF implementation.                                *
+\* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */

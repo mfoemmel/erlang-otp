@@ -56,7 +56,7 @@ DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += +warn_obsolete_guard
+ERL_COMPILE_FLAGS += +warn_obsolete_guard +warn_untyped_record +warn_missing_spec_exported
 
 # ----------------------------------------------------
 # Targets
@@ -92,3 +92,12 @@ release_docs_spec:
 
 distclean:	clean
 realclean:	clean
+
+
+# ---------------------------------------------------- 
+# Include dependencies
+# ---------------------------------------------------- 
+
+$(EBIN)/hipe_ceach.beam: ../main/hipe.hrl
+$(EBIN)/hipe_tool.beam: ../main/hipe.hrl
+

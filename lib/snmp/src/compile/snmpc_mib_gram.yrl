@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1996-2007</year>
+%% <year>1996-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -399,8 +399,9 @@ type -> 'TDomain' : ensure_ver(2,'$1'), '$1'.
 type -> 'TAddress' : ensure_ver(2,'$1'), '$1'.
 
 % Returns: {FatherName, SubIndex}   (the parent)
-nameassign -> implies '{' fatherobjectname parentintegers '}'
-		: {'$3', '$4' }.
+nameassign -> implies '{' fatherobjectname parentintegers '}' : {'$3', '$4' }.
+nameassign -> implies '{' parentintegers '}' : { root, '$3'}.
+
 
 varpart -> '$empty' : [].
 varpart -> 'VARIABLES' '{' variables '}' : '$3'.

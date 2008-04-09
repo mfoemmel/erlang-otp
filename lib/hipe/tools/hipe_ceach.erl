@@ -14,34 +14,44 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2007/02/17 09:03:56 $
-%%              $Revision: 1.5 $
+%%              $Date: 2008/03/07 22:40:33 $
+%%              $Revision: 1.6 $
 %% ====================================================================
 %%  Exports  :
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_ceach).
+
 -export([c/1, c/2, c/3]).
 
-c(Mod) ->
-  lists:foreach(fun({F,A}) -> comp(Mod, F, A) end,
-		Mod:module_info(functions)).
+-include("../main/hipe.hrl").
 
-c(Mod, O) ->
-  lists:foreach(fun({F,A}) -> comp(Mod, F, A, O) end,
-		Mod:module_info(functions)).
+-spec(c/1 :: (atom()) -> 'ok').
+c(M) ->
+  lists:foreach(fun({F,A}) -> comp(M, F, A) end,
+		M:module_info(functions)).
 
-c(Mod, O, Fn) ->
-  lists:foreach(fun({F,A}) -> comp(Mod, F, A, O), Fn() end,
-		Mod:module_info(functions)).
+-spec(c/2 :: (atom(), comp_options()) -> 'ok').
+c(M, Opts) ->
+  lists:foreach(fun({F,A}) -> comp(M, F, A, Opts) end,
+		M:module_info(functions)).
 
-comp(Mod, F, A) ->
-  io:format("~w:~w/~w... ", [Mod, F, A]),
-  hipe:c({Mod, F, A}),
+-spec(c/3 :: (atom(), comp_options(), fun(() -> any())) -> 'ok').
+c(M, Opts, Fn) ->
+  lists:foreach(fun({F,A}) -> comp(M, F, A, Opts), Fn() end,
+		M:module_info(functions)).
+
+-spec(comp/3 :: (atom(), atom(), byte()) -> 'ok').
+comp(M, F, A) ->
+  io:format("~w:~w/~w... ", [M, F, A]),
+  MFA = {M, F, A},
+  {ok, MFA} = hipe:c(MFA),
   io:format("OK\n").
 
-comp(Mod, F, A, O) ->
-  io:format("~w:~w/~w... ", [Mod, F, A]),
-  hipe:c({Mod, F, A}, O),
+-spec(comp/4 :: (atom(), atom(), byte(), comp_options()) -> 'ok').
+comp(M, F, A, Opts) ->
+  io:format("~w:~w/~w... ", [M, F, A]),
+  MFA = {M, F, A},
+  {ok, MFA} = hipe:c(MFA, Opts),
   io:format("OK\n").

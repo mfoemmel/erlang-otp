@@ -13,7 +13,7 @@
 %% 
 %% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
-%%     $Id$
+%% $Id$
 %%
 
 %%%-------------------------------------------------------------------
@@ -31,49 +31,47 @@
 
 -record(analysis_state, 
 	{  
-	  codeserver,
-	  analysis_type,
-	  defines,
-	  doc_plt,
-	  include_dirs,
-	  no_warn_unused,
-	  options,
-	  parent,
-	  plt,
-	  start_from,
-	  supress_inline
+	  codeserver                    :: #dialyzer_codeserver{},
+	  analysis_type  = succ_typings :: anal_type(),
+	  defines        = []           :: [define()],
+	  doc_plt                       :: #dialyzer_plt{},
+	  include_dirs   = []           :: [string()],
+	  no_warn_unused                :: set(),
+	  parent                        :: pid(),
+	  plt                           :: #dialyzer_plt{},
+	  start_from     = byte_code    :: start_from(),
+	  use_contracts  = true         :: bool()
 	 }).
 
--record(state, {parent, legal_warnings}).
-
--define(HIPE_COMPILE_OPTS, [dialyzer|?HIPE_DEF_OPTS]).
+-record(server_state, {parent :: pid(), legal_warnings :: [dial_warn_tag()]}).
 
 %%____________________________________________________________
 %%
 %% Main
 %%
 
+-spec(start/3 :: (pid(), [dial_warn_tag()], #analysis{}) -> 'ok').
+
 start(Parent, LegalWarnings, Analysis) ->
   NewAnalysis1 = expand_files(Analysis),
   NewAnalysis2 = run_analysis(NewAnalysis1),
-  State = #state{parent=Parent, legal_warnings=LegalWarnings},
+  State = #server_state{parent=Parent, legal_warnings=LegalWarnings},
   loop(State, NewAnalysis2, none).
 
 run_analysis(Analysis) ->
   Self = self(),
-  Fun = fun() -> register(dialyzer_analysis_callgraph, self()), 
-		 analysis_start(Self, Analysis) end,
+  Fun = fun() -> analysis_start(Self, Analysis) end,
   Analysis#analysis{analysis_pid=spawn_link(Fun)}.
 
 loop(State, Analysis = #analysis{}, ExtCalls) ->
   AnalPid = Analysis#analysis.analysis_pid,
-  Parent = State#state.parent,
+  Parent = State#server_state.parent,
   receive
     {AnalPid, log, LogMsg} ->
       send_log(Parent, LogMsg),
       loop(State, Analysis, ExtCalls);
     {AnalPid, warnings, Warnings} ->
-      case filter_warnings(State#state.legal_warnings, Warnings) of
+      case filter_warnings(State#server_state.legal_warnings, Warnings) of
 	[] -> ok;
 	SendWarnings ->
 	  send_warnings(Parent, SendWarnings)
@@ -106,9 +104,6 @@ loop(State, Analysis = #analysis{}, ExtCalls) ->
 %%
 
 analysis_start(Parent, Analysis) ->
-  %%XXX: Until we move the icode analysis out of HiPE
-  put(hipe_target_arch, x86), 
-  
   CServer = dialyzer_codeserver:new(),
 
   Plt = Analysis#analysis.plt,
@@ -120,7 +115,7 @@ analysis_start(Parent, Analysis) ->
 			  plt=Plt,
 			  parent=Parent,
 			  start_from=Analysis#analysis.start_from,
-			  supress_inline=Analysis#analysis.supress_inline
+			  use_contracts=Analysis#analysis.use_contracts
 			 },
   Files = ordsets:from_list(Analysis#analysis.files),
   {Callgraph, NoWarn, NewCServer} = compile_and_store(Files, State),
@@ -149,164 +144,16 @@ analyze_callgraph(Callgraph, State) ->
 						       Codeserver, Parent),
       dialyzer_callgraph:delete(Callgraph1),
       State#analysis_state{plt=NewPlt};
-    old_style ->
-      case erlang:system_info(schedulers) of
-	1 -> 
-	  Callgraph1 = dialyzer_callgraph:finalize(Callgraph),
-	  NewState = analyze_callgraph_single_threaded(Callgraph1, State),
-	  dialyzer_callgraph:delete(Callgraph),
-	  NewState;
-	N when is_integer(N), N > 1 -> 
-	  analyze_callgraph_in_parallel(Callgraph, State, N)
-      end;
-    Type when Type =:= dataflow; Type =:= succ_typings ->
+    succ_typings ->
       NoWarn = State#analysis_state.no_warn_unused,
       DocPlt = State#analysis_state.doc_plt,
       Callgraph1 = dialyzer_callgraph:finalize(Callgraph),
       {Warnings, NewPlt, NewDocPlt} = 
 	dialyzer_succ_typings:get_warnings(Callgraph1, Plt, DocPlt,
-					   Codeserver, NoWarn, Type, Parent),
+					   Codeserver, NoWarn, Parent),
       dialyzer_callgraph:delete(Callgraph1),
       send_warnings(State#analysis_state.parent, Warnings),
       State#analysis_state{plt=NewPlt, doc_plt=NewDocPlt}
-  end.
-
-analyze_callgraph_in_parallel(Callgraph, State, N) ->
-  CallgraphList1 = dialyzer_callgraph:split_into_components(Callgraph),
-  CallgraphList2 = [dialyzer_callgraph:finalize(CG) || CG <- CallgraphList1],
-  NewState = parallel_analysis_loop(CallgraphList2, State, 0, N),
-  [dialyzer_callgraph:delete(CG) || CG <- CallgraphList2],
-  NewState.
-
-parallel_analysis_loop([], State, 0, _MaxProc) ->
-  State;
-parallel_analysis_loop([CG|CGs], State, Running, MaxProc) 
-  when Running < MaxProc ->
-  Pid = self(),
-  spawn_link(fun()->
-		 put(hipe_target_arch, x86), 
-		 %% Hijack our parents messages.
-		 State1 = State#analysis_state{parent=Pid},
-		 NewState = analyze_callgraph_single_threaded(CG, State1),
-		 Plt = NewState#analysis_state.plt,
-		 DocPlt = NewState#analysis_state.doc_plt,
-		 Pid ! {done, Plt, DocPlt}
-	     end),
-  parallel_analysis_loop(CGs, State, Running+1, MaxProc);
-parallel_analysis_loop(CGs, State, Running, MaxProc) ->
-  Parent =  State#analysis_state.parent,
-  receive
-    {_Pid, log, LogMsg} ->
-      Parent ! {self(), log, LogMsg},
-      parallel_analysis_loop(CGs, State, Running, MaxProc);
-    {_Pid, warnings, Warnings} -> 
-      Parent ! {self(), warnings, Warnings},
-      parallel_analysis_loop(CGs, State, Running, MaxProc);
-    {_Pid, error, Msg} ->
-      Parent ! {self(), error, Msg},
-      parallel_analysis_loop(CGs, State, Running, MaxProc);
-    {done, Plt, DocPlt} ->
-      NewPlt = dialyzer_plt:merge_plts([State#analysis_state.plt, Plt]),
-      NewDocPlt = 
-	case {DocPlt, State#analysis_state.doc_plt} of
-	  {undefined, undefined} -> DocPlt;
-	  {DocPlt, OldDocPlt} -> dialyzer_plt:merge_plts([OldDocPlt, DocPlt])
-	end,
-      NewState = State#analysis_state{plt=NewPlt, doc_plt=NewDocPlt},
-      parallel_analysis_loop(CGs, NewState, Running - 1, MaxProc)
-  end.
-
-analyze_callgraph_single_threaded(Callgraph, State) ->
-  case dialyzer_callgraph:take_scc(Callgraph) of
-    {ok, SCC, NewCallgraph} ->
-      {Warnings, NewState} = analyze_scc_warnings(SCC, Callgraph, State),
-      send_warnings(NewState#analysis_state.parent, Warnings),
-      analyze_callgraph_single_threaded(NewCallgraph, NewState);
-    none ->
-      State
-  end.
-
-analyze_scc_warnings([Fun], Callgraph, State=#analysis_state{parent=Parent}) ->
-  case dialyzer_callgraph:is_self_rec(Fun, Callgraph) of
-    true ->
-      Msg = io_lib:format("Analyzing self rec Fun: ~p\n", [Fun]),
-      send_log(Parent, Msg),  
-      analyze_scc_icode([Fun], State);
-    false -> 
-      Msg = io_lib:format("Analyzing Fun: ~p\n", [Fun]),
-      send_log(Parent, Msg),  
-      {_, Warnings, NewState} = analyze_fun_icode(Fun, State),
-      {Warnings, NewState}
-  end;
-analyze_scc_warnings(SCC, _Callgraph, State = #analysis_state{parent=Parent}) ->
-  Msg = io_lib:format("Analyzing SCC: ~p\n", [SCC]),
-  send_log(Parent, Msg),
-  analyze_scc_icode(SCC, State).
-
-analyze_scc_icode(SCC, State) ->
-  {Fixpoint, DeepWarnings, NewState} =
-    lists:foldl(fun analyze_scc_icode_fold_fun/2, {fixpoint, [], State}, SCC),
-  case Fixpoint of
-    not_fixpoint -> 
-      send_log(NewState#analysis_state.parent, "Not fixpoint for SCC\n"),
-      analyze_scc_icode(SCC, NewState);
-    fixpoint -> 
-      send_log(NewState#analysis_state.parent, "Reached fixpoint for SCC\n"),
-      {lists:flatten(DeepWarnings), NewState}
-  end.
-
-analyze_scc_icode_fold_fun(MFA, {FP, AccWarnings, State}) ->
-  {Fixpoint, Warnings, NewState} = analyze_fun_icode(MFA, State),
-  NewAccWarnings = [Warnings|AccWarnings],
-  case Fixpoint of
-    fixpoint -> {FP, NewAccWarnings, NewState};
-    not_fixpoint -> {not_fixpoint, NewAccWarnings, NewState}
-  end.
-
-analyze_fun_icode(MFA, State = #analysis_state{codeserver=CServer, 
-					       doc_plt=DocPlt,
-					       no_warn_unused=NoWarn,
-					       parent=Parent, 
-					       plt=Plt}) ->
-  %%io:format("Analyzing icode for: ~p\n", [MFA]),
-  case dialyzer_codeserver:lookup(MFA, icode, CServer) of
-    {ok, CFG} ->
-      Msg1 = io_lib:format("  Analyzing icode for: ~p ...", [MFA]),
-      send_log(Parent, Msg1),
-      {T1, _} = statistics(runtime),
-      Res = dialyzer_icode:run_analysis(CFG, MFA, Plt, NoWarn, true),
-      {T2, _} = statistics(runtime),
-      Msg2 = io_lib:format("done in ~.2f secs\n", [(T2-T1)/1000]),
-      send_log(Parent, Msg2),
-      case Res of
-	{not_fixpoint, UpdateInfo, Warnings} ->
-	  DocPlt1 =
-	    if DocPlt =:= undefined -> DocPlt;
-	       true -> dialyzer_plt:insert(DocPlt, [UpdateInfo])
-	    end,
-	  Plt1 = dialyzer_plt:insert(Plt, [UpdateInfo]),
-	  NewState = State#analysis_state{plt=Plt1, doc_plt=DocPlt1},
-	  {not_fixpoint, Warnings, NewState};
-	{fixpoint, UpdateInfo, Warnings} ->
-	  DocPlt1 =
-	    if DocPlt =:= undefined -> DocPlt;
-	       true -> dialyzer_plt:insert(DocPlt, [UpdateInfo])
-	    end,
-	  NewState = State#analysis_state{doc_plt=DocPlt1},
-	  {fixpoint, Warnings, NewState}
-      end;
-    error ->
-      %% Since HiPE removes module_info it is ok to not find the code
-      %% for it. The only time this happens is when we start from
-      %% byte_code and there is no abstract code.
-      case MFA of
-	{_, module_info, 0} -> ok;
-	{_, module_info, 1} -> ok;
-	_ ->
-	  Msg = io_lib:format("  Could not find icode for ~w\n", [MFA]),
-	  send_error(Parent, Msg)
-      end,
-      {fixpoint, [], State}
   end.
 
 %%____________________________________________________________
@@ -321,13 +168,12 @@ compile_and_store(Files, State = #analysis_state{}) ->
   Includes = [{i, X} || X <- State#analysis_state.include_dirs],
   Defines = [{d, Macro, Val} || {Macro, Val} <- State#analysis_state.defines],
   Callgraph = dialyzer_callgraph:new(),
-  AnalType = State#analysis_state.analysis_type,
-  Plt = State#analysis_state.plt,
+  UseContracts = State#analysis_state.use_contracts,
   case State#analysis_state.start_from of
     src_code -> 
       Fun = fun(File, {TmpCG, TmpCServer, TmpFailed, TmpNoWarn}) ->
-		case compile_src(File, Includes, Defines, 
-				 TmpCG, TmpCServer, AnalType, Plt) of
+		case compile_src(File, Includes, Defines, TmpCG,
+				 TmpCServer, UseContracts) of
 		  {error, Reason} -> 
 		    {TmpCG, TmpCServer, [{File, Reason}|TmpFailed], TmpNoWarn};
 		  {ok, NewCG, NoWarn, NewCServer} -> 
@@ -336,7 +182,7 @@ compile_and_store(Files, State = #analysis_state{}) ->
 	    end;
     byte_code ->
       Fun = fun(File, {TmpCG, TmpCServer, TmpFailed, TmpNoWarn}) -> 
-		case compile_byte(File, TmpCG, TmpCServer, AnalType, Plt) of
+		case compile_byte(File, TmpCG, TmpCServer, UseContracts) of
 		  {error, Reason} -> 
 		    {TmpCG, TmpCServer, [{File, Reason}|TmpFailed], TmpNoWarn};
 		  {ok, NewCG, NoWarn, NewCServer} -> 
@@ -352,9 +198,6 @@ compile_and_store(Files, State = #analysis_state{}) ->
 		       "Removing edges... ", 
 		       [(T2-T1)/1000]),
   send_log(State#analysis_state.parent, Msg1),
-
-  %%io:format("All exports: ~p\n", [dialyzer_codeserver:all_exports(NewCServer)]),
-  
   NewCallgraph2 = cleanup_callgraph(State, NewCServer, NewCallgraph1, Files),
   send_scan_fail(State#analysis_state.parent, Failed),
   {T3, _} = statistics(runtime),
@@ -363,9 +206,7 @@ compile_and_store(Files, State = #analysis_state{}) ->
   {NewCallgraph2, sets:from_list(NoWarn), NewCServer}.
 
 cleanup_callgraph(#analysis_state{plt=InitPlt, parent=Parent, 
-				  start_from=StartFrom, 
-				  analysis_type=AnalType,
-				  codeserver=CodeServer}, 
+				  start_from=StartFrom, codeserver=CodeServer},
 		  CServer, Callgraph, Files) ->
   ModuleDeps = dialyzer_callgraph:module_deps(Callgraph),
   send_mod_deps(Parent, ModuleDeps),
@@ -395,7 +236,7 @@ cleanup_callgraph(#analysis_state{plt=InitPlt, parent=Parent,
 			   end, NonLocalCalls),
   case BadCalls1 ++ BadCalls2 of
     [] -> ok;
-    BadCalls -> send_bad_calls(Parent, BadCalls, AnalType, CodeServer)
+    BadCalls -> send_bad_calls(Parent, BadCalls, CodeServer)
   end,
   if RealExtCalls =:= [] -> ok;
      true ->
@@ -403,150 +244,85 @@ cleanup_callgraph(#analysis_state{plt=InitPlt, parent=Parent,
   end,
   Callgraph1.
 
-compile_src(File, Includes, Defines, Callgraph, CServer, AnalType, Plt) ->
+compile_src(File, Includes, Defines, Callgraph, CServer, UseContracts) ->
   DefaultIncludes = default_includes(filename:dirname(File)),
-  DefCompOpts = ?SRC_COMPILE_OPTS ++ Includes++Defines++DefaultIncludes,
-  CompOpts = if AnalType =:= old_style -> DefCompOpts;
-		true -> [no_copt|DefCompOpts]
-	     end,
+  CompOpts = ?SRC_COMPILE_OPTS ++ Includes++Defines++DefaultIncludes,
   Mod = list_to_atom(filename:basename(File, ".erl")),
   case dialyzer_utils:get_abstract_code_from_src(File, CompOpts) of
     {error, Msg} -> {error, Msg};
-    AbstrCode ->
+    {ok, AbstrCode} ->
       case dialyzer_utils:get_core_from_abstract_code(AbstrCode, CompOpts) of
 	error -> {error, "  Could not find abstract code for: "++File};
-	Core ->
+	{ok, Core} ->
 	  NoWarn = abs_get_nowarn(AbstrCode, Mod),
 	  case dialyzer_utils:get_record_and_type_info(AbstrCode) of
 	    {error, _} = Error -> Error;
 	    {ok, RecInfo} ->
 	      CServer2 = 
 		dialyzer_codeserver:store_records(Mod, RecInfo, CServer),
-	      case dialyzer_utils:get_spec_info(AbstrCode, RecInfo) of
-		{error, _} = Error -> Error;
-		{ok, SpecInfo} ->
-		  CServer3 = 
-		    dialyzer_codeserver:store_contracts(Mod,SpecInfo,CServer2),
-		  compile_core(Mod, Core, NoWarn, Callgraph, 
-			       CServer3, AnalType, Plt)
+	      case UseContracts of
+		true ->
+		  case dialyzer_utils:get_spec_info(AbstrCode, RecInfo) of
+		    {error, _} = Error -> Error;
+		    {ok, SpecInfo} ->
+		      CServer3 = dialyzer_codeserver:store_contracts(Mod,
+								     SpecInfo,
+								     CServer2),
+		      store_core(Mod, Core, NoWarn, Callgraph, CServer3)
+		  end;
+		false ->
+		  store_core(Mod, Core, NoWarn, Callgraph, CServer2)
+			     
 	      end
 	  end
       end
   end.
 
-compile_byte(File, Callgraph, CServer, AnalType, Plt) ->
-  %% We must always set the code path, because the HiPE compiler
-  %% does a M:module_info() call!
-  OldPath = code:get_path(),
-  Mod = list_to_atom(filename:basename(File, ".beam")),
-  Dir = filename:dirname(File),
-  case code:add_patha(Dir) of
-    true ->            
-      Opts = if AnalType =:= old_style -> [];
-		true -> [no_copt]
-	     end,
-      Res = 
-	case dialyzer_utils:get_abstract_code_from_beam(File) of
-	  error ->	  
-	    case AnalType of
-	      dataflow -> 
-		{error, "  Could not get abstract code for "++File++
-		 "\n  Use option --old_style or recompile with"
-		 " +debug_info (preferred)."};
-	      succ_typings ->
-		{error, "  Could not get abstract code for "++File};
-	      old_style ->
-		case (catch hipe:c(Mod, ?HIPE_COMPILE_OPTS)) of
-		  {'EXIT', Why} -> {error, io_lib:format("~p", [Why])};
-		  {error, Why} -> {error, io_lib:format("~p", [Why])};
-		  {ok, Icode} ->
-		    CS1 = dialyzer_codeserver:insert(Icode, icode, CServer),
-		    Exp = beam_get_exports(File),
-		    CS2 = dialyzer_codeserver:insert_exports(Exp, CS1),
-		    NewCG = dialyzer_callgraph:scan_icode(Icode, Callgraph),
-		    NoWarn = beam_get_nowarn(File),
-		    {ok, NewCG, NoWarn, CS2}
-		end
-	    end;
-	  AbstrCode ->
-	    NoWarn = abs_get_nowarn(AbstrCode, Mod),
-	    case dialyzer_utils:get_core_from_abstract_code(AbstrCode, Opts) of
-	      error -> {error, "  Could not get core for "++File};
-	      Core ->
-		case dialyzer_utils:get_record_and_type_info(AbstrCode) of
-		  {error, _} = Error -> Error;
-		  {ok, RecInfo} ->
-		    CServer1 = 
-		      dialyzer_codeserver:store_records(Mod, RecInfo, CServer),
-		    case dialyzer_utils:get_spec_info(AbstrCode, RecInfo) of
-		      {error, _} = Error -> Error;
-		      {ok, SpecInfo} ->
-			CServer2 = 
-			  dialyzer_codeserver:store_contracts
-			    (Mod,SpecInfo,CServer1),
-			compile_core(Mod, Core, NoWarn, Callgraph, 
-				     CServer2, AnalType, Plt)
-		    end
-		end
-	    end
-	end,
-      true = code:set_path(OldPath),
-      Res;
-    false ->
-      {error, "  Could not add path: "++Dir}
+compile_byte(File, Callgraph, CServer, UseContracts) ->
+  case dialyzer_utils:get_abstract_code_from_beam(File) of
+    error ->
+      {error, "  Could not get abstract code for "++File++
+       " Recompile with +debug_info or analyze source code."};
+    {ok, AbstrCode} ->
+      Mod = list_to_atom(filename:basename(File, ".beam")),
+      NoWarn = abs_get_nowarn(AbstrCode, Mod),
+      case dialyzer_utils:get_core_from_abstract_code(AbstrCode) of
+	error -> {error, "  Could not get core for "++File};
+	{ok, Core} ->
+	  case dialyzer_utils:get_record_and_type_info(AbstrCode) of
+	    {error, _} = Error -> Error;
+	    {ok, RecInfo} ->
+	      CServer1 = 
+		dialyzer_codeserver:store_records(Mod, RecInfo, CServer),
+	      case UseContracts of
+		true ->
+		  case dialyzer_utils:get_spec_info(AbstrCode, RecInfo) of
+		    {error, _} = Error -> Error;
+		    {ok, SpecInfo} ->
+		      CServer2 = 
+			dialyzer_codeserver:store_contracts(Mod, SpecInfo,
+							    CServer1),
+		      store_core(Mod, Core, NoWarn, Callgraph, CServer2)
+		  end;
+		false ->
+		  store_core(Mod, Core, NoWarn, Callgraph, CServer1)
+	      end
+	  end
+      end
   end.
 
-compile_core(Mod, Core, NoWarn, Callgraph, CServer, AnalType, Plt) ->
-  Exp = core_get_exports(Core),
+store_core(Mod, Core, NoWarn, Callgraph, CServer) ->
+  Exp = get_exports_from_core(Core),
   CServer1 = dialyzer_codeserver:insert_exports(Exp, CServer),
   {LabeledCore, CServer2} = label_core(Core, CServer1),
-  if AnalType =:= old_style -> 
-      compile_core_old(Mod, LabeledCore, NoWarn, Callgraph, CServer2, 
-		       AnalType, Plt);
-     true -> 
-      store_code_and_build_callgraph(Mod, LabeledCore, none, Callgraph, 
-				     CServer2, AnalType, NoWarn)
-  end.
+  store_code_and_build_callgraph(Mod, LabeledCore, Callgraph, CServer2, NoWarn).
+				 
 
-compile_core_old(Mod, LabeledCore, NoWarn, Callgraph, CServer, AnalType, Plt) ->
-  try 
-    AnnCore = dialyzer_dataflow:annotate_module(LabeledCore, Plt),
-    TransCore = cerl:to_records(AnnCore),
-    case hipe:compile_core(Mod, TransCore, [], ?HIPE_COMPILE_OPTS) of
-      {error, Why} -> {error, io_lib:format("~p", [Why])};
-      {ok, Icode} ->
-	store_code_and_build_callgraph(Mod, TransCore, Icode, Callgraph, 
-				       CServer, AnalType, NoWarn)
-    end
-  catch
-    _:What -> 
-      {error, io_lib:format("~p", [{What, erlang:get_stacktrace()}])}
-  end.
-
-  
 abs_get_nowarn(Abs, M) ->
   [{M, F, A} 
    || {attribute, _, compile, {nowarn_unused_function, {F, A}}} <- Abs].
 
-beam_get_exports(File) ->
-  case beam_lib:chunks(File, [exports]) of
-    {ok,{_,[{exports, List}]}} ->
-      M = list_to_atom(filename:basename(File, ".beam")),
-      [{M, F, A} || {F, A} <- List];
-    error ->
-      []
-  end.
-
-beam_get_nowarn(File) ->
-  case beam_lib:chunks(File, [compile_info]) of
-    {ok,{_,[{compile_info, List}]}} ->
-      M = list_to_atom(filename:basename(File, ".beam")),
-      [{M, F, A} || {nowarn_unused_function, {F, A}} <- List];
-    error ->
-      []
-  end.
-
-core_get_exports(Core) ->
+get_exports_from_core(Core) ->
   Tree = cerl:from_records(Core),
   Exports1 = cerl:module_exports(Tree),  
   Exports2 = [cerl:var_name(V) || V <- Exports1],
@@ -560,22 +336,11 @@ label_core(Core, CServer) ->
   {cerl:to_records(LabeledTree), 
    dialyzer_codeserver:update_next_core_label(NewNextLabel, CServer)}.
 
-store_code_and_build_callgraph(Mod, Core, Icode, Callgraph, CServer, 
-			       AnalType, NoWarn) ->
-  if AnalType =:= old_style ->
-      %% When building the callgraph from core that is not lambda
-      %% lifted, we lose the lifted functions. We solve this for now
-      %% by scanning the icode instead of the core code. I can't wait
-      %% to get rid of the icode.
-      CServer1 = dialyzer_codeserver:insert(Icode, icode, CServer),
-      NewCallgraph = dialyzer_callgraph:scan_icode(Icode, Callgraph),
-      {ok, NewCallgraph, NoWarn, CServer1};
-     true ->
-      CoreTree = cerl:from_records(Core),
-      NewCallgraph = dialyzer_callgraph:scan_core_tree(CoreTree, Callgraph),
-      CServer2 = dialyzer_codeserver:insert([{Mod, CoreTree}], core, CServer),
-      {ok, NewCallgraph, NoWarn, CServer2}
-  end.
+store_code_and_build_callgraph(Mod, Core, Callgraph, CServer, NoWarn) ->
+  CoreTree = cerl:from_records(Core),
+  NewCallgraph = dialyzer_callgraph:scan_core_tree(CoreTree, Callgraph),
+  CServer2 = dialyzer_codeserver:insert([{Mod, CoreTree}], CServer),
+  {ok, NewCallgraph, NoWarn, CServer2}.
 
 %%____________________________________________________________
 %%
@@ -591,7 +356,7 @@ expand_files(Analysis) ->
     end,
   case expand_files(Files, Ext, []) of
     [] ->
-      exit({error, "No files to analyze. Check analysis type."});
+      exit({error, "No files to analyze; check analysis type"});
     NewFiles ->
       Analysis#analysis{files=NewFiles}
   end.
@@ -619,22 +384,26 @@ default_includes(Dir) ->
 %%
 
 send_log(Parent, Msg) ->
-  Parent ! {self(), log, Msg}.
+  Parent ! {self(), log, Msg},
+  ok.
 
 send_warnings(_Parent, []) ->
   ok;
 send_warnings(Parent, Warnings) ->
-  Parent ! {self(), warnings, Warnings}.
+  Parent ! {self(), warnings, Warnings},
+  ok.
 
 filter_warnings(LegalWarnings, Warnings) ->
   [{Tag, Id, Warning} || {Tag, Id, Warning} <- Warnings, 
 			 ordsets:is_element(Tag, LegalWarnings)].
 
 send_analysis_done(Parent, Plt, DocPlt) ->
-  Parent ! {self(), done, Plt, DocPlt}.
+  Parent ! {self(), done, Plt, DocPlt},
+  ok.
 
 send_error(Parent, Msg) ->
-  Parent ! {self(), error, Msg}.
+  Parent ! {self(), error, Msg},
+  ok.
 
 send_scan_fail(_Parent, []) ->
   ok;
@@ -645,30 +414,23 @@ send_scan_fail(Parent, [{FailFile, Reason}|Left]) ->
   send_scan_fail(Parent, Left).
   
 send_ext_calls(Parent, ExtCalls) ->
-  Parent ! {self(), ext_calls, ExtCalls}.
+  Parent ! {self(), ext_calls, ExtCalls},
+  ok.
 
-send_bad_calls(Parent, BadCalls, old_style, _CodeServer) ->
-  Warnings = 
-    [{?WARN_CALLGRAPH, 
-      From, io_lib:format("Call to missing or unexported function ~w\n", 
-			  [To])}
-     || {From, {_,F,A} = To} <- BadCalls,
-	not(F =:= module_info andalso (A =:= 0 orelse A =:= 1))],
-  send_warnings(Parent, Warnings);
-send_bad_calls(Parent, BadCalls, _AnalType, CodeServer) ->
+send_bad_calls(Parent, BadCalls, CodeServer) ->
   send_warnings(Parent, format_bad_calls(BadCalls, CodeServer, [])).
 
 send_mod_deps(Parent, ModuleDeps) ->
-  Parent ! {self(), mod_deps, ModuleDeps}.
+  Parent ! {self(), mod_deps, ModuleDeps},
+  ok.
 
 format_bad_calls([{{_, _, _}, {_, module_info, A}}|Left], CodeServer, Acc) 
   when A =:= 0; A =:= 1 ->
   format_bad_calls(Left, CodeServer, Acc);
 format_bad_calls([{From, To = {M, F, A}}|Left], 
 		 CodeServer, Acc) ->
-  {ok, Tree} = dialyzer_codeserver:lookup(From, core, CodeServer),
-  Msg = io_lib:format("Call to missing or unexported function ~w:~w/~w\n", 
-		      [M, F, A]),
+  {ok, Tree} = dialyzer_codeserver:lookup(From, CodeServer),
+  Msg = {call_to_missing, [M, F, A]},
   FileLine = find_call_file_and_line(Tree, To),
   NewAcc = [{?WARN_CALLGRAPH, FileLine, Msg}|Acc],
   format_bad_calls(Left, CodeServer, NewAcc);

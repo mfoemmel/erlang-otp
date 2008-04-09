@@ -37,27 +37,28 @@
 	 lookup_name/2,
 	 modules/1,
 	 module_deps/1,
-	 module_postorder/1,
+	 %% module_postorder/1,
 	 module_postorder_from_funs/2,
 	 in_neighbours/2,
 	 reset_from_funs/2,
 	 scan_core_tree/2,
-	 scan_icode/2,
-	 split_into_components/1,
 	 new/0, 
 	 take_scc/1, 
 	 remove_external/1]).
 
-%-define(NO_UNUSED, true).
+-define(NO_UNUSED, true).
 -ifndef(NO_UNUSED).
 -export([to_dot/1]).
 -endif.
 
 %%----------------------------------------------------------------------
 
+-include("dialyzer.hrl").
 -include("dialyzer_callgraph.hrl").
 
 %%----------------------------------------------------------------------
+
+-spec(new/0 :: () -> #dialyzer_callgraph{}).
 
 new() ->
   #dialyzer_callgraph{calls=dict:new(),
@@ -69,44 +70,47 @@ new() ->
 		      rev_name_map=dict:new(),
 		      self_rec=sets:new()}.
 
+-spec(delete/1 :: (#dialyzer_callgraph{}) -> 'true').
+
 delete(#dialyzer_callgraph{digraph=Digraph}) ->
   digraph_delete(Digraph).
 
-split_into_components(CG = #dialyzer_callgraph{digraph=Digraph}) ->
-  %% Splits the callgraph into connected components that can be
-  %% analyzed in parallell. Note that we keep all other information in
-  %% the callgraph the same in all parts even if it means a lot of
-  %% redundant information.
-  DigraphList = digraph_components(Digraph),
-  [CG#dialyzer_callgraph{digraph=DG} || DG <- DigraphList].
+-spec(all_nodes/1 :: (#dialyzer_callgraph{}) -> [_]).
 
 all_nodes(#dialyzer_callgraph{digraph=DG}) ->
   digraph_vertices(DG).
+
+-spec(lookup_rec_var/2 ::
+      (integer(), #dialyzer_callgraph{}) -> 'error' | {'ok',_}).
 
 lookup_rec_var(Label, #dialyzer_callgraph{rec_var_map=RecVarMap}) 
   when is_integer(Label) ->
   dict:find(Label, RecVarMap).
 
-lookup_call_site(Label,#dialyzer_callgraph{calls=Calls})when is_integer(Label)->
+-spec(lookup_call_site/2 ::
+      (integer(), #dialyzer_callgraph{}) -> 'error' | {'ok',_}).
+
+lookup_call_site(Label, #dialyzer_callgraph{calls=Calls})
+  when is_integer(Label) ->
   dict:find(Label, Calls).
 
 -spec(lookup_name/2 ::
       (integer(), #dialyzer_callgraph{}) -> 'error' | {'ok',mfa()}).
 
-lookup_name(Label,#dialyzer_callgraph{name_map=NameMap})when is_integer(Label)->
+lookup_name(Label, #dialyzer_callgraph{name_map=NameMap})
+  when is_integer(Label) ->
   dict:find(Label, NameMap).
 
 -spec(lookup_label/2 ::
-      (mfa(), #dialyzer_callgraph{}) -> 'error' | {'ok',mfa()}
-     ;(integer(), #dialyzer_callgraph{}) -> {'ok',integer()}).
+      (mfa_or_funlbl(), #dialyzer_callgraph{}) -> {'ok',integer()}).
 
 lookup_label(MFA = {_,_,_}, #dialyzer_callgraph{rev_name_map=RevNameMap}) ->
-  dict:find(MFA, RevNameMap);
+  {ok, _Lbl} = dict:find(MFA, RevNameMap);
 lookup_label(Label, #dialyzer_callgraph{}) when is_integer(Label) ->
   {ok, Label}.
 
 -spec(in_neighbours/2 ::
-      (integer() | mfa(), #dialyzer_callgraph{}) -> 'none' | [any(),...]).
+      (mfa_or_funlbl(), #dialyzer_callgraph{}) -> 'none' | [any(),...]).
 
 in_neighbours(Label, CG=#dialyzer_callgraph{}) when is_integer(Label) ->
   Name = case dict:find(Label, CG#dialyzer_callgraph.name_map) of
@@ -117,7 +121,7 @@ in_neighbours(Label, CG=#dialyzer_callgraph{}) when is_integer(Label) ->
 in_neighbours(MFA={_,_,_}, CG=#dialyzer_callgraph{}) ->
   digraph_in_neighbours(MFA, CG#dialyzer_callgraph.digraph).
 
--spec(is_self_rec/2 :: (integer() | mfa(), #dialyzer_callgraph{}) -> bool()).
+-spec(is_self_rec/2 :: (mfa_or_funlbl(), #dialyzer_callgraph{}) -> bool()).
 
 is_self_rec(MfaOrLabel, #dialyzer_callgraph{self_rec=SelfRecs}) ->
   sets:is_element(MfaOrLabel, SelfRecs).
@@ -127,23 +131,39 @@ is_self_rec(MfaOrLabel, #dialyzer_callgraph{self_rec=SelfRecs}) ->
 is_escaping(Label, #dialyzer_callgraph{esc=Esc}) when is_integer(Label) ->
   sets:is_element(Label, Esc).  
 
+-type(callgraph_edge() :: {mfa_or_funlbl(),mfa_or_funlbl()}).
+-spec(add_edges/2 ::
+      ([callgraph_edge()], #dialyzer_callgraph{}) -> #dialyzer_callgraph{}).
+
 add_edges([], CG) ->
   CG;
 add_edges(Edges, CG = #dialyzer_callgraph{digraph=Callgraph}) ->
   CG#dialyzer_callgraph{digraph=digraph_add_edges(Edges, Callgraph)}.
 
+-spec(add_edges/3 :: 
+      ([callgraph_edge()], [mfa_or_funlbl()], #dialyzer_callgraph{}) ->
+	 #dialyzer_callgraph{}).
+
 add_edges(Edges, MFAs, CG = #dialyzer_callgraph{digraph=DG}) ->
   DG1 = digraph_confirm_vertices(MFAs, DG),
   add_edges(Edges, CG#dialyzer_callgraph{digraph=DG1}).
+
+-spec(take_scc/1 :: (#dialyzer_callgraph{}) ->
+	                   'none' | {'ok', scc(), #dialyzer_callgraph{}}).
 
 take_scc(CG = #dialyzer_callgraph{postorder=[SCC|Left]}) ->
   {ok, SCC, CG#dialyzer_callgraph{postorder=Left}};
 take_scc(#dialyzer_callgraph{postorder=[]}) ->
   none.
 
+-spec(remove_external/1 ::
+      (#dialyzer_callgraph{}) -> {#dialyzer_callgraph{}, [tuple()]}).
+
 remove_external(CG = #dialyzer_callgraph{digraph=DG}) ->
   {NewDG, External} = digraph_remove_external(DG),
   {CG#dialyzer_callgraph{digraph=NewDG}, External}.
+
+-spec(non_local_calls/1 :: (#dialyzer_callgraph{}) -> [{mfa(),mfa()}]).
 
 non_local_calls(#dialyzer_callgraph{digraph=DG}) ->
   Edges = digraph_edges(DG),		
@@ -163,8 +183,16 @@ find_non_local_calls([{Label1, Label2}|Left], Set) when is_integer(Label1),
 find_non_local_calls([], Set) ->
   sets:to_list(Set).
 
+%%----------------------------------------------------------------------
+%% Handling of modules & SCCs
+%%----------------------------------------------------------------------
+
+-spec(modules/1 :: (#dialyzer_callgraph{}) -> [atom()]).
+
 modules(#dialyzer_callgraph{digraph=DG}) ->
   ordsets:from_list([M || {M,_F,_A} <- digraph_vertices(DG)]).
+
+-spec(module_postorder/1 :: (#dialyzer_callgraph{}) -> [[atom()]]).
 
 module_postorder(#dialyzer_callgraph{digraph=DG}) ->
   Edges = digraph_edges(DG),
@@ -179,7 +207,9 @@ module_postorder(#dialyzer_callgraph{digraph=DG}) ->
   digraph_delete(MDG3),
   PostOrder1.
 
-%% The module deps of a module is who is depending on the module.
+%% The module deps of a module are modules that depend on the module
+-spec(module_deps/1 :: (#dialyzer_callgraph{}) -> dict()).
+
 module_deps(#dialyzer_callgraph{digraph=DG}) ->
   Edges = digraph_edges(DG),
   Nodes = ordsets:from_list([M || {M,_F,_A} <- digraph_vertices(DG)]),
@@ -215,8 +245,13 @@ create_module_digraph([{_, _}|Left], MDG) ->
 create_module_digraph([], MDG) ->
   MDG.
 
+-spec(finalize/1 :: (#dialyzer_callgraph{}) -> #dialyzer_callgraph{}).
+
 finalize(CG = #dialyzer_callgraph{digraph=DG}) ->
   CG#dialyzer_callgraph{postorder=digraph_finalize(DG)}.
+
+-spec(reset_from_funs/2 ::
+      ([_], #dialyzer_callgraph{}) -> #dialyzer_callgraph{}).
 
 reset_from_funs(Funs, CG = #dialyzer_callgraph{digraph=DG}) ->
   SubGraph = digraph_reaching_subgraph(Funs, DG),
@@ -224,20 +259,25 @@ reset_from_funs(Funs, CG = #dialyzer_callgraph{digraph=DG}) ->
   digraph_delete(SubGraph),
   CG#dialyzer_callgraph{postorder=Postorder}.
 
+-spec(module_postorder_from_funs/2 ::
+      ([_], #dialyzer_callgraph{}) -> [[atom()]]).
+	 
 module_postorder_from_funs(Funs, CG = #dialyzer_callgraph{digraph=DG}) ->
   SubGraph = digraph_reaching_subgraph(Funs, DG),
   PO = module_postorder(CG#dialyzer_callgraph{digraph=SubGraph}),
   digraph_delete(SubGraph),
   PO.
   
-%%____________________________________________________________
-%%
+%%----------------------------------------------------------------------
 %% Core code
-%%
+%%----------------------------------------------------------------------
 
 %% The core tree must be labeled as by cerl_trees:label/1 (or /2).
 %% The set of labels in the tree must be disjoint from the set of
 %% labels already occuring in the callgraph.
+
+-spec(scan_core_tree/2 ::
+      (core_module(), #dialyzer_callgraph{}) -> #dialyzer_callgraph{}).
 
 scan_core_tree(Tree, CG=#dialyzer_callgraph{calls=OldCalls,
 					    esc=OldEsc,
@@ -255,8 +295,8 @@ scan_core_tree(Tree, CG=#dialyzer_callgraph{calls=OldCalls,
   NewEsc = sets:union(sets:from_list(EscapingFuns), OldEsc),
   LabelEdges = get_edges_from_deps(Deps0),
   
-  %% Find the self recursive functions. Named functions gets both the
-  %% key and its name for convenience.
+  %% Find the self recursive functions. Named functions get both the
+  %% key and their name for convenience.
   SelfRecs0 = lists:foldl(fun({Key, Key}, Acc) -> 
 			      case dict:find(Key, NewNameMap) of
 				error      -> [Key|Acc];
@@ -268,18 +308,22 @@ scan_core_tree(Tree, CG=#dialyzer_callgraph{calls=OldCalls,
   
   NamedEdges1 = name_edges(LabelEdges, NewNameMap),
   
-  %% We need to scan for intermodular calls since this is not tracked
+  %% We need to scan for inter-module calls since these are not tracked
   %% by dialyzer_dep. Note that the caller is always recorded as the
-  %% top level function. This is ok since the included functions are
+  %% top level function. This is OK since the included functions are
   %% stored as scc with the parent.
   NamedEdges2 = scan_core_funs(Tree),
 
   %% Confirm all nodes in the tree.
-  Names1 = lists:flatten([[X, Y] || {X, Y} <- NamedEdges1]),
+  Names1 = lists:append([[X, Y] || {X, Y} <- NamedEdges1]),
   Names2 = ordsets:from_list(Names1),
+
+  %% Get rid of the 'top' function from nodes and edges.
   Names3 = ordsets:del_element(top, Names2),
-  CG1 = add_edges(NamedEdges2++NamedEdges1, Names3, CG),
-  
+  NamedEdges3 = [{From, To} || {From, To} <- NamedEdges2++NamedEdges1,
+			       From =/= top, To =/= top],
+
+  CG1 = add_edges(NamedEdges3, Names3, CG),  
   CG1#dialyzer_callgraph{calls=NewCalls,
 			 esc=NewEsc,
 			 name_map=NewNameMap,
@@ -304,8 +348,8 @@ build_maps(Tree, RecVarMap, NameMap, RevNameMap) ->
 
 get_edges_from_deps(Deps) ->
   %% Convert the dependencies as produced by dialyzer_dep to a list of
-  %% edges. Also, remove 'external' since we are not interested
-  %% in this information.
+  %% edges. Also, remove 'external' since we are not interested in
+  %% this information.
   Edges = dict:fold(fun(external, _Set, Acc) -> Acc;
 		       (Caller, Set, Acc)    -> [[{Caller, Callee} 
 						  || Callee <- Set, 
@@ -375,57 +419,6 @@ get_label(T) ->
     _ -> erlang:error({missing_label, T})
   end.
 
-
-%%____________________________________________________________
-%%
-%% Icode
-%%
-
-scan_icode(List, Callgraph = #dialyzer_callgraph{self_rec=SelfRec}) ->
-  {NewSelfRec, Edges} = scan_icode_funs(List, SelfRec, []),
-  MFAs = [MFA || {MFA, _} <- List],
-  add_edges(Edges, MFAs, Callgraph#dialyzer_callgraph{self_rec=NewSelfRec}).
-  %add_edges(Edges, Callgraph#dialyzer_callgraph{self_rec=NewSelfRec}).
-
-scan_icode_funs([{MFA, Cfg}|Left], SelfRec, Edges) ->
-  Icode = hipe_icode_cfg:cfg_to_linear(Cfg),
-  Code = hipe_icode:icode_code(Icode),
-  {NewSelfRec, NewEdges} = scan_icode_code(Code, MFA, SelfRec, 
-					   [{MFA, MFA}|Edges]),
-  scan_icode_funs(Left, NewSelfRec, NewEdges);
-scan_icode_funs([], SelfRec, Edges) ->
-  {SelfRec, Edges}.
-
-scan_icode_code([Ins|Left], MFA, SelfRecs, Edges) ->
-  {NewSelfRecs, NewEdges} =
-    case hipe_icode:is_call(Ins) orelse hipe_icode:is_enter(Ins) of
-      true ->
-	case call_or_enter_fun(Ins) of
-	  {mkfun, Closure,_,_} -> {SelfRecs, [{MFA, Closure}|Edges]};
-	  MFA ->
-	    %% A self recursive call.
-	    {sets:add_element(MFA, SelfRecs), Edges};
-	  {M, F, A} -> 
-	    case erl_bif_types:is_known(M, F, A) of
-	      true -> {SelfRecs, Edges};
-	      false -> {SelfRecs, [{MFA, {M, F, A}}|Edges]}
-	    end;
-	  _ -> {SelfRecs, Edges}
-	end;
-      false ->
-	{SelfRecs, Edges}
-    end,
-  scan_icode_code(Left, MFA, NewSelfRecs, NewEdges);
-scan_icode_code([], _MFA, SelfRecs, Edges) ->
-  {SelfRecs, Edges}.	  
-
-call_or_enter_fun(Ins) ->      
-  case hipe_icode:is_call(Ins) of
-    true -> hipe_icode:call_fun(Ins);
-    false -> hipe_icode:enter_fun(Ins)
-  end.
-
-
 %%____________________________________________________________
 %%
 %% Digraph
@@ -491,39 +484,37 @@ digraph_in_neighbours(V, DG) ->
     List -> List
   end.
 
-digraph_components(Digraph) ->
-  Res = [digraph_utils:subgraph(Digraph, Vertices) 
-	 || Vertices <- digraph_utils:components(Digraph)],
-  digraph_delete(Digraph),
-  Res.
+%% Pick all the independent nodes (leaves) from one module. Then try
+%% to stay within the module until no more independent nodes can be
+%% chosen. Then pick a new module and so on.
+%%
+%% Note that an SCC that ranges over more than one module is
+%% considered to belong to all modules to make sure that we do not
+%% lose any nodes.
 
 digraph_postorder(Digraph) ->
-  %% Remove all self-edges for Sccs.
+  %% Remove all self-edges for SCCs.
   Edges = [digraph:edge(Digraph, E) || E <- digraph:edges(Digraph)],
   SelfEdges = [E || {E, V, V, _} <- Edges],
   true = digraph:del_edges(Digraph, SelfEdges),
-  digraph_postorder(Digraph, -1, []).
+  %% Determine the first module outside of the loop.
+  Leaves = digraph_leaves(Digraph),
+  case Leaves =:= [] of
+    true -> [];
+    false ->
+      {Module, Taken} = take_sccs_from_fresh_module(Leaves),
+      true = digraph:del_vertices(Digraph, Taken),
+      digraph_postorder(Digraph, Module, [Taken])
+  end.
 
-
-%%% Pick all the independent nodes (leaves) from one module. Then try
-%%% to stay within the module until no more independent nodes can be
-%%% chosen. Then pick a new module and so on.
-%%%
-%%% Note that a SCC that range over more than one module is considered
-%%% to belong to all modules to make sure that we do not lose any
-%%% nodes.
 digraph_postorder(Digraph, LastModule, Acc) ->
-  Leaves = [V || V <- digraph:vertices(Digraph),
-		 digraph:out_degree(Digraph, V) =:= 0],
+  Leaves = digraph_leaves(Digraph),
   case Leaves =:= [] of
     true -> lists:append(lists:reverse(Acc));
     false ->
       case [SCC || SCC <- Leaves, scc_belongs_to_module(SCC, LastModule)] of
 	[] ->
-	  %% Choose a new module.
-	  NewModule = find_module(hd(Leaves)),
-	  NewTaken = [SCC || SCC <- Leaves, 
-			     scc_belongs_to_module(SCC, NewModule)],
+	  {NewModule, NewTaken} = take_sccs_from_fresh_module(Leaves),
 	  true = digraph:del_vertices(Digraph, NewTaken),
 	  digraph_postorder(Digraph, NewModule, [NewTaken|Acc]);
 	NewTaken ->
@@ -532,7 +523,15 @@ digraph_postorder(Digraph, LastModule, Acc) ->
       end
   end.
 
--spec(scc_belongs_to_module/2 :: ([integer() | mfa()], atom()) -> bool()).
+digraph_leaves(Digraph) ->
+  [V || V <- digraph:vertices(Digraph), digraph:out_degree(Digraph, V) =:= 0].
+
+take_sccs_from_fresh_module(Leaves) ->
+  NewModule = find_module(hd(Leaves)),
+  {NewModule, 
+   [SCC || SCC <- Leaves, scc_belongs_to_module(SCC, NewModule)]}.
+
+-spec(scc_belongs_to_module/2 :: (scc(), atom()) -> bool()).
 
 scc_belongs_to_module([Label|Left], Module) when is_integer(Label) ->
   scc_belongs_to_module(Left, Module);
@@ -543,7 +542,7 @@ scc_belongs_to_module([{M, _, _}|Left], Module) ->
 scc_belongs_to_module([], _Module) ->
   false.
       
--spec(find_module/1 :: ([integer() | mfa(),...]) -> atom()).
+-spec(find_module/1 :: (scc()) -> atom()).
 
 find_module([{M, _, _}|_]) -> M;
 find_module([Label|Left]) when is_integer(Label) -> find_module(Left).
@@ -563,6 +562,9 @@ digraph_reaching_subgraph(Funs, DG) ->
 %%=============================================================================
 
 -ifndef(NO_UNUSED).
+
+-spec(to_dot/1 :: (#dialyzer_callgraph{}) -> string()).
+
 to_dot(CG = #dialyzer_callgraph{digraph=DG, esc=Esc}) ->
   Fun = fun(L) ->
 	    case lookup_name(L, CG) of
@@ -574,6 +576,6 @@ to_dot(CG = #dialyzer_callgraph{digraph=DG, esc=Esc}) ->
 	      || L <- sets:to_list(Esc), L =/= external],
   Vertices = digraph_edges(DG),
   hipe_dot:translate_list(Vertices, "/tmp/cg.dot", "CG", Escaping),
-  os:cmd("dot -T ps -o /tmp/cg.ps /tmp/cg.dot"),
-  ok.
+  os:cmd("dot -T ps -o /tmp/cg.ps /tmp/cg.dot").
+
 -endif.

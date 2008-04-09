@@ -1,7 +1,7 @@
 -module(xmerl_b64Bin).
 -export([parse/1, parse_and_scan/1, format_error/1]).
 
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-02-05_20/otp_src_R12B-1/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/ldisk/daily_build/otp_prebuild_r12b.2008-04-07_20/otp_src_R12B-1/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -23,14 +23,21 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The parser generator will insert appropriate declarations before this line.%
 
+-type(yecc_ret() :: {'error', _} | {'ok', _}).
+
+-spec(parse/1 :: (_) -> yecc_ret()).
 parse(Tokens) ->
     yeccpars0(Tokens, false).
 
+-spec(parse_and_scan/1 ::
+      ({function() | {atom(), atom()}, [_]} | {atom(), atom(), [_]}) ->
+            yecc_ret()).
 parse_and_scan({F, A}) -> % Fun or {M, F}
     yeccpars0([], {F, A});
 parse_and_scan({M, F, A}) ->
     yeccpars0([], {{M, F}, A}).
 
+-spec(format_error/1 :: (any()) -> [char() | list()]).
 format_error(Message) ->
     case io_lib:deep_char_list(Message) of
 	true ->
@@ -145,46 +152,46 @@ yecctoken2string(Other) ->
 
 
 
--file("./xmerl_b64Bin.erl", 148).
+-file("./xmerl_b64Bin.erl", 155).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(1=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_1(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(2=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_2(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(3=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_3(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(1=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_1(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(2=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_2(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(3=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_3(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(4=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(5=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_5(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(6=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_6(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(7=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(7=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_7(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(8=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_8(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(9=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_9(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(10=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_10(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(11=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_11(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(12=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_12(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(11=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_11(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(12=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_12(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(13=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_13(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(14=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_14(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(15=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_15(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(16=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_16(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(17=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_17(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(16=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_16(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(17=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_17(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(Other, _, _, _, _, _, _) ->
- erlang:error({yecc_bug,"1.2",{missing_state_in_action_table, Other}}).
+ erlang:error({yecc_bug,"1.3",{missing_state_in_action_table, Other}}).
 
 yeccpars2_0(S, b04, Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 4, Ss, Stack, T, Ts, Tzr);
@@ -194,11 +201,11 @@ yeccpars2_0(S, b64x, Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 6, Ss, Stack, T, Ts, Tzr);
 yeccpars2_0(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_0_(Stack),
- yeccpars2(2, Cat, [0 | Ss], NewStack, T, Ts, Tzr).
+ yeccpars2_2(2, Cat, [0 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_1(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_1_(Stack),
- yeccpars2(yeccgoto_base64Binary(hd(Ss)), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_base64Binary(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_2(_S, '$end', _Ss, Stack,  _T, _Ts, _Tzr) ->
  {ok, hd(Stack)}.
@@ -212,15 +219,15 @@ yeccpars2_3(S, b64x, Ss, Stack, T, Ts, Tzr) ->
 
 yeccpars2_4(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_4_(Stack),
- yeccpars2(yeccgoto_b64(hd(Ss)), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_b64(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_5(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_5_(Stack),
- yeccpars2(yeccgoto_b64(hd(Ss)), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_b64(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_6(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_6_(Stack),
- yeccpars2(yeccgoto_b64(hd(Ss)), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_b64(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_7(S, b04, Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
@@ -233,15 +240,15 @@ yeccpars2_8(S, '=', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
 yeccpars2_8(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_8_(Stack),
- yeccpars2(yeccgoto_b64(hd(Ss)), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_b64(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_9(S, '=', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_10(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_10_(Stack),
- Nss = lists:nthtail(3, Ss),
- yeccpars2(yeccgoto_base64Binary2(hd(Nss)), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_base64Binary2(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_11(S, b04, Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 4, Ss, Stack, T, Ts, Tzr);
@@ -255,22 +262,22 @@ yeccpars2_12(S, '=', Ss, Stack, T, Ts, Tzr) ->
 
 yeccpars2_13(_S, '=', Ss, Stack, T, Ts, Tzr) ->
  NewStack = 'yeccpars2_13_='(Stack),
- yeccpars2(yeccgoto_b16(hd(Ss)), '=', Ss, NewStack, T, Ts, Tzr);
+ yeccgoto_b16(hd(Ss), '=', Ss, NewStack, T, Ts, Tzr);
 yeccpars2_13(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_13_(Stack),
- yeccpars2(yeccgoto_b64(hd(Ss)), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_b64(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_14(_S, '=', Ss, Stack, T, Ts, Tzr) ->
  NewStack = 'yeccpars2_14_='(Stack),
- yeccpars2(yeccgoto_b16(hd(Ss)), '=', Ss, NewStack, T, Ts, Tzr);
+ yeccgoto_b16(hd(Ss), '=', Ss, NewStack, T, Ts, Tzr);
 yeccpars2_14(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_14_(Stack),
- yeccpars2(yeccgoto_b64(hd(Ss)), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_b64(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_15(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_15_(Stack),
- Nss = lists:nthtail(3, Ss),
- yeccpars2(yeccgoto_base64Binary2(hd(Nss)), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_base64Binary2(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_16(S, b04, Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 4, Ss, Stack, T, Ts, Tzr);
@@ -279,124 +286,146 @@ yeccpars2_16(S, b16x, Ss, Stack, T, Ts, Tzr) ->
 yeccpars2_16(S, b64x, Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 6, Ss, Stack, T, Ts, Tzr);
 yeccpars2_16(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_16_(Stack),
- Nss = lists:nthtail(3, Ss),
- yeccpars2(yeccgoto_base64Binary2(hd(Nss)), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_base64Binary2(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_17(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_17_(Stack),
- Nss = lists:nthtail(4, Ss),
- yeccpars2(yeccgoto_base64Binary2(hd(Nss)), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_base64Binary2(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccgoto_b16(7) -> 12.
+yeccgoto_b16(7, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_12(12, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_b64(0) -> 3;
-yeccgoto_b64(3) -> 7;
-yeccgoto_b64(7) -> 11;
-yeccgoto_b64(11) -> 16;
-yeccgoto_b64(16) -> 3.
+yeccgoto_b64(0, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_3(3, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_b64(3, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(7, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_b64(7, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_11(11, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_b64(11, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_16(16, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_b64(16, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_3(3, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_base64Binary(0) -> 2.
+yeccgoto_base64Binary(0, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_2(2, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_base64Binary2(0) -> 1;
-yeccgoto_base64Binary2(16) -> 17.
+yeccgoto_base64Binary2(0=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_1(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_base64Binary2(16=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_17(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
 -compile({inline,{yeccpars2_0_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_0_(Stack) ->
+yeccpars2_0_(__Stack0) ->
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack0].
 
 -compile({inline,{yeccpars2_1_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_1_([__1 | Stack]) ->
+yeccpars2_1_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{yeccpars2_4_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_4_([__1 | Stack]) ->
+yeccpars2_4_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{yeccpars2_5_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_5_([__1 | Stack]) ->
+yeccpars2_5_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{yeccpars2_6_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_6_([__1 | Stack]) ->
+yeccpars2_6_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{yeccpars2_8_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_8_([__1 | Stack]) ->
+yeccpars2_8_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{yeccpars2_10_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_10_([__4,__3,__2,__1 | Stack]) ->
+yeccpars2_10_(__Stack0) ->
+ [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{'yeccpars2_13_=',1}}).
 -file("xmerl_b64Bin.yrl", 0).
-'yeccpars2_13_='([__1 | Stack]) ->
+'yeccpars2_13_='(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{yeccpars2_13_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_13_([__1 | Stack]) ->
+yeccpars2_13_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{'yeccpars2_14_=',1}}).
 -file("xmerl_b64Bin.yrl", 0).
-'yeccpars2_14_='([__1 | Stack]) ->
+'yeccpars2_14_='(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{yeccpars2_14_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_14_([__1 | Stack]) ->
+yeccpars2_14_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{yeccpars2_15_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_15_([__4,__3,__2,__1 | Stack]) ->
+yeccpars2_15_(__Stack0) ->
+ [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{yeccpars2_16_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_16_([__4,__3,__2,__1 | Stack]) ->
+yeccpars2_16_(__Stack0) ->
+ [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 -compile({inline,{yeccpars2_17_,1}}).
 -file("xmerl_b64Bin.yrl", 0).
-yeccpars2_17_([__5,__4,__3,__2,__1 | Stack]) ->
+yeccpars2_17_(__Stack0) ->
+ [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    '$undefined'
-  end | Stack].
+  end | __Stack].
 
 

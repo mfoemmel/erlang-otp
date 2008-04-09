@@ -1,19 +1,21 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#<copyright>
+# <year>1997-2008</year>
+# <holder>Ericsson AB, All Rights Reserved</holder>
+#</copyright>
+#<legalnotice>
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
-# 
+# retrieved online at http://www.erlang.org/.
+#
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
-# 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
-#     $Id$
+#
+# The Initial Developer of the Original Code is Ericsson AB.
+#</legalnotice>
 #
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
@@ -22,7 +24,6 @@ CXX = @CXX@
 CC = @CC@
 LIBS = @LIBS@
 
-BINDIR = ../priv/bin/$(TARGET)
 OBJDIR = ../priv/obj/$(TARGET)
 
 # ----------------------------------------------------
@@ -39,30 +40,11 @@ RELSYSDIR = $(RELEASE_PATH)/lib/orber-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-ifeq ($(findstring win32,$(TARGET)),win32)
-PROGRAMS = 
-C_FILES = 
-else
-ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-PROGRAMS = 
-C_FILES = 
-else
-PROGRAMS = \
-	obj_init_port
-C_FILES = \
-	$(PROGRAMS:%=%.c) \
-	setsockaddr_in.c 
-endif
-endif
-
 CC_FILES = \
 	InitialReference.cc
 
 HH_FILES = \
 	InitialReference.hh
-
-TARGET_FILES= $(PROGRAMS:%=$(BINDIR)/%)
-OBJ_FILES= $(C_FILES:%.c=$(OBJDIR)/%.o) 
 
 ALL_CFLAGS = @CFLAGS@ @DEFS@ $(CFLAGS) 
 
@@ -70,7 +52,7 @@ ALL_CFLAGS = @CFLAGS@ @DEFS@ $(CFLAGS)
 # Targets
 # ----------------------------------------------------
 
-debug opt: $(OBJDIR) $(BINDIR) orber
+debug opt: $(OBJDIR) orber
 
 ifeq ($(findstring win32,$(TARGET)),win32)
 orber: 
@@ -81,13 +63,12 @@ orber:
 	echo "Nothing to build for VxWorks"
 
 else
-orber: $(TARGET_FILES)
+orber: 
+	echo "Nothing to build"	
 endif
 endif
 
 clean:
-	rm -f $(TARGET_FILES) 
-	rm -f core *~
 
 docs:
 
@@ -97,12 +78,6 @@ docs:
 
 $(OBJDIR):
 	-mkdir -p $(OBJDIR)
-
-$(BINDIR):
-	-mkdir -p $(BINDIR)
-
-$(BINDIR)/obj_init_port: $(OBJ_FILES)
-	$(CC) -o $@ $(OBJ_FILES) $(LIBS)
 
 $(OBJDIR)/%.o: %.c
 	$(CC) -c -o $@ $(ALL_CFLAGS) $<
@@ -127,11 +102,8 @@ release_spec:
 	$(INSTALL_PROGRAM) $(HH_FILES) $(RELSYSDIR)/priv/include
 else
 release_spec: opt
-	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
-	$(INSTALL_DIR) $(RELSYSDIR)/priv/lib
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/src
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/include
-	$(INSTALL_PROGRAM) $(TARGET_FILES) $(RELSYSDIR)/priv/bin
 	$(INSTALL_DATA) $(CC_FILES) $(RELSYSDIR)/priv/src
 	$(INSTALL_DATA) $(HH_FILES) $(RELSYSDIR)/priv/include
 endif

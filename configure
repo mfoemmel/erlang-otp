@@ -822,9 +822,6 @@ Optional Packages:
   --with-ssl=PATH         specify location of OpenSSL include and lib
   --with-ssl              use SSL (default)
   --without-ssl           don't use SSL
-  --with-gd=PATH          specify location of libgd include and lib
-  --with-gd               use gd (default)
-  --without-gd            don't use gd
 
 Some influential environment variables:
   CC          C compiler command
@@ -2608,13 +2605,6 @@ fi;
 # Check whether --enable-dynamic-ssl-lib or --disable-dynamic-ssl-lib was given.
 if test "${enable_dynamic_ssl_lib+set}" = set; then
   enableval="$enable_dynamic_ssl_lib"
-
-fi;
-
-
-# Check whether --with-gd or --without-gd was given.
-if test "${with_gd+set}" = set; then
-  withval="$with_gd"
 
 fi;
 

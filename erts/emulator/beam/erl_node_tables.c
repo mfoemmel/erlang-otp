@@ -101,6 +101,7 @@ dist_table_alloc(void *dep_tmpl)
     dep->flags      = 0;
     dep->cache      = NULL;
     dep->version    = 0;
+    dep->port       = NULL;
 #ifdef ERTS_SMP
     dep->mtxp       = &dist_entry_mutexes[(atom_val(dep->sysname)
 					   % ERTS_NO_OF_DIST_ENTRY_MUTEXES)];
@@ -1076,7 +1077,7 @@ insert_offheap(ErlOffHeap *oh, int type, Eterm id)
 	struct insert_offheap2_arg a;
 	a.type = BIN_REF;
 	for(pb = oh->mso; pb; pb = pb->next) {
-	    if(pb->val->flags & BIN_FLAG_MATCH_PROG) {
+	    if(IsMatchProgBinary(pb->val)) {
 		InsertedBin *ib;
 		int insert_bin = 1;
 		for (ib = inserted_bins; ib; ib = ib->next)

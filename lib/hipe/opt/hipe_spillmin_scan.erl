@@ -1,7 +1,7 @@
 %% -*- erlang-indent-level: 2 -*-
-%% ==========================================================================
+%% ===========================================================================
 %% Copyright (c) 2002 by Niklas Andersson, Andreas Lundin, and Erik Johansson.
-%% ==========================================================================
+%% ===========================================================================
 %%  Module   :	hipe_spillmin_scan
 %%  Purpose  :  Optimizes the number of stack slots used by using a
 %%              "linear-scan algorithm" to allocate stack slots.
@@ -20,10 +20,10 @@
 %%              * 2002-10-08, Happi: Cleanup and speedup
 %%
 %% CVS:
-%%    $Author: mikpe $
-%%    $Date: 2007/12/18 09:13:34 $
-%%    $Revision: 1.6 $
-%% =====================================================================
+%%    $Author: kostis $
+%%    $Date: 2008/03/28 21:37:50 $
+%%    $Revision: 1.8 $
+%% ============================================================================
 %% Exported functions (short description):
 %%   stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) -> 
 %%                    {Coloring, NumberOfSpills}
@@ -42,8 +42,7 @@
 %%
 %%  mapmerge
 %%
-%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_spillmin_scan).
 -export([stackalloc/6]).
@@ -51,9 +50,17 @@
 %-define(DEBUG,1).
 -define(HIPE_INSTRUMENT_COMPILER, true).
 
--include("../main/hipe.hrl").
+%%----------------------------------------------------------------------------
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-type(dict()    :: tuple()).  % XXX: Temporarily
+-type(gb_tree() :: tuple()).  % XXX: Temporarily
+
+%%----------------------------------------------------------------------------
+
+-include("../main/hipe.hrl").
+-include("../flow/cfg.hrl").
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% stackalloc(CFG, StackSlots,  SpillIndex, Options, Target, TempMap) 
 %%   Calculates an allocation of stack slots using a linear_scan algorithm.
@@ -66,25 +73,28 @@
 %%       control-flow-graph.
 %%    3. Do a linear scan allocation over the live intervals.
 %%
-%%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) ->
-  ?debug_msg("LinearScan: ~w\n",[erlang:statistics(runtime)]),
-  %%     Step 1: Calculate liveness (Call external implementation.)
-  Liveness = liveness(CFG, Target),
-  ?debug_msg("liveness (done)~w\n",[erlang:statistics(runtime)]),
-  USIntervals = calculate_intervals(CFG, Liveness,
-				     Options,
-				    Target, TempMap),
-  %% ?debug_msg("intervals (done) ~w\n",[erlang:statistics(runtime)]),
-  Intervals = sort_on_start(USIntervals),
-  ?debug_msg("sort intervals (done) ~w\n",[erlang:statistics(runtime)]),
-  ?debug_msg("Intervals ~w\n",[Intervals]),
-  ?debug_msg("No intervals: ~w\n",[length(Intervals)]),
-  %% --> remove io:format("Intervals: ~p\n", [Intervals]),
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-  ?debug_msg("count intervals (done) ~w\n",[erlang:statistics(runtime)]),
-  Allocation = allocate(Intervals,StackSlots, SpillIndex,  Target),
-  ?debug_msg("allocation (done) ~w\n",[erlang:statistics(runtime)]),
+-spec(stackalloc/6 ::
+      (#cfg{}, [_], non_neg_integer(), comp_options(),
+       atom(), hipe_temp_map()) -> {hipe_spill_map(), non_neg_integer()}).
+
+stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) ->
+  ?debug_msg("LinearScan: ~w\n", [erlang:statistics(runtime)]),
+  %% Step 1: Calculate liveness (Call external implementation.)
+  Liveness = liveness(CFG, Target),
+  ?debug_msg("liveness (done)~w\n", [erlang:statistics(runtime)]),
+  USIntervals = calculate_intervals(CFG, Liveness, Options,
+				    Target, TempMap),
+  %% ?debug_msg("intervals (done) ~w\n", [erlang:statistics(runtime)]),
+  Intervals = sort_on_start(USIntervals),
+  ?debug_msg("sort intervals (done) ~w\n", [erlang:statistics(runtime)]),
+  ?debug_msg("Intervals ~w\n", [Intervals]),
+  ?debug_msg("No intervals: ~w\n", [length(Intervals)]),
+
+  ?debug_msg("count intervals (done) ~w\n", [erlang:statistics(runtime)]),
+  Allocation = allocate(Intervals, StackSlots, SpillIndex, Target),
+  ?debug_msg("allocation (done) ~w\n", [erlang:statistics(runtime)]),
   Allocation.
 
 
@@ -95,7 +105,7 @@ stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-%% calculate_intervals(CFG,Liveness, Options, Target, TempMap)
+%% calculate_intervals(CFG, Liveness, Options, Target, TempMap)
 %%  CFG: The Control-Flow Graph.
 %%  Liveness: A map of live-in and live-out sets for each Basic-Block.
 %%  TempMap: The TempMap from the register allocation
@@ -104,34 +114,28 @@ stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) ->
 %%  that have been spilled during register allocation, and will ignore 
 %%  all other.
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-calculate_intervals(CFG,Liveness, _Options, Target, TempMap) ->
+calculate_intervals(CFG, Liveness, _Options, Target, TempMap) ->
   Interval = empty_interval(Target:number_of_temporaries(CFG)),
-
   Worklist = Target:reverse_postorder(CFG),
-
-  intervals(Worklist, Interval, 1, 
-	    CFG, Liveness, 
-	    succ_map(CFG, Target), 
-	    Target, TempMap).
+  intervals(Worklist, Interval, 1, CFG, Liveness, Target, TempMap).
 
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 %% intervals(WorkList, Intervals, InstructionNr,
-%%           CFG, Liveness, SuccMap, TempMap)
+%%           CFG, Liveness, Target, TempMap)
 %%  WorkList: List of BB-names to handle.
 %%  Intervals: Intervals seen so far (sorted on register names).
 %%  InstructionNr: The number of examined insturctions.
 %%  CFG: The Control-Flow Graph.
 %%  Liveness: A map of live-in and live-out sets for each Basic-Block.
-%%  SuccMap: A map of successors for each BB name.
+%%  Target: The backend for which we generate native code.
 %%  TempMap: The TempMap from the register allocation
 %%
 %%  This function will only consider the intervals of the temporaries
 %%  that have been spilled during register allocation, and will ignore 
 %%  all other.
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-intervals([L|ToDO],Intervals,InstructionNr,CFG,Liveness,SuccMap, Target, 
+intervals([L|ToDO], Intervals, InstructionNr, CFG, Liveness, Target, 
 	  TempMap) ->
-
   ?debug_msg("Block ~w\n",[L]),
   %% Add all variables that are live at the entry of this block
   %% to the interval data structure.
@@ -140,7 +144,7 @@ intervals([L|ToDO],Intervals,InstructionNr,CFG,Liveness,SuccMap, Target,
   LiveIn = [ X || X <- livein(Liveness, L, Target), 
 		  hipe_temp_map:is_spilled(X, TempMap)],
 
-  Intervals2 = add_def_point(LiveIn,InstructionNr,Intervals),
+  Intervals2 = add_def_point(LiveIn, InstructionNr, Intervals),
 
   %% Only consider spilled temporaries in LiveOut
   LiveOut = [ X2 || X2 <- liveout(Liveness, L, Target), 
@@ -149,16 +153,15 @@ intervals([L|ToDO],Intervals,InstructionNr,CFG,Liveness,SuccMap, Target,
 
   %% Traverse this block instruction by instruction and add all
   %% uses and defines to the intervals.
-  Code = hipe_bb:code(bb(CFG,L, Target)),
+  Code = hipe_bb:code(bb(CFG, L, Target)),
   {Intervals3, NewINr} = traverse_block(Code, InstructionNr+1,
 					Intervals2, Target, TempMap),
   
   %% Add end points for the temporaries that are in the live-out set.
   Intervals4 = add_use_point(LiveOut, NewINr+1, Intervals3),
   
-  intervals(ToDO, Intervals4, NewINr+1, CFG, Liveness, SuccMap, Target, 
-	    TempMap);
-intervals([],Intervals,_,_,_,_,_,_) -> 
+  intervals(ToDO, Intervals4, NewINr+1, CFG, Liveness, Target, TempMap);
+intervals([], Intervals, _, _, _, _, _) -> 
   %% Return the calculated intervals
   interval_to_list(Intervals).
   %% Intervals.
@@ -556,9 +559,6 @@ extend_interval(Pos, {Beginning, End})
 %% Interface to external functions.
 %% 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-succ_map(CFG, Target) ->
-  Target:succ_map(CFG).
 
 liveness(CFG, Target) ->
    Target:analyze(CFG).

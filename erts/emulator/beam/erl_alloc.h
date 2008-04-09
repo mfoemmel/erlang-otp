@@ -68,8 +68,9 @@ void erts_fix_free(ErtsAlcType_t, void *, void*);
 Eterm erts_memory(int *, void *, void *, Eterm);
 Eterm erts_allocated_areas(int *, void *, void *);
 
+Eterm erts_alloc_util_allocators(void *proc);
 void erts_allocator_info(int, void *);
-Eterm erts_allocator_info_term(void *proc, Eterm which_alloc);
+Eterm erts_allocator_info_term(void *proc, Eterm which_alloc, int only_sz);
 Eterm erts_allocator_options(void *proc);
 
 #define ERTS_ALLOC_INIT_DEF_OPTS_INITER {0}
@@ -116,7 +117,7 @@ extern ErtsAllocatorInfo_t erts_allctrs_info[ERTS_ALC_A_MAX+1];
 
 typedef struct {
     int enabled;
-    erts_tsd_key_t key;
+    int all_thr_safe;
     int size;
     Allctr_t **allctr;
 } ErtsAllocatorThrSpec_t;

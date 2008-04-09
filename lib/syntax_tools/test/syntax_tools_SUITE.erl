@@ -30,7 +30,7 @@ all(suite) ->
 
 %% Read and parse all source in the OTP release.
 smoke_test(Config) when is_list(Config) ->
-    ?line Dog = ?t:timetrap(?t:minutes(4)),
+    ?line Dog = ?t:timetrap(?t:minutes(12)),
     ?line Wc = filename:join([code:lib_dir(),"*","src","*.erl"]),
     ?line Fs = filelib:wildcard(Wc),
     ?line io:format("~p files\n", [length(Fs)]),
@@ -61,7 +61,7 @@ print_error_markers(F, File) ->
     
 
 p_run(Test, List) ->
-    N = erlang:system_info(schedulers) + 2,
+    N = erlang:system_info(schedulers),
     p_run_loop(Test, List, N, [], 0).
 
 p_run_loop(_, [], _, [], Errors) ->

@@ -8,23 +8,26 @@
 %%============================================================================
 
 %%
-%% This is supposed to be local but appears here for the time being just for the
-%% declaration below
+%% This is supposed to be local but appears here for the time being
+%% just so that it is used below
 %%
--record(cfg_info, {'fun',      % :: mfa(),
-                   start_label,
+-record(cfg_info, {'fun'         :: mfa(),
+                   start_label   :: non_neg_integer(),
                    is_closure    :: bool(),
                    closure_arity :: byte(),
                    is_leaf       :: bool(),
                    params,     % :: list()
-                   extra,
-                   info=[]}).
--type(cfg_info() :: #cfg_info{}).
+                   info = []}).  %% this field seems not needed; take out??
 
 %%
-%% The following type is the one that is to be used by other modules
+%% Data is a triple with a dict of constants, a list of labels and an integer
 %%
--record(cfg, {table,  %
-              info :: cfg_info(),
-              data}). %
+-type(cfg_data() :: {dict(), [non_neg_integer()], non_neg_integer()}).
+
+%%
+%% The following is to be used by other modules
+%%
+-record(cfg, {table :: gb_tree(),
+              info  :: #cfg_info{},
+              data  :: cfg_data()}).
 -type(cfg() :: #cfg{}).

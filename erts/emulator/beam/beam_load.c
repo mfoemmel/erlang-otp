@@ -3603,7 +3603,7 @@ freeze_code(LoaderState* stp)
     stp->catches = catches;
 
     /*
-     * Save the updated code size.
+     * Save the updated code pointer and code size.
      */
 
     stp->code = code;
@@ -3612,6 +3612,11 @@ freeze_code(LoaderState* stp)
     return 1;
 
  load_error:
+    /*
+     * Make sure that the caller frees the newly reallocated block, and
+     * not the old one (in case it has moved).
+     */
+    stp->code = code;
     return 0;
 }
 

@@ -22,8 +22,10 @@ vxworks_ppc603) ;;
 vxworks_ppc603_nolongcall) ;;
 vxworks_sparc) ;;
 vxworks_simso) ;;
+vxworks_simlinux) ;;
+vxworks_ppc32) ;;
 *) echo "usage: configure.vxworks TARGET";
-   echo "where TARGET is one of vxworks_cpu32, vxworks_ppc750, vxworks_ppc860, vxworks_ppc603, vxworks_ppc603_nolongcall, vxworks_sparc, vxworks_simso"; exit 1;;
+   echo "where TARGET is one of vxworks_cpu32, vxworks_ppc750, vxworks_ppc860, vxworks_ppc603, vxworks_ppc603_nolongcall, vxworks_sparc, vxworks_simso, vxworks_simlinux, vxworks_ppc32"; exit 1;;
 esac
 
 if [ "x$ERL_TOP" = x ]; then
@@ -38,7 +40,9 @@ target=$host
 HOST_TYPE=${HOST_TYPE:=sun4-solaris2}
 case $1 in
 vxworks_ppc750) VXTOP=Tornado2.2 ;;
-vxworks_simso)  VXTOP=Tornado2.2 ;;
+vxworks_simso)  VXTOP=WindRiver ;;
+vxworks_simlinux)  VXTOP=WindRiver ;;
+vxworks_ppc32)  VXTOP=WindRiver ;;
 *)              VXTOP=wind ;;
 esac
 

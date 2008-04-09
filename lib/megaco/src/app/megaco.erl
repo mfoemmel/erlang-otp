@@ -235,7 +235,8 @@ system_info_items() ->
      users, 
      n_active_requests, 
      n_active_replies, 
-     n_active_connections
+     n_active_connections,
+     pending_counters
     ].
 
 system_info() ->

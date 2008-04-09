@@ -41,7 +41,7 @@
 
 -export([
 	 lookup_record/3,
-	 lookup_type/2,
+	 type_is_defined/2,
 	 max/2,
 	 min/2,
 	 number_max/1,
@@ -71,6 +71,7 @@
 	 t_cons_tl/1,
 	 t_constant/0,
 	 t_fixnum/0,
+	 t_map/2,
 	 t_non_neg_fixnum/0,
 	 t_pos_fixnum/0,
 	 t_float/0,
@@ -89,7 +90,7 @@
 	 t_fun_range/1,
 	 t_has_var/1,
 	 t_identifier/0,
-	 t_improper_list/2,
+	 %% t_improper_list/2,
 	 t_inf/2,
 	 t_inf_lists/2,
 	 t_integer/0,
@@ -105,8 +106,8 @@
 	 t_is_bitstr/1,
 	 t_is_bitwidth/1,
 	 t_is_bool/1,
-	 t_is_byte/1,
-	 t_is_char/1,
+	 %% t_is_byte/1,
+	 %% t_is_char/1,
 	 t_is_cons/1,
 	 t_is_constant/1,
 	 t_is_equal/2,
@@ -153,7 +154,7 @@
 	 t_pid/0,
 	 t_port/0,
 	 t_maybe_improper_list/0,
-	 t_maybe_improper_list/2,
+	 %% t_maybe_improper_list/2,
 	 t_product/1,
 	 t_ref/0,
 	 t_string/0,
@@ -174,14 +175,13 @@
 	 t_unit/0,
 	 t_var/1,
 	 t_var_name/1,
-	 widening/3,
 	 %%t_assign_variables_to_subtype/2,
 	 subst_all_vars_to_any/1,
 	 any_none_or_unit/1,
 	 lift_list_to_pos_empty/1
 	]).
 
-%% -define(DO_ERL_TYPES_TEST, true).
+%%-define(DO_ERL_TYPES_TEST, true).
 
 -ifdef(DO_ERL_TYPES_TEST).
 -export([test/0]).
@@ -203,8 +203,9 @@
 %% Limits
 %%
 
+-define(TUPLE_TAG_LIMIT, 5).
+-define(TUPLE_ARITY_LIMIT, 10).
 -define(SET_LIMIT, 13).
--define(DICT_LIMIT, 5).
 -define(MAX_BYTE, 255).
 -define(MAX_CHAR, 16#10ffff).
 
@@ -266,8 +267,8 @@
 				      qualifier={Arity, Tag}}).
 -define(tuple_set(Tuples),         #c{tag=?tuple_set_tag, elements=Tuples}).
 -define(var(Id),                   #c{tag=?var_tag, elements=Id}).
--define(matchstate(P,Slots),  #c{tag=?matchstate_tag, elements=[P,Slots]}).
--define(any_matchstate,                ?matchstate(t_bitstr(), ?any)).
+-define(matchstate(P,Slots),	   #c{tag=?matchstate_tag, elements=[P,Slots]}).
+-define(any_matchstate,            ?matchstate(t_bitstr(), ?any)).
 
 -define(byte,                      ?int_range(0, ?MAX_BYTE)).
 -define(char,                      ?int_range(0, ?MAX_CHAR)).
@@ -618,6 +619,7 @@ t_is_integer(_) -> false.
 t_byte() ->
   ?byte.
 
+-ifdef(DO_ERL_TYPES_TEST).
 t_is_byte(?int_range(neg_inf, _)) -> false;
 t_is_byte(?int_range(_, pos_inf)) -> false;
 t_is_byte(?int_range(From, To))
@@ -625,6 +627,7 @@ t_is_byte(?int_range(From, To))
 t_is_byte(?int_set(Set)) -> 
   (set_min(Set) >= 0) andalso (set_max(Set) =< ?MAX_BYTE);
 t_is_byte(_) -> false.
+-endif.
 
 %%------------------------------------
 
@@ -734,13 +737,13 @@ t_is_maybe_improper_list(?list(_, _, _)) -> true;
 t_is_maybe_improper_list(?nil) -> true;
 t_is_maybe_improper_list(_) -> false.
 
-%% Should only be used if you know what you are doing. See t_cons/2
-t_improper_list(?unit, _Termination) -> ?none;
-t_improper_list(_Content, ?unit) -> ?none;
-t_improper_list(Content, Termination) ->
-  %% Safety check
-  false = t_is_subtype(t_nil(), Termination),
-  ?list(Content, Termination, ?any).  
+%% %% Should only be used if you know what you are doing. See t_cons/2
+%% t_improper_list(?unit, _Termination) -> ?none;
+%% t_improper_list(_Content, ?unit) -> ?none;
+%% t_improper_list(Content, Termination) ->
+%%   %% Safety check
+%%   false = t_is_subtype(t_nil(), Termination),
+%%   ?list(Content, Termination, ?any).  
 
 lift_list_to_pos_empty(?nil) -> ?nil;
 lift_list_to_pos_empty(?list(Content, Termination, _)) -> 
@@ -761,18 +764,24 @@ t_tuple(List) ->
     true -> t_none();
     false ->
       Arity = length(List),
-      Tag = get_tuple_tag(List),
-      ?tuple(List, Arity, Tag)
+      case get_tuple_tag(List) of
+	?any -> ?tuple(List, Arity, ?any);
+	[Tag] -> ?tuple(List, Arity, Tag);
+	TagList -> 
+	  SortedTagList = lists:sort(TagList),
+	  Tuples = [?tuple([T|tl(List)], Arity, T) || T <- SortedTagList],
+	  ?tuple_set([{Arity, Tuples}])
+      end
   end.
 
-get_tuple_tag([T = ?atom(Set)|_]) ->
-  case set_size(Set) of
-    1 -> T;
-    _ -> ?any
+get_tuple_tag([?atom(?any)|_]) -> ?any;
+get_tuple_tag([?atom(Set)|_]) ->
+  case set_size(Set) > ?TUPLE_TAG_LIMIT of
+    true -> ?any;
+    false -> [t_atom(A) || A <- set_to_list(Set)]
   end;
-get_tuple_tag(_) ->
-  ?any.
-      
+get_tuple_tag(_) -> ?any.
+
 t_tuple_args(?tuple(?any, ?any, ?any)) ->
   ?any;
 t_tuple_args(?tuple(List, _, _)) ->
@@ -788,59 +797,16 @@ t_tuple_arities(?tuple(?any, ?any, ?any)) ->
 t_tuple_arities(?tuple(_, Arity, _)) when is_integer(Arity) ->
   [Arity];
 t_tuple_arities(?tuple_set(List)) ->
-  [Arity || ?tuple(_, Arity, _) <- List].
+  [Arity || {Arity, _} <- List].
 
 t_tuple_subtypes(?tuple(?any, ?any, ?any)) -> ?any;
 t_tuple_subtypes(T = ?tuple(_, _, _)) -> [T];
-t_tuple_subtypes(?tuple_set(List)) -> List.
+t_tuple_subtypes(?tuple_set(List)) -> 
+  lists:append([Tuple || {_Arity, Tuple} <- List]).
 
 t_is_tuple(?tuple(_, _, _)) -> true;
 t_is_tuple(?tuple_set(_)) -> true;
 t_is_tuple(_) -> false.
-
-tuple_set(List) ->
-  Length = length(List),
-  if Length =:= 1 -> hd(List);
-     Length =< ?SET_LIMIT -> case any_tuple_untagged(List) of
-			       true -> reduce_tuple_set(List);
-			       false -> ?tuple_set(List)
-			     end;
-     true -> reduce_tuple_set(List)
-  end.
-
-any_tuple_untagged([?tuple(_, _, ?any)|_]) -> true;
-any_tuple_untagged([?tuple(_, _, _)|Left]) -> any_tuple_untagged(Left);
-any_tuple_untagged([]) -> false.
-
-tuple_set(T1 = ?tuple(_Elements1, Arity1, Tag1),
-	  T2 = ?tuple(_Elements2, Arity2, Tag2)) ->
-  if Arity1 < Arity2 -> ?tuple_set([T1, T2]);
-     Arity1 > Arity2 -> ?tuple_set([T2, T1]);
-     Tag1 < Tag2     -> ?tuple_set([T1, T2]);
-     Tag1 > Tag2     -> ?tuple_set([T2, T1])
-  end.
-
-reduce_tuple_set(List) ->
-  List1 = reduce_tuple_tags(List),
-  Length = length(List1),
-  if Length =:= 1 -> hd(List1);
-     Length =< ?SET_LIMIT -> ?tuple_set(List1);
-     true -> t_tuple()
-  end.
-
-reduce_tuple_tags([H|T]) ->
-  reduce_tuple_tags(T, H, []). 
-
-reduce_tuple_tags([?tuple(Elements1, Arity, _Tag1)|Left], 
-		  ?tuple(Elements2, Arity, _Tag2), Acc) ->
-  NewTuple = ?tuple(t_sup_lists(Elements1, Elements2), Arity, ?any),
-  reduce_tuple_tags(Left, NewTuple, Acc);
-reduce_tuple_tags([T1 = ?tuple(_, Arity1, _)|Left], 
-		  T2 = ?tuple(_, Arity2, _), Acc) when Arity1 > Arity2 ->
-  reduce_tuple_tags(Left, T1, [T2|Acc]);
-reduce_tuple_tags([], T, Acc) ->
-  lists:reverse([T|Acc]).
-
 
 %%-----------------------------------------------------------------------------
 %% Non-primitive types, including some handy syntactic-sugar types
@@ -922,8 +888,8 @@ t_has_var(?product(Types)) -> t_has_var_list(Types);
 t_has_var(?tuple(?any, ?any, ?any)) -> false;
 t_has_var(?tuple(Elements, _, _)) ->
   t_has_var_list(Elements);
-t_has_var(?tuple_set(List)) ->
-  t_has_var_list(List);
+t_has_var(T = ?tuple_set(_)) ->
+  t_has_var_list(t_tuple_subtypes(T));
 t_has_var(_) -> false.
 
 t_has_var_list([T|Left]) ->
@@ -945,8 +911,9 @@ t_collect_vars(?tuple(?any, ?any, ?any), Acc) ->
   Acc;
 t_collect_vars(?tuple(Types, _, _), Acc) ->
   lists:foldl(fun(T, TmpAcc) -> t_collect_vars(T, TmpAcc) end, Acc, Types);
-t_collect_vars(?tuple_set(Types), Acc) ->
-  lists:foldl(fun(T, TmpAcc) -> t_collect_vars(T, TmpAcc) end, Acc, Types);
+t_collect_vars(TS = ?tuple_set(_), Acc) ->
+  lists:foldl(fun(T, TmpAcc) -> t_collect_vars(T, TmpAcc) end, Acc, 
+	      t_tuple_subtypes(TS));
 t_collect_vars(_, Acc) -> 
   Acc.
 
@@ -966,7 +933,9 @@ t_from_term([]) ->                     t_nil();
 t_from_term(T) when is_atom(T) ->      t_atom(T);
 t_from_term(T) when is_bitstring(T) -> t_bitstr(0, erlang:bit_size(T));
 t_from_term(T) when is_float(T) ->     t_float();
-t_from_term(T) when is_function(T) ->  t_fun();
+t_from_term(T) when is_function(T) ->
+  {arity, Arity} = erlang:fun_info(T, arity),
+  t_fun(Arity, t_any());
 t_from_term(T) when is_integer(T) ->   t_integer(T);
 t_from_term(T) when is_pid(T) ->       t_pid();
 t_from_term(T) when is_port(T) ->      t_port();
@@ -1057,72 +1026,6 @@ number_max(?int_range(_, To)) -> To;
 number_max(?int_set(Set)) -> set_max(Set);
 number_max(?number(?any, _Tag)) -> pos_inf.
 
-%%-----------------------------------------------------------------------------
-%% Widening of ranges
-%%-----------------------------------------------------------------------------
-
-widening(?any, _, _) -> ?any;
-widening(Type, ?any, _) -> Type;
-widening(?function(Domain, Range), ?function(OldDomain, OldRange), Version) 
-  when length(Domain) =:= length(OldDomain) ->
-  ?widening_debug("function", {{Domain, Range}, {OldDomain, OldRange}}),
-  NewDomain = lists:zipwith(
-		fun(Type, OldType) -> widening(Type, OldType, Version) end,
-		Domain, OldDomain),
-  t_fun(NewDomain, widening(Range, OldRange, Version));
-widening(?function(?any,_Range), ?function(?any,_OldRange), _Version) -> 
-  t_fun();
-widening(?list(Contents, Termination, Size), 
-	 ?list(OldContents, OldTermination, Size), Version) ->
-  %?widening_debug("list", {Contents, Termination, OldTermination}),
-  NewContent = widening(Contents, OldContents, Version),
-  NewTermination = widening(Termination, OldTermination, Version),
-  %?widening_debug("NewList", {NewContent, NewTermination}),
-  ?list(NewContent, NewTermination, Size);
-widening(?product(Types), ?product(OldTypes), Version) 
-  when length(Types) =:= length(OldTypes) ->
-  %?widening_debug("Product", {Types, OldTypes}),
-  t_product(lists:zipwith(
-	      fun(Type, OldType) -> widening(Type, OldType, Version) end,
-	      Types, OldTypes));
-widening(Type = ?tuple(?any, ?any, ?any), _, _) -> 
-  %?widening_debug("An any-tuple", Type),
-  Type;
-widening(?tuple(Types, N, _), ?tuple(OldTypes, N, _), Version) ->
-  %?widening_debug("Tuple", {Types, OldTypes}),
-  t_tuple(lists:zipwith(
-	    fun(Type, OldType) -> widening(Type, OldType, Version) end,
-	    Types, OldTypes));
-widening(?union(Types), ?union(OldTypes), Version) ->
-  WidList = lists:zipwith(
-	      fun(Type, OldType) -> widening(Type, OldType, Version) end,
-	      Types, OldTypes),
-  ?union(WidList);
-widening(Type = ?integer(_), OldType = ?integer(_), Version) ->
-  %?widening_debug("Int", {Type, OldType}),
-  NewMin =
-    case (number_min(Type) =:= max(number_min(Type), number_min(OldType))) 
-      orelse (Version < ?WIDENING_LIMIT) of
-      true ->
-	min(number_min(Type), number_min(OldType));
-      false ->
-	neg_inf
-    end,
-  NewMax = 
-    case (number_max(OldType) =:= max(number_max(OldType), number_max(Type)))
-      orelse (Version < ?WIDENING_LIMIT) of
-      true ->
-	max(number_max(Type), number_max(OldType));
-      false ->
-	pos_inf
-    end,
-  Ans = t_from_range(NewMin, NewMax),
-  %?widening_debug("Answer", [Ans]),
-  Ans;
-widening(Type, Type, _) -> Type;
-widening(Type, OldType, _) ->
-  ?widening_debug("Dont know how to widen", {Type, OldType}),
-  Type.
 
 %% int_range(neg_inf, pos_inf)         -> t_integer();
 %% int_range(neg_inf, To)              -> ?int_range(neg_inf, To);
@@ -1256,19 +1159,20 @@ t_sup(T = ?tuple(?any, ?any, ?any), ?tuple_set(_)) -> T;
 t_sup(?tuple_set(_), T = ?tuple(?any, ?any, ?any)) -> T;
 t_sup(T1 = ?tuple(Elements1, Arity, Tag1), 
       T2 = ?tuple(Elements2, Arity, Tag2)) ->
-  if Tag1 =:= Tag2 -> ?tuple(t_sup_lists(Elements1, Elements2), Arity, Tag1);
-     Tag1 =:= ?any -> ?tuple(t_sup_lists(Elements1, Elements2), Arity, Tag1);
-     Tag2 =:= ?any -> ?tuple(t_sup_lists(Elements1, Elements2), Arity, Tag2);
-     Tag1 =/= Tag2 -> tuple_set(T1, T2)
+  if Tag1 =:= Tag2 -> t_tuple(t_sup_lists(Elements1, Elements2));
+     Tag1 =:= ?any -> t_tuple(t_sup_lists(Elements1, Elements2));
+     Tag2 =:= ?any -> t_tuple(t_sup_lists(Elements1, Elements2));
+     Tag1 < Tag2 -> ?tuple_set([{Arity, [T1, T2]}]);
+     Tag1 > Tag2 -> ?tuple_set([{Arity, [T2, T1]}])
   end;
-t_sup(T1 = ?tuple(_, _, _), T2 = ?tuple(_, _, _)) ->
-  tuple_set(T1, T2);
+t_sup(T1 = ?tuple(_, Arity1, _), T2 = ?tuple(_, Arity2, _)) ->
+  sup_tuple_sets([{Arity1, [T1]}], [{Arity2, [T2]}]);
 t_sup(?tuple_set(List1), ?tuple_set(List2)) ->
   sup_tuple_sets(List1, List2);
-t_sup(?tuple_set(List1), T2 = ?tuple(_, _, _)) ->
-  sup_tuple_sets(List1, [T2]);
-t_sup(T1 = ?tuple(_, _, _), ?tuple_set(List2)) ->
-  sup_tuple_sets([T1], List2);
+t_sup(?tuple_set(List1), T2 = ?tuple(_, Arity, _)) ->
+  sup_tuple_sets(List1, [{Arity, [T2]}]);
+t_sup(T1 = ?tuple(_, Arity, _), ?tuple_set(List2)) ->
+  sup_tuple_sets([{Arity, [T1]}], List2);
 t_sup(T1, T2) ->
   ?union(U1) = force_union(T1),
   ?union(U2) = force_union(T2),
@@ -1280,21 +1184,66 @@ t_sup_lists([], []) ->
   [].
 
 sup_tuple_sets(L1, L2) ->
-  sup_tuple_sets(L1, L2, []).
+  TotalArities = ordsets:union([Arity || {Arity, _} <- L1],
+			       [Arity || {Arity, _} <- L2]),
+  if length(TotalArities) > ?TUPLE_ARITY_LIMIT -> t_tuple();
+     true ->
+      case sup_tuple_sets(L1, L2, []) of
+	[{_Arity, [OneTuple = ?tuple(_, _, _)]}] -> OneTuple;
+	List -> ?tuple_set(List)
+      end
+  end.
 
-sup_tuple_sets(L1 = [T1 = ?tuple(_Elements1, Arity1, Tag1)|Left1],
-	       L2 = [T2 = ?tuple(_Elements2, Arity2, Tag2)|Left2],
-	       Acc) ->
+sup_tuple_sets([{Arity, Tuples1}|Left1], [{Arity, Tuples2}|Left2], Acc) ->
+  NewAcc = [{Arity, sup_tuples_in_set(Tuples1, Tuples2)}|Acc],
+  sup_tuple_sets(Left1, Left2, NewAcc);
+sup_tuple_sets(L1 = [T1 = {Arity1, _}|Left1], 
+	       L2 = [T2 = {Arity2, _}|Left2], Acc) ->
   if Arity1 < Arity2 -> sup_tuple_sets(Left1, L2, [T1|Acc]);
-     Arity1 > Arity2 -> sup_tuple_sets(L1, Left2, [T2|Acc]);
-     Tag1 =:= Tag2   -> sup_tuple_sets(Left1, Left2, [t_sup(T1, T2)|Acc]);
-     Tag1 =:= ?any   -> sup_tuple_sets([t_sup(T1, T2)|Left1], Left2, Acc);
-     Tag2 =:= ?any   -> sup_tuple_sets(Left1, [t_sup(T1, T2)|Left2], Acc);
-     Tag1 < Tag2     -> sup_tuple_sets(Left1, L2, [T1|Acc]);
-     Tag1 > Tag2     -> sup_tuple_sets(L1, Left2, [T2|Acc])
+     Arity1 > Arity2 -> sup_tuple_sets(L1, Left2, [T2|Acc])
   end;
-sup_tuple_sets([], L2, Acc) -> tuple_set(lists:reverse(Acc, L2));
-sup_tuple_sets(L1, [], Acc) -> tuple_set(lists:reverse(Acc, L1)).
+sup_tuple_sets([], L2, Acc) -> lists:reverse(Acc, L2);
+sup_tuple_sets(L1, [], Acc) -> lists:reverse(Acc, L1).
+
+
+sup_tuples_in_set([T = ?tuple(_, _, ?any)], L) ->
+  [t_tuple(sup_tuple_elements([T|L]))];
+sup_tuples_in_set(L, [T = ?tuple(_, _, ?any)]) ->
+  [t_tuple(sup_tuple_elements([T|L]))];
+sup_tuples_in_set(L1, L2) ->
+  FoldFun = fun(?tuple(_, _, Tag), AccTag) -> t_sup(Tag, AccTag) end,
+  TotalTag0 = lists:foldl(FoldFun, ?none, L1),
+  TotalTag  = lists:foldl(FoldFun, TotalTag0, L2),
+  case TotalTag of
+    ?atom(?any) -> 
+      %% We will reach the set limit. Widen now.
+      [t_tuple(sup_tuple_elements(L1++L2))];
+    ?atom(Set) ->
+      case set_size(Set) > ?TUPLE_TAG_LIMIT of
+	true ->
+	  %% We will reach the set limit. Widen now.
+	  [t_tuple(sup_tuple_elements(L1++L2))];
+	false ->
+	  %% We can go on and build the tuple set.
+	  sup_tuples_in_set(L1, L2, [])
+      end
+  end.
+
+sup_tuple_elements([?tuple(Elements, _, _)|L]) ->
+  lists:foldl(fun(?tuple(Es, _, _), Acc) -> t_sup_lists(Es, Acc) end,
+	      Elements, L).
+
+sup_tuples_in_set(L1 = [T1 = ?tuple(Elements1, Arity, Tag1)|Left1], 
+		  L2 = [T2 = ?tuple(Elements2, Arity, Tag2)|Left2], Acc) ->
+  if 
+    Tag1 < Tag2   -> sup_tuples_in_set(Left1, L2, [T1|Acc]);
+    Tag1 > Tag2   -> sup_tuples_in_set(L1, Left2, [T2|Acc]);
+    Tag2 =:= Tag2 -> NewElements = t_sup_lists(Elements1, Elements2),
+		     NewAcc = [?tuple(NewElements, Arity, Tag1)|Acc],
+		     sup_tuples_in_set(Left1, Left2, NewAcc)
+  end;
+sup_tuples_in_set([], L2, Acc) -> lists:reverse(Acc, L2);
+sup_tuples_in_set(L1, [], Acc) -> lists:reverse(Acc, L1).
 
 sup_union(U1, U2) ->
   sup_union(U1, U2, 0, []).
@@ -1457,21 +1406,17 @@ t_inf(?tuple(?any, ?any, ?any), T = ?tuple(_, _, _)) -> T;
 t_inf(T = ?tuple(_, _, _), ?tuple(?any, ?any, ?any)) -> T;
 t_inf(?tuple(?any, ?any, ?any), T = ?tuple_set(_)) -> T;
 t_inf(T = ?tuple_set(_), ?tuple(?any, ?any, ?any)) -> T;
-t_inf(?tuple(Elements1, Arity, Tag1), ?tuple(Elements2, Arity, Tag2)) ->
-  case t_inf(Tag1, Tag2) of
+t_inf(?tuple(Elements1, Arity, _Tag1), ?tuple(Elements2, Arity, _Tag2)) ->
+  case t_inf_lists_strict(Elements1, Elements2) of
     ?none -> ?none;
-    NewTag ->
-      case t_inf_lists_strict(Elements1, Elements2) of
-	?none -> ?none;
-	NewElements -> ?tuple(NewElements, Arity, NewTag)
-      end
+    NewElements -> t_tuple(NewElements)
   end;
 t_inf(?tuple_set(List1), ?tuple_set(List2)) ->
   inf_tuple_sets(List1, List2);
-t_inf(?tuple_set(List), T = ?tuple(_, _, _)) ->
-  inf_tuple_sets(List, [T]);
-t_inf(T = ?tuple(_, _, _), ?tuple_set(List)) ->
-  inf_tuple_sets(List, [T]);
+t_inf(?tuple_set(List), T = ?tuple(_, Arity, _)) ->
+  inf_tuple_sets(List, [{Arity, [T]}]);
+t_inf(T = ?tuple(_, Arity, _), ?tuple_set(List)) ->
+  inf_tuple_sets(List, [{Arity, [T]}]);
 t_inf(?union(U1), T) ->
   ?union(U2) = force_union(T),
   inf_union(U1, U2);
@@ -1503,35 +1448,50 @@ t_inf_lists_strict([T1|Left1], [T2|Left2], Acc) ->
 t_inf_lists_strict([], [], Acc) ->
   lists:reverse(Acc).
 
-
 inf_tuple_sets(L1, L2) ->
-  inf_tuple_sets(L1, L2, []).
+  case inf_tuple_sets(L1, L2, []) of
+    [] -> ?none;
+    [{_Arity, [OneTuple = ?tuple(_, _, _)]}] -> OneTuple;
+    List -> ?tuple_set(List)
+  end.
 
-inf_tuple_sets(L1 = [T1 = ?tuple(_Elements1, Arity1, Tag1)|Left1],
-	       L2 = [T2 = ?tuple(_Elements2, Arity2, Tag2)|Left2],
-	       Acc) ->
-  if Arity1 < Arity2 -> inf_tuple_sets(Left1, L2, Acc);
-     Arity1 > Arity2 -> inf_tuple_sets(L1, Left2, Acc);
-     Tag1 =:= Tag2   -> case t_inf(T1, T2) of
-			  ?none -> inf_tuple_sets(Left1, Left2, Acc);
-			  NewTuple -> 
-			    inf_tuple_sets(Left1, Left2, [NewTuple|Acc])
-			end;
-     Tag1 =:= ?any   -> case t_inf(T1, T2) of
-			  ?none -> inf_tuple_sets(L1, Left2, Acc);
-			  NewTuple -> inf_tuple_sets(L1, Left2, [NewTuple|Acc])
-			end;
-     Tag2 =:= ?any   -> case t_inf(T1, T2) of
-			  ?none -> inf_tuple_sets(Left1, L2, Acc);
-			  NewTuple -> inf_tuple_sets(Left1, L2, [NewTuple|Acc])
-			end;
-     Tag1 < Tag2     -> inf_tuple_sets(Left1, L2, Acc);
-     Tag1 > Tag2     -> inf_tuple_sets(L1, Left2, Acc)
+inf_tuple_sets([{Arity, Tuples1}|Left1], [{Arity, Tuples2}|Left2], Acc) ->
+  case inf_tuples_in_sets(Tuples1, Tuples2) of
+    [] -> inf_tuple_sets(Left1, Left2, Acc);
+    NewTuples -> inf_tuple_sets(Left1, Left2, [{Arity, NewTuples}|Acc])
   end;
-inf_tuple_sets(_, _, []) -> ?none;
-inf_tuple_sets([], _L2, Acc) -> tuple_set(lists:reverse(Acc));
-inf_tuple_sets(_L1, [], Acc) -> tuple_set(lists:reverse(Acc)).
+inf_tuple_sets(L1 = [{Arity1, _}|Left1], L2 = [{Arity2, _}|Left2], Acc) ->
+  if Arity1 < Arity2 -> inf_tuple_sets(Left1, L2, Acc);
+     Arity1 > Arity2 -> inf_tuple_sets(L1, Left2, Acc)
+  end;
+inf_tuple_sets([], _, Acc) -> lists:reverse(Acc);
+inf_tuple_sets(_, [], Acc) -> lists:reverse(Acc).
+      
+inf_tuples_in_sets([?tuple(Elements1, _, ?any)], L2) ->
+  NewList = [t_inf_lists_strict(Elements1, Elements2)
+	     || ?tuple(Elements2, _, _) <- L2],
+  [t_tuple(Es) || Es <- NewList, Es =/= ?none];
+inf_tuples_in_sets(L1, [?tuple(Elements2, _, ?any)]) ->
+  NewList = [t_inf_lists_strict(Elements1, Elements2)
+	     || ?tuple(Elements1, _, _) <- L1],
+  [t_tuple(Es) || Es <- NewList, Es =/= ?none];
+inf_tuples_in_sets(L1, L2) ->
+  inf_tuples_in_sets(L1, L2, []).
 
+inf_tuples_in_sets([?tuple(Elements1, Arity, Tag)|Left1], 
+		   [?tuple(Elements2, Arity, Tag)|Left2], Acc) ->
+  case t_inf_lists_strict(Elements1, Elements2) of
+    ?none -> inf_tuples_in_sets(Left1, Left2, Acc);
+    NewElements -> 
+      inf_tuples_in_sets(Left1, Left2, [?tuple(NewElements, Arity, Tag)|Acc])
+  end;
+inf_tuples_in_sets(L1 = [?tuple(_, _, Tag1)|Left1], 
+		   L2 = [?tuple(_, _, Tag2)|Left2], Acc) ->
+  if Tag1 < Tag2 -> inf_tuples_in_sets(Left1, L2, Acc);
+     Tag1 > Tag2 -> inf_tuples_in_sets(L1, Left2, Acc)
+  end;
+inf_tuples_in_sets([], _, Acc) -> lists:reverse(Acc);
+inf_tuples_in_sets(_, [], Acc) -> lists:reverse(Acc).
 
 inf_union(U1, U2) ->
   inf_union(U1, U2, 0, []).
@@ -1572,19 +1532,6 @@ findfirst(N1, N2, U1, B1, U2, B2) ->
      Val1 < Val2 ->
       findfirst(N1+1, N2, U1, B1, U2, B2)
   end.
-
-%%  case (B2-B1) rem GCD of
-%%    0 ->
-%%      X = 
-%%	case orddict:find(U1p, solve(U1p,U2p)) of
-%%	  error -> 0;
-%%	  {ok,Val} -> Val*((B2-B1) div GCD)
-%%	end,
-%%      {U,B} = find_lowest_bound(Mult,U1*X+B1,lists:max([B1,B2])),
-%%      ?bitstr(U,B); 
-%%    _  ->
-%%      ?none
-%%  end.
 
 %%-----------------------------------------------------------------------------
 %% Substituting variables.
@@ -1628,8 +1575,8 @@ t_subst(T = ?tuple(?any, ?any, ?any), _Dict, _Fun) ->
   T;
 t_subst(?tuple(Elements, _Arity, _Tag), Dict, Fun) ->
   t_tuple([t_subst(E, Dict, Fun) || E <- Elements]);
-t_subst(?tuple_set(List), Dict, Fun) ->
-  t_sup([t_subst(T, Dict, Fun) || T <- List]);
+t_subst(T = ?tuple_set(_), Dict, Fun) ->
+  t_sup([t_subst(T, Dict, Fun) || T <- t_tuple_subtypes(T)]);
 t_subst(T, _Dict, _Fun) -> 
   T.
 
@@ -1685,22 +1632,27 @@ t_unify(?tuple(Elements1, Arity, _),
 	?tuple(Elements2, Arity, _), Dict) when Arity =/= ?any ->
   {NewElements, Dict1} = unify_lists(Elements1, Elements2, Dict),
   {t_tuple(NewElements), Dict1};
+t_unify(T1 = ?tuple_set([{Arity, _}]), 
+	T2 = ?tuple(_, Arity, _), Dict) when Arity =/= ?any ->
+  unify_tuple_set_and_tuple(T1, T2, Dict);
+t_unify(T1 = ?tuple(_, Arity, _),
+	T2 = ?tuple_set([{Arity, _}]), Dict) when Arity =/= ?any ->
+  unify_tuple_set_and_tuple(T2, T1, Dict);
 t_unify(?tuple_set(List1), ?tuple_set(List2), Dict) ->
-  unify_lists(List1, List2, Dict);
-t_unify(T1 = ?tuple(_, Arity, _), T2 = ?tuple_set(List), Dict) ->
-  case reduce_tuple_tags(List) of
-    [Tuple = ?tuple(_, Arity, _)] -> t_unify(T1, Tuple, Dict);
-    _ -> throw({mismatch, T1, T2})
-  end;
-t_unify(T1 = ?tuple_set(List), T2 = ?tuple(_, Arity, _), Dict) ->
-  case reduce_tuple_tags(List) of
-    [Tuple = ?tuple(_, Arity, _)] -> t_unify(Tuple, T2, Dict);
-    _ -> throw({mismatch, T1, T2})
-  end;
+  unify_lists(lists:append([T || {_Arity, T} <- List1]), 
+	      lists:append([T || {_Arity, T} <- List2]), Dict);
 t_unify(T, T, Dict) ->
   {T, Dict};
 t_unify(T1, T2, _) ->
   throw({mismatch, T1, T2}).
+
+unify_tuple_set_and_tuple(?tuple_set([{Arity, List}]), 
+			  ?tuple(Elements2, Arity, _), Dict) ->
+  %% Can only work if the single tuple has variables at correct places.
+  %% Collapse the tuple set.
+  {NewElements, Dict1} = unify_lists(sup_tuple_elements(List), Elements2, Dict),
+  {t_tuple(NewElements), Dict1}.
+
 
 unify_lists(L1, L2, Dict) ->
   unify_lists(L1, L2, Dict, []).
@@ -1803,12 +1755,20 @@ unify_lists([], [], Dict, Acc) ->
 %% Subtraction. 
 %%
 %% Note that the subtraction is an approximation since we do not have
-%% negative types. Also, tuples should be handled using the cartesian
-%% product of the elements, but this is not feasible to do.
+%% negative types. Also, tuples and products should be handled using
+%% the cartesian product of the elements, but this is not feasible to
+%% do.
 %% 
 %% Example: {a|b,c|d}\{a,d} = {a,c}|{a,d}|{b,c}|{b,d} \ {a,d} = 
 %%                          = {a,c}|{b,c}|{b,d} = {a|b,c|d}
 %%
+%% Instead, we can subtract if all elements but one becomes none after
+%% subtracting element-wise.
+%% 
+%% Example: {a|b,c|d}\{a|b,d} = {a,c}|{a,d}|{b,c}|{b,d} \ {a,d}|{b,d} = 
+%%                            = {a,c}|{b,c} = {a|b,c}
+
+
 
 t_subtract_list(T1, [T2|Left]) ->
   t_subtract_list(t_subtract(T1, T2), Left);
@@ -1931,33 +1891,36 @@ t_subtract(T1 = ?tuple(Elements1, Arity1, _Tag1),
       NewElements = t_subtract_lists(Elements1, Elements2),
       case [E || E <- NewElements, E =/= ?none] of
 	[] -> ?none;
-	[_] -> t_tuple(replace_one_tuple_element(Elements1, NewElements));
+	[_] -> t_tuple(replace_nontrivial_element(Elements1, NewElements));
 	_ -> T1
       end
   end;
 t_subtract(T1 = ?tuple_set(List1), T2 = ?tuple(_, Arity, _)) ->
-  case [T || T = ?tuple(_, Arity1, _) <- List1, Arity1 =:= Arity] of
-    [] -> T1;
-    List2 ->
-      Left = [T || T = ?tuple(_, Arity1, _) <- List1, Arity1 =/= Arity],
-      t_sup([t_subtract(L, T2) || L <- List2]++Left)
+  case orddict:find(Arity, List1) of
+    error -> T1;
+    {ok, List2} ->
+      TuplesLeft0 = [Tuple || {_Arity, Tuple} <- orddict:erase(Arity, List1)],
+      TuplesLeft1 = lists:append(TuplesLeft0),
+      t_sup([t_subtract(L, T2) || L <- List2]++TuplesLeft1)
   end;
 t_subtract(T1 = ?tuple(_, Arity, _), ?tuple_set(List1)) ->
-  case [T || T = ?tuple(_, Arity1, _) <- List1, Arity1 =:= Arity] of
-    [] -> T1;
-    List2 -> t_inf([t_subtract(T1, L) || L <- List2])
+  case orddict:find(Arity, List1) of
+    error -> T1;
+    {ok, List2} -> t_inf([t_subtract(T1, L) || L <- List2])
   end;
-t_subtract(?tuple_set(List1), T2 = ?tuple_set(_)) ->
-  case [T || T <- [t_subtract(Tuple, T2) || Tuple <- List1], T =/= ?none] of
-    [] -> ?none;
-    [Tuple] -> Tuple;
-    NewList1 -> t_sup(NewList1)
-  end;  
-t_subtract(?product(P1), ?product(P2)) ->
-  case t_subtract(t_tuple(P1), t_tuple(P2)) of
-    ?none -> ?none;
-    ?tuple(Es, _Arity, _Tag) ->
-      ?product(Es)
+t_subtract(T1 = ?tuple_set(_), T2 = ?tuple_set(_)) ->
+  t_sup([t_subtract(T, T2) || T <- t_tuple_subtypes(T1)]);
+t_subtract(T1 = ?product(Elements1), ?product(Elements2)) ->
+  Arity1 = length(Elements1),
+  Arity2 = length(Elements2),
+  if Arity1 =/= Arity2 -> T1;
+     Arity1 =:= Arity2 ->
+      NewElements = t_subtract_lists(Elements1, Elements2),
+      case [E || E <- NewElements, E =/= ?none] of
+	[] -> ?none;
+	[_] -> t_product(replace_nontrivial_element(Elements1, NewElements));
+	_ -> T1
+      end
   end;
 t_subtract(?product(P1), _) ->
   ?product(P1);
@@ -1996,12 +1959,12 @@ subtract_union([], [], 1, Acc) ->
 subtract_union([], [], N, Acc) when is_integer(N), N > 1 ->
   ?union(lists:reverse(Acc)).
 
-replace_one_tuple_element(El1, El2) ->
-  replace_one_tuple_element(El1, El2, []).
+replace_nontrivial_element(El1, El2) ->
+  replace_nontrivial_element(El1, El2, []).
 
-replace_one_tuple_element([T1|Left1], [?none|Left2], Acc) ->
-  replace_one_tuple_element(Left1, Left2, [T1|Acc]);
-replace_one_tuple_element([_|Left1], [T2|_], Acc) ->
+replace_nontrivial_element([T1|Left1], [?none|Left2], Acc) ->
+  replace_nontrivial_element(Left1, Left2, [T1|Acc]);
+replace_nontrivial_element([_|Left1], [T2|_], Acc) ->
   lists:reverse(Acc) ++ [T2|Left1].
 
 subtract_bin(?bitstr(U1,B1),?bitstr(U1,B1)) ->
@@ -2054,10 +2017,8 @@ t_limit_k(?tuple(Elements, Arity, _), K) ->
   if K =:= 1 -> t_tuple(Arity);
      true -> t_tuple([t_limit_k(E, K-1) || E <- Elements])
   end;
-t_limit_k(?tuple_set(List), K) ->
-  if K =:= 1 -> t_sup([t_limit_k(L, K) || L <- List]);
-     true -> ?tuple_set([t_limit_k(L, K) || L <- List])
-  end;
+t_limit_k(T = ?tuple_set(_), K) ->
+  t_sup([t_limit_k(Tuple, K) || Tuple <- t_tuple_subtypes(T)]);
 t_limit_k(?list(Elements, Termination, Size), K) ->
   NewTermination = 
     if K =:= 1 -> 
@@ -2107,6 +2068,8 @@ t_abstract_records(?function(Domain, Range), RecDict) ->
 	    t_abstract_records(Range, RecDict));
 t_abstract_records(?product(Types), RecDict) -> 
   ?product([t_abstract_records(T, RecDict) || T <- Types]);
+t_abstract_records(?union(Types), RecDict) -> 
+  t_sup([t_abstract_records(T, RecDict) || T <- Types]);
 t_abstract_records(T = ?tuple(?any, ?any, ?any), _RecDict) ->
   T;
 t_abstract_records(?tuple(Elements, Arity, Tag = ?atom(_)), RecDict) ->
@@ -2117,10 +2080,29 @@ t_abstract_records(?tuple(Elements, Arity, Tag = ?atom(_)), RecDict) ->
   end;
 t_abstract_records(?tuple(Elements, _Arity, _Tag), RecDict) ->
   t_tuple([t_abstract_records(E, RecDict) || E <- Elements]);
-t_abstract_records(?tuple_set(List), RecDict) ->
-  t_sup([t_abstract_records(T, RecDict) || T <- List]);
+t_abstract_records(Tuples = ?tuple_set(_), RecDict) ->
+  t_sup([t_abstract_records(T, RecDict) || T <- t_tuple_subtypes(Tuples)]);
 t_abstract_records(T, _RecDict) -> 
   T.
+
+%% Map over types. Depth first. ?list is not fully implemented so take
+%% care when changing the type in Termination.
+t_map(Fun, ?list(Contents, Termination, Size)) ->
+  Fun(?list(t_map(Fun, Contents), t_map(Fun, Termination), Size));
+t_map(Fun, ?function(Domain, Range)) ->
+  Fun(?function(t_map(Fun, Domain), t_map(Fun, Range)));
+t_map(Fun, ?product(Types)) -> 
+  Fun(?product([t_map(Fun, T) || T <- Types]));
+t_map(Fun, ?union(Types)) ->
+  Fun(t_sup([t_map(Fun, T) || T <- Types]));
+t_map(Fun, T = ?tuple(?any, ?any, ?any)) ->
+  Fun(T);
+t_map(Fun, ?tuple(Elements, _Arity, _Tag)) ->
+  Fun(t_tuple([t_map(Fun, E) || E <- Elements]));
+t_map(Fun, Tuples = ?tuple_set(_)) ->
+  Fun(t_sup([t_map(Fun, T) || T <- t_tuple_subtypes(Tuples)]));
+t_map(Fun, T) ->
+  Fun(T).
 
 %%============================================================================
 %% 
@@ -2253,7 +2235,7 @@ t_to_string(?tuple(Elements, Arity, Tag), RecDict) ->
       record_to_string(TagAtom, Elements, FieldNames, RecDict)
   end;
 t_to_string(?tuple_set(List), RecDict) ->
-  union_sequence(List, RecDict);
+  union_sequence(lists:append([Tuple || {_Arity, Tuple} <- List]), RecDict);
 t_to_string(?union(Types), RecDict) ->
   union_sequence([T || T <- Types, T =/= ?none], RecDict);
 t_to_string(?var(Id), _RecDict) when is_atom(Id) ->
@@ -2398,9 +2380,16 @@ t_from_form({type, _L, tuple, Args}, RecDict, VarDict) ->
   t_tuple([t_from_form(A, RecDict, VarDict) || A <- Args]);
 t_from_form({type, _L, union, Args}, RecDict, VarDict) -> 
   t_sup([t_from_form(A, RecDict, VarDict) || A <- Args]);
-t_from_form({type, _L, Name, []}, RecDict, _VarDict) ->
+t_from_form({type, _L, Name, Args}, RecDict, VarDict) ->
   case lookup_type(Name, RecDict) of
-    {ok, Type} -> Type;
+    {ok, {Type, ArgNames}} when length(Args) =:= length(ArgNames) ->
+      List = lists:zipwith(fun(ArgName, ArgType) -> 
+			       {ArgName, t_from_form(ArgType, RecDict, VarDict)}
+			   end, ArgNames, Args),
+      TmpVardict = dict:from_list(List),
+      t_from_form(Type, RecDict, TmpVardict);
+    {ok, _} ->
+      throw({error, io_lib:format("Unknown type ~w\n", [Name])});
     error -> 
       throw({error, io_lib:format("Unknown type ~w\n", [Name])}) 
   end.
@@ -2420,7 +2409,7 @@ record_from_form({atom, _, Name}, ModFields, RecDict, VarDict) ->
       end;
     error -> 
       throw({error, 
-	     erlang:error(io_lib:format("Unknown record  ~w#{}\n", [Name]))})
+	     erlang:error(io_lib:format("Unknown record #~w{}\n", [Name]))})
   end.
 
 get_mod_record([], DeclFields) ->
@@ -2470,10 +2459,11 @@ t_form_to_string({type, _L, range, [{integer, _, From}, {integer, _, To}]}) ->
   io_lib:format("~w..~w", [From, To]);
 t_form_to_string({type, _L, record, [{atom, _, Name}]}) ->
   io_lib:format("#~w{}", [Name]);
-t_form_to_string({type, _L, record, [Name, Fields]}) ->
-  Fields1 = [io_lib:format("~w::~s", [FName, t_form_to_string(FType)])
-	     || {{atom, _, FName}, FType} <- Fields],
-  atom_to_list(Name) ++ "#{" ++ sequence(Fields1, ",") ++ "}";
+t_form_to_string({type, _L, record, [{atom, _, Name}|Fields]}) ->
+  FieldString = sequence(t_form_to_string_list(Fields), ","),
+  io_lib:format("#~w{~s}", [Name, FieldString]);
+t_form_to_string({type, _L, field_type, [{atom, _, Name}, Type]}) ->
+  io_lib:format("~w::~s", [Name, t_form_to_string(Type)]);
 t_form_to_string({type, _L, tuple, any}) -> "tuple()";
 t_form_to_string({type, _L, tuple, Args}) ->
   "{" ++ sequence(t_form_to_string_list(Args), ",") ++ "}";
@@ -2529,11 +2519,11 @@ lookup_record(Tag, Arity, RecDict) ->
       error
   end.
 
-lookup_type(Name, RecDict) ->  
-  case dict:find({type, Name}, RecDict) of
-    {ok, Newtype} -> {ok, Newtype};
-    error -> error
-  end.
+lookup_type(Name, RecDict) ->
+  dict:find({type, Name}, RecDict).
+
+type_is_defined(Name, RecDict) ->
+  dict:is_key({type, Name}, RecDict).
       
 %% -----------------------------------
 %% Set
@@ -2750,6 +2740,8 @@ test() ->
   true   = t_is_bool(Union8),
   Union9 = t_sup(Int2, t_integer(2)),
   true   = t_is_byte(Union9),
+  Union10 = t_sup(t_tuple([t_atom(true), ?any]), 
+		  t_tuple([t_atom(false), ?any])),
   
   ?any   = t_sup(Product3, Function5),
 
@@ -2813,7 +2805,9 @@ test() ->
 	   Union5,
 	   Union6,
 	   Union7,
-	   Union8
+	   Union8,
+	   Union10,
+	   t_inf(Union10, t_tuple([t_atom(true), t_integer()]))
 	  ],
   io:format("~p\n", [[t_to_string(X, RecDict) || X <- Types]]).
 		       

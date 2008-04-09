@@ -4,6 +4,7 @@
 %%
 %% IDENTIFIES THE EXTENDED BASIC BLOCKS OF A CFG
 %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -export([cfg/1,
 	 %% dag/2,
@@ -17,74 +18,85 @@
 
 -define(cfg, ?CFG).
 
+%%--------------------------------------------------------------------
+%% The extended basic block datatype
 %%
-%% Returns a list of extended basic blocks.
+%% An EBB is identified with the label of the root node. 
+%% It's a tree
 %%
+%% EBB :=  {ebb_node, Label, [EBB]}
+%%      |  {ebb_leaf, SuccesorLabel}
+%%--------------------------------------------------------------------
 
--spec(cfg/1 :: (#cfg{}) -> [_]).
+%% XXX: Cheating big time! no recursive types
+-type(ebb() :: {ebb_node, icode_lbl(), _}
+             | {ebb_leaf, icode_lbl()}).
+
+-record(ebb_node, {label :: icode_lbl(), successors :: [ebb()]}).
+-record(ebb_leaf, {successor :: icode_lbl()}).
+
+%%--------------------------------------------------------------------
+%% Returns a list of extended basic blocks.
+%%--------------------------------------------------------------------
+
+-spec(cfg/1 :: (#cfg{}) -> [ebb()]).
 
 cfg(CFG) ->
   Start = ?cfg:start_label(CFG),
   Labels = ?cfg:reverse_postorder(CFG),
   Roots = [Start],
   Blocks = Labels -- Roots,
-  SuccMap = ?cfg:succ_map(CFG),
-  PredMap = ?cfg:pred_map(CFG),
   Visited = new_visited(),
-  build_all_ebb(Roots, Blocks, Visited, SuccMap, PredMap).
+  build_all_ebb(Roots, Blocks, Visited, CFG).
 
 new_visited() ->
   gb_sets:empty().
-visited(L,Visited) ->
-  gb_sets:is_member(L,Visited).
-visit(L,Visited) ->
-  gb_sets:add(L,Visited).
+visited(L, Visited) ->
+  gb_sets:is_member(L, Visited).
+visit(L, Visited) ->
+  gb_sets:add(L, Visited).
 
-build_all_ebb(Roots, Blocks, Visited, SuccMap, PredMap) ->
-  build_all_ebb(Roots, Blocks, Visited, SuccMap, PredMap, []).
-build_all_ebb([], [],_, _SuccMap, _PredMap, Ebbs) ->
+build_all_ebb(Roots, Blocks, Visited, CFG) ->
+  build_all_ebb(Roots, Blocks, Visited, CFG, []).
+
+build_all_ebb([], [], _, _CFG, Ebbs) ->
   lists:reverse(Ebbs);
-build_all_ebb([], [BlockLeft|BlocksLeft], Visited, SuccMap, PredMap, Ebbs) ->
-  case visited(BlockLeft,Visited) of
+build_all_ebb([], [BlockLeft|BlocksLeft], Visited, CFG, Ebbs) ->
+  case visited(BlockLeft, Visited) of
     true -> 
-      build_all_ebb([], BlocksLeft, Visited, SuccMap, PredMap,Ebbs);
+      build_all_ebb([], BlocksLeft, Visited, CFG, Ebbs);
     false ->
-      build_all_ebb([BlockLeft], BlocksLeft, Visited, SuccMap, PredMap,Ebbs)
+      build_all_ebb([BlockLeft], BlocksLeft, Visited, CFG, Ebbs)
   end;
-build_all_ebb([Root|Roots], Blocks, Visited, SuccMap, PredMap,Ebbs) ->
-  {Ebb, NewVisited} = build_ebb(Root, Visited, SuccMap, PredMap),
-  build_all_ebb(Roots, Blocks, NewVisited, SuccMap, PredMap,[Ebb | Ebbs]).
-
+build_all_ebb([Root|Roots], Blocks, Visited, CFG, Ebbs) ->
+  {Ebb, NewVisited} = build_ebb(Root, Visited, CFG),
+  build_all_ebb(Roots, Blocks, NewVisited, CFG, [Ebb|Ebbs]).
 
 %%
 %% Build the extended basic block with Lbl as its root.
 %%
-build_ebb(Lbl, Visited, SuccMap, PredMap) ->
+
+build_ebb(Lbl, Visited, CFG) ->
   build_ebb(Lbl, Visited, 
-	    fun (NodeL,NewVisited) ->
-		{NodeL,NewVisited}
-	    end,
-	    [],SuccMap, PredMap).
+	    fun (NodeL, NewVisited) -> {NodeL, NewVisited} end,
+	    [], CFG).
 
-build_ebb(Lbl, Visited, MkFun, EBBs, SuccMap, PredMap) ->
-  Succ = ?cfg:succ(SuccMap, Lbl),
-  add_succ(Succ, visit(Lbl,Visited), Lbl, MkFun, EBBs, SuccMap, PredMap).
+build_ebb(Lbl, Visited, MkFun, EBBs, CFG) ->
+  Succ = ?cfg:succ(CFG, Lbl),
+  add_succ(Succ, visit(Lbl, Visited), Lbl, MkFun, EBBs, CFG).
 
-
-add_succ([], Visited, Node, MkFun, EBBs, _SuccMap, _PredMap) ->
+add_succ([], Visited, Node, MkFun, EBBs, _CFG) ->
   MkFun(mk_node(Node, lists:reverse(EBBs)), Visited);
-add_succ([Lbl|Lbls], Visited, Node, MkFun, EBBs, SuccMap, PredMap) ->
-  case [visited(Lbl, Visited)|?cfg:pred(PredMap, Lbl)] of
+add_succ([Lbl|Lbls], Visited, Node, MkFun, EBBs, CFG) ->
+  case [visited(Lbl, Visited)|?cfg:pred(CFG, Lbl)] of
     [false,_] ->
       build_ebb(Lbl, Visited, 
 		fun (NewEbb, Visited0) ->
-		    add_succ(Lbls, Visited0, Node, MkFun, [NewEbb|EBBs], 
-			     SuccMap, PredMap)
-		end, [],SuccMap, PredMap);
+		    add_succ(Lbls, Visited0, Node, MkFun, [NewEbb|EBBs], CFG)
+		end, [], CFG);
     _ ->
-      add_succ(Lbls, Visited, Node, MkFun,[mk_leaf(Lbl)|EBBs], SuccMap, PredMap)
+      add_succ(Lbls, Visited, Node, MkFun, [mk_leaf(Lbl)|EBBs], CFG)
    end.
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -139,20 +151,20 @@ add_succ([Lbl|Lbls], Visited, Node, MkFun, EBBs, SuccMap, PredMap) ->
 %% find_pred(Lbl, [_|Edges]) ->
 %%   find_pred(Lbl, Edges).
 %% 
-%% all_adges([], _Roots) ->
+%% all_edges([], _Roots) ->
 %%   [];
-%% all_adges([EBB|EBBs], Roots) ->
-%%   succ_adges(node_label(EBB), ebb_successors(EBB), EBBs, Roots).
+%% all_edges([EBB|EBBs], Roots) ->
+%%   succ_edges(node_label(EBB), ebb_successors(EBB), EBBs, Roots).
 %% 
-%% succ_adges(Lbl, [], EBBs, Roots) ->
+%% succ_edges(Lbl, [], EBBs, Roots) ->
 %%   case lists:member(Lbl, Roots) of
 %%     true ->
-%%       [{start, Lbl} | all_adges(EBBs, Roots)];
+%%       [{start, Lbl} | all_edges(EBBs, Roots)];
 %%     false ->
-%%       all_adges(EBBs, Roots)
+%%       all_edges(EBBs, Roots)
 %%   end;
-%% succ_adges(Lbl, [S|Ss], EBBs, Roots) ->
-%%   [{Lbl, S} | succ_adges(Lbl, Ss, EBBs, Roots)].
+%% succ_edges(Lbl, [S|Ss], EBBs, Roots) ->
+%%   [{Lbl, S} | succ_edges(Lbl, Ss, EBBs, Roots)].
 %% 
 %% all_in([], _List) ->
 %%   true;
@@ -168,32 +180,30 @@ add_succ([Lbl|Lbls], Visited, Node, MkFun, EBBs, SuccMap, PredMap) ->
 %%   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
-%% The extended basic block datatype
-%%
-%% An EBB is identified with the label of the root node. 
-%% It's a tree
-%%
-%% EBB :=  {node, Label, [EBB]}
-%%      |  {leaf, Label, SuccesorEBB}
-%%
 
-mk_node(Label, Successors) -> {node, Label, Successors}.
-node_label({node, Label, _Successors}) -> Label.
-node_successors({node, _Label, Successors}) -> Successors.
+-spec(mk_node/2 :: (icode_lbl(), [ebb()]) -> #ebb_node{}).
+mk_node(Label, Successors) -> #ebb_node{label=Label, successors=Successors}.
 
-mk_leaf(NextEbb) -> {leaf, NextEbb}.
-%% leaf_next({leaf, NextEbb}) -> NextEbb.
+-spec(node_label/1 :: (#ebb_node{}) -> icode_lbl()).
+node_label(#ebb_node{label=Label}) -> Label.
 
-type({node, _Label, _SuccessorNodes}) -> node;
-type({leaf, _SuccessorEbb}) -> leaf.
+-spec(node_successors/1 :: (#ebb_node{}) -> [ebb()]).
+node_successors(#ebb_node{successors=Successors}) -> Successors.
+
+-spec(mk_leaf/1 :: (icode_lbl()) -> #ebb_leaf{}).
+mk_leaf(NextEbb) -> #ebb_leaf{successor=NextEbb}.
+%% leaf_next(Leaf) -> Leaf#ebb_leaf.successor.
+
+-spec(type/1 :: (#ebb_node{}) -> 'node' ; (#ebb_leaf{}) -> 'leaf').
+type(#ebb_node{}) -> node;
+type(#ebb_leaf{}) -> leaf.
 
 %% ebb_successors(EBB) ->
 %%   ordsets:from_list(ebb_successors0(EBB)).
 %% 
-%% ebb_successors0({leaf, NextEBB}) ->
+%% ebb_successors0(#ebb_leaf{successor=NextEBB}) ->
 %%   [NextEBB];
-%% ebb_successors0({node, _Label, SuccessorNodes}) ->
+%% ebb_successors0(#ebb_node{successors=SuccessorNodes}) ->
 %%   lists:append(lists:map(fun ebb_successors0/1, SuccessorNodes)).
 
 

@@ -1,9 +1,19 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%% Provides the abstract datatypes for HiPE's RTL (Register Transfer Language).
+%% Provides abstract datatypes for HiPE's RTL (Register Transfer Language).
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%---------------------------------------------------------------------
+%% THESE DO NOT REALLY BELONG HERE -- PLEASE REMOVE ASAP!
+%%---------------------------------------------------------------------
+
+-type(dict()    :: tuple()).
+-type(gb_set()  :: tuple()).
+-type(gb_tree()	:: tuple()).
+
+%%---------------------------------------------------------------------
 
 -record(alu, {dst, src1, op, src2}).
 -record(alub, {dst, src1, op, src2, 'cond', true_label, false_label, p}).

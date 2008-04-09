@@ -20,7 +20,6 @@
 %% @doc Percept - Erlang Concurrency Profiling Tool
 %%
 %%	This module provides the user interface for the application.
-%% @author Björn-Egil Dahlberg 
 %% 
 
 -module(percept).
@@ -81,7 +80,7 @@ stop(_State) ->
 %%==========================================================================
 
 %% @spec profile(Filename::string()) -> {ok, Port} | {already_started, Port}
-%% @equiv percept_profile:start(Filename, [procs])
+%% @see percept_profile
 
 %% profiling
 
@@ -92,7 +91,7 @@ profile(Filename) ->
     percept_profile:start(Filename, [procs]).
 
 %% @spec profile(Filename::string(), [percept_option()]) -> {ok, Port} | {already_started, Port}
-%% @equiv percept_profile:start(Filename, Options)
+%% @see percept_profile
 
 -spec(profile/2 :: (
 	Filename :: string(),
@@ -103,7 +102,7 @@ profile(Filename, Options) ->
     percept_profile:start(Filename, Options). 
 
 %% @spec profile(Filename::string(), MFA::mfa(), [percept_option()]) -> ok | {already_started, Port} | {error, not_started}
-%% @equiv percept_profile:start(Filename, MFA, Options)
+%% @see percept_profile
 
 -spec(profile/3 :: (
 	Filename :: string(),
@@ -117,7 +116,7 @@ profile(Filename, MFA, Options) ->
 -spec(stop_profile/0 :: () -> 'ok' | {'error', 'not_started'}).
 
 %% @spec stop_profile() -> ok | {'error', 'not_started'}
-%% @equiv percept_profile:stop()
+%% @see percept_profile
 
 stop_profile() ->
     percept_profile:stop().

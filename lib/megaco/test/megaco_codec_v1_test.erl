@@ -187,6 +187,8 @@
 -export([display_text_messages/0, generate_text_messages/0]).
 
 
+-export([msg15b/0, msg22f/0]).
+
 %% ----
 
 -define(V1,           v1).
@@ -3797,11 +3799,17 @@ msg_request(Auth, Mid, TransId, ContextId, CmdReq) when list(CmdReq) ->
                                    actions = Actions}}]},
     megaco_message(Auth, ?VERSION, Mid, Req).
 
-msg_reply(Mid, TransId, ContextId, CmdReply) when list(CmdReply) ->
-    Actions = [cre_actionReply(ContextId, CmdReply)],
+msg_reply(Mid, TransId, ContextId, CmdReply) when is_list(CmdReply) ->
+    ReplyData = [{ContextId, CmdReply}], 
+    msg_replies(Mid, TransId, ReplyData).
+
+msg_replies(Mid, TransId, ReplyData) when is_list(ReplyData) ->
+    Actions = [cre_actionReply(ContextId, CmdReply) || 
+		  {ContextId, CmdReply} <- ReplyData],
     Req = {transactions,
            [{transactionReply, cre_transactionReply(TransId, Actions)}]},
     cre_megacoMessage(?VERSION, Mid, Req).
+
 
 msg_ack(Mid, [Range|_] = Ranges) when tuple(Range) ->
     msg_ack(Mid, [Ranges]);
@@ -4139,6 +4147,50 @@ msg15(Mid) ->
     Reply2 = cre_ammsReply([#megaco_term_id{id = ?A4445}]),
     msg_reply(Mid, 10005, 2000, [{modReply, Reply}, {modReply, Reply2}]).
 
+
+msg15b() ->
+    msg15b(?MG1_MID).
+
+msg15b(Mid) ->
+    %% We reuse the amms reply stuff
+    Reply1 = cre_ammsReply([#megaco_term_id{id = ?A4444}]),
+    Reply2 = cre_ammsReply([#megaco_term_id{id = ?A4445}]),
+    ActionReplyData = 
+	[{modReply, Reply1}, {modReply, Reply2}],
+    ReplyData = 
+	[{2001, ActionReplyData},
+	 {2002, ActionReplyData},
+	 {2003, ActionReplyData},
+	 {2004, ActionReplyData},
+	 {2005, ActionReplyData},
+	 {2006, ActionReplyData},
+	 {2007, ActionReplyData},
+	 {2008, ActionReplyData},
+	 {2009, ActionReplyData},
+	 {2010, ActionReplyData},
+	 {2011, ActionReplyData},
+	 {2012, ActionReplyData},
+	 {2013, ActionReplyData},
+	 {2014, ActionReplyData},
+	 {2015, ActionReplyData},
+	 {2016, ActionReplyData},
+	 {2017, ActionReplyData},
+	 {2018, ActionReplyData},
+	 {2019, ActionReplyData},
+	 {2020, ActionReplyData},
+	 {2021, ActionReplyData},
+	 {2022, ActionReplyData},
+	 {2023, ActionReplyData},
+	 {2024, ActionReplyData},
+	 {2025, ActionReplyData},
+	 {2026, ActionReplyData},
+	 {2027, ActionReplyData},
+	 {2028, ActionReplyData},
+	 {2029, ActionReplyData},
+	 {2030, ActionReplyData},
+	 {2031, ActionReplyData}],
+     msg_replies(Mid, 10005, ReplyData).
+	 
 
 %% --------------------------
 

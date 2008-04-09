@@ -502,6 +502,7 @@ erts_alloc_init(int *argc, char **argv, ErtsAllocInitOpts *eaiop)
 	erts_allctrs[i].extra		= NULL;
 	erts_allctrs_info[i].alloc_util	= 0;
 	erts_allctrs_info[i].enabled	= 0;
+	erts_allctrs_info[i].thr_spec	= 0;
 	erts_allctrs_info[i].extra	= NULL;
     }
 
@@ -644,8 +645,9 @@ set_au_allocator(ErtsAlcType_t alctr_n, struct au_init *init)
 	return;
     }
 
-    tspec->enabled	= 0;
-    ai->thr_spec	= 0;
+    tspec->enabled = 0;
+    tspec->all_thr_safe = 0;
+    ai->thr_spec = 0;
 #ifdef USE_THREADS
     if (init->thr_spec) {
 	if (init->thr_spec > 0) {
@@ -663,6 +665,7 @@ set_au_allocator(ErtsAlcType_t alctr_n, struct au_init *init)
 	    else
 		af->realloc = erts_alcu_realloc_thr_pref;
 	    af->free = erts_alcu_free_thr_pref;
+	    tspec->all_thr_safe = 1;
 	}
 
 	tspec->enabled	= 1;
@@ -1388,7 +1391,7 @@ void erts_alloc_reg_scheduler_id(Uint id)
 {
     int ix = (int) id;
     ASSERT(0 < ix && ix <= first_dyn_thr_ix);
-    ASSERT(0 == (int) erts_tsd_get(thr_ix_key));
+    ASSERT(0 == (int) (long) erts_tsd_get(thr_ix_key));
     erts_tsd_set(thr_ix_key, (void *)(long) ix);
 }
 
@@ -1480,21 +1483,6 @@ void
 erts_realloc_n_enomem(ErtsAlcType_t n, void *ptr, Uint size)
 {
     erts_alc_fatal_error(ERTS_ALC_E_NOMEM, ERTS_ALC_O_REALLOC, n, size);
-}
-
-static ERTS_INLINE int
-is_atom_text(Eterm atom, const char *str)
-{
-    int i;
-    char *atxt = (char*) atom_tab(atom_val(atom))->name;
-    int alen = atom_tab(atom_val(atom))->len;
-
-    for (i = 0; i < alen && str[i]; i++)
-	if (atxt[i] != str[i])
-	    return 0;
-    if (alen == i && !str[i])
-	return 1;
-    return 0;
 }
 
 Eterm
@@ -2050,7 +2038,39 @@ erts_allocated_areas(int *print_to_p, void *print_to_arg, void *proc)
 }
 
 Eterm
-erts_allocator_info_term(void *proc, Eterm which_alloc)
+erts_alloc_util_allocators(void *proc)
+{
+    Eterm res;
+    Uint *hp;
+    Uint sz;
+    int i;
+    /*
+     * Currently all allocators except sys_alloc and fix_alloc are
+     * alloc_util allocators.
+     */
+    sz = ((ERTS_ALC_A_MAX + 1 - ERTS_ALC_A_MIN) - 2)*2;
+    ASSERT(sz > 0);
+    hp = HAlloc((Process *) proc, sz);
+    res = NIL;
+    for (i = ERTS_ALC_A_MAX; i >= ERTS_ALC_A_MIN; i--) {
+	switch (i) {
+	case ERTS_ALC_A_SYSTEM:
+	case ERTS_ALC_A_FIXED_SIZE:
+	    break;
+	default: {
+	    char *alc_str = (char *) ERTS_ALC_A2AD(i);
+	    Eterm alc = am_atom_put(alc_str, sys_strlen(alc_str));
+	    res = CONS(hp, alc, res);
+	    hp += 2;
+	    break;
+	}
+	}
+    }
+    return res;
+}
+
+Eterm
+erts_allocator_info_term(void *proc, Eterm which_alloc, int only_sz)
 {
 #define ERTS_AIT_RET(R) \
   do { res = (R); goto done; } while (0)
@@ -2067,7 +2087,7 @@ erts_allocator_info_term(void *proc, Eterm which_alloc)
 	goto done;
 
     for (i = ERTS_ALC_A_MIN; i <= ERTS_ALC_A_MAX; i++) {
-	if (is_atom_text(which_alloc, ERTS_ALC_A2AD(i))) {
+	if (erts_is_atom_str((char *) ERTS_ALC_A2AD(i), which_alloc)) {
 	    if (!erts_allctrs_info[i].enabled)
 		ERTS_AIT_RET(am_false);
 	    else {
@@ -2075,12 +2095,26 @@ erts_allocator_info_term(void *proc, Eterm which_alloc)
 		    Eterm ires, tmp;
 		    Eterm **hpp;
 		    Uint *szp;
-		    
+		    Eterm (*info_func)(Allctr_t *,
+				       int,
+				       int *,
+				       void *,
+				       Uint **,
+				       Uint *);
+
+		    info_func = (only_sz
+				 ? erts_alcu_sz_info
+				 : erts_alcu_info);
+
 		    if (erts_allctrs_info[i].thr_spec) {
 			ErtsAllocatorThrSpec_t *tspec = &erts_allctr_thr_spec[i];
 			int j;
-			erts_smp_proc_unlock(proc, ERTS_PROC_LOCK_MAIN);
-			erts_smp_block_system(0);
+			int block_system = !tspec->all_thr_safe;
+
+			if (block_system) {
+			    erts_smp_proc_unlock(proc, ERTS_PROC_LOCK_MAIN);
+			    erts_smp_block_system(0);
+			}
 			ASSERT(tspec->enabled);
 
 			szp = &sz;
@@ -2098,12 +2132,12 @@ erts_allocator_info_term(void *proc, Eterm which_alloc)
 								       szp,
 								       "instance"),
 							 make_small((Uint) j),
-							 erts_alcu_info(allctr,
-									hpp != NULL,
-									NULL,
-									NULL,
-									hpp,
-									szp));
+							 (*info_func)(allctr,
+								      hpp != NULL,
+								      NULL,
+								      NULL,
+								      hpp,
+								      szp));
 				    ires = erts_bld_cons(hpp, szp, tmp, ires);
 				}
 			    }
@@ -2113,8 +2147,11 @@ erts_allocator_info_term(void *proc, Eterm which_alloc)
 			    hpp = &hp;
 			    szp = NULL;
 			}
-			erts_smp_release_system();
-			erts_smp_proc_lock(proc, ERTS_PROC_LOCK_MAIN);
+
+			if (block_system) {
+			    erts_smp_release_system();
+			    erts_smp_proc_lock(proc, ERTS_PROC_LOCK_MAIN);
+			}
 		    }
 		    else {
 			Allctr_t *allctr = erts_allctrs_info[i].extra;
@@ -2129,12 +2166,12 @@ erts_allocator_info_term(void *proc, Eterm which_alloc)
 							       szp,
 							       "instance"),
 						 make_small((Uint) 0),
-						 erts_alcu_info(allctr,
-								hpp != NULL,
-								NULL,
-								NULL,
-								hpp,
-								szp));
+						 (*info_func)(allctr,
+							      hpp != NULL,
+							      NULL,
+							      NULL,
+							      hpp,
+							      szp));
 			    ires = erts_bld_cons(hpp, szp, tmp, ires);
 			    if (hpp)
 				break;
@@ -2147,7 +2184,7 @@ erts_allocator_info_term(void *proc, Eterm which_alloc)
 		}
 		else {
 		    Eterm *szp, **hpp;
-
+		    
 		    switch (i) {
 		    case ERTS_ALC_A_SYSTEM: {
 			SysAllocStat sas;
@@ -2156,6 +2193,9 @@ erts_allocator_info_term(void *proc, Eterm which_alloc)
 			Eterm as[4];
 			Eterm ts[4];
 			int l;
+
+			if (only_sz)
+			    ERTS_AIT_RET(NIL);
 
 			sys_alloc_stat(&sas);
 			opts_am = am_atom_put("options", 7);
@@ -2198,6 +2238,9 @@ erts_allocator_info_term(void *proc, Eterm which_alloc)
 		    case ERTS_ALC_A_FIXED_SIZE: {
 			ErtsAlcType_t n;
 			Eterm as[2], vs[2];
+
+			if (only_sz)
+			    ERTS_AIT_RET(NIL);
 
 			as[0] = am_atom_put("options", 7);
 			as[1] = am_atom_put("pools", 5);
@@ -2251,9 +2294,10 @@ erts_allocator_info_term(void *proc, Eterm which_alloc)
 	}
     }
 
-    if (is_atom_text(which_alloc, "mseg_alloc")) {
-
+    if (ERTS_IS_ATOM_STR("mseg_alloc", which_alloc)) {
 #if HAVE_ERTS_MSEG
+	if (only_sz)
+	    ERTS_AIT_RET(NIL);
 	erts_mseg_info(NULL, NULL, 0, NULL, &sz);
 	if (sz)
 	    ERTS_AIT_HALLOC((Process *) proc, sz);
@@ -2263,7 +2307,9 @@ erts_allocator_info_term(void *proc, Eterm which_alloc)
 #endif
 
     }
-    else if (is_atom_text(which_alloc, "alloc_util")) {
+    else if (ERTS_IS_ATOM_STR("alloc_util", which_alloc)) {
+	if (only_sz)
+	    ERTS_AIT_RET(NIL);
 	erts_alcu_au_info_options(NULL, NULL, NULL, &sz);
 	if (sz)
 	    ERTS_AIT_HALLOC((Process *) proc, sz);

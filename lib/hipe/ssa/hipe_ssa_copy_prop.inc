@@ -29,11 +29,13 @@
 %% Solution: 
 %%  * Find all dependencies between the uses of a phi-instruction to
 %%    the destination of any earlier phi-instruction in the same phi-node; 
-%%  * Keep the copying move/fmove that defines the variable used in the 
+%%  * Keep the copying move that defines the variable used in the 
 %%    latter phi-instruction; and 
 %%  * Do not propagate the copy into the phi-instruction
 %%
 %%--------------------------------------------------------------------
+
+-spec(cfg/1 :: (#cfg{}) -> #cfg{}).
 
 cfg(Cfg) ->
   Labels = ?cfg:reverse_postorder(Cfg),
@@ -50,13 +52,13 @@ analyse([], _Cfg, Info, PhiDep) ->
   {Info,PhiDep}.
 
 get_phi_dep([I|Left], Defined, Dep) ->
-  case I of
-    #phi{} ->
+  case ?code:is_phi(I) of
+    true ->
       Use = ?code:uses(I),
       [Def] = ?code:defines(I),
       NewDep = add_dep(Use, Defined, Dep),
       get_phi_dep(Left, gb_sets:insert(Def, Defined), NewDep);
-    _ ->
+    false ->
       Dep
   end;
 get_phi_dep([], _Defined, Dep) ->
@@ -82,20 +84,17 @@ has_dep(Use, Def, Dep) ->
   end.
 
 analyse_code([I|Left], Info) ->
-  case I of
-    #move{} ->
-      NewInfo = get_info_move_or_fmove(I, Info),
+  case ?code:is_move(I) of
+    true ->
+      NewInfo = get_info_move(I, Info),
       analyse_code(Left, NewInfo);
-    #fmove{} ->
-      NewInfo = get_info_move_or_fmove(I, Info),
-      analyse_code(Left, NewInfo);
-    _ ->
+    false ->
       analyse_code(Left, Info)
   end;
 analyse_code([], Info) ->
   Info.
 
-get_info_move_or_fmove(I, Info) ->
+get_info_move(I, Info) ->
   case ?code:uses(I) of
     [] -> %% Constant.
       Info;
@@ -113,23 +112,19 @@ rewrite([], Cfg, _Info, _PhiDep) ->
   Cfg.
 
 rewrite_code([I|Left], Info, PhiDep, Acc) ->
-  case I of
-    #move{} ->
-      Fun = fun(X, Y) -> ?code:mk_move(X, Y)end,
-      NewI = rewrite_move_or_fmove(I, Fun, Info, PhiDep),
+  case ?code:is_move(I) of
+    true ->
+      Fun = fun(X, Y) -> ?code:mk_move(X, Y) end,
+      NewI = rewrite_move(I, Fun, Info, PhiDep),
       rewrite_code(Left, Info, PhiDep, NewI++Acc);
-    #fmove{} ->
-      Fun = fun(X, Y) -> ?code:mk_fmove(X, Y)end,
-      NewI = rewrite_move_or_fmove(I, Fun, Info, PhiDep),
-      rewrite_code(Left, Info, PhiDep, NewI++Acc);
-    _ ->      
+    false ->      
       NewI = rewrite_instr(I, Info, PhiDep),
       rewrite_code(Left, Info, PhiDep, [NewI|Acc])
   end;
 rewrite_code([], _Info, _PhiDep, Acc) ->
   lists:reverse(Acc).
 
-rewrite_move_or_fmove(I, Fun, Info, PhiDep) ->
+rewrite_move(I, Fun, Info, PhiDep) ->
   case ?code:uses(I) of
     [] ->%% Constant move. Keep it!
       [I];

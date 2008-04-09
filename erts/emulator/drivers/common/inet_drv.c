@@ -5364,6 +5364,7 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 
     char * arg_ptr = NULL;
     int    arg_sz  = 0;
+    int    old_active = desc->active;
 
     while (curr < ptr + len)
     {
@@ -5774,6 +5775,9 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 	}
     }
     /* If we got here, all "sock_setopt"s above were successful:   */
+    if (IS_OPEN(desc) && desc->active != old_active) {
+	sock_select(desc, (FD_READ|FD_CLOSE), (desc->active > 0));
+    }
     return 0;
 #   undef CHKLEN
 }

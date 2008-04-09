@@ -890,6 +890,19 @@ int main(int argc, char **argv)
     /*DebugBreak();*/
 
     if (run_werl) {
+	if (start_detached) {
+	    char *p;
+	    /* transform werl to erl */
+	    p = start_emulator_program+strlen(start_emulator_program);
+	    while (--p >= start_emulator_program && *p != '/' && *p != '\\' &&
+		   *p != 'W' && *p != 'w')
+		;
+	    if (p >= start_emulator_program && (*p == 'W' || *p == 'w') &&
+		(p[1] == 'E' || p[1] == 'e') && (p[2] == 'R' || p[2] == 'r') &&
+		(p[3] == 'L' || p[3] == 'l')) {
+		memmove(p,p+1,strlen(p));
+	    }
+	}
       return start_win_emulator(emu, start_emulator_program, Eargsp, start_detached);
     } else {
       return start_emulator(emu, start_emulator_program, Eargsp, start_detached);

@@ -14,9 +14,7 @@
 %%  bb(CFG, Label) - returns the basic block named 'Label' from the CFG.
 %%  bb_add(CFG, Label, NewBB) - makes NewBB the basic block associated
 %%       with Label.
-%%  succ_map(CFG) - returns a mapping from labels to succesors.
 %%  succ(Map, Label) - returns a list of successors of basic block 'Label'.
-%%  pred_map(CFG) - returns a mapping from labels to predecessors.
 %%  pred(Map, Label) - returns the predecessors of basic block 'Label'.
 %%  fallthrough(CFG, Label) - returns fall-through successor of basic 
 %%       block 'Label' (or 'none').
@@ -41,7 +39,7 @@
 %%=====================================================================
 
 -ifdef(GEN_CFG).
--define(PRED_MAP_NEEDED,true).
+-define(PRED_NEEDED,true).
 -endif.
 
 -ifdef(ICODE_CFG).
@@ -49,7 +47,7 @@
 -define(INFO_NEEDED,true).
 -define(PARAMS_NEEDED,true).
 -define(PARAMS_UPDATE_NEEDED,true).
--define(PRED_MAP_NEEDED,true).
+-define(PRED_NEEDED,true).
 -define(REMOVE_TRIVIAL_BBS_NEEDED,true).
 -define(REMOVE_UNREACHABLE_CODE,true).
 -define(START_LABEL_UPDATE_NEEDED,true).
@@ -62,11 +60,17 @@
 -define(INFO_NEEDED,true).
 -define(PARAMS_NEEDED,true).
 -define(PARAMS_UPDATE_NEEDED,true).
--define(PRED_MAP_NEEDED,true).
+-define(PRED_NEEDED,true).
 -define(REMOVE_TRIVIAL_BBS_NEEDED,true).
 -define(REMOVE_UNREACHABLE_CODE,true).
 -define(START_LABEL_UPDATE_NEEDED,true).
 -define(CFG_CAN_HAVE_PHI_NODES,true).
+-endif.
+
+-ifdef(SPARC_CFG).
+-define(BREADTH_ORDER,true). % for linear scan
+-define(PARAMS_NEEDED,true).
+-define(START_LABEL_UPDATE_NEEDED,true).
 -endif.
 
 %%=====================================================================
@@ -91,27 +95,24 @@
 %% branch_successors(Instr) -> [term()], the successors of a branch.
 %% fails_to(Instr) -> [term()], the fail-successors of an instruction.
 %% is_branch(Instr) -> bool(), true if instruction is a branch.
-%% is_comment(Instr) -> bool(), true if instruction is a comment,
-%%                          used by remmove dead code.
-%% is_goto(Instr) -> bool(), true if instruction is a pure goto, 
-%%                          used by remove dead code.
+%% is_comment(Instr) -> bool(),
+%%       true if instruction is a comment, used by remove dead code.
+%% is_goto(Instr) -> bool(),
+%%       true if instruction is a pure goto, used by remove dead code.
 %% redirect_jmp(Jmp, ToOld, ToNew) -> NewJmp, 
 %% redirect_ops(Labels, CFG, Map) -> CFG.
-%%                                   Rewrite instructions with labels
-%%                                   in operands to use the new label
-%%                                   as given by map.
-%%                                   Use find_new_label(OldLab,Map) to
-%%                                   get the new label.
-%%                                   (See hipe_sparc_cfg for example)
+%%       Rewrite instructions with labels in operands to use
+%%       the new label as given by map.
+%%       Use find_new_label(OldLab,Map) to get the new label.
+%%       (See hipe_sparc_cfg for example)
 %% pp(CFG) -> ok, do some nifty output.
 %% cfg_to_linear(CFG) -> LinearCode, linearizes the code of CFG
 %% mk_goto(Label) -> instruction
 %% is_phi(Instr) -> bool(), true if the instruction is a phi-instruction.
 %% phi_remove_pred(PhiInstr, Pred) -> NewPhi, 
-%%                                    Removes the predecessor Pred 
-%%                                    from the phi instruction.
-%% highest_var(Code) -> term(),   Returns the highest variable used or 
-%%                                defined in the code.
+%%       Removes the predecessor Pred from the phi instruction.
+%% highest_var(Code) -> term(),
+%%       Returns the highest variable used or defined in the code.
 %%
 %%=====================================================================
 
@@ -120,30 +121,37 @@
 %% Primitives (not all of these are exported)
 %%
 
+-spec(start_label/1 :: (#cfg{}) -> non_neg_integer()).
 start_label(CFG) -> (CFG#cfg.info)#cfg_info.start_label.
+
 -ifndef(GEN_CFG).
+-spec(start_label_update/2 :: (#cfg{}, non_neg_integer()) -> #cfg{}).
 start_label_update(CFG, NewStartLabel) ->
   Info = CFG#cfg.info,
   CFG#cfg{info=Info#cfg_info{start_label=NewStartLabel}}.
 
+-spec(function/1 :: (#cfg{}) -> mfa()).
 function(CFG) -> (CFG#cfg.info)#cfg_info.'fun'.
 
+-spec(is_closure/1 :: (#cfg{}) -> bool()).
 is_closure(CFG) -> (CFG#cfg.info)#cfg_info.is_closure.
+
+-spec(is_leaf/1 :: (#cfg{}) -> bool()).
 is_leaf(CFG) -> (CFG#cfg.info)#cfg_info.is_leaf.
 
-mk_empty_cfg(Fun, StartLbl, Data, Closure, Leaf, Params, Extra) ->
+mk_empty_cfg(Fun, StartLbl, Data, Closure, Leaf, Params) ->
   Info = #cfg_info{'fun' = Fun,
 		   start_label=StartLbl,
 		   is_closure=Closure,
 		   is_leaf=Leaf,
-		   params=Params,
-		   extra=Extra},
+		   params=Params},
   #cfg{table=gb_trees:empty(), data=Data, info=Info}.
 
 data(CFG) -> CFG#cfg.data.
 -endif.	% GEN_CFG
 
 -ifdef(REMOVE_TRIVIAL_BBS_NEEDED).
+-spec(update_data/2 :: (#cfg{}, cfg_data()) -> #cfg{}).
 update_data(CFG, D) ->
   CFG#cfg{data=D}.
 -endif.
@@ -159,10 +167,12 @@ params_update(CFG, NewParams) ->
 -endif.
 
 -ifdef(CLOSURE_ARITY_NEEDED).
+-spec(closure_arity/1 :: (#cfg{}) -> byte()).
 closure_arity(CFG) ->
   Info = CFG#cfg.info,
   Info#cfg_info.closure_arity.
 
+-spec(closure_arity_update/2 :: (#cfg{}, byte()) -> #cfg{}).
 closure_arity_update(CFG, Arity) ->
   Info = CFG#cfg.info,
   CFG#cfg{info=Info#cfg_info{closure_arity=Arity}}.
@@ -171,13 +181,6 @@ closure_arity_update(CFG, Arity) ->
 %% %% Don't forget to do a start_label_update if neccessary.
 %% update_code(CFG, NewCode) ->
 %%   take_bbs(NewCode, CFG).
-
--ifdef(EXTRA_NEEDED).
-extra(CFG) -> (CFG#cfg.info)#cfg_info.extra.
-%% extra_update(CFG, NewExtra) ->
-%%    Info = CFG#cfg.info,
-%%    CFG#cfg{info=Info#cfg_info{extra=NewExtra}}.
--endif.
 
 -ifdef(INFO_NEEDED).
 info(CFG) -> (CFG#cfg.info)#cfg_info.info.
@@ -290,7 +293,7 @@ redirect_phis([I|Rest], OldPred, NewPred, Acc) ->
 
 -endif.
 
-%% @spec bb(CFG::cfg(), Label::label(), NewBB::basic_block()) -> cfg()
+%% @spec bb_add(CFG::cfg(), Label::label(), NewBB::basic_block()) -> cfg()
 %% @doc  Adds a new basic block to a CFG (or updates an existing block).
 bb_add(CFG, Label, NewBB) ->
   %% Asserting that the NewBB is a legal basic block
@@ -473,38 +476,36 @@ postorder(CFG) ->
 
 reverse_postorder(CFG) ->
   Start = start_label(CFG),
-  Succ = succ_map(CFG),
-  {Ordering,_Visited} =
-    depth_search([Start|other_entrypoints(CFG)], none_visited(), Succ, []),
+  {Ordering, _Visited} =
+    depth_search([Start|other_entrypoints(CFG)], none_visited(), CFG, []),
   Ordering.
 
-depth_search([N|Ns], Visited, Succ, Acc) ->
+depth_search([N|Ns], Visited, CFG, Acc) ->
   case is_visited(N, Visited) of 
     true ->
-      depth_search(Ns, Visited, Succ, Acc);
+      depth_search(Ns, Visited, CFG, Acc);
     false ->
-      {Order,Vis} = depth_search(succ(Succ, N), visit(N, Visited), Succ, Acc),
-      depth_search(Ns, Vis, Succ, [N|Order])
+      {Order, Vis} = depth_search(succ(CFG, N), visit(N, Visited), CFG, Acc),
+      depth_search(Ns, Vis, CFG, [N|Order])
   end;
 depth_search([], Visited, _, Ordering) ->
-  {Ordering,Visited}.
+  {Ordering, Visited}.
 
 -ifdef(PREORDER).
 preorder(CFG) ->
   Start = start_label(CFG),
-  Succ = succ_map(CFG),
-  {Ordering,_Visited} =
-    preorder_search([Start|other_entrypoints(CFG)], none_visited(), Succ, []),
+  {Ordering, _Visited} =
+    preorder_search([Start|other_entrypoints(CFG)], none_visited(), CFG, []),
   lists:reverse(Ordering).
 
-preorder_search([N|Ns], Visited, Succ, Acc) ->
+preorder_search([N|Ns], Visited, CFG, Acc) ->
   case is_visited(N, Visited) of 
     true ->
-      preorder_search(Ns, Visited, Succ, Acc);
+      preorder_search(Ns, Visited, CFG, Acc);
     false ->
-      {Order,Vis} = 
-	preorder_search(succ(Succ, N), visit(N, Visited), Succ, [N|Acc]),
-      preorder_search(Ns, Vis, Succ, Order)
+      {Order, Vis} = 
+	preorder_search(succ(CFG, N), visit(N, Visited), CFG, [N|Acc]),
+      preorder_search(Ns, Vis, CFG, Order)
   end;
 preorder_search([], Visited, _, Ordering) ->
   {Ordering,Visited}.
@@ -516,22 +517,22 @@ breadthorder(CFG) ->
 
 reverse_breadthorder(CFG) ->
   Start = start_label(CFG),
-  Succ = succ_map(CFG),
-  {Vis,RBO1} = breadth_list([Start], none_visited(), Succ, []),
-  {_Vis1,RBO2} = breadth_list(other_entrypoints(CFG), Vis, Succ, RBO1),
+  {Vis, RBO1} = breadth_list([Start], none_visited(), CFG, []),
+  {_Vis1, RBO2} = breadth_list(other_entrypoints(CFG), Vis, CFG, RBO1),
   RBO2.
 
-breadth_list([X|Xs], Vis, Succ, BO) ->
-  case is_visited(X,Vis) of
+breadth_list([X|Xs], Vis, CFG, BO) ->
+  case is_visited(X, Vis) of
     true ->
-      breadth_list(Xs, Vis, Succ, BO);
+      breadth_list(Xs, Vis, CFG, BO);
     false ->
-      breadth_list(Xs ++ succ(Succ,X), visit(X,Vis), Succ, [X|BO])
+      breadth_list(Xs ++ succ(CFG, X), visit(X, Vis), CFG, [X|BO])
   end;  
-breadth_list([], Vis, _Succ, BO) -> 
-  {Vis,BO}.
+breadth_list([], Vis, _CFG, BO) -> 
+  {Vis, BO}.
 -endif.
 
+-spec(none_visited/0 :: () -> gb_set()).
 none_visited() -> 
   gb_sets:empty().
 
@@ -541,48 +542,41 @@ visit(X, Vis) ->
 is_visited(X, Vis) ->
   gb_sets:is_member(X, Vis).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-succ_map(CFG) ->
-  CFG.
-
 -endif.	% GEN_CFG
-%%=====================================================================
+
+%%---------------------------------------------------------------------
 
 succ(SuccMap, Label) ->
   HT = SuccMap#cfg.table,
   case gb_trees:lookup(Label, HT) of
-    {value,{_Block,Succ,_Pred}} ->
+    {value, {_Block,Succ,_Pred}} ->
       Succ;
     none ->
-      erlang:error({successor_not_found,Label,SuccMap})
+      erlang:error({"successor not found", Label, SuccMap})
   end.
 
--ifdef(PRED_MAP_NEEDED).
-pred_map(CFG) ->
-  CFG.
-
+-ifdef(PRED_NEEDED).
 pred(Map, Label) ->
   HT = Map#cfg.table,
   case gb_trees:lookup(Label, HT) of
-    {value,{_Block,_Succ,Pred}} ->
+    {value, {_Block,_Succ,Pred}} ->
       Pred;
     none ->
-      erlang:error({predecessor_not_found,Label,Map})
+      erlang:error({"predecessor not found", Label, Map})
   end.
--endif.	% PRED_MAP_NEEDED
+-endif.	% PRED_NEEDED
 
 -ifndef(GEN_CFG).
 fallthrough(CFG, Label) ->
   HT = CFG#cfg.table,
   case gb_trees:lookup(Label, HT) of
-    {value, {_Block,Succ,_}} ->
+    {value, {_Block, Succ, _}} ->
        case Succ of
 	 [X|_] -> X;
 	 _ -> none
        end;
      none ->
-       erlang:error({"fallthrough label not found",Label})
+       erlang:error({"fallthrough label not found", Label})
   end.
 
 conditional(CFG, Label) ->
@@ -624,17 +618,16 @@ lin_succ(Label, CFG, Vis) ->
       {Vis, []};      % already visited
     false ->
       Vis0 = visit(Label, Vis),
-      Block = bb(CFG, Label),
-      case hipe_bb:is_bb(Block) of
-	true ->
+      case bb(CFG, Label) of
+	not_found ->
+	  erlang:error({?MODULE, "No basic block with label", Label});
+        BB ->
 	  Fallthrough = fallthrough(CFG, Label),
 	  Cond = conditional(CFG, Label),
 	  LblInstr = mk_label(Label),
 	  {Vis1, Code1} = lin_succ(Fallthrough, CFG, Vis0),
 	  {Vis2, Code2} = lin_succ(Cond, CFG, Vis1),
-	  {Vis2, [[LblInstr|hipe_bb:code(Block)], Code1, Code2]};
-	false ->
-	  erlang:error({?MODULE,"No basic block with label",Label})
+	  {Vis2, [[LblInstr|hipe_bb:code(BB)], Code1, Code2]}
       end
   end.
 
@@ -663,13 +656,14 @@ find_new_label(Old, Map) ->
 
 -ifdef(REMOVE_TRIVIAL_BBS_NEEDED).
 
+-spec(remove_trivial_bbs/1 :: (#cfg{}) -> #cfg{}).
 remove_trivial_bbs(CFG) ->
   ?opt_start_timer("Merge BBs"),
   CFG0 = merge_bbs(rewrite_trivial_branches(CFG)),
   ?opt_stop_timer("Merge BBs"),
   %% pp(CFG0),
   ?opt_start_timer("FindDead"),
-  {NewMap,CFG1} = remap(labels(CFG0),rd_map_new(),CFG0),
+  {NewMap, CFG1} = remap(labels(CFG0), rd_map_new(), CFG0),
   ?opt_stop_timer("FindDead"),
   ?opt_start_timer("Labels"),
   Labels = labels(CFG1),
@@ -691,7 +685,7 @@ remove_trivial_bbs(CFG) ->
 
 redirect_start(CFG, Map) ->
   Start = start_label(CFG),
-  case forward(Start,Map) of
+  case forward(Start, Map) of
     Start -> CFG;
     NewStart ->
       start_label_update(CFG, NewStart)
@@ -703,20 +697,20 @@ redirect_data(CFG, Map) ->
   update_data(CFG, NewData).
 
 redirect_branches(Map, CFG) ->
-  lists:foldl(fun ({From,{newsuccs,Redirects}},CFGAcc) ->
+  lists:foldl(fun ({From,{newsuccs,Redirects}}, CFGAcc) ->
 		  lists:foldl(
-		    fun({ToOld,ToNew},CFG1) ->
+		    fun({ToOld,ToNew}, CFG1) ->
 			case bb(CFG1, From) of
 			  not_found -> 
 			    CFG1;
 			  _ ->
-			    To = forward(ToNew,Map),
+			    To = forward(ToNew, Map),
 			    redirect(CFG1, From, ToOld, To)
 			end
 		    end,
 		    CFGAcc,
 		    Redirects);
-		  (_,CFGAcc) -> CFGAcc
+		  (_, CFGAcc) -> CFGAcc
 	      end,
 	      CFG,
 	      gb_trees:to_list(Map)).
@@ -727,7 +721,6 @@ redirect(CFG, From, ToOld, ToNew) ->
   NewLastInstr = redirect_jmp(LastInstr, ToOld, ToNew),
   NewBB = hipe_bb:mk_bb(hipe_bb:butlast(BB) ++ [NewLastInstr]),
   bb_add(CFG, From, NewBB).
-
 
 bb_remove(CFG, Label) ->
   HT = CFG#cfg.table,
@@ -746,12 +739,12 @@ bb_remove(CFG, Label) ->
 remap([L|Rest], Map, CFG) ->
   case is_empty(bb(CFG, L)) of
     true ->
-      case succ(succ_map(CFG), L) of
+      case succ(CFG, L) of
 	[L] -> %% This is an empty (infinite) self loop. Leave it.
 	  remap(Rest, Map, CFG);
 	[SuccL] ->
 	  CFG1 = bb_remove(CFG, L), 
-	  NewMap = remap_to_succ(L, SuccL, Map, pred_map(CFG)),
+	  NewMap = remap_to_succ(L, SuccL, Map, CFG),
 	  remap(Rest, NewMap, CFG1)
       end;
     false ->
@@ -765,8 +758,8 @@ remap_to_succ(L, SuccL, Map, PredMap) ->
 
 %% Find the proxy for a BB
 forward(L, Map) ->
-  case gb_trees:lookup(L,Map) of 
-    {value, {dead,To}} -> 
+  case gb_trees:lookup(L, Map) of
+    {value, {dead, To}} ->
       forward(To, Map); %% Hope this terminates.
     _ -> L
   end.
@@ -779,25 +772,25 @@ forward(L, Map) ->
 rd_map_new() -> gb_trees:empty().
 
 rd_succs(M) ->
-  lists:foldl(fun ({From,{dead,To}},Acc) -> [{From,forward(To,M)}|Acc];
-		  (_,Acc) -> Acc
+  lists:foldl(fun ({From,{dead,To}}, Acc) -> [{From,forward(To,M)}|Acc];
+		  (_, Acc) -> Acc
 	      end,
 	      [],
 	      gb_trees:to_list(M)).
 
-add_redirectedto(L,From,To,Map) ->
-  case gb_trees:lookup(L,Map) of 
-    {value, {newsuccs,NS}} ->
+add_redirectedto(L, From, To, Map) ->
+  case gb_trees:lookup(L, Map) of
+    {value, {newsuccs, NS}} ->
       gb_trees:update(L,{newsuccs,[{From,To}|lists:keydelete(From,1,NS)]},Map);
-    {value, {dead,_}} -> Map;
+    {value, {dead, _}} -> Map;
     none ->
-      gb_trees:insert(L,{newsuccs,[{From,To}]},Map)
+      gb_trees:insert(L, {newsuccs, [{From, To}]}, Map)
   end.
 
-insert_remap(L,ToL,Preds,Map) ->
-  Map2 = gb_trees:enter(L,{dead,ToL},Map),
-  lists:foldl(fun (Pred,AccMap) ->
-		   add_redirectedto(Pred,L,ToL,AccMap)
+insert_remap(L, ToL, Preds, Map) ->
+  Map2 = gb_trees:enter(L, {dead, ToL}, Map),
+  lists:foldl(fun (Pred, AccMap) ->
+		   add_redirectedto(Pred, L, ToL, AccMap)
 	      end,
 	      Map2,
 	      Preds).
@@ -822,32 +815,31 @@ is_empty_bb([]) ->
 
 -spec(rewrite_trivial_branches/1 :: (#cfg{}) -> #cfg{}).
 rewrite_trivial_branches(CFG) ->
-  SuccMap = succ_map(CFG),
-  rewrite_trivial_branches(postorder(CFG), SuccMap, CFG).
+  rewrite_trivial_branches(postorder(CFG), CFG).
 
-rewrite_trivial_branches([L|Left], SuccMap, CFG) ->
+rewrite_trivial_branches([L|Left], CFG) ->
   BB = bb(CFG, L),
   Last = hipe_bb:last(BB),
   case is_goto(Last) of
     true ->
-      rewrite_trivial_branches(Left, SuccMap, CFG);
+      rewrite_trivial_branches(Left, CFG);
     false ->
       case is_pure_branch(Last) of
 	false ->
-	  rewrite_trivial_branches(Left, SuccMap, CFG);
+	  rewrite_trivial_branches(Left, CFG);
 	true ->
-	  case succ(SuccMap, L) of
+	  case succ(CFG, L) of
 	    [Successor] ->
 	      Head = hipe_bb:butlast(BB),
 	      NewBB = hipe_bb:mk_bb(Head ++ [mk_goto(Successor)]),
 	      NewCFG = bb_add(CFG, L, NewBB),
-	      rewrite_trivial_branches(Left, SuccMap, NewCFG);
+	      rewrite_trivial_branches(Left, NewCFG);
 	    _ ->
-	      rewrite_trivial_branches(Left, SuccMap, CFG)
+	      rewrite_trivial_branches(Left, CFG)
 	  end
       end
   end;
-rewrite_trivial_branches([], _SuccMap, CFG) ->
+rewrite_trivial_branches([], CFG) ->
   CFG.
 
 
@@ -882,7 +874,7 @@ merge_successor(L, CFG) ->
 	  CFG;
 	{[Successor],_} when Successor =/= StartLabel ->
 	  %% Make sure the succesor only have this block as predecessor.
-	  case  [L] =:= pred(pred_map(CFG), Successor) of
+	  case [L] =:= pred(CFG, Successor) of
 	    true ->
 	      %% Remove the goto or remap fall-through in BB and merge the BBs
 	      NewCode = merge(BB, bb(CFG, Successor), Successor),
@@ -930,27 +922,26 @@ merge(BB, BB2, BB2_Label) ->
 
 -spec(remove_unreachable_code/1 :: (#cfg{}) -> #cfg{}).
 
-remove_unreachable_code(Cfg) ->
-  Start = start_label(Cfg),
-  SuccMap = succ_map(Cfg),
-  Reachable = find_reachable([Start], SuccMap, gb_sets:from_list([Start])),
+remove_unreachable_code(CFG) ->
+  Start = start_label(CFG),
+  Reachable = find_reachable([Start], CFG, gb_sets:from_list([Start])),
   %% Reachable is an ordset: it comes from gb_sets:to_list/1.
   %% So use ordset:subtract instead of '--' below.
-  Labels = ordsets:from_list(labels(Cfg)),
+  Labels = ordsets:from_list(labels(CFG)),
   case ordsets:subtract(Labels, Reachable) of
     [] ->
-      Cfg;
-    Remove ->      
-      NewCfg = lists:foldl(fun(X, Acc) -> bb_remove(Acc, X) end, Cfg, Remove),
-      remove_unreachable_code(NewCfg)
+      CFG;
+    Remove ->
+      NewCFG = lists:foldl(fun(X, Acc) -> bb_remove(Acc, X) end, CFG, Remove),
+      remove_unreachable_code(NewCFG)
   end.
 
-find_reachable([Label|Left], SuccMap, Acc) ->
+find_reachable([Label|Left], CFG, Acc) ->
   NewAcc = gb_sets:add(Label, Acc),
-  Succ = succ(SuccMap, Label),
+  Succ = succ(CFG, Label),
   find_reachable([X || X <- Succ, not gb_sets:is_member(X, Acc)] ++ Left,
-		 SuccMap, NewAcc);
-find_reachable([], _SuccMap, Acc) ->
+		 CFG, NewAcc);
+find_reachable([], _CFG, Acc) ->
   gb_sets:to_list(Acc).
 
 -endif.

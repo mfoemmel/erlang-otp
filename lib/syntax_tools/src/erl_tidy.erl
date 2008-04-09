@@ -369,7 +369,7 @@ write_module(Tree, Name, Opts) ->
     FD = open_output_file(File),
     verbose("writing to file `~s'.", [File], Opts),
     V = (catch {ok, output(FD, Printer, Tree, Opts)}),
-    file:close(FD),
+    ok = file:close(FD),
     case V of
         {ok, _} ->
             File;

@@ -511,31 +511,6 @@ send_to_port(Process *c_p, Eterm message,
 #endif
 }
 
-
-
-static void
-profile_send_to_port(Process *c_p, Eterm profiler, Eterm msg)
-{
-    Port* trace_port;
-
-    ASSERT(is_internal_port(profiler));
-    
-    if (is_not_internal_port(profiler)) return;
-
-#ifdef ERTS_SMP
-    trace_port = NULL;
-#else
-    trace_port = &erts_port[internal_port_index(profiler)];
-    if (INVALID_TRACER_PORT(trace_port, profiler)) return;
-#endif
-
-    do_send_to_port(	profiler, 
-			trace_port,
-			c_p ? c_p->id: NIL,
-			SYS_MSG_TYPE_SYSPROF,
-			msg);
-}
-
 #ifndef ERTS_SMP
 /* Profile send
  * Checks if profiler is port or process

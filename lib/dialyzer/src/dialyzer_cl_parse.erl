@@ -23,6 +23,15 @@
 
 -include("dialyzer.hrl").
 
+%%-----------------------------------------------------------------------
+
+-type(dial_cl_parse_ret() :: {'check_init',#options{}} | {'cl',#options{}}
+                           | {'gui',#options{}} | {'error',string()}).
+
+%%-----------------------------------------------------------------------
+
+-spec(start/0 :: () -> dial_cl_parse_ret()).
+
 start() ->
   init(),
   Args = init:get_plain_arguments(),
@@ -60,9 +69,8 @@ cl(["-I"++Dir|T]) ->
 cl(["-c"++_|T]) ->
   NewTail = command_line(T),
   cl(NewTail);
-cl(["--dataflow"|T]) ->
-  put(dialyzer_options_analysis_type, dataflow),
-  cl(T);
+cl(["--dataflow"|_]) ->
+  error("Option --dataflow is no longer supported");
 cl(["--succ_typings"|T]) ->
   put(dialyzer_options_analysis_type, succ_typings),
   cl(T);
@@ -74,16 +82,14 @@ cl(["-r"++_|T0]) ->
 cl(["--com"++_|T]) ->
   NewTail = command_line(T),
   cl(NewTail);
-cl(["--no_warn_on_inline"|T]) ->
-  put(dialyzer_options_suppress_inline, true),
-  cl(T);
+cl(["--no_warn_on_inline"|_]) ->
+  error("Option --no_warn_on_inline is no longer supported");
 cl(["--output"]) ->
   error("No outfile specified");
 cl(["-o"]) ->
   error("No outfile specified");
-cl(["--old_style"|T]) ->
-  put(dialyzer_options_analysis_type, old_style),
-  cl(T);
+cl(["--old_style"|_]) ->
+  error("Option --old_style is no longer supported");
 cl(["--output",Output|T]) ->
   put(dialyzer_output, Output),
   cl(T);
@@ -116,6 +122,9 @@ cl(["--quiet"|T]) ->
   cl(T);
 cl(["--src"|T]) ->
   put(dialyzer_options_from, src_code),
+  cl(T);
+cl(["--no_spec"|T]) ->
+  put(dialyzer_options_use_contracts, false),
   cl(T);
 cl(["-v"|_]) ->
   io:format("Dialyzer version "++?VSN++"\n"),
@@ -151,7 +160,6 @@ cl([]) ->
     OptsRecord -> {RetTag, OptsRecord}
   end.
 
-
 command_line(T0) ->
   put(dialyzer_options_gui, false),
   {Args,T} = collect_args(T0),
@@ -182,9 +190,9 @@ init() ->
   put(dialyzer_options_analysis_type,   DefaultOpts#options.analysis_type),
   put(dialyzer_options_defines,         DefaultOpts#options.defines),
   put(dialyzer_options_files,           DefaultOpts#options.files),
-  put(dialyzer_options_suppress_inline, DefaultOpts#options.supress_inline),
   put(dialyzer_output,                  DefaultOpts#options.output_file),
   put(dialyzer_options_from,            DefaultOpts#options.from),
+  put(dialyzer_options_use_contracts,   DefaultOpts#options.use_contracts),
   ok.
 
 append_defines([Def, Val]) ->
@@ -198,7 +206,12 @@ append_include(Dir) ->
   append_var(dialyzer_include, [Dir]).
 
 append_var(Var, List) when is_list(List) ->
-  put(Var, get(Var) ++ List).
+  put(Var, get(Var) ++ List),
+  ok.
+
+%%-----------------------------------------------------------------------
+
+-spec(collect_args/1 :: ([string()]) -> {[string()],[string()]}).
 
 collect_args(List) ->
   collect_args_1(List, []).
@@ -209,6 +222,8 @@ collect_args_1([Arg|T], Acc) ->
   collect_args_1(T, [Arg|Acc]);
 collect_args_1([], Acc) ->
   {lists:reverse(Acc),[]}.
+
+%%-----------------------------------------------------------------------
 
 cl_opts() ->
   [{files,get(dialyzer_options_files)},
@@ -223,10 +238,11 @@ common_options() ->
    {include_dirs, get(dialyzer_include)},
    {init_plt, get(dialyzer_init_plt)},
    {output_plt, get(dialyzer_output_plt)},
-   {old_style, get(dialyzer_options_analysis_type) =:= old_style},
    {report_mode, get(dialyzer_options_report_mode)},
-   {supress_inline, get(dialyzer_options_suppress_inline)},
+   {use_spec, get(dialyzer_options_use_contracts)},
    {warnings, get(dialyzer_warnings)}].
+
+%%-----------------------------------------------------------------------
 
 help_warnings() ->
   S = "Warning options:
@@ -242,16 +258,12 @@ help_warnings() ->
 	Suppress warnings for fun applications that will fail.
     -Wno_match
 	Suppress warnings for patterns that are unused or cannot match.
-    -Wno_comp
-	Suppress warnings for term comparisons that will always return false.
-    -Wno_guards
-	Suppress warnings for guards that will always fail.
-    -Wno_unsafe_beam
-	Suppress warnings for unsafe BEAM code produced by an old BEAM compiler.
+    -Wunmatched_returns ***
+	Include warnings for function calls which ignore a structured return value.
     -Werror_handling ***
 	Include warnings for functions that only return by means of an exception.
 Note:
-  *** This is the only option that turns on warnings rather than turning them off.
+  *** These are options that turn on warnings rather than turning them off.
 ",
   io:put_chars(S),
   erlang:halt(?RET_NOTHING_SUSPICIOUS).
@@ -259,10 +271,8 @@ Note:
 help_message() ->
   S = "Usage: dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
 		[-pa dir]* [--plt plt] [-Ddefine]* [-I include_dir]* 
-	        [--old_style] [--output_plt file] [-Wwarn]* 
-                [--no_warn_on_inline] [--src] [-c applications] 
-                [-r applications] [-o outfile]
-                [--dataflow] [--succ_typings]
+	        [--output_plt file] [-Wwarn]* [--src]
+                [-c applications] [-r applications] [-o outfile]
 
 Options: 
    -c applications (or --command-line applications)
@@ -282,13 +292,8 @@ Options:
        When analyzing from source, pass the define to Dialyzer (**)
    -I include_dir
        When analyzing from source, pass the include_dir to Dialyzer (**)
-   --old_style
-       Gives the warnings in the old style without line numbers.
-       Can also be handy when analyzing byte code compiled without +debug_info.
    --output_plt file
        Store the plt at the specified file after building it
-   --no_warn_on_inline
-       Suppress warnings when analyzing an inline compiled bytecode file
    --plt plt
        Use the specified plt as the initial plt (if the plt was built 
        during setup the files will be checked for consistency)
@@ -311,10 +316,7 @@ Options:
        Makes Dialyzer a bit more quiet
    --verbose
        Makes Dialyzer a bit more verbose
-   --dataflow
-       Makes Dialyzer use dataflow analysis to find discrepancies. (Default)
-   --succ_typings
-       Makes Dialyzer use success typings to find discrepancies.
+
 
 Note:
   * denotes that multiple occurrences of these options are possible.

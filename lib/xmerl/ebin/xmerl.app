@@ -1,6 +1,6 @@
 {application,xmerl,
  [{description,"XML parser"},
-  {vsn,"1.1.6"},
+  {vsn,"1.1.8"},
   {modules,[
 	xmerl,
 	xmerl_b64Bin,

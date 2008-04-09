@@ -47,7 +47,11 @@
            (p)->fcalls = -CONTEXT_REDS; 	   \
      } 						   \
 } while(0)
-    
+
+#define ERTS_BIF_REDS_LEFT(p)						\
+  ((p)->ct								\
+   ? ((p)->fcalls > -CONTEXT_REDS ? ((p)->fcalls - (-CONTEXT_REDS)) : 0)\
+   : ((p)->fcalls > 0 ? (p)->fcalls : 0))
 
 #define BIF_RET2(x, gc) do {			\
     BUMP_REDS(BIF_P, (gc));			\

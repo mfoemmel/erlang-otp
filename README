@@ -87,6 +87,8 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
 
   Perl 5
 
+  ncurses		(Or termcap or termlib.)
+
   OpenSSL	        Optional, but needed for building the Erlang/OTP
                         applications 'ssl' and 'crypto'. You need the
                         "development package" of OpenSSL, i.e. including
@@ -112,9 +114,6 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
   Flex                  Optional, headers and libraries are needed to 
                         build the flex scanner for the megaco application
                         on Unix/Linux.
-
-  LibGD			Optional, but needed if you want to use the
-			percept application. http://www.libgd.org
 
   Installing
   ----------
@@ -302,7 +301,8 @@ SPARC:
 	to use Sun's assembler and linker. Using the GNU assembler but
 	Sun's linker has been known to cause problems.
 ARM:
-	Big-endian mode on ARMv5TE (i.e. XScale) processors should work.
+	ARMv5TE (i.e. XScale) processors should work.
+	Both big-endian and little-endian modes are supported.
 
 	Linux is supported.
 

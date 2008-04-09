@@ -126,7 +126,7 @@ adjset_mk_index(N, Tail) ->
   I = N - 1,
   adjset_mk_index(I, [(I * (I-1)) div 2 | Tail]).
 
-adjset_add_edge(U0, V0, Set=#adjset{index=Index,array=Array}) -> % PRE: U0 =/= V0
+adjset_add_edge(U0, V0, #adjset{index=Index,array=Array}) -> % PRE: U0 =/= V0
   {U,V} =
     if U0 < V0 -> {U0,V0};
        true -> {V0,U0}
@@ -136,9 +136,8 @@ adjset_add_edge(U0, V0, Set=#adjset{index=Index,array=Array}) -> % PRE: U0 =/= V
   WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
   WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
   Word = hipe_bifs:bytearray_sub(Array, WordNr),
-  hipe_bifs:bytearray_update(Array, WordNr, Word bor WordMask),
-  Set;
-adjset_add_edge(U0, V0, Set=#adjset_chunked{index=Index,chunks=Chunks}) -> % PRE: U0 =/= V0
+  hipe_bifs:bytearray_update(Array, WordNr, Word bor WordMask);
+adjset_add_edge(U0, V0, #adjset_chunked{index=Index,chunks=Chunks}) -> % PRE: U0 =/= V0
   {U,V} =
     if U0 < V0 -> {U0,V0};
        true -> {V0,U0}
@@ -152,10 +151,9 @@ adjset_add_edge(U0, V0, Set=#adjset_chunked{index=Index,chunks=Chunks}) -> % PRE
   Chunk = element(ChunkNr+1, Chunks),
   ChunkOffset = WordNr band (?CHUNK_BYTES - 1),
   Word = hipe_bifs:bytearray_sub(Chunk, ChunkOffset),
-  hipe_bifs:bytearray_update(Chunk, ChunkOffset, Word bor WordMask),
-  Set.
+  hipe_bifs:bytearray_update(Chunk, ChunkOffset, Word bor WordMask).
 
-adjset_remove_edge(U0, V0, Set=#adjset{index=Index,array=Array}) -> % PRE: U0 =/= V0
+adjset_remove_edge(U0, V0, #adjset{index=Index,array=Array}) -> % PRE: U0 =/= V0
   {U,V} =
     if U0 < V0 -> {U0,V0};
        true -> {V0,U0}
@@ -165,9 +163,8 @@ adjset_remove_edge(U0, V0, Set=#adjset{index=Index,array=Array}) -> % PRE: U0 =/
   WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
   WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
   Word = hipe_bifs:bytearray_sub(Array, WordNr),
-  hipe_bifs:bytearray_update(Array, WordNr, Word band (bnot WordMask)),
-  Set;
-adjset_remove_edge(U0, V0, Set=#adjset_chunked{index=Index,chunks=Chunks}) -> % PRE: U0 =/= V0
+  hipe_bifs:bytearray_update(Array, WordNr, Word band (bnot WordMask));
+adjset_remove_edge(U0, V0, #adjset_chunked{index=Index,chunks=Chunks}) -> % PRE: U0 =/= V0
   {U,V} =
     if U0 < V0 -> {U0,V0};
        true -> {V0,U0}
@@ -181,8 +178,7 @@ adjset_remove_edge(U0, V0, Set=#adjset_chunked{index=Index,chunks=Chunks}) -> % 
   Chunk = element(ChunkNr+1, Chunks),
   ChunkOffset = WordNr band (?CHUNK_BYTES - 1),
   Word = hipe_bifs:bytearray_sub(Chunk, ChunkOffset),
-  hipe_bifs:bytearray_update(Chunk, ChunkOffset, Word band (bnot WordMask)),
-  Set.
+  hipe_bifs:bytearray_update(Chunk, ChunkOffset, Word band (bnot WordMask)).
 
 adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
   {U,V} =

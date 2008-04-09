@@ -34,7 +34,7 @@
 -export([mk_fun_header/0, tag_fun/2]).
 -export([unsafe_untag_float/2, unsafe_tag_float/2]).
 -export([mk_sub_binary/6,mk_sub_binary/7]).
--export([unsafe_mk_float/3, unsafe_mk_big/3, unsafe_load_float/3]).
+-export([unsafe_mk_big/3, unsafe_load_float/3]).
 -export([bignum_sizeneed/1,bignum_sizeneed_code/2, get_word_value_from_big/3]).
 -export([test_subbinary/3, test_heap_binary/3]).
 -export([create_heap_binary/3, create_refc_binary/3, create_refc_binary/4]).
@@ -866,23 +866,6 @@ test_subbinary(Binary, TrueLblName, FalseLblName) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Float Code
-
-%% This mk_float takes two 32 bit regs and writes them starting at the
-%% first word boundary.
-%% XXX: This is safe but suboptimal for 64-bit targets. The 3 functions
-%% that call this should do an 8-byte load from an unaligned source address
-%% and then simply store the value to an aligned destination address.
-unsafe_mk_float(Dst, FloatLo, FloatHi) ->
-  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
-  WordSize = hipe_rtl_arch:word_size(),
-  Head = hipe_rtl:mk_imm(flonum_header()),
-  [GetHPInsn,
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), Head),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(1*WordSize), FloatLo),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(1*WordSize+4), FloatHi),
-   tag_boxed(Dst, HP),
-   hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(WordSize+8)),
-   PutHPInsn].
 
 unsafe_load_float(DstLo, DstHi, Src) ->
   WordSize = hipe_rtl_arch:word_size(),

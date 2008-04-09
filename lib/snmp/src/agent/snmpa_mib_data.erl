@@ -352,8 +352,7 @@ do_unload_mib(MibData, MibName) ->
 	      tree    = Tree} = MibData,
     #mib_info{symbolic = Symbolic} = verify_loaded(MibDb, MibName),
     NewRoot = delete_mib_from_tree(MibName, Tree#tree.root),
-    Pattern = #node_info{oid = '_', mib_name = MibName, me = '_'},
-    MEs = uninstall_mes(NodeDb, Pattern),
+    MEs = uninstall_mes(NodeDb, MibName),
     uninstall_mib(MibDb, Symbolic, MibName, MEs),
     NewMibData = MibData#mib_data{tree = Tree#tree{root = NewRoot}},
     {ok, NewMibData}.

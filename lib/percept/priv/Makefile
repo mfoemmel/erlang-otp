@@ -49,6 +49,8 @@ SCRIPT_FILES = \
 CSS_FILES = \
 	server_root/css/percept.css	
 
+FONT_FILES = \
+	fonts/6x11_latin1.wingsfont
 
 # ----------------------------------------------------
 # FLAGS
@@ -83,7 +85,8 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/server_root/css
 	$(INSTALL_DATA) $(CSS_FILES) $(RELSYSDIR)/priv/server_root/css
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/server_root/images
-#	$(INSTALL_DATA) $(IMAGE_FILES) $(RELSYSDIR)/priv/server_root/images
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/fonts
+	$(INSTALL_DATA) $(FONT_FILES) $(RELSYSDIR)/priv/fonts
 	
 release_docs_spec:
 

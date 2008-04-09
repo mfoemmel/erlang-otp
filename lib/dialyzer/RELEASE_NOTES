@@ -5,14 +5,41 @@
 
 To be released
 --------------
- - The warnings returned by the Erlang interface now contains a tag
-   describing the type of warning.
+
+Version 1.8.0 (in Erlang/OTP R12B-2)
+------------------------------------
+ - Dialyzer's analysis is from now on exclusively based on success typings.
+   In particular, support for options --old_style and --dataflow has been
+   discontinued.
+ - Better and more aggressive handling of type information in records.
+ - Dialyzer has a new warning option -Wunmatched_returns which warns for
+   function calls that ignore the return value.
+   This catches many common programming errors (e.g. calling file:close/1
+   and not checking for the absense of errors), interface discrepancies
+   (e.g. a function returning multiple values when in reality the function
+   is void and only called for its side-effects), calling the wrong function
+   (e.g. io_lib:format/1 instead of io:format/1), and even possible
+   performance defects (e.g. unnecessarily constructing a list using a list
+   comprehension instead of using lists:foreach/2).
+   Whenever a function returns a single atomic value (e.g. 'ok' or pid()),
+   the warning is suppressed. This allows for "void" functions (returning
+   a single atom like 'ok') or for calls to certain builtins like spawn.
+   Because not all calls which ignore the return value are discrepancies,
+   the option is off by default and has to be explicitly requested by the user.
+   But we recommend it nevertheless.
+ - Some warning options (-Wno_comp, -Wno_guards, -Wno_unsafe_beam, etc.)
+   which could be used when analyzing bytecode produced by an old BEAM
+   compiler have been removed.
+
+Version 1.7.2 (in Erlang/OTP R12B-1)
+------------------------------------
+ - The Erlang interface of Dialyzer returns warnings tagged by their type.
 
 Version 1.7.1 (in Erlang/OTP R12B-0)
 ------------------------------------
  - Use of success typings is now default, is robust and detects significantly
    more errors than in previous versions.
- - Dialyzer now accepts and takes into account type information in record
+ - Dialyzer accepts and takes into account type information in record
    declarations and in contracts -- see related paper in Erlang'07 workshop.
    Various OTP applications (e.g. stdlib and kernel) are partially annotated
    with appropriate contracts specifying types information for their functions.

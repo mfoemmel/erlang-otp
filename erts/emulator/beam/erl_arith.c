@@ -942,9 +942,16 @@ erts_int_rem(Process* p, Eterm arg1, Eterm arg2)
     case SMALL_BIG:
 	if (arg1 != make_small(MIN_SMALL)) {
 	    return arg1;
+	} else {
+	    Eterm tmp = small_to_big(signed_val(arg1), tmp_big1);
+	    if ((ires = big_ucomp(tmp, arg2)) == 0) {
+		return SMALL_ZERO;
+	    } else {
+		ASSERT(ires < 0);
+		return arg1;
+	    }
 	}
-	arg1 = small_to_big(signed_val(arg1), tmp_big1);
-	/*FALLTHROUGH*/
+	/* All paths returned */
     case BIG_BIG:
     L_big_rem:
 	ires = big_ucomp(arg1, arg2);
@@ -1868,9 +1875,16 @@ erts_gc_int_rem(Process* p, Eterm* reg, Uint live)
     case SMALL_BIG:
 	if (arg1 != make_small(MIN_SMALL)) {
 	    return arg1;
+	} else {
+	    Eterm tmp = small_to_big(signed_val(arg1), tmp_big1);
+	    if ((ires = big_ucomp(tmp, arg2)) == 0) {
+		return SMALL_ZERO;
+	    } else {
+		ASSERT(ires < 0);
+		return arg1;
+	    }
 	}
-	arg1 = small_to_big(signed_val(arg1), tmp_big1);
-	/*FALLTHROUGH*/
+	/* All paths returned */
     case BIG_BIG:
     L_big_rem:
 	ires = big_ucomp(arg1, arg2);

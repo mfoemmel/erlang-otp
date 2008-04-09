@@ -6,17 +6,20 @@
 %% Description : Supporting routines for sparse conditional constant
 %%		 propagation on SSA form.
 %%
-%% Created     :  21 June 2004 by Kostis Sagonas <kostis@it.uu.se>
+%% Created     : 21 June 2004 by Kostis Sagonas <kostis@it.uu.se>
 %%-----------------------------------------------------------------------------
 
 %%-----------------------------------------------------------------------------
-%% Procedure : sparse_cond_const_propagate/1
-%% Purpose   : Do SCCP on an RTL control flow graph
+%% Procedure : propagate/1
+%% Purpose   : Perform sparse conditional constant propagation on a
+%%             control flow graph
 %% Arguments : CFG  - The cfg to work on
 %% Returns   : A new cfg.
 %%-----------------------------------------------------------------------------
 
-sparse_cond_const_propagate(CFG) ->
+-spec(propagate/1 :: (#cfg{}) -> #cfg{}).
+
+propagate(CFG) ->
   Environment    = create_env(CFG),
   StartEdge      = {?CFG:start_label(CFG), ?CFG:start_label(CFG)},
   NewEnvironment = scc([StartEdge], [], Environment),
@@ -31,7 +34,7 @@ sparse_cond_const_propagate(CFG) ->
 %%             FlowWork     - list of destination part of flowgraph edges 
 %%                            from the visited instructions
 %%             SSAWork      - resulting ssa-edges from visited instrs.
-%% Returns   : { FlowWorkList, SSAWorkList, Environment} 
+%% Returns   : {FlowWorkList, SSAWorkList, Environment} 
 %%-----------------------------------------------------------------------------
 
 visit_expressions(Instructions, Environment) ->
@@ -50,11 +53,11 @@ visit_expressions([Inst | Insts], Environment, FlowWork, SSAWork) ->
 %% The environment record: Shared between incarnations of SCCP.
 %%-----------------------------------------------------------------------------
 
--record(env, {cfg,
-	      executable_flags,
-	      handled_blocks,
-	      lattice_values,
-	      ssa_edges
+-record(env, {cfg                                 :: #cfg{},
+	      executable_flags = gb_sets:empty()  :: gb_set(),
+	      handled_blocks   = gb_sets:empty()  :: gb_set(),
+	      lattice_values   = gb_trees:empty() :: gb_tree(),
+	      ssa_edges        = gb_trees:empty() :: gb_tree()
 	     }).
 
 create_env(CFG) ->
@@ -81,7 +84,8 @@ initialize_lattice(CFG) ->
   Lattice    = gb_trees:empty(),
   Parameters = ?CFG:params(CFG),
   Inserter   = fun(Parameter, Tree) ->
-                   gb_trees:insert(Parameter, bottom, Tree) end,
+                   gb_trees:insert(Parameter, bottom, Tree)
+	       end,
   lists:foldl(Inserter, Lattice, Parameters).
 
 %%-----------------------------------------------------------------------------
@@ -335,7 +339,7 @@ get_phi_value([{PredecessorNode, Variable}| ArgList],
             top -> 
               get_phi_value(ArgList, CurrentNode, Environment, NewValue);
             _ ->
-              case (NewValue == CurrentValue) of
+              case (NewValue =:= CurrentValue) of
                 true ->
                   get_phi_value(ArgList, CurrentNode, Environment, NewValue);
                 false ->  %% two different constants.
@@ -384,7 +388,7 @@ extract_code(Node, Environment) ->
 
 predecessors(Node, Environment) ->
   CFG = env__cfg(Environment),
-  ?CFG:pred(?CFG:pred_map(CFG), Node).
+  ?CFG:pred(CFG, Node).
 
 %%-----------------------------------------------------------------------------
 

@@ -49,7 +49,7 @@
 %% This is ugly but...
 %%----------------------------------------------------------------------
 
-Expect 112.
+Expect 113.
 
 
 %%----------------------------------------------------------------------
@@ -294,6 +294,7 @@ Terminals
     'BufferToken'
     'COLON'
     'COMMA'
+    'ContextAttrToken'   % OTP-7138: To fix a (flex) scanner problem
     'ContextAuditToken'
     'CtxToken'
     'DelayToken'
@@ -992,17 +993,17 @@ parmValue            -> 'GREATER' value :
 %%                       LSBRKT VALUE *(COMMA VALUE) RSBRKT  /
 %%                       LSBRKT VALUE COLON VALUE RSBRKT ) /
 %%                       LBRKT VALUE *(COMMA VALUE) RBRKT
-alternativeValue     -> 'LBRKT' value valueList 'RBRKT'
-                            : #'PropertyParm'{value     = ['$2' | '$3'],
-					      extraInfo = {sublist, false}}. % OR
+alternativeValue     -> 'LBRKT' value valueList 'RBRKT' : 
+                            #'PropertyParm'{value     = ['$2' | '$3'],
+					    extraInfo = {sublist, false}}. % OR
 
-alternativeValue     -> 'LSBRKT' value 'COLON' value 'RSBRKT'
-                            : #'PropertyParm'{value     = ['$2', '$4'],
-                                              extraInfo = {range, true}}.
+alternativeValue     -> 'LSBRKT' value 'COLON' value 'RSBRKT' : 
+                            #'PropertyParm'{value     = ['$2', '$4'],
+                                            extraInfo = {range, true}}.
 
-alternativeValue     -> 'LSBRKT' value valueList 'RSBRKT'
-                            : #'PropertyParm'{value     = ['$2' | '$3'],
-					      extraInfo = {sublist, true}}. % AND
+alternativeValue     -> 'LSBRKT' value valueList 'RSBRKT' : 
+                            #'PropertyParm'{value     = ['$2' | '$3'],
+					    extraInfo = {sublist, true}}. % AND
 
 alternativeValue     -> value : 
                         #'PropertyParm'{value = ['$1']} .
@@ -1353,8 +1354,10 @@ priority             -> 'PriorityToken' 'EQUAL' safeToken : ensure_uint16('$3') 
 
 extensionParameter   -> safeToken : ensure_extensionParameter('$1') .
 
-value                -> 'QuotedChars' : ensure_value('$1') .
-value                -> safeToken     : ensure_value('$1').
+value                -> 'QuotedChars' : 
+                        ensure_value('$1') .
+value                -> safeToken     : 
+                        ensure_value('$1').
 
 safeToken            -> 'SafeChars'             : make_safe_token('$1') .
 safeToken            -> 'AddToken'              : make_safe_token('$1') .
@@ -1366,6 +1369,7 @@ safeToken            -> 'BothwayToken'          : make_safe_token('$1') .
 safeToken            -> 'BriefToken'            : make_safe_token('$1') .
 safeToken            -> 'BufferToken'           : make_safe_token('$1') .
 safeToken            -> 'CtxToken'              : make_safe_token('$1') .
+safeToken            -> 'ContextAttrToken'      : make_safe_token('$1') .
 safeToken            -> 'ContextAuditToken'     : make_safe_token('$1') .
 %% v2-safeToken            -> 'DigitMapToken'         : make_safe_token('$1') .
 %% safeToken         -> 'DigitMapDescriptorToken' : make_safe_token('$1') .

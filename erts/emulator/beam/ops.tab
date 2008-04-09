@@ -819,8 +819,8 @@ call_ext_only u==1 Ar=u$func:hybrid:copy/1 => i_global_copy | return
 # The general case for BIFs that have no special instructions.
 # A BIF used in the tail must be followed by a return instruction.
 #
-# To make stack backtraces work correctly, we make sure that the continuation
-# pointer is always stored on the stack.
+# To make trapping and stack backtraces work correctly, we make sure that
+# the continuation pointer is always stored on the stack.
 
 call_ext u==0 Bif=u$is_bif => call_bif0 Bif
 call_ext u==1 Bif=u$is_bif => call_bif1 Bif
@@ -832,7 +832,8 @@ call_ext_last u==1 Bif=u$is_bif D => call_bif1 Bif | deallocate_return D
 call_ext_last u==2 Bif=u$is_bif D => call_bif2 Bif | deallocate_return D
 call_ext_last u==3 Bif=u$is_bif D => call_bif3 Bif | deallocate_return D
 
-call_ext_only u==0 Bif=u$is_bif => call_bif0 Bif | return
+call_ext_only Ar=u==0 Bif=u$is_bif => \
+  allocate u Ar | call_bif0 Bif | deallocate_return u
 call_ext_only Ar=u==1 Bif=u$is_bif => \
   allocate u Ar | call_bif1 Bif | deallocate_return u
 call_ext_only Ar=u==2 Bif=u$is_bif => \

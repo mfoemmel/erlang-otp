@@ -17,7 +17,12 @@
 
 -export([is_safe/1, fails/1, pp/2, type/1, type/2]).
 
+-include("hipe_icode.hrl").
 -include("hipe_icode_primops.hrl").
+
+%%---------------------------------------------------------------------
+
+-type(io_device() :: any()).    %% XXX: DOES NOT BELONG HERE
 
 %%---------------------------------------------------------------------
 
@@ -26,6 +31,8 @@
 %% the call (e.g., if the types are known). However, if they have been
 %% correctly introduced in the code, most of them are also OK to remove
 %% if the result is not used.
+
+-spec(is_safe/1 :: (icode_primop()) -> bool()).
 
 is_safe('+') -> false;
 is_safe('/') -> false;
@@ -113,6 +120,8 @@ is_safe(#mkfun{}) -> true;
 is_safe(#unsafe_element{}) -> true;
 is_safe(#unsafe_update_element{}) -> true.
 
+
+-spec(fails/1 :: (icode_primop() | mfa()) -> bool()).
 
 fails('+') -> true;
 fails('-') -> true;
@@ -212,7 +221,9 @@ fails({M, F, A}) when is_atom(M), is_atom(F), is_integer(A), 0 =< A, A =< 255 ->
 %% Pretty printing
 %%=====================================================================
 
-pp(Op, Dev) ->
+-spec(pp/2 :: (io_device(), icode_primop()) -> 'ok').
+
+pp(Dev, Op) ->
   case Op of
     #apply_N{arity=N} ->
       io:format(Dev, "apply_N<~w>/", [N]);
@@ -280,6 +291,10 @@ pp(Op, Dev) ->
 	  io:format(Dev, "bs_add<~w>", [Unit]);
 	{bs_add, Const, Unit} ->
 	  io:format(Dev, "bs_add<~w, ~w>", [Const, Unit]);
+	{bs_append, X, Y, Z, W} ->
+	  io:format(Dev, "bs_append<~w, ~w, ~w, ~w>", [X,Y,Z,W]);
+	{bs_private_append, U, Flags} ->
+	  io:format(Dev, "bs_private_append<~w, ~w>", [U,Flags]);
 	bs_bits_to_bytes ->
 	  io:format(Dev, "bs_bits_to_bytes", []);
 	bs_bits_to_bytes2 ->
@@ -302,6 +317,8 @@ pp(Op, Dev) ->
 %%=====================================================================
 %% Type handling
 %%=====================================================================
+
+-spec(type/2 :: (icode_primop() | mfa(), [erl_type()]) -> erl_type()).
 
 type(Primop, Args) ->
   case Primop of
@@ -533,7 +550,7 @@ type(Primop, Args) ->
       erl_types:t_sup(
 	erl_types:t_subtract(Type,erl_types:t_matchstate()),
 	erl_types:t_matchstate_slot(
-	  erl_types:t_inf(Type,erl_types:t_matchstate()),1));
+	  erl_types:t_inf(Type,erl_types:t_matchstate()),0));
     {hipe_bs_primop, {bs_match_string,_,Bytes}} ->
       [MatchState] = Args,
       BinType = erl_types:t_matchstate_present(MatchState),
@@ -552,29 +569,29 @@ type(Primop, Args) ->
       erl_types:t_integer();
     {hipe_bs_primop, bs_bits_to_bytes2} ->
       erl_types:t_integer();
-    {hipe_bs_primop,{Name, Size, _Flags, _ConstInfo}} 
-    when Name =:= bs_put_integer; 
-	 Name =:= bs_put_float    ->
+    {hipe_bs_primop, {Name, Size, _Flags, _ConstInfo}} 
+    when Name =:= bs_put_integer;
+	 Name =:= bs_put_float ->
       case Args of
 	[_SrcType, _Base, Type] ->
-	  erl_types:t_bitstr_concat(Type,erl_types:t_bitstr(0,Size));
+	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(0,Size));
 	[_SrcType,_BitsType, _Base, Type] ->
-	  erl_types:t_bitstr_concat(Type,erl_types:t_bitstr(Size,0))
+	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(Size,0))
       end;
-    {hipe_bs_primop,{bs_put_binary, Size, _Flags}} ->
+    {hipe_bs_primop, {bs_put_binary, Size, _Flags}} ->
       case Args of
 	[_SrcType, _Base, Type] ->
-	  erl_types:t_bitstr_concat(Type,erl_types:t_bitstr(0,Size));
+	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(0,Size));
 	[_SrcType, _BitsType, _Base, Type] ->
-	  erl_types:t_bitstr_concat(Type,erl_types:t_bitstr(Size,0))
+	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(Size,0))
       end;
-    {hipe_bs_primop,{bs_put_binary_all, _Flags}} ->
+    {hipe_bs_primop, {bs_put_binary_all, _Flags}} ->
       [SrcType, _Base, Type] = Args,
       erl_types:t_bitstr_concat(SrcType,Type);
-    {hipe_bs_primop,{bs_put_string, _, Size}} ->
+    {hipe_bs_primop, {bs_put_string, _, Size}} ->
       [_Base, Type] = Args,
-      erl_types:t_bitstr_concat(Type,erl_types:t_bitstr(0,8*Size));
-    {hipe_bs_primop,bs_final} ->
+      erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(0,8*Size));
+    {hipe_bs_primop, bs_final} ->
       [_Base, Type] = Args,
       Type;
     {hipe_bs_primop, {bs_init, Size, _Flags}} ->  
@@ -662,6 +679,8 @@ type(Primop, Args) ->
       erl_bif_types:type(M, F, A, Args)
   end.
 
+
+-spec(type/1 :: (icode_primop() | mfa()) -> erl_type()).
 
 type(Primop) ->
   case Primop of

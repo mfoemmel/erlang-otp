@@ -268,7 +268,7 @@ struct process {
      * Information mainly for post-mortem use (erl crash dump).
      */
     Eterm parent;		/* Pid of process that created this process. */
-    long started;		/* Time when started. */
+    SysTimeval started;		/* Time when started. */
 
 
     /* This is the place, where all fields that differs between memory
@@ -327,6 +327,14 @@ struct process {
 #ifdef CHECK_FOR_HOLES
     Eterm* last_htop;		/* No need to scan the heap below this point. */
     ErlHeapFragment* last_mbuf;	/* No need to scan beyond this mbuf. */
+#endif
+
+#ifdef DEBUG
+    Eterm* last_old_htop;	/*
+				 * No need to scan the old heap below this point
+				 * when looking for invalid pointers into the new heap or
+				 * heap fragments.
+				 */
 #endif
 };
 
@@ -616,6 +624,7 @@ extern erts_smp_atomic_t erts_tot_proc_mem;
     } while (0)
 
 void erts_pre_init_process(void);
+void erts_late_init_process(void);
 #ifdef ERTS_SMP
 int erts_block_multi_scheduling(Process *, ErtsProcLocks, int, int);
 int erts_is_multi_scheduling_blocked(void);
@@ -680,6 +689,8 @@ Process *erts_suspend_another_process(Process *c_p, ErtsProcLocks c_p_locks,
 void erts_deep_process_dump(int, void *);
 
 Sint erts_test_next_pid(int, Uint);
+Eterm erts_debug_processes(Process *c_p);
+Eterm erts_debug_processes_bif_info(Process *c_p);
 
 #ifdef ERTS_SMP
 #  define ERTS_GET_SCHEDULER_DATA_FROM_PROC(PROC) ((PROC)->scheduler_data)
@@ -763,9 +774,6 @@ Process *erts_pid2proc_not_running(Process *,
 #else
 #define ERTS_MIN_PROCESSES		16
 #endif
-
-void erts_smp_proc_tab_lock(void);
-void erts_smp_proc_tab_unlock(void);
 
 #ifdef ERTS_INCLUDE_SCHEDULER_INTERNALS
 /* Scheduling lock */

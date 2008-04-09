@@ -35,7 +35,10 @@ RELSYSDIR = $(RELEASE_PATH)/lib/percept-$(VSN)
 
 MODULES= \
 	egd \
-	image \
+	egd_png \
+	egd_font \
+	egd_render \
+	egd_primitives \
 	percept \
 	percept_db \
 	percept_html \

@@ -45,6 +45,7 @@
 %%-define(DEBUG,true).
 -define(DO_ASSERT,true).
 -define(HIPE_LOGGING,true).
+
 -include("../../hipe/main/hipe.hrl").
 -include("hipe_ext_format.hrl").
 
@@ -58,6 +59,7 @@
 
 %%========================================================================
 
+-spec(chunk_name/1 :: (hipe_architecture()) -> string()).
 %% @doc
 %%    Returns the native code chunk name of the Architecture.
 %%    (On which presumably we are running.)
@@ -76,8 +78,7 @@ chunk_name(Architecture) ->
 
 %%========================================================================
 
-%% @spec load_hipe_modules() -> ok
-%%
+-spec(load_hipe_modules/0 :: () -> 'ok').
 %% @doc
 %%    Ensures HiPE's loader modules are loaded.
 %%    Called from code.erl at start-up.
@@ -87,9 +88,8 @@ load_hipe_modules() ->
 
 %%========================================================================
 
-%% @spec load_native_code(Mod::module_name(), Bin::binary()) ->
-%%           {module,Mod} | no_native
-%%
+-spec(load_native_code/2 :: (Mod, binary()) -> 'no_native' | {'module',Mod}
+						when is_subtype(Mod, atom())).
 %% @doc
 %%    Loads the native code of a module Mod.
 %%    Returns {module,Mod} on success (for compatibility with
@@ -114,6 +114,10 @@ load_native_code(Mod, Bin) when is_atom(Mod), is_binary(Bin) ->
       end
   end.
 
+%%========================================================================
+
+-spec(post_beam_load/1 :: (atom()) -> 'ok').
+
 post_beam_load(Mod) when is_atom(Mod) ->
   Architecture = erlang:system_info(hipe_architecture),
   case catch chunk_name(Architecture) of
@@ -135,6 +139,8 @@ version_check(Version, Mod) when is_atom(Mod) ->
 
 %%========================================================================
 
+-spec(load_module/3 :: (Mod, binary(), _) -> 'bad_crc' | {'module',Mod}
+	     					when is_subtype(Mod,atom())).
 load_module(Mod, Bin, Beam) ->
   load_module(Mod, Bin, Beam, []).
 
@@ -146,6 +152,8 @@ load_module(Mod, Bin, Beam, OldReferencesToPatch) ->
 
 %%========================================================================
 
+-spec(load/2 :: (Mod, binary()) -> 'bad_crc' | {'module',Mod}
+	     				when is_subtype(Mod,atom())).
 load(Mod, Bin) ->
   ?debug_msg("********* Loading funs in module ~w *********\n",[Mod]),
   %% Loading just some functions in a module; patch closures separately.
@@ -516,13 +524,13 @@ patch_load_address(Data, Address, ConstAndZone, Addresses) ->
 patch_closure(DestMFA, Uniq, Index, Address, Addresses) ->
   case get(hipe_patch_closures) of
     false ->
-      true; % This is taken care of when registering the module.
+      []; % This is taken care of when registering the module.
     true -> % We are not loading a module patch these closures
       RemoteOrLocal = local, % closure code refs are local
       DestAddress = get_native_address(DestMFA, Addresses, RemoteOrLocal),
       BEAMAddress = hipe_bifs:fun_to_address(DestMFA),
       FE = hipe_bifs:make_fe(DestAddress, mod(DestMFA), 
-			     {Uniq, Index,BEAMAddress}),
+			     {Uniq, Index, BEAMAddress}),
       ?debug_msg("Patch FE(~w) to 0x~.16b->0x~.16b (emu:0x~.16b)\n",
 		 [DestMFA, FE, DestAddress, BEAMAddress]),
       ?ASSERT(assert_local_patch(Address)),
@@ -550,8 +558,8 @@ patch_load_mfa(CodeAddress, DestMFA, Addresses, RemoteOrLocal) ->
 %% Patch references to code labels in the data segment.
 %%
 patch_consts(Labels, DataAddress, CodeAddress) ->
-  %% XXX: callers ignore the list consed up here!
-  [patch_label_or_labels(L, DataAddress, CodeAddress) || L <- Labels].
+  [patch_label_or_labels(L, DataAddress, CodeAddress) || L <- Labels],
+  ok.
 
 patch_label_or_labels({Pos,Offset}, DataAddress, CodeAddress) ->
   ?ASSERT(assert_local_patch(CodeAddress+Offset)),
@@ -700,14 +708,15 @@ find_const(ConstNo, []) ->
 
 add_ref(CalleeMFA, Address, Addresses, RefType, Trampoline, RemoteOrLocal) ->
   CallerMFA = address_to_mfa(Address, Addresses),
-  case RemoteOrLocal of
-    local ->
-      {M1,_,_} = CalleeMFA,
-      {M2,_,_} = CallerMFA,
-      M1 = M2;
-    remote ->
-      []
-  end,
+  %% just a sanity assertion below
+  true = case RemoteOrLocal of
+	   local ->
+	     {M1,_,_} = CalleeMFA,
+	     {M2,_,_} = CallerMFA,
+	     M1 =:= M2;
+	   remote ->
+	     true
+	 end,
   %% io:format("Adding ref ~w\n",[{CallerMFA, CalleeMFA, Address, RefType}]),
   hipe_bifs:add_ref(CalleeMFA, {CallerMFA,Address,RefType,Trampoline,RemoteOrLocal}).
 
@@ -802,7 +811,7 @@ redirect([MFA|Rest]) ->
   hipe_bifs:redirect_referred_from(MFA),
   redirect(Rest);
 redirect([]) ->
-  true.
+  ok.
 
 %%----------------------------------------------------------------
 %% Given a list of MFAs, remove all referred_from references having

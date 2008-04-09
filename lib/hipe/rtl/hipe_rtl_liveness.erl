@@ -16,10 +16,10 @@
 
 -module(hipe_rtl_liveness).
 
--define(LIVEOUT_NEEDED,true).	% needed for liveness.inc below.
+%% -define(LIVEOUT_NEEDED,true).	% needed for liveness.inc below.
 -define(PRETTY_PRINT,true).
 
--include("../flow/cfg.hrl").
+-include("hipe_rtl.hrl").
 -include("../flow/liveness.inc").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -32,9 +32,6 @@ cfg_bb(CFG, L) ->
 
 cfg_postorder(CFG) ->
    hipe_rtl_cfg:postorder(CFG).
-
-cfg_succ_map(CFG) ->
-   hipe_rtl_cfg:succ_map(CFG).
 
 cfg_succ(CFG, L) ->
    hipe_rtl_cfg:succ(CFG, L).

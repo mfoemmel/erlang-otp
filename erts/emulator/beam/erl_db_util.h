@@ -55,14 +55,31 @@
  * A datatype for a database entry stored out of a process heap
  */
 typedef struct db_term {
-    Eterm *tpl;			/* Untagged pointer to the beginning of term*/
-    ErlOffHeap off_heap;	/* Off heap data for term. */
-    Uint size;		        /* Size of term in "words" */
-    Eterm v[1];			/* Beginning of buffer for the terms */
+    ErlOffHeap off_heap;   /* Off heap data for term. */
+    Uint size;		   /* Size of term in "words" */
+    Eterm tpl[1];          /* Untagged "constant pointer" to top tuple */
+                           /* (assumed to be first in buffer) */
 } DbTerm;
+
+/* "Assign" a value to DbTerm.tpl */
+#define DBTERM_SET_TPL(dbtermPtr,tplPtr) ASSERT((tplPtr)==(dbtermPtr->tpl))
+/* Get start of term buffer */
+#define DBTERM_BUF(dbtermPtr) ((dbtermPtr)->tpl)
 
 union db_table;
 typedef union db_table DbTable;
+
+/* Info about a database entry while it's being updated
+ * (by update_counter or update_element)
+ */
+typedef struct {
+    DbTable* tb;
+    DbTerm* dbterm;
+    void** bp;         /* {Hash|Tree}DbTerm** */
+    Uint new_size;
+    int mustFinalize;  /* Need to call db_finalize_update_element? */
+} DbUpdateHandle;
+
 
 typedef struct db_table_method
 {
@@ -110,14 +127,6 @@ typedef struct db_table_method
 		   DbTable* tb, /* [in out] */ 
 		   Eterm slot, 
 		   Eterm* ret);
-    int (*db_update_counter)(Process* p,
-			     DbTable* tb, /* [in out] */ 
-			     Eterm key,
-			     Eterm increment, 
-			     int warp, 
-			     int position,
-			     Eterm* ret);
-
     int (*db_select_chunk)(Process* p, 
 			   DbTable* tb, /* [in out] */ 
 			   Eterm pattern,
@@ -166,7 +175,23 @@ typedef struct db_table_method
 			       void (*func)(ErlOffHeap *, void *),
 			       void *arg);
     void (*db_check_table)(DbTable* tb);
-    
+
+    /* Allocate and replace a dbterm with a new size.
+     * The new DbTerm must be initialized by caller (from the old).
+    */
+    DbTerm* (*db_alloc_newsize)(DbTable* tb,
+				void** bp,  /* XxxDbTerm** */
+				Uint new_tpl_sz);
+
+    /* Free a dbterm not in table.
+    */
+    void (*db_free_dbterm)(DbTable* tb, DbTerm* bp);
+
+    /* Lookup a dbterm by key. Return false if not found.
+    */
+    int (*db_lookup_dbterm)(DbTable*, Eterm key, 
+			    DbUpdateHandle* handle); /* [out] */
+
 } DbTableMethod;
 
 /*
@@ -261,29 +286,19 @@ Eterm db_set_trace_control_word_1(Process *p, Eterm val);
 
 void db_initialize_util(void);
 Eterm db_getkey(int keypos, Eterm obj);
-int db_realloc_counter(DbTableCommon *tb,
-		       void** bp, DbTerm *b, Uint offset, Uint sz, 
-		       Eterm new_counter, int counterpos);
 void db_free_term_data(DbTerm* p);
 void* db_get_term(DbTableCommon *tb, DbTerm* old, Uint offset, Eterm obj);
 int db_has_variable(Eterm obj);
 int db_is_variable(Eterm obj);
-int db_do_update_counter(Process *p,
-			 DbTableCommon *tb,
-			 void *bp /* {Tree|Hash|XXX}DbTerm **bp */, 
-			 Eterm *tpl, 
-			 int counterpos,
-			 int (*realloc_fun)(DbTableCommon *,
-					    void *,
-					    Uint,
-					    Eterm,
-					    int),
-			 Eterm incr,
-			 int warp,
-			 Eterm *ret);
+void db_do_update_element(DbUpdateHandle* handle,
+			  Sint position,
+			  Eterm newval);
+void db_finalize_update_element(DbUpdateHandle* handle);
+Eterm db_add_counter(Eterm** hpp, Eterm counter, Eterm incr);
 Eterm db_match_set_lint(Process *p, Eterm matchexpr, Uint flags);
 Binary *db_match_set_compile(Process *p, Eterm matchexpr, 
 			     Uint flags);
+void erts_db_match_prog_destructor(Binary *);
 
 typedef struct match_prog {
     ErlHeapFragment *term_save; /* Only if needed, a list of message 
@@ -381,8 +396,13 @@ int erts_db_is_compiled_ms(Eterm term);
 /*
 ** Convenience when compiling into Binary structures
 */
-#define Binary2MatchProg(BP) ((MatchProg *) (BP)->orig_bytes)
+#define IsMatchProgBinary(BP) \
+  (((BP)->flags & BIN_FLAG_MAGIC) \
+   && ERTS_MAGIC_BIN_DESTRUCTOR((BP)) == erts_db_match_prog_destructor)
 
+#define Binary2MatchProg(BP) \
+  (ASSERT_EXPR(IsMatchProgBinary((BP))), \
+   ((MatchProg *) ERTS_MAGIC_BIN_DATA((BP))))
 /*
 ** Debugging 
 */

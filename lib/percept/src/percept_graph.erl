@@ -16,7 +16,6 @@
 %%     $Id$
 %% 
 
-%% @author Björn-Egil Dahlberg
 %% @doc Interface for CGI request on graphs used by percept. The module exports two functions that are implementations for ESI callbacks used by the httpd server. See http://www.erlang.org//doc/apps/inets/index.html.
 
 -module(percept_graph).

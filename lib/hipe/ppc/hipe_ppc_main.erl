@@ -28,7 +28,7 @@ ppc_pp(PPC, MFA, Options) ->
     {file,FileName} ->
       {ok, File} = file:open(FileName, [write,append]),
       hipe_ppc_pp:pp(File, PPC),
-      file:close(File);
+      ok = file:close(File);
     _ ->
-      []
+      ok
   end.

@@ -23,7 +23,7 @@ translate(RTL) ->
     end,
   IsClosure = hipe_rtl:rtl_is_closure(RTL),
   IsLeaf = hipe_rtl:rtl_is_leaf(RTL),
-  hipe_arm:mk_defun(conv_mfa(hipe_rtl:rtl_fun(RTL)),
+  hipe_arm:mk_defun(hipe_rtl:rtl_fun(RTL),
 		    Formals,
 		    IsClosure,
 		    IsLeaf,
@@ -131,7 +131,7 @@ mk_shift_ir(S, Dst, Src1, ShiftOp, Src2) ->
 	mk_shift_rr(S, Dst, Tmp, ShiftOp, Src2)).
 
 mk_shift_ri(S, Dst, Src1, ShiftOp, Src2) when is_integer(Src2) ->
-  if Src2 >= 0, Src2 < 32 -> [];
+  if Src2 >= 0, Src2 < 32 -> ok;
      true -> io:format("~w: excessive immediate shift ~w\n", [?MODULE,Src2])
   end,
   Am1 = {Src1,ShiftOp,Src2},

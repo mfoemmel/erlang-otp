@@ -322,7 +322,7 @@ try_aquire(erts_proc_lock_t *lck, erts_proc_lock_waiter_t *wtr)
 		got_locks |= lock;
 		ERTS_LC_ASSERT(!(old_lflgs & wflg));
 		/* No one else can be waiting for the lock; remove wait flag */
-		ERTS_PROC_LOCK_FLGS_BAND_(lck, ~wflg);
+		(void) ERTS_PROC_LOCK_FLGS_BAND_(lck, ~wflg);
 		if (got_locks == locks)
 		    break;
 	    }
@@ -390,7 +390,7 @@ transfer_locks(Process *p,
 
     if (unset_waiter) {
 	unset_waiter <<= ERTS_PROC_LOCK_WAITER_SHIFT;
-	ERTS_PROC_LOCK_FLGS_BAND_(&p->lock, ~unset_waiter);
+	(void) ERTS_PROC_LOCK_FLGS_BAND_(&p->lock, ~unset_waiter);
     }
 
 #ifdef ERTS_PROC_LOCK_HARD_DEBUG

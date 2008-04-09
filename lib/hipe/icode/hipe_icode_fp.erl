@@ -1,15 +1,16 @@
+%% -*- erlang-indent-level: 2 -*-
 %%%-------------------------------------------------------------------
 %%% File    : hipe_icode_fp.erl
 %%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
 %%% Description : One pass analysis to find floating point values. 
-%%%               Mapping to fp variables and creation of fp ebbs.
+%%%               Mapping to FP variables and creation of FP EBBs.
 %%%
 %%% Created : 23 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%
 %%% CVS      :
-%%%              $Author: kostis $
-%%%              $Date: 2007/11/19 23:56:33 $
-%%%              $Revision: 1.37 $
+%%%              $Author: pergu $
+%%%              $Date: 2008/03/27 09:42:56 $
+%%%              $Revision: 1.43 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
@@ -17,27 +18,32 @@
 -export([cfg/1]).
 
 -include("hipe_icode.hrl").
+-include("../flow/cfg.hrl").
 
--record(state, {info, block_map, edge_map, cfg}).
+-record(state, {block_map :: gb_tree(),
+		edge_map  :: gb_tree(),
+		cfg	  :: #cfg{}}).
+
+%%--------------------------------------------------------------------
+
+-spec(cfg/1 :: (#cfg{}) -> #cfg{}).
 
 cfg(Cfg) ->
-  %%hipe_icode_cfg:pp(Cfg),
+  %% hipe_icode_cfg:pp(Cfg),
   NewCfg = annotate_fclearerror(Cfg),
   State = new_state(NewCfg),
   NewState = place_fp_blocks(State),
-  %%hipe_icode_cfg:pp(state__cfg(NewState)),
+  %% hipe_icode_cfg:pp(state__cfg(NewState)),
   NewState2 = finalize(NewState),
   NewCfg1 = state__cfg(NewState2),
-  %%hipe_icode_cfg:pp(NewCfg1),
+  %% hipe_icode_cfg:pp(NewCfg1),
   NewCfg2 = unannotate_fclearerror(NewCfg1),
-
   NewCfg2.
 
-%%____________________________________________________________
-%%
+%%--------------------------------------------------------------------
 %% Annotate fclearerror with information of the fail label of the
 %% corresponding fcheckerror.
-%%
+%%--------------------------------------------------------------------
 
 annotate_fclearerror(Cfg) ->
   Labels = hipe_icode_cfg:reverse_postorder(Cfg),
@@ -55,7 +61,7 @@ annotate_fclearerror([], Cfg) ->
 
 annotate_fclearerror1([I|Left], Label, Cfg, Acc) ->
   case I of
-    #call{} ->
+    #icode_call{} ->
       case hipe_icode:call_fun(I) of
 	fclearerror ->
 	  Fail = lookahead_for_fcheckerror(Left, Label, Cfg),
@@ -72,7 +78,7 @@ annotate_fclearerror1([], _Label, _Cfg, Acc) ->
 
 lookahead_for_fcheckerror([I|Left], Label, Cfg) ->
   case I of
-    #call{} ->
+    #icode_call{} ->
       case hipe_icode:call_fun(I) of
 	fcheckerror ->
 	  hipe_icode:call_fail_label(I);
@@ -83,7 +89,7 @@ lookahead_for_fcheckerror([I|Left], Label, Cfg) ->
        lookahead_for_fcheckerror(Left, Label, Cfg)
   end;
 lookahead_for_fcheckerror([], Label, Cfg) ->
-  case hipe_icode_cfg:succ(hipe_icode_cfg:succ_map(Cfg), Label) of
+  case hipe_icode_cfg:succ(Cfg, Label) of
     [] -> exit("Unterminated fp ebb");
     SuccList ->
       Succ = hd(SuccList),
@@ -107,7 +113,7 @@ unannotate_fclearerror([], Cfg) ->
 
 unannotate_fclearerror1([I|Left], Acc) ->
   case I of
-    #call{} ->
+    #icode_call{} ->
       case hipe_icode:call_fun(I) of
 	{fclearerror, _Fail} ->
 	  NewI = hipe_icode:call_fun_update(I, fclearerror),
@@ -121,11 +127,9 @@ unannotate_fclearerror1([I|Left], Acc) ->
 unannotate_fclearerror1([], Acc) ->
   lists:reverse(Acc).
 
-
-%%____________________________________________________________
-%%
-%% Make float ebbs
-%%
+%%--------------------------------------------------------------------
+%% Make float EBBs
+%%--------------------------------------------------------------------
 
 place_fp_blocks(State) ->
   WorkList = new_worklist(State),
@@ -164,11 +168,11 @@ transform_instrs([I|Left], PhiMap, Map, Acc) ->
   NewMap = delete_all(Defines, Map),
   NewPhiMap = delete_all(Defines, PhiMap),
   case I of
-    #phi{} ->
+    #icode_phi{} ->
       Uses = hipe_icode:uses(I),
       case [X || X <- Uses, lookup(X, PhiMap) =/= none] of
 	[] ->
-	  %% No ordinary variables from the argument has been untagged.
+	  %% No ordinary variables from the argument have been untagged.
 	  transform_instrs(Left, NewPhiMap, NewMap, [I|Acc]);
 	Uses ->
 	  %% All arguments are untagged. Let's untag the destination.
@@ -183,7 +187,7 @@ transform_instrs([I|Left], PhiMap, Map, Acc) ->
 	  NewI = subst_phi(I, Dst, PhiMap),
 	  transform_instrs(Left, NewPhiMap, NewMap, [NewI|Acc])
       end;
-    #call{} ->
+    #icode_call{} ->
       case hipe_icode:call_fun(I) of
 	X when X =:= unsafe_untag_float orelse X =:= conv_to_float ->
 	  [Dst] = hipe_icode:defines(I),
@@ -201,8 +205,8 @@ transform_instrs([I|Left], PhiMap, Map, Acc) ->
 		  transform_instrs(Left, NewPhiMap, Map, [I|Acc]);
 		FVar -> 
 		  %% The variable was already untagged. 
-		  %% This instruction can be changed to a fmove.
-		  NewI = hipe_icode:mk_fmove(Dst, FVar),
+		  %% This instruction can be changed to a move.
+		  NewI = hipe_icode:mk_move(Dst, FVar),
 		  case hipe_icode:call_continuation(I) of
 		    [] ->
 		      transform_instrs(Left,NewPhiMap,NewMap,[NewI|Acc]);
@@ -286,7 +290,7 @@ handle_untagged_arguments(I, Map) ->
 
 %% Add phi nodes for untagged fp values.
 
-do_prelude(Map) ->  
+do_prelude(Map) ->
   case gb_trees:lookup(phi, Map) of
     none ->
       {[], Map};
@@ -379,7 +383,7 @@ redirect_phis(Code, OldFrom, NewFrom) ->
 
 redirect_phis([I|Left], OldFrom, NewFrom, Acc) ->
   case I of
-    #phi{} ->
+    #icode_phi{} ->
       NewI = hipe_icode:phi_redirect_pred(I, OldFrom, NewFrom),
       redirect_phis(Left, OldFrom, NewFrom, [NewI|Acc]);
     _ ->
@@ -399,7 +403,7 @@ subst_phi_uses0([{Pred, Var}|Left], Map, Acc) ->
 	{value, {Pred, {assigned, _NewVar}}} -> 
 	  %% The variable is untagged, but it has been assigned. Keep it!
 	  subst_phi_uses0(Left, Map, [{Pred, Var}|Acc]);
-	{value, {Pred, NewVar}}-> 
+	{value, {Pred, NewVar}} -> 
 	  %% The variable is untagged and it has never been assigned as tagged.
 	  subst_phi_uses0(Left, Map, [{Pred, NewVar}|Acc]);
 	false ->
@@ -424,7 +428,7 @@ subst_phi_uses_uncond0([{Pred, Var}|Left], Map, Acc) ->
 	{value, {Pred, {assigned, NewVar}}} -> 
 	  %% The variable is untagged!
 	  subst_phi_uses_uncond0(Left, Map, [{Pred, NewVar}|Acc]);
-	{value, {Pred, NewVar}}-> 
+	{value, {Pred, NewVar}} -> 
 	  %% The variable is untagged!
 	  subst_phi_uses_uncond0(Left, Map, [{Pred, NewVar}|Acc]);
 	false ->
@@ -437,7 +441,6 @@ subst_phi_uses_uncond0([{Pred, Var}|Left], Map, Acc) ->
   end;
 subst_phi_uses_uncond0([], _Map, Acc) ->
   Acc.
-
 
 place_error_handling(WorkList, State) ->
   case get_work(WorkList) of
@@ -463,7 +466,7 @@ place_error_handling(WorkList, State) ->
 
 place_error([I|Left], InBlock, Acc) ->
   case I of
-    #call{} ->
+    #icode_call{} ->
       case hipe_icode:call_fun(I) of
 	X when X =:= fp_add; X =:= fp_sub; 
 	       X =:= fp_mul; X =:= fp_div; X =:= fnegate ->
@@ -524,11 +527,11 @@ place_error([I|Left], InBlock, Acc) ->
 	      end
 	  end
       end;
-    #fail{} ->
+    #icode_fail{} ->
       place_error_1(I, Left, InBlock, Acc);
-    #return{} ->
+    #icode_return{} ->
       place_error_1(I, Left, InBlock, Acc);
-    #enter{} ->
+    #icode_enter{} ->
       place_error_1(I, Left, InBlock, Acc);
     Other ->
       case instr_allowed_in_fp_ebb(Other) of
@@ -580,30 +583,24 @@ handle_unchecked_end(Succ, Code, InBlock) ->
 
 instr_allowed_in_fp_ebb(Instr) ->
   case Instr of
-    #comment{} -> true;
-    #fmove{} -> true;
-    #goto{} -> true;
-    #'if'{} -> true;
-    #move{} -> true;
-    #phi{} -> true;
-    #begin_handler{} -> true;
-    #switch_tuple_arity{} -> true;
-    #switch_val{} -> true;
-    #type{} -> true;
+    #icode_comment{} -> true;
+    #icode_goto{} -> true;
+    #icode_if{} -> true;
+    #icode_move{} -> true;
+    #icode_phi{} -> true;
+    #icode_begin_handler{} -> true;
+    #icode_switch_tuple_arity{} -> true;
+    #icode_switch_val{} -> true;
+    #icode_type{} -> true;
     _ -> false
   end.
 
-
-%%____________________________________________________________
-%%
+%%=============================================================
 %% Help functions
-%%
+%%=============================================================
 
 %% ------------------------------------------------------------ 
 %% Handling the gb_tree
-
-empty() ->
-  gb_trees:empty().
 
 delete_all([Key|Left], Tree) ->
   delete_all(Left, gb_trees:delete_any(Key, Tree));
@@ -649,8 +646,10 @@ get_type(Var) ->
   case hipe_icode:is_const(Var) of
     true -> erl_types:t_from_term(hipe_icode:const_value(Var));
     false ->
-      case hipe_icode:is_annotated_var_or_reg(Var) of
-	true -> hipe_icode:reg_or_var_annotation(Var)
+      case hipe_icode:is_annotated_variable(Var) of
+	true -> 
+	  {type_anno, Type, _} = hipe_icode:variable_annotation(Var),
+	  Type
 %%%     false -> erl_types:t_any()
       end
   end.
@@ -659,14 +658,14 @@ get_type(Var) ->
 %% Handling the map from variables to fp-variables
 
 join_maps(Preds, BlockMap) ->
-  join_maps(Preds, BlockMap, empty()).
+  join_maps(Preds, BlockMap, gb_trees:empty()).
 
 join_maps([Pred|Left], BlockMap, Map) ->
   case gb_trees:lookup(Pred, BlockMap) of
     none ->
       %%join_maps(Left, BlockMap, Map);
       %% All predecessors have not been handled. Use empty map.
-      empty();
+      gb_trees:empty();
     {value, OldMap} ->
       NewMap = join_maps0(gb_trees:to_list(OldMap), Pred, Map),
       join_maps(Left, BlockMap, NewMap)
@@ -882,7 +881,7 @@ conv_consts([], I, Subst) ->
 
 new_state(Cfg) ->
   Start = hipe_icode_cfg:start_label(Cfg),  
-  BlockMap = gb_trees:insert({inblock, Start}, false, empty()),
+  BlockMap = gb_trees:insert({inblock, Start}, false, gb_trees:empty()),
   EdgeMap = gb_trees:empty(),
   #state{cfg=Cfg, block_map=BlockMap, edge_map=EdgeMap}.
 
@@ -890,10 +889,10 @@ state__cfg(#state{cfg=Cfg}) ->
   Cfg.
 
 state__succ(#state{cfg=Cfg}, Label) ->
-  hipe_icode_cfg:succ(hipe_icode_cfg:succ_map(Cfg), Label).
+  hipe_icode_cfg:succ(Cfg, Label).
 
 state__pred(#state{cfg=Cfg}, Label) ->
-  hipe_icode_cfg:pred(hipe_icode_cfg:pred_map(Cfg), Label).
+  hipe_icode_cfg:pred(Cfg, Label).
 
 state__redirect(S=#state{cfg=Cfg}, From, ToOld, ToNew) ->
   NewCfg = hipe_icode_cfg:redirect(Cfg, From, ToOld, ToNew),

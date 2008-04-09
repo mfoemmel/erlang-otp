@@ -64,7 +64,6 @@ GIF_FILES = \
 TEXT_FILES = \
 	../about.txt \
 	../manual.txt \
-	../overview.txt \
 	../warnings.txt
 
 HTML_FILES = $(XML_APPLICATION_FILES:%.xml=$(HTMLDIR)/%.html) \

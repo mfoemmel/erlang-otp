@@ -24,7 +24,6 @@
 	 gen_head/3,
 	 demit/1,
 	 emit/1,
-	 fopen/2,
 	 get_inner/1,type/1,def_to_tag/1,prim_bif/1,
 	 type_from_object/1,
 	 get_typefromobject/1,get_fieldcategory/2,
@@ -36,9 +35,16 @@
 	 gen_check_call/7,
 	 get_constraint/2,
 	 insert_once/2,
-	 rt2ct_suffix/1,rt2ct_suffix/0,index2suffix/1]).
--export([pgen/4,pgen_module/5,mk_var/1, un_hyphen_var/1]).
--export([gen_encode_constructed/4,gen_decode_constructed/4]).
+	 rt2ct_suffix/1,
+	 rt2ct_suffix/0,
+	 index2suffix/1,
+	 get_record_name_prefix/0]).
+-export([pgen/4,
+	 pgen_module/5,
+	 mk_var/1, 
+	 un_hyphen_var/1]).
+-export([gen_encode_constructed/4,
+	 gen_decode_constructed/4]).
 
 %% pgen(Erules, Module, TypeOrVal)
 %% Generate Erlang module (.erl) and (.hrl) file corresponding to an ASN.1 module
@@ -54,12 +60,12 @@ pgen(OutFile,Erules,Module,TypeOrVal) ->
 
 pgen_module(OutFile,Erules,Module,TypeOrVal,Indent) ->
     put(outfile,OutFile),
-    HrlGenerated = asn1ct_gen:pgen_hrl(Erules,Module,TypeOrVal,Indent),
+    HrlGenerated = pgen_hrl(Erules,Module,TypeOrVal,Indent),
     asn1ct_name:start(),
     ErlFile = lists:concat([OutFile,".erl"]),
-    Fid = asn1ct_gen:fopen(ErlFile,write),
+    Fid = fopen(ErlFile,[write]),
     put(gen_file_out,Fid),
-    asn1ct_gen:gen_head(Erules,Module,HrlGenerated),
+    gen_head(Erules,Module,HrlGenerated),
     pgen_exports(Erules,Module,TypeOrVal),
     pgen_dispatcher(Erules,Module,TypeOrVal),
     pgen_info(),
@@ -553,9 +559,10 @@ gen_check_defaultval(_,_,[]) ->
     ok.
 
 gen_check_func(Name,FType = #type{def=Def}) ->
-    emit({Name,"(V,asn1_DEFAULT) ->",nl,"   true;",nl}),
-    emit({Name,"(V,V) ->",nl,"   true;",nl}),
-    emit({Name,"(V,{_,V}) ->",nl,"   true;",nl}),
+    EncName = ensure_atom(Name),
+    emit({{asis,EncName},"(_V,asn1_DEFAULT) ->",nl,"   true;",nl}),
+    emit({{asis,EncName},"(V,V) ->",nl,"   true;",nl}),
+    emit({{asis,EncName},"(V,{_,V}) ->",nl,"   true;",nl}),
     case Def of
 	{'SEQUENCE OF',Type} ->
 	    gen_check_sof(Name,'SEQOF',Type);
@@ -568,14 +575,14 @@ gen_check_func(Name,FType = #type{def=Def}) ->
 	{'CHOICE',Components} ->
 	    gen_check_choice(Name,Components);
 	#'Externaltypereference'{type=T} ->
-	    emit({Name,"(DefaultValue,Value) ->",nl}),
-	    emit({"   ",list2name([T,check]),"(DefaultValue,Value).",nl});
+	    emit({{asis,EncName},"(DefaultValue,Value) ->",nl}),
+	    emit({"   '",list2name([T,check]),"'(DefaultValue,Value).",nl});
 	MaybePrim ->
 	    InnerType = get_inner(MaybePrim),
 	    case type(InnerType) of
 		{primitive,bif} ->
-		    emit({Name,"(DefaultValue,Value) ->",nl,"   "}),
-		    gen_prim_check_call(InnerType,"DefaultValue","Value",
+		    emit({{asis,EncName},"(DefaultValue,Value) ->",nl,"   "}),
+		    gen_prim_check_call(get_inner(InnerType),"DefaultValue","Value",
 					FType),
 		    emit({".",nl,nl});
 		_ ->
@@ -584,31 +591,32 @@ gen_check_func(Name,FType = #type{def=Def}) ->
     end.
 
 gen_check_sof(Name,SOF,Type) ->
-    NewName = list2name([sorted,Name]),
-    emit({Name,"(V1,V2) ->",nl}),
-    emit({"   ",NewName,"(lists:sort(V1),lists:sort(V2)).",nl,nl}),
-    emit({NewName,"([],[]) ->",nl,"   true;",nl}),
-    emit({NewName,"([DV|DVs],[V|Vs]) ->",nl,"   "}),
+    EncName = ensure_atom(Name),
+    NewName = ensure_atom(list2name([sorted,Name])),
+    emit({{asis,EncName},"(V1,V2) ->",nl}),
+    emit({"   ",{asis,NewName},"(lists:sort(V1),lists:sort(V2)).",nl,nl}),
+    emit({{asis,NewName},"([],[]) ->",nl,"   true;",nl}),
+    emit({{asis,NewName},"([DV|DVs],[V|Vs]) ->",nl,"   "}),
     InnerType = get_inner(Type#type.def),
     case type(InnerType) of
 	{primitive,bif} ->
 	    gen_prim_check_call(InnerType,"DV","V",Type),
 	    emit({",",nl});
 	{constructed,bif} ->
-	    emit({list2name([SOF,Name]),"(DV, V),",nl});
+	    emit([{asis,ensure_atom(list2name([SOF,Name]))},"(DV, V),",nl]);
 	#'Externaltypereference'{type=T} ->
-	    emit({list2name([T,check]),"(DV,V),",nl})
+	    emit([{asis,ensure_atom(list2name([T,check]))},"(DV,V),",nl]);
+	'ASN1_OPEN_TYPE' ->
+	    emit(["DV = V,",nl])
     end,
-    emit({"   ",NewName,"(DVs,Vs).",nl,nl}).
+    emit({"   ",{asis,NewName},"(DVs,Vs).",nl,nl}).
 
 gen_check_sequence(Name,Components) ->
-    emit({Name,"(DefaultValue,Value) ->",nl}),
+    emit([{asis,ensure_atom(Name)},"(DefaultValue,Value) ->",nl]),
     gen_check_sequence(Name,Components,1).
 gen_check_sequence(Name,[#'ComponentType'{name=N,typespec=Type}|Cs],Num) ->
     InnerType = get_inner(Type#type.def),
-%    NthDefV = lists:concat(["lists:nth(",Num,",DefaultValue)"]),
     NthDefV = ["element(",Num+1,",DefaultValue)"],
-%    NthV = lists:concat(["lists:nth(",Num,",Value)"]),
     NthV = ["element(",Num+1,",Value)"],
     gen_check_func_call(Name,Type,InnerType,NthDefV,NthV,N),
     case Cs of
@@ -622,8 +630,8 @@ gen_check_sequence(_,[],_) ->
     ok.
 
 gen_check_choice(Name,CList=[#'ComponentType'{}|_Cs]) ->
-    emit({Name,"({Id,DefaultValue},{Id,Value}) ->",nl}),
-    emit({"   case Id of",nl}),
+    emit([{asis,ensure_atom(Name)},"({Id,DefaultValue},{Id,Value}) ->",nl]),
+    emit(["   case Id of",nl]),
     gen_check_choice_components(Name,CList,1).
 
 gen_check_choice_components(_,[],_)->
@@ -632,8 +640,7 @@ gen_check_choice_components(Name,[#'ComponentType'{name=N,typespec=Type}|
 				  Cs],Num) ->
     Ind6 = "      ",
     InnerType = get_inner(Type#type.def),
-%    DefVal = ["element(2,lists:nth(",Num,",DefaultValue))"],
-    emit({Ind6,N," ->",nl,Ind6}),
+    emit({Ind6,"'",N,"' ->",nl,Ind6}),
     gen_check_func_call(Name,Type,InnerType,{var,"defaultValue"},
 			{var,"value"},N),
     case Cs of
@@ -648,11 +655,16 @@ gen_check_func_call(Name,Type,InnerType,DefVal,Val,N) ->
     case type(InnerType) of
 	{primitive,bif} ->
 	    emit("   "),
-	    gen_prim_check_call(InnerType,DefVal,Val,Type);
+	    gen_prim_check_call(get_inner(InnerType),DefVal,Val,Type);
 	#'Externaltypereference'{type=T} ->
-	    emit({"   ",list2name([T,check]),"(",DefVal,",",Val,")"});
+	    emit({"   ",{asis,ensure_atom(list2name([T,check]))},"(",DefVal,",",Val,")"});
+	'ASN1_OPEN_TYPE' ->
+	    emit(["   if",nl,
+		  "      ",DefVal," == ",Val," -> true;",nl,
+		  "      true -> throw({error,{asn1_open_type}})",nl,
+		  "   end",nl]);
 	_ ->
-	    emit({"   ",list2name([N,Name]),"(",DefVal,",",Val,")"})
+	    emit(["   ",{asis,ensure_atom(list2name([N,Name]))},"(",DefVal,",",Val,")"])
     end.
 		  
     
@@ -1132,11 +1144,6 @@ gen_dispatcher([Flast|_T],FuncName,Prefix,ExtraArg) ->
 	emit([FuncName,"(","Type",",_Data) -> exit({error,{asn1,{undefined_type,Type}}}).",nl,nl,nl]).
 
 pgen_info() ->
-%%     Options = get(encoding_options),
-%%     emit({"info() ->",nl,
-%% 	  "  [{vsn,'",asn1ct:vsn(),"'},",
-%% 	  "   {module,'",Module,"'},",
-%% 	  "   {options,",io_lib:format("~p",[Options]),"}].",nl}).
     emit(["info() ->",nl,
 	  "   case ?MODULE:module_info() of",nl,
 	  "      MI when is_list(MI) ->",nl,
@@ -1155,7 +1162,7 @@ pgen_info() ->
 
 open_hrl(OutFile,Module) ->
     File = lists:concat([OutFile,".hrl"]),
-    Fid = fopen(File,write),
+    Fid = fopen(File,[write]),
     put(gen_file_out,Fid),
     gen_hrlhead(Module).
 
@@ -1362,7 +1369,8 @@ gen_record(TorPtype,Name,Type,Num) when record(Type,type) ->
 		0 -> open_hrl(get(outfile),get(currmod));
 		_ -> true
 	    end,
-	    emit({"-record('",list2name(Name),"',{",nl}),
+	    Prefix = get_record_name_prefix(),
+	    emit({"-record('",Prefix,list2name(Name),"',{",nl}),
 	    RootList = case CompList of
 			   _ when list(CompList) ->
 			       CompList;
@@ -1483,11 +1491,8 @@ gen_record2(Name,SeqOrSet,[H|T],Com, Extension) ->
     emit(Com),
     emit({asis,Cname}),
     gen_record_default(H, Extension),
-%    emit(", "),
     gen_record2(Name,SeqOrSet,T,", ", Extension).
 
-%gen_record_default(C, ext) ->
-%    emit(" = asn1_NOEXTVALUE");
 gen_record_default(#'ComponentType'{prop='OPTIONAL'}, _)->
     emit(" = asn1_NOVALUE"); 
 gen_record_default(#'ComponentType'{prop={'DEFAULT',_}}, _)->
@@ -1510,14 +1515,6 @@ gen_check_call(TopType,Cname,Type,InnerType,WhatKind,DefaultValue,Element) ->
 	    case insert_once(check_functions,{Name,RefType}) of
 		true ->
 		    lookahead_innertype([T],InType,RefType);
-%		    case asn1ct_gen:type(InType) of
-%			{constructed,bif} ->
-%			    lookahead_innertype([T],InType,RefType);
-%			#'Externaltypereference'{type=TNew} ->
-%			    lookahead_innertype([TNew],InType,RefType);
-%			_ ->
-%			    ok
-%		    end;
 		_ ->
 		    ok
 	    end;
@@ -1594,13 +1591,7 @@ lookahead_innertype(_Name,#'Externaltypereference'{module=M,type=T},_) ->
     InType = asn1ct_gen:get_inner(RefType#type.def),
     case type(InType) of
 	{constructed,bif} ->
-	    NewName = list2name([T,check]),
-	    case insert_once(check_functions,{NewName,RefType}) of
-		true ->
-		    lookahead_innertype([T],InType,RefType);
-		_ ->
-		    ok
-	    end;
+	    lookahead_innertype([T],InType,RefType);
 	#'Externaltypereference'{} ->
 	    NewName = list2name([T,check]),
 	    case insert_once(check_functions,{NewName,RefType}) of
@@ -1612,20 +1603,6 @@ lookahead_innertype(_Name,#'Externaltypereference'{module=M,type=T},_) ->
 	_ ->
 	    ok
     end;
-%    case insert_once(check_functions,{list2name(Name++[check]),Type}) of
-%	true ->
-%	    InnerType = asn1ct_gen:get_inner(Type#type.def),
-%	    case asn1ct_gen:type(InnerType) of
-%		{constructed,bif} ->
-%		    lookahead_innertype([T],InnerType,Type);
-%		#'Externaltypereference'{type=TNew} ->
-%		    lookahead_innertype([TNew],InnerType,Type);
-%		_ ->
-%		    ok
-%	    end;
-%	_ ->
-%	    ok
-%    end;
 lookahead_innertype(_,_,_) ->
     ok.
 
@@ -1797,6 +1774,7 @@ type2(X) ->
 prim_bif(X) ->
     lists:member(X,['INTEGER' ,
 		    'ENUMERATED',
+		    'REAL',
 		    'OBJECT IDENTIFIER',
 		    'ANY',
 		    'NULL',
@@ -1990,4 +1968,17 @@ get_constraint(C,Key) ->
 	    V;
 	{value,Cnstr} ->
 	    Cnstr
+    end.
+
+ensure_atom(Atom) when is_atom(Atom) ->
+    Atom;
+ensure_atom(List) when is_list(List) ->
+    list_to_atom(List).
+    
+get_record_name_prefix() ->
+    case lists:keysearch(record_name_prefix,1,get(encoding_options)) of
+	false ->
+	    "";
+	{value,{_,Prefix}} ->
+	    Prefix
     end.

@@ -61,7 +61,9 @@ create_table([{key, Us}], MnesiaTab, Storage) ->
     
 build_table(MnesiaKey, MnesiaTab, Tree, Us, Storage)
   when MnesiaKey /= '$end_of_table' ->
-    update(write, Tree, MnesiaKey, MnesiaKey),
+    %%update(write, Tree, MnesiaKey, MnesiaKey),
+    SnmpKey = key_to_oid_i(MnesiaKey, Us),
+    b_insert(Tree, SnmpKey, MnesiaKey),
     Next = mnesia_lib:db_next_key(Storage, MnesiaTab, MnesiaKey), 
     build_table(Next, MnesiaTab, Tree, Us, Storage);
 build_table('$end_of_table', _MnesiaTab, _Tree, _Us, _Storage) ->
@@ -145,10 +147,7 @@ oid_to_key_1(Tuple, Oid) ->
 	List = oid_to_key_2(1, size(Tuple), Tuple, Oid),
 	list_to_tuple(List)
     catch 
-	throw:fix_string ->
-	    unknown;
-	  _ : _ ->
-	    mnesia:abort({bad_snmp_key, Oid, Tuple})
+	_:_ -> unknown
     end.
 
 oid_to_key_2(N, Sz, Tuple, Oid0) when N =< Sz ->

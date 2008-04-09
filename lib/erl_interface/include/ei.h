@@ -35,12 +35,13 @@
 #include <winbase.h>
 #endif
 
+#include <stdio.h>		/* Need type FILE */
+#include <errno.h>		/* Need EHOSTUNREACH, ENOMEM, ... */
+
 #if !defined(__WIN32__) && !defined(VXWORKS) || (defined(VXWORKS) && defined(HAVE_SENS))
 # include <netdb.h>
 #endif
 
-#include <stdio.h>		/* Need type FILE */
-#include <errno.h>		/* Need EHOSTUNREACH, ENOMEM, ... */
 
 /* -------------------------------------------------------------------- */
 /*                      Defines part of API                             */
@@ -744,14 +745,14 @@ int ei_decode_intlist(const char *buf, int *index, long *a, int *count);
 int ei_receive_encoded(int fd, char **bufp, int *bufsz, erlang_msg *to, 
 		       int *msglen);
 int ei_receive_encoded_tmo(int fd, char **bufp, int *bufsz, erlang_msg *to, 
-		       int *msglen, unsigned ms);
-int ei_send_encoded(int fd, const erlang_pid *to, const char *msg, int msglen);
-int ei_send_encoded_tmo(int fd, const erlang_pid *to, const char *msg, int msglen,
-		    unsigned ms);
+			   int *msglen, unsigned ms);
+int ei_send_encoded(int fd, const erlang_pid *to, char *msg, int msglen);
+int ei_send_encoded_tmo(int fd, const erlang_pid *to, char *msg, int msglen,
+			unsigned ms);
 int ei_send_reg_encoded(int fd, const erlang_pid *from, const char *to,
-			const char *msg, int msglen);
+			char *msg, int msglen);
 int ei_send_reg_encoded_tmo(int fd, const erlang_pid *from, const char *to,
-			const char *msg, int msglen, unsigned ms);
+			    char *msg, int msglen, unsigned ms);
 
 /*
  * Bacward compatibility with old undocumented but used interface...

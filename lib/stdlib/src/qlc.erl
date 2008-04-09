@@ -126,7 +126,7 @@
 -record(qlc_handle, {h}).
 
 get_handle(#qlc_handle{h = #qlc_lc{opt = {qlc_opt, U, C, M}}=H}) ->
-    %% R10B and R11B-0.
+    %% R11B-0.
     H#qlc_lc{opt = #qlc_opt{unique = U, cache = C, max_lookup = M}};
 get_handle(#qlc_handle{h = H}) ->
     H;
@@ -265,6 +265,10 @@ format_error(too_complex_join) ->
                   []);
 format_error(too_many_joins) ->
     io_lib:format("cannot handle more than one join efficiently", []);
+format_error(nomatch_pattern) ->
+    io_lib:format("pattern cannot possibly match", []);
+format_error(nomatch_filter) ->
+    io_lib:format("filter evaluates to 'false'", []);
 format_error({Line, Mod, Reason}) when is_integer(Line) ->
     io_lib:format("~p: ~s~n", 
                   [Line, lists:flatten(Mod:format_error(Reason))]);
@@ -291,23 +295,26 @@ info(QH) ->
 
 info(QH, Options) ->
     case {options(Options, [unique_all, cache_all, flat, format, n_elements, 
-                            tmpdir, max_list_size, tmpdir_usage]),
+                            depth, tmpdir, max_list_size, tmpdir_usage]),
           get_handle(QH)} of
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
             erlang:error(badarg, [QH, Options]);
         {[GUnique, GCache, Flat, Format, NElements, 
-          TmpDir, MaxList, TmpUsage],
+          Depth, TmpDir, MaxList, TmpUsage],
          H} ->
             try
                 Prep = prepare_qlc(H, [], GUnique, GCache, 
                                    TmpDir, MaxList, TmpUsage),
-                Info = le_info(Prep),
-                AbstractCode = abstract(Info, Flat, NElements),
+                Info = le_info(Prep, {NElements,Depth}),
+                AbstractCode = abstract(Info, Flat, NElements, Depth),
                 case Format of
                     abstract_code ->
-                        AbstractCode;
+                        abstract_code(AbstractCode);
                     string ->
-                        lists:flatten(erl_pp:expr(AbstractCode, 0, none));
+                        Hook = fun({special, _Line, String}, _I, _P, _F) ->
+                                       String
+                               end,
+                        lists:flatten(erl_pp:expr(AbstractCode, 0, Hook));
                     debug -> % Not documented. Intended for testing only.
                         Info
                 end
@@ -569,6 +576,9 @@ options(Options0, [Key | Keys], L) when is_list(Options0) ->
                                                   is_integer(NElements),
                                                    NElements > 0 ->
                 {ok, NElements};
+            {value, {depth, Depth}} when Depth =:= infinity;
+                                         is_integer(Depth), Depth >= 0 ->
+                {ok, Depth};
             {value, {order, Order}} when is_function(Order), 
                                            is_function(Order, 2);
                                          (Order =:= ascending);
@@ -616,6 +626,7 @@ default_option(spawn_options) -> default;
 default_option(flat) -> true;
 default_option(format) -> string;
 default_option(n_elements) -> infinity;
+default_option(depth) -> infinity;
 default_option(max_list_size) -> ?MAX_LIST_SIZE;
 default_option(tmpdir_usage) -> allowed;
 default_option(cache) -> false;
@@ -751,9 +762,7 @@ parent_fun(Pid, Parent) ->
         {Pid, {caught, throw, Error, [?THROWN_ERROR | _]}} ->
             Error;
         {Pid, {caught, Class, Reason, Stacktrace}} ->
-            erlang:raise(Class, Reason, Stacktrace);
-        _Ignored ->
-            parent_fun(Pid, Parent)
+            erlang:raise(Class, Reason, Stacktrace)
     end.
 
 reply(Parent, MonRef, Post, []) ->
@@ -809,15 +818,24 @@ wait_for_request(Parent, MonRef, Post) ->
 
 %%% End of cursor process functions.
 
+abstract_code({special, Line, String}) ->
+    {string, Line, String};
+abstract_code(Tuple) when is_tuple(Tuple) ->
+    list_to_tuple(abstract_code(tuple_to_list(Tuple)));
+abstract_code([H | T]) ->
+    [abstract_code(H) | abstract_code(T)];
+abstract_code(Term) ->
+    Term.
+
 %% Also in qlc_pt.erl.
 -define(Q, q).
 -define(QLC_Q(L1, L2, L3, L4, LC, Os), 
         {call,L1,{remote,L2,{atom,L3,?MODULE},{atom,L4,?Q}},[LC | Os]}).
 
-abstract(Info, false, NElements) ->
-    abstract(Info, NElements);
-abstract(Info, true, NElements) ->
-    Abstract = abstract(Info, NElements),
+abstract(Info, false=_Flat, NElements, Depth) ->
+    abstract(Info, NElements, Depth);
+abstract(Info, true=_Flat, NElements, Depth) ->
+    Abstract = abstract(Info, NElements, Depth),
     Vars = vars(Abstract),
     {_, Body0, Expr} = flatten_abstr(Abstract, 1, Vars, []),
     case Body0 of
@@ -831,24 +849,24 @@ abstract(Info, true, NElements) ->
             {block, 0, lists:reverse(Body0, [Expr])}
     end.
 
-abstract({qlc, E0, Qs0, Opt}, NElements) ->
+abstract({qlc, E0, Qs0, Opt}, NElements, Depth) ->
     Qs = lists:map(fun({generate, P, LE}) ->
                            {generate, 1, binary_to_term(P), 
-                            abstract(LE, NElements)};
+                            abstract(LE, NElements, Depth)};
                       (F) -> 
                            binary_to_term(F)
                    end, Qs0),
     E = binary_to_term(E0),
     Os = case Opt of
              [] -> [];
-             _ -> [erl_parse:abstract(Opt, 1)]
+             _ -> [abstract_term(Opt, 1)]
          end,
     ?QLC_Q(1, 1, 1, 1, {lc,1,E,Qs}, Os);
-abstract({table, {M, F, As0}}, _NElements) 
+abstract({table, {M, F, As0}}, _NElements, _Depth) 
                           when is_atom(M), is_atom(F), is_list(As0) ->
-    As = [erl_parse:abstract(A, 1) || A <- As0],
+    As = [abstract_term(A, 1) || A <- As0],
     {call, 1, {remote, 1, {atom, 1, M}, {atom, 1, F}}, As};
-abstract({table, TableDesc}, _NElements) ->
+abstract({table, TableDesc}, _NElements, _Depth) ->
     case io_lib:deep_char_list(TableDesc) of
         true ->
             {ok, Tokens, _} = erl_scan:string(lists:flatten(TableDesc++".")),
@@ -857,27 +875,113 @@ abstract({table, TableDesc}, _NElements) ->
         false -> % abstract expression
             TableDesc
     end;
-abstract({append, Infos}, NElements) ->
-    As = lists:foldr(fun(Info, As0) -> {cons,1,abstract(Info, NElements),As0}
+abstract({append, Infos}, NElements, Depth) ->
+    As = lists:foldr(fun(Info, As0) -> 
+                             {cons,1,abstract(Info, NElements, Depth),As0}
                      end, {nil, 1}, Infos),
     {call, 1, {remote, 1, {atom, 1, ?MODULE}, {atom, 1, append}}, [As]};
-abstract({sort, Info, SortOptions}, NElements) ->    
+abstract({sort, Info, SortOptions}, NElements, Depth) ->    
     {call, 1, {remote, 1, {atom, 1, ?MODULE}, {atom, 1, sort}},
-     [abstract(Info, NElements), erl_parse:abstract(SortOptions, 1)]};
-abstract({keysort, Info, Kp, SortOptions}, NElements) ->    
+     [abstract(Info, NElements, Depth), abstract_term(SortOptions, 1)]};
+abstract({keysort, Info, Kp, SortOptions}, NElements, Depth) ->
     {call, 1, {remote, 1, {atom, 1, ?MODULE}, {atom, 1, keysort}},
-     [erl_parse:abstract(Kp, 1), abstract(Info, NElements), 
-      erl_parse:abstract(SortOptions, 1)]};
-abstract({list,L,MS}, NElements) ->
+     [abstract_term(Kp, 1), abstract(Info, NElements, Depth), 
+      abstract_term(SortOptions, 1)]};
+abstract({list,L,MS}, NElements, Depth) ->
     {call, 1, {remote, 1, {atom, 1, ets}, {atom, 1, match_spec_run}},
-     [abstract(L, NElements),
+     [abstract(L, NElements, Depth),
       {call, 1, {remote, 1, {atom, 1, ets}, {atom, 1, match_spec_compile}},
-       [erl_parse:abstract(MS, 1)]}]};
-abstract({list, L}, NElements) when NElements =:= infinity; 
-                                    NElements >= length(L) ->
-    erl_parse:abstract(L, 1);
-abstract({list, L}, NElements) ->
-    erl_parse:abstract(lists:sublist(L, NElements) ++ more, 1).
+       [abstract_term(depth(MS, Depth), 1)]}]};
+abstract({list, L}, NElements, Depth) when NElements =:= infinity; 
+                                           NElements >= length(L) ->
+    abstract_term(depth(L, Depth), 1);
+abstract({list, L}, NElements, Depth) ->
+    abstract_term(depth(lists:sublist(L, NElements), Depth) ++ '...', 1).
+
+depth(List, infinity) ->
+    List;
+depth(List, Depth) ->
+    lists:map(fun(E) -> depth1(E, Depth) end, List).
+
+depth_fun(infinity = _Depth) ->
+    fun(E) -> E end;
+depth_fun(Depth) ->
+    fun(E) -> depth1(E, Depth) end.
+
+depth1([]=L, _D) ->
+    L;
+depth1(_Term, 0) ->
+    '...';
+depth1(Tuple, D) when is_tuple(Tuple) ->
+    depth_tuple(Tuple, tuple_size(Tuple), 1, D - 1, []);
+depth1(List, D) when is_list(List) ->
+    if 
+        D =:= 1 ->
+            ['...'];
+        true -> 
+            depth_list(List, D - 1)
+    end;
+depth1(Binary, D) when byte_size(Binary) > D - 1 ->
+    D1 = D - 1,
+    <<Bin:D1/binary,_/binary>> = Binary,
+    <<Bin/binary,"...">>;
+depth1(T, _Depth) ->
+    T.
+
+depth_list([]=L, _D) ->
+    L;
+depth_list(_L, 0) ->
+    '...';
+depth_list([E | Es], D) ->
+    [depth1(E, D) | depth_list(Es, D - 1)].
+
+depth_tuple(_Tuple, Sz, I, _D, L) when I > Sz ->
+    list_to_tuple(lists:reverse(L));
+depth_tuple(_L, _Sz, _I, 0, L) ->
+    list_to_tuple(lists:reverse(L, ['...']));
+depth_tuple(Tuple, Sz, I, D, L) ->
+    E = depth1(element(I, Tuple), D),
+    depth_tuple(Tuple, Sz, I + 1, D - 1, [E | L]).
+
+abstract_term(Term) ->
+    abstract_term(Term, 0).
+
+abstract_term(Term, Line) ->
+    abstr_term(Term, Line).
+
+abstr_term(Tuple, Line) when is_tuple(Tuple) ->
+    {tuple,Line,[abstr_term(E, Line) || E <- tuple_to_list(Tuple)]};
+abstr_term([_ | _]=L, Line) ->
+    case io_lib:char_list(L) of
+        true ->
+            erl_parse:abstract(L, Line);
+        false ->
+            abstr_list(L, Line)
+    end;
+abstr_term(Fun, Line) when is_function(Fun) ->
+    case erl_eval:fun_data(Fun) of
+        {fun_data, _Bs, Cs} ->
+            {'fun', Line, {clauses, Cs}};
+        false ->
+            {name, Name} = erlang:fun_info(Fun, name),
+            {arity, Arity} = erlang:fun_info(Fun, arity),
+            case erlang:fun_info(Fun, type) of
+                {type, external} ->
+                    {module, Module} = erlang:fun_info(Fun, module),
+                    {'fun', Line, {function,Module,Name,Arity}};
+                {type, local} ->
+                    {'fun', Line, {function,Name,Arity}}
+            end
+    end;
+abstr_term(PPR, Line) when is_pid(PPR); is_port(PPR); is_reference(PPR) ->
+    {special, Line, lists:flatten(io_lib:write(PPR))};    
+abstr_term(Simple, Line) ->
+    erl_parse:abstract(Simple, Line).
+
+abstr_list([H | T], Line) ->
+    {cons, Line, abstr_term(H, Line), abstr_list(T, Line)};
+abstr_list(T, Line) ->
+    abstr_term(T, Line).
 
 %% Since generator pattern variables cannot be used in list
 %% expressions, it is OK to flatten out QLCs using temporary
@@ -1021,14 +1125,16 @@ template_state() ->
 %%          | {unique, bool()} | unique
 %% FilterDesc = PatternDesc = TemplateDesc = binary()
 
-le_info(#prepared{qh = #simple_qlc{le = LE, p = P, line = L, optz = Optz}}) ->
+le_info(#prepared{qh = #simple_qlc{le = LE, p = P, line = L, optz = Optz}},
+        InfOpt) ->
     QVar = term_to_binary({var, L, P}),
-    {qlc, QVar, [{generate, QVar, le_info(LE)}], opt_info(Optz)};
-le_info(#prepared{qh = #qlc{codef = CodeF, qdata = Qdata, optz = Optz}}) ->
+    {qlc, QVar, [{generate, QVar, le_info(LE, InfOpt)}], opt_info(Optz)};
+le_info(#prepared{qh = #qlc{codef = CodeF, qdata = Qdata, optz = Optz}},
+        InfOpt) ->
     Code = CodeF(),
     TemplateState = template_state(),
     E = element(TemplateState, Code),
-    QualInfo0 = qual_info(Qdata, Code),
+    QualInfo0 = qual_info(Qdata, Code, InfOpt),
     QualInfo1 = case Optz#optz.fast_join of
                     #qlc_join{} = Join ->
                         join_info(Join, QualInfo0, Qdata, Code);
@@ -1038,46 +1144,62 @@ le_info(#prepared{qh = #qlc{codef = CodeF, qdata = Qdata, optz = Optz}}) ->
     QualInfo = [I || I <- QualInfo1, I =/= skip],
     {qlc, E, QualInfo, opt_info(Optz)};
 le_info(#prepared{qh = #qlc_table{format_fun = FormatFun, trav_MS = TravMS, 
-                                  ms = MS, lu_vals = LuVals}}) ->
+                                  ms = MS, lu_vals = LuVals}}, InfOpt) ->
+    {NElements, Depth} = InfOpt,
+    %% The 'depth' option applies to match specifications as well.
+    %% This is for limiting imported variables (parameters).
+    DepthFun = depth_fun(Depth),
     case LuVals of
         _ when FormatFun =:= undefined ->
             {table, {'$MOD', '$FUN', []}};
-        {Pos, Vals} when MS =:= no_match_spec ->
-            {table, FormatFun({lookup, Pos, Vals})};
         {Pos, Vals} ->
-            {list, {table, FormatFun({lookup, Pos, Vals})}, MS};
+            Formated = try FormatFun({lookup, Pos, Vals, NElements, DepthFun})
+                       catch _:_ -> FormatFun({lookup, Pos, Vals})
+                       end,
+            if
+                MS =:= no_match_spec ->
+                    {table, Formated};
+                true ->
+                    {list, {table, Formated}, depth(MS, Depth)}
+            end;
         _ when TravMS, is_list(MS) ->
-            {table, FormatFun({match_spec, MS})};
+            {table, FormatFun({match_spec, depth(MS, Depth)})};
         _ when MS =:= no_match_spec ->
-            {table, FormatFun(all)}
+            try {table, FormatFun({all, NElements, DepthFun})}
+            catch _:_ -> {table, FormatFun(all)}
+            end
     end;
-le_info(#prepared{qh = #qlc_append{hl = HL}}) ->
-    {append, [le_info(H) || H <- HL]};
+le_info(#prepared{qh = #qlc_append{hl = HL}}, InfOpt) ->
+    {append, [le_info(H, InfOpt) || H <- HL]};
 le_info(#prepared{qh = #qlc_sort{h = H, keypos = sort, 
-                                 fs_opts = SortOptions0, tmpdir = TmpDir}}) ->
+                                 fs_opts = SortOptions0, tmpdir = TmpDir}},
+        InfOpt) ->
     SortOptions = sort_options_global_tmp(SortOptions0, TmpDir),
-    {sort, le_info(H), SortOptions};
+    {sort, le_info(H, InfOpt), SortOptions};
 le_info(#prepared{qh = #qlc_sort{h = H, keypos = {keysort, Kp}, 
-                                 fs_opts = SortOptions0, tmpdir = TmpDir}}) ->
+                                 fs_opts = SortOptions0, tmpdir = TmpDir}},
+        InfOpt) ->
     SortOptions = sort_options_global_tmp(SortOptions0, TmpDir),
-    {keysort, le_info(H), Kp, SortOptions};
-le_info(#prepared{qh = #qlc_list{l = L, ms = no_match_spec}}) ->
+    {keysort, le_info(H, InfOpt), Kp, SortOptions};
+le_info(#prepared{qh = #qlc_list{l = L, ms = no_match_spec}}, _InfOpt) ->
     {list, L};
-le_info(#prepared{qh = #qlc_list{l = L, ms = MS}}) when is_list(L) ->
+le_info(#prepared{qh = #qlc_list{l = L, ms = MS}},_InfOpt) when is_list(L) ->
     {list, {list, L}, MS};
-le_info(#prepared{qh = #qlc_list{l = L, ms = MS}}) ->
-    {list, le_info(L), MS}.
+le_info(#prepared{qh = #qlc_list{l = L, ms = MS}}, InfOpt) ->
+    {list, le_info(L, InfOpt), MS}.
 
-qual_info([?qual_data(_QNum, _GoI, ?SKIP, fil) | Qdata], Code) ->
+qual_info([?qual_data(_QNum, _GoI, ?SKIP, fil) | Qdata], Code, InfOpt) ->
     %% see skip_lookup_filters()
-    [skip | qual_info(Qdata, Code)];
-qual_info([?qual_data(QNum, _GoI, _SI, fil) | Qdata], Code) ->
-    [element(QNum + 1, Code) | qual_info(Qdata, Code)];
-qual_info([?qual_data(_QNum, _GoI, _SI, {gen,#join{}}) | Qdata], Code) ->
-    [skip | qual_info(Qdata, Code)];
-qual_info([?qual_data(QNum, _GoI, _SI, {gen,LE}) | Qdata], Code) ->
-    [{generate,element(QNum + 1, Code),le_info(LE)} | qual_info(Qdata, Code)];
-qual_info([], _Code) ->
+    [skip | qual_info(Qdata, Code, InfOpt)];
+qual_info([?qual_data(QNum, _GoI, _SI, fil) | Qdata], Code, InfOpt) ->
+    [element(QNum + 1, Code) | qual_info(Qdata, Code, InfOpt)];
+qual_info([?qual_data(_QNum, _GoI, _SI, {gen,#join{}}) | Qdata], 
+          Code, InfOpt) ->
+    [skip | qual_info(Qdata, Code, InfOpt)];
+qual_info([?qual_data(QNum, _GoI, _SI, {gen,LE}) | Qdata], Code, InfOpt) ->
+    [{generate,element(QNum + 1, Code),le_info(LE, InfOpt)} | 
+     qual_info(Qdata, Code, InfOpt)];
+qual_info([], _Code, _InfOpt) ->
     [].
 
 join_info(Join, QInfo, Qdata, Code) ->
@@ -1145,7 +1267,7 @@ join_merge_info(QNum, QInfo, Code, G, ExtraConstants) ->
             TP = term_to_binary(G),
             CFs = [begin
                        Call = {call,0,{atom,0,element},[{integer,0,Col},EPV]},
-                       F = list2op([{op,0,'=:=',erl_parse:abstract(Con),Call}
+                       F = list2op([{op,0,'=:=',abstract_term(Con),Call}
                                       || Con <- Cs], 'or'),
                        term_to_binary(F)
                    end ||
@@ -1231,7 +1353,7 @@ prep_le(#qlc_append{hl = HL}, GOpt) ->
         [Prep] -> 
             Prep;
         PrepL -> 
-            Cache = lists:all(fun(#prepared{is_cached = IM}) -> IM =/= false
+            Cache = lists:all(fun(#prepared{is_cached = IsC}) -> IsC =/= false
                               end, PrepL),
             %% The handles in hl are replaced by prepared handles:
             Prep = #prepared{qh = #qlc_append{hl = PrepL}, is_cached = Cache},
@@ -1366,7 +1488,8 @@ may_create_simple(#qlc_opt{unique = Unique, cache = Cache} = Opt,
                   #prepared{is_cached = IsCached, 
                             is_unique_objects = IsUnique} = Prep) ->
     if 
-        Unique and not IsUnique; (Cache =/= false) and not IsCached ->
+        Unique and not IsUnique; 
+        (Cache =/= false) and not IsCached ->
             prep_simple_qlc(?SIMPLE_QVAR, 1, Prep, Opt);
         true ->
             Prep

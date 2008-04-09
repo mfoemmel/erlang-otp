@@ -76,3 +76,4 @@ rule([email|_], _, Opts) ->
 
 rule(TagHistory, TagBody, Opts) ->
     docb_html:rule(TagHistory, TagBody, Opts).
+

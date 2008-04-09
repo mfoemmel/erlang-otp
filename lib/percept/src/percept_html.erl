@@ -197,7 +197,8 @@ url_graph(W, H, Min, Max, []) ->
 process_info_content(_Env, Input) ->
     Query = httpd:parse_query(Input),
     Pid = get_option_value("pid", Query),
-    
+   
+ 
     [I] = percept_db:select({information, Pid}),
     case I#information.entry of
     	{_,_,Arguments} ->

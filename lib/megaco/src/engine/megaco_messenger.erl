@@ -2350,8 +2350,9 @@ do_handle_reply(CD, #request{timer_ref    = {_Type, Ref}, % OTP-4843
     %% Don't care about Req and Rep version diff
     ?report_trace(CD, "trans reply", [T]),
     megaco_monitor:delete_request(TransId),
-    megaco_monitor:cancel_apply_after(Ref), %% OTP-4843
-    
+    megaco_monitor:cancel_apply_after(Ref),           % OTP-4843
+    megaco_config:del_pending_counter(recv, TransId), % OTP-7189
+
     %% Send acknowledgement
     maybe_send_ack(T#megaco_transaction_reply.immAckRequired, CD),
 
@@ -2710,16 +2711,16 @@ test_reply_encode(ConnHandle, Version, EncodingMod, EncodingConfig, Reply) ->
 %% Encode a list of actions or a list of list of actions for
 %% later sending (using call or cast).
 %% 
-%% encode_actions(CH, Acts, Opts) -> {ok, EncodedActions()} | {error, Reason}
+%% encode_actions(CH, Acts, Opts) -> {ok, encoded_actions()} | {error, Reason}
 %% CH -> connection_handle()
 %% Acts -> action_reqs() | [action_reqs()]
 %% action_reqs() -> [action_req()]
-%% action_req() -> #'ActionRequest'
+%% action_req() -> #'ActionRequest'{}
 %% Opts -> [option()]
 %% option() -> {Tab, Val}
 %% Tag -> atom()
 %% Val -> term()
-%% EncodedActionsList -> binary() | [binary()]
+%% encoded_actions() -> binary() | [binary()]
 %% Reason -> term()
 encode_actions(CH, [A|_] = ActionsList, Opts) 
   when is_record(CH, megaco_conn_handle) andalso is_list(A) ->
@@ -2773,12 +2774,15 @@ call(ConnHandle, Actions, Options) ->
 	true ->
 	    {error, {bad_option, reply_data}};
 	false ->
-	    Options2 = [{reply_data, self()} | Options],
-	    call_or_cast(call, ConnHandle, Actions, Options2)
+	    Self          = self(), 
+	    ProxyFun      = fun() -> call_proxy(Self) end,
+	    {Proxy, MRef} = erlang:spawn_monitor(ProxyFun),
+	    Options2      = [{reply_data, Proxy} | Options],
+	    call_or_cast(call, ConnHandle, Actions, Options2, MRef)
     end.
 
 cast(ConnHandle, Actions, Options) ->
-    call_or_cast(cast, ConnHandle, Actions, Options).
+    call_or_cast(cast, ConnHandle, Actions, Options, undefined).
 
 %% In a transaction there can be several actions, so if the 
 %% First element of the Actions list is an ''ActionRequest''
@@ -2788,10 +2792,10 @@ cast(ConnHandle, Actions, Options) ->
 %% ActionRequest. That is, action requests for several transactions.
 %% It could also be a binary or a list of binaries (if 
 %% the actions has already been encoded).
-call_or_cast(CallOrCast, ConnHandle, [A|_] = Actions, Options) 
+call_or_cast(CallOrCast, ConnHandle, [A|_] = Actions, Options, ProxyMon) 
   when is_tuple(A) ->
     %% Just one transaction
-    case call_or_cast(CallOrCast, ConnHandle, [Actions], Options) of
+    case call_or_cast(CallOrCast, ConnHandle, [Actions], Options, ProxyMon) of
 	ok ->
 	    ok;
 	{error, Reason} ->
@@ -2802,10 +2806,10 @@ call_or_cast(CallOrCast, ConnHandle, [A|_] = Actions, Options)
 	    {Version, Error}
     end;
 
-call_or_cast(CallOrCast, ConnHandle, Actions, Options) 
+call_or_cast(CallOrCast, ConnHandle, Actions, Options, ProxyMon) 
   when is_binary(Actions) ->
     %% Just one transaction (although the actions has already been encoded)
-    case call_or_cast(CallOrCast, ConnHandle, [Actions], Options) of
+    case call_or_cast(CallOrCast, ConnHandle, [Actions], Options, ProxyMon) of
 	ok ->
 	    ok;
 	{error, Reason} ->
@@ -2816,7 +2820,7 @@ call_or_cast(CallOrCast, ConnHandle, Actions, Options)
 	    {Version, Error}
     end;
 
-call_or_cast(CallOrCast, ConnHandle, ActionsList, Options)
+call_or_cast(CallOrCast, ConnHandle, ActionsList, Options, ProxyMon)
   when is_record(ConnHandle, megaco_conn_handle) ->
     case prepare_req_send_options(ConnHandle, Options, ActionsList) of
         {ok, ConnData} ->
@@ -2830,18 +2834,21 @@ call_or_cast(CallOrCast, ConnHandle, ActionsList, Options)
 		    case CallOrCast of
 			call -> 
 			    TransIds = to_local_trans_id(ConnData, TRs),
-			    wait_for_reply(ConnData, TransIds);
+			    wait_for_reply(ConnData, TransIds, ProxyMon);
 			cast -> 
 			    ok
 		    end;
                 {error, Reason} ->
+		    call_proxy_cleanup(ConnData, ProxyMon),
 		    Version = ConnData#conn_data.protocol_version,
                     return_error(CallOrCast, Version, {error, Reason})
             end;
         {error, Reason} ->
+	    call_proxy_cleanup(Options, ProxyMon),
             return_error(CallOrCast, 1, {error, Reason})
     end;
-call_or_cast(CallOrCast, ConnHandle, _Actions, _Options) ->
+call_or_cast(CallOrCast, ConnHandle, _Actions, Options, ProxyMon) ->
+    call_proxy_cleanup(Options, ProxyMon),
     return_error(CallOrCast, 1, {error, {bad_megaco_conn_handle, ConnHandle}}).
 
 
@@ -2851,28 +2858,104 @@ return_error(Action, Version, Error) ->
 	cast -> Error
     end.
 
-wait_for_reply(CD, TransIds) ->
-    wait_for_reply(CD, TransIds, []).
+wait_for_reply(CD, TransIds, ProxyMon) ->
+    ProxyPid = CD#conn_data.reply_data,
+    ProxyPid ! {go, self(), CD, TransIds},
+    receive
+	{reply, ProxyPid, Reply} ->
+	    erlang:demonitor(ProxyMon, [flush]),
+	    Reply;
+	{'DOWN', ProxyMon, process, ProxyPid, Info} ->
+	    UserReply = {error, {call_proxy_crash, Info}}, 
+	    {CD#conn_data.protocol_version, UserReply}
+    end.
+    
 
-wait_for_reply(_CD, [], Replies0) ->
+call_proxy_cleanup(#conn_data{reply_data = ProxyPid}, ProxyMon) ->
+    do_call_proxy_cleanup(ProxyPid, ProxyMon);
+call_proxy_cleanup(Options, ProxyMon) when is_list(Options) ->
+    ProxyPid = 
+	case lists:keysearch(reply_data, 1, Options) of
+	    {value, {reply_data, Data}} ->
+		Data;
+	    _ ->
+		undefined
+	end,
+    do_call_proxy_cleanup(ProxyPid, ProxyMon);
+call_proxy_cleanup(ProxyPid, ProxyMon) ->
+    do_call_proxy_cleanup(ProxyPid, ProxyMon).
+
+do_call_proxy_cleanup(ProxyPid, ProxyMon) ->
+    maybe_demonitor(ProxyMon),
+    maybe_stop_proxy(ProxyPid),
+    ok.
+   
+maybe_demonitor(undefined) ->
+    ok;
+maybe_demonitor(Mon) ->
+    (catch erlang:demonitor(Mon, [flush])),
+    ok.
+
+maybe_stop_proxy(Pid) when is_pid(Pid) ->
+    Pid ! {stop, self()},
+    ok;
+maybe_stop_proxy(_) ->
+    ok.
+
+
+call_proxy(Parent) ->
+    receive
+	{go, Parent, CD, TransIds} ->
+	    call_proxy(Parent, CD, TransIds);
+	{stop, Parent} ->
+	    exit(normal)
+    end.
+
+call_proxy(Parent, CD, TransIds) ->
+    Reply = proxy_wait_for_reply(CD, TransIds, []),
+    Parent ! {reply, self(), Reply},
+    call_proxy_gc(CD, 5000).
+
+call_proxy_gc(CD, Timeout) when (Timeout > 0) ->
+    T = t(),
+    receive
+	{?MODULE, TransId, Version, Result} -> % Old format
+	    CD2 = CD#conn_data{protocol_version = Version}, 
+	    Extra = ?default_user_callback_extra, 
+	    return_unexpected_trans_reply(CD2, TransId, Result, Extra),
+	    call_proxy_gc(CD, Timeout - (t() - T));
+
+	{?MODULE, TransId, Version, Result, Extra} ->
+	    CD2 = CD#conn_data{protocol_version = Version}, 
+	    return_unexpected_trans_reply(CD2, TransId, Result, Extra),
+	    call_proxy_gc(CD, Timeout - (t() - T))
+
+    after Timeout ->
+	    exit(normal)
+    end.
+
+proxy_wait_for_reply(_CD, [], Replies0) ->
     % Make sure they come in the same order as the requests where sent
-    Replies1 = lists:keysort(2,Replies0), 
+    Replies1 = lists:keysort(2, Replies0), 
     %% Must all be the same version
     [{Version, _, _}|_] = Replies1,
     Replies2 = [Result || {_Version, _TransId, Result} <- Replies1], 
     {Version, Replies2};
-wait_for_reply(CD, TransIds, Replies) -> 
+proxy_wait_for_reply(CD, TransIds, Replies) -> 
     receive
-	{?MODULE, TransId, Version, Reply} -> % Old form
+	{?MODULE, TransId, Version, Reply} -> % Old format
 	    {TransIds2, Replies2} = 
-		wfr_handle_reply(CD, TransIds, TransId, Version, Replies, Reply),
-	    wait_for_reply(CD, TransIds2, Replies2);
+		wfr_handle_reply(CD, 
+				 TransIds, TransId, 
+				 Version, Replies, Reply),
+	    proxy_wait_for_reply(CD, TransIds2, Replies2);
 	    
 	{?MODULE, TransId, Version, Reply, Extra} -> 
 	    {TransIds2, Replies2} = 
 		wfr_handle_reply(CD, 
-				 TransIds, TransId, Version, Replies, Reply, Extra),
-	    wait_for_reply(CD, TransIds2, Replies2)
+				 TransIds, TransId, 
+				 Version, Replies, Reply, Extra),
+	    proxy_wait_for_reply(CD, TransIds2, Replies2)
     end.
 
 wfr_handle_reply(CD, TransIds, TransId, Version, Replies, Reply) ->
@@ -3728,6 +3811,7 @@ cancel_request(ConnData, Req, Reason)  ->
 
 cancel_request2(ConnData, TransId, UserReply) ->
     megaco_monitor:delete_request(TransId),
+    megaco_config:del_pending_counter(recv, TransId), % OTP-7189
     Serial    = TransId#trans_id.serial,
     ConnData2 = ConnData#conn_data{serial = Serial},
     return_reply(ConnData2, TransId, UserReply).
@@ -3788,7 +3872,8 @@ receive_reply_remote(ConnData, UserReply, Extra) ->
         [#request{timer_ref = {_Type, Ref}} = Req] -> %% OTP-4843
             %% Don't care about Req and Rep version diff
 	    megaco_monitor:delete_request(TransId),
-	    megaco_monitor:cancel_apply_after(Ref), %% OTP-4843
+	    megaco_monitor:cancel_apply_after(Ref),           % OTP-4843
+	    megaco_config:del_pending_counter(recv, TransId), % OTP-7189
 	
 	    UserMod   = Req#request.user_mod,
 	    UserArgs  = Req#request.user_args,
@@ -3822,8 +3907,8 @@ cancel_reply(_ConnData, #reply{state = aborted} = Rep, _Reason) ->
 	   pending_timer_ref = PendingRef} = Rep,
     megaco_monitor:delete_reply(TransId),
     megaco_monitor:cancel_apply_after(ReplyRef),
-    megaco_monitor:cancel_apply_after(PendingRef), % BMK BMK Still running?
-    megaco_config:del_pending_counter(TransId),    % BMK BMK Still existing?
+    megaco_monitor:cancel_apply_after(PendingRef),     % Still running?
+    megaco_config:del_pending_counter(sent, TransId),  % Still existing?
     ok;
 
 cancel_reply(_ConnData, Rep, ignore) ->
@@ -3833,8 +3918,8 @@ cancel_reply(_ConnData, Rep, ignore) ->
 	   pending_timer_ref = PendingRef} = Rep,
     megaco_monitor:delete_reply(TransId),
     megaco_monitor:cancel_apply_after(ReplyRef),
-    megaco_monitor:cancel_apply_after(PendingRef), % BMK BMK Still running?
-    megaco_config:del_pending_counter(TransId),    % BMK BMK Still existing?
+    megaco_monitor:cancel_apply_after(PendingRef),     % Still running?
+    megaco_config:del_pending_counter(sent, TransId),  % Still existing?
     ok;
 
 cancel_reply(_CD, _Rep, _Reason) ->
@@ -4544,6 +4629,11 @@ error_msg(F, A) ->
 %%         io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
 %%                       [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),  
 %%     lists:flatten(FormatDate).
+
+%% Time in milli seconds
+t() ->
+    {A,B,C} = erlang:now(),
+    A*1000000000+B*1000+(C div 1000).
 
 	      
 %%-----------------------------------------------------------------

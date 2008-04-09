@@ -1,10 +1,12 @@
-%%
+%% -*- erlang-indent-level: 2 -*-
+%%====================================================================
 %% Note: Uses the process keys:
 %%  hipe_time       - Indicates what to time.
 %%  hipe_timers     - A stack of timers.
 %%  {hipe_timer,T}  - Delata times for named timers. 
 %%  T               - Acc times for all named timers T.
-%%
+%%====================================================================
+
 -module(hipe_timing).
 -export([start/2, stop/2,
 	 %% start_timer/0, stop_timer/1,
@@ -16,55 +18,65 @@
 
 %%=====================================================================
 
-start(Text,_Mod) ->
+-spec(start/2 :: (string(), atom()) -> 'ok').
+
+start(Text, Mod) when is_atom(Mod) ->
   Timers = 
     case get(hipe_timers) of
       undefined -> [];
       Ts -> Ts
     end,
-  Space = lists:duplicate(length(Timers),$|),
+  Space = lists:duplicate(length(Timers), $|),
   Total = start_timer(),
-  put(hipe_timers,[Total|Timers]),
-  ?msg("[@~7w]"++Space ++ "> ~s~n",[Total,Text]).
+  put(hipe_timers, [Total|Timers]),
+  ?msg("[@~7w]" ++ Space ++ "> ~s~n", [Total,Text]).
 
-stop(Text,_Mod) ->
+-spec(stop/2 :: (string(), atom()) -> 'ok').
+
+stop(Text, Mod) when is_atom(Mod) ->
   {Total,_Last} = erlang:statistics(runtime),
   case get(hipe_timers) of
     [StartTime|Timers] -> 
       Space = lists:duplicate(length(Timers),$|),
       put(hipe_timers,Timers),
-      ?msg("[@~7w]"++Space ++ "< ~s: ~w~n",
+      ?msg("[@~7w]" ++ Space ++ "< ~s: ~w~n",
 	    [Total, Text, Total-StartTime]);
     _ ->
       put(hipe_timers, []),
       ?msg("[@~7w]< ~s: ~w~n", [Total, Text, Total])
   end.
 
-start_optional_timer(Text,Mod) ->
+-spec(start_optional_timer/2 :: (string(), atom()) -> 'ok').
+
+start_optional_timer(Text, Mod) ->
   case get(hipe_time) of 
-    true -> start(Text,Mod);
-    all -> start(Text,Mod);
-    Mod -> start(Text,Mod);
+    true -> start(Text, Mod);
+    all -> start(Text, Mod);
+    Mod -> start(Text, Mod);
     List when is_list(List) ->
       case lists:member(Mod, List) of
-	true -> start(Text,Mod);
-	false -> true
+	true -> start(Text, Mod);
+	false -> ok
       end;
-    _ -> true
+    _ -> ok
   end.
 
-stop_optional_timer(Text,Mod) ->
-  case get(hipe_time) of 
-    true -> stop(Text,Mod);
-    all -> stop(Text,Mod);
-    Mod -> stop(Text,Mod);
+-spec(stop_optional_timer/2 :: (string(), atom()) -> 'ok').
+
+stop_optional_timer(Text, Mod) ->
+  case get(hipe_time) of
+    true -> stop(Text, Mod);
+    all -> stop(Text, Mod);
+    Mod -> stop(Text, Mod);
     List when is_list(List) ->
       case lists:member(Mod, List) of
-	true -> stop(Text,Mod);
-	false -> true
+	true -> stop(Text, Mod);
+	false -> ok
       end;
-    _ -> true
+    _ -> ok
   end.
+
+-spec(start_timer/0 :: () -> non_neg_integer()).
 
 start_timer() ->
   {Total,_Last} = erlang:statistics(runtime),

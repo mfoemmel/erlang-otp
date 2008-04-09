@@ -433,7 +433,8 @@ INTERNAL_RELEASE_INCLUDES= \
 	$(ERTS_INCL_INT)/$(TARGET)/ethread_header_config.h \
 	$(ERTS_INCL_INT)/erl_printf.h \
 	$(ERTS_INCL_INT)/erl_printf_format.h \
-	$(ERTS_INCL_INT)/erl_memory_trace_protocol.h
+	$(ERTS_INCL_INT)/erl_memory_trace_protocol.h \
+	$(ERTS_INCL_INT)/erl_misc_utils.h
 
 INTERNAL_X_RELEASE_INCLUDE_DIRS= i386 x86_64 ppc32 sparc32 sparc64
 

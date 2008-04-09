@@ -646,7 +646,7 @@ Port *
 erts_de2port(DistEntry *dep, Process *c_p, ErtsProcLocks c_p_locks)
 {
     int no_proc_locks = !c_p || !c_p_locks;
-    int unlocked = 0;
+    int unlocked;
     Eterm id;
     int ix;
     Port *prt;
@@ -654,6 +654,7 @@ erts_de2port(DistEntry *dep, Process *c_p, ErtsProcLocks c_p_locks)
     ERTS_SMP_LC_ASSERT(erts_lc_is_dist_entry_locked(dep));
 
  restart:
+    unlocked = 0;
 
     id = dep->cid;
 
@@ -3539,13 +3540,8 @@ ErlDrvBinary* dbin;
     }
 
     bin = ErlDrvBinary2Binary(dbin);
-    if (erts_refc_dectest(&bin->refc, 0) == 0) {
-	if (bin->flags & BIN_FLAG_MATCH_PROG) {
-	    erts_match_set_free(bin);
-	} else {
-	    erts_bin_free(bin);
-	}
-    }
+    if (erts_refc_dectest(&bin->refc, 0) == 0)
+	erts_bin_free(bin);
 }
 
 

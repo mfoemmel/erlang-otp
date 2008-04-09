@@ -62,26 +62,41 @@ close(S) ->
 
 listen(S, Flag) ->
     prim_inet:listen(S, Flag).
-	
+
 connect(S, Addr, Port, Opts, Timer) ->
     case prim_inet:chgopts(S, Opts) of
 	ok ->
-	    Timeout = inet:timeout(Timer),
-	    case prim_inet:connect(S, Addr, Port, Timeout) of
-		ok ->
-		    connect_get_assoc(S, Addr, Port, Timer);
-		Error -> Error
+	    case prim_inet:getopt(S, active) of
+		{ok,Active} ->
+		    Timeout = inet:timeout(Timer),
+		    case prim_inet:connect(S, Addr, Port, Timeout) of
+			ok ->
+			    connect_get_assoc(S, Addr, Port, Active, Timer);
+			Err1 -> Err1
+		    end;
+		Err2 -> Err2
 	    end;
-	Error -> Error
+	Err3 -> Err3
     end.
 
-connect_get_assoc(S, Addr, Port, Timer) ->
+%% XXX race condition problem
+%% 
+%% If an incoming #sctp_assoc_change{} arrives after
+%% prim_inet:getopt(S, alive) above but before the
+%% #sctp_assoc_change{state=comm_up} originating from
+%% prim_inet:connect(S, Addr, Port, Timeout) above,
+%% connect_get_assoc/5 below mistakes it for an invalid response
+%% for a socket in {active,false} or {active,once} modes.
+%%
+%% In {active,true} mode it probably gets right, but it is
+%% a blocking connect that is implemented even for {active,true},
+%% and that may be a shortcoming. A non-blocking connect
+%% would be nice to have.
+
+connect_get_assoc(S, Addr, Port, false, Timer) ->
     case recv(S, inet:timeout(Timer)) of
-	{ok, {Addr, Port, [], Ev = #sctp_assoc_change{}}} ->
-	    %% Yes, got Assoc Change on this destination:
-	    %% check the status:
-	    case Ev of
-		#sctp_assoc_change{state=comm_up} ->
+	{ok, {Addr, Port, [], #sctp_assoc_change{state=St}=Ev}} ->
+	    if St =:= comm_up ->
 		    %% Yes, successfully connected, return the whole
 		    %% sctp_assoc_change event (containing, in particular,
 		    %% the AssocID).
@@ -89,17 +104,31 @@ connect_get_assoc(S, Addr, Port, Timer) ->
 		    %% even if the number of OutStreams is not the same
 		    %% as requested by the user:
 		    {ok,Ev};
-		_ ->
-		    %% Any other event: Error:
+	       true ->
 		    {error,Ev}
 	    end;
-    % Any other message received instead of that Assoc Change:
-    % currently treated as an error:
-    {error,_}=Error ->
-        Error;
-    Hmm ->
-        % FIXME: this should never happen
-        {error,Hmm}
+	%% Any other event: Error:
+	{ok, Msg} ->
+	    {error, Msg};
+	{error,_}=Error ->
+	    Error
+    end;
+connect_get_assoc(S, Addr, Port, Active, Timer) ->
+    Timeout = inet:timeout(Timer),
+    receive
+	{sctp,S,Addr,Port,{[],#sctp_assoc_change{state=St}=Ev}} ->
+	    case Active of
+		once ->
+		    prim_inet:setopt(S, active, once);
+		_ -> ok
+	    end,
+	    if St =:= comm_up ->
+		    {ok,Ev};
+	       true ->
+		    {error,Ev}
+	    end
+    after Timeout ->
+	    {error,timeout}
     end.
 
 sendmsg(S, SRI, Data) ->

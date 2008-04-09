@@ -161,6 +161,8 @@ encode_transaction(#conn_data{protocol_version = V,
     case (catch EM:encode_transaction(EC, V, Trans)) of
 	{ok, Bin} ->
 	    ?SIM({ok, Bin}, encode_trans);
+        {'EXIT', {undef, _}} ->
+            {error, not_implemented};
 	{error, not_implemented} = Error1 ->
 	    Error1;
 	{error, Reason} ->
@@ -185,6 +187,10 @@ encode_actions(#conn_data{protocol_version = V} = CD, TraceLabel, ARs) ->
     case (catch EM:encode_action_requests(EC, V, ARs)) of
         {ok, Bin} when is_binary(Bin) ->
             ?SIM({ok, Bin}, encode_actions);
+        {'EXIT', {undef, _}} ->
+            incNumErrors(CD#conn_data.conn_handle),
+            Reason = not_implemented,
+            {error, {EM, encode_action_requests, [EC, ARs], Reason}};
         {error, Reason} ->
 	    incNumErrors(CD#conn_data.conn_handle),	    
             {error, {EM, encode_action_requests, [EC, ARs], Reason}};
@@ -210,6 +216,10 @@ encode_action_replies(#conn_data{protocol_version = V,
     case (catch Mod:encode_action_reply(Conf, V, AR)) of
 	{ok, Bin} when is_binary(Bin) ->
 	    encode_action_replies(CD, ARs, Size + size(Bin), [Bin|Acc]);
+        {'EXIT', {undef, _}} ->
+            throw({error, not_implemented});
+	{error, not_implemented} = Error1 ->
+	    throw(Error1);
 	{error, Reason} ->
             incNumErrors(CD#conn_data.conn_handle),
 	    throw({error, {Mod, encode_action_reply, [Conf, AR], Reason}});

@@ -564,7 +564,12 @@ build_typed_attribute({atom,La,spec},
     {attribute,La,spec,{{ModName,FunName,FunArity},TypeSpec}};
 build_typed_attribute({atom,La,type}, 
                       [{call,_,{atom,_,TypeName},Args},{type_def, Type}]) ->
-    {attribute,La,type,{TypeName,Type,Args}};
+    case lists:all(fun({var, _, _}) -> true;
+                      (_)           -> false
+                   end, Args) of
+        true -> {attribute,La,type,{TypeName,Type,Args}};
+        false -> error_bad_decl(La,type)
+    end;
 build_typed_attribute({atom,La,Atom},_) ->
     case Atom of
         record -> error_bad_decl(La,record);
@@ -809,12 +814,17 @@ abstract(T) when is_integer(T) -> {integer,0,T};
 abstract(T) when is_float(T) -> {float,0,T};
 abstract(T) when is_atom(T) -> {atom,0,T};
 abstract([]) -> {nil,0};
-abstract(B) when is_binary(B) ->
-    {bin, 0, lists:map(fun(Byte) ->
+abstract(B) when is_bitstring(B) ->
+    {bin, 0, lists:map(fun(Byte) when is_integer(Byte) ->
 			       {bin_element, 0,
-				{integer, 0, Byte}, default, default}
+				{integer, 0, Byte}, default, default};
+                          (Bits) ->
+                               Sz = bit_size(Bits),
+                               <<Val:Sz>> = Bits,
+                               {bin_element, 0,
+                                {integer, 0, Val}, {integer, 0, Sz}, default}
 		       end,
-		       binary_to_list(B))};
+		       bitstring_to_list(B))};
 abstract([C|T]) when is_integer(C), 0 =< C, C < 256 ->
     abstract_string(T, [C]);
 abstract([H|T]) ->
@@ -844,12 +854,19 @@ abstract(T, Line) when is_integer(T) -> {integer,Line,T};
 abstract(T, Line) when is_float(T) -> {float,Line,T};
 abstract(T, Line) when is_atom(T) -> {atom,Line,T};
 abstract([], Line) -> {nil,Line};
-abstract(B, Line) when is_binary(B) ->
-    {bin, Line, lists:map(fun(Byte) ->
+abstract(B, Line) when is_bitstring(B) ->
+    {bin, Line, lists:map(fun(Byte) when is_integer(Byte) ->
 			       {bin_element, Line,
-				{integer, Line, Byte}, default, default}
+				{integer, Line, Byte}, default, default};
+                          (Bits) ->
+                               Sz = bit_size(Bits),
+                               <<Val:Sz>> = Bits,
+                               {bin_element, Line,
+                                {integer, Line, Val},
+                                {integer, Line, Sz},
+                                default}
 		       end,
-		       binary_to_list(B))};
+		       bitstring_to_list(B))};
 abstract([C|T], Line) when is_integer(C), 0 =< C, C < 256 ->
     abstract_string(T, [C], Line);
 abstract([H|T], Line) ->

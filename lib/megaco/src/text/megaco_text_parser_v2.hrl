@@ -30,13 +30,25 @@
 -define(d(F,A), io:format("DBG:"++F++"~n",A)).
 
 make_safe_token({_TokenTag, Line, Text}) ->
+%%     ?d("make_safe_token -> entry with"
+%%        "~n   TokenTag: ~p"
+%%        "~n   Line:     ~p"
+%%        "~n   Text:     ~p", [_TokenTag, Line, Text]),
     {safeToken, Line, Text}.
 
 ensure_value({safeToken, _Line, Text}) ->
+%%     ?d("ensure_value(safeToken) -> entry with"
+%%        "~n   Line: ~p"
+%%        "~n   Text: ~p", [_Line, Text]),
     ensure_value(Text);
 ensure_value({'QuotedChars', _Line, Text}) ->
+%%     ?d("ensure_value('QuotedChars') -> entry with"
+%%        "~n   Line: ~p"
+%%        "~n   Text: ~p", [_Line, Text]),
     ensure_value(Text);
 ensure_value(Text) when list(Text) ->
+%%     ?d("ensure_value -> entry with"
+%%        "~n   Text: ~p", [Text]),
     Text. %% BUGBUG: ensure length
 
 %% NAME       = ALPHA *63(ALPHA / DIGIT / "_" )

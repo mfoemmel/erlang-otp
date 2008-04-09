@@ -34,6 +34,7 @@
 %%   Coloring    -- A coloring for specified CFG
 %%   SpillIndex0 -- A new spill index
 %%-----------------------------------------------------------------------
+
 regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   %% Build interference graph
   ?debug_msg("Build IG\n",[]),
@@ -41,8 +42,8 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   %% io:format("IG: ~p\n",[IG]),
 
   ?debug_msg("Init\n",[]),
-  No_temporaries = Target:number_of_temporaries(CFG),
-  ?debug_msg("Coalescing RA: num_temps = ~p~n", [No_temporaries]),
+  Num_Temps = Target:number_of_temporaries(CFG),
+  ?debug_msg("Coalescing RA: num_temps = ~p~n", [Num_Temps]),
   Allocatable = Target:allocatable(),
   K = length(Allocatable),
   All_colors = colset_from_list(Allocatable),
@@ -52,9 +53,8 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   Move_sets = hipe_moves:new(IG),
 
   ?debug_msg("Build Worklist\n",[]),
-  Worklists = 
-    hipe_reg_worklists:new(IG, Target, CFG, Move_sets, K, No_temporaries),
-  Alias = initAlias(No_temporaries),
+  Worklists = hipe_reg_worklists:new(IG, Target, CFG, Move_sets, K, Num_Temps),
+  Alias = initAlias(Num_Temps),
 
   ?debug_msg("Do coloring\n~p~n",[Worklists]),
   {_IG0, Worklists0, _Moves0, Alias0} = 
@@ -66,16 +66,16 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   ?debug_msg("Default coloring\n",[]),
   {Color0,Node_sets1} = 
     defaultColoring(Target:all_precoloured(),
-		    initColor(No_temporaries), Node_sets, Target),
+		    initColor(Num_Temps), Node_sets, Target),
 
   ?debug_msg("Assign colors\n",[]),
   {Color1,Node_sets2} =
     assignColors(hipe_reg_worklists:stack(Worklists0), Node_sets1, Color0, 
 		 Alias0, All_colors, Target),
-  %% io:format("color0:~w\nColor1:~w\nNodes:~w\nNodes2:~w\nNo_temporaries:~w\n",[Color0,Color1,Node_sets,Node_sets2,No_temporaries]),
+  %% io:format("color0:~w\nColor1:~w\nNodes:~w\nNodes2:~w\nNum_Temps:~w\n",[Color0,Color1,Node_sets,Node_sets2,Num_Temps]),
 
   ?debug_msg("Build mapping ~p\n",[Node_sets2]),
-  Coloring = build_namelist(Node_sets2,SpillIndex,Alias0,Color1),
+  Coloring = build_namelist(Node_sets2, SpillIndex, Alias0, Color1),
   ?debug_msg("Coloring ~p\n",[Coloring]),
   Coloring.
 
@@ -156,7 +156,7 @@ adjacent(Node, IG, Worklists) ->
 %% Function:    simplify
 %%
 %% Description: Simplify graph by removing nodes of low degree. This
-%%               function simplify all nodes it can at once.
+%%               function simplifies all nodes it can at once.
 %% Parameters:
 %%   [Node|Nodes]  --  The simplify worklist
 %%   IG            --  The interference graph
@@ -491,7 +491,7 @@ getColor(Node, {colmap,ColMap}) ->
 
 setColor(Node, Colour, {colmap,ColMap}) ->
   hipe_bifs:array_update(ColMap, Node, Colour),  
-  {colmap,ColMap}.
+  {colmap, ColMap}.
 
 %%%
 %%% Alias ADT providing a partial mapping from nodes to nodes.
@@ -510,7 +510,7 @@ getAlias(Node, {alias,AliasMap}) ->
 
 setAlias(Node, AliasNode, {alias,AliasMap}) ->
   hipe_bifs:array_update(AliasMap, Node, AliasNode),
-  {alias,AliasMap}.
+  {alias, AliasMap}.
 
 aliasToList({alias,AliasMap}) ->
   aliasToList(AliasMap, hipe_bifs:array_length(AliasMap), []).
@@ -887,7 +887,7 @@ findCheapest([], _IG, _Cost, Cheapest, _SpillLimit) ->
   Cheapest;
 findCheapest([Node|Nodes], IG, Cost, Cheapest, SpillLimit) ->
   ThisCost = getCost(Node, IG, SpillLimit),
-  case ThisCost <  Cost of
+  case ThisCost < Cost of
     true ->
       findCheapest(Nodes, IG, ThisCost, Node, SpillLimit);
     false ->

@@ -38,9 +38,6 @@
 
 typedef void *POINTER;
 
-static int update(MD5_CTX* context, Eterm obj);
-
-
 /*
  * Constants for MD5Transform routine.
  */
@@ -108,127 +105,6 @@ static unsigned char PADDING[64] = {
 	(a) += I ((b), (c), (d)) + (x) + (Uint32)(ac); \
 	(a) = ROTATE_LEFT ((a), (s)); \
 	(a) += (b); \
-}
-
-
-BIF_RETTYPE
-md5_1(BIF_ALIST_1)
-{
-    Eterm bin;
-    byte* bytes;
-
-    MD5_CTX context;
-    MD5Init(&context);
-    if (!update(&context, BIF_ARG_1)) {
-	BIF_ERROR(BIF_P, BADARG);
-    }
-    bin = new_binary(BIF_P, (byte *)NULL, 16);
-    bytes = binary_bytes(bin);
-    MD5Final(bytes, &context);
-    BIF_RET(bin);
-}
-
-BIF_RETTYPE
-md5_init_0(BIF_ALIST_0)
-{
-    Eterm bin;
-    byte* bytes;
-
-    bin = erts_new_heap_binary(BIF_P, (byte *)NULL, sizeof(MD5_CTX), &bytes);
-    MD5Init((MD5_CTX *)bytes);
-    BIF_RET(bin);
-}
-
-BIF_RETTYPE
-md5_update_2(BIF_ALIST_2)
-{
-    byte* old_context;
-    byte* new_context;
-    Eterm bin;
-    byte* temp_alloc = NULL;
-
-    if ((old_context = erts_get_aligned_binary_bytes(BIF_ARG_1, &temp_alloc)) == NULL) {
-    error:
-	erts_free_aligned_binary_bytes(temp_alloc);
-	BIF_ERROR(BIF_P, BADARG);
-    }
-    if (binary_size(BIF_ARG_1) != sizeof(MD5_CTX)) {
-	goto error;
-    }
-    bin = erts_new_heap_binary(BIF_P, old_context, sizeof(MD5_CTX), &new_context);
-    if (!update((MD5_CTX *)new_context, BIF_ARG_2)) {
-	goto error;
-    }
-    erts_free_aligned_binary_bytes(temp_alloc);
-    BIF_RET(bin);
-}
-
-BIF_RETTYPE
-md5_final_1(BIF_ALIST_1)
-{
-    Eterm bin;
-    byte* context;
-    byte* result;
-    MD5_CTX ctx_copy;
-    byte* temp_alloc = NULL;
-
-    if ((context = erts_get_aligned_binary_bytes(BIF_ARG_1, &temp_alloc)) == NULL) {
-    error:
-	erts_free_aligned_binary_bytes(temp_alloc);
-	BIF_ERROR(BIF_P, BADARG);
-    }
-    if (binary_size(BIF_ARG_1) != sizeof(MD5_CTX)) {
-	goto error;
-    }
-    bin = erts_new_heap_binary(BIF_P, (byte *)NULL, 16, &result);
-    memcpy(&ctx_copy, context, sizeof(MD5_CTX));
-    erts_free_aligned_binary_bytes(temp_alloc);
-    MD5Final(result, &ctx_copy);
-    BIF_RET(bin);
-}
-
-static int
-update(MD5_CTX* context, Eterm iolist)
-{
-    byte* bytes;
-    Uint size = 64*1024;
-    int r;
-
-    if (is_binary(iolist)) {
-	Uint bitoffs;
-	Uint bitsize;
-
-	ERTS_GET_BINARY_BYTES(iolist, bytes, bitoffs, bitsize);
-	if (bitsize != 0) {
-	    return 0;
-	}
-	size = binary_size(iolist);
-	if (bitoffs == 0) {
-	    MD5Update(context, bytes, size);
-	    return 1;
-	}
-    }
-
-    bytes = erts_alloc(ERTS_ALC_T_TMP, size);
-    r = io_list_to_buf(iolist, (char*) bytes, size);
-    if (r >= 0) {
-	size -= r;
-    } else if (r == -2) {	/* Type error */
-	erts_free(ERTS_ALC_T_TMP, (void *) bytes);
-	return 0;
-    } else {
-	ASSERT(r == -1);	/* Overflow */
-	erts_free(ERTS_ALC_T_TMP, (void *) bytes);
-	if ((size = io_list_len(iolist)) < 0) { /* Type error */
-	    return 0;
-	}
-	bytes = erts_alloc(ERTS_ALC_T_TMP, size);
-	r = io_list_to_buf(iolist, (char*) bytes, size);
-	ASSERT(r == 0);
-    }
-    MD5Update(context, bytes, size);
-    erts_free(ERTS_ALC_T_TMP, (void *) bytes);
-    return 1;
 }
 
 /*

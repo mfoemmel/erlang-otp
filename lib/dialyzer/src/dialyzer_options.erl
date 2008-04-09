@@ -32,19 +32,15 @@
 
 %%-----------------------------------------------------------------------
 
--spec(build/1 :: ([{atom(),_}]) -> #options{} | {'error',string()}).
+-spec(build/1 :: (dial_options()) -> #options{} | {'error',string()}).
 
 build(Opts) ->
   DefaultWarns = [?WARN_RETURN_NO_RETURN,
 		  ?WARN_NOT_CALLED,
 		  ?WARN_NON_PROPER_LIST,
-		  ?WARN_TUPLE_AS_FUN,
 		  ?WARN_FUN_APP,
 		  ?WARN_MATCHING,
 		  ?WARN_CALLGRAPH,
-		  ?WARN_COMP,
-		  ?WARN_GUARDS,
-		  ?WARN_OLD_BEAM,
 		  ?WARN_FAILING_CALL,
 		  ?WARN_CALLGRAPH,
 		  ?WARN_CONTRACT_TYPES,
@@ -60,7 +56,15 @@ build(Opts) ->
     throw:{dialyzer_options_error, Msg} -> {error, Msg}
   end.
 
-build_options([{_OptionName, undefined}|Rest], Options) ->
+
+-spec(bad_option/2 :: (string(), _) -> no_return()).
+
+bad_option(String, Term) ->
+  Msg = io_lib:format("~s: ~P\n", [String,Term,25]),
+  throw({dialyzer_options_error, Msg}).
+
+
+build_options([{OptName, undefined}|Rest], Options) when is_atom(OptName) ->
   build_options(Rest, Options);
 build_options([Term = {OptionName, Value}|Rest], Options) ->
   case OptionName of
@@ -71,8 +75,9 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
       assert_filenames(Term, Value),
       build_options(Rest, Options#options{files_rec=Value});
     analysis_type when Value =:= dataflow; 
-		       Value =:= succ_typings; 
 		       Value =:= old_style ->
+      bad_option("Analysis type is no longer supported", Term);
+    analysis_type when Value =:= succ_typings ->
       build_options(Rest, Options#options{analysis_type=Value});
     defines ->
       assert_defines(Term, Value),
@@ -89,10 +94,12 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
       OldVal = Options#options.include_dirs,
       NewVal = ordsets:union(ordsets:from_list(Value), OldVal),
       build_options(Rest, Options#options{include_dirs=NewVal});
+    use_spec ->
+      build_options(Rest, Options#options{use_contracts=Value});
     old_style ->
       case Value of
 	true ->
-	  build_options(Rest, Options#options{analysis_type=old_style});
+	  bad_option("Analysis type is no longer supported", old_style);
 	false ->
 	  build_options(Rest, Options)
       end;
@@ -106,16 +113,12 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
       build_options(Rest, Options#options{report_mode=Value});
     erlang_mode ->
       build_options(Rest, Options#options{erlang_mode=true});
-    supress_inline ->
-      build_options(Rest, Options#options{supress_inline=Value});
     warnings ->
       NewWarnings = build_warnings(Value, Options#options.legal_warnings),
       build_options(Rest, Options#options{legal_warnings=NewWarnings});
     _ ->
-      bad_option(Term)
+      bad_option("Unknown dialyzer command line option", Term)
   end;
-build_options([Term|_Rest], _Options) ->
-  bad_option(Term);
 build_options([], Options) ->
   Options.
 
@@ -124,21 +127,17 @@ assert_filenames(Term, [FileName|Left]) when length(FileName) >= 0 ->
 assert_filenames(_Term, []) ->
   ok;
 assert_filenames(Term, [_|_]) ->
-  bad_option(Term).
+  bad_option("Malformed or non-existing filename", Term).
 
 assert_defines(Term, [{Macro, _Value}|Left]) when is_atom(Macro) ->
   assert_defines(Term, Left);
 assert_defines(_Term, []) ->
   ok;
 assert_defines(Term, [_|_]) ->
-  bad_option(Term).
+  bad_option("Malformed define", Term).
 
 
-bad_option(Term) ->
-  Msg = io_lib:format("Illegal dialyzer option: ~P.\n",[Term,15]),
-  throw({dialyzer_options_error, Msg}).
-
-
+%%-spec(build_warnings/2 :: ([atom()], ordset(warning())) -> ordset(warning())).
 build_warnings([Opt|Left], Warnings) ->
   NewWarnings =
     case Opt of
@@ -148,23 +147,17 @@ build_warnings([Opt|Left], Warnings) ->
 	ordsets:del_element(?WARN_NOT_CALLED, Warnings);
       no_improper_lists ->
 	ordsets:del_element(?WARN_NON_PROPER_LIST, Warnings);
-      no_tuple_as_fun ->
-	ordsets:del_element(?WARN_TUPLE_AS_FUN, Warnings);
       no_fun_app ->
 	ordsets:del_element(?WARN_FUN_APP, Warnings);
       no_match ->
 	ordsets:del_element(?WARN_MATCHING, Warnings);
-      no_comp ->
-	ordsets:del_element(?WARN_COMP, Warnings);
-      no_guards ->
-	ordsets:del_element(?WARN_GUARDS, Warnings);
-      no_unsafe_beam ->
-	ordsets:del_element(?WARN_OLD_BEAM, Warnings);
       no_fail_call ->
 	ordsets:del_element(?WARN_FAILING_CALL, Warnings);
       no_contracts ->
 	Warnings1 = ordsets:del_element(?WARN_CONTRACT_SYNTAX, Warnings),
 	ordsets:del_element(?WARN_CONTRACT_TYPES, Warnings1);
+      unmatched_returns ->
+	ordsets:add_element(?WARN_UNMATCHED_RETURN, Warnings);
       error_handling ->
 	ordsets:add_element(?WARN_RETURN_ONLY_EXIT, Warnings);
       kostis ->
@@ -178,8 +171,8 @@ build_warnings([Opt|Left], Warnings) ->
 	ordsets:add_element(?WARN_CONTRACT_SUBTYPE, Warnings);
       underspecs ->
 	ordsets:add_element(?WARN_CONTRACT_SUPERTYPE, Warnings);
-      Other ->
-	bad_option(Other)
+      OtherAtom ->
+	bad_option("Unknown dialyzer warning option", OtherAtom)
     end,
   build_warnings(Left, NewWarnings);
 build_warnings([], Warnings) ->

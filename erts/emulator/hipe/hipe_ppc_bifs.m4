@@ -106,6 +106,38 @@ ASYM($1):
 #endif')
 
 /*
+ * trap_bif_interface_0(nbif_name, cbif_name)
+ *
+ * Generate native interface for a BIF with 0 parameters and
+ * trap-only failure mode.
+ */
+define(trap_bif_interface_0,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	GLOBAL(ASYM($1))
+ASYM($1):
+	/* Set up C argument registers. */
+	mr	r3, P
+
+	/* Save caller-save registers and call the C function. */
+	SAVE_CONTEXT_BIF
+	bl	CSYM($2)
+	TEST_GOT_MBUF
+
+	/* Restore registers. Check for exception. */
+	CMPI	r3, THE_NON_VALUE
+	RESTORE_CONTEXT_BIF
+	beq-	1f
+	NBIF_RET(0)
+1:	/* workaround for bc:s small offset operand */
+	b	CSYM(nbif_0_trap_exception)
+	HANDLE_GOT_MBUF(0)
+	SET_SIZE(ASYM($1))
+	TYPE_FUNCTION(ASYM($1))
+#endif')
+
+/*
  * expensive_bif_interface_1(nbif_name, cbif_name)
  * expensive_bif_interface_2(nbif_name, cbif_name)
  * expensive_bif_interface_3(nbif_name, cbif_name)
@@ -695,10 +727,5 @@ ASYM($1):
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
-
-/*
- * Implement standard_bif_interface_0 as nofail_primop_interface_0.
- */
-define(standard_bif_interface_0,`nofail_primop_interface_0($1, $2)')
 
 include(`hipe/hipe_bif_list.m4')

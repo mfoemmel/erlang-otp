@@ -24,13 +24,16 @@
 -module(megaco_binary_encoder_lib).
 
 %% API
--export([version_of/4, 
+-export([
+	 version_of/4, 
 	 decode_message/5, decode_message_dynamic/4, 
 	 decode_mini_message/4, decode_mini_message_dynamic/4, 
 	 encode_message/5, 
 	 encode_transaction/5, 
 	 encode_action_requests/5, 
-	 encode_action_request/5]).
+	 encode_action_request/5,
+	 encode_action_reply/5
+	]).
 
 -include_lib("megaco/src/engine/megaco_message_internal.hrl").
 
@@ -41,7 +44,7 @@
 %%----------------------------------------------------------------------
 
 version_of(_EC, Binary, dynamic, [AsnModV1|_AsnMods]) 
-  when binary(Binary), atom(AsnModV1) ->
+  when is_binary(Binary) andalso is_atom(AsnModV1) ->
     case (catch AsnModV1:decode_message_version(Binary)) of
 	{ok, PartialMsg} ->
 	    V = (PartialMsg#'MegacoMessage'.mess)#'Message'.version,
@@ -50,18 +53,18 @@ version_of(_EC, Binary, dynamic, [AsnModV1|_AsnMods])
 	    Error
     end;
 version_of(_EC, Binary, 1, AsnMods) 
-  when binary(Binary), list(AsnMods) ->
+  when is_binary(Binary) andalso is_list(AsnMods) ->
     version_of(AsnMods, Binary, []);
 version_of(_EC, Binary, 2, [AsnModV1, AsnModV2, AsnModV3]) 
-  when binary(Binary) ->
+  when is_binary(Binary) ->
     version_of([AsnModV2, AsnModV1, AsnModV3], Binary, []);
 version_of(_EC, Binary, 3, [AsnModV1, AsnModV2, AsnModV3]) 
-  when binary(Binary) ->
+  when is_binary(Binary) ->
     version_of([AsnModV3, AsnModV1, AsnModV2], Binary, []).
 
 version_of([], _Binary, Err) ->
     {error, {decode_failed, lists:reverse(Err)}};
-version_of([AsnMod|AsnMods], Binary, Errs) when atom(AsnMod) ->
+version_of([AsnMod|AsnMods], Binary, Errs) when is_atom(AsnMod) ->
     case (catch asn1rt:decode(AsnMod, 'MegacoMessage', Binary)) of
 	{ok, M} ->
 	    V = (M#'MegacoMessage'.mess)#'Message'.version,
@@ -77,10 +80,10 @@ version_of([AsnMod|AsnMods], Binary, Errs) when atom(AsnMod) ->
 %%----------------------------------------------------------------------
 
 encode_message([native], MegaMsg, AsnMod, _TransMod, binary) 
-  when record(MegaMsg, 'MegacoMessage') ->
+  when is_record(MegaMsg, 'MegacoMessage') ->
     asn1rt:encode(AsnMod, 'MegacoMessage', MegaMsg);
 encode_message(EC, MegaMsg, AsnMod, TransMod, binary) 
-  when list(EC), record(MegaMsg, 'MegacoMessage') ->
+  when is_list(EC) andalso is_record(MegaMsg, 'MegacoMessage') ->
     case (catch TransMod:tr_message(MegaMsg, encode, EC)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
@@ -89,7 +92,7 @@ encode_message(EC, MegaMsg, AsnMod, TransMod, binary)
     end;
 encode_message(EC, MegaMsg, AsnMod, TransMod, io_list) ->
     case encode_message(EC, MegaMsg, AsnMod, TransMod, binary) of
-	{ok, Bin} when binary(Bin) ->
+	{ok, Bin} when is_binary(Bin) ->
 	    {ok, Bin};
 	{ok, DeepIoList} ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -98,7 +101,7 @@ encode_message(EC, MegaMsg, AsnMod, TransMod, io_list) ->
 	    {error, Reason} 
     end;
 encode_message(EC, MegaMsg, _AsnMod, _TransMod, _Type)
-  when record(MegaMsg, 'MegacoMessage')  ->
+  when is_record(MegaMsg, 'MegacoMessage')  ->
     {error, {bad_encoding_config, EC}};
 encode_message(_EC, MegaMsg, _AsnMod, _TransMod, _Type) ->
     {error, {no_megaco_message, MegaMsg}}.
@@ -134,13 +137,13 @@ do_encode_transaction([native], _Trans, _AsnMod, _TransMod, binary) ->
     %% asn1rt:encode(AsnMod, element(1, T), T);
     {error, not_implemented};
 do_encode_transaction(EC, _Trans, _AsnMod, _TransMod, binary) 
-  when list(EC) ->
+  when is_list(EC) ->
     %% T2 = TransMod:tr_transaction(Trans, encode, EC),
     %% asn1rt:encode(AsnMod, element(1, T), T2);
     {error, not_implemented};
 do_encode_transaction(EC, Trans, AsnMod, TransMod, io_list) ->
     case do_encode_transaction(EC, Trans, AsnMod, TransMod, binary) of
-	{ok, Bin} when binary(Bin) ->
+	{ok, Bin} when is_binary(Bin) ->
 	    {ok, Bin};
 	{ok, DeepIoList} ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -163,7 +166,7 @@ encode_action_requests(_EC, _ARs0, _AsnMod, _TransMod, binary) ->
     {error, not_implemented};
 encode_action_requests(EC, ARs, AsnMod, TransMod, io_list) ->
     case encode_action_requests(EC, ARs, AsnMod, TransMod, binary) of
-	{ok, Bin} when binary(Bin) ->
+	{ok, Bin} when is_binary(Bin) ->
 	    {ok, Bin};
 	{ok, DeepIoList} ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -186,7 +189,7 @@ encode_action_request(_EC, _ARs0, _AsnMod, _TransMod, binary) ->
     {error, not_implemented};
 encode_action_request(EC, ARs, AsnMod, TransMod, io_list) ->
     case encode_action_request(EC, ARs, AsnMod, TransMod, binary) of
-	{ok, Bin} when binary(Bin) ->
+	{ok, Bin} when is_binary(Bin) ->
 	    {ok, Bin};
 	{ok, DeepIoList} ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -199,6 +202,29 @@ encode_action_request(EC, _ARs, _AsnMod, _TransMod, _Type) ->
 
 
 %%----------------------------------------------------------------------
+%% Convert a ActionReply record into a binary
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+encode_action_reply([native], _ARs, _AsnMod, _TransMod, binary) ->
+    %% asn1rt:encode(AsnMod, element(1, T), T);
+    {error, not_implemented};
+encode_action_reply(_EC, _ARs0, _AsnMod, _TransMod, binary) ->
+    {error, not_implemented};
+encode_action_reply(EC, ARs, AsnMod, TransMod, io_list) ->
+    case encode_action_reply(EC, ARs, AsnMod, TransMod, binary) of
+	{ok, Bin} when is_binary(Bin) ->
+	    {ok, Bin};
+	{ok, DeepIoList} ->
+	    Bin = erlang:list_to_binary(DeepIoList),
+	    {ok, Bin};
+	{error, Reason} ->
+	    {error, Reason} 
+    end;
+encode_action_reply(EC, _ARs, _AsnMod, _TransMod, _Type) ->
+    {error, {bad_encoding_config, EC}}.
+
+
+%%----------------------------------------------------------------------
 %% Convert a binary into a 'MegacoMessage' record
 %% Return {ok, MegacoMessageRecord} | {error, Reason}
 %%----------------------------------------------------------------------
@@ -207,7 +233,7 @@ decode_message_dynamic(EC, Bin,
 		       [{AsnModV1, TransModV1}, 
 			{AsnModV2, TransModV2}, 
 			{AsnModV3, TransModV3}], Form)
-  when list(EC), binary(Bin) ->
+  when is_list(EC) andalso is_binary(Bin) ->
     case AsnModV1:decode_message_version(Bin) of
 	{ok, PartialMsg} ->
 	    V = (PartialMsg#'MegacoMessage'.mess)#'Message'.version,
@@ -223,7 +249,7 @@ decode_message_dynamic(EC, Bin,
 	    {error, Reason}
     end;
 decode_message_dynamic(EC, Bin, _Mods, _Type) 
-  when binary(Bin) ->
+  when is_binary(Bin) ->
     {error, {bad_encoding_config, EC}};
 decode_message_dynamic(_EC, _BadBin, _Mods, _Type) ->
     {error, no_binary}.

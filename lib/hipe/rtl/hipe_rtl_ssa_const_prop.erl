@@ -12,7 +12,7 @@
 %%              * 2004-04-30: Added in the repository.
 %% ============================================================================
 %%
-%% Exports: sparse_cond_const_propagate/1.
+%% Exports: propagate/1.
 %%
 %% ============================================================================
 %%
@@ -49,10 +49,11 @@
 
 
 -module(hipe_rtl_ssa_const_prop).
--export([sparse_cond_const_propagate/1]).
+-export([propagate/1]).
 
 -include("../main/hipe.hrl").
 -include("hipe_rtl.hrl").
+-include("../flow/cfg.hrl").
 
 %-define(DEBUG, true).
 
@@ -74,14 +75,14 @@
 -include("../ssa/hipe_ssa_const_prop.inc").
 
 -type(bool_lattice() :: 'true' | 'false' | 'top' | 'bottom').
--type(conditional() :: 'eq' | 'ne' | 'ge' | 'geu' | 'gt' | 'gtu' | 'le' |
-      'leu' | 'lt' | 'ltu' | 'overflow' | 'not_overflow').
+-type(conditional()  :: 'eq' | 'ne' | 'ge' | 'geu' | 'gt' | 'gtu' | 'le'
+                      | 'leu' | 'lt' | 'ltu' | 'overflow' | 'not_overflow').
 
 %%-----------------------------------------------------------------------------
 %% Procedure : visit_expression/2
-%% Purpose   : do a symbolic exectuion (nice words eh?) of the given 
-%%             instruction. This is just a wrapper that choooses the right 
-%%             function to handle a particular instruction
+%% Purpose   : do a symbolic execution of the given instruction.  This is just
+%%	       a wrapper that chooses the right function to handle a particular
+%%	       instruction.
 %% Arguments : Instructions - the instruction
 %%             Environment  - have a guess.
 %% Returns   : { FlowWorkList, SSAWorkList, Environment} 

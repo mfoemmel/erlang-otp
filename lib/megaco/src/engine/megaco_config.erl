@@ -27,7 +27,7 @@
 
 %% Application internal exports
 -export([
-         start_link/0,
+         start_link/0, stop/0, 
 
          start_user/2,
          stop_user/1,
@@ -100,6 +100,10 @@
 start_link() ->
     ?d("start_link -> entry", []),
     gen_server:start_link({local, ?SERVER}, ?MODULE, [self()], []).
+
+stop() ->
+    ?d("stop -> entry", []),
+    call(stop).
 
 start_user(UserMid, Config) ->
     call({start_user, UserMid, Config}).
@@ -380,7 +384,16 @@ system_info(Item) ->
 		[{text_config, Conf}] ->
 		    [Conf]
 	    end;
-		    
+	
+	pending_counters ->
+	    pending_counters();
+
+	recv_pending_counters ->
+	    pending_counters(recv);
+
+	sent_pending_counters ->
+	    pending_counters(sent);
+
 	BadItem ->
 	    exit({no_such_item, BadItem})
 
@@ -444,8 +457,6 @@ cre_pending_counter(TransId) ->
     cre_pending_counter(sent, TransId, 0).
 
 cre_pending_counter(Direction, TransId, Initial) ->
-%     ?report_trace(ignore, "create pending counter", 
-% 		  [Direction, TransId, Initial]),
     Counter = {pending_counter, Direction, TransId},
     cre_counter(Counter, Initial).
 
@@ -453,7 +464,6 @@ incr_pending_counter(TransId) ->
     incr_pending_counter(sent, TransId).
 
 incr_pending_counter(Direction, TransId) ->
-%     ?report_trace(ignore, "increment pending counter", [Direction, TransId]),
     Counter = {pending_counter, Direction, TransId},
     incr_counter(Counter, 1).
 
@@ -461,7 +471,6 @@ get_pending_counter(TransId) ->
     get_pending_counter(sent, TransId).
 
 get_pending_counter(Direction, TransId) ->
-%     ?report_trace(ignore, "get pending counter", [Direction, TransId]),
     Counter = {pending_counter, Direction, TransId},
     [{Counter, Val}] = ets:lookup(megaco_config, Counter),
     Val.
@@ -470,10 +479,29 @@ del_pending_counter(TransId) ->
     del_pending_counter(sent, TransId).
 
 del_pending_counter(Direction, TransId) ->
-%     ?report_trace(ignore, "delete pending counter", [Direction, TransId]),
     Counter = {pending_counter, Direction, TransId},
     ets:delete(megaco_config, Counter).
 
+pending_counters() ->
+    Pattern   = {{pending_counter, '_', '_'}, '_'}, 
+    Counters1 = ets:match_object(megaco_config, Pattern),
+    Counters2 = [{Direction, TransId, CounterVal} || 
+		    {{pending_counter, Direction, TransId}, CounterVal} <- 
+			Counters1],
+    RecvCounters = [{TransId, CounterVal} || 
+		       {recv, TransId, CounterVal} <- Counters2],
+    SentCounters = [{TransId, CounterVal} || 
+		       {sent, TransId, CounterVal} <- Counters2],
+    [{recv, RecvCounters}, {sent, SentCounters}].
+    
+
+pending_counters(Direction) 
+  when ((Direction == sent) orelse (Direction == recv)) ->
+    Pattern  = {{pending_counter, Direction, '_'}, '_'}, 
+    Counters = ets:match_object(megaco_config, Pattern),
+    [{TransId, CounterVal} || 
+	{{pending_counter, D, TransId}, CounterVal} <- 
+	    Counters, (Direction == D)].
 
 %% A wrapping transaction id counter
 incr_trans_id_counter(ConnHandle) ->
@@ -489,48 +517,92 @@ incr_trans_id_counter(ConnHandle, Incr)
             case (catch ets:update_counter(megaco_config, Item, Incr)) of
                 {'EXIT', _} ->
                     %% The transaction counter needs to be initiated
-                    reset_trans_id_counter(ConnData, ConnHandle, LocalMid, 
-					   Item, Incr);
+                    init_trans_id_counter(ConnData, ConnHandle, LocalMid, 
+					  Item, Incr);
                 Serial ->
                     ConnData2 = ConnData#conn_data{serial = Serial},
                     Max       = ConnData#conn_data.max_serial,
                     if
-                        Max == infinity, Serial =< 4294967295 ->
+                        (Max == infinity) andalso (Serial =< 4294967295) ->
                             {ok, ConnData2};
-                        Serial =< Max ->
+                        (Serial =< Max) ->
                             {ok, ConnData2};
                         true ->
-                            %% The transaction id range is exhausted
+
+			    %% The transaction id range is exhausted:
                             %% Let's wrap the counter
+
                             reset_trans_id_counter(ConnData2, ConnHandle, 
-						   LocalMid, Item, Incr)
+						   LocalMid, Item, Serial)
                     end
             end
     end.
 
-% reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item) ->
-%     reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, 1).
-reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, Incr) ->
+init_trans_id_counter(ConnHandle, Item, Incr) ->
+    LocalMid = ConnHandle#megaco_conn_handle.local_mid,
+    case megaco_config:lookup_local_conn(ConnHandle) of
+        [] ->
+            {error, {no_such_connection, ConnHandle}};
+        [ConnData] ->
+	    init_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, Incr)
+    end.
+    
+init_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, Incr) ->
     case whereis(?SERVER) == self() of
         false ->
-            call({incr_trans_id_counter, ConnHandle});
-        true ->
-            Serial    = user_info(LocalMid, min_trans_id),
-            ConnData2 = ConnData#conn_data{serial = Serial + (Incr-1)},
-            Max       = ConnData#conn_data.max_serial,
-            if
-                Max == infinity,
-                integer(Serial), Serial > 0, Serial =< 4294967295 ->
-                    ets:insert(megaco_config, {Item, Serial}),
-                    {ok, ConnData2};
-                integer(Max), Max > 0,
-                integer(Serial), Serial > 0, Serial =< 4294967295 ->
-                    ets:insert(megaco_config, {Item, Serial}),
-                    {ok, ConnData2};
-                true -> 
-                    {error, {bad_trans_id, Serial, Max}}
-            end
+	    call({init_trans_id_counter, ConnHandle, Item, Incr});
+	true ->
+	    do_init_trans_id_counter(ConnData, LocalMid, Item, Incr)
     end.
+
+%% We do not need to check Serial against the max_serial as the only way
+%% we could pass that limit at this point would be if incr was larger
+%% then max_serial, which is absurd.
+%% 
+do_init_trans_id_counter(ConnData, LocalMid, Item, Incr) ->
+    Serial = user_info(LocalMid, min_trans_id) + (Incr-1),
+    ets:insert(megaco_config, {Item, Serial}),
+    ConnData2 = ConnData#conn_data{serial = Serial},
+    {ok, ConnData2}.
+    
+reset_trans_id_counter(ConnHandle, Item, Serial) ->
+    LocalMid = ConnHandle#megaco_conn_handle.local_mid,
+    case megaco_config:lookup_local_conn(ConnHandle) of
+        [] ->
+            {error, {no_such_connection, ConnHandle}};
+        [ConnData] ->
+	    reset_trans_id_counter(ConnData, ConnHandle, LocalMid, 
+				   Item, Serial)
+    end.
+
+reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, Serial) ->
+    case whereis(?SERVER) == self() of
+        false ->
+            call({reset_trans_id_counter, ConnHandle, Item, Serial});
+        true ->
+	    do_reset_trans_id_counter(ConnData, LocalMid, Item, Serial)
+    end.
+
+%% 
+%% We have passed the max_serial limit (Serial > MaxSerial). 
+%% In order to re-calculate the proper value of serial we need 
+%% to calculate with how much we passed the limit (overflow).
+%% 
+do_reset_trans_id_counter(ConnData, LocalMid, Item, Serial) 
+  when is_integer(Serial) ->
+    Max = ConnData#conn_data.max_serial,
+    Overflow = 
+	if 
+	    (Max == infinity) ->
+		Serial - 4294967295;
+
+	    is_integer(Max) ->
+		Serial - Max
+	end,
+    NewSerial = user_info(LocalMid, min_trans_id) + (Overflow-1),
+    ConnData2 = ConnData#conn_data{serial = NewSerial},
+    ets:insert(megaco_config, {Item, NewSerial}),
+    {ok, ConnData2}.
 
 
 trans_sender_exit(Reason, CH) ->
@@ -626,7 +698,7 @@ init_user_defaults() ->
     init_user_default(min_trans_id,         1),
     init_user_default(max_trans_id,         infinity), 
     init_user_default(request_timer,        #megaco_incr_timer{}),
-    init_user_default(long_request_timer,   infinity),
+    init_user_default(long_request_timer,   timer:seconds(60)),
 
     init_user_default(auto_ack,             false),
 
@@ -707,8 +779,20 @@ handle_call({del_counter, Item, Incr}, _From, S) ->
     Reply = cre_counter(Item, Incr),
     {reply, Reply, S};
 
+handle_call({incr_trans_id_counter, ConnHandle, Incr}, _From, S) ->
+    Reply = incr_trans_id_counter(ConnHandle, Incr),
+    {reply, Reply, S};
+
 handle_call({incr_trans_id_counter, ConnHandle}, _From, S) ->
     Reply = incr_trans_id_counter(ConnHandle),
+    {reply, Reply, S};
+
+handle_call({init_trans_id_counter, ConnHandle, Item, Incr}, _From, S) ->
+    Reply = init_trans_id_counter(ConnHandle, Item, Incr),
+    {reply, Reply, S};
+
+handle_call({reset_trans_id_counter, ConnHandle, Item, Serial}, _From, S) ->
+    Reply = reset_trans_id_counter(ConnHandle, Item, Serial),
     {reply, Reply, S};
 
 handle_call({receive_handle, UserMid}, _From, S) ->
@@ -754,6 +838,10 @@ handle_call({update_user_info, UserMid, Item, Val}, _From, S) ->
             Reply = do_update_user(UserMid, Item, Val),
             {reply, Reply, S}
     end;
+
+handle_call(stop, _From, State) ->
+    Reason = normal, 
+    {stop, Reason, State};
 
 handle_call(Req, From, S) ->
     warning_msg("received unexpected request from ~p: "

@@ -909,8 +909,8 @@ sticky_flush(Ns=[Node | Tail], Store) ->
 	{?MODULE, Node, _} ->
 	    sticky_flush(Tail, Store);
 	{mnesia_down, Node} ->
-	    ?ets_delete(Store, {nodes, Node}),
-	    sticky_flush(Tail, Store)
+	    Reason1 = {aborted, {node_not_running, Node}},
+	    flush_remaining(Tail, Node, Reason1)
     end.
 
 flush_remaining([], _SkipNode, Res) ->

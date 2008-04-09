@@ -532,22 +532,20 @@ table(Tab, Opts) ->
                         end
                 end,
             FormatFun = 
-                fun(all) ->
-                        As = case Opts of
-                                 [] -> [Tab];
-                                 _ -> [Tab, Opts]
-                             end,
+                fun({all, _NElements, _ElementFun}) ->
+                        As = [Tab | [Opts || _ <- [[]], Opts =/= []]],
                         {?MODULE, table, As};
                    ({match_spec, MS}) ->
                         {?MODULE, table, [Tab, [{traverse, {select, MS}} | 
                                                 listify(Opts)]]};
-                   ({lookup, _KeyPos, [Value]}) ->
+                   ({lookup, _KeyPos, [Value], _NElements, ElementFun}) ->
                         io_lib:format("~w:lookup(~w, ~w)", 
-                                      [?MODULE, Tab, Value]);
-                   ({lookup, _KeyPos, Values}) ->
+                                      [?MODULE, Tab, ElementFun(Value)]);
+                   ({lookup, _KeyPos, Values, _NElements, ElementFun}) ->
+                        Vals = [ElementFun(V) || V <- Values],
                         io_lib:format("lists:flatmap(fun(V) -> "
                                       "~w:lookup(~w, V) end, ~w)", 
-                                      [?MODULE, Tab, Values])
+                                      [?MODULE, Tab, Vals])
                 end,
             qlc:table(TF, [{pre_fun, PreFun}, {post_fun, PostFun}, 
                            {info_fun, InfoFun}, {format_fun, FormatFun},

@@ -160,18 +160,18 @@ translate_insn(I, Context, Options) ->
       [{Op, Arg, I}];
     #fp_binop{} ->
       case proplists:get_bool(x87, Options) of
-	true -> %% x87	
+	true ->  % x87
 	  Arg = resolve_x87_binop_args(hipe_x86:fp_binop_src(I),
 				       hipe_x86:fp_binop_dst(I)),
 	  [{hipe_x86:fp_binop_op(I), Arg, I}];
-	false -> %% sse2
+	false -> % sse2
 	  Arg = resolve_sse2_binop_args(hipe_x86:fp_binop_src(I),
 					hipe_x86:fp_binop_dst(I)),
 	  [{resolve_sse2_op(hipe_x86:fp_binop_op(I)), Arg, I}]
       end;
     #fp_unop{} ->
       case proplists:get_bool(x87, Options) of
-	true -> % x87
+	true ->  % x87
 	  Arg = resolve_x87_unop_arg(hipe_x86:fp_unop_arg(I)),
 	  [{hipe_x86:fp_unop_op(I), Arg, I}];
 	false -> % sse2

@@ -10,15 +10,20 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2007/11/25 15:46:44 $
-%%              $Revision: 1.15 $
+%%              $Date: 2008/03/07 22:53:07 $
+%%              $Revision: 1.17 $
 %% ====================================================================
 %%  Exports  :
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_tool).
+
 -export([start/0]).
+
+%%---------------------------------------------------------------------
+
+-include("../main/hipe.hrl").
 
 %%---------------------------------------------------------------------
 
@@ -32,22 +37,23 @@
 
 %%---------------------------------------------------------------------
 
--record(state, {win_created = false	:: bool(),
-		mindex = 0		:: integer(),
-		mod			:: atom(),
-		funs = [],		% :: list(),
-		mods = [] 		:: [atom()],
-		options = [o2],		% :: list(),
-		compiling = false	:: 'false' | pid()
-	       }).
-
-%%---------------------------------------------------------------------
-
 -type(fa() :: {atom(), byte()}). % {Fun,Arity}
 -type(fa_address() :: {atom(), byte(), non_neg_integer()}). % {F,A,Address}
 
 %%---------------------------------------------------------------------
 
+-record(state, {win_created = false	:: bool(),
+		mindex = 0		:: integer(),
+		mod			:: atom(),
+		funs = []		:: [fa()],
+		mods = [] 		:: [atom()],
+		options = [o2]		:: comp_options(),
+		compiling = false	:: 'false' | pid()
+	       }).
+
+%%---------------------------------------------------------------------
+
+-spec(start/0 :: () -> pid()).
 start() ->
   spawn(fun () -> init() end).
 
@@ -96,7 +102,6 @@ loop(State) ->
 	loop(State#state{win_created=false});
       {gs, _Id, keypress, _Data, _Args} ->
 	loop(State);
-
       {gs, _, destroy, _, _} ->
 	loop(State#state{win_created=false});
 
@@ -128,7 +133,7 @@ init_window(State) ->
   gs:config(win, [{map,true}]),
   update_code_listbox(State#state{win_created=true}).
 
--spec(create_window/1 :: (#state{}) -> #state{}).
+-spec(create_window/1 :: (#state{}) -> 'ok').
 create_window(State) ->
   gs:window(win, gs:start(), [{width, ?WINDOW_WIDTH},
 			      {height, ?WINDOW_HEIGHT},
@@ -139,7 +144,7 @@ create_window(State) ->
 			      {cursor, arrow},
 			      {keypress, true}
 			     ]),
-  create_menu(State),
+  create_menu(),
   Xpos = 4, 
   Ypos1 = 60, 
   Width =  (?WINDOW_WIDTH - (Xpos*4)) div 3,
@@ -200,10 +205,10 @@ create_window(State) ->
 		      {vscroll, right},
 		      {hscroll, true},
 		      {wrap, none}]),
-  State.
+  ok.
 
--spec(create_menu/1 :: (#state{}) -> #state{}).
-create_menu(State) ->
+-spec(create_menu/0 :: () -> 'ok').
+create_menu() ->
   gs:menubar(menubar, win, [{bg, ?DEFAULT_BG_COLOR}]),
   create_sub_menus([{mbutt, fmenu, " File",
 		     [{" Close    Ctrl-C ",close_menu}]},
@@ -215,7 +220,7 @@ create_menu(State) ->
 		    {mbutta,amenu, " Analyze ", [separator]},
 		    {mbuttb,bmenu, " Benchmark ", [separator]},		    
 		    {mbuttj,jmenu, " Jit ", [separator]}]),
-  State.
+  ok.
 
 create_menuitems(Parent, [{Text,Data}|Rest]) ->
   gs:menuitem(Parent, [{bg, ?DEFAULT_BG_COLOR},
@@ -306,7 +311,7 @@ update_module_box(State, Idx, Data, _Txt) ->
       State;
     true ->
       Mod = get_selection(Idx, Data, hipe_tool),
-      %% io:format("~w\n",[Mod:module_info()]),
+      %% io:format("~w\n", [Mod:module_info()]),
       
       Info = Mod:module_info(),
       Funs = lists:usort(funs(Mod)), 
@@ -339,7 +344,7 @@ update_module_box(State, Idx, Data, _Txt) ->
 					{items, ProfData},
 					{selection, 0}]),
       get_edoc(Mod),
-      update_fun(State#state{mindex=Idx,mod=Mod,funs=Funs}, 0, MFAs)
+      update_fun(State#state{mindex=Idx, mod=Mod, funs=Funs}, 0, MFAs)
   end.
 
 update_text(Lab, Text) ->
@@ -451,9 +456,10 @@ compile(State) ->
 		c(Parent, State#state.mod, State#state.options)
 	    end),
   State#state{compiling=P}.
-	
-c(Parent,Mod,Options) ->
-  Res = hipe:c(Mod,Options),
+
+-spec(c/3 :: (pid(), atom(), comp_options()) -> 'ok').
+c(Parent, Mod, Options) ->
+  Res = hipe:c(Mod, Options),
   Parent ! {compilation_done,Res,self()},
   ok.
 

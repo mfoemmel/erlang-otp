@@ -6,9 +6,9 @@
 %%              
 %%  History  :	* 2000-11-03 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: pergu $
-%%              $Date: 2007/12/20 16:16:28 $
-%%              $Revision: 1.8 $
+%%              $Author: kostis $
+%%              $Date: 2008/03/28 22:13:18 $
+%%              $Revision: 1.11 $
 %% ====================================================================
 %%
 %% Defines:
@@ -283,18 +283,26 @@
 -define(update_counter(Counter, Val, Op), no_instrumentation).
 -define(cons_counter(Counter, Val), no_instrumentation).
 
--endif. %% HIPE_INSTRUMENT_COMPILER	
+-endif. %% HIPE_INSTRUMENT_COMPILER
+
 %%----------------------------------------------------------------------------
 %% Records defined in the hipe module used in other parts of the compiler
 %%----------------------------------------------------------------------------
 
--record(comp_servers, {pp_server, range, type}).
+-record(comp_servers, {pp_server :: pid(), range :: pid(), type :: pid()}).
 
 %%----------------------------------------------------------------------------
 %% Basic types of the 'hipe' application used in other parts of the system
 %%----------------------------------------------------------------------------
 
--type(comp_option() :: atom() | {atom(), atom()}).
+-type(comp_option()  :: atom() | {atom(), atom()}).
 -type(comp_options() :: [comp_option()]).
+
 -type(hipe_architecture() ::
 		'amd64' | 'arm' | 'powerpc' | 'ppc64' | 'ultrasparc' | 'x86').
+
+-type(hipe_map()       :: [{non_neg_integer(),
+	                    'unknown' | {'reg' | 'fp_reg' | 'spill',
+	                                 non_neg_integer()}}]).
+-type(hipe_temp_map()  :: tuple()).
+-type(hipe_spill_map() :: [{non_neg_integer(), {'spill',non_neg_integer()}}]).

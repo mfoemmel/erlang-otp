@@ -57,7 +57,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_obsolete_guard
+ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_obsolete_guard +warn_untyped_record +warn_missing_spec_exported
 
 # ----------------------------------------------------
 # Targets
@@ -68,7 +68,7 @@ hipe.hrl: ../vsn.mk hipe.hrl.src
 
 $(EBIN)/hipe.beam: hipe.hrl
 $(EBIN)/hipe.beam: ../rtl/hipe_literals.hrl ../../compiler/src/beam_disasm.hrl
-$(EBIN)/hipe_main.beam: hipe.hrl
+$(EBIN)/hipe_main.beam: hipe.hrl ../icode/hipe_icode.hrl #../rtl/hipe_rtl.hrl
 
 debug opt: $(TARGET_FILES) 
 

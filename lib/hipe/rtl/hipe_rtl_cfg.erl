@@ -7,13 +7,11 @@
          labels/1,
 	 params/1, params_update/2,
          start_label/1,
-         succ/2, succ_map/1,
-         pred/2, pred_map/1,
-         bb/2,
-         bb_add/3,bb_insert_between/5,
+         succ/2,
+         pred/2,
+         bb/2, bb_add/3, bb_insert_between/5,
 	 redirect/4,
-         remove_trivial_bbs/1,
-         remove_unreachable_code/1,
+         remove_trivial_bbs/1, remove_unreachable_code/1,
 	 linearize/1,
 	 pp/1, pp/2]).
 -export([preorder/1, postorder/1, reverse_postorder/1]).
@@ -21,9 +19,9 @@
 -define(RTL_CFG, true).	% needed for cfg.inc below
 
 -include("../main/hipe.hrl").
+-include("hipe_rtl.hrl").
 -include("../flow/cfg.hrl").
 -include("../flow/cfg.inc").
--include("hipe_rtl.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -34,14 +32,12 @@ init(Rtl) ->
   %% hipe_rtl:pp(Rtl),
   Code = hipe_rtl:rtl_code(Rtl),
   StartLabel = hipe_rtl:label_name(hd(Code)),
-  Extra = [],
   CFG0 = mk_empty_cfg(hipe_rtl:rtl_fun(Rtl), 
 		      StartLabel, 
 		      hipe_rtl:rtl_data(Rtl),
 		      hipe_rtl:rtl_is_closure(Rtl),
 		      hipe_rtl:rtl_is_leaf(Rtl),
-		      hipe_rtl:rtl_params(Rtl),
-		      Extra),
+		      hipe_rtl:rtl_params(Rtl)),
   CFG = info_update(CFG0, hipe_rtl:rtl_info(Rtl)),
   take_bbs(Code, CFG).
 

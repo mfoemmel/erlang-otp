@@ -42,7 +42,7 @@ translate(RTL) ->
     end,
   IsClosure = hipe_rtl:rtl_is_closure(RTL),
   IsLeaf = hipe_rtl:rtl_is_leaf(RTL),
-  hipe_ppc:mk_defun(conv_mfa(hipe_rtl:rtl_fun(RTL)),
+  hipe_ppc:mk_defun(hipe_rtl:rtl_fun(RTL),
 		    Formals,
 		    IsClosure,
 		    IsLeaf,

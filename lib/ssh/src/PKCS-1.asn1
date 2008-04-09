@@ -9,11 +9,11 @@ DEFINITIONS EXPLICIT TAGS ::=
 
 BEGIN
 
-IMPORTS id-sha256, id-sha384, id-sha512
-    FROM NIST-SHA2 {
-        joint-iso-itu-t(2) country(16) us(840) organization(1)
-        gov(101) csor(3) nistalgorithm(4) modules(0) sha2(1)
-    };
+-- IMPORTS id-sha256, id-sha384, id-sha512
+--     FROM NIST-SHA2 {
+--         joint-iso-itu-t(2) country(16) us(840) organization(1)
+--         gov(101) csor(3) nistalgorithm(4) modules(0) sha2(1)
+--     };
 
 pkcs-1    OBJECT IDENTIFIER ::= {
     iso(1) member-body(2) us(840) rsadsi(113549) pkcs(1) 1

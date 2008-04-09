@@ -1,6 +1,15 @@
 %%% $Id$
 %%% concrete representation of 2-address pseudo-x86 code
 
+%%---------------------------------------------------------------------
+%% THESE DO NOT REALLY BELONG HERE -- PLEASE REMOVE ASAP!
+%%---------------------------------------------------------------------
+
+-type(dict()    :: tuple()).
+-type(gb_set()  :: tuple()).
+-type(gb_tree() :: tuple()).
+
+%%%--------------------------------------------------------------------
 %%% x86 operands:
 %%%
 %%% int32	::= <a 32-bit integer>
@@ -88,6 +97,6 @@
 
 %%% Function definitions.
 
--record(defun, {mfa, formals, code, data,
-	       	isclosure::bool(), isleaf::bool(),
+-record(defun, {mfa :: mfa(), formals, code, data,
+	       	isclosure :: bool(), isleaf :: bool(),
 		var_range, label_range}).

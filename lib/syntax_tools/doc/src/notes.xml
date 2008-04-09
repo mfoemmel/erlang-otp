@@ -32,6 +32,21 @@
   <p>This document describes the changes made to the Syntax_Tools
     application.</p>
 
+<section><title>Syntax_Tools 1.5.4</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Minor updates, mostly cosmetic.</p>
+          <p>
+	    Own Id: OTP-7243</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
   <section>
     <title>Syntax_Tools 1.5.3</title>
 

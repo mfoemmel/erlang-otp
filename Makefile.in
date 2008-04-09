@@ -198,7 +198,7 @@ ifeq ($(OTP_SMALL_BUILD),true)
 else
 	cd $(ERL_TOP)/lib  && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release
 ifneq ($(findstring vxworks,$(TARGET)),vxworks)
-	if test -f lib/dialyzer/SKIP ; then			\
+	@if test -f lib/dialyzer/SKIP ; then			\
 		echo "=== Skipping dialyzer, reason:" ;		\
 		cat lib/dialyzer/SKIP ;				\
 		echo "===" ;					\
@@ -248,14 +248,25 @@ kernel:
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 		$(MAKE) opt BUILD_ALL=true
 
+stdlib:
+	cd lib/stdlib && \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+		$(MAKE) opt BUILD_ALL=true
+
+compiler:
+	cd lib/compiler && \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+		$(MAKE) opt BUILD_ALL=true
+
 hlib:
+hipe:
 	cd lib/hipe && \
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 		$(MAKE) opt BUILD_ALL=true
 
 dialyzer:
 ifneq ($(OTP_SMALL_BUILD),true)
-	if test -f lib/dialyzer/SKIP ; then			\
+	@if test -f lib/dialyzer/SKIP ; then			\
 		echo "=== Skipping dialyzer, reason:" ;		\
 		cat lib/dialyzer/SKIP ;				\
 		echo "===" ;					\
@@ -695,7 +706,7 @@ else
 	cd lib && \
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release
-	if test -f lib/dialyzer/SKIP ; then			\
+	@if test -f lib/dialyzer/SKIP ; then			\
 		echo "=== Skipping dialyzer, reason:" ;		\
 		cat lib/dialyzer/SKIP ;				\
 		echo "===" ;					\

@@ -5,22 +5,19 @@
 
 -export([init/1,
          labels/1, start_label/1,
-         succ/2, succ_map/1,
+         succ/2,
          bb/2, bb_add/3]).
--export([postorder/1]).
+-export([postorder/1, reverse_postorder/1]).
 -export([linearise/1]).
--export([params/1, reverse_postorder/1]).
+-export([params/1]).
 -export([arity/1]). % for linear scan
 
-%%% these tell cfg.inc what to define (ugly as hell)
--define(BREADTH_ORDER,true). % for linear scan
--define(PARAMS_NEEDED,true).
--define(START_LABEL_UPDATE_NEEDED,true).
+-define(SPARC_CFG, true).     % needed for cfg.inc
 
 -include("../main/hipe.hrl").
+-include("hipe_sparc.hrl").
 -include("../flow/cfg.hrl").
 -include("../flow/cfg.inc").
--include("hipe_sparc.hrl").
 
 %%----------------------------------------------------------------------------
 %% CFG interface to SPARC
@@ -34,8 +31,7 @@ init(Defun) ->
   Name = hipe_sparc:defun_mfa(Defun),
   IsLeaf = hipe_sparc:defun_is_leaf(Defun),
   Formals = hipe_sparc:defun_formals(Defun),
-  Extra = [],
-  CFG = mk_empty_cfg(Name, StartLab, Data, IsClosure, IsLeaf, Formals, Extra),
+  CFG = mk_empty_cfg(Name, StartLab, Data, IsClosure, IsLeaf, Formals),
   take_bbs(Code, CFG).
 
 is_branch(I) ->
@@ -105,7 +101,7 @@ mk_label(Name) ->
   hipe_sparc:mk_label(Name).
 
 linearise(CFG) ->	% -> defun, not insn list
-  Fun = function(CFG),
+  MFA = function(CFG),
   Formals = params(CFG),
   Code = linearize_cfg(CFG),
   Data = data(CFG),
@@ -113,9 +109,9 @@ linearise(CFG) ->	% -> defun, not insn list
   LabelRange = hipe_gensym:label_range(sparc),
   IsClosure = is_closure(CFG),
   IsLeaf = is_leaf(CFG),
-  hipe_sparc:mk_defun(Fun, Formals, IsClosure, IsLeaf,
+  hipe_sparc:mk_defun(MFA, Formals, IsClosure, IsLeaf,
 		      Code, Data, VarRange, LabelRange).
 
 arity(CFG) ->
-  #sparc_mfa{a=Arity} = function(CFG),
-  Arity.
+  {_M, _F, A} = function(CFG),
+  A.

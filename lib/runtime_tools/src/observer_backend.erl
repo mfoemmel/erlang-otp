@@ -46,27 +46,7 @@ vsn() ->
 %% etop backend
 %%
 etop_collect(Collector) ->
-    ProcInfo = 	lists:flatmap(
-	  fun(P) -> 
-		  case erlang:is_process_alive(P) of
-		      true ->
-			  Name = case pi(P,registered_name) of
-				     [] -> 
-					 pi(P,initial_call);
-				     N -> 
-					 N
-				 end,
-			  [#etop_proc_info{pid=P,
-					   mem=pi(P,memory),
-					   reds=pi(P,reductions),
-					   name=Name,
-					   cf=pi(P,current_function),
-					   mq=pi(P,message_queue_len)}];
-		      false ->
-			  []
-		  end
-	  end,
-	  lists:delete(self(),processes())),
+    ProcInfo = etop_collect(processes(), []),
     Collector ! {self(),#etop_info{now = now(),
 				   n_procs = length(ProcInfo),
 				   run_queue = erlang:statistics(run_queue),
@@ -81,15 +61,24 @@ etop_collect(Collector) ->
 				   procinfo = ProcInfo
 				  }}.
 
-
-pi(P,Key) ->
-    case catch process_info(P,Key) of
-	{'EXIT',_Reason} -> 0; % oops - bad timing, the process just died
-	{Key,Value} -> Value;
-	[] -> []
-    end.
-
-
+etop_collect([P|Ps], Acc) when P =:= self() ->
+    etop_collect(Ps, Acc);
+etop_collect([P|Ps], Acc) ->
+    Fs = [registered_name,initial_call,memory,reductions,current_function,message_queue_len],
+    case process_info(P, Fs) of
+	undefined ->
+	    etop_collect(Ps, Acc);
+	[{registered_name,Reg},{initial_call,Initial},{memory,Mem},
+	 {reductions,Reds},{current_function,Current},{message_queue_len,Qlen}] ->
+	    Name = case Reg of
+		       [] -> Initial;
+		       _ -> Reg
+		   end,
+	    Info = #etop_proc_info{pid=P,mem=Mem,reds=Reds,name=Name,
+				   cf=Current,mq=Qlen},
+	    etop_collect(Ps, [Info|Acc])
+    end;
+etop_collect([], Acc) -> Acc.
 
 %%
 %% ttb backend
@@ -263,8 +252,13 @@ ttb_make_binary(Term) ->
     
 %% Stop ttb
 ttb_stop(MetaPid) ->
+    Delivered = erlang:trace_delivered(all),
+    receive
+	{trace_delivered,all,Delivered} -> ok
+    end,
     Ref = erlang:monitor(process,MetaPid),
     MetaPid ! stop,
+
     %% Must wait for the process to terminate there
     %% because dbg will be stopped when this function
     %% returns, and then the Port (in {local,MetaFile,Port})

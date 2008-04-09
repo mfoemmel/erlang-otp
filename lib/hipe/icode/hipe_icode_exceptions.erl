@@ -112,12 +112,12 @@ catches_out([], Cs) ->
 
 catches_out_instr(I, Cs) ->
   case I of
-    #begin_try{} ->
+    #icode_begin_try{} ->
       Id = hipe_icode:begin_try_label(I),
       push_catch(Id, Cs);
-    #end_try{} ->
+    #icode_end_try{} ->
       pop_catch(Cs);
-    #begin_handler{} ->
+    #icode_begin_handler{} ->
       pop_catch(Cs);
     _ ->
       Cs
@@ -202,17 +202,17 @@ rewrite_code(Is, C, State, Map) ->
 rewrite_code([I|Is], C, State, Map, As) ->
   [C1] = list_of_catches(catches_out_instr(I, single_catch(C))),
   case I of
-    #begin_try{} ->
+    #icode_begin_try{} ->
       {I1, Is1, State1} = update_begin_try(I, Is, C, State, Map),
       I2 = redirect_instr(I1, C, Map),
       rewrite_code(Is1, C1, State1, Map, [I2 | As]);
-    #end_try{} ->
+    #icode_end_try{} ->
       rewrite_code(Is, C1, State, Map, As);
-    #call{} ->
+    #icode_call{} ->
       {I1, Is1, State1} = update_call(I, Is, C, State, Map),
       I2 = redirect_instr(I1, C, Map),
       rewrite_code(Is1, C1, State1, Map, [I2 | As]);
-    #fail{} ->
+    #icode_fail{} ->
       {I1, Is1, State1} = update_fail(I, Is, C, State, Map),
       I2 = redirect_instr(I1, C, Map),
       rewrite_code(Is1, C1, State1, Map, [I2 | As]);
@@ -364,14 +364,14 @@ get_renaming(C, Map) ->
 %%---------------------------------------------------------------------
 %% State abstraction
 
--record(state, {cfg,
-		changed = false :: bool(),
-		succ,
-		pred,
-		start,
-		visited,
-		out,
-		in
+-record(state, {cfg                    :: #cfg{},
+		changed = false        :: bool(),
+		succ                   :: #cfg{},
+		pred                   :: #cfg{},
+		start_labels           :: [icode_lbl(),...],
+		visited                :: gb_set(),
+		out = gb_trees:empty() :: gb_tree(),
+		in  = gb_trees:empty() :: gb_tree()
 	       }).
 
 init_state(CFG) ->
@@ -384,16 +384,16 @@ init_state(CFG) ->
 
 refresh_state_cache(State) ->
   CFG = State#state.cfg,
-  State#state{succ = hipe_icode_cfg:succ_map(CFG),
-	      pred = hipe_icode_cfg:pred_map(CFG),
-	      start = [hipe_icode_cfg:start_label(CFG)]
+  State#state{succ = CFG,
+	      pred = CFG,
+	      start_labels = [hipe_icode_cfg:start_label(CFG)]
 	     }.
 
 get_cfg(State) ->
   State#state.cfg.
 
 get_start_labels(State) ->
-  State#state.start.
+  State#state.start_labels.
 
 get_pred(L, State) ->
   hipe_icode_cfg:pred(State#state.pred, L).

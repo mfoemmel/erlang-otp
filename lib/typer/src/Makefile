@@ -20,18 +20,20 @@ VSN=$(TYPER_VSN)
 RELSYSDIR = $(RELEASE_PATH)/lib/typer-$(VSN)
 
 # ----------------------------------------------------
+# Orientation information -- find dialyzer's dir
+# ----------------------------------------------------
+DIALYZER_DIR = $(ERL_TOP)/lib/dialyzer
+
+# ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
 MODULES =  \
 	typer \
-	typer_generator \
+	typer_annotator \
 	typer_info \
 	typer_map \
 	typer_options \
-	typer_parse \
 	typer_preprocess
-
-YRL_FILES= typer_parse.yrl
 
 HRL_FILES= typer.hrl typer_options.hrl
 ERL_FILES= $(MODULES:%=%.erl)
@@ -49,7 +51,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += +warn_obsolete_guard
+ERL_COMPILE_FLAGS += -I$(DIALYZER_DIR)/src +warn_obsolete_guard +warn_untyped_record +warn_missing_spec_exported
 
 # ----------------------------------------------------
 # Targets
@@ -62,7 +64,6 @@ docs:
 clean:
 	rm -f $(TARGET_FILES)
 	rm -f core
-	rm -f typer_parse.erl
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -81,11 +82,13 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 # dependencies -- I wish they were somehow automatically generated
 # ---------------------------------------------------------------------
 
-$(EBIN)/typer.beam: typer.hrl
-$(EBIN)/typer_generator.beam: typer.hrl typer_options.hrl
-$(EBIN)/typer_info.beam: typer.hrl
-$(EBIN)/typer_options.beam: typer.hrl typer_options.hrl
-$(EBIN)/typer_preprocess.beam: typer.hrl
+$(EBIN)/typer.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
+$(EBIN)/typer_annotator.beam: typer.hrl typer_options.hrl \
+			      $(DIALYZER_DIR)/src/dialyzer.hrl
+$(EBIN)/typer_info.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
+$(EBIN)/typer_options.beam: typer.hrl typer_options.hrl \
+				$(DIALYZER_DIR)/src/dialyzer.hrl
+$(EBIN)/typer_preprocess.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
 
 # ----------------------------------------------------
 # Release Target

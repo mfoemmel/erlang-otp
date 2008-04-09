@@ -18,17 +18,16 @@
 get_all_files(Args, analysis) ->
   case internal_get_all_files(Args#args.analyze,
 			      Args#args.analyzed_dir_r,
-			      fun test_erl_file/1) of
+			      fun test_erl_file_exclude_ann/1) of
     [] -> typer:error("no file(s) to analyze");
     AllFiles -> AllFiles
   end;
 get_all_files(Args, trust) -> 
-  internal_get_all_files(Args#args.trust, [], fun test_ann_erl_file/1).
+  internal_get_all_files(Args#args.trust, [], fun test_erl_file/1).
 
--spec(test_erl_file/1 :: (string()) -> bool()).
+-spec(test_erl_file_exclude_ann/1 :: (string()) -> bool()).
 
-test_erl_file(File) ->
-  %% Get ".erl" files without ".ann.erl" files
+test_erl_file_exclude_ann(File) ->
   case filename:extension(File) of
     ".erl" -> %% Exclude files ending with ".ann.erl"
       case regexp:matches(File, "[\.](ann)[\.](erl)$") of
@@ -38,14 +37,10 @@ test_erl_file(File) ->
     _ -> false
   end.
 
--spec(test_ann_erl_file/1 :: (string()) -> bool()).
+-spec(test_erl_file/1 :: (string()) -> bool()).
 
-test_ann_erl_file(File) ->
-  %% Get ".ann.erl" files
-  case regexp:matches(File, "[\.](ann)[\.](erl)$") of
-    {match, []} -> false;
-    {match, _ } -> true
-  end.
+test_erl_file(File) ->
+  filename:extension(File) =:= ".erl".
 
 -spec(internal_get_all_files/3 ::
 	([string()], [string()], fun((string()) -> bool())) -> [string()]).

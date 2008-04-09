@@ -23,7 +23,7 @@
 #include "index.h"
 #endif
 
-typedef struct module {
+typedef struct erl_module {
     IndexSlot slot;		/* Must be located at top of struct! */
     int module;			/* Atom index for module (not tagged). */
 

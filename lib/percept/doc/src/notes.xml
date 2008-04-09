@@ -31,6 +31,37 @@
   </header>
   <p>This document describes the changes made to the Percept application.</p>
 
+<section><title>Percept 0.7.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Fixed out of bounds rendering problem in egd which could
+	    cause the rendering process to crash.</p>
+          <p>
+	    Own Id: OTP-7215</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Percept 0.7</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+            <p>Percept no longer depends on external c-libraries. The
+            graphical rendering is now done via erlang code.</p>
+          <p>
+            Own Id: OTP-7162</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Percept 0.6.2</title>
 
     <section><title>Improvements and New Features</title>

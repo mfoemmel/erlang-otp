@@ -660,13 +660,8 @@ static void inc_minor_gc(Process* p, int need, Eterm* objv, int nobj)
                     Binary *bptr;
                     *prev = ptr->next;
                     bptr = ptr->val;
-                    if (erts_refc_dectest(&bptr->refc, 0) == 0) {
-                        if (bptr->flags & BIN_FLAG_MATCH_PROG) {
-                            erts_match_set_free(bptr);
-                        } else {
-                            erts_bin_free(bptr);
-                        }
-                    }
+                    if (erts_refc_dectest(&bptr->refc, 0) == 0)
+			erts_bin_free(bptr);
                     ptr = *prev;
                 }
             }
@@ -984,13 +979,8 @@ static void inc_major_gc(Process *p, int need, Eterm* objv, int nobj)
                     Binary* bptr;
                     *prev = ptr->next;
                     bptr = ptr->val;
-                    if (erts_refc_dectest(&bptr->refc, 0) == 0) {
-                        if (bptr->flags & BIN_FLAG_MATCH_PROG) {
-                            erts_match_set_free(bptr);
-                        } else {
-                            erts_bin_free(bptr);
-                        }
-                    }
+                    if (erts_refc_dectest(&bptr->refc, 0) == 0)
+			erts_bin_free(bptr);
                     ptr = *prev;
                 } else if (ptr_within(ppt, inc_fromspc, inc_fromend)) {
                     ProcBin* ro = (ProcBin*)INC_FORWARD_VALUE(ppt);

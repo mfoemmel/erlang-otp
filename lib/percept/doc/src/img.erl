@@ -4,41 +4,47 @@
 
 do() ->
     Im = egd:create(200,200),
-    White = egd:color(Im, white),
-    Green = egd:color(Im, green),
-    Blue = egd:color(Im, blue),
-    Red = egd:color(Im, red),
-    Black = egd:color(Im, black),
-    Yellow = egd:color(Im, {255,255,0}),
-
-    egd:fill(Im, {10,10}, White),
+    Red = egd:color({255,0,0}),
+    Green = egd:color({0,255,0}),
+    Blue = egd:color({0,0,255}),
+    Black = egd:color({0,0,0}),
+    Yellow = egd:color({255,255,0}),
 
     % Line and fillRectangle
 
     egd:filledRectangle(Im, {20,20}, {180,180}, Red),
     egd:line(Im, {0,0}, {200,200}, Black),    
 
-    egd:save(egd:image(Im, gif), "/home/egil/test1.gif"),
-
-    % Fill border
-
-    egd:fill(Im, {15,5}, Blue),
-    egd:fill(Im, {115,100}, Green),
+    egd:save(egd:render(Im, png), "/home/egil/test1.png"),
     
-    egd:save(egd:image(Im, gif), "/home/egil/test2.gif"),
+    egd:filledEllipse(Im, {45, 60}, {55, 70}, Yellow),
+    egd:filledEllipse(Im, {145, 60}, {155, 70}, Blue),
 
-    % Pacman filledArc
-    egd:filledArc(Im, {100,100}, 100,100, 28,332, Yellow, [arc]), 
-    egd:filledArc(Im, {100,100}, 100,100, 28,332, Black, [arc, no_fill, edged]), 
-    
-    egd:save(egd:image(Im, gif), "/home/egil/test3.gif"),
-    
+    egd:save(egd:render(Im, png), "/home/egil/test2.png"),
+
+    R = 80,
+    X0 = 99,
+    Y0 = 99,
+
+    Pts = [ { 	X0 + trunc(R*math:cos(A*math:pi()*2/360)),
+		Y0 + trunc(R*math:sin(A*math:pi()*2/360))
+	    } || A <- lists:seq(0,359,5)],
+    lists:map(
+	fun({X,Y}) ->
+	    egd:rectangle(Im, {X-5, Y-5}, {X+5,Y+5}, Green)
+	end, Pts), 
+
+    egd:save(egd:render(Im, png), "/home/egil/test3.png"),
+
     % Text
-    {W,H} = egd:fontSize(Im, giant),
-    String = "egd says hello!",
+    Filename = filename:join([code:priv_dir(percept), "fonts", "6x11_latin1.wingsfont"]),
+    Font = egd_font:load(Filename),
+    {W,H} = egd_font:size(Font),
+    String = "egd says hello",
     Length = length(String),
-    egd:text(Im, giant, {round(100 - W*Length/2), 200 - H - 5}, String, Black), 
-    egd:save(egd:image(Im, gif), "/home/egil/test4.gif"),
+
+    egd:text(Im, {round(100 - W*Length/2), 200 - H - 5}, Font, String, Black),
+ 
+    egd:save(egd:render(Im, png), "/home/egil/test4.png"),
 
     egd:destroy(Im).
-

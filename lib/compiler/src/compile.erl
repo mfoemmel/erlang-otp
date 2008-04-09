@@ -876,15 +876,9 @@ core_fold_module(#compile{code=Code0,options=Opts}=St) ->
 test_old_inliner(#compile{options=Opts}) ->
     %% The point of this test is to avoid loading the old inliner
     %% if we know that it will not be used.
-    case any(fun(no_inline) -> true;
-		(_) -> false
-	     end, Opts) of
-	true -> false;
-	false ->
-	    any(fun({inline,_}) -> true;
-		   (_) -> false
-		end, Opts)
-    end.
+    any(fun({inline,_}) -> true;
+	   (_) -> false
+	end, Opts).
 
 test_core_inliner(#compile{options=Opts}) ->
     case any(fun(no_inline) -> true;
@@ -898,12 +892,8 @@ test_core_inliner(#compile{options=Opts}) ->
     end.
 
 core_old_inliner(#compile{code=Code0,options=Opts}=St) ->
-    case catch sys_core_inline:module(Code0, Opts) of
-	{ok,Code} ->
-	    {ok,St#compile{code=Code}};
-	{error,Es} ->
-	    {error,St#compile{errors=St#compile.errors ++ Es}}
-    end.
+    {ok,Code} = sys_core_inline:module(Code0, Opts),
+    {ok,St#compile{code=Code}}.
 
 core_inline_module(#compile{code=Code0,options=Opts}=St) ->
     Code = cerl_inline:core_transform(Code0, Opts),
@@ -1083,7 +1073,7 @@ save_binary(St) ->
 		ok ->
 		    {ok,St};
 		{error,_Error} ->
-		    file:delete(Tfile),
+		    ok = file:delete(Tfile),
 		    Es = [{St#compile.ofile,[{none,?MODULE,{rename,Tfile}}]}],
 		    {error,St#compile{errors=St#compile.errors ++ Es}}
 	    end;

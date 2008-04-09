@@ -140,8 +140,7 @@ include ../app/megaco.mk
 
 ERL_COMPILE_FLAGS += \
 	$(MEGACO_ERL_COMPILE_FLAGS) \
-	-I../../include             \
-	$(MEGACO_APP_VSN_COMPILE_FLAGS)
+	-I../../include
 
 
 # ----------------------------------------------------

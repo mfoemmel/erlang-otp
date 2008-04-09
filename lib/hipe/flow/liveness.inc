@@ -29,13 +29,14 @@
 -export([annotate_liveness/2]).
 -endif.
 
+-include("../flow/cfg.hrl").
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Interface functions that MUST be implemented in the including file
 %%
 %% cfg_bb(CFG, L) -> BasicBlock, extract a basic block from a cfg.
 %% cfg_postorder(CFG) -> [Labels], the labels of the cfg in postorder
-%% cfg_succ_map(CFG) -> SuccMap, a successor mapping.
 %% cfg_succ(CFG, L) -> [Labels], 
 %% uses(Instr) ->
 %% defines(Instr) ->
@@ -51,20 +52,23 @@
 %%
 %% The generic liveness analysis
 %%
+
+-spec(analyze/1 :: (#cfg{}) -> gb_tree()).
+
 -ifdef(HIPE_LIVENESS_CALC_LARGEST_LIVESET).
 analyze(CFG) ->
   PO = cfg_postorder(CFG),
   InitLiveness = liveness_init(init(cfg_labels(CFG), CFG)),
   _Max = case get(hipe_largest_liveset) of
 	   undefined ->
-	     put(hipe_largest_liveset,0),
+	     put(hipe_largest_liveset, 0),
 	     0;
 	   LL -> LL
 	 end,
   Res = merry_go_around(PO, InitLiveness,0),
   case get(hipe_largest_liveset) > _Max of 
     true ->
-      io:format("Largest liveset: ~w \n",[get(hipe_largest_liveset)]);
+      io:format("Largest liveset: ~w \n", [get(hipe_largest_liveset)]);
     _ -> ok
   end,
   Res.
@@ -74,9 +78,10 @@ analyze(CFG) ->
 analyze(CFG) ->
   PO = cfg_postorder(CFG),
   InitLiveness = liveness_init(init(PO, CFG)),
-  Res = merry_go_around(PO, InitLiveness,0),
+  Res = merry_go_around(PO, InitLiveness, 0),
   Res.
 -endif.
+
 %%
 %% The fixpoint iteration
 %%
@@ -84,12 +89,11 @@ analyze(CFG) ->
 merry_go_around(Labels, Liveness, Count) ->
   case doit_once(Labels, Liveness, 0) of
     {NewLiveness, 0} -> 
-       %% io:format("Iterations ~w~n",[Count]),
+       %% io:format("Iterations ~w~n", [Count]),
        NewLiveness;
     {NewLiveness, _Changed} ->
-       merry_go_around(Labels, NewLiveness,Count+1)
+       merry_go_around(Labels, NewLiveness, Count+1)
   end.
-
 
 %%
 %% One iteration
@@ -105,7 +109,7 @@ doit_once([L|Ls], Liveness, Changed) ->
   {NewLiveness, ChangedP} = update_livein(L, LiveIn, Liveness),
   Le = length(LiveIn),
   Max = get(hipe_largest_liveset),
-  if Le > Max -> put(hipe_largest_liveset,Le);
+  if Le > Max -> put(hipe_largest_liveset, Le);
      true -> true
   end,
   doit_once(Ls, NewLiveness, Changed+ChangedP).
@@ -125,7 +129,7 @@ doit_once([L|Ls], Liveness, Changed) ->
 %% %%
 %% %% Given a list of instructions and liveout, calculates livein
 %% %%
-%% livein_from_liveout(List, LiveOut) when is_list(List)->
+%% livein_from_liveout(List, LiveOut) when is_list(List) ->
 %%   livein_from_liveout_1(lists:reverse(List), gb_sets:from_list(LiveOut));
 %% livein_from_liveout(Instr, LiveOut) ->
 %%   livein_from_liveout_1([Instr], gb_sets:from_list(LiveOut)).
@@ -140,7 +144,7 @@ doit_once([L|Ls], Liveness, Changed) ->
 %%   LiveIn = gb_sets:union(gb_sets:difference(LiveOut, DefSet), UseSet),
 %%   Le = gb_sets:size(LiveIn),
 %%   Max = get(hipe_largest_liveset),
-%%   if Le > Max -> put(hipe_largest_liveset,Le);
+%%   if Le > Max -> put(hipe_largest_liveset, Le);
 %%      true -> true
 %%   end,
 %%   livein_from_liveout_1(Is, LiveIn).
@@ -156,9 +160,9 @@ update_livein(Label, NewLiveIn, Liveness) ->
   {GK, LiveIn, Successors} = liveness_lookup(Label, Liveness),
   NewLiveness = liveness_update(Label, {GK, NewLiveIn, Successors}, Liveness),
   if LiveIn =:= NewLiveIn ->
-	 {NewLiveness, 0};
+      {NewLiveness, 0};
   true ->
-	 {NewLiveness, 1}
+      {NewLiveness, 1}
   end.
 
 
@@ -181,23 +185,24 @@ liveout1(Labels, Liveness) ->
 liveout1([], _Liveness, Live) ->
   Live;
 liveout1([L|Ls], Liveness,Live) ->
-  liveout1(Ls, Liveness, ordsets:union(livein(Liveness, L),Live)).
-
+  liveout1(Ls, Liveness, ordsets:union(livein(Liveness, L), Live)).
 
 successors(L, Liveness) ->
-  {_GK,_LiveIn, Successors} = liveness_lookup(L, Liveness),
+  {_GK, _LiveIn, Successors} = liveness_lookup(L, Liveness),
   Successors.
 
+-spec(livein/2 :: (gb_tree(), _) -> [_]).
+
 livein(Liveness, L) ->
-  {_GK, LiveIn,_Successors} = liveness_lookup(L, Liveness),
+  {_GK, LiveIn, _Successors} = liveness_lookup(L, Liveness),
   LiveIn.
 
 kill(L, Liveness) ->
-  {{_Gen,Kill},_LiveIn,_Successors} = liveness_lookup(L, Liveness),
+  {{_Gen, Kill}, _LiveIn, _Successors} = liveness_lookup(L, Liveness),
   Kill.
 
 gen(L, Liveness) ->
-  {{Gen,_Kill},_LiveIn,_Successors} = liveness_lookup(L, Liveness),
+  {{Gen, _Kill}, _LiveIn, _Successors} = liveness_lookup(L, Liveness),
   Gen.
 
 
@@ -216,8 +221,7 @@ init([], _) ->
 init([L|Ls], CFG) ->
   BB = cfg_bb(CFG, L),
   Code = hipe_bb:code(BB),
-  SuccMap = cfg_succ_map(CFG),
-  Succ = cfg_succ(SuccMap, L),
+  Succ = cfg_succ(CFG, L),
   Transfer = make_bb_transfer(Code, Succ),
   [{L, {Transfer, ordsets:new(), Succ}} | init(Ls, CFG)].
 
@@ -233,11 +237,6 @@ make_bb_transfer([I|Is], Succ) ->
   Kill1 = ordsets:union(Kill, InstrKill),
   Kill2 = ordsets:subtract(Kill1, InstrGen),
   {Gen2, Kill2}.
-
-
-
-
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -292,12 +291,14 @@ liveness_update(Label, Val, Liveness) ->
 %%
 %% pp/1 pretty prints liveness information for a CFG
 %%
-%%
+
 -ifdef(PRETTY_PRINT).
+
+-spec(pp/1 :: (#cfg{}) -> 'ok').
 pp(Cfg) ->
-  Liveness=analyze(Cfg),
-  Labels=cfg_labels(Cfg),
-  ok=print_blocks(Labels, Liveness, Cfg).
+  Liveness = analyze(Cfg),
+  Labels = cfg_labels(Cfg),
+  ok = print_blocks(Labels, Liveness, Cfg).
 
 print_blocks([Lbl|Rest], Liveness, Cfg) ->
   io:format("~nLivein:", []),
@@ -309,4 +310,5 @@ print_blocks([Lbl|Rest], Liveness, Cfg) ->
   print_blocks(Rest, Liveness, Cfg);
 print_blocks([], _Liveness, _Cfg) ->
   ok.
+
 -endif. % PRETTY_PRINT

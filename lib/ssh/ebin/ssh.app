@@ -2,7 +2,7 @@
 
 {application, ssh,
  [{description, "SSH-2 for Erlang/OTP"},
-  {vsn, "0.9.9.5"},
+  {vsn, "0.9.9.6"},
   {modules, ['DSS',
 	     'PKCS-1',
 	     ssh,

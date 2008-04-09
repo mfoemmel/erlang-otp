@@ -94,7 +94,7 @@ perform_lcm(CFG0, NodeInfo, EdgeInfo, ExprMap, IdMap, AllExp, BetweenMap,
         {CFG0, MoveSet0}
     end,
   
-  Succs = hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG1), Label),  
+  Succs = hipe_rtl_cfg:succ(CFG1, Label),  
   
   %% Go through the list of successors and insert expression where needed.
   %% Also collect a list of expressions that are inserted somewhere
@@ -217,7 +217,7 @@ insert_exprs(CFG, _, _, _, _, BetweenMap, [])->
 insert_exprs(CFG, Pred, Succ, ExprMap, IdMap, BetweenMap, [ExprId|Exprs])->
   Expr = expr_id_map_get_expr(IdMap, ExprId),
   Instr = expr_map_get_instr(ExprMap, Expr),
-  Succs = hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), Pred),
+  Succs = hipe_rtl_cfg:succ(CFG, Pred),
   case length(Succs) =:= 1 of
     true ->
       pp_debug("  Inserted last: ", []),
@@ -225,7 +225,7 @@ insert_exprs(CFG, Pred, Succ, ExprMap, IdMap, BetweenMap, [ExprId|Exprs])->
       NewCFG = insert_expr_last(CFG, Pred, Instr),
       insert_exprs(NewCFG, Pred, Succ, ExprMap, IdMap, BetweenMap, Exprs);
     false ->
-      Preds = hipe_rtl_cfg:pred(hipe_rtl_cfg:pred_map(CFG), Succ),
+      Preds = hipe_rtl_cfg:pred(CFG, Succ),
       case length(Preds) =:= 1 of
         true ->
 	  pp_debug("  Inserted first: ", []),
@@ -544,7 +544,7 @@ calc_avail_node(Label, CFG, NodeInfo) ->
   case Changed of
     true ->
       %% Update AvailIn-sets of successors and add them to worklist
-      Succs = hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), Label),
+      Succs = hipe_rtl_cfg:succ(CFG, Label),
       NodeInfo3 =
 	lists:foldl
 	  (fun(Succ, NewNodeInfo) ->
@@ -626,7 +626,7 @@ calc_antic_node(Label, CFG, NodeInfo, AllExpr) ->
   case Changed of
     true ->
       %% Update AnticOut-sets of predecessors and add them to worklist
-      Preds = hipe_rtl_cfg:pred(hipe_rtl_cfg:pred_map(CFG), Label),
+      Preds = hipe_rtl_cfg:pred(CFG, Label),
       NodeInfo3 =
 	lists:foldl
 	  (fun(Pred, NewNodeInfo) ->
@@ -681,7 +681,7 @@ calc_later_fixpoint(Work, CFG, NodeInfo, EdgeInfo) ->
   end.
 
 calc_later_node(Label, CFG) ->
-  Succs = hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), Label),
+  Succs = hipe_rtl_cfg:succ(CFG, Label),
   [{edge, Label, Succ} || Succ <- Succs].
 
 calc_later_edge(From, To, _CFG, NodeInfo, EdgeInfo) ->  
@@ -867,7 +867,7 @@ calc_earliest(_, _, EdgeInfo, []) ->
   EdgeInfo;
 calc_earliest(CFG, NodeInfo, EdgeInfo, [To|Labels]) ->
   EmptySet = ?SETS:new(),
-  Preds = hipe_rtl_cfg:pred(hipe_rtl_cfg:pred_map(CFG), To),
+  Preds = hipe_rtl_cfg:pred(CFG, To),
   NewEdgeInfo =
     case EmptySet =:= antic_in(NodeInfo, To) of
       true ->
@@ -990,8 +990,7 @@ add_work(Work, []) ->
 %% exit_labels(CFG) ->
 %%   Labels = hipe_rtl_cfg:labels(CFG),
 %%   lists:foldl(fun(Label, ExitLabels) ->
-%%                   Succs = hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), 
-%%                                             Label),
+%%                   Succs = hipe_rtl_cfg:succ(CFG, Label),
 %%                   case Succs of
 %% 		    [] ->
 %%                       [Label|ExitLabels];
@@ -1006,7 +1005,7 @@ add_work(Work, []) ->
 %% Return true if label is an exit label,
 %% i.e. its bb has no successors or itself as only successor.
 is_exit_label(CFG, Label) ->
-  case hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), Label) of
+  case hipe_rtl_cfg:succ(CFG, Label) of
     [] -> true;
     [Label] -> true;
     _ -> false
@@ -1549,8 +1548,8 @@ pp_debug_instr(_) ->
 pp_sets(_, _, _, _, _, _, []) ->
   ok; 
 pp_sets(ExprMap, IdMap, NodeInfo, EdgeInfo, AllExpr, CFG, [Label|Labels]) ->
-  Preds = hipe_rtl_cfg:pred(hipe_rtl_cfg:pred_map(CFG), Label),
-  Succs = hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), Label),
+  Preds = hipe_rtl_cfg:pred(CFG, Label),
+  Succs = hipe_rtl_cfg:succ(CFG, Label),
 
   io:format(standard_io, "Label ~w~n", [Label]),
   io:format(standard_io, "  Preds:    ~w~n", [Preds]),

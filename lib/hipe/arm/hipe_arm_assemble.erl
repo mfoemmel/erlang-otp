@@ -435,14 +435,14 @@ encode_insns([I|Insns], Address, FunAddress, LabelMap, Relocs, AccCode, Options)
       encode_insns(Insns, Address, FunAddress, LabelMap, [Reloc|Relocs], AccCode, Options);
     {'.long',Value,_} ->
       print_insn(Address, Value, I, Options),
-      Segment = <<Value:32/integer-big>>,
+      Segment = <<Value:32/integer-native>>,
       NewAccCode = [Segment|AccCode],
       encode_insns(Insns, Address+4, FunAddress, LabelMap, Relocs, NewAccCode, Options);
     _ ->
       {Op,Arg,_} = fix_pc_refs(I, Address, FunAddress, LabelMap),
       Word = hipe_arm_encode:insn_encode(Op, Arg),
       print_insn(Address, Word, I, Options),
-      Segment = <<Word:32/integer-big>>,
+      Segment = <<Word:32/integer-native>>,
       NewAccCode = [Segment|AccCode],
       encode_insns(Insns, Address+4, FunAddress, LabelMap, Relocs, NewAccCode, Options)
   end;

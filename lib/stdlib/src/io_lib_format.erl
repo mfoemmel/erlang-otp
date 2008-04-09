@@ -333,13 +333,174 @@ float_data([_|Cs], Ds) ->
     float_data(Cs, Ds).
 
 %% fwrite_g(Float)
+%%  Writes the shortest, correctly rounded string that converts
+%%  to Float when read back with list_to_float/1.
+%%
+%%  See also "Printing Floating-Point Numbers Quickly and Accurately"
+%%  in Proceedings of the SIGPLAN '96 Conference on Programming
+%%  Language Design and Implementation.
+
+fwrite_g(0.0) ->
+    "0.0";
+fwrite_g(Float) when is_float(Float) ->
+    {Frac, Exp} = mantissa_exponent(Float),
+    {Place, Digits} = fwrite_g_1(Float, Exp, Frac),
+    R = insert_decimal(Place, [$0 + D || D <- Digits]),
+    [$- || true <- [Float < 0.0]] ++ R.
+
+-define(BIG_POW, (1 bsl 52)).
+-define(MIN_EXP, (-1074)).
+
+mantissa_exponent(F) ->
+    case <<F:64/float>> of
+        <<_S:1, 0:11, M:52>> -> % denormalized
+            E = log2floor(M),
+            {M bsl (53 - E), E - 52 - 1075};
+        <<_S:1, BE:11, M:52>> when BE < 2047 ->
+            {M + ?BIG_POW, BE - 1075}
+    end.
+
+fwrite_g_1(Float, Exp, Frac) ->
+    Round = (Frac band 1) =:= 0,
+    if 
+        Exp >= 0  ->
+            BExp = 1 bsl Exp,
+            if
+                Frac =:= ?BIG_POW ->
+                    scale(Frac * BExp * 4, 4, BExp * 2, BExp,
+                          Round, Round, Float);
+                true ->
+                    scale(Frac * BExp * 2, 2, BExp, BExp,
+                          Round, Round, Float)
+            end;
+        Exp < ?MIN_EXP ->
+            BExp = 1 bsl (?MIN_EXP - Exp),
+            scale(Frac * 2, 1 bsl (1 - Exp), BExp, BExp,
+                  Round, Round, Float);
+        Exp > ?MIN_EXP, Frac =:= ?BIG_POW ->
+            scale(Frac * 4, 1 bsl (2 - Exp), 2, 1,
+                  Round, Round, Float);
+        true ->
+            scale(Frac * 2, 1 bsl (1 - Exp), 1, 1,
+                  Round, Round, Float)
+    end.
+
+scale(R, S, MPlus, MMinus, LowOk, HighOk, Float) ->
+    Est = int_ceil(math:log10(abs(Float)) - 1.0e-10),
+    %% Note that the scheme implementation uses a 326 element look-up
+    %% table for int_pow(10, N) where we do not.
+    if
+        Est >= 0 ->
+            fixup(R, S * int_pow(10, Est), MPlus, MMinus, Est,
+                  LowOk, HighOk);
+        true ->
+            Scale = int_pow(10, -Est),
+            fixup(R * Scale, S, MPlus * Scale, MMinus * Scale, Est,
+                  LowOk, HighOk)
+    end.
+
+fixup(R, S, MPlus, MMinus, K, LowOk, HighOk) ->
+    TooLow = if 
+                 HighOk ->  R + MPlus >= S;
+                 true -> R + MPlus > S
+             end,
+    case TooLow of
+        true ->
+            {K + 1, generate(R, S, MPlus, MMinus, LowOk, HighOk)};
+        false ->
+            {K, generate(R * 10, S, MPlus * 10, MMinus * 10, LowOk, HighOk)}
+    end.
+
+generate(R0, S, MPlus, MMinus, LowOk, HighOk) ->
+    D = R0 div S,
+    R = R0 rem S,
+    TC1 = if
+              LowOk -> R =< MMinus;
+              true -> R < MMinus
+          end,
+    TC2 = if
+              HighOk -> R + MPlus >= S;
+              true -> R + MPlus > S
+          end,
+    case {TC1, TC2} of
+        {false, false} -> 
+            [D | generate(R * 10, S, MPlus * 10, MMinus * 10, LowOk, HighOk)];
+        {false, true} ->
+            [D + 1];
+        {true, false} -> 
+            [D];
+        {true, true} when R * 2 < S ->
+            [D];
+        {true, true} ->
+            [D + 1]
+    end.
+
+insert_decimal(0, S) ->
+    "0." ++ S;
+insert_decimal(Place, S) ->
+    L = length(S),
+    if
+        Place < 0;
+        Place >= L ->
+            ExpL = integer_to_list(Place - 1),
+            ExpDot = if L =:= 1 -> 2; true -> 1 end,
+            ExpCost = length(ExpL) + 1 + ExpDot,
+            if 
+                Place < 0 ->
+                    if 
+                        2 - Place =< ExpCost ->
+                            "0." ++ lists:duplicate(-Place, $0) ++ S;
+                        true ->
+                            insert_exp(ExpL, S)
+                    end;
+                true ->
+                    if
+                        Place - L + 2 =< ExpCost ->
+                            S ++ lists:duplicate(Place - L, $0) ++ ".0";
+                        true ->
+                            insert_exp(ExpL, S)
+                    end
+            end;
+        true ->
+            {S0, S1} = lists:split(Place, S),
+            S0 ++ "." ++ S1
+    end.
+
+insert_exp(ExpL, [C]) ->
+    [C] ++ ".0e" ++ ExpL;
+insert_exp(ExpL, [C | S]) ->
+    [C] ++ "." ++ S ++ "e" ++ ExpL.
+
+int_ceil(X) when is_float(X) ->
+    T = trunc(X),
+    case (X - T) of
+        Neg when Neg < 0 -> T;
+        Pos when Pos > 0 -> T + 1;
+        _ -> T
+    end.
+
+int_pow(X, 0) when is_integer(X) ->
+    1;
+int_pow(X, N) when is_integer(X), is_integer(N), N > 0 ->
+    int_pow(X, N, 1).
+
+int_pow(X, N, R) when N < 2 ->
+    R * X;
+int_pow(X, N, R) ->
+    int_pow(X * X, N bsr 1, case N band 1 of 1 -> R * X; 0 -> R end).
+
+log2floor(Int) when is_integer(Int), Int > 0 ->
+    log2floor(Int, 0).
+
+log2floor(0, N) ->
+    N;
+log2floor(Int, N) ->
+    log2floor(Int bsr 1, 1 + N).
+
 %% fwrite_g(Float, Field, Adjust, Precision, PadChar)
 %%  Use the f form if Float is >= 0.1 and < 1.0e4, 
 %%  and the prints correctly in the f form, else the e form.
 %%  Precision always means the # of significant digits.
-
-fwrite_g(Fl) ->
-    fwrite_g(Fl, none, right, none, $\s).
 
 fwrite_g(Fl, F, Adj, none, Pad) ->
     fwrite_g(Fl, F, Adj, 6, Pad);

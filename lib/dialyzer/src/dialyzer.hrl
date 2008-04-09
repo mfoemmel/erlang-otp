@@ -10,14 +10,14 @@
 
 -define(RET_NOTHING_SUSPICIOUS, 0).
 -define(RET_INTERNAL_ERROR, 1).
--define(RET_DISCREPANCIES_FOUND, 2).
+-define(RET_DISCREPANCIES, 2).
 
--define(WARN_CALLGRAPH, warn_callgraph).
+-type(dial_ret() :: ?RET_NOTHING_SUSPICIOUS
+                  | ?RET_INTERNAL_ERROR | ?RET_DISCREPANCIES).
 
 -define(SRC_COMPILE_OPTS, 
-	[to_core, binary, report_errors, no_inline, strict_record_tests]).
--define(HIPE_DEF_OPTS, 
-	[no_inline_fp, {pmatch, no_duplicates}, {target, x86}]).
+	[no_copt, to_core, binary, return_errors, 
+	 no_inline, strict_record_tests, strict_record_updates]).
 
 %%--------------------------------------------------------------------
 %% Warning classification
@@ -27,44 +27,83 @@
 -define(WARN_RETURN_ONLY_EXIT, warn_return_only_exit).
 -define(WARN_NOT_CALLED, warn_not_called).
 -define(WARN_NON_PROPER_LIST, warn_non_proper_list).
--define(WARN_COMP, warn_comp).
 -define(WARN_FUN_APP, warn_fun_app).
--define(WARN_TUPLE_AS_FUN, warn_tuple_as_fun).
 -define(WARN_MATCHING, warn_matching).
--define(WARN_GUARDS, warn_guards).
--define(WARN_OLD_BEAM, warn_old_beam).
 -define(WARN_FAILING_CALL, warn_failing_call).
 -define(WARN_CONTRACT_TYPES, warn_contract_types).
 -define(WARN_CONTRACT_SYNTAX, warn_contract_syntax).
 -define(WARN_CONTRACT_NOT_EQUAL, warn_contract_not_equal).
 -define(WARN_CONTRACT_SUBTYPE, warn_contract_subtype).
 -define(WARN_CONTRACT_SUPERTYPE, warn_contract_supertype).
-
+-define(WARN_CALLGRAPH, warn_callgraph).
+-define(WARN_UNMATCHED_RETURN, warn_umatched_return).
 %% Mostly for debugging
 -define(WARN_TERM_COMP, warn_term_comp).
 
--type(dial_warning() :: ?WARN_RETURN_NO_RETURN | ?WARN_RETURN_ONLY_EXIT
-                      | ?WARN_NOT_CALLED | ?WARN_NON_PROPER_LIST | ?WARN_COMP
-                      | ?WARN_TUPLE_AS_FUN | ?WARN_MATCHING | ?WARN_FUN_APP
-                      | ?WARN_GUARDS | ?WARN_OLD_BEAM | ?WARN_FAILING_CALL
-                      | ?WARN_CONTRACT_TYPES | ?WARN_CONTRACT_SYNTAX
-                      | ?WARN_CONTRACT_NOT_EQUAL | ?WARN_CONTRACT_SUBTYPE
-                      | ?WARN_CONTRACT_SUPERTYPE | ?WARN_TERM_COMP).
+%%
+%% The following type has double role:
+%%   1. It is the set of warnings that will be collected.
+%%   2. It is also the set of tags for warnings that will be returned.
+%%
+-type(dial_warn_tag() :: ?WARN_RETURN_NO_RETURN | ?WARN_RETURN_ONLY_EXIT
+                       | ?WARN_NOT_CALLED | ?WARN_NON_PROPER_LIST
+                       | ?WARN_MATCHING | ?WARN_FUN_APP
+                       | ?WARN_FAILING_CALL | ?WARN_CALLGRAPH
+                       | ?WARN_CONTRACT_TYPES | ?WARN_CONTRACT_SYNTAX
+                       | ?WARN_CONTRACT_NOT_EQUAL | ?WARN_CONTRACT_SUBTYPE
+                       | ?WARN_CONTRACT_SUPERTYPE | ?WARN_TERM_COMP
+                       | ?WARN_UNMATCHED_RETURN).
+
+%%
+%% This is the representation of each warning as they will be returned
+%% to dialyzer's callers
+%%
+-type(file_line()    :: {string(), non_neg_integer()}).
+-type(dial_warning() :: {dial_warn_tag(), file_line(), {atom(),[_]}}).
+
+%%
+%% This is the representation of dialyzer's internal errors
+%%
+-type(dial_error()   :: any()).    %% XXX: underspecified
 
 %%--------------------------------------------------------------------
+%% THESE TYPES SHOULD ONE DAY DISAPPEAR -- THEY DO NOT BELONG HERE
+%%--------------------------------------------------------------------
+ 
+-type(dict()         :: tuple()).  %% XXX: temporarily
+-type(orddict()      :: [{_, _}]). %% XXX: temporarily
+-type(set()          :: tuple()).  %% XXX: temporarily
+-type(ordset(T)      :: [T]).      %% XXX: temporarily
+-type(core_module()  :: {'module',_,_,_,_,_}). % XXX: belongs in 'cerl*'
+-type(core_tree()    :: tuple()).  %% XXX: belongs in 'cerl*'
+-type(core_records() :: tuple()).  %% XXX: belongs in 'cerl*'
+-type(erl_type()     :: any()).    %% XXX: belongs to 'erl_types'
 
--type(dict()       :: tuple()). %% XXX: temporarily
-%-type(ordset(T)    :: [T]). %% XXX: temporarily
+%%--------------------------------------------------------------------
+%% Basic types used either in the record definitions below or in other
+%% parts of the application
+%%--------------------------------------------------------------------
 
--type(anal_type()  :: 'dataflow' | 'succ_typings' | 'old_style' | 'plt_build').
--type(start_from() :: 'byte_code' | 'src_code').
--type(define()     :: {atom(), any()}).
--type(md5()        :: [{atom(), binary()}]).
+-type(anal_type()    :: 'succ_typings' | 'plt_build').
+-type(start_from()   :: 'byte_code' | 'src_code').
+-type(define()       :: {atom(), any()}).
+-type(md5()          :: [{atom(), binary()}]).
+-type(rep_mode()     :: 'quiet' | 'normal' | 'verbose').
+-type(dial_option()  :: {atom(), any()}).
+-type(dial_options() :: [dial_option()]).
 
+%%--------------------------------------------------------------------
+%% Record declarations used by various files
 %%--------------------------------------------------------------------
 
 -record(dialyzer_plt, {info       = dict:new()      :: dict(),
 		       contracts  = dict:new()      :: dict()}).
+
+-record(dialyzer_codeserver, {table           :: pid(),
+                              exports         :: set(), % set(mfa())
+                              next_core_label :: non_neg_integer(),
+                              records         :: dict(),
+                              contracts       :: dict()}).
 
 -record(analysis, {analysis_pid			    :: pid(),
 		   type		  = succ_typings    :: anal_type(),
@@ -72,9 +111,9 @@
 		   doc_plt                          :: #dialyzer_plt{},
 		   files          = []		    :: [string()],
 		   include_dirs	  = []		    :: [string()],
-		   supress_inline = false	    :: bool(),
 		   start_from     = byte_code	    :: start_from(),
-		   plt                              :: #dialyzer_plt{}}).
+		   plt                              :: #dialyzer_plt{},
+		   use_contracts  = true            :: bool()}).
 
 -record(options, {files           = []		    :: [string()],
 		  files_rec       = []		    :: [string()],
@@ -83,13 +122,15 @@
 		  from            = byte_code	    :: start_from(),
 		  init_plt        = ""		    :: string(),
 		  include_dirs    = []		    :: [string()],
-		  output_plt,
-		  legal_warnings  = ordsets:new()   :: [dial_warning()], % XXX: ordset(dial_warning())
-		  report_mode     = normal    :: 'quiet' | 'normal' | 'verbose',
+		  output_plt      = none            :: 'none' | string(),
+		  legal_warnings  = ordsets:new()   :: [dial_warn_tag()], % XXX: ordset(dial_warn_tag())
+		  report_mode     = normal	    :: rep_mode(),
 		  erlang_mode     = false	    :: bool(),
-		  supress_inline  = false	    :: bool(),
+		  use_contracts   = true            :: bool(),
 		  output_file     = ""		    :: string()}).
 
 -record(contract, {contracts	  = []		    :: [_],        % ???
-		   args		  = []		    :: [_],        % ???
-		   forms	  = []		    :: [{_, _}]}). % ???
+		   args		  = []		    :: [erl_type()],
+		   forms	  = []		    :: [{_, _}]}).
+
+%%--------------------------------------------------------------------

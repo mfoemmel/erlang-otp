@@ -141,6 +141,7 @@ type	ATOM_TXT	LONG_LIVED	ATOM		atom_text
 type	HEAP		EHEAP		PROCESSES	heap
 type	OLD_HEAP	EHEAP		PROCESSES	old_heap
 type	HEAP_FRAG	EHEAP		PROCESSES	heap_frag
+type	TMP_HEAP	TEMPORARY	PROCESSES	tmp_heap
 type	MSG_REF		SHORT_LIVED	PROCESSES	msg_ref
 type	MSG_ROOTS	TEMPORARY	PROCESSES	msg_roots
 type	ROOTSET		TEMPORARY	PROCESSES	root_set
@@ -218,6 +219,9 @@ type	MISC_OP_LIST	SHORT_LIVED	SYSTEM		misc_op_list
 type	PORT_NAMES	SHORT_LIVED	SYSTEM		port_names
 type	PORT_DATA_LOCK	STANDARD	SYSTEM		port_data_lock
 type	NODES_MON	STANDARD	PROCESSES	nodes_monitor
+type	PROCS_TPROC_EL	SHORT_LIVED	PROCESSES	processes_term_proc_el
+type	PROCS_CNKINF	SHORT_LIVED	PROCESSES	processes_chunk_info
+type	PROCS_PIDS	SHORT_LIVED	PROCESSES	processes_pids
 
 +if thread_safe_std_alloc
 type	DRV_THR_OPTS	STANDARD	SYSTEM		driver_thread_opts

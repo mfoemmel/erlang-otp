@@ -67,22 +67,37 @@
 %%% Exported functions
 %%%
 
-parse_transform(Forms0, Options) ->
-    Forms = Forms0,
+parse_transform(Forms, Options) ->
     ?DEBUG("qlc Parse Transform~n", []),
     State = #state{imp = is_qlc_q_imported(Forms),
                    maxargs = ?COMPILE_MAX_NUM_OF_ARGS,
                    records = record_attributes(Forms)},
-    FormsNoShadows = no_shadows(Forms, State),
-    case compile_messages(Forms, FormsNoShadows, Options, State) of
-        {[],[],Warnings0} ->
-            {NewForms, State1} = transform(FormsNoShadows, State),
-            Warnings = Warnings0 ++ State1#state.xwarnings,
-            {[],WForms} = no_duplicates(NewForms, [], Warnings, Options),
-            WForms ++ NewForms;
-        {E0,Errors,Warnings} ->
-            {EForms,WForms} = no_duplicates(Forms, E0++Errors, Warnings, Options),
-            EForms ++ WForms ++ Forms
+    case called_from_type_checker(Options) of
+        true ->
+            %% The returned value should conform to the types, but
+            %% need not evaluate to anything meaningful.
+            L = 0,
+            {tuple,_,Fs0} = abstr(#qlc_lc{}, L),
+            F = fun(_Id, LC, A) ->
+                        Init = simple(L, 'V', LC, L),
+                        {{tuple,L,set_field(#qlc_lc.lc, Fs0, Init)}, A}
+                end,
+            {Forms1,ok} = qlc_mapfold(F, ok, Forms, State),
+            Forms1;
+        false ->
+            FormsNoShadows = no_shadows(Forms, State),
+            case compile_messages(Forms, FormsNoShadows, Options, State) of
+                {[],[],Warnings} ->
+                    {NewForms, State1} = transform(FormsNoShadows, State),
+                    ExtraWs = State1#state.xwarnings,
+                    {[],WForms} = no_duplicates(NewForms, [], Warnings, 
+                                                ExtraWs, Options),
+                    WForms ++ NewForms;
+                {E0,Errors,Warnings} ->
+                    {EForms,WForms} = no_duplicates(Forms, E0++Errors, 
+                                                    Warnings, [], Options),
+                    EForms ++ WForms ++ Forms
+            end
     end.
 
 transform_from_evaluator(LC, Bindings) ->
@@ -95,6 +110,9 @@ transform_expression(LC, Bindings) ->
 %%%
 %%% Local functions
 %%%
+
+called_from_type_checker(Options) ->
+    lists:member(type_checker, Options).
 
 transform_expression(LC, Bs0, WithLintErrors) ->
     L = 1,
@@ -131,17 +149,31 @@ transform_expression(LC, Bs0, WithLintErrors) ->
 %% The first one encountered in a QLC has no=1.
 -record(qid, {lcid,no}).
 
+mforms(Tag, L) ->
+    sort([{Tag,M} || {_File,Ms} <- L, M <- Ms]).
+
 %% Avoid duplicated lint warnings and lint errors. Care has been taken
 %% not to introduce unused variables in the transformed code.
 %%
-no_duplicates(Forms, Errors, Warnings, Options) ->
+no_duplicates(Forms, Errors, Warnings0, ExtraWarnings, Options) ->
+    %% Some mistakes such as "{X} =:= {}" are found by strong
+    %% validation as well as by qlc. Prefer the warnings from qlc:
+    Warnings1 = mforms(Warnings0) --
+        ([{File,[{L,v3_core,nomatch}]} ||
+             {File,[{L,qlc,M}]} <- mforms(ExtraWarnings),
+             lists:member(M, [nomatch_pattern,nomatch_filter])]
+         ++ 
+         [{File,[{L,sys_core_fold,nomatch_guard}]} ||
+             {File,[{L,qlc,M}]} <- mforms(ExtraWarnings),
+             M =:= nomatch_filter]),
+    Warnings = Warnings1 ++ ExtraWarnings,
     {Es1,Ws1} = compile_forms(Forms, Options),
-    Es = mforms2(error, Errors) -- mforms2(error, Es1),
-    Ws = mforms2(warning, Warnings) -- mforms2(warning, Ws1),
-    {Es,Ws}.
+    Es = mforms(Errors) -- mforms(Es1),
+    Ws = mforms(Warnings) -- mforms(Ws1),
+    {mforms2(error, Es),mforms2(warning, Ws)}.
 
-mforms(Tag, L) ->
-    sort([{Tag,M} || {_File,Ms} <- L, M <- Ms]).
+mforms(L) ->
+    sort([{File,[M]} || {File,Ms} <- L, M <- Ms]).
 
 mforms2(Tag, L) ->
     Line = 0,
@@ -497,6 +529,10 @@ transform(FormsNoShadows, State) ->
                       constants_and_sizes(Qs, E, Dependencies, AllIVs, State),
                  {JoinInfo, XWarn} = 
                      join_kind(Qs, LcL, AllIVs, Dependencies, State),
+                 %% Not at all sure it is a good idea to try and find 
+                 %% failing qualifiers; Dialyzer does it so much better.
+                 %% But there are a few cases where qlc finds more... (r12b).
+                 FWarn = warn_failing_qualifiers(Qs, State),
                  JQs = join_quals(JoinInfo, QCs, L, LcNo, ExtraConsts, AllVars),
                  XQCs = QCs ++ JQs,
                  Cs0 = clauses(XQCs, RL, Fun, Go, NGV, Err, AllIVs, State),
@@ -526,12 +562,12 @@ transform(FormsNoShadows, State) ->
                              {tuple,L,[?A(qlc_v1),FunW,QCode,Qdata,Opt]};
                          {simple, PL, LE, V} ->
                              Init = closure(LE, L),
-                             {tuple,L,[?A(simple_v1),?A(V),Init,?I(PL)]}
+                             simple(L, V, Init, PL)
                      end,
                  LCFun = {'fun',L,{clauses,[{clause,L,[],[],[LCTuple]}]}},
                  {tuple,_,Fs0} = abstr(#qlc_lc{}, L),
                  Fs = set_field(#qlc_lc.lc, Fs0, LCFun),
-                 {{tuple,L,Fs},{RestIntroVs,XWarn0++XWarn}}
+                 {{tuple,L,Fs},{RestIntroVs,FWarn++XWarn++XWarn0}}
          end,
     {NForms,{[],XW}} = qlc_mapfold(F2, {IntroVars,[]}, ModifiedForms1, State),
     display_forms(NForms),
@@ -568,6 +604,45 @@ qlc_kind(OrigE, Qs) ->
         _ ->
             qlc
     end.
+
+%% Finds filters and patterns that cannot match any values at all. 
+%% Nothing but the patterns and the filters themselves is analyzed.
+%% A much weaker analysis than the one of Dialyzer.
+warn_failing_qualifiers(Qualifiers, State) ->
+    {FilterData, GeneratorData} = qual_data(Qualifiers),    
+    Anon = 1,
+    Imported = [],
+    BindFun = fun(Value, Op) -> is_bindable(Value, Op, Imported) end,
+    {PFrame, _PatternVars} = 
+        pattern_frame(GeneratorData, BindFun, Anon, State),
+    PFrames = frame2frames(PFrame),
+    SkipFun = fun(Fs) -> Fs end,
+    {_, Warnings} = 
+        lists:foldl(fun({_QId,{fil,_Filter}}, {[]=Frames,Warnings}) ->
+                            {Frames,Warnings};
+                       ({_QId,{fil,Filter}}, {Frames,Warnings}) ->
+                        case filter(set_line(Filter, 0), Frames, BindFun, 
+                                    SkipFun, State) of
+                            [] ->
+                                {[],
+                                 [{get(?QLC_FILE),
+                                   [{abs(element(2, Filter)),?APIMOD,
+                                     nomatch_filter}]} | Warnings]};
+                            Frames1 -> 
+                                {Frames1,Warnings}
+                        end;
+                   ({_QId,{gen,Pattern,_}}, {Frames,Warnings}) ->
+                        case pattern(Pattern, Anon, [], BindFun, State) of
+                            {failed, _, _} -> 
+                                {Frames,
+                                 [{get(?QLC_FILE),
+                                   [{abs(element(2, Pattern)),?APIMOD,
+                                     nomatch_pattern}]} | Warnings]};
+                            _ ->
+                                {Frames,Warnings}
+                        end
+                end, {PFrames,[]}, FilterData++GeneratorData),
+    Warnings.
 
 -define(TNO, 0).
 -define(TID, #qid{lcid = template, no = ?TNO}).
@@ -640,7 +715,7 @@ join_quals(JoinInfo, QCs, L, LcNo, ExtraConstants, AllVars) ->
     %% The join generator re-uses the generator variable assigned to
     %% the first of the two joined generators. Its introduced variables
     %% are the variables introduced by any of the two joined generators.
-    %% Its abstract code is a pair of the joined generators patterns.
+    %% Its abstract code is a pair of the joined generators' patterns.
     QNums = case JoinInfo of
                 {EqualCols, MatchCols} ->
                     EQs = join_qnums(EqualCols),
@@ -945,7 +1020,8 @@ constants_and_sizes(Qualifiers0, E, Dependencies, AllIVs, State) ->
     {PatternFrame, PatternVars} = 
         pattern_frame(GeneratorData, BindFun, Anon1, State),
     SkipFun = fun(Fs) -> Fs end,
-    Fs = filter(Filter, PatternFrame, BindFun, SkipFun, State),
+    PatternFrames = frame2frames(PatternFrame),
+    Fs = filter(Filter, PatternFrames, BindFun, SkipFun, State),
 
     Selector = fun(Value) -> is_const(Value, Imported) end,
     ColumnConstants0 = [frames_to_columns(Fs, PV, QId, Selector) || 
@@ -953,7 +1029,7 @@ constants_and_sizes(Qualifiers0, E, Dependencies, AllIVs, State) ->
     ColumnConstants1 = flatten(ColumnConstants0),
 
     PatternConstants = 
-        flatten([frames_to_columns([PatternFrame], PV, QId, Selector) || 
+        flatten([frames_to_columns(PatternFrames, PV, QId, Selector) || 
                     {QId,PV} <- PatternVars]),
     ExtraConstants = 
       family_list([{GId, {Col,Vals}} ||
@@ -976,8 +1052,9 @@ lu_skip(ColConstants, FilterData, BindFun, Selector, PatternFrame,
     FailSelector = fun(_Value) -> true end,
     %% In runtime, constants are looked up and matched against a pattern 
     %% (the pattern acts like a filter), then the filters are run.
+    PatternFrames = frame2frames(PatternFrame),
     PatternColumns = 
-        flatten([frames_to_columns([PatternFrame], PV, QId, FailSelector) ||
+        flatten([frames_to_columns(PatternFrames, PV, QId, FailSelector) ||
                     {QId,PV} <- PatternVars]),
     %% Note: ColFil can contain filters for columns that cannot be
     %% looked up. Such (possibly bogus) elements are however not used.
@@ -990,7 +1067,7 @@ lu_skip(ColConstants, FilterData, BindFun, Selector, PatternFrame,
                  {FId,{fil,Fil}} <- 
                      filter_list(FilterData, Dependencies, State),
                  [] =/= (SFs = safe_filter(set_line(Fil, 0), 
-                                           PatternFrame, BindFun, State)),
+                                           PatternFrames, BindFun, State)),
                  {GId,PV} <- PatternVars,
                  GId#qid.lcid =:= FId#qid.lcid,
                  [] =/= (F = frames_to_columns(SFs, PV, GId, Selector)),
@@ -999,7 +1076,7 @@ lu_skip(ColConstants, FilterData, BindFun, Selector, PatternFrame,
                  length(D = F -- PatternColumns) =:= 1,
                  Frame <- SFs,
                  begin
-                     %% The column is compared/matched to a constant.
+                     %% The column is compared/matched against a constant.
                      %% If there are no more comparisons/matches then
                      %% the filter can be replaced by the lookup of
                      %% the constant.
@@ -1082,8 +1159,9 @@ join_info(Qualifiers, AllIVs, Dependencies, BindFun0, State) ->
     BindFun = BindFun0(Imported),
     {PatternFrame, PatternVars} = 
         pattern_frame(GeneratorData, BindFun, Anon1, State),
+    PatternFrames = frame2frames(PatternFrame),
     SkipFun = fun(Fs) -> Fs end,
-    Fs = filter(Filter, PatternFrame, BindFun, SkipFun, State),
+    Fs = filter(Filter, PatternFrames, BindFun, SkipFun, State),
     Selector = fun(Value) -> not is_const(Value, Imported) end,
     join_classes(fun(PV, QId) -> frames_to_columns(Fs, PV, QId, Selector) 
                  end, PatternVars).
@@ -1213,6 +1291,11 @@ pattern(P0, AnonI, Frame0, BindFun, State) ->
     F = unify('=:=', UniqueVar, P, F2, BindFun),
     {F, AnonN, PatternVar}.
 
+frame2frames(failed) ->
+    [];
+frame2frames(F) ->
+    [F].
+
 match_in_pattern({match, _, E10, E20}, F0, BF) ->
     {E1, F1} = match_in_pattern(E10, F0, BF),
     {E2, F} = match_in_pattern(E20, F1, BF),
@@ -1245,12 +1328,12 @@ set_line(T, L) ->
 
 -record(fstate, {state, bind_fun, skip_fun}).
 
-filter(_E, failed, _BF, _SF, _State) ->
-    [];
-filter(E0, Frame0, BF, SF, State) ->
+filter(_E, []=Frames0, _BF, _SF, _State) ->
+    Frames0;
+filter(E0, Frames0, BF, SF, State) ->
     E = pre_expand(E0),
     FState = #fstate{state = State, bind_fun = BF, skip_fun = SF},
-    filter1(E, [Frame0], FState).
+    filter1(E, Frames0, FState).
 
 %% One frame for each path through the and/or formula.
 %%
@@ -1312,13 +1395,13 @@ filter1(_E, Fs, FS) ->
 %% columns as possible. It ignores those parts of the filter that are
 %% uninteresting. safe_filter() on the other hand ensures that the
 %% bindings returned capture _all_ aspects of the filter.
-safe_filter(_E, failed, _BF, _State) ->
-    [];
-safe_filter(E0, Frame0, BF, State) ->
+safe_filter(_E, []=Frames0, _BF, _State) ->
+    Frames0;
+safe_filter(E0, Frames0, BF, State) ->
     E = pre_expand(E0),
     FailFun = fun(_Fs) -> [] end,
     FState = #fstate{state = State, bind_fun = BF, skip_fun = FailFun},
-    safe_filter1(E, [Frame0], FState).
+    safe_filter1(E, Frames0, FState).
 
 safe_filter1({op, _, Op, L0, R0}, Fs, FS) when Op =:= '=:='; Op =:= '==' ->
     #fstate{state = S, bind_fun = BF} = FS,
@@ -1645,10 +1728,10 @@ cons2list(E) -> % tuple tail (always a variable)
 bindings_is_subset(F1, F2) ->
     lists:all(fun(#bind{var = V}) ->
                       is_unique_var(V) 
-                      orelse (defef_ss(V, F1) =:= defef_ss(V, F2))
+                      orelse deref_ss(V, F1) =:= deref_ss(V, F2)
               end, F1).
 
-defef_ss(E, F) ->
+deref_ss(E, F) ->
     var_map(fun(V) ->
                     case is_unique_var(V) of
                         true -> unique_var;
@@ -1745,6 +1828,9 @@ qcode([], _Source) ->
 
 closure(Code, L) ->
     {'fun',L,{clauses,[{clause,L,[],[],[Code]}]}}.
+
+simple(L, Var, Init, Line) ->
+    {tuple,L,[?A(simple_v1),?A(Var),Init,?I(Line)]}.
 
 clauses([{QId,{QIVs,{QualData,GoI,S}}} | QCs], RL, Fun, Go, NGV, E, IVs,St) ->
     ?DEBUG("QIVs = ~p~n", [QIVs]),

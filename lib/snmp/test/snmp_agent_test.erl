@@ -86,15 +86,31 @@
 
 
 all(suite) -> {req,
-	       [mnesia, distribution,
-		{local_slave_nodes, 2}, {time, 360}],
+	       [
+		mnesia, 
+		distribution,
+		{local_slave_nodes, 2}, 
+		{time, 360}
+	       ],
 	       [{conf, init_all, cases(), finish_all}]}.
 
-init_per_testcase(_Case, Config) when list(Config) ->
+init_per_testcase(otp_7157_test = _Case, Config) when is_list(Config) ->
+    ?DBG("init_per_testcase -> entry with"
+	 "~n   Case:   ~p"
+	 "~n   Config: ~p", [_Case, Config]),
+    Dog = ?WD_START(?MINS(1)),
+    [{watchdog, Dog}|Config];
+init_per_testcase(_Case, Config) when is_list(Config) ->
+    ?DBG("init_per_testcase -> entry with"
+	 "~n   Case:   ~p"
+	 "~n   Config: ~p", [_Case, Config]),
     Dog = ?WD_START(?MINS(6)),
     [{watchdog, Dog}|Config].
 
-fin_per_testcase(_Case, Config) when list(Config) ->
+fin_per_testcase(_Case, Config) when is_list(Config) ->
+    ?DBG("fin_per_testcase -> entry with"
+	 "~n   Case:   ~p"
+	 "~n   Config: ~p", [_Case, Config]),
     Dog = ?config(watchdog, Config),
     ?WD_STOP(Dog),
     Config.
@@ -121,7 +137,7 @@ cases() ->
              test_v3, 
 	     test_multi_threaded, 
      	     mib_storage, 
-      	     tickets
+       	     tickets
 	    ]
     end.
 
@@ -170,6 +186,9 @@ start_v1_agent(Config, Opts) ->
 
 start_v2_agent(Config) ->
     snmp_agent_test_lib:start_v2_agent(Config).
+
+start_v2_agent(Config, Opts) ->
+    snmp_agent_test_lib:start_v2_agent(Config, Opts).
 
 start_v3_agent(Config) ->
     snmp_agent_test_lib:start_v3_agent(Config).
@@ -2966,7 +2985,7 @@ sparse_table_test() ->
 %% Req. Test1
 cnt_64_test(MA) ->
     ?LOG("start cnt64 test (~p)",[MA]),
-    snmpa:verbosity(MA,trace),
+    snmpa:verbosity(MA, trace),
     ?LOG("start cnt64 test",[]),
     ?P1("Testing Counter64, and at the same time, "
 	"RowStatus is not last column"),
@@ -2982,9 +3001,11 @@ cnt_64_test(MA) ->
     ?line ?v1_2(expect(2, [{[cnt64Str,0], "after cnt64"}]),
 		expect(2, [{[cnt64,0],18446744073709551615}])),
     ?DBG("send cntTrap",[]),
-    snmpa:send_trap(MA,cntTrap,"standard trap",[{sysContact,"pelle"},
-					       {cnt64, 10},
-					       {sysLocation, "here"}]),
+    snmpa:send_trap(MA,cntTrap,"standard trap",[
+						{sysContact,  "pelle"},
+						{cnt64,       10},
+						{sysLocation, "here"}
+					       ]),
     ?DBG("await response",[]),
     ?line ?v1_2(expect(3, trap, [test], 6, 1, [{[sysContact,0], "pelle"},
 					       {[sysLocation,0], "here"}]),
@@ -4648,7 +4669,10 @@ reported_bugs_3(suite) ->
 %% These are (ticket) test cases where the initiation has to be done
 %% individually.
 tickets(suite) ->
-    [otp_4394].
+    [
+     otp_4394, 
+     otp_7157
+    ].
 
 %%-----------------------------------------------------------------
 %% Ticket: OTP-1128
@@ -5181,6 +5205,77 @@ otp_4394_test1() ->
     ?DBG("otp_4394_test1 -> done with: ~p", [Res]),
     Res.
 
+
+%%-----------------------------------------------------------------
+%% Ticket: OTP-7157
+%% Slogan: Target mib tag list check invalid
+%%-----------------------------------------------------------------
+
+
+otp_7157(suite) -> 
+    {req, [], {conf, 
+	       init_otp_7157, 
+	       [otp_7157_test], 
+	       finish_otp_7157}}.
+
+init_otp_7157(Config) when list(Config) ->
+    ?DBG("init_otp_7157 -> entry with"
+	   "~n   Config: ~p", [Config]),
+    ?line AgentDir = ?config(agent_dir, Config),
+    ?line MgrDir = ?config(mgr_dir, Config),
+    ?line Ip = ?config(ip, Config),
+    ?line config([v2], MgrDir, AgentDir, tuple_to_list(Ip), tuple_to_list(Ip)),
+    MasterAgentVerbosity = {master_agent_verbosity, trace},
+    NetIfVerbosity       = {net_if_verbosity,       trace},
+    Opts = [MasterAgentVerbosity, NetIfVerbosity],
+    [{vsn, v2} | start_v2_agent(Config, Opts)].
+
+
+finish_otp_7157(Config) when list(Config) ->
+    ?DBG("finish_otp_7157 -> entry", []),
+    C1 = stop_agent(Config),
+    delete_files(C1),
+    erase(mgr_node),
+    lists:keydelete(vsn, 1, C1).
+
+otp_7157_test(suite) -> [];
+otp_7157_test(Config) ->
+    ?P(otp_7157_test), 
+    ?DBG("otp_7157_test -> entry", []),
+    init_case(Config),
+    MA = whereis(snmp_master_agent),
+    ?line load_master("Test1"),
+    try_test(otp_7157_test1, [MA]),
+    ?line unload_master("Test1"),
+    ?DBG("otp_7157_test -> done", []),
+    ok.
+
+%% ts:run(snmp, snmp_agent_test, [batch]).
+otp_7157_test1(MA) ->
+    ?LOG("start otp_7157_test1 test (~p)",[MA]),
+    snmpa:verbosity(MA, trace),
+    ?LOG("start otp_7157_test1 test",[]),
+    ?P1("Testing that varbinds in traps/notifications are not reordered"),
+    
+    ?DBG("send cntTrap",[]),
+    snmpa:send_trap(MA, cntTrap, "standard trap"),
+
+    ?DBG("await response",[]),
+    %% We don't really care about the values, just the vb order.
+    ?line ok = expect(1, v2trap, [{[sysUpTime,   0], any},
+				  {[snmpTrapOID, 0], any},
+				  {[sysContact,  0], any},
+				  {[cnt64,       0], any},
+				  {[sysLocation, 0], any}]),
+
+    ?DBG("done", []),
+    ok.
+
+
+
+%%-----------------------------------------------------------------
+%% Slogan: info test
+%%-----------------------------------------------------------------
 
 info_test(suite) -> [];
 info_test(Config) when list(Config) ->

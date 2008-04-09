@@ -178,12 +178,14 @@ parse_SymbolsFromModule(Tokens) ->
     {SymbolList,Rest} = parse_SymbolList(Tokens),
     case Rest of
 	%%How does this case correspond to x.680 ?
-	[{'FROM',_L1},Tref = {typereference,_,_},Ref={identifier,_L2,_Id},C={',',_}|Rest2] ->
-	    {#'SymbolsFromModule'{symbols=SymbolList,
+	[{'FROM',_L1},Tref = {typereference,_,Name},Ref={identifier,_L2,_Id},C={',',_}|Rest2] ->
+	    NewSymbolList = lists:map(SetRefModuleName(Name),SymbolList),
+	    {#'SymbolsFromModule'{symbols=NewSymbolList,
 				  module=tref2Exttref(Tref)},[Ref,C|Rest2]};
 	%%How does this case correspond to x.680 ?
-	[{'FROM',_L1},Tref = {typereference,_,_},{identifier,_L2,_Id}|Rest2] ->
-	    {#'SymbolsFromModule'{symbols=SymbolList,
+	[{'FROM',_L1},Tref = {typereference,_,Name},{identifier,_L2,_Id}|Rest2] ->
+	    NewSymbolList = lists:map(SetRefModuleName(Name),SymbolList),
+	    {#'SymbolsFromModule'{symbols=NewSymbolList,
 				  module=tref2Exttref(Tref)},Rest2}; 
 	[{'FROM',_L1},Tref = {typereference,_,Name},Brace = {'{',_}|Rest2] ->
 	    {_ObjIdVal,Rest3} = parse_ObjectIdentifierValue([Brace|Rest2]), % value not used yet, fix me
@@ -309,6 +311,12 @@ parse_TypeAssignment([H|_T]) ->
 				  [got,get_token(H),expected,
 				   typereference]}}).
 
+%% parse_Type(Tokens) -> Ret
+%%
+%% Tokens = [Tok]
+%% Tok    = tuple()
+%% Ret    = #type{}
+%%
 parse_Type(Tokens) ->
     {Tag,Rest3} = case Tokens of
 		      [Lbr= {'[',_}|Rest] ->
@@ -1185,6 +1193,11 @@ parse_ObjectAssignment(Tokens) ->
     throw({asn1_assignment_error,{get_line(hd(Tokens)),get(asn1_module),
 				  [got,get_token(hd(Tokens)),expected,identifier]}}).
 
+
+%% parse_Object(Tokens) -> Ret
+%% Tokens    = [Tok]
+%% Tok       = tuple()
+%% Ret       = {object,_} | {object, _, _}
 parse_Object(Tokens) ->
     Flist=[fun parse_ObjectDefn/1,
 	   fun parse_ObjectFromObject/1,
@@ -1280,7 +1293,8 @@ parse_DefinedSyntaxToken(Tokens=[TRef={typereference,L1,Name}|Rest]) ->
 		    parse_Setting(Tokens)
 	    end;
 	true ->
-	    {{word_or_setting,L1,Name},Rest}
+	    %% {{word_or_setting,L1,Name},Rest}
+	    {{word_or_setting,L1,tref2Exttref(TRef)},Rest}
     end;
 parse_DefinedSyntaxToken(Tokens) ->
     case catch parse_Setting(Tokens) of
@@ -1308,7 +1322,7 @@ parse_Word([{Name,Pos}|Rest]) ->
 	    throw({asn1_error,{Pos,get(asn1_module),
 			       [got,Name, expected,a,'Word']}});
 	true ->
-	    {{word_or_setting,Pos,Name},Rest}
+	    {{word_or_setting,Pos,tref2Exttref(Pos,Name)},Rest}
     end.
 
 parse_Setting(Tokens) ->
@@ -1356,6 +1370,13 @@ parse_ObjectSetAssignment(Tokens) ->
 				  [got,get_token(hd(Tokens)),expected,
 				   typereference]}}).
 
+%% parse_ObjectSet(Tokens) -> Ret
+%% Tokens    = [Tok]
+%% Tok       = tuple()
+%% Ret       = {[],tuple()} | 
+%%             {list(),list()} | 
+%%             list() | 
+%%             ['EXTENSIONMARK']
 parse_ObjectSet([{'{',_}|Rest]) ->
     {ObjSetSpec,Rest2} = parse_ObjectSetSpec(Rest),
     case Rest2 of
@@ -2428,6 +2449,10 @@ parse_Class([{'PRIVATE',_}|Rest]) ->
 parse_Class(Tokens) ->
     {'CONTEXT',Tokens}.
 
+%% parse_Value(Tokens) -> Ret
+%% Tokens  = [Tok]
+%% Tok     = tuple()
+%% Ret     = term()
 parse_Value(Tokens) ->
     Flist = [fun parse_BuiltinValue/1,
 	     fun parse_ValueFromObject/1,
@@ -2573,9 +2598,10 @@ parse_ValueAssignment([{identifier,L1,IdName}|Rest]) ->
 	    case catch lookahead_assignment(Rest4) of
 		ok ->
 		    {#valuedef{pos=L1,name=IdName,type=Type,value=Value},Rest4};
-		_ ->
-		    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
-				       [got,get_token(hd(Rest2)),expected,'::=']}})
+		Error ->
+		    throw(Error)
+%% 		    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
+%% 				       [got,get_token(hd(Rest2)),expected,'::=']}})
 	    end;
 	_ ->
 	    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),

@@ -11,9 +11,9 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %%
-%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006-2008, Tobias Lindahl and Kostis Sagonas
 %%
-%%     $Id$
+%% $Id$
 %%
 
 -module(dialyzer_contracts).
@@ -24,17 +24,16 @@
 	 contract_from_form/2,
 	 contract_to_string/1,
 	 get_invalid_contract_warnings/3,
+	 get_contract_args/1,
 	 get_contract_return/1,
 	 get_contract_return/2,
-	 get_contract_signature/1,
+	 %% get_contract_signature/1,
 	 is_overloaded/1]).
 
 -include("dialyzer.hrl").
+-include("dialyzer_callgraph.hrl").
 
 %-define(DEBUG, true).
-
-%-type(dict() :: tuple()).
-%-type(warning() :: {atom(), {{File, Line}, [_]}}).
 
 -ifdef(DEBUG).
 -define(debug(X__, Y__), io:format(X__, Y__)).
@@ -42,19 +41,30 @@
 -define(debug(X__, Y__), ok).
 -endif.
 
+%%-----------------------------------------------------------------------
+
+-spec(get_contract_return/1 :: (#contract{}) -> erl_type()).
 get_contract_return(#contract{contracts=Cs, args=GenArgs}) ->
   process_contracts(Cs, GenArgs).
 
+-spec(get_contract_return/2 :: (#contract{}, [erl_type()]) -> erl_type()).
 get_contract_return(#contract{contracts=Cs}, Args) ->
   process_contracts(Cs, Args).
 
+-spec(get_contract_args/1 :: (#contract{}) -> [erl_type()]).
+get_contract_args(#contract{args=Args}) ->
+  Args.
+
+-spec(get_contract_signature/1 :: (#contract{}) -> erl_type()).
 get_contract_signature(#contract{contracts=Cs, args=GeneralDomain}) ->
   Range = process_contracts(Cs, GeneralDomain),
   erl_types:t_fun(GeneralDomain, Range).
 
+-spec(is_overloaded/1 :: (#contract{}) -> bool()).
 is_overloaded(#contract{contracts=Cs}) ->
   not(Cs =:= []).
 
+-spec(contract_to_string/1 :: (#contract{}) -> string()).
 contract_to_string(#contract{forms=Forms}) ->
   contract_to_string_1(Forms).
 
@@ -92,6 +102,9 @@ sequence([], _Delimiter) -> "";
 sequence([H], _Delimiter) -> H;
 sequence([H|T], Delimiter) -> H ++ Delimiter ++ sequence(T, Delimiter).
 
+-spec(check_contracts/3 :: 
+      (orddict(), #dialyzer_callgraph{}, dict()) -> [{mfa(), #contract{}}]).
+
 check_contracts(Contracts, Callgraph, FunTypes) ->
   FoldFun =
     fun(Label, Type, NewContracts) -> 
@@ -116,8 +129,10 @@ check_contracts(Contracts, Callgraph, FunTypes) ->
     end, 
   dict:fold(FoldFun, [], FunTypes).
 
-%% Checks all overloading contracts in a contract
-%%-spec (check_contract/2 :: (([_], _) -> ok | error | {error,_})).
+%% Checks all components of a contract
+-spec(check_contract/2 ::
+      (#contract{}, erl_type()) -> 'ok' | 'error' | {'error',_}).
+
 check_contract(#contract{contracts=Contracts}, SuccType) ->
   try 
     Contracts1 = [{Contract, insert_constraints(Constraints, dict:new())} 
@@ -127,8 +142,7 @@ check_contract(#contract{contracts=Contracts}, SuccType) ->
     GenDomains = [erl_types:t_fun_args(C) || C <- Contracts2],
     case check_domains(GenDomains) of
       error ->
-	{error, "Overloaded contract has overlapping domains;"
-	 " such contracts are currently unsupported and are simply ignored \n"};
+	{error, {overlapping_contract, []}};
       ok -> 
 	InfList = [erl_types:t_inf(Contract, SuccType) 
 		   || Contract <- Contracts2],
@@ -165,7 +179,8 @@ check_domains([Dom1|Left]) ->
   end.
 
 %% This is the heart of the "range function"
-%%-spec (process_contracts/3 :: (([{_,_}],[Arg]) -> any())).
+-spec(process_contracts/2 :: ([{_,_}], [erl_type()]) -> erl_type()).
+
 process_contracts(OverContracts, Args) ->
   process_contracts(OverContracts, Args, erl_types:t_none()).
   
@@ -179,8 +194,9 @@ process_contracts([OverContract|Left], Args, AccRange) ->
 process_contracts([], _Args, AccRange) ->
   AccRange.
 
-%% A single overloading contract
-%-spec (process_contract/2 :: (({_,_},[Arg]) -> any())).
+-spec(process_contract/2 ::
+      ({_,_}, [erl_type()]) -> 'error' | {'ok',erl_type()}).
+
 process_contract({Contract, Constraints}, CallTypes0) ->
   CallTypesFun = erl_types:t_fun(CallTypes0, erl_types:t_any()),
   ContArgsFun = erl_types:t_fun(erl_types:t_fun_args(Contract), 
@@ -216,8 +232,9 @@ solve_constraints(Contract, Call, Constraints) ->
   %%  erl_types:t_assign_variables_to_subtype(Contract, Inf).
 
 %% Checks the contracts for functions that are not implemented
-%%-spec (contracts_without_fun/4 :: 
-%%       ((dict(), [Funs], CG, atom()) -> [warning()])).
+-spec(contracts_without_fun/3 :: 
+      (dict(), [_], #dialyzer_callgraph{}) -> [dial_warning()]).
+
 contracts_without_fun(Contracts, AllFuns0, Callgraph) ->
   AllFuns1 = [{dialyzer_callgraph:lookup_name(Label, Callgraph), Arity} 
 	      || {Label, Arity} <- AllFuns0],
@@ -227,10 +244,8 @@ contracts_without_fun(Contracts, AllFuns0, Callgraph) ->
   lists:map(fun({M,F,A}) -> 
 		File = atom_to_list(M) ++ ".erl",
 		{Line, _Contract} = dict:fetch({M,F,A}, Contracts),
- 		{?WARN_CONTRACT_SYNTAX, 
-		 {{File, Line}, 
-		  io_lib:format("Contract for function that "
-				"does not exist: ~w:~w/~w\n",[M,F,A])}}
+ 		{?WARN_CONTRACT_SYNTAX, {File, Line}, 
+		 {spec_missing_fun, [M, F, A]}}
 	    end, ErrorContracts).
 
 %% This treats the "when" constraints. It will be extended
@@ -252,6 +267,8 @@ insert_constraints([{subtype, Type1, Type2}|Left], Dict) ->
   end,
   insert_constraints(Left, Dict1);
 insert_constraints([], Dict) -> Dict.
+
+-spec(contract_from_form/2 :: ([_], dict()) -> #contract{}).
 
 contract_from_form(Forms, RecDict) ->
   {Cs, Forms1} = contract_from_form(Forms, RecDict, [], []),
@@ -295,7 +312,12 @@ general_domain([{Sig, Constraints}|Left], AccSig) ->
   Sig1 = erl_types:t_subst(Sig, Dict),
   general_domain(Left, erl_types:t_sup(AccSig, Sig1));
 general_domain([], AccSig) ->
-  erl_types:t_fun_args(AccSig).
+  %% Get rid of all variables in the domain.
+  AccSig1 = erl_types:subst_all_vars_to_any(AccSig),
+  erl_types:t_fun_args(AccSig1).
+
+-spec(get_invalid_contract_warnings/3 ::
+      ([atom()], #dialyzer_codeserver{}, #dialyzer_plt{}) -> [dial_warning()]).
 
 get_invalid_contract_warnings(Modules, CodeServer, Plt) ->
   get_invalid_contract_warnings_modules(Modules, CodeServer, Plt, []).
@@ -316,7 +338,7 @@ get_invalid_contract_warnings_funs([{MFA, {FileLine, Contract}}|Left],
   NewAcc =
     case check_contract(Contract, Sig) of
       error -> [invalid_contract_warning(MFA, FileLine, Sig, RecDict)|Acc];
-      {error, Msg} -> [{?WARN_CONTRACT_SYNTAX, {FileLine, Msg}}|Acc];
+      {error, Msg} -> [{?WARN_CONTRACT_SYNTAX, FileLine, Msg}|Acc];
       ok ->
 	{M, F, A} = MFA,
 	CSig0 = get_contract_signature(Contract),
@@ -344,10 +366,9 @@ get_invalid_contract_warnings_funs([], _Plt, _RecDict, Acc) ->
   Acc.
 
 invalid_contract_warning({M, F, A}, FileLine, Type, RecDict) ->
-  Msg = io_lib:format("Invalid type specification for function ~w:~w/~w. "
-		      "The success typing is ~s\n", 
-		      [M, F, A, dialyzer_utils:format_sig(Type, RecDict)]),
-  {?WARN_CONTRACT_TYPES, {FileLine, Msg}}.
+  {?WARN_CONTRACT_TYPES, FileLine,
+   {invalid_contract, [M, F, A, dialyzer_utils:format_sig(Type, RecDict)]}}.
+  
 
 picky_contract_check(CSig0, Sig0, MFA, FileLine, Contract, RecDict, Acc) ->
   CSig = erl_types:t_abstract_records(CSig0, RecDict),
@@ -380,22 +401,16 @@ extra_contract_warning({M, F, A}, FileLine, Contract, CSig, Sig, RecDict) ->
 	case erl_types:t_is_subtype(CSig, Sig) of
 	  true -> 
 	    {?WARN_CONTRACT_SUBTYPE, 
-	     io_lib:format("Type specification ~w:~w/~w :: ~s "
-			   "is a subtype of the success typing: ~s\n", 
-			   [M, F, A, ContractString, SigString])};
+	     {contract_subtype, [M, F, A, ContractString, SigString]}};
 	  false ->
 	    case erl_types:t_is_subtype(Sig, CSig) of
 	      true ->
 		{?WARN_CONTRACT_SUPERTYPE, 
-		 io_lib:format("Type specification ~w:~w/~w :: ~s "
-			       "is a supertype of the success typing: ~s\n", 
-			       [M, F, A, ContractString, SigString])};
+		 {contract_supertype, [M, F, A, ContractString, SigString]}};
 	      false ->
 		{?WARN_CONTRACT_NOT_EQUAL, 
-		 io_lib:format("Type specification ~w:~w/~w :: ~s "
-			       "is not equal to the success typing: ~s\n", 
-			       [M, F, A, ContractString, SigString])}
+		 {contract_diff, [M, F, A, ContractString, SigString]}}
 	    end
 	end,
-      {warning, {Tag, {FileLine, Msg}}}
+      {warning, {Tag, FileLine, Msg}}
   end.

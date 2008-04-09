@@ -31,7 +31,7 @@
 
 -include("asn1_records.hrl").
 
--import(asn1ct_gen, [emit/1,demit/1]).
+-import(asn1ct_gen, [emit/1,demit/1,get_record_name_prefix/0]).
 
 % the encoding of class of tag bits 8 and 7
 -define(UNIVERSAL,   0).
@@ -87,10 +87,10 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
 	    #simpletableattributes{usedclassfield=Used,
 				   uniqueclassfield=Unique} when Used /= Unique ->
 		false;
-	    %% ObjectSet, name of the object set in constraints
+	    %% ObjectSetRef, name of the object set in constraints
 	    %% 
-	    %%{ObjectSet,AttrN,N,UniqueFieldName}
-	    #simpletableattributes{objectsetname=ObjectSet,
+	    %%{ObjectSetRef,AttrN,N,UniqueFieldName}
+	    #simpletableattributes{objectsetname=ObjectSetRef,
 				   c_name=AttrN,
 				   c_index=N,
 				   usedclassfield=UniqueFieldName,
@@ -98,7 +98,7 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
 				   valueindex=ValueIndex
 				  } ->
 		OSDef =
-		    case ObjectSet of
+		    case ObjectSetRef of
 			{Module,OSName} ->
 			    asn1_db:dbget(Module,OSName);
 			OSName ->
@@ -114,11 +114,25 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
 			    asn1ct_gen:un_hyphen_var(lists:concat(['Obj',
 								   AttrN])),
 			emit({ObjectEncode," = ",nl}),
-			emit({"  'getenc_",ObjectSet,"'(",{asis,UniqueFieldName},
+			{ObjSetMod,ObjSetName} = 
+			    case ObjectSetRef of
+				{M,O} ->
+				    {{asis,M},O};
+				O ->
+				    {"?MODULE",O}
+			    end,
+			emit({"  ",ObjSetMod,":'getenc_",ObjSetName,"'(",{asis,UniqueFieldName},
 			      ", ",nl}),
 %			emit({indent(35),"?RT_BER:cindex(",N+1,", Val,",
 %			      {asis,AttrN},")),",nl}),
-			emit([indent(10+length(atom_to_list(ObjectSet))),
+			Length = fun(X,_LFun) when is_atom(X) -> 
+					 length(atom_to_list(X));
+				    (X,_LFun) when is_list(X) ->
+					 length(X);
+				    ({X1,X2},LFun) ->
+					 LFun(X1,LFun) + LFun(X2,LFun)
+				 end,
+			emit([indent(10+Length(ObjectSetRef,Length)),
 			      "value_match(",{asis,ValueIndex},",",
 			      "?RT_BER:cindex(",N+1,",Val,",
 			      {asis,AttrN},"))),",nl]),
@@ -237,13 +251,14 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 	    _ ->
 		{false,false,false}
 	end,
+    RecordName = lists:concat([get_record_name_prefix(),asn1ct_gen:list2rname(Typename)]),
     case gen_dec_sequence_call(Erules,Typename,CompList2,Ext,DecObjInf) of
 	no_terms -> % an empty sequence	    
 	    emit([nl,nl]),
 	    demit({"Result = "}), %dbg
 	    %% return value as record
 	    asn1ct_name:new(rb),
-	    emit(["   {{'",asn1ct_gen:list2rname(Typename),"'}, ",{curr,bytes},",",nl,"    "]),
+	    emit(["   {{'",RecordName,"'}, ",{curr,bytes},",",nl,"    "]),
 	    asn1ct_gen_ber:add_removed_bytes(),
 	    emit(["}.",nl]);
 	{LeadingAttrTerm,PostponedDecArgs} ->
@@ -256,7 +271,14 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 		{[{ObjSet,LeadingAttr,Term}],PostponedDecArgs} ->
 		    DecObj = asn1ct_gen:un_hyphen_var(lists:concat(['DecObj',LeadingAttr,Term])),
 		    ValueMatch = value_match(ValueIndex,Term),
-		    emit([DecObj," =",nl,"   'getdec_",ObjSet,"'(",
+		    {ObjSetMod,ObjSetName} =
+			case ObjSet of
+			    {M,O} ->
+				{{asis,M},O};
+			    _ ->
+				{"?MODULE",ObjSet}
+			end,
+		    emit([DecObj," =",nl,"   ",ObjSetMod,":'getdec_",ObjSetName,"'(",
 %			  {asis,UniqueFName},", ",Term,"),",nl}),
 			  {asis,UniqueFName},", ",ValueMatch,"),",nl]),
 		    gen_dec_postponed_decs(DecObj,PostponedDecArgs)
@@ -274,7 +296,7 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 	    asn1ct_name:new(rb),
 	    case Typename of
 		['EXTERNAL'] ->
-		    emit(["   OldFormat={'",asn1ct_gen:list2rname(Typename),
+		    emit(["   OldFormat={'",RecordName,
 			  "', "]),
 		    mkvlist(asn1ct_name:all(term)),
 		    emit(["},",nl]),
@@ -283,7 +305,7 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 			  "(OldFormat),",nl]),
 		    emit(["   {ASN11994Format,",{next,bytes},", "]);
 		_ ->
-		    emit(["   {{'",asn1ct_gen:list2rname(Typename),"', "]),
+		    emit(["   {{'",RecordName,"', "]),
 		    mkvlist(asn1ct_name:all(term)),
 		    emit(["}, ",{next,bytes},", "])
 	    end,
@@ -423,15 +445,16 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:clear(),
     emit({"'dec_",asn1ct_gen:list2name(Typename),"_result'(",
 	  asn1ct_gen_ber:unused_var("TermList",D#type.def),", Bytes, Rb) ->",nl}),
-    
+    RecordName = lists:concat([get_record_name_prefix(),
+			       asn1ct_gen:list2rname(Typename)]),
     case gen_dec_set_result(Erules,Typename,CompList) of
 	no_terms -> 	    
 	    %% return value as record
 	    asn1ct_name:new(rb),
-	    emit({"   {{'",asn1ct_gen:list2rname(Typename),"'}, Bytes, Rb}.",nl});
+	    emit({"   {{'",RecordName,"'}, Bytes, Rb}.",nl});
 	_ ->
 	    emit({nl,"   case ",{curr,termList}," of",nl}),
-	    emit({"      [] -> {{'",asn1ct_gen:list2rname(Typename),"', "}),
+	    emit({"      [] -> {{'",RecordName,"', "}),
 	    mkvlist(asn1ct_name:all(term)),
 	    emit({"}, Bytes, Rb};",nl}),    
 	    emit({"      ExtraAtt -> exit({error,{asn1,{too_many_attributes, ExtraAtt}}})",nl}),
@@ -1234,7 +1257,7 @@ gen_optormand_case({'DEFAULT',DefaultValue},Erules,TopType,Cname,Type,
     
 
 
-gen_dec_line_sof(_Erules,TopType,Cname,Type,ObjFun) ->
+gen_dec_line_sof(Erules,TopType,Cname,Type,ObjFun) ->
 
     Tag = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}
 	   || X <- Type#type.tag],    
@@ -1262,11 +1285,11 @@ gen_dec_line_sof(_Erules,TopType,Cname,Type,ObjFun) ->
 	    case ObjFun of
 		[] ->
 		    {DecFunName, _, _} = 
-			mkfunname(TopType,Cname,WhatKind,dec,3),
+			mkfunname(Erules,TopType,Cname,WhatKind,dec,3),
 		    emit([DecFunName,", ",{asis,Tag}]);
 		_ ->
 		    {DecFunName, _, _} = 
-			mkfunname(TopType,Cname,WhatKind,dec,4),
+			mkfunname(Erules,TopType,Cname,WhatKind,dec,4),
 		    emit([DecFunName,", ",{asis,Tag},", ObjFun"])
 	    end
     end.
@@ -1399,8 +1422,14 @@ gen_dec_call(InnerType,Erules,TopType,Cname,Type,BytesVar,Tag,PrimOptOrMand,
 	{Cname,{_,OSet,UniqueFName,ValIndex}} ->
 	    Term = asn1ct_gen:mk_var(asn1ct_name:curr(term)),
 	    ValueMatch = value_match(ValIndex,Term),
-	    emit({",",nl,"ObjFun = 'getdec_",OSet,"'(",
-%		  {asis,UniqueFName},", ",{curr,term},")"});
+	    {ObjSetMod,ObjSetName} =
+		case OSet of
+		    {M,O} ->
+			{{asis,M},O};
+		    _ ->
+			{"?MODULE",OSet}
+		end,
+	    emit({",",nl,"ObjFun = ",ObjSetMod,":'getdec_",ObjSetName,"'(",
 		  {asis,UniqueFName},", ",ValueMatch,")"});
 	_ ->
 	    ok
@@ -1499,7 +1528,7 @@ mkfuncname(TopType,Cname,WhatKind,DecOrEnc) ->
 	    {F, "?MODULE", F}
     end.
 
-mkfunname(TopType,Cname,WhatKind,DecOrEnc,Arity) ->
+mkfunname(Erule,TopType,Cname,WhatKind,DecOrEnc,Arity) ->
     CurrMod = get(currmod),
     case WhatKind of
 	#'Externaltypereference'{module=CurrMod,type=EType} ->
@@ -1515,8 +1544,14 @@ mkfunname(TopType,Cname,WhatKind,DecOrEnc,Arity) ->
 			      Arity]),
 	    {F, "?MODULE", F};
 	'ASN1_OPEN_TYPE' ->
-	    F = "fun(A,B,C) -> ?RT_BER:decode_open_type(A,B,C) end",
-	    {F, "?MODULE", F}
+	    case Arity of
+		3 ->
+		    F = lists:concat(["fun(A,_,C) -> ?RT_BER:decode_open_type(",Erule,",A,C) end"]),
+		    {F, "?MODULE", F};
+		4 ->
+		    F = lists:concat(["fun(A,_,C,_) -> ?RT_BER:decode_open_type(",Erule,",A,C) end"]),
+		    {F, "?MODULE", F}
+	    end
     end.
 
 empty_lb(ber) ->

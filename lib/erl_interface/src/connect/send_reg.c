@@ -43,7 +43,7 @@
 #include "show_msg.h"
 
 int ei_send_reg_encoded_tmo(int fd, const erlang_pid *from,
-			    const char *to, const char *msg, int msglen,
+			    const char *to, char *msg, int msglen,
 			    unsigned ms)
 {
     char *s, header[1400]; /* see size calculation below */
@@ -114,7 +114,7 @@ int ei_send_reg_encoded_tmo(int fd, const erlang_pid *from,
 
 
 int ei_send_reg_encoded(int fd, const erlang_pid *from, const char *to,
-			const char *msg, int msglen)
+			char *msg, int msglen)
 {
     return ei_send_reg_encoded_tmo(fd, from, to, msg, msglen, 0);
 }

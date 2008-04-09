@@ -11,8 +11,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/09/16 16:59:34 $
-%%              $Revision: 1.16 $
+%%              $Date: 2008/03/28 09:57:46 $
+%%              $Revision: 1.17 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -27,19 +27,22 @@
 %-------------------------------------------------------------------------
 
 -include("../main/hipe.hrl").
+-include("../icode/hipe_icode.hrl").
 
 %-------------------------------------------------------------------------
 
-%% @spec init(IcodeRecord::term()) -> {Args,VarMap}
+%% @spec init(IcodeRecord::#icode{}) -> {Args, VarMap}
 %%
 %% @doc Initializes gensym for RTL.
-%%
+
+-spec(init/1 :: (#icode{}) -> {_, _}).  % XXX: fix me please
+
 init(IcodeRecord) ->
   hipe_gensym:init(rtl),
-  hipe_gensym:set_var(rtl,hipe_rtl_arch:first_virtual_reg()),
-  hipe_gensym:set_label(rtl,0),
+  hipe_gensym:set_var(rtl, hipe_rtl_arch:first_virtual_reg()),
+  hipe_gensym:set_label(rtl, 0),
   VarMap = new_var_map(),
-  {_Args,_VarMap1} = ivs2rvs(hipe_icode:icode_params(IcodeRecord), VarMap).
+  {_Args, _VarMap1} = ivs2rvs(hipe_icode:icode_params(IcodeRecord), VarMap).
 
 
 %%------------------------------------------------------------------------
@@ -50,37 +53,37 @@ init(IcodeRecord) ->
 
 
 %% @spec icode_label2rtl_label(Icode_Label::term(), LabelMap::term()) ->
-%%           {RTL_Label,NewLabelMap}
+%%           {RTL_Label, NewLabelMap}
 %%
 %% @doc Converts an Icode label to an RTL label.
-%%
+
 icode_label2rtl_label(LabelName, Map) ->
   case lookup(LabelName, Map) of
-    {value,NewLabel} ->
-      {NewLabel,Map};
+    {value, NewLabel} ->
+      {NewLabel, Map};
     none ->
       NewLabel = hipe_rtl:mk_new_label(),
-      {NewLabel,insert(LabelName, NewLabel, Map)}
+      {NewLabel, insert(LabelName, NewLabel, Map)}
   end.
 
 
 %% @spec ivs2rvs(Icode_Vars::[term()], VarMap::term()) -> {[RTL_Var],NewVarMap}
 %%
 %% @doc Converts a list of Icode variables to a list of RTL variables.
-%%
+
 ivs2rvs([], VarMap) ->
-  {[],VarMap};
+  {[], VarMap};
 ivs2rvs([V|Vs], VarMap) ->
-  {NewV,VarMap0} = icode_var2rtl_var(V, VarMap),
-  {NewVs,VarMap1} = ivs2rvs(Vs, VarMap0),
-  {[NewV|NewVs],VarMap1}.
+  {NewV, VarMap0} = icode_var2rtl_var(V, VarMap),
+  {NewVs, VarMap1} = ivs2rvs(Vs, VarMap0),
+  {[NewV|NewVs], VarMap1}.
 
 
 %% @spec icode_var2rtl_var(Icode_Var::term(), VarMap::term()) ->
-%%           {RTL_Var,NewVarMap}
+%%           {RTL_Var, NewVarMap}
 %%
 %% @doc Converts an Icode variable to an RTL variable.
-%%
+
 icode_var2rtl_var(Var, Map) ->
   Value = lookup(Var, Map),
   case Value of
@@ -88,20 +91,20 @@ icode_var2rtl_var(Var, Map) ->
       case type_of_var(Var) of
 	fvar ->
 	  NewVar = hipe_rtl:mk_new_fpreg(),
-	  {NewVar,insert(Var, NewVar, Map)};
+	  {NewVar, insert(Var, NewVar, Map)};
 	var ->
 	  NewVar = hipe_rtl:mk_new_var(),
-	  {NewVar,insert(Var, NewVar, Map)};
-	{reg,IsGcSafe} ->
+	  {NewVar, insert(Var, NewVar, Map)};
+	{reg, IsGcSafe} ->
 	  NewVar =
 	    case IsGcSafe of
 	      %% true -> hipe_rtl:mk_new_reg_gcsafe();
 	      false -> hipe_rtl:mk_new_reg()
 	    end,
-	  {NewVar,insert(Var, NewVar, Map)}
+	  {NewVar, insert(Var, NewVar, Map)}
       end;
-    {value,NewVar} ->
-      {NewVar,Map}
+    {value, NewVar} ->
+      {NewVar, Map}
   end.
 
 %%
@@ -125,7 +128,7 @@ type_of_var(X) ->
 	      case hipe_icode:is_const(X) of
 		true -> const;
 		false ->
-		  exit({"Unknown icode variable", X})
+		  exit({"Unknown Icode variable", X})
 	      end
 	  end
       end

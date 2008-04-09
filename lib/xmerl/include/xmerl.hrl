@@ -178,7 +178,8 @@
 	  text_decl=false,
 	  quiet=false,   % bool() Set to true will print no error messages
 	  col = 1,
-	  line = 1
+	  line = 1,
+          common_data = []
 	 }).
 
 

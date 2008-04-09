@@ -121,7 +121,13 @@ server_loop(Drv, Shell, Buf0) ->
 	    exit(R);
 	{'EXIT',Shell,R} ->
 	    exit(R);
-	_ ->
+	%% We want to throw away any term that we don't handle (standard
+	%% practice in receive loops), but not any {Drv,_} tuples which are
+	%% handled in io_request/5.
+	NotDrvTuple when (not is_tuple(NotDrvTuple)) orelse
+			 (tuple_size(NotDrvTuple) =/= 2) orelse
+			 (element(1, NotDrvTuple) =/= Drv) ->
+	    %% Ignore this unknown message.
 	    server_loop(Drv, Shell, Buf0)
     end.
 

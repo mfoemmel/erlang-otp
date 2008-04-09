@@ -21,15 +21,31 @@
 #
 # Lines starting with '#' are ignored.
 #
-# <bif-decl> ::= "bif" <bif> [<C-name>] | "ubif" <bif> [<C-name>]
+# <bif-decl> ::= "bif" <bif> <C-name>* | "ubif" <bif> <C-name>*
 # <bif> ::= <module> ":" <name> "/" <arity>
 #
 # "ubif" is an unwrapped bif, i.e. a bif without a trace wrapper,
 # or rather; the trace entry point in the export entry is the same
 # as the normal entry point, and no trace wrapper is generated.
+#
+# Important: Use "ubif" for guard BIFs and operators; use "bif" for ordinary BIFs.
+#
+# Add new BIFs to the end of the file. Do not bother adding a "packaged BIF name"
+# (such as 'erl.lang.number'); if/when packages will be supported we will add
+# all those names.
+#
+# Note: Guards BIFs require special support in the compiler (to be able to actually
+# call them from within a guard).
+#
 
 ubif erlang:abs/1
 ubif 'erl.lang.number':abs/1		ebif_abs_1
+bif erlang:adler32/1
+bif 'erl.util.crypt.adler32':sum/1	ebif_adler32_1
+bif erlang:adler32/2
+bif 'erl.util.crypt.adler32':sum/2	ebif_adler32_2
+bif erlang:adler32_combine/3
+bif 'erl.util.crypt.adler32':combine/3	ebif_adler32_combine_3
 bif erlang:apply/3
 bif 'erl.lang':apply/3			ebif_apply_3
 bif erlang:atom_to_list/1
@@ -42,6 +58,12 @@ bif erlang:binary_to_term/1
 bif 'erl.lang.binary':to_term/1		ebif_binary_to_term_1
 bif erlang:check_process_code/2
 bif 'erl.system.code':check_process/2	ebif_check_process_code_2
+bif erlang:crc32/1
+bif 'erl.util.crypt.crc32':sum/1	ebif_crc32_1
+bif erlang:crc32/2
+bif 'erl.util.crypt.crc32':sum/2	ebif_crc32_2
+bif erlang:crc32_combine/3
+bif 'erl.util.crypt.crc32':combine/3	ebif_crc32_combine_3
 bif erlang:date/0
 bif 'erl.util.date':today/0		ebif_date_0
 bif erlang:delete_module/1
@@ -672,6 +694,11 @@ ubif erlang:byte_size/1
 ubif erlang:bit_size/1
 bif erlang:list_to_bitstring/1
 bif erlang:bitstring_to_list/1
+
+#
+# New Bifs in R12B-2
+#
+bif ets:update_element/3
 
 #
 # Obsolete

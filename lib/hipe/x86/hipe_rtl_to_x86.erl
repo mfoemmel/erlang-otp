@@ -37,7 +37,7 @@ translate(RTL) ->	% RTL function -> x86 defun
     end,
   IsClosure = hipe_rtl:rtl_is_closure(RTL),
   IsLeaf = hipe_rtl:rtl_is_leaf(RTL),
-  hipe_x86:mk_defun(conv_mfa(hipe_rtl:rtl_fun(RTL)),
+  hipe_x86:mk_defun(hipe_rtl:rtl_fun(RTL),
 		    Formals,
 		    IsClosure,
 		    IsLeaf,
@@ -553,11 +553,6 @@ conv_fun(Fun, Map) ->
 	  end
       end
   end.
-
-%%% Convert an MFA operand.
-
-conv_mfa({M,F,A}) ->
-  hipe_x86:mk_mfa(M, F, A).
 
 %%% Convert an RTL source operand (imm/var/reg).
 

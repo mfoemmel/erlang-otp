@@ -155,11 +155,6 @@ AC_ARG_WITH(ssl,
 AC_ARG_ENABLE(dynamic-ssl-lib,
 [  --enable-dynamic-ssl-lib        force using dynamic openssl libraries])
 
-AC_ARG_WITH(gd,
-[  --with-gd=PATH          specify location of libgd include and lib
-  --with-gd               use gd (default)
-  --without-gd            don't use gd])
-
 #
 # Set Erlang man page directory
 #

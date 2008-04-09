@@ -1244,8 +1244,10 @@ strip_mod_info([], Acc)                 -> Acc.
 %     error_msg(Format,[]).
 error_msg(Format, Args) ->
     Msg = {notify,{error, group_leader(), {self(), Format, Args}}},
-    error_logger ! Msg.
+    error_logger ! Msg,
+    ok.
 
 info_msg(Format, Args) ->
     Msg = {notify,{info_msg, group_leader(), {self(), Format, Args}}},
-    error_logger ! Msg.
+    error_logger ! Msg,
+    ok.

@@ -1009,7 +1009,7 @@ input_file_type(File) ->
     end.
 
 get_file_list(File,Includes) ->
-    case file:open(File,read) of
+    case file:open(File,[read]) of
 	{error,Reason} ->
 	    {error,{File,file:format_error(Reason)}};
 	{ok,Stream} ->
@@ -1088,7 +1088,8 @@ remove_asn_flags(Options) ->
 	  X /= compact_bit_string,
 	  X /= debug,
 	  X /= keyed_list,
-	  X /= asn1config].
+	  X /= asn1config,
+	  X /= record_name_prefix].
 	  
 debug_on(Options) ->
     case lists:member(debug,Options) of
@@ -1262,7 +1263,7 @@ make_erl_options(Opts) ->
 
 pretty2(Module,AbsFile) ->
     start(),
-    {ok,F} = file:open(AbsFile,write),
+    {ok,F} = file:open(AbsFile,[write]),
     M = asn1_db:dbget(Module,'MODULE'),
     io:format(F,"%%%%%%%%%%%%%%%%%%%   ~p  %%%%%%%%%%%%%%%%%%%~n",[Module]),
     io:format(F,"~s\n",[asn1ct_pretty_format:term(M#module.defid)]),
@@ -1982,7 +1983,6 @@ read_config_file(ModuleName,InfoType) when is_atom(InfoType) ->
 
 read_config_file(ModuleName) ->
     case file:consult(lists:concat([ModuleName,'.asn1config'])) of
-%    case file:consult(ModuleName) of
 	{ok,CfgList} ->
 	    CfgList;
 	{error,enoent} ->

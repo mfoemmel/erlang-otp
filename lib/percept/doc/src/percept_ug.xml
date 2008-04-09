@@ -64,7 +64,7 @@
     </p>
     <p>
 	Note, even if percept is not installed on your target machine, profiling
-	can still be done via the module <seealso marker="percept_profile.xml">percept_profile</seealso>
+	can still be done via the module <seealso marker="percept_profile">percept_profile</seealso>
 	located in runtime_tools.
     </p>
   </section>

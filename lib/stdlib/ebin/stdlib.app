@@ -2,7 +2,7 @@
 
 {application, stdlib,
  [{description, "ERTS  CXC 138 10"},
-  {vsn, "1.15.1"},
+  {vsn, "1.15.2"},
   {modules, [array,
 	     base64,
 	     beam_lib,

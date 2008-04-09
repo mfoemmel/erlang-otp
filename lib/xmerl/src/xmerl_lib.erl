@@ -43,7 +43,7 @@
 -export([mapxml/2, foldxml/3, mapfoldxml/3]).
 
 %% exports for XSD
--export([is_facet/1,is_builtin_simple_type/1]).
+-export([is_facet/1,is_builtin_simple_type/1,is_xsd_string/1]).
 
 -include("xmerl.hrl").
 -include("xmerl_xsd.hrl").
@@ -541,6 +541,7 @@ is_name([H|T]) ->
 	    is_name1(T);
 	_ -> false
     end.
+
 is_name1([]) ->
     true;
 is_name1([H|T]) ->
@@ -565,35 +566,49 @@ is_char(X) when X >= 16#E000, X =< 16#FFFD -> true;
 is_char(X) when X >= 16#10000, X =< 16#10FFFF -> true;
 is_char(_) -> false.
 
+%% 0 - not classified, 
+%% 1 - base_char or ideographic, 
+%% 2 - combining_char or digit or extender,
+%% 3 - $. or $- or $_ or $:
+-define(SMALL, {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,0,2,2,2,2,2,2,2,2,2,2,3,0,
+                0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+                1,0,0,0,0,3,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+                1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                0,0,0,2,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+                1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+                1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1}).
 
 %% [4] NameChar
-is_namechar(X) when X == $. ; X == $- ; X == $_ ; X == $: ->
-    true;
 is_namechar(X) ->
-    case is_letter(X) of
-	true -> true;
-	false ->
-	    case is_digit(X) of
-		true -> true;
-		false ->
-		    case is_combining_char(X) of
-			true -> true;
-			false ->
-			    is_extender(X)
-		    end
-	    end
+    try element(X, ?SMALL) > 0
+    catch _:_ ->
+        case is_letter(X) of
+            true -> true;
+            false ->
+                case is_digit(X) of
+                    true -> true;
+                    false ->
+                        case is_combining_char(X) of
+                            true -> true;
+                            false ->
+                                is_extender(X)
+                        end
+                end
+        end
     end.
-
-
-
 
 %% [84] Letter
 is_letter(X) ->
-    case is_base_char(X) of
-	false ->
-	    is_ideographic(X);
-	true ->
-	    true
+    try element(X, ?SMALL) =:= 1
+    catch _:_ -> 
+        case is_base_char(X) of
+	    false ->
+	        is_ideographic(X);
+    	    true ->
+	        true
+        end
     end.
 
 %% [85] BaseChar
@@ -1016,3 +1031,40 @@ is_builtin_simple_type("NMTOKENS") -> true;
 is_builtin_simple_type("byte") -> true;
 is_builtin_simple_type("unsignedByte") -> true;
 is_builtin_simple_type(_) -> false.
+
+is_xsd_string({Type,_,?XSD_NAMESPACE}) when is_atom(Type) ->
+    is_xsd_string(Type);
+is_xsd_string({Type,_,?XSD_NAMESPACE}) ->
+    is_xsd_string(Type);
+is_xsd_string({_,_,_}) ->
+    false;
+is_xsd_string(Atom) when is_atom(Atom) ->
+    is_xsd_string(atom_to_list(Atom));
+is_xsd_string("string") ->
+    true;
+is_xsd_string("normalizedString") ->
+    true;
+is_xsd_string("token") ->
+    true;
+is_xsd_string("language") ->
+    true;
+is_xsd_string("Name") ->
+    true;
+is_xsd_string("NMTOKEN") ->
+    true;
+is_xsd_string("NMTOKENS") ->
+    true;
+is_xsd_string("NCName") ->
+    true;
+is_xsd_string("ID") ->
+    true;
+is_xsd_string("IDREF") ->
+    true;
+is_xsd_string("IDREFS") ->
+    true;
+is_xsd_string("ENTITY") ->
+    true;
+is_xsd_string("ENTITIES") ->
+    true;
+is_xsd_string(_) ->
+    false.

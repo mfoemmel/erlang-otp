@@ -34,6 +34,7 @@
 #include "dist.h"
 #include "erl_version.h"
 #include "beam_bp.h"
+#include "erl_binary.h"
 
 #define DECL_AM(S) Eterm AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
 

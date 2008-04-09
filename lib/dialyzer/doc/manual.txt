@@ -38,27 +38,9 @@ The parameters are:
 * File Type:
     - Byte code:
 	The analysis starts from .beam bytecode files.
-	The files must be compiled with +debug_info. If this is not 
-	the case you must provide the option --old_style to Dialyzer. 
-	Note that this analysis is more imprecise, so we strongly recommend
-	compiling with +debug_info.
+	The files must be compiled with +debug_info.
     - Source code:
 	The analysis starts from .erl files. 
-
-* Analysis:
-    - Dataflow:
-        Use a dataflow analysis to find discrepancies. This analysis mode
-        is more precise than previous versions of Dialyzer. It also provides
-        file and line number information.
-    - Success Typings:
-        A significantly stronger analysis that finds more discrepancies than
-        dataflow. However, it takes 2 to 2.5 times longer time, and can also
-        give warnings that might be harder to interpret, even though they are
-        still correct.
-    - Old Style:
-        For those that need to analyze beam files that have not been compiled
-        with +debug_info, this mode provides analysis in the idiom of older 
-        versions of Dialyzer.
 
 Controlling the discrepancies reported by the Dialyzer
 ======================================================
@@ -67,15 +49,6 @@ which discrepancies are reported to the user in the "Warnings" window.
 By clicking on these buttons, one can enable/disable a whole class of
 warnings.  Information about the classes of warnings can be found on
 the "Warnings" item under the "Help" menu (at the rightmost top corner).
-
-If modules are compiled with inlining, spurious warnings may be emitted.
-In the "Options" menu you can choose to ignore inline-compiled modules
-when analyzing byte code. When starting from source code this is not a
-problem since the inlining is explicitly turned off by Dialyzer. The
-option causes Dialyzer to suppress all warnings from inline-compiled
-modules, since there is currently no way for Dialyzer to find what
-parts of the code have been produced by inlining. 
-
 
 Running the analysis
 ====================
@@ -154,9 +127,8 @@ The exit status of the command line version is:
 
 Usage: dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
 		 [-pa dir]* [--plt plt] [-Ddefine]* [-I include_dir]* 
-		 [--old_style] [--output_plt file] [-Wwarn]* [--src] 
+		 [--output_plt file] [-Wwarn]* [--src] 
 		 [-c applications] [-r applications] [-o outfile]
-                 [--dataflow] [--succ_typings]
 
 Options: 
    -c applications (or --command-line applications)
@@ -176,13 +148,8 @@ Options:
        When analyzing from source, pass the define to Dialyzer (**)
    -I include_dir
        When analyzing from source, pass the include_dir to Dialyzer (**)
-   --old_style
-       Gives the warnings in the old style without line numbers.
-       Can also be handy when analyzing byte code compiled without +debug_info.
    --output_plt file
        Store the plt at the specified file after building it
-   --no_warn_on_inline
-       Suppress warnings when analyzing an inline compiled bytecode file
    --plt plt
        Use the specified plt as the initial plt (if the plt was built 
        during setup the files will be checked for consistency)
@@ -205,10 +172,6 @@ Options:
        Makes Dialyzer a bit more quiet
    --verbose
        Makes Dialyzer a bit more verbose
-   --dataflow
-       Makes Dialyzer use dataflow analysis to find discrepancies. (Default)
-   --succ_typings
-       Makes Dialyzer use success typings to find discrepancies.
 
 Note:
   * denotes that multiple occurrences of these options are possible.
@@ -222,25 +185,17 @@ Warning options:
      Suppress warnings for unused functions.
   -Wno_improper_lists
      Suppress warnings for construction of improper lists.
-  -Wno_tuple_as_fun
-     Suppress warnings for using tuples instead of funs.
   -Wno_fun_app
      Suppress warnings for fun applications that will fail.
   -Wno_match
      Suppress warnings for patterns that are unused or cannot match.
-  -Wno_comp
-     Suppress warnings for term comparisons that will always return false.
-  -Wno_guards
-     Suppress warnings for guards that will always fail.
-  -Wno_unsafe_beam
-     Suppress warnings for unsafe BEAM code produced by an old 
-     BEAM compiler.
+  -Wunmatched_returns ***
+     Include warnings for function calls which ignore the return value(s).
   -Werror_handling ***
-     Include warnings for functions that only return by means of an 
-     exception.
+     Include warnings for functions that only return by means of an exception.
+
 Note:
-   *** This is the only option that turns on warnings rather than 
-       turning them off.
+   *** These are options that turn on warnings rather than turning them off.
 
 
 -----------------------------------------------
@@ -264,11 +219,10 @@ dialyzer:run(OptList) -> {'ok', Warnings, Errors}
 		       | {'ok', Warnings}
 		       | {error, Message}
 
-Warnings :: [{tag(), id(), string()}]
+Warnings :: [{tag(), id(), msg()}]
 tag()    ::  'warn_return_no_exit' | 'warn_return_only_exit' | 'warn_not_called'
-           | 'warn_non_proper_list' | 'warn_comp' | 'warn_fun_app' 
-           | 'warn_tuple_as_fun' | 'warn_matching' | 'warn_guards' 
-           | 'warn_old_beam' | 'warn_failing_call' | 'warn_contract_types' 
+           | 'warn_non_proper_list' | 'warn_fun_app' | 'warn_matching'
+           | 'warn_failing_call' | 'warn_contract_types' 
            | 'warn_contract_syntax' | 'warn_contract_not_equal' 
            | 'warn_contract_subtype' | 'warn_contract_supertype'
 id()     :: mfa() | {File :: string(), Line :: integer()}
@@ -283,23 +237,17 @@ Option   :: {files,          [Filename :: string()]}
 	  | {from,           src_code | byte_code} %% Defaults to byte_code
 	  | {init_plt,       FileName :: string()} %% If changed from default
 	  | {include_dirs,   [DirName :: string()]} 
-	  | {old_style,      bool()}               %% Defaults to false
 	  | {output_file,    FileName :: string()}
 	  | {output_plt,     FileName :: string()}
-	  | {supress_inline, bool()}               %% Defaults to true
 	  | {warnings,       [WarnOpts]}
-          | {analysis_type,  dataflow | succ_typings | old_style}
 
 WarnOpts :: no_return
 	  | no_unused
 	  | no_improper_lists
-	  | no_tuple_as_fun
 	  | no_fun_app
 	  | no_match
-	  | no_comp
-	  | no_guards
-	  | no_unsafe_beam
 	  | no_fail_call
+	  | unmatched_returns
 	  | error_handling
 
 -----------------------------------------------

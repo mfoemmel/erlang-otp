@@ -1261,13 +1261,18 @@ timetrap_scale_factor() ->
 	    true -> 5;
 	    false -> 1
 	end,
-    F1 = case test_server:is_debug() of
-	     true -> 5 * F0;
-	     false -> F0
+    F1 = case {is_debug(), has_lock_checking()} of
+	     {true,_} -> 6 * F0;
+	     {false,true} -> 2 * F0;
+	     {false,false} -> F0
+	 end,
+    F2 = case has_superfluous_schedulers() of
+	     true -> 3*F1;
+	     false -> F1
 	 end,
     F = case test_server_sup:get_os_family() of
-	    vxworks -> 5 * F1;
-	    _ -> F1
+	    vxworks -> 5 * F2;
+	    _ -> F2
 	end,
     case test_server:is_cover() of
 	true -> 10 * F;
@@ -1781,8 +1786,35 @@ is_cover() ->
 %%
 %% Returns true if the emulator is debug-compiled, false otherwise.
 is_debug() ->
-    case string:str(erlang:system_info(system_version), "debug") of
-	Int when is_integer(Int), Int > 0 -> true;
+    case catch erlang:system_info(debug_compiled) of
+	{'EXIT', _} ->
+	    case string:str(erlang:system_info(system_version), "debug") of
+		Int when is_integer(Int), Int > 0 -> true;
+		_ -> false
+	    end;
+	Res ->
+	    Res
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% has_lock_checking() -> boolean()
+%%
+%% Returns true if the emulator has lock checking enabled, false otherwise.
+has_lock_checking() ->
+    case catch erlang:system_info(lock_checking) of
+	{'EXIT', _} -> false;
+	Res -> Res
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% has_superfluous_schedulers() -> boolean()
+%%
+%% Returns true if the emulator has more scheduler threads than logical
+%% processors, false otherwise.
+has_superfluous_schedulers() ->
+    case catch {erlang:system_info(schedulers),
+		erlang:system_info(logical_processors)} of
+	{S, P} when integer(S), integer(P), S > P -> true;
 	_ -> false
     end.
 

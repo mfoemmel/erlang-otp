@@ -54,6 +54,8 @@
 -export([raw_read_file_info/1, raw_write_file_info/2]).
 -export([rawopen/2]).
 
+-deprecated({rawopen, 2, next_major_release}).
+
 %% Internal export to prim_file and ram_file until they implement
 %% an efficient copy themselves.
 -export([copy_opened/3]).
@@ -245,7 +247,6 @@ write_file(Name, Bin) ->
 	Bin :: binary(),
 	Modes :: filemodes()) -> 
 	'ok' | {'error', posix()}).
-	
 
 write_file(Name, Bin, ModeList) when is_list(ModeList) ->
     case make_binary(Bin) of
@@ -392,7 +393,6 @@ close(_) ->
 	File :: io_device(), 
 	Size :: non_neg_integer()) ->
 	'eof' | {'ok', [char()] | binary()} | {'error', posix()}).
-	
 
 read(File, Sz) when is_pid(File), is_integer(Sz), Sz >= 0 ->
     case io:request(File, {get_chars, '', Sz}) of
@@ -1107,8 +1107,6 @@ mode_list({character, Mode}) when is_atom(Mode) ->
     mode_list(Mode);
 mode_list(_) ->
     [{error, badarg}].
-
-
 
 %%-----------------------------------------------------------------
 %% Functions for communicating with the file server

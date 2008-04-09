@@ -429,6 +429,7 @@ ppc64)	ARCH=ppc64;;
 "Power Macintosh")	ARCH=ppc;;
 armv5b)	ARCH=arm;;
 armv5teb)	ARCH=arm;;
+armv5tel)	ARCH=arm;;
 esac
 
 dnl
@@ -1787,10 +1788,27 @@ else
 
 volatile int erl_fp_exception;
 
+/*
+ * We expect a single SIGFPE in this test program.
+ * Getting many more indicates an inadequate SIGFPE handler,
+ * e.g. using the generic handler on x86.
+ */
+static void new_fp_exception(void)
+{
+    if (++erl_fp_exception > 50) {
+	fprintf(stderr, "SIGFPE loop detected, bailing out\n");
+	exit(1);
+    }
+}
+
 /* Is there no standard identifier for Darwin/MacOSX ? */
 #if defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
 #define __DARWIN__ 1
 #endif
+
+/*
+ * Implement unmask_fpe() and check_fpe() based on CPU/OS combination
+ */
 
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__) && !defined(__CYGWIN__)
 
@@ -1811,8 +1829,11 @@ static void unmask_sse2(void)
 }
 
 #if defined(__x86_64__) || defined(__DARWIN__)
+
 static inline int cpu_has_sse2(void) { return 1; }
+
 #else /* !__x86_64__ */
+
 /*
  * Check if an x86-32 processor has SSE2.
  */
@@ -1947,6 +1968,7 @@ static __inline__ int check_fpe(double f)
 #elif (defined(__powerpc__) && defined(__linux__)) || (defined(__ppc__) && defined(__DARWIN__))
 
 #if defined(__linux__)
+
 #include <sys/prctl.h>
 
 static void set_fpexc_precise(void)
@@ -2043,7 +2065,9 @@ static __inline__ int check_fpe(double f)
 #else
 
 #include <ieeefp.h>
+
 #define unmask_fpe()   fpsetmask(FP_X_INV | FP_X_OFL | FP_X_DZ)
+
 static __inline__ int check_fpe(double f)
 {
     __asm__ __volatile__("" : "=m"(erl_fp_exception) : "g"(f));
@@ -2052,10 +2076,16 @@ static __inline__ int check_fpe(double f)
 
 #endif
 
+/*
+ * Implement SIGFPE handler based on CPU/OS combination
+ */
+
 #if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__x86_64__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__i386__) || defined(__x86_64__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
 
 #if defined(__linux__) && defined(__i386__)
-#include <asm/sigcontext.h>
+#if !defined(X86_FXSR_MAGIC)
+#define X86_FXSR_MAGIC 0x0000
+#endif
 #elif defined(__FreeBSD__) && defined(__i386__)
 #include <sys/types.h>
 #include <machine/npx.h>
@@ -2152,33 +2182,42 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     fpstate->mxcsr = 0x1F80;
     fpstate->sw &= ~0xFF;
 #endif
-    erl_fp_exception = 1;
+    new_fp_exception();
 }
 
-static void do_init(void)
+static void catch_sigfpe(void)
 {
     struct sigaction act;
+
     memset(&act, 0, sizeof act);
     act.sa_sigaction = fpe_sig_action;
     act.sa_flags = SA_SIGINFO;
     sigaction(SIGFPE, &act, NULL);
-    unmask_fpe();
 }
 
 #else
 
 static void fpe_sig_handler(int sig)
 {
-    erl_fp_exception = 1;
+    new_fp_exception();
 }
 
-static void do_init(void)
+static void catch_sigfpe(void)
 {
     signal(SIGFPE, fpe_sig_handler);
-    unmask_fpe();
 }
 
 #endif
+
+/*
+ * Generic test code
+ */
+
+static void do_init(void)
+{
+    catch_sigfpe();
+    unmask_fpe();
+}
 
 double a = 3.23e133;
 double b = 3.57e257;
@@ -3068,114 +3107,6 @@ fi
 done # while test ssl_done != yes
 
 #--------------------------------------------------------------------
-# Erlang GD driver stuff. (egd)
-#--------------------------------------------------------------------
-AC_SUBST(GD_APP)
-AC_SUBST(GD_INCLUDE)
-AC_SUBST(GD_LIB)
-
-dnl check for gd.h, gdfontt.h, gdfonts.h, gdfontmb.h, gdfontl.h, gdfontg.h
-AC_ARG_WITH(gd,
-[  --with-gd=PATH         specify location of libgd include and lib
-  --with-gd              use gd (default)
-  --without-gd           don't use gd])
-
-# Remove all SKIP files from previous runs
-/bin/rm -f $ERL_TOP/lib/percept/SKIP
-
-AC_MSG_CHECKING(for gd library) 
-if test x"$OPSYS" = x"darwin"; then
-   soext=dylib
-else
-   soext=so
-fi	
-		
-if test "x$with_gd" = "xno"; then
-	AC_MSG_RESULT([no; disabled by user])
-	GD_APP=no
-	GD_LIB=
-	GD_INCLUDE=
-elif test "x$with_gd" = "xyes" -o "x$with_gd" = "x" ;then
-	if  test "x$host_os" = "xwin32"; then
-		AC_MSG_RESULT([no; not supported])
-		GD_APP=no
-           	echo "Win32 not supported (yet)" > $ERL_TOP/lib/percept/SKIP
-	else
-		gd_found=no
-		gd_linkable=no
-		for dir in /usr/local/pgm /usr/local /usr /opt /opt/local /sw
-		do
-			if test "x$ARCH" = "xamd64" -o \
-				"x$ARCH" = "xppc64"; then
-				if test -f "$dir/lib64/libgd.$soext"; then
-					gd_found=yes
-					GD_LIB="$dir/lib64";
-					GD_INCLUDE="-I$dir/include";
-				fi
-			fi
-			if test -f "$dir/lib/libgd.$soext"; then
-				gd_found=yes
-				GD_LIB="$dir/lib";
-				GD_INCLUDE="-I$dir/include";
-			fi
- 			if test "x$gd_found" = "xyes"; then
- 				saveCFLAGS="$CFLAGS"
- 				saveLDFLAGS="$LDFLAGS"
- 				CFLAGS="$CFLAGS $GD_INCLUDE"
- 				LDFLAGS="$LDFLAGS -L$GD_LIB -lgd"
- 				AC_TRY_LINK([
-				#include <stdio.h>
- 				#include <gd.h>],
- 				[ 
- 				gdImagePtr im;
- 				im = gdImageCreateTrueColor (300, 300);
- 				printf("Image = 0x%08x\n", (int) im);
- 				],
- 				[gd_linkable=yes],
- 				[gd_linkable=no])
- 				CFLAGS="$saveCFLAGS"
- 				LDFLAGS="$saveLDFLAGS"
- 			fi
-	 		if test "x$gd_found" = "xyes" -a "x$gd_linkable" = "xyes"  ; then
-	   			break;
-         		fi
-		done
-		if test "x$gd_found" = "xyes" -a "x$gd_linkable" = "xno"; then
-			AC_MSG_RESULT([no; found but not usable])
-			GD_LIB=
-			GD_INCLUDE=
-			GD_APP=no
-			echo "libgd not working" > $ERL_TOP/lib/percept/SKIP
-						
-		else
-			if test "x$gd_found" = "xno"; then
-		       		AC_MSG_RESULT([no; not found])
-				GD_LIB=
-				GD_INCLUDE=
-				GD_APP=no
-           			echo "libgd not found" > $ERL_TOP/lib/percept/SKIP
-			else
-				AC_MSG_RESULT([$GD_LIB])
-				GD_APP=yes
-			fi
-		fi
-	fi				
-else
-dnl	With a given path to gd
-	if test -f "$with_gd/lib/libgd.$soext"; then
-		GD_LIB="$with_gd/lib"
-		GD_INCLUDE="-I$with_gd/include"
-		AC_MSG_RESULT([$GD_LIB])
-	else
-		GD_APP=
-		GD_LIB=
-		GD_INCLUDE=
-           	echo "libgd not found" > $ERL_TOP/lib/percept/SKIP
-	       	AC_MSG_ERROR([Invalid path to option --with-gd=$with_gd])
-	fi
-fi
-
-#--------------------------------------------------------------------
 # Os mon stuff.
 #--------------------------------------------------------------------
 AC_SUBST(os_mon_programs)
@@ -3363,7 +3294,6 @@ dnl
   ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in
   ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in
   ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in
-  ../lib/percept/c_src/$host/Makefile:../lib/percept/c_src/Makefile.in
   ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in
   ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in
   )

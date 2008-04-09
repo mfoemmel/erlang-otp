@@ -180,14 +180,14 @@
  * The value will be adjusted down if FD_SETSIZE is smaller.
  */
 
-#define MAX_FILES 1024		/* if sysconf() isn't available, or fails */
+#define MAX_FILES 2048		/* if sysconf() isn't available, or fails */
 
 /* ************************************************************************ */
 /* Macros that let us use IPv6                                              */
 
 #if defined(HAVE_IN6) && defined(AF_INET6) && defined(EPMD6)
 
-#define SOCKADDR_IN sockaddr_in6
+#define EPMD_SOCKADDR_IN sockaddr_in6
 #define FAMILY      AF_INET6
 
 #define SET_ADDR_LOOPBACK(addr, af, port) do { \
@@ -216,7 +216,7 @@
 
 #else /* Not IP v6 */
 
-#define SOCKADDR_IN sockaddr_in
+#define EPMD_SOCKADDR_IN sockaddr_in
 #define FAMILY      AF_INET
 
 #define SET_ADDR_LOOPBACK(addr, af, port) do { \
@@ -238,8 +238,8 @@
 /* ************************************************************************ */
 /* Our own definitions                                                      */
 
-#define FALSE 0
-#define TRUE 1
+#define EPMD_FALSE 0
+#define EPMD_TRUE 1
 
 /* If no activity we let select() return every IDLE_TIMEOUT second
    A file descriptor that are idle for CLOSE_TIMEOUT seconds and

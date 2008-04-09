@@ -3034,47 +3034,6 @@ BIF_RETTYPE garbage_collect_message_area_0(BIF_ALIST_0)
 
 /**********************************************************************/
 
-/* returns a list of the active processes in the system */
-/* scans the whole of the process table */
-
-BIF_RETTYPE processes_0(BIF_ALIST_0)
-{
-    int i;
-    Uint need;
-    Eterm res;
-    Eterm* hp;
-    Process *p;
-#ifdef DEBUG
-    Eterm *hp_end;
-#endif
-
-    erts_smp_proc_tab_lock();
-
-    res = NIL;
-    need = erts_process_count() * 2;
-    hp = HAlloc(BIF_P, need); /* we need two heap words for each pid */
-#ifdef DEBUG
-    hp_end = hp + need;
-#endif
-     
-    /* make the list by scanning bakward */
-
-
-    for (i = erts_max_processes-1; i >= 0; i--) {
-	if ((p = process_tab[i]) != NULL) {
-	    res = CONS(hp, process_tab[i]->id, res);
-	    hp += 2;
-	}
-    }
-    ASSERT(hp == hp_end);
-
-    erts_smp_proc_tab_unlock();
-
-    BIF_RET(res);
-}
-
-/**********************************************************************/
-
 BIF_RETTYPE is_process_alive_1(BIF_ALIST_1) 
 {
    if(is_internal_pid(BIF_ARG_1)) {

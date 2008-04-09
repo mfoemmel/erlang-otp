@@ -101,11 +101,30 @@ static void unmask_x87(void)
     __asm__ __volatile__("fldcw %0" : : "m"(cw));
 }
 
+static void mask_x87(void)
+{
+    unsigned short cw;
+    __asm__ __volatile__("fstcw %0" : "=m"(cw));
+    /* or just set cw = 0x37f */
+    cw |= (0x01|0x04|0x08); /* mask IM, ZM, OM */
+    __asm__ __volatile__("fldcw %0" : : "m"(cw));
+}
+
 static void unmask_sse2(void)
 {
     unsigned int mxcsr;
     __asm__ __volatile__("stmxcsr %0" : "=m"(mxcsr));
     mxcsr &= ~(0x003F|0x0680); /* clear exn flags, unmask OM, ZM, IM (not PM, UM, DM) */
+    __asm__ __volatile__("ldmxcsr %0" : : "m"(mxcsr));
+}
+
+static void mask_sse2(void)
+{
+    unsigned int mxcsr;
+    __asm__ __volatile__("stmxcsr %0" : "=m"(mxcsr));
+    /* or just set mxcsr = 0x1f80 */
+    mxcsr &= ~0x003F; /* clear exn flags */
+    mxcsr |=  0x0680; /* mask OM, ZM, IM (not PM, UM, DM) */
     __asm__ __volatile__("ldmxcsr %0" : : "m"(mxcsr));
 }
 
@@ -207,6 +226,13 @@ static void unmask_fpe(void)
 	unmask_sse2();
 }
 
+static void mask_fpe(void)
+{
+    mask_x87();
+    if (cpu_has_sse2())
+	mask_sse2();
+}
+
 void erts_restore_fpu(void)
 {
     __asm__ __volatile__("fninit");
@@ -230,6 +256,15 @@ static void unmask_fpe(void)
     __asm__(STX " %%fsr, %0" : "=m"(fsr));
     fsr &= ~(0x1FUL << 23);	/* clear FSR[TEM] field */
     fsr |= (0x1AUL << 23);	/* enable NV, OF, DZ exceptions */
+    __asm__ __volatile__(LDX " %0, %%fsr" : : "m"(fsr));
+}
+
+static void mask_fpe(void)
+{
+    unsigned long fsr;
+
+    __asm__(STX " %%fsr, %0" : "=m"(fsr));
+    fsr &= ~(0x1FUL << 23);	/* clear FSR[TEM] field */
     __asm__ __volatile__(LDX " %0, %%fsr" : : "m"(fsr));
 }
 
@@ -323,9 +358,15 @@ static void unmask_fpe(void)
     set_fpscr(0x80|0x40|0x10);	/* VE, OE, ZE; not UE or XE */
 }
 
+static void mask_fpe(void)
+{
+    set_fpscr(0x00);
+}
+
 #else
 
-#define unmask_fpe()   fpsetmask(FP_X_INV | FP_X_OFL | FP_X_DZ)
+#define unmask_fpe()	fpsetmask(FP_X_INV | FP_X_OFL | FP_X_DZ)
+#define mask_fpe()	fpsetmask(0)	/* XXX: check this */
 
 #endif
 
@@ -471,7 +512,9 @@ static void skip_sse2_insn(erts_mcontext_ptr_t mc)
 #if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__x86_64__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
 
 #if defined(__linux__) && defined(__i386__)
-#include <asm/sigcontext.h>
+#if !defined(X86_FXSR_MAGIC)
+#define X86_FXSR_MAGIC 0x0000
+#endif
 #elif defined(__FreeBSD__) && defined(__x86_64__)
 #include <sys/types.h>
 #include <machine/fpu.h>
@@ -647,6 +690,13 @@ void erts_thread_init_float(void)
        must manually re-enable them in each new thread.
        FreeBSD 6.1 appears to suffer from a similar issue. */
     erts_thread_catch_fp_exceptions();
+#endif
+}
+
+void erts_thread_disable_fpe(void)
+{
+#if !defined(NO_FPE_SIGNALS)
+    mask_fpe();
 #endif
 }
 

@@ -1,6 +1,15 @@
 %%% -*- erlang-indent-level: 2 -*-
 %%% $Id$
 
+%%---------------------------------------------------------------------
+%% THESE DO NOT REALLY BELONG HERE -- PLEASE REMOVE ASAP!
+%%---------------------------------------------------------------------
+
+-type(dict()    :: tuple()).
+-type(gb_set()  :: tuple()).
+-type(gb_tree() :: tuple()).
+
+%%%--------------------------------------------------------------------
 %%% Basic Values:
 %%%
 %%% temp	::= {ppc_temp, reg, type, allocatable}
@@ -90,5 +99,6 @@
 
 %%% Function definitions.
 
--record(defun, {mfa, formals, code, data, isclosure, isleaf,
+-record(defun, {mfa :: mfa(), formals, code, data,
+		isclosure :: bool(), isleaf :: bool(),
 		var_range, label_range}).

@@ -832,8 +832,6 @@ static int cmp_guard_bif(void *a, void *b);
 static int match_compact(ErlHeapFragment *expr, DMCErrInfo *err_info);
 static Uint my_size_object(Eterm t);
 static Eterm my_copy_struct(Eterm t, Eterm **hp, ErlOffHeap* off_heap);
-static Binary *allocate_magic_binary(size_t size);
-
 
 /* Guard compilation */
 static void do_emit_constant(DMCContext *context, DMC_STACK_TYPE(Uint) *text,
@@ -1075,7 +1073,7 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
 
 error:
     if (compiled) {
-	erts_match_set_free(mps);
+	erts_bin_free(mps);
     }
     if (buff != sbuff) {
 	erts_free(ERTS_ALC_T_DB_TMP, buff);
@@ -1173,7 +1171,7 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, Uint flags)
     mp = db_match_compile(matches, guards, bodies, num_heads,
 			  flags, err_info); 
     if (mp != NULL) {
-	erts_match_set_free(mp);
+	erts_bin_free(mp);
     }
 done:
     ret = db_format_dmc_err_info(p, err_info);
@@ -1504,10 +1502,10 @@ restart:
     ** A special case is when the match expression is a single binding 
     ** (i.e '$1'), then the field single_variable is set to 1.
     */
-    bp = allocate_magic_binary
-	((sizeof(MatchProg) - sizeof(Uint)) +
-	 (DMC_STACK_NUM(text) * sizeof(Uint)) +
-	 (DMC_STACK_NUM(labels) * sizeof(Uint)));
+    bp = erts_create_magic_binary(((sizeof(MatchProg) - sizeof(Uint)) +
+				   (DMC_STACK_NUM(text) * sizeof(Uint)) +
+				   (DMC_STACK_NUM(labels) * sizeof(Uint))),
+				  erts_db_match_prog_destructor);
     ret = Binary2MatchProg(bp);
     ret->saved_program_buf = NULL;
     ret->saved_program = NIL;
@@ -1551,7 +1549,7 @@ error: /* Here is were we land when compilation failed. */
 /*
 ** Free a match program (in a binary)
 */
-void erts_match_set_free(Binary *bprog)
+void erts_db_match_prog_destructor(Binary *bprog)
 {
     MatchProg *prog;
     ErlHeapFragment *tmp, *ll;
@@ -1566,7 +1564,6 @@ void erts_match_set_free(Binary *bprog)
     }
     if (prog->saved_program_buf != NULL)
 	free_message_buffer(prog->saved_program_buf);
-    erts_bin_free(bprog);
 }
 
 void
@@ -2248,18 +2245,7 @@ success:
  * Convert a match program to a "magic" binary to return up to erlang
  */
 Eterm db_make_mp_binary(Process *p, Binary *mp, Eterm **hpp) {
-    ProcBin *pb;
-    erts_refc_inc(&mp->refc, 1);
-    pb = (ProcBin *) *hpp;
-    *hpp += PROC_BIN_SIZE;
-    pb->thing_word = HEADER_PROC_BIN;
-    pb->size = 0;
-    pb->next = MSO(p).mso;
-    MSO(p).mso = pb;
-    pb->val = mp;
-    pb->bytes = (byte*) mp->orig_bytes;
-    pb->flags = 0;
-    return make_binary(pb);
+    return erts_mk_magic_binary_term(hpp, &MSO(p), mp);
 }
 
 DMCErrInfo *db_new_dmc_err_info(void) 
@@ -2320,34 +2306,31 @@ void db_free_dmc_err_info(DMCErrInfo *ei){
     erts_free(ERTS_ALC_T_DB_DMC_ERR_INFO, ei);
 }
 
-#define MAX_NEED(x,y) (((x)>(y)) ? (x) : (y))
-
-static Eterm add_counter(Eterm counter, Eterm incr)
+/* Calculate integer addition: counter+incr.
+** Store bignum in *hpp and increase *hpp accordingly.
+** *hpp is assumed to be large enough to hold the result.
+*/
+Eterm db_add_counter(Eterm** hpp, Eterm counter, Eterm incr)
 {
     Eterm big_tmp[2];
     Eterm res;
     Sint ires;
     Eterm arg1;
     Eterm arg2;
-    Uint sz1;
-    Uint sz2;
-    Uint need;
-    Eterm *ptr;
-    int i;
 
-    if (is_small(counter) && is_small(incr)) {
+    if (is_both_small(counter,incr)) {
 	ires = signed_val(counter) + signed_val(incr);
 	if (IS_SSMALL(ires)) {
 	    return make_small(ires);
 	} else {
-	    ptr = (Eterm *) erts_alloc_fnf(ERTS_ALC_T_DB_TMP, 2*sizeof(Eterm));
-	    if (!ptr)
-		return NIL;  /* system limit */
-	    return small_to_big(ires, ptr);
+	    res = small_to_big(ires, *hpp);
+	    ASSERT(BIG_NEED_SIZE(big_size(res))==2);
+	    *hpp += 2;
+	    return res;
 	}
     }
     else {
-	switch(i = NUMBER_CODE(counter, incr)) {
+	switch(NUMBER_CODE(counter, incr)) {
 	case SMALL_BIG:
 	    arg1 = small_to_big(signed_val(counter), big_tmp);
 	    arg2 = incr;
@@ -2363,104 +2346,112 @@ static Eterm add_counter(Eterm counter, Eterm incr)
 	default:
 	    return THE_NON_VALUE;
 	}
-	sz1 = big_size(arg1);
-	sz2 = big_size(arg2);
-	sz1 = MAX_NEED(sz1,sz2)+1;
-	need = BIG_NEED_SIZE(sz1);
-	ptr = (Eterm *) erts_alloc_fnf(ERTS_ALC_T_DB_TMP, need*sizeof(Eterm));
-	if (!ptr)
-	    return NIL;  /* system limit */
-	res = big_plus(arg1, arg2, ptr);
-	if (is_small(res) || is_nil(res)) {
-	    erts_free(ERTS_ALC_T_DB_TMP, (void *) ptr);
+	res = big_plus(arg1, arg2, *hpp);
+	if (is_big(res)) {
+	    *hpp += BIG_NEED_SIZE(big_size(res));
 	}
 	return res;
     }
 }
 
 /*
-** The actual update of a counter, a lot of parameters are needed:
-** p: The calling process (BIF_P), 
-** bp: A pointer to the pointer to the object to be updated (extra 
-** indirection for the reallocation), this pointer is only used to
-** pass information to the realloc function.
-** tpl: A pointer to the tuple in the DbTerm.
-** keypos: The key position in the DbTerm.
-** realloc_fun: A function that does the reallocation, it takes 
-** bp, new size, new_value and keypos as parameter. 
-** ret: pointer to where the result is put.
-** Returns normal DB error code.
+** Update one element:
+** handle:   Initialized by db_lookup_dbterm()
+** position: The tuple position of the elements to be updated.
+** newval:   The new value of the element.
+** Can not fail.
 */
-
-int db_do_update_counter(Process *p,
-			 DbTableCommon *tb, void *bp /* XDbTerm **bp */, 
-			 Eterm *tpl, int counterpos,
-			 int (*realloc_fun)(DbTableCommon *,
-					    void *,
-					    Uint,
-					    Eterm,
-					    int),
-			 Eterm incr,
-			 int warp,
-			 Eterm *ret)
+void db_do_update_element(DbUpdateHandle* handle,
+			  Sint position,
+			  Eterm newval)
 {
-    Eterm counter;
-    Eterm *counterp;
-    Eterm res; /* In register? */
+    Eterm oldval = handle->dbterm->tpl[position];
+    Eterm* newp;
+    Eterm* oldp;
+    Uint newval_sz;
+    Uint oldval_sz;
 
-
-    if (arityval(*tpl) < counterpos || !(is_small(tpl[counterpos]) ||
-					 is_big(tpl[counterpos])))
-	return DB_ERROR_BADITEM;
-
-    counterp = tpl + counterpos;
-    counter = *counterp;
-
-    if (warp) {
-	if (is_small(incr)) {
-	    res = incr;
-	} else {
-	    /* copy to buffer */
-	    Eterm *tmp;
-	    Eterm *p = big_val(incr);
-	    Uint psz = BIG_ARITY(p)+1;
-	    tmp = (Eterm *) erts_alloc_fnf(ERTS_ALC_T_DB_TMP, psz*sizeof(Eterm));
-	    if (!tmp)
-		return DB_ERROR_SYSRES;
-	    sys_memcpy(tmp, p, psz*sizeof(Eterm));
-	    res = make_big(tmp);
-	}		
-    } else {
-	if ((res = add_counter(counter, incr)) == NIL) {
-	    return DB_ERROR_SYSRES;
-	} else if (is_non_value(res)) {
-	    return DB_ERROR_UNSPEC;
+    if (is_both_immed(newval,oldval)) {
+	handle->dbterm->tpl[position] = newval;
+	return;
+    }
+    else if (!handle->mustFinalize && is_boxed(newval)) {
+	newp = boxed_val(newval);
+	switch (*newp & _TAG_HEADER_MASK) {
+	case _TAG_HEADER_POS_BIG:
+	case _TAG_HEADER_NEG_BIG:
+	case _TAG_HEADER_FLOAT:
+	case _TAG_HEADER_HEAP_BIN:	    
+	    newval_sz = header_arity(*newp) + 1;	    
+	    if (is_boxed(oldval)) {
+		oldp = boxed_val(oldval);
+		switch (*oldp & _TAG_HEADER_MASK) {
+		case _TAG_HEADER_POS_BIG:
+		case _TAG_HEADER_NEG_BIG:
+		case _TAG_HEADER_FLOAT:
+		case _TAG_HEADER_HEAP_BIN:
+		    oldval_sz = header_arity(*oldp) + 1;
+		    if (oldval_sz == newval_sz) {
+			/* "self contained" terms of same size, do memcpy */
+			sys_memcpy(oldp, newp, newval_sz*sizeof(Eterm));			
+			return;
+		    }
+		    goto both_size_set;
+		}
+	    }
+	    goto new_size_set;
 	}
     }
-    if (is_small(res)) {
-	if (is_small(counter)) {
-	    *counterp = res;
-	} else {
-	    if ((*realloc_fun)(tb, bp, 0, res, counterpos) < 0) 
-		return DB_ERROR_SYSRES;
-	}
-	*ret = res;
-	return DB_ERROR_NONE;
-    } else {
-	Eterm *ptr = big_val(res);
-	Uint sz = BIG_ARITY(ptr) + 1;
-	Eterm *hp;
+    /* Not possible for simple memcpy or dbterm is already non-contiguous, */
+    /* need to realloc... */
 
-	if ((*realloc_fun)(tb, bp, sz, res, counterpos) < 0) 
-	    return DB_ERROR_SYSRES;
-	hp = HAlloc(p, sz);
-	sys_memcpy(hp, ptr, sz*sizeof(Eterm));
-	res = make_big(hp);
-	hp += sz;
-	erts_free(ERTS_ALC_T_DB_TMP, (void *) ptr);
-	*ret = res;
-	return DB_ERROR_NONE;
-    }
+    newval_sz = is_immed(newval) ? 0 : size_object(newval);
+new_size_set:
+	
+    oldval_sz = is_immed(oldval) ? 0 : size_object(oldval);
+both_size_set:
+
+    handle->new_size = handle->new_size - oldval_sz + newval_sz;
+
+    /* write new value in old dbterm, finalize will make a flat copy */	
+    handle->dbterm->tpl[position] = newval;
+    handle->mustFinalize = 1;
+}
+
+/* Must be called after calls to db_do_update_element
+** if handle->mustFinalize is true.
+*/
+void db_finalize_update_element(DbUpdateHandle* handle)
+{
+    Eterm* top;
+    Eterm copy;
+    DbTerm* newDbTerm;
+
+    ASSERT(handle->mustFinalize);
+    newDbTerm = handle->tb->common.meth->db_alloc_newsize (handle->tb,
+							   handle->bp, 
+							   handle->new_size);
+    newDbTerm->size = handle->new_size;
+    newDbTerm->off_heap.mso = NULL;
+    newDbTerm->off_heap.externals = NULL;
+#ifndef HYBRID /* FIND ME! */
+    newDbTerm->off_heap.funs = NULL;
+#endif
+    newDbTerm->off_heap.overhead = 0;
+    
+    /* make a flat copy */
+    top = DBTERM_BUF(newDbTerm);
+    copy = copy_struct(make_tuple(handle->dbterm->tpl),
+		       handle->new_size,
+		       &top, &newDbTerm->off_heap);
+    DBTERM_SET_TPL(newDbTerm,tuple_val(copy));
+
+    db_free_term_data(handle->dbterm);
+    handle->tb->common.meth->db_free_dbterm(handle->tb,handle->dbterm);
+#ifdef DEBUG
+    handle->dbterm = 0;
+#endif
+    return;
 }   
 
 /*
@@ -2522,9 +2513,10 @@ void* db_get_term(DbTableCommon *tb, DbTerm* old, Uint offset, Eterm obj)
 #endif
     p->off_heap.overhead = 0;
 
-    top = p->v;
+    top = DBTERM_BUF(p);
     copy = copy_struct(obj, size, &top, &p->off_heap);
-    p->tpl = tuple_val(copy);
+    DBTERM_SET_TPL(p,tuple_val(copy));
+
     return structp;
 }
 
@@ -2534,90 +2526,6 @@ void db_free_term_data(DbTerm* p)
     erts_cleanup_offheap(&p->off_heap);
 }
 
-
-/*
-** Copy the new counter value into the DbTerm at ((char *) *bp) + offset,
-** Allocate new structure of (needed size + offset) if that DbTerm
-** is to small. When changing size, the old structure is 
-** freed using ERTS_ALC_T_DB_TERM, make sure this can be done
-** (((char *) b) - offset is a pointer to a ERTS_ALC_T_DB_TERM area).
-** bp is a pure out parameter, i e it does not have to
-** point to (((char *) b) - offset) when calling.
-*/
-int db_realloc_counter(DbTableCommon *tb,
-		       void** bp, DbTerm *b, Uint offset, Uint sz, 
-		       Eterm new_counter, int counterpos)
-{
-    DbTerm* new;
-    void *newbp;
-    Eterm  old_counter;
-    Uint  old_sz;
-    Uint  new_sz;
-    Uint  basic_sz;
-    Eterm  copy;
-    Eterm *top;
-    Eterm *ptr;
-
-    old_counter = b->tpl[counterpos];
-
-    if (is_small(old_counter))
-	old_sz = 0;
-    else {
-	top = big_val(old_counter);
-	old_sz = BIG_ARITY(top) + 1;
-	if (sz == old_sz) {  /* OK we fit in old space */
-	    sys_memcpy(top, big_val(new_counter), sz*sizeof(Eterm));
-	    return 0;
-	}
-    }
-
-    basic_sz = b->size - old_sz;
-    new_sz = basic_sz + sz;
-
-    newbp = erts_db_alloc(ERTS_ALC_T_DB_TERM,
-			  (DbTable *) tb,
-			  sizeof(DbTerm)+sizeof(Eterm)*(new_sz-1)+offset);
-
-    if (newbp == NULL)
-	return -1;
-
-    new = (DbTerm*) ((void *)(((char *) newbp) + offset));
-    memcpy(newbp, ((char *) b) - offset, offset); 
-   
-    new->size = new_sz;
-    new->off_heap.mso = NULL;
-    new->off_heap.externals = NULL;
-#ifndef HYBRID /* FIND ME! */
-    new->off_heap.funs = NULL;
-#endif
-    new->off_heap.overhead = 0;
-    top = new->v;
-
-    b->tpl[counterpos] = SMALL_ZERO;               /* zap, do not copy */
-
-    /* copy term (except old counter) */
-    copy = copy_struct(make_tuple(b->tpl), basic_sz, 
-		       &top, &new->off_heap);
-    new->tpl = tuple_val(copy);
-
-    db_free_term_data(b);
-    /* free old term */
-    erts_db_free(ERTS_ALC_T_DB_TERM,
-		 (DbTable *) tb,
-		 (void *) (((char *) b) - offset),
-		 offset + sizeof(DbTerm) + sizeof(Eterm)*(b->size-1));
-    *bp = newbp;     /* patch new */
-
-    /* copy new counter */
-    if (sz == 0)
-	new->tpl[counterpos] = new_counter;  /* must be small !!! */
-    else {
-	ptr = big_val(new_counter);
-	sys_memcpy(top, ptr, sz*sizeof(Eterm));
-	new->tpl[counterpos] = make_big(top);
-    }
-    return 0;
-}
 
 /*
 ** Check if object represents a "match" variable 
@@ -2696,10 +2604,9 @@ int db_has_variable(Eterm obj)
 
 int erts_db_is_compiled_ms(Eterm term)
 {
-    return (!is_binary(term) || 
-	    !(thing_subtag(*binary_val(term)) == REFC_BINARY_SUBTAG) ||
-	    !((((ProcBin *) binary_val(term))->val)->flags & 
-	      BIN_FLAG_MATCH_PROG)) ? 0 : 1;
+    return (is_binary(term)
+	    && (thing_subtag(*binary_val(term)) == REFC_BINARY_SUBTAG)
+	    && IsMatchProgBinary((((ProcBin *) binary_val(term))->val)));
 }
 
 /* 
@@ -4308,18 +4215,6 @@ static Eterm my_copy_struct(Eterm t, Eterm **hp, ErlOffHeap* off_heap)
     return ret;
 }
 
-static Binary *allocate_magic_binary(size_t size)
-{
-    Binary* bptr;
-    bptr = erts_bin_nrml_alloc(size);
-    bptr->flags = BIN_FLAG_MATCH_PROG;
-    bptr->orig_size = size;
-    erts_refc_init(&bptr->refc, 0);
-    return bptr;
-}
-    
-
-
 /*
 ** Compiled match bif interface
 */
@@ -4446,7 +4341,7 @@ static Eterm match_spec_test(Process *p, Eterm against, Eterm spec, int trace)
 	if (trace && arr != NULL) {
 	    erts_free(ERTS_ALC_T_DB_TMP, arr);
 	}
-	erts_match_set_free(mps);
+	erts_bin_free(mps);
 	ret = TUPLE4(hp, am_atom_put("ok",2), res, flg, lint_res);
     }
     return ret;

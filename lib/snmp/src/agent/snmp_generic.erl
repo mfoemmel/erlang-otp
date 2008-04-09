@@ -591,14 +591,16 @@ table_set_cols(NameDb, RowIndex, Cols, ConsFunc) ->
 	Error -> Error
     end.
 
-table_set_cols(_NameDb, _RowIndex, []) -> {noError, 0};
+table_set_cols(_NameDb, _RowIndex, []) -> 
+    {noError, 0};
 table_set_cols(NameDb, RowIndex, [{Col, Val} | Cols]) ->
     case catch table_set_element(NameDb, RowIndex, Col, Val) of
-	true -> table_set_cols(NameDb, RowIndex, Cols);
-	_X ->
+	true -> 
+	    table_set_cols(NameDb, RowIndex, Cols);
+	X ->
 	    user_err("snmp_generic:table_set_cols set ~w to"
 		     " ~w returned ~w",
-		     [{NameDb, RowIndex}, {Col, Val}]),
+		     [{NameDb, RowIndex}, {Col, Val}, X]),
 	    {undoFailed, Col}
     end.
     

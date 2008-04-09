@@ -31,6 +31,7 @@
 	 encode_transaction/3,
 	 encode_action_requests/3,
 	 encode_action_request/3,
+	 encode_action_reply/3,
 
 	 version_of/2]).
 
@@ -227,13 +228,11 @@ encode_message(EC, 3, MegaMsg) ->
 %%     TransMod = ?V1_TRANS_MOD,
 %%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, 
 %% 					     io_list);
-encode_transaction(_EC, 1, _Trans) ->
+%% encode_transaction(_EC, 1, _Trans) ->
 %%     AsnMod   = ?V1_ASN1_MOD, 
 %%     TransMod = ?V1_TRANS_MOD,
 %%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, 
 %% 					     io_list);
-    {error, not_implemented};
-
 %% encode_transaction([] = EC, 2, Trans) ->
 %%     AsnMod   = ?V2_ASN1_MOD, 
 %%     TransMod = ?V2_TRANS_MOD,
@@ -249,13 +248,11 @@ encode_transaction(_EC, 1, _Trans) ->
 %%     TransMod = ?V2_TRANS_MOD,
 %%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
 %% 					     io_list);
-encode_transaction(_EC, 2, _Trans) ->
-    %%     AsnMod   = ?V2_ASN1_MOD, 
-    %%     TransMod = ?V2_TRANS_MOD,
-    %%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
-    %% 					     io_list).
-    {error, not_implemented};
-
+%%encode_transaction(_EC, 2, _Trans) ->
+%%     AsnMod   = ?V2_ASN1_MOD, 
+%%     TransMod = ?V2_TRANS_MOD,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
+%% 					     io_list).
 %% encode_transaction([] = EC, 3, Trans) ->
 %%     AsnMod   = ?V3_ASN1_MOD, 
 %%     TransMod = ?V3_TRANS_MOD,
@@ -271,11 +268,12 @@ encode_transaction(_EC, 2, _Trans) ->
 %%     TransMod = ?V3_TRANS_MOD,
 %%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
 %% 					     io_list);
-encode_transaction(_EC, 3, _Trans) ->
-    %%     AsnMod   = ?V3_ASN1_MOD, 
-    %%     TransMod = ?V3_TRANS_MOD,
-    %%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
-    %% 					     io_list).
+%%encode_transaction(_EC, 3, _Trans) ->
+%%     AsnMod   = ?V3_ASN1_MOD, 
+%%     TransMod = ?V3_TRANS_MOD,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
+%% 					     io_list).
+encode_transaction(_EC, _V, _Trans) ->
     {error, not_implemented}.
 
 
@@ -283,82 +281,81 @@ encode_transaction(_EC, 3, _Trans) ->
 %% Convert a list of ActionRequest record's into a binary
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
-%% encode_action_requests([] = EC, 1, ActReqs) when list(ActReqs) ->
+%% encode_action_requests([] = EC, 1, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V1_ASN1_MOD, 
 %%     TransMod = ?V1_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-%% encode_action_requests([native] = EC, 1, ActReqs) when list(ActReqs) ->
+%% encode_action_requests([native] = EC, 1, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V1_ASN1_MOD, 
 %%     TransMod = ?V1_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-%% encode_action_requests([driver|EC], 1, ActReqs) when list(ActReqs) ->
+%% encode_action_requests([driver|EC], 1, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V1_ASN1_MOD_DRV, 
 %%     TransMod = ?V1_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-encode_action_requests(_EC, 1, ActReqs) when list(ActReqs) ->
+%% encode_action_requests(_EC, 1, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V1_ASN1_MOD, 
 %%     TransMod = ?V1_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-    {error, not_implemented};
-
-%% encode_action_requests([] = EC, 2, ActReqs) when list(ActReqs) ->
+%% encode_action_requests([] = EC, 2, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V2_ASN1_MOD, 
 %%     TransMod = ?V2_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-%% encode_action_requests([native] = EC, 2, ActReqs) when list(ActReqs) ->
+%% encode_action_requests([native] = EC, 2, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V2_ASN1_MOD, 
 %%     TransMod = ?V2_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-%% encode_action_requests([driver|EC], 2, ActReqs) when list(ActReqs) ->
+%% encode_action_requests([driver|EC], 2, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V2_ASN1_MOD_DRV, 
 %%     TransMod = ?V2_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-encode_action_requests(_EC, 2, ActReqs) when list(ActReqs) ->
+%% encode_action_requests(_EC, 2, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V2_ASN1_MOD, 
 %%     TransMod = ?V2_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-    {error, not_implemented};
-
-%% encode_action_requests([] = EC, 3, ActReqs) when list(ActReqs) ->
+%% encode_action_requests([] = EC, 3, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V3_ASN1_MOD, 
 %%     TransMod = ?V3_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-%% encode_action_requests([native] = EC, 3, ActReqs) when list(ActReqs) ->
+%% encode_action_requests([native] = EC, 3, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V3_ASN1_MOD, 
 %%     TransMod = ?V3_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-%% encode_action_requests([driver|EC], 3, ActReqs) when list(ActReqs) ->
+%% encode_action_requests([driver|EC], 3, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V3_ASN1_MOD_DRV, 
 %%     TransMod = ?V3_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
-encode_action_requests(_EC, 3, ActReqs) when list(ActReqs) ->
+%%encode_action_requests(_EC, 3, ActReqs) when is_list(ActReqs) ->
 %%     AsnMod   = ?V3_ASN1_MOD, 
 %%     TransMod = ?V3_TRANS_MOD,
 %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
 %% 						 AsnMod, TransMod, 
 %% 						 io_list);
+%% encode_action_requests(_EC, V, _ActReqs) ->
+%%     {error, {bad_version, V}}.
+encode_action_requests(_EC, _V, _ActReqs) ->
     {error, not_implemented}.
 
 
@@ -366,82 +363,89 @@ encode_action_requests(_EC, 3, ActReqs) when list(ActReqs) ->
 %% Convert a ActionRequest record into a binary
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
-%% encode_action_request([] = EC, 1, ActReqs) when list(ActReqs) ->
+%% encode_action_request([] = EC, 1, ActReq) ->
 %%     AsnMod   = ?V1_ASN1_MOD, 
 %%     TransMod = ?V1_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-%% encode_action_request([native] = EC, 1, ActReqs) when list(ActReqs) ->
+%% encode_action_request([native] = EC, 1, ActReq) ->
 %%     AsnMod   = ?V1_ASN1_MOD, 
 %%     TransMod = ?V1_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-%% encode_action_request([driver|EC], 1, ActReqs) when list(ActReqs) ->
+%% encode_action_request([driver|EC], 1, ActReq) ->
 %%     AsnMod   = ?V1_ASN1_MOD_DRV, 
 %%     TransMod = ?V1_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-encode_action_request(_EC, 1, ActReqs) when list(ActReqs) ->
+%% encode_action_request(_EC, 1, ActReq) ->
 %%     AsnMod   = ?V1_ASN1_MOD, 
 %%     TransMod = ?V1_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-    {error, not_implemented};
-
-%% encode_action_request([] = EC, 2, ActReqs) when list(ActReqs) ->
+%% encode_action_request([] = EC, 2, ActReq) ->
 %%     AsnMod   = ?V2_ASN1_MOD, 
 %%     TransMod = ?V2_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-%% encode_action_request([native] = EC, 2, ActReqs) when list(ActReqs) ->
+%% encode_action_request([native] = EC, 2, ActReq) ->
 %%     AsnMod   = ?V2_ASN1_MOD, 
 %%     TransMod = ?V2_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-%% encode_action_request([driver|EC], 2, ActReqs) when list(ActReqs) ->
+%% encode_action_request([driver|EC], 2, ActReq) ->
 %%     AsnMod   = ?V2_ASN1_MOD_DRV, 
 %%     TransMod = ?V2_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-encode_action_request(_EC, 2, ActReqs) when list(ActReqs) ->
+%% encode_action_request(_EC, 2, ActReq) ->
 %%     AsnMod   = ?V2_ASN1_MOD, 
 %%     TransMod = ?V2_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-    {error, not_implemented};
-
-%% encode_action_request([] = EC, 3, ActReqs) when list(ActReqs) ->
+%% encode_action_request([] = EC, 3, ActReq) ->
 %%     AsnMod   = ?V3_ASN1_MOD, 
 %%     TransMod = ?V3_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-%% encode_action_request([native] = EC, 3, ActReqs) when list(ActReqs) ->
+%% encode_action_request([native] = EC, 3, ActReq) ->
 %%     AsnMod   = ?V3_ASN1_MOD, 
 %%     TransMod = ?V3_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-%% encode_action_request([driver|EC], 3, ActReqs) when list(ActReqs) ->
+%% encode_action_request([driver|EC], 3, ActReq) ->
 %%     AsnMod   = ?V3_ASN1_MOD_DRV, 
 %%     TransMod = ?V3_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
-encode_action_request(_EC, 3, ActReqs) when list(ActReqs) ->
+%% encode_action_request(_EC, 3, ActReq) ->
 %%     AsnMod   = ?V3_ASN1_MOD, 
 %%     TransMod = ?V3_TRANS_MOD,
-%%     ?BIN_LIB:encode_action_request(EC, ActReqs,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
 %% 						AsnMod, TransMod, 
 %% 						io_list);
+encode_action_request(_EC, _V, _ActReq) ->
+    {error, not_implemented}.
+
+
+%%----------------------------------------------------------------------
+%% Convert a action reply into a deep io list
+%% Not yest supported by this binary codec!
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+
+encode_action_reply(_EC, _V, _AcionReply) ->
     {error, not_implemented}.
 
 

@@ -114,7 +114,7 @@ $(EBIN)/hipe_rtl_binary.beam: hipe_rtl.hrl hipe_literals.hrl
 $(EBIN)/hipe_rtl_bin_util.beam: hipe_rtl.hrl hipe_literals.hrl
 $(EBIN)/hipe_rtl_cfg.beam: hipe_rtl.hrl ../flow/cfg.hrl ../flow/cfg.inc ../main/hipe.hrl
 $(EBIN)/hipe_rtl_cleanup_const.beam: hipe_rtl.hrl
-$(EBIN)/hipe_rtl_liveness.beam: ../flow/cfg.hrl ../flow/liveness.inc
+$(EBIN)/hipe_rtl_liveness.beam: hipe_rtl.hrl ../flow/cfg.hrl ../flow/liveness.inc
 $(EBIN)/hipe_icode2rtl.beam: hipe_literals.hrl ../main/hipe.hrl ../icode/hipe_icode.hrl
 $(EBIN)/hipe_tagscheme.beam: hipe_rtl.hrl hipe_literals.hrl
 $(EBIN)/hipe_rtl_primops.beam: hipe_rtl.hrl ../icode/hipe_icode_primops.hrl hipe_literals.hrl ../main/hipe.hrl
@@ -130,5 +130,5 @@ $(EBIN)/hipe_rtl_symbolic.beam: hipe_rtl.hrl hipe_literals.hrl ../flow/cfg.hrl .
 $(EBIN)/hipe_rtl_varmap.beam: ../main/hipe.hrl ../icode/hipe_icode.hrl
 
 $(EBIN)/hipe_rtl_ssa.beam: ../ssa/hipe_ssa.inc ../main/hipe.hrl ../ssa/hipe_ssa_liveness.inc hipe_rtl.hrl
-$(EBIN)/hipe_rtl_ssa_const_prop.beam: hipe_rtl.hrl ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc
+$(EBIN)/hipe_rtl_ssa_const_prop.beam: hipe_rtl.hrl ../main/hipe.hrl ../flow/cfg.hrl ../ssa/hipe_ssa_const_prop.inc
 $(EBIN)/hipe_rtl_ssapre.beam: ../main/hipe.hrl ../flow/cfg.hrl hipe_rtl.hrl

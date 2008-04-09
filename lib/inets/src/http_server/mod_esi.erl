@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1997-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(mod_esi).
 
@@ -135,6 +137,10 @@ load("ErlScriptNoCache " ++ CacheArg, [])->
 %%
 %% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
 %%-------------------------------------------------------------------------
+store({erl_script_alias, {Name, [all]}} = Conf, _) 
+  when is_list(Name) ->
+ 	    {ok, Conf};
+
 store({erl_script_alias, {Name, Modules}} = Conf, _) 
   when is_list(Name) ->
     try httpd_util:modules_validate(Modules) of
@@ -253,7 +259,7 @@ erl(#mod{method = "POST", entity_body = Body} = ModData, ESIBody, Modules) ->
 	    {proceed,[{status, {400, none, BadRequest}} | ModData#mod.data]}
     end.
 
-generate_webpage(ModData, ESIBody, ["all"], Module, FunctionName,
+generate_webpage(ModData, ESIBody, [all], Module, FunctionName,
 		 Input, ScriptElements) ->
     generate_webpage(ModData, ESIBody, [Module], Module,
 		     FunctionName, Input, ScriptElements);
@@ -471,7 +477,7 @@ eval(#mod{method = Method} = ModData, ESIBody, Modules)
 generate_webpage(ESIBody) ->
     (catch lib:eval_str(string:concat(ESIBody,". "))).
 
-is_authorized(_ESIBody, ["all"]) ->
+is_authorized(_ESIBody, [all]) ->
     true;
 is_authorized(ESIBody, Modules) ->
     case regexp:match(ESIBody, "^[^\:(%3A)]*") of

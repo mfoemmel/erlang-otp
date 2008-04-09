@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2004-2007</year>
+%% <year>2004-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -82,7 +82,10 @@
 	 create_and_increment/1,
 
 	 stats_counter/1,
-	 stats_create_and_increment/1
+	 stats_create_and_increment/1,
+
+	 tickets/1,
+	 otp_7219/1
 
 	]).
 
@@ -157,7 +160,8 @@ fin_per_testcase(Case, Config) when list(Config) ->
 all(suite) ->
     [
      start_and_stop,
-     normal_op
+     normal_op,
+     tickets
     ].
 
 
@@ -2169,6 +2173,53 @@ loop(0, Acc, _) ->
 loop(N, _, F) when N > 0, function(F) ->
     Acc = F(),
     loop(N-1, Acc, F).
+
+
+%%======================================================================
+%% Ticket test-cases
+%%======================================================================
+
+tickets(suite) ->
+    [
+     otp_7219
+    ].
+
+
+otp_7219(suite) ->
+    [];
+otp_7219(doc) ->
+    "Test-case for ticket OTP-7219";
+otp_7219(Config) when list(Config) ->
+    put(tname, otp7219),
+    p("start"),
+    process_flag(trap_exit, true),
+
+    ConfDir = ?config(manager_conf_dir, Config),
+    DbDir   = ?config(manager_db_dir, Config),
+
+    write_manager_conf(ConfDir),
+
+    Opts1 = [{versions, [v1]}, 
+	     {inform_request_behaviour, user}, 
+	     {config, [{verbosity, trace}, {dir, ConfDir}, {db_dir, DbDir}]}],
+
+    ?line {ok, _Pid1} = snmpm_config:start_link(Opts1),
+
+    {ok, {user, _}} = snmpm_config:system_info(net_if_irb),
+
+    ?line ok = snmpm_config:stop(),
+
+    IRB_TO = 15322, 
+    Opts2 = [{versions, [v1]}, 
+	     {inform_request_behaviour, {user, IRB_TO}}, 
+	     {config, [{verbosity, trace}, {dir, ConfDir}, {db_dir, DbDir}]}],
+
+    ?line {ok, _Pid2} = snmpm_config:start_link(Opts2),
+
+    {ok, {user, IRB_TO}} = snmpm_config:system_info(net_if_irb),
+
+    ?line ok = snmpm_config:stop(),
+    ok.
 
 
 %%======================================================================

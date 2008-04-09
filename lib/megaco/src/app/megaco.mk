@@ -24,11 +24,12 @@ ifeq ($(WARN_UNUSED_WARS), true)
 ERL_COMPILE_FLAGS += +warn_unused_vars
 endif
 
-MEGACO_ERL_COMPILE_FLAGS +=            \
-	-pa $(ERL_TOP)/lib/et/ebin     \
-	-pa $(ERL_TOP)/lib/megaco/ebin
-
 MEGACO_APP_VSN_COMPILE_FLAGS = \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,app_vsn,$(APP_VSN)}'
+
+MEGACO_ERL_COMPILE_FLAGS +=             \
+	-pa $(ERL_TOP)/lib/et/ebin      \
+	-pa $(ERL_TOP)/lib/megaco/ebin  \
+	$(MEGACO_APP_VSN_COMPILE_FLAGS) 
 

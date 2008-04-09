@@ -336,7 +336,12 @@ do_get_log_pids(LogName) ->
 	[{LogName, Pid, local}] ->
 	    {local, Pid};
 	[{LogName, _Pid, distr}] ->
-            {distributed, pg2:get_members(?group(LogName))};
+            case pg2:get_members(?group(LogName)) of
+                [] -> % The disk_log process has died recently
+                    undefined;
+                Members -> 
+                    {distributed, Members}
+            end;
         _EmptyOrError ->
 	    case dist_pids(LogName) of
 		[] -> undefined;

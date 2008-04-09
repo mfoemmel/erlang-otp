@@ -40,6 +40,7 @@
 #include "bif.h"
 #include "big.h"
 #include "export.h"
+#include "erl_binary.h"
 
 #include "erl_db_hash.h"
 
@@ -124,8 +125,6 @@ struct mp_info {
 ** Forward decl's (static functions)
 */
 static HashDbTerm** alloc_seg(DbTableHash *tb);
-static int realloc_counter(DbTableCommon *tb, HashDbTerm** bp, Uint sz, 
-			   Eterm new_counter, int counterpos);
 static HashDbTerm* next(DbTableHash *tb, Uint *iptr, HashDbTerm *list);
 static HashDbTerm* search_list(DbTableHash* tb, Eterm key, 
 			       HashValue hval, HashDbTerm *list);
@@ -148,15 +147,6 @@ static int db_next_hash(Process *p,
 			DbTable *tbl, 
 			Eterm key,
 			Eterm *ret);
-
-static int db_update_counter_hash(Process *p, 
-				  DbTable *tbl, 
-				  Eterm key,
-				  Eterm incr,
-				  int warp,
-				  int counterpos,
-				  Eterm *ret);
-
 
 static int db_member_hash(Process *p, DbTable *tbl, 
 			  Eterm key, Eterm *ret);
@@ -205,6 +195,10 @@ static int db_delete_all_objects_hash(Process* p, DbTable* tbl);
 #ifdef HARDDEBUG
 static void db_check_table_hash(DbTableHash *tb);
 #endif
+static DbTerm* db_alloc_newsize_hash(DbTable *tb, void** bp,
+				     Uint new_tpl_sz);
+static void db_free_dbterm_hash(DbTable *tb, DbTerm* bp);
+static int db_lookup_dbterm_hash(DbTable *tbl, Eterm key, DbUpdateHandle* handle);
 
 
 /*
@@ -228,7 +222,6 @@ DbTableMethod db_hash =
     db_erase_hash,
     db_erase_object_hash,
     db_slot_hash,
-    db_update_counter_hash,
     db_select_chunk_hash,
     db_select_hash,
     db_select_delete_hash,
@@ -246,7 +239,9 @@ DbTableMethod db_hash =
 #else
     NULL,
 #endif
-
+    db_alloc_newsize_hash,
+    db_free_dbterm_hash,
+    db_lookup_dbterm_hash
 };
 
 /*
@@ -356,48 +351,6 @@ static int db_next_hash(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
     }
     return DB_ERROR_BADKEY;
 }    
-
-static int db_update_counter_hash(Process *p, DbTable *tbl,
-				  Eterm key,
-				  Eterm incr, 
-				  int warp,
-				  int counterpos,
-				  Eterm *ret)
-{
-    DbTableHash *tb = &tbl->hash;
-    HashDbTerm* b;
-    HashDbTerm** bp;
-    int ix;
-    HashValue hval;
-
-    hval = MAKE_HASH(key);
-    HASH(tb, hval, ix);
-    bp = &BUCKET(tb, ix);
-    b = *bp;
-
-    while (b != 0) {
-	if ((b->hvalue == hval) && EQ(key,GETKEY(tb, b->dbterm.tpl)))
-	    break;
-	bp = &b->next;
-	b = *bp;
-   }
-
-    if (b == 0) 
-	return DB_ERROR_BADKEY;
-
-    if (counterpos <= 0)
-	counterpos = tb->common.keypos + 1;
-
-    return db_do_update_counter(p, (DbTableCommon *) tb,
-				(void *) bp, b->dbterm.tpl,
-				counterpos, 
-				(int (*)(DbTableCommon *,
-					 void *,
-					 Uint,
-					 Eterm,
-					 int))
-				&realloc_counter, incr, warp, ret);
-}
 
 int db_put_hash(Process *proc, DbTable *tbl, Eterm obj, Eterm *ret)
 {
@@ -902,7 +855,7 @@ static int db_select_continue_hash(Process *p,
     if (!(thing_subtag(*binary_val(tptr[4])) == REFC_BINARY_SUBTAG))
 	RET_TO_BIF(NIL,DB_ERROR_BADPARAM);
     mp = ((ProcBin *) binary_val(tptr[4]))->val;
-    if (!(mp->flags & BIN_FLAG_MATCH_PROG))
+    if (!IsMatchProgBinary(mp))
 	RET_TO_BIF(NIL,DB_ERROR_BADPARAM);
     all_objects = mp->flags & BIN_FLAG_ALL_OBJECTS;
     match_list = tptr[5];
@@ -936,7 +889,7 @@ static int db_select_continue_hash(Process *p,
 	     is_value(match_res))) {
 	    if (all_objects) {
 		hp = HAlloc(p, current_list->dbterm.size + 2);
-		match_res = copy_shallow(current_list->dbterm.v,
+		match_res = copy_shallow(DBTERM_BUF(&current_list->dbterm),
 					 current_list->dbterm.size,
 					 &hp,
 					 &MSO(p));
@@ -1051,7 +1004,7 @@ static int db_select_chunk_hash(Process *p, DbTable *tbl,
 
 #define RET_TO_BIF(Term,RetVal) do {		\
 	if (mpi.mp != NULL) {			\
-	    erts_match_set_free(mpi.mp);	\
+	    erts_bin_free(mpi.mp);		\
 	}					\
 	if (mpi.lists != mpi.dlists) {		\
 	    erts_free(ERTS_ALC_T_DB_SEL_LIST,	\
@@ -1104,7 +1057,7 @@ static int db_select_chunk_hash(Process *p, DbTable *tbl,
 	     is_value(match_res))) {
 	    if (mpi.all_objects) {
 		hp = HAlloc(p, current_list->dbterm.size + 2);
-		match_res = copy_shallow(current_list->dbterm.v,
+		match_res = copy_shallow(DBTERM_BUF(&current_list->dbterm),
 					 current_list->dbterm.size,
 					 &hp,
 					 &MSO(p));
@@ -1242,7 +1195,7 @@ static int db_select_count_hash(Process *p,
 
 #define RET_TO_BIF(Term,RetVal) do {		\
 	if (mpi.mp != NULL) {			\
-	    erts_match_set_free(mpi.mp);	\
+	    erts_bin_free(mpi.mp);		\
 	}					\
 	if (mpi.lists != mpi.dlists) {		\
 	    erts_free(ERTS_ALC_T_DB_SEL_LIST,	\
@@ -1374,7 +1327,7 @@ static int db_select_delete_hash(Process *p,
 
 #define RET_TO_BIF(Term,RetVal) do {		\
 	if (mpi.mp != NULL) {			\
-	    erts_match_set_free(mpi.mp);	\
+	    erts_bin_free(mpi.mp);		\
 	}					\
 	if (mpi.lists != mpi.dlists) {		\
 	    erts_free(ERTS_ALC_T_DB_SEL_LIST,	\
@@ -2119,7 +2072,7 @@ static Eterm put_term_list(Process* p, HashDbTerm* ptr1, HashDbTerm* ptr2)
     ptr = ptr1;
     while(ptr != ptr2) {
 	if (ptr->hvalue != INVALID_HASH) {
-	    copy = copy_shallow(ptr->dbterm.v, ptr->dbterm.size, &hp, &MSO(p));
+	    copy = copy_shallow(DBTERM_BUF(&ptr->dbterm), ptr->dbterm.size, &hp, &MSO(p));
 	    list = CONS(hp, copy, list);
 	    hp  += 2;
 	}
@@ -2292,15 +2245,57 @@ static HashDbTerm* next(DbTableHash *tb, Uint *iptr, HashDbTerm *list)
     return NULL;
 }
 
+static DbTerm* db_alloc_newsize_hash(DbTable *tb,
+				     void** bp, /* HashDbTerm** */
+				     Uint new_tpl_sz)
+{			
+    HashDbTerm* oldp = (HashDbTerm*) *bp;
+    HashDbTerm* newp = erts_db_alloc(ERTS_ALC_T_DB_TERM,
+				     tb,
+				     sizeof(HashDbTerm)+sizeof(Eterm)*(new_tpl_sz-1));
 
-static int realloc_counter(DbTableCommon *tb, HashDbTerm** bp, Uint sz, 
-			   Eterm new_counter, int counterpos)
-{
-    HashDbTerm* b = *bp;
-    return db_realloc_counter(tb, (void **) bp, &(b->dbterm),
-			      ((char *) &(b->dbterm)) - ((char *) b),
-			      sz, new_counter, counterpos);
+    memcpy(newp, oldp, sizeof(HashDbTerm)-sizeof(DbTerm));  /* copy only hashtab header */
+    *bp = newp;
+    return &newp->dbterm;
 }
+
+static void db_free_dbterm_hash(DbTable* tb, DbTerm* dbterm)
+{
+    erts_db_free(ERTS_ALC_T_DB_TERM,
+		 tb,
+		 (void *) (((char *) dbterm) - (sizeof(HashDbTerm) - sizeof(DbTerm))),
+		 sizeof(HashDbTerm) + sizeof(Eterm)*(dbterm->size-1));
+}
+
+static int db_lookup_dbterm_hash(DbTable *tbl, Eterm key, DbUpdateHandle* handle)
+{
+    DbTableHash *tb = &tbl->hash;
+    HashDbTerm* b;
+    HashDbTerm** prevp;
+    int ix;
+    HashValue hval;
+
+    hval = MAKE_HASH(key);
+    HASH(tb, hval, ix);
+    prevp = &BUCKET(tb, ix);
+    b = *prevp;
+
+    while (b != 0) {
+	if ((b->hvalue == hval) && EQ(key,GETKEY(tb, b->dbterm.tpl))) {
+	    handle->tb = tbl;
+	    handle->bp = (void**) prevp;
+	    handle->dbterm = &b->dbterm;
+	    handle->new_size = b->dbterm.size;
+	    handle->mustFinalize = 0;
+	    return 1;
+	}
+	prevp = &b->next;
+	b = *prevp;
+    }
+    return 0;
+}
+
+
 
 int db_delete_all_objects_hash(Process* p, DbTable* tbl)
 {

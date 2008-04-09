@@ -1,20 +1,22 @@
 %%----------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2000-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS" 
+%% retrieved online at http://www.erlang.org/.
+%%
+%% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %% 
 %%----------------------------------------------------------------------
 %% File        : CosFileTransfer_FileTransferSession_impl.erl
@@ -100,7 +102,7 @@
 %% Description: Initiates the server
 %%----------------------------------------------------------------------
 init(['FTP', Host, Port, User, Password, _Account, Protocol, Timeout]) ->
-    {ok, Pid} = ftp:open(Host, Port, []),
+    {ok, Pid} = inets:start(ftpc, [{host, Host}, {port, Port}], stand_alone),
     ok = ftp:user(Pid, User, Password),
     {ok, PWD} = ftp:pwd(Pid),
     {Connection, ProtocolSupport} = setup_local(Protocol),
@@ -120,12 +122,20 @@ init([{'NATIVE', Mod}, Host, Port, User, Password, _Account, Protocol, Timeout])
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(_Reason, State) ->
+terminate(_Reason, #state{type = Type, server = Server, module = Mod} = State) ->
     case ?get_MyType(State) of
 	ssl ->
 	    catch ssl:close(?get_Connection(State));
 	_ ->
 	    catch gen_tcp:close(?get_Connection(State))
+    end,
+    case Type of
+	'FTP' ->
+	    inets:stop(ftpc, Server);
+	'NATIVE' ->
+	    Mod:close(Server);
+	_ ->
+	    ok
     end,
     ok.
 
@@ -693,7 +703,7 @@ setup_local(ssl) ->
 			       {packet, 0},
 			       {backlog,1},
 			       {active, false}|Options]),
-    {ok, Port} = ssl:port(Socket),
+    {ok, {_Address, Port}} = ssl:sockname(Socket),
     {Socket, [#'CosFileTransfer_ProtocolSupport'{protocol_name="SSL",
 						 addresses = [local_address(Port)]}]}.
 
@@ -829,13 +839,13 @@ receive_file(tcp, LSock, Timeout, FileName, Type) ->
 	{ok, Sock} ->
 	    receive_file_helper(gen_tcp, Sock, FD);
 	{error, timeout} ->
-	    orber:debug_level_print("[~p] CosFileTransfer_FileTransferSession:receive_file();
-gen_tcp:accept(~p) timed out", [?LINE, Timeout], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosFileTransfer_FileTransferSession:receive_file();~n"
+		      "gen_tcp:accept(~p) timed out", [?LINE, Timeout], ?DEBUG_LEVEL),
 	    corba:raise(#'CosFileTransfer_RequestFailureException'
 			{reason="TCP accept timed out.."});
 	{error, Why} ->
-	    orber:debug_level_print("[~p] CosFileTransfer_FileTransferSession:receive_file();
-gen_tcp:accept(~p) failed: ~p", [?LINE, Timeout, Why], ?DEBUG_LEVEL),
+ 	    orber:dbg("[~p] CosFileTransfer_FileTransferSession:receive_file();~n"
+		      "gen_tcp:accept(~p) failed: ~p", [?LINE, Timeout, Why], ?DEBUG_LEVEL),
 	    corba:raise(#'CosFileTransfer_RequestFailureException'
 			{reason="TCP accept failed."})
     end;
@@ -843,17 +853,28 @@ receive_file(ssl, LSock, Timeout, FileName, Type) ->
     %% The Type can be the ones allowed by the file-module, i.e., 
     %% 'read', 'write' or 'append'
     FD = file_open(FileName, Type),
-    case ssl:accept(LSock, Timeout) of
+    case ssl:transport_accept(LSock, Timeout) of
 	{ok, Sock} ->
-	    receive_file_helper(ssl, Sock, FD);
+	    case ssl:ssl_accept(Sock, Timeout) of
+		ok ->
+		    receive_file_helper(ssl, Sock, FD);
+		{error, Error} ->
+		    orber:dbg("[~p] CosFileTransfer_FileTransferSession:receive_file();~n"
+			      "ssl:ssl_accept(~p) failed: ~p", 
+			      [?LINE, Timeout, Error], ?DEBUG_LEVEL),
+		    corba:raise(#'CosFileTransfer_RequestFailureException'
+				{reason="TCP accept failed."})
+	    end;
 	{error, timeout} ->
-	    orber:debug_level_print("[~p] CosFileTransfer_FileTransferSession:receive_file();
-ssl:accept(~p) timed out", [?LINE, Timeout], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosFileTransfer_FileTransferSession:receive_file();~n"
+		      "ssl:transport_accept(~p) timed out", 
+		      [?LINE, Timeout], ?DEBUG_LEVEL),
 	    corba:raise(#'CosFileTransfer_RequestFailureException'
 			{reason="TCP accept timed out.."});
 	{error, Why} ->
-	    orber:debug_level_print("[~p] CosFileTransfer_FileTransferSession:receive_file();
-ssl:accept(~p) failed: ~p", [?LINE, Timeout, Why], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosFileTransfer_FileTransferSession:receive_file();~n"
+		      "ssl:transport_accept(~p) failed: ~p", 
+		      [?LINE, Timeout, Why], ?DEBUG_LEVEL),
 	    corba:raise(#'CosFileTransfer_RequestFailureException'
 			{reason="TCP accept failed."})
     end.

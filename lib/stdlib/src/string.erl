@@ -342,7 +342,6 @@ sub_string(String, Start) -> substr(String, Start).
 
 sub_string(String, Start, Stop) -> substr(String, Start, Stop - Start + 1).
 
-%% The long awaited to_upper and to_lower
 %% ISO/IEC 8859-1 (latin1) letters are converted, others are ignored
 %%
 
@@ -380,7 +379,9 @@ to_upper(S) when is_list(S) ->
 to_upper(C) when is_integer(C) ->
     to_upper_char(C).
 
--spec(join/2 :: ([string(),...], string()) -> string()).
+-spec(join/2 :: ([string()], string()) -> string()).
 
+join([], Sep) when is_list(Sep) ->
+    [];
 join([H|T], Sep) ->
-    H ++ lists:concat([Sep ++ X || X <- T]).
+    H ++ lists:append([Sep ++ X || X <- T]).

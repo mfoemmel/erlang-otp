@@ -67,6 +67,8 @@ atom all
 atom allocated
 atom allocated_areas
 atom allocator
+atom allocator_sizes
+atom alloc_util_allocators
 atom allow_passive_connect
 atom already_loaded
 atom and
@@ -340,6 +342,7 @@ atom priority
 atom private
 atom process
 atom processes
+atom processes_trap
 atom processes_used
 atom process_count
 atom process_limit
@@ -433,11 +436,6 @@ atom tuple
 atom type
 atom undef
 atom unregister
-atom ultrasparc_read_pic1
-atom ultrasparc_read_tick1
-atom ultrasparc_read_pic2
-atom ultrasparc_read_tick2
-atom ultrasparc_set_pcr
 atom use_stdio
 atom used
 atom unblock

@@ -86,6 +86,9 @@ static SysTimeval inittv; /* Used everywhere, the initial time-of-day */
 static SysTimes t_start; /* Used in elapsed_time_both */
 static SysTimeval gtv; /* Used in wall_clock_elapsed_time_both */
 static SysTimeval then; /* Used in get_now */
+static SysTimeval last_emu_time; /* Used in erts_get_emu_time() */
+SysTimeval erts_first_emu_time; /* Used in erts_get_emu_time() */
+
 
 #ifdef HAVE_GETHRTIME
 
@@ -395,6 +398,9 @@ erts_init_time_sup(void)
 {
     erts_smp_mtx_init(&erts_timeofday_mtx, "timeofday");
 
+    last_emu_time.tv_sec = 0;
+    last_emu_time.tv_usec = 0;
+
 #ifndef SYS_CLOCK_RESOLUTION
     clock_resolution = sys_init_time();
 #else
@@ -410,6 +416,8 @@ erts_init_time_sup(void)
     init_erts_deliver_time(&inittv);
     gtv = inittv;
     then.tv_sec = then.tv_usec = 0;
+
+    erts_get_emu_time(&erts_first_emu_time);
 
     return CLOCK_RESOLUTION;
 }    
@@ -823,3 +831,38 @@ void erts_get_now_cpu(Uint* megasec, Uint* sec, Uint* microsec) {
   *sec = (Uint)(tp.tv_sec % 1000000);
 }
 #endif
+
+
+/*
+ * erts_get_emu_time() is similar to get_now(). You will
+ * always get different times from erts_get_emu_time(), but they
+ * may equal a time from get_now().
+ *
+ * erts_get_emu_time() is only used internally in the emulator in
+ * order to order emulator internal events.
+ */
+
+void
+erts_get_emu_time(SysTimeval *this_emu_time_p)
+{
+    erts_smp_mtx_lock(&erts_timeofday_mtx);
+    
+    get_tolerant_timeofday(this_emu_time_p);
+
+    /* Make sure time is later than last */
+    if (last_emu_time.tv_sec > this_emu_time_p->tv_sec ||
+	(last_emu_time.tv_sec == this_emu_time_p->tv_sec
+	 && last_emu_time.tv_usec >= this_emu_time_p->tv_usec)) {
+	*this_emu_time_p = last_emu_time;
+	this_emu_time_p->tv_usec++;
+    }
+    /* Check for carry from above + general reasonability */
+    if (this_emu_time_p->tv_usec >= 1000000) {
+	this_emu_time_p->tv_usec = 0;
+	this_emu_time_p->tv_sec++;
+    }
+
+    last_emu_time = *this_emu_time_p;
+    
+    erts_smp_mtx_unlock(&erts_timeofday_mtx);
+}

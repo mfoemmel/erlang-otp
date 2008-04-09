@@ -51,7 +51,7 @@
 
 
 int ei_send_encoded_tmo(int fd, const erlang_pid *to, 
-			const char *msg, int msglen, unsigned ms) 
+			char *msg, int msglen, unsigned ms) 
 {
     char *s, header[1200]; /* see size calculation below */
     erlang_trace *token = NULL;
@@ -118,7 +118,7 @@ int ei_send_encoded_tmo(int fd, const erlang_pid *to,
     return 0;
 }
 
-int ei_send_encoded(int fd, const erlang_pid *to, const char *msg, int msglen)
+int ei_send_encoded(int fd, const erlang_pid *to, char *msg, int msglen)
 {
     return ei_send_encoded_tmo(fd, to, msg, msglen, 0);
 }

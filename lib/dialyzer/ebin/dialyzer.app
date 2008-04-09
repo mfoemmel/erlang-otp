@@ -1,8 +1,8 @@
 % This is an -*- erlang -*- file.
 
 {application, dialyzer,
- [{description, "DIscrepancy AnaLYZer of ERlang programs, version 1.7.2"},
-  {vsn, "1.7.2"},
+ [{description, "DIscrepancy AnaLYZer of ERlang programs, version 1.8.0"},
+  {vsn, "1.8.0"},
   {modules, [dialyzer,
 	     dialyzer_analysis_callgraph,
 	     dialyzer_callgraph,
@@ -13,7 +13,6 @@
 	     dialyzer_dataflow,
 	     dialyzer_dep,
 	     dialyzer_gui,
-	     dialyzer_icode,
 	     dialyzer_options,
 	     dialyzer_plt,
 	     dialyzer_succ_typings,

@@ -1,7 +1,22 @@
 %% inets-4.7.17 was not widely spread
 %% so most people will go from 4.7.16 -> 5.0!
-{"5.0.2",
+{"5.0.5",
  [
+  {"5.0.4",
+   [
+    {load_module, tftp_engine, soft_purge, soft_purge, []}
+   ]
+  },
+  {"5.0.3",
+   [
+    {load_module, tftp_engine, soft_purge, soft_purge, []}
+   ]
+  },
+  {"5.0.2",
+   [
+    {load_module, mod_esi, soft_purge, soft_purge, []}
+    ]
+  },
  {"5.0.1",	
    [		
     {load_module, httpd_acceptor, soft_purge, soft_purge, [mod_log, mod_disk_log]},
@@ -37,6 +52,21 @@
   }	
  ],
  [
+  {"5.0.4",
+   [
+    {load_module, tftp_engine, soft_purge, soft_purge, []}
+   ]
+  },
+  {"5.0.3",
+   [
+    {load_module, tftp_engine, soft_purge, soft_purge, []}
+   ]
+  },
+  {"5.0.2",
+   [
+    {load_module, mod_esi, soft_purge, soft_purge, []}
+    ]
+  },
  {"5.0.1",	
    [		
     {load_module, httpd_acceptor, soft_purge, soft_purge, [mod_log, mod_disk_log]},

@@ -373,11 +373,13 @@ nbif_3_simple_exception:
 
 	/*
 	 * A BIF failed with freason TRAP:
-	 * - the BIF stored the callee's Export* in p->def_arg_reg[3]
-	 * - the BIF stored the callee's parameters in p->def_arg_reg[0..2]
 	 * - the BIF's arity is in %rax
 	 * - the native heap/stack/reds registers are saved in P
 	 */
+	.global	nbif_0_trap_exception
+	.align	4
+nbif_0_trap_exception:
+	xorl	%eax, %eax
 .handle_trap:
 	movq	%rax, P_ARITY(P)
 	movl	$HIPE_MODE_SWITCH_RES_TRAP, %eax

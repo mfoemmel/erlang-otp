@@ -19,9 +19,9 @@
 #
 
 #EDOC_DIR=/clearcase/otp/internal_tools/edoc
-EDOC_DIR=/home/otp/sgml/edoc-0.7.4
-SYNTAX_TOOLS_DIR=/home/otp/sgml/syntax_tools-1.5.3
-XMERL_DIR=/home/otp/sgml/xmerl-1.1.6
+EDOC_DIR=/home/otp/sgml/edoc-0.7.5
+SYNTAX_TOOLS_DIR=/home/otp/sgml/syntax_tools-1.5.4
+XMERL_DIR=/home/otp/sgml/xmerl-1.1.8
 
 FILE=
 APP=

@@ -1306,24 +1306,19 @@ udp_controlling_process(S, NewOwner) when is_port(S), is_pid(NewOwner) ->
 
 udp_sync_input(S, Owner, Flag) ->
     receive
-	{udp, S, IP, UP, Data} ->
-	    Owner ! {udp, S, IP, UP, Data},
-	    udp_sync_input(S, Owner, Flag);
-	{udp_closed, S} ->
-	    Owner ! {udp_closed, S},
-	    udp_sync_input(S, Owner, true);
-	{S, {data, Data}} ->
-	    Owner ! {S, {data, Data}},
-	    udp_sync_input(S, Owner, Flag);
-	{inet_async, S, Ref, Status} ->
-	    Owner ! {inet_async, S, Ref, Status},
-	    udp_sync_input(S, Owner, Flag);
-	{inet_reply, S, Status} ->
-	    Owner ! {inet_reply, S, Status},
-	    udp_sync_input(S, Owner, Flag)
+	{sctp, S, _, _, _}=Msg    -> udp_sync_input(S, Owner, Flag, Msg);
+	{udp, S, _, _, _}=Msg     -> udp_sync_input(S, Owner, Flag, Msg);
+	{udp_closed, S}=Msg       -> udp_sync_input(S, Owner, Flag, Msg);
+	{S, {data,_}}=Msg         -> udp_sync_input(S, Owner, Flag, Msg);
+	{inet_async, S, _, _}=Msg -> udp_sync_input(S, Owner, Flag, Msg);
+	{inet_reply, S, _}=Msg    -> udp_sync_input(S, Owner, Flag, Msg)
     after 0 -> 
 	    Flag
     end.
+
+udp_sync_input(S, Owner, Flag, Msg) ->
+    Owner ! Msg,
+    udp_sync_input(S, Owner, Flag).
 
 start_timer(infinity) -> false;
 start_timer(Timeout) -> 

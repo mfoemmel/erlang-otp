@@ -19,8 +19,8 @@
 %%               Fixed some bugs and started cleanup.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2007/10/31 15:50:37 $
-%%              $Revision: 1.23 $
+%%              $Date: 2008/03/22 20:14:32 $
+%%              $Revision: 1.24 $
 %% ====================================================================
 %%  Exports  :
 %%    gen_switch_val(I, VarMap, ConstTab, Options)
@@ -87,7 +87,7 @@ gen_switch_val(I, VarMap, ConstTab, Options) ->
 
 gen_fast_switch_val(I, VarMap, ConstTab, Options) ->
   {Arg, VarMap0} = 
-    hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:switch_val_arg(I), VarMap),
+    hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:switch_val_term(I), VarMap),
   IcodeFail = hipe_icode:switch_val_fail_label(I),
   {Fail, VarMap1} = hipe_rtl_varmap:icode_label2rtl_label(IcodeFail, VarMap0),
   %% Important that the list of cases is sorted when handling integers.
@@ -704,14 +704,14 @@ dense_interval([], Max, _, _, _) ->
 
 gen_slow_switch_val(I, VarMap, ConstTab, Options) ->
   Is = rewrite_switch_val(I),
-  ?IF_DEBUG_LEVEL(3,?msg("Switch: ~w\n",[Is]),no_debug),
+  ?IF_DEBUG_LEVEL(3,?msg("Switch: ~w\n", [Is]), no_debug),
   hipe_icode2rtl:translate_instrs(Is, VarMap, ConstTab, Options).
 
 rewrite_switch_val(I) ->
-  Arg = hipe_icode:switch_val_arg(I),
+  Var = hipe_icode:switch_val_term(I),
   Fail = hipe_icode:switch_val_fail_label(I),
   Cases = hipe_icode:switch_val_cases(I),
-  rewrite_switch_val_cases(Cases, Fail, Arg).
+  rewrite_switch_val_cases(Cases, Fail, Var).
 
 rewrite_switch_val_cases([{C,L}|Cases], Fail, Arg) ->
   Tmp = hipe_icode:mk_new_var(),
@@ -945,8 +945,8 @@ split_cases([{V,L}|Rest], Vs, Ls) ->
 %%-------------------------------------------------------------------------
 
 gen_switch_tuple(I, Map, ConstTab, _Options) ->
-  {X, Map1} = 
-    hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:switch_tuple_arity_arg(I), Map),
+  Var = hipe_icode:switch_tuple_arity_term(I),
+  {X, Map1} = hipe_rtl_varmap:icode_var2rtl_var(Var, Map),
   Fail0 = hipe_icode:switch_tuple_arity_fail_label(I),
   {Fail1, Map2} = hipe_rtl_varmap:icode_label2rtl_label(Fail0, Map1),
   FailLab = hipe_rtl:label_name(Fail1),

@@ -182,11 +182,11 @@ platform(Vars) ->
     MT = modified_timing(),
     AsyncThreads = async_threads(),
     HeapType = heap_type_label(),
-    ConstantPool = constant_pool_support(),
     Debug = debug(),
-    Common = lists:concat([Hostname,"/",OsType,"/",CpuType,LinuxDist,
+    CpuBits = word_size(),
+    Common = lists:concat([Hostname,"/",OsType,"/",CpuType,CpuBits,LinuxDist,
 			   Schedulers,KP,IOTHR,LC,MT,AsyncThreads,HeapType,
-			   ConstantPool,Debug,ExtraLabel]),
+			   Debug,ExtraLabel]),
     PlatformId = lists:concat([ErlType, " ", Version, Common]),
     PlatformLabel = ErlType ++ Common,
     PlatformFilename = platform_as_filename(PlatformId),
@@ -203,6 +203,12 @@ to_upper(String) ->
     lists:map(fun(C) when $a =< C, C =< $z -> C - $a + $A;
 		 (C) -> C end,
 	      String).
+
+word_size() ->
+    case erlang:system_info(wordsize) of
+	4 -> "";
+	8 -> "/64"
+    end.
 
 linux_dist() ->
     case os:type() of
@@ -285,12 +291,6 @@ io_thread() ->
 	_ -> ""
     end.
 
-constant_pool_support() ->
-    case catch erlang:system_info(constant_pool_support) of
-	false -> "/Frag";
-	_ -> ""
-    end.
-	     
 extra_platform_label() ->
     case os:getenv("TS_EXTRA_PLATFORM_LABEL") of
 	[] -> "";

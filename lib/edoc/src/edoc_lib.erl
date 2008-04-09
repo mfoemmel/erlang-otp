@@ -659,12 +659,11 @@ write_file(Text, Dir, Name) ->
 write_file(Text, Dir, Name, Package) ->
     Dir1 = filename:join([Dir | packages:split(Package)]),
     File = filename:join(Dir1, Name),
-    filelib:ensure_dir(File),
+    ok = filelib:ensure_dir(File),
     case file:open(File, [write]) of
 	{ok, FD} ->
 	    io:put_chars(FD, Text),
-	    file:close(FD),
-	    ok;
+	    ok = file:close(FD);
 	{error, R} ->
 	    R1 = file:format_error(R),
 	    report("could not write file '~s': ~s.", [File, R1]),
@@ -674,7 +673,7 @@ write_file(Text, Dir, Name, Package) ->
 write_info_file(App, Packages, Modules, Dir) ->
     Ts = [{packages, Packages},
 	  {modules, Modules}],
-    Ts1 = if App == ?NO_APP -> Ts;
+    Ts1 = if App =:= ?NO_APP -> Ts;
 	     true -> [{application, App} | Ts]
 	  end,
     S = [io_lib:fwrite("~p.\n", [T]) || T <- Ts1],

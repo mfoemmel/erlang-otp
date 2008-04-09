@@ -32,6 +32,49 @@
   <p>This document describes the changes made to the Dialyzer
     application.</p>
 
+<section><title>Dialyzer 1.8.0</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Dialyzer's analysis is from now on exclusively based
+	    on success typings. In particular, support for options
+	    <c>--old_style</c> and <c>--dataflow</c> has been
+	    discontinued.</p>
+	    <p>Better and more aggressive handling of type
+	    information in records.</p>
+	    <p>Dialyzer has a new warning option
+	    <c>-Wunmatched_returns</c> which warns for function calls
+	    that ignore the return value. This catches many common
+	    programming errors (e.g. calling <c>file:close/1</c> and
+	    not checking for the absence of errors), interface
+	    discrepancies (e.g. a function returning multiple values
+	    when in reality the function is void and only called for
+	    its side-effects), calling the wrong function (e.g.
+	    <c>io_lib:format/1</c> instead of <c>io:format/1</c>),
+	    and even possible performance defects (e.g. unnecessarily
+	    constructing a list using a list comprehension instead of
+	    using <c>lists:foreach/2</c>). Whenever a function
+	    returns a single atomic value (e.g. 'ok' or pid()), the
+	    warning is suppressed. This allows for "void" functions
+	    (returning a single atom like 'ok') or for calls to
+	    certain builtins like <c>spawn</c>. Because not all calls
+	    which ignore the return value are discrepancies, the
+	    option is off by default and has to be explicitly
+	    requested by the user. But we recommend it
+	    nevertheless.</p>
+	    <p>Some warning options (<c>-Wno_comp</c>,
+	    <c>-Wno_guards</c>, <c>-Wno_unsafe_beam</c>, etc.) which
+	    could be used when analyzing bytecode produced by an old
+	    BEAM compiler have been removed.</p>
+          <p>
+	    Own Id: OTP-7241</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Dialyzer 1.7.2</title>
 
     <section><title>Improvements and New Features</title>

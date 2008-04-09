@@ -13,14 +13,16 @@
 -endif.
 
 -module(?HIPE_X86_LIVENESS).
+
 -export([analyse/1]).
 -export([liveout/2]).
+
+-include("../x86/hipe_x86.hrl").  % ../x86/ is needed when included in amd64
 -include("../flow/liveness.inc").
 
 analyse(CFG) -> analyze(CFG).
 cfg_bb(CFG, L) -> hipe_x86_cfg:bb(CFG, L).
 cfg_postorder(CFG) -> hipe_x86_cfg:postorder(CFG).
-cfg_succ_map(CFG) -> hipe_x86_cfg:succ_map(CFG).
 cfg_succ(CFG, L) -> hipe_x86_cfg:succ(CFG, L).
 uses(Insn) -> ?HIPE_X86_DEFUSE:insn_use(Insn).
 defines(Insn) -> ?HIPE_X86_DEFUSE:insn_def(Insn).

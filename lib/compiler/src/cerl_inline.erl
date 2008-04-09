@@ -825,8 +825,8 @@ add_match_bindings(Bs, E) ->
 	true ->
 	    E;
 	false ->
-	    Vs = [V || {V, E} <- Bs, E /= any],
-	    Es = [hd(get_ann(E)) || {_V, E} <- Bs, E /= any],
+	    Vs = [V || {V, E} <- Bs, E =/= any],
+	    Es = [hd(get_ann(E)) || {_V, E} <- Bs, E =/= any],
 	    c_let(Vs, c_values(Es), E)
     end.
 
@@ -879,11 +879,12 @@ i_fun(E, Ctxt, Ren, Env, S) ->
 	    %% variable references (I think), so that's not a problem.
             {set_ann(c_fun(Vs1, B), kill_id_anns(get_ann(E))), S3};
         #app{} ->
-            %% An application of a fun-expression (in the source code)
-            %% is handled by going directly to `inline'; this is never
-            %% residualised, and we don't set up new counters here. Note
-            %% that inlining of copy-propagated fun-expressions is done
-            %% in `copy'; not here.
+            %% An application of a fun-expression (in the original
+            %% source code) is handled by going directly to `inline'.
+            %% This is never residualised unless there is an arity
+            %% mismatch, so we don't set up new counters here. Note that
+            %% inlining of copy-propagated fun-expressions is done in
+            %% `copy'; not here!
             inline(E, Ctxt, Ren, Env, S)
     end.
 
@@ -1391,11 +1392,11 @@ i_bitstr_pattern(E, Ren, Env, Ren0, Env0, S) ->
 %% ---------------------------------------------------------------------
 %% Other central inlining functions
 
-%% It is assumed here that `E' is a fun-expression and the context is an
-%% app-structure. If the inlining might be aborted for some reason, a
-%% corresponding catch should have been set up before entering `inline'.
+%% The following function assumes that `E' is a fun-expression and the
+%% context is an app-structure. If the inlining could be aborted, a
+%% corresponding catch should be set up before entering the function.
 %%
-%% Note: if the inlined body is a lambda abstraction, and the
+%% Note: if the inlined body is some lambda abstraction, and the
 %% surrounding context of the app-context is also an app-context, the
 %% `inlined' flag of the outermost context will be set before that of
 %% the inner context is set. E.g.: `let F = fun (X) -> fun (Y) -> E in
@@ -1416,26 +1417,23 @@ i_bitstr_pattern(E, Ren, Env, Ren0, Env0, S) ->
 inline(E, #app{opnds = Opnds, ctxt = Ctxt, loc = L}, Ren, Env, S) ->
     %% Check that the arities match:
     Vs = fun_vars(E),
-    if length(Opnds) /= length(Vs) ->
-            report_error("function called with wrong number "
-			 "of arguments!\n"),
-	    %% TODO: should really just residualise the call...
-	    exit(error);
+    if length(Opnds) =/= length(Vs) ->
+	    %% Arity mismatch: the call will be residualized
+	    {E, S};
        true ->
-            ok
-    end,
-    %% Create local bindings for the parameters to their respective
-    %% operand structures from the app-structure, and visit the body in
-    %% the context saved in the structure.
-    {Rs, Ren1, Env1, S1} = bind_locals(Vs, Opnds, Ren, Env, S),
-    {E1, S2} = i(fun_body(E), Ctxt, Ren1, Env1, S1),
+	    %% Create local bindings for the parameters to their
+	    %% respective operand structures from the app-structure, and
+	    %% visit the body in the context saved in the structure.
+	    {Rs, Ren1, Env1, S1} = bind_locals(Vs, Opnds, Ren, Env, S),
+	    {E1, S2} = i(fun_body(E), Ctxt, Ren1, Env1, S1),
 
-    %% Create necessary bindings and/or set flags.
-    {E2, S3} = make_let_bindings(Rs, E1, S2),
+	    %% Create necessary bindings and/or set flags.
+	    {E2, S3} = make_let_bindings(Rs, E1, S2),
 
-    %% Lastly, flag the application as inlined, since the inlining
-    %% attempt was not aborted before we reached this point.
-    {E2, st__set_app_inlined(L, S3)}.
+	    %% Lastly, flag the application as inlined, since the inlining
+	    %% attempt was not aborted before we reached this point.
+	    {E2, st__set_app_inlined(L, S3)}
+    end.
 
 %% For the (possibly renamed) argument variables to an inlined call,
 %% either create `let' bindings for them, if they are still referenced
@@ -2715,8 +2713,8 @@ counter__add(N, {V, L}, Type, Data) ->
 report_internal_error(S, Vs) ->
     report_error("internal error: " ++ S, Vs).
 
-report_error(D) ->
-    report_error(D, []).
+%% report_error(D) ->
+%%     report_error(D, []).
     
 report_error(D, Vs) ->
     report({error, D}, Vs).

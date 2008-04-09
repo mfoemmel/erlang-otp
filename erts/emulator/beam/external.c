@@ -1814,12 +1814,18 @@ decoded_size(byte *ep, byte* endp, int no_refc_bins)
 	    case ATOM_EXT:
 		CHKSIZE(2);
 		n = (ep[0] << 8) | ep[1];
+		if (n > MAX_ATOM_LENGTH) {
+		    return -1;
+		}
 		SKIP(n+2+atom_extra_skip);
 		atom_extra_skip = 0;
 		break;
 	    case NEW_CACHE:
 		CHKSIZE(3);
 		n = get_int16(ep+1);
+		if (n > MAX_ATOM_LENGTH) {
+		    return -1;
+		}
 		SKIP(n+3+atom_extra_skip);
 		atom_extra_skip = 0;
 		break;

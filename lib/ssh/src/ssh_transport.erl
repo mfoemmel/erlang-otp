@@ -344,9 +344,10 @@ server_init(UserFun, Addr, Port, Opts, From) ->
 						    ?DEFAULT_TIMEOUT))
 	   end,
     NoDelay = proplists:get_value(tcp_nodelay, Opts, false),
+    ExtraSSHOpts = proplists:lookup_all(fd, Opts),
     ssh_tcp_wrap:server(Port, [{packet,line}, {active,once},
 			       {ifaddr,Addr}, {reuseaddr,true},
-			       {nodelay, NoDelay}],
+			       {nodelay, NoDelay}] ++ ExtraSSHOpts,
 			Serv, From).
 
 %%
@@ -514,8 +515,7 @@ send_negotiate(S, User, SSH, UserAck) ->
     kex_negotiate(S, User, SSH, UserAck, SendAlg, SendPdu, RecvAlg, RecvPdu).
 
 %% Other side started re-negotiate
-recv_negotiate(S, User, SSH, RecvAlg, UserAck)                           ->
-    RecvPdu = ssh_bits:encode(RecvAlg),
+recv_negotiate(S, User, SSH, RecvAlg, RecvPdu, UserAck) ->
     SendAlg = kex_init(SSH),
     {ok, SendPdu} = send_algorithms(S, SSH, SendAlg),
     send_msg(S, SSH, SendAlg),
@@ -568,9 +568,11 @@ newkeys(S, User, SSH, UserAck)                                           ->
 	    Error
     end.
 
+%% select session id
+sid(SSH, H) when SSH#ssh.session_id == undefined -> H;
+sid(SSH, _) -> SSH#ssh.session_id.
 
-
-client_kex(S, SSH, 'diffie-hellman-group1-sha1')                         ->
+client_kex(S, SSH, 'diffie-hellman-group1-sha1') ->
     ssh_bits:install_messages(kexdh_messages()),
     {G,P} = dh_group1(),
     {Private, Public} = dh_gen_key(G,P,1024),
@@ -589,7 +591,7 @@ client_kex(S, SSH, 'diffie-hellman-group1-sha1')                         ->
 		ok ->
 		    {ok, SSH#ssh { shared_secret  = K,
 				   exchanged_hash = H,
-				   session_id = H }};
+				   session_id = sid(SSH, H) }};
 		Error ->
 		    Error
 	    end;
@@ -630,7 +632,7 @@ client_kex(S, SSH, 'diffie-hellman-group-exchange-sha1')                 ->
 			ok ->
 			    {ok,  SSH#ssh { shared_secret  = K,
 					    exchanged_hash = H,
-					    session_id = H }};
+					    session_id = sid(SSH, H) }};
 			Error ->
 			    Error
 		    end;
@@ -673,7 +675,7 @@ server_kex(S, SSH, 'diffie-hellman-group1-sha1')                         ->
 	    ?dbg(?DBG_KEX, "hash: ~s\n", [fmt_binary(H, 16, 4)]),
 	    {ok, SSH#ssh { shared_secret = K,
 			   exchanged_hash = H,
-			   session_id = H }};
+			   session_id = sid(SSH, H) }};
 	{ok, _} ->
 	    {error, bad_message};
 	continue ->
@@ -706,7 +708,7 @@ server_kex(S, SSH, 'diffie-hellman-group-exchange-sha1')                 ->
 	    ?dbg(?DBG_KEX, "hash: ~s\n", [fmt_binary(H, 16, 4)]),
 	    {ok, SSH#ssh { shared_secret = K,
 			   exchanged_hash = H,
-			   session_id = H }};
+			   session_id = sid(SSH, H) }};
 	{ok, _} ->
 	    {error, bad_message};
 	continue ->
@@ -737,7 +739,7 @@ ssh_main(S, User, SSH) ->
 		    gen_tcp:close(S);
 
 		{ok,M} when is_record(M, ssh_msg_kexinit) ->
-		    recv_negotiate(S, User, SSH, M, false);
+		    recv_negotiate(S, User, SSH, M, get(last_packet), false);
 
 		continue ->
 		    %% ignore and debug messages
@@ -1204,6 +1206,7 @@ recv_msg(S, SSH) ->
 		{ok, M} when record(M, ssh_msg_ignore) ->
 		    continue;
 		{ok, Msg} ->
+		    put(last_packet, Packet),
 		    ?dbg(?DBG_MESSAGE, "RECV_MSG: ~70p\n", [Msg]),
 		    {ok, Msg};
 		Error ->

@@ -52,6 +52,7 @@
           n_states = 0,
           inport,
           outport,
+          line,
 
           parse_actions,
           symbol_tab,
@@ -75,10 +76,12 @@
          }).
 
 -record(rule, {
-          n,       % rule n in the grammar file
+          n,             % rule n in the grammar file
           line,
-          symbols, % the names of symbols
-          tokens
+          symbols,       % the names of symbols
+          tokens,
+          is_guard,      % the action is a guard (not used)
+          is_well_formed % can be parsed (without macro expansion)
          }).
 
 -record(reduce, {
@@ -415,7 +418,7 @@ outfile(St0) ->
     case file:open(St0#yecc.outfile, [write, delayed_write]) of
         {ok, Outport} ->
             try 
-                generate(St0#yecc{outport = Outport})
+                generate(St0#yecc{outport = Outport, line = 0})
             catch 
                 throw: St1  ->
                     St1;
@@ -496,12 +499,15 @@ parse_grammar({rule, Rule, Tokens}, St0) ->
                           [_, #symbol{name = '$empty'}]  -> 0;
                           _ -> length(Rule) - 1
                       end,
-    St1 = check_action(Tokens, St0),
-    {Tokens1, St2} = subst_pseudo_vars(Tokens,
-                                       NmbrOfDaughters,
-                                       St1),
-    RuleDef = #rule{symbols = Rule, tokens = Tokens1},
-    St2#yecc{rules_list = [RuleDef | St2#yecc.rules_list]};
+    {IsGuard, IsWellFormed} = check_action(Tokens),
+    {Tokens1, St} = subst_pseudo_vars(Tokens,
+                                      NmbrOfDaughters,
+                                      St0),
+    RuleDef = #rule{symbols = Rule, 
+                    tokens = Tokens1, 
+                    is_guard = IsGuard, 
+                    is_well_formed = IsWellFormed},
+    St#yecc{rules_list = [RuleDef | St#yecc.rules_list]};
 parse_grammar({prec, Prec}, St) ->
     St#yecc{prec = Prec ++ St#yecc.prec};
 parse_grammar({#symbol{line = Line, name = Name}, Symbols}, St) ->
@@ -726,33 +732,38 @@ action_conflicts(St0) ->
     St = find_action_conflicts(St0),
     St#yecc{conflicts_done = true}.
 
-write_file(St) ->
-    #yecc{parse_actions = ParseActions, goto_tab = GotoTab} = St,
+-record(state_info, {reduce_only, state_repr, comment}).
+
+write_file(St0) ->
+    #yecc{parse_actions = ParseActions, goto_tab = GotoTab} = St0,
     Sorted = sort_parse_actions(ParseActions),
+    StateReprs = find_identical_shift_states(Sorted),
+    StateInfo = collect_some_state_info(Sorted, StateReprs),
+    StateJumps = find_partial_shift_states(Sorted, StateReprs),
+    UserCodeActions = find_user_code(Sorted, St0),
     #yecc{infile = Infile, outfile = Outfile,
           inport = Inport, outport = Outport,
-          nonterminals = Nonterminals} = St,
-    UserCodeActions = find_user_code(Sorted, St),
-    {N_lines, LastErlangCodeLine} = 
-        output_header(Outport, Inport, St),
-    io:nl(Outport),
-    output_file_directive(St, Outfile, N_lines+2),
-    io:nl(Outport),
-    output_actions(Outport, Sorted, St),
+          nonterminals = Nonterminals} = St0,
+    {St10, N_lines, LastErlangCodeLine} = 
+        output_header(Outport, Inport, St0),
+    St20 = nl(St10),
+    St25 = St20#yecc{line = N_lines+2},
+    St30 = output_file_directive(St25, Outfile, St25#yecc.line),
+    St40 = nl(St30),
+    St50 = output_actions(St40, StateJumps, StateInfo),
     Go0 = [{Symbol,{From,To}} || {{From,Symbol},To} <- ets:tab2list(GotoTab)],
     Go = family_with_domain(Go0, Nonterminals),
-    output_goto(Outport, Go, St),
-    output_inlined(St, UserCodeActions, Infile),
-    io:nl(Outport),
+    St60 = output_goto(St50, Go, StateInfo),
+    St70 = output_inlined(St60, UserCodeActions, Infile),
+    St = nl(St70),
     case LastErlangCodeLine of
         %% Just in case warnings or errors are emitted after the last
         %% line of the file.
         {last_erlang_code_line, Last_line} ->
             output_file_directive(St, Infile, Last_line);
         no_erlang_code ->
-            ok
-    end,
-    St.
+            St
+    end.
 
 yecc_ret(St0) ->
     St = check_expected(St0),
@@ -873,14 +884,13 @@ check_rhs(Rhs, St0) ->
                   end, St0, Rhs)
     end.
 
-%% This is not necessary, but if the compiler finds syntax errors in
-%% actions, ugly messages may be given.
-check_action(Tokens, St) ->
+check_action(Tokens) ->
     case erl_parse:parse_exprs(add_roberts_dot(Tokens, 0)) of
-        {error, {ErrorLine, Mod, What}} ->
-            add_error(ErrorLine, {error, Mod, What}, St);
-        {ok, _Exprs} ->
-            St
+        {error, _Error} ->
+            {false, false};
+        {ok, [Expr | Exprs]} ->
+            IsGuard = Exprs =:= [] andalso erl_lint:is_guard_test(Expr),
+            {IsGuard, true}
     end.
 
 add_roberts_dot([], Line) ->
@@ -1585,8 +1595,8 @@ find_reduce_reduce([#reduce{head = Categ1, prec = {P1, _}}=R1,
 
 %% Since the lookahead sets are disjoint (assured by
 %% find_action_conflicts), the order between actions can be chosen
-%% arbitrarily. nonassoc has to come last, though (but is later
-%% discarded!).
+%% almost arbitrarily. nonassoc has to come last, though (but is later
+%% discarded!). And shift has to come before reduce.
 sort_parse_actions([]) ->
     [];
 sort_parse_actions([{N, La_actions} | Tail]) ->
@@ -1598,6 +1608,140 @@ sort_parse_actions1(LaActions) ->
     Rs = filter(fun({_LA, A}) -> is_record(A, reduce) end, LaActions),
     Ns = filter(fun({_LA, A}) -> A =:= nonassoc end, LaActions),
     As ++ Ss ++ Rs ++ Ns.
+
+%% -> {State, StateRepr}. StateRepr has the same set of shift actions
+%% as State. No code will be output for State if State =/= StateRepr.
+find_identical_shift_states(StateActions) ->
+    L1 = [{Actions, State} || {State,Actions} <- StateActions],
+    {SO, NotSO} = lists:partition(fun({Actions,_States}) ->
+                                          shift_actions_only(Actions)
+                                  end, family(L1)),
+    R = [{State, hd(States)} || {_Actions, States} <- SO, State <- States]
+        ++ 
+        [{State, State} || {_Actions, States} <- NotSO, State <- States],
+    lists:keysort(1, R).
+
+-record(part_data, {name, eq_state, actions, n_actions, states}).
+
+%% Replace {SStates,Actions} with {SStates,{Actions,Jump}} where
+%% Jump describes which clauses that have been extracted from shift
+%% states so that they can be used from other states. Some space is
+%% saved.
+find_partial_shift_states(StateActionsL, StateReprs) ->
+    L = [{State, Actions} || {{State,Actions}, {State,State}} <-
+                                 lists:zip(StateActionsL, StateReprs),
+                             shift_actions_only(Actions)],
+    StateActions = sofs:family(L, [{state,[action]}]),
+    StateAction = sofs:family_to_relation(StateActions),
+
+    %% Two actions are equal if they occur in the same states:
+    Parts = sofs:partition(sofs:range(StateActions)),
+    PartsL = sofs:to_external(Parts),
+    %% Assign temporary names to the parts of the partition (of actions):
+    PartNameL = lists:zip(seq1(length(PartsL)), PartsL),
+    ActPartL = [{Action,PartName} || 
+                   {PartName,Actions} <- PartNameL,
+                   Action <- Actions],
+    ActionPartName = sofs:relation(ActPartL, [{action,partname}]),
+    StatePartName = sofs:relative_product(StateAction, ActionPartName),
+    PartInStates = sofs:relation_to_family(sofs:converse(StatePartName)),
+
+    %% Parts that equal all actions of a state:
+    PartActions = sofs:family(PartNameL, [{partname,[action]}]),
+    PartState = 
+        sofs:relative_product(PartActions, sofs:converse(StateActions)),
+    PartStates = sofs_family_with_domain(PartState, sofs:domain(PartActions)),
+
+    PartDataL = [#part_data{name = Nm, eq_state = EqS, actions = P, 
+                            n_actions = length(P), 
+                            states = ordsets:from_list(S)} || 
+                    {{Nm,P}, {Nm,S}, {Nm,EqS}} <- 
+                        lists:zip3(PartNameL, 
+                                   sofs:to_external(PartInStates),
+                                   sofs:to_external(PartStates))],
+    true = length(PartDataL) =:= length(PartNameL),
+    Ps = select_parts(PartDataL),
+
+    J1 = [{State, Actions, {jump_some,hd(States)}} ||
+             {_W, #part_data{actions = Actions, eq_state = [], 
+                             states = States}} <- Ps,
+             State <- States],
+    J2 = [{State, Actions, {jump_all,To}} ||
+             {_W, #part_data{actions = Actions, eq_state = EqS, 
+                             states = States}} <- Ps,
+             To <- EqS,
+             State <- States,
+             State =/= To],
+    J = lists:keysort(1, J1 ++ J2),
+
+    JumpStates = ordsets:from_list([S || {S,_,_} <- J]),
+    {JS, NJS} = 
+        sofs:partition(1, sofs:relation(StateActionsL, [{state, actions}]),
+                       sofs:set(JumpStates, [state])),
+    R = 
+        [{S, {Actions,jump_none}} || {S,Actions} <- sofs:to_external(NJS)]
+        ++
+        [{S, {Actions--Part, {Tag,ToS,Part}}} || 
+            {{S,Actions}, {S,Part,{Tag,ToS}}} <- 
+                lists:zip(sofs:to_external(JS), J)],
+    true = length(StateActionsL) =:= length(R),
+    lists:keysort(1, R).
+
+%% Very greedy. By no means optimal. 
+select_parts([]) ->
+    [];
+select_parts(PartDataL) ->
+    T1 = [{score(PD), PD} || PD <- PartDataL],
+    [{W, PD} | Ws] = lists:reverse(lists:keysort(1, T1)),
+    #part_data{n_actions = NActions, states = S} = PD,
+    if
+        W < 8 -> % don't bother
+            [];
+        true ->
+            %% Cannot extract more clauses from the chosen part's states:
+            NL = [D#part_data{states = NewS} || 
+                     {W1, #part_data{states = S0}=D} <- Ws,
+                     W1 > 0,
+                     (NewS = ordsets:subtract(S0, S)) =/= []],
+            if 
+                length(S) =:= 1; NActions =:= 1 ->
+                    select_parts(NL);
+                true -> 
+                    [{W,PD} | select_parts(NL)]
+            end
+    end.
+
+%% Does it pay off to extract clauses into a new function?
+%% Assumptions:
+%% - a call costs 8 (C = 8);
+%% - a clause (per action) costs 20 plus 8 (select) (Cl = 28);
+%% - a new function costs 20 (funinfo) plus 16 (select) (F = 36).
+%% A is number of actions, S is number of states.
+%% Special case (the part equals all actions of some state):
+%% C * (S - 1) < (S - 1) * A * Cl
+%% Normal case (introduce new function):
+%% F + A * Cl + C * S < S * A * Cl
+score(#part_data{n_actions = NActions, eq_state = [], states = S}) ->
+    (length(S) * NActions * 28) - (36 + NActions * 28 + length(S) * 8);
+score(#part_data{n_actions = NActions, states = S}) ->
+    ((length(S) - 1) * NActions * 28) - (8 * (length(S) - 1)).
+
+shift_actions_only(Actions) ->
+    length([foo || {_Ts,{shift,_,_,_,_}} <- Actions]) =:= length(Actions).
+
+collect_some_state_info(StateActions, StateReprs) ->
+    RF = fun({_LA, A}) -> is_record(A, reduce) end,
+    L = [{State, 
+          begin
+              RO = lists:all(RF, LaActions),
+              %% C is currently always ""; identical states are all shift.
+              C = [io_lib:fwrite(<<" %% ~w\n">>, [State]) || 
+                      true <- [RO], Repr =/= State],
+              #state_info{reduce_only = RO, state_repr = Repr, comment = C}
+          end} ||
+            {{State, LaActions}, {State, Repr}} <-
+                lists:zip(StateActions, StateReprs)],
+    list_to_tuple(L).
 
 conflict_error(Conflict, St0) ->
     St1 = add_conflict(Conflict, St0),
@@ -1692,7 +1836,7 @@ format_conflict({Symbol, N, Reduce, Confl}) ->
 %% "1.1", parsetools-1.4:
 %% - the prologue file has been updated;
 %% - nonassoc is new;
-%% - different order or clauses;
+%% - different order of clauses;
 %% - never more than one clause matching a given symbol in a given state;
 %% - file attributes relate messages to .yrl file;
 %% - actions put in inlined functions;
@@ -1705,78 +1849,105 @@ format_conflict({Symbol, N, Reduce, Confl}) ->
 %%   - yeccgoto() has been split on one function per nonterminal;
 %%   - several minor changes have made the loaded code smaller.
 %% - the include file yeccpre.hrl has been changed incompatibly.
+%%
+%% "1.3", parsetools-1.4.4:
+%% - the generated code has been changed as follows:
+%%   - yeccgoto_T() no longer returns the next state, but calls yeccpars_S();
+%%   - yeccpars2() is not called when it is known which yeccpars2_S() to call;
+%%   - "__Stack" has been substituted for "Stack";
+%%   - several states can share yeccpars2_S_cont(), which reduces code size;
+%%   - instead if calling lists:nthtail() matching code is emitted.
 
--define(CODE_VERSION, "1.2").
+-define(CODE_VERSION, "1.3").
 -define(YECC_BUG(M, A), 
-        append([" erlang:error({yecc_bug,\"",?CODE_VERSION,"\",",
-                io_lib:fwrite(M, A), "}).\n\n"])).
+        iolist_to_binary([" erlang:error({yecc_bug,\"",?CODE_VERSION,"\",",
+                          io_lib:fwrite(M, A), "}).\n\n"])).
 
 %% Returns number of written newlines.
-output_header(Outport, Inport, St) when St#yecc.includefile =:= [] ->
-    #yecc{infile = Infile, module = Module} = St,
-    io:fwrite(Outport, <<"-module(~w).\n">>, [Module]),
-    io:fwrite(Outport,
-              <<"-export([parse/1, parse_and_scan/1, format_error/1]).\n">>,
-              []),
-    {N_lines_1, LastErlangCodeLine} = 
-        case St#yecc.erlang_code of 
+output_header(Outport, Inport, St0) when St0#yecc.includefile =:= [] ->
+    #yecc{infile = Infile, module = Module} = St0,
+    St10 = fwrite(St0, <<"-module(~w).\n">>, [Module]),
+    St20 = 
+        fwrite(St10,
+               <<"-export([parse/1, parse_and_scan/1, format_error/1]).\n">>,
+               []),
+    {St25, N_lines_1, LastErlangCodeLine} = 
+        case St20#yecc.erlang_code of 
             none ->
-                {0, no_erlang_code};
+                {St20, 0, no_erlang_code};
             Next_line ->
-                output_file_directive(St, Infile, Next_line-1),
+                St_10 = output_file_directive(St20, Infile, Next_line-1),
                 Nmbr_of_lines = include1([], Inport, Outport),
-                {Nmbr_of_lines + 1, 
+                {St_10, Nmbr_of_lines + 1, 
                  {last_erlang_code_line, Next_line+Nmbr_of_lines}}
     end,
-    io:nl(Outport),
+    St30 = nl(St25),
     IncludeFile = 
         filename:join([code:lib_dir(parsetools), "include","yeccpre.hrl"]),
     %% Maybe one could assume there are no warnings in this file.
-    output_file_directive(St, IncludeFile, 0),
+    St = output_file_directive(St30, IncludeFile, 0),
     N_lines_2 = include(St, IncludeFile, Outport),
-    {4 + N_lines_1 + N_lines_2, LastErlangCodeLine};
-output_header(Outport, Inport, St) ->
-    #yecc{infile = Infile, module = Module, includefile = Includefile} = St,
-    io:fwrite(Outport, <<"-module(~w).\n">>, [Module]),
-    output_file_directive(St, Includefile, 0),
-    N_lines_1 = include(St, Includefile, Outport),
-    io:nl(Outport),
-    case St#yecc.erlang_code of 
+    {St, 4 + N_lines_1 + N_lines_2, LastErlangCodeLine};
+output_header(Outport, Inport, St0) ->
+    #yecc{infile = Infile, module = Module, includefile = Includefile} = St0,
+    St10 = fwrite(St0, <<"-module(~w).\n">>, [Module]),
+    St20 = output_file_directive(St10, Includefile, 0),
+    N_lines_1 = include(St20, Includefile, Outport),
+    St30 = nl(St20),
+    case St30#yecc.erlang_code of 
         none ->
-            {N_lines_1 + 3, no_erlang_code};
+            {St30, N_lines_1 + 3, no_erlang_code};
         Next_line ->
-            output_file_directive(St, Infile, Next_line-1),
+            St = output_file_directive(St30, Infile, Next_line-1),
             Nmbr_of_lines = include1([], Inport, Outport),
-            {Nmbr_of_lines + 1 + N_lines_1 + 3, 
+            {St, Nmbr_of_lines + 1 + N_lines_1 + 3, 
              {last_erlang_code_line, Next_line+Nmbr_of_lines}}
     end.
 
-output_goto(Port, [{_Nonterminal, []} | Go], St) ->
-    output_goto(Port, Go, St);
-output_goto(Port, [{Nonterminal, List} | Go], St) ->
+output_goto(St, [{_Nonterminal, []} | Go], StateInfo) ->
+    output_goto(St, Go, StateInfo);
+output_goto(St0, [{Nonterminal, List} | Go], StateInfo) ->
     F = function_name(yeccgoto, Nonterminal),
-    output_goto1(Port, List, F, true),
-    output_goto_fini(Port, F, Nonterminal, St),
-    output_goto(Port, Go, St);
-output_goto(_Port, [], _St) ->
-    ok.
+    St10 = output_goto1(St0, List, F, StateInfo, true),
+    St = output_goto_fini(F, Nonterminal, St10),
+    output_goto(St, Go, StateInfo);
+output_goto(St, [], _StateInfo) ->
+    St.
 
-output_goto1(Port, [{From, To} | Tail], F, IsFirst) ->
-    delim(Port, IsFirst),
-    io:fwrite(Port, <<"~w(~w) -> ~w">>, [F, From, To]),
-    output_goto1(Port, Tail, F, false);
-output_goto1(_Port, [], _F, _IsFirst) ->
-    ok.
+output_goto1(St0, [{From, To} | Tail], F, StateInfo, IsFirst) ->
+    St10 = delim(St0, IsFirst),
+    {To, ToInfo} = lookup_state(StateInfo, To),
+    #state_info{reduce_only = RO, state_repr = Repr, comment = C} = ToInfo,
+    if
+        RO -> 
+            %% Reduce actions do not use the state, so we just pass
+            %% the old (now bogus) on:
+            FromS = io_lib:fwrite("~w=_S", [From]),
+            ToS = "_S";
+        true ->
+            FromS = io_lib:fwrite("~w", [From]),
+            ToS = io_lib:fwrite("~w", [To])
+    end,
+    St20 = fwrite(St10, <<"~w(~s, Cat, Ss, Stack, T, Ts, Tzr) ->\n">>, 
+                  [F,FromS]),
+    St30 = fwrite(St20, <<"~s">>, [C]),
+    %% Short-circuit call to yeccpars2:
+    St = fwrite(St30, <<" yeccpars2_~w(~s, Cat, Ss, Stack, T, Ts, Tzr)">>, 
+                [Repr, ToS]),
+    output_goto1(St, Tail, F, StateInfo, false);
+output_goto1(St, [], _F, _StateInfo, _IsFirst) ->
+    St.
 
-output_goto_fini(Port, F, NT, #yecc{includefile_version = {1,1}}) ->
+output_goto_fini(F, NT, #yecc{includefile_version = {1,1}}=St0) ->
     %% Backward compatibility.
-    delim(Port, false),
-    io:fwrite(Port, <<"~w(State) ->\n">>, [F]),
-    io:fwrite(Port, 
-              ?YECC_BUG('{~w, State, missing_in_goto_table}', [NT]),
-              []);
-output_goto_fini(Port, _F, _NT, _St) ->
-    io:fwrite(Port, <<".\n\n">>, []).
+    St10 = delim(St0, false),
+    St = fwrite(St10, <<"~w(State, _Cat, _Ss, _Stack, _T, _Ts, _Tzr) ->\n">>,
+                [F]),
+    fwrite(St, 
+           ?YECC_BUG(<<"{~w, State, missing_in_goto_table}">>, [NT]),
+           []);
+output_goto_fini(_F, _NT, St) ->
+    fwrite(St, <<".\n\n">>, []).
 
 %% Find actions having user code.
 find_user_code(ParseActions, St) ->
@@ -1807,178 +1978,229 @@ find_user_code2([{La, #reduce{rule_nmbr = RuleNmbr,
 find_user_code2([_ | T]) ->
     find_user_code2(T).
 
-output_actions(Port, StateActions0, St) ->
-    StateActions = find_identical_shift_states(StateActions0),
-    foreach(fun({{State,IStates}, _Actions}) ->
-                    output_state_selection(Port, State, IStates)
-            end, StateActions),
-    io:fwrite(Port, <<"yeccpars2(Other, _, _, _, _, _, _) ->\n">>, []),
-    io:fwrite(Port,
-              ?YECC_BUG('{missing_state_in_action_table, Other}', []), 
-              []),
+output_actions(St0, StateJumps, StateInfo) ->
+    %% Not all the clauses of the dispatcher function yeccpars2() can
+    %% be reached. Only when shifting, that is, calling yeccpars1(),
+    %% will yeccpars2() be called.
+    Y2CL = [NewState || {_State,{Actions,_J}} <- StateJumps,
+                        {_LA, #shift{state = NewState}} <- Actions],
+    Y2CS = ordsets:from_list([0 | Y2CL]),
+    Y2S = ordsets:from_list([S || {S,_} <- StateJumps]),
+    NY2CS = ordsets:subtract(Y2S, Y2CS),
+    Sel = [{S,true} || S <- ordsets:to_list(Y2CS)] ++
+          [{S,false} || S <- ordsets:to_list(NY2CS)],
+                                    
+    SelS = [{State,Called} || 
+               {{State,_JActions}, {State,Called}} <- 
+                   lists:zip(StateJumps, lists:keysort(1, Sel))],
+    St10 = foldl(fun({State, Called}, St_0) ->
+                         {State, #state_info{state_repr = IState}} = 
+                             lookup_state(StateInfo, State),
+                         output_state_selection(St_0, State, IState, Called)
+            end, St0, SelS),
+    St20 = fwrite(St10, <<"yeccpars2(Other, _, _, _, _, _, _) ->\n">>, []),
+    St = fwrite(St20,
+                ?YECC_BUG(<<"{missing_state_in_action_table, Other}">>, []),
+                []),
+    foldl(fun({State, JActions}, St_0) ->
+                  {State, #state_info{state_repr = IState}} = 
+                      lookup_state(StateInfo, State),
+                  output_state_actions(St_0, State, IState, 
+                                       JActions, StateInfo)
+          end, St, StateJumps).
 
-    foreach(fun({SIS, Actions}) ->
-                    output_state_actions(Port, SIS, Actions, St)
-            end, StateActions).
+output_state_selection(St0, State, IState, Called) ->
+    Comment = [<<"%% ">> || false <- [Called]],
+    St = fwrite(St0, <<"~syeccpars2(~w=S, Cat, Ss, Stack, T, Ts, Tzr) ->\n">>,
+                [Comment, State]),
+    fwrite(St, 
+           <<"~s yeccpars2_~w(S, Cat, Ss, Stack, T, Ts, Tzr);\n">>, 
+           [Comment, IState]).
 
-%% Replace {State,Actions} with {{State,[IState]},Actions},
-%% where each IState has the same actions as State.
-find_identical_shift_states(StateActions) ->
-    L1 = [{Actions,State} || {State,Actions} <- StateActions,
-                             shift_actions_only(Actions)],
-    Ss1 = [[{State,States} || State <- States] || 
-              {_Actions,States} <- family(L1)],
-    Ss = lists:flatten(Ss1),
-    D = [{State,[State]} || {State,_Actions} <- StateActions],
-    L = sofs:to_external(sofs:family_union(sofs:family(Ss), sofs:family(D))),
-    [{{State,States},Actions} || 
-       {{State,States},{State,Actions}} <- lists:zip(L, StateActions)].
+output_state_actions(St, State, State, {Actions,jump_none}, SI) ->
+    output_state_actions1(St, State, Actions, true, normal, SI);
+output_state_actions(St0, State, State, {Actions, Jump}, SI) ->
+    {Tag, To, Common} = Jump,
+    CS = case Tag of
+             jump_some -> list_to_atom(lists:concat([cont_, To]));
+             jump_all -> To
+         end,
+    St = output_state_actions1(St0, State, Actions, true, {to, CS}, SI),
+    if 
+        To =:= State ->
+            output_state_actions1(St, CS, Common, true, normal, SI);
+        true ->
+            St
+    end;
+output_state_actions(St, State, JState, _XActions, _SI) ->
+    fwrite(St, <<"%% yeccpars2_~w: see yeccpars2_~w\n\n">>, [State, JState]).
 
-shift_actions_only(Actions) ->
-    length([foo || {_Ts,{shift,_,_,_,_}} <- Actions]) =:= length(Actions).
+output_state_actions1(St, State, [], _IsFirst, normal, _SI) ->
+    output_state_actions_fini(State, St);
+output_state_actions1(St0, State, [], IsFirst, {to, ToS}, _SI) ->
+    St = delim(St0, IsFirst),
+    fwrite(St, 
+           <<"yeccpars2_~w(S, Cat, Ss, Stack, T, Ts, Tzr) ->\n"
+            " yeccpars2_~w(S, Cat, Ss, Stack, T, Ts, Tzr).\n\n">>,
+           [State, ToS]);
+output_state_actions1(St0, State, [{_, #reduce{}=Action}], 
+                      IsFirst, _End, SI) ->
+    St = output_reduce(St0, State, "Cat", Action, IsFirst, SI),
+    fwrite(St, <<".\n\n">>, []);
+output_state_actions1(St0, State, [{Lookahead,Action} | Tail],
+                      IsFirst, End, SI) ->
+    {_, St} = 
+        foldl(fun(Terminal, {IsFst,St_0}) ->
+                      {false,
+                       output_action(St_0, State, Terminal, Action, IsFst,SI)}
+              end, {IsFirst,St0}, Lookahead),
+    output_state_actions1(St, State, Tail, false, End, SI).
 
-output_state_selection(Port, State, [IState | _]) ->
-    io:fwrite(Port, <<"yeccpars2(~w=S, Cat, Ss, Stack, T, Ts, Tzr) ->\n">>,
-              [State]),
-    io:fwrite(Port, 
-              <<" yeccpars2_~w(S, Cat, Ss, Stack, T, Ts, Tzr);\n">>, 
-              [IState]).
+output_action(St, State, Terminal, #reduce{}=Action, IsFirst, SI) ->
+    output_reduce(St, State, Terminal, Action, IsFirst, SI);
+output_action(St0, State, Terminal, #shift{state = NewState}, IsFirst, _SI) ->
+    St10 = delim(St0, IsFirst),
+    St = fwrite(St10, <<"yeccpars2_~w(S, ~s, Ss, Stack, T, Ts, Tzr) ->\n">>,
+                [State, quoted_atom(Terminal)]),
+    output_call_to_includefile(NewState, St);
+output_action(St0, State, Terminal, accept, IsFirst, _SI) ->
+    St10 = delim(St0, IsFirst),
+    St = fwrite(St10, 
+                <<"yeccpars2_~w(_S, ~s, _Ss, Stack,  _T, _Ts, _Tzr) ->\n">>,
+                [State, quoted_atom(Terminal)]),
+    fwrite(St, <<" {ok, hd(Stack)}">>, []);
+output_action(St, _State, _Terminal, nonassoc, _IsFirst, _SI) ->
+    St.
 
-output_state_actions(Port, {State,[State]}, Actions, St) ->
-    output_state_actions1(Port, State, Actions, true, St);
-output_state_actions(Port, {State,[State | _]}, Actions, St) ->
-    output_state_actions1(Port, State, Actions, true, St);
-output_state_actions(Port, {State,[IState | _]}, _Actions, _St) ->
-    io:fwrite(Port, <<"%% yeccpars2_~w: see yeccpars2_~w\n\n">>, 
-              [State, IState]).
-
-output_state_actions1(Port, State, [], _IsFirst, St) ->
-    output_state_actions_fini(Port, State, St);
-output_state_actions1(Port, State, [{_, #reduce{}=Action}], IsFirst, St) ->
-    output_reduce(Port, State, "Cat", Action, IsFirst, St),
-    io:fwrite(Port, <<".\n\n">>, []);
-output_state_actions1(Port, State, [{Lookahead,Action} | Tail], IsFirst, St) ->
-    foldl(fun(Terminal, IsFst) ->
-                  output_action(Port, State, Terminal, Action, IsFst, St),
-                  false
-          end, IsFirst, Lookahead),
-    output_state_actions1(Port, State, Tail, false, St).
-
-output_action(Port, State, Terminal, #reduce{}=Action, IsFirst, St) ->
-    output_reduce(Port, State, Terminal, Action, IsFirst, St);
-output_action(Port, State, Terminal, #shift{state = NewState}, IsFirst, St) ->
-    delim(Port, IsFirst),
-    io:fwrite(Port, <<"yeccpars2_~w(S, ~s, Ss, Stack, T, Ts, Tzr) ->\n">>,
-              [State, quoted_atom(Terminal)]),
-    output_call_to_includefile(Port, NewState, St);
-output_action(Port, State, Terminal, accept, IsFirst, _St) ->
-    delim(Port, IsFirst),
-    io:fwrite(Port, 
-              <<"yeccpars2_~w(_S, ~s, _Ss, Stack,  _T, _Ts, _Tzr) ->\n">>,
-              [State, quoted_atom(Terminal)]),
-    io:fwrite(Port, <<" {ok, hd(Stack)}">>, []);
-output_action(_Port, _State, _Terminal, nonassoc, _IsFirst, _St) ->
-    ok.
-
-output_call_to_includefile(Port, NewState, 
-                           #yecc{includefile_version = {1,1}}) ->
+output_call_to_includefile(NewState, #yecc{includefile_version = {1,1}}=St) ->
     %% Backward compatibility.
-    io:fwrite(Port, <<" yeccpars1(Ts, Tzr, ~w, [S | Ss], [T | Stack])">>, 
-              [NewState]);
-output_call_to_includefile(Port, NewState, _St) ->
-    io:fwrite(Port, <<" yeccpars1(S, ~w, Ss, Stack, T, Ts, Tzr)">>, 
-              [NewState]).
+    fwrite(St, <<" yeccpars1(Ts, Tzr, ~w, [S | Ss], [T | Stack])">>, 
+           [NewState]);
+output_call_to_includefile(NewState, St) ->
+    fwrite(St, <<" yeccpars1(S, ~w, Ss, Stack, T, Ts, Tzr)">>, 
+           [NewState]).
 
-output_state_actions_fini(Port, State, #yecc{includefile_version = {1,1}}) ->
+output_state_actions_fini(State, #yecc{includefile_version = {1,1}}=St0) ->
     %% Backward compatibility.
-    delim(Port, false),
-    io:fwrite(Port, <<"yeccpars2_~w(_, _, _, _, T, _, _) ->\n">>, [State]),
-    io:fwrite(Port, <<" yeccerror(T).\n\n">>, []);
-output_state_actions_fini(Port, _State, _St) ->    
-    io:fwrite(Port, <<".\n\n">>, []).
+    St10 = delim(St0, false),
+    St = fwrite(St10, <<"yeccpars2_~w(_, _, _, _, T, _, _) ->\n">>, [State]),
+    fwrite(St, <<" yeccerror(T).\n\n">>, []);
+output_state_actions_fini(_State, St) ->
+    fwrite(St, <<".\n\n">>, []).
 
-output_reduce(Port, State, Terminal0, 
+output_reduce(St0, State, Terminal0, 
               #reduce{rule_nmbr = RuleNmbr, 
                       head = Head, 
                       nmbr_of_daughters = NmbrOfDaughters},
-              IsFirst, St) ->
-    delim(Port, IsFirst),
+              IsFirst, StateInfo) ->
+    St10 = delim(St0, IsFirst),
     Terminal = if 
                    is_atom(Terminal0) -> quoted_atom(Terminal0);
                    true -> Terminal0
                end,
-    Tokens = tokens(RuleNmbr, St),
-    io:fwrite(Port,
-              <<"yeccpars2_~w(_S, ~s, Ss, Stack, T, Ts, Tzr) ->\n">>,
-              [State, Terminal]),
-    NewStack = case Tokens of
-                   [{var, _, '__1'}] when NmbrOfDaughters =:= 1 ->
-                       "Stack";
-                   _ ->
-                       io:fwrite(Port, <<" NewStack = ~w(Stack),\n">>, 
-                                 [inlined_function_name(State, Terminal0)]),
-                       "NewStack"
+    St20 = fwrite(St10,
+                  <<"yeccpars2_~w(_S, ~s, Ss, Stack, T, Ts, Tzr) ->\n">>,
+                  [State, Terminal]),
+    St30 = 
+        if
+            NmbrOfDaughters < 2 ->
+                Ns = "Ss",
+                St20;
+            true ->
+                Ns = "Nss",
+                Tmp = string:join(lists:duplicate(NmbrOfDaughters - 1, "_"),
+                                  ","),
+                fwrite(St20, <<" [~s|Nss] = Ss,\n">>, [Tmp])
+        end,
+    St40 = case tokens(RuleNmbr, St30) of
+               [{var, _, '__1'}] when NmbrOfDaughters =:= 1 ->
+                   NewStack = "Stack",
+                   St30;
+               _ ->
+                   NewStack = "NewStack",
+                   fwrite(St30, <<" NewStack = ~w(Stack),\n">>, 
+                          [inlined_function_name(State, Terminal0)])
                end,
-    Ns = if
-             NmbrOfDaughters < 2 ->
-                 "Ss";
-             NmbrOfDaughters =:= 2 ->
-                 io:fwrite(Port, <<" Nss = tl(Ss),\n">>, []),
-                 "Nss";
-             true ->
-                 io:fwrite(Port, <<" Nss = lists:nthtail(~w, Ss),\n">>,
-                           [NmbrOfDaughters - 1]),
-                 "Nss"
-         end,
     if 
         NmbrOfDaughters =:= 0 ->
-            Next_state = goto(State, Head, St),
-            io:fwrite(Port,
-                      <<" yeccpars2(~w, ~s, [~w | Ss], ~s, T, Ts, Tzr)">>,
-                      [Next_state, Terminal, State, NewStack]);
+            NextState = goto(State, Head, St40),
+            {NextState, I} = lookup_state(StateInfo, NextState),
+            #state_info{reduce_only = RO, state_repr = Repr, comment = C} = I,
+            %% Reduce actions do not use the state, so we just pass
+            %% the old (now bogus) on:
+            if
+                RO -> NextS = "_S";
+                true -> NextS = io_lib:fwrite("~w", [NextState])
+            end,
+            St = fwrite(St40, <<"~s">>, [C]),
+            %% Short-circuit call to yeccpars2:
+            fwrite(St,
+                   <<" yeccpars2_~w(~s, ~s, [~w | Ss], ~s, T, Ts, Tzr)">>,
+                   [Repr, NextS, Terminal, State, NewStack]);
         true ->
-            io:fwrite(Port, 
-                      <<" yeccpars2(~w(hd(~s)), ~s, ~s, ~s, T, Ts, Tzr)">>, 
-                      [function_name(yeccgoto, Head), Ns,
-                       Terminal, Ns, NewStack])
+            fwrite(St40, 
+                   <<" ~w(hd(~s), ~s, ~s, ~s, T, Ts, Tzr)">>,
+                   [function_name(yeccgoto, Head), Ns,
+                    Terminal, Ns, NewStack])
     end.
 
-delim(_Port, true) ->
-    ok;
-delim(Port, false) ->
-    io:fwrite(Port, <<";\n">>, []).
+delim(St, true) ->
+    St;
+delim(St, false) ->
+    fwrite(St, <<";\n">>, []).
 
 quoted_atom(Atom) ->
     io_lib:fwrite(<<"~w">>, [Atom]).
     
 output_inlined(St, UserCodeActions, Infile) ->
-    foreach(fun(#user_code{funname = InlinedFunctionName, 
-                                 action = Action}) ->
-                          output_inlined(St, InlinedFunctionName, 
-                                         Action, Infile)
-                  end, UserCodeActions).
+    foldl(fun(#user_code{funname = InlinedFunctionName, 
+                         action = Action}, St_0) ->
+                  output_inlined(St_0, InlinedFunctionName, 
+                                 Action, Infile)
+          end, St, UserCodeActions).
 
 %% Each action with user code is placed in a separate inlined function.
 %% The purpose is to be able to pinpoint errors and warnings correctly.
-output_inlined(St, FunctionName, Reduce, Infile) ->
-    Port = St#yecc.outport,
+output_inlined(St0, FunctionName, Reduce, Infile) ->
     #reduce{rule_nmbr = RuleNmbr, nmbr_of_daughters = N_daughters} = Reduce,
-    #rule{tokens = Tokens} = get_rule(RuleNmbr, St),
+    #rule{tokens = Tokens, is_well_formed = WF} = get_rule(RuleNmbr, St0),
     Line0 = first_line(Tokens),
-    CodeStartLine = if Line0 < 3 -> 0; true -> Line0 - 3 end,
-    io:fwrite(Port, <<"-compile({inline,{~w,1}}).\n">>, [FunctionName]),
-    output_file_directive(St, Infile, CodeStartLine),
-    Stack = 
-        case N_daughters of
-            0 -> 
-                "Stack";
-            _ -> 
-                A = concat(flatmap(fun(I) -> [",__",I] end, 
-                                               lists:seq(N_daughters, 1, -1))),
-                append(["[", tl(A), " | Stack]"])
-        end,
-    io:fwrite(Port, <<"~w(~s) ->\n [begin\n  ~s\n  end | Stack].\n\n">>, 
-              [FunctionName, Stack, pp_tokens(Tokens, Line0)]).
+    NLines = last_line(Tokens) - Line0,
+
+    St5 = if 
+              WF ->
+                  St0;
+              not WF -> 
+                  %% The compiler will generate an error message for
+                  %% the inlined function (unless the reason that yecc
+                  %% failed to parse the action was some macro). The
+                  %% line number of the message will be correct since
+                  %% we are keeping track of the current line of the
+                  %% output file...
+                  #yecc{outfile = Outfile, line = CurLine} = St0,
+                  output_file_directive(St0, Outfile, CurLine)
+          end,
+
+    CodeStartLine = lists:max([0, Line0 - 4]),
+    St10 = fwrite(St5, <<"-compile({inline,{~w,1}}).\n">>, [FunctionName]),
+    St20 = output_file_directive(St10, Infile, CodeStartLine),
+    St30 = fwrite(St20, <<"~w(__Stack0) ->\n">>, [FunctionName]),
+    %% Currently the (old) inliner emits less code if matching the
+    %% stack inside the body rather than in the head...
+    St40 = case N_daughters of
+               0 -> 
+                   Stack = "__Stack0",
+                   St30;
+               _ -> 
+                   Stack = "__Stack",
+                   A = concat(flatmap(fun(I) -> [",__",I] end, 
+                                      lists:seq(N_daughters, 1, -1))),
+                   fwrite(St30, <<" ~s = __Stack0,\n">>, 
+                          [append(["[", tl(A), " | __Stack]"])])
+           end,
+    St = St40#yecc{line = St40#yecc.line + NLines},
+    fwrite(St, <<" [begin\n  ~s\n  end | ~s].\n\n">>, 
+           [pp_tokens(Tokens, Line0), Stack]).
 
 inlined_function_name(State, "Cat") ->
     inlined_function_name(State, "");
@@ -2213,13 +2435,34 @@ pp_sep(_Line, _Line0, _T0) ->
     " ".
 
 output_file_directive(St, Filename, Line) when St#yecc.file_attrs ->
-    io:fwrite(St#yecc.outport, <<"-file(~s, ~w).\n">>, 
-              [format_filename(Filename), Line]);
-output_file_directive(_St, _Filename, _Line) ->
-    ok.
+    fwrite(St, <<"-file(~s, ~w).\n">>, 
+           [format_filename(Filename), Line]);
+output_file_directive(St, _Filename, _Line) ->
+    St.
 
 first_line(Tokens) ->
     element(2, hd(Tokens)).
+
+last_line(Tokens) ->
+    element(2, lists:last(Tokens)).
+
+%% Keep track of the current line in the generated file.
+fwrite(#yecc{outport = Outport, line = Line}=St, Format, Args) ->
+    NLines = count_nl(Format),
+    io:fwrite(Outport, Format, Args),
+    St#yecc{line = Line + NLines}.
+
+%% Assumes \n is used, and never ~n.
+count_nl(<<$\n,Rest/binary>>) ->
+    1 + count_nl(Rest);
+count_nl(<<_,Rest/binary>>) ->
+    count_nl(Rest);
+count_nl(<<>>) ->
+    0.
+
+nl(#yecc{outport = Outport, line = Line}=St) ->
+    io:nl(Outport),
+    St#yecc{line = Line + 1}.
 
 format_filename(Filename) ->
     io_lib:write_string(filename:flatten(Filename)).
@@ -2257,12 +2500,19 @@ inverse(L) ->
 family(L) ->
     sofs:to_external(sofs:relation_to_family(sofs:relation(L))).
 
+seq1(To) when To < 1 ->
+    [];
+seq1(To) ->
+    lists:seq(1, To).
+
 count(From, L) ->
     lists:zip(L, lists:seq(From, length(L)-1+From)).
 
 family_with_domain(L, DL) ->
-    D = sofs:set(DL),
-    R = sofs:restriction(sofs:relation(L), D),
+    sofs:to_external(sofs_family_with_domain(sofs:relation(L), sofs:set(DL))).
+
+sofs_family_with_domain(R0, D) ->
+    R = sofs:restriction(R0, D),
     F = sofs:relation_to_family(R),
     FD = sofs:constant_function(D, sofs:from_term([])),
-    sofs:to_external(sofs:family_union(F, FD)).
+    sofs:family_union(F, FD).

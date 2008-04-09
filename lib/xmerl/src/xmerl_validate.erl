@@ -434,6 +434,14 @@ parse({'*',SubRule},XMLS,Rules,WSaction,S)->
 parse({'+',SubRule},XMLS,Rules,WSaction,S) ->
     plus(SubRule,XMLS,Rules,WSaction,S);
 parse({choice,CHOICE},XMLS,Rules,WSaction,S)->
+%    case XMLS of
+%	[] ->
+%	    io:format("~p~n",[{choice,CHOICE,[]}]);
+%	[#xmlElement{name=Name,pos=Pos}|_] ->
+%	    io:format("~p~n",[{choice,CHOICE,{Name,Pos}}]);
+%	[#xmlText{value=V}|_] ->
+%	    io:format("~p~n",[{choice,CHOICE,{text,V}}])
+%    end,
     choice(CHOICE,XMLS,Rules,WSaction,S);
 parse(empty,[],_Rules,_WSaction,_S) ->
     {[],[]};
@@ -443,7 +451,7 @@ parse({seq,List},XMLS,Rules,WSaction,S) ->
     seq(List,XMLS,Rules,WSaction,S);
 parse(El_Name,[#xmlElement{name=El_Name}=XML|T],Rules,_WSaction,S) 
   when atom(El_Name)->
-    case do_validation(read_rules(Rules,el_name(XML)),XML,Rules,S) of
+    case do_validation(read_rules(Rules,El_Name),XML,Rules,S) of
 	{error,R} ->
 %	    {error,R};
 	    exit(R);
@@ -497,6 +505,7 @@ parse_any(El,_Rules,_S) ->
     [El].
 
 
+
 %% XXX remove first function clause
 % choice(_Choice,[#xmlText{}=T|R],_Rules) ->
 %     {[T],R};
@@ -509,7 +518,13 @@ choice([CH|CHS],[_XML|_T]=XMLS,Rules,WSaction,S)->
 	    choice(CHS,XMLS,Rules,WSaction,S); %% XXX add a case {[],XML}
 	{[],XMLS1} -> %% Maybe a sequence with * or ? elements that
                       %% didn't match
-	    choice(CHS,XMLS1,Rules,WSaction,S);
+ 	    case CHS of
+ 		[] -> % choice has succeded but without matching XMLS1
+ 		    {[],XMLS1};
+ 		_ -> % there are more choice alternatives to try with
+ 		    choice(CHS,XMLS1,Rules,WSaction,S)
+	    end;
+%%	    choice(CHS,XMLS1,Rules,WSaction,S);
 	{Tree,XMLS2}->
 	    {WS2,XMLS3} = whitespace_action(XMLS2,ws_action(WSaction,remove)),
 	    {WS2++[Tree]++WS,XMLS3}
@@ -550,7 +565,13 @@ star(Rule,XMLS,Rules,WSaction,Tree,S) ->
 	    {WS++Tree++A,N};
 	{error, _E}->
 	    %%io:format("Error~p~n",[_E]),
-	    {WS++[Tree],[]};
+%	    {WS++[Tree],[]};
+	    case  whitespace_action(XMLS,ws_action(WSaction,remove)) of
+		{[],_} ->
+		    {WS++[Tree],XMLS};
+		{WS2,XMLS2} ->
+		    {WS2++[Tree],XMLS2}
+	    end;
 	{Tree1,XMLS2}->
 	    star(Rule,XMLS2,Rules,WSaction,Tree++WS++[Tree1],S)
     end.

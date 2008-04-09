@@ -210,14 +210,16 @@ ssmp1_mgc_event_sequence(text, tcp) ->
 	     {expect_accept, any},
              {expect_receive, "service-change-request",  {ScrVerifyFun, 5000}},
              {send, "service-change-reply",              ServiceChangeRep},
-	     {expect_nothing, 1000}, 
+	     {expect_nothing, timer:seconds(1)}, 
              {send, "notify request",                    NotifyReq},
              {expect_receive, "notify reply: segment 1", {NrVerifyFun1, 2000}},
              {expect_receive, "notify reply: segment 2", {NrVerifyFun2, 1000}},
              {send, "segment reply 1",                   SegmentRep1},
+	     {sleep, 100}, 
              {send, "segment reply 2",                   SegmentRep2},
+	     {sleep, 100}, 
 	     {send, "transaction-ack",                   TransAck},
-             {expect_closed,  5000},
+             {expect_closed,  timer:seconds(5)},
              disconnect
             ],
     EvSeq.
@@ -484,8 +486,8 @@ ssmp1_mg_event_sequence(text, tcp) ->
     AckVerify = ssmp1_mg_verify_ack_fun(), 
     EvSeq = [
              {debug, true},
-             %% {megaco_trace, disable},
-             {megaco_trace, max},
+             {megaco_trace, disable},
+             %% {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
              start_transport,
@@ -586,7 +588,9 @@ ssmp1_mg_do_verify_scr(AR) ->
     end.
 
 ssmp1_mg_verify_notify_request_fun(Tid1, Tid2) ->
-    fun(Req) -> ssmp1_mg_verify_notify_request(Req, Tid1, Tid2) end.
+    fun(Req) -> 
+	    ssmp1_mg_verify_notify_request(Req, Tid1, Tid2) 
+    end.
 	     
 ssmp1_mg_verify_notify_request(
   {handle_trans_request, _CH, ?VERSION, [AR1, AR2]}, Tid1, Tid2) ->
@@ -809,14 +813,15 @@ ssmp2_mgc_event_sequence(text, tcp) ->
 	     {expect_accept, any},
              {expect_receive, "service-change-request",  {ScrVerifyFun, 5000}},
              {send, "service-change-reply",              ServiceChangeRep},
-	     {expect_nothing, 1000}, 
+	     {expect_nothing, timer:seconds(1)}, 
              {send, "notify request",                    NotifyReq},
              {expect_receive, "notify reply: segment 1", {NrVerifyFun1, 2000}},
              {send, "segment reply 1",                   SegmentRep1},
              {expect_receive, "notify reply: segment 2", {NrVerifyFun2, 1000}},
              {send, "segment reply 2",                   SegmentRep2},
+	     {sleep, 100}, 
 	     {send, "transaction-ack",                   TransAck},
-             {expect_closed,  5000},
+             {expect_closed,  timer:seconds(5)},
              disconnect
             ],
     EvSeq.
@@ -1083,8 +1088,8 @@ ssmp2_mg_event_sequence(text, tcp) ->
     AckVerify = ssmp2_mg_verify_ack_fun(), 
     EvSeq = [
              {debug, true},
-             %% {megaco_trace, disable},
-             {megaco_trace, max},
+             {megaco_trace, disable},
+             %% {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
              start_transport,
@@ -1760,8 +1765,8 @@ ssmp3_mg_event_sequence(text, tcp) ->
     AckVerify = ssmp3_mg_verify_ack_fun(), 
     EvSeq = [
              {debug, true},
-             %% {megaco_trace, disable},
-             {megaco_trace, max},
+             {megaco_trace, disable},
+             %% {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
              start_transport,
@@ -2439,8 +2444,8 @@ ssmp4_mg_event_sequence(text, tcp) ->
     AckVerify = ssmp4_mg_verify_ack_fun(), 
     EvSeq = [
              {debug, true},
-             %% {megaco_trace, disable},
-             {megaco_trace, max},
+	     {megaco_trace, disable},
+             %% {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
              start_transport,
@@ -3120,8 +3125,8 @@ ssmo1_mg_event_sequence(text, tcp) ->
     AckVerify = ssmo1_mg_verify_ack_fun(), 
     EvSeq = [
              {debug, true},
-             %% {megaco_trace, disable},
-             {megaco_trace, max},
+	     {megaco_trace, disable},
+             %% {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
              start_transport,
@@ -3799,8 +3804,8 @@ ssmmsr1_mg_event_sequence(text, tcp) ->
     AckVerify = ssmmsr1_mg_verify_ack_fun(), 
     EvSeq = [
              {debug, true},
-             %% {megaco_trace, disable},
-             {megaco_trace, max},
+	     {megaco_trace, disable},
+             %% {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
              start_transport,
@@ -4479,8 +4484,8 @@ ssmmsr2_mg_event_sequence(text, tcp) ->
     AckVerify = ssmmsr2_mg_verify_ack_fun(), 
     EvSeq = [
              {debug, true},
-             %% {megaco_trace, disable},
-             {megaco_trace, max},
+	     {megaco_trace, disable},
+             %% {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
              start_transport,
@@ -5220,8 +5225,8 @@ rsmp_mg_event_sequence(text, tcp) ->
     NotifyReplyVerify3 = rsmp_mg_verify_notify_reply_fun(3, Tid3),
     EvSeq = [
              {debug, true},
-             {megaco_trace, disable},
-             %% {megaco_trace, max},
+             %% {megaco_trace, disable},
+             {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
              start_transport,
@@ -5872,8 +5877,8 @@ rsmos_mg_event_sequence(text, tcp) ->
     DiscoVerify        = rsmos_mg_verify_handle_disco_fun(), 
     EvSeq = [
              {debug, true},
-             {megaco_trace, disable},
-             %% {megaco_trace, max},
+             %% {megaco_trace, disable},
+             {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
              start_transport,
@@ -6523,7 +6528,7 @@ rsmms1_mg_event_sequence(text, tcp) ->
     DiscoVerify        = rsmms1_mg_verify_handle_disco_fun(), 
     EvSeq = [
              {debug, true},
-             {megaco_trace, disable},
+	     {megaco_trace, disable},
              %% {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},

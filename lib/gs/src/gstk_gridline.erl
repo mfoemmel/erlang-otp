@@ -87,9 +87,9 @@ option(Option, _Gstkid, _TkW, DB,_) ->
 %% Clean-up my specific side-effect stuff.
 %%----------------------------------------------------------------------
 delete(DB, Gstkid) ->
-    gstk_db:delete_widget(DB, Gstkid),
-    {Gstkid#gstkid.parent, Gstkid#gstkid.id, gstk_gridline,
-     [Gstkid, gstk_db:opt(DB,Gstkid,row)]}.
+    Row = gstk_db:opt(DB,Gstkid,row),
+    gstk_db:delete_widget(DB, Gstkid),    
+    {Gstkid#gstkid.parent, Gstkid#gstkid.id, gstk_gridline,[Gstkid, Row]}.
 
 %%----------------------------------------------------------------------
 %% Is called iff my parent is not also destroyed.
@@ -118,7 +118,7 @@ config(DB, Gstkid, Opts) ->
 		true -> 
 		    gstk_db:insert_opt(DB,Ngstkid,{row,NewRow}),
 		    ok;
-		{error,Reason} -> {error,Reason}
+		{error,Reason} -> ok %% {error,Reason}
 	    end
     end,
     ok.
@@ -193,7 +193,7 @@ config_gridline(DB,CP,Gstkid,Col,Row,Opts) ->
 	    case gstk_generic:make_command(ColOpts,Gstkid,TkW,
 					  TextPre,RectPre,DB) of
 		[] -> ok;
-		{error,Reason} -> {error,Reason};
+		{error,Reason} -> ok; %%{error,Reason};
 		Cmd -> gstk:exec(Cmd)
 	    end
     end,

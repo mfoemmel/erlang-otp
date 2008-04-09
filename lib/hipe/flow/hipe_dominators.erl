@@ -19,13 +19,20 @@
 	 domFrontier_create/2,
 	 domFrontier_get/2]).
 
+-type(dict()	:: tuple()).	% XXX: Temporarily
+-type(gb_tree()	:: tuple()).	% XXX: Temporarily
+
+-include("cfg.hrl").
+
 %%========================================================================
 %%
 %% CODE FOR CREATING AND MANIPULATING DOMINATOR TREES.
 %%
 %%========================================================================
 
--record(domTree, {root, size, nodes}).
+-record(domTree, {root,
+		  size  = 0		   :: non_neg_integer(),
+		  nodes = gb_trees:empty() :: gb_tree()}).
 
 -record(workDataCell, {dfnum = 0,
 		       dfparent = none,
@@ -42,12 +49,13 @@
 %% Returns   : A dominator tree
 %%>----------------------------------------------------------------------<
 
+-spec(domTree_create/1 :: (#cfg{}) -> #domTree{}).
+
 domTree_create(CFG) ->
-  PredMap = hipe_gen_cfg:pred_map(CFG),
   {WorkData, DFS, N} = dfs(CFG),
   {DomData, WorkData2} = getIdoms(CFG,
 				  domTree_empty(hipe_gen_cfg:start_label(CFG)),
-				  WorkData, N, DFS, PredMap),
+				  WorkData, N, DFS),
   finalize(WorkData2, DomData, 1, N, DFS).
 
 %%>----------------------------------------------------------------------<
@@ -365,10 +373,10 @@ dfsTraverse([], _, _, N, WorkData, DFS) -> {WorkData, DFS, N}.
 %% Returns   : An updated version of the tables DomData and WorkData
 %%>----------------------------------------------------------------------<
 
-getIdoms(CFG, DomData, WorkData, Index, DFS, PredMap)
+getIdoms(CFG, DomData, WorkData, Index, DFS)
      when is_integer(Index), Index > 1 ->
   Node = lookup(Index, DFS),
-  PredLst = hipe_gen_cfg:pred(PredMap, Node),
+  PredLst = hipe_gen_cfg:pred(CFG, Node),
   Par = lookup({dfparent, Node}, WorkData),
   DfNumN = lookup({dfnum, Node}, WorkData),
   {S, WorkData2} = getSemiDominator(PredLst, DfNumN, Par, WorkData),
@@ -379,8 +387,8 @@ getIdoms(CFG, DomData, WorkData, Index, DFS, PredMap)
   {WorkData6, DomData2} = filterBucket(lookup({bucket, Par}, WorkData5), 
 				       Par, WorkData5, DomData),
   WorkData7 = update(Par, {bucket, []}, WorkData6),
-  getIdoms(CFG, DomData2, WorkData7, Index - 1, DFS, PredMap);
-getIdoms(_, DomData, WorkData, 1, _, _) ->
+  getIdoms(CFG, DomData2, WorkData7, Index - 1, DFS);
+getIdoms(_, DomData, WorkData, 1, _) ->
   {DomData,WorkData}.
 
 %%>----------------------------------------------------------------------<

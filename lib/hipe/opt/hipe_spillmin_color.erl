@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% ===========================================================================
 %%@doc
 %%		  GRAPH COLORING STACK SLOT SPILL MINIMIZER
 %%
@@ -30,7 +30,16 @@
 %%-ifndef(DEBUG).
 %%-define(DEBUG,0).
 %%-endif.
+
+%%---------------------------------------------------------------------------
+
+-type(dict()    :: tuple()).  % XXX: Temporarily
+-type(gb_tree() :: tuple()).  % XXX: Temporarily
+
+%%---------------------------------------------------------------------------
+
 -include("../main/hipe.hrl").
+-include("../flow/cfg.hrl").
 
 %% Define these as 'ok' or 'report(X,Y)' depending on how much output you want.
 -define(report0(X,Y), ?IF_DEBUG_LEVEL(0,?msg(X, Y),ok)).
@@ -41,12 +50,18 @@
 %% Emits a coloring: a list of {TempName,Location}
 %%  where Location is {spill,M}.
 %% {spill,M} denotes the Mth spilled node
+
+-spec(stackalloc/6 ::
+      (#cfg{}, [_], non_neg_integer(), comp_options(),
+       atom(), hipe_temp_map()) -> {hipe_spill_map(), non_neg_integer()}).
+
 stackalloc(CFG, _StackSlots, SpillIndex, _Options, Target, TempMap) ->
   ?report2("building IG~n", []),
   {IG, NumNodes} = build_ig(CFG, Target, TempMap),
   {Cols, MaxColors} = 
-    color_heuristic_rec(IG, 0, NumNodes, NumNodes, NumNodes, Target, 1), 
-  {remap_temp_map(lists:sort(Cols), TempMap, SpillIndex), SpillIndex+MaxColors}.
+    color_heuristic_rec(IG, 0, NumNodes, NumNodes, NumNodes, Target, 1),
+  SortedCols = lists:sort(Cols),
+  {remap_temp_map(SortedCols, TempMap, SpillIndex), SpillIndex+MaxColors}.
 
 %% Rounds a floating point value upwards
 ceiling(X) ->
@@ -158,6 +173,7 @@ build_ig(CFG, Target, TempMap) ->
 %% etc.
 setup_ets(List) ->
   setup_ets0(List, ets:new(tempMappingTable,[]), 0).
+
 setup_ets0([], Table, _N) ->
   Table;
 setup_ets0([X|Xs], Table, N) ->
@@ -178,8 +194,8 @@ build_ig_bbs([], _CFG, _Live, IG, _Target, _TempMap, _TempMapping) ->
   IG;
 build_ig_bbs([L|Ls], CFG, Live, IG, Target, TempMap, TempMapping) ->
   Xs = bb(CFG, L, Target),
-  LiveOut = [ X || X <- liveout(Live, L, Target), 
-		   hipe_temp_map:is_spilled(X, TempMap)],
+  LiveOut = [X || X <- liveout(Live, L, Target), 
+		  hipe_temp_map:is_spilled(X, TempMap)],
   LiveOutList = ordsets:to_list(LiveOut),
   LiveOutListMapped = list_map(LiveOutList, TempMapping, []),
   LiveOutSetMapped = ordsets:from_list(LiveOutListMapped),
@@ -208,8 +224,8 @@ build_ig_instr(X, Live, IG, Target, TempMap, TempMapping) ->
   NewLive = ordsets:union(UseSetMapped, ordsets:subtract(Live, DefSetMapped)),
   {NewLive, NewIG}.
 
-%% Given a list X|Xs of keys and an ets-table Mapping returns a list of the elements 
-%% in Mapping corresponding to the keys in X|Xs and appends Acc to this list.
+%% Given a list of Keys and an ets-table returns a list of the elements 
+%% in Mapping corresponding to the Keys and appends Acc to this list.
 list_map([], _Mapping, Acc) ->
   Acc;
 list_map([X|Xs], Mapping, Acc) ->
@@ -229,17 +245,15 @@ map_spilled_temporaries0([_X|Xs]) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-interference_arcs([], _Live, IG) -> 
-   IG;
-interference_arcs([X|Xs],Live,IG) ->
-   interference_arcs(Xs, Live, i_arcs(X, Live, IG)).
+interference_arcs([], _Live, IG) ->
+  IG;
+interference_arcs([X|Xs], Live,IG) ->
+  interference_arcs(Xs, Live, i_arcs(X, Live, IG)).
 
 i_arcs(_X, [], IG) -> 
-   IG;
+  IG;
 i_arcs(X, [Y|Ys], IG) ->
-   i_arcs(X, Ys, add_edge(X,Y, IG)).
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  i_arcs(X, Ys, add_edge(X,Y, IG)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -258,25 +272,25 @@ i_arcs(X, [Y|Ys], IG) ->
 %%     throw an exception (the caller should retry with more stack slots)
 
 color(IG, StackSlots, NumNodes, Target) ->
-   case catch color_0(IG, StackSlots, NumNodes, Target) of
-      {'EXIT',Rsn} ->
-	 ?error_msg("Coloring failed with ~p~n",[Rsn]),
-	 ?EXIT(Rsn);
-      Else ->
-	 Else
-   end.
+  case catch color_0(IG, StackSlots, NumNodes, Target) of
+    {'EXIT',Rsn} ->
+      ?error_msg("Coloring failed with ~p~n", [Rsn]),
+      ?EXIT(Rsn);
+    Else ->
+      Else
+  end.
 
 color_0(IG, StackSlots, NumNodes, Target) -> 
-  ?report("simplification of IG~n",[]),
+  ?report("simplification of IG~n", []),
   K = ordsets:size(StackSlots),
   Nodes = list_ig(IG),
 
   Low = low_degree_nodes(Nodes, K),
 
-  ?report(" starting with low degree nodes ~p~n",[Low]),
+  ?report(" starting with low degree nodes ~p~n", [Low]),
   EmptyStk = [],
   Stk = simplify(Low, NumNodes, IG, K, EmptyStk, Target),
-  ?report("selecting colors~n",[]),
+  ?report(" selecting colors~n", []),
   select(Stk, IG, StackSlots, NumNodes).
 
 %%%%%%%%%%%%%%%%%%%%
@@ -309,7 +323,7 @@ simplify_ig([X|Xs], N, IG, K, Stk, Vis, Target) ->
   ?report3("N: ~w Stk: ~w N+Stk ~w\n", [N,length(Stk),N+length(Stk)]),
   case is_visited(X,Vis) of
     true ->
-      ?report("  node ~p already visited~n",[X]),
+      ?report("  node ~p already visited~n", [X]),
       simplify_ig(Xs, N, IG, K, Stk, Vis, Target);
     false ->
       ?report("Stack ~w\n", [Stk]),
@@ -327,21 +341,21 @@ decrement_neighbors(X, Xs, IG, Vis, K) ->
 
 %% For each node, decrement its degree and check if it is now
 %% a low-degree node. In that case, add it to the 'low list'.
-decrement_each([], Low, IG, _Vis, _K) -> 
+decrement_each([], Low, IG, _Vis, _K) ->
   {Low, IG};
 decrement_each([N|Ns], OldLow, IG, Vis, K) ->
   {Low, CurrIG} = decrement_each(Ns, OldLow, IG, Vis, K),
   case is_visited(N, Vis) of
     true ->
-	 {Low, CurrIG};
+      {Low, CurrIG};
     false ->
-	 {D, NewIG} = decrement_degree(N, CurrIG),
-	 if
-	    D =:= K-1 ->
-	       {[N|Low], NewIG};
-	    true ->
-	       {Low, NewIG}
-	 end
+      {D, NewIG} = decrement_degree(N, CurrIG),
+      if
+	D =:= K-1 ->
+	  {[N|Low], NewIG};
+	true ->
+	  {Low, NewIG}
+      end
   end.
 
 %%%%%%%%%%%%%%%%%%%%
@@ -357,12 +371,12 @@ select(Stk, IG, PhysRegs, NumNodes) ->
   select_colors(Stk, IG, none_colored(NumNodes), PhysRegs).
 
 select_colors([], _IG, _Cols, _PhysRegs) -> 
-  ?report("all nodes colored~n",[]),
+  ?report("all nodes colored~n", []),
   {[], 0};
 select_colors([{X,colorable}|Xs], IG, Cols, PhysRegs) ->
-  ?report("color of ~p\n",[X]),
+  ?report("color of ~p\n", [X]),
   {Slot,NewCols} = select_color(X, IG, Cols, PhysRegs),
-  ?report("~p~n",[Slot]),
+  ?report("~p~n", [Slot]),
   {Tail, MaxColor} = select_colors(Xs, IG, NewCols, PhysRegs),
   NewMaxColor = 
     case Slot > MaxColor of
@@ -371,7 +385,7 @@ select_colors([{X,colorable}|Xs], IG, Cols, PhysRegs) ->
       false ->
 	MaxColor
     end,
-%% Since we are dealing with spills we label all our temporaries accordingly.
+  %% Since we are dealing with spills we label all our temporaries accordingly.
   {[{X,{spill,Slot}} | Tail], NewMaxColor}.
 
 select_color(X, IG, Cols, PhysRegs) ->
@@ -395,8 +409,8 @@ select_unused_color(UsedColors, PhysRegs) ->
   AvailRegs = ordsets:to_list(ordsets:subtract(PhysRegs, Summary)),
   hd(AvailRegs).
 
-push_colored(X,Stk) ->
-    [{X, colorable} | Stk].
+push_colored(X, Stk) ->
+  [{X, colorable} | Stk].
 
 low_degree_nodes([], _K) -> [];
 low_degree_nodes([{N,Info}|Xs], K) ->
@@ -409,25 +423,24 @@ low_degree_nodes([{N,Info}|Xs], K) ->
       low_degree_nodes(Xs, K)
   end.
 
-%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 unvisited_neighbors(X, Vis, IG) ->
-    ordsets:from_list(unvisited(neighbors(X, IG), Vis)).
+  ordsets:from_list(unvisited(neighbors(X, IG), Vis)).
 
 unvisited([], _Vis) -> [];
 unvisited([X|Xs], Vis) ->
-   case is_visited(X, Vis) of
-      true ->
-	 unvisited(Xs, Vis);
-      false ->
-	 [X|unvisited(Xs, Vis)]
-   end.
+  case is_visited(X, Vis) of
+    true ->
+      unvisited(Xs, Vis);
+    false ->
+      [X|unvisited(Xs, Vis)]
+  end.
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% *** ABSTRACT DATATYPES ***
-
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%
@@ -442,7 +455,7 @@ init_stackslots(0, Acc) ->
 init_stackslots(NumSlots, Acc) ->
   init_stackslots(NumSlots - 1, [NumSlots|Acc]).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% The ig datatype:
 %%
@@ -451,7 +464,7 @@ init_stackslots(NumSlots, Acc) ->
 %%
 %% Note: later on, we may wish to add 'move-related' support.
 
--record(ig_info, {neighbors=[]::list(), degree=0::integer()}).
+-record(ig_info, {neighbors=[]::list(), degree=0::non_neg_integer()}).
 
 empty_ig(NumNodes) ->
   hipe_vectors:new(NumNodes, #ig_info{neighbors=[],degree=0}).
@@ -471,7 +484,6 @@ add_arc(X, Y, IG) ->
   Old = neighbors(Info),
   New = Info#ig_info{neighbors=[Y|Old]},
   hipe_vectors:set(IG,X,New).
-
 
 normalize_ig(IG) ->
   Size = hipe_vectors:size(IG),
@@ -513,7 +525,7 @@ color_of(X, Cols) ->
 set_color(X, R, Cols) ->
   hipe_vectors:set(Cols, X, {color, R}).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Note: there might be a slight gain in separating the two versions
 %% of visit/2 and visited/2. (So that {var,X} selects X and calls

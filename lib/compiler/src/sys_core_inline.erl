@@ -67,8 +67,8 @@
 	       weight}).			%Weight
 
 module(#c_module{exports=Es,defs=Ds0}=Mod, Opts) ->
-    case inline_option(10, 0, Opts) of
-	{Thresh,Fs} when is_integer(Thresh), Thresh > 0; Fs /= [] ->
+    case inline_option(Opts) of
+	{Thresh,Fs} when is_integer(Thresh), Thresh > 0; Fs =/= [] ->
 	    case proplists:get_bool(verbose, Opts) of
 		true ->
 		    io:format("Old inliner: threshold=~p functions=~p\n",
@@ -80,19 +80,14 @@ module(#c_module{exports=Es,defs=Ds0}=Mod, Opts) ->
 	_Other -> {ok,Mod}
     end.
     
-inline_option(_OnVal, OffVal, Opts) ->
+inline_option(Opts) ->
     foldl(fun ({inline,{_,_}=Val}, {T,Fs}) ->
 		  {T,[Val|Fs]};
 	      ({inline,Val}, {T,Fs}) when is_list(Val) ->
 		  {T,Val ++ Fs};
 	      ({inline,Val}, {_,Fs}) when is_integer(Val) ->
 		  {Val,Fs};
-
-	      %% Clashes with Richard's new inliner.
-	      %%(inline, {T,Fs}) -> {OnVal,Fs};
-
-	      (noinline, {_,Fs}) -> {OffVal,Fs};
-	      (_Opt, Def) -> Def
+	      (_Opt, {_,_}=Def) -> Def
 	  end, {0,[]}, Opts).
 
 %% inline([Func], Stat) -> [Func].
@@ -144,10 +139,10 @@ is_inlineable(#fstat{func=F,arity=A}, _Thresh, Ofs) ->
 inline_inline(#ifun{body=B,weight=Iw}=If, Is) ->
     Inline = fun (#c_apply{op=#c_fname{id=F,arity=A},args=As}=Call) ->
 		     case find_inl(F, A, Is) of
-			 #ifun{vars=Vs,body=B,weight=W} when W < Iw ->
+			 #ifun{vars=Vs,body=B2,weight=W} when W < Iw ->
 			     #c_let{vars=Vs,
 				     arg=core_lib:make_values(As),
-				    body=kill_id_anns(B)};
+				    body=kill_id_anns(B2)};
 			 _Other -> Call
 		     end;
 		 (Core) -> Core

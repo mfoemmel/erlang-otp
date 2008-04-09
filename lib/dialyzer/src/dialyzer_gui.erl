@@ -31,24 +31,53 @@
 
 -include("dialyzer.hrl").
 
--record(gui_state, {add_all, add_file, add_rec,
-		    chosen_box, analysis_pid, del_file,
-		    doc_plt, clear_chosen, clear_log, clear_warn, 
-		    fixpoint, init_plt, 
-		    dir_entry, file_box, file_wd, gs, log, menu, mode,
-		    options, packer, run, stop, top, warnings_box,
-		    backend_pid}).
+-type(gs_object() :: any()).
 
--record(menu, {file_save_log, file_save_warn, file_quit, 
-	       help_about, help_manual, help_overview, help_warnings, 
-	       opts_supress_inline, opts_macros, opts_includes,
-	       plt_empty, plt_search_doc, plt_show_doc,
-	       warnings}).
-	       
--record(mode, {start_byte_code, start_src_code, 
-	       dataflow, succ_typings, old_style}).
-	       
+-record(mode, {start_byte_code     :: gs_object(), 
+	       start_src_code      :: gs_object()}).
 
+-record(menu, {file_save_log       :: gs_object(),
+	       file_save_warn      :: gs_object(),
+	       file_quit           :: gs_object(), 
+	       help_about          :: gs_object(),
+	       help_manual         :: gs_object(),
+	       help_warnings       :: gs_object(),
+	       opts_macros         :: gs_object(),
+	       opts_includes       :: gs_object(),
+	       plt_empty           :: gs_object(),
+	       plt_search_doc      :: gs_object(),
+	       plt_show_doc        :: gs_object(),
+	       warnings            :: gs_object()}).
+
+-record(gui_state, {add_all      :: gs_object(), 
+		    add_file     :: gs_object(), 
+		    add_rec      :: gs_object(),
+		    chosen_box   :: gs_object(), 
+		    analysis_pid :: pid(), 
+		    del_file     :: gs_object(),
+		    doc_plt      :: #dialyzer_plt{}, 
+		    clear_chosen :: gs_object(), 
+		    clear_log    :: gs_object(), 
+		    clear_warn   :: gs_object(), 
+		    init_plt     :: #dialyzer_plt{}, 
+		    dir_entry    :: gs_object(), 
+		    file_box     :: gs_object(), 
+		    file_wd      :: gs_object(), 
+		    gs           :: gs_object(), 
+		    log          :: gs_object(), 
+		    menu         :: #menu{}, 
+		    mode         :: #mode{},
+		    options      :: #options{}, 
+		    packer       :: gs_object(), 
+		    run          :: gs_object(), 
+		    stop         :: gs_object(), 
+		    top          :: gs_object(), 
+		    warnings_box :: gs_object(),
+		    backend_pid  :: pid()}).
+	       
+%%------------------------------------------------------------------------
+
+-spec(start/1 :: (#options{}) -> ?RET_NOTHING_SUSPICIOUS).
 
 start(DialyzerOptions = #options{}) ->
   process_flag(trap_exit, true),
@@ -122,29 +151,9 @@ start(DialyzerOptions = #options{}) ->
 				{label, {text,"SourceCode"}},
 				{pack_xy, {2,2}}]),
 
-  %% Analysis Type
-  gs:label(ModePacker, [{label, {text, "Analysis:"}}, 
-			{height, 20}, {pack_xy, {1,4}}]),
-  ModeDataflow = gs:radiobutton(ModePacker,
-			      [{group, type},
-			       {label,{text,"Dataflow"}}, 
-			       {select, true},
-			       {pack_xy, {2,4}}]),
-  ModeSuccTypings = gs:radiobutton(ModePacker,
-			       [{group, type},
-				{label,{text,"Success Typings"}}, 
-				{pack_xy, {2,5}}]),
-  ModeOldStyle = gs:radiobutton(ModePacker,
-				[{group, type},
-				 {label,{text,"Old Style"}}, 
-				 {pack_xy, {2,6}}]),
-
   Mode = #mode{start_byte_code=ModeByteCode,
-	       start_src_code=ModeSrcCode,
-	       dataflow=ModeDataflow,
-	       succ_typings=ModeSuccTypings,
-	       old_style=ModeOldStyle
-	      },
+	       start_src_code=ModeSrcCode},
+	      
 
   %% --------- Log box --------------
   gs:label(Packer, [{label, {text, "Log"}}, {height, 20}, {pack_xy, {3,2}}]),
@@ -233,19 +242,9 @@ start(DialyzerOptions = #options{}) ->
 					  {itemtype, check}, {select, true}]),
   MenuWarnLists = gs:menuitem(MenuWarn, [{label, {text, "Improper list constructions"}}, 
 					 {itemtype, check}, {select, true}]),
-  MenuWarnGuards = gs:menuitem(MenuWarn, [{label, {text, "Failing guards"}}, 
-					  {itemtype, check}, {select, true}]),
-  MenuWarnEq = gs:menuitem(MenuWarn, [{label, {text, "Failing term comparisons"}}, 
-				      {itemtype, check}, {select, true}]),
   MenuWarnNotCalled = gs:menuitem(MenuWarn, 
 				  [{label, {text, "Unused functions"}}, 
 				   {itemtype, check}, {select, true}]),
-  MenuWarnTupleAsFun = gs:menuitem(MenuWarn, [{label, 
-					       {text, "Tuple used as fun"}}, 
-					      {itemtype, check}, 
-					      {select, true}]),
-  MenuWarnBeam = gs:menuitem(MenuWarn, [{label, {text, "Unsafe BEAM code"}}, 
-					{itemtype, check}, {select, true}]),
   MenuWarnReturnOnlyExit = gs:menuitem(MenuWarn,
 				       [{label, 
 					 {text, "Error handling functions"}},
@@ -278,16 +277,12 @@ start(DialyzerOptions = #options{}) ->
   %% Options Menu
   MenuBarOpts = gs:menubutton(MenuBar, [{label,{text,"Options"}}]),
   MenuOpts = gs:menu(MenuBarOpts, []),
-  MenuOptsCheckInline = gs:menuitem(MenuOpts, 
-				    [{label, {text, "Ignore inline-compiled bytecode"}}, 
-				     {itemtype, check}, {select, false}]),
   MenuOptsMacros = gs:menuitem(MenuOpts,[{label, {text, "Manage Macro Definitions"}}]),
   MenuOptsIncludes = gs:menuitem(MenuOpts, [{label, {text, "Manage Include Directories"}}]),
   
   %% Help
   MenuBarHelp = gs:menubutton(MenuBar, [{label,{text,"Help"}}, {side, right}]),
   MenuHelp = gs:menu(MenuBarHelp, []),
-  MenuHelpOverview = gs:menuitem(MenuHelp, [{label,{text,"Overview"}}]),
   MenuHelpManual = gs:menuitem(MenuHelp, [{label,{text,"Manual"}}]),
   MenuHelpWarnings = gs:menuitem(MenuHelp, [{label,{text,"Warnings"}}]),
   MenuHelpAbout = gs:menuitem(MenuHelp, [{label,{text,"About"}}]),
@@ -296,12 +291,8 @@ start(DialyzerOptions = #options{}) ->
 	      {?WARN_RETURN_ONLY_EXIT, MenuWarnReturnOnlyExit},
 	      {?WARN_NOT_CALLED, MenuWarnNotCalled},
 	      {?WARN_NON_PROPER_LIST, MenuWarnLists},
-	      {?WARN_TUPLE_AS_FUN, MenuWarnTupleAsFun},
 	      {?WARN_FUN_APP, MenuWarnFunApp},
 	      {?WARN_MATCHING, MenuWarnMatch},
-	      {?WARN_COMP, MenuWarnEq},
-	      {?WARN_GUARDS, MenuWarnGuards},
-	      {?WARN_OLD_BEAM, MenuWarnBeam},
 	      {?WARN_FAILING_CALL, MenuWarnFailingCall},
 	      {?WARN_CALLGRAPH, MenuWarnCallNonExported},
 	      %% For contracts. 
@@ -313,11 +304,9 @@ start(DialyzerOptions = #options{}) ->
 
   Menu = #menu{file_quit=MenuFileQuit,
 	       plt_empty=MenuPLTEmpty,
-	       help_overview=MenuHelpOverview,
 	       help_manual=MenuHelpManual,
 	       help_about=MenuHelpAbout,
 	       help_warnings=MenuHelpWarnings,
-	       opts_supress_inline=MenuOptsCheckInline,
 	       opts_macros=MenuOptsMacros,
 	       opts_includes=MenuOptsIncludes,
 	       plt_search_doc=MenuPLTSearch,
@@ -360,11 +349,12 @@ start(DialyzerOptions = #options{}) ->
   NewState = change_dir_or_add_file(State, "."),
   gui_loop(NewState).
 
-
 %% ----------------------------------------------------------------
 %%
 %%  Main GUI Loop
 %%
+
+-spec(gui_loop/1 :: (#gui_state{}) -> ?RET_NOTHING_SUSPICIOUS).
 
 gui_loop(State = #gui_state{}) ->
   TopWin = State#gui_state.top,
@@ -387,7 +377,6 @@ gui_loop(State = #gui_state{}) ->
   %% --- Menu ---
   Menu = State#gui_state.menu,
   Quit = Menu#menu.file_quit,
-  Overview = Menu#menu.help_overview,
   Manual = Menu#menu.help_manual,
   HelpWarnings = Menu#menu.help_warnings,
   About = Menu#menu.help_about,
@@ -455,9 +444,6 @@ gui_loop(State = #gui_state{}) ->
 	true -> ?RET_NOTHING_SUSPICIOUS;
 	false -> gui_loop(State)
       end;
-    {gs, Overview, click, _, _} ->
-      spawn_link(fun() -> overview(State) end),
-      gui_loop(State);
     {gs, Manual, click, _, _} ->
       spawn_link(fun() -> manual(State) end),
       gui_loop(State);
@@ -506,9 +492,6 @@ gui_loop(State = #gui_state{}) ->
       WarningString = lists:flatten([dialyzer:format_warning(W) 
 				     || W <- Warnings]),
       update_editor(State#gui_state.warnings_box, WarningString),
-      gui_loop(State);
-    {BackendPid, inline_warnings, Warnings} ->
-      update_editor(State#gui_state.warnings_box, Warnings),
       gui_loop(State);
     {BackendPid, error, Msg} ->
       update_editor(State#gui_state.warnings_box, Msg),
@@ -637,13 +620,9 @@ add_files(Add, ChosenBox, Type) ->
   ok.
 
 handle_file_delete(#gui_state{chosen_box=ChosenBox}) ->
-  case gs:read(ChosenBox, selection) of
-    [] ->
-      ok;
-    List ->
-      [gs:config(ChosenBox, {del, X}) || X <- lists:reverse(lists:sort(List))],
-      ok
-  end.
+  List = gs:read(ChosenBox, selection),
+  lists:foreach(fun(X) -> gs:config(ChosenBox, {del, X}) end,
+		lists:reverse(lists:sort(List))).
 
 %% ---- Other ----
 
@@ -722,7 +701,6 @@ config_gui_start(State) ->
   Menu = State#gui_state.menu,
   gs:config(Menu#menu.file_save_warn, {enable, false}),
   gs:config(Menu#menu.file_save_log, {enable, false}),
-  gs:config(Menu#menu.opts_supress_inline, {enable, false}),
   gs:config(Menu#menu.opts_macros, {enable, false}),
   gs:config(Menu#menu.opts_includes, {enable, false}),
   gs:config(Menu#menu.plt_empty, {enable, false}),
@@ -731,11 +709,7 @@ config_gui_start(State) ->
 
   Mode = State#gui_state.mode,
   gs:config(Mode#mode.start_byte_code, {enable, false}),
-  gs:config(Mode#mode.start_src_code, {enable, false}),
-  gs:config(Mode#mode.dataflow, {enable, false}),
-  gs:config(Mode#mode.succ_typings, {enable, false}),
-  gs:config(Mode#mode.old_style, {enable, false}).
-
+  gs:config(Mode#mode.start_src_code, {enable, false}).
 
 config_gui_stop(State) ->
   gs:config(State#gui_state.stop, {enable, false}),
@@ -751,7 +725,6 @@ config_gui_stop(State) ->
   Menu = State#gui_state.menu,
   gs:config(Menu#menu.file_save_warn, {enable, true}),
   gs:config(Menu#menu.file_save_log, {enable, true}),
-  gs:config(Menu#menu.opts_supress_inline, {enable, true}),
   gs:config(Menu#menu.opts_macros, {enable, true}),
   gs:config(Menu#menu.opts_includes, {enable, true}),
   gs:config(Menu#menu.plt_empty, {enable, true}),
@@ -760,12 +733,7 @@ config_gui_stop(State) ->
 
   Mode = State#gui_state.mode,
   gs:config(Mode#mode.start_byte_code, {enable, true}),
-  gs:config(Mode#mode.start_src_code, {enable, true}),
-  gs:config(Mode#mode.dataflow, {enable, true}),
-  gs:config(Mode#mode.succ_typings, {enable, true}),
-  gs:config(Mode#mode.old_style, {enable, true}).
-
-
+  gs:config(Mode#mode.start_src_code, {enable, true}).
 
 %% ----------------------------------------------------------------
 %%
@@ -863,34 +831,6 @@ maybe_quit(State=#gui_state{top=TopWin}) ->
 %%
 
 %% ---- Help Menu ----
-
-overview(State) ->
-  GS = State#gui_state.gs,
-  WH = [{width, 600}, {height, 360}],
-  Win = gs:window(GS, [{title, "Dialyzer Overview"}, {configure, true},
-		       {default, editor, {bg, white}} | WH]),
-  Frame = gs:frame(Win, [{packer_x, [{stretch, 1}, {fixed, 60}, {stretch, 1}]}, 
-			 {packer_y, [{stretch, 1}, {fixed, 30}]}
-			 | WH]),
-  Editor = gs:editor(Frame, [{pack_x, {1,3}}, {pack_y, 1},
-			     {font, {courier, 12}}, {vscroll, right},
-			     {wrap, word}]),
-  Button = gs:button(Frame, [{label, {text, "Ok"}}, {pack_xy, {2,2}}]),
-  gs:config(Win, {map, true}),
-  gs:config(Frame, WH),
-
-  AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "overview.txt"]),
-  case gs:config(Editor, {load, AboutFile}) of
-    {error, Reason} ->
-      gs:destroy(Win),
-      error(State, 
-	    io_lib:format("Could not find doc/overview.txt file!\n\n ~p", 
-			  [Reason]));
-    ok ->
-      gs:config(Editor, {enable, false}),
-      TopWin = State#gui_state.top,
-      show_info_loop(TopWin, Win, Frame, Button)
-  end.
 
 manual(State) ->
   GS = State#gui_state.gs,
@@ -1256,8 +1196,8 @@ include_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 	  [] ->
 	    Options;
 	  List ->
-	    [gs:config(DirBox, [{del, X}]) ||
-	      X <- lists:reverse(lists:sort(List))],
+	    lists:foreach(fun(X) -> gs:config(DirBox, [{del, X}]) end,
+			  lists:sort(List)),
 	    NewDirs = gs:read(DirBox, items),
 	    Options#options{include_dirs=NewDirs}
 	end,
@@ -1377,8 +1317,8 @@ macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 		  list_to_atom(Macro)
 	      end,
 	    Delete = [Fun(X) || X <- List],
-	    [gs:config(MacroBox, [{del, X}]) ||
-	      X <- lists:reverse(lists:sort(List))],
+	    lists:foreach(fun(X) -> gs:config(MacroBox, [{del, X}]) end,
+			  lists:reverse(lists:sort(List))),
 	    Defines = Options#options.defines,
 	    NewDefines = lists:foldl(fun(X, Acc) -> 
 					 orddict:erase(X, Acc)
@@ -1441,33 +1381,16 @@ build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
       true -> byte_code;
       false -> src_code
     end,
-  CheckInline =
-    case StartFrom of
-      byte_code -> gs:read(Menu#menu.opts_supress_inline, select);
-      src_code -> false
-    end,
   InitPlt =
     case gs:read(Menu#menu.plt_empty, select) of
       true -> dialyzer_plt:new();
       false -> InitPlt0
     end,
-  AnalType = 
-    case gs:read(Mode#mode.dataflow, select) of
-      true -> dataflow;
-      false ->
-	case gs:read(Mode#mode.succ_typings, select) of
-	  true -> succ_typings;
-	  false -> old_style
-	end
-    end,
-  
-  #analysis{supress_inline=CheckInline,
-	    type=AnalType,
-	    defines=Options#options.defines,
+  #analysis{defines=Options#options.defines,
 	    include_dirs=Options#options.include_dirs,
 	    plt=InitPlt,
 	    start_from=StartFrom}.
-	    
+
 
 get_anal_files(#gui_state{chosen_box=ChosenBox}, StartFrom) ->
   Files = gs:read(ChosenBox, items),

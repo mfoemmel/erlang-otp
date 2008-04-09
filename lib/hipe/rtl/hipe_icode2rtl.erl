@@ -101,33 +101,31 @@ translate_instruction(I, VarMap, ConstTab, Options) ->
   ?IF_DEBUG(?when_option(rtl_show_translation, Options,
 			 ?msg("From Instr: ~w~n", [I])), ok),
   case I of
-    #call{} ->  
+    #icode_call{} ->  
       gen_call(I, VarMap, ConstTab);
-    #comment{} ->
+    #icode_comment{} ->
       {hipe_rtl:mk_comment(hipe_icode:comment_text(I)), VarMap, ConstTab};  
-    #enter{} -> 
+    #icode_enter{} -> 
       gen_enter(I, VarMap, ConstTab);
-    #fail{} ->
+    #icode_fail{} ->
       gen_fail(I, VarMap, ConstTab);
-    #fmove{} -> 
-      gen_fmove(I, VarMap, ConstTab);
-    #goto{} -> 
+    #icode_goto{} -> 
       gen_goto(I, VarMap, ConstTab);
-    #'if'{} ->  
+    #icode_if{} ->  
       gen_if(I, VarMap, ConstTab);
-    #label{} ->
+    #icode_label{} ->
       gen_label(I, VarMap, ConstTab);
-    #move{} ->  
+    #icode_move{} ->  
       gen_move(I, VarMap, ConstTab);
-    #begin_handler{} ->
+    #icode_begin_handler{} ->
       hipe_rtl_exceptions:gen_begin_handler(I, VarMap, ConstTab);
-    #return{} -> 
+    #icode_return{} -> 
       gen_return(I, VarMap, ConstTab);
-    #switch_val{} -> 
+    #icode_switch_val{} -> 
       gen_switch_val(I, VarMap, ConstTab, Options);
-    #switch_tuple_arity{} -> 
+    #icode_switch_tuple_arity{} -> 
       gen_switch_tuple(I, VarMap, ConstTab, Options);
-    #type{} -> 
+    #icode_type{} -> 
       gen_type(I, VarMap, ConstTab);
     X ->
       exit({?MODULE,{"unknown Icode instruction",X}})
@@ -138,6 +136,7 @@ translate_instruction(I, VarMap, ConstTab, Options) ->
 %%
 %% CALL
 %%
+
 gen_call(I, VarMap, ConstTab) ->
   Fun = hipe_icode:call_fun(I),
   {Dst, VarMap0} = hipe_rtl_varmap:ivs2rvs(hipe_icode:call_dstlist(I), VarMap),
@@ -201,6 +200,7 @@ conv_call_type(local) -> not_remote.
 %%
 %% ENTER
 %%
+
 gen_enter(I, VarMap, ConstTab) ->
   Fun = hipe_icode:enter_fun(I),
   {Args, VarMap1, ConstTab1, InitCode} = 
@@ -225,19 +225,6 @@ gen_enter_1(Fun, Args, Type) ->
     Code ->
       Code
   end.
-
-%% --------------------------------------------------------------------
-
-%%
-%% FMOVE. fvar := fvar or fvar := -fvar
-%%
-
-gen_fmove(I, VarMap, ConstTab) ->
-  {Dst, VarMap0} =
-    hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:fmove_dst(I), VarMap),
-  {Src, VarMap1} =
-    hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:fmove_src(I), VarMap0),
-  {hipe_rtl:mk_fmove(Dst, Src), VarMap1, ConstTab}.
 
 %% --------------------------------------------------------------------
 
@@ -315,13 +302,20 @@ gen_move(I, VarMap, ConstTab) ->
   MovedSrc = hipe_icode:move_src(I),
   {Dst, VarMap0} =
     hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:move_dst(I), VarMap),
-  case hipe_icode:is_var(MovedSrc) orelse hipe_icode:is_reg(MovedSrc)  of
-    true -> %% A move from one var to another
-      {Src, VarMap1} = hipe_rtl_varmap:icode_var2rtl_var(MovedSrc, VarMap0),
-      {[hipe_rtl:mk_move(Dst, Src)], VarMap1, ConstTab};
-    false -> %% A move of a constant to a var has to be expanded.
+  case hipe_icode:is_const(MovedSrc) of
+    true ->
       {Code, NewConstMap} = gen_const_move(Dst, MovedSrc, ConstTab),
-      {[Code], VarMap0, NewConstMap}
+      {[Code], VarMap0, NewConstMap};
+    false ->
+      {Src, VarMap1} = hipe_rtl_varmap:icode_var2rtl_var(MovedSrc, VarMap0),
+      Code = 
+	case  hipe_icode:is_fvar(MovedSrc) of
+	  true ->
+	    hipe_rtl:mk_fmove(Dst, Src);
+	  false -> % It is a var or reg
+	    hipe_rtl:mk_move(Dst, Src)
+	end,
+      {[Code], VarMap1, ConstTab}
   end.
 
 %% --------------------------------------------------------------------
@@ -384,7 +378,7 @@ gen_type(I, VarMap, ConstTab) ->
     hipe_rtl_varmap:icode_label2rtl_label(hipe_icode:type_true_label(I), Map0),
   {FalseLbl, Map2} =
     hipe_rtl_varmap:icode_label2rtl_label(hipe_icode:type_false_label(I), Map1),
-  {Code2 ,NewConstTab1} = gen_type_test(Vars, hipe_icode:type_type(I), 
+  {Code2, NewConstTab1} = gen_type_test(Vars, hipe_icode:type_test(I), 
 					hipe_rtl:label_name(TrueLbl),
 					hipe_rtl:label_name(FalseLbl),
 					hipe_icode:type_pred(I),
@@ -399,18 +393,53 @@ gen_type(I, VarMap, ConstTab) ->
 
 gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
   case Type of
-    nil ->
-      {hipe_tagscheme:test_nil(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    atom ->
+      {hipe_tagscheme:test_atom(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    bignum ->
+      {hipe_tagscheme:test_bignum(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    binary ->
+      {hipe_tagscheme:test_binary(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    bitstr ->
+      {hipe_tagscheme:test_bitstr(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    boolean ->
+      TmpT = hipe_rtl:mk_new_var(),
+      TmpF = hipe_rtl:mk_new_var(),
+      Lbl = hipe_rtl:mk_new_label(),
+      {[hipe_rtl:mk_load_atom(TmpT, true),
+	hipe_rtl:mk_branch(X, eq, TmpT, TrueLbl,hipe_rtl:label_name(Lbl),Pred),
+        Lbl,
+        hipe_rtl:mk_load_atom(TmpF, false),
+        hipe_rtl:mk_branch(X, eq, TmpF, TrueLbl, FalseLbl, Pred)], ConstTab};
     cons ->
       {hipe_tagscheme:test_cons(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    list ->
-      {hipe_tagscheme:test_list(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    float ->
-      {hipe_tagscheme:test_flonum(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    constant ->
+      {hipe_tagscheme:test_constant(X, TrueLbl, FalseLbl, Pred), ConstTab};
     fixnum ->
       {hipe_tagscheme:test_fixnum(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    float ->
+      {hipe_tagscheme:test_flonum(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    function ->
+      {hipe_tagscheme:test_fun(X, TrueLbl, FalseLbl, Pred), ConstTab};
     integer ->
       {hipe_tagscheme:test_integer(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    list ->
+      {hipe_tagscheme:test_list(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    nil ->
+      {hipe_tagscheme:test_nil(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    number ->
+      {hipe_tagscheme:test_number(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    pid ->
+      {hipe_tagscheme:test_any_pid(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    port ->
+      {hipe_tagscheme:test_any_port(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    reference ->
+      {hipe_tagscheme:test_ref(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    tuple ->
+      {hipe_tagscheme:test_tuple(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    {atom, Atom} ->
+      Tmp = hipe_rtl:mk_new_var(),
+      {[hipe_rtl:mk_load_atom(Tmp, Atom),
+	hipe_rtl:mk_branch(X, eq, Tmp, TrueLbl, FalseLbl, Pred)], ConstTab};
     {integer, N} when is_integer(N) -> 
       %% XXX: warning, does not work for bignums
       case hipe_tagscheme:is_fixnum(N) of
@@ -436,13 +465,6 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
 			       TrueLbl, FalseLbl, Pred)],
 	   NewConstTab}
       end;
-    {integer, NAI} -> exit({?MODULE,{test_integer,not_an_integer,NAI}}); 
-    number ->
-      {hipe_tagscheme:test_number(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    tuple ->
-      {hipe_tagscheme:test_tuple(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    {tuple, N} ->
-      {hipe_tagscheme:test_tuple_N(X, N, TrueLbl, FalseLbl, Pred), ConstTab};
     {record, A, S} ->
       TupleLbl = hipe_rtl:mk_new_label(),
       TupleLblName = hipe_rtl:label_name(TupleLbl),
@@ -462,37 +484,8 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
 	 hipe_rtl:mk_branch(TagVar, eq, TmpAtomVar, TrueLbl, FalseLbl, Pred)],
       {Code,
        ConstTab1};
-    atom ->
-      {hipe_tagscheme:test_atom(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    {atom, Atom} ->
-      Tmp = hipe_rtl:mk_new_var(),
-      {[hipe_rtl:mk_load_atom(Tmp, Atom),
-	hipe_rtl:mk_branch(X, eq, Tmp, TrueLbl, FalseLbl, Pred)], ConstTab};
-    boolean ->
-      TmpT = hipe_rtl:mk_new_var(),
-      TmpF = hipe_rtl:mk_new_var(),
-      Lbl = hipe_rtl:mk_new_label(),
-      {[hipe_rtl:mk_load_atom(TmpT, true),
-	hipe_rtl:mk_branch(X, eq, TmpT, TrueLbl,hipe_rtl:label_name(Lbl),Pred),
-        Lbl,
-        hipe_rtl:mk_load_atom(TmpF, false),
-        hipe_rtl:mk_branch(X, eq, TmpF, TrueLbl, FalseLbl, Pred)], ConstTab};
-    bignum ->
-      {hipe_tagscheme:test_bignum(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    pid ->
-      {hipe_tagscheme:test_any_pid(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    port ->
-      {hipe_tagscheme:test_any_port(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    reference ->
-      {hipe_tagscheme:test_ref(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    function ->
-      {hipe_tagscheme:test_fun(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    binary ->
-      {hipe_tagscheme:test_binary(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    constant ->
-      {hipe_tagscheme:test_constant(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    bitstr ->
-      {hipe_tagscheme:test_bitstr(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    {tuple, N} ->
+      {hipe_tagscheme:test_tuple_N(X, N, TrueLbl, FalseLbl, Pred), ConstTab};
     Other ->
       exit({?MODULE,{"unknown type",Other}})
   end;
@@ -640,7 +633,7 @@ gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred) ->
 args_to_vars([Arg|Args],VarMap, ConstTab) ->
   {Vars, VarMap1, ConstTab1, Code} = 
     args_to_vars(Args, VarMap, ConstTab),
-  case hipe_icode:is_var_or_fvar_or_reg(Arg) of
+  case hipe_icode:is_variable(Arg) of
     true ->
       {Var, VarMap2} = hipe_rtl_varmap:icode_var2rtl_var(Arg, VarMap1),
       {[Var|Vars], VarMap2, ConstTab1, Code};
@@ -676,8 +669,8 @@ args_to_vars([], VarMap, ConstTab) ->
 gen_const_move(Dst, Const, ConstTab) ->
   ConstVal = hipe_icode:const_value(Const),
   case type_of_const(Const) of
-    const_fun -> 
-      gen_fun_move(Dst, ConstVal, ConstTab);
+    %% const_fun -> 
+    %%   gen_fun_move(Dst, ConstVal, ConstTab);
     nil ->
       Src = hipe_rtl:mk_imm(tagged_val_of([])),
       {hipe_rtl:mk_move(Dst, Src), ConstTab};
@@ -690,11 +683,10 @@ gen_const_move(Dst, Const, ConstTab) ->
       gen_big_move(Dst, ConstVal, ConstTab)
   end.
 
-gen_fun_move(Dst, Fun, ConstTab) ->
-  ?WARNING_MSG("Funmove ~w! -- NYI\n", [Fun]),
-  {NewTab, Label} = hipe_consttab:insert_fun(ConstTab, Fun),
-  {hipe_rtl:mk_load_address(Dst, Label, constant),
-   NewTab}.
+%% gen_fun_move(Dst, Fun, ConstTab) ->
+%%   ?WARNING_MSG("Funmove ~w! -- NYI\n", [Fun]),
+%%   {NewTab, Label} = hipe_consttab:insert_fun(ConstTab, Fun),
+%%   {hipe_rtl:mk_load_address(Dst, Label, constant), NewTab}.
 
 gen_big_move(Dst, Big, ConstTab) ->
   {NewTab, Label} = hipe_consttab:insert_term(ConstTab, Big),
@@ -702,22 +694,18 @@ gen_big_move(Dst, Big, ConstTab) ->
    NewTab}.
 
 type_of_const(Const) ->
-  case hipe_icode:is_const_fun(Const) of
-    true -> const_fun;
-    false ->
-      case hipe_icode:const_value(Const) of
-	[] -> 
-	  nil;
-	X when is_integer(X) ->
-	  case hipe_tagscheme:is_fixnum(X) of
-	    true -> fixnum;
-	    false -> big
-	  end;
-	A when is_atom(A) ->
-	  atom;
-	_ -> 
-	  big
-      end
+  case hipe_icode:const_value(Const) of
+    [] -> 
+      nil;
+    X when is_integer(X) ->
+      case hipe_tagscheme:is_fixnum(X) of
+	true -> fixnum;
+	false -> big
+      end;
+    A when is_atom(A) ->
+      atom;
+    _ -> 
+      big
   end.
 
 tagged_val_of([]) -> hipe_tagscheme:mk_nil();

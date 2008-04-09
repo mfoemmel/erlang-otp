@@ -21,7 +21,6 @@
 %%
 %%	This module provides the user interface for the percept data
 %	collection (profiling).
-%% @author Björn-Egil Dahlberg 
 %% 
 
 -module(percept_profile).

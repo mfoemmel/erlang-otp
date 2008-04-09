@@ -13,7 +13,6 @@
 	     dialyzer_dataflow,
 	     dialyzer_dep,
 	     dialyzer_gui,
-	     dialyzer_icode,
 	     dialyzer_options,
 	     dialyzer_plt,
 	     dialyzer_succ_typings,

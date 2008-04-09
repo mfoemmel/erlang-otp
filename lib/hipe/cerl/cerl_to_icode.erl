@@ -103,7 +103,7 @@
 
 %% Record definitions
 
--record(ctxt, {final = false,
+-record(ctxt, {final = false :: bool(),
 	       effect = false,
 	       fail = [],		% [] or fail-to label
 	       class = expr,		% expr | guard
@@ -289,7 +289,6 @@ function_1(Name, Fun, Degree, S) ->
     %% target variables for the result of the function.
     Args = cerl:fun_vars(Fun),
     IcodeArity = length(Args),
-    ArgType = get_arg_types(Fun),
     Vs = make_vars(IcodeArity),
     Vs1 = make_vars(IcodeArity),    % input variable temporaries
     Ts = make_vars(Degree),
@@ -320,7 +319,7 @@ function_1(Name, Fun, Degree, S) ->
     Module = s__get_module(S2),
     Code = s__get_code(S2),
     Function = icode_icode(Module, Name, Vs1, Closure, Code,
-			   {LowV, HighV}, {LowL, HighL}, ArgType),
+			   {LowV, HighV}, {LowL, HighL}),
     if Closure -> 
 	    {value, {_, OrigArity}} =
 		lists:keysearch(closure_orig_arity, 1, cerl:get_ann(Fun)),
@@ -865,8 +864,7 @@ expr_apply(E, Ts, Ctxt, Env, S) ->
 			error ->
 			    %% Assumed to be a function in the
 			    %% current module; we don't check.
-			    add_local_call(V, Vs, Ts, Ctxt, S1,
-					   get_type(E));
+			    add_local_call(V, Vs, Ts, Ctxt, S1);
 			{ok, #'fun'{label = L, vars = Vs1}} ->
 			    %% Call to a local letrec-bound function.
 			    add_letrec_call(L, Vs1, Vs, Ctxt, S1);
@@ -2203,11 +2201,11 @@ add_continuation_jump(Label, Ctxt, S) ->
 add_new_continuation_label(Ctxt, S) ->
     add_continuation_label(new_continuation_label(Ctxt), Ctxt, S).
 
-add_local_call({Name, _Arity} = V, Vs, Ts, Ctxt, S, DstType) ->
+add_local_call({Name, _Arity} = V, Vs, Ts, Ctxt, S) ->
     Module = s__get_module(S),
     case Ctxt#ctxt.final of
 	false ->
-	    add_code([icode_call_local(Ts, Module, Name, Vs, DstType)],S);
+	    add_code([icode_call_local(Ts, Module, Name, Vs)],S);
 	true ->
 	    Self = s__get_function(S),
 	    if V =:= Self ->
@@ -2587,53 +2585,13 @@ make_vars(0) ->
 make_reg() ->
     icode_reg(new_var()).
 
-get_arg_types(Fun) ->
-    Type = get_typesig(Fun),
-    case erl_types:t_is_fun(Type) of
-	true -> erl_types:t_fun_args(Type);
-	false -> 
-	    TL = get_type(cerl:fun_vars(Fun)),
-	    case lists:all(fun(X) -> X =:= placeholder end, TL) of
-		true -> none;
-		false -> lists:map(fun(placeholder) -> erl_types:t_any();
-				      (X) -> X
-				   end, TL)
-	    end
-    end.
-
-get_typesig(E) ->
-    case lists:keysearch(typesig, 1, cerl:get_ann(E)) of
-	{value, {typesig, Type}} -> Type;
-	false -> erl_types:t_any()
-    end.
-
-get_type(List) when is_list(List) ->
-    get_type_list(List, []);
-get_type(E) ->
-    case lists:keysearch(type, 1, cerl:get_ann(E)) of
-	{value, {type, Type}} -> Type;
-	false -> erl_types:t_any()
-    end.
-
-get_type_list([H|T], Acc)->
-    case lists:keysearch(type, 1, cerl:get_ann(H)) of
-	{value, {type, Type}} -> get_type_list(T, [Type|Acc]);
-	false -> get_type_list(T, [placeholder|Acc])
-    end;
-get_type_list([], Acc) ->
-    lists:reverse(Acc).
-
 
 %% ---------------------------------------------------------------------
 %% ICode interface
 
-icode_icode(M, {F, A}, Vs, Closure, C, V, L, T) ->
+icode_icode(M, {F, A}, Vs, Closure, C, V, L) ->
     MFA = {M, F, A},
-    if T =:= none ->
-	    hipe_icode:mk_icode(MFA, Vs, Closure, false, C, V, L);
-       true ->
-	    hipe_icode:mk_typed_icode(MFA, Vs, Closure, false, C, V, L, T)
-    end.
+    hipe_icode:mk_icode(MFA, Vs, Closure, false, C, V, L).
 
 icode_icode_name(Icode) ->
     hipe_icode:icode_fun(Icode).
@@ -2652,8 +2610,8 @@ icode_const(X) -> hipe_icode:mk_const(X).
 
 icode_const_val(X) -> hipe_icode:const_value(X).
 
-icode_call_local(Ts, M, N, Vs, DstType) ->
-    hipe_icode:mk_typed_call(Ts, M, N, Vs, local, DstType).
+icode_call_local(Ts, M, N, Vs) ->
+    hipe_icode:mk_call(Ts, M, N, Vs, local).
 
 icode_call_remote(Ts, M, N, Vs) ->
     hipe_icode:mk_call(Ts, M, N, Vs, remote).

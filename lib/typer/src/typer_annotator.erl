@@ -1,6 +1,6 @@
 %% -*- erlang-indent-level: 2 -*-
 %%============================================================================
-%% File    : typer_generator.erl
+%% File    : typer_annotator.erl
 %% Author  : Bingwen He <hebingwen@hotmail.com>
 %% Description : 
 %%    If file 'FILENAME' has been analyzed, then the output of
@@ -8,9 +8,9 @@
 %%    should be exactly what TypEr has added, namely type info.
 %%============================================================================
 
--module(typer_generator).
+-module(typer_annotator).
 
--export([generate_result/1]).
+-export([annotate/1]).
 
 %%----------------------------------------------------------------------------
 
@@ -21,36 +21,40 @@
 
 -define(TYPER_ANN_DIR, typer_ann).
 
--record(info, {recMap = typer_map:new(),
-	       funcs = [],
-	       typeMap,
-	       contracts :: bool()}).
--record(inc, {map = typer_map:new(),
-	      filter = []}).
+-type(func_info() :: {pos_integer(), atom(), byte()}).
+
+-record(info, {recMap = typer_map:new() :: dict(),
+	       funcs = []               :: [func_info()],
+	       typeMap                  :: dict(),
+	       contracts                :: bool()}).
+-record(inc, {map    = typer_map:new() :: dict(),
+	      filter = []              :: [string()]}).
 
 %%----------------------------------------------------------------------------
 
-generate_result(Analysis) ->
-  case typer_options:option_type(Analysis#analysis.mode) of
+-spec(annotate/1 :: (#typer_analysis{}) -> 'ok').
+
+annotate(Analysis) ->
+  case typer_options:option_type(Analysis#typer_analysis.mode) of
     for_show ->
       Fun = fun({File,Module}) -> 
 	      Info = get_final_info(File, Module, Analysis),
 	      show_type_info_only(File, Info)
 	    end,
-      lists:foreach(Fun, Analysis#analysis.final_files);
+      lists:foreach(Fun, Analysis#typer_analysis.final_files);
     for_annotation ->
-      generate_file(Analysis)
+      annotate_file(Analysis)
   end.
 
-generate_file(Analysis) ->
-  Mode = Analysis#analysis.mode,
+annotate_file(Analysis) ->
+  Mode = Analysis#typer_analysis.mode,
   case Mode of
     ?ANNOTATE ->
       Fun = fun({File,Module}) ->
 		Info = get_final_info(File, Module, Analysis),
 		write_typed_file(File, Info)
 	    end,
-      lists:foreach(Fun, Analysis#analysis.final_files);
+      lists:foreach(Fun, Analysis#typer_analysis.final_files);
     ?ANNOTATE_INC_FILES ->
       IncInfo = write_and_collect_inc_info(Analysis),
       write_inc_files(IncInfo)
@@ -63,7 +67,7 @@ write_and_collect_inc_info(Analysis) ->
 	    IncFuns = get_functions(File, Analysis),
 	    collect_imported_funcs(IncFuns, Info#info.typeMap, Inc)
 	end,
-  NewInc = lists:foldl(Fun,#inc{}, Analysis#analysis.final_files),
+  NewInc = lists:foldl(Fun,#inc{}, Analysis#typer_analysis.final_files),
   clean_inc(NewInc).
 
 write_inc_files(Inc) ->
@@ -86,19 +90,19 @@ write_inc_files(Inc) ->
   lists:foreach(Fun, dict:fetch_keys(Inc#inc.map)).
 
 get_final_info(File, Module, Analysis) ->
-  RecMap = get_recMap(File,Analysis),
-  TypeMap = get_typeMap(Module,Analysis,RecMap),
+  RecMap = get_recMap(File, Analysis),
+  TypeMap = get_typeMap(Module, Analysis,RecMap),
   Functions = get_functions(File, Analysis),
-  Contracts = Analysis#analysis.contracts,
+  Contracts = Analysis#typer_analysis.contracts,
   #info{recMap=RecMap, funcs=Functions, typeMap=TypeMap, contracts=Contracts}.
 
-collect_imported_funcs(Funcs,TypeMap,TmpInc) ->
+collect_imported_funcs(Funcs, TypeMap, TmpInc) ->
   %% Coming from other sourses, including:
   %% FIXME: How to deal with yecc-generated file????
   %%     --.yrl (yecc-generated file)???
   %%     -- yeccpre.hrl (yecc-generated file)???
   %%     -- other cases
-  Fun = fun({File,_}=Obj,Inc) ->
+  Fun = fun({File,_} = Obj, Inc) ->
 	    case is_yecc_file(File, Inc) of
 	      {yecc_generated, NewInc} -> NewInc;
 	      {not_yecc, NewInc} ->
@@ -107,25 +111,27 @@ collect_imported_funcs(Funcs,TypeMap,TmpInc) ->
 	end,
   lists:foldl(Fun, TmpInc, Funcs).
 
+-spec(is_yecc_file/2 ::
+      (string(), #inc{}) -> {'not_yecc', #inc{}} | {'yecc_generated', #inc{}}).
 is_yecc_file(File, Inc) ->
-  case lists:member(File,Inc#inc.filter) of
-    true -> {yecc_generated,Inc};
+  case lists:member(File, Inc#inc.filter) of
+    true -> {yecc_generated, Inc};
     false ->
       case filename:extension(File) of
-	".yrl" -> 
-	  Rootname = filename:rootname(File,".yrl"),
-	  Obj = lists:concat([Rootname,".erl"]),
-	  case lists:member(Obj,Inc#inc.filter) of
-	    true -> {yecc_generated,Inc};
+	".yrl" ->
+	  Rootname = filename:rootname(File, ".yrl"),
+	  Obj = Rootname ++ ".erl",
+	  case lists:member(Obj, Inc#inc.filter) of
+	    true -> {yecc_generated, Inc};
 	    false ->
 	      NewFilter = [Obj|Inc#inc.filter],
 	      NewInc = Inc#inc{filter=NewFilter},
-	      {yecc_generated,NewInc}
+	      {yecc_generated, NewInc}
 	  end;
 	_ ->
 	  case filename:basename(File) of
-	    "yeccpre.hrl" -> {yecc_generated,Inc};
-	    _ -> {not_yecc,Inc}
+	    "yeccpre.hrl" -> {yecc_generated, Inc};
+	    _ -> {not_yecc, Inc}
 	  end
       end
   end.
@@ -187,16 +193,16 @@ normalize_obj(TmpInc) ->
   TmpInc#inc{map=NewMap}.
   
 get_recMap(File, Analysis) ->
-  typer_map:lookup(File, Analysis#analysis.record).
+  typer_map:lookup(File, Analysis#typer_analysis.record).
 
 get_typeMap(Module, Analysis, RecMap) ->
-  TypeInfoPlt = Analysis#analysis.trust_plt,
+  TypeInfoPlt = Analysis#typer_analysis.trust_plt,
   TypeInfo = 
     case dialyzer_plt:lookup_module(TypeInfoPlt, Module) of
       none -> [];
       {value, List} -> List
     end,
-  Codeserver = Analysis#analysis.code_server,
+  Codeserver = Analysis#typer_analysis.code_server,
   TypeInfoList =
     lists:map(
       fun({MFA = {M,F,A}, Range, Arg}) ->
@@ -225,31 +231,32 @@ get_typeMap(Module, Analysis, RecMap) ->
   typer_map:from_list(TypeInfoList).
 
 get_functions(File, Analysis) ->
-  case Analysis#analysis.mode of
+  case Analysis#typer_analysis.mode of
     ?SHOW ->
-      Funcs = typer_map:lookup(File, Analysis#analysis.func),
-      Inc_Funcs = typer_map:lookup(File, Analysis#analysis.inc_func),
-      remove_useless_func(Funcs) ++ normalize_incFuncs(Inc_Funcs);
+      Funcs = typer_map:lookup(File, Analysis#typer_analysis.func),
+      Inc_Funcs = typer_map:lookup(File, Analysis#typer_analysis.inc_func),
+      remove_module_info(Funcs) ++ normalize_incFuncs(Inc_Funcs);
     ?SHOW_EXPORTED ->
-      Ex_Funcs = typer_map:lookup(File, Analysis#analysis.ex_func),
-      remove_useless_func(Ex_Funcs);
+      Ex_Funcs = typer_map:lookup(File, Analysis#typer_analysis.ex_func),
+      remove_module_info(Ex_Funcs);
     ?ANNOTATE ->
-      Funcs = typer_map:lookup(File, Analysis#analysis.func),
-      remove_useless_func(Funcs);
+      Funcs = typer_map:lookup(File, Analysis#typer_analysis.func),
+      remove_module_info(Funcs);
     ?ANNOTATE_INC_FILES ->
-      typer_map:lookup(File, Analysis#analysis.inc_func)
+      typer_map:lookup(File, Analysis#typer_analysis.inc_func)
   end.
 
 normalize_incFuncs(Funcs) ->
   [FuncInfo || {_FileName,FuncInfo} <- Funcs].
 
-remove_useless_func(Funcs) ->
-  Fun = fun 
-	  ({_,module_info,0}) -> false;
-	  ({_,module_info,1}) -> false;
-	  ({_,_,_}) -> true
-	end,
-  lists:filter(Fun,Funcs).
+-spec(remove_module_info/1 :: ([func_info()]) -> [func_info()]).
+remove_module_info(FuncInfoList) ->
+  F = fun 
+	({_,module_info,0}) -> false;
+	({_,module_info,1}) -> false;
+	({Line,F,A}) when is_integer(Line), is_atom(F), is_integer(A) -> true
+      end,
+  lists:filter(F, FuncInfoList).
 
 write_typed_file(File, Info) ->
   io:format("      Processing file: ~p\n",[File]),
@@ -262,11 +269,13 @@ write_typed_file(File, Info) ->
   case file:make_dir(TyperAnnDir) of
     {error, Reason} ->
       case Reason of
-	eexist -> %% TypEr dir exists,remove old typer files
-	  file:delete(NewFileName),
+	eexist -> %% TypEr dir exists; remove old typer files
+	  ok = file:delete(NewFileName),
 	  write_typed_file(File, Info, NewFileName);
-	enospc -> io:format("  Not enough space in ~p\n", [Dir]);
-	eacces -> io:format("  No write permission in ~p\n", [Dir]);
+	enospc ->
+	  io:format("  Not enough space in ~p\n", [Dir]);
+	eacces ->
+	  io:format("  No write permission in ~p\n", [Dir]);
 	_ ->
 	  io:format("Unknown error when writing ~p\n", [Dir]),
 	  halt()
@@ -276,19 +285,18 @@ write_typed_file(File, Info) ->
   end.
 
 write_typed_file(File, Info, NewFileName) ->
-  {ok,Binary} = file:read_file(File),
+  {ok, Binary} = file:read_file(File),
   List = binary_to_list(Binary),
   write_typed_file(List, NewFileName, Info, 1, []),
   io:format("             Saved as: ~p\n", [NewFileName]).
 
 write_typed_file(Rest, File, #info{funcs=[]}, _LNo, _Acc) ->
-  file:write_file(File, list_to_binary(Rest), [append]), 
-  {ok,done};
+  ok = file:write_file(File, list_to_binary(Rest), [append]);
 write_typed_file([First|RestCh], File, Info, LineNo, Acc) ->
   [{Line,F,A}|RestFuncs] = Info#info.funcs,
   case Line of 
     1 -> %% This will happen only for inc files
-      raw_write(F, A, Info, File, []),
+      ok = raw_write(F, A, Info, File, []),
       NewInfo = Info#info{funcs=RestFuncs},
       NewAcc = [],
       write_typed_file([First|RestCh], File, NewInfo, Line, NewAcc);
@@ -298,7 +306,7 @@ write_typed_file([First|RestCh], File, Info, LineNo, Acc) ->
 	  NewLineNo = LineNo + 1,
 	  case NewLineNo of
 	    Line ->
-	      raw_write(F, A, Info, File, [First|Acc]),
+	      ok = raw_write(F, A, Info, File, [First|Acc]),
 	      NewInfo = Info#info{funcs=RestFuncs},
 	      NewAcc = [];
 	    _ ->

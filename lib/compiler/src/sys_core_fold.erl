@@ -1995,11 +1995,21 @@ update_types(Expr, Pat, #sub{t=Tdb0}=Sub) ->
     Tdb = update_types_1(Expr, Pat, Tdb0),
     Sub#sub{t=Tdb}.
 
-update_types_1(#c_var{name=V}, [#c_tuple{}=P], Types) ->
-    orddict:store(V, P, Types);
+update_types_1(#c_var{name=V,anno=Anno}, Pat, Types) ->
+    case member(reuse_for_context, Anno) of
+	true ->
+	    %% If a variable has been marked for reuse of binary context,
+	    %% optimizations based on type information are unsafe.
+	    kill_types(V, Types);
+	false ->
+	    case Pat of
+		[#c_tuple{}=P] -> orddict:store(V, P, Types);
+		_ -> Types
+	    end
+    end;
 update_types_1(_, _, Types) -> Types.
 
-%% update_types(V, Tdb) -> Tdb'
+%% kill_types(V, Tdb) -> Tdb'
 %%  Kill any entries that references the variable,
 %%  either in the key or in the value.
 kill_types(V, [{V,_}|Tdb]) ->
@@ -2154,11 +2164,13 @@ bsm_leftmost_2([], Cs, _, Pos) ->
 bsm_ensure_no_partition(Cs, Pos) ->
     bsm_ensure_no_partition_1(Cs, Pos, before).
 
+%% Loop through each clause.
 bsm_ensure_no_partition_1([#c_clause{pats=Ps,guard=G}|Cs], Pos, State0) ->
     State = bsm_ensure_no_partition_2(Ps, Pos, G, simple_vars, State0),
     bsm_ensure_no_partition_1(Cs, Pos, State);
 bsm_ensure_no_partition_1([], _, _) -> ok.
 
+%% Loop through each pattern for this clause.
 bsm_ensure_no_partition_2([#c_binary{}=Where|_], 1, _, Vstate, State) ->
     case State of
 	before when Vstate =:= simple_vars -> within;
@@ -2171,14 +2183,35 @@ bsm_ensure_no_partition_2([#c_alias{}=Alias|_], 1, N, Vstate, State) ->
     %% Retrieve the real pattern that the alias refers to and check that.
     P = bsm_real_pattern(Alias),
     bsm_ensure_no_partition_2([P], 1, N, Vstate, State);
-bsm_ensure_no_partition_2([P|_], 1, _, _Vstate, State) ->
+bsm_ensure_no_partition_2([_|_], 1, _, _Vstate, before=State) ->
+    %% No binary matching yet - therefore no partition.
+    State;
+bsm_ensure_no_partition_2([P|_], 1, _, Vstate, State) ->
     case bsm_could_match_binary(P) of
 	false ->
-	    %% A pattern that cannot match a binary will not be a problem.
-	    State;
+	    %% If clauses can be freely arranged (Vstate =:= simple_vars),
+	    %% a clause that cannot match a binary will not partition the clause.
+	    %% Example:
+	    %%
+	    %% a(Var, <<>>) -> ...
+	    %% a(Var, []) -> ...
+	    %% a(Var, <<B>>) -> ...
+	    %%
+	    %% But if the clauses can't be freely rearranged, as in
+	    %%
+	    %% b(Var, <<>>) -> ...
+	    %% b(1, 2) -> ...
+	    %%
+	    %% we do have a problem.
+	    %%
+	    case Vstate of
+		simple_vars -> State;
+		_ -> bsm_problem(P, Vstate)
+	    end;
 	true ->
+	    %% The pattern P *may* match a binary, so we must update the state.
+	    %% (P must be a variable.)
 	    case State of
-		before -> before;
 		within -> 'after';
 		'after' -> 'after'
 	    end

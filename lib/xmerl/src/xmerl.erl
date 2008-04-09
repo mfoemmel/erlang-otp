@@ -241,7 +241,7 @@ export_element(#xmlDecl{}, _CBs) ->
 %% document. 
 export_element(E, CB,CBstate) when atom(CB) ->
     export_element(E, callbacks(CB), CBstate);
-export_element(#xmlText{value = Text},CBs,CBstate) ->
+export_element(#xmlText{value = Text},CBs,_CBstate) ->
 %%    apply_cb(CBs, '#text#', '#text#', [Text,CBstate]);
     apply_text_cb(CBs,Text);
 export_element(E=#xmlElement{name = Tag,
@@ -311,7 +311,7 @@ apply_cb(Ms, F, Df, Args) ->
 
 apply_cb([M|Ms], F, Df, Args, Ms0) ->
     case catch apply(M, F, Args) of
-	{'EXIT', {undef, _}} ->
+	{'EXIT', {undef,[{M,F,_}|_]}} ->
 	    apply_cb(Ms, F, Df, Args, Ms0);
 	{'EXIT', Reason} ->
 	    exit(Reason);

@@ -156,7 +156,7 @@
 %%     <dd>Use indexing for multiple-choice branch selection.</dd>
 %%
 %%   <dt><code>use_callgraph</code></dt>
-%%     <dd>Use a static call-graph for determining the order in which
+%%     <dd>Use a static call graph for determining the order in which
 %%         the functions of a module should be compiled (in reversed 
 %%         topological sort order).</dd>
 %% </dl></p>
@@ -313,13 +313,8 @@ c(Name, Options) ->
 c(Name, File, Opts) ->
   %% No server if only one function is compiled
   case compile(Name, File, user_compile_opts(Opts)) of
-    {ok, Res} ->
-      case proplists:get_bool(dialyzer, Opts) of
-	true ->
-	  {ok, Res};
-	false ->
-	  {ok, Name}
-      end;
+    {ok, _Res} ->
+      {ok, Name};
     Other ->
       Other
   end.
@@ -330,6 +325,8 @@ c(Name, File, Opts) ->
 %%     Reason = term()
 %%
 %% @equiv f(File, [])
+
+-spec(f/1 :: (f_unit()) -> {'ok', mod()} | {'error', _}).
 
 f(File) ->
   f(File, []).
@@ -368,6 +365,8 @@ user_compile_opts(Opts) ->
 %% 
 %% @equiv compile(Name, [])
 
+-spec(compile/1 :: (c_unit()) -> {'ok', compile_ret()} | {'error', _}).
+
 compile(Name) ->
   compile(Name, []).
 
@@ -391,10 +390,14 @@ compile(Name) ->
 %% @see file/2
 %% @see load/2
 
+-spec(compile/2 ::
+      (c_unit(), comp_options()) ->
+	 {'ok', compile_ret()} | {'error', _}).
+
 compile(Name, Options) ->
   compile(Name, beam_file(Name), Options).
 
--spec(beam_file/1 :: (atom() | mfa()) -> string()).
+-spec(beam_file/1 :: (mod() | mfa()) -> string()).
 
 beam_file({M,F,A}) when is_atom(M), is_atom(F), is_integer(A), A >= 0 ->
   beam_file(M);
@@ -421,7 +424,7 @@ beam_file(Module) when is_atom(Module) ->
 
 -spec(compile/3 ::
       (c_unit(), compile_file(), comp_options()) ->
-	  {'ok', compile_ret()} | {'error', _}).
+	 {'ok', compile_ret()} | {'error', _}).
 
 compile(Name, File, Opts0) ->
   Opts1 = expand_kt2(Opts0),
@@ -470,9 +473,9 @@ compile(Name, File, Opts0) ->
 	  _ ->
 	    case Name of
 	      {_M,_F,_A} ->
-		%% There is no point in using the callgraph when
-		%% analyzing just one function. or to use concurrent_comp
-		[no_use_callgraph,no_concurrent_comp|Opts];
+		%% There is no point in using the callgraph or concurrent_comp
+		%% when analyzing just one function.
+		[no_use_callgraph, no_concurrent_comp|Opts];
 	      _ -> Opts
 	    end
 	end,
@@ -482,6 +485,10 @@ compile(Name, File, Opts0) ->
 		 end,
       run_compiler(Name, DisasmFun, IcodeFun, NewOpts)
   end.
+
+-spec(compile_core/4 ::
+      (mod(), _, compile_file(), comp_options()) ->
+	 {'ok', compile_ret()} | {'error', _}).
 
 compile_core(Name, Core0, File, Opts) ->
   Core = cerl:from_records(Core0),
@@ -510,15 +517,11 @@ compile_core(Name, Core0, File, Opts) ->
 %% @see compile/3
 
 -spec(compile/4 ::
-      (atom(), _, compile_file(), comp_options()) ->
+      (mod(), _, compile_file(), comp_options()) ->
 	 {'ok', compile_ret()} | {'error', _}).
 
 compile(Name, [], File, Opts) ->
   compile(Name, File, Opts);
-compile({M,F,A}, _Core, _File, _Opts) ->
-  ?WARNING_MSG("Cannot compile single functions from source code. (~p}.\n",[{M,F,A}]),
-  {ok, <<>>};  % dummy
-%  compile(M, Core, File, Opts);
 compile(Name, Core, File, Opts) when is_atom(Name) ->
   DisasmFun = fun (_) -> {false, []} end,
   IcodeFun = fun (_, Opts) ->
@@ -738,8 +741,7 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
   ?when_option(verbose, Opts,
 	       ?debug_msg("Compiled ~p in ~.2f s\n",
 			  [Mod,(T2Compile-T1Compile)/1000])),
-  case (proplists:get_bool(to_rtl, Opts) orelse 
-	proplists:get_bool(dialyzer, Opts)) of
+  case proplists:get_bool(to_rtl, Opts) of
     true ->
       {ok, CompiledCode};
     false ->
@@ -748,16 +750,18 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
 		hipe_icode:icode_is_closure(Icode)],
       {T1,_} = erlang:statistics(runtime),
       ?when_option(verbose, Opts, ?debug_msg("Assembling ~w",[Mod])),
-      case catch assemble(CompiledCode, Closures, Exports, Opts) of
-	{'EXIT',Error} -> {error,Error};
+      try assemble(CompiledCode, Closures, Exports, Opts) of
 	Bin ->
 	  {T2,_} = erlang:statistics(runtime),
 	  ?when_option(verbose, Opts,
 		       ?debug_untagged_msg(" in ~.2f s\n",
 					   [(T2-T1)/1000])),
-	  maybe_load(Mod, Bin, WholeModule, Opts),
+	  {module,Mod} = maybe_load(Mod, Bin, WholeModule, Opts),
 	  TargetArch = get(hipe_target_arch),
 	  {ok, {TargetArch,Bin}}
+      catch
+	error:Error ->
+	  {error,Error,erlang:get_stacktrace()}
       end
   end.
 
@@ -773,15 +777,21 @@ finalize_fun(MfaIcodeList, Exports, Opts) ->
 
 finalize_fun_concurrent(MfaIcodeList, Exports, Opts) ->
   Self = self(),
+  NotModInfo =
+    case proplists:get_value(core, Opts) of
+      FalseVal when (FalseVal =:= undefined) or (FalseVal =:= false) ->
+	fun(F,A) -> (F =/= module_info) or (A > 1) end;
+      TrueVal when (TrueVal =:= true) ->
+	fun(_,_) -> true end
+    end,
   case MfaIcodeList of
     [{{M,_,_},_}|_] ->
       CallGraph = hipe_icode_callgraph:construct_callgraph(MfaIcodeList),
       Closures = [{MFA,true} || {MFA, Icode} <- MfaIcodeList,
 				hipe_icode:icode_is_closure(Icode)],
-      Exported = [{{M,F,A},false} || {F,A} <- Exports, not ((F =:= module_info) 
-							    and ((A =:= 1) or (A =:= 0)))],
+      Exported = [{{M,F,A},false} || {F,A} <- Exports, NotModInfo(F,A)],
       NonEscaping = [{M,F,A} || {{M,F,A}, Icode} <- MfaIcodeList, 
-				not lists:member({F,A},Exports),
+				not lists:member({F,A}, Exports),
 				not hipe_icode:icode_is_closure(Icode)],
       Escaping = Closures++Exported,
       TypeServerFun =
@@ -811,10 +821,11 @@ finalize_fun_concurrent(MfaIcodeList, Exports, Opts) ->
 	     init(Opts),
 	     Self ! finalize_fun_sequential(IcodeFun, Opts, Servers)
 	 end || IcodeFun <- MfaIcodeList],
-      [spawn_link(Fun) || Fun <- CompFuns],
+      lists:foreach(fun (F) -> spawn_link(F) end, CompFuns),
       Final = [receive Res when element(1,Res) =:= MFA -> Res end ||
 		{MFA,_} <- MfaIcodeList],
-      [stop_and_wait(Pid) || Pid <- [PPServer,TypeServer,RangeServer]],
+      lists:foreach(fun (Pid) -> stop_and_wait(Pid) end,
+		    [PPServer,TypeServer,RangeServer]),
       Final;
     [] ->
       []
@@ -830,7 +841,7 @@ stop_and_wait(Pid) ->
 finalize_fun_sequential({MFA, Icode}, Opts, Servers) ->
   {T1,_} = erlang:statistics(runtime),
   ?when_option(verbose, Opts, ?debug_msg("Compiling ~w~n", [MFA])),
-  case catch hipe_main:compile_icode(MFA, Icode, Opts, Servers) of
+  try hipe_main:compile_icode(MFA, Icode, Opts, Servers) of
     {native, _Platform, {unprofiled,Code}} ->
       {T2,_} = erlang:statistics(runtime),
       ?when_option(verbose, Opts,
@@ -838,16 +849,12 @@ finalize_fun_sequential({MFA, Icode}, Opts, Servers) ->
       {MFA, Code};
     {rtl, LinearRtl} ->
       io:format("~p~n", [LinearRtl]),
-      {MFA, LinearRtl};
-    {dialyzer, IcodeSSA} ->
-      {MFA, IcodeSSA};
-    {native, X} ->
-      ?error_msg("ERROR: unknown native code format: ~P.\n", [X]),
-      ?EXIT(unknown_format);
-    {'EXIT', Error} -> 
+      {MFA, LinearRtl}
+  catch
+    error:Error -> 
       ?when_option(verbose, Opts,?debug_untagged_msg("\n", [])),
-      ?error_msg("ERROR: ~p~n", [Error]),
-      ?EXIT(Error)
+      ?error_msg("ERROR: ~p~n", [{Error,erlang:get_stacktrace()}]),
+      ?EXIT({Error,erlang:get_stacktrace()})
   end.
 
 pp_server_start(Opts) ->
@@ -876,7 +883,7 @@ icode_multret(List, Mod, Opts, Exports) ->
 maybe_load(Mod, Bin, WholeModule, Opts) ->
   case proplists:get_bool(load, Opts) of
     false ->
-      ok;
+      {module,Mod};
     true ->
       ?when_option(verbose, Opts, ?debug_msg("Loading/linking\n", [])),
       do_load(Mod, Bin, WholeModule)
@@ -893,7 +900,7 @@ do_load(Mod, Bin, WholeModule) ->
   case WholeModule of 
     false ->
       %% In this case, the emulated code for the module must be loaded.
-      code:ensure_loaded(Mod),
+      {module, Mod} = code:ensure_loaded(Mod),
       code:load_native_partial(Mod, Bin);
     BinCode when is_binary(BinCode) ->
       case code:is_sticky(Mod) of
@@ -949,17 +956,18 @@ pre_init(Opts) ->
   %% a keylist with the counter values.
   put(hipe_time,
       case proplists:get_value(time, Options, false) of
-	true -> [hipe,hipe_main];
+	true -> [hipe, hipe_main];
 	OptTime -> OptTime
       end),
-  [?set_hipe_timer_val(Timer,0) || Timer <- hipe_timers()],
-  [case Counter of
-     {CounterName,InitVal} -> put(CounterName, InitVal);
-     CounterName  -> put(CounterName, 0)
-   end
-   || Counter <- proplists:get_value(counters, Options, [])],
-  
-  put(hipe_debug,     proplists:get_bool(debug, Options)),  
+  lists:foreach(fun (T) -> ?set_hipe_timer_val(T, 0) end, hipe_timers()),
+  lists:foreach(fun (Counter) ->
+		    case Counter of
+		      {CounterName,InitVal} -> put(CounterName, InitVal);
+		      CounterName -> put(CounterName, 0)
+		    end
+		end,
+		proplists:get_value(counters, Options, [])),
+  put(hipe_debug,     proplists:get_bool(debug, Options)),
   put(hipe_inline_fp, proplists:get_bool(inline_fp, Options)),
   ok.
 
@@ -1211,8 +1219,6 @@ option_text(timeout) ->
   "Specify compilation time limit in ms. Used as {timeout, LIMIT}.\n" ++
   "    The limit must be a non-negative integer or the atom 'infinity'.\n" ++
   "    The current default limit is 15 minutes (900000 ms).";
-option_text(type_warnings) ->
-  "Turns on warnings from the icode type propagator";
 option_text(use_indexing) ->
   "Use indexing for multiple-choice branch selection.";
 option_text(use_callgraph) ->
@@ -1287,18 +1293,16 @@ hipe_timers() ->
 
 opt_keys() ->
     [
+     binary_opt,
      bitlevel_binaries,
      concurrent_comp,
-     check_for_inlining,
      core,
      core_transform,
      counters,
      count_instrs,
      count_spills,
      count_temps,
-     dialyzer,
      debug,
-     frame_x86,
      get_called_modules,
      split_arith,
      split_arith_unsafe,
@@ -1346,7 +1350,6 @@ opt_keys() ->
      timeregalloc,
      timers,
      to_rtl,
-     type_warnings,
      use_indexing,
      use_inline_atom_search,
      use_callgraph,
@@ -1377,22 +1380,22 @@ o1_opts() ->
 
 o2_opts() ->
   Common = [icode_ssa_const_prop, icode_ssa_copy_prop, icode_ssa_struct_reuse,
-	    icode_type, icode_inline_bifs,
+	    icode_type, icode_inline_bifs, rtl_lcm,
 	    rtl_ssa, rtl_ssa_const_prop,
 	    spillmin_color, use_indexing, remove_comments, 
-	    concurrent_comp | o1_opts()],
+	    concurrent_comp, binary_opt | o1_opts()],
   case get(hipe_target_arch) of
     ultrasparc ->
-      [rtl_lcm | Common];
+      Common;
     powerpc ->
-      [rtl_lcm | Common];
+      Common;
     arm ->
-      [rtl_lcm | Common];
+      Common;
     x86 ->
-      [rtl_lcm | Common];
+      Common;
       % [rtl_ssapre | Common];
     amd64 ->
-      [rtl_lcm, icode_range | Common]; % range analysis is effective on 64 bits
+      [icode_range | Common]; % range analysis is effective on 64 bits
     Arch ->
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
@@ -1419,7 +1422,8 @@ o3_opts() ->
 %% "if 'x' ..." instead of "if not 'no_x' ...".
 
 opt_negations() ->
-  [{no_bitlevel_binaries, bitlevel_binaries},
+  [{no_binary_opt, binary_opt},
+   {no_bitlevel_binaries, bitlevel_binaries},
    {no_core, core},
    {no_debug, debug},
    {no_get_called_modules, get_called_modules},
@@ -1454,7 +1458,6 @@ opt_negations() ->
    {no_rtl_ssapre, rtl_ssapre},
    {no_rtl_show_translation, rtl_show_translation},
    {no_time, time},
-   {no_type_warnings, type_warnings},
    {no_use_callgraph, use_callgraph},
    {no_use_clusters, use_clusters},
    {no_use_inline_atom_search, use_inline_atom_search},

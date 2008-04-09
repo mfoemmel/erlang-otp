@@ -13,7 +13,7 @@
 %%             * 2003-10-01: Passed compiler testsuite.
 %% ============================================================================
 %%
-%% Exports: sparse_cond_const_propagate/1.
+%% Exports: propagate/1.
 %%
 %% ============================================================================
 %%
@@ -33,14 +33,15 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_icode_ssa_const_prop).
--export([sparse_cond_const_propagate/1]).
+-export([propagate/1]).
 
 -include("../main/hipe.hrl").
 -include("hipe_icode.hrl").
+-include("../flow/cfg.hrl").
 -include("hipe_icode_primops.hrl").
 
--define(CONST_PROP_MSG(Str,L),ok).
-%%-define(CONST_PROP_MSG(Str,L),io:format(Str,L)).
+-define(CONST_PROP_MSG(Str,L), ok).
+%%-define(CONST_PROP_MSG(Str,L), io:format(Str,L)).
 
 %%-define(DEBUG, 1).
 
@@ -51,6 +52,7 @@
 
 -define(CODE, hipe_icode).
 -define(CFG,  hipe_icode_cfg).
+
 -include("../ssa/hipe_ssa_const_prop.inc").
 
 %%-----------------------------------------------------------------------------
@@ -59,27 +61,25 @@ visit_expression(Instruction, Environment) ->
   EvaluatedArguments = [lookup_lattice_value(Argument, Environment) 
 			|| Argument <- hipe_icode:args(Instruction)],
   case Instruction of
-    #move{}  ->
-      visit_move_or_fmove     (Instruction, EvaluatedArguments, Environment);
-    #fmove{}  ->
-      visit_move_or_fmove     (Instruction, EvaluatedArguments, Environment);
-    #'if'{} ->
+    #icode_move{}  ->
+      visit_move              (Instruction, EvaluatedArguments, Environment);
+    #icode_if{} ->
       visit_if                (Instruction, EvaluatedArguments, Environment);
-    #goto{} ->
+    #icode_goto{} ->
       visit_goto              (Instruction, EvaluatedArguments, Environment);
-    #type{} ->
+    #icode_type{} ->
       visit_type              (Instruction, EvaluatedArguments, Environment);
-    #call{} ->
+    #icode_call{} ->
       visit_call              (Instruction, EvaluatedArguments, Environment);
-    #switch_val{} ->
+    #icode_switch_val{} ->
       visit_switch_val        (Instruction, EvaluatedArguments, Environment);
-    #switch_tuple_arity{} ->
+    #icode_switch_tuple_arity{} ->
       visit_switch_tuple_arity(Instruction, EvaluatedArguments, Environment);
-    #begin_handler{} ->
+    #icode_begin_handler{} ->
       visit_begin_handler     (Instruction, EvaluatedArguments, Environment);
-    #begin_try{} ->
+    #icode_begin_try{} ->
       visit_begin_try         (Instruction, EvaluatedArguments, Environment);
-    #fail{} ->                
+    #icode_fail{} ->                
       visit_fail              (Instruction, EvaluatedArguments, Environment);
     _ ->
       %% label, end_try, comment, return,
@@ -156,11 +156,8 @@ get_switch_target([{CaseValue, Target} | CaseList], Argument, FailLabel) ->
 
 %%-----------------------------------------------------------------------------
 
-visit_move_or_fmove(Instruction, [SourceValue], Environment) ->
-  Destination = case Instruction of
-		  #move {} -> hipe_icode:move_dst(Instruction);
-		  #fmove{} -> hipe_icode:fmove_dst(Instruction)
-		end,
+visit_move(Instruction, [SourceValue], Environment) ->
+  Destination = hipe_icode:move_dst(Instruction),
   {Environment1, SSAWork} = update_lattice_value({Destination, SourceValue},
 						 Environment),
   {[], SSAWork, Environment1}.
@@ -198,7 +195,7 @@ visit_fail(Instruction, _Arguments, Environment) ->
 %%-----------------------------------------------------------------------------
 
 visit_type(Instruction, Values, Environment) ->
-  case evaluate_type(hipe_icode:type_type(Instruction), Values) of
+  case evaluate_type(hipe_icode:type_test(Instruction), Values) of
     true ->
       TrueLabel  = hipe_icode:type_true_label(Instruction),
       FlowWork   = [TrueLabel];
@@ -248,13 +245,13 @@ visit_call(Dst, Args, Fun, Cont, Fail, Environment) ->
 
 %%-----------------------------------------------------------------------------
 
-call_fail_labels(I)->
+call_fail_labels(I) ->
   case hipe_icode:call_fail_label(I) of
     [] -> [];
     Label -> [Label]
   end.
 
-call_continuation_labels(I)->
+call_continuation_labels(I) ->
   case hipe_icode:call_continuation(I) of
     [] -> [];
     Label -> [Label]
@@ -308,7 +305,6 @@ evaluate_call_or_enter([Argument], Fun) ->
     _ ->
       bottom
   end;
-
 %% Binary calls
 evaluate_call_or_enter([Argument1,Argument2], Fun) ->
   case Fun of
@@ -437,21 +433,21 @@ evaluate_type_const(_Type, []) ->
 
 update_instruction(Instruction, Environment) ->
   case Instruction of
-    #call{} ->
+    #icode_call{} ->
       update_call(Instruction, Environment);
-    #enter{} ->
+    #icode_enter{} ->
       update_enter(Instruction, Environment);
-    #'if'{} ->
+    #icode_if{} ->
       update_if(Instruction, Environment);
-    #move{} ->
+    #icode_move{} ->
       update_move(Instruction, Environment);
-    #phi{} ->
+    #icode_phi{} ->
      update_phi(Instruction, Environment);
-    #switch_val{} ->
+    #icode_switch_val{} ->
       update_switch_val(Instruction, Environment);
-    #type{} ->
+    #icode_type{} ->
       update_type(Instruction, Environment);
-    #switch_tuple_arity{} ->
+    #icode_switch_tuple_arity{} ->
       update_switch_tuple_arity(Instruction, Environment);
     _ ->
       %% goto, comment, label, return, begin_handler, end_try,
@@ -631,7 +627,7 @@ update_phi(Instruction, Environment) ->
 update_type(Instruction, Environment) ->
   EvaluatedArguments = [lookup_lattice_value(Argument, Environment) || 
                          Argument <- hipe_icode:type_args(Instruction)],
-  case evaluate_type(hipe_icode:type_type(Instruction), EvaluatedArguments) of
+  case evaluate_type(hipe_icode:type_test(Instruction), EvaluatedArguments) of
     true ->
       TrueLabel  = hipe_icode:type_true_label(Instruction),
       ?CONST_PROP_MSG("typeT: ~w ---> goto ~w\n", [Instruction, TrueLabel]),
@@ -647,7 +643,7 @@ update_type(Instruction, Environment) ->
 %%-----------------------------------------------------------------------------
 
 update_switch_val(Instruction, Environment) ->
-  Argument = hipe_icode:switch_val_arg(Instruction),
+  Argument = hipe_icode:switch_val_term(Instruction),
   Value    = lookup_lattice_value(Argument, Environment),
   case Value of
     bottom ->
@@ -663,7 +659,7 @@ update_switch_val(Instruction, Environment) ->
 %%-----------------------------------------------------------------------------
 
 update_switch_tuple_arity(Instruction, Environment) ->
-  Argument = hipe_icode:switch_tuple_arity_arg(Instruction),
+  Argument = hipe_icode:switch_tuple_arity_term(Instruction),
   Value    = lookup_lattice_value(Argument, Environment),
   case Value of
     bottom ->

@@ -176,6 +176,15 @@ check_of(X) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 import(ImportList) ->
+    %% Register some well known top-nodes (directly under the root)
+    WellKnownNodes = [ makeInternalNode(ccitt,             [0]),
+		       makeInternalNode(iso,               [1]),
+		       makeInternalNode('joint-iso-ccitt', [2]) ],
+    lists:foreach(
+      fun(#me{aliasname = AliasName, oid = Oid}) ->
+	      register_oid(undef, AliasName, root, Oid)
+      end,
+      WellKnownNodes),
     lists:foreach(fun import_mib/1, ImportList).
 
 
@@ -183,20 +192,20 @@ import(ImportList) ->
 %% Returns: <nothing> only side effect stuff.
 %%----------------------------------------------------------------------
 import_mib({{'SNMPv2-SMI', ImportsFromMib},Line}) ->
-    Nodes = [makeInternalNode(internet, [1,3,6,1]),
-	     makeInternalNode(directory, [1,3,6,1,1]),
-	     makeInternalNode(mgmt, [1,3,6,1,2]),
-	     makeInternalNode('mib-2', [1,3,6,1,2,1]),
+    Nodes = [makeInternalNode(internet,     [1,3,6,1]),
+	     makeInternalNode(directory,    [1,3,6,1,1]),
+	     makeInternalNode(mgmt,         [1,3,6,1,2]),
+	     makeInternalNode('mib-2',      [1,3,6,1,2,1]),
 	     makeInternalNode(transmission, [1,3,6,1,2,1,10]),
 	     makeInternalNode(experimental, [1,3,6,1,3]),
-	     makeInternalNode(private, [1,3,6,1,4]),
-	     makeInternalNode(enterprises, [1,3,6,1,4,1]),
-	     makeInternalNode(zeroDotZero, [0,0]),
-	     makeInternalNode(security, [1,3,6,1,5]),
-	     makeInternalNode(snmpV2, [1,3,6,1,6]),
-	     makeInternalNode(snmpDomains, [1,3,6,1,6,1]),
-	     makeInternalNode(snmpProxys,[1,3,6,1,6,2]),
-	     makeInternalNode(snmpModules, [1,3,6,1,6,3])],
+	     makeInternalNode(private,      [1,3,6,1,4]),
+	     makeInternalNode(enterprises,  [1,3,6,1,4,1]),
+	     makeInternalNode(zeroDotZero,  [0,0]),
+	     makeInternalNode(security,     [1,3,6,1,5]),
+	     makeInternalNode(snmpV2,       [1,3,6,1,6]),
+	     makeInternalNode(snmpDomains,  [1,3,6,1,6,1]),
+	     makeInternalNode(snmpProxys,   [1,3,6,1,6,2]),
+	     makeInternalNode(snmpModules,  [1,3,6,1,6,3])],
     Types = [#asn1_type{bertype   = 'Integer32',
 			aliasname = 'Integer32',
 			lo = -2147483648, hi = 2147483647},

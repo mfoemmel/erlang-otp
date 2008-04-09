@@ -1,42 +1,49 @@
+%% -*- erlang-indent-level: 2 -*-
 %%%-------------------------------------------------------------------
-%%% File    : dot.erl
+%%% File    : hipe_dot.erl
 %%% Author  : Per Gustafsson <pergu@it.uu.se>
 %%% Description : 
 %%%
 %%% Created : 25 Nov 2004 by Per Gustafsson <pergu@it.uu.se>
 %%%-------------------------------------------------------------------
+
 -module(hipe_dot).
 
 -export([translate_digraph/3, translate_digraph/5, 
-	 translate_list/3, translate_list/4,translate_list/5]).
+	 translate_list/3, translate_list/4, translate_list/5]).
 
+%%--------------------------------------------------------------------
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-type(node()    :: any()).
+-type(edge()    :: {node(),node()}).
+-type(digraph() :: tuple()). % XXX: Temporarily
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% This module creates .dot representations of graphs from their
 %% Erlang representations. There are two different forms of Erlang
 %% representations that the module accepts, digraphs and lists of two
 %% tuples (where each tuple represent a directed edge).
 %%
-%% The functions also require a FileName and a name of the graph.  The
+%% The functions also require a FileName and a name of the graph. The
 %% filename is the name of the resulting .dot file the GraphName is
-%% pretty much useless
+%% pretty much useless.
 %%
-%% The resulting .dot reprsentation will be stored in the flie FileName
+%% The resulting .dot reprsentation will be stored in the flie FileName.
 %%
 %% Interfaces:
 %%
 %% translate_list(Graph::[{Node,Node}], FileName::string(),
 %%                GraphName::string()) -> ok
 %%
-%%translate_list(Graph::[{Node,Node}], FileName::string(),
+%% translate_list(Graph::[{Node,Node}], FileName::string(),
 %%                GraphName::string(), Options::[option] ) -> ok
 %%
 %% translate_list(Graph::[{Node::term(),Node::term()}], FileName::string(),
-%%                GraphName::string(), Fun::fun(term()->string()),
+%%                GraphName::string(), Fun::fun(term() -> string()),
 %%                Options::[option]) -> ok
 %%
-%% The optional Fun argument dictates how the node/names should be output
+%% The optional Fun argument dictates how the node/names should be output.
 %%
 %% The option list can be used to pass options to .dot to decide how
 %% different nodes and edges should be displayed.
@@ -44,37 +51,56 @@
 %% translate_digraph has the same interface as translate_list except
 %% it takes a digraph rather than a list
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
+-spec(translate_digraph/3 ::
+      (digraph(), string(), string()) -> 'ok').
 
 translate_digraph(G, FileName, GName) ->
   translate_digraph(G, FileName, GName, 
 		    fun(X) -> io_lib:format("~p", [X]) end, []).
+
+-spec(translate_digraph/5 ::
+      (digraph(), string(), string(), fun((_) -> string()), [_]) -> 'ok').
 
 translate_digraph(G, FileName, GName, Fun, Opts) ->
   Edges = [digraph:edge(G,X) || X <- digraph:edges(G)],
   EdgeList = [{X,Y}|| {_,X,Y,_} <- Edges],
   translate_list(EdgeList, FileName, GName, Fun, Opts).
 
+%%--------------------------------------------------------------------
+
+-spec(translate_list/3 ::
+      ([edge()], string(), string()) -> 'ok').
+
 translate_list(List, FileName, GName) ->
-  translate_list(List, FileName, GName, fun(X) -> lists:flatten(io_lib:format("~p", [X])) end, []).
+  translate_list(List, FileName, GName,
+		 fun(X) -> lists:flatten(io_lib:format("~p", [X])) end, []).
+
+-spec(translate_list/4 ::
+      ([edge()], string(), string(), [_]) -> 'ok').
 
 translate_list(List, FileName, GName, Opts) ->
-  translate_list(List, FileName, GName, fun(X) -> lists:flatten(io_lib:format("~p", [X])) end, Opts).
+  translate_list(List, FileName, GName,
+		 fun(X) -> lists:flatten(io_lib:format("~p", [X])) end, Opts).
+
+-spec(translate_list/5 ::
+      ([edge()], string(), string(), fun((_) -> string()), [_]) -> 'ok').
 
 translate_list(List, FileName, GName, Fun, Opts) ->
   {NodeList1, NodeList2} = lists:unzip(List),
   NodeList = NodeList1 ++ NodeList2,
   NodeSet = ordsets:from_list(NodeList),
   Start = ["digraph ",GName ," {"],
-  VertexList = 
-    [node_format(Opts, Fun, V) ||V <- NodeSet],
+  VertexList = [node_format(Opts, Fun, V) ||V <- NodeSet],
   End = ["graph [",GName,"=",GName,"]}"],
-  EdgeList = [edge_format(Opts,Fun,X,Y)||{X,Y}<-List],
+  EdgeList = [edge_format(Opts, Fun, X, Y) || {X,Y} <- List],
   String = [Start, VertexList, EdgeList, End],
-  %%io:format("~p~n", [lists:flatten([String])]),
-  file:write_file(FileName, list_to_binary(String)).
+  %% io:format("~p~n", [lists:flatten([String])]),
+  ok = file:write_file(FileName, list_to_binary(String)).
   
+%%--------------------------------------------------------------------
+
 node_format(Opt, Fun, V) ->
   OptText = nodeoptions(Opt, Fun ,V),
   Tmp = io_lib:format("~p",[Fun(V)]),
@@ -83,8 +109,8 @@ node_format(Opt, Fun, V) ->
   {Width, Heigth} = calc_dim(String),
   W = ((Width div 7) + 1) * 0.55,
   H = Heigth * 0.4,
-  SL = io_lib:format("~f",[W]), 
-  SH = io_lib:format("~f",[H]),
+  SL = io_lib:format("~f", [W]),
+  SH = io_lib:format("~f", [H]),
   [String, " [width=",SL," heigth=", SH, " ", OptText,"];\n"].
 
 edge_format(Opt, Fun, V1, V2) ->
@@ -95,8 +121,8 @@ edge_format(Opt, Fun, V1, V2) ->
       [_|X] ->
 	X
     end,
-  String = [io_lib:format("~p",[Fun(V1)]), " -> ",
-	    io_lib:format("~p",[Fun(V2)])],
+  String = [io_lib:format("~p", [Fun(V1)]), " -> ",
+	    io_lib:format("~p", [Fun(V2)])],
   [String," [", OptText,"];\n"].
   
 calc_dim(String) ->
@@ -112,7 +138,6 @@ calc_dim([], H, TmpW, MaxW) ->
   if TmpW > MaxW -> {TmpW, H};
      true -> {MaxW, H}
   end.
-      
 
 edgeoptions([{all_edges,{OptName, OptVal}}|T], Fun, V1, V2) -> 
    case legal_edgeoption(OptName) of
@@ -123,7 +148,7 @@ edgeoptions([{all_edges,{OptName, OptVal}}|T], Fun, V1, V2) ->
    end;
 edgeoptions([{N1,N2,{OptName, OptVal}}|T], Fun, V1, V2) ->
   case %% legal_edgeoption(OptName) andalso
-       Fun(N1) == Fun(V1) andalso Fun(N2) == Fun(V2) of 
+       Fun(N1) =:= Fun(V1) andalso Fun(N2) =:= Fun(V2) of 
     true ->
       [io_lib:format(",~p=~p ",[OptName, OptVal])|edgeoptions(T, Fun,V1,V2)];
     false ->
@@ -142,7 +167,7 @@ nodeoptions([{all_nodes,{OptName, OptVal}}|T], Fun, V) ->
       nodeoptions(T, Fun, V)
   end;
 nodeoptions([{Node,{OptName, OptVal}}|T], Fun, V) -> 
-  case Fun(Node) == Fun(V) andalso legal_nodeoption(OptName) of
+  case Fun(Node) =:= Fun(V) andalso legal_nodeoption(OptName) of
     true ->
       [io_lib:format("~p=~p ",[OptName, OptVal])|nodeoptions(T, Fun, V)];
     false ->
@@ -177,9 +202,6 @@ legal_nodeoption(style) -> true;
 legal_nodeoption(toplabel) -> true;
 legal_nodeoption('URL') -> true;
 legal_nodeoption(z) -> true;
-legal_nodeoption(_) -> false.
+legal_nodeoption(Option) when is_atom(Option) -> false.
   
-legal_edgeoption(_) -> true.
-  
-
-
+legal_edgeoption(Option) when is_atom(Option) -> true.

@@ -39,6 +39,8 @@ typedef struct atom {
 extern IndexTable erts_atom_table;
 
 ERTS_GLB_INLINE Atom* atom_tab(Uint i);
+ERTS_GLB_INLINE int erts_is_atom_bytes(byte *text, size_t len, Eterm term);
+ERTS_GLB_INLINE int erts_is_atom_str(char *str, Eterm term);
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 ERTS_GLB_INLINE Atom*
@@ -46,7 +48,44 @@ atom_tab(Uint i)
 {
     return (Atom *) erts_index_lookup(&erts_atom_table, i);
 }
+
+ERTS_GLB_INLINE int erts_is_atom_bytes(byte *text, size_t len, Eterm term)
+{
+    Atom *a;
+    if (!is_atom(term))
+	return 0;
+    a = atom_tab(atom_val(term));
+    return (len == (size_t) a->len
+	    && sys_memcmp((void *) a->name, (void *) text, len) == 0);
+}
+
+ERTS_GLB_INLINE int erts_is_atom_str(char *str, Eterm term)
+{
+    Atom *a;
+    int i, len;
+    char *aname;
+    if (!is_atom(term))
+	return 0;
+    a = atom_tab(atom_val(term));
+    len = a->len;
+    aname = (char *) a->name;
+    for (i = 0; i < len; i++)
+	if (aname[i] != str[i] || str[i] == '\0')
+	    return 0;
+    return str[len] == '\0';
+}
+
 #endif
+
+/*
+ * Note, ERTS_IS_ATOM_STR() expects the first argument to be a
+ * string literal.
+ */
+#define ERTS_IS_ATOM_STR(LSTR, TERM) \
+  (erts_is_atom_bytes((byte *) LSTR, sizeof(LSTR) - 1, (TERM)))
+#define ERTS_DECL_AM(S) Eterm AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
+#define ERTS_INIT_AM(S) AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
+
 int atom_table_size(void);	/* number of elements */
 int atom_table_sz(void);	/* table size in bytes, excluding stored objects */
 

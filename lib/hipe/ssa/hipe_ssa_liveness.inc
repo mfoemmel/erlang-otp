@@ -18,8 +18,8 @@
 %%
 -ifdef(LIVENESS_NEEDED).
 -export([ssa_liveness__analyze/1,
-	 ssa_liveness__livein/2,
-	 ssa_liveness__livein/3]).
+	 ssa_liveness__livein/2]).
+%%	 ssa_liveness__livein/3],
 %%	 ssa_liveness__liveout/2]).
 -endif.
 %% -ifdef(DEBUG_LIVENESS).
@@ -34,8 +34,7 @@
 %% ----------------
 %%  - bb(CFG, L) -> BasicBlock, extract a basic block from a cfg.
 %%  - postorder(CFG) -> [Labels], the labels of the cfg in postorder
-%%  - succ_map(CFG) -> SuccMap, a successor mapping.
-%%  - succ(SuccMap, L) -> [Labels], 
+%%  - succ(CFG, L) -> [Labels], 
 %%  - function(CFG) -> {M,F,A}
 %%
 %% In the CODE file:
@@ -82,7 +81,7 @@ doit_once([L|Ls], Liveness, FixPoint) ->
   LiveOut = join_livein(Liveness, L),
   NewLiveness = update_liveout(L, LiveOut, Liveness),
   Kill = set_subtract(LiveOut, kill(L, NewLiveness)),
-  LiveIn = set_union(Kill, gen(L,NewLiveness)),
+  LiveIn = set_union(Kill, gen(L, NewLiveness)),
   case update_livein(L, LiveIn, NewLiveness) of
     fixpoint -> doit_once(Ls, NewLiveness, FixPoint);
     {value, NewLiveness1} -> doit_once(Ls, NewLiveness1, false)
@@ -106,13 +105,13 @@ update_liveout(Label, NewLiveOut, Liveness) ->
   liveness_update(Label, {GKD,LiveIn,NewLiveOut,Succ}, Liveness).
 
 %%
-%% Join Live in to get the new live out.
+%% Join live in to get the new live out.
 %%
 
 join_livein(Liveness, L) ->
   Succ = successors(L, Liveness),
   case Succ of
-    [] ->    % special case if no successors
+    [] ->  % special case if no successors
       gb_sets:from_list(liveout_no_succ());
     _ ->
       join_livein1(L, Succ, Liveness)
@@ -139,11 +138,11 @@ ssa_liveness__liveout(Liveness, L) ->
   end.  
 
 -ifdef(LIVENESS_NEEDED).
-ssa_liveness__livein(Liveness, L, Pred) ->
-  set_to_list(livein_set(Liveness, L, Pred)).
-
 ssa_liveness__livein(Liveness, L) ->
   set_to_list(livein_set(Liveness, L)).
+
+%% ssa_liveness__livein(Liveness, L, Pred) ->
+%%   set_to_list(livein_set(Liveness, L, Pred)).
 
 livein_set(Liveness, L) ->
   {{_Gen,_Kill,{TotalDirGen, _DirGen}}, LiveIn, _LiveOut, _Successors} = 
@@ -190,8 +189,7 @@ init([], _) ->
 init([L|Ls], CFG) ->
   BB = ?CFG:bb(CFG, L),
   Code = hipe_bb:code(BB),
-  SuccMap = ?CFG:succ_map(CFG),
-  Succ = ?CFG:succ(SuccMap, L),
+  Succ = ?CFG:succ(CFG, L),
   {Gen, Kill} = make_bb_transfer(Code, Succ),
   DirectedGen = get_directed_gen(Code),
   [{L, {{Gen, Kill, DirectedGen}, new_set(), new_set(), Succ}} 
@@ -293,12 +291,11 @@ set_add(Var, Set) ->
 
 -ifdef(DEBUG_LIVENESS).
 
-pp_liveness(Cfg) ->
-  io:format("Liveness for ~p:\n", [?CFG:function(Cfg)]),
-  Liveness = analyze(Cfg),
-  RevPostorder = lists:reverse(?CFG:postorder(Cfg)),
-  SuccMap = ?CFG:succ_map(Cfg),
-  Edges = [{X, Y} || X <- RevPostorder, Y <- ?CFG:succ(SuccMap, X)],
+pp_liveness(CFG) ->
+  io:format("Liveness for ~p:\n", [?CFG:function(CGF)]),
+  Liveness = analyze(CFG),
+  RevPostorder = lists:reverse(?CFG:postorder(CFG)),
+  Edges = [{X, Y} || X <- RevPostorder, Y <- ?CFG:succ(CFG, X)],
   pp_liveness_edges(Edges, Liveness).
 
 pp_liveness_edges([{From, To}|Left], Liveness)->

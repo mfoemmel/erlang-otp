@@ -39,8 +39,13 @@
  * - P: pointer to the state record for the process
  *
  * BIF failure modes:
- * - none: zero-arity BIFs may not signal exceptions
+ * - none: may not signal any exception
  *   The BIF wrapper needs no checks before returning.
+ * - trap: may signal TRAP exceptions
+ *   The BIF wrapper must check for an exception before returning.
+ *   Zero-arity BIFs never signal Erlang-level exceptions,
+ *   but may signal internal implementaton-level exceptions,
+ *   currently only TRAP.
  * - standard: may signal any exception except RESCHEDULE
  *   The BIF wrapper must check for an exception before returning.
  * - expensive: may signal any exception including RESCHEDULE
@@ -55,15 +60,21 @@
  ****************************************************************/
 
 /*
- * standard_bif_interface_0(nbif_name, cbif_name)
  * standard_bif_interface_1(nbif_name, cbif_name)
  * standard_bif_interface_2(nbif_name, cbif_name)
  * standard_bif_interface_3(nbif_name, cbif_name)
  *
- * A BIF with implicit P parameter, 0-3 ordinary parameters,
+ * A BIF with implicit P parameter, 1-3 ordinary parameters,
  * which may fail but not with RESCHEDULE.
  * HP and FCALLS may be read and updated.
  * HP_LIMIT, NSP, NSP_LIMIT, and NRA may not be accessed.
+ */
+
+/*
+ * trap_bif_interface_0(nbif_name, cbif_name)
+ *
+ * A BIF which may fail with TRAP, otherwise
+ * identical to nofail_primop_interface_N.
  */
 
 /*
@@ -142,6 +153,11 @@
 /****************************************************************
  *			BIF CLASSIFICATION			*
  ****************************************************************/
+
+/*
+ * BIFs with trap-only failure modes.
+ */
+trap_bif_interface_0(nbif_processes_0, processes_0)
 
 /*
  * BIFs with expensive failure modes.
@@ -258,6 +274,11 @@ ifelse(ERTS_SMP,1,`
 nocons_nofail_primop_interface_0(nbif_clear_timeout, hipe_clear_timeout)
 noproc_primop_interface_1(nbif_atomic_inc, hipe_atomic_inc)
 ',)dnl
+
+/*
+ * Implement standard_bif_interface_0 as nofail_primop_interface_0.
+ */
+define(standard_bif_interface_0,`nofail_primop_interface_0($1, $2)')
 
 /*
  * Standard BIFs.

@@ -460,74 +460,267 @@ BIF_RETTYPE ets_prev_2(BIF_ALIST_2)
 }
 
 /* 
-** update_counter(Tab, Key, Increment) 
-** Returns new value (integer)
+** update_element(Tab, Key, {Pos, Value})
+** update_element(Tab, Key, [{Pos, Value}])
 */
-
-BIF_RETTYPE ets_update_counter_3(BIF_ALIST_3)
+BIF_RETTYPE ets_update_element_3(BIF_ALIST_3)
 {
     DbTable* tb;
-    Eterm ret;
-    int cret;
-    Eterm increment = BIF_ARG_3;
-    Sint position = 0;
-    Eterm threshold = NIL;
-    Eterm warp_to = NIL;
+    int cret = DB_ERROR_BADITEM;
+    Eterm list;
+    Eterm iter;
+    Eterm cell[2];
+    DbUpdateHandle handle;
 
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE, LCK_WRITE)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if (!(tb->common.status & (DB_SET | DB_ORDERED_SET))) { /*TT*/
-	goto badarg;
+    if (!(tb->common.status & (DB_SET | DB_ORDERED_SET))) {
+	goto bail_out;
     }
-    if (is_tuple(BIF_ARG_3)) { /* key position specified */
-	Eterm *tpl = tuple_val(BIF_ARG_3);
-	switch (arityval(*tpl)) {
-	case 4: /* threshold specified */
-	    if (!(is_small(tpl[3]) || is_big(tpl[3])) ||
-		!(is_small(tpl[4]) || is_big(tpl[4]))) {
-		goto badarg;
-	    }
-	    threshold = tpl[3];
-	    warp_to = tpl[4];
-	    /* Fall through */
-	case 2:
-	    if (!is_small(tpl[1]) ||
-		!(is_small(tpl[2]) || is_big(tpl[2]))) {
-		goto badarg;
-	    }
-	    position = signed_val(tpl[1]);
-	    increment = tpl[2];
-	    if (position == tb->common.keypos) {
-		goto badarg;
-	    }
-	    break;
-	default:
-	    goto badarg;
+    if (is_tuple(BIF_ARG_3)) {
+	list = CONS(cell, BIF_ARG_3, NIL);
+    }
+    else {
+	list = BIF_ARG_3;
+    }
+
+    if (!tb->common.meth->db_lookup_dbterm(tb, BIF_ARG_2, &handle)) {
+	cret = DB_ERROR_BADKEY;
+	goto bail_out;
+    }
+
+    /* First verify that list is ok to avoid nasty rollback scenarios
+    */
+    for (iter=list ; is_not_nil(iter); iter = CDR(list_val(iter))) {
+	Eterm pv;
+	Eterm* pvp;
+	Sint position;
+
+	if (is_not_list(iter)) {
+	    goto bail_out;
 	}
-    }
-	
-    cret = tb->common.meth->db_update_counter(BIF_P,tb,
-					      BIF_ARG_2, increment, 0, 
-					      position, &ret);
-
-    if (cret == DB_ERROR_NONE &&
-	threshold != NIL) { /* Maybe warp it */
-	if ((cmp(increment,make_small(0)) < 0) ? /* negative increment? */
-	    (cmp(ret,threshold) < 0) :  /* if negative, check if below */
-	    (cmp(ret,threshold) > 0)) { /* else check if above threshold */
-
-	    cret = tb->common.meth->db_update_counter(BIF_P,tb,
-						      BIF_ARG_2, warp_to, 1, 
-						      position, &ret);
+	pv = CAR(list_val(iter));    /* {Pos,Value} */
+	if (is_not_tuple(pv)) {
+	    goto bail_out;
 	}
+	pvp = tuple_val(pv);
+	if (arityval(*pvp) != 2 || !is_small(pvp[1])) {
+	    goto bail_out;
+	}
+	position = signed_val(pvp[1]);
+	if (position < 1 || position == tb->common.keypos || 
+	    position > arityval(handle.dbterm->tpl[0])) {
+	    goto bail_out;
+	}	
+    }
+    /* The point of no return, no failures from here on.
+    */
+    cret = DB_ERROR_NONE;
+
+    for (iter=list ; is_not_nil(iter); iter = CDR(list_val(iter))) {
+	Eterm* pvp = tuple_val(CAR(list_val(iter)));    /* {Pos,Value} */
+	db_do_update_element(&handle, signed_val(pvp[1]), pvp[2]);
     }
 
+    if (handle.mustFinalize) {
+	db_finalize_update_element(&handle);
+    }
+
+bail_out:
     db_unlock(tb, LCK_WRITE);
 
     switch (cret) {
     case DB_ERROR_NONE:
-	/* Check for threshold */
+	BIF_RET(am_true);
+    case DB_ERROR_BADKEY:
+	BIF_RET(am_false);
+    case DB_ERROR_SYSRES:
+	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
+    default:
+	BIF_ERROR(BIF_P, BADARG);
+	break;
+    }
+}
+
+/* 
+** update_counter(Tab, Key, Incr) 
+** update_counter(Tab, Key, {Upop}) 
+** update_counter(Tab, Key, [{Upop}]) 
+** Upop = {Pos,Incr} | {Pos,Incr,Threshold,WarpTo}
+** Returns new value(s) (integer or [integer])
+*/
+BIF_RETTYPE ets_update_counter_3(BIF_ALIST_3)
+{
+    DbTable* tb;
+    int cret = DB_ERROR_BADITEM;
+    Eterm upop_list;
+    int list_size;
+    Eterm ret;  /* int or [int] */
+    Eterm* ret_list_currp = NULL;
+    Eterm* ret_list_prevp = NULL;
+    Eterm iter;
+    Eterm cell[2];
+    Eterm tuple[3];
+    DbUpdateHandle handle;
+    Uint halloc_size = 0; /* overestimated heap usage */
+    Eterm* htop;          /* actual heap usage */
+    Eterm* hstart;
+    Eterm* hend;
+
+    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE, LCK_WRITE)) == NULL) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    if (!(tb->common.status & (DB_SET | DB_ORDERED_SET))) {
+	goto bail_out;
+    }
+    if (is_integer(BIF_ARG_3)) {  /* Incr */
+	upop_list = CONS(cell, TUPLE2(tuple, make_small(tb->common.keypos+1),
+				      BIF_ARG_3), NIL);
+    }
+    else if (is_tuple(BIF_ARG_3)) { /* {Upop} */
+	upop_list = CONS(cell, BIF_ARG_3, NIL);
+    }
+    else { /* [{Upop}] (probably) */
+	upop_list = BIF_ARG_3;
+	ret_list_prevp = &ret;
+    }
+
+    if (!tb->common.meth->db_lookup_dbterm(tb, BIF_ARG_2, &handle)) {
+	goto bail_out; /* key not found */
+    }
+
+    /* First verify that list is ok to avoid nasty rollback scenarios
+    */
+    list_size = 0;
+    for (iter=upop_list ; is_not_nil(iter); iter = CDR(list_val(iter)),
+	                                    list_size += 2) {
+	Eterm upop;
+	Eterm* tpl;
+	Sint position;
+	Eterm incr, warp, oldcnt;
+
+	if (is_not_list(iter)) {
+	    goto bail_out;
+	}
+	upop = CAR(list_val(iter));
+	if (is_not_tuple(upop)) {
+	    goto bail_out;
+	}
+	tpl = tuple_val(upop);
+	switch (arityval(*tpl)) {
+	case 4: /* threshold specified */
+	    if (is_not_integer(tpl[3])) {
+		goto bail_out;
+	    }
+	    warp = tpl[4];
+	    if (is_big(warp)) {
+		halloc_size += BIG_NEED_SIZE(big_arity(warp));
+	    }
+	    else if (is_not_small(warp)) {
+		goto bail_out;
+	    }
+	    /* Fall through */
+	case 2:
+	    if (!is_small(tpl[1])) {
+		goto bail_out;
+	    }
+	    incr = tpl[2];
+	    if (is_big(incr)) {
+		halloc_size += BIG_NEED_SIZE(big_arity(incr));
+	    }
+	    else if (is_not_small(incr)) {
+		goto bail_out;
+	    }
+	    position = signed_val(tpl[1]);
+	    if (position < 1 || position == tb->common.keypos ||
+		position > arityval(handle.dbterm->tpl[0])) {
+		goto bail_out;
+	    }
+	    oldcnt = handle.dbterm->tpl[position];
+	    if (is_big(oldcnt)) {
+		halloc_size += BIG_NEED_SIZE(big_arity(oldcnt));
+	    }
+	    else if (is_not_small(oldcnt)) {
+		goto bail_out;
+	    }
+	    break;
+	default:
+	    goto bail_out;
+	}
+	halloc_size += 2;  /* worst growth case: small(0)+small(0)=big(2) */
+    }
+
+    /* The point of no return, no failures from here on.
+    */
+    cret = DB_ERROR_NONE;
+
+    if (ret_list_prevp) { /* Prepare to return a list */
+	ret = NIL;
+	halloc_size += list_size;
+	hstart = HAlloc(BIF_P, halloc_size);
+	ret_list_currp = hstart;
+	htop = hstart + list_size;
+	hend = hstart + halloc_size;
+    }
+    else {
+	hstart = htop = HAlloc(BIF_P, halloc_size);
+    }
+    hend = hstart + halloc_size;
+
+    for (iter=upop_list ; is_not_nil(iter); iter = CDR(list_val(iter))) {
+
+	Eterm* tpl = tuple_val(CAR(list_val(iter)));
+	Sint position = signed_val(tpl[1]);
+	Eterm incr = tpl[2];
+	Eterm oldcnt = handle.dbterm->tpl[position];
+	Eterm newcnt = db_add_counter(&htop, oldcnt, incr);
+
+	if (newcnt == NIL) {
+	    cret = DB_ERROR_SYSRES; /* Can only happen if BIG_ARITY_MAX */
+	    ret = NIL;              /* is reached, ie should not happen */
+	    htop = hstart;
+	    break;
+	}
+	ASSERT(is_integer(newcnt));
+
+	if (arityval(*tpl) == 4) { /* Maybe warp it */
+	    Eterm threshold = tpl[3];
+	    if ((cmp(incr,make_small(0)) < 0) ? /* negative increment? */
+		(cmp(newcnt,threshold) < 0) :  /* if negative, check if below */
+		(cmp(newcnt,threshold) > 0)) { /* else check if above threshold */
+
+		newcnt = tpl[4];
+	    }
+	}
+
+	db_do_update_element(&handle,position,newcnt);
+
+	if (ret_list_prevp) {
+	    *ret_list_prevp = CONS(ret_list_currp,newcnt,NIL);
+	    ret_list_prevp = &CDR(ret_list_currp);
+	    ret_list_currp += 2;
+	}
+	else {
+	    ret = newcnt;
+	    break;	    
+	}
+    }
+    if (handle.mustFinalize) {
+	db_finalize_update_element(&handle);
+    }
+
+    ASSERT(is_integer(ret) || is_nil(ret) || 
+	   (is_list(ret) && (list_val(ret)+list_size)==ret_list_currp));
+    ASSERT(htop <= hend);
+
+    HRelease(BIF_P,hend,htop);
+
+bail_out:
+    db_unlock(tb, LCK_WRITE);
+
+    switch (cret) {
+    case DB_ERROR_NONE:
 	BIF_RET(ret);
     case DB_ERROR_SYSRES:
 	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
@@ -535,9 +728,6 @@ BIF_RETTYPE ets_update_counter_3(BIF_ALIST_3)
 	BIF_ERROR(BIF_P, BADARG);
 	break;
     }
- badarg:
-    db_unlock(tb, LCK_WRITE);
-    BIF_ERROR(BIF_P, BADARG);
 }
 
 /* 
@@ -1989,20 +2179,14 @@ BIF_RETTYPE ets_is_compiled_ms_1(BIF_ALIST_1)
 BIF_RETTYPE ets_match_spec_compile_1(BIF_ALIST_1)
 {
     Binary *mp = db_match_set_compile(BIF_P, BIF_ARG_1, DCOMP_TABLE);
-    ProcBin *pb;
+    Eterm *hp;
     if (mp == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    erts_refc_inc(&mp->refc, 1);
-    pb = (ProcBin *) HAlloc(BIF_P, PROC_BIN_SIZE);
-    pb->thing_word = HEADER_PROC_BIN;
-    pb->size = 0;
-    pb->next = MSO(BIF_P).mso;
-    MSO(BIF_P).mso = pb;
-    pb->val = mp;
-    pb->bytes = (byte*) mp->orig_bytes;
-    pb->flags = 0;
-    BIF_RET(make_binary(pb));
+
+    hp = HAlloc(BIF_P, PROC_BIN_SIZE);
+
+    BIF_RET(erts_mk_magic_binary_term(&hp, &MSO(BIF_P), mp));
 }
 
 BIF_RETTYPE ets_match_spec_run_r_3(BIF_ALIST_3)
@@ -2027,7 +2211,7 @@ BIF_RETTYPE ets_match_spec_run_r_3(BIF_ALIST_3)
 	goto error;
     }
     mp = bp->val;
-    if (!(mp->flags & BIN_FLAG_MATCH_PROG)) {
+    if (!IsMatchProgBinary(mp)) {
 	goto error;
     }
 

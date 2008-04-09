@@ -1,6 +1,6 @@
 {application, ic,
  [{description, "The IDL Compiler"},
-  {vsn, "4.2.16"},
+  {vsn, "4.2.17"},
   {modules,
      [
       ic,

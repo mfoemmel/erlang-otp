@@ -22,7 +22,6 @@
 -export([all/1]).
 -export([init_per_suite/1, end_per_suite/1]).
 -export([init_per_testcase/2, end_per_testcase/2]).
--export([libgd/1, fini/1]).
 
 %% Test cases
 -export([
@@ -51,23 +50,11 @@ end_per_testcase(_Case, Config) ->
 
 all(suite) ->
     % Test cases
-    [	{conf, libgd, [
+    [	
     	webserver,
 	profile,
 	analyze
-	], fini}
     ].
-
-libgd(Config) when is_list(Config) ->
-    case has_libgd() of
-	true ->
-	    Config;
-	_ ->
-	    {skip, "egd is not available without libgd"}
-    end.
-
-fini(Config) when is_list(Config) ->
-    Config.
 
 %%----------------------------------------------------------------------
 %% Tests
@@ -114,25 +101,3 @@ analyze(Config) when is_list(Config) ->
 %%----------------------------------------------------------------------
 %% Auxiliary
 %%----------------------------------------------------------------------
-
-has_libgd() ->
-    case code:priv_dir(percept) of
-	{error, _} -> false;
-	Path ->
-	    Arch = erlang:system_info(system_architecture),
-	    LibPath = filename:join([Path, "lib"]),
-	    OpenPath = filename:join([LibPath, Arch ]),
-
-	    Driver = "egd_drv",
-
-	    case erl_ddll:load_driver(LibPath, Driver) of
-	    	ok -> true;
-		{error, already_loaded} -> true;
-		{error, _} -> 
-		    case erl_ddll:load_driver(OpenPath, Driver) of
-			ok -> true;
-			{error, already_loaded} -> true;
-			_ -> false
-		    end
-	    end
-    end.

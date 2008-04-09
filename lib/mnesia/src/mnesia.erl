@@ -2512,10 +2512,8 @@ snmp_open_table(Tab, Us) ->
 snmp_close_table(Tab) ->  
     mnesia_schema:del_snmp(Tab).
 
-snmp_get_row(Tab, RowIndex) when atom(Tab), Tab /= schema ->
+snmp_get_row(Tab, RowIndex) when atom(Tab), Tab /= schema, is_list(RowIndex) ->
     case get(mnesia_activity_state) of
-	_ when RowIndex =:= endOfTable -> 
-	    undefined;
  	{Mod, Tid, Ts=#tidstore{store=Store}} when element(1, Tid) =:= tid ->
 	    case snmp_oid_to_mnesia_key(RowIndex, Tab) of
 		unknown -> %% Arrg contains fix_string
@@ -2526,7 +2524,8 @@ snmp_get_row(Tab, RowIndex) when atom(Tab), Tab /= schema ->
 				      RowIndex -> 
 					  case Op of
 					      write -> {ok, Row};
-					      _ -> undefined
+					      _ ->
+						  undefined
 					  end;
 				      _ -> 
 					  Res
@@ -2549,7 +2548,7 @@ snmp_get_row(Tab, _RowIndex) ->
 
 %%%%%%%%%%%%%
 
-snmp_get_next_index(Tab, RowIndex) when atom(Tab), Tab /= schema ->
+snmp_get_next_index(Tab, RowIndex) when atom(Tab), Tab /= schema, is_list(RowIndex) ->
     {Next,OrigKey} = dirty_rpc(Tab, mnesia_snmp_hook, get_next_index, [Tab, RowIndex]),
     case get(mnesia_activity_state) of
  	{_Mod, Tid, #tidstore{store=Store}} when element(1, Tid) =:= tid ->		
@@ -2583,7 +2582,6 @@ snmp_order_keys(Store,Tab,RowIndex,Def) ->
     Keys = lists:sort(Keys0),
     get_ordered_snmp_key(RowIndex,Keys).
 
-get_ordered_snmp_key(endOfTable, [First|_]) -> {ok, First};
 get_ordered_snmp_key(Prev, [First|_]) when Prev < First -> {ok, First};
 get_ordered_snmp_key(Prev, [_|R]) ->
     get_ordered_snmp_key(Prev, R);
@@ -2592,7 +2590,7 @@ get_ordered_snmp_key(_, []) ->
 
 %%%%%%%%%%
 
-snmp_get_mnesia_key(Tab, RowIndex) when atom(Tab), Tab /= schema ->
+snmp_get_mnesia_key(Tab, RowIndex) when is_atom(Tab), Tab /= schema, is_list(RowIndex) ->
     case get(mnesia_activity_state) of
  	{_Mod, Tid, Ts} when element(1, Tid) =:= tid ->
 	    Res = dirty_rpc(Tab,mnesia_snmp_hook,get_mnesia_key,[Tab,RowIndex]),
@@ -2614,8 +2612,6 @@ snmp_oid_to_mnesia_key(RowIndex, Tab) ->
 	    MnesiaKey
     end.
 
-snmp_filter_key(undefined, endOfTable, _Tab, _Store) -> 
-    undefined;
 snmp_filter_key(Res = {ok,Key}, _RowIndex, Tab, Store) ->
     case ?ets_lookup(Store, {Tab,Key}) of
 	[] -> Res;
@@ -2635,7 +2631,8 @@ snmp_filter_key(undefined, RowIndex, Tab, Store) ->
 			      RowIndex -> 
 				  case Op of
 				      write -> {ok, Key};
-				      _ -> undefined
+				      _ ->
+					  undefined
 				  end;
 			      _ -> 
 				  Res
@@ -2644,7 +2641,8 @@ snmp_filter_key(undefined, RowIndex, Tab, Store) ->
 	    lists:foldl(Fix, undefined, Ops);
 	Key ->
 	    case ?ets_lookup(Store, {Tab,Key}) of
-		[] -> undefined;
+		[] -> 
+		    undefined;
 		Ops ->
 		    case lists:last(Ops) of
 			{_, _, write} -> {ok, Key};

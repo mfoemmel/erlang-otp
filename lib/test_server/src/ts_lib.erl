@@ -127,13 +127,12 @@ sort_tests(Tests) ->
 %% This defines the order in which tests should be run and be presented
 %% in index files.
 
-suite_order(test_server) -> 0;
-suite_order(emulator) -> 2;
+suite_order(emulator) -> 0;
+suite_order(test_server) -> 1;
 suite_order(kernel) -> 4;
 suite_order(stdlib) -> 6;
 suite_order(compiler) -> 8;
 suite_order(hipe) -> 9;
-suite_order(system) -> 10;
 suite_order(erl_interface) -> 12;
 suite_order(jinterface) -> 14;
 suite_order(sasl) -> 16;
@@ -152,6 +151,7 @@ suite_order(snmp) -> 38;
 suite_order(mnemosyne) -> 40;
 suite_order(mnesia_session) -> 42;
 suite_order(mnesia) -> 44;
+suite_order(system) -> 999; %% IMPORTANT: system SHOULD always be last!
 suite_order(_) -> 200.
 
 last_test(Dir) ->

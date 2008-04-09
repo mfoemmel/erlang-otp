@@ -159,6 +159,10 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	    emit(["case (case ",Value," of {_,_}->element(2,",Value,");_->",
 		  Value," end) of",nl]),
 	    emit_enc_enumerated_cases(NewC, NewList, 0);
+	
+	'REAL' ->
+	    emit({"?RT_PER:encode_real(",Value,")"});
+
 	{'BIT STRING',NamedNumberList} ->
 	    emit({"?RT_PER:encode_bit_string(",
 		  {asis,Constraint},",",Value,",",
@@ -1170,6 +1174,10 @@ gen_dec_prim(Erules,Att,BytesVar) ->
 	    emit({"?RT_PER:decode_integer(",BytesVar,",",
 		  {asis,effective_constraint(integer,Constraint)},",",
 		  {asis,NamedNumberList},")"});
+
+	'REAL' ->
+	    emit({"?RT_PER:decode_real(",BytesVar,")"});
+	
 	{'BIT STRING',NamedNumberList} ->
 	    case get(compact_bit_string) of
 		true ->

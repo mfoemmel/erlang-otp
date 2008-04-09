@@ -1,6 +1,22 @@
 {"%VSN%",  
- [   %% No upgrades possible
+ [
+  {"4.4.1", 
+   [
+    {update, mnesia_locker, soft, soft_purge, soft_purge, []},
+    {update, mnesia_tm, soft, soft_purge, soft_purge, []},
+    {update, mnesia, soft, soft_purge, soft_purge, []},
+    {update, mnesia_snmp_hook, soft, soft_purge, soft_purge, []}
+   ]
+  }
  ],
  [
+  {"4.4.1", 
+   [
+    {update, mnesia_locker, soft, soft_purge, soft_purge, []},
+    {update, mnesia_tm, soft, soft_purge, soft_purge, []},
+    {update, mnesia, soft, soft_purge, soft_purge, []},
+    {update, mnesia_snmp_hook, soft, soft_purge, soft_purge, []}
+   ]
+  }
  ]
 }.

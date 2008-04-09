@@ -512,7 +512,7 @@ count_bits_matched([{test,_,_,[_,_,Sz,U,{field_flags,_},_]}|Is], SavePoint, Bits
     end;
 count_bits_matched([{test,_,_,_}|Is], SavePoint, Bits) ->
     count_bits_matched(Is, SavePoint, Bits);
-count_bits_matched([{bs_save2,_,SavePoint}|_], SavePoint, Bits) ->
+count_bits_matched([{bs_save2,Reg,SavePoint}|_], {Reg,SavePoint}, Bits) ->
     %% The save point we are looking for - we are done.
     Bits;
 count_bits_matched([{bs_save2,_,_}|Is], SavePoint, Bits) ->

@@ -222,7 +222,7 @@ conv_ra_maplet(MapLet = {From,To}, SpillLimit, IsPrecoloured) ->
       %% end of SpillIndex check
       ToTempNum = SpillLimit+SpillIndex+1,
       MaxTempNum = hipe_gensym:get_var(sparc),
-      if MaxTempNum >= ToTempNum -> [];
+      if MaxTempNum >= ToTempNum -> ok;
 	 true -> hipe_gensym:set_var(sparc, ToTempNum)
       end,
       {From, ToTempNum};

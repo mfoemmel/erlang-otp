@@ -1,4 +1,3 @@
-%% -*- Erlang -*-
 %% -*- erlang-indent-level: 2 -*-
 %%----------------------------------------------------------------------
 %% File    : hipe_ssa.inc
@@ -18,8 +17,8 @@
 -export([convert/1, check/1, unconvert/1, remove_dead_code/1]).
 
 -include("../main/hipe.hrl").
--include("../ssa/hipe_ssa_liveness.inc"). %% needed for dead-code removal
-
+-include("../flow/cfg.hrl").              %% needed for the specs
+-include("../ssa/hipe_ssa_liveness.inc"). %% needed for dead code removal
 
 %%----------------------------------------------------------------------
 %%
@@ -38,6 +37,8 @@
 %%
 %%----------------------------------------------------------------------
 
+-spec(convert/1 :: (#cfg{}) -> #cfg{}).
+
 convert(CFG) ->
   CFG1 = insertNewStartNode(CFG),
 
@@ -46,8 +47,7 @@ convert(CFG) ->
   ?opt_stop_timer("Dominator Tree construction done"),
 
   ?opt_start_timer("Dominance Frontier"),
-  SuccMap = ?CFG:succ_map(CFG1),
-  DomFrontier = hipe_dominators:domFrontier_create(SuccMap, DomTree),
+  DomFrontier = hipe_dominators:domFrontier_create(CFG1, DomTree),
   ?opt_stop_timer("Dominance Frontier done"),
 
   ?opt_start_timer("placement of Phi-nodes"),
@@ -398,31 +398,9 @@ renameUses(Statement, Current) ->
 %% Returns   : An updated statement.
 %%---------------------------------------------------------------------- 
 
-updateStatementUses([Var|Vars], Statement, Current) ->
-  NewVar = {colored,gb_trees:get(Var, Current)},
-  Statement2 = ?CODE:subst_uses([{Var,NewVar}], Statement),
-  updateStatementUses(Vars, Statement2, Current);
-updateStatementUses([], Statement, _) ->
-  unColor(Statement).
-
-%%----------------------------------------------------------------------
-%% Procedure : unColor/1
-%% Purpose   : Remove all coloring of variables.     
-%% Arguments : Statement - a statement about to have its coloring removed.
-%% Returns   : Statement
-%%----------------------------------------------------------------------
-
-unColor(Statement) ->
-  %% XXX: should the ?CODE:uses() below be uses_to_rename(Statement) ??
-  unColor(?CODE:uses(Statement), Statement).
-  %% unColor(uses_to_rename(Statement), Statement).
-
-unColor([{colored,Var} = CVar | Vars], Statement) ->
-  unColor(Vars, ?CODE:subst_uses([{CVar,Var}], Statement));
-unColor([_|Vars], Statement) ->
-  unColor(Vars, Statement);
-unColor([], Statement) ->
-  Statement.
+updateStatementUses(Vars, Statement, Current) ->
+  Substs = [{Var,gb_trees:get(Var, Current)} || Var <- Vars],
+  ?CODE:subst_uses(Substs, Statement).
 
 %%----------------------------------------------------------------------
 %% Procedure : renameDefs/3
@@ -603,6 +581,8 @@ insertRenamedParams([], Current, Result) ->
 %% dominated by a define. If a variable does not abide by these rules,
 %% a warning message will be printed on stdout.
 %%
+-spec(check/1 :: (#cfg{}) -> 'ok').
+
 check(CFG) ->
   Labels  = ?CFG:labels(CFG),
   VarTree = traverse_labels(Labels, CFG),
@@ -703,8 +683,10 @@ test_code([Instr|Instrs], VarTree, Label, DomTree, CFG, Old) ->
 	  ok;
 	[_|_] -> ok
       end,
-      [def_doms_use([Var], VarTree, Pred, DomTree,
-		    get_code_from_label(CFG,Pred)) || {Pred,Var} <- ArgList];
+      lists:foreach(fun ({Pred,Var}) ->
+			def_doms_use([Var], VarTree, Pred, DomTree,
+				     get_code_from_label(CFG,Pred))
+		    end, ArgList);
     false ->
       Uses = uses_to_rename(Instr),
       def_doms_use(Uses, VarTree, Label, DomTree, Old)
@@ -788,6 +770,8 @@ def_doms_use([], _VarTree, _Label, _DomTree, _Old) ->
 %%             predecessors, if possible.
 %%----------------------------------------------------------------------
 
+-spec(unconvert/1 :: (#cfg{}) -> #cfg{}).
+
 unconvert(CFG) ->
   ?CFG:remove_trivial_bbs(unconvert(?CFG:reverse_postorder(CFG), CFG)).
 
@@ -801,7 +785,7 @@ unconvert([Node|Nodes], CFG) ->
     _  ->
       BB2 = hipe_bb:code_update(BB, Code2),
       CFG2 = ?CFG:bb_add(CFG, Node, BB2),
-      Pred = ?CFG:pred(?CFG:pred_map(CFG2), Node),  
+      Pred = ?CFG:pred(CFG2, Node),  
       PredMoveMap = get_moves(Pred, Phis),
       CFG3 = insert_move_bbs(PredMoveMap, Node, CFG2),
       unconvert(Nodes, CFG3)
@@ -906,6 +890,8 @@ getPhiFuncts([], Result) ->
 %%======================================================================
 %% Dead Code Elimination on SSA form
 %%======================================================================
+
+-spec(remove_dead_code/1 :: (#cfg{}) -> #cfg{}).
 
 remove_dead_code(CFG) ->
   Lbls = ?CFG:reverse_postorder(CFG),  

@@ -9,12 +9,14 @@
 
 -module(hipe_rtl_ssa).
 
+-export([uses_to_rename/1]).	%% needed by hipe_rtl_ssa_const_prop
+
 %% The following defines are needed by the included file below
 -define(CODE, hipe_rtl).
 -define(CFG,  hipe_rtl_cfg).
 -define(LIVENESS, hipe_rtl_liveness).
--export([uses_to_rename/1]).	%% needed by hipe_rtl_ssa_const_prop
 
+-include("hipe_rtl.hrl").
 -include("../ssa/hipe_ssa.inc").
      
 %%----------------------------------------------------------------------

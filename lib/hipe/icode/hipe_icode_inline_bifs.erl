@@ -1,24 +1,29 @@
-%%%-------------------------------------------------------------------
-%%% File    : hipe_icode_inline_bifs.erl
-%%% Author  : Per Gustafsson <pergu@it.uu.se>
-%%% Description : Inlines BIFs which can be expressed easily in
-%%%               ICode. This allows for optimizations in later 
-%%%               ICode passes and makes the code faster
-%%%                   
-%%% Created : 14 May 2007 by Per Gustafsson <pergu@it.uu.se>
-%%%-------------------------------------------------------------------
+%% -*- erlang-indent-level: 2 -*-
+%%--------------------------------------------------------------------
+%% File    : hipe_icode_inline_bifs.erl
+%% Author  : Per Gustafsson <pergu@it.uu.se>
+%% Purpose : Inlines BIFs which can be expressed easily in ICode.
+%%           This allows for optimizations in later ICode passes
+%%           and makes the code faster.
+%%                   
+%% Created : 14 May 2007 by Per Gustafsson <pergu@it.uu.se>
+%%--------------------------------------------------------------------
 
-%%% Currentlly inlined BIFs:
-%%% and, or, xor, not, <, >, >=, =<, ==, /=, =/=, =:=
-%%% is_integer, is_float, is_tuple, is_binary, is_list
-%%% is_pid, is_atom, is_boolean, is_function, is_reference
-%%% is_constant, is_port
+%% Currently inlined BIFs:
+%% and, or, xor, not, <, >, >=, =<, ==, /=, =/=, =:=
+%% is_atom, is_boolean, is_binary, is_constant, is_float, is_function,
+%% is_integer, is_list, is_pid, is_port, is_reference, is_tuple
 
 -module(hipe_icode_inline_bifs).
 
--include("hipe_icode.hrl").
-
 -export([cfg/1]).
+
+-include("hipe_icode.hrl").
+-include("../flow/cfg.hrl").
+
+%%--------------------------------------------------------------------
+
+-spec(cfg/1 :: (#cfg{}) -> #cfg{}).
 
 cfg(Cfg) ->
   Linear =  hipe_icode_cfg:cfg_to_linear(Cfg),
@@ -27,14 +32,14 @@ cfg(Cfg) ->
   Cfg1 = hipe_icode_cfg:linear_to_cfg(Linear#icode{code = FinalCode}),
   hipe_icode_cfg:remove_unreachable_code(Cfg1).
 
-inline_bif(I = #call{}) ->
+inline_bif(I = #icode_call{}) ->
   try_conditional(I);
 inline_bif(I) ->
   I.
 
-try_conditional(I = #call{dstlist=[Dst], 'fun' = {erlang, Name, 2},
-			  args = [Arg1, Arg2],
-			  continuation = Cont}) ->
+try_conditional(I = #icode_call{dstlist=[Dst], 'fun' = {erlang, Name, 2},
+				args = [Arg1, Arg2],
+				continuation = Cont}) ->
   case is_conditional(Name) of
     true ->
       inline_conditional(Dst, Name, Arg1, Arg2, Cont);
@@ -57,17 +62,17 @@ is_conditional(Name) ->
     _     -> false
   end.
 
-try_bool(I = #call{dstlist=[Dst], 'fun' = Name,
-		   args = [Arg1, Arg2],
-		   continuation = Cont,
-		   fail_label = Fail}) ->
+try_bool(I = #icode_call{dstlist=[Dst], 'fun' = Name,
+			 args = [Arg1, Arg2],
+			 continuation = Cont,
+			 fail_label = Fail}) ->
   case is_binary_bool(Name) of
     {true, Results, ResLbls} ->
       inline_binary_bool(Dst, Results, ResLbls, Arg1, Arg2, Cont, Fail, I); 
     false ->
       try_type_tests(I)
   end;
-try_bool(I = #call{dstlist=[Dst], 'fun' = {erlang, 'not', 1},
+try_bool(I = #icode_call{dstlist=[Dst], 'fun' = {erlang, 'not', 1},
 		   args = [Arg1],
 		   continuation = Cont,
 		   fail_label = Fail}) ->
@@ -87,9 +92,8 @@ is_binary_bool({erlang, Name, 2}) ->
   end;
 is_binary_bool(_) -> false.
 
-try_type_tests(I = #call{dstlist=[Dst], 'fun' = {erlang, Name, 1},
-		   args = Args,
-		   continuation = Cont}) ->
+try_type_tests(I = #icode_call{dstlist=[Dst], 'fun' = {erlang, Name, 1},
+			       args = Args, continuation = Cont}) ->
   case is_type_test(Name) of
     {true, Type} ->
       inline_type_test(Dst, Type, Args, Cont);
@@ -150,7 +154,8 @@ inline_conditional(BifRes, Op, Src1, Src2, Cont) ->
 %% Depending on what boolean expression we are inlining
 %%
 
-inline_binary_bool(Dst, {TTL, TFL, FFL}, {ResTLbl, ResFLbl}, Arg1, Arg2, Cont, Fail, I) ->
+inline_binary_bool(Dst, {TTL, TFL, FFL}, {ResTLbl, ResFLbl},
+		   Arg1, Arg2, Cont, Fail, I) ->
   {NewCont, NewEnd} = get_cont_lbl(Cont),
   {NewFail, FailCode} = get_fail_lbl(Fail, I), 
   EndCode = FailCode++NewEnd,
@@ -206,12 +211,12 @@ inline_unary_bool(Dst, {T,F}, Arg1, Cont, Fail, I) ->
 
 get_cont_lbl([]) ->
   NL = hipe_icode:mk_new_label(),
-  {hipe_icode:label_name(NL),[NL]};
+  {hipe_icode:label_name(NL), [NL]};
 get_cont_lbl(Cont) ->
   {Cont, []}.
 
 get_fail_lbl([], I) ->
   NL = hipe_icode:mk_new_label(),
-  {hipe_icode:label_name(NL),[NL,I]};
-get_fail_lbl(Fail,_) ->
-  {Fail,[]}.
+  {hipe_icode:label_name(NL), [NL,I]};
+get_fail_lbl(Fail, _) ->
+  {Fail, []}.

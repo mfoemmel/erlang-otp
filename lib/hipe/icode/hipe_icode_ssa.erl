@@ -15,7 +15,13 @@
 -define(LIVENESS, hipe_icode_liveness).
 -define(LIVENESS_NEEDED, true).
 
+-include("hipe_icode.hrl").
 -include("../ssa/hipe_ssa.inc").
+
+%% Declarations for exported functions which are Icode-specific.
+-spec(ssa_liveness__analyze/1 :: (#cfg{}) -> gb_tree()).
+-spec(ssa_liveness__livein/2  :: (_, icode_lbl()) -> [#icode_variable{}]).
+%% -spec(ssa_liveness__livein/3  :: (_, icode_lbl(), _) -> [#icode_var{}]).
 
 %%----------------------------------------------------------------------
 %% Auxiliary operations which seriously differ between Icode and RTL.
@@ -49,9 +55,8 @@ mk_new_fp_temp() ->
 %%             depending on the type of the arguments.
 %% Arguments : Dst, Src - the arguments of a Phi instruction that is
 %%                        to be moved up the predecessor block as part
-%%                        of the SSA un-convert phase.
+%%                        of the SSA unconvert phase.
 %% Returns   : Code
-%% Note      : ?CODE here is hipe_icode
 %%----------------------------------------------------------------------
 
 makePhiMove(Dst, Src) ->
@@ -61,14 +66,14 @@ makePhiMove(Dst, Src) ->
 	false ->
 	  hipe_icode:mk_move(Dst, Src);
 	true ->
-	  hipe_icode:mk_primop([Dst],unsafe_tag_float,[Src])
+	  hipe_icode:mk_primop([Dst], unsafe_tag_float, [Src])
       end;
     true ->
       case hipe_icode:is_fvar(Src) of
 	true ->
-	  hipe_icode:mk_fmove(Dst, Src);
+	  hipe_icode:mk_move(Dst, Src);
 	false ->
-	  hipe_icode:mk_primop([Dst],conv_to_float,[Src])
+	  hipe_icode:mk_primop([Dst], conv_to_float, [Src])
       end
   end.
 

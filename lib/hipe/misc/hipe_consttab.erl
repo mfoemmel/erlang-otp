@@ -27,27 +27,28 @@
 %% you can create a jumptable that will be sorted on the load-time
 %% representation of e.g. atoms.
 %% </p>
-%% @type ctdata(). See {@link mk_const/4}.
+%% @type ctdata() = #ctdata{}. See {@link mk_ctdata/4}.
 %% @type ct_type() = term | block | sorted_block | ref
 %% @type data() = term() | [term()] | [byte()] | internal().
-%%  This type is dependent on the ct_type
-%% <ul>
-%%   <li> If ct_type() = term -- data() = term()</li>
-%%   <li> If ct_type() = block -- data() = [byte()] </li>
-%%   <li> If ct_type() = sorted_block -- data() = [term()] </li>
-%%   <li> If ct_type() = ref -- data() = internal() </li>
-%% </ul>
-%% @type alignment(). 
-%%    Alignment is always a power of two.
+%%   This type is dependent on ct_type
+%%   <ul>
+%%     <li> If ct_type() = term -- data() = term()</li>
+%%     <li> If ct_type() = block -- data() = [byte()] </li>
+%%     <li> If ct_type() = sorted_block -- data() = [term()] </li>
+%%     <li> If ct_type() = ref -- data() = internal() </li>
+%%   </ul>
+%% @type ct_alignment().
+%%    Alignment is always a power of two equal to the number of bytes
+%%    in the machine word.
 %% @end
 %% @type byte(). <code>B</code> is an integer between 0 and 255.
-%% @type const_tab().
-%% An abstract datatype for storing data.
+%% @type hipe_consttab().
+%%   An abstract datatype for storing data.
 %% @end
 %%  Internal note:
-%%   A consttable is a tuple {Data, ReferedLabels, NextConstLabel}
-%% @type lbl().
-%%  An abstract datatype for referring to data.
+%%    A hipe_consttab is a tuple {Data, ReferedLabels, NextConstLabel}
+%% @type hipe_constlbl().
+%%   An abstract datatype for referring to data.
 %% @type element_type() = byte | word | array()
 %% @type array() = {array, Type::element_type(), NoElements::integer()}
 %% @type block() = [integer() | label_ref()]
@@ -59,7 +60,7 @@
 
 -export([new/0,             % new() -> ConstTab
 	 insert_term/2,     % insert_term(ConstTab, Term) -> {NewTab, Lbl}
-	 insert_fun/2,      % insert_term(ConstTab, Fun) -> {NewTab, Lbl}
+	 %% insert_fun/2,   % insert_term(ConstTab, Fun) -> {NewTab, Lbl}
 	 %% insert_word/2,  % insert_word(ConstTab, Value) -> {NewTab, Lbl}
 	 insert_sorted_block/2,    % insert_word(ConstTab, ValueList) -> 
 	                           % {NewTab, Lbl}
@@ -85,17 +86,27 @@
 	 %% block_size/1    % size of a block in bytes 
 	]).
 
+%%-----------------------------------------------------------------------------
 
-%% @spec new() -> const_tab()
+-include("hipe_consttab.hrl").
+
+%%-type(element_type() :: 'byte' | 'word' | array()).
+%%-type(array() :: {array, element_type(), non_neg_integer()}).
+
+%%-----------------------------------------------------------------------------
+
 %% @doc Create a new constant table.
+-spec(new/0 :: () -> hipe_consttab()).
 new() -> {tree_empty(), [], 0}.
 
 
-%% @spec insert_term(ConstTab::const_tab(), Term::term()) -> {NewTab, Lbl}
-%% NewTab = const_tab()
-%% Lbl = lbl()
+%% @spec insert_term(ConstTab::hipe_consttab(), Term::term()) -> {NewTab, Lbl}
+%% NewTab = hipe_consttab()
+%% Lbl = hipe_constlbl()
 %% @doc Inserts an erlang term into the const table if the term was not 
 %% present before, otherwise do nothing.
+-spec(insert_term/2 ::
+      (hipe_consttab(), any()) -> {hipe_consttab(), hipe_constlbl()}).
 insert_term(ConstTab, Term) ->
   case lookup_const(ConstTab, term, word_size(), false, Term) of
     {value, Label} ->
@@ -105,33 +116,36 @@ insert_term(ConstTab, Term) ->
   end.
 
 
-%% @spec insert_fun(ConstTab::const_tab(), Term::term()) -> {NewTab, Lbl}
-%% NewTab = const_tab()
-%% Lbl = lbl()
-%% @doc Inserts a Fun into the const table.
-%% Don't ask me what this is for...
-insert_fun(ConstTab, Fun) ->
-  insert_const(ConstTab, term, word_size(), false, Fun).
+%% %% @spec insert_fun(ConstTab::hipe_consttab(), Term::term()) -> {NewTab, Lbl}
+%% %% NewTab = hipe_consttab()
+%% %% Lbl = hipe_constlbl()
+%% %% @doc Inserts a Fun into the const table.
+%% %% Don't ask me what this is for...
+%% -spec(insert_fun/2 :: (hipe_consttab(), _) -> {hipe_consttab(), hipe_constlbl()}).
+%% insert_fun(ConstTab, Fun) ->
+%%   insert_const(ConstTab, term, word_size(), false, Fun).
 
 
-%% @spec (ConstTab::const_tab(), TermList::[term()]) -> {NewTab, Lbl}
-%% NewTab = const_tab()
-%% Lbl = lbl()
+%% @spec (ConstTab::hipe_consttab(), TermList::[term()]) -> {NewTab, Lbl}
+%% NewTab = hipe_consttab()
+%% Lbl = hipe_constlbl()
 %% @doc Inserts a list of terms into the const table.
+-spec(insert_sorted_block/2 ::
+      (hipe_consttab(), [any()]) -> {hipe_consttab(), hipe_constlbl()}).
 insert_sorted_block(CTab, TermList) ->
   insert_const(CTab, sorted_block, word_size(), false, TermList).
 
-%% %% @spec (ConstTab::const_tab(), InitVal::integer()) -> {NewTab, Lbl}
-%% %% NewTab = const_tab()
-%% %% Lbl = lbl()
+%% %% @spec (ConstTab::hipe_consttab(), InitVal::integer()) -> {NewTab, Lbl}
+%% %% NewTab = hipe_consttab()
+%% %% Lbl = hipe_constlbl()
 %% %% @doc Inserts a word into the const table.
 %% %% Shorthand for inserting a word.
 %% insert_word(ConstTab, InitVal) ->
 %%    insert_block(ConstTab, word, [InitVal]).
 
-%% %% @spec (ConstTab::const_tab(), InitVal::integer()) -> {NewTab, Lbl}
-%% %% NewTab = const_tab()
-%% %% Lbl = lbl()
+%% %% @spec (ConstTab::hipe_consttab(), InitVal::integer()) -> {NewTab, Lbl}
+%% %% NewTab = hipe_consttab()
+%% %% Lbl = hipe_constlbl()
 %% %% @doc Inserts a word into the const table.
 %% %% This constant should be exported from the function...
 %% %% <strong>Note</strong> Global constants are 
@@ -140,9 +154,9 @@ insert_sorted_block(CTab, TermList) ->
 %%    insert_global_block(ConstTab, word_size(), word, [InitVal]).
 
 
-%% @spec (ConstTab::const_tab(),
+%% @spec (ConstTab::hipe_consttab(),
 %%        ElementType::element_type(),
-%%        InitList::block()) -> {const_tab(), lbl()}
+%%        InitList::block()) -> {hipe_consttab(), hipe_constlbl()}
 %% @doc Inserts a block into the const table.
 %% The block can consist of references to labels in the code.
 %% This is used for jump tables. These references should be tracked 
@@ -156,8 +170,8 @@ insert_block({ConstTab, RefToLabels, NextLabel}, ElementType, InitList) ->
   {insert_backrefs(NewTa, Id, ReferredLabels), Id}.
 
 
-%% @spec (ConstTab::const_tab(), ElementType::element_type(),
-%%        InitList::block(), SortOrder) -> {const_tab(), lbl()}
+%% @spec (ConstTab::hipe_consttab(), ElementType::element_type(),
+%%        InitList::block(), SortOrder) -> {hipe_consttab(), hipe_constlbl()}
 %% @doc Inserts a block into the const table.
 %% The block can consist of references to labels in the code.
 %% This is used for jump tables. These references should be tracked 
@@ -175,7 +189,7 @@ insert_sorted_block({ConstTab, RefToLabels, NextLabel},
 
 
 insert_backrefs(Tbl, From, ToLabels) ->
-  lists:foldl(fun(To,Tab) ->
+  lists:foldl(fun(To, Tab) ->
 		  insert_ref(Tab, From, To)
 	      end, Tbl, ToLabels).
 
@@ -191,17 +205,15 @@ find_refs(To, {Table,_,_}) ->
   %% returns 'none' or {value, V}
   tree_lookup({To,ref}, Table).
 
-
 delete_ref(To, {ConstTab, RefToLabels, NextLabel}) ->
   {tree_delete({To,ref}, ConstTab), RefToLabels, NextLabel}.
-  
 
 %% TODO: handle refs to labels.
 %% insert_global_block(ConstTab, Align, ElementType, InitList) ->
 %%    ByteList = decompose(size_of(ElementType), InitList),
 %%    insert_const(ConstTab, block, Align, true, {byte,ByteList}).
 
-get_labels([{label, L}| Rest], Acc) ->
+get_labels([{label, L}|Rest], Acc) ->
   get_labels(Rest, [L|Acc]);
 get_labels([I|Rest], Acc) when is_integer(I) -> 
   get_labels(Rest, Acc);
@@ -220,7 +232,7 @@ size_of({array,S,N}) when is_atom(S), is_integer(N), N > 0 ->
 %% @spec ({element_type(), block()}) -> [byte()]
 %% @doc Turns a block into a list of bytes.
 %% <strong>Note:</strong> Be careful with the byte order here.
-decompose({ElementType,Data}) ->
+decompose({ElementType, Data}) ->
   decompose(size_of(ElementType), Data).
 
 decompose(_Bytes, []) ->
@@ -237,10 +249,10 @@ number_to_bytes(N, X, Bytes) ->
 
 %% @spec ({element_type(), block()}) -> integer()
 %% @doc Returns the size in bytes of a block.
-block_size({ElementType,Block}) ->
-  length(Block)*size_of(ElementType);
-block_size({ElementType,Block,_SortOrder}) ->
-  length(Block)*size_of(ElementType).
+block_size({ElementType, Block}) ->
+  length(Block) * size_of(ElementType);
+block_size({ElementType, Block, _SortOrder}) ->
+  length(Block) * size_of(ElementType).
 
 
 %%
@@ -253,7 +265,7 @@ block_size({ElementType,Block,_SortOrder}) ->
 %%    update_block(ConstTab, Label, word_size(), word, [InitVal]).
 %%
 %% update_global_word(ConstTab, Label, InitVal) ->
-%%    update_global_block(ConstTab, Label, word_size(),word, [InitVal]).
+%%    update_global_block(ConstTab, Label, word_size(), word, [InitVal]).
 
 %%
 %% Update info for an existing label
@@ -269,12 +281,12 @@ update_block_labels(ConstTab, DataLbl, OldLbl, NewLbl) ->
   Const = lookup(DataLbl, ConstTab),
   Old = {label, OldLbl},
   case const_data(Const) of
-    {Type,Data} -> 
+    {Type, Data} ->
       NewData = update_data(Data, Old, NewLbl),
-      update(ConstTab,DataLbl,update_const_data(Const, {Type,NewData}));
-    {Type,Data,Order} -> 
+      update(ConstTab, DataLbl, update_const_data(Const, {Type,NewData}));
+    {Type, Data, Order} -> 
       NewData = update_data(Data, Old, NewLbl),
-      update(ConstTab,DataLbl,update_const_data(Const, {Type,NewData,Order}))
+      update(ConstTab, DataLbl, update_const_data(Const, {Type,NewData,Order}))
     end.
 
 update_data(Data, Old, New) ->
@@ -285,15 +297,15 @@ update_data(Data, Old, New) ->
 	      Data).
 
 %% update_global_block(ConstTab, Label, Align, ElementType, InitList) ->
-%%    ByteList = decompose(size_of(ElementType), InitList),
-%%    update_const(ConstTab, Label, block, Align, true, ByteList).
+%%   ByteList = decompose(size_of(ElementType), InitList),
+%%   update_const(ConstTab, Label, block, Align, true, ByteList).
 
 %%
 %% Insert a constant in the table, returns {NewTable, Label}.
 %%
 
 insert_const({Table, RefToLabels, NextLblNr}, Type, Alignment, Exported, Data) ->
-   Const = mk_const(Type, Alignment, Exported, Data),
+   Const = mk_ctdata(Type, Alignment, Exported, Data),
    {{tree_insert(NextLblNr, Const, Table), RefToLabels, NextLblNr+1}, 
     NextLblNr}.
 
@@ -301,34 +313,31 @@ insert_const({Table, RefToLabels, NextLblNr}, Type, Alignment, Exported, Data) -
 %% %% (Removes old info.)
 %% 
 %% update_const({Table, RefToLabels, NextLblNr}, Label, Type, Alignment, Exported, Data) ->
-%%    Const = mk_const(Type, Alignment, Exported, Data),
+%%    Const = mk_ctdata(Type, Alignment, Exported, Data),
 %%    {tree_update(Label, Const, Table), RefToLabels, NextLblNr}.
 
 update({Table, RefToLabels, NextLblNr}, Label, NewConst) ->
   {tree_update(Label, NewConst, Table), RefToLabels, NextLblNr}.
 
-
-%% @spec (lbl(), const_tab()) -> ctdata()
+%% @spec (hipe_constlbl(), hipe_consttab()) -> ctdata()
 %% @doc Lookup a label.
 lookup(Lbl, {Table,_RefToLabels,_NextLblNr}) ->
   tree_get(Lbl, Table).
 
-
 %% Find out if a constant term is present in the constant table.
 lookup_const({Table,_RefToLabels,_NextLblNr}, 
-	     Type, Alignment, Exported, Data)->
-  Const = mk_const(Type, Alignment, Exported, Data),
+	     Type, Alignment, Exported, Data) ->
+  Const = mk_ctdata(Type, Alignment, Exported, Data),
   tree_lookup_key_for_value(Const, Table).
 
-%% @spec (const_tab()) -> [lbl()]
 %% @doc Return the labels bound in a table.
+-spec(labels/1 :: (hipe_consttab()) -> [hipe_constlbl()]).
 labels({Table,_RefToLabels,_NextLblNr}) ->
   tree_keys(Table).
 
-
-%% @spec (const_tab()) -> [label_ref()]
+%% @spec (hipe_consttab()) -> [label_ref()]
 %% @doc Return the referred labels bound in a table.
-referred_labels({_Table, RefToLabels,_NextLblNr}) ->
+referred_labels({_Table,RefToLabels,_NextLblNr}) ->
   RefToLabels.
 
 
@@ -336,7 +345,7 @@ referred_labels({_Table, RefToLabels,_NextLblNr}) ->
 %% Change label names in constant blocks (jump_tables).
 %%
 update_referred_labels(Table, LabelMap) ->
-  %%  io:format("LabelMap: ~w\nTb:~w\n",[LabelMap, Table]),
+  %% io:format("LabelMap: ~w\nTb:~w\n",[LabelMap, Table]),
   {Tb, Refs, Next} =
     lists:foldl(
       fun({OldLbl,NewLbl},Tbl) ->
@@ -370,34 +379,49 @@ update_referred_labels(Table, LabelMap) ->
   {Tb, NewRefs, Next}.
 
 
-%%
+%%-----------------------------------------------------------------------------
 %% primitives for constants
-%%
-%% @spec (Type::ct_type(), Alignment::alignment(), Exported::bool(), Data::data())
-%%  -> ctdata()
-mk_const(Type, Alignment, Exported, Data) ->
-  {ctdata, Type, Alignment, Exported, Data}.
-%% @spec (ctdata()) -> ct_type()
-const_type({ctdata, Type, _Alignment, _Exported, _Data}) -> Type.
-%% @spec (ctdata()) -> alignment()
-const_align({ctdata,_Type, Alignment, _Exported, _Data}) -> Alignment.
-%% @spec (ctdata()) -> bool()
+%%-----------------------------------------------------------------------------
+
+-type(ct_type()      :: 'block' | 'ref' | 'sorted_block' | 'term').
+-type(ct_alignment() :: 4 | 8).
+
+-record(ctdata, {type      :: ct_type(),
+		 alignment :: ct_alignment(),
+		 exported  :: bool(),
+		 data      :: any()}).
+
+-spec(mk_ctdata/4 :: (Type::ct_type(), Alignment::ct_alignment(),
+		      Exported::bool(), Data::any()) -> #ctdata{}).
+mk_ctdata(Type, Alignment, Exported, Data) ->
+  #ctdata{type=Type, alignment=Alignment, exported=Exported, data=Data}.
+
+-spec(const_type/1 :: (#ctdata{}) -> ct_type()).
+const_type(#ctdata{type=Type}) -> Type.
+
+-spec(const_align/1 :: (#ctdata{}) -> ct_alignment()).
+const_align(#ctdata{alignment=Alignment}) -> Alignment.
+
+-spec(const_exported/1 :: (#ctdata{}) -> bool()).
 const_exported({ctdata,_Type,_Alignment, Exported,_Data}) -> Exported.
-%% @spec (ctdata()) -> data()
+
+-spec(const_data/1 :: (#ctdata{}) -> any()).
 const_data({ctdata,_Type,_Alignment,_Exported, Data}) -> Data.
-%% @spec (ctdata(), data()) -> ctdata()
-update_const_data({ctdata, Type, Alignment, Exported, _}, Data) -> 
-  {ctdata, Type, Alignment, Exported, Data}.
-%% @spec (ctdata()) -> integer()
+
+-spec(update_const_data/2 :: (#ctdata{}, {_,[_]} | {_,[_],_}) -> #ctdata{}).
+update_const_data(CTData, Data) -> 
+  CTData#ctdata{data=Data}.
+
 %% @doc Returns the size in bytes.
+-spec(const_size/1 :: (#ctdata{}) -> non_neg_integer()).
 const_size(Constant) ->
   case const_type(Constant) of
     %% term: you can't and shouldn't ask for its size
     block -> block_size(const_data(Constant));
-    sorted_block -> length(const_data(Constant))*word_size()
+    sorted_block -> length(const_data(Constant)) * word_size()
   end.
 
-
+-spec(word_size/0 :: () -> ct_alignment()).
 word_size() ->
   hipe_rtl_arch:word_size().
 
@@ -405,9 +429,10 @@ word_size() ->
 %% Since using `gb_trees' is not safe because of term ordering we use
 %% the `dict' module instead since it matches with =:= on the keys.
 
-tree_keys(T)->
+tree_keys(T) ->
   dict:fetch_keys(T).
 
+-spec(tree_to_list/1 :: (dict()) -> [_]).
 tree_to_list(T) ->
   dict:to_list(T).
 
@@ -431,12 +456,17 @@ tree_lookup(Key, T) ->
       none
   end.
 
+-spec(tree_empty/0 :: () -> dict()).
 tree_empty() ->
   dict:new().
 
+-spec(tree_lookup_key_for_value/2 ::
+      (#ctdata{}, dict()) -> 'none' | {'value', _}).
 tree_lookup_key_for_value(Val, T) ->
   tree_lookup_key_for_value_1(tree_to_list(T), Val).
 
+-spec(tree_lookup_key_for_value_1/2 ::
+      ([{_,_}], #ctdata{}) -> 'none' | {'value', _}).
 tree_lookup_key_for_value_1([{Key, Val}|_], Val) ->
   {value, Key};
 tree_lookup_key_for_value_1([_|Left], Val) ->

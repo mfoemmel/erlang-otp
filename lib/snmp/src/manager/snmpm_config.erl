@@ -795,7 +795,7 @@ do_init(Opts) ->
     %% -- Net-if (optional) --
     ?vdebug("net_if options", []),
     NetIfIrb     = 
-	case get_opt(inform_response_behaviour, Opts, ?IRB_DEFAULT) of
+	case get_opt(inform_request_behaviour, Opts, ?IRB_DEFAULT) of
 	    user ->
 		{user, timer:seconds(15)};
 	    Irb ->

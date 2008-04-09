@@ -68,18 +68,19 @@
 */
 
 #include <vxWorks.h> /* STATUS, size_t  */
-#include <sockLib.h> /* struct sockaddr */ 
+#include <sockLib.h> /* struct sockaddr */
+#include <memLib.h> 
 #include <stdio.h>   /* FILE            */
 
 #if defined(__STDC__)
 #define _RECLAIM_DECL_FUN(RetType, FunName, ParamList) \
-extern RetType FunName##ParamList
+extern RetType FunName ParamList
 #define _RECLAIM_VOID_PTR void *
 #define _RECLAIM_VOID_PARAM void
 #define _RECLAIM_VOID_RETURN void
 #elif defined(__cplusplus)
 #define _RECLAIM_DECL_FUN(RetType, FunName, ParamList) \
-extern "C" RetType FunName##ParamList
+extern "C" RetType FunName ParamList
 #define _RECLAIM_VOID_PTR void *
 #define _RECLAIM_VOID_PARAM 
 #define _RECLAIM_VOID_RETURN void
@@ -111,7 +112,7 @@ _RECLAIM_DECL_FUN(_RECLAIM_VOID_RETURN, save_fd, (int fd));
 #define close	save_close
 #endif
 /* Stdio file operations */
-_RECLAIM_DECL_FUN(FILE *, save_fopen, (char *, char *));
+_RECLAIM_DECL_FUN(FILE *, save_fopen, (const char *, char *));
 _RECLAIM_DECL_FUN(FILE *, save_fdopen, (int, char *));
 _RECLAIM_DECL_FUN(FILE *, save_freopen, (char *, char *, FILE *));
 _RECLAIM_DECL_FUN(int, save_fclose, (FILE *));

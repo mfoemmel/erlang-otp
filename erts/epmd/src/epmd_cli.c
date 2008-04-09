@@ -49,7 +49,7 @@ void kill_epmd(EpmdVars *g)
 	epmd_cleanup_exit(g,1);
     }
 }
-
+
 /* what == EPMD_NAMES_REQ || EPMD_DUMP_REQ */
 
 void epmd_call(EpmdVars *g,int what)
@@ -81,10 +81,10 @@ void epmd_call(EpmdVars *g,int what)
 }
 
 
-
+
 static int conn_to_epmd(EpmdVars *g)
 {
-    struct SOCKADDR_IN address;
+    struct EPMD_SOCKADDR_IN address;
     int connect_sock;
     
     connect_sock = socket(FAMILY, SOCK_STREAM, 0);

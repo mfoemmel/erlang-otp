@@ -382,12 +382,6 @@ bopt_cg({'and',As}, Fail, Acc, St) ->
 bopt_cg({'or',As}, Fail, Acc, St0) ->
     {Succ,St} = new_label(St0),
     bopt_cg_or(As, Succ, Fail, Acc, St);
-bopt_cg({test,is_tuple_element,fail,[Tmp,Tuple,RecordTag]}, Fail, Acc, St) ->
-    {[{test,is_eq_exact,{f,Fail},[Tmp,RecordTag]},
-      {get_tuple_element,Tuple,0,Tmp}|Acc],St};
-bopt_cg({inverted_test,is_tuple_element,fail,[Tmp,Tuple,RecordTag]}, Fail, Acc, St) ->
-    {[{test,is_ne_exact,{f,Fail},[Tmp,RecordTag]},
-      {get_tuple_element,Tuple,0,Tmp}|Acc],St};
 bopt_cg({test,N,fail,As}, Fail, Acc, St) ->
     Test = {test,N,{f,Fail},As},
     {[Test|Acc],St};
@@ -396,9 +390,7 @@ bopt_cg({inverted_test,N,fail,As}, Fail, Acc, St0) ->
     {[{label,Lbl},{jump,{f,Fail}},{test,N,{f,Lbl},As}|Acc],St};
 bopt_cg({protected,_,Bl0,{_,_,_}}, Fail, Acc, St0) ->
     {Bl,St} = bopt_block_1(Bl0, Fail, St0),
-    {Bl++Acc,St};
-bopt_cg([_|_]=And, Fail, Acc, St) ->
-    bopt_cg_and(And, Fail, Acc, St).
+    {Bl++Acc,St}.
 
 bopt_cg_not({'and',As0}) ->
     As = [bopt_cg_not(A) || A <- As0],

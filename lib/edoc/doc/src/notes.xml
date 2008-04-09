@@ -32,6 +32,21 @@
   <p>This document describes the changes made to the EDoc
     application.</p>
 
+<section><title>Edoc 0.7.5</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Minor updates, mostly cosmetic.</p>
+          <p>
+	    Own Id: OTP-7243</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
   <section>
     <title>Edoc 0.7.3</title>
 

@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2000-2007</year>
+%% <year>2000-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -47,7 +47,7 @@ scan(Chars) when is_list(Chars) ->
 
 %% As long as we dont know the version, we will loop in this function
 tokens1(Chars, Line, Acc) ->
-    case any_chars(Chars, Line) of
+    case any_chars(Chars, Line, 1) of
 	{token, Token, [], LatestLine} ->
 	    %% We got to the end without actually getting a version token.
 	    Tokens = [{endOfMessage, LatestLine, endOfMessage}, Token | Acc],
@@ -103,26 +103,26 @@ tokens1(Chars, Line, Acc) ->
     end.
 
 tokens2(Chars, Line0, Version, Tokens0) ->
-    case tokens2(Chars, Line0, Tokens0) of
+    case tokens3(Chars, Line0, Tokens0, Version) of
 	{ok, Tokens, Line} ->
 	    {ok, Tokens, Version, Line};
 	Error ->
 	    Error
     end.
 
-tokens2(Chars, Line, Acc) ->
-%%     d("tokens2 -> entry with"
-%%       "~n   Chars: ~s"
-%%       "~n   Line:  ~p", [Chars, Line]),
-    case any_chars(Chars, Line) of
+tokens3(Chars, Line, Acc, Version) ->
+    %%     d("tokens2 -> entry with"
+    %%       "~n   Chars: ~s"
+    %%       "~n   Line:  ~p", [Chars, Line]),
+    case any_chars(Chars, Line, Version) of
 	{token, Token, [], LatestLine} ->
-%% 	    d("tokens2 -> Token: ~n~p", [Token]),
+	    %%  	    d("tokens2 -> Token: ~n~p", [Token]),
 	    Tokens = [{endOfMessage, LatestLine, endOfMessage}, Token | Acc],
 	    {ok, lists:reverse(Tokens), Line};
 
 	{token, Token, Rest, LatestLine} ->
-%% 	    d("tokens2 -> Token: ~n~p", [Token]),
-	    tokens2(Rest, LatestLine, [Token | Acc]);
+	    %%  	    d("tokens2 -> Token: ~n~p", [Token]),
+	    tokens3(Rest, LatestLine, [Token | Acc], Version);
 
 	{bad_token, Token, _Rest, _LatestLine} ->
 	    {error, {bad_token, [Token, Acc]}, Line}
@@ -142,15 +142,15 @@ guess_version(Str) when is_list(Str) ->
 
 %% Returns {token,     Token, Rest, LatestLine}
 %% Returns {bad_token, Token, Rest, LatestLine}
-any_chars([Char | Rest], Line) ->
-%     Class = ?classify_char(Char),
-%     d("any_chars -> ~w of class ~w", [Char, Class]),
-%     case Class of
+any_chars([Char | Rest], Line, Version) ->
+    %%     Class = ?classify_char(Char),
+    %%     d("any_chars -> ~w of class ~w", [Char, Class]),
+    %%     case Class of
     case ?classify_char(Char) of
 	safe_char_upper ->
-	    safe_chars(Rest, [Char], [?LOWER2(Char)], Line);
+	    safe_chars(Rest, [Char], [?LOWER2(Char)], Line, Version);
 	safe_char ->
-	    safe_chars(Rest, [Char], [Char], Line);
+	    safe_chars(Rest, [Char], [Char], Line, Version);
 	rest_char ->
 	    case Char of
 		?SemiColonToken ->
@@ -168,7 +168,7 @@ any_chars([Char | Rest], Line) ->
 	    %% {bad_token, {'SEP', Line, Char}, Rest, Line}
 	    {bad_token, {'AnyChars', Line, Char}, Rest, Line}
     end;
-any_chars([] = All, Line) ->
+any_chars([] = All, Line, _Version) ->
     {token, {'SEP', Line, end_of_input}, All, Line}.
 
 comment_chars([Char | Rest], Line) ->
@@ -289,15 +289,18 @@ quoted_chars([Char | Rest], Acc, Line) ->
 quoted_chars([] = All, _Acc, Line) ->
     {bad_token, {'QuotedChars', Line, end_of_input}, All, Line}.
     
-safe_chars([Char | Rest] = All, Acc, LowerAcc, Line) ->
+safe_chars([Char | Rest] = All, Acc, LowerAcc, Line, Version) ->
+    %%     d("safe_chars -> entry with"
+    %%       "~n   Char:     ~p"
+    %%       "~n   LowerAcc: ~p", [Char, LowerAcc]),
     case ?classify_char(Char) of
 	safe_char_upper ->
-	    safe_chars(Rest, [Char | Acc], [?LOWER2(Char) | LowerAcc], Line);
+	    safe_chars(Rest, [Char | Acc], [?LOWER2(Char) | LowerAcc], Line, Version);
 	safe_char ->
-	    safe_chars(Rest, [Char | Acc], [Char | LowerAcc], Line);
+	    safe_chars(Rest, [Char | Acc], [Char | LowerAcc], Line, Version);
 	_ ->
 	    LowerSafeChars = lists:reverse(LowerAcc),
-	    TokenTag = select_token(LowerSafeChars),
+	    TokenTag = select_token(LowerSafeChars, Version),
 	    SafeChars = lists:reverse(Acc),
 	    case TokenTag of
 		'MtpToken' ->
@@ -320,9 +323,9 @@ safe_chars([Char | Rest] = All, Acc, LowerAcc, Line) ->
 		    {token, {TokenTag, Line, LowerSafeChars}, All, Line}
 	    end
     end;
-safe_chars([] = All, _Acc, LowerAcc, Line) ->
+safe_chars([] = All, _Acc, LowerAcc, Line, Version) ->
     LowerSafeChars = lists:reverse(LowerAcc),
-    TokenTag = select_token(LowerSafeChars),
+    TokenTag = select_token(LowerSafeChars, Version),
     %%SafeChars = lists:reverse(Acc),
     {token, {TokenTag, Line, LowerSafeChars}, All, Line}.
     
@@ -486,15 +489,15 @@ digit_map_timer(All, Chars, TimerPos, DMV) ->
 	   DMV#'DigitMapValue'{digitMapBody = All}
    end.
 
-select_token([$o, $- | LowerText]) ->
-    select_token(LowerText);
-select_token([$w, $- | LowerText]) ->
-    select_token(LowerText);
-select_token(LowerText) ->
+select_token([$o, $- | LowerText], Version) ->
+    select_token(LowerText, Version);
+select_token([$w, $- | LowerText], Version) ->
+    select_token(LowerText, Version);
+select_token(LowerText, Version) ->
     case LowerText of
         "add"                   -> 'AddToken';
         "a"                     -> 'AddToken';
-        "andlgc"                -> 'AndAUDITSelectToken'; % v3
+        "andlgc"                when (Version >= 3) -> 'AndAUDITSelectToken'; % v3
         "audit"                 -> 'AuditToken';
         "at"                    -> 'AuditToken';
         "auditcapability"       -> 'AuditCapToken';
@@ -503,8 +506,8 @@ select_token(LowerText) ->
         "av"                    -> 'AuditValueToken';
 	"authentication"        -> 'AuthToken';
         "au"                    -> 'AuthToken';
-        "both"                  -> 'BothToken';         % v3
-        "b"                     -> 'BothToken';         % v3
+        "both"                  when (Version >= 3) -> 'BothToken';         % v3
+        "b"                     when (Version >= 3) -> 'BothToken';         % v3
         "bothway"               -> 'BothwayToken';
         "bw"                    -> 'BothwayToken';
         "brief"                 -> 'BriefToken';
@@ -513,18 +516,18 @@ select_token(LowerText) ->
         "bf"                    -> 'BufferToken';
         "context"               -> 'CtxToken';
         "c"                     -> 'CtxToken';
-        "contextattr"           -> 'ContextAttrToken';  % v3
-        "ct"                    -> 'ContextAttrToken';  % v3
-        "contextlist"           -> 'ContextListToken';  % v3
-        "clt"                   -> 'ContextListToken';  % v3
+        "contextattr"           when (Version >= 3) -> 'ContextAttrToken';  % v3
+        "ct"                    when (Version >= 3) -> 'ContextAttrToken';  % v3
+        "contextlist"           when (Version >= 3) -> 'ContextListToken';  % v3
+        "clt"                   when (Version >= 3) -> 'ContextListToken';  % v3
         "contextaudit"          -> 'ContextAuditToken';
         "ca"                    -> 'ContextAuditToken';
 	"digitmap"              -> 'DigitMapToken';
 	"dm"                    -> 'DigitMapToken';
-        "spadirection"          -> 'DirectionToken';    % v3
-        "direction"             -> 'DirectionToken';    % v3 (pre-v3a/v3b)
-        "spadi"                 -> 'DirectionToken';    % v3
-        "di"                    -> 'DirectionToken';    % v3 (pre-v3a/v3b)
+        "spadirection"          when (Version >= 3) -> 'DirectionToken';    % v3
+        "direction"             when (Version >= 3) -> 'DirectionToken';    % v3 (pre-v3a/v3b)
+        "spadi"                 when (Version >= 3) -> 'DirectionToken';    % v3
+        "di"                    when (Version >= 3) -> 'DirectionToken';    % v3 (pre-v3a/v3b)
         "discard"               -> 'DiscardToken';
         "ds"                    -> 'DiscardToken';
         "disconnected"          -> 'DisconnectedToken';
@@ -540,18 +543,18 @@ select_token(LowerText) ->
         "emergency"             -> 'EmergencyToken';
         "eg"                    -> 'EmergencyToken';
         "emergencyofftoken"     -> 'EmergencyOffToken';
-        "emergencyoff"          -> 'EmergencyOffToken';   % v3 (as of prev3c)
+        "emergencyoff"          when (Version >= 3) -> 'EmergencyOffToken';   % v3 (as of prev3c)
         "ego"                   -> 'EmergencyOffToken';
-        "emergencyvalue"        -> 'EmergencyValueToken'; % v3 
-        "egv"                   -> 'EmergencyValueToken'; % v3
+        "emergencyvalue"        when (Version >= 3) -> 'EmergencyValueToken'; % v3 
+        "egv"                   when (Version >= 3) -> 'EmergencyValueToken'; % v3
         "error"                 -> 'ErrorToken';
         "er"                    -> 'ErrorToken';
         "eventbuffer"           -> 'EventBufferToken';
         "eb"                    -> 'EventBufferToken';
         "events"                -> 'EventsToken';
         "e"                     -> 'EventsToken';
-        "external"              -> 'ExternalToken';     % v3
-        "ex"                    -> 'ExternalToken';     % v3
+        "external"              when (Version >= 3) -> 'ExternalToken';     % v3
+        "ex"                    when (Version >= 3) -> 'ExternalToken';     % v3
         "failover"              -> 'FailoverToken';
         "fl"                    -> 'FailoverToken';
         "forced"                -> 'ForcedToken';
@@ -563,17 +566,17 @@ select_token(LowerText) ->
         "h226"                  -> 'H226Token';
         "handoff"               -> 'HandOffToken';
         "ho"                    -> 'HandOffToken';
-        "iepscall"              -> 'IEPSToken';         % v3
-        "ieps"                  -> 'IEPSToken';         % v3
+        "iepscall"              when (Version >= 3) -> 'IEPSToken';         % v3
+        "ieps"                  when (Version >= 3) -> 'IEPSToken';         % v3
         "inactive"              -> 'InactiveToken';
         "in"                    -> 'InactiveToken';
-        "internal"              -> 'InternalToken';     % v3
-        "it"                    -> 'InternalToken';     % v3
+        "internal"              when (Version >= 3) -> 'InternalToken';     % v3
+        "it"                    when (Version >= 3) -> 'InternalToken';     % v3
         "immackrequired"        -> 'ImmAckRequiredToken';
         "ia"                    -> 'ImmAckRequiredToken';
         "inservice"             -> 'InSvcToken';
-        "intersignal"           -> 'IntsigDelayToken'; % v3
-        "spais"                 -> 'IntsigDelayToken'; % v3
+        "intersignal"           when (Version >= 3) -> 'IntsigDelayToken'; % v3
+        "spais"                 when (Version >= 3) -> 'IntsigDelayToken'; % v3
         "intbyevent"            -> 'InterruptByEventToken';
         "ibe"                   -> 'InterruptByEventToken';
         "intbysigdescr"         -> 'InterruptByNewSignalsDescrToken';
@@ -581,8 +584,8 @@ select_token(LowerText) ->
         "iv"                    -> 'InSvcToken';
         "isolate"               -> 'IsolateToken';
         "is"                    -> 'IsolateToken';
-	"iterationtoken"        -> 'IterationToken'; % v3
-	"ir"                    -> 'IterationToken'; % v3
+	"iterationtoken"        when (Version >= 3) -> 'IterationToken'; % v3
+	"ir"                    when (Version >= 3) -> 'IterationToken'; % v3
         "keepactive"            -> 'KeepActiveToken';
         "ka"                    -> 'KeepActiveToken';
 	"local"                 -> 'LocalToken';
@@ -597,8 +600,8 @@ select_token(LowerText) ->
         "m"                     -> 'MediaToken';
         %% "megaco"                -> 'MegacopToken';
 	%% "!"                     -> 'megacoptoken';
-	"segment"               -> 'MessageSegmentToken'; % v3
-	"sm"                    -> 'MessageSegmentToken'; % v3
+	"segment"               when (Version >= 3) -> 'MessageSegmentToken'; % v3
+	"sm"                    when (Version >= 3) -> 'MessageSegmentToken'; % v3
         "method"                -> 'MethodToken';
         "mt"                    -> 'MethodToken';
         "mtp"                   -> 'MtpToken';
@@ -614,31 +617,31 @@ select_token(LowerText) ->
         "mv"                    -> 'MoveToken';
         "mux"                   -> 'MuxToken';
         "mx"                    -> 'MuxToken';
-        "nevernotify"           -> 'NeverNotifyToken'; % v3
-        "nbnn"                  -> 'NeverNotifyToken'; % v3
+        "nevernotify"           when (Version >= 3) -> 'NeverNotifyToken'; % v3
+        "nbnn"                  when (Version >= 3) -> 'NeverNotifyToken'; % v3
         "notify"                -> 'NotifyToken';
         "n"                     -> 'NotifyToken';
         "notifycompletion"      -> 'NotifyCompletionToken';
         "nc"                    -> 'NotifyCompletionToken';
-        "immediatenotify"       -> 'NotifyImmediateToken';    % v3
-        "nbin"                  -> 'NotifyImmediateToken';    % v3
-        "regulatednotify"       -> 'NotifyRegulatedToken';    % v3
-        "nbrn"                  -> 'NotifyRegulatedToken';    % v3
-        "nx64kservice"          -> 'Nx64kToken';              % v2
-        "n64"                   -> 'Nx64kToken';              % v2
+        "immediatenotify"       when (Version >= 3) -> 'NotifyImmediateToken';    % v3
+        "nbin"                  when (Version >= 3) -> 'NotifyImmediateToken';    % v3
+        "regulatednotify"       when (Version >= 3) -> 'NotifyRegulatedToken';    % v3
+        "nbrn"                  when (Version >= 3) -> 'NotifyRegulatedToken';    % v3
+        "nx64kservice"          when (Version >= 2) -> 'Nx64kToken';              % v2
+        "n64"                   when (Version >= 2) -> 'Nx64kToken';              % v2
         "observedevents"        -> 'ObservedEventsToken';
         "oe"                    -> 'ObservedEventsToken';
         "oneway"                -> 'OnewayToken';
         "ow"                    -> 'OnewayToken';
-        "onewayboth"            -> 'OnewayBothToken';     % v3
-        "owb"                   -> 'OnewayBothToken';     % v3
-        "onewayexternal"        -> 'OnewayExternalToken'; % v3
-        "owe"                   -> 'OnewayExternalToken'; % v3
+        "onewayboth"            when (Version >= 3) -> 'OnewayBothToken';     % v3
+        "owb"                   when (Version >= 3) -> 'OnewayBothToken';     % v3
+        "onewayexternal"        when (Version >= 3) -> 'OnewayExternalToken'; % v3
+        "owe"                   when (Version >= 3) -> 'OnewayExternalToken'; % v3
         "off"                   -> 'OffToken';
         "on"                    -> 'OnToken';
         "onoff"                 -> 'OnOffToken';
         "oo"                    -> 'OnOffToken';
-        "orlgc"                 -> 'OrAUDITselectToken';  % v3
+        "orlgc"                 when (Version >= 3) -> 'OrAUDITselectToken';  % v3
         "otherreason"           -> 'OtherReasonToken';
         "or"                    -> 'OtherReasonToken';
         "outofservice"          -> 'OutOfSvcToken';
@@ -654,13 +657,13 @@ select_token(LowerText) ->
         "reason"                -> 'ReasonToken';
         "re"                    -> 'ReasonToken';
         "receiveonly"           -> 'RecvonlyToken';
-        "requestid"             -> 'RequestIDToken';    % v3
-        "rq"                    -> 'RequestIDToken';    % v3
+        "requestid"             when (Version >= 3) -> 'RequestIDToken';    % v3
+        "rq"                    when (Version >= 3) -> 'RequestIDToken';    % v3
         "rc"                    -> 'RecvonlyToken';
         "reply"                 -> 'ReplyToken';
         "p"                     -> 'ReplyToken';
-        "reseteventsdescriptor" -> 'ResetEventsDescriptorToken'; % v3
-        "rse"                   -> 'ResetEventsDescriptorToken'; % v3
+        "reseteventsdescriptor" when (Version >= 3) -> 'ResetEventsDescriptorToken'; % v3
+        "rse"                   when (Version >= 3) -> 'ResetEventsDescriptorToken'; % v3
         "transactionresponseack"-> 'ResponseAckToken';
         "k"                     -> 'ResponseAckToken';
         "restart"               -> 'RestartToken';
@@ -673,8 +676,8 @@ select_token(LowerText) ->
         "rg"                    -> 'ReservedGroupToken';
         "reservedvalue"         -> 'ReservedValueToken';
         "rv"                    -> 'ReservedValueToken';
-        "end"                   -> 'SegmentationCompleteToken'; % v3
-        "&"                     -> 'SegmentationCompleteToken'; % v3
+        "end"                   when (Version >= 3) -> 'SegmentationCompleteToken'; % v3
+        "&"                     when (Version >= 3) -> 'SegmentationCompleteToken'; % v3
         "sendonly"              -> 'SendonlyToken';
         "so"                    -> 'SendonlyToken';
         "sendreceive"           -> 'SendrecvToken';
@@ -687,8 +690,8 @@ select_token(LowerText) ->
         "sc"                    -> 'ServiceChangeToken';
         "servicechangeaddress"  -> 'ServiceChangeAddressToken';
         "ad"                    -> 'ServiceChangeAddressToken';
-        "servicechangeinc"      -> 'ServiceChangeIncompleteToken'; % v3
-        "sic"                   -> 'ServiceChangeIncompleteToken'; % v3
+        "servicechangeinc"      when (Version >= 3) -> 'ServiceChangeIncompleteToken'; % v3
+        "sic"                   when (Version >= 3) -> 'ServiceChangeIncompleteToken'; % v3
         "signallist"            -> 'SignalListToken';
         "sl"                    -> 'SignalListToken';
         "signals"               -> 'SignalsToken';
@@ -724,26 +727,35 @@ select_token(LowerText) ->
         "v91"                   -> 'V91Token';
         "version"               -> 'VersionToken';
         "v"                     -> 'VersionToken';
-	%% TimeStamp when length(TimeStamp) == 17 -> 'TimeStampToken';
-	[D1,D2,D3,D4,D5,D6,D7,D8,$t,T1,T2,T3,T4,T5,T6,T7,T8] 
-	when $0 =< D1; D1 =< $9;
-	     $0 =< D2; D2 =< $9;
-	     $0 =< D3; D3 =< $9;
-	     $0 =< D4; D4 =< $9;
-	     $0 =< D5; D5 =< $9;
-	     $0 =< D6; D6 =< $9;
-	     $0 =< D7; D7 =< $9;
-	     $0 =< D8; D8 =< $9;
-	     $0 =< T1; T1 =< $9;
-	     $0 =< T2; T2 =< $9;
-	     $0 =< T3; T3 =< $9;
-	     $0 =< T4; T4 =< $9;
-	     $0 =< T5; T5 =< $9;
-	     $0 =< T6; T6 =< $9;
-	     $0 =< T7; T7 =< $9;
-	     $0 =< T8; T8 =< $9 -> 'TimeStampToken';
+	[_,_,_,_,_,_,_,_,$t,_,_,_,_,_,_,_,_] -> % Could be a time-stamp
+	    [D1,D2,D3,D4,D5,D6,D7,D8,_,T1,T2,T3,T4,T5,T6,T7,T8] = LowerText,
+	    select_TimeStampToken(D1,D2,D3,D4,D5,D6,D7,D8,
+				  T1,T2,T3,T4,T5,T6,T7,T8);
 	_                       -> 'SafeChars'
     end.
+
+select_TimeStampToken(D1,D2,D3,D4,D5,D6,D7,D8,
+		      T1,T2,T3,T4,T5,T6,T7,T8)
+  when ($0 =< D1) andalso (D1 =< $9) andalso 
+       ($0 =< D2) andalso (D2 =< $9) andalso 
+       ($0 =< D3) andalso (D3 =< $9) andalso 
+       ($0 =< D4) andalso (D4 =< $9) andalso 
+       ($0 =< D5) andalso (D5 =< $9) andalso 
+       ($0 =< D6) andalso (D6 =< $9) andalso 
+       ($0 =< D7) andalso (D7 =< $9) andalso 
+       ($0 =< D8) andalso (D8 =< $9) andalso 
+       ($0 =< T1) andalso (T1 =< $9) andalso 
+       ($0 =< T2) andalso (T2 =< $9) andalso 
+       ($0 =< T3) andalso (T3 =< $9) andalso 
+       ($0 =< T4) andalso (T4 =< $9) andalso 
+       ($0 =< T5) andalso (T5 =< $9) andalso 
+       ($0 =< T6) andalso (T6 =< $9) andalso 
+       ($0 =< T7) andalso (T7 =< $9) andalso 
+       ($0 =< T8) andalso (T8 =< $9) -> 
+    'TimeStampToken';
+select_TimeStampToken(_D1,_D2,_D3,_D4,_D5,_D6,_D7,_D8,
+		      _T1,_T2,_T3,_T4,_T5,_T6,_T7,_T8) ->
+    'SafeChars'.
 
 
 %% d(F) ->

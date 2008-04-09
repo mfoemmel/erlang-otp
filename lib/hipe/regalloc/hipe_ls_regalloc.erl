@@ -21,9 +21,9 @@
 %%  History  :	* 2000-04-07 Erik Johansson (happi@csd.uu.se): Created.
 %%              * 2001-07-16 EJ: Made less sparc-specific.
 %% CVS:
-%%    $Author: mikpe $
-%%    $Date: 2007/12/18 09:13:34 $
-%%    $Revision: 1.33 $
+%%    $Author: kostis $
+%%    $Date: 2008/03/25 10:09:45 $
+%%    $Revision: 1.34 $
 %% =====================================================================
 %% Exported functions (short description):
 %%   regalloc(CFG,PhysRegs,Entrypoints, Options) -> 
@@ -144,41 +144,38 @@ calculate_intervals(CFG,Liveness,_Entrypoints, Options, Target) ->
 
   %% ?inc_counter(bbs_counter, length(Worklist)),
   %% ?debug_msg("No BBs ~w\n",[length(Worklist)]),
-  intervals(Worklist, Interval, 1, CFG, Liveness, succ_map(CFG, Target), Target).
+  intervals(Worklist, Interval, 1, CFG, Liveness, Target).
 
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-%% intervals(WorkList, Intervals, InstructionNr,
-%%           CFG, Liveness, SuccMap)
-%%  WorkList: List of BB-names to handle.
-%%  Intervals: Intervals seen so far (sorted on register names).
-%%  InstructionNr: The number of examined insturctions.
-%%  CFG: The Control-Flow Graph.
-%%  Liveness: A map of live-in and live-out sets for each Basic-Block.
-%%  SuccMap: A map of successors for each BB name.
+%% intervals(WorkList, Intervals, InstructionNr, CFG, Liveness, Target)
+%%   WorkList: List of BB-names to handle.
+%%   Intervals: Intervals seen so far (sorted on register names).
+%%   InstructionNr: The number of examined insturctions.
+%%   CFG: The Control-Flow Graph.
+%%   Liveness: A map of live-in and live-out sets for each Basic-Block.
+%%   Target: The backend for which we generate code.
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-intervals([L|ToDO],Intervals,InstructionNr,CFG,Liveness,SuccMap, Target) ->
+intervals([L|ToDO], Intervals, InstructionNr, CFG, Liveness, Target) ->
   %% Add all variables that are live at the entry of this block
   %% to the interval data structure.
-  LiveIn = livein(Liveness,L, Target),
-  Intervals2 = add_def_point(LiveIn,InstructionNr,Intervals),
-  LiveOut = liveout(Liveness,L, Target),
+  LiveIn = livein(Liveness, L, Target),
+  Intervals2 = add_def_point(LiveIn, InstructionNr, Intervals),
+  LiveOut = liveout(Liveness, L, Target),
 
   %% Traverse this block instruction by instruction and add all
   %% uses and defines to the intervals.
-  Code = hipe_bb:code(bb(CFG,L, Target)),
-  {Intervals3, NewINr} = 
-    traverse_block(Code, InstructionNr+1,
-		   Intervals2,
-		   Target),
+  Code = hipe_bb:code(bb(CFG, L, Target)),
+  {Intervals3, NewINr} =
+    traverse_block(Code, InstructionNr+1, Intervals2, Target),
   
   %% Add end points for the registers that are in the live-out set.
   Intervals4 = add_use_point(LiveOut, NewINr+1, Intervals3),
   
-  intervals(ToDO, Intervals4, NewINr+1, CFG, Liveness, SuccMap, Target);
-intervals([],Intervals,_,_,_,_, _) -> 
+  intervals(ToDO, Intervals4, NewINr+1, CFG, Liveness, Target);
+intervals([], Intervals, _, _, _, _) ->
   %% Return the calculated intervals
-  LI =interval_to_list(Intervals),
-  %io:format("Intervals:~n~p~n", [LI]),
+  LI = interval_to_list(Intervals),
+  %% io:format("Intervals:~n~p~n", [LI]),
   LI.
 
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
@@ -918,9 +915,6 @@ create_freeregs([]) ->
 %% XXX: Make this efficient somehow...
 %% 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-succ_map(CFG, Target) ->
-  Target:succ_map(CFG).
 
 liveness(CFG, Target) ->
   Target:analyze(CFG).

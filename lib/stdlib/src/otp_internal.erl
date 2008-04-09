@@ -229,6 +229,10 @@ obsolete_1(erlang, fault, 1) ->
 obsolete_1(erlang, fault, 2) ->
     {deprecated, {erlang,error,2}, "R13B"};
 
+%% Added in R12B-2.
+obsolete_1(file, rawopen, 2) ->
+    {deprecated, "deprecated (will be removed in R13B); use file:open/2 with the raw option"};
+
 obsolete_1(httpd, start, 0) 	  -> {deprecated,{inets,start,[2,3]},"R14B"};
 obsolete_1(httpd, start, 1) 	  -> {deprecated,{inets,start,[2,3]},"R14B"};
 obsolete_1(httpd, start_link, 1)  -> {deprecated,{inets,start,[2,3]},"R14B"};

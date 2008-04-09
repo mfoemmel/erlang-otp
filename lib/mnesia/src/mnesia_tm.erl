@@ -1970,10 +1970,16 @@ get_dirty_reply(Node, Res) ->
 	{?MODULE, Node, {dirty_res, Reply}} ->
 	    Reply;
 	{mnesia_down, Node} ->
-	    %% It's ok to ignore mnesia_down's 
-	    %% since we will make the replicas
-	    %% consistent again when Node is started
-	    Res
+	    case get(mnesia_activity_state) of
+		{_, Tid, _Ts} when element(1,Tid) == tid -> 
+		    %% Hmm dirty called inside a transaction, to avoid
+		    %% hanging transaction we need to restart the transaction
+		    mnesia:abort({node_not_running, Node});
+		_ ->
+		    %% It's ok to ignore mnesia_down's since we will make 
+		    %% the replicas consistent again when Node is started
+		    Res
+	    end
     after 1000 ->
 	    case lists:member(Node, val({current, db_nodes})) of
 		true ->

@@ -28,24 +28,22 @@
 
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 
--include("../main/hipe.hrl").
+-include("hipe.hrl").
+-include("../icode/hipe_icode.hrl").
+%%-include("../rtl/hipe_rtl.hrl").
+
+%%=====================================================================
+
+-type(comp_icode_ret() :: {'native',hipe_architecture(),{'unprofiled',_}}
+			| {'rtl',tuple()}).
 
 %%=====================================================================
 
 %% @spec compile_icode(MFA::mfa(),
-%%                     LinearIcode::term(),
-%%                     CompilerOptions::options()) ->
+%%                     LinearIcode::#icode{},
+%%                     CompilerOptions::comp_options(),
+%%		       CompServers::#comp_servers()) ->
 %%          {native,Platform,{unprofiled,NativeCode}} | {rtl,RTLCode}
-%%
-%%     options() = [option()]
-%%     option() = term()
-%%
-%% @type mfa() = {M::mod(),F::fun(),A::arity()}.
-%%       A fully qualified function name.
-%%
-%% @type fun() = atom(). A function identifier.
-%%
-%% @type arity() = integer(). A function arity; always nonnegative.
 %%
 %% @doc Compiles the Icode (in linear form) of a single MFA down to
 %% native code for the platform of the target architecture.
@@ -55,6 +53,9 @@
 %% compilation after translation to RTL (in which case RTL code is
 %% generated). The compiler options must have already been expanded
 %% (cf. `<a href="hipe.html">hipe:expand_options</a>'). </p>
+
+-spec(compile_icode/4 ::
+      (mfa(), #icode{}, comp_options(), #comp_servers{}) -> comp_icode_ret()).
 
 compile_icode(MFA, LinearIcode, Options, Servers) ->
   compile_icode(MFA, LinearIcode, Options, Servers, get(hipe_debug)).
@@ -89,15 +90,9 @@ compile_icode(MFA, LinearIcode0, Options, Servers, DebugState) ->
   IcodeCfg0 = icode_linear_to_cfg(LinearIcode1, Options),
   %%hipe_icode_cfg:pp(IcodeCfg1),
   IcodeCfg1 = icode_handle_exceptions(IcodeCfg0, MFA, Options),
-  IcodeCfg2 = icode_binary_pass(IcodeCfg1, Options),
-  IcodeCfg3 = icode_inline_bifs(IcodeCfg2, Options),
+  IcodeCfg3 = icode_inline_bifs(IcodeCfg1, Options),
   pp(IcodeCfg3, MFA, icode, pp_icode, Options, Servers),
-  case icode_ssa(IcodeCfg3, MFA, Options, Servers) of
-    {dialyzer, IcodeSSA} -> {dialyzer, IcodeSSA};
-    IcodeCfg4 -> compile_icode_2(MFA, IcodeCfg4, Options, Servers, DebugState)
-  end.
-
-compile_icode_2(MFA, IcodeCfg4, Options, Servers, DebugState) ->  
+  IcodeCfg4 = icode_ssa(IcodeCfg3, MFA, Options, Servers),
   IcodeCfg5 = icode_split_arith(IcodeCfg4, MFA, Options),
   pp(IcodeCfg5, MFA, icode, pp_icode_split_arith, Options, Servers),
   IcodeCfg6 = icode_heap_test(IcodeCfg5, Options),
@@ -106,8 +101,8 @@ compile_icode_2(MFA, IcodeCfg4, Options, Servers, DebugState) ->
   pp(IcodeCfg7, MFA, icode_liveness, pp_icode_liveness, Options, Servers),
   FinalIcode = hipe_icode_cfg:cfg_to_linear(IcodeCfg7),
   ?opt_stop_timer("Icode"),
-
-  ?option_time(LinearRTL=icode_to_rtl(MFA,FinalIcode,Options, Servers), "RTL", Options),
+  LinearRTL = ?option_time(icode_to_rtl(MFA,FinalIcode,Options, Servers), 
+			   "RTL", Options),
   case proplists:get_bool(to_rtl, Options) of
     false ->
       rtl_to_native(MFA, LinearRTL, Options, DebugState);
@@ -135,13 +130,14 @@ icode_linear_to_cfg(LinearIcode, Options) ->
   ?option_time(hipe_icode_cfg:linear_to_cfg(LinearIcode),
 	       "transform linear Icode to CFG", Options).
 
-%% The binary_pass needs to occur before the handle_exceptions pass
-%% because it assumes that all binary matches have a common end
-%% fail-label. This is no longer true after fixing up the catches.
-
-icode_binary_pass(IcodeCfg, Options) ->  
-  ?option_time(hipe_icode_bincomp:simple(IcodeCfg),
-	       "Icode binary pass", Options).
+icode_ssa_binary_pass(IcodeSSA, Options) ->
+  case proplists:get_bool(binary_opt, Options) of
+    true ->
+      ?option_time(hipe_icode_bincomp:cfg(IcodeSSA),
+		   "Icode binary pass", Options);
+    false ->
+      IcodeSSA
+  end.
 
 icode_handle_exceptions(IcodeCfg, MFA, Options) ->
   debug("Icode fix catches: ~w~n", [MFA], Options),
@@ -237,22 +233,19 @@ perform_io(Fun, undefined) ->
 icode_ssa(IcodeCfg0, MFA, Options, Servers) ->
   ?opt_start_timer("Icode SSA passes"),
   IcodeSSA0 = icode_ssa_convert(IcodeCfg0, Options),
-  IcodeSSA2 = icode_ssa_const_prop(IcodeSSA0, Options),
   pp(IcodeSSA0, MFA, icode, pp_icode_ssa, Options, Servers),
+  IcodeSSA1 = icode_ssa_const_prop(IcodeSSA0, Options),
+  IcodeSSA2 = icode_ssa_dead_code_elimination(IcodeSSA1, Options),
   IcodeSSA3 = icode_ssa_copy_prop(IcodeSSA2, Options),
-  case proplists:get_bool(dialyzer, Options) of
-    true ->
-      {dialyzer, IcodeSSA3};
-    false ->
-      IcodeSSA4 = icode_ssa_type(IcodeSSA3, MFA, Options, Servers),
-      IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
-      IcodeSSA6 = icode_ssa_struct_reuse(IcodeSSA5, Options),
-      icode_ssa_check(IcodeSSA6, Options), %% just for sanity
-      pp(IcodeSSA6, MFA, icode, pp_icode_ssa, Options, Servers),
-      IcodeCfg = icode_ssa_unconvert(IcodeSSA6, Options),
-      ?opt_stop_timer("Icode SSA passes"),
-      IcodeCfg
-  end.
+  IcodeSSA3a = icode_ssa_binary_pass(IcodeSSA3, Options),
+  IcodeSSA4 = icode_ssa_type(IcodeSSA3a, MFA, Options, Servers),
+  IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
+  IcodeSSA6 = icode_ssa_struct_reuse(IcodeSSA5, Options),
+  icode_ssa_check(IcodeSSA6, Options), %% just for sanity
+  pp(IcodeSSA6, MFA, icode, pp_icode_ssa, Options, Servers),
+  IcodeCfg = icode_ssa_unconvert(IcodeSSA6, Options),
+  ?opt_stop_timer("Icode SSA passes"),
+  IcodeCfg.
 
 icode_ssa_type(IcodeSSA, MFA, Options, Servers) ->
   case proplists:get_value(icode_type, Options) of
@@ -278,7 +271,7 @@ icode_ssa_convert(IcodeCfg, Options) ->
 icode_ssa_const_prop(IcodeSSA, Options) ->
   case proplists:get_bool(icode_ssa_const_prop, Options) of
     true ->
-      ?option_time(Tmp=hipe_icode_ssa_const_prop:sparse_cond_const_propagate(IcodeSSA),
+      ?option_time(Tmp=hipe_icode_ssa_const_prop:propagate(IcodeSSA),
 		   "Icode SSA sparse conditional constant propagation", Options),
       ?option_time(hipe_icode_ssa:remove_dead_code(Tmp),
 		   "Icode SSA dead code elimination pass 1", Options);
@@ -460,7 +453,7 @@ rtl_ssa_convert(RtlCfg, Options) ->
 rtl_ssa_const_prop(RtlCfgSSA, Options) ->
   case proplists:get_bool(rtl_ssa_const_prop, Options) of
     true ->
-      ?option_time(hipe_rtl_ssa_const_prop:sparse_cond_const_propagate(RtlCfgSSA),
+      ?option_time(hipe_rtl_ssa_const_prop:propagate(RtlCfgSSA),
 		   "RTL SSA sparse conditional constant propagation", Options);
     false ->
       RtlCfgSSA
@@ -499,18 +492,17 @@ rtl_lcm(RtlCfg, Options) ->
   case proplists:get_bool(rtl_lcm, Options) of
     true ->
       ?opt_start_timer("RTL lazy code motion"),
-%%     ?option_time(hipe_rtl_lcm:rtl_lcm(RtlCfg, Options),
-%%		    "RTL lazy code motion", Options);
+      %% ?option_time(hipe_rtl_lcm:rtl_lcm(RtlCfg, Options),
+      %%	      "RTL lazy code motion", Options);
       RtlCfg1 = hipe_rtl_lcm:rtl_lcm(RtlCfg, Options),
       ?opt_stop_timer("RTL lazy code motion"),
       RtlCfg1;
     false ->
       RtlCfg
   end.
-  
-%%---------------------------------------------------------------------
 
-
+%%=====================================================================
+%% Translation to native code takes place in the corresponding back-end
 %%=====================================================================
 
 rtl_to_native(MFA, LinearRTL, Options, DebugState) ->

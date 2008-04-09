@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2000-2007</year>
+%% <year>2000-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -27,6 +27,7 @@
 
 -include("megaco_test_lib.hrl").
 -include_lib("megaco/include/megaco.hrl").
+-include_lib("megaco/src/app/megaco_internal.hrl").
 
 t()     -> megaco_test_lib:t(?MODULE).
 t(Case) -> megaco_test_lib:t({?MODULE, Case}).
@@ -47,8 +48,17 @@ fin_per_testcase(Case, Config) ->
 
 all(suite) ->
     [
-     config
+     config,
+     tickets
     ].
+
+tickets(suite) ->
+    [
+     otp_7216
+    ].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 config(suite) ->
     [];
@@ -99,7 +109,7 @@ config(Config) when list(Config) ->
 	 verify_user_default_command(Mid, 10, max_trans_id, infinity), 
 	 verify_user_default_command(Mid, 11, request_timer, 
 				          #megaco_incr_timer{}), 
-	 verify_user_default_command(Mid, 12, long_request_timer, infinity), 
+	 verify_user_default_command(Mid, 12, long_request_timer, timer:seconds(60)), 
 	 verify_user_default_command(Mid, 13, auto_ack, false), 
 	 verify_user_default_command(Mid, 14, pending_timer, 30000), 
 	 verify_user_default_command(Mid, 15, reply_timer, 30000), 
@@ -110,7 +120,7 @@ config(Config) when list(Config) ->
 	 verify_user_default_command(Mid, 19, protocol_version, 1), 
 	 verify_user_default_command(Mid, 20, reply_data, undefined), 
 	 verify_user_default_command(Mid, 21, receive_handle, 
-				     fun(H) when record(H, megaco_receive_handle) -> {ok, H};
+				     fun(H) when is_record(H, megaco_receive_handle) -> {ok, H};
 					(R)  -> {error, R}
 				     end), 
 
@@ -339,3 +349,132 @@ command(No, Desc, Cmd, VerifyVal) when is_integer(No) and is_list(Desc) and
 	     cmd    = Cmd,
 	     verify = Verify}.
     
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_7216(suite) ->
+    [];
+otp_7216(Config) when list(Config) ->
+    put(tc, otp_7216),
+    p("start"),
+
+    p("start the megaco config process"),
+    megaco_config:start_link(),
+
+    LocalMid1 = {deviceName, "local-mid-1"},
+    %% LocalMid2 = {deviceName, "local-mid-2"},
+    RemoteMid1 = {deviceName, "remote-mid-1"},
+    %% RemoteMid2 = {deviceName, "remote-mid-2"},
+    RH = #megaco_receive_handle{local_mid       = LocalMid1,
+				encoding_mod    = dummy_codec_module,
+				encoding_config = [],
+				send_mod        = dummy_transport_module},
+    MinTransId = 7216,
+    MaxTransId = MinTransId + 10,
+    User1Config = [{min_trans_id, MinTransId},
+		   {max_trans_id, MaxTransId}], 
+
+    VerifySerial = 
+	fun(Actual, Expected) ->
+		if
+		    Actual == Expected ->
+			ok;
+		    true ->
+			throw({error, {invalid_counter_value, Actual}})
+		end
+	end,
+
+    p("start local user: ~p", [LocalMid1]),
+    ok = megaco_config:start_user(LocalMid1, User1Config),
+
+    p("connect"),
+    {ok, CD} = megaco_config:connect(RH, RemoteMid1, 
+				     dummy_send_handle, self()),
+    p("connect ok: CD = ~n~p", [CD]),
+    CH = CD#conn_data.conn_handle,
+
+    
+    p("*** make the first counter increment ***"),
+    {ok, CD01} = megaco_config:incr_trans_id_counter(CH, 1),
+    Serial01   = CD01#conn_data.serial,
+    p("serial: ~p", [Serial01]),
+    VerifySerial(Serial01, MinTransId),
+    p("counter increment 1 ok"),    
+
+
+    p("*** make two more counter increments ***"),
+    {ok, _} = megaco_config:incr_trans_id_counter(CH, 1),
+    {ok, CD02} = megaco_config:incr_trans_id_counter(CH, 1),
+    Serial02   = CD02#conn_data.serial,
+    p("serial: ~p", [Serial02]),
+    VerifySerial(Serial02, MinTransId+2),
+    p("counter increment 2 ok"), 
+
+    
+    p("*** make a big counter increment ***"),
+    {ok, CD03} = megaco_config:incr_trans_id_counter(CH, 8),
+    Serial03   = CD03#conn_data.serial,
+    p("serial: ~p", [Serial03]),
+    VerifySerial(Serial03, MinTransId+2+8),
+    p("counter increment 3 ok"), 
+
+    
+    p("*** make a wrap-around counter increment ***"),
+    {ok, CD04} = megaco_config:incr_trans_id_counter(CH, 1),
+    Serial04   = CD04#conn_data.serial,
+    p("serial: ~p", [Serial04]),
+    VerifySerial(Serial04, MinTransId),
+    p("counter increment 4 ok"), 
+
+
+    p("*** make a big counter increment ***"),
+    {ok, CD05} = megaco_config:incr_trans_id_counter(CH, 10),
+    Serial05   = CD05#conn_data.serial,
+    p("serial: ~p", [Serial05]),
+    VerifySerial(Serial05, MinTransId+10),
+    p("counter increment 5 ok"), 
+
+    
+    p("*** make a big wrap-around counter increment ***"),
+    {ok, CD06} = megaco_config:incr_trans_id_counter(CH, 3),
+    Serial06   = CD06#conn_data.serial,
+    p("serial: ~p", [Serial06]),
+    VerifySerial(Serial06, MinTransId+(3-1)),
+    p("counter increment 6 ok"), 
+
+
+    p("*** make a big counter increment ***"),
+    {ok, CD07} = megaco_config:incr_trans_id_counter(CH, 7),
+    Serial07   = CD07#conn_data.serial,
+    p("serial: ~p", [Serial07]),
+    VerifySerial(Serial07, MinTransId+(3-1)+7),
+    p("counter increment 7 ok"), 
+
+
+    p("*** make a big wrap-around counter increment ***"),
+    {ok, CD08} = megaco_config:incr_trans_id_counter(CH, 5),
+    Serial08   = CD08#conn_data.serial,
+    p("serial: ~p", [Serial08]),
+    VerifySerial(Serial08, MinTransId+(5-1-1)),
+    p("counter increment 8 ok"), 
+
+
+    p("disconnect"),
+    {ok, CD, RCD} = megaco_config:disconnect(CH),
+    p("disconnect ok: RCD = ~n~p", [RCD]),
+
+    p("stop user"),
+    ok = megaco_config:stop_user(LocalMid1),
+
+    p("stop megaco config process"),
+    megaco_config:stop(),
+
+    p("done"),
+    ok.
+
+
+p(F) ->
+    p(F, []).
+
+p(F, A) ->
+    io:format("[~w] " ++ F ++ "~n", [get(tc)|A]).

@@ -19,14 +19,21 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The parser generator will insert appropriate declarations before this line.%
 
+-type(yecc_ret() :: {'error', _} | {'ok', _}).
+
+-spec(parse/1 :: (_) -> yecc_ret()).
 parse(Tokens) ->
     yeccpars0(Tokens, false).
 
+-spec(parse_and_scan/1 ::
+      ({function() | {atom(), atom()}, [_]} | {atom(), atom(), [_]}) ->
+            yecc_ret()).
 parse_and_scan({F, A}) -> % Fun or {M, F}
     yeccpars0([], {F, A});
 parse_and_scan({M, F, A}) ->
     yeccpars0([], {{M, F}, A}).
 
+-spec(format_error/1 :: (any()) -> [char() | list()]).
 format_error(Message) ->
     case io_lib:deep_char_list(Message) of
 	true ->

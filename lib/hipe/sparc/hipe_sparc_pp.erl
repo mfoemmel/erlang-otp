@@ -8,7 +8,7 @@
 pp(Defun) ->
   pp(standard_io, Defun).
 
-pp(Dev, #defun{mfa=#sparc_mfa{m=M,f=F,a=A}, code=Code, data=Data}) ->
+pp(Dev, #defun{mfa={M,F,A}, code=Code, data=Data}) ->
   Fname = atom_to_list(M)++"_"++atom_to_list(F)++"_"++integer_to_list(A),
   io:format(Dev, "\t.text\n", []),
   io:format(Dev, "\t.align 4\n", []),

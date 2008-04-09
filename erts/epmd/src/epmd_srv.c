@@ -112,7 +112,7 @@ void run(EpmdVars *g)
   int listensock;
   int i;
   int opt;
-  struct SOCKADDR_IN iserv_addr;
+  struct EPMD_SOCKADDR_IN iserv_addr;
 
   node_init(g);
   g->conn = conn_init(g);
@@ -255,10 +255,10 @@ void run(EpmdVars *g)
 
 	now = current_time(g);
 	for (i = 0; i < g->max_conn; i++) {
-	  if (g->conn[i].open == TRUE) {
+	  if (g->conn[i].open == EPMD_TRUE) {
 	    if (FD_ISSET(g->conn[i].fd,&read_mask))
 	      do_read(g,&g->conn[i]);
-	    else if ((g->conn[i].keep == FALSE) &&
+	    else if ((g->conn[i].keep == EPMD_FALSE) &&
 		     ((g->conn[i].mod_time + g->packet_timeout) < now)) {
 	      dbg_tty_printf(g,1,"closing because timed out on receive");
 	      epmd_conn_close(g,&g->conn[i]);
@@ -279,7 +279,7 @@ static void do_read(EpmdVars *g,Connection *s)
 {
   int val, pack_size;
 
-  if (s->open == FALSE)
+  if (s->open == EPMD_FALSE)
     {
       dbg_printf(g,0,"read on unknown socket");
       return;
@@ -289,7 +289,7 @@ static void do_read(EpmdVars *g,Connection *s)
      connection alive to find out when a node is terminated. We then
      want to check for a close */
 
-  if (s->keep == TRUE)
+  if (s->keep == EPMD_TRUE)
     {
       val = read(s->fd, s->buf, INBUF_SIZE);
 
@@ -390,7 +390,7 @@ static void do_read(EpmdVars *g,Connection *s)
 static int do_accept(EpmdVars *g,int listensock)
 {
     int msgsock;
-    struct SOCKADDR_IN icli_addr; /* workaround for QNX bug - cannot */
+    struct EPMD_SOCKADDR_IN icli_addr; /* workaround for QNX bug - cannot */
     int icli_addr_len;            /* handle NULL pointers to accept.  */
 
     icli_addr_len = sizeof(icli_addr);
@@ -400,7 +400,7 @@ static int do_accept(EpmdVars *g,int listensock)
 
     if (msgsock < 0) {
         dbg_perror(g,"error in accept");
-	return FALSE;
+	return EPMD_FALSE;
     }
 
     return conn_open(g,msgsock);
@@ -471,7 +471,7 @@ static void do_request(g, fd, s, buf, bsize)
 	  }
 
 	dbg_tty_printf(g,1,"** sent ALIVE_OK_RESP for \"%s\"",name);
-	s->keep = TRUE;		/* Don't close on inactivity */
+	s->keep = EPMD_TRUE;		/* Don't close on inactivity */
       }
       break;
 
@@ -580,7 +580,7 @@ static void do_request(g, fd, s, buf, bsize)
 	  }
 
 	dbg_tty_printf(g,1,"** sent ALIVE2_RESP for \"%s\"",name);
-	s->keep = TRUE;		/* Don't close on inactivity */
+	s->keep = EPMD_TRUE;		/* Don't close on inactivity */
       }
       break;
 
@@ -820,12 +820,12 @@ static int conn_open(EpmdVars *g,int fd)
       dbg_tty_printf(g,0,"file descriptor %d: too high for FD_SETSIZE=%d",
 		     fd,FD_SETSIZE);
       close(fd);
-      return FALSE;
+      return EPMD_FALSE;
   }
 #endif
 
   for (i = 0; i < g->max_conn; i++) {
-    if (g->conn[i].open == FALSE) {
+    if (g->conn[i].open == EPMD_FALSE) {
       g->active_conn++;
       s = &g->conn[i];
      
@@ -833,8 +833,8 @@ static int conn_open(EpmdVars *g,int fd)
       FD_SET(fd, &g->orig_read_mask);
 
       s->fd   = fd;
-      s->open = TRUE;
-      s->keep = FALSE;
+      s->open = EPMD_TRUE;
+      s->keep = EPMD_FALSE;
       s->want = 0;		/* Currently unknown */
       s->got  = 0;
       s->mod_time = current_time(g); /* Note activity */
@@ -844,17 +844,17 @@ static int conn_open(EpmdVars *g,int fd)
       if (s->buf == NULL) {
 	dbg_printf(g,0,"empd: Insufficient memory");
 	close(fd);
-	return FALSE;
+	return EPMD_FALSE;
       }
 
       dbg_tty_printf(g,2,"opening connection on file descriptor %d",fd);
-      return TRUE;
+      return EPMD_TRUE;
     }
   }
 
   dbg_tty_printf(g,0,"failed opening connection on file descriptor %d",fd);
   close(fd);
-  return FALSE;
+  return EPMD_FALSE;
 }
 
 static int conn_close_fd(EpmdVars *g,int fd)
@@ -865,10 +865,10 @@ static int conn_close_fd(EpmdVars *g,int fd)
     if (g->conn[i].fd == fd)
       {
 	epmd_conn_close(g,&g->conn[i]);
-	return TRUE;
+	return EPMD_TRUE;
       }
   
-  return FALSE;
+  return EPMD_FALSE;
 }
 
 
@@ -878,12 +878,12 @@ int epmd_conn_close(EpmdVars *g,Connection *s)
 
   FD_CLR(s->fd,&g->orig_read_mask);
   close(s->fd);			/* Sometimes already closed but close anyway */
-  s->open = FALSE;
+  s->open = EPMD_FALSE;
   if (s->buf != NULL) {		/* Should never be NULL but test anyway */
     free(s->buf);
   }
   g->active_conn--;
-  return TRUE;
+  return EPMD_TRUE;
 }
 
 /****************************************************************************

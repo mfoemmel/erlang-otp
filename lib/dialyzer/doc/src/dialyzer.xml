@@ -32,16 +32,18 @@
   <module>dialyzer</module>
   <modulesummary>The Dialyzer, a DIscrepancy AnalYZer for ERlang programs</modulesummary>
   <description>
-    <p>The Dialyzer is a static analysis tool that identifies software discrepancies
-      such as type errors, unreachable code, unnecessary tests, etc in single Erlang
-      modules or entire (sets of) applications. Currently, Dialyzer starts its
-      analysis from either BEAM bytecode or from Erlang source code and reports
-      to its user the functions where the discrepancies occur and an indication
-      of what the discrepancy is about. Dialyzer currently supports various modes
-      of operation and its analysis is precise (in particular, there are no false
-      positives) and quite fast.</p>
-    <p>Read more about Dialyzer and about how to use it from the GUI in
-      <seealso marker="dialyzer_chapter">Dialyzer User's Guide</seealso>.</p>
+    <p>The Dialyzer is a static analysis tool that identifies software
+    discrepancies such as type errors, unreachable code, unnecessary
+    tests, etc in single Erlang modules or entire (sets of)
+    applications. Dialyzer starts its analysis from either
+    debug-compiled BEAM bytecode or from Erlang source code. The file
+    and line number of a discrepancy is reported along with an
+    indication of what the discrepancy is about. Dialyzer bases its
+    analysis on the concept of success typings which allows for sound
+    warnings (no false positives).</p>
+    <p>Read more about Dialyzer and about how to use it from the GUI
+    in <seealso marker="dialyzer_chapter">Dialyzer User's
+    Guide</seealso>.</p>
   </description>
 
   <section>
@@ -81,8 +83,8 @@
       <item>when using Dialyzer from the command line, send the analysis
        results in the specified <c><![CDATA[outfile]]></c> rather than in stdout</item>
       <tag><c><![CDATA[--src]]></c></tag>
-      <item>overwrite the default, which is to analyze BEAM bytecode, and
-       analyze starting from Erlang source code instead</item>
+      <item>overide the default, which is to analyze debug compiled BEAM 
+       bytecode, and analyze starting from Erlang source code instead</item>
       <tag><c><![CDATA[-Dname]]></c>(or <c><![CDATA[-Dname=value]]></c>)</tag>
       <item>when analyzing from source, pass the define to Dialyzer (**)</item>
       <tag><c><![CDATA[-I include_dir]]></c></tag>
@@ -113,10 +115,6 @@
       <item>makes Dialyzer a bit more quiet</item>
       <tag><c><![CDATA[--verbose]]></c></tag>
       <item>makes Dialyzer a bit more verbose</item>
-      <tag><c><![CDATA[--dataflow]]></c></tag>
-      <item>Makes Dialyzer use dataflow analysis to find discrepancies. (Default)</item>
-      <tag><c><![CDATA[--succ_typings]]></c></tag>
-      <item>Makes Dialyzer use success typings to find discrepancies.</item>
     </taglist>
     <note>
       <p>* denotes that multiple occurrences of these options are possible.</p>
@@ -131,20 +129,11 @@
       <item>Suppress warnings for unused functions.</item>
       <tag><c><![CDATA[-Wno_improper_lists]]></c></tag>
       <item>Suppress warnings for construction of improper lists.</item>
-      <tag><c><![CDATA[-Wno_tuple_as_fun]]></c></tag>
-      <item>Suppress warnings for using tuples instead of funs.</item>
       <tag><c><![CDATA[-Wno_fun_app]]></c></tag>
       <item>Suppress warnings for fun applications that will fail.</item>
       <tag><c><![CDATA[-Wno_match]]></c></tag>
       <item>Suppress warnings for pattern matching operations that will never
        succeed.</item>
-      <tag><c><![CDATA[-Wno_comp]]></c></tag>
-      <item>Suppress warnings for term comparisons that will always return <c><![CDATA[false]]></c>.</item>
-      <tag><c><![CDATA[-Wno_guards]]></c></tag>
-      <item>Suppress warnings for guards that will always fail.</item>
-      <tag><c><![CDATA[-Wno_unsafe_beam]]></c></tag>
-      <item>Suppress warnings for unsafe BEAM code produced by an old
-       BEAM compiler.</item>
       <tag><c><![CDATA[-Werror_handling]]></c>***</tag>
       <item>Include warnings for functions that only return by means of an
        exception.</item>
@@ -187,12 +176,8 @@ Option   : {files,          [Filename : string()]}
 WarnOpts : no_return
 \011 | no_unused
 \011 | no_improper_lists
-\011 | no_tuple_as_fun
 \011 | no_fun_app
 \011 | no_match
-\011 | no_comp
-\011 | no_guards
-\011 | no_unsafe_beam
 \011 | no_fail_call
 \011 | error_handling
         ]]></code>
@@ -203,17 +188,34 @@ WarnOpts : no_return
       <fsummary>Dialyzer command line version</fsummary>
       <type>
         <v>OptList -- see gui/0,1</v>
-        <v>Warnings = [{MFA, string()}]</v>
-        <v>&nbsp;MFA = {Module, Function, Arity}</v>
-        <v>&nbsp;&nbsp;Module = Function = atom()</v>
-        <v>&nbsp;&nbsp;Arity = int()</v>
-        <v>Errors = string()</v>
+        <v>Warnings -- see below </v>
+        <v>Errors = [string()]</v>
         <v>Message = string()</v>
       </type>
       <desc>
         <p>Dialyzer command line version.</p>
+        <code type="none"><![CDATA[
+Warnings :: [{Tag, Id, Msg}]
+Tag : 'warn_return_no_exit' | 'warn_return_only_exit'
+\011 | 'warn_not_called' | 'warn_non_proper_list'
+\011 | 'warn_fun_app' | 'warn_matching'
+\011 | 'warn_failing_call' | 'warn_contract_types'
+\011 | 'warn_contract_syntax' | 'warn_contract_not_equal'
+\011 | 'warn_contract_subtype' | 'warn_contract_supertype'
+Id = {File :: string(), Line :: integer()}
+Msg = msg() -- To be used as an argument to dialyzer:format_warning/1
+]]></code>
+      </desc>
+    </func>
+    <func>
+      <name>format_warning(Msg) -> string()</name>
+      <fsummary>Get the string version of a warning message.</fsummary>
+      <type>
+        <v>Msg = msg() -- See run/1</v>
+      </type>
+      <desc>
+        <p>Get a string from the message part of the warning as returned by dialyzer:run/1.</p>
       </desc>
     </func>
   </funcs>
 </erlref>
-

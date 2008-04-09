@@ -15,27 +15,28 @@
 -endif.
 
 -module(?HIPE_X86_X87).
+
+-export([map/1]).
+
 -include("../x86/hipe_x86.hrl").
 -include("../main/hipe.hrl").
--export([map/1]).
+
+%%----------------------------------------------------------------------
 
 map(Defun) ->
   CFG0 = hipe_x86_cfg:init(Defun),
-  %%hipe_x86_cfg:pp(CFG0),
+  %% hipe_x86_cfg:pp(CFG0),
   Liveness = ?HIPE_X86_LIVENESS:analyse(CFG0),
   StartLabel = hipe_x86_cfg:start_label(CFG0),
-  SuccMap = hipe_x86_cfg:succ_map(CFG0),
-  {CFG1, _} = do_blocks([], [StartLabel], CFG0, Liveness, [], SuccMap, 
-			gb_trees:empty()),
+  {CFG1,_} = do_blocks([], [StartLabel], CFG0, Liveness, [], gb_trees:empty()),
   hipe_x86_cfg:linearise(CFG1).
 
-
-do_blocks(Pred, [Lbl|Lbls], CFG, Liveness, Map, SuccMap, BlockMap) ->
+do_blocks(Pred, [Lbl|Lbls], CFG, Liveness, Map, BlockMap) ->
   case gb_trees:lookup(Lbl, BlockMap) of
     none ->
       %% This block has not been visited.
       Block = hipe_x86_cfg:bb(CFG, Lbl),
-      Succ = hipe_x86_cfg:succ(SuccMap, Lbl),
+      Succ = hipe_x86_cfg:succ(CFG, Lbl),
       NewBlockMap = gb_trees:insert(Lbl, Map, BlockMap),
       LiveOut = [X || X <- ?HIPE_X86_LIVENESS:liveout(Liveness, Lbl),
 			   is_fp(X)],
@@ -43,38 +44,32 @@ do_blocks(Pred, [Lbl|Lbls], CFG, Liveness, Map, SuccMap, BlockMap) ->
       ReverseCode = lists:reverse(Code),
       {NewCode0, NewMap, NewBlockMap1, Dirty} = 
 	do_block(ReverseCode, LiveOut, Map, NewBlockMap),
-      {NewCFG1, NewSuccMap} =
+      NewCFG1 =
 	case Dirty of
 	  true ->
 	    NewBlock = hipe_bb:code_update(Block, NewCode0),
-	    {hipe_x86_cfg:bb_add(CFG, Lbl, NewBlock), SuccMap};
+	    hipe_x86_cfg:bb_add(CFG, Lbl, NewBlock);
 	  _ ->
-	    {CFG, SuccMap}
+	    CFG
 	end,
-      {NewCFG3, NewBlockMap2} = 
-	do_blocks(Lbl,Succ, NewCFG1, Liveness, NewMap, 
- 		  NewSuccMap, NewBlockMap1),
-      do_blocks(Pred,Lbls, NewCFG3, Liveness, 
-		Map, NewSuccMap, NewBlockMap2);
+      {NewCFG3, NewBlockMap2} =
+	do_blocks(Lbl, Succ, NewCFG1, Liveness, NewMap, NewBlockMap1),
+      do_blocks(Pred, Lbls, NewCFG3, Liveness, Map, NewBlockMap2);
     {value, fail} ->
       %% Don't have to follow this trace any longer.
-      do_blocks(Pred,Lbls, CFG, Liveness, 
-		Map, SuccMap, BlockMap);
+      do_blocks(Pred,Lbls, CFG, Liveness, Map, BlockMap);
     {value, ExistingMap} ->
       %% This block belongs to a trace already handled.
       %% The Map coming in must be identical to the one used
       %% when the block was processed.
       if ExistingMap =:= Map -> 
-	  do_blocks(Pred,Lbls, CFG, Liveness, 
-		    Map, SuccMap, BlockMap);
+	  do_blocks(Pred, Lbls, CFG, Liveness, Map, BlockMap);
 	 true ->
-	  NewCFG = do_shuffle(Pred,Lbl,CFG, Map,ExistingMap),
-	  NewSuccMap = hipe_x86_cfg:succ_map(NewCFG),
-	  do_blocks(Pred, Lbls, NewCFG, Liveness, Map, 
-		    NewSuccMap, BlockMap)
+	  NewCFG = do_shuffle(Pred, Lbl, CFG, Map, ExistingMap),
+	  do_blocks(Pred, Lbls, NewCFG, Liveness, Map, BlockMap)
       end
   end;
-do_blocks(_Pred, [], CFG, _Liveness, _Map, _SuccMap, BlockMap) ->
+do_blocks(_Pred, [], CFG, _Liveness, _Map, BlockMap) ->
   {CFG, BlockMap}.
 
 do_block(Ins, LiveOut, Map, BlockMap) ->

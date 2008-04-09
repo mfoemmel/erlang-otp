@@ -20,7 +20,7 @@ optional_pp(Defun, MFA, Options) ->
     true -> 
       pp(Defun);
     {only,Lst} when is_list(Lst) ->
-      case lists:member(MFA,Lst) of
+      case lists:member(MFA, Lst) of
 	true -> pp(Defun);
 	false -> ok
       end;
@@ -29,16 +29,15 @@ optional_pp(Defun, MFA, Options) ->
     {file,FileName} ->
       {ok, File} = file:open(FileName, [write,append]),
       pp(File, Defun),
-      file:close(File);
+      ok = file:close(File);
     _ ->
-      []
+      ok
   end.
 
 pp(Defun) ->
   pp(standard_io, Defun).
 
-pp(Dev, #defun{mfa=MFA, code=Code, data=Data}) ->
-  {M,F,A} = hipe_x86:mfa_mfa(MFA),
+pp(Dev, #defun{mfa={M,F,A}, code=Code, data=Data}) ->
   Fname = atom_to_list(M)++"_"++atom_to_list(F)++"_"++integer_to_list(A),
   io:format(Dev, "\t.text\n", []),
   io:format(Dev, "\t.align 4\n", []),
@@ -54,7 +53,7 @@ pp_insns(Dev, [I|Is], Fname) ->
   pp_insn(Dev, I, Fname),
   pp_insns(Dev, Is, Fname);
 pp_insns(_, [], _) ->
-  [].
+  ok.
 
 pp_insn(I) ->
   pp_insn(standard_io, I, "").
@@ -90,7 +89,7 @@ pp_insn(Dev, I, Pre) ->
     #imul{imm_opt=ImmOpt, src=Src, temp=Temp} ->
       io:format(Dev, "\timul ", []),
       case ImmOpt of
-	[] -> [];
+	[] -> ok;
 	Imm ->
 	  pp_imm(Dev, Imm, true),
 	  io:format(Dev, ", ", [])
@@ -220,7 +219,7 @@ pp_sdesc(Dev, Pre, #x86_sdesc{exnlab=ExnLab,fsize=FSize,arity=Arity,live=Live}) 
 pp_sdesc_exnlab(Dev, _, []) -> io:format(Dev, " []", []);
 pp_sdesc_exnlab(Dev, Pre, ExnLab) -> io:format(Dev, " .~s_~w", [Pre, ExnLab]).
 
-pp_sdesc_live(_, {}) -> [];
+pp_sdesc_live(_, {}) -> ok;
 pp_sdesc_live(Dev, Live) -> pp_sdesc_live(Dev, Live, 1).
 
 pp_sdesc_live(Dev, Live, I) ->
@@ -228,14 +227,14 @@ pp_sdesc_live(Dev, Live, I) ->
   if I < tuple_size(Live) ->
       io:format(Dev, ",", []),
       pp_sdesc_live(Dev, Live, I+1);
-     true -> []
+     true -> ok
   end.
 
 pp_labels(Dev, [Label|Labels], Pre) ->
   io:format(Dev, " .~s_~w", [Pre, Label]),
   pp_labels(Dev, Labels, Pre);
 pp_labels(_, [], _) ->
-  [].
+  ok.
 
 pp_fun(Dev, Fun) ->
   case Fun of
@@ -282,7 +281,7 @@ pp_fpreg(Dev, #x86_fpreg{reg=Reg, pseudo=Pseudo})->
 
 pp_imm(Dev, #x86_imm{value=Value}, Dollar) ->
   if Dollar =:= true -> io:format(Dev, [$$], []);
-     true -> []
+     true -> ok
   end,
   if is_integer(Value) -> io:format(Dev, "~s", [to_hex(Value)]);
      true -> io:format(Dev, "~w", [Value])
@@ -292,7 +291,7 @@ pp_mem(Dev, #x86_mem{base=Base, off=Off}) ->
   pp_off(Dev, Off),
   case Base of
     [] ->
-      [];
+      ok;
     _ ->
       io:format(Dev, "(", []),
       pp_temp(Dev, Base),
@@ -324,11 +323,11 @@ pp_args(Dev, [A|As]) ->
   pp_src(Dev, A),
   pp_comma_args(Dev, As);
 pp_args(_, []) ->
-  [].
+  ok.
 
 pp_comma_args(Dev, [A|As]) ->
   io:format(Dev, ", ", []),
   pp_src(Dev, A),
   pp_comma_args(Dev, As);
 pp_comma_args(_, []) ->
-  [].
+  ok.

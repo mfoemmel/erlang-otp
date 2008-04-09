@@ -68,7 +68,7 @@
 -include("xmerl_xsd.hrl").
 -include_lib("kernel/include/file.hrl").
 
--import(xmerl_lib,[is_facet/1, is_builtin_simple_type/1]).
+-import(xmerl_lib,[is_facet/1, is_builtin_simple_type/1, is_xsd_string/1]).
 -import(xmerl_xsd_type,[facet_fun/2]).
 -import(lists,[reverse/1,reverse/2,foldl/3,member/2,filter/2,flatten/1,map/2,
 	       splitwith/2,mapfoldl/3,keysearch/3,keymember/3,
@@ -2670,14 +2670,14 @@ check_text_type(XML=[#xmlText{}|_],optional_text,S) ->
 %    {XMLTxt,optional_text};
     {XMLText,Rest} = split_xmlText(XML),
     {XMLText,Rest,S};
-check_text_type(XML=[#xmlText{}|_],Type={simpleType,_},S) ->
+check_text_type(XML=[Txt=#xmlText{}|_],Type={simpleType,_},S) ->
     {XMLText,Rest} = split_xmlText(XML),
-    {_,S2}=check_type(Type,flatten([X||#xmlText{value=X}<-XMLText]),S),
-    {XMLText,Rest,S2};
-check_text_type(XML=[#xmlText{}|_],Type=#schema_simple_type{},S) ->
+    {NewVal,S2}=check_type(Type,flatten([X||#xmlText{value=X}<-XMLText]),unapplied,S),
+    {[Txt#xmlText{value=NewVal}],Rest,S2};
+check_text_type(XML=[Txt=#xmlText{}|_],Type=#schema_simple_type{},S) ->
     {XMLText,Rest} = split_xmlText(XML),
-    {_,S2}=check_type(Type,flatten([X||#xmlText{value=X}<-XMLText]),S),
-    {XMLText,Rest,S2};
+    {NewVal,S2}=check_type(Type,flatten([X||#xmlText{value=X}<-XMLText]),unapplied,S),
+    {[Txt#xmlText{value=NewVal}],Rest,S2};
 check_text_type([XMLTxt=#xmlText{}|_],CMEl,_S) ->
     {error,{error_path(XMLTxt,undefined),?MODULE,
 	    {cannot_contain_text,XMLTxt,CMEl}}}.
@@ -3036,7 +3036,7 @@ check_attributes([Att|Atts],SchemaAtts,XMLEl,XsiFactors,
 	    {SA,S2} = load_object(AttObj,S),
 	    #schema_attribute{type=[AttType]} = SA, 
 	    {Val,S4} = check_type(AttType,
-				  Att#xmlAttribute.value,S2),
+				  Att#xmlAttribute.value, unapplied,S2),
 	    check_attributes(Atts,SchemaAtts2,XMLEl,XsiFactors,S4,
 			     [Att#xmlAttribute{value=Val}|CheckedAtts]);
 	{undefined,SchemaAtts2} ->
@@ -3131,24 +3131,26 @@ resolve_attributeGroups([H|T],El,S,Parents,Acc) ->
 resolve_attributeGroups([],_,_,_,Acc) ->
     Acc.
 
-check_type(Type=#schema_simple_type{},Value,S) ->
-    check_simpleType(Type,Value,S);
-check_type({simpleType,{anySimpleType,_}},Value,S) ->
+check_type(Type=#schema_simple_type{},Value,FacetS,S) ->
+    check_simpleType(Type,Value,FacetS,S);
+check_type({simpleType,{anySimpleType,_}},Value, _FacetS,S) ->
     {Value,S};
-check_type({union,Types},Value,S) ->
+check_type({union,Types},Value,_FacetS,S) ->
     check_union_types(Types,Value,S);
-check_type(ST={simpleType,QName={Name,_Scope,_NS}},Value,S) ->
+check_type(ST={simpleType,QName={Name,_Scope,_NS}},Value, FacetS,S) ->
     case is_builtin_simple_type(QName) of
 	true ->
-	    case xmerl_xsd_type:check_simpleType(Name,Value,S) of
+	    {ConstrainedValue,S2} = 
+		constrained(QName,default_facets(FacetS,Name),Value,S),
+	    case xmerl_xsd_type:check_simpleType(Name,ConstrainedValue,S2) of
 		{ok,_} when Name=='IDREF';Name=='IDREFS' ->
 		    %% do something more
-		    {Value,S};
+		    {ConstrainedValue,S2};
 		{ok,_} ->
-		    {Value,S};
+		    {ConstrainedValue,S2};
 		{error,Reason} ->
 		    ?debug("Error validating type: ~p~nwith value: ~p~n",[Name,Value]),
-		    {Value,acc_errs(S,Reason)}
+		    {Value,acc_errs(S2,Reason)}
 	    end;
 	_ ->
 	    case resolve(ST,S) of
@@ -3156,41 +3158,43 @@ check_type(ST={simpleType,QName={Name,_Scope,_NS}},Value,S) ->
 		    Err = {[],?MODULE,{could_not_resolve_type,ST}},
 		    {Value,acc_errs(S2,Err)};
 		{RefedST,S2} ->
-		    check_type(RefedST,Value,S2)
+		    check_type(RefedST,Value, unapplied,S2)
 	    end
     end;
-check_type(Type,Value,S) ->
+check_type(Type,Value, _FacetS,S) ->
     Err = {[],?MODULE,{could_not_check_value_for_type,Type}},
     ?debug("ERROR: not implemented: ~p~nfor value: ~p~n",[Type,Value]),
     {Value,acc_errs(S,Err)}.
 
 check_simpleType(#schema_simple_type{base_type=BT,final=_Final,
-				     facets=Facets,content=Type},Value,S) ->
+				     facets=Facets,content=Type},
+		 Value,FacetS,S) ->
     case {BT,Type} of
 	{{_ST,_,_},_} ->
 	    case is_builtin_simple_type(BT) of
 		true ->
-		    {ConstrainedValue,S2} = constrained(BT,Facets,Value,S),
-		    {_,_S3} = check_type({simpleType,BT},ConstrainedValue,S2);
+		    {ConstrainedValue,S2} = 
+			constrained(BT,merge_facets(default_facets(FacetS,BT),Facets),Value,S),
+		    {_,_S3} = check_type({simpleType,BT},ConstrainedValue,applied,S2);
 		_ ->
 		    case resolve({simpleType,BT},S) of
 			{BaseST=#schema_simple_type{facets=Facets2},_} ->
-			    check_simpleType(BaseST#schema_simple_type{facets=Facets++Facets2},Value,S);
+			    check_simpleType(BaseST#schema_simple_type{facets=Facets++Facets2},Value,unapplied,S);
 			_ ->
 			    Err = {[],?MODULE,{unknown_simpleType,BT}},
 			    {Value,acc_errs(S,Err)}
 		    end
 	    end;
 	{_,[CT]} ->
-	    {_,_S2} = check_type(CT,Value,S)
+	    {_,_S2} = check_type(CT,Value,unapplied,S)
     end.
 
 check_union_types(Types,Value,S) ->
     check_union_types(Types,Types,Value,S).
 check_union_types([],UT,Value,S) ->
-    acc_errs(S,{[],?MODULE,{value__not_valid,Value,UT}});
+    acc_errs(S,{[],?MODULE,{value_not_valid,Value,UT}});
 check_union_types([T|Ts],UT,Value,S = #xsd_state{errors=Errs}) ->
-    case check_type(T,Value,S) of
+    case check_type(T,Value,unapplied,S) of
 	{Val,S2=#xsd_state{errors=Errs}} ->
 	    {Val,S2};
 	{_,_} ->
@@ -3225,6 +3229,29 @@ reserved_attribute(_,_) ->
     false.
 
 
+default_facets(applied,_) ->
+    [];
+default_facets(_,Type) ->
+    default_facets(Type).
+default_facets({Name,_,_}) when is_list(Name) ->
+    %% Type already proven to be a built in simple type
+    default_facets(list_to_atom(Name));
+default_facets({Name,_,_}) ->
+    default_facets(Name);
+default_facets(TypeName) ->
+    case is_xsd_string(TypeName) of
+	false ->
+	    [{whiteSpace,"collapse"}];
+	_ ->
+	    []
+    end.
+
+merge_facets([],DefinedF) ->
+    DefinedF;
+merge_facets([F={Name,_}|Rest],DefinedF) ->
+    %% At this moment only F has the allowed value
+    merge_facets(Rest,keyreplace(Name,1,DefinedF,F)).
+    
 constrained({T,_,_},Facets,Value,S) ->
     FacetFuns = [facet_fun(T,F)||F<-Facets],
     constrained2(FacetFuns,Value,S).

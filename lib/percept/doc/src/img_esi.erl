@@ -9,14 +9,15 @@ image(SessionID, _Env, _Input) ->
 
 my_image() ->
     Im = egd:create(300,20),
-    White = egd:color(Im, white),
-    Black = egd:color(Im, black),
-    Red = egd:color(Im, red),
-    egd:fill(Im, {20,10}, White),
+    Black = egd:color({0,0,0}),
+    Red = egd:color({255,0,0}),
     egd:filledRectangle(Im, {30,14}, {270,19}, Red),
     egd:rectangle(Im, {30,14}, {270,19}, Black),
-    egd:text(Im, medium, {30, 0}, "egd with esi callback", Black),
-    Bin = egd:image(Im, png),
+
+    Filename = filename:join([code:priv_dir(percept), "fonts", "6x11_latin1.wingsfont"]),
+    Font = egd_font:load(Filename),
+    egd:text(Im, {30, 0}, Font, "egd with esi callback", Black),
+    Bin = egd:render(Im, png),
     egd:destroy(Im),
     Bin.
 

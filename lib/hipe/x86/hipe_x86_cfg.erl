@@ -1,11 +1,11 @@
+%%% -*- erlang-indent-level: 2 -*-
 %%% $Id$
-%%% x86 control-flow graph
 
 -module(hipe_x86_cfg).
 
 -export([init/1,
          labels/1, start_label/1,
-         succ/2, succ_map/1,
+         succ/2,
          bb/2, bb_add/3]).
 -export([postorder/1, reverse_postorder/1]).
 -export([linearise/1, params/1, arity/1, redirect_jmp/3]).
@@ -15,9 +15,9 @@
 -define(PARAMS_NEEDED,true).
 -define(START_LABEL_UPDATE_NEEDED,true).
 
+-include("hipe_x86.hrl").
 -include("../flow/cfg.hrl").
 -include("../flow/cfg.inc").
--include("hipe_x86.hrl").
 
 init(Defun) ->
     %% XXX: this assumes that the code starts with a label insn.
@@ -26,12 +26,10 @@ init(Defun) ->
     StartLab = hipe_x86:label_label(hd(Code)),
     Data = hipe_x86:defun_data(Defun),
     IsClosure = hipe_x86:defun_is_closure(Defun),
-    Name = mfa_to_tuple(hipe_x86:defun_mfa(Defun)),
+    MFA = hipe_x86:defun_mfa(Defun),
     IsLeaf = hipe_x86:defun_is_leaf(Defun),
     Formals = hipe_x86:defun_formals(Defun),
-    Extra = [],
-    CFG0 = mk_empty_cfg(Name, StartLab, Data,
-			IsClosure, IsLeaf, Formals, Extra),
+    CFG0 = mk_empty_cfg(MFA, StartLab, Data, IsClosure, IsLeaf, Formals),
     take_bbs(Code, CFG0).
 
 is_branch(I) ->
@@ -105,7 +103,7 @@ mk_label(Name) ->
 %%   hipe_x86:is_jmp_label(I).
 
 linearise(CFG) ->	% -> defun, not insn list
-  Fun = mfa_from_tuple(function(CFG)),
+  MFA = function(CFG),
   Formals = params(CFG),
   Code = linearize_cfg(CFG),
   Data = data(CFG),
@@ -113,18 +111,12 @@ linearise(CFG) ->	% -> defun, not insn list
   LabelRange = hipe_gensym:label_range(x86),
   IsClosure = is_closure(CFG),
   IsLeaf = is_leaf(CFG),
-  hipe_x86:mk_defun(Fun, Formals, IsClosure, IsLeaf,
+  hipe_x86:mk_defun(MFA, Formals, IsClosure, IsLeaf,
 		    Code, Data, VarRange, LabelRange).
 
 arity(CFG) ->
-  #x86_mfa{a=Arity} = mfa_from_tuple(function(CFG)),
-  Arity.
-
-%% x86 has one and only one representation for MFAs, but the typing
-%% police wants enforce the use of a different representation in x86
-%% CFGs, even though nothing outside of this module depends on it.
-mfa_to_tuple(MFA) -> hipe_x86:mfa_mfa(MFA).
-mfa_from_tuple({M,F,A}) -> hipe_x86:mk_mfa(M, F, A).
+  {_M,_F,A} = function(CFG),
+  A.
 
 %% init_gensym(CFG) ->
 %%   HighestVar = find_highest_var(CFG),

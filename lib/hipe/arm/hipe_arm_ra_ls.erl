@@ -27,11 +27,11 @@ alloc(Defun, SpillIndex, SpillLimit, Options) ->
     hipe_arm_ra_postconditions:check_and_rewrite(
       Defun, Coloring, 'linearscan'),
   TempMap = hipe_temp_map:cols2tuple(Coloring, hipe_arm_specific),
-  {TempMap2,_NewSpillIndex2} =
+  {SpillMap, _NewSpillIndex2} =
     hipe_spillmin:stackalloc(CFG, [], SpillIndex, Options,
 			     hipe_arm_specific, TempMap),
   Coloring2 =
-    hipe_spillmin:mapmerge(hipe_temp_map:to_substlist(TempMap), TempMap2),
+    hipe_spillmin:mapmerge(hipe_temp_map:to_substlist(TempMap), SpillMap),
   {NewDefun, Coloring2}.
 
 regalloc(CFG, PhysRegs, Entrypoints, SpillIndex, DontSpill, Options, Target) ->

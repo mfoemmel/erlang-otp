@@ -33,13 +33,14 @@
   <section>
     <title>Introduction</title>
       <p>
-	The egd module is an interface for the gd library and is used by
-	Percept to generate dynamic graphs to its web pages.
+	The egd module is an interface for 2d-image rendering and is used by
+	Percept to generate dynamic graphs to its web pages. All code is pure
+	erlang, no drivers needed.
       </p>
       <p>
-	Please see
-	<url href="http://www.libgd.org">libgd.org</url> 
-	for futher details about the gd library. 
+	The library is intended for small to medium image sizes with low
+	complexity for optimal performance. The library handles horizontal
+	lines better then vertical lines.
       </p>
       <p>
 	The foremost purpose for this module is to enable users to 

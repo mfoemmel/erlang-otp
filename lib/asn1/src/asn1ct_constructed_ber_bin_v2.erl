@@ -29,7 +29,7 @@
 
 -include("asn1_records.hrl").
 
--import(asn1ct_gen, [emit/1,demit/1]).
+-import(asn1ct_gen, [emit/1,demit/1,get_record_name_prefix/0]).
 -import(asn1ct_constructed_ber,[match_tag/2]).
 
 -define(ASN1CT_GEN_BER,asn1ct_gen_ber_bin_v2).
@@ -105,14 +105,14 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
 		false;
 	    %% ObjectSet, name of the object set in constraints
 	    %% 
-	    #simpletableattributes{objectsetname=ObjectSet,
+	    #simpletableattributes{objectsetname=ObjectSetRef,
 				   c_name=AttrN,
 				   c_index=N,
 				   usedclassfield=UniqueFieldName,
 				   uniqueclassfield=UniqueFieldName,
 				   valueindex=ValueIndex} -> %% N is index of attribute that determines constraint
 		OSDef =
-		    case ObjectSet of
+		    case ObjectSetRef of
 			{Module,OSName} ->
 			    asn1_db:dbget(Module,OSName);
 			OSName ->
@@ -125,8 +125,15 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
 			ObjectEncode = 
 			    asn1ct_gen:un_hyphen_var(lists:concat(['Obj',
 								   AttrN])),
+			{ObjSetMod,ObjSetName} =
+			    case ObjectSetRef of
+				{M,O} ->
+				    {{asis,M},O};
+				_ ->
+				    {"?MODULE",ObjectSetRef}
+			    end,
 			emit([ObjectEncode," = ",nl]),
-			emit(["   'getenc_",ObjectSet,"'(",{asis,UniqueFieldName},
+			emit(["   ",ObjSetMod,":'getenc_",ObjSetName,"'(",{asis,UniqueFieldName},
 			      ", ",nl]),
 			ValueMatch = value_match(ValueIndex,
 						 lists:concat(["Cindex",N])),
@@ -199,12 +206,12 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 
     {DecObjInf,UniqueFName,ValueIndex} =
 	case TableConsInfo of
-	    #simpletableattributes{objectsetname=ObjectSet,
+	    #simpletableattributes{objectsetname=ObjectSetRef,
 				   c_name=AttrN,
 				   usedclassfield=UniqueFieldName,
 				   uniqueclassfield=UniqueFieldName,
 				   valueindex=ValIndex} ->
-%	    {ObjectSet,AttrN,_N,UniqueFieldName} ->%% N is index of attribute that determines constraint
+%	    {ObjectSetRef,AttrN,_N,UniqueFieldName} ->%% N is index of attribute that determines constraint
 		F = fun(#'ComponentType'{typespec=CT})->
 			    case {asn1ct_gen:get_constraint(CT#type.constraint,componentrelation),CT#type.tablecinf} of
 				{no,[{objfun,_}|_]} -> true;
@@ -215,10 +222,10 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 		    true -> % when component relation constraint establish
 			%% relation from a component to another components
 			%% subtype component
-			{{AttrN,{deep,ObjectSet,UniqueFieldName,ValIndex}},
+			{{AttrN,{deep,ObjectSetRef,UniqueFieldName,ValIndex}},
 			 UniqueFieldName,ValIndex};
 		    false ->
-			{{AttrN,ObjectSet},UniqueFieldName,ValIndex}
+			{{AttrN,ObjectSetRef},UniqueFieldName,ValIndex}
 		end;
 	    _ ->
 % 		case D#type.tablecinf of
@@ -228,13 +235,15 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 		{false,false,false}
 %	end
 	end,
+    RecordName = lists:concat([get_record_name_prefix(),
+			       asn1ct_gen:list2rname(Typename)]),
     case gen_dec_sequence_call(Erules,Typename,CompList2,Ext,DecObjInf) of
 	no_terms -> % an empty sequence	    
 	    emit([nl,nl]),
 	    demit(["Result = "]), %dbg
 	    %% return value as record
 	    asn1ct_name:new(rb),
-	    emit(["   {'",asn1ct_gen:list2rname(Typename),"'}.",nl,nl]);
+	    emit(["   {'",RecordName,"'}.",nl,nl]);
 	{LeadingAttrTerm,PostponedDecArgs} ->
 	    emit([com,nl,nl]),
 	    case {LeadingAttrTerm,PostponedDecArgs} of
@@ -242,10 +251,18 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 		    ok;
 		{_,[]} ->
 		    ok;
-		{[{ObjSet,LeadingAttr,Term}],PostponedDecArgs} ->
+		{[{ObjSetRef,LeadingAttr,Term}],PostponedDecArgs} ->
 		    DecObj = asn1ct_gen:un_hyphen_var(lists:concat(['DecObj',LeadingAttr,Term])),
 		    ValueMatch = value_match(ValueIndex,Term),
-		    emit([DecObj," =",nl,"   'getdec_",ObjSet,"'(",
+		    {ObjSetMod,ObjSetName} =
+			case ObjSetRef of
+			    {M,O} ->
+				{{asis,M},O};
+			    _ ->
+				{"?MODULE",ObjSetRef}
+			end,
+		    emit([DecObj," =",nl,
+			  "   ",ObjSetMod,":'getdec_",ObjSetName,"'(",
 			  {asis,UniqueFName},", ",ValueMatch,"),",nl]),
 		    gen_dec_postponed_decs(DecObj,PostponedDecArgs)
 	    end,
@@ -264,14 +281,14 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 	    asn1ct_name:new(rb),
 	    case Typename of
 		['EXTERNAL'] ->
-		    emit(["   OldFormat={'",asn1ct_gen:list2rname(Typename),
+		    emit(["   OldFormat={'",RecordName,
 			  "', "]),
 		    mkvlist(asn1ct_name:all(term)),
 		    emit(["},",nl]),
 		    emit(["    asn1rt_check:transform_to_EXTERNAL1994",
 			  "(OldFormat).",nl]);
 		_ ->
-		    emit(["   {'",asn1ct_gen:list2rname(Typename),"', "]),
+		    emit(["   {'",RecordName,"', "]),
 		    mkvlist(asn1ct_name:all(term)),
 		    emit(["}.",nl,nl])
 	    end
@@ -355,7 +372,7 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 
     {DecObjInf,UniqueFName} =
 	case TableConsInfo of
-	    {ObjectSet,AttrN,_N,UniqueFieldName} ->%% N is index of attribute that determines constraint
+	    {ObjectSetRef,AttrN,_N,UniqueFieldName} ->%% N is index of attribute that determines constraint
 		F = fun(#'ComponentType'{typespec=CT})->
 			    case {CT#type.constraint,CT#type.tablecinf} of
 				{[],[{objfun,_}|_]} -> true;
@@ -366,10 +383,10 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 		    true -> % when component relation constraint establish
 			%% relation from a component to another components
 			%% subtype component
-			{{AttrN,{deep,ObjectSet,UniqueFieldName}},
+			{{AttrN,{deep,ObjectSetRef,UniqueFieldName}},
 			 UniqueFieldName};
 		    false ->
-			{{AttrN,ObjectSet},UniqueFieldName}
+			{{AttrN,ObjectSetRef},UniqueFieldName}
 		end;
 	    _ ->
 		{false,false}
@@ -393,12 +410,14 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 	    asn1ct_name:new(tlv)
 
     end,
+    RecordName = lists:concat([get_record_name_prefix(),
+			       asn1ct_gen:list2rname(Typename)]),
     case gen_dec_sequence_call(Erules,Typename,CompList,Ext,DecObjInf) of
 	no_terms -> % an empty sequence	    
 	    emit([nl,nl]),
 	    demit(["Result = "]), %dbg
 	    %% return value as record
-	    emit(["   {'",asn1ct_gen:list2rname(Typename),"'}.",nl]);
+	    emit(["   {'",RecordName,"'}.",nl]);
 	{LeadingAttrTerm,PostponedDecArgs} ->
 	    emit([com,nl,nl]),
 	    case {LeadingAttrTerm,PostponedDecArgs} of
@@ -406,9 +425,17 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 		    ok;
 		{_,[]} ->
 		    ok;
-		{[{ObjSet,LeadingAttr,Term}],PostponedDecArgs} ->
+		{[{ObjSetRef,LeadingAttr,Term}],PostponedDecArgs} ->
 		    DecObj = lists:concat(['DecObj',LeadingAttr,Term]),
-		    emit([DecObj," =",nl,"   'getdec_",ObjSet,"'(",
+		    {ObjSetMod,ObjSetName} =
+			case ObjSetRef of
+			    {M,O} ->
+				{{asis,M},O};
+			    _ ->
+				{"?MODULE",ObjSetRef}
+			end,
+		    emit([DecObj," =",nl,
+			  "   ",ObjSetMod,":'getdec_",ObjSetName,"'(",
 			  {asis,UniqueFName},", ",Term,"),",nl]),
 		    gen_dec_postponed_decs(DecObj,PostponedDecArgs)
 	    end,
@@ -424,7 +451,7 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 			  "}}}) % extra fields not allowed",nl,
 			  "end,",nl])
 	    end,
-	    emit(["   {'",asn1ct_gen:list2rname(Typename),"', "]),
+	    emit(["   {'",RecordName,"', "]),
 	    mkvlist(asn1ct_name:all(term)),
 	    emit(["}.",nl])
     end.
@@ -1214,8 +1241,14 @@ gen_dec_call(InnerType,Erules,TopType,Cname,Type,BytesVar,Tag,PrimOptOrMand,
 	{Cname,{_,OSet,UniqueFName,ValIndex}} ->
 	    Term = asn1ct_gen:mk_var(asn1ct_name:curr(term)),
 	    ValueMatch = value_match(ValIndex,Term),
-	    emit([",",nl,"ObjFun = 'getdec_",OSet,"'(",
-%		  {asis,UniqueFName},", ",{curr,term},")"]);
+	    {ObjSetMod,ObjSetName} =
+		case OSet of
+		    {M,O} ->
+			{{asis,M},O};
+		    _ ->
+			{"?MODULE",OSet}
+		end,
+	    emit([",",nl,"ObjFun = ",ObjSetMod,":'getdec_",ObjSetName,"'(",
 		  {asis,UniqueFName},", ",ValueMatch,")"]);
 	_ ->
 	    ok

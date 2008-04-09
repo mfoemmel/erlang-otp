@@ -391,7 +391,7 @@ check_liveness(R, [{move,S,D}|Is], St) ->
 	D -> killed;
 	_ -> check_liveness(R, Is, St)
     end;
-check_liveness(R, [{make_fun2,_,NumFree,_,_}|Is], St) ->
+check_liveness(R, [{make_fun2,_,_,_,NumFree}|Is], St) ->
     case R of
 	{x,X} when X < NumFree -> used;
 	{x,_} -> killed;

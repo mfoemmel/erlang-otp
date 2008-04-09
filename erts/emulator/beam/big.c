@@ -320,6 +320,12 @@
 
 
 /* Calculate q, r  A = Bq+R when, assume A1 >= B */
+#if (SIZEOF_VOID_P == 8)
+#define QUOT_LIM 0x7FFFFFFFFFFFFFFF
+#else
+#define QUOT_LIM 0x7FFFFFFF
+#endif
+
 #define D2DIVREM(a1,a0,b1,b0,q0,r1,r0) do {			\
 	ErtsDigit _a1 = (a1);					\
 	ErtsDigit _a0 = (a0);					\
@@ -332,6 +338,8 @@
 	    ErtsDigit _t2=0, _t1, _t0;				\
 	    if ((_b1 == 1) && (_a1 > 1))			\
 		_q1 = _a1 / 2;					\
+	    else if ((_a1 > QUOT_LIM) && (_b1 < _a1))      	\
+		_q1 = _a1/(_b1+1);				\
 	    else						\
 		_q1 = _a1/_b1;					\
 	    if (_as<0)						\
@@ -339,6 +347,7 @@
 	    else						\
 		_q += _q1;					\
 	    D2MULc(_q1, _b1, _b0, _t2, _t1, _t0);		\
+            ASSERT(_t2 == 0);                                   \
 	    if (D2GT(_t1,_t0,_a1,_a0)) {			\
 		D2SUB(_t1,_t0,_a1,_a0,_a1,_a0);			\
 		_as = -_as;					\
@@ -1478,8 +1487,9 @@ big_to_double(Eterm x, double* resp)
     ErtsDigit* s = BIG_V(xp) + xl;
     short xsgn = BIG_SIGN(xp);
     double dbase = ((double)(D_MASK)+1);
-
+#ifndef NO_FPE_SIGNALS 
     volatile int *fpexnp = erts_get_current_fp_exception();
+#endif
     __ERTS_SAVE_FP_EXCEPTION(fpexnp);
 
     __ERTS_FP_CHECK_INIT(fpexnp);

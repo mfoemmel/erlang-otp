@@ -1938,13 +1938,13 @@ int erl_set_memory_block(int isize, int iptr, int warn_save,
     alloc_pool_ptr = (void *) iptr;
     alloc_flags = 0;
     /* USING_ELIB_MALLOC gets set by the initialization routine */
-    if(iptr != NULL)
+    if((void *)iptr != NULL)
 	alloc_flags |= (USER_POOL | NEW_USER_POOL);
     if(realloc_moves)
 	alloc_flags |= REALLOC_MOVES;
     if(warn_save)
 	alloc_flags |= WARN_MALLOC_MIX;
-    if(iptr != NULL && reclaim_in_supplied)
+    if((void *)iptr != NULL && reclaim_in_supplied)
 	alloc_flags |= RECLAIM_USER_POOL;
     return 0;
 }

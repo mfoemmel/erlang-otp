@@ -386,7 +386,7 @@ int save_close(int fd){
 /* The dealing with FILE *'s below isn't strictly correct, we assume
    that one never has several pointing to the same fd - in the unlikely
    event that one does, all but the last one opened is forgotten */
-FILE *save_fopen(char *filename, char *type){
+FILE *save_fopen(const char *filename, char *type){
   FILE *fp;
     
   if ((fp = fopen(filename, type)) != NULL &&

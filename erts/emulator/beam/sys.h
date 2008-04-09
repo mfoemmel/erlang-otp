@@ -537,6 +537,7 @@ extern void erts_time_remaining(SysTimeval *);
 extern int erts_init_time_sup(void);
 extern void erts_sys_init_float(void);
 extern void erts_thread_init_float(void);
+extern void erts_thread_disable_fpe(void);
 
 /* Dynamic library/driver loading */
 extern void erl_sys_ddll_init(void); /* to initialize mutexes etc */

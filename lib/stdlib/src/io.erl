@@ -81,7 +81,7 @@ columns() ->
     columns(default_output()).
 columns(Io) ->
     case request(Io,{get_geometry,columns}) of
-	N  when is_integer(N) ->
+	N  when is_integer(N), N > 0 ->
 	    {ok,N};
 	_ ->
 	    {error,enotsup}
@@ -91,7 +91,7 @@ rows() ->
     rows(default_output()).
 rows(Io) ->
     case request(Io,{get_geometry,rows}) of
-	N  when is_integer(N) ->
+	N  when is_integer(N), N > 0 ->
 	    {ok,N};
 	_ ->
 	    {error,enotsup}

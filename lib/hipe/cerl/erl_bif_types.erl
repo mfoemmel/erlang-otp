@@ -772,12 +772,36 @@ type(erlang, get_cookie, 0, _) -> t_atom();  % | t_atom('nocookie')
 type(erlang, get_keys, 1, _) -> t_list();
 type(erlang, get_module_info, 1, Xs) ->
   strict(arg_types(erlang, get_module_info, 1), Xs,
-	 fun (_) -> t_list(t_tuple([t_atom(),
-				    t_list(t_tuple([t_atom(), t_any()]))]))
+	 fun (_) ->
+	     t_list(t_tuple([t_atom(), t_list(t_tuple([t_atom(), t_any()]))]))
 	 end);
 type(erlang, get_module_info, 2, Xs) ->
+  T_module_info_2_returns =
+    t_sup([t_atom(),
+	   t_list(t_tuple([t_atom(), t_any()])),
+	   t_list(t_tuple([t_atom(), t_arity(), t_integer()]))]),
   strict(arg_types(erlang, get_module_info, 2), Xs,
-	 fun (_) -> t_list(t_tuple([t_atom(), t_any()])) end);
+	 fun ([Module, Item]) ->
+	     case t_is_atom(Item) of
+	       true -> 
+		 case t_atom_vals(Item) of
+		   ['module'] -> t_inf(t_atom(), Module);
+		   ['imports'] -> t_nil();
+		   ['exports'] -> t_list(t_tuple([t_atom(), t_arity()]));
+		   ['functions'] -> t_list(t_tuple([t_atom(), t_arity()]));
+		   ['attributes'] -> t_list(t_tuple([t_atom(), t_any()]));
+		   ['compile'] -> t_list(t_tuple([t_atom(), t_any()]));
+		   ['native_addresses'] -> % [{FunName, Arity, Address}]
+		     t_list(t_tuple([t_atom(), t_arity(), t_integer()]));
+		   List when is_list(List) ->
+		     T_module_info_2_returns;
+		   any ->
+		     T_module_info_2_returns
+		 end;
+	       false ->
+		 T_module_info_2_returns
+	     end
+	 end);
 type(erlang, get_stacktrace, 0, _) ->
   t_list(t_tuple([t_atom(), t_atom(), t_sup([t_arity(), t_list()])]));
 type(erlang, group_leader, 0, _) -> t_pid();
@@ -1136,9 +1160,7 @@ type(erlang, process_flag, 2, Xs) ->
 		   ['error_handler'] -> t_atom();
 		   ['min_heap_size'] -> t_non_neg_integer();
 		   ['monitor_nodes'] -> t_bool();
-		   ['priority'] -> t_sup([t_atom('low'),
-					  t_atom('normal'),
-					  t_atom('high')]);
+		   ['priority'] -> t_process_priority_level();
 		   ['save_calls'] -> t_non_neg_integer();
 		   ['trap_exit'] -> t_bool();
 		   List when is_list(List) ->
@@ -1160,11 +1182,80 @@ type(erlang, process_info, 1, Xs) ->
 		   t_atom('undefined'))
 	 end);
 type(erlang, process_info, 2, Xs) ->
+  %% we define all normal return values: the return when the process exists
+  %% t_nil() is the return for 'registered_name'; perhaps for more
+  T_process_info_2_normal_returns =
+    t_sup([t_tuple([t_pinfo_item(), t_any()]), t_nil()]),
   strict(arg_types(erlang, process_info, 2), Xs,
-	 fun ([_Pid,_InfoItem]) ->
-	     t_sup([t_tuple([t_pinfo(), t_any()]), %% TODO: Very underspecified
-		    t_atom('undefined'),
-		    t_nil()])  % return for 'registered_name'; perhaps for more
+	 fun ([_Pid, InfoItem]) ->
+	     Ret = case t_is_atom(InfoItem) of
+		     true ->
+		       case t_atom_vals(InfoItem) of
+			 ['backtrace'] -> t_tuple([InfoItem, t_binary()]);
+			 ['current_function'] -> t_tuple([InfoItem, t_mfa()]);
+			 ['dictionary'] -> t_tuple([InfoItem, t_list()]);
+			 ['error_handler'] -> t_tuple([InfoItem, t_atom()]);
+			 ['garbage_collection'] ->
+			   t_tuple([InfoItem, t_list()]);
+			 ['group_leader'] -> t_tuple([InfoItem, t_pid()]);
+			 ['heap_size'] ->
+			   t_tuple([InfoItem, t_non_neg_integer()]);
+			 ['initial_call'] -> t_tuple([InfoItem, t_mfa()]);
+			 ['last_calls'] ->
+			   t_tuple([InfoItem,
+				    t_sup(t_atom('false'), t_list())]);
+			 ['links'] -> t_tuple([InfoItem, t_list(t_pid())]);
+			 ['memory'] ->
+			   t_tuple([InfoItem, t_non_neg_integer()]);
+			 ['message_binary'] -> t_tuple([InfoItem,  t_list()]);
+			 ['message_queue_len'] ->
+			   t_tuple([InfoItem, t_non_neg_integer()]);
+			 ['messages'] -> t_tuple([InfoItem, t_list()]);
+			 ['monitored_by'] ->
+			   t_tuple([InfoItem,  t_list(t_pid())]);
+			 ['monitors'] ->
+			   t_tuple([InfoItem, 
+				    t_list(t_sup(t_tuple([t_atom('process'),
+							  t_pid()]),
+						 t_tuple([t_atom('process'),
+							  t_tuple([t_atom(),
+								   t_atom()])])))]);
+			 ['priority'] ->
+			   t_tuple([InfoItem, t_process_priority_level()]);
+			 ['reductions'] ->
+			   t_tuple([InfoItem, t_non_neg_integer()]);
+			 ['registered_name'] ->
+			   t_sup(t_tuple([InfoItem, t_atom()]), t_nil());
+			 ['sequential_trace_token'] ->
+			   t_tuple([InfoItem, t_any()]); %% Underspecified
+			 ['stack_size'] ->
+			   t_tuple([InfoItem, t_non_neg_integer()]);
+			 ['status'] ->
+			   t_tuple([InfoItem, t_process_status()]);
+			 ['suspending'] ->
+			   t_tuple([InfoItem,
+				    t_list(t_tuple([t_pid(),
+						    t_non_neg_integer(),
+						    t_non_neg_integer()]))]);
+			 ['total_heap_size'] ->
+			   t_tuple([InfoItem, t_non_neg_integer()]);
+			 ['trap_exit'] ->
+			   t_tuple([InfoItem, t_bool()]);
+			 List when is_list(List) ->
+			   T_process_info_2_normal_returns;
+			 any ->
+			   T_process_info_2_normal_returns
+		       end;
+		     false ->
+		       case is_list(InfoItem) of
+			 true ->
+			   t_list(t_tuple([t_pinfo_item(), t_any()]));
+			 false ->
+			   t_sup(T_process_info_2_normal_returns,
+				 t_list(t_tuple([t_pinfo_item(), t_any()])))
+		       end
+		   end,
+	       t_sup([Ret, t_atom('undefined')])
 	 end);
 type(erlang, processes, 0, _) -> t_list(t_pid());
 type(erlang, purge_module, 1, Xs) ->
@@ -1725,11 +1816,6 @@ type(gen_tcp, connect, 4, Xs) ->
 	 fun (_) ->
 	     t_sup(t_tuple([t_atom('ok'), t_socket()]),
 		   t_tuple([t_atom('error'), t_inet_posix_error()]))
-	 end);
-type(gen_tcp, controlling_process, 2, Xs) ->
-  strict(arg_types(gen_tcp, controlling_process, 2), Xs,
-	 fun (_) ->
-	     t_sup(t_atom('ok'), t_tuple([t_atom('error'), t_atom('eperm')]))
 	 end);
 type(gen_tcp, listen, 2, Xs) ->
   strict(arg_types(gen_tcp, listen, 2), Xs,
@@ -2363,7 +2449,7 @@ type(lists, unzip3, 1, Xs) ->
 	       false -> % Ps is a proper list of triples
 		 TupleTypes = t_tuple_subtypes(t_list_elements(Ts)),
 		 lists:foldl(fun(T, Acc) ->
-				 [A, B, C] = t_tuple_args(t_list_elements(T)),
+				 [A, B, C] = t_tuple_args(T),
 				 t_sup(t_tuple([t_list(A), 
 						t_list(B), 
 						t_list(C)]),
@@ -3218,7 +3304,7 @@ arg_types(erlang, get_stacktrace, 0) ->
 arg_types(erlang, get_module_info, 1) ->
   [t_atom()];
 arg_types(erlang, get_module_info, 2) ->
-  [t_atom(), t_atom()];
+  [t_atom(), t_module_info_2()];
 arg_types(erlang, group_leader, 0) ->
   [];
 arg_types(erlang, group_leader, 2) ->
@@ -3721,8 +3807,6 @@ arg_types(gen_tcp, connect, 3) ->
   [t_gen_tcp_address(), t_gen_tcp_port(), t_list(t_gen_tcp_connect_option())];
 arg_types(gen_tcp, connect, 4) ->
   arg_types(gen_tcp, connect, 3) ++ [t_timeout()];
-arg_types(gen_tcp, controlling_process, 2) ->
-  [t_socket(), t_pid()];
 arg_types(gen_tcp, listen, 2) ->
   [t_gen_tcp_port(), t_list(t_gen_tcp_listen_option())];
 arg_types(gen_tcp, recv, 2) ->
@@ -4101,20 +4185,28 @@ t_code_load_error_rsn() ->	% also used in erlang:load_module/2
 %% =====================================================================
 
 t_pinfo() ->
-  t_sup([t_atom('current_function'),
+  t_sup([t_pinfo_item(), t_list(t_pinfo_item())]).
+
+t_pinfo_item() ->
+  t_sup([t_atom('backtrace'),
+	 t_atom('current_function'),
 	 t_atom('dictionary'),
 	 t_atom('error_handler'),
 	 t_atom('garbage_collection'),
 	 t_atom('group_leader'),
 	 t_atom('heap_size'),
 	 t_atom('initial_call'),
+	 t_atom('last_calls'),
 	 t_atom('links'),
 	 t_atom('memory'),
-	 t_atom('messages'),
+	 t_atom('message_binary'),     % for hybrid heap only
 	 t_atom('message_queue_len'),
+	 t_atom('messages'),
+	 t_atom('monitored_by'),
+	 t_atom('monitors'),
 	 t_atom('priority'),
-	 t_atom('registered_name'),
 	 t_atom('reductions'),
+	 t_atom('registered_name'),
 	 t_atom('sequential_trace_token'),
 	 t_atom('stack_size'),
 	 t_atom('status'),
@@ -4128,6 +4220,22 @@ t_dist_exit() ->
 t_match_spec_test_errors() ->
   t_list(t_sup(t_tuple([t_atom('error'), t_string()]),
 	       t_tuple([t_atom('warning'), t_string()]))).
+
+t_module_info_2() ->
+ t_sup([t_atom('module'),
+	t_atom('imports'),
+	t_atom('exports'),
+	t_atom('functions'),
+	t_atom('attributes'),
+	t_atom('compile'),
+	t_atom('native_addresses')]).
+
+t_process_priority_level() ->
+  t_sup([t_atom('max'), t_atom('high'), t_atom('normal'), t_atom('low')]).
+
+t_process_status() ->
+  t_sup([t_atom('runnable'), t_atom('running'),
+	 t_atom('suspended'), t_atom('waiting')]).
 
 t_raise_errorclass() ->
   t_sup([t_atom('error'), t_atom('exit'), t_atom('throw')]).
@@ -4146,9 +4254,7 @@ t_seq_trace_info() ->
 t_spawn_options() ->
   t_sup([t_atom('link'),
 	 t_atom('monitor'),
-	 t_tuple([t_atom('priority'),
-		  t_sup([t_atom('max'), t_atom('high'),
-			 t_atom('normal'), t_atom('low')])]),
+	 t_tuple([t_atom('priority'), t_process_priority_level()]),
 	 t_tuple([t_atom('min_heap_size'), t_fixnum()]),
 	 t_tuple([t_atom('fullsweep_after'), t_fixnum()])]).
 

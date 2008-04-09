@@ -66,11 +66,11 @@
 %% Internal data structures
 %%-----------------------------------------------------------------------
 
--record(beam_const, {value :: atom() | [] | integer() | float()}).
+-record(beam_const, {value :: simple_const()}). % defined in hipe_icode.hrl
 
--record(closure_info, {mfa::mfa(), arity::byte(), fv_arity::byte()}).
+-record(closure_info, {mfa :: mfa(), arity :: byte(), fv_arity :: byte()}).
 
--record(environment, {mfa::mfa(), entry}).
+-record(environment, {mfa :: mfa(), entry :: non_neg_integer()}).
 
 
 %%-----------------------------------------------------------------------
@@ -81,7 +81,7 @@
 %% @end
 %%-----------------------------------------------------------------------
 
--spec(module/2 :: ([#function{}], list()) -> hipe_beam_to_icode_ret()).
+-spec(module/2 :: ([#function{}], comp_options()) -> hipe_beam_to_icode_ret()).
 
 module(BeamFuns, Options) ->
   BeamCode0 = [beam_disasm:function__code(F) || F <- BeamFuns],
@@ -127,7 +127,7 @@ exclude_module_info_code([], Acc) ->
 %% @end
 %%-----------------------------------------------------------------------
 
--spec(mfa/3 :: (list(), mfa(), list()) -> hipe_beam_to_icode_ret()).
+-spec(mfa/3 :: (list(), mfa(), comp_options()) -> hipe_beam_to_icode_ret()).
 
 mfa(_, {M,module_info,A}, _) when is_atom(M), (A =:= 0 orelse A =:= 1) ->
   [];  % the module_info/[0,1] functions are just stubs in a BEAM file
@@ -173,18 +173,17 @@ get_fun_mfas([]) ->
 trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
   ?no_debug_msg("disassembling: {~p,~p,~p} ...", [M,F,A]),
   hipe_gensym:init(icode),
-  Env0 = env__store_mfa(M,F,A, env__mk_env()),
   %% Extract the function arguments
   FunArgs = extract_fun_args(A),
   %% Record the function arguments
   FunLbl = mk_label(new),
-  Env1 = env__store_entrypoint(hipe_icode:label_name(FunLbl), Env0),
+  Env1 = env__mk_env(M, F, A, hipe_icode:label_name(FunLbl)),
   Code1 = lists:flatten(trans_fun(FunBeamCode,Env1)),
   Code2 = fix_fallthroughs(fix_catches(Code1)),
-  %% Debugcode
+  %% Debug code
   ?IF_DEBUG_LEVEL(5,
-		  {Code3,_Env3} = ?mk_debugcode({M,F,A}, Env2,Code2),
-		  {Code3,_Env3} = {Code2,Env1}), % Code3 = fix_gotos(Code2),
+		  {Code3,_Env3} = ?mk_debugcode({M,F,A}, Env2, Code2),
+		  {Code3,_Env3} = {Code2,Env1}),
   %% For stack optimization
   Leafness = leafness(Code3),
   IsLeaf = is_leaf_code(Leafness),
@@ -207,7 +206,7 @@ trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
       not_a_closure -> Code5;
       CI -> %% ... then patch the code to 
 	%% get the free_vars from the closure
-	patch_closure_entry(Code5,CI)
+	patch_closure_entry(Code5, CI)
     end,
   ?no_debug_msg("ok~n", []),
   Icode.
@@ -221,7 +220,7 @@ leafness([], Leafness) ->
   Leafness;
 leafness([I|Is], Leafness) ->
   case I of
-    #comment{} ->
+    #icode_comment{} ->
       %% BEAM self-tailcalls become gotos, but they leave
       %% a trace behind in comments. Check those to ensure
       %% that the computed leafness is correct. Needed to
@@ -233,7 +232,7 @@ leafness([I|Is], Leafness) ->
 	  _ -> Leafness
 	end,
       leafness(Is, NewLeafness);
-    #call{} ->
+    #icode_call{} ->
       case hipe_icode:call_type(I) of
 	'primop' -> 
 	  case hipe_icode:call_fun(I) of
@@ -249,7 +248,7 @@ leafness([I|Is], Leafness) ->
 	    false -> false
 	  end
       end;
-    #enter{} ->
+    #icode_enter{} ->
       case hipe_icode:enter_type(I) of
 	'primop' ->
 	  case hipe_icode:enter_fun(I) of
@@ -382,13 +381,13 @@ trans_fun([{bif,BifName,{f,Lbl},[_,_] = Args,Reg}|Instructions], Env) ->
 %%--- allocate
 trans_fun([{allocate,StackSlots,_}|Instructions], Env) ->
   trans_allocate(StackSlots) ++ trans_fun(Instructions,Env);
-%%--- allocate_heap --- IGNORED ON PURPOSE
+%%--- allocate_heap
 trans_fun([{allocate_heap,StackSlots,_,_}|Instructions], Env) ->
   trans_allocate(StackSlots) ++ trans_fun(Instructions,Env);
 %%--- allocate_zero
 trans_fun([{allocate_zero,StackSlots,_}|Instructions], Env) ->
   trans_allocate(StackSlots) ++ trans_fun(Instructions,Env);
-%%--- allocate_heap_zero --- IGNORED ON PURPOSE
+%%--- allocate_heap_zero
 trans_fun([{allocate_heap_zero,StackSlots,_,_}|Instructions], Env) ->
   trans_allocate(StackSlots) ++ trans_fun(Instructions,Env);
 %%--- test_heap --- IGNORED ON PURPOSE
@@ -984,7 +983,7 @@ trans_fun([{fmove,Src,Dst}|Instructions], Env) ->
       case{hipe_icode:is_fvar(Dst1),
 	   hipe_icode:is_fvar(Src1)} of
 	{true, true} -> %% fvar := fvar 
-	  [hipe_icode:mk_fmove(Dst1,Src1) | trans_fun(Instructions,Env)];
+	  [hipe_icode:mk_move(Dst1,Src1) | trans_fun(Instructions,Env)];
 	{false, true} -> %% var := fvar
 	  [hipe_icode:mk_primop([Dst1], unsafe_tag_float, [Src1]) |
 	   trans_fun(Instructions,Env)];
@@ -1419,11 +1418,15 @@ clone_dsts([Dest|Dests], Instrs, NewDests) ->
 clone_dsts([], Instrs, NewDests) ->
   {lists:reverse(Instrs), lists:reverse(NewDests)}.
 
-clone_dst(Dest = {reg,_}) ->  
-  New = mk_var(reg),
-  {hipe_icode:mk_move(Dest, New), New};
-clone_dst(Dest = {var,_}) ->
-  New = mk_var(new),
+clone_dst(Dest) -> 
+  New = 
+    case hipe_icode:is_reg(Dest) of
+      true ->
+	mk_var(reg);
+      false ->
+	true = hipe_icode:is_var(Dest),	      
+	mk_var(new)
+    end,
   {hipe_icode:mk_move(Dest, New), New}.
 
 
@@ -2160,21 +2163,23 @@ fix_fallthroughs([], I, Acc) ->
 %% label.
 %%-----------------------------------------------------------------------
 
-remove_dead_code([I|Code]) ->
+-spec(remove_dead_code/1 :: (icode_instrs()) -> icode_instrs()).
+remove_dead_code([I|Is]) ->
   case I of
-    #fail{} ->
-      [I|remove_dead_code(skip_to_label(Code))];
+    #icode_fail{} ->
+      [I|remove_dead_code(skip_to_label(Is))];
     _ ->
-      [I|remove_dead_code(Code)]
+      [I|remove_dead_code(Is)]
   end;
 remove_dead_code([]) ->
   [].
 
 %% returns the instructions from the closest label
-skip_to_label([I|Code]) ->
+-spec(skip_to_label/1 :: (icode_instrs()) -> icode_instrs()).
+skip_to_label([I|Is]) ->
   case I of
-    #label{} -> [I|Code];
-    _ -> skip_to_label(Code)
+    #icode_label{} -> [I|Is];
+    _ -> skip_to_label(Is)
   end;
 skip_to_label([]) ->
   [].
@@ -2214,7 +2219,7 @@ pp(Code) ->
 pp(Stream, []) ->
   case Stream of  %% I am not sure whether this is necessary
     standard_io -> ok;
-    _ -> file:close(Stream)
+    _ -> ok = file:close(Stream)
   end;
 pp(Stream, [FunCode|FunCodes]) ->
   pp_mfa(Stream, FunCode),
@@ -2236,17 +2241,9 @@ put_nl(Stream) ->
 %% Handling of environments -- used to process local tail calls.
 %%-----------------------------------------------------------------------
 
-%% Constructor!
-env__mk_env() ->
-  #environment{}.
-
-%% The MFA of the current function 
-env__store_mfa(M, F, A, Env) ->
-  Env#environment{mfa = {M,F,A}}.
-
-%% The entrypoint to the current function
-env__store_entrypoint(Entry, Env) ->
-  Env#environment{entry = Entry}.
+%% Construct an environment
+env__mk_env(M, F, A, Entry) ->
+  #environment{mfa={M,F,A}, entry=Entry}.
 
 %% Get current MFA
 env__get_mfa(#environment{mfa=MFA}) -> MFA.

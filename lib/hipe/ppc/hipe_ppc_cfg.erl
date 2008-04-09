@@ -5,7 +5,7 @@
 
 -export([init/1,
          labels/1, start_label/1,
-         succ/2, succ_map/1,
+         succ/2,
          bb/2, bb_add/3]).
 -export([postorder/1]).
 -export([linearise/1, params/1, reverse_postorder/1]).
@@ -17,9 +17,9 @@
 -define(PARAMS_NEEDED,true).
 -define(START_LABEL_UPDATE_NEEDED,true).
 
+-include("hipe_ppc.hrl").
 -include("../flow/cfg.hrl").
 -include("../flow/cfg.inc").
--include("hipe_ppc.hrl").
 
 init(Defun) ->
   Code = hipe_ppc:defun_code(Defun),
@@ -29,9 +29,7 @@ init(Defun) ->
   Name = hipe_ppc:defun_mfa(Defun),
   IsLeaf = hipe_ppc:defun_is_leaf(Defun),
   Formals = hipe_ppc:defun_formals(Defun),
-  Extra = [],
-  CFG0 = mk_empty_cfg(Name, StartLab, Data,
-		      IsClosure, IsLeaf, Formals, Extra),
+  CFG0 = mk_empty_cfg(Name, StartLab, Data, IsClosure, IsLeaf, Formals),
   take_bbs(Code, CFG0).
 
 is_branch(I) ->
@@ -100,7 +98,7 @@ mk_label(Name) ->
   hipe_ppc:mk_label(Name).
 
 linearise(CFG) ->	% -> defun, not insn list
-  Fun = function(CFG),
+  MFA = function(CFG),
   Formals = params(CFG),
   Code = linearize_cfg(CFG),
   Data = data(CFG),
@@ -108,9 +106,9 @@ linearise(CFG) ->	% -> defun, not insn list
   LabelRange = hipe_gensym:label_range(ppc),
   IsClosure = is_closure(CFG),
   IsLeaf = is_leaf(CFG),
-  hipe_ppc:mk_defun(Fun, Formals, IsClosure, IsLeaf,
+  hipe_ppc:mk_defun(MFA, Formals, IsClosure, IsLeaf,
 		    Code, Data, VarRange, LabelRange).
 
 arity(CFG) ->
-  #ppc_mfa{a=Arity} = function(CFG),
-  Arity.
+  {_M, _F, A} = function(CFG),
+  A.

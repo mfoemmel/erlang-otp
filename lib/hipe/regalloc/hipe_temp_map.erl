@@ -1,7 +1,8 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% -*- erlang-indent-level: 2 -*-
+%% ===========================================================================
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
 %% Time-stamp: <02/05/28 15:46:26 happi>
-%% ====================================================================
+%% ===========================================================================
 %%  Filename : 	hipe_temp_map.erl
 %%  Module   :	hipe_temp_map
 %%  Purpose  :  
@@ -9,30 +10,32 @@
 %%  History  :	* 2001-07-24 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2007/12/18 09:13:35 $
-%%              $Revision: 1.11 $
-%% ====================================================================
+%%              $Author: kostis $
+%%              $Date: 2008/03/28 22:13:48 $
+%%              $Revision: 1.13 $
+%% ===========================================================================
 %%  Exports  :
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_temp_map).
--export([cols2tuple/2, is_spilled/2, %% sorted_cols2tuple/2,
-	 in_reg/2, in_fp_reg/2, find/2, to_substlist/1]).
+-export([cols2tuple/2, is_spilled/2,
+	 %% sorted_cols2tuple/2, in_reg/2, in_fp_reg/2, find/2,
+	 to_substlist/1]).
 
-%%-define(DO_ASSERT,true).
 -include("../main/hipe.hrl").
 
-
-%%
-%% Convert a list of [{R0, C1}, {R1, C2}, ...} to a temp_map
+%%----------------------------------------------------------------------------
+%% Convert a list of [{R0, C1}, {R1, C2}, ...] to a temp_map
 %% (Currently implemented as a tuple) tuple {C1, C2, ...}.
 %%
 %% The indices (Ri) must be unique but do not have to be sorted and 
 %% they can be sparse.
 %% Note that the first allowed index is 0 -- this will be mapped to 
 %% element 1
+%%----------------------------------------------------------------------------
+
+-spec(cols2tuple/2 :: (hipe_map(), atom()) -> hipe_temp_map()).
 
 cols2tuple(Map, Target) ->
   ?ASSERT(check_list(Map)),
@@ -61,99 +64,51 @@ cols2tuple(N, SourceMapping, Vs, Target) ->
     end,
   cols2tuple(N+1, SourceMapping, [Val|Vs], Target).
 
--ifdef(DO_ASSERT).
+%%
 %% True if temp Temp is spilled.
-is_spilled(Temp, Map) ->
-  case catch element(Temp+1, Map) of
-    {reg, _R} -> false;
-    {fp_reg, _R}-> false;
-    {spill, _N} -> true;
-    unknown -> false;
-    Error -> ?EXIT({bad_temp_map, Temp, Map, Error})
- end.
+%%
+-spec(is_spilled/2 :: (non_neg_integer(), hipe_temp_map()) -> bool()).
 
-%% True if temp Temp is allocated to a reg.
-in_reg(Temp, Map) ->
-  case catch element(Temp+1, Map) of
-    {reg, _R} -> true;
-    {fp_reg, _R} -> false;
-    {spill, _N} -> false;
-    unknown -> false;
-    _ -> ?EXIT({bad_temp_map, Temp, Map})
-  end.
-       
-%% True if temp Temp is allocated to a fp_reg.
-in_fp_reg(Temp, Map) ->
-  case catch element(Temp+1, Map) of
-    {fp_reg, _R} -> true;
-    {reg, _R} -> false;
-    {spill, _N} -> false;
-    unknown -> false;
-    _ -> ?EXIT({bad_temp_map, Temp, Map})
-  end.
-
-%% Returns the inf temp Temp is mapped to.
-find(Temp, Map) ->
-  case catch element(Temp+1, Map) of
-    {'EXIT',_} ->
-      ?EXIT({bad_temp_map, Temp, Map});
-    Val -> Val
-  end.
-
--else. %% No assert
-
-%% True if temp Temp is spilled.
 is_spilled(Temp, Map) ->
   case element(Temp+1, Map) of
     {reg, _R} -> false;
     {fp_reg, _R}-> false;
     {spill, _N} -> true;
-    unknown -> false;
-    _ -> ?EXIT({bad_temp_map, Temp, Map})
+    unknown -> false
   end.
     
-%% True if temp Temp is allocated to a reg.
-in_reg(Temp, Map) ->
-  case element(Temp+1, Map) of
-    {reg, _R} -> true;
-    {fp_reg, _R}-> false;
-    {spill, _N} -> false;
-    unknown -> false;
-    _ -> ?EXIT({bad_temp_map, Temp, Map})
-  end.
-       
-%% True if temp Temp is allocated to a fp_reg.
-in_fp_reg(Temp, Map) ->
-  case catch element(Temp+1, Map) of
-    {fp_reg, _R} -> true;
-    {reg, _R} -> false;
-    {spill, _N} -> false;
-    unknown -> false;
-    _ -> ?EXIT({bad_temp_map, Temp, Map})
-  end.
-
-%% Returns the inf temp Temp is mapped to.
-find(Temp, Map) -> element(Temp+1, Map).
-
--endif.
+%% %% True if temp Temp is allocated to a reg.
+%% in_reg(Temp, Map) ->
+%%   case element(Temp+1, Map) of
+%%     {reg, _R} -> true;
+%%     {fp_reg, _R}-> false;
+%%     {spill, _N} -> false;
+%%     unknown -> false
+%%   end.
+%%
+%% %% True if temp Temp is allocated to a fp_reg.
+%% in_fp_reg(Temp, Map) ->
+%%   case element(Temp+1, Map) of
+%%     {fp_reg, _R} -> true;
+%%     {reg, _R} -> false;
+%%     {spill, _N} -> false;
+%%     unknown -> false
+%%   end.
+%% 
+%% %% Returns the inf temp Temp is mapped to.
+%% find(Temp, Map) -> element(Temp+1, Map).
 
 
+%%
 %% Converts a temp_map tuple back to a (sorted) key-list.
+%%
+-spec(to_substlist/1 :: (hipe_temp_map()) -> hipe_map()).
+
 to_substlist(Map) ->
   T = tuple_to_list(Map),
-  mapping(T,0).
+  mapping(T, 0).
 
 mapping([R|Rs], Temp) ->
   [{Temp, R}| mapping(Rs, Temp+1)];
-mapping([], _ ) -> [].
-
--ifdef(DO_ASSERT).
-check_list([{I,_}|Rest]) ->
-  is_integer(I) andalso (I >= 0) andalso
-    no_dups(I,Rest) andalso check_list(Rest);
-check_list([])       -> true;
-check_list(_)        -> false.
-no_dups(I,[{I,_}|_]) -> false;
-no_dups(I,[_|Rest]) ->  no_dups(I,Rest);
-no_dups(_,[]) ->        true.
--endif.
+mapping([], _) ->
+  [].

@@ -22,7 +22,6 @@
 -export([all/1]).
 -export([init_per_suite/1, end_per_suite/1]).
 -export([init_per_testcase/2, end_per_testcase/2]).
--export([libgd/1, fini/1]).
 
 %% Test cases
 -export([
@@ -30,9 +29,6 @@
 	image_shape/1, 
 	image_colors/1, 
 	image_font/1,
-	image_pixels/1,
-	image_gif_compliant/1,
-	image_jfif_compliant/1,
 	image_png_compliant/1
 	]).
 
@@ -49,7 +45,7 @@ end_per_suite(Config) when is_list(Config) ->
 
 init_per_testcase(_Case, Config) ->
     Dog = ?t:timetrap(?default_timeout),
-    [{max_size, 300}, {watchdog,Dog} | Config].
+    [{max_size, 800}, {watchdog,Dog} | Config].
 
 end_per_testcase(_Case, Config) ->
     Dog = ?config(watchdog, Config),
@@ -58,28 +54,13 @@ end_per_testcase(_Case, Config) ->
 
 all(suite) ->
     % Test cases
-    [	{conf, libgd, [
+    [	
 	image_create_and_destroy, 
 	image_shape, 
 	image_colors, 
 	image_font, 
-	image_pixels,
-	image_gif_compliant,
-	image_png_compliant,
-	image_jfif_compliant
-	], fini}
+	image_png_compliant
     ].
-
-libgd(Config) when is_list(Config) ->
-    case has_libgd() of
-	true ->
-	    Config;
-	_ ->
-	    {skip, "egd is not available without libgd"}
-    end.
-
-fini(Config) when is_list(Config) ->
-    Config.
 
 %%----------------------------------------------------------------------
 %% Tests
@@ -105,10 +86,10 @@ image_colors(Config) when is_list(Config) ->
     put(image_size, {W,H}),
 
     RGB = get_rgb(),
-    ?line Black = egd:color(Image, black),
-    ?line Red = egd:color(Image, red),
-    ?line Green = egd:color(Image, green),
-    ?line Blue = egd:color(Image, blue),
+    ?line Black = egd:color({0,0,0}),
+    ?line Red = egd:color({255,0,0}),
+    ?line Green = egd:color({0,255,0}),
+    ?line Blue = egd:color({0,0,255}),
     ?line Random = egd:color(Image, RGB),  
 
     ?line ok = egd:line(Image, get_point(), get_point(), Random),
@@ -130,20 +111,21 @@ image_shape(Config) when is_list(Config) ->
     put(image_size, {W,H}),
     ?line Im = egd:create(W, H),
     
-    ?line Bgc = egd:color(Im, white),
-    ?line Fgc = egd:color(Im, black),
+    ?line Fgc = egd:color({255,0,0}),
 
-    ?line ok = egd:fill(Im, get_point(), Bgc),
-    ?line ok = egd:pixel(Im, get_point(), Fgc),
     ?line ok = egd:line(Im, get_point(), get_point(), Fgc), 
     ?line ok = egd:rectangle(Im, get_point(), get_point(), Fgc),
-    ?line ok = egd:polygon(Im, get_points(random:uniform(20)), Fgc),
-    {X, Y} = get_size(?config(max_size, Config)),
-    ?line ok = egd:arc(Im, get_point(), X, Y, get_angle(), get_angle(), Fgc),
-    ?line ok = egd:filledRectangle(Im, get_point(), get_point(), Fgc),
-    ?line ok = egd:filledPolygon(Im, get_points(random:uniform(20)), Fgc), 
-    ?line ok = egd:filledArc(Im, get_point(), X, Y, get_angle(), get_angle(), Fgc, [chord, edged]),
-    ?line ok = egd:filledEllipse(Im, get_point(), X, Y, Fgc),
+    ?line ok = egd:filledEllipse(Im, get_point(), get_point(), Fgc),
+    
+    Pt1 = get_point(),
+    Pt2 = get_point(), 
+
+    ?line ok = egd:filledRectangle(Im, Pt1, Pt2, Fgc),
+
+    ?line Bitmap = egd:render(Im, raw_bitmap),
+
+    ?line ok = bitmap_point_has_color(Bitmap, {W,H}, Pt2, Fgc),
+    ?line ok = bitmap_point_has_color(Bitmap, {W,H}, Pt1, Fgc),
 
     ?line ok = egd:destroy(Im),
     erase(image_size),
@@ -157,66 +139,18 @@ image_font(Config) when is_list(Config) ->
     {W,H} = get_size(?config(max_size, Config)),
     put(image_size, {W,H}),
     ?line Im = egd:create(W, H),
-    ?line Bgc = egd:color(Im, white),
-    ?line Fgc = egd:color(Im, black),
-    ?line ok = egd:fill(Im, get_point(), Bgc),
-    
+    ?line Fgc = egd:color({0,130,0}),
+  
+    ?line Filename = filename:join([code:priv_dir(percept),"fonts","6x11_latin1.wingsfont"]),
+    ?line Font = egd_font:load(Filename),
+   
     % textit
-    lists:foreach(
-	fun(Font) ->
-	    ?line ok = egd:text(Im, Font, get_point(), "Hello World", Fgc),
-	    ?line ok = egd:textUp(Im, Font, get_point(), "My World", Fgc),
-	    ?line {_,_} = egd:fontSize(Im, Font)
-	end, [tiny, small, medium, large, giant]), 
+    ?line ok = egd:text(Im, get_point(), Font, "Hello World", Fgc),
     
     ?line ok = egd:destroy(Im),
     erase(image_size),
     ok.
 
-image_pixels(suite) ->
-    [];
-image_pixels(doc) ->
-    ["Image pixels test."];
-image_pixels(Config) when is_list(Config) ->
-    {W,H} = get_size(?config(max_size, Config)),
-    put(image_size, {W,H}),
-    ?line Im = egd:create(W, H),
-    
-    Points = [ {X,Y} || 
-	X <- lists:seq(0, W - 1),
-	Y <- lists:seq(0, H - 1)],
-
-    lists:foreach(
-	fun(Point) ->
-	    RGB = get_rgb(),
-	    ?line Color = egd:color(Im, RGB),
-	    ?line ok = egd:pixel(Im, Point, Color)
-	end, Points), 
-
-    ?line ok = egd:destroy(Im),
-    erase(image_size),
-    ok.
-
-image_gif_compliant(suite) ->
-    [];
-image_gif_compliant(doc) ->
-    ["Image gif compliant test."];
-image_gif_compliant(Config) when is_list(Config) ->
-    {W,H} = get_size(?config(max_size, Config)),
-    put(image_size, {W,H}),
-    ?line Im = egd:create(W, H),
-    ?line Bgc = egd:color(Im, white),
-    ?line Fgc = egd:color(Im, black),
-    ?line ok = egd:fill(Im, get_point(), Bgc),
-    ?line ok = egd:filledRectangle(Im, get_point(), get_point(), Fgc),
-
-    ?line Bin = egd:image(Im, gif),
-    ?line true = binary_is_gif_compliant(Bin),
-    
-    ?line ok = egd:destroy(Im),
-    erase(image_size),
-    ok.
-     
 image_png_compliant(suite) ->
     [];
 image_png_compliant(doc) ->
@@ -225,33 +159,11 @@ image_png_compliant(Config) when is_list(Config) ->
     {W,H} = get_size(?config(max_size, Config)),
     put(image_size, {W,H}),
     ?line Im = egd:create(W, H),
-    ?line Bgc = egd:color(Im, white),
-    ?line Fgc = egd:color(Im, black),
-    ?line ok = egd:fill(Im, get_point(), Bgc),
+    ?line Fgc = egd:color({0,0,0}),
     ?line ok = egd:filledRectangle(Im, get_point(), get_point(), Fgc),
     
-    ?line Bin = egd:image(Im, png),
+    ?line Bin = egd:render(Im, png),
     ?line true = binary_is_png_compliant(Bin),
-    
-    ?line ok = egd:destroy(Im),
-    erase(image_size),
-    ok.
-
-image_jfif_compliant(suite) ->
-    [];
-image_jfif_compliant(doc) ->
-    ["Image jfif compliant test."];
-image_jfif_compliant(Config) when is_list(Config) ->
-    {W,H} = get_size(?config(max_size, Config)),
-    put(image_size, {W,H}),
-    ?line Im = egd:create(W, H),
-    ?line Bgc = egd:color(Im, white),
-    ?line Fgc = egd:color(Im, black),
-    ?line ok = egd:fill(Im, get_point(), Bgc),
-    ?line ok = egd:filledRectangle(Im, get_point(), get_point(), Fgc),
-    
-    ?line Bin = egd:image(Im, jpeg),
-    ?line true = binary_is_jfif_compliant(Bin),
     
     ?line ok = egd:destroy(Im),
     erase(image_size),
@@ -260,6 +172,17 @@ image_jfif_compliant(Config) when is_list(Config) ->
 %%----------------------------------------------------------------------
 %% Auxiliary tests
 %%----------------------------------------------------------------------
+    
+bitmap_point_has_color(Bitmap, {W,_}, {X,Y}, C) ->
+    {CR,CG,CB,_} = egd_primitives:rgb_float2byte(C),
+    N = W*Y*3 + X*3,
+    << _:N/binary, R,G,B, _/binary>> = Bitmap,
+    case {R,G,B} of
+	{CR,CG,CB} -> ok;
+	Other ->
+	    io:format("bitmap_point_has_color: error color was ~p, should be ~p~n", [Other, {CR,CG,CB}]),
+	    {error, {Other,{CR,CG,CB}}}
+    end.
 
 %% jfif header by specification
 %% 2 bytes, length
@@ -320,8 +243,9 @@ get_point({W,H}) ->
    {X,Y}.
 
 get_size(Max) ->
-    W = random:uniform(Max),
-    H = random:uniform(Max),
+    W = trunc(random:uniform(Max/2) + Max/2),
+    H = trunc(random:uniform(Max/2) + Max/2),
+    io:format("Image size will be ~p x ~p~n", [W,H]),
     {W,H}.
 
 get_points(N) ->
@@ -331,24 +255,3 @@ get_points(0, Out) ->
 get_points(N, Out) ->
     get_points(N - 1, [get_point() | Out]).
 
-has_libgd() ->
-    case code:priv_dir(percept) of
-	{error, _} -> false;
-	Path ->
-	    Arch = erlang:system_info(system_architecture),
-	    LibPath = filename:join([Path, "lib"]),
-	    OpenPath = filename:join([LibPath, Arch ]),
-
-	    Driver = "egd_drv",
-
-	    case erl_ddll:load_driver(LibPath, Driver) of
-	    	ok -> true;
-		{error, already_loaded} -> true;
-		{error, _} -> 
-		    case erl_ddll:load_driver(OpenPath, Driver) of
-			ok -> true;
-			{error, already_loaded} -> true;
-			_ -> false
-		    end
-	    end
-    end.

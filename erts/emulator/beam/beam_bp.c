@@ -27,8 +27,8 @@
 #include "beam_load.h"
 #include "bif.h"
 #include "error.h"
+#include "erl_binary.h"
 #include "beam_bp.h"
-
 
 /* *************************************************************************
 ** Macros

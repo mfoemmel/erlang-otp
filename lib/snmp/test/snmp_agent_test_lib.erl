@@ -773,17 +773,22 @@ do_expect({{error, Err}, To}) ->
     Check = fun(_, R) -> R end,
     do_expect2(Check, any, Err, any, any, To);
 
-do_expect(ExpVBs) when is_list(ExpVBs) ->
+%% exp_varbinds() -> [exp_varbind()]
+%% exp_varbind()  -> any | {Oid, any} | {Oid, Value}
+%% Oid            -> [integer()]
+%% Value          -> term()
+%% ExpVBs         -> exp_varbinds() | {VbsCondition, exp_varbinds()}
+do_expect(ExpVBs) ->
     Check = fun(_, R) -> R end,
     do_expect2(Check, 'get-response', noError, 0, ExpVBs, get_timeout()).
 
 
-do_expect(v2trap, ExpVBs) when is_list(ExpVBs) ->
+do_expect(v2trap, ExpVBs) ->
     Check = fun(_, R) -> R end,
     do_expect2(Check, 'snmpv2-trap', noError, 0, ExpVBs, get_timeout());
 
 
-do_expect(report, ExpVBs) when is_list(ExpVBs) ->
+do_expect(report, ExpVBs) ->
     Check = fun(_, R) -> R end,
     do_expect2(Check, 'report', noError, 0, ExpVBs, get_timeout());
 
@@ -791,11 +796,11 @@ do_expect(report, ExpVBs) when is_list(ExpVBs) ->
 do_expect(inform, ExpVBs) ->
     do_expect({inform, true}, ExpVBs);
 
-do_expect({inform, false}, ExpVBs) when is_list(ExpVBs) ->
+do_expect({inform, false}, ExpVBs) ->
     Check = fun(_, R) -> R end,
     do_expect2(Check, 'inform-request', noError, 0, ExpVBs, get_timeout());
 
-do_expect({inform, true}, ExpVBs) when is_list(ExpVBs) ->
+do_expect({inform, true}, ExpVBs) ->
     Check = 
 	fun(PDU, ok) ->
 		RespPDU = PDU#pdu{type         = 'get-response',
@@ -809,7 +814,7 @@ do_expect({inform, true}, ExpVBs) when is_list(ExpVBs) ->
     do_expect2(Check, 'inform-request', noError, 0, ExpVBs, get_timeout());
 
 do_expect({inform, {error, EStat, EIdx}}, ExpVBs) 
-  when is_atom(EStat) and is_integer(EIdx) and is_list(ExpVBs) ->
+  when is_atom(EStat) andalso is_integer(EIdx) ->
     Check = 
 	fun(PDU, ok) ->
 		RespPDU = PDU#pdu{type         = 'get-response',
@@ -827,9 +832,8 @@ do_expect(Err, Idx, ExpVBs) ->
     do_expect(Err, Idx, ExpVBs, get_timeout()).
 
 do_expect(Err, Idx, ExpVBs, To) 
-  when is_atom(Err) and 
-       (is_integer(Idx) or is_list(Idx) or (Idx == any)) and 
-       (is_list(ExpVBs) or (ExpVBs == any)) ->
+  when is_atom(Err) andalso 
+       (is_integer(Idx) orelse is_list(Idx) orelse (Idx == any)) ->
     Check = fun(_, R) -> R end,
     do_expect2(Check, 'get-response', Err, Idx, ExpVBs, To).
 
@@ -987,37 +991,104 @@ do_expect2(Check, Type, Err, Idx, ExpVBs, To)
 
 
 check_vbs([], []) ->		
+%%     io:format("~w:check_vbs -> entry when done"
+%% 	      "~n   OK"
+%% 	      "~n", [?MODULE]),
     ok;
 check_vbs(Exp, []) ->
+%%     io:format("~w:check_vbs -> entry when done with error: "
+%% 	      "~n   TO FEW VBS: ~p"
+%% 	      "~n", [?MODULE, Exp]),
     {error, {to_few_vbs, Exp}};
 check_vbs([], VBs) ->
+%%     io:format("~w:check_vbs -> entry when done"
+%% 	      "~n   TO MANY VBS: ~p"
+%% 	      "~n", [?MODULE, VBs]),
     {error, {to_many_vbs, VBs}};
 check_vbs([any|Exp], [_|VBs]) ->
+%%     io:format("~w:check_vbs -> entry with"
+%% 	      "~n   accept any varbind"
+%% 	      "~n", [?MODULE]),
     check_vbs(Exp, VBs);
-check_vbs([{_, any}|Exp], [#varbind{}|VBs]) ->
+check_vbs([{Oid, any}|Exp], [#varbind{oid = Oid}|VBs]) ->
+%%     io:format("~w:check_vbs -> entry with"
+%% 	      "~n   Oid: ~p"
+%% 	      "~n   accept any value"
+%% 	      "~n", [?MODULE, Oid]),
     check_vbs(Exp, VBs);
 check_vbs([{Oid, Val}|Exp], [#varbind{oid = Oid, value = Val}|VBs]) ->
+%%     io:format("~w:check_vbs -> entry with"
+%% 	      "~n   Oid: ~p"
+%% 	      "~n   Val: ~p"
+%% 	      "~n", [?MODULE, Oid, Val]),
     check_vbs(Exp, VBs);
 check_vbs([{Oid, Val1}|_], [#varbind{oid = Oid, value = Val2}|_]) ->
+%%     io:format("~w:check_vbs -> entry when done"
+%% 	      "~n   UNEXPECTED VARBIND VALUE"
+%% 	      "~n   Oid:  ~p"
+%% 	      "~n   Val1: ~p"
+%% 	      "~n   Val2: ~p"
+%% 	      "~n", [?MODULE, Oid, Val1, Val2]),
     {error, {unexpected_vb_value, Oid, Val1, Val2}};
 check_vbs([{Oid1, _}|_], [#varbind{oid = Oid2}|_]) ->
+%%     io:format("~w:check_vbs -> entry when done"
+%% 	      "~n   UNEXPECTED VARBIND"
+%% 	      "~n   Oid1:  ~p"
+%% 	      "~n   Oid2:  ~p"
+%% 	      "~n", [?MODULE, Oid1, Oid2]),
     {error, {unexpected_vb_oid, Oid1, Oid2}}.
 
 
-purify_oids([]) -> [];
-purify_oids([{XOid, Q}|T]) ->
-    [{purify_oid(XOid), Q} | purify_oids(T)].
+purify_oids({VbsCondition, VBs}) 
+  when ((VbsCondition == true) orelse (VbsCondition == false)) andalso 
+       is_list(VBs) ->
+    {VbsCondition, do_purify_oids(VBs)};
+purify_oids(VBs) when is_list(VBs) ->
+%%     io:format("~w:purify_oids -> entry with"
+%% 	      "~n   VBs: ~p"
+%% 	      "~n", 
+%% 	      [?MODULE, VBs]),    
+    do_purify_oids(VBs).
+
+do_purify_oids([]) -> 
+%%     io:format("~w:do_purify_oids -> entry when done", [?MODULE]),        
+    [];
+do_purify_oids([{XOid, Q}|T]) ->
+%%     io:format("~w:do_purify_oids -> entry with"
+%% 	      "~n   XOid: ~p"
+%% 	      "~n   Q:    ~p", [?MODULE, XOid, Q]),        
+    [{purify_oid(XOid), Q} | do_purify_oids(T)].
 
 
 purify_oid(Oid) ->
     io:format("~w:purify_oid -> entry with"
-	      "~n   Oid: ~w"
-	      "~n", [?MODULE, Oid]),
-    case snmp_test_mgr:purify_oid(Oid) of
+	      "~n   Oid:      ~w"
+%% 	      "~n   Mgr:      ~w"
+%% 	      "~n   Mgr info: ~p"
+	      "~n", 
+	      [?MODULE, Oid]), 
+%% 	       whereis(snmp_test_mgr), 
+%% 	       (catch erlang:process_info(whereis(snmp_test_mgr)))]),
+    case (catch snmp_test_mgr:purify_oid(Oid)) of
 	{error, Reason} ->
+	    io:format("~w:purify_oid -> error: "
+		      "~n   Reason: ~p"
+		      "~n", 
+		      [?MODULE, Reason]),
 	    exit({malformed_oid, Reason});
-	{ok, Oid2} when list(Oid2) -> 
-	    Oid2
+	{ok, Oid2} when is_list(Oid2) -> 
+	    io:format("~w:purify_oid -> ok: "
+		      "~n   Oid2: ~p"
+		      "~n", 
+		      [?MODULE, Oid2]),
+	    Oid2;
+	Error ->
+	    io:format("~w:purify_oid -> unexpected return value: "
+		      "~n   Error: ~p"
+		      "~n", 
+		      [?MODULE, Error]),
+	    exit({unexpected_purify_result, Error})
+	    
     end.
 
 

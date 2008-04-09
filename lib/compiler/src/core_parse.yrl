@@ -337,9 +337,8 @@ call_expr ->
     'call' anno_expression ':' anno_expression arg_list :
 	#c_call{module='$2',name='$4',args='$5'}.
 
-primop_expr -> 'primop' atom arg_list :
-	Name = #c_literal{val=tok_val('$2')},	%Keep it abstract
-	#c_primop{name=Name,args='$3'}.
+primop_expr -> 'primop' anno_expression arg_list :
+	#c_primop{name='$2',args='$3'}.
 
 arg_list -> '(' ')' : [].
 arg_list -> '(' anno_expressions ')' : '$2'.

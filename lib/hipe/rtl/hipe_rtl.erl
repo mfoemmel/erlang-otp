@@ -97,7 +97,7 @@
 	 move_dst/1,
 	 move_src/1,
 	 %% move_src_update/2,
-	 is_move/1,
+	 %% is_move/1,
 
 	 mk_multimove/2,
 	 multimove_dstlist/1,
@@ -138,12 +138,12 @@
 
 	 mk_load_word_index/3,
 	 load_word_index_dst/1,
-	 load_word_index_index/1,
-	 load_word_index_block/1,
+	 %% load_word_index_index/1,
+	 %% load_word_index_block/1,
 
 	 mk_goto_index/3,
 	 goto_index_index/1,
-	 goto_index_block/1,
+	 %% goto_index_block/1,
 	 goto_index_labels/1,
 
 	 mk_load_address/3,
@@ -272,7 +272,7 @@
 	 %% fconv_src_update/2,
 	 %% is_fconv/1,
 
-	 mk_var/1,
+	 %% mk_var/1,
 	 mk_new_var/0,
 	 is_var/1,
 	 var_index/1,
@@ -387,8 +387,8 @@ move_dst(#move{dst=Dst}) -> Dst.
 move_dst_update(M, NewDst) -> M#move{dst=NewDst}.
 move_src(#move{src=Src}) -> Src.
 move_src_update(M, NewSrc) -> M#move{src=NewSrc}.
-is_move(#move{}) -> true;
-is_move(_) -> false.
+%% is_move(#move{}) -> true;
+%% is_move(_) -> false.
 
 %%
 %% multimove
@@ -827,7 +827,7 @@ reg_is_gcsafe(#rtl_reg{is_gc_safe=IsGcSafe}) -> IsGcSafe.
 is_reg(#rtl_reg{}) -> true;
 is_reg(_) -> false.
 
--record(rtl_var, {index}). % integer()
+-record(rtl_var, {index :: non_neg_integer()}).
 
 mk_var(Num) when is_integer(Num), Num >= 0 -> #rtl_var{index=Num}.
 mk_new_var() -> mk_var(hipe_gensym:get_next_var(rtl)).
@@ -835,7 +835,7 @@ var_index(#rtl_var{index=Index}) -> Index.
 is_var(#rtl_var{}) -> true;
 is_var(_) -> false.
 
--record(rtl_fpreg, {index}). % integer()
+-record(rtl_fpreg, {index :: non_neg_integer()}).
 
 mk_fpreg(Num) when is_integer(Num), Num >= 0 -> #rtl_fpreg{index=Num}.
 mk_new_fpreg() -> mk_fpreg(hipe_gensym:get_next_var(rtl)).
@@ -1354,13 +1354,13 @@ pp_instr(Dev, I) ->
       io:format(Dev, "]", []),
       case load_sign(I) of
 	signed -> io:format(Dev, " -signed",[]);
-	_ -> []
+	_ -> ok
       end,
       case load_size(I) of
 	byte -> io:format(Dev, " -byte",[]);
 	int16 -> io:format(Dev, " -int16",[]);
 	int32 -> io:format(Dev, " -int32",[]);
-	_ -> []
+	_ -> ok
       end,
       io:format(Dev, "~n", []);
     #load_atom{} ->
@@ -1398,7 +1398,7 @@ pp_instr(Dev, I) ->
 	byte -> io:format(Dev, " -byte",[]);
 	int16 -> io:format(Dev, " -int16",[]);
 	int32 -> io:format(Dev, " -int32",[]);
-	_ -> []
+	_ -> ok
       end,
       io:format(Dev, "~n", []);
     #label{} ->

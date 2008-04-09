@@ -325,7 +325,7 @@ load_controller(Config, Fun) when is_list(Config) and is_function(Fun) ->
     after SkipTimeout ->
 	    i("load_controller -> "
 	      "loader [~p] timeout", [Loader]),
-	    exit(kill, Loader),
+	    exit(Loader, kill),
 	    ?SKIP({timeout, SkipTimeout, TcTimeout})
     end.
 

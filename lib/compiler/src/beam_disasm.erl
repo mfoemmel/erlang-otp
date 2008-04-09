@@ -123,7 +123,7 @@ pp(File, Disasm) when is_list(Disasm) ->
     case file:open(File, [write]) of
 	{ok,F} ->
 	    Result = pp(F, Disasm),
-	    file:close(F),
+	    ok = file:close(F),
 	    Result;
 	{error,Reason} -> {error,file,Reason}
     end.

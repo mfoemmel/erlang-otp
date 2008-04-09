@@ -5,9 +5,9 @@
 %%  Filename : 	hipe_rtl_arch.erl
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2007/12/18 09:13:35 $
-%%              $Revision: 1.62 $
+%%              $Author: kostis $
+%%              $Date: 2008/03/31 20:46:29 $
+%%              $Revision: 1.66 $
 %%=====================================================================
 %% @doc
 %%
@@ -25,16 +25,15 @@
 	 add_ra_reg/1,
 	 reg_name/1,
 	 is_precoloured/1,
-	 safe_handling_of_registers/0,
 	 live_at_return/0,
 	 endianess/0,
 	 load_big_2/4,
 	 load_little_2/4,
 	 load_big_4/4,
 	 load_little_4/4,
-	 store_4/3,
+	 %% store_4/3,
 	 eval_alu/3,
-	 eval_alub/4,
+	 %% eval_alub/4,
 	 eval_cond/3,
 	 eval_cond_bits/5,
 	 fwait/0,
@@ -45,11 +44,10 @@
 	 pcb_store/3,
 	 pcb_address/2,
 	 call_bif/5,
-%%         alignment/0,
+	 %% alignment/0,
 	 nr_of_return_regs/0,
          log2_word_size/0,
-         word_size/0,
-	 halfword_size/0
+         word_size/0
 	]).
 
 -include("hipe_literals.hrl").
@@ -246,15 +244,6 @@ live_at_return() ->
 			 || {R,_} <- hipe_amd64_registers:live_at_return()])
   end.
 
-safe_handling_of_registers() -> true.
-
-%% @spec word_size() -> integer()
-%%
-%% @doc Returns the target's word size.
-%%
-halfword_size() ->
-  word_size() div 2.
-
 %% @spec word_size() -> integer()
 %%
 %% @doc Returns the target's word size.
@@ -298,9 +287,9 @@ endianess() ->
   case get(hipe_target_arch) of
     ultrasparc -> big;
     powerpc    -> big;
-    arm        -> big;    % XXX: arm is bi-endian
     x86        -> little;
-    amd64      -> little
+    amd64      -> little;
+    arm        -> ?ARM_ENDIANESS
   end.
 
 %%%------------------------------------------------------------------------
@@ -434,6 +423,7 @@ load_little_4_in_pieces(Dst, Base, Offset, Signedness) ->
    hipe_rtl:mk_alu(Dst, Dst, 'or', Tmp1),
    hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(1))].
 
+-ifdef(STORE_4_NEEDED).
 store_4(Base, Offset, Src) ->
   case get(hipe_target_arch) of
     x86 ->
@@ -465,6 +455,7 @@ store_big_4_in_pieces(Base, Offset, Src) ->
    hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(8)),
    hipe_rtl:mk_store(Base, Offset, Src, byte),
    hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(4))].
+-endif.
 
 %%----------------------------------------------------------------------
 %% Handling of arithmetic -- depends on the size of word.
@@ -481,6 +472,7 @@ eval_alu(Op, Arg1, Arg2) ->
   %% io:format("~w~n ",[Res]),
   Res.
 
+-ifdef(EVAL_ALUB_NEEDED).
 eval_alub(Op, Cond, Arg1, Arg2) ->
   %% io:format("Evaluated alub: ~w ~w ~w cond ~w = ",[Arg1, Op, Arg2, Cond]),
   Res = case word_size() of
@@ -491,27 +483,28 @@ eval_alub(Op, Cond, Arg1, Arg2) ->
 	end,
   %% io:format("~w~n ",[Res]),
   Res.
+-endif.
 
 eval_cond(Cond, Arg1, Arg2) ->
-  %%io:format("Evaluated cond: ~w ~w ~w = ",[Arg1, Cond, Arg2]),
+  %% io:format("Evaluated cond: ~w ~w ~w = ",[Arg1, Cond, Arg2]),
   Res = case word_size() of
 	  4 ->
 	    hipe_rtl_arith_32:eval_cond(Cond, Arg1, Arg2);
 	  8 ->
 	    hipe_rtl_arith_64:eval_cond(Cond, Arg1, Arg2)
 	end,
-  %%io:format("~w~n ",[Res]),
+  %% io:format("~w~n ",[Res]),
   Res.
 
 eval_cond_bits(Cond, N, Z, V, C) ->
-  %%io:format("Evaluated cond: ~w ~w ~w = ",[Arg1, Cond, Arg2]),
+  %% io:format("Evaluated cond: ~w ~w ~w = ",[Arg1, Cond, Arg2]),
   Res = case word_size() of
 	  4 ->
 	    hipe_rtl_arith_32:eval_cond_bits(Cond, N, Z, V, C);
 	  8 ->
 	    hipe_rtl_arith_64:eval_cond_bits(Cond, N, Z, V, C)
 	end,
-  %%io:format("~w~n ",[Res]),
+  %% io:format("~w~n ",[Res]),
   Res.
 
 %%----------------------------------------------------------------------

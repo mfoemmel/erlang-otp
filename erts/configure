@@ -309,7 +309,7 @@ ac_includes_default="\
 # include <unistd.h>
 #endif"
 
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT ENABLE_ALLOC_TYPE_VARS PERFCTR_PATH OTP_RELEASE MIXED_CYGWIN_VC MIXED_CYGWIN_MINGW MIXED_CYGWIN DEBUG_FLAGS DEBUG_CFLAGS WFLAGS CFLAG_RUNTIME_LIBRARY_PATH CPP EGREP OPSYS ARCH RANLIB ac_ct_RANLIB YACC PERL LN_S AR RM MKDIR INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA INSTALL_DIR HCC HCFLAGS vxworks_reclaim LD ERLANG_OSTYPE DEXPORT ETHR_X_LIBS ETHR_LIBS ETHR_LIB_NAME ETHR_DEFS ETHR_THR_LIB_BASE ETHR_THR_LIB_BASE_NAME ERTS_BUILD_SMP_EMU EMU_THR_LIB_NAME EMU_THR_X_LIBS EMU_THR_LIBS EMU_THR_DEFS EMU_LOCK_CHECKING THR_LIBS THR_DEFS TERMCAP_LIB WITH_SCTP HAVE_VALGRIND BITS64 LIBRT TSP_APP ERTS_BUILD_HYBRID_EMU HIPE_HELPERS HIPE_ENABLED USE_PERFCTR ERTS_ENABLE_KERNEL_POLL DED_CFLAGS DED_LD DED_LDFLAGS DED_LD_FLAG_RUNTIME_LIBRARY_PATH STATIC_CFLAGS EMU_CC SSL_INCLUDE SSL_ROOT SSL_LIBDIR SSL_DYNAMIC_ONLY SSL_LINK_WITH_KERBEROS STATIC_KERBEROS_LIBS SSL_LINK_WITH_ZLIB STATIC_ZLIB_LIBS OPENSSL_CMD REGTOOL GD_APP GD_INCLUDE GD_LIB os_mon_programs CPU_SUP_LIBS JAVAC CXXFLAGS CXX CC32 CFLAGS32 LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT ENABLE_ALLOC_TYPE_VARS PERFCTR_PATH OTP_RELEASE MIXED_CYGWIN_VC MIXED_CYGWIN_MINGW MIXED_CYGWIN DEBUG_FLAGS DEBUG_CFLAGS WFLAGS CFLAG_RUNTIME_LIBRARY_PATH CPP EGREP OPSYS ARCH RANLIB ac_ct_RANLIB YACC PERL LN_S AR RM MKDIR INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA INSTALL_DIR HCC HCFLAGS vxworks_reclaim LD ERLANG_OSTYPE DEXPORT ETHR_X_LIBS ETHR_LIBS ETHR_LIB_NAME ETHR_DEFS ETHR_THR_LIB_BASE ETHR_THR_LIB_BASE_NAME ERTS_BUILD_SMP_EMU EMU_THR_LIB_NAME EMU_THR_X_LIBS EMU_THR_LIBS EMU_THR_DEFS EMU_LOCK_CHECKING THR_LIBS THR_DEFS TERMCAP_LIB WITH_SCTP HAVE_VALGRIND BITS64 LIBRT TSP_APP ERTS_BUILD_HYBRID_EMU HIPE_HELPERS HIPE_ENABLED USE_PERFCTR ERTS_ENABLE_KERNEL_POLL DED_CFLAGS DED_LD DED_LDFLAGS DED_LD_FLAG_RUNTIME_LIBRARY_PATH STATIC_CFLAGS EMU_CC SSL_INCLUDE SSL_ROOT SSL_LIBDIR SSL_DYNAMIC_ONLY SSL_LINK_WITH_KERBEROS STATIC_KERBEROS_LIBS SSL_LINK_WITH_ZLIB STATIC_ZLIB_LIBS OPENSSL_CMD REGTOOL os_mon_programs CPU_SUP_LIBS JAVAC CXXFLAGS CXX CC32 CFLAGS32 LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -880,9 +880,6 @@ Optional Packages:
   --with-ssl=PATH         specify location of OpenSSL include and lib
   --with-ssl              use SSL (default)
   --without-ssl           don't use SSL
-  --with-gd=PATH         specify location of libgd include and lib
-  --with-gd              use gd (default)
-  --without-gd           don't use gd
 
 Some influential environment variables:
   CC          C compiler command
@@ -4611,6 +4608,7 @@ ppc64)	ARCH=ppc64;;
 "Power Macintosh")	ARCH=ppc;;
 armv5b)	ARCH=arm;;
 armv5teb)	ARCH=arm;;
+armv5tel)	ARCH=arm;;
 esac
 
 echo "$as_me:$LINENO: checking whether compilation mode forces ARCH adjustment" >&5
@@ -18869,10 +18867,27 @@ cat >>conftest.$ac_ext <<_ACEOF
 
 volatile int erl_fp_exception;
 
+/*
+ * We expect a single SIGFPE in this test program.
+ * Getting many more indicates an inadequate SIGFPE handler,
+ * e.g. using the generic handler on x86.
+ */
+static void new_fp_exception(void)
+{
+    if (++erl_fp_exception > 50) {
+	fprintf(stderr, "SIGFPE loop detected, bailing out\n");
+	exit(1);
+    }
+}
+
 /* Is there no standard identifier for Darwin/MacOSX ? */
 #if defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
 #define __DARWIN__ 1
 #endif
+
+/*
+ * Implement unmask_fpe() and check_fpe() based on CPU/OS combination
+ */
 
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__) && !defined(__CYGWIN__)
 
@@ -18893,8 +18908,11 @@ static void unmask_sse2(void)
 }
 
 #if defined(__x86_64__) || defined(__DARWIN__)
+
 static inline int cpu_has_sse2(void) { return 1; }
+
 #else /* !__x86_64__ */
+
 /*
  * Check if an x86-32 processor has SSE2.
  */
@@ -19029,6 +19047,7 @@ static __inline__ int check_fpe(double f)
 #elif (defined(__powerpc__) && defined(__linux__)) || (defined(__ppc__) && defined(__DARWIN__))
 
 #if defined(__linux__)
+
 #include <sys/prctl.h>
 
 static void set_fpexc_precise(void)
@@ -19125,7 +19144,9 @@ static __inline__ int check_fpe(double f)
 #else
 
 #include <ieeefp.h>
+
 #define unmask_fpe()   fpsetmask(FP_X_INV | FP_X_OFL | FP_X_DZ)
+
 static __inline__ int check_fpe(double f)
 {
     __asm__ __volatile__("" : "=m"(erl_fp_exception) : "g"(f));
@@ -19134,10 +19155,16 @@ static __inline__ int check_fpe(double f)
 
 #endif
 
+/*
+ * Implement SIGFPE handler based on CPU/OS combination
+ */
+
 #if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__x86_64__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__i386__) || defined(__x86_64__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
 
 #if defined(__linux__) && defined(__i386__)
-#include <asm/sigcontext.h>
+#if !defined(X86_FXSR_MAGIC)
+#define X86_FXSR_MAGIC 0x0000
+#endif
 #elif defined(__FreeBSD__) && defined(__i386__)
 #include <sys/types.h>
 #include <machine/npx.h>
@@ -19234,33 +19261,42 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     fpstate->mxcsr = 0x1F80;
     fpstate->sw &= ~0xFF;
 #endif
-    erl_fp_exception = 1;
+    new_fp_exception();
 }
 
-static void do_init(void)
+static void catch_sigfpe(void)
 {
     struct sigaction act;
+
     memset(&act, 0, sizeof act);
     act.sa_sigaction = fpe_sig_action;
     act.sa_flags = SA_SIGINFO;
     sigaction(SIGFPE, &act, NULL);
-    unmask_fpe();
 }
 
 #else
 
 static void fpe_sig_handler(int sig)
 {
-    erl_fp_exception = 1;
+    new_fp_exception();
 }
 
-static void do_init(void)
+static void catch_sigfpe(void)
 {
     signal(SIGFPE, fpe_sig_handler);
-    unmask_fpe();
 }
 
 #endif
+
+/*
+ * Generic test code
+ */
+
+static void do_init(void)
+{
+    catch_sigfpe();
+    unmask_fpe();
+}
 
 double a = 3.23e133;
 double b = 3.57e257;
@@ -20834,165 +20870,6 @@ fi
 done # while test ssl_done != yes
 
 #--------------------------------------------------------------------
-# Erlang GD driver stuff. (egd)
-#--------------------------------------------------------------------
-
-
-
-
-
-# Check whether --with-gd or --without-gd was given.
-if test "${with_gd+set}" = set; then
-  withval="$with_gd"
-
-fi;
-
-# Remove all SKIP files from previous runs
-/bin/rm -f $ERL_TOP/lib/percept/SKIP
-
-echo "$as_me:$LINENO: checking for gd library" >&5
-echo $ECHO_N "checking for gd library... $ECHO_C" >&6
-if test x"$OPSYS" = x"darwin"; then
-   soext=dylib
-else
-   soext=so
-fi
-
-if test "x$with_gd" = "xno"; then
-	echo "$as_me:$LINENO: result: no; disabled by user" >&5
-echo "${ECHO_T}no; disabled by user" >&6
-	GD_APP=no
-	GD_LIB=
-	GD_INCLUDE=
-elif test "x$with_gd" = "xyes" -o "x$with_gd" = "x" ;then
-	if  test "x$host_os" = "xwin32"; then
-		echo "$as_me:$LINENO: result: no; not supported" >&5
-echo "${ECHO_T}no; not supported" >&6
-		GD_APP=no
-           	echo "Win32 not supported (yet)" > $ERL_TOP/lib/percept/SKIP
-	else
-		gd_found=no
-		gd_linkable=no
-		for dir in /usr/local/pgm /usr/local /usr /opt /opt/local /sw
-		do
-			if test "x$ARCH" = "xamd64" -o \
-				"x$ARCH" = "xppc64"; then
-				if test -f "$dir/lib64/libgd.$soext"; then
-					gd_found=yes
-					GD_LIB="$dir/lib64";
-					GD_INCLUDE="-I$dir/include";
-				fi
-			fi
-			if test -f "$dir/lib/libgd.$soext"; then
-				gd_found=yes
-				GD_LIB="$dir/lib";
-				GD_INCLUDE="-I$dir/include";
-			fi
- 			if test "x$gd_found" = "xyes"; then
- 				saveCFLAGS="$CFLAGS"
- 				saveLDFLAGS="$LDFLAGS"
- 				CFLAGS="$CFLAGS $GD_INCLUDE"
- 				LDFLAGS="$LDFLAGS -L$GD_LIB -lgd"
- 				cat >conftest.$ac_ext <<_ACEOF
-/* confdefs.h.  */
-_ACEOF
-cat confdefs.h >>conftest.$ac_ext
-cat >>conftest.$ac_ext <<_ACEOF
-/* end confdefs.h.  */
-
-				#include <stdio.h>
- 				#include <gd.h>
-int
-main ()
-{
-
- 				gdImagePtr im;
- 				im = gdImageCreateTrueColor (300, 300);
- 				printf("Image = 0x%08x\n", (int) im);
-
-  ;
-  return 0;
-}
-_ACEOF
-rm -f conftest.$ac_objext conftest$ac_exeext
-if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
-  (eval $ac_link) 2>conftest.er1
-  ac_status=$?
-  grep -v '^ *+' conftest.er1 >conftest.err
-  rm -f conftest.er1
-  cat conftest.err >&5
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); } &&
-	 { ac_try='test -z "$ac_c_werror_flag"
-			 || test ! -s conftest.err'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; } &&
-	 { ac_try='test -s conftest$ac_exeext'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; }; then
-  gd_linkable=yes
-else
-  echo "$as_me: failed program was:" >&5
-sed 's/^/| /' conftest.$ac_ext >&5
-
-gd_linkable=no
-fi
-rm -f conftest.err conftest.$ac_objext \
-      conftest$ac_exeext conftest.$ac_ext
- 				CFLAGS="$saveCFLAGS"
- 				LDFLAGS="$saveLDFLAGS"
- 			fi
-	 		if test "x$gd_found" = "xyes" -a "x$gd_linkable" = "xyes"  ; then
-	   			break;
-         		fi
-		done
-		if test "x$gd_found" = "xyes" -a "x$gd_linkable" = "xno"; then
-			echo "$as_me:$LINENO: result: no; found but not usable" >&5
-echo "${ECHO_T}no; found but not usable" >&6
-			GD_LIB=
-			GD_INCLUDE=
-			GD_APP=no
-			echo "libgd not working" > $ERL_TOP/lib/percept/SKIP
-
-		else
-			if test "x$gd_found" = "xno"; then
-		       		echo "$as_me:$LINENO: result: no; not found" >&5
-echo "${ECHO_T}no; not found" >&6
-				GD_LIB=
-				GD_INCLUDE=
-				GD_APP=no
-           			echo "libgd not found" > $ERL_TOP/lib/percept/SKIP
-			else
-				echo "$as_me:$LINENO: result: $GD_LIB" >&5
-echo "${ECHO_T}$GD_LIB" >&6
-				GD_APP=yes
-			fi
-		fi
-	fi
-else
-	if test -f "$with_gd/lib/libgd.$soext"; then
-		GD_LIB="$with_gd/lib"
-		GD_INCLUDE="-I$with_gd/include"
-		echo "$as_me:$LINENO: result: $GD_LIB" >&5
-echo "${ECHO_T}$GD_LIB" >&6
-	else
-		GD_APP=
-		GD_LIB=
-		GD_INCLUDE=
-           	echo "libgd not found" > $ERL_TOP/lib/percept/SKIP
-	       	{ { echo "$as_me:$LINENO: error: Invalid path to option --with-gd=$with_gd" >&5
-echo "$as_me: error: Invalid path to option --with-gd=$with_gd" >&2;}
-   { (exit 1); exit 1; }; }
-	fi
-fi
-
-#--------------------------------------------------------------------
 # Os mon stuff.
 #--------------------------------------------------------------------
 
@@ -21277,7 +21154,7 @@ done
 
 
 
-                                                                                                                                                                                    ac_config_files="$ac_config_files emulator/$host/Makefile:emulator/Makefile.in emulator/zlib/$host/Makefile:emulator/zlib/Makefile.in epmd/src/$host/Makefile:epmd/src/Makefile.in etc/common/$host/Makefile:etc/common/Makefile.in include/internal/$host/ethread.mk:include/internal/ethread.mk.in lib_src/$host/Makefile:lib_src/Makefile.in Makefile:Makefile.in ../make/$host/otp.mk:../make/otp.mk.in ../lib/ic/c_src/$host/Makefile:../lib/ic/c_src/Makefile.in ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in ../lib/percept/c_src/$host/Makefile:../lib/percept/c_src/Makefile.in ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in"
+                                                                                                                                                                          ac_config_files="$ac_config_files emulator/$host/Makefile:emulator/Makefile.in emulator/zlib/$host/Makefile:emulator/zlib/Makefile.in epmd/src/$host/Makefile:epmd/src/Makefile.in etc/common/$host/Makefile:etc/common/Makefile.in include/internal/$host/ethread.mk:include/internal/ethread.mk.in lib_src/$host/Makefile:lib_src/Makefile.in Makefile:Makefile.in ../make/$host/otp.mk:../make/otp.mk.in ../lib/ic/c_src/$host/Makefile:../lib/ic/c_src/Makefile.in ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in"
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -21818,7 +21695,6 @@ do
   "../lib/crypto/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in" ;;
   "../lib/orber/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in" ;;
   "../lib/runtime_tools/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in" ;;
-  "../lib/percept/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/percept/c_src/$host/Makefile:../lib/percept/c_src/Makefile.in" ;;
   "../lib/tools/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in" ;;
   "../lib/asn1/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in" ;;
   "$host/config.h" ) CONFIG_HEADERS="$CONFIG_HEADERS $host/config.h:config.h.in" ;;
@@ -21996,9 +21872,6 @@ s,@SSL_LINK_WITH_ZLIB@,$SSL_LINK_WITH_ZLIB,;t t
 s,@STATIC_ZLIB_LIBS@,$STATIC_ZLIB_LIBS,;t t
 s,@OPENSSL_CMD@,$OPENSSL_CMD,;t t
 s,@REGTOOL@,$REGTOOL,;t t
-s,@GD_APP@,$GD_APP,;t t
-s,@GD_INCLUDE@,$GD_INCLUDE,;t t
-s,@GD_LIB@,$GD_LIB,;t t
 s,@os_mon_programs@,$os_mon_programs,;t t
 s,@CPU_SUP_LIBS@,$CPU_SUP_LIBS,;t t
 s,@JAVAC@,$JAVAC,;t t

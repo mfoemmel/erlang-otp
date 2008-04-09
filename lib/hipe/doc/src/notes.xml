@@ -31,6 +31,40 @@
   </header>
   <p>This document describes the changes made to HiPE.</p>
 
+<section><title>Hipe 3.6.6</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>A fix for an #include problem which caused the FP
+	    exception test to fail unnecessarily on
+	    debian/glibc-2.7/x86 systems.</p>
+	    <p>Added SIGFPE loop detection to the FP exception test.
+	    This prevents the test from looping indefinitely, which
+	    could happen when the CPU is supported (so we can enable
+	    FP exceptions on it) but the OS isn't (so we can't write
+	    a proper SIGFPE handler). x86 on an unsupported OS is
+	    known to have had this problem.</p>
+          <p>
+	    Own Id: OTP-7254</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    HiPE now also supports little-endian ARM processors.</p>
+          <p>
+	    Own Id: OTP-7255</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Hipe 3.6.5</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

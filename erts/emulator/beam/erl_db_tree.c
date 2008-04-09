@@ -42,6 +42,7 @@
 #include "erl_db.h"
 #include "bif.h"
 #include "big.h"
+#include "erl_binary.h"
 
 #include "erl_db_tree.h"
 
@@ -220,8 +221,6 @@ static int balance_left(TreeDbTerm **this);
 static int balance_right(TreeDbTerm **this); 
 static int delsub(TreeDbTerm **this); 
 static TreeDbTerm *slot_search(Process *p, DbTableTree *tb, Sint slot);
-static int realloc_counter(DbTableCommon *tb, TreeDbTerm** bp, Uint sz, 
-			   Eterm new_counter, int counterpos);
 static TreeDbTerm *find_node(DbTableTree *tb, Eterm key);
 static TreeDbTerm **find_node2(DbTableTree *tb, Eterm key);
 static TreeDbTerm *find_next(DbTableTree *tb, Eterm key);
@@ -288,10 +287,6 @@ static int db_last_tree(Process *p, DbTable *tbl,
 static int db_prev_tree(Process *p, DbTable *tbl, 
 			Eterm key,
 			Eterm *ret);
-static int db_update_counter_tree(Process *p, DbTable *tbl, 
-				  Eterm key, Eterm incr,
-				  int warp, int counterpos,
-				  Eterm *ret);
 static int db_put_tree(Process *p, DbTable *tbl, 
 		       Eterm obj, Eterm *ret);
 static int db_get_tree(Process *p, DbTable *tbl, 
@@ -338,6 +333,10 @@ static int db_delete_all_objects_tree(Process* p, DbTable* tbl);
 #ifdef HARDDEBUG
 static void db_check_table_tree(DbTable *tbl);
 #endif
+static DbTerm* db_alloc_newsize_tree(DbTable* tb, void** bp,
+				     Uint new_tpl_sz);
+static void db_free_dbterm_tree(DbTable* tb, DbTerm* bp);
+static int db_lookup_dbterm_tree(DbTable *tbl, Eterm key, DbUpdateHandle* handle);
 
 /*
 ** Static variables
@@ -362,7 +361,6 @@ DbTableMethod db_tree =
     db_erase_tree,
     db_erase_object_tree,
     db_slot_tree,
-    db_update_counter_tree,
     db_select_chunk_tree,
     db_select_tree, /* why not chunk size=0 ??? */
     db_select_delete_tree,
@@ -380,6 +378,9 @@ DbTableMethod db_tree =
 #else
     NULL,
 #endif
+    db_alloc_newsize_tree,
+    db_free_dbterm_tree,
+    db_lookup_dbterm_tree
 };
 
 
@@ -532,38 +533,6 @@ static int db_prev_tree(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
     return DB_ERROR_NONE;
 }
 
-static int db_update_counter_tree(Process *p,
-				  DbTable *tbl, 
-				  Eterm key,
-				  Eterm incr,
-				  int warp,
-				  int counterpos,
-				  Eterm *ret)
-{
-    DbTableTree *tb = &tbl->tree;
-    TreeDbTerm **bp = find_node2(tb, key);
-    TreeDbTerm *b;
-    int res;
-    if (bp == NULL)
-	return DB_ERROR_BADKEY;
-    b = *bp;
-    if (counterpos <= 0)
-	counterpos = tb->common.keypos + 1;
-    res = db_do_update_counter(p, (DbTableCommon *) tb, 
-			       (void *) bp, (*bp)->dbterm.tpl,
-			       counterpos, 
-			       (int (*)(DbTableCommon *,
-					void *,
-					Uint,
-					Eterm,
-					int))
-			       &realloc_counter, incr, warp, ret);
-    if (*bp != b) /* May be reallocated in which case 
-		     the saved stack is messed up, clear stck if so. */
-	tb->stack_pos = tb->slot_pos = 0;
-    return res;
-}
-
 static int db_put_tree(Process *proc, DbTable *tbl, Eterm obj, Eterm *ret)
 {
     DbTableTree *tb = &tbl->tree;
@@ -695,7 +664,7 @@ static int db_get_tree(Process *p, DbTable *tbl, Eterm key, Eterm *ret)
 	*ret = NIL;
     } else {
 	hp = HAlloc(p, this->dbterm.size + 2);
-	copy = copy_shallow(this->dbterm.v, 
+	copy = copy_shallow(DBTERM_BUF(&this->dbterm), 
 			    this->dbterm.size, 
 			    &hp, 
 			    &MSO(p));
@@ -827,7 +796,7 @@ static int db_slot_tree(Process *p, DbTable *tbl,
 	return DB_ERROR_UNSPEC;
     }
     hp = HAlloc(p, st->dbterm.size + 2);
-    copy = copy_shallow(st->dbterm.v, 
+    copy = copy_shallow(DBTERM_BUF(&st->dbterm), 
 			st->dbterm.size, 
 			&hp, 
 			&MSO(p));
@@ -941,7 +910,7 @@ static int db_select_continue_tree(Process *p,
     if (!(thing_subtag(*binary_val(tptr[5])) == REFC_BINARY_SUBTAG))
 	RET_TO_BIF(NIL,DB_ERROR_BADPARAM);
     mp = ((ProcBin *) binary_val(tptr[5]))->val;
-    if (!(mp->flags & BIN_FLAG_MATCH_PROG))
+    if (!IsMatchProgBinary(mp))
 	RET_TO_BIF(NIL,DB_ERROR_BADPARAM);
     chunk_size = signed_val(tptr[4]);
 
@@ -1074,7 +1043,7 @@ static int db_select_tree(Process *p, DbTable *tbl,
 
 #define RET_TO_BIF(Term,RetVal) do { 	       	\
 	if (mpi.mp != NULL) {			\
-	    erts_match_set_free(mpi.mp);       	\
+	    erts_bin_free(mpi.mp);       	\
 	}					\
 	*ret = (Term); 				\
 	return RetVal; 			        \
@@ -1204,7 +1173,7 @@ static int db_select_count_continue_tree(Process *p,
     if (!(thing_subtag(*binary_val(tptr[4])) == REFC_BINARY_SUBTAG))
 	RET_TO_BIF(NIL,DB_ERROR_BADPARAM);
     mp = ((ProcBin *) binary_val(tptr[4]))->val;
-    if (!(mp->flags & BIN_FLAG_MATCH_PROG))
+    if (!IsMatchProgBinary(mp))
 	RET_TO_BIF(NIL,DB_ERROR_BADPARAM);
 
     sc.p = p;
@@ -1277,7 +1246,7 @@ static int db_select_count_tree(Process *p, DbTable *tbl,
 
 #define RET_TO_BIF(Term,RetVal) do { 	       	\
 	if (mpi.mp != NULL) {			\
-	    erts_match_set_free(mpi.mp);       	\
+	    erts_bin_free(mpi.mp);       	\
 	}					\
 	*ret = (Term); 				\
 	return RetVal; 			        \
@@ -1375,7 +1344,7 @@ static int db_select_chunk_tree(Process *p, DbTable *tbl,
 
 #define RET_TO_BIF(Term,RetVal) do { 		\
 	if (mpi.mp != NULL) {			\
-	    erts_match_set_free(mpi.mp);	\
+	    erts_bin_free(mpi.mp);		\
 	}					\
 	*ret = (Term); 				\
 	return RetVal; 			        \
@@ -1613,7 +1582,7 @@ static int db_select_delete_tree(Process *p, DbTable *tbl,
 
 #define RET_TO_BIF(Term,RetVal) do { 	       	\
 	if (mpi.mp != NULL) {			\
-	    erts_match_set_free(mpi.mp);       	\
+	    erts_bin_free(mpi.mp);       	\
 	}					\
 	if (sc.erase_lastterm) {                \
 	    free_term(tb, sc.lastterm);         \
@@ -2543,16 +2512,42 @@ static TreeDbTerm **find_node2(DbTableTree *tb, Eterm key)
     return this;
 }
 
-/*
- * Callback function for db_do_update_counter
- */
-static int realloc_counter(DbTableCommon *tb, TreeDbTerm** bp, Uint sz, 
-			   Eterm new_counter, int counterpos)
+static DbTerm* db_alloc_newsize_tree(DbTable *tbl,
+				     void** bp,  /* TreeDbTerm** */
+				     Uint new_tpl_sz)
+{			
+    DbTableTree *tb = &tbl->tree;
+    TreeDbTerm* oldp = (TreeDbTerm*) *bp;
+    TreeDbTerm* newp = erts_db_alloc(ERTS_ALC_T_DB_TERM,
+				     tbl,
+				     sizeof(TreeDbTerm)+sizeof(Eterm)*(new_tpl_sz-1));
+    memcpy(newp, oldp, sizeof(TreeDbTerm)-sizeof(DbTerm));  /* copy only tree header */
+    *bp = newp;
+    tb->stack_pos = tb->slot_pos = 0;
+    return &newp->dbterm;
+}
+
+static void db_free_dbterm_tree(DbTable* tb, DbTerm* dbterm)
 {
-    TreeDbTerm* b = *bp;
-    return db_realloc_counter(tb, (void **) bp, &(b->dbterm),
-			      ((char *) &(b->dbterm)) - ((char *) b),
-			      sz, new_counter, counterpos);
+    erts_db_free(ERTS_ALC_T_DB_TERM,
+		 tb,
+		 (void *) (((char *) dbterm) - (sizeof(TreeDbTerm) - sizeof(DbTerm))),
+		 sizeof(TreeDbTerm) + sizeof(Eterm)*(dbterm->size-1));
+}
+
+static int db_lookup_dbterm_tree(DbTable *tbl, Eterm key, DbUpdateHandle* handle)
+{
+    DbTableTree *tb = &tbl->tree;
+    TreeDbTerm **pp = find_node2(tb, key);
+
+    if (pp == NULL) return 0;
+
+    handle->tb = tbl;
+    handle->dbterm = &(*pp)->dbterm;
+    handle->bp = (void**) pp;
+    handle->new_size = (*pp)->dbterm.size;
+    handle->mustFinalize = 0;
+    return 1;
 }
 
 /*
@@ -2968,7 +2963,7 @@ static int doit_select(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 	Eterm *hp;
 	if (sc->all_objects) {
 	    hp = HAlloc(sc->p, this->dbterm.size + 2);
-	    ret = copy_shallow(this->dbterm.v,
+	    ret = copy_shallow(DBTERM_BUF(&this->dbterm),
 				     this->dbterm.size,
 				     &hp,
 			             &MSO(sc->p));
@@ -3052,7 +3047,7 @@ static int doit_select_chunk(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 	++(sc->got);
 	if (sc->all_objects) {
 	    hp = HAlloc(sc->p, this->dbterm.size + 2);
-	    ret = copy_shallow(this->dbterm.v,
+	    ret = copy_shallow(DBTERM_BUF(&this->dbterm),
 				     this->dbterm.size,
 				     &hp,
 			             &MSO(sc->p));

@@ -11,9 +11,9 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %%
-%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006-2008, Tobias Lindahl and Kostis Sagonas
 %%
-%%     $Id$
+%% $Id$
 %%
 
 %%%-------------------------------------------------------------------
@@ -25,19 +25,15 @@
 %%%-------------------------------------------------------------------
 -module(dialyzer_succ_typings).
 
--export([analyze_callgraph/3, analyze_callgraph/4,
-	 get_warnings/7]).
-
-%% These are only intended as debug functions.
--export([doit/1,
-	 analyze_callgraph_only_typesig/3,
-	 analyze_callgraph_only_dataflow/3,
-	 get_top_level_signatures/2,
-	 get_top_level_signatures/3]).
-
--define(TYPE_LIMIT, 4).
+-export([analyze_callgraph/3, 
+	 analyze_callgraph/4,
+	 get_warnings/6]).
 
 %-define(DEBUG, true).
+%% These are only intended as debug functions.
+-export([doit/1,
+	 get_top_level_signatures/3]).
+
 %-define(DEBUG_PP, true).
 
 -ifdef(DEBUG).
@@ -46,14 +42,33 @@
 -define(debug(X__, Y__), ok).
 -endif.
 
--record(state, {callgraph,
-		codeserver,
-		no_warn_unused,
-		parent=none :: none | pid(),
-		plt}).
+-define(TYPE_LIMIT, 4).
+
+%%--------------------------------------------------------------------
+
+-include("dialyzer.hrl").
+-include("dialyzer_callgraph.hrl").
+
+%%--------------------------------------------------------------------
+
+-record(state, {callgraph        :: #dialyzer_callgraph{},
+		codeserver       :: #dialyzer_codeserver{},
+		no_warn_unused   :: set(),
+		parent=none      :: 'none' | pid(),
+		plt              :: #dialyzer_plt{}}).
+
+%%--------------------------------------------------------------------
+
+-spec(analyze_callgraph/3 ::
+      (#dialyzer_callgraph{}, #dialyzer_plt{}, #dialyzer_codeserver{}) ->
+	 #dialyzer_plt{}).
 
 analyze_callgraph(Callgraph, Plt, Codeserver) ->
   analyze_callgraph(Callgraph, Plt, Codeserver, none).
+
+-spec(analyze_callgraph/4 ::
+      (#dialyzer_callgraph{}, #dialyzer_plt{},
+       #dialyzer_codeserver{}, 'none' | pid()) -> #dialyzer_plt{}).
 
 analyze_callgraph(Callgraph, Plt, Codeserver, Parent) ->
   State = #state{callgraph=Callgraph, plt=Plt, 
@@ -61,22 +76,7 @@ analyze_callgraph(Callgraph, Plt, Codeserver, Parent) ->
   NewState = get_refined_success_typings(State),
   NewState#state.plt.
 
-analyze_callgraph_only_dataflow(Callgraph, Plt, Codeserver) ->
-  ModulePostorder = dialyzer_callgraph:module_postorder(Callgraph),
-  %% When analyzing only with dataflow, the fixpoint iteration is unnecessary.
-  State = #state{callgraph=Callgraph, plt=Plt, codeserver=Codeserver},
-  case refine_succ_typings(ModulePostorder, State, true) of
-    {fixpoint, #state{plt=Plt1}} -> Plt1;
-    {not_fixpoint, _, #state{plt=Plt1}} -> Plt1
-  end.
-
-analyze_callgraph_only_typesig(Callgraph, Plt, Codeserver) ->
-  State = #state{callgraph=Callgraph, plt=Plt, codeserver=Codeserver},
-  %% When analyzing only with typesig, the fixpoint iteration is unnecessary.
-  case find_succ_typings(State) of
-    {fixpoint, #state{plt=Plt1}} -> Plt1;
-    {not_fixpoint, _, #state{plt=Plt1}} -> Plt1
-  end.
+%%--------------------------------------------------------------------
 
 get_refined_success_typings(State) ->
   case find_succ_typings(State) of
@@ -86,7 +86,7 @@ get_refined_success_typings(State) ->
       NotFixpoint2 = [lookup_name(F, Callgraph) || F <- NotFixpoint1],
       ModulePostorder = 
 	dialyzer_callgraph:module_postorder_from_funs(NotFixpoint2, Callgraph),
-      case refine_succ_typings(ModulePostorder, State1, false) of
+      case refine_succ_typings(ModulePostorder, State1) of
 	{fixpoint, State2} ->
 	  State2;
 	{not_fixpoint, NotFixpoint3, State2} ->
@@ -95,124 +95,102 @@ get_refined_success_typings(State) ->
 	  NotFixpoint4 = [lookup_name(F, Callgraph1) || F <- NotFixpoint3],
 	  Callgraph2 = dialyzer_callgraph:reset_from_funs(NotFixpoint4, 
 							  Callgraph1),
-	  State3 = State2#state{callgraph=Callgraph2},
-	  get_refined_success_typings(State3)
+	  get_refined_success_typings(State2#state{callgraph=Callgraph2})
       end
   end.
 
-get_warnings(Callgraph, Plt, DocPlt, Codeserver, NoWarnUnused, AnalysisType,
-	     Parent) ->
-  State = #state{callgraph=Callgraph, plt=Plt,
-		 no_warn_unused=NoWarnUnused,
-		 codeserver=Codeserver, parent=Parent},
-  {Warnings, State1, NewDocPlt} =
-    case AnalysisType of
-      dataflow ->
-	Modules = dialyzer_callgraph:module_postorder(Callgraph),
-	get_warnings(Modules, State, DocPlt, true, []);
-      succ_typings ->
-	NewState = get_refined_success_typings(State),
-	NewPlt = NewState#state.plt,
-	Modules = dialyzer_callgraph:modules(NewState#state.callgraph),
-	CWarnings = dialyzer_contracts:get_invalid_contract_warnings(Modules, 
-								     Codeserver,
-								     NewPlt),
-	WrappedModules = [[M] || M <- Modules],
-	get_warnings(WrappedModules, NewState, DocPlt, false, CWarnings)
-    end,
-  {Warnings, State1#state.plt, NewDocPlt}.
+-type(doc_plt() :: 'undefined' | #dialyzer_plt{}).
+-spec(get_warnings/6 :: 
+      (#dialyzer_callgraph{}, #dialyzer_plt{}, doc_plt(), 
+       #dialyzer_codeserver{}, set(), pid()) -> 
+	 {[dial_warning()], #dialyzer_plt{}, doc_plt()}).
 
-get_warnings([[M]|Left], State, DocPlt, Store, Acc) ->
+get_warnings(Callgraph, Plt, DocPlt, Codeserver, NoWarnUnused, Parent) ->
+  InitState = #state{callgraph=Callgraph, plt=Plt, no_warn_unused=NoWarnUnused,
+		     codeserver=Codeserver, parent=Parent},
+  NewState = get_refined_success_typings(InitState),
+  Mods = dialyzer_callgraph:modules(NewState#state.callgraph),
+  CWarns = dialyzer_contracts:get_invalid_contract_warnings(Mods, Codeserver,
+							    NewState#state.plt),
+  get_warnings_from_modules(Mods, NewState, DocPlt, CWarns).
+
+get_warnings_from_modules([M|Left], State, DocPlt, Acc) when is_atom(M) ->
   send_log(State#state.parent, io_lib:format("Getting warnings for ~w\n", [M])),
-  %% We can get the warnings straight away.
-  Codeserver = State#state.codeserver,
-  {ok, Tree} = dialyzer_codeserver:lookup(M, core, Codeserver),
+  #state{plt=Plt, 
+	 callgraph=Callgraph,
+	 codeserver=Codeserver,
+	 no_warn_unused=NoWarnUnused} = State,
+  {ok, Tree} = dialyzer_codeserver:lookup(M, Codeserver),
   Records = dialyzer_codeserver:lookup_records(M, Codeserver),
   Contracts = dialyzer_codeserver:lookup_contracts(M, Codeserver),
-  AllFuns0 = traverse_tree_list([Tree]),
-  %% Check if there are contracts for functions that does not exist
+  AllFuns = collect_fun_info([Tree]),
+  %% Check if there are contracts for functions that do not exist
   Warnings1 = 
-    dialyzer_contracts:contracts_without_fun(Contracts, AllFuns0, 
-					     State#state.callgraph),
-  #state{plt=Plt, callgraph=Callgraph, no_warn_unused=NoWarnUnused} = State,
+    dialyzer_contracts:contracts_without_fun(Contracts, AllFuns, Callgraph),
   {Warnings2, FunTypes} = dialyzer_dataflow:get_warnings(Tree, Plt, Callgraph, 
 							 Records, NoWarnUnused),
   NewDocPlt = insert_into_doc_plt(FunTypes, Callgraph, DocPlt),
-  NewState =
-    if Store -> insert_into_plt(FunTypes, State);
-       true -> State
-    end,
-  NewAcc = [Warnings1, Warnings2|Acc],
-  get_warnings(Left, NewState, NewDocPlt, Store, NewAcc);
-get_warnings([SCC|Left], State, DocPlt, Store, Acc) ->
-  %% In a scc we must first analyze the modules until fixpoint, and
-  %% then get the warnings. Note that the "fixpoint" in the code means
-  %% if something changed, not if it was analysed to fixpoint. A SCC
-  %% is always analyzed to a fixpoint.
-  State1 =
-    case refine_succ_typings([SCC], State, true) of
-      {fixpoint, S} -> S;
-      {not_fixpoint, _, S} -> S
-    end,
-  Mods = [[M] || M <- SCC],
-  {NewAcc, State2, DocPlt1} = get_warnings(Mods, State1, DocPlt, Store, Acc),
-  get_warnings(Left, State2, DocPlt1, Store, NewAcc);
-get_warnings([], State, DocPlt, _Store, Acc) ->
-  {lists:flatten(Acc), State, DocPlt}.
+  get_warnings_from_modules(Left, State, NewDocPlt, [Warnings1,Warnings2|Acc]);
+get_warnings_from_modules([], #state{plt=Plt}, DocPlt, Acc) ->
+  {lists:flatten(Acc), Plt, DocPlt}.
 
-refine_succ_typings(ModulePostorder, State, StoreAll) ->
+refine_succ_typings(ModulePostorder, State) ->
   ?debug("Module postorder: ~p\n", [ModulePostorder]),
-  refine_succ_typings(ModulePostorder, State, StoreAll, []).
+  refine_succ_typings(ModulePostorder, State, []).
 
-refine_succ_typings([[M]|Left], State, StoreAll, Fixpoint) ->
-  Msg = io_lib:format("Dataflow analysis of module: ~w\n", [M]),
-  send_log(State#state.parent, Msg),
-  ?debug("~s\n", [Msg]),
-  {ok, Tree} = dialyzer_codeserver:lookup(M, core, State#state.codeserver),
-  AllFuns = traverse_tree_list([Tree]),
-  FunTypes = get_fun_types_from_plt(AllFuns, State),
-  Records = dialyzer_codeserver:lookup_records(M, State#state.codeserver),
-  NewFunTypes = dialyzer_dataflow:get_fun_types(Tree, State#state.plt, 
-						State#state.callgraph, Records),
-  {State1, FP} = 
-    case reached_fixpoint(FunTypes, NewFunTypes) of
-      true -> {State, Fixpoint};
-      {false, NotFixpoint} ->
-	?debug("Not fixpoint\n", []),
-	NotFixpoint1 = [Fun || {Fun, _Type} <- NotFixpoint],
-	FP0 = ordsets:union(ordsets:from_list(NotFixpoint1), Fixpoint),
-	case StoreAll of
-	  true -> {insert_into_plt(NewFunTypes, State), FP0};
-	  false -> {insert_into_plt(dict:from_list(NotFixpoint), State), FP0}
-	end
-    end,
-  refine_succ_typings(Left, State1, StoreAll, FP);
-refine_succ_typings(Mods = [SCC|Left], State, StoreAll, Fixpoint) ->
+refine_succ_typings([SCC|Left], State, Fixpoint) ->
   Msg = io_lib:format("Dataflow of one SCC: ~w\n", [SCC]),
   send_log(State#state.parent, Msg),
   ?debug("~s\n", [Msg]),
-  {NewState, NotFixpoint} =
-    lists:foldl(fun(M, {AccState, AccFixpoint}) ->
-		    case refine_succ_typings([[M]], AccState, StoreAll, []) of
-		      {fixpoint, NewAccState} -> 
-			{NewAccState, AccFixpoint};
-		      {not_fixpoint, List, NewAccState} -> 
-			{NewAccState, [List|AccFixpoint]}
-		    end
-		end, {State, []}, SCC),
-  case NotFixpoint =:= [] of
-    true -> 
-      refine_succ_typings(Left, NewState, StoreAll, Fixpoint);
-    false ->
-      NotFixpoint1 = lists:flatten(NotFixpoint),
-      NewFixpoint = ordsets:union(ordsets:from_list(NotFixpoint1), Fixpoint),
-      refine_succ_typings(Mods, NewState, StoreAll, NewFixpoint)
-  end;
-refine_succ_typings([], State, _StoreAll, Fixpoint) ->
+  {NewState, FixpointFromScc} =
+    case SCC of
+      [M] -> refine_one_module(M, State);
+      [_|_] -> refine_one_scc(SCC, State)
+    end,
+  NewFixpoint = ordsets:union(Fixpoint, FixpointFromScc),
+  refine_succ_typings(Left, NewState, NewFixpoint);
+refine_succ_typings([], State, Fixpoint) ->
   case Fixpoint =:= [] of
     true -> {fixpoint, State};
     false -> {not_fixpoint, Fixpoint, State}
   end.
+
+-spec(refine_one_module/2 ::
+      (atom(), #state{}) -> {#state{}, ordset(non_neg_integer())}). % labels
+
+refine_one_module(M, State) ->      
+  {ok, Tree} = dialyzer_codeserver:lookup(M, State#state.codeserver),
+  AllFuns = collect_fun_info([Tree]),
+  FunTypes = get_fun_types_from_plt(AllFuns, State),
+  Records = dialyzer_codeserver:lookup_records(M, State#state.codeserver),
+  NewFunTypes = dialyzer_dataflow:get_fun_types(Tree, State#state.plt, 
+						State#state.callgraph, Records),
+  case reached_fixpoint(FunTypes, NewFunTypes) of
+    true -> {State, []};
+    {false, NotFixpoint} ->
+      ?debug("Not fixpoint\n", []),
+      NewState = insert_into_plt(dict:from_list(NotFixpoint), State),
+      {NewState, ordsets:from_list([FunLbl || {FunLbl, _Type} <- NotFixpoint])}
+  end.
+
+refine_one_scc(SCC, State) ->
+  refine_one_scc(SCC, State, []).
+
+refine_one_scc(SCC, State, AccFixpoint) ->
+  {NewState, FixpointFromScc} = refine_mods_in_scc(SCC, State, []),
+  case FixpointFromScc =:= [] of
+    true -> {NewState, AccFixpoint};
+    false ->
+      NewAccFixpoint = ordsets:union(AccFixpoint, FixpointFromScc),
+      refine_one_scc(SCC, NewState, NewAccFixpoint)
+  end.
+
+refine_mods_in_scc([M|Left], State, Fixpoint) ->
+  {NewState, FixpointFromModule} = refine_one_module(M, State),
+  NewFixpoint = ordsets:union(FixpointFromModule, Fixpoint),
+  refine_mods_in_scc(Left, NewState, NewFixpoint);
+refine_mods_in_scc([], State, Fixpoint) ->
+  {State, Fixpoint}.
 
 reached_fixpoint(OldTypes, NewTypes) ->
   reached_fixpoint(OldTypes, NewTypes, false).
@@ -237,7 +215,6 @@ reached_fixpoint(OldTypes0, NewTypes0, Strict) ->
 is_failed_or_not_called_fun(Type) ->
   any_none([erl_types:t_fun_range(Type)|erl_types:t_fun_args(Type)]).
 
-
 any_none([T|Ts]) ->
   case erl_types:t_is_none(T) of
     true -> true;
@@ -257,31 +234,26 @@ compare_types_1([{X, _Type1}|Left1], [{X, failed_fun}|Left2],
 compare_types_1([{X, failed_fun}|Left1], [{X, _Type2}|Left2], 
 		Strict, NotFixpoint) ->
   compare_types_1(Left1, Left2, Strict, NotFixpoint);
-compare_types_1([{X, Type1}|Left1], [{X, Type2}|Left2], false, NotFixpoint) ->
-  case erl_types:t_is_subtype(Type1, Type2) of
-    true -> compare_types_1(Left1, Left2, false, NotFixpoint);
+compare_types_1([{X, Type1}|Left1], [{X, Type2}|Left2], Strict, NotFixpoint) ->
+  Res = case Strict of
+	  true -> erl_types:t_is_equal(Type1, Type2);
+	  false -> erl_types:t_is_subtype(Type1, Type2)
+	end,
+  case Res of
+    true -> compare_types_1(Left1, Left2, Strict, NotFixpoint);
     false -> 
       ?debug("Failed fixpoint for ~w: ~s =/= ~s\n",
-	     [X, erl_types:t_to_string(Type1), 
-	      erl_types:t_to_string(Type2)]),
-      compare_types_1(Left1, Left2, false, [{X, Type2}|NotFixpoint])
-  end;
-compare_types_1([{X, Type1}|Left1], [{X, Type2}|Left2], true, NotFixpoint) ->
-  case erl_types:t_is_equal(Type1, Type2) of
-    true -> compare_types_1(Left1, Left2, true, NotFixpoint);
-    false -> 
-      ?debug("Failed fixpoint for ~w: ~s =/= ~s\n",
-	     [X, erl_types:t_to_string(Type1), 
-	      erl_types:t_to_string(Type2)]),
-      compare_types_1(Left1, Left2, true, [{X, Type2}|NotFixpoint])
+	     [X, erl_types:t_to_string(Type1), erl_types:t_to_string(Type2)]),
+      compare_types_1(Left1, Left2, Strict, [{X, Type2}|NotFixpoint])
   end;
 compare_types_1([_|Left1], List2, Strict, NotFixpoint) ->
   %% If the function was not called.
   compare_types_1(Left1, List2, Strict, NotFixpoint);
-compare_types_1([], [], _Strict, []) ->
-  true;
 compare_types_1([], [], _Strict, NotFixpoint) ->
-  {false, NotFixpoint}.
+  case NotFixpoint =:= [] of
+    true -> true;
+    false -> {false, NotFixpoint}
+  end.
 
 find_succ_typings(State) ->
   find_succ_typings(State, []).
@@ -306,7 +278,7 @@ find_succ_typings(State, NotFixpoint) ->
 
 analyze_scc(SCC, State = #state{codeserver=Codeserver}) ->
   SCC1 = [{MFA, 
-	   dialyzer_codeserver:lookup(MFA, core, Codeserver),
+	   dialyzer_codeserver:lookup(MFA, Codeserver),
 	   dialyzer_codeserver:lookup_records(M, Codeserver)}
 	  || MFA = {M,_,_} <- SCC],
   false = lists:any(fun({_, X, _}) -> X =:= error end, SCC1),
@@ -318,7 +290,7 @@ analyze_scc(SCC, State = #state{codeserver=Codeserver}) ->
   {SuccTypes, PltContracts, NotFixpoint} = 
     find_succ_types_for_scc(SCC2, Contracts3, State),
   State1 = insert_into_plt(SuccTypes, State),
-  ContrPlt = dialyzer_plt:insert_contracts(State1#state.plt, PltContracts),
+  ContrPlt = dialyzer_plt:insert_contract_list(State1#state.plt, PltContracts),
   {State1#state{plt=ContrPlt}, NotFixpoint}.
 
 find_succ_types_for_scc(SCC, Contracts, 
@@ -326,7 +298,7 @@ find_succ_types_for_scc(SCC, Contracts,
 				       callgraph=Callgraph,
 				       plt=Plt}) ->
   %% Assume that the Plt contains the current propagated types.
-  AllFuns = traverse_tree_list([Fun || {_MFA, {_Var, Fun}, _Rec} <- SCC]),
+  AllFuns = collect_fun_info([Fun || {_MFA, {_Var, Fun}, _Rec} <- SCC]),
   PropTypes = get_fun_types_from_plt(AllFuns, State),
   MFAs = [MFA || {MFA, {_Var, _Fun}, _Rec} <- SCC],
   NextLabel = dialyzer_codeserver:next_core_label(Codeserver),
@@ -368,10 +340,10 @@ get_fun_types_from_plt([{FunLabel, Arity}|Left], State, Map) ->
 get_fun_types_from_plt([], _State, Map) ->
   Map.
 
-traverse_tree_list(Trees) ->
-  traverse_tree_list(Trees, []).
+collect_fun_info(Trees) ->
+  collect_fun_info(Trees, []).
 
-traverse_tree_list([Tree|Left], List) ->
+collect_fun_info([Tree|Left], List) ->
   FoldFun = fun(SubTree, Acc) ->
 		case cerl:is_c_fun(SubTree) of
 		  true -> [{cerl_trees:get_label(SubTree), 
@@ -379,8 +351,8 @@ traverse_tree_list([Tree|Left], List) ->
 		  false -> Acc
 		end
 	    end,
-  traverse_tree_list(Left, cerl_trees:fold(FoldFun, List, Tree));
-traverse_tree_list([], List) ->
+  collect_fun_info(Left, cerl_trees:fold(FoldFun, List, Tree));
+collect_fun_info([], List) ->
   List.
 
 lookup_fun_type(Label, Arity, #state{callgraph=Callgraph, plt=Plt}) ->  
@@ -394,25 +366,20 @@ insert_into_doc_plt(_FunTypes, _Callgraph, undefined) ->
   undefined;
 insert_into_doc_plt(FunTypes, Callgraph, DocPlt) ->
   SuccTypes = format_succ_types(FunTypes, Callgraph),
-  dialyzer_plt:insert(DocPlt, SuccTypes).
+  dialyzer_plt:insert_list(DocPlt, SuccTypes).
 
 insert_into_plt(SuccTypes0, State = #state{callgraph=Callgraph, plt=Plt}) ->
   SuccTypes = format_succ_types(SuccTypes0, Callgraph),
   debug_pp_succ_typings(SuccTypes),
-  State#state{plt=dialyzer_plt:insert(Plt, SuccTypes)}.
+  State#state{plt=dialyzer_plt:insert_list(Plt, SuccTypes)}.
 
 format_succ_types(SuccTypes, Callgraph) ->
   format_succ_types(dict:to_list(SuccTypes), Callgraph, []).
 
-format_succ_types([{Label, {contract, RetFun, Args}}|Left], Callgraph, Acc) ->
-  %Type = erl_types:t_limit(Type0, ?TYPE_LIMIT+1),
-  Id = lookup_name(Label, Callgraph),
-  NewTuple = {Id, {contract, RetFun, Args}},
-  format_succ_types(Left, Callgraph, [NewTuple|Acc]);
 format_succ_types([{Label, Type0}|Left], Callgraph, Acc) ->
   Type = erl_types:t_limit(Type0, ?TYPE_LIMIT+1),
   Id = lookup_name(Label, Callgraph),
-  NewTuple = {Id, erl_types:t_fun_range(Type), erl_types:t_fun_args(Type)},
+  NewTuple = {Id, {erl_types:t_fun_range(Type), erl_types:t_fun_args(Type)}},
   format_succ_types(Left, Callgraph, [NewTuple|Acc]);
 format_succ_types([], _Callgraph, Acc) ->
   Acc.
@@ -441,23 +408,23 @@ lookup_name(F, CG) ->
 send_log(none, _Msg) ->
   ok;
 send_log(Parent, Msg) ->
-  Parent ! {self(), log, lists:flatten(Msg)}.
+  Parent ! {self(), log, lists:flatten(Msg)},
+  ok.
 
 format_scc(SCC) ->
   [X || X = {_M, _F, _A} <- SCC].
 
-%%% ============================================================================
-%%%
-%%%  Debug interface.
-%%%
-%%% ============================================================================
+%% ============================================================================
+%%
+%%  Debug interface.
+%%
+%% ============================================================================
+
+-spec(doit/1 :: (atom() | string()) -> 'ok').
 
 doit(Module) ->
-  AbstrCode = dialyzer_utils:get_abstract_code_from_src(Module, 
-							[no_copt,
-							 {i,"../include"}]),
-					      
-  Code = dialyzer_utils:get_core_from_abstract_code(AbstrCode, [no_copt]),
+  {ok, AbstrCode} = dialyzer_utils:get_abstract_code_from_src(Module),
+  {ok, Code} = dialyzer_utils:get_core_from_abstract_code(AbstrCode),
   {ok, Records} = dialyzer_utils:get_record_and_type_info(AbstrCode),
   %% contract typing info in dictionary format
   {ok, Contracts} = dialyzer_utils:get_spec_info(AbstrCode, Records),
@@ -474,11 +441,10 @@ doit(Module) ->
   pp_signatures(Sigs, Records),
   ok.
 
-get_top_level_signatures(Code, Records) ->
-  get_top_level_signatures(Code, Records, dict:new()).
+-spec(get_top_level_signatures/3 ::
+      (core_records(), dict(), dict()) -> ordset({{atom(),byte()},erl_type()})).
 
 get_top_level_signatures(Code, Records, Contracts) ->
-  %% TODO: Should include contracts
   Tree = cerl:from_records(Code),
   {LabeledTree, NextLabel} = cerl_trees:label(Tree),
   Plt = get_def_plt(),
@@ -491,21 +457,18 @@ get_top_level_signatures(Code, Records, Contracts) ->
   %% First contracts check
   AllContracts = dict:fetch_keys(Contracts),
   ErrorContracts = lists:subtract(AllContracts, Functions),  
-  lists:map(fun(C) -> 
-	       io:format("Contract for function that does not exist: ~w\n",[C])
-	    end, ErrorContracts),
-
+  lists:foreach(fun(C) -> 
+		    io:format("Contract for non-existing function: ~w\n",[C])
+		end, ErrorContracts),
   Types = [{MFA, dialyzer_plt:lookup(Plt2, MFA)} || MFA <- Functions],
-  ordsets:from_list([{{F, A}, erl_types:t_fun(ArgT, RetT)} 
-		     || {{_M, F, A}, {value, {RetT, ArgT}}} <- Types]),
-    Sigs = [{{F, A}, erl_types:t_fun(ArgT, RetT)} 
+  Sigs = [{{F, A}, erl_types:t_fun(ArgT, RetT)} 
 	  || {{_M, F, A}, {value, {RetT, ArgT}}} <- Types],
   ordsets:from_list(Sigs).
 
 get_def_plt() ->
   try 
     dialyzer_plt:from_file(filename:join([code:lib_dir(dialyzer),
-					  "plt","dialyzer_init_plt"]))
+					  "plt", "dialyzer_init_plt"]))
   catch
     error:no_such_file -> dialyzer_plt:new();
     throw:{dialyzer_error, _} -> dialyzer_plt:new()
@@ -546,13 +509,11 @@ strip_annotations(Tree) ->
 -else.
 debug_pp(_Tree, _Map) -> 
   ok.
--endif.
+-endif. % DEBUG_PP
 
-
-%%% --------------------------------------------------------
-%%% Analysis of one module.
-%%%
-
+%%
+%% Analysis of a single module
+%%
 analyze_module(LabeledTree, NextLabel, Plt, Records, Contracts) ->
   debug_pp(LabeledTree, dict:new()),
   Callgraph1 = dialyzer_callgraph:new(),
@@ -562,7 +523,7 @@ analyze_module(LabeledTree, NextLabel, Plt, Records, Contracts) ->
   Codeserver1 = dialyzer_codeserver:new(),
   ModuleName = cerl:concrete(cerl:module_name(LabeledTree)),
   Insert = [{ModuleName, LabeledTree}],
-  Codeserver2 = dialyzer_codeserver:insert(Insert, core, Codeserver1),
+  Codeserver2 = dialyzer_codeserver:insert(Insert, Codeserver1),
   Codeserver3 = 
     dialyzer_codeserver:update_next_core_label(NextLabel, Codeserver2),
   Codeserver4 = 
@@ -573,5 +534,3 @@ analyze_module(LabeledTree, NextLabel, Plt, Records, Contracts) ->
   dialyzer_callgraph:delete(Callgraph4),
   dialyzer_codeserver:delete(Codeserver5),
   Res.
-
-

@@ -33,7 +33,6 @@
 	 labels/1,
 	 livein/2,
 	 liveout/2,
-	 succ_map/1,
 	 uses/1,
 	 defines/1,
 	 is_global/1,
@@ -96,9 +95,6 @@ physical_name(Reg) ->
   Reg.
 
 %% CFG stuff
-
-succ_map(CFG) ->
-  hipe_x86_cfg:succ_map(CFG).
 
 labels(CFG) ->
   hipe_x86_cfg:labels(CFG).

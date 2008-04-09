@@ -32,6 +32,7 @@
 	 encode_transaction/3,
 	 encode_action_requests/3,
 	 encode_action_request/3,
+	 encode_action_reply/3,
 	 
 	 version_of/2]).
 
@@ -222,6 +223,16 @@ encode_action_request(EC, 3, ActReq) ->
     AsnMod   = megaco_ber_media_gateway_control_v3,
     TransMod = megaco_binary_transformer_v3,
     ?BIN_LIB:encode_action_request(EC, ActReq, AsnMod, TransMod, io_list).
+
+
+%%----------------------------------------------------------------------
+%% Convert a action reply into a deep io list
+%% Not yest supported by this binary codec!
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+
+encode_action_reply(_EC, _V, _AcionReply) ->
+    {error, not_implemented}.
 
 
 %%----------------------------------------------------------------------

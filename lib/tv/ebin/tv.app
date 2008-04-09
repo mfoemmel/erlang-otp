@@ -1,6 +1,6 @@
 {application, tv,
  [{description, "tv Table Visualizer"},
-  {vsn, "2.1.4.1"},
+  {vsn, "2.1.4.2"},
   {modules, [tv,
 	     tv_comm_func,
 	     tv_db,

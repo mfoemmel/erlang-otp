@@ -323,6 +323,7 @@ int_string_decl(Str, Options, XMLBase, FileName) ->
 
 
 initial_state0(Options,XMLBase) ->
+    CommonData = common_data(),
     initial_state(Options, #xmerl_scanner{
 		    event_fun = fun event/2,
 		    hook_fun = fun hook/2,
@@ -333,7 +334,8 @@ initial_state0(Options,XMLBase) ->
 		    rules_read_fun = fun rules_read/3,
 		    rules_write_fun = fun rules_write/4,
 		    rules_delete_fun= fun rules_delete/3,
-		    xmlbase = XMLBase
+		    xmlbase = XMLBase,
+                    common_data = CommonData
 		   }).
 
 initial_state([{event_fun, F}|T], S) ->
@@ -408,6 +410,18 @@ validation_value(false) ->
 validation_value(F) ->
     F.
 
+%% Used for compacting (some) indentations. 
+%% See also fast_accumulate_whitespace().
+common_data() ->
+    {comdata(lists:duplicate(60, $\s), []),
+     comdata(lists:duplicate(15, $\t), []),
+     "\n"}.
+
+comdata([], CD)->
+    list_to_tuple(CD);
+comdata([_ | T]=L, CD) ->
+    comdata(T, [[$\n | L] | CD]).
+
 %%% -----------------------------------------------------
 %%% Default modifier functions
 
@@ -444,7 +458,7 @@ event(_X, S) ->
 %% If {Acc',S'} is returned, Pos will be incremented by 1 by default.
 %% Below is an example of an acceptable operation
 acc(X = #xmlText{value = Text}, Acc, S) ->
-    {[X#xmlText{value = lists:flatten(Text)}|Acc], S};
+    {[X#xmlText{value = Text}|Acc], S};
 acc(X, Acc, S) ->
     {[X|Acc], S}.
 
@@ -670,7 +684,7 @@ scan_prolog("<?xml"++T,S0=#xmerl_scanner{encoding=Charset0,col=Col,line=L},Pos)
 	    scan_prolog(T3, S3, Pos)
     end;
 scan_prolog("<!DOCTYPE" ++ T, S0=#xmerl_scanner{environment=prolog,
-						encoding=Charset}, Pos) ->
+						encoding=_Charset}, Pos) ->
     ?dbg("prolog(\"<!DOCTYPE\")~n", []),
     ?bump_col(9),
     %% If no known character set assume it is UTF-8
@@ -682,7 +696,7 @@ scan_prolog("<!DOCTYPE" ++ T, S0=#xmerl_scanner{environment=prolog,
     scan_misc(T2, S1, Pos);
 scan_prolog(Str="%"++_T,S=#xmerl_scanner{environment={external,_}},_Pos) ->
     scan_ext_subset(Str,S);
-scan_prolog(Str, S0 = #xmerl_scanner{user_state=_US,encoding=Charset},Pos) ->
+scan_prolog(Str, S0 = #xmerl_scanner{user_state=_US,encoding=_Charset},Pos) ->
     ?dbg("prolog(\"<\")~n", []),
     
     %% Check for Comments, PI before possible DOCTYPE declaration
@@ -1224,24 +1238,27 @@ fetch_and_parse(ExtSpec,S=#xmerl_scanner{fetch_fun=Fetch,
 	    NewS;
 	{ok, not_fetched,NewS} ->
 	    NewS;
-	{ok, DataRet, NewS = #xmerl_scanner{user_state = UState,
-					    event_fun = Event,
-					    hook_fun = Hook,
-					    fetch_fun = Fetch1,
-					    close_fun = Close1,
-					    continuation_fun = Cont,
-					    acc_fun = Acc,
-					    rules_read_fun = Read,
-					    rules_write_fun = Write,
-					    validation = Valid,
-					    quiet = Quiet,
-					    encoding = Charset
-					   }} ->
+	{ok, DataRet, NewS = #xmerl_scanner{
+			fetch_path=FetchPath,
+			user_state = UState,
+			event_fun = Event,
+			hook_fun = Hook,
+			fetch_fun = Fetch1,
+			close_fun = Close1,
+			continuation_fun = Cont,
+			acc_fun = Acc,
+			rules_read_fun = Read,
+			rules_write_fun = Write,
+			validation = Valid,
+			quiet = Quiet,
+			encoding = Charset
+		       }} ->
 	    EvS = event_state(NewS),
 	    HoS = hook_state(NewS),
 	    FeS = fetch_state(NewS),
 	    CoS = cont_state(NewS),
-	    Options = Options0++[{user_state, UState},
+	    Options = Options0++[{fetch_path,FetchPath},
+				 {user_state, UState},
 				 {rules, Rules},
 				 {event_fun, Event, EvS},
 				 {hook_fun, Hook, HoS},
@@ -2528,10 +2545,19 @@ scan_char_data([$<|T],S,Space,"<", Acc) ->
 scan_char_data(T = [$<|_], S, _Space,_MUD,Acc) ->
     
     {lists:reverse(Acc), T, S};
-scan_char_data(T = [H|_], S, Space,MUD, Acc) when ?whitespace(H) ->
-    
-    {NewAcc, T1, S1} = accumulate_whitespace(T, S, Space, Acc),
-    scan_char_data(T1, S1, Space,MUD,NewAcc);
+scan_char_data(T = [H|R], S, Space,MUD, Acc) when ?whitespace(H) ->
+    if
+        MUD =:= [], Acc =:= [], H =:= $\n, Space =:= preserve ->
+            case fast_accumulate_whitespace(R, S, T) of
+                {done, Reply} ->
+                    Reply;
+                {NewAcc, T1, S1} ->
+                    scan_char_data(T1, S1, Space, MUD, NewAcc)
+            end;
+        true ->
+            {NewAcc, T1, S1} = accumulate_whitespace(T, S, Space, Acc),
+            scan_char_data(T1, S1, Space,MUD,NewAcc)
+    end;
 scan_char_data([H1,H2|_T],S,_Space,_MUD,_Acc) when ?non_character(H1,H2) ->
     ?fatal({error,{not_allowed_to_use_Unicode_noncharacters}},S);
 scan_char_data("]]>"++_T,S,_Space,_MUD,_Acc) ->
@@ -3783,6 +3809,43 @@ normalize(T,S,IsNorm) ->
     end.
 
 
+%% Optimization: 
+%% - avoid building list of spaces or tabs;
+%% - avoid reverse; 
+%% - compact two common indentation patterns.
+%% Note: only to be called when a \n was found.
+fast_accumulate_whitespace(" " ++ T, S, _) ->
+    fast_acc_spaces(T, S, 1);
+fast_accumulate_whitespace("\t"++T, S, _) ->
+    fast_acc_tabs(T, S, 1);
+fast_accumulate_whitespace("<"++_=R, S, _T) ->
+    #xmerl_scanner{common_data = CD, line = Line} = S,
+    {done, {element(3, CD), R, S#xmerl_scanner{col = 1, line = Line + 1}}};
+fast_accumulate_whitespace(_, S, T) ->
+    accumulate_whitespace(T, S, []).
+    
+fast_acc_spaces(" " ++ T, S, N) ->
+    fast_acc_spaces(T, S, N + 1);
+fast_acc_spaces(T, S, N) ->
+    fast_acc_end(T, S, N, N, $\s, 1).
+
+fast_acc_tabs("\t" ++ T, S, N) ->
+    fast_acc_tabs(T, S, N + 1);
+fast_acc_tabs(T, S, N) ->
+    fast_acc_end(T, S, N, N * 8 + 1, $\t, 2).
+
+fast_acc_end(T, S, N, Col, C, CD_I) ->
+    #xmerl_scanner{common_data = CD, line = Line0} = S,
+    Line = Line0 + 1,
+    try 
+        $< = hd(T),
+        {done,{element(N, element(CD_I, CD)), T, 
+               S#xmerl_scanner{col = Col, line = Line}}}
+    catch _:_ -> 
+        accumulate_whitespace(T, S, Line, Col, lists:duplicate(N, C)++"\n")
+    end.
+    
+
 %%% @spec accumulate_whitespace(T::string(),S::global_state(),
 %%%                             atom(),Acc::string()) -> {Acc, T1, S1}
 %%%     
@@ -3793,27 +3856,31 @@ accumulate_whitespace(T, S, normalize, Acc) ->
     {_WsAcc, T1, S1} = accumulate_whitespace(T, S, []),
     {[$\s|Acc], T1, S1}.
 
+accumulate_whitespace(T, S, Acc) ->
+    #xmerl_scanner{line = Line, col = Col} = S,
+    accumulate_whitespace(T, S, Line, Col, Acc).
 
-accumulate_whitespace([], S=#xmerl_scanner{continuation_fun = F}, Acc) ->
+accumulate_whitespace([], S0, Line, Col, Acc) ->
+    #xmerl_scanner{continuation_fun = F} = S0,
+    S = S0#xmerl_scanner{line = Line, col = Col},
     ?dbg("cont()...~n", []),
     F(fun(MoreBytes, S1) -> accumulate_whitespace(MoreBytes, S1, Acc) end,
       fun(S1) -> {Acc, [], S1} end,
       S);
-accumulate_whitespace("\s" ++ T, S=#xmerl_scanner{col = C}, Acc) ->
-    accumulate_whitespace(T, S#xmerl_scanner{col = C+1}, [$\s|Acc]);
-accumulate_whitespace("\t" ++ T, S=#xmerl_scanner{col = C}, Acc) ->
-    accumulate_whitespace(T, S#xmerl_scanner{col = expand_tab(C)}, [$\t|Acc]);
-accumulate_whitespace("\n" ++ T, S=#xmerl_scanner{line = L}, Acc) ->
-    accumulate_whitespace(T, S#xmerl_scanner{line = L+1, col = 1}, [$\n|Acc]);
-accumulate_whitespace("\r\n" ++ T, S=#xmerl_scanner{line = L}, Acc) ->
+accumulate_whitespace("\s" ++ T, S, Line, Col, Acc) ->
+    accumulate_whitespace(T, S, Line, Col+1, [$\s|Acc]);
+accumulate_whitespace("\t" ++ T, S, Line, Col, Acc) ->
+    accumulate_whitespace(T, S, Line, expand_tab(Col), [$\t|Acc]);
+accumulate_whitespace("\n" ++ T, S, Line, _Col, Acc) ->
+    accumulate_whitespace(T, S, Line+1, 1, [$\n|Acc]);
+accumulate_whitespace("\r\n" ++ T, S, Line, _Col, Acc) ->
     %% CR followed by LF is read as a single LF
-    accumulate_whitespace(T, S#xmerl_scanner{line = L+1, col=1}, [$\n|Acc]);
-accumulate_whitespace("\r" ++ T, S=#xmerl_scanner{line = L}, Acc) ->
+    accumulate_whitespace(T, S, Line+1, 1, [$\n|Acc]);
+accumulate_whitespace("\r" ++ T, S, Line, _Col, Acc) ->
     %% CR not followed by LF is read as a LF
-    accumulate_whitespace(T, S#xmerl_scanner{line = L+1, col = 1}, [$\n|Acc]);
-accumulate_whitespace(Str, S, Acc) ->
-    {Acc, Str, S}.
-
+    accumulate_whitespace(T, S, Line+1, 1, [$\n|Acc]);
+accumulate_whitespace(Str, S, Line, Col, Acc) ->
+    {Acc, Str, S#xmerl_scanner{line = Line, col = Col}}.
 
 expand_tab(Col) ->
     Rem = (Col-1) rem 8,
@@ -3840,7 +3907,7 @@ schemaLocations(El,#xmerl_scanner{schemaLocation=SL}) ->
 	    schemaLocations(El)
     end.
 
-schemaLocations(#xmlElement{attributes=Atts,xmlbase=Base}) -> 
+schemaLocations(#xmlElement{attributes=Atts,xmlbase=_Base}) -> 
     Pred = fun(#xmlAttribute{name=schemaLocation}) -> false;
 	      (#xmlAttribute{namespace={_,"schemaLocation"}}) -> false;
 	      (_) -> true

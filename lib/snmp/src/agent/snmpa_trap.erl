@@ -100,9 +100,9 @@
 %%-----------------------------------------------------------------
 %% Func: construct_trap/2
 %% Args: Trap is an atom
-%%       Varbinds is a list of {Variable, Value},
-%%         where Variable is an atom or an OID. |
-%%         {SymbolicTableCol, RowIndex, Value},
+%%       Varbinds is a list of 
+%%               {Variable, Value} | {SymbolicTableCol, RowIndex, Value} 
+%%         where Variable is an atom or an OID, 
 %%         where RowIndex is the indexes for the row.
 %%         We don't check the RowIndex.
 %% Purpose: This is the initially-called function. It is called
@@ -120,32 +120,38 @@ construct_trap(Trap, Varbinds) ->
 	undefined -> 
 	    user_err("construct_trap got undef Trap: ~w" , [Trap]),
 	    error;
-	{value, TRec} when record(TRec, trap) ->
-	    ?vtrace("construct_trap -> TRec: ~n~p", [TRec]),
+
+	{value, TRec} when is_record(TRec, trap) ->
+	    ?vdebug("construct_trap -> trap"
+		    "~n   ~p", [TRec]),
 	    ListOfVars = TRec#trap.oidobjects,
 	    OidVbs = [alias_to_oid(Vb) || Vb <- Varbinds],
 	    LV = initiate_vars(ListOfVars, OidVbs),
 	    InitiatedVars = try_initialise_vars(get(mibserver), LV),
 	    {ok, TRec, InitiatedVars};
-	{value, NRec} when record(NRec, notification) ->
-	    ?vtrace("construct_trap -> NRec: ~n~p", [NRec]),
+
+	{value, NRec} when is_record(NRec, notification) ->
+	    ?vdebug("construct_trap -> notification"
+		    "~n   ~p", [NRec]),
 	    ListOfVars = NRec#notification.oidobjects,
 	    OidVbs = [alias_to_oid(Vb) || Vb <- Varbinds],
 	    LV = initiate_vars(ListOfVars, OidVbs),
-	    {ok, NRec, try_initialise_vars(get(mibserver), LV)}
+	    InitiatedVars = try_initialise_vars(get(mibserver), LV), 
+	    {ok, NRec, InitiatedVars}
     end.
 
-alias_to_oid({Alias, Val}) when atom(Alias) ->
+alias_to_oid({Alias, Val}) when is_atom(Alias) ->
     case snmpa_symbolic_store:aliasname_to_oid(Alias) of
 	{value, Oid} -> {lists:append(Oid, [0]), {value, Val}};
 	_ ->   	     {Alias, {value, Val}}
     end;
-alias_to_oid({Alias, RowIndex, Val}) when atom(Alias) ->
+alias_to_oid({Alias, RowIndex, Val}) when is_atom(Alias) ->
     case snmpa_symbolic_store:aliasname_to_oid(Alias) of
 	{value, Oid} -> {lists:append(Oid, RowIndex), {value, Val}};
 	_ ->   	     {Alias, RowIndex, {value, Val}}
     end;
 alias_to_oid({Oid, Val}) -> {Oid, {value, Val}}.
+
 
 %%-----------------------------------------------------------------
 %% Func: initiate_vars/2
@@ -154,7 +160,7 @@ alias_to_oid({Oid, Val}) -> {Oid, {value, Val}}.
 %%          {VariableOid, Value} | 
 %%          {VariableAtom, Value} |
 %%          {TableColAtom, RowIndex, Value}
-%% Purpose: For each variable in specified in the TRAP-TYPE macro
+%% Purpose: For each variable specified in the TRAP-TYPE macro
 %%          (each in ListOfVars), check if it's got a value given
 %%          in the Varbinds list.
 %%          For each Oid:
@@ -215,9 +221,9 @@ try_map_symbolic([Varbind | Varbinds]) ->
     [localise_oid(Varbind) | try_map_symbolic(Varbinds)];
 try_map_symbolic([]) -> [].
 
-localise_oid({VariableName, Value}) when atom(VariableName) ->
+localise_oid({VariableName, Value}) when is_atom(VariableName) ->
     alias_to_oid({VariableName, Value});
-localise_oid({VariableName, RowIndex, Value}) when atom(VariableName) ->
+localise_oid({VariableName, RowIndex, Value}) when is_atom(VariableName) ->
     alias_to_oid({VariableName, RowIndex, Value});
 localise_oid(X) -> X.
 
@@ -236,9 +242,9 @@ try_find_type([Varbind | Varbinds], Mib) ->
 try_find_type([], _) -> [].
 
 localise_type({VariableOid, Type}, _Mib) 
-  when list(VariableOid), record(Type, asn1_type) ->
+  when is_list(VariableOid) andalso is_record(Type, asn1_type) ->
     {VariableOid, Type};
-localise_type({VariableOid, Value}, Mib) when list(VariableOid) ->
+localise_type({VariableOid, Value}, Mib) when is_list(VariableOid) ->
     case snmpa_mib:lookup(Mib, VariableOid) of
 	{variable, ME} ->
 	    {VariableOid, ME#me.asn1_type, Value};
@@ -273,26 +279,27 @@ make_v1_trap_pdu(Enterprise, Specific, VarbindList, SysUpTime) ->
 		{Enterprise,?enterpriseSpecific,Specific}
     end,
     {value, AgentIp} = snmp_framework_mib:intAgentIpAddress(get),
-    #trappdu{enterprise = Enterp,
-	     agent_addr = AgentIp,
-	     generic_trap = Generic,
+    #trappdu{enterprise    = Enterp,
+	     agent_addr    = AgentIp,
+	     generic_trap  = Generic,
 	     specific_trap = Spec,
-	     time_stamp = SysUpTime,
-	     varbinds = VarbindList}.
+	     time_stamp    = SysUpTime,
+	     varbinds      = VarbindList}.
 
 make_v2_notif_pdu(Vbs, Type) ->
-    #pdu{type = Type,
-	 request_id = snmpa_mpd:generate_req_id(),
+    #pdu{type         = Type,
+	 request_id   = snmpa_mpd:generate_req_id(),
 	 error_status = noError,
-	 error_index = 0,
-	 varbinds = Vbs}.
+	 error_index  = 0,
+	 varbinds     = Vbs}.
 
 make_varbind_list(Varbinds) ->
     {VariablesWithValueAndType, VariablesWithType} =
-	split_variables(order(Varbinds)),
-    V = get_all(VariablesWithType),
+	split_variables( order(Varbinds) ),
+    V    = get_values(VariablesWithType),
     Vars = lists:append([V, VariablesWithValueAndType]),
     [make_varbind(Var) || Var <- unorder(lists:keysort(1, Vars))].
+
 
 %%-----------------------------------------------------------------
 %% Func: send_trap/6
@@ -314,24 +321,33 @@ make_varbind_list(Varbinds) ->
 %%          SnmpTargetAddrTable (using the Tag).
 %%-----------------------------------------------------------------
 send_trap(TrapRec, NotifyName, ContextName, Recv, Vbs, NetIf) ->
+    (catch do_send_trap(TrapRec, NotifyName, ContextName, Recv, Vbs, NetIf)).
+
+do_send_trap(TrapRec, NotifyName, ContextName, Recv, Vbs, NetIf) ->
     VarbindList = make_varbind_list(Vbs),
-    Dests = find_dests(NotifyName),
+    Dests       = find_dests(NotifyName),
     send_trap_pdus(Dests, ContextName, {TrapRec, VarbindList}, [], [], [],
 		   Recv, NetIf).
 	    
-get_all(VariablesWithType) ->
+get_values(VariablesWithType) ->
     {Order, Varbinds} = extract_order(VariablesWithType, 1),
     case snmpa_agent:do_get(snmpa_acm:get_root_mib_view(), Varbinds, true) of
 	{noError, _, NewVarbinds} ->
-	    contract_order(Order, NewVarbinds);
+	    %% NewVarbinds is the result of:
+	    %% first a reverse, then a sort on the oid field and finally 
+	    %% a reverse during the get-processing so we need to re-sort 
+	    %% on the org_index field again before contract-order
+ 	    NewVarbinds1 = lists:keysort(#varbind.org_index, NewVarbinds),
+ 	    contract_order(Order, NewVarbinds1);
 	{ErrorStatus, ErrorIndex, _} ->
-	    user_err("snmpa_trap: get operation failed {~w, ~w}"
+	    user_err("snmpa_trap: get operation failed: ~w"
+		     "~n    at ~w"
 		     "~n    in ~w",
 		     [ErrorStatus, ErrorIndex, Varbinds]),
 	    throw(error)
     end.
     
-make_varbind(Varbind) when record(Varbind, varbind) ->
+make_varbind(Varbind) when is_record(Varbind, varbind) ->
     Varbind;
 make_varbind({VarOid, ASN1Type, Value}) ->
     case snmpa_agent:make_value_a_correct_value(Value, ASN1Type, undef) of
@@ -346,7 +362,9 @@ make_varbind({VarOid, ASN1Type, Value}) ->
 	    throw(error)
     end.
 
-order(Varbinds) -> order(Varbinds, 1).
+order(Varbinds) -> 
+    order(Varbinds, 1).
+
 order([H | T], No) -> [{No, H} | order(T, No + 1)];
 order([], _) -> [].
 
@@ -360,13 +378,14 @@ extract_order([], _) -> {[], []}.
 
 contract_order([No | Order], [Varbind | T]) ->
     [{No, Varbind} | contract_order(Order, T)];
-contract_order([], []) -> [].
+contract_order([], []) -> 
+    [].
 
-split_variables([{No, {VarOid, Type, Val}} | T]) when list(VarOid) ->
+split_variables([{No, {VarOid, Type, Val}} | T]) when is_list(VarOid) ->
     {A, B} = split_variables(T),
     {[{No, {VarOid, Type, Val}} | A], B};
 split_variables([{No, {VarOid, Type}} | T]) 
-  when list(VarOid), record(Type, asn1_type) ->
+  when is_list(VarOid) andalso is_record(Type, asn1_type) ->
     {A, B} = split_variables(T),
     {A, [{No, {VarOid, Type}} | B]};
 split_variables([{_No, {VarName, Value}} | _T]) ->
@@ -424,7 +443,7 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 	{ok, MibView} ->
 	    case check_all_varbinds(TrapRec, Vbs, MibView) of
 		true when MpModel == ?MP_V1 ->
-		    ?vtrace("v1 mp model",[]),
+		    ?vtrace("send_trap_pdus -> v1 mp model",[]),
 		    ContextEngineId = snmp_framework_mib:get_engine_id(),
 		    case snmp_community_mib:vacm2community({SecName,
 							    ContextEngineId,
@@ -443,7 +462,7 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 					   V1Res, V2Res, V3Res, Recv, NetIf)
 		    end;
 		true when MpModel == ?MP_V2C ->
-		    ?vtrace("v2c mp model",[]),
+		    ?vtrace("send_trap_pdus -> v2c mp model",[]),
 		    ContextEngineId = snmp_framework_mib:get_engine_id(),
 		    case snmp_community_mib:vacm2community({SecName,
 							    ContextEngineId,
@@ -463,7 +482,7 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 					   V1Res, V2Res, V3Res, Recv, NetIf)
 		    end;
 		true when MpModel == ?MP_V3 ->
-		    ?vtrace("v3 mp model",[]),
+		    ?vtrace("send_trap_pdus -> v3 mp model",[]),
 		    SecLevelF = mk_flag(SecLevel),
 		    MsgData = {SecModel, SecName, SecLevelF, TargetName},
 		    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
@@ -493,7 +512,7 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 send_trap_pdus([], ContextName, {TrapRec, Vbs}, V1Res, V2Res, V3Res,
 	       Recv, NetIf) ->
     SysUpTime = snmp_standard_mib:sys_up_time(),
-    ?vdebug("send trap pdus with sysUpTime ~p",[SysUpTime]),
+    ?vdebug("send trap pdus with sysUpTime ~p", [SysUpTime]),
     send_v1_trap(TrapRec, V1Res, Vbs, NetIf, SysUpTime),
     send_v2_trap(TrapRec, V2Res, Vbs, Recv, NetIf, SysUpTime),
     send_v3_trap(TrapRec, V3Res, Vbs, Recv, NetIf, SysUpTime, ContextName).
@@ -507,7 +526,7 @@ send_v1_trap(#trap{enterpriseoid = Enter, specificcode = Spec},
 	    "~n   with"
 	    "~n   ~p"
 	    "~n   to"
-	    "~n   ~p",[Enter,Spec,V1Res]),
+	    "~n   ~p", [Enter, Spec, V1Res]),
     TrapPdu = make_v1_trap_pdu(Enter, Spec, Vbs, SysUpTime),
     AddrCommunities = mk_addr_communities(V1Res),
     lists:foreach(fun({Community, Addrs}) ->
@@ -730,9 +749,9 @@ deliver_recv({Tag, Receiver}, MsgId, Result) ->
 	"", [Tag, Receiver, MsgId, Result]),
     Msg = {MsgId, Tag, Result},
     case Receiver of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Pid ! Msg;
-	Name when atom(Name) ->
+	Name when is_atom(Name) ->
 	    catch Name ! Msg;
 	{M, F, A} ->
 	    catch M:F([Msg | A]);

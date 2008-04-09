@@ -147,11 +147,19 @@ handle_parse(megaco_stop_user = Instruction, State) ->
 handle_parse(megaco_info = Instruction, State) ->
     {ok, Instruction, State};
 
-handle_parse(megaco_system_info = Instruction, State) ->
+handle_parse(megaco_system_info, State) ->
+    Verify = fun(_) -> ok end,
+    Instruction = {megaco_system_info, internal_system_info_tag, Verify}, 
     {ok, Instruction, State};
 
-handle_parse({megaco_system_info, Tag} = Instruction, State) 
+handle_parse({megaco_system_info, Tag}, State) 
   when is_atom(Tag) ->
+    Verify = fun(_) -> ok end,
+    Instruction = {megaco_system_info, Tag, Verify}, 
+    {ok, Instruction, State};
+
+handle_parse({megaco_system_info, Tag, Verify} = Instruction, State) 
+  when is_atom(Tag) andalso is_function(Verify) ->
     {ok, Instruction, State};
 
 handle_parse({megaco_user_info, Tag} = Instruction, State)
@@ -522,17 +530,16 @@ handle_exec(megaco_info, #state{result = Res} = State) ->
     d("megaco_info: ~p", [Val]),
     {ok, State#state{result = [Val|Res]}};
 
-handle_exec(megaco_system_info, #state{result = Res} = State) ->
-    p("megaco_system_info", []),
-    Val = (catch megaco:system_info()),
-    d("megaco_system_info: ~p", [Val]),
-    {ok, State#state{result = [Val|Res]}};
-
-handle_exec({megaco_system_info, Tag}, #state{result = Res} = State) ->
+handle_exec({megaco_system_info, Tag, Verify}, #state{result = Res} = State) ->
     p("megaco_system_info: ~w", [Tag]),
     Val = (catch megaco:system_info(Tag)),
     d("megaco_system_info: ~p", [Val]),
-    {ok, State#state{result = [Val|Res]}};
+    case Verify(Val) of
+	ok ->
+	    {ok, State#state{result = [Val|Res]}};
+	Error ->
+	    {error, State#state{result = [Error|Res]}}
+    end;
 
 %% This is either a MG or a MGC which is only connected to one MG
 handle_exec({megaco_call, ARs, Opts}, #state{conn_handle = CH} = State)

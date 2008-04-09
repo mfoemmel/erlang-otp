@@ -13,12 +13,12 @@
 %% 
 %% Copyright 2006, Tobias Lindahl and Kostis Sagonas
 %% 
-%%     $Id$
+%% $Id$
 %%
 
 get_bif_constr({erlang, Op, 2}, Dst, Args = [Arg1, Arg2], _State) 
   when Op =:= '+'; Op =:= '-'; Op =:= '*' ->
-  ReturnType = mk_fun_var(fun(Map)-> 
+  ReturnType = mk_fun_var(fun(Map) ->
 			      TmpArgTypes = lookup_type_list(Args, Map),
 			      erl_bif_types:type(erlang, Op, 2, TmpArgTypes)
 			  end, Args),
@@ -455,7 +455,7 @@ get_bif_constr({M, F, A}, Dst, Args, _State) ->
     true -> ?debug("Bif: ~w failed\n", [{M, F, A}]), throw(error);
     false ->
       ArgTypes = erl_bif_types:arg_types(M, F, A),
-      ReturnType = mk_fun_var(fun(Map)-> 
+      ReturnType = mk_fun_var(fun(Map) -> 
 				  TmpArgTypes = lookup_type_list(Args, Map),
 				  erl_bif_types:type(M, F, A, TmpArgTypes)
 			      end, Args),
@@ -499,7 +499,6 @@ range_inc(Int) when is_integer(Int) -> Int + 1.
 range_dec(neg_inf) -> neg_inf;
 range_dec(pos_inf) -> pos_inf;
 range_dec(Int) when is_integer(Int) -> Int - 1.
-  
 
 get_bif_test_constr(Dst, Arg, Type) ->
   ArgFun = fun(Map) ->

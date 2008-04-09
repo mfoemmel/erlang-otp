@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <semLib.h>
 #include <hostLib.h>
+#include <resolvLib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <errno.h>
@@ -144,14 +145,17 @@ void ei_init_resolve(void)
 static int verify_dns_configuration(void) 
 {
     /* FIXME problem for threaded ? */ 
-    static char resolv_params[200]; /* Enough for a RESOLV_PARAMS_S struct */
+    static char resolv_params[sizeof(RESOLV_PARAMS_S)];
     void (*rpg)(char *);
     STATUS (*rps)(char *);
     SYM_TYPE dummy;
-    if (!(symFindByName(sysSymTbl,"resolvParamsGet", (char **) &rpg, &dummy) 
-	  == OK &&
-	  symFindByName(sysSymTbl,"resolvParamsSet", (char **) &rps, &dummy) 
-	  == OK))
+    int get_result, set_result;
+
+    get_result = symFindByName(sysSymTbl,"resolvParamsGet", (char **) &rpg, &dummy);
+    set_result = symFindByName(sysSymTbl,"resolvParamsSet", (char **) &rps, &dummy);
+
+    if (!(get_result == OK &&
+	  set_result == OK))
 	return -1;
     (*rpg)(resolv_params);
     if (*resolv_params == '\0') {
@@ -159,9 +163,9 @@ static int verify_dns_configuration(void)
 	   if we left it this way... The best we can do is to configure
 	   it to use the local host database on the card, as a fallback */
 	*resolv_params = (char) 1;
-	DEBUGF((stderr,"Trying to fix up DNS configuration.\n"));
+	fprintf(stderr,"Trying to fix up DNS configuration.\n");
 	if (((*rps)(resolv_params)) != OK)
-	    return -1;
+	  return -1;
     }
     return 0;
 }

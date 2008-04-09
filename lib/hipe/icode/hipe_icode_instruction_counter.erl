@@ -2,61 +2,64 @@
 %%-------------------------------------------------------------------
 %% File    : icode_instruction_counter.erl
 %% Author  : Andreas Hasselberg <anha0825@student.uu.se>
-%% Description : This module counts the number of different 
-%% instructions in a function. It is useful when you want to know 
-%% if your icode analysis/specialization is good, bad or unlucky :)
+%% Purpose : This module counts the number of different instructions
+%%           in a function. It is useful when you want to know if
+%%           your Icode analysis or specialization is good, bad or
+%%           simply unlucky :)
 %%
 %% Created :  2 Oct 2006 by Andreas Hasselberg <anha0825@student.uu.se>
 %%-------------------------------------------------------------------
 
 -module(hipe_icode_instruction_counter).
 
--include("hipe_icode.hrl").
-
 -export([cfg/3, compare/3]).
+
+-include("../main/hipe.hrl").
+-include("hipe_icode.hrl").
+-include("../flow/cfg.hrl").
 
 %%-------------------------------------------------------------------
 %% A general CFG instruction walktrough
 %%-------------------------------------------------------------------
 
+-spec(cfg/3 :: (#cfg{}, mfa(), comp_options()) -> [_]).
+
 cfg(Cfg, _IcodeFun, _Options) ->
   Labels = hipe_icode_cfg:labels(Cfg),
   %% Your Info init function goes here
   InitInfo = counter__init_info(),
-  Info = lists:foldl(fun(Label, InfoAcc) ->
+  Info = lists:foldl(fun (Label, InfoAcc) ->
 			 BB = hipe_icode_cfg:bb(Cfg, Label),
 			 Code = hipe_bb:code(BB),
 			 walktrough_bb(Code, InfoAcc)
-		     end,
-		     InitInfo,
-		     Labels),
-  %%counter__output_info(IcodeFun, Info),
+		     end, InitInfo,  Labels),
+  %% counter__output_info(IcodeFun, Info),
   Info.
 
 walktrough_bb(BB, Info) ->
-    lists:foldl(fun(Insn, InfoAcc) ->
-		    %% Your analysis function here
-		    counter__analys_insn(Insn, InfoAcc)
-		end,
-		Info,
-		BB).
+  lists:foldl(fun (Insn, InfoAcc) ->
+		  %% Your analysis function here
+		  counter__analys_insn(Insn, InfoAcc)
+	      end, Info, BB).
 
 %%-------------------------------------------------------------------
 %% The counter specific functions
 %%-------------------------------------------------------------------
 
+-spec(compare/3 :: (gb_tree(), gb_tree(), gb_tree()) -> gb_tree()).
+
 compare(Name, Old, New) ->
   NewList = gb_trees:to_list(New),
   OldList = gb_trees:to_list(Old),
-  Temptree =  compare_one_way(NewList, Old, added, gb_trees:empty()),
-  Difftree = compare_one_way(OldList, New, removed, Temptree),
-  DiffList = gb_trees:to_list(Difftree),
+  TempTree = compare_one_way(NewList, Old, added, gb_trees:empty()),
+  DiffTree = compare_one_way(OldList, New, removed, TempTree),
+  DiffList = gb_trees:to_list(DiffTree),
   if DiffList =:= [] ->
       ok;
      true ->
       io:format("~p: ~p ~n", [Name, DiffList])
   end,
-  Difftree.
+  DiffTree.
 
 compare_one_way(List, Tree, Key, Fold_tree) ->
   lists:foldl(fun({Insn, ListCount}, DiffAcc) when is_integer(ListCount) ->
@@ -83,22 +86,21 @@ counter__analys_insn(Insn, Info) ->
   Key = counter__insn_get_key(Insn),
   counter__increase_key(Key, Info).
 
-counter__insn_get_key(If = #'if'{}) -> {'if', hipe_icode:if_op(If)};
-counter__insn_get_key(Call = #call{}) -> {call, hipe_icode:call_fun(Call)};
-counter__insn_get_key(#enter{}) -> enter;
-counter__insn_get_key(#return{}) -> return;
-counter__insn_get_key(#type{}) -> type;
-counter__insn_get_key(#switch_val{}) -> switch_val;
-counter__insn_get_key(#switch_tuple_arity{}) -> switch_tuple_arity;
-counter__insn_get_key(#goto{}) -> goto;
-counter__insn_get_key(#move{}) -> move;
-counter__insn_get_key(#fmove{}) -> fmove;
-counter__insn_get_key(#phi{}) -> phi;
-counter__insn_get_key(#begin_try{}) -> begin_try;
-counter__insn_get_key(#end_try{}) -> end_try;
-counter__insn_get_key(#begin_handler{}) -> begin_handler;
-counter__insn_get_key(#fail{}) -> fail;
-counter__insn_get_key(#comment{}) -> comment.
+counter__insn_get_key(If = #icode_if{}) -> {'if', hipe_icode:if_op(If)};
+counter__insn_get_key(Call = #icode_call{}) -> {call, hipe_icode:call_fun(Call)};
+counter__insn_get_key(#icode_enter{}) -> enter;
+counter__insn_get_key(#icode_return{}) -> return;
+counter__insn_get_key(#icode_type{}) -> type;
+counter__insn_get_key(#icode_switch_val{}) -> switch_val;
+counter__insn_get_key(#icode_switch_tuple_arity{}) -> switch_tuple_arity;
+counter__insn_get_key(#icode_goto{}) -> goto;
+counter__insn_get_key(#icode_move{}) -> move;
+counter__insn_get_key(#icode_phi{}) -> phi;
+counter__insn_get_key(#icode_begin_try{}) -> begin_try;
+counter__insn_get_key(#icode_end_try{}) -> end_try;
+counter__insn_get_key(#icode_begin_handler{}) -> begin_handler;
+counter__insn_get_key(#icode_fail{}) -> fail;
+counter__insn_get_key(#icode_comment{}) -> comment.
 
 counter__increase_key(Key, Info) ->
   NewCounter = 

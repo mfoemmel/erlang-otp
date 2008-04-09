@@ -4,12 +4,13 @@
 -module(hipe_sparc_liveness_all).
 -export([analyse/1]).
 -export([liveout/2]).
+
+-include("hipe_sparc.hrl").
 -include("../flow/liveness.inc").
 
 analyse(CFG) -> analyze(CFG).
 cfg_bb(CFG, L) -> hipe_sparc_cfg:bb(CFG, L).
 cfg_postorder(CFG) -> hipe_sparc_cfg:postorder(CFG).
-cfg_succ_map(CFG) -> hipe_sparc_cfg:succ_map(CFG).
 cfg_succ(CFG, L) -> hipe_sparc_cfg:succ(CFG, L).
 uses(Insn) -> hipe_sparc_defuse:insn_use_all(Insn).
 defines(Insn) -> hipe_sparc_defuse:insn_def_all(Insn).

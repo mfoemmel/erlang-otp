@@ -52,8 +52,8 @@ static unsigned long param_one = 1;
 
 static unsigned long param_zero = 0;
 static unsigned long param_one = 1;
-#define SET_BLOCKING(Sock) ioctl((Sock),FIONBIO,&param_zero)
-#define SET_NONBLOCKING(Sock) ioctl((Sock),FIONBIO,&param_one)
+#define SET_BLOCKING(Sock) ioctl((Sock),FIONBIO,(int)&param_zero)
+#define SET_NONBLOCKING(Sock) ioctl((Sock),FIONBIO,(int)&param_one)
 #define ERROR_WOULDBLOCK EWOULDBLOCK
 #define ERROR_TIMEDOUT ETIMEDOUT 
 #define ERROR_INPROGRESS EINPROGRESS
@@ -345,7 +345,7 @@ int ei_read_fill(int fd, char* buf, int len)
 
 /* write entire buffer on fd  or fail (setting errno)
  */
-int ei_write_fill_t(int fd, const char *buf, int len, unsigned ms)
+int ei_write_fill_t(int fd, char *buf, int len, unsigned ms)
 {
     int i,done=0;
     if (ms != 0U) {
@@ -367,7 +367,7 @@ int ei_write_fill_t(int fd, const char *buf, int len, unsigned ms)
     return (len);
 }
 
-int ei_write_fill(int fd, const char *buf, int len) 
+int ei_write_fill(int fd, char *buf, int len) 
 {
     return ei_write_fill_t(fd, buf, len, 0);
 }

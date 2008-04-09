@@ -74,7 +74,7 @@ void atom_info(int to, void *to_arg)
 }
 
 /*
- ** Allocate an atom text segment.
+ * Allocate an atom text segment.
  */
 static void
 more_atom_space(void)
@@ -102,9 +102,7 @@ atom_text_alloc(int bytes)
 {
     byte *res;
 
-    if (bytes >= ATOM_TEXT_SIZE)
-	erl_exit(1, "absurdly large atom\n");
-
+    ASSERT(bytes <= MAX_ATOM_LENGTH);
     if (atom_text_pos + bytes >= atom_text_end) {
 	more_atom_space();
     }
@@ -191,6 +189,19 @@ am_atom_put(const char* name, int len)
     Atom a;
     Eterm ret;
 
+    /*
+     * Silently truncate the atom if it is too long. Overlong atoms
+     * could occur in situations where we have no good way to return
+     * an error, such as in the I/O system. (Unfortunately, many
+     * drivers don't check for errors.)
+     *
+     * If an error should be produced for overlong atoms (such in
+     * list_to_atom/1), the caller should check the length before
+     * calling this function.
+     */
+    if (len > MAX_ATOM_LENGTH) {
+	len = MAX_ATOM_LENGTH;
+    }
     a.len = len;
     a.name = (byte*)name;
     atom_write_lock();
@@ -198,6 +209,7 @@ am_atom_put(const char* name, int len)
     atom_write_unlock();
     return ret;
 }
+
 
 int atom_table_size(void)
 {

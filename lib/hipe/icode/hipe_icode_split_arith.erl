@@ -10,11 +10,17 @@
 
 -export([cfg/3]).
 
+-include("../main/hipe.hrl").
 -include("hipe_icode.hrl").
+-include("../flow/cfg.hrl").
 
 -define(MIN_RATIO, 0.005).
 
-cfg(Cfg, _Fun, Options) ->
+%%-------------------------------------------------------------------
+
+-spec(cfg/3 :: (#cfg{}, mfa(), comp_options()) -> #cfg{}).
+
+cfg(Cfg, _MFA, Options) ->
   Icode = hipe_icode_cfg:cfg_to_linear(Cfg),
   case proplists:get_bool(split_arith_unsafe, Options) of
     true -> make_split_unsafe(Icode);
@@ -24,7 +30,7 @@ cfg(Cfg, _Fun, Options) ->
 	  Cfg;
 	{split, _Ratio, Icode1} ->
 	  NewCfg = split(Icode1),
-	  %%hipe_icode_cfg:pp(NewCfg),
+	  %% hipe_icode_cfg:pp(NewCfg),
 	  NewCfg
       end
   end.
@@ -32,14 +38,12 @@ cfg(Cfg, _Fun, Options) ->
 check_nofix_const([Arg1|Arg2]) ->
   case hipe_icode:is_const(Arg1) of
     true ->
-      %%io:format("ConsTant.....~w",[Arg1]),
       Val1 = hipe_tagscheme:fixnum_val(hipe_icode:const_value(Arg1)),
       case hipe_tagscheme:is_fixnum(Val1) of
 	true ->
 	  check_nofix_const(Arg2);
 	false -> {no}
       end;
-
     false ->
       check_nofix_const(Arg2)
   end;	  
@@ -47,9 +51,9 @@ check_nofix_const([]) -> true.
 
 check_const([I|Left]) ->
   case I of
-    #call{} ->
+    #icode_call{} ->
       case is_arith(I) of
-	true -> %%io:format("is_arith.....~w",[I]),
+	true ->
 	  Args = hipe_icode:call_args(I),
 	  case check_nofix_const(Args) of
 	    {no} -> {do_not_split};
@@ -61,8 +65,7 @@ check_const([I|Left]) ->
   end;
 check_const([]) -> {yes}.
 
-
-make_split_unsafe(Icode)->
+make_split_unsafe(Icode) ->
   LinearCode = hipe_icode:icode_code(Icode),
   NewLinearCode = change_unsafe(LinearCode),
   NewIcode = hipe_icode:icode_code_update(Icode, NewLinearCode),
@@ -70,7 +73,7 @@ make_split_unsafe(Icode)->
 
 change_unsafe([I|Is]) ->
   case I of
-    #call{} ->
+    #icode_call{} ->
       case is_arith_extra_unsafe(I) of
 	true ->
 	  NewOp = arithop_to_extra_unsafe(hipe_icode:call_fun(I)),
@@ -88,7 +91,7 @@ preprocess(Icode) ->
   LinearCode = hipe_icode:icode_code(Icode),
   case check_const(LinearCode) of
     {do_not_split} -> %%io:format("NO FIXNUM....."),
-      {do_not_split, 1.9849 }; % Ratio val is ignored
+      {do_not_split, 1.9849}; % Ratio val is ignored
     _ ->
       {NofArith, NofIns, NewLinearCode} = preprocess_code(LinearCode),
       case NofArith / NofIns of
@@ -103,9 +106,9 @@ preprocess(Icode) ->
 preprocess_code([H|Code]) ->
   preprocess_code(Code, 0, 0, [H]).
 
-preprocess_code([I|Left], NofArith, NofIns,CodeAcc = [PrevI|_])->
+preprocess_code([I|Left], NofArith, NofIns, CodeAcc = [PrevI|_]) ->
   case I of
-    #call{} ->
+    #icode_call{} ->
       case is_arith(I) of
 	true ->
 	  %% Note that we need to put these instructions in a separate
@@ -154,7 +157,7 @@ preprocess_code([I|Left], NofArith, NofIns,CodeAcc = [PrevI|_])->
 	false ->
 	  preprocess_code(Left, NofArith, NofIns + 1, [I|CodeAcc])
       end;
-    #label{} ->
+    #icode_label{} ->
       %% Don't count labels as instructions.
       preprocess_code(Left, NofArith, NofIns, [I|CodeAcc]);
     _ ->
@@ -167,7 +170,6 @@ split(Icode) ->
   LinearCode = hipe_icode:icode_code(Icode),
   %% create a new icode label for each existing icode label
   %% create mappings, NewToOld and OldToNew.
-  %%
   AllLabels = lists:foldl(fun(I, Acc) ->
 			      case hipe_icode:is_label(I) of
 				true -> [hipe_icode:label_name(I)|Acc];
@@ -185,9 +187,8 @@ split(Icode) ->
   NewCfg2 = 
     insert_tests(NewCfg, [gb_trees:get(X, OldToNewMap) || X<-AllLabels], 
 		 NewToOldMap, OldToNewMap),
-  %%io:format("split(Cfg): Inserting testsL Done\n", []),
+  %% io:format("split(Cfg): Inserting testsL Done\n", []),
   NewCfg2.
-
 
 map_code(OldCode, LabelMap) ->
   AddedCode = map_code(OldCode, none, LabelMap, []),
@@ -195,7 +196,7 @@ map_code(OldCode, LabelMap) ->
 
 map_code([I|Left], ArithFail, LabelMap, Acc) ->
   case I of
-    #call{} ->
+    #icode_call{} ->
       case is_arith(I) of
 	true ->
 	  case hipe_icode:defines(I) of
@@ -211,7 +212,7 @@ map_code([I|Left], ArithFail, LabelMap, Acc) ->
 	false ->
 	  map_code(Left, ArithFail, LabelMap, [redirect(I, LabelMap)|Acc])
       end;
-    #label{} ->
+    #icode_label{} ->
       LabelName = hipe_icode:label_name(I),
       NewLabel = hipe_icode:mk_label(gb_trees:get(LabelName, LabelMap)),
       map_code(Left, LabelName, LabelMap, [NewLabel|Acc]);
@@ -261,7 +262,7 @@ find_testpoints([], InfoMap, _Cfg, Dirty) ->
 traverse_code([I|Left], Info) ->
   NewInfo = kill_defines(I, Info),
   case I of
-    #call{} ->
+    #icode_call{} ->
       case is_unsafe_arith(I) of
 	true ->
 	  %% The dst is sure to be a fixnum. Remove the 'killed' mark.
@@ -273,7 +274,7 @@ traverse_code([I|Left], Info) ->
 	false ->
 	  traverse_code(Left, NewInfo)
       end;
-    #move{} ->
+    #icode_move{} ->
       Dst = hipe_icode:move_dst(I),
       case gb_sets:is_member(Dst, Info) of 
 	true -> 
@@ -419,7 +420,7 @@ arithop_to_split(Op) ->
   end.
 
 %%%-------------------------------------------------------------------
-%%% Check if it's a arith op that needs to be split
+%%% Check if it's an arith op that needs to be split
 
 is_arith(I) ->
   case hipe_icode:call_fun(I) of
@@ -501,7 +502,7 @@ arithop_to_extra_unsafe(Op) ->
     'bor' -> unsafe_bor;
     'bxor' -> unsafe_bxor;
     'bsr' -> unsafe_bsr;
-    'bsl' -> 'bsl'; %% See comment in split_to_unsafe
+    'bsl' -> 'bsl'; %% See comment in split_to_unsafe/1
     'bnot' -> unsafe_bnot;
     'band' -> unsafe_band
   end.
@@ -511,9 +512,8 @@ arithop_to_extra_unsafe(Op) ->
 redirect(I, LabelMap) ->
   case hipe_icode:successors(I) of
     [] -> I;
-    [[]] -> I;
-    Succ ->
-      RedirectMap = [{X, gb_trees:get(X, LabelMap)} || X<-Succ],
+    Successors ->
+      RedirectMap = [{X, gb_trees:get(X, LabelMap)} || X <- Successors],
       redirect_1(RedirectMap, I)
   end.
 

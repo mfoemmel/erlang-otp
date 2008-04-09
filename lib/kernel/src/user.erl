@@ -313,15 +313,14 @@ get_chars(Prompt, M, F, Xa, Port, Q, State) ->
 		%%{io_request,From,ReplyAs,Request} when is_pid(From) ->
 		%%    get_chars_req(Prompt, M, F, Xa, Port, queue:new(), State,
 		%%		  Request, From, ReplyAs);
-		{io_request,From,ReplyAs,{put_chars,Chars}} when is_pid(From) ->
+                {io_request,From,ReplyAs,{get_geometry,_}=Req} when is_pid(From) ->
+                    do_io_request(Req, From, ReplyAs, Port, 
+                                  queue:new()), %Keep Q over this call
+                    %% No prompt.
+                    get_chars(Prompt, M, F, Xa, Port, Q, State);
+		{io_request,From,ReplyAs,Request} when is_pid(From) ->
 		    get_chars_req(Prompt, M, F, Xa, Port, Q, State,
-				  {put_chars,Chars}, From, ReplyAs);
-		{io_request,From,ReplyAs,{put_chars,M1,F1,A1}} when is_pid(From) ->
-		    get_chars_req(Prompt, M, F, Xa, Port, Q, State,
-				  {put_chars,M1,F1,A1}, From, ReplyAs);
-                {io_request,From,ReplyAs,{requests,Requests}} when is_pid(From) ->
-                    get_chars_req(Prompt, M, F, Xa, Port, Q, State,
-                                  {requests,Requests}, From, ReplyAs);
+				  Request, From, ReplyAs);
 		{'EXIT',From,What} when node(From) =:= node() ->
 		    {exit,What}
 	    end;

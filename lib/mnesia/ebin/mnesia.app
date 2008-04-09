@@ -1,6 +1,6 @@
 {application, mnesia,
  [{description, "MNESIA  CXC 138 12"},
-  {vsn, "4.4"},
+  {vsn, "4.4.2"},
   {modules, [
 	     mnesia, 
 	     mnesia_backup, 

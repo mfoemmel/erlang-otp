@@ -11,9 +11,9 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006-2008, Tobias Lindahl and Kostis Sagonas
 %% 
-%%     $Id$
+%% $Id$
 %%
 
 %%%-------------------------------------------------------------------
@@ -24,48 +24,55 @@
 %%%
 %%% Created : 27 Apr 2004 by Tobias Lindahl <tobiasl@csd.uu.se>
 %%%-------------------------------------------------------------------
+
 -module(dialyzer_cl).
 
 -export([start/1, check_init_plt/2]).
 
 -include("dialyzer.hrl").
 
+-type(io_device() :: pid()).	% XXX: This should be imported from 'file'
+
 -record(cl_state,
 	{backend_pid                            :: pid(),
-	 legal_warnings  = ordsets:new()        :: [_],
+	 erlang_mode = false                    :: bool(),
+	 external_calls = []                    :: string(),
+	 legal_warnings  = ordsets:new()        :: [dial_warn_tag()],
 	 mod_deps                               :: dict(),
-	 nof_warnings    = 0			:: integer(),
-	 output          = standard_io,
-	 output_plt                             :: string(),
+	 output          = standard_io		:: 'standard_io' | io_device(),
+	 output_plt      = none                 :: 'none' | string(),
 	 plt_info                               :: {md5(), 
 						    [atom()],
 						    {mergable | non_mergable, 
 						     dict()}},
-	 report_mode     = normal             :: 'quiet' | 'normal' | 'verbose',
-	 return_status=?RET_NOTHING_SUSPICIOUS	:: integer(),
-	 stored_errors   = do_not_store         :: [_] | 'do_not_store',
-	 stored_warnings = do_not_store         :: [_] | 'do_not_store'
+	 report_mode     = normal               :: rep_mode(),
+	 return_status= ?RET_NOTHING_SUSPICIOUS	:: dial_ret(),
+	 stored_errors   = []                   :: [dial_error()],
+	 stored_warnings = []                   :: [dial_warning()]
 	}).
+
+%%--------------------------------------------------------------------
+
+-spec(start/1 :: (#options{}) -> dial_ret()
+			       | {dial_ret(),[dial_warning()],[dial_error()]}).
 
 start(#options{} = DialyzerOptions) ->
   process_flag(trap_exit, true),
   {InitAnalysis, PltInfo} = build_analysis_record(DialyzerOptions),
-  StoreWarningsAndErrors =
-    case DialyzerOptions#options.erlang_mode of
-      true -> [];
-      false -> do_not_store
-    end,
   State = new_state(),
   NewState1 = init_output(State, DialyzerOptions),  
   NewState2 = 
     NewState1#cl_state{legal_warnings=DialyzerOptions#options.legal_warnings,
 		       output_plt=DialyzerOptions#options.output_plt,
 		       plt_info=PltInfo,
-		       stored_errors=StoreWarningsAndErrors,
-		       stored_warnings=StoreWarningsAndErrors,
+		       erlang_mode=DialyzerOptions#options.erlang_mode,
 		       report_mode=DialyzerOptions#options.report_mode},
   NewState3 = run_analysis(NewState2, InitAnalysis),
   cl_loop(NewState3).
+
+%%--------------------------------------------------------------------
+
+-spec(check_init_plt/2 :: (#options{}, bool()) -> ?RET_NOTHING_SUSPICIOUS).
 
 check_init_plt(Opts, Force) ->
   process_flag(trap_exit, true),
@@ -85,16 +92,16 @@ check_init_plt(Opts, Force) ->
 	  error(Msg);
 	false ->
 	  Msg = "    Creating initial PLT"
-	    " (will take several minutes; please be patient)\n",
+	    " (will take several minutes; please be patient)",
 	  io:format("~s", [Msg]),
 	  InclDirs = Opts#options.include_dirs,
 	  {T1, _} = statistics(wall_clock),
-	  Ret =
+	  Ret = 
 	    case create_init_plt(MD5, DiffMd5, Libs, InitPlt, InclDirs) of
 	      ?RET_INTERNAL_ERROR ->
 		error("Problems during consistency check of initial PLT");
 	      ?RET_NOTHING_SUSPICIOUS -> ?RET_NOTHING_SUSPICIOUS;
-	      ?RET_DISCREPANCIES_FOUND -> ?RET_NOTHING_SUSPICIOUS
+	      ?RET_DISCREPANCIES -> ?RET_NOTHING_SUSPICIOUS
 	    end,
 	  {T2, _} = statistics(wall_clock),
 	  if ReportMode =:= quiet -> ok;
@@ -114,12 +121,13 @@ check_init_plt(Opts, Force) ->
       error(Msg)
   end.
 
+%%--------------------------------------------------------------------
+
 print_elapsed_time(T1, T2) ->
   ElapsedTime = T2 - T1,
   Mins = ElapsedTime div 60000,
   Secs = (ElapsedTime rem 60000) / 1000,
-  io:format("  Done building PLT in ~wm~.2fs\n", [Mins, Secs]).
-
+  io:format("    Done building PLT in ~wm~.2fs\n", [Mins, Secs]).
 
 print_md5_diff(none) ->
   io:format("    Could not find the old PLT information\n", []);
@@ -194,8 +202,7 @@ create_init_plt_common(State, Files, IncludeDirs, InitPlt) ->
 			   plt=InitPlt,
 			   include_dirs=IncludeDirs,
 			   start_from=byte_code,
-			   type=plt_build,
-			   supress_inline=true},
+			   type=plt_build},
       cl_loop(run_analysis(State, Analysis))
   end.
 
@@ -221,6 +228,8 @@ expand_dependent_module([], Included, _ModDeps) ->
   Included.
 
 -define(MIN_FILES_FOR_NATIVE_COMPILE, 20).
+
+-spec(hipe_compile/1 :: ([string()]) -> 'ok').
 
 hipe_compile(Files) when length(Files) > ?MIN_FILES_FOR_NATIVE_COMPILE ->
   case erlang:system_info(hipe_architecture) of
@@ -260,10 +269,11 @@ init_output(State, DialyzerOptions) ->
       end
   end.
 
+-spec(maybe_close_output_file/1 :: (#cl_state{}) -> 'ok').
 maybe_close_output_file(State) ->
   case State#cl_state.output of
     standard_io -> ok;
-    File -> file:close(File)
+    File -> ok = file:close(File)
   end.
 
 %% ----------------------------------------------------------------
@@ -273,6 +283,7 @@ maybe_close_output_file(State) ->
 
 -define(LOG_CACHE_SIZE, 10).
 
+%%-spec(cl_loop/1 :: (#cl_state{}) -> 
 cl_loop(State) ->
   cl_loop(State, []).
 
@@ -291,9 +302,8 @@ cl_loop(State, LogCache) ->
     {BackendPid, done, NewPlt, _NewDocPlt} ->
       return_value(State, NewPlt);
     {BackendPid, ext_calls, ExtCalls} ->
-      Msg = io_lib:format("Unknown functions: ~p\n", [ExtCalls]),
-      NewState = print_ext_calls(State, Msg),
-      cl_loop(NewState, LogCache);
+      Msg = lists:flatten(io_lib:format("Unknown functions: ~p\n", [ExtCalls])),
+      cl_loop(State#cl_state{external_calls=Msg}, LogCache);
     {BackendPid, mod_deps, ModDeps} ->
       NewState = State#cl_state{mod_deps=ModDeps},
       cl_loop(NewState, LogCache);
@@ -301,98 +311,106 @@ cl_loop(State, LogCache) ->
       Msg = failed_anal_msg(Reason, LogCache),
       error(State, Msg);
     {'EXIT', BackendPid, Reason} when Reason =/= 'normal' ->
-      Msg = failed_anal_msg(Reason, LogCache),
-      maybe_close_output_file(State),
+      Msg = failed_anal_msg(io_lib:format("~P", [Reason, 12]), LogCache),
       error(State, Msg);
     _Other ->
       %% io:format("Received ~p\n", [_Other]),
       cl_loop(State, LogCache)
   end.
 
-failed_anal_msg(Reason, LogCache) ->
-  io_lib:format("Analysis failed with error report:\n\t~P\n"
+-spec(failed_anal_msg/2 :: (string(), [_]) -> string()).
+
+failed_anal_msg(Reason, LogCache) when length(Reason) > 0 ->
+  io_lib:format("Analysis failed with error: ~s\n"
 		"Last messages in log cache: ~p\n", 
-		[Reason, 12, lists:reverse(LogCache)]).
+		[Reason, lists:reverse(LogCache)]).
 
-print_ext_calls(State = #cl_state{report_mode=quiet}, _Msg) ->
-  State;
-print_ext_calls(State = #cl_state{}, Msg) ->
-  print_warning_string(State, Msg),
-  State.
+store_error(State = #cl_state{stored_errors=StoredErrors, 
+			      erlang_mode=ErlangMode}, Msg) ->
+  case ErlangMode of
+    true -> 
+      NewStoredErrors = StoredErrors ++ [Msg],
+      State#cl_state{stored_errors=NewStoredErrors};
+    false ->
+      error(State, Msg)
+  end.
 
-store_error(State = #cl_state{stored_errors=StoredErrors}, Msg) ->
-  NewStoredErrors =
-    case StoredErrors =:= do_not_store of
-      true ->
-	error(State, Msg);
-      false ->
-	StoredErrors ++ [Msg]
-    end,
-  State#cl_state{stored_errors=NewStoredErrors}.
+-spec(store_warnings/2 :: (#cl_state{}, [dial_warning()]) -> #cl_state{}).
 
-store_warnings(State = #cl_state{nof_warnings=NofOldWarnings,
-				 stored_warnings=StoredWarnings}, Warnings) ->
-  NewStoredWarnings =
-    case StoredWarnings =:= do_not_store of
-      true ->
-	WarningString = lists:flatten([dialyzer:format_warning(W) 
-				       || W <- Warnings]),
-	print_warning_string(State, WarningString),
-	StoredWarnings;
-      false ->
-	StoredWarnings ++ Warnings
-    end,
-  NofNewWarning = length(Warnings),
-  State#cl_state{nof_warnings=NofOldWarnings+NofNewWarning, 
-		 stored_warnings=NewStoredWarnings}.
+store_warnings(State = #cl_state{stored_warnings=StoredWarnings}, Warnings) ->
+  State#cl_state{stored_warnings=StoredWarnings ++ Warnings}.
 
-print_warning_string(#cl_state{nof_warnings=NofWarn, output=Output}, String) ->
-  case NofWarn of
-    0 -> io:format(Output, "\n", []); %% warnings are just starting to appear
-    _ -> ok
-  end,
-  io:format(Output, "~s", [String]).
+-spec(error/1 :: (string()) -> no_return()).
 
 error(Msg) ->
   throw({dialyzer_error, Msg}).
+
+-spec(error/2 :: (#cl_state{}, string()) -> no_return()).
 
 error(State, Msg) ->
   case State#cl_state.output of
     standard_io -> ok;
     Outfile -> io:format(Outfile, "\n~s\n", [Msg])
   end,
+  maybe_close_output_file(State),
   throw({dialyzer_error, Msg}).
 
-return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
+return_value(State = #cl_state{erlang_mode=ErlangMode,
 			       mod_deps=ModDeps,
+			       output_plt=OutputPlt,
 			       plt_info=PltInfo,
 			       stored_errors=StoredErrors,
 			       stored_warnings=StoredWarnings},
 	     Plt) ->
-  maybe_close_output_file(State),
   RetValue =
     case State#cl_state.return_status of
       ?RET_INTERNAL_ERROR -> ?RET_INTERNAL_ERROR;
       _ ->      
-	case OutputPlt =:= undefined of
+	case OutputPlt =:= none of
 	  true -> ok;
 	  false -> dialyzer_plt:to_file(OutputPlt, Plt, ModDeps, PltInfo)
 	end,
-	if NofWarnings =:= 0 -> ?RET_NOTHING_SUSPICIOUS;
-	   true              -> ?RET_DISCREPANCIES_FOUND
+	case StoredWarnings =:= [] of
+	  true -> ?RET_NOTHING_SUSPICIOUS;
+	  false -> ?RET_DISCREPANCIES
 	end
     end,
-  case StoredWarnings =:= do_not_store of
-    true ->
-      %% Assert
-      do_not_store = StoredErrors,
-      RetValue;
+  case ErlangMode of
     false ->
-      %% Assert
-      false = StoredErrors =:= do_not_store,
-      {RetValue, StoredWarnings, StoredErrors}
+      print_warnings(State),
+      print_ext_calls(State),
+      maybe_close_output_file(State),
+      RetValue;
+    true -> 
+      {RetValue, process_warnings(StoredWarnings), StoredErrors}
   end.
 
+print_ext_calls(#cl_state{report_mode=quiet}) ->
+  ok;
+print_ext_calls(#cl_state{output=Output, external_calls=Msg, 
+			  stored_warnings=Warnings}) ->
+  case Warnings =:= [] of
+    true -> io:format(Output, "\n~s", [Msg]); %% Need to do a newline first
+    false -> io:format(Output, "~s", [Msg])
+  end.
+
+print_warnings(#cl_state{stored_warnings=[]}) ->
+  ok;
+print_warnings(#cl_state{output=Output, stored_warnings=Warnings}) ->
+  Warnings1 = process_warnings(Warnings),
+  String = lists:flatten([dialyzer:format_warning(W) || W <- Warnings1]),
+  io:format(Output, "\n~s", [String]).
+
+process_warnings(Warnings) ->
+  Warnings1 = lists:keysort(2, Warnings), %% Sort on file/line
+  remove_duplicate_warnings(Warnings1, []).
+
+remove_duplicate_warnings([Duplicate, Duplicate|Left], Acc) ->
+  remove_duplicate_warnings([Duplicate|Left], Acc);
+remove_duplicate_warnings([NotDuplicate|Left], Acc) ->
+  remove_duplicate_warnings(Left, [NotDuplicate|Acc]);
+remove_duplicate_warnings([], Acc) ->
+  lists:reverse(Acc).
 
 %% ----------------------------------------------------------------
 %%
@@ -400,22 +418,21 @@ return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
 %%
 
 build_analysis_record(DialyzerOptions) ->
-  From = DialyzerOptions#options.from,
-  IncludeDirs = DialyzerOptions#options.include_dirs,
-  Defines = DialyzerOptions#options.defines,
-  SupressInline = DialyzerOptions#options.supress_inline,
   Files0 = ordsets:from_list(DialyzerOptions#options.files),
   Files1 = ordsets:from_list(lists:concat([filelib:wildcard(F) 
 					   || F <- Files0])),
+  From = DialyzerOptions#options.from,
   Files2 = add_files_rec(DialyzerOptions#options.files_rec, From),  
   Files = ordsets:union(Files1, Files2),
-  AnalType = DialyzerOptions#options.analysis_type,
   {InitPlt, PltInfo} = 
     dialyzer_plt:plt_and_info_from_file(DialyzerOptions#options.init_plt),
-  {#analysis{type=AnalType,
-	     defines=Defines,
-	     include_dirs=IncludeDirs, plt=InitPlt,
-	     files=Files, start_from=From, supress_inline=SupressInline},
+  {#analysis{type=DialyzerOptions#options.analysis_type,
+	     defines=DialyzerOptions#options.defines,
+	     include_dirs=DialyzerOptions#options.include_dirs,
+	     plt=InitPlt,
+	     files=Files, 
+	     start_from=From, 
+	     use_contracts=DialyzerOptions#options.use_contracts},
    PltInfo}.
 
 add_files_rec(Files, From) ->
@@ -428,9 +445,11 @@ add_files_rec(Files, From) ->
     src_code -> filter_files(FinalFiles, ".erl")
   end.
 
+-spec(all_subdirs/1 :: ([string()]) -> [string()]).
 all_subdirs(Dirs) ->
   all_subdirs(Dirs, []).
 
+-spec(all_subdirs/2 :: ([string()], [string()]) -> [string()]).
 all_subdirs([Dir|T], Acc) ->
   {ok, Files} = file:list_dir(Dir),
   SubDirs = lists:zf(fun(F) ->
@@ -445,6 +464,7 @@ all_subdirs([Dir|T], Acc) ->
 all_subdirs([], Acc) ->
   Acc.
 
+-spec(filter_files/2 :: ([string()], string()) -> [string()]).
 filter_files(Files, Extension) ->
   Fun = fun(X) -> 
 	    filename:extension(X) =:= Extension
@@ -453,11 +473,12 @@ filter_files(Files, Extension) ->
 	end,
   lists:filter(Fun, Files).
 
+-spec(contains_files/2 :: (string(), string()) -> bool()).
 contains_files(Dir, Extension) ->
   {ok, Files} = file:list_dir(Dir),
   lists:any(fun(X) -> filename:extension(X) =:= Extension end, Files).
 
-
+-spec(run_analysis/2 :: (#cl_state{}, #analysis{}) -> #cl_state{}).
 run_analysis(State, Analysis) ->
   Self = self(),
   LegalWarnings = State#cl_state.legal_warnings,

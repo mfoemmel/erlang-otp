@@ -598,7 +598,7 @@ void epmd_cleanup_exit(EpmdVars *g, int exitval)
 
   if(g->conn){
       for (i = 0; i < g->max_conn; i++)
-	  if (g->conn[i].open == TRUE)
+	  if (g->conn[i].open == EPMD_TRUE)
 	      epmd_conn_close(g,&g->conn[i]);
       free(g->conn);
   }

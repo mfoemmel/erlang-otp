@@ -31,6 +31,8 @@
                  vcount=0,            % Variable counter
                  imports=[],          % Imports
                  records=dict:new(),  % Record definitions
+		 trecords=sets:new(), % Typed records
+		 uses_types=false,    % Are there -spec or -type in the module
                  strict_ra=[],        % strict record accesses
                  checked_ra=[]        % succesfully accessed records
                 }).
@@ -39,17 +41,44 @@
 %% erl_lint without errors.
 module(Fs0, Opts0) ->
     Opts = compiler_options(Fs0) ++ Opts0,
-    St0 = #exprec{compile = Opts},
+    TRecs = typed_records(Fs0),
+    UsesTypes = uses_types(Fs0),
+    St0 = #exprec{compile = Opts, trecords = TRecs, uses_types = UsesTypes},
     {Fs,_St} = forms(Fs0, St0),
     Fs.
 
 compiler_options(Forms) ->
     lists:flatten([C || {attribute,_,compile,C} <- Forms]).
+
+typed_records(Fs) ->
+    typed_records(Fs, sets:new()).
+
+typed_records([{attribute,_L,type,{{record, Name},_Defs,[]}} | Fs], Trecs) ->
+    typed_records(Fs, sets:add_element(Name, Trecs));
+typed_records([_|Fs], Trecs) ->
+    typed_records(Fs, Trecs);
+typed_records([], Trecs) ->
+    Trecs.
+
+uses_types([{attribute,_L,spec,_}|_]) -> true;
+uses_types([{attribute,_L,type,_}|_]) -> true;
+uses_types([_|Fs]) -> uses_types(Fs);
+uses_types([]) -> false.
     
-forms([{attribute,_L,record,{Name,Defs}} | Fs], St0) ->
+forms([{attribute,L,record,{Name,Defs}} | Fs], St0) ->
     NDefs = normalise_fields(Defs),
     St = St0#exprec{records=dict:store(Name, NDefs, St0#exprec.records)},
-    forms(Fs, St);
+    {Fs1, St1} = forms(Fs, St),
+    %% Check if we need to keep the record information for usage in types.
+    case St#exprec.uses_types of
+	true ->
+	    case sets:is_element(Name, St#exprec.trecords) of
+		true -> {Fs1, St1};
+		false -> {[{attribute,L,type,{{record,Name},Defs,[]}}|Fs1], St1}
+	    end;
+	false ->
+	    {Fs1, St1}
+    end;
 forms([{attribute,L,import,Is} | Fs0], St0) ->
     St1 = import(Is, St0),
     {Fs,St2} = forms(Fs0, St1),
@@ -548,6 +577,11 @@ strict_record_tests([no_strict_record_tests | _]) -> false;
 strict_record_tests([_ | Os]) -> strict_record_tests(Os);
 strict_record_tests([]) -> true.		%Default.
 
+strict_record_updates([strict_record_updates | _]) -> true;
+strict_record_updates([no_strict_record_updates | _]) -> false;
+strict_record_updates([_ | Os]) -> strict_record_updates(Os);
+strict_record_updates([]) -> false.		%Default.
+
 %% pattern_fields([RecDefField], [Match]) -> [Pattern].
 %%  Build a list of match patterns for the record tuple elements.
 %%  This expansion must be passed through pattern again. N.B. We are
@@ -599,12 +633,14 @@ record_update(R, Name, Fs, Us0, St0) ->
     %% to guarantee that it is only evaluated once.
     {Var,St2} = new_var(Line, St1),
 
+    StrictUpdates = strict_record_updates(St2#exprec.compile),
+
     %% Try to be intelligent about which method of updating record to use.
     {Update,St} =
         if
             Nu =:= 0 -> 
                 record_match(Var, Name, Line, Fs, Us, St2);
-            Nu =< Nc ->                         %Few fields updated
+            Nu =< Nc, not StrictUpdates ->      %Few fields updated
                 {record_setel(Var, Name, Fs, Us), St2};
             true ->                             %The wide area inbetween
                 record_match(Var, Name, element(2, hd(Us)), Fs, Us, St2)

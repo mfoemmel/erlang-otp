@@ -1,5 +1,19 @@
-{"4.10.1",
+{"4.10.3",
  [
+  {"4.10.2",   
+   [
+    {update, snmpm_config, soft, soft_purge, soft_purge, []}
+   ]
+  },
+
+  {"4.10.1",   
+   [
+    {load_module, snmp_generic, soft_purge, soft_purge, []},
+    {load_module, snmpa_trap, soft_purge, soft_purge, []},
+    {load_module, snmpa_mib_data, soft_purge, soft_purge, []}, 
+    {update, snmpm_config, soft, soft_purge, soft_purge, []}
+   ]
+  },
   {"4.10",   
    [
     {load_module, snmp, soft_purge, soft_purge, []},
@@ -8,7 +22,11 @@
     {load_module, snmp_conf, soft_purge, soft_purge, []},
     {load_module, snmp_config, soft_purge, soft_purge, []},
     {load_module, snmp_log, soft_purge, soft_purge, []},
-    {load_module, snmpa_supervisor, soft_purge, soft_purge, []}
+    {load_module, snmp_generic, soft_purge, soft_purge, []},
+    {load_module, snmpa_trap, soft_purge, soft_purge, []},
+    {load_module, snmpa_mib_data, soft_purge, soft_purge, []},
+    {load_module, snmpa_supervisor, soft_purge, soft_purge, []}, 
+    {update, snmpm_config, soft, soft_purge, soft_purge, []}
    ]
   }
  ], 
@@ -16,6 +34,20 @@
 %% ---------------------------------------------------------------------------
 
  [
+  {"4.10.2",   
+   [
+    {update, snmpm_config, soft, soft_purge, soft_purge, []}
+   ]
+  },
+
+  {"4.10.1",   
+   [
+    {load_module, snmp_generic, soft_purge, soft_purge, []},
+    {load_module, snmpa_trap, soft_purge, soft_purge, []},
+    {load_module, snmpa_mib_data, soft_purge, soft_purge, []}, 
+    {update, snmpm_config, soft, soft_purge, soft_purge, []}
+   ]
+  },
   {"4.10",   
    [
     {load_module, snmp, soft_purge, soft_purge, []},
@@ -24,7 +56,11 @@
     {load_module, snmp_conf, soft_purge, soft_purge, []},
     {load_module, snmp_config, soft_purge, soft_purge, []},
     {load_module, snmp_log, soft_purge, soft_purge, []},
-    {load_module, snmpa_supervisor, soft_purge, soft_purge, []}
+    {load_module, snmp_generic, soft_purge, soft_purge, []},
+    {load_module, snmpa_trap, soft_purge, soft_purge, []},
+    {load_module, snmpa_mib_data, soft_purge, soft_purge, []},
+    {load_module, snmpa_supervisor, soft_purge, soft_purge, []}, 
+    {update, snmpm_config, soft, soft_purge, soft_purge, []}
    ]
   }
  ]

@@ -1,6 +1,6 @@
 {application, asn1,
- [{description, "The Erlang ASN1 compiler version 1.5"},
-  {vsn, "1.5"},
+ [{description, "The Erlang ASN1 compiler version 1.5.1"},
+  {vsn, "1.5.1"},
   {modules, [
 	asn1rt,
 	asn1rt_per_bin,

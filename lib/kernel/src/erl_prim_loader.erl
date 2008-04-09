@@ -48,12 +48,12 @@
 
 -record(state, 
 	{
-	 loader,		  % efile | inet
+	 loader              :: 'efile' | 'inet',
 	 hosts = [],              % hosts list (to boot from)
 	 id,                      % not used any more?
 	 data,                    % data port etc
 	 timeout,                 % idle timeout
-	 multi_get = false       % true | false
+	 multi_get = false   :: bool()
 	}).
 
 %% Defines for inet as prim_loader

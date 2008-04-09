@@ -250,7 +250,11 @@ vxworks_to_posix(int vx_errno)
     case S_nfsLib_NFSERR_NOENT: return ENOENT;
     case S_nfsLib_NFSERR_IO: return EIO;
     case S_nfsLib_NFSERR_NXIO: return ENXIO;
+#ifdef S_nfsLib_NFSERR_ACCES
     case S_nfsLib_NFSERR_ACCES: return EACCES;
+#else
+    case S_nfsLib_NFSERR_ACCESS: return EACCES;
+#endif
     case S_nfsLib_NFSERR_EXIST: return EEXIST;
     case S_nfsLib_NFSERR_NODEV: return ENODEV;
     case S_nfsLib_NFSERR_NOTDIR: return ENOTDIR;
@@ -265,20 +269,26 @@ vxworks_to_posix(int vx_errno)
     case S_nfsLib_NFSERR_WFLUSH: return ENXIO;
 	/* And sometimes (...) the error codes are from ioLib (as in the */
 	/* case of the (for nfsLib) unimplemented rename function) */
-    case S_ioLib_NO_DRIVER: return ENXIO;
-    case S_ioLib_UNKNOWN_REQUEST: return ENOSYS;
-    case S_ioLib_DEVICE_ERROR: return ENXIO;
-    case  S_ioLib_DEVICE_TIMEOUT: return EIO;
-    case S_ioLib_WRITE_PROTECTED: return EACCES;
     case  S_ioLib_DISK_NOT_PRESENT: return EIO;
+#if S_ioLib_DISK_NOT_PRESENT != S_ioLib_NO_DRIVER
+    case S_ioLib_NO_DRIVER: return ENXIO;
+#endif
+    case S_ioLib_UNKNOWN_REQUEST: return ENOSYS;
+    case  S_ioLib_DEVICE_TIMEOUT: return EIO;
+#ifdef S_ioLib_UNFORMATED
+	/* Added (VxWorks 5.2 -> 5.3.1) */
+  #if S_ioLib_UNFORMATED != S_ioLib_DEVICE_TIMEOUT
+    case S_ioLib_UNFORMATED: return EIO;
+  #endif
+#endif
+#if S_ioLib_DEVICE_TIMEOUT != S_ioLib_DEVICE_ERROR
+    case S_ioLib_DEVICE_ERROR: return ENXIO;
+#endif
+    case S_ioLib_WRITE_PROTECTED: return EACCES;
     case S_ioLib_NO_FILENAME: return EINVAL;
     case S_ioLib_CANCELLED: return EINTR;
     case  S_ioLib_NO_DEVICE_NAME_IN_PATH: return EINVAL;
     case  S_ioLib_NAME_TOO_LONG: return ENAMETOOLONG;
-#ifdef S_ioLib_UNFORMATED
-	/* Added (VxWorks 5.2 -> 5.3.1) */
-    case S_ioLib_UNFORMATED: return EIO;
-#endif
 #ifdef S_objLib_OBJ_UNAVAILABLE
     case S_objLib_OBJ_UNAVAILABLE: return ENOENT;
 #endif

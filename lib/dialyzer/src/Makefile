@@ -20,10 +20,9 @@ VSN=$(DIALYZER_VSN)
 RELSYSDIR = $(RELEASE_PATH)/lib/dialyzer-$(VSN)
 
 # ----------------------------------------------------
-# Orientation information -- find HiPE's icode dir
+# Orientation information
 # ----------------------------------------------------
 DIALYZER_DIR = $(ERL_TOP)/lib/dialyzer
-HIPE_ICODE_DIR = $(ERL_TOP)/lib/hipe/icode
 
 ##---------------------------------------------------------------------
 ## Edit here if you want to change the default libraries included in
@@ -35,7 +34,7 @@ DIALYZER_DEF_LIBS = "kernel,mnesia,stdlib"
 ##
 ## 2. Configuration which includes enough stuff for most Dialyzer uses
 ## 
-## DIALYZER_DEF_LIBS = "compiler,gs,hipe,kernel,mnesia,stdlib,syntax_tools"
+## DIALYZER_DEF_LIBS = "compiler,crypto,dialyzer,gs,hipe,kernel,mnesia,stdlib,syntax_tools"
 ##
 ## 3. Configuration without any unknown functions when building the PLT.
 ##    Gives good results for most uses, but takes really long to
@@ -61,7 +60,6 @@ MODULES =  \
 	dialyzer_dataflow \
 	dialyzer_dep \
 	dialyzer_gui \
-	dialyzer_icode \
 	dialyzer_options \
 	dialyzer_plt \
 	dialyzer_succ_typings \
@@ -86,7 +84,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += -I$(HIPE_ICODE_DIR) +warn_unused_import +warn_obsolete_guard
+ERL_COMPILE_FLAGS += +warn_unused_import +warn_obsolete_guard +warn_untyped_record +warn_missing_spec_exported
 
 # ----------------------------------------------------
 # Targets
@@ -113,13 +111,13 @@ $(DIALYZER_DIR)/plt/dialyzer_init_plt: ../../hipe/ebin/erl_types.beam ../../hipe
 	$(ERL_TOP)/bin/dialyzer --check_init_plt
 
 $(EBIN)/dialyzer_cl_parse.$(EMULATOR): dialyzer_cl_parse.erl ../vsn.mk Makefile
-	erlc $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_cl_parse.erl
+	erlc -W  $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_cl_parse.erl
 
 $(EBIN)/dialyzer_plt.$(EMULATOR): dialyzer_plt.erl Makefile ../vsn.mk
-	erlc $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_plt.erl
+	erlc -W  $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_plt.erl
 
 $(EBIN)/dialyzer_gui.$(EMULATOR): dialyzer_gui.erl ../vsn.mk
-	erlc $(ERL_COMPILE_FLAGS) -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_gui.erl
+	erlc -W  $(ERL_COMPILE_FLAGS) -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_gui.erl
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
@@ -132,17 +130,18 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 # ---------------------------------------------------------------------
 
 $(EBIN)/dialyzer.beam: dialyzer.hrl
-$(EBIN)/dialyzer_analysis.beam: dialyzer.hrl
 $(EBIN)/dialyzer_analysis_callgraph.beam: dialyzer.hrl
 $(EBIN)/dialyzer_callgraph.beam: dialyzer_callgraph.hrl
 $(EBIN)/dialyzer_cl.beam: dialyzer.hrl
 $(EBIN)/dialyzer_cl_parse.beam: dialyzer.hrl
-$(EBIN)/dialyzer_contracts.beam: dialyzer.hrl
+$(EBIN)/dialyzer_codeserver.beam: dialyzer.hrl
+$(EBIN)/dialyzer_contracts.beam: dialyzer.hrl dialyzer_callgraph.hrl
 $(EBIN)/dialyzer_dataflow.beam: dialyzer.hrl dialyzer_callgraph.hrl
+$(EBIN)/dialyzer_dep.beam: dialyzer.hrl
 $(EBIN)/dialyzer_gui.beam: dialyzer.hrl
-$(EBIN)/dialyzer_icode.beam: $(HIPE_ICODE_DIR)/hipe_icode.hrl dialyzer.hrl
 $(EBIN)/dialyzer_options.beam: dialyzer.hrl
 $(EBIN)/dialyzer_plt.beam: dialyzer.hrl
+$(EBIN)/dialyzer_succ_typings.beam: dialyzer.hrl dialyzer_callgraph.hrl
 $(EBIN)/dialyzer_typesig.beam: dialyzer.hrl dialyzer_bif_constraints.inc
 $(EBIN)/dialyzer_utils.beam: dialyzer.hrl
 

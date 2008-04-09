@@ -397,7 +397,7 @@ gen_enter_primop({Op, Args}, IsGuard, ConstTab) ->
       %% Tail-call to a closure must preserve tail-callness!
       %% (Passing Continuation = [] to gen_apply_N/5 does this.)
       Code = gen_apply_N([], Arity, Args, [], []),
-      {Code,  ConstTab};
+      {Code, ConstTab};
 
     _ ->
       %% All other primop tail calls are converted to call + return.

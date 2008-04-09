@@ -35,7 +35,6 @@
 
 	 mk_mfa/3,
 	 %% is_mfa/1,
-	 mfa_mfa/1,
 
 	 mk_prim/1,
 	 is_prim/1,
@@ -238,7 +237,6 @@ mk_fpreg(Reg, Pseudo) -> #x86_fpreg{reg=Reg, pseudo=Pseudo}.
 
 mk_mfa(M, F, A) -> #x86_mfa{m=M, f=F, a=A}.
 %% is_mfa(X) -> case X of #x86_mfa{} -> true; _ -> false end.
-mfa_mfa(#x86_mfa{m=M, f=F, a=A}) -> {M, F, A}.
 
 mk_prim(Prim) -> #x86_prim{prim=Prim}.
 is_prim(X) -> case X of #x86_prim{} -> true; _ -> false end.

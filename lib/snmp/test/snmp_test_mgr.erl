@@ -100,13 +100,13 @@ send_bytes(Bytes) ->
     ?SERVER ! {send_bytes, Bytes}, ok.
 
 purify_oid(Oid) ->
-    gen_server:call(?SERVER, {purify_oid, Oid}, infinity).
+    gen_server:call(?SERVER, {purify_oid, Oid}, 5000).
 
 oid_to_name(Oid) ->
-    gen_server:call(?SERVER, {oid_to_name, Oid}, infinity).
+    gen_server:call(?SERVER, {oid_to_name, Oid}, 5000).
 
 name_to_oid(Name) ->
-    gen_server:call(?SERVER, {name_to_oid, Name}, infinity).
+    gen_server:call(?SERVER, {name_to_oid, Name}, 5000).
 
 
 %%----------------------------------------------------------------------
@@ -1066,6 +1066,7 @@ find_pure_oids([{XOid, Q}|T]) ->
 find_pure_oids2([]) -> [];
 find_pure_oids2([XOid|T]) ->
     [find_pure_oid(XOid) | find_pure_oids2(T)].
+
 
 %%----------------------------------------------------------------------
 %% Returns: Oid

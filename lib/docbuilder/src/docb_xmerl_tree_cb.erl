@@ -55,7 +55,14 @@
 
 '#element#'(Tag, Data, Attrs, Parents, _E) when Tag==pre; Tag==code ->
     [H|T] = reinsert_nl(Data),
-    {Tag, attrs(get_dtd(Parents), Tag, Attrs), [strip_nl(H)|T]};
+    NewData = [strip_nl(H)|T],
+    NewData2 = case Tag of
+		   code ->
+		       fix_single_pcdata(NewData);
+		   pre ->
+		       NewData
+	       end,
+    {Tag, attrs(get_dtd(Parents), Tag, Attrs), NewData2};
 '#element#'(Tag, Data, Attrs, Parents, _E) ->
     NewData = case tag_content(Tag) of
 		  no_pcdata -> % remove all pcdata
@@ -289,6 +296,7 @@ tag_content(com) -> single_pcdata;
 tag_content(comsummary) -> single_pcdata;
 tag_content(copyright) -> mixed_content;
 tag_content(ctitle) -> single_pcdata;
+tag_content(d) -> mixed_content;
 tag_content(date) -> single_pcdata;
 tag_content(docno) -> single_pcdata;
 tag_content(em) -> mixed_content;

@@ -21,6 +21,7 @@
 %% Purpose:
 %%
 %% Test:    ts:run(snmp, snmp_manager_test, [batch]).
+%% Test:    ts:run(snmp, snmp_manager_test, event_tests, [batch]).
 %% Test:    ts:run(snmp, snmp_manager_test, inform_swarm, [batch]).
 %% 
 %%----------------------------------------------------------------------
@@ -2552,7 +2553,7 @@ inform1(Config) when list(Config) ->
     Cmd1 = 
 	fun() ->
 		p("manager info: ~n~p", [mgr_info(MgrNode)]),
-		%% p("manager system info: ~n~p", [mgr_sys_info(MgrNode)]),
+		p("manager system info: ~n~p", [mgr_sys_info(MgrNode)]),
 		p("agent info: ~n~p", [agent_info(AgentNode)]),
 		ok
 	end,
@@ -3525,8 +3526,8 @@ set_snmp_env(Node, Entity, Env) -> set_app_env(Node, snmp, Entity, Env).
 mgr_info(Node) ->
     rcall(Node, snmpm, info, []).
 
-%% mgr_sys_info(Node) ->
-%%     rcall(Node, snmpm_config, system_info, []).
+mgr_sys_info(Node) ->
+    rcall(Node, snmpm_config, system_info, []).
 
 %% mgr_register_user(Node, Id, Data) ->
 %%     mgr_register_user(Node, Id, ?MODULE, Data).
@@ -3825,7 +3826,7 @@ start_manager(Node, Vsns, Conf0, Opts) ->
     NetIfVerbosity     = get_opt(manager_net_if_verbosity,     Conf0, trace),
 
     Env = [{versions,                     Vsns},
-	   {inform_response_behaviour,    IRB},
+	   {inform_request_behaviour,     IRB},
 	   {audit_trail_log, [{type,      read_write},
 			      {dir,       AtlDir},
 			      {size,      {10240, 10}},

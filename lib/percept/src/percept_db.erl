@@ -17,7 +17,6 @@
 %% 
 
 %% 
-%% @author Björn-Egil Dahlberg 
 %% @doc Percept database.
 %%	
 %% 

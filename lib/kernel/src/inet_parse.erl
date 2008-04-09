@@ -365,10 +365,10 @@ collect_line(Fd, Cs) ->
     end.    
 
 collect_line(Fd, N, [$\r, $\n|_], Cs) ->
-    file:position(Fd, {cur,-(N-2)}),
+    {ok, _} = file:position(Fd, {cur,-(N-2)}),
     reverse([$\n|Cs]);
 collect_line(Fd, N, [$\n|_], Cs) ->
-    file:position(Fd, {cur,-(N-1)}),
+    {ok, _} = file:position(Fd, {cur,-(N-1)}),
     reverse([$\n|Cs]);
 collect_line(Fd, _, [], Cs) ->
     collect_line(Fd, Cs);

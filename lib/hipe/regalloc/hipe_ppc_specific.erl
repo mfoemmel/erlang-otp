@@ -19,7 +19,6 @@
 	 ,non_alloc/1
 	 ,physical_name/1
 	 ,reverse_postorder/1
-	 ,succ_map/1
 	 ,livein/2
 	 ,uses/1
 	 ,defines/1
@@ -84,9 +83,6 @@ physical_name(Reg) ->
   Reg.
 
 %% CFG stuff
-
-succ_map(CFG) ->
-  hipe_ppc_cfg:succ_map(CFG).
 
 labels(CFG) ->
   hipe_ppc_cfg:labels(CFG).

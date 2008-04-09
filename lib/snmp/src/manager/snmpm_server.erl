@@ -1925,9 +1925,9 @@ do_handle_inform(UserId, Mod, Ref, Addr, Port, SnmpInform, Data, State) ->
 
 
 handle_inform_response(_, ignore, _Addr, _Port, _State) ->
-    ok;
+    ignore;
 handle_inform_response(no_reply, _Ref, _Addr, _Port, _State) ->
-    ok;
+    no_reply;
 handle_inform_response(_, Ref, Addr, Port, 
 		       #state{net_if = Pid, net_if_mod = Mod}) ->
     ?vdebug("handle_inform -> response", []),
