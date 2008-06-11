@@ -18,10 +18,10 @@
 
 %%%----------------------------------------------------------------------
 %%% File    : dialyzer_options.erl
-%%% Authors : Richard Carlsson <richardc@csd.uu.se>
+%%% Authors : Richard Carlsson <richardc@it.uu.se>
 %%% Description : Provides a better way to start Dialyzer from a script.
 %%%
-%%% Created : 17 Oct 2004 by Richard Carlsson <richardc@csd.uu.se>
+%%% Created : 17 Oct 2004 by Richard Carlsson <richardc@it.uu.se>
 %%%----------------------------------------------------------------------
 
 -module(dialyzer_options).
@@ -46,16 +46,57 @@ build(Opts) ->
 		  ?WARN_CONTRACT_TYPES,
 		  ?WARN_CONTRACT_SYNTAX],
   DefaultWarns1 = ordsets:from_list(DefaultWarns),
-  InitPlt = filename:join([code:lib_dir(dialyzer),"plt","dialyzer_init_plt"]),
+  InitPlt = dialyzer_plt:get_default_plt(),
   DefaultOpts = #options{},
   DefaultOpts1 = DefaultOpts#options{legal_warnings=DefaultWarns1,
 				      init_plt=InitPlt},
   try 
-    build_options(Opts, DefaultOpts1)
+    NewOpts = build_options(Opts, DefaultOpts1),
+    postprocess_opts(NewOpts)
   catch
     throw:{dialyzer_options_error, Msg} -> {error, Msg}
   end.
 
+postprocess_opts(Opts = #options{}) ->
+  Opts1 = check_output_plt(Opts),
+  adapt_get_warnings(Opts1).
+
+check_output_plt(Opts = #options{analysis_type=Mode}) ->
+  case is_plt_mode(Mode) of
+    true ->
+      case Opts#options.from =:= byte_code of
+	true -> Opts;
+	false -> 
+	  throw({dialyzer_error, 
+		 io_lib:format("Analysis must be done on byte code "
+			       "in analysis mode ~w", [Mode])})
+      end;
+    false ->
+      case Opts#options.output_plt =:= none of
+	true -> Opts;
+	false -> 
+	  throw({dialyzer_error, 
+		 io_lib:format("Output plt cannot be specified "
+			       "in analysis mode ~w", [Mode])})
+      end
+  end.
+
+adapt_get_warnings(Opts = #options{analysis_type=Mode}) ->
+  %% Warnings are off by default in plt mode, and on by default in
+  %% success typings mode. User defined warning mode overrides the
+  %% default.
+  case is_plt_mode(Mode) of
+    true ->
+      case Opts#options.get_warnings =:= maybe of
+	true -> Opts#options{get_warnings=false};
+	false -> Opts
+      end;
+    false ->
+      case Opts#options.get_warnings =:= maybe of
+	true -> Opts#options{get_warnings=true};
+	false -> Opts
+      end
+  end.
 
 -spec(bad_option/2 :: (string(), _) -> no_return()).
 
@@ -74,11 +115,20 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
     files_rec ->
       assert_filenames(Term, Value),
       build_options(Rest, Options#options{files_rec=Value});
-    analysis_type when Value =:= dataflow; 
-		       Value =:= old_style ->
-      bad_option("Analysis type is no longer supported", Term);
-    analysis_type when Value =:= succ_typings ->
-      build_options(Rest, Options#options{analysis_type=Value});
+    analysis_type ->
+      NewOptions =
+	case Value of
+	  succ_typings -> Options#options{analysis_type=Value};
+	  plt_add      -> Options#options{analysis_type=Value};
+	  plt_build    -> Options#options{analysis_type=Value};
+	  plt_check    -> Options#options{analysis_type=Value};
+	  plt_remove   -> Options#options{analysis_type=Value};
+	  dataflow  -> bad_option("Analysis type is no longer supported", Term);
+	  old_style -> bad_option("Analysis type is no longer supported", Term);
+	  Other     -> bad_option("Unknown analysis type", Other)
+	end,
+      assert_plt_op(Options, NewOptions),
+      build_options(Rest, NewOptions);
     defines ->
       assert_defines(Term, Value),
       OldVal = Options#options.defines,
@@ -86,6 +136,8 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
       build_options(Rest, Options#options{defines=NewVal});
     from when Value =:= byte_code; Value =:= src_code ->
       build_options(Rest, Options#options{from=Value});
+    get_warnings ->
+      build_options(Rest, Options#options{get_warnings=Value});
     init_plt ->
       assert_filenames([Term], [Value]),
       build_options(Rest, Options#options{init_plt=Value});
@@ -97,15 +149,13 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
     use_spec ->
       build_options(Rest, Options#options{use_contracts=Value});
     old_style ->
-      case Value of
-	true ->
-	  bad_option("Analysis type is no longer supported", old_style);
-	false ->
-	  build_options(Rest, Options)
-      end;
+      bad_option("Analysis type is no longer supported", old_style);
     output_file ->
       assert_filenames([Term], [Value]),
       build_options(Rest, Options#options{output_file=Value});
+    output_format ->
+      assert_output_format(Value),
+      build_options(Rest, Options#options{output_format=Value});
     output_plt ->
       assert_filenames([Term], [Value]),
       build_options(Rest, Options#options{output_plt=Value});
@@ -136,6 +186,25 @@ assert_defines(_Term, []) ->
 assert_defines(Term, [_|_]) ->
   bad_option("Malformed define", Term).
 
+assert_output_format(raw) ->
+  ok;
+assert_output_format(formatted) ->
+  ok;
+assert_output_format(Term) ->
+  bad_option("Illegal value for output_format", Term).
+
+assert_plt_op(#options{analysis_type=OldVal}, 
+	      #options{analysis_type=NewVal}) ->
+  case is_plt_mode(OldVal) andalso is_plt_mode(NewVal) of
+    true -> bad_option("Options cannot be combined", [OldVal, NewVal]);
+    false -> ok
+  end.
+
+is_plt_mode(plt_add)      -> true;
+is_plt_mode(plt_build)    -> true;
+is_plt_mode(plt_remove)   -> true;
+is_plt_mode(plt_check)    -> true;
+is_plt_mode(succ_typings) -> false.
 
 %%-spec(build_warnings/2 :: ([atom()], ordset(warning())) -> ordset(warning())).
 build_warnings([Opt|Left], Warnings) ->

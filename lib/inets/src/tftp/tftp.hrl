@@ -41,7 +41,8 @@
 		 debug_level  = none,
 		 timeout,
 		 user_options = [],
-		 callbacks    = []}).
+		 callbacks    = [],
+		 logger       = tftp_logger,
+		 max_retries  = 5}).
 
 -record(callback, {regexp, internal, module, state, block_no, count}).
-

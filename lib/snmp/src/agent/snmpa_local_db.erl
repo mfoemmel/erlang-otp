@@ -60,8 +60,8 @@
 -define(ETS_TAB,    snmpa_local_db2).
 -define(SERVER,     ?MODULE).
 
--record(state,{dets, ets, notify_clients = [], backup}).
-
+-record(state, {dets, ets, notify_clients = [], backup}).
+-record(dets,  {tab, shadow}).
 
 %% -define(snmp_debug,true).
 -include("snmp_debug.hrl").
@@ -151,6 +151,7 @@ do_init(Prio, DbDir, DbInitError, Opts) ->
     ?vlog("starting",[]),
     Dets = dets_open(DbDir, DbInitError, Opts),
     Ets  = ets:new(?ETS_TAB, [set, protected]),
+    ?vdebug("started",[]),
     {ok, #state{dets = Dets, ets = Ets}}.
 
 dets_open(DbDir, DbInitError, Opts) ->
@@ -161,7 +162,11 @@ dets_open(DbDir, DbInitError, Opts) ->
 	    %% File exists
 	    case do_dets_open(Name, Filename, Opts) of
 		{ok, Dets} ->
-		    Dets;
+		    ?vdebug("dets open done",[]),
+		    Shadow = ets:new(snmp_local_db1_shadow, [set, protected]),
+		    dets:to_ets(Dets, Shadow),
+		    ?vtrace("shadow table created and populated",[]),
+		    #dets{tab = Dets, shadow = Shadow};
 		{error, Reason1} ->
                     user_err("Corrupt local database: ~p", [Filename]),
 		    case DbInitError of
@@ -186,7 +191,10 @@ dets_open(DbDir, DbInitError, Opts) ->
 	_ ->
 	    case do_dets_open(Name, Filename, Opts) of
 		{ok, Dets} ->
-		    Dets;
+		    ?vdebug("dets open done",[]),
+		    Shadow = ets:new(snmp_local_db1_shadow, [set, protected]),
+		    ?vtrace("shadow table created",[]),
+		    #dets{tab = Dets, shadow = Shadow};
 		{error, Reason} ->
 		    user_err("Could not create local database ~p"
 			     "~n   ~p", [Filename, Reason]),
@@ -468,7 +476,8 @@ handle_call({backup, BackupDir}, From, #state{dets = Dets} = State) ->
 			  put(sname, albs),
 			  put(verbosity, V),
 			  Dir   = filename:join([BackupDir]), 
-			  Reply = handle_backup(Dets, Dir),
+			  #dets{tab = Tab} = Dets, 
+			  Reply = handle_backup(Tab, Dir),
 			  Pid ! {backup_done, Reply},
 			  unlink(Pid)
 		  end),	
@@ -482,7 +491,7 @@ handle_call({backup, BackupDir}, From, #state{dets = Dets} = State) ->
 
 handle_call(dump, _From, #state{dets = Dets} = State) ->
     ?vlog("dump",[]),
-    dets:sync(Dets),
+    dets_sync(Dets),
     {reply, ok, State};
 
 handle_call(info, _From, #state{dets = Dets, ets = Ets} = State) ->
@@ -493,7 +502,7 @@ handle_call(info, _From, #state{dets = Dets, ets = Ets} = State) ->
 handle_call(print, _From, #state{dets = Dets, ets = Ets} = State) ->
     ?vlog("print",[]),
     L1 = ets:tab2list(Ets),
-    L2 = dets:match_object(Dets, '_'),
+    L2 = dets_match_object(Dets, '_'),
     {reply, {{ets, L1}, {dets, L2}}, State};
 
 handle_call({print, Table, Db}, _From, State) ->
@@ -589,27 +598,25 @@ terminate(Reason, State) ->
 
 %% downgrade
 %% 
-code_change({down, _Vsn}, S1, downgrade_to_pre_4_7) ->
-    #state{dets = D, ets = E, notify_clients = NC, backup = B} = S1,
-    stop_backup_server(B),
-    S2 = {state, D, E, NC},
+code_change({down, _Vsn}, S1, downgrade_to_pre_4_11) ->
+    #state{dets = D} = S1,
+    #dets{tab = Dets, shadow = Shadow} = D, 
+    ets:delete(Shadow), 
+    S2 = S1#state{dets = Dets},
     {ok, S2};
 
 %% upgrade
 %% 
-code_change(_Vsn, S1, upgrade_from_pre_4_7) ->
-    {state, D, E, NC} = S1,
-    S2 = #state{dets = D, ets = E, notify_clients = NC}, 
+code_change(_Vsn, S1, upgrade_from_pre_4_11) ->
+    #state{dets = D} = S1,
+    Shadow = ets:new(snmp_local_db1_shadow, [set, protected]),
+    dets:to_ets(D, Shadow),
+    Dets =  #dets{tab = D, shadow = Shadow}, 
+    S2 = S1#state{dets = Dets},
     {ok, S2};
 
 code_change(_Vsn, State, _Extra) ->
     {ok, State}.
-
-
-stop_backup_server(undefined) ->
-    ok;
-stop_backup_server({Pid, _}) when pid(Pid) ->
-    exit(Pid, kill).
 
 
 
@@ -842,7 +849,7 @@ insert(persistent, Key, Val, #state{dets = Dets, notify_clients = NC}) ->
 	    "~n   Key: ~p"
 	    "~n   Val: ~p",
 	    [Key,Val]),
-    case dets:insert(Dets, {Key, Val}) of
+    case dets_insert(Dets, {Key, Val}) of
 	ok ->
 	    notify_clients(insert,NC),
 	    true;
@@ -856,7 +863,7 @@ insert(permanent, Key, Val, #state{dets = Dets, notify_clients = NC}) ->
 	    "~n   Key: ~p"
 	    "~n   Val: ~p",
 	    [Key,Val]),
-    case dets:insert(Dets, {Key, Val}) of
+    case dets_insert(Dets, {Key, Val}) of
 	ok ->
 	    notify_clients(insert,NC),
 	    true;
@@ -874,7 +881,7 @@ delete(volatile, Key, State) ->
     ets:delete(State#state.ets, Key),
     true;
 delete(persistent, Key, #state{dets = Dets, notify_clients = NC}) -> 
-    case dets:delete(Dets, Key) of
+    case dets_delete(Dets, Key) of
 	ok ->
 	    notify_clients(delete,NC),
 	    true;
@@ -884,7 +891,7 @@ delete(persistent, Key, #state{dets = Dets, notify_clients = NC}) ->
 	    false
     end;
 delete(permanent, Key, #state{dets = Dets, notify_clients = NC}) -> 
-    case dets:delete(Dets, Key) of
+    case dets_delete(Dets, Key) of
 	ok ->
 	    notify_clients(delete,NC),
 	    true;
@@ -902,7 +909,7 @@ delete(UnknownDb, Key, _) ->
 match(volatile, Name, Pattern, #state{ets = Ets}) ->
     ets:match(Ets, {{Name,'_'},{Pattern,'_','_'}});
 match(persistent, Name, Pattern, #state{dets = Dets}) ->
-    case dets:match(Dets, {{Name,'_'},{Pattern,'_','_'}}) of
+    case dets_match(Dets, {{Name,'_'},{Pattern,'_','_'}}) of
 	{error, Reason} ->
 	    error_msg("DETS (persistent) match failed for {~w,~w}: ~n~w", 
 		      [Name, Pattern, Reason]),
@@ -911,7 +918,7 @@ match(persistent, Name, Pattern, #state{dets = Dets}) ->
 	    Match
     end;
 match(permanent, Name, Pattern, #state{dets = Dets}) ->
-    case dets:match(Dets, {{Name,'_'},{Pattern,'_','_'}})  of
+    case dets_match(Dets, {{Name,'_'},{Pattern,'_','_'}})  of
 	{error, Reason} ->
 	    error_msg("DETS (permanent) match failed for {~w,~w}: ~n~w", 
 		      [Name, Pattern, Reason]),
@@ -930,7 +937,7 @@ lookup(volatile, Key, #state{ets = Ets}) ->
 	[] -> undefined
     end;
 lookup(persistent, Key, #state{dets = Dets}) ->
-    case dets:lookup(Dets, Key) of
+    case dets_lookup(Dets, Key) of
 	[{_, Val}] -> {value, Val};
 	[] -> undefined;
 	{error, Reason} ->
@@ -938,11 +945,14 @@ lookup(persistent, Key, #state{dets = Dets}) ->
 	    undefined
     end;
 lookup(permanent, Key, #state{dets = Dets}) ->
-    case dets:lookup(Dets, Key) of
-	[{_, Val}] -> {value, Val};
-	[] -> undefined;
+    case dets_lookup(Dets, Key) of
+	[{_, Val}] -> 
+	    {value, Val};
+	[] -> 
+	    undefined;
 	{error, Reason} ->
-	    error_msg("DETS lookup ~w failed: ~n~w", [Key, Reason]),
+	    error_msg("DETS (permanent) lookup ~w failed: ~n~w", 
+		      [Key, Reason]),
 	    undefined
     end;
 lookup(UnknownDb, Key, _) ->
@@ -951,7 +961,7 @@ lookup(UnknownDb, Key, _) ->
 
 close(#state{dets = Dets, ets = Ets}) -> 
     ets:delete(Ets),
-    dets:close(Dets).
+    dets_close(Dets).
 
 
 %%-----------------------------------------------------------------
@@ -1118,7 +1128,7 @@ get_info(Dets, Ets) ->
     DetsSz   = dets_size(Dets),
     EtsSz    = ets_size(Ets),
     [{process_memory, ProcSize},
-     {db_memory, [{dets, DetsSz}, {ets, EtsSz}]}].
+     {db_memory, [{persistent, DetsSz}, {volatile, EtsSz}]}].
 
 proc_mem(P) when is_pid(P) ->
     case (catch erlang:process_info(P, memory)) of
@@ -1130,13 +1140,16 @@ proc_mem(P) when is_pid(P) ->
 %% proc_mem(_) ->
 %%     undefined.
 
-dets_size(T) ->
-    case (catch dets:info(T, file_size)) of
-	Sz when is_integer(Sz) ->
-	    Sz;
-	_ ->
-	    undefined
-    end.
+dets_size(#dets{tab = Tab, shadow = Shadow}) ->
+    TabSz = 
+	case (catch dets:info(Tab, file_size)) of
+	    Sz when is_integer(Sz) ->
+		Sz;
+	    _ ->
+		undefined
+	end,
+    ShadowSz = ets_size(Shadow),
+    [{tab, TabSz}, {shadow, ShadowSz}].
 
 ets_size(T) ->
     case (catch ets:info(T, memory)) of
@@ -1176,10 +1189,33 @@ cast(Msg) ->
 
 
 %% ----------------------------------------------------------------
+%% DETS wrapper functions
+%% The purpose of these fuctions is basically to hide the shadow 
+%% table.
+%% Changes are made both in dets and in the shadow table.
+%% Reads are made from the shadow table.
+%% ----------------------------------------------------------------
 
-% i(F) ->
-%     i(F, []).
+dets_sync(#dets{tab = Dets}) ->
+    dets:sync(Dets).
+    
+dets_insert(#dets{tab = Tab, shadow = Shadow}, Data) ->
+    ets:insert(Shadow, Data),
+    dets:insert(Tab, Data).
 
-% i(F, A) ->
-%     io:format("~p: " ++ F ++ "~n", [?MODULE|A]).
+dets_delete(#dets{tab = Tab, shadow = Shadow}, Key) ->
+    ets:delete(Shadow, Key),
+    dets:delete(Tab, Key).
 
+dets_match(#dets{shadow = Shadow}, Pat) ->
+    ets:match(Shadow, Pat).
+
+dets_match_object(#dets{shadow = Shadow}, Pat) ->
+    ets:match_object(Shadow, Pat).
+
+dets_lookup(#dets{shadow = Shadow}, Key) ->
+    ets:lookup(Shadow, Key).
+
+dets_close(#dets{tab = Tab, shadow = Shadow}) ->
+    ets:delete(Shadow),
+    dets:close(Tab).

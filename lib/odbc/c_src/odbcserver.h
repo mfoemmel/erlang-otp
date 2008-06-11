@@ -1,19 +1,21 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*<copyright>
+ * <year>2002-2008</year>
+ * <holder>Ericsson AB, All Rights Reserved</holder>
+ *</copyright>
+ *<legalnotice>
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
- * 
+ * retrieved online at http://www.erlang.org/.
+ *
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
- * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ *
+ * The Initial Developer of the Original Code is Ericsson AB.
+ *</legalnotice>
  */
 
 /* ----------------------------- CONSTANTS ------------------------------*/
@@ -24,6 +26,7 @@
 #define MAX_CONN_STR_OUT 1024
 #define MAX_NAME 255
 #define TRUNCATED "01004"
+#define INFO "00000"
 #define SQL_STATE_SIZE 6
 #define TRUE 1
 #define FALSE 0
@@ -118,9 +121,9 @@ typedef struct {
     SQLSMALLINT sql;
     SQLUINTEGER col_size;
     SQLSMALLINT decimal_digits;
-    SQLUINTEGER len;
-    SQLINTEGER  strlen_or_indptr;
-    SQLINTEGER *strlen_or_indptr_array; 
+    SQLLEN len;
+    SQLLEN  strlen_or_indptr;
+    SQLLEN *strlen_or_indptr_array; 
 } col_type;
 
 typedef struct {
@@ -142,9 +145,10 @@ typedef struct {
 typedef struct {
     col_type type;
     int offset;
+    SQLUSMALLINT input_output_type;
     union {
 	byte *string;
-	long *integer;
+	SQLINTEGER *integer;
 	double *floating;
 	Boolean *bool;
     }values;
@@ -167,7 +171,12 @@ typedef struct {
     Boolean tuple_row;
     Boolean exists_more_result_sets;
     Boolean param_query;
+    Boolean out_params;
 } db_state;
+
+typedef enum {
+	ERL_ODBC_IN, ERL_ODBC_OUT, ERL_ODBC_INOUT
+} in_or_out_type;
 
 #define connection_handle(db_state) (db_state -> connection_handle)
 #define environment_handle(db_state) (db_state -> environment_handle)
@@ -180,3 +189,4 @@ typedef struct {
 #define tuple_row(db_state) (db_state -> tuple_row)
 #define exists_more_result_sets(db_state) (db_state -> exists_more_result_sets)
 #define param_query(db_state) (db_state -> param_query)
+#define out_params(db_state) (db_state -> out_params)

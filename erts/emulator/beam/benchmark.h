@@ -37,7 +37,7 @@
 /* BM_TIMERS keeps track of the time spent in diferent parts of the
  * system. It only measures accual active time, not time spent in idle
  * mode. These timers requires hardware support.  For Linux, use the
- * package perfctr from www.csd.uu.se/~mikpe/linux/perfctr. If this
+ * package perfctr from user.it.uu.se/~mikpe/linux/perfctr. If this
  * package is not specified when configuring the system
  * (--with-perfctr=PATH), the Solaris hrtime_t will be used.
  * To add new timers look below.

@@ -63,7 +63,7 @@ static int check_callees(Eterm callees)
 	return -1;
     tuple = tuple_val(callees);
     arity = arityval(tuple[0]);
-    for(i = 1; i <= arity; ++i) {
+    for (i = 1; i <= arity; ++i) {
 	Eterm mfa = tuple[i];
 	if (is_atom(mfa))
 	    continue;
@@ -95,7 +95,7 @@ static unsigned int *try_alloc(Uint nrwords, int nrcallees, Eterm callees, unsig
     nrfreewords -= nrwords;
 
     base = curseg.base;
-    for(trampnr = 1; trampnr <= nrcallees; ++trampnr) {
+    for (trampnr = 1; trampnr <= nrcallees; ++trampnr) {
 	mfa = tuple_val(callees)[trampnr];
 	if (is_atom(mfa))
 	    trampoline = hipe_primop_get_trampoline(mfa);
@@ -147,9 +147,8 @@ void *hipe_alloc_code(Uint nrbytes, Eterm callees, Eterm *trampolines, Process *
     address = try_alloc(nrwords, nrcallees, callees, trampvec);
     if (!address) {
 	base = new_code_mapping();
-	if (base == MAP_FAILED) {
+	if (base == MAP_FAILED)
 	    return NULL;
-	}
 	oldseg = curseg;
 	curseg.base = base;
 	curseg.code_pos = base;
@@ -225,12 +224,12 @@ void hipe_patch_load_fe(Uint32 *address, Uint value)
 int hipe_patch_insn(void *address, Uint32 value, Eterm type)
 {
     switch (type) {
-    case am_closure:
-    case am_constant:
-    case am_atom:
-    case am_c_const:
+      case am_closure:
+      case am_constant:
+      case am_atom:
+      case am_c_const:
 	break;
-    default:
+      default:
 	return -1;
     }
     patch_imm32((Uint32*)address, value);

@@ -86,39 +86,85 @@ degree_is_trivially_colourable(Node, K, Degree) ->
 %% index vector for fast address calculations.
 %%----------------------------------------------------------------------
 
+-define(USE_NEW_BITARRAY_BIFS, true).
+%%-define(EMULATE_BITARRAY_BIFS, true).
+
+-ifdef(USE_NEW_BITARRAY_BIFS).
+-define(HIPE_BIFS_BITARRAY(ArrayBits, Val), hipe_bifs:bitarray(ArrayBits, Val)).
+-define(HIPE_BIFS_BITARRAY_UPDATE(Array, BitNr, Val), hipe_bifs:bitarray_update(Array, BitNr, Val)).
+-define(HIPE_BIFS_BITARRAY_SUB(Array, BitNr), hipe_bifs:bitarray_sub(Array, BitNr)).
+-endif.
+
+-ifdef(EMULATE_BITARRAY_BIFS).
+
+-define(LOG2_BITS_PER_WORD, 3).
+-define(BITS_PER_WORD, (1 bsl ?LOG2_BITS_PER_WORD)).
+
+hipe_bifs_bitarray(ArrayBits, Val) ->
+  ArrayWords = (ArrayBits + (?BITS_PER_WORD - 1)) bsr ?LOG2_BITS_PER_WORD,
+  Byte =
+    case Val of
+      true -> 16#FF;
+      false -> 16#00
+    end,
+  hipe_bifs:bytearray(ArrayWords, Byte).
+
+hipe_bifs_bitarray_update(Array, BitNr, Val) ->
+  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
+  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
+  Word = hipe_bifs:bytearray_sub(Array, WordNr),
+  NewWord =
+    case Val of
+      true -> Word bor WordMask;
+      false -> Word band (bnot WordMask)
+    end,
+  hipe_bifs:bytearray_update(Array, WordNr, NewWord).
+
+hipe_bifs_bitarray_sub(Array, BitNr) ->
+  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
+  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
+  Word = hipe_bifs:bytearray_sub(Array, WordNr),
+  case Word band WordMask of
+    0 -> false;
+    _ -> true
+  end.
+
+-define(HIPE_BIFS_BITARRAY(ArrayBits, Val), hipe_bifs_bitarray(ArrayBits, Val)).
+-define(HIPE_BIFS_BITARRAY_UPDATE(Array, BitNr, Val), hipe_bifs_bitarray_update(Array, BitNr, Val)).
+-define(HIPE_BIFS_BITARRAY_SUB(Array, BitNr), hipe_bifs_bitarray_sub(Array, BitNr)).
+
+-endif. % EMULATE_BITARRAY_BIFS
+
 -record(adjset, {index, array}).
 -record(adjset_chunked, {index, chunks}).
 
--define(BITS_PER_WORD, 8).
--define(LOG2_BITS_PER_WORD, 3).
-
 adjset_new(NrTemps) ->
   ArrayBits = (NrTemps * (NrTemps - 1)) div 2,
-  ArrayWords = (ArrayBits + (?BITS_PER_WORD - 1)) bsr ?LOG2_BITS_PER_WORD,
   Index = adjset_mk_index(NrTemps, []),
-  case (catch(hipe_bifs:bytearray(ArrayWords, 0))) of
-    {'EXIT',_} ->
-      #adjset_chunked{index=Index,chunks=adjset_mk_chunks(ArrayWords)};
+  try ?HIPE_BIFS_BITARRAY(ArrayBits, false) of
     Array ->
       #adjset{index=Index,array=Array}
+  catch
+    _:_ ->
+      #adjset_chunked{index=Index,chunks=adjset_mk_chunks(ArrayBits)}
   end.
 
--define(LOG2_CHUNK_BYTES, 16).
--define(CHUNK_BYTES, (1 bsl ?LOG2_CHUNK_BYTES)).
+-define(LOG2_CHUNK_BITS, 19).	% 2^19 bits == 64KB
+-define(CHUNK_BITS, (1 bsl ?LOG2_CHUNK_BITS)).
 
-adjset_mk_chunks(ArrayBytes) ->
+adjset_mk_chunks(ArrayBits) ->
   Tail =
-    case ArrayBytes band (?CHUNK_BYTES - 1) of
+    case ArrayBits band (?CHUNK_BITS - 1) of
       0 -> [];
-      LastChunkBytes -> [hipe_bifs:bytearray(LastChunkBytes, 0)]
+      LastChunkBits -> [?HIPE_BIFS_BITARRAY(LastChunkBits, false)]
     end,
-  N = ArrayBytes bsr ?LOG2_CHUNK_BYTES,
+  N = ArrayBits bsr ?LOG2_CHUNK_BITS,
   adjset_mk_chunks(N, Tail).
 
 adjset_mk_chunks(0, Tail) ->
   list_to_tuple(Tail);
 adjset_mk_chunks(N, Tail) ->
-  adjset_mk_chunks(N-1, [hipe_bifs:bytearray(?CHUNK_BYTES, 0) | Tail]).
+  adjset_mk_chunks(N-1, [?HIPE_BIFS_BITARRAY(?CHUNK_BITS, false) | Tail]).
 
 adjset_mk_index(0, Tail) ->
   list_to_tuple(Tail);
@@ -133,10 +179,7 @@ adjset_add_edge(U0, V0, #adjset{index=Index,array=Array}) -> % PRE: U0 =/= V0
     end,
   %% INV: U < V
   BitNr = element(V+1, Index) + U,
-  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
-  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
-  Word = hipe_bifs:bytearray_sub(Array, WordNr),
-  hipe_bifs:bytearray_update(Array, WordNr, Word bor WordMask);
+  ?HIPE_BIFS_BITARRAY_UPDATE(Array, BitNr, true);
 adjset_add_edge(U0, V0, #adjset_chunked{index=Index,chunks=Chunks}) -> % PRE: U0 =/= V0
   {U,V} =
     if U0 < V0 -> {U0,V0};
@@ -144,14 +187,11 @@ adjset_add_edge(U0, V0, #adjset_chunked{index=Index,chunks=Chunks}) -> % PRE: U0
     end,
   %% INV: U < V
   BitNr = element(V+1, Index) + U,
-  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
-  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
   %% here things become different
-  ChunkNr = WordNr bsr ?LOG2_CHUNK_BYTES,
+  ChunkNr = BitNr bsr ?LOG2_CHUNK_BITS,
+  ChunkBit = BitNr band (?CHUNK_BITS - 1),
   Chunk = element(ChunkNr+1, Chunks),
-  ChunkOffset = WordNr band (?CHUNK_BYTES - 1),
-  Word = hipe_bifs:bytearray_sub(Chunk, ChunkOffset),
-  hipe_bifs:bytearray_update(Chunk, ChunkOffset, Word bor WordMask).
+  ?HIPE_BIFS_BITARRAY_UPDATE(Chunk, ChunkBit, true).
 
 adjset_remove_edge(U0, V0, #adjset{index=Index,array=Array}) -> % PRE: U0 =/= V0
   {U,V} =
@@ -160,10 +200,7 @@ adjset_remove_edge(U0, V0, #adjset{index=Index,array=Array}) -> % PRE: U0 =/= V0
     end,
   %% INV: U < V
   BitNr = element(V+1, Index) + U,
-  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
-  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
-  Word = hipe_bifs:bytearray_sub(Array, WordNr),
-  hipe_bifs:bytearray_update(Array, WordNr, Word band (bnot WordMask));
+  ?HIPE_BIFS_BITARRAY_UPDATE(Array, BitNr, false);
 adjset_remove_edge(U0, V0, #adjset_chunked{index=Index,chunks=Chunks}) -> % PRE: U0 =/= V0
   {U,V} =
     if U0 < V0 -> {U0,V0};
@@ -171,14 +208,11 @@ adjset_remove_edge(U0, V0, #adjset_chunked{index=Index,chunks=Chunks}) -> % PRE:
     end,
   %% INV: U < V
   BitNr = element(V+1, Index) + U,
-  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
-  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
   %% here things become different
-  ChunkNr = WordNr bsr ?LOG2_CHUNK_BYTES,
+  ChunkNr = BitNr bsr ?LOG2_CHUNK_BITS,
+  ChunkBit = BitNr band (?CHUNK_BITS - 1),
   Chunk = element(ChunkNr+1, Chunks),
-  ChunkOffset = WordNr band (?CHUNK_BYTES - 1),
-  Word = hipe_bifs:bytearray_sub(Chunk, ChunkOffset),
-  hipe_bifs:bytearray_update(Chunk, ChunkOffset, Word band (bnot WordMask)).
+  ?HIPE_BIFS_BITARRAY_UPDATE(Chunk, ChunkBit, false).
 
 adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
   {U,V} =
@@ -188,13 +222,7 @@ adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
     end,
   %% INV: U < V
   BitNr = element(V+1, Index) + U,
-  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
-  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
-  Word = hipe_bifs:bytearray_sub(Array, WordNr),
-  case Word band WordMask of
-    0 -> false;
-    _ -> true
-  end;
+  ?HIPE_BIFS_BITARRAY_SUB(Array, BitNr);
 adjset_are_adjacent(U0, V0, #adjset_chunked{index=Index,chunks=Chunks}) ->
   {U,V} =
     if U0 < V0 -> {U0,V0};
@@ -203,17 +231,11 @@ adjset_are_adjacent(U0, V0, #adjset_chunked{index=Index,chunks=Chunks}) ->
     end,
   %% INV: U < V
   BitNr = element(V+1, Index) + U,
-  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
-  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
   %% here things become different
-  ChunkNr = WordNr bsr ?LOG2_CHUNK_BYTES,
+  ChunkNr = BitNr bsr ?LOG2_CHUNK_BITS,
+  ChunkBit = BitNr band (?CHUNK_BITS - 1),
   Chunk = element(ChunkNr+1, Chunks),
-  ChunkOffset = WordNr band (?CHUNK_BYTES - 1),
-  Word = hipe_bifs:bytearray_sub(Chunk, ChunkOffset),
-  case Word band WordMask of
-    0 -> false;
-    _ -> true
-  end.
+  ?HIPE_BIFS_BITARRAY_SUB(Chunk, ChunkBit).
 
 %%---------------------------------------------------------------------
 %% Print functions - only used for debugging

@@ -1685,10 +1685,11 @@ static void fd_stop(ErlDrvData d)
 static ErlDrvData
 vanilla_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 {
-    HANDLE fd;
+    HANDLE ofd,ifd;
     DriverData* dp;
     DWORD access;		/* Access mode: GENERIC_READ, GENERIC_WRITE. */
     DWORD crFlags;
+    HANDLE this_process = GetCurrentProcess();
 
     access = 0;
     if (opts->read_write == DO_READ)
@@ -1705,11 +1706,17 @@ vanilla_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 
     if ((dp = new_driver_data(port_num, opts->packet_bytes, 2, FALSE)) == NULL)
 	return ERL_DRV_ERROR_GENERAL;
-    fd = CreateFile(name, access, FILE_SHARE_READ | FILE_SHARE_WRITE,
+    ofd = CreateFile(name, access, FILE_SHARE_READ | FILE_SHARE_WRITE,
 		    NULL, crFlags, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (fd == INVALID_HANDLE_VALUE)
+    if (!DuplicateHandle(this_process, (HANDLE) ofd,	
+			 this_process, &ifd, 0,
+			 FALSE, DUPLICATE_SAME_ACCESS)) {
+	CloseHandle(ofd);
+	ofd = INVALID_HANDLE_VALUE;
+    }
+    if (ofd == INVALID_HANDLE_VALUE)
 	return ERL_DRV_ERROR_GENERAL;
-    return set_driver_data(dp, fd, fd, opts->read_write,0);
+    return set_driver_data(dp, ifd, ofd, opts->read_write,0);
 }
 
 static void
@@ -2159,26 +2166,16 @@ ready_output(ErlDrvData drv_data, ErlDrvEvent ready_event)
 #endif
     DEBUGF(("ready_output(%d, 0x%x)\n", drv_data, ready_event));
     set_busy_port(dp->port_num, 0);
-#ifdef DEBUG
-    /* Temporary!!! */
     if (!(dp->outbuf)) {
-	erts_printf("WARNING: Unexpected call to ready_output with outbuf "
-		    "set to NULL!\r\n");
-    } else {
-	ASSERT(erts_smp_atomic_read(&sys_misc_mem_sz) >= dp->outBufSize);
-	erts_smp_atomic_add(&sys_misc_mem_sz, -1*dp->outBufSize);
-	DRV_BUF_FREE(dp->outbuf);
-	dp->outBufSize = 0;
-	dp->outbuf = NULL;
+	/* Happens because event sometimes get signalled during a succesful
+	   write... */
+	return;
     }
-#else
-    ASSERT(dp->outbuf != NULL);
     ASSERT(erts_smp_atomic_read(&sys_misc_mem_sz) >= dp->outBufSize);
     erts_smp_atomic_add(&sys_misc_mem_sz, -1*dp->outBufSize);
     DRV_BUF_FREE(dp->outbuf);
     dp->outBufSize = 0;
     dp->outbuf = NULL;
-#endif
 #ifdef HARD_POLL_DEBUG
     poll_debug_write_begin(dp->out.ov.hEvent);
 #endif
@@ -2720,6 +2717,10 @@ void erl_sys_init(void)
     }
     erts_sys_init_float();
     erts_init_check_io();
+
+    /* Suppress windows error message popups */
+    SetErrorMode(SetErrorMode(0) |
+		 SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX); 
 }
 
 #ifdef ERTS_SMP

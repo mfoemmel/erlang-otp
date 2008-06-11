@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2007-2007</year>
+%% <year>2007-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -415,17 +415,22 @@ handler_main(Parent, Mod, State, [Instruction|Instructions]) ->
 	    case (catch handler_callback_exec(Mod, State, Instruction)) of
 		{ok, NewState} ->
 		    handler_main(Parent, Mod, NewState, Instructions);
-		{error, Reason} ->
+		{error, NewState} ->
 		    d("handler_main -> exec failed"
-		      "~n   Reason: ~p", [Reason]),
-		    Result = (catch Mod:terminate(normal, State)),
+		      "~n   NewState: ~p", [NewState]),
+		    Result = (catch Mod:terminate(normal, NewState)),
 		    Parent ! {handler_result, self(), {error, Result}},
 		    receive
 			{stop, Parent} ->
 			    exit(normal);
 			{'EXIT', Parent, Reason} ->
 			    exit({parent_died, Reason})
-		    end
+		    end;
+		{'EXIT', Reason} ->
+		    d("handler_main -> exec EXIT"
+		      "~n   Reason: ~p", [Reason]),
+		    exit({callback_exec_exit, Reason})
+		    
 	    end
     end.
 

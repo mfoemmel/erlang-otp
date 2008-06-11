@@ -510,7 +510,14 @@ ERTS_GLB_INLINE void
 erts_cnd_wait(erts_cnd_t *cnd, erts_mtx_t *mtx)
 {
 #ifdef USE_THREADS
-    int res = ethr_cond_wait(cnd, &mtx->mtx);
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_unlock(&mtx->lc);
+#endif
+    res = ethr_cond_wait(cnd, &mtx->mtx);
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_lock(&mtx->lc);
+#endif
     if (res != 0 && res != EINTR)
 	erts_thr_fatal_error(res, "wait on condition variable");
 #endif
@@ -520,7 +527,14 @@ ERTS_GLB_INLINE int
 erts_cnd_timedwait(erts_cnd_t *cnd, erts_mtx_t *mtx, erts_thr_timeval_t *time)
 {
 #ifdef USE_THREADS
-    int res = ethr_cond_timedwait(cnd, &mtx->mtx, time);
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_unlock(&mtx->lc);
+#endif
+    res = ethr_cond_timedwait(cnd, &mtx->mtx, time);
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_lock(&mtx->lc);
+#endif
     if (res != 0 && res != EINTR && res != ETIMEDOUT)
 	erts_thr_fatal_error(res,
 			     "wait with timeout on condition variable");

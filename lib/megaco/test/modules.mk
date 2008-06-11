@@ -25,12 +25,14 @@ MODULES = \
 	megaco_config_test \
 	megaco_digit_map_test \
 	megaco_examples_test \
+	megaco_flex_test \
 	megaco_load_test \
 	megaco_mess_test \
 	megaco_mess_user_test \
 	megaco_mib_test \
 	megaco_mreq_test \
 	megaco_pending_limit_test \
+	megaco_profile \
 	megaco_segment_test \
 	megaco_sdp_test \
 	megaco_tc_controller \

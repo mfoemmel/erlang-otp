@@ -24,13 +24,13 @@
 
 collect(Analysis) ->
   NewPlt =
-    try get_dialyzer_plt() of
+    try get_dialyzer_plt(Analysis) of
 	DialyzerPlt ->
 	dialyzer_plt:merge_plts([Analysis#typer_analysis.trust_plt, DialyzerPlt])
     catch
       throw:{dialyzer_error,_Reason} ->
 	typer:error("Dialyzer's PLT is missing or is not up-to-date\n"++
-		    "       Run the command: dialyzer --check_init_plt")
+		    "       Run Dialyzer for more information.")
     end,
   lists:foldl(fun collect_one_file_info/2, 
 	      Analysis#typer_analysis{trust_plt=NewPlt}, 
@@ -127,7 +127,10 @@ analyze_one_function({Var,FunBody}, Acc) ->
 	     incFuncAcc=IncFuncAcc,
 	     dialyzerObj=NewDialyzerObj}.
 
-get_dialyzer_plt() ->
-  DialyzerDir = code:lib_dir(dialyzer),
-  Dialyzer_Init_Plt = filename:join([DialyzerDir,"plt","dialyzer_init_plt"]),
-  dialyzer_plt:from_file(Dialyzer_Init_Plt).
+get_dialyzer_plt(#typer_analysis{plt=PltFile0}) ->
+  PltFile =
+    case PltFile0 =:= none of
+      true -> dialyzer_plt:get_default_plt();
+      false -> PltFile0
+    end,
+  dialyzer_plt:from_file(PltFile).

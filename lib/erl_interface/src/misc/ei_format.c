@@ -446,16 +446,18 @@ int ei_x_format_wo_ver(ei_x_buff* x, const char* fmt, ... )
 {
     va_list ap;
     union arg* args; 
+    union arg* saved_args; 
     int res;
 
     va_start(ap, fmt);
     res = read_args(fmt,ap,&args);
+    saved_args = args;
     va_end(ap);
     if (res < 0) {
 	return -1;
     }
     res = eiformat(&fmt, &args, x);
-    ei_free(args);
+    ei_free(saved_args);
 
     return res;
 }

@@ -56,10 +56,12 @@
 %% (for Unix) : absname("/") -> "/"
 %% (for WIN32): absname("/") -> "D:/"
 
+%%-spec(absname/1 :: (name()) -> string()).
 absname(Name) ->
     {ok, Cwd} = file:get_cwd(),
     absname(Name, Cwd).
 
+%%-spec(absname/2 :: (name(), string()) -> string()).
 absname(Name, AbsBase) ->
     case pathtype(Name) of
 	relative ->
@@ -95,6 +97,7 @@ absname_vr([[X, $:]|Name], _, _AbsBase) ->
 %% For other systems this is just a join/2, but assumes that 
 %% AbsBase must be absolute and Name must be relative.
 
+%%-spec(absname_join/2 :: (string(), name()) -> string()).
 absname_join(AbsBase, Name) ->
     case major_os_type() of
 	vxworks -> 
@@ -132,6 +135,7 @@ absname_pretty(Abspath, [First|Rest], AbsBase) ->
 %%           basename("/usr/foo/") -> "foo"  (trailing slashes ignored)
 %%           basename("/") -> []
 
+%%-spec(basename/1 :: (name()) -> string()).
 basename(Name0) ->
     Name = flatten(Name0),
     {DirSep2, DrvSep} = separators(),
@@ -178,14 +182,14 @@ skip_prefix1(Name, _) ->
 %% Use rootname(basename(File)) if you want to remove an extension
 %% that you know exists, but you are not sure which one it is.
 %%
-%% Example: basename("~/src/kalle.erl", ".erl") -> kalle
-%%	    basename("~/src/kalle.jam", ".erl") -> kalle.jam
-%%	    basename("~/src/kalle.old.erl", ".erl") -> kalle.old
+%% Example: basename("~/src/kalle.erl", ".erl") -> "kalle"
+%%	    basename("~/src/kalle.jam", ".erl") -> "kalle.jam"
+%%	    basename("~/src/kalle.old.erl", ".erl") -> "kalle.old"
 %%
 %%	    rootname(basename("xxx.jam")) -> "xxx"
 %%	    rootname(basename("xxx.erl")) -> "xxx"
 
-
+%%-spec(basename/2 :: (name(), name()) -> string()).
 basename(Name0, Ext0) ->
     Name = flatten(Name0),
     Ext = flatten(Ext0),
@@ -211,6 +215,7 @@ basename([], _Ext, Tail, _DrvSep2) ->
 %% Example: dirname("/usr/src/kalle.erl") -> "/usr/src",
 %%	    dirname("kalle.erl") -> "."
 
+%%-spec(dirname/1 :: (name()) -> string()).
 dirname(Name0) ->
     Name = flatten(Name0),
     case os:type() of
@@ -258,10 +263,11 @@ dirname([], Dir, _, _) ->
 %% is no extension.
 %%
 %% Example: extension("foo.erl") -> ".erl"
-%%	    extension("jam.src/kalle") -> []
+%%	    extension("jam.src/kalle") -> ""
 %%
 %% On Windows:  fn:dirname("\\usr\\src/kalle.erl") -> "/usr/src"
 
+%%-spec(extension/1 :: (name()) -> string()).
 extension(Name0) ->
     Name = flatten(Name0),
     extension(Name, [], major_os_type()).
@@ -285,6 +291,7 @@ extension([], Result, _OsType) ->
 
 %% Joins a list of filenames with directory separators.
 
+%%-spec(join/1 :: ([string()]) -> string()).
 join([Name1, Name2|Rest]) ->
     join([join(Name1, Name2)|Rest]);
 join([Name]) when is_list(Name) ->
@@ -294,6 +301,7 @@ join([Name]) when is_atom(Name) ->
 
 %% Joins two filenames with directory separators.
 
+%%-spec(join/2 :: (string(), string()) -> string()).
 join(Name1, Name2) when is_list(Name1), is_list(Name2) ->
     OsType = major_os_type(),
     case pathtype(Name2) of
@@ -346,7 +354,7 @@ maybe_remove_dirsep([$/|Name], _) ->
 maybe_remove_dirsep(Name, _) ->
     lists:reverse(Name).
 
-%% Appends a directory separator and an pathname component to
+%% Appends a directory separator and a pathname component to
 %% a given base directory, which is is assumed to be normalised
 %% by a previous call to join/{1,2}.
 
@@ -360,11 +368,12 @@ append(Dir, Name) ->
 %%		h:/port_test (on Windows).
 %% relative	The pathname is relative to the current working directory
 %%		on the current volume.  Example:  foo/bar, ../src
-%% volumerleative  The pathname is relative to the current working directory
+%% volumerelative  The pathname is relative to the current working directory
 %%		on the specified volume, or is a specific file on the
 %%		current working volume.  (Windows only)
 %%		Example: a:bar.erl, /temp/foo.erl
 
+%%-spec(pathtype/1 :: (name()) -> 'absolute' | 'relative' | 'volumerelative').
 pathtype(Atom) when is_atom(Atom) ->
     pathtype(atom_to_list(Atom));
 pathtype(Name) when is_list(Name) ->
@@ -413,10 +422,12 @@ win32_pathtype(_) 		  -> relative.
 %% Examples: rootname("/jam.src/kalle") -> "/jam.src/kalle"
 %%           rootname("/jam.src/foo.erl") -> "/jam.src/foo"
 
+%%-spec(rootname/1 :: (name()) -> string()).
 rootname(Name0) ->
     Name = flatten(Name0),
     rootname(Name, [], [], major_os_type()).
 
+%%-spec(rootname/2 :: (name(), name()) -> string()).
 rootname([$/|Rest], Root, Ext, OsType) ->
     rootname(Rest, [$/]++Ext++Root, [], OsType);
 rootname([$\\|Rest], Root, Ext, win32) ->
@@ -464,6 +475,7 @@ rootname2([Char|Rest], Ext, Result) when is_integer(Char) ->
 %% split("foo/bar") -> ["foo", "bar"]
 %% split("a:\\msdev\\include") -> ["a:/", "msdev", "include"]
 
+%%-spec(split/1 :: (name()) -> [string()]).
 split(Name0) ->
     Name = flatten(Name0),
     case os:type() of
@@ -540,6 +552,7 @@ split([], Comp, Components, OsType) ->
 %% will be converted to backslashes.  On all platforms, the
 %% name will be normalized as done by join/1.
 
+%%-spec(nativename/1 :: (string()) -> string()).
 nativename(Name0) ->
     Name = join([Name0]),			%Normalize.
     case os:type() of
@@ -590,8 +603,14 @@ separators() ->
 %% with compile:file/2, but doesn't include options like 'report' or
 %% 'verbose' that doesn't change the way code is generated.
 %% The paths in the {outdir, Path} and {i, Path} options are guaranteed
-%% to be absoulute.
+%% to be absolute.
 
+%%-type(rule()   :: {string(), string()}).
+%%-type(ecode()  :: 'non_existing' | 'preloaded' | 'interpreted').
+%%-type(option() :: {i, string()} | {outdir, string()} | {d, atom()}).
+
+%%-spec(find_src/1 :: (atom() | string()) ->
+%%	     {string(), [option()]} | {'error', {ecode(), atom()}}).
 find_src(Mod) ->
     Default = [{"", ""}, {"ebin", "src"}, {"ebin", "esrc"}],
     Rules = 
@@ -602,6 +621,8 @@ find_src(Mod) ->
 	end,
     find_src(Mod, Rules).
 
+%%-spec(find_src/2 :: (atom() | string(), [rule()]) ->
+%%	     {string(), [option()]} | {'error', {ecode(), atom()}}).
 find_src(Mod, Rules) when is_atom(Mod) ->
     find_src(atom_to_list(Mod), Rules);
 find_src(File0, Rules) when is_list(File0) ->
@@ -620,7 +641,7 @@ try_file(File, Mod, Rules) ->
 	    {ok, Cwd} = file:get_cwd(),
 	    Path = join(Cwd, Possibly_Rel_Path),
 	    try_file(File, Path, Mod, Rules);
-	Ecode when is_atom(Ecode) -> % Ecode = non_existing | preloaded | interpreted
+	Ecode when is_atom(Ecode) -> % Ecode :: ecode()
 	    {error, {Ecode, Mod}}
     end.
 
@@ -762,6 +783,7 @@ vxworks_first2(Devicep, [H|T], FirstComp) ->
 %% flatten(List)
 %%  Flatten a list, also accepting atoms.
 
+%%-spec(flatten/1 :: (name()) -> string()).
 flatten(List) ->
     do_flatten(List, []).
 

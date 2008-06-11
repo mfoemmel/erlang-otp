@@ -41,16 +41,30 @@ void pba(Process*, int);
 void td(Eterm);
 void ps(Process*, Eterm*);
 
+#undef ERTS_OFFHEAP_DEBUG
+#define ERTS_OFFHEAP_DEBUG
+
 #else /* Non-debug mode */
 
 #define VERBOSE(flag,format)
 
 #endif /* DEBUG */
 
+#ifdef ERTS_OFFHEAP_DEBUG
+#define ERTS_CHK_OFFHEAP(P) erts_check_off_heap((P))
+#define ERTS_CHK_OFFHEAP2(P, HT) erts_check_off_heap2((P), (HT))
+void erts_check_off_heap(Process *);
+void erts_check_off_heap2(Process *, Eterm *);
+#else
+#define ERTS_CHK_OFFHEAP(P)
+#define ERTS_CHK_OFFHEAP2(P, HT)
+#endif
+
 /*
  * These functions can be handy when developing, and perhaps useful
  * even outside debugging.
  */
+extern void erts_check_off_heap(Process *p);
 extern void erts_check_stack(Process *p);
 extern void erts_check_heap(Process *p);
 extern void erts_check_memory(Process *p, Eterm *start, Eterm *end);

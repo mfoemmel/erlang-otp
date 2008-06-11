@@ -247,7 +247,7 @@ typedef struct erl_drv_entry {
     int (*control)(ErlDrvData drv_data, unsigned int command, char *buf, 
 		   int len, char **rbuf, int rlen); 
 				/* "ioctl" for drivers - invoked by 
-				   port_command/3) */
+				   port_control/3) */
     void (*timeout)(ErlDrvData drv_data);	/* Handling of timeout in driver */
     void (*outputv)(ErlDrvData drv_data, ErlIOVec *ev);
 				/* called when we have output from erlang

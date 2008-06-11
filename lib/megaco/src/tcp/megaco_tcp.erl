@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1999-2007</year>
+%% <year>1999-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -256,7 +256,7 @@ socket(Socket) ->
     Socket.
 
 upgrade_receive_handle(Pid, NewHandle) 
-  when pid(Pid), record(NewHandle, megaco_receive_handle) ->
+  when is_pid(Pid) andalso is_record(NewHandle, megaco_receive_handle) ->
     megaco_tcp_connection:upgrade_receive_handle(Pid, NewHandle).
 
 
@@ -397,7 +397,7 @@ handle_cast(Msg, State) ->
 %% Func: handle_info/2
 %% Description: Handling non call/cast messages, eg exit messages
 %%-----------------------------------------------------------------
-handle_info({'EXIT', Pid, Reason}, State) when pid(Pid) ->
+handle_info({'EXIT', Pid, Reason}, State) when is_pid(Pid) ->
     %% Accept process died
     NewState = resetup(Pid, Reason, State),
     {noreply, NewState};
@@ -561,10 +561,10 @@ start_accept(SupPid, TcpRec, Listen) ->
 %% Func: add_tpkt_header
 %% Description: Function is used to add the TPKT header
 %%-----------------------------------------------------------------
-add_tpkt_header(Data) when binary(Data) ->
+add_tpkt_header(Data) when is_binary(Data) ->
     L = size(Data) + 4,
     {L, [3, 0, ((L) bsr 8) band 16#ff, (L) band 16#ff ,Data]};
-add_tpkt_header(IOList) when list(IOList) ->
+add_tpkt_header(IOList) when is_list(IOList) ->
     Binary = list_to_binary(IOList),
     L = size(Binary) + 4,
     {L, [3, 0, ((L) bsr 8) band 16#ff, (L) band 16#ff , Binary]}.
@@ -590,7 +590,7 @@ parse_options([{Tag, Val} | T], TcpRec, Mand) ->
 	    parse_options(T, TcpRec#megaco_tcp{receive_handle = Val}, Mand2);
 	module when is_atom(Val) ->
 	    parse_options(T, TcpRec#megaco_tcp{module = Val}, Mand2);
-	serialize when (Val == true) orelse (Val == false) ->
+	serialize when (Val =:= true) orelse (Val =:= false) ->
 	    parse_options(T, TcpRec#megaco_tcp{serialize = Val}, Mand2);
         Bad ->
 	    ?d1("parse_options -> bad option: "

@@ -31,6 +31,21 @@
   </header>
   <p>This document describes the changes made to HiPE.</p>
 
+<section><title>Hipe 3.6.7</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Minor changes.</p>
+          <p>
+	    Own Id: OTP-7388</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Hipe 3.6.6</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

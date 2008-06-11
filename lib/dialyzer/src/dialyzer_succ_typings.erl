@@ -18,10 +18,10 @@
 
 %%%-------------------------------------------------------------------
 %%% File    : dialyzer_succ_typings.erl
-%%% Author  : Tobias Lindahl <tobiasl@csd.uu.se>
+%%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
 %%% Description : 
 %%%
-%%% Created : 11 Sep 2006 by Tobias Lindahl <tobiasl@csd.uu.se>
+%%% Created : 11 Sep 2006 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%-------------------------------------------------------------------
 -module(dialyzer_succ_typings).
 

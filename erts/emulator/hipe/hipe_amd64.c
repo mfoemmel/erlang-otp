@@ -333,9 +333,9 @@ BIF_RETTYPE hipe_bifs_write_s64_2(BIF_ALIST_2)
     Sint64 value;
 
     address = term_to_address(BIF_ARG_1);
-    if( !address || !hipe_word64_address_ok(address) )
+    if (!address || !hipe_word64_address_ok(address))
 	BIF_ERROR(BIF_P, BADARG);
-    if( !term_to_Sint64(BIF_ARG_2, &value) )
+    if (!term_to_Sint64(BIF_ARG_2, &value))
 	BIF_ERROR(BIF_P, BADARG);
     *address = value;
     BIF_RET(NIL);
@@ -348,9 +348,9 @@ BIF_RETTYPE hipe_bifs_write_u64_2(BIF_ALIST_2)
     Uint64 value;
 
     address = term_to_address(BIF_ARG_1);
-    if( !address || !hipe_word64_address_ok(address) )
+    if (!address || !hipe_word64_address_ok(address))
 	BIF_ERROR(BIF_P, BADARG);
-    if( !term_to_Uint(BIF_ARG_2, &value) )
+    if (!term_to_Uint(BIF_ARG_2, &value))
 	BIF_ERROR(BIF_P, BADARG);
     *address = value;
     hipe_flush_icache_word(address);

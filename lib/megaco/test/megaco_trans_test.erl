@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2003-2007</year>
+%% <year>2003-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -107,7 +107,9 @@ all(suite) ->
      trans_req,
      trans_req_and_ack,
      pending,
-     reply     
+     reply,
+
+     tickets
     ].
 
 ack(suite) ->
@@ -151,6 +153,19 @@ reply(suite) ->
      multi_trans_req_and_ack_and_reply,
      multi_ack_and_reply
     ].
+
+tickets(suite) ->
+    [
+     otp_7192
+    ].
+
+otp_7192(suite) ->
+    [
+     otp_7192_1,
+     otp_7192_2,
+     otp_7192_3
+    ].
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -7337,6 +7352,1710 @@ multi_ack_and_reply(doc) ->
     [];
 multi_ack_and_reply(Config) when list(Config) ->
     ?SKIP(not_yet_implemented).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_7192_1(suite) ->
+    [];
+otp_7192_1(doc) ->
+    [""];
+otp_7192_1(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        otp_7192_1),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p", 
+      [MgcNode, MgNode]),
+
+    MgMid = {deviceName,"mg"},
+
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = otp71921_mgc_event_sequence(text, tcp, MgMid),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = otp71921_mg_event_sequence(text, tcp, MgMid),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
+
+    d("await the generator(s) completion"),
+    await_completion([MgcId, MgId], 30000),
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_megaco_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_megaco_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%% 
+-ifdef(megaco_hipe_special).
+-define(otp71921_mgc_verify_handle_connect_fun(), 
+        {?MODULE, otp71921_mgc_verify_handle_connect, []}).
+-define(otp71921_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, otp71921_mgc_verify_service_change_req, [Mid]}).
+-define(otp71921_mgc_verify_notify_req_fun(),
+        {?MODULE, otp71921_mgc_verify_notify_request, []}).
+-define(otp71921_mgc_verify_notify_reply_fun(),
+        {?MODULE, otp71921_mgc_verify_notify_reply, []}).
+-define(otp71921_mgc_verify_ack_fun(),
+        {?MODULE, otp71921_mgc_verify_ack, []}).
+-define(otp71921_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, otp71921_mgc_verify_handle_disconnect, []}).
+-else.
+-define(otp71921_mgc_verify_handle_connect_fun(), 
+        fun otp71921_mgc_verify_handle_connect/1).
+-define(otp71921_mgc_verify_service_change_req_fun(Mid),
+        otp71921_mgc_verify_service_change_req_fun(Mid)).
+-define(otp71921_mgc_verify_notify_req_fun(),
+	otp71921_mgc_verify_notify_request_fun()).
+-define(otp71921_mgc_verify_notify_reply_fun(),
+	fun otp71921_mgc_verify_notify_reply/1).
+-define(otp71921_mgc_verify_ack_fun(),
+	fun otp71921_mgc_verify_ack/1).
+-define(otp71921_mgc_verify_handle_disconnect_fun(),
+	fun otp71921_mgc_verify_handle_disconnect/1).
+-endif.
+
+otp71921_mgc_event_sequence(text, tcp, MgMid) ->
+    Mid = {deviceName, "ctrl"},
+    RI = [
+	  {port,             2944},
+	  {encoding_module,  megaco_pretty_text_encoder},
+	  {encoding_config,  []},
+	  {transport_module, megaco_tcp}
+	 ],
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NR = fun(Cid, Rid) ->
+		 [otp71921_mgc_notify_request_ar(Rid, Tid, Cid)]
+	 end,
+    LocalConnectVerify     = ?otp71921_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?otp71921_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?otp71921_mgc_verify_notify_req_fun(),
+    NotifyReplyVerify      = ?otp71921_mgc_verify_notify_reply_fun(), 
+    AckVerify              = ?otp71921_mgc_verify_ack_fun(), 
+    DiscoVerify            = ?otp71921_mgc_verify_handle_disconnect_fun(), 
+    EvSeq = [
+	     {debug, true},
+	     %% {megaco_trace, max}, 
+	     {megaco_trace, disable}, 
+	     megaco_start,
+	     {megaco_start_user, Mid, RI, []},
+	     start_transport,
+	     listen,
+	     {megaco_connect,  MgMid}, 
+	     {megaco_callback, handle_connect,       LocalConnectVerify},
+	     %% {megaco_callback, handle_connect,       RemoteConnectVerify},
+	     {megaco_callback, handle_trans_request, ServiceChangeReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_update_conn_info, request_timer,      1000},
+	     {megaco_cast, NR(1,1), []},
+
+	     {megaco_callback, [{handle_trans_ack,     3, AckVerify},
+				{handle_trans_request, 3, NotifyReqVerify},
+				{handle_trans_reply,   1, NotifyReplyVerify}]},
+	     {megaco_callback, handle_disconnect,    DiscoVerify},
+	     {sleep, 1000},
+	     megaco_stop_user,
+	     megaco_stop
+	    ],
+    EvSeq.
+
+
+otp71921_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("otp71921_mgc_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+otp71921_mgc_verify_handle_connect(Else) ->
+    io:format("otp71921_mgc_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp71921_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Ev) ->
+	    otp71921_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+otp71921_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("otp71921_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [otp71921_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
+					_ ->
+					    Err = {invalid_SCP, Parms},
+					    ED = otp71921_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
+					    {error, Err, ErrReply}
+				    end;
+				_ ->
+				    Err = {invalid_termination_id, Tid},
+				    ED = otp71921_err_desc(Tid),
+				    ErrReply = {discard_ack, ED},
+				    {error, Err, ErrReply}
+			    end;
+			_ ->
+			    Err = {invalid_command, Cmd},
+			    ED = otp71921_err_desc(Cmd),
+			    ErrReply = {discard_ack, ED},
+			    {error, Err, ErrReply}
+		    end;
+		_ ->
+		    Err = {invalid_command_request, CR},
+		    ED = otp71921_err_desc(CR),
+		    ErrReply = {discard_ack, ED},
+		    {error, Err, ErrReply}
+	    end;
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = otp71921_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, Err, ErrReply}
+    end;
+otp71921_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("otp71921_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = otp71921_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
+otp71921_mgc_verify_notify_request_fun() ->
+    fun(Ev) ->
+	    otp71921_mgc_verify_notify_request(Ev)
+    end.
+
+otp71921_mgc_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("otp71921_mgc_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, kalle},
+	    Reply = {HandleAck, 
+		     [otp71921_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [otp71921_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = otp71921_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+otp71921_mgc_verify_notify_request(Else) ->
+    io:format("otp71921_mgc_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = otp71921_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
+otp71921_mgc_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
+				 {ok, [AR]}, _}) ->
+    io:format("otp71921_mgc_verify_notify_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {ok, AR, ok};
+otp71921_mgc_verify_notify_reply({handle_trans_reply, CH, ?VERSION, 
+				 UnknownResult, _}) ->
+    io:format("otp71921_mgc_verify_notify_reply -> unknown result"
+	      "~n   UnknownResult: ~p~n", [UnknownResult]),
+    {error, {unknown_reply_result, UnknownResult, CH}, ok};
+otp71921_mgc_verify_notify_reply(Else) ->
+    io:format("otp71921_mgc_verify_notify_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, {unknown_reply, Else}, ok}.
+
+otp71921_mgc_verify_ack({handle_trans_ack, CH, ?VERSION, ok, kalle}) -> 
+    io:format("otp71921_mgc_verify_ack -> ok"
+	      "~n   CH: ~p"
+	      "~n", [CH]),
+    {ok, CH, ok};
+otp71921_mgc_verify_ack(Else) ->
+    io:format("otp71921_mgc_verify_ack -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp71921_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
+    io:format("otp71921_mgc_verify_handle_disconnect -> ok"
+	      "~n   CH: ~p"
+	      "~n   R:  ~p"
+	      "~n", [CH, R]),
+    {ok, CH, ok};
+otp71921_mgc_verify_handle_disconnect(Else) ->
+    io:format("otp71921_mgc_verify_handle_disconnect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+
+otp71921_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    cre_actionReply(Cid, [CR]).
+
+otp71921_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
+    AR    = otp71921_mgc_service_change_reply_ar(Mid, Cid),
+    TRes  = cre_transResult([AR]),
+    TR    = cre_transReply(TransId, TRes),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+otp71921_mgc_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "44000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp71921_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+otp71921_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
+    AR    = otp71921_mgc_notify_reply_ar(Cid, TermId),
+    TRes  = cre_transResult([AR]),
+    TR    = cre_transReply(TransId, TRes),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%
+%% MG generator stuff
+%% 
+-ifdef(megaco_hipe_special).
+-define(otp71921_mg_verify_handle_connect_fun(), 
+        {?MODULE, otp71921_mg_verify_handle_connect, []}).
+-define(otp71921_mg_verify_service_change_reply_fun(),
+        {?MODULE, otp71921_mg_verify_service_change_reply, []}).
+-define(otp71921_mg_verify_notify_req_fun(),
+        {?MODULE, otp71921_mgc_verify_notify_request, []}).
+-define(otp71921_mg_verify_notify_reply_fun(),
+        {?MODULE, otp71921_mg_verify_notify_reply, []}).
+-else.
+-define(otp71921_mg_verify_handle_connect_fun(), 
+        fun otp71921_mg_verify_handle_connect/1).
+-define(otp71921_mg_verify_service_change_reply_fun(),
+        fun otp71921_mg_verify_service_change_reply/1).
+-define(otp71921_mg_verify_notify_req_fun(),
+	otp71921_mgc_verify_notify_request_fun()).
+-define(otp71921_mg_verify_notify_reply_fun(),
+	fun otp71921_mg_verify_notify_reply/1).
+-endif.
+
+otp71921_mg_event_sequence(text, tcp, Mid) ->
+    RI = [
+	  {port,             2944},
+	  {encoding_module,  megaco_pretty_text_encoder},
+	  {encoding_config,  []},
+	  {transport_module, megaco_tcp}
+	 ],
+    ServiceChangeReq = [otp71921_mg_service_change_request_ar(Mid, 1)],
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NR = fun(Cid, Rid) ->
+		 [otp71921_mg_notify_request_ar(Rid, Tid, Cid)]
+	 end,
+    ConnectVerify            = ?otp71921_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?otp71921_mg_verify_service_change_reply_fun(), 
+    NotifyReqVerify          = ?otp71921_mg_verify_notify_req_fun(),
+    NotifyReplyVerify        = ?otp71921_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun otp71921_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun otp71921_mg_verify_service_change_reply/1,
+%%     NotifyReqVerify          = otp71921_mg_verify_notify_request_fun(),
+%%     NotifyReplyVerify        = fun otp71921_mg_verify_notify_reply/1, 
+    EvSeq = [
+	     {debug, true},
+	     megaco_start,
+	     {megaco_start_user, Mid, RI, []},
+	     start_transport,
+	     %% {megaco_trace, max},
+	     {megaco_trace, disable},
+	     {megaco_system_info, users},
+	     {megaco_system_info, connections},
+	     connect,
+	     {megaco_callback, handle_connect, ConnectVerify},
+	     megaco_connect,
+	     {megaco_cast, ServiceChangeReq, []},
+	     {megaco_callback, handle_connect, ConnectVerify}, 
+	     {megaco_callback, handle_trans_reply, ServiceChangeReplyVerify},
+	     {sleep, 1000},
+	     {megaco_system_info, users},
+	     {megaco_system_info, connections},
+	     {sleep, 1000},
+	     {megaco_update_conn_info, auto_ack,           true},
+	     {megaco_update_conn_info, trans_ack_maxcount, 10},
+	     {megaco_update_conn_info, trans_req_maxcount, 10},
+	     {megaco_update_conn_info, trans_timer,        1000},
+	     {megaco_update_conn_info, trans_ack,          true},
+	     {megaco_update_conn_info, trans_req,          true},
+	     {megaco_conn_info, all},
+	     {megaco_cast, NR(1,1), []},
+	     {megaco_cast, NR(1,2), []},
+	     {megaco_cast, NR(1,3), []},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_update_conn_info, trans_timer,        120000},
+	     {megaco_cast, NR(2,1), []},
+	     {megaco_cast, NR(2,2), []},
+	     {megaco_cast, NR(2,3), []},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {sleep, 3000},
+	     megaco_stop_user,
+	     megaco_stop,
+	     {sleep, 1000}
+	    ],
+    EvSeq.
+
+otp71921_mg_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("otp71921_mg_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+otp71921_mg_verify_handle_connect(Else) ->
+    io:format("otp71921_mg_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp71921_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION, 
+					{ok, [AR]}, _}) ->
+    io:format("otp71921_mg_verify_service_change_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionReply'{commandReply = [SCR]} ->
+	    case SCR of
+		{serviceChangeReply,
+		 #'ServiceChangeReply'{terminationID = [Tid],
+				       serviceChangeResult = Res}} ->
+		    case Tid of
+			#megaco_term_id{contains_wildcards = false, 
+					id = ["root"]} ->
+			    case Res of
+				{serviceChangeResParms,
+				 #'ServiceChangeResParm'{
+				   serviceChangeMgcId = _RemoteMid}} ->
+				    {ok, AR, ok};
+				{Tag, Val} ->
+				    Err = {invalid_service_change_result, 
+					   Tag, Val},
+				    {error, Err, ok}
+			    end;
+			_ ->
+			    Err = {invalid_termination_id, Tid},
+			    {error, Err, ok}
+		    end;
+		{Tag, Val} ->
+		    Err = {invalid_command_reply, Tag, Val},
+		    {error, Err, ok}
+	    end;
+	_ ->
+	    Err = {invalid_action_reply, AR},
+	    {error, Err, ok}
+    end;
+otp71921_mg_verify_service_change_reply(Else) ->
+    io:format("otp71921_mg_verify_service_change_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp71921_mg_verify_notify_request_fun() ->
+    fun(Ev) ->
+	    otp71921_mg_verify_notify_request(Ev)
+    end.
+
+otp71921_mg_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("otp71921_mg_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [otp71921_mg_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = otp71921_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+otp71921_mg_verify_notify_request(Else) ->
+    io:format("otp71921_mg_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = otp71921_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
+otp71921_mg_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
+				{ok, [AR]}, _}) ->
+    io:format("otp71921_mg_verify_notify_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {ok, AR, ok};
+otp71921_mg_verify_notify_reply(Else) ->
+    io:format("otp71921_mg_verify_notify_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp71921_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp71921_mg_service_change_request_msg(Mid, TransId, Cid) ->
+    AR    = otp71921_mg_service_change_request_ar(Mid, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+otp71921_mg_notify_reply_ar(Cid, TermId) ->
+    NR = cre_notifyReply([TermId]),
+    CR = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+otp71921_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp71921_notify_request_msg(Mid, TransId, Rid, TermId, Cid) ->
+    AR    = otp71921_mg_notify_request_ar(Rid, TermId, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%
+%% Common functions for the multi_trans_req_timeout test case
+%%
+
+otp71921_err_desc(T) ->
+    EC = ?megaco_internal_gateway_error,
+    ET = lists:flatten(io_lib:format("~w",[T])),
+    #'ErrorDescriptor'{errorCode = EC, errorText = ET}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_7192_2(suite) ->
+    [];
+otp_7192_2(doc) ->
+    [];
+otp_7192_2(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        otp_7192_2),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p", 
+      [MgcNode, MgNode]),
+
+    MgMid = {deviceName,"mg"},
+
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = otp71922_mgc_event_sequence(text, tcp, MgMid),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = otp71922_mg_event_sequence(text, tcp, MgMid),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
+
+    d("await the generator(s) completion"),
+    await_completion([MgcId, MgId], 30000),
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_megaco_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_megaco_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%% 
+-ifdef(megaco_hipe_special).
+-define(otp71922_mgc_verify_handle_connect_fun(), 
+        {?MODULE, otp71922_mgc_verify_handle_connect, []}).
+-define(otp71922_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, otp71922_mgc_verify_service_change_req, [Mid]}).
+-define(otp71922_mgc_verify_notify_req_fun(),
+        {?MODULE, otp71922_mgc_verify_notify_request, []}).
+-define(otp71922_mgc_verify_notify_reply_fun(),
+        {?MODULE, otp71922_mgc_verify_notify_reply, []}).
+-define(otp71922_mgc_verify_ack_fun(),
+        {?MODULE, otp71922_mgc_verify_ack, []}).
+-define(otp71922_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, otp71922_mgc_verify_handle_disconnect, []}).
+-else.
+-define(otp71922_mgc_verify_handle_connect_fun(), 
+        fun otp71922_mgc_verify_handle_connect/1).
+-define(otp71922_mgc_verify_service_change_req_fun(Mid),
+        otp71922_mgc_verify_service_change_req_fun(Mid)).
+-define(otp71922_mgc_verify_notify_req_fun(),
+	otp71922_mgc_verify_notify_request_fun()).
+-define(otp71922_mgc_verify_notify_reply_fun(),
+	fun otp71922_mgc_verify_notify_reply/1).
+-define(otp71922_mgc_verify_ack_fun(),
+	fun otp71922_mgc_verify_ack/1).
+-define(otp71922_mgc_verify_handle_disconnect_fun(),
+	fun otp71922_mgc_verify_handle_disconnect/1).
+-endif.
+
+otp71922_mgc_event_sequence(text, tcp, MgMid) ->
+    Mid = {deviceName, "ctrl"},
+    RI = [
+	  {port,             2944},
+	  {encoding_module,  megaco_pretty_text_encoder},
+	  {encoding_config,  []},
+	  {transport_module, megaco_tcp}
+	 ],
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NR = fun(Cid, Rid) ->
+		 [otp71922_mgc_notify_request_ar(Rid, Tid, Cid)]
+	 end,
+    LocalConnectVerify     = ?otp71922_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?otp71922_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?otp71922_mgc_verify_notify_req_fun(),
+    NotifyReplyVerify      = ?otp71922_mgc_verify_notify_reply_fun(), 
+    AckVerify              = ?otp71922_mgc_verify_ack_fun(), 
+    DiscoVerify            = ?otp71922_mgc_verify_handle_disconnect_fun(), 
+    EvSeq = [
+	     {debug, true},
+	     %% {megaco_trace, max}, 
+	     {megaco_trace, disable}, 
+	     megaco_start,
+	     {megaco_start_user, Mid, RI, []},
+	     start_transport,
+	     listen,
+	     {megaco_connect,  MgMid}, 
+	     {megaco_callback, handle_connect,       LocalConnectVerify},
+	     {megaco_callback, handle_trans_request, ServiceChangeReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_update_conn_info, request_timer,      1000},
+	     {megaco_cast, NR(1,1), []},
+
+	     {megaco_callback, [{handle_trans_ack,     3, AckVerify},
+				{handle_trans_request, 3, NotifyReqVerify},
+				{handle_trans_reply,   1, NotifyReplyVerify}]},
+	     {megaco_callback, handle_disconnect,    DiscoVerify},
+	     {sleep, 1000},
+	     megaco_stop_user,
+	     megaco_stop
+	    ],
+    EvSeq.
+
+
+otp71922_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("otp71922_mgc_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, timer:seconds(2), CH, ok};
+otp71922_mgc_verify_handle_connect(Else) ->
+    io:format("otp71922_mgc_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp71922_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Ev) ->
+	    otp71922_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+otp71922_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("otp71922_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [otp71922_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
+					_ ->
+					    Err = {invalid_SCP, Parms},
+					    ED = otp71922_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
+					    {error, Err, ErrReply}
+				    end;
+				_ ->
+				    Err = {invalid_termination_id, Tid},
+				    ED = otp71922_err_desc(Tid),
+				    ErrReply = {discard_ack, ED},
+				    {error, Err, ErrReply}
+			    end;
+			_ ->
+			    Err = {invalid_command, Cmd},
+			    ED = otp71922_err_desc(Cmd),
+			    ErrReply = {discard_ack, ED},
+			    {error, Err, ErrReply}
+		    end;
+		_ ->
+		    Err = {invalid_command_request, CR},
+		    ED = otp71922_err_desc(CR),
+		    ErrReply = {discard_ack, ED},
+		    {error, Err, ErrReply}
+	    end;
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = otp71922_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, Err, ErrReply}
+    end;
+otp71922_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("otp71922_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = otp71922_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
+otp71922_mgc_verify_notify_request_fun() ->
+    fun(Ev) ->
+	    otp71922_mgc_verify_notify_request(Ev)
+    end.
+
+otp71922_mgc_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("otp71922_mgc_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, kalle},
+	    Reply = {HandleAck, 
+		     [otp71922_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [otp71922_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = otp71922_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+otp71922_mgc_verify_notify_request(Else) ->
+    io:format("otp71922_mgc_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = otp71922_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
+otp71922_mgc_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
+				 {ok, [AR]}, _}) ->
+    io:format("otp71922_mgc_verify_notify_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {ok, AR, ok};
+otp71922_mgc_verify_notify_reply({handle_trans_reply, CH, ?VERSION, 
+				 UnknownResult, _}) ->
+    io:format("otp71922_mgc_verify_notify_reply -> unknown result"
+	      "~n   UnknownResult: ~p~n", [UnknownResult]),
+    {error, {unknown_reply_result, UnknownResult, CH}, ok};
+otp71922_mgc_verify_notify_reply(Else) ->
+    io:format("otp71922_mgc_verify_notify_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, {unknown_reply, Else}, ok}.
+
+otp71922_mgc_verify_ack({handle_trans_ack, CH, ?VERSION, ok, kalle}) -> 
+    io:format("otp71922_mgc_verify_ack -> ok"
+	      "~n   CH: ~p"
+	      "~n", [CH]),
+    {ok, CH, ok};
+otp71922_mgc_verify_ack(Else) ->
+    io:format("otp71922_mgc_verify_ack -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp71922_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
+    io:format("otp71922_mgc_verify_handle_disconnect -> ok"
+	      "~n   CH: ~p"
+	      "~n   R:  ~p"
+	      "~n", [CH, R]),
+    {ok, CH, ok};
+otp71922_mgc_verify_handle_disconnect(Else) ->
+    io:format("otp71922_mgc_verify_handle_disconnect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+
+otp71922_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    cre_actionReply(Cid, [CR]).
+
+otp71922_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
+    AR    = otp71922_mgc_service_change_reply_ar(Mid, Cid),
+    TRes  = cre_transResult([AR]),
+    TR    = cre_transReply(TransId, TRes),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+otp71922_mgc_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "44000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp71922_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+otp71922_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
+    AR    = otp71922_mgc_notify_reply_ar(Cid, TermId),
+    TRes  = cre_transResult([AR]),
+    TR    = cre_transReply(TransId, TRes),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%
+%% MG generator stuff
+%% 
+-ifdef(megaco_hipe_special).
+-define(otp71922_mg_verify_handle_connect_fun(), 
+        {?MODULE, otp71922_mg_verify_handle_connect, []}).
+-define(otp71922_mg_verify_service_change_reply_fun(),
+        {?MODULE, otp71922_mg_verify_service_change_reply, []}).
+-define(otp71922_mg_verify_notify_req_fun(),
+        {?MODULE, otp71922_mgc_verify_notify_request, []}).
+-define(otp71922_mg_verify_notify_reply_fun(),
+        {?MODULE, otp71922_mg_verify_notify_reply, []}).
+-else.
+-define(otp71922_mg_verify_handle_connect_fun(), 
+        fun otp71922_mg_verify_handle_connect/1).
+-define(otp71922_mg_verify_service_change_reply_fun(),
+        fun otp71922_mg_verify_service_change_reply/1).
+-define(otp71922_mg_verify_notify_req_fun(),
+	otp71922_mgc_verify_notify_request_fun()).
+-define(otp71922_mg_verify_notify_reply_fun(),
+	fun otp71922_mg_verify_notify_reply/1).
+-endif.
+
+otp71922_mg_event_sequence(text, tcp, Mid) ->
+    RI = [
+	  {port,             2944},
+	  {encoding_module,  megaco_pretty_text_encoder},
+	  {encoding_config,  []},
+	  {transport_module, megaco_tcp}
+	 ],
+    ServiceChangeReq = [otp71922_mg_service_change_request_ar(Mid, 1)],
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NR = fun(Cid, Rid) ->
+		 [otp71922_mg_notify_request_ar(Rid, Tid, Cid)]
+	 end,
+    ConnectVerify            = ?otp71922_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?otp71922_mg_verify_service_change_reply_fun(), 
+    NotifyReqVerify          = ?otp71922_mg_verify_notify_req_fun(),
+    NotifyReplyVerify        = ?otp71922_mg_verify_notify_reply_fun(), 
+    EvSeq = [
+	     {debug, true},
+	     megaco_start,
+	     {megaco_start_user, Mid, RI, []},
+	     start_transport,
+	     %% {megaco_trace, max},
+	     {megaco_trace, disable},
+	     {megaco_system_info, users},
+	     {megaco_system_info, connections},
+	     connect,
+	     {megaco_callback, handle_connect, ConnectVerify},
+	     megaco_connect,
+	     {megaco_cast, ServiceChangeReq, []},
+	     {megaco_callback, handle_connect, ConnectVerify}, 
+	     {megaco_callback, handle_trans_reply, ServiceChangeReplyVerify},
+	     {sleep, 1000},
+	     {megaco_system_info, users},
+	     {megaco_system_info, connections},
+	     {sleep, 1000},
+	     {megaco_update_conn_info, auto_ack,           true},
+	     {megaco_update_conn_info, trans_ack_maxcount, 10},
+	     {megaco_update_conn_info, trans_req_maxcount, 10},
+	     {megaco_update_conn_info, trans_timer,        1000},
+	     {megaco_update_conn_info, trans_ack,          true},
+	     {megaco_update_conn_info, trans_req,          true},
+	     {megaco_conn_info, all},
+	     {megaco_cast, NR(1,1), []},
+	     {megaco_cast, NR(1,2), []},
+	     {megaco_cast, NR(1,3), []},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_update_conn_info, trans_timer,        120000},
+	     {megaco_cast, NR(2,1), []},
+	     {megaco_cast, NR(2,2), []},
+	     {megaco_cast, NR(2,3), []},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {sleep, 3000},
+	     megaco_stop_user,
+	     megaco_stop,
+	     {sleep, 1000}
+	    ],
+    EvSeq.
+
+otp71922_mg_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("otp71922_mg_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+otp71922_mg_verify_handle_connect(Else) ->
+    io:format("otp71922_mg_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp71922_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION, 
+					{ok, [AR]}, _}) ->
+    io:format("otp71922_mg_verify_service_change_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionReply'{commandReply = [SCR]} ->
+	    case SCR of
+		{serviceChangeReply,
+		 #'ServiceChangeReply'{terminationID = [Tid],
+				       serviceChangeResult = Res}} ->
+		    case Tid of
+			#megaco_term_id{contains_wildcards = false, 
+					id = ["root"]} ->
+			    case Res of
+				{serviceChangeResParms,
+				 #'ServiceChangeResParm'{
+				   serviceChangeMgcId = _RemoteMid}} ->
+				    {ok, AR, ok};
+				{Tag, Val} ->
+				    Err = {invalid_service_change_result, 
+					   Tag, Val},
+				    {error, Err, ok}
+			    end;
+			_ ->
+			    Err = {invalid_termination_id, Tid},
+			    {error, Err, ok}
+		    end;
+		{Tag, Val} ->
+		    Err = {invalid_command_reply, Tag, Val},
+		    {error, Err, ok}
+	    end;
+	_ ->
+	    Err = {invalid_action_reply, AR},
+	    {error, Err, ok}
+    end;
+otp71922_mg_verify_service_change_reply(Else) ->
+    io:format("otp71922_mg_verify_service_change_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp71922_mg_verify_notify_request_fun() ->
+    fun(Ev) ->
+	    otp71922_mg_verify_notify_request(Ev)
+    end.
+
+otp71922_mg_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("otp71922_mg_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [otp71922_mg_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = otp71922_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+otp71922_mg_verify_notify_request(Else) ->
+    io:format("otp71922_mg_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = otp71922_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
+otp71922_mg_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
+				{ok, [AR]}, _}) ->
+    io:format("otp71922_mg_verify_notify_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {ok, AR, ok};
+otp71922_mg_verify_notify_reply(Else) ->
+    io:format("otp71922_mg_verify_notify_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp71922_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp71922_mg_service_change_request_msg(Mid, TransId, Cid) ->
+    AR    = otp71922_mg_service_change_request_ar(Mid, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+otp71922_mg_notify_reply_ar(Cid, TermId) ->
+    NR = cre_notifyReply([TermId]),
+    CR = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+otp71922_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp71922_notify_request_msg(Mid, TransId, Rid, TermId, Cid) ->
+    AR    = otp71922_mg_notify_request_ar(Rid, TermId, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%
+%% Common functions for the multi_trans_req_timeout test case
+%%
+
+otp71922_err_desc(T) ->
+    EC = ?megaco_internal_gateway_error,
+    ET = lists:flatten(io_lib:format("~w",[T])),
+    #'ErrorDescriptor'{errorCode = EC, errorText = ET}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_7192_3(suite) ->
+    [];
+otp_7192_3(doc) ->
+    ["Same as otp_7192_2 but transport is UDP instead of TCP"];
+otp_7192_3(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        otp_7192_3),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p", 
+      [MgcNode, MgNode]),
+
+    MgMid = {deviceName,"mg"},
+
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = otp72923_mgc_event_sequence(text, udp, MgMid),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = otp72923_mg_event_sequence(text, udp, MgMid),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
+
+    d("await the generator(s) completion"),
+    await_completion([MgcId, MgId], 60000),
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_megaco_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_megaco_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%% 
+-ifdef(megaco_hipe_special).
+-define(otp72923_mgc_verify_handle_connect_fun(), 
+        {?MODULE, otp72923_mgc_verify_handle_connect, []}).
+-define(otp72923_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, otp72923_mgc_verify_service_change_req, [Mid]}).
+-define(otp72923_mgc_verify_notify_req_fun(),
+        {?MODULE, otp72923_mgc_verify_notify_request, []}).
+-define(otp72923_mgc_verify_notify_reply_fun(),
+        {?MODULE, otp72923_mgc_verify_notify_reply, []}).
+-define(otp72923_mgc_verify_ack_fun(),
+        {?MODULE, otp72923_mgc_verify_ack, []}).
+-define(otp72923_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, otp72923_mgc_verify_handle_disconnect, []}).
+-else.
+-define(otp72923_mgc_verify_handle_connect_fun(), 
+        fun otp72923_mgc_verify_handle_connect/1).
+-define(otp72923_mgc_verify_service_change_req_fun(Mid),
+        otp72923_mgc_verify_service_change_req_fun(Mid)).
+-define(otp72923_mgc_verify_notify_req_fun(),
+	otp72923_mgc_verify_notify_request_fun()).
+-define(otp72923_mgc_verify_notify_reply_fun(),
+	fun otp72923_mgc_verify_notify_reply/1).
+-define(otp72923_mgc_verify_ack_fun(),
+	fun otp72923_mgc_verify_ack/1).
+-define(otp72923_mgc_verify_handle_disconnect_fun(),
+	fun otp72923_mgc_verify_handle_disconnect/1).
+-endif.
+
+otp72923_mgc_event_sequence(text, udp, MgMid) ->
+    Mid = {deviceName, "ctrl"},
+    RI = [
+	  {port,             2944},
+	  {encoding_module,  megaco_pretty_text_encoder},
+	  {encoding_config,  []},
+	  {transport_module, megaco_udp}
+	 ],
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NR = fun(Cid, Rid) ->
+		 [otp72923_mgc_notify_request_ar(Rid, Tid, Cid)]
+	 end,
+    LocalConnectVerify     = ?otp72923_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?otp72923_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?otp72923_mgc_verify_notify_req_fun(),
+    NotifyReplyVerify      = ?otp72923_mgc_verify_notify_reply_fun(), 
+    AckVerify              = ?otp72923_mgc_verify_ack_fun(), 
+    %% DiscoVerify            = ?otp72923_mgc_verify_handle_disconnect_fun(), 
+    EvSeq = [
+	     {debug, true},
+	     {megaco_trace, max}, 
+	     %% {megaco_trace, disable}, 
+	     megaco_start,
+	     {megaco_start_user, Mid, RI, []},
+	     start_transport,
+	     listen,
+	     {megaco_connect,  MgMid}, 
+	     {megaco_callback, handle_connect,       LocalConnectVerify},
+	     {megaco_callback, handle_trans_request, ServiceChangeReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_update_conn_info, request_timer,      1000},
+	     {megaco_cast, NR(1,1), []},
+
+	     {megaco_callback, [{handle_trans_ack,     3, AckVerify},
+				{handle_trans_request, 3, NotifyReqVerify},
+				{handle_trans_reply,   1, NotifyReplyVerify}]},
+	     %% {megaco_callback, handle_disconnect,    DiscoVerify},
+	     {sleep, 1000},
+	     megaco_stop_user,
+	     megaco_stop
+	    ],
+    EvSeq.
+
+
+otp72923_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("otp72923_mgc_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, timer:seconds(2), CH, ok};
+otp72923_mgc_verify_handle_connect(Else) ->
+    io:format("otp72923_mgc_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp72923_mgc_verify_service_change_req_fun(Mid) ->
+    fun(Ev) ->
+	    otp72923_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+otp72923_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("otp72923_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [otp72923_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
+					_ ->
+					    Err = {invalid_SCP, Parms},
+					    ED = otp72923_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
+					    {error, Err, ErrReply}
+				    end;
+				_ ->
+				    Err = {invalid_termination_id, Tid},
+				    ED = otp72923_err_desc(Tid),
+				    ErrReply = {discard_ack, ED},
+				    {error, Err, ErrReply}
+			    end;
+			_ ->
+			    Err = {invalid_command, Cmd},
+			    ED = otp72923_err_desc(Cmd),
+			    ErrReply = {discard_ack, ED},
+			    {error, Err, ErrReply}
+		    end;
+		_ ->
+		    Err = {invalid_command_request, CR},
+		    ED = otp72923_err_desc(CR),
+		    ErrReply = {discard_ack, ED},
+		    {error, Err, ErrReply}
+	    end;
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = otp72923_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, Err, ErrReply}
+    end;
+otp72923_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("otp72923_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = otp72923_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
+otp72923_mgc_verify_notify_request_fun() ->
+    fun(Ev) ->
+	    otp72923_mgc_verify_notify_request(Ev)
+    end.
+
+otp72923_mgc_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("otp72923_mgc_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, kalle},
+	    Reply = {HandleAck, 
+		     [otp72923_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [otp72923_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = otp72923_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+otp72923_mgc_verify_notify_request(Else) ->
+    io:format("otp72923_mgc_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = otp72923_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
+otp72923_mgc_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
+				 {ok, [AR]}, _}) ->
+    io:format("otp72923_mgc_verify_notify_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {ok, AR, ok};
+otp72923_mgc_verify_notify_reply({handle_trans_reply, CH, ?VERSION, 
+				 UnknownResult, _}) ->
+    io:format("otp72923_mgc_verify_notify_reply -> unknown result"
+	      "~n   UnknownResult: ~p~n", [UnknownResult]),
+    {error, {unknown_reply_result, UnknownResult, CH}, ok};
+otp72923_mgc_verify_notify_reply(Else) ->
+    io:format("otp72923_mgc_verify_notify_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, {unknown_reply, Else}, ok}.
+
+otp72923_mgc_verify_ack({handle_trans_ack, CH, ?VERSION, ok, kalle}) -> 
+    io:format("otp72923_mgc_verify_ack -> ok"
+	      "~n   CH: ~p"
+	      "~n", [CH]),
+    {ok, CH, ok};
+otp72923_mgc_verify_ack(Else) ->
+    io:format("otp72923_mgc_verify_ack -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+%% otp72923_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
+%%     io:format("otp72923_mgc_verify_handle_disconnect -> ok"
+%% 	      "~n   CH: ~p"
+%% 	      "~n   R:  ~p"
+%% 	      "~n", [CH, R]),
+%%     {ok, CH, ok};
+%% otp72923_mgc_verify_handle_disconnect(Else) ->
+%%     io:format("otp72923_mgc_verify_handle_disconnect -> unknown"
+%% 	      "~n   Else: ~p~n", [Else]),
+%%     {error, Else, ok}.
+
+
+otp72923_mgc_service_change_reply_ar(Mid, Cid) ->
+    SCRP  = cre_serviceChangeResParm(Mid),
+    SCRes = cre_serviceChangeResult(SCRP),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReply([Root], SCRes),
+    CR    = cre_cmdReply(SCR),
+    cre_actionReply(Cid, [CR]).
+
+otp72923_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
+    AR    = otp72923_mgc_service_change_reply_ar(Mid, Cid),
+    TRes  = cre_transResult([AR]),
+    TR    = cre_transReply(TransId, TRes),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+otp72923_mgc_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "44000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp72923_mgc_notify_reply_ar(Cid, TermId) ->
+    NR    = cre_notifyReply([TermId]),
+    CR    = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+otp72923_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
+    AR    = otp72923_mgc_notify_reply_ar(Cid, TermId),
+    TRes  = cre_transResult([AR]),
+    TR    = cre_transReply(TransId, TRes),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%
+%% MG generator stuff
+%% 
+-ifdef(megaco_hipe_special).
+-define(otp72923_mg_verify_handle_connect_fun(), 
+        {?MODULE, otp72923_mg_verify_handle_connect, []}).
+-define(otp72923_mg_verify_service_change_reply_fun(),
+        {?MODULE, otp72923_mg_verify_service_change_reply, []}).
+-define(otp72923_mg_verify_notify_req_fun(),
+        {?MODULE, otp72923_mgc_verify_notify_request, []}).
+-define(otp72923_mg_verify_notify_reply_fun(),
+        {?MODULE, otp72923_mg_verify_notify_reply, []}).
+-else.
+-define(otp72923_mg_verify_handle_connect_fun(), 
+        fun otp72923_mg_verify_handle_connect/1).
+-define(otp72923_mg_verify_service_change_reply_fun(),
+        fun otp72923_mg_verify_service_change_reply/1).
+-define(otp72923_mg_verify_notify_req_fun(),
+	otp72923_mgc_verify_notify_request_fun()).
+-define(otp72923_mg_verify_notify_reply_fun(),
+	fun otp72923_mg_verify_notify_reply/1).
+-endif.
+
+otp72923_mg_event_sequence(text, udp, Mid) ->
+    RI = [
+	  {port,             2944},
+	  {encoding_module,  megaco_pretty_text_encoder},
+	  {encoding_config,  []},
+	  {transport_module, megaco_udp}
+	 ],
+    ServiceChangeReq = [otp72923_mg_service_change_request_ar(Mid, 1)],
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NR = fun(Cid, Rid) ->
+		 [otp72923_mg_notify_request_ar(Rid, Tid, Cid)]
+	 end,
+    ConnectVerify            = ?otp72923_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?otp72923_mg_verify_service_change_reply_fun(), 
+    NotifyReqVerify          = ?otp72923_mg_verify_notify_req_fun(),
+    NotifyReplyVerify        = ?otp72923_mg_verify_notify_reply_fun(), 
+    EvSeq = [
+	     %% {debug, true},
+	     {debug, false},
+	     megaco_start,
+	     {megaco_start_user, Mid, RI, []},
+	     start_transport,
+	     %% {megaco_trace, max},
+	     {megaco_trace, disable},
+	     {megaco_system_info, users},
+	     {megaco_system_info, connections},
+	     connect,
+	     {megaco_callback, handle_connect, ConnectVerify},
+	     megaco_connect,
+	     {megaco_cast, ServiceChangeReq, []},
+	     {megaco_callback, handle_connect, ConnectVerify}, 
+	     {megaco_callback, handle_trans_reply, ServiceChangeReplyVerify},
+	     {sleep, 1000},
+	     {megaco_system_info, users},
+	     {megaco_system_info, connections},
+	     {sleep, 1000},
+	     {megaco_update_conn_info, auto_ack,           true},
+	     {megaco_update_conn_info, trans_ack_maxcount, 10},
+	     {megaco_update_conn_info, trans_req_maxcount, 10},
+	     {megaco_update_conn_info, trans_timer,        1000},
+	     {megaco_update_conn_info, trans_ack,          true},
+	     {megaco_update_conn_info, trans_req,          true},
+	     {megaco_conn_info, all},
+	     {megaco_cast, NR(1,1), []},
+	     {megaco_cast, NR(1,2), []},
+	     {megaco_cast, NR(1,3), []},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_update_conn_info, trans_timer,        120000},
+	     {megaco_cast, NR(2,1), []},
+	     {megaco_cast, NR(2,2), []},
+	     {megaco_cast, NR(2,3), []},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {sleep, 3000},
+	     megaco_stop_user,
+	     megaco_stop,
+	     {sleep, 1000}
+	    ],
+    EvSeq.
+
+otp72923_mg_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("otp72923_mg_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+otp72923_mg_verify_handle_connect(Else) ->
+    io:format("otp72923_mg_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp72923_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION, 
+					{ok, [AR]}, _}) ->
+    io:format("otp72923_mg_verify_service_change_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionReply'{commandReply = [SCR]} ->
+	    case SCR of
+		{serviceChangeReply,
+		 #'ServiceChangeReply'{terminationID = [Tid],
+				       serviceChangeResult = Res}} ->
+		    case Tid of
+			#megaco_term_id{contains_wildcards = false, 
+					id = ["root"]} ->
+			    case Res of
+				{serviceChangeResParms,
+				 #'ServiceChangeResParm'{
+				   serviceChangeMgcId = _RemoteMid}} ->
+				    {ok, AR, ok};
+				{Tag, Val} ->
+				    Err = {invalid_service_change_result, 
+					   Tag, Val},
+				    {error, Err, ok}
+			    end;
+			_ ->
+			    Err = {invalid_termination_id, Tid},
+			    {error, Err, ok}
+		    end;
+		{Tag, Val} ->
+		    Err = {invalid_command_reply, Tag, Val},
+		    {error, Err, ok}
+	    end;
+	_ ->
+	    Err = {invalid_action_reply, AR},
+	    {error, Err, ok}
+    end;
+otp72923_mg_verify_service_change_reply(Else) ->
+    io:format("otp72923_mg_verify_service_change_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp72923_mg_verify_notify_request_fun() ->
+    fun(Ev) ->
+	    otp72923_mg_verify_notify_request(Ev)
+    end.
+
+otp72923_mg_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("otp72923_mg_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [otp72923_mg_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = otp72923_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+otp72923_mg_verify_notify_request(Else) ->
+    io:format("otp72923_mg_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = otp72923_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
+otp72923_mg_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
+				{ok, [AR]}, _}) ->
+    io:format("otp72923_mg_verify_notify_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {ok, AR, ok};
+otp72923_mg_verify_notify_reply(Else) ->
+    io:format("otp72923_mg_verify_notify_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+otp72923_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp72923_mg_service_change_request_msg(Mid, TransId, Cid) ->
+    AR    = otp72923_mg_service_change_request_ar(Mid, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+otp72923_mg_notify_reply_ar(Cid, TermId) ->
+    NR = cre_notifyReply([TermId]),
+    CR = cre_cmdReply(NR),
+    cre_actionReply(Cid, [CR]).
+
+otp72923_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp72923_notify_request_msg(Mid, TransId, Rid, TermId, Cid) ->
+    AR    = otp72923_mg_notify_request_ar(Rid, TermId, Cid),
+    TR    = cre_transReq(TransId, [AR]),
+    Trans = cre_transaction(TR),
+    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+    cre_megacoMessage(Mess).
+
+
+%%
+%% Common functions for the multi_trans_req_timeout test case
+%%
+
+otp72923_err_desc(T) ->
+    EC = ?megaco_internal_gateway_error,
+    ET = lists:flatten(io_lib:format("~w",[T])),
+    #'ErrorDescriptor'{errorCode = EC, errorText = ET}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

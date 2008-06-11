@@ -210,4 +210,4 @@ The hipe_x86_encode.erl source code is the authoritative reference
 for the hipe_x86_encode module.
 
 Please report errors in either hipe_x86_encode.erl or this guide
-to mikpe@csd.uu.se.
+to mikpe@it.uu.se.

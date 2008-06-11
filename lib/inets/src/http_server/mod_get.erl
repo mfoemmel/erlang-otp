@@ -52,18 +52,17 @@ do_get(Info) ->
     ?DEBUG("do_get -> Request URI: ~p",[Info#mod.request_uri]),
     Path = mod_alias:path(Info#mod.data, Info#mod.config_db, 
 			  Info#mod.request_uri),
-    {FileInfo, LastModified} = get_modification_date(Path),
-
-    send_response(Info#mod.socket,Info#mod.socket_type, Path, Info, 
-		  FileInfo, LastModified).
+ 
+    send_response(Info#mod.socket,Info#mod.socket_type, Path, Info).
 
 
 %% The common case when no range is specified
-send_response(_Socket, _SocketType, Path, Info, FileInfo, LastModified)->
+send_response(_Socket, _SocketType, Path, Info)->
     %% Send the file!
     %% Find the modification date of the file
     case file:open(Path,[raw,binary]) of
 	{ok, FileDescriptor} ->
+	    {FileInfo, LastModified} = get_modification_date(Path),
 	    ?DEBUG("do_get -> FileDescriptor: ~p",[FileDescriptor]),
 	    Suffix = httpd_util:suffix(Path),
 	    MimeType = httpd_util:lookup_mime_default(Info#mod.config_db,

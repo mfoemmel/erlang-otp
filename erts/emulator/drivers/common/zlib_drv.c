@@ -71,19 +71,25 @@ ErlDrvEntry zlib_driver_entry = {
     zlib_init,
     zlib_start,
     zlib_stop,
-    NULL,
-    NULL,
-    NULL,
+    NULL,                           /* output */
+    NULL,                           /* ready_input */
+    NULL,                           /* ready_output */
     "zlib_drv",
-    NULL,
-    NULL,
+    NULL,                           /* finish */
+    NULL,                           /* handle */
     zlib_ctl,
-    NULL,
+    NULL,                           /* timeout */
     zlib_outputv,
-    NULL,
-    NULL,
-    NULL,
-    NULL
+    NULL,                           /* read_async */
+    NULL,                           /* flush */
+    NULL,                           /* call */
+    NULL,                           /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    ERL_DRV_FLAG_USE_PORT_LOCKING,
+    NULL,                           /* handle2 */
+    NULL,                           /* process_exit */
 };
 
 typedef enum {
@@ -251,7 +257,11 @@ static int zlib_inflate(ZLibData* d, int flush)
 		driver_deq(d->port, len);
 		return res;
 	    }
-	    if (res < 0) {
+	    if (res == Z_BUF_ERROR) {
+		/* Was possible more output, but actually not */
+		res = Z_OK;
+	    }
+	    else if (res < 0) {
 		return res;
 	    }
 	    if (d->s.avail_out != 0) {
@@ -403,7 +413,6 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
 {
     ZLibData* d = (ZLibData*)drv_data;
     int res;
-
 
     switch(command) {
     case DEFLATE_INIT:
@@ -629,6 +638,7 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
     errno = EINVAL;
     return zlib_return(Z_ERRNO, rbuf, rlen);
 }
+
 
 
 static void zlib_outputv(ErlDrvData drv_data, ErlIOVec *ev)

@@ -1,19 +1,21 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*<copyright>
+ * <year>1999-2008</year>
+ * <holder>Ericsson AB, All Rights Reserved</holder>
+ *</copyright>
+ *<legalnotice>
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
- * 
+ * retrieved online at http://www.erlang.org/.
+ *
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
- * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ *
+ * The Initial Developer of the Original Code is Ericsson AB.
+ *</legalnotice>
  */
 
 /*
@@ -81,7 +83,8 @@
    N - integer
    Binary - binary encodede tuple of {SQLQuery, NoRows, Parameters}
    NoRows - integer
-   Parameters - [{Datatype, Value}]
+   Parameters - [{Datatype, InOrOut, Value}]
+   InOrOut = [ERL_ODBC_IN | ERL_ODBC_OUT | ERL_ODBC_INOUT]
    Datatype -  USER_INT | USER_SMALL_INT | {USER_DECIMAL, Precision, Scale} |
    {USER_NMERIC, Precision, Scale} | {USER_CHAR, Max} | {USER_VARCHAR, Max} |
    {USER_FLOAT, Precision} | USER_REAL | USER_DOUBLE
@@ -112,6 +115,8 @@
 #include <sys/uio.h>
 #include <netdb.h>
 #endif
+
+#include <limits.h>
 
 #include "ei.h"
 #include "odbcserver.h"
@@ -144,6 +149,10 @@ static db_result_msg encode_atom_message(char *atom);
 static db_result_msg encode_result(db_state *state);
 static db_result_msg encode_result_set(SQLSMALLINT num_of_columns,
 				       db_state *state);
+static db_result_msg encode_out_params(db_state *state,
+                                       int cols,
+                                       param_array *params,
+                                       int num_param_values);
 static db_result_msg encode_column_name_list(SQLSMALLINT num_of_columns,
 					     db_state *state);
 static db_result_msg encode_value_list(SQLSMALLINT num_of_columns,
@@ -154,8 +163,6 @@ static db_result_msg encode_value_list_scroll(SQLSMALLINT num_of_columns,
 					      db_state *state);
 static db_result_msg encode_row_count(SQLINTEGER num_of_rows,
 				      db_state *state);
-static int encode_column(byte *buffer, int index, db_column column,
-			 int column_nr, db_state *state);  
 static void encode_column_dyn(db_column column, int column_nr,
 			      db_state *state);
 static void encode_data_type(SQLINTEGER sql_type, SQLINTEGER size,
@@ -179,7 +186,7 @@ static Boolean receive_msg_part(SOCKET socket,
 static Boolean send_msg_part(SOCKET socket, byte * buffer, size_t msg_len);
 static void close_socket(SOCKET socket);
 static void init_winsock(void);
-#elif UNIX
+#elif defined(UNIX)
 static int connect_to_erlang(const char *port);
 static void send_msg(db_result_msg *msg, int socket);
 static byte *receive_msg(int socket);
@@ -189,7 +196,7 @@ static void close_socket(int socket);
 #endif
 static void clean_socket_lib(void);
 
-/*------------- Memmory handling funtions --------------------------------*/
+/*------------- Memory handling funtions --------------------------------*/
 
 static void * safe_malloc(int size);
 static void * safe_realloc(void * ptr, int size);
@@ -203,7 +210,7 @@ static void clean_state(db_state *state);
 static void init_driver(int erl_auto_commit_mode, int erl_trace_driver,
 			   db_state *state);
 static void init_param_column(param_array *params, byte *buffer, int *index,
-			      int num_param_values);
+			      int num_param_values, db_state* state);
 
 static void init_param_statement(int cols,
 				 int num_param_values, 
@@ -225,6 +232,7 @@ static db_column retrive_binary_data(db_column column, int column_nr,
 				     db_state *state);
 static db_result_msg retrive_scrollable_cursor_support_info(db_state
 							    *state);
+static int num_out_params(int num_of_params, param_array* params);
 /* ------------- Error handling functions --------------------------------*/
 
 static diagnos get_diagnos(SQLSMALLINT handleType, SQLHANDLE handle);
@@ -233,6 +241,7 @@ static diagnos get_diagnos(SQLSMALLINT handleType, SQLHANDLE handle);
 
 static db_result_msg more_result_sets(db_state *state);
 static Boolean sql_success(SQLRETURN result);
+static void str_tolower(char *str, int len);
 
 /* ----------------------------- CODE ------------------------------------*/
 
@@ -278,7 +287,7 @@ static void spawn_sup(const char *port)
     DWORD threadId;
     (HANDLE)_beginthreadex(NULL, 0, supervise, port, 0, &threadId);
 }
-#elif UNIX
+#elif defined(UNIX)
 static void spawn_sup(const char *port)
 {
     pthread_t thread;
@@ -298,7 +307,7 @@ void supervise(const char *port) {
 #ifdef WIN32
     SOCKET socket;
     init_winsock();
-#elif UNIX
+#elif defined(UNIX)
     int socket; 
 #endif
     
@@ -327,12 +336,12 @@ DWORD WINAPI database_handler(const char *port)
     byte *request_buffer = NULL;
     db_state state =
     {NULL, NULL, NULL, NULL, 0, {NULL, 0, 0},
-     FALSE, FALSE, FALSE, FALSE, FALSE};
+     FALSE, FALSE, FALSE, FALSE, FALSE, FALSE};
     byte request_id;
 #ifdef WIN32
     SOCKET socket;
     init_winsock();
-#elif UNIX
+#elif defined(UNIX)
     int socket;
 #endif
 
@@ -525,7 +534,8 @@ static db_result_msg db_query(byte *sql, db_state *state)
     SQLINTEGER RowCountPtr;
     db_result_msg msg;
     diagnos diagnos;
-
+    byte is_error[6];
+    
     if (associated_result_set(state)) {
 	clean_state(state);
     }
@@ -540,12 +550,28 @@ static db_result_msg db_query(byte *sql, db_state *state)
 
     result = SQLExecDirect(statement_handle(state), sql, SQL_NTS);
     
-    /* SQL_SUCCESS_WITH_INFO at this point indicates error in user input. */
+    /* SQL_SUCCESS_WITH_INFO at this point may indicate an error in user input. */
     if (result != SQL_SUCCESS && result != SQL_NO_DATA_FOUND) {
-	diagnos =  get_diagnos(SQL_HANDLE_STMT, statement_handle(state));
-	msg = encode_error_message(diagnos.error_msg);
-	clean_state(state);
-	return msg;
+	    diagnos =  get_diagnos(SQL_HANDLE_STMT, statement_handle(state));
+	    if(strcmp((char *)diagnos.sqlState, INFO) == 0) { 
+		    is_error[0] = 0;
+		    strncat((char *)is_error, (char *)diagnos.error_msg, 
+			    5);
+		    str_tolower((char *)&is_error, 5);
+		    /* The ODBC error handling could have been more
+		       predictable but alas ... we try to make the best of
+		       it as we want a nice and clean Erlang API  */
+		    if((strcmp((char *)is_error, "error") == 0))
+		    { 
+ 			    msg = encode_error_message((char *)diagnos.error_msg); 
+ 			    clean_state(state); 
+			    return msg;
+		    }  
+	    } else {
+		    msg = encode_error_message((char *)diagnos.error_msg); 
+		    clean_state(state); 
+		    return msg;   
+	    }	    
     }
 
     ei_x_new_with_version(&dynamic_buffer(state));
@@ -590,7 +616,7 @@ static db_result_msg db_query(byte *sql, db_state *state)
 static db_result_msg db_select_count(byte *sql, db_state *state)
 {
     SQLSMALLINT num_of_columns, intresult;
-    SQLINTEGER num_of_rows;
+    SQLLEN num_of_rows;
     SQLRETURN result;
     diagnos diagnos;
     db_result_msg msg;
@@ -760,6 +786,11 @@ static db_result_msg db_param_query(byte *buffer, db_state *state)
 		switch (param_status.param_status_array[i]) {
 		case SQL_PARAM_SUCCESS:
 		case SQL_PARAM_SUCCESS_WITH_INFO:
+			/* SQL_PARAM_DIAG_UNAVAILABLE is entered when the
+			 * driver treats arrays of parameters as a monolithic
+			 * unit, so it does not generate this individual
+			 * parameter level of error information. */	
+		case SQL_PARAM_DIAG_UNAVAILABLE:
 		break;
 		default:
 		    diagnos =
@@ -771,7 +802,11 @@ static db_result_msg db_param_query(byte *buffer, db_state *state)
 	    }
 	    if(msg.length == 0) {
 		ei_x_new_with_version(&dynamic_buffer(state));
-		msg = encode_result(state);
+                if(out_params(state)){
+                    msg = encode_out_params(state, cols, params, num_param_values);
+                }else{
+                    msg = encode_result(state);
+                }
 		if(msg.length == 0) {
 		    msg.buffer = dynamic_buffer(state).buff;
   		    msg.length = dynamic_buffer(state).index; 
@@ -812,7 +847,7 @@ static db_result_msg db_describe_table(byte *sql, db_state *state)
     SQLSMALLINT num_of_columns;
     SQLCHAR name[MAX_NAME];
     SQLSMALLINT name_len, sql_type, dec_digits, nullable;
-    SQLINTEGER size;
+    SQLLEN size;
     diagnos diagnos;
     int i;
     
@@ -851,7 +886,7 @@ static db_result_msg db_describe_table(byte *sql, db_state *state)
     for (i = 0; i < num_of_columns; ++i) {
 	
 	if(!sql_success(SQLDescribeCol(statement_handle(state),
-				       (SQLSMALLINT)(i+1),
+				       (SQLUSMALLINT)(i+1),
 				       name, sizeof(name), &name_len,
 				       &sql_type, &size, &dec_digits,
 				       &nullable)))
@@ -938,7 +973,8 @@ static db_result_msg encode_atom_message(char* atom)
 static db_result_msg encode_result(db_state *state)
 {
     SQLSMALLINT num_of_columns = 0;
-    SQLINTEGER RowCountPtr = 0, paramBatch = 0;
+    SQLLEN RowCountPtr = 0;
+    SQLINTEGER paramBatch = 0;
     db_result_msg msg;
     int elements, update, num_of_rows = 0;
     char *atom;
@@ -951,9 +987,9 @@ static db_result_msg encode_result(db_state *state)
     } 
     
     if (num_of_columns == 0) { 
-	elements = 2;
-	atom = "updated";
-	update = TRUE;
+        elements = 2;
+        atom = "updated";
+        update = TRUE;
     } else {
 	elements = 3;
 	atom = "selected";
@@ -1011,6 +1047,85 @@ static db_result_msg encode_result(db_state *state)
     return msg;
 }
  
+static db_result_msg encode_out_params(db_state *state,
+                                       int num_of_params,
+                                       param_array* params,
+                                       int num_param_values)
+{
+    int num_of_columns = 0;
+    int i = 0;
+    int j = 0;
+    param_array column;
+    db_result_msg msg;
+    msg = encode_empty_message();
+    
+    ei_x_encode_tuple_header(&dynamic_buffer(state), 3);
+    ei_x_encode_atom(&dynamic_buffer(state), "executed");
+
+    num_of_columns = num_out_params(num_of_params, params);
+    ei_x_encode_long(&dynamic_buffer(state), num_of_columns);
+
+    ei_x_encode_list_header(&dynamic_buffer(state), num_param_values);
+    for(j =0; j < num_param_values; j ++){
+    
+        if(tuple_row(state)) {
+            ei_x_encode_tuple_header(&dynamic_buffer(state), num_of_columns);
+
+        } else {
+            ei_x_encode_list_header(&dynamic_buffer(state), num_of_columns);
+        }
+    
+        for (i = 0; i< num_of_params; i++) {
+            if(params[i].input_output_type==SQL_PARAM_INPUT){
+                continue;
+            }
+            column = params[i];
+            if (column.type.len == 0 ||
+                column.type.strlen_or_indptr == SQL_NULL_DATA) {
+                ei_x_encode_atom(&dynamic_buffer(state), "null");
+            } else {
+                void* values = retrive_param_values(&column);
+                switch(column.type.c) {
+                case SQL_C_CHAR:
+                    ei_x_encode_string(&dynamic_buffer(state), ((char*)values)+j*column.type.len);
+                    break;
+                case SQL_C_SLONG:
+                    ei_x_encode_long(&dynamic_buffer(state), ((long*)values)[j]);
+                    break;
+                case SQL_C_DOUBLE:
+                    ei_x_encode_double(&dynamic_buffer(state),
+                                       ((double*)values)[j]);
+                    break;
+                case SQL_C_BIT:
+                    ei_x_encode_atom(&dynamic_buffer(state),
+                                     ((Boolean*)values)[j]==TRUE?"true":"false");
+                    break;
+                default:
+                    ei_x_encode_atom(&dynamic_buffer(state), "error");
+                    break;
+                }
+            } 
+        } 
+        if(!tuple_row(state)) {
+            ei_x_encode_empty_list(&dynamic_buffer(state));
+        }
+    }
+    ei_x_encode_empty_list(&dynamic_buffer(state));
+    return msg;
+}  
+
+static int num_out_params(int num_of_params, param_array* params)
+{
+    int ret = 0;
+    int i = 0;
+    for(i=0; i < num_of_params; i++){
+        if(params[i].input_output_type==SQL_PARAM_INPUT_OUTPUT ||
+           params[i].input_output_type==SQL_PARAM_OUTPUT)
+            ret++;
+    }
+    return ret;
+}
+
 /* Description: Encodes the result set into the "ei_x" - dynamic_buffer
    held by the state variable */
 static db_result_msg encode_result_set(SQLSMALLINT num_of_columns,
@@ -1039,7 +1154,7 @@ static db_result_msg encode_column_name_list(SQLSMALLINT num_of_columns,
     db_result_msg msg;
     SQLCHAR name[MAX_NAME];
     SQLSMALLINT name_len, sql_type, dec_digits, nullable;
-    SQLUINTEGER size; 
+    SQLLEN size; 
     SQLRETURN result;
 
     msg = encode_empty_message();
@@ -1224,48 +1339,11 @@ static db_result_msg encode_row_count(SQLINTEGER num_of_rows,
     return msg;
 }
  
-/* Description: Encodes a column value into the buffer <buffer>.*/
-static int encode_column(byte *buffer, int index, db_column column,
-			 int column_nr, db_state *state)
-{
-    if(column.type.len == 0 ||
-       column.type.strlen_or_indptr == SQL_NULL_DATA)
-	ei_encode_atom((char *)buffer, &index, "null");
-    else {
-	switch(column.type.c) {
-	case SQL_C_CHAR:
-	    ei_encode_string((char *)buffer, &index, column.buffer);
-	    break;
-	case SQL_C_DOUBLE:
-	    ei_encode_double((char *)buffer, &index, *(double *)column.buffer);
-	    break;
-	case SQL_C_SLONG:
-	    ei_encode_long((char *)buffer, &index, *(long *)column.buffer);
-	    break;
-	case SQL_C_BIT:
-	    ei_encode_atom((char *)buffer, &index,
-			   column.buffer[0]?"true":"false");
-	    break;
-	case SQL_C_BINARY:
-	    if (buffer == NULL) {  
-		column = retrive_binary_data(column, column_nr, state);
-	    }
-	    ei_encode_string((char *)buffer, &index, (void *)column.buffer);
-	    break;
-	default:
-	    ei_encode_atom((char *)buffer, &index, "error");
-	    break;
-	} 
-    } 
-    return index;
-}
-
 /* Description: Encodes the a column value into the "ei_x" - dynamic_buffer
    held by the state variable */
 static void encode_column_dyn(db_column column, int column_nr,
 			      db_state *state)
 {
-  
     if (column.type.len == 0 ||
 	column.type.strlen_or_indptr == SQL_NULL_DATA) {
 	ei_x_encode_atom(&dynamic_buffer(state), "null");
@@ -1275,7 +1353,8 @@ static void encode_column_dyn(db_column column, int column_nr,
 	    ei_x_encode_string(&dynamic_buffer(state), column.buffer);
 	    break;
 	case SQL_C_SLONG:
-	    ei_x_encode_long(&dynamic_buffer(state), *(long*)column.buffer);
+	    ei_x_encode_long(&dynamic_buffer(state),
+	    	*(SQLINTEGER*)column.buffer);
 	    break;
 	case SQL_C_DOUBLE:
 	    ei_x_encode_double(&dynamic_buffer(state),
@@ -1402,45 +1481,63 @@ static Boolean decode_params(byte *buffer, int *index, param_array **params,
 			  int i, int j)
 {
     int erl_type, size;
-    long bin_size;
-
+    long bin_size, l64;
+    param_array* param;
   
     ei_get_type(buffer, index, &erl_type, &size);
+    param = &(*params)[i];
 
-    switch ((*params)[i].type.c) {
+    switch (param->type.c) {
     case SQL_C_CHAR:
 	if(erl_type != ERL_STRING_EXT) {
 	    return FALSE;
 	}
-		
-	ei_decode_string(buffer, index, (&((*params)[i].values.string[0]) +
-			 (*params)[i].offset));
-	(*params)[i].offset = (*params)[i].offset + (*params)[i].type.len;
-	(*params)[i].type.strlen_or_indptr_array[j] = SQL_NTS;
+
+	ei_decode_string(buffer, index, &(param->values.string[param->offset]));
+	param->offset += param->type.len;
+	param->type.strlen_or_indptr_array[j] = SQL_NTS;
 	break;
+
     case SQL_C_SLONG:
 	if(!((erl_type == ERL_SMALL_INTEGER_EXT) ||
-             (erl_type == ERL_INTEGER_EXT))) {
+	      (erl_type == ERL_INTEGER_EXT) ||
+	      (erl_type == ERL_SMALL_BIG_EXT) ||
+	      (erl_type == ERL_LARGE_BIG_EXT))) {
 	    return FALSE;
 	}
-	ei_decode_long(buffer, index, &((*params)[i].values.integer[j]));
+
+	if(ei_decode_long(buffer, index, &l64)) {
+	    return FALSE;
+	}
+
+	/* For 64-bit platforms we downcast 8-byte long
+	 * to 4-byte SQLINTEGER, checking for overflow */
+
+	if(l64>INT_MAX || l64<INT_MIN) {
+	    return FALSE;
+	}
+
+	param->values.integer[j]=(SQLINTEGER)l64;
 	break;
+
     case SQL_C_DOUBLE: 
 	if((erl_type != ERL_FLOAT_EXT)) { 
 	    return FALSE;
 	} 
-	ei_decode_double(buffer, index,
-			 &((*params)[i].values.floating[j])); 
+	ei_decode_double(buffer, index, &(param->values.floating[j])); 
 	break;
+
     case SQL_C_BIT:
 	if((erl_type != ERL_ATOM_EXT)) {
 	    return FALSE;
 	}
-	ei_decode_boolean(buffer, index, &((*params)[i].values.bool[j]));
+	ei_decode_boolean(buffer, index, &(param->values.bool[j]));
 	break;
+
     default:
 	return FALSE;
     }
+
     return TRUE;
 }  
 
@@ -1472,7 +1569,7 @@ static int read_exact(byte *buffer, int len)
 	}
     }
 } 
-#elif UNIX
+#elif defined(UNIX)
 static int read_exact(byte *buffer, int len) {
     int i, got = 0;
     
@@ -1514,7 +1611,12 @@ static byte * receive_erlang_port_msg(void)
 }
  
 /* ------------- Socket communication functions --------------------------*/
-#ifdef WIN32
+#define USE_IPV4
+#ifdef UNIX
+#define SOCKET int   
+#endif
+
+#if defined WIN32 || defined USE_IPV4
 /* Currently only an old windows compiler is supported so we do not have ipv6
   capabilities */
 static SOCKET connect_to_erlang(const char *port)
@@ -1535,7 +1637,7 @@ static SOCKET connect_to_erlang(const char *port)
     }
     return sock;
 }
-#elif UNIX
+#elif defined(UNIX)
 static int connect_to_erlang(const char *port)
 {
     int sock;
@@ -1583,7 +1685,7 @@ static void close_socket(SOCKET socket)
 {
     closesocket(socket);
 }
-#elif UNIX
+#elif defined(UNIX)
 static void close_socket(int socket)
 {
     close(socket);
@@ -1592,7 +1694,7 @@ static void close_socket(int socket)
 
 #ifdef WIN32
 static byte * receive_msg(SOCKET socket) 
-#elif UNIX
+#elif defined(UNIX)
 static byte * receive_msg(int socket) 
 #endif
 {
@@ -1623,7 +1725,7 @@ static byte * receive_msg(int socket)
 
 #ifdef WIN32
 static Boolean receive_msg_part(SOCKET socket, byte * buffer, size_t msg_len)
-#elif UNIX  
+#elif defined(UNIX)  
 static Boolean receive_msg_part(int socket, byte * buffer, size_t msg_len)
 #endif
 {
@@ -1646,7 +1748,7 @@ static Boolean receive_msg_part(int socket, byte * buffer, size_t msg_len)
 
 #ifdef WIN32
 static void send_msg(db_result_msg *msg, SOCKET socket)
-#elif UNIX   
+#elif defined(UNIX)   
 static void send_msg(db_result_msg *msg, int socket)
 #endif
 {
@@ -1672,7 +1774,7 @@ static void send_msg(db_result_msg *msg, int socket)
 
 #ifdef WIN32
 static Boolean send_msg_part(SOCKET socket, byte * buffer, size_t msg_len)
-#elif UNIX  
+#elif defined(UNIX)  
 static Boolean send_msg_part(int socket, byte * buffer, size_t msg_len)
 #endif
 {
@@ -1856,10 +1958,11 @@ static void init_driver(int erl_auto_commit_mode, int erl_trace_driver,
 }
 
 static void init_param_column(param_array *params, byte *buffer, int *index,
-			      int num_param_values)
+			      int num_param_values, db_state* state)
 {
     int size, erl_type;
     long user_type, precision, scale, length, dummy;
+    long in_or_out;
     
     ei_decode_long(buffer, index, &user_type);
 
@@ -1871,26 +1974,26 @@ static void init_param_column(param_array *params, byte *buffer, int *index,
     case USER_SMALL_INT:
 	params->type.sql = SQL_SMALLINT;
 	params->type.c = SQL_C_SLONG;
-	params->type.len = sizeof(long);
+	params->type.len = sizeof(SQLINTEGER);
 	params->type.col_size = COL_SQL_SMALLINT;
 	params->values.integer =
-	    (long *)safe_malloc(num_param_values * params->type.len);
+	    (SQLINTEGER*)safe_malloc(num_param_values * params->type.len);
 	break;
     case USER_INT:
 	params->type.sql = SQL_INTEGER;
 	params->type.c = SQL_C_SLONG;
-	params->type.len = sizeof(long);
+	params->type.len = sizeof(SQLINTEGER);
 	params->type.col_size = COL_SQL_INTEGER;
 	params->values.integer =
-	    (long *)safe_malloc(num_param_values * params->type.len);
+	    (SQLINTEGER*)safe_malloc(num_param_values * params->type.len);
 	break;
     case USER_TINY_INT:
 	params->type.sql = SQL_TINYINT;
 	params->type.c = SQL_C_SLONG;
-	params->type.len = sizeof(long);
+	params->type.len = sizeof(SQLINTEGER);
 	params->type.col_size = COL_SQL_TINYINT;
 	params->values.integer =
-	    (long *)safe_malloc(num_param_values * params->type.len);
+	    (SQLINTEGER*)safe_malloc(num_param_values * params->type.len);
 	break;
     case USER_DECIMAL:
     case USER_NMERIC:
@@ -1904,16 +2007,15 @@ static void init_param_column(param_array *params, byte *buffer, int *index,
 	map_dec_num_2_c_column(&params->type, (int)precision, (int)scale);
 	if( params->type.c == SQL_C_SLONG) {
 	    params->values.integer =
-		(long *)safe_malloc(num_param_values * params->type.len);
+		(SQLINTEGER *)safe_malloc(num_param_values * params->type.len);
 	} else if( params->type.c == SQL_C_DOUBLE) {
 	    params->values.floating =
 		(double *)safe_malloc(num_param_values * params->type.len);
 	} else if(params->type.c == SQL_C_CHAR) {
 	    params->type.strlen_or_indptr_array
-		= (SQLUINTEGER*)safe_malloc(num_param_values
-					    * sizeof(SQL_NTS));
+		= (SQLLEN*)safe_malloc(num_param_values * sizeof(SQLINTEGER));
 	    params->values.string =
-		(byte *)safe_malloc((num_param_values + 1) *
+		(byte *)safe_malloc(num_param_values *
 				    sizeof(byte)* params->type.len);
 	}    
 	break;
@@ -1926,14 +2028,13 @@ static void init_param_column(param_array *params, byte *buffer, int *index,
 	}
 	ei_decode_long(buffer, index, &length);
 	/* Max string length + string terminator */
-	 params->type.len = (SQLUINTEGER)length + 1;
+	 params->type.len = length+1;
 	 params->type.c = SQL_C_CHAR;
 	 params->type.col_size = (SQLUINTEGER)length;
 	 params->type.strlen_or_indptr_array =
-	     (SQLUINTEGER*)safe_malloc(num_param_values
-				       * sizeof(SQL_NTS));
+	     (SQLLEN*)safe_malloc(num_param_values * sizeof(SQLINTEGER));
 	 params->values.string =
-	    (byte *)safe_malloc((num_param_values + 1) *
+	    (byte *)safe_malloc(num_param_values *
 				sizeof(byte)* params->type.len);
 	
 	break;
@@ -1972,13 +2073,34 @@ static void init_param_column(param_array *params, byte *buffer, int *index,
 	break;
     }
     params->offset = 0;
+
+    ei_decode_long(buffer, index, &in_or_out);
+    switch((in_or_out_type)in_or_out){
+    case(ERL_ODBC_OUT):
+        out_params(state) = TRUE;
+        params->input_output_type = SQL_PARAM_OUTPUT; break;
+    case(ERL_ODBC_INOUT):
+        out_params(state) = TRUE;
+        params->input_output_type = SQL_PARAM_INPUT_OUTPUT; break;
+    case(ERL_ODBC_IN):
+    default:
+        params->input_output_type = SQL_PARAM_INPUT; break;
+    }
+
 }
 
 static void init_param_statement(int cols, int num_param_values, 
 				 db_state *state, param_status *status)
 {
+    int i;
+
     status -> param_status_array =
 	(SQLUSMALLINT *)safe_malloc(num_param_values * sizeof(SQLUSMALLINT));
+
+    for(i=0; i<num_param_values; i++) {
+    	status -> param_status_array[i] = SQL_PARAM_PROCEED;
+    }
+
     status -> params_processed = 0;
     
     if(!sql_success(SQLAllocHandle(SQL_HANDLE_STMT,
@@ -1987,7 +2109,8 @@ static void init_param_statement(int cols, int num_param_values,
 	DO_EXIT(EXIT_ALLOC);
     }
     
-    
+    if(num_param_values <= 1) return;
+
     if(!sql_success(SQLSetStmtAttr(statement_handle(state),
 				   SQL_ATTR_PARAM_BIND_TYPE,
 				   SQL_PARAM_BIND_BY_COLUMN, 0))) {
@@ -2022,10 +2145,10 @@ static void map_dec_num_2_c_column(col_type *type, int precision, int scale)
     type -> decimal_digits = (SQLSMALLINT)scale;
 
     if(precision >= 0 && precision <= 4 && scale == 0) {
-	type->len = sizeof(long);
+	type->len = sizeof(SQLINTEGER);
 	type->c = SQL_C_SLONG;
     } else if(precision >= 5 && precision <= 9 && scale == 0) {
-	type->len = sizeof(long);
+	type->len = sizeof(SQLINTEGER);
 	type->c = SQL_C_SLONG;
     }  else if((precision >= 10 && precision <= 15 && scale == 0)
 	       || (precision <= 15 && scale > 0)) {
@@ -2067,7 +2190,7 @@ static db_result_msg map_sql_2_c_column(db_column* column)
     case SQL_TINYINT:
     case SQL_INTEGER:
     case SQL_SMALLINT:
-	column -> type.len = sizeof(long);
+	column -> type.len = sizeof(SQLINTEGER);
 	column -> type.c = SQL_C_SLONG;
 	column -> type.strlen_or_indptr = (SQLINTEGER)NULL;
 	break;
@@ -2129,7 +2252,7 @@ static param_array * bind_parameter_arrays(byte *buffer, int *index,
 
 	ei_decode_tuple_header(buffer, index, &size);
 
-	init_param_column(&params[i], buffer, index, num_param_values);
+	init_param_column(&params[i], buffer, index, num_param_values, state);
 
 	ei_decode_list_header(buffer, index, &size);
 
@@ -2153,7 +2276,7 @@ static param_array * bind_parameter_arrays(byte *buffer, int *index,
 
 	if(!sql_success(
 	    SQLBindParameter(statement_handle(state), i + 1,
-			     SQL_PARAM_INPUT,
+			     params[i].input_output_type,
 			     params[i].type.c,
 			     params[i].type.sql,
 			     params[i].type.col_size,
@@ -2356,4 +2479,13 @@ static diagnos get_diagnos(SQLSMALLINT handleType, SQLHANDLE handle)
 	       (char *)diagnos.sqlState);
     }
     return diagnos;
+}
+
+static void str_tolower(char *str, int len)
+{
+	int i;
+	
+	for(i = 0; i <= len; i++) {
+		str[i] = tolower(str[i]);
+	}
 }

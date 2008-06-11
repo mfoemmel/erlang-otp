@@ -50,6 +50,7 @@ all(suite) ->
      app_test,
      appup_test,
      config,
+     flex,
      udp,
      tcp,
      examples,
@@ -134,4 +135,7 @@ segmented(suite) ->
 
 timer(suite) ->
     [{megaco_timer_test, all}].
+
+flex(suite) ->
+    [{megaco_flex_test, all}].
 

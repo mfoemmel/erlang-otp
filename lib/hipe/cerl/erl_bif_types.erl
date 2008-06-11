@@ -696,7 +696,7 @@ type(erlang, bitstr_to_list, 1, Xs) ->	% XXX: TAKE OUT
   type(erlang, bitstring_to_list, 1, Xs);
 type(erlang, bitstring_to_list, 1, Xs) ->
   strict(arg_types(erlang, bitstring_to_list, 1), Xs,
-	 fun (_) -> t_list(t_sup(t_byte(),t_bitstr())) end);
+	 fun (_) -> t_list(t_sup(t_byte(), t_bitstr())) end);
 type(erlang, bump_reductions, 1, Xs) ->
   strict(arg_types(erlang, bump_reductions, 1), Xs,
 	 fun (_) -> t_atom('true') end);
@@ -1498,6 +1498,8 @@ type(erlang, system_info, 1, Xs) ->
 		     t_non_neg_fixnum();
 		   ['creation'] ->
 		     t_fixnum();
+		   ['debug_compiled'] ->
+		     t_bool();
 		   ['dist'] ->
 		     t_binary();
 		   ['dist_ctrl'] ->
@@ -1525,10 +1527,16 @@ type(erlang, system_info, 1, Xs) ->
 		     t_binary();
 		   ['loaded'] ->
 		     t_binary();
+		   ['logical_processors'] ->
+		     t_non_neg_fixnum();
 		   ['machine'] ->
 		     t_string();
 		   ['memory'] ->
 		     t_list(t_tuple([t_atom(), t_non_neg_fixnum()]));
+		   ['multi_scheduling'] ->
+		     t_system_multi_scheduling();
+		   ['multi_scheduling_blockers'] ->
+		     t_list(t_pid());
 		   ['os_type'] ->
 		     t_tuple([t_sup([t_atom('ose'),	% XXX: undocumented
 				     t_atom('unix'),
@@ -1546,10 +1554,6 @@ type(erlang, system_info, 1, Xs) ->
 		     t_non_neg_fixnum();
 		   ['procs'] ->
 		     t_binary();
-		   ['multi_scheduling'] ->
-		     t_system_multi_scheduling();
-		   ['multi_scheduling_blockers'] ->
-		     t_list(t_pid());
 		   ['schedulers'] ->
 		     t_pos_fixnum();
 		   ['sequential_tracer'] ->
@@ -1770,6 +1774,8 @@ type(ets, slot, 2, Xs) ->
 	 fun (_) -> t_sup(t_list(t_tuple()), t_atom('$end_of_table')) end);
 type(ets, update_counter, 3, Xs) ->
   strict(arg_types(ets, update_counter, 3), Xs, fun (_) -> t_integer() end);
+type(ets, update_element, 3, Xs) ->
+  strict(arg_types(ets, update_element, 3), Xs, fun (_) -> t_bool() end);
 %%-- file ---------------------------------------------------------------------
 type(file, close, 1, Xs) ->
   strict(arg_types(file, close, 1), Xs, fun (_) -> t_file_return() end);
@@ -1878,20 +1884,28 @@ type(hipe_bifs, array_length, 1, Xs) ->
 type(hipe_bifs, array_sub, 2, Xs) ->
   strict(arg_types(hipe_bifs, array_sub, 2), Xs, fun (_) -> t_immediate() end);
 type(hipe_bifs, array_update, 3, Xs) ->
-  strict(arg_types(hipe_bifs, array_update, 3), Xs, fun (_) -> t_nil() end);
+  strict(arg_types(hipe_bifs, array_update, 3), Xs,
+	 fun (_) -> t_immarray() end);
 type(hipe_bifs, atom_to_word, 1, Xs) ->
   strict(arg_types(hipe_bifs, atom_to_word, 1), Xs,
 	 fun (_) -> t_integer() end);
 type(hipe_bifs, bif_address, 3, Xs) ->
   strict(arg_types(hipe_bifs, bif_address, 3), Xs,
 	 fun (_) -> t_sup(t_integer(), t_atom('false')) end);
+type(hipe_bifs, bitarray, 2, Xs) ->
+  strict(arg_types(hipe_bifs, bitarray, 2), Xs, fun (_) -> t_bitarray() end);
+type(hipe_bifs, bitarray_sub, 2, Xs) ->
+  strict(arg_types(hipe_bifs, bitarray_sub, 2), Xs, fun (_) -> t_bool() end);
+type(hipe_bifs, bitarray_update, 3, Xs) ->
+  strict(arg_types(hipe_bifs, bitarray_update, 3), Xs,
+	 fun (_) -> t_bitarray() end);
 type(hipe_bifs, bytearray, 2, Xs) ->
   strict(arg_types(hipe_bifs, bytearray, 2), Xs, fun (_) -> t_bytearray() end);
 type(hipe_bifs, bytearray_sub, 2, Xs) ->
   strict(arg_types(hipe_bifs, bytearray_sub, 2), Xs, fun (_) -> t_byte() end);
 type(hipe_bifs, bytearray_update, 3, Xs) ->
   strict(arg_types(hipe_bifs, bytearray_update, 3), Xs,
-	 fun (_) -> t_nil() end);
+	 fun (_) -> t_bytearray() end);
 type(hipe_bifs, call_count_clear, 1, Xs) ->
   strict(arg_types(hipe_bifs, call_count_clear, 1), Xs,
 	 fun (_) -> t_sup(t_non_neg_integer(), t_atom('false')) end);
@@ -2445,7 +2459,7 @@ type(lists, unzip3, 1, Xs) ->
  	 fun ([Ts]) ->
 	     case t_is_nil(Ts) of
 	       true ->
-		 t_tuple([t_nil(), t_nil(), t_nil]);
+		 t_tuple([t_nil(), t_nil(), t_nil()]);
 	       false -> % Ps is a proper list of triples
 		 TupleTypes = t_tuple_subtypes(t_list_elements(Ts)),
 		 lists:foldl(fun(T, Acc) ->
@@ -3779,6 +3793,9 @@ arg_types(ets, update_counter, 3) ->
 			   t_sup(t_tuple([t_integer(), t_integer()]),
 				 t_tuple([t_integer(), t_integer(),
 					  t_integer(), t_integer()])))];
+arg_types(ets, update_element, 3) ->
+  PosValue = t_tuple([t_integer(), t_any()]),
+  [t_tid(), t_any(), t_sup(PosValue, t_list(PosValue))];
 %%------- file ----------------------------------------------------------------
 arg_types(file, close, 1) ->
   [t_file_io_device()];
@@ -3849,6 +3866,12 @@ arg_types(hipe_bifs, atom_to_word, 1) ->
   [t_atom()];
 arg_types(hipe_bifs, bif_address, 3) ->
   [t_atom(), t_atom(), t_arity()];
+arg_types(hipe_bifs, bitarray, 2) ->
+  [t_non_neg_fixnum(), t_bool()];
+arg_types(hipe_bifs, bitarray_sub, 2) ->
+  [t_bitarray(), t_non_neg_fixnum()];
+arg_types(hipe_bifs, bitarray_update, 3) ->
+  [t_bytearray(), t_non_neg_fixnum(), t_bool()];
 arg_types(hipe_bifs, bytearray, 2) ->
   [t_non_neg_fixnum(), t_byte()];
 arg_types(hipe_bifs, bytearray_sub, 2) ->
@@ -4525,6 +4548,9 @@ t_immarray() ->
 
 t_hiperef() ->
   t_immarray().
+
+t_bitarray() ->
+  t_bitstr().
 
 t_bytearray() ->
   t_binary().

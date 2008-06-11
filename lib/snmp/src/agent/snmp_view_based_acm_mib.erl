@@ -340,6 +340,9 @@ init_vacm_mnesia() ->
 %%-----------------------------------------------------------------
 vacmContextTable(_Op) ->
     ok.
+vacmContextTable(set = Op, Arg1, Arg2) ->
+    snmpa_agent:invalidate_ca_cache(),
+    snmp_framework_mib:intContextTable(Op, Arg1, Arg2);
 vacmContextTable(Op, Arg1, Arg2) ->
     snmp_framework_mib:intContextTable(Op, Arg1, Arg2).
 
@@ -359,6 +362,7 @@ vacmSecurityToGroupTable(set, RowIndex, Cols0) ->
 	{ok, Cols} ->
 	    ?vtrace("vacmSecurityToGroupTable(set) -> verified: "
 		    "~n   Cols: ~p", [Cols]),
+            snmpa_agent:invalidate_ca_cache(),
 	    snmp_generic:table_func(set, RowIndex, Cols, 
 				    db(vacmSecurityToGroupTable));
 	Error ->
@@ -512,6 +516,7 @@ vacmAccessTable(is_set_ok, RowIndex, Cols0) ->
 vacmAccessTable(set, RowIndex, Cols0) ->
     case (catch verify_vacmAccessTable_cols(Cols0, [])) of
 	{ok, Cols} ->
+            snmpa_agent:invalidate_ca_cache(),
 	    do_vacmAccessTable_set(RowIndex, Cols);
 	Error ->
 	    Error
@@ -721,6 +726,7 @@ vacmViewTreeFamilyTable(get, RowIndex, Cols) ->
 vacmViewTreeFamilyTable(set, RowIndex, Cols0) ->
     case (catch verify_vacmViewTreeFamilyTable_cols(Cols0, [])) of
 	{ok, Cols} ->
+            snmpa_agent:invalidate_ca_cache(),
 	    snmp_generic:table_func(set, RowIndex, Cols, 
 				    db(vacmViewTreeFamilyTable));
 	Error ->

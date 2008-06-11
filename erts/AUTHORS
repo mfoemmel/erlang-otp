@@ -104,3 +104,9 @@ Tony Rogvall (at Bluetail): New faster inet_drv (R7)
 Sebastian Strollo (at Bluetail): poll() as alternative to select()
 Mikael Pettersson (HiPE)
 
+Leonid Timochouk <l (dot) timochouk (at) gmail (dot) com> and
+Serge Aleynikov <saleyn (at) gmail (dot) com>
+	then (2006) at IDT Corp.
+	Wrote the original SCTP implementation, adapted by the OTP team;
+	in inet_drv.c in the emulator, as well as the parts in the
+	kernel application. They continue to provide patches.

@@ -55,7 +55,9 @@ debug opt docs clean:
 	  esac
 	@ ( cd emulator && $(MAKE) $@ FLAVOR=$(FLAVOR))
 	@for d in $(ERTSDIRS); do \
-		 if test -d $$d; then ( cd $$d && $(MAKE) $@ )fi ; \
+		if test -d $$d; then \
+			( cd $$d && $(MAKE) $@ ) || exit $$? ; \
+		fi ; \
 	 done
 
 # ----------------------------------------------------------------------
@@ -142,7 +144,9 @@ endif
 	@if test $@ = release; then ( cd emulator && $(MAKE) $@ FLAVOR=smp) fi
 	@ (cd emulator && $(MAKE) $@ FLAVOR=plain)
 	@for d in $(ERTSDIRS); do \
-		 if test -d $$d; then ( cd $$d && $(MAKE) $@ )fi ; \
+		if test -d $$d; then \
+			( cd $$d && $(MAKE) $@ ) || exit $$? ; \
+		fi ; \
 	 done
 
 # ----------------------------------------------------------------------

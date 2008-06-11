@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2000-2007</year>
+%% <year>2000-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -27,7 +27,8 @@
 
 %% Application internal exports
 -export([
-         start_link/0, stop/0, 
+         start_link/0,
+         stop/0,
 
          start_user/2,
          stop_user/1,
@@ -62,11 +63,12 @@
 	 del_pending_counter/1,  
 
          lookup_local_conn/1,
-         connect/4,
+         connect/4, finish_connect/4,
+         autoconnect/4,
          disconnect/1,
 	 connect_remote/3,
 	 disconnect_remote/2,
-	 init_conn_data/4,
+	 init_conn_data/4, 
 
 	 trans_sender_exit/2
 
@@ -92,6 +94,8 @@
 	ok).
 -endif.
 
+-define(TID_CNT(LMID), {LMID, trans_id_counter}).
+
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -103,7 +107,7 @@ start_link() ->
 
 stop() ->
     ?d("stop -> entry", []),
-    call(stop).
+    call({stop, self()}).
 
 start_user(UserMid, Config) ->
     call({start_user, UserMid, Config}).
@@ -280,7 +284,10 @@ conn_info(CD, Item) when is_record(CD, conn_data) ->
 							min_trans_id);
 					  Serial < Max ->
 					      Serial  + 1;
-					  Serial == 4294967295 ->
+					  Serial =:= Max ->
+					      user_info(LocalMid, 
+							min_trans_id);
+					  Serial =:= 4294967295 ->
 					      user_info(LocalMid, 
 							min_trans_id);
 					  true ->
@@ -410,6 +417,21 @@ lookup_local_conn(Handle) ->
     ets:lookup(megaco_local_conn, Handle).
 
 
+autoconnect(RH, RemoteMid, SendHandle, ControlPid) ->
+    ?d("autoconnect -> entry with "
+	"~n   RH:         ~p"
+	"~n   RemoteMid:  ~p"
+	"~n   SendHandle: ~p"
+	"~n   ControlPid: ~p", [RH, RemoteMid, SendHandle, ControlPid]),
+    case RemoteMid of
+	{MidType, _MidValue} when is_atom(MidType) ->
+	    call({connect, RH, RemoteMid, SendHandle, ControlPid, auto});
+	preliminary_mid ->
+	    call({connect, RH, RemoteMid, SendHandle, ControlPid, auto});
+	BadMid ->
+	    {error, {bad_remote_mid, BadMid}}
+    end.
+
 connect(RH, RemoteMid, SendHandle, ControlPid) ->
     ?d("connect -> entry with "
 	"~n   RH:         ~p"
@@ -418,12 +440,22 @@ connect(RH, RemoteMid, SendHandle, ControlPid) ->
 	"~n   ControlPid: ~p", [RH, RemoteMid, SendHandle, ControlPid]),
     case RemoteMid of
 	{MidType, _MidValue} when is_atom(MidType) ->
-	    call({connect, RH, RemoteMid, SendHandle, ControlPid});
+	    call({connect, RH, RemoteMid, SendHandle, ControlPid, 
+		  {plain, self()}});
 	preliminary_mid ->
-	    call({connect, RH, RemoteMid, SendHandle, ControlPid});
+	    call({connect, RH, RemoteMid, SendHandle, ControlPid, 
+		  {plain, self()}});
 	BadMid ->
 	    {error, {bad_remote_mid, BadMid}}
     end.
+
+finish_connect(ConnHandle, SendHandle, ControlPid, MFA) ->
+    ?d("finish_connect -> entry with "
+	"~n   ConnHandle: ~p"
+	"~n   SendHandle: ~p"
+	"~n   ControlPid: ~p"
+	"~n   MFA:        ~p", [ConnHandle, SendHandle, ControlPid, MFA]),
+    call({finish_connect, ConnHandle, SendHandle, ControlPid, MFA}).
 
 connect_remote(ConnHandle, UserNode, Ref) ->
     call({connect_remote, ConnHandle, UserNode, Ref}).
@@ -496,7 +528,7 @@ pending_counters() ->
     
 
 pending_counters(Direction) 
-  when ((Direction == sent) orelse (Direction == recv)) ->
+  when ((Direction =:= sent) orelse (Direction =:= recv)) ->
     Pattern  = {{pending_counter, Direction, '_'}, '_'}, 
     Counters = ets:match_object(megaco_config, Pattern),
     [{TransId, CounterVal} || 
@@ -512,82 +544,83 @@ incr_trans_id_counter(ConnHandle, Incr)
         [] ->
             {error, {no_such_connection, ConnHandle}};
         [ConnData] ->
-            LocalMid  = ConnHandle#megaco_conn_handle.local_mid,
-            Item      = {LocalMid, trans_id_counter},
-            case (catch ets:update_counter(megaco_config, Item, Incr)) of
-                {'EXIT', _} ->
-                    %% The transaction counter needs to be initiated
-                    init_trans_id_counter(ConnData, ConnHandle, LocalMid, 
-					  Item, Incr);
-                Serial ->
-                    ConnData2 = ConnData#conn_data{serial = Serial},
-                    Max       = ConnData#conn_data.max_serial,
-                    if
-                        (Max == infinity) andalso (Serial =< 4294967295) ->
-                            {ok, ConnData2};
-                        (Serial =< Max) ->
-                            {ok, ConnData2};
-                        true ->
+            LocalMid = ConnHandle#megaco_conn_handle.local_mid,
+	    Min      = user_info(LocalMid, min_trans_id), 
+	    Max      = 
+		case ConnData#conn_data.max_serial of
+		    infinity ->
+			4294967295;
+		    MS ->
+			MS
+		end,
+	    Item     = ?TID_CNT(LocalMid),
+	    do_incr_trans_id_counter(ConnData, Item, Min, Max, Incr, -1)
+    end.
 
-			    %% The transaction id range is exhausted:
-                            %% Let's wrap the counter
-
-                            reset_trans_id_counter(ConnData2, ConnHandle, 
-						   LocalMid, Item, Serial)
-                    end
-            end
+do_incr_trans_id_counter(ConnData, _Item, _Min, _Max, 0, Serial) ->
+    ConnData2 = ConnData#conn_data{serial = Serial},
+    {ok, ConnData2};
+do_incr_trans_id_counter(ConnData, Item, Min, Max, N, _) ->
+    case (catch ets:update_counter(megaco_config, Item, {2, 1, Max, Min})) of
+	{'EXIT', _} ->
+	    %% This can only happen for the first ever increment,
+	    %% in which case N is equal to (the initial) Incr
+	    ConnHandle = ConnData#conn_data.conn_handle, 
+	    init_trans_id_counter(ConnHandle, Item, N);
+	Serial ->
+	    do_incr_trans_id_counter(ConnData, Item, Min, Max, N-1, Serial)
     end.
 
 init_trans_id_counter(ConnHandle, Item, Incr) ->
-    LocalMid = ConnHandle#megaco_conn_handle.local_mid,
-    case megaco_config:lookup_local_conn(ConnHandle) of
-        [] ->
-            {error, {no_such_connection, ConnHandle}};
-        [ConnData] ->
-	    init_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, Incr)
-    end.
-    
-init_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, Incr) ->
     case whereis(?SERVER) == self() of
         false ->
 	    call({init_trans_id_counter, ConnHandle, Item, Incr});
 	true ->
-	    do_init_trans_id_counter(ConnData, LocalMid, Item, Incr)
+	    do_init_trans_id_counter(ConnHandle, Item, Incr)
     end.
 
-%% We do not need to check Serial against the max_serial as the only way
-%% we could pass that limit at this point would be if incr was larger
-%% then max_serial, which is absurd.
-%% 
-do_init_trans_id_counter(ConnData, LocalMid, Item, Incr) ->
-    Serial = user_info(LocalMid, min_trans_id) + (Incr-1),
-    ets:insert(megaco_config, {Item, Serial}),
-    ConnData2 = ConnData#conn_data{serial = Serial},
-    {ok, ConnData2}.
-    
+do_init_trans_id_counter(ConnHandle, Item, Incr) ->
+    case megaco_config:lookup_local_conn(ConnHandle) of
+	[] ->
+	    {error, {no_such_connection, ConnHandle}};
+	[ConnData] ->
+	    %% Make sure that the counter still does not exist
+	    LocalMid = ConnHandle#megaco_conn_handle.local_mid,
+	    Min      = user_info(LocalMid, min_trans_id), 
+	    Max      = 
+		case ConnData#conn_data.max_serial of
+		    infinity ->
+			4294967295;
+		    MS ->
+			MS
+		end,
+	    Item     = ?TID_CNT(LocalMid),
+	    Incr2    = {2, Incr, Max, Min}, 
+	    case (catch ets:update_counter(megaco_config, Item, Incr2)) of
+		{'EXIT', _} ->
+		    %% Yep, we are the first one here 
+		    Serial1 = Min + (Incr-1),
+		    ets:insert(megaco_config, {Item, Serial1}),
+		    ConnData2 = ConnData#conn_data{serial = Serial1},
+		    {ok, ConnData2};
+		Serial2 ->
+		    %% No, someone got there before we did
+		    ConnData2 = ConnData#conn_data{serial = Serial2},
+		    {ok, ConnData2}
+	    end
+    end.
+
+%% For backward compatibillity (during code upgrade)
 reset_trans_id_counter(ConnHandle, Item, Serial) ->
     LocalMid = ConnHandle#megaco_conn_handle.local_mid,
     case megaco_config:lookup_local_conn(ConnHandle) of
         [] ->
             {error, {no_such_connection, ConnHandle}};
         [ConnData] ->
-	    reset_trans_id_counter(ConnData, ConnHandle, LocalMid, 
-				   Item, Serial)
+	    do_reset_trans_id_counter(ConnData, LocalMid, 
+				      Item, Serial)
     end.
 
-reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, Serial) ->
-    case whereis(?SERVER) == self() of
-        false ->
-            call({reset_trans_id_counter, ConnHandle, Item, Serial});
-        true ->
-	    do_reset_trans_id_counter(ConnData, LocalMid, Item, Serial)
-    end.
-
-%% 
-%% We have passed the max_serial limit (Serial > MaxSerial). 
-%% In order to re-calculate the proper value of serial we need 
-%% to calculate with how much we passed the limit (overflow).
-%% 
 do_reset_trans_id_counter(ConnData, LocalMid, Item, Serial) 
   when is_integer(Serial) ->
     Max = ConnData#conn_data.max_serial,
@@ -779,18 +812,16 @@ handle_call({del_counter, Item, Incr}, _From, S) ->
     Reply = cre_counter(Item, Incr),
     {reply, Reply, S};
 
-handle_call({incr_trans_id_counter, ConnHandle, Incr}, _From, S) ->
-    Reply = incr_trans_id_counter(ConnHandle, Incr),
-    {reply, Reply, S};
-
+%% For backward compatibillity (code upgrade)
 handle_call({incr_trans_id_counter, ConnHandle}, _From, S) ->
     Reply = incr_trans_id_counter(ConnHandle),
     {reply, Reply, S};
 
 handle_call({init_trans_id_counter, ConnHandle, Item, Incr}, _From, S) ->
-    Reply = init_trans_id_counter(ConnHandle, Item, Incr),
+    Reply = do_init_trans_id_counter(ConnHandle, Item, Incr),
     {reply, Reply, S};
 
+%% For backward compatibillity (code upgrade)
 handle_call({reset_trans_id_counter, ConnHandle, Item, Serial}, _From, S) ->
     Reply = reset_trans_id_counter(ConnHandle, Item, Serial),
     {reply, Reply, S};
@@ -803,8 +834,17 @@ handle_call({receive_handle, UserMid}, _From, S) ->
 	    {reply, {ok, RH}, S}
     end;
 handle_call({connect, RH, RemoteMid, SendHandle, ControlPid}, _From, S) ->
-    Reply = handle_connect(RH, RemoteMid, SendHandle, ControlPid),
+    Reply = handle_connect(RH, RemoteMid, SendHandle, ControlPid, auto),
     {reply, Reply, S};
+handle_call({connect, RH, RemoteMid, SendHandle, ControlPid, Auto}, _From, S) ->
+    Reply = handle_connect(RH, RemoteMid, SendHandle, ControlPid, Auto),
+    {reply, Reply, S};
+
+handle_call({finish_connect, ConnHandle, SendHandle, ControlPid, MFA}, 
+	    _From, S) ->
+    Reply = handle_finish_connect(ConnHandle, SendHandle, ControlPid, MFA),
+    {reply, Reply, S};
+
 handle_call({connect_remote, CH, UserNode, Ref}, _From, S) ->
     Reply = handle_connect_remote(CH, UserNode, Ref),
     {reply, Reply, S};
@@ -839,9 +879,10 @@ handle_call({update_user_info, UserMid, Item, Val}, _From, S) ->
             {reply, Reply, S}
     end;
 
-handle_call(stop, _From, State) ->
+handle_call({stop, ParentPid}, _From, #state{parent_pid = ParentPid} = S) ->
     Reason = normal, 
-    {stop, Reason, State};
+    Reply  = ok,
+    {stop, Reason, Reply, S};
 
 handle_call(Req, From, S) ->
     warning_msg("received unexpected request from ~p: "
@@ -883,7 +924,7 @@ handle_cast(Msg, S) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 
-handle_info({'EXIT', Pid, Reason}, S) when Pid == S#state.parent_pid ->
+handle_info({'EXIT', Pid, Reason}, S) when Pid =:= S#state.parent_pid ->
     {stop, Reason, S};
 
 handle_info(Info, S) ->
@@ -1190,7 +1231,7 @@ handle_start_user(Mid, Config) ->
         {'EXIT', _} ->
 	    DefaultConfig = user_info(default, all),
             do_handle_start_user(Mid, DefaultConfig),
-            do_handle_start_user(Mid, Config);
+	    do_handle_start_user(Mid, Config);
         _LocalMid ->
             {error, {user_already_exists, Mid}}
     end.
@@ -1242,8 +1283,10 @@ verify_val(Item, Val) ->
 	trans_sender when Val == undefined -> true;
 
         pending_timer                      -> verify_timer(Val);
-        sent_pending_limit                 -> verify_uint(Val) and (Val > 0);
-        recv_pending_limit                 -> verify_uint(Val) and (Val > 0);
+        sent_pending_limit                 -> verify_uint(Val) andalso 
+								 (Val > 0);
+        recv_pending_limit                 -> verify_uint(Val) andalso 
+								 (Val > 0);
         reply_timer                        -> verify_timer(Val);
         control_pid      when is_pid(Val)  -> true;
         monitor_ref                        -> true; % Internal usage only
@@ -1260,7 +1303,7 @@ verify_val(Item, Val) ->
         strict_version                     -> verify_bool(Val);
 	long_request_resend                -> verify_bool(Val);
 	cancel                             -> verify_bool(Val);
-	resend_indication                  -> verify_bool(Val);
+	resend_indication                  -> verify_resend_indication(Val);
 
 	segment_reply_ind               -> verify_bool(Val);
 	segment_recv_acc                -> verify_bool(Val);
@@ -1278,6 +1321,8 @@ verify_bool(true)  -> true;
 verify_bool(false) -> true;
 verify_bool(_)     -> false.
 
+verify_resend_indication(flag) -> true;
+verify_resend_indication(Val)  -> verify_bool(Val).
 
 verify_strict_int(Int) when is_integer(Int) -> true;
 verify_strict_int(_)                        -> false.
@@ -1612,7 +1657,7 @@ update_trans_req_maxsize(CD, Max)
 
     
 
-handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
+handle_connect(RH, RemoteMid, SendHandle, ControlPid, Auto) ->
     LocalMid   = RH#megaco_receive_handle.local_mid,
     ConnHandle = #megaco_conn_handle{local_mid  = LocalMid,
 				     remote_mid = RemoteMid},
@@ -1624,7 +1669,9 @@ handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
 	    PrelHandle = ConnHandle#megaco_conn_handle{remote_mid = PrelMid},
 	    case ets:lookup(megaco_local_conn, PrelHandle) of
 		[] ->
-		    case catch init_conn_data(RH, RemoteMid, SendHandle, ControlPid) of
+		    case (catch init_conn_data(RH, 
+					       RemoteMid, SendHandle, 
+					       ControlPid, Auto)) of
 			{'EXIT', _Reason} ->
 			    ?d("handle_connect -> init conn data failed: "
 				"~n   ~p",[_Reason]),
@@ -1666,6 +1713,22 @@ handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
             {error, {already_connected, ConnHandle}}
     end.
 
+handle_finish_connect(ConnHandle, SendHandle, ControlPid, MFA) ->
+    case (catch ets:lookup(megaco_local_conn, ConnHandle)) of
+	[#conn_data{monitor_ref = connected} = CD] ->
+	    {M, F, A} = MFA,
+	    Ref = megaco_monitor:apply_at_exit(M, F, A, ControlPid),
+	    ConnData2 = CD#conn_data{monitor_ref = Ref,
+				     control_pid = ControlPid,
+				     send_handle = SendHandle},
+	    ets:insert(megaco_local_conn, ConnData2),
+	    {ok, Ref};
+	[#conn_data{monitor_ref = Ref}] ->
+	    {ok, Ref};
+	[] ->
+	    {error, {no_such_connection, ConnHandle}}
+    end.
+    
 
 %% also trans_req == true
 trans_sender_start(#conn_data{conn_handle        = CH,
@@ -1758,12 +1821,21 @@ handle_connect_remote(ConnHandle, UserNode, Ref) ->
     end.
 
 init_conn_data(RH, RemoteMid, SendHandle, ControlPid) ->
+    init_conn_data(RH, RemoteMid, SendHandle, ControlPid, auto).
+init_conn_data(RH, RemoteMid, SendHandle, ControlPid, Auto) ->
     Mid            = RH#megaco_receive_handle.local_mid,
     ConnHandle     = #megaco_conn_handle{local_mid  = Mid,
 					 remote_mid = RemoteMid},
     EncodingMod    = RH#megaco_receive_handle.encoding_mod,
     EncodingConfig = RH#megaco_receive_handle.encoding_config,
     SendMod        = RH#megaco_receive_handle.send_mod,
+    MonitorRef     = 
+	case Auto of
+	    auto ->
+		undefined_auto_monitor_ref;
+	    {plain, ConnectorPid} ->
+		{connecting, ConnectorPid}
+	end,
     #conn_data{conn_handle          = ConnHandle,
                serial               = undefined_serial,
                max_serial           = user_info(Mid, max_trans_id),
@@ -1784,7 +1856,7 @@ init_conn_data(RH, RemoteMid, SendHandle, ControlPid) ->
                recv_pending_limit   = user_info(Mid, recv_pending_limit),
                reply_timer          = user_info(Mid, reply_timer),
                control_pid          = ControlPid,
-               monitor_ref          = undefined_monitor_ref,
+               monitor_ref          = MonitorRef,
                send_mod             = SendMod,
                send_handle          = SendHandle,
                encoding_mod         = EncodingMod,
@@ -1876,6 +1948,14 @@ snmp_counters() ->
     [medGwyGatewayNumTimerRecovery,
      medGwyGatewayNumErrors].
 
+
+
+%%-----------------------------------------------------------------
+
+%% Time in milli seconds
+%% t() ->
+%%     {A,B,C} = erlang:now(),
+%%     A*1000000000+B*1000+(C div 1000).
 
 
 %%-----------------------------------------------------------------

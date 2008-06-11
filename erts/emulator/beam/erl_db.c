@@ -1348,7 +1348,7 @@ BIF_RETTYPE ets_delete_1(BIF_ALIST_1)
 	Eterm meta_tuple[3];
 
 	/*
-	 * The process is being deleted by a process other than its owner.
+	 * The table is being deleted by a process other than its owner.
 	 * To make sure that the table will be completely deleted if the
 	 * current process will be killed (e.g. by an EXIT signal), we will
 	 * now transfer the ownership to the current process.
@@ -2425,24 +2425,28 @@ void db_proc_dead(Eterm pid)
 	    Sint ix = unsigned_val(arr[i]); /* slot */
 
 	    erts_smp_spin_lock(&db_tables_lock);
-	    if ((tb = db_ref(db_tables[ix].t)) != NULL) {
-		meta_mark_free(ix);
-		db_tables[ix].t = NULL;
-		no_tabs--;
-	    }
+	    tb = db_ref(db_tables[ix].t);
 	    erts_smp_spin_unlock(&db_tables_lock);
-	    if (tb != NULL) {
-#ifdef HARDDEBUG
-		erts_fprintf(stderr, "db_proc_dead(); Table: %T,  Process: %T\n", tb->common.id, pid);
-#endif
-
+	    if (tb) {
 		db_lock_take_over_ref(tb, LCK_WRITE);
-		/* Clear all access bits. */
-		tb->common.status &= ~(DB_PROTECTED|DB_PUBLIC|DB_PRIVATE);
-		free_fixations_locked(tb);
-		tb->common.meth->db_free_table(tb);
+		/* Ownership may have changed since we looked up the table. */
+		if (tb->common.owner == pid) {
+#ifdef HARDDEBUG
+		    erts_fprintf(stderr, "db_proc_dead(); Table: %T,  Process: %T\n", tb->common.id, pid);
+#endif
+		    erts_smp_spin_lock(&db_tables_lock);
+		    meta_mark_free(ix);
+		    db_tables[ix].t = NULL;
+		    no_tabs--;
+		    erts_smp_spin_unlock(&db_tables_lock);
+
+		    /* Clear all access bits. */
+		    tb->common.status &= ~(DB_PROTECTED|DB_PUBLIC|DB_PRIVATE);
+		    free_fixations_locked(tb);
+		    tb->common.meth->db_free_table(tb);
+		    db_unref(tb);
+		}
 		db_unlock(tb, LCK_WRITE);
-		db_unref(tb); /* this one MAY delete the table */
 	    }
 	    if (arr_siz == ARRAY_CHUNK) {
 		/* Need to erase each explicitly */
@@ -2563,7 +2567,6 @@ static void fix_table_locked(Process* p, DbTable* tb)
 	fix->counter = 1;
 	fix->next = tb->common.fixations;
 	tb->common.fixations = fix;
-	/* SMP: I guess we need some kind of lock here ? */
 	p->flags |= F_USING_DB;        
 	db_lock(meta_pid_to_fixed_tab, LCK_WRITE);
 	if (db_put_hash(NULL,meta_pid_to_fixed_tab,

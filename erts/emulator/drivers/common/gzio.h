@@ -17,15 +17,10 @@
  */
 
 gzFile erts_gzopen (const char *path, const char *mode);
-gzFile erts_gzdopen (int fd, const char *mode);
-gzFile erts_gzbufopen(char* bytes, int size);
 int erts_gzread(gzFile file, voidp buf, unsigned len);
-int erts_gzwrite(gzFile file, voidpc buf, unsigned len);
+int erts_gzwrite(gzFile file, voidp buf, unsigned len);
 int erts_gzseek(gzFile, int, int);
 int erts_gzflush(gzFile file, int flush);
 int erts_gzclose(gzFile file);
-ErlDrvBinary* erts_gzinflate_buffer(char*, int);
-ErlDrvBinary* erts_gzdeflate_buffer(char*, int);
-
-
-
+ErlDrvBinary* erts_gzinflate_buffer(char*, uLong);
+ErlDrvBinary* erts_gzdeflate_buffer(char*, uLong);

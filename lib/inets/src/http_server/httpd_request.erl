@@ -142,6 +142,9 @@ parse_uri(<<Octet, Rest/binary>>, URI, CurrSize, MaxSizes, Result) ->
 
 parse_version(<<>>, Version, MaxSizes, Result) ->
     {?MODULE, parse_version, [<<>>, Version, MaxSizes, Result]};
+parse_version(<<?LF, Rest/binary>>, Version, MaxSizes, Result) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_version(<<?CR, ?LF, Rest/binary>>, Version, MaxSizes, Result);
 parse_version(<<?CR, ?LF, Rest/binary>>, Version, MaxSizes, Result) ->
     parse_headers(Rest, [], [], 0, MaxSizes, 
 		  [string:strip(lists:reverse(Version)) | Result]);
@@ -158,6 +161,16 @@ parse_headers(_, _, _, CurrSize, {_, MaxHeaderSize}, Result)
 parse_headers(<<>>, Header, Headers, CurrSize, MaxSizes, Result) ->
     {?MODULE, parse_headers, [<<>>, Header, Headers, CurrSize, 
 			      MaxSizes, Result]};
+parse_headers(<<?CR,?LF,?LF,Body/binary>>, [], [], CurrSize, MaxSizes, Result) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, [], [], CurrSize,  
+		  MaxSizes, Result);
+
+parse_headers(<<?LF,?LF,Body/binary>>, [], [], CurrSize, MaxSizes, Result) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, [], [], CurrSize,  
+		  MaxSizes, Result);
+
 parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, [], [], _,  _, Result) ->
     NewResult = list_to_tuple(lists:reverse([Body, {#http_request_h{}, []} |
 					     Result])),
@@ -176,24 +189,45 @@ parse_headers(<<?CR,?LF,?CR>> = Data, Header, Headers, CurrSize,
 	      MaxSizes, Result) ->
     {?MODULE, parse_headers, [Data, Header, Headers, CurrSize, 
 			      MaxSizes, Result]};
+parse_headers(<<?LF>>, [], [], CurrSize, MaxSizes, Result) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_headers(<<?CR,?LF>>, [], [], CurrSize, MaxSizes, Result);
 
 %% There where no headers, which is unlikely to happen.
 parse_headers(<<?CR,?LF>>, [], [], _, _, Result) ->
      NewResult = list_to_tuple(lists:reverse([<<>>, {#http_request_h{}, []} |
 					      Result])),
     {ok, NewResult};
+
+parse_headers(<<?LF>>, Header, Headers, CurrSize, 
+	      MaxSizes, Result) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_headers(<<?CR,?LF>>, Header, Headers, CurrSize, MaxSizes, Result);
+
 parse_headers(<<?CR,?LF>> = Data, Header, Headers, CurrSize, 
 	      MaxSizes, Result) ->
     {?MODULE, parse_headers, [Data, Header, Headers, CurrSize, 
 			      MaxSizes, Result]};
+parse_headers(<<?LF, Octet, Rest/binary>>, Header, Headers, CurrSize,
+	      MaxSizes, Result) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_headers(<<?CR,?LF, Octet, Rest/binary>>, Header, Headers, CurrSize,
+		  MaxSizes, Result); 
 parse_headers(<<?CR,?LF, Octet, Rest/binary>>, Header, Headers, CurrSize,
 	      MaxSizes, Result) ->
     parse_headers(Rest, [Octet], [lists:reverse(Header) | Headers], 
 		  CurrSize + 1, MaxSizes, Result);
+
 parse_headers(<<?CR>> = Data, Header, Headers, CurrSize,  
 	      MaxSizes, Result) ->
     {?MODULE, parse_headers, [Data, Header, Headers, CurrSize, 
 			      MaxSizes, Result]};
+parse_headers(<<?LF>>, Header, Headers, CurrSize,  
+	      MaxSizes, Result) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_headers(<<?CR, ?LF>>, Header, Headers, CurrSize,  
+		  MaxSizes, Result);
+
 parse_headers(<<Octet, Rest/binary>>, Header, Headers, 
 	      CurrSize, MaxSizes, Result) ->
     parse_headers(Rest, [Octet | Header], Headers, CurrSize + 1,
@@ -293,9 +327,9 @@ get_persistens(HTTPVersion,ParsedHeader,ConfigDB)->
 	    case HTTPVersion of
 		%%If it is version prio to 1.1 kill the conneciton
 		"HTTP/1." ++ NList ->
-		    case proplists:get_value("conneciton", ParsedHeader,
+		    case proplists:get_value("connection", ParsedHeader,
 					     "keep-alive") of  
-			%%if the connection isnt ordered to go down
+			%%if the connection is not ordered to go down
 			%%let it live The keep-alive value is the
 			%%older http/1.1 might be older Clients that
 			%%use it.

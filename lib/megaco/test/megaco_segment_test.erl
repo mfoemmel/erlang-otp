@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2006-2007</year>
+%% <year>2006-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -217,7 +217,7 @@ ssmp1_mgc_event_sequence(text, tcp) ->
              {send, "segment reply 1",                   SegmentRep1},
 	     {sleep, 100}, 
              {send, "segment reply 2",                   SegmentRep2},
-	     {sleep, 100}, 
+	     {sleep, 100}, % {expect_nothing, 500}, 
 	     {send, "transaction-ack",                   TransAck},
              {expect_closed,  timer:seconds(5)},
              disconnect
@@ -819,7 +819,7 @@ ssmp2_mgc_event_sequence(text, tcp) ->
              {send, "segment reply 1",                   SegmentRep1},
              {expect_receive, "notify reply: segment 2", {NrVerifyFun2, 1000}},
              {send, "segment reply 2",                   SegmentRep2},
-	     {sleep, 100}, 
+	     {sleep, 100}, % {expect_nothing, 500}, 
 	     {send, "transaction-ack",                   TransAck},
              {expect_closed,  timer:seconds(5)},
              disconnect
@@ -1482,6 +1482,7 @@ ssmp3_mgc_event_sequence(text, tcp) ->
 	     {expect_nothing, 200},
              {send, "segment reply 8",                   SegmentRep8},
 
+	     {expect_nothing, 200}, 
 	     {send, "transaction-ack",                   TransAck},
              {expect_closed,  5000},
              disconnect

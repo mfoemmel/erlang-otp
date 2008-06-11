@@ -287,6 +287,9 @@ generate_webpage(ModData, ESIBody, Modules, Module, FunctionName,
 %% before anythig is sent back to the client.
 erl_scheme_webpage_whole(Module, Function, Env, Input, ModData) ->
     case (catch Module:Function(Env, Input)) of
+	{'EXIT',{undef, _}} ->
+	    {proceed, [{status, {404, ModData#mod.request_uri, "Not found"}}
+		       | ModData#mod.data]};
 	{'EXIT',Reason} ->
 	    {proceed, [{status, {500, none, Reason}} |
 		       ModData#mod.data]};

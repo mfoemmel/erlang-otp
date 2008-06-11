@@ -18,11 +18,11 @@
 
 %%%-----------------------------------------------------------------------
 %%% File    : dialyzer_gui.erl
-%%% Authors : Tobias Lindahl <tobiasl@csd.uu.se>
+%%% Authors : Tobias Lindahl <tobiasl@it.uu.se>
 %%%           Kostis Sagonas <kostis@it.uu.se>
 %%% Description : The graphical user interface for the Dialyzer tool.
 %%%
-%%% Created : 27 Apr 2004 by Tobias Lindahl <tobiasl@csd.uu.se>
+%%% Created : 27 Apr 2004 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%-----------------------------------------------------------------------
 
 -module(dialyzer_gui).
@@ -143,12 +143,12 @@ start(DialyzerOptions = #options{}) ->
 			{height, 20}, {pack_xy, {1,1}}]),
   ModeByteCode = gs:radiobutton(ModePacker,
 				[{group, start_from},
-				 {label, {text,"ByteCode"}},
+				 {label, {text,"BeamFiles"}},
 				 {select, true},
 				 {pack_xy, {2,1}}]),
   ModeSrcCode = gs:radiobutton(ModePacker,
 			       [{group, start_from},
-				{label, {text,"SourceCode"}},
+				{label, {text,"SourceFiles"}},
 				{pack_xy, {2,2}}]),
 
   Mode = #mode{start_byte_code=ModeByteCode,
@@ -321,7 +321,10 @@ start(DialyzerOptions = #options{}) ->
   gs:config(Packer, WH),
   {ok, CWD} = file:get_cwd(),
   
-  InitPlt = dialyzer_plt:from_file(DialyzerOptions#options.init_plt),
+  InitPlt =
+    try dialyzer_plt:from_file(DialyzerOptions#options.init_plt)
+    catch throw:{dialyzer_error, _} -> dialyzer_plt:new()
+    end,
 
   State = #gui_state{add_all=AddAll,
 		     add_file=AddFile, 
@@ -492,11 +495,6 @@ gui_loop(State = #gui_state{}) ->
       WarningString = lists:flatten([dialyzer:format_warning(W) 
 				     || W <- Warnings]),
       update_editor(State#gui_state.warnings_box, WarningString),
-      gui_loop(State);
-    {BackendPid, error, Msg} ->
-      update_editor(State#gui_state.warnings_box, Msg),
-      update_editor(State#gui_state.log, 
-		    "*** Analysis failed! See warnings for details\n"),
       gui_loop(State);
     {BackendPid, done, _NewPlt, NewDocPlt} ->
       message(State, "Analysis done"),
@@ -1018,7 +1016,6 @@ search_doc_plt(State = #gui_state{gs = GS, top=TopWin}) ->
   search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry, 
 		      FunEntry, ArityEntry, Win, TopWin).
 
-
 search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry, 
 		    FunEntry, ArityEntry, Win, TopWin) ->
   receive
@@ -1045,9 +1042,8 @@ search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry,
 format_search([]) ->
   '_';
 format_search(String) ->
-  case catch list_to_integer(String) of
-    {'EXIT', _} -> list_to_atom(String);
-    Int -> Int
+  try list_to_integer(String)
+  catch error:_ -> list_to_atom(String)
   end.
 
 show_doc_plt(State) ->
@@ -1338,9 +1334,8 @@ parse(String) ->
     {ok, Ts, _} ->
       case erl_parse:parse_exprs(Ts) of
 	{ok, [Expr]} ->	  
-	  case catch erl_parse:normalise(Expr) of
-	    {'EXIT', Reason} -> {error, Reason};
-	    Term -> {ok, Term}
+	  try erl_parse:normalise(Expr)
+	  catch error:Reason -> {error, Reason}
 	  end;
 	{error, E} ->
 	  parse_error(E)

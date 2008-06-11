@@ -15,6 +15,9 @@ $(EBIN)/snmpa_network_interface_filter.$(EMULATOR): \
 $(EBIN)/snmpa_notification_filter.$(EMULATOR): \
 	snmpa_notification_filter.erl
 
+$(EBIN)/snmpa_notification_delivery_info_receiver.$(EMULATOR): \
+	snmpa_notification_delivery_info_receiver.erl
+
 $(EBIN)/snmpa_set_mechanism.$(EMULATOR): \
 	snmpa_set_mechanism.erl
 

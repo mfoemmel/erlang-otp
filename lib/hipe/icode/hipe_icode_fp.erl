@@ -8,9 +8,9 @@
 %%% Created : 23 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%
 %%% CVS      :
-%%%              $Author: pergu $
-%%%              $Date: 2008/03/27 09:42:56 $
-%%%              $Revision: 1.43 $
+%%%              $Author: tobiasl $
+%%%              $Date: 2008/04/25 12:34:59 $
+%%%              $Revision: 1.45 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
@@ -20,16 +20,16 @@
 -include("hipe_icode.hrl").
 -include("../flow/cfg.hrl").
 
--record(state, {block_map :: gb_tree(),
-		edge_map  :: gb_tree(),
-		cfg	  :: #cfg{}}).
+-record(state, {edge_map   :: gb_tree(),
+		fp_ebb_map :: gb_tree(),
+		cfg	   :: #cfg{}}).
 
 %%--------------------------------------------------------------------
 
 -spec(cfg/1 :: (#cfg{}) -> #cfg{}).
 
 cfg(Cfg) ->
-  %% hipe_icode_cfg:pp(Cfg),
+  %%hipe_icode_cfg:pp(Cfg),
   NewCfg = annotate_fclearerror(Cfg),
   State = new_state(NewCfg),
   NewState = place_fp_blocks(State),
@@ -142,26 +142,48 @@ transform_block(WorkList, State) ->
     {Label, NewWorkList} ->      
       %%io:format("Handling ~w \n", [Label]),
       BB = state__bb(State, Label),
-      Code = hipe_bb:code(BB),
+      Code1 = hipe_bb:butlast(BB),
+      Last = hipe_bb:last(BB),
       NofPreds = length(state__pred(State, Label)),
       Map = state__map(State, Label),
       FilteredMap = filter_map(Map, NofPreds),
-      %%io:format("Label: ~w\nPhiMap: ~p\nFilteredMap ~p\n", 
-      %%	[Label, gb_trees:to_list(Map), gb_trees:to_list(FilteredMap)]),
       {Prelude, NewFilteredMap} = do_prelude(FilteredMap),
-      {NewMap, NewCode} = 
-	transform_instrs(Code, Map, NewFilteredMap, []),
+
+      %% Take care to have a map without any new bindings from the
+      %% last instruction if it can fail.
+      {FailMap, NewCode1} = transform_instrs(Code1, Map, NewFilteredMap, []),
+      {NewMap, NewCode2} = transform_instrs([Last], Map, FailMap, []),
+      SuccSet0 = ordsets:from_list(hipe_icode:successors(Last)),
+      FailSet = ordsets:from_list(hipe_icode:fails_to(Last)),
+      SuccSet = ordsets:subtract(SuccSet0, FailSet),
+      NewCode = NewCode1 ++ NewCode2,
       NewBB = hipe_bb:code_update(BB, Prelude++NewCode),
       NewState = state__bb_add(State, Label, NewBB),
-      case state__map_update(NewState, Label, NewMap) of
+      case update_maps(NewState, Label, SuccSet, NewMap, FailSet, FailMap) of
 	fixpoint ->
 	  transform_block(NewWorkList, NewState);
-	NewState1 ->
-	  Succ = state__succ(NewState1, Label),
-	  NewWorkList1 = add_work(NewWorkList, Succ),
+	{NewState1, AddBlocks} ->
+	  NewWorkList1 = add_work(NewWorkList, AddBlocks),
 	  transform_block(NewWorkList1, NewState1)
       end
   end.
+
+update_maps(State, Label, SuccSet, SuccMap, FailSet, FailMap) ->
+  {NewState, Add1} = update_maps(State, Label, SuccSet, SuccMap, []),
+  case update_maps(NewState, Label, FailSet, FailMap, Add1) of
+    {_NewState1, []} -> fixpoint;
+    {_NewState1, _Add} = Ret -> Ret
+  end.
+
+update_maps(State, From, [To|Left], Map, Acc) ->
+  case state__map_update(State, From, To, Map) of
+    fixpoint ->
+      update_maps(State, From, Left, Map, Acc);
+    NewState ->
+      update_maps(NewState, From, Left, Map, [To|Acc])
+  end;
+update_maps(State, _From, [], _Map, Acc) ->
+  {State, Acc}.
 
 transform_instrs([I|Left], PhiMap, Map, Acc) ->
   Defines = hipe_icode:defines(I),
@@ -246,17 +268,13 @@ check_for_fop_candidates(I, Map, Acc) ->
 	[] ->
 	  Args = hipe_icode:args(I),
 	  ConstArgs = [X || X <- Args, hipe_icode:is_const(X)],
-	  case catch [float(hipe_icode:const_value(X)) || X <- ConstArgs] of
-	    {'EXIT', _} -> 
-	      %% This instruction will fail at runtime. The warning
-	      %% should already have happened in hipe_icode_type.
-	      NewIs = handle_untagged_arguments(I, Map),
-	      {Map, NewIs ++ Acc};
-	    _ ->
+	  try lists:foreach(fun(X) -> float(hipe_icode:const_value(X)) end, 
+			    ConstArgs) of
+	    ok ->
 	      %%io:format("Changing ~w to ~w\n", [hipe_icode:call_fun(I), Op]),
 	      Uses = hipe_icode:uses(I),
 	      Defines = hipe_icode:defines(I),
-	      Convs = [X||X <- remove_duplicates(Uses), lookup(X, Map) =:= none],
+	      Convs = [X||X <- remove_duplicates(Uses), lookup(X,Map) =:= none],
 	      NewMap0 = add_new_bindings_assigned(Convs, Map),
 	      NewMap = add_new_bindings_unassigned(Defines, NewMap0),
 	      ConvIns = get_conv_instrs(Convs, NewMap),
@@ -265,6 +283,12 @@ check_for_fop_candidates(I, Map, Acc) ->
 					  Cont, Fail),
 	      NewI2 = conv_consts(ConstArgs, NewI),
 	      {NewMap, [NewI2|ConvIns]++Acc}
+	  catch 
+	    error:badarg ->
+	      %% This instruction will fail at runtime. The warning
+	      %% should already have happened in hipe_icode_type.
+	      NewIs = handle_untagged_arguments(I, Map),
+	      {Map, NewIs ++ Acc}
 	  end;
 	_ -> %% Bailing out! Can't handle instructions in catches (yet).
 	  NewIs = handle_untagged_arguments(I, Map),
@@ -657,18 +681,17 @@ get_type(Var) ->
 %% ------------------------------------------------------------ 
 %% Handling the map from variables to fp-variables
 
-join_maps(Preds, BlockMap) ->
-  join_maps(Preds, BlockMap, gb_trees:empty()).
+join_maps(Edges, EdgeMap) ->
+  join_maps(Edges, EdgeMap, gb_trees:empty()).
 
-join_maps([Pred|Left], BlockMap, Map) ->
-  case gb_trees:lookup(Pred, BlockMap) of
+join_maps([Edge = {Pred, _}|Left], EdgeMap, Map) ->
+  case gb_trees:lookup(Edge, EdgeMap) of
     none ->
-      %%join_maps(Left, BlockMap, Map);
       %% All predecessors have not been handled. Use empty map.
       gb_trees:empty();
     {value, OldMap} ->
       NewMap = join_maps0(gb_trees:to_list(OldMap), Pred, Map),
-      join_maps(Left, BlockMap, NewMap)
+      join_maps(Left, EdgeMap, NewMap)
   end;
 join_maps([], _, Map) ->
   Map.
@@ -880,10 +903,7 @@ conv_consts([], I, Subst) ->
 %%
 
 new_state(Cfg) ->
-  Start = hipe_icode_cfg:start_label(Cfg),  
-  BlockMap = gb_trees:insert({inblock, Start}, false, gb_trees:empty()),
-  EdgeMap = gb_trees:empty(),
-  #state{cfg=Cfg, block_map=BlockMap, edge_map=EdgeMap}.
+  #state{cfg=Cfg, edge_map=gb_trees:empty(), fp_ebb_map=gb_trees:empty()}.
 
 state__cfg(#state{cfg=Cfg}) ->
   Cfg.
@@ -905,44 +925,44 @@ state__bb_add(S=#state{cfg=Cfg}, Label, BB) ->
   NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, BB),
   S#state{cfg=NewCfg}.
 
-state__map(S=#state{block_map=BM}, Label) ->
-  join_maps(state__pred(S, Label), BM).
+state__map(S=#state{edge_map=EM}, To) ->
+  join_maps([{From, To} || From <- state__pred(S, To)], EM).
 
-state__map_update(S=#state{block_map=BM}, Label, Map) ->
+state__map_update(S=#state{edge_map=EM}, From, To, Map) ->
   MapChanged = 
-    case gb_trees:lookup(Label, BM) of
+    case gb_trees:lookup({From, To}, EM) of
       {value, Map1} -> not match(Map1, Map);
       none -> true
     end,
   case MapChanged of
     true ->
-      NewBM = gb_trees:enter(Label, Map, BM),
-      S#state{block_map = NewBM};
+      NewEM = gb_trees:enter({From, To}, Map, EM),
+      S#state{edge_map = NewEM};
     false ->
       fixpoint
   end.
 
-state__join_in_block(S=#state{edge_map = Map}, Label) ->
+state__join_in_block(S=#state{fp_ebb_map = Map}, Label) ->
   Pred = state__pred(S, Label),
   Edges = [{X, Label} || X <- Pred],
   NewInBlock = join_in_block([gb_trees:lookup(X, Map) || X <- Edges]),
   case gb_trees:lookup({inblock_in, Label}, Map) of
     none ->
       NewMap = gb_trees:insert({inblock_in, Label}, NewInBlock, Map),
-      {S#state{edge_map = NewMap}, NewInBlock};
+      {S#state{fp_ebb_map = NewMap}, NewInBlock};
     {value, NewInBlock} ->
       fixpoint;
     _Other ->
       NewMap = gb_trees:update({inblock_in, Label}, NewInBlock, Map),
-      {S#state{edge_map = NewMap}, NewInBlock}
+      {S#state{fp_ebb_map = NewMap}, NewInBlock}
   end.
 
-state__in_block_out_update(S=#state{edge_map = Map}, Label, NewInBlock) ->
+state__in_block_out_update(S=#state{fp_ebb_map = Map}, Label, NewInBlock) ->
   Succ = state__succ(S, Label),
   Edges = [{Label, X} || X <- Succ],
   NewMap = update_edges(Edges, NewInBlock, Map),
   NewMap1 = gb_trees:enter({inblock_out, Label}, NewInBlock, NewMap),
-  S#state{edge_map = NewMap1}.
+  S#state{fp_ebb_map = NewMap1}.
 
 update_edges([Edge|Left], NewInBlock, Map) ->
   NewMap = gb_trees:enter(Edge, NewInBlock, Map),
@@ -969,10 +989,10 @@ join_in_block([], Current) ->
   Current.
 	
 
-state__get_in_block_in(#state{edge_map=Map}, Label) ->
+state__get_in_block_in(#state{fp_ebb_map=Map}, Label) ->
   gb_trees:get({inblock_in, Label}, Map).
 
-state__get_in_block_out(#state{edge_map=Map}, Label) ->
+state__get_in_block_out(#state{fp_ebb_map=Map}, Label) ->
   gb_trees:get({inblock_out, Label}, Map).
 
 

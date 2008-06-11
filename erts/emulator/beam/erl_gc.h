@@ -46,7 +46,7 @@ do {									\
 
 extern Uint erts_test_long_gc_sleep;
 
-#ifdef DEBUG
+#if defined(DEBUG) || defined(ERTS_OFFHEAP_DEBUG)
 int within(Eterm *ptr, Process *p);
 #endif
 

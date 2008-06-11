@@ -258,8 +258,7 @@ compiler:
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 		$(MAKE) opt BUILD_ALL=true
 
-hlib:
-hipe:
+hlib hipe:
 	cd lib/hipe && \
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 		$(MAKE) opt BUILD_ALL=true

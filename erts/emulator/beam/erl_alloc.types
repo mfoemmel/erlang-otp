@@ -222,6 +222,11 @@ type	NODES_MON	STANDARD	PROCESSES	nodes_monitor
 type	PROCS_TPROC_EL	SHORT_LIVED	PROCESSES	processes_term_proc_el
 type	PROCS_CNKINF	SHORT_LIVED	PROCESSES	processes_chunk_info
 type	PROCS_PIDS	SHORT_LIVED	PROCESSES	processes_pids
+type	RE_TMP_BUF	TEMPORARY	SYSTEM		re_tmp_buf
+type    RE_SUBJECT      SHORT_LIVED     SYSTEM          re_subject
+type  	RE_HEAP 	STANDARD	SYSTEM		re_heap
+type	RE_STACK 	SHORT_LIVED	SYSTEM		re_stack
+
 
 +if thread_safe_std_alloc
 type	DRV_THR_OPTS	STANDARD	SYSTEM		driver_thread_opts

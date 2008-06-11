@@ -77,9 +77,6 @@ loop(State, Analysis = #analysis{}, ExtCalls) ->
 	  send_warnings(Parent, SendWarnings)
       end,
       loop(State, Analysis, ExtCalls);
-    {AnalPid, error, Msg} ->
-      send_error(Parent, Msg),
-      loop(State, Analysis, ExtCalls);
     {AnalPid, done, Plt, DocPlt} ->      
       case ExtCalls =:= none of
 	true ->
@@ -193,13 +190,18 @@ compile_and_store(Files, State = #analysis_state{}) ->
   CServer = State#analysis_state.codeserver,
   {NewCallgraph1, NewCServer, Failed, NoWarn} = 
     lists:foldl(Fun, {Callgraph, CServer, [], []}, Files),
+  case Failed =:= [] of
+    true -> ok;
+    false -> 
+      Msg = io_lib:format("Could not scan the following file(s): ~p", [Failed]),
+      exit({error, Msg})
+  end,
   {T2, _} = statistics(runtime),
   Msg1 = io_lib:format("done in ~.2f secs\n"
 		       "Removing edges... ", 
 		       [(T2-T1)/1000]),
   send_log(State#analysis_state.parent, Msg1),
   NewCallgraph2 = cleanup_callgraph(State, NewCServer, NewCallgraph1, Files),
-  send_scan_fail(State#analysis_state.parent, Failed),
   {T3, _} = statistics(runtime),
   Msg2 = io_lib:format("done in ~.2f secs\n", [(T3-T2)/1000]),
   send_log(State#analysis_state.parent, Msg2),  
@@ -281,13 +283,13 @@ compile_src(File, Includes, Defines, Callgraph, CServer, UseContracts) ->
 compile_byte(File, Callgraph, CServer, UseContracts) ->
   case dialyzer_utils:get_abstract_code_from_beam(File) of
     error ->
-      {error, "  Could not get abstract code for "++File++
-       " Recompile with +debug_info or analyze source code."};
+      {error, "  Could not get abstract code for: "++File++"\n"++
+       "  Recompile with +debug_info or analyze starting from source code"};
     {ok, AbstrCode} ->
       Mod = list_to_atom(filename:basename(File, ".beam")),
       NoWarn = abs_get_nowarn(AbstrCode, Mod),
       case dialyzer_utils:get_core_from_abstract_code(AbstrCode) of
-	error -> {error, "  Could not get core for "++File};
+	error -> {error, "  Could not get core for: "++File};
 	{ok, Core} ->
 	  case dialyzer_utils:get_record_and_type_info(AbstrCode) of
 	    {error, _} = Error -> Error;
@@ -354,29 +356,47 @@ expand_files(Analysis) ->
       byte_code -> ".beam";
       src_code -> ".erl"
     end,
-  case expand_files(Files, Ext, []) of
+  case expand_files(Files, Ext, dict:new()) of
     [] ->
       exit({error, "No files to analyze; check analysis type"});
     NewFiles ->
       Analysis#analysis{files=NewFiles}
   end.
 
-expand_files([File|Left], Ext, Acc) ->
+expand_files([File|Left], Ext, ModDict) ->
   case filelib:is_dir(File) of
     true ->
       {ok, List} = file:list_dir(File),
-      NewFiles = [filename:join(File, X)
+      NewFiles = [{filename:basename(X, Ext), filename:join(File, X)}
 		  || X <- List, filename:extension(X) =:= Ext],
-      expand_files(Left, Ext, NewFiles++Acc);
+      NewModDict =
+	lists:foldl(fun({Mod, F}, Dict) -> dict:append(Mod, F, Dict) end,
+		    ModDict, NewFiles),
+      expand_files(Left, Ext, NewModDict);
     false ->
-      expand_files(Left, Ext, [File|Acc])
+      Module = filename:basename(File, Ext),
+      expand_files(Left, Ext, dict:append(Module, File, ModDict))
   end;
-expand_files([], _Ext, Acc) ->
-  ordsets:from_list(Acc).
+expand_files([], _Ext, ModDict) ->
+  check_for_duplicate_modules(ModDict).
+
+check_for_duplicate_modules(ModDict) ->
+  Duplicates = dict:filter(fun(_, [_]) -> false;
+			      (_, _Files) -> true
+			   end, ModDict),
+  case dict:size(Duplicates) =:= 0 of
+    true ->
+      ordsets:from_list([File || {_, [File]} <- dict:to_list(ModDict)]);
+    false ->
+      Msg = io_lib:format("Duplicate modules: ~p",
+			  [X || {_, X} <- dict:to_list(Duplicates)]),
+      exit({error, Msg})
+  end.
 
 default_includes(Dir) ->
   L1 = ["..", "../incl", "../inc", "../include"],
   [{i, filename:join(Dir, X)}||X<-L1].
+
   
 %%____________________________________________________________
 %%
@@ -400,18 +420,6 @@ filter_warnings(LegalWarnings, Warnings) ->
 send_analysis_done(Parent, Plt, DocPlt) ->
   Parent ! {self(), done, Plt, DocPlt},
   ok.
-
-send_error(Parent, Msg) ->
-  Parent ! {self(), error, Msg},
-  ok.
-
-send_scan_fail(_Parent, []) ->
-  ok;
-send_scan_fail(Parent, [{FailFile, Reason}|Left]) ->
-  Msg = io_lib:format("Error scanning file: ~p\n~s\n", 
-		      [FailFile, Reason]),
-  send_error(Parent, Msg),
-  send_scan_fail(Parent, Left).
   
 send_ext_calls(Parent, ExtCalls) ->
   Parent ! {self(), ext_calls, ExtCalls},

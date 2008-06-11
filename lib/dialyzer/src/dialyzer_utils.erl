@@ -18,10 +18,10 @@
 
 %%%-------------------------------------------------------------------
 %%% File    : dialyzer_utils.erl
-%%% Author  : Tobias Lindahl <tobiasl@csd.uu.se>
+%%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
 %%% Description : 
 %%%
-%%% Created :  5 Dec 2006 by Tobias Lindahl <tobiasl@csd.uu.se>
+%%% Created :  5 Dec 2006 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%-------------------------------------------------------------------
 -module(dialyzer_utils).
 

@@ -47,12 +47,12 @@ extern int __sigaction(int, const struct sigaction*, struct sigaction*);
 static void do_init(void)
 {
     __next_sigaction = dlsym(RTLD_NEXT, "__sigaction");
-    if( __next_sigaction != 0 )
+    if (__next_sigaction != 0)
 	return;
     perror("dlsym");
     abort();
 }
-#define INIT()	do { if( !init_done() ) do_init(); } while(0)
+#define INIT()	do { if (!init_done()) do_init(); } while (0)
 #endif	/* glibc 2.3 */
 
 #if __GLIBC__ == 2 && (__GLIBC_MINOR__ == 2 /*|| __GLIBC_MINOR__ == 3*/)
@@ -94,12 +94,12 @@ static int (*__next_sigaction)(int, const struct sigaction*, struct sigaction*);
 static void do_init(void)
 {
     __next_sigaction = dlsym(RTLD_NEXT, "__sigaction");
-    if( __next_sigaction != 0 )
+    if (__next_sigaction != 0)
 	return;
     perror("dlsym");
     abort();
 }
-#define INIT()	do { if( !init_done() ) do_init(); } while(0)
+#define INIT()	do { if (!init_done()) do_init(); } while (0)
 #else
 /* semi-works with all 2.2 versions so far */
 extern int __sigaction(int, const struct sigaction*, struct sigaction*);
@@ -132,12 +132,12 @@ static int (*__next_sigaction)(int, const struct sigaction*, struct sigaction*);
 static void do_init(void)
 {
     __next_sigaction = dlsym(RTLD_NEXT, "sigaction");
-    if( __next_sigaction != 0 )
+    if (__next_sigaction != 0)
 	return;
     perror("dlsym");
     abort();
 }
-#define INIT()	do { if( !init_done() ) do_init(); } while(0)
+#define INIT()	do { if (!init_done()) do_init(); } while (0)
 #endif	/* glibc 2.1 */
 
 /* Is there no standard identifier for Darwin/MacOSX ? */
@@ -168,7 +168,7 @@ static void do_init(void)
     abort();
 }
 #define _NSIG NSIG
-#define INIT()	do { if( !init_done() ) do_init(); } while(0)
+#define INIT()	do { if (!init_done()) do_init(); } while (0)
 #endif /* __DARWIN__ */
 
 #if !defined(__GLIBC__) && !defined(__DARWIN__)
@@ -198,13 +198,13 @@ static int (*__next_sigaction)(int, const struct sigaction*, struct sigaction*);
 static void do_init(void)
 {
     __next_sigaction = dlsym(RTLD_NEXT, "_sigaction");
-    if( __next_sigaction != 0 )
+    if (__next_sigaction != 0)
 	return;
     perror("dlsym");
     abort();
 }
 #define _NSIG NSIG
-#define INIT()	do { if( !init_done() ) do_init(); } while(0)
+#define INIT()	do { if (!init_done()) do_init(); } while (0)
 #endif	/* not glibc or darwin */
 
 /*
@@ -219,10 +219,10 @@ static int my_sigaction(int signum, const struct sigaction *act, struct sigactio
 
     INIT();
 
-    if( act &&
+    if (act &&
 	act->sa_handler != SIG_DFL &&
 	act->sa_handler != SIG_IGN &&
-	!(act->sa_flags & SA_ONSTACK) ) {
+	!(act->sa_flags & SA_ONSTACK)) {
 	newact = *act;
 	newact.sa_flags |= SA_ONSTACK;
 	act = &newact;
@@ -306,19 +306,19 @@ void hipe_signal_init(void)
 
     hipe_sigaltstack_init();
 
-    for(i = 1; i < _NSIG; ++i) {
-	if( sigaction(i, NULL, &sa) ) {
+    for (i = 1; i < _NSIG; ++i) {
+	if (sigaction(i, NULL, &sa)) {
 	    /* This will fail with EINVAL on Solaris if 'i' is one of the
 	       thread library's private signals. We DO catch the initial
 	       setup of these signals, so things MAY be OK anyway. */
 	    continue;
 	}
-	if( sa.sa_handler == SIG_DFL ||
+	if (sa.sa_handler == SIG_DFL ||
 	    sa.sa_handler == SIG_IGN ||
-	    (sa.sa_flags & SA_ONSTACK) )
+	    (sa.sa_flags & SA_ONSTACK))
 	    continue;
 	sa.sa_flags |= SA_ONSTACK;
-	if( sigaction(i, &sa, NULL) ) {
+	if (sigaction(i, &sa, NULL)) {
 #ifdef SIGCANCEL
 	    /* Solaris 9 x86 refuses to let us modify SIGCANCEL. */
 	    if (i == SIGCANCEL)

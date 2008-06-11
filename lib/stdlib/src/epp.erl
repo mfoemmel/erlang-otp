@@ -234,7 +234,7 @@ wait_request(St) ->
 	    epp_reply(From, dict:to_list(St#epp.macs)),
 	    wait_request(St);
 	{epp_request,From,close} ->
-	    file:close(St#epp.file),
+	    ok = file:close(St#epp.file),
 	    epp_reply(From, ok),
 	    exit(normal);
 	{'EXIT',_,R} ->
@@ -309,7 +309,7 @@ leave_file(From, St) ->
 	[] ->
 	    case St#epp.sstk of
 		[OldSt|Sts] ->
-		    file:close(St#epp.file),
+		    ok = file:close(St#epp.file),
 		    enter_file_reply(From, OldSt#epp.name, 
                                      OldSt#epp.line, OldSt#epp.line),
 		    Ms = dict:store({atom,'FILE'},
@@ -924,7 +924,8 @@ epp_request(Epp, Req) ->
     wait_epp_reply(Epp, erlang:monitor(process, Epp)).
 
 epp_reply(From, Rep) ->
-    From ! {epp_reply,self(),Rep}.
+    From ! {epp_reply,self(),Rep},
+    ok.
 
 wait_epp_reply(Epp, Mref) ->
     receive

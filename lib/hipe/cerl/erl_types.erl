@@ -2263,7 +2263,7 @@ record_fields_to_string([Field|Left1], [{FieldName, DeclaredType}|Left2],
   case PrintType of
     false -> record_fields_to_string(Left1, Left2, RecDict, Acc);
     true ->
-      String = atom_to_list(FieldName) ++ "=" ++ t_to_string(Field, RecDict),
+      String = atom_to_list(FieldName) ++ "::" ++ t_to_string(Field, RecDict),
       record_fields_to_string(Left1, Left2, RecDict, [String|Acc])
   end;
 record_fields_to_string([], [], _RecDict, Acc) ->
@@ -2309,6 +2309,13 @@ t_from_form({var, _L, Name}, _RecDict, VarDict) ->
     error -> t_var(Name);
     {ok, Val} -> Val
   end;
+t_from_form({ann_type, _L, [_Var, Type]}, RecDict, VarDict) ->
+  t_from_form(Type, RecDict, VarDict);
+t_from_form({paren_type, _L, [Type]}, RecDict, VarDict) ->
+  t_from_form(Type, RecDict, VarDict);
+t_from_form({remote_type, _L, [_Mod, _Name, _Args]}, _RecDict, _VarDict) ->
+  %% TODO: Just for now
+  t_any();
 t_from_form({atom, _L, Atom}, _RecDict, _VarDict) -> t_atom(Atom);
 t_from_form({integer, _L, Int}, _RecDict, _VarDict) -> t_integer(Int);
 t_from_form({type, _L, any, []}, _RecDict, _VarDict) -> t_any();
@@ -2397,10 +2404,7 @@ t_from_form({type, _L, Name, Args}, RecDict, VarDict) ->
 record_from_form({atom, _, Name}, ModFields, RecDict, VarDict) ->
   case lookup_record(Name, RecDict) of
     {ok, DeclFields} ->
-      ModFields1 = 
-	orddict:from_list([{FieldName, t_from_form(Form, RecDict, VarDict)}
-			   || {FieldName, Form} <- ModFields]),
-      case get_mod_record(ModFields1, DeclFields) of
+      case get_mod_record(ModFields, DeclFields, RecDict, VarDict) of
 	{error, FieldName} ->
 	  throw({error, io_lib:format("Illegal declaration of ~w#{~w}\n", 
 				      [Name, FieldName])});
@@ -2412,20 +2416,31 @@ record_from_form({atom, _, Name}, ModFields, RecDict, VarDict) ->
 	     erlang:error(io_lib:format("Unknown record #~w{}\n", [Name]))})
   end.
 
-get_mod_record([], DeclFields) ->
+get_mod_record([], DeclFields, _RecDict, _VarDict) ->
   {ok, DeclFields};
-get_mod_record(ModFields, DeclFields) ->
-  SortedDeclFields = orddict:from_list(DeclFields),
-  case get_mod_record(SortedDeclFields, ModFields, []) of
+get_mod_record(ModFields, DeclFields, RecDict, VarDict) ->
+  DeclFieldsDict = orddict:from_list(DeclFields),
+  ModFieldsDict = build_field_dict(ModFields, RecDict, VarDict),
+  case get_mod_record(DeclFieldsDict, ModFieldsDict, []) of
     {error, _FieldName} = Error -> Error;
     {ok, FinalOrdDict} ->
       {ok, [{FieldName, orddict:fetch(FieldName, FinalOrdDict)}
 	    || {FieldName, _} <- DeclFields]}
   end.
 
+build_field_dict(FieldTypes, RecDict, VarDict) ->
+  build_field_dict(FieldTypes, RecDict, VarDict, []).
+
+build_field_dict([{type, _, field_type, [{atom, _, Name}, Type]}|Left], 
+		 RecDict, VarDict, Acc) ->
+  NewAcc = [{Name, t_from_form(Type, RecDict, VarDict)}|Acc],
+  build_field_dict(Left, RecDict, VarDict, NewAcc);
+build_field_dict([], _RecDict, _VarDict, Acc) ->
+  orddict:from_list(Acc).
+
 get_mod_record([{FieldName, DeclType}|Left1], 
 	       [{FieldName, ModType}|Left2], Acc) ->
-  case t_is_subtype(ModType, DeclType) of
+  case t_is_var(ModType) orelse t_is_subtype(ModType, DeclType) of
     false -> {error, FieldName};
     true -> get_mod_record(Left1, Left2, [{FieldName, ModType}|Acc])
   end;
@@ -2434,7 +2449,7 @@ get_mod_record([{FieldName1, _DeclType} = DT|Left1],
 	       Acc) when FieldName1 < FieldName2 ->
   get_mod_record(Left1, List2, [DT|Acc]);
 get_mod_record(DeclFields, [], Acc) ->
-  {ok, Acc ++ DeclFields};
+  {ok, orddict:from_list(Acc ++ DeclFields)};
 get_mod_record(_, [{FieldName2, _ModType}|_], _Acc) ->
   {error, FieldName2}.
 
@@ -2443,6 +2458,13 @@ t_form_to_string({var, _L, Name}) -> atom_to_list(Name);
 t_form_to_string({atom, _L, Atom}) -> 
   io_lib:write_string(atom_to_list(Atom), $'); % To quote or not to quote... '
 t_form_to_string({integer, _L, Int}) -> integer_to_list(Int);
+t_form_to_string({ann_type, _L, [Var, Type]}) ->
+  t_form_to_string(Var) ++ "::" ++ t_form_to_string(Type);
+t_form_to_string({paren_type, _L, [Type]}) ->
+  io_lib:format("(~s)", [t_form_to_string(Type)]);
+t_form_to_string({remote_type, _L, [{atom, _, Mod}, {atom, _, Name}, Args]}) ->
+  ArgString = "(" ++ sequence(t_form_to_string_list(Args), ",") ++ ")",
+  io_lib:format("~w:~w", [Mod, Name]) ++ ArgString;
 t_form_to_string({type, _L, 'fun', []}) -> "fun()";
 t_form_to_string({type, _L, 'fun', [{type, _, any, []}, Range]}) -> 
   "fun(...) -> " ++ t_form_to_string(Range);

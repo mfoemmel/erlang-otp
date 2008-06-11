@@ -7,16 +7,16 @@
 %%%-------------------------------------------------------------------
 -module(hipe_rtl_binary).
 
--export([gen_rtl/6]).
+-export([gen_rtl/7]).
 
-gen_rtl(BsOP, Dst, Args, TrueLblName, FalseLblName, ConstTab) ->
+gen_rtl(BsOP, Dst, Args, TrueLblName, FalseLblName, SysLimName, ConstTab) ->
   case type_of_operation(BsOP) of
     match ->
       {hipe_rtl_binary_match:gen_rtl(
 	BsOP, Dst, Args, TrueLblName, FalseLblName),ConstTab};
     construct ->
       hipe_rtl_binary_construct:gen_rtl(
-	BsOP, Dst, Args, TrueLblName, FalseLblName, ConstTab)
+	BsOP, Dst, Args, TrueLblName, FalseLblName, SysLimName, ConstTab)
   end.
 
 type_of_operation({bs_start_match,_}) -> match;

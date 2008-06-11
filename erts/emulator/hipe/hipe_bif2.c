@@ -23,9 +23,8 @@ BIF_RETTYPE hipe_bifs_show_estack_1(BIF_ALIST_1)
 {
     Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
 				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
-    if( !rp ) {
+    if (!rp)
 	BIF_ERROR(BIF_P, BADARG);
-    }
     hipe_print_estack(rp);
     erts_smp_proc_unlock(rp, ERTS_PROC_LOCKS_ALL);
     BIF_RET(am_true);
@@ -35,9 +34,8 @@ BIF_RETTYPE hipe_bifs_show_heap_1(BIF_ALIST_1)
 {
     Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
 				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
-    if( !rp ) {
+    if (!rp)
 	BIF_ERROR(BIF_P, BADARG);
-    }
     hipe_print_heap(rp);
     erts_smp_proc_unlock(rp, ERTS_PROC_LOCKS_ALL);
     BIF_RET(am_true);
@@ -47,9 +45,8 @@ BIF_RETTYPE hipe_bifs_show_nstack_1(BIF_ALIST_1)
 {
     Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
 				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
-    if( !rp ) {
+    if (!rp)
 	BIF_ERROR(BIF_P, BADARG);
-    }
     hipe_print_nstack(rp);
     erts_smp_proc_unlock(rp, ERTS_PROC_LOCKS_ALL);
     BIF_RET(am_true);
@@ -64,9 +61,8 @@ BIF_RETTYPE hipe_bifs_show_pcb_1(BIF_ALIST_1)
 {
     Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
 				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
-    if( !rp ) {
+    if (!rp)
 	BIF_ERROR(BIF_P, BADARG);
-    }
     hipe_print_pcb(rp);
     erts_smp_proc_unlock(rp, ERTS_PROC_LOCKS_ALL);
     BIF_RET(am_true);
@@ -81,17 +77,17 @@ BIF_RETTYPE hipe_bifs_show_term_1(BIF_ALIST_1)
 	Eterm *objp;
 	int i, ary;
 
-	if( is_list(obj) ) {
+	if (is_list(obj)) {
 	    objp = list_val(obj);
 	    ary = 2;
-	} else if( is_boxed(obj) ) {
+	} else if (is_boxed(obj)) {
 	    Eterm header;
 
 	    objp = boxed_val(obj);
 	    header = objp[0];
-	    if( is_thing(header) )
+	    if (is_thing(header))
 		ary = thing_arityval(header);
-	    else if( is_arity_value(header) )
+	    else if (is_arity_value(header))
 		ary = arityval(header);
 	    else {
 		printf("bad header %#lx\r\n", header);
@@ -100,11 +96,11 @@ BIF_RETTYPE hipe_bifs_show_term_1(BIF_ALIST_1)
 	    ary += 1;
 	} else
 	    break;
-	for(i = 0; i < ary; ++i)
+	for (i = 0; i < ary; ++i)
 	    printf("0x%0*lx: 0x%0*lx\r\n",
 		   2*(int)sizeof(long), (unsigned long)&objp[i],
 		   2*(int)sizeof(long), objp[i]);
-    } while( 0 );
+    } while (0);
     erts_printf("%T", obj);
     printf("\r\n");
     BIF_RET(am_true);
@@ -115,7 +111,7 @@ BIF_RETTYPE hipe_bifs_show_literals_0(BIF_ALIST_0)
     Eterm *p;
 
     p = hipe_constants_start;
-    for(; p < hipe_constants_next; ++p)
+    for (; p < hipe_constants_next; ++p)
 	printf("0x%0*lx: 0x%0*lx\r\n",
 	       2*(int)sizeof(long), (unsigned long)p,
 	       2*(int)sizeof(long), *p);

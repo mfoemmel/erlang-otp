@@ -600,7 +600,7 @@ gen_check_sof(Name,SOF,Type) ->
     InnerType = get_inner(Type#type.def),
     case type(InnerType) of
 	{primitive,bif} ->
-	    gen_prim_check_call(InnerType,"DV","V",Type),
+	    gen_prim_check_call(get_inner(InnerType),"DV","V",Type),
 	    emit({",",nl});
 	{constructed,bif} ->
 	    emit([{asis,ensure_atom(list2name([SOF,Name]))},"(DV, V),",nl]);
@@ -1588,18 +1588,13 @@ lookahead_innertype(Name,'SET OF',SeqOf) ->
 lookahead_innertype(_Name,#'Externaltypereference'{module=M,type=T},_) ->
     Typedef = asn1_db:dbget(M,T),
     RefType = Typedef#typedef.typespec,
+    insert_once(check_functions,{list2name([T,check]),RefType}),
     InType = asn1ct_gen:get_inner(RefType#type.def),
     case type(InType) of
 	{constructed,bif} ->
 	    lookahead_innertype([T],InType,RefType);
-	#'Externaltypereference'{} ->
-	    NewName = list2name([T,check]),
-	    case insert_once(check_functions,{NewName,RefType}) of
-		true ->
-		    lookahead_innertype([T],InType,RefType);
-		_ ->
-		    ok
-	    end;
+	Ref = #'Externaltypereference'{} ->
+	    lookahead_reference(Ref);
 	_ ->
 	    ok
     end;
@@ -1620,15 +1615,15 @@ lookahead_components(Name,[C|Cs]) ->
 		    ok
 	    end;
 	#'Externaltypereference'{module=RefMod,type=RefName} ->
-	    Typedef = asn1_db:dbget(RefMod,RefName),
-	    RefType = Typedef#typedef.typespec,
-	    case insert_once(check_functions,{list2name([RefName,check]),
-					      RefType}) of
-		true ->
-		    lookahead_innertype([RefName],InType,RefType);
-		_ ->
-		    ok
-	    end;
+  	    Typedef = asn1_db:dbget(RefMod,RefName),
+  	    RefType = Typedef#typedef.typespec,
+  	    case insert_once(check_functions,{list2name([RefName,check]),
+  					      RefType}) of
+  		true ->
+  		    lookahead_innertype([RefName],InType,RefType);
+  		_ ->
+  		    ok
+  	    end;
 	_ ->
 	    ok
     end,
@@ -1648,21 +1643,23 @@ lookahead_sof(Name,SOF,SOFType) ->
 	    insert_once(check_functions,
 			{list2name(NameList ++ [check]),Type}),
 	    lookahead_innertype(NameList,InnerType,Type);
-	#'Externaltypereference'{module=M,type=T} ->
-	    Typedef = asn1_db:dbget(M,T),
-	    RefType = Typedef#typedef.typespec,
-	    InType = get_inner(RefType#type.def),
-	    case insert_once(check_functions,
-			     {list2name([T,check]),RefType}) of
-		true ->
-		    lookahead_innertype([T],InType,RefType);
-		_ ->
-		    ok
-	    end;
+	Ref = #'Externaltypereference'{} ->
+	    lookahead_reference(Ref);
 	_ ->
 	    ok
     end.
 
+lookahead_reference(#'Externaltypereference'{module=M,type=T}) ->
+    Typedef = asn1_db:dbget(M,T),
+    RefType = Typedef#typedef.typespec,
+    InType = get_inner(RefType#type.def),
+    case insert_once(check_functions,
+		     {list2name([T,check]),RefType}) of
+	true ->
+	    lookahead_innertype([T],InType,RefType);
+	_ ->
+	    ok
+    end.
 
 insert_once(Table,Object) ->
     case ets:lookup(Table,element(1,Object)) of

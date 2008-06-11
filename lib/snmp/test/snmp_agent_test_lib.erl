@@ -797,10 +797,16 @@ do_expect(inform, ExpVBs) ->
     do_expect({inform, true}, ExpVBs);
 
 do_expect({inform, false}, ExpVBs) ->
+    io:format("~w:do_expect(inform, false) -> entry with"
+	      "~n   ExpVBs: ~p"
+	      "~n", [?MODULE, ExpVBs]),
     Check = fun(_, R) -> R end,
     do_expect2(Check, 'inform-request', noError, 0, ExpVBs, get_timeout());
 
 do_expect({inform, true}, ExpVBs) ->
+    io:format("~w:do_expect(inform, true) -> entry with"
+	      "~n   ExpVBs: ~p"
+	      "~n", [?MODULE, ExpVBs]),
     Check = 
 	fun(PDU, ok) ->
 		RespPDU = PDU#pdu{type         = 'get-response',
@@ -848,7 +854,9 @@ do_expect(trap, Enterp, Generic, Specific, ExpVBs, To) ->
 	      "~n   Specific: ~w"
 	      "~n   ExpVBs:   ~w"
 	      "~n   To:       ~w"
-	      "~n", [?MODULE, Enterp, Generic, Specific, ExpVBs, To]),
+	      "~nwhen"
+	      "~n   Time:   ~w"
+	      "~n", [?MODULE, Enterp, Generic, Specific, ExpVBs, To, t()]),
     PureE = purify_oid(Enterp),
     case receive_trap(To) of
 	#trappdu{enterprise    = PureE, 
@@ -884,7 +892,9 @@ do_expect2(Check, Type, Err, Idx, ExpVBs, To)
 	      "~n   Idx:    ~w"
 	      "~n   ExpVBs: ~w"
 	      "~n   To:     ~w"
-	      "~n", [?MODULE, Type, Err, Idx, ExpVBs, To]),
+	      "~nwhen"
+	      "~n   Time:   ~w"
+	      "~n", [?MODULE, Type, Err, Idx, ExpVBs, To, t()]),
 
     case receive_pdu(To) of
 
@@ -991,51 +1001,20 @@ do_expect2(Check, Type, Err, Idx, ExpVBs, To)
 
 
 check_vbs([], []) ->		
-%%     io:format("~w:check_vbs -> entry when done"
-%% 	      "~n   OK"
-%% 	      "~n", [?MODULE]),
     ok;
 check_vbs(Exp, []) ->
-%%     io:format("~w:check_vbs -> entry when done with error: "
-%% 	      "~n   TO FEW VBS: ~p"
-%% 	      "~n", [?MODULE, Exp]),
     {error, {to_few_vbs, Exp}};
 check_vbs([], VBs) ->
-%%     io:format("~w:check_vbs -> entry when done"
-%% 	      "~n   TO MANY VBS: ~p"
-%% 	      "~n", [?MODULE, VBs]),
     {error, {to_many_vbs, VBs}};
 check_vbs([any|Exp], [_|VBs]) ->
-%%     io:format("~w:check_vbs -> entry with"
-%% 	      "~n   accept any varbind"
-%% 	      "~n", [?MODULE]),
     check_vbs(Exp, VBs);
 check_vbs([{Oid, any}|Exp], [#varbind{oid = Oid}|VBs]) ->
-%%     io:format("~w:check_vbs -> entry with"
-%% 	      "~n   Oid: ~p"
-%% 	      "~n   accept any value"
-%% 	      "~n", [?MODULE, Oid]),
     check_vbs(Exp, VBs);
 check_vbs([{Oid, Val}|Exp], [#varbind{oid = Oid, value = Val}|VBs]) ->
-%%     io:format("~w:check_vbs -> entry with"
-%% 	      "~n   Oid: ~p"
-%% 	      "~n   Val: ~p"
-%% 	      "~n", [?MODULE, Oid, Val]),
     check_vbs(Exp, VBs);
 check_vbs([{Oid, Val1}|_], [#varbind{oid = Oid, value = Val2}|_]) ->
-%%     io:format("~w:check_vbs -> entry when done"
-%% 	      "~n   UNEXPECTED VARBIND VALUE"
-%% 	      "~n   Oid:  ~p"
-%% 	      "~n   Val1: ~p"
-%% 	      "~n   Val2: ~p"
-%% 	      "~n", [?MODULE, Oid, Val1, Val2]),
     {error, {unexpected_vb_value, Oid, Val1, Val2}};
 check_vbs([{Oid1, _}|_], [#varbind{oid = Oid2}|_]) ->
-%%     io:format("~w:check_vbs -> entry when done"
-%% 	      "~n   UNEXPECTED VARBIND"
-%% 	      "~n   Oid1:  ~p"
-%% 	      "~n   Oid2:  ~p"
-%% 	      "~n", [?MODULE, Oid1, Oid2]),
     {error, {unexpected_vb_oid, Oid1, Oid2}}.
 
 
@@ -1044,31 +1023,19 @@ purify_oids({VbsCondition, VBs})
        is_list(VBs) ->
     {VbsCondition, do_purify_oids(VBs)};
 purify_oids(VBs) when is_list(VBs) ->
-%%     io:format("~w:purify_oids -> entry with"
-%% 	      "~n   VBs: ~p"
-%% 	      "~n", 
-%% 	      [?MODULE, VBs]),    
     do_purify_oids(VBs).
 
 do_purify_oids([]) -> 
-%%     io:format("~w:do_purify_oids -> entry when done", [?MODULE]),        
     [];
 do_purify_oids([{XOid, Q}|T]) ->
-%%     io:format("~w:do_purify_oids -> entry with"
-%% 	      "~n   XOid: ~p"
-%% 	      "~n   Q:    ~p", [?MODULE, XOid, Q]),        
     [{purify_oid(XOid), Q} | do_purify_oids(T)].
 
 
 purify_oid(Oid) ->
     io:format("~w:purify_oid -> entry with"
 	      "~n   Oid:      ~w"
-%% 	      "~n   Mgr:      ~w"
-%% 	      "~n   Mgr info: ~p"
 	      "~n", 
 	      [?MODULE, Oid]), 
-%% 	       whereis(snmp_test_mgr), 
-%% 	       (catch erlang:process_info(whereis(snmp_test_mgr)))]),
     case (catch snmp_test_mgr:purify_oid(Oid)) of
 	{error, Reason} ->
 	    io:format("~w:purify_oid -> error: "
@@ -1474,3 +1441,8 @@ rpc(Node, F, A) ->
 %% timeout(vxworks) -> 7000;
 %% timeout(_)       -> 3500.
     
+
+%% Time in milli seconds
+t() ->
+    {A,B,C} = erlang:now(),
+    A*1000000000+B*1000+(C div 1000).

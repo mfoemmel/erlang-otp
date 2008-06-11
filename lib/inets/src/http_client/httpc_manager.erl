@@ -255,8 +255,9 @@ handle_call({cookies, Url}, _, State) ->
     end;
 
 handle_call(Msg, From, State) ->
-    error_logger:error_report("HTTPC_MANAGER recived unkown call: ~p"
-			      "from: ~p~n", [Msg, From]),
+    Report = io_lib:format("HTTPC_MANAGER recived unkown call: ~p"
+			   "from: ~p~n", [Msg, From]),
+    error_logger:error_report(Report),
     {reply, {error, 'API_violation'}, State}.
 
 %%--------------------------------------------------------------------
@@ -335,8 +336,9 @@ handle_cast({store_cookies, {Cookies, _}}, State) ->
     {noreply, State};
 
 handle_cast(Msg, State) ->
-    error_logger:error_report("HTTPC_MANAGER recived unkown cast: ~p", 
-			      [Msg]),
+    Report = io_lib:format("HTTPC_MANAGER recived unkown cast: ~p", 
+			   [Msg]),
+    error_logger:error_report(Report),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -366,8 +368,9 @@ handle_info({'DOWN', _, _, Pid, _}, State) ->
 		    end, State#state.cancel, State#state.cancel),
     {noreply, State#state{cancel = NewCanceldList}};    
 handle_info(Info, State) ->
-    error_logger:error_report("Unknown message in "
-			      "httpc_manager:handle_info ~p~n", [Info]),
+    Report = io_lib:format("Unknown message in "
+			   "httpc_manager:handle_info ~p~n", [Info]),
+    error_logger:error_report(Report),
     {noreply, State}. 
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> _  (ignored by gen_server)

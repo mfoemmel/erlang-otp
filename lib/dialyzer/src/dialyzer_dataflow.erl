@@ -2056,12 +2056,6 @@ lookup(Key, Map, Subst, AnyNone) ->
       end
   end.
 
-lookup_fun_contract(Fun, Callgraph, Plt) ->
-  case dialyzer_callgraph:lookup_name(Fun, Callgraph) of
-    error -> none;
-    {ok, MFA} -> dialyzer_plt:lookup_contract(Plt, MFA)
-  end.
-
 lookup_fun_sig(Fun, Callgraph, Plt) ->
   MFAorLabel =
     case dialyzer_callgraph:lookup_name(Fun, Callgraph) of
@@ -2352,17 +2346,13 @@ init_fun_tab([Fun|Left], Dict, TreeMap, Callgraph, Plt) ->
   FunEntry =
     case dialyzer_callgraph:is_escaping(Fun, Callgraph) of
       true ->
-	ContractArgs =
-	  case lookup_fun_contract(Fun, Callgraph, Plt) of
-	    none -> lists:duplicate(Arity, t_any());
-	    {value, C} -> dialyzer_contracts:get_contract_args(C)
-	  end,
+	Args = lists:duplicate(Arity, t_any()),
 	case lookup_fun_sig(Fun, Callgraph, Plt) of
-	  none -> {ContractArgs, t_unit()};
+	  none -> {Args, t_unit()};
 	  {value, {RetType, _}} ->
 	    case t_is_none(RetType) of
-	      true -> {ContractArgs, t_none()};
-	      false -> {ContractArgs, t_unit()}
+	      true -> {Args, t_none()};
+	      false -> {Args, t_unit()}
 	    end
 	end;
       false -> {lists:duplicate(Arity, t_none()), t_unit()}

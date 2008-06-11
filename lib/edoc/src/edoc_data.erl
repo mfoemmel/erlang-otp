@@ -18,7 +18,7 @@
 %%
 %% @private
 %% @copyright 2003 Richard Carlsson
-%% @author Richard Carlsson <richardc@csd.uu.se>
+%% @author Richard Carlsson <richardc@it.uu.se>
 %% @see edoc
 %% @end 
 %% =====================================================================
@@ -403,7 +403,7 @@ signature(Ts, As, Env) ->
 	    {As1, R, [edoc_types:to_xml(Spec1, Env)]};
 	[] ->
 	    S = sets:new(),
-	    {fix_argnames(As, S, 1), [], []}
+	    {[{A, ""} || A <- fix_argnames(As, S, 1)], [], []}
     end.
 
 params(Ts) ->

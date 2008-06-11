@@ -44,7 +44,7 @@ struct erl_bits_state {
      * Offset in bits into the current binary (new instruction set) or
      * buffer (old instruction set).
      */
-    unsigned erts_bin_offset_;
+    Uint erts_bin_offset_;
     /*
      * Whether the current binary is writable.
      */
@@ -150,7 +150,7 @@ void erts_bits_destroy_state(ERL_BITS_PROTO_0);
  */
 
 #define NBYTES(x)  (((x) + 7) >> 3) 
-#define BYTE_OFFSET(ofs) ((unsigned) (ofs) >> 3)
+#define BYTE_OFFSET(ofs) ((Uint) (ofs) >> 3)
 #define BIT_OFFSET(ofs) ((ofs) & 7)
 
 /*

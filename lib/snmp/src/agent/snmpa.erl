@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2004-2007</year>
+%% <year>2004-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -59,7 +59,10 @@
 
 	 backup/1, backup/2, 
 
-	 convert_config/1]).
+	 convert_config/1,
+
+	 restart_worker/0,     restart_worker/1, 
+	 restart_set_worker/0, restart_set_worker/1]).
 
 %% USM functions:
 -export([passwd2localized_key/3, localize_key/3]).
@@ -217,7 +220,7 @@ get_next(Agent, Vars, Context) -> snmpa_agent:get_next(Agent, Vars, Context).
 info()      -> info(snmp_master_agent).
 info(Agent) -> snmpa_agent:info(Agent).
 
-old_info_format(Info) when list(Info) ->
+old_info_format(Info) when is_list(Info) ->
     {value, Vsns}         = lists:keysearch(vsns,            1, Info),
     {value, {_, MibInfo}} = lists:keysearch(mib_server,      1, Info),
     {value, SAa}          = lists:keysearch(subagents,       1, MibInfo),
@@ -244,12 +247,12 @@ dump_mibs(File) -> snmpa_agent:dump_mibs(snmp_master_agent, File).
 
 load_mibs(Mibs) ->
     load_mibs(snmp_master_agent, Mibs).
-load_mibs(Agent, Mibs) when list(Mibs) -> 
+load_mibs(Agent, Mibs) when is_list(Mibs) -> 
     snmpa_agent:load_mibs(Agent, Mibs).
 
 unload_mibs(Mibs) ->
     unload_mibs(snmp_master_agent, Mibs).
-unload_mibs(Agent, Mibs) when list(Mibs) -> 
+unload_mibs(Agent, Mibs) when is_list(Mibs) -> 
     snmpa_agent:unload_mibs(Agent, Mibs).
 
 which_mibs()      -> which_mibs(snmp_master_agent).
@@ -257,7 +260,7 @@ which_mibs(Agent) -> snmpa_agent:which_mibs(Agent).
 
 whereis_mib(Mib) ->
     whereis_mib(snmp_master_agent, Mib).
-whereis_mib(Agent, Mib) when atom(Mib) ->
+whereis_mib(Agent, Mib) when is_atom(Mib) ->
     snmpa_agent:whereis_mib(Agent, Mib).
 
 
@@ -278,16 +281,16 @@ me_of(Agent, Oid) ->
 
 %% - message filter / load regulation
 
-register_notification_filter(Id, Mod, Data) when atom(Mod) ->
+register_notification_filter(Id, Mod, Data) when is_atom(Mod) ->
     register_notification_filter(snmp_master_agent, Id, Mod, Data, last).
  
 register_notification_filter(Agent, Id, Mod, Data)
-  when atom(Agent), atom(Mod) ->
+  when is_atom(Agent) andalso is_atom(Mod) ->
     register_notification_filter(Agent, Id, Mod, Data, last);
 register_notification_filter(Agent, Id, Mod, Data)
-  when pid(Agent), atom(Mod) ->
+  when is_pid(Agent) andalso is_atom(Mod) ->
     register_notification_filter(Agent, Id, Mod, Data, last);
-register_notification_filter(Id, Mod, Data, Where) when atom(Mod) ->
+register_notification_filter(Id, Mod, Data, Where) when is_atom(Mod) ->
     register_notification_filter(snmp_master_agent, Id, Mod, Data, Where).
  
 register_notification_filter(Agent, Id, Mod, Data, Where) ->
@@ -328,8 +331,11 @@ send_notification(Agent, Notification, Recv, Varbinds) ->
 send_notification(Agent, Notification, Recv, NotifyName, Varbinds) ->
     send_notification(Agent, Notification, Recv, NotifyName, "", Varbinds).
 
-send_notification(Agent, Notification, Recv,NotifyName,ContextName,Varbinds) 
-  when list(NotifyName), list(ContextName), list(Varbinds) ->
+send_notification(Agent, Notification, Recv, 
+		  NotifyName, ContextName, Varbinds) 
+  when (is_list(NotifyName)  andalso 
+	is_list(ContextName) andalso 
+	is_list(Varbinds)) ->
     snmpa_agent:send_trap(Agent, Notification, NotifyName, 
 			  ContextName, Recv, Varbinds).
 
@@ -354,6 +360,22 @@ sys_up_time() ->
     % time in 0.01 seconds.
     StartTime = system_start_time(),
     (snmp_misc:now(cs) - StartTime) rem (2 bsl 31).
+
+
+%%%-----------------------------------------------------------------
+
+restart_worker() ->
+    restart_worker(snmp_master_agent).
+
+restart_worker(Agent) ->
+    snmpa_agent:restart_worker(Agent).
+
+
+restart_set_worker() ->
+    restart_set_worker(snmp_master_agent).
+
+restart_set_worker(Agent) ->
+    snmpa_agent:restart_set_worker(Agent).
 
 
 %%%-----------------------------------------------------------------

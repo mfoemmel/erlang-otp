@@ -5,7 +5,7 @@
 %%  Filename : 	hipe_rtl_primops.erl
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2001-03-15 Erik Johansson (happi@csd.uu.se): 
+%%  History  :	* 2001-03-15 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%
 %% $Id$
@@ -123,10 +123,12 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab) ->
     %% Binary Syntax
     %%
     {hipe_bs_primop, BsOP} ->
-      {FailLabelName, FailCode} = gen_fail_code(Fail, badarg, IsGuard),
+      {FailLabelName, FailCode1} = gen_fail_code(Fail, badarg, IsGuard),
+      {SysLimLblName, FailCode2} = gen_fail_code(Fail, system_limit, IsGuard),
       {Code1,NewConstTab} = 
-	hipe_rtl_binary:gen_rtl(BsOP, Dst, Args, Cont, FailLabelName, ConstTab),
-      {[Code1,FailCode], NewConstTab};
+	hipe_rtl_binary:gen_rtl(BsOP, Dst, Args, Cont, FailLabelName, 
+				SysLimLblName, ConstTab),
+      {[Code1,FailCode1,FailCode2], NewConstTab};
     %%
     %% Other primops
     %%

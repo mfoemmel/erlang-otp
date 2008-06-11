@@ -96,43 +96,53 @@ gen_rtl({bs_get_integer,0,_Flags}, [Dst,NewMs], [Ms],
      hipe_rtl:mk_goto(TrueLblName)];
 gen_rtl({bs_get_integer,Size,Flags}, [Dst,NewMs], Args,  
 	TrueLblName, FalseLblName) ->
-  Signed = signed(Flags),
-  LittleEndian = littleendian(Flags),
-  Aligned = aligned(Flags),
-  UnSafe = unsafe(Flags),
-  case Args of
-    [Ms] ->
-      CCode= int_get_c_code(Dst, Ms, hipe_rtl:mk_imm(Size), 
-			    Flags, TrueLblName, FalseLblName),
-      update_ms(NewMs, Ms) ++
+  case is_illegal_const(Size) of
+    true ->
+      [hipe_rtl:mk_goto(FalseLblName)];
+    false -> 
+      Signed = signed(Flags),
+      LittleEndian = littleendian(Flags),
+      Aligned = aligned(Flags),
+      UnSafe = unsafe(Flags),
+      case Args of
+	[Ms] ->
+	  CCode= int_get_c_code(Dst, Ms, hipe_rtl:mk_imm(Size), 
+				Flags, TrueLblName, FalseLblName),
+	  update_ms(NewMs, Ms) ++
 	get_static_int(Dst, Ms, Size, CCode,
 		       Signed, LittleEndian, Aligned, UnSafe,
 		       TrueLblName, FalseLblName);
-    [Ms,Arg] ->
-      {SizeCode1, SizeReg1} = 
-	make_size(Size, Arg, FalseLblName),
-      CCode = int_get_c_code(Dst, Ms, SizeReg1, Flags, 
-			     TrueLblName, FalseLblName),
-      InCode=get_dynamic_int(Dst, Ms, SizeReg1, CCode, 
-			     Signed, LittleEndian, Aligned, 
-			     TrueLblName, FalseLblName),
-      update_ms(NewMs, Ms) ++ SizeCode1 ++ InCode
+	[Ms,Arg] ->
+	  {SizeCode1, SizeReg1} = 
+	    make_size(Size, Arg, FalseLblName),
+	  CCode = int_get_c_code(Dst, Ms, SizeReg1, Flags, 
+				 TrueLblName, FalseLblName),
+	  InCode=get_dynamic_int(Dst, Ms, SizeReg1, CCode, 
+				 Signed, LittleEndian, Aligned, 
+				 TrueLblName, FalseLblName),
+	  update_ms(NewMs, Ms) ++ SizeCode1 ++ InCode
+      end
   end;
 gen_rtl({bs_get_float,Size,Flags}, [Dst1,NewMs], Args, 
 	TrueLblName, FalseLblName) ->
-  [hipe_rtl:mk_gctest(3)] ++
-    case Args of
-      [Ms] ->
-	CCode = float_get_c_code(Dst1, Ms, hipe_rtl:mk_imm(Size), Flags, 
-				 TrueLblName, FalseLblName),
-	update_ms(NewMs, Ms) ++ CCode;
-      [Ms,Arg]  ->
-	{SizeCode, SizeReg} = make_size(Size, Arg, 
-					FalseLblName),
-	CCode = float_get_c_code(Dst1, Ms, SizeReg, Flags, 
-				 TrueLblName, FalseLblName),
-	update_ms(NewMs, Ms) ++ SizeCode ++ CCode
-    end;
+  case is_illegal_const(Size) of
+    true ->
+      [hipe_rtl:mk_goto(FalseLblName)];
+    false -> 
+      [hipe_rtl:mk_gctest(3)] ++
+	case Args of
+	  [Ms] ->
+	    CCode = float_get_c_code(Dst1, Ms, hipe_rtl:mk_imm(Size), Flags, 
+				     TrueLblName, FalseLblName),
+	    update_ms(NewMs, Ms) ++ CCode;
+	  [Ms,Arg]  ->
+	    {SizeCode, SizeReg} = make_size(Size, Arg, 
+					    FalseLblName),
+	    CCode = float_get_c_code(Dst1, Ms, SizeReg, Flags, 
+				     TrueLblName, FalseLblName),
+	    update_ms(NewMs, Ms) ++ SizeCode ++ CCode
+	end
+  end;
 gen_rtl({bs_get_binary_all, Unit, _Flags}, [Dst], [Ms], 
 	TrueLblName, FalseLblName) ->
   [hipe_rtl:mk_gctest(?SUB_BIN_WORDSIZE)] ++
@@ -144,19 +154,24 @@ gen_rtl({bs_get_binary_all_2, Unit, _Flags}, [Dst,NewMs], [Ms],
     get_binary_all(Dst, Unit, Ms, TrueLblName, FalseLblName);
 gen_rtl({bs_get_binary,Size,Flags}, [Dst,NewMs], Args, 
 	TrueLblName, FalseLblName) ->
-  Unsafe = unsafe(Flags),
-  case Args of
-    [Ms] ->
-      SizeReg = hipe_rtl:mk_new_reg(),
-      SizeCode = [hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size))];
-    [Ms, BitsVar]  ->
-      {SizeCode, SizeReg} = 
-	make_size(Size, BitsVar, FalseLblName)
-  end,
-  InCode = get_binary(Dst, Ms, SizeReg, Unsafe,
-		      TrueLblName, FalseLblName),
-  [hipe_rtl:mk_gctest(?SUB_BIN_WORDSIZE)] ++ 
-    update_ms(NewMs, Ms) ++ SizeCode ++ InCode;
+  case is_illegal_const(Size) of
+    true ->
+      [hipe_rtl:mk_goto(FalseLblName)];
+    false ->
+      Unsafe = unsafe(Flags),
+      case Args of
+	[Ms] ->
+	  SizeReg = hipe_rtl:mk_new_reg(),
+	  SizeCode = [hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size))];
+	[Ms, BitsVar]  ->
+	  {SizeCode, SizeReg} = 
+	    make_size(Size, BitsVar, FalseLblName)
+      end,
+      InCode = get_binary(Dst, Ms, SizeReg, Unsafe,
+			  TrueLblName, FalseLblName),
+      [hipe_rtl:mk_gctest(?SUB_BIN_WORDSIZE)] ++ 
+	update_ms(NewMs, Ms) ++ SizeCode ++ InCode
+  end;
 gen_rtl({bs_test_tail, NumBits}, [NewMs], [Ms], TrueLblName, FalseLblName) ->
   {[Offset,BinSize], ExCode} = extract_matchstate_vars([offset,binsize], Ms),
     update_ms(NewMs, Ms) ++ ExCode ++
@@ -1065,3 +1080,7 @@ set_high(0, Y) ->
   Y;
 set_high(X, Y) ->
   set_high(X-1, Y+(1 bsl (27-X))).
+
+is_illegal_const(Const) ->
+  Const >=  1 bsl (hipe_rtl_arch:word_size() * ?BYTE_SIZE) orelse
+    Const < 0.

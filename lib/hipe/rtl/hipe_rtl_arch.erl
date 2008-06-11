@@ -3,11 +3,11 @@
 %% Copyright (c) 2001 by Erik Johansson.
 %%=====================================================================
 %%  Filename : 	hipe_rtl_arch.erl
-%%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): Created.
+%%  History  :	* 2001-04-10 Erik Johansson (happi@it.uu.se): Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/03/31 20:46:29 $
-%%              $Revision: 1.66 $
+%%              $Author: richardc $
+%%              $Date: 2008/04/20 13:01:13 $
+%%              $Revision: 1.67 $
 %%=====================================================================
 %% @doc
 %%

@@ -51,7 +51,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += -I$(DIALYZER_DIR)/src +warn_obsolete_guard +warn_untyped_record +warn_missing_spec_exported
+ERL_COMPILE_FLAGS += -I$(DIALYZER_DIR)/src +warn_obsolete_guard +warn_untyped_record +warn_missing_spec
 
 # ----------------------------------------------------
 # Targets

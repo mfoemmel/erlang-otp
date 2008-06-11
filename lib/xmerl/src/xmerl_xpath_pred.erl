@@ -309,9 +309,10 @@ id(C, [Arg]) ->
 	      end, [], IdTokens)
     end.
 
-id_tokens(Str) ->
-    string:tokens(Str, " \t\n\r").
-			  
+id_tokens(Str=#xmlObj{type=string}) ->
+    string:tokens(Str#xmlObj.value, " \t\n\r").
+%%id_tokens(Str) when list(Str) ->
+%%    string:tokens(Str, " \t\n\r").			  
 
 attribute_test(#xmlNode{node = #xmlElement{attributes = Attrs}}, 
 	       Key, Vals) ->

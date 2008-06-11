@@ -13,12 +13,12 @@
 %%                   Look here for strange bugs appearing when
 %%                   turning on rtl_prop.
 %%
-%%  History  :	* 2002-10-23 Erik Stenman (happi@csd.uu.se): 
+%%  History  :	* 2002-10-23 Erik Stenman (happi@it.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2004/04/30 06:58:44 $
-%%              $Revision: 1.6 $
+%%              $Author: richardc $
+%%              $Date: 2008/04/20 13:01:13 $
+%%              $Revision: 1.7 $
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_rtl_arith_32).

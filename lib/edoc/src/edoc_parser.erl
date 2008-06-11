@@ -1,6 +1,6 @@
 -module(edoc_parser).
 -export([parse/1, parse_and_scan/1, format_error/1]).
--file("edoc_parser.yrl", 200).
+-file("edoc_parser.yrl", 228).
 
 %% ========================== -*-Erlang-*- =============================
 %% EDoc function specification parser, generated from the file
@@ -197,7 +197,7 @@ throw_error(E, L) ->
     %% Just in case.
     throw({error,L,{"unknown parse error: ~P.",[E,15]}}).
 
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-04-07_20/otp_src_R12B-1/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/ldisk/daily_build/otp_prebuild_r12b.2008-06-10_20/otp_src_R12B-3/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -332,15 +332,15 @@ yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
 yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
-yecctoken2string({var,_,V}) -> io_lib:format('~s', [V]);
+yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
 yecctoken2string({string,_,S}) -> io_lib:write_string(S);
-yecctoken2string({reserved_symbol, _, A}) -> io_lib:format('~w', [A]);
-yecctoken2string({_Cat, _, Val}) -> io_lib:format('~w', [Val]);
-yecctoken2string({'dot', _}) -> io_lib:format('~w', ['.']);
+yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
+yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
+yecctoken2string({dot, _}) -> "'.'";
 yecctoken2string({'$end', _}) ->
     [];
 yecctoken2string({Other, _}) when is_atom(Other) ->
-    io_lib:format('~w', [Other]);
+    io_lib:format("~w", [Other]);
 yecctoken2string(Other) ->
     io_lib:write(Other).
 
@@ -1145,7 +1145,7 @@ yeccpars2_102(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccpars2_103(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_|Nss] = Ss,
  NewStack = yeccpars2_103_(Stack),
- yeccgoto_spec(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ 'yeccgoto_\'spec\''(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_104(S, where, Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
@@ -1156,7 +1156,7 @@ yeccpars2_104(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccpars2_105(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
  NewStack = yeccpars2_105_(Stack),
- yeccgoto_spec(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ 'yeccgoto_\'spec\''(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 %% yeccpars2_106: see yeccpars2_4
 
@@ -1436,7 +1436,7 @@ yeccgoto_qname(121, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccgoto_ref(2=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_108(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_spec(3=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+'yeccgoto_\'spec\''(3=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_99(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccgoto_start(0, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -2211,4 +2211,4 @@ yeccpars2_131_(__Stack0) ->
   end | __Stack].
 
 
--file("edoc_parser.yrl", 396).
+-file("edoc_parser.yrl", 424).

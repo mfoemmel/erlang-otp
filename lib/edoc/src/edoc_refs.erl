@@ -14,11 +14,11 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_refs.erl,v 1.11 2004/08/25 00:06:35 richardc Exp $
+%% $Id$
 %%
 %% @private
 %% @copyright 2003 Richard Carlsson
-%% @author Richard Carlsson <richardc@csd.uu.se>
+%% @author Richard Carlsson <richardc@it.uu.se>
 %% @see edoc
 %% @see edoc_parse_ref
 %% @end 

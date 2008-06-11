@@ -85,7 +85,6 @@ typedef struct dist_entry_ {
 				   atom cache etc. */
     struct cache* cache;	/* The atom cache */
     unsigned long version;	/* Protocol version */
-    struct port *port;
 #ifdef ERTS_SMP
     erts_smp_mtx_t *mtxp;
 #endif

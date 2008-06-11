@@ -731,7 +731,7 @@ ERTS_INLINE need_byte_buf(ERL_BITS_PROTO_1(int need))
 int
 erts_new_bs_put_integer(ERL_BITS_PROTO_3(Eterm arg, Uint num_bits, unsigned flags))
 {
-    unsigned bin_offset = erts_bin_offset;
+    Uint bin_offset = erts_bin_offset;
     Uint bit_offset;
     Uint b;
     byte *iptr;

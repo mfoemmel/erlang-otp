@@ -44,7 +44,7 @@
 %% 
 
 -module(init).
--export([restart/0,reboot/0,stop/0,
+-export([restart/0,reboot/0,stop/0,stop/1,
 	 get_status/0,boot/1,get_arguments/0,get_plain_arguments/0,
 	 get_argument/1,script_id/0]).
 
@@ -113,9 +113,10 @@ request(Req) ->
 	    Rep
     end.
 
-restart() -> init ! {stop,restart},ok.
-reboot()  -> init ! {stop,reboot},ok.
-stop()    -> init ! {stop,stop},ok.
+restart()    -> init ! {stop,restart},ok.
+reboot()     -> init ! {stop,reboot},ok.
+stop()       -> init ! {stop,stop},ok.
+stop(Status) -> init ! {stop,{stop,Status}},ok.
 
 boot(BootArgs) ->
     register(init, self()),
@@ -431,7 +432,10 @@ do_stop(reboot,_) ->
     halt();
 do_stop(stop,State) ->
     stop_heart(State),
-    halt().
+    halt();
+do_stop({stop,Status},State) ->
+    stop_heart(State),
+    halt(Status).
 
 clear_system(BootPid,State) ->
     Heart = get_heart(State#state.kernel),

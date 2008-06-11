@@ -335,11 +335,11 @@
 -define(CompactV91Token                   , ?PrettyV91Token        ).
 -define(CompactVersionToken               , "V"                    ).
 
+-define(white_space(Char),     ((Char) =:= ?SpToken) orelse ((Char) =:= ?HtabToken)).
+-define(end_of_line(Char),     ((Char) =:= ?LfToken) orelse ((Char) =:= ?CrToken)).
+
 -define(classify_char(Char),
     (case Char of
-        _ when (Char >= $0) andalso (Char =< $9) -> safe_char;
-        _ when (Char >= $a) andalso (Char =< $z) -> safe_char;
-        _ when (Char >= $A) andalso (Char =< $Z) -> safe_char_upper;
         $+                                       -> safe_char;
         $-                                       -> safe_char;
         $&                                       -> safe_char;
@@ -376,6 +376,86 @@
         ?HtabToken                               -> white_space;
         ?LfToken                                 -> end_of_line;
         ?CrToken                                 -> end_of_line;
+        _ when (Char >= $0) andalso (Char =< $9) -> safe_char;
+        _ when (Char >= $a) andalso (Char =< $z) -> safe_char;
+        _ when (Char >= $A) andalso (Char =< $Z) -> safe_char_upper;
         _                                        -> bad_char
+    end)).
+
+-define(classify_char2(Char),
+    (case Char of
+        ?SemiColonToken                          -> rest_char;
+        ?LsbrktToken                             -> rest_char;
+        ?RsbrktToken                             -> rest_char;
+        ?LbrktToken                              -> rest_char;
+        ?RbrktToken                              -> rest_char;
+        ?ColonToken                              -> rest_char;
+        ?CommaToken                              -> rest_char;
+        ?NequalToken                             -> rest_char;
+        ?LesserToken                             -> rest_char;
+        ?GreaterToken                            -> rest_char;
+        ?EqualToken                              -> rest_char;
+        ?SpToken                                 -> white_space;
+        ?HtabToken                               -> white_space;
+        ?LfToken                                 -> end_of_line;
+        ?CrToken                                 -> end_of_line;
+        _                                        -> no_skip_char
+    end)).
+
+-define(classify_char3(Char),
+    (case Char of
+        $+                                       -> safe_char;
+        $-                                       -> safe_char;
+        $&                                       -> safe_char;
+        $!                                       -> safe_char;
+        $_                                       -> safe_char;
+        $/                                       -> safe_char;
+        $'                                       -> safe_char;
+        $?                                       -> safe_char;
+        $@                                       -> safe_char;
+        $^                                       -> safe_char;
+        $`                                       -> safe_char;
+        $~                                       -> safe_char;
+        $*                                       -> safe_char;
+        $$                                       -> safe_char;
+        ?BackslashToken                          -> safe_char;
+        ?LparToken                               -> safe_char;
+        ?RparToken                               -> safe_char;
+        $%                                       -> safe_char;
+        ?VbarToken                               -> safe_char;
+        $.                                       -> safe_char;
+        _ when (Char >= $0) andalso (Char =< $9) -> safe_char;
+        _ when (Char >= $a) andalso (Char =< $z) -> safe_char;
+        _ when (Char >= $A) andalso (Char =< $Z) -> safe_char_upper;
+        _                                        -> non_safe_char
+    end)).
+
+%% Only safe_char and safe_char_upper
+-define(classify_char4(Char),
+    (case Char of
+        $+                                       -> safe_char;
+        $-                                       -> safe_char;
+        $&                                       -> safe_char;
+        $!                                       -> safe_char;
+        $_                                       -> safe_char;
+        $/                                       -> safe_char;
+        $'                                       -> safe_char;
+        $?                                       -> safe_char;
+        $@                                       -> safe_char;
+        $^                                       -> safe_char;
+        $`                                       -> safe_char;
+        $~                                       -> safe_char;
+        $*                                       -> safe_char;
+        $$                                       -> safe_char;
+        ?BackslashToken                          -> safe_char;
+        ?LparToken                               -> safe_char;
+        ?RparToken                               -> safe_char;
+        $%                                       -> safe_char;
+        ?VbarToken                               -> safe_char;
+        $.                                       -> safe_char;
+        _ when (Char >= $0) andalso (Char =< $9) -> safe_char;
+        _ when (Char >= $a) andalso (Char =< $z) -> safe_char;
+        _ when (Char >= $A) andalso (Char =< $Z) -> safe_char_upper;
+        _                                        -> not_safe_char
     end)).
 

@@ -37,7 +37,7 @@ static __inline__ unsigned int sdesc_arity(const struct sdesc *sdesc)
 
 static __inline__ unsigned long sdesc_exnra(const struct sdesc *sdesc)
 {
-    if( (sdesc->summary & (1<<8)) ) {
+    if ((sdesc->summary & (1<<8))) {
 	const char *tmp;
 	tmp = (const char*)sdesc - offsetof(struct sdesc_with_exnra, sdesc);
 	return ((const struct sdesc_with_exnra*)tmp)->exnra;
@@ -67,11 +67,11 @@ static __inline__ const struct sdesc *hipe_find_sdesc(unsigned long ra)
 {
     unsigned int i = (ra >> HIPE_RA_LSR_COUNT) & hipe_sdesc_table.mask;
     const struct sdesc *sdesc = hipe_sdesc_table.bucket[i];
-    if( likely(sdesc->bucket.hvalue == ra) )
+    if (likely(sdesc->bucket.hvalue == ra))
 	return sdesc;
     do {
 	sdesc = sdesc->bucket.next;
-    } while( sdesc->bucket.hvalue != ra );
+    } while (sdesc->bucket.hvalue != ra);
     return sdesc;
 }
 
@@ -81,6 +81,7 @@ extern void hipe_print_nstack(Process*);
 extern void hipe_find_handler(Process*);
 extern void (*hipe_handle_stack_trap(Process*))(void);
 extern void hipe_update_stack_trap(Process*, const struct sdesc*);
+extern int hipe_fill_stacktrace(Process*, int, Eterm**);
 
 #if 0 && defined(HIPE_NSTACK_GROWS_UP)
 #define hipe_nstack_start(p)	((p)->hipe.nstack)

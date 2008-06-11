@@ -42,7 +42,6 @@
 #undef ARG3
 #undef ARG4
 #undef ARG5
-#undef WSIZE /* crap from erl_bits.h */
 #include "hipe_ppc_asm.h"
 #undef P
 #undef NSP
@@ -126,7 +125,7 @@
 
 #define ARRAY_SIZE(x)	(sizeof(x) / sizeof((x)[0]))
 
-#define field_sizeof(STRUCT, FIELD) (sizeof(((STRUCT *)0)->FIELD)) 
+#define field_sizeof(STRUCT, FIELD) (sizeof(((STRUCT *)0)->FIELD))
 
 static const unsigned int CRCTABLE[256] = {
     0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA,
@@ -217,7 +216,7 @@ crc_update_buf(unsigned int crc_value,
     const unsigned char *tab;
 
     tab = (const unsigned char*)buf;
-    for(; length > 0; --length) {
+    for (; length > 0; --length) {
 	unsigned char t = (crc_value >> 24) & 0xFF;
 	crc_value = (crc_value << 8) | *tab++;
 	crc_value ^= CRCTABLE[t];
@@ -239,7 +238,7 @@ crc_update_int(unsigned int crc_value, const unsigned int *p)
  */
 static const struct literal {
     const char *name;
-    unsigned int value;  
+    unsigned int value;
 } literals[] = {
     /* Field offsets in a process struct */
     { "P_HP", offsetof(struct process, htop) },
@@ -326,32 +325,32 @@ static const struct literal {
     { "MS_SAVEOFFSET", offsetof(struct erl_bin_match_struct, save_offset)},
 
     { "MS_MIN_SIZE", ERL_BIN_MATCHSTATE_SIZE(0)},
-    
-    { "MB_ORIG_SIZE", field_sizeof( struct erl_bin_match_buffer, orig) },
-    { "MB_BASE_SIZE", field_sizeof( struct erl_bin_match_buffer, base) },
-    { "MB_OFFSET_SIZE", field_sizeof( struct erl_bin_match_buffer, offset) },
-    { "MB_SIZE_SIZE", field_sizeof( struct erl_bin_match_buffer, size) },
-    { "PROC_BIN_THING_WORD_SIZE", field_sizeof( struct proc_bin, thing_word) },
-    { "PROC_BIN_BINSIZE_SIZE", field_sizeof( struct proc_bin, size) },
-    { "PROC_BIN_NEXT_SIZE", field_sizeof( struct proc_bin, next) },
-    { "PROC_BIN_VAL_SIZE", field_sizeof( struct proc_bin, val) },
-    { "PROC_BIN_BYTES_SIZE", field_sizeof( struct proc_bin, bytes) },
-    { "PROC_BIN_FLAGS_SIZE", field_sizeof( struct proc_bin, flags) },
-    { "SUB_BIN_THING_WORD_SIZE", field_sizeof( struct erl_sub_bin, thing_word) },
-    { "SUB_BIN_BINSIZE_SIZE", field_sizeof( struct erl_sub_bin, size) },
-    { "SUB_BIN_BITSIZE_SIZE", field_sizeof( struct erl_sub_bin, bitsize) },
-    { "SUB_BIN_OFFS_SIZE", field_sizeof( struct erl_sub_bin, offs) },
-    { "SUB_BIN_BITOFFS_SIZE", field_sizeof( struct erl_sub_bin, bitoffs) },
-    { "SUB_BIN_WRITABLE_SIZE", field_sizeof( struct erl_sub_bin, is_writable) },
-    { "SUB_BIN_ORIG_SIZE", field_sizeof( struct erl_sub_bin, orig) },
-    { "HEAP_BIN_THING_WORD_SIZE", field_sizeof( struct erl_heap_bin, thing_word) },
-    { "HEAP_BIN_SIZE_SIZE", field_sizeof( struct erl_heap_bin, size) },
-    { "HEAP_BIN_DATA_SIZE", field_sizeof( struct erl_heap_bin, data) },
-    { "BINARY_ORIG_SIZE_SIZE", field_sizeof( struct binary, orig_size) },
-    { "BINARY_ORIG_BYTES_SIZE", field_sizeof( struct binary, orig_bytes) },
-    { "MS_THING_WORD_SIZE", field_sizeof( struct erl_bin_match_struct, thing_word)},
-    { "MS_SAVEOFFSET_SIZE", field_sizeof( struct erl_bin_match_struct, save_offset)},
-    
+
+    { "MB_ORIG_SIZE", field_sizeof(struct erl_bin_match_buffer, orig) },
+    { "MB_BASE_SIZE", field_sizeof(struct erl_bin_match_buffer, base) },
+    { "MB_OFFSET_SIZE", field_sizeof(struct erl_bin_match_buffer, offset) },
+    { "MB_SIZE_SIZE", field_sizeof(struct erl_bin_match_buffer, size) },
+    { "PROC_BIN_THING_WORD_SIZE", field_sizeof(struct proc_bin, thing_word) },
+    { "PROC_BIN_BINSIZE_SIZE", field_sizeof(struct proc_bin, size) },
+    { "PROC_BIN_NEXT_SIZE", field_sizeof(struct proc_bin, next) },
+    { "PROC_BIN_VAL_SIZE", field_sizeof(struct proc_bin, val) },
+    { "PROC_BIN_BYTES_SIZE", field_sizeof(struct proc_bin, bytes) },
+    { "PROC_BIN_FLAGS_SIZE", field_sizeof(struct proc_bin, flags) },
+    { "SUB_BIN_THING_WORD_SIZE", field_sizeof(struct erl_sub_bin, thing_word) },
+    { "SUB_BIN_BINSIZE_SIZE", field_sizeof(struct erl_sub_bin, size) },
+    { "SUB_BIN_BITSIZE_SIZE", field_sizeof(struct erl_sub_bin, bitsize) },
+    { "SUB_BIN_OFFS_SIZE", field_sizeof(struct erl_sub_bin, offs) },
+    { "SUB_BIN_BITOFFS_SIZE", field_sizeof(struct erl_sub_bin, bitoffs) },
+    { "SUB_BIN_WRITABLE_SIZE", field_sizeof(struct erl_sub_bin, is_writable) },
+    { "SUB_BIN_ORIG_SIZE", field_sizeof(struct erl_sub_bin, orig) },
+    { "HEAP_BIN_THING_WORD_SIZE", field_sizeof(struct erl_heap_bin, thing_word) },
+    { "HEAP_BIN_SIZE_SIZE", field_sizeof(struct erl_heap_bin, size) },
+    { "HEAP_BIN_DATA_SIZE", field_sizeof(struct erl_heap_bin, data) },
+    { "BINARY_ORIG_SIZE_SIZE", field_sizeof(struct binary, orig_size) },
+    { "BINARY_ORIG_BYTES_SIZE", field_sizeof(struct binary, orig_bytes) },
+    { "MS_THING_WORD_SIZE", field_sizeof(struct erl_bin_match_struct, thing_word)},
+    { "MS_SAVEOFFSET_SIZE", field_sizeof(struct erl_bin_match_struct, save_offset)},
+
     /* messages */
     { "P_MSG_FIRST", offsetof(struct process, msg.first) },
     { "P_MSG_SAVE", offsetof(struct process, msg.save) },
@@ -395,7 +394,7 @@ static const struct literal {
     { "X86_LEAF_WORDS", X86_LEAF_WORDS },
     { "X86_NR_ARG_REGS", X86_NR_ARG_REGS },
     /* Jag vet att detta suger.. temp dock. */
-    { "X86_NR_RET_REGS", 3}, 
+    { "X86_NR_RET_REGS", 3},
 #if X86_HP_IN_ESI
     { "X86_HP_IN_ESI", 1 },
 #endif
@@ -500,12 +499,12 @@ static void compute_crc(void)
     unsigned int i;
 
     crc_value = crc_init();
-    for(i = 0; i < NR_LITERALS; ++i)
+    for (i = 0; i < NR_LITERALS; ++i)
 	crc_value = crc_update_int(crc_value, &literals[i].value);
     crc_value &= 0x07FFFFFF;
     literals_crc = crc_value;
-    for(i = 0; i < NR_PARAMS; ++i)
-	if( rts_params[i].is_defined )
+    for (i = 0; i < NR_PARAMS; ++i)
+	if (rts_params[i].is_defined)
 	    crc_value = crc_update_int(crc_value, &rts_params[i].value);
     crc_value &= 0x07FFFFFF;
     system_crc = crc_value;
@@ -525,7 +524,7 @@ static void print_literals(FILE *fp, void (*print_literal)(FILE*, const struct l
 {
     unsigned int i;
 
-    for(i = 0; i < NR_LITERALS; ++i)
+    for (i = 0; i < NR_LITERALS; ++i)
 	(*print_literal)(fp, &literals[i]);
 }
 
@@ -538,13 +537,13 @@ static void print_atom_literals(FILE *fp, void (*print_atom_literal)(FILE*, cons
 {
     unsigned int i;
 
-    for(i = 0; i < NR_ATOM_LITERALS; ++i)
+    for (i = 0; i < NR_ATOM_LITERALS; ++i)
 	(*print_atom_literal)(fp, &atom_literals[i]);
 }
 
 static void c_define_param(FILE *fp, const struct rts_param *param)
 {
-    if( param->is_defined )
+    if (param->is_defined)
 	fprintf(fp, "#define %s %u\n", param->name, param->value);
 }
 
@@ -552,7 +551,7 @@ static void c_case_param(FILE *fp, const struct rts_param *param)
 {
     fprintf(fp, " \\\n");
     fprintf(fp, "\tcase %u: ", param->nr);
-    if( param->is_defined )
+    if (param->is_defined)
 	fprintf(fp, "value = %u", param->value);
     else
 	fprintf(fp, "is_defined = 0");
@@ -568,7 +567,7 @@ static void print_params(FILE *fp, void (*print_param)(FILE*,const struct rts_pa
 {
     unsigned int i;
 
-    for(i = 0; i < NR_PARAMS; ++i)
+    for (i = 0; i < NR_PARAMS; ++i)
 	(*print_param)(fp, &rts_params[i]);
 }
 
@@ -605,10 +604,10 @@ static int do_e(FILE *fp)
 int main(int argc, const char **argv)
 {
     compute_crc();
-    if( argc == 2 ) {
-	if( strcmp(argv[1], "-c") == 0 )
+    if (argc == 2) {
+	if (strcmp(argv[1], "-c") == 0)
 	    return do_c(stdout);
-	if( strcmp(argv[1], "-e") == 0 )
+	if (strcmp(argv[1], "-e") == 0)
 	    return do_e(stdout);
     }
     fprintf(stderr, "usage: %s [-c | -e] > output-file\n", argv[0]);

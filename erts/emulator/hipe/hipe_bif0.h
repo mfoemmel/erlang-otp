@@ -15,6 +15,7 @@ extern Eterm *hipe_constants_next;
 extern void hipe_mfa_info_table_init(void);
 extern void *hipe_get_remote_na(Eterm m, Eterm f, unsigned int a);
 extern Eterm hipe_find_na_or_make_stub(Process*, Eterm, Eterm, Eterm);
+extern int hipe_find_mfa_from_ra(const void *ra, Eterm *m, Eterm *f, unsigned int *a);
 #if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
 extern void *hipe_mfa_get_trampoline(Eterm m, Eterm f, unsigned int a);
 extern void hipe_mfa_set_trampoline(Eterm m, Eterm f, unsigned int a, void *trampoline);

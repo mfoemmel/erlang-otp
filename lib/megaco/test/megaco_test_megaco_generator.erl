@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2007-2007</year>
+%% <year>2007-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -225,6 +225,9 @@ handle_parse(disconnect = Instruction, State) ->
 handle_parse(megaco_connect = Instruction, State) ->
     {ok, Instruction, State};
 
+handle_parse({megaco_connect, _} = Instruction, State) ->
+    {ok, Instruction, State};
+
 handle_parse(megaco_disconnect = Instruction, State) ->
     {ok, Instruction, State};
 
@@ -428,7 +431,7 @@ handle_exec({connect, Host, Opts0},
      #state{transport_sup = Sup,
 	     recv_handle   = RH,
 	     port          = Port} = State) 
-  when RH#megaco_receive_handle.send_mod == megaco_tcp ->
+  when RH#megaco_receive_handle.send_mod =:= megaco_tcp ->
     p("connect[megaco_tcp] to ~p", [Host]),
     PrelMid = preliminary_mid,
     Opts = [{host, Host}, {port, Port}, {receive_handle, RH}|Opts0],
@@ -446,7 +449,7 @@ handle_exec({connect, Host, Opts0},
      #state{transport_sup = Sup,
 	     recv_handle   = RH,
 	     port          = Port} = State) 
-  when RH#megaco_receive_handle.send_mod == megaco_udp ->
+  when RH#megaco_receive_handle.send_mod =:= megaco_udp ->
     p("connect[megaco_udp] to ~p", [Host]),
     PrelMid = preliminary_mid,
     Opts = [{port, 0}, {receive_handle, RH}|Opts0],
@@ -466,7 +469,7 @@ handle_exec({connect, Host, Opts0},
      #state{transport_sup = Sup,
 	     recv_handle   = RH,
 	     port          = Port} = State) 
-  when RH#megaco_receive_handle.send_mod == megaco_test_generic_transport ->
+  when RH#megaco_receive_handle.send_mod =:= megaco_test_generic_transport ->
     p("connect[megaco_test_generic_transport] to ~p", [Host]),
     PrelMid = preliminary_mid,
     Opts = [{host, Host}, {port, Port}, {receive_handle, RH}|Opts0],
@@ -491,6 +494,14 @@ handle_exec(megaco_connect, State) ->
             #state{result = Res} = State,
             {ok, State#state{result = [Error|Res]}}
     end;
+
+handle_exec({megaco_connect, Mid}, 
+	    #state{recv_handle = RH,
+		   send_handle = SH,
+		   ctrl_pid    = ControlPid} = State) ->
+    p("megaco_connect: ~p", [Mid]),
+    megaco_connector_start(RH, Mid, SH, ControlPid),
+    {ok, State};
 
 handle_exec({megaco_user_info, Tag}, #state{mid = Mid, result = Res} = State)
   when Mid /= undefined ->
@@ -546,7 +557,7 @@ handle_exec({megaco_call, ARs, Opts}, #state{conn_handle = CH} = State)
   when CH /= undefined ->
     p("megaco_call"),
     {_PV, UserReply} = megaco:call(CH, ARs, Opts),
-    d("megaco_cast -> UserReply: ~n~p", [UserReply]),
+    d("megaco_call -> UserReply: ~n~p", [UserReply]),
     {ok, State};
 
 handle_exec({megaco_call, RemoteMid, ARs, Opts}, #state{mid = Mid} = State) ->
@@ -561,7 +572,7 @@ handle_exec({megaco_call, RemoteMid, ARs, Opts}, #state{mid = Mid} = State) ->
 
 %% This is either a MG or a MGC which is only connected to one MG
 handle_exec({megaco_cast, ARs, Opts}, #state{conn_handle = CH} = State)
-  when CH /= undefined ->
+  when CH =/= undefined ->
     p("megaco_cast"),
     case megaco:cast(CH, ARs, Opts) of
         ok ->
@@ -725,8 +736,8 @@ do_megaco_cleanup2(CH) ->
     megaco:cancel(CH, Reason),
     d("do_megaco_cleanup2 -> canceled, now close"),
     case SendMod of
-        megaco_tcp -> megaco_tcp:close(SendHandle);
-        megaco_udp -> megaco_udp:close(SendHandle);
+        megaco_tcp -> (catch megaco_tcp:close(SendHandle));
+        megaco_udp -> (catch megaco_udp:close(SendHandle));
         SendMod    -> exit(Pid, Reason)
     end,
     ok.

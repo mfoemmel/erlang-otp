@@ -366,6 +366,7 @@ snmpCommunityTable(set, RowIndex, Cols0) ->
 	    invalidate_cache(RowIndex),
 	    Db  = db(snmpCommunityTable),
 	    Res = snmp_generic:table_func(set, RowIndex, Cols, Db),
+            snmpa_agent:invalidate_ca_cache(),
 	    update_cache(RowIndex),
 	    Res;
 	Error ->

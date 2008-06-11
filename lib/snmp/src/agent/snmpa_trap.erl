@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1996-2007</year>
+%% <year>1996-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -30,6 +30,7 @@
 
 -include("snmp_types.hrl").
 -include("SNMPv2-MIB.hrl").
+-include("SNMPv2-TM.hrl").
 -include("SNMP-FRAMEWORK-MIB.hrl").
 -define(enterpriseSpecific, 6).
 
@@ -538,10 +539,11 @@ send_v1_trap(#notification{oid = Oid}, V1Res, Vbs, NetIf, SysUpTime) ->
     %% Use alg. in rfc2089 to map a v2 trap to a v1 trap
     % delete Counter64 objects from vbs
     ?vdebug("prepare to send v1 trap '~p'",[Oid]),
-    NVbs = lists:filter(fun(Vb) when Vb#varbind.variabletype =/= 'Counter64' ->
-				true;
-			   (_) -> false
-			end, Vbs),
+    NVbs = [Vb || Vb <- Vbs, Vb#varbind.variabletype =/= 'Counter64'],
+%%     NVbs = lists:filter(fun(Vb) when Vb#varbind.variabletype =/= 'Counter64' ->
+%% 				true;
+%% 			   (_) -> false
+%% 			end, Vbs),
     {Enter,Spec} = 
 	case Oid of
 	    [1,3,6,1,6,3,1,1,5,Specific] ->
@@ -613,19 +615,27 @@ mk_v2_notif(Oid, Vbs, SysUpTime) ->
 %% Addr = {Domain, DomainAddr} ; e.g. {snmpUDPDomain, {IPasList, Udp}}
 %% MsgData = CommunityString (v1, v2c) |
 %%           {SecModel, SecName, SecLevel, TargetAddrName} (v3)
-get_trap_recvs([{Addr, MsgData, trap} | T]) ->
-    [{Addr, MsgData} | get_trap_recvs(T)];
-get_trap_recvs([_ | T]) ->
-    get_trap_recvs(T);
-get_trap_recvs([]) ->
-    [].
 
-get_inform_recvs([{Addr, MsgData, {inform, Timeout, Retry}} | T]) ->
-    [{Addr, MsgData, Timeout, Retry} | get_inform_recvs(T)];
-get_inform_recvs([_ | T]) ->
-    get_inform_recvs(T);
-get_inform_recvs([]) ->
-    [].
+get_trap_recvs(TrapRecvs) ->
+    [{Addr, MsgData} || {Addr, MsgData, trap} <- TrapRecvs].
+
+%% get_trap_recvs([{Addr, MsgData, trap} | T]) ->
+%%     [{Addr, MsgData} | get_trap_recvs(T)];
+%% get_trap_recvs([_ | T]) ->
+%%     get_trap_recvs(T);
+%% get_trap_recvs([]) ->
+%%     [].
+
+get_inform_recvs(InformRecvs) ->
+    [{Addr, MsgData, Timeout, Retry} || 
+	{Addr, MsgData, {inform, Timeout, Retry}} <- InformRecvs].
+
+%% get_inform_recvs([{Addr, MsgData, {inform, Timeout, Retry}} | T]) ->
+%%     [{Addr, MsgData, Timeout, Retry} | get_inform_recvs(T)];
+%% get_inform_recvs([_ | T]) ->
+%%     get_inform_recvs(T);
+%% get_inform_recvs([]) ->
+%%     [].
 
 do_send_v2_trap([], _Vbs, _NetIf) ->
     ok;
@@ -642,9 +652,7 @@ do_send_v2_trap(Recvs, Vbs, NetIf) ->
 do_send_v2_inform([], _Vbs, Recv, _NetIf) ->
     deliver_recv(Recv, snmp_targets, []);
 do_send_v2_inform(Recvs, Vbs, Recv, NetIf) ->
-    Targets = lists:map(fun({Addr, _Community, _Timeout, _Retry}) ->
-				Addr
-			end, Recvs),
+    Targets = [Addr || {Addr, _Community, _Timeout, _Retry} <- Recvs],
     deliver_recv(Recv, snmp_targets, Targets),
     lists:foreach(
       fun({Addr, Community, Timeout, Retry}) ->
@@ -672,7 +680,7 @@ do_send_v3_trap(Recvs, ContextName, Vbs, NetIf) ->
 do_send_v3_inform([], _ContextName, _Vbs, Recv, _NetIf) ->
     deliver_recv(Recv, snmp_targets, []);
 do_send_v3_inform(Recvs, ContextName, Vbs, Recv, NetIf) ->
-    Targets = lists:map(fun({Addr, _, _, _}) -> Addr end, Recvs),
+    Targets = [Addr || {Addr, _, _, _} <- Recvs],
     deliver_recv(Recv, snmp_targets, Targets),
     lists:foreach(
       fun({Addr, MsgData, Timeout, Retry}) ->
@@ -740,6 +748,31 @@ inform_sender_short_name(_)    -> sais.
 deliver_recv(no_receiver, _MsgId, _Result) ->
     ?vtrace("deliver_recv -> no receiver", []),
     ok;
+deliver_recv(#snmpa_notification_delivery_info{tag   = Tag,
+					       mod   = Mod,
+					       extra = Extra},
+	     snmp_targets, TAddrs) when is_list(TAddrs) ->
+    ?vtrace("deliver_recv(snmp_targets) -> entry with"
+	"~n   Tag:    ~p"
+	"~n   Mod:    ~p"
+	"~n   Extra:  ~p"
+	"~n   TAddrs: ~p"
+	"", [Tag, Mod, Extra, TAddrs]),
+    Addrs = transform_taddrs(TAddrs),
+    (catch Mod:delivery_targets(Tag, Addrs, Extra));
+deliver_recv(#snmpa_notification_delivery_info{tag   = Tag,
+					       mod   = Mod,
+					       extra = Extra},
+	     snmp_notification, {DeliveryResult, TAddr}) ->
+    ?vtrace("deliver_recv -> entry with"
+	"~n   Tag:            ~p"
+	"~n   Mod:            ~p"
+	"~n   Extra:          ~p"
+	"~n   DeliveryResult: ~p"
+	"~n   TAddr:          ~p"
+	"", [Tag, Mod, Extra, DeliveryResult, TAddr]),
+    Addr = transform_taddr(TAddr),
+    (catch Mod:delivery_info(Tag, Addr, DeliveryResult, Extra));
 deliver_recv({Tag, Receiver}, MsgId, Result) ->
     ?vtrace("deliver_recv -> entry with"
 	"~n   Tag:      ~p"
@@ -765,9 +798,22 @@ deliver_recv(Else, _MsgId, _Result) ->
 	   [Else]),
     user_err("snmpa: bad receiver, ~w\n", [Else]).
 
+transform_taddrs(Addrs) ->
+    [transform_taddr(Addr) || Addr <- Addrs].
+
+transform_taddr({?snmpUDPDomain, [A1, A2, A3, A4, P1, P2]}) -> % v2
+    Addr = {A1, A2, A3, A4},
+    Port = P1 bsl 8 + P2,
+    {Addr, Port};
+transform_taddr({{?snmpUDPDomain, [A1, A2, A3, A4, P1, P2]}, _MsgData}) -> % v3
+    Addr = {A1, A2, A3, A4},
+    Port = P1 bsl 8 + P2,
+    {Addr, Port}.
+
+
 check_all_varbinds(#notification{oid = Oid}, Vbs, MibView) ->
     case snmpa_acm:validate_mib_view(Oid, MibView) of
-	true -> check_all_varbinds(Vbs, MibView);
+	true  -> check_all_varbinds(Vbs, MibView);
 	false -> false
     end;
 check_all_varbinds(#trap{enterpriseoid = Enter, specificcode = Spec},
@@ -778,7 +824,7 @@ check_all_varbinds(#trap{enterpriseoid = Enter, specificcode = Spec},
 	      _ -> Enter ++ [0, Spec]
 	  end,
     case snmpa_acm:validate_mib_view(Oid, MibView) of
-	true -> check_all_varbinds(Vbs, MibView);
+	true  -> check_all_varbinds(Vbs, MibView);
 	false -> false
     end.
 
@@ -787,7 +833,9 @@ check_all_varbinds([#varbind{oid = Oid} | Vbs], MibView) ->
 	true -> check_all_varbinds(Vbs, MibView);
 	false -> false
     end;
-check_all_varbinds([], _MibView) -> true.
+check_all_varbinds([], _MibView) -> 
+    true.
+
 
 %%--------------------------------------------------
 %% Functions to access the local mib.

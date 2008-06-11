@@ -346,7 +346,6 @@ i_put_tuple A c r
 
 %cold
 i_put_tuple A r y
-i_put_tuple A r r
 i_put_tuple A y y
 i_put_tuple A c y
 %hot
@@ -1070,7 +1069,6 @@ i_bs_skip_bits_imm2 f x I
 
 %macro: i_bs_skip_bits2 BsSkipBits2 -fail_action
 i_bs_skip_bits2 f r x I
-i_bs_skip_bits2 f r r I
 i_bs_skip_bits2 f r y I
 i_bs_skip_bits2 f x x I
 i_bs_skip_bits2 f x r I

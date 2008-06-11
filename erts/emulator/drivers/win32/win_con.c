@@ -26,6 +26,10 @@
 #include "erl_driver.h"
 #include "win_con.h"
 
+#define ALLOC(X) malloc(X)
+#define REALLOC(X,Y) realloc(X,Y)
+#define FREE(X) free(X)
+
 #ifndef STATE_SYSTEM_INVISIBLE
 /* Mingw problem with oleacc.h and WIN32_LEAN_AND_MEAN */
 #define STATE_SYSTEM_INVISIBLE 0x00008000
@@ -182,7 +186,7 @@ grow_con_vprintf_buf(erts_dsprintf_buf_t *dsbufp, size_t need)
 	size = (((need + CON_VPRINTF_BUF_INC_SIZE - 1)
 		 / CON_VPRINTF_BUF_INC_SIZE)
 		* CON_VPRINTF_BUF_INC_SIZE);
-	buf = (char *) driver_alloc(size);
+	buf = (char *) ALLOC(size);
     }
     else {
 	size_t free_size = dsbufp->size - dsbufp->str_len;
@@ -195,8 +199,8 @@ grow_con_vprintf_buf(erts_dsprintf_buf_t *dsbufp, size_t need)
 		 / CON_VPRINTF_BUF_INC_SIZE)
 		* CON_VPRINTF_BUF_INC_SIZE);
 	size += dsbufp->size;
-	buf = (char *) driver_realloc((void *) dsbufp->str,
-				      size);
+	buf = (char *) REALLOC((void *) dsbufp->str,
+			       size);
     }
     if (!buf)
 	return NULL;
@@ -211,10 +215,10 @@ static int con_vprintf(char *format, va_list arg_list)
     int res;
     erts_dsprintf_buf_t dsbuf = ERTS_DSPRINTF_BUF_INITER(grow_con_vprintf_buf);
     res = erts_vdsprintf(&dsbuf, format, arg_list);
-    if (res > 0)
+    if (res >= 0)
 	write_outbuf(dsbuf.str, dsbuf.str_len);
     if (dsbuf.str)
-	driver_free((void *) dsbuf.str);
+      FREE((void *) dsbuf.str);
     return res;
 }
 
@@ -719,11 +723,11 @@ static void dump_linebufs(void) {
 	if (s == buffer_bottom) fprintf(stderr,"BB-> ");
 	if (s == cur_line) fprintf(stderr,"CL-> ");
 
-	buff = (char *) driver_alloc(s->width+1);
+	buff = (char *) ALLOC(s->width+1);
 	memcpy(buff,s->text,s->width);
 	buff[s->width] = '\0';
 	fprintf(stderr,"{\"%s\",%d,%d}\n",buff,s->newline,s->allocated);
-	driver_free(buff);
+	FREE(buff);
 	s = s->next;
     }
     fprintf(stderr,"LinebufDumpEnd---------------------\n");
@@ -776,8 +780,8 @@ static void reorganize_linebufs(void) {
             /*ConScrollScreen();*/
 	}
 	next = otop->next;
-	driver_free(otop->text);
-	driver_free(otop);
+	FREE(otop->text);
+	FREE(otop);
 	otop = next;
     }
     i = cpos / canvasColumns;
@@ -1286,8 +1290,8 @@ ensure_line_below(void)
     if (cur_line->next == NULL) {
 	if (nBufLines >= lines_to_save) {
 	    ScreenLine_t* pLine = buffer_top->next;
-	    driver_free(buffer_top->text);
-	    driver_free(buffer_top);
+	    FREE(buffer_top->text);
+	    FREE(buffer_top);
 	    buffer_top = pLine;
 	    buffer_top->prev = NULL;
 	    nBufLines--;
@@ -1304,10 +1308,10 @@ ConNewLine(void)
 {
     ScreenLine_t *pLine;
 
-    pLine = (ScreenLine_t *)driver_alloc(sizeof(ScreenLine_t));
+    pLine = (ScreenLine_t *)ALLOC(sizeof(ScreenLine_t));
     if (!pLine)
 	return NULL;
-    pLine->text = (char *) driver_alloc(canvasColumns);
+    pLine->text = (char *) ALLOC(canvasColumns);
 #ifdef HARDDEBUG
     pLine->allocated = canvasColumns;
 #endif
@@ -1481,7 +1485,7 @@ OnEditPaste(HWND hwnd)
 	return;
     if ((hClipMem = GetClipboardData(CF_TEXT)) != NULL) {
         pClipMem = GlobalLock(hClipMem);
-        pMem = (char *)driver_alloc(GlobalSize(hClipMem));
+        pMem = (char *)ALLOC(GlobalSize(hClipMem));
         pMem2 = pMem;
         while ((*pMem2 = *pClipMem) != '\0') {
             if (*pClipMem == '\r')
@@ -1762,8 +1766,8 @@ void LogFileWrite(unsigned char *buf, int nbytes)
 static void
 init_buffers(void)
 {
-    inbuf.data = (unsigned char *) driver_alloc(BUFSIZE);
-    outbuf.data = (unsigned char *) driver_alloc(BUFSIZE);
+    inbuf.data = (unsigned char *) ALLOC(BUFSIZE);
+    outbuf.data = (unsigned char *) ALLOC(BUFSIZE);
     inbuf.size = BUFSIZE;
     inbuf.rdPos = inbuf.wrPos = 0;
     outbuf.size = BUFSIZE;
@@ -1777,7 +1781,7 @@ check_realloc(buffer_t *buf, int nbytes)
 	if (buf->size > MAXBUFSIZE)
 	    return 0;
 	buf->size += nbytes + BUFSIZE;
-	if (!(buf->data = (unsigned char *)driver_realloc(buf->data, buf->size))) {
+	if (!(buf->data = (unsigned char *)REALLOC(buf->data, buf->size))) {
 	    buf->size = buf->rdPos = buf->wrPos = 0;
 	    return 0;
         }
@@ -1881,11 +1885,11 @@ ConDrawText(HWND hwnd)
 
 #ifdef HARDDEBUG
     {
-	char *bu = (char *) driver_alloc(nbytes+1);
+	char *bu = (char *) ALLOC(nbytes+1);
 	memcpy(bu,buf,nbytes);
 	bu[nbytes]='\0';
 	fprintf(stderr,"ConDrawText\"%s\"\n",bu);
-	driver_free(bu);
+	FREE(bu);
 	fflush(stderr);
     }
 #endif
@@ -2114,7 +2118,7 @@ window_title(struct title_buf *tbuf)
     else if (res == 0) 
 	tbuf->name = &tbuf->buf[0];
     else {
-	char *buf = driver_alloc(bufsz);
+	char *buf = ALLOC(bufsz);
 	if (!buf)
 	    tbuf->name = erlang_window_title;
 	else {
@@ -2126,16 +2130,16 @@ window_title(struct title_buf *tbuf)
 			tbuf->name = buf;
 		    else {
 			tbuf->name = erlang_window_title;
-			driver_free(buf);
+			FREE(buf);
 		    }
 		    break;
 		}
-		newbuf = driver_realloc(buf, bufsz);
+		newbuf = REALLOC(buf, bufsz);
 		if (newbuf)
 		    buf = newbuf;
 		else {
 		    tbuf->name = erlang_window_title;
-		    driver_free(buf);
+		    FREE(buf);
 		    break;
 		}
 	    }
@@ -2147,5 +2151,5 @@ static void
 free_window_title(struct title_buf *tbuf)
 {
     if (tbuf->name != erlang_window_title && tbuf->name != &tbuf->buf[0])
-	driver_free(tbuf->name);
+	FREE(tbuf->name);
 }

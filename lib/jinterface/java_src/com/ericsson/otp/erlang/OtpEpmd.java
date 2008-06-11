@@ -137,7 +137,7 @@ public class OtpEpmd {
     Socket s = null;
 
     try {
-      s = new Socket(InetAddress.getLocalHost(),epmdPort);
+      s = new Socket((String) null ,epmdPort);
       OtpOutputStream obuf = new OtpOutputStream();
       obuf.write2BE(node.alive().length() + 1);
       obuf.write1(stopReq);
@@ -289,7 +289,7 @@ public class OtpEpmd {
 
     try {
       OtpOutputStream obuf = new OtpOutputStream();
-      s = new Socket(InetAddress.getLocalHost(),epmdPort);
+      s = new Socket((String) null, epmdPort);
     
       obuf.write2BE(node.alive().length() + 3);
     
@@ -349,7 +349,7 @@ public class OtpEpmd {
 
     try {
       OtpOutputStream obuf = new OtpOutputStream();
-      s = new Socket(InetAddress.getLocalHost(),epmdPort);
+      s = new Socket((String) null, epmdPort);
     
       obuf.write2BE(node.alive().length() + 13);
     

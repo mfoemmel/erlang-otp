@@ -1,7 +1,7 @@
 -module(xmerl_b64Bin).
 -export([parse/1, parse_and_scan/1, format_error/1]).
 
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-04-07_20/otp_src_R12B-1/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/ldisk/daily_build/otp_prebuild_r12b.2008-06-10_20/otp_src_R12B-3/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -136,15 +136,15 @@ yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
 yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
-yecctoken2string({var,_,V}) -> io_lib:format('~s', [V]);
+yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
 yecctoken2string({string,_,S}) -> io_lib:write_string(S);
-yecctoken2string({reserved_symbol, _, A}) -> io_lib:format('~w', [A]);
-yecctoken2string({_Cat, _, Val}) -> io_lib:format('~w', [Val]);
-yecctoken2string({'dot', _}) -> io_lib:format('~w', ['.']);
+yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
+yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
+yecctoken2string({dot, _}) -> "'.'";
 yecctoken2string({'$end', _}) ->
     [];
 yecctoken2string({Other, _}) when is_atom(Other) ->
-    io_lib:format('~w', [Other]);
+    io_lib:format("~w", [Other]);
 yecctoken2string(Other) ->
     io_lib:write(Other).
 

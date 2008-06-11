@@ -22,6 +22,7 @@
 	 code_server = dialyzer_codeserver:new() :: dialyzer_codeserver(),
 	 callgraph   = dialyzer_callgraph:new()  :: dialyzer_codeserver(),
 	 ana_files	 :: [string()],   % absolute filenames
+	 plt         = none                      :: 'none' | string(),
 	 
 	 %% Esp for TypEr
 	 %% ----------------------

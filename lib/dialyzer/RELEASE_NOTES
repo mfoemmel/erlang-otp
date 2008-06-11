@@ -6,6 +6,12 @@
 To be released
 --------------
 
+ - The return type of the Erlang interface dialyzer:run/1 has changed
+   to only return a list of warnings. If something goes wrong dialyzer
+   dies with an exception.
+ - The handling of the PLT has changed. Please consult the manual for
+   the changes.
+
 Version 1.8.0 (in Erlang/OTP R12B-2)
 ------------------------------------
  - Dialyzer's analysis is from now on exclusively based on success typings.

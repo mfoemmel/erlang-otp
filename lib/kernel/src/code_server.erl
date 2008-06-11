@@ -61,14 +61,15 @@ init(Ref, Parent, [Root,Mode]) ->
 		    LibDir = filename:append(Root, "lib"),
 		    {ok,Dirs} = erl_prim_loader:list_dir(LibDir),
 		    {Paths,_Libs} = make_path(LibDir, Dirs),
-		    ["."|Paths];
+		    UserLibPaths  = get_user_lib_dirs(),
+		    ["."] ++ UserLibPaths ++ Paths;
 	       true ->
 		    []
 	    end,
 
     Db = ets:new(code, [private]),
-    foreach(fun (M) ->  ets:insert(Db, {M,preloaded}) end, erlang:pre_loaded()),
-    foreach(fun (MF) -> ets:insert(Db, MF) end, init:fetch_loaded()),
+    foreach(fun (M) -> ets:insert(Db, {M,preloaded}) end, erlang:pre_loaded()),
+    ets:insert(Db, init:fetch_loaded()),
     
     Mode1 = if Mode =:= minimal -> interactive;
 	       true -> Mode
@@ -80,7 +81,7 @@ init(Ref, Parent, [Root,Mode]) ->
 		    moddb = Db,
 		    namedb = init_namedb(Path),
 		    mode = Mode1},
-    
+
     State = case init:get_argument(code_path_cache) of
 		error -> 
 		    State0;
@@ -90,6 +91,34 @@ init(Ref, Parent, [Root,Mode]) ->
     
     Parent ! {Ref,{ok,self()}},
     loop(State#state{supervisor=Parent}).
+
+get_user_lib_dirs() ->
+    case os:getenv("ERL_LIBS") of
+	LibDirs0 when is_list(LibDirs0) ->
+	    case os:type() of
+		{win32, _} -> Sep = $;;
+		_          -> Sep = $:
+				  end,
+	    LibDirs = split_paths(LibDirs0, Sep, [], []),
+	    get_user_lib_dirs_1(LibDirs);
+	false -> []
+    end.
+
+get_user_lib_dirs_1([Dir|DirList]) ->
+    {ok, Dirs} = erl_prim_loader:list_dir(Dir),
+    {Paths,_Libs} = make_path(Dir, Dirs),
+    %% Only add paths trailing with ./ebin.
+    [P || P <- Paths, filename:basename(P) =:= "ebin"] ++
+	get_user_lib_dirs_1(DirList);
+get_user_lib_dirs_1([]) -> [].
+
+
+split_paths([S|T], S, Path, Paths) ->
+    split_paths(T, S, [], [lists:reverse(Path) | Paths]);
+split_paths([C|T], S, Path, Paths) ->
+    split_paths(T, S, [C|Path], Paths);
+split_paths([], _S, Path, Paths) ->
+    lists:reverse(Paths, [lists:reverse(Path)]).
 
 call(Name, Req) ->
     Name ! {code_call, self(), Req},
@@ -453,9 +482,9 @@ make_path(BundleDir,Bundles0) ->
     make_path(BundleDir,Bundles,[],[]).
 
 choose_bundles(Bundles) ->
-    Bs = lists:sort(lists:map(fun(B) -> cr_b(B) end,Bundles)),
-    lists:map(fun({_Name,_NumVsn,FullName}) -> FullName end,
-	      choose(lists:reverse(Bs),[])).
+    Bs = lists:sort([cr_b(B) || B <- Bundles]),
+    [FullName || {_Name,_NumVsn,FullName} <-
+		     choose(lists:reverse(Bs), [])].
 
 cr_b(FullName) ->
     case split(FullName, "-") of
@@ -1190,7 +1219,11 @@ do_purge(Mod) ->
 do_purge([P|Ps], Mod, Purged) ->
     case erlang:check_process_code(P, Mod) of
 	true ->
+	    Ref = erlang:monitor(process, P),
 	    exit(P, kill),
+	    receive
+		{'DOWN',Ref,process,_Pid,_} -> ok
+	    end,
 	    do_purge(Ps, Mod, true);
 	false ->
 	    do_purge(Ps, Mod, Purged)

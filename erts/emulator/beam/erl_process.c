@@ -3686,13 +3686,14 @@ static void doit_exit_monitor(ErtsMonitor *mon, void *vpcontext)
 	    ASSERT(is_node_name_atom(mon->pid));
 	    dep = erts_sysname_to_connected_dist_entry(mon->pid);
 	    if (dep) {
-		erts_dist_op_prepare(dep, NULL, 0);
+		ErtsDistOpData dod;
+		erts_dist_op_prepare(&dod, dep, NULL, 0);
 		rmon = erts_remove_monitor(&(dep->monitors), mon->ref);
 		if (rmon) {
-		    dist_demonitor(NULL,0,dep,rmon->pid,mon->name,mon->ref,1);
+		    erts_dist_demonitor(&dod,rmon->pid,mon->name,mon->ref,1);
 		    erts_destroy_monitor(rmon);
 		}
-		erts_dist_op_finalize(dep);
+		erts_dist_op_finalize(&dod);
 		erts_deref_dist_entry(dep);
 	    }
 	} else {
@@ -3713,13 +3714,14 @@ static void doit_exit_monitor(ErtsMonitor *mon, void *vpcontext)
 		dep = external_pid_dist_entry(mon->pid);
 		ASSERT(dep != NULL);
 		if (dep) {
-		    erts_dist_op_prepare(dep, NULL, 0);
+		    ErtsDistOpData dod;
+		    erts_dist_op_prepare(&dod, dep, NULL, 0);
 		    rmon = erts_remove_monitor(&(dep->monitors), mon->ref);
 		    if (rmon) {
-			dist_demonitor(NULL,0,dep,rmon->pid,mon->pid,mon->ref,1);
+			erts_dist_demonitor(&dod,rmon->pid,mon->pid,mon->ref,1);
 			erts_destroy_monitor(rmon);
 		    }
-		    erts_dist_op_finalize(dep);
+		    erts_dist_op_finalize(&dod);
 		}
 	    }
 	}
@@ -3759,16 +3761,16 @@ static void doit_exit_monitor(ErtsMonitor *mon, void *vpcontext)
 	    dep = external_pid_dist_entry(mon->pid);
 	    ASSERT(dep != NULL);
 	    if (dep) {
-		erts_dist_op_prepare(dep, NULL, 0);
+		ErtsDistOpData dod;
+		erts_dist_op_prepare(&dod, dep, NULL, 0);
 		rmon = erts_remove_monitor(&(dep->monitors), mon->ref);
 		if (rmon) {
-		    dist_m_exit(NULL, 0,
-				dep, mon->pid, (rmon->name != NIL) 
-				? rmon->name : rmon->pid,
-				mon->ref, pcontext->reason);
+		    erts_dist_m_exit(&dod, mon->pid, (rmon->name != NIL) 
+				     ? rmon->name : rmon->pid,
+				     mon->ref, pcontext->reason);
 		    erts_destroy_monitor(rmon);
 		}
-		erts_dist_op_finalize(dep);
+		erts_dist_op_finalize(&dod);
 	    }
 	}
     }
@@ -3857,12 +3859,13 @@ static void doit_exit_link(ErtsLink *lnk, void *vpcontext)
 	else if (is_external_pid(item)) {
 	    dep = external_pid_dist_entry(item);
 	    if(dep != erts_this_dist_entry) {
-		erts_dist_op_prepare(dep, NULL, 0);
+		ErtsDistOpData dod;
+		erts_dist_op_prepare(&dod, dep, NULL, 0);
 		if (SEQ_TRACE_TOKEN(p) != NIL) {
 		    seq_trace_update_send(p);
 		}
-		dist_exit_tt(NULL,0,dep,p->id,item,reason,SEQ_TRACE_TOKEN(p));
-		erts_dist_op_finalize(dep);
+		erts_dist_exit_tt(&dod,p->id,item,reason,SEQ_TRACE_TOKEN(p));
+		erts_dist_op_finalize(&dod);
 	    }
 	}
 	break;

@@ -20,9 +20,20 @@
  * 
  * This module implements a process that opens two specified FIFOs, one
  * for reading and one for writing; reads from its stdin, and writes what
- * ithas read to the write FIF0; reads from the read FIFO, and writes to
+ * it has read to the write FIF0; reads from the read FIFO, and writes to
  * its stdout.
  *
+  ________                            _________ 
+ |        |--<-- pipe.r (fifo1) --<--|         |
+ | to_erl |                          | run_erl | (parent)
+ |________|-->-- pipe.w (fifo2) -->--|_________|
+                                          ^ master pty
+                                          |
+                                          | slave pty
+                                      ____V____ 
+                                     |         |
+                                     |  "erl"  | (child)
+                                     |_________|
  */
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -41,6 +52,12 @@
 #include <dirent.h>
 #include <signal.h>
 #include <errno.h>
+#ifdef HAVE_SYS_IOCTL_H
+#  include <sys/ioctl.h>
+#endif
+
+#include "run_erl.h"
+#include "safe_string.h"   /* strn_cpy, strn_catf, sn_printf, etc. */
 
 #if defined(O_NONBLOCK)
 # define DONT_BLOCK_PLEASE O_NONBLOCK
@@ -49,6 +66,12 @@
 # if !defined(EAGAIN)
 #  define EAGAIN -3898734
 # endif
+#endif
+
+#ifdef HAVE_STRERROR
+#  define STRERROR(x) strerror(x)
+#else
+#  define STRERROR(x) ""
 #endif
 
 #define noDEBUG
@@ -69,21 +92,33 @@
 
 static struct termios tty_smode, tty_rmode;
 static int tty_eof = 0;
-static int ctrlc = 0;
+static int recv_sig = 0;
+static int protocol_ver = RUN_ERL_LO_VER; /* assume lowest to begin with */
 
+static int write_all(int fd, const char* buf, int len);
+static int window_size_seq(char* buf, size_t bufsz);
+static int version_handshake(char* buf, int len, int wfd);
 #ifdef DEBUG
 static void show_terminal_settings(struct termios *);
 #endif
 
-static void handle_ctrlc(int sig) {
-  /* Reinstall the handler, and signal break flag */
-  signal(SIGINT,handle_ctrlc);
-  ctrlc = 1;
+static void handle_ctrlc(int sig)
+{
+    /* Reinstall the handler, and signal break flag */
+    signal(SIGINT,handle_ctrlc);
+    recv_sig = SIGINT;
 }  
+
+static void handle_sigwinch(int sig)
+{
+    recv_sig = SIGWINCH;
+}
 
 static void usage(char *pname)
 {
-  fprintf(stderr, "Usage: %s [pipe_name|pipe_dir/]\n", pname);
+    fprintf(stderr, "Usage: %s [-h|-F] [pipe_name|pipe_dir/]\n", pname);
+    fprintf(stderr, "\t-h\tThis help text.\n");
+    fprintf(stderr, "\t-F\tForce connection even though pipe is locked by other to_erl process.\n");
 }
 
 int main(int argc, char **argv)
@@ -93,23 +128,34 @@ int main(int argc, char **argv)
     fd_set readfds;
     char buf[BUFSIZ];
     char pipename[FILENAME_MAX];
-    
-    if (argc < 1) {
-	usage(argv[0]);
-	exit(1);
+    int pipeIx = 1;
+    int force_lock = 0;
+    int got_some = 0;
+
+    if (argc >= 2 && argv[1][0]=='-') {
+	switch (argv[1][1]) {
+	case 'h':
+	    usage(argv[0]);
+	    exit(1);
+	case 'F':
+	    force_lock = 1;
+	    break;
+	default:
+	    fprintf(stderr,"Invalid option '%s'\n",argv[1]);
+	    exit(1);
+	}
+	pipeIx = 2;
     }
     
 #ifdef DEBUG
     fprintf(stderr, "%s: pid is : %d\n", argv[0], (int)getpid());
 #endif
     
-    if(argv[1])
-	strcpy(pipename,argv[1]);
-    else
-	strcpy(pipename,PIPE_DIR);
+    strn_cpy(pipename, sizeof(pipename),
+	     (argv[pipeIx] ? argv[pipeIx] : PIPE_DIR));
     
     if(*pipename && pipename[strlen(pipename)-1] == '/') {
-	/* The user wishes us to find a unique pipe name in the specified */
+	/* The user wishes us to find a pipe name in the specified */
 	/* directory */
 	int highest_pipe_num = 0;
 	DIR *dirp;
@@ -131,17 +177,29 @@ int main(int argc, char **argv)
 	    }
 	}	
 	closedir(dirp);
-	sprintf(pipename+strlen(pipename),
-		(highest_pipe_num?"%s.%d":"%s"),PIPE_STUBNAME,highest_pipe_num);
+	strn_catf(pipename, sizeof(pipename), (highest_pipe_num?"%s.%d":"%s"),
+		  PIPE_STUBNAME, highest_pipe_num);
     } /* if */
-    
+
     /* read FIFO */
-    strncpy(FIFO1, pipename, FILENAME_MAX);
-    strncat(FIFO1, ".r", FILENAME_MAX - strlen(FIFO1));
+    sn_printf(FIFO1,sizeof(FIFO1),"%s.r",pipename);
     /* write FIFO */
-    strncpy(FIFO2, pipename, FILENAME_MAX);
-    strncat(FIFO2, ".w", FILENAME_MAX - strlen(FIFO2));
-    
+    sn_printf(FIFO2,sizeof(FIFO2),"%s.w",pipename);
+
+    /* Check that nobody is running to_erl on this pipe already */
+    if ((wfd = open (FIFO1, O_WRONLY|DONT_BLOCK_PLEASE, 0)) >= 0) {
+	/* Open as server succeeded -- to_erl is already running! */
+	close(wfd);
+	fprintf(stderr, "Another to_erl process already attached to pipe "
+			"%s.\n", pipename);
+	if (force_lock) {
+	    fprintf(stderr, "But we proceed anyway by force (-F).\n");
+	} 
+	else {
+	    exit(1);
+	}
+    }
+
     if ((rfd = open (FIFO1, O_RDONLY|DONT_BLOCK_PLEASE, 0)) < 0) {
 #ifdef DEBUG
 	fprintf(stderr, "Could not open FIFO %s for reading.\n", FIFO1);
@@ -169,7 +227,7 @@ int main(int argc, char **argv)
     
     /* Set break handler to our handler */
     signal(SIGINT,handle_ctrlc);
-    
+
     /* 
      * Save the current state of the terminal, and set raw mode.
      */
@@ -286,10 +344,15 @@ int main(int argc, char **argv)
     show_terminal_settings(&tty_smode);
 #endif
     /*
-     * Write a ^R to the FIFO which causes the other end to redisplay
-     * the input line.
+     * 	 "Write a ^R to the FIFO which causes the other end to redisplay
+     *    the input line."
+     * This does not seem to work as was intended in old comment above.
+     * However, this control character is now (R12B-3) used by run_erl
+     * to trigger the version handshaking between to_erl and run_erl
+     * at the start of every new to_erl-session.
      */
     write(wfd, "\022", 1);
+
     /*
      * read and write
      */
@@ -298,25 +361,38 @@ int main(int argc, char **argv)
 	FD_SET(0, &readfds);
 	FD_SET(rfd, &readfds);
 	if (select(rfd + 1, &readfds, NULL, NULL, NULL) < 0) {
-	    if(ctrlc) {
+	    if (recv_sig) {
 		FD_ZERO(&readfds);
-	    } else {
+	    }
+	    else {
 		fprintf(stderr, "Error in select.\n");
 		result = -1;
 		break;
 	    }
 	}
+	len = 0;
+
 	/*
-	 * Read from terminal, write to FIFO
-	 */
-	if (ctrlc || FD_ISSET(0, &readfds)) {
-	    STATUS("Terminal read; ");
-	    if(ctrlc) {
-		ctrlc = 0;
+	 * Read from terminal and write to FIFO
+         */
+	if (recv_sig) {
+	    switch (recv_sig) {
+	    case SIGINT:
 		fprintf(stderr, "[Break]\n\r");
 		buf[0] = '\003';
 		len = 1;
-	    } else if ((len = read(0, buf, BUFSIZ)) <= 0) {
+		break;
+	    case SIGWINCH:
+		len = window_size_seq(buf,sizeof(buf));
+		break;
+	    default:
+		fprintf(stderr,"Unexpected signal: %u\n",recv_sig);
+	    }
+	    recv_sig = 0;
+	}
+	else if (FD_ISSET(0, &readfds)) {
+	    len = read(0, buf, sizeof(buf));
+	    if (len <= 0) {
 		close(rfd);
 		close(wfd);
 		if (len < 0) {
@@ -333,12 +409,13 @@ int main(int argc, char **argv)
 		fprintf(stderr, "[Quit]\n\r");
 		break;
 	    }
-	    STATUS("FIFO write; \"");
+	}
 
+	if (len) {
 #ifdef DEBUG
 	    write(1, buf, len);
 #endif
-	    if (write(wfd, buf, len) != len) {
+	    if (write_all(wfd, buf, len) != len) {
 		fprintf(stderr, "Error in writing to FIFO.\n");
 		close(rfd);
 		close(wfd);
@@ -374,11 +451,26 @@ int main(int argc, char **argv)
 		    fprintf(stderr, "[End]\n\r");
 		break;
 	    } else {
+		if (!got_some) {
+		    if ((len=version_handshake(buf,len,wfd)) < 0) {
+			close(rfd);
+			close(wfd);
+			result = -1;
+			break;
+		    }
+		    if (protocol_ver >= 1) {
+			/* Tell run_erl size of terminal window */
+			signal(SIGWINCH, handle_sigwinch);
+			raise(SIGWINCH);
+		    }
+		    got_some = 1;
+		}
+
 		/*
 		 * We successfully read at least one character. Write what we got.
 		 */
 		STATUS("Terminal write: \"");
-		if (write(1, buf, len) != len) {
+		if (write_all(1, buf, len) != len) {
 		    fprintf(stderr, "Error in writing to terminal.\n");
 		    close(rfd);
 		    close(wfd);
@@ -397,6 +489,92 @@ int main(int argc, char **argv)
     tcsetattr(0, TCSANOW, &tty_rmode);
     return 0;
 }
+
+/* Call write() until entire buffer has been written or error.
+ * Return len or -1.
+ */
+static int write_all(int fd, const char* buf, int len)
+{
+    int left = len;
+    int written;
+    while (left) {
+	written = write(fd,buf,left);
+	if (written < 0) {
+	    return -1;
+	}
+	left -= written;
+	buf += written;
+    }
+    return len;
+}
+
+static int window_size_seq(char* buf, size_t bufsz)
+{
+#ifdef TIOCGWINSZ
+    struct winsize ws;
+    static const char prefix[] = "\033_";
+    static const char suffix[] = "\033\\";
+    /* This Esc sequence is called "Application Program Command"
+       and seems suitable to use for our own customized stuff. */
+
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0) {
+	int len = sn_printf(buf, bufsz, "%swinsize=%u,%u%s",
+			    prefix, ws.ws_col, ws.ws_row, suffix);
+	return len;
+    }
+#endif /* TIOCGWINSZ */
+    return 0;
+}
+
+/*   to_erl                     run_erl
+ *     |                           |
+ *     |---------- '\022' -------->| (session start)
+ *     |                           |
+ *     |<---- "[run_erl v1-0]" ----| (version interval)
+ *     |                           |
+ *     |--- Esc_"version=1"Esc\ -->| (common version)
+ *     |                           |
+ */
+static int version_handshake(char* buf, int len, int wfd)
+{
+    unsigned re_high=0, re_low;
+    char *end = find_str(buf,len,"]\n");
+    
+    if (end && sscanf(buf,"[run_erl v%u-%u",&re_high,&re_low)==2) {
+	char wbuf[30];
+	int wlen;
+
+	if (re_low > RUN_ERL_HI_VER || re_high < RUN_ERL_LO_VER) {
+	    fprintf(stderr,"Incompatible versions: to_erl=v%u-%u run_erl=v%u-%u\n",
+		    RUN_ERL_HI_VER, RUN_ERL_LO_VER, re_high, re_low);
+	    return -1;
+	}
+	/* Choose highest common version */
+	protocol_ver = re_high < RUN_ERL_HI_VER ? re_high : RUN_ERL_HI_VER;
+
+	wlen = sn_printf(wbuf, sizeof(wbuf), "\033_version=%u\033\\",
+			 protocol_ver);
+	if (write_all(wfd, wbuf, wlen) < 0) {
+	    fprintf(stderr,"Failed to send version handshake\n");
+	    return -1;
+	}
+	end += 2;
+	len -= (end-buf);
+	memmove(buf,end,len);
+
+    }
+    else {  /* we assume old run_erl without version handshake */
+	protocol_ver = 0;
+    }
+
+    if (re_high != RUN_ERL_HI_VER) {
+	fprintf(stderr,"run_erl has different version, "
+		"using common protocol level %u\n", protocol_ver);
+    }
+
+    return len;
+}
+
 
 #ifdef DEBUG
 #define S(x)  ((x) > 0 ? 1 : 0)

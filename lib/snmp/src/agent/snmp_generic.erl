@@ -153,8 +153,7 @@ variable_func(new, NameDb) ->
     case variable_get(NameDb) of
 	{value, _} -> ok;
 	undefined ->
-	    {value, #variable_info{defval = Defval}} =
-		variable_info(NameDb),
+	    #variable_info{defval = Defval} = variable_info(NameDb),
 	    variable_set(NameDb, Defval)
     end;
 
@@ -684,6 +683,7 @@ table_find(NameDb, Col, Value, Indexes) ->
 	    end
     end.
 
+
 %%------------------------------------------------------------------
 %%  find_col(Col, Cols)
 %%    undefined if a Col for column Col doesn't exist.
@@ -711,16 +711,35 @@ try_apply(nofunc, _) -> {noError, 0};
 try_apply(F, Args) -> apply(F, Args).
 
 table_info({Name, _Db}) ->
-    {value, TI} = snmpa_symbolic_store:table_info(Name),
-    TI;
+    case snmpa_symbolic_store:table_info(Name) of
+	{value, TI} ->
+	    TI;
+	false ->
+	    error({table_not_found, Name})
+    end;
 table_info(Name) ->
-    {value, TI} = snmpa_symbolic_store:table_info(Name),
-    TI.
+    case snmpa_symbolic_store:table_info(Name) of
+	{value, TI} ->
+	    TI;
+	false ->
+	    error({table_not_found, Name})
+    end.
 
 variable_info({Name, _Db}) ->
-    snmpa_symbolic_store:variable_info(Name);
-variable_info(NameDb) ->
-    snmpa_symbolic_store:variable_info(NameDb).
+    case snmpa_symbolic_store:variable_info(Name) of
+	{value, VI} ->
+	    VI;
+	false ->
+	    error({variable_not_found, Name})
+    end;
+variable_info(Name) ->
+    case snmpa_symbolic_store:variable_info(Name) of
+	{value, VI} ->
+	    VI;
+	false ->
+	    error({variable_not_found, Name})
+    end.
+
 
 %%------------------------------------------------------------------
 %% This function is a simple consistency check
@@ -804,21 +823,21 @@ get_status_col(Name, Cols) ->
 %% or all of it. If all is selected then the result will be a tagged
 %% list of values.
 %%-----------------------------------------------------------------
-get_table_info(Name,nbr_of_cols) ->
+get_table_info(Name, nbr_of_cols) ->
     get_nbr_of_cols(Name);
-get_table_info(Name,defvals) ->
+get_table_info(Name, defvals) ->
     get_defvals(Name);
-get_table_info(Name,status_col) ->
+get_table_info(Name, status_col) ->
     get_status_col(Name);
-get_table_info(Name,not_accessible) ->
+get_table_info(Name, not_accessible) ->
     get_not_accessible(Name);
-get_table_info(Name,index_types) ->
+get_table_info(Name, index_types) ->
     get_index_types(Name);
-get_table_info(Name,first_accessible) ->
+get_table_info(Name, first_accessible) ->
     get_first_accessible(Name);
-get_table_info(Name,first_own_index) ->
+get_table_info(Name, first_own_index) ->
     get_first_own_index(Name);
-get_table_info(Name,all) ->
+get_table_info(Name, all) ->
     TableInfo = table_info(Name),
     [{nbr_of_cols,      TableInfo#table_info.nbr_of_cols},
      {defvals,          TableInfo#table_info.defvals},
@@ -861,6 +880,11 @@ get_first_own_index(Name) ->
     #table_info{first_own_index = FirstOwnIdx} = table_info(Name),
     FirstOwnIdx.
 
+
+%%-----------------------------------------------------------------
+
+error(Reason) ->
+    throw({error, Reason}).
 
 user_err(F, A) ->
     snmpa_error:user_err(F, A).

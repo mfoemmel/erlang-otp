@@ -29,7 +29,7 @@
 %%%     
 %%%   {debug, Level}
 %%%
-%%%     Level = none | brief | normal | verbose | all
+%%%     Level = none | error | warning brief | normal | verbose | all
 %%%     
 %%%     Controls the level of debug printouts. The default is none.
 %%%     

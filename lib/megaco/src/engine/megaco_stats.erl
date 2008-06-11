@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2002-2007</year>
+%% <year>2002-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -29,8 +29,12 @@
 
 -export([init/1, init/2]).
 
+-export([inc/2, inc/3, inc/4]).
+
 -export([get_stats/1, get_stats/2, get_stats/3,
 	 reset_stats/1, reset_stats/2]).
+
+%% -include_lib("megaco/include/megaco.hrl").
 
 
 %%-----------------------------------------------------------------
@@ -54,6 +58,35 @@ create_global_snmp_counters(Name, [Counter|Counters]) ->
     create_global_snmp_counters(Name, Counters).
 
 
+%%-----------------------------------------------------------------
+%% Func: inc/2, inc/3, inc/4
+%% Description: Increment counter value. Default increment is one 
+%%              (1). 
+%%-----------------------------------------------------------------
+inc(Tab, GlobalCnt) when is_atom(GlobalCnt) ->
+    inc(Tab, GlobalCnt, 1).
+
+inc(Tab, GlobalCnt, Incr) 
+  when is_atom(GlobalCnt) andalso (is_integer(Incr) andalso (Incr > 0)) ->
+    do_inc(Tab, GlobalCnt, Incr);
+inc(Tab, Handle, Cnt) 
+  when is_atom(Cnt) ->
+    inc(Tab, Handle, Cnt, 1).
+
+inc(Tab, Handle, Cnt, Incr) 
+  when is_atom(Cnt) andalso (is_integer(Incr) andalso (Incr > 0)) ->
+    Key = {Handle, Cnt}, 
+    do_inc(Tab, Key, Incr).
+
+do_inc(Tab, Key, Incr) ->
+    case (catch ets:update_counter(Tab, Key, Incr)) of
+        {'EXIT', {badarg, _Reason}} ->
+            ets:insert(Tab, {Key, Incr}),
+	    Incr;
+        Val ->
+            Val
+    end.
+
 
 %%-----------------------------------------------------------------
 %% Func: get_stats/1, get_stats/2, get_stats/3 
@@ -73,7 +106,7 @@ do_get_stats(Ets, [Handle|Handles], Acc) ->
 	    throw({error, Reason})
     end.
 
-get_stats(Ets, GlobalCounter) when atom(GlobalCounter) ->
+get_stats(Ets, GlobalCounter) when is_atom(GlobalCounter) ->
     case (catch ets:lookup(Ets, GlobalCounter)) of
 	[{GlobalCounter, Val}] ->
 	    {ok, Val};
@@ -83,14 +116,14 @@ get_stats(Ets, GlobalCounter) when atom(GlobalCounter) ->
 
 get_stats(Ets, Handle) ->
     case (catch ets:match(Ets, {{Handle, '$1'},'$2'})) of
-	CounterVals when list(CounterVals) ->
+	CounterVals when is_list(CounterVals) ->
 	    {ok, [{Counter, Val} || [Counter, Val] <- CounterVals]};
 	Other ->
 	    {error, {unexpected_result, Other}}
     end.
 
 
-get_stats(Ets, Handle, Counter) when atom(Counter) ->
+get_stats(Ets, Handle, Counter) when is_atom(Counter) ->
     Key = {Handle, Counter}, 
     case (catch ets:lookup(Ets, Key)) of
 	[{Key, Val}] ->
@@ -118,7 +151,7 @@ do_reset_stats(Ets, [Handle|Handles], Acc) ->
 	    throw({error, Reason})
     end.
 
-reset_stats(Ets, GlobalCounter) when atom(GlobalCounter) ->
+reset_stats(Ets, GlobalCounter) when is_atom(GlobalCounter) ->
     %% First get the current value of the counter
     case (catch ets:lookup(Ets, GlobalCounter)) of
 	[{GlobalCounter, Val}] ->
@@ -130,7 +163,7 @@ reset_stats(Ets, GlobalCounter) when atom(GlobalCounter) ->
 
 reset_stats(Ets, Handle) ->
     case (catch ets:match(Ets, {{Handle, '$1'},'$2'})) of
-	CounterVals when list(CounterVals) ->
+	CounterVals when is_list(CounterVals) ->
 	    CVs = [{Counter, Val} || [Counter, Val] <- CounterVals],
 	    reset_stats(Ets, Handle, CVs),
 	    {ok, CVs};

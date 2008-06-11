@@ -241,10 +241,15 @@ endif
 
 LIBS	+= @TERMCAP_LIB@ -L../lib/internal/$(TARGET)
 ifeq ($(TARGET),win32)
-LIBS    += -L$(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET) -lz
+LIBS    += -L$(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET) -lz -L$(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE) -lepcre
+DEPLIBS = $(ERL_TOP)/erts/obj/$(TARGET)/z.lib \
+ $(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/epcre.lib
 else
 # Build on darwin fails if -lz is used
-LIBS    += $(ERL_TOP)/erts/obj/$(TARGET)/libz.a
+LIBS    += $(ERL_TOP)/erts/obj/$(TARGET)/libz.a \
+ $(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/libepcre.a
+DEPLIBS = $(ERL_TOP)/erts/obj/$(TARGET)/libz.a \
+ $(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/libepcre.a
 endif
 
 ELIB_FLAGS = -DENABLE_ELIB_MALLOC -DELIB_ALLOC_IS_CLIB -DELIB_HEAP_SBRK
@@ -320,7 +325,7 @@ ifeq ($(FLAVOR)-@ERTS_BUILD_SMP_EMU@,smp-no)
 all:
 	@echo '*** Omitted build of emulator with smp support'
 else
-all: generate erts_lib zlib $(BINDIR)/$(EMULATOR_EXECUTABLE) $(UNIX_ONLY_BUILDS)
+all: generate erts_lib zlib pcre $(BINDIR)/$(EMULATOR_EXECUTABLE) $(UNIX_ONLY_BUILDS)
 ifeq ($(OMIT_OMIT_FP),yes)
 	@echo '* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *'
 	@echo '* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *'
@@ -336,6 +341,9 @@ endif
 zlib:
 	@set -e ; cd zlib && $(MAKE) $(TYPE)
 
+pcre:
+	@set -e ; cd pcre && $(MAKE) TYPE=$(TYPE) $(TYPE)
+
 erts_lib:
 	cd $(ERL_TOP)/erts/lib_src && $(MAKE) $(TYPE)
 
@@ -350,8 +358,9 @@ endif
 	$(RM) -f $(BINDIR)/child_setup $(BINDIR)/child_setup.*
 	$(RM) -f $(BINDIR)/hipe_mkliterals $(BINDIR)/hipe_mkliterals.*
 	@set -e ; cd zlib && $(MAKE) clean
+	@set -e ; cd pcre && $(MAKE) clean
  
-.PHONY: all sae zlib clean
+.PHONY: all sae zlib pcre clean
 
 docs:
 
@@ -508,7 +517,7 @@ endif
 # ----------------------------------------------------------------------
 # Pattern rules
 #
-INCLUDES  = -Ibeam -Isys/$(ERLANG_OSTYPE) -Isys/common -I$(TTF_DIR) -I$(TARGET) -Izlib -Ihipe -I../include/internal -I../include/internal/$(TARGET)
+INCLUDES  = -Ibeam -Isys/$(ERLANG_OSTYPE) -Isys/common -I$(TTF_DIR) -I$(TARGET) -Izlib -Ipcre -Ihipe -I../include/internal -I../include/internal/$(TARGET)
 
 ifdef PERFCTR_PATH
 INCLUDES += -I$(PERFCTR_PATH)/usr.lib -I$(PERFCTR_PATH)/linux/include
@@ -696,7 +705,8 @@ RUN_OBJS = \
 	$(OBJDIR)/erl_term.o 		$(OBJDIR)/erl_node_tables.o \
 	$(OBJDIR)/erl_monitors.o	$(OBJDIR)/erl_process_dump.o \
 	$(OBJDIR)/erl_obsolete.o	$(OBJDIR)/erl_bif_timer.o \
-	$(OBJDIR)/erl_drv_thread.o      $(OBJDIR)/erl_bif_chksum.o
+	$(OBJDIR)/erl_drv_thread.o      $(OBJDIR)/erl_bif_chksum.o \
+	$(OBJDIR)/erl_bif_re.o
 
 ifeq ($(TARGET),win32)
 DRV_OBJS = \
@@ -771,10 +781,10 @@ HIPE_x86_darwin_OBJS=$(OBJDIR)/mach_override.o
 HIPE_x86_OS_OBJS=$(HIPE_x86_$(OPSYS)_OBJS)
 HIPE_x86_OBJS=$(OBJDIR)/hipe_x86.o $(OBJDIR)/hipe_x86_glue.o $(OBJDIR)/hipe_x86_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o $(HIPE_x86_OS_OBJS)
 HIPE_amd64_OBJS=$(OBJDIR)/hipe_amd64.o $(OBJDIR)/hipe_amd64_glue.o $(OBJDIR)/hipe_amd64_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o
-HIPE_ultrasparc_OBJS=$(OBJDIR)/hipe_sparc.o $(OBJDIR)/hipe_sparc_glue.o $(OBJDIR)/hipe_sparc_bifs.o $(OBJDIR)/hipe_sparc_stack.o
-HIPE_ppc_OBJS=$(OBJDIR)/hipe_ppc.o $(OBJDIR)/hipe_ppc_glue.o $(OBJDIR)/hipe_ppc_bifs.o $(OBJDIR)/hipe_ppc_stack.o
+HIPE_ultrasparc_OBJS=$(OBJDIR)/hipe_sparc.o $(OBJDIR)/hipe_sparc_glue.o $(OBJDIR)/hipe_sparc_bifs.o $(OBJDIR)/hipe_risc_stack.o
+HIPE_ppc_OBJS=$(OBJDIR)/hipe_ppc.o $(OBJDIR)/hipe_ppc_glue.o $(OBJDIR)/hipe_ppc_bifs.o $(OBJDIR)/hipe_risc_stack.o
 HIPE_ppc64_OBJS=$(HIPE_ppc_OBJS)
-HIPE_arm_OBJS=$(OBJDIR)/hipe_arm.o $(OBJDIR)/hipe_arm_glue.o $(OBJDIR)/hipe_arm_bifs.o $(OBJDIR)/hipe_arm_stack.o
+HIPE_arm_OBJS=$(OBJDIR)/hipe_arm.o $(OBJDIR)/hipe_arm_glue.o $(OBJDIR)/hipe_arm_bifs.o $(OBJDIR)/hipe_risc_stack.o
 HIPE_noarch_OBJS=
 HIPE_ARCH_OBJS=$(HIPE_$(ARCH)_OBJS)
 
@@ -917,21 +927,21 @@ endif
 
 ifeq ($(TARGET), win32)
 # Only the basic erlang to begin with eh?
-$(BINDIR)/$(EMULATOR_EXECUTABLE): $(INIT_OBJS) $(OBJS)
+$(BINDIR)/$(EMULATOR_EXECUTABLE): $(INIT_OBJS) $(OBJS) $(DEPLIBS)
 	$(PURIFY) $(LD) -dll -def:sys/$(ERLANG_OSTYPE)/erl.def -implib:$(BINDIR)/erl_dll.lib -o $(BINDIR)/$(EMULATOR_EXECUTABLE) \
 	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS) $(OBJS) $(LIBS)
 else
 
 
-$(BINDIR)/$(EMULATOR_EXECUTABLE): $(INIT_OBJS) $(OBJS)
+$(BINDIR)/$(EMULATOR_EXECUTABLE): $(INIT_OBJS) $(OBJS) $(DEPLIBS)
 	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE) \
 	$(HIPEBEAMLDFLAGS) $(LDFLAGS) $(DEXPORT) $(INIT_OBJS) $(OBJS) $(LIBS)
 
-$(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB): $(INIT_OBJS) $(OBJS_ELIB)
+$(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB): $(INIT_OBJS) $(OBJS_ELIB) $(DEPLIBS)
 	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB) \
 	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS) $(OBJS_ELIB) $(LIBS)
 
-$(BINDIR)/$(EMULATOR_EXECUTABLE_SAE): $(INIT_OBJS_SAE) $(OBJS_SAE)
+$(BINDIR)/$(EMULATOR_EXECUTABLE_SAE): $(INIT_OBJS_SAE) $(OBJS_SAE) $(DEPLIBS)
 	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE) \
 	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS_SAE) $(OBJS_SAE) $(LIBS)
 

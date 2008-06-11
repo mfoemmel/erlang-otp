@@ -57,7 +57,7 @@
 ./lib/common_test/ebin/rx.beam
 ./lib/common_test/ebin/unix_telnet.beam
 ./lib/common_test/ebin/vts.beam
-./lib/common_test/install.sh
+./lib/common_test/priv/install.sh
 ./lib/compiler/ebin/beam_asm.beam
 ./lib/compiler/ebin/beam_block.beam
 ./lib/compiler/ebin/beam_bool.beam
@@ -757,7 +757,6 @@
 ./lib/dialyzer/ebin/dialyzer_succ_typings.beam
 ./lib/dialyzer/ebin/dialyzer_typesig.beam
 ./lib/dialyzer/ebin/dialyzer_utils.beam
-./lib/dialyzer/plt/dialyzer_init_plt
 ./lib/docbuilder/ebin/docb_edoc_xml_cb.beam
 ./lib/docbuilder/ebin/docb_gen.beam
 ./lib/docbuilder/ebin/docb_html.beam
@@ -1016,6 +1015,7 @@
 ./lib/inets/ebin/tftp_engine.beam
 ./lib/inets/ebin/tftp_file.beam
 ./lib/inets/ebin/tftp_lib.beam
+./lib/inets/ebin/tftp_logger.beam
 ./lib/inets/ebin/tftp_sup.beam
 ./lib/inviso/ebin/inviso.app
 ./lib/inviso/ebin/inviso.appup
@@ -1630,6 +1630,7 @@
 ./lib/snmp/ebin/snmpa_net_if_filter.beam
 ./lib/snmp/ebin/snmpa_network_interface.beam
 ./lib/snmp/ebin/snmpa_network_interface_filter.beam
+./lib/snmp/ebin/snmpa_notification_delivery_info_receiver.beam
 ./lib/snmp/ebin/snmpa_notification_filter.beam
 ./lib/snmp/ebin/snmpa_set.beam
 ./lib/snmp/ebin/snmpa_set_lib.beam
@@ -1861,6 +1862,7 @@
 ./lib/stdlib/ebin/qlc_pt.beam
 ./lib/stdlib/ebin/queue.beam
 ./lib/stdlib/ebin/random.beam
+./lib/stdlib/ebin/re.beam
 ./lib/stdlib/ebin/regexp.beam
 ./lib/stdlib/ebin/sets.beam
 ./lib/stdlib/ebin/shell.beam

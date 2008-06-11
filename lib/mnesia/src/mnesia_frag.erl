@@ -1007,10 +1007,10 @@ make_del_node(Tab, Node) ->
 
 remove_node(Node, Cs) ->
     Tab = Cs#cstruct.name,
-    case is_top_frag(Tab) of
-	false ->
+    case ?catch_val({Tab, frag_hash}) of
+	{'EXIT', _} ->
 	    {Cs, false};
-	true -> 
+	_ ->
 	    Pool = lookup_prop(Tab, node_pool),
 	    case lists:member(Node, Pool) of
 		true ->
@@ -1093,14 +1093,6 @@ lookup_frag_hash(Tab) ->
 			hash_state  = HashState};    
 	{'EXIT', _} ->
 	    mnesia:abort({no_exists, Tab, frag_properties, frag_hash})
-    end.
-
-is_top_frag(Tab) ->
-    case ?catch_val({Tab, frag_hash}) of
-	{'EXIT', _} ->
-	    false;
-	_ -> 
-	    [] == lookup_foreigners(Tab)
     end.
 
 %% Returns a list of tables

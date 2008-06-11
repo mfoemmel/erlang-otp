@@ -94,11 +94,8 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
 %%
 
 build_ig(CFG, Target) ->
-  case catch build_ig0(CFG, Target) of
-    {'EXIT',Rsn} ->
-      exit({?MODULE, build_ig, Rsn});
-    Else ->
-      Else
+  try build_ig0(CFG, Target)
+  catch error:Rsn -> exit({?MODULE, build_ig, Rsn})
   end.
 
 build_ig0(CFG, Target) ->
@@ -193,13 +190,12 @@ set_spill_cost(X, N, Spill) ->
 %%     * restart the while-loop above
 
 color(IG, Spill, PhysRegs, SpillIx, SpillLimit, NumNodes, Target, NotAllocatable) ->
-   case catch color_0(IG, Spill, PhysRegs, SpillIx, SpillLimit,
-		      NumNodes, Target, NotAllocatable) of
-      {'EXIT',Rsn} ->
-	 ?error_msg("Coloring failed with ~p~n", [Rsn]),
-	 ?EXIT(Rsn);
-      Else ->
-	 Else
+   try color_0(IG, Spill, PhysRegs, SpillIx, SpillLimit,
+	       NumNodes, Target, NotAllocatable)
+   catch
+     error:Rsn ->
+       ?error_msg("Coloring failed with ~p~n", [Rsn]),
+       ?EXIT(Rsn)
    end.
 
 color_0(IG, Spill, PhysRegs, SpillIx, SpillLimit, NumNodes, Target,

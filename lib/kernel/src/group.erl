@@ -335,9 +335,9 @@ get_line1({undefined,{_A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0)
        or ((Mode =:= meta_left_sq_bracket) and (Char =:= $A)) ->
     send_drv_reqs(Drv, Rs),
     case up_stack(Ls0) of
-	{none,Ls} ->
+	{none,_Ls} ->
 	    send_drv(Drv, beep),
-	    get_line1(edlin:edit_line(Cs, Cont), Drv, Ls);
+	    get_line1(edlin:edit_line(Cs, Cont), Drv, Ls0);
 	{Lcs,Ls} ->
 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
 	    {more_chars,Ncont,Nrs} = edlin:start(edlin:prompt(Cont)),
@@ -352,9 +352,9 @@ get_line1({undefined,{_A,Mode,Char},_Cs,Cont,Rs}, Drv, Ls0)
        or ((Mode =:= meta_left_sq_bracket) and (Char =:= $B)) ->
     send_drv_reqs(Drv, Rs),
     case down_stack(Ls0) of
-	{none,_Ls} ->
+	{none,Ls} ->
 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
-	    get_line1(edlin:start(edlin:prompt(Cont)), Drv, Ls0);
+	    get_line1(edlin:start(edlin:prompt(Cont)), Drv, Ls);
 	{Lcs,Ls} ->
 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
 	    {more_chars,Ncont,Nrs} = edlin:start(edlin:prompt(Cont)),
@@ -413,21 +413,17 @@ new_stack(Ls) -> {stack,Ls,{},[]}.
 
 up_stack({stack,[L|U],{},D}) ->
     {L,{stack,U,L,D}};
-up_stack({stack,[L|U],C,D}) ->
-    {L,{stack,U,L,[C|D]}};
 up_stack({stack,[],{},D}) ->
     {none,{stack,[],{},D}};
-up_stack({stack,[],C,D}) ->
-    {none,{stack,[C],{},D}}.
+up_stack({stack,U,C,D}) ->
+    up_stack({stack,U,{},[C|D]}).
 
 down_stack({stack,U,{},[L|D]}) ->
     {L,{stack,U,L,D}};
-down_stack({stack,U,C,[L|D]}) ->
-    {L,{stack,[C|U],L,D}};
 down_stack({stack,U,{},[]}) ->
     {none,{stack,U,{},[]}};
-down_stack({stack,U,C,[]}) ->
-    {none,{stack,U,{},[C]}}.
+down_stack({stack,U,C,D}) ->
+    down_stack({stack,[C|U],{},D}).
 
 %% This is get_line without line editing (except for backspace) and
 %% without echo.
@@ -469,19 +465,9 @@ edit_password([Char|Cs],Chars) ->
     edit_password(Cs,[Char|Chars]).
 
 %% prompt_bytes(Prompt)
-%%  Return a list of bytes for the Prompt.
-
-prompt_bytes(Prompt) when is_atom(Prompt) ->
-    atom_to_list(Prompt);
-prompt_bytes({format,Format,Args}) ->
-    case catch io_lib:format(Format,Args) of
-	{'EXIT',_} ->
-	    "???";
-	List ->
-	    lists:flatten(List)
-    end;
+%%  Return a flat list of bytes for the Prompt.
 prompt_bytes(Prompt) ->
-    lists:flatten(io_lib:format("~p", [Prompt])).
+    lists:flatten(io_lib:format_prompt(Prompt)).
 
 cast(L, binary) when is_list(L) ->
     list_to_binary(L);

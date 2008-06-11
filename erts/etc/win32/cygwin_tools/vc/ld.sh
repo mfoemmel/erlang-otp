@@ -74,24 +74,23 @@ if [ $DEBUG_BUILD = true ]; then
     if [ $STDLIB_FORCED = false ]; then
 	STDLIB=MSVCRTD.LIB
     fi
-else
-    # Generate a PDB 
-    linkadd_pdb=""
-    case "$OUTPUT_FILENAME" in
-	*.exe|*.EXE)
+fi
+# Generate a PDB 
+linkadd_pdb=""
+case "$OUTPUT_FILENAME" in
+    *.exe|*.EXE)
 	    fn=`echo "$OUTPUT_FILENAME" | sed 's,[eE][xX][eE]$,,g'`;
 	    linkadd_pdb="-pdb:\"${fn}pdb\"";;
-	*.dll|*.DLL)
+    *.dll|*.DLL)
 	    fn=`echo "$OUTPUT_FILENAME" | sed 's,[dD][lL][lL]$,,g'`;
 	    linkadd_pdb="-pdb:\"${fn}pdb\"";;
-	"")
+    "")
 	    linkadd_pdb="-pdb:\"a.pdb\"";;
-	*)
+    *)
 	    linkadd_pdb="-pdb:\"${OUTPUT_FILENAME}.pdb\"";;
-    esac
+esac
 	
     linktype="-debug $linkadd_pdb"
-fi
 
 if [ $BUILD_DLL = true ];then
     case "$OUTPUT_FILENAME" in

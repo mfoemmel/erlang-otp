@@ -611,6 +611,14 @@ bif erl_ddll:monitor/2
 bif erl_ddll:demonitor/1
 
 #
+# Bifs in the re module 
+#
+bif re:compile/1
+bif re:compile/2
+bif re:run/2
+bif re:run/3
+
+#
 # Bifs in lists module.
 #
 

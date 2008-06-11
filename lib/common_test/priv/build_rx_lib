@@ -2,11 +2,10 @@
 
 # Simple script to build the rx regexp library.
 
-rx_dir=$1/rx-1.5
+rx_dir=$1/rx-1.5/rx
 makeprog=$2 
 echo "cd $rx_dir"
 cd $rx_dir
-./configure --cache-file=/dev/null
 echo "MAKE = $makeprog $3 $4"
 $makeprog $3 $4 clean
-$makeprog $3 $4 all
+$makeprog $3 $4 install

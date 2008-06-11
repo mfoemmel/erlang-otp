@@ -1400,11 +1400,56 @@ static int cmp_refs(unsigned char **e1, unsigned char **e2)
     return 0;
 }
 
+static int cmp_string_list(unsigned char **e1, unsigned char **e2) {
+  
+  /* we need to compare a string in **e1 and a list in **e2               */
+  /* convert the string to list representation and convert that with e2   */
+  /* we need a temporary buffer of:                                       */
+  /* 5 (list tag + length) + 2*string length + 1 (end of list tag)        */
+  /* for short lists we use a stack allocated buffer, otherwise we malloc */
+
+  unsigned char *bp;
+  unsigned char buf[5+2*255+1]; /* used for short lists */
+  int i,e1_len;
+  int res;
+  
+  e1_len = ((*e1)[1] << 8) | ((*e1)[2]);
+  if ( e1_len < 256 ) {
+    bp = buf;
+  } else {
+    bp = malloc(5+(2*e1_len)+1);
+  }
+
+  bp[0] = ERL_LIST_EXT;
+  bp[1] = bp[2] = 0;
+  bp[3] = (*e1)[1];
+  bp[4] = (*e1)[2];
+
+  for(i=0;i<e1_len;i++) {
+    bp[5+2*i] = ERL_SMALL_INTEGER_EXT;
+    bp[5+2*i+1] = (*e1)[3+i];
+  }
+
+  bp[5+2*e1_len] = ERL_NIL_EXT;
+
+  res = cmp_exe2(&bp, e2);
+
+  if ( e1_len >= 256 ) free(bp);
+
+  return res;
+}
+
 static int cmp_exe2(unsigned char **e1, unsigned char **e2)
 {
   int min,  ret,i,j,k;
   double ff1, ff2;
   unsigned char *tmp1, *tmp2;
+
+  if ( ((*e1)[0] == ERL_STRING_EXT) && ((*e2)[0] == ERL_LIST_EXT) ) {
+    return cmp_string_list(e1, e2);
+  } else if ( ((*e1)[0] == ERL_LIST_EXT) && ((*e2)[0] == ERL_STRING_EXT) ) {
+    return -cmp_string_list(e2, e1);
+  }
 
   *e2 += 1;
   switch (*(*e1)++) 
@@ -1502,7 +1547,7 @@ static int cmp_exe2(unsigned char **e1, unsigned char **e2)
     case ERL_SMALL_TUPLE_EXT:
       i = *(*e1)++; 	j = *(*e2)++;
       if (i < j) return -1;
-      if (j > j ) return 1;
+      if (i > j ) return 1;
       while (i--) {
 	if ((j = compare_top_ext(e1, e2))) return j;
       }
@@ -1513,7 +1558,7 @@ static int cmp_exe2(unsigned char **e1, unsigned char **e2)
       j = (**e2 << 24) | ((*e2)[1]) << 16| ((*e2)[2]) << 8| ((*e2)[3]) ;	
       *e2 += 4;
       if (i < j) return -1;
-      if (j > j ) return 1;
+      if (i > j ) return 1;
       while (i--) {
 	if ((j = compare_top_ext(e1, e2))) return j;
       }
@@ -1610,6 +1655,9 @@ static int cmp_small_big(unsigned char**e1, unsigned char **e2)
     ei_free_big(b1);
     ei_free_big(b2);
 
+    *e1 += i1;
+    *e2 += i2;
+
     return res;
 }
 
@@ -1626,6 +1674,9 @@ static int cmp_small_float(unsigned char**e1, unsigned char **e2)
     if ( ei_decode_double(*e2,&i2,&f2) < 0 ) return 1;
     
     f1 = to_float(l1);
+
+    *e1 += i1;
+    *e2 += i2;
 
     return cmp_floats(f1,f2);
 }
@@ -1657,6 +1708,9 @@ static int cmp_float_big(unsigned char**e1, unsigned char **e2)
     
     ei_free_big(b2);
 
+    *e1 += i1;
+    *e2 += i2;
+
     return cmp_floats(f1,f2);
 }
 
@@ -1675,6 +1729,9 @@ static int cmp_small_small(unsigned char**e1, unsigned char **e2)
         return 1;
     }
     
+    *e1 += i1;
+    *e2 += i2;
+    
     if ( l1 < l2 ) return -1;
     else if ( l1 > l2 ) return 1;
     else return 0;
@@ -1688,6 +1745,9 @@ static int cmp_float_float(unsigned char**e1, unsigned char **e2)
     i1 = i2 = 0;
     if ( ei_decode_double(*e1,&i1,&f1) < 0 ) return -1;
     if ( ei_decode_double(*e2,&i2,&f2) < 0 ) return 1;
+    
+    *e1 += i1;
+    *e2 += i2;
     
     return cmp_floats(f1,f2);
 }
@@ -1714,6 +1774,9 @@ static int cmp_big_big(unsigned char**e1, unsigned char **e2)
     
     ei_free_big(b1);
     ei_free_big(b2);
+    
+    *e1 += i1;
+    *e2 += i2;
 
     return res;
 }

@@ -264,7 +264,7 @@ get_uint32_measurement(Request, #internal{os_type = {unix, openbsd}}) ->
     end;
 get_uint32_measurement(Request, #internal{os_type = {unix, darwin}}) ->
     %% Get the load average using uptime, overriding Locale setting.
-    D = os:cmd("LANG=C uptime") -- "\n",
+    D = os:cmd("LANG=C LC_ALL=C uptime") -- "\n",
     %% Here is a sample uptime string from Mac OS 10.3.8 (C Locale):
     %%    "11:17  up 12 days, 20:39, 2 users, load averages: 1.07 0.95 0.66"
     %% The safest way to extract the load averages seems to be grab everything

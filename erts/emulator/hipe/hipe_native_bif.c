@@ -118,10 +118,9 @@ Eterm hipe_set_timeout(Process *p, Eterm timeout_value)
      * If we have already set the timer, we must NOT set it again.  Therefore,
      * we must test the F_INSLPQUEUE flag as well as the F_TIMO flag.
      */
-    if( p->flags & (F_INSLPQUEUE | F_TIMO) ) {
+    if (p->flags & (F_INSLPQUEUE | F_TIMO))
 	return NIL;	/* caller had better call nbif_suspend ASAP! */
-    }
-    if( is_small(timeout_value) && signed_val(timeout_value) >= 0 &&
+    if (is_small(timeout_value) && signed_val(timeout_value) >= 0 &&
 #if defined(ARCH_64)
 	(unsigned_val(timeout_value) >> 32) == 0
 #else
@@ -129,10 +128,10 @@ Eterm hipe_set_timeout(Process *p, Eterm timeout_value)
 #endif
 	) {
 	set_timer(p, unsigned_val(timeout_value));
-    } else if( timeout_value == am_infinity ) {
+    } else if (timeout_value == am_infinity) {
 	/* p->flags |= F_TIMO; */	/* XXX: nbif_suspend_msg_timeout */
 #if !defined(ARCH_64)
-    } else if( term_to_Uint(timeout_value, &time_val) ) {
+    } else if (term_to_Uint(timeout_value, &time_val)) {
 	set_timer(p, time_val);
 #endif
     } else {
@@ -165,12 +164,12 @@ void hipe_select_msg(Process *p)
  *  EXF_NATIVE is set, so that build_stacktrace (in beam_emu.c) does not
  *  try to interpret any other field.
  */
-static void
-hipe_save_stacktrace(Process* c_p, Eterm args) {
+static void hipe_save_stacktrace(Process* c_p, Eterm args)
+{
     Eterm *hp;
     struct StackTrace* s;
     int sz;
-    int depth = 0;    /* max depth (never negative) */
+    int depth = erts_backtrace_depth;    /* max depth (never negative) */
 
     /* Create a container for the exception data. This must be done just
        as in the save_stacktrace function in beam_emu.c */
@@ -180,11 +179,10 @@ hipe_save_stacktrace(Process* c_p, Eterm args) {
     s = (struct StackTrace *) (hp + 2);
     c_p->ftrace = CONS(hp, args, make_big((Eterm *) s));
     s->header = make_pos_bignum_header(sz);
-
-    /* All the other fields are inside the bignum */
     s->current = NULL;
     s->pc = NULL;
-    s->depth = depth;
+
+    s->depth = hipe_fill_stacktrace(c_p, depth, s->trace);
 
     /* Must mark this as a native-code exception. */
     s->freason = NATIVE_EXCEPTION(c_p->freason);
@@ -215,17 +213,16 @@ void hipe_handle_exception(Process *c_p)
      * as the Arglist.
      */
     if (c_p->freason & EXF_ARGLIST) {
-	  Eterm* tp;
-	  ASSERT(is_tuple(Value));
-	  tp = tuple_val(Value);
-	  Value = tp[1];
-	  Args = tp[2];
+	Eterm *tp;
+	ASSERT(is_tuple(Value));
+	tp = tuple_val(Value);
+	Value = tp[1];
+	Args = tp[2];
     }
 
     /* If necessary, build a stacktrace object. */
-    if (c_p->freason & EXF_SAVETRACE) {
-        hipe_save_stacktrace(c_p, Args);
-    }
+    if (c_p->freason & EXF_SAVETRACE)
+	hipe_save_stacktrace(c_p, Args);
 
     /* Get the fully expanded error term */
     Value = expand_error_value(c_p, c_p->freason, Value);
@@ -242,18 +239,17 @@ void hipe_handle_exception(Process *c_p)
 	//erts_printf("%s line %u: p==%p, p->mbuf==%p, p->lastbif==%p\n", __FUNCTION__, __LINE__, c_p, c_p->mbuf, c_p->hipe.lastbif);
 	erts_garbage_collect(c_p, 0, NULL, 0);
     }
-    
+
     hipe_find_handler(c_p);
 }
 
 /* This is duplicated from beam_emu.c for now */
-static struct StackTrace *
-get_trace_from_exc(Eterm exc) {
-    if (exc == NIL) {
-      return NULL;
-    } else {
-      return (struct StackTrace *) big_val(CDR(list_val(exc)));
-    }
+static struct StackTrace *get_trace_from_exc(Eterm exc)
+{
+    if (exc == NIL)
+	return NULL;
+    else
+	return (struct StackTrace *) big_val(CDR(list_val(exc)));
 }
 
 /*
@@ -262,114 +258,115 @@ get_trace_from_exc(Eterm exc) {
  */
 Eterm hipe_rethrow(Process *c_p, Eterm exc, Eterm value)
 {
-     c_p->fvalue = value;
-     if (c_p->freason == EXC_NULL) {
-       /* a safety check for the R10-0 case; should not happen */
-       c_p->ftrace = NIL;
-       BIF_ERROR(c_p, EXC_ERROR);
-     }
-     /* For R10-0 code, 'exc' might be an atom. In that case, just
-	keep the existing c_p->ftrace. */
-     switch (exc) {
-     case am_throw:
-       BIF_ERROR(c_p, (EXC_THROWN & ~EXF_SAVETRACE));
-       break;
-     case am_error:
-       BIF_ERROR(c_p, (EXC_ERROR & ~EXF_SAVETRACE));
-       break;
-     case am_exit:
-       BIF_ERROR(c_p, (EXC_EXIT & ~EXF_SAVETRACE));
-       break;
-     default:
-       {/* R10-1 and later
-	   XXX note: should do sanity check on given exception if it can be
-	   passed from a user! Currently only expecting generated calls.
-	*/
-	 struct StackTrace *s;
-	 c_p->ftrace = exc;
-	 s = get_trace_from_exc(exc);
-	 if (s == NULL) {
-	   BIF_ERROR(c_p, EXC_ERROR);
-	 } else {
-	   BIF_ERROR(c_p, PRIMARY_EXCEPTION(s->freason));
-	 }
-       }
-     }
+    c_p->fvalue = value;
+    if (c_p->freason == EXC_NULL) {
+	/* a safety check for the R10-0 case; should not happen */
+	c_p->ftrace = NIL;
+	BIF_ERROR(c_p, EXC_ERROR);
+    }
+    /* For R10-0 code, 'exc' might be an atom. In that case, just
+       keep the existing c_p->ftrace. */
+    switch (exc) {
+      case am_throw:
+	BIF_ERROR(c_p, (EXC_THROWN & ~EXF_SAVETRACE));
+	break;
+      case am_error:
+	BIF_ERROR(c_p, (EXC_ERROR & ~EXF_SAVETRACE));
+	break;
+      case am_exit:
+	BIF_ERROR(c_p, (EXC_EXIT & ~EXF_SAVETRACE));
+	break;
+      default:
+	{/* R10-1 and later
+	    XXX note: should do sanity check on given exception if it can be
+	    passed from a user! Currently only expecting generated calls.
+	 */
+	    struct StackTrace *s;
+	    c_p->ftrace = exc;
+	    s = get_trace_from_exc(exc);
+	    if (s == NULL) {
+		BIF_ERROR(c_p, EXC_ERROR);
+	    } else {
+		BIF_ERROR(c_p, PRIMARY_EXCEPTION(s->freason));
+	    }
+	}
+    }
 }
-
 
 /*
  * Support for compiled binary syntax operations.
  */
 
 char *hipe_bs_allocate(int len)
-{ 
-  Binary* bptr;
-  bptr = erts_bin_nrml_alloc(len);
-  bptr->flags = 0;
-  bptr->orig_size = len;
-  erts_smp_atomic_init(&bptr->refc, 1);
-  return bptr->orig_bytes;
+{
+    Binary *bptr;
+
+    bptr = erts_bin_nrml_alloc(len);
+    bptr->flags = 0;
+    bptr->orig_size = len;
+    erts_smp_atomic_init(&bptr->refc, 1);
+    return bptr->orig_bytes;
 }
 
 Binary *hipe_bs_reallocate(Binary* oldbptr, int newsize)
-{ 
-  Binary* bptr;
-  bptr = erts_bin_realloc(oldbptr, newsize);
-  bptr->orig_size = newsize;
-  return bptr;
+{
+    Binary *bptr;
+
+    bptr = erts_bin_realloc(oldbptr, newsize);
+    bptr->orig_size = newsize;
+    return bptr;
 }
-
-
 
 int hipe_bs_put_big_integer(
 #ifdef ERTS_SMP
     Process *p,
 #endif
     Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
-{ 
-  byte* save_bin_buf;
-  unsigned save_bin_offset;
-  int res;
-  ERL_BITS_DEFINE_STATEP(p);
-  save_bin_buf=erts_current_bin;
-  save_bin_offset=erts_bin_offset;
-  erts_current_bin=base;
-  erts_bin_offset=offset;
-  res = erts_new_bs_put_integer(ERL_BITS_ARGS_3(arg, num_bits, flags));
-  erts_current_bin=save_bin_buf;
-  erts_bin_offset=save_bin_offset;
-  return res;
+{
+    byte *save_bin_buf;
+    Uint save_bin_offset;
+    int res;
+    ERL_BITS_DEFINE_STATEP(p);
+
+    save_bin_buf = erts_current_bin;
+    save_bin_offset = erts_bin_offset;
+    erts_current_bin = base;
+    erts_bin_offset = offset;
+    res = erts_new_bs_put_integer(ERL_BITS_ARGS_3(arg, num_bits, flags));
+    erts_current_bin = save_bin_buf;
+    erts_bin_offset = save_bin_offset;
+    return res;
 }
 
 int hipe_bs_put_small_float(
     Process *p,
     Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
-{ 
-  byte* save_bin_buf;
-  unsigned save_bin_offset;
-  int res;
-  ERL_BITS_DEFINE_STATEP(p);
-  save_bin_buf=erts_current_bin;
-  save_bin_offset=erts_bin_offset;
-  erts_current_bin=base;
-  erts_bin_offset=offset;
-  res = erts_new_bs_put_float(p, arg, num_bits, flags);
-  erts_current_bin=save_bin_buf;
-  erts_bin_offset=save_bin_offset;
-  return res;
+{
+    byte *save_bin_buf;
+    Uint save_bin_offset;
+    int res;
+    ERL_BITS_DEFINE_STATEP(p);
+
+    save_bin_buf = erts_current_bin;
+    save_bin_offset = erts_bin_offset;
+    erts_current_bin = base;
+    erts_bin_offset = offset;
+    res = erts_new_bs_put_float(p, arg, num_bits, flags);
+    erts_current_bin = save_bin_buf;
+    erts_bin_offset = save_bin_offset;
+    return res;
 }
 
 void hipe_bs_put_bits(
     Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
-{ 
-  Uint Bitoffs,Bitsize;
-  byte* Bytep;
-  ERTS_GET_BINARY_BYTES(arg,Bytep,Bitoffs,Bitsize);
-  erts_copy_bits(Bytep,Bitoffs,1,base,offset,1,num_bits);
-  return;
+{
+    Uint Bitoffs, Bitsize;
+    byte *Bytep;
+
+    ERTS_GET_BINARY_BYTES(arg, Bytep, Bitoffs, Bitsize);
+    erts_copy_bits(Bytep, Bitoffs, 1, base, offset, 1, num_bits);
 }
-  
+
 /*
  * Shallow copy to heap if possible; otherwise,
  * move to heap via garbage collection.
@@ -467,6 +464,5 @@ void hipe_atomic_inc(int *counter)
 {
     erts_smp_atomic_inc((erts_smp_atomic_t*)counter);
 }
-
 
 #endif

@@ -86,7 +86,7 @@ compiler_runner(List) ->
 
 compile1(['@cwd', Cwd|Rest]) ->
     CwdL = atom_to_list(Cwd),
-    compile1(Rest, Cwd, #options{outdir=CwdL, cwd=CwdL});
+    compile1(Rest, CwdL, #options{outdir=CwdL, cwd=CwdL});
 compile1(Other) ->
     throw({error, {bad_input, Other}}).
 

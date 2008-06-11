@@ -16,6 +16,10 @@ ifeq ($(MEGACO_DEBUG), true)
 ERL_COMPILE_FLAGS += -Dmegaco_debug
 endif
 
+ifneq ($(MEGACO_PARSER_INLINE), false)
+ERL_COMPILE_FLAGS += -Dmegaco_parser_inline
+endif
+
 ifeq ($(USE_MEGACO_HIPE), true)
 ERL_COMPILE_FLAGS += +native
 endif

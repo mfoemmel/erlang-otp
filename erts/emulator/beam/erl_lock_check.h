@@ -80,10 +80,12 @@ int erts_lc_trylock_force_busy_flg(erts_lc_lock_t *lck, Uint16 op_flags);
 void erts_lc_trylock_flg(int locked, erts_lc_lock_t *lck, Uint16 op_flags);
 void erts_lc_lock_flg(erts_lc_lock_t *lck, Uint16 op_flags);
 void erts_lc_unlock_flg(erts_lc_lock_t *lck, Uint16 op_flags);
+void erts_lc_might_unlock_flg(erts_lc_lock_t *lck, Uint16 op_flags);
 int erts_lc_trylock_force_busy(erts_lc_lock_t *lck);
 void erts_lc_trylock(int locked, erts_lc_lock_t *lck);
 void erts_lc_lock(erts_lc_lock_t *lck);
 void erts_lc_unlock(erts_lc_lock_t *lck);
+void erts_lc_might_unlock(erts_lc_lock_t *lck);
 void erts_lc_init_lock(erts_lc_lock_t *lck, char *name, Uint16 flags);
 void erts_lc_init_lock_x(erts_lc_lock_t *lck, char *name, Uint16 flags, Eterm extra);
 void erts_lc_destroy_lock(erts_lc_lock_t *lck);
@@ -91,6 +93,13 @@ void erts_lc_fail(char *fmt, ...);
 int erts_lc_assert_failed(char *file, int line, char *assertion);
 void erts_lc_set_thread_name(char *thread_name);
 void erts_lc_pll(void);
+
+void erts_lc_require_lock_flg(erts_lc_lock_t *lck, Uint16 op_flags);
+void erts_lc_unrequire_lock_flg(erts_lc_lock_t *lck, Uint16 op_flags);
+
+void erts_lc_require_lock(erts_lc_lock_t *lck);
+void erts_lc_unrequire_lock(erts_lc_lock_t *lck);
+
 
 #define ERTS_LC_ASSERT(A) \
   ((void) ((A) ? 1 : erts_lc_assert_failed(__FILE__, __LINE__, #A)))

@@ -22,7 +22,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
+%% Author contact: richardc@it.uu.se
 %%
 %% $Id$
 %%
@@ -196,6 +196,34 @@ etype -> utype: '$1'.
 throws -> etype where_defs:
 	#t_throws{type = '$1',
 		  defs = lists:reverse('$2')}.
+
+%% (commented out for now)
+%% Header
+%% "%% ========================== -*-Erlang-*- ============================="
+%% "%% EDoc function specification parser, generated from the file"
+%% "%% \"edoc_parser.yrl\" by the Yecc parser generator."
+%% "%%"
+%% "%% Copyright (C) 2002-2005 Richard Carlsson"
+%% "%%"
+%% "%% This library is free software; you can redistribute it and/or modify"
+%% "%% it under the terms of the GNU Lesser General Public License as"
+%% "%% published by the Free Software Foundation; either version 2 of the"
+%% "%% License, or (at your option) any later version."
+%% "%%"
+%% "%% This library is distributed in the hope that it will be useful, but"
+%% "%% WITHOUT ANY WARRANTY; without even the implied warranty of"
+%% "%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU"
+%% "%% Lesser General Public License for more details."
+%% "%%"
+%% "%% You should have received a copy of the GNU Lesser General Public"
+%% "%% License along with this library; if not, write to the Free Software"
+%% "%% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307"
+%% "%% USA"
+%% "%%"
+%% "%% @private"
+%% "%% @author Richard Carlsson <richardc@it.uu.se>"
+%% "%% ===================================================================="
+%% .
 
 Erlang code.
 

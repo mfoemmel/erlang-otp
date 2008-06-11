@@ -35,6 +35,7 @@
 	 run/1, 
 	 gui/0,
 	 gui/1,
+	 plt_info/1,
 	 format_warning/1]).
 
 -include("dialyzer.hrl").
@@ -45,6 +46,7 @@
 %%  - run/1:            Erlang interface for a command line-like analysis
 %%  - gui/0/1:          Erlang interface for the gui.
 %%  - format_warning/1: Get the string representation of a warning.
+%%  - plt_info/1:       Get information of the specified plt.
 %%--------------------------------------------------------------------
 
 -spec(plain_cl/0 :: () -> no_return()).
@@ -52,23 +54,22 @@
 plain_cl() ->
   case dialyzer_cl_parse:start() of
     {check_init, Opts} -> 
-      cl_halt(cl_check_init(Opts, true), Opts);
+      cl_halt(cl_check_init(Opts), Opts);
+    {plt_info, Opts} ->
+      cl_halt(cl_print_plt_info(Opts), Opts);
     {gui, Opts} ->
+      try check_gui_options(Opts)
+      catch throw:{dialyzer_error, Msg} -> cl_error(Msg)
+      end,
       case cl_check_init(Opts) of
 	{error, _} = Error -> gui_halt(Error, Opts);
 	{ok, ?RET_NOTHING_SUSPICIOUS} ->
-	  if Opts#options.report_mode =:= quiet -> ok;
-	     true -> io:put_chars("  Proceeding with startup...\n")
-	  end,
 	  gui_halt(internal_gui(Opts), Opts)
       end;
     {cl, Opts} -> 
       case cl_check_init(Opts) of
 	{error, _} = Error -> cl_halt(Error, Opts);
 	{ok, ?RET_NOTHING_SUSPICIOUS} ->
-	  if Opts#options.report_mode =:= quiet -> ok;
-	     true  -> io:put_chars("  Proceeding with analysis... ")
-	  end,
 	  cl_halt(cl(Opts), Opts)
       end;
     {error, Msg} -> 
@@ -76,17 +77,53 @@ plain_cl() ->
   end.
 
 cl_check_init(Opts) ->
-  cl_check_init(Opts, false).
+  case Opts#options.analysis_type of
+    plt_build ->  {ok, ?RET_NOTHING_SUSPICIOUS};
+    plt_add ->    {ok, ?RET_NOTHING_SUSPICIOUS};
+    plt_remove -> {ok, ?RET_NOTHING_SUSPICIOUS};
+    Other when Other =:= succ_typings; Other =:= plt_check ->
+      F = fun() ->
+	      dialyzer_cl:start(Opts#options{analysis_type=plt_check})
+	  end,
+      doit(F)
+  end.
 
-cl_check_init(Opts, Force) ->
-  if Opts#options.report_mode =:= quiet -> ok;
-     true -> io:put_chars("  Checking whether the initial "
-			  "PLT exists and is up-to-date...")
-  end,
+cl_print_plt_info(Opts) ->
   F = fun() ->
-	  dialyzer_cl:check_init_plt(Opts, Force)
+	  print_plt_info(Opts)
       end,
   doit(F).
+
+print_plt_info(Opts) ->
+  Plt = Opts#options.init_plt,
+  String =
+    case dialyzer_plt:included_files(Plt) of
+      {ok, Files} ->
+	io_lib:format("The plt ~s includes the following files:\n~p\n",
+		      [Plt, Files]);
+      {error, read_error} ->
+	Msg = io_lib:format("Could not read the plt file ~p\n", [Plt]),
+	throw({dialyzer_error, Msg});
+      {error, no_such_file} ->
+	Msg = io_lib:format("The plt file ~p does not exist.\n", [Plt]),
+	throw({dialyzer_error, Msg})
+    end,
+  case Opts#options.output_file of
+    none -> 
+      io:format("~s", [String]),
+      ?RET_NOTHING_SUSPICIOUS;
+    OutputFile ->
+      case file:open(OutputFile, [write]) of
+	{ok, FileDesc} ->
+	  io:format(FileDesc, "~s", [String]),
+	  ok = file:close(FileDesc),
+	  ?RET_NOTHING_SUSPICIOUS;
+	{error, Reason} ->
+	  Msg1 = io_lib:format("Could not open output file ~p, Reason: ~p\n",
+			       [OutputFile, Reason]),
+	  throw({dialyzer_error, Msg1})
+      end
+  end.
 
 cl(Opts) ->
   F = fun() ->
@@ -94,8 +131,7 @@ cl(Opts) ->
       end,
   doit(F).
 
--spec(run/1 :: (dial_options()) ->
-	 {'ok',[dial_warning()]} | {'error',[dial_warning()],[dial_error()]}).
+-spec(run/1 :: (dial_options()) -> [dial_warning()]).
 
 run(Opts) when length(Opts) > 0 ->
   try
@@ -106,10 +142,8 @@ run(Opts) when length(Opts) > 0 ->
 	case cl_check_init(OptsRecord) of
 	  {ok, ?RET_NOTHING_SUSPICIOUS} ->
 	    case dialyzer_cl:start(OptsRecord) of
-	      {?RET_DISCREPANCIES, Warnings, []}      -> {ok, Warnings};
-	      {?RET_NOTHING_SUSPICIOUS, [], []}       -> {ok, []};
-	      {?RET_INTERNAL_ERROR, Warnings, Errors} -> {error, Warnings, 
-							  Errors}
+	      {?RET_DISCREPANCIES, Warnings} -> Warnings;
+	      {?RET_NOTHING_SUSPICIOUS, []}  -> []
 	    end;
 	  {error, ErrorMsg1} ->
 	    throw({dialyzer_error, ErrorMsg1})
@@ -139,6 +173,7 @@ gui(Opts) ->
     case dialyzer_options:build([{report_mode, quiet}|Opts]) of
       {error, Msg} -> throw({dialyzer_error, Msg});
       OptsRecord ->
+	ok = check_gui_options(OptsRecord),
 	case cl_check_init(OptsRecord) of
 	  {ok, ?RET_NOTHING_SUSPICIOUS} ->
 	    F = fun() ->
@@ -156,6 +191,22 @@ gui(Opts) ->
     throw:{dialyzer_error, ErrorMsg} ->
       erlang:error({dialyzer_error, lists:flatten(ErrorMsg)})
   end.
+
+check_gui_options(#options{analysis_type=succ_typings}) ->
+  ok;
+check_gui_options(#options{analysis_type=Mode}) ->
+  Msg = io_lib:format("Analysis mode ~w is illegal in gui mode", [Mode]),
+  throw({dialyzer_error, Msg}).
+
+-spec(plt_info/1 :: (string()) -> {ok, [{'files', [string()]}]}
+				| {error, atom()}) .
+
+plt_info(Plt) ->
+  case dialyzer_plt:included_files(Plt) of
+    {ok, Files} -> {ok, [{files, Files}]};
+    Error -> Error
+  end.
+
 
 %%-----------
 %% Machinery
@@ -189,11 +240,6 @@ cl_halt({ok, R = ?RET_DISCREPANCIES},  #options{output_file=Output}) ->
   io:put_chars("done (warnings were emitted)\n"),
   cl_check_log(Output),
   halt(R);
-cl_halt({ok, R = ?RET_INTERNAL_ERROR},  #options{output_file=Output}) ->
-  Msg = "dialyzer: Internal problems were encountered in the analysis.",
-  io:format("~s\n", [Msg]),
-  cl_check_log(Output),
-  halt(R);  
 cl_halt({error, Msg1}, #options{output_file=Output}) ->
   Msg2 = "dialyzer: Internal problems were encountered in the analysis.",
   io:format("\n~s\n~s\n", [Msg1, Msg2]),
@@ -202,7 +248,7 @@ cl_halt({error, Msg1}, #options{output_file=Output}) ->
 
 -spec(cl_check_log/1 :: (string()) -> 'ok').
 
-cl_check_log("") ->
+cl_check_log(none) ->
   ok;
 cl_check_log(Output) ->
   io:format("  Check output file `~s' for details\n", [Output]).

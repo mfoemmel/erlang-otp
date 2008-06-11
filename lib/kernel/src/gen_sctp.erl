@@ -13,10 +13,8 @@
 %% Portions created by Ericsson are Copyright 2007, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%% The SCTP protocol was added 2006
-%% by Leonid Timochouk <l.timochouk@gmail.com>
-%% and Serge Aleynikov  <serge@hq.idt.net>
-%% at IDT Corp. Adapted by the OTP team at Ericsson AB.
+%% SCTP protocol contribution by Leonid Timochouk and Serge Aleynikov.
+%% See also: $ERL_TOP/lib/kernel/AUTHORS
 %%
 %%     $Id$
 %%

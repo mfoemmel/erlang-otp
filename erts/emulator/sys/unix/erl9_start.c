@@ -31,11 +31,7 @@
 unsigned preloaded_size_ring0 = 1;
 unsigned char preloaded_ring0[1] = {0};
 
-struct {
-    char* name;
-    int size;
-    unsigned char* code;
-} pre_loaded[] = {
+Preload pre_loaded[] = {
     {"ring0", 1, preloaded_ring0},
     {0, 0, 0}
 };

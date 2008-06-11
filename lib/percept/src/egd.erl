@@ -59,8 +59,7 @@
 %% @spec create(integer(), integer()) -> egd_image()
 %% @doc Creates an image area and returns its reference.
 
--spec(create/2 :: (Width :: integer(), Height :: integer()) -> 
-	egd_image()).
+-spec(create/2 :: (Width :: integer(), Height :: integer()) -> egd_image()).
 
 create(Width,Height) ->
     spawn_link(fun() -> init(trunc(Width),trunc(Height)) end).
@@ -72,7 +71,7 @@ create(Width,Height) ->
 -spec(destroy/1 :: (Image :: egd_image()) -> ok).
 
 destroy(Image) ->
-   call(Image, stop),
+   cast(Image, destroy),
    ok.
 
 
@@ -101,9 +100,7 @@ render(Image, Type) ->
 
 render(Image, Type, Options) ->
     {render_engine, RenderType} = proplists:lookup(render_engine, Options),
-    call(Image, {render, Type, RenderType}),
-    receive Binary -> Binary end,
-    Binary.
+    call(Image, {render, Type, RenderType}).
 
 
 %% @spec information(egd_image()) -> ok
@@ -112,7 +109,7 @@ render(Image, Type, Options) ->
 %%	mainly.
 
 information(Pid) ->
-    call(Pid, information),
+    cast(Pid, information),
     ok.
 
 %% @spec line(egd_image(), point(), point, color()) -> ok
@@ -125,7 +122,7 @@ information(Pid) ->
 	Color :: color()) -> 'ok').
 
 line(Image, P1, P2, Color) ->
-    call(Image, {line, P1, P2, Color}),
+    cast(Image, {line, P1, P2, Color}),
     ok.
 
 %% @spec color({byte(), byte(), byte()}) -> color()
@@ -145,28 +142,28 @@ color(_Image, Color) ->
 %% @doc Creates a text object.
 
 text(Image, P, Font, Text, Color) ->
-    call(Image, {text, P, Font, Text, Color}),
+    cast(Image, {text, P, Font, Text, Color}),
     ok.
 
 %% @spec rectangle(egd_image(), point(), point(), color()) -> ok
 %% @doc Creates a rectangle object.
 
 rectangle(Image, P1, P2, Color) ->
-    call(Image, {rectangle, P1, P2, Color}),
+    cast(Image, {rectangle, P1, P2, Color}),
     ok.
 
 %% @spec filledRectangle(egd_image(), point(), point(), color()) -> ok
 %% @doc Creates a filled rectangle object.
 
 filledRectangle(Image, P1, P2, Color) ->
-    call(Image, {filled_rectangle, P1, P2, Color}),
+    cast(Image, {filled_rectangle, P1, P2, Color}),
     ok.
 
 %% @spec filledEllipse(egd_image(), point(), point(), color()) -> ok
 %% @doc Creates a filled ellipse object.
 
 filledEllipse(Image, P1, P2, Color) ->
-    call(Image, {filled_ellipse, P1, P2, Color}),
+    cast(Image, {filled_ellipse, P1, P2, Color}),
     ok.
 
 %% @spec filledTriangle(egd_image(), point(), point(), point(), color()) -> ok
@@ -174,7 +171,7 @@ filledEllipse(Image, P1, P2, Color) ->
 %% @doc Creates a filled triangle object.
 
 filledTriangle(Image, P1, P2, P3, Color) ->
-    call(Image, {filled_triangle, P1, P2, P3, Color}),
+    cast(Image, {filled_triangle, P1, P2, P3, Color}),
     ok.
 
 %% @spec polygon(egd_image(), [point()], color()) -> ok
@@ -182,7 +179,7 @@ filledTriangle(Image, P1, P2, P3, Color) ->
 %% @doc Creates a filled filled polygon object.
 
 polygon(Image, Pts, Color) ->
-    call(Image, {polygon, Pts, Color}),
+    cast(Image, {polygon, Pts, Color}),
     ok.
 
 
@@ -196,8 +193,12 @@ save(Binary, Filename) when is_binary(Binary) ->
 % Aux functions 
 % ---------------------------------
 
+cast(Pid, Command) ->
+    Pid ! {egd, self(), Command}.
+
 call(Pid, Command) ->
-   Pid ! {self(), Command}.
+    Pid ! {egd, self(), Command},
+    receive {egd, Pid, Result} -> Result end.    
 
 % ---------------------------------
 % Server loop 
@@ -210,14 +211,14 @@ init(W,H) ->
 loop(Image) ->
     receive
 	% Quitting
-	{_Pid, quit} -> ok;
+	{egd, _Pid, destroy} -> ok;
 	
 	% Rendering
-    	{Pid, {render, BinaryType, RenderType}} ->
+    	{egd, Pid, {render, BinaryType, RenderType}} ->
 	    case BinaryType of
 		raw_bitmap ->
 		    Bitmap = egd_render:binary(Image, RenderType),
-		    Pid ! Bitmap,
+		    Pid ! {egd, self(), Bitmap},
 		    loop(Image);
 		png ->
 		    Bitmap = egd_render:binary(Image, RenderType),
@@ -225,29 +226,29 @@ loop(Image) ->
 			Image#image.width,
 			Image#image.height,
 			Bitmap),
-		    Pid ! Png,
+		    Pid ! {egd, self(), Png},
 		    loop(Image);
 		Unhandled ->
-		    Pid ! {error, {format, Unhandled}},
+		    Pid ! {egd, self(), {error, {format, Unhandled}}},
 		    loop(Image)
 	     end;
 
 	% Drawing primitives
-	{_Pid, {line, P1, P2, C}} ->
+	{egd, _Pid, {line, P1, P2, C}} ->
 	    loop(egd_primitives:line(Image, P1, P2, C));
-	{_Pid, {text, P, Font, Text, C}} ->
+	{egd, _Pid, {text, P, Font, Text, C}} ->
 	    loop(egd_primitives:text(Image, P, Font, Text, C));
-	{_Pid, {filled_ellipse, P1, P2, C}} ->
+	{egd, _Pid, {filled_ellipse, P1, P2, C}} ->
 	    loop(egd_primitives:filledEllipse(Image, P1, P2, C));
-	{_Pid, {filled_rectangle, P1, P2, C}} ->
+	{egd, _Pid, {filled_rectangle, P1, P2, C}} ->
 	    loop(egd_primitives:filledRectangle(Image, P1, P2, C));
-	{_Pid, {filled_triangle, P1, P2, P3, C}} ->
+	{egd, _Pid, {filled_triangle, P1, P2, P3, C}} ->
 	    loop(egd_primitives:filledTriangle(Image, P1, P2, P3, C));
-	{_Pid, {polygon, Pts, C}} ->
+	{egd, _Pid, {polygon, Pts, C}} ->
 	    loop(egd_primitives:polygon(Image, Pts, C));
-	{_Pid, {rectangle, P1, P2, C}} ->
+	{egd, _Pid, {rectangle, P1, P2, C}} ->
 	    loop(egd_primitives:rectangle(Image, P1, P2, C));
-	{_Pid, information} ->
+	{egd, _Pid, information} ->
 	    egd_primitives:info(Image),
 	    loop(Image)
 

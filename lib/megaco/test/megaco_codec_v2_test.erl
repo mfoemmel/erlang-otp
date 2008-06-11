@@ -197,6 +197,20 @@
 
 -export([display_text_messages/0, generate_text_messages/0]).
 
+-export([
+	 %% Decode
+	 profile_decode_compact_text_message/1,
+	 profile_decode_compact_text_messages/0,
+	 profile_decode_compact_flex_text_messages/0,
+	 profile_decode_pretty_text_message/1,
+	 profile_decode_pretty_text_messages/0, 
+	 profile_decode_pretty_flex_text_messages/0,
+
+	 %% Encode
+	 profile_encode_compact_text_messages/0,
+	 profile_encode_pretty_text_messages/0
+	]).
+
 
 %% ----
 
@@ -235,6 +249,136 @@ generate_text_messages() ->
  	msgs4() ++ 
 	msgs5(),
     megaco_codec_test_lib:generate_text_messages(?V2, ?VERSION, ?EC, Msgs).
+
+
+%% ----
+
+%% (catch megaco_codec_v2_test:profile_decode_compact_text_message(msg51a)).
+%% (catch megaco_codec_v2_test:profile_decode_compact_text_message(msg51b)).
+%% (catch megaco_codec_v2_test:profile_decode_compact_text_message(msg52)).
+%% (catch megaco_codec_v2_test:profile_decode_compact_text_message(msg53)).
+%% (catch megaco_codec_v2_test:profile_decode_compact_text_message(msg54a)).
+%% (catch megaco_codec_v2_test:profile_decode_compact_text_message(msg58a)).
+%% (catch megaco_codec_v2_test:profile_decode_compact_text_message(msg58b)).
+%% (catch megaco_codec_v2_test:profile_decode_compact_text_message(msg61a)).
+profile_decode_compact_text_message(MsgTag) ->
+    Codec  = megaco_compact_text_encoder,
+    Config = [],
+    profile_decode_text_message(Codec, Config, MsgTag).
+
+%% (catch megaco_codec_v2_test:profile_decode_pretty_text_message(msg51a)).
+%% (catch megaco_codec_v2_test:profile_decode_pretty_text_message(msg51b)).
+%% (catch megaco_codec_v2_test:profile_decode_pretty_text_message(msg52)).
+profile_decode_pretty_text_message(MsgTag) ->
+    Codec  = megaco_pretty_text_encoder,
+    Config = [],
+    profile_decode_text_message(Codec, Config, MsgTag).
+
+profile_decode_text_message(Codec, Config, MsgTag) ->
+    Msgs = msgs4() ++ msgs5(), 
+    case lists:keysearch(MsgTag, 1, Msgs) of
+	{value, Msg} ->
+	    profile_decode_text_messages(Codec, Config, [Msg]);
+	false ->
+	    {error, {no_such_message, MsgTag}}
+    end.
+
+
+%% (catch megaco_codec_v2_test:profile_decode_compact_text_messages()).
+profile_decode_compact_text_messages() ->
+    Config = [],
+    Slogan = decode_compact_v2, 
+    profile_decode_compact_text_messages(Slogan, Config).
+
+%% (catch megaco_codec_v2_test:profile_decode_compact_flex_text_messages()).
+profile_decode_compact_flex_text_messages() ->
+    Conf   = flex_init([]),
+    Config = flex_scanner_conf(Conf),
+    Slogan = decode_compact_flex_v2, 
+    Res = profile_decode_compact_text_messages(Slogan, [Config]),
+    flex_finish(Conf),
+    Res.
+
+profile_decode_compact_text_messages(Slogan, Config) ->
+    Codec = megaco_compact_text_encoder,
+    profile_decode_text_messages(Slogan, Codec, Config).
+
+%% (catch megaco_codec_v2_test:profile_decode_pretty_text_messages()).
+profile_decode_pretty_text_messages() ->
+    Config = [],
+    Slogan = decode_pretty_v2, 
+    profile_decode_pretty_text_messages(Slogan, Config).
+
+%% (catch megaco_codec_v2_test:profile_decode_pretty_flex_text_messages()).
+profile_decode_pretty_flex_text_messages() ->
+    Conf   = flex_init([]),
+    Config = flex_scanner_conf(Conf),
+    Slogan = decode_pretty_flex_v2, 
+    Res    = profile_decode_pretty_text_messages(Slogan, [Config]),
+    flex_finish(Conf),
+    Res.
+
+profile_decode_pretty_text_messages(Slogan, Config) ->
+    Codec = megaco_pretty_text_encoder,
+    profile_decode_text_messages(Slogan, Codec, Config).
+
+profile_decode_text_messages(Slogan, Codec, Config) ->
+    Msgs = msgs4() ++ msgs5(),
+    profile_decode_text_messages(Slogan, Codec, Config, Msgs).
+
+profile_decode_text_messages(Slogan, Codec, Config, Msgs0) ->
+    Msgs      = [Msg || {_, Msg, _, _} <- Msgs0],
+    EncodeRes = encode_text_messages(Codec, Config, Msgs, []),
+    Bins      = [Bin || {ok, Bin} <- EncodeRes],
+    Fun = fun() ->
+		decode_text_messages(Codec, Config, Bins, [])
+	  end,
+    %% Make a dry run, just to make sure all modules are loaded:
+    io:format("make a dry run..~n", []),
+    (catch Fun()),
+    io:format("make the run..~n", []),
+    megaco_profile:profile(Slogan, Fun).
+
+%% (catch megaco_codec_v2_test:profile_encode_compact_text_messages()).
+profile_encode_compact_text_messages() ->
+    Codec  = megaco_compact_text_encoder,
+    Config = [],
+    Slogan = encode_compact_v2, 
+    profile_encode_text_messages(Slogan, Codec, Config).
+
+%% (catch megaco_codec_v2_test:profile_encode_pretty_text_messages()).
+profile_encode_pretty_text_messages() ->
+    Codec  = megaco_pretty_text_encoder,
+    Config = [],
+    Slogan = encode_pretty_v2, 
+    profile_encode_text_messages(Slogan, Codec, Config).
+
+profile_encode_text_messages(Slogan, Codec, Config) ->
+    Msgs = msgs4() ++ msgs5(), 
+    profile_encode_text_messages(Slogan, Codec, Config, Msgs).
+
+profile_encode_text_messages(Slogan, Codec, Config, Msgs0) ->
+    Msgs = [Msg || {_, Msg, _, _} <- Msgs0],
+    Fun = fun() ->
+		encode_text_messages(Codec, Config, Msgs, [])
+	  end,
+    %% Make a dry run, just to make sure all modules are loaded:
+    io:format("make a dry run...~n", []),
+    (catch Fun()),
+    io:format("make the run...~n", []),
+    megaco_profile:profile(Slogan, Fun).
+
+encode_text_messages(_Codec, _Config, [], Acc) ->
+    Acc;
+encode_text_messages(Codec, Config, [Msg|Msgs], Acc) ->
+    Res = Codec:encode_message(Config, ?VERSION, Msg),
+    encode_text_messages(Codec, Config, Msgs, [Res | Acc]).
+
+decode_text_messages(_Codec, _Config, [], Acc) ->
+    Acc;
+decode_text_messages(Codec, Config, [Msg|Msgs], Acc) ->
+    Res = Codec:decode_message(Config, dynamic, Msg),
+    decode_text_messages(Codec, Config, Msgs, [Res | Acc]).
 
 
 %% ----
@@ -4358,7 +4502,7 @@ msg11(Mid) ->
     V  = cre_PropParm("v", "0"),
     C  = cre_PropParm("c", "IN IP4 124.124.124.222"),
     M  = cre_PropParm("m", "audio 2222 RTP/AVP 4"),
-    A  = cre_PropParm("a", "a=ptime:30"),
+    A  = cre_PropParm("a", "ptime:30"),
     A2 = cre_PropParm("a", "recvonly"),
     LD = cre_LocalRemoteDesc([[V, C, M, A, A2]]),
     Parms      = cre_StreamParmsL(LD),

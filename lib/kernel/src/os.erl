@@ -164,7 +164,7 @@ unix_cmd(Cmd) ->
 %% and the commands are read from standard input. We set the 
 %% $1 parameter for easy identification of the resident shell.
 %%
--define(SHELL, "sh -s unix:cmd 2>&1").
+-define(SHELL, "/bin/sh -s unix:cmd 2>&1").
 
 %%
 %%  start_port() -> Port

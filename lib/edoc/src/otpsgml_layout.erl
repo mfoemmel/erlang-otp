@@ -16,7 +16,7 @@
 %%
 %% $Id$
 %%
-%% @author Richard Carlsson <richardc@csd.uu.se>
+%% @author Richard Carlsson <richardc@it.uu.se>
 %% @author Kenneth Lundin <kenneth@erix.ericsson.se>
 %% @copyright 2001-2004 Richard Carlsson
 %% @see edoc_layout

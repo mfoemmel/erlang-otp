@@ -119,8 +119,6 @@ int efile_rename(Efile_error* errInfo, char* src, char* dst);
 int efile_chdir(Efile_error* errInfo, char* name);
 int efile_getdcwd(Efile_error* errInfo, int drive,
 		  char* buffer, size_t size);
-int efile_opendir(Efile_error* errInfo, char* name,
-		  EFILE_DIR_HANDLE* p_dir_handle);
 int efile_readdir(Efile_error* errInfo, char* name, 
 		  EFILE_DIR_HANDLE* dir_handle,
 		  char* buffer, size_t size);

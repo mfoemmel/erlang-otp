@@ -219,28 +219,22 @@ visit_call(Ins, Args, Environment) ->
   visit_call(Dsts, Args, Fun, Cont, Fail, Environment).
 
 visit_call(Dst, Args, Fun, Cont, Fail, Environment) ->
-  case lists:any(fun(X) -> (X =:= bottom) end, Args) of
-    true ->
-      FlowWork = Fail ++ Cont,
-      {Environment1, SSAWork} =
-	update_lattice_value({Dst, bottom}, Environment);
-    false ->
-      ConstArgs = [hipe_icode:const_value(Argument) || Argument <- Args],
-      case catch evaluate_call_or_enter(ConstArgs, Fun) of
-	{'EXIT', _} ->
-	  FlowWork = Fail,
-	  {Environment1, SSAWork} =
-	    update_lattice_value({Dst, bottom}, Environment);
-	bottom ->
-	  FlowWork = Fail ++ Cont,
-	  {Environment1, SSAWork} = 
-	    update_lattice_value({Dst, bottom}, Environment);
-	Constant ->
-	  FlowWork = Cont,
-	  {Environment1, SSAWork} =
-	    update_lattice_value({Dst, Constant}, Environment)
-      end
-  end,
+  {FlowWork, {Environment1, SSAWork}} =
+    case lists:any(fun(X) -> (X =:= bottom) end, Args) of
+      true ->
+	{Fail ++ Cont, update_lattice_value({Dst, bottom}, Environment)};
+      false ->
+	ConstArgs = [hipe_icode:const_value(Argument) || Argument <- Args],
+	try evaluate_call_or_enter(ConstArgs, Fun) of
+	  bottom ->
+	    {Fail ++ Cont, update_lattice_value({Dst, bottom}, Environment)};
+	  Constant ->
+	    {Cont, update_lattice_value({Dst, Constant}, Environment)}
+	catch 
+	  _:_ ->
+	    {Fail, update_lattice_value({Dst, bottom}, Environment)}
+	end
+    end,
   {FlowWork, SSAWork, Environment1}.
 
 %%-----------------------------------------------------------------------------
@@ -523,15 +517,16 @@ update_enter(Instruction, Environment) ->
       update_enter_arguments(Instruction, Environment);
     false ->
       ConstVals = [hipe_icode:const_value(X) || X <- EvalArgs],
-      case catch evaluate_call_or_enter(ConstVals, Fun) of
-	{'EXIT', _} -> 
-	  update_enter_arguments(Instruction, Environment);
+      try evaluate_call_or_enter(ConstVals, Fun) of
 	bottom -> 
 	  update_enter_arguments(Instruction, Environment);
 	Const ->
 	  Dst = hipe_icode:mk_new_var(),
 	  [hipe_icode:mk_move(Dst, Const),
 	   hipe_icode:mk_return([Dst])]
+      catch
+	_:_ -> 
+	  update_enter_arguments(Instruction, Environment)
       end
   end.
 

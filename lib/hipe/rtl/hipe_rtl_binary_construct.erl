@@ -4,19 +4,19 @@
 %%  Module   :	hipe_rtl_inline_bs_ops
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	*2001-06-14 Erik Johansson (happi@csd.uu.se): 
+%%  History  :	*2001-06-14 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2007/12/17 08:45:30 $
-%%              $Revision: 1.10 $
+%%              $Author: pergu $
+%%              $Date: 2008/05/20 14:16:11 $
+%%              $Revision: 1.12 $
 %% ====================================================================
 %%  Exports  :
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_rtl_binary_construct).
--export([gen_rtl/6]).
+-export([gen_rtl/7]).
 -import(hipe_tagscheme, [set_field_from_term/3,
 			 get_field_from_term/3,
 			 set_field_from_pointer/3,
@@ -31,12 +31,14 @@
 -define(LOW_BITS, hipe_rtl:mk_imm(7)). %% Three lowest bits set
 -define(LOW_BITS_INT, 7).
 -define(BYTE_SIZE, 8).
+-define(MAX_BINSIZE, ((1 bsl ((hipe_rtl_arch:word_size()*?BYTE_SIZE)-3)) - 1)).
+
 
 %% -------------------------------------------------------------------------
 %% The code is generated as a list of lists, it will be flattened later.
 %% 
 
-gen_rtl(BsOP, Dst, Args, TrueLblName, FalseLblName, ConstTab) ->
+gen_rtl(BsOP, Dst, Args, TrueLblName, FalseLblName, SystemLimitLblName, ConstTab) ->
   %%io:format("~w, ~w, ~w~n", [BsOP, Args, Dst]),
   case BsOP of
     {bs_put_string, String, SizeInBytes} ->
@@ -47,79 +49,37 @@ gen_rtl(BsOP, Dst, Args, TrueLblName, FalseLblName, ConstTab) ->
     _ -> 
       Code = 
 	case BsOP of
-	  bs_bits_to_bytes2 ->
-	    [Src]=Args,
-	    [Dst0]=Dst,
-	    [SuccessLbl] = create_lbls(1),
-	    [Raw] = create_regs(1),
-	    [hipe_tagscheme:test_fixnum(Src, hipe_rtl:label_name(SuccessLbl),
-				    FalseLblName, 0.99),
-	     SuccessLbl,
-	     hipe_tagscheme:untag_fixnum(Raw, Src),
-	     hipe_rtl:mk_alu(Raw, Raw, add, ?LOW_BITS),
-	     hipe_rtl:mk_alu(Raw, Raw, srl, ?BYTE_SHIFT),
-	     hipe_tagscheme:tag_fixnum(Dst0, Raw),
-	     hipe_rtl:mk_goto(TrueLblName)];
-	  
-	  bs_bits_to_bytes ->
-	    [Src] = Args,
-	    [Dst0] = Dst,
-	    [SuccessLbl,NextLbl] = create_lbls(2),
-	    [Raw,Tmp] = create_regs(2),
-	    [hipe_tagscheme:test_fixnum(Src, hipe_rtl:label_name(SuccessLbl),
-					FalseLblName, 0.99),
-	     SuccessLbl,
-	     hipe_tagscheme:untag_fixnum(Raw, Src),
-	     hipe_rtl:mk_alub(Tmp, Raw, 'and', ?LOW_BITS, eq,
-			      hipe_rtl:label_name(NextLbl),FalseLblName),
-	     NextLbl,
-	     hipe_rtl:mk_alu(Raw, Raw, srl, ?BYTE_SHIFT),
-	     hipe_tagscheme:tag_fixnum(Dst0, Raw),
-	     hipe_rtl:mk_goto(TrueLblName)];
-
-	  {bs_add, Const, Unit} ->
-	    Raw = hipe_rtl:mk_imm(Const),
-	    [Tmp1,Tmp2] = create_regs(2),
-	    [New] = Args,
-	    [Dst0] = Dst,
-	    {SizeCode, SizeReg} = make_size(Unit, New, FalseLblName),
-	    SizeCode ++
-	      [hipe_rtl:mk_alu(Tmp1, SizeReg, add, Raw),
-	       hipe_tagscheme:tag_fixnum(Dst0, Tmp1),
-	       hipe_tagscheme:untag_fixnum(Tmp2, Dst0),
-	       hipe_rtl:mk_branch(Tmp1, eq, Tmp2, TrueLblName, FalseLblName)];
-	  
-	  {bs_add, Unit} ->
-	    [Raw,Tmp1,Tmp2] = create_regs(3),
-	    [Old, New] = Args,
-	    [Dst0] = Dst,
-	    {SizeCode, SizeReg} = make_size(Unit, New, FalseLblName),
-	    SizeCode ++
-	      [hipe_tagscheme:untag_fixnum(Raw, Old),
-	       hipe_rtl:mk_alu(Tmp1, SizeReg, add, Raw),
-	       hipe_tagscheme:tag_fixnum(Dst0, Tmp1),
-	       hipe_tagscheme:untag_fixnum(Tmp2, Dst0),
-	       hipe_rtl:mk_branch(Tmp1, eq, Tmp2, TrueLblName, FalseLblName)];
-	  
 	  {bs_init, Size, _Flags} -> 
 	    [] = Args,
 	    [Dst0, Base, Offset] = Dst,
-	    const_init2(Size, Dst0, Base, Offset, TrueLblName, FalseLblName);
+	    case is_illegal_const(Size bsl 3) of
+	      true ->
+		hipe_rtl:mk_goto(SystemLimitLblName);
+	      false ->
+		const_init2(Size, Dst0, Base, Offset, TrueLblName)
+	    end;
 	  
 	  {bs_init, _Flags} -> 
 	    [Size] = Args,
 	    [Dst0, Base, Offset] = Dst,
-	    var_init2(Size, Dst0, Base, Offset, TrueLblName, FalseLblName);
-	  
+	    var_init2(Size, Dst0, Base, Offset, TrueLblName, 
+		      SystemLimitLblName, FalseLblName);
+
 	  {bs_init_bits, Size, _Flags} -> 
 	    [] = Args,
 	    [Dst0, Base, Offset] = Dst,
-	    const_init_bits(Size, Dst0, Base, Offset, TrueLblName, FalseLblName);
+	    case is_illegal_const(Size) of
+	      true ->
+		hipe_rtl:mk_goto(SystemLimitLblName);
+	      false ->
+		const_init_bits(Size, Dst0, Base, Offset, TrueLblName)
+	    end;
 	  
 	  {bs_init_bits, _Flags} -> 
 	    [Size] = Args,
 	    [Dst0, Base, Offset] = Dst,
-	    var_init_bits(Size, Dst0, Base, Offset, TrueLblName, FalseLblName);
+	    var_init_bits(Size, Dst0, Base, Offset, TrueLblName, 
+			  SystemLimitLblName, FalseLblName);
 	  
 	  {bs_put_binary_all, _Flags} ->
 	    [Src, Base, Offset] = Args,
@@ -127,64 +87,79 @@ gen_rtl(BsOP, Dst, Args, TrueLblName, FalseLblName, ConstTab) ->
 	    put_binary_all(NewOffset, Src, Base, Offset, TrueLblName, FalseLblName);
 	   
 	  {bs_put_binary, Size, _Flags} ->
-	    [NewOffset] = get_real(Dst),
-	    case Args of
-	      [Src, Base, Offset] ->
-		put_static_binary(NewOffset, Src, Size, Base, Offset, 
-					    TrueLblName, FalseLblName);
-	      [Src, Bits, Base, Offset]  ->
-		{SizeCode, SizeReg} = make_size(Size, Bits, FalseLblName),
-		InCode = put_dynamic_binary(NewOffset, Src, SizeReg, Base, 
-					    Offset, TrueLblName, FalseLblName),
-		SizeCode ++ InCode
+	    case is_illegal_const(Size) of
+	      true ->
+		[hipe_rtl:mk_goto(FalseLblName)];
+	      false ->
+		[NewOffset] = get_real(Dst),
+		case Args of
+		  [Src, Base, Offset] ->
+		    put_static_binary(NewOffset, Src, Size, Base, Offset, 
+				      TrueLblName, FalseLblName);
+		  [Src, Bits, Base, Offset]  ->
+		    {SizeCode, SizeReg} = make_size(Size, Bits, FalseLblName),
+		    InCode = put_dynamic_binary(NewOffset, Src, SizeReg, Base, 
+						Offset, TrueLblName, FalseLblName),
+		    SizeCode ++ InCode
+		end
 	    end;
 		
 	  {bs_put_float, Size, Flags, ConstInfo} ->    
 	    [NewOffset] = get_real(Dst),
 	    Aligned = aligned(Flags),
 	    LittleEndian = littleendian(Flags),
-	    case Args of
-	      [Src, Base, Offset] ->
-		CCode = static_float_c_code(NewOffset, Src, Base, Offset, Size, Flags, 
-					    TrueLblName, FalseLblName),
-		put_float(NewOffset, Src, Base, Offset, Size, CCode, Aligned, 
-			  LittleEndian, ConstInfo, TrueLblName);
-	      [Src, Bits, Base, Offset] ->
-		{SizeCode, SizeReg} = make_size(Size, Bits, FalseLblName),
-		InCode = float_c_code(NewOffset, Src, Base, Offset, SizeReg, 
-					    Flags, TrueLblName, FalseLblName),
-		SizeCode ++ InCode
-	    end;
+	   case is_illegal_const(Size) of
+	     true ->
+	     	[hipe_rtl:mk_goto(FalseLblName)];
+	     false ->
+	       case Args of
+		 [Src, Base, Offset] ->
+		   CCode = static_float_c_code(NewOffset, Src, Base, Offset, Size, Flags, 
+					       TrueLblName, FalseLblName),
+		   put_float(NewOffset, Src, Base, Offset, Size, CCode, Aligned, 
+			     LittleEndian, ConstInfo, TrueLblName);
+		 [Src, Bits, Base, Offset] ->
+		   {SizeCode, SizeReg} = make_size(Size, Bits, FalseLblName),
+		   InCode = float_c_code(NewOffset, Src, Base, Offset, SizeReg, 
+					 Flags, TrueLblName, FalseLblName),
+		   SizeCode ++ InCode
+	       end
+	   end;
 
 	  {bs_put_integer, Size, Flags, ConstInfo} -> 
 	    Aligned = aligned(Flags), 
 	    LittleEndian = littleendian(Flags),
-	    [NewOffset] = get_real(Dst), 
-	    case ConstInfo of 
-	      fail ->
-		[hipe_rtl:mk_goto(FalseLblName)]; 
-	      _ -> 
-		case Args of 
-		  [Src, Base, Offset] -> 
-		    CCode = static_int_c_code(NewOffset, Src,
-					      Base, Offset, Size, 
-					      Flags, TrueLblName, 
-					      FalseLblName),
-		    put_static_int(NewOffset, Src, Base, Offset, Size, 
-				   CCode, Aligned, LittleEndian, TrueLblName); 
-		  [Src, Bits, Base, Offset] -> 
+	    [NewOffset] = get_real(Dst),
+	    case is_illegal_const(Size) of
+	      true ->
+		[hipe_rtl:mk_goto(FalseLblName)];
+	      false ->
+		case ConstInfo of 
+		  fail ->
+		    [hipe_rtl:mk_goto(FalseLblName)];
+		  _ -> 
+		    case Args of 
+		      [Src, Base, Offset] ->  
+			CCode = static_int_c_code(NewOffset, Src,
+						  Base, Offset, Size, 
+						  Flags, TrueLblName, 
+						  FalseLblName),
+			put_static_int(NewOffset, Src, Base, Offset, Size, 
+				       CCode, Aligned, LittleEndian, TrueLblName); 
+		      [Src, Bits, Base, Offset] -> 
 		    {SizeCode, SizeReg} = make_size(Size, Bits,
 						    FalseLblName), 
-		    CCode = int_c_code(NewOffset, Src, Base,
-				       Offset, SizeReg, Flags, 
-				       TrueLblName, FalseLblName), 
-		    InCode =
-		      put_dynamic_int(NewOffset, Src, Base, Offset, 
-				      SizeReg, CCode, Aligned, LittleEndian, 
-				      TrueLblName), 
-		    SizeCode ++ InCode 
+			CCode = int_c_code(NewOffset, Src, Base,
+					   Offset, SizeReg, Flags, 
+					   TrueLblName, FalseLblName), 
+			InCode =
+			  put_dynamic_int(NewOffset, Src, Base, Offset, 
+					  SizeReg, CCode, Aligned, LittleEndian, 
+					  TrueLblName), 
+			SizeCode ++ InCode 
+		    end 
 		end 
-	    end; 
+	    end;
 	  
 	  {unsafe_bs_put_integer, 0, _Flags, _ConstInfo} -> 
 	    [NewOffset] = get_real(Dst), 
@@ -198,37 +173,42 @@ gen_rtl(BsOP, Dst, Args, TrueLblName, FalseLblName, ConstTab) ->
 	    end; 
 	  
 	  {unsafe_bs_put_integer, Size, Flags, ConstInfo} -> 
-	    Aligned = aligned(Flags),
-	    LittleEndian = littleendian(Flags), 
-	    [NewOffset] = get_real(Dst), 
-	    case ConstInfo of 
-	      fail ->
-		[hipe_rtl:mk_goto(FalseLblName)]; 
-	      _ -> 
-		case Args of 
-		  [Src, Base, Offset] -> 
-		    CCode = static_int_c_code(NewOffset, Src,
-					      Base, Offset, Size, 
-					      Flags, TrueLblName, 
-					      FalseLblName),
-		    put_unsafe_static_int(NewOffset, Src, Base, 
-					  Offset, Size,
-					  CCode, Aligned, LittleEndian, 
-					  TrueLblName); 
-		  [Src, Bits, Base, Offset] -> 
-		    {SizeCode, SizeReg} = make_size(Size, Bits,
-						    FalseLblName), 
-		    CCode = int_c_code(NewOffset, Src, Base,
-				       Offset, SizeReg, Flags, 
-				       TrueLblName, FalseLblName), 
-		    InCode =
-		      put_unsafe_dynamic_int(NewOffset, Src, Base, 
-					     Offset, SizeReg, CCode, 
-					     Aligned, LittleEndian, 
-					     TrueLblName),
-		    SizeCode ++ InCode 
-		end 
-	    end; 
+	     case is_illegal_const(Size) of
+	      true ->
+		[hipe_rtl:mk_goto(FalseLblName)];
+	      false ->
+		 Aligned = aligned(Flags),
+		 LittleEndian = littleendian(Flags), 
+		 [NewOffset] = get_real(Dst), 
+		 case ConstInfo of 
+		   fail ->
+		     [hipe_rtl:mk_goto(FalseLblName)]; 
+		   _ -> 
+		     case Args of 
+		       [Src, Base, Offset] -> 
+			 CCode = static_int_c_code(NewOffset, Src,
+						   Base, Offset, Size, 
+						   Flags, TrueLblName, 
+						   FalseLblName),
+			 put_unsafe_static_int(NewOffset, Src, Base, 
+					       Offset, Size,
+					       CCode, Aligned, LittleEndian, 
+					       TrueLblName); 
+		       [Src, Bits, Base, Offset] -> 
+			 {SizeCode, SizeReg} = make_size(Size, Bits,
+							 FalseLblName), 
+			 CCode = int_c_code(NewOffset, Src, Base,
+					    Offset, SizeReg, Flags, 
+					    TrueLblName, FalseLblName), 
+			 InCode =
+			   put_unsafe_dynamic_int(NewOffset, Src, Base, 
+						  Offset, SizeReg, CCode, 
+						  Aligned, LittleEndian, 
+						  TrueLblName),
+			 SizeCode ++ InCode 
+		     end 
+		 end
+	     end; 
 	  
 	  bs_final -> 
 	    [Src, Offset] = Args, 
@@ -517,6 +497,10 @@ littleendian(Flags) ->
     0 -> false
   end.
 
+is_illegal_const(Const) ->
+  Const >=  (1 bsl (hipe_rtl_arch:word_size() * ?BYTE_SIZE)) orelse
+    Const < 0.
+
 get_real([]) ->
   create_regs(1);
 get_real([NewOffset]) ->
@@ -559,7 +543,7 @@ put_string(NewOffset, ConstTab, String, SizeInBytes, Base, Offset, TLName) ->
 		NewOffset, TLName)],
    NewTab}.
 							  
-const_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
+const_init2(Size, Dst, Base, Offset, TrueLblName) ->
   Log2WordSize = hipe_rtl_arch:log2_word_size(),
   WordSize = hipe_rtl_arch:word_size(),
   NextLbl = hipe_rtl:mk_new_label(),
@@ -581,50 +565,50 @@ const_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
        hipe_rtl:mk_goto(TrueLblName)]
   end.
 
-const_init_bits(Size, Dst, Base, Offset, TrueLblName, FalseLblName) ->
+const_init_bits(Size, Dst, Base, Offset, TrueLblName) ->
   Log2WordSize = hipe_rtl_arch:log2_word_size(),
   WordSize = hipe_rtl_arch:word_size(),
   [NextLbl] = create_lbls(1),
-  if Size < (1 bsl (WordSize * ?BYTE_SIZE)) ->
-      TmpDst = hipe_rtl:mk_new_var(),
-      {ExtraSpace, SubBinCode} =
-	if (Size rem ?BYTE_SIZE) =:= 0 -> 
-	    {0,[hipe_rtl:mk_move(Dst, TmpDst)]};
-	   true ->
-	    {?SUB_BIN_WORDSIZE,
-	     hipe_tagscheme:mk_sub_binary(Dst,hipe_rtl:mk_imm(Size bsr 3),
-					  hipe_rtl:mk_imm(0), 
-					  hipe_rtl:mk_imm(Size band ?LOW_BITS_INT),
-					  hipe_rtl:mk_imm(0),
-					  TmpDst)}
-	end,
-      BaseBinCode = 
-	if Size =< (?MAX_HEAP_BIN_SIZE * 8) ->
-	    ByteSize  = (Size + 7) div 8,
-	    [hipe_rtl:mk_gctest(((ByteSize+ 3*WordSize-1) bsr Log2WordSize)+ ExtraSpace),
-	     hipe_tagscheme:create_heap_binary(Base, ByteSize, TmpDst),
-	     hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0))];
-	   true ->
-	    ByteSize = hipe_rtl:mk_new_reg(),
-	    [hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE+ExtraSpace),
-	     hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0)),
-	     hipe_rtl:mk_move(ByteSize, hipe_rtl:mk_imm((Size+7) bsr 3)),
-	     hipe_rtl:mk_call([Base], bs_allocate, [ByteSize],
-			      hipe_rtl:label_name(NextLbl),[],not_remote),
-	     NextLbl,
-	     hipe_tagscheme:create_refc_binary(Base, ByteSize, TmpDst)]
-	end,
-      [BaseBinCode, SubBinCode, hipe_rtl:mk_goto(TrueLblName)]; 
-     true ->
-      hipe_rtl:mk_goto(FalseLblName)
-  end.
+  TmpDst = hipe_rtl:mk_new_var(),
+  {ExtraSpace, SubBinCode} =
+    if (Size rem ?BYTE_SIZE) =:= 0 -> 
+	{0,[hipe_rtl:mk_move(Dst, TmpDst)]};
+       true ->
+	{?SUB_BIN_WORDSIZE,
+	 hipe_tagscheme:mk_sub_binary(Dst,hipe_rtl:mk_imm(Size bsr 3),
+				      hipe_rtl:mk_imm(0), 
+				      hipe_rtl:mk_imm(Size band ?LOW_BITS_INT),
+				      hipe_rtl:mk_imm(0),
+				      TmpDst)}
+    end,
+  BaseBinCode = 
+    if Size =< (?MAX_HEAP_BIN_SIZE * 8) ->
+	ByteSize  = (Size + 7) div 8,
+	[hipe_rtl:mk_gctest(((ByteSize+ 3*WordSize-1) bsr Log2WordSize)+ ExtraSpace),
+	 hipe_tagscheme:create_heap_binary(Base, ByteSize, TmpDst),
+	 hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0))];
+       true ->
+	ByteSize = hipe_rtl:mk_new_reg(),
+	[hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE+ExtraSpace),
+	 hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0)),
+	 hipe_rtl:mk_move(ByteSize, hipe_rtl:mk_imm((Size+7) bsr 3)),
+	 hipe_rtl:mk_call([Base], bs_allocate, [ByteSize],
+			  hipe_rtl:label_name(NextLbl),[],not_remote),
+	 NextLbl,
+	 hipe_tagscheme:create_refc_binary(Base, ByteSize, TmpDst)]
+    end,
+  [BaseBinCode, SubBinCode, hipe_rtl:mk_goto(TrueLblName)].
 
-var_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
+var_init2(Size, Dst, Base, Offset, TrueLblName, SystemLimitLblName, FalseLblName) ->
   Log2WordSize = hipe_rtl_arch:log2_word_size(),
   WordSize = hipe_rtl_arch:word_size(),
-  [HeapLbl,REFCLbl,NextLbl] = create_lbls(3),
-  [USize,Tmp] = create_regs(2),
-  [hipe_tagscheme:untag_fixnum(USize, Size),
+  [ContLbl,HeapLbl,REFCLbl,NextLbl] = create_lbls(4),
+  [USize,Tmp] = create_unsafe_regs(2),
+  [get_32_bit_value(Size, USize, SystemLimitLblName, FalseLblName),
+   hipe_rtl:mk_branch(USize, le, hipe_rtl:mk_imm(?MAX_BINSIZE), 
+		      hipe_rtl:label_name(ContLbl), 
+		      SystemLimitLblName),
+   ContLbl,
    hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0)),
    hipe_rtl:mk_branch(USize, le, hipe_rtl:mk_imm(?MAX_HEAP_BIN_SIZE), 
 		      hipe_rtl:label_name(HeapLbl), 
@@ -634,38 +618,29 @@ var_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
    hipe_rtl:mk_alu(Tmp, Tmp, srl, hipe_rtl:mk_imm(Log2WordSize)),
    hipe_rtl:mk_alu(Tmp, Tmp, add, hipe_rtl:mk_imm(?SUB_BIN_WORDSIZE)),
    hipe_rtl:mk_gctest(Tmp),
-   hipe_tagscheme:untag_fixnum(USize, Size),
    hipe_tagscheme:create_heap_binary(Base, USize, Dst),
    hipe_rtl:mk_goto(TrueLblName),
    REFCLbl,
    hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE+?SUB_BIN_WORDSIZE),
-   hipe_tagscheme:untag_fixnum(USize, Size),
    hipe_rtl:mk_call([Base], bs_allocate, [USize],
 		    hipe_rtl:label_name(NextLbl), [], not_remote),
    NextLbl,
    hipe_tagscheme:create_refc_binary(Base, USize, Dst),
    hipe_rtl:mk_goto(TrueLblName)].
 
-var_init_bits(Size, Dst, Base, Offset, TrueLblName, FalseLblName) ->
+var_init_bits(Size, Dst, Base, Offset, TrueLblName, SystemLimitLblName, FalseLblName) ->
  
-  [HeapLbl,REFCLbl,NextLbl,NoSubLbl,SubLbl,
-   NoCreateSubBin, CreateSubBin, JoinLbl, JoinLbl2,
-   FixNumLbl, NoFixNumLbl, TogeteherLbl] = create_lbls(12),
-  [USize,ByteSize,TotByteSize,OffsetBits,TmpDst] = create_regs(5),
+  [HeapLbl,REFCLbl,NextLbl,NoSubLbl,SubLbl,ContLbl,
+   NoCreateSubBin, CreateSubBin, JoinLbl, JoinLbl2] = create_lbls(10),
+  [USize,ByteSize,TotByteSize,OffsetBits] = create_regs(4),
+  [TmpDst] = create_unsafe_regs(1),
   Log2WordSize = hipe_rtl_arch:log2_word_size(),
   WordSize = hipe_rtl_arch:word_size(),
   MaximumWords = 
     lists:max([(?MAX_HEAP_BIN_SIZE + 3*WordSize) bsr Log2WordSize,
 	       ?PROC_BIN_WORDSIZE]) + ?SUB_BIN_WORDSIZE,
   [hipe_rtl:mk_gctest(MaximumWords),
-   hipe_tagscheme:test_fixnum(Size, hipe_rtl:label_name(FixNumLbl), 
-			     hipe_rtl:label_name(NoFixNumLbl), 0.99),
-   FixNumLbl,
-   hipe_tagscheme:untag_fixnum(USize, Size),
-   hipe_rtl:mk_goto(hipe_rtl:label_name(TogeteherLbl)),
-   NoFixNumLbl,
-   hipe_tagscheme:get_word_value_from_big(USize, Size, FalseLblName),
-   TogeteherLbl,
+   get_32_bit_value(Size, USize, SystemLimitLblName, FalseLblName),
    hipe_rtl:mk_alu(ByteSize, USize, srl, ?BYTE_SHIFT),
    hipe_rtl:mk_alub(OffsetBits, USize, 'and', ?LOW_BITS, eq, 
 		    hipe_rtl:label_name(NoSubLbl),
@@ -676,6 +651,10 @@ var_init_bits(Size, Dst, Base, Offset, TrueLblName, FalseLblName) ->
    SubLbl,
    hipe_rtl:mk_alu(TotByteSize, ByteSize, 'add', hipe_rtl:mk_imm(1)),
    JoinLbl,
+   hipe_rtl:mk_branch(USize, le, hipe_rtl:mk_imm(?MAX_BINSIZE), 
+		      hipe_rtl:label_name(ContLbl), 
+		      SystemLimitLblName),
+   ContLbl,
    hipe_rtl:mk_branch(TotByteSize, 'le', hipe_rtl:mk_imm(?MAX_HEAP_BIN_SIZE),
 		      hipe_rtl:label_name(HeapLbl), 
 		      hipe_rtl:label_name(REFCLbl)),
@@ -1298,6 +1277,20 @@ set_high(0, Y) ->
 set_high(X, Y) ->
   set_high(X-1, Y+(1 bsl (27-X))).
 
+get_32_bit_value(Size, USize, SystemLimitLblName, NegLblName) ->
+  Lbls = [FixLbl, BigLbl, OkLbl, PosBigLbl] = create_lbls(4),
+  [FixLblName, BigLblName, OkLblName, PosBigLblName] = [hipe_rtl:label_name(Lbl) || Lbl <- Lbls],
+  [hipe_tagscheme:test_fixnum(Size, FixLblName, BigLblName, 0.99),
+   FixLbl,
+   hipe_tagscheme:untag_fixnum(USize, Size),
+   hipe_rtl:mk_branch(USize, ge, hipe_rtl:mk_imm(0), OkLblName, NegLblName), 
+   BigLbl,
+   hipe_tagscheme:test_pos_bignum(Size, PosBigLblName, NegLblName, 0.99),
+   PosBigLbl,
+   hipe_tagscheme:get_one_word_pos_bignum(USize, Size, SystemLimitLblName),
+   OkLbl].  
+   
+
 first_part(Var, Register, FalseLblName) ->
   [SuccessLbl1, SuccessLbl2] = create_lbls(2),
   [hipe_tagscheme:test_fixnum(Var, hipe_rtl:label_name(SuccessLbl1),
@@ -1307,4 +1300,5 @@ first_part(Var, Register, FalseLblName) ->
 			   hipe_rtl:label_name(SuccessLbl2), FalseLblName, 0.99),
   SuccessLbl2,
   hipe_tagscheme:untag_fixnum(Register, Var)].
+
 

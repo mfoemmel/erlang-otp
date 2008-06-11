@@ -1,7 +1,7 @@
 %%% This is an -*- Erlang -*- file.
 %%%-------------------------------------------------------------------
 %%% File    : dialyzer.hrl
-%%% Author  : Tobias Lindahl <tobiasl@csd.uu.se>
+%%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
 %%%           Kostis Sagonas <kostis@it.uu.se>
 %%% Description : Header file for Dialyzer.
 %%%
@@ -13,7 +13,8 @@
 -define(RET_DISCREPANCIES, 2).
 
 -type(dial_ret() :: ?RET_NOTHING_SUSPICIOUS
-                  | ?RET_INTERNAL_ERROR | ?RET_DISCREPANCIES).
+                  | ?RET_INTERNAL_ERROR 
+                  | ?RET_DISCREPANCIES).
 
 -define(SRC_COMPILE_OPTS, 
 	[no_copt, to_core, binary, return_errors, 
@@ -85,9 +86,10 @@
 %%--------------------------------------------------------------------
 
 -type(anal_type()    :: 'succ_typings' | 'plt_build').
+-type(anal_type1()   :: anal_type() | 'plt_add' | 'plt_check' | 'plt_remove').
 -type(start_from()   :: 'byte_code' | 'src_code').
 -type(define()       :: {atom(), any()}).
--type(md5()          :: [{atom(), binary()}]).
+-type(md5()          :: [{string(), binary()}]).
 -type(rep_mode()     :: 'quiet' | 'normal' | 'verbose').
 -type(dial_option()  :: {atom(), any()}).
 -type(dial_options() :: [dial_option()]).
@@ -117,17 +119,19 @@
 
 -record(options, {files           = []		    :: [string()],
 		  files_rec       = []		    :: [string()],
-		  analysis_type   = succ_typings    :: anal_type(),
+		  analysis_type   = succ_typings    :: anal_type1(),
 		  defines         = []		    :: [define()],
 		  from            = byte_code	    :: start_from(),
-		  init_plt        = ""		    :: string(),
+		  get_warnings    = maybe           :: bool() | 'maybe',
+		  init_plt        = none	    :: 'none' | string(),
 		  include_dirs    = []		    :: [string()],
 		  output_plt      = none            :: 'none' | string(),
-		  legal_warnings  = ordsets:new()   :: [dial_warn_tag()], % XXX: ordset(dial_warn_tag())
+		  legal_warnings  = ordsets:new()   :: ordset(dial_warn_tag()),
 		  report_mode     = normal	    :: rep_mode(),
 		  erlang_mode     = false	    :: bool(),
 		  use_contracts   = true            :: bool(),
-		  output_file     = ""		    :: string()}).
+		  output_file     = none	    :: 'none' | string(),
+		  output_format   = formatted       :: 'raw' | 'formatted'}).
 
 -record(contract, {contracts	  = []		    :: [_],        % ???
 		   args		  = []		    :: [erl_type()],

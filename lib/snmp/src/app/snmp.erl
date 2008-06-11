@@ -46,6 +46,8 @@
 	 sys_up_time/1, system_start_time/1,
 
          passwd2localized_key/3, localize_key/3,
+
+	 read_mib/1, 
  
 	 log_to_txt/5, log_to_txt/6, log_to_txt/7,
 	 change_log_size/2,
@@ -731,6 +733,14 @@ passwd2localized_key(Alg, Passwd, EngineID) ->
 
 localize_key(Alg, Key, EngineID) ->
     snmp_usm:localize_key(Alg, Key, EngineID).
+
+
+%%%-----------------------------------------------------------------
+%%% Read a mib
+%%%-----------------------------------------------------------------
+
+read_mib(FileName) ->
+    snmp_misc:read_mib(FileName).
 
 
 %%%-----------------------------------------------------------------

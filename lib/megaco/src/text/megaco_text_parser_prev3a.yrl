@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2004-2007</year>
+%% <year>2004-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -227,6 +227,7 @@ Nonterminals
     requestedEventBody
     requestedEvents
     safeToken
+    safeToken2
     secondEventParameter
     secondEventParameters
     secondRequestedEvent
@@ -1428,120 +1429,122 @@ extensionParameter   -> safeToken : ensure_extensionParameter('$1') .
 value                -> 'QuotedChars' : ensure_value('$1') .
 value                -> safeToken     : ensure_value('$1').
 
-safeToken            -> 'SafeChars'             : make_safe_token('$1') .
-%% BMK BMK safeToken            -> 'AddToken'              : make_safe_token('$1') .
-safeToken            -> 'AuditToken'            : make_safe_token('$1') .
-safeToken            -> 'AuditCapToken'         : make_safe_token('$1') .
-safeToken            -> 'AuditValueToken'       : make_safe_token('$1') .
-safeToken            -> 'AuthToken'             : make_safe_token('$1') .
-%% v3-safeToken            -> 'BothToken'             : make_safe_token('$1') . % v3
-safeToken            -> 'BothwayToken'          : make_safe_token('$1') .
-safeToken            -> 'BriefToken'            : make_safe_token('$1') .
-safeToken            -> 'BufferToken'           : make_safe_token('$1') .
-safeToken            -> 'CtxToken'              : make_safe_token('$1') .
-%% v3-safeToken            -> 'ContextAttrToken'      : make_safe_token('$1') . % v3
-safeToken            -> 'ContextAuditToken'     : make_safe_token('$1') .
-%% v2-safeToken            -> 'DigitMapToken'         : make_safe_token('$1') .
-%% safeToken         -> 'DigitMapDescriptorToken' : make_safe_token('$1') .
+safeToken            -> safeToken2              : make_safe_token('$1') .
+
+safeToken2           -> 'SafeChars'             : '$1' .
+%% BMK BMK safeToken2           -> 'AddToken'              : '$1' .
+safeToken2           -> 'AuditToken'            : '$1' .
+safeToken2           -> 'AuditCapToken'         : '$1' .
+safeToken2           -> 'AuditValueToken'       : '$1' .
+safeToken2           -> 'AuthToken'             : '$1' .
+%% v3-safeToken2           -> 'BothToken'             : '$1' . % v3
+safeToken2           -> 'BothwayToken'          : '$1' .
+safeToken2           -> 'BriefToken'            : '$1' .
+safeToken2           -> 'BufferToken'           : '$1' .
+safeToken2           -> 'CtxToken'              : '$1' .
+%% v3-safeToken2           -> 'ContextAttrToken'      : '$1' . % v3
+safeToken2           -> 'ContextAuditToken'     : '$1' .
+%% v2-safeToken2           -> 'DigitMapToken'         : '$1' .
+%% safeToken2        -> 'DigitMapDescriptorToken' : '$1' .
 %% v3-
-safeToken            -> 'DirectionToken'        : make_safe_token('$1') . % v3
-safeToken            -> 'DiscardToken'          : make_safe_token('$1') .
-safeToken            -> 'DisconnectedToken'     : make_safe_token('$1') .
-safeToken            -> 'DelayToken'            : make_safe_token('$1') .
-safeToken            -> 'DurationToken'         : make_safe_token('$1') .
-safeToken            -> 'EmbedToken'            : make_safe_token('$1') .
-%% BMK BMK safeToken            -> 'EmergencyToken'        : make_safe_token('$1') .
-%% BMK BMK safeToken            -> 'EmergencyOffToken'     : make_safe_token('$1') .
-safeToken            -> 'ErrorToken'            : make_safe_token('$1') .
-%% v2-safeToken            -> 'EventBufferToken'      : make_safe_token('$1') .
-%% v2-safeToken            -> 'EventsToken'           : make_safe_token('$1') .
-%% v3-safeToken            -> 'ExternalToken'         : make_safe_token('$1') . % v3
-safeToken            -> 'FailoverToken'         : make_safe_token('$1') .
-safeToken            -> 'ForcedToken'           : make_safe_token('$1') .
-safeToken            -> 'GracefulToken'         : make_safe_token('$1') .
-safeToken            -> 'H221Token'             : make_safe_token('$1') .
-safeToken            -> 'H223Token'             : make_safe_token('$1') .
-safeToken            -> 'H226Token'             : make_safe_token('$1') .
-safeToken            -> 'HandOffToken'          : make_safe_token('$1') .
-%% v3-safeToken            -> 'IEPSToken'             : make_safe_token('$1') . % v3
-safeToken            -> 'ImmAckRequiredToken'   : make_safe_token('$1') .
-safeToken            -> 'InactiveToken'         : make_safe_token('$1') .
-%% v3-safeToken            -> 'InternalToken'         : make_safe_token('$1') . % v3
-safeToken            -> 'InterruptByEventToken' : make_safe_token('$1') .
-safeToken            -> 'InterruptByNewSignalsDescrToken' : make_safe_token('$1') .
-safeToken            -> 'IsolateToken'          : make_safe_token('$1') .
-safeToken            -> 'InSvcToken'            : make_safe_token('$1') .
-safeToken            -> 'KeepActiveToken'       : make_safe_token('$1') .
-%% safeToken         -> 'LocalToken'            : make_safe_token('$1') .
-%% safeToken         -> 'LocalDescriptorToken'  : make_safe_token('$1') .
-safeToken            -> 'LocalControlToken'     : make_safe_token('$1') .
-safeToken            -> 'LoopbackToken'         : make_safe_token('$1') .
-safeToken            -> 'LockStepToken'         : make_safe_token('$1') .
-%% v2-safeToken            -> 'MediaToken'            : make_safe_token('$1') .
-%% safeToken         -> 'MegacopToken'          : make_safe_token('$1') .
-safeToken            -> 'MethodToken'           : make_safe_token('$1') .
-safeToken            -> 'MgcIdToken'            : make_safe_token('$1') .
-safeToken            -> 'ModeToken'             : make_safe_token('$1') .
-%% BMK BMK safeToken            -> 'ModifyToken'           : make_safe_token('$1') .
-%% v2-safeToken            -> 'ModemToken'            : make_safe_token('$1') .
-%% BMK BMK safeToken            -> 'MoveToken'             : make_safe_token('$1') .
-%% safeToken         -> 'MtpToken'              : make_safe_token('$1') .
-%% safeToken         -> 'MtpAddressToken'       : make_safe_token('$1') .
-%% v2-safeToken            -> 'MuxToken'              : make_safe_token('$1') .
-safeToken            -> 'NotifyToken'           : make_safe_token('$1') .
-safeToken            -> 'NotifyCompletionToken' : make_safe_token('$1') .
-safeToken            -> 'Nx64Token'             : make_safe_token('$1') .
-%% v2-safeToken            -> 'ObservedEventsToken'   : make_safe_token('$1') .
-safeToken            -> 'OnewayToken'           : make_safe_token('$1') .
-safeToken            -> 'OffToken'              : make_safe_token('$1') .
-safeToken            -> 'OnToken'               : make_safe_token('$1') .
-safeToken            -> 'OnOffToken'            : make_safe_token('$1') .
-safeToken            -> 'OutOfSvcToken'         : make_safe_token('$1') .
-safeToken            -> 'OtherReasonToken'      : make_safe_token('$1') .
-%% v2-safeToken            -> 'PackagesToken'         : make_safe_token('$1') .
-safeToken            -> 'PendingToken'          : make_safe_token('$1') .
-%% BMK BMK safeToken            -> 'PriorityToken'         : make_safe_token('$1') .
-safeToken            -> 'ProfileToken'          : make_safe_token('$1') .
-safeToken            -> 'ReasonToken'           : make_safe_token('$1') .
-safeToken            -> 'RecvonlyToken'         : make_safe_token('$1') .
-safeToken            -> 'ReplyToken'            : make_safe_token('$1') .
+safeToken2           -> 'DirectionToken'        : '$1' . % v3
+safeToken2           -> 'DiscardToken'          : '$1' .
+safeToken2           -> 'DisconnectedToken'     : '$1' .
+safeToken2           -> 'DelayToken'            : '$1' .
+safeToken2           -> 'DurationToken'         : '$1' .
+safeToken2           -> 'EmbedToken'            : '$1' .
+%% BMK BMK safeToken2           -> 'EmergencyToken'        : '$1' .
+%% BMK BMK safeToken2           -> 'EmergencyOffToken'     : '$1' .
+safeToken2           -> 'ErrorToken'            : '$1' .
+%% v2-safeToken2           -> 'EventBufferToken'      : '$1' .
+%% v2-safeToken2           -> 'EventsToken'           : '$1' .
+%% v3-safeToken2           -> 'ExternalToken'         : '$1' . % v3
+safeToken2           -> 'FailoverToken'         : '$1' .
+safeToken2           -> 'ForcedToken'           : '$1' .
+safeToken2           -> 'GracefulToken'         : '$1' .
+safeToken2           -> 'H221Token'             : '$1' .
+safeToken2           -> 'H223Token'             : '$1' .
+safeToken2           -> 'H226Token'             : '$1' .
+safeToken2           -> 'HandOffToken'          : '$1' .
+%% v3-safeToken2           -> 'IEPSToken'             : '$1' . % v3
+safeToken2           -> 'ImmAckRequiredToken'   : '$1' .
+safeToken2           -> 'InactiveToken'         : '$1' .
+%% v3-safeToken2           -> 'InternalToken'         : '$1' . % v3
+safeToken2           -> 'InterruptByEventToken' : '$1' .
+safeToken2           -> 'InterruptByNewSignalsDescrToken' : '$1' .
+safeToken2           -> 'IsolateToken'          : '$1' .
+safeToken2           -> 'InSvcToken'            : '$1' .
+safeToken2           -> 'KeepActiveToken'       : '$1' .
+%% safeToken2        -> 'LocalToken'            : '$1' .
+%% safeToken2        -> 'LocalDescriptorToken'  : '$1' .
+safeToken2           -> 'LocalControlToken'     : '$1' .
+safeToken2           -> 'LoopbackToken'         : '$1' .
+safeToken2           -> 'LockStepToken'         : '$1' .
+%% v2-safeToken2           -> 'MediaToken'            : '$1' .
+%% safeToken2        -> 'MegacopToken'          : '$1' .
+safeToken2           -> 'MethodToken'           : '$1' .
+safeToken2           -> 'MgcIdToken'            : '$1' .
+safeToken2           -> 'ModeToken'             : '$1' .
+%% BMK BMK safeToken2           -> 'ModifyToken'           : '$1' .
+%% v2-safeToken2           -> 'ModemToken'            : '$1' .
+%% BMK BMK safeToken2           -> 'MoveToken'             : '$1' .
+%% safeToken2        -> 'MtpToken'              : '$1' .
+%% safeToken2        -> 'MtpAddressToken'       : '$1' .
+%% v2-safeToken2           -> 'MuxToken'              : '$1' .
+safeToken2           -> 'NotifyToken'           : '$1' .
+safeToken2           -> 'NotifyCompletionToken' : '$1' .
+safeToken2           -> 'Nx64Token'             : '$1' .
+%% v2-safeToken2           -> 'ObservedEventsToken'   : '$1' .
+safeToken2           -> 'OnewayToken'           : '$1' .
+safeToken2           -> 'OffToken'              : '$1' .
+safeToken2           -> 'OnToken'               : '$1' .
+safeToken2           -> 'OnOffToken'            : '$1' .
+safeToken2           -> 'OutOfSvcToken'         : '$1' .
+safeToken2           -> 'OtherReasonToken'      : '$1' .
+%% v2-safeToken2           -> 'PackagesToken'         : '$1' .
+safeToken2           -> 'PendingToken'          : '$1' .
+%% BMK BMK safeToken2           -> 'PriorityToken'         : '$1' .
+safeToken2           -> 'ProfileToken'          : '$1' .
+safeToken2           -> 'ReasonToken'           : '$1' .
+safeToken2           -> 'RecvonlyToken'         : '$1' .
+safeToken2           -> 'ReplyToken'            : '$1' .
 %% v3-
-safeToken            -> 'RequestIDToken'        : make_safe_token('$1') . % v3
-safeToken            -> 'ResponseAckToken'      : make_safe_token('$1') .
-safeToken            -> 'RestartToken'          : make_safe_token('$1') .
-%% safeToken         -> 'RemoteToken'           : make_safe_token('$1') .
-%% safeToken         -> 'RemoteDescriptorToken' : make_safe_token('$1') .
-safeToken            -> 'ReservedGroupToken'    : make_safe_token('$1') .
-safeToken            -> 'ReservedValueToken'    : make_safe_token('$1') .
-safeToken            -> 'SendonlyToken'         : make_safe_token('$1') .
-safeToken            -> 'SendrecvToken'         : make_safe_token('$1') .
-safeToken            -> 'ServicesToken'         : make_safe_token('$1') .
-safeToken            -> 'ServiceStatesToken'    : make_safe_token('$1') .
-safeToken            -> 'ServiceChangeToken'    : make_safe_token('$1') .
-%% v3-safeToken            -> 'ServiceChangeIncompleteToken' : make_safe_token('$1') . % v3 
-safeToken            -> 'ServiceChangeAddressToken' : make_safe_token('$1') .
-safeToken            -> 'SignalListToken'       : make_safe_token('$1') .
-%% v2-safeToken            -> 'SignalsToken'          : make_safe_token('$1') .
-safeToken            -> 'SignalTypeToken'       : make_safe_token('$1') .
-%% v2-safeToken            -> 'StatsToken'            : make_safe_token('$1') .
-safeToken            -> 'StreamToken'           : make_safe_token('$1') .
-%% BMK BMK safeToken            -> 'SubtractToken'         : make_safe_token('$1') .
-safeToken            -> 'SynchISDNToken'        : make_safe_token('$1') .
-safeToken            -> 'TerminationStateToken' : make_safe_token('$1') .
-safeToken            -> 'TestToken'             : make_safe_token('$1') .
-safeToken            -> 'TimeOutToken'          : make_safe_token('$1') .
-%% BMK BMK safeToken            -> 'TopologyToken'         : make_safe_token('$1') .
-safeToken            -> 'TransToken'            : make_safe_token('$1') .
-safeToken            -> 'V18Token'              : make_safe_token('$1') .
-safeToken            -> 'V22Token'              : make_safe_token('$1') .
-safeToken            -> 'V22bisToken'           : make_safe_token('$1') .
-safeToken            -> 'V32Token'              : make_safe_token('$1') .
-safeToken            -> 'V32bisToken'           : make_safe_token('$1') .
-safeToken            -> 'V34Token'              : make_safe_token('$1') .
-safeToken            -> 'V76Token'              : make_safe_token('$1') .
-safeToken            -> 'V90Token'              : make_safe_token('$1') .
-safeToken            -> 'V91Token'              : make_safe_token('$1') .
-safeToken            -> 'VersionToken'          : make_safe_token('$1') .
+safeToken2           -> 'RequestIDToken'        : '$1' . % v3
+safeToken2           -> 'ResponseAckToken'      : '$1' .
+safeToken2           -> 'RestartToken'          : '$1' .
+%% safeToken2        -> 'RemoteToken'           : '$1' .
+%% safeToken2        -> 'RemoteDescriptorToken' : '$1' .
+safeToken2           -> 'ReservedGroupToken'    : '$1' .
+safeToken2           -> 'ReservedValueToken'    : '$1' .
+safeToken2           -> 'SendonlyToken'         : '$1' .
+safeToken2           -> 'SendrecvToken'         : '$1' .
+safeToken2           -> 'ServicesToken'         : '$1' .
+safeToken2           -> 'ServiceStatesToken'    : '$1' .
+safeToken2           -> 'ServiceChangeToken'    : '$1' .
+%% v3-safeToken2           -> 'ServiceChangeIncompleteToken' : '$1' . % v3 
+safeToken2           -> 'ServiceChangeAddressToken' : '$1' .
+safeToken2           -> 'SignalListToken'       : '$1' .
+%% v2-safeToken2           -> 'SignalsToken'          : '$1' .
+safeToken2           -> 'SignalTypeToken'       : '$1' .
+%% v2-safeToken2           -> 'StatsToken'            : '$1' .
+safeToken2           -> 'StreamToken'           : '$1' .
+%% BMK BMK safeToken2           -> 'SubtractToken'         : '$1' .
+safeToken2           -> 'SynchISDNToken'        : '$1' .
+safeToken2           -> 'TerminationStateToken' : '$1' .
+safeToken2           -> 'TestToken'             : '$1' .
+safeToken2           -> 'TimeOutToken'          : '$1' .
+%% BMK BMK safeToken2           -> 'TopologyToken'         : '$1' .
+safeToken2           -> 'TransToken'            : '$1' .
+safeToken2           -> 'V18Token'              : '$1' .
+safeToken2           -> 'V22Token'              : '$1' .
+safeToken2           -> 'V22bisToken'           : '$1' .
+safeToken2           -> 'V32Token'              : '$1' .
+safeToken2           -> 'V32bisToken'           : '$1' .
+safeToken2           -> 'V34Token'              : '$1' .
+safeToken2           -> 'V76Token'              : '$1' .
+safeToken2           -> 'V90Token'              : '$1' .
+safeToken2           -> 'V91Token'              : '$1' .
+safeToken2           -> 'VersionToken'          : '$1' .
 
 Erlang code.
 

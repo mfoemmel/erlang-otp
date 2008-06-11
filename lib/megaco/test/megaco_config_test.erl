@@ -32,15 +32,26 @@
 t()     -> megaco_test_lib:t(?MODULE).
 t(Case) -> megaco_test_lib:t({?MODULE, Case}).
 
+min(M) -> timer:minutes(M).
+
 %% Test server callbacks
 init_per_testcase(Case, Config) ->
+    C = lists:keydelete(tc_timeout, 1, Config),
+    do_init_per_testcase(Case, [{tc_timeout, min(3)}|C]).
+
+do_init_per_testcase(Case, Config) ->
+    process_flag(trap_exit, true),
     megaco_test_lib:init_per_testcase(Case, Config).
 
 fin_per_testcase(Case, Config) ->
+    process_flag(trap_exit, false),
     megaco_test_lib:fin_per_testcase(Case, Config).
 
 
 -record(command, {id, desc, cmd, verify}).
+
+-define(TEST_VERBOSITY, debug).
+-define(NUM_CNT_PROCS,  100).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -49,7 +60,14 @@ fin_per_testcase(Case, Config) ->
 all(suite) ->
     [
      config,
+     transaction_id_counter,
      tickets
+    ].
+
+transaction_id_counter(suite) ->
+    [
+     transaction_id_counter_mg, 
+     transaction_id_counter_mgc
     ].
 
 tickets(suite) ->
@@ -59,6 +77,7 @@ tickets(suite) ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Config test case
 
 config(suite) ->
     [];
@@ -77,151 +96,172 @@ config(Config) when list(Config) ->
     IT4 = #megaco_incr_timer{max_retries = NonInt},
     IT5 = #megaco_incr_timer{max_retries = non_infinity},
 
+    %% Command range values
+    Initial = 100,
+    Verify  = 200,
+    Nice    = 300,
+    Evil    = 400,
+    End     = 500,
+
     Commands = 
 	[
 	 %% Initial commands
-	 initial_command( 0, "enable trace", 
+	 initial_command( Initial + 0, 
+			  "enable trace", 
 			  fun() -> megaco:enable_trace(100, io) end, ok),
-	 initial_command( 1, "start", 
+	 initial_command( Initial + 1, 
+			  "start", 
 			  fun() -> megaco:start() end, ok),
-	 initial_command( 2, "Verify no active requests", 
+	 initial_command( Initial + 2, 
+			  "Verify no active requests", 
 			  fun() -> megaco:system_info(n_active_requests) end,
 			  0),
-	 initial_command( 3, "Verify no active replies", 
+	 initial_command( Initial + 3, 
+			  "Verify no active replies", 
 			  fun() -> megaco:system_info(n_active_replies) end,
 			  0),
-	 initial_command( 4, "Verify no active connections", 
+	 initial_command( Initial + 4, 
+			  "Verify no active connections", 
 			  fun() -> 
 				  megaco:system_info(n_active_connections) 
 			  end,
 			  0), 
-	 initial_command( 5, "Verify no connections", 
+	 initial_command( Initial + 5, 
+			  "Verify no connections", 
 			  fun() -> megaco:system_info(connections) end, []),
-	 initial_command( 6, "Verify no users", 
+	 initial_command( Initial + 6, 
+			  "Verify no users", 
 			  fun() -> megaco:system_info(users) end, []), 
-	 initial_command( 7, "Start user", 
+	 initial_command( Initial + 7, 
+			  "Start user", 
 			  fun() -> megaco:start_user(Mid, []) end, ok),
 
 
 	 %% Verify user defaults
-	 verify_user_default_command(Mid,  8, connections, []),
-	 verify_user_default_command(Mid,  9, min_trans_id, 1), 
-	 verify_user_default_command(Mid, 10, max_trans_id, infinity), 
-	 verify_user_default_command(Mid, 11, request_timer, 
+	 verify_user_default_command(Mid, Verify +  1, connections, []),
+	 verify_user_default_command(Mid, Verify +  2, min_trans_id, 1), 
+	 verify_user_default_command(Mid, Verify +  3, max_trans_id, infinity), 
+	 verify_user_default_command(Mid, Verify +  4, request_timer, 
 				          #megaco_incr_timer{}), 
-	 verify_user_default_command(Mid, 12, long_request_timer, timer:seconds(60)), 
-	 verify_user_default_command(Mid, 13, auto_ack, false), 
-	 verify_user_default_command(Mid, 14, pending_timer, 30000), 
-	 verify_user_default_command(Mid, 15, reply_timer, 30000), 
-	 verify_user_default_command(Mid, 16, send_mod, megaco_tcp), 
-	 verify_user_default_command(Mid, 17, encoding_mod, 
+	 verify_user_default_command(Mid, Verify +  5, long_request_timer, timer:seconds(60)), 
+	 verify_user_default_command(Mid, Verify +  6, auto_ack, false), 
+	 verify_user_default_command(Mid, Verify +  7, pending_timer, 30000), 
+	 verify_user_default_command(Mid, Verify +  8, reply_timer, 30000), 
+	 verify_user_default_command(Mid, Verify +  9, send_mod, megaco_tcp), 
+	 verify_user_default_command(Mid, Verify + 10, encoding_mod, 
 				          megaco_pretty_text_encoder), 
-	 verify_user_default_command(Mid, 18, encoding_config, []), 
-	 verify_user_default_command(Mid, 19, protocol_version, 1), 
-	 verify_user_default_command(Mid, 20, reply_data, undefined), 
-	 verify_user_default_command(Mid, 21, receive_handle, 
+	 verify_user_default_command(Mid, Verify + 11, encoding_config, []), 
+	 verify_user_default_command(Mid, Verify + 12, protocol_version, 1), 
+	 verify_user_default_command(Mid, Verify + 13, reply_data, undefined), 
+	 verify_user_default_command(Mid, Verify + 14, receive_handle, 
 				     fun(H) when is_record(H, megaco_receive_handle) -> {ok, H};
 					(R)  -> {error, R}
 				     end), 
 
 
 	 %% Nice update
-	 nice_user_update_command(Mid, 22, min_trans_id, Int), 
-	 nice_user_update_command(Mid, 23, max_trans_id, Int), 
-	 nice_user_update_command(Mid, 24, max_trans_id, infinity), 
-	 nice_user_update_command(Mid, 25, request_timer, Int), 
-	 nice_user_update_command(Mid, 26, request_timer, infinity), 
-	 nice_user_update_command(Mid, 27, request_timer, IT), 
-	 nice_user_update_command(Mid, 28, long_request_timer, Int), 
-	 nice_user_update_command(Mid, 29, long_request_timer, infinity), 
-	 nice_user_update_command(Mid, 30, long_request_timer, IT), 
-	 nice_user_update_command(Mid, 31, auto_ack, true), 
-	 nice_user_update_command(Mid, 32, auto_ack, false), 
-	 nice_user_update_command(Mid, 33, pending_timer, Int), 
-	 nice_user_update_command(Mid, 34, pending_timer, infinity), 
-	 nice_user_update_command(Mid, 35, pending_timer, IT), 
-	 nice_user_update_command(Mid, 36, reply_timer, Int), 
-	 nice_user_update_command(Mid, 37, reply_timer, infinity), 
-	 nice_user_update_command(Mid, 38, reply_timer, IT), 
-	 nice_user_update_command(Mid, 39, send_mod, an_atom), 
-	 nice_user_update_command(Mid, 40, encoding_mod, an_atom), 
-	 nice_user_update_command(Mid, 41, encoding_config, []), 
-	 nice_user_update_command(Mid, 42, protocol_version, Int), 
-	 nice_user_update_command(Mid, 43, reply_data, IT), 
+	 nice_user_update_command(Mid, Nice +  1, min_trans_id, Int), 
+	 nice_user_update_command(Mid, Nice +  2, max_trans_id, Int), 
+	 nice_user_update_command(Mid, Nice +  3, max_trans_id, infinity), 
+	 nice_user_update_command(Mid, Nice +  4, request_timer, Int), 
+	 nice_user_update_command(Mid, Nice +  5, request_timer, infinity), 
+	 nice_user_update_command(Mid, Nice +  6, request_timer, IT), 
+	 nice_user_update_command(Mid, Nice +  7, long_request_timer, Int), 
+	 nice_user_update_command(Mid, Nice +  8, long_request_timer, infinity), 
+	 nice_user_update_command(Mid, Nice +  9, long_request_timer, IT), 
+	 nice_user_update_command(Mid, Nice + 10, auto_ack, true), 
+	 nice_user_update_command(Mid, Nice + 11, auto_ack, false), 
+	 nice_user_update_command(Mid, Nice + 12, pending_timer, Int), 
+	 nice_user_update_command(Mid, Nice + 13, pending_timer, infinity), 
+	 nice_user_update_command(Mid, Nice + 14, pending_timer, IT), 
+	 nice_user_update_command(Mid, Nice + 15, reply_timer, Int), 
+	 nice_user_update_command(Mid, Nice + 16, reply_timer, infinity), 
+	 nice_user_update_command(Mid, Nice + 17, reply_timer, IT), 
+	 nice_user_update_command(Mid, Nice + 18, send_mod, an_atom), 
+	 nice_user_update_command(Mid, Nice + 19, encoding_mod, an_atom), 
+	 nice_user_update_command(Mid, Nice + 20, encoding_config, []), 
+	 nice_user_update_command(Mid, Nice + 21, protocol_version, Int), 
+	 nice_user_update_command(Mid, Nice + 23, reply_data, IT), 
+	 nice_user_update_command(Mid, Nice + 23, resend_indication, true), 
+	 nice_user_update_command(Mid, Nice + 24, resend_indication, false), 
+	 nice_user_update_command(Mid, Nice + 25, resend_indication, flag),
 
 
 	 %% Evil update
-	 evil_user_update_command(Mid, 44, min_trans_id, NonInt), 
-	 evil_user_update_command(Mid, 45, max_trans_id, NonInt), 
-	 evil_user_update_command(Mid, 46, max_trans_id, non_infinity), 
-	 evil_user_update_command(Mid, 47, request_timer, NonInt), 
-	 evil_user_update_command(Mid, 48, request_timer, non_infinity), 
-	 evil_user_update_command(Mid, 49, request_timer, IT2), 
-	 evil_user_update_command(Mid, 50, request_timer, IT3), 
-	 evil_user_update_command(Mid, 51, request_timer, IT4), 
-	 evil_user_update_command(Mid, 52, request_timer, IT5), 
-	 evil_user_update_command(Mid, 53, long_request_timer, NonInt), 
-	 evil_user_update_command(Mid, 54, long_request_timer, non_infinity), 
-	 evil_user_update_command(Mid, 55, long_request_timer, IT2), 
-	 evil_user_update_command(Mid, 56, long_request_timer, IT3), 
-	 evil_user_update_command(Mid, 57, long_request_timer, IT4), 
-	 evil_user_update_command(Mid, 58, long_request_timer, IT5), 
-	 evil_user_update_command(Mid, 59, auto_ack, non_bool), 
-	 evil_user_update_command(Mid, 60, pending_timer, NonInt), 
-	 evil_user_update_command(Mid, 61, pending_timer, non_infinity), 
-	 evil_user_update_command(Mid, 62, pending_timer, IT2), 
-	 evil_user_update_command(Mid, 63, pending_timer, IT3), 
-	 evil_user_update_command(Mid, 64, pending_timer, IT4), 
-	 evil_user_update_command(Mid, 65, pending_timer, IT5), 
-	 evil_user_update_command(Mid, 66, reply_timer, NonInt), 
-	 evil_user_update_command(Mid, 67, reply_timer, non_infinity), 
-	 evil_user_update_command(Mid, 68, reply_timer, IT2), 
-	 evil_user_update_command(Mid, 69, reply_timer, IT3), 
-	 evil_user_update_command(Mid, 70, reply_timer, IT4), 
-	 evil_user_update_command(Mid, 71, reply_timer, IT5), 
-	 evil_user_update_command(Mid, 72, send_mod, {non_atom}), 
-	 evil_user_update_command(Mid, 73, encoding_mod, {non_atom}), 
-	 evil_user_update_command(Mid, 74, encoding_config, non_list), 
-	 evil_user_update_command(Mid, 75, protocol_version, NonInt),
+	 evil_user_update_command(Mid, Evil +  1, min_trans_id, NonInt), 
+	 evil_user_update_command(Mid, Evil +  2, max_trans_id, NonInt), 
+	 evil_user_update_command(Mid, Evil +  3, max_trans_id, non_infinity), 
+	 evil_user_update_command(Mid, Evil +  4, request_timer, NonInt), 
+	 evil_user_update_command(Mid, Evil +  5, request_timer, non_infinity), 
+	 evil_user_update_command(Mid, Evil +  6, request_timer, IT2), 
+	 evil_user_update_command(Mid, Evil +  7, request_timer, IT3), 
+	 evil_user_update_command(Mid, Evil +  8, request_timer, IT4), 
+	 evil_user_update_command(Mid, Evil +  9, request_timer, IT5), 
+	 evil_user_update_command(Mid, Evil + 10, long_request_timer, NonInt), 
+	 evil_user_update_command(Mid, Evil + 11, long_request_timer, non_infinity), 
+	 evil_user_update_command(Mid, Evil + 12, long_request_timer, IT2), 
+	 evil_user_update_command(Mid, Evil + 13, long_request_timer, IT3), 
+	 evil_user_update_command(Mid, Evil + 14, long_request_timer, IT4), 
+	 evil_user_update_command(Mid, Evil + 15, long_request_timer, IT5), 
+	 evil_user_update_command(Mid, Evil + 16, auto_ack, non_bool), 
+	 evil_user_update_command(Mid, Evil + 17, pending_timer, NonInt), 
+	 evil_user_update_command(Mid, Evil + 18, pending_timer, non_infinity), 
+	 evil_user_update_command(Mid, Evil + 19, pending_timer, IT2), 
+	 evil_user_update_command(Mid, Evil + 20, pending_timer, IT3), 
+	 evil_user_update_command(Mid, Evil + 21, pending_timer, IT4), 
+	 evil_user_update_command(Mid, Evil + 22, pending_timer, IT5), 
+	 evil_user_update_command(Mid, Evil + 23, reply_timer, NonInt), 
+	 evil_user_update_command(Mid, Evil + 24, reply_timer, non_infinity), 
+	 evil_user_update_command(Mid, Evil + 25, reply_timer, IT2), 
+	 evil_user_update_command(Mid, Evil + 26, reply_timer, IT3), 
+	 evil_user_update_command(Mid, Evil + 27, reply_timer, IT4), 
+	 evil_user_update_command(Mid, Evil + 28, reply_timer, IT5), 
+	 evil_user_update_command(Mid, Evil + 29, send_mod, {non_atom}), 
+	 evil_user_update_command(Mid, Evil + 30, encoding_mod, {non_atom}), 
+	 evil_user_update_command(Mid, Evil + 31, encoding_config, non_list), 
+	 evil_user_update_command(Mid, Evil + 32, protocol_version, NonInt),
+	 evil_user_update_command(Mid, Evil + 33, resend_indication, flagg),
 
 
-	 exit_command(76, "Verify non-existing system info", 
+	 exit_command(End + 1, 
+		      "Verify non-existing system info", 
 		      fun() -> megaco:system_info(non_exist) end),
-	 exit_command(77, "Verify non-existing user user info", 
+	 exit_command(End + 2, 
+		      "Verify non-existing user user info", 
 		      fun() -> megaco:user_info(non_exist, trans_id) end),
-	 exit_command(78, "Verify non-existing user info", 
+	 exit_command(End + 3, "Verify non-existing user info", 
 		      fun() -> megaco:user_info(Mid, non_exist) end),
 
-	 error_command(79, 
+	 error_command(End + 4, 
 		       "Try updating user info for non-existing user", 
 		       fun() -> 
 			       megaco:update_user_info(non_exist, trans_id, 1) 
 		       end,
 		       no_such_user, 2),
-	 error_command(80, 
+	 error_command(End + 11, 
 		       "Try updating non-existing user info", 
 		       fun() -> 
 			       megaco:update_user_info(Mid, trans_id, 4711) 
 		       end,
 		       bad_user_val, 4),
-	 error_command(81, 
+	 error_command(End + 12, 
 		       "Try start already started user", 
 		       fun() -> 
 			       megaco:start_user(Mid, []) 
 		       end,
 		       user_already_exists, 2),
 
-	 command(82, "Verify started users", 
+	 command(End + 13, "Verify started users", 
 		 fun() -> megaco:system_info(users) end, [Mid]),
-	 command(83, "Stop user", fun() -> megaco:stop_user(Mid) end, ok),
-	 command(84, "Verify started users", 
+	 command(End + 14, "Stop user", fun() -> megaco:stop_user(Mid) end, ok),
+	 command(End + 15, "Verify started users", 
 		 fun() -> megaco:system_info(users) end, []),
-	 error_command(85, "Try stop not started user",
+	 error_command(End + 16, "Try stop not started user",
 		       fun() -> megaco:stop_user(Mid) end, no_such_user, 2),
-	 error_command(86, "Try start megaco (it's already started)",
+	 error_command(End + 17, "Try start megaco (it's already started)",
 		       fun() -> megaco:start() end, already_started, 2),
-	 command(87, "Stop megaco", fun() -> megaco:stop() end, ok),
-	 error_command(88, "Try stop megaco (it's not running)",
+	 command(End + 18, "Stop megaco", fun() -> megaco:stop() end, ok),
+	 error_command(End + 19, "Try stop megaco (it's not running)",
 		       fun() -> megaco:stop() end, not_started, 2)
 	],
 
@@ -352,6 +392,308 @@ command(No, Desc, Cmd, VerifyVal) when is_integer(No) and is_list(Desc) and
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+transaction_id_counter_mg(suite) ->
+    [];
+transaction_id_counter_mg(doc) ->
+    ["This test case is intended to test and verify the "
+     "transaction counter handling of the application "
+     "in with one connection (MG). "];
+transaction_id_counter_mg(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        transaction_id_counter_mg),
+    
+    process_flag(trap_exit, true),
+
+    i("starting"),
+
+    {ok, _ConfigPid} = megaco_config:start_link(),
+
+    %% Basic user data
+    UserMid = {deviceName, "mg"},
+    UserConfig = [
+		  {min_trans_id, 1}
+		 ],
+
+    %% Basic connection data
+    RemoteMid = {deviceName, "mgc"},
+    RecvHandle = #megaco_receive_handle{local_mid       = UserMid,
+					encoding_mod    = ?MODULE,
+					encoding_config = [],
+					send_mod        = ?MODULE},
+    SendHandle = dummy_send_handle,
+    ControlPid = self(), 
+
+    %% Start user
+    i("start user"),
+    ok = megaco_config:start_user(UserMid, UserConfig),
+
+    %% Create connection
+    i("create connection"),
+    {ok, CD} = 
+	megaco_config:connect(RecvHandle, RemoteMid, SendHandle, ControlPid),
+
+    %% Set counter limits
+    i("set counter max limit"),
+    CH = CD#conn_data.conn_handle, 
+    megaco_config:update_conn_info(CH, max_trans_id, 1000),
+
+    %% Create the counter worker procs
+    i("create counter working procs"),
+    Pids = create_counter_working_procs(CH, ?NUM_CNT_PROCS, []),
+
+    %% Start the counter worker procs
+    i("release the counter working procs"),
+    start_counter_working_procs(Pids),
+
+    %% Await the counter worker procs termination
+    i("await the counter working procs completion"),
+    await_completion_counter_working_procs(Pids),
+
+    %% Verify result
+    i("verify counter result"),
+    TransId = megaco_config:conn_info(CH, trans_id),
+    1 = TransId,
+
+    %% Stop test
+    i("disconnect"),
+    {ok, _, _} = megaco_config:disconnect(CH),
+    i("stop user"),
+    ok = megaco_config:stop_user(UserMid),
+    i("stop megaco_config"),
+    ok = megaco_config:stop(),
+
+    i("done"),
+    ok.
+
+
+
+create_counter_working_procs(_CH, 0, Pids) ->
+    Pids;
+create_counter_working_procs(CH, N, Pids) ->
+    TC = get(tc),
+    Pid = erlang:spawn_link(fun() -> counter_init(CH, TC) end),
+    create_counter_working_procs(CH, N-1, [Pid | Pids]).
+
+counter_init(CH, TC) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     lists:flatten(io_lib:format("CNT-~p", [self()]))),
+    put(tc,        TC),    
+    UserMid = CH#megaco_conn_handle.local_mid,
+    Min = megaco_config:user_info(UserMid, min_trans_id),
+    Max = megaco_config:conn_info(CH, max_trans_id),
+    Num = Max - Min + 1,
+    receive
+	start ->
+	    %% i("received start command (~p)", [Num]),
+	    ok
+    end,
+    counter_loop(CH, Num).
+
+counter_loop(_CH, 0) ->
+    %% i("done"),
+    exit(normal);
+counter_loop(CH, Num) when (Num > 0) ->
+    megaco_config:incr_trans_id_counter(CH, 1),
+    counter_loop(CH, Num-1).
+
+start_counter_working_procs([]) ->
+    %% i("released"),
+    ok;
+start_counter_working_procs([Pid | Pids]) ->
+    Pid ! start,
+    start_counter_working_procs(Pids).
+
+await_completion_counter_working_procs([]) ->
+    ok;
+await_completion_counter_working_procs(Pids) ->
+    receive
+	{'EXIT', Pid, normal} ->
+	    Pids2 = lists:delete(Pid, Pids),
+	    await_completion_counter_working_procs(Pids2);
+	_Any ->
+	    await_completion_counter_working_procs(Pids)
+    end.
+    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+transaction_id_counter_mgc(suite) ->
+    [];
+transaction_id_counter_mgc(doc) ->
+    ["This test case is intended to test and verify the "
+     "transaction counter handling of the application "
+     "in with several connections (MGC). "];
+transaction_id_counter_mgc(Config) when is_list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        transaction_id_counter_mgc),
+    process_flag(trap_exit, true),
+
+    i("starting"),
+
+    {ok, _ConfigPid} = megaco_config:start_link(),
+
+    %% Basic user data
+    UserMid = {deviceName, "mgc"},
+    UserConfig = [
+		  {min_trans_id, 1}
+		 ],
+
+    %% Basic connection data
+    RemoteMids = 
+	[
+	 {deviceName, "mg01"},
+	 {deviceName, "mg02"},
+	 {deviceName, "mg03"},
+	 {deviceName, "mg04"},
+	 {deviceName, "mg05"},
+	 {deviceName, "mg06"},
+	 {deviceName, "mg07"},
+	 {deviceName, "mg08"},
+	 {deviceName, "mg09"},
+	 {deviceName, "mg10"}
+	], 
+    RecvHandles = 
+	[
+	 #megaco_receive_handle{local_mid     = UserMid,
+	 			encoding_mod    = ?MODULE,
+	 			encoding_config = [],
+	 			send_mod        = ?MODULE},
+	 #megaco_receive_handle{local_mid     = UserMid,
+	 			encoding_mod    = ?MODULE,
+	 			encoding_config = [],
+	 			send_mod        = ?MODULE},
+	 #megaco_receive_handle{local_mid     = UserMid,
+	 			encoding_mod    = ?MODULE,
+	 			encoding_config = [],
+	 			send_mod        = ?MODULE},
+	 #megaco_receive_handle{local_mid     = UserMid,
+	 			encoding_mod    = ?MODULE,
+	 			encoding_config = [],
+	 			send_mod        = ?MODULE},
+	 #megaco_receive_handle{local_mid     = UserMid,
+	 			encoding_mod    = ?MODULE,
+	 			encoding_config = [],
+	 			send_mod        = ?MODULE},
+	 #megaco_receive_handle{local_mid     = UserMid,
+	 			encoding_mod    = ?MODULE,
+	 			encoding_config = [],
+	 			send_mod        = ?MODULE},
+	 #megaco_receive_handle{local_mid     = UserMid,
+	 			encoding_mod    = ?MODULE,
+	 			encoding_config = [],
+	 			send_mod        = ?MODULE},
+	 #megaco_receive_handle{local_mid     = UserMid,
+	 			encoding_mod    = ?MODULE,
+	 			encoding_config = [],
+	 			send_mod        = ?MODULE},
+	 #megaco_receive_handle{local_mid     = UserMid,
+	 			encoding_mod    = ?MODULE,
+	 			encoding_config = [],
+	 			send_mod        = ?MODULE},
+	 #megaco_receive_handle{local_mid     = UserMid,
+				encoding_mod    = ?MODULE,
+				encoding_config = [],
+				send_mod        = ?MODULE}
+	],
+    SendHandle = dummy_send_handle,
+    ControlPid = self(), 
+    
+    %% Start user
+    i("start user"),
+    ok = megaco_config:start_user(UserMid, UserConfig),
+
+    %% Create connection
+    i("create connection(s)"),
+    CDs = create_connections(RecvHandles, RemoteMids, SendHandle, ControlPid),
+
+    %% Set counter limits
+    i("set counter max limit(s)"),
+    set_counter_max_limits(CDs, 1000),
+
+    %% Create the counter worker procs
+    i("create counter working procs"),
+    Pids = create_counter_working_procs(CDs, ?NUM_CNT_PROCS),
+
+    %% Start the counter worker procs
+    i("release the counter working procs"),
+    start_counter_working_procs(Pids),
+
+    %% Await the counter worker procs termination
+    i("await the counter working procs completion"),
+    await_completion_counter_working_procs(Pids),
+
+    %% Verify result
+    i("verify counter result"),
+    verify_counter_results(CDs),
+
+    %% Stop test
+    i("disconnect"),
+    delete_connections(CDs), 
+    i("stop user"),
+    ok = megaco_config:stop_user(UserMid),
+    i("stop megaco_config"),
+    ok = megaco_config:stop(),
+
+    i("done"),
+    ok.
+
+create_connections(RecvHandles, RemoteMids, SendHandle, ControlPid) ->
+    create_connections(RecvHandles, RemoteMids, SendHandle, ControlPid, []).
+
+create_connections([], [], _SendHandle, _ControlPid, Acc) ->
+    lists:reverse(Acc);
+create_connections([RecvHandle | RecvHandles], 
+		   [RemoteMid  | RemoteMids], 
+		   SendHandle, ControlPid, Acc) ->
+    {ok, CD} = 
+	megaco_config:connect(RecvHandle, RemoteMid, SendHandle, ControlPid),
+    create_connections(RecvHandles, RemoteMids, 
+		       SendHandle, ControlPid, [CD | Acc]).
+
+
+set_counter_max_limits([], _MaxTransId) ->
+    ok;
+set_counter_max_limits([#conn_data{conn_handle = CH} | CDs], MaxTransId) ->
+    megaco_config:update_conn_info(CH, max_trans_id, MaxTransId),
+    set_counter_max_limits(CDs, MaxTransId).
+    
+
+create_counter_working_procs(CDs, NumCntProcs) ->
+    lists:flatten(create_counter_working_procs2(CDs, NumCntProcs)).
+
+create_counter_working_procs2([], _NumCntProcs) ->
+    [];
+create_counter_working_procs2([#conn_data{conn_handle = CH} | CDs], 
+			      NumCntProcs) ->
+    [create_counter_working_procs(CH, NumCntProcs, []) |
+     create_counter_working_procs2(CDs, NumCntProcs)].
+
+
+verify_counter_results([]) ->
+    ok;
+verify_counter_results([#conn_data{conn_handle = CH} | CDs]) ->
+    TransId = megaco_config:conn_info(CH, trans_id),
+    if
+	(TransId =:= 1) ->
+	    ok;
+	true ->
+	    ?ERROR({trans_id_verification_failed, CH, TransId})
+    end,
+    verify_counter_results(CDs).
+
+
+delete_connections([]) ->
+    ok;
+delete_connections([#conn_data{conn_handle = CH} | CDs]) ->
+    {ok, _, _} = megaco_config:disconnect(CH),
+    delete_connections(CDs).
+
+    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 otp_7216(suite) ->
     [];
 otp_7216(Config) when list(Config) ->
@@ -478,3 +820,36 @@ p(F) ->
 
 p(F, A) ->
     io:format("[~w] " ++ F ++ "~n", [get(tc)|A]).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+i(F) ->
+    i(F, []).
+
+i(F, A) ->
+    print(info, get(verbosity), now(), get(tc), "INF", F, A).
+
+printable(_, debug)   -> true;
+printable(info, info) -> true;
+printable(_,_)        -> false.
+
+print(Severity, Verbosity, Ts, Tc, P, F, A) ->
+    print(printable(Severity,Verbosity), Ts, Tc, P, F, A).
+
+print(true, Ts, Tc, P, F, A) ->
+    io:format("*** [~s] ~s ~p ~s:~w ***"
+              "~n   " ++ F ++ "~n",
+              [format_timestamp(Ts), P, self(), get(sname), Tc | A]);
+print(_, _, _, _, _, _) ->
+    ok.
+
+format_timestamp({_N1, _N2, N3} = Now) ->
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate =
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),
+    lists:flatten(FormatDate).
+

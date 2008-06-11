@@ -1,7 +1,7 @@
 {name, "syntax_tools"}.
 {vsn, {1,3}}.
 {summary, "A set of modules for working with Erlang source code."}.
-{author, "Richard Carlsson", "richardc@csd.uu.se", "031124"}.
+{author, "Richard Carlsson", "richardc@it.uu.se", "031124"}.
 {keywords, ["source code", "syntax", "syntax trees", "erl_parse",
             "pretty printing", "comments", "tidying"]}.
 {needs, []}.

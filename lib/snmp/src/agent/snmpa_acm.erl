@@ -24,7 +24,8 @@
 -export([init_check_access/2, get_root_mib_view/0,
 	 error2status/1,
 	 validate_mib_view/2, validate_all_mib_view/2,
-	 is_definitely_not_in_mib_view/2]).
+	 is_definitely_not_in_mib_view/2,
+         invalidate_ca_cache/0]).
 
 -include("snmp_types.hrl").
 -include("STANDARD-MIB.hrl").
@@ -125,29 +126,40 @@ init_ca(Pdu, {community, SecModel, Community, TAddr}) ->
 		   'set-request' -> write;
 		   _ -> read
 	       end,
-    ?vtrace("View type: ~p",[ViewType]),
-    case snmp_community_mib:community2vacm(Community, {?snmpUDPDomain,TAddr}) of
-	{SecName, _ContextEngineId, ContextName} ->
-	    %% Maybe we should check that the contextEngineID matches the
-	    %% local engineID?  It better, since we don't impl. proxy.
-	    ?vtrace("get mib view"
-		    "~n   Security name: ~p"
-		    "~n   Context name:  ~p",[SecName,ContextName]),
-	    case snmpa_vacm:get_mib_view(ViewType, SecModel, SecName,
-					 ?'SnmpSecurityLevel_noAuthNoPriv',
-					 ContextName) of
-		{ok, MibView} ->
-		    put(sec_model, SecModel),
-		    put(sec_name, SecName),
-		    {ok, MibView, ContextName};
-		{discarded, Reason} ->
-		    snmpa_mpd:inc(snmpInBadCommunityUses),
-		    {discarded, Reason}
-	    end;
-	undefined ->
-	    {authentication_failure, snmpInBadCommunityNames,
-	     {bad_community_name, TAddr, Community}}
+    ?vtrace("View type: ~p", [ViewType]),
+    CaCacheKey = {Community, SecModel, TAddr, ViewType},
+    case check_ca_cache(CaCacheKey) of
+        false ->
+            case snmp_community_mib:community2vacm(Community,
+                                                   {?snmpUDPDomain,TAddr}) of
+                {SecName, _ContextEngineId, ContextName} ->
+                    %% Maybe we should check that the contextEngineID 
+		    %% matches the local engineID?  
+		    %% It better, since we don't impl. proxy.
+                    ?vtrace("get mib view"
+                            "~n   Security name: ~p"
+                            "~n   Context name:  ~p",[SecName,ContextName]),
+                    case snmpa_vacm:get_mib_view(ViewType, SecModel, SecName,
+                                                 ?'SnmpSecurityLevel_noAuthNoPriv',
+                                                 ContextName) of
+                        {ok, MibView} ->
+                            Res = {ok, MibView, ContextName},
+                            upd_ca_cache({CaCacheKey, Res}),
+                            put(sec_model, SecModel),
+                            put(sec_name, SecName),
+                            Res;
+                        {discarded, Reason} ->
+                            snmpa_mpd:inc(snmpInBadCommunityUses),
+                            {discarded, Reason}
+                    end;
+                undefined ->
+                    {authentication_failure, snmpInBadCommunityNames,
+                     {bad_community_name, TAddr, Community}}
+            end;
+        Res ->
+            Res
     end;
+
 init_ca(Pdu, {v3, _MsgID, SecModel, SecName, SecLevel,
 	      _ContextEngineID, ContextName, _SecData}) ->
     ?vtrace("check v3 access for ~n"
@@ -168,13 +180,45 @@ init_ca(Pdu, {v3, _MsgID, SecModel, SecName, SecLevel,
 	 end,
     put(sec_model, SecModel),
     put(sec_name, SecName),
-    case snmpa_vacm:get_mib_view(ViewType, SecModel, SecName, 
-				 SL, ContextName) of
-	{ok, MibView} ->
-	    {ok, MibView, ContextName};
-	Else ->
-	    Else
+    CaCacheKey = {ViewType, SecModel, SecName, SL, ContextName},
+    case check_ca_cache(CaCacheKey) of
+        false ->
+            case snmpa_vacm:get_mib_view(ViewType, SecModel, SecName, 
+                                         SL, ContextName) of
+                {ok, MibView} ->
+                    Res = {ok, MibView, ContextName},
+                    upd_ca_cache({CaCacheKey, Res}),
+                    Res;
+                Else ->
+                    Else
+            end;
+        Res ->
+            Res
     end.
+
+check_ca_cache(Key) ->
+    case get(ca_cache) of
+        undefined ->
+            put(ca_cache, []),
+            false;
+        L ->
+            check_ca_cache(L, Key)
+    end.
+
+check_ca_cache([{Key, Val} | _], Key) -> Val;
+check_ca_cache([_ | T], Key) -> check_ca_cache(T, Key);
+check_ca_cache([], _) -> false.
+
+upd_ca_cache(KeyVal) ->
+    case get(ca_cache) of
+        [A,B,C,_] -> % cache is full
+            put(ca_cache, [KeyVal,A,B,C]);
+        L ->
+            put(ca_cache, [KeyVal|L])
+    end.
+
+invalidate_ca_cache() ->
+    erase(ca_cache).
 
 %%-----------------------------------------------------------------
 %% Func: check(Res) -> {ok, MibView} | {discarded, Variable, Reason}

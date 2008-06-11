@@ -39,10 +39,11 @@
 	 module_deps/1,
 	 %% module_postorder/1,
 	 module_postorder_from_funs/2,
+	 new/0,
 	 in_neighbours/2,
 	 reset_from_funs/2,
 	 scan_core_tree/2,
-	 new/0, 
+	 strip_module_deps/2,
 	 take_scc/1, 
 	 remove_external/1]).
 
@@ -220,6 +221,15 @@ module_deps(#dialyzer_callgraph{digraph=DG}) ->
 	  || N <- Nodes],
   digraph_delete(MDG2),
   dict:from_list(Deps).
+
+-spec(strip_module_deps/2 :: (dict(), set()) -> dict()).
+
+strip_module_deps(ModDeps, StripSet) ->
+  FilterFun1 = fun(Val) -> not sets:is_element(Val, StripSet)end,
+  MapFun = fun(_Key, ValSet) -> ordsets:filter(FilterFun1, ValSet)end,
+  ModDeps1 = dict:map(MapFun, ModDeps),
+  FilterFun2 = fun(_Key, ValSet) -> ValSet =/= [] end,
+  dict:filter(FilterFun2, ModDeps1).
 
 sort_sccs_internally(PO, MDG) ->
   sort_sccs_internally(PO, MDG, []).

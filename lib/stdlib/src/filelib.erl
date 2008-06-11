@@ -25,42 +25,47 @@
 
 -include_lib("kernel/include/file.hrl").
 
-wildcard({compiled_wildcard,{exists,File}}) ->
+%%-spec(wildcard/1 :: (name()) -> [string()]).
+wildcard(Pattern) when is_list(Pattern) ->
+    try
+	wildcard_comp(compile_wildcard(Pattern))
+    catch
+	error:{badpattern,_}=Error ->
+	    %% Get the stack backtrace correct.
+	    erlang:error(Error)
+    end.
+
+wildcard_comp({compiled_wildcard,{exists,File}}) ->
     case file:read_file_info(File) of
 	{ok,_} -> [File];
 	_ -> []
     end;
-wildcard({compiled_wildcard,[Base|Rest]}) ->
-    wildcard_1([Base], Rest);
-wildcard(Pattern) when is_list(Pattern) ->
+wildcard_comp({compiled_wildcard,[Base|Rest]}) ->
+    wildcard_1([Base], Rest).
+
+%%-spec(wildcard/2 :: (name(), name()) -> [string()]).
+wildcard(Pattern, Cwd) when is_list(Pattern), is_list(Cwd) ->
     try
-	wildcard(compile_wildcard(Pattern))
+	wildcard_comp(compile_wildcard(Pattern), Cwd)
     catch
 	error:{badpattern,_}=Error ->
 	    %% Get the stack backtrace correct.
 	    erlang:error(Error)
     end.
 
-wildcard({compiled_wildcard,{exists,File}}, Cwd) ->
+wildcard_comp({compiled_wildcard,{exists,File}}, Cwd) ->
     case file:read_file_info(filename:absname(File, Cwd)) of
 	{ok,_} -> [File];
 	_ -> []
     end;
-wildcard({compiled_wildcard,[current|Rest]}, Cwd0) ->
+wildcard_comp({compiled_wildcard,[current|Rest]}, Cwd0) ->
     Cwd = filename:join([Cwd0]),		%Slash away redundant slashes.
     PrefixLen = length(Cwd)+1,
     [lists:nthtail(PrefixLen, N) || N <- wildcard_1([Cwd], Rest)];
-wildcard({compiled_wildcard,[Base|Rest]}, _Cwd) ->
-    wildcard_1([Base], Rest);
-wildcard(Pattern, Cwd) when is_list(Pattern), is_list(Cwd) ->
-    try
-	wildcard(compile_wildcard(Pattern), Cwd)
-    catch
-	error:{badpattern,_}=Error ->
-	    %% Get the stack backtrace correct.
-	    erlang:error(Error)
-    end.
+wildcard_comp({compiled_wildcard,[Base|Rest]}, _Cwd) ->
+    wildcard_1([Base], Rest).
 
+%%-spec(is_dir/1 :: (name()) -> bool()).
 is_dir(Dir) ->
     case file:read_file_info(Dir) of
 	{ok, #file_info{type=directory}} ->
@@ -69,6 +74,7 @@ is_dir(Dir) ->
 	    false
     end.
 
+%%-spec(is_file/1 :: (name()) -> bool()).
 is_file(File) ->
     case file:read_file_info(File) of
 	{ok, #file_info{type=regular}} ->
@@ -79,6 +85,7 @@ is_file(File) ->
             false
     end.
 
+%%-spec(is_regular/1 :: (name()) -> bool()).
 is_regular(File) ->
     case file:read_file_info(File) of
 	{ok, #file_info{type=regular}} ->
@@ -93,6 +100,7 @@ is_regular(File) ->
 %%   all files <F> in <Dir> that match the regular expression <RegExp>
 %%   If <Recursive> is true all sub-directories to <Dir> are processed
 
+%%-spec(fold_files/5 :: (name(), string(), bool(), fun((_,_) -> _), _) -> _).
 fold_files(Dir, RegExp, Recursive, Fun, Acc) ->
     {ok, Re1} = regexp:parse(RegExp),
     fold_files1(Dir, Re1, Recursive, Fun, Acc).
@@ -125,6 +133,7 @@ fold_files2([File|T], Dir, RegExp, Recursive, Fun, Acc0) ->
 	    end
     end.
 
+%%-spec(last_modified/1 :: (name()) -> date_time()).
 last_modified(File) ->
     case file:read_file_info(File) of
 	{ok, Info} ->
@@ -133,6 +142,7 @@ last_modified(File) ->
 	    0
     end.
 
+%%-spec(file_size/1 :: (name()) -> non_neg_integer()).
 file_size(File) ->
     case file:read_file_info(File) of
 	{ok, Info} ->
@@ -146,6 +156,7 @@ file_size(File) ->
 %% +type X = filename() | dirname()
 %% ensures that the directory name required to create D exists
 
+%%-spec(ensure_dir/1 :: (name()) -> 'ok' | {'error', posix()}).
 ensure_dir("/") ->
     ok;
 ensure_dir(F) ->

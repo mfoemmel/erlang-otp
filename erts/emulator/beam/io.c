@@ -642,6 +642,13 @@ erts_open_driver(ErlDrvEntry* driver,	/* Pointer to driver entry. */
 
 #ifdef ERTS_SMP
 
+/*
+ * erts_de2port():
+ *   Looks up connection port and locks it. On return the port is either
+ *   alive or dead. I.e., if the port is closing erts_de2port() *has*
+ *   to wait until the port is dead.
+ */
+
 Port *
 erts_de2port(DistEntry *dep, Process *c_p, ErtsProcLocks c_p_locks)
 {
@@ -650,6 +657,11 @@ erts_de2port(DistEntry *dep, Process *c_p, ErtsProcLocks c_p_locks)
     Eterm id;
     int ix;
     Port *prt;
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    if (c_p && c_p_locks)
+	erts_proc_lc_might_unlock(c_p, c_p_locks);
+#endif
 
     ERTS_SMP_LC_ASSERT(erts_lc_is_dist_entry_locked(dep));
 
@@ -664,7 +676,7 @@ erts_de2port(DistEntry *dep, Process *c_p, ErtsProcLocks c_p_locks)
     ix = internal_port_index(id);
 
     erts_smp_port_tab_lock();
-    if (INVALID_PORT(&erts_port[ix], id)) {
+    if (erts_port[ix].status & ERTS_PORT_SFLGS_DEAD || erts_port[ix].id != id) {
 	prt = NULL;
     }
     else {
@@ -679,27 +691,19 @@ erts_de2port(DistEntry *dep, Process *c_p, ErtsProcLocks c_p_locks)
 	    if (!no_proc_locks)
 		erts_smp_proc_unlock(c_p, c_p_locks);
 	    erts_smp_dist_entry_unlock(dep);
-	    unlocked = 1;
+
 	    erts_smp_mtx_lock(prt->lock);
+	    ERTS_SMP_LC_ASSERT(prt->id == id);
+	    if (!no_proc_locks)
+		erts_smp_proc_lock(c_p, c_p_locks);
+	    erts_smp_dist_entry_lock(dep);
 	}
 
-	/* The id may not have changed... */
-	ERTS_SMP_LC_ASSERT(prt->id == id);
-	/* ... but status may have... */
-	if (prt->status & ERTS_PORT_SFLGS_INVALID_LOOKUP) {
-	    erts_smp_port_unlock(prt); /* Also decrements refc... */
-	    prt = NULL;
-	}
-    }
 
-    if (unlocked) {
-	if (!no_proc_locks)
-	    erts_smp_proc_lock(c_p, c_p_locks);
-	erts_smp_dist_entry_lock(dep);
-	if (dep->cid != id) {
+	if (dep->cid != id || prt->status & ERTS_PORT_SFLGS_INVALID_LOOKUP) {
 	    /*
-	     * Ahh! cid changed while dist entry was unlocked;
-	     * do it all over again...
+	     * cid changed while dist entry was unlocked or
+	     * port is dead or closing; do it all over again...
 	     */
 	    if (prt)
 		erts_smp_port_unlock(prt);
@@ -707,6 +711,8 @@ erts_de2port(DistEntry *dep, Process *c_p, ErtsProcLocks c_p_locks)
 	}
     }
 
+    ASSERT(is_internal_port(id) ? prt != NULL : prt == NULL);
+    ASSERT(!prt || prt->id == dep->cid);
     ASSERT(!prt || (prt->status & ERTS_PORT_SFLG_DISTRIBUTION));
     return prt;
 }
@@ -1944,7 +1950,13 @@ static void sweep_one_link(ErtsLink *lnk, void *vpsc)
     if (is_external_pid(lnk->pid)) {
 	dep = external_pid_dist_entry(lnk->pid);
 	if(dep != erts_this_dist_entry) {
-	    dist_exit(NULL, 0, dep, psc->port, lnk->pid, psc->reason);
+	    ErtsDistOpData dod;
+	    ERTS_DIST_OP_DATA_INIT(&dod,
+				   NULL,
+				   0,
+				   dep,
+				   &erts_port[internal_port_index(psc->port)]);
+	    erts_dist_exit(&dod, psc->port, lnk->pid, psc->reason);
 	}
     } else {
 	ErtsProcLocks rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_XSIG_SEND;

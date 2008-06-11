@@ -642,34 +642,33 @@ create_size_code([], _Ctxt, Dst, S) ->
     {S, Dst}.
 
 make_bs_add(Unit, Old, Var, Dst, #ctxt{fail=FL, class=guard}, S0) ->
-    SL = new_label(),
-    Primop = {hipe_bs_primop, {bs_add, Unit}},
-    add_code([icode_guardop([Dst], Primop, [Old, Var], SL, FL),
-	      icode_label(SL)], S0);
+    SL1 = new_label(),
+    SL2 = new_label(),
+    SL3 = new_label(),
+    Temp = make_var(),
+    add_code([icode_if('>=', [Var, icode_const(0)], SL1, FL),
+	      icode_label(SL1),
+	      icode_guardop([Temp], '*', [Var, icode_const(Unit)], SL2, FL),
+	      icode_label(SL2),
+	      icode_guardop([Dst], '+', [Temp, Old], SL3, FL),
+	      icode_label(SL3)], S0);
 make_bs_add(Unit, Old, Var, Dst, _Ctxt, S0) ->
-    Primop = {hipe_bs_primop, {bs_add, Unit}},
-    add_code([icode_call_primop([Dst], Primop, [Old, Var])], S0).
+    SL = new_label(),
+    FL = new_label(),
+    Temp = make_var(),
+    add_code([icode_if('>=', [Var, icode_const(0)], SL, FL),
+	      icode_label(FL),
+	      icode_fail([icode_const(badarg)], error),
+	      icode_label(SL),
+	      icode_call_primop([Temp], '*', [Var, icode_const(Unit)]),
+	      icode_call_primop([Dst], '+', [Temp, Old])], S0).
 
 make_bs_bits_to_bytes(Old, Dst, #ctxt{fail=FL, class=guard}, S0) -> 
     SL = new_label(),
-    Primop =
-	case s__get_bitlevel_binaries(S0) of
-	    true ->
-		{hipe_bs_primop, bs_bits_to_bytes2};
-	    false ->
-		{hipe_bs_primop, bs_bits_to_bytes}
-	end,
-    add_code([icode_guardop([Dst], Primop, [Old], SL, FL),
+    add_code([icode_guardop([Dst], 'bsl', [Old, icode_const(3)], SL, FL),
 	      icode_label(SL)], S0);
 make_bs_bits_to_bytes(Old, Dst, _Ctxt, S0) ->
-    Primop = 
-	case s__get_bitlevel_binaries(S0) of
-	    true ->
-		{hipe_bs_primop, bs_bits_to_bytes2};
-	    false ->
-		{hipe_bs_primop, bs_bits_to_bytes}
-	end,
-    add_code([icode_call_primop([Dst], Primop, [Old])], S0).
+    add_code([icode_call_primop([Dst], 'bsl', [Old, icode_const(3)])], S0).
 
 make_binary_size(Old, Bin, Dst, #ctxt{fail=FL, class=guard}, S0) -> 
     SL1 = new_label(),

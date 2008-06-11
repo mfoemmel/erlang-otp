@@ -166,9 +166,9 @@ static ErtsLink *create_link(Uint type, Eterm pid)
      n->type = (Uint16) type;
      n->balance = 0;            /* Always the same initial value */
      if (n->type == LINK_NODE) {
-	 ERTS_LINK_ROOT_AS_UINT(n) = 0;
+	 ERTS_LINK_REFC(n) = 0;
      } else {
-	 n->root = NULL; 
+	 ERTS_LINK_ROOT(n) = NULL; 
      }
      CP_LINK_VAL(n->pid, hp, pid);
      
@@ -236,7 +236,7 @@ void erts_destroy_link(ErtsLink *lnk)
     Uint lnk_size = ERTS_LINK_SIZE;
     ErlNode *node;
 
-    ASSERT(lnk->type == LINK_NODE || lnk->root == NULL);
+    ASSERT(lnk->type == LINK_NODE || ERTS_LINK_ROOT(lnk) == NULL);
 
     if (!IS_CONST(lnk->pid)) {
 	lnk_size += NC_HEAP_SIZE(lnk->pid);
@@ -933,13 +933,13 @@ static void erts_dump_links_aux(ErtsLink *root, int indent,
     erts_dump_links_aux(root->right, indent+2, dsbufp);
     dsbufp->str_len = 0;
     erts_dsprintf(dsbufp, "%*s[%b16d:%b16u:%T:%p]", indent, "",
-		  root->balance, root->type, root->pid, root->root);
-    if (root->root != NULL) {
-	ErtsLink *sub = root->root;
+		  root->balance, root->type, root->pid, ERTS_LINK_ROOT(root));
+    if (ERTS_LINK_ROOT(root) != NULL) {
+	ErtsLink *sub = ERTS_LINK_ROOT(root);
 	int len = dsbufp->str_len;
 	erts_dump_links_aux(sub->right, indent+len+5, dsbufp);
 	erts_dsprintf(dsbufp, "-> %*s[%b16d:%b16u:%T:%p]", indent, "",
-		      sub->balance, sub->type, sub->pid, sub->root);
+		      sub->balance, sub->type, sub->pid, ERTS_LINK_ROOT(sub));
 	erts_printf("%s\n", dsbufp->str);
 	erts_dump_links_aux(sub->left, indent+len+5, dsbufp);
     } else {

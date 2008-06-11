@@ -58,8 +58,6 @@
 #define DOP_DEMONITOR_P		20
 #define DOP_MONITOR_P_EXIT	21
 
-#ifdef __SYS_H__
-
 /* distribution trap functions */
 extern Export* dsend2_trap;
 extern Export* dsend3_trap;
@@ -71,25 +69,66 @@ extern Export* dgroup_leader_trap;
 extern Export* dexit_trap;
 extern Export* dmonitor_p_trap;
 
+typedef struct {
+    Process *proc;
+    ErtsProcLocks lcks;
+    DistEntry *dep;
+    Port *dprt;
+} ErtsDistOpData;
 
+#define ERTS_DIST_OP_DATA_INIT(DODP, PROC, LCKS, DEP, DPRT)	\
+do {								\
+    (DODP)->proc = (PROC);					\
+    (DODP)->lcks = (LCKS);					\
+    (DODP)->dep = (DEP);					\
+    (DODP)->dprt = (DPRT);					\
+} while (0)
 
-extern int dist_link(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm);
-extern int dist_send(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm);
-extern int dist_exit_tt(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm,
-			Eterm, Eterm);
-extern int dist_unlink(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm);
-extern int dist_reg_send(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm);
-extern int dist_group_leader(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm);
-extern int dist_exit(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm, Eterm);
-extern int dist_exit2(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm, Eterm);
+ERTS_GLB_INLINE void erts_dist_op_prepare(ErtsDistOpData *,
+					  DistEntry *,
+					  Process *,
+					  ErtsProcLocks);
+ERTS_GLB_INLINE void erts_dist_op_finalize(ErtsDistOpData *);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE void
+erts_dist_op_prepare(ErtsDistOpData *dodp,
+		     DistEntry *dep,
+		     Process *proc,
+		     ErtsProcLocks proc_locks)
+{
+    Port *dprt;
+    erts_smp_dist_entry_lock(dep);
+#ifdef ERTS_SMP
+    dprt = erts_de2port(dep, proc, proc_locks);
+#else
+    dprt = erts_id2port(dep->cid, NULL, 0);
+#endif
+    ERTS_DIST_OP_DATA_INIT(dodp, proc, proc_locks, dep, dprt);
+}
+
+ERTS_GLB_INLINE void
+erts_dist_op_finalize(ErtsDistOpData *dodp)
+{
+    if (dodp->dprt)
+	erts_port_release(dodp->dprt);
+    erts_smp_dist_entry_unlock(dodp->dep);
+}
+
 #endif
 
-extern int dist_demonitor(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm,
-			  Eterm, int);
-extern int dist_monitor(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm,
-			Eterm);
-extern int dist_m_exit(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm,
-		       Eterm, Eterm);
+extern int erts_dist_link(ErtsDistOpData *, Eterm, Eterm);
+extern int erts_dist_send(ErtsDistOpData *, Eterm, Eterm);
+extern int erts_dist_exit_tt(ErtsDistOpData *, Eterm, Eterm, Eterm, Eterm);
+extern int erts_dist_unlink(ErtsDistOpData *, Eterm, Eterm);
+extern int erts_dist_reg_send(ErtsDistOpData *, Eterm, Eterm);
+extern int erts_dist_group_leader(ErtsDistOpData *, Eterm, Eterm);
+extern int erts_dist_exit(ErtsDistOpData *, Eterm, Eterm, Eterm);
+extern int erts_dist_exit2(ErtsDistOpData *, Eterm, Eterm, Eterm);
+extern int erts_dist_demonitor(ErtsDistOpData *, Eterm, Eterm, Eterm, int);
+extern int erts_dist_monitor(ErtsDistOpData *, Eterm, Eterm, Eterm);
+extern int erts_dist_m_exit(ErtsDistOpData *, Eterm, Eterm, Eterm, Eterm);
 
 extern Uint erts_dist_cache_size(void);
 extern int erts_is_alive(void);

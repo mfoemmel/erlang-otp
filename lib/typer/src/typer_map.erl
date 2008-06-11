@@ -22,10 +22,7 @@ insert(Object, Dict) ->
 
 -spec(lookup/2 :: (_, dict()) -> any()).
 lookup(Key, Dict) ->
-  case catch dict:fetch(Key, Dict) of
-    {'EXIT',_} -> none;
-    Result -> Result
-  end.
+  try dict:fetch(Key, Dict) catch error:_ -> none end.
 
 -spec(from_list/1 :: ([_]) -> dict()).
 from_list(List) ->

@@ -937,6 +937,7 @@ make_hash2(Eterm term)
 	case _TAG_IMMED1_IMMED2:
 	    switch (term & _TAG_IMMED2_MASK) {
 	    case _TAG_IMMED2_ATOM:
+		/* Fast, but the poor hash value should be mixed. */
 		return atom_tab(atom_val(term))->slot.bucket.hvalue;
 	    }
 	    break;
@@ -1120,17 +1121,21 @@ make_hash2(Eterm term)
 	    }
 	    break;
 	    case REF_SUBTAG:
+		/* All parts of the ref should be hashed. */
 		UINT32_HASH(internal_ref_numbers(term)[0], HCONST_7);
 		goto hash2_common;
 		break;
 	    case EXTERNAL_REF_SUBTAG:
+		/* All parts of the ref should be hashed. */
 		UINT32_HASH(external_ref_numbers(term)[0], HCONST_7);
 		goto hash2_common;
 		break;
 	    case EXTERNAL_PID_SUBTAG:
+		/* Only 15 bits are hashed. */
 		UINT32_HASH(external_pid_number(term), HCONST_5);
 		goto hash2_common;
 	    case EXTERNAL_PORT_SUBTAG:
+		/* Only 15 bits are hashed. */
 		UINT32_HASH(external_port_number(term), HCONST_6);
 		goto hash2_common;
 	    case FLOAT_SUBTAG:
@@ -1154,15 +1159,18 @@ make_hash2(Eterm term)
 	case TAG_PRIMARY_IMMED1:
 	    switch (term & _TAG_IMMED1_MASK) {
 	    case _TAG_IMMED1_PID:
+		/* Only 15 bits are hashed. */
 		UINT32_HASH(internal_pid_number(term), HCONST_5);
 		goto hash2_common;
 	    case _TAG_IMMED1_PORT:
+		/* Only 15 bits are hashed. */
 		UINT32_HASH(internal_port_number(term), HCONST_6);
 		goto hash2_common;
 	    case _TAG_IMMED1_IMMED2:
 		switch (term & _TAG_IMMED2_MASK) {
 		case _TAG_IMMED2_ATOM:
 		    if (hash == 0)
+			/* Fast, but the poor hash value should be mixed. */
 			hash = atom_tab(atom_val(term))->slot.bucket.hvalue;
 		    else
 			UINT32_HASH(atom_tab(atom_val(term))->slot.bucket.hvalue,

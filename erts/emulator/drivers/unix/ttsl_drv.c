@@ -24,6 +24,13 @@
 #  include "config.h"
 #endif
 
+#include "erl_driver.h"
+
+static int ttysl_init(void);
+static ErlDrvData ttysl_start(ErlDrvPort, char*);
+
+#ifdef HAVE_TERMCAP  /* else make an empty driver that can not be opened */
+
 #include "sys.h"
 #include <ctype.h>
 #include <stdlib.h>
@@ -41,8 +48,6 @@
 #include <sys/ioctl.h>
 #endif
 
-#include "erl_driver.h"
-
 #define TRUE 1
 #define FALSE 0
 
@@ -58,6 +63,7 @@ int tputs(char* cp, int affcnt, int (*outc)(int c));
 static char *capbuf;
 static char *up, *down, *left, *right;
 static int cols, xn;
+static volatile int cols_needs_update = FALSE;
 
 /* The various opcodes. */
 #define OP_PUTC 0
@@ -83,8 +89,6 @@ static int lpos;
 #define NL '\n'
 
 /* Main interface functions. */
-static int ttysl_init(void);
-static ErlDrvData ttysl_start(ErlDrvPort, char*);
 static void ttysl_stop(ErlDrvData);
 static void ttysl_from_erlang(ErlDrvData, char*, int);
 static void ttysl_from_tty(ErlDrvData, ErlDrvEvent);
@@ -114,6 +118,7 @@ static int move_left(int);
 static int move_right(int);
 static int move_up(int);
 static int move_down(int);
+static void update_cols(void);
 
 /* Terminal setting functions. */
 static int tty_init(int,int,int,int);
@@ -122,32 +127,43 @@ static int tty_reset(int);
 static int ttysl_control(ErlDrvData, unsigned int, char *, int, char **, int);
 static RETSIGTYPE suspend(int);
 static RETSIGTYPE cont(int);
+static RETSIGTYPE winch(int);
+
+#  define IF_IMPL(x) x
+#else
+#  define IF_IMPL(x) NULL
+#endif /* HAVE_TERMCAP */
 
 /* Define the driver table entry. */
 struct erl_drv_entry ttsl_driver_entry = {
     ttysl_init,
     ttysl_start,
-    ttysl_stop,
-    ttysl_from_erlang,
-    ttysl_from_tty,
+    IF_IMPL(ttysl_stop),
+    IF_IMPL(ttysl_from_erlang),
+    IF_IMPL(ttysl_from_tty),
     NULL,
     "tty_sl",
     NULL,
     NULL,
-    ttysl_control
+    IF_IMPL(ttysl_control)
   };
 
 static int ttysl_init(void)
 {
+#ifdef HAVE_TERMCAP
     ttysl_port = (ErlDrvPort)-1;
     ttysl_fd = -1;
     lbuf = NULL;		/* For line buffer handling */
     capbuf = NULL;		/* For termcap handling */
+#endif
     return 0;
 }
 
 static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
 {
+#ifndef HAVE_TERMCAP
+    return ERL_DRV_ERROR_GENERAL;
+#else
     char *s, *t, c;
     int canon, echo, sig;	/* Terminal characteristics */
     int flag;
@@ -200,6 +216,7 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
 
     setlocale(LC_CTYPE, "");	/* Set international environment */
     sys_sigset(SIGCONT, cont);
+    sys_sigset(SIGWINCH, winch);
 
     driver_select(port, (ErlDrvEvent)(Uint)ttysl_fd, DO_READ, 1);
     ttysl_port = port;
@@ -208,7 +225,10 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
     using_oldshell = 0;
 
     return (ErlDrvData)ttysl_port;	/* Nothing important to return */
+#endif /* HAVE_TERMCAP */
 }
+
+#ifdef HAVE_TERMCAP
 
 #define DEF_HEIGHT 24
 #define DEF_WIDTH 80
@@ -262,6 +282,7 @@ static void ttysl_stop(ErlDrvData ttysl_data)
 	  close(ttysl_fd);
 	driver_select(ttysl_port, (ErlDrvEvent)(Uint)ttysl_fd, DO_READ, 0);
 	sys_sigset(SIGCONT, SIG_DFL);
+	sys_sigset(SIGWINCH, SIG_DFL);
     }
     ttysl_port = (ErlDrvPort)-1;
     ttysl_fd = -1;
@@ -432,6 +453,8 @@ static int del_chars(int n)
     int i, l, r;
     byte *c;
 
+    update_cols();
+
     /* Step forward or backwards over n logical characters. */
     c = step_over_chars(n);
 
@@ -553,6 +576,8 @@ static int insert_buf(byte *s, int n)
  */
 static int write_buf(byte *s, int n)
 {
+    update_cols();
+
     while (n > 0) {
 	if (isprint(*s)) {
 	    outc(*s);
@@ -597,6 +622,8 @@ static int outc(int c)
 static int move_cursor(int from, int to)
 {
     int dc, dl;
+
+    update_cols();
 
     dc = COL(to) - COL(from);
     dl = LINE(to) - LINE(from);
@@ -703,6 +730,28 @@ static int move_down(int n)
     while (n-- > 0)
       tputs(down, 1, outc);
     return TRUE;
+}
+		    
+
+/*
+ * Updates cols if terminal has resized (SIGWINCH). Should be called
+ * at the start of any function that uses the COL or LINE macros. If
+ * the terminal is resized after calling this function but before use
+ * of the macros, then we may write to the wrong screen location.
+ *
+ * We cannot call this from the SIGWINCH handler because it uses
+ * ioctl() which is not a safe function as listed in the signal(7)
+ * man page.
+ */
+static void update_cols(void)
+{
+    Uint32 width, height;
+ 
+    if (cols_needs_update) {
+	cols_needs_update = FALSE;
+	ttysl_get_window_size(&width, &height);
+	cols = width;
+    }
 }
 		    
 
@@ -830,3 +879,8 @@ static RETSIGTYPE cont(int sig)
     }
 }
 
+static RETSIGTYPE winch(int sig)
+{
+    cols_needs_update = TRUE;
+}
+#endif /* HAVE_TERMCAP */

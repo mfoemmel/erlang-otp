@@ -74,7 +74,8 @@
 	 otp_6865/1, 
 	 otp_6865_request_and_reply_plain_extra1/1,
 	 otp_6865_request_and_reply_plain_extra2/1, 
-	 otp_7189/1
+	 otp_7189/1, 
+	 otp_7259/1
 	]).
 
 %% -behaviour(megaco_user).
@@ -378,7 +379,8 @@ tickets(suite) ->
      otp_6276,
      otp_6442,
      otp_6865,
-     otp_7189
+     otp_7189,
+     otp_7259
     ].
 
 otp_6442(suite) ->
@@ -6949,11 +6951,17 @@ otp_4359(Config) when is_list(Config) ->
     otp_4359_analyze_result(RH1, Actions),
 
     Conns = megaco:system_info(connections),
+    io:format("otp_4359 -> connections~n~p~n", [Conns]),
     OKs   = lists:duplicate(length(Conns),ok),
+    io:format("otp_4359 -> verify (all) connection disconnect~n", []),
     ?VERIFY(OKs, [megaco:disconnect(CH, test_complete) || CH <- Conns]),
+    io:format("otp_4359 -> stop user (~p)~n", [Mid]),
     stop_user(Mid),
+    io:format("otp_4359 -> stop megaco application~n", []),
     ?VERIFY(ok, application:stop(megaco)),
+    io:format("otp_4359 -> make sure we have nothing in the message queue~n", []),
     ?RECEIVE([]),
+    io:format("otp_4359 -> done~n", []),
     ok.
 
 
@@ -7126,8 +7134,6 @@ otp_4836_mgc_event_sequence(text, tcp) ->
     Pending = otp_4836_pending_msg(Mid,2),
     ServiceChangeVerifyFun = ?otp_4836_mgc_verify_service_change_req_msg_fun(),
     NotifyReqVerifyFun     = ?otp_4836_mgc_verify_notify_req_msg_fun(),
-%%     ServiceChangeVerifyFun = otp_4836_verify_service_change_req_msg_fun(),
-%%     NotifyReqVerifyFun     = otp_4836_verify_notify_request_fun(),
     MgcEvSeq = [{debug,  true},
 		{decode, DecodeFun},
 		{encode, EncodeFun},
@@ -9474,7 +9480,7 @@ otp_6442_resend_request1(suite) ->
 otp_6442_resend_request1(Config) when is_list(Config) ->
     put(verbosity, debug),
     put(sname,     "TEST"),
-    put(tc,        resend_request1),
+    put(tc,        otp6442rreq1),
     i("starting"),
 
     MgNode = make_node_name(mg),
@@ -9485,9 +9491,8 @@ otp_6442_resend_request1(Config) when is_list(Config) ->
     {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
-    Mid = {deviceName,"mg"},
-    MgcMid = {deviceName,"mgc"},
-    MgEvSeq = otp_6442_resend_request1_mg_event_sequence(Mid),
+    MgMid = {deviceName,"mg"},
+    MgEvSeq = otp_6442_resend_request1_mg_event_sequence(MgMid),
 
     i("wait some time before starting the MG simulation"),
     sleep(1000),
@@ -9502,13 +9507,18 @@ otp_6442_resend_request1(Config) when is_list(Config) ->
     sleep(500),
 
     i("send the service change reply"),
+    MgcMid = {deviceName,"mgc"},
     ServiceChangeReply = otp_6442_mgc_service_change_reply_msg(MgcMid, 1, 1),
     megaco_test_generic_transport:incomming_message(Pid, ServiceChangeReply),
 
-    i("await the transport module notify-request send_message event from MG: ignore"),
+    i("await the transport module "
+      "notify-request send_message event from MG: "
+      "ignore"),
     ok = otp_6442_expect(fun otp_6442_rsrq1_verify_first_nr_msg/1, 5000),
 
-    i("await the transport module notify-request resend_message event from MG: reply"),
+    i("await the transport module "
+      "notify-request resend_message event from MG: "
+      "reply"),
     {TransId2, Cid2, TermId2} = 
 	otp_6442_expect(fun otp_6442_rsrq1_verify_second_nr_msg/1, 10000),
 
@@ -9516,7 +9526,8 @@ otp_6442_resend_request1(Config) when is_list(Config) ->
     sleep(500),
 
     i("send the notify reply"),
-    NotifyReply = otp_6442_mgc_notify_reply_msg(MgcMid, TransId2, Cid2, TermId2),
+    NotifyReply = 
+	otp_6442_mgc_notify_reply_msg(MgcMid, TransId2, Cid2, TermId2),
     megaco_test_generic_transport:incomming_message(Pid, NotifyReply),
 
     d("await the generator reply"),
@@ -9549,17 +9560,33 @@ otp_6442_expect(Verify, Timeout) when (Timeout > 0) ->
 otp_6442_expect(_, _Timeout) ->
     exit(timeout).
 
-otp_6442_rsrq1_verify_scr_msg({transport_event, {send_message, _SH, Msg}, Pid}) 
+otp_6442_rsrq1_verify_scr_msg(
+  {transport_event, {send_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected service change request message: "
       "~n   Msg: ~p", [Msg]),
     Reply = ok, 
     Pid ! {transport_reply, Reply, self()},
     {ok, Pid};
+otp_6442_rsrq1_verify_scr_msg(
+  {transport_event, {send_message, _SH, BadMsg}, Pid}) ->
+    io:format("otp_6442_rsrq1_verify_scr_msg -> error: "
+	      "~n   BadMsg: ~p"
+	      "~n", [BadMsg]),
+    {error, {invalid_message, BadMsg}};
+otp_6442_rsrq1_verify_scr_msg({transport_event, BadEvent, Pid}) ->
+    io:format("otp_6442_rsrq1_verify_scr_msg -> error: "
+	      "~n   BadEvent: ~p"
+	      "~n", [BadEvent]),
+    {error, {invalid_message, BadEvent}};
 otp_6442_rsrq1_verify_scr_msg(Msg) ->
+    io:format("otp_6442_rsrq1_verify_scr_msg -> error: "
+	      "~n   Msg: ~p"
+	      "~n", [Msg]),
     {error, {invalid_message, Msg}}.
 
-otp_6442_rsrq1_verify_first_nr_msg({transport_event, {send_message, _SH, Msg}, Pid}) 
+otp_6442_rsrq1_verify_first_nr_msg(
+  {transport_event, {send_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected first notify request send message: "
       "~n   Msg: ~p", [Msg]),
@@ -9567,12 +9594,18 @@ otp_6442_rsrq1_verify_first_nr_msg({transport_event, {send_message, _SH, Msg}, P
     Pid ! {transport_reply, Reply, self()},
     {ok, ok};
 otp_6442_rsrq1_verify_first_nr_msg(Msg) ->
+    io:format("otp_6442_rsrq1_verify_nr_msg -> error: "
+	      "~n   Msg: ~p"
+	      "~n", [Msg]),
     {error, {invalid_message, Msg}}.
 
-otp_6442_rsrq1_verify_second_nr_msg({transport_event, {send_message, _SH, Msg}, Pid}) 
+otp_6442_rsrq1_verify_second_nr_msg(
+  {transport_event, {send_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
-    d("received expected second notify request send message: "
-      "~n   Msg: ~p", [Msg]),
+    io:format("otp_6442_rsrq1_verify_second_nr_msg -> "
+	      "entry when received expected message with"
+	      "~n   Msg: ~p"
+	      "~n", [Msg]),
     Reply = ok, 
     Pid ! {transport_reply, Reply, self()},
     #'MegacoMessage'{mess = Mess} = Msg,
@@ -9592,6 +9625,9 @@ otp_6442_rsrq1_verify_second_nr_msg({transport_event, {send_message, _SH, Msg}, 
     #'NotifyRequest'{terminationID = [TermId]} = NR,
     {ok, {TransId, Cid, TermId}};
 otp_6442_rsrq1_verify_second_nr_msg(Msg) ->
+    io:format("otp_6442_rsrq1_verify_second_nr_msg -> entry when error with"
+	      "~n   Msg: ~p"
+	      "~n", [Msg]),
     {error, {invalid_message, Msg}}.
 
 
@@ -9658,11 +9694,11 @@ otp_6442_resend_request1_mg_event_sequence(Mid) ->
 	?otp_6442_resend_request1_mg_verify_service_change_rep_fun(),
     NotifyReplyVerify = 
 	?otp_6442_resend_request1_mg_verify_notify_rep_fun(),
-%%     ConnectVerify = 
-%% 	otp_6442_resend_request1_mg_verify_handle_connect_fun(),
-%%     ServiceChangeReplyVerify = 
-%% 	otp_6442_resend_request1_mg_verify_service_change_reply_fun(),
-%%     NotifyReplyVerify = otp_6442_resend_request1_mg_verify_notify_reply_fun(),
+    %%     ConnectVerify = 
+    %% 	otp_6442_resend_request1_mg_verify_handle_connect_fun(),
+    %%     ServiceChangeReplyVerify = 
+    %% 	otp_6442_resend_request1_mg_verify_service_change_reply_fun(),
+    %%     NotifyReplyVerify = otp_6442_resend_request1_mg_verify_notify_reply_fun(),
     EvSeq = [
              {debug, false},
              megaco_start,
@@ -9814,7 +9850,7 @@ otp_6442_resend_request2(suite) ->
 otp_6442_resend_request2(Config) when is_list(Config) ->
     put(verbosity, debug),
     put(sname,     "TEST"),
-    put(tc,        resend_request2),
+    put(tc,        otp6442rreq2),
     i("starting"),
 
     MgNode = make_node_name(mg),
@@ -9870,7 +9906,8 @@ otp_6442_resend_request2(Config) when is_list(Config) ->
     ok.
 
 
-otp_6442_rsrq2_verify_scr_msg({transport_event, {send_message, _SH, Msg}, Pid}) 
+otp_6442_rsrq2_verify_scr_msg(
+  {transport_event, {send_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected service change request message: "
       "~n   Msg: ~p", [Msg]),
@@ -9878,9 +9915,13 @@ otp_6442_rsrq2_verify_scr_msg({transport_event, {send_message, _SH, Msg}, Pid})
     Pid ! {transport_reply, Reply, self()},
     {ok, Pid};
 otp_6442_rsrq2_verify_scr_msg(Msg) ->
+    io:format("otp_6442_rsrq2_verify_nr_msg -> error: "
+	      "~n   Msg: ~p"
+	      "~n", [Msg]),
     {error, {invalid_message, Msg}}.
 
-otp_6442_rsrq2_verify_first_nr_msg({transport_event, {send_message, _SH, Msg}, Pid}) 
+otp_6442_rsrq2_verify_first_nr_msg(
+  {transport_event, {send_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected first notify request message: "
       "~n   Msg: ~p", [Msg]),
@@ -9890,7 +9931,8 @@ otp_6442_rsrq2_verify_first_nr_msg({transport_event, {send_message, _SH, Msg}, P
 otp_6442_rsrq2_verify_first_nr_msg(Msg) ->
     {error, {invalid_message, Msg}}.
 
-otp_6442_rsrq2_verify_second_nr_msg({transport_event, {resend_message, _SH, Msg}, Pid}) 
+otp_6442_rsrq2_verify_second_nr_msg(
+  {transport_event, {resend_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected second notify request message: "
       "~n   Msg: ~p", [Msg]),
@@ -10110,7 +10152,7 @@ otp_6442_resend_reply1(suite) ->
 otp_6442_resend_reply1(Config) when is_list(Config) ->
     put(sname,     "TEST"),
     put(verbosity, debug),
-    put(tc,        resend_reply2),
+    put(tc,        otp6442rrep1),
     i("starting"),
 
     MgNode = make_node_name(mg),
@@ -10177,7 +10219,8 @@ otp_6442_resend_reply1(Config) when is_list(Config) ->
     ok.
 
 
-otp_6442_rsrp1_verify_scr_msg({transport_event, {send_message, _SH, Msg}, Pid}) 
+otp_6442_rsrp1_verify_scr_msg(
+  {transport_event, {send_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected service change request message: "
       "~n   Msg: ~p", [Msg]),
@@ -10188,7 +10231,7 @@ otp_6442_rsrp1_verify_scr_msg(Msg) ->
     {error, {invalid_message, Msg}}.
 
 otp_6442_rsrp1_verify_first_nr_msg(
-  {transport_event, {send_message, _SH, Msg}, Pid}) 
+  {transport_event, {send_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected first notify reply message: "
       "~n   Msg: ~p", [Msg]),
@@ -10199,7 +10242,7 @@ otp_6442_rsrp1_verify_first_nr_msg(Msg) ->
     {error, {invalid_message, Msg}}.
 
 otp_6442_rsrp1_verify_second_nr_msg(
-  {transport_event, {send_message, _SH, Msg}, Pid}) 
+  {transport_event, {send_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected second notify reply message: "
       "~n   Msg: ~p", [Msg]),
@@ -10498,7 +10541,7 @@ otp_6442_resend_reply2(suite) ->
 otp_6442_resend_reply2(Config) when is_list(Config) ->
     put(sname,     "TEST"),
     put(verbosity, debug),
-    put(tc,        resend_reply2),
+    put(tc,        otp6442rrep2),
     i("starting"),
 
     MgNode = make_node_name(mg),
@@ -10564,7 +10607,8 @@ otp_6442_resend_reply2(Config) when is_list(Config) ->
     ok.
 
 
-otp_6442_rsrp2_verify_scr_msg({transport_event, {send_message, _SH, Msg}, Pid}) 
+otp_6442_rsrp2_verify_scr_msg(
+  {transport_event, {send_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected service change request message: "
       "~n   Msg: ~p", [Msg]),
@@ -10580,7 +10624,7 @@ otp_6442_rsrp2_verify_first_nr_msg_fun() ->
     end.
 
 otp_6442_rsrp2_verify_first_nr_msg(
-  {transport_event, {send_message, _SH, Msg}, Pid}) 
+  {transport_event, {send_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected first notify reply message: "
       "~n   Msg: ~p", [Msg]),
@@ -10596,7 +10640,7 @@ otp_6442_rsrp2_verify_second_nr_msg_fun() ->
     end.
 
 otp_6442_rsrp2_verify_second_nr_msg(
-  {transport_event, {resend_message, _SH, Msg}, Pid}) 
+  {transport_event, {resend_message, _SH, {message, Msg}}, Pid}) 
   when is_record(Msg, 'MegacoMessage') ->
     d("received expected second notify reply message: "
       "~n   Msg: ~p", [Msg]),
@@ -10622,6 +10666,8 @@ otp_6442_rsrp2_verify_second_nr_msg(
     #'NotifyReply'{terminationID = TermId} = NR,
     {ok, {TransId, Cid, TermId}};
 otp_6442_rsrp2_verify_second_nr_msg(Msg) ->
+    d("received expected bad second notify reply message: "
+      "~n   Msg: ~p", [Msg]),
     {error, {invalid_message, Msg}}.
 
 
@@ -12328,6 +12374,352 @@ otp_7189_err_desc(T) ->
     EC = ?megaco_internal_gateway_error,
     ET = lists:flatten(io_lib:format("~w",[T])),
     #'ErrorDescriptor'{errorCode = EC, errorText = ET}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+otp_7259(suite) ->
+    [];
+otp_7259(doc) ->
+    ["This is a variant of ticket OTP-6442"];
+otp_7259(Config) when is_list(Config) ->
+    put(verbosity, debug),
+    put(sname,     "TEST"),
+    put(tc,        otp7259rr),
+    i("starting"),
+
+    MgNode = make_node_name(mg),
+    d("start (MG) node: ~p", [MgNode]),
+    ok = megaco_test_lib:start_nodes([MgNode], ?FILE, ?LINE),
+
+    d("[MG] start the simulator "),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgMid = {deviceName,"mg"},
+    MgEvSeq = otp_7259_mg_event_sequence(MgMid),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
+
+    i("await the transport module service change send_message event"),
+    Pid = otp_7259_expect(fun otp_7259_verify_scr_msg/1, 5000),
+
+    i("wait some before issuing the service change reply"),
+    sleep(500),
+
+    i("send the service change reply"),
+    MgcMid = {deviceName,"mgc"},
+    ServiceChangeReply = otp_7259_mgc_service_change_reply_msg(MgcMid, 1, 1),
+    megaco_test_generic_transport:incomming_message(Pid, ServiceChangeReply),
+
+    i("await the transport module "
+      "notify-request send_message event from MG: "
+      "ignore"),
+    ok = otp_7259_expect(fun otp_7259_verify_first_nr_msg/1, 5000),
+
+    i("await the transport module "
+      "notify-request resend_message event from MG: "
+      "reply"),
+    {TransId2, Cid2, TermId2} = 
+	otp_7259_expect(fun otp_7259_verify_second_nr_msg/1, 10000),
+
+    i("wait some before issuing the notify reply"),
+    sleep(500),
+
+    i("send the notify reply"),
+    NotifyReply = 
+	otp_7259_mgc_notify_reply_msg(MgcMid, TransId2, Cid2, TermId2),
+    megaco_test_generic_transport:incomming_message(Pid, NotifyReply),
+
+    d("[MG] await the generator reply"),
+    await_completion([MgId], 5000),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_megaco_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+otp_7259_expect(Verify, Timeout) when (Timeout > 0) ->
+    T = mtime(),
+    receive
+	Msg ->
+	    case (catch Verify(Msg)) of
+		{ok, Result} ->
+		    d("verified after ~p msec", [mtime() - T]),
+		    Result;
+		skip ->
+		    otp_7259_expect(Verify, to(Timeout, T));
+		{error, Reason} ->
+		    exit({verification_failed, Reason})
+	    end
+    after Timeout ->
+	    exit(timeout)
+    end;
+otp_7259_expect(_, _Timeout) ->
+    exit(timeout).
+
+otp_7259_verify_scr_msg(
+  {transport_event, {send_message, _SH, {message, Msg, Resend}}, Pid}) 
+  when is_record(Msg, 'MegacoMessage') andalso ((Resend =:= true) orelse (Resend =:= false)) ->
+    d("received expected service change request message: "
+      "~n   Msg:    ~p"
+      "~n   Resend: ~p", [Msg, Resend]),
+    Reply = ok, 
+    Pid ! {transport_reply, Reply, self()},
+    {ok, Pid};
+otp_7259_verify_scr_msg(Msg) ->
+    {error, {invalid_message, Msg}}.
+
+otp_7259_verify_first_nr_msg(
+  {transport_event, {send_message, _SH, {message, Msg, Resend}}, Pid}) 
+  when is_record(Msg, 'MegacoMessage') andalso ((Resend =:= true) orelse (Resend =:= false)) ->
+    d("received expected first notify request send message: "
+      "~n   Msg: ~p", [Msg]),
+    Reply = ok, 
+    Pid ! {transport_reply, Reply, self()},
+    {ok, ok};
+otp_7259_verify_first_nr_msg(Msg) ->
+    {error, {invalid_message, Msg}}.
+
+otp_7259_verify_second_nr_msg(
+  {transport_event, {send_message, _SH, {message, Msg, Resend}}, Pid}) 
+  when is_record(Msg, 'MegacoMessage') andalso ((Resend =:= true) orelse (Resend =:= false)) ->
+    d("received expected second notify request send message: "
+      "~n   Msg: ~p", [Msg]),
+    Reply = ok, 
+    Pid ! {transport_reply, Reply, self()},
+    #'MegacoMessage'{mess = Mess} = Msg,
+    #'Message'{mId         = _Mid,
+	       messageBody = Body} = Mess, 
+    {transactions, Transactions} = Body,
+    [Transaction] = Transactions,
+    {transactionRequest, TransReq} = Transaction,
+    #'TransactionRequest'{transactionId = TransId,
+			  actions       = Actions} = TransReq,
+    [Action] = Actions,
+    #'ActionRequest'{contextId       = Cid,
+		     commandRequests = CmdReqs} = Action,
+    [CmdReq] = CmdReqs,
+    #'CommandRequest'{command = Cmd} = CmdReq,
+    {notifyReq, NR} = Cmd,
+    #'NotifyRequest'{terminationID = [TermId]} = NR,
+    {ok, {TransId, Cid, TermId}};
+otp_7259_verify_second_nr_msg(Msg) ->
+    {error, {invalid_message, Msg}}.
+
+
+otp_7259_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
+    SCRP  = #'ServiceChangeResParm'{serviceChangeMgcId = Mid},
+    SCRPs = {serviceChangeResParms, SCRP},
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = #'ServiceChangeReply'{terminationID       = [Root],
+                                  serviceChangeResult = SCRPs},
+    CR    = {serviceChangeReply, SCR},
+    otp_7259_mgc_reply_msg(Mid, TransId, CR, Cid).
+
+otp_7259_mgc_notify_reply_msg(Mid, TransId, Cid, TermId) ->
+    NR  = #'NotifyReply'{terminationID = [TermId]},
+    CR  = {notifyReply, NR},
+    otp_7259_mgc_reply_msg(Mid, TransId, CR, Cid).
+
+otp_7259_mgc_reply_msg(Mid, TransId, CR, Cid) ->
+    AR  = #'ActionReply'{contextId    = Cid,
+                         commandReply = [CR]},
+    ARs  = {actionReplies, [AR]},
+    TR   = #'TransactionReply'{transactionId     = TransId,
+                               transactionResult = ARs},
+    Body = {transactions, [{transactionReply, TR}]},
+    Mess = #'Message'{version     = 1,
+                      mId         = Mid,
+                      messageBody = Body},
+    #'MegacoMessage'{mess = Mess}.
+
+
+%%
+%% MG generator stuff
+%%
+-ifdef(megaco_hipe_special).
+-define(otp_7259_mg_verify_handle_connect_fun(),
+	{?MODULE, otp_7259_mg_verify_handle_connect, []}).
+-define(otp_7259_mg_verify_service_change_rep_fun(),
+	{?MODULE, otp_7259_mg_verify_service_change_rep, []}).
+-define(otp_7259_mg_verify_notify_rep_fun(),
+	{?MODULE, otp_7259_mg_verify_notify_rep, []}).
+-else.
+-define(otp_7259_mg_verify_handle_connect_fun(),
+	otp_7259_mg_verify_handle_connect_fun()).
+-define(otp_7259_mg_verify_service_change_rep_fun(),
+	otp_7259_mg_verify_service_change_rep_fun()).
+-define(otp_7259_mg_verify_notify_rep_fun(),
+	otp_7259_mg_verify_notify_rep_fun()).
+-endif.
+
+otp_7259_mg_event_sequence(Mid) ->
+    RI = [
+          {port,             self()}, % This is just a trick to get my pid to the transport module
+          {encoding_module,  megaco_pretty_text_encoder},
+          {encoding_config,  []},
+          {transport_module, megaco_test_generic_transport}
+         ],
+    ServiceChangeReq = 
+	otp_7259_mg_service_change_request_ar(Mid, 1),
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NotifyReq = otp_7259_mg_notify_request_ar(1, Tid, 1),
+    ConnectVerify = 
+	?otp_7259_mg_verify_handle_connect_fun(),
+    ServiceChangeReplyVerify = 
+	?otp_7259_mg_verify_service_change_rep_fun(),
+    NotifyReplyVerify = 
+	?otp_7259_mg_verify_notify_rep_fun(),
+    EvSeq = [
+             {debug, false},
+             megaco_start,
+             {megaco_start_user, Mid, RI, []},
+	     {megaco_update_user_info, resend_indication, flag},
+             start_transport,
+             {megaco_trace, disable},
+             {megaco_system_info, users},
+             {megaco_system_info, connections},
+             connect,
+             {megaco_callback, handle_connect, ConnectVerify},
+             megaco_connect,
+             {megaco_cast,     [ServiceChangeReq], []},
+             {megaco_callback, handle_connect,     ConnectVerify},
+             {megaco_callback, handle_trans_reply, ServiceChangeReplyVerify},
+             {sleep, 1000},
+             {megaco_cast,     [NotifyReq],        []},
+             {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+             {sleep, 1000},
+             megaco_stop_user,
+             megaco_stop,
+             {sleep, 1000}
+            ],
+    EvSeq.
+
+
+-ifndef(megaco_hipe_special).
+otp_7259_mg_verify_handle_connect_fun() ->
+    fun(Ev) -> 
+	    otp_7259_mg_verify_handle_connect(Ev) 
+    end.
+-endif.
+
+otp_7259_mg_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("otp_7259_mg_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+otp_7259_mg_verify_handle_connect(Else) ->
+    io:format("otp_7259_mg_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+-ifndef(megaco_hipe_special).
+otp_7259_mg_verify_service_change_rep_fun() ->
+    fun(Rep) -> 
+	    otp_7259_mg_verify_service_change_rep(Rep) 
+    end.
+-endif.
+
+otp_7259_mg_verify_service_change_rep(
+  {handle_trans_reply, _CH, ?VERSION, {ok, [AR]}, _}) ->
+    (catch otp_7259_mg_do_verify_service_change_rep(AR));
+otp_7259_mg_verify_service_change_rep(Crap) ->
+    {error, Crap, ok}.
+
+otp_7259_mg_do_verify_service_change_rep(AR) ->
+    io:format("otp_7259_mg_verify_service_change_rep -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    CR = 
+	case AR of
+	    #'ActionReply'{commandReply = [CmdRep]} ->
+		CmdRep;
+	    _ ->
+		Reason1 = {invalid_action_reply, AR},
+		throw({error, Reason1, ok})
+	end,
+    SCR = 
+	case CR of
+	    {serviceChangeReply, ServChRep} ->
+		ServChRep;
+	    _ ->
+		Reason2 = {invalid_command_reply, CR},
+		throw({error, Reason2, ok})
+	end,
+    {Tid, SCRes} = 
+	case SCR of
+	    #'ServiceChangeReply'{terminationID       = [TermID],
+				  serviceChangeResult = Res} ->
+		{TermID, Res};
+	    _ ->
+		Reason3 = {invalid_service_change_reply, SCR},
+		throw({error, Reason3, ok})
+	end,
+    case Tid of
+	#megaco_term_id{contains_wildcards = false, id = ["root"]} ->
+	    ok;
+	_ ->
+	    Reason4 = {invalid_termination_id, Tid},
+	    throw({error, Reason4, ok})
+    end,
+    SCRParm = 
+	case SCRes of
+	    {serviceChangeResParms, ServChResParms} ->
+		ServChResParms;
+	    _ ->
+		Reason5 = {invalid_serviceChangeResult, SCRes},
+		throw({error, Reason5, ok})
+	end,
+    case SCRParm of
+	#'ServiceChangeResParm'{serviceChangeMgcId = _RemoteMid} ->
+	    {ok, AR, ok};
+	_ ->
+	    Reason6 = {invalid_service_change_result, SCRParm},
+	    {error, Reason6, ok}
+    end.
+
+-ifndef(megaco_hipe_special).
+otp_7259_mg_verify_notify_rep_fun() ->
+    fun(Rep) -> 
+	    otp_7259_mg_verify_notify_rep(Rep) 
+    end.
+-endif.
+
+otp_7259_mg_verify_notify_rep(
+  {handle_trans_reply, _CH, ?VERSION, {ok, [AR]}, _}) ->
+    io:format("otp_7259_mg_verify_notify_rep -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    {ok, AR, ok};
+otp_7259_mg_verify_notify_rep(Else) ->
+    io:format("otp_7259_mg_verify_notify_rep -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+
+otp_7259_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+otp_7259_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

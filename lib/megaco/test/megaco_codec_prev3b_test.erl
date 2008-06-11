@@ -4719,7 +4719,7 @@ msg11(Mid) ->
     V  = cre_PropParm("v", "0"),
     C  = cre_PropParm("c", "IN IP4 124.124.124.222"),
     M  = cre_PropParm("m", "audio 2222 RTP/AVP 4"),
-    A  = cre_PropParm("a", "a=ptime:30"),
+    A  = cre_PropParm("a", "ptime:30"),
     A2 = cre_PropParm("a", "recvonly"),
     LD = cre_LocalRemoteDesc([[V, C, M, A, A2]]),
     Parms      = cre_StreamParmsL(LD),

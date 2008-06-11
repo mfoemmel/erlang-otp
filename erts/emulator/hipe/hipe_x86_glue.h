@@ -56,7 +56,7 @@ hipe_write_x86_regs(Process *p, unsigned int arity, Eterm reg[])
 {
 #if NR_ARG_REGS > 0
     int i;
-    for(i = arity; --i >= 0;)
+    for (i = arity; --i >= 0;)
 	p->def_arg_reg[i] = reg[i];
 #endif
 }
@@ -67,7 +67,7 @@ hipe_read_x86_regs(Process *p, unsigned int arity, Eterm reg[])
 {
 #if NR_ARG_REGS > 0
     int i;
-    for(i = arity; --i >= 0;)
+    for (i = arity; --i >= 0;)
 	reg[i] = p->def_arg_reg[i];
 #endif
 }
@@ -78,12 +78,12 @@ hipe_push_x86_params(Process *p, unsigned int arity, Eterm reg[])
     unsigned int i;
 
     i = arity;
-    if( i > NR_ARG_REGS ) {
+    if (i > NR_ARG_REGS) {
 	Eterm *nsp = p->hipe.nsp;
 	i = NR_ARG_REGS;
 	do {
 	    *--nsp = reg[i++];
-	} while( i < arity );
+	} while (i < arity);
 	p->hipe.nsp = nsp;
 	i = NR_ARG_REGS;
     }
@@ -97,11 +97,11 @@ hipe_pop_x86_params(Process *p, unsigned int arity, Eterm reg[])
     unsigned int i;
 
     i = arity;
-    if( i > NR_ARG_REGS ) {
+    if (i > NR_ARG_REGS) {
 	Eterm *nsp = p->hipe.nsp;
 	do {
 	    reg[--i] = *nsp++;
-	} while( i > NR_ARG_REGS );
+	} while (i > NR_ARG_REGS);
 	p->hipe.nsp = nsp;
 	/* INV: i == NR_ARG_REGS */
     }
@@ -118,7 +118,7 @@ hipe_call_to_native(Process *p, unsigned int arity, Eterm reg[])
     /* Note that call_to_native() needs two words on the stack:
        one for the nbif_return return address, and one for the
        callee's return address should it need to call inc_stack_0. */
-    if( (nstkargs = arity - NR_ARG_REGS) < 0 )
+    if ((nstkargs = arity - NR_ARG_REGS) < 0)
 	nstkargs = 0;
     hipe_check_nstack(p, max(nstkargs+1+1, LEAF_WORDS));
     hipe_push_x86_params(p, arity, reg);	/* needs nstkargs words */
@@ -131,11 +131,11 @@ hipe_tailcall_to_native(Process *p, unsigned int arity, Eterm reg[])
 {
     int nstkargs;
 
-    if( (nstkargs = arity - NR_ARG_REGS) < 0 )
+    if ((nstkargs = arity - NR_ARG_REGS) < 0)
 	nstkargs = 0;
     /* +1 so callee can call inc_stack_0 */
     hipe_check_nstack(p, max(nstkargs+1, LEAF_WORDS));
-    if( nstkargs ) {
+    if (nstkargs) {
 	Eterm nra;
 	nra = *(p->hipe.nsp++);
 	hipe_push_x86_params(p, arity, reg);
@@ -162,7 +162,7 @@ hipe_call_from_native_is_recursive(Process *p, Eterm reg[])
 
     nra = *(p->hipe.nsp++);
     hipe_pop_x86_params(p, p->arity, reg);
-    if( nra != (Eterm)nbif_return ) {
+    if (nra != (Eterm)nbif_return) {
 	*--(p->hipe.nsp) = nra;
 	return 1;
     }
@@ -176,7 +176,7 @@ hipe_call_from_native_is_recursive(Process *p, Eterm reg[])
 static __inline__ void
 hipe_pop_params(Process *p, unsigned int arity, Eterm reg[])
 {
-    if( arity > NR_ARG_REGS ) {
+    if (arity > NR_ARG_REGS) {
 	/* for apply/3 this will only happen if we configure
 	   the runtime system with fewer argument registers
 	   than default (i.e., 3) */
@@ -209,9 +209,9 @@ static __inline__ void hipe_reschedule_from_native(Process *p)
 #if NR_ARG_REGS == 0
     ASSERT(p->arity == 0);
 #else
-    if( p->arg_reg != p->def_arg_reg ) {
+    if (p->arg_reg != p->def_arg_reg) {
 	unsigned int i;
-	for(i = 0; i < p->arity; ++i)
+	for (i = 0; i < p->arity; ++i)
 	    p->arg_reg[i] = p->def_arg_reg[i];
     }
 #endif
@@ -236,7 +236,7 @@ static __inline__ void *hipe_closure_stub_address(unsigned int arity)
 #if NR_ARG_REGS == 0
     return nbif_ccallemu0;
 #else	/* > 0 */
-    switch( arity ) {
+    switch (arity) {
       case 0:	return nbif_ccallemu0;
 #if NR_ARG_REGS == 1
       default:	return nbif_ccallemu1;

@@ -108,7 +108,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                xqlc= false :: bool(),		%true if qlc.hrl included
                new = false :: bool(),		%Has user-defined 'new/N'
                called= [],			%Called functions
-               usage = #usage{},
+               usage = #usage{} :: #usage{},
 	       specs = dict:new(),		%Type specifications
 	       types = dict:new()		%Type definitions
               }).
@@ -161,6 +161,8 @@ format_error({bad_nowarn_bif_clash,{F,A}}) ->
 format_error({bad_nowarn_deprecated_function,{M,F,A}}) ->
     io_lib:format("~w:~w/~w is not a deprecated function", [M,F,A]);
 
+format_error(export_all) ->
+    "export_all flag enabled - all functions will be exported";
 format_error({duplicated_export, {F,A}}) ->
     io_lib:format("function ~w/~w already exported", [F,A]);
 format_error({unused_import,{{F,A},M}}) ->
@@ -287,6 +289,8 @@ format_error({missing_spec, {F,A}}) ->
     io_lib:format("missing specification for function ~w/~w", [F, A]);
 format_error(spec_wrong_arity) ->
     "spec has the wrong arity";
+format_error({imported_predefined_type, Name}) ->
+    io_lib:format("referring to predefined type ~w as a remote type", [Name]);
 %% --- obsolete? unused? ---
 format_error({format_error,{Fmt,Args}}) ->
     io_lib:format(Fmt, Args);
@@ -379,6 +383,9 @@ start(File, Opts) ->
 	[{unused_vars,
 	  bool_option(warn_unused_vars, nowarn_unused_vars,
 		      true, Opts)},
+	 {export_all,
+	  bool_option(warn_export_all, nowarn_export_all,
+		      false, Opts)},
 	 {export_vars,
 	  bool_option(warn_export_vars, nowarn_export_vars,
 		      false, Opts)},
@@ -409,8 +416,8 @@ start(File, Opts) ->
 	 {missing_spec,
 	  bool_option(warn_missing_spec, nowarn_missing_spec,
 		      false, Opts)},
-	 {missing_spec_exported,
-	  bool_option(warn_missing_spec_exported, nowarn_missing_spec_exported,
+	 {missing_spec_all,
+	  bool_option(warn_missing_spec_all, nowarn_missing_spec_all,
 		      false, Opts)}
 	],
     Enabled1 = [Category || {Category,true} <- Enabled0],
@@ -490,13 +497,21 @@ forms(Forms0, St0) ->
     St1 = includes_qlc_hrl(Forms, St0),
     St2 = bif_clashes(Forms, St1),
     St3 = not_deprecated(Forms, St2),
-    St4 = foldl(fun form/2, pre_scan(Forms0, St3), Forms),
+    St4 = foldl(fun form/2, pre_scan(Forms, St3), Forms),
     post_traversal_check(Forms, St4).
 
 pre_scan([{function,_L,new,_A,_Cs} | Fs], St) ->
     pre_scan(Fs, St#lint{new=true});
 pre_scan([{attribute,_L,extends,M} | Fs], St) when is_atom(M) ->
     pre_scan(Fs, St#lint{extends=true});
+pre_scan([{attribute,L,compile,C} | Fs], St) ->
+    case is_warn_enabled(export_all, St) andalso
+	member(export_all, lists:flatten([C])) of
+ 	true ->
+	    pre_scan(Fs, add_warning(L, export_all, St));
+ 	false ->
+	    pre_scan(Fs, St)
+    end;
 pre_scan([_ | Fs], St) ->
     pre_scan(Fs, St);
 pre_scan([], St) ->
@@ -1075,7 +1090,7 @@ call_function(Line, F, A, #lint{usage=Usage0,called=Cd,func=Func}=St) ->
 		undefined -> Usage0;
 		_ -> Usage0#usage{calls=dict:append(Func, NA, Cs)}
 	    end,
-    St#lint{called=[{NA,Line}|Cd],usage = Usage}.
+    St#lint{called=[{NA,Line}|Cd], usage=Usage}.
 
 %% is_function_exported(Name, Arity, State) -> false|true.
 
@@ -2262,11 +2277,33 @@ type_def(Line, TypeName, ProtoType, Args, St0) ->
 check_type(Types, St) ->
     {SeenVars, St1} = check_type(Types, dict:new(), St),
     dict:fold(fun(Var, {seen_once, Line}, AccSt) ->
-		      add_error(Line, {singleton_typevar, Var}, AccSt);
+		      case atom_to_list(Var) of
+			  [$_|_] -> AccSt;
+			  _ -> add_error(Line, {singleton_typevar, Var}, AccSt)
+		      end;
 		 (_Var, seen_multiple, AccSt) ->
 		      AccSt
 	      end, St1, SeenVars).
 
+check_type({ann_type, _L, [_Var, Type]}, SeenVars, St) ->
+    check_type(Type, SeenVars, St);
+check_type({paren_type, _L, [Type]}, SeenVars, St) ->
+    check_type(Type, SeenVars, St);
+check_type({remote_type, L, [{atom, _, Mod}, {atom, _, Name}, Args]}, 
+	   SeenVars, St = #lint{module=CurrentMod}) ->
+    St1 =
+	case (dict:is_key({Name, length(Args)}, default_types())
+	      orelse is_var_arity_type(Name)) of
+	    true -> add_error(L, {imported_predefined_type, Name}, St);
+	    false -> St
+	end,
+    case Mod =:= CurrentMod of
+	true -> check_type({type, L, Name, Args}, SeenVars, St1);
+	false ->
+	    lists:foldl(fun(T, {AccSeenVars, AccSt}) ->
+				check_type(T, AccSeenVars, AccSt)
+			end, {SeenVars, St1}, Args)
+    end;
 check_type({integer, _L, _}, SeenVars, St) -> {SeenVars, St};
 check_type({atom, _L, _}, SeenVars, St) -> {SeenVars, St};
 check_type({var, _L, '_'}, SeenVars, St) -> {SeenVars, St};
@@ -2458,11 +2495,11 @@ check_specs_without_function(St = #lint{module=Mod, defined=Funcs}) ->
 %% This generates warnings for functions without specs; if the user has
 %% specified both options, we do not generate the same warnings twice.
 check_functions_without_spec(Forms, St0) ->
-    case is_warn_enabled(missing_spec, St0) of
+    case is_warn_enabled(missing_spec_all, St0) of
 	true ->
 	    add_missing_spec_warnings(Forms, St0, all);
 	false ->
-	    case is_warn_enabled(missing_spec_exported, St0) of
+	    case is_warn_enabled(missing_spec, St0) of
 		true ->
 		    add_missing_spec_warnings(Forms, St0, exported);
 		false ->
@@ -2963,7 +3000,8 @@ modify_line({attribute,L,record,{Name,Fields}}, Mf) ->
 modify_line({attribute,L,spec,{Fun,Types}}, Mf) ->
     {attribute,Mf(L),spec,{Fun,modify_line(Types, Mf)}};
 modify_line({attribute,L,type,{TypeName,TypeDef,Args}}, Mf) ->
-    {attribute,Mf(L),type,{TypeName,modify_line(TypeDef, Mf),Args}};
+    {attribute,Mf(L),type,{TypeName,modify_line(TypeDef, Mf),
+			   modify_line(Args, Mf)}};
 modify_line({attribute,L,Attr,Val}, Mf) -> {attribute,Mf(L),Attr,Val};
 modify_line({warning,W}, _Mf) -> {warning,W};
 modify_line({error,W}, _Mf) -> {error,W};

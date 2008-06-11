@@ -4,11 +4,11 @@
 %%  Purpose  :  Defines some useful macros for debugging and error
 %%              reporting.
 %%              
-%%  History  :	* 2000-11-03 Erik Johansson (happi@csd.uu.se): Created.
+%%  History  :	* 2000-11-03 Erik Johansson (happi@it.uu.se): Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/03/28 22:13:18 $
-%%              $Revision: 1.11 $
+%%              $Author: richardc $
+%%              $Date: 2008/04/20 13:01:13 $
+%%              $Revision: 1.12 $
 %% ====================================================================
 %%
 %% Defines:

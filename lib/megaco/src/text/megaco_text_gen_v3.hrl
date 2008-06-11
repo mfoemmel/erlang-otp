@@ -2200,9 +2200,26 @@ enc_Name(Val, State) ->
 
 enc_PkgdName({'PkgdName', Val}, State) ->
     enc_PkgdName(Val, State);
-enc_PkgdName(Val, State) ->
+enc_PkgdName(Val, _State) ->
     %% BUGBUG:  pkgdName =  (NAME / "*")  SLASH  (ItemID / "*" )
-    enc_OCTET_STRING(Val, State, 1, 64).
+    %% enc_OCTET_STRING(Val, _State, 1, 64).
+    if 
+	is_list(Val) ->
+	    Length = length(Val),
+	    if
+		(Length >= 1) ->
+		    if
+			(Length =< 64) ->
+			    Val;
+			true ->
+			    error({pkgdName_toolong, Length, 64})
+		    end;
+		true ->
+		    error({pkgdName_tooshort, Length, 1})
+	    end;
+	true ->
+	    error({invalid_PkgdName, Val})
+    end.
 
 enc_localDescriptor(Val, State) 
   when is_record(Val, 'LocalRemoteDescriptor') ->
@@ -3332,13 +3349,13 @@ ones_mask(Ones) ->
 %% Verify that Count is within the range of Min and Max
 verify_count(Count, Min, Max) ->
     if
-	integer(Count) ->
+	is_integer(Count) ->
 	    if
-		integer(Min), Count >= Min ->
+		is_integer(Min) andalso (Count >= Min) ->
 		    if
-			integer(Max), Count =< Max ->
+			is_integer(Max) andalso (Count =< Max) ->
 			    Count;
-			Max == infinity ->
+			Max =:= infinity ->
 			    Count;
 			true ->
 			    error({count_too_large, Count, Max})
@@ -3349,6 +3366,7 @@ verify_count(Count, Min, Max) ->
 	true ->
 	    error({count_not_an_integer, Count})
     end.
+
 
 %% -------------------------------------------------------------------
 

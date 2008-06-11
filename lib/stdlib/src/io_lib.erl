@@ -61,7 +61,7 @@
 -export([fwrite/2,fread/2,fread/3,format/2]).
 -export([print/1,print/4,indentation/2]).
 
--export([write/1,write/2,write/3,nl/0]).
+-export([write/1,write/2,write/3,nl/0,format_prompt/1]).
 -export([write_atom/1,write_string/1,write_string/2,write_char/1]).
 
 -export([quote_atom/2,char_list/1,deep_char_list/1,printable_list/1]).
@@ -96,6 +96,27 @@ print(Term, Column, LineLength, Depth) ->
 
 indentation(Chars, Current) ->
     io_lib_format:indentation(Chars, Current).
+
+
+%% Format an IO-request prompt (handles formatting errors safely).
+%% Atoms, binaries, and iolists can be used as-is, and will be
+%% printed without any additional quotes.
+%% Note that the output is a deep string, and not an iolist (i.e.,
+%% it may be deep, but never contains binaries, due to the "~s").
+format_prompt({format,Format,Args}) ->
+    format_prompt(Format,Args);
+format_prompt(Prompt)
+  when is_list(Prompt); is_atom(Prompt); is_binary(Prompt) ->
+    format_prompt("~s", [Prompt]);
+format_prompt(Prompt) ->
+    format_prompt("~p", [Prompt]).
+
+format_prompt(Format,Args) ->
+    case catch io_lib:format(Format,Args) of
+	{'EXIT',_} -> "???";
+	List -> List
+    end.
+
 
 %% write(Term)
 %% write(Term, Depth)
@@ -363,9 +384,9 @@ collect_chars1(N, [], Stack) ->
     {more,{N,Stack}}.
 
 collect_chars_list(Stack, 0, Data) ->
-    {stop,reverse(Stack),Data};
+    {stop,lists:reverse(Stack, []),Data};
 collect_chars_list(Stack, _N, eof) ->
-    {stop,reverse(Stack),eof};
+    {stop,lists:reverse(Stack, []),eof};
 collect_chars_list(Stack, N, []) ->
     {list,Stack,N};
 collect_chars_list(Stack,N, [H|T]) ->
@@ -419,7 +440,7 @@ collect_line([B|_]=Stack, eof, _) when is_binary(B) ->
     {stop,binrev(Stack),eof};
 collect_line(Stack, eof, _) ->
 %    erlang:display({?MODULE,?LINE,[Stack,eof]}),
-    {stop,reverse(Stack),eof}.
+    {stop,lists:reverse(Stack, []),eof}.
 
 collect_line_bin([<<$\r>>|Stack], <<$\n,B2/binary>>, 0) ->
     %% Special case for splitted CRLF
@@ -448,9 +469,9 @@ collect_line_bin(Stack, B, _N) ->
     [B|Stack].
 
 collect_line_list([$\r|Stack], [$\n|T]) ->
-    {stop,reverse(Stack, [$\n]),T};
+    {stop,lists:reverse(Stack, [$\n]),T};
 collect_line_list(Stack, [$\n|T]) ->
-    {stop,reverse(Stack, [$\n]),T};
+    {stop,lists:reverse(Stack, [$\n]),T};
 collect_line_list(Stack, [H|T]) ->
     collect_line_list([H|Stack], T);
 collect_line_list(Stack, []) ->
@@ -481,9 +502,3 @@ binrev(L) ->
 
 binrev(L, T) ->
     list_to_binary(lists:reverse(L, T)).
-
-reverse(L) ->
-    lists:reverse(L, []).
-
-reverse(L, T) ->
-    lists:reverse(L, T).

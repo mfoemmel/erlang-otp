@@ -56,7 +56,7 @@ static int node_is_alive;
 /* forward declarations */
 
 static int clear_dist_entry(DistEntry*);
-static int pack_and_send(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm, int);
+static int pack_and_send(ErtsDistOpData *, Eterm, Eterm, int);
 static void send_nodes_mon_msgs(Process *, Eterm, Eterm, Eterm, Eterm);
 static void init_nodes_monitors(void);
 
@@ -301,9 +301,9 @@ static void doit_link_net_exits(ErtsLink *lnk, void *vnecp)
 {
     LinkNetExitsContext lnec = {(NetExitsContext *) vnecp, lnk};
     ASSERT(lnk->type == LINK_PID)
-    erts_sweep_links(lnk->root, &doit_link_net_exits_sub, (void *) &lnec);
+    erts_sweep_links(ERTS_LINK_ROOT(lnk), &doit_link_net_exits_sub, (void *) &lnec);
 #ifdef DEBUG
-    lnk->root = NULL;
+    ERTS_LINK_ROOT(lnk) = NULL;
 #endif
     erts_destroy_link(lnk);
 }
@@ -328,7 +328,7 @@ static void doit_node_link_net_exits(ErtsLink *lnk, void *vnecp)
 	    ASSERT(is_atom(rlnk->pid) && (rlnk->type == LINK_NODE));
 	    erts_destroy_link(rlnk);
 	}
-	n = ERTS_LINK_ROOT_AS_UINT(lnk);
+	n = ERTS_LINK_REFC(lnk);
 #ifdef ERTS_SMP
 	/* Drop messages if receiver has a pending exit ... */
 	if (!ERTS_PROC_PENDING_EXIT(rp))
@@ -500,24 +500,22 @@ static int clear_dist_entry(DistEntry *dep)
 ** Send a DOP_LINK link message
 */
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_link(Process *c_p, ErtsProcLocks c_p_locks,
-	      DistEntry *dep, Eterm local, Eterm remote)
+int erts_dist_link(ErtsDistOpData *dodp, Eterm local, Eterm remote)
 {
     Eterm ctl_heap[4];
     Eterm ctl = TUPLE3(&ctl_heap[0], make_small(DOP_LINK), local, remote);
 
-    return pack_and_send(c_p, c_p_locks, dep, ctl, THE_NON_VALUE, 0);
+    return pack_and_send(dodp, ctl, THE_NON_VALUE, 0);
 }
 
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_unlink(Process *c_p, ErtsProcLocks c_p_locks,
-		DistEntry *dep, Eterm local, Eterm remote)
+int erts_dist_unlink(ErtsDistOpData *dodp, Eterm local, Eterm remote)
 {
     Eterm ctl_heap[4];
     Eterm ctl = TUPLE3(&ctl_heap[0], make_small(DOP_UNLINK), local, remote);
 
-    return pack_and_send(c_p, c_p_locks, dep, ctl, THE_NON_VALUE, 0);
+    return pack_and_send(dodp, ctl, THE_NON_VALUE, 0);
 }
 
 
@@ -525,9 +523,8 @@ int dist_unlink(Process *c_p, ErtsProcLocks c_p_locks,
    {DOP_MONITOR_P_EXIT, Local pid or name, Remote pid, ref, reason},
    which is rather sad as only the ref is needed, no pid's... */
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_m_exit(Process *c_p, ErtsProcLocks c_p_locks,
-		DistEntry *dep, Eterm watcher, Eterm watched, 
-		Eterm ref, Eterm reason)
+int erts_dist_m_exit(ErtsDistOpData *dodp, Eterm watcher, Eterm watched, 
+		     Eterm ref, Eterm reason)
 {
     Eterm ctl;
     Eterm ctl_heap[6];
@@ -535,18 +532,16 @@ int dist_m_exit(Process *c_p, ErtsProcLocks c_p_locks,
     ctl = TUPLE5(&ctl_heap[0], make_small(DOP_MONITOR_P_EXIT),
 		 watched, watcher, ref, reason);
 
-#ifdef DEBUG
-    ASSERT(!erts_lookup_monitor(dep->monitors, ref));
-#endif
+    ASSERT(!erts_lookup_monitor(dodp->dep->monitors, ref));
 
-    return pack_and_send(c_p, c_p_locks, dep, ctl, THE_NON_VALUE, 1);
+    return pack_and_send(dodp, ctl, THE_NON_VALUE, 1);
 }
 /* We want to monitor a process (named or unnamed) on another node, we send:
    {DOP_MONITOR_P, Local pid, Remote pid or name, Ref}, which is exactly what's
    needed on the other side... */
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_monitor(Process *c_p, ErtsProcLocks c_p_locks,
-		 DistEntry *dep, Eterm watcher, Eterm watched, Eterm ref)
+int erts_dist_monitor(ErtsDistOpData *dodp, Eterm watcher, Eterm watched,
+		      Eterm ref)
 {
     Eterm ctl;
     Eterm ctl_heap[5];
@@ -555,7 +550,7 @@ int dist_monitor(Process *c_p, ErtsProcLocks c_p_locks,
 		 make_small(DOP_MONITOR_P),
 		 watcher, watched, ref);
 
-    return pack_and_send(c_p, c_p_locks, dep, ctl, THE_NON_VALUE, 0);
+    return pack_and_send(dodp, ctl, THE_NON_VALUE, 0);
 }
 
 /* A local process monitoring a remote one wants to stop monitoring, either 
@@ -564,9 +559,8 @@ int dist_monitor(Process *c_p, ErtsProcLocks c_p_locks,
    rather redundant as only the ref will be needed on the other side... */
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_demonitor(Process *c_p, ErtsProcLocks c_p_locks,
-		   DistEntry *dep, Eterm watcher, Eterm watched, 
-		   Eterm ref, int force)
+int erts_dist_demonitor(ErtsDistOpData *dodp, Eterm watcher, Eterm watched, 
+			Eterm ref, int force)
 {
     Eterm ctl;
     Eterm ctl_heap[5];
@@ -575,16 +569,16 @@ int dist_demonitor(Process *c_p, ErtsProcLocks c_p_locks,
 		 make_small(DOP_DEMONITOR_P),
 		 watcher, watched, ref);
 
-    return pack_and_send(c_p, c_p_locks, dep, ctl, THE_NON_VALUE, force);
+    return pack_and_send(dodp, ctl, THE_NON_VALUE, force);
 }
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_send(Process* sender, ErtsProcLocks sender_locks,
-	      DistEntry *dep, Eterm remote, Eterm message)
+int erts_dist_send(ErtsDistOpData *dodp, Eterm remote, Eterm message)
 {
     Eterm ctl;
     Eterm ctl_heap[5];
     Eterm token = NIL;
+    Process *sender = dodp->proc;
 
     if (SEQ_TRACE_TOKEN(sender) != NIL) {
 	seq_trace_update_send(sender);
@@ -597,16 +591,16 @@ int dist_send(Process* sender, ErtsProcLocks sender_locks,
 		     make_small(DOP_SEND_TT), am_Cookie, remote, token);
     else
 	ctl = TUPLE3(&ctl_heap[0], make_small(DOP_SEND), am_Cookie, remote);
-    return pack_and_send(sender, sender_locks, dep, ctl, message, 0);
+    return pack_and_send(dodp, ctl, message, 0);
 }
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_reg_send(Process* sender, ErtsProcLocks sender_locks,
-		  DistEntry *dep, Eterm remote_name, Eterm message)
+int erts_dist_reg_send(ErtsDistOpData *dodp, Eterm remote_name, Eterm message)
 {
     Eterm ctl;
     Eterm ctl_heap[6];
     Eterm token = NIL;
+    Process *sender = dodp->proc;
 
     if (SEQ_TRACE_TOKEN(sender) != NIL) {
 	seq_trace_update_send(sender);
@@ -620,7 +614,7 @@ int dist_reg_send(Process* sender, ErtsProcLocks sender_locks,
     else
 	ctl = TUPLE4(&ctl_heap[0], make_small(DOP_REG_SEND),
 		     sender->id, am_Cookie, remote_name);
-    return pack_and_send(sender, sender_locks, dep, ctl, message, 0);
+    return pack_and_send(dodp, ctl, message, 0);
 }
 
 /* local has died, deliver the exit signal to remote
@@ -629,13 +623,13 @@ int dist_reg_send(Process* sender, ErtsProcLocks sender_locks,
 ** data even if it has signaled that it is busy !!!
 */
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_exit_tt(Process* c_p, ErtsProcLocks c_p_locks,
-		 DistEntry *dep, Eterm local, Eterm remote, 
-		 Eterm reason, Eterm token)
+int erts_dist_exit_tt(ErtsDistOpData *dodp, Eterm local, Eterm remote, 
+		      Eterm reason, Eterm token)
 {
     Eterm ctl;
     Eterm ctl_heap[6];
     ErtsLink *lnk, *sublnk;
+    DistEntry *dep = dodp->dep;
 
     if (token != NIL) {	
 	/* token should be updated by caller */
@@ -649,64 +643,64 @@ int dist_exit_tt(Process* c_p, ErtsProcLocks c_p_locks,
     lnk = erts_lookup_link(dep->nlinks, local);
 
     if (lnk != NULL) {
-	sublnk = erts_remove_link(&(lnk->root), remote);
+	sublnk = erts_remove_link(&(ERTS_LINK_ROOT(lnk)), remote);
 	if (sublnk != NULL) {
 	    erts_destroy_link(sublnk);
 	}
-	if (lnk->root == NULL) {
+	if (ERTS_LINK_ROOT(lnk) == NULL) {
 	    erts_destroy_link(erts_remove_link(&(dep->nlinks), local));
 	}
     }
 
-    return pack_and_send(c_p, c_p_locks, dep, ctl, THE_NON_VALUE, 1);  /* forced, i.e ignore busy */
+    return pack_and_send(dodp, ctl, THE_NON_VALUE, 1);  /* forced, i.e ignore busy */
 }
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_exit(Process* c_p, ErtsProcLocks c_p_locks,
-	      DistEntry *dep, Eterm local, Eterm remote, Eterm reason)
+int erts_dist_exit(ErtsDistOpData *dodp,
+		   Eterm local, Eterm remote, Eterm reason)
 {
     Eterm ctl_heap[5];
     Eterm ctl = TUPLE4(&ctl_heap[0],
 		       make_small(DOP_EXIT), local, remote, reason);
     ErtsLink *lnk, *sublnk;
+    DistEntry *dep = dodp->dep;
 
     lnk = erts_lookup_link(dep->nlinks, local);
 
     if (lnk != NULL) {
-	sublnk = erts_remove_link(&(lnk->root), remote);
+	sublnk = erts_remove_link(&(ERTS_LINK_ROOT(lnk)), remote);
 	if (sublnk != NULL) {
 	    erts_destroy_link(sublnk);
 	}
-	if (lnk->root == NULL) {
+	if (ERTS_LINK_ROOT(lnk) == NULL) {
 	    erts_destroy_link(erts_remove_link(&(dep->nlinks), local));
 	}
     }
 
-    return pack_and_send(c_p, c_p_locks, dep, ctl, THE_NON_VALUE, 1);  /* forced, i.e ignore busy */
+    return pack_and_send(dodp, ctl, THE_NON_VALUE, 1);  /* forced, i.e ignore busy */
 }
 
 /* internal version of dist_exit2 that force send through busy port */
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_exit2(Process* c_p, ErtsProcLocks c_p_locks,
-	       DistEntry *dep, Eterm local, Eterm remote, Eterm reason)
+int erts_dist_exit2(ErtsDistOpData *dodp,
+		    Eterm local, Eterm remote, Eterm reason)
 {
     Eterm ctl_heap[5];
     Eterm ctl = TUPLE4(&ctl_heap[0],
 		       make_small(DOP_EXIT2), local, remote, reason);
 
-    return pack_and_send(c_p, c_p_locks, dep, ctl, THE_NON_VALUE, 0);
+    return pack_and_send(dodp, ctl, THE_NON_VALUE, 0);
 }
 
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_group_leader(Process* c_p, ErtsProcLocks c_p_locks,
-		      DistEntry *dep, Eterm leader, Eterm remote)
+int erts_dist_group_leader(ErtsDistOpData *dodp, Eterm leader, Eterm remote)
 {
     Eterm ctl_heap[4];
     Eterm ctl = TUPLE3(&ctl_heap[0],
 		       make_small(DOP_GROUP_LEADER), leader, remote);
 
-    return pack_and_send(c_p, c_p_locks, dep, ctl, THE_NON_VALUE, 0);
+    return pack_and_send(dodp, ctl, THE_NON_VALUE, 0);
 }
 
 #if defined(PURIFY)
@@ -853,12 +847,10 @@ int erts_net_message(Port *prt,
 	if (!rp) {
 	    /* This is tricky (we MUST force a distributed send) */
 	    /* We may send it to net_kernel and let it do the job !!! */
-
+	    ErtsDistOpData dod;
+	    ERTS_DIST_OP_DATA_INIT(&dod, NULL, 0, dep, prt);
 	    ASSERT(dep->cid == prt->id);
-	    ASSERT(dep->port == NULL);
-	    dep->port = prt;
-	    dist_exit(NULL, 0, dep, to, from, am_noproc);
-	    dep->port = NULL;
+	    erts_dist_exit(&dod, to, from, am_noproc);
 	    erts_smp_dist_entry_unlock(dep);
 	    break;
 	}
@@ -872,7 +864,7 @@ int erts_net_message(Port *prt,
 	    break;
 	}
 	lnk = erts_add_or_lookup_link(&(dep->nlinks), LINK_PID, rp->id);
-	erts_add_link(&(lnk->root), LINK_PID, from);
+	erts_add_link(&(ERTS_LINK_ROOT(lnk)), LINK_PID, from);
 	erts_smp_dist_entry_unlock(dep);
 
 	if (IS_TRACED_FL(rp, F_TRACE_PROCS))
@@ -899,11 +891,11 @@ int erts_net_message(Port *prt,
 
 	lnk = erts_lookup_link(dep->nlinks, rp->id); 
 	if (lnk != NULL) {
-	    sublnk = erts_remove_link(&(lnk->root), from);
+	    sublnk = erts_remove_link(&(ERTS_LINK_ROOT(lnk)), from);
 	    if (sublnk != NULL) {
 		erts_destroy_link(sublnk);
 	    }
-	    if (lnk->root == NULL) {
+	    if (ERTS_LINK_ROOT(lnk) == NULL) {
 		erts_destroy_link(erts_remove_link(&(dep->nlinks), rp->id));
 	    } 
 	}
@@ -941,11 +933,10 @@ int erts_net_message(Port *prt,
 	erts_smp_dist_entry_lock(dep);
 	
 	if (!rp) {
+	    ErtsDistOpData dod;
+	    ERTS_DIST_OP_DATA_INIT(&dod, NULL, 0, dep, prt);
 	    ASSERT(dep->cid == prt->id);
-	    ASSERT(dep->port == NULL);
-	    dep->port = prt;
-	    dist_m_exit(NULL, 0, dep, watcher, watched, ref, am_noproc);
-	    dep->port = NULL;
+	    erts_dist_m_exit(&dod, watcher, watched, ref, am_noproc);
 	}
 	else {
 	    if (is_atom(watched))
@@ -1207,11 +1198,11 @@ int erts_net_message(Port *prt,
 	erts_smp_dist_entry_lock(dep);
 	lnk = erts_lookup_link(dep->nlinks, to); 
 	if (lnk != NULL) {
-	    sublnk = erts_remove_link(&(lnk->root), from);
+	    sublnk = erts_remove_link(&(ERTS_LINK_ROOT(lnk)), from);
 	    if (sublnk != NULL) {
 		erts_destroy_link(sublnk);
 	    }
-	    if (lnk->root == NULL) {
+	    if (ERTS_LINK_ROOT(lnk) == NULL) {
 		erts_destroy_link(erts_remove_link(&(dep->nlinks), to));
 	    } 
 	}
@@ -1372,17 +1363,24 @@ int erts_net_message(Port *prt,
 
 #define DEFAULT_TMP_DIST_BUF_SZ (8*1024)
 
-static int pack_and_send(Process *c_p, ErtsProcLocks c_p_locks,
-			 DistEntry *dep, Eterm ctl, Eterm mess, int force_busy)
+static int pack_and_send(ErtsDistOpData *dodp,
+			 Eterm ctl,
+			 Eterm mess,
+			 int force_busy)
 {
     byte *bufp;
     Uint bufsz;
     byte *t;
     Port* p;
+    DistEntry *dep = dodp->dep;
     Eterm cid = dep->cid;
+#ifdef ERTS_SMP
+    Process *c_p;
+    ErtsProcLocks c_p_locks;
+#endif
 
     /* Caller is *not* allowed to hold status proc lock */
-    ERTS_SMP_LC_ASSERT(!(c_p_locks & ERTS_PROC_LOCK_STATUS));
+    ERTS_SMP_LC_ASSERT(!(dodp->lcks & ERTS_PROC_LOCK_STATUS));
 
     if (!is_alive())
 	return -1;
@@ -1391,11 +1389,11 @@ static int pack_and_send(Process *c_p, ErtsProcLocks c_p_locks,
     if (dep->status & ERTS_DE_SFLG_EXITING)
 	return 0; /* Ignore it */
 
-    ASSERT(is_internal_port(cid));
-    ASSERT(!INVALID_PORT(dep->port, cid));
-    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(dep->port));
+    p = dodp->dprt;
 
-    p = dep->port;
+    ASSERT(is_internal_port(cid));
+    ASSERT(!INVALID_PORT(p, cid));
+    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(p));
 
     if (p->status & ERTS_PORT_SFLG_EXITING)
 	return 0;
@@ -1422,8 +1420,8 @@ static int pack_and_send(Process *c_p, ErtsProcLocks c_p_locks,
      * When we call dist_port_command we should only hold the port lock.
      */
     erts_smp_dist_entry_unlock(dep);
-    if (!c_p)
-	c_p_locks = 0;
+    c_p = dodp->proc;
+    c_p_locks = c_p ? dodp->lcks : 0;
     if (c_p_locks)
 	erts_smp_proc_unlock(c_p, c_p_locks);
 
@@ -1445,8 +1443,8 @@ static int pack_and_send(Process *c_p, ErtsProcLocks c_p_locks,
     erts_smp_dist_entry_lock(dep);
 #endif
 
-    ASSERT(dep->port);
-    ASSERT(is_nil(dep->cid) || !INVALID_PORT(dep->port, dep->cid));
+    ASSERT(dodp->dprt);
+    ASSERT(dodp->dprt->id != dep->cid || !INVALID_PORT(dodp->dprt, dep->cid));
 
     return 0;
 }
@@ -1503,7 +1501,7 @@ static void doit_print_link_info(ErtsLink *lnk, void *vptdp)
 {
     if (is_internal_pid(lnk->pid) && erts_pid2proc_unlocked(lnk->pid)) {
 	PrintLinkContext plc = {(struct print_to_data *) vptdp, lnk->pid};
-	erts_doforall_links(lnk->root, &doit_print_link_info2, &plc);
+	erts_doforall_links(ERTS_LINK_ROOT(lnk), &doit_print_link_info2, &plc);
     } 
 }
 
@@ -2186,21 +2184,21 @@ BIF_RETTYPE monitor_node_3(BIF_ALIST_3)
 	ASSERT(dep->cid != NIL);
 	lnk = erts_add_or_lookup_link(&(dep->node_links), LINK_NODE, 
 				      BIF_P->id);
-	++ERTS_LINK_ROOT_AS_UINT(lnk);
+	++ERTS_LINK_REFC(lnk);
 	lnk = erts_add_or_lookup_link(&(BIF_P->nlinks), LINK_NODE, BIF_ARG_1);
-	++ERTS_LINK_ROOT_AS_UINT(lnk);
+	++ERTS_LINK_REFC(lnk);
     }
     else  {
 	lnk = erts_lookup_link(dep->node_links, BIF_P->id);
 	if (lnk != NULL) {
-	    if ((--ERTS_LINK_ROOT_AS_UINT(lnk)) == 0) {
+	    if ((--ERTS_LINK_REFC(lnk)) == 0) {
 		erts_destroy_link(erts_remove_link(&(dep->node_links), 
 						   BIF_P->id));
 	    }
 	}
 	lnk = erts_lookup_link(BIF_P->nlinks, BIF_ARG_1);
 	if (lnk != NULL) {
-	    if ((--ERTS_LINK_ROOT_AS_UINT(lnk)) == 0) {
+	    if ((--ERTS_LINK_REFC(lnk)) == 0) {
 		erts_destroy_link(erts_remove_link(&(BIF_P->nlinks), 
 						   BIF_ARG_1));
 	    }
@@ -2364,7 +2362,7 @@ static void
 send_nodes_mon_msgs(Process *c_p, Eterm what, Eterm node, Eterm type, Eterm reason)
 {
     ErtsNodesMonitor *nmp;
-    ErtsProcLocks rp_locks;
+    ErtsProcLocks rp_locks = 0; /* Init to shut up false warning */
     Process *rp = NULL;
 
     ASSERT(is_immed(what));
@@ -2576,6 +2574,13 @@ remove_nodes_monitors(Process *c_p, Uint32 opts, int all)
 void
 erts_delete_nodes_monitors(Process *c_p, ErtsProcLocks locks)
 {
+#if defined(ERTS_ENABLE_LOCK_CHECK) && defined(ERTS_SMP)
+    if (c_p) {
+	ErtsProcLocks might_unlock = locks & ~ERTS_PROC_LOCK_MAIN;
+	if (might_unlock)
+	    erts_proc_lc_might_unlock(c_p, might_unlock);
+    }
+#endif
     if (erts_smp_mtx_trylock(&nodes_monitors_mtx) == EBUSY) {
 	ErtsProcLocks unlock_locks = locks & ~ERTS_PROC_LOCK_MAIN;
 	if (c_p && unlock_locks)

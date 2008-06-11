@@ -64,6 +64,7 @@ atom EXIT='EXIT'
 atom aborted
 atom active
 atom all
+atom all_but_first
 atom allocated
 atom allocated_areas
 atom allocator
@@ -71,9 +72,12 @@ atom allocator_sizes
 atom alloc_util_allocators
 atom allow_passive_connect
 atom already_loaded
+atom anchored
 atom and
 atom andalso
 atom andthen
+atom any
+atom anycrlf
 atom arity
 atom asynchronous
 atom atom
@@ -96,12 +100,16 @@ atom break_ignored
 atom breakpoint
 atom bsl
 atom bsr
+atom bsr_anycrlf
+atom bsr_unicode
 atom busy_dist_port
 atom busy_port
 atom call
 atom call_count
 atom caller
+atom capture
 atom case_clause
+atom caseless
 atom catchlevel
 atom cd
 atom clear
@@ -120,6 +128,8 @@ atom const
 atom context_switches
 atom copy
 atom cpu_timestamp
+atom cr
+atom crlf
 atom creation
 atom current_function
 atom data
@@ -140,11 +150,14 @@ atom dmonitor_node
 atom dmonitor_p
 atom DollarDollar='$$'
 atom DollarUnderscore='$_'
+atom dollar_endonly
+atom dotall
 atom driver
 atom driver_options
 atom dsend
 atom dunlink
 atom duplicate_bag
+atom dupnames
 atom elib_malloc
 atom emulator
 atom enable_trace
@@ -155,6 +168,7 @@ atom eof
 atom eol
 atom exception_from
 atom exception_trace
+atom extended
 atom Eq='=:='
 atom Eqeq='=='
 atom erlang
@@ -172,6 +186,8 @@ atom exports
 atom external
 atom false
 atom fd
+atom first
+atom firstline
 atom flags
 atom flush
 atom free
@@ -231,9 +247,11 @@ atom label
 atom large_heap
 atom last_calls
 atom Le='=<'
+atom lf
 atom line
 atom linked_in_driver
 atom links
+atom list
 atom little
 atom loaded
 atom load_cancelled
@@ -243,6 +261,7 @@ atom long_gc
 atom low
 atom Lt='<'
 atom machine
+atom match
 atom match_spec
 atom max
 atom maximum
@@ -267,6 +286,7 @@ atom monitor_nodes
 atom monitors
 atom more
 atom multi_scheduling
+atom multiline
 atom name
 atom named_table
 atom native_addresses
@@ -277,7 +297,12 @@ atom net_kernel_terminated
 atom new
 atom new_index
 atom new_uniq
+atom newline
 atom next
+atom no
+atom nomatch
+atom none
+atom no_auto_capture
 atom noconnect
 atom noconnection
 atom nocookie
@@ -301,9 +326,13 @@ atom not_loaded_by_this_process
 atom not_pending
 atom not_purged
 atom notalive
+atom notbol
+atom noteol
+atom notempty
 atom notify
 atom nouse_stdio
 atom objects
+atom offset
 atom ok
 atom old_heap_block_size
 atom old_heap_size
@@ -355,6 +384,8 @@ atom public
 atom purify
 atom quantify
 atom queue_size
+atom re_pattern
+atom re_run_trap
 atom ready_input
 atom ready_output
 atom ready_async
@@ -435,6 +466,8 @@ atom true
 atom tuple
 atom type
 atom undef
+atom ungreedy
+atom unicode
 atom unregister
 atom use_stdio
 atom used
@@ -446,6 +479,7 @@ atom unloading
 atom unloaded_only
 atom unload_cancelled
 atom value
+atom values
 atom version
 atom visible
 atom waiting
@@ -454,4 +488,5 @@ atom warning
 atom warning_msg
 atom wordsize
 atom xor
+atom yes
 atom yield

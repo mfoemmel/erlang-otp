@@ -1,6 +1,6 @@
 {application, snmp,
  [{description, "SNMP  CXC 138 13"},
-  {vsn, "4.10.3"},
+  {vsn, "4.11"},
   {modules, [
              %% Compiler modules (not in the runtime part of the app)
 %             snmpc,
@@ -38,6 +38,7 @@
              snmpa_net_if_filter,
              snmpa_network_interface,
              snmpa_network_interface_filter,
+             snmpa_notification_delivery_info_receiver, 
              snmpa_notification_filter,
              snmpa_set,
              snmpa_set_lib,

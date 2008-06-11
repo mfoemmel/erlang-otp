@@ -1132,7 +1132,7 @@ transform_bbs([], Cfg) ->
   Cfg.
 
 make_transformations(Is) ->
-  [transform_insn(I) || I <- Is].
+  lists:flatten([transform_insn(I) || I <- Is]).
 
 transform_insn(I) ->
   case I of
@@ -1188,15 +1188,23 @@ handle_call_and_enter(I) ->
     FunName ->
       case is_arith_function(FunName) of
 	true ->
-	  NewI = strength_reduce(I, FunName),
-	  case hipe_icode:is_move(NewI) of
-            true -> NewI;
-            false ->
-	      NewFunName = call_or_enter_fun(NewI),
-	      transform_arith(NewI, NewFunName)
+	  case strength_reduce(I, FunName) of
+	    NewIs when is_list(NewIs) ->
+	      [pos_transform_arith(NewI) || NewI <- NewIs];
+	    NewI ->
+	      pos_transform_arith(NewI)
 	  end;
 	false -> I
       end
+  end.
+
+pos_transform_arith(I) ->
+  case hipe_icode:is_enter(I) orelse hipe_icode:is_call(I) of
+    true ->
+      FunName = call_or_enter_fun(I),
+      transform_arith(I, FunName);
+    false ->
+      I
   end.
 
 is_arith_function(Name) ->
@@ -1232,11 +1240,11 @@ strength_reduce(I, Op) ->
               case hipe_icode:const_value(Arg2) of
 		  0 -> case call_dstlist(I) of
 			 [] -> remove_useless_arithmetic_instruction(I);
-			 [Dst] -> hipe_icode:mk_move(Dst, Arg2)
+			 [Dst] -> create_strength_reduce_move(I, Dst, Arg2)
 		       end;
 		  1 -> case call_dstlist(I) of
 			 [] -> remove_useless_arithmetic_instruction(I);
-			 [Dst] -> hipe_icode:mk_move(Dst, Arg1)
+			 [Dst] -> create_strength_reduce_move(I, Dst, Arg1)
 		       end;
 		  2 -> strength_reduce_imult(I, Arg1, 1);
 		  4 -> strength_reduce_imult(I, Arg1, 2);
@@ -1263,7 +1271,7 @@ strength_reduce(I, Op) ->
 		  0 -> io:fwrite("Integer division by 0 detected!\n"), I;
 		  1 -> case call_dstlist(I) of
 			 [] -> remove_useless_arithmetic_instruction(I);
-			 [Dst] -> hipe_icode:mk_move(Dst, Arg1)
+			 [Dst] -> create_strength_reduce_move(I, Dst, Arg1)
 		       end;
 		  2 -> strength_reduce_div(I, Arg1, 1);
 		  4 -> strength_reduce_div(I, Arg1, 2);
@@ -1290,7 +1298,8 @@ strength_reduce(I, Op) ->
 		  0 -> io:fwrite("Remainder with 0 detected!\n"), I;
 		  1 -> case call_dstlist(I) of
 			 [] -> remove_useless_arithmetic_instruction(I);
-			 [Dst] -> hipe_icode:mk_move(Dst, hipe_icode:mk_const(0))
+			 [Dst] -> create_strength_reduce_move(
+				    I, Dst, hipe_icode:mk_const(0))
 		       end;
 		  2 -> strength_reduce_rem(I, Arg1,   1);
 		  4 -> strength_reduce_rem(I, Arg1,   3);
@@ -1309,10 +1318,18 @@ strength_reduce(I, Op) ->
     _ -> I
   end.
 
-remove_useless_arithmetic_instruction(I) ->
-  %% io:format("The instruction ~w should be removed; not yet handled\n", [I]),
-  I.
+remove_useless_arithmetic_instruction(_) ->
+  [].
 
+create_strength_reduce_move(I, Dst, Val) ->
+  case hipe_icode:call_continuation(I) of
+    [] ->
+      hipe_icode:mk_move(Dst, Val);
+    Lbl ->
+      [hipe_icode:mk_move(Dst, Val),
+       hipe_icode:mk_goto(Lbl)]
+  end.
+      
 %% Puts the args of a multiplication in a form where the constant
 %% (if present) is always the second argument.
 mult_args_const_second(I) ->
@@ -1331,7 +1348,7 @@ strength_reduce_imult(I, Arg1, N) ->
       %% io:format("Multiplication with constant arguments:\n  ~w\n", [I]),
       case call_dstlist(I) of
 	[] -> remove_useless_arithmetic_instruction(I);
-	[Dst] -> hipe_icode:mk_move(Dst, hipe_icode:mk_const((X bsl N)))
+	[Dst] -> create_strength_reduce_move(I, Dst, hipe_icode:mk_const(X bsl N))
       end;
     _ ->
       update_call_or_enter(I, 'bsl', [Arg1, hipe_icode:mk_const(N)])
@@ -1343,7 +1360,7 @@ strength_reduce_div(I, Arg1, N) ->
       %% io:format("Division with constant arguments:\n  ~w\n", [I]),
       case call_dstlist(I) of
 	[] -> remove_useless_arithmetic_instruction(I);
-	[Dst] -> hipe_icode:mk_move(Dst, hipe_icode:mk_const((X bsr N)))
+	[Dst] -> create_strength_reduce_move(I, Dst, hipe_icode:mk_const((X bsr N)))
       end;
     _ ->
       update_call_or_enter(I, 'bsr', [Arg1, hipe_icode:mk_const(N)])
@@ -1355,7 +1372,7 @@ strength_reduce_rem(I, Arg1, N) ->
       %% io:format("Remainder with constant arguments:\n  ~w\n", [I]),
       case call_dstlist(I) of
 	[] -> remove_useless_arithmetic_instruction(I);
-	[Dst] -> hipe_icode:mk_move(Dst, hipe_icode:mk_const((X band N)))
+	[Dst] -> create_strength_reduce_move(I, Dst, hipe_icode:mk_const((X band N)))
       end;
     _ ->
       update_call_or_enter(I, 'band', [Arg1, hipe_icode:mk_const(N)])

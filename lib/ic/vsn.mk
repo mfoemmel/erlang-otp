@@ -1,2 +1,3 @@
-IC_VSN = 4.2.17
+IC_VSN = 4.2.18
 
+TICKETS = OTP-7313

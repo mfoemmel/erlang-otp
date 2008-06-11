@@ -76,6 +76,13 @@
 	  cwd	       % directory to relate paths to	  
 	 }).
 
+% Things that I would like to add to the public record #zip_file, 
+% but can't as it would make things fail at upgrade.
+% Instead we use {#zip_file,#zip_file_extra} internally.
+-record(zip_file_extra, {
+	  crc32        % checksum
+	 }).
+
 %% max bytes read from files and archives (and fed to zlib)
 -define(READ_BLOCK_SIZE, 16*1024).
 
@@ -232,16 +239,26 @@ openzip_get(FileName, OpenZip) ->
 
 do_openzip_get(F, #openzip{files = Files, in = In0, input = Input,
 			   output = Output, zlib = Z, cwd = CWD}) ->
-    case lists:keysearch(F, #zip_file.name, Files) of
-	{value, #zip_file{offset = Offset}} ->
+    %%case lists:keysearch(F, #zip_file.name, Files) of
+    case file_name_search(F, Files) of
+	{#zip_file{offset = Offset},_}=ZFile ->
 	    In1 = Input({seek, bof, Offset}, In0),
-	    {R, _In2} = get_z_file(In1, Z, Input, Output, [], fun silent/1, CWD),
-	    {ok, R};
+	    case get_z_file(In1, Z, Input, Output, [], fun silent/1, CWD, ZFile) of
+		{file, R, _In2} -> {ok, R};
+		_ -> throw(file_not_found)
+	    end;
 	_ -> throw(file_not_found)
     end;
 do_openzip_get(_, _) ->
     throw(einval).
 
+file_name_search(Name,Files) ->
+    case lists:dropwhile(fun({ZipFile,_}) -> ZipFile#zip_file.name =/= Name end,
+			 Files) of
+	[ZFile|_] -> ZFile;
+	[] -> false
+    end.
+	     
 %% %% add a file to an open archive
 %% openzip_add(File, OpenZip) ->
 %%     case ?CATCH do_openzip_add(File, OpenZip) of
@@ -262,12 +279,14 @@ do_openzip_get(_, _) ->
 %% get file list from open archive
 openzip_list_dir(#openzip{zip_comment = Comment,
 			  files = Files}) ->
-    {ok, [#zip_comment{comment = Comment} | Files]};
+    {ZipFiles,_Extras} = lists:unzip(Files),
+    {ok, [#zip_comment{comment = Comment} | ZipFiles]};
 openzip_list_dir(_) ->
     {error, einval}.
 
 openzip_list_dir(#openzip{files = Files}, [names_only]) ->
-    Names = [Name || #zip_file{name=Name} <- Files],
+    {ZipFiles,_Extras} = lists:unzip(Files),
+    Names = [Name || {#zip_file{name=Name},_} <- ZipFiles],
     {ok, Names};
 openzip_list_dir(_, _) ->
     {error, einval}.
@@ -390,8 +409,9 @@ get_unzip_opt([memory | Rest], Opts) ->
 get_unzip_opt([{cwd, CWD} | Rest], Opts) ->
     get_unzip_opt(Rest, Opts#unzip_opts{cwd = CWD});
 get_unzip_opt([{file_filter, F} | Rest], Opts) ->
-    Filter = fun_and_1(F, Opts#unzip_opts.file_filter),
-    get_unzip_opt(Rest, Opts#unzip_opts{file_filter = Filter});
+    Filter1 = fun({ZipFile,_Extra}) -> F(ZipFile) end,
+    Filter2 = fun_and_1(Filter1, Opts#unzip_opts.file_filter),
+    get_unzip_opt(Rest, Opts#unzip_opts{file_filter = Filter2});
 get_unzip_opt([{file_list, L} | Rest], Opts) ->
     FileInList = fun(F) -> file_in_list(F, L) end,
     Filter = fun_and_1(FileInList, Opts#unzip_opts.file_filter),
@@ -443,12 +463,12 @@ verbose_zip(FN) -> io:format("adding: ~p\n", [FN]).
 %% file filter funs
 all(_) -> true.
 
-file_in_list(#zip_file{name = FileName}, List) ->
+file_in_list({#zip_file{name = FileName},_}, List) ->
     lists:member(FileName, List);
 file_in_list(_, _) ->
     false.
 
-keep_old_file(#zip_file{name = FileName}) ->
+keep_old_file({#zip_file{name = FileName},_}) ->
     not (filelib:is_file(FileName) orelse filelib:is_dir(FileName));
 keep_old_file(_) ->
     false.
@@ -495,7 +515,7 @@ get_zip_input(F) when is_list(F) ->
     fun file_io/2.
 
 get_list_dir_options(F, Options) ->
-    Opts = #list_dir_opts{raw_iterator = fun raw_file_info_etc/5,
+    Opts = #list_dir_opts{raw_iterator = fun raw_file_info_public/5,
 			  input = get_input(F),
 			  open_opts = [raw]},
     get_list_dir_opt(Options, Opts).
@@ -898,10 +918,10 @@ zip_tt(Pid) when is_pid(Pid) ->
 
 openzip_tt(#openzip{zip_comment = ZipComment, files = Files}) ->
     print_comment(ZipComment),
-    lists_foreach(fun(#zip_file{comp_size = CompSize,
+    lists_foreach(fun({#zip_file{comp_size = CompSize,
 				name = FileName,
 				comment = FileComment,
-				info = FI}) ->
+				info = FI},_}) ->
 			  #file_info{size = UncompSize, mtime = MTime} = FI,
 			  print_header(CompSize, MTime, UncompSize,
 				       FileName, FileComment)
@@ -910,7 +930,7 @@ openzip_tt(#openzip{zip_comment = ZipComment, files = Files}) ->
 
 openzip_t(#openzip{zip_comment = ZipComment, files = Files}) ->
     print_comment(ZipComment),
-    lists_foreach(fun(#zip_file{name = FileName}) ->
+    lists_foreach(fun({#zip_file{name = FileName},_}) ->
 			  print_file_name(FileName)
 		  end, Files),
     ok.
@@ -944,7 +964,7 @@ get_central_dir(In0, RawIterator, Input) ->
     get_cd_loop(N, In2, RawIterator, Input, Out0).
 
 get_cd_loop(0, In, _RawIterator, _Input, Acc) ->
-    {lists:reverse(Acc, []), In};
+    {lists:reverse(Acc), In};
 get_cd_loop(N, In0, RawIterator, Input, Acc0) ->
     {B, In1} = Input({read, ?CENTRAL_FILE_HEADER_SZ}, In0),
     BCD = case B of
@@ -998,16 +1018,27 @@ find_eocd_header(_) ->
 
 %% from a central directory record, filter and accumulate what we need
 
-%% full zip_file record
+%% with zip_file_extra
 raw_file_info_etc(CD, FileName, FileComment, BExtraField, Acc)
   when is_record(CD, cd_file_header) ->
     #cd_file_header{comp_size = CompSize,
-		    local_header_offset = Offset} = CD,
+		    local_header_offset = Offset,
+		    crc32 = CRC} = CD,
     FileInfo = cd_file_header_to_file_info(CD, BExtraField),
-    [#zip_file{name = FileName, info = FileInfo, comment = FileComment,
-	       offset = Offset, comp_size = CompSize} | Acc];
+    [{#zip_file{name = FileName, info = FileInfo, comment = FileComment,
+		offset = Offset, comp_size = CompSize}, #zip_file_extra{crc32 = CRC}} | Acc];
 raw_file_info_etc(EOCD, _, Comment, _, Acc) when is_record(EOCD, eocd) ->
     [#zip_comment{comment = Comment} | Acc].
+
+%% without zip_file_extra
+raw_file_info_public(CD, FileName, FileComment, BExtraField, Acc0) ->
+    [H1|T] = raw_file_info_etc(CD,FileName,FileComment,BExtraField,Acc0),
+    H2 = case H1 of
+	     {ZF,Extra} when is_record(Extra,zip_file_extra) -> ZF;
+	     Other -> Other
+	 end,
+    [H2|T].
+      
 
 %% make a file_info from a central directory header
 cd_file_header_to_file_info(
@@ -1045,20 +1076,20 @@ add_extra_info(FI, _) ->
 %% get all files using file list
 %% (the offset list is already filtered on which file to get... isn't it?)
 get_z_files([], _Z, _In, _Opts, Acc) ->
-    lists:reverse(Acc, []);
+    lists:reverse(Acc);
 get_z_files([#zip_comment{comment = _} | Rest], Z, In, Opts, Acc) ->
     get_z_files(Rest, Z, In, Opts, Acc);
-get_z_files([#zip_file{offset = Offset} = ZipFile | Rest], Z, In0,
+get_z_files([{#zip_file{offset = Offset},_} = ZFile | Rest], Z, In0,
 	    #unzip_opts{input = Input, output = Output, open_opts = OpO,
 			file_filter = Filter, feedback = FB,
 			cwd = CWD} = Opts, Acc0) ->
-    case Filter(ZipFile) of
+    case Filter(ZFile) of
 	true ->
 	    In1 = Input({seek, bof, Offset}, In0),
-	    {In2, Acc1} = 
-		case get_z_file(In1, Z, Input, Output, OpO, FB, CWD) of
-		    {GZD, Inx} -> {Inx, [GZD | Acc0]};
-		    Inx -> {Inx, Acc0}
+	    {In2, Acc1} =
+		case get_z_file(In1, Z, Input, Output, OpO, FB, CWD, ZFile) of
+		    {file, GZD, Inx} -> {Inx, [GZD | Acc0]};
+		    {dir, Inx} -> {Inx, Acc0}
 		end,
 	    get_z_files(Rest, Z, In2, Opts, Acc1);
 	_ ->
@@ -1066,7 +1097,7 @@ get_z_files([#zip_file{offset = Offset} = ZipFile | Rest], Z, In0,
     end.
 
 %% get a file from the archive, reading chunks
-get_z_file(In0, Z, Input, Output, OpO, FB, CWD) ->
+get_z_file(In0, Z, Input, Output, OpO, FB, CWD, {ZipFile,Extra}) ->
     case Input({read, ?LOCAL_FILE_HEADER_SZ}, In0) of
 	{eof, In1} ->
 	    In1;
@@ -1075,31 +1106,35 @@ get_z_file(In0, Z, Input, Output, OpO, FB, CWD) ->
 	    LH = local_file_header_from_bin(B),
 	    #local_file_header{gp_flag = GPFlag,
 			       comp_method = CompMethod,
-			       comp_size = CompSize,
 			       file_name_length = FileNameLen,
-			       crc32 = CRC32,
-			       extra_field_length = ExtraLen} = LH,
-	    {BFileN, In2} = Input({read, FileNameLen + ExtraLen}, In1),
-	    In3 = skip_z_data_descriptor(GPFlag, Input, In2),
+		       extra_field_length = ExtraLen} = LH,
+
+	    {CompSize,CRC32} = case GPFlag band 8 =:= 8 of
+				   true -> {ZipFile#zip_file.comp_size,
+					    Extra#zip_file_extra.crc32};
+				   false -> {LH#local_file_header.comp_size,
+					     LH#local_file_header.crc32}
+			       end,
+	    {BFileN, In3} = Input({read, FileNameLen + ExtraLen}, In1),
 	    {FileName, _} = get_file_name_extra(FileNameLen, ExtraLen, BFileN),
 	    FileName1 = add_cwd(CWD, FileName),
 	    case lists:last(FileName) of
 		$/ ->
 		    %% perhaps this should always be done?
-		    filelib:ensure_dir(FileName1),
-		    In3;
+		    Output({ensure_dir,FileName1},[]),
+		    {dir, In3};
 		_ ->
 		    %% FileInfo = local_file_header_to_file_info(LH)
 		    %%{Out, In4, CRC, UncompSize} = 
 		    {Out, In4, CRC, _UncompSize} = 
 			get_z_data(CompMethod, In3, FileName1,
 				   CompSize, Input, Output, OpO, Z),
-		    In5 = In4,
+		    In5 = skip_z_data_descriptor(GPFlag, Input, In4),
 		    %% TODO This should be fixed some day:
 		    %% In5 = Input({set_file_info, FileName, FileInfo#file_info{size=UncompSize}}, In4),
 		    FB(FileName),
 		    CRC =:= CRC32 orelse throw({bad_crc, FileName}),
-		    {Out, In5}
+		    {file, Out, In5}
 	    end;
 	_ ->
 	    throw(bad_local_file_header)
@@ -1397,6 +1432,8 @@ binary_io(close, {_Pos, B}) ->
 binary_io({close, FN}, {_Pos, B}) ->
     {FN, B};
 binary_io({set_file_info, _F, _FI}, B) ->
+    B;
+binary_io({ensure_dir, _Dir}, B) ->
     B.
 
 file_io({file_info, F}, _) ->
@@ -1451,4 +1488,7 @@ file_io({set_file_info, F, FI}, H) ->
     case file:write_file_info(F, FI) of
 	ok -> H;
 	{error, Error} -> throw(Error)
-    end.
+    end;
+file_io({ensure_dir, Dir}, H) ->
+    filelib:ensure_dir(Dir),
+    H.

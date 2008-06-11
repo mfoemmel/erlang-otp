@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1996-2007</year>
+%% <year>1996-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -18,6 +18,8 @@
 %%</legalnotice>
 %%
 -module(snmp_note_store).
+
+-behaviour(gen_server).
 
 -include_lib("snmp/src/app/snmp_internal.hrl").
 -include("snmp_debug.hrl").

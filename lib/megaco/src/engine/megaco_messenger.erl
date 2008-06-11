@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1999-2007</year>
+%% <year>1999-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -320,13 +320,56 @@ mk_ch(LM, RM) ->
 %%----------------------------------------------------------------------
 
 %% Returns {ok, ConnHandle} | {error, Reason}
-connect(RH, RemoteMid, SendHandle, ControlPid)
+autoconnect(RH, RemoteMid, SendHandle, ControlPid)
   when is_record(RH, megaco_receive_handle) ->
-    case megaco_config:connect(RH, RemoteMid, SendHandle, ControlPid) of
+    ?rt2("autoconnect", [RH, RemoteMid, SendHandle, ControlPid]),
+    case megaco_config:autoconnect(RH, RemoteMid, SendHandle, ControlPid) of
         {ok, ConnData} ->
             do_connect(ConnData);
         {error, Reason} ->
             {error, Reason}
+    end;
+autoconnect(BadHandle, _CH, _SendHandle, _ControlPid) ->
+    {error, {bad_receive_handle, BadHandle}}.
+
+connect(RH, RemoteMid, SendHandle, ControlPid)
+  when is_record(RH, megaco_receive_handle) ->
+    ?rt2("connect", [RH, RemoteMid, SendHandle, ControlPid]),
+
+    %% The purpose of this is to have a temoporary process, to 
+    %% which one can set up a monitor or link and get a 
+    %% notification when process exits. The entire connect is 
+    %% done in the temporary worker process. 
+    %% When it exits, the connect is either successfully done 
+    %% or it failed.
+
+    ConnectorFun = 
+	fun() ->
+
+		ConnectResult = 
+		    case megaco_config:connect(RH, RemoteMid, 
+					       SendHandle, ControlPid) of
+			{ok, ConnData} ->
+			    do_connect(ConnData);
+			{error, Reason} ->
+			    {error, Reason}
+		    end,
+		?rt2("connector: connected", [self(), ConnectResult]),
+		exit({result, ConnectResult})
+	end,
+    Flag      = process_flag(trap_exit, true),
+    Connector = erlang:spawn_link(ConnectorFun),
+    receive
+	{'EXIT', Connector, {result, ConnectResult}} ->
+	    ?rt2("connect result: received expected connector exit signal", 
+		 [Connector, ConnectResult]),
+	    process_flag(trap_exit, Flag),
+	    ConnectResult;
+	{'EXIT', Connector, OtherReason} ->
+	    ?rt2("connect exit: received unexpected connector exit signal", 
+		 [Connector, OtherReason]),
+	    process_flag(trap_exit, Flag),
+	    {error, OtherReason}
     end;
 connect(BadHandle, _CH, _SendHandle, _ControlPid) ->
     {error, {bad_receive_handle, BadHandle}}.
@@ -341,7 +384,7 @@ do_connect(CD) ->
     ?report_debug(CD, "return: connect", [{return, Res}]),
     case Res of
         ok ->
-	    ?SIM(ok, do_encode),
+	    ?SIM(ok, do_connect), % do_encode),
 	    monitor_process(CH, CD#conn_data.control_pid);
         error ->
             megaco_config:disconnect(CH),
@@ -355,8 +398,46 @@ do_connect(CD) ->
             {error, {connection_refused, CD, Res}}
     end.
 
+finish_connect(#conn_data{control_pid = ControlPid} = CD) 
+  when is_pid(ControlPid) andalso (node(ControlPid) =:= node()) ->
+    ?rt1(CD, "finish local connect", [ControlPid]),
+    do_finish_connect(CD);
+finish_connect(#conn_data{conn_handle = CH,
+			  control_pid = ControlPid} = CD) 
+  when is_pid(ControlPid) andalso (node(ControlPid) =/= node()) ->
+    ?rt1(CD, "finish remote connect", [ControlPid]),
+    RemoteNode     = node(ControlPid),
+    UserMonitorPid = whereis(megaco_monitor),
+    Args           = [CH, ControlPid, UserMonitorPid],
+    case rpc:call(RemoteNode, ?MODULE, connect_remote, Args) of
+        {ok, ControlMonitorPid} ->
+	    do_finish_connect(CD#conn_data{control_pid = ControlMonitorPid});
+        {error, Reason} ->
+            disconnect(CH, {connect_remote, Reason}),
+            {error, Reason};
+        {badrpc, Reason} ->
+            Reason2 = {'EXIT', Reason},
+            disconnect(CH, {connect_remote, Reason2}),
+            {error, Reason2}
+    end.
 
-monitor_process(CH, ControlPid) when node(ControlPid) == node() ->
+do_finish_connect(#conn_data{conn_handle = CH,
+			     send_handle = SendHandle,
+			     control_pid = ControlPid} = CD) ->
+    M   = ?MODULE,
+    F   = disconnect_local,
+    A   = [CH],
+    MFA = {M, F, A}, 
+    case megaco_config:finish_connect(CH, SendHandle, ControlPid, MFA) of
+	{ok, Ref} ->
+	    {ok, CD#conn_data{monitor_ref = Ref}};
+	{error, Reason} ->
+            {error, {config_update, Reason}}
+    end.
+
+
+monitor_process(CH, ControlPid) 
+  when is_pid(ControlPid) andalso (node(ControlPid) =:= node()) ->
     M = ?MODULE,
     F = disconnect_local,
     A = [CH],
@@ -368,7 +449,8 @@ monitor_process(CH, ControlPid) when node(ControlPid) == node() ->
             disconnect(CH, {config_update, Reason}),
             {error, Reason}
     end;
-monitor_process(CH, ControlPid) when node(ControlPid) /= node() ->
+monitor_process(CH, ControlPid) 
+  when is_pid(ControlPid) andalso (node(ControlPid) =/= node()) ->
     RemoteNode = node(ControlPid),
     UserMonitorPid = whereis(megaco_monitor),
     Args = [CH, ControlPid, UserMonitorPid],
@@ -392,10 +474,25 @@ monitor_process(CH, ControlPid) when node(ControlPid) /= node() ->
             Reason2 = {'EXIT', Reason},
             disconnect(CH, {connect_remote, Reason2}),
             {error, Reason2}
+    end;
+monitor_process(CH, undefined = _ControlPid) ->
+    %% We have to do this later (setting up the monitor), 
+    %% when the first message arrives. The 'connected' atom is
+    %% the indication for the first arriving message to finish
+    %% the connect. 
+    %% This may be the case when an MGC performs a pre-connect
+    %% in order to speed up the handling of an (expected) connecting
+    %% MG. 
+    case megaco_config:update_conn_info(CH, monitor_ref, connected) of
+        ok ->
+            ?SIM({ok, CH}, monitor_process_local);
+        {error, Reason} ->
+            disconnect(CH, {config_update, Reason}),
+            {error, Reason}
     end.
 
 connect_remote(CH, ControlPid, UserMonitorPid)
-  when node(ControlPid) == node(), node(UserMonitorPid) /= node() ->
+  when node(ControlPid) =:= node() andalso node(UserMonitorPid) =/= node() ->
     case megaco_config:lookup_local_conn(CH) of
         [_ConnData] -> 
             UserNode = node(UserMonitorPid),
@@ -414,21 +511,33 @@ connect_remote(CH, ControlPid, UserMonitorPid)
             {error, {no_connection, CH}}
     end.
 
+cancel_apply_at_exit({connecting, _ConnectorPid}) ->
+    ok;
+cancel_apply_at_exit(connected) ->
+    ok;
+cancel_apply_at_exit(ControlRef) ->
+    megaco_monitor:cancel_apply_at_exit(ControlRef).
+
+node_of_control_pid(Pid) when is_pid(Pid) ->
+    node(Pid);
+node_of_control_pid(_) ->
+    node().
+
 disconnect(ConnHandle, DiscoReason)
   when is_record(ConnHandle, megaco_conn_handle) ->
     case megaco_config:disconnect(ConnHandle) of
         {ok, ConnData, RemoteConnData} ->
             ControlRef = ConnData#conn_data.monitor_ref,
-            megaco_monitor:cancel_apply_at_exit(ControlRef),
+            cancel_apply_at_exit(ControlRef),
             handle_disconnect_callback(ConnData, DiscoReason),
-            ControlNode = node(ConnData#conn_data.control_pid),
-            case ControlNode == node() of
+            ControlNode = node_of_control_pid(ConnData#conn_data.control_pid),
+            case ControlNode =:= node() of
                 true ->
                     %% Propagate to remote users
                     CancelFun =
                         fun(RCD) ->
                                 UserRef = RCD#remote_conn_data.monitor_ref,
-                                megaco_monitor:cancel_apply_at_exit(UserRef),
+                                cancel_apply_at_exit(UserRef),
                                 RCD#remote_conn_data.user_node
                           end,
                     Nodes = lists:map(CancelFun, RemoteConnData),
@@ -451,7 +560,7 @@ disconnect(ConnHandle, DiscoReason)
                         {_Res, Bad} ->
                             {error, {remote_disconnect_crash, ConnHandle, Bad}}
                     end;
-                false when RemoteConnData == [] ->
+                false when (RemoteConnData =:= []) ->
                     %% Propagate to remote control node
                     M = ?MODULE,
                     F = disconnect_remote,
@@ -476,7 +585,7 @@ disconnect_remote(_Reason, ConnHandle, UserNode) ->
     case megaco_config:disconnect_remote(ConnHandle, UserNode) of
         [RCD] ->
             Ref = RCD#remote_conn_data.monitor_ref,
-            megaco_monitor:cancel_apply_at_exit(Ref),
+            cancel_apply_at_exit(Ref),
             ok;
         [] ->
             {error, {no_connection, ConnHandle}}
@@ -523,9 +632,9 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin, Extra) ->
                     handle_acks(AckList, Extra),
 		    case ReqList of
 			[] ->
-			    ?rt3("no requests"),
+			    ?rt3("no transaction requests"),
 			    ignore;
-			[Req|Reqs] when (ConnData#conn_data.threaded == true) ->
+			[Req|Reqs] when (ConnData#conn_data.threaded =:= true) ->
 			    ?rt3("handle requests (spawned)"),
  			    lists:foreach(
  			      fun(R) -> 
@@ -576,6 +685,7 @@ prepare_message(RH, SH, Bin, Pid, Extra)
             CH         = #megaco_conn_handle{local_mid  = LocalMid,
                                              remote_mid = RemoteMid},
             case megaco_config:lookup_local_conn(CH) of
+
 		%% 
 		%% Message is not of the negotiated version
 		%% 
@@ -594,17 +704,27 @@ prepare_message(RH, SH, Bin, Pid, Extra)
 
 
                 [ConnData] ->
-                    %% Use already established connection
+
+		    %% 
+                    %% Use an already established connection
+		    %% 
+		    %% This *may* have been set up in the
+		    %% "non-official" way, so we may need to 
+		    %% create the monitor to the control process
+		    %% and store the SendHandle (which is normally 
+		    %% done when creating the "temporary" connection). 
+		    %% 
+
 		    ?rt1(ConnData, "use already established connection", []),
                     ConnData2 = ConnData#conn_data{send_handle      = SH,
-						   protocol_version = Version},
+						   control_pid      = Pid, 
+                                                   protocol_version = Version},
                     check_message_auth(CH, ConnData2, MegaMsg, Bin);
-
 
                 [] ->
                     %% Setup a temporary connection
 		    ?rt3("setup a temporary connection"),
-                    case connect(RH, RemoteMid, SH, Pid) of
+                    case autoconnect(RH, RemoteMid, SH, Pid) of
                         {ok, _} ->
 			    do_prepare_message(RH, CH, SH, MegaMsg, Pid, Bin);
 			{error, {already_connected, _ConnHandle}} ->
@@ -723,7 +843,7 @@ check_message_auth(_ConnHandle, ConnData, MegaMsg, Bin) ->
     ConnAuth  = ConnData2#conn_data.auth_data,
     ?report_trace(ConnData2, "check message auth", [{bytes, Bin}]),
     if
-	MsgAuth == asn1_NOVALUE, ConnAuth == asn1_NOVALUE ->
+	(MsgAuth =:= asn1_NOVALUE) andalso (ConnAuth =:= asn1_NOVALUE) ->
             ?SIM({ok, ConnData2, MegaMsg}, check_message_auth);
 	true -> 
 	    ED = #'ErrorDescriptor'{errorCode = ?megaco_unauthorized,
@@ -898,14 +1018,84 @@ prepare_error(Error) ->
             {Code, Reason, Error}
     end.
 
-%% BUGBUG
-%% Do we need something here, if we send more then one trans per message?
-prepare_trans(ConnData, [Trans | Rest], AckList, ReqList, Extra) 
-  when ConnData#conn_data.monitor_ref == undefined_monitor_ref ->
-    %% May occur if another process already has setup a
+prepare_trans(_ConnData, [], AckList, ReqList, _Extra) ->
+    ?SIM({AckList, ReqList}, prepare_trans_done);
+
+prepare_trans(ConnData, Trans, AckList, ReqList, Extra) 
+  when ConnData#conn_data.monitor_ref =:= undefined_auto_monitor_ref ->
+
+    ?rt3("prepare_trans - autoconnect"),
+
+    %% <BUGBUG>
+    %% Do we need something here, if we send more then one 
+    %% trans per message?
+    %% </BUGBUG>
+    
+    %% May occur if another process has already setup a
     %% temporary connection, but the handle_connect callback
     %% function has not yet returned before the eager MG
     %% re-sends its initial service change message.
+
+    prepare_autoconnecting_trans(ConnData, Trans, AckList, ReqList, Extra);
+
+prepare_trans(#conn_data{monitor_ref = connected} = ConnData, 
+	      Trans, AckList, ReqList, Extra) ->
+
+    ?rt3("prepare_trans - connected"),
+
+    %% 
+    %% This will happen when the "MGC" user performs a "pre" connect,
+    %% instead of waiting for the auto-connect (which normally
+    %% happen when the MGC receives the first message from the
+    %% MG). 
+    %% 
+
+    %% 
+    %% The monitor_ref will have this value when the pre-connect 
+    %% is complete, so we finish it here and then continue with the 
+    %% normal transaction prepare.
+    %% 
+
+    case finish_connect(ConnData) of
+	{ok, CD} ->
+	    prepare_normal_trans(CD, Trans, AckList, ReqList, Extra);
+	{error, Reason} ->
+	    disconnect(ConnData#conn_data.conn_handle, Reason),
+	    {[], []}
+    end;
+
+prepare_trans(#conn_data{monitor_ref = {connecting, _}} = _ConnData, 
+	      _Trans, _AckList, _ReqList, _Extra) ->
+    
+    ?rt3("prepare_trans - connecting"),
+
+    %% 
+    %% This will happen when the "MGC" user performs a "pre" connect,
+    %% instead of waiting for the auto-connect (which normally
+    %% happen when the MGC receives the first message from the
+    %% MG). 
+    %% 
+
+    %% 
+    %% The monitor_ref will have this value when the pre-connect 
+    %% is in progress. We drop (ignore) this message and hope the
+    %% other side (MG) will resend. 
+    %% 
+
+    %% prepare_connecting_trans(ConnData, Trans, AckList, ReqList, Extra);
+    {[], []};
+
+prepare_trans(ConnData, Trans, AckList, ReqList, Extra) ->
+
+    ?rt3("prepare_trans - normal"),
+
+    %% Handle transaction in the normal case
+
+    prepare_normal_trans(ConnData, Trans, AckList, ReqList, Extra).
+
+
+prepare_autoconnecting_trans(ConnData, [Trans | Rest], AckList, ReqList, Extra) ->
+    ?rt1(ConnData, "[autoconnecting] prepare trans", [Trans]),
     case Trans of
         {transactionRequest, T} when is_record(T, 'TransactionRequest') ->
 	    
@@ -935,10 +1125,95 @@ prepare_trans(ConnData, [Trans | Rest], AckList, ReqList, Extra)
 		aborted ->
 		    ignore
 	    end,
-	    prepare_trans(ConnData2, Rest, AckList, ReqList, Extra);
+	    prepare_autoconnecting_trans(ConnData2, Rest, AckList, ReqList, 
+					 Extra);
 	_ ->
-	    prepare_trans(ConnData, Rest, AckList, ReqList, Extra)
-    end;
+	    prepare_autoconnecting_trans(ConnData, Rest, AckList, ReqList, 
+					 Extra)
+    end.
+
+%% prepare_connecting_trans(
+%%   #conn_data{conn_handle = CH,
+%% 	     monitor_ref = {connecting, ConnectorPid}} = ConnData, 
+%%   Trans, AckList, ReqList, Extra) ->
+    
+%%     io:format("prepare_connecting_trans[~p,~w] -> entry with"
+%% 	      "~n   ConnectorPid: ~p"
+%% 	      "~n", [self(), t(), ConnectorPid]),
+
+%%     ?rt1(ConnData, "[connecting] prepare trans", [CH, ConnectorPid]),
+
+%%     %% 
+%%     %% Wait for the connector process to finish
+%%     %% and then update the conn_data record we 
+%%     %% are using, with the new monitor_ref (just 
+%%     %% in case). If the monitor ref is not up-to-date,
+%%     %% we need to create it here.
+%%     %% The connector process will update the monitor_ref
+%%     %% field when it completes.
+%%     %% 
+
+%%     ConnectorRef = erlang:monitor(process, ConnectorPid),
+%%     receive
+%% 	{'DOWN', ConnectorRef, process, ConnectorPid, _Reason} ->
+
+%% 	    io:format("prepare_connecting_trans[~p, ~w] -> "
+%% 		      "received DOWN from connector"
+%% 		      "~n   Reason:            ~p"
+%% 		      "~n", [self(), t(), _Reason]),
+	    
+%% 	    ?rt1(ConnData, "[connecting] prepare trans - "
+%% 		 "received connector DOWN", 
+%% 		 [ConnectTimeout, ConnectorPid, ConnectorRef]),
+
+%% 	    case megaco_config:update_conn_info(CH, monitor_ref, Ref) of
+%% 		ok ->
+%% 		    ConnData2 = ConnData#conn_data{monitor_ref = Ref},
+%% 		    prepare_normal_trans(ConnData2, Trans, AckList, 
+%% 					 ReqList, Extra);
+%% 		{error, Reason} ->
+%% 		    disconnect(CH, {config_update, Reason}),
+%% 		    {[], []}
+%% 	    end
+	    
+%%     after Timeout ->
+	    
+%% 	    io:format("prepare_connecting_trans[~p, ~w] -> timeout after ~w"
+%% 		      "~n", [self(), t(), Timeout]),
+
+%% 	    %% 
+%% 	    %% Ok, the connection appears to hang, 
+%% 	    %% so the best we can do is to let go
+%% 	    %% and hope that the other side decide
+%% 	    %% to retransmit this message...
+%% 	    %% 
+	    
+%% 	    ?report_debug(ConnData, "[connecting] prepare trans - "
+%% 			  "timeout", 
+%% 			  [ConnectTimeout, ConnectorRef, ConnectorPid]),
+	    
+%% 	    %% Kill the connector
+%% 	    exit(ConnectorPid, timeout),
+
+%% 	    receive 
+%% 		{'DOWN', ConnectorRef, process, ConnectorPid, _} ->
+%% 		    ok
+%% 	    after 100 ->
+%% 		    %% Ok, we give up, the DOWN sould have come at once... 
+%% 		    %% Remove the monitor
+%% 		    erlang:demonitor(ConnectorRef, [flush]),
+%% 		    ok
+%% 	    end,
+
+%% 	    %% Cleanup
+%% 	    disconnect(CH, connect_timeout),
+
+%% 	    %% And, done
+%% 	    {[], []}
+
+%%     end.
+
+
 
 %% =================================================================
 %% 
@@ -950,15 +1225,18 @@ prepare_trans(ConnData, [Trans | Rest], AckList, ReqList, Extra)
 %%
 %% =================================================================
 
-prepare_trans(ConnData, [Trans | Rest], AckList, ReqList, Extra) ->
-    ?rt1(ConnData, "prepare trans", [Trans]),
+prepare_normal_trans(_ConnData, [], AckList, ReqList, _Extra) ->
+    ?SIM({AckList, ReqList}, prepare_normal_trans_done);
+
+prepare_normal_trans(ConnData, [Trans | Rest], AckList, ReqList, Extra) ->
+    ?rt1(ConnData, "prepare [normal] trans", [Trans]),
     case Trans of
         {transactionRequest, #'TransactionRequest'{transactionId = asn1_NOVALUE}} ->
             ConnData2 = ConnData#conn_data{serial = 0},
 	    Code   = ?megaco_bad_request,
             Reason = "Syntax error in message: transaction id missing",
 	    send_trans_error(ConnData2, Code, Reason),
-            prepare_trans(ConnData2, Rest, AckList, ReqList, Extra);
+            prepare_normal_trans(ConnData2, Rest, AckList, ReqList, Extra);
         {transactionRequest, T} when is_record(T, 'TransactionRequest') ->
             Serial = T#'TransactionRequest'.transactionId,
             ConnData2 = ConnData#conn_data{serial = Serial},
@@ -967,23 +1245,22 @@ prepare_trans(ConnData, [Trans | Rest], AckList, ReqList, Extra) ->
             Serial = T#'TransactionPending'.transactionId,
             ConnData2 = ConnData#conn_data{serial = Serial},
             handle_pending(ConnData2, T, Extra),
-            prepare_trans(ConnData2, Rest, AckList, ReqList, Extra);
+            prepare_normal_trans(ConnData2, Rest, AckList, ReqList, Extra);
         {transactionReply, T} when is_tuple(T) andalso  
 				   (element(1, T) == 'TransactionReply') ->
 	    T2        = transform_transaction_reply_dec(T),
             Serial    = T2#megaco_transaction_reply.transactionId, 
             ConnData2 = ConnData#conn_data{serial = Serial},
             handle_reply(ConnData2, T2, Extra),
-	    prepare_trans(ConnData2, Rest, AckList, ReqList, Extra);
+	    prepare_normal_trans(ConnData2, Rest, AckList, ReqList, Extra);
         {transactionResponseAck, List} when is_list(List) ->
             prepare_ack(ConnData, List, Rest, AckList, ReqList, Extra);
         {segmentReply, SR} when is_record(SR, 'SegmentReply') ->
 	    handle_segment_reply(ConnData, SR, Extra), 
-            prepare_trans(ConnData, Rest, AckList, ReqList, Extra)
+            prepare_normal_trans(ConnData, Rest, AckList, ReqList, Extra)
 
-    end;
-prepare_trans(_ConnData, [], AckList, ReqList, _Extra) ->
-    ?SIM({AckList, ReqList}, prepare_trans_done).
+    end.
+
 
 prepare_request(ConnData, T, Rest, AckList, ReqList, Extra) ->
     ?rt2("prepare request", [T]),
@@ -1005,7 +1282,7 @@ prepare_request(ConnData, T, Rest, AckList, ReqList, Extra) ->
 	    %% the handle_trans_request callback function) we
 	    %% can just as well wait (this is after all a very
 	    %% unlikely case: see function prepare_trans when 
-	    %% monitor_ref == undefined_monitor_ref).
+	    %% monitor_ref == undefined_auto_monitor_ref).
 	    %% 
 
 	    #conn_data{send_handle      = SendHandle,
@@ -1024,8 +1301,9 @@ prepare_request(ConnData, T, Rest, AckList, ReqList, Extra) ->
 			 version           = Version},
             case megaco_monitor:insert_reply_new(Rep) of
 		true ->
-		    prepare_trans(ConnData, Rest, AckList, 
-				  [{ConnData, TransId, T} | ReqList], Extra);
+		    prepare_normal_trans(ConnData, Rest, AckList, 
+					 [{ConnData, TransId, T} | ReqList], 
+					 Extra);
 		false ->
 		    %% Oups - someone got there before we did...
 		    ?report_debug(ConnData, 
@@ -1033,13 +1311,14 @@ prepare_request(ConnData, T, Rest, AckList, ReqList, Extra) ->
 				  [TransId]),
 		    send_pending(ConnData),
 		    megaco_monitor:cancel_apply_after(PendingRef),
-		    prepare_trans(ConnData, Rest, AckList, ReqList, Extra)
+		    prepare_normal_trans(ConnData, Rest, AckList, ReqList, 
+					 Extra)
 	    end;
 
         [#reply{state             = State, 
 		handler           = Pid,
 		pending_timer_ref = Ref} = Rep] 
-	when (State == prepare) orelse (State == eval_request) ->
+	when (State =:= prepare) orelse (State =:= eval_request) ->
 
 	    ?rt2("request resend", [State, Pid, Ref]),
 
@@ -1069,7 +1348,8 @@ prepare_request(ConnData, T, Rest, AckList, ReqList, Extra) ->
 		    %% ------------------------------------------
 
 		    send_pending(ConnData),
-		    prepare_trans(ConnData, Rest, AckList, ReqList, Extra);
+		    prepare_normal_trans(ConnData, Rest, AckList, ReqList, 
+					 Extra);
 
 
 		error ->
@@ -1125,7 +1405,8 @@ prepare_request(ConnData, T, Rest, AckList, ReqList, Extra) ->
 			    cancel_reply(ConnData, Rep2, aborted),
 			    ok
 		    end,
-		    prepare_trans(ConnData, Rest, AckList, ReqList, Extra);
+		    prepare_normal_trans(ConnData, Rest, AckList, ReqList, 
+					 Extra);
 
 
 		aborted ->
@@ -1141,7 +1422,8 @@ prepare_request(ConnData, T, Rest, AckList, ReqList, Extra) ->
 
 		    Rep2 = Rep#reply{state = aborted},
 		    cancel_reply(ConnData, Rep2, aborted),
-		    prepare_trans(ConnData, Rest, AckList, ReqList, Extra)
+		    prepare_normal_trans(ConnData, Rest, AckList, ReqList, 
+					 Extra)
 
 	    end;
 
@@ -1163,7 +1445,7 @@ prepare_request(ConnData, T, Rest, AckList, ReqList, Extra) ->
 		    %% Pass it on to the user (via handle_ack)
 		    cancel_reply(ConnData2, Rep, Reason)
 	    end,
-	    prepare_trans(ConnData2, Rest, AckList, ReqList, Extra);
+	    prepare_normal_trans(ConnData2, Rest, AckList, ReqList, Extra);
 
 	[#reply{state = aborted} = Rep] ->
 	    ?rt3("request resend when already in aborted state"),
@@ -1176,7 +1458,7 @@ prepare_request(ConnData, T, Rest, AckList, ReqList, Extra) ->
 	    %% 
 	    %% Shall we perform a cleanup?
 	    cancel_reply(ConnData, Rep, aborted),
-	    prepare_trans(ConnData, Rest, AckList, ReqList, Extra)
+	    prepare_normal_trans(ConnData, Rest, AckList, ReqList, Extra)
         end.
 
 prepare_ack(ConnData, [TA | T], Rest, AckList, ReqList, Extra) 
@@ -1187,12 +1469,12 @@ prepare_ack(ConnData, [TA | T], Rest, AckList, ReqList, Extra)
     ConnData2 = ConnData#conn_data{serial = First},
     AckList2  = do_prepare_ack(ConnData2, TA2, AckList),
     if
-        Last == asn1_NOVALUE ->
+        Last =:= asn1_NOVALUE ->
             prepare_ack(ConnData, T, Rest, AckList2, ReqList, Extra);
         First < Last ->
             TA3 = TA#'TransactionAck'{firstAck = First + 1},
             prepare_ack(ConnData, [TA3 | T], Rest, AckList2, ReqList, Extra);
-        First == Last ->
+        First =:= Last ->
             prepare_ack(ConnData, T, Rest, AckList2, ReqList, Extra);
         First > Last ->
             %% Protocol violation from the sender of this ack
@@ -1201,7 +1483,7 @@ prepare_ack(ConnData, [TA | T], Rest, AckList, ReqList, Extra)
 	    prepare_ack(ConnData, T, Rest, AckList2, ReqList, Extra)
     end;
 prepare_ack(ConnData, [], Rest, AckList, ReqList, Extra) ->
-    prepare_trans(ConnData, Rest, AckList, ReqList, Extra).
+    prepare_normal_trans(ConnData, Rest, AckList, ReqList, Extra).
 
 do_prepare_ack(ConnData, T, AckList) ->
     TransId = to_remote_trans_id(ConnData),
@@ -1210,7 +1492,7 @@ do_prepare_ack(ConnData, T, AckList) ->
             %% The reply has already been garbage collected. Ignore.
             ?report_trace(ConnData, "discard ack (no receiver)", [T]),
             AckList;
-        [Rep] when Rep#reply.state == waiting_for_ack ->
+        [Rep] when Rep#reply.state =:= waiting_for_ack ->
             %% Don't care about Msg and Rep version diff
             [{ConnData, Rep, T} | AckList];
         [_Rep] ->
@@ -3148,7 +3430,9 @@ send_request(#conn_data{control_pid  = CP,
 			trans_req    = true, 
 			trans_sender = Pid} = CD, 
 	     CH, [Serial], Action, [Bin])
-  when is_pid(Pid) andalso is_integer(Serial) andalso (node(CP) == node()) ->
+  when is_pid(Pid)        andalso 
+       is_integer(Serial) andalso 
+       (node(CP) =:= node()) ->
 
     ?report_trace(CD, 
 		  "send_request - one transaction via trans-sender", 
@@ -3168,7 +3452,9 @@ send_request(#conn_data{control_pid  = CP,
 			trans_req    = true, 
 			trans_sender = Pid} = CD, 
 	     CH, TransInfo, Action, Bins)
-  when is_pid(Pid) andalso is_list(Bins) andalso (node(CP) == node()) ->
+  when is_pid(Pid)   andalso 
+       is_list(Bins) andalso 
+       (node(CP) =:= node()) ->
 
     ?report_trace(CD, 
 		  "send_request - multi transactions via trans_sender", 
@@ -3186,7 +3472,9 @@ send_request(#conn_data{control_pid  = CP,
 %% this encoded message.
 send_request(#conn_data{control_pid = CP} = CD, 
 	     CH, TRs, Action, Bin)
-  when is_list(TRs) andalso is_binary(Bin) andalso (node(CP) == node()) ->
+  when is_list(TRs)   andalso 
+       is_binary(Bin) andalso 
+       (node(CP) =:= node()) ->
 
     %%     d("send_request -> entry with"
     %%       "~n   TRs: ~p", [TRs]),
@@ -3208,7 +3496,7 @@ send_request(#conn_data{control_pid = CP} = CD,
 %% transport process run.
 send_request(#conn_data{control_pid = CP} = CD, 
 	     CH, TransInfo, Action, Bin) 
-  when node(CP) /= node() ->
+  when node(CP) =/= node() ->
 
     ?report_trace(CD, "send_request - remote", [TransInfo]),
 

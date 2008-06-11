@@ -1,0 +1,71 @@
+AC_INIT(priv/rx-1.5/rx/rx.c)
+
+if test "x$no_recursion" != "xyes"; then
+    # We do not want to use a common cache!
+    cache_file=/dev/null
+fi
+
+AC_CONFIG_AUX_DIR(priv/auxdir)
+
+if test "X$host" != "Xfree_source" -a "X$host" != "Xwin32"; then
+    AC_CANONICAL_HOST
+else
+    host_os=win32
+fi
+
+TARGET=$host
+AC_SUBST(TARGET)
+
+AC_PROG_CC
+AC_PROG_CPP
+AC_PROG_RANLIB
+AC_PROG_INSTALL
+AC_C_CONST
+
+AC_STDC_HEADERS
+
+AC_SUBST(opt_objs)
+
+AC_MSG_CHECKING(for appropriate compile flags)
+
+CFLAGS="$CFLAGS $OTP_EXTRA_FLAGS"
+
+if test "X$host" = "Xwin32"; then
+  RX_CFLAGS="$CFLAGS"
+else
+  case $host_os in
+    darwin*)
+	CFLAGS="$CFLAGS -no-cpp-precomp"
+	;;
+  esac
+
+  if test "x$GCC" = xyes; then
+	RX_CFLAGS="$CFLAGS -fPIC $RX_CFLAGS"
+  else
+	RX_CFLAGS="$CFLAGS $RX_CFLAGS"
+  fi
+fi
+AC_MSG_RESULT([$RX_CFLAGS])
+AC_SUBST(RX_CFLAGS)
+
+AC_CHECK_PROGS(RX_LD, [ld.sh ld], no_ld)
+if test "$RX_LD" = no_ld; then
+  AC_MSG_ERROR([ld required but not found!])
+fi
+
+AC_MSG_CHECKING(for linker flags for loadable drivers)
+case $host_os in
+	win32)
+		RX_LDFLAGS="-dll"
+	;;
+	*)
+		RX_LDFLAGS="-G"
+	;;
+esac
+AC_MSG_RESULT([$RX_LDFLAGS])
+AC_SUBST(RX_LDFLAGS)
+
+
+AC_OUTPUT(priv/rx-1.5/rx/Makefile:priv/rx-1.5/rx/Makefile.in
+	  priv/$host/Makefile:priv/Makefile.in
+	  c_src/$host/Makefile:c_src/Makefile.in)

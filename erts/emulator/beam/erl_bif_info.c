@@ -203,9 +203,9 @@ static void do_calc_lnk_size(ErtsLink *lnk, void *vpsz)
 {
     Uint *psz = vpsz;
     *psz += IS_CONST(lnk->pid) ? 0 : NC_HEAP_SIZE(lnk->pid);
-    if (lnk->type != LINK_NODE && lnk->root != NULL) { 
+    if (lnk->type != LINK_NODE && ERTS_LINK_ROOT(lnk) != NULL) { 
 	/* Node links use this pointer as ref counter... */
-	erts_doforall_links(lnk->root,&do_calc_lnk_size,vpsz);
+	erts_doforall_links(ERTS_LINK_ROOT(lnk),&do_calc_lnk_size,vpsz);
     }
     *psz += 7; /* CONS + 4-tuple */ 
 }
@@ -226,11 +226,11 @@ static void do_make_one_lnk_element(ErtsLink *lnk, void * vpllc)
 	       ? lnk->pid
 	       : STORE_NC(&(pllc->hp), &MSO(pllc->p).externals, lnk->pid));
     if (lnk->type == LINK_NODE) {
-	targets = make_small(ERTS_LINK_ROOT_AS_UINT(lnk));
-    } else if (lnk->root != NULL) {
+	targets = make_small(ERTS_LINK_REFC(lnk));
+    } else if (ERTS_LINK_ROOT(lnk) != NULL) {
 	old_res = pllc->res;
 	pllc->res = NIL;
-	erts_doforall_links(lnk->root,&do_make_one_lnk_element, vpllc);
+	erts_doforall_links(ERTS_LINK_ROOT(lnk),&do_make_one_lnk_element, vpllc);
 	targets = pllc->res;
 	pllc->res = old_res;
     }
@@ -452,8 +452,8 @@ static void one_link_size(ErtsLink *lnk, void *vpu)
     *pu += ERTS_LINK_SIZE*sizeof(Uint);
     if(!IS_CONST(lnk->pid))
 	*pu += NC_HEAP_SIZE(lnk->pid)*sizeof(Uint);
-    if (lnk->type != LINK_NODE && lnk->root != NULL) {
-	erts_doforall_links(lnk->root,&one_link_size,vpu);
+    if (lnk->type != LINK_NODE && ERTS_LINK_ROOT(lnk) != NULL) {
+	erts_doforall_links(ERTS_LINK_ROOT(lnk),&one_link_size,vpu);
     }
 }
 static void one_mon_size(ErtsMonitor *mon, void *vpu)
@@ -1281,13 +1281,21 @@ process_info_aux(Process *BIF_P,
 	break;
     }
 
-    case am_garbage_collection:
-	hp = HAlloc(BIF_P, 3+2+3);
-	res = TUPLE2(hp, am_fullsweep_after, make_small(MAX_GEN_GCS(rp)));
+    case am_garbage_collection: {
+        DECL_AM(minor_gcs);
+        Eterm t;
+
+	hp = HAlloc(BIF_P, 3+2+3+2+3);
+	t = TUPLE2(hp, AM_minor_gcs, make_small(GEN_GCS(rp)));
 	hp += 3;
-	res = CONS(hp, res, NIL);
+	res = CONS(hp, t, NIL);
+	hp += 2;
+	t = TUPLE2(hp, am_fullsweep_after, make_small(MAX_GEN_GCS(rp)));
+	hp += 3;
+	res = CONS(hp, t, res);
 	hp += 2;
 	break;
+    }
 
     case am_group_leader: {
 	int sz = NC_HEAP_SIZE(rp->group_leader);
@@ -3016,6 +3024,17 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 	    Uint slot;
 	    if (term_to_Uint(BIF_ARG_2, &slot) != 0) {
 		BIF_RET(erts_ets_slot_to_atom(slot));
+	    }
+	}
+	else if (ERTS_IS_ATOM_STR("re_loop_limit", BIF_ARG_1)) {
+	    /* Used by re_SUITE (stdlib) */
+	    Uint max_loops;
+	    if (is_atom(BIF_ARG_2) && ERTS_IS_ATOM_STR("default", BIF_ARG_2)) {
+		max_loops = erts_re_set_loop_limit(-1);
+		BIF_RET(make_small(max_loops));
+	    } else if (term_to_Uint(BIF_ARG_2, &max_loops) != 0) {
+		max_loops = erts_re_set_loop_limit(max_loops);
+		BIF_RET(make_small(max_loops));
 	    }
 	}
 	else if (ERTS_IS_ATOM_STR("hipe_test_reschedule_suspend", BIF_ARG_1)) {

@@ -18,7 +18,7 @@
 -export([tag_tuple/2, tag_cons/2]).
 -export([test_is_boxed/4, get_header/2]).
 -export([test_nil/4, test_cons/4, test_flonum/4, test_fixnum/4,
-	 test_tuple/4, test_atom/4, test_bignum/4, 
+	 test_tuple/4, test_atom/4, test_bignum/4, test_pos_bignum/4,
 	 test_any_pid/4, test_any_port/4,
 	 test_ref/4, test_fun/4, test_fun2/5, test_matchstate/4, test_binary/4, test_bitstr/4, test_list/4,
 	 test_integer/4, test_number/4, test_constant/4, test_tuple_N/5]).
@@ -35,7 +35,7 @@
 -export([unsafe_untag_float/2, unsafe_tag_float/2]).
 -export([mk_sub_binary/6,mk_sub_binary/7]).
 -export([unsafe_mk_big/3, unsafe_load_float/3]).
--export([bignum_sizeneed/1,bignum_sizeneed_code/2, get_word_value_from_big/3]).
+-export([bignum_sizeneed/1,bignum_sizeneed_code/2, get_one_word_pos_bignum/3]).
 -export([test_subbinary/3, test_heap_binary/3]).
 -export([create_heap_binary/3, create_refc_binary/3, create_refc_binary/4]).
 -export([create_matchstate/6, convert_matchstate/1, compare_matchstate/4]).
@@ -301,6 +301,16 @@ test_bignum(X, TrueLab, FalseLab, Pred) ->
   Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   BigMask = ?TAG_HEADER_MASK - ?BIG_SIGN_BIT,
+  [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
+   HalfTrueLab,
+   get_header(Tmp, X),
+   mask_and_compare(Tmp, BigMask, ?TAG_HEADER_POS_BIG,
+		    TrueLab, FalseLab, Pred)].
+
+test_pos_bignum(X, TrueLab, FalseLab, Pred) ->
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+  HalfTrueLab = hipe_rtl:mk_new_label(),
+  BigMask = ?TAG_HEADER_MASK,
   [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
    HalfTrueLab,
    get_header(Tmp, X),
@@ -929,6 +939,18 @@ unsafe_mk_big(Dst, Src, Signedness) ->
      PutHPInsn],
   [GetHPInsn] ++ PutHeaderCode ++ RestCode.
 
+get_one_word_pos_bignum(USize, Size, Fail) ->
+  Header = hipe_rtl:mk_new_reg(),
+  HalfLbl = hipe_rtl:mk_new_label(),
+  HalfLblName = hipe_rtl:label_name(HalfLbl),
+  WordSize = hipe_rtl_arch:word_size(),
+  PosHead = hipe_rtl:mk_imm(mk_header(1, ?TAG_HEADER_POS_BIG)),
+  [get_header(Header, Size),
+   hipe_rtl:mk_branch(Header, eq, PosHead, HalfLblName, Fail),
+   HalfLbl,
+   hipe_rtl:mk_load(USize, Size, hipe_rtl:mk_imm(1*WordSize
+						 -?TAG_PRIMARY_BOXED))].
+
 bignum_sizeneed(Size) ->
   WordSizeBits = hipe_rtl_arch:word_size() * 8,
   case is_fixnum(1 bsl Size) of
@@ -954,20 +976,7 @@ bignum_sizeneed_code(SizeReg,FixNumLblName) ->
      hipe_rtl:mk_alu(ResReg,ResReg,add,hipe_rtl:mk_imm(1))],
   {ResReg,Code}.
 
-get_word_value_from_big(Dst, Src, FailLblName) ->
-  ContLbl = hipe_rtl:mk_new_label(),
-  ContLbl2 = hipe_rtl:mk_new_label(),
-  Header = hipe_rtl:mk_new_reg(),
-  PosHead = hipe_rtl:mk_imm(mk_header(1, ?TAG_HEADER_POS_BIG)),
-  WordSize = hipe_rtl_arch:word_size(),
-  [test_bignum(Src, hipe_rtl:label_name(ContLbl), FailLblName, 0.99),
-   ContLbl,
-   hipe_rtl:mk_load(Header, Src, hipe_rtl:mk_imm(-?TAG_PRIMARY_BOXED)),
-   hipe_rtl:mk_branch(Header, eq, PosHead, hipe_rtl:label_name(ContLbl2), FailLblName),
-   ContLbl2,
-   hipe_rtl:mk_load(Dst, Src, 
-		    hipe_rtl:mk_imm(-?TAG_PRIMARY_BOXED + 
-				    1 * WordSize))].
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

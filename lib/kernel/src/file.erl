@@ -73,11 +73,7 @@
 -define(RAM_FILE, ram_file).           % Module
 
 %% data types
-%-type(namelist() :: [char() | atom() | namelist()]).
--type(namelist() :: [_]).	%% XXX: GROSS OVERAPPROXIMATION -- FIX ME
--type(name() :: string() | atom() | namelist()). 
 -type(iodata() :: iolist() | binary()).
--type(posix() :: atom()).
 -type(io_device() :: pid() | #file_descriptor{}).
 -type(location() :: integer() | {bof, integer()} | {cur, integer()} | 
 		{eof, integer()} | bof | cur | eof).
@@ -114,7 +110,7 @@ format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
 
 -spec(pid2name/1 :: (Pid :: pid()) ->
-	string() | undefined).
+	{'ok',string()} | undefined).
 
 pid2name(Pid) when is_pid(Pid) ->
     case whereis(?FILE_SERVER) of

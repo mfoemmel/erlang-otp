@@ -65,10 +65,12 @@
     ]]></code>
     <p>Usage:</p>
     <code type="none"><![CDATA[
-      dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
-               [-pa dir]* [-plt plt] [-Ddefine]* [-I include_dir]* 
-               [--output_plt file] [-Wwarn]*  [--src] 
-               [-c applications] [-r applications] [-o outfile]
+   dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
+		[-pa dir]* [--plt plt] [-Ddefine]* [-I include_dir]* 
+		[--output_plt file] [-Wwarn]* [--src] 
+		[-c applications] [-r applications] [-o outfile]
+		[--build_plt] [--add_to_plt] [--remove_from_plt] [--check_plt]
+                [--get_warnings]
     ]]></code>
     <p>Options:</p>
     <taglist>
@@ -85,6 +87,11 @@
       <tag><c><![CDATA[--src]]></c></tag>
       <item>overide the default, which is to analyze debug compiled BEAM 
        bytecode, and analyze starting from Erlang source code instead</item>
+      <tag><c><![CDATA[--raw]]></c></tag>
+      <item>When using Dialyzer from the command line, output the raw analysis
+       results (Erlang terms) instead of the formatted result.
+       The raw format is easier to post-process (for instance, to filter
+       warnings or to output HTML pages).</item>
       <tag><c><![CDATA[-Dname]]></c>(or <c><![CDATA[-Dname=value]]></c>)</tag>
       <item>when analyzing from source, pass the define to Dialyzer (**)</item>
       <tag><c><![CDATA[-I include_dir]]></c></tag>
@@ -94,17 +101,11 @@
        that have <c><![CDATA[-include_lib()]]></c> directives.</item>
       <tag><c><![CDATA[--output_plt file]]></c></tag>
       <item>Store the plt at the specified location after building it.</item>
-      <tag><c><![CDATA[--no_warn_on_inline]]></c></tag>
-      <item>Suppress warnings when analyzing an inline compiled bytecode file.</item>
-      <tag><c><![CDATA[-plt plt]]></c></tag>
-      <item>Use the specified plt as the initial plt. If the plt was built 
-       during setup the files will be checked for consistency.</item>
+      <tag><c><![CDATA[--plt plt]]></c></tag>
+      <item>Use the specified plt as the initial plt.</item>
       <tag><c><![CDATA[-Wwarn]]></c></tag>
       <item>a family of option which selectively turn on/off warnings.
        (for help on the names of warnings use <c><![CDATA[dialyzer -Whelp]]></c>)</item>
-      <tag><c><![CDATA[--check_init_plt]]></c></tag>
-      <item>Only checks if the init plt is up to date. For installed systems
-       this also forces the rebuilding of the plt if this is not the case.</item>
       <tag><c><![CDATA[--shell]]></c></tag>
       <item>do not disable the Erlang shell while running the GUI</item>
       <tag><c><![CDATA[--version (or -v)]]></c></tag>
@@ -115,6 +116,27 @@
       <item>makes Dialyzer a bit more quiet</item>
       <tag><c><![CDATA[--verbose]]></c></tag>
       <item>makes Dialyzer a bit more verbose</item>
+      <tag><c><![CDATA[--check_plt]]></c></tag>
+      <item>Only checks if the init plt is up to date and rebuilds it if this is not the case</item>
+      <tag><c><![CDATA[--build_plt]]></c></tag>
+      <item>The analysis starts from an empty plt and creates a new one from the
+       files specified with -c and -r. Only works for beam files.
+       Use --plt or --output_plt to override the default plt location.</item>
+      <tag><c><![CDATA[--add_to_plt]]></c></tag>   
+      <item> The plt is extended to also include the files specified with 
+       -c and -r. Use --plt to specify wich plt to start from, and --output_plt 
+       to specify where to put the plt. Note that the analysis might include 
+       files from the plt if they depend on the new files. 
+       This option only works with beam files.</item>
+       <tag><c><![CDATA[--remove_from_plt]]></c></tag>
+       <item>The information from the files specified with -c and -r is removed
+       from the plt. Note that this may cause a re-analysis of the remaining
+       dependent files.</item>
+       <tag><c><![CDATA[--get_warnings]]></c></tag>
+       <item>Makes Dialyzer emit warnings even when manipulating the plt. Only 
+       emits warnings for files that are actually analyzed. The default is to
+       not emit any warnings when manipulating the plt. This option has no 
+       effect when performing a normal analysis.</item>
     </taglist>
     <note>
       <p>* denotes that multiple occurrences of these options are possible.</p>
@@ -137,10 +159,21 @@
       <tag><c><![CDATA[-Werror_handling]]></c>***</tag>
       <item>Include warnings for functions that only return by means of an
        exception.</item>
+      <tag><c><![CDATA[-Wunmatched_returns]]></c>***</tag>
+      <item>Include warnings for function calls which ignore the 
+       return value(s).</item>
+      <tag><c><![CDATA[-Wunderspecs]]></c>***</tag>
+      <item>Warn about underspecified functions 
+      (the -spec is strictly more allowing than the success typing)</item>
+      <tag><c><![CDATA[-Woverspecs]]></c>***</tag>
+      <item>Warn about overspecified functions 
+      (the -spec is strictly less allowing than the success typing)</item>
+      <tag><c><![CDATA[-Wspecdiffs]]></c>***</tag>
+      <item>Warn when the -spec is different than the success typing</item>
     </taglist>
     <note>
-      <p>*** This is the only option that turns on warnings rather than 
-        turning them off.</p>
+      <p>*** These are options that turn on warnings rather than
+      turning them off.</p>
     </note>
   </section>
 
@@ -170,8 +203,10 @@ Option   : {files,          [Filename : string()]}
 \011 | {init_plt,       FileName : string()}  %% If changed from default
 \011 | {include_dirs,   [DirName : string()]} 
 \011 | {output_file,    FileName : string()}
-\011 | {supress_inline, bool()}               %% Defaults to true
+\011 | {output_plt,     FileName :: string()}
+\011 | {analysis_type,  'success_typings' | 'plt_add' | 'plt_build' | 'plt_check' | 'plt_remove'}
 \011 | {warnings,       [WarnOpts]}
+\011 | {get_warnings,   bool()}
 
 WarnOpts : no_return
 \011 | no_unused
@@ -180,17 +215,19 @@ WarnOpts : no_return
 \011 | no_match
 \011 | no_fail_call
 \011 | error_handling
+\011 | unmatched_returns
+\011 | overspecs
+\011 | underspecs
+\011 | specdiffs
         ]]></code>
       </desc>
     </func>
     <func>
-      <name>run(OptList) -> {ok, Warnings, Errors} | {ok, Warnings} | {error, Message}</name>
+      <name>run(OptList) -> Warnings</name>
       <fsummary>Dialyzer command line version</fsummary>
       <type>
         <v>OptList -- see gui/0,1</v>
         <v>Warnings -- see below </v>
-        <v>Errors = [string()]</v>
-        <v>Message = string()</v>
       </type>
       <desc>
         <p>Dialyzer command line version.</p>
@@ -203,7 +240,7 @@ Tag : 'warn_return_no_exit' | 'warn_return_only_exit'
 \011 | 'warn_contract_syntax' | 'warn_contract_not_equal'
 \011 | 'warn_contract_subtype' | 'warn_contract_supertype'
 Id = {File :: string(), Line :: integer()}
-Msg = msg() -- To be used as an argument to dialyzer:format_warning/1
+Msg = msg() -- Undefined
 ]]></code>
       </desc>
     </func>
@@ -211,10 +248,17 @@ Msg = msg() -- To be used as an argument to dialyzer:format_warning/1
       <name>format_warning(Msg) -> string()</name>
       <fsummary>Get the string version of a warning message.</fsummary>
       <type>
-        <v>Msg = msg() -- See run/1</v>
+        <v>Msg = {Tag, Id, msg()} -- See run/1</v>
       </type>
       <desc>
-        <p>Get a string from the message part of the warning as returned by dialyzer:run/1.</p>
+        <p>Get a string from warnings as returned by dialyzer:run/1.</p>
+      </desc>
+    </func>
+    <func>
+      <name>plt_info(string()) -> {'ok', [{atom(), any()}]} | {'error', atom()}</name>
+      <fsummary>Returns information about the specified plt.</fsummary>
+      <desc>
+        <p>Returns information about the specified plt.</p>
       </desc>
     </func>
   </funcs>

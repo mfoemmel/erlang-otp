@@ -79,6 +79,7 @@ endif
 ifeq ($(HOST_OS),)
 HOST_OS := $(shell $(ERL_TOP)/erts/autoconf/config.guess)
 endif
+DYNAMIC_CRYPTO_LIB=@SSL_DYNAMIC_ONLY@
 LD_R_FLAG=@DED_LD_FLAG_RUNTIME_LIBRARY_PATH@
 ifeq ($(strip $(LD_R_FLAG)),)
 LD_R_OPT =
@@ -89,7 +90,6 @@ else
 LD_R_OPT =
 endif
 endif
-DYNAMIC_CRYPTO_LIB=@SSL_DYNAMIC_ONLY@
 
 ifeq ($(DYNAMIC_CRYPTO_LIB),yes)
 CRYPTO_LINK_LIB=-L$(SSL_LIBDIR) -lcrypto

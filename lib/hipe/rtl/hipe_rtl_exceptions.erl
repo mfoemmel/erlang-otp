@@ -6,7 +6,7 @@
 %%  Module   :	hipe_rtl_exceptions
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): 
+%%  History  :	* 2001-04-10 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%  CVS      :
 %%      $Id$
@@ -86,9 +86,13 @@ gen_rethrow(Exception, Reason, L) ->
 %% Generic fail. We can't use 'enter' with a fail label (there can be no
 %% stack descriptor info for an enter), so for a non-nil fail label we
 %% generate a call followed by a dummy return.
+%%
+%% Update: The runtime system now interprets the return address of
+%% the BIF call in order to list the invoking MFA in the stack trace.
+%% Generating tailcalls here defeats that purpose, so we no longer do that.
 
-gen_fail_call(Fun, Args, []) ->
-  [hipe_rtl:mk_enter(Fun, Args, remote)];
+%%gen_fail_call(Fun, Args, []) ->
+%%  [hipe_rtl:mk_enter(Fun, Args, remote)];
 gen_fail_call(Fun, Args, L) ->
   ContLbl = hipe_rtl:mk_new_label(),
   Cont = hipe_rtl:label_name(ContLbl),

@@ -32,6 +32,33 @@
   <p>This document describes the changes made to the Dialyzer
     application.</p>
 
+<section><title>Dialyzer 1.8.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    There is new <c>--raw</c> option for Dialyzer to output
+	    the result of the analysis in Erlang term, to faciliate
+	    later filtering and/or formatting.</p>
+          <p>
+	    Own Id: OTP-7386</p>
+        </item>
+        <item>
+	    <p>The return type of the Erlang interface dialyzer:run/1
+	    has changed to only return a list of warnings. If
+	    something goes wrong dialyzer dies with an exception.</p>
+	    <p>The handling of the PLT is now more flexible. There is
+	    no longer any default PLT included with OTP. Please
+	    consult the manual for the changes.</p>
+          <p>
+	    Own Id: OTP-7389</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Dialyzer 1.8.0</title>
 
     <section><title>Improvements and New Features</title>

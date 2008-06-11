@@ -295,7 +295,7 @@ maybe_expand(T0, Ic) when T0#sets.size + Ic > T0#sets.exp_size ->
 	   segs=Segs2};
 maybe_expand(T, Ic) -> T#sets{size=T#sets.size + Ic}.
 
-maybe_expand_segs(T) when T#sets.n == T#sets.maxn ->
+maybe_expand_segs(T) when T#sets.n =:= T#sets.maxn ->
     T#sets{maxn=2 * T#sets.maxn,
 	   bso=2 * T#sets.bso,
 	   segs=expand_segs(T#sets.segs, T#sets.empty)};
@@ -319,7 +319,7 @@ maybe_contract(T, Dc) when T#sets.size - Dc < T#sets.con_size,
 			       segs=Segs2});
 maybe_contract(T, Dc) -> T#sets{size=T#sets.size - Dc}.
 
-maybe_contract_segs(T) when T#sets.n == T#sets.bso ->
+maybe_contract_segs(T) when T#sets.n =:= T#sets.bso ->
     T#sets{maxn=T#sets.maxn div 2,
 	   bso=T#sets.bso div 2,
 	   segs=contract_segs(T#sets.segs)};

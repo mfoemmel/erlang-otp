@@ -145,6 +145,10 @@
    don't. */
 #undef HAVE_DECL_SCTP_ABORT
 
+/* Define to 1 if you have the declaration of `SCTP_ADDR_CONFIRMED', and to 0
+   if you don't. */
+#undef HAVE_DECL_SCTP_ADDR_CONFIRMED
+
 /* Define to 1 if you have the declaration of `SCTP_ADDR_OVER', and to 0 if
    you don't. */
 #undef HAVE_DECL_SCTP_ADDR_OVER
@@ -198,6 +202,12 @@
 /* Define if you have fwrite_unlocked */
 #undef HAVE_FWRITE_UNLOCKED
 
+/* Define to 1 if you have a good `getaddrinfo' function. */
+#undef HAVE_GETADDRINFO
+
+/* Define to 1 if you have the `gethostbyname2' function. */
+#undef HAVE_GETHOSTBYNAME2
+
 /* Define to flavour of gethostbyname_r */
 #undef HAVE_GETHOSTBYNAME_R
 
@@ -212,6 +222,9 @@
 
 /* Define to 1 if you have the `getipnodebyname' function. */
 #undef HAVE_GETIPNODEBYNAME
+
+/* Define to 1 if you have the `getnameinfo' function. */
+#undef HAVE_GETNAMEINFO
 
 /* Define to 1 if you have the `getpagesize' function. */
 #undef HAVE_GETPAGESIZE
@@ -421,6 +434,9 @@
 
 /* Define to 1 if you have <sys/wait.h> that is POSIX.1 compatible. */
 #undef HAVE_SYS_WAIT_H
+
+/* Define if termcap functions exists */
+#undef HAVE_TERMCAP
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H

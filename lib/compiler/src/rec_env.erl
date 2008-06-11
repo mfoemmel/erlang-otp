@@ -16,7 +16,7 @@
 %%
 %% $Id$
 %%
-%% @author Richard Carlsson <richardc@csd.uu.se>
+%% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 1999-2004 Richard Carlsson
 %% @doc Abstract environments, supporting self-referential bindings and
 %% automatic new-key generation.

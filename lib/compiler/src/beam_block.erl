@@ -278,7 +278,7 @@ opt([{set,Ds0,Ss,Op}|Is0]) ->
 opt([I|Is]) -> [I|opt(Is)];
 opt([]) -> [].
 
-%% opt_moves([Dest], [Instruction], SafeRegs) -> {[Dest],[Instruction]}
+%% opt_moves([Dest], [Instruction]) -> {[Dest],[Instruction]}
 %%  For each Dest, does the optimization described in opt_move/2.
 
 opt_moves([], Is0) -> {[],Is0};
@@ -288,6 +288,7 @@ opt_moves([D0]=Ds, Is0) ->
 	{D1,Is} -> {[D1],Is}
     end;
 opt_moves([X0,Y0], Is0) ->
+%%    {[X0,Y0],Is0}.
     {X,Is2} = case opt_move(X0, Is0) of
 		  not_possible -> {X0,Is0};
 		  {Y0,_} -> {X0,Is0};
@@ -350,8 +351,8 @@ opt_move_2(D, [], Acc) -> {D,Acc}.
 %%  Returns false if Instruction does reference Register, or we are
 %%  not sure.
 
-is_transparent({x,X}, {set,_,_,{alloc,Live,_}}) ->
-    X >= Live;
+is_transparent({x,X}, {set,_,_,{alloc,Live,_}}) when X < Live ->
+    false;
 is_transparent(R, {set,Ds,Ss,_Op}) ->
     case member(R, Ds) of
 	true -> false;

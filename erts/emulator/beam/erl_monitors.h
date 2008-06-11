@@ -119,7 +119,10 @@ typedef struct erts_link {
     Uint16 type;             /* LINK_PID | LINK_NODE */
     Eterm pid;               /* When node monitor, 
 				the node atom is here instead */
-    struct erts_link *root;  /* Used only in dist entries */
+    union {
+	struct erts_link *root;  /* Used only in dist entries */
+	Uint refc;
+    } shared;
     Uint heap[1];            /* Larger in reality */
 } ErtsLink;   
 
@@ -132,6 +135,8 @@ typedef struct erts_suspend_monitor {
     Eterm pid;
 } ErtsSuspendMonitor;
 
+#define ERTS_LINK_ROOT(Linkp) ((Linkp)->shared.root)
+#define ERTS_LINK_REFC(Linkp) ((Linkp)->shared.refc) 
 
 #define ERTS_LINK_ROOT_AS_UINT(Linkp) (*((Uint *) &((Linkp)->root)))
 

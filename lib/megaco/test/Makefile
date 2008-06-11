@@ -65,7 +65,7 @@ APP_CASES   = app appup
 
 CODEC_CASES = codec1 codec2 codec3a codec3b codec3c
 
-MISC_CASES  = sdp dm tid conf udp tcp ex timer
+MISC_CASES  = tid sdp dm conf udp tcp ex timer flex
 
 OP_CASES    = mess mib mreq pending trans actions load
 
@@ -212,6 +212,66 @@ ftest: make
 	$(MERL) $(ARGS) -sname megaco_ftest $(ERL_PATH) \
             -s megaco_filter \
             -s megaco_test_lib t $(SUITE) \
+            $(ESTOP)
+
+decode_compact_prof1: make
+	$(MERL) $(ARGS) -sname megaco_profile_decode_compact $(ERL_PATH) \
+            -s megaco_codec_v1_test profile_decode_compact_text_messages \
+            $(ESTOP)
+
+decode_compact_flex_prof1: make
+	$(MERL) $(ARGS) -sname megaco_profile_decode_compact_flex $(ERL_PATH) \
+            -s megaco_codec_v1_test profile_decode_compact_flex_text_messages \
+            $(ESTOP)
+
+decode_compact_prof2: make
+	$(MERL) $(ARGS) -sname megaco_profile_decode_compact $(ERL_PATH) \
+            -s megaco_codec_v2_test profile_decode_compact_text_messages \
+            $(ESTOP)
+
+decode_compact_flex_prof2: make
+	$(MERL) $(ARGS) -sname megaco_profile_decode_compact_flex $(ERL_PATH) \
+            -s megaco_codec_v2_test profile_decode_compact_flex_text_messages \
+            $(ESTOP)
+
+decode_pretty_prof1: make
+	$(MERL) $(ARGS) -sname megaco_profile_decode_pretty $(ERL_PATH) \
+            -s megaco_codec_v1_test profile_decode_pretty_text_messages \
+            $(ESTOP)
+
+decode_pretty_flex_prof1: make
+	$(MERL) $(ARGS) -sname megaco_profile_decode_pretty_flex $(ERL_PATH) \
+            -s megaco_codec_v1_test profile_decode_pretty_flex_text_messages \
+            $(ESTOP)
+
+decode_pretty_prof2: make
+	$(MERL) $(ARGS) -sname megaco_profile_decode_pretty $(ERL_PATH) \
+            -s megaco_codec_v2_test profile_decode_pretty_text_messages \
+            $(ESTOP)
+
+decode_pretty_flex_prof2: make
+	$(MERL) $(ARGS) -sname megaco_profile_decode_pretty_flex $(ERL_PATH) \
+            -s megaco_codec_v2_test profile_decode_pretty_flex_text_messages \
+            $(ESTOP)
+
+encode_compact_prof1: make
+	$(MERL) $(ARGS) -sname megaco_profile_encode_compact $(ERL_PATH) \
+            -s megaco_codec_v1_test profile_encode_compact_text_messages \
+            $(ESTOP)
+
+encode_compact_prof2: make
+	$(MERL) $(ARGS) -sname megaco_profile_encode_compact $(ERL_PATH) \
+            -s megaco_codec_v2_test profile_encode_compact_text_messages \
+            $(ESTOP)
+
+encode_pretty_prof1: make
+	$(MERL) $(ARGS) -sname megaco_profile_encode_pretty $(ERL_PATH) \
+            -s megaco_codec_v1_test profile_encode_pretty_text_messages \
+            $(ESTOP)
+
+encode_pretty_prof2: make
+	$(MERL) $(ARGS) -sname megaco_profile_encode_pretty $(ERL_PATH) \
+            -s megaco_codec_v2_test profile_encode_pretty_text_messages \
             $(ESTOP)
 
 
@@ -366,20 +426,25 @@ timeb3: make
 
 ##########################
 
+flex: make
+	$(MERL) $(ARGS) -sname megaco_flex $(ERL_PATH) \
+            -s megaco_test_lib t megaco_flex_test \
+            $(ESTOP)
+
 dm: make
 	$(MERL) $(ARGS) -sname megaco_dm $(ERL_PATH) \
             -s megaco_test_lib t megaco_digit_map_test \
+            $(ESTOP)
+
+tid: make
+	$(MERL) $(ARGS) -sname megaco_tid $(ERL_PATH) \
+            -s megaco_test_lib t megaco_binary_term_id_test \
             $(ESTOP)
 
 sdp: make
 	$(MERL) $(ARGS) -sname megaco_sdp $(ERL_PATH) \
             -s megaco_test_lib t megaco_sdp_test \
             $(MAYBE_ESTOP)
-
-tid: make
-	$(MERL) $(ARGS) -sname megaco_tid $(ERL_PATH) \
-            -s megaco_test_lib t megaco_binary_term_id_test \
-            $(ESTOP)
 
 actions: make
 	$(MERL) $(ARGS) -sname megaco_actions $(ERL_PATH) \

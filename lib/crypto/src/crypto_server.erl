@@ -22,7 +22,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/0]).
+-export([start_link/0,client_port/0]).
 
 %% Internal exports, call-back functions.
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,code_change/3,
@@ -51,6 +51,12 @@ init([]) ->
 		LibDir2
 	end,
     Cmd = "crypto_drv elibcrypto " ++ filename:join([LibDir, "elibcrypto"]),
+
+    open_ports(Cmd,size(port_names())).
+
+open_ports(_,0) ->
+    {ok, []};
+open_ports(Cmd,N) ->   
     Port = open_port({spawn, Cmd}, []),
     %% check that driver is loaded, linked and working
     %% since crypto_drv links towards libcrypto, this is a good thing
@@ -59,10 +65,20 @@ init([]) ->
 	{'EXIT', _} ->
 	    {stop, nodriver};
 	_ ->
-	    T = ets:new(crypto_server_table, [set, protected, named_table]),
-	    ets:insert(T, {port, Port}),
-	    {ok, {Port, []}}
+	    register(element(N,port_names()), Port),
+	    open_ports(Cmd,N-1)
     end.
+
+port_names() -> 
+    { crypto_drv01, crypto_drv02, crypto_drv03, crypto_drv04,
+      crypto_drv05, crypto_drv06, crypto_drv07, crypto_drv08,
+      crypto_drv09, crypto_drv10, crypto_drv11, crypto_drv12,
+      crypto_drv13, crypto_drv14, crypto_drv15, crypto_drv16 }.
+
+client_port() ->
+    element(erlang:system_info(scheduler_id) rem size(port_names()) + 1,
+	    port_names()).
+
 
 %%% --------------------------------------------------------
 %%% The call-back functions.
@@ -74,20 +90,25 @@ handle_call(_, _, State) ->
 handle_cast(_, State) ->
     {noreply, State}.
 
-handle_info({'EXIT', Pid, _Reason}, {Port, Libraries}) when is_pid(Pid) ->
-    {noreply, {Port, Libraries}};
+handle_info({'EXIT', Pid, _Reason}, State) when is_pid(Pid) ->
+    {noreply, State};
 
-handle_info({'EXIT', Port, Reason}, {Port, Libraries}) when is_port(Port) ->
-    {stop, {port_died, Reason}, {Port, Libraries}};
+handle_info({'EXIT', Port, Reason}, State) when is_port(Port) ->
+    {stop, {port_died, Reason}, State};
 handle_info(_, State) ->
     {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, {Port, _Libraries}) ->
-    Port ! {self(), close},
-    ok.
+terminate(_Reason, _State) ->
+    close_ports(size(port_names())).
+
+close_ports(0) ->
+    ok;
+close_ports(N) ->   
+    element(N,port_names()) ! {self(), close},
+    close_ports(N-1).
 
 
 

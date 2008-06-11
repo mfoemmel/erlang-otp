@@ -31,6 +31,25 @@
   </header>
   <p>This document describes the changes made to the Percept application.</p>
 
+<section><title>Percept 0.7.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>Calling <c>egd:destroy/1</c> did not properly remove
+	    the process holding the image.</p>
+	    <p>Synchronous calls done via the egd interface could
+	    errornous receive messages not intended for egd. Messages
+	    are now tagged in such a way so this should not
+	    occur.</p>
+          <p>
+	    Own Id: OTP-7336</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Percept 0.7.1</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

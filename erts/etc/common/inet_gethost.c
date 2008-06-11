@@ -23,6 +23,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* These are not used even if they would exist which they should not */
+#undef HAVE_GETADDRINFO
+#undef HAVE_GETIPNODEBYNAME
+#undef HAVE_GETHOSTBYNAME2
+#undef HAVE_GETNAMEINFO
+#undef HAVE_GETIPNODEBYADDR
+
 #else /* Unix */
 
 #include <stdio.h>
@@ -48,6 +55,24 @@
 
 #ifndef RETSIGTYPE
 #define RETSIGTYPE void
+#endif
+
+/* To simplify #ifdef code further down - select only one to be defined...
+** Use them in pairs - if one is broken do not trust its mate.
+**/
+#if defined(HAVE_GETADDRINFO) && defined(HAVE_GETNAMEINFO)
+#undef HAVE_GETIPNODEBYNAME
+#undef HAVE_GETIPNODEBYADDR
+#undef HAVE_GETHOSTBYNAME2
+#elif defined(HAVE_GETIPNODEBYNAME) && defined(HAVE_GETIPNODEBYADDR)
+#undef HAVE_GETADDRINFO
+#undef HAVE_GETNAMEINFO
+#undef HAVE_GETHOSTBYNAME2
+#else
+#undef HAVE_GETIPNODEBYNAME
+#undef HAVE_GETIPNODEBYADDR
+#undef HAVE_GETADDRINFO
+#undef HAVE_GETNAMEINFO
 #endif
 
 #endif /* !WIN32 */
@@ -244,12 +269,19 @@ static int get_int32(AddrByte *buff);
 static void put_int32(AddrByte *buff, int value);
 static int create_worker(Worker *pworker, int save_que);
 static int map_netdb_error(int netdb_code);
+#if defined(HAVE_GETADDRINFO) || defined(HAVE_GETNAMEINFO)
+static int map_netdb_error_ai(int netdb_code);
+#endif
 static char *errcode_to_string(int errcode);
 static size_t build_error_reply(SerialType serial, int errnum, 
 				AddrByte **preply,
 				size_t *preply_size);
-static size_t build_reply(SerialType serial, struct hostent *he, 
-			  AddrByte **preply, size_t *preply_size);
+#ifdef HAVE_GETADDRINFO
+static size_t build_reply_ai(SerialType serial, int, struct addrinfo *,
+                            AddrByte **preply, size_t *preply_size);
+#endif
+static size_t build_reply(SerialType serial, struct hostent *he,
+                         AddrByte **preply, size_t *preply_size);
 static int read_request(AddrByte **buff, size_t *buff_size);
 static OpType get_op(AddrByte *buff);
 static AddrByte *get_op_addr(AddrByte *buff);
@@ -1553,19 +1585,13 @@ DWORD WINAPI worker_loop(void *v)
 static int worker_loop(void)
 #endif
 {
-    struct hostent *he;
     AddrByte *req = NULL;
     size_t req_size = 0;
     int this_size;
     AddrByte *reply = NULL;
     size_t reply_size = 0;
     size_t data_size;
-    int error_num;
-    SerialType serial;
-    OpType op;
-    ProtoType proto;
-    AddrByte *data;
-    int free_he;
+
 #ifdef WIN32
     QueItem *m = NULL;
     MesQ *readfrom = ((MesQ **) v)[0];
@@ -1574,6 +1600,23 @@ static int worker_loop(void)
 #endif
 
     for(;;) {
+#ifdef HAVE_GETADDRINFO
+	struct addrinfo *ai = NULL;
+#endif
+	struct hostent *he = NULL;
+#ifdef HAVE_GETNAMEINFO
+	struct sockaddr *sa = NULL;
+	char name[NI_MAXHOST];
+#endif
+#if defined(HAVE_GETIPNODEBYNAME) || defined(HAVE_GETIPNODEBYADDR)
+	int free_he = 0;
+#endif
+	int error_num = 0;
+	SerialType serial;
+	OpType op;
+	ProtoType proto;
+	AddrByte *data;
+
 #ifdef WIN32
 	WaitForSingleObject(event_mesq(readfrom),INFINITE);
 	DEBUGF(4,("Worker got data on message que."));
@@ -1622,92 +1665,191 @@ static int worker_loop(void)
 	DEBUGF(4,("Worker got request, op = %d, proto = %d, data = %s.",
 		  op,proto,data));
 	/* Got a request, lets go... */
-	free_he = 0;
 	switch (op) {
 	case OP_GETHOSTBYNAME:
-	    if (proto != PROTO_IPV4) {
-#if defined(HAVE_GETIPNODEBYNAME) && !defined(WIN32) /* IP V6 support */
-		if (proto == PROTO_IPV6) {
-		    he = getipnodebyname(data, AF_INET6, AI_DEFAULT,
-					 &error_num);
-		    free_he = 1;
-		    error_num = map_netdb_error(error_num);
-		} else {
-		    /* Not supported... */
-		    he = NULL;
-		    error_num = ERRCODE_NOTSUP;
-		}		
-#else
-		/* Not supported... */
-		he = NULL;
-		error_num = ERRCODE_NOTSUP;
-#endif
-	    } else {
-		DEBUGF(4,("Starting gethostbyname(%s)",data));
-		he = gethostbyname((char*)data);
-		error_num = he ? 0 : map_netdb_error(h_errno);
+	    switch (proto) {
+		
+#ifdef HAVE_IN6
+	    case PROTO_IPV6: { /* switch (proto) { */
+#ifdef HAVE_GETADDRINFO
+		struct addrinfo hints;
+		
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_flags = (AI_CANONNAME|AI_V4MAPPED|AI_ADDRCONFIG);
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_family = AF_INET6;
+		DEBUGF(5, ("Starting getaddrinfo(%s, ...)", data));
+		error_num = getaddrinfo((char *)data, NULL, &hints, &ai);
+		DEBUGF(5,("getaddrinfo returned %d", error_num));
 		if (error_num) {
-		    DEBUGF(4,("gethostbyname(%s) gave error: %d", 
-			      data, error_num));
-		} else {
-		    DEBUGF(4,("gethostbyname(%s) gave success",
-			      data));
+		    error_num = map_netdb_error_ai(error_num);
 		}
-	    }
-	    if (!he) {
-		data_size = build_error_reply(serial, error_num, 
-					      &reply, &reply_size);
-	    } else {
+#elif defined(HAVE_GETIPNODEBYNAME) /*#ifdef HAVE_GETADDRINFO */
+		DEBUGF(5,("Starting getipnodebyname(%s)",data));
+		he = getipnodebyname(data, AF_INET6, AI_DEFAULT, &error_num);
+		if (he) {
+		    free_he = 1;
+		    error_num = 0;
+		    DEBUGF(5,("getipnodebyname(,AF_INET6,,) OK"));
+		} else {
+		    DEBUGF(5,("getipnodebyname(,AF_INET6,,) error", error_num));
+		    error_num = map_netdb_error(error_num);
+		}
+#elif defined(HAVE_GETHOSTBYNAME2) /*#ifdef HAVE_GETADDRINFO */
+		DEBUGF(5,("Starting gethostbyname2(%s, AF_INET6)",data));
+		he = gethostbyname2((char*)data, AF_INET6);
+		if (he) {
+		    error_num = 0;
+		    DEBUGF(5,("gethostbyname2(, AF_INET6) OK"));
+		} else {
+		    error_num = map_netdb_error(h_errno);
+		    DEBUGF(5,("gethostbyname2(, AF_INET6) error: %d", h_errno));
+		}
+#else
+		error_num = ERRCODE_NOTSUP;
+#endif /*#ifdef HAVE_GETADDRINFO */
+	    } break;
+#endif /*ifdef HAVE_IN6 */
+	    
+	    case PROTO_IPV4: { /* switch (proto) { */
+		DEBUGF(5,("Starting gethostbyname(%s)",data));
+		he = gethostbyname((char*)data);
+		if (he) {
+		    error_num = 0;
+		    DEBUGF(5,("gethostbyname OK"));
+		} else {
+		    error_num = map_netdb_error(h_errno);
+		    DEBUGF(5,("gethostbyname error %d", h_errno));
+		}
+	    } break;
+	    
+	    default: /* switch (proto) { */
+		/* Not supported... */
+		error_num = ERRCODE_NOTSUP;
+		break;
+	    } /* switch (proto) { */
+	    
+	    if (he) {
 		data_size = build_reply(serial, he, &reply, &reply_size);
-#if defined(HAVE_GETIPNODEBYNAME) && !defined(WIN32) /* IP V6 support */
+#ifdef HAVE_GETIPNODEBYNAME
 		if (free_he) {
 		    freehostent(he);
 		}
 #endif
-	    }
-	    break;
-	case OP_GETHOSTBYADDR:
-	    if (proto != PROTO_IPV4) {
-#if defined(HAVE_GETIPNODEBYADDR) && !defined(WIN32) /* IP V6 support */
-		if (proto == PROTO_IPV6) {
-		    struct in6_addr ia;
-		    memcpy(ia.s6_addr, data, 16);
-		    he = getipnodebyaddr(&ia, 16, AF_INET6, &error_num);
-		    free_he = 1;
-		    error_num = map_netdb_error(error_num);
-		} else {
-		    /* Not supported... */
-		    he = NULL;
-		    error_num = ERRCODE_NOTSUP;
-		}		
-#else
-		/* Not supported... */
-		he = NULL;
-		error_num = ERRCODE_NOTSUP;
+#ifdef HAVE_GETADDRINFO
+	    } else if (ai) {
+		data_size = build_reply_ai(serial, 16, ai,
+					   &reply, &reply_size);
+		freeaddrinfo(ai);
 #endif
 	    } else {
+		data_size = build_error_reply(serial, error_num, 
+					      &reply, &reply_size);
+	    }
+	    break; /* case OP_GETHOSTBYNAME: */
+
+	case OP_GETHOSTBYADDR: /* switch (op) { */
+	    switch (proto) {
+#ifdef HAVE_IN6
+	    case PROTO_IPV6: {
+#ifdef HAVE_GETNAMEINFO
+		struct sockaddr_in6 *sin;
+		socklen_t salen = sizeof(*sin);
+		
+		sin = ALLOC(salen);
+#ifndef NO_SA_LEN
+		sin->sin6_len = salen;
+#endif
+		sin->sin6_family = AF_INET6;
+		sin->sin6_port = 0;
+		memcpy(&sin->sin6_addr, data, 16);
+		sa = (struct sockaddr *)sin;
+		DEBUGF(5,("Starting getnameinfo(,,%s,16,,,)",
+			  format_address(16, data)));
+		error_num = getnameinfo(sa, salen, name, sizeof(name),
+					NULL, 0, NI_NAMEREQD);
+		DEBUGF(5,("getnameinfo returned %d", error_num));
+		if (error_num) {
+		    error_num = map_netdb_error_ai(error_num);
+		    sa = NULL;
+		}
+#elif defined(HAVE_GETIPNODEBYADDR) /*#ifdef HAVE_GETNAMEINFO*/
+		struct in6_addr ia;
+		memcpy(ia.s6_addr, data, 16);
+		DEBUGF(5,("Starting getipnodebyaddr(%s,16,AF_INET6,)",
+			  format_address(16, data)));
+		he = getipnodebyaddr(&ia, 16, AF_INET6, &error_num);
+		free_he = 1;
+		if (! he) {
+		    DEBUGF(5,("getipnodebyaddr error %d", error_num));
+		    error_num = map_netdb_error(error_num);
+		} else {
+		    DEBUGF(5,("getipnodebyaddr OK"));
+		}
+#else /*#ifdef HAVE_GETNAMEINFO*/
+		struct in6_addr ia;
+		memcpy(ia.s6_addr, data, 16);
+		DEBUGF(5,("Starting gethostbyaddr(%s,16,AF_INET6)",
+			  format_address(16, data)));
+		he = gethostbyaddr((const char *) &ia, 16, AF_INET6);
+		if (! he) {
+		    error_num = map_netdb_error(h_errno);
+		    DEBUGF(5,("gethostbyaddr error %d", h_errno));
+		} else {
+		    DEBUGF(5,("gethostbyaddr OK"));
+		}
+#endif /* #ifdef HAVE_GETNAMEINFO */
+	    } break; /* case PROTO_IPV6: { */
+#endif /* #ifdef HAVE_IN6 */
+			    
+	    case PROTO_IPV4: { /* switch(proto) { */
 		struct in_addr ia;
 		memcpy(&ia.s_addr, data, 4); /* Alignment required... */
+		DEBUGF(5,("Starting gethostbyaddr(%s,4,AF_INET)",
+			  format_address(4, data)));
 		he = gethostbyaddr((const char *) &ia, 4, AF_INET);
-		error_num = map_netdb_error(h_errno);
-	    }
-	    if (!he) {
-		data_size = build_error_reply(serial, error_num, 
-					      &reply, &reply_size);
-	    } else {
+		if (! he) {
+		    error_num = map_netdb_error(h_errno);
+		    DEBUGF(5,("gethostbyaddr error %d", h_errno));
+		} else {
+		    DEBUGF(5,("gethostbyaddr OK"));
+		}
+	    } break;
+	    
+	    default:
+		error_num = ERRCODE_NOTSUP;
+	    } /* switch(proto) { */
+	    
+	    if (he) {
 		data_size = build_reply(serial, he, &reply, &reply_size);
-#if defined(HAVE_GETIPNODEBYADDR) && !defined(WIN32) /* IP V6 support */
+#ifdef HAVE_GETIPNODEBYADDR
 		if (free_he) {
 		    freehostent(he);
 		}
 #endif
+#ifdef HAVE_GETNAMEINFO
+	    } else if (sa) {
+		struct addrinfo res;
+		memset(&res, 0, sizeof(res));
+		res.ai_canonname = name;
+		res.ai_addr = sa;
+		res.ai_next = NULL;
+		data_size = build_reply_ai(serial, 16, &res,
+					   &reply, &reply_size);
+		free(sa);
+#endif
+	    } else {
+		data_size = build_error_reply(serial, error_num, 
+					      &reply, &reply_size);
 	    }
-	    break;
+	    break; /* case OP_GETHOSTBYADR: */
+
 	default:
 	    data_size = build_error_reply(serial, ERRCODE_NOTSUP, 
 					  &reply, &reply_size);
 	    break;
-	}
+	} /* switch (op) { */
+
 #ifdef WIN32
 	m = REALLOC(m, sizeof(QueItem) - 1 + data_size - PACKET_BYTES);
 	m->next = NULL;
@@ -1720,7 +1862,8 @@ static int worker_loop(void)
 #else
 	write(1, reply, data_size); /* No signals expected */
 #endif
-    }
+    } /* for (;;) */
+
 #ifdef WIN32
  fail:
     if (m != NULL) {
@@ -1765,6 +1908,41 @@ static int map_netdb_error(int netdb_code)
 	return ERRCODE_NETDB_INTERNAL;
     }
 }
+
+#if defined(HAVE_GETADDRINFO) || defined(HAVE_GETNAMEINFO)
+static int map_netdb_error_ai(int netdb_code)
+{
+    switch(netdb_code) {
+#ifdef EAI_ADDRFAMILY
+    case EAI_ADDRFAMILY:
+	return ERRCODE_NETDB_INTERNAL;
+#endif
+    case EAI_AGAIN:
+	return ERRCODE_TRY_AGAIN;
+    case EAI_BADFLAGS:
+	return ERRCODE_NETDB_INTERNAL;
+    case EAI_FAIL:
+	return ERRCODE_HOST_NOT_FOUND;
+    case EAI_FAMILY:
+	return ERRCODE_NETDB_INTERNAL;
+    case EAI_MEMORY:
+	return ERRCODE_NETDB_INTERNAL;
+#if defined(EAI_NODATA) && EAI_NODATA != EAI_NONAME
+    case EAI_NODATA:
+	return ERRCODE_HOST_NOT_FOUND;
+#endif
+    case EAI_NONAME:
+	return ERRCODE_HOST_NOT_FOUND;
+    case EAI_SERVICE:
+	return ERRCODE_NETDB_INTERNAL;
+    case EAI_SOCKTYPE:
+	return ERRCODE_NETDB_INTERNAL;
+    default:
+	return ERRCODE_NETDB_INTERNAL;
+    }
+}
+#endif /* #if defined(HAVE_GETADDRINFO) || defined(HAVE_GETNAMEINFO) */
+
 
 static char *errcode_to_string(int errcode)
 {
@@ -1879,6 +2057,81 @@ static size_t build_reply(SerialType serial, struct hostent *he,
     }
     return need;
 }
+
+#if defined(HAVE_GETADDRINFO) || defined(HAVE_GETNAMEINFO)
+static size_t build_reply_ai(SerialType serial, int addrlen,
+			     struct addrinfo *res0,
+			     AddrByte **preply, size_t *preply_size)
+{
+    struct addrinfo *res;
+    int num_strings;
+    int num_addresses;
+    AddrByte *ptr;
+    int need;
+
+    num_addresses = 0;
+    num_strings = 0;
+    need = PACKET_BYTES +
+	4 /* Serial */ + 1 /* addrlen */ +
+	4 /* Naddr */ + 4 /* Nnames */;
+
+    for (res = res0; res != NULL; res = res->ai_next) {
+	if (res->ai_addr) {
+	    num_addresses++;
+	    need += addrlen;
+	}
+	if (res->ai_canonname) {
+	    num_strings++;
+	    need += strlen(res->ai_canonname) + 1;
+	}
+    }
+
+    if (*preply_size < need) {
+	if (*preply_size == 0) {
+	    *preply = ALLOC((*preply_size = need));
+	} else {
+	    *preply = REALLOC(*preply,
+			      (*preply_size = need));
+	}
+    }
+
+    ptr = *preply;
+    PUT_PACKET_BYTES(ptr,need - PACKET_BYTES);
+    ptr += PACKET_BYTES;
+    put_int32(ptr,serial);
+    ptr +=4;
+    *ptr++ = (AddrByte) addrlen; /* 4 or 16 */
+    put_int32(ptr, num_addresses);
+    ptr += 4;
+    for (res = res0; res != NULL && num_addresses; res = res->ai_next) {
+	if (res->ai_addr == NULL)
+	    continue;
+	if (addrlen == 4)
+	    memcpy(ptr, &((struct sockaddr_in *)res->ai_addr)->sin_addr, addrlen);
+#ifdef AF_INET6
+	else if (addrlen == 16)
+	    memcpy(ptr, &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr, addrlen);
+#endif
+	else
+	    memcpy(ptr, res->ai_addr->sa_data, addrlen);
+	ptr += addrlen;
+	num_addresses--;
+    }
+    put_int32(ptr, num_strings);
+    ptr += 4;
+    for (res = res0; res != NULL && num_strings; res = res->ai_next) {
+	if (res->ai_canonname == NULL)
+	    continue;
+	strcpy((char *)ptr, res->ai_canonname);
+	ptr += strlen(res->ai_canonname) + 1;
+	num_strings--;
+    }
+    return need;
+}
+
+#endif /* #if defined(HAVE_GETADDRINFO) || defined(HAVE_GETNAMEINFO) */
+
+
 
 /*
  * Encode/decode/read/write 
@@ -2225,7 +2478,7 @@ static void *my_malloc(size_t size)
 { 
     void *ptr = malloc(size);
     if (!ptr) {
-	fatal("Cannot allocate %d bytes of memory.", (int) size);
+	fatal("Cannot allocate %u bytes of memory.", (unsigned) size);
 	return NULL; /* lint... */
     }
     return ptr;
@@ -2235,8 +2488,8 @@ static void *my_realloc(void *old, size_t size)
 {
     void *ptr = realloc(old, size);
     if (!ptr) {
-	fatal("Cannot reallocate %d bytes of memory from 0x%08X.", 
-	      (int) size, (unsigned) old);
+	fatal("Cannot reallocate %u bytes of memory from %p.",
+	      (unsigned) size, old);
 	return NULL; /* lint... */
     }
     return ptr;
@@ -2309,7 +2562,8 @@ BOOL close_mesq(MesQ *q)
     if (!q->shutdown) {
 	q->shutdown = TRUE;
 	if (!SetEvent(q->data_present)) {
-	    fprintf(stderr,"Fatal: Unable to signal event in %s:%d, last error: %d\n",
+	    fprintf(stderr,
+		    "Fatal: Unable to signal event in %s:%d, last error: %d\n",
 		    __FILE__,__LINE__,GetLastError());
 	    exit(1); /* Unable to continue at all */
 	}

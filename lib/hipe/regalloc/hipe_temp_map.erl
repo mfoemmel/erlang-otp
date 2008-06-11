@@ -1,18 +1,18 @@
 %% -*- erlang-indent-level: 2 -*-
 %% ===========================================================================
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/05/28 15:46:26 happi>
+%% Time-stamp: <2008-04-20 14:54:00 richard>
 %% ===========================================================================
 %%  Filename : 	hipe_temp_map.erl
 %%  Module   :	hipe_temp_map
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2001-07-24 Erik Johansson (happi@csd.uu.se): 
+%%  History  :	* 2001-07-24 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/03/28 22:13:48 $
-%%              $Revision: 1.13 $
+%%              $Author: richardc $
+%%              $Date: 2008/04/20 13:01:13 $
+%%              $Revision: 1.14 $
 %% ===========================================================================
 %%  Exports  :
 %%

@@ -52,18 +52,18 @@
 	       bitstr_size/1, bitstr_unit/1, bitstr_type/1,
 	       bitstr_flags/1, call_args/1, call_module/1, call_name/1,
 	       case_arg/1, case_clauses/1, catch_body/1, c_atom/1,
-	       c_int/1, clause_body/1, clause_guard/1, clause_pats/1,
-	       concrete/1, cons_hd/1, cons_tl/1, float_lit/1,
-	       fun_body/1, fun_vars/1, get_ann/1, int_lit/1,
-	       is_c_cons/1, is_c_let/1, is_c_nil/1, is_c_seq/1,
-	       is_print_string/1, let_arg/1, let_body/1, let_vars/1,
-	       letrec_body/1, letrec_defs/1, module_attrs/1,
-	       module_defs/1, module_exports/1, module_name/1,
-	       primop_args/1, primop_name/1, receive_action/1,
-	       receive_clauses/1, receive_timeout/1, seq_arg/1,
-	       seq_body/1, string_lit/1, try_arg/1, try_body/1,
-	       try_vars/1, try_evars/1, try_handler/1, tuple_es/1,
-	       type/1, values_es/1, var_name/1]).
+	       c_binary/1, c_bitstr/5, c_int/1, clause_body/1,
+	       clause_guard/1, clause_pats/1, concrete/1, cons_hd/1,
+	       cons_tl/1, float_lit/1, fun_body/1, fun_vars/1,
+	       get_ann/1, int_lit/1, is_c_cons/1, is_c_let/1,
+	       is_c_nil/1, is_c_seq/1, is_print_string/1, let_arg/1,
+	       let_body/1, let_vars/1, letrec_body/1, letrec_defs/1,
+	       module_attrs/1, module_defs/1, module_exports/1,
+	       module_name/1, primop_args/1, primop_name/1,
+	       receive_action/1, receive_clauses/1, receive_timeout/1,
+	       seq_arg/1, seq_body/1, string_lit/1, try_arg/1,
+	       try_body/1, try_vars/1, try_evars/1, try_handler/1,
+	       tuple_es/1, type/1, values_es/1, var_name/1]).
 
 -define(PAPER, 76).
 -define(RIBBON, 45).
@@ -461,13 +461,12 @@ lay_literal(Node, Ctxt) ->
 	    %% always print an integer.
 	    text(int_lit(Node));
 	V when is_binary(V) ->
-	    lay_binary(cerl:c_binary([cerl:c_bitstr(cerl:abstract(B),
-						    cerl:abstract(8),
-						    cerl:abstract(1),
-						    cerl:abstract(integer),
-						    cerl:abstract([unsigned,
-								   big]))
-				      || B <- binary_to_list(V)]),
+	    lay_binary(c_binary([c_bitstr(abstract(B),
+					  abstract(8),
+					  abstract(1),
+					  abstract(integer),
+					  abstract([unsigned, big]))
+				 || B <- binary_to_list(V)]),
 		       Ctxt);
 	[] ->
 	    text("[]");

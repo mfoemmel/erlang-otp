@@ -2403,7 +2403,7 @@ char *buf;
 #endif
 
 extern const char pre_loaded_code[];
-extern char* const pre_loaded[];
+extern Preload pre_loaded[];
 
 void erts_sys_alloc_init(void)
 {
@@ -2444,7 +2444,7 @@ void erts_sys_free(ErtsAlcType_t t, void *x, void *p)
 Preload*
 sys_preloaded(void)
 {
-    return (Preload *) pre_loaded;
+    return pre_loaded;
 }
 
 /* Return a pointer to preloaded code for module "module" */

@@ -25,8 +25,11 @@
 
 %%-----------------------------------------------------------------------
 
--type(dial_cl_parse_ret() :: {'check_init',#options{}} | {'cl',#options{}}
-                           | {'gui',#options{}} | {'error',string()}).
+-type(dial_cl_parse_ret() :: {'check_init',#options{}}
+                           | {'plt_info', #options{}}
+                           | {'cl',#options{}}
+                           | {'gui',#options{}} 
+                           | {'error',string()}).
 
 %%-----------------------------------------------------------------------
 
@@ -44,9 +47,24 @@ start() ->
       {error, lists:flatten(Msg)}
   end.
 
-cl(["--check_init_plt"|T]) ->
-  put(dialyzer_options_gui, false),
-  put(dialyzer_only_check_init_plt, true),
+cl(["--add_to_plt"|T]) ->
+  put(dialyzer_options_mode, cl),
+  put(dialyzer_options_analysis_type, plt_add),
+  cl(T);
+cl(["--build_plt"|T]) ->
+  put(dialyzer_options_mode, cl),
+  put(dialyzer_options_analysis_type, plt_build),
+  cl(T);
+cl(["--check_plt"|T]) ->
+  put(dialyzer_options_mode, cl),
+  put(dialyzer_options_analysis_type, plt_check),
+  cl(T);
+cl(["--plt_info"|T]) ->
+  put(dialyzer_options_mode, cl),
+  put(dialyzer_options_analysis_type, plt_info),
+  cl(T);
+cl(["--get_warnings"|T]) ->
+  put(dialyzer_options_get_warnings, true),
   cl(T);
 cl(["-D"|_]) ->
   error("No defines specified after -D");
@@ -67,6 +85,7 @@ cl(["-I"++Dir|T]) ->
   append_include(Dir),
   cl(T);
 cl(["-c"++_|T]) ->
+  put(dialyzer_options_mode, cl),
   NewTail = command_line(T),
   cl(NewTail);
 cl(["--dataflow"|_]) ->
@@ -75,9 +94,13 @@ cl(["--succ_typings"|T]) ->
   put(dialyzer_options_analysis_type, succ_typings),
   cl(T);
 cl(["-r"++_|T0]) ->
-  put(dialyzer_options_gui, false),
+  put(dialyzer_options_mode, cl),
   {Args,T} = collect_args(T0),
   append_var(dialyzer_options_files_rec, Args),
+  cl(T);
+cl(["--remove_from_plt"|T]) ->
+  put(dialyzer_options_mode, cl),
+  put(dialyzer_options_analysis_type, plt_remove),
   cl(T);
 cl(["--com"++_|T]) ->
   NewTail = command_line(T),
@@ -103,6 +126,9 @@ cl(["-o",Output|T]) ->
   cl(T);
 cl(["-o"++Output|T]) ->
   put(dialyzer_output, Output),
+  cl(T);
+cl(["--raw"|T]) ->
+  put(dialyzer_output_format, raw),
   cl(T);
 cl(["-pa",Path|T]) ->
   case code:add_patha(Path) of
@@ -145,14 +171,19 @@ cl(["-W"++Warn|T]) ->
 cl([H|_]) ->
   error("Unknown option: "++H);
 cl([]) ->
-  {RetTag, Opts} = 
-    case get(dialyzer_only_check_init_plt) of
-      true -> 
-	{check_init, common_options()};
-      false -> 
-	case get(dialyzer_options_gui) of
-	  true -> {gui, common_options()};
-	  false -> {cl, cl_opts()}
+  {RetTag, Opts} =
+    case get(dialyzer_options_analysis_type) =:= plt_info of
+      true ->
+	put(dialyzer_options_analysis_type, plt_check),
+	{plt_info, cl_options()};
+      false ->
+	case get(dialyzer_options_mode) of
+	  gui -> {gui, common_options()};
+	  cl ->
+	    case get(dialyzer_options_analysis_type) =:= plt_check of
+	      true  -> {check_init, cl_options()};
+	      false -> {cl, cl_options()}
+	    end
 	end
     end,
   case dialyzer_options:build(Opts) of
@@ -160,8 +191,8 @@ cl([]) ->
     OptsRecord -> {RetTag, OptsRecord}
   end.
 
+
 command_line(T0) ->
-  put(dialyzer_options_gui, false),
   {Args,T} = collect_args(T0),
   append_var(dialyzer_options_files, Args),
   %% if all files specified are ".erl" files, set the 'src' flag automatically
@@ -176,23 +207,16 @@ error(Str) ->
   throw({dialyzer_cl_parse_error, Msg}).
 
 init() ->
-  InitPlt = filename:join([code:lib_dir(dialyzer), "plt","dialyzer_init_plt"]),
-  put(dialyzer_init_plt, InitPlt),
-  put(dialyzer_only_check_init_plt, false),
-  put(dialyzer_options_gui, true),
+  put(dialyzer_options_mode, gui),
   put(dialyzer_options_files_rec, []),
   put(dialyzer_options_report_mode, normal),
-  put(dialyzer_options_libs, ?DEFAULT_LIBS),
   put(dialyzer_warnings, []),
 
   DefaultOpts = #options{},
   put(dialyzer_include,                 DefaultOpts#options.include_dirs),
-  put(dialyzer_options_analysis_type,   DefaultOpts#options.analysis_type),
   put(dialyzer_options_defines,         DefaultOpts#options.defines),
   put(dialyzer_options_files,           DefaultOpts#options.files),
-  put(dialyzer_output,                  DefaultOpts#options.output_file),
-  put(dialyzer_options_from,            DefaultOpts#options.from),
-  put(dialyzer_options_use_contracts,   DefaultOpts#options.use_contracts),
+  put(dialyzer_output_format,           formatted),
   ok.
 
 append_defines([Def, Val]) ->
@@ -225,15 +249,17 @@ collect_args_1([], Acc) ->
 
 %%-----------------------------------------------------------------------
 
-cl_opts() ->
+cl_options() ->
   [{files,get(dialyzer_options_files)},
    {files_rec,get(dialyzer_options_files_rec)},
-   {output_file,get(dialyzer_output)}
+   {output_file,get(dialyzer_output)},
+   {output_format,get(dialyzer_output_format)},
+   {analysis_type, get(dialyzer_options_analysis_type)},
+   {get_warnings, get(dialyzer_options_get_warnings)}
    |common_options()].
 
 common_options() ->
-  [{analysis_type, get(dialyzer_options_analysis_type)},
-   {defines, get(dialyzer_options_defines)},
+  [{defines, get(dialyzer_options_defines)},
    {from, get(dialyzer_options_from)},
    {include_dirs, get(dialyzer_include)},
    {init_plt, get(dialyzer_init_plt)},
@@ -271,9 +297,10 @@ Note:
 help_message() ->
   S = "Usage: dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
 		[-pa dir]* [--plt plt] [-Ddefine]* [-I include_dir]* 
-	        [--output_plt file] [-Wwarn]* [--src]
-                [-c applications] [-r applications] [-o outfile]
-
+		[--output_plt file] [-Wwarn]* [--src] 
+		[-c applications] [-r applications] [-o outfile]
+		[--build_plt] [--add_to_plt] [--remove_from_plt] [--check_plt]
+                [--plt_info] [--get_warnings]
 Options: 
    -c applications (or --command-line applications)
        Use Dialyzer from the command line (no GUI) to detect defects in the
@@ -284,9 +311,14 @@ Options:
        type of analysis)
    -o outfile (or --output outfile)
        When using Dialyzer from the command line, send the analysis
-       results in the specified \"outfile\" rather than in stdout
+       results to the specified \"outfile\" rather than to stdout
+   --raw
+       When using Dialyzer from the command line, output the raw analysis
+       results (Erlang terms) instead of the formatted result.
+       The raw format is easier to post-process (for instance, to filter
+       warnings or to output HTML pages)
    --src
-       Overwrite the default, which is to analyze BEAM bytecode, and
+       Override the default, which is to analyze BEAM files, and
        analyze starting from Erlang source code instead
    -Dname (or -Dname=value)
        When analyzing from source, pass the define to Dialyzer (**)
@@ -303,9 +335,6 @@ Options:
    -Wwarn
        A family of options which selectively turn on/off warnings
        (for help on the names of warnings use dialyzer -Whelp)
-   --check_init_plt
-       Only checks if the initial plt is up to date. For installed systems 
-       this also forces the rebuilding of the plt if this is not the case
    --shell
        Do not disable the Erlang shell while running the GUI
    --version (or -v)
@@ -316,12 +345,60 @@ Options:
        Makes Dialyzer a bit more quiet
    --verbose
        Makes Dialyzer a bit more verbose
-
+   --build_plt
+       The analysis starts from an empty plt and creates a new one from the
+       files specified with -c and -r. Only works for beam files.
+       Use --plt or --output_plt to override the default plt location.
+   --add_to_plt
+       The plt is extended to also include the files specified with -c and -r.
+       Use --plt to specify wich plt to start from, and --output_plt to 
+       specify where to put the plt. Note that the analysis might include 
+       files from the plt if they depend on the new files. 
+       This option only works with beam files.
+   --remove_from_plt
+       The information from the files specified with -c and -r is removed
+       from the plt. Note that this may cause a re-analysis of the remaining
+       dependent files.
+   --check_plt
+       Checks the plt for consistency and rebuilds it if it is not up-to-date.
+   --plt_info
+       Makes Dialyzer print information about the plt and then quit. The plt 
+       can be specified with --plt.
+   --get_warnings
+       Makes Dialyzer emit warnings even when manipulating the plt. Only 
+       emits warnings for files that are actually analyzed.
 
 Note:
   * denotes that multiple occurrences of these options are possible.
  ** options -D and -I work both from command-line and in the Dialyzer GUI;
     the syntax of defines and includes is the same as that used by \"erlc\".
+
+Warning options:
+  -Wno_return
+     Suppress warnings for functions that will never return a value.
+  -Wno_unused
+     Suppress warnings for unused functions.
+  -Wno_improper_lists
+     Suppress warnings for construction of improper lists.
+  -Wno_fun_app
+     Suppress warnings for fun applications that will fail.
+  -Wno_match
+     Suppress warnings for patterns that are unused or cannot match.
+  -Wunmatched_returns ***
+     Include warnings for function calls which ignore the return value(s).
+  -Werror_handling ***
+     Include warnings for functions that only return by means of an exception.
+  -Wunderspecs ***
+     Warn about underspecified functions 
+     (the -spec is strictly more allowing than the success typing)
+  -Woverspecs ***
+     Warn about overspecified functions 
+     (the -spec is strictly less allowing than the success typing)
+  -Wspecdiffs ***
+     Warn when the -spec is different than the success typing
+
+Note:
+   *** These are options that turn on warnings rather than turning them off.
 
 
 The exit status of the command line version is:

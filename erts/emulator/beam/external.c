@@ -1396,8 +1396,12 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		Eterm temp;
 		Sint arity;
 
-		ep = dec_atom(dep, ep, &mod);
-		ep = dec_atom(dep, ep, &name);
+		if ((ep = dec_atom(dep, ep, &mod)) == NULL) {
+		    goto error;
+		}
+		if ((ep = dec_atom(dep, ep, &name)) == NULL) {
+		    goto error;
+		}
 		*hpp = hp;
 		ep = dec_term(dep, hpp, ep, off_heap, &temp);
 		hp = *hpp;

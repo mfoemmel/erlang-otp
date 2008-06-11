@@ -1308,11 +1308,8 @@ pp(Dev, Rtl) ->
 pp_instrs(_Dev, []) ->
   ok;
 pp_instrs(Dev, [I|Is]) ->
-  case catch pp_instr(Dev, I) of
-    {'EXIT', _} -> 
-      io:format("*** ~w ***\n", [I]);
-    _ ->
-      ok
+  try pp_instr(Dev, I)
+  catch _:_ -> io:format("*** ~w ***\n", [I])
   end,
   pp_instrs(Dev, Is).
 

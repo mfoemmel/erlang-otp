@@ -1,7 +1,6 @@
 /* $Id$
  * hipe_mode_switch.c
  */
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -35,11 +34,11 @@ int hipe_modeswitch_debug = 0;
 
 #define DPRINTF(fmt, args...) \
 do { \
-    if( hipe_modeswitch_debug > 0 ) { \
+    if (hipe_modeswitch_debug > 0) { \
 	printf("%s, line %u: " fmt "\r\n", __FUNCTION__, __LINE__ , ##args); \
 	fflush(stdout); \
     } \
-} while( 0 )
+} while (0)
 
 static const char *code_str(unsigned code)
 {
@@ -62,7 +61,7 @@ static const char *code_str(unsigned code)
     };
     unsigned cmd = code & 0xFF;
 
-    if( cmd < (sizeof(cmd_str)/sizeof(cmd_str[0])) )
+    if (cmd < (sizeof(cmd_str)/sizeof(cmd_str[0])))
 	return cmd_str[cmd];
     else
 	return "???";
@@ -82,17 +81,17 @@ hipe_abort(const char *expr, const char *file, unsigned line)
     erl_exit(1, "ASSERTION FAILED, file %s, line %u: %s\r\n", file, line, expr);
 }
 
-#define HIPE_ASSERT3(expr,file,line) \
+#define HIPE_ASSERT3(expr, file, line) \
 do { \
-    if( !(expr) ) \
+    if (!(expr)) \
 	hipe_abort(#expr, file, line); \
-} while( 0 )
-#define HIPE_ASSERT(expr)	HIPE_ASSERT3(expr,__FILE__,__LINE__)
+} while (0)
+#define HIPE_ASSERT(expr)	HIPE_ASSERT3(expr, __FILE__, __LINE__)
 
 void hipe_check_pcb(Process *p, const char *file, unsigned line)
 {
 #if HIPE_DEBUG > 2
-    if( hipe_modeswitch_debug > 0 ) {
+    if (hipe_modeswitch_debug > 0) {
         printf("%s, line %u: p %p = {htop %p, stop %p, nstack %p, nsp %p, nstend %p}\r\n", file, line, p, p->htop, p->stop, p->hipe.nstack, p->hipe.nsp, p->hipe.nstend);
     }
 #endif
@@ -102,7 +101,7 @@ void hipe_check_pcb(Process *p, const char *file, unsigned line)
     HIPE_ASSERT3(p->hipe.nsp >= p->hipe.nstack, file, line);
     HIPE_ASSERT3(p->hipe.nsp <= p->hipe.nstend, file, line);
 }
-#define HIPE_CHECK_PCB(P)	hipe_check_pcb((P),__FILE__,__LINE__)
+#define HIPE_CHECK_PCB(P)	hipe_check_pcb((P), __FILE__, __LINE__)
 
 #else	/* HIPE_DEBUG > 0 */
 
@@ -163,7 +162,7 @@ static __inline__ void
 hipe_push_beam_trap_frame(Process *p, Eterm reg[], unsigned arity)
 {
     /* ensure that at least 2 words are available on the BEAM stack */
-    if( (p->stop - 2) < p->htop ) {
+    if ((p->stop - 2) < p->htop) {
 	DPRINTF("calling gc to increase BEAM stack size");
 	p->fcalls -= erts_garbage_collect(p, 2, reg, arity);
     }
@@ -198,19 +197,19 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 
     DPRINTF("cmd == %#x (%s)", cmd, code_str(cmd));
     HIPE_CHECK_PCB(p);
-    switch( cmd & 0xFF ) {
+    switch (cmd & 0xFF) {
       case HIPE_MODE_SWITCH_CMD_RESCHEDULE:
 	break;
       default:
 	p->arity = 0;
     }
-    switch( cmd & 0xFF ) {
+    switch (cmd & 0xFF) {
       case HIPE_MODE_SWITCH_CMD_CALL: {
 	  /* BEAM calls a native code function */
 	  unsigned arity = cmd >> 8;
 
 	  /* p->hipe.ncallee set in beam_emu */
-	  if( p->cp == hipe_beam_pc_return ) {
+	  if (p->cp == hipe_beam_pc_return) {
 	    /* Native called BEAM, which now tailcalls native. */
 	    hipe_pop_beam_trap_frame(p);
 	    result = hipe_tailcall_to_native(p, arity, reg);
@@ -239,7 +238,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  /* just like a normal call from now on */
 
 	  /* p->hipe.ncallee set in beam_emu */
-	  if( p->cp == hipe_beam_pc_return ) {
+	  if (p->cp == hipe_beam_pc_return) {
 	      /* Native called BEAM, which now tailcalls native. */
 	      hipe_pop_beam_trap_frame(p);
 	      result = hipe_tailcall_to_native(p, arity, reg);
@@ -273,15 +272,14 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
       case HIPE_MODE_SWITCH_CMD_RESUME: {
 	  /* BEAM just executed hipe_beam_pc_resume[] */
 	  /* BEAM called native, which suspended. */
-	  if( p->flags & F_TIMO ) {
+	  if (p->flags & F_TIMO) {
 	      /* XXX: The process will immediately execute 'clear_timeout',
 		 repeating these two statements. Remove them? */
 	      p->flags &= ~F_TIMO;
 	      JOIN_MESSAGE(p);
 	      p->def_arg_reg[0] = 0;	/* make_small(0)? */
-	  } else {
+	  } else
 	      p->def_arg_reg[0] = 1;	/* make_small(1)? */
-	  }
 	  result = hipe_return_to_native(p);
 	  break;
       }
@@ -299,7 +297,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
  do_return_from_native:
     DPRINTF("result == %#x (%s)", result, code_str(result));
     HIPE_CHECK_PCB(p);
-    switch( result ) {
+    switch (result) {
       case HIPE_MODE_SWITCH_RES_RETURN: {
 	  hipe_return_from_native(p);
 	  reg[0] = p->def_arg_reg[0];
@@ -337,10 +335,10 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  p->i = ((Export*)(p->def_arg_reg[3]))->address;
 	  p->arity = p->i[-1];
 
-	  for(i = 0; i < p->arity; ++i)
+	  for (i = 0; i < p->arity; ++i)
 	      reg[i] = p->def_arg_reg[i];
 
-	  if( is_recursive )
+	  if (is_recursive)
 	      hipe_push_beam_trap_frame(p, reg, p->arity);
 
 	  result = HIPE_MODE_SWITCH_RES_CALL;
@@ -354,7 +352,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	   * p->def_arg_reg[] contains the register parameters
 	   * p->hipe.nsp[] contains the stacked parameters
 	   */
-	  if( hipe_call_from_native_is_recursive(p, reg) ) {
+	  if (hipe_call_from_native_is_recursive(p, reg)) {
 	      /* BEAM called native, which now calls BEAM */
 	      hipe_push_beam_trap_frame(p, reg, p->arity);
 	  }
@@ -397,7 +395,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	      /* The BEAM code is present. Prepare to call it. */
 
 	      /* Append the free vars after the actual parameters. */
-	      for(i = 0; i < num_free; ++i)
+	      for (i = 0; i < num_free; ++i)
 		  reg[arity+i] = closure->env[i];
 
 	      /* Update arity to reflect the new parameters. */
@@ -469,7 +467,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	      int i;
 	  
 	      argp = p->arg_reg;
-	      for(i = p->arity; --i >= 0;)
+	      for (i = p->arity; --i >= 0;)
 		  reg[i] = argp[i];
 	  }
 	  {
@@ -482,14 +480,14 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 
 	      reds_in = p->fcalls;
 	      o_reds = 0;
-	      if( p->ct != NULL ) {
+	      if (p->ct != NULL) {
 		  o_reds = reds_in;
 		  reds_in = 0;
 		  p->fcalls = 0;
 	      }
 	      p->def_arg_reg[4] = o_reds;
 	      p->def_arg_reg[5] = reds_in;
-	      if( p->i == hipe_beam_pc_resume ) {
+	      if (p->i == hipe_beam_pc_resume) {
 		  p->i = NULL;
 		  p->arity = 0;
 		  goto do_resume;
@@ -510,14 +508,14 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  /* Unroll the arglist onto reg[]. */
 	  args = mfa[2];
 	  arity = 0;
-	  while( is_list(args) ) {
-	      if( arity < 255 ) {
+	  while (is_list(args)) {
+	      if (arity < 255) {
 		  reg[arity++] = CAR(list_val(args));
 		  args = CDR(list_val(args));
 	      } else
 		  goto do_apply_fail;
 	  }
-	  if( is_not_nil(args) )
+	  if (is_not_nil(args))
 	      goto do_apply_fail;
 
 	  /* find a native code entry point for {M,F,A} for a remote call */
@@ -564,13 +562,13 @@ void hipe_inc_nstack(Process *p)
 				     (char *) old_nstack,
 				     new_size*sizeof(Eterm));
     p->hipe.nstend = new_nstack + new_size;
-    if( new_nstack != old_nstack ) {
+    if (new_nstack != old_nstack) {
 	p->hipe.nsp = new_nstack + (p->hipe.nsp - old_nstack);
 	p->hipe.nstack = new_nstack;
-	if( p->hipe.nstgraylim )
+	if (p->hipe.nstgraylim)
 	    p->hipe.nstgraylim = 
 		new_nstack + (p->hipe.nstgraylim - old_nstack);
-	if( p->hipe.nstblacklim )
+	if (p->hipe.nstblacklim)
 	    p->hipe.nstblacklim = 
 		new_nstack + (p->hipe.nstblacklim - old_nstack);
     }
@@ -587,11 +585,11 @@ void hipe_inc_nstack(Process *p)
     unsigned used_size = p->hipe.nstend - p->hipe.nsp;
 
     sys_memcpy(new_nstack+new_size-used_size, p->hipe.nsp, used_size*sizeof(Eterm));
-    if( p->hipe.nstgraylim )
+    if (p->hipe.nstgraylim)
 	p->hipe.nstgraylim = new_nstack + new_size - (p->hipe.nstend - p->hipe.nstgraylim);
-    if( p->hipe.nstblacklim )
+    if (p->hipe.nstblacklim)
 	p->hipe.nstblacklim = new_nstack + new_size - (p->hipe.nstend - p->hipe.nstblacklim);
-    if( p->hipe.nstack )
+    if (p->hipe.nstack)
 	erts_free(ERTS_ALC_T_HIPE, p->hipe.nstack);
     p->hipe.nstack = new_nstack;
     p->hipe.nstend = new_nstack + new_size;
@@ -601,7 +599,7 @@ void hipe_inc_nstack(Process *p)
 
 static void hipe_check_nstack(Process *p, unsigned nwords)
 {
-    while( hipe_nstack_avail(p) < nwords )
+    while (hipe_nstack_avail(p) < nwords)
 	hipe_inc_nstack(p);
 }
 
@@ -611,4 +609,38 @@ void hipe_set_closure_stub(ErlFunEntry *fe, unsigned num_free)
 
     arity = fe->arity;
     fe->native_address = (Eterm*) hipe_closure_stub_address(arity);
+}
+
+Eterm hipe_build_stacktrace(Process *p, struct StackTrace *s)
+{
+    int depth, i;
+    Uint heap_size;
+    Eterm *hp, *hp_end, mfa, m, f, head, *next_p, next;
+    const void *ra;
+    unsigned int a;
+
+    depth = s->depth;
+    if (depth < 1)
+	return NIL;
+
+    heap_size = 6 * depth;	/* each [{M,F,A}|_] is 2+4 == 6 words */
+    hp = HAlloc(p, heap_size);
+    hp_end = hp + heap_size;
+
+    head = NIL;
+    next_p = &head;
+
+    for (i = 0; i < depth; ++i) {
+	ra = (const void*)s->trace[i];
+	if (!hipe_find_mfa_from_ra(ra, &m, &f, &a))
+	    continue;
+	mfa = TUPLE3(hp, m, f, make_small(a));
+	hp += 4;
+	next = CONS(hp, mfa, NIL);
+	*next_p = next;
+	next_p = &CDR(list_val(next));
+	hp += 2;
+    }
+    HRelease(p, hp_end, hp);
+    return head;
 }

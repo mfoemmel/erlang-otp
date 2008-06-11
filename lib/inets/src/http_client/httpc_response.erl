@@ -162,6 +162,12 @@ parse_status_code(<<?CR>> = Data, StatusCodeStr,
 		  MaxHeaderSize, Result, true) ->
     {?MODULE, parse_status_code, 
      [Data, StatusCodeStr, MaxHeaderSize, Result, true]};
+parse_status_code(<<?LF>>, StatusCodeStr, 
+		  MaxHeaderSize, Result, true) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_status_code(<<?CR, ?LF>>, StatusCodeStr, 
+		      MaxHeaderSize, Result, true);
+
 parse_status_code(<<?CR, ?LF, Rest/binary>>, StatusCodeStr, 
 		  MaxHeaderSize, Result, true) ->
     parse_headers(Rest, [], [], MaxHeaderSize,
@@ -184,6 +190,12 @@ parse_reason_phrase(<<>>, Phrase, MaxHeaderSize, Result, Relaxed) ->
     {?MODULE, parse_reason_phrase, 
      [<<>>, Phrase, MaxHeaderSize, Result, Relaxed]};
 
+parse_reason_phrase(<<?CR, ?LF, ?LF, Body/binary>>, Phrase, 
+  		    MaxHeaderSize, Result, Relaxed) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_reason_phrase(<<?CR, ?LF, ?CR, ?LF, Body/binary>>, Phrase, 
+			MaxHeaderSize, Result, Relaxed); 
+
 parse_reason_phrase(<<?CR, ?LF, ?CR, ?LF, Body/binary>>, Phrase, 
   		    _, Result, _) ->
     ResponseHeaderRcord = 
@@ -201,12 +213,19 @@ parse_reason_phrase(<<?CR, ?LF>> = Data, Phrase, MaxHeaderSize, Result,
 		    Relaxed) ->
     {?MODULE, parse_reason_phrase, [Data, Phrase, MaxHeaderSize, Result,
 				    Relaxed]};
-
+parse_reason_phrase(<<?LF, Rest/binary>>, Phrase, 
+ 		    MaxHeaderSize, Result, Relaxed) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_reason_phrase(<<?CR, ?LF, Rest/binary>>, Phrase, 
+			MaxHeaderSize, Result, Relaxed);
 parse_reason_phrase(<<?CR, ?LF, Rest/binary>>, Phrase, 
  		    MaxHeaderSize, Result, Relaxed) ->
     parse_headers(Rest, [], [], MaxHeaderSize,
  		  [lists:reverse(Phrase) | Result], Relaxed); 
-
+parse_reason_phrase(<<?LF>> = Data, Phrase, MaxHeaderSize, Result, Relaxed) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_reason_phrase(<<?CR, ?LF>> = Data, Phrase, MaxHeaderSize, Result, 
+			Relaxed);
 parse_reason_phrase(<<?CR>> = Data, Phrase, MaxHeaderSize, Result, Relaxed) ->
     {?MODULE, parse_reason_phrase, 
      [Data, Phrase, MaxHeaderSize, Result, Relaxed]};
@@ -217,6 +236,18 @@ parse_reason_phrase(<<Octet, Rest/binary>>, Phrase, MaxHeaderSize, Result,
 parse_headers(<<>>, Header, Headers, MaxHeaderSize, Result, Relaxed) -> 
     {?MODULE, parse_headers, [<<>>, Header, Headers, MaxHeaderSize, Result,
 			      Relaxed]};
+
+parse_headers(<<?CR,?LF,?LF,Body/binary>>, Header, Headers,
+	      MaxHeaderSize, Result, Relaxed) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
+		  MaxHeaderSize, Result, Relaxed);
+
+parse_headers(<<?LF,?LF,Body/binary>>, Header, Headers,
+	      MaxHeaderSize, Result, Relaxed) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
+		  MaxHeaderSize, Result, Relaxed);
 
 parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
 	      MaxHeaderSize, Result, _) ->
@@ -250,6 +281,13 @@ parse_headers(<<?CR>> = Data, Header, Headers,
 	      MaxHeaderSize, Result, Relaxed) ->
     {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, 
 			      Result, Relaxed]};
+
+parse_headers(<<?LF>>, Header, Headers, 
+	      MaxHeaderSize, Result, Relaxed) ->
+    %% If ?CR is is missing RFC2616 section-19.3 
+    parse_headers(<<?CR, ?LF>>, Header, Headers, 
+		  MaxHeaderSize, Result, Relaxed);
+
 parse_headers(<<Octet, Rest/binary>>, Header, Headers,
 	      MaxHeaderSize, Result, Relaxed) ->
     parse_headers(Rest, [Octet | Header], Headers, MaxHeaderSize, 

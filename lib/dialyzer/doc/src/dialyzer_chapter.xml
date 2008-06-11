@@ -91,9 +91,10 @@
         list of include directories and macro definitions (as you can do with
         the <c><![CDATA[erlc]]></c> flags <c><![CDATA[-I]]></c> and <c><![CDATA[-D]]></c>). This can be done either by starting Dialyzer
         with these flags from the command line as in:</p>
-      <code type="none"><![CDATA[
-\011./dialyzer -I my_includes -DDEBUG -Dvsn=42 -I one_more_dir
-      ]]></code>
+      <code type="none">
+
+      dialyzer -I my_includes -DDEBUG -Dvsn=42 -I one_more_dir
+      </code>
       <p>or by adding these explicitly using the "Manage Macro Definitions" or
         "Manage Include Directories" sub-menus in the "Options" menu.</p>
     </section>
@@ -127,24 +128,80 @@
   </section>
 
   <section>
-    <title>More on the Persistent Lookup Table (PLT)</title>
-    <p>During setup, a Persistent Lookup Table will automatically be created
-      for the Erlang/OTP libraries specified in <c><![CDATA[dialyzer/src/Makefile]]></c>. This
-      table will be the starting point for later analyses. At each startup
-      of Dialyzer the validity of the PLT will be checked, and if something
-      has changed in the included libraries a new PLT will be constructed.</p>
-    <p>To build a PLT of your own favorite files use the <c><![CDATA[--output_plt]]></c> option
-      to specify where the file containing the PLT should be stored. At
-      later analyses this PLT can be used as the starting point by using the
-      <c><![CDATA[--plt]]></c> option. Note that the new PLT file also includes the information
-      from the PLT that was used as the starting point</p>
-    <p>In an Erlang/OTP system which has been installed, the user typically
-      does not have write permission to the file of the PLT. If Dialyzer
-      later finds that the PLT is not up-to-date, the analysis is aborted
-      with a warning. Until the installed PLT has been updated a temporary
-      PLT can be created and used in the manner described above. For 
-      administrators that do have write permissions to the install directory, 
-      a new plt can be built by using the --check_init_plt option.</p>
+    <title>More on the Persistent Lookup Table (PLT)</title> 
+
+    <p> The persistent lookup table, or PLT, is used to store the
+    result of an analysis. The PLT can then be used as a starting
+    point for later analyses. It is recommended to build a PLT with
+    the otp applications that you are using, but also to include your
+    own applications that you are using frequently.</p>
+
+    <p>The PLT is built using the --build_plt option to dialyzer. The
+    following command builds the recommended minimal PLT for OTP.</p>
+
+    <code type="none">
+
+    dialyzer --build_plt -r $ERL_TOP/lib/stdlib/ebin $ERL_TOP/lib/kernel/ebin $ERL_TOP/lib/mnesia/ebin
+    </code>
+
+    <p>Dialyzer will look if there is an environment variable called
+    $DIALZYER_PLT and place the PLT at this lokation. If no such
+    variable is set, Dialyzer will place the PLT at
+    $HOME/.dialyzer_plt. The placement can also be specified using the
+    --plt, or --output_plt options.</p>
+
+    <p>You can also add information to an existing plt using the
+    --add_to_plt option. Suppose you want to also include the compiler
+    in the PLT and place it in a new PLT, then give the command</p>
+
+    <code type="none">
+
+    dialyzer --add_to_plt -r $ERL_TOP/lib/compiler/ebin --output_plt my.plt
+    </code>
+
+    <p>Then you would like to add your favorite application my_app to
+    the new plt.</p>
+
+    <code type="none">
+
+    dialyzer --add_to_plt --plt my.plt -r my_app/ebin
+    </code>
+
+    <p>But you realize that it is unnecessary to have compiler in this one.</p>
+
+    <code type="none">
+
+    dialyzer --remove_from_plt --plt my.plt -r $ERL_TOP/lib/compiler/ebin
+    </code>
+
+    <p> Later, when you have fixed a bug in your application my_app,
+    you want to update the plt so that it will be fresh the next time
+    you run Dialyzer, run the command</p>
+
+    <code type="none">
+
+    dialyzer --check_plt --plt my.plt
+    </code>
+
+    <p> Dialyzer will then reanalyze the files that have been changed,
+    and the files that depend on these files. Note that this
+    consistency check will be performed automatically the next time
+    you run Dialyzer with this plt. The --check_plt option is merely
+    for doing so without doing any other analysis.</p>
+
+    <p> To get some information about a plt use the option</p>
+    <code type="none">
+
+    dialyzer --plt_info
+    </code>
+
+    <p>You can also specify which plt with the --plt option, and get the 
+    output printed to a file with --output_file</p>
+
+    <p>Note that when manipulating the plt, no warnings are
+    emitted. To turn on warnings during (re)analysis of the plt, use
+    the option --get_warnings.</p>
+
   </section>
 
   <section>

@@ -260,8 +260,8 @@ extern "C" {
 #define __OE_TUPLEHDRSZ__    5
 #define __OE_LISTHDRSZ__     5
 
-/* The actual size of a wide char */
-#define __OE_WCHAR_SIZE_OF__ 4  
+/* The actual size of a wide char (used to be #define __OE_WCHAR_SIZE_OF__ 4) */
+#define __OE_WCHAR_SIZE_OF__ sizeof(CORBA_wchar)
 
 /* Size check macro */
 #define OE_MALLOC_SIZE_CHECK(env,x) { \

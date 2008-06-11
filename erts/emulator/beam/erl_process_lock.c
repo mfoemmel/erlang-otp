@@ -1198,6 +1198,79 @@ erts_proc_lc_unlock(Process *p, ErtsProcLocks locks)
     }
 }
 
+void
+erts_proc_lc_might_unlock(Process *p, ErtsProcLocks locks)
+{
+    erts_lc_lock_t lck = ERTS_LC_LOCK_INIT(-1,
+					   p->id,
+					   ERTS_LC_FLG_LT_PROCLOCK);
+    if (locks & ERTS_PROC_LOCK_STATUS) {
+	lck.id = lc_id.proc_lock_status;
+	erts_lc_might_unlock(&lck);
+    }
+    if (locks & ERTS_PROC_LOCK_MSGQ) {
+	lck.id = lc_id.proc_lock_msgq;
+	erts_lc_might_unlock(&lck);
+    }
+    if (locks & ERTS_PROC_LOCK_LINK) {
+	lck.id = lc_id.proc_lock_link;
+	erts_lc_might_unlock(&lck);
+    }
+    if (locks & ERTS_PROC_LOCK_MAIN) {
+	lck.id = lc_id.proc_lock_main;
+	erts_lc_might_unlock(&lck);
+    }
+}
+
+void
+erts_proc_lc_require_lock(Process *p, ErtsProcLocks locks)
+{
+    erts_lc_lock_t lck = ERTS_LC_LOCK_INIT(-1,
+					   p->id,
+					   ERTS_LC_FLG_LT_PROCLOCK);
+    if (locks & ERTS_PROC_LOCK_MAIN) {
+	lck.id = lc_id.proc_lock_main;
+	erts_lc_require_lock(&lck);
+    }
+    if (locks & ERTS_PROC_LOCK_LINK) {
+	lck.id = lc_id.proc_lock_link;
+	erts_lc_require_lock(&lck);
+    }
+    if (locks & ERTS_PROC_LOCK_MSGQ) {
+	lck.id = lc_id.proc_lock_msgq;
+	erts_lc_require_lock(&lck);
+    }
+    if (locks & ERTS_PROC_LOCK_STATUS) {
+	lck.id = lc_id.proc_lock_status;
+	erts_lc_require_lock(&lck);
+    }
+}
+
+void
+erts_proc_lc_unrequire_lock(Process *p, ErtsProcLocks locks)
+{
+    erts_lc_lock_t lck = ERTS_LC_LOCK_INIT(-1,
+					   p->id,
+					   ERTS_LC_FLG_LT_PROCLOCK);
+    if (locks & ERTS_PROC_LOCK_STATUS) {
+	lck.id = lc_id.proc_lock_status;
+	erts_lc_unrequire_lock(&lck);
+    }
+    if (locks & ERTS_PROC_LOCK_MSGQ) {
+	lck.id = lc_id.proc_lock_msgq;
+	erts_lc_unrequire_lock(&lck);
+    }
+    if (locks & ERTS_PROC_LOCK_LINK) {
+	lck.id = lc_id.proc_lock_link;
+	erts_lc_unrequire_lock(&lck);
+    }
+    if (locks & ERTS_PROC_LOCK_MAIN) {
+	lck.id = lc_id.proc_lock_main;
+	erts_lc_unrequire_lock(&lck);
+    }
+}
+
+
 int
 erts_proc_lc_trylock_force_busy(Process *p, ErtsProcLocks locks)
 {

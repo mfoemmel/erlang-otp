@@ -193,15 +193,20 @@ handle_call({leave, Name, Pid}, _From, S) ->
                     node(Pid) =:= node() ->
                         [{_, LocalMembers}] = 
                             ets:lookup(pg2_table, {local_members, Name}),
-                        ets:insert(pg2_table,
-                                   {{local_members, Name},
-                                    lists:delete(Pid, LocalMembers)}),
-                        NLinks = lists:delete(Pid, S#state.links),
-                        case lists:member(Pid, NLinks) of
-                            true -> ok;
-                            false -> unlink(Pid)
-                        end,
-                        NLinks;
+                        case lists:member(Pid, LocalMembers) of
+                            true ->
+                                ets:insert(pg2_table,
+                                           {{local_members, Name},
+                                            lists:delete(Pid, LocalMembers)}),
+                                NLinks = lists:delete(Pid, S#state.links),
+                                case lists:member(Pid, NLinks) of
+                                    true -> ok;
+                                    false -> unlink(Pid)
+                                end,
+                                NLinks;
+                            false ->
+                                S#state.links
+                        end;
                     true ->
                         S#state.links
                 end,

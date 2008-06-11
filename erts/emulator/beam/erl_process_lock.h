@@ -198,12 +198,15 @@ typedef struct erts_proc_lock_t_ {
 void erts_proc_lc_lock(Process *p, ErtsProcLocks locks);
 void erts_proc_lc_trylock(Process *p, ErtsProcLocks locks, int locked);
 void erts_proc_lc_unlock(Process *p, ErtsProcLocks locks);
+void erts_proc_lc_might_unlock(Process *p, ErtsProcLocks locks);
 void erts_proc_lc_chk_have_proc_locks(Process *p, ErtsProcLocks locks);
 void erts_proc_lc_chk_proc_locks(Process *p, ErtsProcLocks locks);
 void erts_proc_lc_chk_only_proc_main(Process *p);
 void erts_proc_lc_chk_no_proc_locks(char *file, int line);
 ErtsProcLocks erts_proc_lc_my_proc_locks(Process *p);
 int erts_proc_lc_trylock_force_busy(Process *p, ErtsProcLocks locks);
+void erts_proc_lc_require_lock(Process *p, ErtsProcLocks locks);
+void erts_proc_lc_unrequire_lock(Process *p, ErtsProcLocks locks);
 #else
 #define ERTS_SMP_CHK_NO_PROC_LOCKS
 #define ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(P)
@@ -678,6 +681,14 @@ erts_pid2proc_opt(Process *c_p,
     ErtsProcLocks need_locks;
     Uint pix;
     Process *proc;
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    if (c_p) {
+	ErtsProcLocks might_unlock = c_p_have_locks & pid_need_locks;
+	if (might_unlock)
+	    erts_proc_lc_might_unlock(c_p, might_unlock);
+    }
+#endif
 
     if (is_not_internal_pid(pid)) {
 	proc = NULL;

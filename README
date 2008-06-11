@@ -23,17 +23,13 @@ At Ericsson we have a "Daily Build and Test" that runs on:
     Operating system        Versions
     -----------------------------------------------------------
     Solaris/Sparc32         8, 9, 10
-    Linux/Suse x86	    9.3, 10.0
-    Linux/Suse Amd64	    9.3, 10.0
+    Linux/Suse x86	    9.3, 10.1
+    Linux/Suse Amd64	    9.3, 10.1
     Linux/Montavista PPC    3.1
     FreeBSD x86             5.0
     Mac OS X/Intel          10.4.10 (Tiger)
+    Mac OS X/Intel          10.5.3 (Leopard)
     Windows x86		    XP SP2, 2003, Vista
-
-We have also done some limited testing on the following platforms:
-
-    Mac OS X/Intel          10.5.1 (Leopard)
-    Mac OS X/PPC            10.4.11 (Tiger)
 
 
 Versions known *not* to work
@@ -41,9 +37,12 @@ Versions known *not* to work
 
 Suse linux 9.1 is shipped with a patched GCC version 3.3.3, having the
 rpm named gcc-3.3.3-41. That version has a serious optimization bug
-that makes it unusable for building the erlang emulator. Please
+that makes it unusable for building the Erlang emulator. Please
 upgrade GCC to a newer version before building on Suse 9.1. Suse Linux
 EnterpriSe edition 9 (SLES9) has gcc-3.3.3-43 and is not affected.
+
+gcc-4.3.0 has a serious optimizer bug. It produces an Erlang emulator
+that will crash immediately. The bug is supposed to be fixed in gcc-4.3.1.
 
 FreeBSD has a bug which cause kqueue/poll/select to fail to detect
 that a writev() on a pipe has been made. This bug should have been fixed
@@ -236,6 +235,7 @@ start the SMP emulator if the computer has more than one core or CPU.
 or 'erl -smp enable' to start the SMP emulator on a computer with only one
 CPU.)
 
+
 How to install the Erlang/OTP documentation
 -------------------------------------------
 
@@ -256,6 +256,7 @@ GS (Graphic System)
 -------------------
 
 GS now requires Tcl/Tk 8.3. It will be searched for when starting GS.
+
 
 Using HiPE
 ----------
@@ -382,6 +383,7 @@ test on).
 
 Universal binaries and 64bit binaries are mutually exclusive options.
 
+
 Make and the variable "ERL_TOP"
 -------------------------------
 
@@ -400,6 +402,13 @@ want to rebuild the application STDLIB, then you could do:
 
 where <Dir> would be what you find ERL_TOP is set to in the top level
 Makefile.
+
+
+Authors
+-------
+Authors are mostly listed in the application's AUTHORS files,
+that is $ERL_TOP/lib/*/AUTHORS and $ERL_TOP/erts/AUTHORS,
+not in the individual source files.
 
 
 More Information

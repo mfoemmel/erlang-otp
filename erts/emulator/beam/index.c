@@ -77,7 +77,7 @@ index_put(IndexTable* t, void* tmpl)
 	return p->index;
     }
 
-    ix = t->entries++;
+    ix = t->entries;
     if (ix >= t->size) {
 	Uint sz;
 	if (ix >= t->limit) {
@@ -88,7 +88,7 @@ index_put(IndexTable* t, void* tmpl)
 	t->seg_table[ix>>INDEX_PAGE_SHIFT] = erts_alloc(t->type, sz);
 	t->size += INDEX_PAGE_SIZE;
     }
-
+    t->entries++;
     p->index = ix;
     t->seg_table[ix>>INDEX_PAGE_SHIFT][ix&INDEX_PAGE_MASK] = p;
     return ix;

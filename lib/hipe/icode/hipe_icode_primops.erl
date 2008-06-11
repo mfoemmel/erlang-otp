@@ -6,7 +6,7 @@
 %%  Module   :	hipe_icode_primops
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2001-06-13 Erik Johansson (happi@csd.uu.se): 
+%%  History  :	* 2001-06-13 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%
 %% $Id$
@@ -193,10 +193,10 @@ fails({hipe_bs_primop, {bs_add,_}}) -> true;
 fails({hipe_bs_primop, {bs_add,_,_}}) -> true;
 fails({hipe_bs_primop, bs_bits_to_bytes}) -> true;
 fails({hipe_bs_primop, bs_bits_to_bytes2}) -> true;
-fails({hipe_bs_primop, {bs_init,_}}) -> false;
-fails({hipe_bs_primop, {bs_init,_,_}}) -> false;
-fails({hipe_bs_primop, {bs_init_bits,_}}) -> false;
-fails({hipe_bs_primop, {bs_init_bits,_,_}}) -> false;
+fails({hipe_bs_primop, {bs_init,_}}) -> true;
+fails({hipe_bs_primop, {bs_init,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_init_bits,_}}) -> true;
+fails({hipe_bs_primop, {bs_init_bits,_,_}}) -> true;
 fails({hipe_bs_primop, {bs_put_binary,_,_}}) -> true;
 fails({hipe_bs_primop, {bs_put_binary_all,_}}) -> true;  
 fails({hipe_bs_primop, {bs_put_float,_,_,_}}) -> true;
@@ -302,7 +302,9 @@ pp(Dev, Op) ->
 	bs_final ->
 	  io:format(Dev, "bs_final", []);
 	bs_final2 ->
-	  io:format(Dev, "bs_final2", [])
+	  io:format(Dev, "bs_final2", []);
+	bs_init_writable ->
+	  io:format(Dev, "bs_init_writable", [])
       end;
     #mkfun{mfa={Mod, Fun, Arity}, magic_num=Unique, index=I} ->
       io:format(Dev, "mkfun<~w,~w,~w,~w,~w>", [Mod, Fun, Arity, Unique, I]);

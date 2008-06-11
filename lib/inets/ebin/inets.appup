@@ -1,7 +1,18 @@
 %% inets-4.7.17 was not widely spread
 %% so most people will go from 4.7.16 -> 5.0!
-{"5.0.5",
+{"5.0.9",
  [
+  {"5.0.5",
+   [
+    {load_module, tftp,        soft_purge, soft_purge, []},
+    {load_module, tftp_binary, soft_purge, soft_purge, []},
+    {load_module, tftp_engine, soft_purge, soft_purge, []},
+    {load_module, tftp_file,   soft_purge, soft_purge, []},
+    {load_module, tftp_lib,    soft_purge, soft_purge, []},
+    {load_module, tftp_logger, soft_purge, soft_purge, []},
+    {load_module, tftp_sup,    soft_purge, soft_purge, []}
+   ]
+  },
   {"5.0.4",
    [
     {load_module, tftp_engine, soft_purge, soft_purge, []}
@@ -15,30 +26,30 @@
   {"5.0.2",
    [
     {load_module, mod_esi, soft_purge, soft_purge, []}
-    ]
+   ]
   },
- {"5.0.1",	
-   [		
-    {load_module, httpd_acceptor, soft_purge, soft_purge, [mod_log, mod_disk_log]},
-    {load_module, httpd_conf, soft_purge, soft_purge, []},
-    {load_module, httpd_request_handler, soft_purge, soft_purge, [mod_log, mod_disk_log]},
-    {load_module, httpd_util, soft_purge, soft_purge, []},
-    {load_module, mod_disk_log, soft_purge, soft_purge, [httpd_log, httpd_util]},
-    {load_module, mod_log, soft_purge, soft_purge, [httpd_log, httpd_util]},
-    {add_module,  httpd_log},
-    {load_module, http, soft_purge, soft_purge, [httpc_manager]},
-    {load_module, httpc_manager, soft_purge, soft_purge, [httpc_handler]},
-    {update, httpc_handler, {advanced, [{from, '5.0.1'}, {to, '5.0.2'}]},[httpc_request, httpc_response]},
-    {load_module, httpc_request, soft_purge, soft_purge, []},
-    {load_module, httpc_response, soft_purge, soft_purge, []}
-    ]
-  }, 	
+  {"5.0.1",     
+   [            
+                {load_module, httpd_acceptor, soft_purge, soft_purge, [mod_log, mod_disk_log]},
+                {load_module, httpd_conf, soft_purge, soft_purge, []},
+                {load_module, httpd_request_handler, soft_purge, soft_purge, [mod_log, mod_disk_log]},
+                {load_module, httpd_util, soft_purge, soft_purge, []},
+                {load_module, mod_disk_log, soft_purge, soft_purge, [httpd_log, httpd_util]},
+                {load_module, mod_log, soft_purge, soft_purge, [httpd_log, httpd_util]},
+                {add_module,  httpd_log},
+                {load_module, http, soft_purge, soft_purge, [httpc_manager]},
+                {load_module, httpc_manager, soft_purge, soft_purge, [httpc_handler]},
+                {update, httpc_handler, {advanced, [{from, '5.0.1'}, {to, '5.0.2'}]},[httpc_request, httpc_response]},
+                {load_module, httpc_request, soft_purge, soft_purge, []},
+                {load_module, httpc_response, soft_purge, soft_purge, []}
+               ]
+  },    
   {"5.0",
    [
     {load_module, httpd, soft_purge, soft_purge, []},
     {load_module, httpd_conf, soft_purge, soft_purge, []},
     {load_module, httpc_handler, soft_purge, soft_purge, []}
-    ]
+   ]
   },
   {"4.7.16",
    [
@@ -49,9 +60,20 @@
    [
     {restart_application, inets}
    ]
-  }	
+  }     
  ],
  [
+  {"5.0.5",
+   [
+    {load_module, tftp,        soft_purge, soft_purge, []},
+    {load_module, tftp_binary, soft_purge, soft_purge, []},
+    {load_module, tftp_engine, soft_purge, soft_purge, []},
+    {load_module, tftp_file,   soft_purge, soft_purge, []},
+    {load_module, tftp_lib,    soft_purge, soft_purge, []},
+    {load_module, tftp_logger, soft_purge, soft_purge, []},
+    {load_module, tftp_sup,    soft_purge, soft_purge, []}
+   ]
+  },
   {"5.0.4",
    [
     {load_module, tftp_engine, soft_purge, soft_purge, []}
@@ -65,31 +87,31 @@
   {"5.0.2",
    [
     {load_module, mod_esi, soft_purge, soft_purge, []}
-    ]
+   ]
   },
- {"5.0.1",	
-   [		
-    {load_module, httpd_acceptor, soft_purge, soft_purge, [mod_log, mod_disk_log]},
-    {load_module, httpd_conf, soft_purge, soft_purge, []},
-    {load_module, httpd_request_handler, soft_purge, soft_purge, [mod_log, mod_disk_log]},
-    {load_module, httpd_util, soft_purge, soft_purge, []},
-    {load_module, mod_disk_log, soft_purge, soft_purge, [httpd_log, httpd_util]},
-    {load_module, mod_log, soft_purge, soft_purge, [httpd_log, httpd_util]},
-    {delete_module,  httpd_log},
-    {load_module, http, soft_purge, soft_purge, [httpc_manager]},
-    {load_module, httpc_manager, soft_purge, soft_purge, [httpc_handler]},
-    {update, httpc_handler, {advanced, [{from, '5.0.2'}, {to, '5.0.1'}]}, [httpc_request, httpc_response]},
-    {load_module, httpc_request, soft_purge, soft_purge, []},
-    {load_module, httpc_response, soft_purge, soft_purge, []}
-    ]
-  }, 	
+  {"5.0.1",     
+   [            
+                {load_module, httpd_acceptor, soft_purge, soft_purge, [mod_log, mod_disk_log]},
+                {load_module, httpd_conf, soft_purge, soft_purge, []},
+                {load_module, httpd_request_handler, soft_purge, soft_purge, [mod_log, mod_disk_log]},
+                {load_module, httpd_util, soft_purge, soft_purge, []},
+                {load_module, mod_disk_log, soft_purge, soft_purge, [httpd_log, httpd_util]},
+                {load_module, mod_log, soft_purge, soft_purge, [httpd_log, httpd_util]},
+                {delete_module,  httpd_log},
+                {load_module, http, soft_purge, soft_purge, [httpc_manager]},
+                {load_module, httpc_manager, soft_purge, soft_purge, [httpc_handler]},
+                {update, httpc_handler, {advanced, [{from, '5.0.2'}, {to, '5.0.1'}]}, [httpc_request, httpc_response]},
+                {load_module, httpc_request, soft_purge, soft_purge, []},
+                {load_module, httpc_response, soft_purge, soft_purge, []}
+               ]
+  },    
   {"5.0",
    [
     {load_module, httpd, soft_purge, soft_purge, []},
     {load_module, httpd_conf, soft_purge, soft_purge, []},
     {load_module, httpc_handler, soft_purge, soft_purge, []}
-    ]
-  },	
+   ]
+  },    
   {"4.7.16",
    [
     {restart_application, inets}

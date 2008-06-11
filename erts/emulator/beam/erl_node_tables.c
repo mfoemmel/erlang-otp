@@ -101,7 +101,6 @@ dist_table_alloc(void *dep_tmpl)
     dep->flags      = 0;
     dep->cache      = NULL;
     dep->version    = 0;
-    dep->port       = NULL;
 #ifdef ERTS_SMP
     dep->mtxp       = &dist_entry_mutexes[(atom_val(dep->sysname)
 					   % ERTS_NO_OF_DIST_ENTRY_MUTEXES)];
@@ -1145,7 +1144,7 @@ static void doit_insert_link2(ErtsLink *lnk, void *p)
     if(is_external(lnk->pid))
 	insert_node(external_thing_ptr(lnk->pid)->node, LINK_REF, 
 		    *idp);
-    insert_links(lnk->root, *idp);
+    insert_links(ERTS_LINK_ROOT(lnk), *idp);
 }
 
 static void

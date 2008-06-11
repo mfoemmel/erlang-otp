@@ -20,7 +20,7 @@
 
 -module(crypto).
 
--export([start/0, stop/0, info/0]).
+-export([start/0, stop/0, info/0, info_lib/0]).
 -export([md5/1, md5_init/0, md5_update/2, md5_final/1]).
 -export([sha/1, sha_init/0, sha_update/2, sha_final/1]).
 -export([md5_mac/2, md5_mac_96/2, sha_mac/2, sha_mac_96/2]).
@@ -73,8 +73,10 @@
 -define(RC2_40_CBC_DECRYPT, 31).
 -define(AES_CBC_256_ENCRYPT, 32).
 -define(AES_CBC_256_DECRYPT, 33).
+-define(INFO_LIB,34).
 %% -define(IDEA_CBC_ENCRYPT, 34).
 %% -define(IDEA_CBC_DECRYPT, 35).
+
 
 -define(FUNC_LIST, [md5,
 		    md5_init,
@@ -101,7 +103,8 @@
 		    rc4_encrypt, rc4_set_key, rc4_encrypt_with_state,
 		    rc2_40_cbc_encrypt, rc2_40_cbc_decrypt,
 		    %% idea_cbc_encrypt, idea_cbc_decrypt,
-		    aes_cbc_256_encrypt, aes_cbc_256_decrypt]).
+		    aes_cbc_256_encrypt, aes_cbc_256_decrypt,
+		    info_lib]).
 
 start() ->
     application:start(crypto).
@@ -112,6 +115,11 @@ stop() ->
 info() ->
     lists:map(fun(I) -> lists:nth(I, ?FUNC_LIST) end, 
 	      binary_to_list(control(?INFO, []))).
+
+info_lib() ->
+    <<_DrvVer:8, NameSize:8, Name:NameSize/binary,
+      VerNum:32, VerStr/binary>> = control(?INFO_LIB,[]),
+    [{Name,VerNum,VerStr}].
 
 %% Below Key and Data are binaries or IO-lists. IVec is a binary.
 %% Output is always a binary. Context is a binary.
@@ -339,8 +347,9 @@ control_bin(Cmd, Key, Data) ->
     control(Cmd, [<<Sz:32/integer-unsigned>>, Key, Data]).
 
 control(Cmd, Data) ->
-    [{port, Port}| _] = ets:lookup(crypto_server_table, port),
+    Port = crypto_server:client_port(),
     erlang:port_control(Port, Cmd, Data).
+
 
 %% sizehdr(N) ->
 %%     [(N bsr 24) band 255,

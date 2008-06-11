@@ -618,8 +618,17 @@ parse_DefinedType(Tokens=[{typereference,_L1,_Module},{'.',_},
 parse_DefinedType([{typereference,L1,Module},{'.',_},{typereference,_,TypeName}|Rest]) ->
     {#type{def = #'Externaltypereference'{pos=L1,module=Module,type=TypeName}},Rest};
 parse_DefinedType([{typereference,L1,TypeName}|Rest]) ->
-    {#type{def = #'Externaltypereference'{pos=L1,module=get(asn1_module),
-					  type=TypeName}},Rest};
+    case is_pre_defined_class(TypeName) of
+	false  ->
+	    {#type{def = #'Externaltypereference'{pos=L1,module=get(asn1_module),
+						  type=TypeName}},Rest};
+	_ ->
+	    throw({asn1_error,
+		   {L1,get(asn1_module),
+		    [got,TypeName,expected,
+		     [typereference,'typereference.typereference',
+		      'typereference typereference']]}})
+    end;
 parse_DefinedType(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,
@@ -747,6 +756,11 @@ parse_ElementSetSpec(Tokens) ->
     parse_Unions(Tokens).
 
 
+%% parse_Unions(Tokens) -> {Ret,Rest}
+%% Tokens = [Tok]
+%% Tok    = tuple()
+%% Ret    = {'SingleValue',list()} | list() |
+%%          
 parse_Unions(Tokens) ->
     {InterSec,Rest} = parse_Intersections(Tokens),
     {Unions,Rest2} = parse_UnionsRec(Rest),
@@ -989,8 +1003,8 @@ parse_FixedTypeValueFieldSpec([{valuefieldreference,L1,VFieldName}|Rest]) ->
 		{undefined,Rest2}
 	end,
     {OptionalitySpec,Rest5} = parse_ValueOptionalitySpec(Rest3),
-    case Unique of
-	'UNIQUE' ->
+    case {Unique,Rest5} of
+	{'UNIQUE',[{Del,_}|_]} when Del =:= ','; Del =:= '}' ->
 	    case OptionalitySpec of 
 		{'DEFAULT',_} ->
 		    throw({asn1_error,
@@ -999,57 +1013,96 @@ parse_FixedTypeValueFieldSpec([{valuefieldreference,L1,VFieldName}|Rest]) ->
 		_ ->
 		    {{fixedtypevaluefield,VFieldName,Type,Unique,OptionalitySpec},Rest5}
 	    end;
+	{_,[{Del,_}|_]} when Del =:= ','; Del =:= '}'  ->
+	    {{object_or_fixedtypevalue_field,VFieldName,Type,Unique,OptionalitySpec},Rest5};
 	_ ->
-	    {{object_or_fixedtypevalue_field,VFieldName,Type,Unique,OptionalitySpec},Rest5}
+	    throw({asn1_error,{L1,get(asn1_module),
+			       [got,get_token(hd(Rest5)),expected,[',','}']]}})
     end;
 parse_FixedTypeValueFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,valuefieldreference]}}).
 
-parse_VariableTypeValueFieldSpec([{valuefieldreference,_,VFieldName}|Rest]) ->
+parse_VariableTypeValueFieldSpec([{valuefieldreference,L,VFieldName}|Rest]) ->
     {FieldRef,Rest2} = parse_FieldName(Rest),
     {OptionalitySpec,Rest3} = parse_ValueOptionalitySpec(Rest2),
-    {{variabletypevaluefield,VFieldName,FieldRef,OptionalitySpec},Rest3};
+    case Rest3 of
+	[{Del,_}|_] when Del =:= ','; Del =:= '}' ->
+	    {{variabletypevaluefield,VFieldName,FieldRef,OptionalitySpec},Rest3};
+	_ ->
+	    throw({asn1_error,{L,get(asn1_module),
+			   [got,get_token(hd(Rest3)),expected,[',','}']]}})
+    end;
 parse_VariableTypeValueFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,valuefieldreference]}}).
 
-parse_ObjectFieldSpec([{valuefieldreference,_,VFieldName}|Rest]) ->
+parse_ObjectFieldSpec([{valuefieldreference,L,VFieldName}|Rest]) ->
     {Class,Rest2} = parse_DefinedObjectClass(Rest),
     {OptionalitySpec,Rest3} = parse_ObjectOptionalitySpec(Rest2),
-    {{objectfield,VFieldName,Class,OptionalitySpec},Rest3};
+    case Rest3 of
+	[{Del,_}|_] when Del =:= ','; Del =:= '}' ->
+	    {{objectfield,VFieldName,Class,OptionalitySpec},Rest3};
+	_ ->
+	    throw({asn1_error,{L,get(asn1_module),
+			   [got,get_token(hd(Rest3)),expected,[',','}']]}})
+    end;
 parse_ObjectFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,valuefieldreference]}}).
 
-parse_TypeFieldSpec([{typefieldreference,_,TFieldName}|Rest]) ->
+parse_TypeFieldSpec([{typefieldreference,L,TFieldName}|Rest]) ->
     {OptionalitySpec,Rest2} = parse_TypeOptionalitySpec(Rest),
-    {{typefield,TFieldName,OptionalitySpec},Rest2};
+    case Rest2 of
+	[{Del,_}|_] when Del =:= ','; Del =:= '}' ->
+	    {{typefield,TFieldName,OptionalitySpec},Rest2};
+	_ ->
+	    throw({asn1_error,{L,get(asn1_module),
+			       [got,get_token(hd(Rest2)),expected,[',','}']]}})
+    end;
 parse_TypeFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,typefieldreference]}}).
 
-parse_FixedTypeValueSetFieldSpec([{typefieldreference,_,TFieldName}|Rest]) ->
+parse_FixedTypeValueSetFieldSpec([{typefieldreference,L,TFieldName}|Rest]) ->
     {Type,Rest2} = parse_Type(Rest),
     {OptionalitySpec,Rest3} = parse_ValueSetOptionalitySpec(Rest2),
-    {{objectset_or_fixedtypevalueset_field,TFieldName,Type,
-      OptionalitySpec},Rest3};
+    case Rest3 of
+	[{Del,_}|_] when Del =:= ','; Del =:= '}' ->
+	    {{objectset_or_fixedtypevalueset_field,TFieldName,Type,
+	      OptionalitySpec},Rest3};
+	_ ->
+	    throw({asn1_error,{L,get(asn1_module),
+			       [got,get_token(hd(Rest3)),expected,[',','}']]}})
+    end;  
 parse_FixedTypeValueSetFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,typefieldreference]}}).
 
-parse_VariableTypeValueSetFieldSpec([{typefieldreference,_,TFieldName}|Rest]) ->
+parse_VariableTypeValueSetFieldSpec([{typefieldreference,L,TFieldName}|Rest]) ->
     {FieldRef,Rest2} = parse_FieldName(Rest),
     {OptionalitySpec,Rest3} = parse_ValueSetOptionalitySpec(Rest2),
-    {{variabletypevaluesetfield,TFieldName,FieldRef,OptionalitySpec},Rest3};
+    case Rest3 of
+	[{Del,_}|_] when Del =:= ','; Del =:= '}' ->
+	    {{variabletypevaluesetfield,TFieldName,FieldRef,OptionalitySpec},Rest3};
+	_ ->
+	    throw({asn1_error,{L,get(asn1_module),
+			       [got,get_token(hd(Rest3)),expected,[',','}']]}})
+    end; 
 parse_VariableTypeValueSetFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,typefieldreference]}}).
 
-parse_ObjectSetFieldSpec([{typefieldreference,_,TFieldName}|Rest]) ->
+parse_ObjectSetFieldSpec([{typefieldreference,L,TFieldName}|Rest]) ->
     {Class,Rest2} = parse_DefinedObjectClass(Rest),
     {OptionalitySpec,Rest3} = parse_ObjectSetOptionalitySpec(Rest2),
-    {{objectsetfield,TFieldName,Class,OptionalitySpec},Rest3};
+    case Rest3 of
+	[{Del,_}|_] when Del =:= ','; Del =:= '}' ->
+	    {{objectsetfield,TFieldName,Class,OptionalitySpec},Rest3};
+	_ ->
+	    throw({asn1_error,{L,get(asn1_module),
+			       [got,get_token(hd(Rest3)),expected,[',','}']]}})
+    end;  
 parse_ObjectSetFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,typefieldreference]}}).
@@ -1370,13 +1423,16 @@ parse_ObjectSetAssignment(Tokens) ->
 				  [got,get_token(hd(Tokens)),expected,
 				   typereference]}}).
 
-%% parse_ObjectSet(Tokens) -> Ret
+%% parse_ObjectSet(Tokens) -> {Ret,Rest}
 %% Tokens    = [Tok]
 %% Tok       = tuple()
 %% Ret       = {[],tuple()} | 
 %%             {list(),list()} | 
 %%             list() | 
-%%             ['EXTENSIONMARK']
+%%             ['EXTENSIONMARK'] |
+%%             {'ALL',{'EXCEPT',Exclusions}} |
+%%             {'SingleValue',SV}
+%% SV        = list() | #'Externalvaluereference'{} | {definedvalue,term()}
 parse_ObjectSet([{'{',_}|Rest]) ->
     {ObjSetSpec,Rest2} = parse_ObjectSetSpec(Rest),
     case Rest2 of
@@ -1790,6 +1846,8 @@ parse_ParameterizedAssignment(Tokens) ->
 	    Result
     end.
 
+%% parse_ParameterizedTypeAssignment(Tokens) -> Result
+%% Result = {#ptypedef{},Rest} | throw()
 parse_ParameterizedTypeAssignment([{typereference,L1,Name}|Rest]) ->
     {ParameterList,Rest2} = parse_ParameterList(Rest),
     case Rest2 of
@@ -1806,6 +1864,8 @@ parse_ParameterizedTypeAssignment(Tokens) ->
 				  [got,get_token(hd(Tokens)),expected,
 				   typereference]}}).
 
+%% parse_ParameterizedValueAssignment(Tokens) -> Result
+%% Result = {#pvaluedef{},Rest} | throw()
 parse_ParameterizedValueAssignment([{identifier,L1,Name}|Rest]) ->
     {ParameterList,Rest2} = parse_ParameterList(Rest),
     {Type,Rest3} = parse_Type(Rest2),
@@ -1822,6 +1882,8 @@ parse_ParameterizedValueAssignment(Tokens) ->
     throw({asn1_assignment_error,{get_line(hd(Tokens)),get(asn1_module),
 				  [got,get_token(hd(Tokens)),expected,identifier]}}).
 
+%% parse_ParameterizedValueSetTypeAssignment(Tokens) -> Result
+%% Result = {#pvaluesetdef{},Rest} | throw()
 parse_ParameterizedValueSetTypeAssignment([{typereference,L1,Name}|Rest]) ->
     {ParameterList,Rest2} = parse_ParameterList(Rest),
     {Type,Rest3} = parse_Type(Rest2),
@@ -1839,6 +1901,8 @@ parse_ParameterizedValueSetTypeAssignment(Tokens) ->
 				  [got,get_token(hd(Tokens)),expected,
 				   typereference]}}).
 
+%% parse_ParameterizedObjectClassAssignment(Tokens) -> Result
+%% Result = {#ptypedef{},Rest} | throw()
 parse_ParameterizedObjectClassAssignment([{typereference,L1,Name}|Rest]) ->
     {ParameterList,Rest2} = parse_ParameterList(Rest),
     case Rest2 of
@@ -1855,6 +1919,8 @@ parse_ParameterizedObjectClassAssignment(Tokens) ->
 				  [got,get_token(hd(Tokens)),expected,
 				   typereference]}}).
 
+%% parse_ParameterizedObjectAssignment(Tokens) -> Result
+%% Result = {#pobjectdef{},Rest} | throw()
 parse_ParameterizedObjectAssignment([{identifier,L1,Name}|Rest]) ->
     {ParameterList,Rest2} = parse_ParameterList(Rest),
     {Class,Rest3} = parse_DefinedObjectClass(Rest2),
@@ -1873,6 +1939,8 @@ parse_ParameterizedObjectAssignment(Tokens) ->
     throw({asn1_assignment_error,{get_line(hd(Tokens)),get(asn1_module),
 				  [got,get_token(hd(Tokens)),expected,identifier]}}).
 
+%% parse_ParameterizedObjectSetAssignment(Tokens) -> Result
+%% Result = {#pobjectsetdef{},Rest} | throw{}
 parse_ParameterizedObjectSetAssignment([{typereference,L1,Name}|Rest]) ->
     {ParameterList,Rest2} = parse_ParameterList(Rest),
     {Class,Rest3} = parse_DefinedObjectClass(Rest2),
@@ -1892,6 +1960,14 @@ parse_ParameterizedObjectSetAssignment(Tokens) ->
 				  [got,get_token(hd(Tokens)),expected,
 				   typereference]}}).
 
+%% parse_ParameterList(Tokens) -> Result
+%% Result = [Parameter]
+%% Parameter = {Governor,Reference} | Reference
+%% Governor = Type | DefinedObjectClass
+%% Type = #type{}
+%% DefinedObjectClass = #'Externaltypereference'{} | 
+%%                      'ABSTRACT-SYNTAX' | 'TYPE-IDENTIFIER'
+%% Reference = #'Externaltypereference'{} | #'Externalvaluereference'{}
 parse_ParameterList([{'{',_}|Rest]) ->
     parse_ParameterList(Rest,[]);
 parse_ParameterList(Tokens) ->
@@ -2894,3 +2970,10 @@ lookahead_assignment(Tokens) ->
     parse_Assignment(Tokens),
     ok.
 	
+is_pre_defined_class('TYPE-IDENTIFIER') ->
+    true;
+is_pre_defined_class('ABSTRACT-SYNTAX') ->
+    true;
+is_pre_defined_class(_) ->
+    false.
+    

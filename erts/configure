@@ -872,11 +872,13 @@ Optional Features:
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
   --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
+  --with-termcap          use termcap (default)
+  --without-termcap       do not use any termcap libraries (ncurses,curses,termcap,termlib)
   --with-perfctr=PATH     specify location of perfctr include and lib
   --without-perfctr       don't use perfctr (default)
-  --with-ssl-zlib=PATH         specify location of ZLib to be used by OpenSSL
-  --with-ssl-zlib               link SSL with  Zlib (default if found)
-  --without-ssl-zlib            don't link SSL with ZLib
+  --with-ssl-zlib=PATH    specify location of ZLib to be used by OpenSSL
+  --with-ssl-zlib         link SSL with  Zlib (default if found)
+  --without-ssl-zlib      don't link SSL with ZLib
   --with-ssl=PATH         specify location of OpenSSL include and lib
   --with-ssl              use SSL (default)
   --without-ssl           don't use SSL
@@ -2549,6 +2551,16 @@ if test "${enable_smp_support+set}" = set; then
 else
   enable_smp_support=unknown
 fi;
+
+
+# Check whether --with-termcap or --without-termcap was given.
+if test "${with_termcap+set}" = set; then
+  withval="$with_termcap"
+
+else
+  with_termcap=yes
+fi;
+
 
 # Check whether --enable-hybrid-heap or --disable-hybrid-heap was given.
 if test "${enable_hybrid_heap+set}" = set; then
@@ -8216,6 +8228,8 @@ fi
 
 
 
+
+
 #
 # Figure out if the emulator should use threads. The default is set above
 # in the enable_threads variable. It can have the following values:
@@ -8419,7 +8433,8 @@ THR_DEFS=$ETHR_DEFS
 
 TERMCAP_LIB=
 
-if test "X$host" != "Xwin32"; then
+if test "x$with_termcap" != "xno" &&
+   test "X$host" != "Xwin32"; then
     # try these libs
     termcap_libs="ncurses curses termcap termlib"
 
@@ -8505,6 +8520,16 @@ echo "$as_me: error: No curses library functions found" >&2;}
     fi
 fi
 
+
+
+if test "x$TERMCAP_LIB" != "x"; then
+
+
+cat >>confdefs.h <<\_ACEOF
+#define HAVE_TERMCAP 1
+_ACEOF
+
+fi
 
 
 #--------------------------------------------------------------------
@@ -11073,6 +11098,81 @@ _ACEOF
 else
   cat >>confdefs.h <<_ACEOF
 #define HAVE_DECL_SCTP_SENDALL 0
+_ACEOF
+
+
+fi
+echo "$as_me:$LINENO: checking whether SCTP_ADDR_CONFIRMED is declared" >&5
+echo $ECHO_N "checking whether SCTP_ADDR_CONFIRMED is declared... $ECHO_C" >&6
+if test "${ac_cv_have_decl_SCTP_ADDR_CONFIRMED+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#if HAVE_SYS_SOCKET_H
+         #include <sys/socket.h>
+         #endif
+         #include <netinet/sctp.h>
+
+
+int
+main ()
+{
+#ifndef SCTP_ADDR_CONFIRMED
+  char *p = (char *) SCTP_ADDR_CONFIRMED;
+#endif
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_have_decl_SCTP_ADDR_CONFIRMED=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_have_decl_SCTP_ADDR_CONFIRMED=no
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+echo "$as_me:$LINENO: result: $ac_cv_have_decl_SCTP_ADDR_CONFIRMED" >&5
+echo "${ECHO_T}$ac_cv_have_decl_SCTP_ADDR_CONFIRMED" >&6
+if test $ac_cv_have_decl_SCTP_ADDR_CONFIRMED = yes; then
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_DECL_SCTP_ADDR_CONFIRMED 1
+_ACEOF
+
+
+else
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_DECL_SCTP_ADDR_CONFIRMED 0
 _ACEOF
 
 
@@ -15263,6 +15363,83 @@ fi
 
 
 
+echo "$as_me:$LINENO: checking for broken gcc-4.3.0 compiler" >&5
+echo $ECHO_N "checking for broken gcc-4.3.0 compiler... $ECHO_C" >&6
+if test "$cross_compiling" = yes; then
+  echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+/* pr36339.c */
+extern void abort (void);
+
+typedef unsigned long my_uintptr_t;
+
+int check_a(my_uintptr_t tagged_ptr);
+
+int __attribute__((noinline)) try_a(my_uintptr_t x)
+{
+  my_uintptr_t heap[2];
+  my_uintptr_t *hp = heap;
+
+  hp[0] = x;
+  hp[1] = 0;
+  return check_a((my_uintptr_t)(void*)((char*)hp + 1));
+}
+
+int __attribute__((noinline)) check_a(my_uintptr_t tagged_ptr)
+{
+  my_uintptr_t *hp = (my_uintptr_t*)(void*)((char*)tagged_ptr - 1);
+
+  if (hp[0] == 42 && hp[1] == 0)
+    return 0;
+  return -1;
+}
+
+int main(void)
+{
+  if (try_a(42) < 0)
+    abort ();
+  return 0;
+}
+
+_ACEOF
+rm -f conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } && { ac_try='./conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+
+else
+  echo "$as_me: program exited with status $ac_status" >&5
+echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+( exit $ac_status )
+echo "$as_me:$LINENO: result: yes" >&5
+echo "${ECHO_T}yes" >&6
+{ { echo "$as_me:$LINENO: error: This gcc miscompiles the Erlang runtime system; please use a different version" >&5
+echo "$as_me: error: This gcc miscompiles the Erlang runtime system; please use a different version" >&2;}
+   { (exit 1); exit 1; }; }
+
+fi
+rm -f core *.core gmon.out bb.out conftest$ac_exeext conftest.$ac_objext conftest.$ac_ext
+fi
+
 echo "$as_me:$LINENO: checking size of size_t" >&5
 echo $ECHO_N "checking size of size_t... $ECHO_C" >&6
 if test "${ac_cv_sizeof_size_t+set}" = set; then
@@ -15677,9 +15854,178 @@ CPPFLAGS="$CPPFLAGS $EMU_THR_DEFS"
 saved_libs=$LIBS
 LIBS="$LIBS $EMU_THR_X_LIBS"
 
+echo "$as_me:$LINENO: checking for getaddrinfo" >&5
+echo $ECHO_N "checking for getaddrinfo... $ECHO_C" >&6
+if test "${ac_cv_func_getaddrinfo+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+/* Define getaddrinfo to an innocuous variant, in case <limits.h> declares getaddrinfo.
+   For example, HP-UX 11i <limits.h> declares gettimeofday.  */
+#define getaddrinfo innocuous_getaddrinfo
+
+/* System header to define __stub macros and hopefully few prototypes,
+    which can conflict with char getaddrinfo (); below.
+    Prefer <limits.h> to <assert.h> if __STDC__ is defined, since
+    <limits.h> exists even on freestanding compilers.  */
+
+#ifdef __STDC__
+# include <limits.h>
+#else
+# include <assert.h>
+#endif
+
+#undef getaddrinfo
+
+/* Override any gcc2 internal prototype to avoid an error.  */
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+/* We use char because int might match the return type of a gcc2
+   builtin and then its argument prototype would still apply.  */
+char getaddrinfo ();
+/* The GNU C library defines this for functions which it implements
+    to always fail with ENOSYS.  Some functions are actually named
+    something starting with __ and the normal name is an alias.  */
+#if defined (__stub_getaddrinfo) || defined (__stub___getaddrinfo)
+choke me
+#else
+char (*f) () = getaddrinfo;
+#endif
+#ifdef __cplusplus
+}
+#endif
+
+int
+main ()
+{
+return f != getaddrinfo;
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_func_getaddrinfo=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_func_getaddrinfo=no
+fi
+rm -f conftest.err conftest.$ac_objext \
+      conftest$ac_exeext conftest.$ac_ext
+fi
+echo "$as_me:$LINENO: result: $ac_cv_func_getaddrinfo" >&5
+echo "${ECHO_T}$ac_cv_func_getaddrinfo" >&6
+if test $ac_cv_func_getaddrinfo = yes; then
+  have_getaddrinfo=yes
+else
+  have_getaddrinfo=no
+fi
+
+if test $have_getaddrinfo = yes; then
+        echo "$as_me:$LINENO: checking whether getaddrinfo accepts enough flags" >&5
+echo $ECHO_N "checking whether getaddrinfo accepts enough flags... $ECHO_C" >&6
+        if test "$cross_compiling" = yes; then
+  { { echo "$as_me:$LINENO: error: cannot run test program while cross compiling
+See \`config.log' for more details." >&5
+echo "$as_me: error: cannot run test program while cross compiling
+See \`config.log' for more details." >&2;}
+   { (exit 1); exit 1; }; }
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netdb.h>
+int main(int argc, char **argv) {
+    struct addrinfo hints, *ai;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_flags = (AI_CANONNAME|AI_V4MAPPED|AI_ADDRCONFIG);
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_INET6;
+    if (getaddrinfo("::", NULL, &hints, &ai) == 0) {
+	freeaddrinfo(ai);
+	exit(0);
+    } else {
+	exit(1);
+    }
+}
+
+_ACEOF
+rm -f conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } && { ac_try='./conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  :
+else
+  echo "$as_me: program exited with status $ac_status" >&5
+echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+( exit $ac_status )
+have_getaddrinfo=no
+fi
+rm -f core *.core gmon.out bb.out conftest$ac_exeext conftest.$ac_objext conftest.$ac_ext
+fi
+	if test $have_getaddrinfo = yes; then
+		echo "$as_me:$LINENO: result: yes" >&5
+echo "${ECHO_T}yes" >&6
+
+cat >>confdefs.h <<\_ACEOF
+#define HAVE_GETADDRINFO 1
+_ACEOF
+
+	else
+		echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+	fi
+fi
 
 
-for ac_func in getipnodebyname getipnodebyaddr
+
+
+for ac_func in getnameinfo getipnodebyname getipnodebyaddr gethostbyname2
 do
 as_ac_var=`echo "ac_cv_func_$ac_func" | $as_tr_sh`
 echo "$as_me:$LINENO: checking for $ac_func" >&5
@@ -20328,56 +20674,62 @@ elif test "x$with_ssl_zlib" = "xyes" -o "x$with_ssl_zlib" = "x" ;then
 		SSL_LINK_WITH_ZLIB=no
 		STATIC_ZLIB_LIBS=
 	else
+		SSL_LINK_WITH_ZLIB=no
+		STATIC_ZLIB_LIBS=
 		echo "$as_me:$LINENO: checking for static ZLib to be used by SSL in standard locations" >&5
 echo $ECHO_N "checking for static ZLib to be used by SSL in standard locations... $ECHO_C" >&6
-		zlib_found=no
 		for dir in /usr/local /usr/sfw /usr /usr/pkg \
 		/usr/local/openssl /usr/lib/openssl /usr/openssl \
 		/usr/local/ssl /usr/lib/ssl /usr/ssl
 		do
-			if test "x$ARCH" = "xamd64" -o \
-				"x$ARCH" = "xppc64"; then
+			if test "x$ac_cv_sizeof_void_p" = "x8"; then
 				if test -f "$dir/lib64/libz.a"; then
 					SSL_LINK_WITH_ZLIB=yes
-					STATIC_ZLIB_LIBS=$dir/lib64/libz.a
-					zlib_found=yes
+					STATIC_ZLIB_LIBS="$dir/lib64/libz.a"
+					break
+				elif test -f "$dir/lib/64/libz.a"; then
+					SSL_LINK_WITH_ZLIB=yes
+					STATIC_ZLIB_LIBS="$dir/lib/64/libz.a"
+					break
 				fi
 			fi
 			if test -f "$dir/lib/libz.a"; then
 					SSL_LINK_WITH_ZLIB=yes
-					STATIC_ZLIB_LIBS=$dir/lib/libz.a
-					zlib_found=yes
-			fi
-			if test "x$zlib_found" = "xyes"; then
+				STATIC_ZLIB_LIBS="$dir/lib/libz.a"
 				break
 			fi
 		done
-		if test "x$zlib_found" = "xno"; then
+		if test "x$SSL_LINK_WITH_ZLIB" = "xno"; then
 		       	echo "$as_me:$LINENO: result: no" >&5
 echo "${ECHO_T}no" >&6
-			SSL_LINK_WITH_ZLIB=no
-			STATIC_ZLIB_LIBS=
 		else
 			echo "$as_me:$LINENO: result: $STATIC_ZLIB_LIBS" >&5
 echo "${ECHO_T}$STATIC_ZLIB_LIBS" >&6
 		fi
 	fi
 else
+	SSL_LINK_WITH_ZLIB=no
+	STATIC_ZLIB_LIBS=
 	if test -f "$with_ssl_zlib/libz.a"; then
 		SSL_LINK_WITH_ZLIB=yes
 		STATIC_ZLIB_LIBS=$with_ssl_zlib/libz.a
-	elif test -f "$with_ssl_zlib/lib64/libz.a"; then
-		SSL_LINK_WITH_ZLIB=yes
-		STATIC_ZLIB_LIBS=$with_ssl_zlib/lib64/libz.a
 	elif test -f "$with_ssl_zlib/lib/libz.a"; then
 		SSL_LINK_WITH_ZLIB=yes
 		STATIC_ZLIB_LIBS=$with_ssl_zlib/lib/libz.a
-	else
+	fi
+	if test "x$ac_cv_sizeof_void_p" = "x8"; then
+		if test -f "$with_ssl_zlib/lib64/libz.a"; then
+			SSL_LINK_WITH_ZLIB=yes
+			STATIC_ZLIB_LIBS=$with_ssl_zlib/lib64/libz.a
+		elif test -f "$with_ssl_zlib/lib/64/libz.a"; then
+			SSL_LINK_WITH_ZLIB=yes
+			STATIC_ZLIB_LIBS=$with_ssl_zlib/lib/64/libz.a
+		fi
+	fi
+	if test "x$SSL_LINK_WITH_ZLIB" = "xno"; then
 	       	{ { echo "$as_me:$LINENO: error: Invalid path to option --with-ssl-zlib=PATH" >&5
 echo "$as_me: error: Invalid path to option --with-ssl-zlib=PATH" >&2;}
    { (exit 1); exit 1; }; }
-		SSL_LINK_WITH_ZLIB=no
-		STATIC_ZLIB_LIBS=
 	fi
 fi
 
@@ -20508,10 +20860,15 @@ echo $ECHO_N "checking for OpenSSL >= 0.9.7 in standard locations... $ECHO_C" >&
 				is_real_ssl=no
 			fi
 		else
-			if test "x$ARCH" = "xamd64" -o \
-				"x$ARCH" = "xppc64"; then
+			if test "x$ac_cv_sizeof_void_p" = "x8"; then
 				if test -f "$dir/lib64/libcrypto.a"; then
 					SSL_LIBDIR="$dir/lib64"
+				elif test -f "$dir/lib/64/libcrypto.a"; then
+					SSL_LIBDIR="$dir/lib/64"
+				elif test -f "$dir/lib64/libcrypto.so"; then
+					SSL_LIBDIR="$dir/lib64"
+				elif test -f "$dir/lib/64/libcrypto.so"; then
+					SSL_LIBDIR="$dir/lib/64"
 				else
 					SSL_LIBDIR="$dir/lib"
 				fi
@@ -20569,8 +20926,10 @@ rm -f conftest*
 				else
 					saveCFLAGS="$CFLAGS"
  					saveLDFLAGS="$LDFLAGS"
+					saveLIBS="$LIBS"
  					CFLAGS="$CFLAGS $SSL_INCLUDE"
- 					LDFLAGS="$LDFLAGS -L$SSL_LIBDIR -lcrypto"
+ 					LDFLAGS="$LDFLAGS -L$SSL_LIBDIR"
+					LIBS="-lcrypto"
  					cat >conftest.$ac_ext <<_ACEOF
 /* confdefs.h.  */
 _ACEOF
@@ -20624,6 +20983,7 @@ rm -f conftest.err conftest.$ac_objext \
       conftest$ac_exeext conftest.$ac_ext
  					CFLAGS="$saveCFLAGS"
  					LDFLAGS="$saveLDFLAGS"
+					LIBS="$saveLIBS"
 				fi
  			fi
 	 		if test "x$ssl_found" = "xyes" -a "x$ssl_linkable" = "xyes"  ; then
@@ -20756,8 +21116,23 @@ echo "$as_me: error: Invalid path to option --with-ssl=PATH" >&2;}
     SSL_ROOT="$with_ssl"
     if test "x$MIXED_CYGWIN" = "xyes" -a -d "$with_ssl/lib/VC"; then
 	SSL_LIBDIR="$with_ssl/lib/VC"
+    elif test "x$ac_cv_sizeof_void_p" = "x8"; then
+	if test -f "$with_ssl/lib64/libcrypto.a"; then
+		SSL_LIBDIR="$with_ssl/lib64"
+	elif test -f "$with_ssl/lib/64/libcrypto.a"; then
+		SSL_LIBDIR="$with_ssl/lib/64"
+	elif test -f "$with_ssl/lib64/libcrypto.so"; then
+		SSL_LIBDIR="$with_ssl/lib64"
+	elif test -f "$with_ssl/lib/64/libcrypto.so"; then
+		SSL_LIBDIR="$with_ssl/lib/64"
+	else
+		SSL_LIBDIR="$with_ssl/lib"
+	fi
     else
 	SSL_LIBDIR="$with_ssl/lib"
+    fi
+    if test '!' -f $SSL_LIBDIR/libcrypto.a; then
+	SSL_DYNAMIC_ONLY=yes
     fi
     SSL_INCLUDE="-I$with_ssl/include"
     OPENSSL_CMD="$with_ssl/bin/openssl"
@@ -21154,7 +21529,7 @@ done
 
 
 
-                                                                                                                                                                          ac_config_files="$ac_config_files emulator/$host/Makefile:emulator/Makefile.in emulator/zlib/$host/Makefile:emulator/zlib/Makefile.in epmd/src/$host/Makefile:epmd/src/Makefile.in etc/common/$host/Makefile:etc/common/Makefile.in include/internal/$host/ethread.mk:include/internal/ethread.mk.in lib_src/$host/Makefile:lib_src/Makefile.in Makefile:Makefile.in ../make/$host/otp.mk:../make/otp.mk.in ../lib/ic/c_src/$host/Makefile:../lib/ic/c_src/Makefile.in ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in"
+                                                                                                                                                                                    ac_config_files="$ac_config_files emulator/$host/Makefile:emulator/Makefile.in emulator/zlib/$host/Makefile:emulator/zlib/Makefile.in emulator/pcre/$host/Makefile:emulator/pcre/Makefile.in epmd/src/$host/Makefile:epmd/src/Makefile.in etc/common/$host/Makefile:etc/common/Makefile.in include/internal/$host/ethread.mk:include/internal/ethread.mk.in lib_src/$host/Makefile:lib_src/Makefile.in Makefile:Makefile.in ../make/$host/otp.mk:../make/otp.mk.in ../lib/ic/c_src/$host/Makefile:../lib/ic/c_src/Makefile.in ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in"
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -21682,6 +22057,7 @@ do
   # Handling of arguments.
   "emulator/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES emulator/$host/Makefile:emulator/Makefile.in" ;;
   "emulator/zlib/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES emulator/zlib/$host/Makefile:emulator/zlib/Makefile.in" ;;
+  "emulator/pcre/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES emulator/pcre/$host/Makefile:emulator/pcre/Makefile.in" ;;
   "epmd/src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES epmd/src/$host/Makefile:epmd/src/Makefile.in" ;;
   "etc/common/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES etc/common/$host/Makefile:etc/common/Makefile.in" ;;
   "include/internal/$host/ethread.mk" ) CONFIG_FILES="$CONFIG_FILES include/internal/$host/ethread.mk:include/internal/ethread.mk.in" ;;

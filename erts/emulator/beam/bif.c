@@ -178,28 +178,26 @@ BIF_RETTYPE link_1(BIF_ALIST_1)
 	    ERTS_BIF_PREP_RET(ret, am_true);
 	}
 	else {
+	    ErtsDistOpData dod;
 	    dep = external_pid_dist_entry(BIF_ARG_1);
 	    if (dep == erts_this_dist_entry) {
 		erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
 		goto res_no_proc;
 	    }
 
-	    erts_dist_op_prepare(dep,
+	    erts_dist_op_prepare(&dod,
+				 dep,
 				 BIF_P,
 				 ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK);
 
 	    /* link to net */
 	    if (dep->cid == NIL)
 		ERTS_BIF_PREP_TRAP1(ret, dlink_trap, BIF_P, BIF_ARG_1);
-	    else if ((code = dist_link(BIF_P,
-				       ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
-				       dep,
-				       BIF_P->id,
-				       BIF_ARG_1)) == 1) {
+	    else if ((code = erts_dist_link(&dod, BIF_P->id, BIF_ARG_1)) == 1) {
 		if (is_internal_port(dep->cid)) {
 		    erts_suspend(BIF_P,
 				 ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
-				 dep->port);
+				 dod.dprt);
 		    ERTS_BIF_PREP_ERROR(ret, BIF_P, RESCHEDULE);
 		}
 		else {
@@ -222,10 +220,10 @@ BIF_RETTYPE link_1(BIF_ALIST_1)
 					      LINK_PID,
 					      BIF_P->id);
 		ASSERT(lnk != NULL);
-		erts_add_link(&lnk->root, LINK_PID, BIF_ARG_1);
+		erts_add_link(&ERTS_LINK_ROOT(lnk), LINK_PID, BIF_ARG_1);
 		ERTS_BIF_PREP_RET(ret, am_true);
 	    }
-	    erts_dist_op_finalize(dep);
+	    erts_dist_op_finalize(&dod);
 	}
 
 	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
@@ -262,6 +260,7 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
    int deref_de = 0;
    BIF_RETTYPE res;
    int stale_mon = 0;
+   ErtsDistOpData dod;
 
    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_LINK);
 
@@ -306,7 +305,10 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
    if (dep != erts_this_dist_entry) {
        Sint      code;
 
-       erts_dist_op_prepare(dep,BIF_P,ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK);
+       erts_dist_op_prepare(&dod,
+			    dep,
+			    BIF_P,
+			    ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK);
        dmon = erts_lookup_monitor(dep->monitors, ref);
        if (!dmon) {
 #ifndef ERTS_SMP
@@ -330,16 +332,14 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
 	* monitor list since in case of monitor name 
 	* the atom is stored there. Reschedule if necessary.
 	*/
-       code = dist_demonitor(BIF_P,
-			     ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
-			     dep,
-			     BIF_P->id, 
-			     (mon->name != NIL) ? mon->name : mon->pid, 
-			     ref, 0);
+       code = erts_dist_demonitor(&dod,
+				  BIF_P->id, 
+				  (mon->name != NIL) ? mon->name : mon->pid, 
+				  ref, 0);
        if (is_internal_port(dep->cid) && code == 1) {
 	   erts_suspend(BIF_P,
 			ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
-			dep->port);
+			dod.dprt);
 	   ERTS_BIF_PREP_ERROR(res, BIF_P, RESCHEDULE);
 	   goto error;
        }
@@ -395,7 +395,7 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
  error:
 
    if (dep != erts_this_dist_entry && dep)
-       erts_dist_op_finalize(dep);
+       erts_dist_op_finalize(&dod);
    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
    if (deref_de) {
        ASSERT(dep);
@@ -543,6 +543,7 @@ cleanup_remote_monitor(Process *p, DistEntry *dep, Eterm ref)
 static int
 remote_monitor(Process *p, DistEntry *dep, Eterm target, Eterm *res, int byname)
 {
+    ErtsDistOpData dod;
     ErtsProcLocks p_locks = ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK;
     Eterm nodename;
     int ret;
@@ -552,7 +553,7 @@ remote_monitor(Process *p, DistEntry *dep, Eterm target, Eterm *res, int byname)
     ASSERT(dep);
 
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_LINK);
-    erts_dist_op_prepare(dep, p, p_locks);
+    erts_dist_op_prepare(&dod, dep, p, p_locks);
     
     nodename = dep->sysname;
 
@@ -587,12 +588,12 @@ remote_monitor(Process *p, DistEntry *dep, Eterm target, Eterm *res, int byname)
 	erts_add_monitor(&(p->monitors), MON_ORIGIN, *res, p_trgt, p_name);
 	erts_add_monitor(&(dep->monitors), MON_TARGET, *res, p->id, d_name);
 
-	code = dist_monitor(p, p_locks, dep, p->id, target, *res);
+	code = erts_dist_monitor(&dod, p->id, target, *res);
 
 	if (is_internal_port(dep->cid) && code == 1) {
 	    /* cleanup and do it all over again when port is not busy... */
 	    (void) cleanup_remote_monitor(p, dep, *res);
-	    erts_suspend(p, p_locks, dep->port);
+	    erts_suspend(p, p_locks, dod.dprt);
 	    ret = MONITOR_RESULT_RESCHEDULE;
 	} else if (code < 0) {
 	    (void) cleanup_remote_monitor(p, dep, *res);
@@ -607,7 +608,7 @@ remote_monitor(Process *p, DistEntry *dep, Eterm target, Eterm *res, int byname)
 	}
     }
 
-    erts_dist_op_finalize(dep);
+    erts_dist_op_finalize(&dod);
 
     if (send_mon_msg) {
 	Eterm item;
@@ -895,7 +896,7 @@ BIF_RETTYPE unlink_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, BADARG);
 
     if (is_external_pid(BIF_ARG_1)) {
-
+	ErtsDistOpData dod;
 	/* Blind removal, we might have trapped or anything, this leaves
 	   us in a state where monitors might be inconsistent, but the dist
 	   code should take care of it. */
@@ -913,22 +914,18 @@ BIF_RETTYPE unlink_1(BIF_ALIST_1)
 	if (dep == erts_this_dist_entry)
 	    BIF_RET(am_true);
 
-	erts_dist_op_prepare(dep, BIF_P, ERTS_PROC_LOCK_MAIN);
+	erts_dist_op_prepare(&dod, dep, BIF_P, ERTS_PROC_LOCK_MAIN);
 
 	if (is_nil(dep->cid)) {
 	do_trap:
-	    erts_dist_op_finalize(dep);
+	    erts_dist_op_finalize(&dod);
 	    BIF_TRAP1(dunlink_trap, BIF_P, BIF_ARG_1);
 	}
 	
-	if (dist_unlink(BIF_P,
-			ERTS_PROC_LOCK_MAIN,
-			dep,
-			BIF_P->id,
-			BIF_ARG_1) == 1) {
+	if (erts_dist_unlink(&dod, BIF_P->id, BIF_ARG_1) == 1) {
 	    if (is_internal_port(dep->cid)) {
-		erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dep->port);
-		erts_dist_op_finalize(dep);
+		erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dod.dprt);
+		erts_dist_op_finalize(&dod);
 		BIF_ERROR(BIF_P, RESCHEDULE);
 	    }
 	    else {
@@ -940,9 +937,9 @@ BIF_RETTYPE unlink_1(BIF_ALIST_1)
 	l = erts_lookup_link(dep->nlinks,BIF_P->id);
 	if (l) {
 
-	    rl = erts_remove_link(&(l->root),BIF_ARG_1);
+	    rl = erts_remove_link(&(ERTS_LINK_ROOT(l)),BIF_ARG_1);
 	
-	    if (l->root == NULL) { /* last link from this proc to pid 
+	    if (ERTS_LINK_ROOT(l) == NULL) { /* last link from this proc to pid 
 				      on that node removed */
 		l = erts_remove_link(&(dep->nlinks), BIF_P->id);
 		ASSERT(l != NULL);
@@ -953,7 +950,7 @@ BIF_RETTYPE unlink_1(BIF_ALIST_1)
 		erts_destroy_link(rl);
 	    }
 	}
-	erts_dist_op_finalize(dep);
+	erts_dist_op_finalize(&dod);
 	BIF_RET(am_true);
     }
 
@@ -1200,23 +1197,23 @@ BIF_RETTYPE exit_2(BIF_ALIST_2)
       */
 
      if (is_external_pid(BIF_ARG_1)) {
+	 ErtsDistOpData dod;
 	 BIF_RETTYPE ret;
 
 	 dep = external_pid_dist_entry(BIF_ARG_1);
 	 if(dep == erts_this_dist_entry)
 	     BIF_RET(am_true);
 
-	 erts_dist_op_prepare(dep, BIF_P, ERTS_PROC_LOCK_MAIN);
+	 erts_dist_op_prepare(&dod, dep, BIF_P, ERTS_PROC_LOCK_MAIN);
 	 if (dep->cid == NIL) {
 	     ERTS_BIF_PREP_TRAP2(ret, dexit_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
 	 }
 	 else {
-	     code = dist_exit2(BIF_P, ERTS_PROC_LOCK_MAIN,
-			       dep, BIF_P->id, BIF_ARG_1, BIF_ARG_2);
+	     code = erts_dist_exit2(&dod, BIF_P->id, BIF_ARG_1, BIF_ARG_2);
 
 	     if (code == 1) {
 		 if (is_internal_port(dep->cid)) {
-		     erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dep->port);
+		     erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dod.dprt);
 		     ERTS_BIF_PREP_ERROR(ret, BIF_P, RESCHEDULE);
 		 }
 		 else
@@ -1229,7 +1226,7 @@ BIF_RETTYPE exit_2(BIF_ALIST_2)
 		 ERTS_BIF_PREP_RET(ret, am_true);
 	     }
 	 }
-	 erts_dist_op_finalize(dep);
+	 erts_dist_op_finalize(&dod);
 	 return ret;
      }
      else if (is_not_internal_pid(BIF_ARG_1)) {
@@ -1560,6 +1557,7 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	    return 0;
 	}
     } else if (is_external_pid(to)) {
+	ErtsDistOpData dod;
 	Sint res;
 	dep = external_pid_dist_entry(to);
 	if(dep == erts_this_dist_entry) {
@@ -1576,16 +1574,16 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	    return 0;
 	}
 
-	erts_dist_op_prepare(dep, p, ERTS_PROC_LOCK_MAIN);
+	erts_dist_op_prepare(&dod, dep, p, ERTS_PROC_LOCK_MAIN);
 
 	/* Send to remote process */
 	if (is_nil(dep->cid))
 	    res = SEND_TRAP;
-	else if (dist_send(p, ERTS_PROC_LOCK_MAIN, dep, to, msg) == 1) {
+	else if (erts_dist_send(&dod, to, msg) == 1) {
 
 	    if (is_internal_port(dep->cid)) {
 		if (suspend) {
-		    erts_suspend(p, ERTS_PROC_LOCK_MAIN, dep->port);
+		    erts_suspend(p, ERTS_PROC_LOCK_MAIN, dod.dprt);
 		    if (erts_system_monitor_flags.busy_dist_port) {
 			monitor_generic(p, am_busy_dist_port, dep->cid);
 		    }
@@ -1604,7 +1602,7 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 		save_calls(p, &exp_send);
 	}
 	
-	erts_dist_op_finalize(dep);
+	erts_dist_op_finalize(&dod);
 
 	return res;
     } else if (is_atom(to)) {
@@ -1737,6 +1735,7 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	}
 	return 0;
     } else if (is_tuple(to)) { /* Remote send */
+	ErtsDistOpData dod;
 	int ret;
 	tp = tuple_val(to);
 	if (*tp != make_arityval(2))
@@ -1794,13 +1793,13 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	    goto send_message;
 	}
 
-	erts_dist_op_prepare(dep, p, ERTS_PROC_LOCK_MAIN);
+	erts_dist_op_prepare(&dod, dep, p, ERTS_PROC_LOCK_MAIN);
 	if (is_nil(dep->cid))
 	    ret = SEND_TRAP;
-	else if (dist_reg_send(p, ERTS_PROC_LOCK_MAIN, dep, tp[1], msg) == 1) {
+	else if (erts_dist_reg_send(&dod, tp[1], msg) == 1) {
 	    if (is_internal_port(dep->cid)) {
 		if (suspend) {
-		    erts_suspend(p, ERTS_PROC_LOCK_MAIN, dep->port);
+		    erts_suspend(p, ERTS_PROC_LOCK_MAIN, dod.dprt);
 		    if (erts_system_monitor_flags.busy_dist_port) {
 			monitor_generic(p, am_busy_dist_port, dep->cid);
 		    }
@@ -1820,7 +1819,7 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 		save_calls(p, &exp_send);
 	}
 
-	erts_dist_op_finalize(dep);
+	erts_dist_op_finalize(&dod);
 	erts_deref_dist_entry(dep);
 	return ret;
     } else {
@@ -3464,21 +3463,23 @@ BIF_RETTYPE group_leader_2(BIF_ALIST_2)
     }
 
     if (is_external_pid(BIF_ARG_2)) {
+	ErtsDistOpData dod;
 	BIF_RETTYPE ret;
 	dep = external_pid_dist_entry(BIF_ARG_2);
 	if(dep == erts_this_dist_entry)
 	    BIF_ERROR(BIF_P, BADARG);
 
-	erts_dist_op_prepare(dep, BIF_P, ERTS_PROC_LOCK_MAIN);
+	erts_dist_op_prepare(&dod, dep, BIF_P, ERTS_PROC_LOCK_MAIN);
 	if (is_nil(dep->cid)) {
 	dist_trap:
 	    ERTS_BIF_PREP_TRAP2(ret, dgroup_leader_trap, BIF_P,
 				BIF_ARG_1, BIF_ARG_2);
 	}
-	else if ((code = dist_group_leader(BIF_P, ERTS_PROC_LOCK_MAIN,
-				      dep, BIF_ARG_1, BIF_ARG_2)) == 1) {
+	else if ((code = erts_dist_group_leader(&dod,
+						BIF_ARG_1,
+						BIF_ARG_2)) == 1) {
 	    if (is_internal_port(dep->cid)) {
-		erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dep->port);
+		erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dod.dprt);
 		ERTS_BIF_PREP_ERROR(ret, BIF_P, RESCHEDULE);
 	    }
 	    else
@@ -3490,7 +3491,7 @@ BIF_RETTYPE group_leader_2(BIF_ALIST_2)
 	else {
 	    ERTS_BIF_PREP_RET(ret, am_true);
 	}
-	erts_dist_op_finalize(dep);
+	erts_dist_op_finalize(&dod);
 	return ret;
     }
     else if (is_internal_pid(BIF_ARG_2)) {

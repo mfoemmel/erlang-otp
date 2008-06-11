@@ -1118,11 +1118,11 @@ public abstract class AbstractConnection extends Thread {
       byte[] tmpname = new byte[buf.length - 11];
       ibuf.readN(tmpname);
       String hisname = new String(tmpname);
-      int i = hisname.indexOf('@',0);
-      peer.node = hisname;
-      peer.alive = hisname.substring(0,i);
-      peer.host = hisname.substring(i+1,hisname.length());
-
+      if (! hisname.equals(peer.node)) {
+	  throw new IOException("Handshake failed - peer has wrong name: "
+				+ hisname);
+      }
+      
       if ((peer.flags & AbstractNode.dFlagExtendedReferences) == 0) {
 	  throw new IOException("Handshake failed - peer cannot handle extended references");
       }

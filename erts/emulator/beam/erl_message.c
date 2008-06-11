@@ -117,7 +117,7 @@ erts_resize_message_buffer(ErlHeapFragment *bp, Uint size,
 	dbg_brefs[i] = copy_struct(brefs[i], dbg_size, &dbg_hp,
 				   &dbg_bp->off_heap);
     }
-    ASSERT(dbg_tot_size == size < bp->size ? size : bp->size);
+    ASSERT(dbg_tot_size == (size < bp->size ? size : bp->size));
 #endif
 
     nbp = (ErlHeapFragment*) ERTS_HEAP_REALLOC(ERTS_ALC_T_HEAP_FRAG,
@@ -330,8 +330,19 @@ erts_link_mbuf_to_proc(struct process *proc, ErlHeapFragment *bp)
 void
 erts_move_msg_mbuf_to_heap(Eterm** hpp, ErlOffHeap* off_heap, ErlMessage *msg)
 {
-    Uint **oh_list_pp, **oh_el_next_pp;
-    Uint *oh_el_p;
+    /* Unions for typecasts avoids warnings about type-punned pointers and aliasing */
+    union {
+	Uint** upp;
+	ProcBin **pbpp;
+	ErlFunThing **efpp;
+	ExternalThing **etpp;
+    } oh_list_pp, oh_el_next_pp;
+    union {
+	Uint *up;
+	ProcBin *pbp;
+	ErlFunThing *efp;
+	ExternalThing *etp;
+    } oh_el_p;
     Eterm term, token, *fhp, *hp;
     Sint offs;
     Uint sz;
@@ -389,9 +400,9 @@ erts_move_msg_mbuf_to_heap(Eterm** hpp, ErlOffHeap* off_heap, ErlMessage *msg)
     hp = *hpp;
     offs = hp - fhp;
 
-    oh_list_pp = NULL;
-    oh_el_next_pp = NULL; /* Shut up compiler warning */
-    oh_el_p = NULL; /* Shut up compiler warning */
+    oh_list_pp.upp = NULL;
+    oh_el_next_pp.upp = NULL; /* Shut up compiler warning */
+    oh_el_p.up = NULL; /* Shut up compiler warning */
     while (sz--) {
 	Uint cpy_sz;
 	Eterm val = *fhp++;
@@ -412,25 +423,25 @@ erts_move_msg_mbuf_to_heap(Eterm** hpp, ErlOffHeap* off_heap, ErlMessage *msg)
 	    case ARITYVAL_SUBTAG:
 		break;
 	    case REFC_BINARY_SUBTAG:
-		oh_list_pp = (Uint **) &off_heap->mso;
-		oh_el_p = (Uint *) (hp-1);
-		oh_el_next_pp = (Uint **) &((ProcBin *) oh_el_p)->next;
+		oh_list_pp.pbpp = &off_heap->mso;
+		oh_el_p.up = (hp-1);
+		oh_el_next_pp.pbpp = &(oh_el_p.pbp)->next;
 		cpy_sz = thing_arityval(val);
 		goto cpy_words;
 	    case FUN_SUBTAG:
 #ifndef HYBRID
-		oh_list_pp = (Uint **) &off_heap->funs;
-		oh_el_p = (Uint *) (hp-1);
-		oh_el_next_pp = (Uint **) &((ErlFunThing *) oh_el_p)->next;
+		oh_list_pp.efpp = &off_heap->funs;
+		oh_el_p.up = (hp-1);
+		oh_el_next_pp.efpp = &(oh_el_p.efp)->next;
 #endif
 		cpy_sz = thing_arityval(val);
 		goto cpy_words;
 	    case EXTERNAL_PID_SUBTAG:
 	    case EXTERNAL_PORT_SUBTAG:
 	    case EXTERNAL_REF_SUBTAG:
-		oh_list_pp = (Uint **) &off_heap->externals;
-		oh_el_p = (Uint *) (hp-1);
-		oh_el_next_pp = (Uint **) &((ExternalThing *) oh_el_p)->next;
+		oh_list_pp.etpp = &off_heap->externals;
+		oh_el_p.up = (hp-1);
+		oh_el_next_pp.etpp =  &(oh_el_p.etp)->next;
 		cpy_sz = thing_arityval(val);
 		goto cpy_words;
 	    default:
@@ -459,25 +470,25 @@ erts_move_msg_mbuf_to_heap(Eterm** hpp, ErlOffHeap* off_heap, ErlMessage *msg)
 		case 1: *hp++ = *fhp++;
 		default: break;
 		}
-		if (oh_list_pp) {
+		if (oh_list_pp.upp) {
 #ifdef HARD_DEBUG
-		    Uint *dbg_old_oh_list_p = *oh_list_pp;
+		    Uint *dbg_old_oh_list_p = *oh_list_pp.upp;
 #endif
 		    /* Add to offheap list */
-		    *oh_el_next_pp = *oh_list_pp;
-		    *oh_list_pp = oh_el_p;
-		    ASSERT(*hpp <= oh_el_p);
-		    ASSERT(hp > oh_el_p);
+		    *oh_el_next_pp.upp = *oh_list_pp.upp;
+		    *oh_list_pp.upp = oh_el_p.up;
+		    ASSERT(*hpp <= oh_el_p.up);
+		    ASSERT(hp > oh_el_p.up);
 #ifdef HARD_DEBUG
 		    switch (val & _HEADER_SUBTAG_MASK) {
 		    case REFC_BINARY_SUBTAG:
-			ASSERT(off_heap->mso == (ProcBin *) *oh_list_pp);
+			ASSERT(off_heap->mso == *oh_list_pp.pbpp);
 			ASSERT(off_heap->mso->next
 			       == (ProcBin *) dbg_old_oh_list_p);
 			break;
 #ifndef HYBRID
 		    case FUN_SUBTAG:
-			ASSERT(off_heap->funs == (ErlFunThing *) *oh_list_pp);
+			ASSERT(off_heap->funs == *oh_list_pp.efpp);
 			ASSERT(off_heap->funs->next
 			       == (ErlFunThing *) dbg_old_oh_list_p);
 			break;
@@ -486,7 +497,7 @@ erts_move_msg_mbuf_to_heap(Eterm** hpp, ErlOffHeap* off_heap, ErlMessage *msg)
 		    case EXTERNAL_PORT_SUBTAG:
 		    case EXTERNAL_REF_SUBTAG:
 			ASSERT(off_heap->externals
-			       == (ExternalThing *) *oh_list_pp);
+			       == *oh_list_pp.etpp);
 			ASSERT(off_heap->externals->next
 			       == (ExternalThing *) dbg_old_oh_list_p);
 			break;
@@ -494,7 +505,7 @@ erts_move_msg_mbuf_to_heap(Eterm** hpp, ErlOffHeap* off_heap, ErlMessage *msg)
 			ASSERT(0);
 		    }
 #endif
-		    oh_list_pp = NULL;
+		    oh_list_pp.upp = NULL;
 
 
 		}

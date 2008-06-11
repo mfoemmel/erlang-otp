@@ -6,7 +6,15 @@
 #include "global.h"
 #include "bif.h"
 #include "hipe_stack.h"
-#include "hipe_ppc_asm.h"	/* for NR_ARG_REGS */
+
+/* get NR_ARG_REGS from the arch */
+#if defined(__arm__)
+#include "hipe_arm_asm.h"
+#elif defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__)
+#include "hipe_ppc_asm.h"
+#elif defined(__sparc__)
+#include "hipe_sparc_asm.h"
+#endif
 
 AEXTERN(void,nbif_fail,(void));
 AEXTERN(void,nbif_stack_trap_ra,(void));
@@ -93,7 +101,7 @@ void hipe_print_nstack(Process *p)
 
     /* First RA not on stack. Dump current args first. */
     printf(" |%s|%s|\r\n", dashes, dashes);
-    for(i = 0; i < nstkarity; ++i)
+    for (i = 0; i < nstkarity; ++i)
 	print_slot(&nsp[i], 1);
     nsp += nstkarity;
 
@@ -101,7 +109,7 @@ void hipe_print_nstack(Process *p)
 	ra = (unsigned long)p->hipe.ngra;
     sdesc = hipe_find_sdesc(ra);
 
-    for(;;) {	/* INV: nsp at bottom of frame described by sdesc */
+    for (;;) {	/* INV: nsp at bottom of frame described by sdesc */
 	printf(" |%s|%s|\r\n", dashes, dashes);
 	if (nsp >= nsp_end) {
 	    if (nsp == nsp_end)
@@ -117,7 +125,7 @@ void hipe_print_nstack(Process *p)
 	sdesc_size = sdesc_fsize(sdesc) + 1 + sdesc_arity(sdesc);
 	i = 0;
 	mask = sdesc->livebits[0];
-	for(;;) {
+	for (;;) {
 	    if (i == sdesc_fsize(sdesc)) {
 		printf(" | 0x%0*lx | 0x%0*lx | ",
 		       2*(int)sizeof(long), (unsigned long)&nsp[i],
@@ -129,9 +137,8 @@ void hipe_print_nstack(Process *p)
 		if ((exnra = sdesc_exnra(sdesc1)) != 0)
 		    printf(", EXNRA 0x%lx", exnra);
 		printf("\r\n");
-	    } else {
+	    } else
 		print_slot(&nsp[i], (mask & 1));
-	    }
 	    if (++i >= sdesc_size)
 		break;
 	    if (i & 31)
@@ -163,7 +170,7 @@ void hipe_update_stack_trap(Process *p, const struct sdesc *sdesc)
 	return;
     }
     n = NSKIPFRAMES;
-    for(;;) {
+    for (;;) {
 	nsp += sdesc_fsize(sdesc);
 	if (nsp >= nsp_end) {
 	    p->hipe.nstgraylim = NULL;
@@ -243,4 +250,45 @@ void hipe_find_handler(Process *p)
     }
     fprintf(stderr, "%s: no native CATCH found!\r\n", __FUNCTION__);
     abort();
+}
+
+int hipe_fill_stacktrace(Process *p, int depth, Eterm **trace)
+{
+    Eterm *nsp;
+    Eterm *nsp_end;
+    unsigned long ra, prev_ra;
+    unsigned int arity;
+    const struct sdesc *sdesc;
+    int i;
+
+    if (depth < 1)
+	return 0;
+
+    nsp = p->hipe.nsp;
+    nsp_end = p->hipe.nstend;
+    arity = p->hipe.narity - NR_ARG_REGS;
+    if ((int)arity < 0)
+	arity = 0;
+
+    ra = (unsigned long)p->hipe.nra;
+    prev_ra = 0;
+    i = 0;
+    for (;;) {
+	if (ra == (unsigned long)nbif_stack_trap_ra)
+	    ra = (unsigned long)p->hipe.ngra;
+	if (ra != prev_ra) {
+	    trace[i] = (Eterm*)ra;
+	    ++i;
+	    if (i == depth)
+		break;
+	    prev_ra = ra;
+	}
+	if (nsp >= nsp_end)
+	    break;
+	sdesc = hipe_find_sdesc(ra);
+	nsp += arity + sdesc_fsize(sdesc);
+	arity = sdesc_arity(sdesc);
+	ra = *nsp++;
+    }
+    return i;
 }

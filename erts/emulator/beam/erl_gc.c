@@ -116,10 +116,6 @@ static void offset_rootset(Process *p, Sint offs, char* area, Uint area_size,
 static void offset_off_heap(Process* p, Sint offs, char* area, Uint area_size);
 static void offset_mqueue(Process *p, Sint offs, char* area, Uint area_size);
 
-#ifdef DEBUG
-static void check_off_heap(Process *p);
-#endif
-
 #ifdef HARDDEBUG
 static void disallow_heap_frag_ref_in_heap(Process* p);
 static void disallow_heap_frag_ref_in_old_heap(Process* p);
@@ -292,19 +288,19 @@ void
 erts_offset_off_heap(ErlOffHeap *ohp, Sint offs, Eterm* low, Eterm* high)
 {
     if (ohp->mso && ptr_within((Eterm *)ohp->mso, low, high)) {
-        Eterm** uptr = (Eterm**) &ohp->mso;
+        Eterm** uptr = (Eterm**) (void *) &ohp->mso;
         *uptr += offs;
     }
 
 #ifndef HYBRID /* FIND ME! */
     if (ohp->funs && ptr_within((Eterm *)ohp->funs, low, high)) {
-        Eterm** uptr = (Eterm**) &ohp->funs;
+        Eterm** uptr = (Eterm**) (void *) &ohp->funs;
         *uptr += offs;
     }
 #endif
 
     if (ohp->externals && ptr_within((Eterm *)ohp->externals, low, high)) {
-        Eterm** uptr = (Eterm**) &ohp->externals;
+        Eterm** uptr = (Eterm**) (void *) &ohp->externals;
         *uptr += offs;
     }
 }
@@ -361,9 +357,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 
     erts_smp_locked_activity_begin(ERTS_ACTIVITY_GC);
 
-#ifdef DEBUG
-    check_off_heap(p);
-#endif
+    ERTS_CHK_OFFHEAP(p);
 
     ErtsGcQuickSanityCheck(p);
     if (GEN_GCS(p) >= MAX_GEN_GCS(p)) {
@@ -385,9 +379,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
      * Finish.
      */
 
-#ifdef DEBUG
-    check_off_heap(p);
-#endif
+    ERTS_CHK_OFFHEAP(p);
 
     ErtsGcQuickSanityCheck(p);
 
@@ -2357,7 +2349,7 @@ offset_heap(Eterm* hp, Uint sz, Sint offs, char* area, Uint area_size)
 	      case REFC_BINARY_SUBTAG:
 		  {
 		      ProcBin* pb = (ProcBin*) hp;
-		      Eterm** uptr = (Eterm **) &pb->next;
+		      Eterm** uptr = (Eterm **) (void *) &pb->next;
 
 		      if (*uptr && in_area((Eterm *)pb->next, area, area_size)) {
 			  *uptr += offs; /* Patch the mso chain */
@@ -2381,7 +2373,7 @@ offset_heap(Eterm* hp, Uint sz, Sint offs, char* area, Uint area_size)
 	      case FUN_SUBTAG:
 		  {
 		      ErlFunThing* funp = (ErlFunThing *) hp;
-		      Eterm** uptr = (Eterm **) &funp->next;
+		      Eterm** uptr = (Eterm **) (void *) &funp->next;
 
 		      if (*uptr && in_area((Eterm *)funp->next, area, area_size)) {
 			  *uptr += offs;
@@ -2395,7 +2387,7 @@ offset_heap(Eterm* hp, Uint sz, Sint offs, char* area, Uint area_size)
 	      case EXTERNAL_REF_SUBTAG:
 		  {
 		      ExternalThing* etp = (ExternalThing *) hp;
-		      Eterm** uptr = (Eterm **) &etp->next;
+		      Eterm** uptr = (Eterm **) (void *) &etp->next;
 
 		      if (*uptr && in_area((Eterm *)etp->next, area, area_size)) {
 			  *uptr += offs;
@@ -2445,17 +2437,17 @@ static void
 offset_off_heap(Process* p, Sint offs, char* area, Uint area_size)
 {
     if (MSO(p).mso && in_area((Eterm *)MSO(p).mso, area, area_size)) {
-        Eterm** uptr = (Eterm**) &MSO(p).mso;
+        Eterm** uptr = (Eterm**) (void *) &MSO(p).mso;
         *uptr += offs;
     }
 
     if (MSO(p).funs && in_area((Eterm *)MSO(p).funs, area, area_size)) {
-        Eterm** uptr = (Eterm**) &MSO(p).funs;
+        Eterm** uptr = (Eterm**) (void *) &MSO(p).funs;
         *uptr += offs;
     }
 
     if (MSO(p).externals && in_area((Eterm *)MSO(p).externals, area, area_size)) {
-        Eterm** uptr = (Eterm**) &MSO(p).externals;
+        Eterm** uptr = (Eterm**) (void *) &MSO(p).externals;
         *uptr += offs;
     }
 }
@@ -2519,17 +2511,19 @@ offset_rootset(Process *p, Sint offs, char* area, Uint area_size,
     offset_one_rootset(p, offs, area, area_size, objv, nobj);
 }
 
-#ifdef DEBUG
-int
-within(Eterm *ptr, Process *p)
+#if defined(DEBUG) || defined(ERTS_OFFHEAP_DEBUG)
+
+static int
+within2(Eterm *ptr, Process *p, Eterm *real_htop)
 {
     ErlHeapFragment* bp = MBUF(p);
     ErlMessage* mp = p->msg.first;
+    Eterm *htop = real_htop ? real_htop : HEAP_TOP(p);
 
     if (OLD_HEAP(p) && (OLD_HEAP(p) <= ptr && ptr < OLD_HEND(p))) {
         return 1;
     }
-    if (HEAP_START(p) <= ptr && ptr < HEAP_TOP(p)) {
+    if (HEAP_START(p) <= ptr && ptr < htop) {
         return 1;
     }
     while (bp != NULL) {
@@ -2546,8 +2540,31 @@ within(Eterm *ptr, Process *p)
     return 0;
 }
 
-static void
-check_off_heap(Process *p)
+int
+within(Eterm *ptr, Process *p)
+{
+    return within2(ptr, p, NULL);
+}
+
+#endif
+
+#ifdef ERTS_OFFHEAP_DEBUG
+
+#define ERTS_CHK_OFFHEAP_ASSERT(EXP)			\
+do {							\
+    if (!(EXP))						\
+	erl_exit(ERTS_ABORT_EXIT,			\
+		 "%s:%d: Assertion failed: %s\n",	\
+		 __FILE__, __LINE__, #EXP);		\
+} while (0)
+
+#ifdef ERTS_OFFHEAP_DEBUG_CHK_CIRCULAR_EXTERNAL_LIST
+#  define ERTS_EXTERNAL_VISITED_BIT ((Eterm) 1 << 31)
+#endif
+
+
+void
+erts_check_off_heap2(Process *p, Eterm *htop)
 {
     Eterm *oheap = (Eterm *) OLD_HEAP(p);
     Eterm *ohtop = (Eterm *) OLD_HTOP(p);
@@ -2559,44 +2576,61 @@ check_off_heap(Process *p)
     old = 0;
     for (pb = MSO(p).mso; pb; pb = pb->next) {
 	Eterm *ptr = (Eterm *) pb;
-	(void) erts_refc_read(&pb->val->refc, 1);
+	long refc = erts_refc_read(&pb->val->refc, 1);
+	ERTS_CHK_OFFHEAP_ASSERT(refc >= 1);
 	if (old) {
-	    ASSERT(oheap <= ptr && ptr < ohtop);
+	    ERTS_CHK_OFFHEAP_ASSERT(oheap <= ptr && ptr < ohtop);
 	}
 	else if (oheap <= ptr && ptr < ohtop)
 	    old = 1;
 	else {
-	    ASSERT(within(ptr, p));
+	    ERTS_CHK_OFFHEAP_ASSERT(within2(ptr, p, htop));
 	}
     }
-    
+
     old = 0;
     for (eft = MSO(p).funs; eft; eft = eft->next) {
 	Eterm *ptr = (Eterm *) eft;
-	(void) erts_refc_read(&eft->fe->refc, 1);
-	if (old) {
-	    ASSERT(oheap <= ptr && ptr < ohtop);
-	}
+	long refc = erts_refc_read(&eft->fe->refc, 1);
+	ERTS_CHK_OFFHEAP_ASSERT(refc >= 1);
+	if (old)
+	    ERTS_CHK_OFFHEAP_ASSERT(oheap <= ptr && ptr < ohtop);
 	else if (oheap <= ptr && ptr < ohtop)
 	    old = 1;
-	else {
-	    ASSERT(within(ptr, p));
-	}
+	else
+	    ERTS_CHK_OFFHEAP_ASSERT(within2(ptr, p, htop));
     }
 
     old = 0;
     for (et = MSO(p).externals; et; et = et->next) {
 	Eterm *ptr = (Eterm *) et;
-	(void) erts_refc_read(&et->node->refc, 1);
-	if (old) {
-	    ASSERT(oheap <= ptr && ptr < ohtop);
-	}
+	long refc = erts_refc_read(&et->node->refc, 1);
+	ERTS_CHK_OFFHEAP_ASSERT(refc >= 1);
+#ifdef ERTS_OFFHEAP_DEBUG_CHK_CIRCULAR_EXTERNAL_LIST
+	ERTS_CHK_OFFHEAP_ASSERT(!(et->header & ERTS_EXTERNAL_VISITED_BIT));
+#endif
+	if (old)
+	    ERTS_CHK_OFFHEAP_ASSERT(oheap <= ptr && ptr < ohtop);
 	else if (oheap <= ptr && ptr < ohtop)
 	    old = 1;
-	else {
-	    ASSERT(within(ptr, p));
-	}
+	else
+	    ERTS_CHK_OFFHEAP_ASSERT(within2(ptr, p, htop));
+#ifdef ERTS_OFFHEAP_DEBUG_CHK_CIRCULAR_EXTERNAL_LIST
+	et->header |= ERTS_EXTERNAL_VISITED_BIT;
+#endif
     }
+
+#ifdef ERTS_OFFHEAP_DEBUG_CHK_CIRCULAR_EXTERNAL_LIST
+    for (et = MSO(p).externals; et; et = et->next)
+	et->header &= ~ERTS_EXTERNAL_VISITED_BIT;
+#endif
+	
+}
+
+void
+erts_check_off_heap(Process *p)
+{
+    erts_check_off_heap2(p, NULL);
 }
 
 #endif

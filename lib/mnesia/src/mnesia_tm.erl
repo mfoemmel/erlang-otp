@@ -1599,13 +1599,13 @@ tell_participants([Pid | Pids], Msg) ->
 tell_participants([], _Msg) ->
     ok.
 
-%% No need for trapping exits. We are only linked
-%% to mnesia_tm and if it dies we should also die.
-%% The same goes for disk_log and dets.
+%% Trap exit because we can get a shutdown from application manager
 commit_participant(Coord, Tid, Bin, DiscNs, RamNs) when binary(Bin) ->
+    process_flag(trap_exit, true),
     Commit = binary_to_term(Bin),
     commit_participant(Coord, Tid, Bin, Commit, DiscNs, RamNs);
 commit_participant(Coord, Tid, C, DiscNs, RamNs) when record(C, commit) ->
+    process_flag(trap_exit, true),
     commit_participant(Coord, Tid, C, C, DiscNs, RamNs).
 
 commit_participant(Coord, Tid, Bin, C0, DiscNs, _RamNs) ->
@@ -1687,7 +1687,7 @@ commit_participant(Coord, Tid, Bin, C0, DiscNs, _RamNs) ->
 		    verbose("** ERROR ** commit_participant ~p, got unexpected msg: ~p~n",
 			    [Tid, Msg])
 	    end;
-
+	
 	{'EXIT', Reason} ->
 	    ?eval_debug_fun({?MODULE, commit_participant, vote_no},
 			    [{tid, Tid}]),

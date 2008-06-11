@@ -9,6 +9,7 @@
 	 closure_arity/1,
          linear_to_cfg/1,
          labels/1, start_label/1,
+	 pp/1, pp/2,
 	 params/1, params_update/2,
          pred/2,
          redirect/4,
@@ -17,9 +18,6 @@
 	 visit/2, is_visited/2, none_visited/0
 	]).
 -export([postorder/1, reverse_postorder/1]).
--ifdef(ICODE_CFG_PP_NEEDED).
--export([pp/1, pp/2]).
--endif.
 
 -define(ICODE_CFG, true).	% needed by cfg.inc
 %%-define(DO_ASSERT, true).
@@ -32,9 +30,7 @@
 
 %%----------------------------------------------------------------------
 
--ifdef(ICODE_CFG_PP_NEEDED).
 -type(io_device() :: any()).    % XXX: DOES NOT BELONG HERE
--endif.
 
 %%----------------------------------------------------------------------
 %% Prototypes for exported functions which are Icode specific
@@ -161,8 +157,6 @@ redirect_ops(_, CFG, _) -> %% We do not refer to labels in Icode ops.
 
 %%----------------------------------------------------------------------------
 
--ifdef(ICODE_CFG_PP_NEEDED).
-
 -spec(pp/1 :: (#cfg{}) -> 'ok').
 pp(CFG) ->
   hipe_icode_pp:pp(cfg_to_linear(CFG)).
@@ -170,8 +164,6 @@ pp(CFG) ->
 -spec(pp/2 :: (io_device(), #cfg{}) -> 'ok').
 pp(Dev, CFG) ->
   hipe_icode_pp:pp(Dev, cfg_to_linear(CFG)).
-
--endif.
 
 %%----------------------------------------------------------------------------
 

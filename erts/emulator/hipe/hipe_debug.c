@@ -35,20 +35,19 @@ extern Uint beam_apply[];
 
 static void print_beam_pc(Uint *pc)
 {
-    if( pc == hipe_beam_pc_return ) {
+    if (pc == hipe_beam_pc_return) {
 	printf("return-to-native");
-    } else if( pc == hipe_beam_pc_throw ) {
+    } else if (pc == hipe_beam_pc_throw) {
 	printf("throw-to-native");
-    } else if( pc == &beam_apply[1] ) {
+    } else if (pc == &beam_apply[1]) {
 	printf("normal-process-exit");
     } else {
 	Eterm *mfa = find_function_from_pc(pc);
-	if( mfa ) {
+	if (mfa)
 	    erts_printf("%T:%T/%bpu + 0x%bpx",
 			mfa[0], mfa[1], mfa[2], pc - &mfa[3]);
-	} else {
+	else
 	    printf("?");
-	}
     }
 }
 
@@ -85,13 +84,13 @@ static void print_stack(Eterm *sp, Eterm *end)
     printf(" | %*s | %*s |\r\n",
 	   2+2*(int)sizeof(long), "Address",
 	   2+2*(int)sizeof(long), "Contents");
-    while( sp < end ) {
+    while (sp < end) {
 	Eterm val = sp[0];
-	if( is_CP(val) ) {
+	if (is_CP(val))
 	    print_beam_cp(sp, val);
-	} else if( is_catch(val) ) {
+	else if (is_catch(val))
 	    print_catch(sp, val);
-	} else {
+	else {
 	    printf(" | 0x%0*lx | 0x%0*lx | ",
 		   2*(int)sizeof(long), (unsigned long)sp,
 		   2*(int)sizeof(long), (unsigned long)val);
@@ -119,18 +118,18 @@ static void print_heap(Eterm *pos, Eterm *end)
 	   2+2*(int)sizeof(long), "Address",
 	   2+2*(int)sizeof(long), "Contents");
     printf(" |%s|%s|\r\n", dashes, dashes);
-    while( pos < end ) {
+    while (pos < end) {
 	Eterm val = pos[0];
 	printf(" | 0x%0*lx | 0x%0*lx | ",
 	       2*(int)sizeof(long), (unsigned long)pos,
 	       2*(int)sizeof(long), (unsigned long)val);
 	++pos;
-	if( is_arity_value(val) ) {
+	if (is_arity_value(val))
 	    printf("Arity(%lu)", arityval(val));
-	} else if( is_thing(val) ) {
+	else if (is_thing(val)) {
 	    unsigned int ari = thing_arityval(val);
 	    printf("Thing Arity(%u) Tag(%lu)", ari, thing_subtag(val));
-	    while( ari ) {
+	    while (ari) {
 		printf("\r\n | 0x%0*lx | 0x%0*lx | THING",
 		       2*(int)sizeof(long), (unsigned long)pos,
 		       2*(int)sizeof(long), (unsigned long)*pos);
@@ -158,7 +157,7 @@ void hipe_print_pcb(Process *p)
     printf(" % 4d | %s | 0x%0*lx |            |\r\n", (int)offsetof(Process,x), n, 2*(int)sizeof(long), (unsigned long)p->x)
 #define P(n,x) \
     printf(" % 4d | %s | 0x%0*lx | 0x%0*lx |\r\n", (int)offsetof(Process,x), n, 2*(int)sizeof(long), (unsigned long)p->x, 2*(int)sizeof(long), p->x ? (unsigned long)*(p->x) : -1UL)
-    
+
     U("htop       ", htop);
     U("hend       ", hend);
     U("heap       ", heap);

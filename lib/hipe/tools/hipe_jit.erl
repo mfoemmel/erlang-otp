@@ -6,11 +6,11 @@
 %%  Module   :	hipe_jit
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2002-03-14 Erik Johansson (happi@csd.uu.se): Created.
+%%  History  :	* 2002-03-14 Erik Johansson (happi@it.uu.se): Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/03/07 22:40:33 $
-%%              $Revision: 1.4 $
+%%              $Author: richardc $
+%%              $Date: 2008/04/20 13:01:14 $
+%%              $Revision: 1.5 $
 %% ====================================================================
 %% @doc
 %%    A tool to enable using the HiPE compiler as an automatic JIT

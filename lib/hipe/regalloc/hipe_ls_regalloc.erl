@@ -18,12 +18,12 @@
 %% </pre>
 %% @end
 %%              
-%%  History  :	* 2000-04-07 Erik Johansson (happi@csd.uu.se): Created.
+%%  History  :	* 2000-04-07 Erik Johansson (happi@it.uu.se): Created.
 %%              * 2001-07-16 EJ: Made less sparc-specific.
 %% CVS:
-%%    $Author: kostis $
-%%    $Date: 2008/03/25 10:09:45 $
-%%    $Revision: 1.34 $
+%%    $Author: richardc $
+%%    $Date: 2008/04/20 13:01:13 $
+%%    $Revision: 1.35 $
 %% =====================================================================
 %% Exported functions (short description):
 %%   regalloc(CFG,PhysRegs,Entrypoints, Options) -> 

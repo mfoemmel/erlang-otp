@@ -20,22 +20,19 @@
 
 SHELL = /bin/sh
 
+TARGET = @TARGET@
+
 srcdir = @srcdir@
 VPATH = @srcdir@
-prefix = @prefix@
-exec_prefix = @exec_prefix@
-bindir = $(exec_prefix)/bin
-libdir = $(exec_prefix)/lib
-includedir = $(prefix)/include
-infodir = $(prefix)/info
+libdir = ../../lib/$(TARGET)
 
 #### Start of system configuration section. ####
 
 CC = @CC@
 INSTALL = @INSTALL@
 DEFS = @DEFS@
-CFLAGS = @CFLAGS@
-ALL_CFLAGS = @opt_cflags@ -I. -I$(srcdir) -I$(srcdir)/../libsystas $(CFLAGS) -fPIC
+CFLAGS = @RX_CFLAGS@
+ALL_CFLAGS = -I. -I$(srcdir) -I$(srcdir)/../libsystas $(CFLAGS)
 AR = ar
 AR_FLAGS = rc
 RANLIB = @RANLIB@
@@ -65,15 +62,15 @@ all: librx.a
 
 install: all
 	test -d $(libdir) || mkdir $(libdir)
-	test -d $(includedir) || mkdir $(includedir)
+#	test -d $(includedir) || mkdir $(includedir)
 	$(INSTALL) librx.a $(libdir)/librx.a
 	$(RANLIB) $(libdir)/librx.a
-	$(INSTALL) $(srcdir)/inst-rxposix.h $(includedir)/rxposix.h
+#	$(INSTALL) $(srcdir)/inst-rxposix.h $(includedir)/rxposix.h
 
 
 uninstall:
 	-rm -f $(libdir)/librx.a
-	-rm -f $(includedir)/rxposix.h
+#	-rm -f $(includedir)/rxposix.h
 
 clean:
 	-rm -f $(libobjs) librx.a  $(opt_objs) 

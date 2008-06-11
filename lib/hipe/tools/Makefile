@@ -56,7 +56,7 @@ DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += +warn_obsolete_guard +warn_untyped_record +warn_missing_spec_exported
+ERL_COMPILE_FLAGS += +warn_obsolete_guard +warn_untyped_record +warn_missing_spec
 
 # ----------------------------------------------------
 # Targets

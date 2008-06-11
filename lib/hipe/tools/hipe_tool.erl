@@ -6,12 +6,12 @@
 %%  Module   :	hipe_tool
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2002-03-13 Erik Johansson (happi@csd.uu.se): 
+%%  History  :	* 2002-03-13 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2008/03/07 22:53:07 $
-%%              $Revision: 1.17 $
+%%              $Date: 2008/04/25 12:36:47 $
+%%              $Revision: 1.19 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -298,10 +298,7 @@ update_fun(State, Idx, Data) ->
   end.
 
 get_selection(Idx, Data, Default) ->
-  case catch lists:nth(Idx+1, Data) of
-    {'EXIT',_} -> Default;
-    Val -> Val
-  end.
+  try lists:nth(Idx+1, Data) catch _:_ -> Default end.
 
 -spec(update_module_box/4 ::
       (#state{}, integer(), [atom()], string()) -> #state{}).

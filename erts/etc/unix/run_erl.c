@@ -22,7 +22,19 @@
  * FIFOs, one for reading and one for writing; reads from the read FIFO
  * and writes to stdout and the write FIFO.
  *
- */
+  ________                            _________ 
+ |        |--<-- pipe.r (fifo1) --<--|         |
+ | to_erl |                          | run_erl | (parent)
+ |________|-->-- pipe.w (fifo2) -->--|_________|
+                                          ^ master pty
+                                          |
+                                          | slave pty
+                                      ____V____ 
+                                     |         |
+                                     |  "erl"  | (child)
+                                     |_________|
+*/
+
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -43,33 +55,32 @@
 #include <dirent.h>
 #include <termios.h>
 #include <time.h>
-#if !defined(NO_SYSLOG)
-#include <syslog.h>
+#ifndef NO_SYSLOG
+#  include <syslog.h>
 #endif
 #ifdef HAVE_PTY_H
-#include <pty.h>
+#  include <pty.h>
 #endif
 #ifdef HAVE_UTMP_H
-#include <utmp.h>
+#  include <utmp.h>
 #endif
 #ifdef HAVE_UTIL_H
-#include <util.h>
+#  include <util.h>
+#endif
+#ifdef HAVE_SYS_IOCTL_H
+#  include <sys/ioctl.h>
 #endif
 
-#ifndef HAVE_STRLCPY
-size_t strlcpy(char *dst, const char *src, size_t siz);
-#endif
-#ifndef HAVE_STRLCAT
-size_t strlcat(char *dst, const char *src, size_t siz);
-#endif
+#include "run_erl.h"
+#include "safe_string.h"    /* sn_printf, strn_cpy, strn_cat, etc */
 
-#if defined(O_NONBLOCK)
-# define DONT_BLOCK_PLEASE O_NONBLOCK
+#ifdef O_NONBLOCK
+#  define DONT_BLOCK_PLEASE O_NONBLOCK
 #else
-# define DONT_BLOCK_PLEASE O_NDELAY
-# if !defined(EAGAIN)
-#  define EAGAIN -3898734
-# endif
+#  define DONT_BLOCK_PLEASE O_NDELAY
+#  ifndef EAGAIN
+#    define EAGAIN -3898734
+#  endif
 #endif
 
 #define noDEBUG
@@ -109,11 +120,10 @@ static void usage(char *);
 static int create_fifo(char *name, int perm);
 static int open_pty_master(char **name);
 static int open_pty_slave(char *name);
-static void pass_on(pid_t, int);
+static void pass_on(pid_t);
 static void exec_shell(char **);
 static void status(const char *format,...);
-static void stderr_error(int priority, const char *format,...);
-static void catch_sigpipe(int);
+static void error_logf(int priority, int line, const char *format,...);
 static void catch_sigchild(int);
 static int next_log(int log_num);
 static int prev_log(int log_num);
@@ -127,7 +137,12 @@ static int outbuf_size(void);
 static void clear_outbuf(void);
 static char* outbuf_first(void);
 static void outbuf_delete(int bytes);
-static void outbuf_append(char* bytes, int n);
+static void outbuf_append(const char* bytes, int n);
+static int write_all(int fd, const char* buf, int len);
+static int extract_ctrl_seq(char* buf, int len);
+static void set_window_size(unsigned col, unsigned row);
+
+
 #ifdef DEBUG
 static void show_terminal_settings(struct termios *t);
 #endif
@@ -138,8 +153,6 @@ static char statusfile[FILENAME_BUFSIZ];
 static char log_dir[FILENAME_BUFSIZ];
 static char pipename[FILENAME_BUFSIZ];
 static FILE *stdstatus = NULL;
-static struct sigaction sig_act;
-static int fifowrite = 0;
 static int log_generations = DEFAULT_LOG_GENERATIONS;
 static int log_maxsize     = DEFAULT_LOG_MAXSIZE;
 static int log_alive_minutes = DEFAULT_LOG_ALIVE_MINUTES;
@@ -148,6 +161,8 @@ static int log_alive_in_gmt = 0;
 static char log_alive_format[ALIVE_BUFFSIZ+1];
 static int run_daemon = 0;
 static char *program_name;
+static int mfd; /* master pty fd */
+static unsigned protocol_ver = RUN_ERL_LO_VER; /* assume lowest to begin with */
 
 /*
  * Output buffer.
@@ -171,38 +186,31 @@ static char* outbuf_in;
 
 
 #ifdef NO_SYSLOG
-#define OPEN_SYSLOG() ((void) 0)
-#define ERROR(Parameters) stderr_error Parameters
+#    define OPEN_SYSLOG() ((void) 0)
 #else
-#define OPEN_SYSLOG()\
-openlog(simple_basename(program_name),LOG_PID|LOG_CONS|LOG_NOWAIT,LOG_USER)
-
-#define ERROR(Parameters)			\
-do {						\
-    if (run_daemon) {			        \
-	syslog Parameters;			\
-    } else {					\
-	stderr_error Parameters;		\
-    }						\
-} while (0)
+#    define OPEN_SYSLOG() openlog(simple_basename(program_name),   \
+                                  LOG_PID|LOG_CONS|LOG_NOWAIT,LOG_USER)
 #endif
 
-#define  CHECK_BUFFER(Need) 						   \
-do {									   \
-    if ((Need) >= FILENAME_BUFSIZ) {					   \
-	ERROR((LOG_ERR,"%s: Filename length (%d) exceeds maximum length "  \
-	      "of %d characters, exiting.",				   \
-	      program_name, (int)(Need), FILENAME_BUFSIZ));		   \
-	exit(1);							   \
-    }									   \
-} while (0)
+#define ERROR0(Prio,Format) error_logf(Prio,__LINE__,Format"\n")
+#define ERROR1(Prio,Format,A1) error_logf(Prio,__LINE__,Format"\n",A1)
+#define ERROR2(Prio,Format,A1,A2) error_logf(Prio,__LINE__,Format"\n",A1,A2)
+
+#ifdef HAVE_STRERROR
+#    define ADD_ERRNO(Format) "errno=%d '%s'\n"Format"\n",errno,strerror(errno)
+#else
+#    define ADD_ERRNO(Format) "errno=%d\n"Format"\n",errno
+#endif
+#define ERRNO_ERR0(Prio,Format) error_logf(Prio,__LINE__,ADD_ERRNO(Format))
+#define ERRNO_ERR1(Prio,Format,A1) error_logf(Prio,__LINE__,ADD_ERRNO(Format),A1)
+
 
 int main(int argc, char **argv)
 {
   int childpid;
-  int mfd, sfd;
+  int sfd;
   int fd;
-  char *p, *ptyslave;
+  char *p, *ptyslave=NULL;
   int i = 1;
   int off_argv;
 
@@ -221,11 +229,10 @@ int main(int argc, char **argv)
   }
 
   off_argv = i;
-  strlcpy(pipename, argv[i++], sizeof(pipename));
-  strlcpy(log_dir, argv[i], sizeof(log_dir));
-  strlcpy(statusfile, log_dir, sizeof(statusfile));
-  CHECK_BUFFER(strlen(statusfile)+strlen(STATUSFILENAME));
-  strlcat(statusfile, STATUSFILENAME, sizeof(statusfile));
+  strn_cpy(pipename, sizeof(pipename), argv[i++]);
+  strn_cpy(log_dir, sizeof(log_dir), argv[i]);
+  strn_cpy(statusfile, sizeof(statusfile), log_dir);
+  strn_cat(statusfile, sizeof(statusfile), STATUSFILENAME);
 
 #ifdef DEBUG
   status("%s: pid is : %d\n", argv[0], getpid());
@@ -235,8 +242,8 @@ int main(int argc, char **argv)
   if ((p = getenv("RUN_ERL_LOG_ALIVE_MINUTES"))) {
       log_alive_minutes = atoi(p);
       if (!log_alive_minutes) {
-	  ERROR((LOG_ERR,"Minumum value for RUN_ERL_LOG_ALIVE_MINUTES is 1 "
-		 "(current value is %s)\n",p));
+	  ERROR1(LOG_ERR,"Minimum value for RUN_ERL_LOG_ALIVE_MINUTES is 1 "
+		 "(current value is %s)",p);
       }
       log_activity_minutes = log_alive_minutes / 3;
       if (!log_activity_minutes) {
@@ -246,18 +253,18 @@ int main(int argc, char **argv)
   if ((p = getenv("RUN_ERL_LOG_ACTIVITY_MINUTES"))) {
      log_activity_minutes = atoi(p);
       if (!log_activity_minutes) {
-	  ERROR((LOG_ERR,"Minumum value for RUN_ERL_LOG_ACTIVITY_MINUTES is 1 "
-		 "(current value is %s)\n",p));
+	  ERROR1(LOG_ERR,"Minimum value for RUN_ERL_LOG_ACTIVITY_MINUTES is 1 "
+		 "(current value is %s)",p);
       }
   } 
   if ((p = getenv("RUN_ERL_LOG_ALIVE_FORMAT"))) {
       if (strlen(p) > ALIVE_BUFFSIZ) {
-	  ERROR((LOG_ERR, "RUN_ERL_LOG_ALIVE_FORMAT can contain a maximum of "
-		 "%d characters\n", ALIVE_BUFFSIZ));
+	  ERROR1(LOG_ERR, "RUN_ERL_LOG_ALIVE_FORMAT can contain a maximum of "
+		 "%d characters", ALIVE_BUFFSIZ);
       }
-      strlcpy(log_alive_format, p, sizeof(log_alive_format));
+      strn_cpy(log_alive_format, sizeof(log_alive_format), p);
   } else {
-      strlcpy(log_alive_format, DEFAULT_LOG_ALIVE_FORMAT, sizeof(log_alive_format));
+      strn_cpy(log_alive_format, sizeof(log_alive_format), DEFAULT_LOG_ALIVE_FORMAT);
   }
   if ((p = getenv("RUN_ERL_LOG_ALIVE_IN_UTC")) && strcmp(p,"0")) {
       ++log_alive_in_gmt;
@@ -265,15 +272,15 @@ int main(int argc, char **argv)
   if ((p = getenv("RUN_ERL_LOG_GENERATIONS"))) {
     log_generations = atoi(p);
     if (log_generations < LOG_MIN_GENERATIONS)
-      ERROR((LOG_ERR,"Minumum RUN_ERL_LOG_GENERATIONS is %d\n", LOG_MIN_GENERATIONS));
+      ERROR1(LOG_ERR,"Minimum RUN_ERL_LOG_GENERATIONS is %d", LOG_MIN_GENERATIONS);
     if (log_generations > LOG_MAX_GENERATIONS)
-      ERROR((LOG_ERR,"Maximum RUN_ERL_LOG_GENERATIONS is %d\n", LOG_MAX_GENERATIONS));
+      ERROR1(LOG_ERR,"Maximum RUN_ERL_LOG_GENERATIONS is %d", LOG_MAX_GENERATIONS);
   }
 
   if ((p = getenv("RUN_ERL_LOG_MAXSIZE"))) {
     log_maxsize = atoi(p);
     if (log_maxsize < LOG_MIN_MAXSIZE)
-      ERROR((LOG_ERR,"Minimum RUN_ERL_LOG_MAXSIZE is %d\n", LOG_MIN_MAXSIZE));
+      ERROR1(LOG_ERR,"Minimum RUN_ERL_LOG_MAXSIZE is %d", LOG_MIN_MAXSIZE);
   }
 
   /*
@@ -289,7 +296,7 @@ int main(int argc, char **argv)
 
     dirp = opendir(pipename);
     if(!dirp) {
-      ERROR((LOG_ERR,"Can't access pipe directory %s.\n", pipename));
+      ERRNO_ERR1(LOG_ERR,"Can't access pipe directory '%s'.", pipename);
       exit(1);
     }
 
@@ -303,23 +310,21 @@ int main(int argc, char **argv)
       }
     }	
     closedir(dirp);
-    CHECK_BUFFER(strlen(pipename)+10+strlen(PIPE_STUBNAME));
-    sprintf(pipename+strlen(pipename),
-	    "%s.%d",PIPE_STUBNAME,highest_pipe_num+1);
+    strn_catf(pipename, sizeof(pipename), "%s.%d",
+	      PIPE_STUBNAME, highest_pipe_num+1);
   } /* if */
 
   /* write FIFO - is read FIFO for `to_erl' program */
-  strlcpy(fifo1, pipename, sizeof(fifo1));
-  CHECK_BUFFER(strlen(fifo1)+2);
-  strlcat(fifo1, ".r", sizeof(fifo1));
+  strn_cpy(fifo1, sizeof(fifo1), pipename);
+  strn_cat(fifo1, sizeof(fifo1), ".r");
   if (create_fifo(fifo1, PERM) < 0) {
-    ERROR((LOG_ERR,"Cannot create FIFO %s for writing.\n", fifo1));
+    ERRNO_ERR1(LOG_ERR,"Cannot create FIFO %s for writing.", fifo1);
     exit(1);
   }
 
   /* read FIFO - is write FIFO for `to_erl' program */
-  strlcpy(fifo2, pipename, sizeof(fifo2));
-  strlcat(fifo2, ".w", sizeof(fifo2));
+  strn_cpy(fifo2, sizeof(fifo2), pipename);
+  strn_cat(fifo2, sizeof(fifo2), ".w");
 
   /* Check that nobody is running run_erl already */
   if ((fd = open (fifo2, O_WRONLY|DONT_BLOCK_PLEASE, 0)) >= 0) {
@@ -329,7 +334,7 @@ int main(int argc, char **argv)
     exit(1);
   }
   if (create_fifo(fifo2, PERM) < 0) { 
-    ERROR((LOG_ERR,"Cannot create FIFO %s for reading.\n", fifo2));
+    ERRNO_ERR1(LOG_ERR,"Cannot create FIFO %s for reading.", fifo2);
     exit(1);
   }
 
@@ -338,7 +343,7 @@ int main(int argc, char **argv)
    */
 
   if ((mfd = open_pty_master(&ptyslave)) < 0) {
-    ERROR((LOG_ERR,"Could not open pty master\n"));
+    ERRNO_ERR0(LOG_ERR,"Could not open pty master");
     exit(1);
   }
 
@@ -347,7 +352,7 @@ int main(int argc, char **argv)
    */
 
   if ((childpid = fork()) < 0) {
-    ERROR((LOG_ERR,"Cannot fork\n"));
+    ERRNO_ERR0(LOG_ERR,"Cannot fork");
     exit(1);
   }
   if (childpid == 0) {
@@ -356,16 +361,14 @@ int main(int argc, char **argv)
     /* disassociate from control terminal */
 #ifdef USE_SETPGRP_NOARGS       /* SysV */
     setpgrp();
-#else
-#ifdef USE_SETPGRP              /* BSD */
+#elif defined(USE_SETPGRP)       /* BSD */
     setpgrp(0,getpid());
 #else                           /* POSIX */
     setsid();
 #endif
-#endif
     /* Open the slave pty */
     if ((sfd = open_pty_slave(ptyslave)) < 0) {
-      ERROR((LOG_ERR,"Could not open pty slave %s\n", ptyslave));
+      ERRNO_ERR1(LOG_ERR,"Could not open pty slave '%s'", ptyslave);
       exit(1);
     }
     /* But sfd may be one of the stdio fd's now, and we should be unmodern and not use dup2... */
@@ -398,10 +401,11 @@ int main(int argc, char **argv)
                         /* adjust. */
   } else {
     /* Parent */
-    /* Catch the SIGPIPE signal */
+    /* Ignore the SIGPIPE signal, write() will return errno=EPIPE */
+    struct sigaction sig_act;
     sigemptyset(&sig_act.sa_mask);
     sig_act.sa_flags = 0;
-    sig_act.sa_handler = catch_sigpipe;
+    sig_act.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sig_act, (struct sigaction *)NULL);
 
     sigemptyset(&sig_act.sa_mask);
@@ -413,7 +417,7 @@ int main(int argc, char **argv)
      * read and write: enter the workloop
      */
 
-    pass_on(childpid, mfd);
+    pass_on(childpid);
   }
   return 0;
 } /* main() */
@@ -423,7 +427,7 @@ int main(int argc, char **argv)
  * program erlang. If input arrives from to_erl it is passed on to
  * erlang.
  */
-static void pass_on(pid_t childpid, int mfd)
+static void pass_on(pid_t childpid)
 {
     int len;
     fd_set readfds;
@@ -437,13 +441,14 @@ static void pass_on(pid_t childpid, int mfd)
     int rfd, wfd=0, lfd=0;
     int maxfd;
     int ready;
+    int got_some = 0; /* from to_erl */
     
     /* Open the to_erl pipe for reading.
      * We can't open the writing side because nobody is reading and 
      * we'd either hang or get an error.
      */
     if ((rfd = open(fifo2, O_RDONLY|DONT_BLOCK_PLEASE, 0)) < 0) {
-	ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
+	ERRNO_ERR1(LOG_ERR,"Could not open FIFO '%s' for reading.", fifo2);
 	exit(1);
     }
     
@@ -489,7 +494,7 @@ static void pass_on(pid_t childpid, int mfd)
 		FD_ZERO(&writefds);
 	    } else {
 		/* Some error occured */
-		ERROR((LOG_ERR,"Error in select."));
+		ERRNO_ERR0(LOG_ERR,"Error in select.");
 		exit(1);
 	    }
 	} else {
@@ -515,13 +520,14 @@ static void pass_on(pid_t childpid, int mfd)
 		}
 		if (!strftime(log_alive_buffer, ALIVE_BUFFSIZ, log_alive_format,
 			      tmptr)) {
-		    strlcpy(log_alive_buffer,
-			    "(could not format time in 256 positions "
-			    "with current format string.)", sizeof(log_alive_buffer));
+		    strn_cpy(log_alive_buffer, sizeof(log_alive_buffer),
+			     "(could not format time in 256 positions "
+			     "with current format string.)");
 		}
 		log_alive_buffer[ALIVE_BUFFSIZ] = '\0';
 
-		sprintf(buf, "\n===== %s%s\n", ready?"":"ALIVE ", log_alive_buffer);
+		sn_printf(buf, sizeof(buf), "\n===== %s%s\n", 
+			  ready?"":"ALIVE ", log_alive_buffer);
 		write_to_log(&lfd, &lognum, buf, strlen(buf));
 	    }
 	}
@@ -568,9 +574,9 @@ static void pass_on(pid_t childpid, int mfd)
 		unlink(fifo2);
 		if (len < 0) {
 		    if(errno == EIO)
-			ERROR((LOG_ERR,"Erlang closed the connection.\n"));
+			ERROR0(LOG_ERR,"Erlang closed the connection.");
 		    else
-			ERROR((LOG_ERR,"Error in reading from terminal: errno=%d\n",errno));
+			ERRNO_ERR0(LOG_ERR,"Error in reading from terminal");
 		    exit(1);
 		}
 		exit(0);
@@ -582,7 +588,7 @@ static void pass_on(pid_t childpid, int mfd)
 	     * Save in the output queue.
 	     */
 
-	    if (fifowrite && wfd) {
+	    if (wfd) {
 		outbuf_append(buf, len);
 	    }
 	}	    
@@ -594,56 +600,70 @@ static void pass_on(pid_t childpid, int mfd)
 #ifdef DEBUG
 	    status("FIFO read; ");
 #endif
-	    fifowrite = 1;
 	    if ((len = read(rfd, buf, BUFSIZ)) < 0) {
 		close(rfd);
 		if(wfd) close(wfd);
 		close(mfd);
 		unlink(fifo1);
 		unlink(fifo2);
-		ERROR((LOG_ERR,"Error in reading from FIFO.\n"));
+		ERRNO_ERR0(LOG_ERR,"Error in reading from FIFO.");
 		exit(1);
 	    }
 
-	    /* Try to open the write pipe to to_erl. Now that we got some data
-	     * from to_erl, to_erl should already be reading this pipe - open
-	     * should succeed. But in case of error, we just ignore it.
-	     */
-
 	    if(!len) {
+		/* to_erl closed its end of the pipe */
 		close(rfd);
 		rfd = open(fifo2, O_RDONLY|DONT_BLOCK_PLEASE, 0);
 		if (rfd < 0) {
-		    ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
+		    ERRNO_ERR1(LOG_ERR,"Could not open FIFO '%s' for reading.", fifo2);
 		    exit(1);
 		}
-	    } else {
+		got_some = 0; /* reset for next session */
+	    }
+	    else { 
 		if(!wfd) {
+		    /* Try to open the write pipe to to_erl. Now that we got some data
+		     * from to_erl, to_erl should already be reading this pipe - open
+		     * should succeed. But in case of error, we just ignore it.
+		     */
 		    if ((wfd = open(fifo1, O_WRONLY|DONT_BLOCK_PLEASE, 0)) < 0) {
 			status("Client expected on FIFO %s, but can't open (len=%d)\n",
 			       fifo1, len);
 			close(rfd);
 			rfd = open(fifo2, O_RDONLY|DONT_BLOCK_PLEASE, 0);
 			if (rfd < 0) {
-			    ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
+			    ERRNO_ERR1(LOG_ERR,"Could not open FIFO '%s' for reading.", fifo2);
 			    exit(1);
 			}
 			wfd = 0;
-		    } else {
+		    } 
+		    else {
 #ifdef DEBUG
 			status("run_erl: %s opened for writing\n", fifo1);
 #endif
 		    }
 		}
-	
+
+		if (!got_some && wfd && buf[0] == '\022') {
+		    char wbuf[30];
+		    int wlen = sn_printf(wbuf,sizeof(wbuf),"[run_erl v%u-%u]\n",
+					 RUN_ERL_HI_VER, RUN_ERL_LO_VER);
+		    outbuf_append(wbuf,wlen);
+		}
+		got_some = 1;
+
+
 		/* Write the message */
 #ifdef DEBUG
 		status("Pty master write; ");
 #endif
+		len = extract_ctrl_seq(buf, len);
+
 		if(len==1 && buf[0] == '\003') {
 		    kill(childpid,SIGINT);
-		} else if(write(mfd, buf, len) != len) {
-		    ERROR((LOG_ERR,"Error in writing to terminal.\n"));
+		} 
+		else if (len>0 && write_all(mfd, buf, len) != len) {
+		    ERRNO_ERR0(LOG_ERR,"Error in writing to terminal.");
 		    close(rfd);
 		    if(wfd) close(wfd);
 		    close(mfd);
@@ -656,23 +676,6 @@ static void pass_on(pid_t childpid, int mfd)
 	}
     }
 } /* pass_on() */
-
-/*
- * catch_sigpipe()
- * Called if there is an exception on a pipe.
- * This is normally because the to_erl program is no longer connected
- * to the pipe. We just set a flag that indicates that no writing to
- * the pipe is to be done.
- */
-static void catch_sigpipe(int sig)
-{
-  switch(sig) {
-  case SIGPIPE:
-    fifowrite = 0;
-  default:
-    ;
-  }
-}
 
 static void catch_sigchild(int sig)
 {
@@ -716,7 +719,7 @@ static int find_next_log_num(void) {
     log_exists[i] = 0;
   dirp = opendir(log_dir);
   if(!dirp) {
-    ERROR((LOG_ERR,"Can't access log directory %s.\n", log_dir));
+    ERRNO_ERR1(LOG_ERR,"Can't access log directory '%s'", log_dir);
     exit(1);
   }
 
@@ -760,7 +763,8 @@ static int find_next_log_num(void) {
  * at the end or a trucnating write, according to flags.
  * A LOGGING STARTED and time stamp message is inserted into the log file
  */
-static int open_log(int log_num, int flags) {
+static int open_log(int log_num, int flags)
+{
   char buf[FILENAME_MAX];
   time_t now;
   struct tm *tmptr;
@@ -768,13 +772,14 @@ static int open_log(int log_num, int flags) {
   int lfd;
 
   /* Remove the next log (to keep a "hole" in the log sequence) */
-  sprintf(buf, "%s/%s%d", log_dir, LOG_STUBNAME, next_log(log_num));
+  sn_printf(buf, sizeof(buf), "%s/%s%d",
+	    log_dir, LOG_STUBNAME, next_log(log_num));
   unlink(buf);
 
   /* Create or continue on the current log file */
-  sprintf(buf, "%s/%s%d", log_dir, LOG_STUBNAME, log_num);
+  sn_printf(buf, sizeof(buf), "%s/%s%d", log_dir, LOG_STUBNAME, log_num);
   if((lfd = open(buf, flags, LOG_PERM))<0){
-    ERROR((LOG_ERR,"Can't open log file %s.", buf));
+      ERRNO_ERR1(LOG_ERR,"Can't open log file '%s'.", buf);
     exit(1);
   }
 
@@ -787,15 +792,16 @@ static int open_log(int log_num, int flags) {
   }
   if (!strftime(log_buffer, ALIVE_BUFFSIZ, log_alive_format,
 		tmptr)) {
-      strlcpy(log_buffer,
+      strn_cpy(log_buffer, sizeof(log_buffer),
 	      "(could not format time in 256 positions "
-	      "with current format string.)", sizeof(log_buffer));
+	      "with current format string.)");
   }
   log_buffer[ALIVE_BUFFSIZ] = '\0';
 
-  sprintf(buf, "\n=====\n===== LOGGING STARTED %s\n=====\n", log_buffer);
-  if(write(lfd, buf, strlen(buf)) != strlen(buf))
-    status("Error in writing to log.\n");
+  sn_printf(buf, sizeof(buf), "\n=====\n===== LOGGING STARTED %s\n=====\n",
+	    log_buffer);
+  if (write_all(lfd, buf, strlen(buf)) < 0)
+      status("Error in writing to log.\n");
 
 #if USE_FSYNC
   fsync(lfd);
@@ -808,7 +814,8 @@ static int open_log(int log_num, int flags) {
  * Writes a message to a log file. If the current log file is full,
  * a new log file is opened.
  */
-static void write_to_log(int* lfd, int* log_num, char* buf, int len) {
+static void write_to_log(int* lfd, int* log_num, char* buf, int len)
+{
   int size;
 
   /* Decide if new logfile needed, and open if so */
@@ -822,7 +829,7 @@ static void write_to_log(int* lfd, int* log_num, char* buf, int len) {
 
   /* Write to log file */
 
-  if(write(*lfd, buf, len) != len) {
+  if (write_all(*lfd, buf, len) < 0) {
     status("Error in writing to log.\n");
   }
 
@@ -850,11 +857,11 @@ static int open_pty_master(char **ptyslave)
 {
   int mfd;
 #ifdef HAVE_OPENPTY
-# ifdef PATH_MAX
-#  define SLAVE_SIZE PATH_MAX
-#else
-#  define SLAVE_SIZE 1024
-#endif
+#  ifdef PATH_MAX
+#    define SLAVE_SIZE PATH_MAX
+#  else
+#    define SLAVE_SIZE 1024
+#  endif
     static char slave[SLAVE_SIZE];
     int sfd;
 #  undef SLAVE_SIZE
@@ -865,9 +872,10 @@ static int open_pty_master(char **ptyslave)
   if (openpty(&mfd, &sfd, slave, NULL, NULL) == 0) {
       close(sfd);
       *ptyslave = slave;
+      return mfd;
   }
-  return mfd;
-#else
+  return -1;
+#else /* !HAVE_OPENPTY */
   /*
    * The traditional way to find ptys. We only try it if openpty()
    * is not available.
@@ -940,7 +948,7 @@ static int open_pty_master(char **ptyslave)
   }
 
   return -1;
-#endif
+#endif /* !HAVE_OPENPTY */
 }
 
 static int open_pty_slave(char *name)
@@ -991,7 +999,7 @@ static void exec_shell(char **argv)
   if (run_daemon) {
       OPEN_SYSLOG();
   }
-  ERROR((LOG_ERR,"Could not execve\n"));
+  ERRNO_ERR0(LOG_ERR,"Could not execv");
 }
 
 /* status()
@@ -1045,21 +1053,28 @@ static void daemon_init(void)
     run_daemon = 1;
 }
 
-/* error()
- * Prints the arguments to stderr
- * Works like printf (see vfrpintf)
+/* error_logf()
+ * Prints the arguments to stderr or syslog
+ * Works like printf (see vfprintf)
  */
-static void stderr_error(int priority /* ignored */, const char *format, ...)
+static void error_logf(int priority, int line, const char *format, ...)
 {
-  va_list args;
-  time_t now;
+    va_list args;
+    va_start(args, format);
 
-  now = time(NULL);
-  fprintf(stderr, "run_erl [%d] %s", (int)getpid(), ctime(&now));
-  va_start(args, format);
-  vfprintf(stderr, format, args);
-  va_end(args);
-}
+#ifndef NO_SYSLOG
+    if (run_daemon) {
+	vsyslog(priority,format,args);
+    }
+    else
+#endif
+    {
+	time_t now = time(NULL);
+	fprintf(stderr, "run_erl:%d [%d] %s", line, (int)getpid(), ctime(&now));
+	vfprintf(stderr, format, args);
+    }
+    va_end(args);
+}	
 
 static void usage(char *pname)
 {
@@ -1111,7 +1126,7 @@ static void outbuf_delete(int bytes)
     }
 }
 
-static void outbuf_append(char* buf, int n)
+static void outbuf_append(const char* buf, int n)
 {
     if (outbuf_base+outbuf_total < outbuf_in+n) {
 	/*
@@ -1149,6 +1164,78 @@ static void outbuf_append(char* buf, int n)
     outbuf_in += n;
 }
 
+/* Call write() until entire buffer has been written or error.
+ * Return len or -1.
+ */
+static int write_all(int fd, const char* buf, int len)
+{
+    int left = len;
+    int written;
+    for (;;) {
+	written = write(fd,buf,left);
+	if (written == left) {
+	    return len;
+	}
+	if (written < 0) {
+	    return -1;
+	}
+	left -= written;
+	buf += written;
+    }
+}
+
+/* Extract any control sequences that are ment only for run_erl
+ * and should not be forwarded to the pty.
+ */
+static int extract_ctrl_seq(char* buf, int len)
+{
+    static const char prefix[] = "\033_";
+    static const char suffix[] = "\033\\";
+
+    char* start = find_str(buf,len,prefix);
+
+    if (start) {
+	char* command = start + strlen(prefix);
+	char* end = find_str(command,(buf+len)-command,suffix);
+	if (end) {
+	    unsigned col, row;
+	    if (sscanf(command,"version=%u", &protocol_ver)==1) {
+		/*fprintf(stderr,"to_erl v%u\n", protocol_ver);*/
+	    }
+	    else if (sscanf(command,"winsize=%u,%u", &col, &row)==2) {
+		set_window_size(col,row);
+	    }
+	    else {
+		ERROR2(LOG_ERR, "Ignoring unknown ctrl command '%.*s'\n",
+		       (int)(end-command), command);
+	    }
+
+	    /* Remove ctrl sequence from buf */
+	    end += strlen(suffix);
+	    memmove(start, end, (buf+len)-end);
+	    len -= end - start;
+	}
+	else {
+	    ERROR2(LOG_ERR, "Missing suffix in ctrl sequence '%.*s'\n",
+		    (int)((buf+len)-start), start);
+	}
+    }
+    return len;
+}
+
+static void set_window_size(unsigned col, unsigned row)
+{
+#ifdef TIOCSWINSZ	
+    struct winsize ws;
+    ws.ws_col = col;
+    ws.ws_row = row;
+    if (ioctl(mfd, TIOCSWINSZ, &ws) < 0) {
+	ERRNO_ERR0(LOG_ERR,"Failed to set window size");
+    }
+#endif
+}
+
+
 #ifdef DEBUG
 
 #define S(x)  ((x) > 0 ? 1 : 0)
@@ -1183,98 +1270,4 @@ static void show_terminal_settings(struct termios *t)
 
 #endif /* DEBUG */
 
-/*
- * Copyright (c) 1998 Todd C. Miller <Todd.Miller@courtesan.com>
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
 
-#ifndef HAVE_STRLCPY
-
-#include <sys/types.h>
-#include <string.h>
-
-/*
- * Copy src to string dst of size siz.  At most siz-1 characters
- * will be copied.  Always NUL terminates (unless siz == 0).
- * Returns strlen(src); if retval >= siz, truncation occurred.
- */
-size_t
-strlcpy(char *dst, const char *src, size_t siz)
-{
-	char *d = dst;
-	const char *s = src;
-	size_t n = siz;
-
-	/* Copy as many bytes as will fit */
-	if (n != 0 && --n != 0) {
-		do {
-			if ((*d++ = *s++) == 0)
-				break;
-		} while (--n != 0);
-	}
-
-	/* Not enough room in dst, add NUL and traverse rest of src */
-	if (n == 0) {
-		if (siz != 0)
-			*d = '\0';		/* NUL-terminate dst */
-		while (*s++)
-			;
-	}
-
-	return(s - src - 1);	/* count does not include NUL */
-}
-
-#endif /* !HAVE_STRLCPY */
-
-#ifndef HAVE_STRLCAT
-
-#include <sys/types.h>
-#include <string.h>
-
-/*
- * Appends src to string dst of size siz (unlike strncat, siz is the
- * full size of dst, not space left).  At most siz-1 characters
- * will be copied.  Always NUL terminates (unless siz <= strlen(dst)).
- * Returns strlen(src) + MIN(siz, strlen(initial dst)).
- * If retval >= siz, truncation occurred.
- */
-size_t
-strlcat(char *dst, const char *src, size_t siz)
-{
-	char *d = dst;
-	const char *s = src;
-	size_t n = siz;
-	size_t dlen;
-
-	/* Find the end of dst and adjust bytes left but don't go past end */
-	while (n-- != 0 && *d != '\0')
-		d++;
-	dlen = d - dst;
-	n = siz - dlen;
-
-	if (n == 0)
-		return(dlen + strlen(s));
-	while (*s != '\0') {
-		if (n != 1) {
-			*d++ = *s;
-			n--;
-		}
-		s++;
-	}
-	*d = '\0';
-
-	return(dlen + (s - src));	/* count does not include NUL */
-}
-
-#endif /* !HAVE_STRLCAT */

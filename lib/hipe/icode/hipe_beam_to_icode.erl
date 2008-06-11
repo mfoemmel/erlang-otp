@@ -900,15 +900,10 @@ trans_fun([{bs_init_bits,{f,Lbl},Size,_Words,_LiveRegs,{field_flags,Flags0},X}|
     end,
   trans_bin_call({hipe_bs_primop,Name}, Lbl, Args, [Dst, Base, Offset],
 		 Base, Offset, Env, Instructions);
-trans_fun([{bs_bits_to_bytes, {f,Lbl}, Bits, Bytes}|Instructions], Env) ->
-  Src = trans_arg(Bits), 
-  Dst = mk_var(Bytes),
-  trans_op_call({hipe_bs_primop,bs_bits_to_bytes}, Lbl, [Src], [Dst],
-		Env, Instructions);
 trans_fun([{bs_bits_to_bytes2, Bits, Bytes}|Instructions], Env) ->
   Src = trans_arg(Bits), 
   Dst = mk_var(Bytes),
-  [hipe_icode:mk_primop([Dst],{hipe_bs_primop,bs_bits_to_bytes2},[Src])|
+  [hipe_icode:mk_primop([Dst], 'bsl', [Src, hipe_icode:mk_const(3)])|
    trans_fun(Instructions,Env)];
 trans_fun([{bs_add, {f,Lbl}, [Old,New,Unit], Res}|Instructions], Env) ->
   Dst = mk_var(Res),
@@ -933,6 +928,20 @@ trans_fun([{bs_add, {f,Lbl}, [Old,New,Unit], Res}|Instructions], Env) ->
 	     Succ]
 	end
     end,
+  Succ2 = mk_label(new),
+  {FailLblName, FailCode} = 
+    if Lbl =:= 0 ->
+	FailLbl = mk_label(new),
+	{hipe_icode:label_name(FailLbl),
+	 [FailLbl,
+	  hipe_icode:mk_fail([hipe_icode:mk_const(badarg)], error)]};
+       true ->
+	{Lbl, []}
+    end,
+  IsPos = 
+    [hipe_icode:mk_if('>=', [Temp, hipe_icode:mk_const(0)], 
+		      hipe_icode:label_name(Succ2), FailLblName)] ++
+    FailCode ++ [Succ2], 
   AddI =
     case Old of
       {integer,OldInt} ->
@@ -941,7 +950,7 @@ trans_fun([{bs_add, {f,Lbl}, [Old,New,Unit], Res}|Instructions], Env) ->
 	OldVar = mk_var(Old),
 	hipe_icode:mk_primop([Dst], '+', [Temp, OldVar])
     end,
-  MultIs ++ [AddI|trans_fun(Instructions, Env)];
+  MultIs ++ IsPos ++ [AddI|trans_fun(Instructions, Env)];
 	   
 %%--------------------------------------------------------------------
 %%--- Translation of floating point instructions ---

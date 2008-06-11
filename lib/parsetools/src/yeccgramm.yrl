@@ -20,22 +20,25 @@
 %% parser generator.
 
 Nonterminals
-grammar declaration rule head symbol symbols attached_code
+grammar declaration rule head symbol symbols strings attached_code
 token tokens.
 
 Terminals
 atom float integer reserved_symbol reserved_word string char var
-'->' ':' 'dot'.
+'->' ':' dot.
 
 Rootsymbol grammar.
 
 grammar -> declaration : '$1'.
 grammar -> rule : '$1'.
-declaration -> symbol symbols 'dot': {'$1', '$2'}.
-rule -> head '->' symbols attached_code 'dot': {rule, ['$1' | '$3'], '$4'}.
+declaration -> symbol symbols dot: {'$1', '$2'}.
+declaration -> symbol strings dot: {'$1', '$2'}.
+rule -> head '->' symbols attached_code dot: {rule, ['$1' | '$3'], '$4'}.
 head -> symbol : '$1'.
 symbols -> symbol : ['$1'].
 symbols -> symbol symbols : ['$1' | '$2'].
+strings -> string : ['$1'].
+strings -> string strings : ['$1' | '$2'].
 attached_code -> ':' tokens : {erlang_code, '$2'}.
 attached_code -> '$empty' : {erlang_code, [{atom, 0, '$undefined'}]}.
 tokens -> token : ['$1'].

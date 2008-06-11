@@ -1,6 +1,6 @@
 {application, crypto,
    [{description, "CRYPTO version 1"},
-    {vsn, "1.5.1.1"},
+    {vsn, "1.5.2"},
     {modules, [crypto,
 	       crypto_app,
 	       crypto_sup,

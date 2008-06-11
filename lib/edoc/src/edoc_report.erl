@@ -18,7 +18,7 @@
 %% 
 %% @private
 %% @copyright 2001-2003 Richard Carlsson
-%% @author Richard Carlsson <richardc@csd.uu.se>
+%% @author Richard Carlsson <richardc@it.uu.se>
 %% @see edoc
 %% @end 
 %% =====================================================================

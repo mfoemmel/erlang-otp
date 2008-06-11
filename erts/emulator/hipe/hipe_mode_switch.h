@@ -30,6 +30,8 @@
 
 #ifndef ASM
 
+#include "error.h"
+
 int hipe_modeswitch_debug;
 
 void hipe_mode_switch_init(void);
@@ -37,6 +39,7 @@ void hipe_set_call_trap(Uint *bfun, void *nfun, int is_closure);
 Process *hipe_mode_switch(Process*, unsigned, Eterm*);
 void hipe_inc_nstack(Process *p);
 void hipe_set_closure_stub(ErlFunEntry *fe, unsigned num_free);
+Eterm hipe_build_stacktrace(Process *p, struct StackTrace *s);
 
 extern Uint hipe_beam_pc_return[];
 extern Uint hipe_beam_pc_throw[];

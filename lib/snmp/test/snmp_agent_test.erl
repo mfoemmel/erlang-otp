@@ -94,11 +94,24 @@ all(suite) -> {req,
 	       ],
 	       [{conf, init_all, cases(), finish_all}]}.
 
+
 init_per_testcase(otp_7157_test = _Case, Config) when is_list(Config) ->
     ?DBG("init_per_testcase -> entry with"
 	 "~n   Case:   ~p"
 	 "~n   Config: ~p", [_Case, Config]),
     Dog = ?WD_START(?MINS(1)),
+    [{watchdog, Dog}|Config];
+init_per_testcase(v2_inform_i = _Case, Config) when is_list(Config) ->
+    ?DBG("init_per_testcase -> entry with"
+	 "~n   Case:   ~p"
+	 "~n   Config: ~p", [_Case, Config]),
+    Dog = ?WD_START(?MINS(10)),
+    [{watchdog, Dog}|Config];
+init_per_testcase(v3_inform_i = _Case, Config) when is_list(Config) ->
+    ?DBG("init_per_testcase -> entry with"
+	 "~n   Case:   ~p"
+	 "~n   Config: ~p", [_Case, Config]),
+    Dog = ?WD_START(?MINS(10)),
     [{watchdog, Dog}|Config];
 init_per_testcase(_Case, Config) when is_list(Config) ->
     ?DBG("init_per_testcase -> entry with"
@@ -947,7 +960,8 @@ finish_v1(Config) when list(Config) ->
 test_v2(suite) -> {req, [], {conf, init_v2, v2_cases(), finish_v2}}.
 
 v2_cases() ->
-    [simple_2, 
+    [
+     simple_2, 
      v2_processing, 
      big_2, 
      big2_2, 
@@ -1821,9 +1835,11 @@ v2_inform_i(Config) when list(Config) ->
     ?line load_master("TestTrapv2"),
 
     ?P1("Testing inform sending from master agent...  "
-	"~nNOTE! This test takes a few minutes (5) to complete."),
+	"~nNOTE! This test takes a few minutes (10) to complete."),
 
     try_test(ma_v2_inform1, [MA]),
+    try_test(ma_v2_inform2, [MA]),
+    try_test(ma_v2_inform3, [MA]),
 
     ?P1("unload TestTrap & TestTrapv2..."), 
     ?line unload_master("TestTrap"),
@@ -3309,8 +3325,17 @@ ma_v2_trap2(MA) ->
 
 %% Note:  This test case takes a while... actually a couple of minutes.
 ma_v2_inform1(MA) ->
-    ?DBG("ma_v2_inform -> entry with MA = ~p => "
-	   "send notification: testTrapv22",[MA]),
+    ?DBG("ma_v2_inform1 -> entry with" 
+	 "~n   MA = ~p => "
+	 "~n   send notification: testTrapv22", [MA]),
+
+    CmdExpectInform = 
+	fun(No, Response) ->
+		expect(No, 
+		       {inform, Response},
+		       [{[sysUpTime, 0], any}, 
+			{[snmpTrapOID, 0], ?system ++ [0,1]}])
+	end,
 
     CmdExp = 
 	fun(ok) -> 
@@ -3323,30 +3348,29 @@ ma_v2_inform1(MA) ->
 	   (Error) ->
 		Error
 	end,
-    Cmd1 = 
+
+    Cmd01 = 
 	fun() -> 
 		snmpa:send_notification(MA, testTrapv22, no_receiver, 
 					"standard inform", []),
 		ok
 	end,
-    Cmd2 = 
+    Cmd02 = 
 	fun() ->
-		Res = expect(1, {inform, true},
-			     [{[sysUpTime, 0], any},
-			      {[snmpTrapOID, 0], ?system ++ [0,1]}]),
+		Res = CmdExpectInform(1, true),
 		CmdExp(Res)
 	end,
-    Cmd3 = 
+
+    Tag03 = tag11, 
+    Cmd03 = 
 	fun() ->
-		snmpa:send_notification(MA, testTrapv22, {tag1, self()},
+		snmpa:send_notification(MA, testTrapv22, {Tag03, self()},
 					"standard inform", []),
 		ok
 	end,
-    Cmd4 = 
+    Cmd04 = 
 	fun() ->
-		Res = expect(2, {inform, true},
-			     [{[sysUpTime, 0], any},
-			      {[snmpTrapOID, 0], ?system ++ [0,1]}]),
+		Res = CmdExpectInform(2, true),
 		CmdExp(Res)
 	end,
     CmdSnmpTargets = 
@@ -3369,16 +3393,16 @@ ma_v2_inform1(MA) ->
 			{error, snmp_targets_timeout}
 		end
 	end,
-    Cmd5 = fun() -> CmdSnmpTargets(tag1) end,
-    Cmd6 = 
+    Cmd05 = fun() -> CmdSnmpTargets(Tag03) end,
+    Cmd06 = 
 	fun() ->
 		receive
-		    {snmp_notification, tag1, {got_response, Addr}} ->
+		    {snmp_notification, Tag03, {got_response, Addr}} ->
 			?DBG("ma_v2_inform1 -> "
 			     "received expected snmp_notification "
 			     "[with manager response] from: ~n   ~p",[Addr]),
 			ok;
-		    {snmp_notification, tag1, {no_response, Addr}} ->
+		    {snmp_notification, Tag03, {no_response, Addr}} ->
 			?ERR("ma_v2_inform1 -> "
 			     "received unexpected snmp_notification "
 			     "[without manager response] from: ~n   ~p",
@@ -3392,32 +3416,32 @@ ma_v2_inform1(MA) ->
 			{error, snmp_notification_timeout}
 		end
 	end,
-    Cmd7 = 
+
+    Tag07 = tag12,
+    Cmd07 = 
 	fun() ->
-		snmpa:send_notification(MA, testTrapv22, {tag2, self()},
+		snmpa:send_notification(MA, testTrapv22, {Tag07, self()},
 					"standard inform", []),
 		ok
 	end,
-    Cmd8 = 
+    Cmd08 = 
 	fun() ->
-		Res = expect(3, {inform, false},
-			     [{[sysUpTime, 0], any},
-			      {[snmpTrapOID, 0], ?system ++ [0,1]}]),
+		Res = CmdExpectInform(3, false),
 		CmdExp(Res)
 	end,
-    Cmd9 = 
+    Cmd09 = 
 	fun() -> 
-		CmdSnmpTargets(tag2) 
+		CmdSnmpTargets(Tag07) 
 	end,
     Cmd10 = 
 	fun() ->
 		receive
-		    {snmp_notification, tag2, {got_response, Addr}} ->
+		    {snmp_notification, Tag07, {got_response, Addr}} ->
 			?ERR("ma_v2_inform1 -> "
 			     "received unexpected snmp_notification "
 			     "[with manager response] from: ~n   ~p", [Addr]),
 			{error, got_response};
-		    {snmp_notification, tag2, {no_response, Addr}} ->
+		    {snmp_notification, Tag07, {no_response, Addr}} ->
 			?DBG("ma_v2_inform1 -> "
 			     "received expected snmp_notification "
 			     "[without manager response] from: ~n   ~p",
@@ -3431,24 +3455,240 @@ ma_v2_inform1(MA) ->
 			{error, snmp_notification_timeout}
 		end
 	end,
-    
+
     Commands = 
 	[
-	 { 1, "Send notification [no receiver]", Cmd1},
-	 { 2, "Expect inform [send response]", Cmd2},
-	 { 3, "Send notification [tag1]", Cmd3},
-	 { 4, "Expect inform [send response]", Cmd4},
-	 { 5, "Expect snmp_targets message [from trap sender]", Cmd5},
-	 { 6, "Expect snmp_notification [got_response] message [from trap sender]", Cmd6},
-	 { 7, "Send notification [tag2]", Cmd7},
-	 { 8, "Expect inform [don't send response]", Cmd8},
-	 { 9, "Expect snmp_targets message [from trap sender]", Cmd9},
-	 {10, "Expect snmp_notification [no_response] message [from trap sender]", Cmd10}
+	 { 1, "Send notification [no receiver]", Cmd01},
+	 { 2, "Expect inform [send response]",   Cmd02},
+	 { 3, "Send notification [tag1]",        Cmd03},
+	 { 4, "Expect inform [send response]",   Cmd04},
+	 { 5, "Expect snmp_targets message [from trap sender]", Cmd05},
+	 { 6, "Expect snmp_notification [got_response] message [from trap sender]", Cmd06},
+	 { 7, "Send notification [tag2]",        Cmd07},
+	 { 8, "Expect inform [don't send response]", Cmd08},
+	 { 9, "Expect snmp_targets message [from trap sender]", Cmd09},
+	 {10, "Expect snmp_notification [no_response] message [from trap sender]",  Cmd10}
 	],
 
     command_handler(Commands).
 		   
     
+%% Note:  This test case takes a while... actually a couple of minutes.
+ma_v2_inform2(MA) ->
+    ?DBG("ma_v2_inform2 -> entry with" 
+	 "~n   MA = ~p => "
+	 "~n   send notification: testTrapv22", [MA]),
+
+    CmdExpectInform = 
+	fun(No, Response) ->
+		expect(No, 
+		       {inform, Response},
+		       [{[sysUpTime, 0], any}, 
+			{[snmpTrapOID, 0], ?system ++ [0,1]}])
+	end,
+
+    CmdExp = 
+	fun(ok) -> 
+		ok;
+	   ({ok, Val}) ->
+		?DBG("ma_v2_inform -> [cmd2] Val: ~p", [Val]),
+		ok;
+	   ({error, Id, Extra}) ->
+		{error, {unexpected, Id, Extra}};
+	   (Error) ->
+		Error
+	end,
+
+    %% Await callback(s)
+    CmdAwaitDeliveryCallback = 
+	fun(Kind, Ref, Tag) ->
+		io:format("CmdAwaitDeliveryCallback -> entry with"
+			  "~n   Kind: ~p"
+			  "~n   Ref:  ~p"
+			  "~n   Tag:  ~p"
+			  "~n", [Kind, Ref, Tag]),
+		receive
+		    {Kind, Ref, ok} ->
+			io:format("CmdAwaitDeliveryCallback(~p,~p) -> received expected result: ok"
+				  "~n", [Tag, Ref]),
+			ok;
+		    {Kind, Ref, Error} ->
+			io:format("CmdAwaitDeliveryCallback(~p,~p) -> received unexpected result: "
+				  "~n   Error: ~p"
+				  "~n", [Tag, Ref, Error]),
+			{error, {unexpected_response, Error}}
+		after
+		    240000 ->
+			?ERR("ma_v2_inform2 -> "
+			     "timeout awaiting got_response for snmp_notification [~p]",
+			     [Tag]),
+			{error, snmp_notification_timeout}
+		end
+	end,
+	
+    Tag11   = tag21, 
+    Ref11   = make_ref(), 
+    Extra11 = [{tag,      Tag11}, 
+	       {ref,      Ref11}, 
+	       {recv,     self()}, 
+	       {targets,  []}, 
+	       {address,  dummy}, 
+	       {expected_delivery_result, got_response}], 
+    Recv11  = #snmpa_notification_delivery_info{tag   = Tag11,
+						mod   = ?MODULE,
+						extra = Extra11},
+    Cmd11 = 
+	fun() ->
+		snmpa:send_notification(MA, testTrapv22, 
+					Recv11,
+					"standard inform", []),
+		ok
+	end,
+    Cmd12 = 
+	fun() ->
+		Res = CmdExpectInform(4, true),
+		CmdExp(Res)
+	end,
+
+    Cmd13 = fun() -> CmdAwaitDeliveryCallback(targets, Ref11, Tag11) end,
+    Cmd14 = fun() -> CmdAwaitDeliveryCallback(info,    Ref11, Tag11) end,
+			
+    Commands = 
+	[
+	 {11, "Send notification [tag3]",                    Cmd11},
+	 {12, "Expect notification message [tag3]",          Cmd12}, 
+	 {13, "Expect targets message [tag3]",               Cmd13}, 
+	 {14, "Expect notification response message [tag3]", Cmd14}
+	],
+
+    command_handler(Commands).
+		   
+    
+%% Note:  This test case takes a while... actually a couple of minutes.
+ma_v2_inform3(MA) ->
+    ?DBG("ma_v2_inform3 -> entry with" 
+	 "~n   MA = ~p => "
+	 "~n   send notification: testTrapv22", [MA]),
+
+    CmdExpectInform = 
+	fun(No, Response) ->
+		expect(No, 
+		       {inform, Response},
+		       [{[sysUpTime, 0], any}, 
+			{[snmpTrapOID, 0], ?system ++ [0,1]}])
+	end,
+
+    CmdExp = 
+	fun(ok) -> 
+		ok;
+	   ({ok, Val}) ->
+		?DBG("ma_v2_inform3 -> [cmd2] Val: ~p", [Val]),
+		ok;
+	   ({error, Id, Extra}) ->
+		{error, {unexpected, Id, Extra}};
+	   (Error) ->
+		Error
+	end,
+
+    %% Await callback(s)
+    CmdAwaitDeliveryCallback = 
+	fun(Kind, Ref, Tag) ->
+		io:format("CmdAwaitDeliveryCallback -> entry with"
+			  "~n   Kind: ~p"
+			  "~n   Ref:  ~p"
+			  "~n   Tag:  ~p"
+			  "~n", [Kind, Ref, Tag]),
+		receive
+		    {Kind, Ref, ok} ->
+			io:format("CmdAwaitDeliveryCallback(~p,~p) -> received expected result: ok"
+				  "~n", [Tag, Ref]),
+			ok;
+		    {Kind, Ref, Error} ->
+			io:format("CmdAwaitDeliveryCallback(~p,~p) -> received unexpected result: "
+				  "~n   Error: ~p"
+				  "~n", [Tag, Ref, Error]),
+			{error, {unexpected_response, Error}}
+		after
+		    240000 ->
+			?ERR("ma_v2_inform3 -> "
+			     "timeout awaiting got_response for snmp_notification [~p]",
+			     [Tag]),
+			{error, snmp_notification_timeout}
+		end
+	end,
+	
+    Tag15   = tag31, 
+    Ref15   = make_ref(), 
+    Extra15 = [{tag,      Tag15}, 
+	       {ref,      Ref15}, 
+	       {recv,     self()}, 
+	       {targets,  []}, 
+	       {address,  dummy}, 
+	       {expected_delivery_result, no_response}], 
+    Recv15  = #snmpa_notification_delivery_info{tag   = Tag15,
+						mod   = ?MODULE,
+						extra = Extra15},
+    Cmd15 = 
+	fun() ->
+		snmpa:send_notification(MA, testTrapv22, 
+					Recv15,
+					"standard inform", []),
+		ok
+	end,
+    Cmd16 = 
+	fun() ->
+		Res = CmdExpectInform(5, false),
+		CmdExp(Res)
+	end,
+    
+    Cmd17 = fun() -> CmdAwaitDeliveryCallback(targets, Ref15, Tag15) end,
+    Cmd18 = fun() -> CmdAwaitDeliveryCallback(info,    Ref15, Tag15) end,
+    
+    Commands = 
+	[
+	 {15, "Send notification [tag31]",                    Cmd15},
+	 {16, "Expect notification message [tag31]",          Cmd16}, 
+	 {17, "Expect targets message [tag31]",               Cmd17}, 
+	 {18, "Expect notification (no) response message [tag31]", Cmd18}
+	],
+
+    command_handler(Commands).
+		   
+    
+delivery_targets(Tag, Addresses, Extra) ->
+    io:format("~w:delivery_targets -> entry with"
+	      "~n   Tag:       ~p"
+	      "~n   Addresses: ~p"
+	      "~n   Extra:     ~p"
+	      "~n", [?MODULE, Tag, Addresses, Extra]),
+    {value, {_, Pid}} = lists:keysearch(recv, 1, Extra),
+    {value, {_, Ref}} = lists:keysearch(ref,  1, Extra),
+    case lists:keysearch(tag,  1, Extra) of
+	{value, {_, Tag}} ->
+	    Pid ! {targets, Ref, ok};
+	{value, {_, OtherTag}} ->
+	    Pid ! {targets, Ref, {error, {wrong_tag, Tag, OtherTag}}}
+    end,
+    ok.
+
+delivery_info(Tag, Address, DeliveryResult, Extra) ->
+    io:format("~w:delivery_info -> entry with"
+	      "~n   Tag:            ~p"
+	      "~n   Address:        ~p"
+	      "~n   DeliveryResult: ~p"
+	      "~n   Extra:          ~p"
+	      "~n", [?MODULE, Tag, Address, DeliveryResult, Extra]),
+    {value, {_, Pid}} = lists:keysearch(recv, 1, Extra),
+    {value, {_, Ref}} = lists:keysearch(ref,  1, Extra),
+    case lists:keysearch(tag,  1, Extra) of
+	{value, {_, Tag}} ->
+	    Pid ! {info, Ref, ok};
+	{value, {_, OtherTag}} ->
+	    Pid ! {info, Ref, {error, {wrong_tag, Tag, OtherTag}}}
+    end,
+    ok.
+
+
 command_handler([]) ->    
     ok;
 command_handler([{No, Desc, Cmd}|Rest]) ->

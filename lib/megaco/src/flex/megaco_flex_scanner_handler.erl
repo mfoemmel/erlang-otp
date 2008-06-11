@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2001-2007</year>
+%% <year>2001-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -25,6 +25,7 @@
 
 -behaviour(gen_server).
 
+
 %%-----------------------------------------------------------------
 %% Include files
 %%-----------------------------------------------------------------
@@ -32,7 +33,7 @@
 
 
 %% External exports
--export([start_link/0, get_config/1]).
+-export([start_link/0, stop/1, get_config/1]).
 
 %% gen_server callbacks
 -export([init/1, 
@@ -55,6 +56,9 @@ start_link() ->
 	    Else
     end.
 	
+stop(Pid) ->
+    gen_server:call(Pid, stop).
+
 get_config(Pid) ->
     gen_server:call(Pid, get_config).
 
@@ -92,10 +96,16 @@ init([]) ->
 handle_call(get_config, _From, #state{conf = Conf} = S) ->
     {reply, Conf, S};
 
+handle_call(stop, _From, #state{conf = {flex, Port}} = S) ->
+    megaco_flex_scanner:stop(Port),
+    Reason = normal, 
+    Reply  = ok, 
+    {stop, Reason, Reply, S};
+
 handle_call(Req, From, S) ->
     warning_msg("received unexpected request from ~p: "
 		"~n~w", [From, Req]),
-    {reply, ok, S}.
+    {reply, {error, {unknown_request, Req}}, S}.
 
 
 %%----------------------------------------------------------------------

@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1996-2007</year>
+%% <year>1996-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -44,6 +44,8 @@
 	 backup/2]).
 -export([get_log_type/1,      set_log_type/2]).
 -export([get_request_limit/1, set_request_limit/2]).
+-export([invalidate_ca_cache/0]).
+-export([restart_worker/1, restart_set_worker/1]).
 
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -168,6 +170,12 @@ start_link(Prio, Name, Parent, Ref, Options) ->
     ?GS_START_LINK4(Prio, Name, Parent, Ref, Options).
 
 stop(Agent) -> call(Agent, stop).
+
+restart_worker(Agent) ->
+    call(Agent, restart_worker).
+
+restart_set_worker(Agent) ->
+    call(Agent, restart_set_worker).
 
 get_log_type(Agent) ->
     call(Agent, get_log_type).
@@ -585,6 +593,11 @@ handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
     {noreply, S#state{backup = undefined}};
 
 
+handle_info(invalidate_ca_cache, S) ->
+    invalidate_ca_cache(),
+    {noreply, S};
+
+
 %%-----------------------------------------------------------------
 %% If a process crashes, we first check to see if it was the mib,
 %% net-if or note-store.
@@ -596,12 +609,12 @@ handle_info({'EXIT', Pid, Reason}, #state{note_store = Pid} = S) ->
     error_msg("note-store exited: ~n~p", [Reason]),
     {stop, {note_store_exit, Reason}, S#state{note_store = undefined}};
 handle_info({'EXIT', Pid, Reason}, #state{worker = Pid} = S) ->
-    ?vlog("worker (~p) exited -> create new ~n~p", [Pid, Reason]),
+    ?vlog("worker (~p) exited -> create new ~n   ~p", [Pid, Reason]),
     NewWorker = worker_start(), 
     {noreply, S#state{worker = NewWorker}};
 handle_info({'EXIT', Pid, Reason}, #state{set_worker = Pid} = S) ->
-    ?vlog("set-worker (~p) exited -> create new ~n~p", [Pid,Reason]),
-    NewWorker = worker_start(), 
+    ?vlog("set-worker (~p) exited -> create new ~n   ~p", [Pid,Reason]),
+    NewWorker = set_worker_start(), 
     {noreply, S#state{set_worker = NewWorker}};
 handle_info({'EXIT', Pid, Reason}, #state{parent = Pid} = S) ->
     ?vlog("parent (~p) exited for reason ~n~p", [Pid,Reason]),
@@ -645,6 +658,28 @@ handle_info(Info, S) ->
     warning_msg("received unexpected info: ~n~p", [Info]),
     {noreply, S}.
 
+handle_call(restart_worker, _From, #state{worker = Pid} = S) ->
+    if 
+	is_pid(Pid) ->
+	    ?vlog("[handle_call] restart worker ~p", [Pid]),
+	    exit(Pid, kill);
+	true ->
+	    ?vlog("[handle_call] not multi-threaded => "
+		  "ignoring restart request", []),
+	    ok
+    end,
+    {reply, ok, S};
+handle_call(restart_set_worker, _From, #state{set_worker = Pid} = S) ->
+    if
+	is_pid(Pid) ->
+	    ?vlog("[handle_call] restart set worker: ~p", [Pid]),
+	    exit(Pid, kill);
+	true ->
+	    ?vlog("[handle_call] not multi-threaded => "
+		  "ignoring restart request", []),
+	    ok
+    end,
+    {reply, ok, S};
 handle_call({send_trap, Trap, NotifyName, ContextName, Recv, Varbinds}, 
 	    _From, S) ->
     ?vlog("[handle_call] send trap request:"
@@ -983,13 +1018,13 @@ code_change(_Vsn, S, _Extra) ->
 
 workers_start(true) ->
     ?vdebug("start worker and set-worker",[]),
-    {worker_start(), worker_start()};
+    {worker_start(), set_worker_start()};
 workers_start(_) ->
     {undefined, undefined}.
 
 workers_restart(#state{worker = W, set_worker = SW} = S) ->
     Worker    = worker_restart(W),
-    SetWorker = worker_restart(SW),
+    SetWorker = set_worker_restart(SW),
     S#state{worker     = Worker, 
 	    set_worker = SetWorker}.
 
@@ -1003,7 +1038,13 @@ backup_server_stop(_) ->
 
 
 worker_start() ->
-    proc_lib:spawn_link(?MODULE, worker, [self(), get()]).
+    worker_start(get()).
+
+set_worker_start() ->
+    worker_start([{master, self()} | get()]).
+
+worker_start(Dict) ->
+    proc_lib:spawn_link(?MODULE, worker, [self(), Dict]).
 
 worker_stop(Pid) ->
     worker_stop(Pid, infinity).
@@ -1020,10 +1061,16 @@ worker_stop(Pid, Timeout) when is_pid(Pid) ->
 worker_stop(_, _) ->
     ok.
 
-worker_restart(Pid) when pid(Pid) -> 
+set_worker_restart(Pid) ->
+    worker_restart(Pid, [{master, self()} | get()]).
+
+worker_restart(Pid) ->
+    worker_restart(Pid, get()).
+
+worker_restart(Pid, Dict) when is_pid(Pid) -> 
     worker_stop(Pid),
-    worker_start();
-worker_restart(Any) ->
+    worker_start(Dict);
+worker_restart(Any, _Dict) ->
     Any.
 
 
@@ -1094,6 +1141,16 @@ cheat({community, _SecModel, Community, _IpUdp}, Address, ContextName) ->
     {Community, Address, ContextName};
 cheat(_, Address, ContextName) ->
     {"", Address, ContextName}.
+
+
+invalidate_ca_cache() ->
+    case get(master) of
+        undefined ->
+            AuthMod = get(auth_module),
+            AuthMod:invalidate_ca_cache();
+        Pid ->
+            Pid ! invalidate_ca_cache
+    end.
 
 
 %%-----------------------------------------------------------------
@@ -1228,7 +1285,6 @@ do_handle_pdu(MibView, Vsn, Pdu, PduMS,
 	      ACMData, {Community, Address, ContextName}, Extra) ->
     
     put(net_if_data, Extra),
-
     RePdu = process_msg(MibView, Vsn, Pdu, PduMS, Community, 
 			Address, ContextName),
 
@@ -2445,6 +2501,12 @@ validate_tab_next_res({genErr, ColNumber}, OrgCols,
 		      Mfa, _Res, _TabOid, _TabNextOid, _I) ->
     OrgIndex = snmpa_svbl:col_to_orgindex(ColNumber, OrgCols),
     validate_err(table_next, {genErr, OrgIndex}, Mfa);
+validate_tab_next_res({error, Reason}, [{_ColNo, OrgVb, _Index} | _TableOids],
+		      Mfa, _Res, _TabOid, _TabNextOid, _I) ->
+    #varbind{org_index = OrgIndex} = OrgVb,
+    user_err("Erroneous return value ~w from ~w (get_next)",
+	     [Reason, Mfa]),
+    {genErr, OrgIndex};
 validate_tab_next_res(Error, [{_ColNo, OrgVb, _Index} | _TableOids],
 		      Mfa, _Res, _TabOid, _TabNextOid, _I) ->
     #varbind{org_index = OrgIndex} = OrgVb,
@@ -3342,3 +3404,6 @@ get_option(Key, Opts, Default) ->
 
 %% i(F, A) ->
 %%     io:format("~p: " ++ F ++ "~n", [?MODULE|A]).
+
+
+

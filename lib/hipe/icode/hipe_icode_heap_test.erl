@@ -6,7 +6,7 @@
 %%  Module   :	hipe_icode_heap_test
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2000-11-07 Erik Johansson (happi@csd.uu.se): 
+%%  History  :	* 2000-11-07 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%
 %% $Id$

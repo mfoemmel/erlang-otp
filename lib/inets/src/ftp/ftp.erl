@@ -477,7 +477,7 @@ close(Pid) ->
 %%--------------------------------------------------------------------------
 force_active(Pid) ->
     error_logger:info_report("This function is deprecated use the mode flag "
-			     "instead", []),
+			     "instead"),
     call(Pid, force_active, atom).
 
 %%--------------------------------------------------------------------------
@@ -804,8 +804,9 @@ handle_cast({Pid, close}, #state{owner = Pid} = State) ->
     {stop, normal, State#state{csock = undefined, dsock = undefined}};
 
 handle_cast({Pid, close}, State) ->
-    error_logger:info_report("A none owner process ~p tried to close an "
+    Report = io_lib:format("A none owner process ~p tried to close an "
 			     "ftp connection: ~n", [Pid]),
+    error_logger:info_report(Report),
     {noreply, State};
 
 %% Catch all -  This can oly happen if the application programmer writes 
@@ -920,8 +921,10 @@ handle_info({tcp_closed, Socket}, #state{csock = Socket}) ->
     exit(normal); %% User will get error message from terminate/2
 
 handle_info({tcp_error, Socket, Reason}, _) ->
-    error_logger:error_report("tcp_error on socket: ~p  for reason: ~p~n", 
-			      [Socket, Reason]),
+    Report = 
+	io_lib:format("tcp_error on socket: ~p  for reason: ~p~n",
+		      [Socket, Reason]),
+    error_logger:error_report(Report),
     %% If tcp does not work the only option is to terminate,
     %% this is the expected behavior under these circumstances.
     exit(normal); %% User will get error message from terminate/2
@@ -942,16 +945,18 @@ handle_info({'DOWN', _Ref, _Type, Process, Reason}, State) ->
      State#state{client = undefined}};
 
 handle_info({'EXIT', Pid, Reason}, #state{progress = Pid} = State) ->
-    error_logger:info_report("Progress reporting stopped for reason ~p~n",
-			     Reason),
+    Report = io_lib:format("Progress reporting stopped for reason ~p~n",
+			   Reason),
+    error_logger:info_report(Report),
     {noreply, State#state{progress = ignore}};
    
 %% Catch all - throws away unknown messages (This could happen by "accident"
 %% so we do not want to crash, but we make a log entry as it is an
 %% unwanted behaviour.) 
 handle_info(Info, State) ->
-    error_logger:info_report("ftp : ~p : Unexpected message: ~p\n", 
-			     [self(), Info]),
+    Report = io_lib:format("ftp : ~p : Unexpected message: ~p\n", 
+			   [self(), Info]),
+    error_logger:info_report(Report),
     {noreply, State}.
 
 %%--------------------------------------------------------------------------
@@ -963,7 +968,8 @@ terminate(normal, State) ->
     progress_report(stop, State), 
     do_termiante({error, econn}, State);
 terminate(Reason, State) -> 
-    error_logger:error_report("Ftp connection closed due to: ~p~n", [Reason]),
+    Report = io_lib:format("Ftp connection closed due to: ~p~n", [Reason]),
+    error_logger:error_report(Report),
     do_termiante({error, eclosed}, State).
 
 do_termiante(ErrorMsg, State) ->
@@ -1468,8 +1474,9 @@ send_message(Socket, Message) ->
 	ok ->
 	    ok;
 	{error, Reason} ->
-	    error_logger:error_report("gen_tcp:send/2 failed for "
-				      "reason ~p~n", [Reason]),
+	    Report = io_lib:format("gen_tcp:send/2 failed for "
+				   "reason ~p~n", [Reason]),
+	    error_logger:error_report(Report),
 	    %% If tcp does not work the only option is to terminate,
 	    %% this is the expected behavior under these circumstances.
 	    exit(normal) %% User will get error message from terminate/2

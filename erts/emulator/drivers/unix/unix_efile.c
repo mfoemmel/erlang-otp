@@ -59,18 +59,7 @@
  */
 extern STATUS copy(char *, char *);
 #include <errno.h>
-#else /* UNIX */
-#  if defined(HAVE_FCNTL_H) && defined(HAVE_F_DUPFD)
-#    include <fcntl.h>
-     static int try_dup = -1;
-#    if defined(NO_SYSCONF)
-#      include <sys/param.h>
-#      define MAX_FILES()	NOFILE
-#    else
-#      define MAX_FILES()	sysconf(_SC_OPEN_MAX)
-#    endif
-#  endif
-#endif /* !VXWORKS */
+#endif
 
 #ifdef SUNOS4
 #  define getcwd(buf, size) getwd(buf)
@@ -627,23 +616,6 @@ efile_getdcwd(Efile_error* errInfo,	/* Where to return error codes. */
 }
 
 int
-efile_opendir(Efile_error* errInfo,	/* Where to return error codes. */
-	      char* name,		/* Name of directory to open. */
-	      EFILE_DIR_HANDLE* p_dir_handle)	/* Where to return 
-						   directory handle. */
-{
-    DIR *dp;
-
-    CHECK_PATHLEN(name, errInfo);
-
-    dp = opendir(name);
-    if (dp == NULL)
-	return check_error(-1, errInfo);
-    *p_dir_handle = (EFILE_DIR_HANDLE) dp;
-    return 1;
-}
-
-int
 efile_readdir(Efile_error* errInfo,	/* Where to return error codes. */
 	      char* name,		/* Name of directory to open. */
 	      EFILE_DIR_HANDLE* p_dir_handle,	/* Pointer to directory 
@@ -809,22 +781,7 @@ efile_openfile(Efile_error* errInfo,	/* Where to return error codes. */
     if (!check_error(fd, errInfo))
 	return 0;
 
-#if !defined(VXWORKS) && defined(HAVE_FCNTL_H) && defined(HAVE_F_DUPFD)
-    if (try_dup < 0) {
-	try_dup = MAX_FILES() > 1024;
-    }
-    if (try_dup) {
-	if ((*pfd = fcntl(fd,F_DUPFD,1024)) < 0) {
-	    *pfd = fd;
-	} else {
-	    close(fd);
-	}
-    } else {
-	*pfd = fd;
-    }
-#else
     *pfd = fd;
-#endif
     *pSize = statbuf.st_size;
     return 1;
 }

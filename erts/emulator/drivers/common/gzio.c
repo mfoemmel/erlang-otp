@@ -20,17 +20,14 @@
 #endif
 #include <ctype.h>
 #include "erl_driver.h"
+#include "sys.h"
 
 #ifdef VXWORKS
 /* pull in FOPEN from zutil.h instead */
 #undef F_OPEN
 #endif
-#ifdef __WIN32__
-#include "sys.h"
-#define HAVE_CONFLICTING_FREAD_DECLARATION
-#endif
 
-#if(defined(_OSE_) && defined(POWERPC))
+#ifdef __WIN32__
 #define HAVE_CONFLICTING_FREAD_DECLARATION
 #endif
 
@@ -60,13 +57,15 @@ static int gz_magic[2] = {0x1f, 0x8b}; /* gzip magic header */
 #define COMMENT      0x10 /* bit 4 set: file comment present */
 #define RESERVED     0xE0 /* bits 5..7: reserved */
 
-typedef unsigned (*FioFunc)OF((void*, unsigned, unsigned, FILE*));
-
 typedef struct gz_stream {
     z_stream stream;
     int      z_err;   /* error code for last stream operation */
     int      z_eof;   /* set if end of input file */
+#ifdef UNIX
+    int      file;    /* .gz file descriptor */
+#else
     FILE     *file;   /* .gz file */
+#endif
     Byte     *inbuf;  /* input buffer */
     Byte     *outbuf; /* output buffer */
     uLong    crc;     /* crc32 of uncompressed data */
@@ -75,22 +74,33 @@ typedef struct gz_stream {
     int      transparent; /* 1 if input file is not a .gz file */
     char     mode;    /* 'w' or 'r' */
     int      position; /* Position (for seek) */
-    FioFunc  reader;   /* Function used for reading from files. */
     int (*destroy)OF((struct gz_stream*)); /* Function to destroy
 					    *  this structure. */
 } gz_stream;
 
-/* gzFile erts_gzbufopen OF((char* bytes, int size)); */
-
-local gzFile gz_open      OF((const char *path, const char *mode, int  fd));
+local gzFile gz_open      OF((const char *path, const char *mode));
 local int    get_byte     OF((gz_stream *s));
 local void   check_header OF((gz_stream *s));
 local int    destroy      OF((gz_stream *s));
-local void   putLong      OF((FILE *file, uLong x));
 local uLong  getLong      OF((gz_stream *s));
 
-local unsigned mem_reader_dummy OF((void*, unsigned, unsigned, FILE*));
-local int mem_destroy OF((gz_stream *s));
+#ifdef UNIX
+/*
+ * In Solaris 8 and earlier, fopen() and its friends cannot handle 
+ * file descriptors larger than 255. Therefore, we use read()/write()
+ * on all Unix systems.
+ */
+# define ERTS_GZWRITE(File, Buf, Count) write((File), (Buf), (Count))
+# define ERTS_GZREAD(File, Buf, Count) read((File), (Buf), (Count))
+#else
+/*
+ * On all other operating systems, using fopen(), fread()/fwrite(), since
+ * there is not guaranteed to exist any read()/write() (not part of
+ * ANSI/ISO-C).
+ */
+# define ERTS_GZWRITE(File, Buf, Count) fwrite((Buf), 1, (Count), (File))
+# define ERTS_GZREAD(File, Buf, Count) fread((Buf), 1, (Count), (File))
+#endif
 
 /* ===========================================================================
      Opens a gzip (.gz) file for reading or writing. The mode parameter
@@ -101,10 +111,9 @@ local int mem_destroy OF((gz_stream *s));
    can be checked to distinguish the two cases (if errno is zero, the
    zlib error is Z_MEM_ERROR).
 */
-local gzFile gz_open (path, mode, fd)
+local gzFile gz_open (path, mode)
     const char *path;
     const char *mode;
-    int  fd;
 {
     int err;
     int level = Z_DEFAULT_COMPRESSION; /* compression level */
@@ -124,7 +133,11 @@ local gzFile gz_open (path, mode, fd)
     s->stream.next_in = s->inbuf = Z_NULL;
     s->stream.next_out = s->outbuf = Z_NULL;
     s->stream.avail_in = s->stream.avail_out = 0;
+#ifdef UNIX
+    s->file = -1;
+#else
     s->file = NULL;
+#endif
     s->z_err = Z_OK;
     s->z_eof = 0;
     s->crc = crc32(0L, Z_NULL, 0);
@@ -157,7 +170,7 @@ local gzFile gz_open (path, mode, fd)
     
     if (s->mode == 'w') {
         err = deflateInit2(&(s->stream), level,
-                           Z_DEFLATED, -MAX_WBITS, DEF_MEM_LEVEL, 0);
+                           Z_DEFLATED, MAX_WBITS+16, DEF_MEM_LEVEL, 0);
         /* windowBits is passed < 0 to suppress zlib header */
 
         s->stream.next_out = s->outbuf = (Byte*)ALLOC(Z_BUFSIZE);
@@ -166,15 +179,14 @@ local gzFile gz_open (path, mode, fd)
             return s->destroy(s), (gzFile)Z_NULL;
         }
     } else {
-#if (defined(_OSE_SFK_) && defined(fread))
-	s->reader = zzfread;
-#else
-#ifndef HAVE_CONFLICTING_FREAD_DECLARATION
-	extern int fread();
-#endif
-	s->reader = fread;
-#endif
-        err = inflateInit2(&(s->stream), -MAX_WBITS);
+	/*
+	 * It is tempting to use the built-in support in zlib
+	 * for handling GZIP headers, but unfortunately it
+	 * cannot handle multiple GZIP headers (which occur when
+	 * several GZIP files have been concatenated).
+	 */
+
+	err = inflateInit2(&(s->stream), -MAX_WBITS);
         s->stream.next_in  = s->inbuf = (Byte*)ALLOC(Z_BUFSIZE);
 
         if (err != Z_OK || s->inbuf == Z_NULL) {
@@ -184,17 +196,22 @@ local gzFile gz_open (path, mode, fd)
     s->stream.avail_out = Z_BUFSIZE;
 
     errno = 0;
-    s->file = fd < 0 ? F_OPEN(path, fmode) : (FILE*)fdopen(fd, fmode);
-
+#ifdef UNIX
+    if (s->mode == 'r') {
+	s->file = open(path, O_RDONLY);
+    } else {
+	s->file = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    }
+    if (s->file == -1) {
+        return s->destroy(s), (gzFile)Z_NULL;
+    }
+#else
+    s->file = F_OPEN(path, fmode);
     if (s->file == NULL) {
         return s->destroy(s), (gzFile)Z_NULL;
     }
-    if (s->mode == 'w') {
-        /* Write a very simple .gz header:
-         */
-        fprintf(s->file, "%c%c%c%c%c%c%c%c%c%c", gz_magic[0], gz_magic[1],
-             Z_DEFLATED, 0 /*flags*/, 0,0,0,0 /*time*/, 0 /*xflags*/, OS_CODE);
-    } else {
+#endif
+    if (s->mode == 'r') {
 	check_header(s); /* skip the .gz header */
     }
     return (gzFile)s;
@@ -208,7 +225,11 @@ local int gz_rewind (gz_stream *s)
 {
     TRYFREE(s->msg);
 
+#ifdef UNIX
+    lseek(s->file, 0L, SEEK_SET);
+#else
     fseek(s->file, 0L, SEEK_SET);
+#endif
     inflateReset(&(s->stream));
     s->stream.next_in = Z_NULL;
     s->stream.next_out = Z_NULL;
@@ -233,24 +254,9 @@ gzFile erts_gzopen (path, mode)
     const char *path;
     const char *mode;
 {
-    return gz_open (path, mode, -1);
+    return gz_open (path, mode);
 }
 
-/* ===========================================================================
-     Associate a gzFile with the file descriptor fd. fd is not dup'ed here
-   to mimic the behavio(u)r of fdopen.
-*/
-gzFile erts_gzdopen (fd, mode)
-    int fd;
-    const char *mode;
-{
-    char name[20];
-
-    if (fd < 0) return (gzFile)Z_NULL;
-    sprintf(name, "<fd:%d>", fd); /* for debugging */
-
-    return gz_open (name, mode, fd);
-}
 
 /* ===========================================================================
      Read a byte from a gz_stream; update next_in and avail_in. Return EOF
@@ -262,14 +268,32 @@ local int get_byte(s)
 {
     if (s->z_eof) return EOF;
     if (s->stream.avail_in == 0) {
+#ifdef UNIX
+	size_t res;
 	errno = 0;
-	s->stream.avail_in = s->reader(s->inbuf, 1, Z_BUFSIZE, s->file);
+	res = ERTS_GZREAD(s->file, s->inbuf, Z_BUFSIZE);
+	if (res == 0) {
+	    s->stream.avail_in = 0;
+	    s->z_eof = 1;
+	    return EOF;
+	} else if (res < 0) {
+	    s->stream.avail_in = 0;
+	    s->z_eof = 1;
+	    s->z_err = Z_ERRNO;
+	    return EOF;
+	} else {
+	    s->stream.avail_in = (uInt) res;
+	}
+#else
+	errno = 0;
+	s->stream.avail_in = ERTS_GZREAD(s->file, s->inbuf, Z_BUFSIZE);
 	if (s->stream.avail_in == 0) {
 	    s->z_eof = 1;
 	    if (s->file && ferror(s->file))
 		s->z_err = Z_ERRNO;
 	    return EOF;
 	}
+#endif
 	s->stream.next_in = s->inbuf;
     }
     s->stream.avail_in--;
@@ -354,9 +378,15 @@ local int destroy (s)
            err = inflateEnd(&(s->stream));
        }
     }
+#ifdef UNIX
+    if (s->file != -1 && close(s->file)) {
+        err = Z_ERRNO;
+    }
+#else
     if (s->file != NULL && fclose(s->file)) {
         err = Z_ERRNO;
     }
+#endif
     if (s->z_err < 0) err = s->z_err;
 
     TRYFREE(s->inbuf);
@@ -400,8 +430,8 @@ erts_gzread(gzFile file, voidp buf, unsigned len)
 		s->stream.avail_in  -= n;
 	    }
 	    if (s->stream.avail_out > 0) {
-		s->stream.avail_out -= s->reader(next_out, 1, s->stream.avail_out,
-						 s->file);
+		s->stream.avail_out -= ERTS_GZREAD(s->file, next_out,
+						   s->stream.avail_out);
 	    }
 	    len -= s->stream.avail_out;
 	    s->stream.total_in  += (uLong)len;
@@ -411,8 +441,25 @@ erts_gzread(gzFile file, voidp buf, unsigned len)
 	    return (int)len;
 	}
         if (s->stream.avail_in == 0 && !s->z_eof) {
-            errno = 0;
-            s->stream.avail_in = s->reader(s->inbuf, 1, Z_BUFSIZE, s->file);
+#ifdef UNIX
+	    size_t res;
+	    errno = 0;
+	    res = ERTS_GZREAD(s->file, s->inbuf, Z_BUFSIZE);
+	    if (res == 0) {
+		s->stream.avail_in = 0;
+		s->z_eof = 1;
+		return EOF;
+	    } else if (res < 0) {
+		s->stream.avail_in = 0;
+		s->z_eof = 1;
+		s->z_err = Z_ERRNO;
+		return EOF;
+	    } else {
+		s->stream.avail_in = (uInt) res;
+	    }
+#else
+	    errno = 0;
+            s->stream.avail_in = ERTS_GZREAD(s->file, s->inbuf, Z_BUFSIZE);
             if (s->stream.avail_in == 0) {
                 s->z_eof = 1;
 		if (s->file && ferror(s->file)) {
@@ -420,6 +467,7 @@ erts_gzread(gzFile file, voidp buf, unsigned len)
 		    break;
 		}
             }
+#endif
             s->stream.next_in = s->inbuf;
         }
         s->z_err = inflate(&(s->stream), Z_NO_FLUSH);
@@ -463,7 +511,7 @@ erts_gzread(gzFile file, voidp buf, unsigned len)
    gzwrite returns the number of bytes actually written (0 in case of error).
 */
 int
-erts_gzwrite(gzFile file, voidpc buf, unsigned len)
+erts_gzwrite(gzFile file, voidp buf, unsigned len)
 {
     gz_stream *s = (gz_stream*)file;
 
@@ -477,7 +525,7 @@ erts_gzwrite(gzFile file, voidpc buf, unsigned len)
         if (s->stream.avail_out == 0) {
 
             s->stream.next_out = s->outbuf;
-            if (fwrite(s->outbuf, 1, Z_BUFSIZE, s->file) != Z_BUFSIZE) {
+            if (ERTS_GZWRITE(s->file, s->outbuf, Z_BUFSIZE) != Z_BUFSIZE) {
                 s->z_err = Z_ERRNO;
                 break;
             }
@@ -486,8 +534,6 @@ erts_gzwrite(gzFile file, voidpc buf, unsigned len)
         s->z_err = deflate(&(s->stream), Z_NO_FLUSH);
         if (s->z_err != Z_OK) break;
     }
-    s->crc = crc32(s->crc, buf, len);
-
     s->position += (int)(len - s->stream.avail_in);
     return (int)(len - s->stream.avail_in);
 }
@@ -575,7 +621,7 @@ erts_gzflush(gzFile file, int flush)
         len = Z_BUFSIZE - s->stream.avail_out;
 
         if (len != 0) {
-            if ((uInt)fwrite(s->outbuf, 1, len, s->file) != len) {
+            if ((uInt)ERTS_GZWRITE(s->file, s->outbuf, len) != len) {
                 s->z_err = Z_ERRNO;
                 return Z_ERRNO;
             }
@@ -592,22 +638,10 @@ erts_gzflush(gzFile file, int flush)
  
         if (s->z_err != Z_OK && s->z_err != Z_STREAM_END) break;
     }
+#ifndef UNIX
     fflush(s->file);
+#endif
     return  s->z_err == Z_STREAM_END ? Z_OK : s->z_err;
-}
-
-/* ===========================================================================
-   Outputs a long in LSB order to the given file
-*/
-local void putLong (file, x)
-    FILE *file;
-    uLong x;
-{
-    int n;
-    for (n = 0; n < 4; n++) {
-        fputc((int)(x & 0xff), file);
-        x >>= 8;
-    }
 }
 
 /* ===========================================================================
@@ -642,10 +676,6 @@ erts_gzclose(gzFile file)
     if (s->mode == 'w') {
         err = erts_gzflush (file, Z_FINISH);
         if (err != Z_OK) return s->destroy(file);
-
-        putLong (s->file, s->crc);
-        putLong (s->file, s->stream.total_in);
-
     }
     return s->destroy(file);
 }
@@ -661,41 +691,68 @@ erts_gzclose(gzFile file)
 */
 
 ErlDrvBinary*
-erts_gzinflate_buffer(char* start, int size)
+erts_gzinflate_buffer(char* start, uLong size)
 {
     ErlDrvBinary* bin;
     ErlDrvBinary* bin2;
-    gzFile fd;
-    int bytes_read = 0;
+    z_stream zstr;
+    unsigned char* bptr;
 
-    if ((fd = erts_gzbufopen(start, size)) == NULL)
-	return NULL;
+    /*
+     * Check for the magic bytes beginning a GZIP header.
+     */
+    bptr = (unsigned char *) start;
+    if (size < 2 || bptr[0] != gz_magic[0] || bptr[1] != gz_magic[1]) {
+	/* No GZIP header -- just copy the data into a new binary */
+	if ((bin = driver_alloc_binary(size)) == NULL) {
+	    return NULL;
+	}
+	memcpy(bin->orig_bytes, start, size);
+	return bin;
+    }
+
+    /*
+     * The magic bytes for a GZIP header are there. Now try to decompress.
+     * It is an error if the GZIP header is not correct.
+     */
+
+    zstr.next_in = (unsigned char*) start;
+    zstr.avail_in = size;
+    zstr.zalloc = (alloc_func)0;
+    zstr.zfree = (free_func)0;
+    zstr.opaque = (voidpf)0;
     size *= 2;
     if ((bin = driver_alloc_binary(size)) == NULL) {
 	return NULL;
     }
-
+    if (inflateInit2(&zstr, 15+16) != Z_OK) { /* Decode GZIP format */
+	driver_free(bin);
+	return NULL;
+    }
     for (;;) {
-	int n = erts_gzread(fd, bin->orig_bytes + bytes_read, size-bytes_read);
-	if (n == 0) {
-	    erts_gzclose(fd);
-	    if ((bin2 = driver_realloc_binary(bin, bytes_read)) == NULL) {
+	int status;
+
+	zstr.next_out = (unsigned char *) bin->orig_bytes + zstr.total_out;
+	zstr.avail_out = size - zstr.total_out;
+	status = inflate(&zstr, Z_NO_FLUSH);
+	if (status == Z_OK) {
+	    size *= 2;
+	    if ((bin2 = driver_realloc_binary(bin, size)) == NULL) {
+	    error:
 		driver_free_binary(bin);
+		inflateEnd(&zstr);
+		return NULL;
 	    }
+	    bin = bin2;
+	} else if (status == Z_STREAM_END) {
+	    if ((bin2 = driver_realloc_binary(bin, zstr.total_out)) == NULL) {
+		goto error;
+	    }
+	    inflateEnd(&zstr);
 	    return bin2;
-	} else if (n == -1) {
-	    driver_free_binary(bin);
-	    erts_gzclose(fd);
-	    return NULL;
+	} else {
+	    goto error;
 	}
-	bytes_read += n;
-	size *= 2;
-	if ((bin2 = driver_realloc_binary(bin, size)) == NULL) {
-	    driver_free_binary(bin);
-	    erts_gzclose(fd);
-	    return NULL;
-	}
-	bin = bin2;
     }
 }
 
@@ -711,7 +768,7 @@ erts_gzinflate_buffer(char* start, int size)
 #define GZIP_X_SIZE (GZIP_HD_SIZE+GZIP_TL_SIZE)
 
 ErlDrvBinary*
-erts_gzdeflate_buffer(char* start, int size)
+erts_gzdeflate_buffer(char* start, uLong size)
 {
     z_stream c_stream; /* compression stream */
     ErlDrvBinary* bin;
@@ -767,89 +824,5 @@ erts_gzdeflate_buffer(char* start, int size)
     if ((bin2 = driver_realloc_binary(bin, size)) == NULL)
 	driver_free_binary(bin);
     return bin2;
-}
-
-/* ===========================================================================
-   Like gzopen(), but opens a RAM file on the given the buffer.
-*/
-
-gzFile
-erts_gzbufopen(bytes, size)
-    char* bytes;		/* Start of buffer to read from. */
-    int size;			/* Size of buffer. */
-{
-    int err;
-    gz_stream *s;
-
-    s = (gz_stream *)ALLOC(sizeof(gz_stream));
-    if (!s)
-	return Z_NULL;
-
-    s->stream.zalloc = (alloc_func)0;
-    s->stream.zfree = (free_func)0;
-    s->stream.opaque = (voidpf)0;
-    s->stream.next_in = s->inbuf = (unsigned char*)bytes;
-    s->stream.next_out = s->outbuf = Z_NULL;
-    s->stream.avail_in = size;
-    s->stream.avail_out = 0;
-    s->file = NULL;
-    s->z_err = Z_OK;
-    s->z_eof = 0;
-    s->crc = crc32(0L, Z_NULL, 0);
-    s->msg = NULL;
-    s->transparent = 0;
-    s->position = 0;
-
-    s->path = (char*)ALLOC(1);
-    s->path[0] = '\0';
-    s->reader = mem_reader_dummy;
-    s->destroy = mem_destroy;
-    s->mode = 'r';
-    
-    err = inflateInit2(&(s->stream), -MAX_WBITS);
-    if (err != Z_OK || s->inbuf == Z_NULL) {
-	return s->destroy(s), (gzFile)Z_NULL;
-    }
-    s->stream.avail_out = Z_BUFSIZE;
-
-    errno = 0;
-    s->file = NULL;
-    check_header(s);
-
-    return (gzFile)s;
-}
-
-local int mem_destroy(s)
-    gz_stream* s;
-{
-    int err = Z_OK;
-
-    if (!s) return Z_STREAM_ERROR;
-
-    TRYFREE(s->msg);
-
-    if (s->stream.state != NULL) {
-       if (s->mode == 'w') {
-           err = deflateEnd(&(s->stream));
-       } else if (s->mode == 'r') {
-           err = inflateEnd(&(s->stream));
-       }
-    }
-    if (s->z_err < 0)
-	err = s->z_err;
-
-    TRYFREE(s->path);
-    TRYFREE(s->outbuf);
-    TRYFREE(s);
-    return err;
-}
-
-local unsigned mem_reader_dummy(buf, size, items, fp)
-    void* buf;
-    unsigned size;
-    unsigned items;
-    FILE* fp;
-{
-    return 0;			/* Always end of file. */
 }
 

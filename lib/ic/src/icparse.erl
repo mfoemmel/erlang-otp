@@ -1,5 +1,5 @@
 -module(icparse).
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-04-07_20/otp_src_R12B-1/lib/ic/src/icyeccpre.hrl", 0).
+-file("/ldisk/daily_build/otp_prebuild_r12b.2008-06-10_20/otp_src_R12B-3/lib/ic/src/icyeccpre.hrl", 0).
 %%<copyright>
 %% <year>1997-2007</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
@@ -80,11 +80,11 @@ yeccpars1([], {M, F, A}, State, States, Vstack) ->
     case catch apply(M, F, A) of
         {eof, Endline} ->
             {error, {Endline, ?MODULE, "end_of_file"}};
-        {error, Descriptor, Endline} ->
+        {error, Descriptor, _Endline} ->
             {error, Descriptor};
         {'EXIT', Reason} ->
             {error, {0, ?MODULE, Reason}};
-        {ok, Tokens, Endline} ->
+        {ok, Tokens, _Endline} ->
 	    case catch yeccpars1(Tokens, {M, F, A}, State, States, Vstack) of
 		error ->
 		    Errorline = element(2, hd(Tokens)),
@@ -107,18 +107,18 @@ yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
 yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
-yecctoken2string({var,_,V}) -> io_lib:format('~s', [V]);
+yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
 yecctoken2string({string,_,S}) -> io_lib:write_string(S);
-yecctoken2string({reserved_symbol, _, A}) -> io_lib:format('~w', [A]);
-yecctoken2string({'dot', _}) -> io_lib:format('~w', ['.']);
+yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
+yecctoken2string({'dot', _}) -> "'.'";
 yecctoken2string({'$end', _}) ->
     [];
 yecctoken2string({Other, _}) when atom(Other) ->
-    io_lib:format('~w', [Other]);
+    io_lib:format("~w", [Other]);
 yecctoken2string({_, _, Other}) when list(Other), number(hd(Other)) ->
     Other;
 yecctoken2string({_, _, Other}) ->
-    io_lib:format('~p', [Other]);
+    io_lib:format("~p", [Other]);
 yecctoken2string(Other) ->
     io_lib:write(Other).
 

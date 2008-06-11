@@ -40,8 +40,9 @@ headers([Header | Tail], Headers) ->
 	    headers(Tail, headers(http_util:to_lower(string:strip(Key)), 
 				  string:strip(Value), Headers));
 	{_, []} -> 
-	    error_logger:error_report("Ignored invalid HTTP-header: ~p~n", 
-				      [Header]),
+	    Report = io_lib:format("Ignored invalid HTTP-header: ~p~n", 
+				   [Header]),
+	    error_logger:error_report(Report),
 	    headers(Tail, Headers)
     end.
 

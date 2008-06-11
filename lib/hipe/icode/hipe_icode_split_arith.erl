@@ -1,10 +1,10 @@
 %% -*- erlang-indent-level: 2 -*-
 %%-------------------------------------------------------------------
 %% File    : hipe_icode_split_arith.erl
-%% Author  : Tobias Lindahl <tobiasl@csd.uu.se>
+%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
 %% Description : 
 %%
-%% Created : 12 Nov 2003 by Tobias Lindahl <tobiasl@csd.uu.se>
+%% Created : 12 Nov 2003 by Tobias Lindahl <tobiasl@it.uu.se>
 %%-------------------------------------------------------------------
 -module(hipe_icode_split_arith).
 

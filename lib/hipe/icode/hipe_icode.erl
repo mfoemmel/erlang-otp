@@ -5,8 +5,8 @@
 %%  Filename : 	hipe_icode.erl
 %%  Module   :	hipe_icode
 %%  Purpose  :  Provide primops for the Icode data structure.
-%%  History  :	1997-? Erik Johansson (happi@csd.uu.se): Created.
-%%              2001-01-30 EJ (happi@csd.uu.se):
+%%  History  :	1997-? Erik Johansson (happi@it.uu.se): Created.
+%%              2001-01-30 EJ (happi@it.uu.se):
 %%                             Apply, primop, guardop removed
 %%              2003-03-15 ES (happi@acm.org):
 %%                             Started commenting in Edoc.
@@ -486,7 +486,7 @@
 	 enter_args/1,
 	 enter_args_update/2,
 	 enter_type/1,
-	 %% is_enter/1,
+	 is_enter/1,
 	 
 
 	 mk_return/1,            %% mk_return(Vars)
@@ -1149,9 +1149,9 @@ enter_args_update(E, Args) -> E#icode_enter{args=Args}.
 -spec(enter_type/1 :: (#icode_enter{}) -> icode_call_type()).
 enter_type(#icode_enter{type=Type}) -> Type.
 
-%% -spec(is_enter/1 :: (icode_instr()) -> bool()).
-%% is_enter(#icode_enter{}) -> true;
-%% is_enter(_) -> false.
+-spec(is_enter/1 :: (icode_instr()) -> bool()).
+is_enter(#icode_enter{}) -> true;
+is_enter(_) -> false.
 
 -spec(mk_enter_primop/2 ::
       (icode_primop(), [icode_term_arg()]) -> #icode_enter{type::'primop'}).

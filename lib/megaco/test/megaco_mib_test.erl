@@ -72,10 +72,113 @@ fin_per_testcase(Case, Config) ->
 all(suite) ->
     Cases = 
 	[
+	 plain,
 	 connect,
 	 traffic
 	],
     Cases.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+plain(suite) ->
+    [];
+plain(doc) ->
+    ["Test case for the basic statistics counter handling. "];
+plain(Config) when list(Config) ->
+    io:format("create test table 1~n", []),
+    Tab1 = megaco_test_cnt1,
+    megaco_stats:init(Tab1),
+
+    io:format("~ncreate test table 2~n", []),
+    Tab2 = megaco_test_cnt2,
+    megaco_stats:init(Tab2, [kalle, hobbe]),
+
+    io:format("~ntable 1 increments~n", []),
+    H1 = #megaco_conn_handle{local_mid  = {deviceName, "a"},
+			     remote_mid = {deviceName, "b"}},
+    H2 = #megaco_conn_handle{local_mid  = {deviceName, "a"},
+			     remote_mid = {deviceName, "c"}},
+    1 = megaco_stats:inc(Tab1, H1, sune),
+    2 = megaco_stats:inc(Tab1, H2, sune, 2),
+    3 = megaco_stats:inc(Tab1, H1, gurka, 3),
+    4 = megaco_stats:inc(Tab1, H2, sune, 2),
+    4 = megaco_stats:inc(Tab1, H1, gurka),
+
+    io:format("~ntable 2 increments~n", []),
+    H3 = #megaco_conn_handle{local_mid  = {deviceName, "e"},
+			     remote_mid = {deviceName, "c"}},
+    H4 = #megaco_conn_handle{local_mid  = {deviceName, "e"},
+			     remote_mid = {deviceName, "d"}},
+    1 = megaco_stats:inc(Tab2, H3, tomat),
+    4 = megaco_stats:inc(Tab2, H3, tomat, 3),
+    5 = megaco_stats:inc(Tab2, H4, paprika, 5),
+
+    io:format("~ntable 2 global increments~n", []),
+    1 = megaco_stats:inc(Tab2, kalle),
+    1 = megaco_stats:inc(Tab2, hobbe),
+    2 = megaco_stats:inc(Tab2, hobbe),
+    2 = megaco_stats:inc(Tab2, kalle),
+    3 = megaco_stats:inc(Tab2, kalle),
+    4 = megaco_stats:inc(Tab2, hobbe, 2),
+    
+    io:format("~ntable 1 stats~n", []),
+    {ok, Stats1} = megaco_stats:get_stats(Tab1),
+    io:format("Stats1 = ~p~n", [Stats1]),
+    {value, {H1, H1Stats}} = lists:keysearch(H1, 1, Stats1),
+    Stats1_2 = lists:keydelete(H1, 1, Stats1),
+    {value, {H2, H2Stats}} = lists:keysearch(H2, 1, Stats1_2), 
+    Stats1_3 = lists:keydelete(H2, 1, Stats1_2),
+    [] = Stats1_3,
+    io:format("H1Stats = ~p~n", [H1Stats]),
+    io:format("H2Stats = ~p~n", [H2Stats]),
+
+    {value, {sune, 1}}  = lists:keysearch(sune, 1, H1Stats),
+    H1Stats_2 = lists:keydelete(sune, 1, H1Stats),
+    {value, {gurka, 4}} = lists:keysearch(gurka, 1, H1Stats_2),
+    H1Stats_3 = lists:keydelete(gurka, 1, H1Stats_2),
+    [] = H1Stats_3,
+
+    {value, {sune, 4}} = lists:keysearch(sune, 1, H2Stats),
+    H2Stats_2 = lists:keydelete(sune, 1, H2Stats),
+    [] = H2Stats_2,
+    
+
+    %% --
+    io:format("~ntable 2 stats~n", []),
+    {ok, Stats2} = megaco_stats:get_stats(Tab2),
+    io:format("Stats2 = ~p~n", [Stats2]),
+    {ok, 3} = megaco_stats:get_stats(Tab2, kalle),
+    {ok, 4} = megaco_stats:get_stats(Tab2, hobbe),
+     
+
+    %% --
+    io:format("~ntable 1 reset stats for ~p~n", [H1]),
+    megaco_stats:reset_stats(Tab1, H1),
+    {ok, Stats1_4} = megaco_stats:get_stats(Tab1),
+    io:format("Stats1_4 = ~p~n", [Stats1_4]),
+    {ok, 0} = megaco_stats:get_stats(Tab1, H1, sune),
+    {ok, 0} = megaco_stats:get_stats(Tab1, H1, gurka),
+    
+
+    %% --
+    io:format("~ntable 2 reset stats for kalle and ~p~n", [H4]),
+    megaco_stats:reset_stats(Tab2, kalle),
+    megaco_stats:reset_stats(Tab2, H4),
+    {ok, Stats2_2} = megaco_stats:get_stats(Tab2),
+    io:format("Stats2_2 = ~p~n", [Stats2_2]),
+    {ok, 0} = megaco_stats:get_stats(Tab2, kalle),
+    {ok, 4} = megaco_stats:get_stats(Tab2, hobbe),
+    {ok, 4} = megaco_stats:get_stats(Tab2, H3, tomat),
+    {ok, 0} = megaco_stats:get_stats(Tab2, H4, paprika),
+    {ok, Stats4_4} = megaco_stats:get_stats(Tab2, H4),
+    io:format("Stats4_4 = ~p~n", [Stats4_4]),
+
+    %% --
+    io:format("~ntable 2 stats for nonexisting counters~n", []),
+    {error, _} = megaco_stats:get_stats(Tab2, kalla),
+    {error, _} = megaco_stats:get_stats(Tab2, H3, paprika),
+    ok.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

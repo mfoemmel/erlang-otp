@@ -45,6 +45,7 @@ MODULES = \
 	tftp_engine \
 	tftp_file \
 	tftp_lib \
+	tftp_logger \
 	tftp_sup 
 
 HRL_FILES = tftp.hrl

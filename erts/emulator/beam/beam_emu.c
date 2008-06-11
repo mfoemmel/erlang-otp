@@ -66,11 +66,19 @@ do {									\
 	erts_lc_check_exact(NULL, 0);					\
     ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);				\
 } while (0)
+#    define ERTS_SMP_REQ_PROC_MAIN_LOCK(P) \
+        if ((P)) erts_proc_lc_require_lock((P), ERTS_PROC_LOCK_MAIN)
+#    define ERTS_SMP_UNREQ_PROC_MAIN_LOCK(P) \
+        if ((P)) erts_proc_lc_unrequire_lock((P), ERTS_PROC_LOCK_MAIN)
 #  else
+#    define ERTS_SMP_REQ_PROC_MAIN_LOCK(P)
+#    define ERTS_SMP_UNREQ_PROC_MAIN_LOCK(P)
 #    define PROCESS_MAIN_CHK_LOCKS(P) erts_lc_check_exact(NULL, 0)
 #  endif
 #else
 #  define PROCESS_MAIN_CHK_LOCKS(P)
+#  define ERTS_SMP_REQ_PROC_MAIN_LOCK(P)
+#  define ERTS_SMP_UNREQ_PROC_MAIN_LOCK(P)
 #endif
 
 /*
@@ -275,6 +283,12 @@ extern int count_instructions;
     c_p->stop = E
 #endif
 
+#define PRE_BIF_SWAPOUT(P)						\
+     HEAP_TOP((P)) = HTOP;  						\
+     (P)->stop = E;  							\
+     PROCESS_MAIN_CHK_LOCKS((P));					\
+     ERTS_SMP_UNREQ_PROC_MAIN_LOCK((P))
+
 #if defined(HYBRID)
 #  define POST_BIF_GC_SWAPIN_0(_p, _res)				\
      if ((_p)->mbuf) {							\
@@ -291,6 +305,8 @@ extern int count_instructions;
      SWAPIN
 #else
 #  define POST_BIF_GC_SWAPIN_0(_p, _res)				\
+     ERTS_SMP_REQ_PROC_MAIN_LOCK((_p));					\
+     PROCESS_MAIN_CHK_LOCKS((_p));					\
      if ((_p)->mbuf) {							\
        _res = erts_gc_after_bif_call((_p), (_res), NULL, 0);		\
        E = (_p)->stop;							\
@@ -298,6 +314,8 @@ extern int count_instructions;
      HTOP = HEAP_TOP((_p))
 
 #  define POST_BIF_GC_SWAPIN(_p, _res, _regs, _arity)			\
+     ERTS_SMP_REQ_PROC_MAIN_LOCK((_p));					\
+     PROCESS_MAIN_CHK_LOCKS((_p));					\
      if ((_p)->mbuf) {							\
        _regs[0] = r(0);							\
        _res = erts_gc_after_bif_call((_p), (_res), _regs, (_arity));	\
@@ -1100,9 +1118,11 @@ void process_main(void)
     reds_used = REDS_IN(c_p) - FCALLS;
  do_schedule1:
     PROCESS_MAIN_CHK_LOCKS(c_p);
+    ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
     c_p = schedule(c_p, reds_used);
-#ifdef ERTS_SMP
+    ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
     PROCESS_MAIN_CHK_LOCKS(c_p);
+#ifdef ERTS_SMP
     reg = c_p->scheduler_data->save_reg;
     freg = c_p->scheduler_data->freg;
 #endif
@@ -1346,11 +1366,9 @@ void process_main(void)
      Eterm* next;
      Eterm result;
 
-     SWAPOUT;
+     PRE_BIF_SWAPOUT(c_p);
      c_p->fcalls = FCALLS - 1;
-     PROCESS_MAIN_CHK_LOCKS(c_p);
      result = send_2(c_p, r(0), x(1));
-     PROCESS_MAIN_CHK_LOCKS(c_p);
      PreFetch(0, next);
      POST_BIF_GC_SWAPIN(c_p, result, reg, 2);
      FCALLS = c_p->fcalls;
@@ -1518,6 +1536,7 @@ void process_main(void)
 	 /* Make sure messages wont pass exit signals... */
 	 if (ERTS_PROC_PENDING_EXIT(c_p)) {
 	     erts_smp_proc_unlock(c_p, ERTS_PROC_LOCKS_MSG_RECEIVE);
+	     SWAPOUT;
 	     goto do_schedule; /* Will be rescheduled for exit */
 	 }
 	 ERTS_SMP_MSGQ_MV_INQ2PRIVQ(c_p);
@@ -1893,7 +1912,9 @@ void process_main(void)
 	c_p->fcalls = FCALLS;
 	SWAPOUT;
 	PROCESS_MAIN_CHK_LOCKS(c_p);
+	ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
 	result = (*bf)(c_p, reg, live);
+	ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
 	PROCESS_MAIN_CHK_LOCKS(c_p);
 	SWAPIN;
 	r(0) = reg[0];
@@ -1971,7 +1992,7 @@ void process_main(void)
     {
 	Eterm (*bf)(Process*, Uint*) = GET_BIF_ADDRESS(Arg(0));
 
-	SWAPOUT;
+	PRE_BIF_SWAPOUT(c_p);
 	c_p->fcalls = FCALLS - 1;
 	if (FCALLS <= 0) {
 	    save_calls(c_p, (Export *) Arg(0));
@@ -1980,11 +2001,9 @@ void process_main(void)
 	/*
 	 * A BIF with no arguments cannot fail (especially not with badarg).
 	 */
-	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p));
 	r(0) = (*bf)(c_p, I);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p) || is_non_value(r(0)));
-	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	POST_BIF_GC_SWAPIN_0(c_p, r(0));
 	FCALLS = c_p->fcalls;
@@ -2009,12 +2028,10 @@ void process_main(void)
 	    save_calls(c_p, (Export *) Arg(0));
 	}
 	PreFetch(1, next);
-	SWAPOUT;
-	PROCESS_MAIN_CHK_LOCKS(c_p);
+	PRE_BIF_SWAPOUT(c_p);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p));
 	result = (*bf)(c_p, r(0), I);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p) || is_non_value(result));
-	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	POST_BIF_GC_SWAPIN(c_p, result, reg, 1);
 	FCALLS = c_p->fcalls;
@@ -2044,7 +2061,7 @@ void process_main(void)
 	Eterm result;
 	Eterm* next;
 
-	SWAPOUT;
+	PRE_BIF_SWAPOUT(c_p);
 	c_p->fcalls = FCALLS - 1;
 	if (FCALLS <= 0) {
 	   save_calls(c_p, (Export *) Arg(0));
@@ -2052,11 +2069,9 @@ void process_main(void)
 	PreFetch(1, next);
 	CHECK_TERM(r(0));
 	CHECK_TERM(x(1));
-	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p));
 	result = (*bf)(c_p, r(0), x(1), I);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p) || is_non_value(result));
-	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	POST_BIF_GC_SWAPIN(c_p, result, reg, 2);
 	FCALLS = c_p->fcalls;
@@ -2086,17 +2101,15 @@ void process_main(void)
 	Eterm result;
 	Eterm* next;
 
-	SWAPOUT;
+	PRE_BIF_SWAPOUT(c_p);
 	c_p->fcalls = FCALLS - 1;
 	if (FCALLS <= 0) {
 	   save_calls(c_p, (Export *) Arg(0));
 	}
 	PreFetch(1, next);
-	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p));
 	result = (*bf)(c_p, r(0), x(1), x(2), I);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p) || is_non_value(result));
-	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	POST_BIF_GC_SWAPIN(c_p, result, reg, 3);
 	FCALLS = c_p->fcalls;
@@ -2758,7 +2771,9 @@ void process_main(void)
      SWAPOUT;
      c_p->freason = EXC_NORMAL;
      c_p->arity = 0;		/* In case this process will ever be garbed again. */
+     ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
      erts_do_exit_process(c_p, am_normal);
+     ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
      goto do_schedule;
  }
 
@@ -2901,6 +2916,7 @@ void process_main(void)
 	PROCESS_MAIN_CHK_LOCKS(c_p);
 	tmp_arg2 = I[-1];
 	ASSERT(tmp_arg2 <= 3);
+	ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
 	switch (tmp_arg2) {
 	case 3:
 	    {
@@ -2939,6 +2955,7 @@ void process_main(void)
 		break;
 	    }
 	}
+	ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
 	ERTS_HOLE_CHECK(c_p);
 	if (c_p->mbuf) {
 	    reg[0] = r(0);
@@ -3962,8 +3979,10 @@ void process_main(void)
 	 SWAPOUT;
 	 reg[0] = r(0);
 	 PROCESS_MAIN_CHK_LOCKS(c_p);
+	 ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
 	 flags = erts_call_trace(c_p, ep->code, ep->match_prog_set, reg,
 				 0, &c_p->tracer_proc);
+	 ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
 	 PROCESS_MAIN_CHK_LOCKS(c_p);
 	 ASSERT(!ERTS_PROC_IS_EXITING(c_p));
 	 SWAPIN;
@@ -4002,7 +4021,9 @@ void process_main(void)
      Uint* code = (Uint *) E[0];
      
      SWAPOUT;		/* Needed for shared heap */
+     ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
      erts_trace_return(c_p, code, r(0), E+1/*Process tracer*/);
+     ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
      SWAPIN;
      c_p->cp = NULL;
      SET_I((Eterm *) E[2]);
@@ -4064,11 +4085,15 @@ void process_main(void)
 	 }
 	 c_p->cp = (Eterm *) *cpp;
 	 ASSERT(is_CP((Eterm)c_p->cp));
+	 ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
 	 real_I = erts_trace_break(c_p, I, reg, &flags, &tracer_pid);
+	 ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
 	 SWAPIN;		/* Needed by shared heap. */
 	 c_p->cp = cp_save;
      } else {
+	 ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
 	 real_I = erts_trace_break(c_p, I, reg, &flags, &tracer_pid);
+	 ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
 	 SWAPIN;		/* Needed by shared heap. */
      }
 
@@ -4131,7 +4156,9 @@ void process_main(void)
 	     } else break;
 	 }
 	 SWAPOUT;		/* Needed for shared heap */
+	 ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
 	 erts_trace_return_to(c_p, cp_val(*cpp));
+	 ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
 	 SWAPIN;
      }
      c_p->cp = NULL;
@@ -4781,7 +4808,9 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
         if ( (new_pc = next_catch(c_p, reg))) return new_pc;
 	if (c_p->catches > 0) erl_exit(1, "Catch not found");
     }
+    ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
     terminate_proc(c_p, Value);
+    ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
     return NULL;
 }
 
@@ -5161,11 +5190,11 @@ build_stacktrace(Process* c_p, Eterm exc) {
     if (! (s = get_trace_from_exc(exc))) {
         return NIL;
     }
+#ifdef HIPE
     if (s->freason & EXF_NATIVE) {
-      /* Just return a null trace if the exception was in native code.
-       */
-      return NIL;
+	return hipe_build_stacktrace(c_p, s);
     }
+#endif
     if (is_raised_exc(exc)) {
 	return get_args_from_exc(exc);
     }

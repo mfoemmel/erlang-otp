@@ -458,8 +458,6 @@ directory_config_check(Directory, DirData) ->
 	plain ->
 	    check_filename_present(Directory,auth_user_file,DirData),
 	    check_filename_present(Directory,auth_group_file,DirData);
-	undefined ->
-	    throw({missing_auth_type, {directory, {Directory, DirData}}});
 	_ ->
 	    ok
     end.

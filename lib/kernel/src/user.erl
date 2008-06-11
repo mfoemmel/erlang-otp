@@ -389,22 +389,10 @@ get_chars_more(State, M, F, Xa, Port, Q) ->
     end.
 
 
-
 %% prompt(Port, Prompt)
-%%  Print Prompt onto port Port, special case just atoms and print unquoted.
-prompt(Port, Prompt) when is_atom(Prompt) ->
-    List = io_lib:format('~s', [Prompt]),
-    put_port(List, Port);
-prompt(Port, {format,Format,Args}) ->
-    case catch io_lib:format(Format,Args) of
-	{'EXIT',_} ->
-	    put_port("???", Port);
-	List ->
-	    put_port(List, Port)
-    end;
+%%  Print Prompt onto Port
 prompt(Port, Prompt) ->
-    List = io_lib:write(Prompt),
-    put_port(List, Port).
+    put_port(io_lib:format_prompt(Prompt), Port).
 
 %% Convert error code to make it look as before
 err_func(io_lib, get_until, {_,F,_}) ->

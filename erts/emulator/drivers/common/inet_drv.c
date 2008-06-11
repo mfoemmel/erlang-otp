@@ -13,10 +13,8 @@
  * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
  * AB. All Rights Reserved.''
  *
- * The SCTP protocol was added 2006
- * by Leonid Timochouk <l.timochouk@gmail.com>
- * and Serge Aleynikov  <serge@hq.idt.net>
- * at IDT Corp. Adapted by the OTP team at Ericsson AB.
+ * SCTP protocol contribution by Leonid Timochouk and Serge Aleynikov.
+ * See also: $ERL_TOP/erts/AUTHORS
  * 
  *     $Id$
  */
@@ -508,7 +506,8 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 
 /* TCP additional flags */
 #define TCP_ADDF_DELAY_SEND    1
-#define TCP_ADDF_CLOSE_SENT    2
+#define TCP_ADDF_CLOSE_SENT    2 /* Close sent (active mode only) */
+#define TCP_ADDF_DELAYED_CLOSE 4 /* If receive fails, report {error,closed} (passive mode) */
 
 /* *_REQ_* replies */
 #define INET_REP_ERROR       0
@@ -2752,7 +2751,7 @@ static ErlDrvTermData   am_sctp_rtoinfo, /* Option names */
     /* For #sctp_paddr_change{}: */
     am_addr_available,                 am_addr_unreachable, 
     am_addr_removed,                   am_addr_added,
-    am_addr_made_prim,
+    am_addr_made_prim,                 am_addr_confirmed,
     
     /* For #sctp_remote_error{}: */
     am_short_recv,                     am_wrong_anc_data,
@@ -3007,6 +3006,11 @@ static int sctp_parse_async_event
 	    case SCTP_ADDR_MADE_PRIM:
 		i = LOAD_ATOM (spec, i, am_addr_made_prim);
 		break;
+#if HAVE_DECL_SCTP_ADDR_CONFIRMED
+	    case SCTP_ADDR_CONFIRMED:
+		i = LOAD_ATOM (spec, i, am_addr_confirmed);
+		break;
+#endif
 	    default:
 		ASSERT(0);
 	    }
@@ -3206,7 +3210,9 @@ inet_async_binary_data
     int aid;
     int req;
     int i = 0;
+#ifdef HAVE_SCTP
     int ok_pos;
+#endif
 
     DEBUGF(("inet_async_binary_data(%ld): offs=%d, len=%d\r\n", 
 	    (long)desc->port, offs, len));
@@ -3840,6 +3846,7 @@ static int inet_init()
     INIT_ATOM(addr_removed);
     INIT_ATOM(addr_added);
     INIT_ATOM(addr_made_prim);
+    INIT_ATOM(addr_confirmed);
     
     INIT_ATOM(short_recv);
     INIT_ATOM(wrong_anc_data);
@@ -7719,7 +7726,6 @@ static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 	DEBUGF(("tcp_inet_ctl(%ld): ACCEPT\r\n", (long)desc->inet.port)); 
 	/* INPUT: Timeout(4) */
 
-	/* FIXME implement ACCEPT queue ! */
 	if ((desc->inet.state != TCP_STATE_LISTEN && desc->inet.state != TCP_STATE_ACCEPTING &&
 	     desc->inet.state != TCP_STATE_MULTI_ACCEPTING) || len != 4) {
 	    return ctl_error(EINVAL, rbuf, rsize);
@@ -7832,8 +7838,13 @@ static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 
 	DEBUGF(("tcp_inet_ctl(%ld): RECV\r\n", (long)desc->inet.port)); 
 	/* INPUT: Timeout(4),  Length(4) */
-	if (!IS_CONNECTED(INETP(desc)))
+	if (!IS_CONNECTED(INETP(desc))) {
+	    if (desc->tcp_add_flags & TCP_ADDF_DELAYED_CLOSE) {
+		desc->tcp_add_flags &= ~TCP_ADDF_DELAYED_CLOSE;
+		return ctl_reply(INET_REP_ERROR, "closed", 6, rbuf, rsize);
+	    }
 	    return ctl_error(ENOTCONN, rbuf, rsize);
+	}
 	if (desc->inet.active || (len != 8))
 	    return ctl_error(EINVAL, rbuf, rsize);
 	timeout = get_int32(buf);
@@ -7863,7 +7874,7 @@ static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
     case TCP_REQ_UNRECV: {
 	DEBUGF(("tcp_inet_ctl(%ld): UNRECV\r\n", (long)desc->inet.port)); 
 	if (!IS_CONNECTED(INETP(desc)))
-	    return ctl_error(ENOTCONN, rbuf, rsize);
+   	    return ctl_error(ENOTCONN, rbuf, rsize);
 	tcp_push_buffer(desc, buf, len);
 	if (desc->inet.active)
 	    tcp_deliver(desc, 0);
@@ -8908,10 +8919,9 @@ static int tcp_inet_input(tcp_descriptor* desc, HANDLE event)
 
 static int tcp_send_error(tcp_descriptor* desc, int err)
 {
-    inet_address other;
-    unsigned int sz = sizeof(other);
-    int code;
-
+    /*
+     * If the port is busy, we must do some clean-up before proceeding.
+     */
     if (IS_BUSY(INETP(desc))) {
 	desc->inet.caller = desc->inet.busy_caller;
 	if (desc->busy_on_send) {
@@ -8922,29 +8932,39 @@ static int tcp_send_error(tcp_descriptor* desc, int err)
 	set_busy_port(desc->inet.port, 0);
     }
 
-    code = sock_peer(desc->inet.s,(struct sockaddr*) &other,&sz);
-    if ((code == SOCKET_ERROR) && (sock_errno() == ENOTCONN ||
-				   sock_errno() == EPIPE)) {
-	DEBUGF(("driver_failure_eof(%ld) in %s, line %d\r\n",
-		(long)desc->inet.port, __FILE__, __LINE__));
-	if (desc->inet.active) {
-	    tcp_closed_message(desc);
-	    inet_reply_error_am(INETP(desc), am_closed);
-	    if (desc->inet.exitf)
-		driver_exit(desc->inet.port, 0);
-	    else
-		desc_close(INETP(desc));
-	}
-	else {
-	    tcp_clear_output(desc);
-	    tcp_clear_input(desc);
-	    tcp_close_check(desc);
-	    erl_inet_close(INETP(desc));
-	    inet_reply_error_am(INETP(desc), am_closed);
-	}
-    }
-    else  {
-	inet_reply_error(INETP(desc), sock_errno());
+    /*
+     * We used to handle "expected errors" differently from unexpected ones.
+     * Now we handle all errors in the same way. We just have to distinguish
+     * between passive and active sockets.
+     */
+    DEBUGF(("driver_failure_eof(%ld) in %s, line %d\r\n",
+	    (long)desc->inet.port, __FILE__, __LINE__));
+    if (desc->inet.active) {
+	tcp_closed_message(desc);
+	inet_reply_error_am(INETP(desc), am_closed);
+	if (desc->inet.exitf)
+	    driver_exit(desc->inet.port, 0);
+	else
+	    desc_close(INETP(desc));
+    } else {
+	tcp_clear_output(desc);
+	tcp_clear_input(desc);
+	tcp_close_check(desc);
+	erl_inet_close(INETP(desc));
+
+	/*
+	 * Note: The following message might get lost, in case the error
+	 * occurred when we tried to write taken from the queue (no caller).
+	 */
+	inet_reply_error_am(INETP(desc), am_closed);
+
+	/*
+	 * Make sure that the next receive operation gets an {error,closed}
+	 * result rather than {closed,enotconn}. That means that the caller
+	 * can safely ignore errors in the send operations and handle them
+	 * in the receive operation.
+	 */
+	desc->tcp_add_flags |= TCP_ADDF_DELAYED_CLOSE;
     }
     return -1;
 }

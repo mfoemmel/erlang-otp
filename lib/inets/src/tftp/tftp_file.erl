@@ -15,7 +15,6 @@
 -behaviour(tftp).
 
 -export([prepare/6, open/6, read/1, write/2, abort/3]).
--export([prepare/5, open/5]).
 
 %%%-------------------------------------------------------------------
 %%% Defines
@@ -23,14 +22,21 @@
 
 -include_lib("kernel/include/file.hrl").
 
--record(state, {access,
-		filename,
-		root_dir,
-		options,
-		blksize,
-		fd,
-		count,
-		buffer}).
+-record(initial,
+	{filename,
+	 is_native_ascii}).
+
+-record(state,
+	{access,
+	 filename,
+	 is_native_ascii,
+	 is_network_ascii,
+	 root_dir,
+	 options,
+	 blksize,
+	 fd,
+	 count,
+	 buffer}).
 
 %%-------------------------------------------------------------------
 %% prepare(Peer, Access, Filename, Mode, SuggestedOptions, InitialState) -> 
@@ -66,20 +72,18 @@
 %% in the AcceptedOptions.
 %%-------------------------------------------------------------------
 
-prepare(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) ->
-    %% Kept for backwards compatibility 
-    prepare(Access, Filename, Mode, SuggestedOptions, Initial).
-
-prepare(Access, Filename, Mode, SuggestedOptions, Initial) when is_list(Initial) ->
+prepare(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) when is_list(Initial) ->
     %% Client side
     case catch handle_options(Access, Filename, Mode, SuggestedOptions, Initial) of
-	{ok, Filename2, AcceptedOptions} ->
+	{ok, Filename2, IsNativeAscii, IsNetworkAscii, AcceptedOptions} ->
 	    State = #state{access           = Access,
 			   filename         = Filename2,
+			   is_native_ascii  = IsNativeAscii,
+			   is_network_ascii = IsNetworkAscii,
 			   options  	    = AcceptedOptions,
 			   blksize  	    = lookup_blksize(AcceptedOptions),
 			   count    	    = 0,
-			   buffer   	    = []},
+			   buffer   	   =  []},
 	    {ok, AcceptedOptions, State};
 	{error, {Code, Text}} ->
 	    {error, {Code, Text}}
@@ -118,27 +122,27 @@ prepare(Access, Filename, Mode, SuggestedOptions, Initial) when is_list(Initial)
 %% in the AcceptedOptions.
 %%-------------------------------------------------------------------
 
-open(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) ->
-    %% Kept for backwards compatibility 
-    open(Access, Filename, Mode, SuggestedOptions, Initial).
-
-open(Access, Filename, Mode, SuggestedOptions, Initial) when is_list(Initial) ->
+open(Peer, Access, Filename, Mode, SuggestedOptions, Initial) when is_list(Initial) ->
     %% Server side
-    case prepare(Access, Filename, Mode, SuggestedOptions, Initial) of
+    case prepare(Peer, Access, Filename, Mode, SuggestedOptions, Initial) of
 	{ok, AcceptedOptions, State} ->
-	    open(Access, Filename, Mode, AcceptedOptions, State);
+	    open(Peer, Access, Filename, Mode, AcceptedOptions, State);
 	{error, {Code, Text}} ->
 	    {error, {Code, Text}}
     end;
-open(Access, Filename, Mode, NegotiatedOptions, State) when is_record(State, state) ->
+open(_Peer, Access, Filename, Mode, NegotiatedOptions, State) when is_record(State, state) ->
     %% Both sides
     case catch handle_options(Access, Filename, Mode, NegotiatedOptions, State) of
-	{ok, _Filename2, Options} 
+	{ok, _Filename2, _IsNativeAscii, _IsNetworkAscii, Options} 
 	   when Options =:= NegotiatedOptions ->
 	    do_open(State);
 	{error, {Code, Text}} ->
 	    {error, {Code, Text}}
-    end.
+    end;
+open(Peer, Access, Filename, Mode, NegotiatedOptions, State) ->
+    %% Handle upgrade from old releases. Please, remove this clause in next release.
+    State2 = upgrade_state(State),
+    open(Peer, Access, Filename, Mode, NegotiatedOptions, State2).
 
 do_open(State) when is_record(State, state) ->
     case file:open(State#state.filename, file_options(State)) of
@@ -198,7 +202,11 @@ read(#state{access = read} = State) ->
 	{error, Reason} ->
 	    file:close(State#state.fd),
 	    {error, file_error(Reason)}
-    end.
+    end;
+read(State) ->
+    %% Handle upgrade from old releases. Please, remove this clause in next release.
+    State2 = upgrade_state(State),
+    read(State2).
 
 %%-------------------------------------------------------------------
 %% write(Bin, State) ->
@@ -233,7 +241,11 @@ write(Bin, #state{access = write} = State) when is_binary(Bin) ->
 	    file:close(State#state.fd),
 	    file:delete(State#state.filename),
 	    {error, file_error(Reason)}
-    end.
+    end;
+write(Bin, State) ->
+    %% Handle upgrade from old releases. Please, remove this clause in next release.
+    State2 = upgrade_state(State),
+    write(Bin, State2).
 
 %%-------------------------------------------------------------------
 %% abort(Code, Text, State) -> ok
@@ -260,27 +272,36 @@ abort(_Code, _Text, #state{fd = Fd, access = Access} = State) ->
 %% Process options
 %%-------------------------------------------------------------------
 
-handle_options(Access, Filename, Mode, Options, InitialState) when Mode =:= "octet" ->
-    Filename2 = handle_filename(Filename, InitialState),
+handle_options(Access, Filename, Mode, Options, Initial) ->
+    I = #initial{filename = Filename, is_native_ascii = is_native_ascii()},
+    {Filename2, IsNativeAscii} = handle_initial(Initial, I),
+    IsNetworkAscii = handle_mode(Mode, IsNativeAscii),
     Options2 = do_handle_options(Access, Filename2, Options),
-    {ok, Filename2, Options2};
-handle_options(_Access, _Filename, Mode, _Options, _InitialState) ->
-    {error, {badop, "Illegal mode " ++ Mode}}.
+    {ok, Filename2, IsNativeAscii, IsNetworkAscii, Options2}.
 
-handle_filename(Filename, InitialState) when is_list(InitialState) ->
-    case lists:keysearch(root_dir, 1, InitialState) of
-	{value, {_, Dir}} ->
-	    case catch filename_join(Dir, Filename) of
-		{'EXIT', _} ->
-		    throw({error, {badop, "Internal error. root_dir is not a string"}});
-		Filename2 ->
-		    Filename2
-	    end;
-	false ->
-	    Filename
+handle_mode(Mode, IsNativeAscii) ->
+    case Mode of
+	"netascii" when IsNativeAscii =:= true -> true;
+	"octet" -> false;
+	_ -> throw({error, {badop, "Illegal mode " ++ Mode}})
+    end.
+
+handle_initial([{root_dir, Dir} | Initial], I) ->
+    case catch filename_join(Dir, I#initial.filename) of
+	{'EXIT', _} ->
+	    throw({error, {badop, "Internal error. root_dir is not a string"}});
+	Filename2 ->
+	    handle_initial(Initial, I#initial{filename = Filename2})
     end;
-handle_filename(_Filename, State) when is_record(State, state) ->
-    State#state.filename.
+handle_initial([{native_ascii, Bool} | Initial], I) ->
+    case Bool of
+	true  -> handle_initial(Initial, I#initial{is_native_ascii = true});
+	false -> handle_initial(Initial, I#initial{is_native_ascii = false})
+    end;
+handle_initial([], I) when is_record(I, initial) ->
+    {I#initial.filename, I#initial.is_native_ascii};
+handle_initial(State, _) when is_record(State, state) ->
+    {State#state.filename, State#state.is_native_ascii}.
 
 filename_join(Dir, Filename) ->
     case filename:pathtype(Filename) of
@@ -336,3 +357,13 @@ lookup_blksize(Options) ->
 	false ->
 	    512
     end.
+
+is_native_ascii() ->
+    case os:type() of
+	{win32, _} -> true;
+	_          -> false
+    end.
+
+%% Handle upgrade from old releases. Please, remove this function in next release.
+upgrade_state({state, Access, Filename, RootDir, Options, BlkSize, Fd, Count, Buffer}) ->
+    {state, Access, Filename, false, false, RootDir, Options, BlkSize, Fd, Count, Buffer}.

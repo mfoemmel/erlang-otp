@@ -27,14 +27,16 @@
 -module(dialyzer_plt).
 
 -export([
-	 check_init_plt/1,
+	 check_plt/3,
+	 compute_md5_from_files/1,
 	 contains_mfa/2,
 	 contains_module/2,
 	 delete_contract_list/2,
 	 delete_list/2,
 	 delete_module/2,
+	 included_files/1,
 	 from_file/1,
-	 get_mod_deps/1,
+	 get_default_plt/0,
 	 %% insert/3,
 	 insert_list/2,
 	 insert_contract_list/2,
@@ -54,12 +56,16 @@
 
 -include("dialyzer.hrl").
 
+-type(mod_deps() :: dict()).
+
+%% XXX: This is only for a version or so, to protect against old plts.
+-type(old_md5() :: [{atom(), binary()}]). 
+
 -record(dialyzer_file_plt, {version=[]            :: string(), 
-			    libs=[]               :: [atom()], 
-			    md5=[]                :: md5(),
+			    md5=[]                :: md5() | old_md5(),
 			    info=dict:new()       :: dict(),
 			    contracts=dict:new()  :: dict(),
-			    mod_deps              :: dict(),
+			    mod_deps              :: mod_deps(),
 			    implementation_md5=[] :: [{atom(), _}]
 			   }).
 
@@ -140,7 +146,19 @@ contains_mfa(#dialyzer_plt{info=Info, contracts=Contracts}, MFA) ->
   (table_lookup(Info, MFA) =/= none) 
     orelse (table_lookup(Contracts, MFA) =/= none).
 
--spec(plt_and_info_from_file/1 :: (string()) -> {#dialyzer_plt{}, {_, _, _}}).
+-spec(get_default_plt/0 :: () -> string()).
+
+get_default_plt() ->
+  case os:getenv("DIALYZER_PLT") of
+    false ->
+      case os:getenv("HOME") of
+	false -> error("Please specify which plt to use");
+	HomeDir -> filename:join(HomeDir, ".dialyzer_plt")
+      end;
+    UserSpecPlt -> UserSpecPlt
+  end.
+
+-spec(plt_and_info_from_file/1 :: (string()) -> {#dialyzer_plt{}, {_, _}}).
   
 plt_and_info_from_file(FileName) ->
   from_file(FileName, true).
@@ -164,8 +182,7 @@ from_file(FileName, ReturnInfo) ->
 	    false -> Plt;
 	    true ->
 	      PltInfo = {Rec#dialyzer_file_plt.md5,
-			 Rec#dialyzer_file_plt.libs,
-			 {non_mergable, Rec#dialyzer_file_plt.mod_deps}},
+			 Rec#dialyzer_file_plt.mod_deps},
 	      {Plt, PltInfo}
 	  end
       end;
@@ -174,25 +191,34 @@ from_file(FileName, ReturnInfo) ->
 			  [FileName, Reason]))
   end.
 
+-spec(included_files/1 :: (string()) -> {ok, [string()]} 
+                                      | {error, 'no_such_file' | 'read_error'}).
+	 
+
+included_files(FileName) ->
+  case get_record_from_file(FileName) of
+    {ok, #dialyzer_file_plt{md5=Md5}} ->
+      {ok, [File || {File, _} <- Md5]};
+    {error, _What} = Error ->
+      Error
+  end.
+
 check_version(#dialyzer_file_plt{version=?VSN, implementation_md5=ImplMd5}) ->
-  case compute_implementation_md5() =:= ImplMd5 of
-    true -> ok;
-    false -> error
+  case compute_new_md5(ImplMd5, [], []) of
+    ok -> ok;
+    {differ, _, _} -> error;
+    {error, _} -> error
   end;
 check_version(#dialyzer_file_plt{}) -> error.
-
--spec(get_mod_deps/1 :: (string()) -> tuple()).
-
-get_mod_deps(FileName) ->
-  {ok, Rec} = get_record_from_file(FileName),
-  Rec#dialyzer_file_plt.mod_deps.
 
 get_record_from_file(FileName) ->
   case file:read_file(FileName) of
     {ok, Bin} ->
-      case catch binary_to_term(Bin) of
-	Rec = #dialyzer_file_plt{} -> {ok, Rec};
-	_ -> {error, not_valid}
+      try binary_to_term(Bin) of
+	  Rec = #dialyzer_file_plt{} -> {ok, Rec};
+	  _ -> {error, not_valid}
+      catch 
+	_:_ -> {error, not_valid}
       end;
     {error, enoent} ->
       {error, no_such_file};
@@ -210,24 +236,17 @@ merge_plts(List) ->
   #dialyzer_plt{info=table_merge(InfoList),
 		contracts=table_merge(ContractsList)}.
 
--spec(to_file/4 :: 
-      (string(), #dialyzer_plt{},dict(),
-       {md5(), [atom()], {'mergable' | 'non_mergable', dict()}}) -> 'ok').
+-spec(to_file/4 :: (string(), #dialyzer_plt{}, dict(), {md5(), dict()}) -> 'ok').
 
 to_file(FileName, #dialyzer_plt{info=Info, contracts=Contracts}, 
-	ModDeps, {MD5, Libs, OldModDeps}) ->
-  NewModDeps =
-    case OldModDeps of
-      {mergable, OMDs} -> 
-	dict:merge(fun(_Key, _OldVal, NewVal) -> NewVal end, 
-		   OMDs, ModDeps);
-      {non_mergable, OMDs} ->
-	OMDs
-    end,
+	ModDeps, {MD5, OldModDeps}) ->
+  NewModDeps = dict:merge(fun(_Key, OldVal, NewVal) -> 
+			      ordsets:union(OldVal, NewVal)
+			  end, 
+			  OldModDeps, ModDeps),
   ImplMd5 = compute_implementation_md5(),
   Record = #dialyzer_file_plt{version=?VSN, 
 			      md5=MD5, 
-			      libs=Libs, 
 			      info=Info,
 			      contracts=Contracts,
 			      mod_deps=NewModDeps,
@@ -241,109 +260,138 @@ to_file(FileName, #dialyzer_plt{info=Info, contracts=Contracts},
       throw({dialyzer_error, Msg})
   end.
 
--type(md5_diff() :: [{'diff',atom()} | {'new',atom()} | {'removed',atom()}]).
+-type(md5_diff() :: [{'differ',atom()} | {'removed',atom()}]).
+-type(check_error() :: 'not_valid' | 'no_such_file' | 'read_error' |
+                       {'no_file_to_remove', string()}).
+      
+-spec(check_plt/3 :: 
+      (string(), [string()], [string()]) -> 
+	 'ok'
+       | {'error', check_error()}
+       | {'differ', md5(), md5_diff(), mod_deps()}
+       | {'old_version', md5()}).
 
--spec(check_init_plt/1 :: 
-      (string()) -> {'error' | 'ok', string()} 
-		  | {'fail', md5(), 'none' | md5_diff(), [atom()], string()}).
-
-check_init_plt(FileName) ->
+check_plt(FileName, RemoveFiles, AddFiles) ->
   case get_record_from_file(FileName) of
-    {ok, Rec = #dialyzer_file_plt{libs=FileLibs, md5=Md5}} ->
-      case FileLibs =:= ?DEFAULT_LIBS of
-	false -> 
-	  {fail, compute_md5(?DEFAULT_LIBS), none, ?DEFAULT_LIBS, FileName};
-	true -> 
-	  Libs = ?DEFAULT_LIBS,
+    {ok, Rec = #dialyzer_file_plt{md5=Md5, mod_deps=ModDeps}} ->
+      case is_old_md5_format(Md5) of
+	true ->
+	  {error, not_valid};
+	false ->
 	  case check_version(Rec) of
 	    ok -> 
-	      case compute_md5(Libs) of
-		Md5 -> {ok, FileName};
-		NewMd5 ->
-		  DiffMd5 = 
-		    if is_list(Md5) -> find_diffs_in_md5(NewMd5, Md5);
-		       %% The Md5 was calculated in the old fashion.
-		       true -> none
-		    end,
-		  {fail, NewMd5, DiffMd5, Libs, FileName}
+	      case compute_new_md5(Md5, RemoveFiles, AddFiles) of
+		ok -> ok;
+		{differ, NewMd5, DiffMd5} -> {differ, NewMd5, DiffMd5, ModDeps};
+		{error, What} -> {error, What}
 	      end;
 	    error ->
-	      NewMd5 = compute_md5(Libs),
-	      {fail, NewMd5, none, Libs, FileName}
+	      case compute_new_md5(Md5, RemoveFiles, AddFiles) of
+		{differ, NewMd5, _DiffMd5} -> {old_version, NewMd5};
+		ok -> {old_version, Md5};
+		{error, What} -> {error, What}
+	      end
 	  end
       end;
-    {error, not_valid} ->
-      Msg0 = io_lib:format("    The file ~s is not a PLT file\n", [FileName]),
-      Msg = lists:flatten(Msg0),
-      {error, Msg};
-    {error, no_such_file} ->
-      {fail, compute_md5(?DEFAULT_LIBS), none, ?DEFAULT_LIBS, FileName};
-    {error, read_error} ->
-      Msg0 = io_lib:format("    Could not read the file ~s\n", [FileName]),
-      Msg = lists:flatten(Msg0),
-      {error, Msg}
+    Error -> Error
   end.
 
-compute_md5(Libs) ->
-  LibDirs = [code:lib_dir(L) || L <- Libs],
-  Dirs = [filename:join(L, "ebin") || L <- LibDirs],
-  case list_dirs(Dirs) of
-    {error, List} ->
-      error(io_lib:format("Invalid libraries: ~w\n", [List]));
-    {ok, List} ->
-      BeamFiles = [filename:join(Dir, X) 
-		   || {Dir, X} <- List, filename:extension(X)==".beam"],
-      [compute_md5_from_file(F) || F <- lists:sort(BeamFiles)]
+%% Since the old md5 format is so similar, we need to make sure this
+%% does not leak into the new analysis. In a way a non-backwards
+%% compability issue.
+is_old_md5_format([{Mod, _Md5}|_]) ->
+  is_atom(Mod).
+
+compute_new_md5(Md5, [], []) ->
+  compute_new_md5_1(Md5, [], []);
+compute_new_md5(Md5, RemoveFiles0, AddFiles0) ->
+  %% Assume that files are first removed and then added. Files that
+  %% are both removed and added will be checked for consistency in the
+  %% normal way. If they have moved, we assume that they differ.
+  RemoveFiles = RemoveFiles0 -- AddFiles0,
+  AddFiles = AddFiles0 -- RemoveFiles0,
+  InitDiffList = init_diff_list(RemoveFiles, AddFiles),
+  case init_md5_list(Md5, RemoveFiles, AddFiles) of
+    {ok, NewMd5} -> compute_new_md5_1(NewMd5, [], InitDiffList);
+    {error, What} -> {error, What}
   end.
 
-compute_md5_from_file(File) ->
-  case dialyzer_utils:get_abstract_code_from_beam(File) of
-    error ->
-      throw({dialyzer_error, 
-	     io_lib:format("Could not compute md5 for file: ~s\n", 
-			   [File])});
-    {ok, Abs} ->
-      ModName = list_to_atom(filename:basename(File, ".beam")),
-      Md5 = erlang:md5(term_to_binary(Abs)),
-      {ModName, Md5}
-  end.
+compute_new_md5_1([{File, Md5}|Left], NewList, Diff) ->
+  case compute_md5_from_file(File) of
+    Md5 -> compute_new_md5_1(Left, [{File, Md5}|NewList], Diff);
+    NewMd5 ->
+      ModName = beam_file_to_module(File),
+      compute_new_md5_1(Left, [{File, NewMd5}|NewList], [{differ, ModName}|Diff])
+  end;
+compute_new_md5_1([], _NewList, []) ->
+  ok;
+compute_new_md5_1([], NewList, Diff) ->
+  {differ, lists:keysort(1, NewList), Diff}.
 
 compute_implementation_md5() ->
   Dir = code:lib_dir(hipe),
-  Files1 = ["erl_types.beam", "erl_bif_types.beam"],
+  Files1 = ["erl_bif_types.beam", "erl_types.beam"],
   Files2 = [filename:join([Dir, "ebin", F]) || F <- Files1],
-  [compute_md5_from_file(F) || F <- Files2].
+  compute_md5_from_files(Files2).
 
-find_diffs_in_md5(NewMd5, OldMd5) ->
-  find_diffs_in_md5(NewMd5, OldMd5, []).
+-spec(compute_md5_from_files/1 :: ([string()]) -> [{string(), binary()}]).
 
-find_diffs_in_md5([{Mod, Md5}|Left1], [{Mod, Md5}|Left2], Acc) ->
-  find_diffs_in_md5(Left1, Left2, Acc);
-find_diffs_in_md5([{Mod, _}|Left1], [{Mod, _}|Left2], Acc) ->
-  find_diffs_in_md5(Left1, Left2, [{diff, Mod}|Acc]);
-find_diffs_in_md5([{Mod1, _}|Left1], L2 =[{Mod2, _}|_], Acc) when Mod1 < Mod2 ->
-  find_diffs_in_md5(Left1, L2, [{new, Mod1}|Acc]);
-find_diffs_in_md5(L1 =[{Mod1, _}|_], [{Mod2, _}|Left2], Acc) when Mod1 > Mod2 ->
-  find_diffs_in_md5(L1, Left2, [{removed, Mod2}|Acc]);
-find_diffs_in_md5([], [], Acc) ->
-  Acc;
-find_diffs_in_md5(L1, [], Acc) ->
-  [{new, Mod} || {Mod, _} <- L1] ++ Acc;
-find_diffs_in_md5([], L2, Acc) ->
-  [{removed, Mod} || {Mod, _} <- L2] ++ Acc.
+compute_md5_from_files(Files) ->
+  lists:keysort(1, [{F, compute_md5_from_file(F)} || F <- Files]).
 
-list_dirs(Dirs) ->
-  list_dirs(Dirs, [], []).
+compute_md5_from_file(File) ->
+  case filelib:is_regular(File) of
+    false -> 
+      Msg = io_lib:format("Not a regular file: ~s\n", [File]),
+      throw({dialyzer_error, Msg});
+    true ->
+      case dialyzer_utils:get_abstract_code_from_beam(File) of
+	error ->
+	  Msg = io_lib:format("Could not compute md5 for file: ~s\n", [File]),
+	  throw({dialyzer_error, Msg});
+	{ok, Abs} ->
+	  erlang:md5(term_to_binary(Abs))
+      end
+  end.
 
-list_dirs([Dir|Left], Error, Acc) ->
-  case file:list_dir(Dir) of
-    {ok, List} -> list_dirs(Left, Error, [{Dir, List}|Acc]);
-    {error, _} -> list_dirs(Left, [Dir|Error], Acc)
+init_diff_list(RemoveFiles, AddFiles) ->
+  RemoveSet0 = sets:from_list([beam_file_to_module(F) || F <- RemoveFiles]),
+  AddSet0 = sets:from_list([beam_file_to_module(F) || F <- AddFiles]),
+  DiffSet = sets:intersection(AddSet0, RemoveSet0),
+  RemoveSet = sets:subtract(RemoveSet0, DiffSet),
+  %% Added files and diff files will appear as diff files from the md5 check.
+  [{removed, F} || F <- sets:to_list(RemoveSet)].
+
+init_md5_list(Md5, RemoveFiles, AddFiles) ->
+  DiffFiles = lists:keysort(2, [{remove, F} || F <- RemoveFiles]
+			    ++ [{add, F}    || F <- AddFiles]),
+  Md5Sorted = lists:keysort(1, Md5),
+  init_md5_list_1(Md5Sorted, DiffFiles, []).
+
+init_md5_list_1([{File, _Md5}|Md5Left], [{remove, File}|DiffLeft], Acc) ->
+  init_md5_list_1(Md5Left, DiffLeft, Acc);
+init_md5_list_1([{File, Md5}|Md5Left], [{add, File}|DiffLeft], Acc) ->
+  init_md5_list_1(Md5Left, DiffLeft, [{File, Md5}|Acc]);
+init_md5_list_1(Md5List = [{File1, Md5}|Md5Left], 
+	      DiffList = [{Tag, File2}|DiffLeft], Acc) ->
+  case File1 < File2 of
+    true -> init_md5_list_1(Md5Left, DiffList, [{File1, Md5}|Acc]);
+    false ->
+      %% Just an assert.
+      true = File1 > File2,
+      case Tag of
+	add -> init_md5_list_1(Md5List, DiffLeft, [{File2, <<>>}|Acc]);
+	remove -> {error, {no_file_to_remove, File2}}
+      end
   end;
-list_dirs([], [], Acc) -> 
-  {ok, lists:sort(lists:flatten([[{Dir, X} || X <- List] || {Dir, List} <- Acc]))};
-list_dirs([], Error, _Acc) ->
-  {error, lists:flatten(Error)}.
+init_md5_list_1([], DiffList, Acc) ->
+  AddFiles = [{F, <<>>} || {add, F} <- DiffList],
+  {ok, lists:reverse(Acc, AddFiles)};
+init_md5_list_1(Md5List, [], Acc) ->
+  {ok, lists:reverse(Acc, Md5List)}.
+
+%%---------------------------------------------------------------------------
+%% Edoc
 
 -spec(to_edoc/1 :: (#dialyzer_plt{}) -> string()).
 
@@ -352,6 +400,9 @@ to_edoc(#dialyzer_plt{info=Info}) ->
   List = 
     lists:sort([{MFA, Val} || {MFA = {_,_,_}, Val} <- table_to_list(Info)]),
   lists:flatten(expand_edoc(List, [])).
+
+beam_file_to_module(Filename) ->
+  list_to_atom(filename:basename(Filename, ".beam")).
 
 -spec(to_edoc/4 :: (#dialyzer_plt{}, atom(), atom(), byte()) -> string()).
 

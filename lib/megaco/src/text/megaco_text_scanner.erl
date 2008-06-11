@@ -143,9 +143,6 @@ guess_version(Str) when is_list(Str) ->
 %% Returns {token,     Token, Rest, LatestLine}
 %% Returns {bad_token, Token, Rest, LatestLine}
 any_chars([Char | Rest], Line, Version) ->
-    %%     Class = ?classify_char(Char),
-    %%     d("any_chars -> ~w of class ~w", [Char, Class]),
-    %%     case Class of
     case ?classify_char(Char) of
 	safe_char_upper ->
 	    safe_chars(Rest, [Char], [?LOWER2(Char)], Line, Version);
@@ -198,13 +195,10 @@ sep_chars([Char | Rest] = All, Line) ->
 	    {token, {'SEP', Line}, All, Line};
 	safe_char ->
 	    {token, {'SEP', Line}, All, Line};
+	rest_char when Char =:= ?SemiColonToken ->
+	    comment_chars(Rest, Line);
 	rest_char ->
-	    case Char of
-		?SemiColonToken ->
-		    comment_chars(Rest, Line);
-		_ ->
-		    rest_chars(Rest, [Char], Line)
-	    end;
+	    rest_chars(Rest, [Char], Line);
 	white_space -> 
 	    sep_chars(Rest, Line);
 	end_of_line ->
@@ -238,8 +232,8 @@ rest_chars(Rest, [AccChar], Line) ->
     {token, {TokenTag, Line}, Rest2, Line2}.
 
 skip_sep_chars([Char | Rest] = All, Line) ->
-    case ?classify_char(Char) of
-	rest_char when Char == ?SemiColonToken ->
+    case ?classify_char2(Char) of
+	rest_char when Char =:= ?SemiColonToken ->
 	    skip_comment_chars(Rest, Line);
 	white_space -> 
 	    skip_sep_chars(Rest, Line);
@@ -293,9 +287,10 @@ safe_chars([Char | Rest] = All, Acc, LowerAcc, Line, Version) ->
     %%     d("safe_chars -> entry with"
     %%       "~n   Char:     ~p"
     %%       "~n   LowerAcc: ~p", [Char, LowerAcc]),
-    case ?classify_char(Char) of
+    case ?classify_char3(Char) of
 	safe_char_upper ->
-	    safe_chars(Rest, [Char | Acc], [?LOWER2(Char) | LowerAcc], Line, Version);
+	    safe_chars(Rest, [Char | Acc], 
+		       [?LOWER2(Char) | LowerAcc], Line, Version);
 	safe_char ->
 	    safe_chars(Rest, [Char | Acc], [Char | LowerAcc], Line, Version);
 	_ ->
@@ -330,7 +325,7 @@ safe_chars([] = All, _Acc, LowerAcc, Line, Version) ->
     {token, {TokenTag, Line, LowerSafeChars}, All, Line}.
     
 collect_safe_chars([Char | Rest] = All, LowerAcc) ->
-    case ?classify_char(Char) of
+    case ?classify_char3(Char) of
 	safe_char_upper ->
 	    collect_safe_chars(Rest, [?LOWER2(Char) | LowerAcc]);
 	safe_char ->
@@ -429,19 +424,20 @@ octet_string(Chars, Line) ->
     
 octet_string([Char | Rest] = All, Acc, Line) ->
     if
-	Char == ?CrToken ->
+	(Char =:= ?CrToken) ->
 	    octet_string(Rest, [Char | Acc], Line + 1);
-	Char == ?LfToken ->
+	(Char =:= ?LfToken) ->
 	    octet_string(Rest, [Char | Acc], Line + 1);
-	Char >= 8#1, Char =< 8#174 ->
+	(Char >= 8#1) andalso (Char =< 8#174) ->
 	    octet_string(Rest, [Char | Acc], Line);
-	Char >= 8#176, Char =< 8#377 ->
+	(Char >= 8#176) andalso (Char =< 8#377) ->
 	    octet_string(Rest, [Char | Acc], Line);
-	Char == ?BackslashToken ->
+	(Char =:= ?BackslashToken) ->
 	    case Rest of
 		[?RbrktToken | _Rest2] ->
 		    %% OTP-4357
-		    octet_string(Rest, [?RbrktToken, ?BackslashToken | Acc], Line);
+		    octet_string(Rest, 
+				 [?RbrktToken, ?BackslashToken | Acc], Line);
 		_ ->
 		    octet_string(Rest, [Char | Acc], Line)
 	    end;
@@ -480,8 +476,9 @@ digit_map_timer(All, Chars, TimerPos, DMV) ->
     {Rest, Digits} = collect_safe_chars(Chars, []),
     {Rest2, _} = skip_sep_chars(Rest, 0),
    case {Rest2, catch list_to_integer(Digits)} of
-       {[?CommaToken | Rest3], Int} when integer(Int), Int >= 0,
-					 element(TimerPos, DMV) == asn1_NOVALUE ->
+       {[?CommaToken | Rest3], Int} when is_integer(Int) andalso 
+                                         (Int >= 0) andalso 
+					 (element(TimerPos, DMV) == asn1_NOVALUE) ->
 	   {Rest4, _} = skip_sep_chars(Rest3, 0),
 	   DMV2 = setelement(TimerPos, DMV, Int),
 	   digit_map_value(Rest4, DMV2);

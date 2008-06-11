@@ -300,7 +300,7 @@ try_decrypt(usmAesCfb128Protocol,
 generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
     %% 3.1.1
     ?vtrace("generate_outgoing_msg -> entry (3.1.1)",[]),
-    {UserName, AuthProtocol, PrivProtocol, AuthKey, PrivKey} = 
+    {UserName, AuthProtocol, AuthKey, PrivProtocol, PrivKey} = 
 	case SecData of
 	    [] -> % 3.1.1b
 		%% Not a response - read from LCD
@@ -317,7 +317,7 @@ generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
 		end;
 	    [MsgUserName] ->
 		%% This means the user at the engine is unknown
-		{MsgUserName, usmNoAuthProtocol, usmNoPrivProtocol, "", ""};
+		{MsgUserName, usmNoAuthProtocol, "", usmNoPrivProtocol, ""};
 	    _ -> % 3.1.1a
 		SecData
 	end,

@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2003-2007</year>
+%% <year>2003-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -292,25 +292,29 @@ send_body(ConnData, TraceLabel, Body) ->
 %% Send the (encoded) message
 %%----------------------------------------------------------------------
 
+send_message(#conn_data{resend_indication = flag} = ConnData, 
+	     Resend, Bin) ->
+    do_send_message(ConnData, send_message, Bin, [Resend]);
+
 send_message(#conn_data{resend_indication = true} = ConnData, 
 	     true, Bin) ->
-    do_send_message(ConnData, resend_message, Bin);
+    do_send_message(ConnData, resend_message, Bin, []);
 
 send_message(ConnData, _Resend, Bin) ->
-    %% p("send_message -> entry with"
-    %%   "~n   ResendInd: ~p"
-    %%   "~n   Resend:    ~p", [ConnData#conn_data.resend_indication, _Resend]),
-    do_send_message(ConnData, send_message, Bin).
+    do_send_message(ConnData, send_message, Bin, []).
 
-do_send_message(ConnData, SendFunc, Bin) ->
+do_send_message(ConnData, SendFunc, Bin, Extra) ->
     %% Send the message
     #conn_data{send_mod    = SendMod,
 	       send_handle = SendHandle} = ConnData,
 
     ?TC_AWAIT_SEND_EVENT(SendFunc),
 
-    ?report_trace(ConnData, "send bytes", [{bytes,Bin},{send_func,SendFunc}]),
-    case (catch SendMod:SendFunc(SendHandle, Bin)) of
+    ?report_trace(ConnData, "send bytes", [{bytes,     Bin}, 
+					   {send_func, SendFunc}]),
+
+    Args = [SendHandle, Bin | Extra], 
+    case (catch apply(SendMod, SendFunc, Args)) of
         ok ->
             ?SIM({ok, Bin}, send_message);
         {cancel, Reason} ->

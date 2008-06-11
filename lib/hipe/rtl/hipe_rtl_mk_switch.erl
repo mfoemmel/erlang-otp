@@ -10,17 +10,17 @@
 %%              the inline search of atoms might have some bugs.
 %%              Should be extended to handle bignums and floats.
 %%
-%%  History  :	* 2001-02-28 Erik Johansson (happi@csd.uu.se): 
+%%  History  :	* 2001-02-28 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%              * 2001-04-01 Erik Trulsson (ertr1013@csd.uu.se):
 %%                           Stefan Lindström (stli3993@csd.uu.se):
 %%               Added clustering and inlined binary search trees.
-%%              * 2001-07-30 EJ (happi@csd.uu.se):
+%%              * 2001-07-30 EJ (happi@it.uu.se):
 %%               Fixed some bugs and started cleanup.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/03/22 20:14:32 $
-%%              $Revision: 1.24 $
+%%              $Author: richardc $
+%%              $Date: 2008/04/20 13:01:14 $
+%%              $Revision: 1.25 $
 %% ====================================================================
 %%  Exports  :
 %%    gen_switch_val(I, VarMap, ConstTab, Options)

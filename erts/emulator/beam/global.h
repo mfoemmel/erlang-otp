@@ -1016,8 +1016,6 @@ ERTS_GLB_INLINE Port*erts_drvportid2port(Eterm);
 ERTS_GLB_INLINE Uint32 erts_portid2status(Eterm id);
 ERTS_GLB_INLINE int erts_is_port_alive(Eterm id);
 ERTS_GLB_INLINE int erts_is_valid_tracer_port(Eterm id);
-ERTS_GLB_INLINE void erts_dist_op_prepare(DistEntry *, Process *, ErtsProcLocks);
-ERTS_GLB_INLINE void erts_dist_op_finalize(DistEntry *);
 ERTS_GLB_INLINE void erts_port_status_bandor_set(Port *, Uint32, Uint32);
 ERTS_GLB_INLINE void erts_port_status_band_set(Port *, Uint32);
 ERTS_GLB_INLINE void erts_port_status_bor_set(Port *, Uint32);
@@ -1147,34 +1145,6 @@ ERTS_GLB_INLINE int
 erts_is_valid_tracer_port(Eterm id)
 {
     return !(erts_portid2status(id) & ERTS_PORT_SFLGS_INVALID_TRACER_LOOKUP);
-}
-
-ERTS_GLB_INLINE void
-erts_dist_op_prepare(DistEntry *dep, Process *proc, ErtsProcLocks proc_locks)
-{
-#ifdef ERTS_SMP
-    Port *port;
-    erts_smp_dist_entry_lock(dep);
-    port = erts_de2port(dep, proc, proc_locks);
-    while (dep->port) {
-	erts_smp_dist_entry_unlock(dep);
-	erts_smp_dist_entry_lock(dep);
-    }
-    dep->port = port;
-#else
-    ASSERT(!dep->port);
-    dep->port = erts_id2port(dep->cid, NULL, 0);
-#endif
-}
-
-ERTS_GLB_INLINE void
-erts_dist_op_finalize(DistEntry *dep)
-{
-    if (dep->port) {
-	erts_port_release(dep->port);
-	dep->port = NULL;
-    }
-    erts_smp_dist_entry_unlock(dep);
 }
 
 ERTS_GLB_INLINE void erts_port_status_bandor_set(Port *prt,
@@ -1377,6 +1347,9 @@ extern int erts_cpu_timestamp;
 #endif
 /* erl_bif_chksum.c */
 void erts_init_bif_chksum(void);
+/* erl_bif_chksum.c */
+void erts_init_bif_re(void);
+Sint erts_re_set_loop_limit(Sint limit);
 /* erl_trace.c */
 void erts_init_trace(void);
 void erts_trace_check_exiting(Eterm exiting);

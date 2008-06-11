@@ -18,6 +18,11 @@
 
 %%--------------------------------------------------------------------------
 
+%%-type(namelist() :: [char() | atom() | namelist()]).
+-type(namelist() :: [_]).       %% XXX: GROSS OVERAPPROXIMATION -- FIX ME
+-type(name() :: string() | atom() | namelist()).
+-type(posix() :: atom()).
+
 -type(date() :: {pos_integer(), pos_integer(), pos_integer()}).
 -type(time() :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}).
 -type(date_time() :: {date(), time()}).

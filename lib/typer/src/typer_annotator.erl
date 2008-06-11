@@ -19,7 +19,7 @@
 
 %%----------------------------------------------------------------------------
 
--define(TYPER_ANN_DIR, typer_ann).
+-define(TYPER_ANN_DIR, "typer_ann").
 
 -type(func_info() :: {pos_integer(), atom(), byte()}).
 

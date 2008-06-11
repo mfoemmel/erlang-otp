@@ -1,6 +1,6 @@
 {application,inets,
  [{description,"INETS  CXC 138 49"},
-  {vsn,"5.0.5"},
+  {vsn,"5.0.9"},
   {modules,[
             inets,
             inets_sup,
@@ -82,6 +82,7 @@
             tftp_engine,
             tftp_file,
             tftp_lib,
+            tftp_logger,
             tftp_sup
         ]},
   {registered,[inets_sup, httpc_manager]},

@@ -30,6 +30,14 @@
 #include <string.h>
 #include "erl_driver.h"
 
+#define OPENSSL_THREAD_DEFINES
+#include <openssl/opensslconf.h>
+#ifndef OPENSSL_THREADS
+#  ifdef __GNUC__
+#    warning No thread support by openssl. Driver will use coarse grain locking.
+#  endif 
+#endif
+
 #include <openssl/crypto.h>
 #include <openssl/des.h>
 /* #include <openssl/idea.h> This is not supported on the openssl OTP requires */
@@ -42,6 +50,23 @@
 #include <openssl/objects.h>
 #include <openssl/rc4.h>
 #include <openssl/rc2.h>
+
+#ifdef DEBUG
+#  define ASSERT(e) \
+    ((void) ((e) ? 1 : (fprintf(stderr,"Assert '%s' failed at %s:%d\n",\
+				#e, __FILE__, __LINE__), abort(), 0)))
+#else
+#  define ASSERT(e) ((void) 1)
+#endif
+
+#ifdef __GNUC__
+#  define INLINE __inline__
+#elif defined(__WIN32__)
+#  define INLINE __forceinline
+#else
+#  define INLINE
+#endif
+
 
 #define get_int32(s) ((((unsigned char*) (s))[0] << 24) | \
                       (((unsigned char*) (s))[1] << 16) | \
@@ -56,33 +81,60 @@
 }
 
 /* Driver interface declarations */
+static int init(void);
+static void finish(void);
 static ErlDrvData start(ErlDrvPort port, char *command);
 static void stop(ErlDrvData drv_data);
 static int control(ErlDrvData drv_data, unsigned int command, char *buf, 
                    int len, char **rbuf, int rlen); 
 
+/* openssl callbacks */
+#ifdef OPENSSL_THREADS
+static void locking_function(int mode, int n, const char *file, int line);
+static unsigned long id_function(void);
+static struct CRYPTO_dynlock_value* dyn_create_function(const char *file,
+							int line);
+static void dyn_lock_function(int mode, struct CRYPTO_dynlock_value* ptr,
+			      const char *file, int line);
+static void dyn_destroy_function(struct CRYPTO_dynlock_value *ptr,
+				 const char *file, int line);
+#endif /* OPENSSL_THREADS */
+
+/* helpers */
 static void hmac_md5(char *key, int klen, char *dbuf, int dlen, 
                      char *hmacbuf);
 static void hmac_sha1(char *key, int klen, char *dbuf, int dlen, 
                       char *hmacbuf);
 
 static ErlDrvEntry crypto_driver_entry = {
-    NULL,                       /* init */
+    init,
     start, 
     stop, 
     NULL,                       /* output */
     NULL,                       /* ready_input */
     NULL,                       /* ready_output */ 
     "crypto_drv", 
-    NULL,                       /* finish */
+    finish,
     NULL,                       /* handle */
     control, 
     NULL,                       /* timeout */
-    NULL                        /* outputv */
-};
+    NULL,                       /* outputv */
 
-static ErlDrvPort erlang_port = NULL;
-static ErlDrvData driver_data = (ErlDrvData) &erlang_port; /* Anything goes */
+    NULL,                       /* ready_async */
+    NULL,                       /* flush */
+    NULL,                       /* call */
+    NULL,                       /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+#ifdef OPENSSL_THREADS
+    ERL_DRV_FLAG_USE_PORT_LOCKING,
+#else
+    0,
+#endif
+    NULL,                       /* handle2 */
+    NULL                        /* process_exit */
+};
 
 
 /* Keep the following definitions in alignment with the FUNC_LIST
@@ -123,10 +175,11 @@ static ErlDrvData driver_data = (ErlDrvData) &erlang_port; /* Anything goes */
 #define DRV_CBC_RC2_40_DECRYPT     31
 #define DRV_CBC_AES256_ENCRYPT  32
 #define DRV_CBC_AES256_DECRYPT  33
+#define DRV_INFO_LIB            34
 /* #define DRV_CBC_IDEA_ENCRYPT    34 */
 /* #define DRV_CBC_IDEA_DECRYPT    35 */
 
-#define NUM_CRYPTO_FUNCS        33
+#define NUM_CRYPTO_FUNCS        34
 
 #define MD5_CTX_LEN     (sizeof(MD5_CTX))
 #define MD5_LEN         16
@@ -153,22 +206,65 @@ DRIVER_INIT(crypto_drv)
     return &crypto_driver_entry;
 }
 
+static ErlDrvRWLock** lock_vec = NULL; /* Static locks used by openssl */
+
 /* DRIVER INTERFACE */
+
+static int init(void)
+{
+    ErlDrvSysInfo sys_info;
+    int i;
+
+    CRYPTO_set_mem_functions(driver_alloc, driver_realloc, driver_free);
+
+#ifdef OPENSSL_THREADS
+    driver_system_info(&sys_info, sizeof(sys_info));
+
+    if(sys_info.scheduler_threads > 1) {
+	lock_vec = driver_alloc(CRYPTO_num_locks()*sizeof(*lock_vec));
+	if (lock_vec==NULL) return -1;
+	memset(lock_vec,0,CRYPTO_num_locks()*sizeof(*lock_vec));
+    
+	for(i=CRYPTO_num_locks()-1; i>=0; --i) {
+	    lock_vec[i] = erl_drv_rwlock_create("crypto_drv_stat");
+	    if (lock_vec[i]==NULL) return -1;
+	}
+	CRYPTO_set_locking_callback(locking_function);    
+	CRYPTO_set_id_callback(id_function);
+	CRYPTO_set_dynlock_create_callback(dyn_create_function);
+	CRYPTO_set_dynlock_lock_callback(dyn_lock_function);
+	CRYPTO_set_dynlock_destroy_callback(dyn_destroy_function);
+    }
+    /* else no need for locks */
+#endif /* OPENSSL_THREADS */
+
+    return 0;
+}
+
+static void finish(void)
+{
+    /* Moved here from control() as it's not thread safe */
+    CRYPTO_cleanup_all_ex_data();
+
+    if(lock_vec != NULL) {
+	int i;
+	for(i=CRYPTO_num_locks()-1; i>=0; --i) {
+	    if (lock_vec[i] != NULL) {
+		erl_drv_rwlock_destroy(lock_vec[i]);
+	    }
+	}
+	driver_free(lock_vec);
+    }
+}
 
 static ErlDrvData start(ErlDrvPort port, char *command)
 { 
-
-    if (erlang_port != NULL)
-        return ERL_DRV_ERROR_GENERAL;
     set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
-    CRYPTO_set_mem_functions(driver_alloc, driver_realloc, driver_free);
-    erlang_port = port;
-    return driver_data;
+    return 0; /* not used */
 }
 
 static void stop(ErlDrvData drv_data)
 {
-    erlang_port = NULL;
     return;
 }
 
@@ -180,12 +276,12 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 {
     int klen, dlen, i, j, macsize, from_len, to_len;
     int base_len, exponent_len, modulo_len;
-    int data_len, digest_len, dsa_p_len, dsa_q_len, dsa_r_len;
-    int dsa_s_len, dsa_g_len, dsa_y_len;
+    int data_len, dsa_p_len, dsa_q_len;
+    int dsa_g_len, dsa_y_len;
     int rsa_e_len, rsa_n_len;
     int or_mask;
     unsigned int rsa_s_len;
-    char *key, *key2, *key3, *dbuf, *ivec, *p;
+    char *key, *key2, *dbuf, *p;
     const_DES_cblock *des_key, *des_key2, *des_key3;
     const unsigned char *des_dbuf;
     BIGNUM *bn_from, *bn_to, *bn_rand, *bn_result;
@@ -218,7 +314,6 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
             bin->orig_bytes[i] = i + 1;
         }
         return NUM_CRYPTO_FUNCS;
-        break;
 
     case DRV_MD5:
         *rbuf = (char*)(bin = driver_alloc_binary(MD5_LEN));
@@ -576,9 +671,6 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
       (bin->orig_bytes)[0] = (char)(i & 0xff);
       DSA_free(dsa);
       DSA_SIG_free(dsa_sig);
-      /* Apparently, the DSA_do_verify operation allocates some space
-       * which must be freed this way: */
-      CRYPTO_cleanup_all_ex_data();
       return 1;
       break;
 
@@ -625,10 +717,6 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
       *rbuf = (char *)(bin = driver_alloc_binary(1));
       (bin->orig_bytes)[0] = (char)(i & 0xff);
       RSA_free(rsa);
-      /* Apparently, the RSA_verify operation allocates some space
-       * which must be freed this way, but perhaps it would suffice to
-       * do it in stop()? */
-      CRYPTO_cleanup_all_ex_data();
       return 1;
       break;
 
@@ -697,12 +785,84 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         return dlen;
         break;
 
+    case DRV_INFO_LIB:	
+	{/* <<DrvVer:8, NameSize:8, Name:NameSize/binary, VerNum:32, VerStr/binary>> */
+	    static const char libname[] = "OpenSSL";
+	    unsigned name_sz = strlen(libname);
+	    const char* ver = SSLeay_version(SSLEAY_VERSION);
+	    unsigned ver_sz = strlen(ver);
+	    *rbuf = (char*)(bin = driver_alloc_binary(1+1+name_sz+4+ver_sz));
+	    p = bin->orig_bytes;
+	    *p++ = 0; /* "driver version" for future use */
+	    *p++ = name_sz;
+	    memcpy(p, libname, name_sz);
+	    p += name_sz;
+	    put_int32(p,SSLeay()); /* OPENSSL_VERSION_NUMBER */
+	    p += 4;
+	    memcpy(p, ver, ver_sz);
+	}
+	return bin->orig_size; 
+
     default:
-        break;
+	break;
     }
     return -1;
 }
 
+#ifdef OPENSSL_THREADS /* vvvvvvvvvvvvvvv OPENSSL_THREADS vvvvvvvvvvvvvvvv */
+
+static INLINE void locking(int mode, ErlDrvRWLock* lock)
+{
+    switch(mode) {
+    case CRYPTO_LOCK|CRYPTO_READ:
+	erl_drv_rwlock_rlock(lock);
+	break;
+    case CRYPTO_LOCK|CRYPTO_WRITE:
+	erl_drv_rwlock_rwlock(lock);
+	break;
+    case CRYPTO_UNLOCK|CRYPTO_READ:
+	erl_drv_rwlock_runlock(lock);
+	break;
+    case CRYPTO_UNLOCK|CRYPTO_WRITE:
+	erl_drv_rwlock_rwunlock(lock);
+	break;
+    default:
+	ASSERT(!"Invalid lock mode");
+    }
+}
+
+/* Callback from openssl for static locking
+ */
+static void locking_function(int mode, int n, const char *file, int line)
+{
+    ASSERT(n>=0 && n<CRYPTO_num_locks());
+
+    locking(mode, lock_vec[n]);
+}
+
+/* Callback from openssl for thread id
+ */
+static unsigned long id_function(void)
+{
+    return (unsigned long) erl_drv_thread_self();
+}
+
+/* Callbacks for dynamic locking, not used by current openssl version (0.9.8)
+ */
+static struct CRYPTO_dynlock_value* dyn_create_function(const char *file, int line)
+{
+    return (struct CRYPTO_dynlock_value*) erl_drv_rwlock_create("crypto_drv_dyn");
+}
+static void dyn_lock_function(int mode, struct CRYPTO_dynlock_value* ptr,const char *file, int line)
+{
+    locking(mode, (ErlDrvRWLock*)ptr);
+}
+static void dyn_destroy_function(struct CRYPTO_dynlock_value *ptr, const char *file, int line)
+{
+    return erl_drv_rwlock_destroy((ErlDrvRWLock*)ptr);
+}
+
+#endif /* ^^^^^^^^^^^^^^^^^^^^^^ OPENSSL_THREADS ^^^^^^^^^^^^^^^^^^^^^^ */
 
 /* HMAC */
 

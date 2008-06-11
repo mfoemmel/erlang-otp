@@ -591,8 +591,10 @@ scan_document(Str0, S=#xmerl_scanner{event_fun = Event,
 		 case schemaLocations(Res,S5) of
 		     {ok,Schemas} ->
 			 cleanup(S5),
-			 %%io:format("Schemas: ~p~nRes: ~p~ninhertih_options(S): ~p~n",[Schemas,Res,inherit_options(S5)]),
-			 XSDRes = xmerl_xsd:process_validate(Schemas,Res,inherit_options(S5)),
+			 %%io:format("Schemas: ~p~nRes: ~p~ninhertih_options(S): ~p~n",
+			 %%          [Schemas,Res,inherit_options(S5)]),
+			 XSDRes = xmerl_xsd:process_validate(Schemas,Res,
+							     inherit_options(S5)),
 			 handle_schema_result(XSDRes,S5);
 		     _ ->
 			 {Res,cleanup(S5)}
@@ -805,10 +807,11 @@ scan_xml_decl([], S=#xmerl_scanner{continuation_fun = F}, Decl) ->
 scan_xml_decl("?>" ++ T, S0, Decl) ->
     ?bump_col(2),
     return_xml_decl(T,S,Decl);
-scan_xml_decl(T,S=#xmerl_scanner{event_fun = _Event},Decl) ->
+scan_xml_decl(T,S=#xmerl_scanner{event_fun = _Event},Decl) when ?whitespace(hd(T)) ->
     {_,T1,S1}=mandatory_strip(T,S),
-    scan_xml_decl2(T1,S1,Decl).
-
+    scan_xml_decl2(T1,S1,Decl);
+scan_xml_decl(_T,S=#xmerl_scanner{event_fun = _Event},_Decl) ->
+    ?fatal(preformat([expected,one,'of:'],['?>',whitespace_character],","),S).
 
 scan_xml_decl2("?>" ++ T, S0,Decl) ->
     ?bump_col(2),
@@ -3914,6 +3917,7 @@ schemaLocations(#xmlElement{attributes=Atts,xmlbase=_Base}) ->
 	   end,
     case lists:dropwhile(Pred,Atts) of
 	[#xmlAttribute{value=Paths}|_] ->
+	    
 	    case string:tokens(Paths," ") of
 		L when length(L) > 0 ->
 		    case length(L) rem 2 of
@@ -3932,7 +3936,7 @@ schemaLocations(#xmlElement{attributes=Atts,xmlbase=_Base}) ->
 		    {error,{missing_schemaLocation}}
 	    end;
 	[] ->
-	    {error,{missing_scheamaLocation}}
+	    {error,{missing_schemaLocation}}
     end.
 
 inherit_options(S) ->

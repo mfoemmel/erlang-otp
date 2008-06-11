@@ -1,16 +1,16 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <2002-09-13 15:32:45 richardc>
+%% Time-stamp: <2008-04-20 14:53:42 richard>
 %% ====================================================================
 %%  Filename : 	hipe_profile.erl
 %%  Module   :	hipe_profile
 %%  Purpose  :  
-%%  History  :	* 2001-07-12 Erik Johansson (happi@csd.uu.se): Created.
+%%  History  :	* 2001-07-12 Erik Johansson (happi@it.uu.se): Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/03/07 23:05:03 $
-%%              $Revision: 1.8 $
+%%              $Author: richardc $
+%%              $Date: 2008/04/20 13:01:14 $
+%%              $Revision: 1.9 $
 %% ====================================================================
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

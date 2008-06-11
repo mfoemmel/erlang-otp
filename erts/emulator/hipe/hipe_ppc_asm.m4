@@ -24,7 +24,6 @@ define(WSIZE,4)dnl
 `#define LOAD	'LOAD
 `#define STORE	'STORE
 `#define CMPI	'CMPI
-`#define WSIZE	'WSIZE
 
 /*
  * Tunables.

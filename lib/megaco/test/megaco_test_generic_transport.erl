@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2007-2007</year>
+%% <year>2007-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -47,6 +47,7 @@
 %% megaco_transport callbacks
 -export([
 	 send_message/2,
+	 send_message/3,
 	 resend_message/2
 	]).
 
@@ -88,6 +89,9 @@ stop() ->
 
 send_message(SendHandle, Bin) ->
     call({transport, {send_message, SendHandle, Bin}}).
+
+send_message(SendHandle, Bin, Resend) ->
+    call({transport, {send_message, SendHandle, Bin, Resend}}).
 
 resend_message(SendHandle, Bin) ->
     call({transport, {resend_message, SendHandle, Bin}}).
@@ -211,16 +215,33 @@ code_change(_Vsn, State, _Extra) ->
 handle_transport(Pid, 
 		 #megaco_receive_handle{encoding_mod    = EM,
 					encoding_config = EC},
-		 {Event, SendHandle, Bin}) ->
+		 {Event, SendHandle, Bin, Resend}) ->
     Info = 
 	case (catch EM:decode_message(EC, Bin)) of
 	    {ok, MegMsg} ->
-		MegMsg;
+		{message, MegMsg, Resend};
 	    Error ->
 		d("handle_transport -> decode failed"
 		  "~n   Error: ~p", [Error]),
 		{bad_message, Error, Bin}
 	end,
+    handle_transport(Pid, Event, SendHandle, Info);
+handle_transport(Pid, 
+		 #megaco_receive_handle{encoding_mod    = EM,
+					encoding_config = EC},
+		 {Event, SendHandle, Bin}) ->
+    Info = 
+	case (catch EM:decode_message(EC, Bin)) of
+	    {ok, MegMsg} ->
+		{message, MegMsg};
+	    Error ->
+		d("handle_transport -> decode failed"
+		  "~n   Error: ~p", [Error]),
+		{bad_message, Error, Bin}
+	end,
+    handle_transport(Pid, Event, SendHandle, Info).
+
+handle_transport(Pid, Event, SendHandle, Info) ->
     Pid ! {transport_event, {Event, SendHandle, Info}, self()},
     receive
 	{transport_reply, Reply, Pid} ->
@@ -239,13 +260,19 @@ handle_transport(Pid,
 	    end
     end.
 
+
 %% This function is used to simulate incomming messages
-handle_incomming_message(Msg, #megaco_receive_handle{encoding_mod    = EM,
-						     encoding_config = EC} = RH) ->
+handle_incomming_message(Msg, 
+			 #megaco_receive_handle{encoding_mod    = EM,
+						encoding_config = EC} = RH) ->
     Self = self(),
     case EM:encode_message(EC, Msg) of
 	{ok, Bin} ->
-	    spawn(fun() -> megaco:process_received_message(RH, Self, Self, Bin) end),
+	    ProcessMessage = 
+		fun() -> 
+			megaco:process_received_message(RH, Self, Self, Bin) 
+		end,
+	    spawn(ProcessMessage),
 	    ok;
 	Error ->
 	    d("handle_incomming_message -> encode failed"

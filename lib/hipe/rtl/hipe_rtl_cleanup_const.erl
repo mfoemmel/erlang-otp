@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
 %%% File    : hipe_rtl_cleanup_const.erl
-%%% Author  : Tobias Lindahl <tobiasl@csd.uu.se>
+%%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
 %%% Description : 
 %%%
-%%% Created :  5 Mar 2004 by Tobias Lindahl <tobiasl@csd.uu.se>
+%%% Created :  5 Mar 2004 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%-------------------------------------------------------------------
 
 %% Big constants (floats, bignums) can be used as arguments to

@@ -10,12 +10,12 @@
 %%              that when compiled causes a bug.
 %%
 %%  Notes    : 
-%%  History  :	* 2001-12-11 Erik Johansson (happi@csd.uu.se): 
+%%  History  :	* 2001-12-11 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/03/07 22:40:33 $
-%%              $Revision: 1.6 $
+%%              $Author: richardc $
+%%              $Date: 2008/04/20 13:01:14 $
+%%              $Revision: 1.7 $
 %% ====================================================================
 %%  Exports  :
 %%

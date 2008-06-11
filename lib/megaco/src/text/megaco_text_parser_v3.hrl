@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2005-2007</year>
+%% <year>2005-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -26,25 +26,48 @@
 -include_lib("megaco/include/megaco_message_v3.hrl").
 -include("megaco_text_tokens.hrl").
 
-make_safe_token({_TokenTag, Line, Text}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{make_safe_token,1}]}).
+-endif.
+make_safe_token(Token) ->
+    {_TokenTag, Line, Text} = Token,
     {safeToken, Line, Text}.
 
-ensure_value({safeToken, _Line, Text}) ->
-    ensure_value(Text);
-ensure_value({'QuotedChars', _Line, Text}) ->
-    ensure_value(Text);
-ensure_value(Text) when list(Text) ->
-    Text. %% BUGBUG: ensure length
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_value,1}]}).
+-endif.
+ensure_value(Token) ->
+    case Token of
+	{safeToken, _Line, Text} when is_list(Text) ->
+	    Text;  % We really should ensure length
+	{'QuotedChars', _Line, Text} when is_list(Text) ->
+	    Text;  % We really should ensure length
+	Text when is_list(Text) ->
+	    Text   % We really should ensure length
+    end.
 
 %% NAME       = ALPHA *63(ALPHA / DIGIT / "_" )
-ensure_NAME({_TokenTag, _Line, Text}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_NAME,1}]}).
+-endif.
+ensure_NAME(Token) ->
+    {_TokenTag, _Line, Text} = Token,
     Text.  %% BUGBUG: ensure length and chars
 
-ensure_requestID({safeToken, _Line, "*"}) ->
-    ?megaco_all_request_id;
-ensure_requestID(RequestId) ->
-    ensure_uint32(RequestId).
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_requestID,1}]}).
+-endif.
+ensure_requestID(Token) ->
+    case Token of
+	{safeToken, _Line, "*"} ->
+	    ?megaco_all_request_id;
+	_ ->
+	    ensure_uint32(Token)
+    end.
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_streamID,1}]}).
+-endif.
 ensure_streamID(StreamId) ->
     ensure_uint16(StreamId).
 
@@ -54,8 +77,12 @@ ensure_auth_header(SpiToken, SnToken, AdToken) ->
     Ad  = ensure_hex(AdToken, 24, 64),
     #'AuthenticationHeader'{secParmIndex = Spi, seqNum = Sn, ad = Ad}.
 
-%% ContextID         = (UINT32 / "*" / "-" / "$")
-ensure_contextID({_TokenTag, Line, Text}) ->
+%% ContextID = (UINT32 / "*" / "-" / "$")
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_contextID,1}]}).
+-endif.
+ensure_contextID(Token) ->
+    {_TokenTag, Line, Text} = Token,
     case Text of
         "*"  -> ?megaco_all_context_id;
         "-"  -> ?megaco_null_context_id;
@@ -63,8 +90,8 @@ ensure_contextID({_TokenTag, Line, Text}) ->
         Int  ->
 	    CID = ensure_uint32(Int),
 	    if
-		(CID =/= 0) and
-		(CID =/= 16#FFFFFFFE) and
+		(CID =/= 0) andalso
+		(CID =/= 16#FFFFFFFE) andalso
 		(CID =/= 16#FFFFFFFF) ->
 		    CID;
 		true ->
@@ -83,23 +110,42 @@ ensure_domainAddress(Addr0, Port) ->
     {ip6Address, #'IP6Address'{address = Addr, portNumber = Port}}.
 
 
-ensure_ip4addr({TokenTag, Line, Addr}) ->
-    case string:tokens(Addr, [$.]) of
+ensure_ip4addr(Token) ->
+    {_TokenTag, Line, Addr} = Token, 
+    case split_ip4addr_text(Addr, []) of
 	[T1, T2, T3, T4] ->
-	    A1 = ensure_uint({TokenTag, Line, T1}, 0, 255),
-	    A2 = ensure_uint({TokenTag, Line, T2}, 0, 255),
-	    A3 = ensure_uint({TokenTag, Line, T3}, 0, 255),
-	    A4 = ensure_uint({TokenTag, Line, T4}, 0, 255),
-	    [A1, A2, A3, A4];
+	    %% We optimize by sending only the text part (Addr) of 
+	    %% the token to the function. 
+	    %% If something is wrong, then we do not get a proper 
+	    %% position and therefor we catch and sendissue the
+	    %% the error again (with the proper line number).
+	    case (catch [
+			 ensure_uint(T1, 0, 255),
+			 ensure_uint(T2, 0, 255),
+			 ensure_uint(T3, 0, 255),
+			 ensure_uint(T4, 0, 255)
+			]) of
+		A when is_list(A) ->
+		    A;
+		_ ->
+		    return_error(Line, {bad_IP4address, Addr})
+	    end;
 	_ ->
 	    return_error(Line, {bad_IP4address, Addr})
     end.
+
+split_ip4addr_text([], Acc) ->
+    [ lists:reverse(Acc) ];
+split_ip4addr_text([$. | Rest], Acc) ->
+    [ lists:reverse(Acc) | split_ip4addr_text(Rest, []) ];
+split_ip4addr_text([H | T], Acc) ->
+    split_ip4addr_text(T, [H | Acc]).
 
 
 ensure_ip6addr([colon,colon|T]) ->
     [H1|T1] = lists:reverse(T),
     case do_ensure_ip6addr(T1, true, [ensure_hex4_or_ip4addr(H1)], 1) of
-	{true, A} when length(A) == 16 ->
+	{true, A} when length(A) =:= 16 ->
 	    A;
 	{true, B} when length(B) < 16 ->
 	    lists:duplicate(16 - length(B), 0) ++ B;
@@ -110,7 +156,7 @@ ensure_ip6addr(L) ->
     case lists:reverse(L) of
 	[colon, colon| T] ->
 	    case do_ensure_ip6addr(T, true, [], 1) of
-		{true, A} when length(A) == 16 ->
+		{true, A} when length(A) =:= 16 ->
 		    A;
 		{true, B} when length(B) < 16 ->
 		    B ++ lists:duplicate(16 - length(B), 0);
@@ -119,7 +165,7 @@ ensure_ip6addr(L) ->
 	    end;
 	[H|L1] -> % A (last element) could be an ip4 address
 	    case do_ensure_ip6addr(L1,false,[ensure_hex4_or_ip4addr(H)],1) of
-		{false, A} when length(A) == 16 -> 
+		{false, A} when length(A) =:= 16 -> 
 		    A;
 		%% allow a pad even if the address is full (i.e. 16)
 		{true, B} when length(B) =< 17 -> 
@@ -165,9 +211,9 @@ ensure_hex4_or_ip4addr({TokenTag, Line, Addr} = V) ->
     end.
 
 ensure_hex4({_TokenTag, Line, Hex4}) 
-  when length(Hex4) =< 4, length(Hex4) > 0 ->
+  when (length(Hex4) =< 4) andalso (length(Hex4) > 0) ->
     case (catch do_ensure_hex4(Hex4)) of
-	IL when list(IL), length(IL) == 2 ->
+	IL when is_list(IL) andalso (length(IL) =:= 2) ->
 	    IL;
 	Error ->
 	    return_error(Line, {bad_hex4, Hex4, Error})
@@ -182,17 +228,25 @@ do_ensure_hex4([H3, H4]) ->
 do_ensure_hex4([H4]) ->
     hex_to_int([$0, $0, $0, H4], []).
 
-ensure_domainName({_TokenTag, _Line, Name}, Port) ->
-    %% BUGBUG: validate name
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_domainName,2}]}).
+-endif.
+ensure_domainName(Token, Port) ->
+    {_TokenTag, _Line, Name} = Token,
+    %% BUGBUG: we should really validate name
     {domainName, #'DomainName'{name = Name, portNumber = Port}}.
 
 %% extensionParameter= "X"  ("-" / "+") 1*6(ALPHA / DIGIT)
-ensure_extensionParameter({_TokenTag, Line, Text}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_extensionParameter,1}]}).
+-endif.
+ensure_extensionParameter(Token) ->
+    {_TokenTag, Line, Text} = Token,
     case Text of
         [X, S | _Chars] ->
             if
-                X /= $X, X /= $x,
-                S /= $+, S /= $- ->
+                (X =/= $X) andalso (X =/= $x) andalso
+                (S =/= $+) andalso (S =/= $-) ->
                     return_error(Line, {bad_extension_parameter, Text});
                 true ->
                     {extension_parameter, Text}
@@ -202,15 +256,39 @@ ensure_extensionParameter({_TokenTag, Line, Text}) ->
     end.
 
 ensure_message(MegacopToken,  MID, Body) ->
-    #'ServiceChangeProfile'{profileName = Name,
-			    version     = Version} = 
-	ensure_profile(MegacopToken),
-    case Name of
-        "megaco" ->
-            #'Message'{version = Version, mId = MID, messageBody = Body};
-        [$!]  ->
-            #'Message'{version = Version, mId = MID, messageBody = Body}
+%%     #'ServiceChangeProfile'{profileName = Name,
+%% 			    version     = Version} = 
+%% 	ensure_profile(MegacopToken),
+%%     case Name of
+%%         "megaco" ->
+%%             #'Message'{version = Version, mId = MID, messageBody = Body};
+%%         [$!]  ->
+%%             #'Message'{version = Version, mId = MID, messageBody = Body}
+%%     end.
+    {_TokenTag, Line, Text} = MegacopToken, 
+    case split_Megacop(Text, []) of
+	{Name, Version} ->
+	    Version2 = ensure_version(Version),
+	    case Name of
+		"megaco" ->
+		    #'Message'{version     = Version2, 
+			       mId         = MID, 
+			       messageBody = Body};
+		[$!]  ->
+		    #'Message'{version     = Version2, 
+			       mId         = MID, 
+			       messageBody = Body}
+	    end;
+	_ ->
+	    return_error(Line, {bad_name_or_version, Text})
     end.
+
+split_Megacop([], _) ->
+    error;
+split_Megacop([$/ | Version], Acc) ->
+    {lists:reverse(Acc), Version};
+split_Megacop([H | T], Acc) ->
+    split_Megacop(T, [H | Acc]).
 
 
 %% Corr1:
@@ -236,67 +314,112 @@ ensure_message(MegacopToken,  MID, Body) ->
 %%     end.
 
 %% An mtp address is five octets long
-ensure_mtpAddress({_TokenTag, _Line, Addr}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_mtpAddress,1}]}).
+-endif.
+ensure_mtpAddress(Token) ->
+    {_TokenTag, _Line, Addr} = Token, 
     %% BUGBUG: validate address
     {mtpAddress, Addr}.
 
 %% MuxType = ( H221Token / H223Token / H226Token / V76Token / extensionParameter )
-ensure_muxType({_TokenTag, _Line, Text} = Token) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_muxType,1}]}).
+-endif.
+ensure_muxType(Token) ->
+    {_TokenTag, _Line, Text} = Token, 
     case Text of
-        "h221"  -> h221;
-        "h223"  -> h223;
-        "h226"  -> h226;
-        "v76"   -> v76;
-        "nx64k" -> nx64k; % v2
-        [$x | _]          -> ensure_extensionParameter(Token)
+        "h221"   -> h221;
+        "h223"   -> h223;
+        "h226"   -> h226;
+        "v76"    -> v76;
+        "nx64k"  -> nx64k; % v2
+        [$x | _] -> ensure_extensionParameter(Token)
     end.
 
 %% packagesItem      = NAME "-" UINT16
 %% NAME              = ALPHA *63(ALPHA / DIGIT / "_" )
-ensure_packagesItem({_TokenTag, Line, Text} = Token) ->
-    case string:tokens(Text, [$-]) of
-        [Name, Version] ->
-            #'PackagesItem'{packageName    = ensure_NAME(
-					       setelement(3, Token, Name)),
-                            packageVersion = ensure_uint(
-					       setelement(3, Token, Version),
-					       0, 99)};
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_packagesItem,1}]}).
+-endif.
+ensure_packagesItem(Token) ->
+    {_TokenTag, Line, Text} = Token, 
+      case split_packagesItem(Text, []) of
+	{Name, Version} ->
+	    %% As we don't ensure length of the names, there is no point 
+	    %% in doing the ensure_NAME thing...
+            #'PackagesItem'{packageName    = Name,
+                            packageVersion = ensure_uint(Version, 0, 99)};
         _ ->
             return_error(Line, {bad_PackagesItem, Text})
     end.
 
+split_packagesItem([], _) ->
+    error;
+split_packagesItem([$- | Version], Acc) ->
+    {lists:reverse(Acc), Version};
+split_packagesItem([H|T], Acc) ->
+    split_packagesItem(T, [H|Acc]).
+
+
 %% pkgdName          =  (PackageName / "*")  SLASH  (ItemID / "*" )
 %% PackageName       = NAME
 %% ItemID            = NAME
-ensure_pkgdName({_TokenTag, Line, Text} = Token) ->
-    case string:tokens(Text, [$/]) of
-        [Name, Item] ->
-            ensure_name_or_star(setelement(3, Token, Name)),
-            ensure_name_or_star(setelement(3, Token, Item)),
-            Text;
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_pkgdName,1}]}).
+-endif.
+ensure_pkgdName(Token) ->
+    {_TokenTag, Line, Text} = Token, 
+    case ensure_pkgdName(Text, []) of
+        ok ->
+	    %% As we don't really do any checks on the strings 
+	    %% (length or content) there is really no point in
+	    %% "ensuring" the name and item part of the 
+	    %% package name
+            %% ensure_name_or_star(Name),
+            %% ensure_name_or_star(Item),
+	    Text;
         _ ->
             return_error(Line, {bad_pkgdName, Text})
     end.
 
-ensure_name_or_star({_, _, Name}) when Name == "*" ->
-    Name;
-ensure_name_or_star(Name) ->
-    ensure_NAME(Name).
+ensure_pkgdName([], _) ->
+    error;
+ensure_pkgdName([$/ | T], Acc) 
+  when ((length(T) > 0) andalso (length(Acc) > 0)) ->
+    ok;
+ensure_pkgdName([H | T], Acc) ->
+    ensure_pkgdName(T, [H | Acc]).
 
+
+%% -compile({inline,[{ensure_name_or_star,1}]}).
+%% ensure_name_or_star(Val) ->
+%%     %%     case Token of
+%%     %% 	{_, _, Name} when Name =:= "*" ->
+%%     %% 	    Name;
+%%     %% 	_ ->
+%%     %% 	    ensure_NAME(Token)
+%%     %%     end.
+%%     if
+%% 	Val =:= "*" ->
+%% 	    Val;
+%% 	true ->
+%% 	    %% as we don't really validate the text part of the token(s),
+%% 	    %% we can just return the value assuming it to be correct...
+%% 	    Val
+%%     end.
 
 
 %% v2 - start
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_indAudMediaDescriptor,1}]}).
+-endif.
 merge_indAudMediaDescriptor(Vals) ->
-%%     d("merge_indAudMediaDescriptor -> entry with"
-%%       "~n   Vals: ~p", [Vals]),
     merge_indAudMediaDescriptor(Vals, #'IndAudMediaDescriptor'{}).
 
 merge_indAudMediaDescriptor(
   [], #'IndAudMediaDescriptor'{streams = Streams1} = D) ->
-%%     d("merge_indAudMediaDescriptor -> entry with"
-%%       "~n   Streams1: ~p"
-%%       "~n   D:        ~p", [Streams1, D]),
     Streams2 = 
 	case Streams1 of
 	    {multiStream, Descs} ->
@@ -306,32 +429,19 @@ merge_indAudMediaDescriptor(
 	end,
     D#'IndAudMediaDescriptor'{streams = Streams2};
 merge_indAudMediaDescriptor([{termStateDescr, Val}|Vals], D) 
-  when D#'IndAudMediaDescriptor'.termStateDescr == asn1_NOVALUE ->
-%%     d("merge_indAudMediaDescriptor(termStateDescr) -> entry with"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p", [Val, D]),
+  when D#'IndAudMediaDescriptor'.termStateDescr =:= asn1_NOVALUE ->
     D2 = #'IndAudMediaDescriptor'{termStateDescr = Val},
     merge_indAudMediaDescriptor(Vals, D2);
 merge_indAudMediaDescriptor([{streamParm, Val}|Vals], D)  
-  when D#'IndAudMediaDescriptor'.streams == asn1_NOVALUE ->
-%%     d("merge_indAudMediaDescriptor(streamParm) -> entry with"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p", [Val, D]),
+  when D#'IndAudMediaDescriptor'.streams =:= asn1_NOVALUE ->
     D2 = #'IndAudMediaDescriptor'{streams = {oneStream, Val}},
     merge_indAudMediaDescriptor(Vals, D2);
 merge_indAudMediaDescriptor([{streamDescr, Val}|Vals], D)  
-  when D#'IndAudMediaDescriptor'.streams == asn1_NOVALUE ->
-%%     d("merge_indAudMediaDescriptor(streamDescr) -> entry with"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p", [Val, D]),
+  when D#'IndAudMediaDescriptor'.streams =:= asn1_NOVALUE ->
     D2 = #'IndAudMediaDescriptor'{streams = {multiStream, [Val]}},
     merge_indAudMediaDescriptor(Vals, D2);
 merge_indAudMediaDescriptor([{streamDescr, Val}|Vals], 
   #'IndAudMediaDescriptor'{streams = Streams1} = D1) ->
-%%     d("merge_indAudMediaDescriptor() -> entry with"
-%%       "~n   Val:      ~p"
-%%       "~n   Streams1: ~p"
-%%       "~n   D1:       ~p", [Val, Streams1, D1]),
     Streams2 = 
 	case Streams1 of
 	    {multiStream, Descs} ->
@@ -343,10 +453,6 @@ merge_indAudMediaDescriptor([{streamDescr, Val}|Vals],
     D2 = D1#'IndAudMediaDescriptor'{streams = Streams2},
     merge_indAudMediaDescriptor(Vals, D2);
 merge_indAudMediaDescriptor([{Tag, Val}|_], D) ->
-%%     d("merge_indAudMediaDescriptor -> entry with"
-%%       "~n   Tag: ~p"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p", [Tag, Val, D]),
     case Tag of
 	termStateDescr ->
 	    return_error(0, {bad_IndAudMediaDescriptor_termStateDescr, 
@@ -361,34 +467,27 @@ merge_indAudMediaDescriptor([{Tag, Val}|_], D) ->
 	    return_error(0, {bad_IndAudMediaDescriptor_tag, Tag, Val})
     end.
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_indAudLocalControlDescriptor,1}]}).
+-endif.
 merge_indAudLocalControlDescriptor(Parms) ->
     merge_indAudLocalControlDescriptor(Parms, 
 					  #'IndAudLocalControlDescriptor'{},
 					  asn1_NOVALUE).
 					  
 merge_indAudLocalControlDescriptor([modeToken | Parms], D, PP) 
-  when (D#'IndAudLocalControlDescriptor'.streamMode    == asn1_NOVALUE) and 
-       (D#'IndAudLocalControlDescriptor'.streamModeSel == asn1_NOVALUE) ->
-%%     d("merge_indAudLocalControlDescriptor(modeToken,1) -> entry when"
-%%       "~n   D:  ~p"
-%%       "~n   PP: ~p", [D, PP]),
+  when (D#'IndAudLocalControlDescriptor'.streamMode    =:= asn1_NOVALUE) andalso 
+       (D#'IndAudLocalControlDescriptor'.streamModeSel =:= asn1_NOVALUE) ->
     D2 = D#'IndAudLocalControlDescriptor'{streamMode = 'NULL'},
     merge_indAudLocalControlDescriptor(Parms, D2, PP);
 
 merge_indAudLocalControlDescriptor([modeToken | Parms], D, PP) 
-  when (D#'IndAudLocalControlDescriptor'.streamMode == asn1_NOVALUE) ->
-%%     d("merge_indAudLocalControlDescriptor(modeToken,2) -> entry when"
-%%       "~n   D:  ~p"
-%%       "~n   PP: ~p", [D, PP]),
+  when (D#'IndAudLocalControlDescriptor'.streamMode =:= asn1_NOVALUE) ->
     merge_indAudLocalControlDescriptor(Parms, D, PP);
 
 merge_indAudLocalControlDescriptor([{mode, Val} | Parms], D, PP) 
-  when (D#'IndAudLocalControlDescriptor'.streamMode    == asn1_NOVALUE) and 
-       (D#'IndAudLocalControlDescriptor'.streamModeSel == asn1_NOVALUE) ->
-%%     d("merge_indAudLocalControlDescriptor(mode,1) -> entry when"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p"
-%%       "~n   PP:  ~p", [Val, D, PP]),
+  when (D#'IndAudLocalControlDescriptor'.streamMode    =:= asn1_NOVALUE) andalso 
+       (D#'IndAudLocalControlDescriptor'.streamModeSel =:= asn1_NOVALUE) ->
     D2 = 
 	case Val of
 	    {equal, Val2} ->
@@ -399,11 +498,7 @@ merge_indAudLocalControlDescriptor([{mode, Val} | Parms], D, PP)
     merge_indAudLocalControlDescriptor(Parms, D2, PP);
 
 merge_indAudLocalControlDescriptor([{mode, Val} | Parms], D, PP) 
-  when (D#'IndAudLocalControlDescriptor'.streamModeSel == asn1_NOVALUE) ->
-%%     d("merge_indAudLocalControlDescriptor(mode,2) -> entry when"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p"
-%%       "~n   PP:  ~p", [Val, D, PP]),
+  when (D#'IndAudLocalControlDescriptor'.streamModeSel =:= asn1_NOVALUE) ->
     D2 = 
 	case Val of
 	    {equal, Val2} ->
@@ -416,18 +511,12 @@ merge_indAudLocalControlDescriptor([{mode, Val} | Parms], D, PP)
     merge_indAudLocalControlDescriptor(Parms, D2, PP);
 
 merge_indAudLocalControlDescriptor([reservedGroupToken | Parms], D, PP) 
-  when D#'IndAudLocalControlDescriptor'.reserveGroup == asn1_NOVALUE ->
-%%     d("merge_indAudLocalControlDescriptor(reservedGroupToken) -> entry when"
-%%       "~n   D:  ~p"
-%%       "~n   PP: ~p", [D, PP]),
+  when D#'IndAudLocalControlDescriptor'.reserveGroup =:= asn1_NOVALUE ->
     D2 = D#'IndAudLocalControlDescriptor'{reserveGroup = 'NULL'},
     merge_indAudLocalControlDescriptor(Parms, D2, PP);
 
 merge_indAudLocalControlDescriptor([reservedValueToken | Parms], D, PP) 
-  when D#'IndAudLocalControlDescriptor'.reserveValue == asn1_NOVALUE ->
-%%     d("merge_indAudLocalControlDescriptor(reservedValueToken) -> entry when"
-%%       "~n   D:  ~p"
-%%       "~n   PP: ~p", [D, PP]),
+  when D#'IndAudLocalControlDescriptor'.reserveValue =:= asn1_NOVALUE ->
     D2 = D#'IndAudLocalControlDescriptor'{reserveValue = 'NULL'},
     merge_indAudLocalControlDescriptor(Parms, D2, PP);
 
@@ -435,25 +524,16 @@ merge_indAudLocalControlDescriptor([reservedValueToken | Parms], D, PP)
 %% best I can do...  BUGBUG BUGBUG BUGBUG
 %% 
 merge_indAudLocalControlDescriptor([{name, Val} | Parms], D, asn1_NOVALUE) ->
-%%     d("merge_indAudLocalControlDescriptor(name) -> entry when"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p", [Val, D]),
     PP = #'IndAudPropertyParm'{name = Val},
     merge_indAudLocalControlDescriptor(Parms, D, PP);
 
 merge_indAudLocalControlDescriptor([{name, Val} | Parms], D, PP) 
-  when D#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE ->
-%%     d("merge_indAudLocalControlDescriptor(name) -> entry when"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p", [Val, D]),
+  when D#'IndAudLocalControlDescriptor'.propertyParms =:= asn1_NOVALUE ->
     D2  = D#'IndAudLocalControlDescriptor'{propertyParms = [PP]},
     PP2 = #'IndAudPropertyParm'{name = Val},
     merge_indAudLocalControlDescriptor(Parms, D2, PP2);
 
 merge_indAudLocalControlDescriptor([{name, Val} | Parms], D, PP) ->
-%%     d("merge_indAudLocalControlDescriptor(name) -> entry when"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p", [Val, D]),
     PPs = D#'IndAudLocalControlDescriptor'.propertyParms,
     D2  = D#'IndAudLocalControlDescriptor'{propertyParms = [PP|PPs]},
     PP2 = #'IndAudPropertyParm'{name = Val},
@@ -464,23 +544,15 @@ merge_indAudLocalControlDescriptor([{name, Val} | Parms], D, PP) ->
 %% assume that it this has been used, then the name part
 %% (pkgdName) must precide it? 
 merge_indAudLocalControlDescriptor([{prop, Val} | Parms], D, PP) 
-  when (PP =/= asn1_NOVALUE) and 
-       (D#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE) ->
-%%     d("merge_indAudLocalControlDescriptor(prop,1) -> entry when"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p"
-%%       "~n   PP:  ~p", [Val, D, PP]),
+  when (PP =/= asn1_NOVALUE) andalso 
+       (D#'IndAudLocalControlDescriptor'.propertyParms =:= asn1_NOVALUE) ->
     PP2 = PP#'IndAudPropertyParm'{propertyParms = Val},
     D2  = D#'IndAudLocalControlDescriptor'{propertyParms = [PP2]},
     merge_indAudLocalControlDescriptor(Parms, D2, asn1_NOVALUE);
 
 merge_indAudLocalControlDescriptor([{prop, Val} | Parms], D, PP) 
-  when (PP =/= asn1_NOVALUE) and 
+  when (PP =/= asn1_NOVALUE) andalso 
        is_list(D#'IndAudLocalControlDescriptor'.propertyParms) ->
-%%     d("merge_indAudLocalControlDescriptor(prop,2) -> entry when"
-%%       "~n   Val: ~p"
-%%       "~n   D:   ~p"
-%%       "~n   PP:  ~p", [Val, D, PP]),
     PPs = D#'IndAudLocalControlDescriptor'.propertyParms,
     PP2 = PP#'IndAudPropertyParm'{propertyParms = Val},
     D2  = D#'IndAudLocalControlDescriptor'{propertyParms = [PP2|PPs]},
@@ -490,26 +562,16 @@ merge_indAudLocalControlDescriptor([H | _T], _D, _PP) ->
     return_error(0, {bad_indAudLocalControlDescriptor_parm, H});
 
 merge_indAudLocalControlDescriptor([], D, asn1_NOVALUE) 
-  when D#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE ->
-%%     d("merge_indAudLocalControlDescriptor -> entry when done with"
-%%       "~n   D:  ~p", [D]),
+  when D#'IndAudLocalControlDescriptor'.propertyParms =:= asn1_NOVALUE ->
     D;
 merge_indAudLocalControlDescriptor([], D, asn1_NOVALUE) ->
-%%     d("merge_indAudLocalControlDescriptor -> entry when done with"
-%%       "~n   D:  ~p", [D]),
     PPs = D#'IndAudLocalControlDescriptor'.propertyParms,
     PropParms2 = lists:reverse(PPs),
     D#'IndAudLocalControlDescriptor'{propertyParms = PropParms2};
 merge_indAudLocalControlDescriptor([], D, PP) 
-  when D#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE ->
-%%     d("merge_indAudLocalControlDescriptor -> entry when done with"
-%%       "~n   D:  ~p"
-%%       "~n   PP: ~p", [D, PP]),
+  when D#'IndAudLocalControlDescriptor'.propertyParms =:= asn1_NOVALUE ->
     D#'IndAudLocalControlDescriptor'{propertyParms = [PP]};
 merge_indAudLocalControlDescriptor([], D, PP) ->
-%%     d("merge_indAudLocalControlDescriptor -> entry when done with"
-%%       "~n   D:  ~p"
-%%       "~n   PP: ~p", [D, PP]),
     PPs  = D#'IndAudLocalControlDescriptor'.propertyParms,
     PPs2 = lists:reverse([PP|PPs]),
     D#'IndAudLocalControlDescriptor'{propertyParms = PPs2}.
@@ -531,6 +593,9 @@ merge_indAudTerminationStateDescriptor(bufferToken) ->
     #'IndAudTerminationStateDescriptor'{eventBufferControl = 'NULL'}.
 
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_indAudEventBufferDescriptor,2}]}).
+-endif.
 merge_indAudEventBufferDescriptor(EventName, SpecParams) ->
     IAEBD = #'IndAudEventBufferDescriptor'{eventName = EventName},
     do_merge_indAudEventBufferDescriptor(SpecParams, IAEBD).
@@ -547,30 +612,49 @@ do_merge_indAudEventBufferDescriptor({eventParameterName, _Name} = EPN,
     IAEBD#'IndAudEventBufferDescriptor'{streamID = EPN}.
 
 
-ensure_indAudSignalListParm(SIG) when record(SIG, 'Signal') ->
-    ensure_indAudSignal(SIG).
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_indAudSignalListParm,1}]}).
+-endif.
+ensure_indAudSignalListParm(SIG) ->
+    if
+	is_record(SIG, 'Signal') ->
+	    ensure_indAudSignal(SIG);
+	true ->
+	    return_error(0, {bad_Signal, SIG})
+    end.
 
-ensure_indAudSignal(#'Signal'{signalName       = SignalName,
-			      streamID         = SID, 
-			      sigType          = asn1_NOVALUE, 
-			      duration         = asn1_NOVALUE, 
-			      notifyCompletion = asn1_NOVALUE, 
-			      keepActive       = asn1_NOVALUE, 
-			      sigParList       = [],
-			      requestID        = RID}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_indAudSignal,1}]}).
+-endif.
+ensure_indAudSignal(Sig) ->
+    #'Signal'{signalName       = SignalName,
+	      streamID         = SID, 
+	      sigType          = asn1_NOVALUE, 
+	      duration         = asn1_NOVALUE, 
+	      notifyCompletion = asn1_NOVALUE, 
+	      keepActive       = asn1_NOVALUE, 
+	      sigParList       = [],
+	      requestID        = RID} = Sig,
     #'IndAudSignal'{signalName      = SignalName,
 		    streamID        = SID,
 		    signalRequestID = RID}.
-    
 
-ensure_IADMD({_TokenTag, _Line, 
-	      #'DigitMapDescriptor'{digitMapName  = Name,
-				    digitMapValue = asn1_NOVALUE}}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_IADMD,1}]}).
+-endif.
+ensure_IADMD(Token) ->
+    {_TokenTag, _Line, DMD} = Token,
+    #'DigitMapDescriptor'{digitMapName  = Name,
+			  digitMapValue = asn1_NOVALUE} = DMD,
     #'IndAudDigitMapDescriptor'{digitMapName = Name}.
 
 
-merge_indAudPackagesDescriptor(#'PackagesItem'{packageName    = N,
-					       packageVersion = V}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_indAudPackagesDescriptor,1}]}).
+-endif.
+merge_indAudPackagesDescriptor(Pkgs) ->
+    #'PackagesItem'{packageName    = N,
+		    packageVersion = V} = Pkgs,
     #'IndAudPackagesDescriptor'{packageName    = N,
 				packageVersion = V}.
 
@@ -590,7 +674,7 @@ merge_indAudPackagesDescriptor(#'PackagesItem'{packageName    = N,
 
 merge_auditDescriptor([]) ->
     #'AuditDescriptor'{};
-merge_auditDescriptor(Tokens) when list(Tokens) ->
+merge_auditDescriptor(Tokens) when is_list(Tokens) ->
     case lists:keysearch(terminationAudit, 1, Tokens) of
 	{value, {terminationAudit, TA}} ->
 	    case lists:keydelete(terminationAudit, 1, Tokens) of
@@ -611,6 +695,9 @@ merge_auditDescriptor(_) ->
 
 
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_ServiceChangeParm,1}]}).
+-endif.
 merge_ServiceChangeParm(Parms) ->
     Required = [serviceChangeReason, serviceChangeMethod],
     merge_ServiceChangeParm(Parms, #'ServiceChangeParm'{}, Required).
@@ -622,56 +709,56 @@ merge_ServiceChangeParm([], _SCP, Required) ->
     exit({missing_required_serviceChangeParm, Required});
 
 merge_ServiceChangeParm([{address, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeAddress == asn1_NOVALUE,
-       SCP0#'ServiceChangeParm'.serviceChangeMgcId == asn1_NOVALUE ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeAddress =:= asn1_NOVALUE) andalso 
+       (SCP0#'ServiceChangeParm'.serviceChangeMgcId =:= asn1_NOVALUE) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeAddress = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{address, Val}|_Parms], SCP0, _Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeAddress == asn1_NOVALUE ->
+  when SCP0#'ServiceChangeParm'.serviceChangeAddress =:= asn1_NOVALUE ->
     MgcId = SCP0#'ServiceChangeParm'.serviceChangeMgcId,
     exit({not_both_address_mgcid_serviceChangeParm, Val, MgcId});
 
 merge_ServiceChangeParm([{mgc_id, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeMgcId == asn1_NOVALUE,
-       SCP0#'ServiceChangeParm'.serviceChangeAddress == asn1_NOVALUE ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeMgcId =:= asn1_NOVALUE) andalso 
+       (SCP0#'ServiceChangeParm'.serviceChangeAddress =:= asn1_NOVALUE) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeMgcId = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{mgc_id, Val}|_Parms], SCP0, _Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeMgcId == asn1_NOVALUE ->
+  when SCP0#'ServiceChangeParm'.serviceChangeMgcId =:= asn1_NOVALUE ->
     Addr = SCP0#'ServiceChangeParm'.serviceChangeAddress,
     exit({not_both_address_mgcid_serviceChangeParm, Val, Addr});
 
 merge_ServiceChangeParm([{profile, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeProfile == asn1_NOVALUE ->
+  when SCP0#'ServiceChangeParm'.serviceChangeProfile =:= asn1_NOVALUE ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeProfile = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 merge_ServiceChangeParm([{version, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeVersion == asn1_NOVALUE ->
+  when SCP0#'ServiceChangeParm'.serviceChangeVersion =:= asn1_NOVALUE ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeVersion = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 %% REQUIRED (i.e. no default value)
 merge_ServiceChangeParm([{reason, Val}|Parms], SCP0, Req0) 
-  when SCP0#'ServiceChangeParm'.serviceChangeReason == undefined ->
+  when SCP0#'ServiceChangeParm'.serviceChangeReason =:= undefined ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeReason = Val},
     Req = lists:delete(serviceChangeReason, Req0),
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 merge_ServiceChangeParm([{delay, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeDelay == asn1_NOVALUE ->
+  when SCP0#'ServiceChangeParm'.serviceChangeDelay =:= asn1_NOVALUE ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeDelay = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 %% REQUIRED (i.e. no default value)
 merge_ServiceChangeParm([{method, Val}|Parms], SCP0, Req0) 
-  when SCP0#'ServiceChangeParm'.serviceChangeMethod == undefined ->
+  when SCP0#'ServiceChangeParm'.serviceChangeMethod =:= undefined ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeMethod = Val},
     Req = lists:delete(serviceChangeMethod, Req0),
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 merge_ServiceChangeParm([{time_stamp, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.timeStamp == asn1_NOVALUE ->
+  when SCP0#'ServiceChangeParm'.timeStamp =:= asn1_NOVALUE ->
     SCP = SCP0#'ServiceChangeParm'{timeStamp = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 
@@ -679,26 +766,28 @@ merge_ServiceChangeParm([{extension, _Val}|Parms], SCP0, Req) ->
     merge_ServiceChangeParm(Parms, SCP0, Req);
 
 merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeInfo == asn1_NOVALUE, atom(Val) ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeInfo =:= asn1_NOVALUE) andalso 
+       is_atom(Val) ->
     SCI = #'AuditDescriptor'{auditToken = [Val]},
     SCP = SCP0#'ServiceChangeParm'{serviceChangeInfo = SCI},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeInfo == asn1_NOVALUE,tuple(Val) ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeInfo =:= asn1_NOVALUE) andalso 
+       is_tuple(Val) ->
     SCI = #'AuditDescriptor'{auditPropertyToken = [Val]},
     SCP = SCP0#'ServiceChangeParm'{serviceChangeInfo = SCI},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
-  when record(SCP0#'ServiceChangeParm'.serviceChangeInfo, 'AuditDescriptor'),
-       atom(Val) ->
+  when is_record(SCP0#'ServiceChangeParm'.serviceChangeInfo, 'AuditDescriptor') andalso 
+       is_atom(Val) ->
     SCI0 = SCP0#'ServiceChangeParm'.serviceChangeInfo,
     L    = SCI0#'AuditDescriptor'.auditToken,
     SCI  = SCI0#'AuditDescriptor'{auditToken = [Val|L]},
     SCP  = SCP0#'ServiceChangeParm'{serviceChangeInfo = SCI},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
-  when record(SCP0#'ServiceChangeParm'.serviceChangeInfo, 'AuditDescriptor'),
-       tuple(Val) ->
+  when is_record(SCP0#'ServiceChangeParm'.serviceChangeInfo, 'AuditDescriptor') andalso 
+       is_tuple(Val) ->
     SCI0 = SCP0#'ServiceChangeParm'.serviceChangeInfo,
     L    = SCI0#'AuditDescriptor'.auditPropertyToken,
     SCI  = SCI0#'AuditDescriptor'{auditPropertyToken = [Val|L]},
@@ -706,7 +795,7 @@ merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req)
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 merge_ServiceChangeParm([incomplete|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeIncompleteFlag == asn1_NOVALUE ->
+  when SCP0#'ServiceChangeParm'.serviceChangeIncompleteFlag =:= asn1_NOVALUE ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeIncompleteFlag = 'NULL'},
     merge_ServiceChangeParm(Parms, SCP, Req);
 
@@ -742,43 +831,46 @@ merge_ServiceChangeParm([Parm|_Parms], SCP, _Req) ->
     exit({at_most_once_serviceChangeParm, {Parm, Parm2}}).
 
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_ServiceChangeResParm,1}]}).
+-endif.
 merge_ServiceChangeResParm(Parms) ->
     merge_ServiceChangeResParm(Parms, #'ServiceChangeResParm'{}).
 
 merge_ServiceChangeResParm([], SCRP) ->
     SCRP;
 merge_ServiceChangeResParm([{address, Val}|Parms], SCRP0) 
-  when SCRP0#'ServiceChangeResParm'.serviceChangeAddress == asn1_NOVALUE,
-       SCRP0#'ServiceChangeResParm'.serviceChangeMgcId == asn1_NOVALUE ->
+  when (SCRP0#'ServiceChangeResParm'.serviceChangeAddress =:= asn1_NOVALUE) andalso 
+       (SCRP0#'ServiceChangeResParm'.serviceChangeMgcId =:= asn1_NOVALUE) ->
     SCRP = SCRP0#'ServiceChangeResParm'{serviceChangeAddress = Val},
     merge_ServiceChangeResParm(Parms, SCRP);
 merge_ServiceChangeResParm([{address, Val}|_Parms], SCRP0) 
-  when SCRP0#'ServiceChangeResParm'.serviceChangeAddress == asn1_NOVALUE ->
+  when SCRP0#'ServiceChangeResParm'.serviceChangeAddress =:= asn1_NOVALUE ->
     MgcId = SCRP0#'ServiceChangeResParm'.serviceChangeMgcId,
     exit({not_both_address_mgcid_servChgReplyParm, Val, MgcId});
 
 merge_ServiceChangeResParm([{mgc_id, Val}|Parms], SCRP0)
-  when SCRP0#'ServiceChangeResParm'.serviceChangeMgcId == asn1_NOVALUE,
-       SCRP0#'ServiceChangeResParm'.serviceChangeAddress == asn1_NOVALUE -> 
+  when (SCRP0#'ServiceChangeResParm'.serviceChangeMgcId =:= asn1_NOVALUE) andalso 
+       (SCRP0#'ServiceChangeResParm'.serviceChangeAddress =:= asn1_NOVALUE) -> 
     SCRP = SCRP0#'ServiceChangeResParm'{serviceChangeMgcId = Val},
     merge_ServiceChangeResParm(Parms, SCRP);
 merge_ServiceChangeResParm([{mgc_id, Val}|_Parms], SCRP0)
-  when SCRP0#'ServiceChangeResParm'.serviceChangeMgcId == asn1_NOVALUE -> 
+  when SCRP0#'ServiceChangeResParm'.serviceChangeMgcId =:= asn1_NOVALUE -> 
     Addr = SCRP0#'ServiceChangeResParm'.serviceChangeAddress,
     exit({not_both_address_mgcid_servChgReplyParm, Val, Addr});
 
 merge_ServiceChangeResParm([{profile, Val}|Parms], SCRP0)
-  when SCRP0#'ServiceChangeResParm'.serviceChangeProfile == asn1_NOVALUE ->
+  when SCRP0#'ServiceChangeResParm'.serviceChangeProfile =:= asn1_NOVALUE ->
     SCRP = SCRP0#'ServiceChangeResParm'{serviceChangeProfile = Val},
     merge_ServiceChangeResParm(Parms, SCRP);
 
 merge_ServiceChangeResParm([{version, Val}|Parms], SCRP0)
-  when SCRP0#'ServiceChangeResParm'.serviceChangeVersion == asn1_NOVALUE ->
+  when SCRP0#'ServiceChangeResParm'.serviceChangeVersion =:= asn1_NOVALUE ->
     SCRP = SCRP0#'ServiceChangeResParm'{serviceChangeVersion = Val},
     merge_ServiceChangeResParm(Parms, SCRP);
 
 merge_ServiceChangeResParm([{time_stamp, Val}|Parms], SCRP0)
-  when SCRP0#'ServiceChangeResParm'.timeStamp == asn1_NOVALUE ->
+  when SCRP0#'ServiceChangeResParm'.timeStamp =:= asn1_NOVALUE ->
     SCRP = SCRP0#'ServiceChangeResParm'{timeStamp = Val},
     merge_ServiceChangeResParm(Parms, SCRP);
 
@@ -794,34 +886,43 @@ merge_ServiceChangeResParm([{Tag, Val}|_Parms], SCRP) ->
     exit({at_most_once_servChgReplyParm, {Tag, Val, Val2}}).
 
 
-ensure_serviceChangeMethod({safeToken, _Line, "fl"}) ->
-    failover;
-ensure_serviceChangeMethod({safeToken, _Line, "failover"}) ->
-    failover;
-ensure_serviceChangeMethod({safeToken, _Line, "fo"}) -> 
-    forced;
-ensure_serviceChangeMethod({safeToken, _Line, "forced"}) ->
-    forced;
-ensure_serviceChangeMethod({safeToken, _Line, "gr"}) ->
-    graceful;
-ensure_serviceChangeMethod({safeToken, _Line, "graceful"}) ->
-    graceful;
-ensure_serviceChangeMethod({safeToken, _Line, "rs"}) ->
-    restart;
-ensure_serviceChangeMethod({safeToken, _Line, "restart"}) ->
-    restart;
-ensure_serviceChangeMethod({safeToken, _Line, "dc"}) ->
-    disconnected;
-ensure_serviceChangeMethod({safeToken, _Line, "disconnected"}) ->
-    disconnected;
-ensure_serviceChangeMethod({safeToken, _Line, "ho"}) ->
-    handOff;
-ensure_serviceChangeMethod({safeToken, _Line, "handoff"}) ->
-    handOff;
-ensure_serviceChangeMethod({safeToken, Line, Text}) ->
-    return_error(Line, {bad_serviceChangeMethod, Text}).
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_serviceChangeMethod,1}]}).
+-endif.
+ensure_serviceChangeMethod(Token) ->
+    case Token of
+	{safeToken, _Line, "fl"} ->	
+	    failover;
+	{safeToken, _Line, "failover"} ->
+	    failover;
+	{safeToken, _Line, "fo"} -> 
+	    forced;
+	{safeToken, _Line, "forced"} ->
+	    forced;
+	{safeToken, _Line, "gr"} ->
+	    graceful;
+	{safeToken, _Line, "graceful"} ->
+	    graceful;
+	{safeToken, _Line, "rs"} ->
+	    restart;
+	{safeToken, _Line, "restart"} ->
+	    restart;
+	{safeToken, _Line, "dc"} ->
+	    disconnected;
+	{safeToken, _Line, "disconnected"} ->
+	    disconnected;
+	{safeToken, _Line, "ho"} ->
+	    handOff;
+	{safeToken, _Line, "handoff"} ->
+	    handOff;
+	{safeToken, Line, Text} ->
+	    return_error(Line, {bad_serviceChangeMethod, Text})
+    end.
 
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_topologyDescriptor,1}]}).
+-endif.
 merge_topologyDescriptor(Components) ->
     merge_topologyDescriptor(Components, #'TopologyRequest'{}, []).
 
@@ -863,15 +964,19 @@ merge_topologyDescriptor(Comps, TR, TRs) ->
 ensure_TopologyRequest(#'TopologyRequest'{terminationFrom   = From,
 					  terminationTo     = To,
 					  topologyDirection = Dir} = R)
-  when (From =/= asn1_NOVALUE) and
-       (To   =/= asn1_NOVALUE) and
+  when (From =/= asn1_NOVALUE) andalso 
+       (To   =/= asn1_NOVALUE) andalso 
        (Dir  =/= asn1_NOVALUE) ->
     R;
 ensure_TopologyRequest(R) ->
     return_error(0, {bad_TopologyRequest, R}).
 
        
-ensure_profile({_TokenTag, Line, Text}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_profile,1}]}).
+-endif.
+ensure_profile(Token) ->
+    {_TokenTag, Line, Text} = Token, 
     case string:tokens(Text, [$/]) of
         [Name, Version] ->
             Version2 = ensure_version(Version),
@@ -880,43 +985,42 @@ ensure_profile({_TokenTag, Line, Text}) ->
             return_error(Line, {bad_profile, Text})
     end.
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_version,1}]}).
+-endif.
 ensure_version(Version) ->
     ensure_uint(Version, 0, 99).
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_signalRequest,2}]}).
+-endif.
 merge_signalRequest(SignalName, PropertyParms) ->
-%%     d("merge_signalRequest -> entry with"
-%%       "~n   SignalName:    ~p"
-%%       "~n   PropertyParms: ~p", [SignalName, PropertyParms]),
     Sig = #'Signal'{signalName = SignalName},
     SPL = [],
     do_merge_signalRequest(Sig, PropertyParms, SPL).
 
 do_merge_signalRequest(Sig, [H | T], SPL) ->
-%%     d("do_merge_signalRequest -> entry with"
-%%       "~n   Sig: ~p"
-%%       "~n   H:   ~p"
-%%       "~n   SPL: ~p", [Sig, H, SPL]),
     case H of
-        {stream, SID} when Sig#'Signal'.streamID == asn1_NOVALUE ->
+        {stream, SID} when Sig#'Signal'.streamID =:= asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{streamID = SID}, T, SPL);
-        {signal_type, SigType} when Sig#'Signal'.sigType == asn1_NOVALUE ->
+        {signal_type, SigType} when Sig#'Signal'.sigType =:= asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{sigType = SigType}, T, SPL);
-        {duration, Duration} when Sig#'Signal'.duration == asn1_NOVALUE ->
+        {duration, Duration} when Sig#'Signal'.duration =:= asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{duration = Duration}, T, SPL);
-        {notify_completion, NC} when Sig#'Signal'.notifyCompletion == asn1_NOVALUE ->
+        {notify_completion, NC} when Sig#'Signal'.notifyCompletion =:= asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{notifyCompletion = NC}, T, SPL);
-        keepActive when Sig#'Signal'.keepActive == asn1_NOVALUE ->
+        keepActive when Sig#'Signal'.keepActive =:= asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{keepActive = true}, T, SPL);
         {other, Name, PP} ->
             SP = #'SigParameter'{sigParameterName = Name, 
 				 value            = PP#'PropertyParm'.value,
 				 extraInfo        = PP#'PropertyParm'.extraInfo},
             do_merge_signalRequest(Sig, T, [SP | SPL]);
-        {direction, Dir} when Sig#'Signal'.direction == asn1_NOVALUE ->
+        {direction, Dir} when Sig#'Signal'.direction =:= asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{direction = Dir}, T, SPL);
-        {requestId, RID} when Sig#'Signal'.requestID == asn1_NOVALUE ->
+        {requestId, RID} when Sig#'Signal'.requestID =:= asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{requestID = RID}, T, SPL);
-        {intersigDelay, ISD} when Sig#'Signal'.intersigDelay == asn1_NOVALUE ->
+        {intersigDelay, ISD} when Sig#'Signal'.intersigDelay =:= asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{intersigDelay = ISD}, T, SPL);
         _ ->
             return_error(0, {bad_sigParm, H})
@@ -926,56 +1030,96 @@ do_merge_signalRequest(Sig, [], SPL) ->
 
 %% eventStream = StreamToken EQUAL StreamID
 %% eventOther  = eventParameterName parmValue
-select_stream_or_other("st", #'PropertyParm'{value = [Value]}) ->
-    {stream, ensure_uint16(Value)};
-select_stream_or_other("st", Value) ->
-    {stream, ensure_uint16(Value)};
-select_stream_or_other("stream", #'PropertyParm'{value = [Value]}) ->
-    {stream, ensure_uint16(Value)};
-select_stream_or_other("stream", Value) ->
-    {stream, ensure_uint16(Value)};
-select_stream_or_other(Name, #'PropertyParm'{value = Value}) ->
-    EP = #'EventParameter'{eventParameterName = Name,
- 			   value              = Value},
-    {other, EP}.
-
-ensure_eventDM({_TokenTag, Line, DMD}) 
-  when record(DMD, 'DigitMapDescriptor') ->
-    Name = DMD#'DigitMapDescriptor'.digitMapName,
-    Val  = DMD#'DigitMapDescriptor'.digitMapValue,
+-ifdef(megaco_parser_inline).
+-compile({inline,[{select_stream_or_other,2}]}).
+-endif.
+select_stream_or_other(EventParameterName, ParmValue) ->
     if
-        Name  == asn1_NOVALUE, Val /= asn1_NOVALUE ->
-	    {'DigitMapValue', Start, Short, Long, Duration, Body} = Val,
-	    DMV = #'DigitMapValue'{startTimer    = Start, 
-				   shortTimer    = Short, 
-				   longTimer     = Long, 
-				   digitMapBody  = Body,
-				   durationTimer = Duration},
-            {eventDM, {digitMapValue, DMV}};
-        Name  /= asn1_NOVALUE, Val == asn1_NOVALUE ->
-            {eventDM, {digitMapName, Name}};
-        true ->
-            return_error(Line, {bad_eventDM, DMD})
+	(EventParameterName =:= "st") orelse 
+	(EventParameterName =:= "stream") ->
+	    case ParmValue of
+		#'PropertyParm'{value = [Value]} ->
+		    {stream, ensure_uint16(Value)};
+		_ ->
+		    {stream, ensure_uint16(ParmValue)}
+	    end;
+	true ->
+	    #'PropertyParm'{value = Value} = ParmValue, 
+	    EP = #'EventParameter'{eventParameterName = EventParameterName,
+				   value              = Value},
+	    {other, EP}
     end.
-    
-ensure_DMD({_TokenTag, _Line, DMD}) 
-  when record(DMD, 'DigitMapDescriptor') ->
-    Val2 = 
-	case DMD#'DigitMapDescriptor'.digitMapValue of
-	    %% Note that the values of the digitMapBody and durationTimers
-	    %% are swapped by the scanner (this is done because of a 
-	    %% problem in the flex scanner).
-	    #'DigitMapValue'{durationTimer = Body,
-			     digitMapBody  = Duration} = DMV ->
-		%% Convert to version 1 DigitMapValue
-		DMV#'DigitMapValue'{digitMapBody  = Body,
-				    durationTimer = Duration};
-	    Other ->
-		Other
-	end,
-    DMD#'DigitMapDescriptor'{digitMapValue = Val2}.
+
+%% select_stream_or_other("st", #'PropertyParm'{value = [Value]}) ->
+%%     {stream, ensure_uint16(Value)};
+%% select_stream_or_other("st", Value) ->
+%%     {stream, ensure_uint16(Value)};
+%% select_stream_or_other("stream", #'PropertyParm'{value = [Value]}) ->
+%%     {stream, ensure_uint16(Value)};
+%% select_stream_or_other("stream", Value) ->
+%%     {stream, ensure_uint16(Value)};
+%% select_stream_or_other(Name, #'PropertyParm'{value = Value}) ->
+%%     EP = #'EventParameter'{eventParameterName = Name,
+%%  			   value              = Value},
+%%     {other, EP}.
 
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_eventDM,1}]}).
+-endif.
+ensure_eventDM(Token) ->
+    {_TokenTag, Line, DMD} = Token,
+    if 
+	is_record(DMD, 'DigitMapDescriptor') ->
+	    Name = DMD#'DigitMapDescriptor'.digitMapName,
+	    Val  = DMD#'DigitMapDescriptor'.digitMapValue,
+	    if
+		(Name  =:= asn1_NOVALUE) andalso (Val =/= asn1_NOVALUE) ->
+		    {'DigitMapValue', Start, Short, Long, Duration, Body} = Val,
+		    DMV = #'DigitMapValue'{startTimer    = Start, 
+					   shortTimer    = Short, 
+					   longTimer     = Long, 
+					   digitMapBody  = Body,
+					   durationTimer = Duration},
+		    {eventDM, {digitMapValue, DMV}};
+		(Name =/= asn1_NOVALUE) andalso (Val =:= asn1_NOVALUE) ->
+		    {eventDM, {digitMapName, Name}};
+		true ->
+		    return_error(Line, {bad_eventDM, DMD})
+	    end;
+	true ->
+	    return_error(Line, {bad_eventDM, DMD})
+    end.
+	    
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_DMD,1}]}).
+-endif.
+ensure_DMD(Token) ->
+    {_TokenTag, Line, DMD} = Token,
+    if 
+	is_record(DMD, 'DigitMapDescriptor') ->
+	    Val2 = 
+		case DMD#'DigitMapDescriptor'.digitMapValue of
+		    %% Note that the values of the digitMapBody and 
+		    %% durationTimers are swapped by the scanner 
+		    %% (this is done because of a problem in the flex scanner).
+		    #'DigitMapValue'{durationTimer = Body,
+				     digitMapBody  = Duration} = DMV ->
+			%% Convert to version 1 DigitMapValue
+			DMV#'DigitMapValue'{digitMapBody  = Body,
+					    durationTimer = Duration};
+		    Other ->
+			Other
+		end,
+	    DMD#'DigitMapDescriptor'{digitMapValue = Val2};
+	true ->
+	    return_error(Line, {bad_DigitMapDescriptor, DMD})
+    end.
+
+
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_observed_event,3}]}).
+-endif.
 merge_observed_event(ObservedEvents, EventName, TimeStamp) ->
     StreamId = asn1_NOVALUE,
     EPL = [],
@@ -991,8 +1135,9 @@ do_merge_observed_event([], EventName, TimeStamp, StreamID, EPL) ->
                      streamID     = StreamID,
                      eventParList = lists:reverse(EPL)}.
 
-merge_eventSpec(OE) when record(OE, 'ObservedEvent'),
-                         OE#'ObservedEvent'.timeNotation == asn1_NOVALUE ->
+merge_eventSpec(OE) 
+  when is_record(OE, 'ObservedEvent') andalso 
+       (OE#'ObservedEvent'.timeNotation =:= asn1_NOVALUE) ->
     #'EventSpec'{eventName     = OE#'ObservedEvent'.eventName,
                  streamID      = OE#'ObservedEvent'.streamID,
                  eventParList  = OE#'ObservedEvent'.eventParList};
@@ -1000,15 +1145,13 @@ merge_eventSpec(OE) ->
     return_error(0, {bad_event_spec, OE}).
 
 make_RegulatedEmbeddedDescriptor({embed, SD, SED}) ->
-%%     d("make_RegulatedEmbeddedDescriptor(embed) -> entry with"
-%%       "~n   SD:  ~p"
-%%       "~n   SED: ~p", [SD, SED]),
     #'RegulatedEmbeddedDescriptor'{secondEvent       = SED,
 				   signalsDescriptor = SD}.
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_eventParameters,1}]}).
+-endif.
 merge_eventParameters(Params) ->
-%%     d("merge_eventParameters -> entry with"
-%%       "~n   Params: ~p", [Params]),
     SID  = asn1_NOVALUE,
     EPL  = [],
     RA   = #'RequestedActions'{},
@@ -1016,36 +1159,30 @@ merge_eventParameters(Params) ->
     do_merge_eventParameters(Params, SID, EPL, RA, HasA) .
                                    
 do_merge_eventParameters([H | T], SID, EPL, RA, HasA) ->
-%%     d("do_merge_eventParameters -> entry with"
-%%       "~n   H:    ~p"
-%%       "~n   SID:  ~p"
-%%       "~n   EPL:  ~p"
-%%       "~n   RA:  ~p"
-%%       "~n   HasA: ~p", [H, SID, EPL, RA, HasA]),
     case H of
-        keepActive when RA#'RequestedActions'.keepActive == asn1_NOVALUE ->
+        keepActive when RA#'RequestedActions'.keepActive =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{keepActive = true},
             do_merge_eventParameters(T, SID, EPL, RA2, yes);
-        resetEventsDescriptor when RA#'RequestedActions'.resetEventsDescriptor == asn1_NOVALUE ->
+        resetEventsDescriptor when RA#'RequestedActions'.resetEventsDescriptor =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{resetEventsDescriptor = 'NULL'},
             do_merge_eventParameters(T, SID, EPL, RA2, yes);
-        {embed, SD, SED} when RA#'RequestedActions'.signalsDescriptor == asn1_NOVALUE ->
+        {embed, SD, SED} when RA#'RequestedActions'.signalsDescriptor =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{signalsDescriptor = SD,
 					secondEvent       = SED},
             do_merge_eventParameters(T, SID, EPL, RA2, yes);
-        {eventDM, DM} when RA#'RequestedActions'.eventDM == asn1_NOVALUE ->
+        {eventDM, DM} when RA#'RequestedActions'.eventDM =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{eventDM = DM},
             do_merge_eventParameters(T, SID, EPL, RA2, yes);
-        {stream, NewSID} when SID == asn1_NOVALUE ->
+        {stream, NewSID} when SID =:= asn1_NOVALUE ->
             do_merge_eventParameters(T, NewSID, EPL, RA, HasA);
-        {other, PP} when record(PP, 'PropertyParm') ->
+        {other, PP} when is_record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
             do_merge_eventParameters(T, SID, [EP | EPL], RA, HasA);
-        {other, EP} when record(EP, 'EventParameter') ->
+        {other, EP} when is_record(EP, 'EventParameter') ->
             do_merge_eventParameters(T, SID, [EP | EPL], RA, HasA);
-        {notifyBehaviour, NB} when RA#'RequestedActions'.notifyBehaviour == asn1_NOVALUE ->
+        {notifyBehaviour, NB} when RA#'RequestedActions'.notifyBehaviour =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{notifyBehaviour = NB},
             do_merge_eventParameters(T, SID, EPL, RA2, yes);
         _ ->
@@ -1060,9 +1197,10 @@ do_merge_eventParameters([], SID, EPL, _RA, no) ->
                       eventAction = asn1_NOVALUE, 
                       evParList   = lists:reverse(EPL)}.
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_secondEventParameters,1}]}).
+-endif.
 merge_secondEventParameters(Params) ->
-%%     d("merge_secondEventParameters -> entry with"
-%%       "~n   Params: ~p", [Params]),
     SID  = asn1_NOVALUE,
     EPL  = [],
     SRA  = #'SecondRequestedActions'{},
@@ -1070,35 +1208,29 @@ merge_secondEventParameters(Params) ->
     do_merge_secondEventParameters(Params, SID, EPL, SRA, HasA) .
                                    
 do_merge_secondEventParameters([H | T], SID, EPL, SRA, HasA) ->
-%%     d("do_merge_secondEventParameters -> entry with"
-%%       "~n   H:    ~p"
-%%       "~n   SID:  ~p"
-%%       "~n   EPL:  ~p"
-%%       "~n   SRA:  ~p"
-%%       "~n   HasA: ~p", [H, SID, EPL, SRA, HasA]),
     case H of
-        keepActive when SRA#'SecondRequestedActions'.keepActive == asn1_NOVALUE ->
+        keepActive when SRA#'SecondRequestedActions'.keepActive =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{keepActive = true},
             do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
-        resetEventsDescriptor when SRA#'SecondRequestedActions'.resetEventsDescriptor == asn1_NOVALUE ->
+        resetEventsDescriptor when SRA#'SecondRequestedActions'.resetEventsDescriptor =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{resetEventsDescriptor = 'NULL'},
             do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
-        {second_embed, SD} when SRA#'SecondRequestedActions'.signalsDescriptor == asn1_NOVALUE ->
+        {second_embed, SD} when SRA#'SecondRequestedActions'.signalsDescriptor =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{signalsDescriptor = SD},
             do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
-        {eventDM, DM} when SRA#'SecondRequestedActions'.eventDM == asn1_NOVALUE ->
+        {eventDM, DM} when SRA#'SecondRequestedActions'.eventDM =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{eventDM = DM},
             do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
-        {stream, NewSID} when SID == asn1_NOVALUE ->
+        {stream, NewSID} when SID =:= asn1_NOVALUE ->
             do_merge_secondEventParameters(T, NewSID, EPL, SRA, HasA);
-        {other, PP} when record(PP, 'PropertyParm') ->
+        {other, PP} when is_record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
             do_merge_secondEventParameters(T, SID, [EP | EPL], SRA, HasA);
-        {other, EP} when record(EP, 'EventParameter') ->
+        {other, EP} when is_record(EP, 'EventParameter') ->
             do_merge_secondEventParameters(T, SID, [EP | EPL], SRA, HasA);
-        {notifyBehaviour, NB} when SRA#'SecondRequestedActions'.notifyBehaviour == asn1_NOVALUE ->
+        {notifyBehaviour, NB} when SRA#'SecondRequestedActions'.notifyBehaviour =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{notifyBehaviour = NB},
             do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
         _ ->
@@ -1121,8 +1253,12 @@ do_merge_secondEventParameters([], SID, EPL, _SRA, no) ->
 %% in a path domain name.
 %% pathDomainName    = (ALPHA / DIGIT / "*" )
 %%                        *63(ALPHA / DIGIT / "-" / "*" / ".")
-ensure_terminationID({safeToken, _Line, LowerText}) ->
-    %% terminationID     = "ROOT" / pathName / "$" / "*"
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_terminationID,1}]}).
+-endif.
+ensure_terminationID(Token) ->
+    {safeToken, _Line, LowerText} = Token, 
+    %% terminationID = "ROOT" / pathName / "$" / "*"
     decode_term_id(LowerText, false, [], []).
 
 decode_term_id([H | T], Wild, Id, Component) ->
@@ -1136,13 +1272,21 @@ decode_term_id([], Wild, Id, Component) ->
     Id2 = [lists:reverse(Component) | Id],
     #megaco_term_id{contains_wildcards = Wild, id = lists:reverse(Id2)}.
             
-ensure_pathName({_TokenTag, _Line, Text}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_pathName,1}]}).
+-endif.
+ensure_pathName(Token) ->
+    {_TokenTag, _Line, Text} = Token, 
     Text.  %% BUGBUG: ensure values
 
 %% TimeStamp            = Date "T" Time ; per ISO 8601:1988
 %% Date                 = 8(DIGIT) ; Date = yyyymmdd
 %% Time                 = 8(DIGIT) ; Time = hhmmssss
-ensure_timeStamp({'TimeStampToken', Line, Text}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_timeStamp,1}]}).
+-endif.
+ensure_timeStamp(Token) ->
+    {'TimeStampToken', Line, Text} = Token, 
     case string:tokens(Text, [$T, $t]) of
         [Date, Time] ->
             #'TimeNotation'{date = Date, time = Time};
@@ -1150,6 +1294,9 @@ ensure_timeStamp({'TimeStampToken', Line, Text}) ->
             return_error(Line, {bad_timeStamp, Text})
     end.
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_transactionID,1}]}).
+-endif.
 ensure_transactionID(TransId) ->
     ensure_uint32(TransId).
 
@@ -1168,39 +1315,30 @@ make_transactionID_and_segment_info({TokenTag, Line, Text}) ->
 	    ensure_uint32({TokenTag, Line, TidText})
     end.
     
-ensure_segmentationComplete({_TokenTag, _Line, "end"}) ->
-    ok;
-ensure_segmentationComplete({_TokenTag, _Line, "&"}) ->
-    ok;
-ensure_segmentationComplete({_TokenTag, Line, Text}) ->
-    return_error(Line, {invalid_segmentationCompleteToken, Text}).
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_segmentationComplete,1}]}).
+-endif.
+ensure_segmentationComplete(Token) ->
+    {_TokenTag, Line, Text} = Token,
+    if
+	(Text =:= "end") orelse (Text =:= "&") ->
+	    ok;
+	true ->
+	    return_error(Line, {invalid_segmentationCompleteToken, Text})
+    end.
 
 make_TransactionReply({Tid, SegNo, 'NULL'}, IAR, Res) ->
-%%     d("make_TransactionReply('NULL') -> entry with"
-%%       "~n   Tid:   ~p"
-%%       "~n   SegNo: ~p"
-%%       "~n   IAR:   ~p"
-%%       "~n   Res:   ~p", [Tid, SegNo, IAR, Res]),
     #'TransactionReply'{transactionId        = Tid,
 			immAckRequired       = IAR,
 			transactionResult    = Res,
 			segmentNumber        = SegNo,
 			segmentationComplete = 'NULL'};
 make_TransactionReply({Tid, SegNo}, IAR, Res) ->
-%%     d("make_TransactionReply -> entry with"
-%%       "~n   Tid:   ~p"
-%%       "~n   SegNo: ~p"
-%%       "~n   IAR:   ~p"
-%%       "~n   Res:   ~p", [Tid, SegNo, IAR, Res]),
     #'TransactionReply'{transactionId        = Tid,
 			immAckRequired       = IAR,
 			transactionResult    = Res,
 			segmentNumber        = SegNo};
 make_TransactionReply(Tid, IAR, Res) ->
-%%     d("make_TransactionReply -> entry with"
-%%       "~n   Tid:   ~p"
-%%       "~n   IAR:   ~p"
-%%       "~n   Res:   ~p", [Tid, IAR, Res]),
     #'TransactionReply'{transactionId        = Tid,
 			immAckRequired       = IAR,
 			transactionResult    = Res}.
@@ -1214,8 +1352,12 @@ make_SegmentReply({Tid, SegNo}) ->
 		    segmentNumber        = SegNo}.
 
 
-%% transactionAck       = transactionID / (transactionID "-" transactionID)
-ensure_transactionAck({safeToken, _Line, Text}) ->
+%% transactionAck = transactionID / (transactionID "-" transactionID)
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_transactionAck,1}]}).
+-endif.
+ensure_transactionAck(Tokens) ->
+    {safeToken, _Line, Text} = Tokens, 
     case string:tokens(Text, [$-]) of
         [Id] ->
             #'TransactionAck'{firstAck = ensure_transactionID(Id)};
@@ -1274,23 +1416,23 @@ merge_context_attr_audit_request(
     CAAR#'ContextAttrAuditRequest'{contextPropAud = lists:reverse(CPA)};
 merge_context_attr_audit_request(CAAR, [H|T]) ->
     case H of
-	priorityAudit when CAAR#'ContextAttrAuditRequest'.priority == asn1_NOVALUE ->
+	priorityAudit when CAAR#'ContextAttrAuditRequest'.priority =:= asn1_NOVALUE ->
             CAAR2 = CAAR#'ContextAttrAuditRequest'{priority = 'NULL'},
             merge_context_attr_audit_request(CAAR2, T);
 
-        emergencyAudit when CAAR#'ContextAttrAuditRequest'.emergency == asn1_NOVALUE ->
+        emergencyAudit when CAAR#'ContextAttrAuditRequest'.emergency =:= asn1_NOVALUE ->
             CAAR2 = CAAR#'ContextAttrAuditRequest'{emergency = 'NULL'},
             merge_context_attr_audit_request(CAAR2, T);
 
-        topologyAudit when CAAR#'ContextAttrAuditRequest'.topology == asn1_NOVALUE ->
+        topologyAudit when CAAR#'ContextAttrAuditRequest'.topology =:= asn1_NOVALUE ->
             CAAR2 = CAAR#'ContextAttrAuditRequest'{topology = 'NULL'},
 	    merge_context_attr_audit_request(CAAR2, T);
 
-        iepsCallind when CAAR#'ContextAttrAuditRequest'.iepscallind == asn1_NOVALUE ->
+        iepsCallind when CAAR#'ContextAttrAuditRequest'.iepscallind =:= asn1_NOVALUE ->
             CAAR2 = CAAR#'ContextAttrAuditRequest'{iepscallind = 'NULL'},
 	    merge_context_attr_audit_request(CAAR2, T);
 
-	{prop, Name} when CAAR#'ContextAttrAuditRequest'.contextPropAud == asn1_NOVALUE ->
+	{prop, Name} when CAAR#'ContextAttrAuditRequest'.contextPropAud =:= asn1_NOVALUE ->
 	    CPA = [#'IndAudPropertyParm'{name = Name}],
 	    CAAR2 = CAAR#'ContextAttrAuditRequest'{contextPropAud = CPA},
 	    merge_context_attr_audit_request(CAAR2, T);
@@ -1301,19 +1443,19 @@ merge_context_attr_audit_request(CAAR, [H|T]) ->
 	    CAAR2 = CAAR#'ContextAttrAuditRequest'{contextPropAud = CPA2},
 	    merge_context_attr_audit_request(CAAR2, T);
 
-	{select_prio, Prio} when CAAR#'ContextAttrAuditRequest'.selectpriority == asn1_NOVALUE ->
+	{select_prio, Prio} when CAAR#'ContextAttrAuditRequest'.selectpriority =:= asn1_NOVALUE ->
 	    CAAR2 = CAAR#'ContextAttrAuditRequest'{selectpriority = Prio},
 	    merge_context_attr_audit_request(CAAR2, T);
 
-	{select_emergency, EV} when CAAR#'ContextAttrAuditRequest'.selectemergency == asn1_NOVALUE ->
+	{select_emergency, EV} when CAAR#'ContextAttrAuditRequest'.selectemergency =:= asn1_NOVALUE ->
 	    CAAR2 = CAAR#'ContextAttrAuditRequest'{selectemergency = EV},
 	    merge_context_attr_audit_request(CAAR2, T);
 
-	{select_ieps, IV} when CAAR#'ContextAttrAuditRequest'.selectiepscallind == asn1_NOVALUE ->
+	{select_ieps, IV} when CAAR#'ContextAttrAuditRequest'.selectiepscallind =:= asn1_NOVALUE ->
 	    CAAR2 = CAAR#'ContextAttrAuditRequest'{selectiepscallind = IV},
 	    merge_context_attr_audit_request(CAAR2, T);
 
-	{select_logic, SL} when CAAR#'ContextAttrAuditRequest'.selectLogic == asn1_NOVALUE ->
+	{select_logic, SL} when CAAR#'ContextAttrAuditRequest'.selectLogic =:= asn1_NOVALUE ->
 	    CAAR2 = CAAR#'ContextAttrAuditRequest'{selectLogic = SL},
 	    merge_context_attr_audit_request(CAAR2, T);
 
@@ -1337,6 +1479,9 @@ merge_context_attr_audit_request(CAAR, [H|T]) ->
     
     end.
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_action_request,2}]}).
+-endif.
 merge_action_request(CtxId, Items) ->
     do_merge_action_request(Items, [], asn1_NOVALUE, asn1_NOVALUE, CtxId).
 
@@ -1351,7 +1496,7 @@ do_merge_action_request([H|T], CmdReqs, CtxReq, CtxAuditReq, CtxId) ->
 				    merge_context_request(CtxReq, ContextProp),
 				    CtxAuditReq, CtxId);
 
-	{contextAudit, ContextAuditReq} when CtxAuditReq == asn1_NOVALUE ->
+	{contextAudit, ContextAuditReq} when CtxAuditReq =:= asn1_NOVALUE ->
 	    do_merge_action_request(T, CmdReqs, 
 				    CtxReq, ContextAuditReq, CtxId)
     end;
@@ -1366,6 +1511,9 @@ do_merge_action_request([], CmdReqs, CtxReq, CtxAuditReq, CtxId) ->
 %% In order to solve a problem in the parser, the error descriptor
 %% has been put last in the non-empty commandReplyList, if it is not 
 %% asn1_NOVALUE
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_action_reply,1}]}).
+-endif.
 merge_action_reply(Items) ->
     do_merge_action_reply(Items, asn1_NOVALUE, asn1_NOVALUE, []).
 
@@ -1375,7 +1523,7 @@ do_merge_action_reply([], Err, Ctx, Cmds) ->
 		   commandReply    = lists:reverse(Cmds)};
 do_merge_action_reply([H|T], Err0, CR, Cmds) ->
     case H of
-        {error, Err1} when Err0 == asn1_NOVALUE ->
+        {error, Err1} when Err0 =:= asn1_NOVALUE ->
             do_merge_action_reply(T, Err1, CR, Cmds);
         {command, Cmd} ->
             do_merge_action_reply(T, Err0, CR, [Cmd | Cmds]);
@@ -1465,6 +1613,9 @@ make_commandRequest({CmdTag, {_TokenTag, _Line, Text}}, Cmd) ->
             Req
     end.
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_terminationAudit,1}]}).
+-endif.
 merge_terminationAudit(AuditReturnParameters) ->
     lists:reverse(do_merge_terminationAudit(AuditReturnParameters, [], [])).
 
@@ -1482,42 +1633,58 @@ do_merge_terminationAudit([], AuditReturnParameters, AuditItems) ->
     AuditReturnParameter = {emptyDescriptors, AuditDescriptor},
     [AuditReturnParameter | AuditReturnParameters].
         
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_mediaDescriptor,1}]}).
+-endif.
 merge_mediaDescriptor(MediaParms) ->
     do_merge_mediaDescriptor(MediaParms, asn1_NOVALUE, [], []).
 
 do_merge_mediaDescriptor([H | T], TS, One, Multi) ->
     case H of
-        {streamParm, Parm} when Multi == [] ->
+        {streamParm, Parm} when Multi =:= [] ->
             do_merge_mediaDescriptor(T, TS, [Parm | One], Multi);
-        {streamDescriptor, Desc} when One == [] ->
+        {streamDescriptor, Desc} when One =:= [] ->
             do_merge_mediaDescriptor(T, TS, One, [Desc | Multi]);
-        {termState, TS2} when TS  == asn1_NOVALUE ->
+        {termState, TS2} when TS  =:= asn1_NOVALUE ->
             do_merge_mediaDescriptor(T, TS2, One, Multi);
         _ ->
             return_error(0, {bad_merge_mediaDescriptor, [H, TS, One, Multi]})
     end;
 do_merge_mediaDescriptor([], TS, One, Multi) ->
     if
-	One == [], Multi == [] ->
-	    #'MediaDescriptor'{streams = asn1_NOVALUE,
-			       termStateDescr = TS};
-	One /= [], Multi == [] ->
-	    #'MediaDescriptor'{streams = {oneStream, merge_streamParms(One)},
-			       termStateDescr = TS};
-	One == [], Multi /= [] ->
-	    #'MediaDescriptor'{streams = {multiStream, lists:reverse(Multi)},
-			       termStateDescr = TS}
+	(One =:= []) ->
+	    if (Multi =:= []) ->
+		    #'MediaDescriptor'{streams        = asn1_NOVALUE,
+				       termStateDescr = TS};
+	       true -> % (Multi =/= [])
+		    Streams = {multiStream, lists:reverse(Multi)}, 
+		    #'MediaDescriptor'{streams        = Streams,
+				       termStateDescr = TS}
+	    end;
+	true -> % (One =/= [])
+	    if 
+		(Multi =:= []) ->
+		    Streams = {oneStream, merge_streamParms(One)}, 
+		    #'MediaDescriptor'{streams        = Streams,
+				       termStateDescr = TS};
+		true -> % (Multi =/= [])
+		   return_error(0, 
+				{bad_merge_mediaDescriptor, [TS, One, Multi]}) 
+	    end
     end.
   
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_streamParms,1}]}).
+-endif.
 merge_streamParms(TaggedStreamParms) ->
     SP = #'StreamParms'{},
     do_merge_streamParms(TaggedStreamParms, SP).
 
 do_merge_streamParms([{Tag, D} | T] = All, SP) ->
     case Tag of
-        local when SP#'StreamParms'.localDescriptor  == asn1_NOVALUE ->
+        local when SP#'StreamParms'.localDescriptor  =:= asn1_NOVALUE ->
             do_merge_streamParms(T, SP#'StreamParms'{localDescriptor = D});
-        remote when SP#'StreamParms'.remoteDescriptor == asn1_NOVALUE ->
+        remote when SP#'StreamParms'.remoteDescriptor =:= asn1_NOVALUE ->
             do_merge_streamParms(T, SP#'StreamParms'{remoteDescriptor = D});
         control ->
             LCD = 
@@ -1529,12 +1696,13 @@ do_merge_streamParms([{Tag, D} | T] = All, SP) ->
                 end,
             LCD2 = do_merge_control_streamParms(D, LCD),
             do_merge_streamParms(T, SP#'StreamParms'{localControlDescriptor = LCD2});
-	statistics when SP#'StreamParms'.statisticsDescriptor == asn1_NOVALUE ->
+	statistics when SP#'StreamParms'.statisticsDescriptor =:= asn1_NOVALUE ->
 	    do_merge_streamParms(T, SP#'StreamParms'{statisticsDescriptor = D});
         _ ->
             return_error(0, {do_merge_streamParms, [All, SP]})
     end;
-do_merge_streamParms([], SP) when record(SP#'StreamParms'.localControlDescriptor, 'LocalControlDescriptor') ->
+do_merge_streamParms([], SP) 
+  when is_record(SP#'StreamParms'.localControlDescriptor, 'LocalControlDescriptor') ->
     LCD  = SP#'StreamParms'.localControlDescriptor,
     PP   = LCD#'LocalControlDescriptor'.propertyParms,
     LCD2 = LCD#'LocalControlDescriptor'{propertyParms = lists:reverse(PP)},
@@ -1545,13 +1713,13 @@ do_merge_streamParms([], SP) ->
 
 do_merge_control_streamParms([{SubTag, SD} | T] = All, LCD) ->
     case SubTag of
-        group when LCD#'LocalControlDescriptor'.reserveGroup == asn1_NOVALUE ->
+        group when LCD#'LocalControlDescriptor'.reserveGroup =:= asn1_NOVALUE ->
             LCD2 = LCD#'LocalControlDescriptor'{reserveGroup = SD},
             do_merge_control_streamParms(T, LCD2);
-        value when LCD#'LocalControlDescriptor'.reserveValue == asn1_NOVALUE ->
+        value when LCD#'LocalControlDescriptor'.reserveValue =:= asn1_NOVALUE ->
             LCD2 = LCD#'LocalControlDescriptor'{reserveValue = SD},
             do_merge_control_streamParms(T, LCD2);
-        mode when LCD#'LocalControlDescriptor'.streamMode == asn1_NOVALUE ->
+        mode when LCD#'LocalControlDescriptor'.streamMode =:= asn1_NOVALUE ->
             LCD2 = LCD#'LocalControlDescriptor'{streamMode = SD},
             do_merge_control_streamParms(T, LCD2);
         prop ->
@@ -1564,16 +1732,19 @@ do_merge_control_streamParms([{SubTag, SD} | T] = All, LCD) ->
 do_merge_control_streamParms([], LCD) ->
     LCD.
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{merge_terminationStateDescriptor,1}]}).
+-endif.
 merge_terminationStateDescriptor(Parms) ->
     TSD = #'TerminationStateDescriptor'{propertyParms = []},
     do_merge_terminationStateDescriptor(Parms, TSD).
 
 do_merge_terminationStateDescriptor([{Tag, Val} | T], TSD) ->
     case Tag of
-        serviceState when TSD#'TerminationStateDescriptor'.serviceState == asn1_NOVALUE ->
+        serviceState when TSD#'TerminationStateDescriptor'.serviceState =:= asn1_NOVALUE ->
             TSD2 = TSD#'TerminationStateDescriptor'{serviceState = Val},
             do_merge_terminationStateDescriptor(T, TSD2);
-        eventBufferControl when TSD#'TerminationStateDescriptor'.eventBufferControl == asn1_NOVALUE->
+        eventBufferControl when TSD#'TerminationStateDescriptor'.eventBufferControl =:= asn1_NOVALUE->
             TSD2 = TSD#'TerminationStateDescriptor'{eventBufferControl = Val},
             do_merge_terminationStateDescriptor(T, TSD2);
         propertyParm ->
@@ -1585,18 +1756,22 @@ do_merge_terminationStateDescriptor([], TSD) ->
     PP = TSD#'TerminationStateDescriptor'.propertyParms,
     TSD#'TerminationStateDescriptor'{propertyParms = lists:reverse(PP)}.
 
-ensure_prop_groups({_TokenTag, _Line, Text}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_prop_groups,1}]}).
+-endif.
+ensure_prop_groups(Token) ->
+    {_TokenTag, _Line, Text} = Token,
     Group  = [],
     Groups = [],
     parse_prop_name(Text, Group, Groups).
 
 parse_prop_name([Char | Rest] = All, Group, Groups) ->
-    case ?classify_char(Char) of
-        white_space ->
+    if 
+        ?white_space(Char) ->
             parse_prop_name(Rest, Group, Groups);
-        end_of_line ->
+        ?end_of_line(Char) ->
             parse_prop_name(Rest, Group, Groups);
-        _ ->
+        true ->
             Name = [],
             do_parse_prop_name(All, Name, Group, Groups)
     end;
@@ -1604,25 +1779,26 @@ parse_prop_name([] = All, Group, Groups) ->
     Name = [],
     do_parse_prop_name(All, Name, Group, Groups).
 
+do_parse_prop_name([Char | Rest], Name, Group, Groups) 
+  when (Char =:= $=) andalso (Name =/= []) ->
+    %% Now we have a complete name
+    if
+	(Name =:= "v") andalso (Group =/= []) ->
+	    %% v= is a property group delimiter,
+	    %% lets create yet another property group.
+	    Groups2 = [lists:reverse(Group) | Groups],
+	    Group2 = [],
+	    parse_prop_value(Rest, Name, Group2, Groups2);
+	true ->
+	    %% Use current property group
+	    parse_prop_value(Rest, Name, Group, Groups)
+    end;
 do_parse_prop_name([Char | Rest], Name, Group, Groups) ->
-    case ?classify_char(Char) of
-	safe_char_upper ->
+    case ?classify_char4(Char) of
+        safe_char_upper ->
             do_parse_prop_name(Rest, [Char | Name], Group, Groups);
         safe_char ->
             do_parse_prop_name(Rest, [Char | Name], Group, Groups);
-        rest_char when Char == $=, Name /= [] ->
-            %% Now we have a complete name
-            if
-                Name == "v", Group /= [] ->
-                    %% v= is a property group delimiter,
-                    %% lets create yet another property group.
-                    Groups2 = [lists:reverse(Group) | Groups],
-                    Group2 = [],
-                    parse_prop_value(Rest, Name, Group2, Groups2);
-                true ->
-                    %% Use current property group
-                    parse_prop_value(Rest, Name, Group, Groups)
-            end;
         _ ->
             return_error(0, {bad_prop_name, lists:reverse(Name), Char})
     end;
@@ -1631,24 +1807,27 @@ do_parse_prop_name([], [], [], Groups) ->
 do_parse_prop_name([], [], Group, Groups) ->
     Group2 = lists:reverse(Group),
     lists:reverse([Group2 | Groups]);
-do_parse_prop_name([], Name, Group, Groups) when Name /= [] ->
+do_parse_prop_name([], Name, Group, Groups) when Name =/= [] ->
     %% Assume end of line
     Value = [],
     PP = make_prop_parm(Name, Value),
     Group2 = lists:reverse([PP | Group]),
     lists:reverse([Group2 | Groups]).
-                   
+
+-ifdef(megaco_parser_inline).
+-compile({inline,[{parse_prop_value,4}]}).
+-endif.
 parse_prop_value(Chars, Name, Group, Groups) ->
     Value = [],
     do_parse_prop_value(Chars, Name, Value, Group, Groups).
 
 do_parse_prop_value([Char | Rest], Name, Value, Group, Groups) ->
-    case ?classify_char(Char) of
-        end_of_line ->
+    if
+        ?end_of_line(Char) ->
             %% Now we have a complete "name=value" pair
             PP = make_prop_parm(Name, Value),
             parse_prop_name(Rest, [PP | Group], Groups);
-        _ ->
+        true ->
             do_parse_prop_value(Rest, Name, [Char | Value], Group, Groups)
     end;
 do_parse_prop_value([], Name, Value, Group, Groups) ->
@@ -1657,37 +1836,65 @@ do_parse_prop_value([], Name, Value, Group, Groups) ->
     Group2 = lists:reverse([PP | Group]),
     lists:reverse([Group2 | Groups]).
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{make_prop_parm,2}]}).
+-endif.
 make_prop_parm(Name, Value) ->
     #'PropertyParm'{name  = lists:reverse(Name),
                     value = [lists:reverse(Value)]}.
 
-ensure_uint({_TokenTag, Line, Val}, Min, Max) when integer(Val) ->
-    if
-        integer(Min), Val >= Min ->
-            if
-                integer(Max), Val =< Max ->
-                    Val;
-                Max == infinity ->
-                    Val;
-                true ->
-                    return_error(Line, {too_large_integer, Val, Max})
-            end;
-        true ->
-            return_error(Line, {too_small_integer, Val, Min})
-    end;
-ensure_uint({TokenTag, Line, Text}, Min, Max) ->
-    case catch list_to_integer(Text) of
-        {'EXIT', _} ->
-            return_error(Line, {not_an_integer, Text});
-        Val when integer(Val) ->
-            ensure_uint({TokenTag, Line, Val}, Min, Max)
-   end;
-ensure_uint(Val, Min, Max) ->
-    ensure_uint({uint, 0, Val}, Min, Max).
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_uint,3}]}).
+-endif.
+ensure_uint(Token, Min, Max) ->
+    case Token of
+	{_TokenTag, Line, Val} when is_integer(Val) ->
+	    ensure_uint(Val, Min, Max, Line);
+	{_TokenTag, Line, Text} ->
+	    case (catch list_to_integer(Text)) of
+		{'EXIT', _} ->
+		    return_error(Line, {not_an_integer, Text});
+		Val when is_integer(Val) ->
+		    ensure_uint(Val, Min, Max, Line)
+	    end;
+	Val when is_integer(Val) ->
+	    ensure_uint(Val, Min, Max, 0);
+	Text ->
+	    case (catch list_to_integer(Text)) of
+		{'EXIT', _} ->
+		    return_error(0, {not_an_integer, Text});
+		Val when is_integer(Val) ->
+		    ensure_uint(Val, Min, Max, 0)
+	    end
+    end.
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_uint,4}]}).
+-endif.
+ensure_uint(Val, Min, Max, Line) ->
+    if 
+	is_integer(Min) andalso (Val >= Min) ->
+	    if
+		is_integer(Max) andalso (Val =< Max) ->
+		    Val;
+		Max =:= infinity ->
+		    Val;
+		true ->
+		    return_error(Line, {too_large_integer, Val, Max})
+	    end;
+	true ->
+	    return_error(Line, {too_small_integer, Val, Min})
+    end.
+
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_uint16,1}]}).
+-endif.
 ensure_uint16(Int) ->
     ensure_uint(Int, 0, 65535).
 
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_uint32,1}]}).
+-endif.
 ensure_uint32(Int) ->
     ensure_uint(Int, 0, 4294967295) .
 
@@ -1717,14 +1924,18 @@ hex_to_int([Char], Acc) ->
     Int = hchar_to_int(Char),
     lists:reverse([Int|Acc]).
 
-hchar_to_int(Char) when $0 =< Char, Char =< $9 ->
+hchar_to_int(Char) when ($0 =< Char) andalso (Char =< $9) ->
     Char - $0;
-hchar_to_int(Char) when $A =< Char, Char =< $F ->
+hchar_to_int(Char) when ($A =< Char) andalso (Char =< $F) ->
     Char - $A + 10; % OTP-4710
-hchar_to_int(Char) when $a =< Char, Char =< $f ->
+hchar_to_int(Char) when ($a =< Char) andalso (Char =< $f) ->
     Char - $a + 10. % OTP-4710
 
-value_of({_TokenTag, _Line, Text}) ->
+-ifdef(megaco_parser_inline).
+-compile({inline,[{value_of,1}]}).
+-endif.
+value_of(Token) ->
+    {_TokenTag, _Line, Text} = Token, 
     Text.
 
 

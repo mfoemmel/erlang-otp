@@ -66,6 +66,7 @@
              qlc_pt,
 	     queue,
 	     random,
+	     re,
 	     regexp,
 	     sets,
 	     shell,

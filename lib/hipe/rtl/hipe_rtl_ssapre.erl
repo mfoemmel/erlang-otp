@@ -1482,20 +1482,18 @@ pp_instr(I, Graph) ->
       pp_expr(I),
       io:format(standard_io, "~n", []);
     _ ->
-      case catch ?RTL:pp_instr(standard_io, I) of
- 	{'EXIT', _} -> 
- 	  case I of
- 	    #pre_candidate{} ->
- 	      pp_pre(I);
- 	    #xsi{} ->
- 	      pp_xsi(I);
- 	    #xsi_link{} ->
- 	      pp_xsi_link(I#xsi_link.num, Graph);
- 	    _->
- 	      io:format(standard_io,"*** ~w ***~n", [I])
- 	  end;
- 	_ ->
- 	  ok
+      try ?RTL:pp_instr(standard_io, I)
+      catch _:_ ->
+ 	case I of
+ 	  #pre_candidate{} ->
+ 	    pp_pre(I);
+ 	  #xsi{} ->
+ 	    pp_xsi(I);
+ 	  #xsi_link{} ->
+ 	    pp_xsi_link(I#xsi_link.num, Graph);
+ 	  _->
+ 	    io:format(standard_io,"*** ~w ***~n", [I])
+ 	end
       end
   end.
 

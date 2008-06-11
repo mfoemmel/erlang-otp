@@ -96,45 +96,39 @@ ceiling(X) ->
 color_heuristic_rec(IG, Min, Max, Safe, MaxNodes, Target, MaxDepth) ->
   case MaxDepth of
     0 ->
-      case catch color(IG, ordsets:from_list(init_stackslots(Max)),
-		       MaxNodes, Target) of
-	foo ->
+      case color(IG, ordsets:from_list(init_stackslots(Max)),
+		 MaxNodes, Target) of
+	not_easily_colorable ->
 	  color(IG, ordsets:from_list(init_stackslots(Safe)),
 		MaxNodes, Target);
 	Else ->
 	  Else
       end;
     _ ->
-      
-      % This can be increased from 2, and by this the heuristic can be
-      % exited earlier, but the same can be achived by decreasing the
-      % recursion depth. This should not be decreased below 2.
+      %% This can be increased from 2, and by this the heuristic can be
+      %% exited earlier, but the same can be achived by decreasing the
+      %% recursion depth. This should not be decreased below 2.
       case (Max - Min) < 2 of
         true ->
-          case catch color(IG, ordsets:from_list(init_stackslots(Max)),
-			   MaxNodes, Target) of
-            foo ->
+          case color(IG, ordsets:from_list(init_stackslots(Max)),
+		     MaxNodes, Target) of
+            not_easily_colorable ->
               color(IG, ordsets:from_list(init_stackslots(Safe)),
                     MaxNodes, Target);
             Else ->
               Else
           end;
         false ->
-          {Cols, MaxColors} =
-            case catch color(IG, 
-			     ordsets:from_list(init_stackslots(
-			     ceiling((Max - Min)/2)+Min)),
-			     MaxNodes, Target) of
-              foo ->
-                color_heuristic_rec(IG, ceiling((Max - Min)/2)+Min, Max,
-                                    Safe, MaxNodes, Target, MaxDepth - 1);
-              Else ->
-                {_TmpCols, TmpMaxColors} = Else,
-                color_heuristic_rec(IG, Min, TmpMaxColors, 
-                                    ceiling((Max - Min)/2)+Min, MaxNodes,
-                                    Target, MaxDepth - 1)
-            end,
-	  {Cols, MaxColors}
+	  NumSlots = ceiling((Max - Min)/2) + Min,
+	  case color(IG, ordsets:from_list(init_stackslots(NumSlots)),
+		     MaxNodes, Target) of
+	    not_easily_colorable ->
+	      color_heuristic_rec(IG, NumSlots, Max,
+				  Safe, MaxNodes, Target, MaxDepth - 1);
+	    {_TmpCols, TmpMaxColors} ->
+	      color_heuristic_rec(IG, Min, TmpMaxColors,
+				  NumSlots, MaxNodes, Target, MaxDepth - 1)
+	  end
       end
   end.
 
@@ -160,11 +154,8 @@ remap_temp_map0(Cols, [_Y|Ys], SpillIndex) ->
 %%
 
 build_ig(CFG, Target, TempMap) ->
-  case catch build_ig0(CFG, Target, TempMap) of
-    {'EXIT',Rsn} ->
-      exit({regalloc, build_ig, Rsn});
-    Else ->
-      Else
+  try build_ig0(CFG, Target, TempMap)
+  catch error:Rsn -> exit({regalloc, build_ig, Rsn})
   end.
 
 %% Creates an ets-table consisting of the keys given in List, with the values
@@ -247,13 +238,13 @@ map_spilled_temporaries0([_X|Xs]) ->
 
 interference_arcs([], _Live, IG) ->
   IG;
-interference_arcs([X|Xs], Live,IG) ->
+interference_arcs([X|Xs], Live, IG) ->
   interference_arcs(Xs, Live, i_arcs(X, Live, IG)).
 
 i_arcs(_X, [], IG) -> 
   IG;
 i_arcs(X, [Y|Ys], IG) ->
-  i_arcs(X, Ys, add_edge(X,Y, IG)).
+  i_arcs(X, Ys, add_edge(X, Y, IG)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -272,26 +263,27 @@ i_arcs(X, [Y|Ys], IG) ->
 %%     throw an exception (the caller should retry with more stack slots)
 
 color(IG, StackSlots, NumNodes, Target) ->
-  case catch color_0(IG, StackSlots, NumNodes, Target) of
-    {'EXIT',Rsn} ->
+  try
+    color_0(IG, StackSlots, NumNodes, Target)
+  catch
+    error:Rsn ->
       ?error_msg("Coloring failed with ~p~n", [Rsn]),
-      ?EXIT(Rsn);
-    Else ->
-      Else
+      ?EXIT(Rsn)
   end.
 
 color_0(IG, StackSlots, NumNodes, Target) -> 
   ?report("simplification of IG~n", []),
   K = ordsets:size(StackSlots),
   Nodes = list_ig(IG),
-
   Low = low_degree_nodes(Nodes, K),
-
   ?report(" starting with low degree nodes ~p~n", [Low]),
   EmptyStk = [],
-  Stk = simplify(Low, NumNodes, IG, K, EmptyStk, Target),
-  ?report(" selecting colors~n", []),
-  select(Stk, IG, StackSlots, NumNodes).
+  case simplify(Low, NumNodes, IG, K, EmptyStk, Target) of
+    non_simplifiable -> not_easily_colorable;
+    Stk ->
+      ?report(" selecting colors~n", []),
+      select(Stk, IG, StackSlots, NumNodes)
+  end.
 
 %%%%%%%%%%%%%%%%%%%%
 %%
@@ -315,13 +307,12 @@ simplify(Low, NumNodes, IG, K, Stk, Target) ->
 
 simplify_ig([], 0, _IG, _K, Stk, _Vis, _Target) ->
   Stk;
-simplify_ig([], N, _IG, _K, _Stk, _Vis, _Target) 
-  when N > 0 ->
+simplify_ig([], N, _IG, _K, _Stk, _Vis, _Target) when N > 0 ->
   ?report3("N: ~w Stk: ~w N+Stk ~w\n", [N,length(Stk),N+length(Stk)]),
-  throw(foo);
+  non_simplifiable;
 simplify_ig([X|Xs], N, IG, K, Stk, Vis, Target) ->
   ?report3("N: ~w Stk: ~w N+Stk ~w\n", [N,length(Stk),N+length(Stk)]),
-  case is_visited(X,Vis) of
+  case is_visited(X, Vis) of
     true ->
       ?report("  node ~p already visited~n", [X]),
       simplify_ig(Xs, N, IG, K, Stk, Vis, Target);

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1999-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %
 
 -module(odbc).
@@ -678,8 +680,10 @@ handle_info({tcp, Socket, BinData}, State = #state{state = disconnecting,
  	ok -> 
  	    ok;
  	{error, Reason} ->
- 	    error_logger:error_report("ODBC could not end connection "  
- 				      "gracefully due to ~p~n", [Reason])
+	    Report = 
+		io_lib:format("ODBC could not end connection "  
+			      "gracefully due to ~p~n", [Reason]),
+ 	    error_logger:error_report(Report)
     end,
     
     {stop, normal, State#state{reply_to = undefined}};
@@ -754,11 +758,11 @@ handle_info({'DOWN', _Ref, _Type, Process, Reason}, State) ->
 %% so we do not want to crash, but we make a log entry as it is an
 %% unwanted behaviour.) 
 handle_info(Info, State) ->
-    error_logger:error_report("ODBC: received unexpected info: ~p~n",
-			      [Info]),
+    Report = io_lib:format("ODBC: received unexpected info: ~p~n", [Info]),
+    error_logger:error_report(Report),
     {noreply, State}.
 
-%%--------------------------------------------------------------------------
+%%-------------------------------------------------------------------------
 %% terminate/2 and code_change/3
 %%--------------------------------------------------------------------------
 
@@ -880,47 +884,53 @@ decode(Binary) ->
     end.
 
 %%-------------------------------------------------------------------------
-fix_params({sql_integer, Values}) ->
-    {?USER_INT, [256 | Values]};
-fix_params({sql_smallint, Values}) ->
-    {?USER_SMALL_INT, [256 | Values]};
-fix_params({sql_tinyint, Values}) ->
-    {?USER_TINY_INT, [256 | Values]};
-fix_params({{sql_decimal, Precision, 0}, 
-	    Values}) when Precision >= 0, Precision =< 9 ->
-    {?USER_DECIMAL, Precision, 0, [256 | Values]};
-fix_params({{sql_decimal, Precision, Scale}, Values}) ->
-   {?USER_DECIMAL, Precision, Scale, Values};
-fix_params({{sql_numeric, Precision, 0}, 
-	    Values}) when Precision >= 0, Precision =< 9 ->
-    {?USER_NUMERIC, Precision, 0, [256 | Values]};
-fix_params({{sql_numeric, Precision, Scale}, Values}) ->
-    {?USER_NUMERIC, Precision, Scale, Values};
-fix_params({{sql_char, Max}, Values}) ->
-    NewValues =
-	case (catch 
-	      lists:map(fun(Str) -> Str ++ [?STR_TERMINATOR] end, Values)) of
-	    {'EXIT', {badarg, _}} -> 
-		exit({badarg, odbc, param_query, 'Params'}); 
-	    Result ->
-		Result
-	end,
-    {?USER_CHAR, Max, NewValues};
-fix_params({{sql_varchar, Max}, Values}) ->
-    NewValues =
-	case (catch 
-	      lists:map(fun(Str) -> Str ++ [?STR_TERMINATOR] end, Values)) of
-	    {'EXIT', {badarg, _}} -> 
-		exit({badarg, odbc, param_query, 'Params'}); 
-	    Result ->
-		Result
-	end,
-    {?USER_VARCHAR, Max, NewValues};
-fix_params({{sql_float, Precision}, Values}) ->
-    {?USER_FLOAT, Precision, Values};
-fix_params({sql_real, Values}) ->
-    {?USER_REAL, Values};
-fix_params({sql_double, Values}) ->
-    {?USER_DOUBLE, Values};
-fix_params({sql_bit, Values}) ->
-    {?USER_BOOLEAN, Values}.
+fix_params({sql_integer, InOut, Values}) ->
+    {?USER_INT, fix_inout(InOut), [256 | Values]};
+fix_params({sql_smallint, InOut, Values}) ->
+    {?USER_SMALL_INT, fix_inout(InOut), [256 | Values]};
+fix_params({sql_tinyint, InOut, Values}) ->
+    {?USER_TINY_INT, fix_inout(InOut), [256 | Values]};
+fix_params({{sql_decimal, Precision, 0}, InOut, 
+ 	    Values}) when Precision >= 0, Precision =< 9 ->
+    {?USER_DECIMAL, Precision, 0, fix_inout(InOut), [256 | Values]};
+fix_params({{sql_decimal, Precision, Scale}, InOut, Values}) ->
+    {?USER_DECIMAL, Precision, Scale, fix_inout(InOut), Values};
+fix_params({{sql_numeric, Precision, 0}, InOut, 
+ 	    Values}) when Precision >= 0, Precision =< 9 ->
+    {?USER_NUMERIC, Precision, 0, fix_inout(InOut), [256 | Values]};
+fix_params({{sql_numeric, Precision, Scale}, InOut, Values}) ->
+        {?USER_NUMERIC, Precision, Scale, fix_inout(InOut), Values};
+fix_params({{sql_char, Max}, InOut, Values}) ->
+     NewValues =
+ 	case (catch 
+ 	      lists:map(fun(Str) -> Str ++ [?STR_TERMINATOR] end, Values)) of
+ 	    Result ->
+ 		Result
+ 	end,
+    {?USER_CHAR, Max, fix_inout(InOut), NewValues};
+fix_params({{sql_varchar, Max}, InOut, Values}) ->
+     NewValues =
+ 	case (catch 
+ 	      lists:map(fun(Str) -> Str ++ [?STR_TERMINATOR] end, Values)) of
+ 	    Result ->
+ 		Result
+ 	end,
+    {?USER_VARCHAR, Max, fix_inout(InOut), NewValues};
+fix_params({{sql_float, Precision}, InOut, Values}) ->
+    {?USER_FLOAT, Precision, fix_inout(InOut), Values};
+fix_params({sql_real, InOut, Values}) ->
+    {?USER_REAL, fix_inout(InOut), Values};
+fix_params({sql_double, InOut, Values}) ->
+    {?USER_DOUBLE, fix_inout(InOut), Values};
+fix_params({sql_bit, InOut, Values}) ->
+    {?USER_BOOLEAN, fix_inout(InOut), Values};
+%% default is IN %%%
+fix_params({Type, Values}) ->
+    fix_params({Type, in, Values}).
+
+fix_inout(in) ->
+    ?IN;
+fix_inout(out) ->
+    ?OUT;
+fix_inout(inout) ->
+    ?INOUT.

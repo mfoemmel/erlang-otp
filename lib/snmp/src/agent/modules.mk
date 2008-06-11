@@ -5,6 +5,7 @@ BEHAVIOUR_MODULES = \
 	snmpa_error_report \
 	snmpa_network_interface \
 	snmpa_network_interface_filter \
+	snmpa_notification_delivery_info_receiver \
 	snmpa_notification_filter \
 	snmpa_set_mechanism
 

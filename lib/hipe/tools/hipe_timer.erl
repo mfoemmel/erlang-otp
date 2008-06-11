@@ -1,18 +1,18 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/03/18 23:23:50 happi>
+%% Time-stamp: <2008-04-20 14:53:36 richard>
 %% ====================================================================
 %%  Filename : 	hipe_timer.erl
 %%  Module   :	hipe_timer
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2001-03-15 Erik Johansson (happi@csd.uu.se): 
+%%  History  :	* 2001-03-15 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2006/07/25 07:37:35 $
-%%              $Revision: 1.3 $
+%%              $Author: richardc $
+%%              $Date: 2008/04/20 13:01:14 $
+%%              $Revision: 1.4 $
 %% ====================================================================
 %%  Exports  :
 %%

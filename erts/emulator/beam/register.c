@@ -55,8 +55,12 @@ reg_safe_read_lock(Process *c_p, ErtsProcLocks *c_p_locks)
 	ASSERT(c_p_locks);
 	ASSERT(*c_p_locks);
 
-	if (reg_try_read_lock() != EBUSY)
+	if (reg_try_read_lock() != EBUSY) {
+#ifdef ERTS_ENABLE_LOCK_CHECK
+	    erts_proc_lc_might_unlock(c_p, *c_p_locks);
+#endif
 	    return;
+	}
 
 	/* Release process locks in order to avoid deadlock */
 	erts_smp_proc_unlock(c_p, *c_p_locks);
@@ -74,8 +78,12 @@ reg_safe_write_lock(Process *c_p, ErtsProcLocks *c_p_locks)
 	ASSERT(c_p_locks);
 	ASSERT(*c_p_locks);
 
-	if (reg_try_write_lock() != EBUSY)
+	if (reg_try_write_lock() != EBUSY) {
+#ifdef ERTS_ENABLE_LOCK_CHECK
+	    erts_proc_lc_might_unlock(c_p, *c_p_locks);
+#endif
 	    return;
+	}
 
 	/* Release process locks in order to avoid deadlock */
 	erts_smp_proc_unlock(c_p, *c_p_locks);

@@ -57,6 +57,7 @@ cl(["--show"|Opts]) -> {{mode,?SHOW}, Opts};
 cl(["--show-exported"|Opts]) -> {{mode,?SHOW_EXPORTED}, Opts};
 cl(["--annotate"|Opts]) -> {{mode,?ANNOTATE}, Opts};
 cl(["--annotate-inc-files"|Opts]) -> {{mode,?ANNOTATE_INC_FILES}, Opts};
+cl(["--plt",Plt|Opts]) -> {{plt, Plt}, Opts};
 cl(["-D"++Defines|Opts]) ->
   case Defines of
     "" -> typer:error("no defines specified after -D");
@@ -118,7 +119,9 @@ analyze_result({macros,Val}, Args, Analysis) ->
   {Args, Analysis#typer_analysis{macros=NewVal}};
 analyze_result({inc,Val}, Args, Analysis) -> 
   NewVal = Analysis#typer_analysis.includes ++ [Val],
-  {Args, Analysis#typer_analysis{includes=NewVal}}.
+  {Args, Analysis#typer_analysis{includes=NewVal}};
+analyze_result({plt, Plt}, Args, Analysis) ->
+  {Args, Analysis#typer_analysis{plt=Plt}}.
 
 %%--------------------------------------------------------------------
 
@@ -133,7 +136,7 @@ version_message() ->
 
 -spec(help_message/0 :: () -> no_return()).
 help_message() ->
-  S = " Usage: typer [--help] [--version] [--comments]
+  S = " Usage: typer [--help] [--version] [--comments] [--plt PltFile]
               [--show | --show-exported | --annotate | --annotate-inc-files]
               [-Ddefine]* [-I include_dir]* [-T application]* [-r] file*
 
@@ -152,6 +155,8 @@ help_message() ->
        all .erl files (use this option with caution)
    --comments
        Print type information using comments, not type contracts
+   --plt PltFile
+       Use the specified dialyzer plt file rather than the default one
    -T file*
        The file(s) already contain type annotations and these annotations
        are to be trusted in order to print contracts for the rest of the files

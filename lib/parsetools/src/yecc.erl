@@ -72,6 +72,7 @@
           endsymbol = [],
           expect_shift_reduce = [],
           expect_n_states = [],
+          header = [],
           erlang_code = none
          }).
 
@@ -418,7 +419,7 @@ outfile(St0) ->
     case file:open(St0#yecc.outfile, [write, delayed_write]) of
         {ok, Outport} ->
             try 
-                generate(St0#yecc{outport = Outport, line = 0})
+                generate(St0#yecc{outport = Outport, line = 1})
             catch 
                 throw: St1  ->
                     St1;
@@ -485,6 +486,9 @@ parse_grammar(Inport, Line, St) ->
 
 parse_grammar(eof, _Inport, _NextLine, St) ->
     St;
+parse_grammar({#symbol{name = 'Header'}, Ss}, Inport, NextLine, St0) ->
+    St1 = St0#yecc{header = [S || {string,_,S} <- Ss]},
+    parse_grammar(Inport, NextLine, St1);
 parse_grammar({#symbol{name = 'Erlang'}, [#symbol{name = code}]}, _Inport, 
               NextLine, St) ->
     St#yecc{erlang_code = NextLine};
@@ -553,7 +557,9 @@ read_grammar(Inport, Line) ->
                                        {prec, Ps};
                                    true -> 
                                        Ss
-                               end
+                               end;
+                           {ok, Ss} -> 
+                               Ss
                        end}
     end.
 
@@ -745,9 +751,9 @@ write_file(St0) ->
           inport = Inport, outport = Outport,
           nonterminals = Nonterminals} = St0,
     {St10, N_lines, LastErlangCodeLine} = 
-        output_header(Outport, Inport, St0),
-    St20 = nl(St10),
-    St25 = St20#yecc{line = N_lines+2},
+        output_prelude(Outport, Inport, St0),
+    St20 = St10#yecc{line = St10#yecc.line + N_lines},
+    St25 = nl(St20),
     St30 = output_file_directive(St25, Outfile, St25#yecc.line),
     St40 = nl(St30),
     St50 = output_actions(St40, StateJumps, StateInfo),
@@ -1863,10 +1869,11 @@ format_conflict({Symbol, N, Reduce, Confl}) ->
         iolist_to_binary([" erlang:error({yecc_bug,\"",?CODE_VERSION,"\",",
                           io_lib:fwrite(M, A), "}).\n\n"])).
 
-%% Returns number of written newlines.
-output_header(Outport, Inport, St0) when St0#yecc.includefile =:= [] ->
-    #yecc{infile = Infile, module = Module} = St0,
-    St10 = fwrite(St0, <<"-module(~w).\n">>, [Module]),
+%% Returns number of newlines in included files.
+output_prelude(Outport, Inport, St0) when St0#yecc.includefile =:= [] ->
+    St5 = output_header(St0),
+    #yecc{infile = Infile, module = Module} = St5,
+    St10 = fwrite(St5, <<"-module(~w).\n">>, [Module]),
     St20 = 
         fwrite(St10,
                <<"-export([parse/1, parse_and_scan/1, format_error/1]).\n">>,
@@ -1878,7 +1885,7 @@ output_header(Outport, Inport, St0) when St0#yecc.includefile =:= [] ->
             Next_line ->
                 St_10 = output_file_directive(St20, Infile, Next_line-1),
                 Nmbr_of_lines = include1([], Inport, Outport),
-                {St_10, Nmbr_of_lines + 1, 
+                {St_10, Nmbr_of_lines, 
                  {last_erlang_code_line, Next_line+Nmbr_of_lines}}
     end,
     St30 = nl(St25),
@@ -1887,22 +1894,27 @@ output_header(Outport, Inport, St0) when St0#yecc.includefile =:= [] ->
     %% Maybe one could assume there are no warnings in this file.
     St = output_file_directive(St30, IncludeFile, 0),
     N_lines_2 = include(St, IncludeFile, Outport),
-    {St, 4 + N_lines_1 + N_lines_2, LastErlangCodeLine};
-output_header(Outport, Inport, St0) ->
-    #yecc{infile = Infile, module = Module, includefile = Includefile} = St0,
-    St10 = fwrite(St0, <<"-module(~w).\n">>, [Module]),
+    {St, N_lines_1 + N_lines_2, LastErlangCodeLine};
+output_prelude(Outport, Inport, St0) ->
+    St5 = output_header(St0),
+    #yecc{infile = Infile, module = Module, includefile = Includefile} = St5,
+    St10 = fwrite(St5, <<"-module(~w).\n">>, [Module]),
     St20 = output_file_directive(St10, Includefile, 0),
     N_lines_1 = include(St20, Includefile, Outport),
     St30 = nl(St20),
     case St30#yecc.erlang_code of 
         none ->
-            {St30, N_lines_1 + 3, no_erlang_code};
+            {St30, N_lines_1, no_erlang_code};
         Next_line ->
             St = output_file_directive(St30, Infile, Next_line-1),
             Nmbr_of_lines = include1([], Inport, Outport),
-            {St, Nmbr_of_lines + 1 + N_lines_1 + 3, 
+            {St, Nmbr_of_lines + N_lines_1, 
              {last_erlang_code_line, Next_line+Nmbr_of_lines}}
     end.
+
+output_header(St0) ->
+    lists:foldl(fun(Str, St) -> fwrite(St, <<"~s\n">>, [Str]) 
+                end, St0, St0#yecc.header).
 
 output_goto(St, [{_Nonterminal, []} | Go], StateInfo) ->
     output_goto(St, Go, StateInfo);

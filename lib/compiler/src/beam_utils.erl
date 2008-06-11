@@ -139,7 +139,6 @@ code_at(L, Ll) ->
 bif_to_test(is_atom,     [_]=Ops, Fail) -> {test,is_atom,Fail,Ops};
 bif_to_test(is_boolean,  [_]=Ops, Fail) -> {test,is_boolean,Fail,Ops};
 bif_to_test(is_binary,   [_]=Ops, Fail) -> {test,is_binary,Fail,Ops};
-bif_to_test(is_bitstr,   [_]=Ops, Fail) -> {test,is_bitstr,Fail,Ops}; %XXX Deprecated
 bif_to_test(is_bitstring,[_]=Ops, Fail) -> {test,is_bitstr,Fail,Ops};
 bif_to_test(is_constant, [_]=Ops, Fail) -> {test,is_constant,Fail,Ops};
 bif_to_test(is_float,    [_]=Ops, Fail) -> {test,is_float,Fail,Ops};

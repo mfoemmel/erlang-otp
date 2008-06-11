@@ -2,7 +2,7 @@
 
 {application, stdlib,
  [{description, "ERTS  CXC 138 10"},
-  {vsn, "1.15.2"},
+  {vsn, "1.15.3"},
   {modules, [array,
 	     base64,
 	     beam_lib,
@@ -66,6 +66,7 @@
              qlc_pt,
 	     queue,
 	     random,
+	     re,
 	     regexp,
 	     sets,
 	     shell,

@@ -15,6 +15,8 @@
  * 
  *     $Id$
  */
+#ifndef __ERROR_H__
+#define __ERROR_H__
 
 /*
  * There are three primary exception classes:
@@ -187,3 +189,5 @@ struct StackTrace {
     int depth;	/* number of saved pointers in trace[] */
     Eterm *trace[1];  /* varying size - must be last in struct */
 };
+
+#endif /* __ERROR_H__ */

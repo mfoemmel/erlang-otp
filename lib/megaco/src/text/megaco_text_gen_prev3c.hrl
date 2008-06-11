@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2005-2007</year>
+%% <year>2005-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -122,7 +122,7 @@ enc_Message(Val, State)
      enc_Message_messageBody(Val#'Message'.messageBody, State)
     ].
 
-enc_version(Val, State) when integer(Val), Val >= 0 ->
+enc_version(Val, State) when is_integer(Val) andalso (Val >= 0) ->
     enc_DIGIT(Val, State, 0, 99).
 
 enc_Message_messageBody({'Message_messageBody',Val}, State) ->
@@ -141,7 +141,7 @@ enc_Message_messageBody_transactions({'Message_messageBody_transactions',Val},
 				     State) ->
     enc_Message_messageBody_transactions(Val, State);
 enc_Message_messageBody_transactions(Val, State)
-  when list(Val), Val /= []->
+  when is_list(Val) andalso (Val =/= []) ->
     [enc_Transaction(T, State) || T <- Val].
 
 enc_MId({'MId',Val}, State) ->
@@ -223,7 +223,7 @@ enc_V4hex(Val, State) ->
 
 enc_IP6Address(#'IP6Address'{portNumber = asn1_NOVALUE,
 			     address    = Addr}, State) 
-  when is_list(Addr) andalso (length(Addr) == 16) ->
+  when is_list(Addr) andalso (length(Addr) =:= 16) ->
     [
      $[,
      enc_IP6Address_address(Addr, State),
@@ -231,7 +231,7 @@ enc_IP6Address(#'IP6Address'{portNumber = asn1_NOVALUE,
     ];
 enc_IP6Address(#'IP6Address'{portNumber = PortNumber,
 			     address    = Addr}, State) 
-  when is_list(Addr) andalso (length(Addr) == 16) ->
+  when is_list(Addr) andalso (length(Addr) =:= 16) ->
     [
      $[,
      enc_IP6Address_address(Addr, State),
@@ -517,7 +517,7 @@ enc_ContextID(Val, State) ->
 	?megaco_all_context_id    -> $*;
 	?megaco_null_context_id   -> $-;
 	?megaco_choose_context_id -> $$;
-	Int when integer(Int) -> enc_UINT32(Int, State)
+	Int when is_integer(Int) -> enc_UINT32(Int, State)
     end.
 
 enc_ActionRequest(Bin, _State) when is_binary(Bin) ->
@@ -598,12 +598,12 @@ enc_ActionReply(#'ActionReply'{contextId       = Id,
     ].
 
 do_enc_ActionReply(asn1_NOVALUE, CtxRep, [], State) 
-  when CtxRep =/= asn1_NOVALUE ->
+  when (CtxRep =/= asn1_NOVALUE) ->
     [
      enc_ContextRequest(CtxRep, ?INC_INDENT(State))
     ];
 do_enc_ActionReply(asn1_NOVALUE, CtxRep, CmdRep, State) 
-  when CtxRep =/= asn1_NOVALUE, CmdRep =/= [] ->
+  when (CtxRep =/= asn1_NOVALUE) andalso (CmdRep =/= []) ->
     [
      enc_ContextRequest(CtxRep, ?INC_INDENT(State)),
      ?COMMA_INDENT(?INC_INDENT(State)), 
@@ -611,13 +611,13 @@ do_enc_ActionReply(asn1_NOVALUE, CtxRep, CmdRep, State)
 	      ?INC_INDENT(State))
     ];
 do_enc_ActionReply(asn1_NOVALUE, asn1_NOVALUE, CmdRep, State) 
-  when CmdRep =/= [] ->
+  when (CmdRep =/= []) ->
     [
      enc_list([{CmdRep, fun enc_CommandReply/2}],
 	      ?INC_INDENT(State))
     ];
 do_enc_ActionReply(ED, CtxRep, [], State) 
-  when ED =/= asn1_NOVALUE, CtxRep =/= asn1_NOVALUE ->
+  when (ED =/= asn1_NOVALUE) andalso (CtxRep =/= asn1_NOVALUE) ->
     [
      enc_ContextRequest(CtxRep, ?INC_INDENT(State)),
      ?COMMA_INDENT(?INC_INDENT(State)), 
@@ -625,14 +625,16 @@ do_enc_ActionReply(ED, CtxRep, [], State)
  	      ?INC_INDENT(State))
     ];
 do_enc_ActionReply(ED, asn1_NOVALUE, CmdRep, State) 
-  when ED =/= asn1_NOVALUE, CmdRep =/= [] ->
+  when (ED =/= asn1_NOVALUE) andalso (CmdRep =/= []) ->
     [
      enc_list([{CmdRep, fun enc_CommandReply/2},
 	       {[ED],   fun enc_ErrorDescriptor/2}], % Indention cosmetics
  	      ?INC_INDENT(State))
     ];
 do_enc_ActionReply(ED, CtxRep, CmdRep, State) 
-  when ED =/= asn1_NOVALUE, CtxRep =/= asn1_NOVALUE, CmdRep =/= [] ->
+  when (ED     =/= asn1_NOVALUE) andalso 
+       (CtxRep =/= asn1_NOVALUE) andalso 
+       (CmdRep =/= []) ->
     [
      enc_ContextRequest(CtxRep, ?INC_INDENT(State)),
      ?COMMA_INDENT(?INC_INDENT(State)), 
@@ -641,7 +643,7 @@ do_enc_ActionReply(ED, CtxRep, CmdRep, State)
  	      ?INC_INDENT(State))
     ];
 do_enc_ActionReply(ED, asn1_NOVALUE, [], State) 
-  when ED =/= asn1_NOVALUE ->
+  when (ED =/= asn1_NOVALUE) ->
     [
      enc_ErrorDescriptor(ED, ?INC_INDENT(State))
     ].
@@ -958,7 +960,7 @@ enc_CommandReply({Tag, Val}, State) ->
      end.
 
 enc_TopologyRequest(Val, State)
-  when list(Val) ->
+  when is_list(Val) ->
     [
      ?TopologyToken,
      ?LBRKT_INDENT(State),
@@ -1018,7 +1020,7 @@ enc_TopologyRequest1(
 		     topologyDirection          = TD,
  		     streamID                   = SID,   % OPTIONAL
  		     topologyDirectionExtension = TDE},  % OPTIONAL
-  State) when (SID =/= asn1_NOVALUE) and (TDE =/= asn1_NOVALUE) ->
+  State) when (SID =/= asn1_NOVALUE) andalso (TDE =/= asn1_NOVALUE) ->
     [
      enc_TerminationID(From, State),
      ?COMMA_INDENT(State),
@@ -1452,7 +1454,7 @@ enc_IndAudTerminationStateDescriptor(
 				      eventBufferControl = asn1_NOVALUE,
 				      serviceState       = asn1_NOVALUE,
 				      serviceStateSel    = SSS}, 
-  State) when SSS =/= asn1_NOVALUE ->
+  State) when (SSS =/= asn1_NOVALUE) ->
     [
      ?TerminationStateToken,
      ?LBRKT_INDENT(State),
@@ -1962,7 +1964,7 @@ enc_termIDList({'TerminationIDList',Val}, State) ->
 enc_termIDList([Singleton], State) ->
     enc_TerminationID(Singleton, State);
 enc_termIDList(TidList, State) 
-  when is_list(TidList) and (length(TidList) > 1) ->
+  when is_list(TidList) andalso (length(TidList) > 1) ->
 %%     d("enc_termIDList -> entry with"
 %%       "~n   TidList: ~p", [TidList]),
     State2 = ?INC_INDENT(State),
@@ -1981,7 +1983,7 @@ enc_TerminationID(Tid, State)
     List = [{Tid#megaco_term_id.id, fun enc_tid_component/2 }],
     enc_list(List, State, fun(_S) -> ?SLASH end, false).    
 
-enc_tid_component(Component, State) when list(Component) ->
+enc_tid_component(Component, State) when is_list(Component) ->
     [enc_tid_sub_component(Sub, State) || Sub <- Component];
 enc_tid_component(Invalid, _State) ->
     error({invalid_id_list_component, Invalid}).
@@ -1990,7 +1992,7 @@ enc_tid_sub_component(Sub, _State) ->
     case Sub of
 	all    -> ?megaco_all;
 	choose -> ?megaco_choose;
-	Char when integer(Char) -> Char
+	Char when is_integer(Char) -> Char
     end.
 
 %% mediaDescriptor      = MediaToken LBRKT mediaParm *(COMMA mediaParm) RBRKT
@@ -2129,9 +2131,26 @@ enc_Name(Val, State) ->
 
 enc_PkgdName({'PkgdName', Val}, State) ->
     enc_PkgdName(Val, State);
-enc_PkgdName(Val, State) ->
+enc_PkgdName(Val, _State) ->
     %% BUGBUG:  pkgdName =  (NAME / "*")  SLASH  (ItemID / "*" )
-    enc_OCTET_STRING(Val, State, 1, 64).
+    %% enc_OCTET_STRING(Val, _State, 1, 64).
+    if 
+	is_list(Val) ->
+	    Length = length(Val),
+	    if
+		(Length >= 1) ->
+		    if
+			(Length =< 64) ->
+			    Val;
+			true ->
+			    error({pkgdName_toolong, Length, 64})
+		    end;
+		true ->
+		    error({pkgdName_tooshort, Length, 1})
+	    end;
+	true ->
+	    error({invalid_PkgdName, Val})
+    end.
 
 enc_localDescriptor(Val, State) 
   when is_record(Val, 'LocalRemoteDescriptor') ->
@@ -2174,7 +2193,7 @@ enc_LocalRemoteDescriptor(Val, State)
 enc_PropertyGroup({'PropertyGroup',Val}, RequiresV, State) ->
     enc_PropertyGroup(Val, RequiresV, State);
 enc_PropertyGroup([H | _T] = List, mand_v, State) 
-  when is_record(H, 'PropertyParm') andalso (H#'PropertyParm'.name == "v") ->
+  when is_record(H, 'PropertyParm') andalso (H#'PropertyParm'.name =:= "v") ->
     enc_PropertyGroup(List, opt_v, State);
 enc_PropertyGroup(PG, opt_v, State) ->
     [
@@ -2316,7 +2335,7 @@ enc_EventsDescriptor(#'EventsDescriptor'{requestID = asn1_NOVALUE,
     ];
 enc_EventsDescriptor(#'EventsDescriptor'{requestID = RID,
 					 eventList = Evs}, State) 
-  when (RID =/= asn1_NOVALUE) and (Evs =/= []) ->
+  when (RID =/= asn1_NOVALUE) andalso (Evs =/= []) ->
     [
      ?EventsToken,
      ?EQUAL,
@@ -2382,7 +2401,7 @@ decompose_requestedActions(#'RequestedActions'{keepActive            = KA,
 					       signalsDescriptor     = SD,
 					       notifyBehaviour       = NB,
 					       resetEventsDescriptor = RED}) 
-  when (KA =/= true) and ((SD =/= asn1_NOVALUE) and (SD =/= [])) ->
+  when (KA =/= true) andalso ((SD =/= asn1_NOVALUE) andalso (SD =/= [])) ->
     [
      {[EDM],      fun enc_EventDM/2},
      {[{SE, SD}], fun enc_embedWithSig/2},
@@ -2397,7 +2416,7 @@ decompose_requestedActions(#'RequestedActions'{keepActive            = KA,
 					       signalsDescriptor     = SD,
 					       notifyBehaviour       = NB,
 					       resetEventsDescriptor = RED}) 
-  when (SD == asn1_NOVALUE) or (SD == []) ->
+  when (SD =:= asn1_NOVALUE) orelse (SD =:= []) ->
     [
      {[KA],  fun enc_keepActive/2},
      {[EDM], fun enc_EventDM/2},
@@ -2478,7 +2497,7 @@ enc_EventDM({Tag, Val}, State) ->
 
 
 enc_embedFirst(RID, Evs, State)
-  when (RID =/= asn1_NOVALUE) and (is_list(Evs) and (Evs =/= [])) ->
+  when (RID =/= asn1_NOVALUE) andalso (is_list(Evs) andalso (Evs =/= [])) ->
     %%     d("enc_embedFirst -> entry with"
     %%       "~n   RID: ~p"
     %%       "~n   Evs: ~p", [RID, Evs]),
@@ -2581,7 +2600,7 @@ decompose_secondRequestedActions(
 			    signalsDescriptor     = SD,
 			    notifyBehaviour       = NB,
 			    resetEventsDescriptor = RED}) 
-  when (KA =/= true) and ((SD =/= asn1_NOVALUE) and (SD =/= [])) ->
+  when (KA =/= true) andalso ((SD =/= asn1_NOVALUE) andalso (SD =/= [])) ->
     [
      {[EDM], fun enc_EventDM/2},
      {[SD],  fun enc_embedSig/2},
@@ -2594,7 +2613,7 @@ decompose_secondRequestedActions(
 			    signalsDescriptor     = SD,
 			    notifyBehaviour       = NB,
 			    resetEventsDescriptor = RED}) 
-  when (SD == asn1_NOVALUE) or (SD == []) ->
+  when (SD =:= asn1_NOVALUE) orelse (SD =:= []) ->
     [
      {[KA],  fun enc_keepActive/2},
      {[EDM], fun enc_EventDM/2},
@@ -2619,7 +2638,7 @@ enc_EventBufferDescriptor([], _State) ->
      ?EventBufferToken
     ];
 enc_EventBufferDescriptor(EvSpecs, State) 
-  when is_list(EvSpecs) and (length(EvSpecs) >= 1) ->
+  when is_list(EvSpecs) andalso (length(EvSpecs) >= 1) ->
     [
      ?EventBufferToken,
      ?LBRKT_INDENT(State),
@@ -2736,7 +2755,7 @@ enc_sigDuration(Val, State) ->
      enc_UINT16(Val, State)
     ].
 
-enc_notifyCompletion(List, State) when list(List) ->
+enc_notifyCompletion(List, State) when is_list(List) ->
     [
      ?NotifyCompletionToken,
      ?EQUAL,
@@ -2800,7 +2819,7 @@ enc_sigRequestID(Val, State) ->
 
 enc_RequestID({'RequestID',Val}, State) ->
     enc_RequestID(Val, State);
-enc_RequestID(Val, _State) when Val == ?megaco_all_request_id ->
+enc_RequestID(Val, _State) when (Val =:= ?megaco_all_request_id) ->
     "*";
 enc_RequestID(Val, State) ->
     enc_UINT32(Val, State).
@@ -3008,7 +3027,7 @@ enc_serviceChangeReason({reason, Val}, State) ->
     case Val of
 	asn1_NOVALUE ->
 	    [];
-	[List] when list(List) ->
+	[List] when is_list(List) ->
 	    [
 	     ?ReasonToken,
 	     ?EQUAL,
@@ -3030,7 +3049,7 @@ enc_serviceChangeMgcId(Val, State) ->
      enc_MId(Val, State)
     ].
 
-enc_portNumber(Val, State) when integer(Val), Val >= 0 ->
+enc_portNumber(Val, State) when is_integer(Val) andalso (Val >= 0) ->
     enc_UINT16(Val, State).
      
 enc_ServiceChangeResParm(Val, State)
@@ -3068,7 +3087,7 @@ enc_PackagesItem(Val, State)
 
 enc_StatisticsDescriptor({'StatisticsDescriptor',Val}, State) ->
     enc_StatisticsDescriptor(Val, State);
-enc_StatisticsDescriptor(List, State) when list(List) ->
+enc_StatisticsDescriptor(List, State) when is_list(List) ->
     [
      ?StatsToken,
      ?LBRKT_INDENT(State),
@@ -3084,7 +3103,7 @@ enc_StatisticsParameter(Val, State)
 	    [
 	     enc_PkgdName(PkgdName, State)
 	    ];
-	[StatVal] when list(StatVal) ->
+	[StatVal] when is_list(StatVal) ->
 	    [
 	     enc_PkgdName(PkgdName, State),
 	     ?EQUAL,
@@ -3143,7 +3162,7 @@ do_enc_OCTET_STRING([], _State, Min, Max, Count) ->
     verify_count(Count, Min, Max),
     [].
 
-enc_QUOTED_STRING(String, _State) when list(String) ->
+enc_QUOTED_STRING(String, _State) when is_list(String) ->
     {_IsSafe, Count} = quoted_string_count(String, 0, true),
     verify_count(Count, 1, infinity),
     [?DQUOTE, String, ?DQUOTE].
@@ -3151,11 +3170,11 @@ enc_QUOTED_STRING(String, _State) when list(String) ->
 %% The internal format of hex digits is a list of octets
 %% Min and Max means #hexDigits
 %% Leading zeros are prepended in order to fulfill Min
-enc_HEXDIG(Octets, State, Min, Max) when list(Octets) ->
+enc_HEXDIG(Octets, State, Min, Max) when is_list(Octets) ->
     do_enc_HEXDIG(Octets, State, Min, Max, 0, []).
 
 do_enc_HEXDIG([Octet | Rest], State, Min, Max, Count, Acc) 
-  when Octet >= 0, Octet =< 255  ->
+  when (Octet >= 0) andalso (Octet =< 255)  ->
     Hex = hex(Octet), % OTP-4921
     if
 	Octet =< 15 ->
@@ -3166,7 +3185,7 @@ do_enc_HEXDIG([Octet | Rest], State, Min, Max, Count, Acc)
 	    do_enc_HEXDIG(Rest, State, Min, Max, Count + 2, Acc2)
     end;
 do_enc_HEXDIG([], State, Min, Max, Count, Acc)
-  when integer(Min), Count < Min ->
+  when is_integer(Min) andalso (Count < Min) ->
     do_enc_HEXDIG([0], State, Min, Max, Count, Acc);
 do_enc_HEXDIG([], _State, Min, Max, Count, Acc) -> %% OTP-4710
     verify_count(Count, Min, Max),
@@ -3175,7 +3194,7 @@ do_enc_HEXDIG([], _State, Min, Max, Count, Acc) -> %% OTP-4710
 enc_DIGIT(Val, State, Min, Max) ->
     enc_integer(Val, State, Min, Max).
 
-enc_STRING(String, _State, Min, Max) when list(String) ->
+enc_STRING(String, _State, Min, Max) when is_list(String) ->
     verify_count(length(String), Min, Max),
     String.
 
@@ -3220,14 +3239,14 @@ do_enc_list([], _State, _ElemEncoder, _SepEncoder, _NeedsSep) ->
 do_enc_list([asn1_NOVALUE | T], State, ElemEncoder, SepEncoder, NeedsSep) ->
     do_enc_list(T, State, ElemEncoder, SepEncoder, NeedsSep);
 do_enc_list([H | T], State, ElemEncoder, SepEncoder, NeedsSep)
-  when function(ElemEncoder), function(SepEncoder) ->
+  when is_function(ElemEncoder) andalso is_function(SepEncoder) ->
     case ElemEncoder(H, State) of
 	[] ->
 	    do_enc_list(T, State, ElemEncoder, SepEncoder, NeedsSep);
-	List when NeedsSep == true ->
+	List when NeedsSep =:= true ->
 	    [SepEncoder(State),
 	     List, do_enc_list(T, State, ElemEncoder, SepEncoder, true)];
-	List when NeedsSep == false ->
+	List when NeedsSep =:= false ->
 	    [List,
 	     do_enc_list(T, State, ElemEncoder, SepEncoder, true)]
     end.
@@ -3235,7 +3254,7 @@ do_enc_list([H | T], State, ElemEncoder, SepEncoder, NeedsSep)
 %% Add brackets if list is non-empty
 enc_opt_brackets([], _State) ->
     [];
-enc_opt_brackets(List, _State) when list(List) ->
+enc_opt_brackets(List, _State) when is_list(List) ->
     [?LBRKT_INDENT(_State), List, ?RBRKT_INDENT(_State)].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -3265,13 +3284,13 @@ ones_mask(Ones) ->
 %% Verify that Count is within the range of Min and Max
 verify_count(Count, Min, Max) ->
     if
-	integer(Count) ->
+	is_integer(Count) ->
 	    if
-		integer(Min), Count >= Min ->
+		is_integer(Min) andalso (Count >= Min) ->
 		    if
-			integer(Max), Count =< Max ->
+			is_integer(Max) andalso (Count =< Max) ->
 			    Count;
-			Max == infinity ->
+			Max =:= infinity ->
 			    Count;
 			true ->
 			    error({count_too_large, Count, Max})
@@ -3282,6 +3301,7 @@ verify_count(Count, Min, Max) ->
 	true ->
 	    error({count_not_an_integer, Count})
     end.
+
 
 %% -------------------------------------------------------------------
 

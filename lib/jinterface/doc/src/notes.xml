@@ -31,6 +31,35 @@
   </header>
   <p>This document describes the changes made to the Jinterface application.</p>
 
+<section><title>Jinterface 1.4.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Jinterface has been fixed to use the loopback interface
+	    when connecting to the Erlang Port Mapper Daemon - epmd.
+	    This facilitates firewall configuration and saves
+	    resources.</p>
+          <p>
+	    Own Id: OTP-7103</p>
+        </item>
+        <item>
+	    <p>Jinterface now refuses to connect to another node that
+	    does not agree on the other node's name. This has been a
+	    problem in that a connection was set up, but not used on
+	    a following send, which caused a second erroneous
+	    connection attemt to fail since the other (Erlang) node
+	    rejects a connection due to name disagreement.</p>
+	    <p>Problem reported and dissected by Alexander Lamb</p>
+          <p>
+	    Own Id: OTP-7330</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Jinterface 1.4</title>
 
     <section><title>Improvements and New Features</title>

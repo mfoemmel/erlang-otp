@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2000-2007</year>
+%% <year>2000-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -40,6 +40,7 @@
 
 %% Backward compatible funcs:
 -export([encode_message/2, decode_message/2]).
+
 
 -include_lib("megaco/src/engine/megaco_message_internal.hrl").
 
@@ -510,8 +511,6 @@ token_tag2string(Tag, prev3c) ->
     megaco_compact_text_encoder_prev3c:token_tag2string(Tag);
 token_tag2string(Tag, _Vsn) ->
     token_tag2string(Tag, ?TT2S_BEST_VERSION).
-
-
 
 
 %% d(F) ->

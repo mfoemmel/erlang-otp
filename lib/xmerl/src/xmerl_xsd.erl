@@ -32,7 +32,7 @@
 %% XML Schema study <a href="http://www.w3.org/TR/xmlschema-0/">part 0.</a>
 %% An XML structure is validated by xmerl_xsd:validate/[2,3].
 %% @type global_state(). <p>The global state of the validator. It is 
-%% representated by the <code>#xmerl_xsd{}</code> record.
+%% representated by the <code>#xsd_state{}</code> record.
 %% </p>
 %% @type option_list(). <p>Options allow to customize the behaviour of the 
 %% validation.
@@ -54,25 +54,46 @@
 %%      <dd>It is possible by this option to provide a state with process
 %%          information from an earlier validation.</dd> 
 %% </dl>
-
+%%%-------------------------------------------------------------------
 -module(xmerl_xsd).
 
--export([validate/2,validate/3,process_validate/2,process_validate/3,
-	 process_schema/1,process_schema/2,
-	 process_schemas/1,process_schemas/2,
-	 state2file/1,state2file/2,file2state/1,format_error/1]).
--export([print_table/1]).
-%%-export([whitespace/1]).
-
+%%----------------------------------------------------------------------
+%% Include files
+%%----------------------------------------------------------------------
 -include("xmerl.hrl").
 -include("xmerl_xsd.hrl").
 -include_lib("kernel/include/file.hrl").
 
+%%----------------------------------------------------------------------
+%% External exports
+%%----------------------------------------------------------------------
+-export([
+	 validate/2,validate/3,process_validate/2,process_validate/3,
+	 process_schema/1,process_schema/2,
+	 process_schemas/1,process_schemas/2,
+	 state2file/1,state2file/2,file2state/1,format_error/1
+	]).
+
+%%----------------------------------------------------------------------
+%% Internal exports
+%%----------------------------------------------------------------------
+-export([print_table/1]).
+%%-export([whitespace/1]).
+
+%%----------------------------------------------------------------------
+%% Imports
+%%----------------------------------------------------------------------
 -import(xmerl_lib,[is_facet/1, is_builtin_simple_type/1, is_xsd_string/1]).
 -import(xmerl_xsd_type,[facet_fun/2]).
 -import(lists,[reverse/1,reverse/2,foldl/3,member/2,filter/2,flatten/1,map/2,
 	       splitwith/2,mapfoldl/3,keysearch/3,keymember/3,
 	       keyreplace/4,keydelete/3]).
+
+
+
+%%======================================================================
+%% Functions
+%%======================================================================
 
 %% @spec validate(Element,State) -> Result
 %% @equiv validate(Element,State,[])
@@ -127,7 +148,7 @@ state2file(S=#xsd_state{schema_name=SN}) ->
 %% schema in a file. You can provide the file name for the saved
 %% state. FileName is saved with the <code>.xss</code> extension
 %% added.
-state2file(S,FileName) ->
+state2file(S,FileName) when is_record(S,xsd_state) ->
     save_xsd_state(S),
     case catch ets:tab2file(S#xsd_state.table,lists:append(FileName,".xss")) of
 	{'EXIT',Reason} ->
@@ -236,18 +257,20 @@ validate3(Schema,Xml,S=#xsd_state{errors=[]}) ->
 	    {XML2,[],Sx} ->
 		{XML2,Sx};
 	    {_,UnValidated,Sx} ->
-		{Xml,acc_errs(Sx,{error_path(UnValidated,Xml#xmlElement.name),?MODULE,{unvalidated_rest,UnValidated}})};
+		{Xml,acc_errs(Sx,{error_path(UnValidated,Xml#xmlElement.name),?MODULE,
+				  {unvalidated_rest,UnValidated}})};
 	    _Err = {error,Reason} ->
 		{Xml,acc_errs(S,Reason)};
 	    {'EXIT',Reason} ->
-		{Xml,acc_errs(S,{error_path(Xml,Xml#xmlElement.name),?MODULE,{undefined,{internal_error,Reason}}})}
+		{Xml,acc_errs(S,{error_path(Xml,Xml#xmlElement.name),?MODULE,
+				 {undefined,{internal_error,Reason}}})}
 	end,
     save_to_file(S2,filename:rootname(Schema)++".tab2"),
     case S2#xsd_state.errors of
 	[] ->
 	    Ret;
 	L ->
-	    delete_table(S2),
+	    %%delete_table(S2),
 	    return_error(L)
     end;
 validate3(_,_,S) ->
@@ -263,15 +286,15 @@ process_schema(Schema) ->
 %%       State   = global_state()
 %%       Reason  = [ErrorReason] | ErrorReason
 %%       Options = option_list()
-%% @doc Reads the referenced XML schema and controls it is valid.
+%% @doc Reads the referenced XML schema and checks that it is valid.
 %% Returns the <code>global_state()</code> with schema info or an 
 %% error reason. The error reason may be a list of several errors
 %% or a single error encountered during the processing.
 process_schema(Schema,Options) when is_list(Options) ->
     S = initiate_state(Options,Schema),
-    process_schema2(xmerl_scan:file(Schema),S,Schema);
+    process_schema2(xmerl_scan:file(filename:join(S#xsd_state.xsd_base, Schema)),S,Schema);
 process_schema(Schema,State) when is_record(State,xsd_state) ->
-    process_schema2(xmerl_scan:file(Schema),State,Schema).
+    process_schema2(xmerl_scan:file(filename:join(State#xsd_state.xsd_base, Schema)),State,Schema).
 
 process_schema2(Err={error,_},_,_) ->
     Err;
@@ -4415,20 +4438,20 @@ attribute_wildcard_union(NS1,NS2,S) ->
 	    end;
 	_ -> %% either is a {not,NS}
 	    case toggle_ns(NS1,NS2) of
-		{_O1=[absent],S} -> %% bullet 6
-		    case member(absent,S)of
+		{_O1=[absent],NS3} -> %% bullet 6
+		    case member(absent,NS3)of
 			true -> {['##any'],S};
 			_ ->    {[{'not',[absent]}],S}
 		    end;
-		{O1=[O1Name],S} -> %% bullet 5
-		    case member(O1Name,S) of
+		{O1=[O1Name],NS4} -> %% bullet 5
+		    case member(O1Name,NS4) of
 			true ->
-			    case member(absent,S) of
+			    case member(absent,NS4) of
 				true -> {['##any'],S}; %% 5.1
 			        _ ->    {[{'not',[absent]}],S} %% 5.2
 			    end;
 			_ ->
-			    case member(absent,S) of
+			    case member(absent,NS4) of
 				true ->
 				    %% not expressible 5.3
 				    Err = {[],?MODULE,{wildcard_namespace_union_not_expressible,NS1,NS2}},
@@ -4840,9 +4863,9 @@ print_table(#xsd_state{table=Tab}) ->
 print_table(_) ->
     ok.
 
-save_object({name,_},S) ->
-    %% already saved.
-    S;
+%save_object({name,_},S) ->
+%    %% already saved.
+%    S;
 %% only simpleType asn complexType are temporary saved with
 %% three-tuple key. They are loaded and merged in redefine/2.
 save_object({Kind,Obj},S=#xsd_state{redefine=true}) 
@@ -4933,17 +4956,18 @@ save_to_file(S=#xsd_state{tab2file=true},FileName) ->
     save_to_file(S#xsd_state{tab2file=FileName});
 save_to_file(_,_) ->
     ok.
+
 save_to_file(S=#xsd_state{tab2file=TF}) ->
     case TF of
 	true ->
 	    {ok,IO}=file:open(filename:rootname(S#xsd_state.schema_name)++".tab",
-			      write),
+			      [write]),
 	    io:format(IO,"~p~n",[catch ets:tab2list(S#xsd_state.table)]),
 	    file:close(IO);
 	false ->
 	    ok;
 	IOFile ->
-	    {ok,IO}=file:open(IOFile,write),
+	    {ok,IO}=file:open(IOFile,[write]),
 	    io:format(IO,"~p~n",[catch ets:tab2list(S#xsd_state.table)]),
 	    file:close(IO)
     end.
@@ -5356,9 +5380,10 @@ add_key_once(Key,N,El,L) ->
 %% %%    io:format("mk_xml_path: Parents = ~p~n",[Parents]),
 %%     {filename:join([[io_lib:format("/~w(~w)",[X,Y])||{X,Y}<-Parents],Type]),Pos}.
 
-%% format_error
-%% E -> xmlElement | xmlAttribute | xmlText
-%% SchemaE -> {Type,_}
+%% @spec format_error(Errors) -> Result
+%%       Errors     = error_tuple() | [error_tuple()]
+%%       Result       = string() | [string()]
+%% @doc Formats error descriptions to human readable strings.
 format_error(L) when is_list(L) -> 
     [format_error(X)||X<-L];
 format_error({unexpected_rest,UR}) ->
@@ -5542,7 +5567,6 @@ format_error(Err) ->
 %% format_error2(E,SchemaE,Env) ->
 %%     {shema_el_pathname(SchemaE,Env),
 %%      xml_el_pathname(E)}.
-
 
 initial_tab_data(Tab) ->
     ets:insert(Tab,

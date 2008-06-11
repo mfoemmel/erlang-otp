@@ -272,6 +272,7 @@ endif
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/reclaim.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/run_erl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/to_erl.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/safe_string.o	
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/typer.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/vxcall.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erl.o
@@ -297,17 +298,20 @@ $(OBJDIR)/inet_gethost.o: inet_gethost.c
 $(BINDIR)/inet_gethost@EXEEXT@: $(OBJDIR)/inet_gethost.o $(ENTRY_OBJ)
 	$(PURIFY) $(LD) $(LDFLAGS) $(ENTRY_LDFLAGS) -o $@ $(OBJDIR)/inet_gethost.o $(ENTRY_OBJ) $(LIBS) 
 
-$(BINDIR)/run_erl: $(OBJDIR)/run_erl.o
-	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/run_erl.o $(LIBS)
+$(BINDIR)/run_erl: $(OBJDIR)/safe_string.o $(OBJDIR)/run_erl.o
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/safe_string.o $(OBJDIR)/run_erl.o $(LIBS)
 
 $(OBJDIR)/run_erl.o: ../unix/run_erl.c
 	$(CC) $(CFLAGS) -o $@ -c ../unix/run_erl.c
 
-$(BINDIR)/to_erl: $(OBJDIR)/to_erl.o
-	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/to_erl.o
+$(BINDIR)/to_erl: $(OBJDIR)/safe_string.o $(OBJDIR)/to_erl.o
+	$(LD) $(LDFLAGS) -o $@  $(OBJDIR)/safe_string.o $(OBJDIR)/to_erl.o
 
 $(OBJDIR)/to_erl.o: ../unix/to_erl.c
 	$(CC) $(CFLAGS) -o $@ -c ../unix/to_erl.c
+
+$(OBJDIR)/safe_string.o: ../unix/safe_string.c
+	$(CC) $(CFLAGS) -o $@ -c ../unix/safe_string.c
 
 $(BINDIR)/wd_keeper: $(OBJDIR)/wd_keeper.o
 	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/wd_keeper.o

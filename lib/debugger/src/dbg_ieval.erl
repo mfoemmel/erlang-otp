@@ -546,12 +546,12 @@ trace(_What, _Args, false) ->
 format_args(As) when is_list(As) ->
     [$(,format_args1(As),$)];
 format_args(A) ->
-    [$/,io_lib:format('~p', [A])].
+    [$/,io_lib:format("~p", [A])].
 
 format_args1([A]) ->
-    [io_lib:format('~p', [A])];
+    [io_lib:format("~p", [A])];
 format_args1([A|As]) ->
-    [io_lib:format('~p', [A]),$,|format_args1(As)];
+    [io_lib:format("~p", [A]),$,|format_args1(As)];
 format_args1([]) ->
     [].
 

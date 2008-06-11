@@ -52,13 +52,13 @@ void hipe_patch_load_fe(Uint32 *address, Uint32 value)
 int hipe_patch_insn(void *address, Uint32 value, Eterm type)
 {
     switch (type) {
-    case am_load_mfa:
-    case am_atom:
-    case am_constant:
-    case am_closure:
-    case am_c_const:
+      case am_load_mfa:
+      case am_atom:
+      case am_constant:
+      case am_closure:
+      case am_c_const:
 	break;
-    default:
+      default:
 	return -1;
     }
     patch_sethi_ori((Uint32*)address, value);
@@ -193,7 +193,7 @@ void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity)
     unsigned int *code;
     unsigned int callEmuOffset;
     int i;
-    
+
     code = alloc_code(5*sizeof(int));
 
     /* sethi %hi(Address), %i4 */
@@ -209,7 +209,7 @@ void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity)
     code[4] = 0xBA102000 | (beamArity & 0x0FFF);
 
     /* flush I-cache as if by write_u32() */
-    for(i = 0; i < 5; ++i)
+    for (i = 0; i < 5; ++i)
 	hipe_flush_icache_word(&code[i]);
 
     return code;

@@ -6,7 +6,7 @@
 %%  Module   : hipe
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  : * 1998-01-28 Erik Johansson (happi@csd.uu.se): Created.
+%%  History  : * 1998-01-28 Erik Johansson (happi@it.uu.se): Created.
 %%  CVS      : $Id$
 %% ====================================================================
 %% @doc This is the direct interface to the HiPE compiler.
@@ -718,9 +718,10 @@ compile_finish({Mod, Exports, Icode}, WholeModule, Options) ->
   post(Res, Icode, Options).
 
 
-%% ---------------------------------------------------------------------
-%% finalize/4 compiles, assembles, and optionally loads a list of `{MFA,
-%% Icode}' pairs, and returns `{ok, Binary}' or `{error, Reason}'.
+%% -------------------------------------------------------------------------
+%% finalize/4
+%% compiles, assembles, and optionally loads a list of `{MFA, Icode}' pairs,
+%% and returns `{ok, {TargetArch, Binary}}' or `{error, Reason, Stack}'.
 
 finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
   List = icode_multret(OrigList, Mod, Opts, Exports),
@@ -745,7 +746,7 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
     true ->
       {ok, CompiledCode};
     false ->
-      Closures = 
+      Closures =
 	[MFA || {MFA, Icode} <- List,
 		hipe_icode:icode_is_closure(Icode)],
       {T1,_} = erlang:statistics(runtime),
@@ -764,7 +765,6 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
 	  {error,Error,erlang:get_stacktrace()}
       end
   end.
-
 
 finalize_fun(MfaIcodeList, Exports, Opts) ->
   case proplists:get_value(concurrent_comp, Opts) of
@@ -851,7 +851,7 @@ finalize_fun_sequential({MFA, Icode}, Opts, Servers) ->
       io:format("~p~n", [LinearRtl]),
       {MFA, LinearRtl}
   catch
-    error:Error -> 
+    error:Error ->
       ?when_option(verbose, Opts,?debug_untagged_msg("\n", [])),
       ?error_msg("ERROR: ~p~n", [{Error,erlang:get_stacktrace()}]),
       ?EXIT({Error,erlang:get_stacktrace()})
@@ -894,7 +894,7 @@ do_load(Mod, Bin, WholeModule) ->
   TargetArch = get(hipe_target_arch),
   %% Make sure we can do the load.
   if HostArch =/= TargetArch ->
-    ?EXIT({host_and_target_arch_differ,HostArch,TargetArch});
+    ?EXIT({host_and_target_arch_differ, HostArch, TargetArch});
     true -> ok
   end,
   case WholeModule of 
@@ -911,10 +911,10 @@ do_load(Mod, Bin, WholeModule) ->
 	  %% Normal loading of a whole module
 	  Architecture = erlang:system_info(hipe_architecture),
 	  ChunkName = hipe_unified_loader:chunk_name(Architecture),
-	  {ok,_,Chunks0} = beam_lib:all_chunks(WholeModule),
-	  Chunks = [{ChunkName,Bin}|lists:keydelete(ChunkName,1,Chunks0)],
-	  {ok,BeamPlusNative} = beam_lib:build_module(Chunks),
-	  code:load_binary(Mod,code:which(Mod),BeamPlusNative)
+	  {ok, _, Chunks0} = beam_lib:all_chunks(WholeModule),
+	  Chunks = [{ChunkName, Bin}|lists:keydelete(ChunkName, 1, Chunks0)],
+	  {ok, BeamPlusNative} = beam_lib:build_module(Chunks),
+	  code:load_binary(Mod, code:which(Mod), BeamPlusNative)
       end
   end.
 
