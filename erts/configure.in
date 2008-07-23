@@ -1840,6 +1840,46 @@ CPPFLAGS=$saved_cppflags
 LM_SYS_IPV6
 LM_SYS_MULTICAST
 ERL_TIME_CORRECTION
+
+case $ARCH-$OPSYS in
+	amd64-darwin*|x86-darwin*)
+		AC_MSG_CHECKING([For modern (leopard) style mcontext_t])
+		AC_TRY_COMPILE([
+				#include <stdlib.h>
+				#include <sys/types.h>
+				#include <unistd.h>
+				#include <mach/mach.h>
+				#include <pthread.h>
+				#include <machine/signal.h>
+				#include <ucontext.h>
+				],[
+				#if defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
+				#define __DARWIN__ 1
+				#endif
+
+				#ifndef __DARWIN__
+				#error inpossible
+				#else
+
+    				mcontext_t mc = NULL;
+    				int x = mc->__fs.__fpu_mxcsr;
+
+				#endif
+				],darwin_mcontext_leopard=yes,
+				darwin_mcontext_leopard=no)
+				if test X"$darwin_mcontext_leopard" = X"yes"; then
+				   AC_DEFINE(DARWIN_MODERN_MCONTEXT,[],[Modern style mcontext_t in MacOSX])
+				   AC_MSG_RESULT(yes)
+				else
+				   AC_MSG_RESULT(no)
+				fi		
+		;;
+	*)	
+		darwin_mcontext_leopard=no
+		;;
+esac
+	
+
 dnl check to auto-enable hipe here...
 if test X${enable_hipe} != Xno; then
   case "$ARCH-$OPSYS" in
@@ -2179,6 +2219,7 @@ static __inline__ int check_fpe(double f)
 #include <machine/fpu.h>
 #elif defined(__DARWIN__)
 #include <machine/signal.h>
+#include <mach/i386/thread_status.h>
 #elif defined(__OpenBSD__) && defined(__x86_64__)
 #include <sys/types.h>
 #include <machine/fpu.h>
@@ -2226,15 +2267,33 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 #endif
 #elif defined(__DARWIN__)
 #if defined(__x86_64__)
+#ifdef DARWIN_MODERN_MCONTEXT
      mcontext_t mc = uc->uc_mcontext;
     struct __darwin_x86_float_state64 *fpstate = &mc->__fs;
     fpstate->__fpu_mxcsr = 0x1F80;
     *(unsigned short *)&fpstate->__fpu_fsw &= ~0xFF;
+#else
+    mcontext_t mc = uc->uc_mcontext;
+#if defined(__LP64__)
+    x86_float_state64_t *fpstate = &mc->fs;
+#else
+    x86_float_state32_t *fpstate = &mc->fs;
+#endif
+    fpstate->fpu_mxcsr = 0x1F80;
+    *(unsigned short *)&fpstate->fpu_fsw &= ~0xFF;
+#endif /* DARWIN_MODERN_MCONTEXT */
 #elif defined(__i386__)
+#ifdef DARWIN_MODERN_MCONTEXT
     mcontext_t mc = uc->uc_mcontext;
     struct __darwin_i386_float_state *fpstate = &mc->__fs;
     fpstate->__fpu_mxcsr = 0x1F80;
     *(unsigned short *)&fpstate->__fpu_fsw &= ~0xFF;
+#else
+    mcontext_t mc = uc->uc_mcontext;
+    x86_float_state32_t *fpstate = &mc->fs;
+    fpstate->fpu_mxcsr = 0x1F80;
+    *(unsigned short *)&fpstate->fpu_fsw &= ~0xFF;
+#endif /* DARWIN_MODERN_MCONTEXT */
 #elif defined(__ppc__)
     mcontext_t mc = uc->uc_mcontext;
     mc->ss.srr0 += 4;
@@ -2345,47 +2404,6 @@ int main(int argc, const char **argv)
         FPE=reliable
     fi
 fi	
-
-case $ARCH-$OPSYS in
-	amd64-darwin*|x86-darwin*)
-		AC_MSG_CHECKING([For modern (leopard) style mcontext_t])
-		AC_TRY_COMPILE([
-				#include <stdlib.h>
-				#include <sys/types.h>
-				#include <unistd.h>
-				#include <mach/mach.h>
-				#include <pthread.h>
-				#include <machine/signal.h>
-				#include <ucontext.h>
-				],[
-				#if defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
-				#define __DARWIN__ 1
-				#endif
-
-				#ifndef __DARWIN__
-				#error inpossible
-				#else
-
-    				mcontext_t mc = NULL;
-    				int x = mc->__fs.__fpu_mxcsr;
-
-				#endif
-				],darwin_mcontext_leopard=yes,
-				darwin_mcontext_leopard=no)
-				if test X"$darwin_mcontext_leopard" = X"yes"; then
-				   AC_DEFINE(DARWIN_MODERN_MCONTEXT,[],[Modern style mcontext_t in MacOSX])
-				   AC_MSG_RESULT(yes)
-				else
-				   AC_MSG_RESULT(no)
-				fi		
-		;;
-	*)	
-		darwin_mcontext_leopard=no
-		;;
-esac
-	
-	 
-		
 
 
 
