@@ -48,7 +48,8 @@
 	 start_and_stop/1,
 
 	 simple_start_and_stop/1,
-	 start_without_mandatory_opts/1,
+	 start_without_mandatory_opts1/1,
+	 start_without_mandatory_opts2/1,
 	 start_with_all_valid_opts/1,
 	 start_with_unknown_opts/1,
 	 start_with_incorrect_opts/1,
@@ -174,7 +175,8 @@ start_and_stop(doc) ->
 start_and_stop(suite) ->
     [
      simple_start_and_stop,
-     start_without_mandatory_opts,
+     start_without_mandatory_opts1,
+     start_without_mandatory_opts2,
      start_with_all_valid_opts,
      start_with_unknown_opts,
      start_with_incorrect_opts,
@@ -215,12 +217,12 @@ simple_start_and_stop(Conf) when list(Conf) ->
 %% ---
 %% 
 
-start_without_mandatory_opts(suite) -> [];
-start_without_mandatory_opts(doc) ->
-    "Start the snmp manager config process with the \n"
+start_without_mandatory_opts1(suite) -> [];
+start_without_mandatory_opts1(doc) ->
+    "Start the snmp manager config process with some of the \n"
 	"mandatory options missing.";
-start_without_mandatory_opts(Conf) when list(Conf) ->
-    put(tname,swomo),
+start_without_mandatory_opts1(Conf) when list(Conf) ->
+    put(tname,swomo1),
     put(verbosity,trace),
     p("start"),
     process_flag(trap_exit, true),
@@ -230,20 +232,40 @@ start_without_mandatory_opts(Conf) when list(Conf) ->
     write_manager_conf(ConfDir),
     
 
-    %% First set of options (config, but no dir):
+    %% config, but no dir:
     p("config option, but no dir"),
-    Opts1 = [{priority, normal}, 
-	     {config, [{verbosity, trace}, {db_dir, DbDir}]}, {mibs, []}],
-    %% ?line {error, R1} = snmpm_config:start_link(Opts1),
-    ?line {error, {missing_mandatory,dir}} = config_start(Opts1),
-    %% ?line ok = config_stop(),
+    Opts = [{priority, normal}, 
+	    {config, [{verbosity, trace}, {db_dir, DbDir}]}, {mibs, []}],
+    ?line {error, {missing_mandatory,dir}} = config_start(Opts),
+
+    p("done"),
+    ok.
+
+
+%% 
+%% ---
+%% 
+
+start_without_mandatory_opts2(suite) -> [];
+start_without_mandatory_opts2(doc) ->
+    "Start the snmp manager config process with some of the \n"
+	"mandatory options missing.";
+start_without_mandatory_opts2(Conf) when list(Conf) ->
+    put(tname,swomo2),
+    put(verbosity,trace),
+    p("start"),
+    process_flag(trap_exit, true),
+    ConfDir = ?config(manager_conf_dir, Conf),
+
+    write_manager_conf(ConfDir),
+    
 
     %% Second set of options (no config):
     p("no config option"),
-    Opts2 = [{priority, normal}, 
-	     {mibs, []}],
-    ?line {error, {missing_mandatory,config,[dir, db_dir]}} = config_start(Opts2),
-    %% ?line ok = config_stop(),
+    Opts = [{priority, normal}, 
+	    {mibs, []}],
+    ?line {error, {missing_mandatory,config,[dir, db_dir]}} = 
+	config_start(Opts),
 
     p("done"),
     ok.

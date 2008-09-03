@@ -12,7 +12,7 @@ value({Token, _Line}) ->
 value({_Token, _Line, Value}) ->
 	Value.
 
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-06-10_20/otp_src_R12B-3/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/ldisk/daily_build/otp_prebuild_r12b.2008-09-02_20/otp_src_R12B-4/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -2153,7 +2153,7 @@ yeccpars2_79_(__Stack0) ->
 yeccpars2_82_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
-   { arith , mod , __1 , __2 }
+   { arith , mod , __1 , __3 }
   end | __Stack].
 
 -compile({inline,{yeccpars2_83_,1}}).

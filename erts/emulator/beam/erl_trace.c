@@ -32,6 +32,8 @@
 #include "dist.h"
 #include "beam_bp.h"
 #include "error.h"
+#include "erl_binary.h"
+#include "erl_bits.h"
 
 #if 0
 #define DEBUG_PRINTOUTS
@@ -675,109 +677,134 @@ patch_ts(Eterm tuple, Eterm* hp)
     return hp+5;
 }
 
-/* Send {trace_ts, Pid, What, {Mod, Func, Arity}, Timestamp}
- * or   {trace, Pid, What, {Mod, Func, Arity}}
- *
- * where 'What' is supposed to be 'in' or 'out'.
- */
-void
-trace_sched(Process *p, Eterm what)
+static ERTS_INLINE void
+send_to_tracer(Process *tracee,
+	       ERTS_TRACER_REF_TYPE tracer_ref,
+	       Eterm msg,
+	       Eterm **hpp,
+	       ErlHeapFragment *bp,
+	       int no_fake_sched)
 {
-    Eterm tmp;
-    Eterm mess;
-    Eterm* hp;
-    int ws = 5;	
-    Eterm sched_id;
+    ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(tracee));
 
-    if (is_internal_port(p->tracer_proc)) {
-	Eterm local_heap[4+5+6];
-	hp = local_heap;
+    erts_smp_mtx_lock(&smq_mtx);
 
-	if (p->current == NULL) {
-	    p->current = find_function_from_pc(p->i);
-	}
-	if (p->current == NULL) {
-	    tmp = make_small(0);
-	} else {
-	    tmp = TUPLE3(hp, p->current[0], p->current[1], make_small(p->current[2]));
-	    hp += 4;
-	}
-	
-	if (IS_TRACED_FL(p, F_TRACE_SCHED_NO)) {
-#ifdef ERTS_SMP
-		if (p->scheduler_data) sched_id = make_small(p->scheduler_data->no);
-		else sched_id = am_undefined;
-#else
-		sched_id = make_small(1);
-#endif
-		mess = TUPLE5(hp, am_trace, p->id, what, sched_id, tmp);
-		ws = 6;
-	} else {
-		mess = TUPLE4(hp, am_trace, p->id, what, tmp);
-		ws = 5;
-	}
-	
-	hp += ws;
-		
-	
-	erts_smp_mtx_lock(&smq_mtx);
-	if (p->trace_flags & F_TIMESTAMP) {
-	    hp = patch_ts(mess, hp);
-	}
-	if (what != am_out) {
-	    send_to_port(p, mess, &p->tracer_proc, &p->trace_flags);
-	} else {
-	    send_to_port(NULL, mess, &p->tracer_proc, &p->trace_flags);
-	}
-	erts_smp_mtx_unlock(&smq_mtx);
-    } else {
-	ErlHeapFragment *bp;
-	ErlOffHeap *off_heap;
-	ERTS_TRACER_REF_TYPE tracer_ref;
+    if (tracee->trace_flags & F_TIMESTAMP)
+	*hpp = patch_ts(msg, *hpp);
 
+    if (is_internal_pid(tracee->tracer_proc))
+	ERTS_ENQ_TRACE_MSG(tracee->id, tracer_ref, msg, bp);
+    else {
+	ASSERT(is_internal_port(tracee->tracer_proc));
+	send_to_port(no_fake_sched ? NULL : tracee,
+		     msg,
+		     &tracee->tracer_proc,
+		     &tracee->trace_flags);
+    }
+
+    erts_smp_mtx_unlock(&smq_mtx);
+
+}
+
+static void
+trace_sched_aux(Process *p, Eterm what, int never_fake_sched)
+{
+    Eterm local_heap[5+4+1+TS_HEAP_WORDS];
+    Eterm tmp, mess, *hp;
+    ErlHeapFragment *bp = NULL;
+    ErlOffHeap *off_heap;
+    ERTS_TRACER_REF_TYPE tracer_ref = ERTS_NULL_TRACER_REF;
+    int sched_no, curr_func, to_port, no_fake_sched;
+
+    if (is_nil(p->tracer_proc))
+	return;
+
+    no_fake_sched = never_fake_sched;
+
+    switch (what) {
+    case am_out:
+    case am_out_exiting:
+    case am_out_exited:
+	no_fake_sched = 1;
+	break;
+    case am_in:
+    case am_in_exiting:
+	break;
+    default:
+	ASSERT(0);
+	break;
+    }
+
+    sched_no = IS_TRACED_FL(p, F_TRACE_SCHED_NO);
+    to_port = is_internal_port(p->tracer_proc);
+
+    if (!to_port) {
 	ASSERT(is_internal_pid(p->tracer_proc)
 	       && internal_pid_index(p->tracer_proc) < erts_max_processes);
 
 	ERTS_GET_TRACER_REF(tracer_ref, p->tracer_proc, p->trace_flags);
-
-	hp = ERTS_ALLOC_SYSMSG_HEAP(4 + ws + TS_SIZE(p), &bp, &off_heap, tracer_ref);
-	
-	if (p->current == NULL) {
-	    p->current = find_function_from_pc(p->i);
-	}
-	if (p->current == NULL) {
-	    tmp = make_small(0);
-	} else {
-	    tmp = TUPLE3(hp, p->current[0], p->current[1], make_small(p->current[2]));
-	    hp += 4;
-	}
-	
-	if (IS_TRACED_FL(p, F_TRACE_SCHED_NO)) {
-#ifdef ERTS_SMP
-		if (p->scheduler_data) sched_id = make_small(p->scheduler_data->no);
-		else sched_id = make_small(am_undefined);
-#else
-		sched_id = make_small(1);
-#endif
-		mess = TUPLE5(hp, am_trace,p->id/* Local pid */, what, sched_id, tmp);
-		ws = 6;
-	} else {
-		mess = TUPLE4(hp, am_trace, p->id, what, tmp);
-		ws = 5;
-	}
-	hp += ws;
-
-	erts_smp_mtx_lock(&smq_mtx);
-
-	if (p->trace_flags & F_TIMESTAMP) {
-	    hp = patch_ts(mess, hp);
-	}
-
-	ERTS_ENQ_TRACE_MSG(p->id, tracer_ref, mess, bp);
-	erts_smp_mtx_unlock(&smq_mtx);
     }
+
+    if (ERTS_PROC_IS_EXITING(p)
+#ifndef ERTS_SMP
+	|| p->status == P_FREE
+#endif
+	) {
+	curr_func = 0;
+    }
+    else {
+	if (!p->current)
+	    p->current = find_function_from_pc(p->i);
+	curr_func = p->current != NULL;
+    }
+
+    if (to_port)
+	hp = &local_heap[0];
+    else {
+	Uint size = 5;
+	if (curr_func)
+	    size += 4;
+	if (sched_no)
+	    size += 1;
+	size += TS_SIZE(p);
+	hp = ERTS_ALLOC_SYSMSG_HEAP(size, &bp, &off_heap, tracer_ref);
+    }
+
+    if (!curr_func) {
+	tmp = make_small(0);
+    } else {
+	tmp = TUPLE3(hp,p->current[0],p->current[1],make_small(p->current[2]));
+	hp += 4;
+    }
+
+    if (!sched_no) {
+	mess = TUPLE4(hp, am_trace, p->id, what, tmp);
+	hp += 5;
+    }
+    else {
+#ifdef ERTS_SMP
+	Eterm sched_id = make_small(p->scheduler_data->no);
+#else
+	Eterm sched_id = make_small(1);
+#endif
+	mess = TUPLE5(hp, am_trace, p->id, what, sched_id, tmp);
+	hp += 6;
+    }
+
+    send_to_tracer(p, tracer_ref, mess, &hp, bp, no_fake_sched);
 }
 
+/* Send {trace_ts, Pid, What, {Mod, Func, Arity}, Timestamp}
+ * or   {trace, Pid, What, {Mod, Func, Arity}}
+ *
+ * where 'What' is supposed to be 'in', 'out', 'in_exiting',
+ * 'out_exiting', or 'out_exited'.
+ */
+void
+trace_sched(Process *p, Eterm what)
+{
+    trace_sched_aux(p, what, 0);
+}
 
 /* Send {trace_ts, Pid, Send, Msg, DestPid, Timestamp}
  * or   {trace, Pid, Send, Msg, DestPid}
@@ -1445,7 +1472,9 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 #ifdef ERTS_SMP
     Eterm tracee;
 #endif
-    
+    Eterm transformed_args[MAX_ARG];
+    ErlSubBin sub_bin_heap;
+
     ASSERT(tracer_pid);
     if (*tracer_pid == am_true) {
 	/* Breakpoint trace enabled without specifying tracer =>
@@ -1488,6 +1517,42 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 #endif
     }
 
+    /*
+     * Because of the delayed sub-binary creation optimization introduced in
+     * R12B, (at most) one of arguments can be a match context instead of
+     * a binary. Since we don't want to handle match contexts in utility functions
+     * such as size_object() and copy_struct(), we must make sure that we
+     * temporarily convert any match contexts to sub binaries.
+     */
+    arity = mfa[2];
+#ifdef DEBUG
+    sub_bin_heap.thing_word = 0;
+#endif
+    for (i = 0; i < arity; i++) {
+	Eterm arg = args[i];
+	if (is_boxed(arg) && header_is_bin_matchstate(*boxed_val(arg))) {
+	    ErlBinMatchState* ms = (ErlBinMatchState *) boxed_val(arg);
+	    ErlBinMatchBuffer* mb = &ms->mb;
+	    ErlSubBin* sb = &sub_bin_heap;
+	    Uint bit_size;
+
+	    ASSERT(sub_bin_heap.thing_word == 0); /* At most one of match context */
+
+	    bit_size = mb->size - mb->offset;
+	    sb->thing_word = HEADER_SUB_BIN;
+	    sb->size = BYTE_OFFSET(bit_size);
+	    sb->bitsize = BIT_OFFSET(bit_size);
+	    sb->offs = BYTE_OFFSET(mb->offset);
+	    sb->bitoffs = BIT_OFFSET(mb->offset);
+	    sb->is_writable = 0;
+	    sb->orig = mb->orig;
+
+	    arg = make_binary(sb);
+	}
+	transformed_args[i] = arg;
+    }
+    args = transformed_args;
+
     if (is_internal_port(*tracer_pid)) {
 	Eterm local_heap[64+MAX_ARG];
 	hp = local_heap;
@@ -1525,7 +1590,6 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	
 	/* BEGIN this code should be the same for port and pid trace */
 	return_flags = 0;
-	arity = mfa[2];
 	if (match_spec) {
 	    pam_result = erts_match_set_run(p, match_spec, args, arity,
 					    &return_flags);
@@ -1601,7 +1665,7 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	Eterm tpid;
 #endif
 	unsigned size;
-	unsigned sizes[256];
+	unsigned sizes[MAX_ARG];
 	unsigned pam_result_size = 0;
 	int invalid_tracer;
 #ifdef DEBUG
@@ -1652,7 +1716,6 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	
 	/* BEGIN this code should be the same for port and pid trace */
 	return_flags = 0;
-	arity = mfa[2];
 	if (match_spec) {
 	    pam_result = erts_match_set_run(p, match_spec, args, arity,
 					    &return_flags);
@@ -2439,98 +2502,9 @@ profile_scheduler_q(Eterm scheduler_id, Eterm state, Eterm no_schedulers, Uint M
  */
 
 
-void trace_virtual_sched(Process *p, Eterm what) {
-    Eterm tmp;
-    Eterm mess;
-    Eterm* hp;
-    Eterm sched_id = am_undefined;
-    int ws_id = 6;
-
-    if (is_internal_port(p->tracer_proc)) {
-	Eterm local_heap[4+5+6];
-	hp = local_heap;
-
-	if (p->current == NULL) {
-	    p->current = find_function_from_pc(p->i);
-	}
-	if (p->current == NULL) {
-	    tmp = make_small(0);
-	} else {
-	    tmp = TUPLE3(hp, p->current[0], p->current[1], make_small(p->current[2]));
-	    hp += 4;
-	}
-	
-	if (IS_TRACED_FL(p, F_TRACE_SCHED_NO)) {
-#ifdef ERTS_SMP
-		if (p->scheduler_data) sched_id = make_small(p->scheduler_data->no);
-		else sched_id = am_undefined;
-#else
-    		sched_id = make_small(1);
-#endif
-		mess = TUPLE5(hp, am_trace, p->id, what, sched_id, tmp);
-		ws_id = 6;
-	} else {
-		mess = TUPLE4(hp, am_trace, p->id, what, tmp);
-		ws_id = 5;
-	}
-	hp += ws_id;
-		
-	
-	erts_smp_mtx_lock(&smq_mtx);
-	if (p->trace_flags & F_TIMESTAMP) {
-	    hp = patch_ts(mess, hp);
-	}
-	send_to_port(NULL, mess, &p->tracer_proc, &p->trace_flags);
-	erts_smp_mtx_unlock(&smq_mtx);
-    } else {
-	ErlHeapFragment *bp;
-	ErlOffHeap *off_heap;
-	ERTS_TRACER_REF_TYPE tracer_ref;
-	ASSERT(is_internal_pid(p->tracer_proc)
-	       && internal_pid_index(p->tracer_proc) < erts_max_processes);
-
-	if (IS_TRACED_FL(p, F_TRACE_SCHED_NO)) ws_id = 6; /* Make place for scheduler id */
-
-	ERTS_GET_TRACER_REF(tracer_ref, p->tracer_proc, p->trace_flags);
-
-	hp = ERTS_ALLOC_SYSMSG_HEAP(ws_id + 4 + TS_SIZE(p),
-				    &bp,
-				    &off_heap,
-				    tracer_ref);
-	
-	if (p->current == NULL) {
-	    p->current = find_function_from_pc(p->i);
-	}
-	if (p->current == NULL) {
-	    tmp = make_small(0);
-	} else {
-	    tmp = TUPLE3(hp, p->current[0], p->current[1], make_small(p->current[2]));
-	    hp += 4;
-	}
-	
-	if (IS_TRACED_FL(p, F_TRACE_SCHED_NO)) {
-#ifdef ERTS_SMP
-		if (p->scheduler_data) sched_id = make_small(p->scheduler_data->no);
-		else sched_id = am_undefined;
-#else
-    		sched_id = make_small(1);
-#endif
-		mess = TUPLE5(hp, am_trace,p->id/* Local pid */, what, sched_id, tmp);
-	} else {
-		mess = TUPLE4(hp, am_trace, p->id, what, tmp);
-	}
-	
-	hp += ws_id;
-
-	erts_smp_mtx_lock(&smq_mtx);
-
-	if (p->trace_flags & F_TIMESTAMP) {
-	    hp = patch_ts(mess, hp);
-	}
-
-	ERTS_ENQ_TRACE_MSG(p->id, tracer_ref, mess, bp);
-	erts_smp_mtx_unlock(&smq_mtx);
-    }
+void trace_virtual_sched(Process *p, Eterm what)
+{
+    trace_sched_aux(p, what, 1);
 }
 
 /* Port profiling */

@@ -1089,7 +1089,9 @@ type_opt_1(packet) ->
 	   {line, ?TCP_PB_LINE_LF},
 	   {tpkt, ?TCP_PB_TPKT},
 	   {http, ?TCP_PB_HTTP},
-	   {httph,?TCP_PB_HTTPH}]};
+	   {httph,?TCP_PB_HTTPH},
+	   {ssl, ?TCP_PB_SSL_TLS}, % obsolete
+	   {ssl_tls, ?TCP_PB_SSL_TLS}]};
 type_opt_1(mode) ->
     {enum,[{list, ?INET_MODE_LIST},
 	   {binary, ?INET_MODE_BINARY}]};
@@ -1514,11 +1516,17 @@ enum_name(_, []) -> false.
 %% encode opt/val REVERSED since options are stored in reverse order
 %% i.e. the recent options first (we must process old -> new)
 encode_opt_val(Opts) -> 
-    try enc_opt_val(Opts, [])
+    try 
+	enc_opt_val(Opts, [])
     catch
 	Reason -> {error,Reason}
     end.
 
+enc_opt_val([{active,once}|Opts], Acc) ->
+    %% Specially optimized because {active,once} will be used for
+    %% every packet, not only once when initializing the socket.
+    %% Measurements show that this optimization is worthwhile.
+    enc_opt_val(Opts, [<<?INET_LOPT_ACTIVE:8,?INET_ONCE:32>>|Acc]);
 enc_opt_val([{raw,P,O,B}|Opts], Acc) ->
     enc_opt_val(Opts, Acc, raw, {P,O,B});
 enc_opt_val([{Opt,Val}|Opts], Acc) ->

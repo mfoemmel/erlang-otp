@@ -45,6 +45,7 @@
 %%-----------------------------------------------------------------
 -export([
 	 start_transport/0, %% Start TPKT transport service
+	 stop_transport/1,  %% Stop TPKT transport service
 	 listen/2,          %% Starts a new listener socket
 	 connect/2,         %% Used on client side to connect server
 	 socket/1,          %% Returns the inet socket
@@ -84,6 +85,7 @@
 %%-----------------------------------------------------------------
 -record(state, {supervisor_pid, linkdb}).
 
+
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
@@ -122,6 +124,22 @@ start_transport() ->
     (catch megaco_stats:init(megaco_tcp_stats)),
     megaco_tcp_sup:start_link().
 
+
+%%-----------------------------------------------------------------
+%% Func: stop_transport/1, 2
+%% Description: Stop the TPKT transport service
+%%-----------------------------------------------------------------
+stop_transport(Pid) ->
+    (catch unlink(Pid)), 
+    stop_transport(Pid, shutdown).
+
+stop_transport(Pid, Reason) ->
+    ?d1("stop_transport -> entry with"
+	"~n   Pid:    ~p"
+	"~n   Reason: ~p", [Pid, Reason]),
+    exit(Pid, Reason).
+
+
 %%-----------------------------------------------------------------
 %% Func: listen/2
 %% Description: Starts new TPKT listener sockets
@@ -140,6 +158,7 @@ listen(SupPid, Parameters) ->
 	    {error, no_tcp_server}
     end.	    
 
+
 %%-----------------------------------------------------------------
 %% Func: connect
 %% Description: Function is used when opening an TCP socket 
@@ -151,23 +170,26 @@ connect(SupPid, Parameters) ->
 	"~n   Parameters: ~p", [SupPid, Parameters]),
     Mand = [host, port, receive_handle],
     case parse_options(Parameters, #megaco_tcp{}, Mand) of
-	{ok, TcpRec} ->
+	{ok, Rec} ->
+
 	    ?d1("connect -> options parsed: "
-		"~n   TcpRec: ~p", [TcpRec]),
-	    IpOpt = [binary, {packet, tpkt}, {active, once} |
-		     TcpRec#megaco_tcp.options],
+		"~n   Rec: ~p", [Rec]),
+
+	    #megaco_tcp{host    = Host,
+			port    = Port,
+			options = Options} = Rec,
+	    
+	    IpOpt = [binary, {packet, tpkt}, {active, once} | Options], 
 
             %%------------------------------------------------------
             %% Connect the other side
-	    case catch gen_tcp:connect(TcpRec#megaco_tcp.host, 
-				       TcpRec#megaco_tcp.port, 
-				       IpOpt) of
+	    case (catch gen_tcp:connect(Host, Port, IpOpt)) of
 		{ok, Socket} ->
 		    ?d1("connect -> connected: "
 			"~n   Socket: ~p", [Socket]),
                     %%----------------------------------------------
                     %% Socket up start a new control process
-		    Rec2 = TcpRec#megaco_tcp{socket = Socket}, 
+		    Rec2 = Rec#megaco_tcp{socket = Socket}, 
 		    case start_connection(SupPid, Rec2) of
 			{ok, Pid} ->
 			    ?d1("connect -> connection started: "
@@ -180,19 +202,23 @@ connect(SupPid, Parameters) ->
 				"~n   Reason: ~p", [Reason]),
 			    {error, Reason}
 		    end;
+
 		{error, Reason} ->
 		    ?d1("connect -> failed connecting: "
 			"~n   Reason: ~p", [Reason]),
 		    Error = {error, {gen_tcp_connect, Reason}},
-		    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
+		    ?tcp_debug(Rec, "tcp connect failed", [Error]),
 		    Error;
+
 		{'EXIT', _Reason} = Exit ->
 		    ?d1("connect -> connect exited: "
 			"~n   Exit: ~p", [Exit]),
 		    Error = {error, {gen_tcp_connect, Exit}},
-		    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
+		    ?tcp_debug(Rec, "tcp connect failed", [Error]),
 		    Error
+
 	    end;
+
 	{error, _Reason} = Error ->
 	    ?d1("connect -> failed parsing options: "
 		"~n   Error: ~p", [Error]),
@@ -201,6 +227,7 @@ connect(SupPid, Parameters) ->
 	    Error
     end.
 
+
 %%-----------------------------------------------------------------
 %% Func: send_message
 %% Description: Function is used for sending data on the TCP socket
@@ -208,7 +235,7 @@ connect(SupPid, Parameters) ->
 send_message(Socket, Data) ->
     ?d1("send_message -> entry with"
 	"~n   Socket:     ~p"
-	"~n   size(Data): ~p", [Socket, size(Data)]),
+	"~n   size(Data): ~p", [Socket, sz(Data)]),
     {Size, NewData} = add_tpkt_header(Data),
     Res = gen_tcp:send(Socket, NewData),
     case Res of
@@ -220,6 +247,12 @@ send_message(Socket, Data) ->
     end,
     Res.
 	    
+-ifdef(megaco_debug).
+sz(Bin) when is_binary(Bin) ->
+    size(Bin);
+sz(List) when is_list(List) ->
+    length(List).
+-endif.
 
 
 %%-----------------------------------------------------------------
@@ -231,6 +264,7 @@ block(Socket) ->
     ?tcp_debug({socket, Socket}, "tcp block", []),
     inet:setopts(Socket, [{active, false}]).
 
+
 %%-----------------------------------------------------------------
 %% Func: unblock
 %% Description: Function is used for blocking incomming messages
@@ -240,6 +274,7 @@ unblock(Socket) ->
     ?tcp_debug({socket, Socket}, "tcp unblock", []),
     inet:setopts(Socket, [{active, once}]).
 
+
 %%-----------------------------------------------------------------
 %% Func: close
 %% Description: Function is used for closing the TCP socket
@@ -247,6 +282,7 @@ unblock(Socket) ->
 close(Socket) ->
     ?tcp_debug({socket, Socket}, "tcp close", []),
     gen_tcp:close(Socket).
+
 
 %%-----------------------------------------------------------------
 %% Func: socket
@@ -270,6 +306,7 @@ upgrade_receive_handle(Pid, NewHandle)
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
+
 %%-----------------------------------------------------------------
 %% Func: start_connection
 %% Description: Function is used for starting up a connection
@@ -280,13 +317,12 @@ start_connection(SupPid, #megaco_tcp{socket = Socket} = TcpRec) ->
 	"~n   SupPid: ~p" 
 	"~n   Socket: ~p", [SupPid, Socket]),
     
-    ProcList = supervisor:which_children(SupPid),
-    case lists:keysearch(megaco_tcp_connection_sup, 1, ProcList) of
-	{value, {_Name, ConnSupPid, _Type, _Modules}} ->
+    case connection_sup(SupPid) of
+	{ok, ConnSupPid} ->
 	    ?d1("start_connection -> found connection supervisor: "
 		"~n   ConnSupPid: ~p", [ConnSupPid]),
 	    ?tcp_debug(TcpRec, "tcp connect", []),
-	    case megaco_tcp_connection_sup:start_child(ConnSupPid, TcpRec) of
+	    case create_connection(ConnSupPid, TcpRec) of
 		{ok, Pid} ->
 		    ?d1("start_connection -> started: "
 			"~n   Pid: ~p", [Pid]),
@@ -300,12 +336,18 @@ start_connection(SupPid, #megaco_tcp{socket = Socket} = TcpRec) ->
 		    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
 		    Error
 	    end;
-	false ->
+	{error, _Reason} ->
 	    ?d2("start_connection -> could not find connection supervisor"),
 	    Error = {error, no_connection_supervisor},
 	    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
 	    Error
     end.
+
+connection_sup(Pid) ->
+    megaco_tcp_sup:which_connection_sup(Pid).
+
+create_connection(Pid, Rec) ->
+    megaco_tcp_connection_sup:start_child(Pid, Rec).
 
 create_snmp_counters(Socket) ->
     Counters = [medGwyGatewayNumInMessages, 
@@ -536,12 +578,11 @@ start_accept(SupPid, TcpRec, Listen) ->
 	"~n   SupPid: ~p"
 	"~n   TcpRec: ~p"
 	"~n   Reason: ~p", [SupPid, TcpRec, Listen]),
-    case get_pid_from_supervisor(SupPid, megaco_tcp_accept_sup) of
+    case accept_sup(SupPid) of
 	{ok, AcceptSupPid} ->
 	    ?d1("start_accept -> found accept supervisor"
 		"~n   AcceptSupPid: ~p", [AcceptSupPid]),
-	    case supervisor:start_child(AcceptSupPid, 
-					[{TcpRec, SupPid, Listen}]) of
+	    case create_acceptor(AcceptSupPid, TcpRec, SupPid, Listen) of
 		{ok, Pid} ->
 		    ?d1("start_accept -> accept process started"
 			"~n   Pid: ~p", [Pid]),
@@ -556,6 +597,13 @@ start_accept(SupPid, TcpRec, Listen) ->
 		"~n   Reason: ~p", [Reason]),
 	    {error, {no_tcp_accept_sup, Reason}}
     end.
+
+accept_sup(Pid) ->
+    megaco_tcp_sup:which_accept_sup(Pid).
+
+create_acceptor(Pid, Rec, TopSup, Listen) ->
+    megaco_tcp_accept_sup:start_child(Pid, Rec, TopSup, Listen).
+
 
 %%-----------------------------------------------------------------
 %% Func: add_tpkt_header
@@ -608,22 +656,6 @@ parse_options(BadList, _TcpRec, _Mand) ->
     ?d1("parse_options -> entry with"
 	"~n   BadList: ~p", [BadList]),
     {error, {bad_option_list, BadList}}.
-
-
-%%-----------------------------------------------------------------
-%% Func: get_pid_from_supervisor
-%% Description: Function that get a pid form a supervisor 
-%%              with the help of the name.
-%%-----------------------------------------------------------------
-get_pid_from_supervisor(SupPid, ProcName) ->
-    ProcList = supervisor:which_children(SupPid),
-    %% ProcList of type [{Name, Pid, Type, Modules}| Rest]
-    case lists:keysearch(ProcName, 1, ProcList) of
-	{value, {_Name, Pid, _Type, _Modules}} ->
-	    {ok, Pid};
-	false ->
-	    {error, no_such_process}
-    end.
 
 
 %%-----------------------------------------------------------------

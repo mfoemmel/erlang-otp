@@ -233,6 +233,7 @@ do {                                     \
 
 Eterm beam_apply[2];
 Eterm beam_exit[1];
+Eterm beam_continue_exit[1];
 
 Eterm* em_call_error_handler;
 Eterm* em_apply_bif;
@@ -2595,13 +2596,10 @@ void process_main(void)
 	  */
 	 Uint size = c_p->arity * sizeof(c_p->arg_reg[0]);
 	 if (c_p->arg_reg != c_p->def_arg_reg) {
-	     ERTS_PROC_LESS_MEM(c_p->max_arg_reg * sizeof(c_p->arg_reg[0]));
-	     ERTS_PROC_MORE_MEM(size);
 	     c_p->arg_reg = (Eterm *) erts_realloc(ERTS_ALC_T_ARG_REG,
 						   (void *) c_p->arg_reg,
 						   size);
 	 } else {
-	     ERTS_PROC_MORE_MEM(size);
 	     c_p->arg_reg = (Eterm *) erts_alloc(ERTS_ALC_T_ARG_REG, size);
 	 }
 	 c_p->max_arg_reg = c_p->arity;
@@ -2773,6 +2771,13 @@ void process_main(void)
      c_p->arity = 0;		/* In case this process will ever be garbed again. */
      ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
      erts_do_exit_process(c_p, am_normal);
+     ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
+     goto do_schedule;
+ }
+
+ OpCase(continue_exit): {
+     ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
+     erts_continue_exit_process(c_p);
      ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
      goto do_schedule;
  }
@@ -4623,6 +4628,7 @@ void process_main(void)
      beam_apply[0] = (Eterm) OpCode(i_apply);
      beam_apply[1] = (Eterm) OpCode(normal_exit);
      beam_exit[0] = (Eterm) OpCode(error_action_code);
+     beam_continue_exit[0] = (Eterm) OpCode(continue_exit);
      beam_return_to_trace[0] = (Eterm) OpCode(i_return_to_trace);
      beam_return_trace[0] = (Eterm) OpCode(return_trace);
      beam_exception_trace[0] = (Eterm) OpCode(return_trace); /* UGLY */
@@ -5577,7 +5583,6 @@ hibernate(Process* c_p, Eterm module, Eterm function, Eterm args, Eterm* reg)
 
     if (c_p->arg_reg != c_p->def_arg_reg) {
 	/* Save some memory */
-	ERTS_PROC_LESS_MEM(c_p->max_arg_reg * sizeof(c_p->arg_reg[0]));
 	erts_free(ERTS_ALC_T_ARG_REG, c_p->arg_reg);
 	c_p->arg_reg = c_p->def_arg_reg;
 	c_p->max_arg_reg = sizeof(c_p->def_arg_reg)/sizeof(c_p->def_arg_reg[0]);

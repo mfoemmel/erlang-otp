@@ -68,45 +68,45 @@ start(Options) ->
     gen_server:start({local, ?SERVER}, ?MODULE, {Options, self()}, []).
 
 stop() ->
-    gen_server:call(?SERVER, stop, infinity).
+    call(stop).
 
 d() ->
-    gen_server:call(?SERVER,discovery,infinity).
+    call(discovery).
 
 g(Oids) ->
-    ?SERVER ! {get, Oids}, ok.
+    cast({get, Oids}).
 
 %% VarsAndValues is: {PlainOid, o|s|i, Value} (unknown mibs) | {Oid, Value} 
 s(VarsAndValues) ->
-    ?SERVER ! {set, VarsAndValues}, ok.
+    cast({set, VarsAndValues}).
 
 gn(Oids) when is_list(Oids) ->
-    ?SERVER ! {get_next, Oids}, ok;
+    cast({get_next, Oids});
 gn(N) when is_integer(N) ->
-    ?SERVER ! {iter_get_next, N}, ok.
+    cast({iter_get_next, N}).
 gn() ->
-    ?SERVER ! iter_get_next, ok.
+    cast(iter_get_next).
 
 r() ->
-    ?SERVER ! resend_pdu, ok.
+    cast(resend_pdu).
 
 gb(NonRepeaters, MaxRepetitions, Oids) ->
-    ?SERVER ! {bulk, {NonRepeaters, MaxRepetitions, Oids}}, ok.
+    cast({bulk, {NonRepeaters, MaxRepetitions, Oids}}).
 
 rpl(RespPdu) ->
-    ?SERVER ! {response, RespPdu}.
+    cast({response, RespPdu}).
 
 send_bytes(Bytes) ->
-    ?SERVER ! {send_bytes, Bytes}, ok.
+    cast({send_bytes, Bytes}).
 
 purify_oid(Oid) ->
-    gen_server:call(?SERVER, {purify_oid, Oid}, 5000).
+    call({purify_oid, Oid}, 5000).
 
 oid_to_name(Oid) ->
-    gen_server:call(?SERVER, {oid_to_name, Oid}, 5000).
+    call({oid_to_name, Oid}, 5000).
 
 name_to_oid(Name) ->
-    gen_server:call(?SERVER, {name_to_oid, Name}, 5000).
+    call({name_to_oid, Name}, 5000).
 
 
 %%----------------------------------------------------------------------
@@ -340,85 +340,6 @@ mk_seclevel(authNoPriv) -> 1;
 mk_seclevel(authPriv) -> 3.
     
 
-handle_info({get, Oids}, State) ->
-    d("handle_info -> get request for ~p",[Oids]),
-    {noreply, execute_request(get, Oids, State)};
-
-handle_info({set, VariablesAndValues}, State) ->
-    d("handle_info -> set request for ~p",[VariablesAndValues]),
-    {noreply, execute_request(set, VariablesAndValues, State)};
-
-handle_info({bulk, Args}, State) ->
-    d("handle_info -> bulk request for ~p",[Args]),
-    {noreply, execute_request(bulk, Args, State)};
-
-handle_info({response, RespPdu}, State) ->
-    d("handle_info -> response request with ~p",[RespPdu]),
-    ?PACK_SERV:send_pdu(RespPdu, State#state.packet_server),
-    {noreply, State};
-
-handle_info({snmp_msg, Msg, Ip, Udp}, State) ->
-    io:format("* Got PDU: ~s", [?PACK_SERV:format_hdr(Msg)]),
-    PDU = ?PACK_SERV:get_pdu(Msg),
-    echo_pdu(PDU, State#state.mini_mib),
-    case PDU#pdu.type of
-	'inform-request' ->
-	    %% Generate a response...
-	    RespPDU = PDU#pdu{type = 'get-response',
-			      error_status = noError,
-			      error_index = 0},
-	    RespMsg = ?PACK_SERV:set_pdu(Msg, RespPDU),
-	    ?PACK_SERV:send_msg(RespMsg, State#state.packet_server, Ip, Udp);
-	_Else ->
-	    ok
-    end,
-    {noreply, State#state{last_received_pdu = PDU}};
-
-handle_info({get_next, Oids}, State) ->
-    d("handle_info -> get-next request for ~p",[Oids]),
-    {noreply, execute_request(get_next, Oids, State)};
-
-handle_info(resend_pdu, State) ->
-    PDU = State#state.last_sent_pdu,
-    d("handle_info -> resend_pdu request when last sent pdu: ~n\t~p",[PDU]),
-    send_pdu(PDU#pdu{request_id = make_request_id()},
-	     State#state.mini_mib,
-	     State#state.packet_server),
-    {noreply, State};
-
-handle_info(iter_get_next, State)
-  when is_record(State#state.last_received_pdu, pdu) ->
-    d("handle_info -> iter_get_next request",[]),
-    PrevPDU = State#state.last_received_pdu,
-    Oids    = [get_oid_from_varbind(Vb) || Vb <- PrevPDU#pdu.varbinds], 
-    {noreply, execute_request(get_next, Oids, State)};
-
-handle_info(iter_get_next, State) ->
-    ?PACK_SERV:error("[Iterated get-next] No Response PDU to "
-			"start iterating from.", []),
-    {noreply, State};
-
-handle_info({iter_get_next, N}, State) ->
-    d("handle_info -> iter_get_next(~p) request",[N]),
-    if
-	record(State#state.last_received_pdu, pdu) ->
-	    PDU = get_next_iter_impl(N, State#state.last_received_pdu,
-				     State#state.mini_mib,
-				     State#state.packet_server),
-	    {noreply, State#state{last_received_pdu = PDU}};
-	true ->
-	    ?PACK_SERV:error("[Iterated get-next] No Response PDU to "
-				"start iterating from.", []),
-	    {noreply, State}
-    end;
-
-handle_info({send_bytes, Bytes}, State) ->
-    d("handle_info -> send-bytes request for ~p bytes",
-      [sizeOf(Bytes)]),
-    ?PACK_SERV:send_bytes(Bytes, State#state.packet_server),
-    {noreply, State}.
-
-
 handle_call({purify_oid, Oid}, _From, #state{mini_mib = MiniMib} = State) ->
     d("handle_call -> purify_oid for ~p",[Oid]),
     Reply = (catch purify_oid(Oid, MiniMib)),
@@ -460,9 +381,95 @@ handle_call(discovery, _From, State) ->
     {Reply, NewState} = execute_discovery(State),
     {reply, Reply, NewState}.
     
+
+handle_cast({get, Oids}, State) ->
+    d("handle_cast -> get request for ~p", [Oids]),
+    {noreply, execute_request(get, Oids, State)};
+
+handle_cast({set, VariablesAndValues}, State) ->
+    d("handle_cast -> set request for ~p", [VariablesAndValues]),
+    {noreply, execute_request(set, VariablesAndValues, State)};
+
+handle_cast({get_next, Oids}, State) ->
+    d("handle_cast -> get-next request for ~p", [Oids]),
+    {noreply, execute_request(get_next, Oids, State)};
+
+handle_cast(iter_get_next, State)
+  when is_record(State#state.last_received_pdu, pdu) ->
+    d("handle_cast -> iter_get_next request", []),
+    PrevPDU = State#state.last_received_pdu,
+    Oids    = [get_oid_from_varbind(Vb) || Vb <- PrevPDU#pdu.varbinds], 
+    {noreply, execute_request(get_next, Oids, State)};
+
+handle_cast(iter_get_next, State) ->
+    ?PACK_SERV:error("[Iterated get-next] No Response PDU to "
+		     "start iterating from.", []),
+    {noreply, State};
+
+handle_cast({iter_get_next, N}, State) ->
+    d("handle_cast -> iter_get_next(~p) request",[N]),
+    if
+	is_record(State#state.last_received_pdu, pdu) ->
+	    PDU = get_next_iter_impl(N, State#state.last_received_pdu,
+				     State#state.mini_mib,
+				     State#state.packet_server),
+	    {noreply, State#state{last_received_pdu = PDU}};
+	true ->
+	    ?PACK_SERV:error("[Iterated get-next] No Response PDU to "
+				"start iterating from.", []),
+	    {noreply, State}
+    end;
+
+handle_cast(resend_pdu, #state{last_sent_pdu = PDU} = State) ->
+    d("handle_cast -> resend_pdu request when"
+      "~n   PDU = ~p", [PDU]),
+    send_pdu(PDU#pdu{request_id = make_request_id()},
+	     State#state.mini_mib,
+	     State#state.packet_server),
+    {noreply, State};
+
+handle_cast({bulk, Args}, State) ->
+    d("handle_bulk -> bulk request for ~p", [Args]),
+    {noreply, execute_request(bulk, Args, State)};
+
+handle_cast({response, RespPdu}, State) ->
+    d("handle_cast -> response request with ~p", [RespPdu]),
+    ?PACK_SERV:send_pdu(RespPdu, State#state.packet_server),
+    {noreply, State};
+
+handle_cast({send_bytes, Bytes}, State) ->
+    d("handle_cast -> send-bytes request for ~p bytes", [sizeOf(Bytes)]),
+    ?PACK_SERV:send_bytes(Bytes, State#state.packet_server),
+    {noreply, State};
+
 handle_cast(Msg, State) ->
-    d("handle_cast -> unknown message: ~n\t~p",[Msg]),
+    d("handle_cast -> unknown message: "
+      "~n   ~p", [Msg]),
     {noreply, State}.
+
+
+handle_info({snmp_msg, Msg, Ip, Udp}, State) ->
+    io:format("* Got PDU: ~s", [?PACK_SERV:format_hdr(Msg)]),
+    PDU = ?PACK_SERV:get_pdu(Msg),
+    echo_pdu(PDU, State#state.mini_mib),
+    case PDU#pdu.type of
+	'inform-request' ->
+	    %% Generate a response...
+	    RespPDU = PDU#pdu{type = 'get-response',
+			      error_status = noError,
+			      error_index = 0},
+	    RespMsg = ?PACK_SERV:set_pdu(Msg, RespPDU),
+	    ?PACK_SERV:send_msg(RespMsg, State#state.packet_server, Ip, Udp);
+	_Else ->
+	    ok
+    end,
+    {noreply, State#state{last_received_pdu = PDU}};
+
+handle_info(Info, State) ->
+    d("handle_info -> unknown info: "
+      "~n   ~p", [Info]),
+    {noreply, State}.
+
 
 terminate(Reason, State) ->
     d("terminate -> with Reason: ~n\t~p",[Reason]),
@@ -1085,6 +1092,18 @@ get_value(Opt, Opts, Default) ->
 	{value, C} -> C;
 	false -> Default
     end.
+
+
+%%----------------------------------------------------------------------
+
+call(Req) ->
+    call(Req, infinity).
+
+call(Req, To) ->
+    gen_server:call(?SERVER, Req, To).
+
+cast(Msg) ->
+    gen_server:cast(?SERVER, Msg).
 
 
 %%----------------------------------------------------------------------

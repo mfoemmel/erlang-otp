@@ -406,9 +406,12 @@ handle_exec(start_transport, #state{recv_handle = RH} = State) ->
 
 handle_exec({listen, Opts0},
      #state{recv_handle = RH, port = Port, transport_sup = Pid} = State)
-  when RH#megaco_receive_handle.send_mod == megaco_tcp ->
+  when RH#megaco_receive_handle.send_mod =:= megaco_tcp ->
     p("listen(tcp)", []),
-    Opts = [{module, ?DELIVER_MOD}, {port, Port}, {receive_handle, RH}|Opts0],
+    Opts = [{module,         ?DELIVER_MOD}, 
+	    {port,           Port}, 
+	    {receive_handle, RH},
+	    {tcp_options,    [{nodelay, true}]} | Opts0],
     case (catch megaco_tcp:listen(Pid, Opts)) of
         ok ->
             {ok, State};
@@ -417,7 +420,7 @@ handle_exec({listen, Opts0},
     end;
 handle_exec({listen, Opts0},
      #state{recv_handle = RH, port = Port, transport_sup = Pid} = State)
-  when RH#megaco_receive_handle.send_mod == megaco_udp ->
+  when RH#megaco_receive_handle.send_mod =:= megaco_udp ->
     p("listen(udp) - open"),
     Opts = [{module, ?DELIVER_MOD}, {port, Port}, {receive_handle, RH}|Opts0],
     case (catch megaco_udp:open(Pid, Opts)) of
@@ -434,7 +437,10 @@ handle_exec({connect, Host, Opts0},
   when RH#megaco_receive_handle.send_mod =:= megaco_tcp ->
     p("connect[megaco_tcp] to ~p", [Host]),
     PrelMid = preliminary_mid,
-    Opts = [{host, Host}, {port, Port}, {receive_handle, RH}|Opts0],
+    Opts = [{host,           Host}, 
+	    {port,           Port}, 
+	    {receive_handle, RH},
+	    {tcp_options,    [{nodelay, true}]} | Opts0],
     case (catch megaco_tcp:connect(Sup, Opts)) of
 	{ok, SH, ControlPid} ->
 	    d("tcp connected: ~p, ~p", [SH, ControlPid]),
@@ -650,7 +656,8 @@ handle_exec({megaco_callback, Tag, {VMod, VFunc, VArgs}}, State)
     end;
 
 handle_exec({megaco_callback, Tag, Verify, Timeout}, State)
-  when is_function(Verify) and (is_integer(Timeout) and (Timeout > 0)) ->
+  when (is_function(Verify) andalso 
+	(is_integer(Timeout) andalso (Timeout > 0))) ->
     p("megaco_callback [~w]", [Tag]),
     receive
         {handle_megaco_callback, Type, Msg, Pid} ->
@@ -955,7 +962,9 @@ handle_megaco_callback_cast(P, Msg, Reply) ->
     Reply.
 
 handle_megaco_callback_call(P, Msg) ->
-    p("handle_megaco_callback_call -> entry with Msg: ~n~p", [Msg]),
+    p("handle_megaco_callback_call -> entry with"
+      "~n   P:   ~p"
+      "~n   Msg: ~p", [P, Msg]),
     P ! {handle_megaco_callback, call, Msg, self()},
     receive
         {handle_megaco_callback_reply, Reply} ->

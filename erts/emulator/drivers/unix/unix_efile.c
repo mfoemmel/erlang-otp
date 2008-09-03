@@ -44,6 +44,14 @@
 #endif
 #endif /* _OSE_ */
 
+#if defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
+#define DARWIN 1
+#endif
+
+#ifdef DARWIN
+#include <fcntl.h>
+#endif /* DARWIN */
+
 #ifdef VXWORKS
 #include <ioLib.h>
 #include <dosFsLib.h>
@@ -666,7 +674,7 @@ efile_openfile(Efile_error* errInfo,	/* Where to return error codes. */
 	       int flags,		/* Flags to user for opening. */
 	       int* pfd,		/* Where to store the file 
 					   descriptor. */
-	       off_t *pSize)		/* Where to store the size of the 
+	       Sint64 *pSize)		/* Where to store the size of the 
 					   file. */
 {
     struct stat statbuf;
@@ -782,7 +790,9 @@ efile_openfile(Efile_error* errInfo,	/* Where to return error codes. */
 	return 0;
 
     *pfd = fd;
-    *pSize = statbuf.st_size;
+    if (pSize) {
+	*pSize = statbuf.st_size;
+    }
     return 1;
 }
 
@@ -818,7 +828,11 @@ efile_fsync(Efile_error *errInfo, /* Where to return error codes. */
   undefined fsync
 #endif /* VXWORKS */
 #else
+#if defined(DARWIN) && defined(F_FULLFSYNC)
+    return check_error(fcntl(fd, F_FULLFSYNC), errInfo);
+#else
     return check_error(fsync(fd), errInfo);
+#endif /* DARWIN */
 #endif /* NO_FSYNC */
 }
 
@@ -1182,15 +1196,19 @@ efile_read(Efile_error* errInfo,     /* Where to return error codes. */
 int
 efile_pread(Efile_error* errInfo,     /* Where to return error codes. */
 	    int fd,		      /* File descriptor to read from. */
-	    off_t offset,             /* Offset in bytes from BOF. */
+	    Sint64 offset,            /* Offset in bytes from BOF. */
 	    char* buf,		      /* Buffer to read into. */
 	    size_t count,	      /* Number of bytes to read. */
 	    size_t *pBytesRead)	      /* Where to return 
 					 number of bytes read. */
 {
-
 #if defined(HAVE_PREAD) && defined(HAVE_PWRITE)
     ssize_t n;
+    off_t off = (off_t) offset;
+    if (off != offset) {
+	errno = EINVAL;
+	return check_error(-1, errInfo);
+    }
     for (;;) {
 	if ((n = pread(fd, buf, count, offset)) >= 0)
 	    break;
@@ -1201,13 +1219,12 @@ efile_pread(Efile_error* errInfo,     /* Where to return error codes. */
     return 1;
 #else
     {
-	int res;
-	off_t location;
-	if ((res = efile_seek(errInfo, fd, offset, EFILE_SEEK_SET, 
-			      &location)))
+	int res = efile_seek(errInfo, fd, offset, EFILE_SEEK_SET, NULL);
+	if (res) {
 	    return efile_read(errInfo, 0, fd, buf, count, pBytesRead);
-	else
+	} else {
 	    return res;
+	}
     }
 #endif
 }
@@ -1219,12 +1236,16 @@ efile_pwrite(Efile_error* errInfo,  /* Where to return error codes. */
 	     int fd,		    /* File descriptor to write to. */
 	     char* buf,		    /* Buffer to write. */
 	     size_t count,	    /* Number of bytes to write. */
-	     off_t offset)	    /* where to write it */
+	     Sint64 offset)	    /* where to write it */
 { 
-
 #if defined(HAVE_PREAD) && defined(HAVE_PWRITE)
     ssize_t written;		    /* Bytes written in last operation. */
-
+    off_t off = (off_t) offset;
+    if (off != offset) {
+	errno = EINVAL;
+	return check_error(-1, errInfo);
+    }
+    
     while (count > 0) {
 	if ((written = pwrite(fd, buf, count, offset)) < 0) {
 	    if (errno != EINTR)
@@ -1240,13 +1261,13 @@ efile_pwrite(Efile_error* errInfo,  /* Where to return error codes. */
     return 1;
 #else  /* For unix systems that don't support pread() and pwrite() */    
     {
-	int res;
-	off_t location;
-	if ((res = efile_seek(errInfo, fd, offset, 
-			      EFILE_SEEK_SET, &location)))
+	int res = efile_seek(errInfo, fd, offset, EFILE_SEEK_SET, NULL);
+	
+	if (res) {
 	    return efile_write(errInfo, 0, fd, buf, count);
-	else
+	} else {
 	    return res;
+	}
     }
 #endif
 }
@@ -1255,13 +1276,13 @@ efile_pwrite(Efile_error* errInfo,  /* Where to return error codes. */
 int
 efile_seek(Efile_error* errInfo,      /* Where to return error codes. */
 	   int fd,                    /* File descriptor to do the seek on. */
-	   off_t offset,              /* Offset in bytes from the given 
+	   Sint64 offset,             /* Offset in bytes from the given 
 					 origin. */ 
 	   int origin,                /* Origin of seek (SEEK_SET, SEEK_CUR,
 				         SEEK_END). */ 
-	   off_t *new_location)       /* Resulting new location in file. */
+	   Sint64 *new_location)      /* Resulting new location in file. */
 {
-    off_t result;
+    off_t off, result;
 
     switch (origin) {
     case EFILE_SEEK_SET: origin = SEEK_SET; break;
@@ -1269,12 +1290,16 @@ efile_seek(Efile_error* errInfo,      /* Where to return error codes. */
     case EFILE_SEEK_END: origin = SEEK_END; break;
     default:
 	errno = EINVAL;
-	check_error(-1, errInfo);
-	break;
+	return check_error(-1, errInfo);
     }
-
+    off = (off_t) offset;
+    if (off != offset) {
+	errno = EINVAL;
+	return check_error(-1, errInfo);
+    }
+    
     errno = 0;
-    result = lseek(fd, offset, origin);
+    result = lseek(fd, off, origin);
 
     /*
      * Note that the man page for lseek (on SunOs 5) says:
@@ -1288,7 +1313,9 @@ efile_seek(Efile_error* errInfo,      /* Where to return error codes. */
 	errno = EINVAL;
     if (result < 0)
 	return check_error(-1, errInfo);
-    *new_location = result;
+    if (new_location) {
+	*new_location = result;
+    }
     return 1;
 }
 

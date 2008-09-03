@@ -114,6 +114,15 @@ ifneq ($(MIBS_VERBOSITY),)
 SNMP_FLAGS += +'{verbosity,$(MIBS_VERBOSITY)}'
 endif
 
+ifneq ($(MIBS_REFERENCE),) 
+SNMP_FLAGS += +reference
+endif
+
+ifneq ($(MIBS_OPTIONS),) 
+SNMP_FLAGS += +options
+endif
+
+
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
@@ -139,6 +148,8 @@ conf:
 	cd ..; $(MAKE) conf
 
 info:
+	@echo "SNMP_FLAGS      = $(SNMP_FLAGS)"
+	@echo ""
 	@echo "MIBS            = $(MIBS)"
 	@echo ""
 	@echo "BUILD_MIBS      = $(BUILD_MIBS)"

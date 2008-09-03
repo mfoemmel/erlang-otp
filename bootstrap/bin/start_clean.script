@@ -1,4 +1,4 @@
-%% script generated at {2008,6,10} {20,13,35}
+%% script generated at {2008,9,2} {20,15,48}
 {script,
     {"OTP  APN 181 01","R12B"},
     [{preLoaded,
@@ -45,7 +45,7 @@
          {application_controller,start,
              [{application,kernel,
                   [{description,"ERTS  CXC 138 10"},
-                   {vsn,"2.12.3"},
+                   {vsn,"2.12.4"},
                    {id,[]},
                    {modules,
                        [application,application_controller,application_master,
@@ -83,7 +83,7 @@
          {application,load,
              [{application,stdlib,
                   [{description,"ERTS  CXC 138 10"},
-                   {vsn,"1.15.3"},
+                   {vsn,"1.15.4"},
                    {id,[]},
                    {modules,
                        [array,base64,beam_lib,c,calendar,dets,dets_server,

@@ -44,6 +44,7 @@
 		    t_arity/0,
 		    t_atom/0,
 		    t_atom/1,
+		    t_atoms/1,
 		    t_atom_vals/1,
 		    t_binary/0,
 		    t_bitstr/0,
@@ -69,10 +70,10 @@
 		    t_inf/2,
 		    t_integer/0,
 		    t_integer/1,
-		    t_iolist/0,
 		    t_non_neg_integer/0,
 		    t_pos_integer/0,
 		    t_integers/1,
+		    t_iolist/0,
 		    t_is_any/1,
 		    t_is_atom/1,
 		    t_is_binary/1,
@@ -247,14 +248,8 @@ type(code, set_path, 1, Xs) ->
 	 end);
 type(code, soft_purge, 1, Xs) ->
   type(code, delete, 1, Xs);
-type(code, stick_dir, 1, Xs) ->
-  strict(arg_types(code, stick_dir, 1), Xs,
-	 fun (_) -> t_sup(t_atom('ok'), t_atom('error')) end);
 type(code, stick_mod, 1, Xs) ->
   strict(arg_types(code, stick_mod, 1), Xs, fun (_) -> t_atom('true') end);
-type(code, stop, 0, _) -> t_none();
-type(code, unstick_dir, 1, Xs) ->
-  type(code, stick_dir, 1, Xs);
 type(code, unstick_mod, 1, Xs) ->
   type(code, stick_mod, 1, Xs);
 type(code, which, 1, Xs) ->
@@ -712,6 +707,14 @@ type(erlang, concat_binary, 1, Xs) ->
   strict(arg_types(erlang, concat_binary, 1), Xs, fun (_) -> t_binary() end);
 type(erlang, date, 0, _) ->
   t_date();
+type(erlang, decode_packet, 3, Xs) ->
+  strict(arg_types(erlang, decode_packet, 3), Xs,
+	 fun (_) ->
+	     t_sup([t_tuple([t_atom('ok'), t_packet(), t_binary()]),
+		    t_tuple([t_atom('more'), t_sup([t_non_neg_integer(),
+						    t_atom('undefined')])]),
+		    t_tuple([t_atom('error'), t_any()])])
+	 end);
 type(erlang, delete_module, 1, Xs) ->
   strict(arg_types(erlang, delete_module, 1), Xs,
  	 fun (_) -> t_sup(t_atom('true'), t_atom('undefined')) end);
@@ -3036,11 +3039,11 @@ arg_types(_BIF) ->
 
 %%------- code ----------------------------------------------------------------
 arg_types(code, add_path, 1) ->
-  [t_any()];
+  [t_string()];
 arg_types(code, add_patha, 1) ->
   arg_types(code, add_path, 1);
 arg_types(code, add_paths, 1) ->
-  [t_list()];
+  [t_list(t_string())];
 arg_types(code, add_pathsa, 1) ->
   arg_types(code, add_paths, 1);
 arg_types(code, add_pathsz, 1) ->
@@ -3052,7 +3055,7 @@ arg_types(code, all_loaded, 0) ->
 arg_types(code, compiler_dir, 0) ->
   [];
 arg_types(code, del_path, 1) ->
-  [t_any()];  % OBS: currently code:del_path(42) returns {'error','bad_name'}
+  [t_sup(t_string(), t_atom())];  % OBS: doc differs from add_path/1 - why?
 arg_types(code, delete, 1) ->
   arg_types(code, load_file, 1);
 arg_types(code, ensure_loaded, 1) ->
@@ -3060,11 +3063,11 @@ arg_types(code, ensure_loaded, 1) ->
 arg_types(code, get_chunk, 2) ->
   [t_binary(), t_string()];
 arg_types(code, get_object_code, 1) ->
-  [t_any()];  % OBS: currently code:get_object_code(42) returns 'error'
+  [t_atom()];
 arg_types(code, get_path, 0) ->
   [];
 arg_types(code, is_loaded, 1) ->
-  [t_any()];  % OBS: not t_atom(); currently code:is_loaded(42) returns 'false'
+  [t_atom()];
 arg_types(code, is_sticky, 1) ->
   [t_atom()];
 arg_types(code, is_module_native, 1) ->
@@ -3072,7 +3075,7 @@ arg_types(code, is_module_native, 1) ->
 arg_types(code, lib_dir, 0) ->
   [];
 arg_types(code, lib_dir, 1) ->
-  [t_any()];  % OBS: currently code:lib_dir(42) returns {'error','bad_name'}
+  [t_atom()];
 arg_types(code, load_abs, 1) ->
   [t_string()];
 arg_types(code, load_abs, 2) ->
@@ -3090,7 +3093,7 @@ arg_types(code, module_md5, 1) ->
 arg_types(code, make_stub_module, 3) ->
   [t_atom(), t_binary(), t_tuple([t_list(), t_list()])];
 arg_types(code, priv_dir, 1) ->
-  [t_any()];  % OBS: currently code:lib_dir(42) returns {'error','bad_name'}
+  [t_atom()];
 arg_types(code, purge, 1) ->
   arg_types(code, delete, 1);
 arg_types(code, rehash, 0) ->
@@ -3100,17 +3103,11 @@ arg_types(code, replace_path, 2) ->
 arg_types(code, root_dir, 0) ->
   [];
 arg_types(code, set_path, 1) ->
-  [t_any()];  % OBS: currently code:set_path(42) returns {'error','bad_path'}
+  [t_string()];
 arg_types(code, soft_purge, 1) ->
   arg_types(code, delete, 1);
-arg_types(code, stick_dir, 1) ->
-  [t_any()];  % OBS: currently code:stick_dir(42) returns 'error'
 arg_types(code, stick_mod, 1) ->
-  [t_any()];
-arg_types(code, stop, 0) ->
-  [];
-arg_types(code, unstick_dir, 1) ->
-  arg_types(code, stick_dir, 1);
+  [t_atom()];
 arg_types(code, unstick_mod, 1) ->
   arg_types(code, stick_mod, 1);
 arg_types(code, which, 1) ->
@@ -3259,6 +3256,8 @@ arg_types(erlang, concat_binary, 1) ->
   [t_list(t_binary())];
 arg_types(erlang, date, 0) ->
   [];
+arg_types(erlang, decode_packet, 3) ->
+  [t_decode_packet_type(), t_binary(), t_list(t_decode_packet_option())];
 arg_types(erlang, delete_module, 1) ->
   [t_atom()];
 arg_types(erlang, demonitor, 1) ->
@@ -3831,7 +3830,7 @@ arg_types(gen_tcp, recv, 2) ->
 arg_types(gen_tcp, recv, 3) ->
   arg_types(gen_tcp, recv, 2) ++ [t_timeout()];
 arg_types(gen_tcp, send, 2) ->
-  [t_socket(), t_gen_tcp_packet()];
+  [t_socket(), t_packet()];
 arg_types(gen_tcp, shutdown, 2) ->
   [t_socket(), t_sup([t_atom('read'), t_atom('write'), t_atom('read_write')])];
 %%------- gen_udp -------------------------------------------------------------
@@ -3844,7 +3843,7 @@ arg_types(gen_udp, recv, 2) ->
 arg_types(gen_udp, recv, 3) ->
   arg_types(gen_tcp, recv, 3);
 arg_types(gen_udp, send, 4) ->
-  [t_socket(), t_gen_tcp_address(), t_gen_tcp_port(), t_gen_tcp_packet()];
+  [t_socket(), t_gen_tcp_address(), t_gen_tcp_port(), t_packet()];
 %%------- hipe_bifs -----------------------------------------------------------
 arg_types(hipe_bifs, add_ref, 2) ->
   [t_mfa(), t_tuple([t_mfa(),
@@ -4186,6 +4185,77 @@ t_ip_address() ->
 		 T_int16, T_int16, T_int16, T_int16])).
 
 %% =====================================================================
+%% Some basic types used in various parts of the system
+%% =====================================================================
+
+t_date() ->
+  t_tuple([t_pos_fixnum(), t_pos_fixnum(), t_pos_fixnum()]).
+
+t_time() ->
+  t_tuple([t_non_neg_fixnum(), t_non_neg_fixnum(), t_non_neg_fixnum()]).
+
+t_packet() ->
+  t_sup([t_binary(), t_iolist(), t_httppacket()]).
+
+t_httppacket() ->
+  t_sup([t_HttpRequest(), t_HttpResponse(),
+	 t_HttpHeader(), t_atom('http_eoh'), t_HttpError()]).
+
+%% =====================================================================
+%% HTTP types documented in R12B-4
+%% =====================================================================
+
+t_HttpRequest() ->
+  t_tuple([t_atom('http_request'), t_HttpMethod(), t_HttpUri(), t_HttpVersion()]).
+
+t_HttpResponse() ->
+   t_tuple([t_atom('http_response'), t_HttpVersion(), t_integer(), t_string()]).
+
+t_HttpHeader() ->
+  t_tuple([t_atom('http_header'), t_integer(), t_HttpField(), t_any(), t_string()]).
+
+t_HttpError() ->
+  t_tuple([t_atom('http_error'), t_string()]).
+
+t_HttpMethod() ->
+  t_sup(t_HttpMethodAtom(), t_string()).
+
+t_HttpMethodAtom() ->
+  t_atoms(['OPTIONS', 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'TRACE']).
+
+t_HttpUri() ->
+  t_sup([t_atom('*'),
+	 t_tuple([t_atom('absoluteURI'),
+		  t_sup(t_atom('http'), t_atom('https')),
+		  t_string(),
+		  t_sup(t_non_neg_integer(), t_atom('undefined')),
+		  t_string()]),
+	 t_tuple([t_atom('scheme'), t_string(), t_string()]),
+	 t_tuple([t_atom('abs_path'), t_string()]),
+	 t_string()]).
+
+t_HttpVersion() ->
+  t_tuple([t_non_neg_integer(), t_non_neg_integer()]).
+
+t_HttpField() ->
+  t_sup(t_HttpFieldAtom(), t_string()).
+
+t_HttpFieldAtom() ->
+  t_atoms(['Cache-Control', 'Connection', 'Date', 'Pragma', 'Transfer-Encoding',
+	   'Upgrade', 'Via', 'Accept', 'Accept-Charset', 'Accept-Encoding',
+	   'Accept-Language', 'Authorization', 'From', 'Host',
+	   'If-Modified-Since', 'If-Match', 'If-None-Match', 'If-Range',
+	   'If-Unmodified-Since', 'Max-Forwards', 'Proxy-Authorization',
+	   'Range', 'Referer', 'User-Agent', 'Age', 'Location',
+	   'Proxy-Authenticate', 'Public', 'Retry-After', 'Server', 'Vary',
+	   'Warning', 'Www-Authenticate', 'Allow', 'Content-Base',
+	   'Content-Encoding', 'Content-Language', 'Content-Length',
+	   'Content-Location', 'Content-Md5', 'Content-Range', 'Content-Type',
+	   'Etag', 'Expires', 'Last-Modified', 'Accept-Ranges',
+	   'Set-Cookie', 'Set-Cookie2', 'X-Forwarded-For', 'Cookie',
+	   'Keep-Alive', 'Proxy-Connection']).
+
+%% =====================================================================
 %% These are used for the built-in functions of 'code'
 %% =====================================================================
 
@@ -4236,6 +4306,13 @@ t_pinfo_item() ->
 	 t_atom('suspending'),
 	 t_atom('total_heap_size'),
 	 t_atom('trap_exit')]).
+
+t_decode_packet_option() ->
+  t_sup([t_tuple([t_atom('packet_size'), t_non_neg_integer()]),
+	 t_tuple([t_atom('line_length'), t_non_neg_integer()])]).
+
+t_decode_packet_type() ->
+  t_sup(t_inet_setoption_packettype(), t_atom('httph')).
 
 t_dist_exit() ->
   t_sup([t_atom('kill'), t_atom('noconnection'), t_atom('normal')]).
@@ -4386,7 +4463,8 @@ t_inet_setoption_packettype() ->
   t_sup([t_atom('raw'),
 	 t_integers([0,1,2,4]),
 	 t_atom('asn1'), t_atom('cdr'), t_atom('sunrm'),
-	 t_atom('fcgi'), t_atom('tpkt'), t_atom('line')]).
+	 t_atom('fcgi'), t_atom('tpkt'), t_atom('line'),
+	 t_atom('http')]).	%% but t_atom('httph') is not needed
 
 t_inet_posix_error() ->
   t_atom().  %% XXX: Very underspecified
@@ -4396,13 +4474,10 @@ t_inet_posix_error() ->
 %% =====================================================================
 
 t_file_io_data() ->
-  t_sup([t_binary(),
-	 %% IoList() = [char() | binary() | IoList()] -- approximation below
-	 t_string(),
-	 t_maybe_improper_list()]).
+  t_sup([t_binary(), t_iolist()]).
 
 t_file_io_device() ->
-  t_sup(t_pid(), t_tuple([t_atom('file_descriptor'), t_any(), t_any()])).
+  t_sup(t_pid(), t_tuple([t_atom('file_descriptor'), t_atom(), t_any()])).
 
 t_file_name() ->
   t_sup([t_atom(),
@@ -4497,12 +4572,8 @@ t_gen_tcp_listen_option() ->
 	 t_atom('inet'),
 	 t_inet_setoption()]).
 
-t_gen_tcp_packet() ->
-  %% Documentation reads: string() | binary() but it is actually an IOList
-  t_file_io_data().
-
 t_gen_tcp_recv() ->
-  t_sup(t_tuple([t_atom('ok'), t_gen_tcp_packet()]),
+  t_sup(t_tuple([t_atom('ok'), t_packet()]),
 	t_tuple([t_atom('error'), t_sup([t_atom('closed'),
 					 t_inet_posix_error()])])).
 
@@ -4523,7 +4594,7 @@ t_gen_udp_recv() ->
   t_sup(t_tuple([t_atom('ok'),
 		 t_tuple([t_ip_address(),
 			  t_gen_tcp_port(),
-			  t_gen_tcp_packet()])]),
+			  t_packet()])]),
 	t_tuple([t_atom('error'),
 		 t_sup(t_atom('not_owner'), t_inet_posix_error())])).
 
@@ -4537,14 +4608,8 @@ t_trampoline() ->
 t_immediate() ->
   t_sup([t_nil(), t_atom(), t_fixnum()]).
 
-t_date() ->
-  t_tuple([t_pos_fixnum(), t_pos_fixnum(), t_pos_fixnum()]).
-
-t_time() ->
-  t_tuple([t_non_neg_fixnum(), t_non_neg_fixnum(), t_non_neg_fixnum()]).
-
 t_immarray() ->
-  t_sup(t_nil(), t_integer()).	%% abstract data type
+  t_integer().	%% abstract data type
 
 t_hiperef() ->
   t_immarray().

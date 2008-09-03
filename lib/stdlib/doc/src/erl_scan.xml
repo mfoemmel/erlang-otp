@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE erlref SYSTEM "erlref.dtd">
+
+<erlref>
+  <header>
+    <copyright>
+      <year>1996</year>
+      <year>2007</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>erl_scan</title>
+    <prepared>Robert Virding</prepared>
+    <responsible>Bjarne D&auml;cker</responsible>
+    <docno>1</docno>
+    <approved>Bjarne D&auml;cker</approved>
+    <checked></checked>
+    <date>97-01-24</date>
+    <rev>B</rev>
+    <file>erl_scan.sgml</file>
+  </header>
+  <module>erl_scan</module>
+  <modulesummary>The Erlang Token Scanner</modulesummary>
+  <description>
+    <p>This module contains functions for tokenizing characters into
+      Erlang tokens.</p>
+  </description>
+  <funcs>
+    <func>
+      <name>string(CharList,StartLine]) -> {ok, Tokens, EndLine} | Error</name>
+      <name>string(CharList) ->  {ok, Tokens, EndLine} | Error</name>
+      <fsummary>Scan a string and returns the Erlang tokens</fsummary>
+      <type>
+        <v>CharList = string()</v>
+        <v>StartLine = EndLine = Line = integer()</v>
+        <v>Tokens = [{atom(),Line}|{atom(),Line,term()}]</v>
+        <v>Error = {error, ErrorInfo, EndLine}</v>
+      </type>
+      <desc>
+        <p>Takes the list of characters <c>CharList</c> and tries to scan (tokenize) them. Returns <c>{ok, Tokens, EndLine}</c>, where <c>Tokens</c> are the Erlang tokens
+          from <c>CharList</c>. <c>EndLine</c> is the last line where a token was found.</p>
+        <p><c>StartLine</c> indicates the initial line when scanning starts. <c>string/1</c> is equivalent to <c>string(CharList,1)</c>.</p>
+        <p><c>{error, ErrorInfo, EndLine}</c> is returned if an error occurs.
+          <c>EndLine</c> indicates where the error occurred.</p>
+      </desc>
+    </func>
+    <func>
+      <name>tokens(Continuation, CharList, StartLine) ->Return</name>
+      <fsummary>Re-entrant scanner</fsummary>
+      <type>
+        <v>Return = {done, Result, LeftOverChars} | {more, Continuation}</v>
+        <v>Continuation = [] | string()</v>
+        <v>CharList = string()</v>
+        <v>StartLine = EndLine = integer()</v>
+        <v>Result = {ok, Tokens, EndLine} | {eof, EndLine}</v>
+        <v>Tokens = [{atom(),Line}|{atom(),Line,term()}]</v>
+      </type>
+      <desc>
+        <p>This is the re-entrant scanner which scans characters until
+          a <em>dot</em> ('.' whitespace) has been reached. It returns:</p>
+        <taglist>
+          <tag><c>{done, Result, LeftOverChars}</c></tag>
+          <item>
+            <p>This return indicates that there is sufficient input data to get an
+              input.  <c>Result</c> is:</p>
+            <p></p>
+            <taglist>
+              <tag><c>{ok, Tokens, EndLine}</c></tag>
+              <item>
+                <p>The scanning was successful. <c>Tokens</c> is the
+                  list of tokens including <em>dot</em>.</p>
+              </item>
+              <tag><c>{eof, EndLine}</c></tag>
+              <item>
+                <p>End of file was encountered before any more tokens.</p>
+              </item>
+              <tag><c>{error, ErrorInfo, EndLine}</c></tag>
+              <item>
+                <p>An error occurred.</p>
+              </item>
+            </taglist>
+          </item>
+          <tag><c>{more, Continuation}</c></tag>
+          <item>
+            <p>More data is required for building a term.
+              <c>Continuation</c> must be passed in a new call to
+              <c>tokens/3</c> when more data is available.</p>
+          </item>
+        </taglist>
+      </desc>
+    </func>
+    <func>
+      <name>reserved_word(Atom) -> bool()</name>
+      <fsummary>Test for a reserved word</fsummary>
+      <desc>
+        <p>Returns <c>true</c> if <c>Atom</c> is an Erlang reserved
+          word, otherwise <c>false</c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>format_error(ErrorDescriptor) -> string() </name>
+      <fsummary>Format an error descriptor</fsummary>
+      <type>
+        <v>ErrorDescriptor = errordesc()</v>
+      </type>
+      <desc>
+        <p>Takes an <c>ErrorDescriptor</c> and returns a string which
+          describes the error or warning. This function is usually
+          called implicitly when processing an <c>ErrorInfo</c>
+          structure (see below).</p>
+      </desc>
+    </func>
+  </funcs>
+
+  <section>
+    <title>Error Information</title>
+    <p>The <c>ErrorInfo</c> mentioned above is the standard
+      <c>ErrorInfo</c> structure which is returned from all IO
+      modules. It has the following format:
+      </p>
+    <code type="none">
+    {ErrorLine, Module, ErrorDescriptor}    </code>
+    <p>A string which describes the error is obtained with the following call:
+      </p>
+    <code type="none">
+apply(Module, format_error, ErrorDescriptor)    </code>
+  </section>
+
+  <section>
+    <title>Notes</title>
+    <p>The continuation of the first call to the re-entrant input
+      functions must be <c>[]</c>. Refer to Armstrong, Virding and Williams, 'Concurrent Programming in Erlang', Chapter 13, for  a complete description of how
+      the re-entrant input scheme works.
+      </p>
+  </section>
+
+  <section>
+    <title>See Also</title>
+    <p><seealso marker="io">io(3)</seealso>,
+      <seealso marker="erl_parse">erl_parse(3)</seealso></p>
+  </section>
+</erlref>
+

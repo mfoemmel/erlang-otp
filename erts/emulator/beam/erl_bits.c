@@ -736,6 +736,10 @@ erts_new_bs_put_integer(ERL_BITS_PROTO_3(Eterm arg, Uint num_bits, unsigned flag
     Uint b;
     byte *iptr;
 
+    if (num_bits == 0) {
+	return 1;
+    }
+
     bit_offset = BIT_OFFSET(bin_offset);
     if (is_small(arg)) {
 	Uint rbits = 8 - bit_offset;

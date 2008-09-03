@@ -73,15 +73,6 @@ ErtsAllocatorThrSpec_t erts_allctr_thr_spec[ERTS_ALC_A_MAX+1];
 #define ERTS_MIN(A, B) ((A) < (B) ? (A) : (B))
 #define ERTS_MAX(A, B) ((A) > (B) ? (A) : (B))
 
-#ifndef ERTS_CACHE_LINE_SIZE
-/* Assume a cache line size of 64 bytes */
-#  define ERTS_CACHE_LINE_SIZE ((Uint) 64)
-#  define ERTS_CACHE_LINE_MASK (ERTS_CACHE_LINE_SIZE - 1)
-#endif
-
-#define ERTS_ALC_CACHE_LINE_ALIGN_SIZE(SZ) \
-  (((((SZ) - 1) / ERTS_CACHE_LINE_SIZE) + 1) * ERTS_CACHE_LINE_SIZE)
-
 typedef union {
     GFAllctr_t gfa;
     char align_gfa[ERTS_ALC_CACHE_LINE_ALIGN_SIZE(sizeof(GFAllctr_t))];
@@ -413,7 +404,7 @@ erts_alloc_init(int *argc, char **argv, ErtsAllocInitOpts *eaiop)
     };
 
     erts_sys_alloc_init();
-    init_thr_ix(eaiop->no_of_schedulers);
+    init_thr_ix(erts_no_schedulers);
     erts_init_utils_mem();
 
     set_default_sl_alloc_opts(&init.sl_alloc);
@@ -428,7 +419,7 @@ erts_alloc_init(int *argc, char **argv, ErtsAllocInitOpts *eaiop)
     if (argc && argv)
 	handle_args(argc, argv, &init);
 
-    if (eaiop->no_of_schedulers <= 1) {
+    if (erts_no_schedulers <= 1) {
 	init.sl_alloc.thr_spec = 0;
 	init.std_alloc.thr_spec = 0;
 	init.ll_alloc.thr_spec = 0;
@@ -453,16 +444,16 @@ erts_alloc_init(int *argc, char **argv, ErtsAllocInitOpts *eaiop)
 #ifdef ERTS_SMP
     /* Only temp_alloc can use thread specific interface */
     if (init.temp_alloc.thr_spec)
-	init.temp_alloc.thr_spec = eaiop->no_of_schedulers;
+	init.temp_alloc.thr_spec = erts_no_schedulers;
 
     /* Others must use thread preferred interface */
-    adjust_tpref(&init.sl_alloc, eaiop->no_of_schedulers);
-    adjust_tpref(&init.std_alloc, eaiop->no_of_schedulers);
-    adjust_tpref(&init.ll_alloc, eaiop->no_of_schedulers);
-    adjust_tpref(&init.eheap_alloc, eaiop->no_of_schedulers);
-    adjust_tpref(&init.binary_alloc, eaiop->no_of_schedulers);
-    adjust_tpref(&init.ets_alloc, eaiop->no_of_schedulers);
-    adjust_tpref(&init.driver_alloc, eaiop->no_of_schedulers);
+    adjust_tpref(&init.sl_alloc, erts_no_schedulers);
+    adjust_tpref(&init.std_alloc, erts_no_schedulers);
+    adjust_tpref(&init.ll_alloc, erts_no_schedulers);
+    adjust_tpref(&init.eheap_alloc, erts_no_schedulers);
+    adjust_tpref(&init.binary_alloc, erts_no_schedulers);
+    adjust_tpref(&init.ets_alloc, erts_no_schedulers);
+    adjust_tpref(&init.driver_alloc, erts_no_schedulers);
 
 #else
     /* No thread specific if not smp */
@@ -1485,10 +1476,45 @@ erts_realloc_n_enomem(ErtsAlcType_t n, void *ptr, Uint size)
     erts_alc_fatal_error(ERTS_ALC_E_NOMEM, ERTS_ALC_O_REALLOC, n, size);
 }
 
+static ERTS_INLINE Uint
+alcu_size(ErtsAlcType_t ai)
+{
+    Uint res = 0;
+
+    ASSERT(erts_allctrs_info[ai].enabled);
+    ASSERT(erts_allctrs_info[ai].alloc_util);
+
+    if (!erts_allctrs_info[ai].thr_spec) {
+	Allctr_t *allctr = erts_allctrs_info[ai].extra;
+	AllctrSize_t asize;
+	erts_alcu_current_size(allctr, &asize);
+	res += asize.blocks;
+    }
+    else {
+	ErtsAllocatorThrSpec_t *tspec = &erts_allctr_thr_spec[ai];
+	int i;
+
+	ASSERT(tspec->all_thr_safe);
+
+	ASSERT(tspec->enabled);
+
+	for (i = tspec->size - 1; i >= 0; i--) {
+	    Allctr_t *allctr = tspec->allctr[i];
+	    AllctrSize_t asize;
+	    if (allctr) {
+		erts_alcu_current_size(allctr, &asize);
+		res += asize.blocks;
+	    }
+	}
+    }
+
+    return res;
+}
+
 Eterm
 erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 {
-#define MEM_NEED_PARTS (!erts_instr_stat && want_tot_or_sys)
+#define ERTS_MEM_NEED_ALL_ALCU (!erts_instr_stat && want_tot_or_sys)
     ErtsFixInfo efi;
     struct {
 	int total;
@@ -1521,7 +1547,7 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
     int want_tot_or_sys;
     int length;
     Eterm res = THE_NON_VALUE;
-    int block = !ERTS_IS_CRASH_DUMPING;
+    ErtsAlcType_t ai;
 
     /* Figure out whats wanted... */
 
@@ -1660,38 +1686,122 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 	    return am_badarg;
     }
 
+    /* All alloc_util allocators *have* to be enabled */
+    
+    for (ai = ERTS_ALC_A_MIN; ai <= ERTS_ALC_A_MAX; ai++) {
+	switch (ai) {
+	case ERTS_ALC_A_SYSTEM:
+	case ERTS_ALC_A_FIXED_SIZE:
+	    break;
+	default:
+	    if (!erts_allctrs_info[ai].enabled
+		|| !erts_allctrs_info[ai].alloc_util) {
+		ERTS_DECL_AM(notsup);
+		return AM_notsup;
+	    }
+	    break;
+	}
+    }
+
     ASSERT(length <= sizeof(atoms)/sizeof(Eterm));
     ASSERT(length <= sizeof(euints)/sizeof(Eterm));
     ASSERT(length <= sizeof(uintps)/sizeof(Uint));
 
-    if (block)
-	erts_smp_block_system(0);
+
+    if (proc) {
+	ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN
+			   == erts_proc_lc_my_proc_locks(proc));
+	/* We'll need locks early in the lock order */
+	erts_smp_proc_unlock(proc, ERTS_PROC_LOCK_MAIN);
+    }
 
     /* Calculate values needed... */
 
     want_tot_or_sys = want.total || want.system;
-    need_atom = MEM_NEED_PARTS || want.atom;
+    need_atom = ERTS_MEM_NEED_ALL_ALCU || want.atom;
 
-    size.processes = size.processes_used = erts_get_tot_proc_mem();
+    if (ERTS_MEM_NEED_ALL_ALCU) {
+	size.total = 0;
 
-    if (MEM_NEED_PARTS || want.processes) {
-	erts_fix_info(ERTS_ALC_T_NLINK_SH, &efi);
-	size.processes += efi.total - efi.used;
-	erts_fix_info(ERTS_ALC_T_MONITOR_SH, &efi);
-	size.processes += efi.total - efi.used;
-	erts_fix_info(ERTS_ALC_T_PROC, &efi);
-	size.processes += efi.total - efi.used;
-	erts_fix_info(ERTS_ALC_T_REG_PROC, &efi);
-	size.processes += efi.total - efi.used;
+	for (ai = ERTS_ALC_A_MIN; ai <= ERTS_ALC_A_MAX; ai++) {
+	    if (erts_allctrs_info[ai].alloc_util) {
+		Uint *save;
+		Uint asz;
+		switch (ai) {
+		case ERTS_ALC_A_TEMPORARY:
+		     /*
+		      * Often not thread safe and usually never
+		      * contain any allocated memory.
+		      */
+		    continue;
+		case ERTS_ALC_A_EHEAP:
+		    save = &size.processes;
+		    break;
+		case ERTS_ALC_A_ETS:
+		    save = &size.ets;
+		    break;
+		case ERTS_ALC_A_BINARY:
+		    save = &size.binary;
+		    break;
+		default:
+		    save = NULL;
+		    break;
+		}
+		asz = alcu_size(ai);
+		if (save)
+		    *save = asz;
+		size.total += asz;
+	    }
+	}
     }
 
-    if (need_atom || want.atom_used) {
+
+
+    if (want_tot_or_sys || want.processes) {
+	Uint tmp;
+
+	if (ERTS_MEM_NEED_ALL_ALCU)
+	    tmp = size.processes;
+	else
+	    tmp = alcu_size(ERTS_ALC_A_EHEAP);
+	tmp += erts_max_processes*sizeof(Process*);
+#ifdef HYBRID
+	tmp += erts_max_processes*sizeof(Process*);
+#endif
+	tmp += erts_bif_timer_memory_size();
+	tmp += erts_tot_link_lh_size();
+
+	size.processes = size.processes_used = tmp;
+
+	erts_fix_info(ERTS_ALC_T_NLINK_SH, &efi);
+	size.processes += efi.total;
+	size.processes_used += efi.used;
+
+	erts_fix_info(ERTS_ALC_T_MONITOR_SH, &efi);
+	size.processes += efi.total;
+	size.processes_used += efi.used;
+
+	erts_fix_info(ERTS_ALC_T_PROC, &efi);
+	size.processes += efi.total;
+	size.processes_used += efi.used;
+
+	erts_fix_info(ERTS_ALC_T_REG_PROC, &efi);
+	size.processes += efi.total;
+	size.processes_used += efi.used;
+
+	erts_fix_info(ERTS_ALC_T_PROC_LIST, &efi);
+	size.processes += efi.total;
+	size.processes_used += efi.used;
+
+    }
+
+    if (want.atom || want.atom_used) {
 	Uint reserved_atom_space, atom_space;
 	erts_atom_get_text_space_sizes(&reserved_atom_space, &atom_space);
 	size.atom = size.atom_used = atom_table_sz();
 	erts_fix_info(ERTS_ALC_T_ATOM, &efi);
 
-	if (need_atom) {
+	if (want.atom) {
 	    size.atom += reserved_atom_space;
 	    size.atom += efi.total;
 	}
@@ -1702,9 +1812,10 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 	}
     }
 
-    size.binary = erts_get_binaries_size();
+    if (!ERTS_MEM_NEED_ALL_ALCU && want.binary)
+	size.binary = alcu_size(ERTS_ALC_A_BINARY);
 
-    if (MEM_NEED_PARTS || want.code) {
+    if (want.code) {
 	size.code = module_table_sz();
 	erts_fix_info(ERTS_ALC_T_MODULE, &efi);
 	size.code += efi.used;
@@ -1718,44 +1829,22 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 	size.code += erts_total_code_size;
     }
 
-    size.ets = erts_ets_memory_size();
+    if (want.ets) {
+	if (!ERTS_MEM_NEED_ALL_ALCU)
+	    size.ets = alcu_size(ERTS_ALC_A_ETS);
+	size.ets += erts_get_ets_misc_mem_size();
+    }
 
     if (erts_instr_stat && (want_tot_or_sys || want.maximum)) {
-	size.total = erts_instr_get_total();
-	size.system = size.total - size.processes;
+	if (want_tot_or_sys) {
+	    size.total = erts_instr_get_total();
+	    size.system = size.total - size.processes;
+	}
 	size.maximum = erts_instr_get_max_total();
     }
     else if (want_tot_or_sys) {
-
-	/* Static stuff ... */
-	size.system = erts_max_ports*sizeof(Port);
-	size.system += erts_timer_wheel_memory_size();
-#ifdef SYS_TMP_BUF_SIZE
-	size.system += SYS_TMP_BUF_SIZE; /* tmp_buf in sys on vxworks & ose */
-#endif
-
-	/* Misc stuff ... */
-	size.system += erts_sys_misc_mem_sz();
-	size.system += erts_dist_table_size();
-	size.system += erts_node_table_size();
-	size.system += erts_bits_bufs_size();
-	size.system += process_reg_sz();
-	erts_fix_info(ERTS_ALC_T_REG_PROC, &efi);
-	size.system += efi.total;
-	erts_fix_info(ERTS_ALC_T_PROC_LIST, &efi);
-	size.system += efi.total;
-        
-	/* Atom, binary, code, and ets */
-	size.system += size.atom;
-	size.system += size.binary;
-	size.system += size.code;
-	size.system += size.ets;
-
-	size.total = size.system + size.processes;
+	size.system = size.total - size.processes;
     }
-
-    if (block)
-	erts_smp_release_system();
 
     if (print_to_p) {
 	int i;
@@ -1774,6 +1863,8 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 	Uint **hpp;
 	Uint hsz;
 	Uint *hszp;
+
+	erts_smp_proc_lock(proc, ERTS_PROC_LOCK_MAIN);
 
 	hpp = NULL;
 	hsz = 0;
@@ -1794,7 +1885,7 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 
     return res;
 
-#undef MEM_NEED_PARTS
+#undef ERTS_MEM_NEED_ALL_ALCU
 }
 
 struct aa_values {
@@ -1815,6 +1906,14 @@ erts_allocated_areas(int *print_to_p, void *print_to_arg, void *proc)
     ErtsFixInfo efi;
     Uint reserved_atom_space, atom_space;
 
+    if (proc) {
+	ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN
+			   == erts_proc_lc_my_proc_locks(proc));
+
+	/* We'll need locks early in the lock order */
+	erts_smp_proc_unlock(proc, ERTS_PROC_LOCK_MAIN);
+    }
+
     i = 0;
 
     if (erts_instr_stat) {
@@ -1828,26 +1927,6 @@ erts_allocated_areas(int *print_to_p, void *print_to_arg, void *proc)
 	values[i].ui[0] = erts_instr_get_max_total();
 	i++;
     }
-
-    values[i].arity = 3;
-    values[i].name = "processes";
-    values[i].ui[0] = erts_get_tot_proc_mem();
-
-    values[i].ui[1] = erts_get_tot_proc_mem();
-    erts_fix_info(ERTS_ALC_T_NLINK_SH, &efi);
-    values[i].ui[1] += efi.total - efi.used;
-    erts_fix_info(ERTS_ALC_T_MONITOR_SH, &efi);
-    values[i].ui[1] += efi.total - efi.used;
-    erts_fix_info(ERTS_ALC_T_PROC, &efi);
-    values[i].ui[1] += efi.total - efi.used;
-    erts_fix_info(ERTS_ALC_T_REG_PROC, &efi);
-    values[i].ui[1] += efi.total - efi.used;
-    i++;
-
-    values[i].arity = 2;
-    values[i].name = "ets";
-    values[i].ui[0] = erts_ets_memory_size();
-    i++;
 
     values[i].arity = 2;
     values[i].name = "sys_misc";
@@ -1871,11 +1950,6 @@ erts_allocated_areas(int *print_to_p, void *print_to_arg, void *proc)
     values[i].name = "atom_space";
     values[i].ui[0] = reserved_atom_space;
     values[i].ui[1] = atom_space;
-    i++;
-
-    values[i].arity = 2;
-    values[i].name = "binary";
-    values[i].ui[0] = erts_get_binaries_size();
     i++;
 
     values[i].arity = 2;
@@ -1989,6 +2063,8 @@ erts_allocated_areas(int *print_to_p, void *print_to_arg, void *proc)
 	Uint **hpp;
 	Uint hsz;
 	Uint *hszp;
+
+	erts_smp_proc_lock(proc, ERTS_PROC_LOCK_MAIN);
 
 	hpp = NULL;
 	hsz = 0;

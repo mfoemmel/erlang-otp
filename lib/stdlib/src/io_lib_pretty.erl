@@ -22,9 +22,7 @@
 %%% In this module "print" means the formatted printing while "write"
 %%% means just writing out onto one line.
 
--export([print/1,print/2,print/3,print/4,print/5]).
-
--define(MAXCS, 60). % Approx max number of characters on one line.
+-export([print/1,print/2,print/3,print/4,print/5,print/6]).
 
 %%%
 %%% Exported functions
@@ -48,63 +46,73 @@ print(Term, Depth, RecDefFun) ->
     print(Term, 1, 80, Depth, RecDefFun).
 
 print(Term, Col, Ll, D) ->
-    print(Term, Col, Ll, D, no_fun).
+    print(Term, Col, Ll, D, _M=-1, no_fun).
 
-print(_, _, _, 0, _RF) -> "...";
-print(Term, Col, Ll, D, RecDefFun) when Col =< 0 ->
-    print(Term, 1, Ll, D, RecDefFun);
-print(Term, Col, Ll, D, RecDefFun) when is_tuple(Term); 
-                                        is_list(Term) ->
+print(Term, Col, Ll, D, RecDefFun) ->
+    print(Term, Col, Ll, D, _M=-1, RecDefFun).
+
+print(_, _, _, 0, _M, _RF) -> "...";
+print(Term, Col, Ll, D, M, RecDefFun) when Col =< 0 ->
+    print(Term, 1, Ll, D, M, RecDefFun);
+print(Term, Col, Ll, D, M0, RecDefFun) when is_tuple(Term); 
+                                            is_list(Term) ->
     If = {_S, Len} = print_length(Term, D, RecDefFun),
+    M = max_cs(M0, Len),
     if
-        Len < Ll - Col, Len =< ?MAXCS ->
+        Len < Ll - Col, Len =< M ->
             write(If);
         true ->
             TInd = while_fail([-1, 4], 
-                              fun(I) -> cind(If, Col, Ll, I, 0, 0) end, 
+                              fun(I) -> cind(If, Col, Ll, M, I, 0, 0) end, 
                               1),
-            pp(If, Col, Ll, TInd, indent(Col), 0, 0)
+            pp(If, Col, Ll, M, TInd, indent(Col), 0, 0)
     end;
-print(<<_/bitstring>>=Term, Col, Ll, D, RecDefFun) ->
+print(<<_/bitstring>>=Term, Col, Ll, D, M0, RecDefFun) ->
     If = {_S, Len} = print_length(Term, D, RecDefFun),
+    M = max_cs(M0, Len),
     if
-        Len < Ll - Col, Len =< ?MAXCS ->
+        Len < Ll - Col, Len =< M ->
             write(If);
         true ->
             TInd = while_fail([-1, 4], 
-                              fun(I) -> cind(If, Col, Ll, I, 0, 0) end, 
+                              fun(I) -> cind(If, Col, Ll, M, I, 0, 0) end, 
                               1),
-            pp(If, Col, Ll, TInd, indent(Col), 0, 0)
+            pp(If, Col, Ll, M, TInd, indent(Col), 0, 0)
     end;
-print(Term, _Col, _Ll, _D, _RF) ->
+print(Term, _Col, _Ll, _D, _M, _RF) ->
     io_lib:write(Term).
 
 %%%
 %%% Local functions
 %%%
 
+max_cs(M, Len) when M < 0 ->
+    Len;
+max_cs(M, _Len) ->
+    M.
+
 -define(ATM(T), is_list(element(1, T))).
 -define(ATM_FLD(Field), ?ATM(element(4, element(1, Field)))).
 
-pp({_S, Len} = If, Col, Ll, _TInd, _Ind, LD, W) 
-                      when Len < Ll - Col - LD, Len + W + LD =< ?MAXCS ->
+pp({_S, Len} = If, Col, Ll, M, _TInd, _Ind, LD, W) 
+                      when Len < Ll - Col - LD, Len + W + LD =< M ->
     write(If);
-pp({{list,L}, _Len}, Col, Ll, TInd, Ind, LD, W) ->
-    [$[, pp_list(L, Col + 1, Ll, TInd, indent(1, Ind), LD, $|, W + 1), $]];
-pp({{tuple,true,L}, _Len}, Col, Ll, TInd, Ind, LD, W) ->
-    [${, pp_tag_tuple(L, Col, Ll, TInd, Ind, LD, W + 1), $}];
-pp({{tuple,false,L}, _Len}, Col, Ll, TInd, Ind, LD, W) ->
-    [${, pp_list(L, Col + 1, Ll, TInd, indent(1, Ind), LD, $,, W + 1), $}];
-pp({{record,[{Name,NLen} | L]}, _Len}, Col, Ll, TInd, Ind, LD, W) ->
-    [Name, ${, pp_record(L, NLen, Col, Ll, TInd, Ind, LD, W + NLen + 1), $}];
-pp({{bin,S}, _Len}, Col, Ll, _TInd, Ind, LD, W) ->
-    pp_binary(S, Col + 2, Ll, indent(2, Ind), LD, W);
-pp({S, _Len}, _Col, _Ll, _TInd, _Ind, _LD, _W) ->
+pp({{list,L}, _Len}, Col, Ll, M, TInd, Ind, LD, W) ->
+    [$[, pp_list(L, Col + 1, Ll, M, TInd, indent(1, Ind), LD, $|, W + 1), $]];
+pp({{tuple,true,L}, _Len}, Col, Ll, M, TInd, Ind, LD, W) ->
+    [${, pp_tag_tuple(L, Col, Ll, M, TInd, Ind, LD, W + 1), $}];
+pp({{tuple,false,L}, _Len}, Col, Ll, M, TInd, Ind, LD, W) ->
+    [${, pp_list(L, Col + 1, Ll, M, TInd, indent(1, Ind), LD, $,, W + 1), $}];
+pp({{record,[{Name,NLen} | L]}, _Len}, Col, Ll, M, TInd, Ind, LD, W) ->
+    [Name, ${, pp_record(L, NLen, Col, Ll, M, TInd, Ind, LD, W + NLen+1), $}];
+pp({{bin,S}, _Len}, Col, Ll, M, _TInd, Ind, LD, W) ->
+    pp_binary(S, Col + 2, Ll, M, indent(2, Ind), LD, W);
+pp({S, _Len}, _Col, _Ll, _M, _TInd, _Ind, _LD, _W) ->
     S.
 
 %%  Print a tagged tuple by indenting the rest of the elements
 %%  differently to the tag. Tuple has size >= 2.
-pp_tag_tuple([{Tag,Tlen} | L], Col, Ll, TInd, Ind, LD, W) ->
+pp_tag_tuple([{Tag,Tlen} | L], Col, Ll, M, TInd, Ind, LD, W) ->
     TagInd = Tlen + 2,
     Tcol = Col + TagInd,
     S = $,,
@@ -112,51 +120,51 @@ pp_tag_tuple([{Tag,Tlen} | L], Col, Ll, TInd, Ind, LD, W) ->
         TInd > 0, TagInd > TInd ->
             Col1 = Col + TInd,
             Indent = indent(TInd, Ind),
-            [Tag | pp_tail(L, Col1, Tcol, Ll, TInd, Indent, LD, S, W + Tlen)];
+            [Tag|pp_tail(L, Col1, Tcol, Ll, M, TInd, Indent, LD, S, W+Tlen)];
         true ->
             Indent = indent(TagInd, Ind),
-            [Tag, S | pp_list(L, Tcol, Ll, TInd, Indent, LD, S, W + Tlen + 1)]
+            [Tag, S | pp_list(L, Tcol, Ll, M, TInd, Indent, LD, S, W+Tlen+1)]
     end.
 
-pp_record([], _Nlen, _Col, _Ll, _TInd, _Ind, _LD, _W) ->
+pp_record([], _Nlen, _Col, _Ll, _M, _TInd, _Ind, _LD, _W) ->
     "";
-pp_record({dots, _}, _Nlen, _Col, _Ll, _TInd, _Ind, _LD, _W) ->
+pp_record({dots, _}, _Nlen, _Col, _Ll, _M, _TInd, _Ind, _LD, _W) ->
     "...";
-pp_record([F | Fs], Nlen, Col0, Ll, TInd, Ind0, LD, W0) ->
+pp_record([F | Fs], Nlen, Col0, Ll, M, TInd, Ind0, LD, W0) ->
     Nind = Nlen + 1,
     {Col, Ind, S, W} = rec_indent(Nind, TInd, Col0, Ind0, W0),
-    {FS, FW} = pp_field(F, Col, Ll, TInd, Ind, last_depth(Fs, LD), W),
-    [S, FS | pp_fields_tail(Fs, Col, Col + FW, Ll, TInd, Ind, LD, W + FW)].
+    {FS, FW} = pp_field(F, Col, Ll, M, TInd, Ind, last_depth(Fs, LD), W),
+    [S, FS | pp_fields_tail(Fs, Col, Col + FW, Ll, M, TInd, Ind, LD, W + FW)].
 
-pp_fields_tail([], _Col0, _Col, _Ll, _TInd, _Ind, _LD, _W) ->
+pp_fields_tail([], _Col0, _Col, _Ll, _M, _TInd, _Ind, _LD, _W) ->
     "";
-pp_fields_tail({dots, _}, _Col0, _Col, _Ll, _TInd, _Ind, _LD, _W) ->
+pp_fields_tail({dots, _}, _Col0, _Col, _M, _Ll, _TInd, _Ind, _LD, _W) ->
     ",...";
-pp_fields_tail([{_, Len}=F | Fs], Col0, Col, Ll, TInd, Ind, LD, W) ->
+pp_fields_tail([{_, Len}=F | Fs], Col0, Col, Ll, M, TInd, Ind, LD, W) ->
     LD1 = last_depth(Fs, LD),
     ELen = 1 + Len,
     if
-        LD1 =:= 0, ELen + 1 < Ll - Col, W + ELen + 1 =< ?MAXCS, ?ATM_FLD(F);
-        LD1 > 0, ELen < Ll - Col - LD1, W + ELen + LD1 =< ?MAXCS, ?ATM_FLD(F) ->
+        LD1 =:= 0, ELen + 1 < Ll - Col, W + ELen + 1 =< M, ?ATM_FLD(F);
+        LD1 > 0, ELen < Ll - Col - LD1, W + ELen + LD1 =< M, ?ATM_FLD(F) ->
             [$,, write_field(F) |
-             pp_fields_tail(Fs, Col0, Col + ELen, Ll, TInd, Ind, LD, W+ELen)];
+             pp_fields_tail(Fs, Col0, Col+ELen, Ll, M, TInd, Ind, LD, W+ELen)];
         true ->
-            {FS, FW} = pp_field(F, Col0, Ll, TInd, Ind, LD1, 0),
+            {FS, FW} = pp_field(F, Col0, Ll, M, TInd, Ind, LD1, 0),
             [$,, $\n, Ind, FS |
-             pp_fields_tail(Fs, Col0, Col0 + FW, Ll, TInd, Ind, LD, FW)]
+             pp_fields_tail(Fs, Col0, Col0 + FW, Ll, M, TInd, Ind, LD, FW)]
     end.
 
-pp_field({_, Len}=Fl, Col, Ll, _TInd, _Ind, LD, W) 
-         when Len < Ll - Col - LD, Len + W + LD =< ?MAXCS ->
+pp_field({_, Len}=Fl, Col, Ll, M, _TInd, _Ind, LD, W) 
+         when Len < Ll - Col - LD, Len + W + LD =< M ->
     {write_field(Fl), if
                           ?ATM_FLD(Fl) -> 
                               Len;
                           true -> 
                               Ll % force nl
                       end};
-pp_field({{field, Name, NameL, F}, _Len}, Col0, Ll, TInd, Ind0, LD, W0) ->
+pp_field({{field, Name, NameL, F}, _Len}, Col0, Ll, M, TInd, Ind0, LD, W0) ->
     {Col, Ind, S, W} = rec_indent(NameL, TInd, Col0, Ind0, W0 + NameL),
-    {[Name, " = ", S | pp(F, Col, Ll, TInd, Ind, LD, W)], Ll}. % force nl
+    {[Name, " = ", S | pp(F, Col, Ll, M, TInd, Ind, LD, W)], Ll}. % force nl
 
 rec_indent(RInd, TInd, Col0, Ind0, W0) ->
     Nl = (TInd > 0) and (RInd > TInd),
@@ -176,46 +184,46 @@ rec_indent(RInd, TInd, Col0, Ind0, W0) ->
         end,
     {Col, Ind, S, W}.
 
-pp_list({dots, _}, _Col0, _Ll, _TInd, _Ind, _LD, _S, _W) ->
+pp_list({dots, _}, _Col0, _Ll, _M, _TInd, _Ind, _LD, _S, _W) ->
     "...";
-pp_list([E | Es], Col0, Ll, TInd, Ind, LD, S, W) ->
-    {ES, WE} = pp_element(E, Col0, Ll, TInd, Ind, last_depth(Es, LD), W),
-    [ES | pp_tail(Es, Col0, Col0 + WE, Ll, TInd, Ind, LD, S, W + WE)].
+pp_list([E | Es], Col0, Ll, M, TInd, Ind, LD, S, W) ->
+    {ES, WE} = pp_element(E, Col0, Ll, M, TInd, Ind, last_depth(Es, LD), W),
+    [ES | pp_tail(Es, Col0, Col0 + WE, Ll, M, TInd, Ind, LD, S, W + WE)].
 
-pp_tail([], _Col0, _Col, _Ll, _TInd, _Ind, _LD, _S, _W) ->
+pp_tail([], _Col0, _Col, _Ll, _M, _TInd, _Ind, _LD, _S, _W) ->
     "";
-pp_tail([{_, Len}=E | Es], Col0, Col, Ll, TInd, Ind, LD, S, W) ->
+pp_tail([{_, Len}=E | Es], Col0, Col, Ll, M, TInd, Ind, LD, S, W) ->
     LD1 = last_depth(Es, LD),
     ELen = 1 + Len,
     if 
-        LD1 =:= 0, ELen + 1 < Ll - Col, W + ELen + 1 =< ?MAXCS, ?ATM(E);
-        LD1 > 0, ELen < Ll - Col - LD1, W + ELen + LD1 =< ?MAXCS, ?ATM(E) ->
+        LD1 =:= 0, ELen + 1 < Ll - Col, W + ELen + 1 =< M, ?ATM(E);
+        LD1 > 0, ELen < Ll - Col - LD1, W + ELen + LD1 =< M, ?ATM(E) ->
             [$,, write(E) | 
-             pp_tail(Es, Col0, Col + ELen, Ll, TInd, Ind, LD, S, W + ELen)];
+             pp_tail(Es, Col0, Col + ELen, Ll, M, TInd, Ind, LD, S, W+ELen)];
         true ->
-            {ES, WE} = pp_element(E, Col0, Ll, TInd, Ind, LD1, 0),
+            {ES, WE} = pp_element(E, Col0, Ll, M, TInd, Ind, LD1, 0),
             [$,, $\n, Ind, ES | 
-             pp_tail(Es, Col0, Col0 + WE, Ll, TInd, Ind, LD, S, WE)]
+             pp_tail(Es, Col0, Col0 + WE, Ll, M, TInd, Ind, LD, S, WE)]
     end;
-pp_tail({dots, _}, _Col0, _Col, _Ll, _TInd, _Ind, _LD, S, _W) ->
+pp_tail({dots, _}, _Col0, _Col, _Ll, _M, _TInd, _Ind, _LD, S, _W) ->
     [S | "..."];
-pp_tail({_, Len}=E, _Col0, Col, Ll, _TInd, _Ind, LD, S, W) 
+pp_tail({_, Len}=E, _Col0, Col, Ll, M, _TInd, _Ind, LD, S, W) 
                   when Len + 1 < Ll - Col - (LD + 1), 
-                       Len + 1 + W + (LD + 1) =< ?MAXCS, 
+                       Len + 1 + W + (LD + 1) =< M, 
                        ?ATM(E) ->
     [S | write(E)];
-pp_tail(E, Col0, _Col, Ll, TInd, Ind, LD, S, _W) ->
-    [S, $\n, Ind | pp(E, Col0, Ll, TInd, Ind, LD + 1, 0)].
+pp_tail(E, Col0, _Col, Ll, M, TInd, Ind, LD, S, _W) ->
+    [S, $\n, Ind | pp(E, Col0, Ll, M, TInd, Ind, LD + 1, 0)].
 
-pp_element({_, Len}=E, Col, Ll, _TInd, _Ind, LD, W) 
-           when Len < Ll - Col - LD, Len + W + LD =< ?MAXCS, ?ATM(E) ->
+pp_element({_, Len}=E, Col, Ll, M, _TInd, _Ind, LD, W) 
+           when Len < Ll - Col - LD, Len + W + LD =< M, ?ATM(E) ->
     {write(E), Len};
-pp_element(E, Col, Ll, TInd, Ind, LD, W) ->
-    {pp(E, Col, Ll, TInd, Ind, LD, W), Ll}. % force nl
+pp_element(E, Col, Ll, M, TInd, Ind, LD, W) ->
+    {pp(E, Col, Ll, M, TInd, Ind, LD, W), Ll}. % force nl
 
 %% Reuse the list created by io_lib:write_binary()...
-pp_binary([LT,LT,S,GT,GT], Col, Ll, Ind, LD, W) ->
-    N = max(8, min(Ll - Col, ?MAXCS - 4 - W) - LD),
+pp_binary([LT,LT,S,GT,GT], Col, Ll, M, Ind, LD, W) ->
+    N = max(8, min(Ll - Col, M - 4 - W) - LD),
     [LT,LT,pp_binary(S, N, N, Ind),GT,GT].
 
 pp_binary([BS, $, | S], N, N0, Ind) ->
@@ -476,78 +484,78 @@ printable_list1([], _) -> all;
 printable_list1(_, N) -> N.
 
 %% Throw 'no_good' if the indentation exceeds half the line length
-%% unless there is room for ?MAXCS characters on the line.
+%% unless there is room for M characters on the line.
 
-cind({_S, Len}, Col, Ll, Ind, LD, W) when Len < Ll - Col - LD,
-                                          Len + W + LD =< ?MAXCS ->
+cind({_S, Len}, Col, Ll, M, Ind, LD, W) when Len < Ll - Col - LD,
+                                             Len + W + LD =< M ->
     Ind;
-cind({{list,L}, _Len}, Col, Ll, Ind, LD, W) ->
-    cind_list(L, Col + 1, Ll, Ind, LD, W + 1);
-cind({{tuple,true,L}, _Len}, Col, Ll, Ind, LD, W) ->
-    cind_tag_tuple(L, Col, Ll, Ind, LD, W + 1);
-cind({{tuple,false,L}, _Len}, Col, Ll, Ind, LD, W) ->
-    cind_list(L, Col + 1, Ll, Ind, LD, W + 1);
-cind({{record,[{_Name,NLen} | L]}, _Len}, Col, Ll, Ind, LD, W) ->
-    cind_record(L, NLen, Col, Ll, Ind, LD, W + NLen + 1);
-cind({{bin,_S}, _Len}, _Col, _Ll, Ind, _LD, _W) ->
+cind({{list,L}, _Len}, Col, Ll, M, Ind, LD, W) ->
+    cind_list(L, Col + 1, Ll, M, Ind, LD, W + 1);
+cind({{tuple,true,L}, _Len}, Col, Ll, M, Ind, LD, W) ->
+    cind_tag_tuple(L, Col, Ll, M, Ind, LD, W + 1);
+cind({{tuple,false,L}, _Len}, Col, Ll, M, Ind, LD, W) ->
+    cind_list(L, Col + 1, Ll, M, Ind, LD, W + 1);
+cind({{record,[{_Name,NLen} | L]}, _Len}, Col, Ll, M, Ind, LD, W) ->
+    cind_record(L, NLen, Col, Ll, M, Ind, LD, W + NLen + 1);
+cind({{bin,_S}, _Len}, _Col, _Ll, _M, Ind, _LD, _W) ->
     Ind;
-cind({_S, _Len}, _Col, _Ll, Ind, _LD, _W) ->
+cind({_S, _Len}, _Col, _Ll, _M, Ind, _LD, _W) ->
     Ind.
 
-cind_tag_tuple([{_Tag,Tlen} | L], Col, Ll, Ind, LD, W) ->
+cind_tag_tuple([{_Tag,Tlen} | L], Col, Ll, M, Ind, LD, W) ->
     TagInd = Tlen + 2,
     Tcol = Col + TagInd,
     if
         Ind > 0, TagInd > Ind ->
             Col1 = Col + Ind,
             if
-                ?MAXCS + Col1 =< Ll; Col1 =< Ll div 2 ->
-                    cind_tail(L, Col1, Tcol, Ll, Ind, LD, W + Tlen);
+                M + Col1 =< Ll; Col1 =< Ll div 2 ->
+                    cind_tail(L, Col1, Tcol, Ll, M, Ind, LD, W + Tlen);
                 true ->
                     throw(no_good)
             end;
-        ?MAXCS + Tcol < Ll; Tcol < Ll div 2 ->
-            cind_list(L, Tcol, Ll, Ind, LD, W + Tlen + 1);
+        M + Tcol < Ll; Tcol < Ll div 2 ->
+            cind_list(L, Tcol, Ll, M, Ind, LD, W + Tlen + 1);
         true ->
             throw(no_good)
     end.
 
-cind_record([F | Fs], Nlen, Col0, Ll, Ind, LD, W0) ->
+cind_record([F | Fs], Nlen, Col0, Ll, M, Ind, LD, W0) ->
     Nind = Nlen + 1,
-    {Col, W} = cind_rec(Nind, Col0, Ll, Ind, W0),
-    FW = cind_field(F, Col, Ll, Ind, last_depth(Fs, LD), W),
-    cind_fields_tail(Fs, Col, Col + FW, Ll, Ind, LD, W + FW);
-cind_record(_, _Nlen, _Col, _Ll, Ind, _LD, _W) ->
+    {Col, W} = cind_rec(Nind, Col0, Ll, M, Ind, W0),
+    FW = cind_field(F, Col, Ll, M, Ind, last_depth(Fs, LD), W),
+    cind_fields_tail(Fs, Col, Col + FW, Ll, M, Ind, LD, W + FW);
+cind_record(_, _Nlen, _Col, _Ll, _M, Ind, _LD, _W) ->
     Ind.
 
-cind_fields_tail([{_, Len}=F | Fs], Col0, Col, Ll, Ind, LD, W) ->
+cind_fields_tail([{_, Len}=F | Fs], Col0, Col, Ll, M, Ind, LD, W) ->
     LD1 = last_depth(Fs, LD),
     ELen = 1 + Len,
     if
-        LD1 =:= 0, ELen + 1 < Ll - Col, W + ELen + 1 =< ?MAXCS, ?ATM_FLD(F);
-        LD1 > 0, ELen < Ll - Col - LD1, W + ELen + LD1 =< ?MAXCS, ?ATM_FLD(F) ->
-            cind_fields_tail(Fs, Col0, Col + ELen, Ll, Ind, LD, W + ELen);
+        LD1 =:= 0, ELen + 1 < Ll - Col, W + ELen + 1 =< M, ?ATM_FLD(F);
+        LD1 > 0, ELen < Ll - Col - LD1, W + ELen + LD1 =< M, ?ATM_FLD(F) ->
+            cind_fields_tail(Fs, Col0, Col + ELen, Ll, M, Ind, LD, W + ELen);
         true ->
-            FW = cind_field(F, Col0, Ll, Ind, LD1, 0),
-            cind_fields_tail(Fs, Col0, Col + FW, Ll, Ind, LD, FW)
+            FW = cind_field(F, Col0, Ll, M, Ind, LD1, 0),
+            cind_fields_tail(Fs, Col0, Col + FW, Ll, M, Ind, LD, FW)
     end;
-cind_fields_tail(_, _Col0, _Col, _Ll, Ind, _LD, _W) ->
+cind_fields_tail(_, _Col0, _Col, _Ll, _M, Ind, _LD, _W) ->
     Ind.
 
-cind_field({{field, _N, _NL, _F}, Len}=Fl, Col, Ll, _Ind, LD, W) 
-         when Len < Ll - Col - LD, Len + W + LD =< ?MAXCS ->
+cind_field({{field, _N, _NL, _F}, Len}=Fl, Col, Ll, M, _Ind, LD, W) 
+         when Len < Ll - Col - LD, Len + W + LD =< M ->
     if
         ?ATM_FLD(Fl) ->
             Len;
         true ->
             Ll
     end;
-cind_field({{field, _Name, NameL, F}, _Len}, Col0, Ll, Ind, LD, W0) ->
-    {Col, W} = cind_rec(NameL, Col0, Ll, Ind, W0 + NameL),
-    cind(F, Col, Ll, Ind, LD, W),
+cind_field({{field, _Name, NameL, F}, _Len}, Col0, Ll, M, Ind, LD, W0) ->
+    {Col, W} = cind_rec(NameL, Col0, Ll, M, Ind, W0 + NameL),
+    cind(F, Col, Ll, M, Ind, LD, W),
     Ll.
 
-cind_rec(RInd, Col0, Ll, Ind, W0) ->
+cind_rec(RInd, Col0, Ll, M, Ind, W0) ->
     Nl = (Ind > 0) and (RInd > Ind),
     DCol = case Nl of
                true -> Ind;
@@ -555,7 +563,7 @@ cind_rec(RInd, Col0, Ll, Ind, W0) ->
            end,
     Col = Col0 + DCol,
     if
-        ?MAXCS + Col =< Ll; Col =< Ll div 2 ->        
+        M + Col =< Ll; Col =< Ll div 2 ->        
             W = case Nl of
                     true -> 0;
                     false -> W0
@@ -565,40 +573,40 @@ cind_rec(RInd, Col0, Ll, Ind, W0) ->
             throw(no_good)
     end.
 
-cind_list({dots, _}, _Col0, _Ll, Ind, _LD, _W) ->
+cind_list({dots, _}, _Col0, _Ll, _M, Ind, _LD, _W) ->
     Ind;
-cind_list([E | Es], Col0, Ll, Ind, LD, W) ->
-    WE = cind_element(E, Col0, Ll, Ind, last_depth(Es, LD), W),
-    cind_tail(Es, Col0, Col0 + WE, Ll, Ind, LD, W + WE).
+cind_list([E | Es], Col0, Ll, M, Ind, LD, W) ->
+    WE = cind_element(E, Col0, Ll, M, Ind, last_depth(Es, LD), W),
+    cind_tail(Es, Col0, Col0 + WE, Ll, M, Ind, LD, W + WE).
 
-cind_tail([], _Col0, _Col, _Ll, Ind, _LD, _W) ->
+cind_tail([], _Col0, _Col, _Ll, _M, Ind, _LD, _W) ->
     Ind;
-cind_tail([{_, Len}=E | Es], Col0, Col, Ll, Ind, LD, W) ->
+cind_tail([{_, Len}=E | Es], Col0, Col, Ll, M, Ind, LD, W) ->
     LD1 = last_depth(Es, LD),
     ELen = 1 + Len,
     if 
-        LD1 =:= 0, ELen + 1 < Ll - Col, W + ELen + 1 =< ?MAXCS, ?ATM(E);
-        LD1 > 0, ELen < Ll - Col - LD1, W + ELen + LD1 =< ?MAXCS, ?ATM(E) ->
-            cind_tail(Es, Col0, Col + ELen, Ll, Ind, LD, W + ELen);
+        LD1 =:= 0, ELen + 1 < Ll - Col, W + ELen + 1 =< M, ?ATM(E);
+        LD1 > 0, ELen < Ll - Col - LD1, W + ELen + LD1 =< M, ?ATM(E) ->
+            cind_tail(Es, Col0, Col + ELen, Ll, M, Ind, LD, W + ELen);
         true -> 
-            WE = cind_element(E, Col0, Ll, Ind, LD1, 0),
-            cind_tail(Es, Col0, Col0 + WE, Ll, Ind, LD, WE)
+            WE = cind_element(E, Col0, Ll, M, Ind, LD1, 0),
+            cind_tail(Es, Col0, Col0 + WE, Ll, M, Ind, LD, WE)
     end;
-cind_tail({dots, _}, _Col0, _Col, _Ll, Ind, _LD, _W) ->
+cind_tail({dots, _}, _Col0, _Col, _Ll, _M, Ind, _LD, _W) ->
     Ind;
-cind_tail({_, Len}=E, _Col0, Col, Ll, Ind, LD, W)
+cind_tail({_, Len}=E, _Col0, Col, Ll, M, Ind, LD, W)
                   when Len + 1 < Ll - Col - (LD + 1), 
-                       Len + 1 + W + (LD + 1) =< ?MAXCS, 
+                       Len + 1 + W + (LD + 1) =< M, 
                        ?ATM(E) ->
     Ind;
-cind_tail(E, _Col0, Col, Ll, Ind, LD, _W) ->
-    cind(E, Col, Ll, Ind, LD + 1, 0).
+cind_tail(E, _Col0, Col, Ll, M, Ind, LD, _W) ->
+    cind(E, Col, Ll, M, Ind, LD + 1, 0).
 
-cind_element({_, Len}=E, Col, Ll, _Ind, LD, W)
-           when Len < Ll - Col - LD, Len + W + LD =< ?MAXCS, ?ATM(E) ->
+cind_element({_, Len}=E, Col, Ll, M, _Ind, LD, W)
+           when Len < Ll - Col - LD, Len + W + LD =< M, ?ATM(E) ->
     Len;
-cind_element(E, Col, Ll, Ind, LD, W) ->
-    cind(E, Col, Ll, Ind, LD, W),
+cind_element(E, Col, Ll, M, Ind, LD, W) ->
+    cind(E, Col, Ll, M, Ind, LD, W),
     Ll.
 
 last_depth([_ | _], _LD) ->

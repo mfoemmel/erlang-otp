@@ -116,7 +116,7 @@ safe_btm_lock(Process *c_p, ErtsProcLocks c_p_locks, int rw_lock)
     return 0;
 }
 
-ERTS_SMP_PALLOC_IMPL(btm_pre, ErtsBifTimer, BTM_PREALC_SZ)
+ERTS_SCHED_PREF_PALLOC_IMPL(btm_pre, ErtsBifTimer, BTM_PREALC_SZ)
 
 static ERTS_INLINE int
 get_index(Uint32 *ref_numbers, Uint32 len)
@@ -288,7 +288,6 @@ bif_timer_cleanup(ErtsBifTimer* btm)
     if (btm->bp)
 	free_message_buffer(btm->bp);
 
-    ERTS_PROC_LESS_MEM(sizeof(ErtsBifTimer));
     if (!btm_pre_free(btm)) {
 	if (btm->flags & BTM_FLG_SL_TIMER)
 	    erts_free(ERTS_ALC_T_SL_BIF_TIMER, (void *) btm);
@@ -421,7 +420,6 @@ setup_bif_timer(Uint32 xflags,
 	    return ref;
     }
 
-    ERTS_PROC_MORE_MEM(sizeof(ErtsBifTimer));
     if (timeout < ERTS_ALC_MIN_LONG_LIVED_TIME) {
 	if (timeout < 1000) {
 	    btm = btm_pre_alloc();

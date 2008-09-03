@@ -547,7 +547,7 @@ store(ConfigList0) ->
 		  lists:append(Modules,[?MODULE]), ConfigList)
     catch
 	throw:Error ->
-	    {error, {wrong_type, Error}}
+	    {error, {invalid_option, Error}}
     end.
 
 fix_mime_types(ConfigList0) ->

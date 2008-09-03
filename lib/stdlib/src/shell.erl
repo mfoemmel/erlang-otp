@@ -23,6 +23,7 @@
 -export([local_allowed/3, non_local_allowed/3]).
 
 -define(LINEMAX, 30).
+-define(CHAR_MAX, 60).
 -define(DEF_HISTORY, 20).
 -define(DEF_RESULTS, 20).
 -define(DEF_CATCH_EXCEPTION, false).
@@ -927,7 +928,8 @@ local_func(rp, [A], Bs0, _Shell, RT, Lf, Ef) ->
     {[V],Bs} = expr_list([A], Bs0, Lf, Ef),
     W = columns(),
     io:requests([{put_chars, 
-                  io_lib_pretty:print(V, 1, W, -1, record_print_fun(RT))},
+                  io_lib_pretty:print(V, 1, W, -1, ?CHAR_MAX,
+                                      record_print_fun(RT))},
                  nl]),
     {value,ok,Bs};
 local_func(rr, [A], Bs0, _Shell, RT, Lf, Ef) ->
@@ -1005,9 +1007,26 @@ non_builtin_local_func(F,As,Bs) ->
 	true ->
             {eval,{user_default,F},As,Bs};
 	false ->
-            {eval,{shell_default,F},As,Bs}
+	    shell_default(F,As,Bs)
     end.
-    
+
+shell_default(F,As,Bs) ->
+    M = shell_default,
+    A = length(As),
+    case code:ensure_loaded(M) of
+	{module, _} ->
+	    case erlang:function_exported(M,F,A) of
+		true ->
+		    {eval,{M,F},As,Bs};		    
+		false ->
+		    shell_undef(F,A)
+	    end;
+	{error, _} ->
+	    shell_undef(F,A)
+    end.
+
+shell_undef(F,A) ->
+    erlang:error({shell_undef,F,A}).
 
 local_func_handler(Shell, RT, Ef) ->
     H = fun(Lf) -> 
@@ -1350,7 +1369,8 @@ min(_X, Y) ->
     Y.
 
 pp(V, I, RT) ->
-    io_lib_pretty:print(V, I, columns(), ?LINEMAX, record_print_fun(RT)).
+    io_lib_pretty:print(V, I, columns(), ?LINEMAX, ?CHAR_MAX,
+                        record_print_fun(RT)).
 
 columns() ->
     case io:columns() of

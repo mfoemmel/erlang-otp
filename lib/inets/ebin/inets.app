@@ -1,6 +1,6 @@
 {application,inets,
  [{description,"INETS  CXC 138 49"},
-  {vsn,"5.0.9"},
+  {vsn,"5.0.10"},
   {modules,[
             inets,
             inets_sup,

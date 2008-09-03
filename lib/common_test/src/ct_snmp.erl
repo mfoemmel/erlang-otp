@@ -190,7 +190,7 @@ start(Config, ConfName) ->
     
     prepare_snmp_env(),
     setup_agent(StartAgent, ConfName, Config, SysName, AgentManagerIP, IP),
-    setup_manager(StartManager, ConfName, Config, IP),
+    setup_manager(StartManager, ConfName, Config, AgentManagerIP),
     application:start(snmp),
 
     manager_register(StartManager, ConfName).

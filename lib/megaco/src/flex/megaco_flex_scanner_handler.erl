@@ -159,11 +159,12 @@ terminate(_Reason, _S) ->
 %% Purpose: Called to change the internal state
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change({down, _Vsn}, #state{conf = Conf} = State, downgrade_to_pre_3_3) ->
+code_change({down, _Vsn}, #state{conf = Conf} = State, 
+	    downgrade_to_pre_3_8_1) ->
     Port = update_flex_scanner(Conf),
     {ok, State#state{conf = {flex, Port}}};
 
-code_change(_Vsn, #state{conf = Conf} = State, upgrade_from_pre_3_3) ->
+code_change(_Vsn, #state{conf = Conf} = State, upgrade_from_pre_3_8_1) ->
     Port = update_flex_scanner(Conf),
     {ok, State#state{conf = {flex, Port}}};
 

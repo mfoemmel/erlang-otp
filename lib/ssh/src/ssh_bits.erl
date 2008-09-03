@@ -203,10 +203,10 @@ enc([], [],_) ->
 decode(Binary = <<?BYTE(ID), _/binary>>) ->
     case get({msg_name, ID}) of
 	undefined -> 
-	    {error, unimplemented};
+	    {unknown, Binary};
 	{Name, Ts} ->
 	    {_, Elems} = decode(Binary,1,Ts),
-	    {ok,list_to_tuple([Name | Elems])}
+	    list_to_tuple([Name | Elems])
     end.
 
 %%

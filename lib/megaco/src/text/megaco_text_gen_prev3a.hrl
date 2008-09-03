@@ -1549,6 +1549,24 @@ enc_eventStream(Val, State) ->
      enc_StreamID(Val, State)
     ].
 
+%% The value is already encoded
+enc_eventOther(#megaco_event_parameter{name  = Name,
+				       value = Value}, State) 
+  when is_list(Value) ->
+    [
+     enc_Name(Name, State),
+     ?EqualToken,
+     Value
+    ];
+%% Special treatment of the ds parameter of the dd/ce event
+enc_eventOther(#'EventParameter'{eventParameterName = "ds" = Name,
+				 value              = [DigitString],
+				 extraInfo          = asn1_NOVALUE}, State) ->
+    [
+     enc_Name(Name, State),
+     ?EqualToken,
+     enc_DigitString(DigitString, State)
+    ];
 enc_eventOther(#'EventParameter'{eventParameterName = Name,
 				 value              = Value,
 				 extraInfo          = Extra}, State) ->
@@ -2678,6 +2696,10 @@ quoted_string_count([H | T], Count, IsSafe) ->
     end;
 quoted_string_count([], Count, IsSafe) ->
     {IsSafe, Count}.
+
+enc_DigitString(String, _State) when is_list(String) ->
+    [?DQUOTE, String, ?DQUOTE].
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

@@ -1,6 +1,6 @@
 -module(snmpc_mib_gram).
 -export([parse/1, parse_and_scan/1, format_error/1]).
--file("snmpc_mib_gram.yrl", 625).
+-file("snmpc_mib_gram.yrl", 626).
 %%----------------------------------------------------------------------
 
 -include("snmp_types.hrl").
@@ -350,7 +350,7 @@ w(F, A) ->
 %    io:format("~w:" ++ F ++ "~n", [?MODULE|A]).
 
 
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-06-10_20/otp_src_R12B-3/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/ldisk/daily_build/otp_prebuild_r12b.2008-09-02_20/otp_src_R12B-4/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -4031,7 +4031,7 @@ yeccpars2_55_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_64_,1}}).
--file("snmpc_mib_gram.yrl", 506).
+-file("snmpc_mib_gram.yrl", 507).
 yeccpars2_64_(__Stack0) ->
  [begin
    [ ]
@@ -4054,7 +4054,7 @@ yeccpars2_67_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{'yeccpars2_68_MODULE-IDENTITY',1}}).
--file("snmpc_mib_gram.yrl", 479).
+-file("snmpc_mib_gram.yrl", 480).
 'yeccpars2_68_MODULE-IDENTITY'(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4094,7 +4094,7 @@ yeccpars2_71_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_75_,1}}).
--file("snmpc_mib_gram.yrl", 480).
+-file("snmpc_mib_gram.yrl", 481).
 yeccpars2_75_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4102,7 +4102,7 @@ yeccpars2_75_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_78_,1}}).
--file("snmpc_mib_gram.yrl", 481).
+-file("snmpc_mib_gram.yrl", 482).
 yeccpars2_78_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4110,7 +4110,7 @@ yeccpars2_78_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_81_,1}}).
--file("snmpc_mib_gram.yrl", 482).
+-file("snmpc_mib_gram.yrl", 483).
 yeccpars2_81_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4125,7 +4125,7 @@ yeccpars2_82_(__Stack0) ->
   end | __Stack0].
 
 -compile({inline,{yeccpars2_83_,1}}).
--file("snmpc_mib_gram.yrl", 484).
+-file("snmpc_mib_gram.yrl", 485).
 yeccpars2_83_(__Stack0) ->
  [begin
    [ ]
@@ -4140,7 +4140,7 @@ yeccpars2_84_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_85_,1}}).
--file("snmpc_mib_gram.yrl", 485).
+-file("snmpc_mib_gram.yrl", 486).
 yeccpars2_85_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4148,7 +4148,7 @@ yeccpars2_85_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_87_,1}}).
--file("snmpc_mib_gram.yrl", 487).
+-file("snmpc_mib_gram.yrl", 488).
 yeccpars2_87_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4156,7 +4156,7 @@ yeccpars2_87_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_90_,1}}).
--file("snmpc_mib_gram.yrl", 492).
+-file("snmpc_mib_gram.yrl", 493).
 yeccpars2_90_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4164,7 +4164,7 @@ yeccpars2_90_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_92_,1}}).
--file("snmpc_mib_gram.yrl", 490).
+-file("snmpc_mib_gram.yrl", 491).
 yeccpars2_92_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4172,7 +4172,7 @@ yeccpars2_92_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_93_,1}}).
--file("snmpc_mib_gram.yrl", 493).
+-file("snmpc_mib_gram.yrl", 494).
 yeccpars2_93_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4180,7 +4180,7 @@ yeccpars2_93_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_94_,1}}).
--file("snmpc_mib_gram.yrl", 475).
+-file("snmpc_mib_gram.yrl", 476).
 yeccpars2_94_(__Stack0) ->
  [__12,__11,__10,__9,__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4246,7 +4246,7 @@ yeccpars2_110_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_111_,1}}).
--file("snmpc_mib_gram.yrl", 488).
+-file("snmpc_mib_gram.yrl", 489).
 yeccpars2_111_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4262,7 +4262,7 @@ yeccpars2_112_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_125_,1}}).
--file("snmpc_mib_gram.yrl", 507).
+-file("snmpc_mib_gram.yrl", 508).
 yeccpars2_125_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4461,7 +4461,7 @@ yeccpars2_164_(__Stack0) ->
   end | __Stack0].
 
 -compile({inline,{yeccpars2_165_,1}}).
--file("snmpc_mib_gram.yrl", 604).
+-file("snmpc_mib_gram.yrl", 605).
 yeccpars2_165_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4469,10 +4469,10 @@ yeccpars2_165_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_166_,1}}).
--file("snmpc_mib_gram.yrl", 0).
+-file("snmpc_mib_gram.yrl", 463).
 yeccpars2_166_(__Stack0) ->
  [begin
-   '$undefined'
+   undefined
   end | __Stack0].
 
 -compile({inline,{yeccpars2_168_,1}}).
@@ -4484,15 +4484,15 @@ yeccpars2_168_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_171_,1}}).
--file("snmpc_mib_gram.yrl", 0).
+-file("snmpc_mib_gram.yrl", 462).
 yeccpars2_171_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
-   '$undefined'
+   lists : reverse ( val ( __2 ) )
   end | __Stack].
 
 -compile({inline,{yeccpars2_173_,1}}).
--file("snmpc_mib_gram.yrl", 511).
+-file("snmpc_mib_gram.yrl", 512).
 yeccpars2_173_(__Stack0) ->
  [__10,__9,__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4688,28 +4688,28 @@ yeccpars2_226_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_229_,1}}).
--file("snmpc_mib_gram.yrl", 615).
+-file("snmpc_mib_gram.yrl", 616).
 yeccpars2_229_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
 -compile({inline,{yeccpars2_231_,1}}).
--file("snmpc_mib_gram.yrl", 615).
+-file("snmpc_mib_gram.yrl", 616).
 yeccpars2_231_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
 -compile({inline,{yeccpars2_235_,1}}).
--file("snmpc_mib_gram.yrl", 601).
+-file("snmpc_mib_gram.yrl", 602).
 yeccpars2_235_(__Stack0) ->
  [begin
    undefined
   end | __Stack0].
 
 -compile({inline,{yeccpars2_238_,1}}).
--file("snmpc_mib_gram.yrl", 602).
+-file("snmpc_mib_gram.yrl", 603).
 yeccpars2_238_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4717,7 +4717,7 @@ yeccpars2_238_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_241_,1}}).
--file("snmpc_mib_gram.yrl", 606).
+-file("snmpc_mib_gram.yrl", 607).
 yeccpars2_241_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4732,14 +4732,14 @@ yeccpars2_244_(__Stack0) ->
   end | __Stack0].
 
 -compile({inline,{yeccpars2_245_,1}}).
--file("snmpc_mib_gram.yrl", 0).
+-file("snmpc_mib_gram.yrl", 463).
 yeccpars2_245_(__Stack0) ->
  [begin
-   '$undefined'
+   undefined
   end | __Stack0].
 
 -compile({inline,{yeccpars2_246_,1}}).
--file("snmpc_mib_gram.yrl", 591).
+-file("snmpc_mib_gram.yrl", 592).
 yeccpars2_246_(__Stack0) ->
  [begin
    { indexes , undefined }
@@ -4753,7 +4753,7 @@ yeccpars2_247_(__Stack0) ->
   end | __Stack0].
 
 -compile({inline,{yeccpars2_252_,1}}).
--file("snmpc_mib_gram.yrl", 593).
+-file("snmpc_mib_gram.yrl", 594).
 yeccpars2_252_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4761,7 +4761,7 @@ yeccpars2_252_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_256_,1}}).
--file("snmpc_mib_gram.yrl", 596).
+-file("snmpc_mib_gram.yrl", 597).
 yeccpars2_256_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4769,7 +4769,7 @@ yeccpars2_256_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_258_,1}}).
--file("snmpc_mib_gram.yrl", 589).
+-file("snmpc_mib_gram.yrl", 590).
 yeccpars2_258_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4777,7 +4777,7 @@ yeccpars2_258_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_259_,1}}).
--file("snmpc_mib_gram.yrl", 594).
+-file("snmpc_mib_gram.yrl", 595).
 yeccpars2_259_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4785,7 +4785,7 @@ yeccpars2_259_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_263_,1}}).
--file("snmpc_mib_gram.yrl", 590).
+-file("snmpc_mib_gram.yrl", 591).
 yeccpars2_263_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4866,7 +4866,7 @@ yeccpars2_285_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_286_,1}}).
--file("snmpc_mib_gram.yrl", 584).
+-file("snmpc_mib_gram.yrl", 585).
 yeccpars2_286_(__Stack0) ->
  [__15,__14,__13,__12,__11,__10,__9,__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4877,14 +4877,14 @@ yeccpars2_286_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_290_,1}}).
--file("snmpc_mib_gram.yrl", 0).
+-file("snmpc_mib_gram.yrl", 463).
 yeccpars2_290_(__Stack0) ->
  [begin
-   '$undefined'
+   undefined
   end | __Stack0].
 
 -compile({inline,{yeccpars2_292_,1}}).
--file("snmpc_mib_gram.yrl", 517).
+-file("snmpc_mib_gram.yrl", 518).
 yeccpars2_292_(__Stack0) ->
  [__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4895,7 +4895,7 @@ yeccpars2_292_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_297_,1}}).
--file("snmpc_mib_gram.yrl", 617).
+-file("snmpc_mib_gram.yrl", 618).
 yeccpars2_297_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -4903,7 +4903,7 @@ yeccpars2_297_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_299_,1}}).
--file("snmpc_mib_gram.yrl", 614).
+-file("snmpc_mib_gram.yrl", 615).
 yeccpars2_299_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4911,7 +4911,7 @@ yeccpars2_299_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_300_,1}}).
--file("snmpc_mib_gram.yrl", 618).
+-file("snmpc_mib_gram.yrl", 619).
 yeccpars2_300_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4926,14 +4926,14 @@ yeccpars2_302_(__Stack0) ->
   end | __Stack0].
 
 -compile({inline,{yeccpars2_303_,1}}).
--file("snmpc_mib_gram.yrl", 0).
+-file("snmpc_mib_gram.yrl", 463).
 yeccpars2_303_(__Stack0) ->
  [begin
-   '$undefined'
+   undefined
   end | __Stack0].
 
 -compile({inline,{yeccpars2_305_,1}}).
--file("snmpc_mib_gram.yrl", 524).
+-file("snmpc_mib_gram.yrl", 525).
 yeccpars2_305_(__Stack0) ->
  [__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4959,14 +4959,14 @@ yeccpars2_311_(__Stack0) ->
   end | __Stack0].
 
 -compile({inline,{yeccpars2_312_,1}}).
--file("snmpc_mib_gram.yrl", 0).
+-file("snmpc_mib_gram.yrl", 463).
 yeccpars2_312_(__Stack0) ->
  [begin
-   '$undefined'
+   undefined
   end | __Stack0].
 
 -compile({inline,{yeccpars2_314_,1}}).
--file("snmpc_mib_gram.yrl", 611).
+-file("snmpc_mib_gram.yrl", 612).
 yeccpars2_314_(__Stack0) ->
  [__9,__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -4982,14 +4982,14 @@ yeccpars2_320_(__Stack0) ->
   end | __Stack0].
 
 -compile({inline,{yeccpars2_321_,1}}).
--file("snmpc_mib_gram.yrl", 0).
+-file("snmpc_mib_gram.yrl", 463).
 yeccpars2_321_(__Stack0) ->
  [begin
-   '$undefined'
+   undefined
   end | __Stack0].
 
 -compile({inline,{yeccpars2_323_,1}}).
--file("snmpc_mib_gram.yrl", 530).
+-file("snmpc_mib_gram.yrl", 531).
 yeccpars2_323_(__Stack0) ->
  [__11,__10,__9,__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -5006,10 +5006,10 @@ yeccpars2_325_(__Stack0) ->
   end | __Stack0].
 
 -compile({inline,{yeccpars2_326_,1}}).
--file("snmpc_mib_gram.yrl", 0).
+-file("snmpc_mib_gram.yrl", 463).
 yeccpars2_326_(__Stack0) ->
  [begin
-   '$undefined'
+   undefined
   end | __Stack0].
 
 -compile({inline,{yeccpars2_327_,1}}).
@@ -5196,7 +5196,7 @@ yeccpars2_359_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_360_,1}}).
--file("snmpc_mib_gram.yrl", 536).
+-file("snmpc_mib_gram.yrl", 537).
 yeccpars2_360_(__Stack0) ->
  [__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -5252,10 +5252,10 @@ yeccpars2_374_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_375_,1}}).
--file("snmpc_mib_gram.yrl", 0).
+-file("snmpc_mib_gram.yrl", 463).
 yeccpars2_375_(__Stack0) ->
  [begin
-   '$undefined'
+   undefined
   end | __Stack0].
 
 -compile({inline,{yeccpars2_378_,1}}).
@@ -5292,10 +5292,10 @@ yeccpars2_387_(__Stack0) ->
   end | __Stack0].
 
 -compile({inline,{yeccpars2_388_,1}}).
--file("snmpc_mib_gram.yrl", 0).
+-file("snmpc_mib_gram.yrl", 463).
 yeccpars2_388_(__Stack0) ->
  [begin
-   '$undefined'
+   undefined
   end | __Stack0].
 
 -compile({inline,{yeccpars2_389_,1}}).
@@ -5360,4 +5360,4 @@ yeccpars2_401_(__Stack0) ->
   end | __Stack].
 
 
--file("snmpc_mib_gram.yrl", 974).
+-file("snmpc_mib_gram.yrl", 975).

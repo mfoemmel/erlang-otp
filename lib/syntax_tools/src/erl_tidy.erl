@@ -49,6 +49,12 @@
 -define(DEFAULT_DIR, "").
 -define(DEFAULT_REGEXP, ".*\\.erl$").
 
+%% =====================================================================
+
+-type(filename() :: string()).
+-type(options()  :: [atom() | {atom(),_}]).
+
+%% =====================================================================
 
 dir__defaults() ->
     [{follow_links, false},
@@ -60,6 +66,7 @@ dir__defaults() ->
 %% @spec dir() -> ok
 %% @equiv dir("")
 
+-spec dir() -> 'ok'.
 dir() ->
     dir("").
 
@@ -67,6 +74,7 @@ dir() ->
 %% @spec dir(Dir) -> ok
 %% @equiv dir(Dir, [])
 
+-spec dir(filename()) -> 'ok'.
 dir(Dir) ->
     dir(Dir, []).
 
@@ -118,8 +126,11 @@ dir(Dir) ->
 %% @see //stdlib/regexp
 %% @see file/2
 
--record(dir, {follow_links = false, recursive = true, options}).
+-record(dir, {follow_links = false :: bool(),
+	      recursive    = true  :: bool(),
+	      options              :: options()}).
 
+-spec dir(filename(), options()) -> 'ok'.
 dir(Dir, Opts) ->
     Opts1 = Opts ++ dir__defaults(),
     Env = #dir{follow_links = proplists:get_bool(follow_links, Opts1),
@@ -202,6 +213,7 @@ default_printer() ->
 %% @spec file(Name) -> ok
 %% @equiv file(Name, [])
 
+-spec file(filename()) -> 'ok'.
 file(Name) ->
     file(Name, []).
 
@@ -265,6 +277,7 @@ file(Name) ->
 %% @see erl_prettypr:format/2
 %% @see module/2
 
+-spec file(filename(), options()) -> 'ok'.
 file(Name, Opts) ->
     Parent = self(),
     Child = spawn_link(fun () -> file_1(Parent, Name, Opts) end),
@@ -654,7 +667,7 @@ analyze_forms(Forms, File) ->
             L1;
         syntax_error ->
             report_error({File, 0, "syntax error."}),
-            erlang:error(badarg);
+	    throw(syntax_error);
         {'EXIT', R} ->
             exit(R);
         R ->
@@ -1015,7 +1028,8 @@ visit_implicit_fun(Tree, _Env, St0) ->
             Used = sets:add_element(N, St0#st.used),
             {Tree, St0#st{used = Used}};
         _ ->
-            Tree
+	    %% symbolic funs do not count as uses of a function
+            {Tree, St0}
     end.
 
 visit_clause(Tree, Env, St0) ->
@@ -1823,8 +1837,8 @@ report_error({F, L, D}, Vs) ->
 report_error(D, Vs) ->
     report({error, D}, Vs).
 
-% warn(D, N) ->
-%     warn(D, [], N).
+%% warn(D, N) ->
+%%     warn(D, [], N).
 
 warn({F, L, D}, Vs, N) ->
     report({F, L, {warning, D}}, Vs, N);
@@ -1866,6 +1880,5 @@ format({F, _L, D}, Vs) ->
     [io_lib:fwrite("~s: ", [filename(F)]), format(D, Vs)];
 format(S, Vs) when is_list(S) ->
     [io_lib:fwrite(S, Vs), $\n].
-
 
 %% =====================================================================

@@ -1098,6 +1098,7 @@ do_change_table_frag(Tab, _Change) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Clear a table
 
+%% No need for a schema transaction
 clear_table(Tab) ->
     schema_transaction(fun() -> do_clear_table(Tab) end).
 
@@ -1109,9 +1110,7 @@ do_clear_table(Tab) ->
     insert_schema_ops(TidTs, make_clear_table(Tab)).
 
 make_clear_table(Tab) ->
-    ensure_writable(schema),
     Cs = val({Tab, cstruct}),
-    ensure_active(Cs),
     ensure_writable(Tab),
     [{op, clear_table, cs2list(Cs)}].
 

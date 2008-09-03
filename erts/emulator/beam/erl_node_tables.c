@@ -730,8 +730,13 @@ void erts_init_node_tables(void)
 #ifdef ERTS_SMP
     {
 	int i;
-	for (i = 0; i < ERTS_NO_OF_DIST_ENTRY_MUTEXES; i++)
+	for (i = 0; i < ERTS_NO_OF_DIST_ENTRY_MUTEXES; i++) {
+#ifdef ERTS_ENABLE_LOCK_COUNT
+	    erts_smp_mtx_init_x(&dist_entry_mutexes[i], "dist_entry", make_small(i));
+#else
 	    erts_smp_mtx_init(&dist_entry_mutexes[i], "dist_entry");
+#endif /*ERTS_ENABLE_LOCK_COUNT*/
+	}
 	erts_this_dist_entry->mtxp = &dist_entry_mutexes[0];
 	erts_smp_mtx_init(&erts_node_table_mtx, "node_table");
 	erts_smp_mtx_init(&erts_dist_table_mtx, "dist_table");

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE application SYSTEM "application.dtd">
+
+<application>
+  <header>
+    <copyright>
+      <year>1996</year>
+      <year>2007</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>STDLIB Reference Manual</title>
+    <prepared>OTP Team</prepared>
+    <docno></docno>
+    <date>1997-06-04</date>
+    <rev>1.3.1</rev>
+    <file>application.sgml</file>
+  </header>
+  <description>
+    <p>The Standard Erlang Libraries application, <em>STDLIB</em>,
+      contains modules for manipulating lists, strings and files etc.</p>
+    <br></br>
+  </description>
+  <include file="stdlib_app"></include>
+  <include file="array"></include>
+  <include file="base64"></include>
+  <include file="beam_lib"></include>
+  <include file="c"></include>
+  <include file="calendar"></include>
+  <include file="dets"></include>
+  <include file="dict"></include>
+  <include file="digraph"></include>
+  <include file="digraph_utils"></include>
+  <include file="epp"></include>
+  <include file="erl_eval"></include>
+  <include file="erl_expand_records"></include>
+  <include file="erl_id_trans"></include>
+  <include file="erl_internal"></include>
+  <include file="erl_lint"></include>
+  <include file="erl_parse"></include>
+  <include file="erl_pp"></include>
+  <include file="erl_scan"></include>
+  <include file="erl_tar"></include>
+  <include file="ets"></include>
+  <include file="file_sorter"></include>
+  <include file="filelib"></include>
+  <include file="filename"></include>
+  <include file="gb_sets"></include>
+  <include file="gb_trees"></include>
+  <include file="gen_event"></include>
+  <include file="gen_fsm"></include>
+  <include file="gen_server"></include>
+  <include file="io"></include>
+  <include file="io_lib"></include>
+  <include file="lib"></include>
+  <include file="lists"></include>
+  <include file="log_mf_h"></include>
+  <include file="math"></include>
+  <include file="ms_transform"></include>
+  <include file="orddict"></include>
+  <include file="ordsets"></include>
+  <include file="pg"></include>
+  <include file="pool"></include>
+  <include file="proc_lib"></include>
+  <include file="proplists"></include>
+  <include file="qlc"></include>
+  <include file="queue"></include>
+  <include file="random"></include>
+  <include file="re"></include>
+  <include file="regexp"></include>
+  <include file="sets"></include>
+  <include file="shell"></include>
+  <include file="shell_default"></include>
+  <include file="slave"></include>
+  <include file="sofs"></include>
+  <include file="string"></include>
+  <include file="supervisor"></include>
+  <include file="supervisor_bridge"></include>
+  <include file="sys"></include>
+  <include file="timer"></include>
+  <include file="win32reg"></include>
+  <include file="zip"></include>
+</application>
+

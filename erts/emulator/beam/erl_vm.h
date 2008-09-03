@@ -62,6 +62,12 @@
 
 #define CP_SIZE 1
 
+#define ErtsHAllocLockCheck(P) \
+  ERTS_SMP_LC_ASSERT((ERTS_PROC_LOCK_MAIN & erts_proc_lc_my_proc_locks((P))) \
+		     || ((P)->scheduler_data \
+			 && (P) == (P)->scheduler_data->match_pseudo_process) \
+		     || erts_is_system_blocked(0))
+
 #ifdef DEBUG
 /*
  * Debug HAlloc that initialize all memory to bad things.
@@ -75,6 +81,7 @@
 #ifdef CHECK_FOR_HOLES
 #define HAlloc(p, sz)						\
     (ASSERT_EXPR((sz) >= 0),					\
+     ErtsHAllocLockCheck(p),					\
      ((((HEAP_LIMIT(p) - HEAP_TOP(p)) < (sz)))			\
       ? erts_heap_alloc((p),(sz))				\
       : (erts_set_hole_marker(HEAP_TOP(p), (sz)),		\
@@ -82,6 +89,7 @@
 #else
 #define HAlloc(p, sz)                                                   \
     (ASSERT_EXPR((sz) >= 0),                                            \
+     ErtsHAllocLockCheck(p),						\
      ((((HEAP_LIMIT(p) - HEAP_TOP(p)) < (sz)))                          \
       ? erts_heap_alloc((p),(sz))                                       \
       : (memset(HEAP_TOP(p),DEBUG_BAD_BYTE,(sz)*sizeof(Eterm*)),        \
@@ -95,6 +103,7 @@
  */
 #define HAlloc(p, sz)                                                   \
     (ASSERT_EXPR((sz) >= 0),                                            \
+     ErtsHAllocLockCheck(p),						\
      ((((HEAP_LIMIT(p) - HEAP_TOP(p)) < (sz)))                          \
       ? erts_heap_alloc((p),(sz))                                       \
       : (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))

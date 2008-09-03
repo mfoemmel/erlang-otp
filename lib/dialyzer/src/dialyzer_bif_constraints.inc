@@ -509,5 +509,17 @@ get_bif_test_constr(Dst, Arg, Type) ->
 	       end
 	   end,
   ArgV = mk_fun_var(ArgFun, [Dst]),
-  mk_conj_constraint_list([mk_constraint(Dst, sub, t_bool()),
+  DstFun = fun(Map) ->
+	       ArgType = lookup_type(Arg, Map),
+	       case t_is_none(t_inf(ArgType, Type)) of
+		 true -> t_from_term(false);
+		 false -> 
+		   case t_is_subtype(ArgType, Type) of
+		     true -> t_from_term(true);
+		     false -> t_bool()
+		   end
+	       end
+	   end,
+  DstV = mk_fun_var(DstFun, [Arg]),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, DstV),
 			   mk_constraint(Arg, sub, ArgV)]).

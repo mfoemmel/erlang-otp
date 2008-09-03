@@ -44,7 +44,19 @@
  *
  *  When using SunOS 4, the memory report is faked. The total physical memory
  *  is always reported to be 256MB, and the used fraction to be 128MB.
- *
+ *  
+ *  If capabilities, such as sysconf or procfs, is not defined on the system 
+ *  memsup will fake memory usage as well.
+ *  
+ *  Following ordering is defined for extended memory,
+ *  Linux:	procfs -> sysinfo -> sysconf -> fake
+ *  Sunos:	sysconf -> fake
+ *  other:	arch specific
+ *  
+ *  Todo:
+ *  Memory retrieval should be defined by capabilities and not by archs.
+ *  Ordering should be defined arch.
+ *  
  *  STANDARD INPUT, OUTPUT AND ERROR
  *
  *  This program communicates with Erlang through the standard
@@ -98,12 +110,16 @@
 #ifdef BSD4_4
 #include <sys/types.h>
 #include <sys/sysctl.h>
-#ifndef __OpenBSD__
+#if !defined ( __OpenBSD__) && !defined(__NetBSD__) 
 #include <vm/vm_param.h>
 #endif
 #ifdef __FreeBSD__
 #include <sys/vmmeter.h>
 #endif
+#endif
+
+#if defined (__linux__)
+#include <sys/sysinfo.h>
 #endif
 
 /* commands */
@@ -116,7 +132,7 @@
 
 
 /* procfs */
-#if defined(__linux__) && !defined(_SC_AVPHYS_PAGES)
+#if defined(__linux__) 
 #include <fcntl.h>
 #define MEMINFO "/proc/meminfo"
 #endif
@@ -138,13 +154,86 @@ static unsigned long latest_system_total; /* does not fit in the struct */
 #define MAIN main
 #endif
 
+
+/*
+ * example, we want procfs information, now give them something equivalent: 
+ * 
+ * MemTotal:      4029352 kB	old 	HighTotal + LowTotal
+ * MemFree:       1674168 kB	old	HighFree + LowFree
+ * MemShared:           0 kB    old 	now always zero; not calculated
+ * Buffers:        417164 kB	old	temporary storage for raw disk blocks
+ * Cached:         371312 kB	old	in-memory cache for files read from the disk (the page cache)
+
+ * Active:        1408492 kB	new
+
+ * Inact_dirty:      7772 kB    new
+ * Inact_clean:      2008 kB    new
+ * Inact_target:        0 kB    new
+ * Inact_laundry:       0 kB    new, and might be missing too
+
+ * HighTotal:           0 kB
+ * HighFree:            0 kB		memory area for userspace programs or for the pagecache
+ * LowTotal:      4029352 kB		
+ * LowFree:       1674168 kB		Highmem + kernel stuff, slab allocates here
+
+ * SwapTotal:     4194296 kB	old	total amount of swap space available
+ * SwapFree:      4194092 kB	old	Memory which has been evicted from RAM
+ * Inactive:       549224 kB	2.5.41+
+ * Dirty:             872 kB	2.5.41+	Memory which is waiting to get written back to the disk
+ * Writeback:           0 kB	2.5.41+	Memory which is actively being written back to the disk
+ * AnonPages:      787616 kB	??
+ * Mapped:         113612 kB	2.5.41+	files which have been mmaped, such as libraries
+ * Slab:           342864 kB	2.5.41+	in-kernel data structures cache
+ * CommitLimit:   6208972 kB	??
+ * Committed_AS:  1141444 kB	2.5.41+
+ * PageTables:       9368 kB	2.5.41+
+ * VmallocTotal: 34359738367 kB	??	total size of vmalloc memory area
+ * VmallocUsed:     57376 kB	??	amount of vmalloc area which is used
+ * VmallocChunk: 34359677947 kB	??	largest contigious block of vmalloc area which is free
+ * ReverseMaps:      5738       2.5.41+	number of rmap pte chains
+ * SwapCached:          0 kB	2.5.??+	
+ * HugePages_Total:     0	2.5.??+
+ * HugePages_Free:      0	2.5.??+
+ * HugePages_Rsvd:      0	2.5.??+
+ * Hugepagesize:     2048 kB	2.5.??
+ *
+ * This information should be generalized for generic platform i.e. erlang.
+ */
+
+
+
+#define F_MEM_TOTAL   (1 << 0)
+#define F_MEM_FREE    (1 << 1)
+#define F_MEM_BUFFERS (1 << 2)
+#define F_MEM_CACHED  (1 << 3)
+#define F_MEM_SHARED  (1 << 4)
+#define F_SWAP_TOTAL  (1 << 5)
+#define F_SWAP_FREE   (1 << 6)
+
+typedef struct {
+    unsigned int flag;
+    unsigned long pagesize;
+    unsigned long total;
+    unsigned long free;
+    unsigned long buffered;
+    unsigned long cached;
+    unsigned long shared;
+    unsigned long total_swap;
+    unsigned long free_swap;
+} memory_ext;
+
+typedef struct mem_table_struct {
+  const char *name;     /* memory type name */
+  unsigned long *slot; /* slot in return struct */
+} mem_table_struct;
+
+
 /*  static variables */
 
 static char *program_name;
 
 static void
-send(unsigned long value, unsigned long pagesize)
-{
+send(unsigned long value, unsigned long pagesize) {
     char buf[32];
     int left, bytes, res;
     int hex_zeroes;
@@ -180,13 +269,16 @@ send_tag(int value){
     buf[0] = 1U;
     buf[1] = (unsigned char) value;
     left = 2;
-    while(left > 0)
+    while(left > 0) {
 	if((res = write(ERLOUT_FD, buf+left-2,left)) <= 0){
 	    perror("Error writing to pipe");
 	    exit(1);
-	} else
+	} else {
 	    left -= res;
+	}
+    }
 }
+
 
 #ifdef VXWORKS
 static void load_statistics(void){
@@ -199,8 +291,7 @@ static void load_statistics(void){
 
 #ifdef BSD4_4
 static int
-get_vmtotal(struct vmtotal *vt)
-{
+get_vmtotal(struct vmtotal *vt) {
 	static int vmtotal_mib[] = {CTL_VM, VM_METER};
 	size_t size = sizeof *vt;
 
@@ -208,51 +299,181 @@ get_vmtotal(struct vmtotal *vt)
 }
 #endif
 
-#if defined(__linux__) && !defined(_SC_AVPHYS_PAGES)
+#if defined(__linux__)
+
+
 static int 
-get_basic_mem_procfs(unsigned long *total, unsigned long *used, unsigned long *pagesize){
+get_mem_procfs(memory_ext *me){
     int fd, nread;
     char buffer[4097];
-    unsigned long mem_total, mem_free;
     char *bp;
+    unsigned long value;
     
-    *total = 0;
-    *used = 0;
-    *pagesize = 0;
-
-    if ( (fd = open(MEMINFO, O_RDONLY)) < 0) {
-	return -1;
-    }
+    me->flag = 0;
+    
+    if ( (fd = open(MEMINFO, O_RDONLY)) < 0) return -1;
 
     if ( (nread = read(fd, buffer, 4096)) < 0) {
+        close(fd);
 	return -1;
     }
-
     close(fd);
+
     buffer[nread] = '\0';
-
-    bp = strstr(buffer, "MemTotal:");    
-    if ( sscanf(bp, "MemTotal: %lu kB\n", &mem_total) != 1) {
-        return -1;
-    }
     
-    bp = strstr(buffer, "MemFree:");
-    if ( sscanf(bp, "MemFree: %lu kB\n", &mem_free) != 1) {
-        return -1;
-    }
+    /* Total and free is NEEDED! */
+    
+    bp = strstr(buffer, "MemTotal:");    
+    if (sscanf(bp, "MemTotal: %lu kB\n", &(me->total)))  me->flag |= F_MEM_TOTAL;
 
-    /* pagesize is really used to determine memory size in a generic function,
-     * if we report 1024 all will be well.
-     */
+    bp = strstr(buffer, "MemFree:");    
+    if (sscanf(bp, "MemFree: %lu kB\n", &(me->free)))    me->flag |= F_MEM_FREE;
+    
+    /* Extensions */
+    
+    bp = strstr(buffer, "Buffers:");    
+    if (sscanf(bp, "Buffers: %lu kB\n", &(me->buffered))) me->flag |= F_MEM_BUFFERS;
+    
+    bp = strstr(buffer, "Cached:");    
+    if (sscanf(bp, "Cached: %lu kB\n", &(me->cached)))   me->flag |= F_MEM_CACHED;
+    
 
-    *total = mem_total;   
-    *used = mem_total - mem_free;
-    *pagesize = 1024; 
- 
-    return 1;
-
+    /* Swap */
+    
+    bp = strstr(buffer, "SwapTotal:");    
+    if (sscanf(bp, "SwapTotal: %lu kB\n", &(me->total_swap))) me->flag |= F_SWAP_TOTAL;
+    
+    bp = strstr(buffer, "SwapFree:");    
+    if (sscanf(bp, "SwapFree: %lu kB\n", &(me->free_swap))) me->flag |= F_SWAP_FREE;
+    
+    me->pagesize = 1024; /* procfs defines its size in kB */
+    
+    return 1;   
 }
 #endif
+
+
+/* arch specific functions */
+
+#if defined(VXWORKS)
+static int
+get_extended_mem_vxwork(memory_ext *me) {
+    load_statistics();
+    me->total    = (latest.numBytesFree + latest.numBytesAlloc);
+    me->free     = latest.numBytesFree;
+    me->pagesize = 1;
+    me->flag     = F_MEM_TOTAL | F_MEM_FREE;
+    return 1;
+}
+#endif
+
+
+#if defined(__linux__) /* ifdef SYSINFO */
+/* sysinfo does not include cached memory which is a problem. */
+static int
+get_extended_mem_sysinfo(memory_ext *me) {
+    struct sysinfo info;
+    me->flag = 0;
+    if (sysinfo(&info) < 0) return -1;
+    me->pagesize   = 1; 
+    me->total      = info.totalram;
+    me->free       = info.freeram;
+    me->buffered   = info.bufferram;
+    me->shared     = info.sharedram;
+    me->total_swap = info.totalswap;
+    me->free_swap  = info.freeswap;
+    
+    me->flag = F_MEM_TOTAL | F_MEM_FREE | F_MEM_SHARED | F_MEM_BUFFERS | F_SWAP_TOTAL | F_SWAP_FREE;
+
+    return 1;
+}
+#endif
+
+
+#if defined(_SC_AVPHYS_PAGES)
+static int
+get_extended_mem_sysconf(memory_ext *me) {
+    me->total      = sysconf(_SC_PHYS_PAGES);
+    me->free       = sysconf(_SC_AVPHYS_PAGES);
+    me->pagesize   = sysconf(_SC_PAGESIZE);
+
+    me->flag = F_MEM_TOTAL | F_MEM_FREE;
+
+    return 1;
+}
+#endif
+
+#if defined(BSD4_4)
+static void
+get_extended_mem_bsd4(memory_ext *me) {
+    struct vmtotal vt;
+    long pgsz;
+
+    if (!get_vmtotal(&vt)) goto fail;
+    if ((pgsz = sysconf(_SC_PAGESIZE)) == -1) goto fail;
+
+    me->total      = (vt.t_free + vt.t_rm);
+    me->free       = vt.t_free;
+    me->pagesize   = pgsz;
+    
+    me->flag = F_MEM_TOTAL | F_MEM_FREE;
+    
+    return;
+fail:
+    print_error("%s", strerror(errno));
+    exit(1);
+}
+#endif
+
+#if defined(__sgi__)
+static int
+get_extended_mem_sgi(memory_ext *me) {
+    struct rminfo rmi;
+    if (sysmp(MP_SAGET, MPSA_RMINFO, &rmi, sizeof(rmi)) < 0)  return -1;
+
+    me->total    = (unsigned long)(rmi.physmem);
+    me->free     = (unsigned long)(rmi.freemem);
+    me->pagesize = (unsigned long)getpagesize(); 
+    me->flag = F_MEM_TOTAL | F_MEM_FREE;
+    
+    return 1;
+}
+#endif
+
+static void
+get_extended_mem(memory_ext *me) {
+/* vxworks */
+#if defined(VXWORKS)
+    if (get_extended_mem_vxworks(me)) return;
+
+/* linux */
+#elif defined(__linux__)
+    if (get_mem_procfs(me))  return;
+    if (get_extended_mem_sysinfo(me)) return;
+
+/* bsd */
+#elif defined(BSD4_4)
+    if (get_extended_mem_bsd4(me))    return;
+
+/* sgi */
+#elif defined(sgi)
+    if (get_extended_mem_sgi(me))     return;
+#endif
+
+/* Does this exist on others than Solaris2? */
+#if defined(_SC_AVPHYS_PAGES)
+    if (get_extended_mem_sysconf(me)) return;
+
+/* We fake the rest */
+/* SunOS4 (for example) */
+#else  
+    me->free     = (1<<27);	       	/* Fake! 128 MB used */
+    me->total    = (1<<28);		/* Fake! 256 MB total */
+    me->pagesize = 1;
+    me->flag = F_MEM_TOTAL | F_MEM_FREE;
+#endif
+}
+    
 
 static void 
 get_basic_mem(unsigned long *tot, unsigned long *used, unsigned long *pagesize){
@@ -270,10 +491,14 @@ get_basic_mem(unsigned long *tot, unsigned long *used, unsigned long *pagesize){
     *tot = phys;
     *pagesize = sysconf(_SC_PAGESIZE);
 #elif defined(__linux__) && !defined(_SC_AVPHYS_PAGES)
-    if (get_basic_mem_procfs(tot, used, pagesize) < 0) {
+    memory_ext me;
+    if (get_mem_procfs(&me) < 0) {
         print_error("ProcFS read error.");
         exit(1);
     }
+    *tot      = me.total;
+    *pagesize = me.pagesize;
+    *used     = me.total - me.free;
 #elif defined(BSD4_4)
     struct vmtotal vt;
     long pgsz;
@@ -314,23 +539,36 @@ simple_show_mem(void){
 
 static void 
 extended_show_mem(void){
-    unsigned long tot, used, pagesize;
-    get_basic_mem(&tot, &used, &pagesize);
-    send_tag(TOTAL_MEMORY);
-    send(tot, pagesize);
-    send_tag(FREE_MEMORY);
-    send(tot - used, pagesize);
-    send_tag(SYSTEM_TOTAL_MEMORY);
+    memory_ext me;
+    unsigned long ps;
+    
+    get_extended_mem(&me);
+    ps = me.pagesize;
+   
+    if (me.flag & F_MEM_TOTAL)  { send_tag(MEM_TOTAL);        send(me.total, ps);      }
+    if (me.flag & F_MEM_FREE)   { send_tag(MEM_FREE);         send(me.free, ps);       }
+
+    /* extensions */
+    if (me.flag & F_MEM_BUFFERS){ send_tag(MEM_BUFFERS);      send(me.buffered, ps);   }
+    if (me.flag & F_MEM_CACHED) { send_tag(MEM_CACHED);       send(me.cached, ps);     }
+    if (me.flag & F_MEM_SHARED) { send_tag(MEM_SHARED);       send(me.shared, ps);     }
+    
+    /* swap */
+    if (me.flag & F_SWAP_TOTAL) { send_tag(SWAP_TOTAL);       send(me.total_swap, ps); }
+    if (me.flag & F_SWAP_FREE)  { send_tag(SWAP_FREE);        send(me.free_swap, ps);  }
+    
 #ifdef VXWORKS
+    send_tag(SM_SYSTEM_TOTAL);
     send(latest_system_total, 1);
-    send_tag(LARGEST_FREE);
+    send_tag(SM_LARGEST_FREE);
     send(latest.maxBlockSizeFree, 1);
-    send_tag(NUMBER_OF_FREE);
+    send_tag(SM_NUMBER_OF_FREE);
     send(latest.numBlocksFree, 1);
 #else
-    send(tot, pagesize);
+    /* total is system total*/
+    if (me.flag & F_MEM_TOTAL)  { send_tag(MEM_SYSTEM_TOTAL); send(me.total, ps);     }
 #endif
-    send_tag(SYSTEM_MEM_SHOW_END);
+    send_tag(SHOW_SYSTEM_MEM_END);
 }    
 
 static void
@@ -353,10 +591,10 @@ message_loop(int erlin_fd)
 		switch (read(erlin_fd, &cmd, 1)){
 		case 1:	  
 		    switch (cmd){
-		    case MEM_SHOW:
+		    case SHOW_MEM:
 			simple_show_mem();
 			break;
-		    case SYSTEM_MEM_SHOW:
+		    case SHOW_SYSTEM_MEM:
 			extended_show_mem();
 			break;
 		    default:	/* ignore all other messages */

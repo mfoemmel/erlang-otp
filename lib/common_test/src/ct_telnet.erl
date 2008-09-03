@@ -368,7 +368,7 @@ init(Name,{Ip,Port,Type},{TargetMod,Extra}) ->
 	     Settings ->
 		 set_telnet_defaults(Settings,#state{})				    
 	 end,
-    case TargetMod:connect(Ip,Port,S0#state.conn_to,Extra) of
+    case catch TargetMod:connect(Ip,Port,S0#state.conn_to,Extra) of
 	{ok,TelnPid} ->
 	    log(heading(init,{Name,Type}), 
 		"Opened telnet connection\n"
@@ -386,6 +386,8 @@ init(Name,{Ip,Port,Type},{TargetMod,Extra}) ->
 				 target_mod=TargetMod,
 				 extra=Extra,
 				 prx=TargetMod:get_prompt_regexp()}};
+	{'EXIT',Reason} ->
+	    {error,Reason};
 	Error ->
 	    Error
     end.

@@ -25,7 +25,7 @@
 -define(VMODULE,"AUTH_PLAIN").
 
 %% Internal API
--export([store_directory_data/2]).
+-export([store_directory_data/3]).
 
 
 -export([get_user/2, 
@@ -154,9 +154,9 @@ delete_group(DirData, Group) ->
 	    {error, no_such_group}
     end.
 
-store_directory_data(_Directory, DirData) ->
-    PWFile = proplists:get_value(auth_user_file, DirData),
-    GroupFile = proplists:get_value(auth_group_file, DirData),
+store_directory_data(_Directory, DirData, Server_root) ->
+    PWFile = absolute_file_name(auth_user_file, DirData, Server_root),
+    GroupFile = absolute_file_name(auth_group_file, DirData, Server_root),
     case load_passwd(PWFile) of
 	{ok, PWDB} ->
 	    case load_group(GroupFile) of
@@ -292,6 +292,23 @@ remove(DirData) ->
 
 
 
-
-
+%% absolute_file_name/2
+%%
+%% Return the absolute path name of File_type. 
+absolute_file_name(File_type, DirData, Server_root) ->
+    Path = proplists:get_value(File_type, DirData),
+    case filename:pathtype(Path) of
+	relative ->
+	    case Server_root of
+		undefined ->
+		    {error,
+		     ?NICE(Path++
+			   " is an invalid file name because "
+			   "ServerRoot is not defined")};
+		_ ->
+		    filename:join(Server_root,Path)
+	    end;
+	_ ->
+	    Path
+    end.
 

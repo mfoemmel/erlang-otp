@@ -1,0 +1,469 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE erlref SYSTEM "erlref.dtd">
+
+<erlref>
+  <header>
+    <copyright>
+      <year>2001</year>
+      <year>2007</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>driver_entry</title>
+    <prepared>Jakob Cederlund</prepared>
+    <responsible>Jakob Cederlund</responsible>
+    <docno>1</docno>
+    <approved></approved>
+    <checked></checked>
+    <date>2001-10-01</date>
+    <rev>PA1</rev>
+    <file>driver_entry.sgml</file>
+  </header>
+  <module>driver_entry</module>
+  <modulesummary>The driver-entry structure used by erlang drivers.</modulesummary>
+  <description>
+    <p>As of erts version 5.5.3 the driver interface has been extended
+      (see <seealso marker="driver_entry#extended_marker">extended marker</seealso>).
+      The extended interface introduce
+      <seealso marker="erl_driver#version_management">version management</seealso>,
+      the possibility to pass capability flags
+      (see <seealso marker="driver_entry#driver_flags">driver flags</seealso>)
+      to the runtime system at driver initialization, and some new
+      driver API functions.      </p>
+    <note>
+      <p>Old drivers (compiled with an <c><![CDATA[erl_driver.h]]></c> from an
+        earlier erts version than 5.5.3) have to be recompiled
+        (but does not have to use the extended interface).</p>
+    </note>
+    <p>The <c><![CDATA[driver_entry]]></c> structure is a C struct that all erlang
+      drivers defines. It contains entry points for the erlang driver
+      that are called by the erlang emulator when erlang code accesses
+      the driver.</p>
+    <p>      <marker id="emulator"></marker>
+
+      The <seealso marker="driver_entry">erl_driver</seealso> driver
+      API functions needs a port handle
+      that identifies the driver instance (and the port in the
+      emulator). This is only passed to the <c><![CDATA[start]]></c> function, but
+      not to the other functions. The <c><![CDATA[start]]></c> function returns a
+      driver-defined handle that is passed to the other functions. A
+      common practice is to have the <c><![CDATA[start]]></c> function allocating
+      some application-defined structure and stash the <c><![CDATA[port]]></c>
+      handle in it, to use it later with the driver API functions.</p>
+    <p>The driver call-back functions are called synchronously from the
+      erlang emulator. If they take too long before completing, they
+      can cause timeouts in the emulator. Use the queue or
+      asynchronous calls if nessecary, since the emulator must be
+      responsive.</p>
+    <p>The driver structure contains the name of the driver and some
+      15 function pointers. These pointers are called at different
+      times by the emulator.</p>
+    <p>The only exported function from the driver is
+      <c><![CDATA[driver_init]]></c>. This function returns the <c><![CDATA[driver_entry]]></c>
+      structure that points to the other functions in the driver. The
+      <c><![CDATA[driver_init]]></c> function is declared with a macro
+      <c><![CDATA[DRIVER_INIT(drivername)]]></c>. (This is because different OS's
+      have different names for it.)</p>
+    <p>When writing a driver in C++, the driver entry should be of
+      <c><![CDATA["C"]]></c> linkage. One way to do this is to put this line
+      somewhere before the driver entry:
+      <c><![CDATA[extern "C" DRIVER_INIT(drivername);]]></c>.</p>
+    <p>When the driver has passed the <c><![CDATA[driver_entry]]></c> over to
+      the emulator, the driver is <em>not</em> allowed to modify the
+      <c><![CDATA[driver_entry]]></c>.</p>
+    <note>
+      <p>Do <em>not</em> declare the <c><![CDATA[driver_entry]]></c><c><![CDATA[const]]></c>. This since the emulator needs to
+        modify the <c><![CDATA[handle]]></c>, and the <c><![CDATA[handle2]]></c>
+        fields. A statically allocated, and <c><![CDATA[const]]></c>
+        declared <c><![CDATA[driver_entry]]></c> may be located in
+        read only memory which will cause the emulator
+        to crash.</p>
+    </note>
+    <p>Here is the declaration of <c><![CDATA[driver_entry]]></c>:</p>
+    <code type="none"><![CDATA[
+typedef struct erl_drv_entry {
+    int (*init)(void);\011\011/* called at system start up for statically
+\011\011\011\011   linked drivers, and after loading for
+\011\011\011\011   dynamically loaded drivers */ 
+
+#ifndef ERL_SYS_DRV
+    ErlDrvData (*start)(ErlDrvPort port, char *command);
+\011\011\011\011/* called when open_port/2 is invoked.
+\011\011\011\011   return value -1 means failure. */
+#else
+    ErlDrvData (*start)(ErlDrvPort port, char *command, SysDriverOpts* opts);
+\011\011\011\011/* special options, only for system driver */
+#endif
+    void (*stop)(ErlDrvData drv_data);
+                                /* called when port is closed, and when the
+\011\011\011\011   emulator is halted. */
+    void (*output)(ErlDrvData drv_data, char *buf, int len);
+\011\011\011\011/* called when we have output from erlang to 
+\011\011\011\011   the port */
+    void (*ready_input)(ErlDrvData drv_data, ErlDrvEvent event); 
+\011\011\011\011/* called when we have input from one of 
+\011\011\011\011   the driver's handles) */
+    void (*ready_output)(ErlDrvData drv_data, ErlDrvEvent event);  
+\011\011\011\011/* called when output is possible to one of 
+\011\011\011\011   the driver's handles */
+    char *driver_name;\011\011/* name supplied as command 
+\011\011\011\011   in open_port XXX ? */
+    void (*finish)(void);       /* called before unloading the driver -
+\011\011\011\011   DYNAMIC DRIVERS ONLY */
+    void *handle;\011\011/* Reserved -- Used by emulator internally */
+    int (*control)(ErlDrvData drv_data, unsigned int command, char *buf, 
+\011\011   int len, char **rbuf, int rlen); 
+\011\011\011\011/* "ioctl" for drivers - invoked by 
+\011\011\011\011   port_control/3) */
+    void (*timeout)(ErlDrvData drv_data);\011/* Handling of timeout in driver */
+    void (*outputv)(ErlDrvData drv_data, ErlIOVec *ev);
+\011\011\011\011/* called when we have output from erlang
+\011\011\011\011   to the port */
+    void (*ready_async)(ErlDrvData drv_data, ErlDrvThreadData thread_data);
+    void (*flush)(ErlDrvData drv_data);
+                                /* called when the port is about to be 
+\011\011\011\011   closed, and there is data in the 
+\011\011\011\011   driver queue that needs to be flushed
+\011\011\011\011   before 'stop' can be called */
+    int (*call)(ErlDrvData drv_data, unsigned int command, char *buf, 
+\011\011   int len, char **rbuf, int rlen, unsigned int *flags); 
+                                /* Works mostly like 'control', a syncronous
+\011\011\011\011   call into the driver. */
+    void (*event)(ErlDrvData drv_data, ErlDrvEvent event,
+\011\011  ErlDrvEventData event_data);
+                                /* Called when an event selected by 
+\011\011\011\011   driver_event() has occurred */
+    int extended_marker;\011/* ERL_DRV_EXTENDED_MARKER */
+    int major_version;\011\011/* ERL_DRV_EXTENDED_MAJOR_VERSION */
+    int minor_version;\011\011/* ERL_DRV_EXTENDED_MINOR_VERSION */
+    int driver_flags;\011\011/* ERL_DRV_FLAGs */
+    void *handle2;\011\011/* Reserved -- Used by emulator internally */
+    void (*process_exit)(ErlDrvData drv_data, ErlDrvMonitor *monitor);
+                                /* Called when a process monitor fires */
+ } ErlDrvEntry;
+    ]]></code>
+  </description>
+  <funcs>
+    <func>
+      <name>int init(void)</name>
+      <fsummary>Called after loading of driver</fsummary>
+      <desc>
+        <marker id="init"></marker>
+        <p>This is called directly after the driver has been loaded by
+          <c><![CDATA[erl_ddll:load_driver/2]]></c>. (Actually when the driver is
+          added to the driver list.) The driver should return 0, or if
+          the driver can't initialize, -1.</p>
+      </desc>
+    </func>
+    <func>
+      <name>int start(ErlDrvPort port, char* command)</name>
+      <fsummary>Called when port is opened</fsummary>
+      <desc>
+        <marker id="start"></marker>
+        <p>This is called when the driver is instantiated, when
+          <c><![CDATA[open_port/2]]></c> is called. The driver should return a
+          number &gt;= 0 or a pointer, or if the driver can't be started,
+          one of three error codes should be returned:</p>
+        <p>ERL_DRV_ERROR_GENERAL - general error, no error code</p>
+        <p>ERL_DRV_ERROR_ERRNO - error with error code in erl_errno</p>
+        <p>ERL_DRV_ERROR_BADARG - error, badarg</p>
+        <p>If an error code is returned, the port isn't started.</p>
+      </desc>
+    </func>
+    <func>
+      <name>void stop(ErlDrvData drv_data)</name>
+      <fsummary>Called when port is closed</fsummary>
+      <desc>
+        <marker id="stop"></marker>
+        <p>This is called when the port is closed, with
+          <c><![CDATA[port_close/1]]></c> or <c><![CDATA[Port ! {self(), close}]]></c>. Note
+          that terminating the port owner process also closes the
+          p\011  port.</p>
+      </desc>
+    </func>
+    <func>
+      <name>void output(ErlDrvData drv_data, char *buf, int len)</name>
+      <fsummary>Called when port is written to</fsummary>
+      <desc>
+        <marker id="output"></marker>
+        <p>This is called when an erlang process has sent data to the
+          port. The data is pointed to by <c><![CDATA[buf]]></c>, and is
+          <c><![CDATA[len]]></c> bytes.  Data is sent to the port with <c><![CDATA[Port ! {self(), {command, Data}}]]></c>, or with
+          <c><![CDATA[port_command/2]]></c>. Depending on how the port was opened,
+          it should be either a list of integers 0...255 or a
+          binary. See <c><![CDATA[open_port/3]]></c> and <c><![CDATA[port_command/2]]></c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>void ready_input(ErlDrvData drv_data, ErlDrvEvent event)</name>
+      <name>void ready_output(ErlDrvData drv_data, ErlDrvEvent event)</name>
+      <fsummary>Called when the driver event for input or output is signaled</fsummary>
+      <desc>
+        <marker id="ready_input"></marker>
+        <marker id="ready_output"></marker>
+        <p>This is called when a driver event (given in the
+          <c><![CDATA[event]]></c> parameter) is signaled. This is used to help
+          asynchronous drivers "wake up" when something happens.</p>
+        <p>On unix the <c><![CDATA[event]]></c> is a pipe or socket handle (or
+          something that the <c><![CDATA[select]]></c> system call understands).</p>
+        <p>On Windows the <c><![CDATA[event]]></c> is an Event or Semaphore (or
+          something that the <c><![CDATA[WaitForMultipleObjects]]></c> API
+          function understands). (Some trickery in the emulator allows
+          more than the built-in limit of 64 <c><![CDATA[Events]]></c> to be used.)</p>
+        <p>To use this with threads and asynchronous routines, create a
+          pipe on unix and an Event on Windows. When the routine
+          completes, write to the pipe (use <c><![CDATA[SetEvent]]></c> on
+          Windows), this will make the emulator call
+          <c><![CDATA[ready_input]]></c> or <c><![CDATA[ready_output]]></c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>char *driver_name</name>
+      <fsummary>The name of the driver</fsummary>
+      <desc>
+        <marker id="driver_name"></marker>
+        <p>This is the name of the driver, it must correspond to the
+          atom used in <c><![CDATA[open_port]]></c>, and the name of the driver
+          library file (without the extension).</p>
+      </desc>
+    </func>
+    <func>
+      <name>void finish(void)</name>
+      <fsummary>Called just before the dynamic driver is unloaded</fsummary>
+      <desc>
+        <marker id="finish"></marker>
+        <p>This function is called by the <c><![CDATA[erl_ddll]]></c> driver when the
+          driver is unloaded. (It is only called in dynamic drivers.)</p>
+        <p>The driver is only unloaded as a result of calling
+          <c><![CDATA[unload_driver/1]]></c>, or when the emulator halts.</p>
+      </desc>
+    </func>
+    <func>
+      <name>void *handle</name>
+      <fsummary>Reserved, initialize to <c><![CDATA[NULL]]></c></fsummary>
+      <desc>
+        <p>This field is reserved for the emulators internal use. The
+          emulator will modify this field; therefore, it is important
+          that the <c><![CDATA[driver_entry]]></c> isn't declared <c><![CDATA[const]]></c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>int control(ErlDrvData drv_data, unsigned int command, char *buf,  int len, char **rbuf, int rlen)</name>
+      <fsummary>Invoked with <c><![CDATA[port_control]]></c></fsummary>
+      <desc>
+        <marker id="control"></marker>
+        <p>This is a special routine invoked with the erlang function
+          <c><![CDATA[port_control/3]]></c>. It works a little like an "ioctl" for
+          erlang drivers. The data given to <c><![CDATA[port_control/3]]></c>
+          arrives in <c><![CDATA[buf]]></c> and <c><![CDATA[len]]></c>. The driver may send
+          data back, using <c><![CDATA[*rbuf]]></c> and <c><![CDATA[rlen]]></c>.</p>
+        <p>This is the fastest way of calling a driver and get a
+          response. It won't make any context switch in the erlang
+          emulator, and requires no message passing. It is suitable
+          for calling C function to get faster execution, when erlang
+          is too slow.</p>
+        <p>If the driver wants to return data, it should return it in
+          <c><![CDATA[rbuf]]></c>. Data is returned different depending on
+          the port control flags (those that are set with
+          <seealso marker="erl_driver#set_port_control_flags">set_port_control_flags</seealso>).</p>
+        <p>If the flag is set to <c><![CDATA[PORT_CONTROL_FLAG_BINARY]]></c>, then
+          <c>*<![CDATA[rbuf]]></c> must point to a binary allocated with
+          <seealso marker="erl_driver#driver_alloc_binary">driver_alloc_binary</seealso> or be NULL.
+          This binary will be freed automatically after <c><![CDATA[control]]></c> has returned.
+          The driver can retain the returned binary for <em>read only</em> access with
+          <seealso marker="erl_driver#driver_binary_inc_refc">driver_binary_inc_refc</seealso> to be freed later with
+          <seealso marker="erl_driver#driver_free_binary">driver_free_binary</seealso>.
+          It is never allowed to alter the binary after <c><![CDATA[control]]></c> has returned.
+          If <c>*<![CDATA[rbuf]]></c> is set to NULL, an empty list will be returned.
+          </p>
+        <p>If the flag is set to <c><![CDATA[0]]></c>,
+          <c><![CDATA[rbuf]]></c> points to a <c><![CDATA[char*]]></c> containing data,
+          that is returned as a list of integers. When <c><![CDATA[control]]></c> is called,
+          <c>*<![CDATA[rbuf]]></c> points to a buffer of <c><![CDATA[rlen]]></c> bytes, which
+          can be used to return data. A larger buffer can be allocated with
+          <seealso marker="erl_driver#driver_alloc">driver_alloc</seealso>.
+          The buffer will be freed automatically after <c><![CDATA[control]]></c> has returned.</p>
+        <p>Using binaries is faster if more than a few bytes are returned.</p>
+        <p>The return value is the number of bytes returned in
+          <c><![CDATA[*rbuf]]></c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>void timeout(ErlDrvData drv_data)</name>
+      <fsummary>Called when timer reaches 0</fsummary>
+      <desc>
+        <marker id="timeout"></marker>
+        <p>This function is called any time after the driver's timer
+          reaches 0. The timer is activeated with
+          <c><![CDATA[driver_set_timer]]></c>. There are no priorities or ordering
+          among drivers, so if several drivers time out at the same
+          time, any one of them is called first.</p>
+      </desc>
+    </func>
+    <func>
+      <name>void outputv(ErlDrvData drv_data, ErlIOVec *ev)</name>
+      <fsummary>Called when the port is written to</fsummary>
+      <desc>
+        <marker id="outputv"></marker>
+        <p>This function is called whenever the port is written to. If
+          it is <c><![CDATA[NULL]]></c>, the <c><![CDATA[output]]></c> function is called
+          instead. This function is faster than <c><![CDATA[output]]></c>, because
+          it takes an <c><![CDATA[ErlIOVec]]></c> directly, which requires no
+          copying of the data. The port should be in binary mode, see
+          <c><![CDATA[open_port/2]]></c>.</p>
+        <p>The <c><![CDATA[ErlIOVec]]></c> contains both a <c><![CDATA[SysIOVec]]></c>,
+          suitable for <c><![CDATA[writev]]></c>, and one or more binaries. If
+          these binaries should be retained, when the driver returns
+          from <c><![CDATA[outputv]]></c>, they can be queued (using <seealso marker="erl_driver#driver_enq_bin">driver_enq_bin</seealso>
+          for instance), or if they are kept in a static or global
+          variable, the reference counter can be incremented.</p>
+      </desc>
+    </func>
+    <func>
+      <name>void ready_async(ErlDrvData drv_data, ErlDrvThreadData thread_data)</name>
+      <fsummary>Called when an asynchronous call has returned</fsummary>
+      <desc>
+        <marker id="ready_async"></marker>
+        <p>This function is called after an asynchronous call has
+          completed. The asynchronous call is started with <seealso marker="erl_driver#driver_async">driver_async</seealso>.
+          This function is called from the erlang emulator thread, as
+          opposed to the asynchronous function, which is called in
+          some thread (if multithreading is enabled).</p>
+      </desc>
+    </func>
+    <func>
+      <name>int call(ErlDrvData drv_data, unsigned int command, char *buf, int len, char **rbuf, int rlen, unsigned int *flags)</name>
+      <fsummary>Synchronous call with term conversion</fsummary>
+      <desc>
+        <marker id="call"></marker>
+        <p>This function is called from <c><![CDATA[erlang:port_call/3]]></c>. It
+          works a lot like the <c><![CDATA[control]]></c> call-back, but uses the
+          external term format for input and output.</p>
+        <p><c><![CDATA[command]]></c> is an integer, obtained from the call from
+          erlang (the second argument to <c><![CDATA[erlang:port_call/3]]></c>).</p>
+        <p><c><![CDATA[buf]]></c> and <c><![CDATA[len]]></c> provide the arguments to the call
+          (the third argument to <c><![CDATA[erlang:port_call/3]]></c>). They can
+          be decoded using <c><![CDATA[ei]]></c> functions.</p>
+        <p><c><![CDATA[rbuf]]></c> points to a return buffer, <c><![CDATA[rlen]]></c> bytes
+          long. The return data should be a valid erlang term in the
+          external (binary) format. This is converted to an erlang
+          term and returned by <c><![CDATA[erlang:port_call/3]]></c> to the
+          caller.  If more space than <c><![CDATA[rlen]]></c> bytes is needed to
+          return data, <c><![CDATA[*rbuf]]></c> can be set to memory allocated with
+          <c><![CDATA[driver_alloc]]></c>. This memory will be freed automatically
+          after <c><![CDATA[call]]></c> has returned.</p>
+        <p>The return value is the number of bytes returned in
+          <c><![CDATA[*rbuf]]></c>. If <c><![CDATA[ERL_DRV_ERROR_GENERAL]]></c> is returned
+          (or in fact, anything &lt; 0), <c><![CDATA[erlang:port_call/3]]></c> will
+          throw a <c><![CDATA[BAD_ARG]]></c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>void event(ErlDrvData drv_data, ErlDrvEvent event, ErlDrvEventData event_data)</name>
+      <fsummary></fsummary>
+      <desc>
+        <p>Intentionally left undocumented.</p>
+      </desc>
+    </func>
+    <func>
+      <name>int extended_marker</name>
+      <fsummary>Extended driver marker</fsummary>
+      <desc>
+        <marker id="extended_marker"></marker>
+        <p>This field should either be equal to <c><![CDATA[ERL_DRV_EXTENDED_MARKER]]></c>
+          or <c><![CDATA[0]]></c>. An old driver (not aware of the extended driver
+          interface) should set this field to <c><![CDATA[0]]></c>. If this field is
+          equal to <c><![CDATA[0]]></c>, all the fields following this field also
+          <em>have</em> to be <c><![CDATA[0]]></c>, or <c><![CDATA[NULL]]></c> in case it is a
+          pointer field.</p>
+      </desc>
+    </func>
+    <func>
+      <name>int major_version</name>
+      <fsummary>Major version number</fsummary>
+      <desc>
+        <p>This field should equal <c><![CDATA[ERL_DRV_EXTENDED_MAJOR_VERSION]]></c> if
+          the <c><![CDATA[extended_marker]]></c> field equals
+          <c><![CDATA[ERL_DRV_EXTENDED_MARKER]]></c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>int minor_version</name>
+      <fsummary>Minor version number</fsummary>
+      <desc>
+        <p>This field should equal <c><![CDATA[ERL_DRV_EXTENDED_MINOR_VERSION]]></c> if
+          the <c><![CDATA[extended_marker]]></c> field equals
+          <c><![CDATA[ERL_DRV_EXTENDED_MARKER]]></c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>int driver_flags</name>
+      <fsummary>Driver flags</fsummary>
+      <desc>
+        <marker id="driver_flags"></marker>
+        <p>This field is used to pass driver capability information to the
+          runtime system. If the <c><![CDATA[extended_marker]]></c> field equals
+          <c><![CDATA[ERL_DRV_EXTENDED_MARKER]]></c>, it should contain <c><![CDATA[0]]></c> or
+          driver flags (<c><![CDATA[ERL_DRV_FLAG_*]]></c>) ored bitwise. Currently
+          the following driver flags exist:</p>
+        <taglist>
+          <tag><c><![CDATA[ERL_DRV_FLAG_USE_PORT_LOCKING]]></c></tag>
+          <item>The runtime system will use port level locking on
+           all ports executing this driver instead of driver
+           level locking when the driver is run in a runtime
+           system with SMP support. For more information see the
+          <seealso marker="erl_driver#smp_support">erl_driver</seealso>
+           documentation.</item>
+        </taglist>
+      </desc>
+    </func>
+    <func>
+      <name>void *handle2</name>
+      <fsummary>Reserved, initialize to <c><![CDATA[NULL]]></c></fsummary>
+      <desc>
+        <p>This field is reserved for the emulators internal use. The
+          emulator will modify this field; therefore, it is important
+          that the <c><![CDATA[driver_entry]]></c> isn't declared <c><![CDATA[const]]></c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>void process_exit(ErlDrvData drv_data, ErlDrvMonitor *monitor)</name>
+      <fsummary>Callback for process monitors.</fsummary>
+      <desc>
+        <marker id="process_exit"></marker>
+        <p>This callback is called when a monitored process exits. The
+          <c><![CDATA[drv_data]]></c> is the data associated with the port for which
+          the process is monitored (using <seealso marker="erl_driver#driver_monitor_process">driver_monitor_process</seealso>)
+          and the <c><![CDATA[monitor]]></c> corresponds to the <c><![CDATA[ErlDrvMonitor]]></c> 
+          structure filled
+          in when creating the monitor. The driver interface function
+          <seealso marker="erl_driver#driver_get_monitored_process">driver_get_monitored_process</seealso>
+          can be used to retrieve the process id of the exiting process as
+          an <c><![CDATA[ErlDrvTermData]]></c></p>
+      </desc>
+    </func>
+  </funcs>
+
+  <section>
+    <title>SEE ALSO</title>
+    <p><seealso marker="erl_driver">erl_driver(3)</seealso>, 
+      <seealso marker="kernel:erl_ddll">erl_ddll(3)</seealso>,
+      <seealso marker="kernel:erlang">erlang(3)</seealso>,
+      kernel(3)</p>
+  </section>
+</erlref>
+

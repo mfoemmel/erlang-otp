@@ -240,7 +240,7 @@ contracts_without_fun(Contracts, AllFuns0, Callgraph) ->
 	      || {Label, Arity} <- AllFuns0],
   AllFuns2 = [{M, F, A} || {{ok,{M,F,_}}, A} <- AllFuns1],
   AllContracts = dict:fetch_keys(Contracts),
-  ErrorContracts = lists:subtract(AllContracts, AllFuns2),
+  ErrorContracts = AllContracts -- AllFuns2,
   lists:map(fun({M,F,A}) -> 
 		File = atom_to_list(M) ++ ".erl",
 		{Line, _Contract} = dict:fetch({M,F,A}, Contracts),

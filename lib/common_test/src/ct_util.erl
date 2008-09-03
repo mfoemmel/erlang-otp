@@ -202,7 +202,7 @@ read_config_files1([ConfigFile|Files]) ->
 	    set_config(Config),
 	    read_config_files1(Files);
 	{error,Reason} ->
-	    {error,{ConfigFile,Reason}}
+	    {user_error,{config_file_error,ConfigFile,Reason}}
     end;
 read_config_files1([]) ->
     ok.

@@ -51,6 +51,7 @@
 	 t_arity/0,
 	 t_atom/0,
 	 t_atom/1,
+	 t_atoms/1,
 	 t_atom_vals/1,
 	 t_binary/0,
 	 t_bitstr/0,
@@ -95,10 +96,10 @@
 	 t_inf_lists/2,
 	 t_integer/0,
 	 t_integer/1,
-	 t_iolist/0,
 	 t_non_neg_integer/0,
 	 t_pos_integer/0,
 	 t_integers/1,
+	 t_iolist/0,
 	 t_is_any/1,
 	 t_is_atom/1,
 	 t_is_atom/2,
@@ -342,6 +343,9 @@ t_atom() ->
 
 t_atom(A) when is_atom(A) ->
   ?atom(set_singleton(A)).
+
+t_atoms(List) when is_list(List) ->
+  t_sup([t_atom(A) || A <- List]).
 
 t_atom_vals(?atom(Set)) ->
   set_to_list(Set);
@@ -851,7 +855,7 @@ t_iolist() ->
 
 t_iolist(N) when N > 0 ->
   t_maybe_improper_list(t_sup([t_iolist(N-1),t_binary(),t_byte()]),
-		      t_sup(t_binary(),t_nil()));
+		        t_sup(t_binary(),t_nil()));
 t_iolist(0) ->
   t_maybe_improper_list(t_any(),t_sup(t_binary(),t_nil())).
 
@@ -1847,7 +1851,7 @@ t_subtract(?float, ?number(_Set, Tag)) ->
     _ -> ?float
   end;
 t_subtract(?number(_, _), ?number(?any, ?number_tag)) -> ?none;
-t_subtract(T1 = ?number(?any, ?number_tag), ?number(_, _)) -> T1;
+t_subtract(T1 = ?number(_, _), ?integer(?any)) -> t_inf(?float, T1);
 t_subtract(?int_set(Set1), ?int_set(Set2)) ->
   case set_subtract(Set1, Set2) of
     ?none -> ?none;
@@ -1879,8 +1883,8 @@ t_subtract(?int_set(Set), ?int_range(From, To)) ->
     ?none -> ?none;
     NewSet -> ?int_set(NewSet)
   end;
-t_subtract(?integer(_), ?integer(?any)) -> ?none;
 t_subtract(T1 = ?integer(?any), ?integer(_)) -> T1;
+t_subtract(T1 = ?number(_, _), ?number(_, _)) -> T1;
 t_subtract(?tuple(_, _, _), ?tuple(?any, ?any, ?any)) -> ?none;
 t_subtract(?tuple_set(_), ?tuple(?any, ?any, ?any)) -> ?none;
 t_subtract(T1 = ?tuple(?any, ?any, ?any), ?tuple_set(_)) -> T1;

@@ -820,24 +820,24 @@ define etp-bignum-1
     if ($etp_bignum_1_p[0] & 0x3b) != 0x08
       printf "#NotBignum<%#x>", $etp_bignum_1_p[0]
     else
-      set $etp_bignum_1_i = 2 * ($etp_bignum_1_p[0] >> 6)
-      if $etp_bignum_1_i < 2
+      set $etp_bignum_1_i = ($etp_bignum_1_p[0] >> 6)
+      if $etp_bignum_1_i < 1
         printf "#BignumError<%#x>", (Eterm)($arg0)
       else
         if $etp_bignum_1_p[0] & 0x04
           printf "-"
         end
-        set $etp_bignum_1_p = (digit_t *)($etp_bignum_1_p + 1)
+        set $etp_bignum_1_p = (ErtsDigit *)($etp_bignum_1_p + 1)
         printf "16#"
         if $etp_arch64
           while $etp_bignum_1_i > 0
             set $etp_bignum_1_i--
-            printf "%08x", $etp_bignum_1_p[$etp_bignum_1_i]
+            printf "%016lx", $etp_bignum_1_p[$etp_bignum_1_i]
           end
         else
           while $etp_bignum_1_i > 0
             set $etp_bignum_1_i--
-            printf "%04x", $etp_bignum_1_p[$etp_bignum_1_i]
+            printf "%08x", $etp_bignum_1_p[$etp_bignum_1_i]
           end
         end
       end

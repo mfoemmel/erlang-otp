@@ -26,13 +26,8 @@
 
 -export([start/2, stop/1]).
 
-%% start/2(Type, StartArgs) -> {ok, Pid} | {ok, Pid, State} | 
-%%                             {error, Reason}
-%%
-start(_Type, _StartArgs) ->
-    {ok, self()}.
+start(_Type, _State) ->
+    supervisor:start_link({local, ssh_sup}, ssh_sup, []).
 
-%% stop(State) -> void()
-%%
 stop(_State) ->
     ok.

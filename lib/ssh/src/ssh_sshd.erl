@@ -25,6 +25,12 @@
 %% API
 -export([listen/0, listen/1, listen/2, listen/3, stop/1]).
 
+-deprecated({listen, 0, next_major_release}).
+-deprecated({listen, 1, next_major_release}).
+-deprecated({listen, 2, next_major_release}).
+-deprecated({listen, 3, next_major_release}).
+-deprecated({stop, 1, next_major_release}).
+
 listen() ->
     listen(22).
 
@@ -35,7 +41,7 @@ listen(Port, Opts) ->
     listen(any, Port, Opts).
 
 listen(Addr, Port, Opts) ->
-    ssh_cli:listen({shell,start,[]}, Addr, Port, Opts).
+    ssh:daemon(Addr, Port, Opts).
 
 stop(Pid) ->
     ssh_cli:stop(Pid).

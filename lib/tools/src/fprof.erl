@@ -2040,7 +2040,12 @@ trace_out(Table, Pid, Func, TS) ->
     ?dbg(0, "trace_out(~p, ~p, ~p)~n~p~n", [Pid, Func, TS, Stack]),
     case Stack of
 	[] ->
-	    put(Pid, trace_call_push(Table, Pid, suspend, TS, [[{Func,TS}]]));
+	    put(Pid, trace_call_push(Table, Pid, suspend, TS, 
+				     case Func of
+					 undefined -> [];
+					 _ ->
+					     [[{Func,TS}]]
+				     end));
 	[[{suspend,_}] | _] ->
 	    %% No stats update for a suspend on suspend
 	    put(Pid, [[{suspend,TS}] | Stack]);

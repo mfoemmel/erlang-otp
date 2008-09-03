@@ -1,10 +1,23 @@
 {"%VSN%",  
  [
+  {"4.4.4", 
+   [
+    {update, mnesia_schema, soft, soft_purge, soft_purge, []},
+   ]
+  },
+  {"4.4.3", 
+   [
+    {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
+    {update, mnesia_recover, soft, soft_purge, soft_purge, []}
+   ]
+  },
   {"4.4.2", 
    [
     {update, mnesia_frag, soft, soft_purge, soft_purge, []},
     {update, mnesia_schema, soft, soft_purge, soft_purge, []},
-    {update, mnesia_tm, soft, soft_purge, soft_purge, []}
+    {update, mnesia_tm, soft, soft_purge, soft_purge, []},
+    {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
+    {update, mnesia_recover, soft, soft_purge, soft_purge, []}
    ]
   },
   {"4.4.1", 
@@ -13,16 +26,31 @@
     {update, mnesia_locker, soft, soft_purge, soft_purge, []},
     {update, mnesia_tm, soft, soft_purge, soft_purge, []},
     {update, mnesia, soft, soft_purge, soft_purge, []},
-    {update, mnesia_snmp_hook, soft, soft_purge, soft_purge, []}
+    {update, mnesia_snmp_hook, soft, soft_purge, soft_purge, []},
+    {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
+    {update, mnesia_recover, soft, soft_purge, soft_purge, []}
    ]
   }
  ],
  [
+  {"4.4.4", 
+   [
+    {update, mnesia_schema, soft, soft_purge, soft_purge, []},
+   ]
+  },
+  {"4.4.3", 
+   [
+    {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
+    {update, mnesia_recover, soft, soft_purge, soft_purge, []}
+   ]
+  },
   {"4.4.2", 
    [
     {update, mnesia_frag, soft, soft_purge, soft_purge, []},
     {update, mnesia_schema, soft, soft_purge, soft_purge, []},
-    {update, mnesia_tm, soft, soft_purge, soft_purge, []}
+    {update, mnesia_tm, soft, soft_purge, soft_purge, []},
+    {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
+    {update, mnesia_recover, soft, soft_purge, soft_purge, []}
    ]
   },
   {"4.4.1", 
@@ -31,7 +59,9 @@
     {update, mnesia_locker, soft, soft_purge, soft_purge, []},
     {update, mnesia_tm, soft, soft_purge, soft_purge, []},
     {update, mnesia, soft, soft_purge, soft_purge, []},
-    {update, mnesia_snmp_hook, soft, soft_purge, soft_purge, []}
+    {update, mnesia_snmp_hook, soft, soft_purge, soft_purge, []},    
+    {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
+    {update, mnesia_recover, soft, soft_purge, soft_purge, []}
    ]
   }
  ]

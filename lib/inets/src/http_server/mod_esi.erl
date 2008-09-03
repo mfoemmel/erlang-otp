@@ -235,12 +235,12 @@ erl(#mod{method = Method} = ModData, ESIBody, Modules)
 		    generate_webpage(ModData, ESIBody, Modules, 
 				     list_to_atom(ModuleName), 
 				     FunctionName, Input, 
-				     script_elements(FunctionName, Input));
+				     script_elements(FuncAndInput, Input));
 		{ok, [FunctionName]} ->
 		    generate_webpage(ModData, ESIBody, Modules, 
 				     list_to_atom(ModuleName),
 				     FunctionName, "", 
-				     script_elements(FunctionName, ""));
+				     script_elements(FuncAndInput, ""));
 		{ok, BadRequest} ->
 		    {proceed,[{status,{400,none, BadRequest}} | 
 			      ModData#mod.data]}

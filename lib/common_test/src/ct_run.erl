@@ -39,7 +39,7 @@
 
 
 %% Misc internal functions
--export([variables_file_name/1, script_start1/2, run_test1/1]).
+-export([variables_file_name/1,script_start1/2,run_test1/1]).
 
 -include("ct_event.hrl").
 -include("ct_util.hrl").
@@ -71,10 +71,16 @@ script_start() ->
 		Pid = spawn_link(fun() -> script_start1(Self,Args) end),
 	        receive 
 		    {'EXIT',Pid,Reason} ->
-			io:format("Test run crashed! This could be an internal error "
-				  "- please report!\n\n"
-				  "~p\n\n",[Reason]),
-			{error,Reason};
+			case Reason of
+			    {user_error,What} ->
+				io:format("\nTest run failed!\nReason: ~p\n\n",[What]),
+				{error,What};
+			    _ ->
+				io:format("Test run crashed! This could be an internal error "
+					  "- please report!\n\n"
+					  "~p\n\n",[Reason]),
+				{error,Reason}				
+			end;
 		    {Pid,{error,Reason}} ->
 			io:format("\nTest run failed!\nReason: ~p\n\n",[Reason]),
 			{error,Reason};
@@ -273,7 +279,8 @@ script_start3(VtsOrShell,ConfigFiles,EvHandlers,Args,LogDir,Cover) ->
 		    script_start4(VtsOrShell,ConfigFiles,EvHandlers,
 				  [],Cover,Args,LogDir);
 		false ->
-		    script_usage()
+		    script_usage(),
+		    {error,incorrect_usage}
 	    end
     end.
 

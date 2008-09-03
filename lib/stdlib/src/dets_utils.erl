@@ -206,11 +206,6 @@ pwrite(Head, Bins) ->
     end,
     case file:pwrite(Head#head.fptr, Bins) of
 	ok ->
-            try
-                pwrite_check(Head#head.fptr, remove_overlaps(Bins))
-            catch BadPos ->
-                throw(corrupt_reason(Head, {bad_pwrite, BadPos, Bins}))
-            end,
 	    {Head, ok};
 	Error ->
 	    corrupt_file(Head, Error)
@@ -1044,90 +1039,6 @@ next(P, PSz, T) ->
         _ ->
             ok
     end.
-
-%%% Extra code just for checking pwrite/2.
-%%% If you see this comment, you have have an inofficial version of
-%%% dets_utils.erl. Not for production!
-
-pwrite_check(_Fd, []) ->
-    ok;
-pwrite_check(Fd, [{Pos,Bin0} | Bins]) ->
-    Bin = iolist_to_binary(Bin0),
-    case pread_n(Fd, Pos, byte_size(Bin)) of
-        Bin ->
-            pwrite_check(Fd, Bins);
-        Got ->
-            throw({Pos, Got})
-    end.
-
-%% [{Pos,Bin}], Pos = integer() -> [{Pos,Bin}]
-%% Bin is some binary placed at position Pos. If B2 occurs after B1,
-%% then B2 overwrites B1, should they overlap. Overwritten parts are
-%% removed.
-remove_overlaps([]) -> [];
-remove_overlaps(L) ->
-    join_bins(remov(lists:sort(number_bins(L, 1, [])), [])).
-
-number_bins([{P,B} | Es], I, L) ->
-    E = {P,P + bytes_size(B, 0),I,B},
-    number_bins(Es, I+1, [E | L]);
-number_bins([], _I, L) ->
-    L.
-
-remov([{F1,T1,N1,B1} | Ss], L) ->
-    remov(Ss, F1, T1, N1, B1, L);
-remov([], L) ->
-    L.
-
-remov([{F2,T2,N2,B2} | Ss], F1, T1, _N1, B1, L) when F2 >= T1 ->
-    remov(Ss, F2, T2, N2, B2, [{F1,T1,B1} | L]);
-remov([{F2,T2,N2,B2} | Ss], F1, T1, N1, _B1, L) when F1 == F2, T2>=T1, N2>N1 ->
-    remov(Ss, F2, T2, N2, B2, L);
-remov([{_F2,T2,N2,_B2} | Ss], F1, T1, N1, B1, L) when T1 >= T2, N1 > N2 ->
-    remov(Ss, F1, T1, N1, B1, L);
-remov(Ss = [{F2,_T2,N2,_B2} | _], F1, T1, N1, B1, L) when F1 < F2, N1 < N2 ->
-    Size = F2-F1,
-    {B, T} = split_bytes(B1, Size),
-    remov(place_bin(F2, T1, N1, T, Ss), [{F1,F2,B} | L]);
-remov([{F2,T2,N2,B2} | Ss], F1, T1, N1, B1, L) ->
-    Size = T1 - F2,
-    {_, T} = split_bytes(B2, Size),
-    NSs = place_bin(T1, T2, N2, T, Ss),
-    remov(NSs, F1, T1, N1, B1, L);
-remov([], F1, T1, _N1, B1, L) ->
-    [{F1,T1,B1} | L].
-
-place_bin(F, T, N, B, Ss) ->
-    lists:merge([{F,T,N,B}], Ss).
-
-join_bins([{F,_T,B} | Ss]) ->
-    join_bins(Ss, F, B, []);
-join_bins([]) ->
-    [].
-
-join_bins([{F1,T1,B1} | Ss], F2, B2, L) when F2 == T1 ->
-    join_bins(Ss, F1, [B1 | B2], L);
-join_bins([{F1,T1,B1} | Ss], F2, B, L) when F2 > T1 ->
-    join_bins(Ss, F1, B1, [{F2,B} | L]);
-join_bins([], F, B, L) ->
-    [{F,B} | L].
-
-bytes_size([], S) ->
-    S;
-bytes_size([B | Bs], S) ->
-    bytes_size(Bs, bytes_size(B, S));
-bytes_size(I, S) when is_integer(I) ->
-    S + 1;
-bytes_size(B, S) when is_binary(B) ->
-    S + byte_size(B).
-
-split_bytes(B, Sz) when is_binary(B) ->
-    <<X:Sz/binary,Y/binary>> = B,
-    {X, Y};
-split_bytes(B, Sz) ->
-    split_bytes(list_to_binary(B), Sz).
-
-%%% End of pwrite_check
 
 %%%-----------------------------------------------------------------
 %%% These functions implement a B+ tree.

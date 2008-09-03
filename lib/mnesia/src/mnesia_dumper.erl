@@ -113,13 +113,8 @@ perform_dump(InitBy, Regulator) ->
     adjust_log_writes(false),    
     case LogState of
 	already_dumped ->
-	    case mnesia_monitor:use_dir() of
-		true ->
-		    dumped;
-		_ ->
-		    mnesia_recover:allow_garb(),
-		    dumped
-	    end;
+	    mnesia_recover:allow_garb(),
+	    dumped;
 	{needs_dump, Diff} ->
 	    U = mnesia_monitor:get_env(dump_log_update_in_place),
 	    Cont = mnesia_log:init_log_dump(),

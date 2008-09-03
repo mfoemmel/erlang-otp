@@ -74,7 +74,6 @@ allocator	EHEAP		true		eheap_alloc
 allocator	ETS		true		ets_alloc
 allocator	FIXED_SIZE	true		fix_alloc
 
-+enable thread_safe_std_alloc
 +else # Non smp build
 
 allocator	TEMPORARY	false		temp_alloc
@@ -182,7 +181,7 @@ type	LINEBUF		STANDARD	SYSTEM		line_buf
 type	IOQ		STANDARD	SYSTEM		io_queue
 type	BITS_BUF	STANDARD	SYSTEM		bits_buf
 type	TMP_DIST_BUF	TEMPORARY	SYSTEM		tmp_dist_buf
-type	ASYNC		SYSTEM		SYSTEM		async
+type	ASYNC		SHORT_LIVED	SYSTEM		async
 type	ASYNC_Q		LONG_LIVED	SYSTEM		async_queue
 type	ESTACK		TEMPORARY	SYSTEM		estack
 type	PORT_CALL_BUF	TEMPORARY	SYSTEM		port_call_buf
@@ -190,6 +189,7 @@ type	DB_TABLE	FIXED_SIZE	ETS		db_tab
 type	DB_FIXATION	SHORT_LIVED	ETS		db_fixation
 type	DB_FIX_DEL	SHORT_LIVED	ETS		fixed_del
 type	DB_TABLES	LONG_LIVED	ETS		db_tabs
+type    DB_NTAB_ENT	STANDARD	ETS		db_named_table_entry
 type	DB_TMP		TEMPORARY	ETS		db_tmp
 type	DB_MC_STK	TEMPORARY	ETS		db_mc_stack
 type	DB_MS_PSDO_PROC	LONG_LIVED	ETS		db_match_pseudo_proc
@@ -203,6 +203,7 @@ type	DB_SEL_LIST	ETS		ETS		db_select_list
 type	DB_DMC_ERROR	ETS		ETS		db_dmc_error
 type	DB_DMC_ERR_INFO	ETS		ETS		db_dmc_error_info
 type	DB_TERM		ETS		ETS		db_term
+type	DB_PROC_CLEANUP SHORT_LIVED	ETS		db_proc_cleanup_state
 type	INSTR_INFO	LONG_LIVED	SYSTEM		instr_info
 type	LOGGER_DSBUF	TEMPORARY	SYSTEM		logger_dsbuf
 type	TMP_DSBUF	TEMPORARY	SYSTEM		tmp_dsbuf
@@ -226,23 +227,13 @@ type	RE_TMP_BUF	TEMPORARY	SYSTEM		re_tmp_buf
 type    RE_SUBJECT      SHORT_LIVED     SYSTEM          re_subject
 type  	RE_HEAP 	STANDARD	SYSTEM		re_heap
 type	RE_STACK 	SHORT_LIVED	SYSTEM		re_stack
-
-
-+if thread_safe_std_alloc
-type	DRV_THR_OPTS	STANDARD	SYSTEM		driver_thread_opts
-type	DRV_TID		STANDARD	SYSTEM		driver_tid
-type	DRV_MTX		STANDARD	SYSTEM		driver_mutex
-type	DRV_CND		STANDARD	SYSTEM		driver_cond
-type	DRV_RWLCK	STANDARD	SYSTEM		driver_rwlock
-type	DRV_TSD		STANDARD	SYSTEM		driver_tsd
-+else
-type	DRV_THR_OPTS	SYSTEM		SYSTEM		driver_thread_opts
-type	DRV_TID		SYSTEM		SYSTEM		driver_tid
-type	DRV_MTX		SYSTEM		SYSTEM		driver_mutex
-type	DRV_CND		SYSTEM		SYSTEM		driver_cond
-type	DRV_RWLCK	SYSTEM		SYSTEM		driver_rwlock
-type	DRV_TSD		SYSTEM		SYSTEM		driver_tsd
-+endif
+type	PRE_ALLOC_DATA	LONG_LIVED	SYSTEM		pre_alloc_data
+type	DRV_THR_OPTS	DRIVER		SYSTEM		driver_thread_opts
+type	DRV_TID		DRIVER		SYSTEM		driver_tid
+type	DRV_MTX		DRIVER		SYSTEM		driver_mutex
+type	DRV_CND		DRIVER		SYSTEM		driver_cond
+type	DRV_RWLCK	DRIVER		SYSTEM		driver_rwlock
+type	DRV_TSD		DRIVER		SYSTEM		driver_tsd
 
 +if smp
 type	PORT_LOCK	STANDARD	SYSTEM		port_lock
@@ -324,7 +315,7 @@ type	SYS_READ_BUF	TEMPORARY	SYSTEM		sys_read_buf
 type	FD_TAB		LONG_LIVED	SYSTEM		fd_tab
 type	FD_ENTRY_BUF	STANDARD	SYSTEM		fd_entry_buf
 type	CS_PROG_PATH	LONG_LIVED	SYSTEM		cs_prog_path
-type	ENVIRONMENT	SYSTEM		SYSTEM		environment
+type	ENVIRONMENT	TEMPORARY	SYSTEM		environment
 type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
 type	PRT_REP_EXIT	STANDARD	SYSTEM		port_report_exit
 

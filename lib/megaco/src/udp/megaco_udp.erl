@@ -32,7 +32,7 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([
-	 start_transport/0,
+	 start_transport/0, stop_transport/1,
 	 open/2,
 	 socket/1,
 	 create_send_handle/3,
@@ -60,10 +60,10 @@
 get_stats() ->
     megaco_stats:get_stats(megaco_udp_stats).
 
-get_stats(SH) when record(SH, send_handle) ->
+get_stats(SH) when is_record(SH, send_handle) ->
     megaco_stats:get_stats(megaco_udp_stats, SH).
 
-get_stats(SH, Counter) when record(SH, send_handle), atom(Counter) ->
+get_stats(SH, Counter) when is_record(SH, send_handle), atom(Counter) ->
     megaco_stats:get_stats(megaco_udp_stats, SH, Counter).
 
 
@@ -74,7 +74,7 @@ get_stats(SH, Counter) when record(SH, send_handle), atom(Counter) ->
 reset_stats() ->
     megaco_stats:reset_stats(megaco_udp_stats).
 
-reset_stats(SH) when record(SH, send_handle) ->
+reset_stats(SH) when is_record(SH, send_handle) ->
     megaco_stats:reset_stats(megaco_udp_stats, SH).
 
 
@@ -86,6 +86,18 @@ reset_stats(SH) when record(SH, send_handle) ->
 start_transport() ->
     (catch megaco_stats:init(megaco_udp_stats)),
     megaco_udp_sup:start_link().
+
+
+%%-----------------------------------------------------------------
+%% Func: stop_transport
+%% Description: Stop the UDP transport service
+%%-----------------------------------------------------------------
+stop_transport(Pid) ->
+    (catch unlink(Pid)), 
+    stop_transport(Pid, shutdown).
+
+stop_transport(Pid, Reason) ->
+    exit(Pid, Reason).
 
 
 %%-----------------------------------------------------------------
@@ -137,14 +149,14 @@ open(SupPid, Options) ->
 %% Func: socket
 %% Description: Returns the inet socket
 %%-----------------------------------------------------------------
-socket(SH) when record(SH, send_handle) ->
+socket(SH) when is_record(SH, send_handle) ->
     SH#send_handle.socket;
 socket(Socket) ->
     Socket.
 
 
 upgrade_receive_handle(Pid, NewHandle) 
-  when pid(Pid), record(NewHandle, megaco_receive_handle) ->
+  when is_pid(Pid) andalso is_record(NewHandle, megaco_receive_handle) ->
     megaco_udp_server:upgrade_receive_handle(Pid, NewHandle).
 
 
@@ -196,7 +208,7 @@ create_snmp_counters(SH, [Counter|Counters]) ->
 %% Func: send_message
 %% Description: Function is used for sending data on the UDP socket
 %%-----------------------------------------------------------------
-send_message(SH, Data) when record(SH, send_handle) ->
+send_message(SH, Data) when is_record(SH, send_handle) ->
     #send_handle{socket = Socket, addr = Addr, port = Port} = SH,
     Res = gen_udp:send(Socket, Addr, Port, Data),
     case Res of
@@ -216,7 +228,7 @@ send_message(SH, _Data) ->
 %% Description: Function is used for blocking incomming messages
 %%              on the TCP socket
 %%-----------------------------------------------------------------
-block(SH) when record(SH, send_handle) ->
+block(SH) when is_record(SH, send_handle) ->
     block(SH#send_handle.socket);
 block(Socket) ->
     ?udp_debug({socket, Socket}, "udp block", []),
@@ -228,7 +240,7 @@ block(Socket) ->
 %% Description: Function is used for blocking incomming messages
 %%              on the TCP socket
 %%-----------------------------------------------------------------
-unblock(SH) when record(SH, send_handle) ->
+unblock(SH) when is_record(SH, send_handle) ->
     unblock(SH#send_handle.socket);
 unblock(Socket) ->
     ?udp_debug({socket, Socket}, "udp unblock", []),
@@ -279,7 +291,7 @@ parse_options([{Tag, Val} | T], UdpRec, Mand) ->
 	    parse_options(T, UdpRec#megaco_udp{receive_handle = Val}, Mand2);
 	module when is_atom(Val) ->
 	    parse_options(T, UdpRec#megaco_udp{module = Val}, Mand2);
-	serialize when (Val == true) orelse (Val == false) ->
+	serialize when (Val =:= true) orelse (Val =:= false) ->
 	    parse_options(T, UdpRec#megaco_udp{serialize = Val}, Mand2);
         Bad ->
 	    {error, {bad_option, Bad}}

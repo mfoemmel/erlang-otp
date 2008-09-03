@@ -2279,6 +2279,30 @@ erts_alcu_info(Allctr_t *allctr,
     return res;
 }
 
+
+void
+erts_alcu_current_size(Allctr_t *allctr, AllctrSize_t *size)
+{
+
+#ifdef USE_THREADS
+    if (allctr->thread_safe)
+	erts_mtx_lock(&allctr->mutex);
+#endif
+
+    size->carriers = allctr->mbcs.curr_mseg.size;
+    size->carriers += allctr->mbcs.curr_sys_alloc.size;
+    size->carriers += allctr->sbcs.curr_mseg.size;
+    size->carriers += allctr->sbcs.curr_sys_alloc.size;
+
+    size->blocks = allctr->mbcs.blocks.curr.size;
+    size->blocks += allctr->sbcs.blocks.curr.size;
+
+#ifdef USE_THREADS
+    if (allctr->thread_safe)
+	erts_mtx_unlock(&allctr->mutex);
+#endif
+}
+
 /* ----------------------------------------------------------------------- */
 
 static ERTS_INLINE void *

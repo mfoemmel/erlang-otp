@@ -152,13 +152,13 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	    NewC = [{'ValueRange',{0,length(Nlist1)-1}}],
 	    emit(["case (case ",Value," of {_,_}->element(2,",Value,");_->",
 		  Value," end) of",nl]),
-	    emit_enc_enumerated_cases(NewC, NewList++[{asn1_enum,length(Nlist1)-1}], 0);
+	    emit_enc_enumerated_cases(Erules,NewC, NewList++[{asn1_enum,length(Nlist1)-1}], 0);
 	{'ENUMERATED',NamedNumberList} ->
 	    NewList = [X||{X,_} <- NamedNumberList],
 	    NewC = [{'ValueRange',{0,length(NewList)-1}}],
 	    emit(["case (case ",Value," of {_,_}->element(2,",Value,");_->",
 		  Value," end) of",nl]),
-	    emit_enc_enumerated_cases(NewC, NewList, 0);
+	    emit_enc_enumerated_cases(Erules,NewC, NewList, 0);
 	
 	'REAL' ->
 	    emit({"?RT_PER:encode_real(",Value,")"});
@@ -235,30 +235,38 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	    exit({asn1_error,nyi,XX})
     end.
 
-emit_enc_enumerated_cases(C, [H], Count) ->
-    emit_enc_enumerated_case(C, H, Count),
+emit_enc_enumerated_cases(Erule,C, [H], Count) ->
+    emit_enc_enumerated_case(Erule,C, H, Count),
     emit([";",nl,"EnumVal -> exit({error,{asn1, {enumerated_not_in_range, EnumVal}}})"]),
     emit([nl,"end"]);
-emit_enc_enumerated_cases(C, ['EXT_MARK'|T], _Count) ->
-    emit_enc_enumerated_cases(C, T, 0);
-emit_enc_enumerated_cases(C, [H1,H2|T], Count) ->
-    emit_enc_enumerated_case(C, H1, Count),
+emit_enc_enumerated_cases(Erule, C, ['EXT_MARK'|T], _Count) ->
+    emit_enc_enumerated_cases(Erule, C, T, 0);
+emit_enc_enumerated_cases(Erule, C, [H1,H2|T], Count) ->
+    emit_enc_enumerated_case(Erule, C, H1, Count),
     emit([";",nl]),
-    emit_enc_enumerated_cases(C, [H2|T], Count+1).
+    emit_enc_enumerated_cases(Erule, C, [H2|T], Count+1).
     
 
 
-emit_enc_enumerated_case(_C, {asn1_enum,High}, _) ->
+emit_enc_enumerated_case(uper_bin,_C, {asn1_enum,High}, _) ->
+    emit([
+	  "{asn1_enum,EnumV} when integer(EnumV), EnumV > ",High," -> ",
+	  "[<<1:1>>,?RT_PER:encode_small_number(EnumV)]"]);
+emit_enc_enumerated_case(_Per,_C, {asn1_enum,High}, _) ->
     emit([
 	  "{asn1_enum,EnumV} when integer(EnumV), EnumV > ",High," -> ",
 	  "[{bit,1},?RT_PER:encode_small_number(EnumV)]"]);
-emit_enc_enumerated_case(_C, 'EXT_MARK', _Count) ->
+emit_enc_enumerated_case(_Erule, _C, 'EXT_MARK', _Count) ->
     true;
-emit_enc_enumerated_case(_C, {1,EnumName}, Count) ->
+emit_enc_enumerated_case(uper_bin,_C, {1,EnumName}, Count) ->
+    emit(["'",EnumName,"' -> [<<1:1>>,?RT_PER:encode_small_number(",Count,")]"]);
+emit_enc_enumerated_case(_Per,_C, {1,EnumName}, Count) ->
     emit(["'",EnumName,"' -> [{bit,1},?RT_PER:encode_small_number(",Count,")]"]);
-emit_enc_enumerated_case(C, {0,EnumName}, Count) ->
+emit_enc_enumerated_case(uper_bin,C, {0,EnumName}, Count) ->
+    emit(["'",EnumName,"' -> [<<0:1>>,?RT_PER:encode_integer(",{asis,C},", ",Count,")]"]);
+emit_enc_enumerated_case(_Per,C, {0,EnumName}, Count) ->
     emit(["'",EnumName,"' -> [{bit,0},?RT_PER:encode_integer(",{asis,C},", ",Count,")]"]);
-emit_enc_enumerated_case(C, EnumName, Count) ->
+emit_enc_enumerated_case(_Erule, C, EnumName, Count) ->
     emit(["'",EnumName,"' -> ?RT_PER:encode_integer(",{asis,C},", ",Count,")"]).
 
 %% effective_constraint(Type,C)
@@ -370,7 +378,7 @@ gen_obj_code(Erules,_Module,Obj) when record(Obj,typedef) ->
     emit({nl,"%%  ",ObjName}),
     emit({nl,"%%================================",nl}),
     EncConstructed =
-	gen_encode_objectfields(ClassName,get_class_fields(Class),
+	gen_encode_objectfields(Erules, ClassName,get_class_fields(Class),
 				ObjName,Fields,[]),
     emit(nl),
     gen_encode_constr_type(Erules,EncConstructed),
@@ -385,7 +393,7 @@ gen_obj_code(_,_,Obj) when record(Obj,pobjectdef) ->
     ok.
 
 
-gen_encode_objectfields(ClassName,[{typefield,Name,OptOrMand}|Rest],
+gen_encode_objectfields(Erule,ClassName,[{typefield,Name,OptOrMand}|Rest],
 			ObjName,ObjectFields,ConstrAcc) ->
     EmitFuncClause = 
 	fun(V) ->
@@ -401,7 +409,12 @@ gen_encode_objectfields(ClassName,[{typefield,Name,OptOrMand}|Rest],
 				   ObjName}}});
 	    {false,'OPTIONAL'} ->
 		EmitFuncClause("Val"),
-		emit("   [{octets,Val}]"),
+		case Erule of
+		    uper_bin ->
+			emit("   Val");
+		    _ ->
+			emit("   [{octets,Val}]")
+		end,
 		[];
 	    {false,{'DEFAULT',DefaultType}} ->
 		EmitFuncClause("Val"),
@@ -418,9 +431,9 @@ gen_encode_objectfields(ClassName,[{typefield,Name,OptOrMand}|Rest],
 	false ->
 	    emit([".",nl])
     end,
-    gen_encode_objectfields(ClassName,Rest,ObjName,ObjectFields,
+    gen_encode_objectfields(Erule,ClassName,Rest,ObjName,ObjectFields,
 			    MaybeConstr++ConstrAcc);
-gen_encode_objectfields(ClassName,[{objectfield,Name,_,_,OptOrMand}|Rest],
+gen_encode_objectfields(Erule,ClassName,[{objectfield,Name,_,_,OptOrMand}|Rest],
 			ObjName,ObjectFields,ConstrAcc) ->
     CurrentMod = get(currmod),
     EmitFuncClause =
@@ -463,10 +476,10 @@ gen_encode_objectfields(ClassName,[{objectfield,Name,_,_,OptOrMand}|Rest],
 	false ->
 	    emit([".",nl])
     end,
-    gen_encode_objectfields(ClassName,Rest,ObjName,ObjectFields,ConstrAcc);
-gen_encode_objectfields(ClassName,[_C|Cs],O,OF,Acc) ->
-    gen_encode_objectfields(ClassName,Cs,O,OF,Acc);
-gen_encode_objectfields(_,[],_,_,Acc) ->
+    gen_encode_objectfields(Erule,ClassName,Rest,ObjName,ObjectFields,ConstrAcc);
+gen_encode_objectfields(Erule,ClassName,[_C|Cs],O,OF,Acc) ->
+    gen_encode_objectfields(Erule,ClassName,Cs,O,OF,Acc);
+gen_encode_objectfields(_, _,[],_,_,Acc) ->
     Acc.
 
 
@@ -720,16 +733,16 @@ gen_objectset_code(Erules,ObjSet) ->
 gen_objset_code(Erules,ObjSetName,UniqueFName,Set,ClassName,ClassDef)->
     ClassFields = (ClassDef#classdef.typespec)#objectclass.fields,
     InternalFuncs=
-	gen_objset_enc(ObjSetName,UniqueFName,Set,ClassName,ClassFields,1,[]),
+	gen_objset_enc(Erules,ObjSetName,UniqueFName,Set,ClassName,ClassFields,1,[]),
     gen_objset_dec(ObjSetName,UniqueFName,Set,ClassName,ClassFields,1),
     gen_internal_funcs(Erules,InternalFuncs).
 
 %% gen_objset_enc iterates over the objects of the object set
-gen_objset_enc(_,{unique,undefined},_,_,_,_,_) ->
+gen_objset_enc(_,_,{unique,undefined},_,_,_,_,_) ->
     %% There is no unique field in the class of this object set
     %% don't bother about the constraint
     [];
-gen_objset_enc(ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],
+gen_objset_enc(Erule,ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],
 	       ClName,ClFields,NthObj,Acc)->
     emit({"'getenc_",ObjSName,"'(",{asis,UniqueName},",",{asis,Val},
 	  ") ->",nl}),
@@ -737,7 +750,7 @@ gen_objset_enc(ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],
     {InternalFunc,NewNthObj}=
 	case ObjName of
 	    {no_mod,no_name} ->
-		gen_inlined_enc_funs(Fields,ClFields,ObjSName,NthObj);
+		gen_inlined_enc_funs(Erule,Fields,ClFields,ObjSName,NthObj);
 	    {CurrMod,Name} ->
 		emit({"    fun 'enc_",Name,"'/3"}),
 		{[],0};
@@ -750,9 +763,9 @@ gen_objset_enc(ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],
 		{[],0}
 	end,
     emit({";",nl}),
-    gen_objset_enc(ObjSName,UniqueName,[T|Rest],ClName,ClFields,
+    gen_objset_enc(Erule,ObjSName,UniqueName,[T|Rest],ClName,ClFields,
 		   NewNthObj,InternalFunc ++ Acc);
-gen_objset_enc(ObjSetName,UniqueName,
+gen_objset_enc(Erule,ObjSetName,UniqueName,
 	       [{ObjName,Val,Fields}],_ClName,ClFields,NthObj,Acc) ->
 
     emit({"'getenc_",ObjSetName,"'(",{asis,UniqueName},",",
@@ -761,7 +774,7 @@ gen_objset_enc(ObjSetName,UniqueName,
     {InternalFunc,_}=
 	case ObjName of
 	    {no_mod,no_name} ->
-		gen_inlined_enc_funs(Fields,ClFields,ObjSetName,NthObj);
+		gen_inlined_enc_funs(Erule,Fields,ClFields,ObjSetName,NthObj);
 	    {CurrMod,Name} ->
 		emit({"    fun 'enc_",Name,"'/3"}),
 		{[],NthObj};
@@ -777,14 +790,19 @@ gen_objset_enc(ObjSetName,UniqueName,
     emit_default_getenc(ObjSetName,UniqueName),
     emit({".",nl,nl}),
     InternalFunc++Acc;
-gen_objset_enc(ObjSetName,_UniqueName,['EXTENSIONMARK'],_ClName,
+gen_objset_enc(Erule,ObjSetName,_UniqueName,['EXTENSIONMARK'],_ClName,
 	       _ClFields,_NthObj,Acc) ->
     emit({"'getenc_",ObjSetName,"'(_, _) ->",nl}),
     emit({indent(3),"fun(_, Val, _) ->",nl}),
-    emit({indent(6),"[{octets,Val}]",nl}),
+    case Erule of
+	uper_bin ->
+	    emit([indent(6),"Val",nl]);
+	_ ->
+	    emit([indent(6),"[{octets,Val}]",nl])
+    end,
     emit({indent(3),"end.",nl,nl}),
     Acc;
-gen_objset_enc(_,_,[],_,_,_,Acc) ->
+gen_objset_enc(_,_,_,[],_,_,_,Acc) ->
     Acc.
 
 emit_ext_encfun(ModuleName,Name) ->
@@ -799,7 +817,7 @@ emit_default_getenc(ObjSetName,UniqueName) ->
 %% gen_inlined_enc_funs for each object iterates over all fields of a
 %% class, and for each typefield it checks if the object has that
 %% field and emits the proper code.
-gen_inlined_enc_funs(Fields,[{typefield,Name,_}|Rest],ObjSetName,NthObj) ->
+gen_inlined_enc_funs(Erule,Fields,[{typefield,Name,_}|Rest],ObjSetName,NthObj) ->
     CurrMod = get(currmod),
     InternalDefFunName = asn1ct_gen:list2name([NthObj,Name,ObjSetName]),
     case lists:keysearch(Name,1,Fields) of
@@ -807,38 +825,43 @@ gen_inlined_enc_funs(Fields,[{typefield,Name,_}|Rest],ObjSetName,NthObj) ->
 	    emit({indent(3),"fun(Type, Val, _) ->",nl,
 		  indent(6),"case Type of",nl}),
 	    {Ret,N}=emit_inner_of_fun(Type,InternalDefFunName),
-	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj+N,Ret);
+	    gen_inlined_enc_funs1(Erule,Fields,Rest,ObjSetName,NthObj+N,Ret);
 	{value,{_,Type}} when record(Type,typedef) ->
 	    emit({indent(3),"fun(Type, Val, _) ->",nl,
 		  indent(6),"case Type of",nl}),
 	    emit({indent(9),{asis,Name}," ->",nl}),
 	    {Ret,N} = emit_inner_of_fun(Type,InternalDefFunName),
-	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj+N,Ret);
+	    gen_inlined_enc_funs1(Erule,Fields,Rest,ObjSetName,NthObj+N,Ret);
 	{value,{_,#'Externaltypereference'{module=CurrMod,type=T}}} ->
 	    emit({indent(3),"fun(Type, Val, _) ->",nl,
 		  indent(6),"case Type of",nl}),
 	    emit({indent(9),{asis,Name}," ->",nl}),
 	    emit([indent(12),"'enc_",T,"'(Val)"]),
 %	    {Ret,N} = emit_inner_of_fun(TDef,InternalDefFunName),
-	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,[]);
+	    gen_inlined_enc_funs1(Erule,Fields,Rest,ObjSetName,NthObj,[]);
 	{value,{_,#'Externaltypereference'{module=M,type=T}}} ->
 	    emit({indent(3),"fun(Type, Val, _) ->",nl,
 		  indent(6),"case Type of",nl}),
 	    emit({indent(9),{asis,Name}," ->",nl}),
 	    emit([indent(12),"'",M,"'",":'enc_",T,"'(Val)"]),
-	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,[]);
+	    gen_inlined_enc_funs1(Erule,Fields,Rest,ObjSetName,NthObj,[]);
+	false when Erule == uper_bin ->
+	    emit([indent(3),"fun(Type,Val,_) ->",nl,
+		  indent(6),"case Type of",nl,
+		  indent(9),{asis,Name}," -> Val",nl]),
+	    gen_inlined_enc_funs1(Erule,Fields,Rest,ObjSetName,NthObj,[]);
 	false ->
 	    emit([indent(3),"fun(Type,Val,_) ->",nl,
 		  indent(6),"case Type of",nl,
 		  indent(9),{asis,Name}," -> [{octets,Val}]",nl]),
-	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,[])
+	    gen_inlined_enc_funs1(Erule,Fields,Rest,ObjSetName,NthObj,[])
     end;
-gen_inlined_enc_funs(Fields,[_H|Rest],ObjSetName,NthObj) ->
-    gen_inlined_enc_funs(Fields,Rest,ObjSetName,NthObj);
-gen_inlined_enc_funs(_,[],_,NthObj) ->
+gen_inlined_enc_funs(Erule,Fields,[_H|Rest],ObjSetName,NthObj) ->
+    gen_inlined_enc_funs(Erule,Fields,Rest,ObjSetName,NthObj);
+gen_inlined_enc_funs(_,_,[],_,NthObj) ->
     {[],NthObj}.
 
-gen_inlined_enc_funs1(Fields,[{typefield,Name,_}|Rest],ObjSetName,
+gen_inlined_enc_funs1(Erule,Fields,[{typefield,Name,_}|Rest],ObjSetName,
 		     NthObj,Acc) ->
     CurrentMod = get(currmod),
     InternalDefFunName = asn1ct_gen:list2name([NthObj,Name,ObjSetName]),
@@ -860,16 +883,21 @@ gen_inlined_enc_funs1(Fields,[{typefield,Name,_}|Rest],ObjSetName,
 		emit({";",nl,indent(9),{asis,Name}," ->",nl}),
 		emit([indent(12),"'",M,"'",":'enc_",T,"'(Val)"]),
 		{Acc,0};
+	    false when Erule == uper_bin ->
+		emit([";",nl,
+		      indent(9),{asis,Name}," -> ",nl,
+		      "Val",nl]),
+		{Acc,0};
 	    false ->
 		emit([";",nl,
 		      indent(9),{asis,Name}," -> ",nl,
 		      "[{octets,Val}]",nl]),
 		{Acc,0}
 	end,
-    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj+NAdd,Acc2);
-gen_inlined_enc_funs1(Fields,[_H|Rest],ObjSetName,NthObj,Acc)->
-    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,Acc);
-gen_inlined_enc_funs1(_,[],_,NthObj,Acc) ->
+    gen_inlined_enc_funs1(Erule,Fields,Rest,ObjSetName,NthObj+NAdd,Acc2);
+gen_inlined_enc_funs1(Erule,Fields,[_H|Rest],ObjSetName,NthObj,Acc)->
+    gen_inlined_enc_funs1(Erule,Fields,Rest,ObjSetName,NthObj,Acc);
+gen_inlined_enc_funs1(_,_,[],_,NthObj,Acc) ->
     emit({nl,indent(6),"end",nl}),
     emit({indent(3),"end"}),
     {Acc,NthObj}.

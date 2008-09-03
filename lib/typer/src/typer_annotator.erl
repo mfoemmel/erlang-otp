@@ -32,7 +32,7 @@
 
 %%----------------------------------------------------------------------------
 
--spec(annotate/1 :: (#typer_analysis{}) -> 'ok').
+-spec annotate(#typer_analysis{}) -> 'ok'.
 
 annotate(Analysis) ->
   case typer_options:option_type(Analysis#typer_analysis.mode) of
@@ -111,8 +111,8 @@ collect_imported_funcs(Funcs, TypeMap, TmpInc) ->
 	end,
   lists:foldl(Fun, TmpInc, Funcs).
 
--spec(is_yecc_file/2 ::
-      (string(), #inc{}) -> {'not_yecc', #inc{}} | {'yecc_generated', #inc{}}).
+-spec is_yecc_file(string(), #inc{}) -> {'not_yecc', #inc{}}
+				      | {'yecc_generated', #inc{}}.
 is_yecc_file(File, Inc) ->
   case lists:member(File, Inc#inc.filter) of
     true -> {yecc_generated, Inc};
@@ -136,40 +136,40 @@ is_yecc_file(File, Inc) ->
       end
   end.
 
-check_imported_funcs({File,{Line,F,A}},Inc,TypeMap) ->
+check_imported_funcs({File,{Line,F,A}}, Inc, TypeMap) ->
   IncMap = Inc#inc.map,
-  Type = get_type_info({F,A},TypeMap),
-  case typer_map:lookup(File,IncMap) of
+  Type = get_type_info({F,A}, TypeMap),
+  case typer_map:lookup(File, IncMap) of
     none -> %% File is not added. Add it
       Obj = {File,[{{F,A},{Line,Type}}]},
-      NewMap = typer_map:insert(Obj,IncMap),
+      NewMap = typer_map:insert(Obj, IncMap),
       Inc#inc{map=NewMap};
     Val -> %% File is already in. Check.
-      case lists:keysearch({F,A},1,Val) of
+      case lists:keysearch({F,A}, 1, Val) of
 	false -> 
 	  %% Function is not in. Good. Add.
 	  Obj = {File,Val++[{{F,A},{Line,Type}}]},
-	  NewMap = typer_map:insert(Obj,IncMap),
+	  NewMap = typer_map:insert(Obj, IncMap),
 	  Inc#inc{map=NewMap};
 	{_,Type} -> 
 	  %% Function is in and with same type
 	  Inc;
 	{_,_} ->
 	  %% Function is in but with diff type
-	  inc_warning({F,A},File),
-	  Elem = lists:keydelete({F,A},1,Val),
+	  inc_warning({F,A}, File),
+	  Elem = lists:keydelete({F,A}, 1, Val),
 	  NewMap = case Elem of
 		     [] -> 
-		       typer_map:remove(File,IncMap);
+		       typer_map:remove(File, IncMap);
 		     _  ->
 		       Obj = {File,Elem},
-		       typer_map:insert(Obj,IncMap)
+		       typer_map:insert(Obj, IncMap)
 		   end,
 	  Inc#inc{map=NewMap}
       end
   end.
 
-inc_warning({F,A},File) ->	    
+inc_warning({F,A}, File) ->	    
   io:format("      ***Warning: Skip function ~p/~p ",[F,A]),
   io:format("in file ~p because of inconsistent type\n",[File]).
 
@@ -178,20 +178,20 @@ clean_inc(Inc) ->
   normalize_obj(Inc1).
 
 remove_yecc_generated_file(TmpInc) ->
-  Fun = fun(Key,Inc) ->
-	    NewMap = typer_map:remove(Key,Inc#inc.map),
+  Fun = fun(Key, Inc) ->
+	    NewMap = typer_map:remove(Key, Inc#inc.map),
 	    Inc#inc{map=NewMap}
 	end,
-  lists:foldl(Fun,TmpInc,TmpInc#inc.filter).
+  lists:foldl(Fun, TmpInc, TmpInc#inc.filter).
   
 normalize_obj(TmpInc) ->
-  Fun = fun(Key,Val,Inc) ->
+  Fun = fun(Key, Val, Inc) ->
 	    NewVal = [{{Line,F,A},Type} || {{F,A},{Line,Type}} <- Val],
 	    typer_map:insert({Key,NewVal},Inc)
 	end,
   NewMap = typer_map:fold(Fun, typer_map:new(), TmpInc#inc.map),
   TmpInc#inc{map=NewMap}.
-  
+
 get_recMap(File, Analysis) ->
   typer_map:lookup(File, Analysis#typer_analysis.record).
 
@@ -202,33 +202,32 @@ get_typeMap(Module, Analysis, RecMap) ->
       none -> [];
       {value, List} -> List
     end,
-  Codeserver = Analysis#typer_analysis.code_server,
-  TypeInfoList =
-    lists:map(
-      fun({MFA = {M,F,A}, Range, Arg}) ->
-	  case dialyzer_codeserver:lookup_contract(MFA, Codeserver) of
-	    {ok, {_Line, C}} ->
-	      Sig = erl_types:t_fun(Arg, Range),
-	      case dialyzer_contracts:check_contract(C, Sig) of
-		ok -> {{F, A}, {contract, C}};
-		{error, What} ->
-		  typer:error(
-		    io_lib:format("Error in contract of function ~w:~w/~w: ~s",
-				  [M,F,A,What]));
-		error ->
-		  CString = dialyzer_contracts:contract_to_string(C),
-		  SigString = dialyzer_utils:format_sig(Sig, RecMap),
-		  typer:error(
-		    io_lib:format("Error in contract of function ~w:~w/~w. " 
-				  "The contract is\n" ++ CString ++ 
-				  "\tbut the inferred signature is\n~s",
-				  [M,F,A,SigString]))
-	      end;
-	    error ->
-	      {{F,A},{Range,Arg}}
-	  end
-      end, TypeInfo),
+  CodeServer = Analysis#typer_analysis.code_server,
+  TypeInfoList = [get_type(I, CodeServer, RecMap) || I <- TypeInfo],
   typer_map:from_list(TypeInfoList).
+
+get_type({MFA = {M,F,A}, Range, Arg}, CodeServer, RecMap) ->
+  case dialyzer_codeserver:lookup_contract(MFA, CodeServer) of
+    {ok, {_Line, C}} ->
+      Sig = erl_types:t_fun(Arg, Range),
+      case dialyzer_contracts:check_contract(C, Sig) of
+	ok -> {{F, A}, {contract, C}};
+	{error, What} ->
+	  typer:error(
+	    io_lib:format("Error in contract of function ~w:~w/~w: ~s",
+			  [M,F,A,What]));
+	error ->
+	  CString = dialyzer_contracts:contract_to_string(C),
+	  SigString = dialyzer_utils:format_sig(Sig, RecMap),
+	  typer:error(
+	    io_lib:format("Error in contract of function ~w:~w/~w. " 
+			  "The contract is\n" ++ CString ++ 
+			  "\tbut the inferred signature is\n~s",
+			  [M,F,A,SigString]))
+      end;
+    error ->
+      {{F,A},{Range,Arg}}
+  end.
 
 get_functions(File, Analysis) ->
   case Analysis#typer_analysis.mode of
@@ -249,23 +248,22 @@ get_functions(File, Analysis) ->
 normalize_incFuncs(Funcs) ->
   [FuncInfo || {_FileName,FuncInfo} <- Funcs].
 
--spec(remove_module_info/1 :: ([func_info()]) -> [func_info()]).
+-spec remove_module_info([func_info()]) -> [func_info()].
 remove_module_info(FuncInfoList) ->
-  F = fun 
-	({_,module_info,0}) -> false;
-	({_,module_info,1}) -> false;
-	({Line,F,A}) when is_integer(Line), is_atom(F), is_integer(A) -> true
+  F = fun ({_,module_info,0}) -> false;
+	  ({_,module_info,1}) -> false;
+	  ({Line,F,A}) when is_integer(Line), is_atom(F), is_integer(A) -> true
       end,
   lists:filter(F, FuncInfoList).
 
 write_typed_file(File, Info) ->
-  io:format("      Processing file: ~p\n",[File]),
+  io:format("      Processing file: ~p\n", [File]),
   Dir = filename:dirname(File),
   RootName = filename:basename(filename:rootname(File)),
   Ext = filename:extension(File),
   TyperAnnDir = filename:join(Dir, ?TYPER_ANN_DIR),
   TmpNewFilename = lists:concat([RootName,".ann",Ext]),
-  NewFileName = filename:join(TyperAnnDir,TmpNewFilename),
+  NewFileName = filename:join(TyperAnnDir, TmpNewFilename),
   case file:make_dir(TyperAnnDir) of
     {error, Reason} ->
       case Reason of
@@ -294,7 +292,7 @@ write_typed_file(Rest, File, #info{funcs=[]}, _LNo, _Acc) ->
   ok = file:write_file(File, list_to_binary(Rest), [append]);
 write_typed_file([First|RestCh], File, Info, LineNo, Acc) ->
   [{Line,F,A}|RestFuncs] = Info#info.funcs,
-  case Line of 
+  case Line of
     1 -> %% This will happen only for inc files
       ok = raw_write(F, A, Info, File, []),
       NewInfo = Info#info{funcs=RestFuncs},
@@ -319,7 +317,7 @@ write_typed_file([First|RestCh], File, Info, LineNo, Acc) ->
       end
   end.
 
-raw_write(F, A, Info, File, Content) ->  
+raw_write(F, A, Info, File, Content) ->
   TypeInfo = get_type_string(F, A, Info, file),
   ContentList = lists:reverse(Content)++TypeInfo++"\n",
   ContentBin = list_to_binary(ContentList),
@@ -340,8 +338,8 @@ get_type_string(F, A, Info, Mode) ->
       case {Mode, Type} of
 	{file, {contract, _}} -> "";
 	_ ->
-	  Prefix = lists:concat(["-spec(", F, "/", A, " :: "]),
-	  lists:concat([Prefix, TypeStr, [")."]])
+	  Prefix = lists:concat(["-spec ", F]),
+	  lists:concat([Prefix, TypeStr, ["."]])
       end;
     false ->
       Prefix = lists:concat(["%% @typer_spec ", F, "/", A, " :: "]),
@@ -352,11 +350,10 @@ show_type_info_only(File, Info) ->
   io:format("\n%% File: ~p\n%% ", [File]),
   OutputString = lists:concat(["~.",length(File)+8,"c~n"]),
   io:fwrite(OutputString, [$-]),
-  Fun =
-    fun ({_LineNo,F,A}) ->
-	TypeInfo = get_type_string(F,A,Info,show),
-	io:format("~s\n", [TypeInfo])
-    end,
+  Fun = fun ({_LineNo,F,A}) ->
+	    TypeInfo = get_type_string(F,A,Info,show),
+	    io:format("~s\n", [TypeInfo])
+	end,
   lists:foreach(Fun, Info#info.funcs).
 
 get_type_info(Func, TypeMap) ->

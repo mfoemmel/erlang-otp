@@ -252,7 +252,7 @@ handle_info({handler_result, Pid, Result},
 		   handler = {running, Pid},
 		   timer   = Timer,
 		   id      = Id} = State) ->
-    d("handle_call(handler_result) -> entry with"
+    d("handle_info(handler_result) -> entry with"
       "~n   Result: ~p", [Result]),
     maybe_stop_timer(Timer),
     handler_stop(Pid), 
@@ -263,7 +263,7 @@ handle_info({handler_result, Pid, Result},
     {noreply, NewState};
 
 handle_info(handler_timeout, #state{handler = {running, Pid}} = State) ->
-    d("handle_call(handler_timeout) -> entry with"),
+    d("handle_info(handler_timeout) -> entry with"),
     handler_stop(Pid), 
     {noreply, State#state{handler = {stopping, Pid}}};
 
@@ -271,7 +271,7 @@ handle_info({'EXIT', Pid, {stopped, Result}},
 	    #state{parent  = Parent,
 		   handler = {stopping, Pid},
 		   id      = Id} = State) ->
-    d("handle_call(handler stopped EXIT) -> entry with"
+    d("handle_info(handler stopped EXIT) -> entry with"
       "~n   Result: ~p", [Result]),
     deliver_exec_result(Parent, Id, {error, {handler_timeout, Result}}),
     {noreply, State#state{handler = {stopped, undefined}, 
@@ -281,7 +281,7 @@ handle_info({'EXIT', Pid, {stopped, Result}},
 handle_info({'EXIT', Pid, normal}, 
 	    #state{handler = {_, Pid},
 		   timer   = Timer} = State) ->
-    d("handle_call(handler normal EXIT) -> entry"), 
+    d("handle_info(handler normal EXIT) -> entry"), 
     maybe_stop_timer(Timer),
     {noreply, State#state{handler = {stopped, undefined}, timer = undefined}};
 
@@ -290,7 +290,7 @@ handle_info({'EXIT', Pid, Reason},
 		   handler = {_, Pid},
 		   timer   = Timer,
 		   id      = Id} = State) ->
-    d("handle_call(handler EXIT) -> entry with"
+    d("handle_info(handler EXIT) -> entry with"
       "~n   Reason: ~p", [Reason]),
     maybe_stop_timer(Timer),
     deliver_exec_result(Parent, Id, {error, {handler_crashed, Reason}}),
@@ -415,10 +415,10 @@ handler_main(Parent, Mod, State, [Instruction|Instructions]) ->
 	    case (catch handler_callback_exec(Mod, State, Instruction)) of
 		{ok, NewState} ->
 		    handler_main(Parent, Mod, NewState, Instructions);
-		{error, NewState} ->
+		{error, Reason} ->
 		    d("handler_main -> exec failed"
-		      "~n   NewState: ~p", [NewState]),
-		    Result = (catch Mod:terminate(normal, NewState)),
+		      "~n   Reason: ~p", [Reason]),
+		    Result = (catch Mod:terminate(normal, State)),
 		    Parent ! {handler_result, self(), {error, Result}},
 		    receive
 			{stop, Parent} ->
@@ -494,8 +494,8 @@ d(F, A) -> debug(F, A).
 
 e(F, A) -> error(F, A).
 
-p(P,    F, A) -> print(P,    F, A).
-p(P, N, F, A) -> print(P, N, F, A).
+%% p(P,    F, A) -> print(P,    F, A).
+%% p(P, N, F, A) -> print(P, N, F, A).
 
 
 %% -------------------------

@@ -1308,15 +1308,12 @@ static BIF_RETTYPE process_flag_aux(Process *BIF_P,
       } else {
 	 Uint sz = sizeof(*ct) + (i-1) * sizeof(ct->ct[0]);
 	 ct = erts_alloc(ERTS_ALC_T_CALLS_BUF, sz);
-	 ERTS_PROC_MORE_MEM(sz);
 	 ct->len = i;
 	 ct->cur = 0;
 	 ct->n = 0;
       }
 
       if (rp->ct != NULL) {
-	 ERTS_PROC_LESS_MEM(sizeof(*(rp->ct))
-			    + (rp->ct->len-1) * sizeof(rp->ct->ct[0]));
 	 erts_free(ERTS_ALC_T_CALLS_BUF, (void *) rp->ct);
       }
       rp->ct = ct;
@@ -2391,13 +2388,17 @@ BIF_RETTYPE string_to_integer_1(BIF_ALIST_1)
      Eterm tail;
      Eterm *hp;
      /* must be a list */
-     hp = HAlloc(BIF_P,3);
      switch (do_list_to_integer(BIF_P,BIF_ARG_1,&res,&tail)) {
+	 /* HAlloc after do_list_to_integer as it 
+	    might HAlloc itself (bignum) */
      case LTI_BAD_STRUCTURE:
+	 hp = HAlloc(BIF_P,3);
 	 BIF_RET(TUPLE2(hp, am_error, am_not_a_list));
      case LTI_NO_INTEGER:
+	 hp = HAlloc(BIF_P,3);
 	 BIF_RET(TUPLE2(hp, am_error, am_no_integer));
      default:
+	 hp = HAlloc(BIF_P,3);
 	 BIF_RET(TUPLE2(hp, res, tail));
      }
 }
@@ -3527,7 +3528,7 @@ BIF_RETTYPE system_flag_2(BIF_ALIST_2)
 #ifndef ERTS_SMP
 	    BIF_RET(am_disabled);
 #else
-	    if (erts_no_of_schedulers == 1)
+	    if (erts_no_schedulers == 1)
 		BIF_RET(am_disabled);
 	    else {
 		int blocked;

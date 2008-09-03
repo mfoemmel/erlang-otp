@@ -47,13 +47,17 @@
 %%
 
 -export([bif/2,bif/3,guard_bif/2,
-	 type_test/2,new_type_test/2,old_type_test/2,
-	 obsolete/3]).
+	 type_test/2,new_type_test/2,old_type_test/2]).
 -export([arith_op/2,bool_op/2,comp_op/2,list_op/2,send_op/2,op_type/2]).
 
-%% -type guard_bif(Name, Arity) -> bool()
-%%	when Name = atom(), Arity = integer().
+%%---------------------------------------------------------------------------
+
+-type arity() :: 0..255.
+
+%%---------------------------------------------------------------------------
+
 %%  Erlang builtin functions allowed in guards.
+-spec guard_bif(Name::atom(), Arity::arity()) -> bool().
 
 guard_bif(abs, 1) -> true;
 guard_bif(float, 1) -> true;
@@ -89,16 +93,14 @@ guard_bif(is_record, 2) -> true;
 guard_bif(is_record, 3) -> true;
 guard_bif(Name, A) when is_atom(Name), is_integer(A) -> false.
 
-%% -type type_test(Name, Arity) -> bool()
-%%	when Name = atom(), Arity = integer().
 %%  Erlang type tests.
+-spec type_test(Name::atom(), Arity::arity()) -> bool().
 
 type_test(Name, Arity) ->
     new_type_test(Name, Arity) orelse old_type_test(Name, Arity).
 
-%% -type new_type_test(Name, Arity) -> bool()
-%%	when Name = atom(), Arity = integer().
 %%  Erlang new-style type tests.
+-spec new_type_test(Name::atom(), Arity::arity()) -> bool().
 
 new_type_test(is_atom, 1) -> true;
 new_type_test(is_boolean, 1) -> true;
@@ -119,9 +121,8 @@ new_type_test(is_record, 2) -> true;
 new_type_test(is_record, 3) -> true;
 new_type_test(Name, A) when is_atom(Name), is_integer(A) -> false.
 
-%% -type old_type_test(Name, Arity) -> bool()
-%%	when Name = atom(), Arity = integer().
 %%  Erlang old-style type tests.
+-spec old_type_test(Name::atom(), Arity::arity()) -> bool().
 
 old_type_test(integer, 1) -> true;
 old_type_test(float, 1) -> true;
@@ -138,8 +139,7 @@ old_type_test(record, 2) -> true;
 old_type_test(function, 1) -> true;
 old_type_test(Name, A) when is_atom(Name), is_integer(A) -> false.
 
-%% -type arith_op(Op, Arity) -> bool()
-%%	when Op = atom(), Arity = integer().
+-spec arith_op(Op::atom(), Arity::arity()) -> bool().
 
 arith_op('+', 1) -> true;
 arith_op('-', 1) -> true;
@@ -157,8 +157,7 @@ arith_op('bsl', 2) -> true;
 arith_op('bsr', 2) -> true;
 arith_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
-%% -type bool_op(Op, Arity) -> bool()
-%%	when Op = atom(), Arity = integer().
+-spec bool_op(Op::atom(), Arity::arity()) -> bool().
 
 bool_op('not', 1) -> true;
 bool_op('and', 2) -> true;
@@ -166,8 +165,7 @@ bool_op('or', 2) -> true;
 bool_op('xor', 2) -> true;
 bool_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
-%% -type comp_op(Op, Arity) -> bool()
-%%	when Op = atom(), Arity = integer().
+-spec comp_op(Op::atom(), Arity::arity()) -> bool().
 
 comp_op('==', 2) -> true;
 comp_op('/=', 2) -> true;
@@ -179,21 +177,19 @@ comp_op('=:=', 2) -> true;
 comp_op('=/=', 2) -> true;
 comp_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
-%% -type list_op(Op, Arity) -> bool()
-%%	when Op = atom(), Arity = integer().
+-spec list_op(Op::atom(), Arity::arity()) -> bool().
 
 list_op('++', 2) -> true;
 list_op('--', 2) -> true;
 list_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
-%% -type send_op(Op, Arity) -> bool()
-%%	when Op = atom(), Arity = integer().
+-spec send_op(Op::atom(), Arity::arity()) -> bool().
 
 send_op('!', 2) -> true;
 send_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
-%% -type op_type(Op, Arity) -> arith | bool | comp | list | send
-%%	when Op = atom(), Arity = integer().
+-spec op_type(Op::atom(), Arity::arity()) ->
+		'arith' | 'bool' | 'comp' | 'list' | 'send'.
 
 op_type('+', 1) -> arith;
 op_type('-', 1) -> arith;
@@ -225,10 +221,12 @@ op_type('++', 2) -> list;
 op_type('--', 2) -> list;
 op_type('!', 2) -> send.
 
+-spec bif(Mod::atom(), Name::atom(), Arity::arity()) -> bool().
+
 bif(erlang, Name, Arity) -> bif(Name, Arity);
 bif(M, F, A) when is_atom(M), is_atom(F), is_integer(A) -> false.
 
-%% bif(Name, Arity) -> true|false
+-spec bif(Name::atom(), Arity::arity()) -> bool().
 %%   Returns true if erlang:Name/Arity is an auto-imported BIF, false otherwise.
 %%   Use erlang:is_bultin(Mod, Name, Arity) to find whether a function is a BIF
 %%   (meaning implemented in C) or not.
@@ -356,10 +354,3 @@ bif(unlink, 1) -> true;
 bif(unregister, 1) -> true;
 bif(whereis, 1) -> true;
 bif(Name, A) when is_atom(Name), is_integer(A) -> false.
-
-obsolete(Mod, Fun, Arity) ->
-    %% Just in case.
-    case catch otp_internal:obsolete(Mod, Fun, Arity) of
-	{true,Arg} -> {true,Arg};
-	_Other -> false				%False, no otp_internal
-    end.

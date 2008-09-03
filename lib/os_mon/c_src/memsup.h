@@ -23,16 +23,23 @@
 #define _SYSMEM_H
 
 /* Simple memory statistics */
-/*IG*/ #define MEM_SHOW 1 
+/*IG*/ #define SHOW_MEM 1 
 
 /* Extended memory statistics */
-/*IG*/ #define SYSTEM_MEM_SHOW 2
+/*IG*/ #define SHOW_SYSTEM_MEM 2
 
 /* Tags for the extended statistics */
-/*IG*/ #define SYSTEM_MEM_SHOW_END 0
-/*IG*/ #define SYSTEM_TOTAL_MEMORY 1
-/*IG*/ #define TOTAL_MEMORY 2
-/*IG*/ #define FREE_MEMORY 3
-/*IG*/ #define LARGEST_FREE 4
-/*IG*/ #define NUMBER_OF_FREE 5 
+/*IG*/ #define SHOW_SYSTEM_MEM_END 0
+/*IG*/ #define MEM_SYSTEM_TOTAL 1
+/*IG*/ #define MEM_TOTAL 2
+/*IG*/ #define MEM_FREE 3
+/*IG*/ #define MEM_LARGEST_FREE 4
+/*IG*/ #define MEM_NUMBER_OF_FREE 5
+/*Extension*/
+/*IG*/ #define MEM_BUFFERS 6
+/*IG*/ #define MEM_CACHED 7
+/*IG*/ #define MEM_SHARED 8
+/*IG*/ #define SWAP_TOTAL 9
+/*IG*/ #define SWAP_FREE 10
+
 #endif

@@ -66,7 +66,9 @@
 	 fail/1, comment/1,
 	 testcases/2, userdata/2, userdata/3]).
 
--export([get_status/0]).
+%% Other interface functions
+-export([get_status/0, abort_current_testcase/1]).
+
 
 -export([get_target_name/1]).
 -export([parse_table/1, listenv/1]).
@@ -395,6 +397,9 @@ pal(Format) ->
     pal(default,Format,[]).
 
 %%%-----------------------------------------------------------------
+%%% @spec pal(X1,X2) -> ok
+%%%      X1 = Category | Format
+%%%      X2 = Format | Args
 %%% @equiv pal(Category,Format,Args)
 pal(X1,X2) ->
     {Category,Format,Args} = 
@@ -618,3 +623,17 @@ get_testdata(Key) ->
 	Data ->
 	    {ok,Data}
     end.
+
+%%%-----------------------------------------------------------------
+%%% @spec abort_current_testcase(Reason) -> ok | {error,no_testcase_running}
+%%%       Reason = term()
+%%%
+%%% @doc <p>When calling this function, the currently executing test case will be aborted.
+%%%      It is the user's responsibility to know for sure which test case is currently
+%%%	 executing. The function is therefore only safe to call from a function which
+%%%	 has been called (or synchronously invoked) by the test case.</p>
+%%%
+%%%      <p><code>Reason</code>, the reason for aborting the test case, is printed
+%%%      in the test case log.</p>
+abort_current_testcase(Reason) ->
+    test_server_ctrl:abort_current_testcase(Reason).

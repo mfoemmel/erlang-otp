@@ -48,8 +48,6 @@
 #endif
 #endif
 
-/* use http processing */
-#define USE_HTTP 
 /* All platforms fail on malloc errors. */
 #define FATAL_MALLOC
 
@@ -412,6 +410,8 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 
 #endif /* __WIN32__ */
 
+#include "packet_parser.h"
+
 #define get_int24(s) ((((unsigned char*) (s))[0] << 16) | \
                       (((unsigned char*) (s))[1] << 8)  | \
                       (((unsigned char*) (s))[2]))
@@ -574,20 +574,6 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 #define INET_IFOPT_NETMASK    5
 #define INET_IFOPT_FLAGS      6
 #define INET_IFOPT_HWADDR     7
-
-/* INET_LOPT_PACKET options */
-#define TCP_PB_RAW     0
-#define TCP_PB_1       1
-#define TCP_PB_2       2
-#define TCP_PB_4       3
-#define TCP_PB_ASN1    4
-#define TCP_PB_RM      5
-#define TCP_PB_CDR     6
-#define TCP_PB_FCGI    7
-#define TCP_PB_LINE_LF 8
-#define TCP_PB_TPKT    9
-#define TCP_PB_HTTP    10
-#define TCP_PB_HTTPH   11
 
 /* INET_LOPT_BIT8 options */
 #define INET_BIT8_CLEAR 0
@@ -801,7 +787,7 @@ typedef struct {
     int   sprotocol;            /* socket protocol:
 				   IPPROTO_TCP|IPPROTO_UDP|IPPROTO_SCTP     */
     int   sfamily;              /* address family */
-    int   htype;                /* header type (TCP only?) */
+    enum PacketParseType htype; /* header type (TCP only?) */
     unsigned int psize;         /* max packet size (TCP only?) */
     int   bit8;                 /* set if bit8f==true and data some data
 				   seen had the 7th bit set */
@@ -990,9 +976,7 @@ typedef struct {
     char*         i_ptr_start;  /* packet start pos in buf */
     int           i_remain;     /* remaining chars to read */
     int           tcp_add_flags;/* Additional TCP descriptor flags */
-#ifdef USE_HTTP
     int           http_state;   /* 0 = response|request  1=headers fields */
-#endif
     inet_async_multi_op *multi_first;/* NULL == no multi-accept-queue, op is in ordinary queue */
     inet_async_multi_op *multi_last;
     MultiTimerData *mtd;        /* Timer structures for multiple accept */
@@ -1035,6 +1019,7 @@ static ErlDrvTermData am_tcp_closed;
 static ErlDrvTermData am_tcp_error;
 static ErlDrvTermData am_udp_error;
 static ErlDrvTermData am_empty_out_q;
+static ErlDrvTermData am_ssl_tls;
 #ifdef HAVE_SCTP
 static ErlDrvTermData am_sctp;
 static ErlDrvTermData am_sctp_error;
@@ -1887,18 +1872,18 @@ static int inet_reply_error(inet_descriptor* desc, int err)
 /* 
 ** Deliver port data from buffer 
 */
-static int inet_port_data(inet_descriptor* desc, char* buf, int len)
+static int inet_port_data(inet_descriptor* desc, const char* buf, int len)
 {
     unsigned int hsz = desc->hsz;
 
     DEBUGF(("inet_port_data(%ld): len = %d\r\n", (long)desc->port, len));
 
     if ((desc->mode == INET_MODE_LIST) || (hsz > len))
-	return driver_output2(desc->port, buf, len, NULL, 0);
+	return driver_output2(desc->port, (char*)buf, len, NULL, 0);
     else if (hsz > 0)
-	return driver_output2(desc->port, buf, hsz, buf+hsz, len-hsz);
+	return driver_output2(desc->port, (char*)buf, hsz, (char*)buf+hsz, len-hsz);
     else
-	return driver_output(desc->port, buf, len);
+	return driver_output(desc->port, (char*)buf, len);
 }
 
 /* 
@@ -1919,96 +1904,6 @@ inet_port_binary_data(inet_descriptor* desc, ErlDrvBinary* bin, int offs, int le
 				    bin, offs+hsz, len-hsz);
 }
 
-#ifdef USE_HTTP
-
-#define HTTP_HDR_HASH_SIZE  53
-#define HTTP_METH_HASH_SIZE 13
-
-static char tspecial[128];
-
-static char* http_hdr_strings[] = {
-  "Cache-Control",
-  "Connection",
-  "Date",
-  "Pragma",
-  "Transfer-Encoding",
-  "Upgrade",
-  "Via",
-  "Accept",
-  "Accept-Charset",
-  "Accept-Encoding",
-  "Accept-Language",
-  "Authorization",
-  "From",
-  "Host",
-  "If-Modified-Since",
-  "If-Match",
-  "If-None-Match",
-  "If-Range",
-  "If-Unmodified-Since",
-  "Max-Forwards",
-  "Proxy-Authorization",
-  "Range",
-  "Referer",
-  "User-Agent",
-  "Age",
-  "Location",
-  "Proxy-Authenticate",
-  "Public",
-  "Retry-After",
-  "Server",
-  "Vary",
-  "Warning",
-  "Www-Authenticate",
-  "Allow",
-  "Content-Base",
-  "Content-Encoding",
-  "Content-Language",
-  "Content-Length",
-  "Content-Location",
-  "Content-Md5",
-  "Content-Range",
-  "Content-Type",
-  "Etag",
-  "Expires",
-  "Last-Modified",
-  "Accept-Ranges",
-  "Set-Cookie",
-  "Set-Cookie2",
-  "X-Forwarded-For",
-  "Cookie",
-  "Keep-Alive",
-  "Proxy-Connection",
-    NULL
-};
-
-
-static char* http_meth_strings[] = {
-  "OPTIONS",
-  "GET",
-  "HEAD",
-  "POST",
-  "PUT",
-  "DELETE",
-  "TRACE",
-    NULL
-};
-
-typedef struct http_atom {
-  struct http_atom* next;   /* next in bucket */
-  unsigned long h;          /* stored hash value */
-  char* name;
-  int   len;
-  int index;                /* index in table + bit-pos */
-  ErlDrvTermData atom;      /* erlang atom rep */
-} http_atom_t;
-
-static http_atom_t http_hdr_table[sizeof(http_hdr_strings)/sizeof(char*)];
-static http_atom_t http_meth_table[sizeof(http_meth_strings)/sizeof(char*)];
-
-static http_atom_t* http_hdr_hash[HTTP_HDR_HASH_SIZE];
-static http_atom_t* http_meth_hash[HTTP_METH_HASH_SIZE];
-
 static ErlDrvTermData am_http_eoh;
 static ErlDrvTermData am_http_header;
 static ErlDrvTermData am_http_request;
@@ -2022,344 +1917,176 @@ static ErlDrvTermData am_http;
 static ErlDrvTermData am_https;
 static ErlDrvTermData am_scheme;
 
-
-
-#define CRNL(ptr) (((ptr)[0] == '\r') && ((ptr)[1] == '\n'))
-#define NL(ptr)   ((ptr)[0] == '\n')
-#define SP(ptr)   (((ptr)[0] == ' ') || ((ptr)[0] == '\t'))
-#define is_tspecial(x) ((((x) > 32) && ((x) < 128)) ? tspecial[(x)] : 1)
-
-#define hash_update(h,c) do { \
-    unsigned long __g; \
-    (h) = ((h) << 4) + (c); \
-    if ((__g = (h) & 0xf0000000)) { \
-       (h) ^= (__g >> 24); \
-       (h) ^= __g; \
-    } \
- } while(0)
-
-static void http_hash(char* name, http_atom_t* entry,
-		      http_atom_t** hash, int hsize)
+static int http_response_inetdrv(void *arg, int major, int minor,
+				 int status, const char* phrase, int phrase_len)
 {
-  unsigned long h = 0;
-  unsigned char* ptr = (unsigned char*) name;
-  int ix;
-  int len = 0;
-
-  while(*ptr != '\0') {
-    hash_update(h, *ptr);
-    ptr++;
-    len++;
-  }
-  ix = h % hsize;
-
-  entry->next = hash[ix];
-  entry->h    = h;
-  entry->name = name;
-  entry->len  = len;
-  entry->atom = driver_mk_atom(name);
-    
-  hash[ix] = entry;
-}
-
-static http_atom_t* http_hash_lookup(char* name, int len,
-				     unsigned long h,
-				     http_atom_t** hash, int hsize)
-{
-  int ix = h % hsize;
-  http_atom_t* ap = hash[ix];
-
-  while (ap != NULL) {
-    if ((ap->h == h) && (ap->len == len) && 
-	(strncmp(ap->name, name, len) == 0))
-      return ap;
-    ap = ap->next;
-  }
-  return NULL;
-}
-     
-
-
-static int http_init(void)
-{
-  int i;
-  unsigned char* ptr;
-
-  for (i = 0; i < 33; i++)
-    tspecial[i] = 1;
-  for (i = 33; i < 127; i++)
-    tspecial[i] = 0;
-  for (ptr = (unsigned char*)"()<>@,;:\\\"/[]?={} \t"; *ptr != '\0'; ptr++)
-    tspecial[*ptr] = 1;
-
-  INIT_ATOM(http_eoh);
-  INIT_ATOM(http_header);
-  INIT_ATOM(http_request);
-  INIT_ATOM(http_response);
-  INIT_ATOM(http_error);
-  INIT_ATOM(abs_path);
-  INIT_ATOM(absoluteURI);
-  am_star = driver_mk_atom("*");
-  INIT_ATOM(undefined);
-  INIT_ATOM(http);
-  INIT_ATOM(https);
-  INIT_ATOM(scheme);
-
-  for (i = 0; i < HTTP_HDR_HASH_SIZE; i++)
-    http_hdr_hash[i] = NULL;
-  for (i = 0; http_hdr_strings[i] != NULL; i++) {
-    http_hdr_table[i].index = i;
-    http_hash(http_hdr_strings[i], 
-	      &http_hdr_table[i], 
-	      http_hdr_hash, HTTP_HDR_HASH_SIZE);
-  }
-
-  for (i = 0; i < HTTP_METH_HASH_SIZE; i++)
-    http_meth_hash[i] = NULL;
-  for (i = 0; http_meth_strings[i] != NULL; i++) {
-    http_meth_table[i].index = i;
-    http_hash(http_meth_strings[i],
-	      &http_meth_table[i], 
-	      http_meth_hash, HTTP_METH_HASH_SIZE);
-  }
-  return 0;
-}
-
-static int
-http_response_message(tcp_descriptor* desc, int major, int minor, int status,
-		      char* phrase, int phrase_len)
-{
-  int i = 0;
-  ErlDrvTermData spec[27];
-
-  if (desc->inet.active == INET_PASSIVE) {
-    /* {inet_async,S,Ref,{ok,{http_response,Version,Status,Phrase}}} */
-    int req;
-    int aid;
+    tcp_descriptor* desc = (tcp_descriptor*) arg;
+    int i = 0;
+    ErlDrvTermData spec[27];
     ErlDrvTermData caller;
-
-    if (deq_async(INETP(desc), &aid, &caller, &req) < 0)
-      return -1;
-    i = LOAD_ATOM(spec, i,  am_inet_async);
-    i = LOAD_PORT(spec, i,  desc->inet.dport);
-    i = LOAD_INT(spec, i,   aid);
-    i = LOAD_ATOM(spec, i,  am_ok);
-    i = LOAD_ATOM(spec, i,  am_http_response);
-    i = LOAD_INT(spec, i, major);
-    i = LOAD_INT(spec, i, minor);
-    i = LOAD_TUPLE(spec, i, 2);
-    i = LOAD_INT(spec, i, status);
-    i = LOAD_STRING(spec, i, phrase, phrase_len);
-    i = LOAD_TUPLE(spec, i, 4);
-    i = LOAD_TUPLE(spec, i, 2);
-    i = LOAD_TUPLE(spec, i, 4);
-    return driver_send_term(desc->inet.port, caller, spec, i);
-  }
-  else {
-    /* {http_response, S, Version, Status, Phrase} */
-    i = LOAD_ATOM(spec, i,  am_http_response);
-    i = LOAD_PORT(spec, i,  desc->inet.dport);
-    i = LOAD_INT(spec, i, major);
-    i = LOAD_INT(spec, i, minor);
-    i = LOAD_TUPLE(spec, i, 2);
-    i = LOAD_INT(spec, i, status);
-    i = LOAD_STRING(spec, i, phrase, phrase_len);
-    i = LOAD_TUPLE(spec, i, 5);
-    return driver_output_term(desc->inet.port, spec, i);
-  }
-}
-
-/*
-** Handle URI syntax:
-**
-**  Request-URI    = "*" | absoluteURI | abs_path
-**  absoluteURI    = scheme ":" *( uchar | reserved )
-**  net_path       = "//" net_loc [ abs_path ]
-**  abs_path       = "/" rel_path
-**  rel_path       = [ path ] [ ";" params ] [ "?" query ]
-**  path           = fsegment *( "/" segment )
-**  fsegment       = 1*pchar
-**  segment        = *pchar
-**  params         = param *( ";" param )
-**  param          = *( pchar | "/" )
-**  query          = *( uchar | reserved )
-**
-**  http_URL       = "http:" "//" host [ ":" port ] [ abs_path ]
-**
-**  host           = <A legal Internet host domain name
-**                   or IP address (in dotted-decimal form),
-**                   as defined by Section 2.1 of RFC 1123>
-**  port           = *DIGIT
-**
-**  {absoluteURI, <scheme>, <host>, <port>, <path+params+query>}
-**       when <scheme> = http | https
-**  {scheme, <scheme>, <chars>}
-**       wheb <scheme> is something else then http or https
-**  {abs_path,  <path>}
-**
-**  <string>  (unknown form)
-**
-*/
-
-/* host [ ":" port ] [ abs_path ] */
-static int
-http_load_absoluteURI(ErlDrvTermData* spec, int i, ErlDrvTermData scheme,
-		      char* uri_ptr, int uri_len)
-{
-  char* p;
-  char* abs_path_ptr;
-  int   abs_path_len;
-
-  if ((p = memchr(uri_ptr, '/', uri_len)) == NULL) {
-    /* host [":" port] */
-    abs_path_ptr = "/";
-    abs_path_len = 1;
-  }
-  else {
-    int n = (p - uri_ptr);
-
-    abs_path_ptr = p;
-    abs_path_len = uri_len - n;
-    uri_len = n;
-  }
-  i = LOAD_ATOM(spec, i, am_absoluteURI);
-  i = LOAD_ATOM(spec, i, scheme);
-
-  /* host[:port]  */
-  if ((p = memchr(uri_ptr, ':', uri_len)) == NULL) {
-    i = LOAD_STRING(spec, i, uri_ptr, uri_len);
-    i = LOAD_ATOM(spec, i, am_undefined);
-  }
-  else {
-    int n = (p - uri_ptr);
-    int port = 0;
-
-    i = LOAD_STRING(spec, i, uri_ptr, n);
-    n = uri_len - (n+1);
-    p++;
-    while(n && isdigit((int) *p)) {
-      port = port*10 + (*p - '0');
-      n--;
-      p++;
-    }
-    if ((n != 0) || (port == 0))
-      i = LOAD_ATOM(spec, i, am_undefined);
-    else
-      i = LOAD_INT(spec, i, port);
-  }
-  i = LOAD_STRING(spec, i, abs_path_ptr, abs_path_len);
-  i = LOAD_TUPLE(spec, i, 5);
-  return i;
-}
-
-static int http_load_uri(ErlDrvTermData* spec, int i, char* uri_ptr, int uri_len)
-{
-  if ((uri_len == 1) && (uri_ptr[0] == '*'))
-    i = LOAD_ATOM(spec, i, am_star);
-  else if ((uri_len <= 1) || (uri_ptr[0] == '/')) {
-    i = LOAD_ATOM(spec, i, am_abs_path);
-    i = LOAD_STRING(spec, i, uri_ptr, uri_len);
-    i = LOAD_TUPLE(spec, i, 2);
-  }
-  else {
-    if ((uri_len>=7) && (STRNCASECMP(uri_ptr, "http://", 7) == 0)) {
-      uri_len -= 7;
-      uri_ptr += 7;
-      return http_load_absoluteURI(spec, i, am_http, uri_ptr, uri_len);
-    }
-    else if ((uri_len>=8) && (STRNCASECMP(uri_ptr, "https://", 8) == 0)) {
-      uri_len -= 8;
-      uri_ptr += 8;    
-      return http_load_absoluteURI(spec, i, am_https, uri_ptr,uri_len);
+    
+    if (desc->inet.active == INET_PASSIVE) {
+        /* {inet_async,S,Ref,{ok,{http_response,Version,Status,Phrase}}} */
+        int req;
+        int aid;
+        
+        if (deq_async(INETP(desc), &aid, &caller, &req) < 0)
+            return -1;
+        i = LOAD_ATOM(spec, i,  am_inet_async);
+        i = LOAD_PORT(spec, i,  desc->inet.dport);
+        i = LOAD_INT(spec, i,   aid);
+        i = LOAD_ATOM(spec, i,  am_ok);
     }
     else {
-      char* ptr;
-      if ((ptr = memchr(uri_ptr, ':', uri_len)) == NULL)
-	i = LOAD_STRING(spec, i, uri_ptr, uri_len);
-      else {
-	int slen = ptr - uri_ptr;
-	i = LOAD_ATOM(spec, i, am_scheme);
-	i = LOAD_STRING(spec, i, uri_ptr, slen);
-	i = LOAD_STRING(spec, i, uri_ptr+(slen+1), uri_len-(slen+1));
-	i = LOAD_TUPLE(spec, i, 3);
-      }
+        /* {http, S, {http_response,Version,Status,Phrase}} */
+        i = LOAD_ATOM(spec, i, am_http);
+        i = LOAD_PORT(spec, i, desc->inet.dport);
     }
-  }
-  return i;
+    i = LOAD_ATOM(spec, i,  am_http_response);
+    i = LOAD_INT(spec, i, major);
+    i = LOAD_INT(spec, i, minor);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_INT(spec, i, status);
+    i = LOAD_STRING(spec, i, phrase, phrase_len);
+    i = LOAD_TUPLE(spec, i, 4);
+    
+    if (desc->inet.active == INET_PASSIVE) {
+        i = LOAD_TUPLE(spec, i, 2);
+        i = LOAD_TUPLE(spec, i, 4);
+        ASSERT(i<=27);
+        return driver_send_term(desc->inet.port, caller, spec, i);
+    }
+    else {
+        i = LOAD_TUPLE(spec, i, 3);
+        ASSERT(i<=27);
+        return driver_output_term(desc->inet.port, spec, i);
+    }
 }
 
+static int http_load_uri(ErlDrvTermData* spec, int i, const PacketHttpURI* uri)
+{
+    ErlDrvTermData scheme;
+
+    switch (uri->type) {
+    case URI_STAR:
+        i = LOAD_ATOM(spec, i, am_star);
+        break;
+    case URI_ABS_PATH:
+        i = LOAD_ATOM(spec, i, am_abs_path);
+        i = LOAD_STRING(spec, i, uri->s1_ptr, uri->s1_len);
+        i = LOAD_TUPLE(spec, i, 2);
+        break;
+    case URI_HTTP:
+        scheme = am_http;
+        goto http_common;
+    case URI_HTTPS:
+        scheme = am_https;
+    http_common:
+        i = LOAD_ATOM(spec, i, am_absoluteURI);
+        i = LOAD_ATOM(spec, i, scheme);
+        i = LOAD_STRING(spec, i, uri->s1_ptr, uri->s1_len);
+        if (uri->port == 0) {
+            i = LOAD_ATOM(spec, i, am_undefined);
+        } else {
+            i = LOAD_INT(spec, i, uri->port);
+        }
+        i = LOAD_STRING(spec, i, uri->s2_ptr, uri->s1_len);
+        i = LOAD_TUPLE(spec, i, 5);
+        break;
+
+    case URI_STRING:
+        i = LOAD_STRING(spec, i, uri->s1_ptr, uri->s1_len);
+        break;
+    case URI_SCHEME:
+        i = LOAD_ATOM(spec, i, am_scheme);
+        i = LOAD_STRING(spec, i, uri->s1_ptr, uri->s1_len);
+        i = LOAD_STRING(spec, i, uri->s2_ptr, uri->s2_len);
+        i = LOAD_TUPLE(spec, i, 3);
+    }
+    return i;
+}
+
+
 static int
-http_request_message(tcp_descriptor* desc, http_atom_t* meth, char* meth_ptr,
-		     int meth_len, char* uri_ptr, int uri_len,
+http_request_inetdrv(void* arg, const http_atom_t* meth, const char* meth_ptr,
+		     int meth_len, const PacketHttpURI* uri,
 		     int major, int minor)
 {
-  int i = 0;
-  ErlDrvTermData spec[43];
-
-  if (desc->inet.active == INET_PASSIVE) {
-    /* {inet_async, S, Ref, {ok,{http_request,Meth,Uri,Version}}} */
-    int req;
-    int aid;
+    tcp_descriptor* desc = (tcp_descriptor*) arg;
+    int i = 0;
+    ErlDrvTermData spec[43];
     ErlDrvTermData caller;
+    
+    if (desc->inet.active == INET_PASSIVE) {
+        /* {inet_async, S, Ref, {ok,{http_request,Meth,Uri,Version}}} */
+        int req;
+        int aid;
+        
+        if (deq_async(INETP(desc), &aid, &caller, &req) < 0)
+            return -1;
+        i = LOAD_ATOM(spec, i,  am_inet_async);
+        i = LOAD_PORT(spec, i,  desc->inet.dport);
+        i = LOAD_INT(spec, i,   aid);
+        i = LOAD_ATOM(spec, i,  am_ok);
+    }
+    else {
+        /* {http, S, {http_request,Meth,Uri,Version}}} */
+        i = LOAD_ATOM(spec, i, am_http);
+        i = LOAD_PORT(spec, i, desc->inet.dport);
+    }
 
-    if (deq_async(INETP(desc), &aid, &caller, &req) < 0)
-      return -1;
-    i = LOAD_ATOM(spec, i,  am_inet_async);
-    i = LOAD_PORT(spec, i,  desc->inet.dport);
-    i = LOAD_INT(spec, i,   aid);
-    i = LOAD_ATOM(spec, i,  am_ok);
     i = LOAD_ATOM(spec, i,  am_http_request);
     if (meth != NULL)
       i = LOAD_ATOM(spec, i, meth->atom);
     else
       i = LOAD_STRING(spec, i, meth_ptr, meth_len);
-    i = http_load_uri(spec, i, uri_ptr, uri_len);
+    i = http_load_uri(spec, i, uri);
     i = LOAD_INT(spec, i, major);
     i = LOAD_INT(spec, i, minor);
     i = LOAD_TUPLE(spec, i, 2);
     i = LOAD_TUPLE(spec, i, 4);
-    i = LOAD_TUPLE(spec, i, 2);
-    i = LOAD_TUPLE(spec, i, 4);
-    ASSERT(i <= 43);
-    return driver_send_term(desc->inet.port, caller, spec, i);
-  }
-  else {
-    /* {http_request, S, Meth, Uri, Version} */
-    i = LOAD_ATOM(spec, i,  am_http_request);
-    i = LOAD_PORT(spec, i,  desc->inet.dport);
-    if (meth != NULL)
-      i = LOAD_ATOM(spec, i, meth->atom);
-    else
-      i = LOAD_STRING(spec, i, meth_ptr, meth_len);
-    i = http_load_uri(spec, i, uri_ptr, uri_len);
-    i = LOAD_INT(spec, i, major);
-    i = LOAD_INT(spec, i, minor);
-    i = LOAD_TUPLE(spec, i, 2);
-    i = LOAD_TUPLE(spec, i, 5);
-    ASSERT(i <= 43);
-    return driver_output_term(desc->inet.port, spec, i);
-  }
+
+    if (desc->inet.active == INET_PASSIVE) {
+        i = LOAD_TUPLE(spec, i, 2);
+        i = LOAD_TUPLE(spec, i, 4);
+        ASSERT(i <= 43);
+        return driver_send_term(desc->inet.port, caller, spec, i);
+    }
+    else {
+        i = LOAD_TUPLE(spec, i, 3);
+        ASSERT(i <= 43);
+        return driver_output_term(desc->inet.port, spec, i);
+    }
 }
 
 static int
-http_header_message(tcp_descriptor* desc, http_atom_t* name, char* name_ptr,
-		    int name_len, char* value_ptr, int value_len)
+http_header_inetdrv(void* arg, const http_atom_t* name, const char* name_ptr,
+		    int name_len, const char* value_ptr, int value_len)
 {
-  int i = 0;
-  ErlDrvTermData spec[26];
-
-  if (desc->inet.active == INET_PASSIVE) {
-    /* {inet_async,S,Ref,{ok,{http_header,Bit,Name,IValue,Value}} */
-    int req;
-    int aid;
+    tcp_descriptor* desc = (tcp_descriptor*) arg;
+    int i = 0;
+    ErlDrvTermData spec[26];
     ErlDrvTermData caller;
+    
+    if (desc->inet.active == INET_PASSIVE) {
+        /* {inet_async,S,Ref,{ok,{http_header,Bit,Name,IValue,Value}} */
+        int req;
+        int aid;
+        
+        
+        if (deq_async(INETP(desc), &aid, &caller, &req) < 0)
+            return -1;
+        i = LOAD_ATOM(spec, i,  am_inet_async);
+        i = LOAD_PORT(spec, i,  desc->inet.dport);
+        i = LOAD_INT(spec, i,   aid);
+        i = LOAD_ATOM(spec, i,  am_ok);
+    }
+    else {
+        /* {http, S, {http_header,Bit,Name,IValue,Value}} */
+        i = LOAD_ATOM(spec, i, am_http);
+        i = LOAD_PORT(spec, i, desc->inet.dport);
+    }
 
-    if (deq_async(INETP(desc), &aid, &caller, &req) < 0)
-      return -1;
-    i = LOAD_ATOM(spec, i,  am_inet_async);
-    i = LOAD_PORT(spec, i,  desc->inet.dport);
-    i = LOAD_INT(spec, i,   aid);
-    i = LOAD_ATOM(spec, i,  am_ok);
     i = LOAD_ATOM(spec, i,  am_http_header);
     if (name != NULL) {
       i = LOAD_INT(spec, i,  name->index+1);
@@ -2372,33 +2099,23 @@ http_header_message(tcp_descriptor* desc, http_atom_t* name, char* name_ptr,
     i = LOAD_ATOM(spec, i, am_undefined);
     i = LOAD_STRING(spec, i, value_ptr, value_len);
     i = LOAD_TUPLE(spec, i, 5);
-    i = LOAD_TUPLE(spec, i, 2);
-    i = LOAD_TUPLE(spec, i, 4);
-    ASSERT(i <= 26);
-    return driver_send_term(desc->inet.port, caller, spec, i);
-  }
-  else {
-    /* {http_header,S,Bit,Name,Code,Value} */
-    i = LOAD_ATOM(spec, i,  am_http_header);
-    i = LOAD_PORT(spec, i,  desc->inet.dport);
-    if (name != NULL) {
-      i = LOAD_INT(spec, i,  name->index+1);
-      i = LOAD_ATOM(spec, i, name->atom);
+
+    if (desc->inet.active == INET_PASSIVE) {
+        i = LOAD_TUPLE(spec, i, 2);
+        i = LOAD_TUPLE(spec, i, 4);
+        ASSERT(i <= 26);
+        return driver_send_term(desc->inet.port, caller, spec, i);
     }
     else {
-      i = LOAD_INT(spec, i,  0);
-      i = LOAD_STRING(spec, i, name_ptr, name_len);
+        i = LOAD_TUPLE(spec, i, 3);
+        ASSERT(i <= 26);
+        return driver_output_term(desc->inet.port, spec, i);
     }
-    i = LOAD_ATOM(spec, i, am_undefined);
-    i = LOAD_STRING(spec, i, value_ptr, value_len);
-    i = LOAD_TUPLE(spec, i, 6);
-    ASSERT(i <= 26);
-    return driver_output_term(desc->inet.port, spec, i);
-  }
 }
 
-static int http_eoh_message(tcp_descriptor* desc)
+static int http_eoh_inetdrv(void* arg)
 {
+  tcp_descriptor* desc = (tcp_descriptor*) arg;
   int i = 0;
   ErlDrvTermData spec[14];
 
@@ -2421,17 +2138,19 @@ static int http_eoh_message(tcp_descriptor* desc)
     return driver_send_term(desc->inet.port, caller, spec, i);
   }
   else {
-    /* {http_eoh,S} */
-    i = LOAD_ATOM(spec, i,  am_http_eoh);
-    i = LOAD_PORT(spec, i,  desc->inet.dport);
-    i = LOAD_TUPLE(spec, i, 2);
-    ASSERT(i <= 14);
-    return driver_output_term(desc->inet.port, spec, i);
+      /* {http, S, http_eoh} */
+      i = LOAD_ATOM(spec, i,  am_http);
+      i = LOAD_PORT(spec, i,  desc->inet.dport);
+      i = LOAD_ATOM(spec, i,  am_http_eoh);
+      i = LOAD_TUPLE(spec, i, 3);
+      ASSERT(i <= 14);
+      return driver_output_term(desc->inet.port, spec, i);
   }
 }
 
-static int http_error_message(tcp_descriptor* desc, char* buf, int len)
+static int http_error_inetdrv(void* arg, const char* buf, int len)
 {
+  tcp_descriptor* desc = (tcp_descriptor*) arg;
   int i = 0;
   ErlDrvTermData spec[19];
 
@@ -2456,209 +2175,89 @@ static int http_error_message(tcp_descriptor* desc, char* buf, int len)
     return driver_send_term(desc->inet.port, caller, spec, i);
   }
   else {
-    /* {http_error,S,Line} */
-    i = LOAD_ATOM(spec, i,  am_http_error);
-    i = LOAD_PORT(spec, i,  desc->inet.dport);
-    i = LOAD_STRING(spec, i, buf, len);
-    i = LOAD_TUPLE(spec, i, 3);
-    ASSERT(i <= 19);
-    return driver_output_term(desc->inet.port, spec, i);
+      /* {http, S, {http_error,Line} */
+      i = LOAD_ATOM(spec, i,  am_http);
+      i = LOAD_PORT(spec, i,  desc->inet.dport);
+      i = LOAD_ATOM(spec, i,  am_http_error);
+      i = LOAD_STRING(spec, i, buf, len);
+      i = LOAD_TUPLE(spec, i, 2);
+      i = LOAD_TUPLE(spec, i, 3);
+      ASSERT(i <= 19);
+      return driver_output_term(desc->inet.port, spec, i);
   }
 }
 
-/*
-** load http message:
-**  {http_eoh, S}                          - end of headers
-**  {http_header,   S, Key, Value}         - Key = atom() | string()
-**  {http_request,  S, Method,Url,Version}
-**  {http_response, S, Version, Status, Message}
-**  {http_error,    S, Error-Line}
-*/
-static int http_message(tcp_descriptor* desc, char* buf, int len)
+
+static
+int ssl_tls_inetdrv(void* arg, unsigned type, unsigned major, unsigned minor,
+                    const char* buf, int len, const char* prefix, int plen)
 {
-  char* ptr = buf;
-  int n = len;
+    tcp_descriptor* desc = (tcp_descriptor*) arg;
+    int i = 0;
+    ErlDrvTermData spec[28];
+    ErlDrvTermData caller;
+    ErlDrvBinary* bin;
+    int ret;
 
-  /* remove trailing CRNL (accept NL as well) */
-  if ((n >= 2) && (buf[n-2] == '\r'))
-    n -= 2;
-  else if ((n >= 1) && (buf[n-1] == '\n'))
-    n -= 1;
-
-  if (desc->http_state == 0) {
-    unsigned long h;
-    http_atom_t* meth;
-    char* meth_ptr;
-    int   meth_len;
-    int c;
-    /* start-line = Request-Line | Status-Line */
-    if (n == 0)
-	return -1;
-    h = 0;
-    meth_ptr = ptr;
-    while (n && !is_tspecial((unsigned char)*ptr)) {
-      c = *ptr;
-      hash_update(h, c);
-      ptr++;
-      n--;
+    if ((bin = driver_alloc_binary(plen+len)) == NULL)
+        return async_error(&desc->inet, ENOMEM);
+    memcpy(bin->orig_bytes+plen, buf, len);
+    if (plen) {
+        memcpy(bin->orig_bytes, prefix, plen);
+        len += plen;
     }
-    if ((meth_len = (ptr - meth_ptr)) == 0)
-      return -1;
-    meth = http_hash_lookup(meth_ptr, meth_len, h,
-			    http_meth_hash, HTTP_METH_HASH_SIZE);
-    if (n) {
-      if ((*ptr == '/') && (strncmp(buf, "HTTP", 4) == 0)) {
-	int major  = 0;
-	int minor  = 0;
-	int status = 0;
-	/* Status-Line = HTTP-Version SP 
-	 *              Status-Code SP Reason-Phrase 
-	 *              CRNL
-	 * HTTP-Version   = "HTTP" "/" 1*DIGIT "." 1*DIGIT
-	 */
-	ptr++;
-	n--;
-	if (!n || !isdigit((int) *ptr)) return -1;
-	while(n && isdigit((int) *ptr)) {
-	  major = 10*major + (*ptr - '0');
-	  ptr++;
-	  n--;
-	}
-	if (!n || (*ptr != '.'))
-	  return -1;
-	ptr++;
-	n--;
-	if (!n || !isdigit((int) *ptr)) return -1;
-	while(n && isdigit((int) *ptr)) {
-	  minor = 10*minor + (*ptr - '0');
-	  ptr++;
-	  n--;
-	}
-	if (!n || !SP(ptr))
-	  return -1;
 
-	while(n && SP(ptr)) { ptr++; n--; }
+    if (desc->inet.active == INET_PASSIVE) {
+        /* {inet_async,S,Ref,{ok,{ssl_tls,...}}} */
+        int req;
+        int aid;
 
-	while(n && isdigit((int) *ptr)) {
-	  status = 10*status + (*ptr - '0');
-	  ptr++;
-	  n--;
-	}
-	if (!n || !SP(ptr))
-	  return -1;
-
-	while(n && SP(ptr)) { ptr++; n--; }
-
-	/* NOTE: the syntax allows empty reason phrases */
-	desc->http_state++;
-
-	return http_response_message(desc, major, minor, status,
-				     (char*)ptr, n);
-      }
-      else if (SP(ptr)) {
-	/* Request-Line = Method SP Request-URI SP HTTP-Version CRLF */
-	char* uri_ptr;
-	int   uri_len;
-	int major  = 0;
-	int minor  = 0;
-	
-	while(n && SP(ptr)) { ptr++; n--; }
-	uri_ptr = ptr;
-	while(n && !SP(ptr)) { ptr++; n--; }
-	if ((uri_len = (ptr - uri_ptr)) == 0)
-	  return -1;
-	while(n && SP(ptr)) { ptr++; n--; }
-	if (n == 0) {
-	  desc->http_state++;
-	  return http_request_message(desc, meth,
-				      meth_ptr, meth_len,
-				      uri_ptr, uri_len,
-				      0, 9);
-	}
-	if (n < 8)
-	  return -1;
-	if (strncmp(ptr, "HTTP/", 5) != 0)
-	  return -1;
-	ptr += 5;
-	n   -= 5;
-
-	if (!n || !isdigit((int) *ptr)) return -1;
-	while(n && isdigit((int) *ptr)) {
-	  major = 10*major + (*ptr - '0');
-	  ptr++;
-	  n--;
-	}
-
-	if (!n || (*ptr != '.'))
-	  return -1;
-	ptr++;
-	n--;
-
-	if (!n || !isdigit((int) *ptr)) return -1;
-	while(n && isdigit((int) *ptr)) {
-	  minor = 10*minor + (*ptr - '0');
-	  ptr++;
-	  n--;
-	}
-	desc->http_state++;
-	return http_request_message(desc, meth,
-				    meth_ptr, meth_len,
-				    uri_ptr, uri_len,
-				    major, minor);
-      }
+        if (deq_async(INETP(desc), &aid, &caller, &req) < 0) {
+            ret = -1;
+            goto done;
+        }
+        i = LOAD_ATOM(spec, i,  am_inet_async);
+        i = LOAD_PORT(spec, i,  desc->inet.dport);
+        i = LOAD_INT(spec, i,   aid);
+        i = LOAD_ATOM(spec, i,  am_ok);
     }
-    return -1;
-  }
-  else {
-    int up = 1;      /* make next char uppercase */
-    http_atom_t* name;
-    char* name_ptr;
-    int   name_len;
-    unsigned long h;
 
-    if (n == 0) {
-      /* end of headers */
-      desc->http_state = 0;  /* reset state (for next request) */
-      return http_eoh_message(desc);
-    }
-    h = 0;
-    while(n && !is_tspecial((unsigned char)*ptr)) {
-      int c = *ptr;
-      if (up) {
-	if (islower(c)) {
-	  c = toupper(c);
-	}
-	up = 0;
-      }
-      else {
-	if (isupper(c))
-	  c = tolower(c);
-	else if (c == '-')
-	  up = 1;
-      }
-      *ptr = c;
-      hash_update(h, c);
-      ptr++;
-      n--;
-    }
-    if (*ptr != ':') {
-      /* Error case */
-      return -1;
-    }
-    name_ptr = buf;
-    name_len = (ptr - buf);
-    name = http_hash_lookup(name_ptr, name_len, h,
-			    http_hdr_hash, HTTP_HDR_HASH_SIZE);
-    ptr++;
-    n--;
-    /* Skip white space */
-    while(n && SP(ptr)) { ptr++; n--; }
+    /* {ssl_tls,S,ContentType,{Major,Minor},Bin} */
+    i = LOAD_ATOM(spec, i,  am_ssl_tls);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    i = LOAD_INT(spec, i,   type);
+    i = LOAD_INT(spec, i,   major);
+    i = LOAD_INT(spec, i,   minor);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_BINARY(spec, i, bin, 0, len);
+    i = LOAD_TUPLE(spec, i, 5);
 
-    return http_header_message(desc, name, name_ptr, name_len,
-			       ptr, n);
-  }
+    if (desc->inet.active == INET_PASSIVE) {
+        i = LOAD_TUPLE(spec, i, 2);
+        i = LOAD_TUPLE(spec, i, 4);
+        ASSERT(i <= 28);
+        ret = driver_send_term(desc->inet.port, caller, spec, i);
+    }
+    else {
+        ASSERT(i <= 28);
+        ret = driver_output_term(desc->inet.port, spec, i);
+    }
+done:
+    driver_free_binary(bin);
+    return ret;
 }
-#endif
+
+
+static PacketCallbacks packet_callbacks =
+{
+    http_response_inetdrv,
+    http_request_inetdrv,
+    http_eoh_inetdrv,
+    http_header_inetdrv,
+    http_error_inetdrv,
+    ssl_tls_inetdrv
+};
+
 
 /* 
 ** passive mode reply:
@@ -2666,7 +2265,7 @@ static int http_message(tcp_descriptor* desc, char* buf, int len)
 ** NB: this is for TCP only;
 ** UDP and SCTP use inet_async_binary_data .
 */
-static int inet_async_data(inet_descriptor* desc, char* buf, int len)
+static int inet_async_data(inet_descriptor* desc, const char* buf, int len)
 {
     unsigned int hsz = desc->hsz;
     ErlDrvTermData spec[20];
@@ -3303,7 +2902,7 @@ inet_async_binary_data
 ** active mode message:
 **        {tcp, S, [H1,...Hsz | Data]}
 */
-static int tcp_message(inet_descriptor* desc, char* buf, int len)
+static int tcp_message(inet_descriptor* desc, const char* buf, int len)
 {
     unsigned int hsz = desc->hsz;
     ErlDrvTermData spec[20];
@@ -3531,52 +3130,9 @@ static int packet_error_message(udp_descriptor* udesc, int err)
     return driver_output_term(desc->port, spec, i);
 }
 
-/*
-** The fcgi header is 8 bytes. After that comes the data and
-** possibly some padding.
-** return length of the header (and total length int plen)
-** return -1 when not enough bytes
-** return -2 when error
-*/
-#define FCGI_VERSION_1		1
-
-struct fcgi_head {
-  unsigned char version;
-  unsigned char type;
-  unsigned char requestIdB1;
-  unsigned char requestIdB0;
-  unsigned char contentLengthB1;
-  unsigned char contentLengthB0;
-  unsigned char paddingLength;
-  unsigned char reserved;
-};
-
-
-#define CDR_MAGIC "GIOP"
-
-struct cdr_head {
-    unsigned char magic[4];        /* 4 bytes must be 'GIOP' */
-    unsigned char major;           /* major version */ 
-    unsigned char minor;           /* minor version */
-    unsigned char flags;           /* bit 0: 0 == big endian, 1 == little endian 
-				      bit 1: 1 == more fragments follow
-				   */
-    unsigned char message_type;    /* message type ... */
-    unsigned char message_size[4]; /* size in (flags bit 0 byte order) */
-};
-
-
-#define TPKT_VRSN 3
-
-struct tpkt_head {
-    unsigned char vrsn;             /* contains TPKT_VRSN */
-    unsigned char reserved;
-    unsigned char packet_length[2]; /* size incl header, big-endian (?) */
-};
-
 
 /* scan buffer for bit 7 */
-static void scanbit8(inet_descriptor* desc, char* buf, int len)
+static void scanbit8(inet_descriptor* desc, const char* buf, int len)
 {
     int c;
 
@@ -3598,33 +3154,25 @@ static void scanbit8(inet_descriptor* desc, char* buf, int len)
 static int tcp_reply_data(tcp_descriptor* desc, char* buf, int len)
 {
     int code;
+    const char* body = buf;
+    int bodylen = len;
+    
+    packet_get_body(desc->inet.htype, &body, &bodylen);
 
-    /* adjust according to packet type */
-    switch(desc->inet.htype) {
-    case TCP_PB_1:  buf += 1; len -= 1; break;
-    case TCP_PB_2:  buf += 2; len -= 2; break;
-    case TCP_PB_4:  buf += 4; len -= 4; break;
-    case TCP_PB_FCGI:
-	len -= ((struct fcgi_head*)buf)->paddingLength;
-	break;
+    scanbit8(INETP(desc), body, bodylen);
+
+    if (desc->inet.deliver == INET_DELIVER_PORT) {
+        code = inet_port_data(INETP(desc), body, bodylen);
     }
-
-    scanbit8(INETP(desc), buf, len);
-
-    if (desc->inet.deliver == INET_DELIVER_PORT)
-        code = inet_port_data(INETP(desc), buf, len);
-#ifdef USE_HTTP
-    else if ((desc->inet.htype == TCP_PB_HTTP) ||
-	     (desc->inet.htype == TCP_PB_HTTPH)) {
-        if ((code = http_message(desc, buf, len)) < 0)
-	    http_error_message(desc, buf, len);
-	code = 0;
+    else if ((code=packet_parse(desc->inet.htype, buf, len,
+                                &desc->http_state, &packet_callbacks,
+                                desc)) == 0) {
+        /* No body parsing, return raw binary */
+        if (desc->inet.active == INET_PASSIVE)
+            return inet_async_data(INETP(desc), body, bodylen);
+        else
+            code = tcp_message(INETP(desc), body, bodylen);
     }
-#endif    
-    else if (desc->inet.active == INET_PASSIVE)
-        return inet_async_data(INETP(desc), buf, len);
-    else
-        code = tcp_message(INETP(desc), buf, len);
 
     if (code < 0)
 	return code;
@@ -3637,33 +3185,25 @@ static int
 tcp_reply_binary_data(tcp_descriptor* desc, ErlDrvBinary* bin, int offs, int len)
 {
     int code;
+    const char* buf = bin->orig_bytes + offs;
+    const char* body = buf;
+    int bodylen = len;
 
-    /* adjust according to packet type */
-    switch(desc->inet.htype) {
-    case TCP_PB_1:  offs += 1; len -= 1; break;
-    case TCP_PB_2:  offs += 2; len -= 2; break;
-    case TCP_PB_4:  offs += 4; len -= 4; break;
-    case TCP_PB_FCGI:
-	len -= ((struct fcgi_head*)(bin->orig_bytes+offs))->paddingLength;
-	break;
-    }
+    packet_get_body(desc->inet.htype, &body, &bodylen);
+    offs = body - bin->orig_bytes; /* body offset now */
 
-    scanbit8(INETP(desc), bin->orig_bytes+offs, len);
+    scanbit8(INETP(desc), body, bodylen);
 
     if (desc->inet.deliver == INET_DELIVER_PORT)
-        code = inet_port_binary_data(INETP(desc), bin, offs, len);
-#ifdef USE_HTTP
-    else if ((desc->inet.htype == TCP_PB_HTTP) ||
-	     (desc->inet.htype == TCP_PB_HTTPH)) {
-        if ((code = http_message(desc, bin->orig_bytes+offs, len)) < 0)
-	    http_error_message(desc, bin->orig_bytes+offs, len);
-	code = 0;
+        code = inet_port_binary_data(INETP(desc), bin, offs, bodylen);
+    else if ((code=packet_parse(desc->inet.htype, buf, len, &desc->http_state,
+                                     &packet_callbacks,desc)) == 0) {
+        /* No body parsing, return raw data */
+        if (desc->inet.active == INET_PASSIVE)
+            return inet_async_binary_data(INETP(desc), 0, bin, offs, bodylen, NULL);
+        else
+            code = tcp_binary_message(INETP(desc), bin, offs, bodylen);
     }
-#endif
-    else if (desc->inet.active == INET_PASSIVE)
-	return inet_async_binary_data(INETP(desc), 0, bin, offs, len, NULL);
-    else
-	code = tcp_binary_message(INETP(desc), bin, offs, len);
     if (code < 0)
 	return code;
     if (desc->inet.active == INET_ONCE)
@@ -3766,6 +3306,7 @@ static int inet_init()
     INIT_ATOM(tcp_error);
     INIT_ATOM(udp_error);
     INIT_ATOM(empty_out_q);
+    INIT_ATOM(ssl_tls);
 #ifdef HAVE_SCTP
     /* Check the size of SCTP AssocID -- currently both this driver and the
        Erlang part require 32 bit: */
@@ -3881,8 +3422,21 @@ static int inet_init()
     ** INIT_ATOM(bound);
     ** INIT_ATOM(listen);
     */
-#endif
-    
+#endif /* HAVE_SCTP */
+
+    INIT_ATOM(http_eoh);
+    INIT_ATOM(http_header);
+    INIT_ATOM(http_request);
+    INIT_ATOM(http_response);
+    INIT_ATOM(http_error);
+    INIT_ATOM(abs_path);
+    INIT_ATOM(absoluteURI);
+    am_star = driver_mk_atom("*");
+    INIT_ATOM(undefined);
+    INIT_ATOM(http);
+    INIT_ATOM(https);
+    INIT_ATOM(scheme);
+
     /* add TCP, UDP and SCTP drivers */
 #ifdef _OSE_
     add_ose_tcp_drv_entry(&tcp_inet_driver_entry);
@@ -3896,9 +3450,6 @@ static int inet_init()
 #endif /* _OSE_ */
     /* remove the dummy inet driver */
     remove_driver_entry(&inet_driver_entry);
-#ifdef USE_HTTP
-    http_init();
-#endif
     return 0;
 
  error:
@@ -4932,7 +4483,7 @@ static int inet_set_opts(inet_descriptor* desc, char* ptr, int len)
     int ival;
     char* arg_ptr;
     int arg_sz;
-    int old_htype = desc->htype;
+    enum PacketParseType old_htype = desc->htype;
     int old_active = desc->active;
     int propagate = 0; /* Set to 1 if failure to set this option
 			  should be propagated to erlang (not all 
@@ -7494,9 +7045,7 @@ static ErlDrvData tcp_inet_start(ErlDrvPort port, char* args)
     desc->i_remain = 0;
     desc->i_bufsz = 0;
     desc->tcp_add_flags = 0;
-#ifdef USE_HTTP
     desc->http_state = 0;
-#endif
     desc->mtd = NULL;
     desc->multi_first = desc->multi_last = NULL;
     DEBUGF(("tcp_inet_start(%ld) }\r\n", (long)port));
@@ -8157,239 +7706,43 @@ static int tcp_remain(tcp_descriptor* desc, int* len)
     int nfill = (desc->i_ptr - desc->i_buf->orig_bytes); /* filled */
     int nsz   = desc->i_bufsz - nfill;                   /* remain */
     int n = desc->i_ptr - ptr;  /* number of bytes read */
-    int plen;
-    int hlen;
+    int tlen;
 
     DEBUGF(("tcp_remain(%ld): s=%d, n=%d, nfill=%d nsz=%d\r\n", 
 	    (long)desc->inet.port, desc->inet.s, n, nfill, nsz));
 
-    switch(desc->inet.htype) {
-    case TCP_PB_RAW:
-	if (n == 0) goto more;
-	else {
-	    *len = n;
-	    DEBUGF((" => nothing remain packet=%d\r\n", n));	    
-	    return 0;  /* deliver */
-	}
-
-    case TCP_PB_1:
-	/* TCP_PB_1:    [L0 | Data] */
-	hlen = 1;
-	if (n < hlen) goto more;
-	plen = get_int8(ptr);
-	goto remain;
-
-    case TCP_PB_2:
-	/* TCP_PB_2:    [L1,L0 | Data] */
-	hlen = 2;
-	if (n < hlen) goto more;
-	plen = get_int16(ptr);
-	goto remain;
-
-    case TCP_PB_4:
-	/* TCP_PB_4:    [L3,L2,L1,L0 | Data] */
-	hlen = 4;
-	if (n < hlen) goto more;
-	plen = get_int32(ptr);
-	goto remain;
-
-    case TCP_PB_RM:
-	/* TCP_PB_RM:    [L3,L2,L1,L0 | Data] 
-	 ** where MSB (bit) is used to signal end of record
-	 */
-	hlen = 4;
-	if (n < hlen) goto more;
-	plen = get_int32(ptr) & 0x7fffffff;
-	goto remain;
-
-    case TCP_PB_LINE_LF: {
-	/* TCP_PB_LINE_LF:  [Data ... \n]  */
-	char* ptr2;
-	if  ((ptr2 = memchr(ptr, '\n', n)) == NULL) {
-	    if ((nsz == 0) && (nfill == n)) { /* buffer full */
-		*len = n;
-		DEBUGF((" => line buffer full (no NL)=%d\r\n", n));
-		return 0;
-	    }
-	    goto more;
-	}
-	else {
-	    *len = (ptr2 - ptr) + 1;  /* include newline */
-	    DEBUGF((" => nothing remain packet=%d\r\n", *len));
-	    return 0;
-	}
+    tlen = packet_get_length(desc->inet.htype, ptr, n, 
+                             desc->inet.psize, desc->i_bufsz,
+                             &desc->http_state);
+    if (tlen > 0) {
+        if (tlen <= n) { /* got a packet */
+            *len = tlen;
+            DEBUGF((" => nothing remain packet=%d\r\n", tlen));
+            return 0;
+        }
+        else { /* need known more */
+            if (tcp_expand_buffer(desc, tlen) < 0)
+                return -1;
+            *len = tlen - n;
+            DEBUGF((" => remain=%d\r\n", *len));
+            return *len;
+        }
+    }
+    else if (tlen == 0) { /* need unknown more */
+        *len = 0;
+        if (nsz == 0) {
+            if (nfill == n)
+                goto error;
+            DEBUGF((" => restart more=%d\r\n", nfill - n));
+            return nfill - n;
+        }
+        else {
+            DEBUGF((" => more=%d \r\n", nsz));
+            return nsz;
+        }	    
     }
 
-    case TCP_PB_ASN1: {
-	/* TCP_PB_ASN1: handles long (4 bytes) or short length format */
-	char* tptr = ptr;
-	int length;
-	int nn = n;
-
-	if (n < 2) goto more;
-	nn--;
-	if ((*tptr++ & 0x1f) == 0x1f) { /* Long tag format */
-	    while(nn && ((*tptr & 0x80) == 0x80)) {
-		tptr++;
-		nn--;
-	    }
-	    if (nn < 2) goto more;
-	    tptr++;
-	    nn--;
-	}
-
-	/* tptr now point to length field and n characters remain */
-	length = *tptr & 0x7f;
-	if ((*tptr & 0x80) == 0x80) {   /* Long length format */
-	    tptr++;
-	    nn--;
-	    if (nn < length) goto more;
-	    switch(length) {
-	    case 0: plen = 0; break;
-	    case 1: plen = get_int8(tptr);  tptr += 1; break;
-	    case 2: plen = get_int16(tptr); tptr += 2; break;
-	    case 3: plen = get_int24(tptr); tptr += 3; break;
-	    case 4: plen = get_int32(tptr); tptr += 4; break;
-	    default: goto error; /* error */
-	    }
-	}
-	else {
-	    tptr++;
-	    plen = length;
-	}
-	hlen = (tptr-ptr);
-	goto remain;
-    }
-
-
-    case TCP_PB_CDR: {
-	struct cdr_head* hp;
-	hlen = sizeof(struct cdr_head);
-	if (n < hlen) goto more;
-	hp = (struct cdr_head*) ptr;
-	if (sys_memcmp(hp->magic, CDR_MAGIC, 4) != 0)
-	    goto error;
-	if (hp->flags & 0x01) /* Byte ordering flag */
-	    plen = get_little_int32(hp->message_size);
-	else
-	    plen = get_int32(hp->message_size);
-	goto remain;
-    }
-
-    case TCP_PB_FCGI: {
-	struct fcgi_head* hp;
-	hlen = sizeof(struct fcgi_head);
-	if (n < hlen) goto more;
-	hp = (struct fcgi_head*) ptr;
-	if (hp->version != FCGI_VERSION_1)
-	    goto error;			/* ERROR, unknown header version */
-	plen = ((hp->contentLengthB1 << 8) | hp->contentLengthB0)
-	    + hp->paddingLength;
-	goto remain;
-    }
-#ifdef USE_HTTP
-    case TCP_PB_HTTPH:
-	desc->http_state = 1;
-    case TCP_PB_HTTP: {
-        /* TCP_PB_HTTP:  data \r\n(SP data\r\n)*  */
-        plen = n;
-	if (((plen == 1) && NL(ptr)) || ((plen == 2) && CRNL(ptr)))
-	    goto done;
-	else {
-	    char* ptr1 = ptr;
-	    int   len = plen;
-
-	    while(1) {
-	      char* ptr2 = memchr(ptr1, '\n', len);
-
-	      if  (ptr2 == NULL) {
-		  if ((nsz == 0) && (nfill == n)) { /* buffer full */
-		      plen = n;
-		      goto done;
-		  }
-		  goto more;
-	      }
-	      else {
-  		  plen = (ptr2 - ptr) + 1;
-
-		  if (desc->http_state == 0) 
-		      goto done;
-	        
-		  if (plen < n) {
-		      if (SP(ptr2+1)) {
-			  ptr1 = ptr2+1;
-			  len = n - plen;
-		      }
-		      else
-			  goto done;
-		  }
-		  else
-		      goto more;
-	      }
-	    }
-	}
-    }
-#endif
-    case TCP_PB_TPKT: {
-	struct tpkt_head* hp;
-	hlen = sizeof(struct tpkt_head);
-	if (n < hlen) 
-	    goto more;
-	hp = (struct tpkt_head*) ptr;
-	if (hp->vrsn == TPKT_VRSN) {
-	    plen = get_int16(hp->packet_length) - hlen;
-	    if (plen < 0)
-		goto error;
-	} else
-	    goto error;
-	goto remain;
-    }
-
-    default:  /* this can not occure (make compiler happy) */
-	DEBUGF((" => case error\r\n"));
-	return -1;
-    }
-
- done: {
-      *len = plen;
-      DEBUGF((" => nothing remain packet=%d\r\n", plen));
-      return 0;
-    }
-
- remain: {
-     int tlen, remain;
-     if (desc->inet.psize != 0 && 
-	 ((unsigned int)plen) > desc->inet.psize) goto error;
-     tlen = plen + hlen;
-     remain = tlen - n;
-     if (remain <= 0) {
-	 *len = tlen;
-	 DEBUGF((" => nothing remain packet=%d\r\n", tlen));
-	 return 0;
-     }
-     else {
-	 if (tcp_expand_buffer(desc, tlen) < 0)
-	     return -1;
-	 DEBUGF((" => remain=%d\r\n", remain));
-	 *len = remain;
-	 return remain;
-     }
- }
-
- more:
-    *len = 0;
-    if (nsz == 0) {
-	if (nfill == n)
-	    goto error;
-	DEBUGF((" => restart more=%d\r\n", nfill - n));
-	return nfill - n;
-    }
-    else {
-	DEBUGF((" => more=%d \r\n", nsz));
-	return nsz;
-    }
-
- error:
+error:
     DEBUGF((" => packet error\r\n"));
     return -1;
 }
@@ -8981,25 +8334,25 @@ static int tcp_sendv(tcp_descriptor* desc, ErlIOVec* ev)
     ErlDrvPort ix = desc->inet.port;
     int len = ev->size;
 
-    switch(desc->inet.htype) {
-    case TCP_PB_1: 
-	put_int8(len, buf);
-	h_len = 1;
-	break;
-    case TCP_PB_2: 
-	put_int16(len, buf);
-	h_len = 2; 
-	break;
-    case TCP_PB_4: 
-	put_int32(len, buf);
-	h_len = 4; 
-	break;
-    default:
-	if (len == 0)
-	    return 0;
-	h_len = 0;
-	break;
-    }
+     switch(desc->inet.htype) {
+     case TCP_PB_1:
+         put_int8(len, buf);
+         h_len = 1;
+         break;
+     case TCP_PB_2:
+         put_int16(len, buf);
+         h_len = 2;
+         break;
+     case TCP_PB_4:
+         put_int32(len, buf);
+         h_len = 4;
+         break;
+     default:
+         if (len == 0)
+             return 0;
+         h_len = 0;
+         break;
+     }
 
     inet_output_count(INETP(desc), len+h_len);
 

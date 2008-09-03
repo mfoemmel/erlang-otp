@@ -1,4 +1,4 @@
-VSN = 5.6.3
+VSN = 5.6.4
 SYSTEM_VSN = R12B
 
 # Port number 4365 in 4.2

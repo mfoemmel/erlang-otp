@@ -851,6 +851,8 @@ Optional Features:
   --enable-hybrid-heap    enable hybrid heap
   --disable-hybrid-heap   disable hybrid heap
   --enable-lock-checking  enable lock checking
+  --enable-lock-counter    enable lock counters
+  --disable-lock-counter   disable lock counters
   --enable-kernel-poll    enable kernel poll support
   --disable-kernel-poll   disable kernel poll support
   --enable-sctp           enable sctp support
@@ -2585,6 +2587,18 @@ else
   enable_lock_check=no
 fi;
 
+# Check whether --enable-lock-counter or --disable-lock-counter was given.
+if test "${enable_lock_counter+set}" = set; then
+  enableval="$enable_lock_counter"
+   case "$enableval" in
+    no) enable_lock_count=no ;;
+    *)  enable_lock_count=yes ;;
+  esac
+else
+  enable_lock_count=no
+fi;
+
+
 # Check whether --enable-kernel-poll or --disable-kernel-poll was given.
 if test "${enable_kernel_poll+set}" = set; then
   enableval="$enable_kernel_poll"
@@ -2595,6 +2609,7 @@ if test "${enable_kernel_poll+set}" = set; then
 else
   enable_kernel_poll=unknown
 fi;
+
 
 # Check whether --enable-sctp or --disable-sctp was given.
 if test "${enable_sctp+set}" = set; then
@@ -8311,6 +8326,7 @@ esac
 
 if test $emu_threads != yes; then
 	enable_lock_check=no
+	enable_lock_count=no
 else
 	# Threads enabled for emulator
 	EMU_THR_LIB_NAME=$ETHR_LIB_NAME
@@ -8324,6 +8340,13 @@ echo $ECHO_N "checking whether lock checking should be enabled... $ECHO_C" >&6
 echo "${ECHO_T}$enable_lock_check" >&6
 	if test "x$enable_lock_check" != "xno"; then
 	    EMU_THR_DEFS="$EMU_THR_DEFS -DERTS_ENABLE_LOCK_CHECK"
+	fi
+	echo "$as_me:$LINENO: checking whether lock counters should be enabled" >&5
+echo $ECHO_N "checking whether lock counters should be enabled... $ECHO_C" >&6
+	echo "$as_me:$LINENO: result: $enable_lock_count" >&5
+echo "${ECHO_T}$enable_lock_count" >&6
+	if test "x$enable_lock_count" != "xno"; then
+	    EMU_THR_DEFS="$EMU_THR_DEFS -DERTS_ENABLE_LOCK_COUNT"
 	fi
 	disable_child_waiter_thread=no
 	case $host_os in

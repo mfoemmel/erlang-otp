@@ -137,7 +137,7 @@ gen_encode(Erules,Typename,Type) when record(Type,type) ->
 %% encode ComponentType
 %%===============================================================================
 
-gen_encode(Erules,Tname,{'ComponentType',_Pos,Cname,Type,_,_}) ->
+gen_encode(Erules,Tname,#'ComponentType'{name=Cname,typespec=Type}) ->
     NewTname = [Cname|Tname],
     %% The tag is set to [] to avoid that it is
     %% taken into account twice, both as a component/alternative (passed as
@@ -412,7 +412,7 @@ gen_decode(Erules,Tname,Type) when record(Type,type) ->
 %% decode ComponentType
 %%===============================================================================
 
-gen_decode(Erules,Tname,{'ComponentType',_Pos,Cname,Type,_,_}) ->
+gen_decode(Erules,Tname,#'ComponentType'{name=Cname,typespec=Type}) ->
     NewTname = [Cname|Tname],
     %% The tag is set to [] to avoid that it is
     %% taken into account twice, both as a component/alternative (passed as
@@ -1102,6 +1102,18 @@ gen_objset_enc(_,{unique,undefined},_,_,_,_,_) ->
     %% There is no unique field in the class of this object set
     %% don't bother about the constraint
     [];
+gen_objset_enc(ObjSName,UniqueName,[{_,no_unique_value,_},T|Rest],
+	       ClName,ClFields,NthObj,Acc) ->
+    %% No need to check that this class has property OPTIONAL for the
+    %% unique field, it was detected in the previous phase
+    gen_objset_enc(ObjSName,UniqueName,[T|Rest],ClName,ClFields,NthObj,Acc);
+gen_objset_enc(ObjSetName,UniqueName,[{_,no_unique_value,_}],
+	       _ClName,_ClFields,_NthObj,Acc) ->
+    %% No need to check that this class has property OPTIONAL for the
+    %% unique field, it was detected in the previous phase
+    emit_default_getenc(ObjSetName,UniqueName),
+    emit({".",nl,nl}),
+    Acc;
 gen_objset_enc(ObjSName,UniqueName,
 	       [{ObjName,Val,Fields},T|Rest],ClName,ClFields,NthObj,Acc)->
     emit({"'getenc_",ObjSName,"'(",{asis,UniqueName},",",{asis,Val},") ->",nl}),
@@ -1323,6 +1335,14 @@ gen_objset_dec(_,_,{unique,undefined},_,_,_,_) ->
     %% There is no unique field in the class of this object set
     %% don't bother about the constraint
     ok;
+gen_objset_dec(Erules,ObjSName,UniqueName,[{_,no_unique_value,_},T|Rest],
+	       ClName,ClFields,NthObj)->
+    gen_objset_dec(Erules,ObjSName,UniqueName,[T|Rest],ClName,ClFields,
+		   NthObj);
+gen_objset_dec(_Erules,ObjSetName,UniqueName,[{_,no_unique_value,_}],
+	       _ClName,_ClFields,_NthObj)->
+    emit_default_getdec(ObjSetName,UniqueName),
+    emit({".",nl,nl});
 gen_objset_dec(Erules,ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],
 	       ClName,ClFields,NthObj)->
     emit({"'getdec_",ObjSName,"'(",{asis,UniqueName},",",{asis,Val},

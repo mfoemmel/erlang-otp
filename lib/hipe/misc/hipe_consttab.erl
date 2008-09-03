@@ -290,11 +290,7 @@ update_block_labels(ConstTab, DataLbl, OldLbl, NewLbl) ->
     end.
 
 update_data(Data, Old, New) ->
-    lists:map(fun(Lbl) when Lbl =:= Old ->
-	            {label, New};
-	         (Lbl) -> Lbl
-	      end,
-	      Data).
+    [if Lbl =:= Old -> {label, New}; true -> Lbl end || Lbl <- Data].
 
 %% update_global_block(ConstTab, Label, Align, ElementType, InitList) ->
 %%   ByteList = decompose(size_of(ElementType), InitList),
@@ -367,14 +363,10 @@ update_referred_labels(Table, LabelMap) ->
       end,
       Table,
       LabelMap),
-  NewRefs = 
-    lists:map(fun(Lbl) ->
-		  case lists:keysearch(Lbl, 1, LabelMap) of
-		    {value, {_, New}} -> New;
-		    _ -> Lbl
-		  end
-	      end,
-	      Refs),
+  NewRefs = [case lists:keysearch(Lbl, 1, LabelMap) of
+	       {value, {_, New}} -> New;
+	       _ -> Lbl
+	     end || Lbl <- Refs],
   %% io:format("NewTb:~w\n",[{Tb, NewRefs, Next}]),
   {Tb, NewRefs, Next}.
 

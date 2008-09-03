@@ -417,7 +417,7 @@ static void
 insert_timer(ErlTimer* p, Uint t)
 {
     Uint tm;
-    Uint ticks;
+    Uint64 ticks;
 
     /* The current slot (tiw_pos) in timing wheel is the next slot to be
      * be processed. Hence no extra time tick is needed.
@@ -425,6 +425,11 @@ insert_timer(ErlTimer* p, Uint t)
      * (x + y - 1)/y is precisely the "number of bins" formula.
      */
     ticks = (t + itime - 1) / itime;
+
+    /* 
+     * Ticks must be a Uint64, or the addition may overflow here,
+     * resulting in an incorrect value for p->count below.
+     */
     ticks += do_time_update(); /* Add backlog of unprocessed time */
     
     /* calculate slot */

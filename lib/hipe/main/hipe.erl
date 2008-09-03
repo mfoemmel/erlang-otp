@@ -207,7 +207,9 @@
 -type(mod() :: atom()).
 -type(c_unit() :: mod() | mfa()).
 -type(f_unit() :: mod() | binary()).
--type(c_ret() :: {'ok',c_unit()} | {'error',_}).
+-type(ret_rtl() :: [_]).
+-type(c_ret() :: {'ok',c_unit()} | {'error',_} |
+                 {'ok',c_unit(),ret_rtl()}). %% The last for debugging only
 -type(compile_file() :: atom() | string() | binary()).
 -type(compile_ret() :: {hipe_architecture(), binary()} | list()).
 
@@ -312,9 +314,13 @@ c(Name, Options) ->
 
 c(Name, File, Opts) ->
   %% No server if only one function is compiled
-  case compile(Name, File, user_compile_opts(Opts)) of
-    {ok, _Res} ->
-      {ok, Name};
+  Opts1 = user_compile_opts(Opts),
+  case compile(Name, File, Opts1) of
+    {ok, Res} ->
+      case proplists:get_bool(to_rtl, Opts1) of
+	true -> {ok, Name, Res};
+	false -> {ok, Name}
+      end;
     Other ->
       Other
   end.
@@ -848,7 +854,6 @@ finalize_fun_sequential({MFA, Icode}, Opts, Servers) ->
 		   ?debug_msg("Compiled ~w in ~.2f s\n", [MFA,(T2-T1)/1000])),
       {MFA, Code};
     {rtl, LinearRtl} ->
-      io:format("~p~n", [LinearRtl]),
       {MFA, LinearRtl}
   catch
     error:Error ->
@@ -905,8 +910,12 @@ do_load(Mod, Bin, WholeModule) ->
     BinCode when is_binary(BinCode) ->
       case code:is_sticky(Mod) of
 	true ->
+	  %% We unpack and repack the Beam binary as a workaround to
+	  %% ensure that it is not compressed.
+	  {ok, _, Chunks} = beam_lib:all_chunks(WholeModule),
+	  {ok, Beam} = beam_lib:build_module(Chunks),
 	  %% Don't purge or register sticky mods; just load native.
-	  code:load_native_sticky(Mod, Bin, WholeModule);
+	  code:load_native_sticky(Mod, Bin, Beam);
 	false ->
 	  %% Normal loading of a whole module
 	  Architecture = erlang:system_info(hipe_architecture),
@@ -1153,6 +1162,8 @@ option_text('O') ->
   "Specify optimization level. Used as o1, o2, o3.\n" ++
   "    At the moment levels 0 - 3 are implemented.\n" ++
   "    Aliases: 'O1', 'O2', O3'.";
+option_text(caller_save_spill_restore) ->
+  "Activates caller save register spills and restores";
 option_text(debug) ->
   "Outputs internal debugging information during compilation";
 option_text(icode_range) ->
@@ -1295,6 +1306,7 @@ opt_keys() ->
     [
      binary_opt,
      bitlevel_binaries,
+     caller_save_spill_restore,
      concurrent_comp,
      core,
      core_transform,

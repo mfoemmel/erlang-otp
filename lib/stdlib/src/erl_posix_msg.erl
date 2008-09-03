@@ -21,6 +21,8 @@
 
 -export([message/1]).
 
+-spec message(atom()) -> string().
+
 message(e2big) -> "argument list too long";
 message(eacces) -> "permission denied";
 message(eaddrinuse) -> "address already in use";

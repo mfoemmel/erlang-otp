@@ -48,13 +48,13 @@
 -define(DEFAULT_TIMEOUT, 5000).
 
 attach(CM, Opts) ->
-    case ssh_cm:attach(CM, connect_timeout(Opts)) of
+    case ssh:attach(CM, connect_timeout(Opts)) of
 	{ok,CMPid} ->  open_xfer(CMPid, Opts);
 	Error ->  Error
     end.
 
 connect(Host, Port, Opts) ->
-    case ssh_cm:connect(Host, Port, Opts) of
+    case ssh:connect(Host, Port, Opts) of
 	{ok, CM} -> open_xfer(CM, Opts);
 	Error -> Error
     end.
@@ -64,9 +64,9 @@ connect(Host, Port, Opts) ->
 
 open_xfer(CM, Opts) ->
     TMO = connect_timeout(Opts),
-    case ssh_cm:session_open(CM, ?XFER_WINDOW_SIZE, ?XFER_PACKET_SIZE, TMO) of
+    case ssh_connection:session_channel(CM, ?XFER_WINDOW_SIZE, ?XFER_PACKET_SIZE, TMO) of
 	{ok, Channel} ->
-	    case ssh_cm:subsystem(CM, Channel, "sftp", TMO) of
+	    case ssh_connection:subsystem(CM, Channel, "sftp", TMO) of
 		success ->
 		    case init(CM, Channel) of
 			{ok, {Vsn,Ext}, Rest} ->
@@ -110,10 +110,10 @@ reply(CM,Channel,RBuf) ->
 	    error_logger:format("ssh: STDERR: ~s\n", [binary_to_list(Data)]),
 	    reply(CM,Channel,RBuf);
 	{ssh_cm, CM, {exit_signal,Channel,_SIG,Err,_Lang}} ->
-	    ssh_cm:close(CM, Channel),
+	    ssh_connection:close(CM, Channel),
 	    {error, Err};
 	{ssh_cm, CM, {exit_status,Channel,_Status}} ->
-	    ssh_cm:close(CM, Channel),
+	    ssh_connection:close(CM, Channel),
 	    eof;
 	{ssh_cm, CM, {eof, Channel}} ->
 	    eof;
@@ -317,14 +317,14 @@ xf_request(XF, Op, Arg) ->
 	      list(Arg) -> list_to_binary(Arg)
 	   end,
     Size = 1+size(Data),
-    ssh_cm:send(CM, Channel, <<?UINT32(Size), Op, Data/binary>>).
+    ssh_connection:send(CM, Channel, <<?UINT32(Size), Op, Data/binary>>).
 
 xf_send_reply(#ssh_xfer{cm = CM, channel = Channel}, Op, Arg) ->    
     Data = if binary(Arg) -> Arg;
 	      list(Arg) -> list_to_binary(Arg)
 	   end,
     Size = 1 + size(Data),
-    ssh_cm:send(CM, Channel, <<?UINT32(Size), Op, Data/binary>>).
+    ssh_connection:send(CM, Channel, <<?UINT32(Size), Op, Data/binary>>).
 
 xf_send_name(XF, ReqId, Name, Attr) ->
     xf_send_names(XF, ReqId, [{Name, Attr}]).
@@ -338,7 +338,7 @@ xf_send_name(XF, ReqId, Name, Attr) ->
 %%     ToSend = [<<?UINT32(Size),
 %% 	       ?SSH_FXP_NAME, ?UINT32(ReqId), ?UINT32(1), ?UINT32(NameLen)>>,
 %% 	      Name, EncAttr],
-%%     ssh_cm:send(CM, Channel, ToSend).
+%%     ssh_connection:send(CM, Channel, ToSend).
 
 xf_send_handle(#ssh_xfer{cm = CM, channel = Channel},
 	       ReqId, Handle) ->
@@ -346,7 +346,7 @@ xf_send_handle(#ssh_xfer{cm = CM, channel = Channel},
     Size = 1 + 4 + 4+HLen,
     ToSend = [<<?UINT32(Size), ?SSH_FXP_HANDLE, ?UINT32(ReqId), ?UINT32(HLen)>>,
 	      Handle],
-    ssh_cm:send(CM, Channel, ToSend).
+    ssh_connection:send(CM, Channel, ToSend).
 
 xf_send_names(#ssh_xfer{cm = CM, channel = Channel, vsn = Vsn},
 	      ReqId, NamesAndAttrs) ->
@@ -357,7 +357,7 @@ xf_send_names(#ssh_xfer{cm = CM, channel = Channel, vsn = Vsn},
 	      Data],
     ?dbg(true, "xf_send_names: Size=~p size(ToSend)=~p\n",
 	 [Size, size(list_to_binary(ToSend))]),
-    ssh_cm:send(CM, Channel, ToSend).
+    ssh_connection:send(CM, Channel, ToSend).
 
 xf_send_status(XF, ReqId, ErrorCode) ->
     xf_send_status(XF, ReqId, ErrorCode, "").
@@ -376,21 +376,21 @@ xf_send_status(#ssh_xfer{cm = CM, channel = Channel},
 	      <<?UINT32(ELen)>>, ErrorMsg,
 	      <<?UINT32(TLen)>>, LangTag,
 	      Data],
-    ssh_cm:send(CM, Channel, ToSend).
+    ssh_connection:send(CM, Channel, ToSend).
 
 xf_send_attr(#ssh_xfer{cm = CM, channel = Channel, vsn = Vsn}, ReqId, Attr) ->
     EncAttr = encode_ATTR(Vsn, Attr),
     ALen = size(EncAttr),
     Size = 1 + 4 + ALen,
     ToSend = [<<?UINT32(Size), ?SSH_FXP_ATTRS, ?UINT32(ReqId)>>, EncAttr],
-    ssh_cm:send(CM, Channel, ToSend).
+    ssh_connection:send(CM, Channel, ToSend).
 
 xf_send_data(#ssh_xfer{cm = CM, channel = Channel}, ReqId, Data) ->
     DLen = size(Data),
     Size = 1 + 4 + 4+DLen,
     ToSend = [<<?UINT32(Size), ?SSH_FXP_DATA, ?UINT32(ReqId), ?UINT32(DLen)>>,
 	      Data],
-    ssh_cm:send(CM, Channel, ToSend).    
+    ssh_connection:send(CM, Channel, ToSend).    
 
 
 %% xf_reply_server(XF, <<?SSH_FXP_INIT, ?UINT32(V)>>) ->

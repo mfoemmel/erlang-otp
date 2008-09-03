@@ -49,6 +49,11 @@ typedef struct {
     Uint mbcgs;
 } AllctrInit_t;
 
+typedef struct {
+    Uint blocks;
+    Uint carriers;
+} AllctrSize_t;
+
 #ifndef SMALL_MEMORY
 
 #define ERTS_DEFAULT_ALCU_INIT {                                           \
@@ -126,6 +131,7 @@ Eterm	erts_alcu_info_options(Allctr_t *, int *, void *, Uint **, Uint *);
 Eterm	erts_alcu_sz_info(Allctr_t *, int, int *, void *, Uint **, Uint *);
 Eterm	erts_alcu_info(Allctr_t *, int, int *, void *, Uint **, Uint *);
 void	erts_alcu_init(AlcUInit_t *);
+void    erts_alcu_current_size(Allctr_t *, AllctrSize_t *);
 
 #endif
 

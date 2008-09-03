@@ -1,172 +1,25 @@
 {"%VSN%",
  [
-  {"4.10.3",   
+  {"4.11",   
    [
-    {load_module, snmp_generic, soft_purge, soft_purge, []},
-    {load_module, snmpa, soft_purge, soft_purge, []},
-    {load_module, snmpa_trap, soft_purge, soft_purge, []},
-    {load_module, snmpa_acm, soft_purge, soft_purge, []},
-    {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {update, snmp_note_store, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_acm]}, 
-    {update, snmpa_local_db, {advanced, upgrade_from_pre_4_11}, 
-     soft_purge, soft_purge, []},
-    {add_module,  snmpa_notification_delivery_info_receiver}
-   ]
-  },
-
-  {"4.10.2",   
-   [
-    {load_module, snmp_generic, soft_purge, soft_purge, []},
-    {load_module, snmpa, soft_purge, soft_purge, []},
-    {load_module, snmpa_trap, soft_purge, soft_purge, []},
-    {load_module, snmpa_acm, soft_purge, soft_purge, []},
-    {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {update, snmp_note_store, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_acm]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_local_db, {advanced, upgrade_from_pre_4_11}, 
-     soft_purge, soft_purge, []},
-    {add_module,  snmpa_notification_delivery_info_receiver}
-   ]
-  },
-
-  {"4.10.1",   
-   [
-    {load_module, snmpa, soft_purge, soft_purge, []},
-    {load_module, snmpa_acm, soft_purge, soft_purge, []},
-    {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {load_module, snmp_generic, soft_purge, soft_purge, []},
-    {load_module, snmpa_trap, soft_purge, soft_purge, []},
-    {load_module, snmpa_mib_data, soft_purge, soft_purge, []}, 
-    {update, snmp_note_store, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_acm]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_local_db, {advanced, upgrade_from_pre_4_11}, 
-     soft_purge, soft_purge, []},
-    {add_module,  snmpa_notification_delivery_info_receiver}
-   ]
-  },
-  {"4.10",   
-   [
-    {load_module, snmpa, soft_purge, soft_purge, []},
-    {load_module, snmpa_acm, soft_purge, soft_purge, []},
-    {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
     {load_module, snmp, soft_purge, soft_purge, []},
-    {load_module, snmp_framework_mib, soft_purge, soft_purge, []},
-    {load_module, snmp_pdus, soft_purge, soft_purge, []},
-    {load_module, snmp_conf, soft_purge, soft_purge, []},
-    {load_module, snmp_config, soft_purge, soft_purge, []},
-    {load_module, snmp_log, soft_purge, soft_purge, []},
-    {load_module, snmp_generic, soft_purge, soft_purge, []},
-    {load_module, snmpa_trap, soft_purge, soft_purge, []},
-    {load_module, snmpa_mib_data, soft_purge, soft_purge, []},
-    {load_module, snmpa_supervisor, soft_purge, soft_purge, []}, 
-    {update, snmp_note_store, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_acm]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_local_db, {advanced, upgrade_from_pre_4_11}, 
-     soft_purge, soft_purge, []},
-    {add_module,  snmpa_notification_delivery_info_receiver}
+    {load_module, snmpm_usm, soft_purge, soft_purge, []},
+    {update, snmpm_server, soft, soft_purge, soft_purge, []},
+    {update, snmp_note_store, soft, soft_purge, soft_purge, []}
    ]
   }
+
  ], 
 
 %% ---------------------------------------------------------------------------
 
  [
-  {"4.10.3",   
+  {"4.11",   
    [
-    {load_module, snmp_generic, soft_purge, soft_purge, []},
-    {load_module, snmpa, soft_purge, soft_purge, []},
-    {load_module, snmpa_trap, soft_purge, soft_purge, []},
-    {load_module, snmpa_acm, soft_purge, soft_purge, []},
-    {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {update, snmp_note_store, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_acm]}, 
-    {update, snmpa_local_db, {advanced, downgrade_to_pre_4_11}, 
-     soft_purge, soft_purge, []},
-    {delete_module,  snmpa_notification_delivery_info_receiver}
-   ]
-  },
-
-  {"4.10.2",   
-   [
-    {load_module, snmp_generic, soft_purge, soft_purge, []},
-    {load_module, snmpa, soft_purge, soft_purge, []},
-    {load_module, snmpa_trap, soft_purge, soft_purge, []},
-    {load_module, snmpa_acm, soft_purge, soft_purge, []},
-    {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {update, snmp_note_store, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_acm]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_local_db, {advanced, downgrade_to_pre_4_11}, 
-     soft_purge, soft_purge, []},
-    {delete_module,  snmpa_notification_delivery_info_receiver}
-   ]
-  },
-
-  {"4.10.1",   
-   [
-    {load_module, snmpa, soft_purge, soft_purge, []},
-    {load_module, snmpa_acm, soft_purge, soft_purge, []},
-    {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {load_module, snmp_generic, soft_purge, soft_purge, []},
-    {load_module, snmpa_trap, soft_purge, soft_purge, []},
-    {load_module, snmpa_mib_data, soft_purge, soft_purge, []}, 
-    {update, snmp_note_store, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_acm]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_local_db, {advanced, downgrade_to_pre_4_11}, 
-     soft_purge, soft_purge, []},
-    {delete_module,  snmpa_notification_delivery_info_receiver}
-   ]
-  },
-  {"4.10",   
-   [
-    {load_module, snmpa, soft_purge, soft_purge, []},
-    {load_module, snmpa_acm, soft_purge, soft_purge, []},
-    {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
-    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, 
-     [snmpa_agent]},
     {load_module, snmp, soft_purge, soft_purge, []},
-    {load_module, snmp_framework_mib, soft_purge, soft_purge, []},
-    {load_module, snmp_pdus, soft_purge, soft_purge, []},
-    {load_module, snmp_conf, soft_purge, soft_purge, []},
-    {load_module, snmp_config, soft_purge, soft_purge, []},
-    {load_module, snmp_log, soft_purge, soft_purge, []},
-    {load_module, snmp_generic, soft_purge, soft_purge, []},
-    {load_module, snmpa_trap, soft_purge, soft_purge, []},
-    {load_module, snmpa_mib_data, soft_purge, soft_purge, []},
-    {load_module, snmpa_supervisor, soft_purge, soft_purge, []}, 
-    {update, snmp_note_store, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_acm]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []}, 
-    {update, snmpa_local_db, {advanced, downgrade_to_pre_4_11}, 
-     soft_purge, soft_purge, []},
-    {delete_module,  snmpa_notification_delivery_info_receiver}
+    {load_module, snmpm_usm, soft_purge, soft_purge, []},
+    {update, snmpm_server, soft, soft_purge, soft_purge, []},
+    {update, snmp_note_store, soft, soft_purge, soft_purge, []}
    ]
   }
  ]

@@ -622,6 +622,31 @@ run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment) ->
 		{infinity, should_never_appear}
 	end,
     receive
+	{abort_current_testcase,Reason,From} ->
+	    Line = get_loc(Pid),
+	    Mon = erlang:monitor(process, Pid),
+	    exit(Pid,{testcase_aborted,Reason,Line}),
+	    erlang:yield(),
+	    From ! {self(),abort_current_testcase,ok},
+	    NewComment =
+		receive
+		    {'DOWN', Mon, process, Pid, _} ->
+			Comment
+		    after 10000 ->		    
+			    %% Pid is probably trapping exits, hit it harder...
+			    exit(Pid, kill),
+			    %% here's the only place we know Reason, so we save
+			    %% it as a comment, potentially replacing user data
+			    Error = lists:flatten(io_lib:format("Aborted: ~p",[Reason])),
+			    Error1 = lists:flatten([string:strip(S,left) || 
+						    S <- string:tokens(Error,[$\n])]),
+			    if length(Error1) > 63 ->
+				    string:substr(Error1,1,60) ++ "...";
+			       true ->
+				    Error1
+			    end
+		    end,
+	    run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,NewComment);
         {io_request,From,ReplyAs,{put_chars,io_lib,Func,[Format,Args]}}
 	when list(Format) ->
 	    Msg = (catch io_lib:Func(Format,Args)),
@@ -667,25 +692,51 @@ run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment) ->
 	    ReturVal = {Time/1000000,Value,mod_loc(Loc),Comment},
 	    run_test_case_msgloop(Ref,Pid,CaptureStdout,{true,ReturVal},Comment);
 	{'EXIT',Pid,Reason} ->
-	    ReturVal =
-		case Reason of
-		    {timetrap_timeout,TVal,Loc} ->
-			Loc1 = mod_loc(Loc),
-			{Mod,Func} = case Loc1 of
-					 [{M,F,_}|_] -> {M,F};
-					 [{M,F}|_]   -> {M,F};
-					 _           -> {undefined,undefined}
-				     end,			
-			fw_error_notify(Mod,Func,[],timetrap_timeout,Loc1),
-			Conf = [{tc_status,{failed,timetrap}}],
-			test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,[Conf]]),
-			%% ...but return Loc on form that can be formatted
-			{died,{timetrap_timeout,TVal},Loc1,Comment};
-		    _ ->
-			{died,Reason,unknown,Comment}
-		end,
+	    case Reason of
+		{timetrap_timeout,TVal,Loc} ->
+		    %% convert Loc to form that can be formatted
+		    Loc1 = mod_loc(Loc),
+		    {Mod,Func} = get_mf(Loc1),
+		    %% The framework functions mustn't execute on this
+		    %% group leader process or io will cause deadlock,
+		    %% so we spawn a dedicated process for the operation
+		    %% and let the group leader go back to handle io.
+		    spawn_fw_call(Mod,Func,{timetrap_timeout,TVal},Loc1,self()),
+		    run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment);
+		{testcase_aborted,Reason,Loc} ->
+		    Loc1 = mod_loc(Loc),
+		    {Mod,Func} = get_mf(Loc1),
+		    spawn_fw_call(Mod,Func,{testcase_aborted,Reason},Loc1,self()),
+		    run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment);
+		killed ->			
+		    %% result of an exit(TestCase,kill) call, which is the
+		    %% only way to abort a testcase process that traps exits 
+		    %% (see abort_current_testcase)
+		    spawn_fw_call(undefined,undefined,testcase_aborted_or_killed,
+				  unknown,self()),
+		    run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment);
+		_ ->
+		    %% the testcase has terminated because of Reason (e.g. an exit
+		    %% because a linked process failed)
+		    spawn_fw_call(undefined,undefined,Reason,unknown,self()),
+		    run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment)
+	    end;
+	{_FwCallPid,fw_notify_done,Error,Loc} ->
+	    %% the framework has been notified, we're finished
+	    ReturVal = {died,Error,Loc,Comment},
+	    run_test_case_msgloop(Ref,Pid,CaptureStdout,{true,ReturVal},Comment);	    
+ 	{'EXIT',_FwCallPid,{fw_notify_done,Func,Error}} ->
+	    %% a framework function failed
+	    CB = os:getenv("TEST_SERVER_FRAMEWORK"),
+	    Loc = case CB of
+		      false -> 
+			  {test_server,Func};
+		      _ -> 
+			  {list_to_atom(CB),Func}
+		  end,
+	    ReturVal = {died,{framework_error,Loc,Error},Loc,"Framework error"},
 	    run_test_case_msgloop(Ref,Pid,CaptureStdout,{true,ReturVal},Comment);
-	{failed, File, Line} ->
+	{failed,File,Line} ->
 	    put(test_server_detected_fail, 
 		[{File, Line}| get(test_server_detected_fail)]),
        	    run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment);
@@ -712,6 +763,31 @@ run_test_case_msgloop_io(ReplyAs,CaptureStdout,Msg,From,Func) ->
 
 output(Msg,Sender) ->
     local_or_remote_apply({test_server_ctrl,output,[Msg,Sender]}).
+
+spawn_fw_call(Mod,Func,Error,Loc,SendTo) ->
+    FwCall =
+	fun() ->
+		case catch fw_error_notify(Mod,Func,[],
+					   Error,Loc) of
+		    {'EXIT',FwErrorNotifyErr} ->
+			exit({fw_notify_done,error_notification,
+			      FwErrorNotifyErr});
+		    _ ->
+			ok
+		end,
+		Conf = [{tc_status,{failed,timetrap}}],
+		case catch test_server_sup:framework_call(end_tc,
+							  [?pl2a(Mod),Func,
+							   [Conf]]) of
+		    {'EXIT',FwEndTCErr} ->
+			exit({fw_notify_done,end_tc,FwEndTCErr});
+		    _ ->
+			ok
+		end,
+		%% finished, report back
+		SendTo ! {self(),fw_notify_done,Error,Loc}
+	end,
+    spawn_link(FwCall).
 
 %% The job proxy process forwards messages between the test case
 %% process on a shielded node (and its descendants) and the job process.
@@ -984,6 +1060,10 @@ get_loc(Pid) ->
     {dictionary,Dict} = process_info(Pid, dictionary),
     lists:foreach(fun({Key,Val}) -> put(Key,Val) end,Dict),
     get_loc().
+
+get_mf([{M,F,_}|_]) -> {M,F};
+get_mf([{M,F}|_])   -> {M,F};
+get_mf(_)           -> {undefined,undefined}.
 
 mod_loc(Loc) ->
     %% handle diff line num versions

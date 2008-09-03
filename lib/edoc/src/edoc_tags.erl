@@ -71,7 +71,7 @@ tags() ->
      {param, fun parse_param/4, [function]},
      {private, text, [module,function,single]},
      {reference, xml, [module,footer,package,overview]},
-     {return, xml, [function,single]},
+     {returns, xml, [function,single]},
      {see, fun parse_see/4, [module,function,package,overview]},
      {since, text, [module,function,package,overview,single]},
      {spec, fun parse_spec/4, [function,single]},
@@ -83,6 +83,7 @@ tags() ->
      {version, text, [module,package,overview,single]}].
 
 aliases('TODO') -> todo;
+aliases(return) -> returns;
 aliases(T) -> T.
 
 %% Selecting tags based on flags.

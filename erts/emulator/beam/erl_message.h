@@ -56,7 +56,6 @@ do {									\
     unsigned real_size__ = (BP)->size;					\
     ASSERT((BP)->mem <= (HENDP) && (HENDP) <= (BP)->mem + real_size__);	\
     (BP)->size = (HENDP) - (BP)->mem;					\
-    ERTS_PROC_LESS_MEM(real_size__ - (BP)->size);			\
     /* We do not reallocate since buffer *might* be moved.	*/	\
     /* FIXME: Memory count is wrong, but at least it's almost	*/	\
     /*        right...						*/	\
@@ -100,7 +99,6 @@ typedef struct {
     *(p)->msg.last = (mp); \
     (p)->msg.last = &(mp)->next; \
     (p)->msg.len++; \
-    ERTS_PROC_MORE_MEM(sizeof(ErlMessage)); \
 } while(0)
 
 
@@ -124,7 +122,6 @@ do {							\
     *(p)->msg_inq.last = (mp); \
     (p)->msg_inq.last = &(mp)->next; \
     (p)->msg_inq.len++; \
-    ERTS_PROC_MORE_MEM(sizeof(ErlMessage)); \
 } while(0)
 
 #else
@@ -143,7 +140,6 @@ do {							\
      (p)->msg.len--; \
      if (__mp == NULL) \
          (p)->msg.last = (p)->msg.save; \
-     ERTS_PROC_LESS_MEM(sizeof(ErlMessage)); \
 } while(0)
 
 /* Reset message save point (after receive match) */

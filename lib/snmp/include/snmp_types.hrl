@@ -190,7 +190,7 @@
 %%----------------------------------------------------------------------
 -record(mib, 
 	{misc = [], 
-	 mib_format_version = "3.0", 
+	 mib_format_version = "3.1", 
 	 name = "",
 	 module_identity,  %% Not in SMIv1, and only with +module_identity
 	 mes = [], 

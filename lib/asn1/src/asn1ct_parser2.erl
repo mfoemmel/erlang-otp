@@ -444,6 +444,8 @@ parse_BuiltinType([{'OCTET',_},{'STRING',_}|Rest]) ->
     {#type{def='OCTET STRING'},Rest};
 parse_BuiltinType([{'REAL',_}|Rest]) ->
     {#type{def='REAL'},Rest};
+parse_BuiltinType([{'RELATIVE-OID',_}|Rest]) ->
+    {#type{def='RELATIVE-OID'},Rest};
 parse_BuiltinType([{'SEQUENCE',_},{'{',_},{'...',Line},{'}',_}|Rest]) ->
     {#type{def=#'SEQUENCE'{components=[{'EXTENSIONMARK',Line,undefined}]}},
      Rest};
@@ -821,6 +823,8 @@ parse_Intersections(Tokens) ->
 	    {[V1,intersection,V2],Rest2}
     end.
 
+%% parse_IElemsRec(Tokens) -> Result
+%% Result ::= {'SingleValue',ordered_set()} | list()
 parse_IElemsRec([{'^',_}|Rest]) ->
     {InterSec,Rest2} = parse_IntersectionElements(Rest),
     {IRec,Rest3} = parse_IElemsRec(Rest2),
@@ -852,6 +856,11 @@ parse_IElemsRec([{'INTERSECTION',_}|Rest]) ->
 parse_IElemsRec(Tokens) ->
     {[],Tokens}.
 
+%% parse_IntersectionElements(Tokens) -> {Result,Rest}
+%% Result ::= InterSec | {InterSec,{'EXCEPT',Exclusion}}
+%% InterSec ::= {'ALL',{'EXCEPT',Exclusions}} | Unions
+%% Unions ::= {'SingleValue',list()} | list() (see parse_Unions)
+%% Exclusions ::= InterSec
 parse_IntersectionElements(Tokens) ->
     {InterSec,Rest} = parse_Elements(Tokens),
     case Rest of
@@ -862,6 +871,10 @@ parse_IntersectionElements(Tokens) ->
 	    {InterSec,Rest}
     end.
 
+%% parse_Elements(Tokens) -> {Result,Rest}
+%% Result ::= {'ALL',{'EXCEPT',Exclusions}} | Unions
+%% Exclusions ::= {'ALL',{'EXCEPT',Exclusions}} | Unions
+%% Unions ::= {'SingleValue',list()} | list() (see parse_Unions)
 parse_Elements([{'(',_}|Rest]) ->
     {Elems,Rest2} = parse_ElementSetSpec(Rest),
     case Rest2 of
@@ -1458,6 +1471,14 @@ parse_ObjectSetSpec(Tokens) ->
     parse_ElementSetSpecs(Tokens).
 
 % moved fun parse_Object/1 and fun parse_DefinedObjectSet/1 to parse_Elements
+%% parse_ObjectSetElements(Tokens) -> {Result,Rest}
+%% Result ::= {'ObjectSetFromObjects',Objects,Name} | {pos,ObjectSet,Params}
+%% Objects ::= ReferencedObjects
+%% ReferencedObjects ::= (see parse_ReferencedObjects/1)
+%% Name ::= [FieldName]
+%% FieldName ::= {typefieldreference,atom()} | {valuefieldreference,atom()}
+%% ObjectSet ::= {objectset,integer(),#'Externaltypereference'{}}
+%% Params ::= list() (see parse_ActualParameterList/1)
 parse_ObjectSetElements(Tokens) ->
     Flist = [%fun parse_Object/1,
 	     %fun parse_DefinedObjectSet/1,
@@ -1531,6 +1552,14 @@ parse_OpenTypeFieldVal(Tokens) ->
 % 	    Result
 %     end.
 
+%% parse_ReferencedObjects(Tokens) -> {Result,Rest}
+%% Result    ::= DefObject | DefObjSet |
+%%               {po,DefObject,Params} | {pos,DefObjSet,Params} |
+%%            
+%% DefObject ::= {object,#'Externaltypereference'{}} |
+%%               {object,#'Externalvaluereference'{}}
+%% DefObjSet ::= {objectset,integer(),#'Externaltypereference'{}}
+%% Params    ::= list()
 parse_ReferencedObjects(Tokens) ->
     Flist = [fun parse_DefinedObject/1,
 	     fun parse_DefinedObjectSet/1,
@@ -1614,10 +1643,14 @@ parse_ObjectFromObject(Tokens) ->
 	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'.']}})
-%%%	Other ->
-%%%	    throw({asn1_error,{got,Other,expected,'.'}})
     end.
 
+%% parse_ObjectSetFromObjects(Tokens) -> {Result,Rest}
+%% Result  ::= {'ObjectSetFromObjects',Objects,Name}
+%% Objects ::= ReferencedObject (see parse_ReferencedObjects/1)
+%% Name    ::= [FieldName]
+%% FieldName ::= {typefieldreference,atom()} |
+%%               {valuefieldreference,atom()}
 parse_ObjectSetFromObjects(Tokens) ->
     {Objects,Rest} = parse_ReferencedObjects(Tokens),
     case Rest of
@@ -1634,8 +1667,6 @@ parse_ObjectSetFromObjects(Tokens) ->
 	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'.']}})
-%%%	Other ->
-%%%	    throw({asn1_error,{got,Other,expected,'.'}})
     end.
 
 % parse_InstanceOfType([{'INSTANCE',_},{'OF',_}|Rest]) ->

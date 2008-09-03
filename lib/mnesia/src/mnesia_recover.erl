@@ -103,12 +103,20 @@ allow_garb() ->
 do_allow_garb() ->
     %% The order of the following stuff is important!
     Curr = val(latest_transient_decision),
-    Old = val(previous_transient_decisions),
-    Next = create_transient_decision(),
-    {Prev, ReallyOld} = sublist([Curr | Old], 10, []),
-    [?ets_delete_table(Tab) || Tab <- ReallyOld],
-    set(previous_transient_decisions, Prev),
-    set(latest_transient_decision, Next).
+    %% Don't garb small tables, they are created on every 
+    %% dump_log and may be small (empty) for schema transactions
+    %% which are dumped twice
+    case ets:info(Curr, size) > 20 of
+	true ->
+	    Old = val(previous_transient_decisions),
+	    Next = create_transient_decision(),
+	    {Prev, ReallyOld} = sublist([Curr | Old], 10, []),
+	    [?ets_delete_table(Tab) || Tab <- ReallyOld],
+	    set(previous_transient_decisions, Prev),
+	    set(latest_transient_decision, Next);
+	false ->
+	    ignore
+    end.
     
 sublist([H|R], N, Acc) when N > 0 ->
     sublist(R, N-1, [H| Acc]);

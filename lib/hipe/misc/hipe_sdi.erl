@@ -19,7 +19,7 @@
 %%------------------------------------------------------------------------
 
 -type(gb_tree()    :: tuple()).  % temporarily until there is a proper datatype
--type(hipe_array() :: [] | integer()). % declare this in hipe.hrl or builtin?
+-type(hipe_array() :: integer()).% declare this in hipe.hrl or builtin?
 
 -type(label()      :: non_neg_integer()).
 -type(address()    :: non_neg_integer()).
@@ -72,30 +72,30 @@
 %%%   data from the symbol table. This avoids repeated O(logn) time
 %%%   lookup costs for the labels.
 
--spec(pass1_init/0 :: () -> #pass1{}).
+-spec pass1_init() -> #pass1{}.
 pass1_init() ->
   #pass1{prevSdi=(-1), preS=[], labelMap=gb_trees:empty()}.
 
--spec(pass1_add_label/3 :: (#pass1{}, non_neg_integer(), label()) -> #pass1{}).
+-spec pass1_add_label(#pass1{}, non_neg_integer(), label()) -> #pass1{}.
 pass1_add_label(Pass1, Address, Label) ->
   #pass1{prevSdi=PrevSdi, labelMap=LabelMap} = Pass1,
   LabelData = #label_data{address=Address, prevSdi=PrevSdi},
   LabelMap2 = gb_trees:insert(Label, LabelData, LabelMap),
   Pass1#pass1{labelMap=LabelMap2}.
 
--spec(pass1_add_sdi/4 ::
-      (#pass1{}, non_neg_integer(), label(), #sdi_info{}) -> #pass1{}).
+-spec pass1_add_sdi(#pass1{}, non_neg_integer(), label(), #sdi_info{}) ->
+	#pass1{}.
 pass1_add_sdi(Pass1, Address, Label, SdiInfo) ->
   #pass1{prevSdi=PrevSdi, preS=PreS} = Pass1,
   PreSdiData = #pre_sdi_data{address=Address, label=Label, si=SdiInfo},
   Pass1#pass1{prevSdi=PrevSdi+1, preS=[PreSdiData|PreS]}.
 
--spec(pass1_finalise/1 :: (#pass1{}) -> {non_neg_integer(),tuple(),gb_tree()}).
+-spec pass1_finalise(#pass1{}) -> {non_neg_integer(),tuple(),gb_tree()}.
 pass1_finalise(#pass1{prevSdi=PrevSdi, preS=PreS, labelMap=LabelMap}) ->
   {PrevSdi+1, pass1_finalise_preS(PreS, LabelMap, []), LabelMap}.
 
--spec(pass1_finalise_preS/3 ::
-      ([#pre_sdi_data{}], gb_tree(), [#sdi_data{}]) -> tuple()).
+-spec pass1_finalise_preS([#pre_sdi_data{}], gb_tree(), [#sdi_data{}]) ->
+	tuple().
 pass1_finalise_preS([], _LabelMap, S) -> vector_from_list(S);
 pass1_finalise_preS([PreSdiData|PreS], LabelMap, S) ->
   #pre_sdi_data{address=Address, label=Label, si=SdiInfo} = PreSdiData,
@@ -107,7 +107,7 @@ pass1_finalise_preS([PreSdiData|PreS], LabelMap, S) ->
 
 %%% Pass2.
 
--spec(pass2/1 :: (#pass1{}) -> {gb_tree(), non_neg_integer()}).
+-spec pass2(#pass1{}) -> {gb_tree(), non_neg_integer()}.
 pass2(Pass1) ->
   {N,SDIS,LabelMap} = pass1_finalise(Pass1),
   LONG = mk_long(N),
@@ -125,7 +125,7 @@ pass2(Pass1) ->
 %%% Implementation notes:
 %%% - LONG is an integer array indexed from 0 to N-1.
 
--spec(mk_long/1 :: (non_neg_integer()) -> hipe_array()).
+-spec mk_long(non_neg_integer()) -> hipe_array().
 mk_long(N) ->
   mk_array_of_zeros(N).
 
@@ -156,12 +156,12 @@ mk_long(N) ->
 %%%   compute PARENTS[j] from the SDI vector when needed. This
 %%%   reduces memory overheads, and may reduce time overheads too.
 
--spec(mk_span/2 :: (non_neg_integer(), tuple()) -> hipe_array()).
+-spec mk_span(non_neg_integer(), tuple()) -> hipe_array().
 mk_span(N, SDIS) ->
   initSPAN(0, N, SDIS, mk_array_of_zeros(N)).
 
--spec(initSPAN/4 :: (non_neg_integer(), non_neg_integer(),
-		     tuple(), hipe_array()) -> hipe_array()).
+-spec initSPAN(non_neg_integer(), non_neg_integer(),
+	       tuple(), hipe_array()) -> hipe_array().
 initSPAN(SdiNr, N, SDIS, SPAN) ->
   if SdiNr >= N -> SPAN;
      true ->
@@ -192,14 +192,14 @@ mk_parents(N, SDIS) -> {N,SDIS}.
 %%% - The result is the updated LONG array. Afterwards, S, SPAN,
 %%%   and PARENTS are no longer useful.
 
--spec(update_long/5 :: (non_neg_integer(), tuple(), hipe_array(),
-			{non_neg_integer(),tuple()},hipe_array()) -> 'ok').
+-spec update_long(non_neg_integer(), tuple(), hipe_array(),
+		  {non_neg_integer(),tuple()},hipe_array()) -> 'ok'.
 update_long(N, SDIS, SPAN, PARENTS, LONG) ->
   WKL = initWKL(N-1, SDIS, SPAN, []),
   processWKL(WKL, SDIS, SPAN, PARENTS, LONG).
 
--spec(initWKL/4 :: (integer(), tuple(),
-		    hipe_array(), [non_neg_integer()]) -> [non_neg_integer()]).
+-spec initWKL(integer(), tuple(),
+	      hipe_array(), [non_neg_integer()]) -> [non_neg_integer()].
 initWKL(SdiNr, SDIS, SPAN, WKL) ->
   if SdiNr < 0 -> WKL;
      true ->
@@ -208,16 +208,15 @@ initWKL(SdiNr, SDIS, SPAN, WKL) ->
       initWKL(SdiNr-1, SDIS, SPAN, WKL2)
   end.
 
--spec(processWKL/5 :: ([non_neg_integer()], tuple(), hipe_array(),
-		       {non_neg_integer(), tuple()}, hipe_array()) -> 'ok').
+-spec processWKL([non_neg_integer()], tuple(), hipe_array(),
+		 {non_neg_integer(), tuple()}, hipe_array()) -> 'ok'.
 processWKL([], _SDIS, _SPAN, _PARENTS, _LONG) -> ok;
 processWKL([Child|WKL], SDIS, SPAN, PARENTS, LONG) ->
   WKL2 = updateChild(Child, WKL, SDIS, SPAN, PARENTS, LONG),
   processWKL(WKL2, SDIS, SPAN, PARENTS, LONG).
 
--spec(updateChild/6 ::
-      (non_neg_integer(), [non_neg_integer()], tuple(), hipe_array(),
-       {non_neg_integer(),tuple()}, hipe_array()) -> [non_neg_integer()]).
+-spec updateChild(non_neg_integer(), [non_neg_integer()], tuple(), hipe_array(),
+		  {non_neg_integer(),tuple()}, hipe_array()) -> [non_neg_integer()].
 updateChild(Child, WKL, SDIS, SPAN, PARENTS, LONG) ->
   case array_sub(SPAN, Child) of
     0 -> WKL;						% removed
@@ -230,13 +229,13 @@ updateChild(Child, WKL, SDIS, SPAN, PARENTS, LONG) ->
       updateParents(PS, Child, Incr, SDIS, SPAN, WKL)
   end.
 
--spec(parentsOfChild/2 :: ({non_neg_integer(),tuple()},
-			   non_neg_integer()) -> [non_neg_integer()]).
+-spec parentsOfChild({non_neg_integer(),tuple()},
+		     non_neg_integer()) -> [non_neg_integer()].
 parentsOfChild({N,SDIS}, Child) ->
   parentsOfChild(N-1, SDIS, Child, []).
 
--spec(parentsOfChild/4 :: (integer(), tuple(), non_neg_integer(),
-			   [non_neg_integer()]) -> [non_neg_integer()]).
+-spec parentsOfChild(integer(), tuple(), non_neg_integer(),
+		     [non_neg_integer()]) -> [non_neg_integer()].
 parentsOfChild(-1, _SDIS, _Child, PS) -> PS;
 parentsOfChild(SdiNr, SDIS, Child, PS) ->
   SdiData = vector_sub(SDIS, SdiNr),
@@ -251,17 +250,17 @@ parentsOfChild(SdiNr, SDIS, Child, PS) ->
     end,
   parentsOfChild(SdiNr-1, SDIS, Child, NewPS).
 
--spec(updateParents/6 :: ([non_neg_integer()], non_neg_integer(),
-			  byte(), tuple(), hipe_array(),
-			  [non_neg_integer()]) -> [non_neg_integer()]).
+-spec updateParents([non_neg_integer()], non_neg_integer(),
+		    byte(), tuple(), hipe_array(),
+		    [non_neg_integer()]) -> [non_neg_integer()].
 updateParents([], _Child, _Incr, _SDIS, _SPAN, WKL) -> WKL;
 updateParents([P|PS], Child, Incr, SDIS, SPAN, WKL) ->
   WKL2 = updateParent(P, Child, Incr, SDIS, SPAN, WKL),
   updateParents(PS, Child, Incr, SDIS, SPAN, WKL2).
 
--spec(updateParent/6 :: (non_neg_integer(), non_neg_integer(),
-			 byte(), tuple(), hipe_array(),
-			 [non_neg_integer()]) -> [non_neg_integer()]).
+-spec updateParent(non_neg_integer(), non_neg_integer(),
+		   byte(), tuple(), hipe_array(),
+		   [non_neg_integer()]) -> [non_neg_integer()].
 updateParent(Parent, Child, Incr, SDIS, SPAN, WKL) ->
   case array_sub(SPAN, Parent) of
     0 -> WKL;						% removed
@@ -274,19 +273,19 @@ updateParent(Parent, Child, Incr, SDIS, SPAN, WKL) ->
       updateWKL(Parent, SDIS, NewSpan, WKL)
   end.
 
--spec(updateWKL/4 :: (non_neg_integer(), tuple(),
-		      integer(), [non_neg_integer()]) -> [non_neg_integer()]).
+-spec updateWKL(non_neg_integer(), tuple(),
+		integer(), [non_neg_integer()]) -> [non_neg_integer()].
 updateWKL(SdiNr, SDIS, SdiSpan, WKL) ->
   case sdiSpanIsShort(vector_sub(SDIS, SdiNr), SdiSpan) of
     true -> WKL;
     false -> [SdiNr|WKL]
   end.
 
--spec(sdiSpanIsShort/2 :: (#sdi_data{}, integer()) -> bool()).
+-spec sdiSpanIsShort(#sdi_data{}, integer()) -> bool().
 sdiSpanIsShort(#sdi_data{si=#sdi_info{lb=LB,ub=UB}}, SdiSpan) ->
   SdiSpan >= LB andalso SdiSpan =< UB.
 
--spec(sdiLongIncr/1 :: (#sdi_data{}) -> byte()).
+-spec sdiLongIncr(#sdi_data{}) -> byte().
 sdiLongIncr(#sdi_data{si=#sdi_info{incr=Incr}}) -> Incr.
 
 %%% "Now construct a table INCREMENT[0:n] by defining
@@ -300,14 +299,13 @@ sdiLongIncr(#sdi_data{si=#sdi_info{incr=Incr}}) -> Incr.
 %%% - Due to the lack of an SML-like Array.extract operation,
 %%%   INCREMENT is an array, not an immutable vector.
 
--spec(mk_increment/2 ::
-      (non_neg_integer(), hipe_array()) -> {hipe_array(), non_neg_integer()}).
+-spec mk_increment(non_neg_integer(), hipe_array()) ->
+			{hipe_array(), non_neg_integer()}.
 mk_increment(N, LONG) ->
   initINCR(0, 0, N, LONG, mk_array_of_zeros(N)).
 
--spec(initINCR/5 :: (non_neg_integer(), non_neg_integer(), non_neg_integer(),
-		     hipe_array(), hipe_array()) ->
-	                 {hipe_array(), non_neg_integer()}).
+-spec initINCR(non_neg_integer(), non_neg_integer(), non_neg_integer(),
+	       hipe_array(), hipe_array()) -> {hipe_array(), non_neg_integer()}.
 initINCR(SdiNr, PrevIncr, N, LONG, INCREMENT) ->
   if SdiNr >= N -> {INCREMENT, PrevIncr};
      true ->
@@ -326,13 +324,13 @@ initINCR(SdiNr, PrevIncr, N, LONG, INCREMENT) ->
 %%%   a and previous sdi i is remapped to a+incr(i), where
 %%%   incr(i) = if i < 0 then 0 else INCREMENT[i].
 
--spec(adjust_label_map/2 :: (gb_tree(), hipe_array()) -> gb_tree()).
+-spec adjust_label_map(gb_tree(), hipe_array()) -> gb_tree().
 adjust_label_map(LabelMap, INCREMENT) ->
   applyIncr(gb_trees:to_list(LabelMap), INCREMENT, gb_trees:empty()).
 
--type(label_pair() :: {label(), #label_data{}}).
+-type label_pair() :: {label(), #label_data{}}.
 
--spec(applyIncr/3 :: ([label_pair()], hipe_array(), gb_tree()) -> gb_tree()).
+-spec applyIncr([label_pair()], hipe_array(), gb_tree()) -> gb_tree().
 applyIncr([], _INCREMENT, LabelMap) -> LabelMap;
 applyIncr([{Label,LabelData}|List], INCREMENT, LabelMap) ->
   #label_data{address=Address, prevSdi=PrevSdi} = LabelData,
@@ -346,7 +344,7 @@ applyIncr([{Label,LabelData}|List], INCREMENT, LabelMap) ->
 %%% Currently implemented as tuples.
 %%% Used for the 'SDIS' and 'PARENTS' vectors.
 
--spec(vector_from_list/1 :: ([#sdi_data{}]) -> tuple()).
+-spec vector_from_list([#sdi_data{}]) -> tuple().
 vector_from_list(Values) -> list_to_tuple(Values).
 
 vector_sub(Vec, I) -> element(I+1, Vec).
@@ -355,11 +353,11 @@ vector_sub(Vec, I) -> element(I+1, Vec).
 %%% Currently implemented as HiPE arrays.
 %%% Used for the 'LONG', 'SPAN', and 'INCREMENT' arrays.
 
--spec(mk_array_of_zeros/1 :: (non_neg_integer()) -> hipe_array()).
+-spec mk_array_of_zeros(non_neg_integer()) -> hipe_array().
 mk_array_of_zeros(N) -> hipe_bifs:array(N, 0).
 
--spec(array_update/3 :: (hipe_array(), non_neg_integer(), integer()) -> []).
+-spec array_update(hipe_array(), non_neg_integer(), integer()) -> hipe_array().
 array_update(A, I, V) -> hipe_bifs:array_update(A, I, V).
 
--spec(array_sub/2 :: (hipe_array(), non_neg_integer()) -> integer()).
+-spec array_sub(hipe_array(), non_neg_integer()) -> integer().
 array_sub(A, I) -> hipe_bifs:array_sub(A, I).

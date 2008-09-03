@@ -242,7 +242,7 @@ _ET_DECLARE_CHECKED(Sint,signed_val,Eterm);
 #define MAX_ATOM_INDEX (~(~((Uint) 0) << (sizeof(Uint)*8 - _TAG_IMMED2_SIZE)))
 
 /* atom access methods */
-#define make_atom(x)	(((x) << _TAG_IMMED2_SIZE) + _TAG_IMMED2_ATOM)
+#define make_atom(x)  ((Eterm)(((x) << _TAG_IMMED2_SIZE) + _TAG_IMMED2_ATOM))
 #define is_atom(x)	(((x) & _TAG_IMMED2_MASK) == _TAG_IMMED2_ATOM)
 #define is_not_atom(x)	(!is_atom(x))
 #define _unchecked_atom_val(x)	((x) >> _TAG_IMMED2_SIZE)
@@ -250,7 +250,7 @@ _ET_DECLARE_CHECKED(Uint,atom_val,Eterm);
 #define atom_val(x)	_ET_APPLY(atom_val,(x))
 
 /* header (arityval or thing) access methods */
-#define _make_header(sz,tag)	(((sz) << _HEADER_ARITY_OFFS) + (tag))
+#define _make_header(sz,tag)  ((Uint)(((sz) << _HEADER_ARITY_OFFS) + (tag)))
 #define is_header(x)	(((x) & _TAG_PRIMARY_MASK) == TAG_PRIMARY_HEADER)
 #define _unchecked_header_arity(x)	((x) >> _HEADER_ARITY_OFFS)
 _ET_DECLARE_CHECKED(Uint,header_arity,Eterm);

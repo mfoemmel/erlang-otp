@@ -62,6 +62,8 @@ atom DOWN='DOWN'
 atom UP='UP'
 atom EXIT='EXIT'
 atom aborted
+atom abs_path
+atom absoluteURI
 atom active
 atom all
 atom all_but_first
@@ -79,6 +81,7 @@ atom andthen
 atom any
 atom anycrlf
 atom arity
+atom asn1
 atom asynchronous
 atom atom
 atom atom_used
@@ -112,6 +115,7 @@ atom case_clause
 atom caseless
 atom catchlevel
 atom cd
+atom cdr
 atom clear
 atom close
 atom closed
@@ -185,6 +189,7 @@ atom exiting
 atom exports
 atom external
 atom false
+atom fcgi
 atom fd
 atom first
 atom firstline
@@ -211,6 +216,7 @@ atom getting_unlinked
 atom global
 atom global_heaps_size
 atom Gt='>'
+atom grun
 atom heap_block_size
 atom heap_size
 atom heap_sizes
@@ -219,11 +225,13 @@ atom hidden
 atom hide
 atom high
 atom hipe_architecture
+atom http httph https http_response http_request http_header http_eoh http_error
 atom hybrid
 atom id
 atom if_clause
 atom imports
 atom in
+atom in_exiting
 atom inactive
 atom inconsistent
 atom index
@@ -249,6 +257,7 @@ atom last_calls
 atom Le='=<'
 atom lf
 atom line
+atom line_length
 atom linked_in_driver
 atom links
 atom list
@@ -352,9 +361,12 @@ atom ose_process_prio
 atom ose_process_type
 atom ose_ti_proc
 atom out
+atom out_exited
+atom out_exiting
 atom output
 atom owner
 atom packet
+atom packet_size
 atom Plus='+'
 atom pause
 atom pending
@@ -384,6 +396,8 @@ atom public
 atom purify
 atom quantify
 atom queue_size
+atom raw
+atom re
 atom re_pattern
 atom re_run_trap
 atom ready_input
@@ -413,6 +427,7 @@ atom runtime
 atom save_calls
 atom scheduler 
 atom scheduler_id
+atom scheme
 atom sensitive
 atom sequential_tracer
 atom sequential_trace_token
@@ -430,6 +445,7 @@ atom shared
 atom silent
 atom size
 atom sl_alloc
+atom ssl_tls
 atom stack_size
 atom start
 atom status
@@ -437,6 +453,7 @@ atom static
 atom stderr_to_stdout
 atom stop
 atom stream
+atom sunrm
 atom suspend
 atom suspended
 atom suspending
@@ -457,6 +474,7 @@ atom Times='*'
 atom timestamp
 atom total
 atom total_heap_size
+atom tpkt
 atom trace trace_ts traced 
 atom trace_control_word
 atom tracer

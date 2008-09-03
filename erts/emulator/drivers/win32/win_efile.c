@@ -659,7 +659,7 @@ Efile_error* errInfo;		/* Where to return error codes. */
 char* name;			/* Name of directory to open. */
 int flags;			/* Flags to use for opening. */
 int* pfd;			/* Where to store the file descriptor. */
-off_t* pSize;			/* Where to store the size of the file. */
+Sint64* pSize;			/* Where to store the size of the file. */
 {
     BY_HANDLE_FILE_INFORMATION fileInfo; /* File information from a handle. */
     HANDLE fd;			/* Handle to open file. */
@@ -720,7 +720,11 @@ off_t* pSize;			/* Where to store the size of the file. */
     if (!GetFileInformationByHandle(fd, &fileInfo))
 	return set_error(errInfo);
     *pfd = (int) fd;
-    *pSize = fileInfo.nFileSizeLow;
+    if (pSize) {
+	*pSize = (Sint64)
+	    (((Uint64)fileInfo.nFileSizeHigh << 32) | 
+	     (Uint64)fileInfo.nFileSizeLow);
+    }
     return 1;
 }
 
@@ -1025,15 +1029,14 @@ Efile_error* errInfo;		/* Where to return error codes. */
 int fd;				/* File descriptor to write to. */
 char* buf;			/* Buffer to write. */
 size_t count;			/* Number of bytes to write. */
-off_t offset;			/* where to write it */
+Sint64 offset;			/* where to write it */
 {
-    int res, location;
-
-    if ((res = efile_seek(errInfo, fd, offset, 
-			  EFILE_SEEK_SET, &location)))
+    int res  = efile_seek(errInfo, fd, offset, EFILE_SEEK_SET, NULL);
+    if (res) {
 	return efile_write(errInfo, EFILE_MODE_WRITE, fd, buf, count);
-    else
+    } else {
 	return res;
+    }
 }
 
 /* position and read/write as a single atomic op */
@@ -1041,18 +1044,17 @@ int
 efile_pread(errInfo, fd, offset, buf, count, pBytesRead)
 Efile_error* errInfo;		/* Where to return error codes. */
 int fd;				/* File descriptor to read from. */
-off_t offset;			/* Offset in bytes from BOF. */
+Sint64 offset;			/* Offset in bytes from BOF. */
 char* buf;			/* Buffer to read into. */
 size_t count;			/* Number of bytes to read. */
 size_t* pBytesRead;		/* Where to return number of bytes read. */
 {
-    int res, location;
-
-    if ((res = efile_seek(errInfo, fd, offset, EFILE_SEEK_SET, 
-			  &location)))
+    int res = efile_seek(errInfo, fd, offset, EFILE_SEEK_SET, NULL);
+    if (res) {
 	return efile_read(errInfo, EFILE_MODE_READ, fd, buf, count, pBytesRead);
-    else
+    } else {
 	return res;
+    }
 }
 
 
@@ -1133,14 +1135,14 @@ int
 efile_seek(errInfo, fd, offset, origin, new_location)
 Efile_error* errInfo;		/* Where to return error codes. */
 int fd;				/* File descriptor to do the seek on. */
-off_t offset;			/* Offset in bytes from the given origin. */
+Sint64 offset;			/* Offset in bytes from the given origin. */
 int origin;			/* Origin of seek (SEEK_SET, SEEK_CUR,
 				 * SEEK_END).
 				 */
-off_t* new_location;		/* Resulting new location in file. */
+Sint64* new_location;		/* Resulting new location in file. */
 {
-    DWORD result;
-
+    LARGE_INTEGER off, new_loc;
+    
     switch (origin) {
     case EFILE_SEEK_SET: origin = FILE_BEGIN; break;
     case EFILE_SEEK_CUR: origin = FILE_CURRENT; break;
@@ -1150,12 +1152,19 @@ off_t* new_location;		/* Resulting new location in file. */
 	check_error(-1, errInfo);
 	break;
     }
-
-    result = SetFilePointer((HANDLE) fd, offset, NULL, origin);
-    if (result == (DWORD) -1)
+    
+    off.QuadPart = offset;
+    if (! SetFilePointerEx((HANDLE) fd, off,
+	new_location ? &new_loc : NULL, origin)) {
 	return set_error(errInfo);
-    DEBUGF(("efile_seek(offset=%d, origin+%d) -> %d\n", offset, origin, result));
-    *new_location = (unsigned) result;
+    }
+    if (new_location) {
+	*new_location = new_loc.QuadPart;
+	DEBUGF(("efile_seek(offset=%ld, origin=%d) -> %ld\n", 
+		(long) offset, origin, (long) *new_location));
+    } else {
+	DEBUGF(("efile_seek(offset=%ld, origin=%d)\n", (long) offset, origin));
+    }
     return 1;
 }
 

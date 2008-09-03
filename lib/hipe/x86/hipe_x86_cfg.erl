@@ -5,12 +5,13 @@
 
 -export([init/1,
          labels/1, start_label/1,
-         succ/2,
+         succ/2, pred/2,
          bb/2, bb_add/3]).
 -export([postorder/1, reverse_postorder/1]).
 -export([linearise/1, params/1, arity/1, redirect_jmp/3]).
 
 %%% these tell cfg.inc what to define (ugly as hell)
+-define(PRED_NEEDED,true).
 -define(BREADTH_ORDER,true).
 -define(PARAMS_NEEDED,true).
 -define(START_LABEL_UPDATE_NEEDED,true).

@@ -140,9 +140,17 @@ erts_init_proc_lock(void)
     erts_smp_spinlock_init(&wtr_lock, "proc_lck_wtr_alloc");
     for (i = 0; i < ERTS_NO_OF_PIX_LOCKS; i++) {
 #if ERTS_PROC_LOCK_MUTEX_IMPL
+#ifdef ERTS_ENABLE_LOCK_COUNT
+	erts_smp_mtx_init_x(&erts_pix_locks[i].u.mtx, "pix_lock", make_small(i));
+#else
 	erts_smp_mtx_init(&erts_pix_locks[i].u.mtx, "pix_lock");
+#endif
+#else
+#ifdef ERTS_ENABLE_LOCK_COUNT
+	erts_smp_spinlock_init_x(&erts_pix_locks[i].u.spnlck, "pix_lock", make_small(i));
 #else
 	erts_smp_spinlock_init(&erts_pix_locks[i].u.spnlck, "pix_lock");
+#endif
 #endif
     }
     waiter_free_list = NULL;

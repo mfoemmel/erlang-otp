@@ -35,6 +35,8 @@ OBJECTS=$(SOURCES:%.erl=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
 HRL_FILES = edoc.hrl edoc_types.hrl ../include/edoc_doclet.hrl
 
+YRL_FILE = edoc_parser.yrl
+
 APP_FILE= edoc.app
 APP_SRC= $(APP_FILE).src
 APP_TARGET= $(EBIN)/$(APP_FILE)
@@ -83,7 +85,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(OBJECTS) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(SOURCES) $(HRL_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(SOURCES) $(HRL_FILES) $(YRL_FILE) $(RELSYSDIR)/src
 
 release_docs_spec:
 

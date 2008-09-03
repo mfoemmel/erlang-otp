@@ -51,10 +51,10 @@
 					% (Windows).
 	 %% The following are Unix specific.
 	 %% They are set to zero on other operating systems.
-	 minor_device,			% Only valid for devices.
+	 minor_device :: integer(),	% Only valid for devices.
 	 inode  :: integer(),  		% Inode number for file.
-	 uid    :: integer(),  		% User id for owner (integer).
-	 gid    :: integer()}).	        % Group id for owner (integer).
+	 uid    :: integer(),  		% User id for owner.
+	 gid    :: integer()}).	        % Group id for owner.
 
 
 -record(file_descriptor,

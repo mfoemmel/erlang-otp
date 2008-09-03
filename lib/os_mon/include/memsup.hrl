@@ -22,14 +22,21 @@
 
 %% Defines
 
--define( MEM_SHOW , 1 ).
--define( SYSTEM_MEM_SHOW , 2 ).
--define( SYSTEM_MEM_SHOW_END , 8#0 ).
--define( SYSTEM_TOTAL_MEMORY , 1 ).
--define( TOTAL_MEMORY , 2 ).
--define( FREE_MEMORY , 3 ).
--define( LARGEST_FREE , 4 ).
--define( NUMBER_OF_FREE , 5 ).
+-define( SHOW_MEM , 1 ).
+-define( SHOW_SYSTEM_MEM , 2 ).
+-define( SHOW_SYSTEM_MEM_END , 8#0 ).
+%% tags for extended statistics
+-define( MEM_SYSTEM_TOTAL , 1 ).
+-define( MEM_TOTAL , 2 ).
+-define( MEM_FREE , 3 ).
+-define( MEM_LARGEST_FREE , 4 ).
+-define( MEM_NUMBER_OF_FREE , 5 ).
+%% extensions 
+-define( MEM_BUFFERS , 6 ).
+-define( MEM_CACHED , 7 ).
+-define( MEM_SHARED , 8 ).
+-define( SWAP_TOTAL , 9 ).
+-define( SWAP_FREE , 10 ).
 
 -endif.
 

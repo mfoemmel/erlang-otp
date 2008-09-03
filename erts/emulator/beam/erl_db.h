@@ -32,7 +32,7 @@
 #include "erl_db_tree.h" /* DbTableTree */
 /*TT*/
 
-Uint erts_ets_memory_size(void);
+Uint erts_get_ets_misc_mem_size(void);
 
 /*
  * So, the structure for a database table, NB this is only
@@ -45,13 +45,12 @@ union db_table {
     /*TT*/
 };
 
-/* This should be a prime number. Find them with super:/usr/games/prime */
 #define DB_DEF_MAX_TABS 2053 /* Superseeded by environment variable 
 				"ERL_MAX_ETS_TABLES" */
 #define ERL_MAX_ETS_TABLES_ENV "ERL_MAX_ETS_TABLES"
 
 void init_db(void);
-void db_proc_dead(Eterm pid);
+int erts_db_process_exiting(Process *, ErtsProcLocks);
 void db_info(int, void *, int);
 void erts_db_foreach_table(void (*)(DbTable *, void *), void *);
 void erts_db_foreach_offheap(DbTable *,
@@ -63,8 +62,9 @@ extern int erts_ets_realloc_always_moves;  /* set in erl_init */
 extern Export ets_select_delete_continue_exp;
 extern Export ets_select_count_continue_exp;
 extern Export ets_select_continue_exp;
+extern erts_smp_atomic_t erts_ets_misc_mem_size;
 
-Eterm erts_ets_slot_to_atom(Uint slot);
+Eterm erts_ets_colliding_names(Process*, Eterm name, Uint cnt);
 
 #endif
 
@@ -72,8 +72,6 @@ Eterm erts_ets_slot_to_atom(Uint slot);
 #define ERTS_HAVE_DB_INTERNAL__
 
 #include "erl_alloc.h"
-
-extern erts_smp_atomic_t erts_tot_ets_memory_size; /* NOTE: Memory size in bytes! */
 
 /*
  * _fnf : Failure Not Fatal (same as for erts_alloc/erts_realloc/erts_free)
@@ -83,16 +81,12 @@ extern erts_smp_atomic_t erts_tot_ets_memory_size; /* NOTE: Memory size in bytes
 #define ERTS_DB_ALC_MEM_UPDATE_(TAB, FREE_SZ, ALLOC_SZ)			\
 do {									\
     long sz__ = ((long) (ALLOC_SZ)) - ((long) (FREE_SZ));		\
-    erts_smp_atomic_add(&erts_tot_ets_memory_size, sz__);		\
     ASSERT((TAB));							\
     erts_smp_atomic_add(&(TAB)->common.memory_size, sz__);		\
 } while (0)
 
-#define ERTS_DB_ALC_MEM_UPDATE_NT_(FREE_SZ, ALLOC_SZ)			\
-do {									\
-    long sz__ = ((long) (ALLOC_SZ)) - ((long) (FREE_SZ));		\
-    erts_smp_atomic_add(&erts_tot_ets_memory_size, sz__);		\
-} while (0)
+#define ERTS_ETS_MISC_MEM_ADD(SZ) \
+  erts_smp_atomic_add(&erts_ets_misc_mem_size, (SZ));
 
 ERTS_GLB_INLINE void *erts_db_alloc(ErtsAlcType_t type,
 				    DbTable *tab,
@@ -127,7 +121,6 @@ ERTS_GLB_INLINE void *
 erts_db_alloc_nt(ErtsAlcType_t type, Uint size)
 {
     void *res = erts_alloc(type, size);
-    ERTS_DB_ALC_MEM_UPDATE_NT_(0, size);
     return res;
 }
 
@@ -137,7 +130,6 @@ erts_db_alloc_fnf_nt(ErtsAlcType_t type, Uint size)
     void *res = erts_alloc_fnf(type, size);
     if (!res)
 	return NULL;
-    ERTS_DB_ALC_MEM_UPDATE_NT_(0, size);
     return res;
 }
 
@@ -195,7 +187,6 @@ erts_db_realloc_nt(ErtsAlcType_t type, void *ptr,
     void *res;
     ASSERT(!ptr || old_size == ERTS_ALC_DBG_BLK_SZ(ptr));
     res = erts_realloc(type, ptr, size);
-    ERTS_DB_ALC_MEM_UPDATE_NT_(old_size, size);
     return res;
 }
 
@@ -208,7 +199,6 @@ erts_db_realloc_fnf_nt(ErtsAlcType_t type, void *ptr,
     res = erts_realloc_fnf(type, ptr, size);
     if (!res)
 	return NULL;
-    ERTS_DB_ALC_MEM_UPDATE_NT_(old_size, size);
     return res;
 }
 
@@ -218,6 +208,10 @@ ERTS_GLB_INLINE void erts_db_free(ErtsAlcType_t type,
 				  DbTable *tab,
 				  void *ptr,
 				  Uint size);
+
+ERTS_GLB_INLINE void erts_db_free_nt(ErtsAlcType_t type,
+				     void *ptr,
+				     Uint size);
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 
@@ -233,9 +227,18 @@ erts_db_free(ErtsAlcType_t type, DbTable *tab, void *ptr, Uint size)
 
     erts_free(type, ptr);
 }
+
+ERTS_GLB_INLINE void
+erts_db_free_nt(ErtsAlcType_t type, void *ptr, Uint size)
+{
+    ASSERT(ptr != 0);
+    ASSERT(size == ERTS_ALC_DBG_BLK_SZ(ptr));
+
+    erts_free(type, ptr);
+}
+
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
 
-#undef ERTS_DB_ALC_MEM_UPDATE_NT_
 #undef ERTS_DB_ALC_MEM_UPDATE_
 
 #endif /* #if defined(ERTS_WANT_DB_INTERNAL__) && !defined(ERTS_HAVE_DB_INTERNAL__) */

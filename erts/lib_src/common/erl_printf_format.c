@@ -128,11 +128,6 @@ static char zeros[]  = "00000000000000000000000000000000";
 static char blanks[] = "                                ";
 static char hex[] = "0123456789abcdef";
 static char heX[] = "0123456789ABCDEF";
-static int xtab[] = { 0, 10, 11, 12, 13, 14, 15,
-		      0, 0, 0, 0, 0, 0, 0, 0, 0, 
-		      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-		      0, 0, 0, 0, 0, 0 };
-#define HEX(c) xtab[(c) & 0x1f]
 
 #define FMT(fn,arg,buf,len,count) do { \
     int res__ = (fn)((arg),(buf),(len)); \
@@ -431,49 +426,6 @@ static int fmt_double(fmtfn_t fn,void*arg,double val,
     return res;
 }
 
-
-static char* fmtq(char* ptr, int* buf)
-{
-    int c;
-
-    switch((c=*ptr++)) {
-    case 'n': c = '\n'; break;
-    case 'r': c = '\r'; break;
-    case 't': c = '\t'; break;
-    case 'v': c = '\v'; break;
-    case 'b': c = '\b'; break;
-    case 'f': c = '\f'; break;
-    case 'x':
-	if (isxdigit((int) *ptr)) {
-	    c = HEX(*ptr);
-	    ptr++;
-	    if (isxdigit((int) *ptr)) {
-		c = (c << 4) | HEX(*ptr);
-		ptr++;
-		if (isxdigit((int) *ptr)) {
-		    c = (c << 4) | HEX(*ptr);
-		    ptr++;
-		}
-	    }
-	}
-	break;
-    case '0': case '1': case '2': case '3': case '4':
-    case '5': case '6': case '7':
-	c = c - '0';
-	if ((*ptr >= 0) && (*ptr <= 7)) {
-	    c = (c << 3) | (*ptr - '0');
-	    ptr++;
-	    if ((*ptr >= 0) && (*ptr <= 7)) {
-		c = (c << 3) | (*ptr - '0');
-		ptr++;
-	    }
-	}
-	break;
-    }
-    *buf = c;
-    return ptr;
-}
-
 int erts_printf_format(fmtfn_t fn, void* arg, char* fmt, va_list ap)
 {
     char* ptr0 = fmt;
@@ -491,17 +443,7 @@ int erts_printf_format(fmtfn_t fn, void* arg, char* fmt, va_list ap)
 	if (res < 0)
 	    return res;
 
-	if (*ptr == '\\') {
-	    int wc;
-	    char c;
-	    if ((n=ptr-ptr0))
-		FMT(fn,arg,ptr0,n,count);
-	    ptr++;
-	    ptr0 = ptr = fmtq(ptr, &wc);
-	    c = wc & 0xff;
-	    FMT(fn,arg,&c,1,count);
-	}
-	else if (*ptr == '%') {
+	if (*ptr == '%') {
 	    if ((n=ptr-ptr0))
 		FMT(fn,arg,ptr0,n,count);
 	    ptr++;

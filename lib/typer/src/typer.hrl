@@ -5,7 +5,11 @@
 %% Description : Header file for the typer application
 %%--------------------------------------------------------------------
 
--include("dialyzer.hrl").  %% needed for some dialyzer records below
+%%
+%% The following are needed for some dialyzer records below
+%%
+-include("dialyzer.hrl").
+-include("dialyzer_callgraph.hrl").
 
 %% XXX: The following appear here only temporarily
 %-type(dict()                :: tuple()).
@@ -20,7 +24,7 @@
 	 %% Esp for Dialyzer
 	 %% ----------------------
 	 code_server = dialyzer_codeserver:new() :: dialyzer_codeserver(),
-	 callgraph   = dialyzer_callgraph:new()  :: dialyzer_codeserver(),
+	 callgraph   = dialyzer_callgraph:new()  :: #dialyzer_callgraph{},
 	 ana_files	 :: [string()],   % absolute filenames
 	 plt         = none                      :: 'none' | string(),
 	 

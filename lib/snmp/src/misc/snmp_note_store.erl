@@ -26,7 +26,10 @@
 -include("snmp_verbosity.hrl").
 
 %% External exports
--export([start_link/3, get_note/2, set_note/4, info/1, verbosity/2]).
+-export([start_link/3, stop/1, 
+	 get_note/2, 
+	 set_note/3, set_note/4, 
+	 info/1, verbosity/2]).
 
 %% Internal exports
 -export([init/1, 
@@ -74,9 +77,16 @@ start_link(Prio, Mod, Opts) ->
 %%-----------------------------------------------------------------
 %% Interface functions.
 %%-----------------------------------------------------------------
+
+stop(Pid) ->
+    call(Pid, stop).
+
 get_note(Pid, Key) ->
     call(Pid, {get_note, Key}).
-%% Lifetime is in 1/10 sec.
+
+%% Lifetime is in 1/10 sec or infinity
+set_note(Pid, Key, Value) ->
+    set_note(Pid, infinity, Key, Value).
 set_note(Pid, Lifetime, Key, Value) ->
     call(Pid, {set_note, Lifetime, Key, Value}).
 
@@ -128,19 +138,32 @@ do_init(Prio, Mod, Opts) ->
 %%-----------------------------------------------------------------
 handle_call({set_note, Lifetime, Key, Value}, _From, 
 	    #state{mod = Mod, notes = Notes} = State) 
-  when integer(Lifetime) ->
-    ?vlog("set note <~p,~p> with life time ~p",[Key,Value,Lifetime]),
-    RealUpTime = snmp_misc:now(cs) - Mod:system_start_time(),
-    ?vtrace("handle_call(set_note) -> RealUpTime: ~p",[RealUpTime]),
-    BestBefore = RealUpTime + Lifetime,
-    ?vtrace("handle_call(set_note) -> BestBefore: ~p",[BestBefore]),
-    Val = ets:insert(Notes, {Key, {BestBefore, Value}}),
-    NState = activate_timer(State),
-    {reply, Val, NState};
+  when is_integer(Lifetime) ->
+    ?vlog("set note <~p,~p> with life time ~p", [Key,Value,Lifetime]),
+    case (catch Mod:system_start_time()) of
+	SysStartTime when is_integer(SysStartTime) ->
+	    ?vtrace("handle_call(set_note) -> SysStartTime: ~p", 
+		    [SysStartTime]),
+	    Now = snmp_misc:now(cs), 
+	    ?vtrace("handle_call(set_note) -> Now: ~p", [Now]),
+	    RealUpTime = Now - SysStartTime,
+	    ?vtrace("handle_call(set_note) -> RealUpTime: ~p", [RealUpTime]),
+	    BestBefore = RealUpTime + Lifetime,
+	    ?vtrace("handle_call(set_note) -> BestBefore: ~p", [BestBefore]),
+	    Val = ets:insert(Notes, {Key, {BestBefore, Value}}),
+	    NState = activate_timer(State),
+	    {reply, Val, NState};
+	_Crap ->
+	    ?vinfo("handle_call(set_note) -> "
+		   "failed retreiving system start time from ~w: "
+		   "~n   ~p", [Mod, _Crap]),
+	    {reply, {error, failed_retreive_system_start_time}, State}
+    end;
 
-handle_call({set_note, infinity, Key, Value}, _From, State) ->
+handle_call({set_note, infinity, Key, Value}, _From, 
+	    #state{notes = Notes} = State) ->
     ?vlog("set note <~p,~p>",[Key,Value]),
-    Val = ets:insert(State#state.notes, {Key, {infinity, Value}}),
+    Val = ets:insert(Notes, {Key, {infinity, Value}}),
     ?vdebug("set note; old value: ~p",[Val]),
     {reply, Val, State};
 
@@ -323,15 +346,19 @@ handle_get_note(Notes, Mod, Key) ->
 	    ?vtrace("get note -> BestBefore: ~w", [BestBefore]),
 	    StartTime = Mod:system_start_time(), 
 	    ?vtrace("get note -> StartTime: ~w", [StartTime]),
-	    case (snmp_misc:now(cs) - StartTime) of
-		Now when BestBefore >= Now ->
-		    ?vtrace("get note -> Now: ~w", [Now]),
+	    Now = snmp_misc:now(cs), 
+	    ?vtrace("get note -> Now: ~w", [Now]),
+	    case (Now - StartTime) of
+		Diff when BestBefore >= Diff ->
+		    ?vtrace("get note -> Diff: ~w", [Diff]),
 		    Val;
-		_ ->
+		OldDiff ->
+		    ?vtrace("get note -> note to old [~w] - delete", [OldDiff]),
 		    ets:delete(Notes, Key),
 		    undefined
 	    end;
-	[] -> undefined
+	[] -> 
+	    undefined
     end.
 
 

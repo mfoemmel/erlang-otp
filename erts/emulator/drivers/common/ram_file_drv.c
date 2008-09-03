@@ -89,28 +89,6 @@
 
 #define BFILE_BLOCK  1024
 
-#define get_int32(s) ((((unsigned char*) (s))[0] << 24) | \
-                      (((unsigned char*) (s))[1] << 16) | \
-                      (((unsigned char*) (s))[2] << 8)  | \
-                      (((unsigned char*) (s))[3]))
-
-#define put_int32(i, s) {((char*)(s))[0] = (char)((i) >> 24) & 0xff; \
-                        ((char*)(s))[1] = (char)((i) >> 16) & 0xff; \
-                        ((char*)(s))[2] = (char)((i) >> 8)  & 0xff; \
-                        ((char*)(s))[3] = (char)((i)        & 0xff);}
-
-#define get_int16(s) ((((unsigned char*)  (s))[0] << 8) | \
-                      (((unsigned char*)  (s))[1]))
-
-
-#define put_int16(i, s) {((unsigned char*)(s))[0] = ((i) >> 8) & 0xff; \
-                        ((unsigned char*)(s))[1] = (i)         & 0xff;}
-
-#define get_int8(s) ((((unsigned char*)  (s))[0] ))
-
-
-#define put_int8(i, s) { ((unsigned char*)(s))[0] = (i)         & 0xff;}
-
 typedef unsigned char uchar;
 
 static ErlDrvData rfile_start(ErlDrvPort, char*);
@@ -138,7 +116,7 @@ typedef struct ram_file {
     ErlDrvPort port;	/* the associcated port */
     int flags;          /* flags read/write */
     ErlDrvBinary* bin;  /* binary to hold binary file */
-    uchar* buf;         /* buffer start (in binary) */
+    char* buf;          /* buffer start (in binary) */
     int size;           /* buffer size (allocated) */
     int cur;            /* current position in buffer */
     int end;            /* end position in buffer */
@@ -316,7 +294,7 @@ static int ram_file_expand(RamFile *f, int size, int *error)
 }
 
 
-static int ram_file_write(RamFile *f, uchar *buf, int len, 
+static int ram_file_write(RamFile *f, char *buf, int len, 
 			  int *location, int *error)
 {
     int cur = f->cur;
@@ -417,8 +395,8 @@ static int ram_file_uuencode(RamFile *f)
 
     if ((bin = driver_alloc_binary(usize)) == NULL)
 	return error_reply(f, ENOMEM);
-    outp = (unsigned char*)bin->orig_bytes;
-    inp = f->buf;
+    outp = (uchar*)bin->orig_bytes;
+    inp = (uchar*)f->buf;
 
     while(len > 0) {
         int c1, c2, c3;
@@ -475,8 +453,8 @@ static int ram_file_uudecode(RamFile *f)
 
     if ((bin = driver_alloc_binary(usize)) == NULL)
 	return error_reply(f, ENOMEM);
-    outp = (unsigned char*)bin->orig_bytes;
-    inp  = f->buf;
+    outp = (uchar*)bin->orig_bytes;
+    inp  = (uchar*)f->buf;
 
     while(len > 0) {
 	if ((n = uu_decode(*inp++)) < 0)

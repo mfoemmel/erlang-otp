@@ -365,7 +365,8 @@ http_options([{version, Val} | Settings], Acc)
   when is_atom(Val)->
     http_options(Settings, Acc#http_options{version = Val});
 http_options([Option | Settings], Acc) ->
-    error_logger:info_report("Invalid option ignored ~p~n", [Option]),
+    Report = io_lib:format("Invalid option ~p ignored ~n", [Option]),
+    error_logger:info_report(Report),
     http_options(Settings, Acc).
 
 validate_options([]) ->

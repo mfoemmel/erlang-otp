@@ -302,13 +302,14 @@ erts_port_cleanup(Port *prt)
 #endif
     ErlDrvEntry *driver;
 
+    erts_smp_port_tab_lock();
+
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
     driver = prt->drv_ptr;
     prt->drv_ptr = NULL;
     ASSERT(driver);
 
 #ifdef ERTS_SMP
-    erts_smp_port_tab_lock();
 
     ASSERT(prt->status & ERTS_PORT_SFLG_FREE_SCHEDULED);
     ERTS_SMP_LC_ASSERT(erts_smp_atomic_read(&prt->refc) == 0);
@@ -412,6 +413,8 @@ setup_port(int port_num, Eterm pid, ErlDrvEntry *driver,
     prt->status = ERTS_PORT_SFLG_CONNECTED | xstatus;
     old_name = prt->name;
     prt->name = new_name;
+    ASSERT(!prt->drv_ptr);
+    prt->drv_ptr = driver;
     erts_smp_port_tab_unlock();
     erts_smp_tasks_unlock();
 #ifdef ERTS_SMP
@@ -423,8 +426,6 @@ setup_port(int port_num, Eterm pid, ErlDrvEntry *driver,
 
     prt->control_flags = 0;
     prt->connected = pid;
-    ASSERT(!prt->drv_ptr);
-    prt->drv_ptr = driver;
     prt->drv_data = (long) drv_data;
     prt->bytes_in = 0;
     prt->bytes_out = 0;
@@ -726,7 +727,7 @@ struct ErtsXPortsList_ {
     Port *port;
 };
 
-ERTS_SMP_QUALLOC_IMPL(xports_list, ErtsXPortsList, 10, ERTS_ALC_T_XPORTS_LIST)
+ERTS_SCHED_PREF_QUICK_ALLOC_IMPL(xports_list, ErtsXPortsList, 50, ERTS_ALC_T_XPORTS_LIST)
 
 #endif
 
@@ -4556,7 +4557,7 @@ init_de_list(DE_List *de_list, ErlDrvEntry *drv, DE_Handle *de_hndl)
 					  sizeof(erts_smp_mtx_t));
 	erts_smp_mtx_init_x(de_list->driver_lock,
 			    "driver_lock",
-#ifdef ERTS_ENABLE_LOCK_CHECK
+#if defined(ERTS_ENABLE_LOCK_CHECK) || defined(ERTS_ENABLE_LOCK_COUNT)
 			    am_atom_put(drv->driver_name,
 					sys_strlen(drv->driver_name))
 #else
@@ -4622,7 +4623,7 @@ driver_system_info(ErlDrvSysInfo *sip, size_t si_size)
      */
     if (si_size >= ERL_DRV_SYS_INFO_SIZE(scheduler_threads)) {
 	sip->async_threads = erts_async_max_threads;
-	sip->scheduler_threads = erts_no_of_schedulers;
+	sip->scheduler_threads = erts_no_schedulers;
     }
 
 }

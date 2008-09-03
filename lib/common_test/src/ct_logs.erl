@@ -100,19 +100,9 @@ logdir_node_prefix() ->
 %%% (tool-internal use only).
 close(How) ->
     make_last_run_index(),
-    if How == clean ->
-	    case cleanup() of
-		ok ->
-		    ok;
-		Error ->
-		    io:format("Warning! Cleanup failed: ~p~n", [Error])
-	    end;
-       true -> 
-	    file:set_cwd("..")
-    end,       
-    make_all_suites_index(stop),
-    make_all_runs_index(stop),
+
     ct_event:notify(#event{name=stop_logging,node=node(),data=[]}),
+
     case whereis(?MODULE) of
 	Pid when pid(Pid) ->
 	    MRef = erlang:monitor(process,Pid),
@@ -124,6 +114,21 @@ close(How) ->
 	undefined ->
 	    ok
     end,
+
+    if How == clean ->
+	    case cleanup() of
+		ok ->
+		    ok;
+		Error ->
+		    io:format("Warning! Cleanup failed: ~p~n", [Error])
+	    end;
+       true -> 
+	    file:set_cwd("..")
+    end,       
+
+    make_all_suites_index(stop),
+    make_all_runs_index(stop),
+
     ok.
 
 %%%-----------------------------------------------------------------
@@ -384,8 +389,25 @@ log_timestamp(Now) ->
 -record(logger_state,{log_dir,start_time,orig_GL,ct_log_fd,current_fd,stylesheet}).
 logger(Parent,Mode) ->
     register(?MODULE,self()),
-    Time = calendar:local_time(),
-    Dir = make_dirname(Time),
+
+    %%! Below is a temporary workaround for the limitation of
+    %%! max one test run per second. 
+    %%! --->
+    Time0 = calendar:local_time(),
+    Dir0 = make_dirname(Time0),
+    {Time,Dir} = 
+	case filelib:is_dir(Dir0) of
+	    true ->
+		timer:sleep(1000),
+		Time1 = calendar:local_time(),
+		Dir1 = make_dirname(Time1),
+
+		{Time1,Dir1};
+	    false ->
+		{Time0,Dir0}
+	end,
+    %%! <---
+
     file:make_dir(Dir),
     ct_event:notify(#event{name=start_logging,node=node(),
 			   data=?abs(Dir)}),
@@ -1248,9 +1270,9 @@ cleanup() ->
 	    ok ->
 		ok;
 	    {'EXIT',Reason} ->
-		{error,{cleanup_failed,Reason}};
+		{error,Reason};
 	    Error ->
-		{error,{cleanup_failed,Error}}
+		{error,Error}
 	end,
     ok = file:set_cwd(Top),
     Result.
@@ -1261,7 +1283,7 @@ try_cleanup(CTRunDir) ->
 	[[$c,$t,$_,$r,$u,$n,$.|_]|_] ->
 	    case filelib:wildcard(filename:join(CTRunDir,"ct_run.*")) of
 		[] ->				% "double check"
-		    delete_dir(CTRunDir);
+		    rm_dir(CTRunDir);
 		_ ->
 		    unknown_logdir
 	    end;
@@ -1269,29 +1291,40 @@ try_cleanup(CTRunDir) ->
 	    unknown_logdir
     end.
 
-delete_dir(Dir) ->
-    {ok,Files} = file:list_dir(Dir),
-    recursive_delete(Files,Dir).
+rm_dir(Dir) ->
+    case file:list_dir(Dir) of
+	{error,Errno} ->
+	    exit({ls_failed,Dir,Errno});
+	{ok,Files} ->
+	    rm_files([filename:join(Dir, F) || F <- Files]),
+	    case file:del_dir(Dir) of
+		{error,Errno} ->
+		    exit({rmdir_failed,Errno});
+		ok ->
+		    ok
+	    end
+    end.
 
-recursive_delete(["."|Files],Dir) ->
-    recursive_delete(Files,Dir);
-recursive_delete(["../"|Files],Dir) ->
-    recursive_delete(Files,Dir);
-recursive_delete([File|Files],Dir) ->
-    ok = file:set_cwd(Dir),
-    case file:read_file_info(File) of
-	{ok,#file_info{type=directory}} ->
-	    ok = file:set_cwd(File),
-	    {ok,Fs} = file:list_dir("."),
-	    recursive_delete(Fs,?abs("."));	    
-	{ok,_Regular} ->			% leaf = file
-	    ok = file:delete(File)
-    end,
-    recursive_delete(Files,Dir);
-recursive_delete([],Dir) ->			% leaf = dir
-    ok = file:set_cwd("../"),
-    ok = file:del_dir(Dir).
-    
+rm_files([F | Fs]) ->
+    Base = filename:basename(F),
+    if Base == "." ; Base == ".." ->
+	    rm_files(Fs);
+       true ->
+	    case file:read_file_info(F) of
+		{ok,#file_info{type=directory}} ->
+		    rm_dir(F),
+		    rm_files(Fs);
+		{ok,_Regular} ->
+		    case file:delete(F) of
+			ok ->
+			    rm_files(Fs);
+			{error,Errno} ->
+			    exit({del_failed,F,Errno})
+		    end
+	    end
+    end;
+rm_files([]) ->
+    ok.    
 
 %%%-----------------------------------------------------------------
 %%% @spec simulate() -> pid()

@@ -27,7 +27,7 @@ At Ericsson we have a "Daily Build and Test" that runs on:
     Linux/Suse Amd64	    9.3, 10.1
     Linux/Montavista PPC    3.1
     FreeBSD x86             5.0
-    Mac OS X/Intel          10.4.10 (Tiger)
+    Mac OS X/Intel          10.4.11 (Tiger)
     Mac OS X/Intel          10.5.3 (Leopard)
     Windows x86		    XP SP2, 2003, Vista
 
@@ -86,7 +86,8 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
 
   Perl 5
 
-  ncurses		(Or termcap or termlib.)
+  ncurses		(Or termcap or termlib.) The development headers and
+                        libraries are needed, often known as ncurses-devel.
 
   OpenSSL	        Optional, but needed for building the Erlang/OTP
                         applications 'ssl' and 'crypto'. You need the
@@ -210,9 +211,23 @@ a prompt.
 mind about where you wish to install you can rerun step 4, without
 having to do step 5 again).
 
+The source tree is delivered with a lot of platform independent
+build results already pre-built. If you want to remove these pre-built
+files, invoke './otp_build remove_prebuilt_files' from the $ERL_TOP
+directory. After you have done this, you can build exactly the same way
+as before, but the build process will take a much longer time.
+
+NOTE: Doing 'make clean' in an arbitrary directory of the source tree,
+may remove files needed for bootstrapping the build. Doing
+'./otp_build save_bootstrap' from the $ERL_TOP directory before
+doing 'make clean' will ensure that it will be possible to build after
+doing 'make clean'. './otp_build save_bootstrap' will be invoked
+automatically when 'make' is invoked from ERL_TOP with either the
+clean target, or the default target. It is also automatically invoked
+if './otp_build remove_prebuilt_files' is invoked.
+
 If you or your system has special requirements please read the
 Makefile for additional configuration information.
-
 
 Support for SMP (Symmetric Multi Processing)
 --------------------------------------------
@@ -347,8 +362,8 @@ to print out the available options.
 Mac OS X (Darwin)
 -----------------
 
-Mac OS X version 10.4 (Tiger) or later is recommended. 10.5 (Leopard) is
-tested, but at the time of writing, not on a regular basis.
+We test Mac OS X 10.4.11 (Tiger) and Mac OS X 10.5.x (Leopard)
+in our daily builds.
 
 Earlier releases of Mac OS X might work, but we have not
 tested them. On earlier releases, use the "gnutar" command
@@ -369,9 +384,16 @@ problems with certain applications using this option, but the base
 system should run smoothly.
 
 When building universal binaries on a PowerPC Mac (at least on Tiger),
-you must point out a suitable SDK that contains universal binaries:
+you must point out a suitable SDK that contains universal binaries.
+For instance, to build universal binaries for Tiger (10.4):
 
 CFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk" LDFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk" 	./configure --enable-darwin-universal
+
+Also, if you run Leopard, but want to build for Tiger, you must do
+
+export MACOSX_DEPLOYMENT_TARGET=10.4
+
+before running the above configure command.
 
 Experimental support for 64bit x86 darwin binaries can be enabled
 using the --enable-darwin-64bit configure flag. The 64bit binaries are

@@ -364,6 +364,7 @@ erts_trace_flag2bit(Eterm flag)
     case am_set_on_first_link: return F_TRACE_SOL1;
     case am_timestamp: return F_TIMESTAMP;
     case am_running: return F_TRACE_SCHED;
+    case am_exiting: return F_TRACE_SCHED_EXIT;
     case am_garbage_collection: return F_TRACE_GC;
     case am_call: return  F_TRACE_CALLS;
     case am_arity: return F_TRACE_ARITY_ONLY;
@@ -426,47 +427,50 @@ Eterm
 trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 {
     int on;
-    Process *tracer_proc = NULL;
-    Port *tracer_port = NULL;
     Eterm tracer = NIL;
     int matches = 0;
     Uint mask = 0;
     int cpu_ts = 0;
+#ifdef ERTS_SMP
+    int system_blocked = 0;
+#endif
 
     if (! erts_trace_flags(list, &mask, &tracer, &cpu_ts)) {
 	BIF_ERROR(p, BADARG);
     }
 
-    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
-    erts_smp_block_system(0);
-
-    if (tracer != NIL) {
-	if (is_internal_pid(tracer)) {
-	    if (internal_pid_index(tracer) >= erts_max_processes)
-		goto error;
-	    tracer_proc = process_tab[internal_pid_index(tracer)];
-	    if (INVALID_PID(tracer_proc, tracer))
-		goto error;
-	} else if (is_internal_port(tracer)) {
-	    if (internal_port_index(tracer) >= erts_max_ports)
-		goto error;
-	    tracer_port = &erts_port[internal_port_index(tracer)];
-	    if (INVALID_TRACER_PORT(tracer_port, tracer))
-		goto error;
-	} else
+    if (is_nil(tracer) || is_internal_pid(tracer)) {
+	Process *tracer_proc = erts_pid2proc(p,
+					     ERTS_PROC_LOCK_MAIN,
+					     is_nil(tracer) ? p->id : tracer,
+					     ERTS_PROC_LOCKS_ALL);
+	if (!tracer_proc)
 	    goto error;
-    }
+	tracer_proc->trace_flags |= F_TRACER;
+	erts_smp_proc_unlock(tracer_proc,
+			     (tracer_proc == p
+			      ? ERTS_PROC_LOCKS_ALL_MINOR
+			      : ERTS_PROC_LOCKS_ALL));
+    } else if (is_internal_port(tracer)) {
+	Port *tracer_port = erts_id2port(tracer, p, ERTS_PROC_LOCK_MAIN);
+	if (!erts_is_valid_tracer_port(tracer)) {
+	    if (tracer_port)
+		erts_smp_port_unlock(tracer_port);
+	    goto error;
+	}
+	tracer_port->trace_flags |= F_TRACER;
+	erts_smp_port_unlock(tracer_port);
+    } else
+	goto error;
 
     switch (how) {
     case am_false: 
 	on = 0; 
 	break;
     case am_true: 
-	on = 1; 
-	if (tracer == NIL) {
-	    tracer_proc = p;
+	on = 1;
+	if (is_nil(tracer))
 	    tracer = p->id;
-	}
 	break;
     default: 
 	goto error;
@@ -477,34 +481,38 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
      */
 
     if (is_port(pid_spec)) {
-	Port *tracee_port = NULL;
+	Port *tracee_port;
 
 #ifdef HAVE_ERTS_NOW_CPU
 	if (cpu_ts) {
 	    goto error;
 	}
 #endif
-	if (is_not_internal_port(pid_spec)
-	    || internal_port_index(pid_spec) >= erts_max_ports)
+
+	if (pid_spec == tracer)
 	    goto error;
-	tracee_port = &erts_port[internal_port_index(pid_spec)];
-	if (INVALID_PORT(tracee_port, pid_spec))
+
+	tracee_port = erts_id2port(pid_spec, p, ERTS_PROC_LOCK_MAIN);
+	if (!tracee_port)
 	    goto error;
 	
-	if (tracer != NIL) {
-	    if (pid_spec == tracer) goto error;
-	    if (port_already_traced(NULL, tracee_port, tracer)) goto already_traced;
+	if (tracer != NIL && port_already_traced(p, tracee_port, tracer)) {
+	    erts_smp_port_unlock(tracee_port);
+	    goto already_traced;
 	}
 
-	if (on) tracee_port->trace_flags |= mask;
-	else tracee_port->trace_flags &= ~mask;
+	if (on)
+	    tracee_port->trace_flags |= mask;
+	else
+	    tracee_port->trace_flags &= ~mask;
 	
-	if (!tracee_port->trace_flags) {
+	if (!tracee_port->trace_flags)
 	    tracee_port->tracer_proc = NIL;
-	} else if (tracer != NIL) {
+	else if (tracer != NIL)
 	    tracee_port->tracer_proc = tracer;
-	}
-	if (tracer_port) tracer_port->trace_flags |= F_TRACER;
+
+	erts_smp_port_unlock(tracee_port);
+
 	matches = 1;
     } else if (is_pid(pid_spec)) {
 	Process *tracee_p;
@@ -518,32 +526,37 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	 * and not about to be tracing.
 	 */
 
-	if (is_not_internal_pid(pid_spec)
-	    || internal_pid_index(pid_spec) >= erts_max_processes)
-	    goto error;
-	tracee_p = process_tab[internal_pid_index(pid_spec)];
-	if (INVALID_PID(tracee_p, pid_spec))
+	if (pid_spec == tracer)
 	    goto error;
 
-	if (tracer != NIL) {
-	    if (pid_spec == tracer)
-		goto error;
-	    if (already_traced(NULL, tracee_p, tracer))
-		goto already_traced;
+	tracee_p = erts_pid2proc(p, ERTS_PROC_LOCK_MAIN,
+				 pid_spec, ERTS_PROC_LOCKS_ALL);
+	if (!tracee_p)
+	    goto error;
+
+	if (tracer != NIL && already_traced(p, tracee_p, tracer)) {
+	    erts_smp_proc_unlock(tracee_p,
+				 (tracee_p == p
+				  ? ERTS_PROC_LOCKS_ALL_MINOR
+				  : ERTS_PROC_LOCKS_ALL));
+	    goto already_traced;
 	}
-	if (on) {
+
+	if (on)
 	    tracee_p->trace_flags |= mask;
-	} else {
+	else
 	    tracee_p->trace_flags &= ~mask;
-	}
-	if ((tracee_p->trace_flags & TRACEE_FLAGS) == 0) {
+
+	if ((tracee_p->trace_flags & TRACEE_FLAGS) == 0)
 	    tracee_p->tracer_proc = NIL;
-	} else if (tracer != NIL) {
+	else if (tracer != NIL)
 	    tracee_p->tracer_proc = tracer;
-	}
-	if (tracer_proc) {
-	    tracer_proc->trace_flags |= F_TRACER;
-	}
+
+	erts_smp_proc_unlock(tracee_p,
+			     (tracee_p == p
+			      ? ERTS_PROC_LOCKS_ALL_MINOR
+			      : ERTS_PROC_LOCKS_ALL));
+
 	matches = 1;
     } else {
 	int ok = 0;
@@ -592,68 +605,80 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	
 	if (pid_spec == am_all || pid_spec == am_existing) {
 	    int i;
+	    int procs = 0;
+	    int ports = 0;
+	    int mods = 0;
+
+	    if (mask & (ERTS_PROC_TRACEE_FLAGS & ~ERTS_TRACEE_MODIFIER_FLAGS))
+		procs = 1;
+	    if (mask & (ERTS_PORT_TRACEE_FLAGS & ~ERTS_TRACEE_MODIFIER_FLAGS))
+		ports = 1;
+	    if (mask & ERTS_TRACEE_MODIFIER_FLAGS)
+		mods = 1;
+
+#ifdef ERTS_SMP
+	    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
+	    erts_smp_block_system(0);
+	    system_blocked = 1;
+#endif
 
 	    ok = 1;
-	    /* tracing of processes */
-	    for (i = 0; i < erts_max_processes; i++) {
-		Process* tracee_p = process_tab[i];
+	    if (procs || mods) {
+		/* tracing of processes */
+		for (i = 0; i < erts_max_processes; i++) {
+		    Process* tracee_p = process_tab[i];
 
-		if (! tracee_p) 
-		    continue;
-		if (tracer != NIL) {
-		    if (tracee_p->id == tracer)
+		    if (! tracee_p) 
 			continue;
-		    if (already_traced(NULL, tracee_p, tracer))
-			continue;
+		    if (tracer != NIL) {
+			if (tracee_p->id == tracer)
+			    continue;
+			if (already_traced(NULL, tracee_p, tracer))
+			    continue;
+		    }
+		    if (on) {
+			tracee_p->trace_flags |= mask;
+		    } else {
+			tracee_p->trace_flags &= ~mask;
+		    }
+		    if(!(tracee_p->trace_flags & TRACEE_FLAGS)) {
+			tracee_p->tracer_proc = NIL;
+		    } else if (tracer != NIL) {
+			tracee_p->tracer_proc = tracer;
+		    }
+		    matches++;
 		}
-		if (on) {
-		    tracee_p->trace_flags |= mask;
-		} else {
-		    tracee_p->trace_flags &= ~mask;
-		}
-		if(!(tracee_p->trace_flags & TRACEE_FLAGS)) {
-		    tracee_p->tracer_proc = NIL;
-		} else if (tracer != NIL) {
-		    tracee_p->tracer_proc = tracer;
-		}
-		if (tracer_proc) {
-		    tracer_proc->trace_flags |= F_TRACER;
-		}
-		matches++;
 	    }
-	    /* tracing of ports */
-	    for (i = 0; i < erts_max_ports; i++) {
-	    	Port *tracee_port = &erts_port[i];
-		if (tracee_port->status & ERTS_PORT_SFLGS_DEAD) continue;
-		if (tracer != NIL) {
-		    if (tracee_port->id == tracer) continue;
-		    if (port_already_traced(NULL, tracee_port, tracer)) continue;
-		}
+	    if (ports || mods) {
+		/* tracing of ports */
+		for (i = 0; i < erts_max_ports; i++) {
+		    Port *tracee_port = &erts_port[i];
+		    if (tracee_port->status & ERTS_PORT_SFLGS_DEAD) continue;
+		    if (tracer != NIL) {
+			if (tracee_port->id == tracer) continue;
+			if (port_already_traced(NULL, tracee_port, tracer)) continue;
+		    }
 
-		if (on) tracee_port->trace_flags |= mask;
-		else tracee_port->trace_flags &= ~mask;
+		    if (on) tracee_port->trace_flags |= mask;
+		    else tracee_port->trace_flags &= ~mask;
 		
-		if (!(tracee_port->trace_flags & TRACEE_FLAGS)) {
-		    tracee_port->tracer_proc = NIL;
-		} else if (tracer != NIL) {
-		    tracee_port->tracer_proc = tracer;
+		    if (!(tracee_port->trace_flags & TRACEE_FLAGS)) {
+			tracee_port->tracer_proc = NIL;
+		    } else if (tracer != NIL) {
+			tracee_port->tracer_proc = tracer;
+		    }
+		    /* matches are not counted for ports since it would violate compability */	
+		    /* This could be a reason to modify this function or make a new one. */
 		}
-		/* matches are not counted for ports since it would violate compability */	
-		/* This could be a reason to modify this function or make a new one. */
-		if (tracer_port) tracer_port->trace_flags |= F_TRACER;
 	    }
-
 	}
+
 	if (pid_spec == am_all || pid_spec == am_new) {
 	    Uint def_flags = mask;
 	    Eterm def_tracer = tracer;
 
 	    ok = 1;
 	    erts_change_default_tracing(on, &def_flags, &def_tracer);
-	    if (tracer_proc && tracer_proc->id == def_tracer)
-		tracer_proc->trace_flags |= F_TRACER;
-	    if (tracer_port && tracer_port->id == def_tracer) 
-	    	tracer_port->trace_flags |= F_TRACER;
 
 #ifdef HAVE_ERTS_NOW_CPU
 	    if (cpu_ts && !on) {
@@ -672,22 +697,29 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	    goto error;
     }
 
-    erts_smp_release_system();
-    erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
+#ifdef ERTS_SMP
+    if (system_blocked) {
+	erts_smp_release_system();
+	erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
+    }
+#endif
 
     BIF_RET(make_small(matches));
-
- error:
-
-    erts_smp_release_system();
-    erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
-
-    BIF_ERROR(p, BADARG);
 
  already_traced:
     erts_send_error_to_logger_str(p->group_leader,
 				  "** can only have one tracer per process\n");
-    goto error;
+
+ error:
+
+#ifdef ERTS_SMP
+    if (system_blocked) {
+	erts_smp_release_system();
+	erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
+    }
+#endif
+
+    BIF_ERROR(p, BADARG);
 }
 
 /* Check that the process to be traced is not already traced
@@ -841,7 +873,7 @@ trace_info_pid(Process* p, Eterm pid_spec, Eterm key)
     }
 
     if (key == am_flags) {
-	int num_flags = 18;	/* MAXIMUM number of flags. */
+	int num_flags = 19;	/* MAXIMUM number of flags. */
 	Uint needed = 3+2*num_flags;
 	Eterm flag_list = NIL;
 	Eterm* limit;
@@ -868,6 +900,7 @@ trace_info_pid(Process* p, Eterm pid_spec, Eterm key)
 	FLAG(F_TRACE_SOL, am_set_on_link);
 	FLAG(F_TRACE_SOL1, am_set_on_first_link);
 	FLAG(F_TRACE_SCHED, am_running);
+	FLAG(F_TRACE_SCHED_EXIT, am_exiting);
 	FLAG(F_TRACE_GC, am_garbage_collection);
 	FLAG(F_TIMESTAMP, am_timestamp);
 	FLAG(F_TRACE_ARITY_ONLY, am_arity);

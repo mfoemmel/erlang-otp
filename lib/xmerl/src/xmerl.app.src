@@ -20,6 +20,7 @@
 	xmerl_xlate,
 	xmerl_xml,
 	xmerl_xpath,
+	xmerl_xpath_lib,
 	xmerl_xpath_parse,
 	xmerl_xpath_pred,
 	xmerl_xpath_scan,

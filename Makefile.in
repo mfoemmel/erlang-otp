@@ -384,7 +384,7 @@ fourth_bootstrap_copy:
 check_recreate_primary_bootstrap:
 	@if test -f $(ERL_TOP)/prebuilt.files ; then \
 	  if test ! -d $(ERL_TOP)/bootstrap/lib ; then \
-	    $(MAKE) ERL_TOP=$(ERL_TOP) recreate_primary_bootstrap ; \
+	    $(ERL_TOP)/otp_build save_bootstrap ; \
 	  fi ; \
 	fi
 
@@ -394,19 +394,7 @@ check_recreate_primary_bootstrap:
 # directories of all applications part of the primary bootstrap.
 #
 recreate_primary_bootstrap:
-	@if test ! -f $(ERL_TOP)/prebuilt.files ; then \
-	  echo "Cannot recreate bootstrap; this is not a pre-built source distribution" ; \
-	else \
-	  if test -d $(ERL_TOP)/bootstrap/lib ; then \
-	    echo "Bootstrap already exist" ; \
-	  else \
-	    echo "Recreating primary bootstrap" ; \
-	    $(MAKE) ERL_TOP=$(ERL_TOP) \
-	            BOOTSTRAP_SRC_TOP=$(ERL_TOP) \
-	            BOOTSTRAP_ROOT=$(ERL_TOP) \
-	            primary_bootstrap_to_bootstrap_root_copy ; \
-	  fi ; \
-	fi
+	$(ERL_TOP)/otp_build save_bootstrap
 
 # The first bootstrap build is rarely (never) used in open source, it's
 # used to build the shipped bootstrap directory. The Open source bootstrap 
@@ -423,8 +411,7 @@ KERNEL_PRELOAD    = otp_ring0 init erl_prim_loader prim_inet prim_file erlang
 	primary_bootstrap_build						\
 	primary_bootstrap_compiler					\
 	primary_bootstrap_mkdirs					\
-	primary_bootstrap_copy						\
-	primary_bootstrap_to_bootstrap_root_copy
+	primary_bootstrap_copy
 
 primary_bootstrap: primary_bootstrap_check_make
 	@echo "=== Building a bootstrap compiler in $(BOOTSTRAP_ROOT)/bootstrap"
@@ -442,11 +429,11 @@ primary_bootstrap: primary_bootstrap_check_make
 	cd $(ERL_TOP)/erts/start_scripts && \
 		$(MAKE) TESTROOT=$(BOOTSTRAP_TOP) \
 		BOOTSTRAP_TOP=$(BOOTSTRAP_TOP) bootstrap_scripts
-	test $(BOOTSTRAP_ROOT) = $(ERL_TOP) || \
-		$(MAKE) ERL_TOP=$(ERL_TOP) \
-			BOOTSTRAP_SRC_TOP=$(BOOTSTRAP_TOP) \
-			BOOTSTRAP_ROOT=$(BOOTSTRAP_ROOT) \
-			primary_bootstrap_to_bootstrap_root_copy
+	test $(BOOTSTRAP_ROOT) = $(ERL_TOP) \
+		|| $(ERL_TOP)/otp_build \
+			copy_primary_bootstrap \
+			$(BOOTSTRAP_TOP) \
+			$(BOOTSTRAP_ROOT)
 
 #
 # Dependencies are not complete in all makefiles; therefore, remove bootstrap
@@ -511,44 +498,6 @@ primary_bootstrap_copy:
 	cp -f lib/stdlib/include/*.hrl $(BOOTSTRAP_TOP)/lib/stdlib/include
 	cp -f lib/orber/include/* $(BOOTSTRAP_TOP)/lib/orber/include
 
-primary_bootstrap_to_bootstrap_root_copy:
-	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin \
-		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin
-	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/include \
-		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/include
-	cp -f $(BOOTSTRAP_SRC_TOP)/lib/kernel/ebin/*.beam \
-		$(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin
-	cp -f $(BOOTSTRAP_SRC_TOP)/lib/kernel/ebin/*.app* \
-		$(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin
-	cp -f $(BOOTSTRAP_SRC_TOP)/lib/kernel/include/*.hrl \
-		$(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/include
-	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/ebin \
-		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/ebin
-	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/include \
-		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/include
-	cp -f $(BOOTSTRAP_SRC_TOP)/lib/stdlib/ebin/*.beam \
-		$(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/ebin
-	cp -f $(BOOTSTRAP_SRC_TOP)/lib/stdlib/ebin/*.app* \
-		$(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/ebin
-	cp -f $(BOOTSTRAP_SRC_TOP)/lib/stdlib/include/*.hrl \
-		$(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/include
-	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/compiler/ebin \
-		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/compiler/ebin
-	cp -f $(BOOTSTRAP_SRC_TOP)/lib/compiler/ebin/*.beam \
-		$(BOOTSTRAP_ROOT)/bootstrap/lib/compiler/ebin
-	cp -f $(BOOTSTRAP_SRC_TOP)/lib/compiler/ebin/*.app* \
-		$(BOOTSTRAP_ROOT)/bootstrap/lib/compiler/ebin
-	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/orber/include \
-		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/orber/include
-	cp -f $(BOOTSTRAP_SRC_TOP)/lib/orber/include/* \
-		$(BOOTSTRAP_ROOT)/bootstrap/lib/orber/include
-ifneq ($(BOOTSTRAP_SRC_TOP),$(ERL_TOP))
-	test -d $(BOOTSTRAP_ROOT)/bootstrap/bin \
-		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/bin
-	cp -f $(BOOTSTRAP_SRC_TOP)/bin/* \
-		$(BOOTSTRAP_ROOT)/bootstrap/bin
-endif
-
 # To remove modules left by the bootstrap building, but leave (restore)
 # the modules in kernel which are needed for an emulator build
 KERNEL_PRELOAD_BEAMS=$(KERNEL_PRELOAD:%=$(BOOTSTRAP_TOP)/lib/kernel/ebin/%.beam)
@@ -572,6 +521,7 @@ TESTS = test_server
 # Tests that can be run on any platform (keep alphabetic order, please)
 TESTS +=					\
 	asn1_test				\
+	common_test_test			\
 	compiler_test				\
 	emulator_test				\
 	epmd_test				\

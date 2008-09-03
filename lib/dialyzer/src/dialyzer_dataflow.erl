@@ -142,8 +142,7 @@ get_top_level_signatures(Code, Records) ->
 
 get_def_plt() ->
   try 
-    dialyzer_plt:from_file(filename:join([code:lib_dir(dialyzer),
-					  "plt","dialyzer_init_plt"]))
+    dialyzer_plt:from_file(dialyzer_plt:get_default_plt())
   catch
     throw:{dialyzer_error, _} -> dialyzer_plt:new()
   end.

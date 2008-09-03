@@ -240,16 +240,39 @@ CS_CFLAGS = $(CS_CFLAGS_)
 endif
 
 LIBS	+= @TERMCAP_LIB@ -L../lib/internal/$(TARGET)
+
 ifeq ($(TARGET),win32)
-LIBS    += -L$(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET) -lz -L$(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE) -lepcre
-DEPLIBS = $(ERL_TOP)/erts/obj/$(TARGET)/z.lib \
- $(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/epcre.lib
+LIBS    += \
+	-L$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE) -lz \
+	-L$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE) -lepcre
+
+#LIBS    += \
+#	-L$(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET) -lz \
+#	-L$(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE) -lepcre
+
+DEPLIBS = \
+	$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/z.lib \
+	$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/epcre.lib
+#DEPLIBS = \
+#	$(ERL_TOP)/erts/obj/$(TARGET)/z.lib \
+# 	$(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/epcre.lib
 else
 # Build on darwin fails if -lz is used
-LIBS    += $(ERL_TOP)/erts/obj/$(TARGET)/libz.a \
- $(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/libepcre.a
-DEPLIBS = $(ERL_TOP)/erts/obj/$(TARGET)/libz.a \
- $(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/libepcre.a
+LIBS    += \
+	$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/libz.a \
+	$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/libepcre.a
+
+#LIBS    += \
+#	$(ERL_TOP)/erts/obj/$(TARGET)/libz.a \
+#	$(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/libepcre.a
+
+DEPLIBS = \
+	$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/libz.a \
+	$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/libepcre.a
+
+#DEPLIBS = \
+#	$(ERL_TOP)/erts/obj/$(TARGET)/libz.a \
+#	$(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/libepcre.a
 endif
 
 ELIB_FLAGS = -DENABLE_ELIB_MALLOC -DELIB_ALLOC_IS_CLIB -DELIB_HEAP_SBRK
@@ -290,8 +313,14 @@ LIBS += @LIBRT@
 TTF_DIR=$(TARGET)/$(TYPE)/$(FLAVOR)
 CREATE_DIRS += $(TTF_DIR)
 
+# create obj dirs for emulator, pcre and zlib
+
 OBJDIR = obj/$(TTF_DIR)
-CREATE_DIRS += $(OBJDIR)
+
+CREATE_DIRS += $(OBJDIR) \
+	pcre/obj/$(TARGET)/$(TYPE) \
+	zlib/obj/$(TARGET)/$(TYPE)
+
 
 BINDIR = $(ERL_TOP)/bin/$(TARGET)
 
@@ -339,7 +368,7 @@ endif
 endif
 
 zlib:
-	@set -e ; cd zlib && $(MAKE) $(TYPE)
+	@set -e ; cd zlib && $(MAKE) TYPE=$(TYPE) $(TYPE)
 
 pcre:
 	@set -e ; cd pcre && $(MAKE) TYPE=$(TYPE) $(TYPE)
@@ -698,7 +727,7 @@ RUN_OBJS = \
 	$(OBJDIR)/module.o		$(OBJDIR)/export.o \
 	$(OBJDIR)/register.o		$(OBJDIR)/break.o \
 	$(OBJDIR)/erl_async.o		$(OBJDIR)/erl_lock_check.o \
-	$(OBJDIR)/erl_gc.o \
+	$(OBJDIR)/erl_gc.o 		$(OBJDIR)/erl_lock_count.o \
 	$(OBJDIR)/erl_nmgc.o		$(OBJDIR)/erl_posix_str.o \
 	$(OBJDIR)/erl_bits.o 		$(OBJDIR)/erl_math.o \
 	$(OBJDIR)/erl_fun.o             $(OBJDIR)/erl_bif_port.o \
@@ -706,7 +735,7 @@ RUN_OBJS = \
 	$(OBJDIR)/erl_monitors.o	$(OBJDIR)/erl_process_dump.o \
 	$(OBJDIR)/erl_obsolete.o	$(OBJDIR)/erl_bif_timer.o \
 	$(OBJDIR)/erl_drv_thread.o      $(OBJDIR)/erl_bif_chksum.o \
-	$(OBJDIR)/erl_bif_re.o
+	$(OBJDIR)/erl_bif_re.o		$(OBJDIR)/packet_parser.o
 
 ifeq ($(TARGET),win32)
 DRV_OBJS = \

@@ -658,6 +658,12 @@ bif 'erl.system.debug':display/1 ebif_erts_debug_display_1
 bif erts_debug:dump_monitors/1
 bif erts_debug:dump_links/1
 
+
+#
+# Lock counter bif's
+#
+bif erts_debug:lock_counters/1
+
 #
 # New Bifs in R8.
 #
@@ -707,6 +713,11 @@ bif erlang:bitstring_to_list/1
 # New Bifs in R12B-2
 #
 bif ets:update_element/3
+
+#
+# New Bifs in R12B-4
+#
+bif erlang:decode_packet/3
 
 #
 # Obsolete

@@ -217,7 +217,7 @@ typedef struct db_table_common {
 #endif
     Eterm owner;              /* Pid of the creator */
     Eterm the_name;           /* an atom   */
-    Eterm id;                 /* atom | integer | DB_USED | DB_NOTUSED */
+    Eterm id;                 /* atom | integer */
     DbTableMethod* meth;      /* table methods */
     Uint nitems;               /* Total number of items */
     erts_smp_atomic_t memory_size;/* Total memory size. NOTE: in bytes! */
@@ -227,14 +227,10 @@ typedef struct db_table_common {
 
     /* All 32-bit fields */
     Uint32 status;            /* bit masks defined  below */
-    int slot;                 /* slot in db_tables */
+    int slot;                 /* slot index in meta_main_tab */
     int keypos;               /* defaults to 1 */
     int kept_items;           /* Number of kept elements due to fixation */
 } DbTableCommon;
-
-/* XXX: as long as NIL is atom, don't use NIL as USED marker */
-#define DB_NOTUSED	(_make_header(0,_TAG_HEADER_FLOAT))	/*XXX*/
-#define DB_USED		(_make_header(3,_TAG_HEADER_FLOAT))	/*XXX*/
 
 /* These are status bit patterns */
 #define DB_NORMAL        (1 << 0)
@@ -247,6 +243,7 @@ typedef struct db_table_common {
 #define DB_FIXED         (1 << 7)
 #define DB_DUPLICATE_BAG (1 << 8)
 #define DB_ORDERED_SET   (1 << 9)
+#define DB_DELETE        (1 << 10) /* table is being deleted */
 
 #define ERTS_ETS_TABLE_TYPES (DB_BAG|DB_SET|DB_DUPLICATE_BAG|DB_ORDERED_SET)
 

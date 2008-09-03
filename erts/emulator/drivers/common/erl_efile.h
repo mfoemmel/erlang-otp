@@ -123,7 +123,7 @@ int efile_readdir(Efile_error* errInfo, char* name,
 		  EFILE_DIR_HANDLE* dir_handle,
 		  char* buffer, size_t size);
 int efile_openfile(Efile_error* errInfo, char* name, int flags,
-		   int* pfd, off_t* pSize);
+		   int* pfd, Sint64* pSize);
 void efile_closefile(int fd);
 int efile_fsync(Efile_error* errInfo, int fd);
 int efile_fileinfo(Efile_error* errInfo, Efile_info* pInfo,
@@ -136,12 +136,12 @@ int efile_writev(Efile_error* errInfo, int flags, int fd,
 int efile_read(Efile_error* errInfo, int flags, int fd, 
 	       char* buf, size_t count, size_t* pBytesRead);
 int efile_seek(Efile_error* errInfo, int fd, 
-	       off_t offset, int origin, off_t* new_location);
+	       Sint64 offset, int origin, Sint64* new_location);
 int efile_truncate_file(Efile_error* errInfo, int *fd, int flags);
 int efile_pwrite(Efile_error* errInfo, int fd, 
-		 char* buf, size_t count, off_t offset);
+		 char* buf, size_t count, Sint64 offset);
 int efile_pread(Efile_error* errInfo, int fd, 
-		off_t offset, char* buf, size_t count, size_t* pBytesRead);
+		Sint64 offset, char* buf, size_t count, size_t* pBytesRead);
 int efile_readlink(Efile_error* errInfo, char *name, 
 		   char* buffer, size_t size);
 int efile_altname(Efile_error* errInfo, char *name, 

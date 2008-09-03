@@ -33,6 +33,9 @@ usage ()
     echo "release [-a] <target_dir> - creates full release to <target_dir>"
     echo "tests <dir> - Build testsuites to <dir>"
     echo ""
+    echo "remove_prebuilt_files - create a minimal source tree"
+    echo "save_bootstrap - recreate primary bootstrap"
+    echo ""
     echo "debuginfo_win32 <dir> - adds debug emulator and pdb files to <dir>"
     echo "installer_win32 <dir> - creates a windows installer from <dir>" 
     echo ""
@@ -680,6 +683,82 @@ do_installer_win32 ()
     (cd $installer_dir; $MAKE MAKE="$MAKE" TARGET=$TARGET TESTROOT=$1 release) || exit 1
 }
 
+do_copy_primary_bootstrap ()
+{
+    if [ "x$1" = "x" ]; then
+	echo "Missing bootstrap source top" 1>&2
+	exit 1
+    fi
+    if  [ ! -d $1 ]; then
+	echo "Invalid bootstrap source top" 1>&2
+	exit 1
+    fi
+    if [ "x$2" = "x" ]; then
+	echo "Missing bootstrap root" 1>&2
+	exit 1
+    fi
+    if  [ ! -d $2 ]; then
+	echo "Invalid bootstrap root" 1>&2
+	exit 1
+    fi
+
+    bootstrap=$2/bootstrap
+    bootstrap_src_top=$1
+    lib_src=$bootstrap_src_top/lib
+
+    # kernel
+    test -d $bootstrap/lib/kernel/ebin || mkdir -p  $bootstrap/lib/kernel/ebin
+    test -d $bootstrap/lib/kernel/include || mkdir -p  $bootstrap/lib/kernel/include
+    cp -f $lib_src/kernel/ebin/*.beam $bootstrap/lib/kernel/ebin
+    cp -f $lib_src/kernel/ebin/*.app* $bootstrap/lib/kernel/ebin
+    cp -f $lib_src/kernel/include/*.hrl $bootstrap/lib/kernel/include
+
+    # stdlib
+    test -d $bootstrap/lib/stdlib/ebin || mkdir -p  $bootstrap/lib/stdlib/ebin
+    test -d $bootstrap/lib/stdlib/include || mkdir -p  $bootstrap/lib/stdlib/include
+    cp -f $lib_src/stdlib/ebin/*.beam $bootstrap/lib/stdlib/ebin
+    cp -f $lib_src/stdlib/ebin/*.app* $bootstrap/lib/stdlib/ebin
+    cp -f $lib_src/stdlib/include/*.hrl $bootstrap/lib/stdlib/include
+
+    # compiler
+    test -d $bootstrap/lib/compiler/ebin || mkdir -p  $bootstrap/lib/compiler/ebin
+    cp -f $lib_src/compiler/ebin/*.beam $bootstrap/lib/compiler/ebin
+    cp -f $lib_src/compiler/ebin/*.app* $bootstrap/lib/compiler/ebin
+
+    # orber include
+    test -d $bootstrap/lib/orber/include || mkdir -p  $bootstrap/lib/orber/include
+    cp -f $lib_src/orber/include/* $bootstrap/lib/orber/include
+
+    # bootstrap bin
+    if [ $bootstrap_src_top != $ERL_TOP ]; then
+	test -d $bootstrap/bin || mkdir -p  $bootstrap/bin
+	cp -f $bootstrap_src_top/bin/* $bootstrap/bin
+    fi
+
+}
+
+do_save_bootstrap ()
+{
+    if [ ! -f $ERL_TOP/prebuilt.files ]; then
+	echo "This is not a pre-built source distribution" 1>&2
+	exit 1
+    fi
+    if  [ -d $ERL_TOP/bootstrap/lib ]; then
+	echo "Bootstrap already exist" 1>&2
+	exit 1
+    fi
+
+    do_copy_primary_bootstrap $ERL_TOP $ERL_TOP
+}
+
+do_remove_prebuilt_files ()
+{
+    do_save_bootstrap
+    for file in $ERL_TOP/`cat $ERL_TOP/prebuilt.files` ; do
+	rm -f $file
+    done
+}
+
 # main
 
 check_erltop
@@ -808,6 +887,12 @@ case "$1" in
 		    shift
 		fi;
 		do_tests "$2";;
+        remove_prebuilt_files)
+		do_remove_prebuilt_files;;
+        save_bootstrap)
+		do_save_bootstrap;;
+        copy_primary_bootstrap)
+		do_copy_primary_bootstrap $2 $3;;
 	installer_win32)
 		if [ $minus_a_flag = true ]; then 
 		    shift

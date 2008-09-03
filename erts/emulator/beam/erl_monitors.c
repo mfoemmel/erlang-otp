@@ -135,8 +135,6 @@ static ErtsMonitor *create_monitor(Uint type, Eterm ref, Eterm pid, Eterm name)
      n->name = name; /* atom() or [] */
      CP_LINK_VAL(n->ref, hp, ref); /*XXX Unneccesary check, never immediate*/
      CP_LINK_VAL(n->pid, hp, pid);
-     
-     ERTS_PROC_MORE_MEM(mon_size);
 
      return n;
 }
@@ -171,8 +169,6 @@ static ErtsLink *create_link(Uint type, Eterm pid)
 	 ERTS_LINK_ROOT(n) = NULL; 
      }
      CP_LINK_VAL(n->pid, hp, pid);
-     
-     ERTS_PROC_MORE_MEM(lnk_size);
 
      return n;
 }
@@ -188,7 +184,6 @@ static ErtsSuspendMonitor *create_suspend_monitor(Eterm pid)
     smon->pending = 0;
     smon->active = 0;
     smon->pid = pid;
-    ERTS_PROC_MORE_MEM(sizeof(ErtsSuspendMonitor));
     return smon;
 }
 
@@ -228,7 +223,6 @@ void erts_destroy_monitor(ErtsMonitor *mon)
 	erts_free(ERTS_ALC_T_MONITOR_LH, (void *) mon);
 	erts_smp_atomic_add(&tot_link_lh_size, -1*mon_size*sizeof(Uint));
     }
-    ERTS_PROC_LESS_MEM(mon_size);
 }
     
 void erts_destroy_link(ErtsLink *lnk)
@@ -251,13 +245,11 @@ void erts_destroy_link(ErtsLink *lnk)
 	erts_free(ERTS_ALC_T_NLINK_LH, (void *) lnk);
 	erts_smp_atomic_add(&tot_link_lh_size, -1*lnk_size*sizeof(Uint));
     }
-    ERTS_PROC_LESS_MEM(lnk_size);
 }
 
 void erts_destroy_suspend_monitor(ErtsSuspendMonitor *smon)
 {
     erts_free(ERTS_ALC_T_SUSPEND_MON, smon);
-    ERTS_PROC_LESS_MEM(sizeof(ErtsSuspendMonitor));
 }
      
 static void insertion_rotation(int dstack[], int dpos, 

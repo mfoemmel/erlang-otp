@@ -39,6 +39,7 @@
 static const unsigned char *default_table;
 static Uint max_loop_limit;
 static Export re_exec_trap_export;
+static Export *grun_trap_exportp = NULL;
 
 static BIF_RETTYPE re_exec_trap(BIF_ALIST_3);
 
@@ -67,13 +68,15 @@ void erts_init_bif_re(void)
     default_table = NULL; /* ISO8859-1 default, forced into pcre */
     max_loop_limit = CONTEXT_REDS * LOOP_FACTOR;
  
-   sys_memset((void *) &re_exec_trap_export, 0, sizeof(Export));
+    sys_memset((void *) &re_exec_trap_export, 0, sizeof(Export));
     re_exec_trap_export.address = &re_exec_trap_export.code[3];
     re_exec_trap_export.code[0] = am_erlang;
     re_exec_trap_export.code[1] = am_re_run_trap;
     re_exec_trap_export.code[2] = 3;
     re_exec_trap_export.code[3] = (Eterm) em_apply_bif;
     re_exec_trap_export.code[4] = (Eterm) &re_exec_trap;
+
+    grun_trap_exportp =  erts_export_put(am_re,am_grun,3);
 
     return;
 }
@@ -175,6 +178,7 @@ static Eterm make_signed_integer(int x, Process *p)
 #define PARSE_FLAG_UNICODE 4
 #define PARSE_FLAG_STARTOFFSET 8
 #define PARSE_FLAG_CAPTURE_OPT 16
+#define PARSE_FLAG_GLOBAL 32
 
 #define CAPSPEC_VALUES 0
 #define CAPSPEC_TYPE 1
@@ -338,6 +342,9 @@ parse_options(Eterm listp, /* in */
 		    copt |= PCRE_UTF8; 
 		    fl |= (PARSE_FLAG_UNIQUE_COMPILE_OPT | PARSE_FLAG_UNICODE);
 		    break;
+		case am_global:
+		    fl |= (PARSE_FLAG_UNIQUE_EXEC_OPT | PARSE_FLAG_GLOBAL);
+		    break;
 		default:
 		    return -1;
 		}
@@ -364,7 +371,7 @@ parse_options(Eterm listp, /* in */
  */
 
 static Eterm 
-build_compile_result(Process *p, Eterm error_tag, pcre *result, int errcode, const char *errstr, int errofset,int unicode) 
+build_compile_result(Process *p, Eterm error_tag, pcre *result, int errcode, const char *errstr, int errofset, int unicode, int with_ok) 
 {
     Eterm *hp;
     Eterm ret;
@@ -388,10 +395,12 @@ build_compile_result(Process *p, Eterm error_tag, pcre *result, int errcode, con
 	   be kept across traps w/o need of copying */
 	ret = new_binary(p, (byte *) result, pattern_size);
 	pcre_free(result);
-	hp = HAlloc(p, 3+5);
+	hp = HAlloc(p, (with_ok) ? (3+5) : 5);
 	ret = TUPLE4(hp,am_re_pattern, make_small(capture_count), make_small(unicode),ret);
-	hp += 5;
-	ret = TUPLE2(hp,am_ok,ret);
+	if (with_ok) {
+	    hp += 5;
+	    ret = TUPLE2(hp,am_ok,ret);
+	}	    
     }
     return ret;
 }
@@ -443,7 +452,7 @@ re_compile_2(BIF_ALIST_2)
 			   &errstr, &errofset, default_table);
 
     ret = build_compile_result(BIF_P, am_error, result, errcode, 
-			       errstr, errofset, unicode);
+			       errstr, errofset, unicode, 1);
     erts_free(ERTS_ALC_T_RE_TMP_BUF, expr);
     BIF_RET(ret);
 }
@@ -815,7 +824,8 @@ re_run_3(BIF_ALIST_3)
 	BIF_ERROR(BIF_P,BADARG);
     }
     if (is_not_tuple(BIF_ARG_2) || (arityval(*tuple_val(BIF_ARG_2)) != 4)) {
-	if (is_binary(BIF_ARG_2) || is_list(BIF_ARG_2)) { /* Compile from textual RE */
+	if (is_binary(BIF_ARG_2) || is_list(BIF_ARG_2) || is_nil(BIF_ARG_2)) { 
+	    /* Compile from textual RE */
 	    int slen;
 	    char *expr;
 	    pcre *result;
@@ -844,8 +854,26 @@ re_run_3(BIF_ALIST_3)
 	    if (!result) {
 		erts_free(ERTS_ALC_T_RE_TMP_BUF, expr);
 		BIF_RET(build_compile_result(BIF_P, am_error, NULL, errcode, 
-					     errstr, errofset, 0));
-	    }		
+					     errstr, errofset, 0, 0));
+	    }
+	    if (pflags & PARSE_FLAG_GLOBAL) {
+		Eterm precompiled = 
+		    build_compile_result(BIF_P, am_error, 
+					 result, errcode, 
+					 errstr, errofset, 
+					 (pflags & 
+					  PARSE_FLAG_UNICODE) ? 1 : 0,
+					 0);
+		Eterm *hp,r;
+		erts_free(ERTS_ALC_T_RE_TMP_BUF, expr);
+		hp = HAlloc(BIF_P,3);
+		r = TUPLE2(hp,BIF_ARG_3,
+			   ((pflags & PARSE_FLAG_UNIQUE_COMPILE_OPT) ? 
+			    am_true : 
+			    am_false));
+		BIF_TRAP3(grun_trap_exportp, BIF_P, BIF_ARG_1, precompiled, r);
+	    }
+
 	    pcre_fullinfo(result, NULL, PCRE_INFO_SIZE, &code_size);
 	    pcre_fullinfo(result, NULL, PCRE_INFO_CAPTURECOUNT, &capture_count);
 	    ovsize = 3*(capture_count+1);
@@ -861,6 +889,14 @@ re_run_3(BIF_ALIST_3)
 	if (pflags & PARSE_FLAG_UNIQUE_COMPILE_OPT) {
 	    BIF_ERROR(BIF_P,BADARG);
 	}
+	if (pflags & PARSE_FLAG_GLOBAL) {
+	    Eterm *hp,r;
+	    hp = HAlloc(BIF_P,3);
+	    r = TUPLE2(hp,BIF_ARG_3,am_false);
+	    BIF_TRAP3(grun_trap_exportp, BIF_P, BIF_ARG_1, BIF_ARG_2, 
+		      r);
+	}
+
 	tp = tuple_val(BIF_ARG_2);
 	if (tp[1] != am_re_pattern || is_not_small(tp[2]) || 
 	    is_not_small(tp[3]) || is_not_binary(tp[4])) {
@@ -895,7 +931,6 @@ re_run_3(BIF_ALIST_3)
     restart.extra.restart_flags = 0;
     restart.extra.loop_counter_return = &loop_count;
     restart.ret_info = NULL;
-    
     
     if (pflags & PARSE_FLAG_CAPTURE_OPT) {
 	if ((restart.ret_info = build_capture(capture,restart.code)) == NULL) {

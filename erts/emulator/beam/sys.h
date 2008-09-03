@@ -1072,39 +1072,39 @@ EXTERN_FUNCTION(void*, sys_calloc2, (Uint, Uint));
                       (((unsigned char*) (s))[6] << 8)  | \
                       (((unsigned char*) (s))[7]))
 
-#define put_int64(i, s) do {                                           \
-                            Uint j = (i);                              \
-                            ((char*)(s))[7] = (char)((j)&0xff), j>>=8; \
-                            ((char*)(s))[6] = (char)((j)&0xff), j>>=8; \
-                            ((char*)(s))[5] = (char)((j)&0xff), j>>=8; \
-                            ((char*)(s))[4] = (char)((j)&0xff), j>>=8; \
-                            ((char*)(s))[3] = (char)((j)&0xff), j>>=8; \
-                            ((char*)(s))[2] = (char)((j)&0xff), j>>=8; \
-                            ((char*)(s))[1] = (char)((j)&0xff), j>>=8; \
-                            ((char*)(s))[0] = (char)((j)&0xff);        \
-                        } while (0)
+#define put_int64(i, s) do {((char*)(s))[0] = (char)((Sint64)(i) >> 56) & 0xff;\
+                            ((char*)(s))[1] = (char)((Sint64)(i) >> 48) & 0xff;\
+                            ((char*)(s))[2] = (char)((Sint64)(i) >> 40) & 0xff;\
+                            ((char*)(s))[3] = (char)((Sint64)(i) >> 32) & 0xff;\
+                            ((char*)(s))[4] = (char)((Sint64)(i) >> 24) & 0xff;\
+                            ((char*)(s))[5] = (char)((Sint64)(i) >> 16) & 0xff;\
+                            ((char*)(s))[6] = (char)((Sint64)(i) >> 8)  & 0xff;\
+                            ((char*)(s))[7] = (char)((Sint64)(i))       & 0xff;\
+                           } while (0) 
 
 #define get_int32(s) ((((unsigned char*) (s))[0] << 24) | \
                       (((unsigned char*) (s))[1] << 16) | \
                       (((unsigned char*) (s))[2] << 8)  | \
                       (((unsigned char*) (s))[3]))
 
-#define put_int32(i, s) {((char*)(s))[0] = (char)((i) >> 24) & 0xff; \
-                         ((char*)(s))[1] = (char)((i) >> 16) & 0xff; \
-                         ((char*)(s))[2] = (char)((i) >> 8)  & 0xff; \
-                         ((char*)(s))[3] = (char)((i)        & 0xff);}
+#define put_int32(i, s) do {((char*)(s))[0] = (char)((i) >> 24) & 0xff;   \
+                            ((char*)(s))[1] = (char)((i) >> 16) & 0xff;   \
+                            ((char*)(s))[2] = (char)((i) >> 8)  & 0xff;   \
+                            ((char*)(s))[3] = (char)(i)         & 0xff;} \
+                        while (0)
 
 #define get_int16(s) ((((unsigned char*)  (s))[0] << 8) | \
                       (((unsigned char*)  (s))[1]))
 
 
-#define put_int16(i, s) {((unsigned char*)(s))[0] = ((i) >> 8) & 0xff; \
-                         ((unsigned char*)(s))[1] = (i)        & 0xff;}
+#define put_int16(i, s) do {((char*)(s))[0] = (char)((i) >> 8) & 0xff;  \
+                            ((char*)(s))[1] = (char)(i)        & 0xff;} \
+                        while (0)
 
 #define get_int8(s) ((((unsigned char*)  (s))[0] ))
 
 
-#define put_int8(i, s) { ((unsigned char*)(s))[0] = (i) & 0xff;}
+#define put_int8(i, s) do {((unsigned char*)(s))[0] = (i) & 0xff;} while (0)
 
 /*
  * Use DEBUGF as you would use printf, but use double parentheses:

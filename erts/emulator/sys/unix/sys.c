@@ -452,6 +452,10 @@ erts_sys_pre_init(void)
 
     report_exit_list = NULL;
 
+#ifdef ERTS_ENABLE_LOCK_COUNT
+    erts_lcnt_init();
+#endif
+
 #if CHLDWTHR || defined(ERTS_SMP)
     erts_mtx_init(&chld_stat_mtx, "child_status");
 #endif

@@ -13,7 +13,7 @@
 
 %%----------------------------------------------------------------------------
 
--spec(get_all_files/2 :: (#args{}, 'analysis' | 'trust') -> [string()]).
+-spec get_all_files(#args{}, 'analysis' | 'trust') -> [string()].
 
 get_all_files(Args, analysis) ->
   case internal_get_all_files(Args#args.analyze,
@@ -25,7 +25,7 @@ get_all_files(Args, analysis) ->
 get_all_files(Args, trust) -> 
   internal_get_all_files(Args#args.trust, [], fun test_erl_file/1).
 
--spec(test_erl_file_exclude_ann/1 :: (string()) -> bool()).
+-spec test_erl_file_exclude_ann(string()) -> bool().
 
 test_erl_file_exclude_ann(File) ->
   case filename:extension(File) of
@@ -37,21 +37,21 @@ test_erl_file_exclude_ann(File) ->
     _ -> false
   end.
 
--spec(test_erl_file/1 :: (string()) -> bool()).
+-spec test_erl_file(string()) -> bool().
 
 test_erl_file(File) ->
   filename:extension(File) =:= ".erl".
 
--spec(internal_get_all_files/3 ::
-	([string()], [string()], fun((string()) -> bool())) -> [string()]).
+-spec internal_get_all_files([string()], [string()],
+			     fun((string()) -> bool())) -> [string()].
 
 internal_get_all_files(File_Dir, Dir_R, Fun) ->
   All_File_1 = process_file_and_dir(File_Dir, Fun),
   All_File_2 = process_dir_recursively(Dir_R, Fun),
   remove_dup(All_File_1 ++ All_File_2).
 
--spec(process_file_and_dir/2 ::
-	([string()], fun((string()) -> bool())) -> [string()]).
+-spec process_file_and_dir([string()],
+			   fun((string()) -> bool())) -> [string()].
 
 process_file_and_dir(File_Dir, TestFun) ->
   Fun =
@@ -63,8 +63,8 @@ process_file_and_dir(File_Dir, TestFun) ->
     end,
   lists:foldl(Fun, [], File_Dir).
 
--spec(process_dir_recursively/2 ::
-	([string()], fun((string()) -> bool())) -> [string()]).
+-spec process_dir_recursively([string()],
+			      fun((string()) -> bool())) -> [string()].
 
 process_dir_recursively(Dirs, TestFun) ->
   Fun = fun (Dir, Acc) ->
@@ -72,11 +72,10 @@ process_dir_recursively(Dirs, TestFun) ->
 	end,
   lists:foldl(Fun, [], Dirs).
 
--spec(check_dir/4 ::
-	(string(),
-	 'non_recursive' | 'recursive',
-	 [string()],
-	 fun((string()) -> bool())) -> [string()]).
+-spec check_dir(string(),
+		'non_recursive' | 'recursive',
+		[string()],
+		fun((string()) -> bool())) -> [string()].
 
 check_dir(Dir, Mode, Acc, Fun) ->
   case file:list_dir(Dir) of
@@ -100,8 +99,7 @@ check_dir(Dir, Mode, Acc, Fun) ->
   end.
 
 %% Same order as the input list
--spec(process_file/3 ::
-	(string(), fun((string()) -> bool()), string()) -> [string()]).
+-spec process_file(string(), fun((string()) -> bool()), string()) -> [string()].
 
 process_file(File, TestFun, Acc) ->
   case TestFun(File) of
@@ -110,8 +108,7 @@ process_file(File, TestFun, Acc) ->
   end.
 
 %% Same order as the input list
--spec(split_dirs_and_files/2 ::
-      ([string()], string()) -> {[string()], [string()]}).
+-spec split_dirs_and_files([string()], string()) -> {[string()], [string()]}.
 
 split_dirs_and_files(Elems, Dir) ->
   Test_Fun = 
@@ -131,7 +128,7 @@ split_dirs_and_files(Elems, Dir) ->
 
 %% Removes duplicate filenames but it keeps the order of the input list
 
--spec(remove_dup/1 :: ([string()]) -> [string()]).
+-spec remove_dup/1 :: ([string()]) -> [string()].
 
 remove_dup(Files) ->
   Test_Dup = fun (File, Acc) ->

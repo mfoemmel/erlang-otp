@@ -25,7 +25,7 @@ scan(Chars) ->
 	{ok, Tokens, _Line}  ->
 	    {ok, lex(a1(Tokens))};
 	{error, {Line,Module,Info}, _EndLine} ->
-	    {error, apply(Module, format_error, [Info]), Line}
+	    {error, Module:format_error(Info), Line}
     end.
 
 a1([{'-',N},{integer,N,1} | L]) ->
@@ -35,37 +35,37 @@ a1([T | L]) ->
 a1([]) ->
     [].
 
--define(MFA(M,F,A,N), {atom,N,M}, {':',N}, {atom,N,F}, {'/',N}, {integer,N,A}).
+-define(MFA(M,F,A,N), {atom,N,M}, {':',_}, {atom,_,F}, {'/',_}, {integer,_,A}).
 -define(MFA2(M,F,A,N), 
-	{'{',N},{atom,N,M},{',',N},{atom,N,F},{',',N},{integer,N,A},{'}',N}).
--define(DECL(N,T), {':',N},{var,N,T}).
+	{'{',N},{atom,_,M},{',',_},{atom,_,F},{',',_},{integer,_,A},{'}',_}).
+-define(DECL(N1,N2,T), {':',N1},{var,N2,T}).
 
-lex([{atom,N,V1},{'->',N},{atom,N,V2} | L]) ->
+lex([{atom,N,V1},{'->',_},{atom,_,V2} | L]) ->
     Constant = {constant, unknown, edge, {V1,V2}},
     [{edge,N,Constant} | lex(L)];
-lex([{'{',N},{atom,N,V1},{',',N},{atom,N,V2},{'}',N} | L]) ->
+lex([{'{',N},{atom,_,V1},{',',_},{atom,_,V2},{'}',_} | L]) ->
     Constant = {constant, unknown, edge, {V1,V2}},
     [{edge,N,Constant} | lex(L)];
-lex([?MFA(M,F,A,N),{'->',N},?MFA(M2,F2,A2,N) | L]) ->
+lex([?MFA(M,F,A,N),{'->',_},?MFA(M2,F2,A2,_) | L]) ->
     Constant = {constant, 'Fun', edge, {{M,F,A},{M2,F2,A2}}},
     [{edge,N,Constant} | lex(L)];
 lex([?MFA(M,F,A,N) | L]) ->
     Constant = {constant, 'Fun', vertex, {M,F,A}},
     [{vertex,N,Constant} | lex(L)];
-lex([{'{',N},?MFA2(M,F,A,N),{',',N},?MFA2(M2,F2,A2,N),{'}',N} | L]) ->
+lex([{'{',N},?MFA2(M,F,A,_),{',',_},?MFA2(M2,F2,A2,_),{'}',_} | L]) ->
     Constant = {constant, 'Fun', edge, {{M,F,A},{M2,F2,A2}}},
     [{edge,N,Constant} | lex(L)];
 lex([?MFA2(M,F,A,N) | L]) ->
     Constant = {constant, 'Fun', vertex, {M,F,A}},
     [{vertex,N,Constant} | lex(L)];
-lex([?DECL(N,Decl) | L]) ->
+lex([?DECL(N1,N2,Decl) | L]) ->
     case is_type(Decl) of
-	false -> [?DECL(N, Decl) | lex(L)];
-	true -> [{decl,N,Decl} | lex(L)]
+	false -> [?DECL(N1, N2, Decl) | lex(L)];
+	true -> [{decl,N1,Decl} | lex(L)]
     end;
-lex([{':',N},{'=',N} | L]) ->
+lex([{':',N},{'=',_} | L]) ->
     [{':=',N} | lex(L)];
-lex([{'||',N},{'|',N} | L]) ->
+lex([{'||',N},{'|',_} | L]) ->
     [{'|||',N} | lex(L)];
 lex([V={var,N,Var} | L]) ->
     T = case is_type(Var) of

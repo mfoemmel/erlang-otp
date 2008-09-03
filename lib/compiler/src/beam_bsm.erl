@@ -40,7 +40,7 @@
 %%%     func_info ...
 %%% L1	test bs_start_match2 {f,...} {x,0} Live SavePositions {x,0}
 %%%              . . .
-%%%     test bs_get_binary2 {f,...} {x,1} all 8 Flags {x,1}
+%%%     test bs_get_binary2 {f,...} {x,0} all 8 Flags {x,1}
 %%%              . . .
 %%%     move {x,1} {x,0}
 %%%     call_only 2 L1
@@ -63,7 +63,10 @@
 	{f,					%Gbtrees for all functions.
 	 index,					%{Label,Code} index (for liveness).
 	 ok_br,					%Labels that are OK.
-	 need_save				%Must save position when optmizing.
+	 must_not_save,				%Must not save position when
+						% optimizing (reaches
+						% bs_context_to_binary).
+	 must_save				%Must save position when optimizing.
 	}).
 
 module({Mod,Exp,Attr,Fs0,Lc}, Opts) ->
@@ -103,9 +106,9 @@ btb_opt_1([{test,bs_get_binary2,F,[Reg,_,{atom,all},U,Fs,Reg]}=I0|Is], D, Acc0) 
 	{error,Reason} ->
 	    Comment = btb_comment_no_opt(Reason, Fs),
 	    btb_opt_1(Is, D, [Comment,I0|Acc0]);
-	{ok,NeedSave} ->
+	{ok,MustSave} ->
 	    Comment = btb_comment_opt(Fs),
-	    Acc1 = btb_gen_save(NeedSave, Reg, [Comment|Acc0]),
+	    Acc1 = btb_gen_save(MustSave, Reg, [Comment|Acc0]),
 	    Acc = case U of
 		      1 -> Acc1;
 		      _ -> [{test,bs_test_unit,F,[Reg,U]}|Acc1]
@@ -117,14 +120,14 @@ btb_opt_1([{test,bs_get_binary2,F,[Ctx,_,{atom,all},U,Fs,Dst]}=I0|Is], D, Acc0) 
 	{error,Reason} ->
 	    Comment = btb_comment_no_opt(Reason, Fs),
 	    btb_opt_1(Is, D, [Comment,I0|Acc0]);
-	{ok,NeedSave} when U =:= 1 ->
+	{ok,MustSave} when U =:= 1 ->
 	    Comment = btb_comment_opt(Fs),
-	    Acc1 = btb_gen_save(NeedSave, Ctx, [Comment|Acc0]),
+	    Acc1 = btb_gen_save(MustSave, Ctx, [Comment|Acc0]),
 	    Acc = [{move,Ctx,Dst}|Acc1],
 	    btb_opt_1(Is, D, Acc);
-	{ok,NeedSave} ->
+	{ok,MustSave} ->
 	    Comment = btb_comment_opt(Fs),
-	    Acc1 = btb_gen_save(NeedSave, Ctx, [Comment|Acc0]),
+	    Acc1 = btb_gen_save(MustSave, Ctx, [Comment|Acc0]),
 	    Acc = [{move,Ctx,Dst},{test,bs_test_unit,F,[Ctx,U]}|Acc1],
 	    btb_opt_1(Is, D, Acc)
     end;
@@ -138,27 +141,51 @@ btb_gen_save(true, Reg, Acc) ->
     [{bs_save2,Reg,{atom,start}}|Acc];
 btb_gen_save(false, _, Acc) -> Acc.
 
-%% btb_reaches_match([Instruction], Register, D) -> ok|{error,Reason}
-%%  The Register should be the target for a sub binary from
-%%  bs_get_binary2 instruction. Determine whether it is OK to instead
-%%  of a sub binary retain the match context to speed up further bit
-%%  syntax matches.
+%% btb_reaches_match([Instruction], [Register], D) ->
+%%   {ok,MustSave}|{error,Reason}
+%%
+%%  The list of Registers should be a list of registers referencing a
+%%  match context. The Register may contain one element if the
+%%  bs_get_binary2 instruction looks like
+%%
+%%    test bs_get_binary2 {f,...} Ctx all _ _ Ctx
+%%
+%%  or two elements if the instruction looks like
+%%
+%%    test bs_get_binary2 {f,...} Ctx all _ _ Dst
+%%
+%%  This function determines whether the bs_get_binary2 instruction
+%%  can be omitted (retaining the match context instead of creating
+%%  a sub binary).
 %%
 %%  The rule is that the match context ultimately must end up at a
-%%  bs_start_match2 instruction (having enough slots for save positions),
-%%  and nowhere else. That it, it must not be passed to BIFs, or copied
-%%  or put into data structures. There must only be one copy alive
-%%  when the match context reaches the bs_start_match2 instruction.
+%%  bs_start_match2 instruction and nowhere else. That it, it must not
+%%  be passed to BIFs, or copied or put into data structures. There
+%%  must only be one copy alive when the match context reaches the
+%%  bs_start_match2 instruction.
 %%
 %%  At a branch, we must follow all branches and make sure that the above
 %%  rule is followed (or that the branch kills the match context).
+%%
+%%  The MustSave return value will be true if control may end up at
+%%  bs_context_to_binary instruction. Since that instruction uses the
+%%  saved start position, we must use "bs_save2 Ctx start" to
+%%  update the saved start position. An additional complication is that
+%%  "bs_save2 Ctx start" must not be used if Dst and Ctx are
+%%  different registers and both registers may be passed to
+%%  a bs_context_to_binary instruction.
+%% 
 
 btb_reaches_match(Is, RegList, D0) ->
     try
 	Regs = btb_regs_from_list(RegList),
-	D = D0#btb{ok_br=gb_sets:empty(),need_save=false},
-	#btb{need_save=NeedSave} = btb_reaches_match_1(Is, Regs, D),
-	{ok,NeedSave}
+	D = D0#btb{ok_br=gb_sets:empty(),must_not_save=false,must_save=false},
+	#btb{must_not_save=MustNotSave,must_save=MustSave} =
+	btb_reaches_match_1(Is, Regs, D),
+	case MustNotSave and MustSave of
+	    true -> btb_error(must_and_must_not_save);
+	    _    -> {ok,MustSave}
+	end
     catch
 	throw:{error,_}=Error -> Error
     end.
@@ -297,7 +324,7 @@ btb_reaches_match_2([{bs_restore2,Src,_}=I|Is], Regs0, D) ->
 	    CtxRegs = btb_context_regs(Regs),
 	    case btb_are_all_killed(CtxRegs, Is, D) of
 		false -> btb_error({CtxRegs,not_all_killed_after,I});
-		true -> D
+		true -> D#btb{must_not_save=true}
 	    end
     end;
 btb_reaches_match_2([{bs_context_to_binary,Src}=I|Is], Regs0, D) ->
@@ -311,7 +338,7 @@ btb_reaches_match_2([{bs_context_to_binary,Src}=I|Is], Regs0, D) ->
 	    CtxRegs = btb_context_regs(Regs),
 	    case btb_are_all_killed(CtxRegs, Is, D) of
 		false -> btb_error({CtxRegs,not_all_killed_after,I});
-		true -> D
+		true -> D#btb{must_not_save=true}
 	    end
     end;
 btb_reaches_match_2([{badmatch,Src}=I|_], Regs, D) ->
@@ -356,15 +383,15 @@ btb_call(Arity, Lbl, Regs0, Is, D0) ->
 	    btb_reaches_match_1(Is, Regs, D0)
     end.
 
-btb_tail_call(Lbl, Regs, #btb{f=Ftree,need_save=NeedSave0}=D) ->
+btb_tail_call(Lbl, Regs, #btb{f=Ftree,must_save=MustSave0}=D) ->
     %% Ignore any y registers here.
     case [R || {x,_}=R <- btb_context_regs(Regs)] of
 	[] ->
 	    D;
 	[{x,_}=Reg] ->
 	    case gb_trees:lookup(Lbl, Ftree) of
-		{value,{Reg,_NeedSlots,NeedSave}} ->
-		    D#btb{need_save=NeedSave0 or NeedSave};
+		{value,{Reg,MustSave}} ->
+		    D#btb{must_save=MustSave0 or MustSave};
 		_ when is_integer(Lbl) ->
 		    btb_error({{label,Lbl},no_suitable_bs_start_match});
 		_ ->
@@ -398,10 +425,12 @@ btb_follow_branch(Lbl, Regs, #btb{ok_br=Br0,index=Li}=D) ->
 	false ->
 	    %% New branch. Try it.
 	    Is = fetch_code_at(Lbl, Li),
-	    #btb{ok_br=Br} = btb_reaches_match_1(Is, Regs, D),
+	    #btb{ok_br=Br,must_not_save=MustNotSave,must_save=MustSave} =
+		btb_reaches_match_1(Is, Regs, D),
 
 	    %% Since we got back, this branch is OK.
-	    D#btb{ok_br=gb_sets:insert(Lbl, Br)}
+	    D#btb{ok_br=gb_sets:insert(Lbl, Br),must_not_save=MustNotSave,
+		  must_save=MustSave}
     end.
 
 btb_reaches_match_block([{set,Ds,Ss,{alloc,Live,_}}=I|Is], Regs0) ->
@@ -524,9 +553,12 @@ btb_context_regs_1(Regs, N, Tag, Acc) when (Regs band 1) =:= 1 ->
 btb_context_regs_1(Regs, N, Tag, Acc) ->
     btb_context_regs_1(Regs bsr 1, N+1, Tag, Acc).
 
-%% btb_index([Function]) -> GbTree({EntryLabel,{Register,NumberOfSlots}})
+%% btb_index([Function]) -> GbTree({EntryLabel,{Register,MustSave}})
 %%  Build an index of functions that accept a match context instead of
-%%  a binary.
+%%  a binary. MustSave is true if the function may pass the match
+%%  context to the bs_context_to_binary instruction (in which case
+%%  the current position in the binary must have saved into the
+%%  start position using "bs_save_2 Ctx start".
 
 btb_index(Fs) ->
     btb_index_1(Fs, []).
@@ -537,8 +569,9 @@ btb_index_1([{function,_,_,Entry,Is0}|Fs], Acc0) ->
     btb_index_1(Fs, Acc);
 btb_index_1([], Acc) -> gb_trees:from_orddict(sort(Acc)).
 
-btb_index_2([{test,bs_start_match2,{f,_},[Reg,_,Slots,Reg]}|_], Entry, NeedSave, Acc) ->
-    [{Entry,{Reg,Slots,NeedSave}}|Acc];
+btb_index_2([{test,bs_start_match2,{f,_},[Reg,_,_,Reg]}|_],
+	    Entry, MustSave, Acc) ->
+    [{Entry,{Reg,MustSave}}|Acc];
 btb_index_2(Is0, Entry, _, Acc) ->
     try btb_index_find_start_match(Is0) of
 	Is -> btb_index_2(Is, Entry, true, Acc)
@@ -641,6 +674,8 @@ format_error_1(unsuitable_bs_start_match) ->
 format_error_1({{F,A},no_suitable_bs_start_match}) ->
     io_lib:format("called function ~p/~p does not begin with a suitable "
 		  "binary matching instruction", [F,A]);
+format_error_1(must_and_must_not_save) ->
+    "different control paths use different positions in the binary";
 format_error_1({_,I,not_handled}) ->
     case I of
 	{'catch',_,_} ->

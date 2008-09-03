@@ -147,7 +147,7 @@ gen_encode(Erules,Typename,Type) when record(Type,type) ->
 %% encode ComponentType
 %%===============================================================================
 
-gen_encode(Erules,Tname,{'ComponentType',_Pos,Cname,Type,_Prop,_Tags}) ->
+gen_encode(Erules,Tname,#'ComponentType'{name=Cname,typespec=Type}) ->
     NewTname = [Cname|Tname],
     %% The tag is set to [] to avoid that it is
     %% taken into account twice, both as a component/alternative (passed as
@@ -520,7 +520,7 @@ gen_decode(Erules,Typename,Type) when record(Type,type) ->
 %% decode ComponentType
 %%===============================================================================
 
-gen_decode(Erules,Tname,{'ComponentType',_Pos,Cname,Type,_Prop,_Tags}) ->
+gen_decode(Erules,Tname,#'ComponentType'{name=Cname,typespec=Type}) ->
     NewTname = [Cname|Tname],
     %% The tag is set to [] to avoid that it is
     %% taken into account twice, both as a component/alternative (passed as

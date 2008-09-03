@@ -2638,6 +2638,9 @@ erts_sys_pre_init(void)
 	eid.realloc = ethr_internal_realloc;
 	eid.free = ethr_internal_free;
 	erts_thr_init(&eid);
+#ifdef ERTS_ENABLE_LOCK_COUNT
+	erts_lcnt_init();
+#endif
     }
 #endif
     erts_smp_atomic_init(&sys_misc_mem_sz, 0);

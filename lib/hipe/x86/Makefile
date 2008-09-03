@@ -56,6 +56,7 @@ MODULES=hipe_rtl_to_x86 \
 	hipe_x86_ra_postconditions \
 	hipe_x86_ra_x87_ls \
 	hipe_x86_registers \
+	hipe_x86_spill_restore \
 	hipe_x86_x87
 
 HRL_FILES=hipe_x86.hrl
@@ -119,6 +120,7 @@ $(EBIN)/hipe_x86_ra_ls.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra_postconditions.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra_x87_ls.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_registers.beam: ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_x86_spill_restore.beam: ../main/hipe.hrl ../flow/cfg.hrl
 $(EBIN)/hipe_x86_x87.beam: ../main/hipe.hrl
 
 $(TARGET_FILES): hipe_x86.hrl

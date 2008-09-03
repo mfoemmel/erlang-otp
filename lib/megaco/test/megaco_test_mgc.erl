@@ -586,7 +586,9 @@ start_tcp(RH, Port, undefined) ->
     end;
 start_tcp(RH, Port, Sup) when pid(Sup) ->
     d("tcp listen on ~p", [Port]),
-    Opts = [{port, Port}, {receive_handle, RH}],
+    Opts = [{port,           Port}, 
+	    {receive_handle, RH}, 
+	    {tcp_options,    [{nodelay, true}]}],
     case megaco_tcp:listen(Sup, Opts) of
 	ok ->
 	    Sup;

@@ -50,6 +50,7 @@ static Binary* all_binaries;
 
 extern Eterm beam_apply[];
 extern Eterm beam_exit[];
+extern Eterm beam_continue_exit[];
 
 
 void
@@ -202,6 +203,8 @@ print_function_from_pc(int to, void *to_arg, Eterm* x)
     if (addr == NULL) {
         if (x == beam_exit) {
             erts_print(to, to_arg, "<terminate process>");
+        } else if (x == beam_continue_exit) {
+            erts_print(to, to_arg, "<continue terminate process>");
         } else if (x == beam_apply+1) {
             erts_print(to, to_arg, "<terminate process normally>");
         } else {

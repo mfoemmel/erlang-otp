@@ -37,9 +37,23 @@ RELSYSDIR = $(RELEASE_PATH)/lib/ssh-$(VSN)
 
 MODULES= \
 	ssh \
+	ssh_sup \
+	sshc_sup \
+	sshd_sup \
+	ssh_connection \
+	ssh_connection_sup \
+	ssh_connection_handler \
+	ssh_connection_manager \
+	ssh_system_sup \
+	ssh_subsystem_sup \
+	ssh_channel_sup \
+	ssh_acceptor_sup \
+	ssh_acceptor \
 	ssh_app \
+	ssh_auth\
 	ssh_bits \
 	ssh_cli \
+	ssh_channel \
 	ssh_cm \
 	ssh_dsa \
 	ssh_file \
@@ -53,10 +67,8 @@ MODULES= \
 	ssh_sftpd_file_api \
 	ssh_ssh \
 	ssh_sshd \
-	ssh_tcp \
-	ssh_tcp_wrap \
 	ssh_transport \
-	ssh_userauth \
+	ssh_userreg \
 	ssh_xfer
 
 PUBLIC_HRL_FILES= ssh.hrl ssh_userauth.hrl ssh_xfer.hrl

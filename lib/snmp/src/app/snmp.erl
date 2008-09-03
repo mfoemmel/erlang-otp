@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1996-2007</year>
+%% <year>1996-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -38,8 +38,9 @@
 	 universal_time_to_date_and_time/1,
 	 local_time_to_date_and_time_dst/1, 
 	 date_and_time_to_universal_time_dst/1,
-	 validate_date_and_time/1, 
-	 date_and_time_to_string/1,
+	 validate_date_and_time/1, validate_date_and_time/2, 
+	 date_and_time_to_string/1, date_and_time_to_string/2, 
+	 date_and_time_to_string2/1, 
 
 	 str_apply/1,
 
@@ -624,8 +625,38 @@ date_and_time(Local, UTC) ->
 short_time({{Y,M,D},{H,Mi,S}}) ->
     [y1(Y), y2(Y), M, D, H, Mi, S, 0].
 
+%% This function will only be called if there has been some 
+%% validation error, and as it is strict, it allways returns 
+%% false. 
+strict_validation(_What, _Data) ->
+    false.
+
+kiribati_validation(diff, Diff) ->
+    check_kiribati_diff(Diff);
+kiribati_validation(_What, _Data) ->
+    false.
+
+check_kiribati_diff([$+, H, M]) 
+  when ((0 =< H) andalso (H < 14) andalso (0 =< M) andalso (M < 60)) orelse
+       ((H =:= 14) andalso (M =:= 0)) -> 
+    true;
+check_kiribati_diff([$-, H, M]) 
+  when ((0 =< H) andalso (H < 14) andalso (0 =< M) andalso (M < 60)) orelse
+       ((H =:= 14) andalso (M =:= 0)) ->
+    true;
+check_kiribati_diff(_) ->
+    false.
+
+
+date_and_time_to_string2(DAT) ->
+    Validate = fun(What, Data) -> kiribati_validation(What, Data) end,
+    date_and_time_to_string(DAT, Validate).
+
 date_and_time_to_string(DAT) ->
-    case validate_date_and_time(DAT) of
+    Validate = fun(What, Data) -> strict_validation(What, Data) end,
+    date_and_time_to_string(DAT, Validate).
+date_and_time_to_string(DAT, Validate) when is_function(Validate) ->
+    case validate_date_and_time(DAT, Validate) of
 	true ->
 	        dat2str(DAT);
 	false ->
@@ -685,27 +716,73 @@ date_and_time_to_universal_time_dst([Y1, Y2, Mo, D, H, M, S, _Ds, Sign, Hd, Md])
     [calendar:gregorian_seconds_to_datetime(UTCSecs)].
 
 
-validate_date_and_time([Y1,Y2, Mo, D, H, M, S, Ds | Diff]) 
-  when 0 =< Y1, 0 =< Y2, 
-       0 < Mo, Mo < 13, 
-       0 < D, D < 32, 0 =< H,
-       H < 24, 
-       0 =< M, M < 60, 
-       0 =< S, S < 61, 
-       0 =< Ds, Ds < 10 ->
-    case check_diff(Diff) of
+validate_date_and_time(DateAndTime) ->
+    Validate = fun(What, Data) -> strict_validation(What, Data) end,
+    validate_date_and_time(DateAndTime, Validate).
+
+validate_date_and_time(DateAndTime, Validate) when is_function(Validate) ->
+    do_validate_date_and_time(DateAndTime, Validate).
+
+do_validate_date_and_time([Y1,Y2, Mo, D, H, M, S, Ds | Diff], Validate) 
+  when ((0 =< Y1) andalso (0 =< Y2)) andalso 
+       ((0 < Mo) andalso (Mo < 13)) andalso 
+       ((0 < D) andalso (D < 32) andalso (0 =< H)) andalso 
+       (H < 24) andalso 
+       ((0 =< M) andalso (M < 60)) andalso  
+       ((0 =< S) andalso (S < 61)) andalso  
+       ((0 =< Ds) andalso (Ds < 10)) ->
+    case check_diff(Diff, Validate) of
 	true ->
-	        calendar:valid_date(y(Y1,Y2), Mo, D);
+	    Year = y(Y1,Y2), 
+	    case calendar:valid_date(Year, Mo, D) of
+		true ->
+		    true;
+		_ ->
+		    Validate(valid_date, {Year, Mo, D})
+	    end;
 	false ->
-	        false
+	    false
     end;
-validate_date_and_time(_) -> false.
+do_validate_date_and_time([Y1,Y2, Mo, D, H, M, S, Ds | Diff], Validate) ->
+    Valid = 
+	Validate(year,         {Y1, Y2}) andalso 
+	Validate(month,        Mo)       andalso 
+	Validate(day,          D)        andalso 
+	Validate(hour,         H)        andalso 
+	Validate(minute,       M)        andalso 
+	Validate(seconds,      S)        andalso 
+	Validate(deci_seconds, Ds),
+    if 
+	Valid =:= true ->
+	    case check_diff(Diff, Validate) of
+		true ->
+		    Year = y(Y1,Y2), 
+		    case calendar:valid_date(Year, Mo, D) of
+			true ->
+			    true;
+			_ ->
+			    Validate(valid_date, {Year, Mo, D})
+		    end;
+		false ->
+		    false
+	    end;
+	true ->
+	    false
+    end;
+do_validate_date_and_time(_, _) -> 
+    false.
 
 %% OTP-4206 (now according to RFC-2579)
-check_diff([]) -> true;
-check_diff([$+, H, M]) when 0 =< H, H < 14, 0 =< M, M < 60 -> true;
-check_diff([$-, H, M]) when 0 =< H, H < 14, 0 =< M, M < 60 -> true;
-check_diff(_) -> false.
+check_diff([], _) -> 
+    true;
+check_diff([$+, H, M], _) 
+  when (0 =< H) andalso (H < 14) andalso (0 =< M) andalso (M < 60) -> 
+    true;
+check_diff([$-, H, M], _) 
+  when (0 =< H) andalso (H < 14) andalso (0 =< M) andalso (M < 60) -> 
+    true;
+check_diff(Diff, Validate) -> 
+    Validate(diff, Diff).
 
 
 %%-----------------------------------------------------------------

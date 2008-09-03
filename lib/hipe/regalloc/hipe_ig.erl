@@ -587,10 +587,10 @@ get_moves(IG) ->
 %%----------------------------------------------------------------------
 %% Function:    add_edge
 %%
-%% Description: Adds an edge to the adj_set data-structure if it's
+%% Description: Adds an edge to the adj_set data structure if it is
 %%               not already a part of it and if U is not precoloured
-%%               we add V to it's adj_list. If V is not precoloured
-%%               we add U ti it's adj_list.
+%%               we add V to its adj_list. If V is not precoloured
+%%               we add U to its adj_list.
 %%
 %% Parameters:
 %%   U              --  A temporary number
@@ -609,11 +609,9 @@ add_edge(U, V, IG, Target) ->
     false ->
       adjset_add_edge(U, V, adj_set(IG)),
       Degree = degree(IG),
-      Adj_list0 = interfere_if_uncolored(U, V, adj_list(IG),
-					 Degree, Target),
-      Adj_list1 = interfere_if_uncolored(V, U, Adj_list0,
-					 Degree, Target),
-      set_adj_list(Adj_list1, IG)
+      AdjList0 = interfere_if_uncolored(U, V, adj_list(IG), Degree, Target),
+      AdjList1 = interfere_if_uncolored(V, U, AdjList0, Degree, Target),
+      set_adj_list(AdjList1, IG)
   end.
 
 %%----------------------------------------------------------------------
@@ -641,11 +639,9 @@ remove_edge(U, V, IG, Target) ->
     true ->
       adjset_remove_edge(U, V, adj_set(IG)),
       Degree = degree(IG),
-      Adj_list0 = remove_if_uncolored(U, V, adj_list(IG),
-					 Degree, Target),
-      Adj_list1 = remove_if_uncolored(V, U, Adj_list0,
-					 Degree, Target),
-      set_adj_list(Adj_list1, IG)
+      AdjList0 = remove_if_uncolored(U, V, adj_list(IG), Degree, Target),
+      AdjList1 = remove_if_uncolored(V, U, AdjList0, Degree, Target),
+      set_adj_list(AdjList1, IG)
   end.
 
 %%----------------------------------------------------------------------

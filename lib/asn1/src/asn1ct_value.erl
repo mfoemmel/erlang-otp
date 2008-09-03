@@ -115,7 +115,7 @@ get_sequence(M,Typename,Type) ->
     {_SEQorSET,CompList} = 
 	case Type#type.def of
 	    #'SEQUENCE'{components=Cl} -> {'SEQUENCE',Cl};
-	    #'SET'{components=Cl} -> {'SET',Cl}
+	    #'SET'{components=Cl} -> {'SET',to_textual_order(Cl)}
 	end,
     case get_components(M,Typename,CompList) of
         [] ->
@@ -384,3 +384,13 @@ open_type_value(per_bin) ->
 %    <<10,9,111,112,101,110,95,116,121,112,101>>;
 open_type_value(_) ->
     [4,9,111,112,101,110,95,116,121,112,101].
+
+to_textual_order({Root,Ext}) ->
+    {to_textual_order(Root),Ext};
+to_textual_order(Cs) when is_list(Cs) ->
+    case Cs of
+	[#'ComponentType'{textual_order=undefined}|_] ->
+	    Cs;
+	_ ->
+	    lists:keysort(#'ComponentType'.textual_order,Cs)
+    end.

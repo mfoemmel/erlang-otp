@@ -67,17 +67,16 @@ check_output_plt(Opts = #options{analysis_type=Mode}) ->
       case Opts#options.from =:= byte_code of
 	true -> Opts;
 	false -> 
-	  throw({dialyzer_error, 
-		 io_lib:format("Analysis must be done on byte code "
-			       "in analysis mode ~w", [Mode])})
+	  Msg = "Byte code compiled with debug_info is needed to build the PLT",
+	  throw({dialyzer_error, Msg})
       end;
     false ->
       case Opts#options.output_plt =:= none of
 	true -> Opts;
 	false -> 
-	  throw({dialyzer_error, 
-		 io_lib:format("Output plt cannot be specified "
-			       "in analysis mode ~w", [Mode])})
+	  Msg = io_lib:format("Output plt cannot be specified "
+			      "in analysis mode ~w", [Mode]),
+	  throw({dialyzer_error, lists:flatten(Msg)})
       end
   end.
 
@@ -102,7 +101,7 @@ adapt_get_warnings(Opts = #options{analysis_type=Mode}) ->
 
 bad_option(String, Term) ->
   Msg = io_lib:format("~s: ~P\n", [String,Term,25]),
-  throw({dialyzer_options_error, Msg}).
+  throw({dialyzer_options_error, lists:flatten(Msg)}).
 
 
 build_options([{OptName, undefined}|Rest], Options) when is_atom(OptName) ->

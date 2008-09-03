@@ -261,6 +261,7 @@ void db_unfix_table_hash(DbTableHash *tb)
 		     (DbTable *) tb,
 		     (void *) fx,
 		     sizeof(FixedDeletion));
+	ERTS_ETS_MISC_MEM_ADD(-sizeof(FixedDeletion));
 
 	while (b != NULL) {
 	    if (b->hvalue == INVALID_HASH) {
@@ -685,6 +686,7 @@ int db_erase_hash(Process *p, DbTable *tbl,
 		    erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
 				  (DbTable *) tb,
 				  sizeof(FixedDeletion));
+		ERTS_ETS_MISC_MEM_ADD(sizeof(FixedDeletion));
 		fixd->slot = ix;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
@@ -745,6 +747,7 @@ static int db_erase_object_hash(Process *p, DbTable *tbl,
 		    erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
 				  (DbTable *) tb,
 				  sizeof(FixedDeletion));
+		ERTS_ETS_MISC_MEM_ADD(sizeof(FixedDeletion));
 		fixd->slot = ix;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
@@ -1378,6 +1381,7 @@ static int db_select_delete_hash(Process *p,
 				  (DbTable *) tb,
 				  sizeof(FixedDeletion));
 		int ix;
+		ERTS_ETS_MISC_MEM_ADD(sizeof(FixedDeletion));
 		HASH(tb, (*current_list)->hvalue, ix);
 		fixd->slot = ix;
 		fixd->next = tb->fixdel;
@@ -1533,6 +1537,7 @@ static int db_select_delete_continue_hash(Process *p,
 		    erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
 				  (DbTable *) tb,
 				  sizeof(FixedDeletion));
+		ERTS_ETS_MISC_MEM_ADD(sizeof(FixedDeletion));
 		fixd->slot = chain_pos;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
@@ -1728,6 +1733,7 @@ int db_mark_all_deleted_hash(DbTable *tbl)
 		erts_db_alloc(ERTS_ALC_T_DB_FIX_DEL,
 			      (DbTable *) tb,
 			      sizeof(FixedDeletion));
+	    ERTS_ETS_MISC_MEM_ADD(sizeof(FixedDeletion));
 	    fixd->slot = i;
 	    fixd->next = tb->fixdel;
 	    tb->fixdel = fixd;
@@ -1783,6 +1789,7 @@ static int db_free_table_hash(DbTable *tbl)
 		     (DbTable *) tb,
 		     (void *) fx,
 		     sizeof(FixedDeletion));
+	ERTS_ETS_MISC_MEM_ADD(-sizeof(FixedDeletion));
     }
     while(n--) {
 	HashDbTerm** bp = *sp;
@@ -1842,6 +1849,7 @@ static int db_free_table_continue_hash(DbTable *tbl, int first)
 		     (DbTable *) tb,
 		     (void *) fx,
 		     sizeof(FixedDeletion));
+	ERTS_ETS_MISC_MEM_ADD(-sizeof(FixedDeletion));
 	if (++done >= 2*DELETE_RECORD_LIMIT) {
 	    return 0;		/* Not done */
 	}

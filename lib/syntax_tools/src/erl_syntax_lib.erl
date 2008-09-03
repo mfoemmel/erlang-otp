@@ -483,6 +483,8 @@ vann(Tree, Env) ->
             vann_cond_expr(Tree, Env);
         receive_expr ->
             vann_receive_expr(Tree, Env);
+        catch_expr ->
+            vann_catch_expr(Tree, Env);
         try_expr ->
             vann_try_expr(Tree, Env);
         function ->
@@ -576,8 +578,28 @@ vann_if_expr(Tree, Env) ->
 vann_cond_expr(_Tree, _Env) ->
     erlang:error({not_implemented,cond_expr}).
 
-vann_try_expr(_Tree, _Env) ->
-    erlang:error({not_implemented,try_expr}).
+vann_catch_expr(Tree, Env) ->
+    E = erl_syntax:catch_expr_body(Tree),
+    {E1, _, Free} = vann(E, Env),
+    Tree1 = rewrite(Tree, erl_syntax:catch_expr(E1)),
+    Bound = [],
+    {ann_bindings(Tree1, Env, Bound, Free), Bound, Free}.
+
+vann_try_expr(Tree, Env) ->
+    Es = erl_syntax:try_expr_body(Tree),
+    {Es1, {Bound1, Free1}} = vann_body(Es, Env),
+    Cs = erl_syntax:try_expr_clauses(Tree),
+    %% bindings in the body should be available in the success case,
+    {Cs1, {_, Free2}} = vann_clauses(Cs, ordsets:union(Env, Bound1)),
+    Hs = erl_syntax:try_expr_handlers(Tree),
+    {Hs1, {_, Free3}} = vann_clauses(Hs, Env),
+    %% the after part does not export anything, yet; this might change
+    As = erl_syntax:try_expr_after(Tree),
+    {As1, {_, Free4}} = vann_body(As, Env),
+    Tree1 = rewrite(Tree, erl_syntax:try_expr(Es1, Cs1, Hs1, As1)),
+    Bound = [],
+    Free = ordsets:union(Free1, ordsets:union(Free2, ordsets:union(Free3, Free4))),
+    {ann_bindings(Tree1, Env, Bound, Free), Bound, Free}.
 
 vann_receive_expr(Tree, Env) ->
     %% The timeout action is treated as an extra clause.
@@ -803,14 +825,15 @@ vann_clauses_join(Env) ->
     fun (C, {Bound, Free}) ->
             {C1, Bound1, Free1} = vann_clause(C, Env),
             {C1, {ordsets:intersection(Bound, Bound1),
-                  ordsets:union(Free, Free1)}};
-        (C, false) ->
-            {C1, Bound, Free} = vann_clause(C, Env),
-            {C1, {Bound, Free}}
+                  ordsets:union(Free, Free1)}}
     end.
 
-vann_clauses(Cs, Env) ->
-    lists:mapfoldl(vann_clauses_join(Env), false, Cs).
+vann_clauses([C | Cs], Env) ->
+    {C1, Bound, Free} = vann_clause(C, Env),
+    {Cs1, BF} = lists:mapfoldl(vann_clauses_join(Env), {Bound, Free}, Cs),
+    {[C1 | Cs1], BF};
+vann_clauses([], _Env) ->
+    {[], {[], []}}.
 
 ann_bindings(Tree, Env, Bound, Free) ->
     As0 = erl_syntax:get_ann(Tree),
@@ -1052,6 +1075,8 @@ collect_attribute(file, _, Info) ->
     Info;
 collect_attribute(record, {R, L}, Info) ->
     finfo_add_record(R, L, Info);
+collect_attribute(spec, _, Info) ->
+    Info;
 collect_attribute(_, {N, V}, Info) ->
     finfo_add_attribute(N, V, Info).
 
@@ -1283,6 +1308,8 @@ analyze_attribute(record, Node) ->
     analyze_record_attribute(Node);
 analyze_attribute(define, _Node) ->
     define;
+analyze_attribute(spec, _Node) ->
+    spec;
 analyze_attribute(_, Node) ->
     %% A "wild" attribute (such as e.g. a `compile' directive).
     analyze_wild_attribute(Node).
@@ -1492,8 +1519,12 @@ analyze_wild_attribute(Node) ->
                 atom ->
                     case erl_syntax:attribute_arguments(Node) of
                         [V] ->
-                            {erl_syntax:atom_value(N),
-                             erl_syntax:concrete(V)};
+			    case catch {ok, erl_syntax:concrete(V)} of
+				{ok, Val} ->
+				    {erl_syntax:atom_value(N), Val};
+				_ ->
+				    throw(syntax_error)
+			    end;
                         _ ->
                             throw(syntax_error)
                     end;

@@ -292,7 +292,7 @@ connect(Host, Port, Opts) ->
 %%          {stop, Reason}
 %%--------------------------------------------------------------------
 init([CM]) ->
-    case ssh_xfer:attach(CM, ?FILEOP_TIMEOUT) of
+    case ssh_xfer:attach(CM, [?FILEOP_TIMEOUT]) of
 	{ok,Xf,RBuf} ->
 	    {ok, #state { req_id = 0, xf = Xf, rep_buf=RBuf,
 			  inf = new_inf()}};
@@ -532,7 +532,7 @@ handle_call(recv_window, _From, State) ->
 handle_call(stop, _From, State) ->
     XF = State#state.xf,
     #ssh_xfer{cm = CM, channel = Channel} = XF,
-    ssh_cm:close(CM, Channel),
+    ssh_connection:close(CM, Channel),
     ssh_cm:stop(CM),
     {stop, normal, ok, State};
 
@@ -557,7 +557,7 @@ handle_cast(_Msg, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 handle_info({ssh_cm, CM, {data,Channel,Type,Data}}, State) ->
-    ssh_cm:adjust_window(CM, Channel, size(Data)),
+    ssh_connection:adjust_window(CM, Channel, size(Data)),
     if Type == 0 ->
 	    Data0 = State#state.rep_buf,
 	    State1 = handle_reply(State,CM,Channel,
@@ -568,12 +568,12 @@ handle_info({ssh_cm, CM, {data,Channel,Type,Data}}, State) ->
 	    {noreply, State}
     end;
 handle_info({ssh_cm, CM, {exit_signal,Channel,_SIG,Err,_Lang}},State) ->
-    ssh_cm:close(CM, Channel),
+    ssh_connection:close(CM, Channel),
     State1 = reply_all(State, CM, Channel, {error, Err}),
     ?dbg(true, "handle_info: exit_signal ~p ~p ~p\n", [_SIG, Err, _Lang]),
     {stop, normal, State1};
 handle_info({ssh_cm, CM, {exit_status,Channel,_Status}},State) ->
-    ssh_cm:close(CM, Channel),
+    ssh_connection:close(CM, Channel),
     State1 = reply_all(State, CM, Channel, eof),
     ?dbg(true, "handle_info: exit_status ~p\n", [_Status]),
     {stop, normal, State1};

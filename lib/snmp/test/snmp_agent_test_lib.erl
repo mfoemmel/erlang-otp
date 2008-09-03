@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2005-2007</year>
+%% <year>2005-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -335,8 +335,10 @@ run(Mod, Func, Args, Opts) ->
     ?DBG("run -> Crypto: ~p", [Crypto]),
     catch snmp_test_mgr:stop(), % If we had a running mgr from a failed case
     StdM = filename:join(code:priv_dir(snmp), "mibs") ++ "/",
+    Vsn = get(vsn), 
     ?DBG("run -> config:"
 	   "~n   M:           ~p"
+	   "~n   Vsn:         ~p"
 	   "~n   Dir:         ~p"
 	   "~n   User:        ~p"
 	   "~n   SecLevel:    ~p"
@@ -344,29 +346,30 @@ run(Mod, Func, Args, Opts) ->
 	   "~n   CtxEngineID: ~p"
 	   "~n   Community:   ~p"
 	   "~n   StdM:        ~p",
-	   [M,Dir,User,SecLevel,EngineID,CtxEngineID,Community,StdM]),
+	   [M,Vsn,Dir,User,SecLevel,EngineID,CtxEngineID,Community,StdM]),
     case snmp_test_mgr:start([%% {agent, snmp_test_lib:hostname()},
-			 {packet_server_debug,true},
-			 {debug,true},
-			 {agent, get(master_host)}, 
-			 {agent_udp, 4000},
-			 {trap_udp, 5000},
-			 {recbuf,65535},
-			 quiet,
-			 get(vsn),
-			 {community, Community},
-			 {user, User},
-			 {sec_level, SecLevel},
-			 {engine_id, EngineID},
-			 {context_engine_id, CtxEngineID},
-			 {dir, Dir},
-			 {mibs, mibs(StdM, M)}]) of
+			      {packet_server_debug,true},
+			      {debug,true},
+			      {agent, get(master_host)}, 
+			      {agent_udp, 4000},
+			      {trap_udp, 5000},
+			      {recbuf,65535},
+			      quiet,
+			      Vsn, 
+			      {community, Community},
+			      {user, User},
+			      {sec_level, SecLevel},
+			      {engine_id, EngineID},
+			      {context_engine_id, CtxEngineID},
+			      {dir, Dir},
+			      {mibs, mibs(StdM, M)}]) of
 	{ok, _Pid} ->
 	    case (catch apply(Mod, Func, Args)) of
 		{'EXIT', Reason} ->
 		    catch snmp_test_mgr:stop(),
 		    ?FAIL({apply_failed, {Mod, Func, Args}, Reason});
 		Res ->
+		    catch snmp_test_mgr:stop(),
 		    Res
 	    end;
 	Err ->
@@ -374,7 +377,7 @@ run(Mod, Func, Args, Opts) ->
 	    catch snmp_test_mgr:stop(),
 	    ?line ?FAIL({mgr_start, Err})
     end.
-	    
+
 
 %% ---------------------------------------------------------------
 %% ---                                                         ---

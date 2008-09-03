@@ -61,10 +61,10 @@ test_0(Type, N) ->
     io:fwrite("\nmax: ~w.\n", [get(new_key_max)]),
     dict:to_list(element(1,Env)).
 
-test_1(integer = Type, N, Env) when integer(N), N > 0 ->
+test_1(integer = Type, N, Env) when is_integer(N), N > 0 ->
     Key = new_key(Env),
     test_1(Type, N - 1, bind(Key, value, Env));
-test_1({custom, F} = Type, N, Env) when integer(N), N > 0 ->
+test_1({custom, F} = Type, N, Env) when is_integer(N), N > 0 ->
     Key = new_key(F, Env),
     test_1(Type, N - 1, bind(Key, value, Env));
 test_1(_,0, Env) ->
@@ -112,14 +112,14 @@ empty() ->
 
 is_empty([{map, Dict} | Es]) ->
     N = dict:size(Dict),
-    if N /= 0 -> false;
-       Es == [] -> true;
+    if N =/= 0 -> false;
+       Es =:= [] -> true;
        true -> is_empty(Es)
     end;
 is_empty([{rec, Dict, _} | Es]) ->
     N = dict:size(Dict),
-    if N /= 0 -> false;
-       Es == [] -> true;
+    if N =/= 0 -> false;
+       Es =:= [] -> true;
        true -> is_empty(Es)
     end.
 
@@ -156,7 +156,7 @@ is_defined(Key, [{map, Dict} | Env]) ->
     case dict:is_key(Key, Dict) of
 	true ->
 	    true;
-	false when Env == [] ->
+	false when Env =:= [] ->
 	    false;
 	false ->
 	    is_defined(Key, Env)
@@ -396,7 +396,7 @@ lookup(Key, [{map, Dict} | Env]) ->
     case dict:find(Key, Dict) of
 	{ok, _}=Value ->
 	    Value;
-	error when Env == [] ->
+	error when Env =:= [] ->
 	    error;
 	error ->
 	    lookup(Key, Env)

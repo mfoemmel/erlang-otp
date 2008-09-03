@@ -157,7 +157,8 @@
 -export([add_module_with_skip/2,add_module_with_skip/3,
 	 add_case_with_skip/3,add_case_with_skip/4,
 	 add_cases_with_skip/3,add_cases_with_skip/4]).
--export([jobs/0,run_test/1,wait_finish/0,idle_notify/1,abort/0]).
+-export([jobs/0,run_test/1,wait_finish/0,idle_notify/1,
+	 abort_current_testcase/1,abort/0]).
 -export([start_get_totals/1,stop_get_totals/0]).
 -export([get_levels/0,set_levels/3]).
 -export([multiply_timetraps/1]).
@@ -433,6 +434,10 @@ wait_finish() ->
     process_flag(trap_exit,OldTrap),
     ok.
 
+abort_current_testcase(Reason) ->
+    controller_call({abort_current_testcase,Reason}),
+    ok.
+
 abort() ->
     OldTrap = process_flag(trap_exit,true),
     {ok, Pid} = finish(abort),
@@ -578,7 +583,19 @@ contact_main_target(local) ->
     %% Local target! The global test_server process implemented by
     %% test_server.erl will not be started, so we simulate it by 
     %% globally registering this process instead.
-    global:register_name(test_server,self()),
+    global:sync(),
+    case global:whereis_name(test_server) of
+	undefined ->
+	    global:register_name(test_server,self());
+	Pid ->
+	    case node() of
+		N when N == node(Pid) ->
+		    io:format(user, "Warning: test_server already running!\n", []),
+		    global:re_register_name(test_server,self());
+		_ ->
+		    ok
+	    end
+    end,	    
     TI = test_server:init_target_info(),
     TargetHost = test_server_sup:hoststr(),
     {ok,TI#target_info{where=local,
@@ -758,8 +775,30 @@ handle_call(jobs,_From,State) ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% handle_call({abort_current_testcase,Reason},_,State) -> Result
+%% Reason = term()
+%% Result = ok | {error,no_testcase_running}
+%% 
+%% Attempts to abort the test case that's currently running.
+
+handle_call({abort_current_testcase,Reason},_From,State) ->
+    case State#state.jobs of
+	[{_,Pid}|_] ->
+	    Pid ! {abort_current_testcase,Reason,self()},
+	    receive
+		{Pid,abort_current_testcase,Result} ->
+		    {reply, Result, State}
+	    after 10000 ->
+		    {reply, {error,no_testcase_running}, State}
+	    end;
+	_ ->
+	    {reply, {error,no_testcase_running}, State}
+    end;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% handle_call({finish,Fini},_,State) -> {ok,Pid}
 %% Fini = true | abort
+%%
 %% Tells the test_server to stop as soon as there are no test suites
 %% running. Immediately if none are running. Abort is handled as soon
 %% as current test finishes.
@@ -1450,7 +1489,7 @@ start_log_file() ->
 
     PrivDir = filename:join(TestDir, ?priv_dir),
     ok = file:make_dir(PrivDir),
-    put(test_server_priv_dir,PrivDir),
+    put(test_server_priv_dir,PrivDir++"/"),
     print_timestamp(13,"Suite started at "),
     ok.
 
@@ -1818,7 +1857,7 @@ run_test_cases_loop([{conf,Ref,{Mod,Func}}|Cases0], Config={Cfg0,Cfg1},
 			       {data_dir,get_data_dir(Mod)}]),
     case run_test_case(Mod,Func,[ActualCfg], skip_init, target, 
 		       MultiplyTimetrap) of
-	NewCfg when Func == init_per_suite, is_list(NewCfg) ->
+	{_,NewCfg} when Func == init_per_suite, is_list(NewCfg) ->
 	    case lists:filter(fun({_,_}) -> false;
 				 (_) -> true end, NewCfg) of
 		[] ->
@@ -1831,51 +1870,71 @@ run_test_cases_loop([{conf,Ref,{Mod,Func}}|Cases0], Config={Cfg0,Cfg1},
 		    stop_minor_log_file(),
 		    run_test_cases_loop(Cases, Config, MultiplyTimetrap)
 	    end;		
-	NewCfg when is_list(NewCfg) ->
+	{_,NewCfg} when is_list(NewCfg) ->
 	    stop_minor_log_file(),
 	    run_test_cases_loop(Cases0, {Cfg0,NewCfg}, MultiplyTimetrap);	    
-	{Skip,Reason} when Skip==skip; Skip==skipped ->
-	    print(minor,"~n*** ~p skipped.~n"
-		  "    Skipping all other cases.", [Func]),
-	    Cases = skip_cases_upto(Ref, Cases0, Reason),
+	{_,{Skip,Reason}} when Skip==skip; Skip==skipped ->
+	    Cases = 
+		if Func == end_per_suite -> Cases0;
+		   true ->
+			print(minor,"~n*** ~p skipped.~n"
+			      "    Skipping all other cases.", [Func]),
+			skip_cases_upto(Ref, Cases0, Reason)
+		end,
 	    stop_minor_log_file(),
 	    run_test_cases_loop(Cases, Config, MultiplyTimetrap);
-	{skip_and_save,Reason,_SavedConfig} ->
-	    print(minor,"~n*** ~p skipped.~n"
-		  "    Skipping all other cases.", [Func]),
-	    Cases = skip_cases_upto(Ref, Cases0, Reason),
+	{_,{skip_and_save,Reason,_SavedConfig}} ->
+	    Cases = 
+		if Func == end_per_suite -> Cases0;
+		   true ->	    
+			print(minor,"~n*** ~p skipped.~n"
+			      "    Skipping all other cases.", [Func]),
+			skip_cases_upto(Ref, Cases0, Reason)
+		end,
+	    stop_minor_log_file(),
+	    run_test_cases_loop(Cases, Config, MultiplyTimetrap);	
+	{_,{framework_error,{FwMod,FwFunc},Reason}} ->
+	    print(minor,"~n*** ~p failed in ~p. Reason: ~p~n", [FwMod,FwFunc,Reason]),
+	    print(1, "~p failed in ~p. Reason: ~p~n", [FwMod,FwFunc,Reason]),
+	    exit(framework_error);
+	{_,Fail} when element(1,Fail)=='EXIT'; 
+		      element(1,Fail)==timetrap_timeout ;
+		      element(1,Fail)==failed ->
+	    Cases = 
+		if Func == end_per_suite -> Cases0;
+		   true ->	
+			print(minor,"~n*** ~p failed.~n"
+			      "    Skipping all other cases.", [Func]),
+			Reason = lists:flatten(io_lib:format("~p:~p/1 failed", 
+							     [Mod,Func])),
+			skip_cases_upto(Ref, Cases0, Reason)
+		end,
 	    stop_minor_log_file(),
 	    run_test_cases_loop(Cases, Config, MultiplyTimetrap);
-	Fail when element(1,Fail)=='EXIT'; 
-		  element(1,Fail)==timetrap_timeout ;
-		  element(1,Fail)==failed ->
-	    print(minor,"~n*** ~p failed.~n"
-		  "    Skipping all other cases.", [Func]),
-	    Reason = lists:flatten(io_lib:format("~p:~p/1 failed", [Mod,Func])),
-	    Cases = skip_cases_upto(Ref, Cases0, Reason),
+	{died,_Why} when Func == init_per_suite ->
+	    print(minor,"~n*** Unexpected exit during init_per_suite.~n",[]),
 	    stop_minor_log_file(),
+	    Cases = skip_cases_upto(Ref, Cases0, "init_per_suite_crashed"),
+	    run_test_cases_loop(Cases, Config, MultiplyTimetrap);		    
+	{_,_Other} when Func == init_per_suite ->
+	    print(minor,"~n*** init_per_suite failed to return a Config list.~n",[]),
+	    stop_minor_log_file(),
+	    Cases = skip_cases_upto(Ref, Cases0, "init_per_suite_bad_return"),
 	    run_test_cases_loop(Cases, Config, MultiplyTimetrap);
-	_Other ->
-	    if Func == init_per_suite ->
-		    print(minor,"~n*** init_per_suite failed to return a Config list.~n",[]),
-		    stop_minor_log_file(),
-		    Cases = skip_cases_upto(Ref, Cases0, "init_per_suite_bad_return"),
-		    run_test_cases_loop(Cases, Config, MultiplyTimetrap);		    
-	       true ->
-		    stop_minor_log_file(),
-		    run_test_cases_loop(Cases0, Config, MultiplyTimetrap)
-	    end
+	{_,_Other} ->
+	    stop_minor_log_file(),
+	    run_test_cases_loop(Cases0, Config, MultiplyTimetrap)
     end;
 run_test_cases_loop([{make,Ref,{Mod,Func,Args}}|Cases0], Config, MultiplyTimetrap) ->
     case run_test_case(Mod, Func, Args, skip_init, host, MultiplyTimetrap) of
-	{'EXIT',_} ->
+	{_,{'EXIT',_}} ->
  	    print(minor,"~n*** ~p failed.~n"
  		  "    Skipping all other cases.", [Func]),
 	    Reason = lists:flatten(io_lib:format("~p:~p/1 failed", [Mod,Func])),
 	    Cases = skip_cases_upto(Ref, Cases0, Reason),
 	    stop_minor_log_file(),
 	    run_test_cases_loop(Cases, Config, MultiplyTimetrap);
-	_Whatever ->
+	{_,_Whatever} ->
 	    stop_minor_log_file(),
 	    run_test_cases_loop(Cases0, Config, MultiplyTimetrap)
     end;
@@ -1888,9 +1947,17 @@ run_test_cases_loop([{Mod,Case}|Cases], Config={_Cfg0,Cfg1}, MultiplyTimetrap) -
     run_test_cases_loop([{Mod,Case,[ActualCfg]}|Cases],Config,
 			MultiplyTimetrap);
 run_test_cases_loop([{Mod,Func,Args}|Cases],Config,MultiplyTimetrap) ->
-    run_test_case(Mod, Func, Args, run_init, target, MultiplyTimetrap),
-    stop_minor_log_file(),
-    run_test_cases_loop(Cases,Config,MultiplyTimetrap);
+    {_,Result} = run_test_case(Mod, Func, Args, run_init, target, MultiplyTimetrap),
+    case Result of
+	{framework_error,{FwMod,FwFunc},Reason} ->
+	    print(minor,"~n*** ~p failed in ~p. Reason: ~p~n", [FwMod,FwFunc,Reason]),
+	    print(1, "~p failed in ~p. Reason: ~p~n", [FwMod,FwFunc,Reason]),
+	    stop_minor_log_file(),
+	    exit(framework_error);
+	_ ->
+	    stop_minor_log_file(),
+	    run_test_cases_loop(Cases,Config,MultiplyTimetrap)
+    end;
 run_test_cases_loop([],_Config,_MultiplyTimetrap) ->
     ok.
 
@@ -1918,21 +1985,28 @@ skip_case(Case,Comment) ->
     put_no_conf(Func,test_server_case_num,CaseNum+1),
     {Mod,Func}.
 
-%% Skip all cases up to the matching reference.
+%% Skip all cases up to the matching reference (always only called for a conf case).
 
+%% next case is a conf with new ref (orig case was an end conf) = we're done already
 skip_cases_upto(Ref,[{Type,Ref1,_MF}|_]=Cs,_Reason) when Type==conf, Ref/=Ref1 ->
     Cs;
+%% normal cases follow - mark them as skipped
 skip_cases_upto(Ref,Cs,Reason) ->
     skip_cases_upto1(Ref,Cs,Reason).
 
+%% next case is a conf with same ref, must be end conf = we're done
 skip_cases_upto1(Ref,[{Type,Ref,MF}|T],Reason) when Type==conf; Type==make ->
     [{auto_skip_case,{MF,Reason}}|T];
+%% next is a skip_case, could be one test case or 'all' in suite, we must proceed
 skip_cases_upto1(Ref,[{skip_case,{_F,_Cmt}}=MF|T],Reason) ->
     [MF|skip_cases_upto1(Ref,T,Reason)];
+%% next is normal case, mark as skipped and proceed
 skip_cases_upto1(Ref,[{_M,_F}=MF|T],Reason) ->
     [{auto_skip_case,{MF,Reason}}|skip_cases_upto1(Ref,T,Reason)];
+%% next is some other case, ignore and proceed
 skip_cases_upto1(Ref,[_|T],Reason) ->
     skip_cases_upto1(Ref,T,Reason);
+%% found no end conf (or start of new), we're done
 skip_cases_upto1(_Ref,[],_Reason) -> [].
 
 get_data_dir(Mod) ->
@@ -2004,9 +2078,10 @@ run_test_case(Mod, Func, Args, Run_init, Where, MultiplyTimetrap) ->
     print_timestamp(minor, "Ended at "),
     print(major, "=ended   ~s", [lists:flatten(timestamp_get(""))]),
     file:set_cwd(Cwd),
+
     case {Time,RetVal} of
-	{died,{timetrap_timeout, TimetrapTimeout, Line}} ->
-	    progress(failed,CaseNum,Mod,Func,Line,
+	{died,{timetrap_timeout,TimetrapTimeout}} ->
+	    progress(failed,CaseNum,Mod,Func,Loc,
 		     timetrap_timeout,TimetrapTimeout,Comment);
 	{died,Reason} ->
 	    progress(failed,CaseNum,Mod,Func,Loc,Reason,
@@ -2082,7 +2157,7 @@ run_test_case(Mod, Func, Args, Run_init, Where, MultiplyTimetrap) ->
     end,
     check_new_crash_dumps(Where),
     put_no_conf(Func, test_server_case_num,CaseNum+1),
-    RetVal.
+    {Time,RetVal}.
 
 num2str(init_per_suite, _) -> "";
 num2str(end_per_suite, _) -> "";
@@ -2236,6 +2311,64 @@ progress(failed,CaseNum,Mod,Func,Loc,timetrap_timeout,T,Comment0) ->
     print(minor, "location ~s", [FormatLoc]),
     print(minor, "reason=timetrap timeout", []),
     put_no_conf(Func,test_server_failed, get(test_server_failed)+1);
+
+progress(failed,CaseNum,Mod,Func,Loc,{testcase_aborted,Reason},_T,Comment0) ->
+    print(major, "=result    failed:testcase_aborted, ~p", [Loc]),
+    print(1, "*** FAILED *** ~s",
+	  [get_info_str(Func,CaseNum,get(test_server_cases))]),
+    test_server_sup:framework_call(report,
+				   [tc_done,{?pl2a(Mod),Func,
+					     {failed,testcase_aborted}}]),
+    FormatLastLoc = test_server_sup:format_loc(get_last_loc(Loc)),
+    ErrorReason = io_lib:format("{testcase_aborted,~s}",[FormatLastLoc]),
+    Comment = 
+	case Comment0 of
+	    "" -> "<font color=\"red\">" ++ ErrorReason ++ "</font>";
+	    _ -> "<font color=\"red\">" ++ ErrorReason ++ "</font><br>" ++ 
+                 Comment0
+	end,
+    print(html, 
+	  "<td>died</td>"
+	  "<td><font color=\"red\">FAILED</font></td>"
+	  "<td>~s</td></tr>\n", 
+	  [Comment]),
+    FormatLoc = test_server_sup:format_loc(Loc),
+    print(minor, "location ~s", [FormatLoc]),
+    print(minor, "reason={testcase_aborted,~p}", [Reason]),
+    put_no_conf(Func,test_server_failed, get(test_server_failed)+1);
+
+progress(failed,CaseNum,Mod,Func,unknown,Reason,Time,Comment0) ->
+    print(major, "=result    failed:~p, ~p", [Reason,unknown]),
+    print(1,"*** FAILED *** ~s",
+	  [get_info_str(Func,CaseNum,get(test_server_cases))]),
+    test_server_sup:framework_call(report,[tc_done,{?pl2a(Mod),Func,
+						    {failed,Reason}}]),
+    TimeStr = io_lib:format(if float(Time) -> "~.3fs";
+			       true -> "~w"	     
+			    end, [Time]),
+    ErrorReason = lists:flatten(io_lib:format("~p",[Reason])),
+    ErrorReason1 = lists:flatten([string:strip(S,left) || 
+				  S <- string:tokens(ErrorReason,[$\n])]),
+    ErrorReason2 =
+	if length(ErrorReason1) > 63 ->
+		string:substr(ErrorReason1,1,60) ++ "...";
+	   true ->
+		ErrorReason1
+	end,
+    Comment = 
+	case Comment0 of
+	    "" -> "<font color=\"red\">" ++ ErrorReason2 ++ "</font>";
+	    _ -> "<font color=\"red\">" ++ ErrorReason2 ++ "</font><br>" ++ 
+                 Comment0
+	end,
+    print(html, 
+	  "<td>~s</td>"
+	  "<td><font color=\"red\">FAILED</font></td>"
+	  "<td>~s</td></tr>\n",
+	  [TimeStr,Comment]),
+    print(minor, "location ~s", [unknown]),
+    print(minor, "reason=~p", [Reason]),
+    put_no_conf(Func,test_server_failed,get(test_server_failed)+1);
 
 progress(failed,CaseNum,Mod,Func,Loc,Reason,Time,Comment0) ->
     print(major, "=result    failed:~p, ~p", [Reason,Loc]),

@@ -1,4 +1,4 @@
-{"1.5.2",
+{"1.5.2.1",
  [{"1.5.1.1", [restart_new_emulator]},
   {"1.5.1", [restart_new_emulator]},
   {"1.5", [restart_new_emulator]},

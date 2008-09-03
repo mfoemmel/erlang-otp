@@ -87,6 +87,7 @@
 -record(movzx, {src, dst}).
 -record(pseudo_call, {'fun', sdesc, contlab, linkage}).
 -record(pseudo_jcc, {cc, true_label, false_label, pred}).
+-record(pseudo_spill, {args=[]}).
 -record(pseudo_tailcall, {'fun', arity, stkargs, linkage}).
 -record(pseudo_tailcall_prepare, {}).
 -record(push, {src}).

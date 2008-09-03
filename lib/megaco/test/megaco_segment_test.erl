@@ -1782,7 +1782,7 @@ ssmp3_mg_event_sequence(text, tcp) ->
 	     {megaco_update_conn_info, protocol_version, ?VERSION}, 
 	     {megaco_update_conn_info, segment_send,     1}, 
 	     {megaco_update_conn_info, max_pdu_size,     128}, 
-             {sleep, 1000},
+             {sleep, 500},
              {megaco_callback, handle_trans_request, NotifyReqVerify},
              {megaco_callback, handle_trans_ack,     AckVerify, 5000},
              megaco_stop_user,
@@ -4852,12 +4852,20 @@ rsmp_mgc_event_sequence(text, tcp) ->
              {listen, 2944},
 	     {expect_accept, any},
              {expect_receive, "service-change-request", {ScrVerifyFun, 5000}},
+             {sleep, 500},
+
              {send, "service-change-reply",             ServiceChangeRep},
              {expect_receive, "notify-request(1)",      {NrVerifyFun, 4000}},
+             {sleep, 500},
+
              {send, "notify reply - segment 1",         NotifyRep1},
              {expect_receive, "segment reply 1",        {SrVerifyFun1, 2000}},
+             {sleep, 500},
+
              {send, "notify reply - segment 2",         NotifyRep2},
              {expect_receive, "segment reply 2",        {SrVerifyFun2, 2000}},
+             {sleep, 500},
+
              {send, "notify reply - segment 3 (last)",  NotifyRep3},
              {expect_receive, "segment reply 3 (last)", {SrVerifyFun3, 2000}},
              {expect_receive, "ack",                    {AckVerifyFun, 4000}},
@@ -5334,9 +5342,21 @@ rsmp_mg_verify_notify_reply_fun(SN, Tid) ->
 	     
 rsmp_mg_verify_notify_reply(
   {handle_trans_reply, _CH, ?VERSION, {ok, {SN, Last, [AR]}}, _}, SN, Tid) 
-  when ((SN == 3) and (Last == true)) or 
-       ((SN =/= 3) and (Last == false)) ->
+  when ((SN =:= 3) andalso (Last =:= true)) orelse 
+       ((SN =/= 3) andalso (Last =:= false)) ->
     (catch rsmp_mg_do_verify_notify_reply(Tid, AR));
+rsmp_mg_verify_notify_reply(
+  {handle_trans_reply, _CH, Version, {ok, {SN1, Last, ARs}}, _}, SN2, Tid) ->
+    io:format("rsmp_mg_verify_notify_reply -> unknown reply"
+	      "~n   Version: ~p"
+	      "~n   SN1:     ~p"
+	      "~n   Last:    ~p"
+	      "~n   ARs:     ~p"
+	      "~n   SN2:     ~p"
+	      "~n   Tid:     ~p"
+	      "~n", [Version, SN1, Last, ARs, SN2, Tid]),
+    Crap = {unexpected_segment_data, [SN1, Last, ARs, SN2, Tid]}, 
+    {error, Crap, ok};
 rsmp_mg_verify_notify_reply(Crap, SN, Tid) ->
     io:format("rsmp_mg_verify_notify_reply -> unknown reply"
 	      "~n   SN:   ~p"
@@ -7599,20 +7619,20 @@ await_completion(Ids) ->
 	    ?ERROR({failed, Reply})
     end.
 
-await_completion(Ids, Timeout) ->
-    case megaco_test_generator_lib:await_completion(Ids, Timeout) of
-	{ok, Reply} ->
-	    d("OK => Reply: ~n~p", [Reply]),
-	    ok;
-	{error, {OK, ERROR}} ->
-	    d("ERROR => "
-	      "~n   OK:    ~p"
-	      "~n   ERROR: ~p", [OK, ERROR]),
-	    ?ERROR({failed, ERROR});
-	{error, Reply} ->
-	    d("ERROR => Reply: ~n~p", [Reply]),
-	    ?ERROR({failed, Reply})
-    end.
+%% await_completion(Ids, Timeout) ->
+%%     case megaco_test_generator_lib:await_completion(Ids, Timeout) of
+%% 	{ok, Reply} ->
+%% 	    d("OK => Reply: ~n~p", [Reply]),
+%% 	    ok;
+%% 	{error, {OK, ERROR}} ->
+%% 	    d("ERROR => "
+%% 	      "~n   OK:    ~p"
+%% 	      "~n   ERROR: ~p", [OK, ERROR]),
+%% 	    ?ERROR({failed, ERROR});
+%% 	{error, Reply} ->
+%% 	    d("ERROR => Reply: ~n~p", [Reply]),
+%% 	    ?ERROR({failed, Reply})
+%%     end.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -570,6 +570,7 @@ encode_constrained_number({Lb,Ub},Val) when Val >= Lb, Ub >= Val ->
     Range = Ub - Lb + 1,
     Val2 = Val - Lb,
     if 
+	Range  == 1 -> [];
 	Range  == 2 ->
 %	    Size = {bits,1,Val2};
 	    [Val2];
@@ -628,6 +629,8 @@ decode_constrained_number(Buffer,{Lb,_Ub},Range) ->
 						%    Val2 = Val - Lb,
     {Val,Remain} = 
 	if 
+	    Range  == 1 ->
+		{0,Buffer};
 	    Range  == 2 ->
 		getbits(Buffer,1);
 	    Range  =< 4 -> 

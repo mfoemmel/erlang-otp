@@ -17,7 +17,7 @@
 %%
 -module(escript).
 
-%% Useful functionst that can be called from scripts.
+%% Useful functions that can be called from scripts.
 -export([script_name/0]).
 
 %% Internal API.
@@ -38,6 +38,11 @@ start() ->
 
 start(EscriptOptions) ->
     try 
+	%% Commands run using -run or -s are run in a process
+	%% trap_exit set to false. Because this behaviour is
+	%% surprising for users of escript, make sure to reset
+	%% trap_exit to false.
+	process_flag(trap_exit, false),
 	[File|Args] = init:get_plain_arguments(),
 	do_run(File, Args, EscriptOptions)
     catch
@@ -102,7 +107,7 @@ interpret(File, Parse0, Args) ->
 compile(Parse, Args) ->
     case compile:forms(Parse, [report]) of
 	{ok,Module,BeamCode} -> 
-	    erlang:load_module(Module, BeamCode),
+	    {module, Module} = erlang:load_module(Module, BeamCode),
 	    run_code(Module, Args);
 	_Other ->
 	    fatal("There were compilation errors.")

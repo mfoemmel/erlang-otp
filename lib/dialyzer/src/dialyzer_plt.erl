@@ -130,7 +130,7 @@ lookup(#dialyzer_plt{info=Info}, Label) when is_integer(Label) ->
   table_lookup(Info, Label).
 
 -spec(lookup_module/2 :: 
-      (#dialyzer_plt{}, atom()) -> 'none' | {'value', [{_, _}]}).
+      (#dialyzer_plt{}, atom()) -> 'none' | {'value', [{mfa(), _, _}]}).
 
 lookup_module(#dialyzer_plt{info=Info}, M) when is_atom(M) ->
   table_lookup_module(Info, M).
@@ -193,7 +193,6 @@ from_file(FileName, ReturnInfo) ->
 
 -spec(included_files/1 :: (string()) -> {ok, [string()]} 
                                       | {error, 'no_such_file' | 'read_error'}).
-	 
 
 included_files(FileName) ->
   case get_record_from_file(FileName) of
@@ -261,8 +260,8 @@ to_file(FileName, #dialyzer_plt{info=Info, contracts=Contracts},
   end.
 
 -type(md5_diff() :: [{'differ',atom()} | {'removed',atom()}]).
--type(check_error() :: 'not_valid' | 'no_such_file' | 'read_error' |
-                       {'no_file_to_remove', string()}).
+-type(check_error() :: 'not_valid' | 'no_such_file' | 'read_error'
+                     | {'no_file_to_remove', string()}).
       
 -spec(check_plt/3 :: 
       (string(), [string()], [string()]) -> 
@@ -347,7 +346,7 @@ compute_md5_from_file(File) ->
     true ->
       case dialyzer_utils:get_abstract_code_from_beam(File) of
 	error ->
-	  Msg = io_lib:format("Could not compute md5 for file: ~s\n", [File]),
+	  Msg = io_lib:format("Could not get abstract code for file: ~s (please recompile it with +debug_info)\n", [File]),
 	  throw({dialyzer_error, Msg});
 	{ok, Abs} ->
 	  erlang:md5(term_to_binary(Abs))

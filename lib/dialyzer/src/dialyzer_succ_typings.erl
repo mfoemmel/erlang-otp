@@ -456,7 +456,7 @@ get_top_level_signatures(Code, Records, Contracts) ->
 	       || {V, _F} <- cerl:module_defs(LabeledTree)],
   %% First contracts check
   AllContracts = dict:fetch_keys(Contracts),
-  ErrorContracts = lists:subtract(AllContracts, Functions),  
+  ErrorContracts = AllContracts -- Functions,  
   lists:foreach(fun(C) -> 
 		    io:format("Contract for non-existing function: ~w\n",[C])
 		end, ErrorContracts),
@@ -467,8 +467,7 @@ get_top_level_signatures(Code, Records, Contracts) ->
 
 get_def_plt() ->
   try 
-    dialyzer_plt:from_file(filename:join([code:lib_dir(dialyzer),
-					  "plt", "dialyzer_init_plt"]))
+    dialyzer_plt:from_file(dialyzer_plt:get_default_plt())
   catch
     error:no_such_file -> dialyzer_plt:new();
     throw:{dialyzer_error, _} -> dialyzer_plt:new()

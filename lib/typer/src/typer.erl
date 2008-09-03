@@ -31,7 +31,7 @@
 
 %%--------------------------------------------------------------------
 
--spec(start/0 :: () -> no_return()).
+-spec start() -> no_return().
 
 start() ->
   {Args, Analysis} = typer_options:process(),
@@ -55,6 +55,8 @@ start() ->
   erlang:halt(0).
 
 %%--------------------------------------------------------------------
+
+-spec extract(#typer_analysis{}) -> #typer_analysis{}.
 
 extract(Analysis) ->
   %% io:format("--- Extracting trusted typer_info... "),
@@ -91,6 +93,8 @@ extract(Analysis) ->
 
 %%--------------------------------------------------------------------
 
+-spec get_type_info(#typer_analysis{}) -> #typer_analysis{}.
+
 get_type_info(Analysis) ->
   StrippedCallGraph = remove_external(Analysis#typer_analysis.callgraph, 
 				      Analysis#typer_analysis.trust_plt),
@@ -109,6 +113,8 @@ get_type_info(Analysis) ->
       error(io_lib:format("analysis failed with message: ~s", [Msg]))
   end.
 
+-spec remove_external(#dialyzer_callgraph{}, #dialyzer_plt{}) -> #dialyzer_callgraph{}.
+
 remove_external(CallGraph, PLT) ->
   {StrippedCG0, Ext} = dialyzer_callgraph:remove_external(CallGraph),
   StrippedCG = dialyzer_callgraph:finalize(StrippedCG0),
@@ -117,6 +123,8 @@ remove_external(CallGraph, PLT) ->
     Externals -> io:format(" Unknown functions: ~p\n", [lists:usort(Externals)])
   end,
   StrippedCG.
+
+-spec get_external([{mfa(), mfa()}], #dialyzer_plt{}) -> [mfa()].
 
 get_external(Exts, Plt) ->
   Fun = fun ({_From, To = {M, F, A}}, Acc) ->
@@ -133,7 +141,7 @@ get_external(Exts, Plt) ->
 
 %%--------------------------------------------------------------------
 
--spec(error/1 :: (string()) -> no_return()).
+-spec error(string()) -> no_return().
 
 error(Slogan) ->
   io:format("typer: ~s\n", [Slogan]),
@@ -141,7 +149,7 @@ error(Slogan) ->
 
 %%--------------------------------------------------------------------
 
--spec(compile_error/1 :: ([string()]) -> no_return()).
+-spec compile_error([string()]) -> no_return().
 
 compile_error(Reason) ->
   JoinedString = lists:flatten([X ++ "\n" || X <- Reason]),

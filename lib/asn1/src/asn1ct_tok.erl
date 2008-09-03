@@ -331,6 +331,7 @@ reserved_word('PRESENT') -> true;
 reserved_word('PrintableString') -> rstrtype;
 reserved_word('PRIVATE') -> true;
 reserved_word('REAL') -> true;
+reserved_word('RELATIVE-OID') -> true;
 reserved_word('SEQUENCE') -> true;
 reserved_word('SET') -> true;
 reserved_word('SIZE') -> true;

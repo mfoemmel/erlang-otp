@@ -174,6 +174,7 @@
 -define(TCP_PB_TPKT,    9).
 -define(TCP_PB_HTTP,    10).
 -define(TCP_PB_HTTPH,   11).
+-define(TCP_PB_SSL_TLS, 12).
 
 %% bit options, INET_LOPT_BIT8
 -define(INET_BIT8_CLEAR, 0).

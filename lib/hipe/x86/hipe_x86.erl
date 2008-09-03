@@ -154,6 +154,8 @@
 	 %% pseudo_jcc_false_label/1,
 	 %% pseudo_jcc_pred/1,
 
+     mk_pseudo_spill/1,
+
 	 mk_pseudo_tailcall/4,
 	 %% is_pseudo_tailcall/1,
 	 pseudo_tailcall_fun/1,
@@ -404,6 +406,9 @@ mk_pseudo_jcc_simple(Cc, TrueLabel, FalseLabel, Pred) ->
 %% pseudo_jcc_true_label(#pseudo_jcc{true_label=TrueLabel}) -> TrueLabel.
 %% pseudo_jcc_false_label(#pseudo_jcc{false_label=FalseLabel}) -> FalseLabel.
 %% pseudo_jcc_pred(#pseudo_jcc{pred=Pred}) -> Pred.
+
+mk_pseudo_spill(List) ->
+    #pseudo_spill{args=List}.
 
 mk_pseudo_tailcall(Fun, Arity, StkArgs, Linkage) ->
     check_linkage(Linkage),

@@ -30,8 +30,6 @@
 #include "erl_binary.h"
 #include "erl_bits.h"
 
-erts_atomic_t erts_allocated_binaries;
-
 #ifdef DEBUG
 static int list_to_bitstr_buf(Eterm obj, char* buf, int len);
 #else
@@ -42,8 +40,6 @@ static Sint bitstr_list_len(Eterm obj);
 void
 erts_init_binary(void)
 {
-    erts_atomic_init(&erts_allocated_binaries, 0);
-
     /* Verify Binary alignment... */
     if ((((Uint) &((Binary *) 0)->orig_bytes[0]) % ((Uint) 8)) != 0) {
 	/* I assume that any compiler should be able to optimize this

@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1999-2007</year>
+%% <year>1999-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -70,3 +70,7 @@
 	megaco_test_lib:prepare_test_case([init, {stop_app, megaco}],
 				   N, Config, ?FILE, ?LINE)).
 
+
+-define(SLEEP(MSEC),    megaco_test_lib:sleep(MSEC)).
+-define(M(),            megaco_test_lib:millis()).
+-define(MDIFF(A,B),     megaco_test_lib:millis_diff(A,B)).

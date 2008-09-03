@@ -39,6 +39,7 @@
 #include "erl_instrument.h"
 #include "erl_printf_term.h"
 #include "erl_misc_utils.h"
+#include "packet_parser.h"
 
 #ifdef HIPE
 #include "hipe_mode_switch.h"	/* for hipe_mode_switch_init() */
@@ -103,10 +104,6 @@ Uint32 verbose;             /* See erl_debug.h for information about verbose */
 int erts_disable_tolerant_timeofday; /* Time correction can be disabled it is
 				      * not and/or it is too slow.
 				      */
-
-#ifdef ERTS_SMP
-Uint no_of_schedulers;
-#endif
 
 int erts_modified_timing_level;
 
@@ -265,6 +262,7 @@ erl_init(void)
 #ifdef _OSE_
     erl_sys_init_final();
 #endif
+    packet_parser_init();
 }
 
 static void
@@ -380,6 +378,7 @@ erl_first_process_otp(char* modname, void* code, unsigned size, int argc, char**
      */
 
     erts_init_empty_process(&parent);
+    erts_smp_proc_lock(&parent, ERTS_PROC_LOCK_MAIN);
     hp = HAlloc(&parent, argc*2 + 4);
     args = NIL;
     for (i = argc-1; i >= 0; i--) {
@@ -394,6 +393,7 @@ erl_first_process_otp(char* modname, void* code, unsigned size, int argc, char**
 
     so.flags = 0;
     (void) erl_create_process(&parent, start_mod, am_start, args, &so);
+    erts_smp_proc_unlock(&parent, ERTS_PROC_LOCK_MAIN);
     erts_cleanup_empty_process(&parent);
 }
 
@@ -591,15 +591,15 @@ early_init(int *argc, char **argv) /*
     main_thread = erts_thr_self();
 #endif
 
-    erts_init_utils();
-
     /*
      * We need to know the number of schedulers to use before we
      * can initialize the allocators.
      */
 #ifdef ERTS_SMP
     ncpu = erts_no_of_cpus();
-    no_of_schedulers = (Uint) (ncpu > 0 ? ncpu : 1);
+    erts_no_schedulers = (Uint) (ncpu > 0 ? ncpu : 1);
+#else
+    erts_no_schedulers = 1;
 #endif
     if (argc && argv) {
 	int i = 1;
@@ -623,7 +623,7 @@ early_init(int *argc, char **argv) /*
 		    VERBOSE(DEBUG_SYSTEM,
 			    ("using %d scheduler(s)\n", no));
 #ifdef ERTS_SMP
-		    no_of_schedulers = (Uint) no;
+		    erts_no_schedulers = (Uint) no;
 #endif
 		    break;
 		}
@@ -635,11 +635,10 @@ early_init(int *argc, char **argv) /*
 	}
     }
 
-#ifdef ERTS_SMP
-    alloc_opts.no_of_schedulers = (int) no_of_schedulers;
-#endif
     erts_alloc_init(argc, argv, &alloc_opts); /* Handles (and removes)
 						 -M flags. */
+
+    erts_init_utils(); /* Require allocators */
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_lc_late_init();
@@ -1033,7 +1032,7 @@ erl_start(int argc, char **argv)
     erl_first_process_otp("otp_ring0", NULL, 0, boot_argc, boot_argv);
 
 #ifdef ERTS_SMP
-    erts_start_schedulers(no_of_schedulers);
+    erts_start_schedulers();
     /* Let system specific code decide what to do with the main thread... */
     erts_sys_main_thread(); /* May or may not return! */
 #else

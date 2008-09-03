@@ -115,7 +115,6 @@
 -vsn('0.20').
 -date('03-09-16').
 
-
 %% main API
 -export([string/1, string/2,
 	 file/1, file/2]).
@@ -1087,8 +1086,9 @@ scan_pi("?>" ++ T, S0 = #xmerl_scanner{hook_fun = Hook,
     {Ret, T, S2};
 scan_pi([H|T], S, Target, L, C, Pos, Acc) when ?whitespace(H) ->
     ?strip1,
-    scan_pi2(T1, S1, Target, L, C, Pos, Acc).
-
+    scan_pi2(T1, S1, Target, L, C, Pos, Acc);
+scan_pi([H|_T],S,_Target, _L, _C, _Pos, _Acc) ->
+    ?fatal({expected_whitespace_OR_end_of_PI,{char,H}}, S).
 
 scan_pi2([], S=#xmerl_scanner{continuation_fun = F}, Target,L, C, Pos, Acc) ->
     ?dbg("cont()...~n", []),
@@ -2446,7 +2446,7 @@ scan_content("&" ++ T, S0, Pos, Name, Attrs, Space, Lang, Parents, NS, Acc,[]) -
     case markup_delimeter(ExpRef) of
 	true -> scan_content(ExpRef++T1,S1,Pos,Name,Attrs,Space,Lang,Parents,NS,Acc,ExpRef);
 	_ ->
-	    scan_content(string_to_char_set(S1#xmerl_scanner.encoding,ExpRef++T1),S1,Pos,Name,Attrs,Space,Lang,Parents,NS,Acc,[])
+	    scan_content(string_to_char_set(S1#xmerl_scanner.encoding,ExpRef)++T1,S1,Pos,Name,Attrs,Space,Lang,Parents,NS,Acc,[])
     end;
 scan_content("<!--" ++ T, S, Pos, Name, Attrs, Space, Lang, Parents, NS, Acc,[]) ->
     {_, T1, S1} = scan_comment(T, S, Pos, Parents, Lang),
@@ -3988,7 +3988,7 @@ rules_read(Context, Name, #xmerl_scanner{rules = T}) ->
 rules_delete(Context,Name,#xmerl_scanner{rules = T}) ->
     ets:delete(T,{Context,Name}).
 
-to_ucs(Encoding,Chars) when Encoding=='utf-8'; Encoding == undefined ->
+to_ucs(Encoding, Chars) when Encoding=="utf-8"; Encoding == undefined ->
     utf8_2_ucs(Chars);
 to_ucs(_,[C|Rest]) ->
     {C,Rest}.

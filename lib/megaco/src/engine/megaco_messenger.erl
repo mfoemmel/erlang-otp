@@ -692,7 +692,7 @@ prepare_message(RH, SH, Bin, Pid, Extra)
 
                 [#conn_data{protocol_version = NegVersion, 
 			    strict_version   = true} = ConnData] 
-		when NegVersion /= Version ->
+		when NegVersion =/= Version ->
 		    %% Use already established connection, 
 		    %% but incorrect version
 		    ?rt1(ConnData, "not negotiated version", [Version]),
@@ -1008,7 +1008,7 @@ prepare_error(Error) ->
             Reason = "Syntax error",
             Code = ?megaco_bad_request,
             {Code, Reason, Error};
-        {ok, MegaMsg} when is_record (MegaMsg, 'MegacoMessage') ->
+        {ok, MegaMsg} when is_record(MegaMsg, 'MegacoMessage') ->
             Reason = "MID does not match config",
             Code = ?megaco_incorrect_identifier,
             {Code, Reason, Error};
@@ -1094,6 +1094,9 @@ prepare_trans(ConnData, Trans, AckList, ReqList, Extra) ->
     prepare_normal_trans(ConnData, Trans, AckList, ReqList, Extra).
 
 
+prepare_autoconnecting_trans(_ConnData, [], AckList, ReqList, _Extra) ->
+    ?SIM({AckList, ReqList}, prepare_autoconnecting_trans_done);
+
 prepare_autoconnecting_trans(ConnData, [Trans | Rest], AckList, ReqList, Extra) ->
     ?rt1(ConnData, "[autoconnecting] prepare trans", [Trans]),
     case Trans of
@@ -1131,88 +1134,6 @@ prepare_autoconnecting_trans(ConnData, [Trans | Rest], AckList, ReqList, Extra) 
 	    prepare_autoconnecting_trans(ConnData, Rest, AckList, ReqList, 
 					 Extra)
     end.
-
-%% prepare_connecting_trans(
-%%   #conn_data{conn_handle = CH,
-%% 	     monitor_ref = {connecting, ConnectorPid}} = ConnData, 
-%%   Trans, AckList, ReqList, Extra) ->
-    
-%%     io:format("prepare_connecting_trans[~p,~w] -> entry with"
-%% 	      "~n   ConnectorPid: ~p"
-%% 	      "~n", [self(), t(), ConnectorPid]),
-
-%%     ?rt1(ConnData, "[connecting] prepare trans", [CH, ConnectorPid]),
-
-%%     %% 
-%%     %% Wait for the connector process to finish
-%%     %% and then update the conn_data record we 
-%%     %% are using, with the new monitor_ref (just 
-%%     %% in case). If the monitor ref is not up-to-date,
-%%     %% we need to create it here.
-%%     %% The connector process will update the monitor_ref
-%%     %% field when it completes.
-%%     %% 
-
-%%     ConnectorRef = erlang:monitor(process, ConnectorPid),
-%%     receive
-%% 	{'DOWN', ConnectorRef, process, ConnectorPid, _Reason} ->
-
-%% 	    io:format("prepare_connecting_trans[~p, ~w] -> "
-%% 		      "received DOWN from connector"
-%% 		      "~n   Reason:            ~p"
-%% 		      "~n", [self(), t(), _Reason]),
-	    
-%% 	    ?rt1(ConnData, "[connecting] prepare trans - "
-%% 		 "received connector DOWN", 
-%% 		 [ConnectTimeout, ConnectorPid, ConnectorRef]),
-
-%% 	    case megaco_config:update_conn_info(CH, monitor_ref, Ref) of
-%% 		ok ->
-%% 		    ConnData2 = ConnData#conn_data{monitor_ref = Ref},
-%% 		    prepare_normal_trans(ConnData2, Trans, AckList, 
-%% 					 ReqList, Extra);
-%% 		{error, Reason} ->
-%% 		    disconnect(CH, {config_update, Reason}),
-%% 		    {[], []}
-%% 	    end
-	    
-%%     after Timeout ->
-	    
-%% 	    io:format("prepare_connecting_trans[~p, ~w] -> timeout after ~w"
-%% 		      "~n", [self(), t(), Timeout]),
-
-%% 	    %% 
-%% 	    %% Ok, the connection appears to hang, 
-%% 	    %% so the best we can do is to let go
-%% 	    %% and hope that the other side decide
-%% 	    %% to retransmit this message...
-%% 	    %% 
-	    
-%% 	    ?report_debug(ConnData, "[connecting] prepare trans - "
-%% 			  "timeout", 
-%% 			  [ConnectTimeout, ConnectorRef, ConnectorPid]),
-	    
-%% 	    %% Kill the connector
-%% 	    exit(ConnectorPid, timeout),
-
-%% 	    receive 
-%% 		{'DOWN', ConnectorRef, process, ConnectorPid, _} ->
-%% 		    ok
-%% 	    after 100 ->
-%% 		    %% Ok, we give up, the DOWN sould have come at once... 
-%% 		    %% Remove the monitor
-%% 		    erlang:demonitor(ConnectorRef, [flush]),
-%% 		    ok
-%% 	    end,
-
-%% 	    %% Cleanup
-%% 	    disconnect(CH, connect_timeout),
-
-%% 	    %% And, done
-%% 	    {[], []}
-
-%%     end.
-
 
 
 %% =================================================================
@@ -2731,8 +2652,23 @@ handle_segment_reply(CD,
 		_ ->
 		    ok
 	    end;
+
+	[#reply{state = State}] ->
+	    %% We received a segment reply for a segmented reply we have 
+	    %% not yet sent? This is either some sort of race condition 
+	    %% or the "the other side" is really confused.
+	    %% Ignore the message but issue a warning just in case...
+	    warning_msg("received unexpected segment reply: "
+			"~n   Transaction Id:        ~p"
+			"~n   Segment Number:        ~p"
+			"~n   Segmentation Complete: ~p"
+			"~n   Reply state:           ~p", 
+			[TransId2, SN, SC, State]),
+	    ignore;
+
 	[] ->
 	    ignore
+
     end.
     
 
@@ -2775,7 +2711,7 @@ handle_ack(ConnData, AckStatus,
 		  timer_ref         = ReplyRef,
 		  pending_timer_ref = PendingRef,  %% BMK Still running?
 		  ack_action        = AckAction}, T, Extra) 
-  when is_binary(Bytes) orelse (Bytes == undefined) ->
+  when is_binary(Bytes) orelse (Bytes =:= undefined) ->
     handle_ack_cleanup(TransId, ReplyRef, PendingRef),
     handle_ack_callback(ConnData, AckStatus, AckAction, T, Extra);
 
@@ -3781,7 +3717,7 @@ send_reply(#conn_data{serial       = Serial,
 				   immAckRequired       = ImmAck,
 				   transactionResult    = TransRes},
     case encode_reply(CD, TR) of
-	{ok, Bin} when is_binary(Bin) andalso (TransReq == true) ->
+	{ok, Bin} when is_binary(Bin) andalso (TransReq =:= true) ->
 	    ?rt2("send_reply - pass it on to the transaction sender", 
 		 [size(Bin)]),
 	    megaco_trans_sender:send_reply(TransSnd, Bin),

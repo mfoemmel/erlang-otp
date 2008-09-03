@@ -408,7 +408,7 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 	    _ -> {"lists:flatten(",")"}
 	end,
     emit(["   'dec_",asn1ct_gen:list2name(Typename),
-	  "_result'(lists:sort(",ExtFlatten1,"SetTerm",ExtFlatten2,"), SetBytes, "]),
+	  "__result__'(lists:sort(",ExtFlatten1,"SetTerm",ExtFlatten2,"), SetBytes, "]),
     asn1ct_gen_ber:add_removed_bytes(),
     emit([").",nl,nl,nl]),
 
@@ -443,7 +443,7 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
     emit({"%%-------------------------------------------------",nl}),
 
     asn1ct_name:clear(),
-    emit({"'dec_",asn1ct_gen:list2name(Typename),"_result'(",
+    emit({"'dec_",asn1ct_gen:list2name(Typename),"__result__'(",
 	  asn1ct_gen_ber:unused_var("TermList",D#type.def),", Bytes, Rb) ->",nl}),
     RecordName = lists:concat([get_record_name_prefix(),
 			       asn1ct_gen:list2rname(Typename)]),

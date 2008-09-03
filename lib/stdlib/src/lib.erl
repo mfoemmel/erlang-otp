@@ -229,9 +229,13 @@ explain_reason({try_clause,V}, error=Cl, [], PF, S) ->
     %% pattern matching..."
     format_value(V, <<"no try clause matching ">>, Cl, PF, S);
 explain_reason(undef, error, [{M,F,A}], _PF, _S) ->
-    %% Only the arity is displayed, not the arguments, if there any.
+    %% Only the arity is displayed, not the arguments, if there are any.
     io_lib:fwrite(<<"undefined function ~s">>, 
                   [mfa_to_string(M, F, n_args(A))]);
+explain_reason({shell_undef,F,A}, error, [], _PF, _S) ->
+    %% Give nicer reports for undefined shell functions
+    %% (but not when the user actively calls shell_default:F(...)).
+    io_lib:fwrite(<<"undefined shell command ~s/~w">>, [F, n_args(A)]);
 %% Exit codes returned by erl_eval only:
 explain_reason({argument_limit,_Fun}, error, [], _PF, _S) ->
     io_lib:fwrite(<<"limit of number of arguments to interpreted function"

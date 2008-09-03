@@ -290,7 +290,7 @@ static ErlDrvEntry mfs_entry = {
 
 %x SKIP_RBRKT MTP_HEXDIG LOCAL_OCTETS REMOTE_OCTETS 
 %x MAP_NAME MAP_OPT_LBRKT MAP_VALUE MAP_SKIP_COMMA MAP_BODY
-%x QUOTED_CHARS SKIP_DQUOTE
+%x QUOTED_CHARS SKIP_DQUOTE 
 
 digit       ([0-9])
 alpha       ([a-zA-Z])
@@ -384,8 +384,8 @@ wild        ((w\-)?)
 
 <SKIP_DQUOTE>{dquote}                   BEGIN(INITIAL);
                                         
-{opt}add                                LOAD_TOKEN(mfs_AddToken);
-{opt}a                                  LOAD_TOKEN(mfs_AddToken);
+{opt}{wild}add                          LOAD_TOKEN(mfs_AddToken);
+{opt}{wild}a                            LOAD_TOKEN(mfs_AddToken);
 andlgc                                  LOAD_TOKEN(mfs_AndAUDITSelectToken);
 audit                                   LOAD_TOKEN(mfs_AuditToken);
 at                                      LOAD_TOKEN(mfs_AuditToken);
@@ -505,8 +505,8 @@ mux                                     LOAD_TOKEN(mfs_MuxToken);
 mx                                      LOAD_TOKEN(mfs_MuxToken);
 nevernotify                             LOAD_TOKEN(mfs_NeverNotifyToken);
 nbnn                                    LOAD_TOKEN(mfs_NeverNotifyToken);
-{opt}notify                             LOAD_TOKEN(mfs_NotifyToken);
-{opt}n                                  LOAD_TOKEN(mfs_NotifyToken);
+{opt}{wild}notify                       LOAD_TOKEN(mfs_NotifyToken);
+{opt}{wild}n                            LOAD_TOKEN(mfs_NotifyToken);
 notifycompletion                        LOAD_TOKEN(mfs_NotifyCompletionToken);
 nc                                      LOAD_TOKEN(mfs_NotifyCompletionToken);
 immediatenotify                         LOAD_TOKEN(mfs_NotifyImmediateToken);
@@ -572,8 +572,8 @@ services                                LOAD_TOKEN(mfs_ServicesToken);
 sv                                      LOAD_TOKEN(mfs_ServicesToken);
 servicestates                           LOAD_TOKEN(mfs_ServiceStatesToken);
 si                                      LOAD_TOKEN(mfs_ServiceStatesToken);
-{opt}servicechange                      LOAD_TOKEN(mfs_ServiceChangeToken);
-{opt}sc                                 LOAD_TOKEN(mfs_ServiceChangeToken);
+{opt}{wild}servicechange                LOAD_TOKEN(mfs_ServiceChangeToken);
+{opt}{wild}sc                           LOAD_TOKEN(mfs_ServiceChangeToken);
 servicechangeaddress                    LOAD_TOKEN(mfs_ServiceChangeAddressToken);
 ad                                      LOAD_TOKEN(mfs_ServiceChangeAddressToken);
 servicechangeinc                        LOAD_TOKEN(mfs_ServiceChangeIncompleteToken);

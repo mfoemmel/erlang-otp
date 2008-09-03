@@ -52,6 +52,8 @@
 	 last/2,
 	 'local-name'/2,
 	 'namespace-uri'/2,
+	 name/2,
+	 string/2,
 	 nodeset/1,
 	 'normalize-space'/2,
 	 number/1, number/2,
@@ -65,7 +67,7 @@
 	 'substring-before'/2,
 	 sum/2,
 	 translate/2]).
-	 
+-export([core_function/1]).	 
 
 -include("xmerl.hrl").
 -include("xmerl_xpath.hrl").
@@ -181,7 +183,7 @@ comp_expr('=', E1, E2, C) ->
 comp_expr('!=', E1, E2, C) ->
     N1 = expr(E1,C),
     N2 = expr(E2,C),
-    ?boolean(compare_eq_format(N1,N2,C) == compare_eq_format(N2,N1,C)).
+    ?boolean(compare_eq_format(N1,N2,C) /= compare_eq_format(N2,N1,C)).
 
 bool_expr('or', E1, E2, C) ->
     ?boolean(mk_boolean(C, E1) or mk_boolean(C, E2));
@@ -283,10 +285,12 @@ count(C, [Arg]) ->
 
 %% node-set: id(object)
 id(C, [Arg]) ->
-    NS0 = [C#xmlContext.whole_document],
-    case Arg#xmlObj.type of
+    WD = C#xmlContext.whole_document,
+    NS0 = [WD],
+    Obj = mk_object(C,Arg),
+    case Obj#xmlObj.type of
 	nodeset ->
-	    NodeSet = Arg#xmlObj.value,
+	    NodeSet = Obj#xmlObj.value,
 	    IdTokens = 
 		lists:foldl(
 		  fun(N, AccX) ->
@@ -301,12 +305,15 @@ id(C, [Arg]) ->
 				 end, C#xmlContext{nodeset = NS0}),
 	    ?nodeset(NewNodeSet);
 	_ ->
-	    StrVal = string_value(Arg#xmlObj.value),
+	    StrVal = string_value(Obj#xmlObj.value),
 	    IdTokens = id_tokens(StrVal),
-	    lists:foldl(
-	      fun(Tok, AccX) ->
-		      select_on_attribute(NS0, id, Tok, AccX)
-	      end, [], IdTokens)
+	    NodeSet = [(WD#xmlNode.node)#xmlDocument.content],
+	    NewNodeSet = lists:foldl(
+			   fun(Tok, AccX) ->
+				   select_on_attribute(NodeSet, id, Tok, AccX)
+			   end, [], IdTokens),
+	    ?nodeset(NewNodeSet)
+	    
     end.
 
 id_tokens(Str=#xmlObj{type=string}) ->
@@ -336,12 +343,20 @@ attribute_test(_Node, _Key, _Vals) ->
 
 local_name1([]) ->
     ?string([]);
+local_name1([#xmlNode{type=element,node=El}|_]) ->
+    #xmlElement{name=Name,nsinfo=NSI} = El,
+    local_name2(Name,NSI);
+local_name1([#xmlNode{type=attribute,node=Att}|_]) ->
+    #xmlAttribute{name=Name,nsinfo=NSI} = Att,
+    local_name2(Name,NSI);
 local_name1([#xmlElement{name = Name, nsinfo = NSI}|_]) ->
+    local_name2(Name,NSI).
+local_name2(Name, NSI) ->
     case NSI of
 	{_Prefix, Local} ->
 	    ?string(Local);
 	[] ->
-	    ?string(Name)
+	    ?string(atom_to_list(Name))
     end.
 
 %% string: namespace-uri(node-set?)
@@ -355,19 +370,56 @@ local_name1([#xmlElement{name = Name, nsinfo = NSI}|_]) ->
 ns_uri([]) ->
     ?string([]);
 ns_uri([#xmlElement{nsinfo = NSI, namespace = NS}|_]) ->
+    ns_uri2(NSI,NS);
+ns_uri([#xmlNode{type=element,node=El}|_]) ->
+    #xmlElement{nsinfo=NSI, namespace = NS} = El,
+    ns_uri2(NSI,NS);
+ns_uri([#xmlNode{type=attribute,node=Att}|_]) ->
+    #xmlAttribute{nsinfo=NSI, namespace = NS} = Att,
+    ns_uri2(NSI,NS);
+ns_uri(_) ->
+    ?string([]).
+
+ns_uri2(NSI,NS) ->
     case NSI of
 	{Prefix, _} ->
 	    case lists:keysearch(Prefix, 1, NS#xmlNamespace.nodes) of
 		false ->
 		    ?string([]);
 		{value, {_K, V}} ->
-		    ?string(V)
+		    string_value(V)
 	    end;
 	[] ->
-	    []
+	    ?string([])
     end.
 
-
+%% name(node-set) -> xmlObj{type=string}
+%% The name function returns a string containing the QName of the node
+%% first in document order. The representation of the QName is not
+%% standardized and applications have their own format. At
+%% http://xml.coverpages.org/clarkNS-980804.html (the author of XPath)
+%% adopts the format "namespace URI"+"local-name" but according to
+%% other sources it is more common to use the format:
+%% '{'"namespace URI"'}'"local-name". This function also uses this
+%% latter form.
+name(C,[]) ->
+    name1(default_nodeset(C));
+name(C, [Arg]) ->
+    name1(mk_nodeset(C, Arg)).
+name1([]) ->
+    ?string([]);
+name1(NodeSet) ->
+    NSVal =
+	case ns_uri(NodeSet) of
+	    #xmlObj{value=NSStr} when NSStr =/= [] ->
+		"{"++NSStr++"}";
+	    _ ->
+		""
+	end,
+    #xmlObj{value=LocalName} = local_name1(NodeSet),
+    ?string(NSVal++LocalName).
+	
+	  
 
 %%% String functions
 
@@ -399,6 +451,9 @@ string_value(El=#xmlNode{type=element}) ->
 		     end,
     TextDecendants=fun(X) -> TextValue(X,TextValue) end,
     ?string(lists:flatten(lists:map(TextDecendants,C)));
+string_value(T=#xmlNode{type=text}) ->
+    #xmlText{value=Txt} = T#xmlNode.node,
+    ?string(Txt);
 string_value(infinity) -> ?string("Infinity");
 string_value(neg_infinity) -> ?string("-Infinity");
 string_value(A) when atom(A) ->
@@ -407,7 +462,9 @@ string_value(N) when integer(N) ->
     ?string(integer_to_list(N));
 string_value(N) when float(N) ->
     N1 = round(N * 10000000000000000),
-    ?string(strip_zeroes(integer_to_list(N1))).
+    ?string(strip_zeroes(integer_to_list(N1)));
+string_value(Str) when is_list(Str) ->
+    ?string(Str).
 
 strip_zeroes(Str) ->
     strip_zs(lists:reverse(Str), 15).
@@ -432,7 +489,7 @@ concat(C, Args = [_, _|_]) ->
 
 %% boolean: starts-with(string, string)
 'starts-with'(C, [A1, A2]) ->
-    ?boolean(lists:prefix(mk_string(C, A1), mk_string(C, A2))).
+    ?boolean(lists:prefix(mk_string(C, A2), mk_string(C, A1))).
 
 %% boolean: contains(string, string)
 contains(C, [A1, A2]) ->
@@ -613,10 +670,14 @@ round(C, [Arg]) ->
 select_on_attribute([E = #xmlElement{attributes = Attrs}|T], K, V, Acc) ->
     case lists:keysearch(K, #xmlAttribute.name, Attrs) of
 	{value, #xmlAttribute{value = V}} ->
-	    select_on_attribute(T, K, V, [E|Acc]);
+	    Acc2 = select_on_attribute(E#xmlElement.content,K,V,[E|Acc]),
+	    select_on_attribute(T, K, V, Acc2);
 	_ ->
-	    select_on_attribute(T, K, V, Acc)
+	    Acc2 = select_on_attribute(E#xmlElement.content,K,V,Acc),
+	    select_on_attribute(T, K, V, Acc2)
     end;
+select_on_attribute([H|T], K, V, Acc) when is_record(H,xmlText) ->
+    select_on_attribute(T, K, V, Acc);
 select_on_attribute([], _K, _V, Acc) ->
     Acc.
 
@@ -648,6 +709,8 @@ mk_object(C0, Expr) ->
 
 mk_string(_C0, #xmlObj{type = string, value = V}) ->
     V;
+mk_string(C0, Obj = #xmlObj{}) ->
+    mk_string(C0,string_value(Obj));
 mk_string(C0, Expr) ->
     mk_string(C0, expr(Expr, C0)).
 

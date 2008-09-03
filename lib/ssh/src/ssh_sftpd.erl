@@ -36,7 +36,8 @@
 
 %%--------------------------------------------------------------------
 %% External exports
--export([listen/1, listen/2, listen/3, stop/1]).
+-export([subsystem_spec/1,
+	 listen/1, listen/2, listen/3, stop/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -58,6 +59,16 @@
 %%====================================================================
 %% API
 %%====================================================================
+subsystem_spec(Options) ->
+    Name = make_ref(),
+    StartFunc = {gen_server, 
+		 start_link, [ssh_sftpd, [Options], []]},
+    Restart = transient, 
+    Shutdown = 3600,
+    Modules = [ssh_sftpd],
+    Type = worker,
+    {"sftp", {Name, StartFunc, Restart, Shutdown, Type, Modules}}.
+
 %%--------------------------------------------------------------------
 %% Function: listen() -> Pid | {error,Error}
 %% Description: Starts the server
@@ -67,11 +78,8 @@ listen(Port) ->
 listen(Port, Options) ->
     listen(any, Port, Options).
 listen(Addr, Port, Options) ->
-    ssh_cm:listen(fun() ->
-			  {ok,Pid} = 
-			      gen_server:start_link(?MODULE, [Options], []),
-			  Pid
-		  end, Addr, Port, Options).
+    SubSystems = [subsystem_spec(Options)],
+    ssh:daemon(Addr, Port, [{subsystems, SubSystems} |Options]).
 
 %%--------------------------------------------------------------------
 %% Function: stop(Pid) -> ok
@@ -135,20 +143,19 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({ssh_cm, CM, {open, Channel, RemoteChannel, _}}, State) ->
+
+handle_info({ssh_cm, CM, {open, Channel, RemoteChannel, _Type}}, State) ->
     XF = #ssh_xfer{vsn = 5, ext = [], cm = CM, channel = Channel},
     State1 = State#state{xf = XF, remote_channel = RemoteChannel},
     {noreply, State1};
 handle_info({ssh_cm, CM, {data, Channel, Type, Data}}, State) ->
-    ssh_cm:adjust_window(CM, Channel, size(Data)),
+    ssh_connection:adjust_window(CM, Channel, size(Data)),
     State1 = handle_data(Type, Data, State),
     {noreply, State1};
-handle_info({ssh_cm, CM, {subsystem, _Channel, WantsReply, "sftp"}}, State) ->
-    CM = (State#state.xf)#ssh_xfer.cm, 		% hmmm going through xf...
-    CM ! {same_user, self()},
-    case WantsReply of
-	true -> CM ! {ssh_cm, self(), {success, State#state.remote_channel}}
-    end,
+
+handle_info({ssh_cm, CM, {subsystem, _, WantReply, "sftp"}}, 
+	    #state{remote_channel = ChannelId} = State) ->
+    ssh_connection:reply_request(CM, WantReply, success, ChannelId),
     {noreply, State};
 
 %% The client has terminated the session
@@ -157,8 +164,11 @@ handle_info({ssh_cm, _, {eof, Channel}},
 	    State = #state{xf = #ssh_xfer{channel = Channel}}) ->
     {stop, normal, State};
 
+handle_info({ssh_cm, _CM, {closed, _Channel}}, State) ->
+    %% ignore -- we'll get an {eof, Channel} soon??
+    {noreply, State};
+
 handle_info(_Info, State) ->
-    io:format("handle_info ~p\n", [_Info]),
     ?dbg(true, "handle_info: Info=~p State=~p\n", [_Info, State]),
     {noreply, State}.
 

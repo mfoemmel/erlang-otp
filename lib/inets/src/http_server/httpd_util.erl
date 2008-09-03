@@ -670,6 +670,8 @@ dir_validate(ConfDir, Dir) ->
     case filelib:is_dir(Dir) of
 	true ->
 	    ok;
+	false when is_list(Dir) ->
+	    throw({non_existing, {ConfDir, Dir}});
 	false ->
 	    throw({ConfDir, Dir})
     end.
@@ -678,6 +680,8 @@ file_validate(ConfFile, File) ->
     case filelib:is_file(File) of
 	true ->
 	    ok;
+	false when is_list(File) ->
+	    throw({non_existing, {ConfFile, File}});	      
 	false ->
 	    throw({ConfFile, File})
     end.

@@ -110,9 +110,12 @@ start(Node, Mid, Encoding, Transport, Conf, Verbosity) ->
 			Else
 		end
 	end,
+    true = erlang:monitor_node(Node, true),
     Pid = spawn_link(Node, Fun),
     %% Pid = spawn_link(Node, ?MODULE, mg, [self(), Verbosity, Config]),
     MonRef = (catch erlang:monitor(process, Pid)),
+    NodePing = net_adm:ping(Node), 
+    ProcInfo = (catch proc_info(Pid)), 
     i("start -> "
       "~n   self():           ~p"
       "~n   node():           ~p"
@@ -121,20 +124,20 @@ start(Node, Mid, Encoding, Transport, Conf, Verbosity) ->
       "~n   Monitor ref:      ~p"
       "~n   Process info:     ~p", 
       [self(), node(), 
-       Node, net_adm:ping(Node), 
+       Node, NodePing, 
        Pid, 
-       MonRef, (catch proc_info(Pid))]),
-    await_started(MonRef, Pid).
+       MonRef, ProcInfo]),
+    await_started(Node, MonRef, Pid).
 
 proc_info(Pid) ->
     rpc:call(node(Pid), erlang, process_info, [Pid]).
 
-encoding_config({Encoding, EC}) when atom(Encoding), list(EC) ->
+encoding_config({Encoding, EC}) when is_atom(Encoding) andalso is_list(EC) ->
     {Mod, Port} = select_encoding(Encoding),
     [{encoding_module, Mod},
      {encoding_config, EC},
      {port,            Port}];
-encoding_config(Encoding) when atom(Encoding) ->
+encoding_config(Encoding) when is_atom(Encoding) ->
     {Mod, Port} = select_encoding(Encoding),
     [{encoding_module, Mod},
      {encoding_config, []},
@@ -160,29 +163,43 @@ transport_config(tcp) ->
 transport_config(udp) ->
     [{transport_module, megaco_udp}].
 
-await_started(MonRef, Pid) ->
+await_started(Node, MonRef, Pid) ->
     i("await_started -> entry with"
       "~n   MonRef: ~p"
       "~n   Pid:    ~p", [MonRef, Pid]),
     receive
 	{started, Pid} ->
-	    d("await_started ~p: "
+	    d("await_started ~p - started"
 	      "~n   Process info: ~p", [Pid, (catch proc_info(Pid))]),
+	    true = erlang:monitor_node(Node, false),	    
 	    erlang:demonitor(MonRef),
 	    {ok, Pid};
 
+	{nodedown, Node} ->
+	    i("await_started ~p - received node down", [Pid]),
+	    exit({node_down, Node}); 
+
 	{'DOWN', MonRef, process, Pid, Info} ->
-	    i("await_started ~p: received down signal: ~p", 
+	    i("await_started ~p - received down signal: ~p", 
 	      [Pid, Info]),
+	    true = erlang:monitor_node(Node, false),	    
 	    exit({failed_starting, Pid, Info});
 
 	{'EXIT', Pid, Reason} ->
-	    i("await_started ~p: received exit signal: ~p", [Pid, Reason]),
+	    i("await_started ~p - received exit signal: ~p", [Pid, Reason]),
+	    true = erlang:monitor_node(Node, false),	    
 	    exit({failed_starting, Pid, Reason})
 
     after 10000 ->
-	    i("await_started ~p: timeout: "
-	      "~n~p", [Pid, (catch process_info(Pid))]),
+	    NodePing = net_adm:ping(Node), 
+	    ProcInfo = (catch proc_info(Pid)),
+	    FlushQ = megaco_test_lib:flush(), 
+	    i("await_started ~p - timeout: "
+	      "~n   net_adm:ping(~p):     ~p" 
+	      "~n   Process info:         ~p"
+	      "~n   Messages in my queue: ~p", 
+	      [Pid, Node, NodePing, ProcInfo, FlushQ]),
+	    true = erlang:monitor_node(Node, false),	    
 	    exit({error, timeout})
     end.
 
@@ -205,7 +222,7 @@ reset_stats(Pid) ->
 user_info(Pid) ->
     server_request(Pid, {user_info, all}, user_info_ack).
 
-user_info(Pid, Tag) when atom(Tag) ->
+user_info(Pid, Tag) when is_atom(Tag) ->
     server_request(Pid, {user_info, Tag}, user_info_ack).
 
 
@@ -216,7 +233,7 @@ update_user_info(Pid, Tag, Val) ->
 conn_info(Pid) ->
     server_request(Pid, {conn_info, all}, conn_info_ack).
 
-conn_info(Pid, Tag) when atom(Tag) ->
+conn_info(Pid, Tag) when is_atom(Tag) ->
     server_request(Pid, {conn_info, Tag}, conn_info_ack).
 
 
@@ -225,11 +242,11 @@ update_conn_info(Pid, Tag, Val) ->
 
 
 enable_test_code(Pid, Module, Where, Fun) 
-  when atom(Module), atom(Where), function(Fun) ->
+  when is_atom(Module) andalso is_atom(Where) andalso is_function(Fun) ->
     Tag = {Module, Where},
     server_request(Pid, {enable_test_code, Tag, Fun}, enable_test_code_reply).
 
-encode_ar_first(Pid, New) when atom(New) ->
+encode_ar_first(Pid, New) when is_atom(New) ->
     server_request(Pid, {encode_ar_first, New}, encode_ar_first_reply).
 
 service_change(Pid) ->
@@ -303,9 +320,9 @@ server_reply(Pid, ReplyTag, Reply) ->
 
 mg(Parent, Verbosity, Config) ->
     process_flag(trap_exit, true),
-    put(verbosity, Verbosity),
-    %% put(verbosity, debug),
-    put(sname,   "MG"),
+    put(sname, "MG"),
+    %% put(verbosity, Verbosity),
+    put(verbosity, debug),  % Enable debug printouts during init
     i("mg -> starting"),
     %% megaco:enable_trace(max, io),
     case (catch init(Config)) of
@@ -317,6 +334,7 @@ mg(Parent, Verbosity, Config) ->
 	    notify_started(Parent),
 	    MG = #mg{parent = Parent, mid = Mid},
 	    i("mg -> started"),
+	    put(verbosity, Verbosity),
 	    case (catch loop(MG)) of
 		{'EXIT', normal} ->
 		    exit(normal);
@@ -333,7 +351,9 @@ init(Config) ->
     d("init -> entry with"
       "~n   Config: ~p", [Config]),
     random_init(),
+    d("init -> random initiated", []),
     Mid = get_conf(local_mid, Config),
+    d("init -> Mid: ~p", [Mid]),
     RI  = get_conf(receive_info, Config),
     d("init -> start megaco"),
     application:start(megaco),
@@ -345,7 +365,7 @@ init(Config) ->
 	    megaco:enable_trace(max, io);
 	{value, {megaco_trace, io}} ->
 	    megaco:enable_trace(max, io);
-	{value, {megaco_trace, File}} when list(File) ->
+	{value, {megaco_trace, File}} when is_list(File) ->
 	    megaco:enable_trace(max, File);
 	_ ->
 	    ok
@@ -360,13 +380,6 @@ init(Config) ->
     ok = megaco:update_user_info(Mid, user_mod,  ?MODULE),
     d("init -> update user info (user_args)"),
     ok = megaco:update_user_info(Mid, user_args, [self(), Mid]),
-
-%     d("init -> start megaco user"),
-%     megaco:start_user(Mid, []),
-%     d("init -> update user info (user_mod)"),
-%     megaco:update_user_info(Mid, user_mod,  ?MODULE),
-%     d("init -> update user info (user_args)"),
-%     megaco:update_user_info(Mid, user_args, [self()]),
 
     d("init -> get user info (receive_handle)"),
     RH = megaco:user_info(Mid,receive_handle),
@@ -559,7 +572,7 @@ loop(#mg{parent = Parent, mid = Mid} = S) ->
 
 
 handle_encode_ar_first(#mg{encode_ar_first = Old} = MG, New) 
-  when New == true; New == false ->
+  when (New =:= true) orelse (New =:= false) ->
     {{ok, Old}, MG#mg{encode_ar_first = New}};
 handle_encode_ar_first(MG, New) ->
     {{error, {invalid_value, New}}, MG}.
@@ -635,7 +648,7 @@ do_reset_stats1(CH) ->
 		      "own connection ~p: ~p. "
 		      "~nexiting...", [CH, Reason]),
 	    exit({invalid_connection, CH, Reason});
-	SendMod when atom(SendMod) ->
+	SendMod when is_atom(SendMod) ->
 	    SendMod:reset_stats()
     end.
 
@@ -664,14 +677,14 @@ do_update_user_info(Mid, Tag, Val) ->
 %%
 %% Get conn info 
 %%
-do_get_conn_info(CH, all = Tag) when record(CH, megaco_conn_handle) ->
+do_get_conn_info(CH, all = Tag) when is_record(CH, megaco_conn_handle) ->
     case (catch megaco:conn_info(CH, Tag)) of
 	L when is_list(L) ->
 	    lists:sort(L);
 	Else ->
 	    Else
     end;
-do_get_conn_info(CH, Tag) when record(CH, megaco_conn_handle) ->
+do_get_conn_info(CH, Tag) when is_record(CH, megaco_conn_handle) ->
     (catch megaco:conn_info(CH, Tag));
 do_get_conn_info(Mid, Tag) ->
     case megaco:user_info(Mid, connections) of
@@ -871,7 +884,10 @@ start_tcp(MgcPort, RH) ->
 	{ok, Sup} ->
 	    d("tcp transport started: ~p", [Sup]),
 	    {ok, LocalHost} = inet:gethostname(),
-	    Opts = [{host, LocalHost},{port, MgcPort}, {receive_handle, RH}],
+	    Opts = [{host,           LocalHost},
+		    {port,           MgcPort}, 
+		    {receive_handle, RH},
+		    {tcp_options,    [{nodelay, true}]}],
 	    d("tcp connect", []),
 	    case megaco_tcp:connect(Sup, Opts) of
 		{ok, SendHandle, ControlPid} ->
@@ -1013,7 +1029,7 @@ do_notify_request(EAF, CH, N) ->
     {N, Actions, _} = make_notify_request(N,N),
     send_sync(EAF, CH, Actions, []).
 
-make_notify_request(N, Sz) when N >= Sz, Sz > 0 ->
+make_notify_request(N, Sz) when (N >= Sz) andalso (Sz > 0) ->
     {Req, ReplyData} = make_notify_request(N, Sz, [], []),
     {Sz, Req, ReplyData};
 make_notify_request(N, _Sz) when N > 0 ->
@@ -1113,7 +1129,7 @@ handle_megaco_request(#mg{state = S} = MG,
 
 handle_megaco_request(#mg{req_handler = Pid} = MG,
 		      {handle_disconnect, _CH, _PV, R}) 
-  when pid(Pid) ->
+  when is_pid(Pid) ->
     d("handle_megaco_request(handle_disconnect) -> entry with"
       "~n   Pid: ~p", [Pid]),
     Error = {error, {disconnected, R}},
@@ -1131,7 +1147,7 @@ handle_megaco_request(MG,
 
 handle_megaco_request(#mg{req_handler = Pid} = MG,
 		      {handle_message_error, CH, PV, ED}) 
-  when pid(Pid) ->
+  when is_pid(Pid) ->
     d("handle_megaco_request(handle_message_error) -> entry with"
       "~n   Pid:    ~p"
       "~n   CH:     ~p"
@@ -1160,14 +1176,14 @@ handle_megaco_request(MG,
     {{discard_ack, ED}, MG};
 
 handle_megaco_request(#mg{rep_info = P} = MG, 
-		      {handle_trans_reply, CH, PV, AR, RD}) when pid(P) ->
+		      {handle_trans_reply, CH, PV, AR, RD}) when is_pid(P) ->
     P ! {rep_received, self(), AR},
     do_handle_trans_reply(MG, CH, PV, AR, RD);
 handle_megaco_request(MG, {handle_trans_reply, CH, PV, AR, RD}) ->
     do_handle_trans_reply(MG, CH, PV, AR, RD);
 
 handle_megaco_request(#mg{ack_info = P} = MG, 
-		      {handle_trans_ack, _CH, _PV, AS, _AD}) when pid(P) ->
+		      {handle_trans_ack, _CH, _PV, AS, _AD}) when is_pid(P) ->
     d("handle_megaco_request(handle_trans_ack,~p) -> entry",[P]),
     P ! {ack_received, self(), AS},
     {ok, MG};
@@ -1349,7 +1365,7 @@ get_encoding_config(RI, EM) ->
     case text_codec(EM) of
 	true ->
 	    case megaco:system_info(text_config) of
-		[Conf] when list(Conf) ->
+		[Conf] when is_list(Conf) ->
 		    Conf;
 		_ ->
 		    []

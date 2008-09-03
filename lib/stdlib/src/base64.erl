@@ -22,17 +22,28 @@
 -export([encode/1, decode/1, mime_decode/1,
 	 encode_to_string/1, decode_to_string/1, mime_decode_to_string/1]).
 
+%%-------------------------------------------------------------------------
+%% The following type is a subtype of string() for return values
+%% of (some) functions of this module.
+%%-------------------------------------------------------------------------
+
+-type ascii_string() :: [1..255].
+
+%%-------------------------------------------------------------------------
 %% define a threshold for big binaries wich will be chopped off and
 %% converted in chunks (must be a multiple both 3 and 4, i.e. 12)
 -define(BIG, 24000).
 
 %%-------------------------------------------------------------------------
-%% encode_to_string(ASCII) -> Base64
+%% encode_to_string(ASCII) -> Base64String
 %%	ASCII - string() | binary()
-%%	Base64 - string()
+%%	Base64String - string()
 %%                                   
 %% Description: Encodes a plain ASCII string (or binary) into base64.
 %%-------------------------------------------------------------------------
+
+-spec encode_to_string(string() | binary()) -> ascii_string().
+
 encode_to_string(Bin) when is_binary(Bin) ->
     encode_to_string(binary_to_list(Bin));
 encode_to_string(List) when is_list(List) ->
@@ -45,6 +56,9 @@ encode_to_string(List) when is_list(List) ->
 %%                                   
 %% Description: Encodes a plain ASCII string (or binary) into base64.
 %%-------------------------------------------------------------------------
+
+-spec encode(string() | binary()) -> binary().
+
 encode(Bin) when is_binary(Bin), byte_size(Bin) > ?BIG ->
     {A, B} = split_binary(Bin, ?BIG),
     L = encode_l(binary_to_list(A)),
@@ -53,6 +67,8 @@ encode(Bin) when is_binary(Bin) ->
     encode(binary_to_list(Bin));
 encode(List) when is_list(List) ->
     list_to_binary(encode_l(List)).
+
+-spec encode_l(string()) -> ascii_string().
 
 encode_l(List) ->
     encode(List, encode_tuple()).
@@ -85,6 +101,9 @@ encode([A,B,C|Ls], T) ->
 %% mime_decode strips away all characters not Base64 before converting,
 %% whereas decode crashes if an illegal character is found
 %%-------------------------------------------------------------------------
+
+-spec decode(string() | binary()) -> binary().
+
 decode(Bin) when is_binary(Bin), byte_size(Bin) > ?BIG ->
     {A, B} = split_binary(Bin, ?BIG),
     L = decode_l(binary_to_list(A)),
@@ -93,6 +112,8 @@ decode(Bin) when is_binary(Bin) ->
     decode(binary_to_list(Bin));
 decode(List) when is_list(List) ->
     list_to_binary(decode_l(List)).
+
+-spec mime_decode(string() | binary()) -> binary().
 
 mime_decode(Bin) when is_binary(Bin), byte_size(Bin) > ?BIG ->
     {A, B} = split_binary(Bin, ?BIG),
@@ -103,9 +124,13 @@ mime_decode(Bin) when is_binary(Bin) ->
 mime_decode(List) when is_list(List) ->
     list_to_binary(mime_decode_l(List)).
 
+-spec decode_l(string()) -> string().
+
 decode_l(List) ->
     L = strip_spaces(List, []),
     decode(L, decode_tuple(), []).
+
+-spec mime_decode_l(string()) -> string().
 
 mime_decode_l(List) ->
     L = strip_illegal(List, []),
@@ -116,22 +141,25 @@ mime_decode_l(List) ->
 %% decode_to_string(Base64) -> ASCII
 %%	Base64 - string() | binary()
 %%	ASCII - binary()
-%%                                    
+%%
 %% Description: Decodes an base64 encoded string to plain ASCII.
 %% mime_decode strips away all characters not Base64 before converting,
 %% whereas decode crashes if an illegal character is found
 %%-------------------------------------------------------------------------
+
+-spec decode_to_string(string() | binary()) -> string().
+
 decode_to_string(Bin) when is_binary(Bin) ->
     decode_to_string(binary_to_list(Bin));
 decode_to_string(List) when is_list(List) ->
     decode_l(List).
 
+-spec mime_decode_to_string(string() | binary()) -> string().
+
 mime_decode_to_string(Bin) when is_binary(Bin) ->
     mime_decode_to_string(binary_to_list(Bin));
 mime_decode_to_string(List) when is_list(List) ->
     mime_decode_l(List).
-
-
 
 
 decode([], _T, A) ->
@@ -210,5 +238,6 @@ b64e(X, T) ->
 b64d(X, T) ->
     b64d_ok(element(X, T)).
 
+-spec b64d_ok(non_neg_integer()) -> non_neg_integer().
 b64d_ok(N) when N >= 0 ->
     N.

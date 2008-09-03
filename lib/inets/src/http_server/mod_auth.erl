@@ -520,7 +520,8 @@ store_directory(Directory0, DirData0, ConfigList) ->
 			  PassW
 		  end,
 	    DirDataLast = lists:keydelete(auth_access_password,1,DirData), 
-	    case catch AuthMod:store_directory_data(Directory, DirDataLast) of
+	    Server_root = proplists:get_value(server_root, ConfigList),
+	    case catch AuthMod:store_directory_data(Directory, DirDataLast, Server_root) of
 		ok ->
 		    add_auth_password(Directory,Pwd,ConfigList),
 		    {ok, {directory, {Directory, DirDataLast}}};

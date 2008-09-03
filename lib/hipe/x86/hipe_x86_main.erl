@@ -10,6 +10,7 @@
 -define(HIPE_X86_PP, hipe_amd64_pp).
 -define(X86TAG, amd64). % XXX: kill this crap
 -define(X86STR, "amd64").
+-define(HIPE_X86_SPILL_RESTORE, hipe_amd64_spill_restore).
 -else.
 -define(HIPE_X86_MAIN, hipe_x86_main).
 -define(RTL_TO_X86, rtl_to_x86). % XXX: kill this crap
@@ -19,6 +20,7 @@
 -define(HIPE_X86_PP, hipe_x86_pp).
 -define(X86TAG, x86). % XXX: kill this crap
 -define(X86STR, "x86").
+-define(HIPE_X86_SPILL_RESTORE, hipe_x86_spill_restore).
 -endif.
 
 -module(?HIPE_X86_MAIN).
@@ -33,7 +35,15 @@
 ?RTL_TO_X86(MFA, RTL, Options) ->
   Translated = ?option_time(?HIPE_RTL_TO_X86:translate(RTL),
 			    "RTL-to-"?X86STR, Options),
-  Allocated  = ?option_time(?HIPE_X86_RA:ra(Translated, Options),
+  SpillRest = 
+    case proplists:get_bool(caller_save_spill_restore, Options) of
+      true ->
+	?option_time(?HIPE_X86_SPILL_RESTORE:spill_restore(Translated, Options),
+		     ?X86STR" spill restore", Options);
+      false ->
+	Translated
+    end,
+  Allocated  = ?option_time(?HIPE_X86_RA:ra(SpillRest, Options),
 			    ?X86STR" register allocation", Options),
   Framed     = ?option_time(?HIPE_X86_FRAME:frame(Allocated, Options), 
 			    ?X86STR" frame", Options),

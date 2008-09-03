@@ -32,27 +32,29 @@
 	 delete_group/2,
 	 remove/1]).
 
--export([store_directory_data/2]).
+-export([store_directory_data/3]).
 
 -include("httpd.hrl").
 -include("mod_auth.hrl").
 
-store_directory_data(_Directory, DirData) ->
+store_directory_data(_Directory, DirData, Server_root) ->
     ?CDEBUG("store_directory_data -> ~n"
 	    "     Directory: ~p~n"
 	    "     DirData:   ~p",
 	    [_Directory, DirData]),
 
-    PWFile = proplists:get_value(auth_user_file, DirData),
-    GroupFile = proplists:get_value(auth_group_file, DirData),
+    {PWFile, Absolute_pwdfile} = absolute_file_name(auth_user_file, DirData,
+						    Server_root),
+    {GroupFile, Absolute_groupfile} = absolute_file_name(auth_group_file,
+							 DirData, Server_root),
     Addr = proplists:get_value(bind_address, DirData),
     Port = proplists:get_value(port, DirData),
 
     PWName  = httpd_util:make_name("httpd_dets_pwdb",Addr,Port),
-    case dets:open_file(PWName,[{type,set},{file,PWFile},{repair,true}]) of
+    case dets:open_file(PWName,[{type,set},{file,Absolute_pwdfile},{repair,true}]) of
 	{ok, PWDB} ->
 	    GDBName = httpd_util:make_name("httpd_dets_groupdb",Addr,Port),
-	    case dets:open_file(GDBName,[{type,set},{file,GroupFile},{repair,true}]) of
+	    case dets:open_file(GDBName,[{type,set},{file,Absolute_groupfile},{repair,true}]) of
 		{ok, GDB} ->
 		    NDD1 = lists:keyreplace(auth_user_file, 1, DirData, 
 					    {auth_user_file, PWDB}),
@@ -228,3 +230,25 @@ remove(DirData) ->
     dets:close(GDB),
     dets:close(PWDB),
     ok.
+
+%% absolute_file_name/2
+%%
+%% Return the absolute path name of File_type. 
+absolute_file_name(File_type, DirData, Server_root) ->
+    Path = proplists:get_value(File_type, DirData),
+    Absolute_path = case filename:pathtype(Path) of
+			relative ->
+			    case Server_root of
+				undefined ->
+				    {error,
+				     ?NICE(Path++
+					   " is an invalid file name because "
+					   "ServerRoot is not defined")};
+				_ ->
+				    filename:join(Server_root,Path)
+			    end;
+			_ ->
+			    Path
+		    end,
+    {Path, Absolute_path}.
+

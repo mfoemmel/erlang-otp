@@ -157,7 +157,12 @@ stop() ->
     call(stop).
 
 is_started() ->
-    call(is_started, 1000).
+    case (catch call(is_started, 1000)) of
+	Bool when ((Bool =:= true) orelse (Bool =:= false)) ->
+	    Bool;
+	_ ->
+	    false
+    end.
 
 load_mib(MibFile) when list(MibFile) ->
     call({load_mib, MibFile}).

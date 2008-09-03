@@ -2204,7 +2204,7 @@ add_local_call({Name, _Arity} = V, Vs, Ts, Ctxt, S) ->
     Module = s__get_module(S),
     case Ctxt#ctxt.final of
 	false ->
-	    add_code([icode_call_local(Ts, Module, Name, Vs)],S);
+	    add_code([icode_call_local(Ts, Module, Name, Vs)], S);
 	true ->
 	    Self = s__get_function(S),
 	    if V =:= Self ->

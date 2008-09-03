@@ -1,6 +1,6 @@
 {application,xmerl,
  [{description,"XML parser"},
-  {vsn,"1.1.9"},
+  {vsn,"1.1.10"},
   {modules,[
 	xmerl,
 	xmerl_b64Bin,
@@ -20,6 +20,7 @@
 	xmerl_xlate,
 	xmerl_xml,
 	xmerl_xpath,
+	xmerl_xpath_lib,
 	xmerl_xpath_parse,
 	xmerl_xpath_pred,
 	xmerl_xpath_scan,

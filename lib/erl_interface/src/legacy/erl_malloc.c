@@ -133,12 +133,16 @@ restart:
 		}
 		break;
 	    case ERL_LIST: 
-		ERL_COUNT(HEAD(ep))--;
-		/* FIXME added cast, is this correct? */
-		_erl_free_term((ETERM *)HEAD(ep), INTERNAL, compound);
-		ERL_COUNT(TAIL(ep))--;
-		/* Clean up and walk on to CDR in list */
-		RESTART(TAIL(ep), INTERNAL, compound);
+		if (HEAD(ep)) {
+		    ERL_COUNT(HEAD(ep))--;
+		    /* FIXME added cast, is this correct? */
+		    _erl_free_term((ETERM *)HEAD(ep), INTERNAL, compound);
+		}
+		if (TAIL(ep)) {
+		    ERL_COUNT(TAIL(ep))--;
+		    /* Clean up and walk on to CDR in list */
+		    RESTART(TAIL(ep), INTERNAL, compound);
+		}
 		break;
 	    case ERL_TUPLE: 
 		{

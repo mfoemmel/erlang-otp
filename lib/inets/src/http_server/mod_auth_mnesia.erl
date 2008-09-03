@@ -37,14 +37,14 @@
 	 remove_group_member/5, remove_group_member/6, 
 	 remove_group/4, remove_group/5]).
 
--export([store_directory_data/2]).
+-export([store_directory_data/3]).
 
 -include("httpd.hrl").
 -include("mod_auth.hrl").
 
 
 
-store_directory_data(_Directory, _DirData) ->
+store_directory_data(_Directory, _DirData, _Server_root) ->
     %% We don't need to do anything here, we could of course check that
     %% the appropriate mnesia tables has been created prior to
     %% starting the http server.

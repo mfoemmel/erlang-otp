@@ -309,9 +309,9 @@ generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
 		    {ok, User} ->
  			{User#usm_user.name, 
  			 User#usm_user.auth,
+			 User#usm_user.auth_key,
 			 User#usm_user.priv,
- 			 User#usm_user.auth_key,
-			 User#usm_user.priv_key};
+ 			 User#usm_user.priv_key};
 		    _ ->
 			error(unknownSecurityName)
 		end;

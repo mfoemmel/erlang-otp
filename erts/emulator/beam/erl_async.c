@@ -160,37 +160,14 @@ static void async_add(ErlAsync* a, AsyncQueue* q)
     erts_mtx_unlock(&q->mtx);
 }
 
-static void
-prepare_for_block(void *vmtxp)
-{
-    erts_mtx_unlock((erts_mtx_t *) vmtxp);
-}
-
-static void
-resume_after_block(void *vmtxp)
-{
-    erts_mtx_lock((erts_mtx_t *) vmtxp);
-}
-
-
 static ErlAsync* async_get(AsyncQueue* q)
 {
     ErlAsync* a;
 
     erts_mtx_lock(&q->mtx);
-    erts_smp_activity_change(ERTS_ACTIVITY_IO,
-			     ERTS_ACTIVITY_WAIT,
-			     prepare_for_block,
-			     resume_after_block,
-			     (void *) &q->mtx);
     while((a = q->tail) == NULL) {
 	erts_cnd_wait(&q->cv, &q->mtx);
     }
-    erts_smp_activity_change(ERTS_ACTIVITY_WAIT,
-			     ERTS_ACTIVITY_IO,
-			     prepare_for_block,
-			     resume_after_block,
-			     (void *) &q->mtx);
 #ifdef ERTS_SMP
     ASSERT(a && q->tail == a);
 #endif
@@ -254,12 +231,6 @@ static void* async_main(void* arg)
     }
 #endif
 
-#ifdef ERTS_SMP
-    erts_register_blockable_thread();
-#endif
-
-    erts_smp_activity_begin(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
-
     while(1) {
 	ErlAsync* a = async_get(q);
 
@@ -303,8 +274,6 @@ static void* async_main(void* arg)
 #endif
 	}
     }
-
-    erts_smp_activity_end(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
 
     return NULL;
 }

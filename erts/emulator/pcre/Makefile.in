@@ -45,23 +45,30 @@ include $(ERL_TOP)/make/target.mk
 
 # On windows we need a separate zlib during debug build
 ifeq ($(TARGET),win32)
+
 ifeq ($(TYPE),debug)
 CFLAGS = $(subst -O2, -g, @CFLAGS@ @DEFS@ @DEBUG_FLAGS@ @EMU_THR_DEFS@ -DERLANG_INTEGRATION)
-OBJDIR = $(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)
-else
+else  # debug
 CFLAGS = @CFLAGS@ @DEFS@ @EMU_THR_DEFS@ -DERLANG_INTEGRATION
-OBJDIR = $(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)
-endif
-else
+endif # debug
+
+else  # win32
+
 ifeq ($(TYPE),debug)
 TYPE_FLAGS = @DEBUG_CFLAGS@ 
-else
+else  # debug
+ifeq ($(TYPE),gcov)
+TYPE_FLAGS = -O0 -fprofile-arcs -ftest-coverage
+else  # gcov 
 TYPE_FLAGS = -O3
-endif
+endif # gcov
+endif # debug
+
 CFLAGS =  $(TYPE_FLAGS) $(subst -O2,, @CFLAGS@) @DEFS@ @EMU_THR_DEFS@ -DERLANG_INTEGRATION 
 
-OBJDIR = $(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)
-endif
+endif # win32
+
+OBJDIR = $(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)
 
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 

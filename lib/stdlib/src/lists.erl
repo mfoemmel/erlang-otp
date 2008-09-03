@@ -651,7 +651,7 @@ ukeysort_1(_I, X, _EX, []) ->
     [X].
 
 -spec(ukeymerge/3 :: (pos_integer(), [X], [Y]) ->
-	     [_] when is_subtype(X, tuple()), is_subtype(Y, tuple())).
+	     [(X | Y)] when is_subtype(X, tuple()), is_subtype(Y, tuple())).
 
 ukeymerge(Index, L1, T2) when is_integer(Index), Index > 0 ->
     case L1 of
@@ -666,7 +666,7 @@ ukeymerge(Index, L1, T2) when is_integer(Index), Index > 0 ->
 %% reverse(rukeymerge(I,reverse(A),reverse(B))) is equal to ukeymerge(I,A,B).
 
 -spec(rukeymerge/3 :: (pos_integer(), [X], [Y]) ->
-	     [_] when is_subtype(X, tuple()), is_subtype(Y, tuple())).
+	     [(X | Y)] when is_subtype(X, tuple()), is_subtype(Y, tuple())).
 
 rukeymerge(Index, T1, L2) when is_integer(Index), Index > 0 ->
     case L2 of
@@ -961,7 +961,7 @@ partition(Pred, [H | T], As, Bs) ->
 partition(Pred, [], As, Bs) when is_function(Pred, 1) ->
     {reverse(As), reverse(Bs)}.
 
--spec(zf/2 :: (fun((T) -> bool() | {true,_}), [T]) -> [_]).
+-spec(zf/2 :: (fun((T) -> bool() | {true,X}), [T]) -> [(T | X)]).
 
 zf(F, [Hd|Tail]) ->
     case F(Hd) of

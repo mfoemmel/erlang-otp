@@ -607,7 +607,8 @@ valfun_4({loop_rec,{f,Fail},Dst}, Vst0) ->
 valfun_4({wait,_}, Vst) ->
     kill_state(Vst);
 valfun_4({wait_timeout,_,Src}, Vst) ->
-    assert_term(Src, Vst);
+    assert_term(Src, Vst),
+    Vst;
 valfun_4({loop_rec_end,_}, Vst) ->
     kill_state(Vst);
 valfun_4(timeout, #vst{current=St}=Vst) ->
@@ -1137,7 +1138,7 @@ set_type_y(Type, Reg, #vst{}) -> error({invalid_store,Reg,Type}).
 
 assert_term(Src, Vst) ->
     get_term_type(Src, Vst),
-    Vst.
+    ok.
 
 %% The possible types.
 %%

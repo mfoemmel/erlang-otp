@@ -24,6 +24,10 @@
 
 -export([connect/1, connect/2, connect/3]).
 
+-deprecated({connect, 1, next_major_release}).
+-deprecated({connect, 2, next_major_release}).
+-deprecated({connect, 3, next_major_release}).
+
 -export([input_loop/2, shell_loop/4]).
 
 -include("ssh.hrl").
@@ -38,7 +42,7 @@ connect(Host, Opts) when is_list(Host) ->
     connect(Host, 22, Opts);
 connect(CM, Opts) ->
     Timeout = proplists:get_value(connect_timeout, Opts, ?default_timeout),
-    case ssh_cm:attach(CM, Timeout) of
+    case ssh:attach(CM, Timeout) of
 	{ok,CMPid} ->
 	    session(CMPid, Timeout);
 	Error ->
@@ -46,7 +50,7 @@ connect(CM, Opts) ->
     end.
 
 connect(Host, Port, Opts) ->
-    case ssh_cm:connect(Host, Port, Opts) of
+    case ssh:connect(Host, Port, Opts) of
 	{ok, CM} ->
 	    session(CM, proplists:get_value(connect_timeout,
 					    Opts, ?default_timeout));
@@ -55,17 +59,17 @@ connect(Host, Port, Opts) ->
     end.
 
 session(CM, Timeout) ->
-    case ssh_cm:session_open(CM, Timeout) of
-	{ok,Channel}  ->
-	    case ssh_cm:shell(CM, Channel) of
+    case ssh_connection:session_channel(CM, Timeout) of
+	{ok,ChannelId}  ->
+	    case ssh_connection:shell(CM, ChannelId) of
 		ok ->
 		    {group_leader,GIO} = 
 			process_info(self(), group_leader),
 		    IO = spawn(?MODULE, input_loop,
 			       [GIO, self()]),
-		    shell_loop(CM, Channel, IO, false);
+		    shell_loop(CM, ChannelId, IO, false);
 		Error  ->
-		    ssh_cm:close(CM, Channel),
+		    ssh_connection:close(CM, ChannelId),
 		    Error
 	    end;
 	Error ->
@@ -84,50 +88,50 @@ input_loop(Fd, Pid) ->
     end.
     
 
-shell_loop(CM, Channel, IO, SentClose) ->
+shell_loop(CM, ChannelId, IO, SentClose) ->
     receive
 	{input, IO, eof} ->
-	    ssh_cm:send_eof(CM, Channel),
-	    ?MODULE:shell_loop(CM, Channel, IO, SentClose);
+	    ssh_connection:send_eof(CM, ChannelId),
+	    ?MODULE:shell_loop(CM, ChannelId, IO, SentClose);
 	    
 	{input, IO, Line} ->
-	    ssh_cm:send(CM, Channel, Line),
-	    ?MODULE:shell_loop(CM, Channel, IO, SentClose);
+	    ssh_connection:send(CM, ChannelId, Line),
+	    ?MODULE:shell_loop(CM, ChannelId, IO, SentClose);
 
-	{ssh_cm, CM, {data, Channel, Type, Data}} ->
+	{ssh_cm, CM, {data, ChannelId, Type, Data}} ->
 	    if Type == 0 ->
 		    io:format("~s", [binary_to_list(Data)]);
 	       Type == ?SSH_EXTENDED_DATA_STDERR ->
-		    error_logger:format("ssh: STDERR: ~s", 
-					[binary_to_list(Data)]);
+		    Report = io_lib:format("~s", [binary_to_list(Data)]),
+		    %% May not be an error!
+		    error_logger:info_report(Report);
 	       true ->
 		    ok
 	    end,
-	    ssh_cm:adjust_window(CM, Channel, size(Data)),
-	    ?MODULE:shell_loop(CM, Channel, IO, SentClose);
+	    ssh_connection:adjust_window(CM, ChannelId, size(Data)),
+	    ?MODULE:shell_loop(CM, ChannelId, IO, SentClose);
 
-	{ssh_cm, CM, {exit_signal, Channel, _SIG, _Err, _Lang}} ->
+	{ssh_cm, CM, {exit_signal, ChannelId, _SIG, _Err, _Lang}} ->
 	    ?dbg(true, "SIGNAL: ~s (~s)\n", [_SIG, _Err]),
-	    send_close(SentClose, CM, Channel),
-	    ?MODULE:shell_loop(CM, Channel, IO, true);
+	    send_close(SentClose, CM, ChannelId),
+	    ?MODULE:shell_loop(CM, ChannelId, IO, true);
 
-	{ssh_cm, CM, {exit_status,Channel,_Status}} ->
-	    %send_close(SentClose, CM, Channel),
-	    ?MODULE:shell_loop(CM, Channel, IO, true);
+	{ssh_cm, CM, {exit_status,ChannelId,_Status}} ->
+	    %send_close(SentClose, CM, ChannelId),
+	    ?MODULE:shell_loop(CM, ChannelId, IO, true);
 
-	{ssh_cm, CM, {eof, Channel}} ->
-	    %send_close(SentClose, CM, Channel),
-	    ?MODULE:shell_loop(CM, Channel, IO, true);
+	{ssh_cm, CM, {eof, ChannelId}} ->
+	    %send_close(SentClose, CM, ChannelId),
+	    ?MODULE:shell_loop(CM, ChannelId, IO, true);
 
-	{ssh_cm, CM, {closed, Channel}} ->
-	    ssh_cm:detach(CM, ?default_timeout),
+	{ssh_cm, CM, {closed, ChannelId}} ->
 	    exit(IO, kill);
 
 	Other ->
-	    error_logger:format("ssh_ssh:shell_loop: unexpected msg ~p\n", [Other])
+	    error_logger:format("ssh_ssh:shell_loop: unexpected msg ~p \n", [Other])
     end.
 
-send_close(false, CM, Channel) ->
-    ssh_cm:close(CM, Channel);
+send_close(false, CM, ChannelId) ->
+    ssh_connection:close(CM, ChannelId);
 send_close(_, _, _) ->
     ok.

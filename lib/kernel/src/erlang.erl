@@ -423,11 +423,18 @@ concat_binary(List) ->
     list_to_binary(List).
 
 %%
-%% memory/[0,1]
+%% erlang:memory/0 may fail with a notsup exception
 %%
 
 memory() ->
-    erlang:system_info(memory).
+    case erlang:system_info(memory) of
+	Result when is_list(Result) -> Result;
+	Error -> erlang:error(Error, [])
+    end.
+
+%%
+%% erlang:memory/1 may fail with a badarg or a notsup exception
+%%
 
 memory(Type) when is_atom(Type) ->
     case erlang:system_info({memory, [Type]}) of

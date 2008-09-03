@@ -30,10 +30,10 @@
 #include "erl_process.h"
 #include "erl_nmgc.h"
 
-ERTS_SMP_QUALLOC_IMPL(message,
-		      ErlMessage,
-		      ERL_MESSAGE_BUF_SZ,
-		      ERTS_ALC_T_MSG_REF)
+ERTS_SCHED_PREF_QUICK_ALLOC_IMPL(message,
+				 ErlMessage,
+				 ERL_MESSAGE_BUF_SZ,
+				 ERTS_ALC_T_MSG_REF)
 
 #if defined(DEBUG) && 0
 #define HARD_DEBUG

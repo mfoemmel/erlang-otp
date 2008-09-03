@@ -654,9 +654,7 @@ Eterm copy_shallow(Eterm*, Uint, Eterm**, ErlOffHeap*);
   (p)->rrsrc[(p)->nrr++] = (src);                                       \
   if ((p)->nrr == (p)->rrsz)                                            \
   {                                                                     \
-      ERTS_PROC_LESS_MEM(sizeof(Eterm) * (p)->rrsz * 2);                \
       (p)->rrsz *= 2;                                                   \
-      ERTS_PROC_MORE_MEM(sizeof(Eterm) * (p)->rrsz * 2);                \
       (p)->rrma = (Eterm *) erts_realloc(ERTS_ALC_T_ROOTSET,            \
                                          (void*)(p)->rrma,              \
                                          sizeof(Eterm) * (p)->rrsz);    \
@@ -694,7 +692,6 @@ Eterm copy_shallow(Eterm*, Uint, Eterm**, ErlOffHeap*);
     ma_##_s_##_size = 512;                                              \
     ma_##_s_##_stack = (ma_##_s_##_type*)erts_alloc(ERTS_ALC_T_OBJECT_STACK, \
                        sizeof(ma_##_s_##_type) * ma_##_s_##_size);      \
-    ERTS_PROC_MORE_MEM(sizeof(ma_##_s_##_type) * ma_##_s_##_size);      \
 } while(0)
 
 
@@ -702,9 +699,7 @@ Eterm copy_shallow(Eterm*, Uint, Eterm**, ErlOffHeap*);
     ma_##_s_##_stack[ma_##_s_##_top++] = (val);                         \
     if (ma_##_s_##_top == ma_##_s_##_size)                              \
     {                                                                   \
-        ERTS_PROC_LESS_MEM(sizeof(ma_##_s_##_type) * ma_##_s_##_size);  \
         ma_##_s_##_size *= 2;                                           \
-        ERTS_PROC_MORE_MEM(sizeof(ma_##_s_##_type) * ma_##_s_##_size);  \
         ma_##_s_##_stack =                                              \
             (ma_##_s_##_type*) erts_realloc(ERTS_ALC_T_OBJECT_STACK,    \
                                            (void*)ma_##_s_##_stack,     \
@@ -1297,7 +1292,8 @@ Eterm erts_bld_uint(Uint **hpp, Uint *szp, Uint ui);
 Eterm erts_bld_cons(Uint **hpp, Uint *szp, Eterm car, Eterm cdr);
 Eterm erts_bld_tuple(Uint **hpp, Uint *szp, Uint arity, ...);
 Eterm erts_bld_tuplev(Uint **hpp, Uint *szp, Uint arity, Eterm terms[]);
-Eterm erts_bld_string(Uint **hpp, Uint *szp, char *str);
+Eterm erts_bld_string_n(Uint **hpp, Uint *szp, const char *str, Sint len);
+#define erts_bld_string(hpp,szp,str) erts_bld_string_n(hpp,szp,str,strlen(str))
 Eterm erts_bld_list(Uint **hpp, Uint *szp, Sint length, Eterm terms[]);
 Eterm erts_bld_2tup_list(Uint **hpp, Uint *szp,
 			 Sint length, Eterm terms1[], Uint terms2[]);

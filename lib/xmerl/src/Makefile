@@ -76,6 +76,7 @@ MODULES = $(EDOC_MODULES) \
 	xmerl_validate \
 	xmerl_xlate \
 	xmerl_xml \
+	xmerl_xpath_lib \
 	xmerl_xpath_parse \
 	xmerl_xpath_pred \
 	xmerl_xpath_scan \
@@ -174,21 +175,14 @@ $(DOCDIR)/%.html:	%.erl
 #include $(MA_TOP)/config/make.release
 include $(ERL_TOP)/make/otp_release_targets.mk
 
-release_src:
-	$(INSTALL_DATA) $(MODULES:%=%.erl) $(RELSYSDIR)/src
-	rm -f $(RELSYSDIR)/src/xmerl_xpath_parse.erl
-	rm -f $(RELSYSDIR)/src/xmerl_b64Bin.erl
-	$(INSTALL_DATA) Makefile $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(APP_SRC) $(APPUP_SRC) $(RELSYSDIR)/src
-	$(INSTALL_DATA) xmerl_xpath_parse.yrl $(RELSYSDIR)/src
-	$(INSTALL_DATA) xmerl_b64Bin.yrl $(RELSYSDIR)/src
-
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(ERL_FILES) $(APP_SRC) $(APPUP_SRC) $(RELSYSDIR)/src
+	$(INSTALL_DATA) xmerl_xpath_parse.yrl $(RELSYSDIR)/src
+	$(INSTALL_DATA) xmerl_b64Bin.yrl $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/include
 	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/include
 
@@ -208,6 +202,7 @@ $(EBIN)/xmerl_text.beam:../include/xmerl.hrl
 $(EBIN)/xmerl_eventp.beam:../include/xmerl.hrl
 $(EBIN)/xmerl_simple.beam:../include/xmerl.hrl
 $(EBIN)/xmerl_xpath.beam:../include/xmerl.hrl
+$(EBIN)/xmerl_xpath_lib.beam:../include/xmerl.hrl
 $(EBIN)/xmerl_xpath_pred.beam:../include/xmerl.hrl
 $(EBIN)/xmerl_xpath_scan.beam:../include/xmerl.hrl
 #$(EBIN)/xmerl_xsd.beam:../include/xmerl_xsd.hrl

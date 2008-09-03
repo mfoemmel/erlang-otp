@@ -75,7 +75,7 @@ Eterm erts_allocator_options(void *proc);
 
 #define ERTS_ALLOC_INIT_DEF_OPTS_INITER {0}
 typedef struct {
-    int no_of_schedulers;
+    int dummy;
 } ErtsAllocInitOpts;
 
 void erts_alloc_init(int *argc, char **argv, ErtsAllocInitOpts *eaiop);
@@ -230,6 +230,15 @@ void *erts_realloc_fnf(ErtsAlcType_t type, void *ptr, Uint size)
 
 #endif /* #if ERTS_ALC_DO_INLINE || defined(ERTS_ALC_INTERNAL__) */
 
+#ifndef ERTS_CACHE_LINE_SIZE
+/* Assume a cache line size of 64 bytes */
+#  define ERTS_CACHE_LINE_SIZE ((Uint) 64)
+#  define ERTS_CACHE_LINE_MASK (ERTS_CACHE_LINE_SIZE - 1)
+#endif
+
+#define ERTS_ALC_CACHE_LINE_ALIGN_SIZE(SZ) \
+  (((((SZ) - 1) / ERTS_CACHE_LINE_SIZE) + 1) * ERTS_CACHE_LINE_SIZE)
+
 #define ERTS_QUALLOC_IMPL(NAME, TYPE, PASZ, ALCT)			\
 ERTS_QUICK_ALLOC_IMPL(NAME, TYPE, PASZ, ALCT,				\
 		      (void) 0, (void) 0, (void) 0)
@@ -261,31 +270,65 @@ ERTS_QUICK_ALLOC_IMPL(NAME, TYPE, PASZ, ALCT,				\
 #define ERTS_PALLOC_IMPL(NAME, TYPE, PASZ)				\
 ERTS_PRE_ALLOC_IMPL(NAME, TYPE, PASZ, (void) 0, (void) 0, (void) 0)
 
-#define ERTS_SMP_PALLOC_IMPL(NAME, TYPE, PASZ)				\
-static erts_smp_spinlock_t NAME##_lck;					\
+#define ERTS_TS_PALLOC_IMPL(NAME, TYPE, PASZ)				\
+static erts_spinlock_t NAME##_lck;					\
 ERTS_PRE_ALLOC_IMPL(NAME, TYPE, PASZ,					\
-		    erts_smp_spinlock_init(&NAME##_lck, #NAME "_alloc_lock"),\
-		    erts_smp_spin_lock(&NAME##_lck),			\
-		    erts_smp_spin_unlock(&NAME##_lck))
+		    erts_spinlock_init(&NAME##_lck, #NAME "_alloc_lock"),\
+		    erts_spin_lock(&NAME##_lck),			\
+		    erts_spin_unlock(&NAME##_lck))
 
 #ifdef ERTS_SMP
 
-#define ERTS_TS_PALLOC_IMPL(NAME, TYPE, PASZ)				\
-ERTS_SMP_PALLOC_IMPL(NAME, TYPE, PASZ)
+#define ERTS_SMP_PALLOC_IMPL(NAME, TYPE, PASZ)				\
+  ERTS_TS_PALLOC_IMPL(NAME, TYPE, PASZ)
 
 #else /* !ERTS_SMP */
 
-#define ERTS_TS_PALLOC_IMPL(NAME, TYPE, PASZ)				\
-static erts_mtx_t NAME##_lck;						\
-ERTS_PRE_ALLOC_IMPL(NAME, TYPE, PASZ,					\
-		    erts_mtx_init(NAME##_lck, #NAME "_alloc_lock"),	\
-		    erts_mtx_lock(&NAME##_lck),				\
-		    erts_mtx_unlock(&NAME##_lck))
+#define ERTS_SMP_PALLOC_IMPL(NAME, TYPE, PASZ)				\
+  ERTS_PALLOC_IMPL(NAME, TYPE, PASZ)
 
 #endif
 
 #define ERTS_QUICK_ALLOC_IMPL(NAME, TYPE, PASZ, ALCT, ILCK, LCK, ULCK)	\
 ERTS_PRE_ALLOC_IMPL(NAME##_pre, TYPE, PASZ, ILCK, LCK, ULCK)		\
+static void								\
+init_##NAME##_alloc(void)						\
+{									\
+    init_##NAME##_pre_alloc();						\
+}									\
+static ERTS_INLINE TYPE *						\
+NAME##_alloc(void)							\
+{									\
+    TYPE *res = NAME##_pre_alloc();					\
+    if (!res)								\
+	res = erts_alloc(ALCT, sizeof(TYPE));				\
+    return res;								\
+}									\
+static ERTS_INLINE void							\
+NAME##_free(TYPE *p)							\
+{									\
+    if (!NAME##_pre_free(p))						\
+	erts_free(ALCT, (void *) p);					\
+}
+
+#ifdef ERTS_SMP
+#define ERTS_SCHED_PREF_PALLOC_IMPL(NAME, TYPE, PASZ)			\
+  ERTS_SCHED_PREF_PRE_ALLOC_IMPL(NAME, TYPE, PASZ)
+#else
+#define ERTS_SCHED_PREF_PALLOC_IMPL(NAME, TYPE, PASZ)			\
+  ERTS_PRE_ALLOC_IMPL(NAME, TYPE, PASZ, (void) 0, (void) 0, (void) 0)
+#endif
+
+#ifdef ERTS_SMP
+#define ERTS_SCHED_PREF_AUX(NAME, TYPE, PASZ)				\
+ERTS_SCHED_PREF_PRE_ALLOC_IMPL(NAME##_pre, TYPE, PASZ)
+#else
+#define ERTS_SCHED_PREF_AUX(NAME, TYPE, PASZ)				\
+ERTS_PRE_ALLOC_IMPL(NAME##_pre, TYPE, PASZ, (void) 0, (void) 0, (void) 0)
+#endif
+
+#define ERTS_SCHED_PREF_QUICK_ALLOC_IMPL(NAME, TYPE, PASZ, ALCT)	\
+ERTS_SCHED_PREF_AUX(NAME, TYPE, PASZ)					\
 static void								\
 init_##NAME##_alloc(void)						\
 {									\
@@ -367,6 +410,138 @@ NAME##_free(TYPE *p)							\
 	up->next = qa_freelist_##NAME;					\
 	qa_freelist_##NAME = up;					\
 	ULCK;								\
+	return 1;							\
+    }									\
+}
+
+typedef struct {
+    void *start;
+    void *end;
+    int chunks_mem_size;
+} erts_sched_pref_quick_alloc_data_t;
+
+#ifdef DEBUG
+#define ERTS_SPPA_DBG_CHK_IN_CHNK(A, C, P)				\
+do {									\
+    ASSERT((void *) (C) < (void *) (P));				\
+    ASSERT((void *) (P)							\
+	   < (void *) (((char *) (C)) + (A)->chunks_mem_size));		\
+} while (0)
+#else
+#define ERTS_SPPA_DBG_CHK_IN_CHNK(A, C, P)
+#endif
+
+#define ERTS_SCHED_PREF_PRE_ALLOC_IMPL(NAME, TYPE, PASZ)		\
+union erts_qa_##NAME##__ {						\
+    TYPE type;								\
+    union erts_qa_##NAME##__ *next;					\
+};									\
+typedef struct {							\
+    erts_smp_spinlock_t lock;						\
+    union erts_qa_##NAME##__ *freelist;					\
+    union erts_qa_##NAME##__ pre_alloced[1];				\
+} erts_qa_##NAME##_chunk__;						\
+static erts_sched_pref_quick_alloc_data_t *qa_data_##NAME##__;		\
+static ERTS_INLINE erts_qa_##NAME##_chunk__ *				\
+get_##NAME##_chunk_ix(int cix)						\
+{									\
+    char *ptr = (char *) qa_data_##NAME##__->start;			\
+    ptr += cix*qa_data_##NAME##__->chunks_mem_size;			\
+    return (erts_qa_##NAME##_chunk__ *) ptr;				\
+}									\
+static ERTS_INLINE erts_qa_##NAME##_chunk__ *				\
+get_##NAME##_chunk_ptr(void *ptr)					\
+{									\
+    int cix;								\
+    size_t diff;							\
+    if (ptr < qa_data_##NAME##__->start || qa_data_##NAME##__->end <= ptr)\
+	return NULL;							\
+    diff = ((char *) ptr) -  ((char *) qa_data_##NAME##__->start);	\
+    cix = diff / qa_data_##NAME##__->chunks_mem_size;			\
+    return get_##NAME##_chunk_ix(cix);					\
+}									\
+static void								\
+init_##NAME##_alloc(void)						\
+{									\
+    size_t tot_size;							\
+    size_t chunk_mem_size;						\
+    char *chunk_start;							\
+    int cix;								\
+    int no_blocks = ERTS_PRE_ALLOC_SIZE((PASZ));			\
+    int no_blocks_per_chunk = 2*((no_blocks-1)/erts_no_schedulers + 1);	\
+    no_blocks = no_blocks_per_chunk * erts_no_schedulers;		\
+    chunk_mem_size = sizeof(erts_qa_##NAME##_chunk__);			\
+    chunk_mem_size += (sizeof(union erts_qa_##NAME##__)			\
+		       * (no_blocks_per_chunk - 1));			\
+    chunk_mem_size = ERTS_ALC_CACHE_LINE_ALIGN_SIZE(chunk_mem_size);	\
+    tot_size = sizeof(erts_sched_pref_quick_alloc_data_t);		\
+    tot_size += ERTS_CACHE_LINE_SIZE - 1;				\
+    tot_size += chunk_mem_size*erts_no_schedulers;			\
+    qa_data_##NAME##__ = erts_alloc(ERTS_ALC_T_PRE_ALLOC_DATA,tot_size);\
+    chunk_start = (((char *) qa_data_##NAME##__)			\
+		   + sizeof(erts_sched_pref_quick_alloc_data_t));	\
+    if ((((Uint) chunk_start) & ERTS_CACHE_LINE_MASK) != ((Uint) 0))	\
+	chunk_start = ((char *)						\
+		       ((((Uint) chunk_start) & ~ERTS_CACHE_LINE_MASK)	\
+		       + ERTS_CACHE_LINE_SIZE));			\
+    qa_data_##NAME##__->chunks_mem_size = chunk_mem_size;		\
+    qa_data_##NAME##__->start = (void *) chunk_start;			\
+    qa_data_##NAME##__->end = (chunk_start				\
+			       + chunk_mem_size*erts_no_schedulers);	\
+    for (cix = 0; cix < erts_no_schedulers; cix++) {			\
+	int i;								\
+	erts_qa_##NAME##_chunk__ *chunk = get_##NAME##_chunk_ix(cix);	\
+	erts_smp_spinlock_init(&chunk->lock, #NAME "_alloc_lock");	\
+	chunk->freelist = &chunk->pre_alloced[0];			\
+	for (i = 1; i < no_blocks_per_chunk; i++) {			\
+	    ERTS_PRE_ALLOC_CLOBBER(&chunk->pre_alloced[i-1],		\
+				   union erts_qa_##NAME##__);		\
+	    chunk->pre_alloced[i-1].next = &chunk->pre_alloced[i];	\
+	}								\
+	ERTS_PRE_ALLOC_CLOBBER(&chunk->pre_alloced[no_blocks_per_chunk-1],\
+			       union erts_qa_##NAME##__);		\
+	chunk->pre_alloced[no_blocks_per_chunk-1].next = NULL;		\
+    }									\
+}									\
+static ERTS_INLINE TYPE *						\
+NAME##_alloc(void)							\
+{									\
+    int cix = ((int) erts_get_scheduler_id()) - 1;			\
+    TYPE *res;								\
+    if (cix < 0)							\
+	res = NULL;							\
+    else {								\
+	erts_qa_##NAME##_chunk__ *chunk = get_##NAME##_chunk_ix(cix);	\
+	erts_smp_spin_lock(&chunk->lock);				\
+	if (!chunk->freelist)						\
+	    res = NULL;							\
+	else {								\
+	    res = &chunk->freelist->type;				\
+	    chunk->freelist = chunk->freelist->next;			\
+	    ERTS_SPPA_DBG_CHK_IN_CHNK(qa_data_##NAME##__, chunk, res);	\
+	}								\
+	erts_smp_spin_unlock(&chunk->lock);				\
+    }									\
+    return res;								\
+}									\
+static ERTS_INLINE int							\
+NAME##_free(TYPE *p)							\
+{									\
+    erts_qa_##NAME##_chunk__ *chunk;					\
+    chunk = get_##NAME##_chunk_ptr((void *) p);				\
+    if (!chunk)								\
+	return 0;							\
+    else {								\
+	union erts_qa_##NAME##__ *up;					\
+	ERTS_SPPA_DBG_CHK_IN_CHNK(qa_data_##NAME##__, chunk, p);	\
+	up = ((union erts_qa_##NAME##__ *)				\
+	      (((char *) p)						\
+	       - ((char *) &((union erts_qa_##NAME##__ *) 0)->type)));	\
+	erts_smp_spin_lock(&chunk->lock);				\
+	ERTS_PRE_ALLOC_CLOBBER(up, union erts_qa_##NAME##__);		\
+	up->next = chunk->freelist;					\
+	chunk->freelist = up;						\
+	erts_smp_spin_unlock(&chunk->lock);				\
 	return 1;							\
     }									\
 }

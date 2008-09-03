@@ -878,7 +878,9 @@ mgc_start_tcp(RH, Port, undefined) ->
     end;
 mgc_start_tcp(RH, Port, Sup) when pid(Sup) ->
     d("tcp listen on ~p", [Port]),
-    Opts = [{port, Port}, {receive_handle, RH}],
+    Opts = [{port,           Port}, 
+	    {receive_handle, RH}, 
+	    {tcp_options,    [{nodelay, true}]}],
     case megaco_tcp:listen(Sup, Opts) of
 	ok ->
 	    Sup;
@@ -1199,7 +1201,10 @@ mg_start_tcp(MgcPort, RH) ->
     case megaco_tcp:start_transport() of
 	{ok, Sup} ->
 	    {ok, LocalHost} = inet:gethostname(),
-	    Opts = [{host, LocalHost},{port, MgcPort}, {receive_handle, RH}],
+	    Opts = [{host,           LocalHost},
+		    {port,           MgcPort}, 
+		    {receive_handle, RH}, 
+		    {tcp_options,    [{nodelay, true}]}],
 	    case megaco_tcp:connect(Sup, Opts) of
 		{ok, SendHandle, ControlPid} ->
                     PrelMgcMid = preliminary_mid,

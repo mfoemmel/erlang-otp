@@ -41,6 +41,7 @@ MODULES=hipe_amd64_assemble \
 	hipe_amd64_ra_sse2_postconditions \
 	hipe_amd64_ra_x87_ls \
 	hipe_amd64_registers \
+	hipe_amd64_spill_restore \
 	hipe_amd64_x87 \
 	hipe_rtl_to_amd64
 
@@ -99,5 +100,6 @@ $(EBIN)/hipe_amd64_ra_postconditions.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl 
 $(EBIN)/hipe_amd64_ra_sse2_postconditions.beam: ../main/hipe.hrl
 $(EBIN)/hipe_amd64_ra_x87_ls.beam: ../main/hipe.hrl ../x86/hipe_x86_ra_x87_ls.erl
 $(EBIN)/hipe_amd64_registers.beam: ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_amd64_spill_restore.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl ../flow/cfg.hrl ../x86/hipe_x86_spill_restore.erl
 $(EBIN)/hipe_amd64_x87.beam: ../x86/hipe_x86_x87.erl
 $(EBIN)/hipe_rtl_to_amd64.beam: ../x86/hipe_rtl_to_x86.erl ../rtl/hipe_rtl.hrl

@@ -790,7 +790,7 @@ static Connection *conn_init(EpmdVars *g)
 
   if (connections == NULL)
     {
-      dbg_printf(g,0,"empd: Insufficient memory");
+      dbg_printf(g,0,"epmd: Insufficient memory");
 #ifdef DONT_USE_MAIN
       free(g->argv);
 #endif
@@ -842,7 +842,7 @@ static int conn_open(EpmdVars *g,int fd)
       s->buf = (char *)malloc(INBUF_SIZE);
 
       if (s->buf == NULL) {
-	dbg_printf(g,0,"empd: Insufficient memory");
+	dbg_printf(g,0,"epmd: Insufficient memory");
 	close(fd);
 	return EPMD_FALSE;
       }
@@ -1085,7 +1085,7 @@ static Node *node_reg2(EpmdVars *g,
 	{
 	  if ((node = (Node *)malloc(sizeof(Node))) == NULL)
 	    {
-	      dbg_printf(g,0,"empd: Insufficient memory");
+	      dbg_printf(g,0,"epmd: Insufficient memory");
 	      exit(1);
 	    }
 

@@ -9,8 +9,8 @@
 
 -export([collect/1]).
 
--type(func_info() :: {non_neg_integer(), atom(), byte()}).
--type(inc_file_info() :: {string(), func_info()}).
+-type func_info() :: {non_neg_integer(), atom(), byte()}.
+-type inc_file_info() :: {string(), func_info()}.
 
 -record(tmpAcc, {file		:: string(),
 		 module		:: atom(),
@@ -20,7 +20,7 @@
 
 -include("typer.hrl").
 
--spec(collect/1 :: (#typer_analysis{}) -> #typer_analysis{}).
+-spec collect(#typer_analysis{}) -> #typer_analysis{}.
 
 collect(Analysis) ->
   NewPlt =
@@ -29,8 +29,7 @@ collect(Analysis) ->
 	dialyzer_plt:merge_plts([Analysis#typer_analysis.trust_plt, DialyzerPlt])
     catch
       throw:{dialyzer_error,_Reason} ->
-	typer:error("Dialyzer's PLT is missing or is not up-to-date\n"++
-		    "       Run Dialyzer for more information.")
+	typer:error("Dialyzer's PLT is missing or is not up-to-date; please (re)create it")
     end,
   lists:foldl(fun collect_one_file_info/2, 
 	      Analysis#typer_analysis{trust_plt=NewPlt}, 

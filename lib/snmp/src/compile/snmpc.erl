@@ -109,6 +109,7 @@ compile(FileName) ->
 %%          {warnings,    bool()}                         true
 %%          {outdir,      string()}                       "./"
 %%          description
+%%          reference
 %%          imports
 %%          module_identity
 %%          {module, string()}
@@ -188,6 +189,10 @@ get_options([{description, Val}|Opts], Formats, Args) ->
     get_options(Opts, ["~n   description: ~w"|Formats], [Val|Args]);
 get_options([description|Opts], Formats, Args) ->
     get_options(Opts, ["~n   description"|Formats], Args);
+get_options([{reference, Val}|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   reference: ~w"|Formats], [Val|Args]);
+get_options([reference|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   reference"|Formats], Args);
 get_options([{warnings, Val}|Opts], Formats, Args) ->
     get_options(Opts, ["~n   warnings:    ~w"|Formats], [Val|Args]);
 get_options([{verbosity, Val}|Opts], Formats, Args) ->
@@ -263,6 +268,11 @@ check_options([{description, Bool}| T]) ->
     check_options(T);
 check_options([description| T]) -> %% same as {description, true}
     check_options(T);
+check_options([{reference, Bool}| T]) ->
+    check_bool(reference, Bool),
+    check_options(T);
+check_options([reference| T]) -> %% same as {reference, true}
+    check_options(T);
 check_options([{verbosity, V} | T]) when atom(V) ->
     snmpc_lib:vvalidate(V),
     check_options(T);
@@ -282,7 +292,7 @@ check_options([Opt|_]) ->
     {error, {invalid_option, Opt}}.
 
 
-check_bool(_Key, Bool) when Bool == true; Bool == false ->
+check_bool(_Key, Bool) when (Bool =:= true) orelse (Bool =:= false) ->
     ok;
 check_bool(Key, Val) ->
     {error, {invalid_option, {Key, Val}}}.
@@ -294,9 +304,15 @@ get_deprecated(Options) ->
     snmpc_lib:key1search(deprecated, Options, true).
 
 get_description(Options) ->
-    case lists:member(description,Options) of
+    get_bool_option(description, Options).
+
+get_reference(Options) ->
+    get_bool_option(reference, Options).
+
+get_bool_option(Option, Options) ->
+    case lists:member(Option, Options) of
 	false ->
-	    snmpc_lib:key1search(description,Options,false);
+	    snmpc_lib:key1search(Option, Options, false);
 	true ->
 	    true
     end.
@@ -307,6 +323,16 @@ make_description(Message) ->
 	    Message;
 	_ -> 
 	    undefined
+    end.
+
+make_reference(undefined) ->
+    [];
+make_reference(Reference) ->
+    case get(reference) of
+	true ->
+	    [{reference, Reference}];
+	_ -> 
+	    []
     end.
 
     
@@ -363,6 +389,7 @@ init(From, MibFileName, Options) ->
     put(options,     Options),
     put(verbosity,   get_verbosity(Options)),
     put(description, get_description(Options)),
+    put(reference,   get_reference(Options)),
     File = filename:rootname(MibFileName, ".mib"),
     put(filename, filename:basename(File ++ ".mib")),
     R = case catch c_impl(File) of
@@ -441,6 +468,7 @@ definitions_loop([{#mc_object_type{name        = NameOfTable,
 				   status      = Tstatus,
 				   description = Desc1,
 				   units       = Tunits,
+				   reference   = Ref, 
 				   name_assign = Tindex},
 		   Tline},
 		  {#mc_object_type{name        = NameOfEntry,
@@ -470,12 +498,13 @@ definitions_loop([{#mc_object_type{name        = NameOfTable,
       "   IndexingInfo: ~p~n"
       "   Estatus:      ~p~n"
       "   Eunits:       ~p~n"
+      "   Ref:          ~p~n"
       "   Eline:        ~p~n"
       "   FieldList:    ~p~n"
       "   Sline:        ~p",
       [NameOfTable,SeqName,Taccess,Kind,Tstatus,
        Tindex,Tunits,Tline,
-       NameOfEntry,TEline,IndexingInfo,Estatus,Eunits,Eline,
+       NameOfEntry,TEline,IndexingInfo,Estatus,Eunits,Ref,Eline,
        FieldList,Sline]),
     update_status(NameOfTable, Tstatus),
     update_status(NameOfEntry, Estatus),
@@ -505,7 +534,7 @@ definitions_loop([{#mc_object_type{name        = NameOfTable,
     snmpc_lib:add_cdata(#cdata.mes, 
 			[TableEntryME,
 			 TableME#me{assocList=[{table_info, 
-						TableInfo}]} |
+						TableInfo} | make_reference(Ref)]} |
 				ColMEs]),
     definitions_loop(RestObjs, Deprecated);
 
@@ -516,6 +545,7 @@ definitions_loop([{#mc_object_type{name        = NameOfTable,
 				   status      = Tstatus,
 				   description = Desc1,
 				   units       = Tunits,
+				   reference   = Ref, 
 				   name_assign = Tindex}, Tline},
 		  {#mc_object_type{name        = NameOfEntry,
 				   syntax      = {{type, SeqName},_},
@@ -543,12 +573,13 @@ definitions_loop([{#mc_object_type{name        = NameOfTable,
       "   Estatus:      ~p~n"
       "   BadOID:       ~p~n"
       "   Eunits:       ~p~n"
+      "   Ref:          ~p~n"
       "   Eline:        ~p~n"
       "   FieldList:    ~p~n"
       "   Sline:        ~p",
       [NameOfTable,SeqName,Taccess,Kind,Tstatus,
        Tindex,Tunits,Tline,
-       NameOfEntry,IndexingInfo,Estatus,BadOID,Eunits,Eline,
+       NameOfEntry,IndexingInfo,Estatus,BadOID,Eunits,Ref,Eline,
        FieldList,Sline]),
     update_status(NameOfTable, Tstatus),
     update_status(NameOfEntry, Estatus),
@@ -579,7 +610,7 @@ definitions_loop([{#mc_object_type{name        = NameOfTable,
     snmpc_lib:add_cdata(#cdata.mes, 
 			       [TableEntryME,
 				TableME#me{assocList=[{table_info, 
-						       TableInfo}]} |
+						       TableInfo} | make_reference(Ref)]} |
 				ColMEs]),
     definitions_loop(RestObjs, Deprecated);
 

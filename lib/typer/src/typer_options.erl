@@ -18,7 +18,7 @@
 %% Exported functions
 %%---------------------------------------------------------------------------
 
--spec(process/0 :: () -> {#args{}, #typer_analysis{}}).
+-spec process() -> {#args{}, #typer_analysis{}}.
 
 process() ->
   ArgList = init:get_plain_arguments(),
@@ -30,7 +30,7 @@ process() ->
 	   Mode when is_atom(Mode) -> Analysis
 	 end}.
 
--spec(option_type/1 :: (typer_option()) -> 'for_annotation' | 'for_show').
+-spec option_type(typer_option()) -> 'for_annotation' | 'for_show'.
 
 option_type(?SHOW) -> for_show;
 option_type(?SHOW_EXPORTED) -> for_show;
@@ -125,16 +125,16 @@ analyze_result({plt, Plt}, Args, Analysis) ->
 
 %%--------------------------------------------------------------------
 
--spec(mode_error/0 :: () -> no_return()).
+-spec mode_error() -> no_return().
 mode_error() ->
   typer:error("can not do \"show\", \"show-exported\", \"annotate\", and \"annotate-inc-files\" at the same time").
 
--spec(version_message/0 :: () -> no_return()).
+-spec version_message() -> no_return().
 version_message() ->
   io:format("TypEr version "++?VSN++"\n"),
   erlang:halt(0).
 
--spec(help_message/0 :: () -> no_return()).
+-spec help_message() -> no_return().
 help_message() ->
   S = " Usage: typer [--help] [--version] [--comments] [--plt PltFile]
               [--show | --show-exported | --annotate | --annotate-inc-files]

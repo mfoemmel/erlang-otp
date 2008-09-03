@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1997-2007</year>
+%% <year>1997-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -1509,7 +1509,7 @@ printable(debug,warning)   -> warning;
 printable(debug,info)      -> info;
 printable(debug,log)       -> log;
 printable(debug,debug)     -> debug;
-printable(trace,trace)     -> trace;
+printable(trace,V)         -> V;
 printable(_V,_S)           -> false.
 
 

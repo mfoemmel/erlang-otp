@@ -463,8 +463,9 @@ accessv1 -> atom: accessv1('$1').
 
 statusv1 -> atom : statusv1('$1').
 
-referpart -> 'REFERENCE' string.
-referpart -> '$empty'.
+referpart -> 'REFERENCE' string : lists:reverse(val('$2')).
+referpart -> '$empty' : undefined.
+
 
 %%----------------------------------------------------------------------
 %% SNMPv2 grammatics

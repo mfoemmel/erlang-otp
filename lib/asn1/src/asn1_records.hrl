@@ -31,7 +31,7 @@
 
 -record('SEQUENCE',{pname=false,tablecinf=false,components=[]}).
 -record('SET',{pname=false,sorted=false,tablecinf=false,components=[]}).
--record('ComponentType',{pos,name,typespec,prop,tags}).
+-record('ComponentType',{pos,name,typespec,prop,tags,textual_order}).
 -record('ObjectClassFieldType',{classname,class,fieldname,type}).
 
 -record(typedef,{checked=false,pos,name,typespec}).

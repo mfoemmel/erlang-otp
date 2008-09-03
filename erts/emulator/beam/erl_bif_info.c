@@ -44,6 +44,10 @@
 #include "hipe_arch.h"
 #endif
 
+#ifdef ERTS_ENABLE_LOCK_COUNT
+#include "erl_lock_count.h"
+#endif
+
 #ifdef VALGRIND
 #include <valgrind/valgrind.h>
 #include <valgrind/memcheck.h>
@@ -88,6 +92,9 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 #endif	
 #ifdef ERTS_ENABLE_LOCK_CHECK
 				     " [lock-checking]"
+#endif
+#ifdef ERTS_ENABLE_LOCK_COUNT
+				     " [lock-counting]"
 #endif
 #ifdef PURIFY
 				     " [purify-compiled]"
@@ -264,7 +271,7 @@ erts_print_system_version(int to, void *arg, Process *c_p)
 {
     return erts_print(to, arg, erts_system_version
 #ifdef ERTS_SMP
-		      , erts_no_of_schedulers
+		      , erts_no_schedulers
 #endif
 #ifdef USE_THREADS
 		      , erts_async_max_threads
@@ -1445,9 +1452,7 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 	Eterm res;
 	if (arity != 2)
 	    return am_badarg;
-	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	res = erts_memory(NULL, NULL, BIF_P, *tp);
-	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	return res;
     } else if (sel == am_allocated) {
 	if (arity == 2) {
@@ -1709,15 +1714,13 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	ASSERT(erts_compat_rel > 0);
 	BIF_RET(make_small(erts_compat_rel));
     } else if (BIF_ARG_1 == am_memory) {
-	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	res = erts_memory(NULL, NULL, BIF_P, THE_NON_VALUE);
-	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	BIF_RET(res);
     } else if (BIF_ARG_1 == am_multi_scheduling) {
 #ifndef ERTS_SMP
 	BIF_RET(am_disabled);
 #else
-	if (erts_no_of_schedulers == 1)
+	if (erts_no_schedulers == 1)
 	    BIF_RET(am_disabled);
 	else {
 	    BIF_RET(erts_is_multi_scheduling_blocked()
@@ -1726,9 +1729,7 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	}
 #endif
     } else if (BIF_ARG_1 == am_allocated_areas) {
-	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	res = erts_allocated_areas(NULL, NULL, BIF_P);
-	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	BIF_RET(res);
     } else if (BIF_ARG_1 == am_allocated) {
 	BIF_RET(erts_instr_get_memory_map(BIF_P));
@@ -2152,7 +2153,7 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
     } else if (ERTS_IS_ATOM_STR("constant_pool_support", BIF_ARG_1)) {
 	BIF_RET(am_true);
     } else if (ERTS_IS_ATOM_STR("schedulers", BIF_ARG_1)) {
-	res = make_small(erts_no_of_schedulers);
+	res = make_small(erts_no_schedulers);
 	BIF_RET(res);
     } else if (ERTS_IS_ATOM_STR("c_compiler_used", BIF_ARG_1)) {
 	Eterm *hp = NULL;
@@ -2190,7 +2191,7 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 #ifndef ERTS_SMP
 	BIF_RET(NIL);
 #else
-	if (erts_no_of_schedulers == 1)
+	if (erts_no_schedulers == 1)
 	    BIF_RET(NIL);
 	else
 	    BIF_RET(erts_multi_scheduling_blockers(BIF_P));
@@ -3019,11 +3020,15 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 		}
 	    }
 	}
-	else if (ERTS_IS_ATOM_STR("slot_to_atom", BIF_ARG_1)) {
+        else if (ERTS_IS_ATOM_STR("colliding_names", BIF_ARG_1)) {
 	    /* Used by ets_SUITE (stdlib) */
-	    Uint slot;
-	    if (term_to_Uint(BIF_ARG_2, &slot) != 0) {
-		BIF_RET(erts_ets_slot_to_atom(slot));
+	    if (is_tuple(BIF_ARG_2)) {
+                Eterm* tpl = tuple_val(BIF_ARG_2);
+                Uint cnt;
+                if (arityval(tpl[0]) == 2 && is_atom(tpl[1]) && 
+                    term_to_Uint(tpl[2], &cnt)) {
+                    BIF_RET(erts_ets_colliding_names(BIF_P,tpl[1],cnt));
+                }
 	    }
 	}
 	else if (ERTS_IS_ATOM_STR("re_loop_limit", BIF_ARG_1)) {
@@ -3069,6 +3074,93 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 	}
     }
 
+    BIF_ERROR(BIF_P, BADARG);
+}
+
+#ifdef ERTS_ENABLE_LOCK_COUNT
+
+static Eterm lcnt_build_lock_term(Process *p, erts_lcnt_lock_t *lock, Eterm res) {
+    Eterm loc, nlt, nlc, tup, lid, type;
+    Eterm ts, tns, tn, ttup;
+    Eterm* hp;
+    
+    unsigned long tries, colls;
+    char *ltype;
+    int need = 4 + 7 + 2;
+	
+
+    ethr_atomic_read(&lock->tries, (long *)&tries);
+    ethr_atomic_read(&lock->colls, (long *)&colls);
+    need += (!IS_USMALL(0, tries) +
+	     !IS_USMALL(0, colls) +
+	     !IS_USMALL(0,lock->timer_s ) +
+	     !IS_USMALL(0,lock->timer_ns) +
+	     !IS_USMALL(0,lock->timer_n ))*BIG_UINT_HEAP_SIZE;
+    hp = HAlloc(p, need);
+    
+    ltype = erts_lcnt_lock_type(lock->flag);
+	
+    loc  = am_atom_put(lock->name, strlen(lock->name)); 
+    lid  = lock->id;                                    
+    type = am_atom_put(ltype, strlen(ltype));           
+    nlt  = erts_bld_uint( &hp, NULL, tries);             
+    nlc  = erts_bld_uint( &hp, NULL, colls);             
+
+    ts   = erts_bld_uint( &hp, NULL, lock->timer_s);
+    tns  = erts_bld_uint( &hp, NULL, lock->timer_ns);
+    tn   = erts_bld_uint( &hp, NULL, lock->timer_n);
+    ttup = erts_bld_tuple(&hp, NULL, 3, 
+	    ts, tns, tn);
+	
+    tup  = erts_bld_tuple(&hp, NULL, 6, 
+	    loc, lid, type, nlt, nlc, ttup);  
+    
+    res  = erts_bld_cons( &hp, NULL, tup, res);          
+
+    return res;
+}
+#endif
+
+BIF_RETTYPE erts_debug_lock_counters_1(BIF_ALIST_1)
+{
+#ifdef ERTS_ENABLE_LOCK_COUNT
+    Eterm res = NIL;
+
+    if (BIF_ARG_1 == am_info) {
+	erts_lcnt_lock_t *lock = NULL;
+	erts_lcnt_data_t *data; 
+
+	/* block */
+	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
+	erts_smp_block_system(0);
+
+	data = erts_lcnt_get_data();
+	
+	/* Build eterm in the form of,
+	 * * [{lock_name(), lock_id(), lock_type(), Tries :: int(), Colls :: int()}]
+	 * */
+    	for (lock = data->current_locks->head; lock != NULL ; lock = lock->next ) {
+	    res = lcnt_build_lock_term(BIF_P, lock, res);
+    	}
+    	for (lock = data->deleted_locks->head; lock != NULL ; lock = lock->next ) {
+	    res = lcnt_build_lock_term(BIF_P, lock, res);
+    	}
+    
+	/* unblock */
+	erts_smp_release_system();
+	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
+    	BIF_RET(res);
+    } else if (BIF_ARG_1 == am_clear) {
+	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
+	erts_smp_block_system(0);
+	/* clear counters */
+	erts_lcnt_clear_counters();
+	erts_smp_release_system();
+	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
+	/* clear counters */
+	BIF_RET(am_ok);
+    }
+#endif /* ERTS_ENABLE_LOCK_COUNT */
     BIF_ERROR(BIF_P, BADARG);
 }
 

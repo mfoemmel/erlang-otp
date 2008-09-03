@@ -414,10 +414,20 @@ error_notification(Mod,Func,_Args,{Error,Loc}) ->
 		     io_lib:format("~P", [Other,5])
 	     end,
     ErrorHtml = "<font color=\"brown\">" ++ ErrStr ++ "</font>",
-    case Error of
-	timetrap_timeout ->  % not possible to add comment
+    case {Mod,Error} of
+	%% some notifications come from the main test_server process
+	%% and for these cases the existing comment may not be modified
+	{_,{timetrap_timeout,_TVal}} ->
 	    ok;
-	_ ->                 % add error to comment
+	{_,{testcase_aborted,_Info}} ->
+	    ok;
+	{_,testcase_aborted_or_killed} ->
+	    ok;
+	{undefined,_OtherError} ->
+	    ok;
+	_ ->			     
+	    %% this notification comes from the test case process, so
+	    %% we can add error info to comment with test_server:comment/1
 	    case ct_util:get_testdata(comment) of
 		undefined ->
 		    test_server:comment(ErrorHtml);

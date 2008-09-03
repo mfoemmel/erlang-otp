@@ -938,11 +938,9 @@ splits([L|Ls], SavedSpillCosts) ->
 %% Merge two ordered sub-splits into one.
 
 spillCostOrderedMerge(Spl1, [], Spl) ->
-  Spl0 = lists:reverse(Spl),
-  lists:append(Spl0, Spl1);
+  lists:reverse(Spl) ++ Spl1;
 spillCostOrderedMerge([], Spl2, Spl) ->
-  Spl0 = lists:reverse(Spl),
-  lists:append(Spl0, Spl2);
+  lists:reverse(Spl) ++ Spl2;
 spillCostOrderedMerge(Spl1, Spl2, Spl) ->
   {_, _, SpillCost1} = hd(Spl1),
   {_, _, SpillCost2} = hd(Spl2),
@@ -997,7 +995,7 @@ enqueueSplit([], _IG, Stack) ->
 enqueueSplit([Node|Nodes], IG, Stack) ->
   ?debug_msg("  Placing node ~p at the bottom of the stack.~n", [Node]),
   Edges = hipe_ig:node_adj_list(Node, IG),
-  Stack1 = lists:append(Stack, [{Node, Edges}]),
+  Stack1 = Stack ++ [{Node, Edges}],
   enqueueSplit(Nodes, IG, Stack1).
 
 %%----------------------------------------------------------------------

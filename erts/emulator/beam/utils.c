@@ -30,6 +30,7 @@
 #include "bif.h"
 #include "erl_binary.h"
 #include "erl_bits.h"
+#include "packet_parser.h"
 #define ERTS_WANT_DB_INTERNAL__
 #include "erl_db.h"
 #include "erl_threads.h"
@@ -375,7 +376,6 @@ erts_bld_tuple(Uint **hpp, Uint *szp, Uint arity, ...)
     if (szp)
 	*szp += arity + 1;
     if (hpp) {
-
 	res = make_tuple(*hpp);
 	*((*hpp)++) = make_arityval(arity);
 
@@ -384,8 +384,9 @@ erts_bld_tuple(Uint **hpp, Uint *szp, Uint arity, ...)
 	    va_list argp;
 
 	    va_start(argp, arity);
-	    for (i = 0; i < arity; i++)
-		*((*hpp)++) = va_arg(argp, Eterm);
+	    for (i = 0; i < arity; i++) {
+                *((*hpp)++) = va_arg(argp, Eterm);
+            }
 	    va_end(argp);
 	}
     }
@@ -416,12 +417,12 @@ Eterm erts_bld_tuplev(Uint **hpp, Uint *szp, Uint arity, Eterm terms[])
 }
 
 Eterm
-erts_bld_string(Uint **hpp, Uint *szp, char *str)
+erts_bld_string_n(Uint **hpp, Uint *szp, const char *str, Sint len)
 {
     Eterm res = THE_NON_VALUE;
-    Sint i = strlen(str);
+    Sint i = len;
     if (szp)
-	*szp += i*2;
+	*szp += len*2;
     if (hpp) {
 	res = NIL;
 	while (--i >= 0) {
@@ -2815,7 +2816,7 @@ is_string(Eterm list)
  * Process and Port timers in smp case
  */
 
-ERTS_SMP_PALLOC_IMPL(ptimer_pre, ErtsSmpPTimer, 1000)
+ERTS_SCHED_PREF_PRE_ALLOC_IMPL(ptimer_pre, ErtsSmpPTimer, 1000)
 
 #define ERTS_PTMR_FLGS_ALLCD_SIZE \
   2

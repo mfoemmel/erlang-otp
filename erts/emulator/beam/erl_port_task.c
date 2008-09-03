@@ -88,14 +88,14 @@ check_task_queue(ErtsPortTaskQueue *ptqp,
 
 static void handle_remaining_tasks(Port *pp);
 
-#ifdef DEBUG
-#define ERTS_PT_PRE_ALLOC_SIZE(SZ) 1
-#else
-#define ERTS_PT_PRE_ALLOC_SIZE(SZ) (SZ)
-#endif
-
-ERTS_PALLOC_IMPL(port_task_pre, ErtsPortTask, ERTS_PT_PRE_ALLOC_SIZE(200))
-ERTS_PALLOC_IMPL(port_taskq_pre, ErtsPortTaskQueue, ERTS_PT_PRE_ALLOC_SIZE(50))
+ERTS_SCHED_PREF_QUICK_ALLOC_IMPL(port_task,
+				 ErtsPortTask,
+				 200,
+				 ERTS_ALC_T_PORT_TASK)
+ERTS_SCHED_PREF_QUICK_ALLOC_IMPL(port_taskq,
+				 ErtsPortTaskQueue,
+				 50,
+				 ERTS_ALC_T_PORT_TASKQ)
 
 /*
  * Task handle manipulation.
@@ -462,16 +462,11 @@ erts_port_task_abort(ErtsPortTaskHandle *pthp)
 	ptqp = NULL;
     else {
 	pp->sched.taskq = NULL;
-	if (port_taskq_pre_free(ptqp))
-	    ptqp = NULL;
 	if (!pp->sched.exe_taskq) {
 	    dequeue_port(pp);
 	    port_is_dequeued = 1;
 	}
     }
-
-    if (port_task_pre_free(ptp))
-	ptp = NULL;
 
     ERTS_PT_CHK_PRES_PORTQ(pp);
 
@@ -480,11 +475,9 @@ erts_port_task_abort(ErtsPortTaskHandle *pthp)
     	profile_runnable_port(pp, am_inactive);
     }
 
-    if (ptp)
-	erts_free(ERTS_ALC_T_PORT_TASK, ptp);
-
+    port_task_free(ptp);
     if (ptqp)
-	erts_free(ERTS_ALC_T_PORT_TASKQ, ptqp);
+	port_taskq_free(ptqp);
 
     return 0;
 }
@@ -517,6 +510,8 @@ erts_port_task_schedule(Eterm id,
 	erts_port_task_abort(pthp);
     }
 
+    ptp = port_task_alloc();
+
     erts_smp_tasks_lock();
 
     ASSERT(is_internal_port(id));
@@ -529,8 +524,6 @@ erts_port_task_schedule(Eterm id,
 
     ASSERT(!erts_port_task_is_scheduled(pthp));
 
-    ptp = port_task_pre_alloc();
-
     ERTS_PT_CHK_PRES_PORTQ(pp);
 #ifdef DEBUG
     /* If we have a taskq and not executing, we should be in port run q */  
@@ -539,39 +532,24 @@ erts_port_task_schedule(Eterm id,
     }
 #endif
 
-    if (!ptp || !pp->sched.taskq) {
-	ptqp = port_taskq_init(port_taskq_pre_alloc(), pp);
+    if (!pp->sched.taskq) {
 	erts_smp_tasks_unlock();
-	if (!ptp)
-	    ptp = erts_alloc(ERTS_ALC_T_PORT_TASK, sizeof(ErtsPortTask));
-	if (!ptqp)
-	    ptqp = port_taskq_init(erts_alloc(ERTS_ALC_T_PORT_TASKQ,
-					      sizeof(ErtsPortTaskQueue)),
-				   pp);
+	ptqp = port_taskq_init(port_taskq_alloc(), pp);
 	erts_smp_sched_lock();
 	sched_lock = 1;
 	erts_smp_tasks_lock();
 
 	/* Port might have died while tasks_lock was unlocked... */
 	if (ERTS_PORT_TASK_INVALID_PORT(pp, id)) {
-	    if (port_task_pre_free(ptp))
-		ptp = NULL;
-	    if (port_taskq_pre_free(ptqp))
-		ptqp = NULL;
 	    erts_smp_tasks_unlock();
 	    erts_smp_sched_unlock();
-	    if (ptp)
-		erts_free(ERTS_ALC_T_PORT_TASKQ, ptp);
-	    if (ptqp)
-		erts_free(ERTS_ALC_T_PORT_TASKQ, ptqp);
+	    port_task_free(ptp);
+	    port_taskq_free(ptqp);
 	    return -1;
 	}
 
-	if (pp->sched.taskq) {
-	    if (port_taskq_pre_free(ptqp))
-		ptqp = NULL;
-	}
-	else {
+	/* A queue might have appeared while tasks_lock was unlocked... */
+	if (!pp->sched.taskq) {
 	    pp->sched.taskq = ptqp;
 	    enq_port = !pp->sched.exe_taskq;
 	    ptqp = NULL;
@@ -638,7 +616,7 @@ erts_port_task_schedule(Eterm id,
     }
 
     if (ptqp)
-	erts_free(ERTS_ALC_T_PORT_TASKQ, ptqp);
+	port_taskq_free(ptqp);
     return 0;
 }
 
@@ -655,12 +633,10 @@ erts_port_task_free_port(Port *pp)
     if (pp->sched.exe_taskq) {
 	/* I (this thread) am currently executing this port, free it
 	   when scheduled out... */
-	ErtsPortTask *ptp = port_task_pre_alloc();
-	if (!ptp) {
-	    erts_smp_tasks_unlock();
-	    ptp = erts_alloc(ERTS_ALC_T_PORT_TASK, sizeof(ErtsPortTask));
-	    erts_smp_tasks_lock();
-	}
+	ErtsPortTask *ptp;
+	erts_smp_tasks_unlock();
+	ptp = port_task_alloc();
+	erts_smp_tasks_lock();
 	erts_smp_port_tab_lock();
 	ASSERT(erts_ports_alive > 0);
 	erts_ports_alive--;
@@ -696,8 +672,6 @@ erts_port_task_free_port(Port *pp)
 	handle_remaining_tasks(pp); /* May release tasks lock */
 	ASSERT(!pp->sched.exe_taskq && (!ptqp || !ptqp->first));
 	pp->sched.taskq = NULL;
-	if (ptqp && port_taskq_pre_free(ptqp))
-	    ptqp = NULL;
 	ERTS_PT_CHK_PRES_PORTQ(pp);
 #ifndef ERTS_SMP
 	ASSERT(pp->status & ERTS_PORT_SFLG_PORT_DEBUG);
@@ -709,7 +683,7 @@ erts_port_task_free_port(Port *pp)
     	}
 
 	if (ptqp)
-	    erts_free(ERTS_ALC_T_PORT_TASKQ, ptqp);
+	    port_taskq_free(ptqp);
     }
 }
 
@@ -747,7 +721,6 @@ erts_port_task_execute(void)
     ErtsPortTaskQueue *ptqp;
     ErtsPortTask *ptp;
     int res = 0;
-    ErtsPortTask *free_ptp = NULL;
     long io_tasks_executed = 0;
 
     ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
@@ -804,11 +777,6 @@ erts_port_task_execute(void)
 	reset_handle(ptp);
 	erts_smp_tasks_unlock();
 
-	if (free_ptp) {
-	    erts_free(ERTS_ALC_T_PORT_TASK, free_ptp);
-	    free_ptp = NULL;
-	}
-
 	ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(pp));
 
 	switch (ptp->type) {
@@ -851,10 +819,9 @@ erts_port_task_execute(void)
 
 	ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(pp));
 
-	erts_smp_tasks_lock();
+	port_task_free(ptp);
 
-	if (!port_task_pre_free(ptp))
-	    free_ptp = ptp;
+	erts_smp_tasks_lock();
 
 	ptp = pop_task(ptqp);
     }
@@ -864,12 +831,8 @@ erts_port_task_execute(void)
 	erts_port_task_outstanding_io_tasks -= io_tasks_executed;
     }
 
-    if (free_ptp || erts_smp_sched_trylock() == EBUSY) {
+    if (erts_smp_sched_trylock() == EBUSY) {
 	erts_smp_tasks_unlock();
-	if (free_ptp) {
-	    erts_free(ERTS_ALC_T_PORT_TASK, free_ptp);
-	    free_ptp = NULL;
-	}
 	erts_smp_sched_lock();
 	erts_smp_tasks_lock();
 	ptp = pop_task(ptqp);
@@ -894,21 +857,13 @@ erts_port_task_execute(void)
 #else
 	    erts_port_status_bor_set(pp, ERTS_PORT_SFLG_FREE);
 #endif
-	    if (port_task_pre_free(ptp))
-		ptp = NULL;
 	    ptq2p = pp->sched.taskq;	
-	    if (!ptq2p)
-		erts_smp_tasks_unlock();
-	    else {
-		pp->sched.taskq = NULL;
-		if (port_taskq_pre_free(ptq2p))
-		    ptq2p = NULL;
-		erts_smp_tasks_unlock();
-	    }
-	    if (ptp)
-		erts_free(ERTS_ALC_T_PORT_TASK, ptp);
+	    pp->sched.taskq = NULL;
+	    erts_smp_tasks_unlock();
+
+	    port_task_free(ptp);
 	    if (ptq2p)
-		erts_free(ERTS_ALC_T_PORT_TASKQ, ptq2p);
+		port_taskq_free(ptq2p);
 
 	    erts_smp_sched_lock();
 	    erts_smp_tasks_lock();
@@ -940,13 +895,10 @@ erts_port_task_execute(void)
     res = erts_port_task_outstanding_io_tasks != (long) 0;
 
     ERTS_PT_CHK_PRES_PORTQ(pp);
-    if (port_taskq_pre_free(ptqp))
-	erts_smp_tasks_unlock();
-    else {
-	erts_smp_tasks_unlock();
-	erts_free(ERTS_ALC_T_PORT_TASKQ, ptqp);
-    }
-    
+    erts_smp_tasks_unlock();
+
+    port_taskq_free(ptqp);
+
     if (erts_system_profile_flags.runnable_ports && (port_was_enqueued != 1)) {
     	profile_runnable_port(pp, am_inactive);
     }
@@ -991,7 +943,7 @@ static void
 handle_remaining_tasks(Port *pp)
 {
     int i;
-    ErtsPortTask *ptp, *free_ptp = NULL;
+    ErtsPortTask *ptp;
     ErtsPortTaskQueue *ptqps[] = {pp->sched.exe_taskq, pp->sched.taskq};
 
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(pp));
@@ -1004,11 +956,6 @@ handle_remaining_tasks(Port *pp)
 	while (ptp) {
 	    reset_handle(ptp);
 	    erts_smp_tasks_unlock();
-
-	    if (free_ptp) {
-		erts_free(ERTS_ALC_T_PORT_TASK, free_ptp);
-		free_ptp = NULL;
-	    }
 
 	    switch (ptp->type) {
 	    case ERTS_PORT_TASK_FREE:
@@ -1029,19 +976,13 @@ handle_remaining_tasks(Port *pp)
 			 (int) ptp->type);
 	    }
 
-	    erts_smp_tasks_lock();
+	    port_task_free(ptp);
 
-	    if (!port_task_pre_free(ptp))
-		free_ptp = ptp;
+	    erts_smp_tasks_lock();
 	    ptp = pop_task(ptqps[i]);
 	}
     }
 
-    if (free_ptp) {
-	erts_smp_tasks_unlock();
-	erts_free(ERTS_ALC_T_PORT_TASK, free_ptp);
-	erts_smp_tasks_lock();
-    }
     ASSERT(!pp->sched.taskq);
 }
 
@@ -1064,8 +1005,8 @@ erts_port_task_init(void)
 {
     erts_port_task_outstanding_io_tasks = (long) 0;
     erts_smp_spinlock_init(&erts_port_tasks_lock, "port_tasks_lock");
-    init_port_task_pre_alloc();
-    init_port_taskq_pre_alloc();
+    init_port_task_alloc();
+    init_port_taskq_alloc();
     erts_port_run_q = NULL;
     port_run_q_end = NULL;
     erts_port_run_q_len = 0;

@@ -24,6 +24,8 @@
 #  include "ose.h"
 #endif
 
+#include <ctype.h>
+
 #include "sys.h"
 #include "erl_vm.h"
 #include "erl_sys_driver.h"
@@ -38,10 +40,12 @@
 #include "erl_db_util.h"
 #include "register.h"
 #include "external.h"
+#include "packet_parser.h"
 
 extern ErlDrvEntry fd_driver_entry;
 extern ErlDrvEntry vanilla_driver_entry;
 extern ErlDrvEntry spawn_driver_entry;
+
 
 static int open_port(Process* p, Eterm name, Eterm settings, int *err_nump);
 static byte* convert_environment(Process* p, Eterm env);
@@ -53,10 +57,7 @@ BIF_RETTYPE open_port_2(BIF_ALIST_2)
     char *str;
     int err_num;
 
-    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
-
     if ((port_num = open_port(BIF_P, BIF_ARG_1, BIF_ARG_2, &err_num)) < 0) {
-	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	if (port_num == -3) {
 	    ASSERT(err_num == BADARG || err_num == SYSTEM_LIMIT);
 	    BIF_ERROR(BIF_P, err_num);
@@ -69,7 +70,7 @@ BIF_RETTYPE open_port_2(BIF_ALIST_2)
 	BIF_ERROR(BIF_P, EXC_ERROR);
     }
 
-    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK);
+    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_LINK);
 
     port_val = erts_port[port_num].id;
     erts_add_link(&(erts_port[port_num].nlinks), LINK_PID, BIF_P->id);
@@ -778,7 +779,13 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
         trace_virtual_sched(p, am_out);
     }
 
+
+    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
+
     port_num = erts_open_driver(driver, p->id, name_buf, &opts, err_nump);
+
+    erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
+
     if (port_num < 0) {
 	DEBUGF(("open_driver returned %d(%d)\n", port_num, *err_nump));
     	if (IS_TRACED_FL(p, F_TRACE_SCHED_PROCS)) {
@@ -884,3 +891,342 @@ static byte* convert_environment(Process* p, Eterm env)
     erts_free(ERTS_ALC_T_TMP, temp_heap);
     return bytes;
 }
+
+
+struct packet_callback_args
+{
+    Process* p;  /* In */
+    Eterm res;   /* Out */
+};
+
+static int http_response_erl(void *arg, int major, int minor,
+                             int status, const char* phrase, int phrase_len)
+{
+    /* {http_response,{Major,Minor},Status,"Phrase"} */
+    struct packet_callback_args* pca = (struct packet_callback_args*) arg;    
+    Eterm list, ver;
+    unsigned hsize = phrase_len*2 + 3 + 5;
+    Eterm* hp = HAlloc(pca->p, hsize);
+#ifdef DEBUG
+    Eterm* hend = hp + hsize;
+#endif
+
+    list = erts_bld_string_n(&hp, NULL, phrase, phrase_len);
+    ver = TUPLE2(hp, make_small(major), make_small(minor));
+    hp += 3;
+    pca->res = TUPLE4(hp, am_http_response, ver, make_small(status), list);
+    ASSERT(hp+5==hend);
+    return 1;
+}   
+    
+static Eterm http_bld_uri(Eterm** hpp, Uint* szp, const PacketHttpURI* uri)
+{
+    Eterm s1, s2;
+    if (uri->type == URI_STAR) {
+        return am_Times; /* '*' */
+    }
+
+    s1 = erts_bld_string_n(hpp, szp, uri->s1_ptr, uri->s1_len);
+
+    switch (uri->type) {
+    case URI_ABS_PATH:
+        return erts_bld_tuple(hpp, szp, 2, am_abs_path, s1);
+    case URI_HTTP:
+    case URI_HTTPS:
+        s2 = erts_bld_string_n(hpp, szp, uri->s2_ptr, uri->s2_len);
+        return erts_bld_tuple
+            (hpp, szp, 5, am_absoluteURI, 
+             ((uri->type==URI_HTTP) ? am_http : am_https),
+             s1, 
+             ((uri->port==0) ? am_undefined : make_small(uri->port)),
+             s2);
+        
+    case URI_STRING:
+        return s1;
+    case URI_SCHEME:
+        s2 = erts_bld_string_n(hpp, szp, uri->s2_ptr, uri->s2_len);
+        return erts_bld_tuple(hpp, szp, 3, am_scheme, s1, s2);
+                              
+    default:
+        erl_exit(1, "%s, line %d: type=%u\n", __FILE__, __LINE__, uri->type);
+    }
+}
+
+static int http_request_erl(void* arg, const http_atom_t* meth,
+                            const char* meth_ptr, int meth_len,
+                            const PacketHttpURI* uri, int major, int minor)
+{
+    struct packet_callback_args* pca = (struct packet_callback_args*) arg;    
+    Eterm meth_term, uri_term, ver_term;
+    Uint sz = 0;
+    Uint* szp = &sz;
+    Eterm* hp;
+    Eterm** hpp = NULL;
+
+    /* {http_request,Meth,Uri,Version} */
+
+    for (;;) {
+        meth_term = (meth!=NULL) ? meth->atom :
+            erts_bld_string_n(hpp, szp, meth_ptr, meth_len);
+        uri_term = http_bld_uri(hpp, szp, uri);
+        ver_term = erts_bld_tuple(hpp, szp, 2,
+                                  make_small(major), make_small(minor));
+        pca->res = erts_bld_tuple(hpp, szp, 4, am_http_request, meth_term,
+                                  uri_term, ver_term); 
+        if (hpp != NULL) break;
+        hpp = &hp;
+        hp = HAlloc(pca->p, sz);
+        szp = NULL;        
+    }
+    return 1;
+}
+
+static int
+http_header_erl(void* arg, const http_atom_t* name, const char* name_ptr,
+                int name_len, const char* value_ptr, int value_len)
+{
+    struct packet_callback_args* pca = (struct packet_callback_args*) arg;    
+    Eterm bit_term, name_term, val_term;
+    Uint sz = value_len*2 + 6 + (name ? 0 : name_len*2);
+    Eterm* hp = HAlloc(pca->p,sz);
+#ifdef DEBUG
+    Eterm* hend = hp + sz;
+#endif
+
+    /* {http_header,Bit,Name,IValue,Value} */
+    if (name != NULL) {
+	bit_term = make_small(name->index+1);
+	name_term = name->atom;
+    }
+    else {
+	bit_term = make_small(0);
+	name_term = erts_bld_string_n(&hp,NULL,name_ptr,name_len);
+    }
+
+    val_term = erts_bld_string_n(&hp, NULL, value_ptr, value_len);
+    pca->res = TUPLE5(hp, am_http_header, bit_term, name_term, am_undefined, val_term);
+    ASSERT(hp+6==hend);
+    return 1;
+}   
+
+static int http_eoh_erl(void* arg)
+{
+    /* http_eoh */
+    struct packet_callback_args* pca = (struct packet_callback_args*) arg;    
+    pca->res = am_http_eoh;
+    return 1;
+}
+
+static int http_error_erl(void* arg, const char* buf, int len)
+{
+    /* {http_error,Line} */
+    struct packet_callback_args* pca = (struct packet_callback_args*) arg;
+    unsigned hsize = len*2 + 3;
+    Eterm* hp = HAlloc(pca->p, hsize);
+#ifdef DEBUG
+    Eterm* hend = hp + hsize;
+#endif
+    Eterm line;
+
+    line = erts_bld_string_n(&hp,NULL,buf,len);
+    pca->res = erts_bld_tuple(&hp,NULL,2,am_http_error,line);
+    ASSERT(hp==hend);
+    return 1;
+}
+
+static
+int ssl_tls_erl(void* arg, unsigned type, unsigned major, unsigned minor,
+		const char* buf, int len, const char* prefix, int plen)
+{
+    struct packet_callback_args* pca = (struct packet_callback_args*) arg;
+    Eterm* hp;
+    Eterm ver;
+    Eterm bin = new_binary(pca->p, NULL, plen+len);
+    byte* bin_ptr = binary_bytes(bin);
+
+    memcpy(bin_ptr+plen, buf, len);
+    if (plen) {
+        memcpy(bin_ptr, prefix, plen);
+    }
+
+    /* {ssl_tls,NIL,ContentType,{Major,Minor},Bin} */
+    hp = HAlloc(pca->p, 3+6);
+    ver = TUPLE2(hp, make_small(major), make_small(minor));
+    hp += 3;
+    pca->res = TUPLE5(hp, am_ssl_tls, NIL, make_small(type), ver, bin);
+    return 1;
+}
+
+
+PacketCallbacks packet_callbacks_erl = {
+    http_response_erl,
+    http_request_erl,
+    http_eoh_erl,
+    http_header_erl,
+    http_error_erl,
+    ssl_tls_erl
+};
+
+/*
+ decode_packet(Type,Bin,Options)
+ Returns:
+     {ok, PacketBodyBin, RestBin}
+     {more, PacketSz | undefined}
+     {error, invalid}
+*/
+BIF_RETTYPE decode_packet_3(BIF_ALIST_3)
+{
+    unsigned max_plen = 0;   /* Packet max length, 0=no limit */
+    unsigned trunc_len = 0;  /* Truncate lines if longer, 0=no limit */
+    int http_state = 0;      /* 0=request/response 1=header */
+    int packet_sz;           /*-------Binaries involved: ------------------*/
+    Eterm orig;              /*| orig: original binary                     */
+    Uint bin_offs;           /*| bin: BIF_ARG_2, may be sub-binary of orig */
+    byte* bin_ptr;           /*| packet: prefix of bin                     */
+    byte bin_bitoffs;        /*| body: part of packet to return            */
+    byte bin_bitsz;          /*| rest: bin without packet                  */
+    Uint bin_sz;
+    char* body_ptr;
+    int body_sz;
+    byte* aligned_ptr;        /* bin_ptr or byte aligned temp copy */
+    struct packet_callback_args pca;
+    enum PacketParseType type;
+    Eterm* hp;
+    Eterm* hend;
+    ErlSubBin* rest;
+    Eterm res;
+    Eterm options;
+    int code;
+
+    if (!is_binary(BIF_ARG_2) || 
+        (!is_list(BIF_ARG_3) && !is_nil(BIF_ARG_3))) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+
+    switch (BIF_ARG_1) {
+    case make_small(0): case am_raw: type = TCP_PB_RAW; break;
+    case make_small(1): type = TCP_PB_1; break;
+    case make_small(2): type = TCP_PB_2; break;
+    case make_small(4): type = TCP_PB_4; break;
+    case am_asn1: type = TCP_PB_ASN1; break;
+    case am_sunrm: type = TCP_PB_RM; break;
+    case am_cdr: type = TCP_PB_CDR; break;
+    case am_fcgi: type = TCP_PB_FCGI; break;
+    case am_line: type = TCP_PB_LINE_LF; break;
+    case am_tpkt: type = TCP_PB_TPKT; break;
+    case am_http: type = TCP_PB_HTTP; break;
+    case am_httph: type = TCP_PB_HTTPH; break;
+    case am_ssl_tls: type = TCP_PB_SSL_TLS; break;
+    default:
+        BIF_ERROR(BIF_P, BADARG);
+    }
+
+    options = BIF_ARG_3;
+    while (!is_nil(options)) {
+        Eterm* cons = list_val(options);
+        if (is_tuple(CAR(cons))) {
+            Eterm* tpl = tuple_val(CAR(cons));
+            Uint val;
+            if (tpl[0] == make_arityval(2) &&
+		term_to_Uint(tpl[2],&val) && val <= UINT_MAX) {
+                switch (tpl[1]) {
+                case am_packet_size:
+                    max_plen = val;
+                    goto next_option;
+                case am_line_length:
+                    trunc_len = val;
+                    goto next_option;
+                }
+            }
+        }
+        BIF_ERROR(BIF_P, BADARG);
+
+    next_option:       
+        options = CDR(cons);
+    }
+
+
+    bin_sz = binary_size(BIF_ARG_2);
+    ERTS_GET_BINARY_BYTES(BIF_ARG_2, bin_ptr, bin_bitoffs, bin_bitsz);  
+    if (bin_bitoffs != 0) {
+        aligned_ptr = erts_alloc(ERTS_ALC_T_TMP, bin_sz);
+        erts_copy_bits(bin_ptr, bin_bitoffs, 1, aligned_ptr, 0, 1, bin_sz*8);
+    }
+    else {
+        aligned_ptr = bin_ptr;
+    }
+    packet_sz = packet_get_length(type, (char*)aligned_ptr, bin_sz,
+                                  max_plen, trunc_len, &http_state);
+    if (!(packet_sz > 0 && packet_sz <= bin_sz)) {
+        if (packet_sz < 0) {
+	    goto error;
+        }
+        else { /* not enough data */
+            Eterm plen = (packet_sz==0) ? am_undefined : 
+                erts_make_integer(packet_sz, BIF_P);
+            Eterm* hp = HAlloc(BIF_P,3);        
+            res = TUPLE2(hp, am_more, plen);
+            goto done;
+        }
+    }
+    /* We got a whole packet */
+
+    body_ptr = (char*) aligned_ptr;
+    body_sz = packet_sz;
+    packet_get_body(type, (const char**) &body_ptr, &body_sz);
+
+    ERTS_GET_REAL_BIN(BIF_ARG_2, orig, bin_offs, bin_bitoffs, bin_bitsz);
+    pca.p = BIF_P;
+    pca.res = THE_NON_VALUE;
+    code = packet_parse(type, (char*)aligned_ptr, packet_sz, &http_state,
+			&packet_callbacks_erl, &pca);
+    if (code == 0) { /* no special packet parsing, make plain binary */
+        ErlSubBin* body;
+        Uint hsz = 2*ERL_SUB_BIN_SIZE + 4;
+        hp = HAlloc(BIF_P, hsz);
+        hend = hp + hsz;
+
+        body = (ErlSubBin *) hp;
+        body->thing_word = HEADER_SUB_BIN;
+        body->size = body_sz;
+        body->offs = bin_offs + (body_ptr - (char*)aligned_ptr);
+        body->orig = orig;
+        body->bitoffs = bin_bitoffs;
+        body->bitsize = 0;
+        body->is_writable = 0;
+        hp += ERL_SUB_BIN_SIZE;
+        pca.res = make_binary(body);
+    }
+    else if (code > 0) {
+	Uint hsz = ERL_SUB_BIN_SIZE + 4;
+	ASSERT(pca.res != THE_NON_VALUE);
+	hp = HAlloc(BIF_P, hsz);
+	hend = hp + hsz;
+    }
+    else {
+error:
+	hp = HAlloc(BIF_P,3);        
+	res = TUPLE2(hp, am_error, am_invalid);
+	goto done;
+    }
+
+    rest = (ErlSubBin *) hp;
+    rest->thing_word = HEADER_SUB_BIN;
+    rest->size = bin_sz - packet_sz;
+    rest->offs = bin_offs + packet_sz;
+    rest->orig = orig;
+    rest->bitoffs = bin_bitoffs;
+    rest->bitsize = bin_bitsz;   /* The extra bits go into the rest. */
+    rest->is_writable = 0;
+    hp += ERL_SUB_BIN_SIZE;
+    res = TUPLE3(hp, am_ok, pca.res, make_binary(rest));
+    hp += 4;
+    ASSERT(hp==hend); (void)hend;
+
+done:
+    if (aligned_ptr != bin_ptr) {
+        erts_free(ERTS_ALC_T_TMP, aligned_ptr);
+    }
+    BIF_RET(res);
+}
+

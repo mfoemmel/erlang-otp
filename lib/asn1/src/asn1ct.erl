@@ -422,7 +422,9 @@ get_pos_of_def(#pvaluesetdef{pos=Pos}) ->
 get_pos_of_def(#pobjectdef{pos=Pos}) ->
     Pos;
 get_pos_of_def(#pobjectsetdef{pos=Pos}) ->
-    Pos.
+    Pos;
+get_pos_of_def(_) -> 
+    undefined.
     
     
 get_name_of_def(#typedef{name=Name}) ->
@@ -440,7 +442,9 @@ get_name_of_def(#pvaluesetdef{name=Name}) ->
 get_name_of_def(#pobjectdef{name=Name}) ->
     Name;
 get_name_of_def(#pobjectsetdef{name=Name}) ->
-    Name.
+    Name;
+get_name_of_def(_) ->
+    undefined.
 
 set_name_of_def(ModName,Name,OldDef) ->
     NewName = list_to_atom(lists:concat([Name,ModName])),
@@ -1036,7 +1040,7 @@ get_file_list1(Stream,Dir,Includes,Acc) ->
     end.
 
 get_rule(Options) ->
-    case [Rule ||Rule <-[per,ber,ber_bin,ber_bin_v2,per_bin],
+    case [Rule ||Rule <-[per,ber,ber_bin,ber_bin_v2,per_bin,uper_bin],
 		 Opt <- Options,
 		 Rule==Opt] of
 	[Rule] ->
@@ -1060,7 +1064,8 @@ get_runtime_mod(Options) ->
 		    _ -> ["asn1rt_per_bin.erl"]
 		end;
 	    ber_bin -> ["asn1rt_ber_bin.erl"];
-	    ber_bin_v2 -> ["asn1rt_ber_bin_v2.erl"]
+	    ber_bin_v2 -> ["asn1rt_ber_bin_v2.erl"];
+	    uper_bin -> ["asn1rt_uper_bin.erl"]
 	end,
     RtMod1++["asn1rt_check.erl","asn1rt_driver_handler.erl"].
     
@@ -1255,7 +1260,8 @@ make_erl_options(Opts) ->
 	    ber_bin -> [ber_bin];
 	    ber_bin_v2 -> [ber_bin_v2];
 	    per -> [per];
-	    per_bin -> [per_bin]
+	    per_bin -> [per_bin];
+	    uper_bin -> [uper_bin]
 	end,
 
     Options++[report_errors, {cwd, Cwd}, {outdir, Outdir}|
@@ -1385,7 +1391,9 @@ test(Module,Type,Value) ->
 		    per_bin when is_binary(Bytes) ->
 			Bytes;
 		    per_bin ->
-			list_to_binary(Bytes)
+			list_to_binary(Bytes);
+		    uper_bin ->
+			Bytes
 		end,
 	    case decode(Module,Type,NewBytes) of
 		{ok,Value} -> 

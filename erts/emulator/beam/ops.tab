@@ -434,6 +434,7 @@ i_fetch s s
 #
 
 normal_exit
+continue_exit
 apply_bif
 call_error_handler
 error_action_code

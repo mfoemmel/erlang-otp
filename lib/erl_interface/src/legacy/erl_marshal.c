@@ -820,6 +820,7 @@ static ETERM *erl_decode_it(unsigned char **ext)
 		 */
 		np = erl_alloc_eterm(ERL_LIST);
 		ERL_COUNT(np) = 1;
+                TAIL(np) = NULL; /* in case of failure */
 		TAIL(tp) = np;
 		tp = np;
 	    }

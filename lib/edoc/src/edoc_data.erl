@@ -294,31 +294,33 @@ get_deprecated(Ts, F, A, Env) ->
     case get_deprecated(Ts) of
 	[] ->
 	    M = Env#env.module,
-	    case erl_internal:obsolete(M, F, A) of
-		{true, {M1, F1, A1}} ->
-		    Text = if M =:= M1 ->
-				   io_lib:fwrite("~w/~w", [F1, A1]);
-			      true ->
-				   io_lib:fwrite("~w:~w/~w",
-						 [M1, F1, A1])
-			   end,
-		    Ref = if M =:= M1 ->
-				  edoc_refs:function(F1, A1);
-			     true ->
-				  edoc_refs:function(M1, F1, A1)
-			  end,
-		    Desc = ["Use ",
-			    {a, href(Ref, Env), [{code, [Text]}]},
-			    " instead."],
-		    [{deprecated, description(Desc)}];
-		{true, Text} ->
-		    [{deprecated, description([Text])}];
+	    case otp_internal:obsolete(M, F, A) of
+		{Tag, Text} when Tag =:= deprecated; Tag =:= removed ->
+		    deprecated([Text]);
+		{Tag, Repl, _Rel} when Tag =:= deprecated; Tag =:= removed -> 
+		    deprecated(Repl, Env);
 		_ ->
 		    []
 	    end;
 	Es ->
 	    Es
     end.
+
+deprecated(Repl, Env) ->
+    {Text, Ref} = replacement_function(Env#env.module, Repl),
+    Desc = ["Use ", {a, href(Ref, Env), [{code, [Text]}]}, " instead."],
+    deprecated(Desc).
+
+deprecated(Desc) ->
+    [{deprecated, description(Desc)}].
+
+replacement_function(M0, {M,F,A}) when is_list(A) ->
+    %% refer to the largest listed arity - the most general version
+    replacement_function(M0, {M,F,lists:last(lists:sort(A))});
+replacement_function(M, {M,F,A}) ->
+    {io_lib:fwrite("~w/~w", [F, A]), edoc_refs:function(F, A)};
+replacement_function(_, {M,F,A}) ->
+    {io_lib:fwrite("~w:~w/~w", [M, F, A]), edoc_refs:function(M, F, A)}.
 
 get_expr_ref(Expr) ->
     case catch {ok, erl_syntax_lib:analyze_application(Expr)} of
@@ -416,7 +418,7 @@ params(Ts) ->
 %%     end.
 
 merge_returns(Spec, Ts) ->
-    case get_tags(return, Ts) of
+    case get_tags(returns, Ts) of
 	[] ->
 	    case edoc_types:range_desc(Spec) of
 		"" -> [];

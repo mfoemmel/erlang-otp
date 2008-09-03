@@ -136,6 +136,22 @@ have_odbc_lib=no
 	
 AC_SUBST(TARGET_FLAGS)
     case $host_os in
+        darwin*)
+                TARGET_FLAGS="-DUNIX"
+                AC_CHECK_LIB(pthread, pthread_create,
+                           [AC_DEFINE(HAVE_LIBPTHREAD, 1, [Define if you have the pthread library (-lpthread).])
+                            LIBS="$LIBS -lpthread"
+                            have_pthread_lib=yes])
+	        if test ! -d "$with_odbc"; then				
+		    ODBC_LIB= -L"/usr/lib"
+		    ODBC_INCLUDE="-I/usr/lib/include"
+		else
+		    ODBC_LIB=-L"$with_odbc/lib"
+		    ODBC_INCLUDE="-I$with_odbc/include"
+		fi
+			    
+               AC_CHECK_LIB(iodbc, SQLAllocHandle,[ODBC_LIB="$ODBC_LIB -liodbc" odbc_lib_link_sucess=yes])
+            ;;
         win32|cygwin)
 		TARGET_FLAGS="-DWIN32"
 		AC_CHECK_LIB(ws2_32, main)

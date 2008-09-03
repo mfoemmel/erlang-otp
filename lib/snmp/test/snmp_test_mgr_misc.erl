@@ -186,19 +186,26 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
     end.
 
 
-handle_udp_packet(_V,undefined,UdpId,Ip,UdpPort,Bytes,SnmpMgr,AgentIp) ->
+handle_udp_packet(_V, undefined, 
+		  UdpId, Ip, UdpPort,
+		  Bytes, SnmpMgr, AgentIp) ->
     M = (catch snmp_pdus:dec_message_only(Bytes)),
     MsgData3 =
 	case M of
-	    Message when Message#message.version == 'version-3' ->
+	    Message when Message#message.version =:= 'version-3' ->
 		d("handle_udp_packet -> version 3"),
 		case catch handle_v3_msg(Bytes, Message) of
 		    {ok, NewData, MsgData2} ->
 			Msg = Message#message{data = NewData},
 			case SnmpMgr of
 			    {pdu, Pid} ->
-				Pid ! {snmp_pdu, get_pdu(Msg)};
+				Pdu = get_pdu(Msg), 
+				d("packet_loop -> "
+				  "send pdu to manager (~w): ~p", [Pid, Pdu]),
+				Pid ! {snmp_pdu, Pdu};
 			    {msg, Pid} ->
+				d("packet_loop -> "
+				  "send msg to manager (~w): ~p", [Pid, Msg]),
 				Pid ! {snmp_msg, Msg, Ip, UdpPort}
 			end,
 			MsgData2;
@@ -216,7 +223,7 @@ handle_udp_packet(_V,undefined,UdpId,Ip,UdpPort,Bytes,SnmpMgr,AgentIp) ->
 			      [Bytes, Reason, UdpPort, Ip]),
 			[]
 		end;
-	    Message when record(Message, message) ->
+	    Message when is_record(Message, message) ->
 		%% v1 or v2c
 		d("handle_udp_packet -> version v1 or v2c"),
 		case catch snmp_pdus:dec_pdu(Message#message.data) of

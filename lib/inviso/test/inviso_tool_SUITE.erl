@@ -193,7 +193,7 @@ dist_basic_1(Config) when list(Config) ->
     CNode=node(),
     Nodes=RemoteNodes,
     DataDir=?config(data_dir,Config),
-    PrivDir=?config(priv_dir,Config),
+    PrivDir=filename:join(?config(priv_dir,Config),""),
     Opts=[{regexp_node,RegExpNode},
 	  {tdg,{?MODULE,tdg,[PrivDir]}},
 	  {tc_def_file,?TC_DEF_FILE},
@@ -478,7 +478,7 @@ dist_rtc(Config) when is_list(Config) ->
     CNode=node(),
     Nodes=RemoteNodes,
     DataDir=?config(data_dir,Config),
-    PrivDir=?config(priv_dir,Config),
+    PrivDir=filename:join(?config(priv_dir,Config),""),
     Opts=[{regexp_node,RegExpNode},
 	  {tdg,{?MODULE,tdg,[PrivDir]}},
 	  {tc_def_file,?TC_DEF_FILE},
@@ -543,7 +543,7 @@ dist_reconnect(Config) when list(Config) ->
     CNode=node(),
     Nodes=RemoteNodes,
     DataDir=?config(data_dir,Config),
-    PrivDir=?config(priv_dir,Config),
+    PrivDir=filename:join(?config(priv_dir,Config),""),
     Opts=[{regexp_node,RegExpNode},
 	  {tdg,{?MODULE,tdg,[PrivDir]}},
 	  {tc_def_file,?TC_DEF_FILE},
@@ -670,7 +670,7 @@ dist_adopt(Config) when list(Config) ->
     CNode=node(),
     Nodes=RemoteNodes,
     DataDir=?config(data_dir,Config),
-    PrivDir=?config(priv_dir,Config),
+    PrivDir=filename:join(?config(priv_dir,Config),""),
 
     %% Then first start runtime components at different nodes for us to
     %% later adopt.
@@ -740,7 +740,7 @@ dist_history(Config) when list(Config) ->
     CNode=RegExpNode,                       % We use a remote control component.
     Nodes=RemoteNodes,
     DataDir=?config(data_dir,Config),
-    PrivDir=?config(priv_dir,Config),
+    PrivDir=filename:join(?config(priv_dir,Config),""),
 
     %% Start up the tool and a couple of inviso runtimes.
     Opts=[{regexp_node,RegExpNode},
@@ -889,7 +889,7 @@ dist_start_session_special(Config) when list(Config) ->
     CNode=RegExpNode,                       % We use a remote control component.
 %    Nodes=RemoteNodes,
     DataDir=?config(data_dir,Config),
-    PrivDir=?config(priv_dir,Config),
+    PrivDir=filename:join(?config(priv_dir,Config),""),
 
     %% Start up the tool but with no exiting nodes.
     FaultyNodes=[gurka@nonexistant,tomat@nonexistant],

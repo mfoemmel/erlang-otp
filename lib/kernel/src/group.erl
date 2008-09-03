@@ -37,6 +37,8 @@ server(Drv, Shell, Options) ->
     put(expand_fun,
 	proplists:get_value(expand_fun, Options,
 			    fun(B) -> edlin_expand:expand(B) end)),
+    put(echo, proplists:get_value(echo, Options, true)),
+    
     start_shell(Shell),
     server_loop(Drv, get(shell), []).
 
@@ -112,6 +114,9 @@ server_loop(Drv, Shell, Buf0) ->
 	    server_loop(Drv, Shell, Buf);
 	{driver_id,ReplyTo} ->
 	    ReplyTo ! {self(),driver_id,Drv},
+	    server_loop(Drv, Shell, Buf0);
+	{Drv, echo, Bool} ->
+	    put(echo, Bool),
 	    server_loop(Drv, Shell, Buf0);
 	{'EXIT',Drv,interrupt} ->
 	    %% Send interrupt to the shell.
@@ -256,6 +261,7 @@ send_drv_reqs(Drv, Rs) ->
 setopts(Opts0,_Drv, Buf) ->
     Opts = proplists:substitute_negations([{list,binary}], Opts0),
     put(expand_fun, proplists:get_value(expand_fun, Opts, get(expand_fun))),
+    put(echo, proplists:get_value(echo, Opts, get(echo))),
     case proplists:get_bool(binary, Opts) of
 	true ->
 	    put(read_mode, binary),
@@ -288,7 +294,13 @@ get_chars(Prompt, M, F, Xa, Drv, Buf) ->
     get_chars_loop(Pbs, M, F, Xa, Drv, Buf, start).
 
 get_chars_loop(Pbs, M, F, Xa, Drv, Buf0, State) ->
-    case get_line(Buf0, Pbs, Drv) of
+    Result = case get(echo) of 
+		 true ->
+		     get_line(Buf0, Pbs, Drv);
+		 false ->
+		     get_line_echo_off(Buf0, Pbs, Drv)
+	     end,
+    case Result of
 	{done,Line,Buf1} ->
 	    get_chars_apply(Pbs, M, F, Xa, Drv, Buf1, State, Line);
 	interrupted ->
@@ -304,7 +316,6 @@ get_chars_apply(Pbs, M, F, Xa, Drv, Buf, State0, Line) ->
 	{'EXIT',_} ->
 	    {error,{error,err_func(M, F, Xa)},[]};
 	State1 ->
-	    edlin:start(Pbs),
 	    get_chars_loop(Pbs, M, F, Xa, Drv, Buf, State1)
     end.
 
@@ -406,6 +417,57 @@ get_line1({What,Cont0,Rs}, Drv, Ls) ->
 	    get_line1(edlin:edit_line([], Cont0), Drv, Ls)
     end.
 
+
+get_line_echo_off(Chars, Pbs, Drv) ->
+    send_drv_reqs(Drv, [{put_chars,Pbs}]),
+    get_line_echo_off1(edit_line(Chars,[]), Drv).
+
+get_line_echo_off1({Chars,[]}, Drv) ->
+    receive
+	{Drv,{data,Cs}} ->
+	    get_line_echo_off1(edit_line(Cs, Chars), Drv);
+	{Drv,eof} ->
+	    get_line_echo_off1(edit_line(eof, Chars), Drv);
+	{io_request,From,ReplyAs,Req} when is_pid(From) ->
+	    io_request(Req, From, ReplyAs, Drv, []),
+	    get_line_echo_off1({Chars,[]}, Drv);
+	{'EXIT',Drv,interrupt} ->
+	    interrupted;
+	{'EXIT',Drv,_} ->
+	    terminated
+    end;
+get_line_echo_off1({Chars,Rest}, _Drv) ->
+    {done,lists:reverse(Chars),case Rest of done -> []; _ -> Rest end}.
+
+%% We support line editing for the ICANON mode except the following
+%% line editing characters, which already has another meaning in
+%% echo-on mode (See Advanced Programming in the Unix Environment, 2nd ed,
+%% Stevens, page 638):
+%% - ^u in posix/icanon mode: erase-line, prefix-arg in edlin
+%% - ^t in posix/icanon mode: status, transpose-char in edlin
+%% - ^d in posix/icanon mode: eof, delete-forward in edlin
+%% - ^r in posix/icanon mode: reprint (silly in echo-off mode :-))
+%% - ^w in posix/icanon mode: word-erase (produces a beep in edlin)
+edit_line(eof, Chars) ->
+    {Chars,done};
+edit_line([],Chars) ->
+    {Chars,[]};
+edit_line([$\r,$\n|Cs],Chars) ->
+    {[$\n | Chars], remainder_after_nl(Cs)};
+edit_line([NL|Cs],Chars) when NL =:= $\r; NL =:= $\n ->
+    {[$\n | Chars], remainder_after_nl(Cs)};
+edit_line([Erase|Cs],[]) when Erase =:= $\177; Erase =:= $\^H ->
+    edit_line(Cs,[]);
+edit_line([Erase|Cs],[_|Chars]) when Erase =:= $\177; Erase =:= $\^H ->
+    edit_line(Cs,Chars);
+edit_line([Char|Cs],Chars) ->
+    edit_line(Cs,[Char|Chars]).
+
+remainder_after_nl("") -> done;
+remainder_after_nl(Cs) -> Cs.
+    
+
+
 get_line_timeout(blink) -> 1000;
 get_line_timeout(more_chars) -> infinity.
 
@@ -440,7 +502,6 @@ get_password1({Chars,[]}, Drv) ->
 	    %% I guess the reason the above line is wrong is that Buf is
 	    %% set to []. But do we expect anything but plain output?
 
-	    send_drv_reqs(Drv, [{put_chars, Chars}]),
 	    get_password1({Chars, []}, Drv);
 	{'EXIT',Drv,interrupt} ->
 	    interrupted;
@@ -460,7 +521,7 @@ edit_password([$\r|Cs],Chars) ->
 edit_password([$\177|Cs],[]) ->       %% Being able to erase characters is
     edit_password(Cs,[]);             %% the least we should offer, but
 edit_password([$\177|Cs],[_|Chars]) ->%% is backspace enough?
-   edit_password(Cs,Chars);
+    edit_password(Cs,Chars);
 edit_password([Char|Cs],Chars) ->
     edit_password(Cs,[Char|Chars]).
 

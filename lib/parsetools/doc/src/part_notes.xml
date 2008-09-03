@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE part SYSTEM "part.dtd">
+
+<part>
+  <header>
+    <copyright>
+      <year>1997</year>
+      <year>2007</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>PARSETOOLS Release Notes</title>
+    <prepared>Carl Velin</prepared>
+    <docno></docno>
+    <date>1997-04-28</date>
+    <rev>1.0</rev>
+    <file>part_notes.sgml</file>
+  </header>
+  <description>
+    <p>The Parse Tools Application (<em>PARSETOOLS</em>) contains
+      utilities for parsing, e.g. the <c>yecc</c> module. Yecc is an
+      <term id="LALR-1"></term>parser generator for Erlang, similar to
+      yacc. Yecc takes a <term id="BNF"></term>grammar definition as input,
+      and produces Erlang code for a parser as output.</p>
+    <p>There are also release notes for
+      <seealso marker="notes_history">older versions</seealso>.</p>
+  </description>
+  <include file="notes"></include>
+</part>
+

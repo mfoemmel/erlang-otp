@@ -711,8 +711,8 @@ get_memory_usage({unix,freebsd}) ->
 
 %% Deprecated: Linux uses port (sysconf)
 %% Linux: see below
-get_memory_usage({unix,linux}) ->
-    get_memory_usage_linux();
+%get_memory_usage({unix,linux}) ->
+%    get_memory_usage_linux();
 
 %% Win32: Find out how much memory is in use by asking
 %% the os_mon_sysinfo process.
@@ -804,10 +804,10 @@ start_portprogram() ->
 port_idle(Port) ->
     receive
 	{Memsup, collect_sys} ->
-	    Port ! {self(), {command, [?MEM_SHOW]}},
+	    Port ! {self(), {command, [?SHOW_MEM]}},
 	    get_memory_usage(Port, undefined, Memsup);
 	{Memsup, collect_ext_sys} ->
-	    Port ! {self(), {command, [?SYSTEM_MEM_SHOW]}},
+	    Port ! {self(), {command, [?SHOW_SYSTEM_MEM]}},
 	    get_ext_memory_usage(Port, [], Memsup);
 	cancel ->
 	    %% Received after reply already has been delivered...
@@ -857,13 +857,20 @@ get_memory_usage_cancelled(Port, Alloc) ->
     end.
 
 get_ext_memory_usage(Port, Accum, Memsup) ->
-    Tab = [{?SYSTEM_TOTAL_MEMORY, system_total_memory},
-	   {?TOTAL_MEMORY, total_memory},
-	   {?FREE_MEMORY, free_memory},
-	   {?LARGEST_FREE, largest_free},
-	   {?NUMBER_OF_FREE, number_of_free}],
+    Tab = [
+	    {?MEM_SYSTEM_TOTAL,   system_total_memory},
+	    {?MEM_TOTAL,          total_memory},
+	    {?MEM_FREE,           free_memory},
+	    {?MEM_BUFFERS,        buffered_memory},
+	    {?MEM_CACHED,         cached_memory},
+	    {?MEM_SHARED,         shared_memory},
+	    {?MEM_LARGEST_FREE,   largest_free},
+	    {?MEM_NUMBER_OF_FREE, number_of_free},
+	    {?SWAP_TOTAL,	  total_swap},
+	    {?SWAP_FREE,	  free_swap}
+	],
     receive
-	{Port, {data, [?SYSTEM_MEM_SHOW_END]}} ->
+	{Port, {data, [?SHOW_SYSTEM_MEM_END]}} ->
 	    Memsup ! {collected_ext_sys, Accum},
 	    port_idle(Port);
 	{Port, {data, [Tag]}} ->
@@ -883,13 +890,20 @@ get_ext_memory_usage(Port, Accum, Memsup) ->
 	    port_close(Port)
     end.
 get_ext_memory_usage_cancelled(Port) ->
-    Tab = [{?SYSTEM_TOTAL_MEMORY, system_total_memory},
-	   {?TOTAL_MEMORY, total_memory},
-	   {?FREE_MEMORY, free_memory},
-	   {?LARGEST_FREE, largest_free},
-	   {?NUMBER_OF_FREE, number_of_free}],
+    Tab = [
+	    {?MEM_SYSTEM_TOTAL,   system_total_memory},
+	    {?MEM_TOTAL,          total_memory},
+	    {?MEM_FREE,           free_memory},
+	    {?MEM_BUFFERS,        buffered_memory},
+	    {?MEM_CACHED,         cached_memory},
+	    {?MEM_SHARED,         shared_memory},
+	    {?MEM_LARGEST_FREE,   largest_free},
+	    {?MEM_NUMBER_OF_FREE, number_of_free},
+	    {?SWAP_TOTAL,	  total_swap},
+	    {?SWAP_FREE,	  free_swap}
+	],
     receive
-	{Port, {data, [?SYSTEM_MEM_SHOW_END]}} ->
+	{Port, {data, [?SHOW_SYSTEM_MEM_END]}} ->
 	    port_idle(Port);
 	{Port, {data, [Tag]}} ->
 	    case lists:keysearch(Tag, 1, Tab) of

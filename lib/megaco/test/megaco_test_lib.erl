@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1999-2007</year>
+%% <year>1999-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -26,6 +26,24 @@
 -compile(export_all).
 
 -include("megaco_test_lib.hrl").
+
+
+%% ----------------------------------------------------------------
+%% Time related function
+%%
+
+sleep(infinity) ->
+    receive
+    after infinity ->
+            ok
+    end;
+sleep(MSecs) ->
+    receive
+    after trunc(MSecs) ->
+            ok
+    end,
+    ok.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Evaluates a test case or test suite

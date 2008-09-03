@@ -1,0 +1,737 @@
+<!doctype report PUBLIC "-//Stork//DTD report//EN">
+<!-- 
+ ``The contents of this file are subject to the Erlang Public License,
+ Version 1.1, (the "License"); you may not use this file except in
+ compliance with the License. You should have received a copy of the
+ Erlang Public License along with this software. If not, it can be
+ retrieved via the world wide web at http://www.erlang.org/.
+ 
+ Software distributed under the License is distributed on an "AS IS"
+ basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ the License for the specific language governing rights and limitations
+ under the License.
+ 
+ The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ AB. All Rights Reserved.''
+ 
+     $Id$
+-->
+<report>
+  <header>
+    <title>BEAM's fast execution models
+    <prepared>Jan-Erik Dahlin
+    <responsible>Jan-Erik Dahlin
+    <docno>1234:5678
+    <approved>No One
+    <checked>No One
+    <date>1997-04-28
+    <rev>PA
+    <file>execution_models.sgml
+  </header>
+  
+  <section>
+    <title>Introduction</title>
+    <marker id="top">
+
+    <p>This report will try to clarify some of the mysteries about the
+    three different modes in which BEAM can run.  The choice of mode
+    affects both the emulator and the generated fast code.  An
+    emulator compiled for a certain mode can't execute fast code
+    compiled for another mode.
+
+    <p>After some general information about the virtual machine, the
+    generated C code will be examined.  For explanation of the details
+    when executing C code the least complex and fastest model will be
+    used.  It uses two GCC language extensions: first class labels and
+    global register declarations.  That model will be compared to a
+    portable model that any ANSI C compiler can compile.  These two
+    models were merged into a third, hybrid model that uses the first
+    class labels extension, but calls each function.
+
+    <p>When the C code has been examined, we'll discuss the
+    modifications of the emulator.  The threaded execution depends on
+    the first class labels, so byte code emulation has to be used
+    instead.
+  </section>
+
+  <section>
+    <title>Generated C code</title> 
+
+    <section>
+      <title>Virtual Machine</title> 
+
+      <p>BEAM is a register machine based on WAM (Warren Abstract
+      Machine).  The WAM has been extended for process parallelism and
+      the instruction set with instructions for arithmetics, tests and
+      building data structures on the heap and extracting data from
+      them has been extended with a lot of built-in functions.  In the
+      C code each BEAM instruction is generated as a C macro.
+
+      <p>Each process in the virtual machine has its own heap and
+      stack (<em>not</em> the C stack the emulator uses), and a set of
+      registers (shown in the table below).
+
+        <table>
+          <row>
+            <cell><c>HTOP</c></cell>
+	    <cell>Heap top - points to the top of the heap.</cell>
+          </row>
+          <row>
+	    <cell><c>E</c></cell>
+	    <cell>Environment - points to the top of the stack.</cell>
+          </row>
+          <row>
+	    <cell><c>CP</c></cell> 
+	    <cell>Continuation pointer. Continue execution at the
+	    instruction <c>CP</c> points to when the current functions
+	    returns.  </cell>
+          </row>
+          <row>
+	    <cell><c>I</c></cell>
+	    <cell>Instruction pointer.  Only used for threaded
+	    code emulation.</cell>
+          </row>
+          <row>
+	    <cell><c>x(N)</c></cell>
+	    <cell>Argument registers (to pass function parameters),
+	    <c>x(N)</c> are also used to hold temporal variables.
+	    <c>x(0)</c> is used to hold function return values.
+	    </cell>
+          </row>
+          <row>
+	    <cell><c>y(N)</c></cell>
+	    <cell>Local variables (<c>y(N)</c> are not real registers, they
+	    reside in a local frame and are accessed by integer offset
+	    from a top-of-stack pointer).
+	    </cell>
+          </row>
+          <row>
+	    <cell><c>fcalls</c></cell>
+	    <cell>Number of reductions left before the current process
+	    is suspended. Decreased and checked before each function
+	    call.</cell>
+          </row>
+        </table>
+
+      <p>As you can imagine, the generated code will be quite large if
+      each BEAM instruction is expanded to straight C code.  To reduce
+      the code size, parts of large instructions has been extracted
+      and replaced with a jump to the common code.  Yes, a subroutine,
+      but control flow is more explicit and the return address must be
+      passed to the extracted code so the execution can continue after
+      the "subroutine call".
+
+      <p>The entry points to the extracted parts are: 
+
+      <taglist>
+        <tag><c>error_action_c</c></tag>
+
+	<item>An error of some sort has been detected.  Take the
+	appropriate action.</item>
+	<tag><c>dispatch_c</c></tag>
+	<item>Suspend current process and schedule the next.</item>
+	<tag><c>call_ex_c</c></tag>
+	<item>Call an external function.</item>
+	<tag><c>apply3_c</c></tag>
+	<item>Function application.</item>
+	<tag><c>wait_c</c></tag>
+	<item>Wait for a message or timeout.</item>
+	<tag><c>send_c</c></tag>
+	<item>Send a message to a process.</item>
+	<tag><c>do_gc_c</c></tag><item>Garbage collection.</item>
+	<tag><c>do_gc_stack_c</c></tag><item>Garbage collection.</item>
+      </taglist>
+
+
+      <p>Global variables are used to pass and return values to and
+      from these extracted code chunks.  The more important variables
+      are:
+
+        <table>
+          <row>
+            <cell><c>g0,g1,g2</c></cell>
+	    <cell>Used to pass module, function and arity to 
+	    <c>apply/3</c></cell>
+          </row>
+          <row>
+	    <cell><c>mod_name,
+	    func_name, 
+	    func_arity </c></cell>
+	    <cell>Used to hold current module, function and arity when
+	    dispatching</cell>
+          </row>
+          <row>
+	    <cell><c>addr</c></cell> 
+
+	    <cell>Continue execution at this point when the extracted
+	    code chunk has been executed.  When calling the extracted
+	    code chunks <c>addr</c> has the same function as the
+	    <c>CP</c> has when executing regular code.  </cell>
+          </row>
+          <row>
+	    <cell><c>c_p</c></cell>
+	    <cell>Points to the current process.</cell>
+          </row>
+        </table>
+    </section>
+
+    <section>
+      <title>Function Calls</title> 
+
+      <p>Execution of a BEAM function calling another function roughly
+      follows this outline: 
+
+      <list>
+        <item><p>Function entry
+	<list>
+	  <item><p>Reserve space on the stack to hold local data.
+	  <item><p>Save Continuation pointer on stack
+	</list>
+        <item><p>Function Call
+	<list>
+          <item><p>Set Continuation pointer to the instruction after
+          the call.
+
+	  <item><p>Check if all reductions are used up.
+
+	  <item><p>Jump to the function we're calling.  When it
+	  returns it will jump to the current Continuation pointer.
+	</list>
+        <item><p>Function Exit
+	<list>
+          <item><p>Restore Continuation pointer
+          <item><p>Release space on stack
+          <item><p>Jump to the Continuation Pointer
+	</list>
+      </list>
+
+    </section>
+
+    <section>
+      <title>The generated code</title> 
+
+      <p>The C code the compiler generates is identical for all three
+      execution models.  Just define a preprocessor macro on the
+      command line to the C compiler to choose model:
+
+        <table>
+          <row>
+            <cell><em>Flag</em></cell>
+            <cell> Model </cell>
+          </row>
+          <row>
+            <cell><c>-DBEAM_GCC</c></cell>
+
+            <cell>
+
+	    Use first class labels and global register declarations.
+	    Generates the fastest and smallest code.
+
+	    </cell>
+
+          </row>
+          <row>
+            <cell><c>-DBEAM_GCC_CALL</c></cell>
+
+            <cell>
+
+	    This model uses first class labels and global register
+	    declarations, but every functions is called and the
+	    function prologue is executed.  On some architectures the
+	    prologue has to be executed since GCC sets pointers and
+	    constant values there.
+
+	    </cell>
+
+          </row>
+          <row>
+            <cell><c>-DBEAM_ANSI</c></cell>
+
+            <cell>
+
+	    No GCC extensions.  Any ANSI C compiler can be used to
+	    compile the code in this mode.
+
+	    </cell>
+
+          </row>
+        </table>
+
+
+    <p>The trivial function <c>double/1</c> below will be used to
+    illustrate the differences between the models.
+
+
+    <code>
+-module(example).
+-compile(export_all).
+
+double([H | T]) -> [H, H | double(T)];
+double([]) -> [].
+    </code>
+
+    <p>The BEAM compiler will generate the following code:
+    <code type=c>
+FuncBegin(double_1)
+	Cl;
+	TNonEmpL(r(0),N(1));	Non-empty list?
+	A(1,1,18);		Allocate one slot on the stack to hold H
+	GL2(r(0),y(0),r(0));	Get H and T from list
+	C(0,1,19,1,1);		Call double/1
+	TH(4,1,20);		Enough space (4 words) on the stack 
+	PL(x(3),y(0),r(0));	Cons H to return value from func
+	PL(r(0),y(0),x(3));	Cons another H to the list
+	D_R(1);			Deallocate stack and return
+	End(1);
+
+	Cl;
+	TNil(r(0),N(2));	Empty list?
+	R;			Return (empty list already in x(0))
+	End(2);
+
+	ERR_ACT(FUNCTION_CLAUSE,1,1);	If arg doesn't match any clause
+FuncEnd(0,double_1)
+    </code>
+
+    <p>Are you thinking it doesn't look that bad?  Just wait until we
+    run it through the C preprocessor to expand the macros.  After
+    preprocessing the examples have been <c>indent</c>ed and edited for
+    legibility.
+</section>
+
+    <section>
+      <title>Full use of GCC extensions</title>
+
+      <p>Speed is everything.  Cross your fingers and close your eyes,
+      we're jumping past the prologues straight into the middle of the
+      functions.
+
+      <p>The virtual machine registers are placed in hardware
+      registers with the global asm declarations.
+
+      <code type=c>
+static void 
+double_1_000 ()
+{
+  goto init;                    Goto init.  The function is only called
+                                once,  the rest of the "calls" jump 
+                                directly to the entry point.
+double_1:                       Entry point
+  if (((x0) & (0xf - 1)))       Is argument a non-empty list?
+    goto next1;
+alloc18:
+  E -= 1 + 1;                   Reserve two slots on stack.  One for
+                                CP and one for the local variable H.
+  if (E <= HTOP)                If stack and heap collides
+    {                           do a garbage collection
+      E += 1 + 1;               Release reserved space
+      addr = &&alloc18;         Continue at alloc18 after GC
+      n_reg_obj = 1;            One live x register
+      goto *do_gc_stack_c;      Do GC
+    }
+  *(E) = ((uint32) (CP));       Save current CP
+  t0 = ((uint32 *) ((x0) >> 4));
+  *(E + 0 + 1) = *t0;           Save H on stack
+  x0 = *(t0 + 1);               Set x(0) to T. Arg in function call
+  CP = &&ret19;                 Return to ret19 after call.
+  if (fcalls-- > 0)             If all reductions aren't used up
+    goto *l_call[0];            jump(!) to function's entry point
+
+  c_p->call = l_call[0];        Save address of function to call
+  c_p->arity = 1;               Save function arity
+  c_p->current_module = 
+    atom_element[0];
+  c_p->current_function = 
+    atom_element[1];
+  c_p->current_arity = 1;
+  goto *dispatch_c;             Jump to dispatch.  No need to pass 
+                                a return address since execution
+                                will continue with the function call
+ret19:
+  if (E <= (HTOP + 4 + 16))     Enough free heap to build lists?
+    {
+      addr = &&alloc20;         return to alloc20 after GC
+      n_reg_obj = 1;            One live x register
+      g0 = 4;                   Need at least 4 words
+      goto *do_gc_c;            Do GC
+    }
+alloc20:
+  HTOP[0] = *(E + 0 + 1);       Set head in cons cell to H
+  HTOP[1] = x0;                 Set tail to return value from double/1
+  *(reg + 3) =                  Tag pointer
+    ((uint32) (HTOP) << 4 | 1);
+  HTOP += 2;                    Move HTOP
+  HTOP[0] = *(E + 0 + 1);       Set head
+  HTOP[1] = *(reg + 3);         Set tail
+  x0 = ((uint32) (HTOP) << 4 | 1);      Tag pointer
+  HTOP += 2;                    Move HTOP
+  CP = ((uint32 *) (*(E)));     Restore saved CP
+  E += 1 + 1;                   Free stack space
+  goto *CP;                     Jump to CP
+
+next1:
+  if (((x0) != (11 + 16)))      Empty list?
+    goto next2;
+  goto *CP;                     Jump to CP
+
+next2:
+  c_p->freason = 7;             Reason = BADMATCH
+  mod_name = atom_element[0];   Set module
+  func_name = atom_element[1];  Set function
+  func_arity = 1;               Set arity
+  goto *error_action_c;         Jump to error handling
+
+init:
+  l_call[0] = &&double_1;       Export entry point
+}
+      </code>
+    </section>
+
+    <section> <title>ANSI C</title>
+
+    <p>Without the first class labels it's no longer possible to
+    represent a point in the code with just the address of a label.
+    In this model a point the code in represented by a function
+    pointer and an index.  All functions are wrapped in a switch
+    statement with case labels instead of the labels in the GCC model.
+
+    <p>To avoid the problem with C code not being tail recursive, a
+    dispatch loop was added to handle function calls.  One function
+    calling/returning to another function returns the address of the
+    callee/caller and the index of the case label where execution
+    should continue.  The dispatch loop then calls that function with
+    the index as an argument.
+
+      <code type=c>
+void dispatch_loop(func, i)
+     uint32 *func;
+     int i;
+{
+    int index = i;
+    while (func) {
+        func = ((uint32 *(*)())func)(&index);
+    }
+}
+      </code>
+
+    <p>In this model, a function call, unfortunately, requires a lot
+    of extra work and an intermediary landing in the dispatch
+    loop. Function A calling B goes through the following steps:
+
+    <list>
+      <item>In caller (A)
+        <list>
+          <item>set CP to address of current function
+          <item>set CI to number of next case label
+          <item>set *index to 0
+          <item>return address of function to call
+        </list>
+      <item>In dispatch loop
+        <list>
+          <item>Did last function call return a non-NULL pointer? If
+          so, call that pointer with the argument &amp;index
+        </list>
+      <item>In callee:
+        <list>
+          <item>execute switch(*index)
+          <item>...execute function...
+          <item>Set *index to CI
+          <item>return CP
+        </list>
+      <item>In dispatch loop
+        <list>
+          <item>Did last function call return a non-NULL pointer? If
+          so, call that pointer with the argument &amp;index
+        </list>
+      <item>In caller (A)
+        <list>
+          <item>execute switch(*index)
+          <item>continue execution after function call
+        </list>
+    </list>
+
+    <p>Using a function pointer and an index instead of the label
+    address affects several aspects of the code. Besides the
+    continuation index field <c>ci</c> added to the continuation
+    pointer <c>cp</c> in the process structure, the <c>call</c>, and
+    <c>action_time_out</c> fields have their index fields
+    <c>call_index</c>, and <c>action_time_out_index</c>.
+
+    <p>Without the global asm declarations the virtual machine
+    registers cannot be cached in hardware registers so the relevant
+    fields in the current process struct are used instead.
+
+      <code type=c>
+
+static uint32 *                 Return type has changed.
+
+double_1_000 (int *index, struct process *c_p, uint32 * reg)
+
+                                The dispatch loop passes C_P and reg
+                                as arguments.  This will place them in 
+                                HW registers.
+{
+  uint32 *self = (uint32 *) double_1_000;       Pointer to current function
+  uint32 *t0, bres;
+loop:
+  switch (*index)
+    {
+    case 0:                             Entry point
+      if (((*(reg + 0)) & (0xf - 1)))   Non-empty list?
+        goto next1;
+
+    alloc18:
+      c_p->stop -= 1 + 2;               Allocate three slots on the stack
+                                        One for CP, one for CI and one for
+                                        the local variable H.
+      if (c_p->stop <= c_p->htop)       Time for a GC?
+        {
+          c_p->stop += 1 + 2;
+          n_reg_obj = 1;
+          do_gc_stack_call(c_p, reg, 0); Call GC, no need to set addr
+          goto alloc18;
+        }
+      *(c_p->stop) = 
+        ((uint32) (c_p->cp));           Save current CP
+      *((c_p->stop) + 1) =            
+        ((c_p->ci) << 4 | 15);          Tag and save current CI
+      t0 = ((uint32 *) ((*(reg + 0)) >> 4));
+      *(c_p->stop + 0 + 2) = *t0;
+      *(reg + 0) = *(t0 + 1);
+      c_p->cp = self;                   Set CP to current function
+      c_p->ci = 19;                     Set CI to next case label
+      if (c_p->fcalls-- > 0)            All reductions used?
+        {
+          *index = 0;                   Start at index 0, entry point
+          if (l_call[0] == self)        Calling myself? Go straight
+            goto loop;                  there, skip dispatch loop
+          return l_call[0];             Return address of callee
+        };
+      c_p->call = l_call[0];            Set address of callee
+      c_p->call_index = 0;              Set index to entry point
+      c_p->arity = 1;
+      c_p->current_module = atom_element[0];
+      c_p->current_function = atom_element[1];
+      c_p->current_arity = 1;
+      *index = dispatch_code_case;      Index of extracted code chunk
+      return (uint32 *) schedule2;      Let dispatch loop call emulator
+
+    case 19:
+      if (c_p->stop <= (c_p->htop + 4 + 16))    Enough space on heap?
+        {
+          n_reg_obj = 1;
+          g0 = 4;
+          do_gc_call (c_p, reg, 4);     Call GC
+        };
+      c_p->htop[0] = *(c_p->stop + 0 + 2);      Build cons cell
+      c_p->htop[1] = *(reg + 0);
+      *(reg + 3) = ((uint32) (c_p->htop) << 4 | 1);
+      c_p->htop += 2;
+      c_p->htop[0] = *(c_p->stop + 0 + 2);      Build cons cell
+      c_p->htop[1] = *(reg + 3);
+      *(reg + 0) = ((uint32) (c_p->htop) << 4 | 1);
+      c_p->htop += 2;
+      c_p->cp = 
+        ((uint32 *) (*(c_p->stop)));            Restore CP
+      c_p->ci = 
+        (((sint32) (*((c_p->stop) + 1))) >> 4); Restore CI
+      c_p->stop += 1 + 2;                       Release stack space
+      *index = c_p->ci;                         Set index
+      if (c_p->cp == self)                      Returning to myself?
+        goto loop;                              Go straight there
+      return c_p->cp;                           Return address of caller
+
+    next1:
+      if (((*(reg + 0)) != (11 + 16)))  If arg an empty list?
+        goto next2;
+      *index = c_p->ci;                 Set index to CI
+      if (c_p->cp == self)              Returning to myself?
+        goto loop;
+      return c_p->cp;                   Return address of caller
+
+    next2:
+      c_p->freason = 7;                 BADMATCH
+      mod_name = atom_element[0];
+      func_name = atom_element[1];
+      func_arity = 1;
+      *index = error_action_code_case;  Index of extracted code chunk
+      return (uint32 *) schedule2;      Return address of emulator
+
+    case -1:                            Entry point for init
+      l_call[0] = 
+        (uint32 *) double_1_000;        Export my address, entry point
+                                        is always 0
+    }
+}
+      </code>
+    </section>
+
+    <section>
+
+      <title>Use GCC extensions, but call each function</title>
+
+      <p>On some architectures, e.g. Alpha, GCC uses the function
+      prologue to load some registers with constants and pointers, so
+      if the prologue isn't executed the code might produce erroneous
+      values or fail completely.  To be able to use the extensions of
+      GCC on these architectures the GCC model and the ANSI C model
+      were merged.
+
+      <p>In this model the dispatch loop is used, but instead of an
+      index the address of a label is passed and the callee jumps
+      straight to that label.
+
+      <p>This means function tables have to hold both the function
+      address and the address of the entry point.
+
+      <code type=c>
+static uint32 *
+double_1_000 (go, index)
+     uint32 *go;
+     uint32 **index;
+{
+  static uint32 *self;
+  register uint32 *t0;
+  uint32 bres;
+  if (go)                               If we got a label address,
+    goto *go;                           jump to it!
+  self = (uint32 *) double_1_000;       Initialize own address
+  goto init;                            Do rest of init
+
+double_1:
+  if (((x0) & (0xf - 1)))
+    goto next1;
+alloc18:
+  E -= 1 + 2;
+  if (E <= HTOP)
+    {
+      E += 1 + 2;                       Need place for CP, CI, and H
+      n_reg_obj = 1;
+      do_gc_stack_call(0);              Call GC in this model, too.
+      goto alloc18;;
+    }
+  *(E) = ((uint32) (CP));               Save CP
+  *((E) + 1) = 
+    (((uint32) c_p->ci) << 4 | 15);     Tag and save CI
+  t0 = ((uint32 *) ((x0) >> 4));        Extract H and T
+  *(E + 0 + 2) = *t0;
+  x0 = *(t0 + 1);
+  CP = self;                            Set CP to current function
+  c_p->ci = &&ret19;                    Set CI to next label
+  if (fcalls-- > 0)                     Any reductions left?
+    {
+      if (l_call[0 * 2] == self)        Skip the dispatch loop if
+        goto *l_call[0 * 2 + 1];        calling myself
+      *index = l_call[0 * 2 + 1];       Set index to address of label
+      return l_call[0 * 2];             Return address of callee.
+    };
+  c_p->call = l_call[0 * 2];            Set call to address of function
+  c_p->call_index = l_call[0 * 2 + 1];  Set call_index to address of label
+  c_p->arity = 1;
+  c_p->current_module = atom_element[0];
+  c_p->current_function = atom_element[1];
+  c_p->current_arity = 1;
+  *index = dispatch_c;                  Set index to address of dispatch code
+  return (uint32 *) schedule2;          Let dispatch loop call emulator
+                                        and the emulator will jump straight
+                                        the dispatch code.
+ret19:
+  if (E <= (HTOP + 4 + 16))             Enough space on the heap?
+    {
+      n_reg_obj = 1;
+      g0 = 4;
+      do_gc_call (4);                   Call GC
+    };
+  HTOP[0] = *(E + 0 + 2);               Build cons cell
+  HTOP[1] = x0;
+  *(reg + 3) = ((uint32) (HTOP) << 4 | 1);
+  HTOP += 2;
+  HTOP[0] = *(E + 0 + 2);               Build cons cell
+  HTOP[1] = *(reg + 3);
+  x0 = ((uint32) (HTOP) << 4 | 1);
+  HTOP += 2;
+  CP = ((uint32 *) (*(E)));             Restore CP
+  c_p->ci = (uint32 *) 
+    (((sint32) (*((E) + 1))) >> 4);     Restore CI
+  E += 1 + 2;                           Deallocate stack
+  if (CP == self)                       Returning to myself?
+    goto *c_p->ci;                      Go straight there
+  *index = c_p->ci;                     Set index to address in caller
+  return CP;                            Return address of caller to loop
+
+next1:
+  if (((x0) != (11 + 16)))              Empty list?
+    goto next2;
+  if (CP == self)                       Returning to self?
+    goto *c_p->ci;                      Go straight there
+  *index = c_p->ci;                     Set index to address in caller
+  return CP;                            Return address of caller to loop
+
+next2:
+  c_p->freason = 7;                     BADMATCH
+  mod_name = atom_element[0];
+  func_name = atom_element[1];
+  func_arity = 1;
+  *index = error_action_c;              Label of error handling code
+  return (uint32 *) schedule2;          Address of emulator
+
+init:
+  l_call[0 * 2] = self;                 Export my address
+  l_call[0 * 2 + 1] = &&double_1;       and address of the entry label
+}
+      </code>
+    </section>
+  </section>  
+
+  
+  <section>
+    <title>The Emulator</title>
+
+      <p>Without the first class labels extension of GCC, the whole
+      idea of a threaded emulator is impossible.  For simplicity and
+      in order to minimize the changes a simple byte code emulation
+      scheme, as close to the threaded emulator as possible, was
+      chosen.  It's really a word code emulator, opcodes and arguments
+      are expanded to a full word just as in the threaded emulator.
+
+      When the emulator runs in threaded mode, the code loader
+      replaces the opcode with the address of the (C) code that
+      executes that BEAM instruction, but the word code emulator uses
+      the original opcode as an index in a switch statement.
+
+    <section>
+    <title>Macros</title>
+
+      <p>To avoid the horrors of maintaining code for three execution
+      models nested in ifdefs, most of the differences are hidden
+      behind macros. There are three configuration files that contain
+      different sets of macros and a compilation flag determines which
+      one to include.
+
+      <p>Take the macro <c>SET_CP(N)</c> as an example.  The operation
+      "Set the continuation pointer to the address of a return label"
+      will expand of one of these three alternatives:
+
+      <list>
+	<item><c>#define SET_CP(L)		CP = &&ret##L</c>
+	  <p>Sets the continuation pointer to the address of a label
+
+	<item><c>#define SET_CP(L)		{CP = self; CI = L;}</c>
+	<p>Sets the continuation pointer to the current function and
+	the continuation index to the next case label in the switch
+
+	<item><c>#define SET_CP(L)		{CP = self; CI = &&ret##L;}</c>
+	<p>Sets the continuation pointer to the current function and
+	the continuation index to address of a label.
+      </list>
+
+      <p>Unfortunately, there can be several macros with similar names
+      that does almost the same thing. In one model they can even
+      expand to the same code and the difference between two macros
+      might not be obvious unless one examines the other models.  Take
+      care when writing new code for the emulator and make sure you
+      test code for <em>all</em> the models.
+    </section>
+  </section>
+</report>

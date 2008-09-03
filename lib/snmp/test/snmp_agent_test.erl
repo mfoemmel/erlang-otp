@@ -3411,8 +3411,8 @@ ma_v2_inform1(MA) ->
 		after
 		    20000 ->
 			?ERR("ma_v2_inform1 -> "
-			     "timeout awaiting snmp_notification [tag1]",
-			     []),
+			     "timeout awaiting snmp_notification [~p]",
+			     [Tag03]),
 			{error, snmp_notification_timeout}
 		end
 	end,
@@ -3450,8 +3450,8 @@ ma_v2_inform1(MA) ->
 		after
 		    240000 ->
 			?ERR("ma_v2_inform1 -> "
-			     "timeout awaiting snmp_notification [tag2]",
-			     []),
+			     "timeout awaiting snmp_notification [~p]",
+			     [Tag07]),
 			{error, snmp_notification_timeout}
 		end
 	end,

@@ -16,6 +16,7 @@
 
 -export([analyse/1]).
 -export([liveout/2]).
+-export([uses/1, defines/1]).	% used in hipe_*_spill_restore modules
 
 -include("../x86/hipe_x86.hrl").  % ../x86/ is needed when included in amd64
 -include("../flow/liveness.inc").

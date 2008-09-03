@@ -18,7 +18,11 @@
 %%</legalnotice>
 %%
 
-%%% Description : SSH connection protocol messages
+%%% Description : SSH connection protocol 
+
+-define(DEFAULT_PACKET_SIZE, 32768).
+-define(DEFAULT_WINDOW_SIZE, 2*?DEFAULT_PACKET_SIZE).
+-define(DEFAULT_TIMEOUT, 5000).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -225,5 +229,35 @@
 %%  Specifies the output baud rate in bits per second.
 -define(TTY_OP_OSPEED,129).  
 
-    
+-record(channel,
+	{
+	  type,          %% "session", "x11", "forwarded-tcpip", "direct-tcpip"
+	  sys,           %% "none", "shell", "exec" "subsystem"
+	  user,          %% "user" process id (default to cm user)
+	  flow_control, 
+	  passive_subsys, 
+	  subsys_queue,
 
+	  local_id,           %% local channel id
+
+	  recv_window_size,
+	  recv_packet_size,
+	  %%recv_eof = false,
+	  recv_close = false,
+
+	  remote_id,          %% remote channel id
+	  send_window_size,
+	  send_packet_size,
+	  %%sent_eof = false,
+	  sent_close = false,
+	  send_buf = []
+	 }).
+
+-record(connection, {
+	  requests = [], %% [{ChannelId, Pid}...] awaiting reply on request,
+	  channel_cache,
+	  channel_pids = [],
+	  port_bindings,
+	  channel_id_seed,
+	  passive_subsys
+	 }).

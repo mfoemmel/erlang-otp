@@ -261,8 +261,8 @@ Expect 2.
 	: {arith, '$2', '$1', '$3'} .
 'MultiplicativeExpr' -> 'MultiplicativeExpr' 'div' 'UnaryExpr' 
 	: {arith, 'div', '$1', '$3'} .
-'MultiplicativeExpr' -> 'MultiplicativeExpr' 'mod' 'UnaryExpr' : 
-	{arith, 'mod', '$1', '$2'} .
+'MultiplicativeExpr' -> 'MultiplicativeExpr' 'mod' 'UnaryExpr'
+	: {arith, 'mod', '$1', '$3'} .
 
 
 %% [27]

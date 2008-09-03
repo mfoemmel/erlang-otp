@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE comref SYSTEM "comref.dtd">
+
+<comref>
+  <header>
+    <copyright>
+      <year>2007</year>
+      <year>2007</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>escript</title>
+    <prepared></prepared>
+    <docno></docno>
+    <date></date>
+    <rev></rev>
+  </header>
+  <com>escript</com>
+  <comsummary>Erlang scripting support</comsummary>
+  <description>
+    <p><c><![CDATA[escript]]></c> provides support for running short Erlang programs
+      without having to compile them first and an easy way to retrieve the
+      command line arguments.</p>
+  </description>
+  <funcs>
+    <func>
+      <name>script-name script-arg1 script-arg2...</name>
+      <name>escript escript-flags script-name script-arg1 script-arg2...</name>
+      <fsummary>Run a script written in Erlang</fsummary>
+      <desc>
+        <p><c><![CDATA[escript]]></c> runs a script written in Erlang.</p>
+        <p>Here follows an example.</p>
+        <pre>
+$ <input>cat factorial</input>        
+#!/usr/bin/env escript
+%% -*- erlang -*-
+main([String]) ->
+    try
+\011N = list_to_integer(String),
+\011F = fac(N),
+\011io:format("factorial ~w = ~w\
+", [N,F])
+    catch
+\011_:_ ->
+\011    usage()
+    end;
+main(_) ->
+    usage().
+        
+usage() ->
+    io:format("usage: factorial integer\
+"),
+    halt(1).
+        
+fac(0) -> 1;
+fac(N) -> N * fac(N-1).
+$ <input>factorial 5</input>
+factorial 5 = 120
+$ <input>factorial</input>
+usage: factorial integer
+$ <input>factorial five</input>
+usage: factorial integer        </pre>
+        <p>Note that there should not be any module declaration in an Erlang
+          script file. Instead, the first line is usually the interpreter line
+          which invokes <c><![CDATA[escript]]></c>. If you invoke <c><![CDATA[escript]]></c> like this</p>
+        <pre>
+$ <input>escript factorial 5</input>        </pre>
+        <p>the contents of the first line does not matter, but it cannot contain
+          Erlang code as it will be <em>ignored</em>.</p>
+        <p>If you know the location of the <c><![CDATA[escript]]></c> executable, the first
+          line can directly give the path to <c><![CDATA[escript]]></c>. For instance:</p>
+        <pre>
+#!/usr/local/bin/escript        </pre>
+        <p>As any other kind of scripts, Erlang scripts will not work on
+          Unix platforms if they execution bit for the script file is not set.
+          (Use <c><![CDATA[chmod +x script-name]]></c> to turn on the execution bit.)
+          </p>
+        <p>An Erlang script file must always contain the function <em>main/1</em>.
+          When the script is run, the <c><![CDATA[main/1]]></c> will be called with a list
+          of strings representing the arguments given to the script (not changed or
+          interpreted in any way).</p>
+        <p>Call <c><![CDATA[escript:script_name/0]]></c> from your to script to retrieve
+          the pathname of the script (the pathname is usually, but not always,
+          absolute).</p>
+        <p>It is not necessary to export the <c><![CDATA[main/1]]></c> function.</p>
+        <p>By default, the script will be interpreted. You can force it to be
+          compiled by including the following line somewhere in the script file:</p>
+        <pre>
+-mode(compile).        </pre>
+        <p>Pre-processor directives in the script files are ignored, with the
+          exception for the <c><![CDATA[-include_lib]]></c> directive. For instance, use</p>
+        <pre>
+-include_lib("kernel/include/file.hrl").        </pre>
+        <p>to include the record definitions for the records used by the
+          <c><![CDATA[file:read_file_info/1]]></c> function.</p>
+        <p></p>
+        <p>Pre-defined macros (such as <c><![CDATA[?MODULE]]></c>) will not work.
+          A script does not have module name, so BIFs such as
+          <seealso marker="kernel:erlang#spawn/3">spawn/3</seealso>
+          that require a module name cannot be used.
+          Instead, use a BIF that take a fun, such as
+          <seealso marker="kernel:erlang#spawn/1">spawn/1</seealso>.</p>
+        <p>The script will be checked for syntactic and semantic correctness
+          before being run. If there are warnings (such as unused variables),
+          they will be printed and the script will still be run. If there are
+          errors, they will be printed and the script will not be run and its
+          exit status will be 127.</p>
+        <p>If the <c><![CDATA[main/1]]></c> function in the script returns successfully,
+          the exit status for the script will be 0. If an exception is generated
+          during execution, a short message will be printed and the script terminated
+          with exit status 127.</p>
+        <p></p>
+        <p>To return your own non-zero exit code, call <c><![CDATA[halt(ExitCode)]]></c>;
+          for instance:</p>
+        <pre>
+halt(1).        </pre>
+      </desc>
+    </func>
+  </funcs>
+
+  <section>
+    <title>Options accepted by escript</title>
+    <taglist>
+      <tag>-s</tag>
+      <item>Only perform a syntactic and semantic check of the script file.
+       Warnings and errors (if any) are written to the standard output, but
+       the script will not be run. The exit status will be 0 if there were
+       no errors, and 127 otherwise.</item>
+    </taglist>
+  </section>
+</comref>
+

@@ -56,27 +56,14 @@ struct port;
 
 #define ERTS_DEFAULT_MAX_PROCESSES (1 << 15)
 
-Uint erts_get_tot_proc_mem(void);
-
-#define ERTS_PROC_MORE_MEM(Size) \
-  (erts_smp_atomic_add(&erts_tot_proc_mem, (long) (Size)))
-
-#define ERTS_PROC_LESS_MEM(Size) \
-  (ASSERT_EXPR(erts_smp_atomic_read(&erts_tot_proc_mem) >= (long) (Size)), \
-   erts_smp_atomic_add(&erts_tot_proc_mem, -((long) (Size))))
-
 #define ERTS_HEAP_ALLOC(Type, Size)					\
-    (ERTS_PROC_MORE_MEM((Size)),					\
-     erts_alloc((Type), (Size)))
+     erts_alloc((Type), (Size))
 
 #define ERTS_HEAP_REALLOC(Type, Ptr, OldSize, NewSize)			\
-    (ERTS_PROC_LESS_MEM((OldSize)),					\
-     ERTS_PROC_MORE_MEM((NewSize)),					\
-     erts_realloc((Type), (Ptr), (NewSize)))
+     erts_realloc((Type), (Ptr), (NewSize))
 
 #define ERTS_HEAP_FREE(Type, Ptr, Size)					\
-    (ERTS_PROC_LESS_MEM((Size)),					\
-     erts_free((Type), (Ptr)))
+     erts_free((Type), (Ptr))
 
 #define INITIAL_MOD 0
 #define INITIAL_FUN 1
@@ -92,7 +79,7 @@ struct saved_calls {
 };
 
 extern Export exp_send, exp_receive, exp_timeout;
-extern Uint erts_no_of_schedulers;
+extern Uint erts_no_schedulers;
 
 #ifdef ERTS_SMP
 #include "erl_bits.h"
@@ -285,11 +272,14 @@ struct process {
     ErlHeapFragment* mbuf;	/* Pointer to message buffer list */
     Uint mbuf_sz;		/* Size of all message buffers */
 
+    union {
 #ifdef ERTS_SMP
-    ErtsSmpPTimer *ptimer;
+	ErtsSmpPTimer *ptimer;
 #else
-    ErlTimer tm;		/* Timer entry */
+	ErlTimer tm;		/* Timer entry */
 #endif
+	void *exit_data;	/* Misc data referred during termination */
+    } u;
 
 #ifdef ERTS_SMP
     erts_proc_lock_t lock;
@@ -471,8 +461,6 @@ struct erts_system_profile_flags_t {
 };
 extern struct erts_system_profile_flags_t erts_system_profile_flags;
 
-extern erts_smp_atomic_t erts_tot_proc_mem;
-
 #define INVALID_PID(p, pid)	((p) == NULL				\
 				 || (p)->id != (pid)			\
 				 || (p)->status == P_EXITING)
@@ -531,8 +519,9 @@ extern erts_smp_atomic_t erts_tot_proc_mem;
 #define F_TRACE_SCHED_PROCS  (1 << 19) /* With virtual scheduling */
 #define F_TRACE_PORTS	     (1 << 20) /* Ports equivalent to F_TRACE_PROCS */
 #define F_TRACE_SCHED_NO     (1 << 21) /* Trace with scheduler id */
+#define F_TRACE_SCHED_EXIT   (1 << 22)
 
-#define F_NUM_FLAGS          22
+#define F_NUM_FLAGS          23
 #ifdef DEBUG
 #  define F_INITIAL_TRACE_FLAGS (5 << F_NUM_FLAGS)
 #else
@@ -541,13 +530,21 @@ extern erts_smp_atomic_t erts_tot_proc_mem;
 
 
 
-#define TRACEE_FLAGS (  F_TRACE_PROCS | F_TRACE_CALLS \
+#define TRACEE_FLAGS ( F_TRACE_PROCS | F_TRACE_CALLS \
 		     | F_TRACE_SOS |  F_TRACE_SOS1| F_TRACE_RECEIVE  \
-		     | F_TRACE_SOL | F_TRACE_SOL1 | F_TRACE_SEND | \
-		     F_TRACE_SCHED | F_TIMESTAMP | F_TRACE_GC  | \
-		     F_TRACE_ARITY_ONLY | F_TRACE_RETURN_TO | \
-                     F_TRACE_SILENT | F_TRACE_SCHED_PROCS | F_TRACE_PORTS | \
-		     F_TRACE_SCHED_PORTS | F_TRACE_SCHED_NO)
+		     | F_TRACE_SOL | F_TRACE_SOL1 | F_TRACE_SEND \
+		     | F_TRACE_SCHED | F_TIMESTAMP | F_TRACE_GC \
+		     | F_TRACE_ARITY_ONLY | F_TRACE_RETURN_TO \
+                     | F_TRACE_SILENT | F_TRACE_SCHED_PROCS | F_TRACE_PORTS \
+		     | F_TRACE_SCHED_PORTS | F_TRACE_SCHED_NO \
+		     | F_TRACE_SCHED_EXIT)
+
+#define ERTS_TRACEE_MODIFIER_FLAGS \
+  (F_TRACE_SILENT | F_TIMESTAMP | F_TRACE_SCHED_NO)
+#define ERTS_PORT_TRACEE_FLAGS \
+  (ERTS_TRACEE_MODIFIER_FLAGS | F_TRACE_PORTS | F_TRACE_SCHED_PORTS)
+#define ERTS_PROC_TRACEE_FLAGS \
+  ((TRACEE_FLAGS & ~ERTS_PORT_TRACEE_FLAGS) | ERTS_TRACEE_MODIFIER_FLAGS)
 
 /* Sequential trace flags */
 #define SEQ_TRACE_SEND     (1 << 0)
@@ -629,7 +626,7 @@ void erts_late_init_process(void);
 int erts_block_multi_scheduling(Process *, ErtsProcLocks, int, int);
 int erts_is_multi_scheduling_blocked(void);
 Eterm erts_multi_scheduling_blockers(Process *);
-void erts_start_schedulers(Uint);
+void erts_start_schedulers(void);
 void erts_smp_notify_check_children_needed(void);
 #endif
 void erts_init_process(void);
@@ -640,6 +637,7 @@ Process *schedule(Process*, int);
 void erts_schedule_misc_op(void (*)(void *), void *);
 Eterm erl_create_process(Process*, Eterm, Eterm, Eterm, ErlSpawnOpts*);
 void erts_do_exit_process(Process*, Eterm);
+void erts_continue_exit_process(Process *);
 void set_timer(Process*, Uint);
 void cancel_timer(Process*);
 /* Begin System profile */
@@ -714,6 +712,7 @@ ErtsSchedulerData *erts_get_scheduler_data(void)
 
 ERTS_GLB_INLINE Process *erts_get_current_process(void);
 ERTS_GLB_INLINE Eterm erts_get_current_pid(void);
+ERTS_GLB_INLINE Uint erts_get_scheduler_id(void);
 
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
@@ -730,6 +729,17 @@ Eterm erts_get_current_pid(void)
 {
     Process *proc = erts_get_current_process();
     return proc ? proc->id : THE_NON_VALUE;
+}
+
+ERTS_GLB_INLINE
+Uint erts_get_scheduler_id(void)
+{
+#ifdef ERTS_SMP
+    ErtsSchedulerData *esdp = erts_get_scheduler_data();
+    return esdp ? esdp->no : (Uint) 0;
+#else
+    return erts_get_scheduler_data() ? (Uint) 1 : (Uint) 0;
+#endif
 }
 
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */

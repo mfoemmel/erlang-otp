@@ -24,11 +24,13 @@
 
 -behaviour(supervisor).
 
+
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
 -export([
-	 start_link/0
+	 start_link/0,
+	 start_child/4
 	]).
 
 %%-----------------------------------------------------------------
@@ -42,13 +44,25 @@
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
+
 %%-----------------------------------------------------------------
 %% Func: start_link/1
-%% Description: Starts the proces that keeps track of the TCP 
+%% Description: Starts the process that keeps track of the TCP 
 %%              accept processes
 %%-----------------------------------------------------------------
 start_link() ->
     supervisor:start_link(?MODULE, []).
+
+
+%%-----------------------------------------------------------------
+%% Func: start_link/1
+%% Description: Starts the acceptor process (the TCP accept 
+%%              processes)
+%%-----------------------------------------------------------------
+start_child(Pid, Rec, Ref, Listen) ->
+    ChildSpec = [{Rec, Ref, Listen}],  % Simple one-for-one
+    supervisor:start_child(Pid, ChildSpec).
+
 
 %%-----------------------------------------------------------------
 %% Server functions

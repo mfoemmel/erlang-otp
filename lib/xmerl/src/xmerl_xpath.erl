@@ -101,9 +101,7 @@
 
 -record(state, {context = #xmlContext{},
 		acc = []}).
-%% -record(node, {node,
-%% 	       pos,
-%% 	       parents}).
+
 
 -define(nodeset(NS), #state{context = #xmlContext{nodeset = NS}}).
 -define(context(C), #state{context = C}).
@@ -111,26 +109,31 @@
 
 
 
-%% @spec string(Str, Doc) -> docEntity()
+%% @spec string(Str, Doc) -> [docEntity()] | Scalar
 %% @equiv string(Str,Doc, [])
 string(Str, Doc) ->
     string(Str, Doc, []).
 
 %% @spec string(Str,Doc,Options) -> 
-%%      docEntity()
+%%      [docEntity()] | Scalar
 %% @equiv string(Str,Doc, [],Doc,Options)
 string(Str, Doc, Options) ->
     string(Str, Doc, [], Doc, Options).
 
 %% @spec string(Str,Node,Parents,Doc,Options) ->
-%%      docEntity()
+%%      [docEntity()] | Scalar
 %%   Str     = xPathString()
 %%   Node    = nodeEntity()
 %%   Parents = parentList()
 %%   Doc     = nodeEntity()
 %%   Options = option_list()
+%%   Scalar  = xmlObj
 %% @doc Extracts the nodes from the parsed XML tree according to XPath.
+%%   xmlObj is a record with fields type and value,
+%%   where type is boolean | number | string
 string(Str, Node, Parents, Doc, Options) ->
+%% record with fields type and value,
+%%                where type is boolean | number | string
     FullParents = 
 	case Parents of
 	    [] ->
@@ -148,9 +151,17 @@ string(Str, Node, Parents, Doc, Options) ->
     Context=(new_context(Options))#xmlContext{context_node = ContextNode,
 					      whole_document = WholeDoc},
 %io:format("string Context=~p~n",[Context]),
-    #state{context =  NewContext} = match(Str, #state{context = Context}),
+    #state{context = NewContext} = match(Str, #state{context = Context}),
 %io:format("string NewContext=~p~n",[NewContext]),
-    [N || #xmlNode{node = N} <- NewContext#xmlContext.nodeset].
+    case NewContext#xmlContext.nodeset of
+	ScalObj = #xmlObj{type=Scalar} 
+	when Scalar == boolean;	Scalar == number; Scalar == string ->
+	    ScalObj;
+	#xmlObj{type=nodeset,value=NodeSet} -> 
+	    NodeSet;
+	_ ->
+	    [N || #xmlNode{node = N} <- NewContext#xmlContext.nodeset]
+    end.
 
 
 whole_document(#xmlDocument{} = Doc) ->
@@ -218,7 +229,10 @@ match(Str, S = #state{}) ->
 
 
 match_expr({path, Type, Arg}, S) ->
-    eval_path(Type, Arg, S#state.context).
+    eval_path(Type, Arg, S#state.context);
+%% PrimaryExpr
+match_expr(PrimExpr,S) ->
+    eval_primary_expr(PrimExpr,S).
 
 
 
@@ -236,8 +250,9 @@ path_expr({step, {Axis, NodeTest, PredExpr}}, S = #state{context = C,
 							 acc = Acc}) ->
     ?dbg("PredExpr = ~p~n", [PredExpr]),
     NewContext = axis(Axis, NodeTest, C, Acc),
-    pred_expr(PredExpr, S#state{context = NewContext}).
-
+    pred_expr(PredExpr, S#state{context = NewContext});
+path_expr('/', S) ->
+    S.
 
 
 pred_expr([], S) ->
@@ -250,9 +265,18 @@ pred_expr([{pred, Pred}|Preds], S = #state{}) ->
 %% simple case: the predicate is a number, e.g. para[5].
 %% No need to iterate over all nodes in the nodeset; we know what to do.
 %%
-eval_pred({number, N}, S = #state{context = C = #xmlContext{nodeset = NS}}) ->
-    case length(NS)>=N of
+eval_pred({number, N0}, 
+	  S = #state{context = C = #xmlContext{nodeset = NS,
+					       axis_type = AxisType}}) ->
+    Len = length(NS),
+    case Len>=N0 of
 	true ->
+	    N = case AxisType of
+		    forward ->
+			N0;
+		    reverse ->
+			Len + 1 - N0
+		end,
 	    NewNodeSet = [lists:nth(N, NS)],
 	    NewContext = C#xmlContext{nodeset = NewNodeSet},
 	    S#state{context = NewContext};
@@ -297,8 +321,13 @@ write_node(_) ->
 eval_path(union, {PathExpr1, PathExpr2}, C = #xmlContext{}) ->
     S = #state{context = C},
     S1 = match_expr(PathExpr1, S),
-    NewNodeSet = (S#state.context)#xmlContext.nodeset,
-    match_expr(PathExpr2, S1#state{acc = NewNodeSet});
+%%    NewNodeSet = (S1#state.context)#xmlContext.nodeset,
+    S2 = match_expr(PathExpr2, S1#state{context=C}),
+    NodeSet1 = (S1#state.context)#xmlContext.nodeset,
+    NodeSet2 = (S2#state.context)#xmlContext.nodeset,
+    NewNodeSet = ordsets:to_list(ordsets:union(ordsets:from_list(NodeSet1),
+					       ordsets:from_list(NodeSet2))),
+    S2#state{context=(S2#state.context)#xmlContext{nodeset=NewNodeSet}};
 eval_path(abs, PathExpr, C = #xmlContext{}) ->
     NodeSet = [C#xmlContext.whole_document],
     Context = C#xmlContext{nodeset = NodeSet},
@@ -314,6 +343,14 @@ eval_path(filter, {PathExpr, PredExpr}, C = #xmlContext{}) ->
     S1 = path_expr(PathExpr, S),
     pred_expr(PredExpr, S1).
 
+eval_primary_expr(FC = {function_call,_,_},S = #state{context = Context}) ->
+%%    NewNodeSet = xmerl_xpath_pred:eval(FC, Context),
+    NewNodeSet = xmerl_xpath_lib:eval(primary_expr, FC, Context),
+    NewContext = Context#xmlContext{nodeset = NewNodeSet},
+    S#state{context = NewContext};
+eval_primary_expr(PrimExpr,_S) ->
+    exit({primary_expression,{not_implemented, PrimExpr}}).
+    
 
 %% axis(Axis,NodeTest,Context::xmlContext()) -> xmlContext()
 %% axis(Axis,NodeTest,Context,[])
@@ -365,6 +402,8 @@ axis1(descendant_or_self, Tok, N, Acc, Context) ->
 
 fwd_or_reverse(ancestor, Context) ->
     reverse_axis(Context);
+fwd_or_reverse(ancestor_or_self, Context) ->
+    reverse_axis(Context);
 fwd_or_reverse(preceding_sibling, Context) ->
     reverse_axis(Context);
 fwd_or_reverse(preceding, Context) ->
@@ -382,7 +421,6 @@ forward_axis(Context) ->
 match_self(Tok, N, Acc, Context) ->
     case node_test(Tok, N, Context) of
 	true ->
-	    %io:format("node_test -> true.~n", []),
 	    [N|Acc];
 	false ->
 	    Acc
@@ -393,40 +431,27 @@ match_descendant(Tok, N, Acc, Context) ->
     #xmlNode{parents = Ps, node = Node, type = Type} = N,
     case Type of
 	El when El == element; El == root_node ->
-%	element ->
 	    NewPs = [N|Ps],
 	    match_desc(get_content(Node), NewPs, Tok, Acc, Context);
 	_Other ->
 	    Acc
     end.
 
-%match_desc(Content, Parents, Tok, Context) ->
-%    match_desc(Content, Parents, Tok, [], Context).
 
 match_desc([E = #xmlElement{}|T], Parents, Tok, Acc, Context) ->
+    Acc1 = match_desc(T, Parents, Tok, Acc, Context),
     N = #xmlNode{type = node_type(E),
 		 node = E,
 		 parents = Parents},
     NewParents = [N|Parents],
-    Acc1 = case node_test(Tok, N, Context) of
-	       true ->
-		   [N|Acc];
-	       false ->
-		   Acc
-	   end,
     Acc2 = match_desc(get_content(E), NewParents, Tok, Acc1, Context),
-    match_desc(T, Parents, Tok, Acc2, Context);
+    match_self(Tok, N, Acc2, Context);
 match_desc([E|T], Parents, Tok, Acc, Context) ->
+    Acc1 = match_desc(T, Parents, Tok, Acc, Context),
     N = #xmlNode{node = E,
 		 type = node_type(E),
 		 parents = Parents},
-    Acc1 = case node_test(Tok, N, Context) of
-	       true ->
-		   [N|Acc];
-	       false ->
-		   Acc
-	   end,
-    match_desc(T, Parents, Tok, Acc1, Context);
+    match_self(Tok, N, Acc1, Context);
 match_desc([], _Parents, _Tok, Acc, _Context) ->
     Acc.
 			  
@@ -435,13 +460,8 @@ match_desc([], _Parents, _Tok, Acc, _Context) ->
 %% "The 'descendant-or-self' axis contains the context node and the 
 %% descendants of the context node."
 match_descendant_or_self(Tok, N, Acc, Context) ->
-    Acc1 = case node_test(Tok, N, Context) of
-	       true ->
-		   [N|Acc];
-	       false ->
-		   Acc
-	   end,
-    match_descendant(Tok, N, Acc1, Context).
+    Acc1 = match_descendant(Tok, N, Acc, Context),
+    match_self(Tok, N, Acc1, Context).
 
 
 match_child(Tok, N, Acc, Context) ->
@@ -455,12 +475,7 @@ match_child(Tok, N, Acc, Context) ->
 		      ThisN = #xmlNode{type = node_type(E),
 				       node = E,
 				       parents = NewPs},
-		      case node_test(Tok, ThisN, Context) of
-			  true ->
-			      [ThisN|AccX];
-			  false ->
-			      AccX
-		      end
+		      match_self(Tok, ThisN, AccX, Context)
 	      end, Acc, get_content(Node));
 	_Other ->
 	    Acc
@@ -474,12 +489,7 @@ match_parent(Tok, N, Acc, Context) ->
 	[] ->
 	    Acc;
 	[PN|_] ->
-	    case node_test(Tok, PN, Context) of
-		true ->
-		    [PN|Acc];
-		false ->
-		    Acc
-	    end
+	    match_self(Tok, PN, Acc, Context)
     end.
 
 
@@ -489,14 +499,9 @@ match_parent(Tok, N, Acc, Context) ->
 %% always include the root node, unless the context node is the root node."
 match_ancestor(Tok, N, Acc, Context) ->
     Parents = N#xmlNode.parents,
-    lists:foldr(
+    lists:foldl(
       fun(PN, AccX) ->
-	      case node_test(Tok, PN, Context) of
-		  true ->
-		      [PN|AccX];
-		  false ->
-		      AccX
-	      end
+	      match_self(Tok, PN, AccX, Context)
       end, Acc, Parents).
 
 
@@ -506,12 +511,7 @@ match_ancestor(Tok, N, Acc, Context) ->
 %% of the context node; thus, the acestor axis will always include the
 %% root node."
 match_ancestor_or_self(Tok, N, Acc, Context) ->
-    Acc1 = case node_test(Tok, N, Context) of
-	       true ->
-		   [N|Acc];
-	       false ->
-		   Acc
-	   end,
+    Acc1 = match_self(Tok, N, Acc, Context),
     match_ancestor(Tok, N, Acc1, Context).
 
 
@@ -525,19 +525,14 @@ match_following_sibling(Tok, N, Acc, Context) ->
     case Ps of
 	[#xmlNode{type = element,
 		  node = #xmlElement{} = PNode}|_] ->
-	    FollowingSiblings = lists:nthtail(Node#xmlElement.pos, 
+	    FollowingSiblings = lists:nthtail(get_position(Node), 
 					      get_content(PNode)),
 	    lists:foldr(
 	      fun(E, AccX) ->
 		      ThisN = #xmlNode{type = node_type(E),
 				       node = E,
 				       parents = Ps},
-		      case node_test(Tok, ThisN, Context) of
-			  true ->
-			      [ThisN|AccX];
-			  false ->
-			      AccX
-		      end
+		      match_self(Tok, ThisN, AccX, Context)
 	      end, Acc, FollowingSiblings);
 	_Other ->
 	    Acc
@@ -547,28 +542,21 @@ match_following_sibling(Tok, N, Acc, Context) ->
 %% "The 'following' axis contains all nodes in the same document as the
 %% context node that are after the context node in document order, excluding
 %% any descendants and excluding attribute nodes and namespace nodes."
-%% (UW: I interpret this as "following siblings and their descendants")
 match_following(Tok, N, Acc, Context) ->
     #xmlNode{parents = Ps, node = Node} = N,
     case Ps of
 	[#xmlNode{type = element,
-		  node = #xmlElement{} = PNode}|_] ->
-	    FollowingSiblings = lists:nthtail(Node#xmlElement.pos, 
+		  node = #xmlElement{} = PNode} = P|_] ->
+	    FollowingSiblings = lists:nthtail(get_position(Node), 
 					      get_content(PNode)),
+	    Acc0 = match_following(Tok, P, Acc, Context),
 	    lists:foldr(
 	      fun(E, AccX) ->
 		      ThisN = #xmlNode{type = node_type(E),
 				       node = E,
 				       parents = Ps},
-		      Acc1 =
-			  case node_test(Tok, ThisN, Context) of
-			      true ->
-				  [ThisN|AccX];
-			      false ->
-				  AccX
-			  end,
-		      match_desc(get_content(E), Tok, Ps, Acc1, Context)
-	      end, Acc, FollowingSiblings);
+		      match_descendant_or_self(Tok, ThisN, AccX, Context)
+	      end, Acc0, FollowingSiblings);
 	_Other ->
 	    Acc
     end.
@@ -588,51 +576,40 @@ match_preceding_sibling(Tok, N, Acc, Context) ->
 	[#xmlNode{type = element,
 		  node = #xmlElement{} = PNode}|_] ->
 	    PrecedingSiblings = lists:sublist(get_content(PNode), 1,
-					      Node#xmlElement.pos-1), 
+					      get_position(Node) - 1), 
 	    lists:foldr(
 	      fun(E, AccX) ->
 		      ThisN = #xmlNode{type = node_type(E),
 				       node = E,
 				       parents = Ps},
-		      case node_test(Tok, ThisN, Context) of
-			  true ->
-			      [ThisN|AccX];
-			  false ->
-			      AccX
-		      end
+		      match_self(Tok, ThisN, AccX, Context)
 	      end, Acc, PrecedingSiblings);
 	_Other ->
-	    []
+	    Acc
     end.
 
 
 %% "The 'preceding' axis contains all nodes in the same document as the context
 %% node that are before the context node in document order, exluding any
 %% ancestors and excluding attribute nodes and namespace nodes."
-%% (UW: I interpret this as "preceding siblings and their descendants".)
 match_preceding(Tok, N, Acc, Context) ->
     #xmlNode{parents = Ps, node = Node} = N,
     case Ps of
 	[#xmlNode{type = element,
-		  node = #xmlElement{} = PNode}|_] ->
+		  node = #xmlElement{} = PNode} = P|_] ->
 	    PrecedingSiblings = lists:sublist(get_content(PNode), 1,
-					      Node#xmlElement.pos-1), 
-	    lists:foldr(
-	      fun(E, AccX) ->
-		      ThisN = #xmlNode{type = node_type(E),
-				       node = E,
-				       parents = Ps},
-		      Acc1 =
-			  case node_test(Tok, ThisN, Context) of
-			      true ->
-				  [ThisN|AccX];
-				  false ->
-				      AccX
-			  end,
-		      match_desc(get_content(E), Tok, Ps, Acc1, Context)
-	      end, Acc, PrecedingSiblings);
+					      get_position(Node) - 1), 
+	    Acc0 = lists:foldr(
+		     fun(E, AccX) ->
+			     ThisN = #xmlNode{type = node_type(E),
+					      node = E,
+					      parents = Ps},
+			     match_descendant_or_self(Tok, ThisN,
+						      AccX, Context)
+		     end, Acc, PrecedingSiblings),
+	    match_preceding(Tok, P, Acc0, Context);
 	_Other ->
-	    []
+	    Acc
     end.
 
 
@@ -642,20 +619,16 @@ match_attribute(Tok, N, Acc, Context) ->
     case N#xmlNode.type of
 	element ->
 	    #xmlNode{parents = Ps, node = E} = N,
-	    lists:foldl(
+	    lists:foldr(
 	      fun(A, AccX) ->
 		      ThisN = #xmlNode{type = attribute,
 				       node = A,
 				       parents = [N|Ps]},
-		      case node_test(Tok, ThisN, Context) of
-			  true ->
-			      [ThisN|AccX];
-			  false ->
-			      AccX
-		      end
+		      match_self(Tok, ThisN, AccX, Context)
 	      end, Acc, E#xmlElement.attributes);
 	_Other ->
-	    []
+	    %%[]
+	    Acc
     end.
 
 node_type(#xmlAttribute{}) ->	attribute;
@@ -672,26 +645,19 @@ node_type(#xmlDocument{}) ->	root_node.
 %    erlang:fault(not_yet_implemented).
 
 
-update_nodeset(Context = #xmlContext{axis_type = reverse}, NodeSet) ->
-    Context#xmlContext{nodeset = reverse(NodeSet)};
-update_nodeset(Context, NodeSet) ->
-    Context#xmlContext{nodeset = forward(NodeSet)}.
-
-reverse(NodeSet) ->
-    reverse(NodeSet, 1, []).
-
-reverse([H|T], Pos, Acc) ->
-    reverse(T, Pos+1, [H#xmlNode{pos = Pos}|Acc]);
-reverse([], _Pos, Acc) ->
-    Acc.
-
-forward(NodeSet) ->
-    forward(NodeSet, 1).
-
-forward([H|T], Pos) ->
-    [H#xmlNode{pos = Pos}|forward(T, Pos+1)];
-forward([], _Pos) ->
-    [].
+update_nodeset(Context = #xmlContext{axis_type = AxisType}, NodeSet) ->
+    MapFold =
+	case AxisType of
+	    forward ->
+		mapfoldl;
+	    reverse ->
+		mapfoldr
+	end,
+    {Result, _N} =
+	lists:MapFold(fun(Node, N) ->
+			      {Node#xmlNode{pos = N}, N + 1}
+		      end, 1, NodeSet),
+    Context#xmlContext{nodeset = Result}.
 
 
 
@@ -736,12 +702,12 @@ node_test({name, {_Tag, Prefix, Local}},
     case expanded_name(Prefix, Local, Context) of
 	[] ->
 	    ?dbg("node_test(~p, ~p) -> ~p.~n", 
-		 [{Tag, Prefix, Local}, write_node(Name), false]),
+		 [{_Tag, Prefix, Local}, write_node(Name), false]),
 	    false;
 	ExpName ->
 	    Res = (ExpName == {NS#xmlNamespace.default,Name}),
 	    ?dbg("node_test(~p, ~p) -> ~p.~n", 
-		 [{Tag, Prefix, Local}, write_node(Name), Res]),
+		 [{_Tag, Prefix, Local}, write_node(Name), Res]),
 	    Res
     end;
 node_test({name, {Tag,_Prefix,_Local}}, 
@@ -812,3 +778,9 @@ get_content(#xmlDocument{content = C}) when list(C) ->
     C;
 get_content(#xmlDocument{content = C}) ->
     [C].
+
+
+get_position(#xmlElement{pos = N}) ->
+    N;
+get_position(#xmlText{pos = N}) ->
+    N.

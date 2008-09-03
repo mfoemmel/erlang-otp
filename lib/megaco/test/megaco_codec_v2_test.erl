@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2003-2007</year>
+%% <year>2003-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -136,10 +136,16 @@
          compact_otp6017_msg03/1,
          compact_otp7138_msg01/1,
          compact_otp7138_msg02/1,
+         compact_otp7457_msg01/1,
+         compact_otp7457_msg02/1,
+         compact_otp7457_msg03/1,
 
 	 flex_compact_tickets/1, 
 	 flex_compact_otp7138_msg01/1, 
 	 flex_compact_otp7138_msg02/1, 
+	 flex_compact_otp7457_msg01/1, 
+	 flex_compact_otp7457_msg02/1, 
+	 flex_compact_otp7457_msg03/1, 
 
 	 pretty_tickets/1, 
 	 pretty_otp4632_msg1/1, 
@@ -614,7 +620,10 @@ compact_tickets(suite) ->
      compact_otp6017_msg02,
      compact_otp6017_msg03,
      compact_otp7138_msg01,
-     compact_otp7138_msg02
+     compact_otp7138_msg02,
+     compact_otp7457_msg01,
+     compact_otp7457_msg02,
+     compact_otp7457_msg03
     ].
 
 flex_compact_tickets(suite) ->
@@ -625,7 +634,10 @@ flex_compact_tickets(suite) ->
 flex_compact_tickets_cases() ->
     [
      flex_compact_otp7138_msg01,
-     flex_compact_otp7138_msg02
+     flex_compact_otp7138_msg02,
+     flex_compact_otp7457_msg01,
+     flex_compact_otp7457_msg02,
+     flex_compact_otp7457_msg03
     ].
 
 pretty_tickets(suite) ->
@@ -2535,7 +2547,8 @@ compact_otp7138(EC, BinMsg) ->
 		      "~n   ~p", [binary_to_list(BinMsg)]),
 		    ok;
 		{ok, BinMsg2} ->
-		    d("compact_otp7138 -> encode successfull but result differ: "
+		    d("compact_otp7138 ->"
+		      "encode successfull but result differ: "
 		      "~n   ~p", [binary_to_list(BinMsg2)]),
 		    ok;
 		{error, Reason} ->
@@ -2548,6 +2561,76 @@ compact_otp7138(EC, BinMsg) ->
     end.
 
 	    
+compact_otp7457_msg01(suite) ->
+    [];
+compact_otp7457_msg01(Config) when is_list(Config) ->
+    put(dbg, true),
+    put(severity, trc),
+    d("compact_otp7457_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg = compact_otp7457_msg01(),
+    EC  = [],
+    ok = compact_otp7457(EC, Msg),
+    ok.
+
+compact_otp7457_msg02(suite) ->
+    [];
+compact_otp7457_msg02(Config) when is_list(Config) ->
+    put(dbg, true),
+    put(severity, trc),
+    d("compact_otp7457_msg02 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg = compact_otp7457_msg02(),
+    EC  = [],
+    ok = compact_otp7457(EC, Msg),
+    ok.
+
+compact_otp7457_msg03(suite) ->
+    [];
+compact_otp7457_msg03(Config) when is_list(Config) ->
+    put(dbg, true),
+    put(severity, trc),
+    d("compact_otp7457_msg03 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg = compact_otp7457_msg03(),
+    EC  = [],
+    ok = compact_otp7457(EC, Msg),
+    ok.
+
+compact_otp7457_msg01() ->
+    <<"!/2 <mg1>\nT=15{C=-{SC=tdm12/1/1/*{SV{MT=RS,RE=900}}}}\n">>.
+
+compact_otp7457_msg02() ->
+    <<"!/2 <mg1>\nT=15{C=-{O-SC=tdm12/1/1/*{SV{MT=RS,RE=900}}}}\n">>.
+
+compact_otp7457_msg03() ->
+    <<"!/2 <mg1>\nT=15{C=-{W-SC=tdm12/1/1/*{SV{MT=RS,RE=900}}}}\n">>.
+
+compact_otp7457(EC, BinMsg) ->
+    d("compact_otp7138 -> "
+      "~n   ~p", [binary_to_list(BinMsg)]),
+    Codec = megaco_compact_text_encoder,
+    case decode_message(Codec, false, EC, BinMsg) of
+	{ok, Msg} ->
+	    case encode_message(Codec, EC, Msg) of
+		{ok, BinMsg} ->
+		    d("compact_otp7457 -> encode successfull: "
+		      "~n   ~p", [binary_to_list(BinMsg)]),
+		    ok;
+		{ok, BinMsg2} ->
+		    d("compact_otp7457 -> "
+		      "encode successfull but result differ: "
+		      "~n   ~p", [binary_to_list(BinMsg2)]),
+		    ok;
+		{error, Reason} ->
+		    e("encode failed: ~p", [Reason]),
+		    {error, Reason}
+	    end;
+	{error, Reason} ->
+	    e("decode failed: ~p", [Reason]),
+	    {error, Reason}
+    end.
+
 
 %% ==============================================================
 %%
@@ -2573,6 +2656,36 @@ flex_compact_otp7138_msg02(Config) when list(Config) ->
     Msg  = compact_otp7138_msg02(),
     Conf = flex_scanner_conf(Config),
     compact_otp7138([Conf], Msg).
+
+flex_compact_otp7457_msg01(suite) ->
+    [];
+flex_compact_otp7457_msg01(Config) when is_list(Config) ->
+    put(dbg, true),
+    put(severity, trc),
+    d("flex_compact_otp7457_msg01 -> entry", []),
+    Msg  = compact_otp7457_msg01(),
+    Conf = flex_scanner_conf(Config),
+    compact_otp7457([Conf], Msg).
+
+flex_compact_otp7457_msg02(suite) ->
+    [];
+flex_compact_otp7457_msg02(Config) when is_list(Config) ->
+    put(dbg, true),
+    put(severity, trc),
+    d("flex_compact_otp7457_msg02 -> entry", []),
+    Msg  = compact_otp7457_msg02(),
+    Conf = flex_scanner_conf(Config),
+    compact_otp7457([Conf], Msg).
+
+flex_compact_otp7457_msg03(suite) ->
+    [];
+flex_compact_otp7457_msg03(Config) when is_list(Config) ->
+    put(dbg, true),
+    put(severity, trc),
+    d("flex_compact_otp7457_msg03 -> entry", []),
+    Msg  = compact_otp7457_msg03(),
+    Conf = flex_scanner_conf(Config),
+    compact_otp7457([Conf], Msg).
 
 
 %% ==============================================================

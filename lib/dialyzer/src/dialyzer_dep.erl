@@ -567,10 +567,9 @@ test(Mod) ->
 	end,
   NameMap1 = cerl_trees:fold(Fun, dict:new(), LabeledTree),
   NameMap = dict:store(external, external, NameMap1),
-  NamedEdges = lists:map(fun({X, Y}) ->
-			     {dict:fetch(X, NameMap), dict:fetch(Y, NameMap)}
-			 end, Edges),
-  NamedEsc = lists:map(fun(X) -> dict:fetch(X, NameMap) end, Esc),
+  NamedEdges = [{dict:fetch(X, NameMap), dict:fetch(Y, NameMap)}
+		|| {X, Y} <- Edges],
+  NamedEsc = [dict:fetch(X, NameMap) || X <- Esc],
   %% Color the edges
   ColorEsc = [{X, {color, red}} || X <- NamedEsc],
 
@@ -578,9 +577,7 @@ test(Mod) ->
 			     [[{Caller, Callee} || Callee <- Set]|Acc]
 			 end, [], Calls),
   CallEdges = lists:flatten(CallEdges0),
-  NamedCallEdges = lists:map(fun({X, Y}) ->
-				 {X, dict:fetch(Y, NameMap)}
-			     end, CallEdges),
+  NamedCallEdges = [{X, dict:fetch(Y, NameMap)} || {X, Y} <- CallEdges],
 
   hipe_dot:translate_list(NamedEdges ++ NamedCallEdges, "/tmp/cg.dot", "CG", 
 			  ColorEsc),

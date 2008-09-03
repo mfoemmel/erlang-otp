@@ -79,7 +79,7 @@ private_host_key(Type, Opts) ->
 add_ip(Host)                                                             ->
     case inet:getaddr(Host, inet) of
 	{ok, Addr} ->
-	    case ssh_cm:encode_ip(Addr) of
+	    case ssh_connection:encode_ip(Addr) of
 		false -> Host;
 		IPString -> Host ++ "," ++ IPString
 	    end;
@@ -323,8 +323,8 @@ lookup_host_key_fd(Fd, Host, Alg) ->
 	Line ->
 	    case string:tokens(Line, " ") of
 		[HostList, Alg, KeyData] ->
-		    %% 		    io:format("lookup_host_key_fd: HostList ~p Alg ~p KeyData ~p\n",
-		    %% 			      [HostList, Alg, KeyData]),
+%% 		    io:format(" ~p lookup_host_key_fd: HostList ~p Alg ~p KeyData ~p\n",
+%%			      [Host, HostList, Alg, KeyData]),
 		    case lists:member(Host, string:tokens(HostList, ",")) of
 			true ->
 			    decode_public_key_v2(ssh_bits:b64_decode(KeyData), Alg);

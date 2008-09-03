@@ -41,6 +41,10 @@
 #include "hipe_signal.h"	/* for hipe_thread_signal_init() */
 #endif
 
+#ifdef ERTS_ENABLE_LOCK_COUNT
+#include "erl_lock_count.h"
+#endif
+
 #define MAX_BIT       (1 << PRIORITY_MAX)
 #define HIGH_BIT      (1 << PRIORITY_HIGH)
 #define NORMAL_BIT    (1 << PRIORITY_NORMAL)
@@ -73,8 +77,10 @@ do {								\
 	save_terminating_process((P));				\
 } while (0)
 
+
 extern Eterm beam_apply[];
 extern Eterm beam_exit[];
+extern Eterm beam_continue_exit[];
 
 static Sint p_last;
 static Sint p_next;
@@ -82,7 +88,7 @@ static Sint p_serial;
 static Uint p_serial_mask;
 static Uint p_serial_shift;
 
-Uint erts_no_of_schedulers;
+Uint erts_no_schedulers;
 #ifdef ERTS_SMP
 Uint used_schedulers;
 erts_smp_mtx_t msched_blk_mtx;
@@ -90,8 +96,6 @@ erts_smp_cnd_t msched_blk_cnd;
 #endif
 Uint erts_max_processes = ERTS_DEFAULT_MAX_PROCESSES;
 Uint erts_process_tab_index_mask;
-
-erts_smp_atomic_t erts_tot_proc_mem; /* in bytes */
 
 int block_multi_scheduling;
 int is_setting_block_multi_scheduling;
@@ -136,7 +140,6 @@ static Sint runq_len;
 #ifndef BM_COUNTERS
 static int processes_busy;
 #endif
-
 
 Process**  process_tab;
 static Uint context_switches;		/* no of context switches */
@@ -256,17 +259,13 @@ erts_init_process(void)
 	ASSERT(erts_max_processes <= (1 << ERTS_R9_PROC_BITS));
     }
 
-    erts_smp_atomic_init(&erts_tot_proc_mem, 0L);
-
     process_tab = (Process**) erts_alloc(ERTS_ALC_T_PROC_TABLE,
 					 erts_max_processes*sizeof(Process*));
-    ERTS_PROC_MORE_MEM(erts_max_processes * sizeof(Process*));
     sys_memzero(process_tab, erts_max_processes * sizeof(Process*));
 #ifdef HYBRID
     erts_active_procs = (Process**)
         erts_alloc(ERTS_ALC_T_ACTIVE_PROCS,
                    erts_max_processes * sizeof(Process*));
-    ERTS_PROC_MORE_MEM(erts_max_processes * sizeof(Process*));
     erts_num_active_procs = 0;
 #endif
 
@@ -277,7 +276,6 @@ erts_init_process(void)
     block_multi_scheduling_procs = NULL;
 
 #ifdef ERTS_SMP
-    erts_no_of_schedulers = 0;
     used_schedulers = 0;
     erts_smp_mtx_init(&msched_blk_mtx, "multi_scheduling_block");
     erts_smp_cnd_init(&msched_blk_cnd);
@@ -293,7 +291,6 @@ erts_init_process(void)
 
 #else /* !ERTS_SMP */
 
-    erts_no_of_schedulers = 1;
     esdp = &erts_scheduler_data;
 
 #ifdef USE_THREADS
@@ -746,13 +743,15 @@ sched_thread_func(void *vesdp)
 #ifdef ERTS_SMP
 
 void
-erts_start_schedulers(Uint wanted_no_of_schedulers)
+erts_start_schedulers(void)
 {
     int res = 0;
     Uint actual = 0;
-    Uint wanted = wanted_no_of_schedulers;
+    Uint wanted = erts_no_schedulers;
+    Uint wanted_no_schedulers = erts_no_schedulers;
     ethr_thr_opts opts = ETHR_THR_OPTS_DEFAULT_INITER;
     opts.detached = 1;
+
 
     if (wanted < 1)
 	wanted = 1;
@@ -773,7 +772,11 @@ erts_start_schedulers(Uint wanted_no_of_schedulers)
 	}
 	actual++;
 	init_sched_thr_data(esdp, actual);
+#ifdef ERTS_ENABLE_LOCK_COUNT
+	cres = erts_lcnt_thr_create(&esdp->tid,sched_thread_func,(void*)esdp,&opts);
+#else
 	cres = ethr_thr_create(&esdp->tid,sched_thread_func,(void*)esdp,&opts);
+#endif
 	if (cres != 0) {
 	    res = cres;
 	    erts_free(ERTS_ALC_T_SCHDLR_DATA, (void *) esdp);
@@ -788,7 +791,7 @@ erts_start_schedulers(Uint wanted_no_of_schedulers)
 	schedulers = esdp;
     }
 
-    erts_no_of_schedulers = actual;
+    erts_no_schedulers = actual;
     used_schedulers = actual;
 
     erts_smp_sched_unlock();
@@ -800,11 +803,11 @@ erts_start_schedulers(Uint wanted_no_of_schedulers)
 		 res);
     if (res != 0) {
 	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
-	ASSERT(actual != wanted_no_of_schedulers);
+	ASSERT(actual != wanted_no_schedulers);
 	erts_dsprintf(dsbufp,
 		      "Failed to create %bpu scheduler-threads (%s:%d); "
 		      "only %bpu scheduler-thread%s created.\n",
-		      wanted_no_of_schedulers, erl_errno_id(res), res,
+		      wanted_no_schedulers, erl_errno_id(res), res,
 		      actual, actual == 1 ? " was" : "s were");
 	erts_send_error_to_logger_nogl(dsbufp);
     }
@@ -1948,7 +1951,30 @@ Process *schedule(Process *p, int calls)
 	p->reds += calls;
 
 	erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
-	
+
+	if ((erts_system_profile_flags.runnable_procs)
+	    && (p->status == P_WAITING)) {
+	    profile_runnable_proc(p, am_inactive);
+	}
+
+	if (IS_TRACED(p)) {
+	    switch (p->status) {
+	    case P_EXITING:
+		if (ARE_TRACE_FLAGS_ON(p, F_TRACE_SCHED_EXIT))
+		    trace_sched(p, am_out_exiting);
+		break;
+	    case P_FREE:
+		if (ARE_TRACE_FLAGS_ON(p, F_TRACE_SCHED_EXIT))
+		    trace_sched(p, am_out_exited);
+		break;
+	    default:
+		if (ARE_TRACE_FLAGS_ON(p, F_TRACE_SCHED))
+		    trace_sched(p, am_out);
+		else if (ARE_TRACE_FLAGS_ON(p, F_TRACE_SCHED_PROCS))
+		    trace_virtual_sched(p, am_out);
+		break;
+	    }
+	}	
 
 #ifdef ERTS_SMP
 	if (ERTS_PROC_PENDING_EXIT(p)) {
@@ -1965,20 +1991,6 @@ Process *schedule(Process *p, int calls)
 	}
 #endif
 	erts_smp_sched_lock();
-	
-	if ((erts_system_profile_flags.runnable_procs) && (p->status == P_WAITING)) {
-	    profile_runnable_proc(p, am_inactive);
-	}
-
-	/* Rule of thumb, only trace when we have a valid current_process */
-	if (p->status != P_FREE) {
-	    if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
-	    	trace_sched(p, am_out);
-	    } else if (IS_TRACED_FL(p, F_TRACE_SCHED_PROCS)) {
-		trace_virtual_sched(p, am_out);
-	    }
-	}
-
 
 	esdp->current_process = NULL;
 #ifdef ERTS_SMP
@@ -2319,15 +2331,23 @@ Process *schedule(Process *p, int calls)
 
         ACTIVATE(p);
 	calls = context_reds;
-	
-	if (p->status != P_EXITING) {
-	    if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
-		trace_sched(p, am_in);
-	    } else if (IS_TRACED_FL(p, F_TRACE_SCHED_PROCS)) {
-	    	trace_virtual_sched(p, am_in);
+
+	if (IS_TRACED(p)) {
+	    switch (p->status) {
+	    case P_EXITING:
+		if (ARE_TRACE_FLAGS_ON(p, F_TRACE_SCHED_EXIT))
+		    trace_sched(p, am_in_exiting);
+		break;
+	    default:
+		if (ARE_TRACE_FLAGS_ON(p, F_TRACE_SCHED))
+		    trace_sched(p, am_in);
+		else if (ARE_TRACE_FLAGS_ON(p, F_TRACE_SCHED_PROCS))
+		    trace_virtual_sched(p, am_in);
+		break;
 	    }
-	    p->status = P_RUNNING;
 	}
+	if (p->status != P_EXITING)
+	    p->status = P_RUNNING;
 
 	erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
 
@@ -2415,12 +2435,6 @@ exec_misc_ops(void)
 	molp = molp->next;
 	misc_op_list_free(tmp_molp); /* need sched lock */
     }
-}
-
-
-Uint erts_get_tot_proc_mem(void)
-{
-    return (Uint) erts_smp_atomic_read(&erts_tot_proc_mem);
 }
 
 Uint
@@ -2530,7 +2544,6 @@ Uint erts_process_count(void)
 void
 erts_free_proc(Process *p)
 {
-    ERTS_PROC_LESS_MEM(sizeof(Process));
     erts_free(ERTS_ALC_T_PROC, (void *) p);
 }
 
@@ -2570,7 +2583,6 @@ alloc_process(void)
 
     process_tab[p_next] = p;
     erts_smp_atomic_inc(&process_count);
-    ERTS_PROC_MORE_MEM(sizeof(Process));
     p->id = make_internal_pid(p_serial << p_serial_shift | p_next);
     if (p->id == ERTS_INVALID_PID) {
 	/* Do not use the invalid pid; change serial */
@@ -2776,9 +2788,9 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->reds = 0;
 
 #ifdef ERTS_SMP
-    p->ptimer = NULL;
+    p->u.ptimer = NULL;
 #else
-    sys_memset(&p->tm, 0, sizeof(ErlTimer));
+    sys_memset(&p->u.tm, 0, sizeof(ErlTimer));
 #endif
 
     p->reg = NULL;
@@ -3002,9 +3014,9 @@ void erts_init_empty_process(Process *p)
     p->fcalls = 0;
     p->dist_entry = NULL;
 #ifdef ERTS_SMP
-    p->ptimer = NULL;
+    p->u.ptimer = NULL;
 #else
-    memset(&(p->tm), 0, sizeof(ErlTimer));
+    memset(&(p->u.tm), 0, sizeof(ErlTimer));
 #endif
     p->next = NULL;
     p->off_heap.mso = NULL;
@@ -3220,7 +3232,6 @@ delete_process(Process* p)
     p->off_heap.mso = (void *) 0x8DEFFACD;
 
     if (p->arg_reg != p->def_arg_reg) {
-	ERTS_PROC_LESS_MEM(p->max_arg_reg * sizeof(p->arg_reg[0]));
 	erts_free(ERTS_ALC_T_ARG_REG, p->arg_reg);
     }
 
@@ -3279,8 +3290,6 @@ delete_process(Process* p)
     ASSERT(!p->suspend_monitors);
 
     if (p->ct != NULL) {
-	ERTS_PROC_LESS_MEM((sizeof(struct saved_calls)
-			    + (p->ct->len - 1) * sizeof(Export *)));
         erts_free(ERTS_ALC_T_CALLS_BUF, (void *) p->ct);
     }
 
@@ -3303,7 +3312,6 @@ delete_process(Process* p)
     if (p->rrma != NULL) {
         erts_free(ERTS_ALC_T_ROOTSET,p->rrma);
         erts_free(ERTS_ALC_T_ROOTSET,p->rrsrc);
-        ERTS_PROC_LESS_MEM(sizeof(Eterm) * p->rrsz * 2);
     }
 #endif
 
@@ -3904,7 +3912,7 @@ static void doit_exit_link(ErtsLink *lnk, void *vpcontext)
 static void
 resume_suspend_monitor(ErtsSuspendMonitor *smon, void *vc_p)
 {
-    Process *suspendee = erts_pid2proc((Process *) vc_p, ERTS_PROC_LOCKS_ALL,
+    Process *suspendee = erts_pid2proc((Process *) vc_p, ERTS_PROC_LOCK_MAIN,
 				       smon->pid, ERTS_PROC_LOCK_STATUS);
     if (suspendee) {
 	if (smon->active)
@@ -3914,14 +3922,18 @@ resume_suspend_monitor(ErtsSuspendMonitor *smon, void *vc_p)
     erts_destroy_suspend_monitor(smon);
 }
 
+static void
+continue_exit_process(Process *p
+#ifdef ERTS_SMP
+		      , erts_pix_lock_t *pix_lock
+#endif
+    );
 
 /* this function fishishes a process and propagates exit messages - called
    by process_main when a process dies */
 void 
 erts_do_exit_process(Process* p, Eterm reason)
 {
-    ErtsLink* lnk;
-    ErtsMonitor *mon;
 #ifdef ERTS_SMP
     erts_pix_lock_t *pix_lock = ERTS_PID2PIXLOCK(p->id);
 #endif
@@ -3975,23 +3987,78 @@ erts_do_exit_process(Process* p, Eterm reason)
 
     cancel_timer(p);		/* Always cancel timer just in case */
 
+    /*
+     * The timer of this process can *not* be used anymore. The field used
+     * for the timer is now used for misc exiting data.
+     */
+    p->u.exit_data = NULL;
+
     if (p->bif_timers)
 	erts_cancel_bif_timers(p, ERTS_PROC_LOCKS_ALL);
-
-    if (p->flags & F_USING_DB)
-	db_proc_dead(p->id);
 
 #ifdef ERTS_SMP
     if (p->flags & F_HAVE_BLCKD_MSCHED)
 	erts_block_multi_scheduling(p, ERTS_PROC_LOCKS_ALL, 0, 1);
 #endif
 
-    if (p->flags & F_USING_DDLL) {
-	erts_ddll_proc_dead(p, ERTS_PROC_LOCKS_ALL);
+    erts_smp_proc_unlock(p, ERTS_PROC_LOCKS_ALL_MINOR);
+
+#ifdef ERTS_SMP
+    continue_exit_process(p, pix_lock);
+#else
+    continue_exit_process(p);
+#endif
+}
+
+void
+erts_continue_exit_process(Process *c_p)
+{
+#ifdef ERTS_SMP
+    continue_exit_process(c_p, ERTS_PID2PIXLOCK(c_p->id));
+#else
+    continue_exit_process(c_p);
+#endif
+}
+
+static void
+continue_exit_process(Process *p
+#ifdef ERTS_SMP
+		      , erts_pix_lock_t *pix_lock
+#endif
+    )
+{
+    ErtsLink* lnk;
+    ErtsMonitor *mon;
+    ErtsProcLocks curr_locks = ERTS_PROC_LOCK_MAIN;
+    Eterm reason = p->fvalue;
+#ifdef DEBUG
+    int reschedule_allowed = 1;
+#endif
+
+    ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN == erts_proc_lc_my_proc_locks(p));
+
+#ifdef DEBUG
+    erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
+    ASSERT(p->status == P_EXITING);
+    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
+#endif
+
+    if (p->flags & F_USING_DB) {
+	if (erts_db_process_exiting(p, ERTS_PROC_LOCK_MAIN))
+	    goto reschedule;
+	p->flags &= ~F_USING_DB;
     }
 
-    if (p->nodes_monitors)
-	erts_delete_nodes_monitors(p, ERTS_PROC_LOCKS_ALL);
+    if (p->flags & F_USING_DDLL) {
+	erts_ddll_proc_dead(p, ERTS_PROC_LOCK_MAIN);
+	p->flags &= ~F_USING_DDLL;
+    }
+
+    if (p->nodes_monitors) {
+	erts_delete_nodes_monitors(p, ERTS_PROC_LOCK_MAIN);
+	p->nodes_monitors = NULL;
+    }
+	
 
     if (p->suspend_monitors) {
 	erts_sweep_suspend_monitors(p->suspend_monitors,
@@ -4004,8 +4071,21 @@ erts_do_exit_process(Process* p, Eterm reason)
      * The registered name *should* be the last "erlang resource" to
      * cleanup.
      */
-    if (p->reg)
-	(void) erts_unregister_name(p, ERTS_PROC_LOCKS_ALL, NULL, p->reg->name);
+    if (p->reg) {
+	(void) erts_unregister_name(p, ERTS_PROC_LOCK_MAIN, NULL, p->reg->name);
+	ASSERT(!p->reg);
+    }
+
+    erts_smp_proc_lock(p, ERTS_PROC_LOCKS_ALL_MINOR);
+    curr_locks = ERTS_PROC_LOCKS_ALL;
+
+    /*
+     * From this point on we are no longer allowed to reschedule
+     * this process.
+     */
+#ifdef DEBUG
+    reschedule_allowed = 0;
+#endif
 
     {
 	int pix;
@@ -4100,6 +4180,34 @@ erts_do_exit_process(Process* p, Eterm reason)
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN); /* Make process_main() happy */
     ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(p);
 #endif
+
+    return;
+
+ reschedule:
+
+#ifdef DEBUG
+    ASSERT(reschedule_allowed);
+#endif
+
+    ERTS_SMP_LC_ASSERT(curr_locks == erts_proc_lc_my_proc_locks(p));
+    ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN & curr_locks);
+
+    ASSERT(p->status == P_EXITING);
+
+    p->i = (Eterm *) beam_continue_exit;
+
+    if (!(curr_locks & ERTS_PROC_LOCK_STATUS)) {
+	erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
+	curr_locks |= ERTS_PROC_LOCK_STATUS;
+    }
+
+    add_to_schedule_q(p);
+
+    if (curr_locks != ERTS_PROC_LOCK_MAIN)
+	erts_smp_proc_unlock(p, ~ERTS_PROC_LOCK_MAIN & curr_locks);
+
+    ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN == erts_proc_lc_my_proc_locks(p));
+
 }
 
 /* Callback for process timeout */
@@ -4123,9 +4231,9 @@ cancel_timer(Process* p)
     ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN & erts_proc_lc_my_proc_locks(p));
     p->flags &= ~(F_INSLPQUEUE|F_TIMO);
 #ifdef ERTS_SMP
-    erts_cancel_smp_ptimer(p->ptimer);
+    erts_cancel_smp_ptimer(p->u.ptimer);
 #else
-    erl_cancel_timer(&p->tm);
+    erl_cancel_timer(&p->u.tm);
 #endif
 }
 
@@ -4146,12 +4254,12 @@ set_timer(Process* p, Uint timeout)
     p->flags &= ~F_TIMO;
 
 #ifdef ERTS_SMP
-    erts_create_smp_ptimer(&p->ptimer,
+    erts_create_smp_ptimer(&p->u.ptimer,
 			   p->id,
 			   (ErlTimeoutProc) timeout_proc,
 			   timeout);
 #else
-    erl_set_timer(&p->tm,
+    erl_set_timer(&p->u.tm,
 		  (ErlTimeoutProc) timeout_proc,
 		  NULL,
 		  (void*) p,
@@ -4203,6 +4311,8 @@ print_function_from_pc(int to, void *to_arg, Eterm* x)
     if (addr == NULL) {
         if (x == beam_exit) {
             erts_print(to, to_arg, "<terminate process>");
+        } else if (x == beam_continue_exit) {
+            erts_print(to, to_arg, "<continue terminate process>");
         } else if (x == beam_apply+1) {
             erts_print(to, to_arg, "<terminate process normally>");
         } else {
@@ -4958,6 +5068,7 @@ static BIF_RETTYPE processes_trap(BIF_ALIST_2)
 	BIF_TRAP2(&processes_trap_export, BIF_P, res_acc, BIF_ARG_2);
     }
 }
+
 
 
 /*
