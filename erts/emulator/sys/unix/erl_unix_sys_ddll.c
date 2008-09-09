@@ -47,7 +47,7 @@
 #define EXT_LEN      3
 #define FILE_EXT     ".so"    /* extension appended to the filename */
 
-#if !defined(HAVE_MACH_O_DYLD_H)
+#if defined(HAVE_DLOPEN)
 static char **errcodes = NULL;
 static int num_errcodes = 0;
 static int num_errcodes_allocated = 0;
@@ -112,35 +112,6 @@ int erts_sys_ddll_open(char *full_name, void **handle)
     sys_strcpy(dlname, full_name);
     sys_strcpy(dlname+len, FILE_EXT);
 
-#if defined(HAVE_MACH_O_DYLD_H)
-    /* XXX:PaN Reentrant interface? */
-    {
-	int result;
-	NSObjectFileImage ofile;
-	
-	result = NSCreateObjectFileImageFromFile(dlname, &ofile);
-	switch (result) {
-	case NSObjectFileImageSuccess:
-	    *handle = NSLinkModule(ofile, dlname, NSLINKMODULE_OPTION_PRIVATE);
-	    if ((*handle)) {
-		ret = ERL_DE_NO_ERROR;
-	    } else {
-		ret = ERL_DE_ERROR_UNSPECIFIED;
-	    }
-	    break;
-	/* XXX:PaN should anything return something else ? */
-	/*case NSObjectFileImageInappropriateFile:
-	  case NSObjectFileImageArch:
-	  case NSObjectFileImageFormat:
-	  case NSObjectFileImageAccess:
-	  case NSObjectFileImageFailure: */
-	default:
-	    ret = ERL_DE_DYNAMIC_ERROR_OFFSET - result;
-	    break;
-	}
-	goto done;
-    }
-#else
     {
 	char *str;
 	dlerror();
@@ -163,7 +134,6 @@ int erts_sys_ddll_open(char *full_name, void **handle)
 	}
 	goto done;
     }
-#endif
 #else
     ret = ERL_DE_ERROR_NO_DDLL_FUNCTIONALITY;
     goto done;
@@ -177,16 +147,7 @@ int erts_sys_ddll_open(char *full_name, void **handle)
  */
 int erts_sys_ddll_sym(void *handle, char *func_name, void **function)
 {
-#if defined(HAVE_MACH_O_DYLD_H)
-    {
-	NSSymbol nssymbol = NSLookupSymbolInModule((NSModule)handle,func_name);
-	if (nssymbol == NULL) {
-	    return ERL_DE_LOOKUP_ERROR_NOT_FOUND;
-	} 
-	*function = NSAddressOfSymbol(nssymbol);
-	return ERL_DE_NO_ERROR;
-    }
-#elif defined(HAVE_DLOPEN)
+#if defined(HAVE_DLOPEN)
     {
 	void *sym;
 	char *e;
@@ -239,9 +200,7 @@ void *erts_sys_ddll_call_init(void *function) {
  */
 int erts_sys_ddll_close(void *handle)
 {
-#if defined(HAVE_MACH_O_DYLD_H)
-    return ERL_DE_NO_ERROR; /* XXX:PaN No close functionality in MacOSX??? */
-#elif defined(HAVE_DLOPEN)
+#if defined(HAVE_DLOPEN)
     {
 	int ret;
 	char *s;
@@ -274,22 +233,7 @@ char *erts_sys_ddll_error(int code)
 	return "Unspecified error";
     }
     actual_code = -1*(code - ERL_DE_DYNAMIC_ERROR_OFFSET);
-#if defined(HAVE_MACH_O_DYLD_H)
-    switch (actual_code) {
-    case NSObjectFileImageFailure:
-	return "General dynamic load failure";
-    case NSObjectFileImageInappropriateFile:
-	return "Driver is an inappropriate Mach-O file";
-    case NSObjectFileImageArch:
-	return "Driver is compiled for inappropriate Mach-O architecture";
-    case NSObjectFileImageFormat:
-	return "Driver Mach-O file format is invalid";
-    case NSObjectFileImageAccess:
-	return "Access error loading driver Mach-O file";
-    default:
-	return "Unknown Mach-O error";
-    }
-#elif defined(HAVE_DLOPEN)
+#if defined(HAVE_DLOPEN)
     {
 	char *msg;
 
