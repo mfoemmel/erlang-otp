@@ -806,7 +806,6 @@ OS_OBJS +=	$(OBJDIR)/erl_mseg.o \
 		$(OBJDIR)/erl_$(ERLANG_OSTYPE)_sys_ddll.o \
 		$(OBJDIR)/erl_mtrace_sys_wrap.o
 
-HIPE_x86_darwin_OBJS=$(OBJDIR)/mach_override.o
 HIPE_x86_OS_OBJS=$(HIPE_x86_$(OPSYS)_OBJS)
 HIPE_x86_OBJS=$(OBJDIR)/hipe_x86.o $(OBJDIR)/hipe_x86_glue.o $(OBJDIR)/hipe_x86_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o $(HIPE_x86_OS_OBJS)
 HIPE_amd64_OBJS=$(OBJDIR)/hipe_amd64.o $(OBJDIR)/hipe_amd64_glue.o $(OBJDIR)/hipe_amd64_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o
