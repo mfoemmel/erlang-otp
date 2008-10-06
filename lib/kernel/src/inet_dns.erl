@@ -401,11 +401,18 @@ decode_data(?S_MX, _, [P1,P0 | Dom], Buffer) ->
 decode_data(?S_SRV, _, [P1,P0, W1,W0, Po1,Po0 | Dom], Buffer) ->
     { ?i16(P1,P0), ?i16(W1,W0), ?i16(Po1,Po0), decode_domain(Dom, Buffer) };
 decode_data(?S_TXT, _, Data, _Buffer) ->
-    {Text,Rest} = get_data(hd(Data), tl(Data)),
-    Text;
+    decode_txt(Data);
 %% sofar unknown or non standard
 decode_data(_, _, Data, _Buffer) ->
     Data.
+
+decode_txt_data(List) ->
+    decode_txt_data(List, []).
+
+decode_txt_data([], Acc) -> Acc;
+decode_txt_data([Len | Data], Acc) ->
+    {Str,Rest} = lists:split(Len, Data),
+    decode_txt(Rest, Acc ++ [Str]).
 
 decode_domain(Data, Buffer) ->
     case dn_expand(Data, Buffer) of
@@ -501,7 +508,7 @@ encode_data(?S_SRV, in, {Prio, Weight, Port, Target}, Ptrs, L) ->
     {EDom, NPtrs} = dn_compress(Target, Ptrs, [], L),
     {?int16(Prio) ++ ?int16(Weight) ++ ?int16(Port) ++ EDom, NPtrs};
 encode_data(?S_TXT, in, Data, Ptrs, _)     ->
-    {[length(Data) | Data], Ptrs};
+    {[[length(Str) | Str] || Str <- Data], Ptrs};
 %% sofar unknown or non standard
 encode_data(_, _, Data, Ptrs, _)        -> {Data, Ptrs}.
 
