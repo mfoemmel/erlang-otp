@@ -500,7 +500,8 @@ encode_data(?S_MX, in, {Pref, Exch}, Ptrs, L) ->
 encode_data(?S_SRV, in, {Prio, Weight, Port, Target}, Ptrs, L) ->
     {EDom, NPtrs} = dn_compress(Target, Ptrs, [], L),
     {?int16(Prio) ++ ?int16(Weight) ++ ?int16(Port) ++ EDom, NPtrs};
-encode_data(?S_TXT, in, Data, Ptrs, _)     -> {Data, Ptrs};
+encode_data(?S_TXT, in, Data, Ptrs, _)     ->
+    {[length(Data) | Data], Ptrs};
 %% sofar unknown or non standard
 encode_data(_, _, Data, Ptrs, _)        -> {Data, Ptrs}.
 
