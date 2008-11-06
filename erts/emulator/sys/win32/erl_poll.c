@@ -643,10 +643,6 @@ static void *break_waiter(void *param)
     }
 }
 		    
-		    
-		
-	
-	
 static void *threaded_waiter(void *param)
 {
     register Waiter* w = (Waiter *) param;
@@ -1077,7 +1073,8 @@ int erts_poll_wait(ErtsPollSet ps,
 		   HARDDEBUGF(("Oups!"));
 		   /* Oups, got signalled before we took the lock, can't reset */
 		   if(erts_atomic_read(&ps->sys_io_ready) == 0) {
-		       erl_exit(1,"Inconsistent, why isnt io reported?");
+		       erl_exit(1,"Internal error: "
+				"Inconsistent io structures in erl_poll.\n");
 		   }
 		   START_WAITER(ps,w);
 		   erts_mtx_unlock(&w->mtx);
@@ -1177,6 +1174,9 @@ int erts_poll_wait(ErtsPollSet ps,
 	    if (num >= no_fds) {
 		w->highwater=j+1;
 		erts_mtx_unlock(&w->mtx);
+		/* This might mean we still have data to report, set
+		   back the global flag! */
+		erts_atomic_set(&ps->sys_io_ready,1);
 		HARDDEBUGF(("To many FD's to report!"));
 		goto done;
 	    }

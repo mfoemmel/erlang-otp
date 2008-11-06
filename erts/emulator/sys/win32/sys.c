@@ -2229,7 +2229,7 @@ sys_init_io(void)
 
 	sys_memset((void*)&dopts, 0, sizeof(SysDriverOpts));
 	add_driver_entry(&async_driver_entry);
-	ret = erts_open_driver(&async_driver_entry, NIL, "async", &dopts, NULL);
+	ret = erts_open_driver(NULL, NIL, "async", &dopts, NULL);
 	DEBUGF(("open_driver = %d\n", ret));
 	if (ret < 0)
 	    erl_exit(1, "Failed to open async driver\n");

@@ -98,18 +98,18 @@ dns_hostname(Hostname) ->
 	    {error, Hostname}
     end.
 
-%% a common situation in "life" is to have a configuration file with a list
+%% A common situation in "life" is to have a configuration file with a list
 %% of nodes, and then at startup, all nodes in the list are ping'ed
 %% this can lead to no end of troubles if two disconnected nodes
 %% simultaneously ping each other.
-%% Use this function in order to do it safe,
+%% Use this function in order to do it safely.
 %% It assumes a working global.erl which ensures a fully 
 %% connected network.
 %% Had the erlang runtime system been able to fully cope with 
 %% the possibility of two simultaneous (unix) connects, this function would
 %% merley  be lists:map({net_adm, ping}, [], Nodelist).
 %% It is also assumed, that the same (identical) Nodelist is given to all
-%% nodes which are to perform this call. (possibly simultaneously)
+%% nodes which are to perform this call (possibly simultaneously).
 %% Even this code has a flaw, and that is the case where two
 %% nodes simultaneously and without *any* other already 
 %% running nodes execute this code. :-(
@@ -149,9 +149,9 @@ collect_new(Sofar, Nodelist) ->
 
 %% This function polls a set of hosts according to a file called
 %% .hosts.erlang that need to reside either in the current directory
-%% or at your home directory ( The current dir is tried first )
+%% or in your home directory. (The current directory is tried first.)
 %% world() returns a list of all nodes on the network that can be 
-%% found (including ourselves) obs. $HOME variable is inspected
+%% found (including ourselves). Note: the $HOME variable is inspected.
 %%
 %% Added possibility to supply a list of hosts instead of reading
 %% the .hosts.erlang file. 971016 patrik@erix.ericsson.se
@@ -197,18 +197,24 @@ collect_host_nodes(Host, Verbose) ->
 	    nil
     end.
 
-do_ping([], _Host, _Verbose) ->
+do_ping(Names, Host0, Verbose) ->
+    case longshort(Host0) of
+	ignored -> [];
+	Host -> do_ping_1(Names, Host, Verbose)
+    end.
+
+do_ping_1([], _Host, _Verbose) ->
     [];
-do_ping([{Name, _} | Rest], Host, Verbose) ->
+do_ping_1([{Name, _} | Rest], Host, Verbose) ->
     Node = list_to_atom(Name ++ "@" ++ longshort(Host)),
     verbose(Verbose, "Pinging ~w -> ", [Node]),
     Result = ping(Node),
     verbose(Verbose, "~p\n", [Result]),
     case Result of
 	pong ->
-	    [Node | do_ping(Rest, Host, Verbose)];
+	    [Node | do_ping_1(Rest, Host, Verbose)];
 	pang ->
-	    do_ping(Rest, Host, Verbose)
+	    do_ping_1(Rest, Host, Verbose)
     end.
 
 verbose(verbose, Format, Args) ->
@@ -218,10 +224,9 @@ verbose(_, _, _) ->
 
 longshort(Host) ->
     case net_kernel:longnames() of
-	false ->
-	    uptodot(Host);
-	true ->
-	    Host
+	false -> uptodot(Host);
+	true -> Host;
+	ignored -> ignored
     end.
 
 uptodot([$.|_]) -> [];

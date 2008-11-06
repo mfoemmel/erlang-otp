@@ -30,7 +30,7 @@
 
 -define(LOWER1(Char),
 	if
-	    Char >= $A, Char =< $Z ->
+	    (Char >= $A) andalso (Char =< $Z) ->
 		Char - ($A - $a);
 	    true ->
 		Char
@@ -180,7 +180,7 @@ comment_chars([Char | Rest], Line) ->
 	    comment_chars(Rest, Line);
 	end_of_line ->
 	    sep_chars(Rest, Line);
-	_ when Char == 22 ->
+	_ when Char =:= 22 ->
 	    comment_chars(Rest, Line);
 	_ ->
 	    %% {bad_token, {'SEP', Line, Char}, Rest, Line}
@@ -351,10 +351,12 @@ special_chars(All, SafeChars, Line, TokenTag) ->
 				{'MtpAddressToken', Line, OctetString};
 			    'LocalToken' ->
 				%% 'LocalToken' 'LBRKT' OctetString 'RBRKT'
-				{'LocalDescriptorToken', Line, OctetString};
+				PGs = property_groups(OctetString), 
+				{'LocalDescriptorToken', Line, PGs};
 			    'RemoteToken' ->
 				%% 'RemoteToken' 'LBRKT' OctetString 'RBRKT'
-				{'RemoteDescriptorToken', Line, OctetString};
+				PGs = property_groups(OctetString), 
+				{'RemoteDescriptorToken', Line, PGs};
 			    'DigitMapToken' ->
 				%% 'DigitMapToken' 'LBRKT' OctetString 'RBRKT'
 				DMV = digit_map_value(OctetString),
@@ -362,18 +364,18 @@ special_chars(All, SafeChars, Line, TokenTag) ->
 				{'DigitMapDescriptorToken', Line, DMD}
 			end,
 		    {token, Token, Rest6, Line4};
-		_ when TokenTag == 'DigitMapToken' ->
+		_ when TokenTag =:= 'DigitMapToken' ->
 		    %% 'DigitMapToken'
 		    {token, {'DigitMapToken', Line, SafeChars}, All, Line};
 		_ ->
 		    {token, {'SafeChars', Line, SafeChars}, All, Line}
 	    end;
-	[?EqualToken | Rest2] when TokenTag == 'DigitMapToken' ->
+	[?EqualToken | Rest2] when TokenTag =:= 'DigitMapToken' ->
 	    {Rest3, Line3} = skip_sep_chars(Rest2, Line2),
 	    {Rest4, DigitMapName} = collect_safe_chars(Rest3, []),
 	    {Rest6, Line6, DMD} = 
 		if
-		    DigitMapName == [] ->
+		    DigitMapName =:= [] ->
 			{Rest3, Line3, #'DigitMapDescriptor'{}};
 		    true ->
 			{Rest5, Line5} = skip_sep_chars(Rest4, Line3),
@@ -405,7 +407,7 @@ special_chars(All, SafeChars, Line, TokenTag) ->
 		    %% 'DigitMapToken'
 		    {token, {'DigitMapToken', Line, SafeChars}, All, Line}
 	    end;
-	_  when TokenTag == 'DigitMapToken' ->
+	_  when TokenTag =:= 'DigitMapToken' ->
 	    %% 'DigitMapToken'
 	    {token, {'DigitMapToken', Line, SafeChars}, All, Line};
 	_ ->
@@ -478,13 +480,112 @@ digit_map_timer(All, Chars, TimerPos, DMV) ->
    case {Rest2, catch list_to_integer(Digits)} of
        {[?CommaToken | Rest3], Int} when is_integer(Int) andalso 
                                          (Int >= 0) andalso 
-					 (element(TimerPos, DMV) == asn1_NOVALUE) ->
+					 (element(TimerPos, DMV) =:= asn1_NOVALUE) ->
 	   {Rest4, _} = skip_sep_chars(Rest3, 0),
 	   DMV2 = setelement(TimerPos, DMV, Int),
 	   digit_map_value(Rest4, DMV2);
        _ ->
 	   DMV#'DigitMapValue'{digitMapBody = All}
    end.
+
+%% ============================================================================
+%% <prev-parser-stuff>
+%% 
+%% This stuff was originally in the parser(s), but was, 
+%% for performance reasons, moved to the scanner(s). This 
+%% scanner does not make it faster, but the flex scanner 
+%% does, which is why the move was made.
+%% 
+
+property_groups(OctetString) ->
+    Group  = [],
+    Groups = [],
+    property_name(OctetString, Group, Groups).
+
+property_name([Char | Rest] = All, Group, Groups) ->
+    if 
+        ?white_space(Char) ->
+            property_name(Rest, Group, Groups);
+        ?end_of_line(Char) ->
+            property_name(Rest, Group, Groups);
+        true ->
+            Name = [],
+            do_property_name(All, Name, Group, Groups)
+    end;
+property_name([] = All, Group, Groups) ->
+    Name = [],
+    do_property_name(All, Name, Group, Groups).
+
+do_property_name([Char | Rest], Name, Group, Groups) 
+  when (Char =:= $=) andalso (Name =/= []) ->
+    %% Now we have a complete name
+    if
+	(Name =:= "v") andalso (Group =/= []) ->
+	    %% v= is a property group delimiter,
+	    %% lets create yet another property group.
+	    Groups2 = [lists:reverse(Group) | Groups],
+	    Group2 = [],
+	    property_value(Rest, Name, Group2, Groups2);
+	true ->
+	    %% Use current property group
+	    property_value(Rest, Name, Group, Groups)
+    end;
+do_property_name([Char | Rest], Name, Group, Groups) ->
+    case ?classify_char4(Char) of
+        safe_char_upper ->
+            do_property_name(Rest, [Char | Name], Group, Groups);
+        safe_char ->
+            do_property_name(Rest, [Char | Name], Group, Groups);
+        _ ->
+            throw({error, {bad_prop_name, lists:reverse(Name), Char}})
+    end;
+do_property_name([], [], [], Groups) ->
+    lists:reverse(Groups);
+do_property_name([], [], Group, Groups) ->
+    Group2 = lists:reverse(Group),
+    lists:reverse([Group2 | Groups]);
+do_property_name([], Name, Group, Groups) when Name =/= [] ->
+    %% Assume end of line
+    Value  = [],
+    PP     = make_property_parm(Name, Value),
+    Group2 = lists:reverse([PP | Group]),
+    lists:reverse([Group2 | Groups]).
+
+-ifdef(megaco_scanner_inline).
+-compile({inline,[{property_value,4}]}).
+-endif.
+property_value(Chars, Name, Group, Groups) ->
+    Value = [],
+    do_property_value(Chars, Name, Value, Group, Groups).
+
+do_property_value([Char | Rest], Name, Value, Group, Groups) ->
+    if
+        ?end_of_line(Char) ->
+            %% Now we have a complete "name=value" pair
+            PP = make_property_parm(Name, Value),
+            property_name(Rest, [PP | Group], Groups);
+        true ->
+            do_property_value(Rest, Name, [Char | Value], Group, Groups)
+    end;
+do_property_value([], Name, Value, Group, Groups) ->
+    %% Assume end of line
+    PP = make_property_parm(Name, Value),
+    Group2 = lists:reverse([PP | Group]),
+    lists:reverse([Group2 | Groups]).
+
+-ifdef(megaco_scanner_inline).
+-compile({inline,[{make_property_parm,2}]}).
+-endif.
+make_property_parm(Name, Value) ->
+    %% Record name, name field, value field, extraInfo field
+    {'PropertyParm', 
+     lists:reverse(Name), 
+     [lists:reverse(Value)], 
+     asn1_NOVALUE}.
+
+
+%% </prev-parser-stuff>
+%% ===========================================================================
 
 select_token([$o, $- | LowerText], Version) ->
     select_token(LowerText, Version);

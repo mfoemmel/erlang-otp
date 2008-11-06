@@ -200,7 +200,6 @@ void hipe_handle_exception(Process *c_p)
     Eterm Args = am_true;
 
     ASSERT(c_p->freason != TRAP); /* Should have been handled earlier. */
-    ASSERT(c_p->freason != RESCHEDULE); /* Should have been handled earlier. */
 
     if (c_p->mbuf) {
 	erts_printf("%s line %u: p==%p, p->mbuf==%p\n", __FUNCTION__, __LINE__, c_p, c_p->mbuf);

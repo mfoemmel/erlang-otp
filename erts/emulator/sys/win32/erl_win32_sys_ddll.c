@@ -47,25 +47,26 @@ void erl_sys_ddll_init(void) {
  */
 int erts_sys_ddll_open(char *full_name, void **handle)
 {
-    HINSTANCE hinstance;
     int len;
-    int ret = ERL_DE_NO_ERROR;
-    char dlname[MAXPATHLEN + EXT_LEN + 1];
-
-    if ((len = sys_strlen(full_name)) > MAXPATHLEN-EXT_LEN-1) {
-	ret = ERL_DE_LOAD_ERROR_NAME_TO_LONG;
-	goto done;
+    char dlname[MAXPATHLEN + 1];
+    
+    if ((len = sys_strlen(full_name)) >= MAXPATHLEN - EXT_LEN) {
+	return ERL_DE_LOAD_ERROR_NAME_TO_LONG;
     }
     sys_strcpy(dlname, full_name);
     sys_strcpy(dlname+len, FILE_EXT);
+    return erts_sys_ddll_open_noext(dlname, handle);
+}
+int erts_sys_ddll_open_noext(char *dlname, void **handle)
+{
+    HINSTANCE hinstance;
+    
     if ((hinstance = LoadLibrary(dlname)) == NULL) {
-	ret = ERL_DE_DYNAMIC_ERROR_OFFSET - GetLastError();
-	goto done;
+	return ERL_DE_DYNAMIC_ERROR_OFFSET - GetLastError();
     } else {
 	*handle = (void *) hinstance;
+	return ERL_DE_NO_ERROR;
     }
- done:
-    return ret;
 }
 
 /* 

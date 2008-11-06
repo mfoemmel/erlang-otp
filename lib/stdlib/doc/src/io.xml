@@ -113,7 +113,7 @@ io_device()
       </desc>
     </func>
     <func>
-      <name>get_line([IoDevice,] Prompt) -> string() | eof</name>
+      <name>get_line([IoDevice,] Prompt) -> string() | eof | {error,Reason}</name>
       <fsummary>Read a line</fsummary>
       <type>
         <v>IoDevice = io_device()</v>
@@ -132,6 +132,11 @@ io_device()
           <item>
             <p>End of file was encountered.</p>
           </item>
+	  <tag><c>{error,Reason}</c></tag>
+	  <item>
+	    <p>Other (rare) error condition, for instance <c>{error,estale}</c>
+	    if reading from an NFS file system.</p>
+	  </item>
         </taglist>
       </desc>
     </func>

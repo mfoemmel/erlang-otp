@@ -581,7 +581,7 @@ find_src(Beam) ->
 
 find_beam(Mod, Src) ->
     SrcDir = filename:dirname(Src),
-    BeamFile = packages:last(Mod) ++ code_aux:objfile_extension(),
+    BeamFile = packages:last(Mod) ++ code:objfile_extension(),
     File = filename:join(SrcDir, BeamFile),
     case is_file(File) of
 	true -> File;
@@ -592,7 +592,7 @@ find_beam_1(Mod, SrcDir) ->
     RootDir = find_root_dir(SrcDir, packages:first(Mod)),
     EbinDir = filename:join(RootDir, "ebin"),
     CodePath = [EbinDir | code:get_path()],
-    BeamFile = code_aux:to_path(Mod) ++ code_aux:objfile_extension(),
+    BeamFile = to_path(Mod) ++ code:objfile_extension(),
     lists:foldl(fun(_, Beam) when is_list(Beam) -> Beam;
 		   (Dir, error) ->
 			File = filename:join(Dir, BeamFile),
@@ -603,6 +603,9 @@ find_beam_1(Mod, SrcDir) ->
 		end,
 		error,
 		CodePath).
+
+to_path(X) ->
+    filename:join(packages:split(X)).
 
 find_root_dir(Dir, [_|Ss]) ->
     find_root_dir(filename:dirname(Dir), Ss);

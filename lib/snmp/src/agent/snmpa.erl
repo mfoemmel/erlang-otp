@@ -29,7 +29,7 @@
 	 current_request_id/0, current_community/0, current_address/0,
 	 current_context/0, current_net_if_data/0, 
 	 
-	 get_symbolic_store_db/0,
+	 get_symbolic_store_db/0, 
 	 which_aliasnames/0, 
 	 which_tables/0, 
 	 which_variables/0, 
@@ -46,6 +46,7 @@
 	 dump_mibs/0, dump_mibs/1,
 	 mib_of/1, mib_of/2, 
 	 me_of/1,  me_of/2, 
+	 invalidate_mibs_cache/0, invalidate_mibs_cache/1, 
 
 	 get/2, get/3, get_next/2, get_next/3,
 
@@ -277,6 +278,12 @@ me_of(Oid) ->
 
 me_of(Agent, Oid) ->
     snmpa_agent:me_of(Agent, Oid).
+
+invalidate_mibs_cache() ->
+    invalidate_mibs_cache(snmp_master_agent).
+
+invalidate_mibs_cache(Agent) ->
+    snmpa_agent:invalidate_mibs_cache(Agent).
 
 
 %% - message filter / load regulation

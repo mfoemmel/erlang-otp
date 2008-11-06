@@ -15,14 +15,14 @@
 
 -module(hipe_icode_primops).
 
--export([is_safe/1, fails/1, pp/2, type/1, type/2]).
+-export([is_safe/1, fails/1, pp/2, type/1, type/2, arg_types/1]).
 
 -include("hipe_icode.hrl").
 -include("hipe_icode_primops.hrl").
 
 %%---------------------------------------------------------------------
 
--type(io_device() :: any()).    %% XXX: DOES NOT BELONG HERE
+-type io_device() :: any().    %% XXX: DOES NOT BELONG HERE
 
 %%---------------------------------------------------------------------
 
@@ -32,7 +32,7 @@
 %% correctly introduced in the code, most of them are also OK to remove
 %% if the result is not used.
 
--spec(is_safe/1 :: (icode_primop()) -> bool()).
+-spec is_safe(icode_primop()) -> bool().
 
 is_safe('+') -> false;
 is_safe('/') -> false;
@@ -121,7 +121,7 @@ is_safe(#unsafe_element{}) -> true;
 is_safe(#unsafe_update_element{}) -> true.
 
 
--spec(fails/1 :: (icode_primop() | mfa()) -> bool()).
+-spec fails(icode_primop() | mfa()) -> bool().
 
 fails('+') -> true;
 fails('-') -> true;
@@ -221,7 +221,7 @@ fails({M, F, A}) when is_atom(M), is_atom(F), is_integer(A), 0 =< A, A =< 255 ->
 %% Pretty printing
 %%=====================================================================
 
--spec(pp/2 :: (io_device(), icode_primop()) -> 'ok').
+-spec pp(io_device(), icode_primop()) -> 'ok'.
 
 pp(Dev, Op) ->
   case Op of
@@ -320,7 +320,7 @@ pp(Dev, Op) ->
 %% Type handling
 %%=====================================================================
 
--spec(type/2 :: (icode_primop() | mfa(), [erl_type()]) -> erl_type()).
+-spec type(icode_primop() | mfa(), [erl_type()]) -> erl_type().
 
 type(Primop, Args) ->
   case Primop of
@@ -682,7 +682,7 @@ type(Primop, Args) ->
   end.
 
 
--spec(type/1 :: (icode_primop() | mfa()) -> erl_type()).
+-spec type(icode_primop() | mfa()) -> erl_type().
 
 type(Primop) ->
   case Primop of
@@ -849,6 +849,48 @@ type(Primop) ->
       erl_bif_types:type(M, F, A)
   end.
 
+
+
+%% =====================================================================
+%% @doc
+%% function arg_types returns a list of the demanded argument types for
+%% a bif to succeed.
+
+-spec arg_types(atom() | mfa()) -> [erl_type()] | 'any'.
+
+arg_types(Primop) ->
+  case Primop of
+    {M, F, A} ->
+      erl_bif_types:arg_types(M, F, A);
+    #element{} ->
+      [erl_types:t_pos_fixnum(), erl_types:t_tuple()];
+    '+' ->
+      erl_bif_types:arg_types(erlang, '+', 2);
+    '-' ->
+      erl_bif_types:arg_types(erlang, '-', 2);
+    '*' ->
+      erl_bif_types:arg_types(erlang, '*', 2);
+    '/' ->
+      erl_bif_types:arg_types(erlang, '/', 2);
+    'band' ->
+      erl_bif_types:arg_types(erlang, 'band', 2);
+    'bnot' ->
+      erl_bif_types:arg_types(erlang, 'bnot', 1);
+    'bor' ->
+      erl_bif_types:arg_types(erlang, 'bor', 2);
+    'bxor' ->
+      erl_bif_types:arg_types(erlang, 'bxor', 2);
+    'bsl' ->
+      erl_bif_types:arg_types(erlang, 'bsl', 2);
+    'bsr' ->
+      erl_bif_types:arg_types(erlang, 'bsr', 2);
+    'div' ->
+      erl_bif_types:arg_types(erlang, 'div', 2);
+    'rem' ->
+      erl_bif_types:arg_types(erlang, 'rem', 2);
+    _ ->
+      any    % safe approximation for all primops.
+  end.
 
 %%=====================================================================
 %% Auxiliary functions

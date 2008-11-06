@@ -63,7 +63,7 @@ go(ReplicaType, Nodes) ->
     Separator = #result{desc = "", list = SepList},
     display([Separator, Header, Separator | NewRes] ++ [Separator]).
 
-go(ReplicaType, [], Config, FunOverhead, Acc) ->
+go(_ReplicaType, [], _Config, _FunOverhead, Acc) ->
     Acc;
 go(ReplicaType, [H | T], OldNodes, FunOverhead, Acc) ->
     Nodes = [H | OldNodes],
@@ -71,7 +71,7 @@ go(ReplicaType, [H | T], OldNodes, FunOverhead, Acc) ->
     Res = run(Nodes, Config, FunOverhead),
     go(ReplicaType, T, Nodes, FunOverhead, [{ReplicaType, Nodes, Res} | Acc]).
 
-rearrange([{ReplicaType, Nodes, Meters} | Tail], Acc) ->
+rearrange([{_ReplicaType, _Nodes, Meters} | Tail], Acc) ->
     Acc2 = [add_meter(M, Acc) || M <- Meters],
     rearrange(Tail, Acc2);
 rearrange([], Acc) ->
@@ -103,7 +103,7 @@ display([R | Res], Format, MaxDesc) ->
 display([], _Format, _MaxDesc) ->
     ok.
     
-display_items([Item | Items], "") ->
+display_items([_Item | Items], "") ->
     io:format(" ! ~s", [lists:duplicate(10, $-)]),
     display_items(Items, "");
 display_items([Micros | Items], Desc) ->
@@ -433,7 +433,7 @@ stop(Nodes) ->
     rpc:multicall(Nodes, mnesia, stop, []).
 
 %% Generate some dummy persons    
-init_records(Fun, 0) ->
+init_records(_Fun, 0) ->
     {atomic, ok};
 init_records(Fun, Times) ->
     {atomic, ok} = Fun(Times, 0 - Times),
@@ -443,7 +443,7 @@ tc(Fun, Times) ->
     case catch timer:tc(?MODULE, repeat_meter, [Fun, Times]) of
         {Micros, ok} ->
             {ok, Micros div Times};
-        {Micros, {error, Reason}} ->
+        {_Micros, {error, Reason}} ->
             {error, Reason};
         {'EXIT', Reason} ->
             {error, Reason}
@@ -455,8 +455,8 @@ repeat_meter(Meter, Times) ->
 
 repeat_meter(_, {atomic, ok}, 0) ->
     ok;
-repeat_meter(Meter, {atomic, Result}, Times) when Times > 0 ->
+repeat_meter(Meter, {atomic, _Result}, Times) when Times > 0 ->
     repeat_meter(Meter, Meter(Times), Times - 1);
-repeat_meter(Meter, Reason, Times) ->
+repeat_meter(_Meter, Reason, _Times) ->
     {error, Reason}.
 

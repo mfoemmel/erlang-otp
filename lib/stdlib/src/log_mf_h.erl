@@ -87,7 +87,7 @@ handle_event(Event, State) ->
 		if
 		    CurB + Size < MaxB -> State;
 		    true ->
-			file:close(CurFd),
+			ok = file:close(CurFd),
 			NewF = inc(CurF, MaxF),
 			{ok, NewFd} = file_open(Dir, NewF),
 			State#state{cur_fd = NewFd, curF = NewF, curB = 0}
@@ -105,7 +105,7 @@ handle_info(_, State) ->
     {ok, State}.
 
 terminate(_, State) ->
-    file:close(State#state.cur_fd),
+    ok = file:close(State#state.cur_fd),
     State.
 
 handle_call(null, State) ->
@@ -139,7 +139,7 @@ read_index_file(Dir) ->
 		      {ok, [Index]} -> {ok, Index};
 		      _ -> error
 		  end,
-	    file:close(Fd),
+	    ok = file:close(Fd),
 	    Res;
 	_ -> error
     end.
@@ -152,7 +152,7 @@ write_index_file(Dir, Index) ->
     case file:open(Dir ++ "/index", [raw, write]) of
 	{ok, Fd} ->
 	    file:write(Fd, [Index]),
-	    file:close(Fd);
+	    ok = file:close(Fd);
 	_ -> exit(open_index_file)
     end.
 

@@ -1,6 +1,6 @@
 %%----------------------------------------------------------------------
 %%<copyright>
-%% <year>2001-2007</year>
+%% <year>2001-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -25,7 +25,7 @@
 
 -module(orber_web_server).
 
--behavoiur(genserver).
+-behaviour(gen_server).
 
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2]).
 -export([terminate/2,code_change/3]).

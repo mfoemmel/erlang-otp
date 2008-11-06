@@ -284,8 +284,6 @@ extension([$\\|Rest], _Result, vxworks) ->
     extension(Rest, [], vxworks);
 extension([Char|Rest], Result, OsType) when is_integer(Char) ->
     extension(Rest, [Char|Result], OsType);
-extension([List|Rest], Result, OsType) when is_list(List) ->
-    extension(List++Rest, Result, OsType);
 extension([], Result, _OsType) ->
     lists:reverse(Result).
 
@@ -438,8 +436,6 @@ rootname([$.|Rest], Root, [], OsType) ->
     rootname(Rest, Root, ".", OsType);
 rootname([$.|Rest], Root, Ext, OsType) ->
     rootname(Rest, Ext++Root, ".", OsType);
-rootname([[_|_]=List|Rest], Root, Ext, OsType) ->
-    rootname(List++Rest, Root, Ext, OsType);
 rootname([Char|Rest], Root, [], OsType) when is_integer(Char) ->
     rootname(Rest, [Char|Root], [], OsType);
 rootname([Char|Rest], Root, Ext, OsType) when is_integer(Char) ->
@@ -463,8 +459,6 @@ rootname2(Ext, Ext, Result) ->
     lists:reverse(Result);
 rootname2([], _Ext, Result) ->
     lists:reverse(Result);
-rootname2([[_|_]=List|Rest], Ext, Result) ->
-    rootname2(List++Rest, Ext, Result);
 rootname2([Char|Rest], Ext, Result) when is_integer(Char) ->
     rootname2(Rest, Ext, [Char|Result]).
 
@@ -506,14 +500,8 @@ win32_split([X, $\\|Rest]) when is_integer(X) ->
     win32_split([X, $/|Rest]);
 win32_split([X, Y, $\\|Rest]) when is_integer(X), is_integer(Y) ->
     win32_split([X, Y, $/|Rest]);
-win32_split([List|Rest]) when is_list(List) ->
-    win32_split(List++Rest);
-win32_split([Char, List|Rest]) when is_list(List) ->
-    win32_split([Char|List++Rest]);
 win32_split([$/, $/|Rest]) ->
     split(Rest, [], [[$/, $/]]);
-win32_split([C1, C2, List|Rest]) when is_list(List) ->
-    win32_split([C1, C2|List++Rest]);
 win32_split([UcLetter, $:|Rest]) when UcLetter >= $A, UcLetter =< $Z ->
     win32_split([UcLetter+$a-$A, $:|Rest]);
 win32_split([Letter, $:, $/|Rest]) ->
@@ -527,8 +515,6 @@ split([$/|Rest], Components, OsType) ->
     split(Rest, [], [[$/]|Components], OsType);
 split([$\\|Rest], Components, win32) ->
     split(Rest, [], [[$/]|Components], win32);
-split([List|Rest], Components, OsType) when is_list(List) ->
-    split(List++Rest, Components, OsType);
 split(RelativeName, Components, OsType) ->
     split(RelativeName, [], Components, OsType).
 

@@ -31,18 +31,18 @@
 
 %%---------------------------------------------------------------------
 
--type(io_device() :: any()).	%% XXX: DOES NOT BELONG HERE
+-type io_device() :: any().	%% XXX: DOES NOT BELONG HERE
 
 %%---------------------------------------------------------------------
 
--spec(pp/1 :: (#icode{}) -> 'ok').
+-spec pp(#icode{}) -> 'ok'.
 %% @doc Prettyprints linear Icode on stdout.
 %%  <p> Badly formed or unknown instructions are printed surrounded
 %%      by three stars "***".</p>
 pp(Icode) ->
   pp(standard_io, Icode).
 
--spec(pp/2 :: (io_device(), #icode{}) -> 'ok').
+-spec pp(io_device(), #icode{}) -> 'ok'.
 %% @doc Prettyprints linear Icode on IoDevice.
 %%  <p> Badly formed or unknown instructions are printed surrounded by
 %%      three stars "***".</p>
@@ -66,11 +66,11 @@ pp(Dev, Icode) ->
   io:format(Dev, "%% Data:\n", []),
   hipe_data_pp:pp(Dev, hipe_icode:icode_data(Icode), icode, "").
 
--spec(pp_block/1 :: (icode_instrs()) -> 'ok').
+-spec pp_block(icode_instrs()) -> 'ok'.
 pp_block(Code) ->
   pp_instrs(standard_io, Code).
 
--spec(pp_instrs/2 :: (io_device(), icode_instrs()) -> 'ok').
+-spec pp_instrs(io_device(), icode_instrs()) -> 'ok'.
 %% @doc Prettyprints a list of Icode instructions.
 pp_instrs(Dev, Is) ->
   lists:foreach(fun (I) -> pp_instr(Dev, I) end, Is).

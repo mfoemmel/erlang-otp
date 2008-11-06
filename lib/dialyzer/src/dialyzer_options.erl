@@ -32,7 +32,7 @@
 
 %%-----------------------------------------------------------------------
 
--spec(build/1 :: (dial_options()) -> #options{} | {'error',string()}).
+-spec build(dial_options()) -> #options{} | {'error',string()}.
 
 build(Opts) ->
   DefaultWarns = [?WARN_RETURN_NO_RETURN,
@@ -97,7 +97,7 @@ adapt_get_warnings(Opts = #options{analysis_type=Mode}) ->
       end
   end.
 
--spec(bad_option/2 :: (string(), _) -> no_return()).
+-spec bad_option(string(), _) -> no_return().
 
 bad_option(String, Term) ->
   Msg = io_lib:format("~s: ~P\n", [String,Term,25]),
@@ -128,6 +128,8 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
 	end,
       assert_plt_op(Options, NewOptions),
       build_options(Rest, NewOptions);
+    check_plt when is_boolean(Value) ->
+      build_options(Rest, Options#options{check_plt=Value});
     defines ->
       assert_defines(Term, Value),
       OldVal = Options#options.defines,
@@ -205,7 +207,7 @@ is_plt_mode(plt_remove)   -> true;
 is_plt_mode(plt_check)    -> true;
 is_plt_mode(succ_typings) -> false.
 
-%%-spec(build_warnings/2 :: ([atom()], ordset(warning())) -> ordset(warning())).
+%%-spec build_warnings([atom()], ordset(warning())) -> ordset(warning()).
 build_warnings([Opt|Left], Warnings) ->
   NewWarnings =
     case Opt of

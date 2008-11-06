@@ -22,10 +22,10 @@
 -export([module/2]).
 -export([combine_heap_needs/2]).
 
--import(lists, [reverse/1,reverse/2,map/2,sort/1]).
+-import(lists, [reverse/1,reverse/2,sort/1]).
 
 module({Mod,Exp,Attr,Fs,Lc}, _Opt) ->
-    {ok,{Mod,Exp,Attr,map(fun function/1, Fs),Lc}}.
+    {ok,{Mod,Exp,Attr,[function(F) || F <- Fs],Lc}}.
 
 function({function,Name,Arity,CLabel,Is0}) ->
     Is1 = block(Is0),

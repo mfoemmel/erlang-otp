@@ -166,7 +166,7 @@ init_names({node, Node, From}) ->
 %%% Wait for the kill message.
 %%%====================================================================================
 
--spec(end_loop/0 :: () -> no_return()).
+-spec end_loop() -> no_return().
 
 end_loop() ->
     receive

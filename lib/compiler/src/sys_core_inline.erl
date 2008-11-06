@@ -52,19 +52,21 @@
 -record(inline, {exports=[],thresh=0,inline=[]}).
 
 %% General function info.
--record(fstat, {func,				%Function name
-		arity,				%         arity
+-record(fstat, {func  :: atom(),		%Function name
+		arity :: byte(),		%         arity
 		def,				%Original definition
 		weight=0,			%Weight
-		inline=false,			%Inline func flag
+		inline=false :: bool(),		%Inline func flag
 		modified=false}).		%Mod flag
 
 %% Inlineable function info.
--record(ifun, {func,				%Function name
-	       arity,				%         arity
+-record(ifun, {func  :: atom(),			%Function name
+	       arity :: byte(),			%         arity
 	       vars,				%Fun vars
 	       body,				%    body
 	       weight}).			%Weight
+
+-spec module(#c_module{}, [_]) -> {'ok', #c_module{}}.
 
 module(#c_module{exports=Es,defs=Ds0}=Mod, Opts) ->
     case inline_option(Opts) of
@@ -117,11 +119,11 @@ inline(Fs0, St0) ->
     Is1 = map(fun (#ifun{body=B}=If) ->
 		      If#ifun{body=core_lib:map(match_fail_fun(), B)}
 	      end, Is0),
-    Is2 = map(fun (If) -> inline_inline(If, Is1) end, Is1),
+    Is2 = [inline_inline(If, Is1) || If <- Is1],
     %% We would like to remove inlined, non-exported functions here,
     %% but this can be difficult as they may be recursive.
     %% Use fixed inline functions on all functions.
-    Fs = map(fun (F) -> inline_func(F, Is2) end, Fs2),
+    Fs = [inline_func(F, Is2) || F <- Fs2],
     %% Regenerate module body.
     [Def || #fstat{def=Def} <- Fs].
 

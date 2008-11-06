@@ -27,32 +27,32 @@
 %% Returns a basic block: {bb, Code}
 %%   * Code is a list of instructions
 
--spec(mk_bb/1 :: ([_]) -> bb()).
+-spec mk_bb/1 :: ([_]) -> bb().
 
 mk_bb(Code) ->
     #bb{code=Code}.
 
--spec(is_bb/1 :: (_) -> bool()).
+-spec is_bb/1 :: (_) -> bool().
 
 is_bb(#bb{}) -> true;
 is_bb(_) -> false.
 
--spec(code_update/2 :: (bb(), [_]) -> bb()).
+-spec code_update(bb(), [_]) -> bb().
 
 code_update(BB, Code) ->
     BB#bb{code = Code}.
 
--spec(code/1 :: (bb()) -> [_]).
+-spec code(bb()) -> [_].
 
 code(#bb{code = Code}) -> 
     Code.
 
--spec(last/1 :: (bb()) -> _).
+-spec last(bb()) -> _.
 
 last(#bb{code = Code}) -> 
     lists:last(Code).
 
--spec(butlast/1 :: (bb()) -> [_]).
+-spec butlast(bb()) -> [_].
 
 butlast(#bb{code = Code}) ->
     butlast_1(Code).

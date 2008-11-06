@@ -1,5 +1,5 @@
 #<copyright>
-# <year>1997-2007</year>
+# <year>1997-2008</year>
 # <holder>Ericsson AB, All Rights Reserved</holder>
 #</copyright>
 #<legalnotice>
@@ -148,6 +148,7 @@ ERL_IDL_FLAGS += -pa $(ERL_TOP)/lib/cosEvent/ebin -pa $(ERL_TOP)/lib/ic/ebin
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += \
 	$(ERL_IDL_FLAGS) \
+	-I$(ERL_TOP)/lib/orber/include \
 	-I$(ERL_TOP)/lib/cosEvent/include \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,app_vsn,"cosEvent_$(COSEVENT_VSN)"}' 

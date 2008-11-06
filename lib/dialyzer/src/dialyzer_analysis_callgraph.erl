@@ -50,7 +50,7 @@
 %% Main
 %%
 
--spec(start/3 :: (pid(), [dial_warn_tag()], #analysis{}) -> 'ok').
+-spec start(pid(), [dial_warn_tag()], #analysis{}) -> 'ok'.
 
 start(Parent, LegalWarnings, Analysis) ->
   NewAnalysis1 = expand_files(Analysis),
@@ -213,9 +213,8 @@ cleanup_callgraph(#analysis_state{plt=InitPlt, parent=Parent,
   ModuleDeps = dialyzer_callgraph:module_deps(Callgraph),
   send_mod_deps(Parent, ModuleDeps),
   {Callgraph1, ExtCalls} = dialyzer_callgraph:remove_external(Callgraph),
-  ExtCalls1 = lists:filter(fun({_From, To}) -> 
-			       not dialyzer_plt:contains_mfa(InitPlt, To)
-			   end, ExtCalls),
+  ExtCalls1 = [Call || Call = {_From, To} <- ExtCalls,
+		       not dialyzer_plt:contains_mfa(InitPlt, To)],
   {BadCalls1, RealExtCalls} =
     if ExtCalls1 =:= [] -> {[], []};
        true -> 
@@ -233,9 +232,8 @@ cleanup_callgraph(#analysis_state{plt=InitPlt, parent=Parent,
 			end, ExtCalls1)
     end,
   NonLocalCalls = dialyzer_callgraph:non_local_calls(Callgraph1),
-  BadCalls2 = lists:filter(fun({_From, To}) ->
-			       not dialyzer_codeserver:is_exported(To, CServer)
-			   end, NonLocalCalls),
+  BadCalls2 = [Call || Call = {_From, To} <- NonLocalCalls,
+		       not dialyzer_codeserver:is_exported(To, CServer)],
   case BadCalls1 ++ BadCalls2 of
     [] -> ok;
     BadCalls -> send_bad_calls(Parent, BadCalls, CodeServer)
@@ -318,7 +316,6 @@ store_core(Mod, Core, NoWarn, Callgraph, CServer) ->
   CServer1 = dialyzer_codeserver:insert_exports(Exp, CServer),
   {LabeledCore, CServer2} = label_core(Core, CServer1),
   store_code_and_build_callgraph(Mod, LabeledCore, Callgraph, CServer2, NoWarn).
-				 
 
 abs_get_nowarn(Abs, M) ->
   [{M, F, A} 
@@ -358,7 +355,12 @@ expand_files(Analysis) ->
     end,
   case expand_files(Files, Ext, dict:new()) of
     [] ->
-      exit({error, "No files to analyze; check analysis type"});
+      Msg = "No "++Ext++" files to analyze"++
+	      case Analysis#analysis.start_from of
+		byte_code -> " (no --src specified?)";
+		src_code -> ""
+	      end,
+      exit({error, Msg});
     NewFiles ->
       Analysis#analysis{files=NewFiles}
   end.
@@ -388,14 +390,14 @@ check_for_duplicate_modules(ModDict) ->
     true ->
       ordsets:from_list([File || {_, [File]} <- dict:to_list(ModDict)]);
     false ->
-      Msg = io_lib:format("Duplicate modules: ~p",
-			  [X || {_, X} <- dict:to_list(Duplicates)]),
+      Mods = [X || {_, X} <- dict:to_list(Duplicates)],
+      Msg = io_lib:format("Duplicate modules: ~p", [Mods]),
       exit({error, Msg})
   end.
 
 default_includes(Dir) ->
   L1 = ["..", "../incl", "../inc", "../include"],
-  [{i, filename:join(Dir, X)}||X<-L1].
+  [{i, filename:join(Dir, X)} || X <- L1].
 
   
 %%____________________________________________________________

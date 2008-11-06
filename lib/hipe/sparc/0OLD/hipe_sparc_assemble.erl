@@ -116,20 +116,16 @@ mk_labelmap(Map, ExportMap) ->
   LblMap.
 
 mk_labelmap([{MFA, Labels}| Rest], ExportMap, Acc) ->
-  Map = 
-    lists:map(
-      fun 
-	({L,Pos}) ->
-	  {Pos,find_offset({MFA,L}, ExportMap)};
-	({sorted,Base,OrderedLabels}) ->
-	  {sorted, Base, [{Order, find_offset({MFA,L}, ExportMap)}
-			  || {L,Order} <- OrderedLabels]
-	  }
-      end,
-      Labels),
+  Map = [case Label of
+	   {L,Pos} ->
+	     {Pos, find_offset({MFA,L}, ExportMap)};
+	   {sorted,Base,OrderedLabels} ->
+	     {sorted, Base, [{Order, find_offset({MFA,L}, ExportMap)}
+			     || {L,Order} <- OrderedLabels]}
+	 end || Label <- Labels],
   %% msg("Map: ~w Map\n",[Map]),
   mk_labelmap(Rest, ExportMap, [Map,Acc]);
-mk_labelmap([],_,Acc) -> Acc.
+mk_labelmap([], _, Acc) -> Acc.
 
 find_offset({MFA,L},[{{MFA,L},hot,Adr}|_Rest]) ->
   Adr;
@@ -137,7 +133,6 @@ find_offset(L,[_|Rest]) ->
   find_offset(L,Rest);
 find_offset(L,[]) ->
   ?EXIT({label_not_found,L}).
-
 
 slim_exportmap(Map, Closures, Exports) ->
   SortedMap = lists:sort(slim_exportmap1(Map, [])),

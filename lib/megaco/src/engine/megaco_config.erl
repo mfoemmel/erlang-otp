@@ -1324,28 +1324,38 @@ verify_bool(_)     -> false.
 verify_resend_indication(flag) -> true;
 verify_resend_indication(Val)  -> verify_bool(Val).
 
+-spec verify_strict_int(Int :: integer()) -> bool().
 verify_strict_int(Int) when is_integer(Int) -> true;
 verify_strict_int(_)                        -> false.
 
+-spec verify_strict_int(Int :: integer(), 
+			Max :: integer() | 'infinity') -> bool().
 verify_strict_int(Int, infinity) ->
     verify_strict_int(Int);
 verify_strict_int(Int, Max) ->
     verify_strict_int(Int) andalso verify_strict_int(Max) andalso (Int =< Max).
 
+-spec verify_strict_uint(Int :: non_neg_integer()) -> bool().
 verify_strict_uint(Int) when is_integer(Int) and (Int >= 0) -> true;
 verify_strict_uint(_)                                       -> false.
 
+-spec verify_strict_uint(Int :: non_neg_integer(), 
+			 Max :: non_neg_integer() | 'infinity') -> bool().
 verify_strict_uint(Int, infinity) ->
     verify_strict_uint(Int);
 verify_strict_uint(Int, Max) ->
     verify_strict_int(Int, 0, Max).
 
+-spec verify_uint(Val :: non_neg_integer() | 'infinity') -> bool().
 verify_uint(infinity) -> true;
 verify_uint(Val)      -> verify_strict_uint(Val).
 
+-spec verify_int(Val :: integer() | 'infinity') -> bool().
 verify_int(infinity) -> true;
 verify_int(Val)      -> verify_strict_int(Val).
 
+-spec verify_int(Int :: integer() | 'infinity', 
+		 Max :: integer() | 'infinity') -> bool().
 verify_int(Int, infinity) ->
     verify_int(Int);
 verify_int(infinity, _Max) ->
@@ -1353,6 +1363,8 @@ verify_int(infinity, _Max) ->
 verify_int(Int, Max) ->
     verify_strict_int(Int) andalso verify_strict_int(Max) andalso (Int =< Max).
 
+-spec verify_uint(Int :: non_neg_integer() | 'infinity', 
+		  Max :: non_neg_integer() | 'infinity') -> bool().
 verify_uint(Int, infinity) ->
     verify_uint(Int);
 verify_uint(infinity, _Max) ->
@@ -1360,6 +1372,9 @@ verify_uint(infinity, _Max) ->
 verify_uint(Int, Max) ->
     verify_strict_int(Int, 0, Max).
 
+-spec verify_strict_int(Int :: integer(), 
+			Min :: integer(), 
+			Max :: integer()) -> bool().
 verify_strict_int(Val, Min, Max) 
   when (is_integer(Val) andalso 
 	is_integer(Min) andalso 
@@ -1370,6 +1385,9 @@ verify_strict_int(Val, Min, Max)
 verify_strict_int(_Val, _Min, _Max) ->
     false.
     
+-spec verify_int(Val :: integer() | 'infinity', 
+		 Min :: integer(), 
+		 Max :: integer() | 'infinity') -> bool(). 
 verify_int(infinity, Min, infinity) ->
     verify_strict_int(Min);
 verify_int(Val, Min, infinity) ->

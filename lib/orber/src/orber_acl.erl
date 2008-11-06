@@ -239,9 +239,7 @@ create_mask(List, Div, Mask, DB, Direction, Interfaces, Ports) ->
 		      Interfaces, Ports);
 	{Full, []} ->
 	    %% 32 bits.
-	    add_parts(Full, Direction, ?STOP, Mask, DB, Interfaces, Ports);
-	What ->
-	    ?EFORMAT("Invalid Filter: ~p, ~p\nReason: ~p\n", [List, Div, What])
+	    add_parts(Full, Direction, ?STOP, Mask, DB, Interfaces, Ports)
     end.
 
 add_parts([], Parent, Bits, Mask, DB, Interfaces, Ports) ->

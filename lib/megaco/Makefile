@@ -1,5 +1,5 @@
 #<copyright>
-# <year>1999-2007</year>
+# <year>1999-2008</year>
 # <holder>Ericsson AB, All Rights Reserved</holder>
 #</copyright>
 #<legalnotice>
@@ -160,3 +160,9 @@ tar: $(APP_TAR_FILE)
 $(APP_TAR_FILE): $(APP_DIR)
 	(cd $(APP_RELEASE_DIR); gtar zcf $(APP_TAR_FILE) $(DIR_NAME))
 
+dialyzer: 
+	(cd ./ebin; \
+         dialyzer --build_plt \
+                  --output_plt ../priv/megaco.plt \
+                  -r ../../megaco/ebin \
+                  --verbose)

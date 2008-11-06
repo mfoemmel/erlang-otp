@@ -43,8 +43,11 @@ void kill_epmd(EpmdVars *g)
     if ((rval = read_fill(fd,buf,2)) == 2) {
 	printf("Killed\n");
 	epmd_cleanup_exit(g,0);
-    } else {
-	buf[rval] = buf[5] = '\0';
+    } else if (rval < 0) {
+	printf("epmd: failed to read answer from local epmd\n");
+	epmd_cleanup_exit(g,1);
+    } else { 			/* rval is now 0 or 1 */
+	buf[rval] = '\0';
 	printf("epmd: local epmd responded with <%s>\n", buf);
 	epmd_cleanup_exit(g,1);
     }
@@ -121,5 +124,3 @@ static int read_fill(int fd,char *buf,int len)
     } while (got < len);
     return (len);
 }
-
-

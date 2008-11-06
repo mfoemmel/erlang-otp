@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2004-2007</year>
+%% <year>2004-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -45,7 +45,7 @@
 	 action_first_encode_decode/5,
 	
 	 encode_message/4,
-	 decode_message/5,
+	 decode_message/5, decode_message/6,
 
 	 expect_instruction/3,
 	 expect_encode/3, 
@@ -245,7 +245,7 @@ plain_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
     case (catch encode_message(Codec, Ver, EC, M1)) of
 	{ok, Bin} ->
 	    d("plain_encode_decode -> encode - ok"),
-	    decode_message(Codec, DynamicDecode, Ver, EC, Bin);
+	    decode_message(Codec, DynamicDecode, Ver, EC, Bin, true);
 	Error ->
 	    d("plain_encode_decode -> encode - failed: "
 	      "~n   Error: ~p", [Error]),
@@ -255,11 +255,11 @@ plain_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
 
 %% *** plain_decode_encode ***
 
-plain_decode_encode(Codec, DynamicDecode, Ver, EC, M) when list(M) ->
+plain_decode_encode(Codec, DynamicDecode, Ver, EC, M) when is_list(M) ->
     Bin = list_to_binary(M),
     plain_decode_encode(Codec, DynamicDecode, Ver, EC, Bin);
-plain_decode_encode(Codec, DynamicDecode, Ver, EC, B) when binary(B) ->
-    case (catch decode_message(Codec, DynamicDecode, Ver, EC, B)) of
+plain_decode_encode(Codec, DynamicDecode, Ver, EC, B) when is_binary(B) ->
+    case (catch decode_message(Codec, DynamicDecode, Ver, EC, B, true)) of
 	{ok, M} ->
 	    encode_message(Codec, Ver, EC, M);
 	Error ->
@@ -273,7 +273,7 @@ trans_first_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
     d("trans_first_encode_decode -> entry"),
     case (catch trans_first_encode_message(Codec, Ver, EC, M1)) of
 	{ok, Bin} ->
-	    decode_message(Codec, DynamicDecode, Ver, EC, Bin);
+	    decode_message(Codec, DynamicDecode, Ver, EC, Bin, true);
 	Error ->
 	    Error 
     end.
@@ -307,7 +307,7 @@ actions_first_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
     d("actions_first_encode_decode -> entry"),
     case (catch actions_first_encode_message(Codec, Ver, EC, M1)) of
 	{ok, Bin} ->
-	    decode_message(Codec, DynamicDecode, Ver, EC, Bin);
+	    decode_message(Codec, DynamicDecode, Ver, EC, Bin, true);
 	Error ->
 	    Error 
     end.
@@ -347,7 +347,7 @@ action_first_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
     d("action_first_encode_decode -> entry"),
     case (catch action_first_encode_message(Codec, Ver, EC, M1)) of
 	{ok, Bin} ->
-	    decode_message(Codec, DynamicDecode, Ver, EC, Bin);
+	    decode_message(Codec, DynamicDecode, Ver, EC, Bin, true);
 	Error ->
 	    Error 
     end.
@@ -387,26 +387,46 @@ encode_message(Codec, Ver, EC, M) ->
       "~n   Codec: ~p"
       "~n   Ver:   ~p"
       "~n   EC:    ~p"
-      "~n   M:     ~p", [Codec, Ver, EC, M]),
-    case (catch Codec:encode_message(EC, Ver, M)) of
-	{ok, Bin} ->
-	    d("encode_message -> encode - ok: "
-	      "~n~s", [binary_to_list(Bin)]),
+      "~n   M:     ~p", [Codec, Ver, EC, M]),    
+%%     case (catch Codec:encode_message(EC, Ver, M)) of
+%% 	{ok, Bin} ->
+%% 	    d("encode_message -> encode - ok: "
+%% 	      "~n~s", [binary_to_list(Bin)]),
+%% 	    {ok, Bin};
+%% 	Error ->
+%% 	    d("encode_message -> encode - failed"),
+%% 	    throw({error, {message_encode_failed, Error, M}})
+%%     end.
+    case (catch timer:tc(Codec, encode_message, [EC, Ver, M])) of
+	{Time, {ok, Bin}} ->
+	    d("encode_message -> encode - ok after ~p: "
+	      "~n~s", [Time, binary_to_list(Bin)]),
 	    {ok, Bin};
-	Error ->
+	{_Time, Error} ->
 	    d("encode_message -> encode - failed"),
 	    throw({error, {message_encode_failed, Error, M}})
     end.
 
-decode_message(Codec, true, _Ver, EC, M) ->
+decode_message(Codec, Dynamic, Ver, EC, M) ->
+    decode_message(Codec, Dynamic, Ver, EC, M, false).
+
+decode_message(Codec, true, _Ver, EC, M, _Timed) ->
     d("decode_message -> entry - when using dynamic"),
     Codec:decode_message(EC, dynamic, M);
-decode_message(Codec, _, Ver, EC, M) ->
+decode_message(Codec, _, Ver, EC, M, false) ->
     d("decode_message -> entry with"
       "~n   Codec: ~p"
       "~n   Ver:   ~p"
       "~n   EC:    ~p", [Codec, Ver, EC]),
-    Codec:decode_message(EC, Ver, M).
+    Codec:decode_message(EC, Ver, M);
+decode_message(Codec, _, Ver, EC, M, true) ->
+    d("decode_message -> entry with"
+      "~n   Codec: ~p"
+      "~n   Ver:   ~p"
+      "~n   EC:    ~p", [Codec, Ver, EC]),
+    {Time, Result} = timer:tc(Codec, decode_message, [EC, Ver, M]),
+    io:format("~-8w", [Time]),
+    Result.
 
 
 %% =======================================================================

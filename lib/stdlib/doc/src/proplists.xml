@@ -190,7 +190,7 @@
           <c>{Key, Value}</c>, this function returns the corresponding
           <c>Value</c>, otherwise <c>Default</c> is returned.</p>
         <p>See also: <c>get_all_values/2</c>, <c>get_bool/2</c>,
-          <c>get_value/1</c>, <c>lookup/2</c>.</p>
+          <c>get_value/2</c>, <c>lookup/2</c>.</p>
       </desc>
     </func>
     <func>

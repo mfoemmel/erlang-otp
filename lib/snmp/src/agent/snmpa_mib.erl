@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1996-2007</year>
+%% <year>1996-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -31,7 +31,8 @@
 	 load_mibs/2, unload_mibs/2, 
 	 register_subagent/3, unregister_subagent/2, info/1, info/2, 
 	 verbosity/2, dump/1, dump/2,
-	 backup/2]).
+	 backup/2,
+	 invalidate_cache/1]).
 
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -44,7 +45,9 @@
 -include("snmp_debug.hrl").
 
 
--define(SERVER, ?MODULE).
+-define(SERVER,   ?MODULE).
+-define(NO_CACHE, no_mibs_cache).
+-define(DEFAULT_CACHE_USAGE, true).
 
 -ifdef(snmp_debug).
 -define(GS_START_LINK(Prio, Mibs, Opts),
@@ -63,7 +66,7 @@
 %%       meo  - mib entry override
 %%       teo  - trap (notification) entry override
 %%-----------------------------------------------------------------
--record(state, {data, meo, teo, backup}).
+-record(state, {data, meo, teo, backup, cache}).
 
 
 
@@ -87,6 +90,9 @@ verbosity(MibServer, Verbosity) ->
 
 stop(MibServer) ->
     call(MibServer, stop).
+
+invalidate_cache(MibServer) ->
+    call(MibServer, invalidate_cache).
 
 
 %%-----------------------------------------------------------------
@@ -201,6 +207,7 @@ do_init(Prio, Mibs, Opts) ->
     put(sname,ms),
     put(verbosity,?vvalidate(get_verbosity(Opts))),
     ?vlog("starting",[]),
+    Cache      = maybe_create_cache(Opts), 
     MeOverride = get_me_override(Opts),
     TeOverride = get_te_override(Opts),
     MibStorage = get_mib_storage(Opts),
@@ -212,7 +219,10 @@ do_init(Prio, Mibs, Opts) ->
 	    ?vdebug("started",[]),
 	    snmpa_mib_data:sync(Data2),
 	    ?vdebug("mib data synced",[]),
-	    {ok, #state{data = Data2, teo = TeOverride, meo = MeOverride}};
+	    {ok, #state{data  = Data2, 
+			teo   = TeOverride, 
+			meo   = MeOverride,
+			cache = Cache}};
 	{'aborted at', Mib, _NewData, Reason} ->
 	    ?vinfo("failed loading mib ~p: ~p",[Mib,Reason]),
 	    {error, {Mib, Reason}}
@@ -243,12 +253,12 @@ mib_operation(Operation, Mib, Data0, MeOverride, TeOverride, Force)
   when list(Mib) ->
     ?vtrace("mib operation on mib ~p", [Mib]),
     case apply(snmpa_mib_data, Operation, [Data0,Mib,MeOverride,TeOverride]) of
-	{error, 'already loaded'} when Operation == load_mib, 
-				       Force == true ->
+	{error, 'already loaded'} when (Operation =:= load_mib) andalso  
+				       (Force =:= true) ->
 	    ?vlog("ignore mib ~p -> already loaded", [Mib]),
 	    Data0;
-	{error, 'not loaded'} when Operation == unload_mib, 
-				   Force == true ->
+	{error, 'not loaded'} when (Operation =:= unload_mib) andalso 
+				   (Force =:= true) ->
 	    ?vlog("ignore mib ~p -> not loaded", [Mib]),
 	    Data0;
 	{error, Reason} ->
@@ -265,9 +275,28 @@ mib_operation(_Op, Mib, Data, _MeOverride, _TeOverride, _Force) ->
 %%-----------------------------------------------------------------
 %% Handle messages
 %%-----------------------------------------------------------------
-handle_call({lookup, Oid}, _From, #state{data = Data} = State) ->
-    ?vlog("lookup ~p",[Oid]),    
-    Reply = snmpa_mib_data:lookup(Data, Oid),
+
+handle_call(invalidate_cache, _From, #state{cache = Cache} = State) ->
+    ?vlog("invalidate_cache", []), 
+    NewCache = maybe_invalidate_cache(Cache),
+    {reply, ignore, State#state{cache = NewCache}};
+
+handle_call({lookup, Oid}, _From, 
+	    #state{data = Data, cache = Cache} = State) ->
+    ?vlog("lookup ~p", [Oid]), 
+    Key = {lookup, Oid}, 
+    Reply = case maybe_cache_lookup(Cache, Key) of
+		?NO_CACHE ->
+		    snmpa_mib_data:lookup(Data, Oid);
+		[] ->
+		    Rep = snmpa_mib_data:lookup(Data, Oid),
+		    ets:insert(Cache, {Key, Rep}),
+		    Rep;
+		[{Key, Rep}] ->
+		    ?vdebug("lookup -> found in cache", []), 
+		    Rep
+	    end,
+    ?vdebug("lookup -> Reply: ~p",[Reply]),    
     {reply, Reply, State};
 
 handle_call({which_mib, Oid}, _From, #state{data = Data} = State) ->
@@ -276,15 +305,32 @@ handle_call({which_mib, Oid}, _From, #state{data = Data} = State) ->
     ?vdebug("which_mib: ~p",[Reply]),    
     {reply, Reply, State};
 
-handle_call({next, Oid, MibView}, _From, #state{data = Data} = State) ->
-    ?vlog("next ~p [~p]",[Oid,MibView]),    
-    Reply = snmpa_mib_data:next(Data, Oid, MibView),
-    ?vdebug("next: ~p",[Reply]),    
+handle_call({next, Oid, MibView}, _From, 
+	    #state{data = Data, cache = Cache} = State) ->
+    ?vlog("next ~p [~p]",[Oid,MibView]), 
+    Key = {next, Oid, MibView},
+    Reply = case maybe_cache_lookup(Cache, Key) of
+		?NO_CACHE ->
+		    snmpa_mib_data:next(Data, Oid, MibView);
+		[] ->    
+		    Rep = snmpa_mib_data:next(Data, Oid, MibView),
+		    ets:insert(Cache, {Key, Rep}),
+		    Rep;
+		[{Key, Rep}] ->
+		    ?vdebug("lookup -> found in cache", []), 
+		    Rep
+	    end,
+    ?vdebug("next -> Reply: ~p",[Reply]), 
     {reply, Reply, State};
 
 handle_call({load_mibs, Mibs}, _From, 
-	    #state{data = Data, teo = TeOverride, meo = MeOverride} = State) ->
+	    #state{data  = Data, 
+		   teo   = TeOverride, 
+		   meo   = MeOverride,
+		   cache = Cache} = State) ->
     ?vlog("load mibs ~p",[Mibs]),    
+    %% Invalidate cache
+    NewCache = maybe_invalidate_cache(Cache),
     {NData,Reply} = 
 	case (catch mib_operations(load_mib, Mibs, Data,
 				   MeOverride, TeOverride)) of
@@ -295,22 +341,28 @@ handle_call({load_mibs, Mibs}, _From,
 		{NewData,ok}
 	end,
     snmpa_mib_data:sync(NData),
-    {reply, Reply, State#state{data = NData}};
+    {reply, Reply, State#state{data = NData, cache = NewCache}};
 
 handle_call({unload_mibs, Mibs}, _From, 
-	    #state{data = Data, teo = TeOverride, meo = MeOverride} = State) ->
+	    #state{data  = Data, 
+		   teo   = TeOverride, 
+		   meo   = MeOverride,
+		   cache = Cache} = State) ->
     ?vlog("unload mibs ~p",[Mibs]),    
+    %% Invalidate cache
+    NewCache = maybe_invalidate_cache(Cache),
+    %% Unload mib(s)
     {NData,Reply} = 
 	case (catch mib_operations(unload_mib, Mibs, Data,
 				   MeOverride, TeOverride)) of
 	    {'aborted at', Mib, NewData, Reason} ->
 		?vlog("aborted at ~p for reason ~p",[Mib,Reason]),    
-		{NewData,{error, {'unload aborted at', Mib, Reason}}};
+		{NewData, {error, {'unload aborted at', Mib, Reason}}};
 	    {ok, NewData} ->
 		{NewData,ok}
 	end,
     snmpa_mib_data:sync(NData),
-    {reply, Reply, State#state{data = NData}};
+    {reply, Reply, State#state{data = NData, cache = NewCache}};
 
 handle_call(which_mibs, _From, #state{data = Data} = State) ->
     ?vlog("which mibs",[]),    
@@ -322,40 +374,55 @@ handle_call({whereis_mib, Mib}, _From, #state{data = Data} = State) ->
     Reply = snmpa_mib_data:whereis_mib(Data, Mib),
     {reply, Reply, State};
 
-handle_call({register_subagent, Oid, Pid}, _From, State) ->
+handle_call({register_subagent, Oid, Pid}, _From, 
+	    #state{data = Data, cache = Cache} = State) ->
     ?vlog("register subagent ~p, ~p",[Oid,Pid]),
-    case snmpa_mib_data:register_subagent(State#state.data, Oid, Pid) of
+    %% Invalidate cache
+    NewCache = maybe_invalidate_cache(Cache),
+    case snmpa_mib_data:register_subagent(Data, Oid, Pid) of
 	{error, Reason} ->
 	    ?vlog("registration failed: ~p",[Reason]),    
-	    {reply, {error, Reason}, State};
+	    {reply, {error, Reason}, State#state{cache = NewCache}};
 	NewData ->
-	    {reply, ok, State#state{data = NewData}}
+	    {reply, ok, State#state{data = NewData, cache = NewCache}}
     end;
 
-handle_call({unregister_subagent, OidOrPid}, _From, State) ->
+handle_call({unregister_subagent, OidOrPid}, _From, 
+	    #state{data = Data, cache = Cache} = State) ->
     ?vlog("unregister subagent ~p",[OidOrPid]),    
-    case snmpa_mib_data:unregister_subagent(State#state.data, OidOrPid) of
+    %% Invalidate cache
+    NewCache = maybe_invalidate_cache(Cache),
+    case snmpa_mib_data:unregister_subagent(Data, OidOrPid) of
 	{ok, NewData, DeletedSubagentPid} ->
-	    {reply, {ok, DeletedSubagentPid}, State#state{data=NewData}};
+	    {reply, {ok, DeletedSubagentPid}, State#state{data  = NewData, 
+							  cache = NewCache}};
 	{error, Reason} ->
 	    ?vlog("unregistration failed: ~p",[Reason]),    
-	    {reply, {error, Reason}, State};
+	    {reply, {error, Reason}, State#state{cache = NewCache}};
 	NewData ->
-	    {reply, ok, State#state{data = NewData}}
+	    {reply, ok, State#state{data = NewData, cache = NewCache}}
     end;
 
-handle_call(info, _From, #state{data = Data} = State) ->
+handle_call(info, _From, #state{data = Data, cache = Cache} = State) ->
     ?vlog("info",[]),    
-    {reply, catch snmpa_mib_data:info(Data), State};
+    Reply = 
+	case (catch snmpa_mib_data:info(Data)) of
+	    Info when is_list(Info) ->
+		[{cache, size_cache(Cache)} | Info];
+	    E ->
+		    [{error, E}]
+	    end,
+    {reply, Reply, State};
 
 handle_call({info, Type}, _From, #state{data = Data} = State) ->
     ?vlog("info ~p",[Type]),    
-    Reply = case (catch snmpa_mib_data:info(Data, Type)) of
-		Info when list(Info) ->
-		    Info;
-		E ->
-		    [{error, E}]
-	    end,
+    Reply = 
+	case (catch snmpa_mib_data:info(Data, Type)) of
+	    Info when is_list(Info) ->
+		Info;
+	    E ->
+		[{error, E}]
+	end,
     {reply, Reply, State};
 
 handle_call(dump, _From, State) ->
@@ -401,7 +468,7 @@ handle_call(Req, _From, State) ->
     Reply = {error, {unknown, Req}}, 
     {reply, Reply, State}.
     
-handle_cast({verbosity,Verbosity}, State) ->
+handle_cast({verbosity, Verbosity}, State) ->
     ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),    
     put(verbosity,snmp_verbosity:validate(Verbosity)),
     {noreply, State};
@@ -442,47 +509,79 @@ terminate(_Reason, #state{data = Data}) ->
 
 %% downgrade
 %% 
-code_change({down, _Vsn}, S1, downgrade_to_pre_4_7) ->
-    #state{data = Data, meo = MEO, teo = TEO, backup = B} = S1, 
-    stop_backup_server(B),
-    NData = snmpa_mib_data:code_change(down, Data),
-    S2 = {state, NData, MEO, TEO},
+code_change({down, _Vsn}, S1, downgrade_to_pre_4_12) ->
+    #state{data = Data, meo = MEO, teo = TEO, backup = B, cache = Cache} = S1, 
+    del_cache(Cache), 
+    S2 = {state, Data, MEO, TEO, B},
     {ok, S2};
 
 %% upgrade
 %% 
-code_change(_Vsn, S1, upgrade_from_pre_4_7) ->
-    {state, Data, MEO, TEO} = S1,
-    NData = snmpa_mib_data:code_change(up, Data),
-    S2 = #state{data = NData, meo = MEO, teo = TEO},
+code_change(_Vsn, S1, upgrade_from_pre_4_12) ->
+    {state, Data, MEO, TEO, B} = S1,
+    Cache = new_cache(), 
+    S2 = #state{data = Data, meo = MEO, teo = TEO, backup = B, cache = Cache},
     {ok, S2};
 
 code_change(_Vsn, State, _Extra) ->
     {ok, State}.
 
 
-stop_backup_server(undefined) ->
-    ok;
-stop_backup_server({Pid, _}) when pid(Pid) ->
-    exit(Pid, kill).
-
-
-
 %%-----------------------------------------------------------------
 %% Option access functions
 %%-----------------------------------------------------------------
 
-get_verbosity(O) ->
-    snmp_misc:get_option(verbosity,O,?default_verbosity).
+get_verbosity(Options) ->
+    snmp_misc:get_option(verbosity, Options, ?default_verbosity).
 
-get_me_override(O) ->
-    snmp_misc:get_option(mibentry_override,O,false).
+get_me_override(Options) ->
+    snmp_misc:get_option(mibentry_override, Options, false).
 
-get_te_override(O) ->
-    snmp_misc:get_option(trapentry_override,O,false).
+get_te_override(Options) ->
+    snmp_misc:get_option(trapentry_override, Options, false).
 
-get_mib_storage(O) ->
-    snmp_misc:get_option(mib_storage,O,ets).
+get_mib_storage(Options) ->
+    snmp_misc:get_option(mib_storage, Options, ets).
+
+
+%% ----------------------------------------------------------------
+
+maybe_create_cache(Options) when is_list(Options) ->
+    case snmp_misc:get_option(cache, Options, ?DEFAULT_CACHE_USAGE) of
+	true ->
+	    new_cache();
+	_ ->
+	    ?NO_CACHE
+    end.
+
+maybe_invalidate_cache(?NO_CACHE) ->
+    ?NO_CACHE;
+maybe_invalidate_cache(Cache) ->
+    del_cache(Cache),
+    new_cache().
+
+new_cache() ->
+    ets:new(snmpa_mib_cache, [set, protected, {keypos, 1}]).
+
+del_cache(?NO_CACHE) ->
+    ok;
+del_cache(Cache) ->
+    ets:delete(Cache).
+
+maybe_cache_lookup(?NO_CACHE, _) ->
+    ?NO_CACHE;
+maybe_cache_lookup(Cache, Key) ->
+    ets:lookup(Cache, Key).
+
+size_cache(?NO_CACHE) ->
+    undefined;
+size_cache(Cache) ->
+    case (catch ets:info(Cache, memory)) of
+	Sz when is_integer(Sz) ->
+	    Sz;
+	_ ->
+	    undefined
+    end.
 
 
 %% ----------------------------------------------------------------

@@ -19,9 +19,9 @@
 -include("../ssa/hipe_ssa.inc").
 
 %% Declarations for exported functions which are Icode-specific.
--spec(ssa_liveness__analyze/1 :: (#cfg{}) -> gb_tree()).
--spec(ssa_liveness__livein/2  :: (_, icode_lbl()) -> [#icode_variable{}]).
-%% -spec(ssa_liveness__livein/3  :: (_, icode_lbl(), _) -> [#icode_var{}]).
+-spec ssa_liveness__analyze(#cfg{}) -> gb_tree().
+-spec ssa_liveness__livein(_, icode_lbl()) -> [#icode_variable{}].
+%% -spec ssa_liveness__livein(_, icode_lbl(), _) -> [#icode_var{}].
 
 %%----------------------------------------------------------------------
 %% Auxiliary operations which seriously differ between Icode and RTL.

@@ -256,7 +256,11 @@ handle_exec(disconnect,
 
 handle_exec({listen, Port}, #state{result = Res} = State) ->
     p("listen to ~p", [Port]),
-    Opts = [binary, {packet, tpkt}, {active, false}, {reuseaddr, true}],
+    Opts = [binary, 
+	    {packet,    tpkt}, 
+	    {active,    false}, 
+	    {reuseaddr, true}, 
+	    {nodelay,   true}],
     case (catch gen_tcp:listen(Port, Opts)) of
         {ok, Listen} ->
             d("listen -> listen socket created"),
@@ -315,7 +319,7 @@ handle_exec({active, NewState},
 handle_exec({connect, {Addr, Port, To}}, 
      #state{result = Res} = State) ->
     p("connect to ~p, ~p", [Addr, Port]),
-    Opts = [binary, {packet, tpkt}, {active, once}],
+    Opts = [binary, {packet, tpkt}, {active, once}, {nodelay, true}],
     case (catch gen_tcp:connect(Addr, Port, Opts, To)) of
         {ok, Sock} ->
             d("connect -> connected"),
@@ -430,9 +434,9 @@ handle_exec({expect_nothing, To},
             {ok, State#state{result = [{nothing, To}|Acc]}}
     end;
 
-handle_exec({trigger, Trigger}, 
+handle_exec({trigger, Desc, Trigger}, 
      #state{result = Acc} = State) when is_function(Trigger) ->
-    p("trigger"),
+    p("trigger: ~s", [Desc]),
     Trigger(),
     {ok, State#state{result = [triggered|Acc]}};
 

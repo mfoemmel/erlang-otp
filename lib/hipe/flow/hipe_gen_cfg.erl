@@ -6,10 +6,10 @@
 	]).
 
 %%-define(DO_ASSERT, true).
--define(GEN_CFG, true).	     % needed for cfg.inc
+-define(GEN_CFG, true).	    % needed for cfg.inc
 
--type(dict()    :: tuple()). % needed for cfg.hrl
--type(gb_tree() :: tuple()). % needed for cfg.hrl
+-type dict()    :: tuple(). % needed for cfg.hrl
+-type gb_tree() :: tuple(). % needed for cfg.hrl
 
 -include("../main/hipe.hrl").
 -include("cfg.hrl").

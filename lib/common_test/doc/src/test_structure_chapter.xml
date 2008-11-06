@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE chapter SYSTEM "chapter.dtd">
+
+<chapter>
+  <header>
+    <copyright>
+      <year>2006</year>
+      <year>2008</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>Test Structure</title>
+    <prepared>Siri Hansen, Kenneth Lundin</prepared>
+    <docno></docno>
+    <date></date>
+    <rev></rev>
+  </header>
+
+  <section>
+    <title>Test structure</title>
+
+    <p>A test consists of a set of test cases. Each test case is
+    implemented as an Erlang function. An Erlang module implementing
+    one or more test cases is called a test suite. One or more test 
+    suites are stored in a test directory.</p>
+
+  </section>
+
+  <section>
+    <title>Skipping test cases</title>
+
+    <p>It is possible to skip certain test cases, for example if you
+    know beforehand that a specific test case fails. This might be
+    functionality which isn't yet implemented, a bug that is known but
+    not yet fixed or some functionality which doesn't work or isn't
+    applicable on a specific platform.</p>
+
+    <p>There are several different ways to state that one or more 
+    test cases should be skipped:</p>
+    <list>
+
+      <item>Using <c>skip_suites</c> and <c>skip_cases</c>
+      terms in 
+      <seealso marker="run_test_chapter#test_specifications">test specifications</seealso>.
+      </item>
+
+      <item>Returning <c>{skip,Reason}</c> from the
+      <c>init_per_testcase/2</c> or <c>init_per_suite/1</c> functions.</item>
+
+      <item>Returning <c>{skip,Reason}</c> from the execution clause
+      of the test case.</item>
+
+    </list>
+
+    <p>The latter of course means that the execution clause is
+    actually called, so the author must make sure that the test case
+    is not run.</p>
+
+    <p>When a test case is skipped, it will be noted as <c>SKIPPED</c>
+    in the HTML log.</p>
+
+  </section>
+
+  <section>
+    <title>Definition of terms</title>
+    
+    <taglist>
+      
+      <tag><em>data_dir</em></tag>
+      <item>
+	Data directory for a test suite. This directory contains
+	any files used by the test suite, e.g. additional Erlang
+	modules, binaries or data files.
+      </item>
+      
+      <tag><em>major log file</em></tag>
+      <item>
+	An overview log file for one or more test suites.
+      </item>
+
+      <tag><em>minor log file</em></tag>
+      <item>
+	A log file for one particular test case.
+      </item>
+      <tag><em>priv_dir</em></tag>
+      <item>
+	Private directory for a test suite. This directory should
+	be used when the test suite needs to write to files.
+      </item>
+
+      <tag><em>test case</em></tag>
+      <item>
+	A single test included in a test suite. A test case is
+	implemented as a function in a test suite module.
+      </item>
+      
+      <tag><em>test suite</em></tag>
+      <item>
+	An erlang module containing a collection of test cases for
+	a specific functional area.
+      </item>
+
+      <tag><em>test directory</em></tag>
+      <item>
+	A directory that contains one or more test suite modules, i.e.
+	a group of test suites.
+      </item>
+    </taglist>
+    
+  </section>
+
+
+</chapter>
+

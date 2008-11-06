@@ -264,17 +264,17 @@ wrap_input(term, check, Files) ->
                   Fn = merge_terms_fun(file_rterms(no_file, [File])),
                   {fn, Fn, File}
           end,
-    {binary_term_fun(), lists:map(Fun, Files)};
+    {binary_term_fun(), [Fun(F) || F <- Files]};
 wrap_input(Format, check, Files) ->
     {Format, Files};
 wrap_input(term, merge, Files) ->
     Fun = fun(File) -> merge_terms_fun(file_rterms(no_file, [File])) end,
-    Input = lists:reverse(lists:map(Fun, Files)),
+    Input = lists:reverse([Fun(F) || F <- Files]),
     {binary_term_fun(), Input};
 wrap_input(Format, merge, Files) ->
-    Input = lists:reverse(lists:map(fun merge_bins_fun/1, Files)),
+    Input = lists:reverse([merge_bins_fun(F) || F <- Files]),
     {Format, Input};
-wrap_input(term, sort, InFun) when is_function(InFun), is_function(InFun, 1) ->
+wrap_input(term, sort, InFun) when is_function(InFun, 1) ->
     {binary_term_fun(), fun_rterms(InFun)};
 wrap_input(term, sort, Files) ->
     {binary_term_fun(), file_rterms(no_file, Files)};

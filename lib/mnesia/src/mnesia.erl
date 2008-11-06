@@ -45,13 +45,14 @@
 	 delete_object/1, s_delete_object/1, delete_object/3, delete_object/5, 
 	 
 	 %% Access within an activity - Reads
-	 read/1, wread/1, read/3, read/5,
+	 read/1, read/2, wread/1, read/3, read/5,
 	 match_object/1, match_object/3, match_object/5,
 	 select/1,select/2,select/3,select/4,select/5,select/6,
 	 all_keys/1, all_keys/4,
 	 index_match_object/2, index_match_object/4, index_match_object/6,
 	 index_read/3, index_read/6,
 	 first/1, next/2, last/1, prev/2,
+	 first/3, next/4, last/3, prev/4,
 
 	 %% Iterators within an activity 
 	 foldl/3, foldl/4, foldr/3, foldr/4,
@@ -629,6 +630,16 @@ delete_object(Tab, Val, LockKind) ->
 
 delete_object(Tid, Ts, Tab, Val, LockKind)
   when atom(Tab), Tab /= schema, tuple(Val), size(Val) > 2 ->
+    case has_var(Val) of
+	false -> 
+	    do_delete_object(Tid, Ts, Tab, Val, LockKind);
+	true ->
+	    abort({bad_type, Tab, Val})
+    end;
+delete_object(_Tid, _Ts, Tab, _Key, _LockKind) ->
+    abort({bad_type, Tab}).
+
+do_delete_object(Tid, Ts, Tab, Val, LockKind) ->
       case element(1, Tid) of
 	  ets ->
 	      ?ets_match_delete(Tab, Val),
@@ -661,12 +672,13 @@ delete_object(Tid, Ts, Tab, Val, LockKind)
 	      ok;
 	Protocol ->
 	      do_dirty_delete_object(Protocol, Tab, Val)
-    end;
-delete_object(_Tid, _Ts, Tab, _Key, _LockKind) ->
-    abort({bad_type, Tab}).
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Access within an activity - read
+
+read(Tab, Key) ->
+    read(Tab, Key, read).
 
 read({Tab, Key}) ->
     read(Tab, Key, read);
@@ -1560,7 +1572,13 @@ dirty_delete_object(Tab, Val) ->
 do_dirty_delete_object(SyncMode, Tab, Val)
     when atom(Tab), Tab /= schema, tuple(Val), size(Val) > 2 ->
     Oid = {Tab, element(2, Val)},
-    mnesia_tm:dirty(SyncMode, {Oid, Val, delete_object});
+    case has_var(Val) of
+	false -> 
+	    mnesia_tm:dirty(SyncMode, {Oid, Val, delete_object});
+	true ->
+	    abort({bad_type, Tab, Val})
+    end;
+
 do_dirty_delete_object(_SyncMode, Tab, Val) ->
     abort({bad_type, Tab, Val}).
 

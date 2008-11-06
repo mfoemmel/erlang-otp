@@ -106,7 +106,7 @@ do_populate_subscriber(Wlock, Id, C) when Id >= 0 ->
                          suffix            = Suffix},
     ?APPLY(mnesia, write, [subscriber, Subscr, Wlock]),
     do_populate_subscriber(Wlock, Id - 1, C);
-do_populate_subscriber(Wlock, _, _) ->
+do_populate_subscriber(_Wlock, _, _) ->
     io:format(" totally ~p bytes~n", 
 	      [mnesia:table_info(subscriber, memory) * 4]),
     ok.
@@ -131,7 +131,7 @@ do_populate_group(Wlock, Id, C) when Id >= 0 ->
                    allow_delete = Allow},
     ?APPLY(mnesia, write, [group, Group, Wlock]),
     do_populate_group(Wlock, Id - 1, C);
-do_populate_group(Wlock, _, _) ->
+do_populate_group(_Wlock, _, _) ->
     io:format(" totally ~p bytes~n",
 	      [mnesia:table_info(group, memory) * 4]),
     ok.
@@ -163,7 +163,7 @@ populate_server(Wlock, C) ->
 do_populate_server(Wlock, Id) when Id >= 0 ->
     populate_server_suffixes(Wlock, Id, 99),
     do_populate_server(Wlock, Id - 1);
-do_populate_server(Wlock, _) ->
+do_populate_server(_Wlock, _) ->
     io:format(" totally ~p bytes~n",
 	      [mnesia:table_info(server, memory) * 4]),
     ok.
@@ -178,6 +178,6 @@ populate_server_suffixes(Wlock, Id, Suffix) when Suffix >= 0 ->
                      suffix       = Suffix},
     ?APPLY(mnesia, write, [server, Server, Wlock]),
     populate_server_suffixes(Wlock, Id, Suffix - 1);
-populate_server_suffixes(Wlock, _, _) ->
+populate_server_suffixes(_Wlock, _, _) ->
     ok.
 

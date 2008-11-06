@@ -37,12 +37,17 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
+ifdef HIPE_ENABLED
+HIPE_MODULES = hipe_icode_heap_test
+else
+HIPE_MODULES =
+endif
+
 DOC_MODULES = hipe_beam_to_icode \
 	hipe_icode hipe_icode_bincomp \
 	hipe_icode_callgraph hipe_icode_cfg hipe_icode_coordinator \
 	hipe_icode_fp \
 	hipe_icode_exceptions \
-	hipe_icode_heap_test \
 	hipe_icode_inline_bifs hipe_icode_instruction_counter \
 	hipe_icode_liveness \
 	hipe_icode_pp hipe_icode_primops \
@@ -50,7 +55,7 @@ DOC_MODULES = hipe_beam_to_icode \
 	hipe_icode_split_arith \
 	hipe_icode_ssa hipe_icode_ssa_const_prop \
 	hipe_icode_ssa_copy_prop hipe_icode_ssa_struct_reuse \
-	hipe_icode_type
+	hipe_icode_type $(HIPE_MODULES)
 
 MODULES = $(DOC_MODULES) hipe_icode_ebb hipe_icode_mulret 
 

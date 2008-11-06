@@ -31,8 +31,8 @@
 -define(SR_INSTR_TYPE, sr_instr_type).
 -define(SR_STRUCT_INSTR_TYPE, sr_struct_instr_type).
 
--type(struct_type()  :: {?CONS | ?MKTUPLE, icode_term_arg(), any()}).
--type(struct_elems() :: {icode_var(), non_neg_integer(), icode_term_arg()}).
+-type struct_type()  :: {?CONS | ?MKTUPLE, icode_term_arg(), any()}.
+-type struct_elems() :: {icode_var(), non_neg_integer(), icode_term_arg()}.
 
 %% DATATYPE AREA
 
@@ -379,7 +379,7 @@ update_del_red_test_set(Update) ->
 %%-----------------------------------------------------------------------------
 %% Main function called from the hipe_main module
 
--spec(struct_reuse/1 :: (#cfg{}) -> #cfg{}).
+-spec struct_reuse(#cfg{}) -> #cfg{}.
 
 struct_reuse(CFG) ->
   %% debug_init_case_count(?SR_INSTR_TYPE),
@@ -1352,7 +1352,7 @@ instr_type(I) ->
 init_expr_id() ->
   put({struct_reuse, expr_id_count}, 0).
 
--spec(new_expr_id/0 :: () -> non_neg_integer()).
+-spec new_expr_id() -> non_neg_integer().
 new_expr_id() ->
   V = get({struct_reuse, expr_id_count}),
   put({struct_reuse, expr_id_count}, V+1),

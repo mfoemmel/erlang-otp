@@ -42,6 +42,7 @@
 #define EXT_LEN          4
 #define FILE_EXT         ".eld"
 #define ALT_FILE_EXT     ".o"
+/* ALT_FILE_EXT must not be longer than FILE_EXT */
 #define DRIVER_INIT_SUFFIX "_init"
 
 static MODULE_ID get_mid(char *);
@@ -69,29 +70,34 @@ void erl_sys_ddll_init(void) {
  */
 int erts_sys_ddll_open(char *full_name, void **handle)
 {
-    MODULE_ID mid;
     int len;
-    int ret = ERL_DE_NO_ERROR;
-    static char dlname[PATH_MAX + EXT_LEN + 1];
-
-    if ((mid = get_mid(full_name)) == NULL) {
-	if ((len = sys_strlen(full_name)) > PATH_MAX-EXT_LEN-1) {
-	    ret = ERL_DE_LOAD_ERROR_NAME_TO_LONG;
-	    goto done;
-	}
+    
+    if (erts_sys_ddll_open_noext(full_name, handle) == ERL_DE_NO_ERROR) {
+	return ERL_DE_NO_ERROR;
+    }
+    if ((len = sys_strlen(full_name)) > PATH_MAX-EXT_LEN) {
+	return ERL_DE_LOAD_ERROR_NAME_TO_LONG;
+    } else {
+	static char dlname[PATH_MAX + 1];
+	
 	sys_strcpy(dlname, full_name);
 	sys_strcpy(dlname+len, FILE_EXT);
-	if((mid = get_mid(dlname)) == NULL) {
-	    sys_strcpy(dlname+len, ALT_FILE_EXT);
-	    if((mid = get_mid(dlname)) == NULL) {
-		ret = ERL_DE_DYNAMIC_ERROR_OFFSET - ((int) ModuleNotFound);
-		goto done;
-	    }
+	if (erts_sys_ddll_open_noext(dlname, handle) == ERL_DE_NO_ERROR) {
+	    return ERL_DE_NO_ERROR;
 	}
+	sys_strcpy(dlname+len, ALT_FILE_EXT);
+	return erts_sys_ddll_open_noext(dlname, handle);
+    }
+}
+int erts_sys_ddll_open_noext(char *dlname, void **handle)
+{
+    MODULE_ID mid;
+    
+    if((mid = get_mid(dlname)) == NULL) {
+	return ERL_DE_DYNAMIC_ERROR_OFFSET - ((int) ModuleNotFound);
     }
     *handle = (void *) mid;
- done:
-    return ret;
+    return ERL_DE_NO_ERROR;
 }
 
 /* 

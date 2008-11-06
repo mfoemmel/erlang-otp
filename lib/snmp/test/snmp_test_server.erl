@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2003-2007</year>
+%% <year>2003-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -25,9 +25,27 @@
 
 -compile(export_all).
 
+-export([
+	 run/1, run/2,
+
+	 error/3,
+	 skip/3,
+	 fatal_skip/3,
+
+	 init_per_testcase/2,
+	 fin_per_testcase/2
+	]).
+
 -include("snmp_test_lib.hrl").
 
+-define(GLOBAL_LOGGER, snmp_global_logger).
+-define(TEST_CASE_SUP, snmp_test_case_supervisor).
+
 -define(d(F,A),d(F,A,?LINE)).
+
+-ifndef(snmp_priv_dir).
+-define(snmp_priv_dir, "run-" ++ timestamp()).
+-endif.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -37,22 +55,31 @@
 %%     {Mod, Fun, ExpectedRes, ActualRes}
 %%----------------------------------------------------------------------
 
-t(Case) ->
-    io:format("~n", []),
-    ?d("t(~p) -> entry", [Case]),
-    Res = t(Case, default_config()),
+run([Mod, Fun]) when is_atom(Mod) andalso is_atom(Fun) ->
+    Res = run({Mod, Fun}, default_config(Mod)),
     display_result(Res),
     Res;
-t([Mod, Fun]) when atom(Mod), atom(Fun) ->
-    ?d("t([~w,~w]:1) -> entry", [Mod, Fun]),
-    Res = t({Mod, Fun}, default_config()),
+run({Mod, _Fun} = Case) when is_atom(Mod) ->
+    io:format("~n", []),
+    Res = run(Case, default_config(Mod)),
     display_result(Res),
-    ?d("t(~p,~p) -> Res:~n~p", [Mod, Fun, Res]),
+    Res;
+run(Mod) when is_atom(Mod) ->
+    io:format("~n", []),
+    Res = run(Mod, default_config(Mod)),
+    display_result(Res),
+    Res;
+run([Mod]) when is_atom(Mod) ->
+    io:format("~n", []),
+    Res = run(Mod, default_config(Mod)),
+    display_result(Res),
     Res.
     
 
-t({Mod, Fun}, Config) when atom(Mod), atom(Fun), list(Config) ->
-    ?d("t(~p,~p) -> entry", [Mod, Fun]),
+run({Mod, Fun}, Config) when is_atom(Mod) andalso 
+			     is_atom(Fun) andalso 
+			     is_list(Config) ->
+    ?d("run(~p,~p) -> entry", [Mod, Fun]),
     case (catch apply(Mod, Fun, [suite])) of
 	[] ->
 	    io:format("~n~n*** Eval: ~p ***************~n", 
@@ -64,17 +91,30 @@ t({Mod, Fun}, Config) when atom(Mod), atom(Fun), list(Config) ->
 		    [Other]
 	    end;
 
-	Cases when list(Cases) ->
+	Cases when is_list(Cases) ->
 	    io:format("~n*** Expand: ~p ...~n", [{Mod, Fun}]),
-	    Map = fun(Case) when atom(Case)-> {Mod, Case};
+	    Map = fun(Case) when is_atom(Case) -> {Mod, Case};
 		     (Case) -> Case
 		  end,
-	    t(lists:map(Map, Cases), Config);
+	    run(lists:map(Map, Cases), Config);
 
-        {req, _, SubCases} when list(SubCases) ->
+        {conf, InitSuite, Cases, FinishSuite} when is_atom(InitSuite) andalso 
+						   is_list(Cases) andalso 
+						   is_atom(FinishSuite) ->
+	    ?d("run -> conf: "
+	       "~n   InitSuite:   ~p"
+	       "~n   Cases:       ~p"
+	       "~n   FinishSuite: ~p", [InitSuite, Cases, FinishSuite]),
+	    do_suite(Mod, InitSuite, Cases, FinishSuite, Config);
+                    
+        {req, _, SubCases} when is_list(SubCases) ->
+	    ?d("run -> req: "
+	       "~n   SubCases: ~p", [SubCases]),
 	    do_subcases(Mod, Fun, SubCases, Config, []);
                     
         {req, _, Conf} ->
+	    ?d("run -> req: "
+	       "~n   Conf: ~p", [Conf]),
 	    do_subcases(Mod, Fun, [Conf], Config, []);
                     
         {'EXIT', {undef, _}} ->
@@ -85,50 +125,74 @@ t({Mod, Fun}, Config) when atom(Mod), atom(Fun), list(Config) ->
             io:format("~n*** Ignoring:   ~p: ~p~n", [{Mod, Fun}, Error]),
             [{failed, {Mod, Fun}, Error}]
     end;
-t(Mod, Config) when atom(Mod), list(Config) ->
-    ?d("t(~p) -> entry whith"
-	"~n   Config: ~p", [Mod, Config]),
-    t({Mod, all}, Config);
-t(Cases, Config) when list(Cases), list(Config) ->
-    ?d("t -> entry whith"
-	"~n   Cases:  ~p"
-	"~n   Config: ~p", [Cases, Config]),
-    Errors = [t(Case, Config) || Case <- Cases],
-    ?d("t -> Errors: ~n~p", [Errors]),
+
+run(Mod, Config) when is_atom(Mod) andalso is_list(Config) ->
+    run({Mod, all}, Config);
+
+run(Cases, Config) when is_list(Cases) andalso is_list(Config) ->
+    Errors = [run(Case, Config) || Case <- Cases],
     lists:append(Errors);
-t(Bad, Config) ->
-    ?d("t -> entry with"
-	"~n   Bad:    ~p"
-	"~n   Config: ~p", [Bad, Config]),
+
+run(Bad, _Config) ->
     [{badarg, Bad, ok}].
 
 
-do_case(M,F,C) ->
-    io:format("~n~n*** Eval: ~p ***************~n", [{M, F}]),
-    case eval(M, F, C) of
-	{ok, _, _} ->
-	    [];
-	Other ->
-	    [Other]
+do_suite(Mod, Init, Cases, Finish, Config0) ->
+    ?d("do_suite -> entry with"
+       "~n   Mod:     ~p"
+       "~n   Init:    ~p"
+       "~n   Cases:   ~p"
+       "~n   Finish:  ~p"
+       "~n   Config0: ~p", [Mod, Init, Cases, Finish, Config0]),
+    case (catch apply(Mod, Init, [Config0])) of
+	Config when is_list(Config) ->
+	    io:format("~n*** Expand: ~p ...~n", [Mod]),
+	    Map = fun(Case) when is_atom(Case) -> {Mod, Case};
+		     (Case) -> Case
+		  end,
+	    Res = run(lists:map(Map, Cases), Config),
+	    (catch apply(Mod, Finish, [Config])),
+	    Res;
+
+	{'EXIT', {skipped, Reason}} ->
+	    io:format(" => skipping: ~p~n", [Reason]),
+	    SkippedCases = 
+		[{skipped, {Mod, Case}, suite_init_skipped} || Case <- Cases],
+	    lists:flatten([[{skipped, {Mod, Init}, Reason}],
+			   SkippedCases, 
+			   [{skipped, {Mod, Finish}, suite_init_skipped}]]);
+
+	Error ->
+	    io:format(" => init (~p) failed: ~n~p~n", [Init, Error]),
+	    InitResult = 
+		[{failed, {Mod, Init}, Error}],
+	    SkippedCases = 
+		[{skipped, {Mod, Case}, suite_init_failed} || Case <- Cases],
+	    FinResult = 
+		case (catch apply(Mod, Finish, [Config0])) of
+		    ok ->
+			[];
+		    FinConfig when is_list(FinConfig) ->
+			[];
+		    FinError ->
+			[{failed, {Mod, Finish}, FinError}]
+		end,
+	    lists:flatten([InitResult, SkippedCases, FinResult])
+
     end.
-    
+
 
 do_subcases(_Mod, _Fun, [], _Config, Acc) ->
-    ?d("t -> do_subcases([]) -> entry with"
-	"~n   Acc: ~p", [Acc]),
     lists:flatten(lists:reverse(Acc));
-do_subcases(Mod, Fun, [{conf, Init, Cases, Finish}|SubCases], Config, Acc) ->
-    ?d("t -> do_subcases(conf) -> entry with"
-	"~n   Init:   ~p"
-	"~n   Cases:  ~p"
-	"~n   Finish: ~p", [Init, Cases, Finish]),
+do_subcases(Mod, Fun, [{conf, Init, Cases, Finish}|SubCases], Config, Acc) 
+  when is_atom(Init) andalso is_list(Cases) andalso is_atom(Finish) ->
     R = case (catch apply(Mod, Init, [Config])) of
-	    Conf when list(Conf) ->
+	    Conf when is_list(Conf) ->
 		io:format("~n*** Expand: ~p ...~n", [{Mod, Fun}]),
-		Map = fun(Case) when atom(Case) -> {Mod, Case};
+		Map = fun(Case) when is_atom(Case) -> {Mod, Case};
 			 (Case) -> Case
 		      end,
-		Res = t(lists:map(Map, Cases), Conf),
+		Res = run(lists:map(Map, Cases), Conf),
 		(catch apply(Mod, Finish, [Conf])),
 		Res;
 	    
@@ -141,30 +205,33 @@ do_subcases(Mod, Fun, [{conf, Init, Cases, Finish}|SubCases], Config, Acc) ->
 		(catch apply(Mod, Finish, [Config])),
 		[{failed, {Mod, Fun}, Error}]
 	end,
-    ?d("t -> do_subcases(conf):"
-	"~n   R: ~p", [R]),
     do_subcases(Mod, Fun, SubCases, Config, [R|Acc]);
 do_subcases(Mod, Fun, [SubCase|SubCases], Config, Acc) when atom(SubCase) ->
-    ?d("t -> do_subcases(~p)", [SubCase]),
     R = do_case(Mod, SubCase, Config),
     do_subcases(Mod, Fun, SubCases,Config, [R|Acc]).
 
 
+do_case(M, F, C) ->
+    io:format("~n~n*** Eval: ~p ***************~n", [{M, F}]),
+    case eval(M, F, C) of
+	{ok, _, _} ->
+	    [];
+	Other ->
+	    [Other]
+    end.
+
 
 eval(Mod, Fun, Config) ->
-    ?d("eval -> entry with"
-	"~n   Mod: ~p"
-	"~n   Fun: ~p", [Mod, Fun]),
-    global:register_name(inets_test_case_sup, self()),
-    Flag = process_flag(trap_exit, true),
+    Flag    = process_flag(trap_exit, true),
+    global:register_name(?TEST_CASE_SUP, self()),
     Config2 = Mod:init_per_testcase(Fun, Config),
-    Pid = spawn_link(?MODULE, do_eval, [self(), Mod, Fun, Config2]),
-    R = wait_for_evaluator(Pid, Mod, Fun, Config2, []),
+    Self    = self(), 
+    Eval    = fun() -> do_eval(Self, Mod, Fun, Config2) end,
+    Pid     = spawn_link(Eval),
+    R       = wait_for_evaluator(Pid, Mod, Fun, Config2, []),
     Mod:fin_per_testcase(Fun, Config2),
-    global:unregister_name(inets_test_case_sup),
+    global:unregister_name(?TEST_CASE_SUP),
     process_flag(trap_exit, Flag),
-    ?d("eval -> exit with:"
-	"~n   R: ~p", [R]),
     R.
 
 wait_for_evaluator(Pid, Mod, Fun, Config, Errors) ->
@@ -173,16 +240,16 @@ wait_for_evaluator(Pid, Mod, Fun, Config, Errors) ->
 	{'EXIT', _Watchdog, watchdog_timeout} ->
 	    io:format("*** ~s WATCHDOG TIMEOUT~n", [Pre]), 
 	    exit(Pid, kill),
-	    {failed, {Mod,Fun}, watchdog_timeout};
-	{done, Pid, ok} when Errors == [] ->
+	    {failed, {Mod, Fun}, watchdog_timeout};
+	{done, Pid, ok} when Errors =:= [] ->
 	    io:format("*** ~s OK~n", [Pre]),
 	    {ok, {Mod, Fun}, Errors};
-	{done, Pid, {ok, _}} when Errors == [] ->
+	{done, Pid, {ok, _}} when Errors =:= [] ->
 	    io:format("*** ~s OK~n", [Pre]),
 	    {ok, {Mod, Fun}, Errors};
 	{done, Pid, Fail} ->
 	    io:format("*** ~s FAILED~n~p~n", [Pre, Fail]),
-	    {failed, {Mod,Fun}, Fail};
+	    {failed, {Mod, Fun}, Fail};
 	{'EXIT', Pid, {skipped, Reason}} -> 
 	    io:format("*** ~s SKIPPED~n~p~n", [Pre, Reason]),
 	    {skipped, {Mod, Fun}, Errors};
@@ -195,22 +262,12 @@ wait_for_evaluator(Pid, Mod, Fun, Config, Errors) ->
    end.
 
 do_eval(ReplyTo, Mod, Fun, Config) ->
-    ?d("do_eval -> entry with"
-	"~n   ReplyTo: ~p"
-	"~n   Mod:     ~p"
-	"~n   Fun:     ~p"
-	"~n   Config:  ~p"
-	"~nat"
-	"~n   ~p", [ReplyTo, Mod, Fun, Config, erlang:now()]),
     case (catch apply(Mod, Fun, [Config])) of
 	{'EXIT', {skipped, Reason}} ->
 	    ReplyTo ! {'EXIT', self(), {skipped, Reason}};
 	Other ->
- 	    ?d("do_eval -> entry with"
-		"~n   Other: ~p", [Other]),
 	    ReplyTo ! {done, self(), Other}
     end,
-    ?d("do_eval -> case ~p completed at ~p", [Fun, erlang:now()]),
     unlink(ReplyTo),
     exit(shutdown).
 
@@ -218,7 +275,7 @@ do_eval(ReplyTo, Mod, Fun, Config) ->
 display_result([]) ->    
     io:format("TEST OK~n", []);
 
-display_result(Errors) when list(Errors) ->
+display_result(Errors) when is_list(Errors) ->
     Nyi     = [MF || {nyi, MF, _} <- Errors],
     Skipped = [{MF, Reason} || {skipped, MF, Reason} <- Errors],
     Crashed = [{MF, Reason} || {crashed, MF, Reason} <- Errors],
@@ -269,9 +326,9 @@ display_failed(Failed) ->
 %% Stores the result in the process dictionary if mismatch
 
 error(Actual, Mod, Line) ->
-    global:send(inets_global_logger, {failed, Mod, Line}),
+    global:send(?GLOBAL_LOGGER, {failed, Mod, Line}),
     log("<ERROR> Bad result: ~p~n", [Actual], Mod, Line),
-    case global:whereis_name(inets_test_case_sup) of
+    case global:whereis_name(?TEST_CASE_SUP) of
 	undefined -> 
 	    ignore;
 	Pid -> 
@@ -284,17 +341,12 @@ skip(Actual, Mod, Line) ->
     exit({skipped, {Actual, Mod, Line}}).
 
 fatal_skip(Actual, Mod, Line) ->
-    ?d("fatal_skip -> entry with"
-      "~n   Actual: ~p"
-      "~n   Mod:    ~p"
-      "~n   Line:  ~p", [Actual, Mod, Line]),
     error(Actual, Mod, Line),
-    
     exit(shutdown).
 
 
 log(Format, Args, Mod, Line) ->
-    case global:whereis_name(inets_global_logger) of
+    case global:whereis_name(?GLOBAL_LOGGER) of
 	undefined ->
 	    io:format(user, "~p(~p): " ++ Format, [Mod, Line] ++ Args);
 	Pid ->
@@ -305,69 +357,60 @@ log(Format, Args, Mod, Line) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Test server callbacks
 
-init_per_testcase(Case, Config) ->
-    ?d("init_per_testcase(~p) -> entry", [Case]),
-    global:register_name(megaco_global_logger, group_leader()),
+init_per_testcase(_Case, Config) ->
+    global:register_name(?GLOBAL_LOGGER, group_leader()),
     Config.
 
-fin_per_testcase(Case, Config) ->
-    ?d("fin_per_testcase(~p) -> entry", [Case]),
-    global:unregister_name(megaco_global_logger),
+fin_per_testcase(_Case, _Config) ->
+    global:unregister_name(?GLOBAL_LOGGER),
     ok.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Internal utility functions
 
-default_config() ->
-    [{nodes, default_nodes()}].
-
-default_nodes() ->    
-    mk_nodes(2, []).
-
-mk_nodes(0, Nodes) ->
-    Nodes;
-mk_nodes(N, []) ->
-    mk_nodes(N - 1, [node()]);
-mk_nodes(N, Nodes) when N > 0 ->
-    Head = hd(Nodes),
-    [Name, Host] = node_to_name_and_host(Head),
-    Nodes ++ [mk_node(I, Name, Host) || I <- lists:seq(1, N)].
-
-mk_node(N, Name, Host) ->
-    list_to_atom(lists:concat([Name ++ integer_to_list(N) ++ "@" ++ Host])).
-    
-%% Returns [Name, Host]    
-node_to_name_and_host(Node) ->
-    string:tokens(atom_to_list(Node), [$@]).
-
-start_nodes([Node | Nodes], File, Line) ->
-    case net_adm:ping(Node) of
-	pong ->
-	    start_nodes(Nodes, File, Line);
-	pang ->
-	    [Name, Host] = node_to_name_and_host(Node),
-	    Args = [],
-	    
-	    case ?STARTL_NODE(Host, Name, Args) of
-		{ok, NewNode} when NewNode == Node ->
-		    start_nodes(Nodes, File, Line);
-		Other ->
-		    fatal_skip({cannot_start_node, Node, Other}, File, Line)
-	    end
-    end;
-start_nodes([], File, Line) ->
-    ok.
+default_config(Mod) ->
+    PrivDir0 = ?snmp_priv_dir,
+    case filename:pathtype(PrivDir0) of
+	absolute ->
+	    ok;
+	_ ->
+	    case file:make_dir(Mod) of
+		ok ->
+		    ok;
+		{error, eexist} ->
+		    ok
+	    end,
+	    PrivDir = filename:join(Mod, PrivDir0), 
+	    case file:make_dir(PrivDir) of
+		ok ->
+		    ok;
+		{error, eexist} ->
+		    ok;
+		Error ->
+		    ?FAIL({failed_creating_subsuite_top_dir, Error})
+	    end,
+	    [{priv_dir, PrivDir}]
+    end.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 d(F, A, L) ->
-    %% d(true, F, A, L).
-    d(get(dbg), F, A, L).
+    d(true, F, A, L).
+    %% d(get(dbg), F, A, L).
 
 d(true, F, A, L) ->
-    io:format("STS:~p:~p " ++ F ++ "~n", [self(),L|A]);
+    io:format("STS[~w] ~p " ++ F ++ "~n", [L,self()|A]);
 d(_, _, _, _) ->
     ok.
 
+timestamp() ->
+    {Date, Time}     = calendar:now_to_datetime( now() ),
+    {YYYY, MM, DD}   = Date,
+    {Hour, Min, Sec} = Time,
+    FormatDate =
+        io_lib:format("~.4w-~.2.0w-~.2.0w_~.2.0w.~.2.0w.~.2.0w",
+                      [YYYY,MM,DD,Hour,Min,Sec]),
+    lists:flatten(FormatDate).
+    

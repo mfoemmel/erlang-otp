@@ -32,6 +32,46 @@
   <p>This document describes the changes made to the Compiler
     application.</p>
 
+<section><title>Compiler 4.5.5</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>Matching on a zero-width segment in the bit syntax
+	    would crash the compiler. (Thanks to Will.)</p>
+          <p>
+	    Own Id: OTP-7591</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    In bit syntax expressions which started with a binary
+	    segment, and was followed by at least two segments of
+	    variable size, too little space could be allocated for
+	    the binary, leading to memory corruption.</p>
+          <p>
+	    Own Id: OTP-7556</p>
+        </item>
+        <item>
+	    <p>In user-defined attributes, <c>Name/Arity</c> is now
+	    allowed and will be translated to <c>{Name,Arity}</c>.
+	    (An implementation of EEP-24 by Richard O'Keefe.)</p>
+	    <p>The <c>module_info/{0,1}</c> functions automatically
+	    inserted into each compiled modules are now documented in
+	    the Modules section in the Reference Manual.</p>
+          <p>
+	    Own Id: OTP-7586</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Compiler 4.5.4</title>
 
     <section><title>Improvements and New Features</title>

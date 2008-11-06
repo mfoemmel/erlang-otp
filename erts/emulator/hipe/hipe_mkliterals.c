@@ -279,7 +279,6 @@ static const struct literal {
 
     /* freason codes */
     { "FREASON_TRAP", TRAP },
-    { "FREASON_RESCHEDULE", RESCHEDULE },
 
     /* special Erlang constants */
     { "THE_NON_VALUE", THE_NON_VALUE },

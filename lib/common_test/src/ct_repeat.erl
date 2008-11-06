@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2007-2007</year>
+%% <year>2007-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>

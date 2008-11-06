@@ -21,7 +21,8 @@
 
 -export([module/2]).
 
--import(lists, [reverse/1,reverse/2,foldl/3,mapfoldl/3,sort/1,member/2]).
+-import(lists, [reverse/1,reverse/2,foldl/3,mapfoldl/3]).
+
 -define(MAXREG, 1024).
 
 -record(st,

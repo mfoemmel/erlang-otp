@@ -46,6 +46,8 @@ MIB_TARGETS = \
 	$(MIB_FILES:%.mib=$(SNMP_BIN_TARGET_DIR)/%.hrl)
 ERL_TARGETS = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
+TEST_SERVER_TARGETS = $(TEST_SERVER_MODULES:%=$(EBIN)/%.$(EMULATOR))
+
 TARGET_FILES = $(ERL_TARGETS) 
 
 SOURCE = $(ERL_FILES) $(HRL_FILES) 
@@ -108,6 +110,28 @@ GROUP_CHECK = +'{group_check,false}'
 
 SNMP_MIB_FLAGS += $(GROUP_CHECK) $(USE_DESCRIPTION) -I$(SNMP_BIN_TARGET_DIR)
 
+ifndef SUITE
+SUITE = snmp_SUITE
+endif
+
+ESTOP = -s init stop
+
+ifeq ($(DONT_STOP),true)
+MAYBE_ESTOP =
+else
+MAYBE_ESTOP = $(ESTOP)
+endif
+
+ifeq ($(MERL),)
+MERL = erl
+endif
+
+ARGS += -noshell
+
+ifeq ($(DISABLE_TC_TIMEOUT),true)
+ARGS += -snmp_test_timeout
+endif
+
 
 # ----------------------------------------------------
 # FLAGS
@@ -140,10 +164,10 @@ tests debug opt: $(BUILDTARGET)
 
 emakebuild: $(EMAKEFILE)
 
-targets: mib $(EMAKEFILE)
+targets: mib $(EMAKEFILE) 
 	erl -make
 
-old_targets: $(TARGET_FILES)
+old_targets: $(TARGET_FILES) $(TEST_SERVER_TARGETS)
 
 $(EMAKEFILE):  Makefile
 	$(MAKE_EMAKE) $(ERL_COMPILE_FLAGS) -o$(EBIN) '*_SUITE_make' > $(EMAKEFILE)
@@ -159,6 +183,28 @@ docs:
 appup: snmp_appup_mgr.$(EMULATOR)
 
 mib: $(MIB_TARGETS)
+
+make: old_targets
+
+test: make
+	$(MERL) $(ARGS) -sname snmp_test $(ERL_PATH) \
+            -s snmp_test_server run $(SUITE) \
+            $(MAYBE_ESTOP)
+
+agent: make
+	$(MERL) $(ARGS) -sname snmp_agent_test $(ERL_PATH) \
+            -s snmp_test_server run snmp_agent_test \
+            $(MAYBE_ESTOP)
+
+manager: make
+	$(MERL) $(ARGS) -sname snmp_manager_test $(ERL_PATH) \
+            -s snmp_test_server run snmp_manager_test \
+            $(MAYBE_ESTOP)
+
+appup: make
+	$(MERL) $(ARGS) -sname snmp_appup_test $(ERL_PATH) \
+            -s snmp_test_server run snmp_appup_test \
+            $(MAYBE_ESTOP)
 
 
 # ----------------------------------------------------

@@ -45,6 +45,7 @@
 #include <openssl/rsa.h>
 #include <openssl/aes.h>
 #include <openssl/md5.h>
+#include <openssl/md4.h>
 #include <openssl/sha.h>
 #include <openssl/bn.h>
 #include <openssl/objects.h>
@@ -164,7 +165,8 @@ static ErlDrvEntry crypto_driver_entry = {
 #define DRV_RAND_UNIFORM        20
 #define DRV_MOD_EXP             21
 #define DRV_DSS_VERIFY          22
-#define DRV_RSA_VERIFY          23
+#define DRV_RSA_VERIFY_SHA      23
+/* #define DRV_RSA_VERIFY_MD5      35 */ 
 #define DRV_CBC_AES128_ENCRYPT  24
 #define DRV_CBC_AES128_DECRYPT  25
 #define DRV_XOR                 26
@@ -176,14 +178,48 @@ static ErlDrvEntry crypto_driver_entry = {
 #define DRV_CBC_AES256_ENCRYPT  32
 #define DRV_CBC_AES256_DECRYPT  33
 #define DRV_INFO_LIB            34
+/* #define DRV_RSA_VERIFY_SHA      23 */
+#define DRV_RSA_VERIFY_MD5      35 
+#define DRV_RSA_SIGN_SHA        36
+#define DRV_RSA_SIGN_MD5        37
+#define DRV_DSS_SIGN            38
+#define DRV_RSA_PUBLIC_ENCRYPT  39
+#define DRV_RSA_PRIVATE_DECRYPT 40
+#define DRV_RSA_PRIVATE_ENCRYPT 41
+#define DRV_RSA_PUBLIC_DECRYPT  42
+#define DRV_DH_GENERATE_PARAMS  43
+#define DRV_DH_CHECK            44
+#define DRV_DH_GENERATE_KEY     45
+#define DRV_DH_COMPUTE_KEY      46
+#define DRV_MD4                 47
+#define DRV_MD4_INIT            48
+#define DRV_MD4_UPDATE          49
+#define DRV_MD4_FINAL           50
+
+#define SSL_VERSION_0_9_8 0
+#if SSL_VERSION_0_9_8
+#define DRV_SHA256              51
+#define DRV_SHA256_INIT         52
+#define DRV_SHA256_UPDATE       53
+#define DRV_SHA256_FINAL        54
+#define DRV_SHA512              55
+#define DRV_SHA512_INIT         56
+#define DRV_SHA512_UPDATE       57
+#define DRV_SHA512_FINAL        58
+#endif
+
 /* #define DRV_CBC_IDEA_ENCRYPT    34 */
 /* #define DRV_CBC_IDEA_DECRYPT    35 */
 
-#define NUM_CRYPTO_FUNCS        34
+/* Not DRV_DH_GENERATE_PARAMS DRV_DH_CHECK
+ * Calc RSA_VERIFY_*  and RSA_SIGN once */
+#define NUM_CRYPTO_FUNCS        46
 
 #define MD5_CTX_LEN     (sizeof(MD5_CTX))
 #define MD5_LEN         16
 #define MD5_LEN_96      12
+#define MD4_CTX_LEN     (sizeof(MD4_CTX))
+#define MD4_LEN         16
 #define SHA_CTX_LEN     (sizeof(SHA_CTX))
 #define SHA_LEN         20
 #define SHA_LEN_96      12
@@ -192,6 +228,13 @@ static ErlDrvEntry crypto_driver_entry = {
 #define HMAC_IPAD       0x36
 #define HMAC_OPAD       0x5c
 
+#if SSL_VERSION_0_9_8
+#define SHA256_CTX_LEN (sizeof(SHA256_CTX))
+#define SHA256_LEN     32
+
+#define SHA512_CTX_LEN (sizeof(SHA512_CTX))
+#define SHA512_LEN     64
+#endif
 
 /* INITIALIZATION AFTER LOADING */
 
@@ -274,34 +317,42 @@ static void stop(ErlDrvData drv_data)
 static int control(ErlDrvData drv_data, unsigned int command, char *buf, 
                    int len, char **rbuf, int rlen)
 {
-    int klen, dlen, i, j, macsize, from_len, to_len;
+    int klen, dlen, macsize, from_len, to_len, i;
     int base_len, exponent_len, modulo_len;
     int data_len, dsa_p_len, dsa_q_len;
-    int dsa_g_len, dsa_y_len;
-    int rsa_e_len, rsa_n_len;
+    int dsa_s_len, dsa_g_len, dsa_y_len;
+    int rsa_e_len, rsa_n_len, rsa_d_len, padding;
     int or_mask;
-    unsigned int rsa_s_len;
+    int prime_len, generator;
+    int privkey_len, pubkey_len, dh_p_len, dh_g_len;
+    unsigned int rsa_s_len, j;
     char *key, *key2, *dbuf, *p;
     const_DES_cblock *des_key, *des_key2, *des_key3;
     const unsigned char *des_dbuf;
     BIGNUM *bn_from, *bn_to, *bn_rand, *bn_result;
     BIGNUM *bn_base, *bn_exponent, *bn_modulo;
-    BIGNUM *dsa_p, *dsa_q, *dsa_r, *dsa_s, *dsa_g, *dsa_y;
-    BIGNUM *rsa_n, *rsa_e;
+    BIGNUM *dsa_p, *dsa_q, *dsa_r, *dsa_g, *dsa_y;
+    BIGNUM *rsa_n, *rsa_e, *rsa_d;
+    BIGNUM *dh_p, *dh_g, *privkey, *pubkey;
     DES_cblock *des_ivec;
     ErlDrvBinary *bin;
     DES_key_schedule schedule, schedule2, schedule3;
+    DH *dh_params;
 /*     IDEA_KEY_SCHEDULE idea, idea2; */
     unsigned char hmacbuf[SHA_DIGEST_LENGTH];
-    unsigned char *rsa_s;
+    unsigned char *rsa_s, *dsa_s;
     /* char hmacbuf[SHA_LEN]; */
+#if SSL_VERSION_0_9_8
+    SHA256_CTX sha256_ctx;
+    SHA512_CTX sha512_ctx;
+#endif
     MD5_CTX md5_ctx;
+    MD4_CTX md4_ctx;
     SHA_CTX sha_ctx;
     int new_ivlen = 0;
     BN_CTX *bn_ctx;
     DSA *dsa;
     RSA *rsa;
-    DSA_SIG *dsa_sig;
     AES_KEY aes_key;
     RC4_KEY rc4_key;
     RC2_KEY rc2_key;
@@ -310,19 +361,22 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 
     case DRV_INFO:
         *rbuf = (char*)(bin = driver_alloc_binary(NUM_CRYPTO_FUNCS));
+	if (bin==NULL) return -1;
         for (i = 0; i < NUM_CRYPTO_FUNCS; i++) {
             bin->orig_bytes[i] = i + 1;
         }
         return NUM_CRYPTO_FUNCS;
 
     case DRV_MD5:
-        *rbuf = (char*)(bin = driver_alloc_binary(MD5_LEN));
-        MD5(buf, len, bin->orig_bytes);
+       *rbuf = (char*)(bin = driver_alloc_binary(MD5_LEN));
+       if (bin==NULL) return -1;
+       MD5(buf, len, bin->orig_bytes);
         return MD5_LEN;
         break;
 
     case DRV_MD5_INIT:
         *rbuf = (char*)(bin = driver_alloc_binary(MD5_CTX_LEN));
+	if (bin==NULL) return -1;
         MD5_Init((MD5_CTX *)bin->orig_bytes);
         return MD5_CTX_LEN;             
         break;
@@ -331,6 +385,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         if (len < MD5_CTX_LEN)
             return -1;
         *rbuf = (char*)(bin = driver_alloc_binary(MD5_CTX_LEN));
+	if (bin==NULL) return -1;
         memcpy(bin->orig_bytes, buf, MD5_CTX_LEN);
         MD5_Update((MD5_CTX *)bin->orig_bytes, buf + MD5_CTX_LEN, 
                    len - MD5_CTX_LEN);
@@ -342,18 +397,21 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
             return -1;
         memcpy(&md5_ctx, buf, MD5_CTX_LEN); /* XXX Use buf only? */
         *rbuf = (char *)(bin = driver_alloc_binary(MD5_LEN));
+	if (bin==NULL) return -1;	
         MD5_Final(bin->orig_bytes, &md5_ctx);
         return MD5_LEN;         
         break;
 
     case DRV_SHA:
         *rbuf = (char *)(bin = driver_alloc_binary(SHA_LEN));
+	if (bin==NULL) return -1;
         SHA1(buf, len, bin->orig_bytes);
         return SHA_LEN;
         break;
 
     case DRV_SHA_INIT:
         *rbuf = (char *)(bin = driver_alloc_binary(SHA_CTX_LEN));
+	if (bin==NULL) return -1;
         SHA1_Init((SHA_CTX *)bin->orig_bytes);
         return SHA_CTX_LEN;             
         break;
@@ -362,6 +420,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         if (len < SHA_CTX_LEN)
             return -1;
         *rbuf = (char *)(bin = driver_alloc_binary(SHA_CTX_LEN)); 
+	if (bin==NULL) return -1;
         memcpy(bin->orig_bytes, buf, SHA_CTX_LEN);
         SHA1_Update((SHA_CTX *)bin->orig_bytes, buf + SHA_CTX_LEN, 
                           len - SHA_CTX_LEN);
@@ -373,6 +432,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
             return -1;
         memcpy(&sha_ctx, buf, SHA_CTX_LEN); /* XXX Use buf only? */
         *rbuf = (char *)(bin = driver_alloc_binary(SHA_LEN));
+	if (bin==NULL) return -1;
         SHA1_Final(bin->orig_bytes, &sha_ctx);
         return SHA_LEN;         
         break;
@@ -387,6 +447,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         hmac_md5(key, klen, dbuf, dlen, hmacbuf);
         macsize = (command == DRV_MD5_MAC) ? MD5_LEN : MD5_LEN_96;
         *rbuf = (char *)(bin = driver_alloc_binary(macsize));
+	if (bin==NULL) return -1;
         memcpy(bin->orig_bytes, hmacbuf, macsize);
         return macsize;
         break;
@@ -401,6 +462,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         hmac_sha1(key, klen, dbuf, dlen, hmacbuf);
         macsize = (command == DRV_SHA_MAC) ? SHA_LEN : SHA_LEN_96;
         *rbuf = (char *)(bin = driver_alloc_binary(macsize));
+	if (bin==NULL) return -1;
         memcpy(bin->orig_bytes, hmacbuf, macsize);
         return macsize;
         break;
@@ -417,6 +479,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         des_ivec = (DES_cblock*)(buf + 8); 
         des_dbuf = buf + 16;
         *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	if (bin==NULL) return -1;
         DES_set_key(des_key, &schedule);
         DES_ncbc_encrypt(des_dbuf, bin->orig_bytes, dlen, &schedule, des_ivec, 
                          (command == DRV_CBC_DES_ENCRYPT));
@@ -449,6 +512,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         if (dlen < 0)
             return -1;
         *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	if (bin==NULL) return -1;
         RC2_set_key(&rc2_key, 5, buf, 40);
         RC2_cbc_encrypt(buf + 13, bin->orig_bytes, dlen, &rc2_key, buf + 5,
 			(command == DRV_CBC_RC2_40_ENCRYPT));
@@ -466,6 +530,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         des_ivec = (DES_cblock*) (buf + 24); 
         des_dbuf = buf + 32;
         *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	if (bin==NULL) return -1;
         DES_set_key(des_key, &schedule);
         DES_set_key(des_key2, &schedule2);
         DES_set_key(des_key3, &schedule3);
@@ -482,6 +547,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         if (dlen < 0)
             return -1;
         *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	if (bin==NULL) return -1;
         AES_set_encrypt_key(buf, 128, &aes_key);
         AES_cfb128_encrypt(buf+32, bin->orig_bytes, dlen, &aes_key,
                            buf+16, &new_ivlen,
@@ -495,6 +561,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         dlen = len - klen - 4;
         dbuf = key + klen;
         *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	if (bin==NULL) return -1;
         RC4_set_key(&rc4_key, klen, key);
         RC4(&rc4_key, dlen, dbuf, bin->orig_bytes);
         return dlen;
@@ -503,6 +570,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         /* buf = key */
         dlen = sizeof(rc4_key);
         *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	if (bin==NULL) return -1;
         RC4_set_key(&rc4_key, len, buf);
         memcpy(bin->orig_bytes, &rc4_key, dlen);
         return dlen;
@@ -514,6 +582,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         dlen = len - klen - 4;
         dbuf = key + klen;
         *rbuf = (char *)(bin = driver_alloc_binary(len));
+	if (bin==NULL) return -1;
         memcpy(&rc4_key, key, klen);
         RC4(&rc4_key, dlen, dbuf, bin->orig_bytes + klen + 4);
         memcpy(bin->orig_bytes, buf, 4);
@@ -527,6 +596,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
             return -1;
         rlen = get_int32(buf);
         *rbuf = (char *)(bin = driver_alloc_binary(rlen));
+	if (bin==NULL) return -1;
         RAND_pseudo_bytes(bin->orig_bytes,rlen);
         or_mask = ((unsigned char*)buf)[4];
         bin->orig_bytes[rlen-1] |= or_mask; /* topmask */
@@ -556,6 +626,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
       BN_add(bn_rand, bn_rand, bn_from);
       rlen = BN_num_bytes(bn_rand);
       *rbuf = (char *)(bin = driver_alloc_binary(rlen + 4));
+      if (bin==NULL) return -1;
       put_int32(bin->orig_bytes, rlen);
       BN_bn2bin(bn_rand,(unsigned char*)(bin->orig_bytes + 4));
       BN_free(bn_rand);
@@ -594,6 +665,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
                  bn_modulo, bn_ctx);
       rlen = BN_num_bytes(bn_result);
       *rbuf = (char *)(bin = driver_alloc_binary(rlen + 4));
+      if (bin==NULL) return -1;
       put_int32(bin->orig_bytes, rlen);
       BN_bn2bin(bn_result,(unsigned char*)(bin->orig_bytes + 4));
       BN_free(bn_result);
@@ -605,49 +677,45 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
       break;
 
     case DRV_DSS_VERIFY:
-      /* buf = <<data_len:32/integer,data:data_len/binary,
-       *         dsa_r:20/binary,
-       *         dsa_s:20/binary,
+      /* buf = <<data_len:32/integer, data:data_len/binary,
+       *         dsa_s_len:32/integer, dsa_s:dsa_s_len/binary,
        *         dsa_p_len:32/integer, dsa_p:dsa_p_len/binary,
        *         dsa_q_len:32/integer, dsa_q:dsa_q_len/binary,
-       *         dsa_g_len:32/integer, dsa_r:dsa_r_len/binary,
+       *         dsa_g_len:32/integer, dsa_g:dsa_g_len/binary,
        *         dsa_y_len:32/integer, dsa_y:dsa_y_len/binary>> */
       i = 0;
       j = 0;
-      if (len < 60)
-        return -1;
+      if (len < 24)
+	return -1;
       data_len = get_int32(buf + i + j);
-      j += data_len; i += 44;
-      if (len < (60 + j))
-        return -1;
+      j += data_len; i += 4;
+      if (len < (24 + j))
+	return -1;
+      dsa_s_len = get_int32(buf + i + j);
+      j += dsa_s_len; i += 4;
+      if (len < (24 + j))
+	 return -1;      
       dsa_p_len = get_int32(buf + i + j);
       j += dsa_p_len; i += 4;
-      if (len < (60 + j))
+      if (len < (24 + j))
         return -1;
       dsa_q_len = get_int32(buf + i + j);
       j += dsa_q_len; i += 4;
-      if (len < (60 + j))
+      if (len < (24 + j))
         return -1;
       dsa_g_len = get_int32(buf + i + j);
       j += dsa_g_len; i += 4;
-      if (len < (60 + j))
+      if (len < (24 + j))
         return -1;
       dsa_y_len = get_int32(buf + i + j);
       j += dsa_y_len;
-      if (len < (60 + j))
+      if (len != (24 + j))
         return -1;
       i = 4;
       SHA1((unsigned char *) (buf + i), data_len, hmacbuf);
-      dsa_sig = DSA_SIG_new();
-      dsa_r = BN_new();
-      i += data_len;
-      BN_bin2bn((unsigned char *)(buf + i), 20, dsa_r);
-      i += 20;
-      dsa_s = BN_new();
-      BN_bin2bn((unsigned char *)(buf + i), 20, dsa_s);
-      i += 24;
-      dsa_sig->r = dsa_r;
-      dsa_sig->s = dsa_s;
+      i += data_len + 4;
+      dsa_s = (unsigned char *)(buf + i);
+      i += (dsa_s_len + 4);
       dsa_p = BN_new();
       BN_bin2bn((unsigned char *)(buf + i), dsa_p_len, dsa_p);
       i += (dsa_p_len + 4);
@@ -665,16 +733,90 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
       dsa->g = dsa_g;
       dsa->priv_key = NULL;
       dsa->pub_key = dsa_y;
-      i =  DSA_do_verify(hmacbuf, SHA_DIGEST_LENGTH,
-                         dsa_sig, dsa);
+      i =  DSA_verify(0, hmacbuf, SHA_DIGEST_LENGTH, dsa_s, dsa_s_len, dsa);
       *rbuf = (char *)(bin = driver_alloc_binary(1));
-      (bin->orig_bytes)[0] = (char)(i & 0xff);
+      if (bin==NULL) return -1;
+
       DSA_free(dsa);
-      DSA_SIG_free(dsa_sig);
+      if(i > 0) {
+	 (bin->orig_bytes)[0] = 1;
+      } else {
+	 (bin->orig_bytes)[0] = 0;
+      }
       return 1;
       break;
+      
+    case DRV_DSS_SIGN:
+      /* buf = <<data_len:32/integer, data:data_len/binary,
+       *         dsa_p_len:32/integer, dsa_p:dsa_p_len/binary,
+       *         dsa_q_len:32/integer, dsa_q:dsa_q_len/binary,
+       *         dsa_g_len:32/integer, dsa_g:dsa_g_len/binary,
+       *         dsa_y_len:32/integer, dsa_y:dsa_y_len/binary,
+       *         dsa_x_len:32/integer, dsa_s:dsa_x_len/binary>> */
+      i = 0;
+      j = 0;
+      if (len < 20)
+	 return -1;
+      data_len = get_int32(buf + i + j);
+      j += data_len; i += 4;
+      if (len < (20 + j))
+	  return -1;
+      dsa_p_len = get_int32(buf + i + j);
+      j += dsa_p_len; i += 4;
+      if (len < (20 + j))
+	 return -1;
+      dsa_q_len = get_int32(buf + i + j);
+      j += dsa_q_len; i += 4;
+      if (len < (20 + j))
+	 return -1;
+      dsa_g_len = get_int32(buf + i + j);
+      j += dsa_g_len; i += 4;
+      if (len < (20 + j))
+	 return -1;
+      dsa_y_len = get_int32(buf + i + j);
+      j += dsa_y_len;
+      if (len < (20 + j))
+	 return -1;
+      if (len != (20 + j))
+	 return -1;
 
-    case DRV_RSA_VERIFY:
+      i = 4;
+      SHA1((unsigned char *) (buf + i), data_len, hmacbuf);
+      i += data_len + 4;
+      dsa_p = BN_new();
+      BN_bin2bn((unsigned char *)(buf + i), dsa_p_len, dsa_p);
+      i += (dsa_p_len + 4);
+      dsa_q = BN_new();
+      BN_bin2bn((unsigned char *)(buf + i), dsa_q_len, dsa_q);
+      i += (dsa_q_len + 4);
+      dsa_g = BN_new();
+      BN_bin2bn((unsigned char *)(buf + i), dsa_g_len, dsa_g);
+      i += (dsa_g_len + 4);
+      dsa_y = BN_new();
+      BN_bin2bn((unsigned char *)(buf + i), dsa_y_len, dsa_y);
+      /* i += (dsa_y_len + 4); */
+
+      dsa = DSA_new();
+      dsa->p = dsa_p;
+      dsa->q = dsa_q;
+      dsa->g = dsa_g;
+      dsa->priv_key = dsa_y;
+      dsa->pub_key  = NULL;
+      dlen = DSA_size(dsa) + 1;
+      *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+      if (bin==NULL) return -1;
+      i =  DSA_sign(NID_sha1,
+		    hmacbuf,SHA_DIGEST_LENGTH,
+		    (unsigned char *) &bin->orig_bytes[1],
+		    &dsa_s_len, dsa);
+
+      (bin->orig_bytes)[0] = (char)(i & 0xff);
+      DSA_free(dsa);
+      return dsa_s_len + 1;
+      break;
+
+    case DRV_RSA_VERIFY_MD5:
+    case DRV_RSA_VERIFY_SHA:
       /* buf = <<data_len:32/integer, data:data_len/binary,
        *         rsa_s_len:32/integer, rsa_s:rsa_s_len/binary,
        *         rsa_e_len:32/integer, rsa_e:rsa_e_len/binary,
@@ -682,7 +824,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
       i = 0;
       j = 0;
       if (len < 16)
-        return -1;
+	 return -1;
       data_len = get_int32(buf + i + j);
       j += data_len; i += 4;
       if (len < (16 + j))
@@ -697,10 +839,9 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         return -1;
       rsa_n_len = get_int32(buf + i + j);
       j += rsa_n_len; i += 4;
-      if (len < (16 + j))
-        return -1;
+      if (len != (16 + j))
+	 return -1;
       i = 4;
-      SHA1((unsigned char *) (buf + i), data_len, hmacbuf);
       i += (data_len + 4);
       rsa_s = (unsigned char *)(buf + i);
       i += (rsa_s_len + 4);
@@ -712,13 +853,273 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
       rsa = RSA_new();
       rsa->n = rsa_n;
       rsa->e = rsa_e;
-      i =  RSA_verify(NID_sha1, hmacbuf, SHA_DIGEST_LENGTH,
-                      rsa_s, rsa_s_len, rsa);
+      i = 4;
+      if(command == DRV_RSA_VERIFY_SHA) {
+	 SHA1((unsigned char *) (buf + i), data_len, hmacbuf);
+	 i = RSA_verify(NID_sha1, hmacbuf, SHA_DIGEST_LENGTH,
+			rsa_s, rsa_s_len, rsa);
+      } else {
+	 MD5((unsigned char *) (buf + i), data_len, hmacbuf);
+	 i =  RSA_verify(NID_md5, hmacbuf, MD5_DIGEST_LENGTH,
+			 rsa_s, rsa_s_len, rsa);
+      }
+
       *rbuf = (char *)(bin = driver_alloc_binary(1));
+      if (bin==NULL) return -1;
       (bin->orig_bytes)[0] = (char)(i & 0xff);
       RSA_free(rsa);
       return 1;
       break;
+
+    case DRV_RSA_SIGN_MD5:
+    case DRV_RSA_SIGN_SHA:        
+      /* buf = <<data_len:32/integer, data:data_len/binary,
+       *         rsa_e_len:32/integer, rsa_e:rsa_e_len/binary,       
+       *         rsa_n_len:32/integer, rsa_n:rsa_n_len/binary,
+       *         rsa_d_len:32/integer, rsa_d:rsa_d_len/binary>> */ 
+
+      i = 0;
+      j = 0;
+      
+      if (len < 16)
+	 return -1;
+      data_len = get_int32(buf + i + j);
+      j += data_len; i += 4;
+      if (len < (16 + j))
+	 return -1;
+      rsa_e_len = get_int32(buf + i + j);
+      j += rsa_e_len; i += 4;
+      if (len < (16 + j))
+	 return -1;
+      rsa_n_len = get_int32(buf + i + j);
+      j += rsa_n_len; i += 4;
+      if (len < (16 + j))
+	 return -1;
+      rsa_d_len = get_int32(buf + i + j);
+      j += rsa_d_len; i += 4;
+      if (len != (16 + j))
+	 return -1;
+
+      i = 4;
+      i += (data_len + 4);
+      rsa_e = BN_new();
+      BN_bin2bn((unsigned char *)(buf + i), rsa_e_len, rsa_e);
+      i += (rsa_e_len + 4);
+      rsa_n = BN_new();
+      BN_bin2bn((unsigned char *)(buf + i), rsa_n_len, rsa_n);
+      i += (rsa_n_len + 4);
+      rsa_d = BN_new();
+      BN_bin2bn((unsigned char *)(buf + i), rsa_d_len, rsa_d);
+      i += (rsa_d_len + 4);
+  
+      rsa = RSA_new();
+      rsa->e = rsa_e;
+      rsa->n = rsa_n;
+      rsa->d = rsa_d;
+      
+      dlen = RSA_size(rsa) + 1;
+      *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+      if (bin==NULL) return -1;
+      i = 4;
+      if (command == DRV_RSA_SIGN_MD5) {
+	 MD5((unsigned char *) (buf + i), data_len, hmacbuf);
+	 i = RSA_sign(NID_md5,
+		      hmacbuf,MD5_DIGEST_LENGTH,
+		      (unsigned char *) &bin->orig_bytes[1],
+		      &rsa_s_len, rsa);
+      } else {
+	 SHA1((unsigned char *) (buf + i), data_len, hmacbuf);
+	 i =  RSA_sign(NID_sha1,
+		       hmacbuf,SHA_DIGEST_LENGTH,
+		       (unsigned char *) &bin->orig_bytes[1],
+		       &rsa_s_len, rsa);
+      }
+
+      (bin->orig_bytes)[0] = (char)(i & 0xff);
+      RSA_free(rsa);
+      return rsa_s_len + 1;
+      break;
+
+    case DRV_RSA_PRIVATE_DECRYPT:        
+    case DRV_RSA_PRIVATE_ENCRYPT:        
+       /* buf = <<data_len:32/integer, data:data_len/binary,
+	*         rsa_e_len:32/integer, rsa_e:rsa_e_len/binary,       
+	*         rsa_n_len:32/integer, rsa_n:rsa_n_len/binary,
+	*         rsa_d_len:32/integer, rsa_d:rsa_d_len/binary,
+	*         pad:8/integer >> */ 
+
+       i = 0;
+       j = 0;
+      
+       if (len < 17)
+	  return -1;
+       data_len = get_int32(buf + i + j);
+       j += data_len; i += 4;
+       if (len < (17 + j))
+	  return -1;
+       rsa_e_len = get_int32(buf + i + j);
+       j += rsa_e_len; i += 4;
+       if (len < (17 + j))
+	  return -1;
+       rsa_n_len = get_int32(buf + i + j);
+       j += rsa_n_len; i += 4;
+       if (len < (17 + j))
+	  return -1;
+       rsa_d_len = get_int32(buf + i + j);
+       j += rsa_d_len; i += 4;
+       padding = *(unsigned char *) (buf+i+j); 
+       if (len != (17 + j))
+	  return -1;
+
+       i = 4;
+       i += (data_len + 4);
+       rsa_e = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), rsa_e_len, rsa_e);
+       i += (rsa_e_len + 4);
+       rsa_n = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), rsa_n_len, rsa_n);
+       i += (rsa_n_len + 4);
+       rsa_d = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), rsa_d_len, rsa_d);
+       i += (rsa_d_len + 4);
+       
+       switch(padding) {
+       case 0:
+	  padding = RSA_NO_PADDING;
+	  break;
+       case 1:
+	  padding = RSA_PKCS1_PADDING;
+	  break;
+       case 2:
+	  padding = RSA_PKCS1_OAEP_PADDING;
+	  break;
+       case 3:
+	  padding = RSA_SSLV23_PADDING;
+	  break;
+       default:
+	  return -1;
+       }
+       
+       rsa = RSA_new();
+       rsa->e = rsa_e;
+       rsa->n = rsa_n;
+       rsa->d = rsa_d;
+      
+       dlen = RSA_size(rsa) + 1;
+       *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+       if (bin==NULL) return -1;
+       i = 4;
+       if(command == DRV_RSA_PRIVATE_DECRYPT) {
+	  i = RSA_private_decrypt(data_len, (unsigned char *) (buf+i),
+				  (unsigned char *) &bin->orig_bytes[1],
+				  rsa, padding);
+	  if(i > 0) {
+	     *rbuf = (char *) (bin = driver_realloc_binary(bin, i+1));
+	     if (*rbuf==NULL) return -1;
+	  }
+       } else {
+	  i = RSA_private_encrypt(data_len, (unsigned char *) (buf+i),
+				  (unsigned char *) &bin->orig_bytes[1],
+				  rsa, padding);
+       }
+       RSA_free(rsa);
+       if(i > 0) {
+	  (bin->orig_bytes)[0] = 1;
+	  return i + 1;
+       } else {
+	  (bin->orig_bytes)[0] = 0;
+	  return 1;
+       }
+       break;
+
+    case DRV_RSA_PUBLIC_ENCRYPT:
+    case DRV_RSA_PUBLIC_DECRYPT:
+       /* buf = <<data_len:32/integer, data:data_len/binary,
+	*         rsa_e_len:32/integer, rsa_e:rsa_e_len/binary,       
+	*         rsa_n_len:32/integer, rsa_n:rsa_n_len/binary,
+	*         pad:8/integer >> */ 
+
+       i = 0;
+       j = 0;
+      
+       if (len < 13)
+	  return -1;
+       data_len = get_int32(buf + i + j);
+       j += data_len; i += 4;
+       if (len < (13 + j))
+	  return -1;
+       rsa_e_len = get_int32(buf + i + j);
+       j += rsa_e_len; i += 4;
+       if (len < (13 + j))
+	  return -1;
+       rsa_n_len = get_int32(buf + i + j);
+       j += rsa_n_len; i += 4;
+       if (len < (13 + j))
+	  return -1;
+       padding = *(unsigned char *) (buf + i + j);
+       if (len != (13 + j))
+	  return -1;
+
+       i = 4;
+       i += (data_len + 4);
+       rsa_e = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), rsa_e_len, rsa_e);
+       i += (rsa_e_len + 4);
+       rsa_n = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), rsa_n_len, rsa_n);
+       i += (rsa_n_len + 4);
+       
+       switch(padding) {
+       case 0:
+	  padding = RSA_NO_PADDING;
+	  break;
+       case 1:
+	  padding = RSA_PKCS1_PADDING;
+	  break;
+       case 2:
+	  padding = RSA_PKCS1_OAEP_PADDING;
+	  break;
+       case 3:
+	  padding = RSA_SSLV23_PADDING;
+	  break;
+       default:
+	  return -1;
+       }
+       
+       rsa = RSA_new();
+       rsa->e = rsa_e;
+       rsa->n = rsa_n;
+      
+       dlen = RSA_size(rsa) + 1;
+       
+       *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+       if (bin==NULL) return -1;
+       i = 4;
+       if(command == DRV_RSA_PUBLIC_ENCRYPT) {
+	  i = RSA_public_encrypt(data_len, (unsigned char *) (buf+i),
+				 (unsigned char *) &bin->orig_bytes[1],
+				 rsa, padding);
+       } else {
+	  i = RSA_public_decrypt(data_len, (unsigned char *) (buf+i),
+				 (unsigned char *) &bin->orig_bytes[1],
+				 rsa, padding);
+	  if(i > 0) {
+	     *rbuf = (char *) (bin = driver_realloc_binary(bin, i+1));
+	     if (*rbuf==NULL) return -1;
+	  }
+       }
+
+       RSA_free(rsa);
+       if(i > 0) {
+	  (bin->orig_bytes)[0] = 1;
+	  return i + 1;
+       } else {
+/* 	  ERR_load_crypto_strings(); */
+/* 	  fprintf(stderr, "%d: %s \r\n", __LINE__, ERR_reason_error_string(ERR_get_error())); */
+	  (bin->orig_bytes)[0] = 0;
+	  return 1;
+       }
+       break;
 
     case DRV_CBC_AES128_ENCRYPT:
     case DRV_CBC_AES256_ENCRYPT:
@@ -742,6 +1143,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 	    AES_set_decrypt_key((unsigned char *) buf, klen*8, &aes_key);
 	}
 	*rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	if (bin==NULL) return -1;
 	AES_cbc_encrypt((unsigned char *) (buf + klen+16),
 			(unsigned char *) bin->orig_bytes,
 			dlen,
@@ -778,33 +1180,300 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         if (len != dlen * 2)
             return -1;
         *rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	if (bin==NULL) return -1;
         p = bin->orig_bytes,
         dbuf = buf + dlen;
         for (key = buf, key2 = dbuf; key != dbuf; ++key, ++key2, ++p)
             *p = *key ^ *key2;
         return dlen;
         break;
+	
+    case DRV_DH_GENERATE_PARAMS:
+       /* buf = <<PrimeLen:32 Generator:32>> */
+       if (len != 8) 
+	  return -1;
+       prime_len = get_int32(buf);
+       generator = get_int32(buf+4);
+       dh_params = DH_generate_parameters(prime_len, generator, NULL, NULL);
 
+       if(dh_params) {
+	  dh_p_len = BN_num_bytes(dh_params->p);
+	  dh_g_len = BN_num_bytes(dh_params->g);
+	  *rbuf = (char *)(bin = driver_alloc_binary(1+4+4+dh_g_len+dh_p_len));
+	  if (bin==NULL) return -1;
+	  (bin->orig_bytes)[0] = 1;
+	  put_int32(bin->orig_bytes+1, dh_p_len);
+	  BN_bn2bin(dh_params->p, bin->orig_bytes+5);
+	  put_int32(bin->orig_bytes+5+dh_p_len, dh_g_len);
+	  BN_bn2bin(dh_params->g, bin->orig_bytes+5+dh_p_len+4);
+       } else {
+	  *rbuf = (char *)(bin = driver_alloc_binary(1));
+	  if (bin==NULL) return -1;
+	  (bin->orig_bytes)[0] = 0;
+       }
+       DH_free(dh_params);
+       return 1;
+       break;
+
+    case DRV_DH_CHECK:
+       /* buf = <<dh_p_len:32/integer, dh_p:dh_p_len/binary,
+	*         dh_g_len:32/integer, dh_g:dh_g_len/binary>> */
+       i = 0;
+       j = 0;
+       if(len < 8)        return -1;
+       dh_p_len = get_int32(buf + i + j);
+       j += dh_p_len; i += 4;
+       if (len < (8 + j)) return -1;
+       dh_g_len = get_int32(buf + i + j);
+       j += dh_g_len; i += 4;
+       if(len != (8+j))   return -1;
+       i=4;
+       dh_p = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), dh_p_len, dh_p);
+       i += (dh_p_len + 4);
+       dh_g = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), dh_g_len, dh_g);
+       /* i += (dsa_g_len + 4); */
+
+       dh_params = DH_new();
+       dh_params->p = dh_p;
+       dh_params->g = dh_g;
+       
+       i=0;
+       *rbuf = (char *)(bin = driver_alloc_binary(4));
+       if (bin==NULL) return -1;
+       if(DH_check(dh_params, &i)) {
+	  put_int32(bin->orig_bytes, i);
+       } else {
+	  /* Check Failed */
+	  put_int32(bin->orig_bytes, -1);
+       }
+       DH_free(dh_params);
+       return 1;
+       break;
+
+    case DRV_DH_GENERATE_KEY:
+       /* buf = <<key_len:32,  key:key_len/binary,            *
+	*         dh_p_len:32/integer, dh_p:dh_p_len/binary,  *
+	*         dh_g_len:32/integer, dh_g:dh_g_len/binary>> */
+       i = 0;
+       j = 0;
+       if(len < 12)        return -1;
+       base_len = get_int32(buf + i + j);
+       j += base_len; i += 4;
+       if (len < (12 + j)) return -1;
+       dh_p_len = get_int32(buf + i + j);
+       j += dh_p_len; i += 4;
+       if (len < (12 + j)) return -1;
+       dh_g_len = get_int32(buf + i + j);
+       j += dh_g_len; i += 4;
+       if(len != (12 + j))   return -1;
+       i=4;
+       if(base_len > 0) {
+	  bn_base = BN_new();
+	  BN_bin2bn((unsigned char *)(buf + i), base_len, bn_base);
+       }
+       i += (base_len + 4);
+       dh_p = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), dh_p_len, dh_p);
+       i += (dh_p_len + 4);
+       dh_g = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), dh_g_len, dh_g);
+       /* i += (dsa_g_len + 4); */
+
+       dh_params = DH_new();
+       dh_params->p = dh_p;
+       dh_params->g = dh_g;
+       if(base_len > 0) {
+	  dh_params->priv_key = bn_base;
+       }
+       i=0;
+       if(DH_generate_key(dh_params)) {
+	  privkey_len = BN_num_bytes(dh_params->priv_key);
+	  pubkey_len = BN_num_bytes(dh_params->pub_key);
+	  *rbuf = (char *)(bin = driver_alloc_binary(1+4+4+pubkey_len+privkey_len));
+	  if (bin==NULL) return -1;
+	  (bin->orig_bytes)[0] = 1;
+	  put_int32(bin->orig_bytes+1, pubkey_len);
+	  BN_bn2bin(dh_params->pub_key, bin->orig_bytes+5);
+	  put_int32(bin->orig_bytes+5+pubkey_len, privkey_len);
+	  BN_bn2bin(dh_params->priv_key, bin->orig_bytes+5+pubkey_len+4);
+       } else {
+	  *rbuf = (char *)(bin = driver_alloc_binary(1));
+	  if (bin==NULL) return -1;
+	  (bin->orig_bytes)[0] = 0;
+       }
+       DH_free(dh_params);
+       return 1;
+       break;
+
+    case DRV_DH_COMPUTE_KEY:
+       /* buf = <<pubkey_len:32,  pubkey:pubkey_len/binary,   *
+	*         privkey_len:32, privkey:privkey_len/binary, *
+	*         dh_p_len:32/integer, dh_p:dh_p_len/binary,  *
+	*         dh_g_len:32/integer, dh_g:dh_g_len/binary>> */
+       i = 0;
+       j = 0;
+       if(len < 16)        return -1;
+       pubkey_len = get_int32(buf + i + j);
+       j += pubkey_len; i += 4;
+       if (len < (16 + j)) return -1;
+       privkey_len = get_int32(buf + i + j);
+       j += privkey_len; i += 4;
+       if (len < (16 + j)) return -1;
+       dh_p_len = get_int32(buf + i + j);
+       j += dh_p_len; i += 4;
+       if (len < (16 + j)) return -1;
+       dh_g_len = get_int32(buf + i + j);
+       j += dh_g_len; i += 4;
+       if(len != (16 + j))   return -1;
+       i=4;
+       pubkey = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), pubkey_len, pubkey);
+       i += (pubkey_len + 4);
+       privkey = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), privkey_len, privkey);
+       i += (privkey_len + 4);
+       dh_p = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), dh_p_len, dh_p);
+       i += (dh_p_len + 4);
+       dh_g = BN_new();
+       BN_bin2bn((unsigned char *)(buf + i), dh_g_len, dh_g);
+       /* i += (dsa_g_len + 4); */
+
+       dh_params = DH_new();
+       dh_params->p = dh_p;
+       dh_params->g = dh_g;
+       dh_params->priv_key = privkey;
+       
+       klen = DH_size(dh_params);
+       *rbuf = (char *)(bin = driver_alloc_binary(1+klen));       
+       if (bin==NULL) return -1;
+       i = DH_compute_key(&bin->orig_bytes[1],pubkey, dh_params);
+       if(i > 0) {
+	  (bin->orig_bytes)[0] = 1;
+       } else {
+	  (bin->orig_bytes)[0] = 0;
+       }
+       DH_free(dh_params);
+       return 1;
+       break;
+
+    case DRV_MD4:
+       *rbuf = (char*) (bin = driver_alloc_binary(MD4_LEN));
+       MD4((unsigned char *)buf, len, (unsigned char *)bin->orig_bytes);
+       return MD4_LEN;
+       break;
+       
+    case DRV_MD4_INIT:
+       *rbuf = (char*) (bin = driver_alloc_binary(MD4_CTX_LEN));
+       MD4_Init((MD4_CTX *) bin->orig_bytes);
+       return MD4_CTX_LEN;
+       break;
+       
+    case DRV_MD4_UPDATE:
+       if (len < MD4_CTX_LEN)
+	  return -1;
+       *rbuf = (char*) (bin = driver_alloc_binary(MD4_CTX_LEN));
+       memcpy(bin->orig_bytes, buf, MD4_CTX_LEN);
+       MD4_Update((MD4_CTX *) bin->orig_bytes, buf + MD4_CTX_LEN, len - MD4_CTX_LEN);
+       return MD4_CTX_LEN;
+       break;
+       
+    case DRV_MD4_FINAL:
+       if (len != MD4_CTX_LEN)
+	  return -1;
+       memcpy(&md4_ctx, buf, MD4_CTX_LEN); /* XXX Use buf only? */
+       *rbuf = (char *) (bin = driver_alloc_binary(MD4_LEN));
+       MD4_Final((unsigned char *)bin->orig_bytes, &md4_ctx);
+       return MD4_LEN;
+       break;
+
+#if SSL_VERSION_0_9_8
+    case DRV_SHA256:
+       *rbuf = (char *)(bin = driver_alloc_binary(SHA256_LEN));
+       SHA256(buf, len, bin->orig_bytes);
+       return SHA256_LEN;
+       break;
+       
+    case DRV_SHA256_INIT:
+       *rbuf = (char *)(bin = driver_alloc_binary(SHA256_CTX_LEN));
+       SHA256_Init((SHA256_CTX *)bin->orig_bytes);
+       return SHA256_CTX_LEN;		
+       break;
+
+    case DRV_SHA256_UPDATE:
+       if (len < SHA256_CTX_LEN)
+	  return -1;
+       *rbuf = (char *)(bin = driver_alloc_binary(SHA256_CTX_LEN)); 
+       memcpy(bin->orig_bytes, buf, SHA256_CTX_LEN);
+       SHA256_Update((SHA256_CTX *)bin->orig_bytes, buf + SHA256_CTX_LEN, 
+		     len - SHA256_CTX_LEN);
+       return SHA256_CTX_LEN;		
+       break;
+
+    case DRV_SHA256_FINAL:
+       if (len != SHA256_CTX_LEN)
+	  return -1;
+       memcpy(&sha256_ctx, buf, SHA256_CTX_LEN); /* XXX Use buf only? */
+       *rbuf = (char *)(bin = driver_alloc_binary(SHA256_LEN));
+       SHA256_Final(bin->orig_bytes, &sha256_ctx);
+       return SHA256_LEN;
+       break;
+
+    case DRV_SHA512:
+       *rbuf = (char *)(bin = driver_alloc_binary(SHA512_LEN));
+       SHA512(buf, len, bin->orig_bytes);
+       return SHA512_LEN;
+       break;
+       
+    case DRV_SHA512_INIT:
+       *rbuf = (char *)(bin = driver_alloc_binary(SHA512_CTX_LEN));
+       SHA512_Init((SHA512_CTX *)bin->orig_bytes);
+       return SHA512_CTX_LEN;		
+       break;
+       
+    case DRV_SHA512_UPDATE:
+       if (len < SHA512_CTX_LEN)
+	  return -1;
+       *rbuf = (char *)(bin = driver_alloc_binary(SHA512_CTX_LEN)); 
+       memcpy(bin->orig_bytes, buf, SHA512_CTX_LEN);
+       SHA512_Update((SHA512_CTX *)bin->orig_bytes, buf + SHA512_CTX_LEN, 
+		     len - SHA512_CTX_LEN);
+       return SHA512_CTX_LEN;		
+       break;
+       
+    case DRV_SHA512_FINAL:
+       if (len != SHA512_CTX_LEN)
+	  return -1;
+       memcpy(&sha512_ctx, buf, SHA512_CTX_LEN); /* XXX Use buf only? */
+       *rbuf = (char *)(bin = driver_alloc_binary(SHA512_LEN));
+       SHA512_Final(bin->orig_bytes, &sha512_ctx);
+       return SHA512_LEN;		
+       break;
+#endif
+       
     case DRV_INFO_LIB:	
-	{/* <<DrvVer:8, NameSize:8, Name:NameSize/binary, VerNum:32, VerStr/binary>> */
-	    static const char libname[] = "OpenSSL";
-	    unsigned name_sz = strlen(libname);
-	    const char* ver = SSLeay_version(SSLEAY_VERSION);
-	    unsigned ver_sz = strlen(ver);
-	    *rbuf = (char*)(bin = driver_alloc_binary(1+1+name_sz+4+ver_sz));
-	    p = bin->orig_bytes;
-	    *p++ = 0; /* "driver version" for future use */
-	    *p++ = name_sz;
-	    memcpy(p, libname, name_sz);
-	    p += name_sz;
-	    put_int32(p,SSLeay()); /* OPENSSL_VERSION_NUMBER */
-	    p += 4;
-	    memcpy(p, ver, ver_sz);
-	}
-	return bin->orig_size; 
+       {/* <<DrvVer:8, NameSize:8, Name:NameSize/binary, VerNum:32, VerStr/binary>> */
+	  static const char libname[] = "OpenSSL";
+	  unsigned name_sz = strlen(libname);
+	  const char* ver = SSLeay_version(SSLEAY_VERSION);
+	  unsigned ver_sz = strlen(ver);
+	  *rbuf = (char*)(bin = driver_alloc_binary(1+1+name_sz+4+ver_sz));
+	  if (bin==NULL) return -1;
+	  p = bin->orig_bytes;
+	  *p++ = 0; /* "driver version" for future use */
+	  *p++ = name_sz;
+	  memcpy(p, libname, name_sz);
+	  p += name_sz;
+	  put_int32(p,SSLeay()); /* OPENSSL_VERSION_NUMBER */
+	  p += 4;
+	  memcpy(p, ver, ver_sz);
+       }
+       return bin->orig_size; 
 
     default:
-	break;
+       break;
     }
     return -1;
 }

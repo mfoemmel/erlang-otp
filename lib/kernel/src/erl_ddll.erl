@@ -26,27 +26,26 @@
 	 unload_driver/1, unload/1, reload/2, reload_driver/2, 
 	 format_error/1,info/1,info/0, start/0, stop/0]).
 
+%%----------------------------------------------------------------------------
 
-%% No reason to provide contracts for the first two functions
+-spec start() -> {'error', {'already_started', 'undefined'}}.
 
 start() ->
-    {error,{already_started,undefined}}.
+    {error, {already_started,undefined}}.
+
+-spec stop() -> 'ok'.
 
 stop() ->
     ok.
 
--spec(load_driver/2 :: (
-	Path :: string() | atom(), 
-	Driver :: string() | atom()) ->
-	'ok' | {'error', any()}).
+-spec load_driver(Path :: string() | atom(), Driver :: string() | atom()) ->
+	'ok' | {'error', any()}.
 
 load_driver(Path, Driver) ->
     do_load_driver(Path, Driver, [{driver_options,[kill_ports]}]).
 
--spec(load/2 :: (
-	Path :: string() | atom(), 
-	Driver :: string() | atom()) ->
-	'ok' | {'error', any()}).
+-spec load(Path :: string() | atom(), Driver :: string() | atom()) ->
+	'ok' | {'error', any()}.
 
 load(Path, Driver) ->
     do_load_driver(Path, Driver, []).
@@ -95,37 +94,30 @@ do_unload_driver(Driver,Flags) ->
 	    end
     end.
 
--spec(unload_driver/1 :: (Driver :: string() | atom()) ->
-	'ok' | {'error', any()}).
-	
+-spec unload_driver(Driver :: string() | atom()) -> 'ok' | {'error', any()}.
 
 unload_driver(Driver) ->
     do_unload_driver(Driver,[{monitor,pending_driver},kill_ports]).
 
--spec(unload/1 :: (Driver :: string() | atom()) ->
-	'ok' | {'error', any()}).
+-spec unload(Driver :: string() | atom()) -> 'ok' | {'error', any()}.
 
 unload(Driver) ->
     do_unload_driver(Driver,[]).
 
--spec(reload/2 :: (
-	Path :: string() | atom(),
-	Driver :: string() | atom()) ->
-	'ok' | {'error', any()}).
+-spec reload(Path :: string() | atom(), Driver :: string() | atom()) ->
+	'ok' | {'error', any()}.
 
 reload(Path,Driver) ->
     do_load_driver(Path, Driver, [{reload,pending_driver}]).
 
--spec(reload_driver/2 :: (
-	Path :: string() | atom(),
-	Driver :: string() | atom()) ->
-	'ok' | {'error', any()}).
+-spec reload_driver(Path :: string() | atom(), Driver :: string() | atom()) ->
+	'ok' | {'error', any()}.
 
 reload_driver(Path,Driver) ->
     do_load_driver(Path, Driver, [{reload,pending_driver},
 				  {driver_options,[kill_ports]}]).			    
 
--spec(format_error/1 :: (Code :: atom()) -> string()).
+-spec format_error(Code :: atom()) -> string().
 
 format_error(Code) ->
     case Code of
@@ -137,8 +129,7 @@ format_error(Code) ->
 	    erl_ddll:format_error_int(Code)
     end.
 
--spec(info/1 :: (Driver :: string() | atom()) ->
-	[{atom(), any()}]).
+-spec info(Driver :: string() | atom()) -> [{atom(), any()}].
  
 info(Driver) ->
     [{processes, erl_ddll:info(Driver,processes)},
@@ -149,8 +140,7 @@ info(Driver) ->
      {awaiting_load,  erl_ddll:info(Driver,awaiting_load)},
      {awaiting_unload, erl_ddll:info(Driver,awaiting_unload)}].
 
--spec(info/0 :: () ->
-	[{string(), [{atom(), any()}]}]).
+-spec info() -> [{string(), [{atom(), any()}]}].
 
 info() ->
     {ok,DriverList} = erl_ddll:loaded_drivers(),

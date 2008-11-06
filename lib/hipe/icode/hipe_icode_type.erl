@@ -29,10 +29,10 @@
 -include("hipe_icode_type.hrl").
 -include("../flow/cfg.hrl").
 
--type(args_fun() :: fun((mfa(), cfg()) -> [erl_type()])).
--type(call_fun() :: fun((mfa(), [_]) -> erl_type())).
--type(final_fun() :: fun((mfa(), [_]) -> 'ok')).
--type(data() :: {mfa(), args_fun(), call_fun(), final_fun()}).
+-type args_fun()  :: fun((mfa(), cfg()) -> [erl_type()]).
+-type call_fun()  :: fun((mfa(), [_]) -> erl_type()).
+-type final_fun() :: fun((mfa(), [_]) -> 'ok').
+-type data()	  :: {mfa(), args_fun(), call_fun(), final_fun()}.
 
 %-define(DO_HIPE_ICODE_TYPE_TEST, false).
 
@@ -97,7 +97,7 @@
 %% The main exported function
 %%-----------------------------------------------------------------------
 
--spec(cfg/4 :: (cfg(), mfa(), comp_options(), #comp_servers{}) -> cfg()).
+-spec cfg(cfg(), mfa(), comp_options(), #comp_servers{}) -> cfg().
 
 cfg(Cfg, MFA, Options, Servers) ->
   case proplists:get_bool(concurrent_comp, Options) of
@@ -150,17 +150,17 @@ make_data(Cfg, {_M,_F,A}=MFA) ->
   FinalFun = fun(_,_) -> ok end,
   {MFA,ArgsFun,CallFun,FinalFun}.
 
-%debug_make_data(Cfg, {_M,_F,A}=MFA) ->
-%  NoArgs = 
-%    case hipe_icode_cfg:is_closure(Cfg) of
-%      true -> hipe_icode_cfg:closure_arity(Cfg);
-%      false -> A
-%    end,
-%  Args = lists:duplicate(NoArgs,t_any()), 
-%  ArgsFun = fun(MFA,_Cfg) -> io:format("Start:~p~n",[MFA]),Args end,
-%  CallFun = fun(MFA,Types) -> io:format("Call With:~p~nTo:~p~n",[Types,MFA]), t_any() end,
-%  FinalFun = fun(MFA,Type) -> io:format("ResType:~p~nFor:~p~n",[Type,MFA]),ok end,
-%  {MFA,ArgsFun,CallFun,FinalFun}.
+%%debug_make_data(Cfg, {_M,_F,A}=MFA) ->
+%%  NoArgs = 
+%%    case hipe_icode_cfg:is_closure(Cfg) of
+%%      true -> hipe_icode_cfg:closure_arity(Cfg);
+%%      false -> A
+%%    end,
+%%  Args = lists:duplicate(NoArgs,t_any()), 
+%%  ArgsFun = fun(MFA,_Cfg) -> io:format("Start:~p~n",[MFA]),Args end,
+%%  CallFun = fun(MFA,Types) -> io:format("Call With:~p~nTo:~p~n",[Types,MFA]), t_any() end,
+%%  FinalFun = fun(MFA,Type) -> io:format("ResType:~p~nFor:~p~n",[Type,MFA]),ok end,
+%%  {MFA,ArgsFun,CallFun,FinalFun}.
 
 
 %% _________________________________________________________________
@@ -174,7 +174,7 @@ make_data(Cfg, {_M,_F,A}=MFA) ->
 %% information is added to the worklist.
 %%
 
--spec(analyse/2 :: (cfg(), data()) -> 'ok').
+-spec analyse(cfg(), data()) -> 'ok'.
 
 analyse(Cfg, Data) ->
   try
@@ -183,7 +183,7 @@ analyse(Cfg, Data) ->
   catch throw:no_input -> ok % No need to do anything since we have no input
   end.
 
--spec(safe_analyse/2 :: (cfg(), data()) -> #state{}).
+-spec safe_analyse(cfg(), data()) -> #state{}.
 
 safe_analyse(Cfg, {MFA,_,_,_}=Data) ->
   State = new_state(Cfg, Data),
@@ -1115,7 +1115,7 @@ unset_fail(State, BB, Label, I) ->
 %% out of the block to annotate all variables in it.
 %%
 
--spec(specialize/1 :: (cfg()) -> cfg()).
+-spec specialize(cfg()) -> cfg().
 
 specialize(Cfg) ->
   Labels = hipe_icode_cfg:reverse_postorder(Cfg),
@@ -1884,7 +1884,7 @@ butlast([_]) ->
 butlast([H|T]) ->
   [H|butlast(T)].
 
--spec(any_is_none/1 :: ([erl_type()]) -> bool()).
+-spec any_is_none([erl_type()]) -> bool().
 any_is_none([H|T]) ->
   case t_is_none(H) of
     true -> true;
@@ -2083,7 +2083,7 @@ annotate_instr(I, DefInfo, UseInfo) ->
 make_annotation(X, Info) ->
   {type_anno, safe_lookup(X, Info), fun erl_types:t_to_string/1}. 
 
--spec(unannotate_cfg/1 :: (cfg()) -> cfg()).
+-spec unannotate_cfg(cfg()) -> cfg().
 
 unannotate_cfg(Cfg) ->
   NewCfg = unannotate_params(Cfg),
@@ -2166,7 +2166,7 @@ find_signature_primop(Primop, Arity) ->
   end.
 
 get_primop_arg_types(Primop) ->
-  case erl_bif_types:arg_types(Primop) of
+  case hipe_icode_primops:arg_types(Primop) of
     any -> any;
     ArgTypes -> add_tuple_to_args(ArgTypes)
   end.
@@ -2209,14 +2209,14 @@ add_fun_to_arg_type(T) ->
 %% Icode Coordinator Callbacks
 %%=====================================================================
 
--spec(replace_nones/1 :: ([erl_type()] | erl_type()) -> [erl_type()]).
+-spec replace_nones([erl_type()] | erl_type()) -> [erl_type()].
 
 replace_nones(Types) when is_list(Types) ->
   [replace_none(T) || T <- Types];
 replace_nones(Type) ->
   [replace_none(Type)].
 
--spec(replace_none/1 :: (erl_type()) -> erl_type()).
+-spec replace_none(erl_type()) -> erl_type().
 
 replace_none(Type) ->
   case erl_types:t_is_none(Type) of
@@ -2226,7 +2226,7 @@ replace_none(Type) ->
       Type
   end.
 
--spec(update__info/2 :: ([erl_type()], [erl_type()]) -> {bool(), [erl_type()]}).
+-spec update__info([erl_type()], [erl_type()]) -> {bool(), [erl_type()]}.
 
 update__info(NewTypes, OldTypes) ->
   SupFun = 
@@ -2238,22 +2238,22 @@ update__info(NewTypes, OldTypes) ->
   Change = lists:zipwith(EqFun, ResTypes, OldTypes),
   {lists:all(fun(X) -> X end, Change), ResTypes}.
  
--spec(new__info/1 :: ([erl_type()]) -> [erl_type()]).
+-spec new__info([erl_type()]) -> [erl_type()].
 
 new__info(NewTypes) ->
   [erl_types:t_limit(T, ?TYPE_DEPTH) || T <- NewTypes].
 
--spec(return__info/1 :: (erl_type()) -> erl_type()).
+-spec return__info(erl_type()) -> erl_type().
 
 return__info(Types) ->  
   Types.
 
--spec(return_none/0 :: () -> [erl_type(),...]).
+-spec return_none() -> [erl_type(),...].
 
 return_none() ->
   [erl_types:t_none()].
 
--spec(return_none_args/2 :: (cfg(), mfa()) -> [erl_type()]).
+-spec return_none_args(cfg(), mfa()) -> [erl_type()].
 
 return_none_args(Cfg, {_M,_F,A}) ->
   NoArgs = 
@@ -2263,7 +2263,7 @@ return_none_args(Cfg, {_M,_F,A}) ->
     end,
   lists:duplicate(NoArgs, erl_types:t_none()).
 
--spec(return_any_args/2 :: (cfg(), mfa()) -> [erl_type()]).
+-spec return_any_args(cfg(), mfa()) -> [erl_type()].
 
 return_any_args(Cfg, {_M,_F,A}) ->
   NoArgs = 

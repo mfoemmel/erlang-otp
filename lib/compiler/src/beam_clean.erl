@@ -22,7 +22,7 @@
 -export([module/2]).
 -export([bs_clean_saves/1]).
 -export([clean_labels/1]).
--import(lists, [member/2,map/2,foldl/3,mapfoldl/3,reverse/1,sort/1,all/2]).
+-import(lists, [map/2,foldl/3,reverse/1]).
 
 module({Mod,Exp,Attr,Fs0,_}, _Opt) ->
     Order = [Lbl || {function,_,_,Lbl,_} <- Fs0],
@@ -242,6 +242,12 @@ replace([{bs_init_bits,{f,Lbl},Sz,Words,R,F,Dst}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_init_bits,{f,label(Lbl, D)},Sz,Words,R,F,Dst}|Acc], D);
 replace([{bs_put_integer,{f,Lbl},Bits,Unit,Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_put_integer,{f,label(Lbl, D)},Bits,Unit,Fl,Val}|Acc], D);
+replace([{bs_put_utf8=I,{f,Lbl},Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
+    replace(Is, [{I,{f,label(Lbl, D)},Fl,Val}|Acc], D);
+replace([{bs_put_utf16=I,{f,Lbl},Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
+    replace(Is, [{I,{f,label(Lbl, D)},Fl,Val}|Acc], D);
+replace([{bs_put_utf32=I,{f,Lbl},Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
+    replace(Is, [{I,{f,label(Lbl, D)},Fl,Val}|Acc], D);
 replace([{bs_put_binary,{f,Lbl},Bits,Unit,Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_put_binary,{f,label(Lbl, D)},Bits,Unit,Fl,Val}|Acc], D);
 replace([{bs_put_float,{f,Lbl},Bits,Unit,Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
@@ -251,6 +257,10 @@ replace([{bs_add,{f,Lbl},Src,Dst}|Is], Acc, D) when Lbl =/= 0 ->
 replace([{bs_append,{f,Lbl},_,_,_,_,_,_,_}=I0|Is], Acc, D) when Lbl =/= 0 ->
     I = setelement(2, I0, {f,label(Lbl, D)}),
     replace(Is, [I|Acc], D);
+replace([{bs_utf8_size=I,{f,Lbl},Src,Dst}|Is], Acc, D) when Lbl =/= 0 ->
+    replace(Is, [{I,{f,label(Lbl, D)},Src,Dst}|Acc], D);
+replace([{bs_utf16_size=I,{f,Lbl},Src,Dst}|Is], Acc, D) when Lbl =/= 0 ->
+    replace(Is, [{I,{f,label(Lbl, D)},Src,Dst}|Acc], D);
 replace([I|Is], Acc, D) ->
     replace(Is, [I|Acc], D);
 replace([], Acc, _) -> Acc.

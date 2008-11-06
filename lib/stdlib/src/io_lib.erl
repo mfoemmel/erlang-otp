@@ -396,7 +396,10 @@ collect_chars_list(Stack,N, [H|T]) ->
 %%  Returns:
 %%	{done,Result,RestChars}
 %%	{more,Continuation}
-
+%%
+%%  XXX Can be removed when compatibility with pre-R12B-5 nodes
+%%  is no longer required.
+%% 
 collect_line([], Chars) ->
     collect_line1(Chars, []);
 collect_line({SoFar}, More) ->
@@ -422,19 +425,19 @@ collect_line1([], Stack) ->
 
 collect_line(start, Data, _) when is_binary(Data) ->
 %    erlang:display({?MODULE,?LINE,[start,Data]}),
-    collect_line_bin([], Data, 0);
+    collect_line_bin(Data, Data, []);
 collect_line(start, Data, _) when is_list(Data) ->
 %    erlang:display({?MODULE,?LINE,[start,Data]}),
-    collect_line_list([], Data);
+    collect_line_list(Data, []);
 collect_line(start, eof, _) ->
 %    erlang:display({?MODULE,?LINE,[start,eof]}),
     {stop,eof,eof};
 collect_line(Stack, Data, _) when is_binary(Data) ->
 %    erlang:display({?MODULE,?LINE,[Stack,Data]}),
-    collect_line_bin(Stack, Data, 0);
+    collect_line_bin(Data, Data, Stack);
 collect_line(Stack, Data, _) when is_list(Data) ->
 %    erlang:display({?MODULE,?LINE,[Stack,Data]}),
-    collect_line_list(Stack, Data);
+    collect_line_list(Data, Stack);
 collect_line([B|_]=Stack, eof, _) when is_binary(B) ->
 %    erlang:display({?MODULE,?LINE,[Stack,eof]}),
     {stop,binrev(Stack),eof};
@@ -442,39 +445,38 @@ collect_line(Stack, eof, _) ->
 %    erlang:display({?MODULE,?LINE,[Stack,eof]}),
     {stop,lists:reverse(Stack, []),eof}.
 
-collect_line_bin([<<$\r>>|Stack], <<$\n,B2/binary>>, 0) ->
-    %% Special case for splitted CRLF
-    {stop,binrev(Stack, [$\n]),B2};
-collect_line_bin(Stack, B, N) when N < byte_size(B) ->
-    case B of
-	<<B1:N/binary,$\r,$\n,B2/binary>> ->
-	    %% Base case for CRLF
-	    {stop,binrev(Stack, [B1,$\n]),B2};
-	<<_:N/binary,$\n,_/binary>> when Stack =:= [] ->
-	    %% Optimization for NL, very common case
-	    {B1,B2} = split_binary(B, N+1),
-	    {stop,B1,B2};
-	<<B1:N/binary,$\n,B2/binary>> ->
-	    %% Base case for NL
-	    {stop,binrev(Stack, [B1,$\n]),B2};
-	<<B1:N/binary,$\r>> ->
-	    %% Special case for splitted CRLF
-	    [<<$\r>>,B1|Stack];
+collect_line_bin(<<$\n,T/binary>>, Data, Stack0) ->
+    N = byte_size(Data) - byte_size(T),
+    <<Line:N/binary,_/binary>> = Data,
+    case Stack0 of
+	[] ->
+	    {stop,Line,T};
+	[<<$\r>>|Stack] when N =:= 1 ->
+	    {stop,binrev(Stack, [$\n]),T};
 	_ ->
-	    %% Iteration within binary
-	    collect_line_bin(Stack, B, N+1)
+	    {stop,binrev(Stack0, [Line]),T}
     end;
-collect_line_bin(Stack, B, _N) ->
-    %% Iteration to text binay
-    [B|Stack].
+collect_line_bin(<<$\r,$\n,T/binary>>, Data, Stack) ->
+    N = byte_size(Data) - byte_size(T) - 2,
+    <<Line:N/binary,_/binary>> = Data,
+    {stop,binrev(Stack, [Line,$\n]),T};
+collect_line_bin(<<$\r>>, Data0, Stack) ->
+    N = byte_size(Data0) - 1,
+    <<Data:N/binary,_/binary>> = Data0,
+    [<<$\r>>,Data|Stack];
+collect_line_bin(<<_,T/binary>>, Data, Stack) ->
+    collect_line_bin(T, Data, Stack);
+collect_line_bin(<<>>, Data, Stack) ->
+    %% Need more data here.
+    [Data|Stack].
 
-collect_line_list([$\r|Stack], [$\n|T]) ->
+collect_line_list([$\n|T], [$\r|Stack]) ->
     {stop,lists:reverse(Stack, [$\n]),T};
-collect_line_list(Stack, [$\n|T]) ->
+collect_line_list([$\n|T], Stack) ->
     {stop,lists:reverse(Stack, [$\n]),T};
-collect_line_list(Stack, [H|T]) ->
-    collect_line_list([H|Stack], T);
-collect_line_list(Stack, []) ->
+collect_line_list([H|T], Stack) ->
+    collect_line_list(T, [H|Stack]);
+collect_line_list([], Stack) ->
     Stack.
 
 %% Translator function to emulate a new (R9C and later) 

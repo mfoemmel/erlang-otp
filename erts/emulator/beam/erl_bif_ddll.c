@@ -31,6 +31,8 @@
 #  include "config.h"
 #endif
 
+#define ERL_SYS_DRV
+
 #include "sys.h"
 #include "erl_vm.h"
 #include "global.h"
@@ -64,7 +66,7 @@ typedef struct {
  * Forward
  */
 static char *pick_list_or_atom(Eterm name_term);
-static DE_List *lookup_driver(char *name);
+static erts_driver_t *lookup_driver(char *name);
 static Eterm mkatom(char *str);
 static void add_proc_loaded(DE_Handle *dh, Process *proc); 
 static void add_proc_loaded_deref(DE_Handle *dh, Process *proc);
@@ -145,7 +147,7 @@ BIF_RETTYPE erl_ddll_try_load_3(Process *p, Eterm path_term,
     int path_len;
     char *name = NULL;
     DE_Handle *dh;
-    DE_List *de;
+    erts_driver_t *drv;
     int res;
     Eterm soft_error_term = NIL;
     Eterm ok_term = NIL;
@@ -237,13 +239,13 @@ BIF_RETTYPE erl_ddll_try_load_3(Process *p, Eterm path_term,
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
     lock_drv_list();
 #endif
-    if ((de = lookup_driver(name)) != NULL) {
-	if (de->de_hndl == NULL) {
+    if ((drv = lookup_driver(name)) != NULL) {
+	if (drv->handle == NULL) {
 	    /* static_driver */
 	    soft_error_term = am_linked_in_driver;
 	    goto soft_error;
 	} else {
-	    dh = de->de_hndl;
+	    dh = drv->handle;
 	    if (dh->status == ERL_DE_OK) {
 		int is_last = is_last_user(dh,p);
 		if (reload == 1 && !is_last) {
@@ -303,7 +305,7 @@ BIF_RETTYPE erl_ddll_try_load_3(Process *p, Eterm path_term,
 		    goto soft_error;
 		}
 		dh->status = ERL_DE_OK;
-		notify_all(dh, de->drv->driver_name, 
+		notify_all(dh, drv->name, 
 			   ERL_DE_PROC_AWAIT_UNLOAD, am_UP, 
 			   am_unload_cancelled);
 		add_proc_loaded(dh,p);
@@ -484,7 +486,7 @@ Eterm erl_ddll_try_unload_2(Process *p, Eterm name_term, Eterm options)
     char *name = NULL;
     Eterm ok_term = NIL;
     Eterm soft_error_term = NIL;
-    DE_List *de;
+    erts_driver_t *drv;
     DE_Handle *dh;
     DE_ProcEntry *pe;
     Eterm *hp;
@@ -530,19 +532,19 @@ Eterm erl_ddll_try_unload_2(Process *p, Eterm name_term, Eterm options)
     lock_drv_list();
 #endif
 
-    if ((de = lookup_driver(name)) == NULL) {
+    if ((drv = lookup_driver(name)) == NULL) {
 	soft_error_term = am_not_loaded;
 	goto soft_error;
     }
 
-    if (de->de_hndl == NULL) {
+    if (drv->handle == NULL) {
 	soft_error_term = am_linked_in_driver;
 	goto soft_error;
-    } else if (de->de_hndl->status == ERL_DE_PERMANENT) {
+    } else if (drv->handle->status == ERL_DE_PERMANENT) {
 	soft_error_term = am_permanent;
 	goto soft_error;
     }	
-    dh = de->de_hndl;
+    dh = drv->handle;
     if (dh->flags & ERL_DE_FL_KILL_PORTS) {
 	kill_ports = 1;
     }
@@ -565,7 +567,7 @@ Eterm erl_ddll_try_unload_2(Process *p, Eterm name_term, Eterm options)
     }
     if (dh->status == ERL_DE_RELOAD ||
 	dh->status == ERL_DE_FORCE_RELOAD) {
-	notify_all(dh, de->drv->driver_name, 
+	notify_all(dh, drv->name, 
 		   ERL_DE_PROC_AWAIT_LOAD, am_DOWN, am_load_cancelled);
 	erts_free(ERTS_ALC_T_DDLL_HANDLE,dh->reload_full_path);
 	erts_free(ERTS_ALC_T_DDLL_HANDLE,dh->reload_driver_name);
@@ -697,17 +699,17 @@ Eterm erl_ddll_loaded_drivers_0(Process *p)
     Eterm *hp;
     int need = 3;
     Eterm res = NIL;
-    DE_List *de;
+    erts_driver_t *drv;
 #if DDLL_SMP
     lock_drv_list();
 #endif
-    for (de = driver_list; de != NULL; de = de->next) {
-	need += sys_strlen(de->drv->driver_name)*2+2;
+    for (drv = driver_list; drv; drv = drv->next) {
+	need += sys_strlen(drv->name)*2+2;
     }
     hp = HAlloc(p,need);
-    for (de = driver_list; de != NULL; de = de->next) {
+    for (drv = driver_list; drv; drv = drv->next) {
 	Eterm l;
-	l = buf_to_intlist(&hp, de->drv->driver_name, sys_strlen(de->drv->driver_name), NIL);
+	l = buf_to_intlist(&hp, drv->name, sys_strlen(drv->name), NIL);
 	res = CONS(hp,l,res);
 	hp += 2;
     }
@@ -728,7 +730,7 @@ Eterm erl_ddll_info_2(Process *p, Eterm name_term, Eterm item)
 {
     char *name = NULL;
     Eterm res = NIL;
-    DE_List *de;
+    erts_driver_t *drv;
     ProcEntryInfo *pei = NULL;
     int num_pei;
     Eterm *hp;
@@ -750,7 +752,7 @@ Eterm erl_ddll_info_2(Process *p, Eterm name_term, Eterm item)
     lock_drv_list();
     have_lock = 1;
 #endif
-    if ((de = lookup_driver(name)) == NULL) {
+    if ((drv = lookup_driver(name)) == NULL) {
 	goto error;
     }
     
@@ -759,10 +761,10 @@ Eterm erl_ddll_info_2(Process *p, Eterm name_term, Eterm item)
 	filter = ERL_DE_PROC_LOADED;
 	break;
     case am_driver_options:
-	if (de->de_hndl == NULL) {
+	if (drv->handle == NULL) {
 	    res = am_linked_in_driver;
 	} else {
-	    Uint start_flags = de->de_hndl->flags & ERL_FL_CONSISTENT_MASK;
+	    Uint start_flags = drv->handle->flags & ERL_FL_CONSISTENT_MASK;
 	    /* Cheating, only one flag for now... */
 	    if (start_flags & ERL_DE_FL_KILL_PORTS) {
 		Eterm *myhp;
@@ -774,23 +776,23 @@ Eterm erl_ddll_info_2(Process *p, Eterm name_term, Eterm item)
 	}
 	goto done;
     case am_port_count:
-	if (de->de_hndl == NULL) {
+	if (drv->handle == NULL) {
 	    res = am_linked_in_driver;
-	} else if (de->de_hndl->status == ERL_DE_PERMANENT) {
+	} else if (drv->handle->status == ERL_DE_PERMANENT) {
 	    res = am_permanent;
 	} else {
-	    res = make_small(de->de_hndl->port_count);
+	    res = make_small(drv->handle->port_count);
 	}
 	goto done;
     case am_linked_in_driver:
-	if (de->de_hndl == NULL){
+	if (drv->handle == NULL){
 	    res = am_true;
 	} else {
 	    res = am_false;
 	}
 	goto done;
     case am_permanent:
-	if (de->de_hndl != NULL && de->de_hndl->status == ERL_DE_PERMANENT) {
+	if (drv->handle != NULL && drv->handle->status == ERL_DE_PERMANENT) {
 	    res = am_true;
 	} else {
 	    res = am_false;
@@ -806,14 +808,14 @@ Eterm erl_ddll_info_2(Process *p, Eterm name_term, Eterm item)
 	goto error;
     }
 
-    if (de->de_hndl == NULL) {
+    if (drv->handle == NULL) {
 	res = am_linked_in_driver;
 	goto done;
-    } else if (de->de_hndl->status == ERL_DE_PERMANENT) {
+    } else if (drv->handle->status == ERL_DE_PERMANENT) {
 	res = am_permanent;
 	goto done;
     }
-    num_pei = build_proc_info(de->de_hndl, &pei, filter);
+    num_pei = build_proc_info(drv->handle, &pei, filter);
     if (!num_pei) {
 	goto done;
     }
@@ -963,13 +965,13 @@ Eterm erts_ddll_monitor_driver(Process *p,
 
 void erts_ddll_remove_monitor(Process *p, Eterm ref, ErtsProcLocks plocks)
 { 
-    DE_List *de;
+    erts_driver_t *drv;
     erts_smp_proc_unlock(p, plocks);
     lock_drv_list();
-    de = driver_list;
-    while (de != NULL) {
-	if (de->de_hndl != NULL && de->de_hndl->status != ERL_DE_PERMANENT) {
-	    DE_ProcEntry **pe = &(de->de_hndl->procs);
+    drv = driver_list;
+    while (drv != NULL) {
+	if (drv->handle != NULL && drv->handle->status != ERL_DE_PERMANENT) {
+	    DE_ProcEntry **pe = &(drv->handle->procs);
 	    while ((*pe) != NULL) {
 		if ((*pe)->proc == p && 
 		    ((*pe)->awaiting_status == ERL_DE_PROC_AWAIT_LOAD ||
@@ -985,7 +987,7 @@ void erts_ddll_remove_monitor(Process *p, Eterm ref, ErtsProcLocks plocks)
 		pe = &((*pe)->next);
 	    }
 	}
-	de = de->next;
+	drv = drv->next;
     }
  done:
     unlock_drv_list();
@@ -997,14 +999,14 @@ void erts_ddll_remove_monitor(Process *p, Eterm ref, ErtsProcLocks plocks)
  */
 void erts_ddll_proc_dead(Process *p, ErtsProcLocks plocks) 
 {
-    DE_List *de;
+    erts_driver_t *drv;
     erts_smp_proc_unlock(p, plocks);
     lock_drv_list();
-    de = driver_list;
-    while (de != NULL) {
-	if (de->de_hndl != NULL && de->de_hndl->status != ERL_DE_PERMANENT) {
-	    DE_ProcEntry **pe = &(de->de_hndl->procs);
-	    int kill_ports = (de->de_hndl->flags & ERL_DE_FL_KILL_PORTS);
+    drv = driver_list;
+    while (drv != NULL) {
+	if (drv->handle != NULL && drv->handle->status != ERL_DE_PERMANENT) {
+	    DE_ProcEntry **pe = &(drv->handle->procs);
+	    int kill_ports = (drv->handle->flags & ERL_DE_FL_KILL_PORTS);
 	    int left = 0;
 	    while ((*pe) != NULL) {
 		if ((*pe)->proc == p) {
@@ -1012,7 +1014,7 @@ void erts_ddll_proc_dead(Process *p, ErtsProcLocks plocks)
 		    *pe = r->next;
 		    if (!(r->flags & ERL_DE_FL_DEREFERENCED) && 
 			r->awaiting_status == ERL_DE_PROC_LOADED) {
-			erts_ddll_dereference_driver(de->de_hndl);
+			erts_ddll_dereference_driver(drv->handle);
 		    }
 		    erts_free(ERTS_ALC_T_DDLL_PROCESS, (void *) r);
 		} else {
@@ -1023,10 +1025,10 @@ void erts_ddll_proc_dead(Process *p, ErtsProcLocks plocks)
 		}
 	    }
 	    if (!left) {
-		DE_Handle *dh = de->de_hndl;
+		DE_Handle *dh = drv->handle;
 		if (dh->status == ERL_DE_RELOAD ||
 		    dh->status == ERL_DE_FORCE_RELOAD) {
-		    notify_all(dh, de->drv->driver_name, 
+		    notify_all(dh, drv->name, 
 			       ERL_DE_PROC_AWAIT_LOAD, am_DOWN, am_load_cancelled);
 		    erts_free(ERTS_ALC_T_DDLL_HANDLE,dh->reload_full_path);
 		    erts_free(ERTS_ALC_T_DDLL_HANDLE,dh->reload_driver_name);
@@ -1035,10 +1037,10 @@ void erts_ddll_proc_dead(Process *p, ErtsProcLocks plocks)
 		} 
 		dh->status = ERL_DE_UNLOAD;
 	    }
-	    if (!left && de->de_hndl->port_count > 0) {
+	    if (!left && drv->handle->port_count > 0) {
 		if (kill_ports) {
 		    int j;
-		    DE_Handle *dh = de->de_hndl;
+		    DE_Handle *dh = drv->handle;
 		    erts_ddll_reference_driver(dh);
 		    dh->status = ERL_DE_FORCE_UNLOAD;
 #if DDLL_SMP
@@ -1074,16 +1076,16 @@ void erts_ddll_proc_dead(Process *p, ErtsProcLocks plocks)
 		    erts_smp_port_tab_unlock();
 		    lock_drv_list(); /* Needed for future list operations */
 #endif
-		    de = de->next; /* before allowing destruction */
+		    drv = drv->next; /* before allowing destruction */
 		    erts_ddll_dereference_driver(dh);
 		} else {
-		    de = de->next;
+		    drv = drv->next;
 		}
 	    } else {
-		de = de->next;
+		drv = drv->next;
 	    }
 	} else {
-	    de = de->next;
+	    drv = drv->next;
 	}
     }
     unlock_drv_list();
@@ -1298,24 +1300,24 @@ static Eterm notify_when_loaded(Process *p, Eterm name_term, char *name, ErtsPro
     Eterm r = NIL;
     Eterm immediate_tag = NIL;
     Eterm immediate_type = NIL;
-    DE_List *de;
+    erts_driver_t *drv;
 
     ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN & plocks);
 #if DDLL_SMP 
     lock_drv_list();
 #endif
-    if ((de = lookup_driver(name)) == NULL) {
+    if ((drv = lookup_driver(name)) == NULL) {
 	immediate_tag = am_unloaded;
 	immediate_type = am_DOWN;
 	goto immediate;
     }
-    if (de->de_hndl == NULL || de->de_hndl->status == ERL_DE_PERMANENT) {
+    if (drv->handle == NULL || drv->handle->status == ERL_DE_PERMANENT) {
 	immediate_tag = am_permanent;
 	immediate_type = am_UP;
 	goto immediate;
     }	
 
-    switch (de->de_hndl->status) {
+    switch (drv->handle->status) {
     case ERL_DE_OK:
 	immediate_tag = am_loaded;
 	immediate_type = am_UP;
@@ -1329,10 +1331,10 @@ static Eterm notify_when_loaded(Process *p, Eterm name_term, char *name, ErtsPro
     case ERL_DE_FORCE_RELOAD:
 	break;
     default:
-	erl_exit(1,"Internal error, unknown state %u in dynamic driver.", de->de_hndl->status);
+	erl_exit(1,"Internal error, unknown state %u in dynamic driver.", drv->handle->status);
     }
     p->flags |= F_USING_DDLL;
-    r = add_monitor(p, de->de_hndl, ERL_DE_PROC_AWAIT_LOAD);
+    r = add_monitor(p, drv->handle, ERL_DE_PROC_AWAIT_LOAD);
 #if DDLL_SMP
     unlock_drv_list();
 #endif
@@ -1355,25 +1357,25 @@ static Eterm notify_when_unloaded(Process *p, Eterm name_term, char *name, ErtsP
     Eterm r = NIL;
     Eterm immediate_tag = NIL;
     Eterm immediate_type = NIL;
-    DE_List *de;
+    erts_driver_t *drv;
 
     ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN & plocks);
 #if DDLL_SMP 
     lock_drv_list();
 #endif
-    if ((de = lookup_driver(name)) == NULL) {
+    if ((drv = lookup_driver(name)) == NULL) {
 	immediate_tag = am_unloaded;
 	immediate_type = am_DOWN;
 	goto immediate;
     }
-    if (de->de_hndl == NULL || de->de_hndl->status == ERL_DE_PERMANENT) {
+    if (drv->handle == NULL || drv->handle->status == ERL_DE_PERMANENT) {
 	immediate_tag = am_permanent;
 	immediate_type = am_UP;
 	goto immediate;
     }	
 
     p->flags |= F_USING_DDLL;
-    r = add_monitor(p, de->de_hndl, flag);
+    r = add_monitor(p, drv->handle, flag);
 #if DDLL_SMP
     unlock_drv_list();
 #endif
@@ -1608,9 +1610,8 @@ static int do_load_driver_entry(DE_Handle *dh, char *path, char *name)
     sys_strcpy(dh->full_path, path);
     dh->flags = 0;
     dh->status = ERL_DE_OK;
-    dp->handle = dh;
 
-    if (erts_add_driver_entry(dp,1) != 0 /* io.c */) { 
+    if (erts_add_driver_entry(dp, dh, 1) != 0 /* io.c */) { 
 	/*
 	 * The init in the driver struct did not return 0 
 	 */
@@ -1625,13 +1626,12 @@ static int do_load_driver_entry(DE_Handle *dh, char *path, char *name)
 
 static int do_unload_driver_entry(DE_Handle *dh, Eterm *save_name)
 {
-    DE_List *p = driver_list;
-    DE_List *q;
+    erts_driver_t *q, *p = driver_list;
 
     assert_drv_list_locked();
 
     while (p != NULL) {
-	if (p->de_hndl == dh) {
+	if (p->handle == dh) {
 		
 	    q = p;
 	    if (p->prev == NULL) {
@@ -1644,20 +1644,16 @@ static int do_unload_driver_entry(DE_Handle *dh, Eterm *save_name)
 	    }
 
 	    if (save_name != NULL) {
-		*save_name = mkatom(q->drv->driver_name);
+		*save_name = mkatom(q->name);
 	    } 
 	    /* XXX:PaN Future locking problems? Don't dare to let go of the diver_list lock here!*/
-	    if (q->drv->finish) {
-		(*(q->drv->finish))();
+	    if (q->finish) {
+		erts_block_fpe();
+		(*(q->finish))();
+		erts_unblock_fpe();
 	    }
 	    erts_sys_ddll_close(dh->handle);
-#if DDLL_SMP
-	    if (q->driver_lock) {
-		erts_smp_mtx_destroy(q->driver_lock);
-		erts_free(ERTS_ALC_T_DRIVER_LOCK, q->driver_lock);
-	    }
-#endif
-	    erts_free(ERTS_ALC_T_DRV_ENTRY_LIST, (void *) q);
+	    erts_destroy_driver(q);
 	    return 1;
 	}
 	p = p->next;
@@ -1959,12 +1955,11 @@ static int build_proc_info(DE_Handle *dh, ProcEntryInfo **out_pei, Uint filter)
 	    
     
 
-static DE_List *lookup_driver(char *name)
+static erts_driver_t *lookup_driver(char *name)
 {
-    DE_List *de;
+    erts_driver_t *drv;
     assert_drv_list_locked();
-    for (de = driver_list; de != NULL && strcmp(de->drv->driver_name,name); de = de->next)
+    for (drv = driver_list; drv != NULL && strcmp(drv->name, name); drv = drv->next)
 	;
-    return de;
+    return drv;
 }
-    

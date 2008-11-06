@@ -31,6 +31,36 @@
   </header>
   <p>This document describes the changes made to the Erl_interface application.</p>
 
+<section><title>Erl_Interface 3.5.9</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    A type-casting bug in ei_skip_term and ei_printterm on
+	    64bit platforms rendering undefined results is now
+	    corrected.</p>
+          <p>
+	    Own Id: OTP-7577</p>
+        </item>
+        <item>
+          <p>
+	    A bug in the hostent copying code of erl_interface on
+	    MacOS X/Darwin is now corrected.</p>
+          <p>
+	    Own Id: OTP-7593</p>
+        </item>
+        <item>
+	    <p>A problem with building <c>erl_interface</c> on
+	    FreeBSD has been fixed (Thanks to Akira Kitada).</p>
+          <p>
+	    Own Id: OTP-7611</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Erl_Interface 3.5.8</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

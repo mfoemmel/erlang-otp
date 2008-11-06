@@ -8,9 +8,9 @@
 %%  Notes    : 
 %%  History  :	* 2002-03-14 Erik Johansson (happi@it.uu.se): Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2008/04/20 13:01:14 $
-%%              $Revision: 1.5 $
+%%              $Author: kostis $
+%%              $Date: 2008/09/14 11:36:25 $
+%%              $Revision: 1.6 $
 %% ====================================================================
 %% @doc
 %%    A tool to enable using the HiPE compiler as an automatic JIT
@@ -29,7 +29,7 @@
 
 %%---------------------------------------------------------------------
 
--spec(start/0 :: () -> pid()).
+-spec start() -> pid().
 %% @doc
 %%    Starts an Erlang process which calls the HiPE compiler every
 %%    now and then (when it sees it fit to do so).
@@ -48,7 +48,7 @@ loop(State) ->
   end.
 
 sleep(State) ->
-  receive 
+  receive
     quit -> ok
   after State#state.sleep ->
     loop(State#state{mode=start})
@@ -60,7 +60,7 @@ start(State) ->
   loop(State#state{mode=wait}).
 
 wait(State) ->
-  receive 
+  receive
     quit -> ok
   after State#state.time ->
     R = [M || {M,C} <- (catch hipe_profile:mods_res()),

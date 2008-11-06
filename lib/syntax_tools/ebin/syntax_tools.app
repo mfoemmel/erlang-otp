@@ -2,7 +2,7 @@
 
 {application, syntax_tools,
  [{description, "Syntax tools"},
-  {vsn, "1.5.5"},
+  {vsn, "1.5.6"},
   {modules, [epp_dodger,
 	     erl_comment_scan,
 	     erl_prettypr,

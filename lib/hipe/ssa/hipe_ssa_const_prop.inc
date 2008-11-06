@@ -17,7 +17,7 @@
 %% Returns   : A new cfg.
 %%-----------------------------------------------------------------------------
 
--spec(propagate/1 :: (#cfg{}) -> #cfg{}).
+-spec propagate(#cfg{}) -> #cfg{}.
 
 propagate(CFG) ->
   Environment    = create_env(CFG),

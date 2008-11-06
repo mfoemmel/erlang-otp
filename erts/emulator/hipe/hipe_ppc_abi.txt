@@ -19,17 +19,10 @@ scratch registers and for function call parameters and results.
 
 The runtime system uses temporaries in specific contexts:
 r28 (TEMP_LR) is used to preserve LR around BIF calls.
-r27 (TEMP_ARG0) is used to preserve ARG0 in BIFs that may
-fail with RESCHEDULE, the return value in nbif_stack_trap_ra,
+r27 (TEMP_ARG0) is used to preserve the return value in nbif_stack_trap_ra,
 and LR in hipe_ppc_inc_stack (the caller saved its LR in TEMP_LR).
-r26 (TEMP_ARG1) is used to preserve ARG1 in BIFs that may
-fail with RESCHEDULE.
-r25 (TEMP_ARG2) is used to preserve ARG2 in BIFs that may
-fail with RESCHEDULE.
 r12 is used to pass the callee address in native-to-BEAM traps.
 r11 is used to construct callee addresses in calls via trampolines.
-r5 (ARG1) is used to pass the NBIF address when a BIF that may
-fail with RESCHEDULE throws an exception.
 r4 (ARG0) is used for MBUF-after-BIF checks, for storing the
 arity of a BIF that throws an exception or does GC due to MBUF,
 and for checking P->flags for pending timeout.

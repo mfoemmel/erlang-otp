@@ -31,7 +31,7 @@
 %%	affect the state, nor depend on the state, although its
 %%	evaluation is not guaranteed to complete normally for all input.
 
--spec(is_pure/3 :: (atom(), atom(), byte()) -> bool()).
+-spec is_pure(atom(), atom(), byte()) -> bool().
 
 is_pure(erlang, '*', 2) -> true;
 is_pure(erlang, '+', 1) -> true;    % (even for non-numbers)
@@ -65,6 +65,8 @@ is_pure(erlang, abs, 1) -> true;
 is_pure(erlang, atom_to_list, 1) -> true;
 is_pure(erlang, binary_to_list, 1) -> true;
 is_pure(erlang, binary_to_list, 3) -> true;
+is_pure(erlang, bit_size, 1) -> true;
+is_pure(erlang, byte_size, 1) -> true;
 is_pure(erlang, concat_binary, 1) -> true;
 is_pure(erlang, element, 2) -> true;
 is_pure(erlang, float, 1) -> true;
@@ -104,6 +106,7 @@ is_pure(erlang, split_binary, 2) -> true;
 is_pure(erlang, term_to_binary, 1) -> true;
 is_pure(erlang, tl, 1) -> true;
 is_pure(erlang, trunc, 1) -> true;
+is_pure(erlang, tuple_size, 1) -> true;
 is_pure(erlang, tuple_to_list, 1) -> true;
 is_pure(lists, append, 2) -> true;
 is_pure(lists, subtract, 2) -> true;
@@ -144,7 +147,7 @@ is_pure(_, _, _) -> false.
 %%      Note: is_function/2 and is_record/3 are NOT safe: is_function(X, foo)
 %%      and is_record(X, foo, bar) will fail.
 
--spec(is_safe/3 :: (atom(), atom(), byte()) -> bool()).
+-spec is_safe(atom(), atom(), byte()) -> bool().
 
 is_safe(erlang, '/=', 2) -> true;
 is_safe(erlang, '<', 2) -> true;
@@ -185,6 +188,7 @@ is_safe(erlang, registered, 0) -> true;
 is_safe(erlang, self, 0) -> true;
 is_safe(erlang, term_to_binary, 1) -> true;
 is_safe(erlang, time, 0) -> true;
+is_safe(error_logger, warning_map, 0) -> true;
 is_safe(_, _, _) -> false.
 
 
@@ -198,7 +202,7 @@ is_safe(_, _, _) -> false.
 %%	normally, i.e., if it always causes an exception regardless of
 %%	its arguments.
 
--spec(is_exit_bif/3 :: (atom(), atom(), byte()) -> bool()).
+-spec is_exit_bif(atom(), atom(), byte()) -> bool().
 
 is_exit_bif(erlang, exit, 1) -> true;
 is_exit_bif(erlang, throw, 1) -> true;

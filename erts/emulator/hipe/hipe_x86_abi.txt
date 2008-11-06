@@ -66,3 +66,38 @@ Standard Unix x86 Calling Conventions
 %ebp is optional frame pointer or local variable
 actual parameters are pushed right-to-left
 caller deallocates parameters after return (addl $N,%esp)
+
+Windows 32-bit C Calling Conventions
+====================================
+See "Description of the calling conventions that the 32-bit
+compiler supports" in msdn.
+
+[the sets of caller-save and callee-save registers are not yet known]
+
+Windows supports 3 calling conventions on x86 that differ in
+whether caller or callee pops off stacked parameters,
+whether any parameters are passed in registers, and
+how function names are mangled.
+
+The _cdecl convention (default)
+-------------------------------
+No parameters are passed in registers.
+Parameters are pushed right-to-left.
+Caller deallocates parameters after return (addl $N, %esp).
+A function name is prefixed by a "_".
+
+The _stdcall convention
+-----------------------
+No parameters are passed in registers.
+Parameters are pushed right-to-left.
+Callee deallocates parameters during return (ret $N).
+A function name is prefixed by a "_" and suffixed by "@" and the
+number of bytes of stack space the parameters use in decimal.
+
+The _fastcall convention
+------------------------
+The first two parameters are passed in %ecx and %edx.
+Remaining parameters are pushed right-to-left.
+Callee deallocates stacked parameters during return (ret $N).
+A function name is prefixed by a "@" and suffixed by "@" and the
+number of bytes of stack space the parameters use in decimal.

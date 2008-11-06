@@ -331,6 +331,9 @@
 /* Define to 1 if you have the <netinet/sctp.h> header file */
 #undef HAVE_SCTP_H
 
+/* Define to 1 if you have the `setsid' function. */
+#undef HAVE_SETSID
+
 /* Define if we have socklen_t */
 #undef HAVE_SOCKLEN_T
 

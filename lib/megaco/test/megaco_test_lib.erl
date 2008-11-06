@@ -74,14 +74,14 @@ tickets(Mod, Func, Config) ->
 	    {R, _, _} = Res,
 	    io:format(" ~p~n", [R]),
 	    Res;
-% 	    io:format("Eval:   ~p:~p~n", [Mod, Func]),
-% 	    eval(Mod, Func, Config);
 	
-	Cases when list(Cases) ->
+	Cases when is_list(Cases) ->
 	    io:format("Expand: ~p:~p ... ~n"
 		      "        ~p~n", [Mod, Func, Cases]),
-	    Map = fun({M,_}) when atom(M) -> tickets(M, tickets, Config);
-		     (F)     when atom(F) -> tickets(Mod, F, Config);
+	    Map = fun({M,_}) when is_atom(M) -> 
+			  tickets(M, tickets, Config);
+		     (F)     when is_atom(F) -> 
+			  tickets(Mod, F, Config);
 		     (Case) -> Case
 		  end,
 	    lists:map(Map, Cases);
@@ -90,8 +90,10 @@ tickets(Mod, Func, Config) ->
 	    case (catch Mod:Init(Config)) of
 		Conf when list(Conf) ->
 		    io:format("Expand: ~p:~p ...~n", [Mod, Func]),
-		    Map = fun({M,_}) when atom(M) -> tickets(M, tickets, Config);
-			     (F)     when atom(F) -> tickets(Mod, F, Config);
+		    Map = fun({M,_}) when atom(M) -> 
+				  tickets(M, tickets, Config);
+			     (F)     when atom(F) -> 
+				  tickets(Mod, F, Config);
 			     (Case) -> Case
 			  end,
 		    Res = lists:map(Map, Cases),

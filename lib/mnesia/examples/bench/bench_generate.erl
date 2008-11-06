@@ -91,7 +91,7 @@ monitor_loop(C, Parent, Alive, Deceased) ->
             Parent ! {monitor_done, self(), ok},
 	    unlink(Parent),
 	    exit(monitor_done);
-	{nodedown, Node} ->
+	{nodedown, _Node} ->
 	    monitor_loop(C, Parent, Alive, Deceased);
 	{nodeup, Node} ->
 	    NeedsBirth = [N || N <- Deceased, N == Node],
@@ -154,7 +154,7 @@ generator_loop(Monitor, C, SessionTab, Counters) ->
 	    Counters2 = reset_counters(C, Counters),
 	    ReplyTo ! {self(), Ref, Stats},
 	    generator_loop(Monitor, C, SessionTab, Counters2);
-        {ReplyTo, Ref, stop} ->
+        {_ReplyTo, _Ref, stop} ->
 	    exit(shutdown);
         {'EXIT', Pid, Reason} when Pid == Monitor ->
 	    exit(Reason);
@@ -207,7 +207,7 @@ call_worker([Node | _] = Nodes, Activity, Fun, Wlock, Mod) ->
 	    call_worker(Nodes, Activity, Fun, Wlock, Mod)
     end.
 
-retry_worker([], Activity, Fun, Wlock, Mod, Reason) ->
+retry_worker([], _Activity, _Fun, _Wlock, _Mod, Reason) ->
     {node(), Reason};
 retry_worker([BadNode | SpareNodes], Activity, Fun, Wlock, Mod, Reason) ->
     Nodes = SpareNodes -- [BadNode],
@@ -241,9 +241,9 @@ elapsed({Before1, Before2, Before3}, {After1, After2, After3}) ->
     After - Before.
 
 %% Lookup counters
-get_counters(C, {table, Tab}) ->
+get_counters(_C, {table, Tab}) ->
     ets:match_object(Tab, '_');
-get_counters(C, {NM, NC, NA, NB}) ->
+get_counters(_C, {NM, NC, NA, NB}) ->
     Trans = any,
     Node  = somewhere,
     [{{Trans, n_micros, Node}, NM},
@@ -252,7 +252,7 @@ get_counters(C, {NM, NC, NA, NB}) ->
      {{Trans, n_branches_executed, Node}, NB}].
 
 % Clear all counters    
-reset_counters(C, normal) ->
+reset_counters(_C, normal) ->
     {0, 0, 0, 0};
 reset_counters(C, {_, _, _, _}) ->
     reset_counters(C, normal);
@@ -301,7 +301,7 @@ post_eval(Monitor, C, Elapsed, {Node, Res}, Name, CommitSessions, SessionTab, {t
 	    incr(Tab, {Name, n_aborts, Node}, 1),
 	    generator_loop(Monitor, C, SessionTab, Counters)
     end;
-post_eval(Monitor, C, Elapsed, {Node, Res}, Name, CommitSessions, SessionTab, {NM, NC, NA, NB}) ->
+post_eval(Monitor, C, Elapsed, {_Node, Res}, _Name, CommitSessions, SessionTab, {NM, NC, NA, NB}) ->
     case Res of
 	{do_commit, BranchExecuted, _} ->
 	    case BranchExecuted of
@@ -350,7 +350,7 @@ gen_trans(C, SessionTab) ->
 	ping -> gen_ping(C, SessionTab)
     end.
         
-gen_t1(C, SessionTab) ->
+gen_t1(C, _SessionTab) ->
     SubscrId    = random:uniform(C#config.n_subscribers) - 1,
     SubscrKey   = bench_trans:number_to_key(SubscrId, C),
     Location    = 4711,
@@ -362,7 +362,7 @@ gen_t1(C, SessionTab) ->
      no_fun
     }.
 
-gen_t2(C, SessionTab) ->
+gen_t2(C, _SessionTab) ->
     SubscrId  = random:uniform(C#config.n_subscribers) - 1,
     SubscrKey = bench_trans:number_to_key(SubscrId, C),
     {t2,
@@ -372,7 +372,7 @@ gen_t2(C, SessionTab) ->
      no_fun
     }.
 
-gen_t3(C,  SessionTab) ->
+gen_t3(C, SessionTab) ->
     case ets:first(SessionTab) of
 	'$end_of_table' ->
 	    %% This generator does not have any session,
@@ -442,11 +442,11 @@ gen_t5(C, SessionTab) ->
 	    }
     end.
 
-gen_ping(C, SessionTab) ->
+gen_ping(C, _SessionTab) ->
     SubscrId   = random:uniform(C#config.n_subscribers) - 1,
     {ping,
      nearest_node(SubscrId, transaction, C),
-     fun(Wlock) -> {do_commit, true, []} end,
+     fun(_Wlock) -> {do_commit, true, []} end,
      no_fun
     }.    
 
@@ -498,7 +498,7 @@ display_statistics(Stats, C) ->
      lists:keysearch(n_aborts, 1, TotalStats ++ [{n_aborts, 0, 0, 0, 0}]),
     {value, {n_commits, NC, 0, 0, 0}} =
 	lists:keysearch(n_commits, 1, TotalStats ++ [{n_commits, 0, 0, 0, 0}]),
-    {value, {n_branches_executed, 0, 0, NB, 0}} =
+    {value, {n_branches_executed, 0, 0, _NB, 0}} =
 	lists:keysearch(n_branches_executed, 1, TotalStats ++ [{n_branches_executed, 0, 0, 0, 0}]),
     {value, {n_micros, 0, 0, 0, AccMicros}} =
 	lists:keysearch(n_micros, 1, TotalStats ++ [{n_micros, 0, 0, 0, 0}]),
@@ -559,16 +559,16 @@ display_statistics(Stats, C) ->
     end.
     
  
-display_calc_stats(Prefix, [{Tag, 0, 0, 0, 0} | Rest], NT, Micros) ->
+display_calc_stats(Prefix, [{_Tag, 0, 0, 0, 0} | Rest], NT, Micros) ->
     display_calc_stats(Prefix, Rest, NT, Micros);   
-display_calc_stats(Prefix, [{Tag, NC, NA, NB, NM} | Rest], NT, Micros) ->
+display_calc_stats(Prefix, [{Tag, NC, NA, _NB, NM} | Rest], NT, Micros) ->
     ?d("~s~s n=~s%\ttime=~s%~n",
        [Prefix, left(Tag), percent(NC + NA, NT), percent(NM, Micros)]),
     display_calc_stats(Prefix, Rest, NT, Micros);   
 display_calc_stats(_, [], _, _) ->
     ok.
 
-display_type_stats(Prefix, [{Tag, 0, 0, 0, 0} | Rest], NT, Micros) ->
+display_type_stats(Prefix, [{_Tag, 0, 0, 0, 0} | Rest], NT, Micros) ->
     display_type_stats(Prefix, Rest, NT, Micros);   
 display_type_stats(Prefix, [{Tag, NC, NA, NB, NM} | Rest], NT, Micros) ->
     ?d("~s~s n=~s%\ttime=~s%\tavg micros=~p~n",
@@ -594,10 +594,10 @@ display_type_stats(_, [], _, _) ->
 left(Term) ->
     string:left(lists:flatten(io_lib:format("~p", [Term])), 27, $.).
 
-percent(Part, 0)     -> "infinity";
+percent(_Part, 0)     -> "infinity";
 percent(Part, Total) -> io_lib:format("~8.4f", [(Part * 100) / Total]).
 
-calc_stats_per_tag([], Pos, Acc) ->
+calc_stats_per_tag([], _Pos, Acc) ->
     lists:sort(Acc);
 calc_stats_per_tag([Tuple | _] = FlatStats, Pos, Acc) when size(Tuple) == 5 ->
     Tag = element(Pos, Tuple),
@@ -619,7 +619,7 @@ do_calc_stats_per_tag([Tuple | Rest], Pos, {Tag, NC, NA, NB, NM}, Acc)
 do_calc_stats_per_tag(GenStats, Pos, CalcStats, Acc) ->
     calc_stats_per_tag(GenStats, Pos, [CalcStats | Acc]).
 
-display_trans_stats(Prefix, [{Tag, 0, 0, 0, 0} | Rest], NT, Micros, NG) ->
+display_trans_stats(Prefix, [{_Tag, 0, 0, 0, 0} | Rest], NT, Micros, NG) ->
     display_trans_stats(Prefix, Rest, NT, Micros, NG);   
 display_trans_stats(Prefix, [{Tag, NC, NA, NB, NM} | Rest], NT, Micros, NG) ->
     Common =

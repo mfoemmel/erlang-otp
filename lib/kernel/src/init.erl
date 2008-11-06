@@ -31,26 +31,34 @@
 %%                         (Optional - default efile)
 %%        -hosts [Node]  : List of hosts from which we can boot.
 %%                         (Mandatory if -loader inet or ose_inet)
-%%        -mode embedded : Load all modules at startup, no automatic
-%%                         loading
-%%        -mode interactive : Auto. load modules (default system behaviour).
+%%        -mode embedded : Load all modules at startup, no automatic loading
+%%        -mode interactive : Auto load modules (default system behaviour).
 %%        -path          : Override path in bootfile.
 %%        -pa Path+      : Add my own paths first.
 %%        -pz Path+      : Add my own paths last.
 %%        -run           : Start own processes.
 %%        -s             : Start own processes.
 %% 
-%%
-%% 
+%% Experimental flags:
+%%        -init_debug      : Activate debug printouts in init
+%%        -loader_debug    : Activate debug printouts in erl_prim_loader
+%%        -code_path_choice : strict | relaxed
 
 -module(init).
+
 -export([restart/0,reboot/0,stop/0,stop/1,
 	 get_status/0,boot/1,get_arguments/0,get_plain_arguments/0,
 	 get_argument/1,script_id/0]).
 
 % internal exports
 -export([fetch_loaded/0,ensure_loaded/1,make_permanent/2,
-	 notify_when_started/1,wait_until_started/0]).
+	 notify_when_started/1,wait_until_started/0, 
+	 objfile_extension/0, archive_extension/0,code_path_choice/0]).
+
+%% Internal function. Exported to avoid dialyzer warnings
+-export([join/2]).
+
+-include_lib("kernel/include/file.hrl").
 
 -record(state, {flags = [],
 		args = [],
@@ -61,6 +69,9 @@
 		script_id = [],
 		loaded = [],
 		subscribed = []}).
+
+debug(false, _) -> ok;
+debug(_, T)     -> erlang:display(T).
 
 get_arguments() ->
     request(get_arguments).
@@ -161,6 +172,16 @@ flags_to_atoms_again([{F0,L0}|Rest]) ->
 flags_to_atoms_again([{F0}|Rest]) ->
     F = b2a(F0),
     [{F}|flags_to_atoms_again(Rest)].
+
+code_path_choice() ->
+    case get_argument(code_path_choice) of
+	{ok,[["strict"]]} ->
+	    strict;
+	{ok,[["relaxed"]]} ->
+	    relaxed;
+	_Else ->
+	    strict
+    end.
 
 boot(Start,Flags,Args) ->
     BootPid = do_boot(Flags,Start),
@@ -274,7 +295,7 @@ boot_loop(BootPid, State) ->
     end.
 
 ensure_loaded(Module, Loaded) ->
-    File = concat([Module,extension()]),
+    File = concat([Module,objfile_extension()]),
     case catch load_mod(Module,File) of
 	{ok, FullName} ->
 	    {{module, Module}, [{Module, FullName}|Loaded]};
@@ -671,13 +692,15 @@ do_boot(Init,Flags,Start) ->
 			     bs2ss(Path),PathFls),
     BootFile = bootfile(Flags,Root),
     BootList = get_boot(BootFile,Root),
-    Embedded = b2a(get_flag('-mode',Flags,false)),
+    LoadMode = b2a(get_flag('-mode',Flags,false)),
     Deb = b2a(get_flag('-init_debug',Flags,false)),
     BootVars = get_flag_args('-boot_var',Flags),
     ParallelLoad = 
 	(Pgm =:= "efile") and (erlang:system_info(thread_pool_size) > 0),
+
+    PathChoice = code_path_choice(),
     eval_script(BootList,Init,PathFls,{Root,BootVars},Path,
-		{true,Embedded,ParallelLoad},Deb),
+		{true,LoadMode,ParallelLoad},Deb,PathChoice),
 
     %% To help identifying Purify windows that pop up,
     %% print the node name into the Purify log.
@@ -733,25 +756,25 @@ get_boot(BootFile) ->
 %% boot process hangs (we want to ensure syncronicity).
 %%
 
-eval_script([{progress,Info}|CfgL],Init,PathFs,Vars,P,Ph,Deb) ->
+eval_script([{progress,Info}|CfgL],Init,PathFs,Vars,P,Ph,Deb,PathChoice) ->
     debug(Deb,{progress,Info}),
     init ! {self(),progress,Info},
-    eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb);
-eval_script([{preLoaded,_}|CfgL],Init,PathFs,Vars,P,Ph,Deb) ->
-    eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb);
-eval_script([{path,Path}|CfgL],Init,{Pa,Pz},Vars,false,Ph,Deb) ->
-    RealPath = make_path(Pa, Pz, Path, Vars),
+    eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb,PathChoice);
+eval_script([{preLoaded,_}|CfgL],Init,PathFs,Vars,P,Ph,Deb,PathChoice) ->
+    eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb,PathChoice);
+eval_script([{path,Path}|CfgL],Init,{Pa,Pz},Vars,false,Ph,Deb,PathChoice) ->
+    RealPath0 = make_path(Pa, Pz, Path, Vars),
+    RealPath = patch_path(RealPath0, PathChoice),
     erl_prim_loader:set_path(RealPath),
-    eval_script(CfgL,Init,{Pa,Pz},Vars,false,Ph,Deb);
-eval_script([{path,_}|CfgL],Init,PathFs,Vars,P,Ph,Deb) ->
+    eval_script(CfgL,Init,{Pa,Pz},Vars,false,Ph,Deb,PathChoice);
+eval_script([{path,_}|CfgL],Init,PathFs,Vars,P,Ph,Deb,PathChoice) ->
     %% Ignore, use the command line -path flag.
-    eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb);
-eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,embedded,Par},Deb) ->
-
-    eval_script(CfgL,Init,PathFs,Vars,P,{true,embedded,Par},Deb);
-eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,E,Par},Deb) ->
-    eval_script(CfgL,Init,PathFs,Vars,P,{false,E,Par},Deb);
-eval_script([{primLoad,Mods}|CfgL],Init,PathFs,Vars,P,{true,E,Par},Deb)
+    eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb,PathChoice);
+eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,embedded,Par},Deb,PathChoice) ->
+    eval_script(CfgL,Init,PathFs,Vars,P,{true,embedded,Par},Deb,PathChoice);
+eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,E,Par},Deb,PathChoice) ->
+    eval_script(CfgL,Init,PathFs,Vars,P,{false,E,Par},Deb,PathChoice);
+eval_script([{primLoad,Mods}|CfgL],Init,PathFs,Vars,P,{true,E,Par},Deb,PathChoice)
   when is_list(Mods) ->
     if 
 	Par =:= true ->
@@ -759,35 +782,32 @@ eval_script([{primLoad,Mods}|CfgL],Init,PathFs,Vars,P,{true,E,Par},Deb)
 	true ->
 	    load_modules(Mods)
     end,
-    eval_script(CfgL,Init,PathFs,Vars,P,{true,E,Par},Deb);
-eval_script([{primLoad,_Mods}|CfgL],Init,PathFs,Vars,P,{false,E,Par},Deb) ->
+    eval_script(CfgL,Init,PathFs,Vars,P,{true,E,Par},Deb,PathChoice);
+eval_script([{primLoad,_Mods}|CfgL],Init,PathFs,Vars,P,{false,E,Par},Deb,PathChoice) ->
     %% Do not load now, code_server does that dynamically!
-    eval_script(CfgL,Init,PathFs,Vars,P,{false,E,Par},Deb);
+    eval_script(CfgL,Init,PathFs,Vars,P,{false,E,Par},Deb,PathChoice);
 eval_script([{kernelProcess,Server,{Mod,Fun,Args}}|CfgL],Init,
-	    PathFs,Vars,P,Ph,Deb) ->
+	    PathFs,Vars,P,Ph,Deb,PathChoice) ->
     debug(Deb,{start,Server}),
     start_in_kernel(Server,Mod,Fun,Args,Init),
-    eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb);
-eval_script([{apply,{Mod,Fun,Args}}|CfgL],Init,PathFs,Vars,P,Ph,Deb) ->
+    eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb,PathChoice);
+eval_script([{apply,{Mod,Fun,Args}}|CfgL],Init,PathFs,Vars,P,Ph,Deb,PathChoice) ->
     debug(Deb,{apply,{Mod,Fun,Args}}),
     apply(Mod,Fun,Args),
-    eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb);
-eval_script([],_,_,_,_,_,_) ->
+    eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb,PathChoice);
+eval_script([],_,_,_,_,_,_,_) ->
     ok;
-eval_script(What,_,_,_,_,_,_) ->
+eval_script(What,_,_,_,_,_,_,_) ->
     exit({'unexpected command in bootfile',What}).
 
-debug(false, _) -> ok;
-debug(_, T)     -> erlang:display(T).
-
 load_modules([Mod|Mods]) ->
-    File = concat([Mod,extension()]),
+    File = concat([Mod,objfile_extension()]),
     {ok,Full} = load_mod(Mod,File),
     init ! {self(),loaded,{Mod,Full}},  %% Tell init about loaded module
     load_modules(Mods);
 load_modules([]) ->
     ok.
-    
+
 %%% An optimization: erl_prim_loader gets the chance of loading many
 %%% files in parallel, using threads. This will reduce the seek times,
 %%% and loaded code can be processed while other threads are waiting
@@ -803,7 +823,7 @@ load_modules([]) ->
 %%% between directories).
 
 par_load_modules(Mods,Init) ->
-    Ext = extension(),
+    Ext = objfile_extension(),
     ModFiles = map(fun(Mod) -> {Mod,concat([Mod,Ext])} end, Mods),
     Self = self(),
     Fun = fun(Mod, BinCode, FullName) ->
@@ -863,6 +883,73 @@ get_var_value(Var,[]) ->
 get_var_val(Var,[Var,Value|_]) -> {ok, Value};
 get_var_val(Var,[_,_|Vars])    -> get_var_val(Var,Vars);
 get_var_val(_,_)               -> false.
+
+patch_path(Dirs, strict) ->
+    Dirs;
+patch_path(Dirs, relaxed) ->
+    ArchiveExt = archive_extension(),
+    [patch_dir(Dir, ArchiveExt) || Dir <- Dirs].
+
+patch_dir(Orig, ArchiveExt) ->
+    case funny_split(Orig, $/) of
+	["nibe", RevApp, RevArchive | RevTop] ->
+	    App = reverse(RevApp),
+	    case funny_splitwith(RevArchive, $.) of
+		{Ext, Base} when Ext =:= ArchiveExt, Base =:= App ->
+		    %% Orig archive
+		    Top = reverse([reverse(C) || C <- RevTop]),
+		    Dir = join(Top ++ [App, "ebin"], "/"),
+		    Archive = Orig;
+		_ ->
+		    %% Orig directory
+		    Top = reverse([reverse(C) || C <- [RevArchive | RevTop]]),
+		    Archive = join(Top ++ [App ++ ArchiveExt, App, "ebin"], "/"),
+		    Dir = Orig
+	    end,
+	    %% First try dir, second try archive and at last use orig if both fails
+	    case erl_prim_loader:read_file_info(Dir) of
+		{ok, #file_info{type = directory}} ->
+		    Dir;
+		_ ->
+		    case erl_prim_loader:read_file_info(Archive) of
+			{ok, #file_info{type = directory}} ->
+			    Archive;
+			_ ->
+			    Orig
+		    end
+	    end;
+	_ ->
+	    Orig
+    end.
+
+%% Returns all lists in reverse order
+funny_split(List, Sep) ->
+   funny_split(List, Sep, [], []).
+
+funny_split([Sep | Tail], Sep, Path, Paths) ->
+    funny_split(Tail, Sep, [], [Path | Paths]);
+funny_split([Head | Tail], Sep, Path, Paths) ->
+    funny_split(Tail, Sep, [Head | Path], Paths);
+funny_split([], _Sep, Path, Paths) ->
+    [Path | Paths].
+
+%% Returns {BeforeSep, AfterSep} where BeforeSep is in reverse order
+funny_splitwith(List, Sep) ->
+    funny_splitwith(List, Sep, [], List).
+
+funny_splitwith([Sep | Tail], Sep, Acc, _Orig) ->
+    {Acc, Tail};
+funny_splitwith([Head | Tail], Sep, Acc, Orig) ->
+    funny_splitwith(Tail, Sep, [Head | Acc], Orig);
+funny_splitwith([], _Sep, _Acc, Orig) ->
+    {[], Orig}.
+
+join([H1, H2| T], S) ->
+    H1 ++ S ++ join([H2| T], S);
+join([H], _) ->
+    H;
+join([], _) ->
+    [].
 
 %% Servers that are located in the init kernel are linked
 %% and supervised by init.
@@ -929,11 +1016,16 @@ start_it([_|_]=MFA) ->
 %% Fetch a module and load it into the system.
 %%
 load_mod(Mod, File) ->
-    case erl_prim_loader:get_file(File) of
-	{ok,BinCode,FullName} ->
-	    load_mod_code(Mod, BinCode, FullName);
-	_ ->
-	    exit({'cannot load',Mod,get_file})
+    case erlang:module_loaded(Mod) of
+	false ->
+	    case erl_prim_loader:get_file(File) of
+		{ok,BinCode,FullName} ->
+		    load_mod_code(Mod, BinCode, FullName);
+		_ ->
+		    exit({'cannot load',Mod,get_file})
+	    end;
+	_ -> % Already loaded.
+	    {ok,File}
     end.
 
 load_mod_code(Mod, BinCode, FullName) ->
@@ -996,7 +1088,7 @@ parse_boot_args(Args) ->
 parse_boot_args([B|Bs], Ss, Fs, As) ->
     case check(B) of
 	start_extra_arg ->
-	    {reverse(Ss),reverse(Fs),reverse(As, Bs)};
+	    {reverse(Ss),reverse(Fs),lists:reverse(As, Bs)}; % BIF
 	start_arg ->
 	    {S,Rest} = get_args(Bs, []),
 	    parse_boot_args(Rest, [{s, S}|Ss], Fs, As);
@@ -1165,22 +1257,29 @@ append([H|T]) ->
     H ++ append(T);
 append([]) -> [].
 
-reverse(X) ->
-    reverse(X, []).
-
-reverse([H|T], Y) ->
-    reverse(T, [H|Y]);
-reverse([], X) -> X.
+reverse([] = L) ->
+    L;
+reverse([_] = L) ->
+    L;
+reverse([A, B]) ->
+    [B, A];
+reverse([A, B | L]) ->
+    lists:reverse(L, [B, A]). % BIF
 			
 search(Key, [H|_T]) when is_tuple(H), element(1, H) =:= Key ->
     {value, H};
-search(Key, [_|T]) -> search(Key, T);
-search(_Key, []) -> false.
+search(Key, [_|T]) ->
+    search(Key, T);
+search(_Key, []) ->
+    false.
 
-extension() ->
+objfile_extension() ->
     ".beam".
 %%    case erlang:system_info(machine) of
 %%      "JAM" -> ".jam";
 %%      "VEE" -> ".vee";
 %%      "BEAM" -> ".beam"
 %%    end.
+
+archive_extension() ->
+    ".ez".

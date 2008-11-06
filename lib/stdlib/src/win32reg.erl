@@ -50,7 +50,15 @@
 -define(reg_binary, 3).
 -define(reg_dword, 4).
 
+%% Basic types internal to this file.
+-type open_mode()  :: 'read' | 'write'.
+-type reg_handle() :: {'win32reg',port()}.
+-type name()       :: string() | 'default'.
+-type value()      :: string() | integer() | binary().
+
 %%% Exported functions.
+
+-spec open([open_mode()]) -> {'ok', reg_handle()} | {'error', 'enotsup'}.
 
 open(Modes) ->
     case os:type() of
@@ -66,10 +74,14 @@ open(Modes) ->
 	    {error, enotsup}
     end.
 
+-spec close(reg_handle()) -> 'ok'.
+
 close({win32reg, Reg}) when is_port(Reg) ->
     unlink(Reg),
     exit(Reg, die),
     ok.
+
+-spec current_key(reg_handle()) -> {'ok', string()}.
 
 current_key({win32reg, Reg}) when is_port(Reg) ->
     Cmd = [?cmd_get_current],
@@ -81,8 +93,12 @@ current_key({win32reg, Reg}) when is_port(Reg) ->
 	     _  -> Root ++ [$\\|Name]
 	 end}.
 
+-spec change_key(reg_handle(), string()) -> 'ok' | {'error', atom()}.
+
 change_key({win32reg, Reg}, Key) when is_port(Reg) ->
     change_key(Reg, ?cmd_open_key, Key).
+
+-spec change_key_create(reg_handle(), string()) -> 'ok' | {'error', atom()}.
 
 change_key_create({win32reg, Reg}, Key) when is_port(Reg) ->
     change_key(Reg, ?cmd_create_key, Key).
@@ -96,16 +112,22 @@ change_key(Reg, Cmd, Key) ->
 	    {error, Reason}
     end.
 
+-spec sub_keys(reg_handle()) -> {'ok', [string()]} | {'error', atom()}.
+
 sub_keys({win32reg, Reg}) when is_port(Reg) ->
     Cmd = [?cmd_get_all_subkeys],
     Reg ! {self(), {command, Cmd}},
     collect_keys(Reg, []).
 
+-spec delete_key(reg_handle()) -> 'ok' | {'error', atom()}.
+
 delete_key({win32reg, Reg}) when is_port(Reg) ->
     Cmd = [?cmd_delete_key],
     Reg ! {self(), {command, Cmd}},
     get_result(Reg).
-    
+
+-spec set_value(reg_handle(), name(), value()) -> 'ok' | {'error', atom()}.
+
 set_value({win32reg, Reg}, Name0, Value) when is_port(Reg) ->
     Name =
 	case Name0 of
@@ -117,6 +139,8 @@ set_value({win32reg, Reg}, Name0, Value) when is_port(Reg) ->
     Reg ! {self(), {command, Cmd}},
     get_result(Reg).
 
+-spec value(reg_handle(), name()) -> {'ok', value()} | {'error', atom()}.
+
 value({win32reg, Reg}, Name) when is_port(Reg) ->
     Cmd = [?cmd_get_value, Name, 0],
     Reg ! {self(), {command, Cmd}},
@@ -127,10 +151,14 @@ value({win32reg, Reg}, Name) when is_port(Reg) ->
 	    {error, Reason}
     end.
     
+-spec values(reg_handle()) -> {'ok', [{name(), value()}]}.
+
 values({win32reg, Reg}) when is_port(Reg) ->
     Cmd = [?cmd_get_all_values],
     Reg ! {self(), {command, Cmd}},
     collect_values(Reg, []).
+
+-spec delete_value(reg_handle(), name()) -> 'ok' | {'error', atom()}.
 
 delete_value({win32reg, Reg}, Name0) when is_port(Reg) ->
     Name =
@@ -141,6 +169,8 @@ delete_value({win32reg, Reg}, Name0) when is_port(Reg) ->
     Cmd = [?cmd_delete_value, Name, 0],
     Reg ! {self(), {command, Cmd}},
     get_result(Reg).
+
+-spec expand(string()) -> string().
 
 expand(Value) ->
     expand(Value, [], []).
@@ -164,10 +194,15 @@ expand([C|Rest], Env, Result) ->
 expand([], [], Result) ->
     lists:reverse(Result).
 
+-spec format_error(atom()) -> string().
+
 format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
-					 
+
 %%% Implementation.
+
+-spec collect_values(port(), [{name(), value()}]) -> 
+        {'ok', [{name(), value()}]} | {'error', atom()}.
 
 collect_values(P, Result) ->
     case get_result(P) of
@@ -178,6 +213,8 @@ collect_values(P, Result) ->
 	{error, Reason} ->
 	    {error, Reason}
     end.
+
+-spec collect_keys(port(), string()) -> {'ok', string()} | {'error', atom()}.
 
 collect_keys(P, Result) ->
     case get_result(P) of

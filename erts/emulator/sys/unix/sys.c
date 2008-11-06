@@ -425,6 +425,19 @@ thr_create_cleanup(void *saved_sigmask)
 #endif /* #ifdef ERTS_THR_HAVE_SIG_FUNCS */
 #endif /* #ifdef USE_THREADS */
 
+#ifndef NO_FPE_SIGNALS
+static void
+thr_create_prepare_child(void *unused)
+{
+    /*
+     * We do not want fp exeptions in other threads than the
+     * scheduler threads. We enable fpe explicitly in the scheduler
+     * threads after this.
+     */
+    erts_thread_disable_fpe();
+}
+#endif
+
 void
 erts_sys_pre_init(void)
 {
@@ -436,6 +449,10 @@ erts_sys_pre_init(void)
     eid.alloc = ethr_internal_alloc;
     eid.realloc = ethr_internal_realloc;
     eid.free = ethr_internal_free;
+
+#ifndef NO_FPE_SIGNALS
+    eid.thread_create_child_func = thr_create_prepare_child;
+#endif
 #ifdef ERTS_THR_HAVE_SIG_FUNCS
     /* Before creation in parent */
     eid.thread_create_prepare_func = thr_create_prepare;
@@ -2376,7 +2393,7 @@ sys_init_io(void)
 
 	sys_memset((void*)&dopts, 0, sizeof(SysDriverOpts));
 	add_driver_entry(&async_driver_entry);
-	ret = erts_open_driver(&async_driver_entry, NIL, "async", &dopts, NULL);
+	ret = erts_open_driver(NULL, NIL, "async", &dopts, NULL);
 	DEBUGF(("open_driver = %d\n", ret));
 	if (ret < 0)
 	    erl_exit(1, "Failed to open async driver\n");
@@ -2755,7 +2772,6 @@ signal_dispatcher_thread_func(void *unused)
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_lc_set_thread_name("signal_dispatcher");
 #endif
-    erts_thread_init_fp_exception();
     while (1) {
 	char buf[32];
 	int res, i;
@@ -2854,6 +2870,7 @@ init_smp_sig_notify(void)
 void
 erts_sys_main_thread(void)
 {
+    erts_thread_disable_fpe();
     /* Become signal receiver thread... */
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_lc_set_thread_name("signal_receiver");

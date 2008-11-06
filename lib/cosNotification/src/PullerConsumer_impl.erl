@@ -1,6 +1,6 @@
 %%--------------------------------------------------------------------
 %%<copyright>
-%% <year>1999-2007</year>
+%% <year>1999-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -252,7 +252,7 @@ init([MyType, MyAdmin, MyAdminPid, InitQoS, LQS, MyChannel, Options, Operator]) 
 							     ?not_DEFAULT_SETTINGS)),
     GCTime = 'CosNotification_Common':get_option(gcTime, Options, 
 						 ?not_DEFAULT_SETTINGS),
-    GCLimit = 'CosNotification_Common':get_option(gcTime, Options, 
+    GCLimit = 'CosNotification_Common':get_option(gcLimit, Options, 
 						  ?not_DEFAULT_SETTINGS),
     TimeRef = 'CosNotification_Common':get_option(timeService, Options, 
 						  ?not_DEFAULT_SETTINGS),

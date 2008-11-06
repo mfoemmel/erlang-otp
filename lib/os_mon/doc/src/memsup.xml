@@ -5,7 +5,7 @@
   <header>
     <copyright>
       <year>1996</year>
-      <year>2007</year>
+      <year>2008</year>
       <holder>Ericsson AB, All Rights Reserved</holder>
     </copyright>
     <legalnotice>
@@ -214,6 +214,16 @@
 	On linux the memory available to the emulator is <c>cached_memory</c> and <c>buffered_memory</c> in addition to 
 	<c>free_memory</c>.</p>
 	</note>
+      </desc>
+    </func>
+    <func>
+      <name>get_os_wordsize() -> Wordsize</name>
+      <fsummary>Get the wordsize of running os.</fsummary>
+      <type>
+        <v>Wordsize = 32 | 64 | unsupported_os</v>
+      </type>
+      <desc>
+        <p>Returns the wordsize of the current running operating system. </p>
       </desc>
     </func>
     <func>

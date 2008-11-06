@@ -1125,7 +1125,7 @@ splitwith(Pred, List) ->
           <c>Combine(X, Y)</c>.</p>
         <p><c>zipwith(fun(X, Y) -> {X,Y} end, List1, List2)</c> is
           equivalent to <c>zip(List1, List2)</c>.</p>
-        <p>Examples:</p>
+        <p>Example:</p>
         <pre>
 > <input>lists:zipwith(fun(X, Y) -> X+Y end, [1,2,3], [4,5,6]).</input>
 [5,7,9]</pre>

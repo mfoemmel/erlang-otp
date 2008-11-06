@@ -32,6 +32,25 @@
   </header>
   <p>This document describes the changes made to the Crypto application.</p>
 
+<section><title>Crypto 1.5.3</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            Added new functions: dss_verify/3, rsa_verify/3,
+            rsa_verify/4, dss_sign/2, rsa_sign/2, rsa_sign/3,
+            rsa_public_encrypt, rsa_private_decrypt/3,
+            rsa_private_encrypt/3, rsa_public_decrypt/3,
+            dh_generate_key/1, dh_generate_key/2, dh_compute_key/3.</p>
+          <p>
+            Own Id: OTP-7545</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Crypto 1.5.2.1</title>
 
     <section><title>Improvements and New Features</title>

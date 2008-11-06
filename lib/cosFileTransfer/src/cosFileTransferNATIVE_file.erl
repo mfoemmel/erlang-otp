@@ -1,6 +1,6 @@
 %%----------------------------------------------------------------------
 %%<copyright>
-%% <year>2000-2007</year>
+%% <year>2000-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -321,11 +321,11 @@ copy_file(Source, Target) ->
     end.
 
 copy_file_helper(SourceDev, TargetDev, BuffSize) ->
-    case file_read(SourceDev, BuffSize) of
-	{0, _} ->
+    case file:read(SourceDev, BuffSize) of
+	eof ->
 	    file:close(SourceDev),
 	    file:close(TargetDev);
-	{_N, Bin} ->
+	{ok, Bin} ->
 	    case  file:write(TargetDev, Bin) of
 		ok ->
 		    copy_file_helper(SourceDev, TargetDev, BuffSize);
@@ -333,19 +333,12 @@ copy_file_helper(SourceDev, TargetDev, BuffSize) ->
 		    file:close(SourceDev),
 		    file:close(TargetDev),
 		    convert_error(Reason)
-	    end
+	    end;
+	{error, Reason} ->
+	    file:close(SourceDev),
+	    file:close(TargetDev),
+	    convert_error(Reason)
     end.
-
-file_read(Fd, BuffSize) ->
-  case file:read(Fd, BuffSize) of
-    {ok, {N, Bytes}} ->
-      {N, Bytes};
-    {ok, Bytes} ->
-      {size(Bytes), Bytes};
-    eof ->
-      {0, []}
-  end.
-
 
 convert_error({error, eacces}) ->
     {error, elogin};

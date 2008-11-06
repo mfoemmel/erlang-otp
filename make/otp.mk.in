@@ -211,6 +211,7 @@ SGML_FLAG_term = -ptype unix -ptype windows \
 	-defs cite  $(ERL_TOP)/system/doc/definitions/cite.defs --
 SGML_FLAG_booksty = -booksty otpA4
 SGML_FLAGS = -s $(SGML_FLAG_term) $(SGML_FLAG_booksty)
+XML_FLAGS = $(SGML_FLAGS)
 
 # latex
 DOCBTEX2DVI = docb_tex2dvi
@@ -236,51 +237,51 @@ LATEX_CLEAN = *.aux *.cites *.citeshd *.dvi *.idx *.ilg *.ind \
 	$(DOCBTRANSFORM) -ent html -html -outdir . $(SGML_FLAGS) $*
 	@$(RM) $*.html.sgmls_errs $*.html.sgmls_output
 %.html:: %.xml
-	$(DOCBTRANSFORM) -ent html -html -outdir . $(SGML_FLAGS) $*
+	$(DOCBTRANSFORM) -ent html -html -outdir . $(XML_FLAGS) $*
 
 $(HTMLDIR)/%.html:: %.sgml
 	$(DOCBTRANSFORM) -ent html -html -outdir $(HTMLDIR) $(SGML_FLAGS) $*
 	@$(RM) $*.html.sgmls_errs $*.html.sgmls_output
 $(HTMLDIR)/%.html:: %.xml
-	$(DOCBTRANSFORM) -ent html -html -outdir $(HTMLDIR) $(SGML_FLAGS) $*
+	$(DOCBTRANSFORM) -ent html -html -outdir $(HTMLDIR) $(XML_FLAGS) $*
 
 $(MAN1DIR)/%.1:: %.sgml
 	$(DOCBTRANSFORM) -ent man -m 1 -outdir $(MAN1DIR) $(SGML_FLAGS) $*
 	@$(RM) $*.man1.sgmls_errs $*.man1.sgmls_output
 $(MAN1DIR)/%.1:: %.xml
-	$(DOCBTRANSFORM) -ent man -m 1 -outdir $(MAN1DIR) $(SGML_FLAGS) $*
+	$(DOCBTRANSFORM) -ent man -m 1 -outdir $(MAN1DIR) $(XML_FLAGS) $*
 
 $(MAN2DIR)/%.2:: %.sgml
 	$(DOCBTRANSFORM) -ent man -m 2 -outdir $(MAN2DIR) $(SGML_FLAGS) $*
 	@$(RM) $*.man2.sgmls_errs $*.man2.sgmls_output
 $(MAN2DIR)/%.2:: %.xml
-	$(DOCBTRANSFORM) -ent man -m 2 -outdir $(MAN2DIR) $(SGML_FLAGS) $*
+	$(DOCBTRANSFORM) -ent man -m 2 -outdir $(MAN2DIR) $(XML_FLAGS) $*
 
 $(MAN3DIR)/%.3:: %.sgml
 	$(DOCBTRANSFORM) -ent man -m 3 -outdir $(MAN3DIR) $(SGML_FLAGS) $*
 	@$(RM) $*.man3.sgmls_errs $*.man3.sgmls_output
 $(MAN3DIR)/%.3:: %.xml
-	$(DOCBTRANSFORM) -ent man -m 3 -outdir $(MAN3DIR) $(SGML_FLAGS) $*
+	$(DOCBTRANSFORM) -ent man -m 3 -outdir $(MAN3DIR) $(XML_FLAGS) $*
 
 $(MAN4DIR)/%.4:: %.sgml
 	$(DOCBTRANSFORM) -ent man -m 4 -outdir $(MAN4DIR) $(SGML_FLAGS) $*
 	@$(RM) $*.man4.sgmls_errs $*.man4.sgmls_output
 $(MAN4DIR)/%.4:: %.xml
-	$(DOCBTRANSFORM) -ent man -m 4 -outdir $(MAN4DIR) $(SGML_FLAGS) $*
+	$(DOCBTRANSFORM) -ent man -m 4 -outdir $(MAN4DIR) $(XML_FLAGS) $*
 
 $(MAN6DIR)/%.6:: %_app.sgml
 	$(DOCBTRANSFORM) -ent man -m 6 -outdir $(MAN6DIR) $(SGML_FLAGS) $*_app
 	@$(RM) $*_app.man6.sgmls_errs $*_app.man6.sgmls_output
 	mv $(MAN6DIR)/$*_app.6 $@
 $(MAN6DIR)/%.6:: %_app.xml
-	$(DOCBTRANSFORM) -ent man -m 6 -outdir $(MAN6DIR) $(SGML_FLAGS) $*_app
+	$(DOCBTRANSFORM) -ent man -m 6 -outdir $(MAN6DIR) $(XML_FLAGS) $*_app
 	mv $(MAN6DIR)/$*_app.6 $@
 
 $(MAN9DIR)/%.9:: %.sgml
 	$(DOCBTRANSFORM) -ent man -m 9 -outdir $(MAN9DIR) $(SGML_FLAGS) $*
 	@$(RM) $*.man9.sgmls_errs $*.man9.sgmls_output
 $(MAN9DIR)/%.9:: %.xml
-	$(DOCBTRANSFORM) -ent man -m 9 -outdir $(MAN9DIR) $(SGML_FLAGS) $*
+	$(DOCBTRANSFORM) -ent man -m 9 -outdir $(MAN9DIR) $(XML_FLAGS) $*
 
 %.tex:: %.sgml
 	(cd `dirname $*`; \
@@ -291,7 +292,7 @@ $(MAN9DIR)/%.9:: %.xml
 %.tex:: %.xml
 	(cd `dirname $*`; \
 	 $(DOCBTRANSFORM) -includepath `pwd` \
-		-ent latex -latex $(SGML_FLAGS) `basename $*`)
+		-ent latex -latex $(XML_FLAGS) `basename $*`)
 
 %.dvi: %.tex
 	$(DOCBTEX2DVI) $*

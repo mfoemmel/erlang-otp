@@ -78,6 +78,7 @@
 	     supervisor_bridge,
 	     sys,
 	     timer,
+	     unicode,
 	     win32reg,
 	     zip]},
   {registered,[timer_server,rsh_starter,take_over_monitor,pool_master,

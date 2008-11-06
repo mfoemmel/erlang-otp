@@ -99,7 +99,7 @@ module(#c_module{defs=Ds0}=Mod, Opts) ->
 	_ -> ok
     end,
     init_warnings(),
-    Ds1 = map(fun function_1/1, Ds0),
+    Ds1 = [function_1(D) || D <- Ds0],
     erase(no_inline_list_funcs),
     erase(bin_opt_info),
     {ok,Mod#c_module{defs=Ds1},get_warnings()}.
@@ -240,13 +240,16 @@ expr(#c_tuple{es=Es0}=Tuple, Ctxt, Sub) ->
 	value ->
 	    eval_tuple(Tuple, Es)
     end;
-expr(#c_binary{segments=Ss}=Bin, Ctxt, Sub) ->
+expr(#c_binary{segments=Ss}=Bin0, Ctxt, Sub) ->
+    %% Warn for useless building, but always build the binary
+    %% anyway to preserve a possible exception.
     case Ctxt of
-	effect -> add_warning(Bin, useless_building);
+	effect -> add_warning(Bin0, useless_building);
 	value -> ok
     end,
-    %% Keep because of possible side effect (exception).
-    eval_binary(Bin#c_binary{segments=bitstr_list(Ss, Sub)});
+    Bin1 = Bin0#c_binary{segments=bitstr_list(Ss, Sub)},
+    Bin = bin_un_utf(Bin1),
+    eval_binary(Bin);
 expr(#c_fname{}=Fname, _, _) -> Fname;
 expr(#c_fun{}=Fun, effect, _) ->
     %% A fun is created, but not used. Warn, and replace with the void value.
@@ -368,10 +371,10 @@ expr(#c_try{anno=A,arg=E0,vars=Vs0,body=B0,evars=Evs0,handler=H0}=Try, _, Sub0) 
     end.
 
 expr_list(Es, Ctxt, Sub) ->
-    map(fun (E) -> expr(E, Ctxt, Sub) end, Es).
+    [expr(E, Ctxt, Sub) || E <- Es].
 
 bitstr_list(Es, Sub) ->
-    map(fun (E) -> bitstr(E, Sub) end, Es).
+    [bitstr(E, Sub) || E <- Es].
 
 bitstr(#c_bitstr{val=Val,size=Size}=BinSeg, Sub) ->
     BinSeg#c_bitstr{val=expr(Val, Sub),size=expr(Size, value, Sub)}.
@@ -420,6 +423,46 @@ eval_tuple_1([#c_literal{val=Val}|Es], Acc) ->
     eval_tuple_1(Es, [Val|Acc]);
 eval_tuple_1([_|_], _) -> no;
 eval_tuple_1([], Acc) -> reverse(Acc).
+
+%% bin_un_utf(#c_binary{}) -> #c_binary{}
+%%  Convert any literal UTF-8/16/32 literals to byte-sized
+%%  integer fields.
+
+bin_un_utf(#c_binary{anno=Anno,segments=Ss}=Bin) ->
+    Bin#c_binary{segments=bin_un_utf_1(Ss, Anno)}.
+
+bin_un_utf_1([#c_bitstr{val=#c_literal{},type=#c_literal{val=utf8}}=H|T],
+	     Anno) ->
+    bin_un_utf_eval(H, Anno) ++ bin_un_utf_1(T, Anno);
+bin_un_utf_1([#c_bitstr{val=#c_literal{},type=#c_literal{val=utf16}}=H|T],
+	     Anno) ->
+    bin_un_utf_eval(H, Anno) ++ bin_un_utf_1(T, Anno);
+bin_un_utf_1([#c_bitstr{val=#c_literal{},type=#c_literal{val=utf32}}=H|T],
+	     Anno) ->
+    bin_un_utf_eval(H, Anno) ++ bin_un_utf_1(T, Anno);
+bin_un_utf_1([H|T], Anno) ->
+    [H|bin_un_utf_1(T, Anno)];
+bin_un_utf_1([], _) -> [].
+
+bin_un_utf_eval(Bitstr, Anno) ->
+    Segments = [Bitstr],
+    case eval_binary(#c_binary{anno=Anno,segments=Segments}) of
+	#c_literal{anno=Anno,val=Bytes} when is_binary(Bytes) ->
+	    [#c_bitstr{anno=Anno,
+		       val=#c_literal{anno=Anno,val=B},
+		       size=#c_literal{anno=Anno,val=8},
+		       unit=#c_literal{anno=Anno,val=1},
+		       type=#c_literal{anno=Anno,val=integer},
+		       flags=#c_literal{anno=Anno,val=[unsigned,big]}} ||
+		B <- binary_to_list(Bytes)];
+	_ ->
+	    Segments
+    end.
+
+%% eval_binary(#c_binary{}, matching|construction) ->
+%%      #c_binary{} | #c_literal{}
+%%  Evaluate a binary at compile time if possible to create
+%%  a binary literal.
 
 eval_binary(#c_binary{anno=Anno,segments=Ss}=Bin) ->
     try
@@ -484,6 +527,9 @@ eval_binary_1([#c_bitstr{val=#c_literal{val=Val},size=#c_literal{val=Sz},
 		64 -> ok;
 		_ -> throw(impossible)
 	    end;
+	utf8 -> ok;
+	utf16 -> ok;
+	utf32 -> ok;
 	_ ->
 	    throw(impossible)
     end,
@@ -502,6 +548,26 @@ eval_binary_2(Acc, Val, Size, Unit, integer, little) ->
     <<Acc/bitstring,Val:(Size*Unit)/little>>;
 eval_binary_2(Acc, Val, Size, Unit, integer, big) ->
     <<Acc/bitstring,Val:(Size*Unit)/big>>;
+eval_binary_2(Acc, Val, _Size, _Unit, utf8, _) ->
+    %% XXX Simplify this code in the release following R12B-5.
+    %%<<Acc/bitstring,Val/utf8>>;
+    <<Acc/bitstring,(int_to_utf8(Val))/binary>>;
+eval_binary_2(Acc, Val, _Size, _Unit, utf16, big) ->
+    %% XXX Simplify this code in the release following R12B-5.
+    %%<<Acc/bitstring,Val/big-utf16>>;
+    <<Acc/bitstring,(int_to_utf16_be(Val))/binary>>;
+eval_binary_2(Acc, Val, _Size, _Unit, utf16, little) ->
+    %% XXX Simplify this code in the release following R12B-5.
+    %%<<Acc/bitstring,Val/little-utf16>>;
+    <<Acc/bitstring,(int_to_utf16_le(Val))/binary>>;
+eval_binary_2(Acc, Val, _Size, _Unit, utf32, big) ->
+    %% XXX Simplify this code in the release following R12B-5.
+    validate_unicode_char(Val),
+    <<Acc/bitstring,Val:32/big>>;
+eval_binary_2(Acc, Val, _Size, _Unit, utf32, little) ->
+    %% XXX Simplify this code in the release following R12B-5.
+    validate_unicode_char(Val),
+    <<Acc/bitstring,Val:32/little>>;
 eval_binary_2(Acc, Val, Size, Unit, float, little) ->
     <<Acc/bitstring,Val:(Size*Unit)/little-float>>;
 eval_binary_2(Acc, Val, Size, Unit, float, big) ->
@@ -515,6 +581,70 @@ eval_binary_2(Acc, Val, all, Unit, binary, _) ->
     end;
 eval_binary_2(Acc, Val, Size, Unit, binary, _) ->
     <<Acc/bitstring,Val:(Size*Unit)/bitstring>>.
+
+int_to_utf8(I) when 0 =< I, I =< 16#7F ->
+    <<I>>;
+int_to_utf8(I) when 0 =< I, I =< 16#7FF ->
+    B2 = I,
+    B1 = (I bsr 6),
+    <<1:1,1:1,0:1,B1:5,1:1,0:1,B2:6>>;
+int_to_utf8(I) when 0 =< I, I =< 16#FFFF ->
+    if
+	16#D800 =< I, I =< 16#DFFF;
+	I =:= 16#FFFE; I =:= 16#FFFF -> throw({badarg,bad_unicode});
+	true -> ok
+    end,
+    B3 = I,
+    B2 = (I bsr 6),
+    B1 = (I bsr 12),
+    <<1:1,1:1,1:1,0:1,B1:4,1:1,0:1,B2:6,1:1,0:1,B3:6>>;
+int_to_utf8(I) when 0 =< I, I =< 16#10FFFF ->
+    B4 = I,
+    B3 = (I bsr 6),
+    B2 = (I bsr 12),
+    B1 = (I bsr 18),
+    <<1:1,1:1,1:1,1:1,0:1,B1:3,1:1,0:1,B2:6,1:1,0:1,B3:6,1:1,0:1,B4:6>>;
+int_to_utf8(_) ->
+    throw({badarg,bad_unicode}).
+
+int_to_utf16_be(I) when 0 =< I, I =< 16#10000 ->
+    if
+	16#D800 =< I, I =< 16#DFFF;
+	I =:= 16#FFFE; I =:= 16#FFFF -> throw({badarg,bad_unicode});
+	true -> ok
+    end,
+    <<I:16/big>>;
+int_to_utf16_be(I) when 16#10000 =< I, I =< 16#10FFFF ->
+    U = I - 16#10000,
+    W1 = 16#D800 bor (U bsr 10),
+    W2 = 16#DC00 bor (U band 16#3FF),
+    <<W1:16/big,W2:16/big>>;
+int_to_utf16_be(_) ->
+    throw({badarg,bad_unicode}).
+
+int_to_utf16_le(I) when 0 =< I, I =< 16#10000 ->
+    if
+	16#D800 =< I, I =< 16#DFFF;
+	I =:= 16#FFFE; I =:= 16#FFFF -> throw({badarg,bad_unicode});
+	true -> ok
+    end,
+    <<I:16/little>>;
+int_to_utf16_le(I) when 16#10000 =< I, I =< 16#10FFFF ->
+    U = I - 16#10000,
+    W1 = 16#D800 bor (U bsr 10),
+    W2 = 16#DC00 bor (U band 16#3FF),
+    <<W1:16/little,W2:16/little>>;
+int_to_utf16_le(_) ->
+    throw({badarg,bad_unicode}).
+
+validate_unicode_char(I) ->
+    if
+	I < 0;
+	16#D800 =< I, I =< 16#DFFF;
+	I =:= 16#FFFE; I =:= 16#FFFF;
+	I > 16#10FFFF -> throw({badarg,bad_unicode});
+	true -> ok
+    end.
 
 %% Count the number of bits approximately needed to store Int.
 %% (We don't need an exact result for this purpose.)
@@ -1026,11 +1156,28 @@ eval_element(Call, #c_literal{val=Pos}, #c_literal{val=Val}=Lit)
 	true ->
 	    eval_failure(Call, badarg)
     end;
-eval_element(Call, #c_literal{val=I}, #c_var{}) when is_integer(I) -> Call;
-eval_element(Call, #c_var{}, #c_literal{}) -> Call;
-eval_element(Call, #c_var{}, #c_tuple{}) -> Call;
-eval_element(Call, #c_var{}, #c_var{}) -> Call;
-eval_element(Call, _, _) -> eval_failure(Call, badarg).
+eval_element(Call, Pos, Tuple) ->
+    case is_not_integer(Pos) orelse is_not_tuple(Tuple) of
+	true ->
+	    eval_failure(Call, badarg);
+	false ->
+	    Call
+    end.
+
+%% is_not_integer(Core) -> true | false.
+%%  Returns true if Core is definitely not an integer.
+
+is_not_integer(#c_literal{val=Val}) when not is_integer(Val) -> true;
+is_not_integer(#c_tuple{}) -> true;
+is_not_integer(#c_cons{}) -> true;
+is_not_integer(_) -> false.
+
+%% is_not_tuple(Core) -> true | false.
+%%  Returns true if Core is definitely not a tuple.
+
+is_not_tuple(#c_literal{val=Val}) when not is_tuple(Val) -> true;
+is_not_tuple(#c_cons{}) -> true;
+is_not_tuple(_) -> false.
 
 %% eval_setelement(Pos, Tuple, NewVal) -> Val.
 %%  Evaluates setelement/3 if Pos and Tuple are literals.
@@ -1388,8 +1535,7 @@ will_match_lit(Lit1, #c_literal{val=Lit2}) ->
     case Lit1 =:= Lit2 of
 	true -> yes;
 	false -> no
-    end;
-will_match_lit(_, _) -> maybe.
+    end.
 
 will_match_lit_list([H|T], [P|Ps]) ->
     case will_match_lit(H, P) of
@@ -1685,7 +1831,7 @@ unalias_pat(#c_tuple{es=Ps}=Tuple) ->
     Tuple#c_tuple{es=unalias_pat_list(Ps)};
 unalias_pat(Atomic) -> Atomic.
 
-unalias_pat_list(Ps) -> map(fun unalias_pat/1, Ps).
+unalias_pat_list(Ps) -> [unalias_pat(P) || P <- Ps].
 
 make_vars(A, I, Max) when I =< Max ->
     [make_var(A)|make_vars(A, I+1, Max)];
@@ -1821,14 +1967,14 @@ tuple_to_values(#c_literal{val=Tuple}=Lit, Arity) when tuple_size(Tuple) =:= Ari
     Es = [Lit#c_literal{val=E} || E <- tuple_to_list(Tuple)],
     core_lib:make_values(Es);
 tuple_to_values(#c_case{clauses=Cs0}=Case, Arity) ->
-    Cs1 = map(fun(E) -> tuple_to_values(E, Arity) end, Cs0),
+    Cs1 = [tuple_to_values(E, Arity) || E <- Cs0],
     Case#c_case{clauses=Cs1};
 tuple_to_values(#c_seq{body=B0}=Seq, Arity) ->
     Seq#c_seq{body=tuple_to_values(B0, Arity)};
 tuple_to_values(#c_let{body=B0}=Let, Arity) ->
     Let#c_let{body=tuple_to_values(B0, Arity)};
 tuple_to_values(#c_receive{clauses=Cs0,timeout=Timeout,action=A0}=Rec, Arity) ->
-    Cs = map(fun(E) -> tuple_to_values(E, Arity) end, Cs0),
+    Cs = [tuple_to_values(E, Arity) || E <- Cs0],
     A = case Timeout of
 	    #c_literal{val=infinity} -> A0;
 	    _ -> tuple_to_values(A0, Arity)
@@ -2301,6 +2447,9 @@ format_error({embedded_unit,Unit,Size}) ->
     M = io_lib:format("binary construction will fail with a 'badarg' exception "
 		      "(size ~p cannot be evenly divided by unit ~p)", [Size,Unit]),
     flatten(M);
+format_error(bad_unicode) ->
+    "binary construction will fail with a 'badarg' exception "
+	"(invalid Unicode code point in a utf8/utf16/utf32 segment)";
 format_error({nomatch_shadow,Line}) ->
     M = io_lib:format("this clause cannot match because a previous clause at line ~p "
 		      "always matches", [Line]),

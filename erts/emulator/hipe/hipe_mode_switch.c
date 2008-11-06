@@ -47,14 +47,12 @@ static const char *code_str(unsigned code)
 	"return from beam",
 	"throw from beam",
 	"resume from beam",
-	"reschedule from beam",
 	"return to beam",
 	"call to beam",
 	"throw to beam",
 	"suspend to beam",
 	"wait from native",
 	"wait_timeout from native",
-	"reschedule from native",
 	"trap from native",
 	"call closure from beam",
 	"call closure to beam",
@@ -130,7 +128,6 @@ static void hipe_check_nstack(Process *p, unsigned nwords);
 Uint hipe_beam_pc_return[1];	/* needed in hipe_debug.c */
 Uint hipe_beam_pc_throw[1];	/* needed in hipe_debug.c */
 Uint hipe_beam_pc_resume[1];	/* needed by hipe_set_timeout() */
-static Uint hipe_beam_pc_reschedule[1];
 static Eterm hipe_beam_catch_throw;
 
 void hipe_mode_switch_init(void)
@@ -140,7 +137,6 @@ void hipe_mode_switch_init(void)
     hipe_beam_pc_return[0] = BeamOpCode(op_hipe_trap_return);
     hipe_beam_pc_throw[0] = BeamOpCode(op_hipe_trap_throw);
     hipe_beam_pc_resume[0] = BeamOpCode(op_hipe_trap_resume);
-    hipe_beam_pc_reschedule[0] = BeamOpCode(op_hipe_trap_reschedule);
 
     hipe_beam_catch_throw =
 	make_catch(beam_catches_cons(hipe_beam_pc_throw, BEAM_CATCHES_NIL));
@@ -197,12 +193,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 
     DPRINTF("cmd == %#x (%s)", cmd, code_str(cmd));
     HIPE_CHECK_PCB(p);
-    switch (cmd & 0xFF) {
-      case HIPE_MODE_SWITCH_CMD_RESCHEDULE:
-	break;
-      default:
-	p->arity = 0;
-    }
+    p->arity = 0;
     switch (cmd & 0xFF) {
       case HIPE_MODE_SWITCH_CMD_CALL: {
 	  /* BEAM calls a native code function */
@@ -281,14 +272,6 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  } else
 	      p->def_arg_reg[0] = 1;	/* make_small(1)? */
 	  result = hipe_return_to_native(p);
-	  break;
-      }
-      case HIPE_MODE_SWITCH_CMD_RESCHEDULE: {
-	  /* BEAM just executed hipe_beam_pc_reschedule[] */
-	  /* Native called a BIF which failed with RESCHEDULE. Resume it. */
-	  /* XXX: this ought to be the same as 'resume' */
-	  DPRINTF("rescheduling to 0x%#lx/%u", p->hipe.ncallee, p->arity);
-	  result = hipe_reschedule_to_native(p, p->arity, reg);
 	  break;
       }
       default:
@@ -420,19 +403,12 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  }
 	  break;
       }
-      case HIPE_MODE_SWITCH_RES_RESCHEDULE: {
-	  if (p->arity > NR_ARG_REGS)
-	      p->arity = NR_ARG_REGS;
-	  DPRINTF("native reschedules 0x%#lx/%u\r\n", p->hipe.ncallee, p->arity);
-	  hipe_reschedule_from_native(p);
-	  p->i = hipe_beam_pc_reschedule;
-	  goto do_schedule;
-      }
       case HIPE_MODE_SWITCH_RES_SUSPEND: {
 	  p->i = hipe_beam_pc_resume;
 	  p->arity = 0;
 	  erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
-	  add_to_schedule_q(p);
+	  if (p->status != P_SUSPENDED)
+	      add_to_schedule_q(p);
 	  erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
 	  goto do_schedule;
       }

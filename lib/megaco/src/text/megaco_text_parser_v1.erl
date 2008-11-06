@@ -1,6 +1,6 @@
 -module(megaco_text_parser_v1).
 -export([parse/1, parse_and_scan/1, format_error/1]).
--file("megaco_text_parser_v1.yrl", 1293).
+-file("megaco_text_parser_v1.yrl", 1345).
 
 %% The following directive is needed for (significantly) faster compilation
 %% of the generated .erl file by the HiPE compiler.  Please do not remove.
@@ -20,7 +20,7 @@
 %%    ok.
 
 
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-09-02_20/otp_src_R12B-4/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/ldisk/daily_build/otp_prebuild_r12b.2008-11-05_12/otp_src_R12B-5/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -380,57 +380,57 @@ yeccpars2(101=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccpars2(102=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_102(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(103=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(104=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_104(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_103(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(104=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_104(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(105=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(106=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_106(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(107=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_107(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(108=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_108(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(109=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_109(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_105(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(106=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_106(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(107=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_107(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(108=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_108(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(109=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_109(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(110=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_110(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(111=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_111(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(112=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_112(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(113=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_113(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(114=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_114(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(111=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_111(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(112=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_112(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(113=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_113(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(114=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_114(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(115=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_115(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(116=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_116(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(117=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_117(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(118=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_118(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(117=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_117(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(118=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_118(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(119=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_119(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(120=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_120(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(120=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_120(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(121=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_121(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(122=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_122(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(123=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_123(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(124=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_124(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(125=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_125(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(126=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_126(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(127=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(123=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_123(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(124=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_124(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(125=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_125(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(126=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_126(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(127=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_127(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(128=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_128(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(128=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_128(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(129=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(130=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -441,8 +441,8 @@ yeccpars2(129=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_132(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(133=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_133(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(134=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_134(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(134=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_134(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(135=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_135(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(136=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -451,36 +451,36 @@ yeccpars2(129=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_137(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(138=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_138(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(139=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_139(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(139=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(140=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_140(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(141=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_141(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(142=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_142(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(141=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_141(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(142=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_142(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(143=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_143(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(144=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_144(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(144=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_144(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(145=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_145(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(146=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_146(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(147=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_147(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(148=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_148(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(149=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(148=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_148(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(149=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_149(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(150=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_150(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(151=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_151(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(152=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_152(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(153=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_153(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(153=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(154=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_154(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(155=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -501,8 +501,8 @@ yeccpars2(152=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_162(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(163=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_163(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(164=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_164(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(164=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_164(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(165=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_165(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(166=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -515,20 +515,20 @@ yeccpars2(169=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_169(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(170=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_170(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(171=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_171(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(171=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_171(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(172=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_172(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(173=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_173(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(174=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_174(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(175=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_175(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(174=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_174(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(175=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_175(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(176=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_176(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(177=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(177=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_177(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(178=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_178(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(179=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -537,296 +537,296 @@ yeccpars2(177=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_180(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(181=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_181(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(182=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(182=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_182(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(183=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_183(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(184=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_184(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(185=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_185(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(185=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_185(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(186=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_186(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(187=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_187(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(188=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_188(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(187=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_187(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(188=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_188(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(189=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_189(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(190=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_190(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(190=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_190(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(191=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(192=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_192(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(193=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_193(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_191(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(192=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_192(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(193=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_193(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(194=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_194(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(195=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(196=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_196(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(197=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_197(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_195(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(196=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_196(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(197=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_197(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(198=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_198(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(199=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_199(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(199=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_199(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(200=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_200(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(201=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_201(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(202=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_202(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(203=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_203(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(204=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_204(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(205=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_205(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(205=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_205(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(206=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_206(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(207=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_207(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(208=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_208(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(207=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_207(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(208=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_208(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(209=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_209(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(210=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_210(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(210=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_210(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(211=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_211(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(212=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_212(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(213=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_213(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(214=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_214(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(214=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_214(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(215=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_215(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(216=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_216(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(217=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_217(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(218=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_218(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(219=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_219(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(220=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_220(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(221=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%% yeccpars2(217=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_217(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(218=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_218(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(219=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(222=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_222(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(223=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_223(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(224=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_224(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(220=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_220(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(221=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_221(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(222=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_222(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(223=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_223(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(224=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_224(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(225=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_225(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(226=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_226(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(226=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_226(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(227=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_227(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(228=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_228(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(229=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_229(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(230=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_230(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(231=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_231(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(232=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_232(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(233=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_233(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(234=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_234(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(235=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_235(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(236=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_236(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(237=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_237(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(238=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_238(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(229=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_229(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(230=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_230(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(231=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_231(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(232=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_232(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(233=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_233(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(234=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_234(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(235=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_235(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(236=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_236(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(237=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_237(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(238=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_238(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(239=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_239(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(240=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_240(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(240=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_240(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(241=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_241(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(242=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_242(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(243=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_243(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(242=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_242(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(243=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_243(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(244=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_244(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(245=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_245(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(246=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_246(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(247=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(246=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_246(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(247=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_247(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(248=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_248(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(249=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_249(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(250=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_250(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(250=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_250(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(251=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_251(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(252=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(252=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(253=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_253(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(254=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_254(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(255=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_255(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(256=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(255=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_255(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(256=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_256(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(257=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_257(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(258=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_258(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(258=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_258(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(259=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_259(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(260=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(260=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_260(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(261=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_261(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(262=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(263=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_263(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(264=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_264(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(262=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_262(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(263=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_263(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(264=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_264(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(265=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_265(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(266=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_266(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(267=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_267(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(268=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(269=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_269(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(270=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_270(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(271=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_271(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_268(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(269=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_269(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(270=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_270(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(271=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(272=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_272(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(273=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_273(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(274=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(275=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(276=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(273=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_273(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(274=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_274(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(275=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_275(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(276=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(277=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_277(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(278=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(278=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_278(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(279=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(280=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_280(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_279(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(280=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(281=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_281(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(282=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_282(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(283=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_283(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(282=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_282(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(283=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_283(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(284=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_284(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(285=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_285(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(286=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_286(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(287=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_287(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(286=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(287=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_287(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(288=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_288(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(289=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_226(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(290=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_290(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(291=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_291(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_289(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(290=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(291=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(292=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_292(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(293=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_293(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(294=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(293=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_293(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(294=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_294(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(295=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_295(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(296=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(296=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_296(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(297=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_297(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(298=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_298(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(299=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_299(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(299=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(300=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_300(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(301=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_301(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(302=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_302(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(303=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(304=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_304(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(305=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_305(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(306=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_306(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(307=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_307(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(308=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_308(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(306=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_306(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(307=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_307(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(308=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_308(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(309=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_309(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(310=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_310(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(311=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_311(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(311=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_311(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(312=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_312(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(313=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_313(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_250(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(314=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_314(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(315=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_315(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(316=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_316(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(317=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(318=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_318(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(317=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_317(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(318=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(319=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_319(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(320=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(321=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_321(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(322=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_322(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(322=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_322(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(323=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_323(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(324=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_237(S, Cat, Ss, Stack, T, Ts, Tzr);
+%%  yeccpars2_324(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(325=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_325(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(326=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_326(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(326=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_326(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(327=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(328=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -839,122 +839,122 @@ yeccpars2(330=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_331(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(332=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_332(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(333=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_333(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(334=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_334(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(335=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_335(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(333=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_333(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(334=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_334(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(335=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_335(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(336=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_336(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(337=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_337(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(338=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_338(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(339=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_339(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(340=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_340(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(341=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_335(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(338=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_338(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(339=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_339(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(340=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_340(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(341=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(342=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_342(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(343=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_343(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(344=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_344(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(345=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(345=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_345(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(346=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_346(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(347=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_347(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(348=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(348=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_261(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(349=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_349(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(350=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_350(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(351=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_351(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(352=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_152(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(351=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(352=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_352(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(353=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_353(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(354=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_354(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(355=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_355(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(356=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(357=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_357(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(358=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_358(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(354=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_354(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(355=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_355(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(356=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_356(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(357=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_357(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(358=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_358(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(359=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_359(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(360=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_360(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(361=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_361(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(362=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_362(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(363=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_363(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(361=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_361(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(362=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_362(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(363=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_363(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(364=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_364(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(365=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_365(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(365=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_359(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(366=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_366(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(367=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_367(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(368=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_368(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(368=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_368(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(369=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_369(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(370=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_370(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(371=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_371(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(370=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_370(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(371=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_371(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(372=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_372(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(373=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_373(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(374=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_374(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(375=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_375(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(373=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_373(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(374=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_374(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(375=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_375(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(376=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_376(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_176(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(377=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_377(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(378=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_378(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(379=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_379(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(380=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_380(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(379=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_379(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(380=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(381=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_381(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(382=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_382(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(382=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_382(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(383=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_383(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(384=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_384(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(385=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_385(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(386=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(386=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_386(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(387=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_387(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(388=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_388(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(389=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_389(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(390=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(390=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_390(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(391=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_391(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(392=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -963,10 +963,10 @@ yeccpars2(393=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_393(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(394=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_394(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(395=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_395(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(396=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_237(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(395=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_395(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(396=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_396(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(397=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_397(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(398=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -975,58 +975,58 @@ yeccpars2(399=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_399(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(400=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_400(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(401=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_401(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(402=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(401=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_401(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(402=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_402(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(403=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_403(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(404=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_404(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(405=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_405(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(406=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_406(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(405=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_405(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(406=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_406(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(407=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_407(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(408=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_408(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(409=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_409(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(408=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_408(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(409=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_409(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(410=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_410(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(411=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_411(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(411=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_411(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(412=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_412(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(413=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_413(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(413=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_413(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(414=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_414(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(415=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_415(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(416=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_416(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(417=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_417(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(415=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_415(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(416=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_416(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(417=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_417(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(418=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_411(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_418(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(419=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_419(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(420=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_420(S, Cat, Ss, Stack, T, Ts, Tzr);
+%%  yeccpars2_261(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(421=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_421(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(422=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(423=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_423(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(424=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_424(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(425=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_425(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_422(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(423=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_423(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(424=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_424(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(425=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_425(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(426=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_394(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(427=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_427(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(428=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -1036,29 +1036,29 @@ yeccpars2(429=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %% yeccpars2(430=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_430(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(431=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_376(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(432=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_432(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(433=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_433(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_431(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(432=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_432(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(433=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_433(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(434=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_434(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(435=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_435(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(436=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_436(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(437=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_437(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(438=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_438(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(437=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_437(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(438=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_438(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(439=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(440=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_440(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_439(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(440=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_440(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(441=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_441(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(442=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_435(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(443=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_443(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(444=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -1067,122 +1067,122 @@ yeccpars2(445=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_445(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(446=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(447=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(447=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_447(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(448=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_448(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(449=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_449(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(450=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_450(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(451=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(450=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_418(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(451=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_451(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(452=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_452(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(453=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_453(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(454=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_454(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(455=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_455(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(456=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(453=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_453(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(454=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_454(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(455=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_400(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(456=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_456(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(457=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_457(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(458=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_237(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(459=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_459(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(458=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_458(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(459=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(460=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_460(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(461=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(461=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_461(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(462=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_462(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(463=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_463(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(464=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_464(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(463=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(464=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_464(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(465=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_465(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(466=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_466(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(467=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_467(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(466=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(467=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_467(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(468=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_468(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(469=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_469(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(470=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_470(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(471=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_471(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(469=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_469(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(470=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(471=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(472=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_472(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(473=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_473(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(474=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_474(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(473=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_473(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(474=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_474(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(475=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_475(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(476=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_476(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(477=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_477(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(476=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_476(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(477=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_477(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(478=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_478(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(479=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_479(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(480=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_480(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(480=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(481=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_481(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(482=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_482(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(483=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_483(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(484=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_484(S, Cat, Ss, Stack, T, Ts, Tzr);
+%%  yeccpars2_261(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(483=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_483(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(484=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_484(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(485=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_485(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(486=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_486(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(487=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_487(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(487=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_487(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(488=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_488(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(489=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_489(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(490=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_490(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(491=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_491(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(492=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_492(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(493=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_493(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(489=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_489(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(490=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_490(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(491=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_491(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(492=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_492(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(493=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_493(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(494=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_494(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(495=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_478(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(495=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_495(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(496=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_496(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(497=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_497(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(497=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_497(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(498=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_498(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(499=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(500=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_500(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_499(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(500=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_500(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(501=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_501(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(502=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_502(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(502=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_502(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(503=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_503(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(504=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_501(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(504=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_504(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(505=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_505(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(506=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -1191,8 +1191,8 @@ yeccpars2(507=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_507(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(508=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_508(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(509=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_509(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(509=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_509(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(510=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_510(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(511=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -1209,98 +1209,98 @@ yeccpars2(516=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_516(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(517=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_517(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(518=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_514(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(519=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_519(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(520=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_520(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(518=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_518(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(519=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_502(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(520=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_520(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(521=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_521(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(522=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_522(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(523=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_523(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(524=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_524(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(524=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_524(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(525=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_525(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(526=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_526(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(526=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_526(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(527=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_527(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(528=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_508(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_525(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(529=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_529(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(530=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_530(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(531=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_531(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(532=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_532(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(533=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_467(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(532=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_532(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(533=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_533(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(534=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_534(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(535=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_535(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(535=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_535(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(536=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_536(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(537=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(538=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_538(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(539=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(540=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_540(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(541=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_541(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(542=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_542(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(543=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_543(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(544=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_544(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_537(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(538=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_538(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(539=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_539(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(540=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_540(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(541=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_541(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(542=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_538(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(543=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_543(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(544=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_544(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(545=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_545(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(546=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_546(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(547=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_547(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(548=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_548(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(546=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_546(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(547=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_547(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(548=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_548(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(549=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_549(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(550=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_550(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(551=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_551(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(551=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_551(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(552=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_552(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_532(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(553=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_553(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(554=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_554(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(555=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_555(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(556=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(557=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_557(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(558=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(556=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_556(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(557=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_491(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(558=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_558(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(559=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_559(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(560=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_560(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(561=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_561(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(562=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_562(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(563=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_563(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(560=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_560(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(561=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(562=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_562(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(563=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(564=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_564(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(565=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -1309,106 +1309,106 @@ yeccpars2(562=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_566(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(567=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_567(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(568=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_568(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(569=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_569(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(568=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_568(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(569=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_569(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(570=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_570(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(571=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_571(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(571=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_571(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(572=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_572(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(573=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_562(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(574=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_574(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(575=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_575(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_573(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(574=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_574(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(575=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_575(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(576=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_576(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(577=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_577(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(578=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%% yeccpars2(578=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_578(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(579=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_579(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(580=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(579=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_579(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(580=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_580(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(581=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_581(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(581=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_581(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(582=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_582(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(583=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_583(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(584=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_584(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(583=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_583(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(584=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_584(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(585=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_585(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(586=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_586(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(587=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_587(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(588=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_543(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(588=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_588(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(589=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_589(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(590=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_590(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(591=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_591(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(592=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_592(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(592=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_592(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(593=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_593(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(594=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_594(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(595=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_595(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(596=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_596(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(595=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_595(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(596=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_596(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(597=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_597(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_586(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(598=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_598(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(599=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_599(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(600=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_600(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(601=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_601(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(602=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_602(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(600=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_600(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(601=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_601(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(602=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(603=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_603(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(604=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_604(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(605=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_605(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(604=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_604(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(605=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_605(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(606=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_359(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(607=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_607(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(608=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_608(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(609=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_609(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(610=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_610(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(611=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_146(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(612=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_612(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_606(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(607=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_607(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(608=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_608(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(609=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_609(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(610=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_610(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(611=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_611(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(612=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_567(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(613=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_613(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(614=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_614(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(615=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_615(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(614=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_614(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(615=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_615(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(616=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_616(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(617=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_146(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(618=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_618(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(619=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -1416,105 +1416,105 @@ yeccpars2(617=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccpars2(620=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_620(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(621=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_146(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_621(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(622=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_622(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(623=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_623(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(624=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_624(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(624=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_624(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(625=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_625(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(626=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_626(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(627=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_627(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(628=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_628(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(629=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(630=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_630(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(628=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_628(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(629=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_629(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(630=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_383(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(631=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_631(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(632=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_632(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(632=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_632(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(633=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_633(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(634=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_634(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(635=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_635(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_170(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(636=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_636(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(637=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_637(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(637=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_637(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(638=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_638(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(639=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_639(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(640=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_640(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(641=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_641(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(642=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_642(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(643=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(644=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_644(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(641=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_170(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(642=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_642(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(643=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_643(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(644=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_644(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(645=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_645(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_170(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(646=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_646(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(647=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_647(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(648=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_648(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(649=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_649(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(648=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_648(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(649=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(650=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_650(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(651=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_651(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(652=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_652(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(653=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_653(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(653=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(654=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_654(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(655=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_655(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(655=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_655(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(656=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_656(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(657=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_657(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(658=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_658(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(658=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_658(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(659=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_659(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(660=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_660(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(660=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_660(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(661=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_661(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(662=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_662(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(663=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(663=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_663(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(664=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_664(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(665=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_665(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(666=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_666(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(667=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_667(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(667=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(668=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_668(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(669=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_669(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(670=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_670(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(670=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_670(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(671=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_671(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(672=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -1527,36 +1527,36 @@ yeccpars2(670=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_675(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(676=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_676(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(677=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_677(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(678=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_678(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(677=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_677(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(678=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_678(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(679=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_679(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(680=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_680(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(681=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_681(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(681=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_681(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(682=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_670(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(683=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_683(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(684=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_684(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_682(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(683=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_683(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(684=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_684(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(685=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_685(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(686=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_686(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(687=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_687(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(688=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(688=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_688(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(689=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_689(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(690=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_690(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(691=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_691(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(690=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_690(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(691=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_691(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(692=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_692(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(693=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -1567,166 +1567,166 @@ yeccpars2(694=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_695(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(696=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_696(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(697=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_697(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(697=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_697(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(698=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_698(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(699=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_699(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(700=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_700(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(701=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_701(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(700=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_700(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(701=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_701(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(702=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_702(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(703=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(704=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_704(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_703(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(704=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_704(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(705=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_705(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(706=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_706(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_694(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(707=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_707(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(708=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_708(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(708=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_708(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(709=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_709(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(710=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_710(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(711=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_711(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(712=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_712(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(712=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(713=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_713(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(714=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_714(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(715=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_715(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(715=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_715(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(716=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_716(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(717=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_717(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(718=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_718(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(717=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_717(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(718=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_718(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(719=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_719(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(720=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_720(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(721=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_721(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(721=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_721(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(722=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_722(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(723=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_723(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(724=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_724(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(724=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_724(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(725=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_725(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(726=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_726(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(727=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_727(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(728=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_728(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(729=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_729(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(728=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_728(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(729=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_729(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(730=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_730(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(731=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_731(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(731=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_731(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(732=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(733=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_733(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(734=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_734(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_732(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(733=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_733(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(734=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_734(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(735=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_735(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(736=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_736(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(737=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_737(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(738=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(738=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_738(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(739=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_739(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(740=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_740(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(741=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_741(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(742=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(741=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_741(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(742=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_742(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(743=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_743(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(744=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_744(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(745=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_745(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(746=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(746=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_746(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(747=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_747(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(748=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_748(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(749=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_749(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(750=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_750(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(749=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_749(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(750=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_750(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(751=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_711(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(752=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_752(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(753=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_753(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_751(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(752=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_752(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(753=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_753(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(754=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_754(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(755=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_755(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(756=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_756(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(757=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_757(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(756=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(757=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_757(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(758=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_758(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(759=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_759(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(760=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(760=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_760(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(761=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_761(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(762=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_762(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(763=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_711(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(762=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(763=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_763(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(764=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_764(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(765=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_765(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(766=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_766(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(767=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_645(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(766=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(767=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_767(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(768=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_768(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(769=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_769(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(770=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_770(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(770=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(771=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_771(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(772=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_772(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(773=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_773(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(772=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_772(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(773=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_773(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(774=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_774(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(775=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_775(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(776=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_735(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(776=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_776(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(777=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_777(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(778=S, Cat, Ss, Stack, T, Ts, Tzr) ->
@@ -1735,20 +1735,68 @@ yeccpars2(779=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_779(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(780=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_780(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(781=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_781(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(781=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_781(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(782=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_782(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(783=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_783(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(784=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_784(S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccpars2(785=S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_785(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(783=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_783(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(784=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(785=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_785(S, Cat, Ss, Stack, T, Ts, Tzr);
 %% yeccpars2(786=S, Cat, Ss, Stack, T, Ts, Tzr) ->
 %%  yeccpars2_786(S, Cat, Ss, Stack, T, Ts, Tzr);
-%% yeccpars2(787=S, Cat, Ss, Stack, T, Ts, Tzr) ->
-%%  yeccpars2_787(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(787=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_735(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(788=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_788(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(789=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_789(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(790=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_790(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(791=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_669(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(792=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_792(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(793=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_793(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(794=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_794(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(795=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_795(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(796=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_796(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(797=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_797(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(798=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_798(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(799=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_799(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(800=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(801=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_801(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(802=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_802(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(803=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_803(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(804=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_804(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(805=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_805(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(806=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_806(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(807=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_807(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(808=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_808(S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccpars2(809=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_809(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(810=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_810(S, Cat, Ss, Stack, T, Ts, Tzr);
+%% yeccpars2(811=S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%%  yeccpars2_811(S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccpars2(Other, _, _, _, _, _, _) ->
  erlang:error({yecc_bug,"1.3",{missing_state_in_action_table, Other}}).
 
@@ -1772,196 +1820,244 @@ yeccpars2_3(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccgoto_optSep(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_4(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_4(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_4(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_4(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_4(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_4(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_4(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_4(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_4(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_4(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_4(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_4(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_4(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
 yeccpars2_4(S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_cont_4(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'AndAUDITSelectToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'BothToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ContextAttrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ContextListToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'DirectionToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'EmergencyOffToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'EmergencyValueToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ExternalToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'IEPSToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'InternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'IntsigDelayToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'IterationToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'MessageSegmentToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'NeverNotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'NotifyImmediateToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'NotifyRegulatedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'Nx64kToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'OnewayBothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'OnewayExternalToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'OrAUDITselectToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'RequestIDToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ResetEventsDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'SegmentationCompleteToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
-yeccpars2_cont_4(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_cont_4(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'ServiceChangeIncompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 104, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 107, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 108, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 110, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 111, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 112, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 113, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 114, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 117, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 118, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 120, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 121, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 122, Ss, Stack, T, Ts, Tzr);
+yeccpars2_cont_4(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 123, Ss, Stack, T, Ts, Tzr);
 yeccpars2_cont_4(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 124, Ss, Stack, T, Ts, Tzr);
 yeccpars2_cont_4(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr).
+ yeccpars1(S, 125, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_5(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 6, Ss, Stack, T, Ts, Tzr).
@@ -1973,7 +2069,7 @@ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccgoto_safeToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_8(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr).
+ yeccpars1(S, 127, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_9(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
@@ -2257,736 +2353,82 @@ yeccpars2_101(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccpars2_102(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_103: see yeccpars2_4
+yeccpars2_103(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_104(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr).
+yeccpars2_104(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_105: see yeccpars2_4
+yeccpars2_105(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_106(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
 yeccpars2_106(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_106_(Stack),
- yeccpars2_107(_S, Cat, [106 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_107(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_107_(Stack),
- yeccgoto_authenticationHeader(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_108(S, 'LESSER', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
-yeccpars2_108(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
-yeccpars2_108(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
 yeccpars2_108(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_108_(Stack),
- yeccpars2_111(111, Cat, [108 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_109(S, endOfMessage, Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 110, Ss, Stack, T, Ts, Tzr).
+yeccpars2_109(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_110(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_110_(Stack),
- yeccgoto_megacoMessage(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_111(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'MtpAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 785, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_111(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_111(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_112(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 140, Ss, Stack, T, Ts, Tzr);
-yeccpars2_112(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 141, Ss, Stack, T, Ts, Tzr);
-yeccpars2_112(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 142, Ss, Stack, T, Ts, Tzr);
-yeccpars2_112(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 143, Ss, Stack, T, Ts, Tzr);
-yeccpars2_112(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 144, Ss, Stack, T, Ts, Tzr).
+yeccpars2_112(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_113(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_mId(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_114(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_mId(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_115: see yeccpars2_4
+yeccpars2_115(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_116(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
-yeccpars2_116(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
 yeccpars2_116(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_116_(Stack),
- yeccpars2_118(118, Cat, [116 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_117(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
-yeccpars2_117(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
 yeccpars2_117(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_117_(Stack),
- yeccpars2_126(_S, Cat, [117 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_118(S, 'RSBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 121, Ss, Stack, T, Ts, Tzr).
+yeccpars2_118(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_119(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
-yeccpars2_119(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
 yeccpars2_119(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_119_(Stack),
- yeccpars2_120(_S, Cat, [119 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_120(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_120_(Stack),
- yeccgoto_daddr(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_121(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 122, Ss, Stack, T, Ts, Tzr);
 yeccpars2_121(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_121_(Stack),
- yeccgoto_domainAddress(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_122: see yeccpars2_4
+yeccpars2_122(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_123(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_123_(Stack),
- yeccgoto_portNumber(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_124(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
 yeccpars2_124(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_124_(Stack),
- yeccpars2_125(_S, Cat, [124 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_125(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_125_(Stack),
- yeccgoto_domainAddress(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_126(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_126_(Stack),
- yeccgoto_daddr(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_127(S, 'GREATER', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 128, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_127: see yeccpars2_4
 
 yeccpars2_128(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 129, Ss, Stack, T, Ts, Tzr);
-yeccpars2_128(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_128_(Stack),
- yeccgoto_domainName(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars1(S, 129, Ss, Stack, T, Ts, Tzr).
 
 %% yeccpars2_129: see yeccpars2_4
 
@@ -2997,1551 +2439,1989 @@ yeccpars2_130(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_131(_S, Cat, [130 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_131(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_|Nss] = Ss,
+ [_,_,_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_131_(Stack),
- yeccgoto_domainName(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_authenticationHeader(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
+yeccpars2_132(S, 'LESSER', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 139, Ss, Stack, T, Ts, Tzr);
+yeccpars2_132(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 140, Ss, Stack, T, Ts, Tzr);
+yeccpars2_132(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
 yeccpars2_132(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_132_(Stack),
- yeccgoto_transactionItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_135(135, Cat, [132 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_133(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_133_(Stack),
- yeccgoto_transactionItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_133(S, endOfMessage, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 134, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_134(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_134_(Stack),
- yeccgoto_transactionItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_megacoMessage(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_135(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_135_(Stack),
- yeccgoto_transactionItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-yeccpars2_136(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_136_(Stack),
- yeccgoto_messageBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-yeccpars2_137(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 141, Ss, Stack, T, Ts, Tzr);
-yeccpars2_137(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 142, Ss, Stack, T, Ts, Tzr);
-yeccpars2_137(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 143, Ss, Stack, T, Ts, Tzr);
-yeccpars2_137(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 144, Ss, Stack, T, Ts, Tzr);
-yeccpars2_137(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_137_(Stack),
- yeccgoto_transactionList(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-yeccpars2_138(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_138_(Stack),
- yeccgoto_message(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_139(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_139_(Stack),
- yeccgoto_messageBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-yeccpars2_140(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 703, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_141(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 776, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_142(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 633, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_143(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 625, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_144(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 145, Ss, Stack, T, Ts, Tzr);
-yeccpars2_144(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 146, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_145(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_135(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_135(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 617, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_135(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_145(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_135(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'MtpAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 809, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_135(S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_146(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 148, Ss, Stack, T, Ts, Tzr).
+yeccpars2_136(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 164, Ss, Stack, T, Ts, Tzr);
+yeccpars2_136(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 165, Ss, Stack, T, Ts, Tzr);
+yeccpars2_136(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 166, Ss, Stack, T, Ts, Tzr);
+yeccpars2_136(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 167, Ss, Stack, T, Ts, Tzr);
+yeccpars2_136(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 168, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_147(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 611, Ss, Stack, T, Ts, Tzr);
+yeccpars2_137(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_mId(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_138(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_mId(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_139: see yeccpars2_4
+
+yeccpars2_140(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'AndAUDITSelectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'BothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 143, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ContextAttrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ContextListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'DirectionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'EmergencyOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'EmergencyValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'IEPSToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'InternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'IntsigDelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'IterationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'MessageSegmentToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'NeverNotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'NotifyImmediateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'NotifyRegulatedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'Nx64kToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'OnewayBothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'OnewayExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'OrAUDITselectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'RequestIDToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ResetEventsDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'SegmentationCompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ServiceChangeIncompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 104, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 107, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 108, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 110, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 111, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 112, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 113, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 114, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 117, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 118, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 120, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 121, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 122, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 123, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 124, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 125, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_140(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_140_(Stack),
+ yeccpars2_142(142, Cat, [140 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_141(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'AndAUDITSelectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'BothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 143, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ContextAttrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ContextListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'DirectionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'EmergencyOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'EmergencyValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'IEPSToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'InternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'IntsigDelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'IterationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'MessageSegmentToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'NeverNotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'NotifyImmediateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'NotifyRegulatedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'Nx64kToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'OnewayBothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'OnewayExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'OrAUDITselectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'RequestIDToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ResetEventsDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'SegmentationCompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ServiceChangeIncompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 104, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 107, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 108, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 110, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 111, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 112, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 113, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 114, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 117, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 118, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 120, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 121, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 122, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 123, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 124, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 125, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_141(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_141_(Stack),
+ yeccpars2_150(_S, Cat, [141 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_142(S, 'RSBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 145, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_143(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'AndAUDITSelectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'BothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 143, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ContextAttrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ContextListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'DirectionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'EmergencyOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'EmergencyValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'IEPSToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'InternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'IntsigDelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'IterationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'MessageSegmentToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'NeverNotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'NotifyImmediateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'NotifyRegulatedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'Nx64kToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'OnewayBothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'OnewayExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'OrAUDITselectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'RequestIDToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ResetEventsDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'SegmentationCompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ServiceChangeIncompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 104, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 107, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 108, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 110, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 111, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 112, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 113, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 114, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 117, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 118, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 120, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 121, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 122, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 123, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 124, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 125, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_143(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_143_(Stack),
+ yeccpars2_144(_S, Cat, [143 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_144(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_144_(Stack),
+ yeccgoto_daddr(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_145(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 146, Ss, Stack, T, Ts, Tzr);
+yeccpars2_145(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_145_(Stack),
+ yeccgoto_domainAddress(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+%% yeccpars2_146: see yeccpars2_4
+
 yeccpars2_147(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_147_(Stack),
- yeccpars2_610(610, Cat, [147 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_portNumber(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_148(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 149, Ss, Stack, T, Ts, Tzr).
+yeccpars2_148(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
+yeccpars2_148(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_148_(Stack),
+ yeccpars2_149(_S, Cat, [148 | Ss], NewStack, T, Ts, Tzr).
 
-%% yeccpars2_149: see yeccpars2_4
+yeccpars2_149(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_149_(Stack),
+ yeccgoto_domainAddress(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_150(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
  NewStack = yeccpars2_150_(Stack),
- yeccgoto_contextID(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_daddr(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_151(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_151(S, 'GREATER', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 152, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_152(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 165, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 166, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 167, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 168, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 169, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 170, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 171, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 172, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 173, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 174, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 175, Ss, Stack, T, Ts, Tzr);
-yeccpars2_152(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 176, Ss, Stack, T, Ts, Tzr).
+yeccpars2_152(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 153, Ss, Stack, T, Ts, Tzr);
+yeccpars2_152(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_152_(Stack),
+ yeccgoto_domainName(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_153(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_153_(Stack),
- yeccgoto_contextProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_153: see yeccpars2_4
 
+yeccpars2_154(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
 yeccpars2_154(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_commandRequest(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_154_(Stack),
+ yeccpars2_155(_S, Cat, [154 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_155(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_commandRequest(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ [_,_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_155_(Stack),
+ yeccgoto_domainName(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_156(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_156_(Stack),
- yeccgoto_contextProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_transactionItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_157(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_commandRequest(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_157_(Stack),
+ yeccgoto_transactionItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_158(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_actionRequestItem(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_158_(Stack),
+ yeccgoto_transactionItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_159(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_actionRequestItem(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_159_(Stack),
+ yeccgoto_transactionItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_160(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_actionRequestItem(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_160_(Stack),
+ yeccgoto_messageBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_161(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 165, Ss, Stack, T, Ts, Tzr);
+yeccpars2_161(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 166, Ss, Stack, T, Ts, Tzr);
+yeccpars2_161(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 167, Ss, Stack, T, Ts, Tzr);
+yeccpars2_161(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 168, Ss, Stack, T, Ts, Tzr);
 yeccpars2_161(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_commandRequest(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_161_(Stack),
+ yeccgoto_transactionList(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_162(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 356, Ss, Stack, T, Ts, Tzr).
+yeccpars2_162(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_162_(Stack),
+ yeccgoto_message(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_163(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_commandRequest(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_163_(Stack),
+ yeccgoto_messageBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_164(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 352, Ss, Stack, T, Ts, Tzr);
-yeccpars2_164(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_164_(Stack),
- yeccpars2_351(351, Cat, [164 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_164(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 727, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_165(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_165_(Stack),
- yeccgoto_ammToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_165(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 800, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_166(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 348, Ss, Stack, T, Ts, Tzr).
+ yeccpars1(S, 657, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_167(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 345, Ss, Stack, T, Ts, Tzr).
+yeccpars2_167(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 649, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_168(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 169, Ss, Stack, T, Ts, Tzr);
 yeccpars2_168(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 335, Ss, Stack, T, Ts, Tzr).
+ yeccpars1(S, 170, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_169(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_169_(Stack),
- yeccgoto_contextProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_169(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 641, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_169(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_170(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_170_(Stack),
- yeccgoto_ammToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_170(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 172, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_171(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 635, Ss, Stack, T, Ts, Tzr);
 yeccpars2_171(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_171_(Stack),
- yeccgoto_ammToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_634(634, Cat, [171 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_172(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 296, Ss, Stack, T, Ts, Tzr).
+ yeccpars1(S, 173, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_173(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 294, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_173: see yeccpars2_4
 
-yeccpars2_174(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 221, Ss, Stack, T, Ts, Tzr).
+yeccpars2_174(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_174_(Stack),
+ yeccgoto_contextID(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_175(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 195, Ss, Stack, T, Ts, Tzr).
+yeccpars2_175(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 176, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_176(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 177, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_177: see yeccpars2_4
-
-yeccpars2_178(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_176(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 189, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 190, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 191, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 192, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 193, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 194, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 195, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 196, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 197, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 198, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 199, Ss, Stack, T, Ts, Tzr);
+yeccpars2_176(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 200, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_177(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_177_(Stack),
+ yeccgoto_contextProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
 yeccpars2_178(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_178_(Stack),
- yeccpars2_190(190, Cat, [178 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_commandRequest(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_179(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_terminationA(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ yeccgoto_commandRequest(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_180(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 182, Ss, Stack, T, Ts, Tzr).
+yeccpars2_180(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_180_(Stack),
+ yeccgoto_contextProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_181_(Stack),
- yeccgoto_terminationID(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_commandRequest(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_182: see yeccpars2_4
+yeccpars2_182(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_actionRequestItem(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_183(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_terminationB(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ yeccgoto_actionRequestItem(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_184(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 185, Ss, Stack, T, Ts, Tzr).
+yeccpars2_184(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_actionRequestItem(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_185(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 187, Ss, Stack, T, Ts, Tzr);
-yeccpars2_185(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 188, Ss, Stack, T, Ts, Tzr);
-yeccpars2_185(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 189, Ss, Stack, T, Ts, Tzr).
+yeccpars2_185(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_commandRequest(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_186(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_186_(Stack),
- yeccgoto_topologyTriple(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_186(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 380, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_187(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_187_(Stack),
- yeccgoto_topologyDirection(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_commandRequest(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_188(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 376, Ss, Stack, T, Ts, Tzr);
 yeccpars2_188(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_188_(Stack),
- yeccgoto_topologyDirection(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_375(375, Cat, [188 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_189(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_189_(Stack),
- yeccgoto_topologyDirection(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_ammToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_190(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 194, Ss, Stack, T, Ts, Tzr).
+yeccpars2_190(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 372, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_191: see yeccpars2_4
+yeccpars2_191(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 369, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_192(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 191, Ss, Stack, T, Ts, Tzr);
-yeccpars2_192(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_192_(Stack),
- yeccpars2_193(_S, Cat, [192 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_192(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 359, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_193(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_193_(Stack),
- yeccgoto_topologyTripleList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_contextProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_194(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_194_(Stack),
- yeccgoto_topologyDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_ammToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_195: see yeccpars2_4
+yeccpars2_195(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_195_(Stack),
+ yeccgoto_ammToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_196(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 198, Ss, Stack, T, Ts, Tzr);
-yeccpars2_196(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_196_(Stack),
- yeccpars2_197(_S, Cat, [196 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_196(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 320, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_197(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_197_(Stack),
- yeccgoto_subtractRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_197(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 318, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_198(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 200, Ss, Stack, T, Ts, Tzr).
+yeccpars2_198(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 245, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_199(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 220, Ss, Stack, T, Ts, Tzr).
+yeccpars2_199(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 219, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_200(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 201, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_201(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 205, Ss, Stack, T, Ts, Tzr);
-yeccpars2_201(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 206, Ss, Stack, T, Ts, Tzr);
-yeccpars2_201(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 207, Ss, Stack, T, Ts, Tzr);
-yeccpars2_201(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 208, Ss, Stack, T, Ts, Tzr);
-yeccpars2_201(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 209, Ss, Stack, T, Ts, Tzr);
-yeccpars2_201(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 210, Ss, Stack, T, Ts, Tzr);
-yeccpars2_201(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 211, Ss, Stack, T, Ts, Tzr);
-yeccpars2_201(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 212, Ss, Stack, T, Ts, Tzr);
-yeccpars2_201(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 213, Ss, Stack, T, Ts, Tzr);
-yeccpars2_201(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 214, Ss, Stack, T, Ts, Tzr);
-yeccpars2_201(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_201_(Stack),
- yeccpars2_204(204, Cat, [201 | Ss], NewStack, T, Ts, Tzr).
+%% yeccpars2_201: see yeccpars2_4
 
+yeccpars2_202(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 215, Ss, Stack, T, Ts, Tzr);
 yeccpars2_202(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_auditItem(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_202_(Stack),
+ yeccpars2_214(214, Cat, [202 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_203(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 217, Ss, Stack, T, Ts, Tzr);
 yeccpars2_203(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_203_(Stack),
- yeccpars2_216(_S, Cat, [203 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_terminationA(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_204(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 215, Ss, Stack, T, Ts, Tzr).
+yeccpars2_204(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 206, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_205_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_terminationID(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_206(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_206_(Stack),
- yeccgoto_auditItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_206: see yeccpars2_4
 
 yeccpars2_207(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_207_(Stack),
- yeccgoto_auditItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_terminationB(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_208(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_208_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_208(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 209, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_209(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_209_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_209(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 211, Ss, Stack, T, Ts, Tzr);
+yeccpars2_209(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 212, Ss, Stack, T, Ts, Tzr);
+yeccpars2_209(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 213, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_210(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_210_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_topologyTriple(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_211(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_211_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_topologyDirection(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_212(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_212_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_topologyDirection(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_213(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_213_(Stack),
- yeccgoto_auditItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_topologyDirection(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_214(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_214_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_214(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 218, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_215(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_215_(Stack),
- yeccgoto_auditDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_215: see yeccpars2_4
 
+yeccpars2_216(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 215, Ss, Stack, T, Ts, Tzr);
 yeccpars2_216(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
  NewStack = yeccpars2_216_(Stack),
- yeccgoto_auditDescriptorBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_217(_S, Cat, [216 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_217(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 205, Ss, Stack, T, Ts, Tzr);
-yeccpars2_217(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 206, Ss, Stack, T, Ts, Tzr);
-yeccpars2_217(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 207, Ss, Stack, T, Ts, Tzr);
-yeccpars2_217(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 208, Ss, Stack, T, Ts, Tzr);
-yeccpars2_217(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 209, Ss, Stack, T, Ts, Tzr);
-yeccpars2_217(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 210, Ss, Stack, T, Ts, Tzr);
-yeccpars2_217(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 211, Ss, Stack, T, Ts, Tzr);
-yeccpars2_217(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 212, Ss, Stack, T, Ts, Tzr);
-yeccpars2_217(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 213, Ss, Stack, T, Ts, Tzr);
-yeccpars2_217(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 214, Ss, Stack, T, Ts, Tzr).
+yeccpars2_217(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_217_(Stack),
+ yeccgoto_topologyTripleList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_218(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 217, Ss, Stack, T, Ts, Tzr);
 yeccpars2_218(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_218_(Stack),
- yeccpars2_219(_S, Cat, [218 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_topologyDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_219(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_219_(Stack),
- yeccgoto_auditItemList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_219: see yeccpars2_4
 
+yeccpars2_220(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 222, Ss, Stack, T, Ts, Tzr);
 yeccpars2_220(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_220_(Stack),
- yeccgoto_optAuditDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_221(_S, Cat, [220 | Ss], NewStack, T, Ts, Tzr).
 
-%% yeccpars2_221: see yeccpars2_4
+yeccpars2_221(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_221_(Stack),
+ yeccgoto_subtractRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_222(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 223, Ss, Stack, T, Ts, Tzr).
+yeccpars2_222(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 224, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_223(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_223(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 244, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_224(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 225, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_224(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 293, Ss, Stack, T, Ts, Tzr).
+yeccpars2_225(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 229, Ss, Stack, T, Ts, Tzr);
+yeccpars2_225(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 230, Ss, Stack, T, Ts, Tzr);
+yeccpars2_225(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 231, Ss, Stack, T, Ts, Tzr);
+yeccpars2_225(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 232, Ss, Stack, T, Ts, Tzr);
+yeccpars2_225(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 233, Ss, Stack, T, Ts, Tzr);
+yeccpars2_225(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 234, Ss, Stack, T, Ts, Tzr);
+yeccpars2_225(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 235, Ss, Stack, T, Ts, Tzr);
+yeccpars2_225(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 236, Ss, Stack, T, Ts, Tzr);
+yeccpars2_225(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 237, Ss, Stack, T, Ts, Tzr);
+yeccpars2_225(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 238, Ss, Stack, T, Ts, Tzr);
+yeccpars2_225(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_225_(Stack),
+ yeccpars2_228(228, Cat, [225 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_225(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 226, Ss, Stack, T, Ts, Tzr).
+yeccpars2_226(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_auditItem(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_226(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 239, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 240, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_227(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 241, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 242, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 243, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 244, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 245, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 246, Ss, Stack, T, Ts, Tzr);
-yeccpars2_226(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
-
 yeccpars2_227(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_227_(Stack),
- yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_240(_S, Cat, [227 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_228(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_228_(Stack),
- yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_228(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 239, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_229(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_229_(Stack),
- yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_230(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_230_(Stack),
- yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_231(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 289, Ss, Stack, T, Ts, Tzr);
 yeccpars2_231(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_231_(Stack),
- yeccpars2_288(288, Cat, [231 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_auditItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_232(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_232_(Stack),
- yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_233(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_233_(Stack),
- yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_234(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_234_(Stack),
- yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_235(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_235_(Stack),
- yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_236(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_236_(Stack),
- yeccgoto_extensionParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_237(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 265, Ss, Stack, T, Ts, Tzr);
-yeccpars2_237(S, 'GREATER', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 266, Ss, Stack, T, Ts, Tzr);
-yeccpars2_237(S, 'LESSER', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 267, Ss, Stack, T, Ts, Tzr);
-yeccpars2_237(S, 'NEQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 268, Ss, Stack, T, Ts, Tzr).
+yeccpars2_237(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_237_(Stack),
+ yeccgoto_auditItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_238(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_238_(Stack),
- yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_239(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 262, Ss, Stack, T, Ts, Tzr);
 yeccpars2_239(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_239_(Stack),
+ yeccgoto_auditDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_240(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 260, Ss, Stack, T, Ts, Tzr);
 yeccpars2_240(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_240_(Stack),
+ yeccgoto_auditDescriptorBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_241(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 258, Ss, Stack, T, Ts, Tzr);
-yeccpars2_241(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_241(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 229, Ss, Stack, T, Ts, Tzr);
+yeccpars2_241(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 230, Ss, Stack, T, Ts, Tzr);
+yeccpars2_241(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 231, Ss, Stack, T, Ts, Tzr);
+yeccpars2_241(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 232, Ss, Stack, T, Ts, Tzr);
+yeccpars2_241(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 233, Ss, Stack, T, Ts, Tzr);
+yeccpars2_241(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 234, Ss, Stack, T, Ts, Tzr);
+yeccpars2_241(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 235, Ss, Stack, T, Ts, Tzr);
+yeccpars2_241(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 236, Ss, Stack, T, Ts, Tzr);
+yeccpars2_241(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 237, Ss, Stack, T, Ts, Tzr);
+yeccpars2_241(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 238, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_242(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 256, Ss, Stack, T, Ts, Tzr);
+yeccpars2_242(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 241, Ss, Stack, T, Ts, Tzr);
 yeccpars2_242(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_242_(Stack),
+ yeccpars2_243(_S, Cat, [242 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_243(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 252, Ss, Stack, T, Ts, Tzr);
 yeccpars2_243(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_243_(Stack),
+ yeccgoto_auditItemList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_244(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 249, Ss, Stack, T, Ts, Tzr);
 yeccpars2_244(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_245(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_245_(Stack),
- yeccgoto_timeStamp(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-yeccpars2_246(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 247, Ss, Stack, T, Ts, Tzr);
-yeccpars2_246(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_247: see yeccpars2_4
-
-yeccpars2_248(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
- NewStack = yeccpars2_248_(Stack),
- yeccgoto_serviceChangeVersion(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ NewStack = yeccpars2_244_(Stack),
+ yeccgoto_optAuditDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_249(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+%% yeccpars2_245: see yeccpars2_4
+
+yeccpars2_246(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 247, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_247(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 249, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_248(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 317, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_249(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 250, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_250(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_250(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_250(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 263, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_250(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_250(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'LESSER', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_250(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_250(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 264, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 265, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_250(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_250(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 266, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 267, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_250(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_249(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_249_(Stack),
- yeccpars2_111(111, Cat, [249 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_250(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_250_(Stack),
- yeccgoto_serviceChangeAddress(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_251(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_251_(Stack),
- yeccgoto_serviceChangeAddress(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_252(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'QuotedChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 255, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_252(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_250(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 268, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 269, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 270, Ss, Stack, T, Ts, Tzr);
+yeccpars2_250(S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_251(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_251_(Stack),
+ yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_252(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_252_(Stack),
+ yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
 yeccpars2_253(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_253_(Stack),
- yeccgoto_serviceChangeReason(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_254_(Stack),
- yeccgoto_value(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_255(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 313, Ss, Stack, T, Ts, Tzr);
 yeccpars2_255(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_255_(Stack),
- yeccgoto_value(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_312(312, Cat, [255 | Ss], NewStack, T, Ts, Tzr).
 
-%% yeccpars2_256: see yeccpars2_4
+yeccpars2_256(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_256_(Stack),
+ yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_257(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_257_(Stack),
- yeccgoto_serviceChangeProfile(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_258(S, 'LESSER', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
-yeccpars2_258(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
-yeccpars2_258(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
 yeccpars2_258(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_258_(Stack),
- yeccpars2_111(111, Cat, [258 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_259(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_259_(Stack),
- yeccgoto_serviceChangeMgcId(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_260: see yeccpars2_4
+yeccpars2_260(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_260_(Stack),
+ yeccgoto_extensionParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_261(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_261_(Stack),
- yeccgoto_serviceChangeMethod(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_261(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 289, Ss, Stack, T, Ts, Tzr);
+yeccpars2_261(S, 'GREATER', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 290, Ss, Stack, T, Ts, Tzr);
+yeccpars2_261(S, 'LESSER', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 291, Ss, Stack, T, Ts, Tzr);
+yeccpars2_261(S, 'NEQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 292, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_262: see yeccpars2_4
+yeccpars2_262(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_262_(Stack),
+ yeccgoto_serviceChangeParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_263(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 286, Ss, Stack, T, Ts, Tzr);
 yeccpars2_263(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_263_(Stack),
- yeccgoto_serviceChangeDelay(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_264(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 284, Ss, Stack, T, Ts, Tzr);
 yeccpars2_264(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_264_(Stack),
- yeccgoto_extension(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_265(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 274, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 275, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'QuotedChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 255, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_265(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_265(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 282, Ss, Stack, T, Ts, Tzr);
+yeccpars2_265(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_266: see yeccpars2_252
+yeccpars2_266(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 280, Ss, Stack, T, Ts, Tzr);
+yeccpars2_266(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_267: see yeccpars2_252
+yeccpars2_267(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 276, Ss, Stack, T, Ts, Tzr);
+yeccpars2_267(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_268: see yeccpars2_252
+yeccpars2_268(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 273, Ss, Stack, T, Ts, Tzr);
+yeccpars2_268(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_269(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
  NewStack = yeccpars2_269_(Stack),
- yeccgoto_parmValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_timeStamp(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_270(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 271, Ss, Stack, T, Ts, Tzr);
 yeccpars2_270(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_270_(Stack),
- yeccgoto_parmValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_271(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_271_(Stack),
- yeccgoto_parmValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_271: see yeccpars2_4
 
 yeccpars2_272(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_272_(Stack),
- yeccgoto_alternativeValue(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeVersion(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
+yeccpars2_273(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'AndAUDITSelectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'BothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ContextAttrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ContextListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'DirectionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'EmergencyOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'EmergencyValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'IEPSToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'InternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'IntsigDelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'IterationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'LESSER', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 139, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 140, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'MessageSegmentToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'NeverNotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'NotifyImmediateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'NotifyRegulatedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'Nx64kToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'OnewayBothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'OnewayExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'OrAUDITselectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'RequestIDToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ResetEventsDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'SegmentationCompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ServiceChangeIncompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 104, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 107, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 108, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 110, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 111, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 112, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 113, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 114, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 117, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 118, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 120, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 121, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 122, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 123, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 124, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 125, Ss, Stack, T, Ts, Tzr);
+yeccpars2_273(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
 yeccpars2_273(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
  NewStack = yeccpars2_273_(Stack),
- yeccgoto_parmValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_135(135, Cat, [273 | Ss], NewStack, T, Ts, Tzr).
 
-%% yeccpars2_274: see yeccpars2_252
+yeccpars2_274(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_274_(Stack),
+ yeccgoto_serviceChangeAddress(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_275: see yeccpars2_252
+yeccpars2_275(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_275_(Stack),
+ yeccgoto_serviceChangeAddress(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_276(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 278, Ss, Stack, T, Ts, Tzr);
-yeccpars2_276(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_276(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'QuotedChars', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 279, Ss, Stack, T, Ts, Tzr);
-yeccpars2_276(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_276_(Stack),
- yeccpars2_277(277, Cat, [276 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_276(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_276(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_277(S, 'RSBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 284, Ss, Stack, T, Ts, Tzr).
+yeccpars2_277(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_277_(Stack),
+ yeccgoto_serviceChangeReason(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_278: see yeccpars2_252
+yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_278_(Stack),
+ yeccgoto_value(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_279: see yeccpars2_252
+yeccpars2_279(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_279_(Stack),
+ yeccgoto_value(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_280(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 279, Ss, Stack, T, Ts, Tzr);
-yeccpars2_280(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_280_(Stack),
- yeccpars2_281(_S, Cat, [280 | Ss], NewStack, T, Ts, Tzr).
+%% yeccpars2_280: see yeccpars2_4
 
 yeccpars2_281(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
  NewStack = yeccpars2_281_(Stack),
- yeccgoto_valueList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeProfile(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_282(S, 'RSBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 283, Ss, Stack, T, Ts, Tzr).
+yeccpars2_282(S, 'LESSER', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 139, Ss, Stack, T, Ts, Tzr);
+yeccpars2_282(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 140, Ss, Stack, T, Ts, Tzr);
+yeccpars2_282(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
+yeccpars2_282(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_282_(Stack),
+ yeccpars2_135(135, Cat, [282 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_283(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_283_(Stack),
- yeccgoto_alternativeValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeMgcId(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_284(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_284_(Stack),
- yeccgoto_alternativeValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_284: see yeccpars2_4
 
-yeccpars2_285(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 279, Ss, Stack, T, Ts, Tzr);
 yeccpars2_285(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_285_(Stack),
- yeccpars2_286(286, Cat, [285 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeMethod(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_286(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 287, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_286: see yeccpars2_4
 
 yeccpars2_287(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_287_(Stack),
- yeccgoto_alternativeValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_288(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 292, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_289: see yeccpars2_226
-
-yeccpars2_290(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 289, Ss, Stack, T, Ts, Tzr);
-yeccpars2_290(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_290_(Stack),
- yeccpars2_291(_S, Cat, [290 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_291(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
- NewStack = yeccpars2_291_(Stack),
- yeccgoto_serviceChangeParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ NewStack = yeccpars2_287_(Stack),
+ yeccgoto_serviceChangeDelay(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_292(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_292_(Stack),
- yeccgoto_serviceChangeDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_288(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_288_(Stack),
+ yeccgoto_extension(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_289(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 298, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 299, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'QuotedChars', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 279, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_289(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_290: see yeccpars2_276
+
+%% yeccpars2_291: see yeccpars2_276
+
+%% yeccpars2_292: see yeccpars2_276
 
 yeccpars2_293(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_|Nss] = Ss,
+ [_|Nss] = Ss,
  NewStack = yeccpars2_293_(Stack),
- yeccgoto_serviceChangeRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_parmValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_294: see yeccpars2_4
+yeccpars2_294(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_294_(Stack),
+ yeccgoto_parmValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_295(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
+ [_|Nss] = Ss,
  NewStack = yeccpars2_295_(Stack),
- yeccgoto_priority(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_parmValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_296: see yeccpars2_4
+yeccpars2_296(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_296_(Stack),
+ yeccgoto_alternativeValue(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_297(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 298, Ss, Stack, T, Ts, Tzr).
+yeccpars2_297(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_297_(Stack),
+ yeccgoto_parmValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_298(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 140, Ss, Stack, T, Ts, Tzr);
-yeccpars2_298(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 302, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_298: see yeccpars2_276
 
-yeccpars2_299(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_299_(Stack),
- yeccgoto_notifyRequestBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_299: see yeccpars2_276
 
-yeccpars2_300(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 334, Ss, Stack, T, Ts, Tzr).
+yeccpars2_300(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 302, Ss, Stack, T, Ts, Tzr);
+yeccpars2_300(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 303, Ss, Stack, T, Ts, Tzr);
+yeccpars2_300(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_300_(Stack),
+ yeccpars2_301(301, Cat, [300 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_301(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_301_(Stack),
- yeccgoto_notifyRequestBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_301(S, 'RSBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 308, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_302(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 303, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_302: see yeccpars2_276
 
-%% yeccpars2_303: see yeccpars2_4
+%% yeccpars2_303: see yeccpars2_276
 
+yeccpars2_304(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 303, Ss, Stack, T, Ts, Tzr);
 yeccpars2_304(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_304_(Stack),
- yeccgoto_requestID(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_305(_S, Cat, [304 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_305(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 306, Ss, Stack, T, Ts, Tzr).
+yeccpars2_305(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_305_(Stack),
+ yeccgoto_valueList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_306(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 245, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_306(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_306_(Stack),
- yeccpars2_310(310, Cat, [306 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_306(S, 'RSBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 307, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_307(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
 yeccpars2_307(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_307_(Stack),
- yeccpars2_332(332, Cat, [307 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_alternativeValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_308_(Stack),
- yeccgoto_pkgdName(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_alternativeValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_309(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 320, Ss, Stack, T, Ts, Tzr);
+yeccpars2_309(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 303, Ss, Stack, T, Ts, Tzr);
 yeccpars2_309(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_309_(Stack),
- yeccpars2_331(_S, Cat, [309 | Ss], NewStack, T, Ts, Tzr).
+ yeccpars2_310(310, Cat, [309 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_310(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
-yeccpars2_310(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_310_(Stack),
- yeccpars2_4(317, Cat, [310 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_310(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 311, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_311(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 313, Ss, Stack, T, Ts, Tzr);
 yeccpars2_311(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_311_(Stack),
- yeccpars2_312(312, Cat, [311 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_alternativeValue(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_312(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 316, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_313(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 245, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_313(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_313_(Stack),
- yeccpars2_310(310, Cat, [313 | Ss], NewStack, T, Ts, Tzr).
+%% yeccpars2_313: see yeccpars2_250
 
 yeccpars2_314(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 313, Ss, Stack, T, Ts, Tzr);
@@ -4552,647 +4432,1126 @@ yeccpars2_314(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccpars2_315(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
  NewStack = yeccpars2_315_(Stack),
- yeccgoto_observedEvents(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_316(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_,_|Nss] = Ss,
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_316_(Stack),
- yeccgoto_observedEventsDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_317: see yeccpars2_4
+yeccpars2_317(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_317_(Stack),
+ yeccgoto_serviceChangeRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_318(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 320, Ss, Stack, T, Ts, Tzr);
-yeccpars2_318(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_318_(Stack),
- yeccpars2_319(_S, Cat, [318 | Ss], NewStack, T, Ts, Tzr).
+%% yeccpars2_318: see yeccpars2_4
 
 yeccpars2_319(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_319_(Stack),
- yeccgoto_observedEvent(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_priority(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 %% yeccpars2_320: see yeccpars2_4
 
-yeccpars2_321(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_321_(Stack),
- yeccgoto_eventParameterName(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_321(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 322, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_322(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 327, Ss, Stack, T, Ts, Tzr);
-yeccpars2_322(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_322_(Stack),
- yeccpars2_326(326, Cat, [322 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_322(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 164, Ss, Stack, T, Ts, Tzr);
+yeccpars2_322(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 326, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_323(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_observedEventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_323_(Stack),
+ yeccgoto_notifyRequestBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_324: see yeccpars2_237
+yeccpars2_324(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 358, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_325(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
  NewStack = yeccpars2_325_(Stack),
- yeccgoto_eventStreamOrOther(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_notifyRequestBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_326(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 330, Ss, Stack, T, Ts, Tzr).
+yeccpars2_326(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 327, Ss, Stack, T, Ts, Tzr).
 
 %% yeccpars2_327: see yeccpars2_4
 
-yeccpars2_328(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 327, Ss, Stack, T, Ts, Tzr);
 yeccpars2_328(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_328_(Stack),
- yeccpars2_329(_S, Cat, [328 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_requestID(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_329(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_329_(Stack),
- yeccgoto_observedEventParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_329(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 330, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_330(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'AndAUDITSelectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'BothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ContextAttrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ContextListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'DirectionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'EmergencyOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'EmergencyValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'IEPSToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'InternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'IntsigDelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'IterationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'MessageSegmentToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'NeverNotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'NotifyImmediateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'NotifyRegulatedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'Nx64kToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'OnewayBothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'OnewayExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'OrAUDITselectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'RequestIDToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ResetEventsDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'SegmentationCompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ServiceChangeIncompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 104, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 107, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 108, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 110, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 111, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 112, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 113, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 114, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 269, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 117, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 118, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 120, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 121, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 122, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 123, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 124, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 125, Ss, Stack, T, Ts, Tzr);
+yeccpars2_330(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
 yeccpars2_330(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_330_(Stack),
- yeccgoto_observedEventBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_334(334, Cat, [330 | Ss], NewStack, T, Ts, Tzr).
 
+yeccpars2_331(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
 yeccpars2_331(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
  NewStack = yeccpars2_331_(Stack),
- yeccgoto_observedEvent(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_356(356, Cat, [331 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_332(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 333, Ss, Stack, T, Ts, Tzr).
+yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_332_(Stack),
+ yeccgoto_pkgdName(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_333(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 344, Ss, Stack, T, Ts, Tzr);
 yeccpars2_333(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_333_(Stack),
- yeccgoto_observedEventTimeStamp(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_355(_S, Cat, [333 | Ss], NewStack, T, Ts, Tzr).
 
+yeccpars2_334(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
 yeccpars2_334(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_334_(Stack),
- yeccgoto_notifyRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_4(341, Cat, [334 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_335(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_335(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 337, Ss, Stack, T, Ts, Tzr);
-yeccpars2_335(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 338, Ss, Stack, T, Ts, Tzr);
-yeccpars2_335(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 339, Ss, Stack, T, Ts, Tzr).
+yeccpars2_335(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_335_(Stack),
+ yeccpars2_336(336, Cat, [335 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_336(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 341, Ss, Stack, T, Ts, Tzr);
-yeccpars2_336(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_336_(Stack),
- yeccpars2_340(340, Cat, [336 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_336(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 340, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_337(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'AndAUDITSelectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'BothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ContextAttrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ContextListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'DirectionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'EmergencyOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'EmergencyValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'IEPSToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'InternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'IntsigDelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'IterationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'MessageSegmentToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'NeverNotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'NotifyImmediateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'NotifyRegulatedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'Nx64kToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'OnewayBothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'OnewayExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'OrAUDITselectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'RequestIDToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ResetEventsDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'SegmentationCompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ServiceChangeIncompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 104, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 107, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 108, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 110, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 111, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 112, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 113, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 114, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 269, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 117, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 118, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 120, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 121, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 122, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 123, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 124, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 125, Ss, Stack, T, Ts, Tzr);
+yeccpars2_337(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
 yeccpars2_337(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_337_(Stack),
- yeccgoto_contextAuditProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_334(334, Cat, [337 | Ss], NewStack, T, Ts, Tzr).
 
+yeccpars2_338(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 337, Ss, Stack, T, Ts, Tzr);
 yeccpars2_338(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_338_(Stack),
- yeccgoto_contextAuditProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_339(_S, Cat, [338 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_339(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_339_(Stack),
- yeccgoto_contextAuditProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_observedEvents(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_340(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 344, Ss, Stack, T, Ts, Tzr).
+yeccpars2_340(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_340_(Stack),
+ yeccgoto_observedEventsDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_341: see yeccpars2_335
+%% yeccpars2_341: see yeccpars2_4
 
-yeccpars2_342(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 341, Ss, Stack, T, Ts, Tzr);
+yeccpars2_342(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 344, Ss, Stack, T, Ts, Tzr);
 yeccpars2_342(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_342_(Stack),
  yeccpars2_343(_S, Cat, [342 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_343(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_343_(Stack),
- yeccgoto_contextAuditProperties(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_observedEvent(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_344(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_344_(Stack),
- yeccgoto_contextAudit(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_344: see yeccpars2_4
 
-%% yeccpars2_345: see yeccpars2_4
+yeccpars2_345(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_345_(Stack),
+ yeccgoto_eventParameterName(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_346(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 198, Ss, Stack, T, Ts, Tzr);
+yeccpars2_346(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 351, Ss, Stack, T, Ts, Tzr);
 yeccpars2_346(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_346_(Stack),
- yeccpars2_347(_S, Cat, [346 | Ss], NewStack, T, Ts, Tzr).
+ yeccpars2_350(350, Cat, [346 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_347(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_347_(Stack),
- yeccgoto_auditRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_observedEventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_348: see yeccpars2_4
+%% yeccpars2_348: see yeccpars2_261
 
-yeccpars2_349(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 198, Ss, Stack, T, Ts, Tzr);
 yeccpars2_349(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
  NewStack = yeccpars2_349_(Stack),
- yeccpars2_350(_S, Cat, [349 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_eventStreamOrOther(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_350(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_350_(Stack),
- yeccgoto_auditRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_350(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 354, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_351(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 355, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_351: see yeccpars2_4
 
-%% yeccpars2_352: see yeccpars2_152
+yeccpars2_352(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 351, Ss, Stack, T, Ts, Tzr);
+yeccpars2_352(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_352_(Stack),
+ yeccpars2_353(_S, Cat, [352 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_353(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 352, Ss, Stack, T, Ts, Tzr);
 yeccpars2_353(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_353_(Stack),
- yeccpars2_354(_S, Cat, [353 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_observedEventParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_354(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_354_(Stack),
- yeccgoto_actionRequestItems(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_observedEventBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_355(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_,_|Nss] = Ss,
+ [_|Nss] = Ss,
  NewStack = yeccpars2_355_(Stack),
- yeccgoto_actionRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_observedEvent(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_356: see yeccpars2_4
+yeccpars2_356(S, 'COLON', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 357, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_357(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 359, Ss, Stack, T, Ts, Tzr);
 yeccpars2_357(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_357_(Stack),
- yeccpars2_358(_S, Cat, [357 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_observedEventTimeStamp(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_358(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
+ [_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_358_(Stack),
- yeccgoto_ammRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_notifyRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_359(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 200, Ss, Stack, T, Ts, Tzr);
-yeccpars2_359(S, 'DigitMapDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 369, Ss, Stack, T, Ts, Tzr);
-yeccpars2_359(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 370, Ss, Stack, T, Ts, Tzr);
-yeccpars2_359(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 371, Ss, Stack, T, Ts, Tzr);
-yeccpars2_359(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 372, Ss, Stack, T, Ts, Tzr);
-yeccpars2_359(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 373, Ss, Stack, T, Ts, Tzr);
-yeccpars2_359(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 374, Ss, Stack, T, Ts, Tzr);
-yeccpars2_359(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 375, Ss, Stack, T, Ts, Tzr).
+yeccpars2_359(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 361, Ss, Stack, T, Ts, Tzr);
+yeccpars2_359(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 362, Ss, Stack, T, Ts, Tzr);
+yeccpars2_359(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 363, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_360(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 365, Ss, Stack, T, Ts, Tzr);
 yeccpars2_360(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_360_(Stack),
- yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_364(364, Cat, [360 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_361(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_361_(Stack),
- yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_contextAuditProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_362(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_362_(Stack),
- yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_contextAuditProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_363(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_363_(Stack),
- yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_contextAuditProperty(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_364(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_364_(Stack),
- yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_364(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 368, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_365(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_365_(Stack),
- yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_365: see yeccpars2_359
 
+yeccpars2_366(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 365, Ss, Stack, T, Ts, Tzr);
 yeccpars2_366(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_366_(Stack),
- yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_367(_S, Cat, [366 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_367(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_367_(Stack),
- yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_contextAuditProperties(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_368(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 606, Ss, Stack, T, Ts, Tzr);
 yeccpars2_368(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_368_(Stack),
- yeccpars2_605(605, Cat, [368 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_contextAudit(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_369(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_369_(Stack),
- yeccgoto_digitMapDescriptor(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_369: see yeccpars2_4
 
 yeccpars2_370(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 597, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 222, Ss, Stack, T, Ts, Tzr);
 yeccpars2_370(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_370_(Stack),
- yeccgoto_eventBufferDescriptor(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_371(_S, Cat, [370 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_371(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 537, Ss, Stack, T, Ts, Tzr);
 yeccpars2_371(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_371_(Stack),
- yeccgoto_eventsDescriptor(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_372(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 467, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_372: see yeccpars2_4
 
-yeccpars2_373(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 446, Ss, Stack, T, Ts, Tzr);
-yeccpars2_373(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 447, Ss, Stack, T, Ts, Tzr).
+yeccpars2_373(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 222, Ss, Stack, T, Ts, Tzr);
+yeccpars2_373(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_373_(Stack),
+ yeccpars2_374(_S, Cat, [373 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_374(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 435, Ss, Stack, T, Ts, Tzr).
+yeccpars2_374(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_374_(Stack),
+ yeccgoto_auditRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_375(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_375(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 379, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_376: see yeccpars2_176
+
+yeccpars2_377(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 376, Ss, Stack, T, Ts, Tzr);
-yeccpars2_375(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_375_(Stack),
- yeccgoto_signalsDescriptor(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-yeccpars2_376(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 382, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_376(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
-
 yeccpars2_377(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_377_(Stack),
- yeccgoto_signalParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_378(_S, Cat, [377 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_378(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 431, Ss, Stack, T, Ts, Tzr);
 yeccpars2_378(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_378_(Stack),
- yeccpars2_430(430, Cat, [378 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_actionRequestItems(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_379(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 394, Ss, Stack, T, Ts, Tzr);
 yeccpars2_379(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_379_(Stack),
- yeccgoto_signalRequest(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_actionRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_380(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_380_(Stack),
- yeccgoto_signalParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_380: see yeccpars2_4
 
-yeccpars2_381(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_signalName(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_382(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_381(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 383, Ss, Stack, T, Ts, Tzr);
+yeccpars2_381(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_381_(Stack),
+ yeccpars2_382(_S, Cat, [381 | Ss], NewStack, T, Ts, Tzr).
+
 yeccpars2_382(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_382_(Stack),
+ yeccgoto_ammRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_383: see yeccpars2_4
+yeccpars2_383(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 224, Ss, Stack, T, Ts, Tzr);
+yeccpars2_383(S, 'DigitMapDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 393, Ss, Stack, T, Ts, Tzr);
+yeccpars2_383(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 394, Ss, Stack, T, Ts, Tzr);
+yeccpars2_383(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 395, Ss, Stack, T, Ts, Tzr);
+yeccpars2_383(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 396, Ss, Stack, T, Ts, Tzr);
+yeccpars2_383(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 397, Ss, Stack, T, Ts, Tzr);
+yeccpars2_383(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 398, Ss, Stack, T, Ts, Tzr);
+yeccpars2_383(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 399, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_384(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 386, Ss, Stack, T, Ts, Tzr).
+yeccpars2_384(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_384_(Stack),
+ yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_385(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_385_(Stack),
- yeccgoto_signalListId(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_386: see yeccpars2_4
+yeccpars2_386(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_386_(Stack),
+ yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_387(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_signalListParm(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_387_(Stack),
+ yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_388(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 390, Ss, Stack, T, Ts, Tzr);
 yeccpars2_388(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_388_(Stack),
- yeccpars2_389(389, Cat, [388 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_389(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 393, Ss, Stack, T, Ts, Tzr).
+yeccpars2_389(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_389_(Stack),
+ yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_390: see yeccpars2_4
+yeccpars2_390(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_390_(Stack),
+ yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_391(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 390, Ss, Stack, T, Ts, Tzr);
 yeccpars2_391(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_391_(Stack),
- yeccpars2_392(_S, Cat, [391 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_ammParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_392(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 630, Ss, Stack, T, Ts, Tzr);
 yeccpars2_392(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_392_(Stack),
- yeccgoto_signalListParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_629(629, Cat, [392 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_393(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_393_(Stack),
- yeccgoto_signalList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_digitMapDescriptor(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_394(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 397, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 398, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 399, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 400, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 401, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_394(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_394(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 621, Ss, Stack, T, Ts, Tzr);
+yeccpars2_394(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_394_(Stack),
+ yeccgoto_eventBufferDescriptor(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_395(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 426, Ss, Stack, T, Ts, Tzr);
+yeccpars2_395(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 561, Ss, Stack, T, Ts, Tzr);
 yeccpars2_395(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_395_(Stack),
- yeccpars2_425(425, Cat, [395 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_eventsDescriptor(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_396: see yeccpars2_237
+yeccpars2_396(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 491, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_397(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 422, Ss, Stack, T, Ts, Tzr);
-yeccpars2_397(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ yeccpars1(S, 470, Ss, Stack, T, Ts, Tzr);
+yeccpars2_397(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 471, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_398(_S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_398_COMMA(Stack),
- yeccgoto_sigParameter(hd(Ss), 'COMMA', Ss, NewStack, T, Ts, Tzr);
-yeccpars2_398(_S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_398_RBRKT(Stack),
- yeccgoto_sigParameter(hd(Ss), 'RBRKT', Ss, NewStack, T, Ts, Tzr);
-yeccpars2_398(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_398(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 459, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_399(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 410, Ss, Stack, T, Ts, Tzr);
+yeccpars2_399(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 400, Ss, Stack, T, Ts, Tzr);
 yeccpars2_399(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_399_(Stack),
+ yeccgoto_signalsDescriptor(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_400(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 405, Ss, Stack, T, Ts, Tzr);
-yeccpars2_400(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_400(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 406, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_400(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_401(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 402, Ss, Stack, T, Ts, Tzr);
 yeccpars2_401(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_401_(Stack),
+ yeccgoto_signalParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_402: see yeccpars2_4
+yeccpars2_402(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 455, Ss, Stack, T, Ts, Tzr);
+yeccpars2_402(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_402_(Stack),
+ yeccpars2_454(454, Cat, [402 | Ss], NewStack, T, Ts, Tzr).
 
+yeccpars2_403(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 418, Ss, Stack, T, Ts, Tzr);
 yeccpars2_403(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_403_(Stack),
- yeccgoto_sigParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_signalRequest(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_404(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_404_(Stack),
- yeccgoto_streamID(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_signalParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_405(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_405(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_signalName(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_406(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 407, Ss, Stack, T, Ts, Tzr);
-yeccpars2_405(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 408, Ss, Stack, T, Ts, Tzr);
-yeccpars2_405(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 409, Ss, Stack, T, Ts, Tzr).
-
 yeccpars2_406(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_406_(Stack),
- yeccgoto_sigParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_407(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_407_(Stack),
- yeccgoto_signalType(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_407: see yeccpars2_4
 
-yeccpars2_408(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_408_(Stack),
- yeccgoto_signalType(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_408(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 410, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_409(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_409_(Stack),
- yeccgoto_signalType(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_signalListId(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_410(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 411, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_410: see yeccpars2_4
 
-yeccpars2_411(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 413, Ss, Stack, T, Ts, Tzr);
-yeccpars2_411(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 414, Ss, Stack, T, Ts, Tzr);
-yeccpars2_411(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 415, Ss, Stack, T, Ts, Tzr);
-yeccpars2_411(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 416, Ss, Stack, T, Ts, Tzr).
+yeccpars2_411(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_signalListParm(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_412(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 418, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 414, Ss, Stack, T, Ts, Tzr);
 yeccpars2_412(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_412_(Stack),
- yeccpars2_417(417, Cat, [412 | Ss], NewStack, T, Ts, Tzr).
+ yeccpars2_413(413, Cat, [412 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_413(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_413_(Stack),
- yeccgoto_notificationReason(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_413(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 417, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_414(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_414_(Stack),
- yeccgoto_notificationReason(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_414: see yeccpars2_4
 
+yeccpars2_415(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 414, Ss, Stack, T, Ts, Tzr);
 yeccpars2_415(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_415_(Stack),
- yeccgoto_notificationReason(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_416(_S, Cat, [415 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_416(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_416_(Stack),
- yeccgoto_notificationReason(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_signalListParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_417(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 421, Ss, Stack, T, Ts, Tzr).
+yeccpars2_417(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_417_(Stack),
+ yeccgoto_signalList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_418: see yeccpars2_411
+yeccpars2_418(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 421, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 422, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 423, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 424, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 425, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_418(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_419(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 418, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 450, Ss, Stack, T, Ts, Tzr);
 yeccpars2_419(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_419_(Stack),
- yeccpars2_420(_S, Cat, [419 | Ss], NewStack, T, Ts, Tzr).
+ yeccpars2_449(449, Cat, [419 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_420(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_420_(Stack),
- yeccgoto_notificationReasons(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_420: see yeccpars2_261
 
+yeccpars2_421(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 446, Ss, Stack, T, Ts, Tzr);
 yeccpars2_421(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_421_(Stack),
- yeccgoto_sigParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_422: see yeccpars2_4
+yeccpars2_422(_S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_422_COMMA(Stack),
+ yeccgoto_sigParameter(hd(Ss), 'COMMA', Ss, NewStack, T, Ts, Tzr);
+yeccpars2_422(_S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_422_RBRKT(Stack),
+ yeccgoto_sigParameter(hd(Ss), 'RBRKT', Ss, NewStack, T, Ts, Tzr);
+yeccpars2_422(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_423(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 434, Ss, Stack, T, Ts, Tzr);
 yeccpars2_423(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_423_(Stack),
- yeccgoto_sigParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_424(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 429, Ss, Stack, T, Ts, Tzr);
 yeccpars2_424(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_424_(Stack),
- yeccgoto_sigParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_425(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 429, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_426: see yeccpars2_394
-
-yeccpars2_427(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_425(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 426, Ss, Stack, T, Ts, Tzr);
+yeccpars2_425(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_426: see yeccpars2_4
+
 yeccpars2_427(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_427_(Stack),
- yeccpars2_428(_S, Cat, [427 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_sigParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_428(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_428_(Stack),
- yeccgoto_sigParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_streamID(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_429(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_429_(Stack),
- yeccgoto_signalRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_430(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 434, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_431: see yeccpars2_376
-
-yeccpars2_432(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_429(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 431, Ss, Stack, T, Ts, Tzr);
+yeccpars2_429(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 432, Ss, Stack, T, Ts, Tzr);
+yeccpars2_429(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 433, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_430(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_430_(Stack),
+ yeccgoto_sigParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_431(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_431_(Stack),
+ yeccgoto_signalType(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
 yeccpars2_432(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_432_(Stack),
- yeccpars2_433(_S, Cat, [432 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_signalType(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_433(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_433_(Stack),
- yeccgoto_signalParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_signalType(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_434(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_434_(Stack),
- yeccgoto_signalsDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_434(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 435, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_435: see yeccpars2_4
+yeccpars2_435(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 437, Ss, Stack, T, Ts, Tzr);
+yeccpars2_435(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 438, Ss, Stack, T, Ts, Tzr);
+yeccpars2_435(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 439, Ss, Stack, T, Ts, Tzr);
+yeccpars2_435(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 440, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_436(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 442, Ss, Stack, T, Ts, Tzr);
 yeccpars2_436(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_436_(Stack),
- yeccgoto_muxType(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_441(441, Cat, [436 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_437(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 439, Ss, Stack, T, Ts, Tzr).
+yeccpars2_437(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_437_(Stack),
+ yeccgoto_notificationReason(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_438(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_438_(Stack),
- yeccgoto_muxDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_notificationReason(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_439: see yeccpars2_4
+yeccpars2_439(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_439_(Stack),
+ yeccgoto_notificationReason(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_440(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 442, Ss, Stack, T, Ts, Tzr);
 yeccpars2_440(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_440_(Stack),
- yeccpars2_441(441, Cat, [440 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_notificationReason(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_441(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 445, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_442: see yeccpars2_4
+%% yeccpars2_442: see yeccpars2_435
 
 yeccpars2_443(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 442, Ss, Stack, T, Ts, Tzr);
@@ -5203,457 +5562,402 @@ yeccpars2_443(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccpars2_444(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
  NewStack = yeccpars2_444_(Stack),
- yeccgoto_terminationIDListRepeat(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_notificationReasons(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_445(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
+ [_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_445_(Stack),
- yeccgoto_terminationIDList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_sigParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 %% yeccpars2_446: see yeccpars2_4
 
-%% yeccpars2_447: see yeccpars2_4
+yeccpars2_447(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_447_(Stack),
+ yeccgoto_sigParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_448(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
  NewStack = yeccpars2_448_(Stack),
- yeccgoto_modemType(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_sigParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_449(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 451, Ss, Stack, T, Ts, Tzr);
-yeccpars2_449(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_449_(Stack),
- yeccpars2_450(450, Cat, [449 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_449(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 453, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_450(S, 'RSBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 454, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_450: see yeccpars2_418
 
-%% yeccpars2_451: see yeccpars2_4
+yeccpars2_451(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 450, Ss, Stack, T, Ts, Tzr);
+yeccpars2_451(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_451_(Stack),
+ yeccpars2_452(_S, Cat, [451 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_452(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 451, Ss, Stack, T, Ts, Tzr);
 yeccpars2_452(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_452_(Stack),
- yeccpars2_453(_S, Cat, [452 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_sigParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_453(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_453_(Stack),
- yeccgoto_modemTypeList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_signalRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_454(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 456, Ss, Stack, T, Ts, Tzr);
-yeccpars2_454(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_454_(Stack),
- yeccpars2_455(_S, Cat, [454 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_454(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 458, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_455(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_455_(Stack),
- yeccgoto_modemDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_455: see yeccpars2_400
 
-%% yeccpars2_456: see yeccpars2_4
+yeccpars2_456(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 455, Ss, Stack, T, Ts, Tzr);
+yeccpars2_456(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_456_(Stack),
+ yeccpars2_457(_S, Cat, [456 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_457(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 461, Ss, Stack, T, Ts, Tzr);
 yeccpars2_457(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_457_(Stack),
- yeccpars2_460(460, Cat, [457 | Ss], NewStack, T, Ts, Tzr).
-
-%% yeccpars2_458: see yeccpars2_237
-
-yeccpars2_459(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_459_(Stack),
- yeccgoto_propertyParm(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_460(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 464, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_461: see yeccpars2_4
-
-yeccpars2_462(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 461, Ss, Stack, T, Ts, Tzr);
-yeccpars2_462(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_462_(Stack),
- yeccpars2_463(_S, Cat, [462 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_463(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
- NewStack = yeccpars2_463_(Stack),
- yeccgoto_propertyParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ NewStack = yeccpars2_457_(Stack),
+ yeccgoto_signalParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
+yeccpars2_458(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_458_(Stack),
+ yeccgoto_signalsDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+%% yeccpars2_459: see yeccpars2_4
+
+yeccpars2_460(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_460_(Stack),
+ yeccgoto_muxType(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_461(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 463, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_462(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_462_(Stack),
+ yeccgoto_muxDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+%% yeccpars2_463: see yeccpars2_4
+
+yeccpars2_464(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 466, Ss, Stack, T, Ts, Tzr);
 yeccpars2_464(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_464_(Stack),
- yeccgoto_optPropertyParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_465(465, Cat, [464 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_465(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 456, Ss, Stack, T, Ts, Tzr);
-yeccpars2_465(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_465_(Stack),
- yeccpars2_466(_S, Cat, [465 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_465(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 469, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_466(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_466_(Stack),
- yeccgoto_modemDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_466: see yeccpars2_4
 
-yeccpars2_467(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 476, Ss, Stack, T, Ts, Tzr);
-yeccpars2_467(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 477, Ss, Stack, T, Ts, Tzr);
-yeccpars2_467(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_501(S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_467(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 466, Ss, Stack, T, Ts, Tzr);
+yeccpars2_467(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_467_(Stack),
+ yeccpars2_468(_S, Cat, [467 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_468(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_468_(Stack),
- yeccgoto_mediaParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_terminationIDListRepeat(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_469(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_469_(Stack),
- yeccgoto_mediaParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_terminationIDList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_470(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_470_(Stack),
- yeccgoto_mediaParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_470: see yeccpars2_4
 
-yeccpars2_471(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 533, Ss, Stack, T, Ts, Tzr);
-yeccpars2_471(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_471_(Stack),
- yeccpars2_532(532, Cat, [471 | Ss], NewStack, T, Ts, Tzr).
+%% yeccpars2_471: see yeccpars2_4
 
 yeccpars2_472(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_472_(Stack),
- yeccgoto_streamParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_modemType(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_473(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 508, Ss, Stack, T, Ts, Tzr).
+yeccpars2_473(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 475, Ss, Stack, T, Ts, Tzr);
+yeccpars2_473(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_473_(Stack),
+ yeccpars2_474(474, Cat, [473 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_474(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_474_(Stack),
- yeccgoto_streamParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-yeccpars2_475(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_475_(Stack),
- yeccgoto_streamParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-yeccpars2_476(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 499, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_477(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_474(S, 'RSBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 478, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_478(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 483, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 484, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_478(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_475: see yeccpars2_4
 
-yeccpars2_479(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 495, Ss, Stack, T, Ts, Tzr);
+yeccpars2_476(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 475, Ss, Stack, T, Ts, Tzr);
+yeccpars2_476(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_476_(Stack),
+ yeccpars2_477(_S, Cat, [476 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_477(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_477_(Stack),
+ yeccgoto_modemTypeList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_478(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 480, Ss, Stack, T, Ts, Tzr);
+yeccpars2_478(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_478_(Stack),
+ yeccpars2_479(_S, Cat, [478 | Ss], NewStack, T, Ts, Tzr).
+
 yeccpars2_479(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_479_(Stack),
- yeccpars2_494(494, Cat, [479 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_modemDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_480(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_480_(Stack),
- yeccgoto_terminationStateParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_480: see yeccpars2_4
 
+yeccpars2_481(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 485, Ss, Stack, T, Ts, Tzr);
 yeccpars2_481(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_481_(Stack),
- yeccgoto_terminationStateParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_484(484, Cat, [481 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_482(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_482_(Stack),
- yeccgoto_terminationStateParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_482: see yeccpars2_261
 
-yeccpars2_483(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 490, Ss, Stack, T, Ts, Tzr);
 yeccpars2_483(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_483_(Stack),
+ yeccgoto_propertyParm(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_484(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_484(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 488, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_485: see yeccpars2_4
+
+yeccpars2_486(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 485, Ss, Stack, T, Ts, Tzr);
-yeccpars2_484(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_485(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 487, Ss, Stack, T, Ts, Tzr);
-yeccpars2_485(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 488, Ss, Stack, T, Ts, Tzr);
-yeccpars2_485(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 489, Ss, Stack, T, Ts, Tzr).
-
 yeccpars2_486(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_486_(Stack),
- yeccgoto_serviceStates(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_487(_S, Cat, [486 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_487(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_487_(Stack),
- yeccgoto_serviceState(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_propertyParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_488(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_488_(Stack),
- yeccgoto_serviceState(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_optPropertyParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
+yeccpars2_489(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 480, Ss, Stack, T, Ts, Tzr);
 yeccpars2_489(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_489_(Stack),
- yeccgoto_serviceState(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_490(_S, Cat, [489 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_490(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 492, Ss, Stack, T, Ts, Tzr);
-yeccpars2_490(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 493, Ss, Stack, T, Ts, Tzr).
+yeccpars2_490(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_490_(Stack),
+ yeccgoto_modemDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_491(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_491_(Stack),
- yeccgoto_eventBufferControl(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_491(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 500, Ss, Stack, T, Ts, Tzr);
+yeccpars2_491(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 501, Ss, Stack, T, Ts, Tzr);
+yeccpars2_491(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_525(S, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_492(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_492_(Stack),
- yeccgoto_eventBufferControlState(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_mediaParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_493(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_493_(Stack),
- yeccgoto_eventBufferControlState(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_mediaParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_494(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 498, Ss, Stack, T, Ts, Tzr).
+yeccpars2_494(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_494_(Stack),
+ yeccgoto_mediaParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_495: see yeccpars2_478
+yeccpars2_495(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 557, Ss, Stack, T, Ts, Tzr);
+yeccpars2_495(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_495_(Stack),
+ yeccpars2_556(556, Cat, [495 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_496(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 495, Ss, Stack, T, Ts, Tzr);
 yeccpars2_496(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_496_(Stack),
- yeccpars2_497(_S, Cat, [496 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_streamParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_497(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_497_(Stack),
- yeccgoto_terminationStateParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_497(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 532, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_498(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_498_(Stack),
- yeccgoto_terminationStateDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_streamParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_499: see yeccpars2_4
+yeccpars2_499(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_499_(Stack),
+ yeccgoto_streamParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_500(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 501, Ss, Stack, T, Ts, Tzr).
+yeccpars2_500(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 523, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_501(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 473, Ss, Stack, T, Ts, Tzr);
-yeccpars2_501(S, 'LocalDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 474, Ss, Stack, T, Ts, Tzr);
-yeccpars2_501(S, 'RemoteDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 475, Ss, Stack, T, Ts, Tzr).
+yeccpars2_501(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 502, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_502(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 504, Ss, Stack, T, Ts, Tzr);
-yeccpars2_502(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_502_(Stack),
- yeccpars2_503(503, Cat, [502 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_503(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 507, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_504: see yeccpars2_501
-
-yeccpars2_505(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 504, Ss, Stack, T, Ts, Tzr);
-yeccpars2_505(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_505_(Stack),
- yeccpars2_506(_S, Cat, [505 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_506(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_506_(Stack),
- yeccgoto_streamParmList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_507(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_507_(Stack),
- yeccgoto_streamDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_508(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_502(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 507, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 511, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_502(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 512, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 513, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_508(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_502(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 508, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_502(S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_509(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_509_(Stack),
- yeccgoto_localParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_503(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 519, Ss, Stack, T, Ts, Tzr);
+yeccpars2_503(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_503_(Stack),
+ yeccpars2_518(518, Cat, [503 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_510(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 528, Ss, Stack, T, Ts, Tzr);
-yeccpars2_510(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_510_(Stack),
- yeccpars2_527(527, Cat, [510 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_504(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_504_(Stack),
+ yeccgoto_terminationStateParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_511(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 520, Ss, Stack, T, Ts, Tzr);
-yeccpars2_511(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_505(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_505_(Stack),
+ yeccgoto_terminationStateParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_512(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 518, Ss, Stack, T, Ts, Tzr);
-yeccpars2_512(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_506(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_506_(Stack),
+ yeccgoto_terminationStateParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_513(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_507(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 514, Ss, Stack, T, Ts, Tzr);
-yeccpars2_513(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_507(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_514(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_508(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 509, Ss, Stack, T, Ts, Tzr);
+yeccpars2_508(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_509(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 511, Ss, Stack, T, Ts, Tzr);
+yeccpars2_509(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 512, Ss, Stack, T, Ts, Tzr);
+yeccpars2_509(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 513, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_510(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_510_(Stack),
+ yeccgoto_serviceStates(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_511(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_511_(Stack),
+ yeccgoto_serviceState(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_512(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_512_(Stack),
+ yeccgoto_serviceState(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_513(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_513_(Stack),
+ yeccgoto_serviceState(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_514(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 516, Ss, Stack, T, Ts, Tzr);
-yeccpars2_514(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_514(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 517, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_515(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
  NewStack = yeccpars2_515_(Stack),
- yeccgoto_localParm(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_eventBufferControl(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_516(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_516_(Stack),
- yeccgoto_onOrOff(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_eventBufferControlState(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_517(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_517_(Stack),
- yeccgoto_onOrOff(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_eventBufferControlState(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_518: see yeccpars2_514
+yeccpars2_518(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 522, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_519(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_519_(Stack),
- yeccgoto_localParm(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_519: see yeccpars2_502
 
-yeccpars2_520(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 522, Ss, Stack, T, Ts, Tzr);
-yeccpars2_520(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 523, Ss, Stack, T, Ts, Tzr);
-yeccpars2_520(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 524, Ss, Stack, T, Ts, Tzr);
-yeccpars2_520(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 525, Ss, Stack, T, Ts, Tzr);
-yeccpars2_520(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 526, Ss, Stack, T, Ts, Tzr).
+yeccpars2_520(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 519, Ss, Stack, T, Ts, Tzr);
+yeccpars2_520(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_520_(Stack),
+ yeccpars2_521(_S, Cat, [520 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_521(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
  NewStack = yeccpars2_521_(Stack),
- yeccgoto_localParm(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_terminationStateParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_522(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_522_(Stack),
- yeccgoto_streamModes(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_terminationStateDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_523(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_523_(Stack),
- yeccgoto_streamModes(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_523: see yeccpars2_4
 
-yeccpars2_524(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_524_(Stack),
- yeccgoto_streamModes(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_524(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 525, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_525(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_525_(Stack),
- yeccgoto_streamModes(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_525(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 497, Ss, Stack, T, Ts, Tzr);
+yeccpars2_525(S, 'LocalDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 498, Ss, Stack, T, Ts, Tzr);
+yeccpars2_525(S, 'RemoteDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 499, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_526(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 528, Ss, Stack, T, Ts, Tzr);
 yeccpars2_526(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_526_(Stack),
- yeccgoto_streamModes(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_527(527, Cat, [526 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_527(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 531, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_528: see yeccpars2_508
+%% yeccpars2_528: see yeccpars2_525
 
 yeccpars2_529(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 528, Ss, Stack, T, Ts, Tzr);
@@ -5664,3277 +5968,3525 @@ yeccpars2_529(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccpars2_530(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
  NewStack = yeccpars2_530_(Stack),
- yeccgoto_localParmList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_streamParmList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_531(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
+ [_,_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_531_(Stack),
- yeccgoto_localControlDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_streamDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_532(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 536, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_533: see yeccpars2_467
-
-yeccpars2_534(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 533, Ss, Stack, T, Ts, Tzr);
-yeccpars2_534(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_534_(Stack),
- yeccpars2_535(_S, Cat, [534 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_535(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_535_(Stack),
- yeccgoto_mediaParmList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_536(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_536_(Stack),
- yeccgoto_mediaDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-%% yeccpars2_537: see yeccpars2_4
-
-yeccpars2_538(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 539, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_539: see yeccpars2_4
-
-yeccpars2_540(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 593, Ss, Stack, T, Ts, Tzr);
-yeccpars2_540(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_540_(Stack),
- yeccpars2_592(592, Cat, [540 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_541(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 543, Ss, Stack, T, Ts, Tzr);
-yeccpars2_541(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_541_(Stack),
- yeccpars2_542(_S, Cat, [541 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_542(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_542_(Stack),
- yeccgoto_requestedEvent(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_543(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_532(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'DigitMapDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 549, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_532(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 550, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 551, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_532(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_543(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_532(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 535, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 536, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 537, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_532(S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_544(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_eventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_533(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_533_(Stack),
+ yeccgoto_localParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_545(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 588, Ss, Stack, T, Ts, Tzr);
+yeccpars2_534(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 552, Ss, Stack, T, Ts, Tzr);
+yeccpars2_534(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_534_(Stack),
+ yeccpars2_551(551, Cat, [534 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_535(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 544, Ss, Stack, T, Ts, Tzr);
+yeccpars2_535(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_536(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 542, Ss, Stack, T, Ts, Tzr);
+yeccpars2_536(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_537(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 538, Ss, Stack, T, Ts, Tzr);
+yeccpars2_537(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_538(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 540, Ss, Stack, T, Ts, Tzr);
+yeccpars2_538(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 541, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_539(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_539_(Stack),
+ yeccgoto_localParm(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_540(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_540_(Stack),
+ yeccgoto_onOrOff(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_541(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_541_(Stack),
+ yeccgoto_onOrOff(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+%% yeccpars2_542: see yeccpars2_538
+
+yeccpars2_543(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_543_(Stack),
+ yeccgoto_localParm(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_544(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 546, Ss, Stack, T, Ts, Tzr);
+yeccpars2_544(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 547, Ss, Stack, T, Ts, Tzr);
+yeccpars2_544(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 548, Ss, Stack, T, Ts, Tzr);
+yeccpars2_544(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 549, Ss, Stack, T, Ts, Tzr);
+yeccpars2_544(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 550, Ss, Stack, T, Ts, Tzr).
+
 yeccpars2_545(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_545_(Stack),
- yeccpars2_587(587, Cat, [545 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_localParm(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_546(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_eventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_546_(Stack),
+ yeccgoto_streamModes(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_547(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_eventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_547_(Stack),
+ yeccgoto_streamModes(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_548(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_eventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_548_(Stack),
+ yeccgoto_streamModes(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_549(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_549_(Stack),
- yeccgoto_eventDM(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_streamModes(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_550(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 552, Ss, Stack, T, Ts, Tzr);
 yeccpars2_550(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_550_(Stack),
+ yeccgoto_streamModes(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_551(_S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_551_COMMA(Stack),
- yeccgoto_eventParameter(hd(Ss), 'COMMA', Ss, NewStack, T, Ts, Tzr);
-yeccpars2_551(_S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_551_RBRKT(Stack),
- yeccgoto_eventParameter(hd(Ss), 'RBRKT', Ss, NewStack, T, Ts, Tzr);
-yeccpars2_551(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_552(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 555, Ss, Stack, T, Ts, Tzr);
-yeccpars2_552(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 375, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_553(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 583, Ss, Stack, T, Ts, Tzr);
-yeccpars2_553(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 584, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_554(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 582, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_555(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 556, Ss, Stack, T, Ts, Tzr);
-yeccpars2_555(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_555_(Stack),
- yeccgoto_embedFirst(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-%% yeccpars2_556: see yeccpars2_4
-
-yeccpars2_557(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 558, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_558: see yeccpars2_4
-
-yeccpars2_559(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 578, Ss, Stack, T, Ts, Tzr);
-yeccpars2_559(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_559_(Stack),
- yeccpars2_577(577, Cat, [559 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_560(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 562, Ss, Stack, T, Ts, Tzr);
-yeccpars2_560(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_560_(Stack),
- yeccpars2_561(_S, Cat, [560 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_561(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_561_(Stack),
- yeccgoto_secondRequestedEvent(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_562(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'DigitMapDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 549, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 567, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 568, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_562(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_563(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 573, Ss, Stack, T, Ts, Tzr);
-yeccpars2_563(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_563_(Stack),
- yeccpars2_572(572, Cat, [563 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_564(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_secondEventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_565(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_secondEventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_566(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_secondEventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_567(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 569, Ss, Stack, T, Ts, Tzr);
-yeccpars2_567(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_568(_S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_568_COMMA(Stack),
- yeccgoto_secondEventParameter(hd(Ss), 'COMMA', Ss, NewStack, T, Ts, Tzr);
-yeccpars2_568(_S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_568_RBRKT(Stack),
- yeccgoto_secondEventParameter(hd(Ss), 'RBRKT', Ss, NewStack, T, Ts, Tzr);
-yeccpars2_568(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_569(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 375, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_570(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 571, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_571(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_571_(Stack),
- yeccgoto_embedSig(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_572(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 576, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_573: see yeccpars2_562
-
-yeccpars2_574(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 573, Ss, Stack, T, Ts, Tzr);
-yeccpars2_574(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_574_(Stack),
- yeccpars2_575(_S, Cat, [574 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_575(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_575_(Stack),
- yeccgoto_secondEventParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_576(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_576_(Stack),
- yeccgoto_secondRequestedEventBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_577(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 581, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_578: see yeccpars2_4
-
-yeccpars2_579(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 578, Ss, Stack, T, Ts, Tzr);
-yeccpars2_579(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_579_(Stack),
- yeccpars2_580(_S, Cat, [579 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_580(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_580_(Stack),
- yeccgoto_secondRequestedEvents(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_581(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_581_(Stack),
- yeccgoto_embedFirst(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_582(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_582_(Stack),
- yeccgoto_embedNoSig(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_583(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_551(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 555, Ss, Stack, T, Ts, Tzr).
 
+%% yeccpars2_552: see yeccpars2_532
+
+yeccpars2_553(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 552, Ss, Stack, T, Ts, Tzr);
+yeccpars2_553(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_553_(Stack),
+ yeccpars2_554(_S, Cat, [553 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_554(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_554_(Stack),
+ yeccgoto_localParmList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_555(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_555_(Stack),
+ yeccgoto_localControlDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_556(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 560, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_557: see yeccpars2_491
+
+yeccpars2_558(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 557, Ss, Stack, T, Ts, Tzr);
+yeccpars2_558(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_558_(Stack),
+ yeccpars2_559(_S, Cat, [558 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_559(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_559_(Stack),
+ yeccgoto_mediaParmList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_560(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_560_(Stack),
+ yeccgoto_mediaDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+%% yeccpars2_561: see yeccpars2_4
+
+yeccpars2_562(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 563, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_563: see yeccpars2_4
+
+yeccpars2_564(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 617, Ss, Stack, T, Ts, Tzr);
+yeccpars2_564(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_564_(Stack),
+ yeccpars2_616(616, Cat, [564 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_565(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 567, Ss, Stack, T, Ts, Tzr);
+yeccpars2_565(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_565_(Stack),
+ yeccpars2_566(_S, Cat, [565 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_566(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_566_(Stack),
+ yeccgoto_requestedEvent(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_567(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'DigitMapDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 573, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 574, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 575, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_567(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_568(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_eventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_569(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 612, Ss, Stack, T, Ts, Tzr);
+yeccpars2_569(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_569_(Stack),
+ yeccpars2_611(611, Cat, [569 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_570(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_eventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_571(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_eventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_572(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_eventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_573(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_573_(Stack),
+ yeccgoto_eventDM(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_574(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 576, Ss, Stack, T, Ts, Tzr);
+yeccpars2_574(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_575(_S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_575_COMMA(Stack),
+ yeccgoto_eventParameter(hd(Ss), 'COMMA', Ss, NewStack, T, Ts, Tzr);
+yeccpars2_575(_S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_575_RBRKT(Stack),
+ yeccgoto_eventParameter(hd(Ss), 'RBRKT', Ss, NewStack, T, Ts, Tzr);
+yeccpars2_575(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_576(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 579, Ss, Stack, T, Ts, Tzr);
+yeccpars2_576(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 399, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_577(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 607, Ss, Stack, T, Ts, Tzr);
+yeccpars2_577(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 608, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_578(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 606, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_579(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 580, Ss, Stack, T, Ts, Tzr);
+yeccpars2_579(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_579_(Stack),
+ yeccgoto_embedFirst(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+%% yeccpars2_580: see yeccpars2_4
+
+yeccpars2_581(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 582, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_582: see yeccpars2_4
+
+yeccpars2_583(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 602, Ss, Stack, T, Ts, Tzr);
+yeccpars2_583(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_583_(Stack),
+ yeccpars2_601(601, Cat, [583 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_584(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 586, Ss, Stack, T, Ts, Tzr);
 yeccpars2_584(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_584_(Stack),
- yeccgoto_embedWithSig(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_585(_S, Cat, [584 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_585(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 586, Ss, Stack, T, Ts, Tzr).
+yeccpars2_585(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_585_(Stack),
+ yeccgoto_secondRequestedEvent(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_586(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_586_(Stack),
- yeccgoto_embedWithSig(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_586(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'DigitMapDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 573, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 591, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 592, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_586(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_587(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 591, Ss, Stack, T, Ts, Tzr).
+yeccpars2_587(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 597, Ss, Stack, T, Ts, Tzr);
+yeccpars2_587(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_587_(Stack),
+ yeccpars2_596(596, Cat, [587 | Ss], NewStack, T, Ts, Tzr).
 
-%% yeccpars2_588: see yeccpars2_543
+yeccpars2_588(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_secondEventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_589(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 588, Ss, Stack, T, Ts, Tzr);
 yeccpars2_589(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_589_(Stack),
- yeccpars2_590(_S, Cat, [589 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_secondEventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_590(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_590_(Stack),
- yeccgoto_eventParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_secondEventParameter(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_591(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_591_(Stack),
- yeccgoto_requestedEventBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_592(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 596, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_593: see yeccpars2_4
-
-yeccpars2_594(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_591(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 593, Ss, Stack, T, Ts, Tzr);
-yeccpars2_594(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_594_(Stack),
- yeccpars2_595(_S, Cat, [594 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_591(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_592(_S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_592_COMMA(Stack),
+ yeccgoto_secondEventParameter(hd(Ss), 'COMMA', Ss, NewStack, T, Ts, Tzr);
+yeccpars2_592(_S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_592_RBRKT(Stack),
+ yeccgoto_secondEventParameter(hd(Ss), 'RBRKT', Ss, NewStack, T, Ts, Tzr);
+yeccpars2_592(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_593(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 399, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_594(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 595, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_595(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_595_(Stack),
- yeccgoto_requestedEvents(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_embedSig(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_596(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_596_(Stack),
- yeccgoto_eventsDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_596(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 600, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_597(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 245, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_597(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_597_(Stack),
- yeccpars2_310(310, Cat, [597 | Ss], NewStack, T, Ts, Tzr).
+%% yeccpars2_597: see yeccpars2_586
 
+yeccpars2_598(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 597, Ss, Stack, T, Ts, Tzr);
 yeccpars2_598(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_598_(Stack),
- yeccgoto_eventSpec(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_599(_S, Cat, [598 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_599(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 601, Ss, Stack, T, Ts, Tzr);
 yeccpars2_599(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_599_(Stack),
- yeccpars2_600(600, Cat, [599 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_600(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 604, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_601(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 245, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_601(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_601_(Stack),
- yeccpars2_310(310, Cat, [601 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_602(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 601, Ss, Stack, T, Ts, Tzr);
-yeccpars2_602(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_602_(Stack),
- yeccpars2_603(_S, Cat, [602 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_603(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
+ NewStack = yeccpars2_599_(Stack),
+ yeccgoto_secondEventParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_600(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_600_(Stack),
+ yeccgoto_secondRequestedEventBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_601(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 605, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_602: see yeccpars2_4
+
+yeccpars2_603(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 602, Ss, Stack, T, Ts, Tzr);
+yeccpars2_603(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_603_(Stack),
- yeccgoto_eventSpecList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_604(_S, Cat, [603 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_604(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_604_(Stack),
- yeccgoto_eventBufferDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_secondRequestedEvents(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_605(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 609, Ss, Stack, T, Ts, Tzr).
+yeccpars2_605(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_605_(Stack),
+ yeccgoto_embedFirst(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_606: see yeccpars2_359
+yeccpars2_606(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_606_(Stack),
+ yeccgoto_embedNoSig(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_607(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 606, Ss, Stack, T, Ts, Tzr);
-yeccpars2_607(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_607_(Stack),
- yeccpars2_608(_S, Cat, [607 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_607(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 579, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_608(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_608_(Stack),
- yeccgoto_ammParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-yeccpars2_609(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_609_(Stack),
- yeccgoto_ammRequestBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ NewStack = yeccpars2_608_(Stack),
+ yeccgoto_embedWithSig(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_610(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 614, Ss, Stack, T, Ts, Tzr).
+yeccpars2_609(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 610, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_611: see yeccpars2_146
+yeccpars2_610(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_610_(Stack),
+ yeccgoto_embedWithSig(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_612(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 611, Ss, Stack, T, Ts, Tzr);
-yeccpars2_612(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_612_(Stack),
- yeccpars2_613(_S, Cat, [612 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_611(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 615, Ss, Stack, T, Ts, Tzr).
 
+%% yeccpars2_612: see yeccpars2_567
+
+yeccpars2_613(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 612, Ss, Stack, T, Ts, Tzr);
 yeccpars2_613(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_613_(Stack),
- yeccgoto_actionRequestList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_614(_S, Cat, [613 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_614(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_614_(Stack),
- yeccgoto_transactionRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_eventParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_615(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 621, Ss, Stack, T, Ts, Tzr).
+yeccpars2_615(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_615_(Stack),
+ yeccgoto_requestedEventBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_616(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_616_(Stack),
- yeccgoto_transactionID(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-%% yeccpars2_617: see yeccpars2_146
-
-yeccpars2_618(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 611, Ss, Stack, T, Ts, Tzr);
-yeccpars2_618(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_618_(Stack),
- yeccpars2_619(619, Cat, [618 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_619(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_616(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 620, Ss, Stack, T, Ts, Tzr).
 
+%% yeccpars2_617: see yeccpars2_4
+
+yeccpars2_618(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 617, Ss, Stack, T, Ts, Tzr);
+yeccpars2_618(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_618_(Stack),
+ yeccpars2_619(_S, Cat, [618 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_619(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_619_(Stack),
+ yeccgoto_requestedEvents(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
 yeccpars2_620(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_|Nss] = Ss,
+ [_,_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_620_(Stack),
- yeccgoto_transactionRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_eventsDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_621: see yeccpars2_146
+yeccpars2_621(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'AndAUDITSelectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'BothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ContextAttrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ContextListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'DirectionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'EmergencyOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'EmergencyValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'IEPSToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'InternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'IntsigDelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'IterationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'MessageSegmentToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'NeverNotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'NotifyImmediateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'NotifyRegulatedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'Nx64kToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'OnewayBothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'OnewayExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'OrAUDITselectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'RequestIDToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ResetEventsDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'SegmentationCompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ServiceChangeIncompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 104, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 107, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 108, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 110, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 111, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 112, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 113, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 114, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 269, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 117, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 118, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 120, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 121, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 122, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 123, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 124, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 125, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_621(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_621_(Stack),
+ yeccpars2_334(334, Cat, [621 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_622(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 611, Ss, Stack, T, Ts, Tzr);
 yeccpars2_622(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_622_(Stack),
- yeccpars2_623(623, Cat, [622 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_eventSpec(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_623(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 624, Ss, Stack, T, Ts, Tzr).
+yeccpars2_623(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 625, Ss, Stack, T, Ts, Tzr);
+yeccpars2_623(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_623_(Stack),
+ yeccpars2_624(624, Cat, [623 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_624(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_624_(Stack),
- yeccgoto_transactionRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_624(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 628, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_625: see yeccpars2_4
+yeccpars2_625(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 9, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'AndAUDITSelectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 10, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 11, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'AuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 12, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 13, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'AuthToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 14, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'BothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 15, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'BothwayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'BriefToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 17, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ContextAttrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ContextAuditToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 20, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ContextListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 21, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'DirectionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 25, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'DiscardToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'DisconnectedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 27, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'EmergencyOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 30, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 31, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'EmergencyValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 32, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 34, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 35, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 36, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'FailoverToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 37, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ForcedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 38, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'GracefulToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 39, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'H221Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 40, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'H223Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 41, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'H226Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'HandOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 43, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'IEPSToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 44, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 45, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'InSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 46, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'InactiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'InternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'InterruptByEventToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'InterruptByNewSignalsDescrToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 50, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'IntsigDelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 51, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'IsolateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 52, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'IterationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 53, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'LocalControlToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 55, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'LockStepToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 56, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'LoopbackToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 57, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 58, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'MessageSegmentToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 59, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 63, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 64, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 65, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'NeverNotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'NotifyImmediateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 69, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'NotifyRegulatedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'Nx64kToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 72, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 73, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'OffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 74, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'OnOffToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 75, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'OnToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 76, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'OnewayBothToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'OnewayExternalToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 78, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'OnewayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'OrAUDITselectToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 80, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'OtherReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'OutOfSvcToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 83, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'PendingToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 84, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'RecvonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 88, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ReplyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 89, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'RequestIDToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 90, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ResetEventsDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 93, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ResponseAckToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 94, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'RestartToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 95, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'SafeChars', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 96, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'SegmentationCompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 97, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'SendonlyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 98, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'SendrecvToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 99, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ServiceChangeIncompleteToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 101, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 104, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 107, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 108, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 110, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'SynchISDNToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 111, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'TerminationStateToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 112, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'TestToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 113, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'TimeOutToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 114, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 269, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 115, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'TransToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 116, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'V18Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 117, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'V22Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 118, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'V22bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 119, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'V32Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 120, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'V32bisToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 121, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'V34Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 122, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'V76Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 123, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'V90Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 124, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'V91Token', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 125, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_625(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_625_(Stack),
+ yeccpars2_334(334, Cat, [625 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_626(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 629, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 625, Ss, Stack, T, Ts, Tzr);
 yeccpars2_626(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_626_(Stack),
- yeccpars2_628(628, Cat, [626 | Ss], NewStack, T, Ts, Tzr).
+ yeccpars2_627(_S, Cat, [626 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_627(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_627_(Stack),
- yeccgoto_transactionAck(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-yeccpars2_628(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 632, Ss, Stack, T, Ts, Tzr).
-
-%% yeccpars2_629: see yeccpars2_4
-
-yeccpars2_630(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 629, Ss, Stack, T, Ts, Tzr);
-yeccpars2_630(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_630_(Stack),
- yeccpars2_631(_S, Cat, [630 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_631(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
+ NewStack = yeccpars2_627_(Stack),
+ yeccgoto_eventSpecList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_628(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_628_(Stack),
+ yeccgoto_eventBufferDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_629(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 633, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_630: see yeccpars2_383
+
+yeccpars2_631(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 630, Ss, Stack, T, Ts, Tzr);
+yeccpars2_631(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_631_(Stack),
- yeccgoto_transactionAckList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_632(_S, Cat, [631 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_632(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_632_(Stack),
- yeccgoto_transactionResponseAck(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_ammParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_633: see yeccpars2_4
+yeccpars2_633(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_633_(Stack),
+ yeccgoto_ammRequestBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_634(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 635, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_635(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 637, Ss, Stack, T, Ts, Tzr);
-yeccpars2_635(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_635_(Stack),
- yeccpars2_636(636, Cat, [635 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_636(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 642, Ss, Stack, T, Ts, Tzr);
-yeccpars2_636(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 140, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_637(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_634(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 638, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_638(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_638_(Stack),
- yeccgoto_optImmAckRequired(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_635: see yeccpars2_170
 
-yeccpars2_639(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 775, Ss, Stack, T, Ts, Tzr).
+yeccpars2_636(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 635, Ss, Stack, T, Ts, Tzr);
+yeccpars2_636(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_636_(Stack),
+ yeccpars2_637(_S, Cat, [636 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_637(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_637_(Stack),
+ yeccgoto_actionRequestList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_638(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_638_(Stack),
+ yeccgoto_transactionRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_639(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 645, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_640(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_640_(Stack),
- yeccgoto_transactionReplyBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_transactionID(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_641(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 772, Ss, Stack, T, Ts, Tzr);
-yeccpars2_641(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_641_(Stack),
- yeccpars2_771(_S, Cat, [641 | Ss], NewStack, T, Ts, Tzr).
+%% yeccpars2_641: see yeccpars2_170
 
-yeccpars2_642(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 643, Ss, Stack, T, Ts, Tzr).
+yeccpars2_642(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 635, Ss, Stack, T, Ts, Tzr);
+yeccpars2_642(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_642_(Stack),
+ yeccpars2_643(643, Cat, [642 | Ss], NewStack, T, Ts, Tzr).
 
-%% yeccpars2_643: see yeccpars2_4
+yeccpars2_643(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 644, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_644(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 645, Ss, Stack, T, Ts, Tzr).
+yeccpars2_644(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_644_(Stack),
+ yeccgoto_transactionRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_645(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 655, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 656, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 657, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 169, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 140, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 658, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 659, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 660, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 173, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 661, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 662, Ss, Stack, T, Ts, Tzr);
-yeccpars2_645(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 176, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_645: see yeccpars2_170
 
+yeccpars2_646(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 635, Ss, Stack, T, Ts, Tzr);
 yeccpars2_646(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_646_(Stack),
- yeccgoto_commandReply(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_647(647, Cat, [646 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_647(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_647_(Stack),
- yeccgoto_commandReply(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_647(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 648, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_648(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_648_(Stack),
- yeccgoto_actionReplyBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_transactionRequest(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_649(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_649_(Stack),
- yeccgoto_commandReply(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_649: see yeccpars2_4
 
 yeccpars2_650(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 767, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 653, Ss, Stack, T, Ts, Tzr);
 yeccpars2_650(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_650_(Stack),
- yeccpars2_766(_S, Cat, [650 | Ss], NewStack, T, Ts, Tzr).
+ yeccpars2_652(652, Cat, [650 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_651(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_651_(Stack),
- yeccgoto_commandReply(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_transactionAck(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_652(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 760, Ss, Stack, T, Ts, Tzr).
+yeccpars2_652(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 656, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_653(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_653_(Stack),
- yeccgoto_commandReply(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_653: see yeccpars2_4
 
-yeccpars2_654(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 759, Ss, Stack, T, Ts, Tzr).
+yeccpars2_654(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 653, Ss, Stack, T, Ts, Tzr);
+yeccpars2_654(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_654_(Stack),
+ yeccpars2_655(_S, Cat, [654 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_655(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_655_(Stack),
- yeccgoto_ammsToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_transactionAckList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_656(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 755, Ss, Stack, T, Ts, Tzr).
+yeccpars2_656(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_656_(Stack),
+ yeccgoto_transactionResponseAck(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_657(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 694, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_657: see yeccpars2_4
 
-yeccpars2_658(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_658_(Stack),
- yeccgoto_ammsToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_658(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 659, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_659(S, 'ImmAckRequiredToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 661, Ss, Stack, T, Ts, Tzr);
 yeccpars2_659(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_659_(Stack),
- yeccgoto_ammsToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_660(660, Cat, [659 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_660(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 688, Ss, Stack, T, Ts, Tzr).
+yeccpars2_660(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 666, Ss, Stack, T, Ts, Tzr);
+yeccpars2_660(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 164, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_661(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 663, Ss, Stack, T, Ts, Tzr).
+yeccpars2_661(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 662, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_662(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
  NewStack = yeccpars2_662_(Stack),
- yeccgoto_ammsToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_optImmAckRequired(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_663: see yeccpars2_4
+yeccpars2_663(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 799, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_664(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 666, Ss, Stack, T, Ts, Tzr);
 yeccpars2_664(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_664_(Stack),
- yeccpars2_665(_S, Cat, [664 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_transactionReplyBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_665(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 796, Ss, Stack, T, Ts, Tzr);
 yeccpars2_665(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_665_(Stack),
- yeccgoto_serviceChangeReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_795(_S, Cat, [665 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_666(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 140, Ss, Stack, T, Ts, Tzr);
-yeccpars2_666(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_666(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 667, Ss, Stack, T, Ts, Tzr).
+
+%% yeccpars2_667: see yeccpars2_4
+
+yeccpars2_668(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 669, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_667(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 687, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_668(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 686, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_669(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 670, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_670(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 677, Ss, Stack, T, Ts, Tzr);
-yeccpars2_670(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 678, Ss, Stack, T, Ts, Tzr);
-yeccpars2_670(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_669(S, 'AddToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 679, Ss, Stack, T, Ts, Tzr);
-yeccpars2_670(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 245, Ss, Stack, T, Ts, Tzr);
-yeccpars2_670(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 680, Ss, Stack, T, Ts, Tzr).
+yeccpars2_669(S, 'AuditCapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 680, Ss, Stack, T, Ts, Tzr);
+yeccpars2_669(S, 'AuditValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 681, Ss, Stack, T, Ts, Tzr);
+yeccpars2_669(S, 'EmergencyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 193, Ss, Stack, T, Ts, Tzr);
+yeccpars2_669(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 164, Ss, Stack, T, Ts, Tzr);
+yeccpars2_669(S, 'ModifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 682, Ss, Stack, T, Ts, Tzr);
+yeccpars2_669(S, 'MoveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 683, Ss, Stack, T, Ts, Tzr);
+yeccpars2_669(S, 'NotifyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 684, Ss, Stack, T, Ts, Tzr);
+yeccpars2_669(S, 'PriorityToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 197, Ss, Stack, T, Ts, Tzr);
+yeccpars2_669(S, 'ServiceChangeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 685, Ss, Stack, T, Ts, Tzr);
+yeccpars2_669(S, 'SubtractToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 686, Ss, Stack, T, Ts, Tzr);
+yeccpars2_669(S, 'TopologyToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 200, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_670(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_670_(Stack),
+ yeccgoto_commandReply(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_671(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_671_(Stack),
- yeccgoto_servChgReplyParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_commandReply(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_672(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_672_(Stack),
- yeccgoto_servChgReplyParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_actionReplyBody(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_673(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_673_(Stack),
- yeccgoto_servChgReplyParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_commandReply(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_674(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 791, Ss, Stack, T, Ts, Tzr);
 yeccpars2_674(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_674_(Stack),
- yeccgoto_servChgReplyParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_790(_S, Cat, [674 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_675(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_675_(Stack),
- yeccgoto_servChgReplyParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_commandReply(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_676(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 682, Ss, Stack, T, Ts, Tzr);
-yeccpars2_676(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_676_(Stack),
- yeccpars2_681(681, Cat, [676 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_676(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 784, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_677(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 258, Ss, Stack, T, Ts, Tzr).
+yeccpars2_677(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_677_(Stack),
+ yeccgoto_commandReply(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_678(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 256, Ss, Stack, T, Ts, Tzr).
+yeccpars2_678(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 783, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_679(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 249, Ss, Stack, T, Ts, Tzr).
+yeccpars2_679(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_679_(Stack),
+ yeccgoto_ammsToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_680(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 247, Ss, Stack, T, Ts, Tzr).
+ yeccpars1(S, 779, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_681(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 685, Ss, Stack, T, Ts, Tzr).
+yeccpars2_681(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 718, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_682: see yeccpars2_670
+yeccpars2_682(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_682_(Stack),
+ yeccgoto_ammsToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_683(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 682, Ss, Stack, T, Ts, Tzr);
 yeccpars2_683(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_683_(Stack),
- yeccpars2_684(_S, Cat, [683 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_ammsToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_684(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_684_(Stack),
- yeccgoto_servChgReplyParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_684(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 712, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_685(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_685_(Stack),
- yeccgoto_serviceChangeReplyDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_685(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 687, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_686(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_686_(Stack),
- yeccgoto_serviceChangeReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_ammsToken(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_687(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_687_(Stack),
- yeccgoto_serviceChangeReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_687: see yeccpars2_4
 
-%% yeccpars2_688: see yeccpars2_4
+yeccpars2_688(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 690, Ss, Stack, T, Ts, Tzr);
+yeccpars2_688(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_688_(Stack),
+ yeccpars2_689(_S, Cat, [688 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_689(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 691, Ss, Stack, T, Ts, Tzr);
 yeccpars2_689(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_689_(Stack),
- yeccpars2_690(_S, Cat, [689 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_690(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_690_(Stack),
- yeccgoto_notifyReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ NewStack = yeccpars2_689_(Stack),
+ yeccgoto_serviceChangeReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_691(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 140, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_692(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_690(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 164, Ss, Stack, T, Ts, Tzr);
+yeccpars2_690(S, 'ServicesToken', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 693, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_693(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_693_(Stack),
- yeccgoto_notifyReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_691(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 711, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_694(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 697, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
+yeccpars2_692(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 710, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_693(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 694, Ss, Stack, T, Ts, Tzr).
+
 yeccpars2_694(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 701, Ss, Stack, T, Ts, Tzr);
 yeccpars2_694(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 702, Ss, Stack, T, Ts, Tzr);
 yeccpars2_694(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
+ yeccpars1(S, 703, Ss, Stack, T, Ts, Tzr);
+yeccpars2_694(S, 'TimeStampToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 269, Ss, Stack, T, Ts, Tzr);
 yeccpars2_694(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_694(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
+ yeccpars1(S, 704, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_695(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 711, Ss, Stack, T, Ts, Tzr);
 yeccpars2_695(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_695_(Stack),
- yeccgoto_auditOther(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_servChgReplyParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_696(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_696_(Stack),
- yeccgoto_auditReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_servChgReplyParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_697(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 700, Ss, Stack, T, Ts, Tzr);
 yeccpars2_697(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_697_(Stack),
+ yeccgoto_servChgReplyParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_698(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_698_(Stack),
- yeccgoto_contextTerminationAudit(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_servChgReplyParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_699(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_699_(Stack),
- yeccgoto_auditReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_servChgReplyParm(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_700(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 702, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_700(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_700(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 706, Ss, Stack, T, Ts, Tzr);
+yeccpars2_700(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_700_(Stack),
+ yeccpars2_705(705, Cat, [700 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_701(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 710, Ss, Stack, T, Ts, Tzr).
+yeccpars2_701(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 282, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_702(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 703, Ss, Stack, T, Ts, Tzr);
-yeccpars2_702(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ yeccpars1(S, 280, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_703: see yeccpars2_4
+yeccpars2_703(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 273, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_704(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_704_(Stack),
- yeccgoto_errorCode(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_704(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 271, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_705(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 706, Ss, Stack, T, Ts, Tzr).
-
-yeccpars2_706(S, 'QuotedChars', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 708, Ss, Stack, T, Ts, Tzr);
-yeccpars2_706(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_706_(Stack),
- yeccpars2_707(707, Cat, [706 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_707(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_705(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 709, Ss, Stack, T, Ts, Tzr).
 
+%% yeccpars2_706: see yeccpars2_694
+
+yeccpars2_707(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 706, Ss, Stack, T, Ts, Tzr);
+yeccpars2_707(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_707_(Stack),
+ yeccpars2_708(_S, Cat, [707 | Ss], NewStack, T, Ts, Tzr).
+
 yeccpars2_708(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_708_(Stack),
- yeccgoto_errorText(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_servChgReplyParms(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_709(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_|Nss] = Ss,
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_709_(Stack),
- yeccgoto_errorDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeReplyDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_710(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
  NewStack = yeccpars2_710_(Stack),
- yeccgoto_contextTerminationAudit(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_serviceChangeReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_711(S, 'DigitMapDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 369, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 205, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 140, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 370, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 371, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 726, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 727, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 728, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 729, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 730, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 375, Ss, Stack, T, Ts, Tzr);
-yeccpars2_711(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 731, Ss, Stack, T, Ts, Tzr).
+yeccpars2_711(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_711_(Stack),
+ yeccgoto_serviceChangeReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_712(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 754, Ss, Stack, T, Ts, Tzr).
+%% yeccpars2_712: see yeccpars2_4
 
+yeccpars2_713(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 715, Ss, Stack, T, Ts, Tzr);
 yeccpars2_713(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_713_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_714(_S, Cat, [713 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_714(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_714_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_notifyReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_715(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_715_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_715(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 164, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_716(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_716_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_716(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 717, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_717(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_717_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_notifyReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_718(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_718_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_718(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 721, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_718(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
+yeccpars2_719(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 735, Ss, Stack, T, Ts, Tzr);
 yeccpars2_719(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_719_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditOther(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_720(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_720_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
+yeccpars2_721(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 724, Ss, Stack, T, Ts, Tzr);
 yeccpars2_721(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_721_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_722(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_722_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_contextTerminationAudit(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_723(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_723_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_724(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 751, Ss, Stack, T, Ts, Tzr);
-yeccpars2_724(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_724_(Stack),
- yeccpars2_750(_S, Cat, [724 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_724(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 22, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 726, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_724(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_725(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_725_(Stack),
- yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_725(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 734, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_726(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 467, Ss, Stack, T, Ts, Tzr);
+yeccpars2_726(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 727, Ss, Stack, T, Ts, Tzr);
 yeccpars2_726(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_726_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_727(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 446, Ss, Stack, T, Ts, Tzr);
-yeccpars2_727(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 447, Ss, Stack, T, Ts, Tzr);
-yeccpars2_727(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_727_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+%% yeccpars2_727: see yeccpars2_4
 
-yeccpars2_728(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 435, Ss, Stack, T, Ts, Tzr);
 yeccpars2_728(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_728_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_errorCode(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_729(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 303, Ss, Stack, T, Ts, Tzr);
-yeccpars2_729(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_729_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_729(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 730, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_730(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 742, Ss, Stack, T, Ts, Tzr);
+yeccpars2_730(S, 'QuotedChars', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 732, Ss, Stack, T, Ts, Tzr);
 yeccpars2_730(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_730_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_731(731, Cat, [730 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_731(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 732, Ss, Stack, T, Ts, Tzr);
-yeccpars2_731(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_731_(Stack),
- yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+yeccpars2_731(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 733, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_732: see yeccpars2_4
+yeccpars2_732(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_732_(Stack),
+ yeccgoto_errorText(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_733(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 738, Ss, Stack, T, Ts, Tzr);
 yeccpars2_733(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_733_(Stack),
- yeccpars2_737(737, Cat, [733 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_errorDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_734(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 735, Ss, Stack, T, Ts, Tzr);
 yeccpars2_734(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_734_(Stack),
- yeccgoto_statisticsParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
-
-%% yeccpars2_735: see yeccpars2_252
-
-yeccpars2_736(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
- NewStack = yeccpars2_736_(Stack),
- yeccgoto_statisticsParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ NewStack = yeccpars2_734_(Stack),
+ yeccgoto_contextTerminationAudit(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_737(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 741, Ss, Stack, T, Ts, Tzr).
+yeccpars2_735(S, 'DigitMapDescriptorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 393, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'DigitMapToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 229, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 164, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'EventBufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 394, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'EventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 395, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'MediaToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 750, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'ModemToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 751, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'MuxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 752, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'ObservedEventsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 753, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'PackagesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 754, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'SignalsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 399, Ss, Stack, T, Ts, Tzr);
+yeccpars2_735(S, 'StatsToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 755, Ss, Stack, T, Ts, Tzr).
 
-%% yeccpars2_738: see yeccpars2_4
+yeccpars2_736(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 778, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_739(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 738, Ss, Stack, T, Ts, Tzr);
+yeccpars2_737(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_737_(Stack),
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_738(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_738_(Stack),
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
 yeccpars2_739(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_739_(Stack),
- yeccpars2_740(_S, Cat, [739 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_740(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_740_(Stack),
- yeccgoto_statisticsParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_741(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_741_(Stack),
- yeccgoto_statisticsDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_742: see yeccpars2_4
+yeccpars2_742(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_742_(Stack),
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
 yeccpars2_743(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_743_(Stack),
- yeccgoto_packagesItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_744(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 746, Ss, Stack, T, Ts, Tzr);
 yeccpars2_744(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_744_(Stack),
- yeccpars2_745(745, Cat, [744 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_745(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 749, Ss, Stack, T, Ts, Tzr).
+yeccpars2_745(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_745_(Stack),
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_746: see yeccpars2_4
+yeccpars2_746(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_746_(Stack),
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_747(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 746, Ss, Stack, T, Ts, Tzr);
 yeccpars2_747(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_747_(Stack),
- yeccpars2_748(_S, Cat, [747 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_748(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 775, Ss, Stack, T, Ts, Tzr);
 yeccpars2_748(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_748_(Stack),
- yeccgoto_packagesItems(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_774(_S, Cat, [748 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_749(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_749_(Stack),
- yeccgoto_packagesDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_750(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 491, Ss, Stack, T, Ts, Tzr);
 yeccpars2_750(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
  NewStack = yeccpars2_750_(Stack),
- yeccgoto_terminationAudit(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-%% yeccpars2_751: see yeccpars2_711
+yeccpars2_751(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 470, Ss, Stack, T, Ts, Tzr);
+yeccpars2_751(S, 'LSBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 471, Ss, Stack, T, Ts, Tzr);
+yeccpars2_751(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_751_(Stack),
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_752(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 751, Ss, Stack, T, Ts, Tzr);
+yeccpars2_752(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 459, Ss, Stack, T, Ts, Tzr);
 yeccpars2_752(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_752_(Stack),
- yeccpars2_753(_S, Cat, [752 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_753(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 327, Ss, Stack, T, Ts, Tzr);
 yeccpars2_753(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
  NewStack = yeccpars2_753_(Stack),
- yeccgoto_auditReturnParameterList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_754(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 766, Ss, Stack, T, Ts, Tzr);
 yeccpars2_754(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_754_(Stack),
- yeccgoto_auditOther(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_755(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 16, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 757, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 19, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 24, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 26, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 42, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 47, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 48, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 49, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 66, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 67, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 70, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 71, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 77, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 79, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 81, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 82, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 85, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 102, Ss, Stack, T, Ts, Tzr);
-yeccpars2_755(S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_755(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 756, Ss, Stack, T, Ts, Tzr);
+yeccpars2_755(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_755_(Stack),
+ yeccgoto_auditReturnItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_756(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_756_(Stack),
- yeccgoto_auditReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_756: see yeccpars2_4
 
-yeccpars2_757(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 700, Ss, Stack, T, Ts, Tzr);
+yeccpars2_757(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 762, Ss, Stack, T, Ts, Tzr);
 yeccpars2_757(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
+ NewStack = yeccpars2_757_(Stack),
+ yeccpars2_761(761, Cat, [757 | Ss], NewStack, T, Ts, Tzr).
 
+yeccpars2_758(S, 'EQUAL', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 759, Ss, Stack, T, Ts, Tzr);
 yeccpars2_758(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_758_(Stack),
- yeccgoto_auditReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_statisticsParameter(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
-yeccpars2_759(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_759_(Stack),
- yeccgoto_actionReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_759: see yeccpars2_276
 
-%% yeccpars2_760: see yeccpars2_4
+yeccpars2_760(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_760_(Stack),
+ yeccgoto_statisticsParameter(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_761(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 763, Ss, Stack, T, Ts, Tzr);
-yeccpars2_761(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_761_(Stack),
- yeccpars2_762(_S, Cat, [761 | Ss], NewStack, T, Ts, Tzr).
-
-yeccpars2_762(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_|Nss] = Ss,
- NewStack = yeccpars2_762_(Stack),
- yeccgoto_ammsReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
-
-%% yeccpars2_763: see yeccpars2_711
-
-yeccpars2_764(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+yeccpars2_761(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
  yeccpars1(S, 765, Ss, Stack, T, Ts, Tzr).
 
+%% yeccpars2_762: see yeccpars2_4
+
+yeccpars2_763(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 762, Ss, Stack, T, Ts, Tzr);
+yeccpars2_763(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_763_(Stack),
+ yeccpars2_764(_S, Cat, [763 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_764(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_764_(Stack),
+ yeccgoto_statisticsParameters(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
 yeccpars2_765(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_765_(Stack),
- yeccgoto_ammsReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_statisticsDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_766(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
- NewStack = yeccpars2_766_(Stack),
- yeccgoto_actionReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_766: see yeccpars2_4
 
-%% yeccpars2_767: see yeccpars2_645
+yeccpars2_767(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_767_(Stack),
+ yeccgoto_packagesItem(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
 
+yeccpars2_768(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 770, Ss, Stack, T, Ts, Tzr);
 yeccpars2_768(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
  NewStack = yeccpars2_768_(Stack),
- yeccgoto_commandReplyList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_769(769, Cat, [768 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_769(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 767, Ss, Stack, T, Ts, Tzr);
-yeccpars2_769(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_769_(Stack),
- yeccpars2_770(_S, Cat, [769 | Ss], NewStack, T, Ts, Tzr).
+yeccpars2_769(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 773, Ss, Stack, T, Ts, Tzr).
 
-yeccpars2_770(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
- NewStack = yeccpars2_770_(Stack),
- yeccgoto_commandReplyList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_770: see yeccpars2_4
 
+yeccpars2_771(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 770, Ss, Stack, T, Ts, Tzr);
 yeccpars2_771(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
  NewStack = yeccpars2_771_(Stack),
- yeccgoto_transactionReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccpars2_772(_S, Cat, [771 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_772(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 642, Ss, Stack, T, Ts, Tzr).
+yeccpars2_772(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_772_(Stack),
+ yeccgoto_packagesItems(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_773(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 772, Ss, Stack, T, Ts, Tzr);
 yeccpars2_773(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_773_(Stack),
- yeccpars2_774(_S, Cat, [773 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_packagesDescriptor(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
 yeccpars2_774(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
+ [_|Nss] = Ss,
  NewStack = yeccpars2_774_(Stack),
- yeccgoto_actionReplyList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_terminationAudit(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_775(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_775_(Stack),
- yeccgoto_transactionReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+%% yeccpars2_775: see yeccpars2_735
 
-%% yeccpars2_776: see yeccpars2_4
+yeccpars2_776(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 775, Ss, Stack, T, Ts, Tzr);
+yeccpars2_776(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_776_(Stack),
+ yeccpars2_777(_S, Cat, [776 | Ss], NewStack, T, Ts, Tzr).
 
-yeccpars2_777(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 778, Ss, Stack, T, Ts, Tzr).
+yeccpars2_777(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_777_(Stack),
+ yeccgoto_auditReturnParameterList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_778(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 779, Ss, Stack, T, Ts, Tzr).
+yeccpars2_778(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_778_(Stack),
+ yeccgoto_auditOther(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_779(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_,_,_|Nss] = Ss,
- NewStack = yeccpars2_779_(Stack),
- yeccgoto_transactionPending(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+yeccpars2_779(S, 'BufferToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 18, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 781, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'DelayToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 23, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'DurationToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 28, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'EmbedToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 29, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'ErrorToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 33, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'KeepActiveToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 54, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'MethodToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 60, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'MgcIdToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 61, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'ModeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 62, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'NotifyCompletionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 68, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'ProfileToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 86, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'ReasonToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 87, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'ReservedGroupToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 91, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'ReservedValueToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 92, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'ServiceChangeAddressToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 100, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'ServiceStatesToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 103, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'SignalListToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 105, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'SignalTypeToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 106, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'StreamToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 109, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, 'VersionToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 126, Ss, Stack, T, Ts, Tzr);
+yeccpars2_779(S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_cont_4(S, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_780(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_|Nss] = Ss,
+ [_,_|Nss] = Ss,
  NewStack = yeccpars2_780_(Stack),
- yeccgoto_transactionList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
+yeccpars2_781(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 724, Ss, Stack, T, Ts, Tzr);
 yeccpars2_781(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_781_(Stack),
- yeccgoto_pathName(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_safeToken2(hd(Ss), Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccpars2_782(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_782_(Stack),
- yeccgoto_deviceName(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccgoto_auditReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_783(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
 yeccpars2_783(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_|Nss] = Ss,
  NewStack = yeccpars2_783_(Stack),
- yeccpars2_787(_S, Cat, [783 | Ss], NewStack, T, Ts, Tzr).
+ yeccgoto_actionReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_784(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
- yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
-yeccpars2_784(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- NewStack = yeccpars2_784_(Stack),
- yeccpars2_786(_S, Cat, [784 | Ss], NewStack, T, Ts, Tzr).
+%% yeccpars2_784: see yeccpars2_4
 
+yeccpars2_785(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 787, Ss, Stack, T, Ts, Tzr);
 yeccpars2_785(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  NewStack = yeccpars2_785_(Stack),
- yeccgoto_mtpAddress(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+ yeccpars2_786(_S, Cat, [785 | Ss], NewStack, T, Ts, Tzr).
 
 yeccpars2_786(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- [_,_|Nss] = Ss,
+ [_,_,_|Nss] = Ss,
  NewStack = yeccpars2_786_(Stack),
- yeccgoto_mId(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+ yeccgoto_ammsReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccpars2_787(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+%% yeccpars2_787: see yeccpars2_735
+
+yeccpars2_788(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 789, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_789(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  [_,_|Nss] = Ss,
- NewStack = yeccpars2_787_(Stack),
+ NewStack = yeccpars2_789_(Stack),
+ yeccgoto_ammsReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_790(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_790_(Stack),
+ yeccgoto_actionReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+%% yeccpars2_791: see yeccpars2_669
+
+yeccpars2_792(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_792_(Stack),
+ yeccgoto_commandReplyList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_793(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 791, Ss, Stack, T, Ts, Tzr);
+yeccpars2_793(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_793_(Stack),
+ yeccpars2_794(_S, Cat, [793 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_794(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_794_(Stack),
+ yeccgoto_commandReplyList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_795(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_795_(Stack),
+ yeccgoto_transactionReplyBody(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_796(S, 'CtxToken', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 666, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_797(S, 'COMMA', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 796, Ss, Stack, T, Ts, Tzr);
+yeccpars2_797(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_797_(Stack),
+ yeccpars2_798(_S, Cat, [797 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_798(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_798_(Stack),
+ yeccgoto_actionReplyList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_799(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_799_(Stack),
+ yeccgoto_transactionReply(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+%% yeccpars2_800: see yeccpars2_4
+
+yeccpars2_801(S, 'LBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 802, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_802(S, 'RBRKT', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 803, Ss, Stack, T, Ts, Tzr).
+
+yeccpars2_803(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_,_,_|Nss] = Ss,
+ NewStack = yeccpars2_803_(Stack),
+ yeccgoto_transactionPending(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_804(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_|Nss] = Ss,
+ NewStack = yeccpars2_804_(Stack),
+ yeccgoto_transactionList(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
+
+yeccpars2_805(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_805_(Stack),
+ yeccgoto_pathName(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_806(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_806_(Stack),
+ yeccgoto_deviceName(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_807(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
+yeccpars2_807(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_807_(Stack),
+ yeccpars2_811(_S, Cat, [807 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_808(S, 'SEP', Ss, Stack, T, Ts, Tzr) ->
+ yeccpars1(S, 3, Ss, Stack, T, Ts, Tzr);
+yeccpars2_808(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_808_(Stack),
+ yeccpars2_810(_S, Cat, [808 | Ss], NewStack, T, Ts, Tzr).
+
+yeccpars2_809(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ NewStack = yeccpars2_809_(Stack),
+ yeccgoto_mtpAddress(hd(Ss), Cat, Ss, NewStack, T, Ts, Tzr).
+
+yeccpars2_810(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_810_(Stack),
  yeccgoto_mId(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccgoto_actionReply(636, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_641(641, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_actionReply(772, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_773(773, Cat, Ss, Stack, T, Ts, Tzr).
+yeccpars2_811(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ [_,_|Nss] = Ss,
+ NewStack = yeccpars2_811_(Stack),
+ yeccgoto_mId(hd(Nss), Cat, Nss, NewStack, T, Ts, Tzr).
 
-yeccgoto_actionReplyBody(645, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_654(654, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_actionReply(660, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_665(665, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_actionReply(796, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_797(797, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_actionReplyList(641=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_771(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_actionReplyList(773=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_774(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_actionReplyBody(669, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_678(678, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_actionRequest(146, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_147(147, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_actionRequest(611, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_612(612, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_actionRequest(617, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_618(618, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_actionRequest(621, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_622(622, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_actionReplyList(665=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_795(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_actionReplyList(797=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_798(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_actionRequestItem(152, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_164(164, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_actionRequestItem(352, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_353(353, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_actionRequest(170, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_171(171, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_actionRequest(635, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_636(636, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_actionRequest(641, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_642(642, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_actionRequest(645, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_646(646, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_actionRequestItems(164, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_351(351, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_actionRequestItems(353=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_354(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_actionRequestItem(176, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_188(188, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_actionRequestItem(376, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_377(377, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_actionRequestList(147, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_610(610, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_actionRequestList(612=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_613(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_actionRequestList(618, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_619(619, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_actionRequestList(622, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_623(623, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_actionRequestItems(188, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_375(375, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_actionRequestItems(377=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_378(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_alternativeValue(265=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_273(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_actionRequestList(171, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_634(634, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_actionRequestList(636=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_637(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_actionRequestList(642, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_643(643, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_actionRequestList(646, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_647(647, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_ammParameter(359, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_368(368, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_ammParameter(606, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_607(607, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_alternativeValue(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_297(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_ammParameters(368, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_605(605, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_ammParameters(607=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_608(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_ammParameter(383, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_392(392, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_ammParameter(630, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_631(631, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_ammRequest(152=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_163(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_ammRequest(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_163(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_ammParameters(392, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_629(629, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_ammParameters(631=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_632(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_ammRequestBody(357=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_358(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_ammRequest(176=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_187(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_ammRequest(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_187(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_ammToken(152, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_162(162, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_ammToken(352, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_162(162, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_ammRequestBody(381=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_382(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_ammsReply(645=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_653(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_ammsReply(767=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_653(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_ammToken(176, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_186(186, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_ammToken(376, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_186(186, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_ammsReplyBody(761=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_762(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_ammsReply(669=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_677(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_ammsReply(791=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_677(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_ammsToken(645, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_652(652, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_ammsToken(767, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_652(652, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_ammsReplyBody(785=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_786(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_auditDescriptor(198, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_199(199, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditDescriptor(359=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_367(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditDescriptor(606=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_367(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_ammsToken(669, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_676(676, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_ammsToken(791, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_676(676, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_auditDescriptorBody(201, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_204(204, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_auditDescriptor(222, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_223(223, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditDescriptor(383=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_391(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditDescriptor(630=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_391(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_auditItem(201, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_203(203, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditItem(217, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_218(218, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_auditDescriptorBody(225, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_228(228, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_auditItemList(203=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_216(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditItemList(218=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_219(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_auditItem(225, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_227(227, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditItem(241, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_242(242, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_auditOther(694=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_696(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditOther(755=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_756(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_auditItemList(227=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_240(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditItemList(242=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_243(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_auditReply(645=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_651(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditReply(767=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_651(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_auditOther(718=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_720(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditOther(779=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_780(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_auditRequest(152=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_161(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditRequest(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_161(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_auditReply(669=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_675(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditReply(791=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_675(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_auditReturnItem(201=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_202(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditReturnItem(217=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_202(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditReturnItem(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_725(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditReturnItem(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_725(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditReturnItem(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_725(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_auditRequest(176=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_185(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditRequest(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_185(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_auditReturnParameter(711, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_724(724, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditReturnParameter(751, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_752(752, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditReturnParameter(763, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_724(724, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_auditReturnItem(225=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_226(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditReturnItem(241=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_226(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditReturnItem(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_749(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditReturnItem(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_749(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditReturnItem(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_749(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_auditReturnParameterList(724=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_750(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_auditReturnParameterList(752=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_753(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_auditReturnParameter(735, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_748(748, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditReturnParameter(775, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_776(776, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditReturnParameter(787, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_748(748, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_auditReturnParameterList(748=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_774(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_auditReturnParameterList(776=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_777(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccgoto_authenticationHeader(1, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_4(4, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_commandReply(645, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_650(650, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_commandReply(767, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_769(769, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_commandReply(669, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_674(674, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_commandReply(791, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_793(793, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_commandReplyList(650=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_766(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_commandReplyList(769=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_770(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_commandReplyList(674=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_790(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_commandReplyList(793=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_794(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_commandRequest(152=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_160(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_commandRequest(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_160(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_commandRequest(176=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_184(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_commandRequest(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_184(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_contextAudit(152=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_159(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_contextAudit(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_159(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_contextAudit(176=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_183(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_contextAudit(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_183(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_contextAuditProperties(336, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_340(340, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_contextAuditProperties(342=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_343(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_contextAuditProperties(360, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_364(364, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_contextAuditProperties(366=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_367(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_contextAuditProperty(335, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_336(336, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_contextAuditProperty(341, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_342(342, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_contextAuditProperty(359, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_360(360, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_contextAuditProperty(365, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_366(366, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_contextID(149, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_151(151, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_contextID(643, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_644(644, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_contextID(173, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_175(175, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_contextID(667, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_668(668, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_contextProperty(152=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_158(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_contextProperty(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_158(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_contextProperty(645=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_649(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_contextProperty(767=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_649(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_contextProperty(176=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_182(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_contextProperty(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_182(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_contextProperty(669=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_673(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_contextProperty(791=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_673(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_contextTerminationAudit(697=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_699(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_contextTerminationAudit(757=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_758(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_daddr(116, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_118(118, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_daddr(117=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_126(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_daddr(119=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_120(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_deviceName(111, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_784(784, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_digitMapDescriptor(359=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_366(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_digitMapDescriptor(606=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_366(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_digitMapDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_contextTerminationAudit(721=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_723(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_digitMapDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_723(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_digitMapDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_723(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_contextTerminationAudit(781=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_782(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_domainAddress(108=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_114(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_domainAddress(249=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_114(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_domainAddress(258=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_114(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_daddr(140, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_142(142, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_daddr(141=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_150(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_daddr(143=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_144(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_domainName(108=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_113(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_domainName(249=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_113(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_domainName(258=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_113(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_deviceName(135, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_808(808, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_embedFirst(552, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_554(554, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_embedFirst(583, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_585(585, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_digitMapDescriptor(383=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_390(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_digitMapDescriptor(630=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_390(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_digitMapDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_747(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_digitMapDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_747(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_digitMapDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_747(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_embedNoSig(543=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_548(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_embedNoSig(588=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_548(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_domainAddress(132=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_138(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_domainAddress(273=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_138(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_domainAddress(282=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_138(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_embedSig(562=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_566(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_embedSig(573=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_566(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_domainName(132=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_137(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_domainName(273=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_137(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_domainName(282=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_137(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_embedWithSig(543=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_547(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_embedWithSig(588=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_547(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_embedFirst(576, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_578(578, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_embedFirst(607, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_609(609, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_errorCode(703, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_705(705, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_embedNoSig(567=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_572(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_embedNoSig(612=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_572(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_errorDescriptor(112=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_139(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_errorDescriptor(298=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_301(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_errorDescriptor(636=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_640(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_errorDescriptor(645=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_648(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_errorDescriptor(666, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_668(668, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_errorDescriptor(691, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_692(692, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_errorDescriptor(700, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_701(701, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_errorDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_722(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_errorDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_722(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_errorDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_722(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_errorDescriptor(767=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_768(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_errorText(706, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_707(707, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_eventBufferControl(478=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_482(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventBufferControl(495=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_482(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_eventBufferControlState(490=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_491(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_eventBufferDescriptor(359=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_365(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventBufferDescriptor(606=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_365(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventBufferDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_721(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventBufferDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_721(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventBufferDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_721(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_eventDM(543=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_546(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventDM(562=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_565(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventDM(573=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_565(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventDM(588=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_546(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_eventParameter(543, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_545(545, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventParameter(588, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_589(589, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_eventParameterName(320, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(324, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventParameterName(327, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(324, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventParameterName(543, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(324, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventParameterName(562, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(324, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventParameterName(573, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(324, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventParameterName(588, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(324, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_eventParameters(545, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_587(587, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventParameters(589=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_embedSig(586=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_590(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_embedSig(597=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_590(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_eventSpec(597, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_599(599, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventSpec(601, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_602(602, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_embedWithSig(567=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_571(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_embedWithSig(612=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_571(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_eventSpecList(599, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_600(600, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventSpecList(602=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_603(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_errorCode(727, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_729(729, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_eventStreamOrOther(320=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_323(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventStreamOrOther(327=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_323(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventStreamOrOther(543=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_544(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventStreamOrOther(562=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_564(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventStreamOrOther(573=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_564(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventStreamOrOther(588=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_544(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_errorDescriptor(136=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_163(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_errorDescriptor(322=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_325(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_errorDescriptor(660=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_664(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_errorDescriptor(669=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_672(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_errorDescriptor(690, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_692(692, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_errorDescriptor(715, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_716(716, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_errorDescriptor(724, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_725(725, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_errorDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_746(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_errorDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_746(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_errorDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_746(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_errorDescriptor(791=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_792(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_eventsDescriptor(359=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_364(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventsDescriptor(606=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_364(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventsDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_720(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventsDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_720(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_eventsDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_720(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_errorText(730, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_731(731, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_extension(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_238(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_extension(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_238(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_eventBufferControl(502=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_506(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventBufferControl(519=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_506(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_extensionParameter(226, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(237, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_extensionParameter(289, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(237, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_eventBufferControlState(514=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_515(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_localControlDescriptor(467=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_472(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_localControlDescriptor(501=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_472(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_localControlDescriptor(504=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_472(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_localControlDescriptor(533=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_472(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_eventBufferDescriptor(383=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_389(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventBufferDescriptor(630=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_389(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventBufferDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_745(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventBufferDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_745(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventBufferDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_745(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_localParm(508, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_510(510, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_localParm(528, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_529(529, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_eventDM(567=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_570(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventDM(586=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_589(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventDM(597=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_589(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventDM(612=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_570(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_localParmList(510, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_527(527, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_localParmList(529=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_530(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_eventParameter(567, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_569(569, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventParameter(612, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_613(613, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_mId(108, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_112(112, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_mId(249=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_251(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_mId(258=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_259(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_eventParameterName(344, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(348, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventParameterName(351, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(348, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventParameterName(567, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(348, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventParameterName(586, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(348, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventParameterName(597, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(348, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventParameterName(612, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(348, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_mediaDescriptor(359=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_363(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_mediaDescriptor(606=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_363(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_mediaDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_719(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_mediaDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_719(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_mediaDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_719(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_eventParameters(569, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_611(611, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventParameters(613=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_614(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_mediaParm(467, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_471(471, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_mediaParm(533, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_534(534, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_eventSpec(621, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_623(623, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventSpec(625, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_626(626, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_mediaParmList(471, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_532(532, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_mediaParmList(534=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_535(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_eventSpecList(623, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_624(624, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventSpecList(626=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_627(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_eventStreamOrOther(344=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_347(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventStreamOrOther(351=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_347(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventStreamOrOther(567=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_568(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventStreamOrOther(586=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_588(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventStreamOrOther(597=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_588(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventStreamOrOther(612=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_568(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_eventsDescriptor(383=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_388(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventsDescriptor(630=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_388(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventsDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_744(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventsDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_744(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_eventsDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_744(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_extension(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_262(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_extension(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_262(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_extensionParameter(250, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(261, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_extensionParameter(313, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(261, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_localControlDescriptor(491=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_496(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_localControlDescriptor(525=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_496(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_localControlDescriptor(528=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_496(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_localControlDescriptor(557=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_496(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_localParm(532, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_534(534, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_localParm(552, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_553(553, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_localParmList(534, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_551(551, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_localParmList(553=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_554(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_mId(132, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_136(136, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_mId(273=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_275(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_mId(282=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_283(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_mediaDescriptor(383=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_387(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_mediaDescriptor(630=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_387(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_mediaDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_743(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_mediaDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_743(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_mediaDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_743(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_mediaParm(491, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_495(495, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_mediaParm(557, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_558(558, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_mediaParmList(495, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_556(556, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_mediaParmList(558=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_559(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccgoto_megacoMessage(0, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_2(2, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccgoto_message(4, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_109(109, Cat, Ss, Stack, T, Ts, Tzr).
+ yeccpars2_133(133, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_messageBody(112=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_138(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_messageBody(136=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_162(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_modemDescriptor(359=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_362(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_modemDescriptor(606=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_362(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_modemDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_718(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_modemDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_718(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_modemDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_718(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_modemDescriptor(383=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_386(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_modemDescriptor(630=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_386(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_modemDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_742(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_modemDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_742(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_modemDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_742(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_modemType(446, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_465(465, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_modemType(447, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_449(449, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_modemType(451, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_452(452, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_modemType(470, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_489(489, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_modemType(471, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_473(473, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_modemType(475, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_476(476, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_modemTypeList(449, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_450(450, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_modemTypeList(452=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_453(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_modemTypeList(473, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_474(474, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_modemTypeList(476=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_477(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_mtpAddress(111, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_783(783, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_mtpAddress(135, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_807(807, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_muxDescriptor(359=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_361(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_muxDescriptor(606=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_361(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_muxDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_717(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_muxDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_717(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_muxDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_717(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_muxDescriptor(383=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_385(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_muxDescriptor(630=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_385(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_muxDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_741(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_muxDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_741(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_muxDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_741(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_muxType(435, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_437(437, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_muxType(459, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_461(461, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_notificationReason(411, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_412(412, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_notificationReason(418, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_419(419, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_notificationReason(435, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_436(436, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_notificationReason(442, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_443(443, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_notificationReasons(412, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_417(417, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_notificationReasons(419=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_420(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_notificationReasons(436, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_441(441, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_notificationReasons(443=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_444(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_notifyReply(645=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_647(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_notifyReply(767=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_647(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_notifyReply(669=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_671(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_notifyReply(791=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_671(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_notifyReplyBody(689=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_690(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_notifyReplyBody(713=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_714(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_notifyRequest(152=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_157(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_notifyRequest(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_157(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_notifyRequest(176=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_notifyRequest(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_notifyRequestBody(298, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_300(300, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_notifyRequestBody(322, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_324(324, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_observedEvent(306, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_311(311, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEvent(313, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_314(314, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEvent(597=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_598(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEvent(601=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_598(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_observedEvent(330, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_335(335, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEvent(337, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_338(338, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEvent(621=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_622(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEvent(625=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_622(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_observedEventBody(309=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_331(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEventBody(318=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_319(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_observedEventBody(333=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_355(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEventBody(342=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_343(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_observedEventParameter(320, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_322(322, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEventParameter(327, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_328(328, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_observedEventParameter(344, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_346(346, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEventParameter(351, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_352(352, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_observedEventParameters(322, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_326(326, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEventParameters(328=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_329(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_observedEventParameters(346, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_350(350, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEventParameters(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_353(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_observedEventTimeStamp(306, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_310(310, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEventTimeStamp(313, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_310(310, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEventTimeStamp(597, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_310(310, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEventTimeStamp(601, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_310(310, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_observedEventTimeStamp(330, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_334(334, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEventTimeStamp(337, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_334(334, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEventTimeStamp(621, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_334(334, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEventTimeStamp(625, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_334(334, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_observedEvents(311, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_312(312, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEvents(314=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_315(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_observedEvents(335, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_336(336, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEvents(338=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_339(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_observedEventsDescriptor(298=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_299(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEventsDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_716(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEventsDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_716(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_observedEventsDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_716(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_observedEventsDescriptor(322=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_323(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEventsDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_740(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEventsDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_740(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_observedEventsDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_740(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_onOrOff(514=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_515(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_onOrOff(518=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_519(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_onOrOff(538=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_539(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_onOrOff(542=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_543(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_optAuditDescriptor(196=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_197(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optAuditDescriptor(346=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_347(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optAuditDescriptor(349=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_350(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_optAuditDescriptor(220=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_221(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optAuditDescriptor(370=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_371(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optAuditDescriptor(373=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_374(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_optImmAckRequired(635, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_636(636, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_optImmAckRequired(659, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_660(660, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_optPropertyParms(454=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_455(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optPropertyParms(465=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_466(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_optPropertyParms(478=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_479(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optPropertyParms(489=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_490(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccgoto_optSep(0, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_1(1, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optSep(106=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_107(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optSep(108, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_111(111, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optSep(124=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_125(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_optSep(130=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_131(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optSep(249, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_111(111, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optSep(258, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_111(111, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optSep(307, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_332(332, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optSep(310, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_4(317, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optSep(783=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_787(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_optSep(784=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_786(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_optSep(132, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_135(135, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optSep(148=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_149(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optSep(154=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_155(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optSep(273, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_135(135, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optSep(282, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_135(135, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optSep(331, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_356(356, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optSep(334, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_4(341, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optSep(807=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_811(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_optSep(808=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_810(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_packagesDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_715(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_packagesDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_715(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_packagesDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_715(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_packagesDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_739(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_packagesDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_739(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_packagesDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_739(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_packagesItem(742, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_744(744, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_packagesItem(746, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_747(747, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_packagesItem(766, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_768(768, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_packagesItem(770, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_771(771, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_packagesItems(744, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_745(745, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_packagesItems(747=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_748(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_packagesItems(768, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_769(769, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_packagesItems(771=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_772(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_parmValue(237=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_264(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_parmValue(324=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_325(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_parmValue(396=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_424(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_parmValue(458=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_459(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_parmValue(261=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_288(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_parmValue(348=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_349(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_parmValue(420=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_448(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_parmValue(482=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_483(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_pathName(111=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_782(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_pathName(135=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_806(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_pkgdName(306, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_309(309, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(313, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_309(309, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(317, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_318(318, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_381(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(386=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_381(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(390=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_381(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(431=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_381(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(456, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(458, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(461, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(458, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(478, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(458, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(495, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(458, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(508, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(458, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(528, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(458, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(539, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_541(541, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(558, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_560(560, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(578, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_560(560, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(593, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_541(541, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(597, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_309(309, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(601, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_309(309, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(732, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_734(734, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_pkgdName(738, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_734(734, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_pkgdName(330, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_333(333, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(337, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_333(333, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(341, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_342(342, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(400=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_405(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(410=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_405(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(414=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_405(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(455=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_405(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(480, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(482, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(485, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(482, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(502, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(482, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(519, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(482, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(532, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(482, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(552, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(482, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(563, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_565(565, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(582, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_584(584, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(602, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_584(584, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(617, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_565(565, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(621, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_333(333, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(625, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_333(333, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(756, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_758(758, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_pkgdName(762, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_758(758, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_portNumber(122, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_124(124, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_portNumber(129, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_130(130, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_portNumber(249=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_250(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_portNumber(146, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_148(148, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_portNumber(153, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_154(154, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_portNumber(273=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_274(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_priority(152=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_156(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_priority(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_156(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_priority(645=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_156(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_priority(767=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_156(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_priority(176=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_180(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_priority(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_180(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_priority(669=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_180(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_priority(791=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_180(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_propertyParm(456, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_457(457, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_propertyParm(461, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_462(462, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_propertyParm(478=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_481(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_propertyParm(495=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_481(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_propertyParm(508=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_509(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_propertyParm(528=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_509(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_propertyParm(480, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_481(481, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_propertyParm(485, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_486(486, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_propertyParm(502=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_505(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_propertyParm(519=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_505(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_propertyParm(532=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_533(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_propertyParm(552=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_533(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_propertyParms(457, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_460(460, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_propertyParms(462=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_463(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_propertyParms(481, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_484(484, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_propertyParms(486=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_487(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_requestID(303, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_305(305, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_requestID(537, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_538(538, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_requestID(556, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_557(557, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_requestID(327, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_329(329, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_requestID(561, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_562(562, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_requestID(580, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_581(581, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_requestedEvent(539, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_540(540, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_requestedEvent(593, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_594(594, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_requestedEvent(563, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_564(564, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_requestedEvent(617, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_618(618, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_requestedEventBody(541=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_542(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_requestedEventBody(565=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_566(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_requestedEvents(540, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_592(592, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_requestedEvents(594=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_595(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_requestedEvents(564, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_616(616, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_requestedEvents(618=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_619(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccgoto_safeToken(4, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_108(108, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_132(132, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken(6, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_8(8, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(103, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_104(104, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(105, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_106(106, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(111=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_781(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(115, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_127(127, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(116, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_117(117, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(117, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_117(117, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(119, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_117(117, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(122=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_123(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(129=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_123(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(145=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_616(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(149=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_150(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(177=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(182=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(191=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(195=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(221=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_236(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(247=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_248(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(249=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_123(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(252=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(256=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_257(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(260=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_261(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(262=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_263(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(265=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(266=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(267=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(268=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(274=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(275=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(278=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(279=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(127, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_128(128, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(129, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_130(130, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(135=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_805(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(139, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_151(151, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(140, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_141(141, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(141, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_141(141, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(143, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_141(141, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(146=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_147(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(153=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_147(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(169=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_640(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(173=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_174(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(201=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(206=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(215=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(219=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(245=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_260(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(271=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_272(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(273=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_147(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(276=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(280=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_281(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(284=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_285(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(286=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_287(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_236(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(294=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_295(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(296=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(290=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(291=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(292=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(298=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(299=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(302=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken(303=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_304(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(306=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(317=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_260(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(318=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_319(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken(320=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_321(_S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken(327=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_321(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(345=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(348=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(356=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(383=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_385(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(386=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(390=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(394, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(396, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(402=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_404(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(422=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_423(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(426, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_237(396, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(431=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(435=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_436(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(439=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(442=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_328(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(330=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(337=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(341=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(344=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_345(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(351=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_345(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(369=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(372=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(380=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(400=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(407=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_409(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(410=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(414=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(418, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(420, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(426=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_428(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken(446=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_448(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(447=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_448(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(451=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_448(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(456=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(461=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(478=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(495=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(499=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_404(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(508=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(528=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(537=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_304(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(539=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(543=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_321(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(556=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_304(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(558=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(562=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_321(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(573=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_321(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(578=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(588=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_321(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(593=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_447(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(450, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_261(420, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(455=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(459=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_460(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(463=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(466=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(470=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_472(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(471=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_472(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(475=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_472(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(480=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(485=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(502=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(519=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(523=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_428(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(532=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(552=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(561=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_328(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(563=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(567=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_345(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(580=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_328(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(582=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(586=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_345(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken(597=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(601=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
+ yeccpars2_345(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(602=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(612=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_345(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(617=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(621=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken(625=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_627(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(629=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_627(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(633=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_616(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(643=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_150(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(663=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(688=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(694=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(700=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(703=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_704(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(732=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(738=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_308(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(742=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_743(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(746=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_743(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(755=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(760=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_181(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken(776=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_616(_S, Cat, Ss, Stack, T, Ts, Tzr).
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(649=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_651(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(653=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_651(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(657=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_640(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(667=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_174(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(687=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(712=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(718=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(724=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(727=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_728(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(756=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(759=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_278(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(762=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_332(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(766=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_767(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(770=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_767(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(779=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(784=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_205(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken(800=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_640(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
 yeccgoto_safeToken2(4=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(6=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(103=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(105=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(111=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(115=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(116=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(117=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(119=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(122=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(127=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(129=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(145=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(135=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(149=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(139=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(177=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(140=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(182=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(141=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(191=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(143=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(195=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(146=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(221=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(153=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(169=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(247=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(173=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(249=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(201=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(252=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(206=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(256=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(215=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(260=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(219=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(262=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(245=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(265=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(266=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(271=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(267=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(273=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(268=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(276=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(274=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(280=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(275=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(284=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(278=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(279=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(286=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(294=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(290=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(296=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(291=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(292=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(298=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(299=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(302=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(303=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(306=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(317=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(318=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(320=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(327=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(345=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(330=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(348=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(337=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(356=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(341=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(344=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(383=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(351=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(386=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(369=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(390=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(372=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(394=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(380=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(402=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(400=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(422=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(407=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(410=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(414=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(418=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(426=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(431=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(435=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(439=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(442=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(446=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(447=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(450=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(451=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(455=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(456=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(459=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(461=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(463=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(478=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(466=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(495=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(470=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(499=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(471=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(508=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(475=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(528=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(480=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(537=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(485=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(539=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(502=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(543=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(519=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(556=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(523=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(558=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(532=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(562=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(552=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(573=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(561=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(578=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(563=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(588=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(567=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(593=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(580=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(582=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(586=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(597=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(601=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(602=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(612=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(617=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(621=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
 yeccgoto_safeToken2(625=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(629=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(649=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(633=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(653=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(643=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(657=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(663=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(667=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(688=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(687=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(694=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(712=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(700=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(718=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(703=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(724=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(732=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(727=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(756=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(738=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(759=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(742=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(762=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(746=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(766=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(755=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(770=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(760=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(779=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_safeToken2(776=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_safeToken2(784=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_safeToken2(800=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_secondEventParameter(562, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_563(563, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_secondEventParameter(573, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_574(574, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_secondEventParameter(586, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_587(587, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_secondEventParameter(597, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_598(598, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_secondEventParameters(563, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_572(572, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_secondEventParameters(574=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_575(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_secondEventParameters(587, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_596(596, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_secondEventParameters(598=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_599(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_secondRequestedEvent(558, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_559(559, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_secondRequestedEvent(578, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_579(579, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_secondRequestedEvent(582, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_583(583, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_secondRequestedEvent(602, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_603(603, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_secondRequestedEventBody(560=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_561(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_secondRequestedEventBody(584=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_585(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_secondRequestedEvents(559, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_577(577, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_secondRequestedEvents(579=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_580(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_secondRequestedEvents(583, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_601(601, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_secondRequestedEvents(603=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_604(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_servChgReplyParm(670, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_676(676, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_servChgReplyParm(682, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_683(683, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_servChgReplyParm(694, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_700(700, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_servChgReplyParm(706, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_707(707, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_servChgReplyParms(676, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_681(681, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_servChgReplyParms(683=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_684(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_servChgReplyParms(700, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_705(705, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_servChgReplyParms(707=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_708(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_serviceChangeAddress(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_235(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeAddress(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_235(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeAddress(670=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_675(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeAddress(682=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_675(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_serviceChangeAddress(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_259(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeAddress(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_259(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeAddress(694=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_699(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeAddress(706=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_699(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_serviceChangeDelay(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_234(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeDelay(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_234(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_serviceChangeDelay(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_258(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeDelay(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_258(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_serviceChangeDescriptor(223, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_224(224, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_serviceChangeDescriptor(247, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_248(248, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_serviceChangeMethod(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_233(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeMethod(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_233(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_serviceChangeMethod(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_257(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeMethod(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_257(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_serviceChangeMgcId(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_232(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeMgcId(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_232(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeMgcId(670=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_674(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeMgcId(682=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_674(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceChangeParm(226, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_231(231, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeParm(289, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_290(290, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceChangeParms(231, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_288(288, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeParms(290=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_291(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceChangeProfile(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_230(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeProfile(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_230(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeProfile(670=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_673(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeProfile(682=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_673(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceChangeReason(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_229(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeReason(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_229(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceChangeReply(645=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_646(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeReply(767=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_646(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceChangeReplyBody(664=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_665(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceChangeReplyDescriptor(666, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_667(667, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceChangeRequest(152=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_155(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeRequest(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_155(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceChangeVersion(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_228(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeVersion(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_228(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeVersion(670=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_672(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceChangeVersion(682=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_672(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceState(485=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_486(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_serviceStates(478=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_480(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_serviceStates(495=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_480(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_sigParameter(394, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_395(395, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_sigParameter(426, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_427(427, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_sigParameters(395, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_425(425, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_sigParameters(427=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_428(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_signalList(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_380(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalList(431=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_380(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_signalListId(383, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_384(384, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_signalListParm(386, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_388(388, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalListParm(390, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_391(391, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_signalListParms(388, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_389(389, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalListParms(391=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_392(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_signalName(376, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_379(379, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalName(386, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_379(379, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalName(390, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_379(379, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalName(431, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_379(379, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_signalParm(376, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_378(378, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalParm(431, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_432(432, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_signalParms(378, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_430(430, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalParms(432=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_433(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_signalRequest(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_377(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalRequest(386=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_387(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalRequest(390=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_387(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalRequest(431=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_377(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_signalType(405=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_406(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_signalsDescriptor(359=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_360(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalsDescriptor(552, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_553(553, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalsDescriptor(569, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_570(570, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalsDescriptor(606=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_360(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalsDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_714(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalsDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_714(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_signalsDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_714(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_statisticsDescriptor(711=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_713(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_statisticsDescriptor(751=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_713(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_statisticsDescriptor(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_713(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_statisticsParameter(732, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_733(733, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_statisticsParameter(738, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_739(739, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_statisticsParameters(733, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_737(737, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_statisticsParameters(739=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_740(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_streamDescriptor(467=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_470(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_streamDescriptor(533=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_470(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_streamID(402=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_403(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_streamID(499, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_500(500, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_streamModes(520=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_521(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_streamParm(467=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_469(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_streamParm(501, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_502(502, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_streamParm(504, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_505(505, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_streamParm(533=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_469(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_streamParmList(502, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_503(503, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_streamParmList(505=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_506(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_subtractRequest(152=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_154(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_subtractRequest(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_154(_S, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_terminationA(177, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_180(180, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationA(191, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_180(180, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_terminationAudit(711, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_712(712, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationAudit(763, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_764(764, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_terminationB(182, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_184(184, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_terminationID(177=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_179(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(182=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_183(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(191=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_179(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(195, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_196(196, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(221, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_222(222, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(296, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_297(297, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(345, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_346(346, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(348, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_349(349, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(356, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_357(357, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(439, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_440(440, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(442, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_443(443, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(663, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_664(664, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(688, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_689(689, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(694, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_695(695, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(700, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_440(440, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(755, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_695(695, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationID(760, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_761(761, Cat, Ss, Stack, T, Ts, Tzr).
-
-yeccgoto_terminationIDList(437=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_438(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationIDList(697=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_serviceChangeMgcId(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_256(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeMgcId(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_256(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeMgcId(694=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_698(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationIDList(757=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_serviceChangeMgcId(706=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_698(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_terminationIDListRepeat(440, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_441(441, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationIDListRepeat(443=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_444(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_serviceChangeParm(250, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_255(255, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeParm(313, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_314(314, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_terminationStateDescriptor(467=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_468(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationStateDescriptor(533=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+yeccgoto_serviceChangeParms(255, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_312(312, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeParms(314=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_315(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_serviceChangeProfile(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeProfile(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_254(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeProfile(694=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_697(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeProfile(706=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_697(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_serviceChangeReason(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_253(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeReason(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_253(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_serviceChangeReply(669=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_670(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeReply(791=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_670(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_serviceChangeReplyBody(688=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_689(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_serviceChangeReplyDescriptor(690, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_691(691, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_serviceChangeRequest(176=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_179(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeRequest(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_179(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_serviceChangeVersion(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_252(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeVersion(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_252(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeVersion(694=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_696(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceChangeVersion(706=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_696(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_serviceState(509=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_510(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_serviceStates(502=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_504(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_serviceStates(519=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_504(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_sigParameter(418, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_419(419, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_sigParameter(450, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_451(451, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_sigParameters(419, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_449(449, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_sigParameters(451=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_452(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_signalList(400=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_404(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalList(455=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_404(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_signalListId(407, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_408(408, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_signalListParm(410, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_412(412, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalListParm(414, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_415(415, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_signalListParms(412, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_413(413, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalListParms(415=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_416(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_signalName(400, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_403(403, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalName(410, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_403(403, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalName(414, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_403(403, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalName(455, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_403(403, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_signalParm(400, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_402(402, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalParm(455, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_456(456, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_signalParms(402, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_454(454, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalParms(456=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_457(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_signalRequest(400=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_401(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalRequest(410=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_411(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalRequest(414=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_411(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalRequest(455=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_401(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_signalType(429=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_430(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_signalsDescriptor(383=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_384(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalsDescriptor(576, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_577(577, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalsDescriptor(593, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_594(594, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalsDescriptor(630=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_384(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalsDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_738(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalsDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_738(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_signalsDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_738(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_statisticsDescriptor(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_737(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_statisticsDescriptor(775=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_737(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_statisticsDescriptor(787=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_737(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_statisticsParameter(756, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_757(757, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_statisticsParameter(762, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_763(763, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_statisticsParameters(757, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_761(761, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_statisticsParameters(763=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_764(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_streamDescriptor(491=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_494(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_streamDescriptor(557=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_494(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_streamID(426=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_427(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_streamID(523, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_524(524, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_streamModes(544=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_545(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_streamParm(491=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_493(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_streamParm(525, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_526(526, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_streamParm(528, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_529(529, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_streamParm(557=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_493(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_streamParmList(526, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_527(527, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_streamParmList(529=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_530(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_subtractRequest(176=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_178(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_subtractRequest(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_178(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_terminationA(201, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_204(204, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationA(215, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_204(204, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_terminationAudit(735, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_736(736, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationAudit(787, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_788(788, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_terminationB(206, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_208(208, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_terminationID(201=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_203(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(206=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_207(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(215=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_203(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(219, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_220(220, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(245, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_246(246, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(320, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_321(321, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(369, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_370(370, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(372, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_373(373, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(380, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_381(381, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(463, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_464(464, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(466, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_467(467, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(687, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_688(688, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(712, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_713(713, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(718, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_719(719, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(724, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_464(464, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(779, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_719(719, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationID(784, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_785(785, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_terminationIDList(461=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_462(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationIDList(721=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_722(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationIDList(781=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_722(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_terminationIDListRepeat(464, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_465(465, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationIDListRepeat(467=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_468(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_terminationStateParm(478, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_479(479, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationStateParm(495, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_496(496, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_terminationStateDescriptor(491=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_492(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationStateDescriptor(557=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_492(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_terminationStateParms(479, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_494(494, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_terminationStateParms(496=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_497(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_terminationStateParm(502, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_503(503, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationStateParm(519, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_520(520, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_timeStamp(226=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_227(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_timeStamp(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_227(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_timeStamp(306, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_307(307, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_timeStamp(313, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_307(307, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_timeStamp(597, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_307(307, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_timeStamp(601, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_307(307, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_timeStamp(670=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_671(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_timeStamp(682=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_671(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_terminationStateParms(503, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_518(518, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_terminationStateParms(520=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_521(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_topologyDescriptor(152=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_153(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_topologyDescriptor(352=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_153(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_topologyDescriptor(645=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_153(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_topologyDescriptor(767=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_153(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_timeStamp(250=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_251(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_timeStamp(313=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_251(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_timeStamp(330, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_331(331, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_timeStamp(337, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_331(331, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_timeStamp(621, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_331(331, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_timeStamp(625, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_331(331, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_timeStamp(694=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_695(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_timeStamp(706=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_695(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_topologyDirection(185=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_186(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_topologyDescriptor(176=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_177(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_topologyDescriptor(376=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_177(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_topologyDescriptor(669=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_177(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_topologyDescriptor(791=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_177(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_topologyTriple(177, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_178(178, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_topologyTriple(191, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_192(192, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_topologyDirection(209=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_210(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_topologyTripleList(178, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_190(190, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_topologyTripleList(192=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_193(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_topologyTriple(201, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_202(202, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_topologyTriple(215, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_216(216, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_transactionAck(625, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_626(626, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_transactionAck(629, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_630(630, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_topologyTripleList(202, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_214(214, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_topologyTripleList(216=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_217(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_transactionAckList(626, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_628(628, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_transactionAckList(630=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_631(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_transactionAck(649, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_650(650, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_transactionAck(653, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_654(654, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_transactionID(145, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_615(615, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_transactionID(633, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_634(634, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_transactionID(776, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_777(777, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_transactionAckList(650, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_652(652, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_transactionAckList(654=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_655(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_transactionItem(112, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_137(137, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_transactionItem(137, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_137(137, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_transactionID(169, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_639(639, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_transactionID(657, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_658(658, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_transactionID(800, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_801(801, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_transactionList(112=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_136(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_transactionList(137=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_780(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_transactionItem(136, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_161(161, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_transactionItem(161, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_161(161, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_transactionPending(112=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_135(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_transactionPending(137=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_135(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_transactionList(136=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_160(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_transactionList(161=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_804(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_transactionReply(112=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_134(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_transactionReply(137=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_134(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_transactionPending(136=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_159(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_transactionPending(161=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_159(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_transactionReplyBody(636, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_639(639, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_transactionReply(136=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_158(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_transactionReply(161=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_158(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_transactionRequest(112=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_133(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_transactionRequest(137=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_133(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_transactionReplyBody(660, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_663(663, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_transactionResponseAck(112=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_132(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_transactionResponseAck(137=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_132(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_transactionRequest(136=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_157(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_transactionRequest(161=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_157(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_value(252=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_253(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_value(265=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_272(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_value(266=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_271(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_value(267=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_270(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_value(268=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_269(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_value(274, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_285(285, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_value(275, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_276(276, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_value(278, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_282(282, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_value(279, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_280(280, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_value(735=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_736(_S, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_transactionResponseAck(136=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_156(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_transactionResponseAck(161=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_156(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
-yeccgoto_valueList(276, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_277(277, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_valueList(280=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_281(_S, Cat, Ss, Stack, T, Ts, Tzr);
-yeccgoto_valueList(285, Cat, Ss, Stack, T, Ts, Tzr) ->
- yeccpars2_286(286, Cat, Ss, Stack, T, Ts, Tzr).
+yeccgoto_value(276=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_277(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_value(289=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_296(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_value(290=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_295(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_value(291=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_294(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_value(292=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_293(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_value(298, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_309(309, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_value(299, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_300(300, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_value(302, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_306(306, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_value(303, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_304(304, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_value(759=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_760(_S, Cat, Ss, Stack, T, Ts, Tzr).
+
+yeccgoto_valueList(300, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_301(301, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_valueList(304=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_305(_S, Cat, Ss, Stack, T, Ts, Tzr);
+yeccgoto_valueList(309, Cat, Ss, Stack, T, Ts, Tzr) ->
+ yeccpars2_310(310, Cat, Ss, Stack, T, Ts, Tzr).
 
 -compile({inline,{yeccpars2_0_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
+-file("megaco_text_parser_v1.yrl", 412).
 yeccpars2_0_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
 -compile({inline,{yeccpars2_1_,1}}).
--file("megaco_text_parser_v1.yrl", 393).
+-file("megaco_text_parser_v1.yrl", 417).
 yeccpars2_1_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
 -compile({inline,{yeccpars2_3_,1}}).
--file("megaco_text_parser_v1.yrl", 387).
+-file("megaco_text_parser_v1.yrl", 411).
 yeccpars2_3_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -8942,286 +9494,286 @@ yeccpars2_3_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_7_,1}}).
--file("megaco_text_parser_v1.yrl", 1184).
+-file("megaco_text_parser_v1.yrl", 1210).
 yeccpars2_7_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    make_safe_token ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_106_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
-yeccpars2_106_(__Stack0) ->
- [begin
-   no_sep
-  end | __Stack0].
-
--compile({inline,{yeccpars2_107_,1}}).
--file("megaco_text_parser_v1.yrl", 392).
-yeccpars2_107_(__Stack0) ->
- [__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   ensure_auth_header ( __3 , __5 , __7 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_108_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
-yeccpars2_108_(__Stack0) ->
- [begin
-   no_sep
-  end | __Stack0].
-
--compile({inline,{yeccpars2_110_,1}}).
--file("megaco_text_parser_v1.yrl", 385).
-yeccpars2_110_(__Stack0) ->
- [__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   # 'MegacoMessage' { authHeader = __2 , mess = __3 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_116_,1}}).
--file("megaco_text_parser_v1.yrl", 711).
-yeccpars2_116_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_117_,1}}).
--file("megaco_text_parser_v1.yrl", 711).
-yeccpars2_117_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_119_,1}}).
--file("megaco_text_parser_v1.yrl", 711).
-yeccpars2_119_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_120_,1}}).
--file("megaco_text_parser_v1.yrl", 712).
-yeccpars2_120_(__Stack0) ->
- [__2,__1 | __Stack] = __Stack0,
- [begin
-   [ colon | __2 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_121_,1}}).
--file("megaco_text_parser_v1.yrl", 709).
-yeccpars2_121_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   ensure_domainAddress ( __2 , asn1_NOVALUE )
-  end | __Stack].
-
--compile({inline,{yeccpars2_123_,1}}).
--file("megaco_text_parser_v1.yrl", 716).
-yeccpars2_123_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   ensure_uint16 ( __1 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_124_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
-yeccpars2_124_(__Stack0) ->
- [begin
-   no_sep
-  end | __Stack0].
-
--compile({inline,{yeccpars2_125_,1}}).
--file("megaco_text_parser_v1.yrl", 707).
-yeccpars2_125_(__Stack0) ->
- [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   ensure_domainAddress ( __2 , __5 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_126_,1}}).
--file("megaco_text_parser_v1.yrl", 713).
-yeccpars2_126_(__Stack0) ->
- [__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __1 | __2 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_128_,1}}).
--file("megaco_text_parser_v1.yrl", 700).
-yeccpars2_128_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   ensure_domainName ( __2 , asn1_NOVALUE )
-  end | __Stack].
-
 -compile({inline,{yeccpars2_130_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
+-file("megaco_text_parser_v1.yrl", 412).
 yeccpars2_130_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
 -compile({inline,{yeccpars2_131_,1}}).
--file("megaco_text_parser_v1.yrl", 698).
+-file("megaco_text_parser_v1.yrl", 416).
 yeccpars2_131_(__Stack0) ->
+ [__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   ensure_auth_header ( __3 , __5 , __7 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_132_,1}}).
+-file("megaco_text_parser_v1.yrl", 412).
+yeccpars2_132_(__Stack0) ->
+ [begin
+   no_sep
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_134_,1}}).
+-file("megaco_text_parser_v1.yrl", 409).
+yeccpars2_134_(__Stack0) ->
+ [__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   # 'MegacoMessage' { authHeader = __2 , mess = __3 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_140_,1}}).
+-file("megaco_text_parser_v1.yrl", 735).
+yeccpars2_140_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_141_,1}}).
+-file("megaco_text_parser_v1.yrl", 735).
+yeccpars2_141_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_143_,1}}).
+-file("megaco_text_parser_v1.yrl", 735).
+yeccpars2_143_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_144_,1}}).
+-file("megaco_text_parser_v1.yrl", 736).
+yeccpars2_144_(__Stack0) ->
+ [__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ colon | __2 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_145_,1}}).
+-file("megaco_text_parser_v1.yrl", 733).
+yeccpars2_145_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   ensure_domainAddress ( __2 , asn1_NOVALUE )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_147_,1}}).
+-file("megaco_text_parser_v1.yrl", 740).
+yeccpars2_147_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   ensure_uint16 ( __1 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_148_,1}}).
+-file("megaco_text_parser_v1.yrl", 412).
+yeccpars2_148_(__Stack0) ->
+ [begin
+   no_sep
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_149_,1}}).
+-file("megaco_text_parser_v1.yrl", 731).
+yeccpars2_149_(__Stack0) ->
+ [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   ensure_domainAddress ( __2 , __5 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_150_,1}}).
+-file("megaco_text_parser_v1.yrl", 737).
+yeccpars2_150_(__Stack0) ->
+ [__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __1 | __2 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_152_,1}}).
+-file("megaco_text_parser_v1.yrl", 724).
+yeccpars2_152_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   ensure_domainName ( __2 , asn1_NOVALUE )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_154_,1}}).
+-file("megaco_text_parser_v1.yrl", 412).
+yeccpars2_154_(__Stack0) ->
+ [begin
+   no_sep
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_155_,1}}).
+-file("megaco_text_parser_v1.yrl", 722).
+yeccpars2_155_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    ensure_domainName ( __2 , __5 )
   end | __Stack].
 
--compile({inline,{yeccpars2_132_,1}}).
--file("megaco_text_parser_v1.yrl", 407).
-yeccpars2_132_(__Stack0) ->
+-compile({inline,{yeccpars2_156_,1}}).
+-file("megaco_text_parser_v1.yrl", 431).
+yeccpars2_156_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { transactionResponseAck , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_133_,1}}).
--file("megaco_text_parser_v1.yrl", 404).
-yeccpars2_133_(__Stack0) ->
+-compile({inline,{yeccpars2_157_,1}}).
+-file("megaco_text_parser_v1.yrl", 428).
+yeccpars2_157_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { transactionRequest , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_134_,1}}).
--file("megaco_text_parser_v1.yrl", 405).
-yeccpars2_134_(__Stack0) ->
+-compile({inline,{yeccpars2_158_,1}}).
+-file("megaco_text_parser_v1.yrl", 429).
+yeccpars2_158_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { transactionReply , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_135_,1}}).
--file("megaco_text_parser_v1.yrl", 406).
-yeccpars2_135_(__Stack0) ->
+-compile({inline,{yeccpars2_159_,1}}).
+-file("megaco_text_parser_v1.yrl", 430).
+yeccpars2_159_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { transactionPending , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_136_,1}}).
--file("megaco_text_parser_v1.yrl", 399).
-yeccpars2_136_(__Stack0) ->
+-compile({inline,{yeccpars2_160_,1}}).
+-file("megaco_text_parser_v1.yrl", 423).
+yeccpars2_160_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { transactions , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_137_,1}}).
--file("megaco_text_parser_v1.yrl", 401).
-yeccpars2_137_(__Stack0) ->
+-compile({inline,{yeccpars2_161_,1}}).
+-file("megaco_text_parser_v1.yrl", 425).
+yeccpars2_161_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    [ __1 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_138_,1}}).
--file("megaco_text_parser_v1.yrl", 396).
-yeccpars2_138_(__Stack0) ->
+-compile({inline,{yeccpars2_162_,1}}).
+-file("megaco_text_parser_v1.yrl", 420).
+yeccpars2_162_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    ensure_message ( __1 , __2 , __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_139_,1}}).
--file("megaco_text_parser_v1.yrl", 398).
-yeccpars2_139_(__Stack0) ->
+-compile({inline,{yeccpars2_163_,1}}).
+-file("megaco_text_parser_v1.yrl", 422).
+yeccpars2_163_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { messageError , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_147_,1}}).
--file("megaco_text_parser_v1.yrl", 436).
-yeccpars2_147_(__Stack0) ->
+-compile({inline,{yeccpars2_171_,1}}).
+-file("megaco_text_parser_v1.yrl", 460).
+yeccpars2_171_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_150_,1}}).
--file("megaco_text_parser_v1.yrl", 704).
-yeccpars2_150_(__Stack0) ->
+-compile({inline,{yeccpars2_174_,1}}).
+-file("megaco_text_parser_v1.yrl", 728).
+yeccpars2_174_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_contextID ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_153_,1}}).
--file("megaco_text_parser_v1.yrl", 450).
-yeccpars2_153_(__Stack0) ->
+-compile({inline,{yeccpars2_177_,1}}).
+-file("megaco_text_parser_v1.yrl", 474).
+yeccpars2_177_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { topology , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_156_,1}}).
--file("megaco_text_parser_v1.yrl", 451).
-yeccpars2_156_(__Stack0) ->
+-compile({inline,{yeccpars2_180_,1}}).
+-file("megaco_text_parser_v1.yrl", 475).
+yeccpars2_180_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { priority , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_164_,1}}).
--file("megaco_text_parser_v1.yrl", 443).
-yeccpars2_164_(__Stack0) ->
+-compile({inline,{yeccpars2_188_,1}}).
+-file("megaco_text_parser_v1.yrl", 467).
+yeccpars2_188_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_165_,1}}).
--file("megaco_text_parser_v1.yrl", 524).
-yeccpars2_165_(__Stack0) ->
+-compile({inline,{yeccpars2_189_,1}}).
+-file("megaco_text_parser_v1.yrl", 548).
+yeccpars2_189_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { addReq , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_169_,1}}).
--file("megaco_text_parser_v1.yrl", 452).
-yeccpars2_169_(__Stack0) ->
+-compile({inline,{yeccpars2_193_,1}}).
+-file("megaco_text_parser_v1.yrl", 476).
+yeccpars2_193_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { emergency , true }
   end | __Stack].
 
--compile({inline,{yeccpars2_170_,1}}).
--file("megaco_text_parser_v1.yrl", 526).
-yeccpars2_170_(__Stack0) ->
+-compile({inline,{yeccpars2_194_,1}}).
+-file("megaco_text_parser_v1.yrl", 550).
+yeccpars2_194_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { modReq , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_171_,1}}).
--file("megaco_text_parser_v1.yrl", 525).
-yeccpars2_171_(__Stack0) ->
+-compile({inline,{yeccpars2_195_,1}}).
+-file("megaco_text_parser_v1.yrl", 549).
+yeccpars2_195_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { moveReq , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_178_,1}}).
--file("megaco_text_parser_v1.yrl", 1169).
-yeccpars2_178_(__Stack0) ->
+-compile({inline,{yeccpars2_202_,1}}).
+-file("megaco_text_parser_v1.yrl", 1195).
+yeccpars2_202_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_181_,1}}).
--file("megaco_text_parser_v1.yrl", 732).
-yeccpars2_181_(__Stack0) ->
+-compile({inline,{yeccpars2_205_,1}}).
+-file("megaco_text_parser_v1.yrl", 756).
+yeccpars2_205_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_terminationID ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_186_,1}}).
--file("megaco_text_parser_v1.yrl", 1165).
-yeccpars2_186_(__Stack0) ->
+-compile({inline,{yeccpars2_210_,1}}).
+-file("megaco_text_parser_v1.yrl", 1191).
+yeccpars2_210_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'TopologyRequest' { terminationFrom = __1 ,
@@ -9229,63 +9781,63 @@ yeccpars2_186_(__Stack0) ->
     topologyDirection = __5 }
   end | __Stack].
 
--compile({inline,{yeccpars2_187_,1}}).
--file("megaco_text_parser_v1.yrl", 1173).
-yeccpars2_187_(__Stack0) ->
+-compile({inline,{yeccpars2_211_,1}}).
+-file("megaco_text_parser_v1.yrl", 1199).
+yeccpars2_211_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    bothway
   end | __Stack].
 
--compile({inline,{yeccpars2_188_,1}}).
--file("megaco_text_parser_v1.yrl", 1174).
-yeccpars2_188_(__Stack0) ->
+-compile({inline,{yeccpars2_212_,1}}).
+-file("megaco_text_parser_v1.yrl", 1200).
+yeccpars2_212_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    isolate
   end | __Stack].
 
--compile({inline,{yeccpars2_189_,1}}).
--file("megaco_text_parser_v1.yrl", 1175).
-yeccpars2_189_(__Stack0) ->
+-compile({inline,{yeccpars2_213_,1}}).
+-file("megaco_text_parser_v1.yrl", 1201).
+yeccpars2_213_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    oneway
   end | __Stack].
 
--compile({inline,{yeccpars2_192_,1}}).
--file("megaco_text_parser_v1.yrl", 1169).
-yeccpars2_192_(__Stack0) ->
+-compile({inline,{yeccpars2_216_,1}}).
+-file("megaco_text_parser_v1.yrl", 1195).
+yeccpars2_216_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_193_,1}}).
--file("megaco_text_parser_v1.yrl", 1171).
-yeccpars2_193_(__Stack0) ->
+-compile({inline,{yeccpars2_217_,1}}).
+-file("megaco_text_parser_v1.yrl", 1197).
+yeccpars2_217_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_194_,1}}).
--file("megaco_text_parser_v1.yrl", 1157).
-yeccpars2_194_(__Stack0) ->
+-compile({inline,{yeccpars2_218_,1}}).
+-file("megaco_text_parser_v1.yrl", 1183).
+yeccpars2_218_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_196_,1}}).
--file("megaco_text_parser_v1.yrl", 564).
-yeccpars2_196_(__Stack0) ->
+-compile({inline,{yeccpars2_220_,1}}).
+-file("megaco_text_parser_v1.yrl", 588).
+yeccpars2_220_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_197_,1}}).
--file("megaco_text_parser_v1.yrl", 558).
-yeccpars2_197_(__Stack0) ->
+-compile({inline,{yeccpars2_221_,1}}).
+-file("megaco_text_parser_v1.yrl", 582).
+yeccpars2_221_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    make_commandRequest ( { subtractReq , __1 } ,
@@ -9293,556 +9845,441 @@ yeccpars2_197_(__Stack0) ->
     auditDescriptor = __4 } )
   end | __Stack].
 
--compile({inline,{yeccpars2_201_,1}}).
--file("megaco_text_parser_v1.yrl", 621).
-yeccpars2_201_(__Stack0) ->
+-compile({inline,{yeccpars2_225_,1}}).
+-file("megaco_text_parser_v1.yrl", 645).
+yeccpars2_225_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_203_,1}}).
--file("megaco_text_parser_v1.yrl", 624).
-yeccpars2_203_(__Stack0) ->
+-compile({inline,{yeccpars2_227_,1}}).
+-file("megaco_text_parser_v1.yrl", 648).
+yeccpars2_227_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_205_,1}}).
--file("megaco_text_parser_v1.yrl", 631).
-yeccpars2_205_(__Stack0) ->
+-compile({inline,{yeccpars2_229_,1}}).
+-file("megaco_text_parser_v1.yrl", 655).
+yeccpars2_229_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    digitMapToken
   end | __Stack].
 
--compile({inline,{yeccpars2_206_,1}}).
--file("megaco_text_parser_v1.yrl", 641).
-yeccpars2_206_(__Stack0) ->
+-compile({inline,{yeccpars2_230_,1}}).
+-file("megaco_text_parser_v1.yrl", 665).
+yeccpars2_230_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    eventBufferToken
   end | __Stack].
 
--compile({inline,{yeccpars2_207_,1}}).
--file("megaco_text_parser_v1.yrl", 642).
-yeccpars2_207_(__Stack0) ->
+-compile({inline,{yeccpars2_231_,1}}).
+-file("megaco_text_parser_v1.yrl", 666).
+yeccpars2_231_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    eventsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_208_,1}}).
--file("megaco_text_parser_v1.yrl", 630).
-yeccpars2_208_(__Stack0) ->
+-compile({inline,{yeccpars2_232_,1}}).
+-file("megaco_text_parser_v1.yrl", 654).
+yeccpars2_232_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    mediaToken
   end | __Stack].
 
--compile({inline,{yeccpars2_209_,1}}).
--file("megaco_text_parser_v1.yrl", 629).
-yeccpars2_209_(__Stack0) ->
+-compile({inline,{yeccpars2_233_,1}}).
+-file("megaco_text_parser_v1.yrl", 653).
+yeccpars2_233_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    modemToken
   end | __Stack].
 
--compile({inline,{yeccpars2_210_,1}}).
--file("megaco_text_parser_v1.yrl", 628).
-yeccpars2_210_(__Stack0) ->
+-compile({inline,{yeccpars2_234_,1}}).
+-file("megaco_text_parser_v1.yrl", 652).
+yeccpars2_234_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    muxToken
   end | __Stack].
 
--compile({inline,{yeccpars2_211_,1}}).
--file("megaco_text_parser_v1.yrl", 633).
-yeccpars2_211_(__Stack0) ->
+-compile({inline,{yeccpars2_235_,1}}).
+-file("megaco_text_parser_v1.yrl", 657).
+yeccpars2_235_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    observedEventsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_212_,1}}).
--file("megaco_text_parser_v1.yrl", 634).
-yeccpars2_212_(__Stack0) ->
+-compile({inline,{yeccpars2_236_,1}}).
+-file("megaco_text_parser_v1.yrl", 658).
+yeccpars2_236_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    packagesToken
   end | __Stack].
 
--compile({inline,{yeccpars2_213_,1}}).
--file("megaco_text_parser_v1.yrl", 640).
-yeccpars2_213_(__Stack0) ->
+-compile({inline,{yeccpars2_237_,1}}).
+-file("megaco_text_parser_v1.yrl", 664).
+yeccpars2_237_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    signalsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_214_,1}}).
--file("megaco_text_parser_v1.yrl", 632).
-yeccpars2_214_(__Stack0) ->
+-compile({inline,{yeccpars2_238_,1}}).
+-file("megaco_text_parser_v1.yrl", 656).
+yeccpars2_238_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    statsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_215_,1}}).
--file("megaco_text_parser_v1.yrl", 618).
-yeccpars2_215_(__Stack0) ->
+-compile({inline,{yeccpars2_239_,1}}).
+-file("megaco_text_parser_v1.yrl", 642).
+yeccpars2_239_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'AuditDescriptor' { auditToken = __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_216_,1}}).
--file("megaco_text_parser_v1.yrl", 620).
-yeccpars2_216_(__Stack0) ->
+-compile({inline,{yeccpars2_240_,1}}).
+-file("megaco_text_parser_v1.yrl", 644).
+yeccpars2_240_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    [ __1 | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_218_,1}}).
--file("megaco_text_parser_v1.yrl", 624).
-yeccpars2_218_(__Stack0) ->
+-compile({inline,{yeccpars2_242_,1}}).
+-file("megaco_text_parser_v1.yrl", 648).
+yeccpars2_242_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_219_,1}}).
--file("megaco_text_parser_v1.yrl", 623).
-yeccpars2_219_(__Stack0) ->
+-compile({inline,{yeccpars2_243_,1}}).
+-file("megaco_text_parser_v1.yrl", 647).
+yeccpars2_243_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_220_,1}}).
--file("megaco_text_parser_v1.yrl", 563).
-yeccpars2_220_(__Stack0) ->
+-compile({inline,{yeccpars2_244_,1}}).
+-file("megaco_text_parser_v1.yrl", 587).
+yeccpars2_244_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_227_,1}}).
--file("megaco_text_parser_v1.yrl", 1092).
-yeccpars2_227_(__Stack0) ->
+-compile({inline,{yeccpars2_251_,1}}).
+-file("megaco_text_parser_v1.yrl", 1118).
+yeccpars2_251_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { time_stamp , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_228_,1}}).
--file("megaco_text_parser_v1.yrl", 1094).
-yeccpars2_228_(__Stack0) ->
+-compile({inline,{yeccpars2_252_,1}}).
+-file("megaco_text_parser_v1.yrl", 1120).
+yeccpars2_252_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { version , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_229_,1}}).
--file("megaco_text_parser_v1.yrl", 1087).
-yeccpars2_229_(__Stack0) ->
+-compile({inline,{yeccpars2_253_,1}}).
+-file("megaco_text_parser_v1.yrl", 1113).
+yeccpars2_253_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { reason , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_230_,1}}).
--file("megaco_text_parser_v1.yrl", 1090).
-yeccpars2_230_(__Stack0) ->
+-compile({inline,{yeccpars2_254_,1}}).
+-file("megaco_text_parser_v1.yrl", 1116).
+yeccpars2_254_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { profile , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_231_,1}}).
--file("megaco_text_parser_v1.yrl", 1084).
-yeccpars2_231_(__Stack0) ->
+-compile({inline,{yeccpars2_255_,1}}).
+-file("megaco_text_parser_v1.yrl", 1110).
+yeccpars2_255_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_232_,1}}).
--file("megaco_text_parser_v1.yrl", 1093).
-yeccpars2_232_(__Stack0) ->
+-compile({inline,{yeccpars2_256_,1}}).
+-file("megaco_text_parser_v1.yrl", 1119).
+yeccpars2_256_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { mgc_id , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_233_,1}}).
--file("megaco_text_parser_v1.yrl", 1086).
-yeccpars2_233_(__Stack0) ->
+-compile({inline,{yeccpars2_257_,1}}).
+-file("megaco_text_parser_v1.yrl", 1112).
+yeccpars2_257_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { method , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_234_,1}}).
--file("megaco_text_parser_v1.yrl", 1088).
-yeccpars2_234_(__Stack0) ->
+-compile({inline,{yeccpars2_258_,1}}).
+-file("megaco_text_parser_v1.yrl", 1114).
+yeccpars2_258_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { delay , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_235_,1}}).
--file("megaco_text_parser_v1.yrl", 1089).
-yeccpars2_235_(__Stack0) ->
+-compile({inline,{yeccpars2_259_,1}}).
+-file("megaco_text_parser_v1.yrl", 1115).
+yeccpars2_259_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { address , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_236_,1}}).
--file("megaco_text_parser_v1.yrl", 1179).
-yeccpars2_236_(__Stack0) ->
+-compile({inline,{yeccpars2_260_,1}}).
+-file("megaco_text_parser_v1.yrl", 1205).
+yeccpars2_260_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_extensionParameter ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_238_,1}}).
--file("megaco_text_parser_v1.yrl", 1091).
-yeccpars2_238_(__Stack0) ->
+-compile({inline,{yeccpars2_262_,1}}).
+-file("megaco_text_parser_v1.yrl", 1117).
+yeccpars2_262_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { extension , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_245_,1}}).
--file("megaco_text_parser_v1.yrl", 1139).
-yeccpars2_245_(__Stack0) ->
+-compile({inline,{yeccpars2_269_,1}}).
+-file("megaco_text_parser_v1.yrl", 1165).
+yeccpars2_269_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_timeStamp ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_248_,1}}).
--file("megaco_text_parser_v1.yrl", 1109).
-yeccpars2_248_(__Stack0) ->
+-compile({inline,{yeccpars2_272_,1}}).
+-file("megaco_text_parser_v1.yrl", 1135).
+yeccpars2_272_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    ensure_version ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_249_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
-yeccpars2_249_(__Stack0) ->
+-compile({inline,{yeccpars2_273_,1}}).
+-file("megaco_text_parser_v1.yrl", 412).
+yeccpars2_273_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_250_,1}}).
--file("megaco_text_parser_v1.yrl", 1103).
-yeccpars2_250_(__Stack0) ->
+-compile({inline,{yeccpars2_274_,1}}).
+-file("megaco_text_parser_v1.yrl", 1129).
+yeccpars2_274_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { portNumber , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_251_,1}}).
--file("megaco_text_parser_v1.yrl", 1102).
-yeccpars2_251_(__Stack0) ->
+-compile({inline,{yeccpars2_275_,1}}).
+-file("megaco_text_parser_v1.yrl", 1128).
+yeccpars2_275_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_253_,1}}).
--file("megaco_text_parser_v1.yrl", 1098).
-yeccpars2_253_(__Stack0) ->
+-compile({inline,{yeccpars2_277_,1}}).
+-file("megaco_text_parser_v1.yrl", 1124).
+yeccpars2_277_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_254_,1}}).
--file("megaco_text_parser_v1.yrl", 1182).
-yeccpars2_254_(__Stack0) ->
+-compile({inline,{yeccpars2_278_,1}}).
+-file("megaco_text_parser_v1.yrl", 1208).
+yeccpars2_278_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_value ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_255_,1}}).
--file("megaco_text_parser_v1.yrl", 1181).
-yeccpars2_255_(__Stack0) ->
+-compile({inline,{yeccpars2_279_,1}}).
+-file("megaco_text_parser_v1.yrl", 1207).
+yeccpars2_279_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_value ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_257_,1}}).
--file("megaco_text_parser_v1.yrl", 1107).
-yeccpars2_257_(__Stack0) ->
+-compile({inline,{yeccpars2_281_,1}}).
+-file("megaco_text_parser_v1.yrl", 1133).
+yeccpars2_281_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    ensure_profile ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_258_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
-yeccpars2_258_(__Stack0) ->
+-compile({inline,{yeccpars2_282_,1}}).
+-file("megaco_text_parser_v1.yrl", 412).
+yeccpars2_282_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_259_,1}}).
--file("megaco_text_parser_v1.yrl", 1105).
-yeccpars2_259_(__Stack0) ->
+-compile({inline,{yeccpars2_283_,1}}).
+-file("megaco_text_parser_v1.yrl", 1131).
+yeccpars2_283_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_261_,1}}).
--file("megaco_text_parser_v1.yrl", 1096).
-yeccpars2_261_(__Stack0) ->
+-compile({inline,{yeccpars2_285_,1}}).
+-file("megaco_text_parser_v1.yrl", 1122).
+yeccpars2_285_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    ensure_serviceChangeMethod ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_263_,1}}).
--file("megaco_text_parser_v1.yrl", 1100).
-yeccpars2_263_(__Stack0) ->
+-compile({inline,{yeccpars2_287_,1}}).
+-file("megaco_text_parser_v1.yrl", 1126).
+yeccpars2_287_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    ensure_uint32 ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_264_,1}}).
--file("megaco_text_parser_v1.yrl", 1112).
-yeccpars2_264_(__Stack0) ->
+-compile({inline,{yeccpars2_288_,1}}).
+-file("megaco_text_parser_v1.yrl", 1138).
+yeccpars2_288_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    setelement ( # 'PropertyParm' .name , __2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_269_,1}}).
--file("megaco_text_parser_v1.yrl", 800).
-yeccpars2_269_(__Stack0) ->
+-compile({inline,{yeccpars2_293_,1}}).
+-file("megaco_text_parser_v1.yrl", 826).
+yeccpars2_293_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    # 'PropertyParm' { value = [ __2 ] , extraInfo = { relation , unequalTo } }
   end | __Stack].
 
--compile({inline,{yeccpars2_270_,1}}).
--file("megaco_text_parser_v1.yrl", 802).
-yeccpars2_270_(__Stack0) ->
+-compile({inline,{yeccpars2_294_,1}}).
+-file("megaco_text_parser_v1.yrl", 828).
+yeccpars2_294_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    # 'PropertyParm' { value = [ __2 ] , extraInfo = { relation , smallerThan } }
   end | __Stack].
 
--compile({inline,{yeccpars2_271_,1}}).
--file("megaco_text_parser_v1.yrl", 804).
-yeccpars2_271_(__Stack0) ->
+-compile({inline,{yeccpars2_295_,1}}).
+-file("megaco_text_parser_v1.yrl", 830).
+yeccpars2_295_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    # 'PropertyParm' { value = [ __2 ] , extraInfo = { relation , greaterThan } }
   end | __Stack].
 
--compile({inline,{yeccpars2_272_,1}}).
--file("megaco_text_parser_v1.yrl", 823).
-yeccpars2_272_(__Stack0) ->
+-compile({inline,{yeccpars2_296_,1}}).
+-file("megaco_text_parser_v1.yrl", 849).
+yeccpars2_296_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    # 'PropertyParm' { value = [ __1 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_273_,1}}).
--file("megaco_text_parser_v1.yrl", 797).
-yeccpars2_273_(__Stack0) ->
+-compile({inline,{yeccpars2_297_,1}}).
+-file("megaco_text_parser_v1.yrl", 823).
+yeccpars2_297_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_276_,1}}).
--file("megaco_text_parser_v1.yrl", 826).
-yeccpars2_276_(__Stack0) ->
+-compile({inline,{yeccpars2_300_,1}}).
+-file("megaco_text_parser_v1.yrl", 852).
+yeccpars2_300_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_280_,1}}).
--file("megaco_text_parser_v1.yrl", 826).
-yeccpars2_280_(__Stack0) ->
+-compile({inline,{yeccpars2_304_,1}}).
+-file("megaco_text_parser_v1.yrl", 852).
+yeccpars2_304_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_281_,1}}).
--file("megaco_text_parser_v1.yrl", 825).
-yeccpars2_281_(__Stack0) ->
+-compile({inline,{yeccpars2_305_,1}}).
+-file("megaco_text_parser_v1.yrl", 851).
+yeccpars2_305_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_283_,1}}).
--file("megaco_text_parser_v1.yrl", 816).
-yeccpars2_283_(__Stack0) ->
+-compile({inline,{yeccpars2_307_,1}}).
+-file("megaco_text_parser_v1.yrl", 842).
+yeccpars2_307_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'PropertyParm' { value = [ __2 , __4 ] ,
     extraInfo = { range , true } }
   end | __Stack].
 
--compile({inline,{yeccpars2_284_,1}}).
--file("megaco_text_parser_v1.yrl", 820).
-yeccpars2_284_(__Stack0) ->
+-compile({inline,{yeccpars2_308_,1}}).
+-file("megaco_text_parser_v1.yrl", 846).
+yeccpars2_308_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'PropertyParm' { value = [ __2 | __3 ] ,
     extraInfo = { sublist , true } }
   end | __Stack].
 
--compile({inline,{yeccpars2_285_,1}}).
--file("megaco_text_parser_v1.yrl", 826).
-yeccpars2_285_(__Stack0) ->
+-compile({inline,{yeccpars2_309_,1}}).
+-file("megaco_text_parser_v1.yrl", 852).
+yeccpars2_309_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_287_,1}}).
--file("megaco_text_parser_v1.yrl", 812).
-yeccpars2_287_(__Stack0) ->
+-compile({inline,{yeccpars2_311_,1}}).
+-file("megaco_text_parser_v1.yrl", 838).
+yeccpars2_311_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'PropertyParm' { value = [ __2 | __3 ] ,
     extraInfo = { sublist , false } }
   end | __Stack].
 
--compile({inline,{yeccpars2_290_,1}}).
--file("megaco_text_parser_v1.yrl", 1084).
-yeccpars2_290_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_291_,1}}).
--file("megaco_text_parser_v1.yrl", 1083).
-yeccpars2_291_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __2 | __3 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_292_,1}}).
--file("megaco_text_parser_v1.yrl", 1080).
-yeccpars2_292_(__Stack0) ->
- [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   merge_ServiceChangeParm ( [ __3 | __4 ] )
-  end | __Stack].
-
--compile({inline,{yeccpars2_293_,1}}).
--file("megaco_text_parser_v1.yrl", 666).
-yeccpars2_293_(__Stack0) ->
- [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   make_commandRequest ( { serviceChangeReq , __1 } ,
-    # 'ServiceChangeRequest' { terminationID = [ __3 ] ,
-    serviceChangeParms = __5 } )
-  end | __Stack].
-
--compile({inline,{yeccpars2_295_,1}}).
--file("megaco_text_parser_v1.yrl", 1177).
-yeccpars2_295_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   ensure_uint16 ( __3 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_299_,1}}).
--file("megaco_text_parser_v1.yrl", 652).
-yeccpars2_299_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   # 'NotifyRequest' { observedEventsDescriptor = __1 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_301_,1}}).
--file("megaco_text_parser_v1.yrl", 654).
-yeccpars2_301_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   # 'NotifyRequest' { errorDescriptor = __1 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_304_,1}}).
--file("megaco_text_parser_v1.yrl", 1048).
-yeccpars2_304_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   ensure_requestID ( __1 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_306_,1}}).
--file("megaco_text_parser_v1.yrl", 1036).
-yeccpars2_306_(__Stack0) ->
- [begin
-   asn1_NOVALUE
-  end | __Stack0].
-
--compile({inline,{yeccpars2_307_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
-yeccpars2_307_(__Stack0) ->
- [begin
-   no_sep
-  end | __Stack0].
-
--compile({inline,{yeccpars2_308_,1}}).
--file("megaco_text_parser_v1.yrl", 862).
-yeccpars2_308_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   ensure_pkgdName ( __1 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_309_,1}}).
--file("megaco_text_parser_v1.yrl", 1040).
-yeccpars2_309_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_310_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
-yeccpars2_310_(__Stack0) ->
- [begin
-   no_sep
-  end | __Stack0].
-
--compile({inline,{yeccpars2_311_,1}}).
--file("megaco_text_parser_v1.yrl", 1027).
-yeccpars2_311_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_313_,1}}).
--file("megaco_text_parser_v1.yrl", 1036).
-yeccpars2_313_(__Stack0) ->
- [begin
-   asn1_NOVALUE
-  end | __Stack0].
-
 -compile({inline,{yeccpars2_314_,1}}).
--file("megaco_text_parser_v1.yrl", 1027).
+-file("megaco_text_parser_v1.yrl", 1110).
 yeccpars2_314_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
 -compile({inline,{yeccpars2_315_,1}}).
--file("megaco_text_parser_v1.yrl", 1026).
+-file("megaco_text_parser_v1.yrl", 1109).
 yeccpars2_315_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -9850,164 +10287,279 @@ yeccpars2_315_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_316_,1}}).
--file("megaco_text_parser_v1.yrl", 1023).
+-file("megaco_text_parser_v1.yrl", 1106).
 yeccpars2_316_(__Stack0) ->
+ [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   merge_ServiceChangeParm ( [ __3 | __4 ] )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_317_,1}}).
+-file("megaco_text_parser_v1.yrl", 690).
+yeccpars2_317_(__Stack0) ->
+ [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   make_commandRequest ( { serviceChangeReq , __1 } ,
+    # 'ServiceChangeRequest' { terminationID = [ __3 ] ,
+    serviceChangeParms = __5 } )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_319_,1}}).
+-file("megaco_text_parser_v1.yrl", 1203).
+yeccpars2_319_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   ensure_uint16 ( __3 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_323_,1}}).
+-file("megaco_text_parser_v1.yrl", 676).
+yeccpars2_323_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   # 'NotifyRequest' { observedEventsDescriptor = __1 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_325_,1}}).
+-file("megaco_text_parser_v1.yrl", 678).
+yeccpars2_325_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   # 'NotifyRequest' { errorDescriptor = __1 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_328_,1}}).
+-file("megaco_text_parser_v1.yrl", 1074).
+yeccpars2_328_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   ensure_requestID ( __1 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_330_,1}}).
+-file("megaco_text_parser_v1.yrl", 1062).
+yeccpars2_330_(__Stack0) ->
+ [begin
+   asn1_NOVALUE
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_331_,1}}).
+-file("megaco_text_parser_v1.yrl", 412).
+yeccpars2_331_(__Stack0) ->
+ [begin
+   no_sep
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_332_,1}}).
+-file("megaco_text_parser_v1.yrl", 888).
+yeccpars2_332_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   ensure_pkgdName ( __1 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_333_,1}}).
+-file("megaco_text_parser_v1.yrl", 1066).
+yeccpars2_333_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_334_,1}}).
+-file("megaco_text_parser_v1.yrl", 412).
+yeccpars2_334_(__Stack0) ->
+ [begin
+   no_sep
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_335_,1}}).
+-file("megaco_text_parser_v1.yrl", 1053).
+yeccpars2_335_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_337_,1}}).
+-file("megaco_text_parser_v1.yrl", 1062).
+yeccpars2_337_(__Stack0) ->
+ [begin
+   asn1_NOVALUE
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_338_,1}}).
+-file("megaco_text_parser_v1.yrl", 1053).
+yeccpars2_338_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_339_,1}}).
+-file("megaco_text_parser_v1.yrl", 1052).
+yeccpars2_339_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_340_,1}}).
+-file("megaco_text_parser_v1.yrl", 1049).
+yeccpars2_340_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'ObservedEventsDescriptor' { requestId = __3 ,
     observedEventLst = [ __5 | __6 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_318_,1}}).
--file("megaco_text_parser_v1.yrl", 1040).
-yeccpars2_318_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_319_,1}}).
--file("megaco_text_parser_v1.yrl", 1031).
-yeccpars2_319_(__Stack0) ->
- [__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   merge_observed_event ( __4 , __3 , __1 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_321_,1}}).
--file("megaco_text_parser_v1.yrl", 945).
-yeccpars2_321_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   ensure_NAME ( __1 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_322_,1}}).
--file("megaco_text_parser_v1.yrl", 1043).
-yeccpars2_322_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_325_,1}}).
--file("megaco_text_parser_v1.yrl", 942).
-yeccpars2_325_(__Stack0) ->
- [__2,__1 | __Stack] = __Stack0,
- [begin
-   select_stream_or_other ( __1 , __2 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_328_,1}}).
--file("megaco_text_parser_v1.yrl", 1043).
-yeccpars2_328_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_329_,1}}).
--file("megaco_text_parser_v1.yrl", 1042).
-yeccpars2_329_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __2 | __3 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_330_,1}}).
--file("megaco_text_parser_v1.yrl", 1039).
-yeccpars2_330_(__Stack0) ->
- [__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __2 | __3 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_331_,1}}).
--file("megaco_text_parser_v1.yrl", 1033).
-yeccpars2_331_(__Stack0) ->
- [__2,__1 | __Stack] = __Stack0,
- [begin
-   merge_observed_event ( __2 , __1 , asn1_NOVALUE )
-  end | __Stack].
-
--compile({inline,{yeccpars2_333_,1}}).
--file("megaco_text_parser_v1.yrl", 1035).
-yeccpars2_333_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   __1
-  end | __Stack].
-
--compile({inline,{yeccpars2_334_,1}}).
--file("megaco_text_parser_v1.yrl", 648).
-yeccpars2_334_(__Stack0) ->
- [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   make_commandRequest ( { notifyReq , __1 } ,
-    setelement ( # 'NotifyRequest' .terminationID , __5 , [ __3 ] ) )
-  end | __Stack].
-
--compile({inline,{yeccpars2_336_,1}}).
--file("megaco_text_parser_v1.yrl", 462).
-yeccpars2_336_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_337_,1}}).
--file("megaco_text_parser_v1.yrl", 466).
-yeccpars2_337_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   emergencyAudit
-  end | __Stack].
-
--compile({inline,{yeccpars2_338_,1}}).
--file("megaco_text_parser_v1.yrl", 467).
-yeccpars2_338_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   priorityAudit
-  end | __Stack].
-
--compile({inline,{yeccpars2_339_,1}}).
--file("megaco_text_parser_v1.yrl", 465).
-yeccpars2_339_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   topologyAudit
-  end | __Stack].
-
 -compile({inline,{yeccpars2_342_,1}}).
--file("megaco_text_parser_v1.yrl", 462).
+-file("megaco_text_parser_v1.yrl", 1066).
 yeccpars2_342_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
 -compile({inline,{yeccpars2_343_,1}}).
--file("megaco_text_parser_v1.yrl", 461).
+-file("megaco_text_parser_v1.yrl", 1057).
 yeccpars2_343_(__Stack0) ->
+ [__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   merge_observed_event ( __4 , __3 , __1 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_345_,1}}).
+-file("megaco_text_parser_v1.yrl", 971).
+yeccpars2_345_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   ensure_NAME ( __1 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_346_,1}}).
+-file("megaco_text_parser_v1.yrl", 1069).
+yeccpars2_346_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_349_,1}}).
+-file("megaco_text_parser_v1.yrl", 968).
+yeccpars2_349_(__Stack0) ->
+ [__2,__1 | __Stack] = __Stack0,
+ [begin
+   select_stream_or_other ( __1 , __2 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_352_,1}}).
+-file("megaco_text_parser_v1.yrl", 1069).
+yeccpars2_352_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_353_,1}}).
+-file("megaco_text_parser_v1.yrl", 1068).
+yeccpars2_353_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_344_,1}}).
--file("megaco_text_parser_v1.yrl", 457).
-yeccpars2_344_(__Stack0) ->
+-compile({inline,{yeccpars2_354_,1}}).
+-file("megaco_text_parser_v1.yrl", 1065).
+yeccpars2_354_(__Stack0) ->
+ [__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_355_,1}}).
+-file("megaco_text_parser_v1.yrl", 1059).
+yeccpars2_355_(__Stack0) ->
+ [__2,__1 | __Stack] = __Stack0,
+ [begin
+   merge_observed_event ( __2 , __1 , asn1_NOVALUE )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_357_,1}}).
+-file("megaco_text_parser_v1.yrl", 1061).
+yeccpars2_357_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   __1
+  end | __Stack].
+
+-compile({inline,{yeccpars2_358_,1}}).
+-file("megaco_text_parser_v1.yrl", 672).
+yeccpars2_358_(__Stack0) ->
+ [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   make_commandRequest ( { notifyReq , __1 } ,
+    setelement ( # 'NotifyRequest' .terminationID , __5 , [ __3 ] ) )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_360_,1}}).
+-file("megaco_text_parser_v1.yrl", 486).
+yeccpars2_360_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_361_,1}}).
+-file("megaco_text_parser_v1.yrl", 490).
+yeccpars2_361_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   emergencyAudit
+  end | __Stack].
+
+-compile({inline,{yeccpars2_362_,1}}).
+-file("megaco_text_parser_v1.yrl", 491).
+yeccpars2_362_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   priorityAudit
+  end | __Stack].
+
+-compile({inline,{yeccpars2_363_,1}}).
+-file("megaco_text_parser_v1.yrl", 489).
+yeccpars2_363_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   topologyAudit
+  end | __Stack].
+
+-compile({inline,{yeccpars2_366_,1}}).
+-file("megaco_text_parser_v1.yrl", 486).
+yeccpars2_366_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_367_,1}}).
+-file("megaco_text_parser_v1.yrl", 485).
+yeccpars2_367_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_368_,1}}).
+-file("megaco_text_parser_v1.yrl", 481).
+yeccpars2_368_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_346_,1}}).
--file("megaco_text_parser_v1.yrl", 564).
-yeccpars2_346_(__Stack0) ->
+-compile({inline,{yeccpars2_370_,1}}).
+-file("megaco_text_parser_v1.yrl", 588).
+yeccpars2_370_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_347_,1}}).
--file("megaco_text_parser_v1.yrl", 568).
-yeccpars2_347_(__Stack0) ->
+-compile({inline,{yeccpars2_371_,1}}).
+-file("megaco_text_parser_v1.yrl", 592).
+yeccpars2_371_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    make_commandRequest ( { auditValueRequest , __1 } ,
@@ -10015,16 +10567,16 @@ yeccpars2_347_(__Stack0) ->
     auditDescriptor = __4 } )
   end | __Stack].
 
--compile({inline,{yeccpars2_349_,1}}).
--file("megaco_text_parser_v1.yrl", 564).
-yeccpars2_349_(__Stack0) ->
+-compile({inline,{yeccpars2_373_,1}}).
+-file("megaco_text_parser_v1.yrl", 588).
+yeccpars2_373_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_350_,1}}).
--file("megaco_text_parser_v1.yrl", 573).
-yeccpars2_350_(__Stack0) ->
+-compile({inline,{yeccpars2_374_,1}}).
+-file("megaco_text_parser_v1.yrl", 597).
+yeccpars2_374_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    make_commandRequest ( { auditCapRequest , __1 } ,
@@ -10032,39 +10584,39 @@ yeccpars2_350_(__Stack0) ->
     auditDescriptor = __4 } )
   end | __Stack].
 
--compile({inline,{yeccpars2_353_,1}}).
--file("megaco_text_parser_v1.yrl", 443).
-yeccpars2_353_(__Stack0) ->
+-compile({inline,{yeccpars2_377_,1}}).
+-file("megaco_text_parser_v1.yrl", 467).
+yeccpars2_377_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_354_,1}}).
--file("megaco_text_parser_v1.yrl", 442).
-yeccpars2_354_(__Stack0) ->
+-compile({inline,{yeccpars2_378_,1}}).
+-file("megaco_text_parser_v1.yrl", 466).
+yeccpars2_378_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_355_,1}}).
--file("megaco_text_parser_v1.yrl", 440).
-yeccpars2_355_(__Stack0) ->
+-compile({inline,{yeccpars2_379_,1}}).
+-file("megaco_text_parser_v1.yrl", 464).
+yeccpars2_379_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    merge_action_requests ( __3 , [ __5 | __6 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_357_,1}}).
--file("megaco_text_parser_v1.yrl", 529).
-yeccpars2_357_(__Stack0) ->
+-compile({inline,{yeccpars2_381_,1}}).
+-file("megaco_text_parser_v1.yrl", 553).
+yeccpars2_381_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_358_,1}}).
--file("megaco_text_parser_v1.yrl", 520).
-yeccpars2_358_(__Stack0) ->
+-compile({inline,{yeccpars2_382_,1}}).
+-file("megaco_text_parser_v1.yrl", 544).
+yeccpars2_382_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    make_commandRequest ( __1 ,
@@ -10072,408 +10624,299 @@ yeccpars2_358_(__Stack0) ->
     descriptors = __4 } )
   end | __Stack].
 
--compile({inline,{yeccpars2_360_,1}}).
--file("megaco_text_parser_v1.yrl", 540).
-yeccpars2_360_(__Stack0) ->
+-compile({inline,{yeccpars2_384_,1}}).
+-file("megaco_text_parser_v1.yrl", 564).
+yeccpars2_384_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { signalsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_361_,1}}).
--file("megaco_text_parser_v1.yrl", 537).
-yeccpars2_361_(__Stack0) ->
+-compile({inline,{yeccpars2_385_,1}}).
+-file("megaco_text_parser_v1.yrl", 561).
+yeccpars2_385_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { muxDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_362_,1}}).
--file("megaco_text_parser_v1.yrl", 536).
-yeccpars2_362_(__Stack0) ->
+-compile({inline,{yeccpars2_386_,1}}).
+-file("megaco_text_parser_v1.yrl", 560).
+yeccpars2_386_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { modemDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_363_,1}}).
--file("megaco_text_parser_v1.yrl", 535).
-yeccpars2_363_(__Stack0) ->
+-compile({inline,{yeccpars2_387_,1}}).
+-file("megaco_text_parser_v1.yrl", 559).
+yeccpars2_387_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { mediaDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_364_,1}}).
--file("megaco_text_parser_v1.yrl", 538).
-yeccpars2_364_(__Stack0) ->
+-compile({inline,{yeccpars2_388_,1}}).
+-file("megaco_text_parser_v1.yrl", 562).
+yeccpars2_388_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { eventsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_365_,1}}).
--file("megaco_text_parser_v1.yrl", 539).
-yeccpars2_365_(__Stack0) ->
+-compile({inline,{yeccpars2_389_,1}}).
+-file("megaco_text_parser_v1.yrl", 563).
+yeccpars2_389_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { eventBufferDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_366_,1}}).
--file("megaco_text_parser_v1.yrl", 541).
-yeccpars2_366_(__Stack0) ->
+-compile({inline,{yeccpars2_390_,1}}).
+-file("megaco_text_parser_v1.yrl", 565).
+yeccpars2_390_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { digitMapDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_367_,1}}).
--file("megaco_text_parser_v1.yrl", 542).
-yeccpars2_367_(__Stack0) ->
+-compile({inline,{yeccpars2_391_,1}}).
+-file("megaco_text_parser_v1.yrl", 566).
+yeccpars2_391_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { auditDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_368_,1}}).
--file("megaco_text_parser_v1.yrl", 532).
-yeccpars2_368_(__Stack0) ->
+-compile({inline,{yeccpars2_392_,1}}).
+-file("megaco_text_parser_v1.yrl", 556).
+yeccpars2_392_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_369_,1}}).
--file("megaco_text_parser_v1.yrl", 1074).
-yeccpars2_369_(__Stack0) ->
+-compile({inline,{yeccpars2_393_,1}}).
+-file("megaco_text_parser_v1.yrl", 1100).
+yeccpars2_393_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_DMD ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_370_,1}}).
--file("megaco_text_parser_v1.yrl", 829).
-yeccpars2_370_(__Stack0) ->
+-compile({inline,{yeccpars2_394_,1}}).
+-file("megaco_text_parser_v1.yrl", 855).
+yeccpars2_394_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    [ ]
   end | __Stack].
 
--compile({inline,{yeccpars2_371_,1}}).
--file("megaco_text_parser_v1.yrl", 865).
-yeccpars2_371_(__Stack0) ->
+-compile({inline,{yeccpars2_395_,1}}).
+-file("megaco_text_parser_v1.yrl", 891).
+yeccpars2_395_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    # 'EventsDescriptor' { requestID = asn1_NOVALUE ,
     eventList = [ ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_375_,1}}).
--file("megaco_text_parser_v1.yrl", 954).
-yeccpars2_375_(__Stack0) ->
+-compile({inline,{yeccpars2_399_,1}}).
+-file("megaco_text_parser_v1.yrl", 980).
+yeccpars2_399_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    [ ]
   end | __Stack].
 
--compile({inline,{yeccpars2_377_,1}}).
--file("megaco_text_parser_v1.yrl", 960).
-yeccpars2_377_(__Stack0) ->
+-compile({inline,{yeccpars2_401_,1}}).
+-file("megaco_text_parser_v1.yrl", 986).
+yeccpars2_401_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { signal , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_378_,1}}).
--file("megaco_text_parser_v1.yrl", 957).
-yeccpars2_378_(__Stack0) ->
+-compile({inline,{yeccpars2_402_,1}}).
+-file("megaco_text_parser_v1.yrl", 983).
+yeccpars2_402_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_379_,1}}).
--file("megaco_text_parser_v1.yrl", 964).
-yeccpars2_379_(__Stack0) ->
+-compile({inline,{yeccpars2_403_,1}}).
+-file("megaco_text_parser_v1.yrl", 990).
+yeccpars2_403_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    merge_signalRequest ( __1 , [ ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_380_,1}}).
--file("megaco_text_parser_v1.yrl", 959).
-yeccpars2_380_(__Stack0) ->
+-compile({inline,{yeccpars2_404_,1}}).
+-file("megaco_text_parser_v1.yrl", 985).
+yeccpars2_404_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { seqSigList , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_385_,1}}).
--file("megaco_text_parser_v1.yrl", 1013).
-yeccpars2_385_(__Stack0) ->
+-compile({inline,{yeccpars2_409_,1}}).
+-file("megaco_text_parser_v1.yrl", 1039).
+yeccpars2_409_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_uint16 ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_388_,1}}).
--file("megaco_text_parser_v1.yrl", 1011).
-yeccpars2_388_(__Stack0) ->
+-compile({inline,{yeccpars2_412_,1}}).
+-file("megaco_text_parser_v1.yrl", 1037).
+yeccpars2_412_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_391_,1}}).
--file("megaco_text_parser_v1.yrl", 1011).
-yeccpars2_391_(__Stack0) ->
+-compile({inline,{yeccpars2_415_,1}}).
+-file("megaco_text_parser_v1.yrl", 1037).
+yeccpars2_415_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_392_,1}}).
--file("megaco_text_parser_v1.yrl", 1010).
-yeccpars2_392_(__Stack0) ->
+-compile({inline,{yeccpars2_416_,1}}).
+-file("megaco_text_parser_v1.yrl", 1036).
+yeccpars2_416_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_393_,1}}).
--file("megaco_text_parser_v1.yrl", 1007).
-yeccpars2_393_(__Stack0) ->
+-compile({inline,{yeccpars2_417_,1}}).
+-file("megaco_text_parser_v1.yrl", 1033).
+yeccpars2_417_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'SeqSigList' { id = ensure_uint16 ( __3 ) ,
     signalList = [ __5 | __6 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_395_,1}}).
--file("megaco_text_parser_v1.yrl", 967).
-yeccpars2_395_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_398_COMMA,1}}).
--file("megaco_text_parser_v1.yrl", 991).
-yeccpars2_398_COMMA(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   keepActive
-  end | __Stack].
-
--compile({inline,{yeccpars2_398_RBRKT,1}}).
--file("megaco_text_parser_v1.yrl", 991).
-yeccpars2_398_RBRKT(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   keepActive
-  end | __Stack].
-
--compile({inline,{yeccpars2_403_,1}}).
--file("megaco_text_parser_v1.yrl", 984).
-yeccpars2_403_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   { stream , __3 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_404_,1}}).
--file("megaco_text_parser_v1.yrl", 860).
-yeccpars2_404_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   ensure_streamID ( __1 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_406_,1}}).
--file("megaco_text_parser_v1.yrl", 985).
-yeccpars2_406_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   { signal_type , __3 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_407_,1}}).
--file("megaco_text_parser_v1.yrl", 995).
-yeccpars2_407_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   brief
-  end | __Stack].
-
--compile({inline,{yeccpars2_408_,1}}).
--file("megaco_text_parser_v1.yrl", 993).
-yeccpars2_408_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   onOff
-  end | __Stack].
-
--compile({inline,{yeccpars2_409_,1}}).
--file("megaco_text_parser_v1.yrl", 994).
-yeccpars2_409_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   timeOut
-  end | __Stack].
-
--compile({inline,{yeccpars2_412_,1}}).
--file("megaco_text_parser_v1.yrl", 998).
-yeccpars2_412_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_413_,1}}).
--file("megaco_text_parser_v1.yrl", 1001).
-yeccpars2_413_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   onInterruptByEvent
-  end | __Stack].
-
--compile({inline,{yeccpars2_414_,1}}).
--file("megaco_text_parser_v1.yrl", 1002).
-yeccpars2_414_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   onInterruptByNewSignalDescr
-  end | __Stack].
-
--compile({inline,{yeccpars2_415_,1}}).
--file("megaco_text_parser_v1.yrl", 1003).
-yeccpars2_415_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   otherReason
-  end | __Stack].
-
--compile({inline,{yeccpars2_416_,1}}).
--file("megaco_text_parser_v1.yrl", 1000).
-yeccpars2_416_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   onTimeOut
-  end | __Stack].
-
 -compile({inline,{yeccpars2_419_,1}}).
--file("megaco_text_parser_v1.yrl", 998).
+-file("megaco_text_parser_v1.yrl", 993).
 yeccpars2_419_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_420_,1}}).
--file("megaco_text_parser_v1.yrl", 997).
-yeccpars2_420_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
+-compile({inline,{yeccpars2_422_COMMA,1}}).
+-file("megaco_text_parser_v1.yrl", 1017).
+yeccpars2_422_COMMA(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
-   [ __2 | __3 ]
+   keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_421_,1}}).
--file("megaco_text_parser_v1.yrl", 990).
-yeccpars2_421_(__Stack0) ->
- [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+-compile({inline,{yeccpars2_422_RBRKT,1}}).
+-file("megaco_text_parser_v1.yrl", 1017).
+yeccpars2_422_RBRKT(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
-   { notify_completion , [ __4 | __5 ] }
-  end | __Stack].
-
--compile({inline,{yeccpars2_423_,1}}).
--file("megaco_text_parser_v1.yrl", 986).
-yeccpars2_423_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   { duration , ensure_uint16 ( __3 ) }
-  end | __Stack].
-
--compile({inline,{yeccpars2_424_,1}}).
--file("megaco_text_parser_v1.yrl", 987).
-yeccpars2_424_(__Stack0) ->
- [__2,__1 | __Stack] = __Stack0,
- [begin
-   { other , ensure_NAME ( __1 ) , __2 }
+   keepActive
   end | __Stack].
 
 -compile({inline,{yeccpars2_427_,1}}).
--file("megaco_text_parser_v1.yrl", 967).
+-file("megaco_text_parser_v1.yrl", 1010).
 yeccpars2_427_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_428_,1}}).
--file("megaco_text_parser_v1.yrl", 966).
-yeccpars2_428_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
-   [ __2 | __3 ]
+   { stream , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_429_,1}}).
--file("megaco_text_parser_v1.yrl", 963).
-yeccpars2_429_(__Stack0) ->
- [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+-compile({inline,{yeccpars2_428_,1}}).
+-file("megaco_text_parser_v1.yrl", 886).
+yeccpars2_428_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
-   merge_signalRequest ( __1 , [ __3 | __4 ] )
+   ensure_streamID ( __1 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_430_,1}}).
+-file("megaco_text_parser_v1.yrl", 1011).
+yeccpars2_430_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   { signal_type , __3 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_431_,1}}).
+-file("megaco_text_parser_v1.yrl", 1021).
+yeccpars2_431_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   brief
   end | __Stack].
 
 -compile({inline,{yeccpars2_432_,1}}).
--file("megaco_text_parser_v1.yrl", 957).
+-file("megaco_text_parser_v1.yrl", 1019).
 yeccpars2_432_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_433_,1}}).
--file("megaco_text_parser_v1.yrl", 956).
-yeccpars2_433_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __2 | __3 ]
+   onOff
   end | __Stack].
 
--compile({inline,{yeccpars2_434_,1}}).
--file("megaco_text_parser_v1.yrl", 952).
-yeccpars2_434_(__Stack0) ->
- [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+-compile({inline,{yeccpars2_433_,1}}).
+-file("megaco_text_parser_v1.yrl", 1020).
+yeccpars2_433_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
  [begin
-   [ __3 | __4 ]
+   timeOut
   end | __Stack].
 
 -compile({inline,{yeccpars2_436_,1}}).
--file("megaco_text_parser_v1.yrl", 858).
+-file("megaco_text_parser_v1.yrl", 1024).
 yeccpars2_436_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   ensure_muxType ( __1 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_438_,1}}).
--file("megaco_text_parser_v1.yrl", 855).
-yeccpars2_438_(__Stack0) ->
- [__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   # 'MuxDescriptor' { muxType = __3 ,
-    termList = __4 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_440_,1}}).
--file("megaco_text_parser_v1.yrl", 727).
-yeccpars2_440_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
+-compile({inline,{yeccpars2_437_,1}}).
+-file("megaco_text_parser_v1.yrl", 1027).
+yeccpars2_437_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   onInterruptByEvent
+  end | __Stack].
+
+-compile({inline,{yeccpars2_438_,1}}).
+-file("megaco_text_parser_v1.yrl", 1028).
+yeccpars2_438_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   onInterruptByNewSignalDescr
+  end | __Stack].
+
+-compile({inline,{yeccpars2_439_,1}}).
+-file("megaco_text_parser_v1.yrl", 1029).
+yeccpars2_439_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   otherReason
+  end | __Stack].
+
+-compile({inline,{yeccpars2_440_,1}}).
+-file("megaco_text_parser_v1.yrl", 1026).
+yeccpars2_440_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   onTimeOut
+  end | __Stack].
+
 -compile({inline,{yeccpars2_443_,1}}).
--file("megaco_text_parser_v1.yrl", 727).
+-file("megaco_text_parser_v1.yrl", 1024).
 yeccpars2_443_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
 -compile({inline,{yeccpars2_444_,1}}).
--file("megaco_text_parser_v1.yrl", 726).
+-file("megaco_text_parser_v1.yrl", 1023).
 yeccpars2_444_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -10481,413 +10924,405 @@ yeccpars2_444_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_445_,1}}).
--file("megaco_text_parser_v1.yrl", 723).
+-file("megaco_text_parser_v1.yrl", 1016).
 yeccpars2_445_(__Stack0) ->
- [__4,__3,__2,__1 | __Stack] = __Stack0,
+ [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
-   [ __2 | __3 ]
+   { notify_completion , [ __4 | __5 ] }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_447_,1}}).
+-file("megaco_text_parser_v1.yrl", 1012).
+yeccpars2_447_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   { duration , ensure_uint16 ( __3 ) }
   end | __Stack].
 
 -compile({inline,{yeccpars2_448_,1}}).
--file("megaco_text_parser_v1.yrl", 1071).
+-file("megaco_text_parser_v1.yrl", 1013).
 yeccpars2_448_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
+ [__2,__1 | __Stack] = __Stack0,
  [begin
-   ensure_modemType ( __1 )
+   { other , ensure_NAME ( __1 ) , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_449_,1}}).
--file("megaco_text_parser_v1.yrl", 1061).
-yeccpars2_449_(__Stack0) ->
+-compile({inline,{yeccpars2_451_,1}}).
+-file("megaco_text_parser_v1.yrl", 993).
+yeccpars2_451_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
 -compile({inline,{yeccpars2_452_,1}}).
--file("megaco_text_parser_v1.yrl", 1061).
+-file("megaco_text_parser_v1.yrl", 992).
 yeccpars2_452_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_453_,1}}).
--file("megaco_text_parser_v1.yrl", 1060).
-yeccpars2_453_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_454_,1}}).
--file("megaco_text_parser_v1.yrl", 1064).
-yeccpars2_454_(__Stack0) ->
+-compile({inline,{yeccpars2_453_,1}}).
+-file("megaco_text_parser_v1.yrl", 989).
+yeccpars2_453_(__Stack0) ->
+ [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   merge_signalRequest ( __1 , [ __3 | __4 ] )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_456_,1}}).
+-file("megaco_text_parser_v1.yrl", 983).
+yeccpars2_456_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_455_,1}}).
--file("megaco_text_parser_v1.yrl", 1057).
-yeccpars2_455_(__Stack0) ->
+-compile({inline,{yeccpars2_457_,1}}).
+-file("megaco_text_parser_v1.yrl", 982).
+yeccpars2_457_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_458_,1}}).
+-file("megaco_text_parser_v1.yrl", 978).
+yeccpars2_458_(__Stack0) ->
+ [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __3 | __4 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_460_,1}}).
+-file("megaco_text_parser_v1.yrl", 884).
+yeccpars2_460_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   ensure_muxType ( __1 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_462_,1}}).
+-file("megaco_text_parser_v1.yrl", 881).
+yeccpars2_462_(__Stack0) ->
+ [__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   # 'MuxDescriptor' { muxType = __3 ,
+    termList = __4 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_464_,1}}).
+-file("megaco_text_parser_v1.yrl", 751).
+yeccpars2_464_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_467_,1}}).
+-file("megaco_text_parser_v1.yrl", 751).
+yeccpars2_467_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_468_,1}}).
+-file("megaco_text_parser_v1.yrl", 750).
+yeccpars2_468_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_469_,1}}).
+-file("megaco_text_parser_v1.yrl", 747).
+yeccpars2_469_(__Stack0) ->
+ [__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_472_,1}}).
+-file("megaco_text_parser_v1.yrl", 1097).
+yeccpars2_472_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   ensure_modemType ( __1 )
+  end | __Stack].
+
+-compile({inline,{yeccpars2_473_,1}}).
+-file("megaco_text_parser_v1.yrl", 1087).
+yeccpars2_473_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_476_,1}}).
+-file("megaco_text_parser_v1.yrl", 1087).
+yeccpars2_476_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_477_,1}}).
+-file("megaco_text_parser_v1.yrl", 1086).
+yeccpars2_477_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_478_,1}}).
+-file("megaco_text_parser_v1.yrl", 1090).
+yeccpars2_478_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_479_,1}}).
+-file("megaco_text_parser_v1.yrl", 1083).
+yeccpars2_479_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'ModemDescriptor' { mtl = [ __3 | __4 ] ,
     mpl = __6 }
   end | __Stack].
 
--compile({inline,{yeccpars2_457_,1}}).
--file("megaco_text_parser_v1.yrl", 1067).
-yeccpars2_457_(__Stack0) ->
+-compile({inline,{yeccpars2_481_,1}}).
+-file("megaco_text_parser_v1.yrl", 1093).
+yeccpars2_481_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_459_,1}}).
--file("megaco_text_parser_v1.yrl", 795).
-yeccpars2_459_(__Stack0) ->
+-compile({inline,{yeccpars2_483_,1}}).
+-file("megaco_text_parser_v1.yrl", 821).
+yeccpars2_483_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    setelement ( # 'PropertyParm' .name , __2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_462_,1}}).
--file("megaco_text_parser_v1.yrl", 1067).
-yeccpars2_462_(__Stack0) ->
+-compile({inline,{yeccpars2_486_,1}}).
+-file("megaco_text_parser_v1.yrl", 1093).
+yeccpars2_486_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_463_,1}}).
--file("megaco_text_parser_v1.yrl", 1066).
-yeccpars2_463_(__Stack0) ->
+-compile({inline,{yeccpars2_487_,1}}).
+-file("megaco_text_parser_v1.yrl", 1092).
+yeccpars2_487_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_464_,1}}).
--file("megaco_text_parser_v1.yrl", 1063).
-yeccpars2_464_(__Stack0) ->
+-compile({inline,{yeccpars2_488_,1}}).
+-file("megaco_text_parser_v1.yrl", 1089).
+yeccpars2_488_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_465_,1}}).
--file("megaco_text_parser_v1.yrl", 1064).
-yeccpars2_465_(__Stack0) ->
+-compile({inline,{yeccpars2_489_,1}}).
+-file("megaco_text_parser_v1.yrl", 1090).
+yeccpars2_489_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_466_,1}}).
--file("megaco_text_parser_v1.yrl", 1051).
-yeccpars2_466_(__Stack0) ->
+-compile({inline,{yeccpars2_490_,1}}).
+-file("megaco_text_parser_v1.yrl", 1077).
+yeccpars2_490_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'ModemDescriptor' { mtl = [ __3 ] ,
     mpl = __4 }
   end | __Stack].
 
--compile({inline,{yeccpars2_468_,1}}).
--file("megaco_text_parser_v1.yrl", 748).
-yeccpars2_468_(__Stack0) ->
+-compile({inline,{yeccpars2_492_,1}}).
+-file("megaco_text_parser_v1.yrl", 772).
+yeccpars2_492_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { termState , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_469_,1}}).
--file("megaco_text_parser_v1.yrl", 744).
-yeccpars2_469_(__Stack0) ->
+-compile({inline,{yeccpars2_493_,1}}).
+-file("megaco_text_parser_v1.yrl", 768).
+yeccpars2_493_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { streamParm , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_470_,1}}).
--file("megaco_text_parser_v1.yrl", 746).
-yeccpars2_470_(__Stack0) ->
+-compile({inline,{yeccpars2_494_,1}}).
+-file("megaco_text_parser_v1.yrl", 770).
+yeccpars2_494_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { streamDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_471_,1}}).
--file("megaco_text_parser_v1.yrl", 738).
-yeccpars2_471_(__Stack0) ->
+-compile({inline,{yeccpars2_495_,1}}).
+-file("megaco_text_parser_v1.yrl", 762).
+yeccpars2_495_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_472_,1}}).
--file("megaco_text_parser_v1.yrl", 756).
-yeccpars2_472_(__Stack0) ->
+-compile({inline,{yeccpars2_496_,1}}).
+-file("megaco_text_parser_v1.yrl", 782).
+yeccpars2_496_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { control , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_474_,1}}).
--file("megaco_text_parser_v1.yrl", 753).
-yeccpars2_474_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   { local , # 'LocalRemoteDescriptor' { propGrps = ensure_prop_groups ( __1 ) } }
-  end | __Stack].
-
--compile({inline,{yeccpars2_475_,1}}).
--file("megaco_text_parser_v1.yrl", 755).
-yeccpars2_475_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   { remote , # 'LocalRemoteDescriptor' { propGrps = ensure_prop_groups ( __1 ) } }
-  end | __Stack].
-
--compile({inline,{yeccpars2_479_,1}}).
+-compile({inline,{yeccpars2_498_,1}}).
 -file("megaco_text_parser_v1.yrl", 777).
-yeccpars2_479_(__Stack0) ->
+yeccpars2_498_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   PGs = ensure_prop_groups ( __1 ) ,
+    { local , # 'LocalRemoteDescriptor' { propGrps = PGs } }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_499_,1}}).
+-file("megaco_text_parser_v1.yrl", 780).
+yeccpars2_499_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   PGs = ensure_prop_groups ( __1 ) ,
+    { remote , # 'LocalRemoteDescriptor' { propGrps = PGs } }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_503_,1}}).
+-file("megaco_text_parser_v1.yrl", 803).
+yeccpars2_503_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_480_,1}}).
--file("megaco_text_parser_v1.yrl", 839).
-yeccpars2_480_(__Stack0) ->
+-compile({inline,{yeccpars2_504_,1}}).
+-file("megaco_text_parser_v1.yrl", 865).
+yeccpars2_504_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { serviceState , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_481_,1}}).
--file("megaco_text_parser_v1.yrl", 841).
-yeccpars2_481_(__Stack0) ->
+-compile({inline,{yeccpars2_505_,1}}).
+-file("megaco_text_parser_v1.yrl", 867).
+yeccpars2_505_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { propertyParm , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_482_,1}}).
--file("megaco_text_parser_v1.yrl", 840).
-yeccpars2_482_(__Stack0) ->
+-compile({inline,{yeccpars2_506_,1}}).
+-file("megaco_text_parser_v1.yrl", 866).
+yeccpars2_506_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { eventBufferControl , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_486_,1}}).
--file("megaco_text_parser_v1.yrl", 843).
-yeccpars2_486_(__Stack0) ->
+-compile({inline,{yeccpars2_510_,1}}).
+-file("megaco_text_parser_v1.yrl", 869).
+yeccpars2_510_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_487_,1}}).
--file("megaco_text_parser_v1.yrl", 847).
-yeccpars2_487_(__Stack0) ->
+-compile({inline,{yeccpars2_511_,1}}).
+-file("megaco_text_parser_v1.yrl", 873).
+yeccpars2_511_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    inSvc
   end | __Stack].
 
--compile({inline,{yeccpars2_488_,1}}).
--file("megaco_text_parser_v1.yrl", 846).
-yeccpars2_488_(__Stack0) ->
+-compile({inline,{yeccpars2_512_,1}}).
+-file("megaco_text_parser_v1.yrl", 872).
+yeccpars2_512_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    outOfSvc
   end | __Stack].
 
--compile({inline,{yeccpars2_489_,1}}).
--file("megaco_text_parser_v1.yrl", 845).
-yeccpars2_489_(__Stack0) ->
+-compile({inline,{yeccpars2_513_,1}}).
+-file("megaco_text_parser_v1.yrl", 871).
+yeccpars2_513_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    test
   end | __Stack].
 
--compile({inline,{yeccpars2_491_,1}}).
--file("megaco_text_parser_v1.yrl", 849).
-yeccpars2_491_(__Stack0) ->
+-compile({inline,{yeccpars2_515_,1}}).
+-file("megaco_text_parser_v1.yrl", 875).
+yeccpars2_515_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_492_,1}}).
--file("megaco_text_parser_v1.yrl", 852).
-yeccpars2_492_(__Stack0) ->
+-compile({inline,{yeccpars2_516_,1}}).
+-file("megaco_text_parser_v1.yrl", 878).
+yeccpars2_516_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    lockStep
   end | __Stack].
 
--compile({inline,{yeccpars2_493_,1}}).
--file("megaco_text_parser_v1.yrl", 851).
-yeccpars2_493_(__Stack0) ->
+-compile({inline,{yeccpars2_517_,1}}).
+-file("megaco_text_parser_v1.yrl", 877).
+yeccpars2_517_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    off
   end | __Stack].
 
--compile({inline,{yeccpars2_496_,1}}).
--file("megaco_text_parser_v1.yrl", 777).
-yeccpars2_496_(__Stack0) ->
+-compile({inline,{yeccpars2_520_,1}}).
+-file("megaco_text_parser_v1.yrl", 803).
+yeccpars2_520_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_497_,1}}).
--file("megaco_text_parser_v1.yrl", 776).
-yeccpars2_497_(__Stack0) ->
+-compile({inline,{yeccpars2_521_,1}}).
+-file("megaco_text_parser_v1.yrl", 802).
+yeccpars2_521_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_498_,1}}).
--file("megaco_text_parser_v1.yrl", 774).
-yeccpars2_498_(__Stack0) ->
+-compile({inline,{yeccpars2_522_,1}}).
+-file("megaco_text_parser_v1.yrl", 800).
+yeccpars2_522_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    merge_terminationStateDescriptor ( [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_502_,1}}).
--file("megaco_text_parser_v1.yrl", 764).
-yeccpars2_502_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_505_,1}}).
--file("megaco_text_parser_v1.yrl", 764).
-yeccpars2_505_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_506_,1}}).
--file("megaco_text_parser_v1.yrl", 763).
-yeccpars2_506_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __2 | __3 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_507_,1}}).
--file("megaco_text_parser_v1.yrl", 760).
-yeccpars2_507_(__Stack0) ->
- [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   # 'StreamDescriptor' { streamID = __3 ,
-    streamParms = merge_streamParms ( [ __5 | __6 ] ) }
-  end | __Stack].
-
--compile({inline,{yeccpars2_509_,1}}).
--file("megaco_text_parser_v1.yrl", 783).
-yeccpars2_509_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   { prop , __1 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_510_,1}}).
--file("megaco_text_parser_v1.yrl", 770).
-yeccpars2_510_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_515_,1}}).
--file("megaco_text_parser_v1.yrl", 781).
-yeccpars2_515_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   { value , __3 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_516_,1}}).
--file("megaco_text_parser_v1.yrl", 786).
-yeccpars2_516_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   false
-  end | __Stack].
-
--compile({inline,{yeccpars2_517_,1}}).
--file("megaco_text_parser_v1.yrl", 785).
-yeccpars2_517_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   true
-  end | __Stack].
-
--compile({inline,{yeccpars2_519_,1}}).
--file("megaco_text_parser_v1.yrl", 780).
-yeccpars2_519_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   { group , __3 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_521_,1}}).
--file("megaco_text_parser_v1.yrl", 782).
-yeccpars2_521_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   { mode , __3 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_522_,1}}).
--file("megaco_text_parser_v1.yrl", 792).
-yeccpars2_522_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   inactive
-  end | __Stack].
-
--compile({inline,{yeccpars2_523_,1}}).
--file("megaco_text_parser_v1.yrl", 793).
-yeccpars2_523_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   loopBack
-  end | __Stack].
-
--compile({inline,{yeccpars2_524_,1}}).
--file("megaco_text_parser_v1.yrl", 790).
-yeccpars2_524_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   recvOnly
-  end | __Stack].
-
--compile({inline,{yeccpars2_525_,1}}).
--file("megaco_text_parser_v1.yrl", 789).
-yeccpars2_525_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   sendOnly
-  end | __Stack].
-
 -compile({inline,{yeccpars2_526_,1}}).
--file("megaco_text_parser_v1.yrl", 791).
+-file("megaco_text_parser_v1.yrl", 790).
 yeccpars2_526_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
  [begin
-   sendRecv
-  end | __Stack].
+   [ ]
+  end | __Stack0].
 
 -compile({inline,{yeccpars2_529_,1}}).
--file("megaco_text_parser_v1.yrl", 770).
+-file("megaco_text_parser_v1.yrl", 790).
 yeccpars2_529_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
 -compile({inline,{yeccpars2_530_,1}}).
--file("megaco_text_parser_v1.yrl", 769).
+-file("megaco_text_parser_v1.yrl", 789).
 yeccpars2_530_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -10895,574 +11330,693 @@ yeccpars2_530_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_531_,1}}).
--file("megaco_text_parser_v1.yrl", 767).
+-file("megaco_text_parser_v1.yrl", 786).
 yeccpars2_531_(__Stack0) ->
- [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
-   [ __3 | __4 ]
+   # 'StreamDescriptor' { streamID = __3 ,
+    streamParms = merge_streamParms ( [ __5 | __6 ] ) }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_533_,1}}).
+-file("megaco_text_parser_v1.yrl", 809).
+yeccpars2_533_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   { prop , __1 }
   end | __Stack].
 
 -compile({inline,{yeccpars2_534_,1}}).
--file("megaco_text_parser_v1.yrl", 738).
+-file("megaco_text_parser_v1.yrl", 796).
 yeccpars2_534_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_535_,1}}).
--file("megaco_text_parser_v1.yrl", 737).
-yeccpars2_535_(__Stack0) ->
+-compile({inline,{yeccpars2_539_,1}}).
+-file("megaco_text_parser_v1.yrl", 807).
+yeccpars2_539_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   { value , __3 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_540_,1}}).
+-file("megaco_text_parser_v1.yrl", 812).
+yeccpars2_540_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   false
+  end | __Stack].
+
+-compile({inline,{yeccpars2_541_,1}}).
+-file("megaco_text_parser_v1.yrl", 811).
+yeccpars2_541_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   true
+  end | __Stack].
+
+-compile({inline,{yeccpars2_543_,1}}).
+-file("megaco_text_parser_v1.yrl", 806).
+yeccpars2_543_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   { group , __3 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_545_,1}}).
+-file("megaco_text_parser_v1.yrl", 808).
+yeccpars2_545_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   { mode , __3 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_546_,1}}).
+-file("megaco_text_parser_v1.yrl", 818).
+yeccpars2_546_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   inactive
+  end | __Stack].
+
+-compile({inline,{yeccpars2_547_,1}}).
+-file("megaco_text_parser_v1.yrl", 819).
+yeccpars2_547_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   loopBack
+  end | __Stack].
+
+-compile({inline,{yeccpars2_548_,1}}).
+-file("megaco_text_parser_v1.yrl", 816).
+yeccpars2_548_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   recvOnly
+  end | __Stack].
+
+-compile({inline,{yeccpars2_549_,1}}).
+-file("megaco_text_parser_v1.yrl", 815).
+yeccpars2_549_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   sendOnly
+  end | __Stack].
+
+-compile({inline,{yeccpars2_550_,1}}).
+-file("megaco_text_parser_v1.yrl", 817).
+yeccpars2_550_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   sendRecv
+  end | __Stack].
+
+-compile({inline,{yeccpars2_553_,1}}).
+-file("megaco_text_parser_v1.yrl", 796).
+yeccpars2_553_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_554_,1}}).
+-file("megaco_text_parser_v1.yrl", 795).
+yeccpars2_554_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_536_,1}}).
--file("megaco_text_parser_v1.yrl", 735).
-yeccpars2_536_(__Stack0) ->
+-compile({inline,{yeccpars2_555_,1}}).
+-file("megaco_text_parser_v1.yrl", 793).
+yeccpars2_555_(__Stack0) ->
+ [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __3 | __4 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_558_,1}}).
+-file("megaco_text_parser_v1.yrl", 762).
+yeccpars2_558_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_559_,1}}).
+-file("megaco_text_parser_v1.yrl", 761).
+yeccpars2_559_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_560_,1}}).
+-file("megaco_text_parser_v1.yrl", 759).
+yeccpars2_560_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    merge_mediaDescriptor ( [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_540_,1}}).
--file("megaco_text_parser_v1.yrl", 873).
-yeccpars2_540_(__Stack0) ->
+-compile({inline,{yeccpars2_564_,1}}).
+-file("megaco_text_parser_v1.yrl", 899).
+yeccpars2_564_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_541_,1}}).
--file("megaco_text_parser_v1.yrl", 881).
-yeccpars2_541_(__Stack0) ->
+-compile({inline,{yeccpars2_565_,1}}).
+-file("megaco_text_parser_v1.yrl", 907).
+yeccpars2_565_(__Stack0) ->
  [begin
    # 'RequestedEvent' { evParList = [ ] }
   end | __Stack0].
 
--compile({inline,{yeccpars2_542_,1}}).
--file("megaco_text_parser_v1.yrl", 876).
-yeccpars2_542_(__Stack0) ->
+-compile({inline,{yeccpars2_566_,1}}).
+-file("megaco_text_parser_v1.yrl", 902).
+yeccpars2_566_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    setelement ( # 'RequestedEvent' .pkgdName , __2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_545_,1}}).
--file("megaco_text_parser_v1.yrl", 886).
-yeccpars2_545_(__Stack0) ->
+-compile({inline,{yeccpars2_569_,1}}).
+-file("megaco_text_parser_v1.yrl", 912).
+yeccpars2_569_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_549_,1}}).
--file("megaco_text_parser_v1.yrl", 948).
-yeccpars2_549_(__Stack0) ->
+-compile({inline,{yeccpars2_573_,1}}).
+-file("megaco_text_parser_v1.yrl", 974).
+yeccpars2_573_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_eventDM ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_551_COMMA,1}}).
--file("megaco_text_parser_v1.yrl", 889).
-yeccpars2_551_COMMA(__Stack0) ->
+-compile({inline,{yeccpars2_575_COMMA,1}}).
+-file("megaco_text_parser_v1.yrl", 915).
+yeccpars2_575_COMMA(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_551_RBRKT,1}}).
--file("megaco_text_parser_v1.yrl", 889).
-yeccpars2_551_RBRKT(__Stack0) ->
+-compile({inline,{yeccpars2_575_RBRKT,1}}).
+-file("megaco_text_parser_v1.yrl", 915).
+yeccpars2_575_RBRKT(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_555_,1}}).
--file("megaco_text_parser_v1.yrl", 905).
-yeccpars2_555_(__Stack0) ->
+-compile({inline,{yeccpars2_579_,1}}).
+-file("megaco_text_parser_v1.yrl", 931).
+yeccpars2_579_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    # 'SecondEventsDescriptor' { requestID = asn1_NOVALUE ,
     eventList = [ ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_559_,1}}).
--file("megaco_text_parser_v1.yrl", 915).
-yeccpars2_559_(__Stack0) ->
+-compile({inline,{yeccpars2_583_,1}}).
+-file("megaco_text_parser_v1.yrl", 941).
+yeccpars2_583_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_560_,1}}).
--file("megaco_text_parser_v1.yrl", 926).
-yeccpars2_560_(__Stack0) ->
+-compile({inline,{yeccpars2_584_,1}}).
+-file("megaco_text_parser_v1.yrl", 952).
+yeccpars2_584_(__Stack0) ->
  [begin
    # 'SecondRequestedEvent' { evParList = [ ] }
   end | __Stack0].
 
--compile({inline,{yeccpars2_561_,1}}).
--file("megaco_text_parser_v1.yrl", 919).
-yeccpars2_561_(__Stack0) ->
+-compile({inline,{yeccpars2_585_,1}}).
+-file("megaco_text_parser_v1.yrl", 945).
+yeccpars2_585_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    setelement ( # 'SecondRequestedEvent' .pkgdName ,
     __2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_563_,1}}).
--file("megaco_text_parser_v1.yrl", 930).
-yeccpars2_563_(__Stack0) ->
+-compile({inline,{yeccpars2_587_,1}}).
+-file("megaco_text_parser_v1.yrl", 956).
+yeccpars2_587_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_568_COMMA,1}}).
--file("megaco_text_parser_v1.yrl", 933).
-yeccpars2_568_COMMA(__Stack0) ->
+-compile({inline,{yeccpars2_592_COMMA,1}}).
+-file("megaco_text_parser_v1.yrl", 959).
+yeccpars2_592_COMMA(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_568_RBRKT,1}}).
--file("megaco_text_parser_v1.yrl", 933).
-yeccpars2_568_RBRKT(__Stack0) ->
+-compile({inline,{yeccpars2_592_RBRKT,1}}).
+-file("megaco_text_parser_v1.yrl", 959).
+yeccpars2_592_RBRKT(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_571_,1}}).
--file("megaco_text_parser_v1.yrl", 939).
-yeccpars2_571_(__Stack0) ->
+-compile({inline,{yeccpars2_595_,1}}).
+-file("megaco_text_parser_v1.yrl", 965).
+yeccpars2_595_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { second_embed , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_574_,1}}).
--file("megaco_text_parser_v1.yrl", 930).
-yeccpars2_574_(__Stack0) ->
+-compile({inline,{yeccpars2_598_,1}}).
+-file("megaco_text_parser_v1.yrl", 956).
+yeccpars2_598_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_575_,1}}).
--file("megaco_text_parser_v1.yrl", 929).
-yeccpars2_575_(__Stack0) ->
+-compile({inline,{yeccpars2_599_,1}}).
+-file("megaco_text_parser_v1.yrl", 955).
+yeccpars2_599_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_576_,1}}).
--file("megaco_text_parser_v1.yrl", 924).
-yeccpars2_576_(__Stack0) ->
+-compile({inline,{yeccpars2_600_,1}}).
+-file("megaco_text_parser_v1.yrl", 950).
+yeccpars2_600_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    merge_secondEventParameters ( [ __2 | __3 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_579_,1}}).
--file("megaco_text_parser_v1.yrl", 915).
-yeccpars2_579_(__Stack0) ->
+-compile({inline,{yeccpars2_603_,1}}).
+-file("megaco_text_parser_v1.yrl", 941).
+yeccpars2_603_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_580_,1}}).
--file("megaco_text_parser_v1.yrl", 914).
-yeccpars2_580_(__Stack0) ->
+-compile({inline,{yeccpars2_604_,1}}).
+-file("megaco_text_parser_v1.yrl", 940).
+yeccpars2_604_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_581_,1}}).
--file("megaco_text_parser_v1.yrl", 910).
-yeccpars2_581_(__Stack0) ->
+-compile({inline,{yeccpars2_605_,1}}).
+-file("megaco_text_parser_v1.yrl", 936).
+yeccpars2_605_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'SecondEventsDescriptor' { requestID = __3 ,
     eventList = [ __5 | __6 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_582_,1}}).
--file("megaco_text_parser_v1.yrl", 902).
-yeccpars2_582_(__Stack0) ->
+-compile({inline,{yeccpars2_606_,1}}).
+-file("megaco_text_parser_v1.yrl", 928).
+yeccpars2_606_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { embed , asn1_NOVALUE , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_584_,1}}).
--file("megaco_text_parser_v1.yrl", 899).
-yeccpars2_584_(__Stack0) ->
+-compile({inline,{yeccpars2_608_,1}}).
+-file("megaco_text_parser_v1.yrl", 925).
+yeccpars2_608_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { embed , __3 , asn1_NOVALUE }
   end | __Stack].
 
--compile({inline,{yeccpars2_586_,1}}).
--file("megaco_text_parser_v1.yrl", 897).
-yeccpars2_586_(__Stack0) ->
+-compile({inline,{yeccpars2_610_,1}}).
+-file("megaco_text_parser_v1.yrl", 923).
+yeccpars2_610_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { embed , __3 , __5 }
   end | __Stack].
 
--compile({inline,{yeccpars2_589_,1}}).
--file("megaco_text_parser_v1.yrl", 886).
-yeccpars2_589_(__Stack0) ->
+-compile({inline,{yeccpars2_613_,1}}).
+-file("megaco_text_parser_v1.yrl", 912).
+yeccpars2_613_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_590_,1}}).
--file("megaco_text_parser_v1.yrl", 884).
-yeccpars2_590_(__Stack0) ->
+-compile({inline,{yeccpars2_614_,1}}).
+-file("megaco_text_parser_v1.yrl", 910).
+yeccpars2_614_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_591_,1}}).
--file("megaco_text_parser_v1.yrl", 879).
-yeccpars2_591_(__Stack0) ->
+-compile({inline,{yeccpars2_615_,1}}).
+-file("megaco_text_parser_v1.yrl", 905).
+yeccpars2_615_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    merge_eventParameters ( [ __2 | __3 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_594_,1}}).
--file("megaco_text_parser_v1.yrl", 873).
-yeccpars2_594_(__Stack0) ->
+-compile({inline,{yeccpars2_618_,1}}).
+-file("megaco_text_parser_v1.yrl", 899).
+yeccpars2_618_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_595_,1}}).
--file("megaco_text_parser_v1.yrl", 872).
-yeccpars2_595_(__Stack0) ->
+-compile({inline,{yeccpars2_619_,1}}).
+-file("megaco_text_parser_v1.yrl", 898).
+yeccpars2_619_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_596_,1}}).
--file("megaco_text_parser_v1.yrl", 869).
-yeccpars2_596_(__Stack0) ->
+-compile({inline,{yeccpars2_620_,1}}).
+-file("megaco_text_parser_v1.yrl", 895).
+yeccpars2_620_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'EventsDescriptor' { requestID = __3 ,
     eventList = [ __5 | __6 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_597_,1}}).
--file("megaco_text_parser_v1.yrl", 1036).
-yeccpars2_597_(__Stack0) ->
+-compile({inline,{yeccpars2_621_,1}}).
+-file("megaco_text_parser_v1.yrl", 1062).
+yeccpars2_621_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_598_,1}}).
--file("megaco_text_parser_v1.yrl", 836).
-yeccpars2_598_(__Stack0) ->
+-compile({inline,{yeccpars2_622_,1}}).
+-file("megaco_text_parser_v1.yrl", 862).
+yeccpars2_622_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    merge_eventSpec ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_599_,1}}).
--file("megaco_text_parser_v1.yrl", 834).
-yeccpars2_599_(__Stack0) ->
+-compile({inline,{yeccpars2_623_,1}}).
+-file("megaco_text_parser_v1.yrl", 860).
+yeccpars2_623_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_601_,1}}).
--file("megaco_text_parser_v1.yrl", 1036).
-yeccpars2_601_(__Stack0) ->
+-compile({inline,{yeccpars2_625_,1}}).
+-file("megaco_text_parser_v1.yrl", 1062).
+yeccpars2_625_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_602_,1}}).
--file("megaco_text_parser_v1.yrl", 834).
-yeccpars2_602_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_603_,1}}).
--file("megaco_text_parser_v1.yrl", 833).
-yeccpars2_603_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __2 | __3 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_604_,1}}).
--file("megaco_text_parser_v1.yrl", 831).
-yeccpars2_604_(__Stack0) ->
- [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __3 | __4 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_607_,1}}).
--file("megaco_text_parser_v1.yrl", 532).
-yeccpars2_607_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_608_,1}}).
--file("megaco_text_parser_v1.yrl", 531).
-yeccpars2_608_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __2 | __3 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_609_,1}}).
--file("megaco_text_parser_v1.yrl", 528).
-yeccpars2_609_(__Stack0) ->
- [__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __2 | __3 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_612_,1}}).
--file("megaco_text_parser_v1.yrl", 436).
-yeccpars2_612_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_613_,1}}).
--file("megaco_text_parser_v1.yrl", 435).
-yeccpars2_613_(__Stack0) ->
- [__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   [ __2 | __3 ]
-  end | __Stack].
-
--compile({inline,{yeccpars2_614_,1}}).
--file("megaco_text_parser_v1.yrl", 423).
-yeccpars2_614_(__Stack0) ->
- [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   # 'TransactionRequest' { transactionId = asn1_NOVALUE ,
-    actions = [ __3 | __4 ] }
-  end | __Stack].
-
--compile({inline,{yeccpars2_616_,1}}).
--file("megaco_text_parser_v1.yrl", 690).
-yeccpars2_616_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   ensure_uint32 ( __1 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_618_,1}}).
--file("megaco_text_parser_v1.yrl", 436).
-yeccpars2_618_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_620_,1}}).
--file("megaco_text_parser_v1.yrl", 427).
-yeccpars2_620_(__Stack0) ->
- [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   # 'TransactionRequest' { transactionId = asn1_NOVALUE ,
-    actions = [ __4 | __5 ] }
-  end | __Stack].
-
--compile({inline,{yeccpars2_622_,1}}).
--file("megaco_text_parser_v1.yrl", 436).
-yeccpars2_622_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_624_,1}}).
--file("megaco_text_parser_v1.yrl", 431).
-yeccpars2_624_(__Stack0) ->
- [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
- [begin
-   # 'TransactionRequest' { transactionId = ensure_transactionID ( __3 ) ,
-    actions = [ __5 | __6 ] }
-  end | __Stack].
-
 -compile({inline,{yeccpars2_626_,1}}).
--file("megaco_text_parser_v1.yrl", 414).
+-file("megaco_text_parser_v1.yrl", 860).
 yeccpars2_626_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
 -compile({inline,{yeccpars2_627_,1}}).
--file("megaco_text_parser_v1.yrl", 416).
+-file("megaco_text_parser_v1.yrl", 859).
 yeccpars2_627_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   ensure_transactionAck ( __1 )
-  end | __Stack].
-
--compile({inline,{yeccpars2_630_,1}}).
--file("megaco_text_parser_v1.yrl", 414).
-yeccpars2_630_(__Stack0) ->
- [begin
-   [ ]
-  end | __Stack0].
-
--compile({inline,{yeccpars2_631_,1}}).
--file("megaco_text_parser_v1.yrl", 413).
-yeccpars2_631_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_632_,1}}).
--file("megaco_text_parser_v1.yrl", 411).
-yeccpars2_632_(__Stack0) ->
+-compile({inline,{yeccpars2_628_,1}}).
+-file("megaco_text_parser_v1.yrl", 857).
+yeccpars2_628_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_635_,1}}).
--file("megaco_text_parser_v1.yrl", 483).
-yeccpars2_635_(__Stack0) ->
- [begin
-   asn1_NOVALUE
-  end | __Stack0].
-
--compile({inline,{yeccpars2_638_,1}}).
--file("megaco_text_parser_v1.yrl", 482).
-yeccpars2_638_(__Stack0) ->
- [__2,__1 | __Stack] = __Stack0,
- [begin
-   'NULL'
-  end | __Stack].
-
--compile({inline,{yeccpars2_640_,1}}).
--file("megaco_text_parser_v1.yrl", 486).
-yeccpars2_640_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   { transactionError , __1 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_641_,1}}).
--file("megaco_text_parser_v1.yrl", 491).
-yeccpars2_641_(__Stack0) ->
+-compile({inline,{yeccpars2_631_,1}}).
+-file("megaco_text_parser_v1.yrl", 556).
+yeccpars2_631_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_646_,1}}).
--file("megaco_text_parser_v1.yrl", 502).
-yeccpars2_646_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
+-compile({inline,{yeccpars2_632_,1}}).
+-file("megaco_text_parser_v1.yrl", 555).
+yeccpars2_632_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
  [begin
-   { command , __1 }
+   [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_647_,1}}).
--file("megaco_text_parser_v1.yrl", 505).
-yeccpars2_647_(__Stack0) ->
+-compile({inline,{yeccpars2_633_,1}}).
+-file("megaco_text_parser_v1.yrl", 552).
+yeccpars2_633_(__Stack0) ->
+ [__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_636_,1}}).
+-file("megaco_text_parser_v1.yrl", 460).
+yeccpars2_636_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_637_,1}}).
+-file("megaco_text_parser_v1.yrl", 459).
+yeccpars2_637_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_638_,1}}).
+-file("megaco_text_parser_v1.yrl", 447).
+yeccpars2_638_(__Stack0) ->
+ [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   # 'TransactionRequest' { transactionId = asn1_NOVALUE ,
+    actions = [ __3 | __4 ] }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_640_,1}}).
+-file("megaco_text_parser_v1.yrl", 714).
+yeccpars2_640_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
-   { command , __1 }
+   ensure_uint32 ( __1 )
   end | __Stack].
+
+-compile({inline,{yeccpars2_642_,1}}).
+-file("megaco_text_parser_v1.yrl", 460).
+yeccpars2_642_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_644_,1}}).
+-file("megaco_text_parser_v1.yrl", 451).
+yeccpars2_644_(__Stack0) ->
+ [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   # 'TransactionRequest' { transactionId = asn1_NOVALUE ,
+    actions = [ __4 | __5 ] }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_646_,1}}).
+-file("megaco_text_parser_v1.yrl", 460).
+yeccpars2_646_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
 
 -compile({inline,{yeccpars2_648_,1}}).
--file("megaco_text_parser_v1.yrl", 498).
+-file("megaco_text_parser_v1.yrl", 455).
 yeccpars2_648_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
+ [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
-   # 'ActionReply' { errorDescriptor = __1 }
-  end | __Stack].
-
--compile({inline,{yeccpars2_649_,1}}).
--file("megaco_text_parser_v1.yrl", 506).
-yeccpars2_649_(__Stack0) ->
- [__1 | __Stack] = __Stack0,
- [begin
-   { context , __1 }
+   # 'TransactionRequest' { transactionId = ensure_transactionID ( __3 ) ,
+    actions = [ __5 | __6 ] }
   end | __Stack].
 
 -compile({inline,{yeccpars2_650_,1}}).
--file("megaco_text_parser_v1.yrl", 516).
+-file("megaco_text_parser_v1.yrl", 438).
 yeccpars2_650_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
 -compile({inline,{yeccpars2_651_,1}}).
--file("megaco_text_parser_v1.yrl", 503).
+-file("megaco_text_parser_v1.yrl", 440).
 yeccpars2_651_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
-   { command , __1 }
+   ensure_transactionAck ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_653_,1}}).
--file("megaco_text_parser_v1.yrl", 504).
-yeccpars2_653_(__Stack0) ->
+-compile({inline,{yeccpars2_654_,1}}).
+-file("megaco_text_parser_v1.yrl", 438).
+yeccpars2_654_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_655_,1}}).
+-file("megaco_text_parser_v1.yrl", 437).
+yeccpars2_655_(__Stack0) ->
+ [__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __2 | __3 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_656_,1}}).
+-file("megaco_text_parser_v1.yrl", 435).
+yeccpars2_656_(__Stack0) ->
+ [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
+ [begin
+   [ __3 | __4 ]
+  end | __Stack].
+
+-compile({inline,{yeccpars2_659_,1}}).
+-file("megaco_text_parser_v1.yrl", 507).
+yeccpars2_659_(__Stack0) ->
+ [begin
+   asn1_NOVALUE
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_662_,1}}).
+-file("megaco_text_parser_v1.yrl", 506).
+yeccpars2_662_(__Stack0) ->
+ [__2,__1 | __Stack] = __Stack0,
+ [begin
+   'NULL'
+  end | __Stack].
+
+-compile({inline,{yeccpars2_664_,1}}).
+-file("megaco_text_parser_v1.yrl", 510).
+yeccpars2_664_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   { transactionError , __1 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_665_,1}}).
+-file("megaco_text_parser_v1.yrl", 515).
+yeccpars2_665_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_670_,1}}).
+-file("megaco_text_parser_v1.yrl", 526).
+yeccpars2_670_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { command , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_655_,1}}).
--file("megaco_text_parser_v1.yrl", 548).
-yeccpars2_655_(__Stack0) ->
+-compile({inline,{yeccpars2_671_,1}}).
+-file("megaco_text_parser_v1.yrl", 529).
+yeccpars2_671_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   { command , __1 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_672_,1}}).
+-file("megaco_text_parser_v1.yrl", 522).
+yeccpars2_672_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   # 'ActionReply' { errorDescriptor = __1 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_673_,1}}).
+-file("megaco_text_parser_v1.yrl", 530).
+yeccpars2_673_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   { context , __1 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_674_,1}}).
+-file("megaco_text_parser_v1.yrl", 540).
+yeccpars2_674_(__Stack0) ->
+ [begin
+   [ ]
+  end | __Stack0].
+
+-compile({inline,{yeccpars2_675_,1}}).
+-file("megaco_text_parser_v1.yrl", 527).
+yeccpars2_675_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   { command , __1 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_677_,1}}).
+-file("megaco_text_parser_v1.yrl", 528).
+yeccpars2_677_(__Stack0) ->
+ [__1 | __Stack] = __Stack0,
+ [begin
+   { command , __1 }
+  end | __Stack].
+
+-compile({inline,{yeccpars2_679_,1}}).
+-file("megaco_text_parser_v1.yrl", 572).
+yeccpars2_679_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    addReply
   end | __Stack].
 
--compile({inline,{yeccpars2_658_,1}}).
--file("megaco_text_parser_v1.yrl", 550).
-yeccpars2_658_(__Stack0) ->
+-compile({inline,{yeccpars2_682_,1}}).
+-file("megaco_text_parser_v1.yrl", 574).
+yeccpars2_682_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    modReply
   end | __Stack].
 
--compile({inline,{yeccpars2_659_,1}}).
--file("megaco_text_parser_v1.yrl", 549).
-yeccpars2_659_(__Stack0) ->
+-compile({inline,{yeccpars2_683_,1}}).
+-file("megaco_text_parser_v1.yrl", 573).
+yeccpars2_683_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    moveReply
   end | __Stack].
 
--compile({inline,{yeccpars2_662_,1}}).
--file("megaco_text_parser_v1.yrl", 551).
-yeccpars2_662_(__Stack0) ->
+-compile({inline,{yeccpars2_686_,1}}).
+-file("megaco_text_parser_v1.yrl", 575).
+yeccpars2_686_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    subtractReply
   end | __Stack].
 
--compile({inline,{yeccpars2_664_,1}}).
--file("megaco_text_parser_v1.yrl", 679).
-yeccpars2_664_(__Stack0) ->
+-compile({inline,{yeccpars2_688_,1}}).
+-file("megaco_text_parser_v1.yrl", 703).
+yeccpars2_688_(__Stack0) ->
  [begin
    { serviceChangeResParms , # 'ServiceChangeResParm' { } }
   end | __Stack0].
 
--compile({inline,{yeccpars2_665_,1}}).
--file("megaco_text_parser_v1.yrl", 671).
-yeccpars2_665_(__Stack0) ->
+-compile({inline,{yeccpars2_689_,1}}).
+-file("megaco_text_parser_v1.yrl", 695).
+yeccpars2_689_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { serviceChangeReply ,
@@ -11470,102 +12024,102 @@ yeccpars2_665_(__Stack0) ->
     serviceChangeResult = __4 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_671_,1}}).
--file("megaco_text_parser_v1.yrl", 1129).
-yeccpars2_671_(__Stack0) ->
+-compile({inline,{yeccpars2_695_,1}}).
+-file("megaco_text_parser_v1.yrl", 1155).
+yeccpars2_695_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { time_stamp , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_672_,1}}).
--file("megaco_text_parser_v1.yrl", 1128).
-yeccpars2_672_(__Stack0) ->
+-compile({inline,{yeccpars2_696_,1}}).
+-file("megaco_text_parser_v1.yrl", 1154).
+yeccpars2_696_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { version , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_673_,1}}).
--file("megaco_text_parser_v1.yrl", 1127).
-yeccpars2_673_(__Stack0) ->
+-compile({inline,{yeccpars2_697_,1}}).
+-file("megaco_text_parser_v1.yrl", 1153).
+yeccpars2_697_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { profile , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_674_,1}}).
--file("megaco_text_parser_v1.yrl", 1126).
-yeccpars2_674_(__Stack0) ->
+-compile({inline,{yeccpars2_698_,1}}).
+-file("megaco_text_parser_v1.yrl", 1152).
+yeccpars2_698_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { mgc_id , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_675_,1}}).
--file("megaco_text_parser_v1.yrl", 1125).
-yeccpars2_675_(__Stack0) ->
+-compile({inline,{yeccpars2_699_,1}}).
+-file("megaco_text_parser_v1.yrl", 1151).
+yeccpars2_699_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { address , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_676_,1}}).
--file("megaco_text_parser_v1.yrl", 1123).
-yeccpars2_676_(__Stack0) ->
+-compile({inline,{yeccpars2_700_,1}}).
+-file("megaco_text_parser_v1.yrl", 1149).
+yeccpars2_700_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_683_,1}}).
--file("megaco_text_parser_v1.yrl", 1123).
-yeccpars2_683_(__Stack0) ->
+-compile({inline,{yeccpars2_707_,1}}).
+-file("megaco_text_parser_v1.yrl", 1149).
+yeccpars2_707_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_684_,1}}).
--file("megaco_text_parser_v1.yrl", 1122).
-yeccpars2_684_(__Stack0) ->
+-compile({inline,{yeccpars2_708_,1}}).
+-file("megaco_text_parser_v1.yrl", 1148).
+yeccpars2_708_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_685_,1}}).
--file("megaco_text_parser_v1.yrl", 1119).
-yeccpars2_685_(__Stack0) ->
+-compile({inline,{yeccpars2_709_,1}}).
+-file("megaco_text_parser_v1.yrl", 1145).
+yeccpars2_709_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    merge_ServiceChangeResParm ( [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_686_,1}}).
--file("megaco_text_parser_v1.yrl", 676).
-yeccpars2_686_(__Stack0) ->
+-compile({inline,{yeccpars2_710_,1}}).
+-file("megaco_text_parser_v1.yrl", 700).
+yeccpars2_710_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { errorDescriptor , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_687_,1}}).
--file("megaco_text_parser_v1.yrl", 678).
-yeccpars2_687_(__Stack0) ->
+-compile({inline,{yeccpars2_711_,1}}).
+-file("megaco_text_parser_v1.yrl", 702).
+yeccpars2_711_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { serviceChangeResParms , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_689_,1}}).
--file("megaco_text_parser_v1.yrl", 662).
-yeccpars2_689_(__Stack0) ->
+-compile({inline,{yeccpars2_713_,1}}).
+-file("megaco_text_parser_v1.yrl", 686).
+yeccpars2_713_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_690_,1}}).
--file("megaco_text_parser_v1.yrl", 657).
-yeccpars2_690_(__Stack0) ->
+-compile({inline,{yeccpars2_714_,1}}).
+-file("megaco_text_parser_v1.yrl", 681).
+yeccpars2_714_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { notifyReply ,
@@ -11573,17 +12127,17 @@ yeccpars2_690_(__Stack0) ->
     errorDescriptor = __4 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_693_,1}}).
--file("megaco_text_parser_v1.yrl", 661).
-yeccpars2_693_(__Stack0) ->
+-compile({inline,{yeccpars2_717_,1}}).
+-file("megaco_text_parser_v1.yrl", 685).
+yeccpars2_717_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_695_,1}}).
--file("megaco_text_parser_v1.yrl", 590).
-yeccpars2_695_(__Stack0) ->
+-compile({inline,{yeccpars2_719_,1}}).
+-file("megaco_text_parser_v1.yrl", 614).
+yeccpars2_719_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { auditResult ,
@@ -11591,333 +12145,333 @@ yeccpars2_695_(__Stack0) ->
     terminationAuditResult = [ ] } }
   end | __Stack].
 
--compile({inline,{yeccpars2_696_,1}}).
--file("megaco_text_parser_v1.yrl", 582).
-yeccpars2_696_(__Stack0) ->
+-compile({inline,{yeccpars2_720_,1}}).
+-file("megaco_text_parser_v1.yrl", 606).
+yeccpars2_720_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { auditValueReply , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_698_,1}}).
--file("megaco_text_parser_v1.yrl", 586).
-yeccpars2_698_(__Stack0) ->
+-compile({inline,{yeccpars2_722_,1}}).
+-file("megaco_text_parser_v1.yrl", 610).
+yeccpars2_722_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { contextAuditResult , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_699_,1}}).
--file("megaco_text_parser_v1.yrl", 578).
-yeccpars2_699_(__Stack0) ->
+-compile({inline,{yeccpars2_723_,1}}).
+-file("megaco_text_parser_v1.yrl", 602).
+yeccpars2_723_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { auditValueReply , __4 }
   end | __Stack].
 
--compile({inline,{yeccpars2_704_,1}}).
--file("megaco_text_parser_v1.yrl", 685).
-yeccpars2_704_(__Stack0) ->
+-compile({inline,{yeccpars2_728_,1}}).
+-file("megaco_text_parser_v1.yrl", 709).
+yeccpars2_728_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_uint ( __1 , 0 , 999 )
   end | __Stack].
 
--compile({inline,{yeccpars2_706_,1}}).
--file("megaco_text_parser_v1.yrl", 688).
-yeccpars2_706_(__Stack0) ->
+-compile({inline,{yeccpars2_730_,1}}).
+-file("megaco_text_parser_v1.yrl", 712).
+yeccpars2_730_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_708_,1}}).
--file("megaco_text_parser_v1.yrl", 687).
-yeccpars2_708_(__Stack0) ->
+-compile({inline,{yeccpars2_732_,1}}).
+-file("megaco_text_parser_v1.yrl", 711).
+yeccpars2_732_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    value_of ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_709_,1}}).
--file("megaco_text_parser_v1.yrl", 682).
-yeccpars2_709_(__Stack0) ->
+-compile({inline,{yeccpars2_733_,1}}).
+-file("megaco_text_parser_v1.yrl", 706).
+yeccpars2_733_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'ErrorDescriptor' { errorCode = __3 ,
     errorText = __5 }
   end | __Stack].
 
--compile({inline,{yeccpars2_710_,1}}).
--file("megaco_text_parser_v1.yrl", 587).
-yeccpars2_710_(__Stack0) ->
+-compile({inline,{yeccpars2_734_,1}}).
+-file("megaco_text_parser_v1.yrl", 611).
+yeccpars2_734_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { contextAuditResult , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_713_,1}}).
--file("megaco_text_parser_v1.yrl", 612).
-yeccpars2_713_(__Stack0) ->
+-compile({inline,{yeccpars2_737_,1}}).
+-file("megaco_text_parser_v1.yrl", 636).
+yeccpars2_737_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { statisticsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_714_,1}}).
--file("megaco_text_parser_v1.yrl", 608).
-yeccpars2_714_(__Stack0) ->
+-compile({inline,{yeccpars2_738_,1}}).
+-file("megaco_text_parser_v1.yrl", 632).
+yeccpars2_738_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { signalsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_715_,1}}).
--file("megaco_text_parser_v1.yrl", 613).
-yeccpars2_715_(__Stack0) ->
+-compile({inline,{yeccpars2_739_,1}}).
+-file("megaco_text_parser_v1.yrl", 637).
+yeccpars2_739_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { packagesDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_716_,1}}).
--file("megaco_text_parser_v1.yrl", 610).
-yeccpars2_716_(__Stack0) ->
+-compile({inline,{yeccpars2_740_,1}}).
+-file("megaco_text_parser_v1.yrl", 634).
+yeccpars2_740_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { observedEventsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_717_,1}}).
--file("megaco_text_parser_v1.yrl", 606).
-yeccpars2_717_(__Stack0) ->
+-compile({inline,{yeccpars2_741_,1}}).
+-file("megaco_text_parser_v1.yrl", 630).
+yeccpars2_741_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { muxDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_718_,1}}).
--file("megaco_text_parser_v1.yrl", 605).
-yeccpars2_718_(__Stack0) ->
+-compile({inline,{yeccpars2_742_,1}}).
+-file("megaco_text_parser_v1.yrl", 629).
+yeccpars2_742_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { modemDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_719_,1}}).
--file("megaco_text_parser_v1.yrl", 604).
-yeccpars2_719_(__Stack0) ->
+-compile({inline,{yeccpars2_743_,1}}).
+-file("megaco_text_parser_v1.yrl", 628).
+yeccpars2_743_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { mediaDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_720_,1}}).
--file("megaco_text_parser_v1.yrl", 607).
-yeccpars2_720_(__Stack0) ->
+-compile({inline,{yeccpars2_744_,1}}).
+-file("megaco_text_parser_v1.yrl", 631).
+yeccpars2_744_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { eventsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_721_,1}}).
--file("megaco_text_parser_v1.yrl", 611).
-yeccpars2_721_(__Stack0) ->
+-compile({inline,{yeccpars2_745_,1}}).
+-file("megaco_text_parser_v1.yrl", 635).
+yeccpars2_745_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { eventBufferDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_722_,1}}).
--file("megaco_text_parser_v1.yrl", 614).
-yeccpars2_722_(__Stack0) ->
+-compile({inline,{yeccpars2_746_,1}}).
+-file("megaco_text_parser_v1.yrl", 638).
+yeccpars2_746_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { errorDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_723_,1}}).
--file("megaco_text_parser_v1.yrl", 609).
-yeccpars2_723_(__Stack0) ->
+-compile({inline,{yeccpars2_747_,1}}).
+-file("megaco_text_parser_v1.yrl", 633).
+yeccpars2_747_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { digitMapDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_724_,1}}).
--file("megaco_text_parser_v1.yrl", 602).
-yeccpars2_724_(__Stack0) ->
+-compile({inline,{yeccpars2_748_,1}}).
+-file("megaco_text_parser_v1.yrl", 626).
+yeccpars2_748_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_725_,1}}).
--file("megaco_text_parser_v1.yrl", 615).
-yeccpars2_725_(__Stack0) ->
+-compile({inline,{yeccpars2_749_,1}}).
+-file("megaco_text_parser_v1.yrl", 639).
+yeccpars2_749_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { auditReturnItem , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_726_,1}}).
--file("megaco_text_parser_v1.yrl", 630).
-yeccpars2_726_(__Stack0) ->
+-compile({inline,{yeccpars2_750_,1}}).
+-file("megaco_text_parser_v1.yrl", 654).
+yeccpars2_750_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    mediaToken
   end | __Stack].
 
--compile({inline,{yeccpars2_727_,1}}).
--file("megaco_text_parser_v1.yrl", 629).
-yeccpars2_727_(__Stack0) ->
+-compile({inline,{yeccpars2_751_,1}}).
+-file("megaco_text_parser_v1.yrl", 653).
+yeccpars2_751_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    modemToken
   end | __Stack].
 
--compile({inline,{yeccpars2_728_,1}}).
--file("megaco_text_parser_v1.yrl", 628).
-yeccpars2_728_(__Stack0) ->
+-compile({inline,{yeccpars2_752_,1}}).
+-file("megaco_text_parser_v1.yrl", 652).
+yeccpars2_752_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    muxToken
   end | __Stack].
 
--compile({inline,{yeccpars2_729_,1}}).
--file("megaco_text_parser_v1.yrl", 633).
-yeccpars2_729_(__Stack0) ->
+-compile({inline,{yeccpars2_753_,1}}).
+-file("megaco_text_parser_v1.yrl", 657).
+yeccpars2_753_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    observedEventsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_730_,1}}).
--file("megaco_text_parser_v1.yrl", 634).
-yeccpars2_730_(__Stack0) ->
+-compile({inline,{yeccpars2_754_,1}}).
+-file("megaco_text_parser_v1.yrl", 658).
+yeccpars2_754_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    packagesToken
   end | __Stack].
 
--compile({inline,{yeccpars2_731_,1}}).
--file("megaco_text_parser_v1.yrl", 632).
-yeccpars2_731_(__Stack0) ->
+-compile({inline,{yeccpars2_755_,1}}).
+-file("megaco_text_parser_v1.yrl", 656).
+yeccpars2_755_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    statsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_733_,1}}).
--file("megaco_text_parser_v1.yrl", 1146).
-yeccpars2_733_(__Stack0) ->
+-compile({inline,{yeccpars2_757_,1}}).
+-file("megaco_text_parser_v1.yrl", 1172).
+yeccpars2_757_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_734_,1}}).
--file("megaco_text_parser_v1.yrl", 1150).
-yeccpars2_734_(__Stack0) ->
+-compile({inline,{yeccpars2_758_,1}}).
+-file("megaco_text_parser_v1.yrl", 1176).
+yeccpars2_758_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    # 'StatisticsParameter' { statName = __1 ,
     statValue = asn1_NOVALUE }
   end | __Stack].
 
--compile({inline,{yeccpars2_736_,1}}).
--file("megaco_text_parser_v1.yrl", 1153).
-yeccpars2_736_(__Stack0) ->
+-compile({inline,{yeccpars2_760_,1}}).
+-file("megaco_text_parser_v1.yrl", 1179).
+yeccpars2_760_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'StatisticsParameter' { statName = __1 ,
     statValue = [ __3 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_739_,1}}).
--file("megaco_text_parser_v1.yrl", 1146).
-yeccpars2_739_(__Stack0) ->
+-compile({inline,{yeccpars2_763_,1}}).
+-file("megaco_text_parser_v1.yrl", 1172).
+yeccpars2_763_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_740_,1}}).
--file("megaco_text_parser_v1.yrl", 1145).
-yeccpars2_740_(__Stack0) ->
+-compile({inline,{yeccpars2_764_,1}}).
+-file("megaco_text_parser_v1.yrl", 1171).
+yeccpars2_764_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_741_,1}}).
--file("megaco_text_parser_v1.yrl", 1143).
-yeccpars2_741_(__Stack0) ->
+-compile({inline,{yeccpars2_765_,1}}).
+-file("megaco_text_parser_v1.yrl", 1169).
+yeccpars2_765_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_743_,1}}).
--file("megaco_text_parser_v1.yrl", 1137).
-yeccpars2_743_(__Stack0) ->
+-compile({inline,{yeccpars2_767_,1}}).
+-file("megaco_text_parser_v1.yrl", 1163).
+yeccpars2_767_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_packagesItem ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_744_,1}}).
--file("megaco_text_parser_v1.yrl", 1135).
-yeccpars2_744_(__Stack0) ->
+-compile({inline,{yeccpars2_768_,1}}).
+-file("megaco_text_parser_v1.yrl", 1161).
+yeccpars2_768_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_747_,1}}).
--file("megaco_text_parser_v1.yrl", 1135).
-yeccpars2_747_(__Stack0) ->
+-compile({inline,{yeccpars2_771_,1}}).
+-file("megaco_text_parser_v1.yrl", 1161).
+yeccpars2_771_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_748_,1}}).
--file("megaco_text_parser_v1.yrl", 1134).
-yeccpars2_748_(__Stack0) ->
+-compile({inline,{yeccpars2_772_,1}}).
+-file("megaco_text_parser_v1.yrl", 1160).
+yeccpars2_772_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_749_,1}}).
--file("megaco_text_parser_v1.yrl", 1132).
-yeccpars2_749_(__Stack0) ->
+-compile({inline,{yeccpars2_773_,1}}).
+-file("megaco_text_parser_v1.yrl", 1158).
+yeccpars2_773_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_750_,1}}).
--file("megaco_text_parser_v1.yrl", 599).
-yeccpars2_750_(__Stack0) ->
+-compile({inline,{yeccpars2_774_,1}}).
+-file("megaco_text_parser_v1.yrl", 623).
+yeccpars2_774_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    merge_terminationAudit ( [ __1 | __2 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_752_,1}}).
--file("megaco_text_parser_v1.yrl", 602).
-yeccpars2_752_(__Stack0) ->
+-compile({inline,{yeccpars2_776_,1}}).
+-file("megaco_text_parser_v1.yrl", 626).
+yeccpars2_776_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_753_,1}}).
--file("megaco_text_parser_v1.yrl", 601).
-yeccpars2_753_(__Stack0) ->
+-compile({inline,{yeccpars2_777_,1}}).
+-file("megaco_text_parser_v1.yrl", 625).
+yeccpars2_777_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_754_,1}}).
--file("megaco_text_parser_v1.yrl", 594).
-yeccpars2_754_(__Stack0) ->
+-compile({inline,{yeccpars2_778_,1}}).
+-file("megaco_text_parser_v1.yrl", 618).
+yeccpars2_778_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { auditResult ,
@@ -11925,111 +12479,111 @@ yeccpars2_754_(__Stack0) ->
     terminationAuditResult = __3 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_756_,1}}).
--file("megaco_text_parser_v1.yrl", 584).
-yeccpars2_756_(__Stack0) ->
+-compile({inline,{yeccpars2_780_,1}}).
+-file("megaco_text_parser_v1.yrl", 608).
+yeccpars2_780_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { auditCapReply , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_758_,1}}).
--file("megaco_text_parser_v1.yrl", 580).
-yeccpars2_758_(__Stack0) ->
+-compile({inline,{yeccpars2_782_,1}}).
+-file("megaco_text_parser_v1.yrl", 604).
+yeccpars2_782_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { auditCapReply , __4 }
   end | __Stack].
 
--compile({inline,{yeccpars2_759_,1}}).
--file("megaco_text_parser_v1.yrl", 495).
-yeccpars2_759_(__Stack0) ->
+-compile({inline,{yeccpars2_783_,1}}).
+-file("megaco_text_parser_v1.yrl", 519).
+yeccpars2_783_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    setelement ( # 'ActionReply' .contextId , __5 , __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_761_,1}}).
--file("megaco_text_parser_v1.yrl", 554).
-yeccpars2_761_(__Stack0) ->
+-compile({inline,{yeccpars2_785_,1}}).
+-file("megaco_text_parser_v1.yrl", 578).
+yeccpars2_785_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_762_,1}}).
--file("megaco_text_parser_v1.yrl", 545).
-yeccpars2_762_(__Stack0) ->
+-compile({inline,{yeccpars2_786_,1}}).
+-file("megaco_text_parser_v1.yrl", 569).
+yeccpars2_786_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { __1 , # 'AmmsReply' { terminationID = [ __3 ] ,
     terminationAudit = __4 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_765_,1}}).
--file("megaco_text_parser_v1.yrl", 553).
-yeccpars2_765_(__Stack0) ->
+-compile({inline,{yeccpars2_789_,1}}).
+-file("megaco_text_parser_v1.yrl", 577).
+yeccpars2_789_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_766_,1}}).
--file("megaco_text_parser_v1.yrl", 500).
-yeccpars2_766_(__Stack0) ->
+-compile({inline,{yeccpars2_790_,1}}).
+-file("megaco_text_parser_v1.yrl", 524).
+yeccpars2_790_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    merge_action_reply ( [ __1 | __2 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_768_,1}}).
--file("megaco_text_parser_v1.yrl", 513).
-yeccpars2_768_(__Stack0) ->
+-compile({inline,{yeccpars2_792_,1}}).
+-file("megaco_text_parser_v1.yrl", 537).
+yeccpars2_792_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_769_,1}}).
--file("megaco_text_parser_v1.yrl", 516).
-yeccpars2_769_(__Stack0) ->
+-compile({inline,{yeccpars2_793_,1}}).
+-file("megaco_text_parser_v1.yrl", 540).
+yeccpars2_793_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_770_,1}}).
--file("megaco_text_parser_v1.yrl", 515).
-yeccpars2_770_(__Stack0) ->
+-compile({inline,{yeccpars2_794_,1}}).
+-file("megaco_text_parser_v1.yrl", 539).
+yeccpars2_794_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_771_,1}}).
--file("megaco_text_parser_v1.yrl", 488).
-yeccpars2_771_(__Stack0) ->
+-compile({inline,{yeccpars2_795_,1}}).
+-file("megaco_text_parser_v1.yrl", 512).
+yeccpars2_795_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    { actionReplies , [ __1 | __2 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_773_,1}}).
--file("megaco_text_parser_v1.yrl", 491).
-yeccpars2_773_(__Stack0) ->
+-compile({inline,{yeccpars2_797_,1}}).
+-file("megaco_text_parser_v1.yrl", 515).
+yeccpars2_797_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_774_,1}}).
--file("megaco_text_parser_v1.yrl", 490).
-yeccpars2_774_(__Stack0) ->
+-compile({inline,{yeccpars2_798_,1}}).
+-file("megaco_text_parser_v1.yrl", 514).
+yeccpars2_798_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_775_,1}}).
--file("megaco_text_parser_v1.yrl", 478).
-yeccpars2_775_(__Stack0) ->
+-compile({inline,{yeccpars2_799_,1}}).
+-file("megaco_text_parser_v1.yrl", 502).
+yeccpars2_799_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'TransactionReply' { transactionId = __3 ,
@@ -12037,75 +12591,75 @@ yeccpars2_775_(__Stack0) ->
     transactionResult = __6 }
   end | __Stack].
 
--compile({inline,{yeccpars2_779_,1}}).
--file("megaco_text_parser_v1.yrl", 419).
-yeccpars2_779_(__Stack0) ->
+-compile({inline,{yeccpars2_803_,1}}).
+-file("megaco_text_parser_v1.yrl", 443).
+yeccpars2_803_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    # 'TransactionPending' { transactionId = ensure_transactionID ( __3 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_780_,1}}).
--file("megaco_text_parser_v1.yrl", 402).
-yeccpars2_780_(__Stack0) ->
+-compile({inline,{yeccpars2_804_,1}}).
+-file("megaco_text_parser_v1.yrl", 426).
+yeccpars2_804_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    [ __1 | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_781_,1}}).
--file("megaco_text_parser_v1.yrl", 730).
-yeccpars2_781_(__Stack0) ->
+-compile({inline,{yeccpars2_805_,1}}).
+-file("megaco_text_parser_v1.yrl", 754).
+yeccpars2_805_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_pathName ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_782_,1}}).
--file("megaco_text_parser_v1.yrl", 702).
-yeccpars2_782_(__Stack0) ->
+-compile({inline,{yeccpars2_806_,1}}).
+-file("megaco_text_parser_v1.yrl", 726).
+yeccpars2_806_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { deviceName , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_783_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
-yeccpars2_783_(__Stack0) ->
+-compile({inline,{yeccpars2_807_,1}}).
+-file("megaco_text_parser_v1.yrl", 412).
+yeccpars2_807_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_784_,1}}).
--file("megaco_text_parser_v1.yrl", 388).
-yeccpars2_784_(__Stack0) ->
+-compile({inline,{yeccpars2_808_,1}}).
+-file("megaco_text_parser_v1.yrl", 412).
+yeccpars2_808_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_785_,1}}).
--file("megaco_text_parser_v1.yrl", 718).
-yeccpars2_785_(__Stack0) ->
+-compile({inline,{yeccpars2_809_,1}}).
+-file("megaco_text_parser_v1.yrl", 742).
+yeccpars2_809_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    ensure_mtpAddress ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_786_,1}}).
--file("megaco_text_parser_v1.yrl", 695).
-yeccpars2_786_(__Stack0) ->
+-compile({inline,{yeccpars2_810_,1}}).
+-file("megaco_text_parser_v1.yrl", 719).
+yeccpars2_810_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_787_,1}}).
--file("megaco_text_parser_v1.yrl", 694).
-yeccpars2_787_(__Stack0) ->
+-compile({inline,{yeccpars2_811_,1}}).
+-file("megaco_text_parser_v1.yrl", 718).
+yeccpars2_811_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    __2
   end | __Stack].
 
 
--file("megaco_text_parser_v1.yrl", 1312).
+-file("megaco_text_parser_v1.yrl", 1364).

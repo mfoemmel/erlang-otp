@@ -110,6 +110,8 @@
 %%%  API
 %%%=========================================================================
 
+-spec behaviour_info(atom()) -> 'undefined' | [{atom(), byte()}].
+
 behaviour_info(callbacks) ->
     [{init,1},{handle_call,3},{handle_cast,2},{handle_info,2},
      {terminate,2},{code_change,3}];
@@ -628,7 +630,7 @@ reply(Name, {To, Tag}, Reply, State, Debug) ->
 system_continue(Parent, Debug, [Name, State, Mod, Time]) ->
     loop(Parent, Name, State, Mod, Time, Debug).
 
--spec(system_terminate/4 :: (_, _, _, [_]) -> no_return()).
+-spec system_terminate(_, _, _, [_]) -> no_return().
 
 system_terminate(Reason, _Parent, Debug, [Name, State, Mod, _Time]) ->
     terminate(Reason, Name, [], Mod, State, Debug).

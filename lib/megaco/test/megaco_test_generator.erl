@@ -102,7 +102,7 @@ start_link(Mod, Args, Name)
     start(Mod, Args, Name, self()).
 
 start_link(Mod, Args, Name, Node) 
-  when is_atom(Mod) andalso is_list(Name) andalso (Node /= node()) ->
+  when is_atom(Mod) andalso is_list(Name) andalso (Node =/= node()) ->
     case rpc:call(Node, ?MODULE, start, [Mod, Args, Name, self()]) of
 	{ok, Pid} ->
 	    link(Pid),
@@ -111,7 +111,7 @@ start_link(Mod, Args, Name, Node)
 	    Error
     end;
 start_link(Mod, Args, Name, Node) 
-  when is_atom(Mod) andalso is_list(Name) andalso (Node == node()) ->
+  when is_atom(Mod) andalso is_list(Name) andalso (Node =:= node()) ->
     case start(Mod, Args, Name, self()) of
 	{ok, Pid} ->
 	    link(Pid),
@@ -418,8 +418,13 @@ handler_main(Parent, Mod, State, [Instruction|Instructions]) ->
 		{error, Reason} ->
 		    d("handler_main -> exec failed"
 		      "~n   Reason: ~p", [Reason]),
-		    Result = (catch Mod:terminate(normal, State)),
-		    Parent ! {handler_result, self(), {error, Result}},
+		    case (catch Mod:terminate(normal, State)) of
+			{ok, Result} ->
+			    Parent ! {handler_result, self(), {error, Result}};
+			Error ->
+			    Result = {bad_terminate, Error},
+			    Parent ! {handler_result, self(), {error, Result}}
+		    end,
 		    receive
 			{stop, Parent} ->
 			    exit(normal);

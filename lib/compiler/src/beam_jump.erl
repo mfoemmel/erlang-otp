@@ -97,15 +97,14 @@
 %%% effect on the program state.
 %%% 
 
--import(lists, [reverse/1,reverse/2,map/2,mapfoldl/3,foldl/3,
-		last/1,foreach/2,member/2]).
+-import(lists, [reverse/1,reverse/2,foldl/3,last/1]).
 
 module({Mod,Exp,Attr,Fs0,Lc}, _Opt) ->
-    Fs = map(fun function/1, Fs0),
+    Fs = [function(F) || F <- Fs0],
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
 
 module_labels({Mod,Exp,Attr,Fs,Lc}) ->
-    {Mod,Exp,Attr,map(fun function_labels/1, Fs),Lc}.
+    {Mod,Exp,Attr,[function_labels(F) || F <- Fs],Lc}.
 
 function_labels({function,Name,Arity,CLabel,Asm0}) ->
     Asm = remove_unused_labels(Asm0),
@@ -437,9 +436,19 @@ ulbl({bs_put_float,Lbl,_Bits,_Unit,_Fl,_Val}, Used) ->
     mark_used(Lbl, Used);
 ulbl({bs_put_binary,Lbl,_Bits,_Unit,_Fl,_Val}, Used) ->
     mark_used(Lbl, Used);
+ulbl({bs_put_utf8,Lbl,_Fl,_Val}, Used) ->
+    mark_used(Lbl, Used);
+ulbl({bs_put_utf16,Lbl,_Fl,_Val}, Used) ->
+    mark_used(Lbl, Used);
+ulbl({bs_put_utf32,Lbl,_Fl,_Val}, Used) ->
+    mark_used(Lbl, Used);
 ulbl({bs_add,Lbl,_,_}, Used) ->
     mark_used(Lbl, Used);
 ulbl({bs_append,Lbl,_,_,_,_,_,_,_}, Used) ->
+    mark_used(Lbl, Used);
+ulbl({bs_utf8_size,Lbl,_,_}, Used) ->
+    mark_used(Lbl, Used);
+ulbl({bs_utf16_size,Lbl,_,_}, Used) ->
     mark_used(Lbl, Used);
 ulbl(_, Used) -> Used.
 

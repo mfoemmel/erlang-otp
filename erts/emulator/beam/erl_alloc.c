@@ -216,7 +216,7 @@ set_default_ll_alloc_opts(struct au_init *ip)
     ip->thr_spec		= 0;
     ip->atype			= BESTFIT;
     ip->init.bf.ao		= 1;
-    ip->init.util.ramv		= 1;
+    ip->init.util.ramv		= 0;
     ip->init.util.mmsbc		= 0;
     ip->init.util.mmmbc		= 0;
     ip->init.util.sbct		= ~((Uint) 0);
@@ -231,6 +231,7 @@ set_default_ll_alloc_opts(struct au_init *ip)
     ip->init.util.asbcst	= 0;
     ip->init.util.rsbcst	= 0;
     ip->init.util.rsbcmt	= 0;
+    ip->init.util.rmbcmt	= 0;
 }
 
 static void
@@ -249,6 +250,7 @@ set_default_temp_alloc_opts(struct au_init *ip)
 #endif
     ip->init.util.ts 		= ERTS_ALC_MTA_TEMPORARY;
     ip->init.util.rsbcst	= 90;
+    ip->init.util.rmbcmt	= 100;
 }
 
 static void
@@ -1005,6 +1007,11 @@ handle_au_arg(struct au_init *auip,
 	    auip->init.util.rsbcst = get_amount_value(sub_param + 6, argv, ip);
 	    if (auip->init.util.rsbcst > 100)
 		auip->init.util.rsbcst = 100;
+	}
+	else if (has_prefix("rmbcmt", sub_param)) {
+	    auip->init.util.rmbcmt = get_amount_value(sub_param + 6, argv, ip);
+	    if (auip->init.util.rmbcmt > 100)
+		auip->init.util.rmbcmt = 100;
 	}
 	else if (has_prefix("ramv", sub_param)) {
 	    auip->init.util.ramv = get_bool_value(sub_param + 4, argv, ip);

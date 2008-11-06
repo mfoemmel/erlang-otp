@@ -24,7 +24,8 @@
 	 get_check_interval/0, set_check_interval/1,
 	 get_procmem_high_watermark/0, set_procmem_high_watermark/1,
 	 get_sysmem_high_watermark/0, set_sysmem_high_watermark/1,
-	 get_helper_timeout/0, set_helper_timeout/1]).
+	 get_helper_timeout/0, set_helper_timeout/1,
+	 get_os_wordsize/0]).
 -export([dummy_reply/1, param_type/2, param_default/1]).
 
 %% gen_server callbacks
@@ -62,6 +63,9 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+get_os_wordsize() ->
+    os_mon:call(memsup, get_os_wordsize, infinity).
 
 get_memory_data() ->
     os_mon:call(memsup, get_memory_data, infinity).
@@ -117,6 +121,8 @@ dummy_reply(get_memory_data) ->
 		os_mon:get_env(memsup, memsup_system_only));
 dummy_reply(get_system_memory_data) ->
     [];
+dummy_reply(get_os_wordsize) ->
+    0;
 dummy_reply(get_check_interval) ->
     minutes_to_ms(os_mon:get_env(memsup, memory_check_interval));
 dummy_reply({set_check_interval, _}) ->
@@ -207,6 +213,9 @@ init([]) ->
 
 		pid=Pid}}.
 
+handle_call(get_os_wordsize, _From, State) ->
+    Wordsize = get_os_wordsize(State#state.os),
+    {reply, Wordsize, State};
 handle_call(get_memory_data, From, State) ->
     %% Return result of latest memory check
     case State#state.mem_usage of
@@ -666,6 +675,31 @@ format_status(_Opt, [_PDict, #state{timeout=Timeout, mem_usage=MemUsage,
 %% Internal functions
 %%----------------------------------------------------------------------
 
+%%-- Fetching kernel bit support ---------------------------------------
+
+get_os_wordsize({unix, sunos}) ->
+    String = clean_string(os:cmd("isainfo -b")),
+    erlang:list_to_integer(String);
+get_os_wordsize({unix, irix64})  -> 64;
+get_os_wordsize({unix, irix})    -> 32;
+get_os_wordsize({unix, linux})   -> get_os_wordsize_with_uname();
+get_os_wordsize({unix, darwin})  -> get_os_wordsize_with_uname();
+get_os_wordsize({unix, netbsd})  -> get_os_wordsize_with_uname();
+get_os_wordsize({unix, freebsd}) -> get_os_wordsize_with_uname();
+get_os_wordsize({unix, openbsd}) -> get_os_wordsize_with_uname();
+get_os_wordsize(_)               -> unsupported_os.
+
+get_os_wordsize_with_uname() ->
+    String = clean_string(os:cmd("uname -m")),
+    case String of
+	"x86_64"  -> 64;
+	"sparc64" -> 64;
+	_         -> 32
+    end.
+
+clean_string(String) -> lists:flatten(string:tokens(String,"\r\n\t ")).
+    
+
 %%--Replying to pending clients-----------------------------------------
 
 reply(Pending, MemUsage, SysMemUsage) ->
@@ -709,11 +743,6 @@ get_memory_usage({unix,freebsd}) ->
     NMemTotal = PageCount * PageSize,
     {NMemUsed, NMemTotal};
 
-%% Deprecated: Linux uses port (sysconf)
-%% Linux: see below
-%get_memory_usage({unix,linux}) ->
-%    get_memory_usage_linux();
-
 %% Win32: Find out how much memory is in use by asking
 %% the os_mon_sysinfo process.
 get_memory_usage({win32,_OSname}) ->
@@ -722,35 +751,6 @@ get_memory_usage({win32,_OSname}) ->
 	  _TotPage, _AvailPage, _TotV, _AvailV], _RestStr} =
 	io_lib:fread("~d~d~d~d~d~d~d", Result),
     {TotPhys-AvailPhys, TotPhys}.
-
-%% Linux: Read pseudo file /proc/meminfo
-%% If unavailable, wait and try again (until success or killed due
-%% to a reg_collection_timeout in memsup)
-get_memory_usage_linux() ->
-    Res = os:cmd("cat /proc/meminfo"),
-    case get_memory_usage_linux(Res, undef, undef) of
-	{MemTotal, MemFree} ->
-	    {MemTotal-MemFree, MemTotal};
-	error ->
-	    timer:sleep(1000),
-	    get_memory_usage_linux()
-    end.
-
-get_memory_usage_linux(_Str, Tot, Free) when is_integer(Tot),
-					     is_integer(Free) ->
-    {Tot, Free};
-get_memory_usage_linux("MemTotal:"++T, _Tot0, Free0) ->
-    {ok, [N], Rest} = io_lib:fread("~d", T),
-    Tot = N*1024,
-    get_memory_usage_linux(skip_to_eol(Rest), Tot, Free0);
-get_memory_usage_linux("MemFree:"++T, Tot0, _Free0) ->
-    {ok, [N], Rest} = io_lib:fread("~d", T),
-    Free = N*1024,
-    get_memory_usage_linux(skip_to_eol(Rest), Tot0, Free);
-get_memory_usage_linux("", _Tot0, _Free0) ->
-    error;
-get_memory_usage_linux(Str, Tot0, Free0) ->
-    get_memory_usage_linux(skip_to_eol(Str), Tot0, Free0).
 
 skip_to_eol([]) ->
     [];
@@ -790,7 +790,7 @@ port_init() ->
     port_idle(Port).
 
 start_portprogram() ->
-    Command = filename:join([code:priv_dir("os_mon"), "bin", "memsup"]),
+    Command = filename:join([code:priv_dir(os_mon), "bin", "memsup"]),
     open_port({spawn, Command}, [{packet, 1}]).
 
 %% The connected process loops are a bit awkward (several different

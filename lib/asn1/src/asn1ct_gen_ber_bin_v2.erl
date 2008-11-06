@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2002-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1ct_gen_ber_bin_v2).
 
@@ -253,6 +255,8 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	    emit_encode_func('null',Value,DoTag);
 	'OBJECT IDENTIFIER' ->
 	    emit_encode_func("object_identifier",Value,DoTag);
+	'RELATIVE-OID' ->
+	    emit_encode_func("relative_oid",Value,DoTag);
 	'ObjectDescriptor' ->
 	    emit_encode_func('restricted_string',Constraint,Value,
 			     ?T_ObjectDescriptor,DoTag);
@@ -261,7 +265,8 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	'NumericString' ->
 	    emit_encode_func('restricted_string',Constraint,Value,
 			     ?T_NumericString,DoTag);
-	'TeletexString' ->
+	TString when TString == 'TeletexString';
+		     TString == 'T61String' ->
 	    emit_encode_func('restricted_string',Constraint,Value,
 			     ?T_TeletexString,DoTag);
 	'VideotexString' ->
@@ -637,6 +642,9 @@ gen_dec_prim(Erules,Att,BytesVar,DoTag,TagIn,Form,OptOrMand) ->
 	'OBJECT IDENTIFIER' ->
 	    emit({"?RT_BER:decode_object_identifier(",BytesVar,","}),
 	    add_func({decode_object_identifier,2});
+	'RELATIVE-OID' ->
+	    emit({"?RT_BER:decode_relative_oid(",BytesVar,","}),
+	    add_func({decode_relative_oid,2});
 	'ObjectDescriptor' ->
 	    emit({"?RT_BER:decode_restricted_string(",
 		  BytesVar,",",{asis,Constraint},",",{asis,?T_ObjectDescriptor},","}),
@@ -648,7 +656,8 @@ gen_dec_prim(Erules,Att,BytesVar,DoTag,TagIn,Form,OptOrMand) ->
 	    emit({"?RT_BER:decode_restricted_string",AsBin,"(",
 		  BytesVar,",",{asis,Constraint},",",{asis,?T_NumericString},","}),
 	    add_func({decode_restricted_string,4});
-	'TeletexString' ->
+	TString when TString == 'TeletexString';
+		     TString == 'T61String' ->
 	    emit({"?RT_BER:decode_restricted_string",AsBin,"(",
 		  BytesVar,",",{asis,Constraint},",",{asis,?T_TeletexString},","}),
 	    add_func({decode_restricted_string,4});
@@ -1276,8 +1285,8 @@ emit_ext_fun(EncDec,ModuleName,Name) ->
 	  Name,"'(T,V,O) end"]).
     
 emit_default_getenc(ObjSetName,UniqueName) ->
-    emit(["'getenc_",ObjSetName,"'(",{asis,UniqueName},", _) ->",nl]),
-    emit([indent(3),"fun(C,V,_) -> exit({'Type not compatible with table constraint',{component,C},{value,V}}) end"]).
+    emit(["'getenc_",ObjSetName,"'(",{asis,UniqueName},", ErrV) ->",nl]),
+    emit([indent(3),"fun(C,V,_) -> exit({'Type not compatible with table constraint',{component,C},{value,V}, {unique_name_and_value,",{asis,UniqueName},", ErrV}}) end"]).
 
 %% gen_inlined_enc_funs for each object iterates over all fields of a
 %% class, and for each typefield it checks if the object has that
@@ -1495,8 +1504,8 @@ gen_objset_dec(_,_,_,[],_,_,_) ->
     ok.
 
 emit_default_getdec(ObjSetName,UniqueName) ->
-    emit(["'getdec_",ObjSetName,"'(",{asis,UniqueName},", _) ->",nl]),
-    emit([indent(2), "fun(C,V,_) -> exit({{component,C},{value,V}}) end"]).
+    emit(["'getdec_",ObjSetName,"'(",{asis,UniqueName},", ErrV) ->",nl]),
+    emit([indent(2), "fun(C,V,_) -> exit({{component,C},{value,V},{unique_name_and_value,",{asis,UniqueName},", ErrV}}) end"]).
 
 gen_inlined_dec_funs(Fields,[{typefield,Name,Prop}|Rest],
 		     ObjSetName,NthObj) ->
@@ -1675,6 +1684,7 @@ decode_type('REAL') -> 9;
 decode_type('ENUMERATED') -> 10;
 decode_type('EMBEDDED_PDV') -> 11;
 decode_type('UTF8String') -> 12;
+decode_type('RELATIVE-OID') -> 13;
 decode_type('SEQUENCE') -> 16;
 decode_type('SEQUENCE OF') -> 16;
 decode_type('SET') -> 17;
@@ -1682,6 +1692,7 @@ decode_type('SET OF') -> 17;
 decode_type('NumericString') -> 18;  
 decode_type('PrintableString') -> 19;  
 decode_type('TeletexString') -> 20;  
+decode_type('T61String') -> 20;
 decode_type('VideotexString') -> 21;  
 decode_type('IA5String') -> 22;  
 decode_type('UTCTime') -> 23;  

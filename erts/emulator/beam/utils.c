@@ -78,6 +78,8 @@ typedef struct {
     Uint n;
 } profile_sched_msg_q;
 
+#ifdef ERTS_SMP
+
 static void 
 dispatch_profile_msg_q(profile_sched_msg_q *psmq)
 {
@@ -89,6 +91,8 @@ dispatch_profile_msg_q(profile_sched_msg_q *psmq)
 	profile_scheduler_q(make_small(msg->scheduler_id), msg->state, am_undefined, msg->Ms, msg->s, msg->us);
     }
 }
+
+#endif
 
 Eterm*
 erts_heap_alloc(Process* p, Uint need)
@@ -1372,7 +1376,7 @@ make_broken_hash(Eterm term, Uint hash)
 
 #elif D_EXP == 64
 	    {
-	      Uint32 h, l;
+	      Uint32 h = 0, l;
 #if defined(WORDS_BIGENDIAN)
 	      while(i--) {
 		  Uint d = *ptr++;

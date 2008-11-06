@@ -38,43 +38,61 @@
 -define(INTERVAL_TAB, timer_interval_tab).
 
 %%
-%% Interface functions
-%%
 %% Time is in milliseconds.
 %%
+-type tref()      :: any().  % opaque type
+-type time()      :: non_neg_integer().
+-type timestamp() :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}.
+
+%%
+%% Interface functions
+%%
+-spec apply_after(time(), atom(), atom(), [_]) -> {'ok', tref()} | {'error', _}.
 apply_after(Time, M, F, A) ->
     req(apply_after, {Time, {M, F, A}}).
 
+-spec send_after(time(), pid() | atom(), _) -> {'ok', tref()} | {'error', _}.
 send_after(Time, Pid, Message) ->
     req(apply_after, {Time, {?MODULE, send, [Pid, Message]}}).
 
+-spec send_after(time(), _) -> {'ok', tref()} | {'error', _}.
 send_after(Time, Message) ->
     send_after(Time, self(), Message).
 
+-spec exit_after(time(), pid() | atom(), _) -> {'ok', tref()} | {'error', _}.
 exit_after(Time, Pid, Reason) ->
     req(apply_after, {Time, {erlang, exit, [Pid, Reason]}}).
 
+-spec exit_after(time(), _) -> {'ok', tref()} | {'error', _}.
 exit_after(Time, Reason) ->
     exit_after(Time, self(), Reason).
 
+-spec kill_after(time(), _) -> {'ok', tref()} | {'error', _}.
 kill_after(Time, Pid) ->
     exit_after(Time, Pid, kill).
 
+-spec kill_after(time()) -> {'ok', tref()} | {'error', _}.
 kill_after(Time) ->
     exit_after(Time, self(), kill).
 
+-spec apply_interval(time(), atom(), atom(), [_]) -> {'ok', tref()} | {'error', _}.
 apply_interval(Time, M, F, A) ->
     req(apply_interval, {Time, self(), {M, F, A}}).
 
+-spec send_interval(time(), pid() | atom(), _) -> {'ok', tref()} | {'error', _}.
 send_interval(Time, Pid, Message) ->
     req(apply_interval, {Time, Pid, {?MODULE, send, [Pid, Message]}}).
 
+-spec send_interval(time(), _) -> {'ok', tref()} | {'error', _}.
 send_interval(Time, Message) ->
     send_interval(Time, self(), Message).
 
+-spec cancel(tref()) -> {'ok', 'cancel'} | {'error', _}.
 cancel(BRef) ->
     req(cancel, BRef).
 
+-type timeout() :: non_neg_integer() | 'infinity'.
+-spec sleep(timeout()) -> 'ok'.
 sleep(T) ->
     receive
     after T -> ok
@@ -83,6 +101,7 @@ sleep(T) ->
 %%
 %% Measure the execution time (in microseconds) for an MFA.
 %%
+-spec tc(atom(), atom(), [_]) -> {time(), _}.
 tc(M, F, A) ->
     Before = erlang:now(),
     Val = (catch apply(M, F, A)),
@@ -93,18 +112,23 @@ tc(M, F, A) ->
 %% Calculate the time difference (in microseconds) of two
 %% erlang:now() timestamps, T2-T1.
 %%
+-spec now_diff(timestamp(), timestamp()) -> integer().
 now_diff({A2, B2, C2}, {A1, B1, C1}) ->
     ((A2-A1)*1000000 + B2-B1)*1000000 + C2-C1.
 
 %%
 %% Convert seconds, minutes etc. to milliseconds.    
 %%
+-spec seconds(non_neg_integer()) -> non_neg_integer().
 seconds(Seconds) ->
     1000*Seconds.
+-spec minutes(non_neg_integer()) -> non_neg_integer().
 minutes(Minutes) ->
     1000*60*Minutes.
+-spec hours(non_neg_integer()) -> non_neg_integer().
 hours(Hours) ->
     1000*60*60*Hours.
+-spec hms(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> non_neg_integer().
 hms(H, M, S) ->
     hours(H) + minutes(M) + seconds(S).
 
@@ -113,16 +137,19 @@ hms(H, M, S) ->
 %%
 
 %%   Start is only included because of backward compatibility!
+-spec start() -> 'ok'.
 start() ->
     ensure_started().
 
+-spec start_link() -> {'ok', pid()} | {'error', _}.
 start_link() ->
     gen_server:start_link({local, timer_server}, ?MODULE, [], []).    
 
+-spec init([]) -> {'ok', [], 'infinity'}.
 init([]) ->
     process_flag(trap_exit, true),
-    ets:new(?TIMER_TAB,[named_table,ordered_set,protected]),
-    ets:new(?INTERVAL_TAB,[named_table,protected]),
+    ?TIMER_TAB = ets:new(?TIMER_TAB, [named_table,ordered_set,protected]),
+    ?INTERVAL_TAB = ets:new(?INTERVAL_TAB, [named_table,protected]),
     {ok, [], infinity}.
 
 ensure_started() ->
@@ -155,7 +182,6 @@ handle_call({apply_after, {Time, Op}, Started}, _From, _Ts)
     ets:insert(?TIMER_TAB, Timer),
     Timeout = timer_timeout(system_time()),
     {reply, {ok, BRef}, [], Timeout};
-
 handle_call({apply_interval, {Time, To, MFA}, Started}, _From, _Ts) 
   when is_integer(Time), Time >= 0 ->
     %% To must be a pid or a registered name
@@ -175,7 +201,6 @@ handle_call({apply_interval, {Time, To, MFA}, Started}, _From, _Ts)
 	_ ->
 	    {reply, {error, badarg}, [], next_timeout()}
     end;
-
 handle_call({cancel, BRef = {_Time, Ref}, _}, _From, Ts) 
                                            when is_reference(Ref) ->
     delete_ref(BRef),
@@ -186,21 +211,22 @@ handle_call({apply_after, _, _}, _From, Ts) ->
     {reply, {error, badarg}, Ts, next_timeout()};
 handle_call({apply_interval, _, _}, _From, Ts) ->
     {reply, {error, badarg}, Ts, next_timeout()};
-handle_call(_Else, _From, Ts) ->			% Catch anything else
+handle_call(_Else, _From, Ts) ->		  % Catch anything else
     {noreply, Ts, next_timeout()}.
 
-handle_info(timeout, Ts) ->                     % Handle timeouts 
+handle_info(timeout, Ts) ->                       % Handle timeouts 
     Timeout = timer_timeout(system_time()),
     {noreply, Ts, Timeout};
-handle_info({'EXIT',  Pid, _Reason}, Ts) ->      % Oops, someone died
+handle_info({'EXIT',  Pid, _Reason}, Ts) ->       % Oops, someone died
     pid_delete(Pid),
     {noreply, Ts, next_timeout()};
-handle_info(_OtherMsg, Ts) ->                         % Other Msg's
+handle_info(_OtherMsg, Ts) ->                     % Other Msg's
     {noreply, Ts, next_timeout()}.
 
-handle_cast(_Req, Ts) ->                         % Not predicted but handled
+handle_cast(_Req, Ts) ->                          % Not predicted but handled
     {noreply, Ts, next_timeout()}.
 
+-spec terminate(_, _) -> 'ok'.
 terminate(_Reason, _State) ->
     ok.
 
@@ -277,7 +303,7 @@ next_timeout() ->
     case ets:first(?TIMER_TAB) of
 	'$end_of_table' -> 
 	    infinity;
-	{Time, _ } ->
+	{Time, _} ->
 	    min(positive((Time - system_time()) div 1000), ?MAX_TIMEOUT)
     end.
 

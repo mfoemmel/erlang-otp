@@ -41,7 +41,8 @@
 #define MIN_MBC_FIRST_FREE_SZ	(4*1024)
 
 /* Prototypes of callback functions */
-static Block_t *	get_free_block		(Allctr_t *, Uint);
+static Block_t *	get_free_block		(Allctr_t *, Uint,
+						 Block_t *, Uint);
 static void		link_free_block		(Allctr_t *, Block_t *);
 static void		unlink_free_block	(Allctr_t *, Block_t *);
 
@@ -103,20 +104,21 @@ erts_afalc_start(AFAllctr_t *afallctr,
 }
 
 static Block_t *
-get_free_block(Allctr_t *allctr, Uint size)
+get_free_block(Allctr_t *allctr, Uint size, Block_t *cand_blk, Uint cand_size)
 {
-    AFFreeBlock_t *res;
     AFAllctr_t *afallctr = (AFAllctr_t *) allctr;
 
+    ASSERT(!cand_blk || cand_size >= size);
+
     if (afallctr->free_list && BLK_SZ(afallctr->free_list) >= size) {
-	res = afallctr->free_list;	
+	AFFreeBlock_t *res = afallctr->free_list;	
 	afallctr->free_list = res->next;
 	if (res->next)
 	    res->next->prev = NULL;
+	return (Block_t *) res;
     }
     else
-	res = NULL;
-    return (Block_t *) res;
+	return NULL;
 }
 
 static void

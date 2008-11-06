@@ -23,6 +23,7 @@
 
 -include("file.hrl").
 
+-spec type() -> 'vxworks' | {'unix',atom()} | {'win32',atom()} | {'ose',atom()}.
 type() ->
     case erlang:system_info(os_type) of
 	{vxworks, _} ->
@@ -30,17 +31,18 @@ type() ->
 	Else -> Else
     end.
 
+-spec version() -> string() | {non_neg_integer(),non_neg_integer(),non_neg_integer()}.
 version() ->
     erlang:system_info(os_version).
 
--spec(find_executable/1 :: (string()) -> string() | 'false').
+-spec find_executable(string()) -> string() | 'false'.
 find_executable(Name) ->
     case os:getenv("PATH") of
 	false -> find_executable(Name, []);
 	Path  -> find_executable(Name, Path)
     end.
 
--spec(find_executable/2 :: (string(), string()) -> string() | 'false').
+-spec find_executable(string(), string()) -> string() | 'false'.
 find_executable(Name, Path) ->
     Extensions = extensions(),
     case filename:pathtype(Name) of
@@ -123,7 +125,7 @@ extensions() ->
     end.
 
 %% Executes the given command in the default shell for the operating system.
--spec(cmd/1 :: (atom() | string()) -> string()).
+-spec cmd(atom() | string() | [string()]) -> string().
 cmd(Cmd) ->
     validate(Cmd),
     case type() of

@@ -25,7 +25,7 @@
 %%    The NumberOfSpills is either 0 indicating no spill or the 
 %%    SpillIndex of the last spilled register.
 %%
-%%  mapmerge
+%%  mapmerge(Map, SpillMap) -> NewMap
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -37,8 +37,8 @@
 
 %%---------------------------------------------------------------------------
 
--type(dict()    :: tuple()).  % XXX: Temporarily
--type(gb_tree() :: tuple()).  % XXX: Temporarily
+-type dict()    :: tuple().  % XXX: Temporarily
+-type gb_tree() :: tuple().  % XXX: Temporarily
 
 %%---------------------------------------------------------------------------
 
@@ -53,9 +53,9 @@
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec(stackalloc/6 ::
-      (#cfg{}, [_], non_neg_integer(), comp_options(),
-       atom(), hipe_temp_map()) -> {hipe_spill_map(), non_neg_integer()}).
+-spec stackalloc(#cfg{}, [_], non_neg_integer(),
+		 comp_options(), atom(), hipe_temp_map()) ->
+                                {hipe_spill_map(), non_neg_integer()}.
  
 stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) ->
   case proplists:get_bool(spillmin_color, Options) of
@@ -83,7 +83,7 @@ stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) ->
 %% Combines the map with allocated spills with a map from the register
 %% allocator
 
--spec(mapmerge/2 :: (hipe_map(), hipe_spill_map()) -> hipe_map()).
+-spec mapmerge(hipe_map(), hipe_spill_map()) -> hipe_map().
 
 mapmerge(TempMap, SpillMap) ->
   mapmerge(TempMap, SpillMap, []).

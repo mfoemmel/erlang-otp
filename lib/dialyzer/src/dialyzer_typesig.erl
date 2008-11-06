@@ -53,7 +53,7 @@
 -record(fun_var, {'fun'  :: fun((_) -> any()), 
 		   deps  :: [integer()]}).
 
--type(type_or_fun_var() :: any()).
+-type type_or_fun_var() :: any().
 
 -record(constraint, {lhs   :: type_or_fun_var(),
 		     op    :: 'eq' | 'sub', 
@@ -66,7 +66,7 @@
 			  id    :: {'list', integer()}
 			 }).
 
--type(type_var() :: any()).
+-type type_var() :: any().
 
 -record(constraint_ref, {id    :: type_var(), 
 			 deps  :: [integer()]}).
@@ -130,12 +130,11 @@
 %%             about functions that can be called by this SCC.
 %%-----------------------------------------------------------------------------
 
--type(typesig_scc() :: [{mfa(), {_, _}, dict()}]).
--type(typesig_ret() :: [{mfa(),erl_type()}]).
+-type typesig_scc() :: [{mfa(), {_, _}, dict()}].
+-type typesig_ret() :: [{mfa(),erl_type()}].
 
--spec(analyze_scc/4 ::
-      (typesig_scc(), integer(), #dialyzer_callgraph{}, #dialyzer_plt{}) ->
-	 typesig_ret()).
+-spec analyze_scc(typesig_scc(), integer(), #dialyzer_callgraph{}, #dialyzer_plt{}) ->
+	 typesig_ret().
 
 analyze_scc(SCC, NextLabel, CallGraph, Plt) when is_integer(NextLabel) ->
   assert_format_of_scc(SCC),
@@ -146,9 +145,9 @@ assert_format_of_scc([{_MFA, {_Var, _Fun}, _Records}|Left]) ->
 assert_format_of_scc([]) ->
   ok.
 
--spec(analyze_scc_get_all_fun_types/5 ::
-      (typesig_scc(), integer(), #dialyzer_callgraph{}, 
-       #dialyzer_plt{}, dict()) -> dict()).
+-spec analyze_scc_get_all_fun_types(typesig_scc(), integer(),
+				    #dialyzer_callgraph{}, 
+				    #dialyzer_plt{}, dict()) -> dict().
 
 analyze_scc_get_all_fun_types(SCC, NextLabel, CallGraph, Plt, PropTypes) ->
   assert_format_of_scc(SCC),
@@ -763,7 +762,7 @@ handle_clauses_1([Clause|Tail], TopVar, Arg, DefinedVars,
 handle_clauses_1([], _TopVar, _Arg, _DefinedVars, State, _SubtrType, Acc) ->
   {state__new_constraint_context(State), Acc}.
 
--spec(get_safe_underapprox/2 :: ([_], core_tree()) -> erl_type()).
+-spec get_safe_underapprox([_], core_tree()) -> erl_type().
 
 get_safe_underapprox(Pats, Guard) ->
   try
@@ -1532,13 +1531,11 @@ get_apply_constr(FunLabels, Dst, ArgTypes, State = #state{callgraph=CG}) ->
   case lists:member(error, MFAs) of
     true -> error;
     false ->
-      MFAs1 = [X || {ok, X} <- MFAs],
-      Constrs =
-	lists:map(fun(MFA) ->
-		      State1 = state__new_constraint_context(State),
-		      State2 = get_plt_constr(MFA, Dst, ArgTypes, State1),
-		      state__cs(State2)
-		  end, MFAs1),
+      Constrs = [begin
+		   State1 = state__new_constraint_context(State),
+		   State2 = get_plt_constr(MFA, Dst, ArgTypes, State1),
+		   state__cs(State2)
+		 end || {ok, MFA} <- MFAs],
       ApplyConstr = mk_disj_constraint_list(Constrs),
       {ok, state__store_conj(ApplyConstr, State)}
   end.
@@ -1791,10 +1788,7 @@ mk_disj_norm_form(C = #constraint_list{}) ->
   end.
 
 expand_to_conjunctions(#constraint_list{type=conj, list=List}) ->
-  List1 = lists:filter(fun(#constraint{}) -> true;
-			  (#constraint_ref{}) -> true;
-			  (#constraint_list{}) -> false
-		       end, List),
+  List1 = [C || C <- List, is_simple_constraint(C)],
   List2 = [expand_to_conjunctions(C) || C = #constraint_list{} <- List],
   case List2 =:= [] of
     true -> [mk_conj_constraint_list(List1)];
@@ -1810,10 +1804,7 @@ expand_to_conjunctions(#constraint_list{type=disj, list=List}) ->
   if length(List) > ?DISJ_NORM_FORM_LIMIT -> throw(too_many_disj);
      true -> ok
   end,
-  List1 = lists:filter(fun(#constraint{}) -> true;
-			  (#constraint_ref{}) -> true;
-			  (#constraint_list{}) -> false
-		       end, List),
+  List1 = [C || C <- List, is_simple_constraint(C)],
   %% Just an assert.
   [] = [C || C=#constraint{} <- List1],
   Expanded = lists:flatten([expand_to_conjunctions(C) 
@@ -1823,6 +1814,10 @@ expand_to_conjunctions(#constraint_list{type=disj, list=List}) ->
      true -> ReturnList
   end.
 
+is_simple_constraint(#constraint{}) -> true;
+is_simple_constraint(#constraint_ref{}) -> true;
+is_simple_constraint(#constraint_list{}) -> false.
+
 combine_conj_lists([List1, List2|Left], Prefix) ->
   NewList = [mk_conj_constraint_list([L1, L2]) || L1 <- List1, L2 <- List2],
   if length(NewList) > ?DISJ_NORM_FORM_LIMIT -> throw(too_many_disj);
@@ -1831,8 +1826,6 @@ combine_conj_lists([List1, List2|Left], Prefix) ->
   combine_conj_lists([NewList|Left], Prefix);
 combine_conj_lists([List], Prefix) ->
   [mk_conj_constraint_list([mk_conj_constraint_list(Prefix), L]) || L <- List].
-  
-						  
 
 calculate_deps(List) ->
   calculate_deps(List, []).
@@ -1849,13 +1842,14 @@ mk_conj_constraint_list(List) ->
 mk_disj_constraint_list([NotReallyAList]) ->
   NotReallyAList;
 mk_disj_constraint_list(List) ->
-  %% Make sure all elements in the list is a conjunction or a
+  %% Make sure each element in the list is either a conjunction or a
   %% ref. Wrap single constraints into conjunctions.
-  List1 = lists:map(fun(C = #constraint{}) -> mk_conj_constraint_list([C]);
-		       (C = #constraint_list{}) -> C;
-		       (C = #constraint_ref{}) -> C
-		    end, List),
+  List1 = [wrap_simple_constr(C) || C <- List],
   mk_constraint_list(disj, List1).
+
+wrap_simple_constr(C = #constraint{}) -> mk_conj_constraint_list([C]);
+wrap_simple_constr(C = #constraint_list{}) -> C;
+wrap_simple_constr(C = #constraint_ref{}) -> C.
 
 enumerate_constraints(State) ->
   Cs = [mk_constraint_ref(Id, get_deps(state__get_cs(Id, State))) 

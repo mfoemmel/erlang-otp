@@ -629,7 +629,7 @@
 
   <section>
     <title>Inlining</title>
-    <p>The compiler can now do function inlining within an Erlang
+    <p>The compiler can do function inlining within an Erlang
       module. Inlining means that a call to a function is replaced with
       the function body with the arguments replaced with the actual
       values. The semantics are preserved, except if exceptions are
@@ -638,10 +638,11 @@
       <c>function_clause</c> exceptions will be converted to similar
       <c>case_clause</c> exceptions.</p>
 
-    <p>When a function is inlined, the original function may be kept
-      as a separate function as well, because there might still be calls
-      to it.  Therefore, inlining almost always increases code size.</p>
-
+    <p>When a function is inlined, the original function will be
+      kept if it is exported (either by an explicit export or if the
+      <c>export_all</c> option was given) or if not all calls to the
+      function were inlined.</p>
+    
     <p>Inlining does not necessarily improve running time.
       For instance, inlining may increase Beam stack usage which will
       probably be detrimental to performance for recursive functions.
@@ -651,9 +652,22 @@
       compiler option or a <c>-compile()</c> attribute in the source
       module.</p>
 
-    <p>To enable inlining, use the <c>inline</c> option.</p>
+    <p>To enable inlining, either use the <c>inline</c> option to
+    let the compiler decide which functions to inline or
+    <c>{inline,[{Name,Arity},...]}</c> to have the compiler inline
+    all calls to the given functions. If the option is given inside
+    a <c>compile</c> directive in an Erlang module, <c>{Name,Arity}</c>
+    may be written as <c>Name/Arity</c>.</p>
 
-    <p>Example:</p>
+    <p>Example of explicit inlining:</p>
+
+    <pre>
+-compile({inline,[pi/0]}).
+
+pi() -> 3.1416.
+    </pre>
+
+    <p>Example of implicit inlining:</p>
     <pre>
 -compile(inline).
     </pre>

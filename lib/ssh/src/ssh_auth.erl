@@ -161,8 +161,6 @@ handle_userauth_request(#ssh_msg_userauth_request{user = User,
 	    {authorized, User,
 	     ssh_transport:ssh_packet(#ssh_msg_userauth_success{}, Ssh)};
 	false  ->
-	    Report = io_lib:format("Bad password for user ~p~n", [User]),
-	    error_logger:info_report(Report),
 	    {not_authorized, {User, {passwd, Password}}, 
 	     ssh_transport:ssh_packet(#ssh_msg_userauth_failure{
 		     authentications = "",
@@ -173,10 +171,7 @@ handle_userauth_request(#ssh_msg_userauth_request{user = User,
 						  service = "ssh-connection",
 						  method = "none"}, _,
 			#ssh{userauth_supported_methods = Methods} = Ssh) ->
-    Report = io_lib:format("All authorization methods failed for ~p~n", 
-			   [User]),
-    error_logger:info_report(Report),
-    {not_authorized, {User, {error, Report}},
+    {not_authorized, {User, undefined},
      ssh_transport:ssh_packet(
        #ssh_msg_userauth_failure{authentications = Methods,
 				 partial_success = false}, Ssh)};
@@ -198,9 +193,6 @@ handle_userauth_request(#ssh_msg_userauth_request{user = User,
 		     ssh_transport:ssh_packet(
 		       #ssh_msg_userauth_success{}, Ssh)};
 		{error, Reason} ->
-		    Report = io_lib:format("~p failed to login: ~p~n", 
-					   [User, Reason]),
-		    error_logger:error_report(Report),
 		    {not_authorized, {User, {error, Reason}}, 
 		     ssh_transport:ssh_packet(#ssh_msg_userauth_failure{
 			     authentications="publickey,password",
@@ -218,9 +210,6 @@ handle_userauth_request(#ssh_msg_userauth_request{user = User,
 						  service = "ssh-connection",
 						  method = Other}, _,
 			#ssh{userauth_supported_methods = Methods} = Ssh) ->
-    Report = io_lib:format("Unspported authentication method ~p was"
-			   " requested ~n", [Other]),
-    error_logger:info_report(Report),
     {not_authorized, {User, {authmethod, Other}}, 
      ssh_transport:ssh_packet(
        #ssh_msg_userauth_failure{authentications = Methods,
@@ -302,7 +291,7 @@ user_name(Opts) ->
     end.
 
 check_password(User, Password, Opts) ->
-    io:format(" ~p ~p ~p ~n", [User, Password, Opts]),
+    ?dbg(true, " ~p ~p ~p ~n", [User, Password, Opts]),
     case proplists:get_value(pwdfun, Opts) of
 	undefined ->
 	    Static = get_password_option(Opts, User),

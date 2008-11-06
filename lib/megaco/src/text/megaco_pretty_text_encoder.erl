@@ -172,7 +172,6 @@ decode_message([{version3,prev3c}], _, Bin) when is_binary(Bin) ->
 	    parse_error(Reason, Line, [], Bin)
     end;
 decode_message([{version3,prev3b}], _, Bin) when is_binary(Bin) ->
-
     case megaco_text_scanner:scan(Bin) of
 	{ok, Tokens, 1, _LastLine} ->
 	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
@@ -336,19 +335,29 @@ decode_mini_message(EC, _, Bin) when is_binary(Bin) ->
 
 
 parse_error(Reason, Tokens, Chars) ->
-    %% io:format("parse_error -> entry with"
-    %%           "~n   Reason: ~p"
-    %% 	         "~n   Tokens: ~p"
-    %% 	         "~n", [Reason, Tokens]),
-    {error, [{reason, Reason}, {token, Tokens}, {chars, Chars}]}.
+%%     io:format("parse_error -> entry with"
+%%               "~n   Reason: ~p"
+%% 	      "~n   Tokens: ~p"
+%% 	      "~n", [Reason, Tokens]),
+    case Reason of
+	"bad_property_parm: " ++ NewReason ->
+	    {error, {bad_property_parm, NewReason}};
+	_ ->
+	    {error, [{reason, Reason}, {token, Tokens}, {chars, Chars}]}
+    end.
 
 parse_error(Reason, Line, Tokens, Chars) ->
-    %% io:format("parse_error -> entry with"
-    %% 	         "~n   Reason: ~p"
-    %% 	         "~n   Line:   ~p"
-    %% 	         "~n   Tokens: ~p"
-    %% 	         "~n", [Reason, Line, Tokens]),
-    {error, [{reason, Reason, Line}, {token, Tokens}, {chars, Chars}]}.
+%%     io:format("parse_error -> entry with"
+%%     	         "~n   Reason: ~p"
+%%     	         "~n   Line:   ~p"
+%%     	         "~n   Tokens: ~p"
+%%     	         "~n", [Reason, Line, Tokens]),
+    case Reason of
+	"bad_property_parm: " ++ NewReason ->
+	    {error, {bad_property_parm, NewReason}};
+	_ ->
+	    {error, [{reason, Reason, Line}, {token, Tokens}, {chars, Chars}]}
+    end.
 
 
 %%----------------------------------------------------------------------
@@ -565,3 +574,22 @@ token_tag2string(Tag, _Vsn) ->
 %% d(_, _, _) ->
 %%     ok.
 
+%% p(F, A) ->
+%%     io:format("*** [~s] ***"
+%% 	      "~n   " ++ F ++ "~n", [formated_timestamp() | A]),
+%%     sleep(5000),
+%%     ok.
+
+%% sleep(X) -> receive after X -> ok end.
+
+%% formated_timestamp() ->
+%%     format_timestamp(now()).
+
+%% format_timestamp({_N1, _N2, N3}   = Now) ->
+%%     {Date, Time}   = calendar:now_to_datetime(Now),
+%%     {YYYY,MM,DD}   = Date,
+%%     {Hour,Min,Sec} = Time,
+%%     FormatDate =
+%%         io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+%%                       [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),
+%%     lists:flatten(FormatDate).

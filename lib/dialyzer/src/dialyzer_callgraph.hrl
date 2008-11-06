@@ -46,11 +46,11 @@
 %%		   whenever applicable.
 %%-----------------------------------------------------------------------------
 
--type(digraph() :: any()).
+-type digraph() :: any().
 
 %% in the following type, integers represent labels of funs
--type(mfa_or_funlbl() :: integer() | mfa()).
--type(scc()	      :: [mfa_or_funlbl()]).
+-type mfa_or_funlbl() :: integer() | mfa().
+-type scc()	      :: [mfa_or_funlbl()].
 
 -record(dialyzer_callgraph, {digraph        :: digraph(),
 			     esc            :: set(),

@@ -25,6 +25,8 @@
 	 send/3, controlling_process/3, setopts/3,
 	 peername/2, resolve/0]).
 
+-export([negotiate/3]).
+
 %%%=========================================================================
 %%%  Internal application API
 %%%=========================================================================
@@ -47,8 +49,6 @@ start(ip_comm) ->
 start({ssl, _}) ->
     case ssl:start() of
 	ok ->
-	    ok;
-	{ok, _} ->
 	    ok;
 	{error, {already_started,_}} ->
 	    ok;
@@ -151,7 +151,7 @@ accept(SocketType, ListenSocket) ->
 accept(ip_comm, ListenSocket, Timeout) ->
     gen_tcp:accept(ListenSocket, Timeout);
 accept({ssl,_SSLConfig}, ListenSocket, Timeout) ->
-    ssl:accept(ListenSocket, Timeout).
+    ssl:transport_accept(ListenSocket, Timeout).
 
 %%-------------------------------------------------------------------------
 %% controlling_process(SocketType, Socket, NewOwner) -> ok | {error, Reason}
@@ -290,4 +290,20 @@ has_inet6_supported() ->
 	{ok,_} -> yes;
 	_ ->
 	    no
+    end.
+
+negotiate(ip_comm,_,_) ->
+    ok;
+negotiate({ssl,_},Socket,Timeout) ->
+    case ssl:ssl_accept(Socket,Timeout) of
+	ok ->
+	    ok;
+	{error, Error} ->
+	    case lists:member(Error,
+			      [timeout,econnreset,esslaccept,esslerrssl]) of
+		true ->
+		    {error,normal};
+		false ->
+		    {error, Error}
+           end
     end.

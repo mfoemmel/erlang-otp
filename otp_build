@@ -831,21 +831,15 @@ case "$1" in
 		shift;
 		if [ $minus_a_flag = true ]; then 
 		    shift
-		else
-		    TYPE=opt
 		fi;
-		FLAVOR=plain
 		do_autoconf; 
 		do_configure "$@";
 		do_noboot_lib_and_erts;;
 	lazy_setup)
 		shift;
-		if [ $minus_a_flag = true ]; then
+		if [ $minus_a_flag = true ]; then 
 		    shift
-		else
-		    TYPE=opt
 		fi;
-		FLAVOR=plain
 		do_lazy_configure "$@";
 		do_noboot_lib_and_erts;;
 	autoconf)
@@ -862,7 +856,9 @@ case "$1" in
 	lazy_configure_target_clean)
 		shift;
 		do_lazy_configure_target_clean;;
-	opt|plain|smp|hybrid|nofrag)
+	opt)
+		do_noboot_lib_and_erts;;
+	plain|smp|hybrid|nofrag)
 		if [ $minus_a_flag = false ]; then 
 		    TYPE=opt
 		fi;

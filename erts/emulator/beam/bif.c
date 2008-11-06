@@ -198,7 +198,7 @@ BIF_RETTYPE link_1(BIF_ALIST_1)
 		    erts_suspend(BIF_P,
 				 ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
 				 dod.dprt);
-		    ERTS_BIF_PREP_ERROR(ret, BIF_P, RESCHEDULE);
+		    ERTS_BIF_PREP_YIELD1(ret, bif_export[BIF_link_1], BIF_P, BIF_ARG_1);
 		}
 		else {
 		    ERTS_BIF_PREP_TRAP1(ret, dlink_trap, BIF_P, BIF_ARG_1);
@@ -330,7 +330,7 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
        }
        /* Soft (no force) send, use ->data in dist slot 
 	* monitor list since in case of monitor name 
-	* the atom is stored there. Reschedule if necessary.
+	* the atom is stored there. Yield if necessary.
 	*/
        code = erts_dist_demonitor(&dod,
 				  BIF_P->id, 
@@ -340,7 +340,7 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
 	   erts_suspend(BIF_P,
 			ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
 			dod.dprt);
-	   ERTS_BIF_PREP_ERROR(res, BIF_P, RESCHEDULE);
+	   ERTS_BIF_PREP_YIELD1(res, bif_export[BIF_demonitor_1], BIF_P, BIF_ARG_1);
 	   goto error;
        }
        mon = erts_remove_monitor(&BIF_P->monitors, ref);
@@ -458,7 +458,7 @@ erts_queue_monitor_message(Process *p,
 
 #define MONITOR_RESULT_OK 0
 #define MONITOR_RESULT_BADARG -1
-#define MONITOR_RESULT_RESCHEDULE -2
+#define MONITOR_RESULT_YIELD -2
 #define MONITOR_RESULT_NOTALIVE -3
 #define MONITOR_RESULT_TRAP -4
 
@@ -594,7 +594,7 @@ remote_monitor(Process *p, DistEntry *dep, Eterm target, Eterm *res, int byname)
 	    /* cleanup and do it all over again when port is not busy... */
 	    (void) cleanup_remote_monitor(p, dep, *res);
 	    erts_suspend(p, p_locks, dod.dprt);
-	    ret = MONITOR_RESULT_RESCHEDULE;
+	    ret = MONITOR_RESULT_YIELD;
 	} else if (code < 0) {
 	    (void) cleanup_remote_monitor(p, dep, *res);
 	    ret = MONITOR_RESULT_NOTALIVE;
@@ -690,8 +690,8 @@ BIF_RETTYPE monitor_2(BIF_ALIST_2)
 	BIF_RET(result);
     case MONITOR_RESULT_BADARG:
 	BIF_ERROR(BIF_P,BADARG);
-    case MONITOR_RESULT_RESCHEDULE:
-	BIF_ERROR(BIF_P, RESCHEDULE);
+    case MONITOR_RESULT_YIELD:
+	ERTS_BIF_YIELD2(bif_export[BIF_monitor_2], BIF_P, BIF_ARG_1, BIF_ARG_2);
     case MONITOR_RESULT_NOTALIVE:
 	BIF_ERROR(BIF_P, EXC_NOTALIVE);
     case MONITOR_RESULT_TRAP:
@@ -926,7 +926,7 @@ BIF_RETTYPE unlink_1(BIF_ALIST_1)
 	    if (is_internal_port(dep->cid)) {
 		erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dod.dprt);
 		erts_dist_op_finalize(&dod);
-		BIF_ERROR(BIF_P, RESCHEDULE);
+		ERTS_BIF_YIELD1(bif_export[BIF_unlink_1], BIF_P, BIF_ARG_1);
 	    }
 	    else {
 		goto do_trap;
@@ -1214,7 +1214,8 @@ BIF_RETTYPE exit_2(BIF_ALIST_2)
 	     if (code == 1) {
 		 if (is_internal_port(dep->cid)) {
 		     erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dod.dprt);
-		     ERTS_BIF_PREP_ERROR(ret, BIF_P, RESCHEDULE);
+		     ERTS_BIF_PREP_YIELD2(ret, bif_export[BIF_exit_2],
+					  BIF_P, BIF_ARG_1, BIF_ARG_2);
 		 }
 		 else
 		     ERTS_BIF_PREP_RET(ret, am_true);
@@ -1525,7 +1526,7 @@ ebif_bang_2(Process* p, Eterm To, Eterm Message)
  * Returns non-negative reduction bump or negative result code.
  */
 #define SEND_TRAP       (-1)
-#define SEND_RESCHEDULE (-2)
+#define SEND_YIELD      (-2)
 #define SEND_BADARG     (-3)
 #define SEND_USER_ERROR (-4)
 
@@ -1585,7 +1586,7 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 			monitor_generic(p, am_busy_dist_port, dep->cid);
 		    }
 		}
-		res = SEND_RESCHEDULE;
+		res = SEND_YIELD;
 	    }
 	    else {
 		res = SEND_TRAP;
@@ -1693,7 +1694,7 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	    	profile_runnable_port(pt, am_inactive);
 	    }
 	    erts_port_release(pt);
-	    return SEND_RESCHEDULE;
+	    return SEND_YIELD;
 	}
 	
 	if (IS_TRACED(p)) 	/* trace once only !! */
@@ -1801,7 +1802,7 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 			monitor_generic(p, am_busy_dist_port, dep->cid);
 		    }
 		}
-		ret = SEND_RESCHEDULE;
+		ret = SEND_YIELD;
 	    }
 	    else {
 		ret = SEND_TRAP;
@@ -1888,9 +1889,9 @@ send_3(Process *p, Eterm to, Eterm msg, Eterm opts) {
 	    BIF_RET(am_noconnect);
 	}
 	break;
-    case SEND_RESCHEDULE:
+    case SEND_YIELD:
 	if (suspend) {
-	    BIF_ERROR(p, RESCHEDULE);
+	    ERTS_BIF_YIELD3(bif_export[BIF_send_3], p, to, msg, opts);
 	} else {
 	    BIF_RET(am_nosuspend);
 	}
@@ -1923,8 +1924,8 @@ send_2(Process *p, Eterm to, Eterm msg) {
     case SEND_TRAP:
 	BIF_TRAP2(dsend2_trap, p, to, msg); 
 	break;
-    case SEND_RESCHEDULE:
-	BIF_ERROR(p, RESCHEDULE); 
+    case SEND_YIELD:
+	ERTS_BIF_YIELD2(bif_export[BIF_send_2], p, to, msg);
 	break;
     case SEND_BADARG:
 	BIF_ERROR(p, BADARG); 
@@ -2991,10 +2992,10 @@ BIF_RETTYPE garbage_collect_1(BIF_ALIST_1)
 
     rp = erts_pid2proc_not_running(BIF_P, ERTS_PROC_LOCK_MAIN,
 				   BIF_ARG_1, ERTS_PROC_LOCK_MAIN);
-    if (!rp) {
-	ERTS_SMP_BIF_CHK_RESCHEDULE(BIF_P);
+    if (!rp)
 	BIF_RET(am_false);
-    }
+    if (rp == ERTS_PROC_LOCK_BUSY)
+	ERTS_BIF_YIELD1(bif_export[BIF_garbage_collect_1], BIF_P, BIF_ARG_1);
 
     /* The GC cost is taken for the process executing this BIF. */
 
@@ -3481,7 +3482,8 @@ BIF_RETTYPE group_leader_2(BIF_ALIST_2)
 						BIF_ARG_2)) == 1) {
 	    if (is_internal_port(dep->cid)) {
 		erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dod.dprt);
-		ERTS_BIF_PREP_ERROR(ret, BIF_P, RESCHEDULE);
+		ERTS_BIF_PREP_YIELD2(ret, bif_export[BIF_group_leader_2],
+				     BIF_P, BIF_ARG_1, BIF_ARG_2);
 	    }
 	    else
 		goto dist_trap;
@@ -3536,8 +3538,13 @@ BIF_RETTYPE system_flag_2(BIF_ALIST_2)
 						      ERTS_PROC_LOCK_MAIN,
 						      BIF_ARG_2 == am_block,
 						      0);
-		ERTS_SMP_BIF_CHK_RESCHEDULE(BIF_P);
-		BIF_RET(blocked ? am_blocked : am_enabled);
+		if (blocked == 0)
+		    BIF_RET(am_enabled);
+		else if (blocked > 0)
+		    BIF_RET(am_blocked);
+		else /*  if (blocked < 0) */
+		    ERTS_BIF_YIELD2(bif_export[BIF_system_flag_2], BIF_P,
+				    BIF_ARG_1, BIF_ARG_2);
 	    }
 #endif
 	}

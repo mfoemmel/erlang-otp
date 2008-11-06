@@ -120,7 +120,8 @@ remove_external(CallGraph, PLT) ->
   StrippedCG = dialyzer_callgraph:finalize(StrippedCG0),
   case get_external(Ext, PLT) of
     [] -> ok; 
-    Externals -> io:format(" Unknown functions: ~p\n", [lists:usort(Externals)])
+    Externals ->
+      msg(io_lib:format(" Unknown functions: ~p\n", [lists:usort(Externals)]))
   end,
   StrippedCG.
 
@@ -144,7 +145,7 @@ get_external(Exts, Plt) ->
 -spec error(string()) -> no_return().
 
 error(Slogan) ->
-  io:format("typer: ~s\n", [Slogan]),
+  msg(io_lib:format("typer: ~s\n", [Slogan])),
   erlang:halt(1).
 
 %%--------------------------------------------------------------------
@@ -156,5 +157,22 @@ compile_error(Reason) ->
   Msg = io_lib:format("analysis failed with error report:\n~s",
 		      [JoinedString]),
   error(Msg).
+
+%%--------------------------------------------------------------------
+%% Outputs a message on 'stderr', if possible.
+%%--------------------------------------------------------------------
+
+-spec msg(string()) -> 'ok'.
+
+msg(Msg) ->
+  case os:type() of
+    {unix, _} ->
+      P = open_port({fd,0,2}, [out]),
+      port_command(P, Msg),
+      true = port_close(P),
+      ok;
+    _ ->  % win32, vxworks
+      io:format("~s", [Msg])
+  end.
 
 %%--------------------------------------------------------------------

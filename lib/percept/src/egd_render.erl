@@ -24,18 +24,12 @@
 
 -export([binary/1, binary/2]).
 -compile(inline).
+-compile(export_all).
 
 -include("egd.hrl").
+-define('DummyC',0).
 
-%% Definitions
-%-type(line_span_data() :: {
-%	Z  	:: integer(), 
-%	X0 	:: integer(), 
-%	X1 	:: integer(), 
-%	Color 	:: rgba_float()}).
-
-binary(Image) -> 
-    binary(Image, opaque).
+binary(Image) -> binary(Image, opaque).
 
 binary(Image, Type) ->
     parallel_binary(Image,Type).
@@ -74,11 +68,11 @@ do_parallel_binary(Image, {Hu, Hl}, Type, Pid) ->
 scanlines({Y,Y}, _, _,_, Scanlines) -> Scanlines;
 scanlines({Yi,Y}, Os, {_,_,Width,_}=LSB, Type, Scanlines) ->
     OLSs = parse_objects_on_line(Y-1, Width, Os),
-    URLSs = resulting_line_spans(lists:reverse([LSB|OLSs]),Type, []),
+    URLSs = resulting_line_spans([LSB|OLSs],Type),
 
     % FIXME: Can we keep the list sorted instead of sorting it?
     % sort descending
-    RLSs = lists:sort(fun ({_,A,_,_}, {_,B,_,_}) -> if A < B -> false; true -> true end end, URLSs),
+    RLSs = lists:reverse(URLSs),
 
     Scanline = resulting_scanline(RLSs,Width),
 
@@ -92,191 +86,87 @@ resulting_scanline([{_,Xl, Xr, C} | RLSs], Width, Scanlines) ->
     Scanline = lists:duplicate(trunc(Xr - Xl + 1), <<R:8,G:8,B:8>>),
     resulting_scanline(RLSs, Width, [Scanline|Scanlines]).
 
-%print_line_spans([]) -> io:format("~n"), ok;
-%print_line_spans([{_,Xl,Xr,_}|LSs]) ->
-%    io:format("[~p,~p]", [Xl,Xr]),
-%    print_line_spans(LSs).
+resulting_line_spans(LSs,Type) ->
+    %% Build a list of "transitions" from left to right.
+    Trans = line_spans_to_trans(LSs),
+    %% Convert list of "transitions" to linespans.
+	trans_to_line_spans(Trans,Type).
 
-%check_binary(Bin, {_,_,W, _}) ->
-%   Size = erlang:size(erlang:list_to_binary(Bin)),
-%   ScanlineWidth = trunc(Size/3),
-%   if 
-%   	ScanlineWidth =/= W + 1 ->
-%	    io:format("check_binary: Image width ~p vs. Scanline width ~p~n", [W+1,ScanlineWidth]),
-%	    throw(bad_binary);
-%	true -> ok
-%   end.
+line_spans_to_trans(LSs) ->
+    Trans = [],
+    line_spans_to_trans(LSs,Trans,0).
 
-%check_line_spans([]) -> ok;
-%check_line_spans([_]) -> ok; 
-%check_line_spans([LSa, LSb | LSs]) ->
-%    {_,Xal,_Xar,_} = LSa,
-%    {_,_Xbl,Xbr,_} = LSb,
-%    Overlap = do_lines_overlap(LSa,LSb),
-%    LLSa = ls_length(LSa),
-%    LLSb = ls_length(LSb),
-%
-%    if
-%	LLSa < 0 ->
-%	    io:format("check_line_spans:~p ~n", [Overlap]),
-%	    debug_print_ls_states([{ls_left, LSa},{ls_right, LSb}]),
-%	    throw({bad_length, ls_left});
-%	LLSb < 0 ->
-%	    io:format("check_line_spans:~p ~n", [Overlap]),
-%	    debug_print_ls_states([{ls_left, LSa},{ls_right, LSb}]),
-%	    throw({bad_length, ls_right});
-%    	Overlap =/= false ->
-%	    io:format("check_line_spans:~p ~n", [Overlap]),
-%	    debug_print_ls_states([{ls_left, LSa},{ls_right, LSb}]),
-%	    throw(overlap_error);
-%	Xal - Xbr =/= 1 ->	
-%	    io:format("check_line_spans:~p~n", [Overlap]),
-%	    debug_print_ls_states([{ls_left, LSa},{ls_right, LSb}]),
-%	    throw(contiuation_error);
-%	true -> check_line_spans([LSb|LSs])
-%    end.
+line_spans_to_trans([],Db,_) ->
+    lists:sort(Db);
+line_spans_to_trans([{_,L,R,C}|LSs],Db,Z) ->
+    line_spans_to_trans(LSs,[{{L,Z,start},C},{{R+1,Z,stop},C}|Db],Z+1).
 
-% resulting_line_spans
-% In:
-%	LineIntervals = [line_span_data()]
-% Out:
-%	LineIntervals
-% Purpose:
-%	Reduce line spans. This function handles the overlapping color spans on a line.
-%	Måste troligen ha en sorterad lista med object, där översta objecte ligger först i stacken.
-%	FÖr varje object måste man titta under och se vilka den överlappar och antingen,
-%	1) simple
-%		Ta bort de som täcks eller dela upp underliggande span från det överlappande.
-%	2) alpha
-%		todo...
+trans_to_line_spans(Trans,Type) ->
+    trans_to_line_spans(simplify_trans(Trans,Type,[],{0,0,0,0},[])).
 
-resulting_line_spans([], _, MLSs) -> MLSs;
-resulting_line_spans([LS|LSs], Type, MLSs) ->
-    resulting_line_spans(LSs, Type, merge_line_spans(LS, MLSs, Type)).
+trans_to_line_spans(SimpleTrans) ->
+    trans_to_line_spans1(SimpleTrans,[]).
 
+trans_to_line_spans1([],Spans) ->
+    Spans;
+trans_to_line_spans1([_],Spans) ->
+    Spans;
+trans_to_line_spans1([{L1,_},{L2,C2}|SimpleTrans],Spans) ->
+    %% We are going backwards now...
+    trans_to_line_spans1([{L2,C2}|SimpleTrans],[{?DummyC,L2,L1-1,C2}|Spans]).
 
-% merge_line_spans
-% In: merge_line_spans/3
-%	CLS :: line_span_data(), current line span
-%	MLSs :: [line_span_data()] (non overlapping, continious, unsorted)
-%	Type :: alpha | opaque (render engine, color blending or not)
-% In: merge_line_spans/3
-%	 CLSs :: [line_span_data()], current line spans
-%	LMLSs :: [line_span_data()], left merged line spans (iter)
-%	RMLSs :: [line_span_data()], right merged line spans (iter)
-%	Type :: alpha | opaque (render engine, color blending or not)
-% Out:
-%	[line_span_data()] (non overlapping, continious, unsorted)
-% Purpose:
-%	Entwines color intervals with non overlapping color intervals,
-%	Remember: CLS may split and become several CLSs (at least two) -> handle it.
-
-% OK, here we go!
-merge_line_spans(CLS, MLSs, Type) ->
-    merge_line_spans([CLS], [], MLSs, Type). 	% init
-merge_line_spans(CLS, [], [], _Type) -> 
-    CLS; % If it is the first line span of MLSs
-merge_line_spans(CLSs, MLSs, [], _Type) -> 
-    lists:flatten([CLSs|MLSs]);   % Here we have iterated through all MLSs; add CLSs.
-merge_line_spans([], LMLSs, RMLSs, _Type) -> 
-    lists:flatten([LMLSs|RMLSs]); % FIXME: optimize? all CLSs is shadowed (in opaque)
-merge_line_spans(CLSs, LMLSs, [ILS|RMLSs], Type) -> 
-    merge_line_spans([], CLSs, LMLSs, ILS, RMLSs, Type).
-
-merge_line_spans(LCLSs, [], LMLSs, ILS, RMLSs, Type) -> 
-    merge_line_spans(LCLSs, [ILS|LMLSs], RMLSs, Type);
-merge_line_spans(LCLSs, [{Zc,Xcl,Xcr,Cc}=CLS|RCLSs], LMLSs, {_Zi,Xil,Xir,_Ci}=ILS, RMLSs, opaque) ->
-    % Compare the current line span with the iterating one and see if
-    % something shines through the overlapping object.
-    % Think: How does each RMLS affect the CLS object if they overlap?
-
-    %  ILS ------------ (upper)
-    %  CLS ------------ (lower)
-    case do_lines_overlap(CLS,ILS) of
-	% the current line span is ...
-	left_partial -> % cut it
-	    CLS0 = {Zc, Xcl, Xil - 1, Cc},
-	    merge_line_spans([CLS0|LCLSs], RCLSs, LMLSs, ILS, RMLSs, opaque);
-	right_partial -> % cut it
-	    CLS0 = {Zc, Xir + 1, Xcr, Cc},
-	    merge_line_spans([CLS0|LCLSs], RCLSs, LMLSs, ILS, RMLSs, opaque);
-	outspaced -> % split and cut it
-	    CLS0l = {Zc, Xcl, Xil - 1, Cc},
-	    CLS0r = {Zc, Xir + 1, Xcr, Cc},
-	    % Are we not supposed to put CLS0r in RCLSs to view it with other
-	    % MLSs? Seems to work now though...
-	    merge_line_spans([CLS0l, CLS0r | LCLSs], RCLSs, LMLSs, ILS, RMLSs, opaque);
-	shadowed -> % drop it
-	    merge_line_spans(LCLSs, RCLSs, LMLSs, ILS, RMLSs, opaque);
-	false -> 
-	    merge_line_spans([CLS|LCLSs], RCLSs, LMLSs, ILS, RMLSs, opaque) % do the same for the next CLS
-    end;
-merge_line_spans(LCLSs, [{Zc,Xcl,Xcr,Cc}=CLS|RCLSs], LMLSs, {Zi,Xil,Xir,Ci}=ILS, RMLSs, alpha) ->
-    %  ILS ------------ (upper)
-    %  CLS ------------ (lower)
-    case do_lines_overlap(CLS,ILS) of
-	% the current line span is ...
-	left_partial -> % cut it
-	    if 
-	    	Xir > Xcr ->
-	    	CLS0 = {Zc, Xcl, Xil - 1, Cc},              % Cut current line span
-	    	ALS  = {Zi, Xil, Xcr, alpha_blend(Ci,Cc)},  % alphalized part of iterating line span
-	    	ILS0 = {Zi, Xcr + 1, Xir, Ci},              % Cut part of iterating line span
-%	        ok = check_line_spans([ILS0, ALS, CLS0]), 
-	    	merge_line_spans([CLS0|LCLSs], RCLSs, LMLSs, ALS, [ILS0|RMLSs], alpha);
-	    true ->
-	    	CLS0 = {Zc, Xcl, Xil - 1, Cc},              % Cut current line span
-	    	ALS  = {Zi, Xil, Xcr, alpha_blend(Ci,Cc)},  % alphalized part of iterating line span
-%	        ok = check_line_spans([ALS, CLS0]), 
-	    	merge_line_spans([CLS0|LCLSs], RCLSs, LMLSs, ALS, RMLSs, alpha)
-	    end;
-	right_partial -> % cut it
-	    if 
-	    Xil < Xcl ->
-	    	ILS0 = {Zi, Xil, Xcl - 1, Ci},              % Cut part of iterating line span
-	    	ALS  = {Zi, Xcl, Xir, alpha_blend(Ci,Cc)},  % alphalized part of iterating line span
-	    	CLS0 = {Zc, Xir + 1, Xcr, Cc},              % Cut current line span
-%	        ok = check_line_spans([CLS0, ALS, ILS0]), 
-	    	merge_line_spans([CLS0|LCLSs], RCLSs, LMLSs, ILS0, [ALS|RMLSs],alpha);
-	    true ->
-	    	ALS  = {Zi, Xcl, Xir, alpha_blend(Ci,Cc)},  % alphalized part of iterating line span
-	    	CLS0 = {Zc, Xir + 1, Xcr, Cc},              % Cut current line span
-%	        ok = check_line_spans([CLS0, ALS]), 
-	    	merge_line_spans([CLS0|LCLSs], RCLSs, LMLSs, ALS, RMLSs, alpha)
-	    end;
-	outspaced -> % split and cut it
-	    CLS0l = {Zc, Xcl, Xil - 1, Cc},
-	    ALS   = {Zi, Xil, Xir, alpha_blend(Ci,Cc)},
-	    CLS0r = {Zc, Xir + 1, Xcr, Cc},
-%	    ok = check_line_spans([CLS0r, ALS, CLS0l]), 
-	    merge_line_spans([CLS0l,CLS0r | LCLSs], RCLSs, LMLSs, ALS, RMLSs, alpha);
-	shadowed -> % dont drop it, alpha it
-	    if 
-	    Xil == Xcl , Xir == Xcr ->
-		ALS = {Zi, Xil, Xir, alpha_blend(Ci,Cc)},
-	        merge_line_spans(LCLSs, RCLSs, LMLSs, ALS, RMLSs, alpha);
-	    Xil == Xcl ->
-		ALS  = {Zi, Xil, Xcr, alpha_blend(Ci,Cc)},
-		ILSr = {Zi, Xcr + 1, Xir, Ci},
-%	        ok = check_line_spans([ILSr, ALS]), 
-	        merge_line_spans(LCLSs, RCLSs, LMLSs, ALS, [ILSr|RMLSs], alpha);
-	    Xir == Xcr ->
-	        ILSl = {Zi, Xil, Xcl - 1, Ci},
-	        ALS   = {Zi, Xcl, Xcr, alpha_blend(Ci,Cc)},
-%	        ok = check_line_spans([ALS,ILSl]), 
-	        merge_line_spans(LCLSs, RCLSs, LMLSs, ILSl, [ALS|RMLSs], alpha);
-	    true ->
-	        ILS0l = {Zi, Xil, Xcl - 1, Ci},
-	        ALS   = {Zc, Xcl, Xcr, alpha_blend(Ci,Cc)},
-	        ILS0r = {Zi, Xcr + 1, Xir, Ci},
-%	        ok = check_line_spans([ILS0r, ALS, ILS0l]), 
-	        merge_line_spans(LCLSs, RCLSs, LMLSs, ILS0l, [ILS0r,ALS|RMLSs], alpha)
-	    end;
-	false -> 
-	    merge_line_spans([CLS|LCLSs], RCLSs, LMLSs, ILS, RMLSs, alpha) % do the same for the next CLS
+simplify_trans([],_,_,_,Acc) ->
+    Acc;
+simplify_trans([{{L,_,_},_}|_] = Trans,Type,Layers,OldC,Acc) ->
+    {NextTrans,RestTrans} =
+	lists:splitwith(fun({{L1,_,_},_}) when L1 == L ->
+				true;
+			   (_) ->
+				false
+			end, Trans),
+    {C,NewLayers} = color(NextTrans,Layers,Type,OldC),
+    case OldC of
+        C -> %% No change in color, so transition unnecessary.
+            simplify_trans(RestTrans,Type,NewLayers,OldC,Acc);
+        _ ->
+            simplify_trans(RestTrans,Type,NewLayers,C,[{L,C}|Acc])
     end.
 
+color(Trans,Layers,Type,OldC) ->
+    case modify_layers(Layers,Trans) of
+        Layers ->
+            {OldC,Layers};
+        NewLayers ->
+            {color(NewLayers,Type),NewLayers}
+    end.
 
+color([],_) -> {0,0,0,0};
+color([{_,C}|_],opaque) -> C;    
+color(Layers,alpha) -> color1({0,0,0,0},Layers).
+
+color1(Color,[]) -> Color;
+color1(Color,[{_,C}|Layers]) -> color1(blend(Color,C),Layers).
+
+blend(C1,C2) -> alpha_blend(C1,C2).
+
+modify_layers(Layers,[]) -> Layers;
+modify_layers(Layers,[{{_,Z,Op},C}|Trans]) ->
+    modify_layers(case Op of
+		      start ->
+			  add_layer(Layers,Z,C);
+		      stop ->
+			  remove_layer(Layers,Z,C)
+		  end,
+		  Trans).
+
+add_layer([{Z1,_}=H|Layers],Z,C) when Z1 > Z ->
+    [H|add_layer(Layers,Z,C)];
+add_layer(Layers,Z,C) ->
+    [{Z,C}|Layers].
+
+remove_layer(Layers,Z,C) ->
+    Layers -- [{Z,C}].
+    
 
 alpha_blend({R1,G1,B1,A1}, {R2,G2,B2,A2}) ->
   Beta = A2*(1 - A1),
@@ -285,56 +175,6 @@ alpha_blend({R1,G1,B1,A1}, {R2,G2,B2,A2}) ->
   G = G1*A1 + G2*Beta,
   B = B1*A1 + B2*Beta,
   {R,G,B,A}.
-
-do_lines_overlap({_,Xll, Xlr, _}, {_,Xul, Xur,_}) ->
-    if 
-	% Xul -------------- Xur
-	% Xll -------------- Xlr
-    	Xlr < Xul -> false;
-	Xll > Xur -> false;
-	true ->
-	   if 
-		% ---------
-		%      ---------
-	   	Xul =< Xll , Xur < Xlr -> right_partial;
-
-		%     ------------
-		% ------
-		Xll < Xul , Xlr =< Xur -> left_partial;
-		
-		%    --------    
-		% ---------------
-		Xul > Xll , Xur < Xlr -> outspaced;
-		
-		% -------------
-		%     ----
-		Xul =< Xll , Xur >= Xlr -> shadowed;
-		true ->
-		    %debug_print_ls_states([{upper_ls, LSu}, {lower_ls, LSl}]),
-		    throw(non_complete_closure)
-	   end
-    end.
-    
-%ls_length({_,Xl,Xr,_}) -> Xr - Xl.
-
-%debug_print_ls_states([]) -> ok;
-%debug_print_ls_states([{Name, {_,Xl,Xr,_}=LS}|LSs]) ->
-%    io:format("- ~p Xl=~p, Xr=~p -> L=~p~n", [Name, Xl,Xr,ls_length(LS)]),
-%    debug_print_ls_states(LSs);
-%debug_print_ls_states([{Name, Msg}|LSs]) -> 
-%    io:format("- ~p -> ~p~n", [Name, Msg]),
-%    debug_print_ls_states(LSs).
-
-% parse_objects_on_line
-% In: 
-%	Y :: index of height
-%	Width :: width of image
-%	Objects :: [image_object()]
-% Out:
-%	LineData :: [ObjectLineData]
-%	ObjectLineData :: {Z, X,  Length, RGB}
-% Purpose:
-%	Calculate the resulting length and color for each object.
 
 parse_objects_on_line(Y, Width, Objects) ->
     parse_objects_on_line(Y, 1, Width, Objects, []).

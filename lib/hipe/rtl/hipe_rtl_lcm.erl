@@ -1487,7 +1487,7 @@ init_expr_id() ->
   put({rtl_lcm,expr_id_count}, 0),
   ok.
 
--spec(new_expr_id/0 :: () -> non_neg_integer()).
+-spec new_expr_id() -> non_neg_integer().
 new_expr_id() ->
   V = get({rtl_lcm, expr_id_count}),
   put({rtl_lcm,expr_id_count}, V+1),

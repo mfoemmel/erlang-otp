@@ -81,36 +81,39 @@ initialize_table() ->
 
 glyph_insert(Font, Code, Translation, LSs) ->
     Element = {{Font, Code}, Translation, LSs},
-    % ehum, this is defensive ... or proactive programming
-    try
-    	ets:insert(egd_font_table, Element)
-    catch
-	error:_ ->
-	    initialize_table(),
-    	    ets:insert(egd_font_table, Element)
-    end.
+    ets:insert(egd_font_table, Element).
 
 font_insert(Font, Description, Dimensions) ->
     Element = {{Font, information}, Description, Dimensions},
-    % ehum, this is equally defensive ... or proactive programming
+    ets:insert(egd_font_table, Element).
+
+%% Font loader functions
+
+is_font_loaded(Font) ->
     try
-    	ets:insert(egd_font_table, Element)
+        case ets:lookup(egd_font_table, {Font, information}) of 
+  	    [] -> false;
+	    _ -> true
+        end
     catch
 	error:_ ->
 	    initialize_table(),
-    	    ets:insert(egd_font_table, Element)
+	    false
     end.
-
-%% Font loader functions
+    
 
 load_font_header({_Type, _Version, Font}) ->
     load_font_body(Font).
     
 load_font_body({Key,Desc,W,H,Glyphs,Bitmaps}) ->
-    % insert dimensions
-    font_insert(Key, Desc, {W,H}),
-    parse_glyphs(Glyphs, Bitmaps, Key),
-    Key.
+    case is_font_loaded(Key) of
+	true  -> Key;
+	false ->
+	    % insert dimensions
+	    font_insert(Key, Desc, {W,H}),
+	    parse_glyphs(Glyphs, Bitmaps, Key),
+	    Key
+    end.
 
 parse_glyphs([], _ , _Key) -> ok;
 parse_glyphs([Glyph|Glyphs], Bs, Key) ->

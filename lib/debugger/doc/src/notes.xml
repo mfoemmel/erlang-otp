@@ -33,6 +33,37 @@
   <p>This document describes the changes made to the Debugger
     application.</p>
 
+<section><title>Debugger 3.1.1.4</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    There is now experimental support for loading of code
+	    from archive files. See the documentation of <c>code</c>,
+	    <c>init</c>, <c>erl_prim_loader </c> and <c>escript</c>
+	    for more info.</p>
+          <p>
+	    The error handling of <c>escripts</c> has been improved.</p>
+          <p>
+	    An <c>escript</c> may now set explicit arguments to the
+	    emulator, such as <c>-smp enabled</c>.</p>
+          <p>
+	    An <c>escript</c> may now contain a precompiled beam
+	    file.</p>
+          <p>
+	    An <c>escript</c> may now contain an archive file
+	    containing one or more applications (experimental).</p>
+          <p>
+	    The internal module <c>code_aux</c> has been removed.</p>
+          <p>
+	    Own Id: OTP-7548 Aux Id: otp-6622 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Debugger 3.1.1.3</title>
 
     <section><title>Improvements and New Features</title>

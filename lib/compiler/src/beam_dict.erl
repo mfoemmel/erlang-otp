@@ -15,7 +15,7 @@
 %% 
 %%     $Id$
 %%
-%% Purpose : Maintain atom, import, export tables, and other tables for assembler.
+%% Purpose: Maintain atom, import, export, and other tables for assembler.
 
 -module(beam_dict).
 
@@ -27,35 +27,45 @@
 
 -import(lists, [map/2]).
 
+-type label() :: integer().
+
 -record(asm,
 	{atoms = gb_trees:empty(),		%{Atom,Index}
-	 exports = [],				%[{F, A, Label}]
-	 locals = [],				%[{F, A, Label}]
+	 exports = []			:: [{pos_integer(), byte(), label()}],
+	 locals = []			:: [{pos_integer(), byte(), label()}],
 	 imports = gb_trees:empty(),		%{{M,F,A},Index}
-	 strings = [],				%String pool
+	 strings = []			:: [string()],	%String pool
 	 lambdas = [],				%[{...}]
 	 literals = dict:new(),			%Format: {Literal,Number}
-	 next_atom = 1,
-	 next_import = 0,
-	 string_offset = 0,
-	 next_literal = 0,			%Number of next literal
-	 highest_opcode = 0
+	 next_atom = 1			:: pos_integer(),
+	 next_import = 0		:: non_neg_integer(),
+	 string_offset = 0		:: non_neg_integer(),
+	 next_literal = 0		:: non_neg_integer(),
+	 highest_opcode = 0		:: non_neg_integer()
 	}).
+-type bdict() :: #asm{}.
+
+%%-----------------------------------------------------------------------------
+
+-spec new() -> bdict().
 
 new() ->
     #asm{}.
 
 %% Remember the highest opcode.
+-spec opcode(non_neg_integer(), bdict()) -> bdict().
 
 opcode(Op, Dict) when Dict#asm.highest_opcode > Op -> Dict;
 opcode(Op, Dict) -> Dict#asm{highest_opcode=Op}.
 
 %% Returns the highest opcode encountered.
+-spec highest_opcode(bdict()) -> non_neg_integer().
 
 highest_opcode(#asm{highest_opcode=Op}) -> Op.
 
 %% Returns the index for an atom (adding it to the atom table if necessary).
 %%    atom(Atom, Dict) -> {Index,Dict'}
+-spec atom(atom(), bdict()) -> {pos_integer(), bdict()}.
 
 atom(Atom, #asm{atoms=Atoms0,next_atom=NextIndex}=Dict) when is_atom(Atom) ->
     case gb_trees:lookup(Atom, Atoms0) of
@@ -68,6 +78,7 @@ atom(Atom, #asm{atoms=Atoms0,next_atom=NextIndex}=Dict) when is_atom(Atom) ->
 
 %% Remembers an exported function.
 %%    export(Func, Arity, Label, Dict) -> Dict'
+-spec export(atom(), byte(), label(), bdict()) -> bdict().
 
 export(Func, Arity, Label, Dict0) when is_atom(Func),
 				       is_integer(Arity),
@@ -77,6 +88,7 @@ export(Func, Arity, Label, Dict0) when is_atom(Func),
 
 %% Remembers a local function.
 %%    local(Func, Arity, Label, Dict) -> Dict'
+-spec local(atom(), byte(), label(), bdict()) -> bdict().
 
 local(Func, Arity, Label, Dict0) when is_atom(Func),
 				      is_integer(Arity),
@@ -86,6 +98,7 @@ local(Func, Arity, Label, Dict0) when is_atom(Func),
 
 %% Returns the index for an import entry (adding it to the import table if necessary).
 %%    import(Mod, Func, Arity, Dict) -> {Index,Dict'}
+-spec import(atom(), atom(), byte(), bdict()) -> {non_neg_integer(), bdict()}.
 
 import(Mod0, Name0, Arity, #asm{imports=Imp0,next_import=NextIndex}=D0)
   when is_atom(Mod0), is_atom(Name0), is_integer(Arity) ->
@@ -103,6 +116,7 @@ import(Mod0, Name0, Arity, #asm{imports=Imp0,next_import=NextIndex}=D0)
 %% Returns the index for a string in the string table (adding the string to the
 %% table if necessary).
 %%    string(String, Dict) -> {Offset, Dict'}
+-spec string(string(), bdict()) -> {non_neg_integer(), bdict()}.
 
 string(Str, Dict) when is_list(Str) ->
     #asm{strings=Strings,string_offset=NextOffset} = Dict,
@@ -116,15 +130,18 @@ string(Str, Dict) when is_list(Str) ->
     end.
 
 %% Returns the index for a funentry (adding it to the table if necessary).
-%%    lambda(Dict, Lbl, Index, Uniq, NumFree) -> {Index,Dict'}
+%%    lambda(Lbl, Index, Uniq, NumFree, Dict) -> {Index,Dict'}
+-spec lambda(label(), non_neg_integer(), integer(), non_neg_integer(), bdict()) ->
+        {non_neg_integer(), bdict()}.
 
 lambda(Lbl, Index, OldUniq, NumFree, #asm{lambdas=Lambdas0}=Dict) ->
     OldIndex = length(Lambdas0),
     Lambdas = [{Lbl,{OldIndex,Lbl,Index,NumFree,OldUniq}}|Lambdas0],
     {OldIndex,Dict#asm{lambdas=Lambdas}}.
 
-%% Returns the index for a a literal (adding it to the atom table if necessary).
+%% Returns the index for a literal (adding it to the atom table if necessary).
 %%    literal(Literal, Dict) -> {Index,Dict'}
+-spec literal(any(), bdict()) -> {non_neg_integer(), bdict()}.
 
 literal(Lit, #asm{literals=Tab0,next_literal=NextIndex}=Dict) ->
     case dict:find(Lit, Tab0) of
@@ -135,9 +152,9 @@ literal(Lit, #asm{literals=Tab0,next_literal=NextIndex}=Dict) ->
 	    {NextIndex,Dict#asm{literals=Tab,next_literal=NextIndex+1}}
     end.
 
-
 %% Returns the atom table.
 %%    atom_table(Dict) -> {LastIndex,[Length,AtomString...]}
+-spec atom_table(bdict()) -> {non_neg_integer(), [[non_neg_integer(),...]]}.
 
 atom_table(#asm{atoms=Atoms,next_atom=NumAtoms}) ->
     Sorted = lists:keysort(2, gb_trees:to_list(Atoms)),
@@ -149,27 +166,34 @@ atom_table(#asm{atoms=Atoms,next_atom=NumAtoms}) ->
     {NumAtoms-1,AtomTab}.
 
 %% Returns the table of local functions.
-%%    local_table(Dict) -> {NumLocals,[{Function, Arity, Label}...]}
+%%    local_table(Dict) -> {NumLocals, [{Function, Arity, Label}...]}
+-spec local_table(bdict()) -> {non_neg_integer(), [{atom(),byte(),label()}]}.
 
 local_table(#asm{locals = Locals}) ->
     {length(Locals),Locals}.
 
 %% Returns the export table.
-%%    export_table(Dict) -> {NumExports,[{Function, Arity, Label}...]}
+%%    export_table(Dict) -> {NumExports, [{Function, Arity, Label}...]}
+-spec export_table(bdict()) -> {non_neg_integer(), [{atom(),byte(),label()}]}.
 
 export_table(#asm{exports = Exports}) ->
     {length(Exports),Exports}.
 
 %% Returns the import table.
 %%    import_table(Dict) -> {NumImports, [{Module, Function, Arity}...]}
+-spec import_table(bdict()) -> {non_neg_integer(), [{mfa()}]}.
 
 import_table(#asm{imports=Imp,next_import=NumImports}) ->
     Sorted = lists:keysort(2, gb_trees:to_list(Imp)),
     ImpTab = [MFA || {MFA,_} <- Sorted],
     {NumImports,ImpTab}.
 
+-spec string_table(bdict()) -> {non_neg_integer(), [string()]}.
+
 string_table(#asm{strings=Strings,string_offset=Size}) ->
     {Size,Strings}.
+
+-spec lambda_table(bdict()) -> {non_neg_integer(), [<<_:192>>]}.
 
 lambda_table(#asm{locals=Loc0,lambdas=Lambdas0}) ->
     Lambdas1 = sofs:relation(Lambdas0),
@@ -180,7 +204,8 @@ lambda_table(#asm{locals=Loc0,lambdas=Lambdas0}) ->
     {length(Lambdas),Lambdas}.
 
 %% Returns the literal table.
-%%  literal_table(Dict) -> {NumLiterals,[TermSize,TermInExternalFormat...]}
+%%    literal_table(Dict) -> {NumLiterals, [<<TermSize>>,TermInExternalFormat]}
+-spec literal_table(bdict()) -> {non_neg_integer(), [[binary(),...]]}.
 
 literal_table(#asm{literals=Tab,next_literal=NumLiterals}) ->
     L0 = dict:fold(fun(Lit, Num, Acc) ->
@@ -194,7 +219,8 @@ my_term_to_binary(Term) ->
     term_to_binary(Term, [{minor_version,1}]).
 
 %% Search for string Str in the string pool Pool.
-%%   old_string(Str, Pool) -> none | Index
+%%    old_string(Str, Pool) -> none | Index
+-spec old_string(string(), [string()]) -> 'none' | pos_integer().
 
 old_string([C|Str]=Str0, [C|Pool]) ->
     case lists:prefix(Str, Pool) of

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE chapter SYSTEM "chapter.dtd">
+
+<chapter>
+  <header>
+    <copyright>
+      <year>2004</year>
+      <year>2008</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>Config Files</title>
+    <prepared>Siri Hansen, Peter Andersson</prepared>
+    <docno></docno>
+    <date></date>
+    <rev></rev>
+  </header>
+
+  <section>
+    <title>General</title>
+
+    <p>The Common Test framework uses configuration files to
+    describe data related to a test or a test plant. The configuration
+    data makes it possible to change properties without changing the
+    test program itself. Configuration data can for example be:</p>
+
+    <list>
+      <item>Addresses to the test plant or other instruments</item>
+      <item>Filenames for files needed by the test</item>
+      <item>Program names for programs that shall be run by the test</item>
+      <item>Any other variable that is needed by the test</item>
+    </list>
+
+  </section>
+
+  <section>
+    <title>Syntax</title>
+
+    <p>A config file can contain any number of elements of the type:</p>
+    <pre>
+      {Key,Value}.</pre>
+
+    <p>where</p>
+    <pre>
+      Key = atom()
+      Value = term() | [{Key,Value}]</pre>
+
+  </section>
+
+  <section>
+    <title>Reading config values</title>
+
+    <p>From inside a test suite, one can <em>require</em> a variable
+    to exist before a test case can be run, and <em>read</em> the
+    value of a variable.</p>
+
+    <p><c>require</c> is a statement that can be part of the <seealso
+    marker="write_test_chapter#suite">test suite default
+    data</seealso> or
+    <seealso marker="write_test_chapter#info_function">test case info
+    function</seealso>. If the required variable is not available, the
+    test is skipped. There is also a function
+    <c>ct:require/[1,2]</c> which can be called from inside a
+    test suite in order to check if a specific variable is
+    available. The return value from the function must then be checked
+    and appropriate actions taken explicitly by the test case.</p>
+
+    <p>A <c>require</c> statement should look like this:
+    <c>{require,Required}</c> or <c>{require,Name,Required}</c>. The
+    arguments <c>Name</c> and <c>Required</c> are the same as the
+    arguments to <c>ct:require/[1,2]</c> which are described in the
+    reference manual for <seealso marker="ct">ct</seealso>.</p>
+
+    <p>To read the value of a config variable, use the function
+    <c>get_config/[1,2]</c> which is also described in the reference
+    manual for <seealso marker="ct">ct</seealso>.</p>
+
+  </section>
+
+  <section>
+    <title>Examples</title>
+
+    <p>A config file for usning telnet to communicate with
+      a unix host could look like this:</p>
+
+    <pre>
+    {unix,[{telnet,"durin.du.uab"},
+           {username,"someuser"},
+	   {password,"somepassword"}]}.</pre>
+
+  </section>
+
+</chapter>
+
+

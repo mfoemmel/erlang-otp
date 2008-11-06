@@ -22,7 +22,7 @@
 %%
 %% Data is a triple with a dict of constants, a list of labels and an integer
 %%
--type(cfg_data() :: {dict(), [non_neg_integer()], non_neg_integer()}).
+-type cfg_data() :: {dict(), [non_neg_integer()], non_neg_integer()}.
 
 %%
 %% The following is to be used by other modules
@@ -30,4 +30,4 @@
 -record(cfg, {table :: gb_tree(),
               info  :: #cfg_info{},
               data  :: cfg_data()}).
--type(cfg() :: #cfg{}).
+-type cfg() :: #cfg{}.

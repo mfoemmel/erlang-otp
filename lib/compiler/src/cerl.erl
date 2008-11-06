@@ -329,6 +329,8 @@ ann_abstract(As, T) ->
 %%
 %% @see abstract/1
 
+-spec is_literal_term(_) -> bool().
+
 is_literal_term(T) when is_integer(T) -> true;
 is_literal_term(T) when is_float(T) -> true;
 is_literal_term(T) when is_atom(T) -> true;
@@ -344,6 +346,8 @@ is_literal_term(T) when is_tuple(T) ->
     is_literal_term_list(tuple_to_list(T));
 is_literal_term(_) ->
     false.
+
+-spec is_literal_term_list([_]) -> bool().
 
 is_literal_term_list([T | Ts]) ->
     case is_literal_term(T) of
@@ -647,7 +651,6 @@ module_vars(Node) ->
 
 %% @spec c_int(Value::integer()) -> cerl()
 %%
-%%
 %% @doc Creates an abstract integer literal. The lexical
 %% representation is the canonical decimal numeral of
 %% <code>Value</code>.
@@ -686,6 +689,7 @@ is_c_int(_) ->
 %% @doc Returns the value represented by an integer literal node.
 %% @see c_int/1
 
+-spec int_val(#literal{}) -> integer().
 int_val(Node) ->
     Node#literal.val.
 
@@ -696,6 +700,7 @@ int_val(Node) ->
 %% node.
 %% @see c_int/1
 
+-spec int_lit(#literal{}) -> string().
 int_lit(Node) ->
     integer_to_list(int_val(Node)).
 
@@ -716,6 +721,7 @@ int_lit(Node) ->
 %% Note that not all floating-point numerals can be represented with
 %% full precision.
 
+-spec c_float(float()) -> #literal{}.
 c_float(Value) ->
     #literal{val = Value}.
 
@@ -745,6 +751,7 @@ is_c_float(_) ->
 %% node.
 %% @see c_float/1
 
+-spec float_val(#literal{}) -> float().
 float_val(Node) ->
     Node#literal.val.
 
@@ -755,6 +762,7 @@ float_val(Node) ->
 %% literal node.
 %% @see c_float/1
 
+-spec float_lit(#literal{}) -> string().
 float_lit(Node) ->
     float_to_list(float_val(Node)).
 
@@ -776,6 +784,7 @@ float_lit(Node) ->
 %% @see atom_name/1
 %% @see atom_lit/1
 
+-spec c_atom(atom() | string()) -> #literal{}.
 c_atom(Name) when is_atom(Name) ->
     #literal{val = Name};
 c_atom(Name) ->
@@ -804,12 +813,13 @@ is_c_atom(#literal{val = V}) when is_atom(V) ->
 is_c_atom(_) ->
     false.
 
-%% @spec atom_val(cerl())-> atom()
+%% @spec atom_val(cerl()) -> atom()
 %%
 %% @doc Returns the value represented by an abstract atom.
 %%
 %% @see c_atom/1
 
+-spec atom_val(#literal{}) -> atom().
 atom_val(Node) ->
     Node#literal.val.
 
@@ -820,6 +830,7 @@ atom_val(Node) ->
 %%
 %% @see c_atom/1
 
+-spec atom_name(#literal{}) -> string().
 atom_name(Node) ->
     atom_to_list(atom_val(Node)).
 
@@ -866,6 +877,7 @@ atom_lit(Node) ->
 %% @see char_lit/1
 %% @see is_print_char/1
 
+-spec c_char(non_neg_integer()) -> #literal{}.
 c_char(Value) when is_integer(Value), Value >= 0 ->
     #literal{val = Value}.
 
@@ -920,6 +932,7 @@ is_print_char(_) ->
 %%
 %% @see c_char/1
 
+-spec char_val(#literal{}) -> char().
 char_val(Node) ->
     Node#literal.val.
 
@@ -933,6 +946,7 @@ char_val(Node) ->
 %%
 %% @see c_char/1
 
+-spec char_lit(#literal{}) -> string().
 char_lit(Node) ->
     io_lib:write_char(char_val(Node)).
 
@@ -955,6 +969,7 @@ char_lit(Node) ->
 %% @see string_lit/1
 %% @see is_print_string/1
 
+-spec c_string(string()) -> #literal{}.
 c_string(Value) ->
     #literal{val = Value}.
 
@@ -1006,6 +1021,7 @@ is_print_string(_) ->
 %%
 %% @see c_string/1
 
+-spec string_val(#literal{}) -> string().
 string_val(Node) ->
     Node#literal.val.
 
@@ -1020,6 +1036,7 @@ string_val(Node) ->
 %%
 %% @see c_string/1
 
+-spec string_lit(#literal{}) -> string().
 string_lit(Node) ->
     io_lib:write_string(string_val(Node)).
 
@@ -1035,6 +1052,7 @@ string_lit(Node) ->
 %% @see is_c_list/1
 %% @see c_cons/2
 
+-spec c_nil() -> #literal{}.
 c_nil() ->
     #literal{val = []}.
 
@@ -1281,9 +1299,11 @@ abstract_list([]) ->
 %% @see is_c_list/1
 %% @see list_elements/1
 
+-spec list_length(#cons{} | #literal{}) -> non_neg_integer().
 list_length(L) ->
     list_length(L, 0).
 
+-spec list_length(#cons{} | #literal{}, non_neg_integer()) -> non_neg_integer().
 list_length(#cons{tl = Tail}, A) ->
     list_length(Tail, A + 1);
 list_length(#literal{val = V}, A) ->
@@ -1499,6 +1519,7 @@ tuple_es(#literal{val = V}) ->
 %% @see tuple_es/1
 %% @see c_tuple/1
 
+-spec tuple_arity(#tuple{} | #literal{}) -> non_neg_integer().
 tuple_arity(#tuple{es = Es}) ->
     length(Es);
 tuple_arity(#literal{val = V}) when is_tuple(V) ->
@@ -1546,8 +1567,11 @@ tuple_arity(#literal{val = V}) when is_tuple(V) ->
 %% @see c_module/4
 %% @see c_letrec/2
 
--record(var, {ann = [], name}).
+-type var_name() :: integer() | atom() | {atom(), integer()}.
 
+-record(var, {ann = [], name :: var_name()}).
+
+-spec c_var(var_name()) -> #var{}.
 c_var(Name) ->
     #var{name = Name}.
 
@@ -1556,6 +1580,7 @@ c_var(Name) ->
 %%
 %% @see c_var/1
 
+-spec ann_c_var([_], var_name()) -> #var{}.
 ann_c_var(As, Name) ->
     #var{name = Name, ann = As}.
 
@@ -1563,6 +1588,7 @@ ann_c_var(As, Name) ->
 %%
 %% @see c_var/1
 
+-spec update_c_var(#var{}, var_name()) -> #var{}.
 update_c_var(Node, Name) ->
     #var{name = Name, ann = get_ann(Node)}.
 
@@ -1588,6 +1614,7 @@ is_c_var(_) ->
 %% @see ann_c_fname/3
 %% @see update_c_fname/3
 
+-spec c_fname(atom(), integer()) -> #var{}.
 c_fname(Atom, Arity) ->
     c_var({Atom, Arity}).
 
@@ -1597,6 +1624,7 @@ c_fname(Atom, Arity) ->
 %% @equiv ann_c_var(As, {Atom, Arity})
 %% @see c_fname/2
 
+-spec ann_c_fname([_], atom(), integer()) -> #var{}.
 ann_c_fname(As, Atom, Arity) ->
     ann_c_var(As, {Atom, Arity}).
 
@@ -1607,6 +1635,7 @@ ann_c_fname(As, Atom, Arity) ->
 %% @see update_c_fname/3
 %% @see c_fname/2
 
+-spec update_c_fname(#var{}, atom()) -> #var{}.
 update_c_fname(#var{name = {_, Arity}, ann = As}, Atom) ->
     #var{name = {Atom, Arity}, ann = As}.
 
@@ -1617,6 +1646,7 @@ update_c_fname(#var{name = {_, Arity}, ann = As}, Atom) ->
 %% @see update_c_fname/2
 %% @see c_fname/2
 
+-spec update_c_fname(#var{}, atom(), integer()) -> #var{}.
 update_c_fname(Node, Atom, Arity) ->
     update_c_var(Node, {Atom, Arity}).
 
@@ -1642,6 +1672,7 @@ is_c_fname(_) ->
 %%
 %% @see c_var/1
 
+-spec var_name(#var{}) -> var_name().
 var_name(Node) ->
     Node#var.name.
 
@@ -1654,17 +1685,19 @@ var_name(Node) ->
 %% @see fname_arity/1
 %% @see c_fname/2
 
+-spec fname_id(#var{}) -> atom().
 fname_id(#var{name={A,_}}) ->
     A.
 
 
-%% @spec fname_arity(cerl()) -> integer()
+%% @spec fname_arity(cerl()) -> byte()
 %%
 %% @doc Returns the arity part of an abstract function name variable.
 %%
 %% @see fname_id/1
 %% @see c_fname/2
 
+-spec fname_arity(#var{}) -> byte().
 fname_arity(#var{name={_,N}}) ->
     N.
 
@@ -1740,6 +1773,7 @@ values_es(Node) ->
 %% @see c_values/1
 %% @see values_es/1
 
+-spec values_arity(#values{}) -> non_neg_integer().
 values_arity(Node) ->
     length(values_es(Node)).
 
@@ -1931,6 +1965,7 @@ bitstr_size(Node) ->
 %%
 %% @see c_bitstr/5
 
+-spec bitstr_bitsize(#bitstr{}) -> 'all' | 'any' | integer().
 bitstr_bitsize(Node) ->
     Size = Node#bitstr.size,
     case is_literal(Size) of
@@ -4041,9 +4076,9 @@ split_list(Node) ->
 split_list(Node, L) ->
     A = get_ann(Node),
     case type(Node) of
-	cons when A == [] ->
+	cons when A =:= [] ->
 	    split_list(cons_tl(Node), [cons_hd(Node) | L]);
-	nil when A == [] ->
+	nil when A =:= [] ->
 	    {lists:reverse(L), none};
 	_ ->
 	    {lists:reverse(L), Node}
@@ -4066,6 +4101,7 @@ lit_list_vals([#literal{val = V} | Es]) ->
 lit_list_vals([]) ->
     [].
 
+-spec make_lit_list([_]) -> [#literal{}].  % XXX: cerl() instead of _ ?
 make_lit_list([V | Vs]) ->
     [#literal{val = V} | make_lit_list(Vs)];
 make_lit_list([]) ->

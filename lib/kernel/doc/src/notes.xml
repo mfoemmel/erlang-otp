@@ -31,6 +31,124 @@
   </header>
   <p>This document describes the changes made to the Kernel application.</p>
 
+<section><title>Kernel 2.12.5</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>The documentation of <c>rpc:pmap/3</c> has been
+	    corrected. (Thanks to Kirill Zaborski.)</p>
+          <p>
+	    Own Id: OTP-7537</p>
+        </item>
+        <item>
+          <p>
+	    The listen socket used for the distributed Erlang
+	    protocol now uses the socket option 'reuseaddr', which is
+	    useful when you force the listen port number using kernel
+	    options 'inet_dist_listen_min' and 'inet_dist_listen_max'
+	    and restarts a node with open connections.</p>
+          <p>
+	    Own Id: OTP-7563</p>
+        </item>
+        <item>
+          <p>
+	    Fixed memory leak of unclosed TCP-ports. A gen_tcp:send()
+	    followed by a failing gen_tcp:recv() could in some cases
+	    cause the port to linger after being closed.</p>
+          <p>
+	    Own Id: OTP-7615</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Processes spawned using <c>proc_lib</c> (including
+	    <c>gen_server</c> and other library modules that use
+	    <c>proc_lib</c>) no longer keep the entire argument list
+	    for the initial call, but only the arity.</p>
+	    <p>Also, if <c>proc_lib:spawn/1</c> is used to spawn a
+	    fun, the actual fun is not kept, but only module,
+	    function name, and arity of the function that implements
+	    the fun.</p>
+	    <p>The reason for the change is that keeping the initial
+	    fun (or a fun in an argument list), would prevent
+	    upgrading the code for the module. A secondary reason is
+	    that keeping the fun and function arguments could waste a
+	    significant amount of memory.</p>
+	    <p>The drawback with the change is that the crash reports
+	    will provide less precise information about the initial
+	    call (only <c>Module:Function/Arity</c> instead of
+	    <c>Module:Function(Arguments)</c>). The function
+	    <c>proc_lib:initial_call/1</c> still returns a list, but
+	    each argument has been replaced with a dummy atom.</p>
+          <p>
+	    Own Id: OTP-7531 Aux Id: seq11036 </p>
+        </item>
+        <item>
+          <p>
+	    <c>io:get_line/1</c> when reading from standard input is
+	    now substantially faster. There are also some minor
+	    performance improvements in <c>io:get_line/1</c> when
+	    reading from any file opened in binary mode. (Thanks to
+	    Fredrik Svahn.)</p>
+          <p>
+	    Own Id: OTP-7542</p>
+        </item>
+        <item>
+          <p>
+	    There is now experimental support for loading of code
+	    from archive files. See the documentation of <c>code</c>,
+	    <c>init</c>, <c>erl_prim_loader </c> and <c>escript</c>
+	    for more info.</p>
+          <p>
+	    The error handling of <c>escripts</c> has been improved.</p>
+          <p>
+	    An <c>escript</c> may now set explicit arguments to the
+	    emulator, such as <c>-smp enabled</c>.</p>
+          <p>
+	    An <c>escript</c> may now contain a precompiled beam
+	    file.</p>
+          <p>
+	    An <c>escript</c> may now contain an archive file
+	    containing one or more applications (experimental).</p>
+          <p>
+	    The internal module <c>code_aux</c> has been removed.</p>
+          <p>
+	    Own Id: OTP-7548 Aux Id: otp-6622 </p>
+        </item>
+        <item>
+          <p>
+	    <c>code:is_sticky/1</c> is now documented. (Thanks to
+	    Vlad Dumitrescu.)</p>
+          <p>
+	    Own Id: OTP-7561</p>
+        </item>
+        <item>
+          <p>
+	    In the job control mode, the "s" and "r" commands now
+	    take an optional argument to specify which shell to
+	    start. (Thanks to Robert Virding.)</p>
+          <p>
+	    Own Id: OTP-7617</p>
+        </item>
+        <item>
+          <p>
+	    <c>net_adm:world/0,1</c> could crash if called in an
+	    emulator that has not been started with either the
+	    <c>-sname</c> or <c>-name</c> option; now it will return
+	    an empty list. (Thanks to Edwin Fine.)</p>
+          <p>
+	    Own Id: OTP-7618</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Kernel 2.12.4</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

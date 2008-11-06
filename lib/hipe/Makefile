@@ -20,9 +20,15 @@ else
 HIPE_SUBDIRS =
 endif
 
+ALWAYS_SUBDIRS = misc main cerl icode flow util
+
+ifdef HIPE_ENABLED
 # "rtl" below must be the first directory so that file rtl/hipe_literals.hrl
 # which is needed by many other HiPE files is built first
-SUB_DIRECTORIES = rtl misc main cerl icode flow util $(HIPE_SUBDIRS)
+SUB_DIRECTORIES = rtl $(ALWAYS_SUBDIRS) $(HIPE_SUBDIRS)
+else
+SUB_DIRECTORIES = $(ALWAYS_SUBDIRS)
+endif
 
 #
 # Default Subdir Targets

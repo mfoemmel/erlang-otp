@@ -95,15 +95,15 @@ open(File, FileNo) when is_list(File), is_integer(FileNo) ->
 	    Error
     end.
 
-close(WR) when is_record(WR, wrap_reader) ->
+close(WR = #wrap_reader{}) ->
     file:close(WR#wrap_reader.fd).
 
-chunk(WR) when is_record(WR, wrap_reader) ->
+chunk(WR = #wrap_reader{}) ->
     chunk(WR, ?MAX_CHUNK_SIZE, 0). 
 
-chunk(WR, infinity) when is_record(WR, wrap_reader) ->
+chunk(WR = #wrap_reader{}, infinity) ->
     chunk(WR, ?MAX_CHUNK_SIZE, 0);
-chunk(WR, N) when is_record(WR, wrap_reader), is_integer(N), N > 0 ->
+chunk(WR = #wrap_reader{}, N) when is_integer(N), N > 0 ->
     chunk(WR, N, 0). 
 
 %%
@@ -178,7 +178,7 @@ read_a_chunk(Fd, FileName, Pos, B, N) ->
     %% 'foo' will do here since Log is not used in read-only mode.
     Log = foo,
     case disk_log:ichunk_end(R, Log) of
-	{C, S} when is_record(C, continuation) ->
+	{C = #continuation{}, S} ->
 	    {C, S, 0};
 	Else ->
 	    Else

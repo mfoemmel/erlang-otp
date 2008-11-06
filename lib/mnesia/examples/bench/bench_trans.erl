@@ -42,7 +42,7 @@ update_current_location(Wlock, SubscrId, Location, ChangedBy, ChangedTime) ->
 %% T2
 %% -------------------------------------------------------------------
 
-read_current_location(Wlock, SubscrId) ->
+read_current_location(_Wlock, SubscrId) ->
     Suffix   = number_to_suffix(SubscrId),
     [Subscr] = mnesia:read({subscriber, Suffix}, SubscrId, read),
 

@@ -35,7 +35,7 @@ MODULES =  \
 	typer_options \
 	typer_preprocess
 
-HRL_FILES= typer.hrl typer_options.hrl
+HRL_FILES= typer.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 INSTALL_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 TARGET_FILES= $(INSTALL_FILES)
@@ -83,11 +83,9 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 # ---------------------------------------------------------------------
 
 $(EBIN)/typer.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
-$(EBIN)/typer_annotator.beam: typer.hrl typer_options.hrl \
-			      $(DIALYZER_DIR)/src/dialyzer.hrl
+$(EBIN)/typer_annotator.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
 $(EBIN)/typer_info.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
-$(EBIN)/typer_options.beam: typer.hrl typer_options.hrl \
-				$(DIALYZER_DIR)/src/dialyzer.hrl
+$(EBIN)/typer_options.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
 $(EBIN)/typer_preprocess.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
 
 # ----------------------------------------------------

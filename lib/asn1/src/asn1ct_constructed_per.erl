@@ -1,19 +1,21 @@
-% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2003-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1ct_constructed_per).
 
@@ -113,7 +115,15 @@ gen_encode_constructed(Erule,Typename,D) when record(D,type) ->
 			emit(["  ",ObjSetMod,":'getenc_",ObjSetName,"'(",
 			      {asis,UniqueFieldName},", ",nl]),
 			El = make_element(N+1,asn1ct_gen:mk_var(asn1ct_name:curr(val)),AttrN),
-			Indent = 12 + length(atom_to_list(ObjectSet)), 
+
+			Length = fun(X,_LFun) when is_atom(X) -> 
+					 length(atom_to_list(X));
+				    (X,_LFun) when is_list(X) ->
+					 length(X);
+				    ({X1,X2},LFun) ->
+					 LFun(X1,LFun) + LFun(X2,LFun)
+				 end,
+			Indent = 12 + Length(ObjectSet,Length),
 			case ValueIndex of
 			    [] ->
 				emit([indent(Indent),El,"),",nl]);
@@ -172,6 +182,7 @@ gen_decode_sequence(Erules,Typename,D) ->
 
 gen_decode_constructed(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:start(),
+    asn1ct_name:clear(),
     {CompList,TableConsInfo} = 
 	case D#type.def of
 	    #'SEQUENCE'{tablecinf=TCI,components=CL} ->
@@ -374,6 +385,7 @@ gen_encode_choice(Erule,Typename,D) when record(D,type) ->
 
 gen_decode_choice(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:start(),
+    asn1ct_name:clear(),
     asn1ct_name:new(bytes),
     {'CHOICE',CompList} = D#type.def,
     Ext = extensible(CompList),
@@ -475,6 +487,10 @@ gen_encode_sof_components(Erule,Typename,SeqOrSetOf,Cont) ->
 	    emit({"'enc_",Ename,"'(H)",nl,nl});
 	#'Externaltypereference'{module=EMod,type=EType} ->
 	    emit({"'",EMod,"':'enc_",EType,"'(H)",nl,nl});
+	'ASN1_OPEN_TYPE' ->
+	    gen_encode_prim_wrapper(Ctgenmod,Erule,
+				    #type{def='ASN1_OPEN_TYPE'},
+				    false,"H");
 	_ ->
 	    emit({"'enc_",Conttype,"'(H)",nl,nl})
     end,
@@ -514,6 +530,10 @@ gen_decode_sof_components(Erule,Typename,SeqOrSetOf,Cont) ->
 	    emit({"'dec_",EType,"'(Bytes,telltype),",nl});
 	#'Externaltypereference'{module=EMod,type=EType} ->
 	    emit({"'",EMod,"':'dec_",EType,"'(Bytes,telltype),",nl});
+	'ASN1_OPEN_TYPE' ->
+	    Ctgenmod:gen_dec_prim(Erule,#type{def='ASN1_OPEN_TYPE'},
+				  "Bytes"),
+	    emit({com,nl});
 	_ ->
 	    emit({"'dec_",Conttype,"'(Bytes,telltype),",nl})
     end,
@@ -570,13 +590,13 @@ optionals([],Acc,_) ->
     lists:reverse(Acc).
 
 %%%%%%%%%%%%%%%%%%%%%%
-create_optionality_table(Cs=[#'ComponentType'{textual_order=undefined}|_]) ->
-    {NewCs,_} = lists:mapfoldl(fun(C,Num) ->
-				       {C#'ComponentType'{textual_order=Num},
-					Num+1}
-			       end,
-			       1,Cs),
-    create_optionality_table(NewCs);
+%% create_optionality_table(Cs=[#'ComponentType'{textual_order=undefined}|_]) ->
+%%     {NewCs,_} = lists:mapfoldl(fun(C,Num) ->
+%% 				       {C#'ComponentType'{textual_order=Num},
+%% 					Num+1}
+%% 			       end,
+%% 			       1,Cs),
+%%     create_optionality_table(NewCs);
 create_optionality_table(Cs) ->
     IsOptional = fun('OPTIONAL') -> true;
 		    ({'DEFAULT',_}) -> true;
@@ -698,7 +718,6 @@ gen_enc_component_default(Erule,TopType,Cname,Type,Pos,DynamicEnc,Ext) ->
     NextElement = asn1ct_gen:mk_var(asn1ct_name:curr(tmpval)),
     gen_enc_line(Erule,TopType,Cname,Type,NextElement, Pos,DynamicEnc,Ext),
     emit({nl,"end"}).
-
 gen_enc_component_optional(Erule,TopType,Cname,Type,Pos,DynamicEnc,Ext) ->
     Element = make_element(Pos+1,"Val1",Cname),
     emit({"case ",Element," of",nl}),
@@ -815,17 +834,16 @@ gen_enc_line(Erule,TopType,Cname,Type,Element, _Pos,DynamicEnc,Ext) ->
     end.
 gen_dec_components_call(Erule,TopType,{Root1,ExtList,Root2},MaybeComma,DecInfObj,Ext,NumberOfOptionals) ->
      %% The type has extensionmarker
-     OptTable1 = create_optionality_table(Root1),
+     OptTable = create_optionality_table(Root1 ++ Root2),
      {Rpos,AccTerm,AccBytes} = 
- 	gen_dec_components_call1(Erule,TopType, Root1, 1, OptTable1,
+ 	gen_dec_components_call1(Erule,TopType, Root1, 1, OptTable,
  				 MaybeComma,DecInfObj, noext,[],[],
  				 NumberOfOptionals),
      emit([",",nl,"{Extensions,",{next,bytes},"} = "]),
      emit(["?RT_PER:getextension(Ext,",{curr,bytes},"),",nl]),
      asn1ct_name:new(bytes),
-     OptTable2 = create_optionality_table(ExtList),
      {Epos,AccTermE,AccBytesE} = 
- 	gen_dec_components_call1(Erule,TopType,ExtList,Rpos, OptTable2, "",
+ 	gen_dec_components_call1(Erule,TopType,ExtList,Rpos, OptTable, "",
  				 DecInfObj,Ext,[],[],NumberOfOptionals),
      case ExtList of
  	[] -> true;
@@ -834,9 +852,8 @@ gen_dec_components_call(Erule,TopType,{Root1,ExtList,Root2},MaybeComma,DecInfObj
      emit([{next,bytes},"= ?RT_PER:skipextensions(",{curr,bytes},",",
  	  length(ExtList)+1,",Extensions),",nl]),
      asn1ct_name:new(bytes),
-     OptTable3 = create_optionality_table(Root2),
      {_RPos2,AccTerm2,AccBytes2} =
- 	gen_dec_components_call1(Erule,TopType,Root2,Epos,OptTable3,
+ 	gen_dec_components_call1(Erule,TopType,Root2,Epos,OptTable,
  				 "",DecInfObj,noext,[],[],NumberOfOptionals),
      {AccTerm++AccTermE++AccTerm2,AccBytes++AccBytesE++AccBytes2};
 gen_dec_components_call(Erule,TopType,{CompList,ExtList},MaybeComma,
@@ -850,9 +867,8 @@ gen_dec_components_call(Erule,TopType,{CompList,ExtList},MaybeComma,
     emit([",",nl,"{Extensions,",{next,bytes},"} = "]),
     emit(["?RT_PER:getextension(Ext,",{curr,bytes},"),",nl]),
     asn1ct_name:new(bytes),
-    OptTable2 = create_optionality_table(ExtList),
     {_Epos,AccTermE,AccBytesE} = 
-	gen_dec_components_call1(Erule,TopType,ExtList,Rpos, OptTable2,
+	gen_dec_components_call1(Erule,TopType,ExtList,Rpos, OptTable,
 				 "",DecInfObj,Ext,[],[],NumberOfOptionals),
     case ExtList of
 	[] -> true;
@@ -877,7 +893,6 @@ gen_dec_components_call(Erule,TopType,CompList,MaybeComma,DecInfObj,
 gen_dec_components_call1(Erule,TopType,
 			 [C=#'ComponentType'{name=Cname,typespec=Type,prop=Prop,textual_order=TextPos}|Rest],
 			 Tpos,OptTable,MaybeComma,DecInfObj,Ext,AccTerm,AccBytes,NumberOfOptionals) ->
-    OptPos = get_optionality_pos(TextPos,OptTable),
     Pos = case Ext of
 	      noext -> Tpos;
 	      {ext,Epos,_Enum} -> Tpos - Epos + 1
@@ -903,12 +918,25 @@ gen_dec_components_call1(Erule,TopType,
 		  InnerType,nl})
     end,
 
-    case InnerType of
-	{typefield,_} ->
+    IsMandatoryAndPredefinedTableC =
+	fun(noext,mandatory,{"got objfun through args","ObjFun"}) ->
+		true;
+	   (_,_,{"got objfun through args","ObjFun"}) ->
+		false;
+	   (_,_,_) ->
+		true
+	end,
+    case {InnerType,IsMandatoryAndPredefinedTableC(Ext,Prop,DecInfObj)} of
+%%	{typefield,_} when Ext == noext, Prop == mandatory ->
+	{{typefield,_},true}  ->
+	    %% DecInfObj /= {"got objfun through args","ObjFun"} |
+	    %% (DecInfObj == {"got objfun through args","ObjFun"} &
+	    %% Ext == noext & Prop == mandatory)
 	    asn1ct_name:new(term),
 	    asn1ct_name:new(tmpterm),
 	    emit({"{",{curr,tmpterm},", ",{next,bytes},"} = "});
-	{objectfield,_,_} ->
+	%%{objectfield,_,_} when Ext == noext, Prop == mandatory ->
+	{{objectfield,_,_},true} ->
 	    asn1ct_name:new(term),
 	    asn1ct_name:new(tmpterm),
 	    emit({"{",{curr,tmpterm},", ",{next,bytes},"} = "});
@@ -918,38 +946,33 @@ gen_dec_components_call1(Erule,TopType,
     end,
 
     case {Ext,Prop,is_optimized(Erule)} of
-	{noext,mandatory,_} -> OptPos; % generate nothing
-	{noext,_,_} ->
+	{noext,mandatory,_} -> ok; % generate nothing
+	{noext,_,_} -> %% OPTIONAL or DEFAULT
+	    OptPos = get_optionality_pos(TextPos,OptTable),
 	    Element = io_lib:format("Opt band (1 bsl ~w)",[NumberOfOptionals - OptPos]),
 	    emit(["case ",Element," of",nl]),
-	    emit(["_Opt",OptPos," when _Opt",OptPos," > 0 ->"]);
-	{_,_,false} ->
+	    emit(["  _Opt",TextPos," when _Opt",TextPos," > 0 ->"]);
+	{_,_,false} -> %% extension element, not bitstring
 	    emit(["case Extensions of",nl]),
-	    emit(["_ when size(Extensions) >= ",Pos,",element(",Pos,",Extensions) == 1 ->",nl]);
+	    emit(["  _ when size(Extensions) >= ",Pos,",element(",Pos,",Extensions) == 1 ->",nl]);
 	_ ->
 	    emit(["case Extensions of",nl]),
-	    emit(["<<_:",Pos-1,",1:1,_/bitstring>> when bit_size(Extensions) >= ",Pos," ->",nl])
+	    emit(["  <<_:",Pos-1,",1:1,_/bitstring>> when bit_size(Extensions) >= ",Pos," ->",nl])
     end,
     put(component_type,{true,C}),
-    {TermVar,BytesVar} = gen_dec_line(Erule,TopType,Cname,Type,Tpos,DecInfObj,Ext),
+    {TermVar,BytesVar} = gen_dec_line(Erule,TopType,Cname,Type,Tpos,DecInfObj,Ext,Prop),
     erase(component_type),
     case {Ext,Prop} of
 	{noext,mandatory} -> true; % generate nothing
 	{noext,_} ->
 	    emit([";",nl,"0 ->"]),
-	    gen_dec_component_no_val(TopType,Cname,Type,Prop,Tpos,Ext);
-	_ ->
-	    emit([";",nl,"_  ->",nl]),
-	    gen_dec_component_no_val(TopType,Cname,Type,Prop,Tpos,Ext)
-    end,    
-    case {Ext,Prop} of
-	{noext,mandatory} -> true; % generate nothing
-	{noext,_} ->
+	    gen_dec_component_no_val(TopType,Cname,Type,Prop,Tpos,Ext),
 	    emit([nl,"end"]);
 	_ ->
+	    emit([";",nl,"_  ->",nl]),
+	    gen_dec_component_no_val(TopType,Cname,Type,Prop,Tpos,Ext),
 	    emit([nl,"end"])
-	    
-    end,
+    end,    
     asn1ct_name:new(bytes),
     case Rest of
 	[] ->
@@ -973,7 +996,7 @@ gen_dec_component_no_val(_,_,_,mandatory,_,{ext,_,_}) ->
     emit({"{asn1_NOVALUE,",{curr,bytes},"}",nl}).
     
 
-gen_dec_line(Erule,TopType,Cname,Type,Pos,DecInfObj,Ext)  ->
+gen_dec_line(Erule,TopType,Cname,Type,Pos,DecInfObj,Ext,Prop)  ->
     Ctgenmod = list_to_atom(lists:concat(["asn1ct_gen_",per,
 					  asn1ct_gen:rt2ct_suffix()])),
     Atype = 
@@ -1017,7 +1040,7 @@ gen_dec_line(Erule,TopType,Cname,Type,Pos,DecInfObj,Ext)  ->
 			      {curr,reason},"});",nl]),
 			asn1ct_name:new(tmpterm),
 			emit([indent(4),"{",{curr,tmpterm},", _} ->",nl]),
-			emit([indent(6),"{",Cname,", {",{curr,tmpterm},", ",
+			emit([indent(6),"{",{asis,Cname},", {",{curr,tmpterm},", ",
 			      {next,bytes},"}}",nl]),
 			emit([indent(2),"end"]),
 			[];
@@ -1025,12 +1048,25 @@ gen_dec_line(Erule,TopType,Cname,Type,Pos,DecInfObj,Ext)  ->
 			%% this is when the generated code gots the
 			%% objfun though arguments on function
 			%% invocation.
+			if
+			    Ext == noext andalso Prop == mandatory ->
+				ok;
+			    true ->
+				asn1ct_name:new(tmpterm),
+				asn1ct_name:new(tmpbytes),
+				emit([nl,"    {",{curr,tmpterm},", ",{curr,tmpbytes},"} ="])
+			end,
 			{Name,RestFieldNames} = 
 			    (Type#type.def)#'ObjectClassFieldType'.fieldname,
 			emit(["?RT_PER:decode_open_type(",{curr,bytes},
 			      ", []),",nl]),
-			emit([{curr,term}," =",nl,
-			      "  case (catch ObjFun(",{asis,Name},",",
+			if
+			   Ext == noext andalso Prop == mandatory -> 
+				emit([{curr,term}," =",nl,"      "]);
+			    true ->
+				emit(["     {"])
+			end,
+			emit(["case (catch ObjFun(",{asis,Name},",",
 			      {curr,tmpterm},",telltype,",
 			      {asis,RestFieldNames},")) of", nl]),
 			emit(["    {'EXIT',",{curr,reason},"} ->",nl]),
@@ -1041,6 +1077,12 @@ gen_dec_line(Erule,TopType,Cname,Type,Pos,DecInfObj,Ext)  ->
 			emit([indent(4),"{",{curr,tmpterm},", _} ->",nl]),
 			emit([indent(6),{curr,tmpterm},nl]),
 			emit([indent(2),"end"]),
+			if
+			    Ext == noext andalso Prop == mandatory ->
+				ok;
+			    true ->
+				emit([",",nl,{curr,tmpbytes},"}"])
+			end,
 			[];
 		    _ ->
 			emit(["?RT_PER:decode_open_type(",{curr,bytes},
@@ -1175,7 +1217,12 @@ when record(H1,'ComponentType'), record(H2,'ComponentType') ->
     EncObj =
 	case asn1ct_gen:get_constraint(Type#type.constraint,
 				       componentrelation) of
-	    no -> false;
+	    no -> 
+		case Type#type.tablecinf of
+		    [{objfun,_}|_] ->
+			{"got objfun through args","ObjFun"};
+		    _ ->false
+		end;
 	    _ -> {no_attr,"ObjFun"}
 	end,
     emit({{asis,Cname}," ->",nl}),
@@ -1194,7 +1241,12 @@ gen_enc_choice2(Erule,TopType,[H1|T], Pos, Ext)
     EncObj =
 	case asn1ct_gen:get_constraint(Type#type.constraint,
 				       componentrelation) of
-	    no -> false;
+	    no -> 
+		case Type#type.tablecinf of
+		    [{objfun,_}|_] ->
+			{"got objfun through args","ObjFun"};
+		    _ ->false
+		end;
 	    _ -> {no_attr,"ObjFun"}
 	end,
     emit({{asis,H1#'ComponentType'.name}," ->",nl}),
@@ -1308,7 +1360,7 @@ tuple_notation_allowed() ->
 
 wrap_gen_dec_line(Erule,C,TopType,Cname,Type,Pos,DIO,Ext) ->
     put(component_type,{true,C}),
-    gen_dec_line(Erule,TopType,Cname,Type,Pos,DIO,Ext),
+    gen_dec_line(Erule,TopType,Cname,Type,Pos,DIO,Ext,mandatory),
     erase(component_type).
 
 get_components_prop() ->

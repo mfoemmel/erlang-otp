@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2008/04/25 12:36:47 $
-%%              $Revision: 1.19 $
+%%              $Date: 2008/09/24 10:00:58 $
+%%              $Revision: 1.21 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -37,8 +37,8 @@
 
 %%---------------------------------------------------------------------
 
--type(fa() :: {atom(), byte()}). % {Fun,Arity}
--type(fa_address() :: {atom(), byte(), non_neg_integer()}). % {F,A,Address}
+-type fa() :: {atom(), byte()}. % {Fun,Arity}
+-type fa_address() :: {atom(), byte(), non_neg_integer()}. % {F,A,Address}
 
 %%---------------------------------------------------------------------
 
@@ -53,7 +53,7 @@
 
 %%---------------------------------------------------------------------
 
--spec(start/0 :: () -> pid()).
+-spec start() -> pid().
 start() ->
   spawn(fun () -> init() end).
 
@@ -63,7 +63,7 @@ init() ->
   S = init_window(#state{}),
   loop(S).
 
--spec(loop/1 :: (#state{}) -> no_return()).
+-spec loop(#state{}) -> no_return().
 loop(State) ->
     receive
       {gs, code_listbox, click, Data, [Idx, Txt | _]} ->
@@ -127,13 +127,13 @@ loop(State) ->
 	loop(update_code_listbox(State))
     end.
 
--spec(init_window/1 :: (#state{}) -> #state{}).
+-spec init_window(#state{}) -> #state{}.
 init_window(State) ->
   create_window(State),
   gs:config(win, [{map,true}]),
   update_code_listbox(State#state{win_created=true}).
 
--spec(create_window/1 :: (#state{}) -> 'ok').
+-spec create_window(#state{}) -> 'ok'.
 create_window(State) ->
   gs:window(win, gs:start(), [{width, ?WINDOW_WIDTH},
 			      {height, ?WINDOW_HEIGHT},
@@ -207,7 +207,7 @@ create_window(State) ->
 		      {wrap, none}]),
   ok.
 
--spec(create_menu/0 :: () -> 'ok').
+-spec create_menu() -> 'ok'.
 create_menu() ->
   gs:menubar(menubar, win, [{bg, ?DEFAULT_BG_COLOR}]),
   create_sub_menus([{mbutt, fmenu, " File",
@@ -261,7 +261,7 @@ create_labels([{Name,Y,Text}|Rest], Xpos) ->
   create_labels(Rest,Xpos);
 create_labels([],_) -> ok.
 
--spec(update_code_listbox/1 :: (#state{}) -> #state{}).
+-spec update_code_listbox(#state{}) -> #state{}.
 update_code_listbox(State) ->
   Mods = lists:sort(mods()),
   case State#state.win_created of
@@ -282,7 +282,7 @@ update_code_listbox(State) ->
       end
   end.
 
--spec(update_fun/3 :: (#state{}, integer(), [mfa()]) -> #state{}).
+-spec update_fun(#state{}, integer(), [mfa()]) -> #state{}.
 update_fun(State, Idx, Data) ->
   case State#state.win_created of
     false ->
@@ -300,8 +300,7 @@ update_fun(State, Idx, Data) ->
 get_selection(Idx, Data, Default) ->
   try lists:nth(Idx+1, Data) catch _:_ -> Default end.
 
--spec(update_module_box/4 ::
-      (#state{}, integer(), [atom()], string()) -> #state{}).
+-spec update_module_box(#state{}, integer(), [atom()], string()) -> #state{}.
 update_module_box(State, Idx, Data, _Txt) ->
   case State#state.win_created of
     false ->
@@ -350,23 +349,23 @@ update_text(Lab, Text) ->
 %%---------------------------------------------------------------------
 %% @doc Returns a list of all loaded modules. 
 %%---------------------------------------------------------------------
--spec(mods/0 :: () -> [atom()]).
+-spec mods() -> [atom()].
 mods() ->
   [Mod || {Mod,_File} <- code:all_loaded()].
 
--spec(funs/1 :: (atom()) -> [fa()]).
+-spec funs(atom()) -> [fa()].
 funs(Mod) -> 
   Mod:module_info(functions).
 
--spec(native_code/1 :: (atom()) -> [fa_address()]).
+-spec native_code(atom()) -> [fa_address()].
 native_code(Mod) ->
   Mod:module_info(native_addresses).
 
--spec(mfas/2 :: (atom(), [fa()]) -> [mfa()]).
+-spec mfas(atom(), [fa()]) -> [mfa()].
 mfas(Mod, Funs) ->
   [{Mod,F,A} || {F,A} <- Funs].
 
--spec(fun_names/4 :: (atom(), [fa()], [fa_address()], bool()) -> string()).
+-spec fun_names(atom(), [fa()], [fa_address()], bool()) -> string().
 fun_names(M, Funs, NativeCode, Prof) ->
   [list_to_atom(atom_to_list(F) ++ "/" ++ integer_to_list(A) ++
 		(case in_native(F, A, NativeCode) of
@@ -380,14 +379,14 @@ fun_names(M, Funs, NativeCode, Prof) ->
 		end) ||
       {F,A} <- Funs].
 
--spec(in_native/3 :: (atom(), byte(), [fa_address()]) -> bool()).
+-spec in_native(atom(), byte(), [fa_address()]) -> bool().
 in_native(F, A, NativeCode) ->
   lists:any(fun({Fun,Arity,_}) ->
 		(Fun =:= F andalso Arity =:= A)
 	    end,
 	    NativeCode).
 
--spec(mfa_to_string/1 :: (mfa()) -> [char(),...]).
+-spec mfa_to_string(mfa()) -> [char(),...].
 mfa_to_string({M,F,A}) ->
   atom_to_list(M) ++ ":" ++ atom_to_list(F) ++ "/" ++ integer_to_list(A).
 
@@ -437,14 +436,14 @@ get_compile(Info) ->
     _ -> []
   end.
 
--spec(is_profiled/1 :: (atom()) -> bool()).
+-spec is_profiled(atom()) -> bool().
 is_profiled(Mod) ->
   case hipe_bifs:call_count_get({Mod,module_info,0}) of
     false -> false;
     C when is_integer(C) -> true
   end.
 
--spec(compile/1 :: (#state{}) -> #state{}).
+-spec compile(#state{}) -> #state{}.
 compile(State) ->
   catch gs:config(compmod, [{enable, false}]),
   update_text(compiling, "Compiling..."),
@@ -454,7 +453,7 @@ compile(State) ->
 	    end),
   State#state{compiling=P}.
 
--spec(c/3 :: (pid(), atom(), comp_options()) -> 'ok').
+-spec c(pid(), atom(), comp_options()) -> 'ok'.
 c(Parent, Mod, Options) ->
   Res = hipe:c(Mod, Options),
   Parent ! {compilation_done,Res,self()},
@@ -471,10 +470,8 @@ get_edoc(Mod) ->
       _ -> Dir ++"/" ++ atom_to_list(Mod) ++ ".erl"
     end,
   %% io:format("Get ~s\n", [File]),
-  Text = case catch edoc(File,[{xml_export,
-				xmerl_text},no_output]) of
-	   {'EXIT',_} -> "error";
-	   T -> T
+  Text = try edoc(File, [{xml_export,xmerl_text}, no_output])
+	 catch  _:_ -> "error"
 	 end,
   gs:config(edoc, {enable, true}),
   gs:config(edoc, clear),

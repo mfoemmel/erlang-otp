@@ -133,7 +133,7 @@ test2(AllNodes, OldBup, NewBup) ->
     %% Change node name
     {ok,_} = change_node_name(Mod, ThisNode, OtherNode, OldBup, NewBup),
     ok = rpc:call(OtherNode, mnesia, install_fallback, [NewBup, Mod]),
-    {NewStartRes,[]} = rpc:multicall(NewNodes, mnesia, start, []),
+    {_NewStartRes,[]} = rpc:multicall(NewNodes, mnesia, start, []),
     rpc:call(OtherNode, mnesia, wait_for_tables, [[bup_rec], infinity]),
     Wild = rpc:call(OtherNode, mnesia, table_info, [bup_rec, wild_pattern]),
     NewRecs = rpc:call(OtherNode, mnesia, dirty_match_object, [Wild]),
@@ -213,7 +213,7 @@ display(State) ->
 display(State, [Tab | Tabs]) ->
     Counters = match_tab(State#state.counter_tab, Tab),
     io:format("~-10w     records in table ~w~n", [length(Counters), Tab]),
-    Fun = fun({Oid, Val}) when Val < 5 ->
+    Fun = fun({_Oid, Val}) when Val < 5 ->
 		  ignore;
 	     ({Oid, Val}) ->
 		  io:format("~-10w *** records with key ~w~n", [Val, Oid])
@@ -221,7 +221,7 @@ display(State, [Tab | Tabs]) ->
     lists:foreach(Fun, Counters),
     display_size(State#state.size_tab, Tab),
     display(State, Tabs);
-display(CounterTab, []) ->
+display(_CounterTab, []) ->
     ok.
     
 match_tab(T, Tab) ->

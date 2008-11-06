@@ -222,7 +222,12 @@ do {                                     \
 
 #define ClauseFail() goto lb_jump_f
 
-#define SAVE_CP(X)		*(X) = make_cp(c_p->cp)
+#define SAVE_CP(X)				\
+   do {						\
+      *(X) = make_cp(c_p->cp);			\
+      c_p->cp = 0;				\
+   } while(0)
+
 #define RESTORE_CP(X)		SET_CP(c_p, cp_val(*(X)))
 
 #define ISCATCHEND(instr) ((Eterm *) *(instr) == OpCode(catch_end_y))
@@ -607,6 +612,7 @@ extern int count_instructions;
     (Dest) = (Src);                 \
     I = c_p->cp;                    \
     ASSERT(VALID_INSTR(*c_p->cp));  \
+    c_p->cp = 0;                    \
     CHECK_TERM(r(0));               \
     Goto(*I)
 
@@ -1327,10 +1333,17 @@ void process_main(void)
      NextPF(1, next);
  }
 
- OpCase(return):
+ OpCase(return): {
     SET_I(c_p->cp);
+    /*
+     * We must clear the CP to make sure that a stale value do not
+     * create a false module dependcy preventing code upgrading.
+     * It also means that we can use the CP in stack backtraces.
+     */
+    c_p->cp = 0;
     CHECK_TERM(r(0));
     Goto(*I);
+ }
 
  OpCase(test_heap_1_put_list_Iy): {
      Eterm* next;
@@ -1377,23 +1390,6 @@ void process_main(void)
 	 r(0) = result;
 	 CHECK_TERM(r(0));
 	 NextPF(0, next);
-     } else if (c_p->freason == RESCHEDULE) {
-	 Eterm* argp;
-
-	 c_p->arity = 2;
-
-	 /*
-	  * Moving c_p->arg to a register is shorter than using c_p->arg_reg
-	  * directly, since c_p->arg_reg is a pointer (not an array)
-	  * and the compiler generates code to fetch the pointer every time.
-	  */
-	 argp = c_p->arg_reg;
-	 argp[0] = r(0);
-	 argp[1] = x(1);
-	 SWAPOUT;
-	 c_p->i = I;
-	 c_p->current = NULL;
-	 goto do_schedule;
      } else if (c_p->freason == TRAP) {
 	 SET_CP(c_p, I+1);
 	 SET_I(((Export *)(c_p->def_arg_reg[3]))->address);
@@ -2040,9 +2036,6 @@ void process_main(void)
 	    r(0) = result;
 	    CHECK_TERM(r(0));
 	    NextPF(1, next);
-	} else if (c_p->freason == RESCHEDULE) {
-	    c_p->arity = 1;
-	    goto suspend_bif;
 	} else if (c_p->freason == TRAP) {
 	    goto call_bif_trap3;
 	}
@@ -2080,9 +2073,6 @@ void process_main(void)
 	    r(0) = result;
 	    CHECK_TERM(r(0));
 	    NextPF(1, next);
-	} else if (c_p->freason == RESCHEDULE) {
-	    c_p->arity = 2;
-	    goto suspend_bif;
 	} else if (c_p->freason == TRAP) {
 	    goto call_bif_trap3;
 	}
@@ -2118,9 +2108,6 @@ void process_main(void)
 	    r(0) = result;
 	    CHECK_TERM(r(0));
 	    NextPF(1, next);
-	} else if (c_p->freason == RESCHEDULE) {
-	    c_p->arity = 3;
-	    goto suspend_bif;
 	} else if (c_p->freason == TRAP) {
 	call_bif_trap3:
 	    SET_CP(c_p, I+2);
@@ -2627,7 +2614,8 @@ void process_main(void)
      SWAPOUT;
      c_p->i = I;
      erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_STATUS);
-     add_to_schedule_q(c_p);
+     if (c_p->status != P_SUSPENDED)
+	 add_to_schedule_q(c_p);
      erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_STATUS);
      goto do_schedule1;
  }
@@ -2779,20 +2767,6 @@ void process_main(void)
      ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
      erts_continue_exit_process(c_p);
      ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
-     goto do_schedule;
- }
-
-    /*
-     * Suspend BIF and prepare BIF to be rescheduled.
-     */
- suspend_bif: {
-     Eterm* argp = c_p->arg_reg;
-     argp[0] = r(0);
-     argp[1] = x(1);
-     argp[2] = x(2);
-     SWAPOUT;
-     c_p->i = I;
-     c_p->current = NULL;
      goto do_schedule;
  }
 
@@ -2974,17 +2948,6 @@ void process_main(void)
 	    CHECK_TERM(r(0));
 	    SET_I(c_p->cp);
 	    Goto(*I);
-	} else if (c_p->freason == RESCHEDULE) {
-	    Eterm* argp = c_p->arg_reg;
-
-	    c_p->arity = I[-1];
-	    argp[0] = r(0);
-	    argp[1] = x(1);
-	    argp[2] = x(2);
-	    SWAPOUT;
-	    c_p->i = I;
-	    c_p->current = NULL;
-	    goto do_schedule;
 	} else if (c_p->freason == TRAP) {
 	    SET_I(((Export *)(c_p->def_arg_reg[3]))->address);
 	    r(0) = c_p->def_arg_reg[0];
@@ -3468,6 +3431,115 @@ void process_main(void)
  }
 
  /*
+  * Calculate the number of bytes needed to encode the source
+  * operarand to UTF-8. If the source operand is invalid (e.g. wrong
+  * type or range) we return a nonsense integer result (0 or 4). We
+  * can get away with that because we KNOW that bs_put_utf8 will do
+  * full error checking.
+  */
+ OpCase(i_bs_utf8_size_sd): {
+     Eterm arg;
+     Eterm result;
+
+     GetArg1(0, arg);
+     if (arg < make_small(0x80UL)) {
+	 result = make_small(1);
+     } else if (arg < make_small(0x800UL)) {
+	 result = make_small(2);
+     } else if (arg < make_small(0x10000UL)) {
+	 result = make_small(3);
+     } else {
+	 result = make_small(4);
+     }
+     StoreBifResult(1, result);
+ }
+
+ OpCase(i_bs_put_utf8_js): {
+     Eterm arg;
+
+     GetArg1(1, arg);
+     if (!erts_bs_put_utf8(ERL_BITS_ARGS_1(arg))) {
+	 goto badarg;
+     }
+     Next(2);
+ }
+
+ /*
+  * Calculate the number of bytes needed to encode the source
+  * operarand to UTF-8. If the source operand is invalid (e.g. wrong
+  * type or range) we return a nonsense integer result (2 or 4). We
+  * can get away with that because we KNOW that bs_put_utf16 will do
+  * full error checking.
+  */
+
+ OpCase(i_bs_utf16_size_sd): {
+     Eterm arg;
+     Eterm result = make_small(2);
+
+     GetArg1(0, arg);
+     if (arg >= make_small(0x10000UL)) {
+	 result = make_small(4);
+     }
+     StoreBifResult(1, result);
+ }
+
+ OpCase(i_bs_put_utf16_jIs): {
+     Eterm arg;
+
+     GetArg1(2, arg);
+     if (!erts_bs_put_utf16(ERL_BITS_ARGS_2(arg, Arg(1)))) {
+	 goto badarg;
+     }
+     Next(3);
+ }
+
+ /*
+  * Only used for validating a value about to be stored in a binary.
+  */
+ OpCase(i_bs_validate_unicode_js): {
+     Eterm val;
+
+     GetArg1(1, val);
+
+     /*
+      * There is no need to untag the integer, but it IS necessary
+      * to make sure it is small (if the term is a bignum, it could
+      * slip through the test, and there is no further test that
+      * would catch it, since bit syntax construction silently masks
+      * too big numbers).
+      */
+     if (is_not_small(val) || val > make_small(0x10FFFFUL) ||
+	 (make_small(0xD800UL) <= val && val <= make_small(0xDFFFUL)) ||
+	 val == make_small(0xFFFEUL) || val == make_small(0xFFFFUL)) {
+	 goto badarg;
+     }
+     Next(2);
+ }
+
+ /*
+  * Only used for validating a value matched out. 
+  *
+  * tmp_arg1 = Integer to validate
+  * tmp_arg2 = Match context
+  */
+ OpCase(i_bs_validate_unicode_retract_j): {
+     /*
+      * There is no need to untag the integer, but it IS necessary
+      * to make sure it is small (a bignum pointer could fall in
+      * the valid range).
+      */
+     if (is_not_small(tmp_arg1) || tmp_arg1 > make_small(0x10FFFFUL) ||
+	 (make_small(0xD800UL) <= tmp_arg1 && tmp_arg1 <= make_small(0xDFFFUL)) ||
+	 tmp_arg1 == make_small(0xFFFEUL) || tmp_arg1 == make_small(0xFFFFUL)) {
+	 ErlBinMatchBuffer *mb = ms_matchbuffer(tmp_arg2);
+
+	 mb->offset -= 32;
+	 goto badarg;
+     }
+     Next(1);
+ }
+
+ /*
   * Matching of binaries.
   */
 
@@ -3689,7 +3761,7 @@ void process_main(void)
      _mb = ms_matchbuffer(tmp_arg1);
      if (_mb->size - _mb->offset < 32) { ClauseFail(); }
      if (BIT_OFFSET(_mb->offset) != 0) {
-	 _integer = erts_bs_get_unaligned_uint32(c_p, _mb);
+	 _integer = erts_bs_get_unaligned_uint32(_mb);
      } else {
 	 _integer = get_int32(_mb->base + _mb->offset/8);
      }
@@ -3799,6 +3871,142 @@ void process_main(void)
 	 ClauseFail();
      }
      StoreBifResult(3, result);
+ }
+
+ /* Operands: MatchContext Fail Dst */
+ OpCase(i_bs_get_utf8_rfd): {
+     tmp_arg1 = r(0);
+     goto do_bs_get_utf8;
+ }
+
+ OpCase(i_bs_get_utf8_xfd): {
+     tmp_arg1 = xb(Arg(0));
+     I++;
+ }
+
+ /*
+  * tmp_arg1 = match_context
+  * Operands: Fail Dst
+  */
+
+    do_bs_get_utf8: {
+     ErlBinMatchBuffer* _mb;
+     Eterm result;
+     Uint remaining_bits;
+     byte* pos;
+     byte tmp_buf[4];
+     Eterm a, b, c;
+
+     /*
+      * Number of trailing bytes for each value of the first byte.
+      */
+     static const byte erts_trailing_bytes_for_utf8[256] = {
+	 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9, 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+	 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9, 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+	 9,9,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+	 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 3,3,3,3,3,3,3,3,9,9,9,9,9,9,9,9
+     };
+
+     _mb = ms_matchbuffer(tmp_arg1);
+     if ((remaining_bits = _mb->size - _mb->offset) < 8) {
+	 ClauseFail();
+     }
+     if (BIT_OFFSET(_mb->offset) == 0) {
+	 pos = _mb->base + BYTE_OFFSET(_mb->offset);
+     } else {
+	 erts_align_utf8_bytes(_mb, tmp_buf);
+	 pos = tmp_buf;
+     }
+     result = pos[0];
+     switch (erts_trailing_bytes_for_utf8[result]) {
+     case 0:
+	 /* One byte only */
+	 _mb->offset += 8;
+	 break;
+     case 1:
+	 /* Two bytes */
+	 if (remaining_bits < 16) {
+	     ClauseFail();
+	 }
+	 a = pos[1];
+	 if ((a & 0xC0) != 0x80) {
+	     ClauseFail();
+	 }
+	 result = (result << 6) + a - (Eterm) 0x00003080UL;
+	 _mb->offset += 16;
+	 break;
+     case 2:
+	 /* Three bytes */
+
+	 if (remaining_bits < 24) {
+	     ClauseFail();
+	 }
+	 a = pos[1];
+	 b = pos[2];
+	 if ((a & 0xC0) != 0x80 || (b & 0xC0) != 0x80 ||
+	     (result == 0xE0 && a < 0xA0)) {
+	     ClauseFail();
+	 }
+	 result = (((result << 6) + a) << 6) + b - (Eterm) 0x000E2080UL;
+	 if ((0xD800 <= result && result <= 0xDFFF) ||
+	     result == 0xFFFE || result == 0xFFFF) {
+	     ClauseFail();
+	 }
+	 _mb->offset += 24;
+	 break;
+     case 3:
+	 /* Four bytes */
+
+	 if (remaining_bits < 32) {
+	     ClauseFail();
+	 }
+	 a = pos[1];
+	 b = pos[2];
+	 c = pos[3];
+	 if ((a & 0xC0) != 0x80 || (b & 0xC0) != 0x80 ||
+	     (c & 0xC0) != 0x80 ||
+	     (result == 0xF0 && a < 0x90)) {
+	     ClauseFail();
+	 }
+	 result = (((((result << 6) + a) << 6) + b) << 6) +
+	     c - (Eterm) 0x03C82080UL;
+	 if (result > 0x10FFFF) {
+	     ClauseFail();
+	 }
+	 _mb->offset += 32;
+	 break;
+     default:
+	 ClauseFail();
+     }
+     result = make_small(result);
+     StoreBifResult(1, result);
+ }
+
+ /* Operands: MatchContext Fail Flags Dst */
+ OpCase(i_bs_get_utf16_rfId): {
+     tmp_arg1 = r(0);
+     goto do_bs_get_utf16;
+ }
+
+ OpCase(i_bs_get_utf16_xfId): {
+     tmp_arg1 = xb(Arg(0));
+     I++;
+ }
+
+ /*
+  * tmp_arg1 = match_context
+  * Operands: Fail Flags Dst
+  */
+    do_bs_get_utf16: {
+     Eterm result = erts_bs_get_utf16(ms_matchbuffer(tmp_arg1), Arg(1));
+     if (is_non_value(result)) {
+	 ClauseFail();
+     }
+     StoreBifResult(2, result);
  }
 
  {
@@ -4172,11 +4380,12 @@ void process_main(void)
      Goto(*I);
  }
 
+#ifdef HIPE	/* XXX: temporary fix for R12B-5, will go away before R13 */
  /*
   * Instructions for module_info/0,1.
   */
 
- OpCase(i_module_info_0): {
+ OpCase(hipe_module_info_0): {
      SWAPOUT;
      r(0) = erts_module_info_0(c_p, I[-3]);
      HTOP = HEAP_TOP(c_p);
@@ -4184,7 +4393,7 @@ void process_main(void)
      Goto(*I);
  }
 
- OpCase(i_module_info_1): {
+ OpCase(hipe_module_info_1): {
      Eterm res;
 
      SWAPOUT;
@@ -4199,6 +4408,7 @@ void process_main(void)
      c_p->current = I-3;
      goto lb_error_action_code;
  }
+#endif
 
  /*
   * Instructions for allocating on the message area.
@@ -4460,10 +4670,6 @@ void process_main(void)
      }
      OpCase(hipe_trap_resume): {
 	 cmd = HIPE_MODE_SWITCH_CMD_RESUME;
-	 goto L_hipe_mode_switch;
-     }
-     OpCase(hipe_trap_reschedule): {
-	 cmd = HIPE_MODE_SWITCH_CMD_RESCHEDULE;
 	 goto L_hipe_mode_switch;
      }
  L_hipe_mode_switch:
@@ -4753,7 +4959,6 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
     c_p->i = pc;    /* In case we call erl_exit(). */
 
     ASSERT(c_p->freason != TRAP); /* Should have been handled earlier. */
-    ASSERT(c_p->freason != RESCHEDULE); /* Should have been handled earlier. */
 
     /*
      * Check if we have an arglist for the top level call. If so, this
@@ -4811,7 +5016,10 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
 	reg[1] = exception_tag[GET_EXC_CLASS(c_p->freason)];
 	reg[2] = Value;
 	reg[3] = c_p->ftrace;
-        if ( (new_pc = next_catch(c_p, reg))) return new_pc;
+        if ((new_pc = next_catch(c_p, reg))) {
+	    c_p->cp = 0;	/* To avoid keeping stale references. */
+	    return new_pc;
+	}
 	if (c_p->catches > 0) erl_exit(1, "Catch not found");
     }
     ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
@@ -5047,6 +5255,11 @@ save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf,
 	    s->trace[s->depth++] = pc;
 	    depth--;
 	}
+	/* Save second stack entry if CP is valid and different from pc */
+	if (depth > 0 && c_p->cp != 0 && c_p->cp != pc) {
+	    s->trace[s->depth++] = c_p->cp;
+	    depth--;
+	}
 	s->pc = NULL;
 	args = make_arglist(c_p, reg, a); /* Overwrite CAR(c_p->ftrace) */
     } else {
@@ -5069,6 +5282,10 @@ save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf,
 	    }
 	    s->pc = NULL; /* Ignore pc */
 	} else {
+	    if (depth > 0 && c_p->cp != 0 && c_p->cp != pc) {
+		s->trace[s->depth++] = c_p->cp;
+		depth--;
+	    }
 	    s->pc = pc;
 	}
     }

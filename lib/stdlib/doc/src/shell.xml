@@ -575,14 +575,14 @@ loop(N) ->
       displayed:</p>
     <pre>
           --> ?
-          c [nn]   - connect to job 
-          i [nn]   - interrupt job
-          k [nn]   - kill job
-          j        - list all jobs
-          s        - start local shell
-          r [node] - start remote shell
-          q        - quit Erlang
-          ?  | h   - this message    </pre>
+          c [nn]            - connect to job
+          i [nn]            - interrupt job
+          k [nn]            - kill job
+          j                 - list all jobs
+          s [shell]         - start local shell
+          r [node [shell]]  - start remote shell
+          q        - quit erlang
+          ? | h             - this message    </pre>
     <p>The <c>JCL</c> commands have the following meaning:</p>
     <taglist>
       <tag><c>c [nn]</c></tag>
@@ -624,12 +624,22 @@ loop(N) ->
           <c>[nn]</c> which can be used in references.
           </p>
       </item>
+      <tag><c>s [shell]</c></tag>
+      <item>
+        <p>Starts a new job. This will be assigned the new index
+          <c>[nn]</c> which can be used in references.
+	  If the optional argument <c>shell</c> is given, it is assumed
+	  to be a module that implements an alternative shell.
+          </p>
+      </item>
       <tag><c>r [node]</c></tag>
       <item>
         <p>Starts a remote job on <c>node</c>. This is used in
           distributed Erlang to allow a shell running on one node to
           control a number of applications running on a network of
           nodes.
+	  If the optional argument <c>shell</c> is given, it is assumed
+	  to be a module that implements an alternative shell.
           </p>
       </item>
       <tag><c>q</c></tag>

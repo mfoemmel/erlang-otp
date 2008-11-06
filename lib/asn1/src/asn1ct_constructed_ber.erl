@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1997-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1ct_constructed_ber).
 
@@ -364,6 +366,7 @@ gen_encode_set(Erules,Typename,D) when record(D,type) ->
 
 gen_decode_set(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:start(),
+    asn1ct_name:clear(),
     asn1ct_name:new(term),
     asn1ct_name:new(tag),
     #'SET'{components=TCompList} = D#type.def,
@@ -502,6 +505,7 @@ gen_encode_sof(Erules,Typename,_InnerTypename,D) when record(D,type) ->
 
 gen_decode_sof(Erules,Typename,_InnerTypename,D) when record(D,type) ->
     asn1ct_name:start(),
+    asn1ct_name:clear(),
     {SeqOrSetOf, TypeTag, Cont} = 
 	case D#type.def of
 	    {'SET OF',_Cont} -> {'SET OF','SET',_Cont};
@@ -1105,14 +1109,6 @@ gen_enc_line(Erules,TopType,Cname,
 			 ["{",{curr,encBytes},",",{curr,encLen},"} = "],
 			 EncObj)
     end;
-% gen_enc_line(Erules,TopType,Cname,
-% 	     Type=#type{constraint=[{componentrelation,_,_}],
-% 			def=#'ObjectClassFieldType'{type={typefield,_}}},
-% 	     Element,Indent,OptOrMand=mandatory,EncObj) 
-%   when list(Element) ->
-%     asn1ct_name:new(tmpBytes),
-%     gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,
-% 		 ["{",{curr,tmpBytes},",_} = "],EncObj);
  gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,EncObj) 
    when list(Element) ->
      gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,
@@ -1132,23 +1128,16 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 		       Element),
     case {Type,asn1ct_gen:get_constraint(Type#type.constraint,
 					 componentrelation)} of
-% 	#type{constraint=[{tableconstraint_info,RefedFieldName}],
-% 	      def={typefield,_}} ->
 	{#type{def=#'ObjectClassFieldType'{type={typefield,_},
 					   fieldname=RefedFieldName}},
 	 {componentrelation,_,_}} ->
 	    {_LeadingAttrName,Fun} = EncObj,
 	    case RefedFieldName of
-%% 		{notype,T} ->
-%% 		    throw({error,{notype,type_from_object,T}});
 		{Name,RestFieldNames} when atom(Name),Name =/= notype ->
 		    case OptOrMand of
 			mandatory -> ok;
 			_ ->
-%			    emit(["{",{curr,tmpBytes},",",{curr,tmpLen},
 			    emit(["{",{curr,tmpBytes},", _} = "])
-%%			    asn1ct_name:new(tmpBytes),
-%%			    asn1ct_name:new(tmpLen)
 		    end,
 		    emit({Fun,"(",{asis,Name},", ",Element,", [], ",
 			  {asis,RestFieldNames},"),",nl}),
@@ -1159,7 +1148,6 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 			    emit({"?RT_BER:encode_open_type(",{curr,tmpBytes},
 				  ",",{asis,Tag},")"});
 			_ ->
-%			    emit({"{",{next,tmpBytes},", _} = "}),
 			    emit({"{",{next,tmpBytes},", ",{curr,tmpLen},
 				  "} = "}),
 			    emit({"?RT_BER:encode_open_type(",{curr,tmpBytes},
@@ -1170,16 +1158,6 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 		Err ->
 		    throw({asn1,{'internal error',Err}})
 	    end;
-% 	#type{constraint=[{tableconstraint_info,_}],
-% 	      def={objectfield,PrimFieldName1,PFNList}} ->
-%% 	{{#'ObjectClassFieldType'{type={objectfield,PrimFieldName1,
-%% 					PFNList}},_},
-%% 	 {componentrelation,_,_}} ->
-%% 	    %% this is when the dotted list in the FieldName has more
-%% 	    %% than one element
-%% 	    {_LeadingAttrName,Fun} = EncObj,
-%% 	    emit({"?RT_BER:encode_open_type(",Fun,"(",{asis,PrimFieldName1},
-%% 		  ", ",Element,", ",{asis,PFNList},"),",{asis,Tag},")"});
 	_ ->
 	    case WhatKind of
 		{primitive,bif} ->
@@ -1194,8 +1172,6 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 			end,
 		    asn1ct_gen_ber:gen_encode_prim(ber,EncType,{asis,Tag},
 						   Element);
-%% 		{notype,_} ->
-%% 		    emit({"'enc_",InnerType,"'(",Element,", ",{asis,Tag},")"});
 		'ASN1_OPEN_TYPE' ->
 		    asn1ct_gen_ber:gen_encode_prim(ber,Type#type{def='ASN1_OPEN_TYPE'},{asis,Tag},Element);
 		_ ->

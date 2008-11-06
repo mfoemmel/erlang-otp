@@ -539,9 +539,42 @@ extern void erts_sys_init_float(void);
 extern void erts_thread_init_float(void);
 extern void erts_thread_disable_fpe(void);
 
+ERTS_GLB_INLINE int erts_block_fpe(void);
+ERTS_GLB_INLINE void erts_unblock_fpe_conditional(int);
+ERTS_GLB_INLINE void erts_unblock_fpe(void);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE int erts_block_fpe(void)
+{
+#ifndef NO_FPE_SIGNALS
+    return erts_sys_block_fpe();
+#else
+    return 0;
+#endif
+}
+
+ERTS_GLB_INLINE void erts_unblock_fpe_conditional(int unmasked)
+{
+#ifndef NO_FPE_SIGNALS
+    erts_sys_unblock_fpe_conditional(unmasked);
+#endif
+}
+
+ERTS_GLB_INLINE void erts_unblock_fpe(void)
+{
+#ifndef NO_FPE_SIGNALS
+    erts_sys_unblock_fpe();
+#endif
+}
+
+#endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
+
+
 /* Dynamic library/driver loading */
 extern void erl_sys_ddll_init(void); /* to initialize mutexes etc */
 extern int erts_sys_ddll_open(char *path, void **handle);
+extern int erts_sys_ddll_open_noext(char *path, void **handle);
 extern int erts_sys_ddll_load_driver_init(void *handle, void **function);
 extern int erts_sys_ddll_close(void *handle);
 extern void *erts_sys_ddll_call_init(void *function);

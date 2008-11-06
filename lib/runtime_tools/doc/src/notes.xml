@@ -32,6 +32,22 @@
   <p>This document describes the changes made to the Runtime_Tools
     application.</p>
 
+<section><title>Runtime_Tools 1.7.3</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>Fixed a timestamp problem where some events could be
+	    sent out of order. Minor fixes to presentation of
+	    data.</p>
+          <p>
+	    Own Id: OTP-7544 Aux Id: otp-7442 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Runtime_Tools 1.7.2</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

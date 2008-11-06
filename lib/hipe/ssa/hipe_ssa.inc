@@ -37,7 +37,7 @@
 %%
 %%----------------------------------------------------------------------
 
--spec(convert/1 :: (#cfg{}) -> #cfg{}).
+-spec convert(#cfg{}) -> #cfg{}.
 
 convert(CFG) ->
   CFG1 = insertNewStartNode(CFG),
@@ -581,7 +581,7 @@ insertRenamedParams([], Current, Result) ->
 %% dominated by a define. If a variable does not abide by these rules,
 %% a warning message will be printed on stdout.
 %%
--spec(check/1 :: (#cfg{}) -> 'ok').
+-spec check(#cfg{}) -> 'ok'.
 
 check(CFG) ->
   Labels  = ?CFG:labels(CFG),
@@ -770,7 +770,7 @@ def_doms_use([], _VarTree, _Label, _DomTree, _Old) ->
 %%             predecessors, if possible.
 %%----------------------------------------------------------------------
 
--spec(unconvert/1 :: (#cfg{}) -> #cfg{}).
+-spec unconvert(#cfg{}) -> #cfg{}.
 
 unconvert(CFG) ->
   ?CFG:remove_trivial_bbs(unconvert(?CFG:reverse_postorder(CFG), CFG)).
@@ -891,7 +891,7 @@ getPhiFuncts([], Result) ->
 %% Dead Code Elimination on SSA form
 %%======================================================================
 
--spec(remove_dead_code/1 :: (#cfg{}) -> #cfg{}).
+-spec remove_dead_code(#cfg{}) -> #cfg{}.
 
 remove_dead_code(CFG) ->
   Lbls = ?CFG:reverse_postorder(CFG),  

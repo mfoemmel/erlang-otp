@@ -635,6 +635,7 @@ start(Cp) ->
 
 init(Cp) ->
     process_flag(trap_exit, true),
+    process_flag(priority, high), %% Needed dets files might starve the system
     Name = Cp#checkpoint_args.name,
     Props = [set, public, {keypos, 2}],
     case catch ?ets_new_table(mnesia_pending_checkpoint, Props) of
@@ -800,20 +801,23 @@ retainer_loop(Cp) ->
 	{_From, {retain, Tid, Tab, Key, OldRecs}}
 	when Cp#checkpoint_args.wait_for_old == [] ->
 	    R = val({Tab, {retainer, Name}}),
+	    PendingTab = Cp#checkpoint_args.pending_tab,
 	    case R#retainer.really_retain of
+		true when PendingTab =:= undefined ->
+		    Store = R#retainer.store,
+		    case retainer_get(Store, Key) of
+			[] ->  retainer_put(Store, {Tab, Key, OldRecs});
+			_ ->   already_retained
+		    end;
 		true ->
-		    PendingTab = Cp#checkpoint_args.pending_tab,
-		    case catch ?ets_lookup_element(PendingTab, Tid, 1) of
-			{'EXIT', _} ->
+		    case ets:member(PendingTab, Tid) of
+			true -> ignore;
+			false -> 
 			    Store = R#retainer.store,
 			    case retainer_get(Store, Key) of
-				[] ->
-				    retainer_put(Store, {Tab, Key, OldRecs});
-				_ ->
-				    already_retained
-			    end;
-			pending ->
-			    ignore
+				[] ->  retainer_put(Store, {Tab, Key, OldRecs});
+				_ ->   already_retained
+			    end			
 		    end;
 		false ->
 		    ignore

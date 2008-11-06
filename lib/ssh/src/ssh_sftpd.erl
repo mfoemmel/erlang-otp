@@ -617,7 +617,7 @@ relate_file_name(File, #state{root = Root}) ->
 	File ->
 	    File;
 	Root ->
-	    NewFile = relate(string:strip(File, left, $/), Root),
+	    NewFile = relate(make_relative_filename(File), Root),
 	    within_root(Root, NewFile)
     end.
 
@@ -629,10 +629,69 @@ within_root(Root, File) ->
 	    Root
     end.
 
+%% Remove leading slash (/), if any, in order to make the filename
+%% relative (to the root)
+make_relative_filename("/")       -> "./"; % Make it relative and preserve /
+make_relative_filename("/"++File) -> File;
+make_relative_filename(File)      -> File.
+
 relate(File0, Path) ->
     File1 = filename:absname(File0, Path),
     Parts = fix_file_name(filename:split(File1), []),
-    filename:join(Parts).
+    File2 = filename:join(Parts),
+    ensure_trailing_slash_is_preserved(File0, File2).
+
+%% It seems as if the openssh client (observed with the
+%% openssh-4.2p1-18.30 package on SLED 10), and possibly other clients
+%% as well (Maverick?), rely on the fact that a trailing slash (/) is
+%% preserved.  If trailing slashes aren't preserved, symlinks which
+%% point at directories won't be properly identified as directories.
+%%
+%% A failing example: 
+%%
+%%    1) assume the following directory structure:
+%%       $ mkdir /tmp/symlink-target
+%%       $ touch /tmp/symlink-target/foo
+%%       $ ln -s /tmp/symlink-target /tmp/symlink
+%%
+%%    2) login using the sftp client in openssh
+%%       sftp> cd /tmp/
+%%       sftp> ls symlink-target
+%%       symlink-target/foo   
+%%       sftp> ls symlink
+%%       symlink/                 <===== foo should have been visible here
+%%       sftp> cd symlink-target
+%%       sftp> ls
+%%       foo  
+%%       sftp> cd ..
+%%       sftp> cd symlink
+%%       sftp> ls
+%%                                <===== foo should have been visible here
+%%
+%% The symlinks are resolved by file:read_link_info/1 only if the path
+%% has a trailing slash, which seems to something that some of the
+%% sftp clients utilize:
+%%
+%%    1> file:read_link_info(".../symlink").
+%%    {ok,{file_info,4,symlink,read_write,
+%%                   {{2008,10,20},{10,25,26}},
+%%                   {{2008,10,17},{16,22,33}},
+%%                   {{2008,10,17},{16,22,33}},
+%%                   41471,1,2053,0,570447,20996,9935}}
+%%    
+%%    2> file:read_link_info(".../symlink/").
+%%    {ok,{file_info,8192,directory,read_write,
+%%                   {{2008,10,20},{10,36,2}},
+%%                   {{2008,10,20},{10,44,35}},
+%%                   {{2008,10,20},{10,44,35}},
+%%                   17407,29,2053,0,521224,0,0}}
+ensure_trailing_slash_is_preserved(File0, File1) ->
+    case {lists:suffix("/", File0), lists:suffix("/", File1)} of
+	{true, false} -> File1 ++ "/";
+	_Other        -> File1
+    end.
+	    
+    
 
 %%% fix file just a little: a/b/.. -> a and a/. -> a
 fix_file_name([".." | Rest], ["/"] = Acc) ->

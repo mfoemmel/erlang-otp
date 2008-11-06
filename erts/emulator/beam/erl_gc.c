@@ -400,7 +400,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 	get_now(&ms2, &s2, &us2);
 	t = ms2 - ms1;
 	t = t*1000000 + s2 - s1;
-	t = t*1000 + (us2 - us1)/1000;
+	t = t*1000 + ((Sint) (us2 - us1))/1000;
 	if (t > 0 && (Uint)t > erts_system_monitor_long_gc) {
 	    monitor_long_gc(p, t);
 	}

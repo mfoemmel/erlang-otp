@@ -139,13 +139,25 @@
          compact_otp7457_msg01/1,
          compact_otp7457_msg02/1,
          compact_otp7457_msg03/1,
+	 compact_otp7534_msg01/1,
+	 compact_otp7576_msg01/1,
 
 	 flex_compact_tickets/1, 
 	 flex_compact_otp7138_msg01/1, 
 	 flex_compact_otp7138_msg02/1, 
+         flex_compact_otp7431_msg01/1,
+         flex_compact_otp7431_msg02/1,
+         flex_compact_otp7431_msg03/1,
+         flex_compact_otp7431_msg04/1,
+         flex_compact_otp7431_msg05/1,
+         flex_compact_otp7431_msg06/1,
+         flex_compact_otp7431_msg07/1,
 	 flex_compact_otp7457_msg01/1, 
 	 flex_compact_otp7457_msg02/1, 
 	 flex_compact_otp7457_msg03/1, 
+         flex_compact_otp7534_msg01/1,
+         flex_compact_otp7573_msg01/1,
+	 flex_compact_otp7576_msg01/1, 
 
 	 pretty_tickets/1, 
 	 pretty_otp4632_msg1/1, 
@@ -198,6 +210,13 @@
          flex_pretty_otp5600_msg2/1,
          flex_pretty_otp5601_msg1/1,
          flex_pretty_otp5793_msg01/1,
+         flex_pretty_otp7431_msg01/1,
+         flex_pretty_otp7431_msg02/1,
+         flex_pretty_otp7431_msg03/1,
+         flex_pretty_otp7431_msg04/1,
+         flex_pretty_otp7431_msg05/1,
+         flex_pretty_otp7431_msg06/1,
+         flex_pretty_otp7431_msg07/1,
 
 	 init_per_testcase/2, fin_per_testcase/2]).  
 
@@ -623,7 +642,9 @@ compact_tickets(suite) ->
      compact_otp7138_msg02,
      compact_otp7457_msg01,
      compact_otp7457_msg02,
-     compact_otp7457_msg03
+     compact_otp7457_msg03,
+     compact_otp7534_msg01,
+     compact_otp7576_msg01
     ].
 
 flex_compact_tickets(suite) ->
@@ -635,9 +656,20 @@ flex_compact_tickets_cases() ->
     [
      flex_compact_otp7138_msg01,
      flex_compact_otp7138_msg02,
+     flex_compact_otp7431_msg01,
+     flex_compact_otp7431_msg02,
+     flex_compact_otp7431_msg03, 
+     flex_compact_otp7431_msg04,
+     flex_compact_otp7431_msg05,
+     flex_compact_otp7431_msg06,
+     flex_compact_otp7431_msg07,
+     flex_compact_otp7138_msg02,
      flex_compact_otp7457_msg01,
      flex_compact_otp7457_msg02,
-     flex_compact_otp7457_msg03
+     flex_compact_otp7457_msg03,
+     flex_compact_otp7534_msg01,
+     flex_compact_otp7573_msg01,
+     flex_compact_otp7576_msg01
     ].
 
 pretty_tickets(suite) ->
@@ -698,7 +730,14 @@ flex_pretty_tickets_cases() ->
      flex_pretty_otp5600_msg1,
      flex_pretty_otp5600_msg2,
      flex_pretty_otp5601_msg1,
-     flex_pretty_otp5793_msg01
+     flex_pretty_otp5793_msg01,
+     flex_pretty_otp7431_msg01,
+     flex_pretty_otp7431_msg02,
+     flex_pretty_otp7431_msg03, 
+     flex_pretty_otp7431_msg04,
+     flex_pretty_otp7431_msg05,
+     flex_pretty_otp7431_msg06,
+     flex_pretty_otp7431_msg07
     ].
 
 
@@ -846,6 +885,220 @@ flex_pretty_otp5793_msg01(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config),
     pretty_otp5793(ok, pretty_otp5793_msg1(), [Conf]).
+
+
+flex_pretty_otp7431_msg01(suite) ->
+    [];
+flex_pretty_otp7431_msg01(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(ok, flex_pretty_otp7431_msg1(), [Conf]).
+
+flex_pretty_otp7431_msg02(suite) ->
+    [];
+flex_pretty_otp7431_msg02(Config) when list(Config) ->
+    %%     put(severity,trc),
+    %%     put(dbg,true),
+    d("flex_pretty_otp7431_msg02 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg2(), [Conf]).
+
+flex_pretty_otp7431_msg03(suite) ->
+    [];
+flex_pretty_otp7431_msg03(Config) when list(Config) ->
+    %%     put(severity,trc),
+    %%     put(dbg,true),
+    d("flex_pretty_otp7431_msg03 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg3(), [Conf]).
+
+flex_pretty_otp7431_msg04(suite) ->
+    [];
+flex_pretty_otp7431_msg04(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg04 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg4(), [Conf]).
+
+flex_pretty_otp7431_msg05(suite) ->
+    [];
+flex_pretty_otp7431_msg05(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg05 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg5(), [Conf]).
+
+flex_pretty_otp7431_msg06(suite) ->
+    [];
+flex_pretty_otp7431_msg06(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg06 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg6(), [Conf]).
+
+flex_pretty_otp7431_msg07(suite) ->
+    [];
+flex_pretty_otp7431_msg07(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg07 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg7(), [Conf]).
+
+flex_pretty_otp7431(Expected, Msg, Conf) ->
+    otp7431(Expected, megaco_pretty_text_encoder, Msg, Conf).
+
+otp7431(Expected, Codec, Msg0, Conf) ->
+    Bin0 = list_to_binary(Msg0),
+    case decode_message(Codec, false, Conf, Bin0) of
+	{ok, _Msg1} when Expected =:= ok ->
+ 	    io:format(" decoded", []);
+	{error, {bad_property_parm, Reason}} when (Expected =:= error) andalso 
+						  is_list(Reason) ->
+	    io:format("expected result: ~s", [Reason]),
+	    ok;
+	Else ->
+	    io:format("unexpected result", []),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+
+flex_pretty_otp7431_msg1() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v=0 
+				      o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+				      s=- 
+				      t= 0 0 
+				      c=IN IP4 124.124.124.222 
+				      m=audio 2222 RTP/AVP 4 
+				      a=ptime:30 
+				      a=recvonly 
+				     } ; RTP profile for G.723.1 is 4
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg2() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v=0 
+				      o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+				      s=- 
+				      t= 0 0 
+				      c=IN IP4 124.124.124.222 
+				      m=audio 2222 RTP/AVP 4 
+				      a=ptime:30 
+				      a=             }
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg3() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v=0 
+				      o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+				      s=- 
+				      t= 0 0 
+				      c=IN IP4 124.124.124.222 
+				      m=audio 2222 RTP/AVP 4 
+				      a=ptime:30 
+				      a             }
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg4() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v=0 
+				      o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+				      s=- 
+				      t= 0 0 
+				      c=IN IP4 124.124.124.222 
+				      m=audio 2222 RTP/AVP 4 
+				      a=ptime:30 
+				      a}
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg5() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v=            }
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg6() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v            }
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg7() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v}
+				   }
+			}
+		      }
+	      } 
+       }".
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2547,8 +2800,7 @@ compact_otp7138(EC, BinMsg) ->
 		      "~n   ~p", [binary_to_list(BinMsg)]),
 		    ok;
 		{ok, BinMsg2} ->
-		    d("compact_otp7138 ->"
-		      "encode successfull but result differ: "
+		    d("compact_otp7138 -> encode successfull but result differ: "
 		      "~n   ~p", [binary_to_list(BinMsg2)]),
 		    ok;
 		{error, Reason} ->
@@ -2607,7 +2859,7 @@ compact_otp7457_msg03() ->
     <<"!/2 <mg1>\nT=15{C=-{W-SC=tdm12/1/1/*{SV{MT=RS,RE=900}}}}\n">>.
 
 compact_otp7457(EC, BinMsg) ->
-    d("compact_otp7138 -> "
+    d("compact_otp7457 -> "
       "~n   ~p", [binary_to_list(BinMsg)]),
     Codec = megaco_compact_text_encoder,
     case decode_message(Codec, false, EC, BinMsg) of
@@ -2622,6 +2874,86 @@ compact_otp7457(EC, BinMsg) ->
 		      "encode successfull but result differ: "
 		      "~n   ~p", [binary_to_list(BinMsg2)]),
 		    ok;
+		{error, Reason} ->
+		    e("encode failed: ~p", [Reason]),
+		    {error, Reason}
+	    end;
+	{error, Reason} ->
+	    e("decode failed: ~p", [Reason]),
+	    {error, Reason}
+    end.
+
+compact_otp7534_msg01(suite) ->
+    [];
+compact_otp7534_msg01(Config) when is_list(Config) ->
+    put(dbg, true),
+    put(severity, trc),
+    d("compact_otp7534_msg01 -> entry", []),
+    Msg = otp7534_msg01(),
+    compact_otp7534([], Msg).
+
+
+compact_otp7576_msg01(suite) ->
+    [];
+compact_otp7576_msg01(Config) when list(Config) ->
+%%     put(dbg, true),
+%%     put(severity, trc),
+    d("compact_otp7576_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg = compact_otp7576_msg01(),
+    EC  = [],
+    ok = compact_otp7576(EC, Msg),
+    ok.
+
+compact_otp7576_msg01() ->
+    M = "!/"  
+	?VERSION_STR 
+	"[130.100.144.37]:2944\nT=10032{C=${tp{*,*,is,st=1},pr=6,a=rtp/2/${m{st=1{o{mo=so,rv=ON},l{
+v=0
+c=IN IP4 $
+m=audio $ RTP/AVP 0
+b=AS:64
+a=rtpmap:0 PCMU/8000
+}}},e=1{G/CAUSE}},a=rtp/2/${m{st=1{o{mo=rc,rv=ON},l{
+v=0
+c=IN IP4 $
+m=audio $ RTP/AVP 0
+b=AS:64
+a=rtpmap:0 PCMU/8000
+},r{
+v=0
+c=IN IP4 130.100.126.77
+m=audio 8014 RTP/AVP 0
+b=AS:64
+a=rtpmap:0 PCMU/8000
+}}},e=1{G/CAUSE}}}}",
+    list_to_binary(M).
+
+compact_otp7576(EC, BinMsg) ->
+    d("compact_otp7576 -> "
+      "~n   ~p", [binary_to_list(BinMsg)]),
+    Codec = megaco_compact_text_encoder,
+    case decode_message(Codec, false, EC, BinMsg) of
+	{ok, Msg} ->
+	    case encode_message(Codec, EC, Msg) of
+		{ok, BinMsg} ->
+		    d("compact_otp7138 -> encode successfull: "
+		      "~n   ~p", [binary_to_list(BinMsg)]),
+		    ok;
+		{ok, BinMsg2} ->
+		    d("compact_otp7138 -> encode successfull but result differ: "
+		      "~n   ~p", [binary_to_list(BinMsg2)]),
+                    case decode_message(Codec, false, EC, BinMsg2) of
+			{ok, Msg} -> 
+			    d("compact_otp7138 -> "
+			      "extra verification decode ok", []),
+			    ok;
+			{ok, Msg2} ->
+			    e("verification decode generated other message: "
+			      "~n   Msg:  ~p"
+			      "~n   Msg2: ~p", [Msg, Msg2]),
+			    {error, {verification_decode, Msg, Msg2}}
+		    end;
 		{error, Reason} ->
 		    e("encode failed: ~p", [Reason]),
 		    {error, Reason}
@@ -2657,6 +2989,148 @@ flex_compact_otp7138_msg02(Config) when list(Config) ->
     Conf = flex_scanner_conf(Config),
     compact_otp7138([Conf], Msg).
 
+
+flex_compact_otp7431_msg01(suite) ->
+    [];
+flex_compact_otp7431_msg01(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg01 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(ok, flex_compact_otp7431_msg1(), [Conf]).
+
+flex_compact_otp7431_msg02(suite) ->
+    [];
+flex_compact_otp7431_msg02(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg02 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg2(), [Conf]).
+
+flex_compact_otp7431_msg03(suite) ->
+    [];
+flex_compact_otp7431_msg03(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg03 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg3(), [Conf]).
+
+flex_compact_otp7431_msg04(suite) ->
+    [];
+flex_compact_otp7431_msg04(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg04 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg4(), [Conf]).
+
+flex_compact_otp7431_msg05(suite) ->
+    [];
+flex_compact_otp7431_msg05(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg05 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg5(), [Conf]).
+
+flex_compact_otp7431_msg06(suite) ->
+    [];
+flex_compact_otp7431_msg06(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg06 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg6(), [Conf]).
+
+flex_compact_otp7431_msg07(suite) ->
+    [];
+flex_compact_otp7431_msg07(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg07 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg7(), [Conf]).
+
+
+flex_compact_otp7431(Expected, Msg, Conf) ->
+    otp7431(Expected, megaco_compact_text_encoder, Msg, Conf).
+
+flex_compact_otp7431_msg1() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a=recvonly
+}}}}}}".
+
+flex_compact_otp7431_msg2() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a=     }
+}}}}}".
+
+
+flex_compact_otp7431_msg3() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a     }
+}}}}}".
+
+
+flex_compact_otp7431_msg4() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a}
+}}}}}".
+
+
+flex_compact_otp7431_msg5() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=       }
+}}}}}".
+
+
+flex_compact_otp7431_msg6() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v       }
+}}}}}".
+
+flex_compact_otp7431_msg7() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v}
+}}}}}".
+
 flex_compact_otp7457_msg01(suite) ->
     [];
 flex_compact_otp7457_msg01(Config) when is_list(Config) ->
@@ -2686,6 +3160,102 @@ flex_compact_otp7457_msg03(Config) when is_list(Config) ->
     Msg  = compact_otp7457_msg03(),
     Conf = flex_scanner_conf(Config),
     compact_otp7457([Conf], Msg).
+
+flex_compact_otp7534_msg01(suite) ->
+    [];
+flex_compact_otp7534_msg01(Config) when is_list(Config) ->
+    put(dbg, true),
+    put(severity, trc),
+    d("flex_compact_otp7534_msg01 -> entry", []),
+    Msg  = otp7534_msg01(),
+    Conf = flex_scanner_conf(Config),
+    compact_otp7534([Conf], Msg).
+
+otp7534_msg01() ->
+    <<"!/2 bgwch3_1\nP=62916991{C=-{AV=root{M{TS{ipra/ar=[interconnect,interconnect1,internal],SI=IV}},PG{root-2,ocp-1,it-1,nt-1,rtp-1,gm-1,ds-1,tman-1,xnq-1}}}}">>.
+
+compact_otp7534(EC, BinMsg) ->
+    Codec = megaco_compact_text_encoder,
+    otp7534(Codec, EC, BinMsg).
+
+otp7534(Codec, EC, BinMsg) ->
+    d("otp7534 -> "
+      "~n   Codec: ~p"
+      "~n   ~p", [Codec, binary_to_list(BinMsg)]),
+    case decode_message(Codec, false, EC, BinMsg) of
+	{ok, Msg} ->
+	    case encode_message(Codec, EC, Msg) of
+		{ok, BinMsg} ->
+		    d("otp7457 -> encode successfull: "
+		      "~n   ~p", [binary_to_list(BinMsg)]),
+		    ok;
+		{ok, BinMsg2} ->
+		    d("otp7457 -> "
+		      "encode successfull but result differ: "
+		      "~n   ~p", [binary_to_list(BinMsg2)]),
+		    ok;
+		{error, Reason} ->
+		    e("encode failed: ~p", [Reason]),
+		    {error, Reason}
+	    end;
+	{error, Reason} ->
+	    e("decode failed: ~p", [Reason]),
+	    {error, Reason}
+    end.
+
+
+flex_compact_otp7573_msg01(suite) ->
+    [];
+flex_compact_otp7573_msg01(Config) when is_list(Config) ->
+    put(dbg, true),
+    put(severity, trc),
+    d("flex_compact_otp7573_msg01 -> entry", []),
+    Msg  = otp7573_msg01(),
+    Conf = flex_scanner_conf(Config),
+    compact_otp7573([Conf], Msg).
+
+otp7573_msg01() ->
+    <<"!/2 <aa>\nP=37775561{C=-{AV=root{M{TS{root/maxnumberofcontexts=16000,root/maxterminationspercontext=2,root/normalmgexecutiontime=3000,root/normalmgcexecutiontime=3000,root/mgprovisionalresponsetimervalue=2000,root/mgcprovisionalresponsetimervalue=2000,root/mgcoriginatedpendinglimit=5,root/mgoriginatedpendinglimit=5,ipra/ar=[\"\"],SI=IV}},PG{root-2,ocp-1,it-1,nt-1,rtp-1,gm-1,ds-1,tman-1,xnq-1,ipra-1}}}}">>.
+
+compact_otp7573(EC, BinMsg) ->
+    Codec = megaco_compact_text_encoder,
+    otp7573(Codec, EC, BinMsg).
+
+otp7573(Codec, EC, BinMsg) ->
+    d("otp7573 -> "
+      "~n   Codec: ~p"
+      "~n   ~p", [Codec, binary_to_list(BinMsg)]),
+    case decode_message(Codec, false, EC, BinMsg) of
+	{ok, Msg} ->
+	    case encode_message(Codec, EC, Msg) of
+		{ok, BinMsg} ->
+		    d("otp7573 -> encode successfull: "
+		      "~n   ~p", [binary_to_list(BinMsg)]),
+		    ok;
+		{ok, BinMsg2} ->
+		    d("otp7573 -> "
+		      "encode successfull but result differ: "
+		      "~n   ~p", [binary_to_list(BinMsg2)]),
+		    ok;
+		{error, Reason} ->
+		    e("encode failed: ~p", [Reason]),
+		    {error, Reason}
+	    end;
+	{error, Reason} ->
+	    e("decode failed: ~p", [Reason]),
+	    {error, Reason}
+    end.
+
+
+flex_compact_otp7576_msg01(suite) ->
+    [];
+flex_compact_otp7576_msg01(Config) when list(Config) ->
+%%     put(dbg, true),
+%%     put(severity, trc),
+    d("flex_compact_otp7576_msg01 -> entry", []),
+    Msg  = compact_otp7576_msg01(),
+    Conf = flex_scanner_conf(Config),
+    compact_otp7576([Conf], Msg).
 
 
 %% ==============================================================

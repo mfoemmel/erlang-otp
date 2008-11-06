@@ -286,6 +286,10 @@ static __inline__ int erts_check_fpe_thorough(volatile int *fp_exception, double
 #  define __ERTS_FP_ERROR_THOROUGH(fpexnp, f, Action) \
   do { if (erts_check_fpe_thorough((fpexnp),(f))) { Action; } } while (0)
 
+int erts_sys_block_fpe(void);
+void erts_sys_unblock_fpe_conditional(int);
+void erts_sys_unblock_fpe(void);
+
 #endif /* !NO_FPE_SIGNALS */
 
 #define ERTS_FP_CHECK_INIT(p)		__ERTS_FP_CHECK_INIT(&(p)->fp_exception)

@@ -79,8 +79,7 @@
 
 -export([module/2,format_error/1]).
 
--import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,splitwith/2,
-		member/2,reverse/1,reverse/2]).
+-import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,splitwith/2,member/2]).
 -import(ordsets, [add_element/2,del_element/2,union/2,union/1,subtract/2]).
 
 -compile({nowarn_deprecated_function, {erlang,hash,2}}).
@@ -563,6 +562,7 @@ atomic_bin([], _Sub, St) -> {#k_bin_end{},[],St}.
 validate_bin_element_size(#k_var{}) -> ok;
 validate_bin_element_size(#k_int{val=V}) when V >= 0 -> ok;
 validate_bin_element_size(#k_atom{val=all}) -> ok;
+validate_bin_element_size(#k_atom{val=undefined}) -> ok;
 validate_bin_element_size(_) -> throw(bad_element_size).
     
 %% atomic_list([Cexpr], Sub, State) -> {[Kexpr],[PreKexpr],State}.
@@ -763,11 +763,14 @@ is_remote_bif(erlang, N, A) ->
     case erl_internal:guard_bif(N, A) of
 	true -> true;
 	false ->
-	    case catch erl_internal:op_type(N, A) of
+	    try erl_internal:op_type(N, A) of
 		arith -> true;
 		bool -> true;
 		comp -> true;
-		_Other -> false		%List, send or not an op
+		list -> false;
+		send -> false
+	    catch
+		_:_ -> false		% not an op
 	    end
     end;
 is_remote_bif(_, _, _) -> false.
@@ -1058,13 +1061,39 @@ select_bin_con_2([C1|Cs]) ->
     [{Con,[C1|More]}|select_bin_con_2(Rest)];
 select_bin_con_2([]) -> [].
 
+%% select_bin_int([Clause]) -> {k_bin_int,[Clause]}
+%%  If the first pattern in each clause selects the same integer,
+%%  rewrite all clauses to use #k_bin_int{} (which will later to
+%%  translated to a bs_match_string/4 instruction).
+%%
+%%  If it is not possible to do this rewrite, a 'not_possible'
+%%  exception is thrown.
+
 select_bin_int([#iclause{pats=[#k_bin_seg{anno=A,type=integer,
  					  size=#k_int{val=Bits0}=Sz,unit=U,
  					  flags=Fl,seg=#k_int{val=Val},
 					  next=N}|Ps]}=C|Cs0]) ->
     Bits = U * Bits0,
+    if
+	Bits > 1024 -> throw(not_possible); %Expands the code too much.
+	true -> ok
+    end,
+    select_assert_match_possible(Bits, Val, Fl),
     P = #k_bin_int{anno=A,size=Sz,unit=U,flags=Fl,val=Val,next=N},
-    select_assert_not_expensive(Bits, Val, Fl),
+    select_assert_match_possible(Bits, Val, Fl),
+    case member(native, Fl) of
+	true -> throw(not_possible);
+	false -> ok
+    end,
+    Cs = select_bin_int_1(Cs0, Bits, Fl, Val),
+    [{k_bin_int,[C#iclause{pats=[P|Ps]}|Cs]}];
+select_bin_int([#iclause{pats=[#k_bin_seg{anno=A,type=utf8,
+ 					  flags=[unsigned,big]=Fl,
+					  seg=#k_int{val=Val0},
+					  next=N}|Ps]}=C|Cs0]) ->
+    {Val,Bits} = select_utf8(Val0),
+    P = #k_bin_int{anno=A,size=#k_int{val=Bits},unit=1,
+		   flags=Fl,val=Val,next=N},
     Cs = select_bin_int_1(Cs0, Bits, Fl, Val),
     [{k_bin_int,[C#iclause{pats=[P|Ps]}|Cs]}];
 select_bin_int(_) -> throw(not_possible).
@@ -1078,23 +1107,70 @@ select_bin_int_1([#iclause{pats=[#k_bin_seg{anno=A,type=integer,
 	Bits0*U =:= Bits -> ok;
 	true -> throw(not_possible)
     end,
-    select_assert_not_expensive(Bits, Val, Fl),
     P = #k_bin_int{anno=A,size=Sz,unit=U,flags=Fl,val=Val,next=N},
+    [C#iclause{pats=[P|Ps]}|select_bin_int_1(Cs, Bits, Fl, Val)];
+select_bin_int_1([#iclause{pats=[#k_bin_seg{anno=A,type=utf8,
+					    flags=Fl,seg=#k_int{val=Val0},
+					    next=N}|Ps]}=C|Cs],
+		 Bits, Fl, Val) ->
+    case select_utf8(Val0) of
+	{Val,Bits} -> ok;
+	{_,_} -> throw(not_possible)
+    end,
+    P = #k_bin_int{anno=A,size=#k_int{val=Bits},unit=1,
+		   flags=[unsigned,big],val=Val,next=N},
     [C#iclause{pats=[P|Ps]}|select_bin_int_1(Cs, Bits, Fl, Val)];
 select_bin_int_1([], _, _, _) -> [];
 select_bin_int_1(_, _, _, _) -> throw(not_possible).
 
-select_assert_not_expensive(Sz, Val, Fs) ->
+select_assert_match_possible(Sz, Val, Fs) ->
     EmptyBindings = erl_eval:new_bindings(),
+    MatchFun = fun({integer,_,_}, NewV, Bs) when NewV =:= Val ->
+		       {match,Bs}
+	       end,
     EvalFun = fun({integer,_,S}, B) -> {value,S,B} end,
     Expr = [{bin_element,0,{integer,0,Val},{integer,0,Sz},[{unit,1}|Fs]}],
     {value,Bin,EmptyBindings} = eval_bits:expr_grp(Expr, EmptyBindings, EvalFun),
-    if
-	bit_size(Bin) > 1024 ->
-	    throw(not_possible);
-	true ->
-	    ok
+    try
+	{match,_} = eval_bits:match_bits(Expr, Bin,
+					 EmptyBindings,
+					 EmptyBindings,
+					 MatchFun, EvalFun)
+    catch
+	throw:nomatch ->
+	    throw(not_possible)
     end.
+
+select_utf8(Val0) ->
+    Bin = int_to_utf8(Val0),
+    Size = bit_size(Bin),
+    <<Val:Size>> = Bin,
+    {Val,Size}.
+
+%% XXX Get rid of this function in the release following R12B-5.
+int_to_utf8(I) when 0 =< I, I =< 16#7F ->
+    <<I>>;
+int_to_utf8(I) when 0 =< I, I =< 16#7FF ->
+    B2 = I,
+    B1 = (I bsr 6),
+    <<1:1,1:1,0:1,B1:5,1:1,0:1,B2:6>>;
+int_to_utf8(I) when 0 =< I, I =< 16#FFFF ->
+    if
+	16#D800 =< I, I =< 16#DFFF -> throw(not_possible);
+	true -> ok
+    end,
+    B3 = I,
+    B2 = (I bsr 6),
+    B1 = (I bsr 12),
+    <<1:1,1:1,1:1,0:1,B1:4,1:1,0:1,B2:6,1:1,0:1,B3:6>>;
+int_to_utf8(I) when 0 =< I, I =< 16#10FFFF ->
+    B4 = I,
+    B3 = (I bsr 6),
+    B2 = (I bsr 12),
+    B1 = (I bsr 18),
+    <<1:1,1:1,1:1,1:1,0:1,B1:3,1:1,0:1,B2:6,1:1,0:1,B3:6,1:1,0:1,B4:6>>;
+int_to_utf8(_) ->
+    throw(not_possible).
 
 %% select(Con, [Clause]) -> [Clause].
 

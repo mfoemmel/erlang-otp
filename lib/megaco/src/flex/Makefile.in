@@ -1,5 +1,5 @@
 #<copyright>
-# <year>2001-2007</year>
+# <year>2001-2008</year>
 # <holder>Ericsson AB, All Rights Reserved</holder>
 #</copyright>
 #<legalnotice>
@@ -249,11 +249,11 @@ solibs: $(LIBDIR) $(SOLIBS)
 
 # No need to link with -lfl as we have also defined %option noyywrap - 
 # and having -lfl doesn't work under Darwin for some reason. - Sean
-$(LIBDIR)/megaco_flex_scanner_drv.so: megaco_flex_scanner_drv.c $(LIBDIR)
+$(LIBDIR)/megaco_flex_scanner_drv.so: megaco_flex_scanner_drv.c 
 	@echo "std driver:"
 	$(CC) $(STD_DRV_NAME) $(CFLAGS) $(LDFLAGS) -o $(LIBDIR)/megaco_flex_scanner_drv.so $< 
 
-$(LIBDIR)/megaco_flex_scanner_drv_mt.so: megaco_flex_scanner_drv.c $(LIBDIR)
+$(LIBDIR)/megaco_flex_scanner_drv_mt.so: megaco_flex_scanner_drv.c 
 	@echo "multi-threaded driver:"
 	$(CC) $(MT_DRV_NAME) $(CFLAGS_MT) $(LDFLAGS) -o $(LIBDIR)/megaco_flex_scanner_drv_mt.so $< 
 

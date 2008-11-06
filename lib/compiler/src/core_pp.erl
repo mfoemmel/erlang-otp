@@ -448,9 +448,8 @@ unindent([], _, _, []) -> [].
 
 
 width(Txt, Ctxt) ->
-    case catch width(Txt, 0, Ctxt, []) of
-	{'EXIT',_} -> exit({bad_text,Txt});
-	Other -> Other
+    try width(Txt, 0, Ctxt, [])
+    catch error:_ -> exit({bad_text,Txt})
     end.
 
 width([$\t|T], A, Ctxt, C) ->

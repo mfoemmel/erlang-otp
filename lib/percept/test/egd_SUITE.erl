@@ -144,9 +144,39 @@ image_font(Config) when is_list(Config) ->
     ?line Filename = filename:join([code:priv_dir(percept),"fonts","6x11_latin1.wingsfont"]),
     ?line Font = egd_font:load(Filename),
    
-    % textit
+    % simple text
     ?line ok = egd:text(Im, get_point(), Font, "Hello World", Fgc),
+    ?line <<_/binary>> = egd:render(Im, png),
     
+    GlyphStr1   = " !\"#$%&'()*+,-./",            % Codes  32 ->  47
+    NumericStr  = "0123456789",                   % Codes  48 ->  57
+    GlyphStr2   = ":;<=>?@",                      % Codes  58 ->  64
+    AlphaBigStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZ",   % Codes  65 ->  90
+    GlyphStr3   = "[\\]^_`",                      % Codes  91 ->  96
+    AlphaSmStr  = "abcdefghijklmnopqrstuvwxyz",   % Codes  97 -> 122
+    GlyphStr4   = "{|}~",                         % Codes 123 -> 126
+
+    ?line ok = egd:text(Im, get_point(), Font, GlyphStr1, Fgc),
+    ?line <<_/binary>> = egd:render(Im, png),
+
+    ?line ok = egd:text(Im, get_point(), Font, NumericStr, Fgc),
+    ?line <<_/binary>> = egd:render(Im, png),
+ 
+    ?line ok = egd:text(Im, get_point(), Font, GlyphStr2, Fgc),
+    ?line <<_/binary>> = egd:render(Im, png),
+
+    ?line ok = egd:text(Im, get_point(), Font, AlphaBigStr, Fgc),
+    ?line <<_/binary>> = egd:render(Im, png),
+    
+    ?line ok = egd:text(Im, get_point(), Font, GlyphStr3, Fgc),
+    ?line <<_/binary>> = egd:render(Im, png),
+
+    ?line ok = egd:text(Im, get_point(), Font, AlphaSmStr, Fgc),
+    ?line <<_/binary>> = egd:render(Im, png),
+    
+    ?line ok = egd:text(Im, get_point(), Font, GlyphStr4, Fgc),
+    ?line <<_/binary>> = egd:render(Im, png),
+
     ?line ok = egd:destroy(Im),
     erase(image_size),
     ok.

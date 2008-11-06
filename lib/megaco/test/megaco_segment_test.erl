@@ -3401,6 +3401,42 @@ send_segmented_msg_missing_seg_reply1(Config) when list(Config) ->
     d("[MG] start the simulation"),
     {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
+    %% Await MGC ready for segments
+    d("await MGC trigger event"),
+    MgcPid = 
+	receive
+	    {ready_for_segments, mgc, Pid1} ->
+		d("received MGC trigger event"),
+		Pid1
+	after 5000 ->
+		d("timeout waiting for MGC trigger event: ~p", 
+		  [megaco_test_lib:flush()]),
+		?ERROR(timeout_MGC_trigger_event)
+	end,
+
+    %% Await MG ready for segments
+    d("await MG trigger event"),
+    MgPid = 
+	receive
+	    {ready_for_segments, mg, Pid2} ->
+		d("received MG trigger event"),
+		Pid2
+	after 5000 ->
+		d("timeout waiting for MG trigger event: ~p", 
+		  [megaco_test_lib:flush()]),
+		?ERROR(timeout_MG_trigger_event)
+	end,
+
+    %% Instruct the MG to continue
+    d("send continue to MG"),
+    MgPid ! {continue_with_segments, self()}, 
+
+    sleep(500),
+
+    %% Instruct the MGC to continue
+    d("send continue to MGC"),
+    MgcPid ! {continue_with_segments, self()}, 
+
     d("await the generator reply(s)"),
     await_completion([MgcId, MgId]),
 
@@ -3490,6 +3526,7 @@ ssmmsr1_mgc_event_sequence(text, tcp) ->
     SegmentRep7 = ssmmsr1_mgc_segment_reply_msg(Mid, TransId, 7, false),
     SegmentRep8 = ssmmsr1_mgc_segment_reply_msg(Mid, TransId, 8, true),
     TransAck    = ssmmsr1_mgc_trans_ack_msg(Mid, TransId),
+    ReadyForSegments = ssmmsr1_mgc_ready_for_segments_fun(), 
     EvSeq = [{debug,  true},
              {decode, DecodeFun},
              {encode, EncodeFun},
@@ -3497,7 +3534,8 @@ ssmmsr1_mgc_event_sequence(text, tcp) ->
 	     {expect_accept, any},
              {expect_receive, "service-change-request",  {ScrVerifyFun, 5000}},
              {send, "service-change-reply",              ServiceChangeRep},
-	     {expect_nothing, 1000}, 
+	     %% {expect_nothing, 1000}, 
+	     {trigger, "segment send sync trigger", ReadyForSegments}, 
              {send, "notify request",                    NotifyReq},
              {expect_receive, "notify reply: segment 1", {NrVerifyFun1, 1000}},
              {expect_receive, "notify reply: segment 2", {NrVerifyFun2, 1000}},
@@ -3528,6 +3566,19 @@ ssmmsr1_mgc_event_sequence(text, tcp) ->
             ],
     EvSeq.
 
+ssmmsr1_mgc_ready_for_segments_fun() ->
+    TC = self(),
+    fun() ->
+	    io:format("ssmmsr1_mgc_ready_for_segments_fun -> entry~n", []),
+	    TC ! {ready_for_segments, mgc, self()},
+	    receive
+		{continue_with_segments, TC} ->
+		    io:format("ssmmsr1_mgc_ready_for_segments_fun -> "
+			      "received continue~n", []),
+		    ok
+	    end
+    end.
+		
 ssmmsr1_mgc_encode_msg_fun(Mod, Conf) ->
     fun(M) ->
             Mod:encode_message(Conf, M)
@@ -3803,6 +3854,7 @@ ssmmsr1_mg_event_sequence(text, tcp) ->
     Tids = [Tid1, Tid2, Tid3, Tid4, Tid5, Tid6, Tid7, Tid8], 
     NotifyReqVerify = ssmmsr1_mg_verify_notify_request_fun(Tids),
     AckVerify = ssmmsr1_mg_verify_ack_fun(), 
+    ReadyForSegments = ssmmsr1_mg_ready_for_segments_fun(), 
     EvSeq = [
              {debug, true},
 	     {megaco_trace, disable},
@@ -3819,10 +3871,11 @@ ssmmsr1_mg_event_sequence(text, tcp) ->
              {megaco_callback, handle_connect,     ConnectVerify},
              {megaco_callback, handle_trans_reply, ServiceChangeReplyVerify},
 	     {megaco_update_conn_info, protocol_version, ?VERSION}, 
-	     {megaco_update_conn_info, reply_timer,      12000}, 
+	     {megaco_update_conn_info, reply_timer,      20000}, 
 	     {megaco_update_conn_info, segment_send,     3}, 
 	     {megaco_update_conn_info, max_pdu_size,     128}, 
-             {sleep, 1000},
+	     %% {sleep, 1000},
+             {trigger, ReadyForSegments}, 
              {megaco_callback, handle_trans_request, NotifyReqVerify},
              {megaco_callback, handle_trans_ack,     AckVerify, 15000},
              megaco_stop_user,
@@ -3832,6 +3885,19 @@ ssmmsr1_mg_event_sequence(text, tcp) ->
     EvSeq.
 
 
+ssmmsr1_mg_ready_for_segments_fun() ->
+    TC = self(),
+    fun() ->
+	    io:format("ssmmsr1_mg_ready_for_segments_fun -> entry~n", []),
+	    TC ! {ready_for_segments, mg, self()},
+	    receive
+		{continue_with_segments, TC} ->
+		    io:format("ssmmsr1_mg_ready_for_segments_fun -> "
+			      "received continue~n", []),
+		    ok
+	    end
+    end.
+		
 ssmmsr1_mg_verify_handle_connect_fun() ->
     fun(Ev) -> ssmmsr1_mg_verify_handle_connect(Ev) end.
 
@@ -4101,6 +4167,42 @@ send_segmented_msg_missing_seg_reply2(Config) when list(Config) ->
     d("[MG] start the simulation"),
     {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
+    %% Await MGC ready for segments
+    d("await MGC trigger event"),
+    MgcPid = 
+	receive
+	    {ready_for_segments, mgc, Pid1} ->
+		d("received MGC trigger event"),
+		Pid1
+	after 5000 ->
+		d("timeout waiting for MGC trigger event: ~p", 
+		  [megaco_test_lib:flush()]),
+		?ERROR(timeout_MGC_trigger_event)
+	end,
+
+    %% Await MG ready for segments
+    d("await MG trigger event"),
+    MgPid = 
+	receive
+	    {ready_for_segments, mg, Pid2} ->
+		d("received MG trigger event"),
+		Pid2
+	after 5000 ->
+		d("timeout waiting for MG trigger event: ~p", 
+		  [megaco_test_lib:flush()]),
+		?ERROR(timeout_MG_trigger_event)
+	end,
+
+    %% Instruct the MG to continue
+    d("send continue to MG"),
+    MgPid ! {continue_with_segments, self()}, 
+
+    sleep(500),
+
+    %% Instruct the MGC to continue
+    d("send continue to MGC"),
+    MgcPid ! {continue_with_segments, self()}, 
+
     d("await the generator reply(s)"),
     await_completion([MgcId, MgId]),
 
@@ -4163,33 +4265,8 @@ ssmmsr2_mgc_event_sequence(text, tcp) ->
     NrVerifyFun2 = 
     	ssmmsr2_mgc_verify_notify_reply_segment_msg_fun(2, false, TransId, 
 							TermId2, CtxId2),
-    %% NrVerifyFun3 = 
-    %% 	ssmmsr2_mgc_verify_notify_reply_segment_msg_fun(3, false, TransId, 
-    %% 						      TermId3, CtxId3),
-    %% NrVerifyFun4 = 
-    %% 	ssmmsr2_mgc_verify_notify_reply_segment_msg_fun(4, false, TransId, 
-    %% 						      TermId4, CtxId4),
-    %% NrVerifyFun5 = 
-    %% 	ssmmsr2_mgc_verify_notify_reply_segment_msg_fun(5, false, TransId, 
-    %% 						      TermId5, CtxId5),
-    %% NrVerifyFun6 = 
-    %% 	ssmmsr2_mgc_verify_notify_reply_segment_msg_fun(6, false, TransId, 
-    %% 						      TermId6, CtxId6),
-    %% NrVerifyFun7 = 
-    %% 	ssmmsr2_mgc_verify_notify_reply_segment_msg_fun(7, false, TransId, 
-    %% 						      TermId7, CtxId7),
-    %% NrVerifyFun8 = 
-    %%  ssmmsr2_mgc_verify_notify_reply_segment_msg_fun(8, true, TransId, 
-    %% 						      TermId8, CtxId8),
     SegmentRep1 = ssmmsr2_mgc_segment_reply_msg(Mid, TransId, 1, false),
-    %% SegmentRep2 = ssmmsr2_mgc_segment_reply_msg(Mid, TransId, 2, false),
-    %% SegmentRep3 = ssmmsr2_mgc_segment_reply_msg(Mid, TransId, 3, false),
-    %% SegmentRep4 = ssmmsr2_mgc_segment_reply_msg(Mid, TransId, 4, false),
-    %% SegmentRep5 = ssmmsr2_mgc_segment_reply_msg(Mid, TransId, 5, false),
-    %% SegmentRep6 = ssmmsr2_mgc_segment_reply_msg(Mid, TransId, 6, false),
-    %% SegmentRep7 = ssmmsr2_mgc_segment_reply_msg(Mid, TransId, 7, false),
-    %% SegmentRep8 = ssmmsr2_mgc_segment_reply_msg(Mid, TransId, 8, true),
-    %% TransAck    = ssmmsr2_mgc_trans_ack_msg(Mid, TransId),
+    ReadyForSegments = ssmmsr2_mgc_ready_for_segments_fun(), 
     EvSeq = [{debug,  true},
              {decode, DecodeFun},
              {encode, EncodeFun},
@@ -4197,17 +4274,30 @@ ssmmsr2_mgc_event_sequence(text, tcp) ->
 	     {expect_accept, any},
              {expect_receive, "service-change-request",  {ScrVerifyFun, 5000}},
              {send, "service-change-reply",              ServiceChangeRep},
-	     {expect_nothing, 1000}, 
+	     %% {expect_nothing, 1000}, 
+	     {trigger, "segment send sync trigger", ReadyForSegments}, 
              {send, "notify request",                    NotifyReq},
              {expect_receive, "notify reply: segment 1", {NrVerifyFun1, 1000}},
              {send, "segment reply 1",               SegmentRep1},
              {expect_receive, "notify reply: segment 2", {NrVerifyFun2, 1000}},
-	     %% {expect_nothing, 1000},
              {expect_closed,  20000},
              disconnect
             ],
     EvSeq.
 
+ssmmsr2_mgc_ready_for_segments_fun() ->
+    TC = self(),
+    fun() ->
+	    io:format("ssmmsr2_mgc_ready_for_segments_fun -> entry~n", []),
+	    TC ! {ready_for_segments, mgc, self()},
+	    receive
+		{continue_with_segments, TC} ->
+		    io:format("ssmmsr2_mgc_ready_for_segments_fun -> "
+			      "received continue~n", []),
+		    ok
+	    end
+    end.
+		
 ssmmsr2_mgc_encode_msg_fun(Mod, Conf) ->
     fun(M) ->
             Mod:encode_message(Conf, M)
@@ -4483,6 +4573,7 @@ ssmmsr2_mg_event_sequence(text, tcp) ->
     Tids = [Tid1, Tid2, Tid3, Tid4, Tid5, Tid6, Tid7, Tid8], 
     NotifyReqVerify = ssmmsr2_mg_verify_notify_request_fun(Tids),
     AckVerify = ssmmsr2_mg_verify_ack_fun(), 
+    ReadyForSegments = ssmmsr2_mg_ready_for_segments_fun(), 
     EvSeq = [
              {debug, true},
 	     {megaco_trace, disable},
@@ -4502,7 +4593,8 @@ ssmmsr2_mg_event_sequence(text, tcp) ->
 	     {megaco_update_conn_info, reply_timer,      12000}, 
 	     {megaco_update_conn_info, segment_send,     1}, 
 	     {megaco_update_conn_info, max_pdu_size,     128}, 
-             {sleep, 1000},
+             %% {sleep, 1000},
+             {trigger, ReadyForSegments}, 
              {megaco_callback, handle_trans_request, NotifyReqVerify},
              {megaco_callback, handle_trans_ack,     AckVerify, 15000},
              megaco_stop_user,
@@ -4512,6 +4604,19 @@ ssmmsr2_mg_event_sequence(text, tcp) ->
     EvSeq.
 
 
+ssmmsr2_mg_ready_for_segments_fun() ->
+    TC = self(),
+    fun() ->
+	    io:format("ssmmsr2_mg_ready_for_segments_fun -> entry~n", []),
+	    TC ! {ready_for_segments, mg, self()},
+	    receive
+		{continue_with_segments, TC} ->
+		    io:format("ssmmsr2_mg_ready_for_segments_fun -> "
+			      "received continue~n", []),
+		    ok
+	    end
+    end.
+		
 ssmmsr2_mg_verify_handle_connect_fun() ->
     fun(Ev) -> ssmmsr2_mg_verify_handle_connect(Ev) end.
 

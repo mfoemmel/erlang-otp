@@ -82,7 +82,7 @@ encode(Chunk) when is_binary(Chunk)->
     <<HEXSize/binary, ?CR, ?LF, Chunk/binary, ?CR, ?LF>>;
 
 encode(Chunk) when is_list(Chunk)->
-    HEXSize = http_util:integer_to_hexlist(length(Chunk)),
+    HEXSize = http_util:integer_to_hexlist(erlang:iolist_size(Chunk)),
     [HEXSize,  ?CR, ?LF, Chunk, ?CR, ?LF].
 
 encode_last() ->

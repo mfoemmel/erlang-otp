@@ -21,7 +21,7 @@
 %% Notes     : 
 %%>----------------------------------------------------------------------<
 
--spec(mult_ret/4 :: ([_], atom(), comp_options(), _) -> [_]).
+-spec mult_ret([_], atom(), comp_options(), _) -> [_].
 
 mult_ret(List, Mod, Opts, Exports) ->
   case length(List) > 1 of

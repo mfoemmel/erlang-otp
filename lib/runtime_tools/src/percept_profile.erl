@@ -94,15 +94,28 @@ start(Filename, {Module, Function, Args}, Options) ->
 	    {already_started, Port}
     end.
 
+deliver_all_trace() ->
+    Tracee = self(),
+    Tracer = spawn(fun() -> 
+	receive {Tracee, start} -> ok end,
+    	Ref = erlang:trace_delivered(Tracee),
+	receive {trace_delivered, Tracee, Ref} -> Tracee ! {self(), ok} end
+    end),
+    erlang:trace(Tracee, true, [procs, {tracer, Tracer}]),
+    Tracer ! {Tracee, start},
+    receive {Tracer, ok} -> ok end,
+    erlang:trace(Tracee, false, [procs]),
+    ok.
 -spec(stop/0 :: () -> 'ok' | {'error', 'not_started'}).
 
 %% @spec stop() -> ok | {'error', 'not_started'}
 %% @doc Stops profiling.
+    
 
 stop() ->
     erlang:system_profile(undefined, [runnable_ports, runnable_procs]),
     erlang:trace(all, false, [procs, ports, timestamp]),
-    
+    deliver_all_trace(), 
     case whereis(percept_port) of
     	undefined -> 
 	    {error, not_started};

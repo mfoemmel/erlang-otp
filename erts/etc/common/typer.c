@@ -282,13 +282,13 @@ run_erlang(char* progname, char** argv)
 #ifdef __WIN32__
     /*
      * Alas, we must wait here for the program to finish.
-     * Otherwise, the shell from which we was executed will think
+     * Otherwise, the shell from which we were executed will think
      * we are finished and print a prompt and read keyboard input.
      */
 
     status = my_spawnvp(argv)/*_spawnvp(_P_WAIT,progname,argv)*/;
     if (status == -1) {
-	fprintf(stderr, "erlc: Error executing '%s': %d", progname, 
+	fprintf(stderr, "typer: Error executing '%s': %d", progname, 
 		GetLastError());
     }
     return status;
@@ -308,7 +308,7 @@ error(char* format, ...)
     va_start(ap, format);
     vsprintf(sbuf, format, ap);
     va_end(ap);
-    fprintf(stderr, "erlc: %s\n", sbuf);
+    fprintf(stderr, "typer: %s\n", sbuf);
     exit(1);
 }
 

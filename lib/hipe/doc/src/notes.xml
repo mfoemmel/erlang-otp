@@ -31,6 +31,23 @@
   </header>
   <p>This document describes the changes made to HiPE.</p>
 
+<section><title>Hipe 3.6.9</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>The <c>--disable-hipe</c> option for the
+	    <c>configure</c> will now completely disable the hipe
+	    run-time in the emulator, as is the expected
+	    behaviour.</p>
+          <p>
+	    Own Id: OTP-7631</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Hipe 3.6.8</title>
 
     <section><title>Improvements and New Features</title>

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2000-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 2000, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1ct_parser2).
 
@@ -177,12 +179,18 @@ parse_SymbolsFromModule(Tokens) ->
 	end,
     {SymbolList,Rest} = parse_SymbolList(Tokens),
     case Rest of
-	%%How does this case correspond to x.680 ?
 	[{'FROM',_L1},Tref = {typereference,_,Name},Ref={identifier,_L2,_Id},C={',',_}|Rest2] ->
 	    NewSymbolList = lists:map(SetRefModuleName(Name),SymbolList),
 	    {#'SymbolsFromModule'{symbols=NewSymbolList,
 				  module=tref2Exttref(Tref)},[Ref,C|Rest2]};
-	%%How does this case correspond to x.680 ?
+
+	%% This a special case when there is only one Symbol imported
+	%% from the next module. No other way to distinguish Ref from
+	%% a part of the GlobalModuleReference of Name.
+	[{'FROM',_L1},Tref = {typereference,_,Name},Ref = {identifier,_L2,_Id},From = {'FROM',_}|Rest2] ->
+	    NewSymbolList = lists:map(SetRefModuleName(Name),SymbolList),
+	    {#'SymbolsFromModule'{symbols=NewSymbolList,
+				  module=tref2Exttref(Tref)},[Ref,From|Rest2]};
 	[{'FROM',_L1},Tref = {typereference,_,Name},{identifier,_L2,_Id}|Rest2] ->
 	    NewSymbolList = lists:map(SetRefModuleName(Name),SymbolList),
 	    {#'SymbolsFromModule'{symbols=NewSymbolList,
@@ -277,7 +285,6 @@ parse_or(_Tokens,[],ErrList) ->
 	[] ->
 	    throw({asn1_error,{parse_or,ErrList}});
 	L when list(L) ->
-%%%	    throw({asn1_error,{parse_or,hd(lists:reverse(ErrList))}});
 	    %% chose to throw 1) the error with the highest line no,
 	    %% 2) the last error which is not a asn1_assignment_error or
 	    %% 3) the last error.
@@ -293,10 +300,35 @@ parse_or(Tokens,[Fun|Frest],ErrList) ->
 	    parse_or(Tokens,Frest,[AsnAssErr|ErrList]);
 	Result = {_,L} when list(L) ->
 	    Result;
-%	Result ->
-%	    Result
 	Error  ->
 	    parse_or(Tokens,Frest,[Error|ErrList])
+    end.
+
+parse_or_tag(Tokens,Flist) ->
+	parse_or_tag(Tokens,Flist,[]).
+
+parse_or_tag(_Tokens,[],ErrList) ->
+    case ErrList of
+	[] ->
+	    throw({asn1_error,{parse_or_tag,ErrList}});
+	L when list(L) ->
+	    %% chose to throw 1) the error with the highest line no,
+	    %% 2) the last error which is not a asn1_assignment_error or
+	    %% 3) the last error.
+	    throw(prioritize_error(ErrList))
+    end;
+parse_or_tag(Tokens,[{Tag,Fun}|Frest],ErrList) when is_function(Fun) ->
+    case (catch Fun(Tokens)) of
+	Exit = {'EXIT',_Reason} ->
+	    parse_or_tag(Tokens,Frest,[Exit|ErrList]);
+	AsnErr = {asn1_error,_} ->
+	    parse_or_tag(Tokens,Frest,[AsnErr|ErrList]);
+	AsnAssErr = {asn1_assignment_error,_} ->
+	    parse_or_tag(Tokens,Frest,[AsnAssErr|ErrList]);
+	{ParseRes,Rest} when list(Rest) ->
+	    {{Tag,ParseRes},Rest};
+	Error  ->
+	    parse_or_tag(Tokens,Frest,[Error|ErrList])
     end.
 
 parse_TypeAssignment([{typereference,L1,Tref},{'::=',_}|Rest]) ->	
@@ -1055,7 +1087,7 @@ parse_ObjectFieldSpec([{valuefieldreference,L,VFieldName}|Rest]) ->
     {OptionalitySpec,Rest3} = parse_ObjectOptionalitySpec(Rest2),
     case Rest3 of
 	[{Del,_}|_] when Del =:= ','; Del =:= '}' ->
-	    {{objectfield,VFieldName,Class,OptionalitySpec},Rest3};
+	    {{objectfield,VFieldName,Class,undefined,OptionalitySpec},Rest3};
 	_ ->
 	    throw({asn1_error,{L,get(asn1_module),
 			   [got,get_token(hd(Rest3)),expected,[',','}']]}})
@@ -1392,18 +1424,34 @@ parse_Word([{Name,Pos}|Rest]) ->
     end.
 
 parse_Setting(Tokens) ->
-    Flist = [fun parse_Type/1,
-	     fun parse_Value/1,
-	     fun parse_Object/1,
-	     fun parse_ObjectSet/1],
-    case (catch parse_or(Tokens,Flist)) of
+    Flist = [{type_tag,fun parse_Type/1},
+	     {value_tag,fun parse_Value/1},
+	     {object_tag,fun parse_Object/1},
+	     {objectset_tag,fun parse_ObjectSet/1}],
+    case (catch parse_or_tag(Tokens,Flist)) of
 	{'EXIT',Reason} ->
 	    exit(Reason);
 	AsnErr = {asn1_error,_} ->
 	    throw(AsnErr);
-	Result ->
-	    Result
+	Result = {{value_tag,_},_} ->
+	    Result;
+	{{Tag,Setting},Rest} when is_atom(Tag) ->
+	    {Setting,Rest}
     end.
+
+%% parse_Setting(Tokens) ->
+%%     Flist = [fun parse_Type/1,
+%% 	     fun parse_Value/1,
+%% 	     fun parse_Object/1,
+%% 	     fun parse_ObjectSet/1],
+%%     case (catch parse_or(Tokens,Flist)) of
+%% 	{'EXIT',Reason} ->
+%% 	    exit(Reason);
+%% 	AsnErr = {asn1_error,_} ->
+%% 	    throw(AsnErr);
+%% 	Result ->
+%% 	    Result
+%%     end.
 
 parse_DefinedObjectSet([{typereference,L1,ModuleName},{'.',_},
 			{typereference,L2,ObjSetName}|Rest]) ->
@@ -2674,7 +2722,8 @@ parse_ValueSetTypeAssignment([{typereference,L1,Name}|Rest]) ->
     case Rest2 of
 	[{'::=',_}|Rest3] ->
 	    {ValueSet,Rest4} = parse_ValueSet(Rest3),
-	    {#valuedef{pos=L1,name=Name,type=Type,value=ValueSet},Rest4};
+	    {#valuedef{pos=L1,name=Name,type=Type,value=ValueSet,
+		       module=get(asn1_module)},Rest4};
 	[H|_T] ->
 	    throw({asn1_error,{get_line(L1),get(asn1_module),
 			       [got,get_token(H),expected,'::=']}})
@@ -2704,7 +2753,8 @@ parse_ValueAssignment([{identifier,L1,IdName}|Rest]) ->
 	    {Value,Rest4} = parse_Value(Rest3),
 	    case catch lookahead_assignment(Rest4) of
 		ok ->
-		    {#valuedef{pos=L1,name=IdName,type=Type,value=Value},Rest4};
+		    {#valuedef{pos=L1,name=IdName,type=Type,value=Value,
+			       module=get(asn1_module)},Rest4};
 		Error ->
 		    throw(Error)
 %% 		    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),

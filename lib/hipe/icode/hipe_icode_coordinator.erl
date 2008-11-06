@@ -19,8 +19,7 @@
 
 %%---------------------------------------------------------------------
 
--spec(coordinate/4 ::
-      (#hipe_digraph{}, [{mfa(),bool()}], [mfa()], atom()) -> no_return()).
+-spec coordinate(#hipe_digraph{}, [{mfa(),bool()}], [mfa()], atom()) -> no_return().
 
 coordinate(CG, Escaping, NonEscaping, Mod) ->
   ServerPid = initialize_server(Escaping, Mod),

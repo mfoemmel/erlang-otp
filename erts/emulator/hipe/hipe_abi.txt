@@ -61,10 +61,6 @@ If p->freason == TRAP, then the BIF redirects its call to some
 other function, given by p->def_arg_reg[].
 The BIF and the new callee may have different arities.
 
-A BIF can suspend the call by setting p->freason == RESCHEDULE.
-The caller should return immediately to the scheduler. When
-the process is resumed, the caller should re-execute the call.
-
 The "hipe_${ARCH}_bifs.m4" macro files take care of these issues
 by automatically generating assembly code which performs the
 necessary stack switching, parameter copying, and checking for

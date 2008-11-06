@@ -40,7 +40,7 @@ collect_one_file_info(File, Analysis) ->
   %% Current directory should also be included in "Includes".
   Includes = [filename:dirname(File)|Analysis#typer_analysis.includes],
   Is = [{i,Dir} || Dir <- Includes],
-  Options = ?SRC_COMPILE_OPTS ++Is ++Ds,
+  Options = ?SRC_COMPILE_OPTS ++ Is ++ Ds,
   case dialyzer_utils:get_abstract_code_from_src(File, Options) of
     {error, Reason} ->
       %% io:format("File=~p\n,Options=~p\n,Error=~p\n", [File,Options,Reason]),

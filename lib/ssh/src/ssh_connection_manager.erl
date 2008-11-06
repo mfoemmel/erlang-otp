@@ -303,7 +303,7 @@ handle_call({recv_window, ChannelId}, _From,
 	    end,
     {reply, Reply, State};
 
-handle_call(peer_addr, _From, #state{connection = Pid} = State) ->
+handle_call({peer_addr, _ChannelId}, _From, #state{connection = Pid} = State) ->
     Reply = ssh_connection_handler:peer_address(Pid),
     {reply, Reply, State};
 
@@ -482,7 +482,11 @@ handle_info(ssh_connected, #state{role = client, client = Pid}
 handle_info(ssh_connected, 
 	    #state{role = server, channel_args = {Address, Port, Shell, Options}} 
 	    = State0) ->
-    ChannelSpec = ssh_cli:child_spec(Shell, Address, Port, Options),
+    SshCli = proplists:get_value(ssh_cli, Options, ssh_cli),
+    ChannelSpec = case SshCli of
+	    Fun when is_function(Fun) -> Fun(Shell, Address, Port, Options);
+	    SshCliMod -> SshCliMod:child_spec(Shell, Address, Port, Options)
+    end,
     ChannelPid = start_channel(Address, Port, ChannelSpec),
     State = add_channel_ref(ChannelPid, State0),
     {noreply, State#state{connected = true}};

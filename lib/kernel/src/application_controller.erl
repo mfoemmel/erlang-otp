@@ -482,7 +482,7 @@ init(Init, Kernel) ->
     register(?AC, self()),
     process_flag(trap_exit, true),
     put('$ancestors', [Init]), % OTP-5811, for gen_server compatibility
-    put('$initial_call', {application_controller, start, [Kernel]}),
+    put('$initial_call', {application_controller, start, 1}),
 
     case catch check_conf() of
 	{ok, ConfData} ->
@@ -1415,7 +1415,7 @@ make_appl(Name) when is_atom(Name) ->
 	non_existing ->
 	    {error, {file:format_error(enoent), FName}};
 	FullName ->
-	    case file:consult(FullName) of
+	    case prim_consult(FullName) of
 		{ok, [Application]} ->
 		    {ok, make_appl_i(Application)};
 		{error, Reason} -> 
@@ -1424,6 +1424,39 @@ make_appl(Name) when is_atom(Name) ->
     end;
 make_appl(Application) ->
     {ok, make_appl_i(Application)}.
+
+prim_consult(FullName) ->
+    case erl_prim_loader:get_file(FullName) of
+	{ok, Bin, _} ->
+	    case erl_scan:string(binary_to_list(Bin)) of
+		{ok, Tokens, _EndLine} ->
+		    prim_parse(Tokens, []);
+		{error, Reason, _EndLine} ->
+		    {error, Reason}
+	    end;
+	error ->
+	    {error, enoent}
+    end.
+
+prim_parse(Tokens, Acc) ->
+    case lists:splitwith(fun(T) -> element(1,T) =/= dot end, Tokens) of
+	{[], []} ->
+	    {ok, lists:reverse(Acc)};
+	{Tokens2, [{dot,_} = Dot | Rest]} ->
+	    case erl_parse:parse_term(Tokens2 ++ [Dot]) of
+		{ok, Term} ->
+		    prim_parse(Rest, [Term | Acc]);
+		{error, Reason} ->
+		    {error, Reason}
+	    end;
+	{Tokens2, []} ->
+	    case erl_parse:parse_term(Tokens2) of
+		{ok, Term} ->
+		    {ok, lists:reverse([Term | Acc])};
+		{error, Reason} ->
+		    {error, Reason}
+	    end
+    end.
 
 make_appl_i({application, Name, Opts}) when is_atom(Name), is_list(Opts) ->
     Descr = get_opt(description, Opts, ""),

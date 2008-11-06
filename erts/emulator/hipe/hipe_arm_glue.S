@@ -304,7 +304,7 @@ nbif_3_gc_after_bif:
 
 /*
  * We end up here when a BIF called from native signals an
- * exceptional condition, and RESCHEDULE cannot occur.
+ * exceptional condition.
  * HP was just read from P.
  * NSP has not been saved in P.
  * TEMP_LR contains a copy of LR
@@ -323,7 +323,6 @@ nbif_3_simple_exception:
 	/*FALLTHROUGH*/
 .nbif_simple_exception:
 	ldr	r0, [P, #P_FREASON]
-.nbif_simple_exception2:
 	cmp	r0, #FREASON_TRAP
 	beq	.handle_trap
 	/*
@@ -355,45 +354,10 @@ nbif_0_trap_exception:
 	mov	r1, #0
 .handle_trap:
 	mov	r0, #HIPE_MODE_SWITCH_RES_TRAP
-.bif_exit:
 	str	NSP, [P, #P_NSP]
 	str	r1, [P, #P_ARITY]
 	str	TEMP_LR, [P, #P_NRA]
 	b	.nosave_exit
-
-/*
- * We end up here when a BIF called from native signals an
- * exceptional condition, and RESCHEDULE can occur.
- * r2 contains the address of the nbif which failed.
- * HP was just read from P.
- * NSP has not been saved in P.
- * TEMP_ARG0 is the first actual parameter, if NR_ARG_REGS > 0.
- * TEMP_ARG1 is the second actual parameter (if defined), if NR_ARG_REGS > 1.
- * TEMP_ARG2 is the third actual parameter (if defined), if NR_ARG_REGS > 2.
- */
-	.global	nbif_1_hairy_exception
-nbif_1_hairy_exception:
-	mov	r1, #1
-	b	.nbif_hairy_exception
-	.global	nbif_2_hairy_exception
-nbif_2_hairy_exception:
-	mov	r1, #2
-	b	.nbif_hairy_exception
-	.global	nbif_3_hairy_exception
-nbif_3_hairy_exception:
-	mov	r1, #3
-	/*FALLTHROUGH*/
-.nbif_hairy_exception:
-	ldr	r0, [P, #P_FREASON]
-	cmp	r0, #FREASON_RESCHEDULE
-	bne	.nbif_simple_exception2
-	/* handle reschedule */
-	str	r2, [P, #P_NCALLEE]
-	str	TEMP_ARG0, [P, #P_ARG0]
-	str	TEMP_ARG1, [P, #P_ARG1]
-	str	TEMP_ARG2, [P, #P_ARG2]
-	mov	r0, #HIPE_MODE_SWITCH_RES_RESCHEDULE
-	b	.bif_exit
 
 /*
  * nbif_stack_trap_ra: trap return address for maintaining

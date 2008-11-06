@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2007-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Record and constant defenitions for the SSL-handshake protocol
@@ -60,12 +62,6 @@
 -define(CERTIFICATE_VERIFY, 15).
 -define(CLIENT_KEY_EXCHANGE, 16).
 -define(FINISHED, 20).
-
--record(handshake, {
-	  msg_type, % HandshakeType
-	  length,   % uint24 
-	  body      %  
-	 }).
 
 -record(random, {
 	  gmt_unix_time, % uint32
@@ -131,16 +127,6 @@
 -define(SIGNATURE_RSA, 1).
 -define(SIGNATURE_DSA, 2).
 
--record(signature, {
-	  digitally_signed
-	 }).
-
--record(digitally_signed, {
-	  md5_hash,   % rsa opaque md5_hash[16];
-	  sha_hash    % rsa, dsa opaque sha_hash[20]
-	 }).
-
-
 -record(hello_request, {}).
 -record(server_hello_done, {}).
 
@@ -196,7 +182,7 @@
 %%% Certificate verify - RFC 4346 section 7.4.8
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -record(certificate_verify, {
-	  signature % #signature{}
+	  signature % binary()
 	 }).
 
 
@@ -205,34 +191,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -record(finished, {
 	  verify_data %opaque verify_data[12]
-	 }).
-
--record(path_validation_state, {
-	  valid_policy_tree,
-	  explicit_policy,
-	  inhibit_any_policy,
-	  policy_mapping,
-	  cert_num,
-	  permitted_subtrees = no_constraints, %% Name constraints
-	  excluded_subtrees = [],      %% Name constraints   
-	  working_public_key_algorithm,
-	  working_public_key,
-	  working_public_key_parameters,
-	  working_issuer_name,
-	  max_path_length
-	 }).
-
--record(policy_tree_node, {
-	  valid_policy,
-	  qualifier_set,
-	  criticality_indicator,
-	  expected_policy_set
-	 }).
-
--record(revoke_state, {
-	  reasons_mask,
-	  cert_status,
-	  interim_reasons_mask
 	 }).
 
 -endif. % -ifdef(ssl_handshake).

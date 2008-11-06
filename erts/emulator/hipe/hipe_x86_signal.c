@@ -147,24 +147,30 @@ static void do_init(void)
 
 #if defined(__DARWIN__)
 /*
- * Darwin appears to require code patching in order to catch
- * and redirect calls to library functions. That functionality
- * is implemented by the mach_override library.
+ * Assumes Mac OS X >= 10.3 (dlsym operations not available in 10.2 and
+ * earlier).
+ *
+ * The code below assumes that is is part of the main image (earlier
+ * in the load order than libSystem and certainly before any dylib
+ * that might use sigaction) -- a standard RTLD_NEXT caveat.
+ *
+ * _sigaction lives in /usr/lib/libSystem.B.dylib and can be found
+ * with the standard dlsym(RTLD_NEXT) call. The proviso on Mac OS X
+ * being that the symbol for dlsym doesn't include a leading '_'.
+ *
+ * The other _sigaction, _sigaction_no_bind I don't understand the purpose
+ * of and don't modify.
  */
-#include "mach_override.h"
-static int my_sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
+#include <dlfcn.h>
 static int (*__next_sigaction)(int, const struct sigaction*, struct sigaction*);
 #define init_done()	(__next_sigaction != 0)
+#define __SIGACTION _sigaction
 static void do_init(void)
 {
-    kern_return_t err;
-
-    err = mach_override_ptr((void*)sigaction,
-			    (void*)my_sigaction,
-			    (void**)&__next_sigaction);
-    if (!err)
+    __next_sigaction = dlsym(RTLD_NEXT, "sigaction");
+    if (__next_sigaction != 0)
 	return;
-    perror("mach_override");
+    perror("dlsym_darwin");
     abort();
 }
 #define _NSIG NSIG

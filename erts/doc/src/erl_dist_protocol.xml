@@ -35,8 +35,8 @@ The description here is far from complete and will therefore be further
 refined in upcoming releases.
 
 The protocols both from Erlang nodes towards
-EPMD (Erlang Port Mapper Daemon) and between Erlang nodes are however
-stable and mature since many years.
+EPMD (Erlang Port Mapper Daemon) and between Erlang nodes, however, are
+stable since many years.
 </p>
 
 <p>The distribution protocol can be divided into four (4) parts:</p>
@@ -73,6 +73,7 @@ By default EPMD listens on port 4369.
   other node if it communicates using an invalid cookie (after one (1) second).
 </p>
 
+<p>The integers in all multi-byte fields are in big-endian order.</p>
 
   <section>
     <title>EPMD Protocol</title>
@@ -117,6 +118,7 @@ By default EPMD listens on port 4369.
 	    <cell align="center">1</cell>
 	    <cell align="center">2</cell>
 	    <cell align="center">2</cell>
+	    <cell align="center">2</cell>
 	    <cell align="center">Nlen</cell>
 	    <cell align="center">2</cell>
 	    <cell align="center">Elen</cell>
@@ -126,7 +128,8 @@ By default EPMD listens on port 4369.
 	    <cell align="center">PortNo</cell>
 	    <cell align="center">NodeType</cell>
 	    <cell align="center">Protocol</cell>
-	    <cell align="center">DistrvsnRange</cell>
+	    <cell align="center">LowestVersion</cell>
+	    <cell align="center">HighestVersion</cell>
 	    <cell align="center">Nlen</cell>
 	    <cell align="center">NodeName</cell>
 	    <cell align="center">Elen</cell>
@@ -146,11 +149,15 @@ By default EPMD listens on port 4369.
 	    <item>
 	      0 = tcp/ip-v4, ...
 	    </item>
-	    <tag><c>DistrvsnRange</c></tag>
+	    <tag><c>LowestVersion</c></tag>
 	    <item>
-	      Two bytes where MSB = Highestvsn and LSB = Lowestvsn.
-	      For erts-4.6.x (OTP-R3)the vsn = 0
-	      For erts-4.7.x (OTP-R4) = ?????.
+	      The lowest distribution version that this node can handle.
+	      See the next field for possible values.
+	    </item>
+	    <tag><c>HighestVersion</c></tag>
+	    <item>
+	      The highest distribution version that this node can handle.
+	      The value in R6B and later is 5.
 	    </item>
 	    <tag><c>Nlen</c></tag>
 	    <item>
@@ -211,11 +218,6 @@ By default EPMD listens on port 4369.
 	  node resides in order to get the distribution port that the node 
 	  listens to.
 	</p>
-	<p>
-	  The response PORT2_RESP contains other valuable information such as
-	  protocol version in 
-	  addition to the distribution port.
-	</p>
 
 	<table align="left">
 	<row>
@@ -256,6 +258,7 @@ By default EPMD listens on port 4369.
 	  <cell align="center">1</cell>
 	  <cell align="center">2</cell>
 	  <cell align="center">2</cell>
+	  <cell align="center">2</cell>
 	  <cell align="center">Nlen</cell>
 	  <cell align="center">2</cell>
 	  <cell align="center">Elen</cell>
@@ -266,30 +269,19 @@ By default EPMD listens on port 4369.
 	  <cell align="center">PortNo</cell>
 	  <cell align="center">NodeType</cell>
 	  <cell align="center">Protocol</cell>
-	  <cell align="center">DistrvsnRange</cell>
+	  <cell align="center">HighestVersion</cell>
+	  <cell align="center">LowestVersion</cell>
 	  <cell align="center">Nlen</cell>
 	  <cell align="center">NodeName</cell>
 	  <cell align="center">Elen</cell>
 	  <cell align="center">Extra</cell>
 	</row>
       <tcaption>PORT2_RESP when Result = 0.</tcaption></table>
-<!--
-[119, Result] or
-[119, Result, PortNo, NodeType, Protocol, DistrvsnRange, Nlen, 
-	NodeName, Elen, Extra]
-Result = 1 byte (0 = ok, >0 error)
-NodeType = 1 byte ( 77 - normal Erlang node , 72 - hidden node ...)
-PortNo = 2 byte
-Protocol = 1 byte
-DistrvsnRange = [Highestvsn, Lowestvsn] Highestvsn = Lowestvsn = 2 bytes
-Nlen = 2 bytes
-NodeName = string, length = Nlen
-Elen = 2 bytes
-Extra = string, length = Elen
--->
 <p>
 If Result > 0, the packet only consists of [119, Result].
 </p>
+
+        <p>EPMD will close the socket as soon as it has sent the information.</p>
       </section>
 
       <section>

@@ -121,23 +121,44 @@ ensure_link(SpawnOpts) ->
     end.
 
 
-init_p(Parent,Ancestors,F) when is_function(F) ->
+init_p(Parent,Ancestors,Fun) when is_function(Fun) ->
     put('$ancestors',[Parent|Ancestors]),
-    put('$initial_call',F),
-    try F() catch Class:Reason -> exit_p(Class, Reason, F) end.
+    {module,Mod} = erlang:fun_info(Fun, module),
+    {name,Name} = erlang:fun_info(Fun, name),
+    {arity,Arity} = erlang:fun_info(Fun, arity),
+    put('$initial_call', {Mod,Name,Arity}),
+    try
+	Fun()
+    catch
+	Class:Reason ->
+	    exit_p(Class, Reason)
+    end.
 
 init_p(Parent,Ancestors,M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
-    put('$ancestors',[Parent|Ancestors]),
-    put('$initial_call',{M,F,A}),
-    try apply(M,F,A) 
-    catch Class:Reason -> exit_p(Class, Reason, {M,F,A}) end.
+    put('$ancestors', [Parent|Ancestors]),
+    put('$initial_call', trans_init(M, F, A)),
+    init_p_do_apply(M, F, A).
 
-wake_up(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
-    try apply(M,F,A) 
-    catch Class:Reason -> exit_p(Class, Reason, {M,F,A}) end.
+init_p_do_apply(M, F, A) ->
+    try
+	apply(M, F, A) 
+    catch
+	Class:Reason ->
+	    exit_p(Class, Reason)
+    end.
 
-exit_p(Class, Reason, StartF) ->
-    _ = crash_report(Class, Reason, StartF),
+wake_up(M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
+    try
+	apply(M, F, A) 
+    catch
+	Class:Reason ->
+	    exit_p(Class, Reason)
+    end.
+
+exit_p(Class, Reason) ->
+    {M,F,A} = get('$initial_call'),
+    MFA = {M,F,make_dummy_args(A, [])},
+    crash_report(Class, Reason, MFA),
     exit(Reason).
 
 start(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
@@ -194,32 +215,19 @@ init_ack(Return) ->
 %% Fetch the initial call of a proc_lib spawned process.
 %% -----------------------------------------------------
 
-initial_call({X,Y,Z}) when is_integer(X),is_integer(Y),is_integer(Z) ->
-    initial_call(c:pid(X,Y,Z));
-initial_call(Pid) when is_pid(Pid) ->
-    case get_process_info(Pid,dictionary) of
-	{dictionary,Dict} ->
-	    init_call(Dict);
-	_ ->
-	    false
-    end;
-initial_call(ProcInfo) when is_list(ProcInfo) ->
-    case lists:keysearch(dictionary,1,ProcInfo) of
-	{value,{dictionary,Dict}} ->
-	    init_call(Dict);
-	_ ->
+initial_call(DictOrPid) ->
+    case raw_initial_call(DictOrPid) of
+	{M,F,A} ->
+	    {M,F,make_dummy_args(A, [])};
+	false ->
 	    false
     end.
 
-init_call(Dict) ->
-    case lists:keysearch('$initial_call',1,Dict) of
-	{value,{_,{M,F,A}}} ->
-	    {M,F,A};
-	{value,{_,F}} when is_function(F) ->
-	    F;
-	_ ->
-	    false
-    end.
+make_dummy_args(0, Acc) ->
+    Acc;
+make_dummy_args(N, Acc) ->
+    Arg = list_to_atom("Argument__" ++ integer_to_list(N)),
+    make_dummy_args(N-1, [Arg|Acc]).
 
 %% -----------------------------------------------------
 %% Translate the '$initial_call' to some useful information.
@@ -229,14 +237,46 @@ init_call(Dict) ->
 %% -----------------------------------------------------
 
 translate_initial_call(DictOrPid) ->
-    case initial_call(DictOrPid) of
-	{M,F,A} ->
-	    trans_init(M,F,A);
-	F when is_function(F) ->
-	    F;
+    case raw_initial_call(DictOrPid) of
+	{_,_,_}=MFA ->
+	    MFA;
 	false ->
 	    {proc_lib,init_p,5}
     end.
+
+%% -----------------------------------------------------
+%% Fetch the initial call information exactly as stored
+%% in the process dictionary.
+%% -----------------------------------------------------
+
+raw_initial_call({X,Y,Z}) when is_integer(X),is_integer(Y),is_integer(Z) ->
+    raw_initial_call(c:pid(X,Y,Z));
+raw_initial_call(Pid) when is_pid(Pid) ->
+    case get_process_info(Pid,dictionary) of
+	{dictionary,Dict} ->
+	    raw_init_call(Dict);
+	_ ->
+	    false
+    end;
+raw_initial_call(ProcInfo) when is_list(ProcInfo) ->
+    case lists:keysearch(dictionary,1,ProcInfo) of
+	{value,{dictionary,Dict}} ->
+	    raw_init_call(Dict);
+	_ ->
+	    false
+    end.
+
+raw_init_call(Dict) ->
+    case lists:keysearch('$initial_call', 1, Dict) of
+	{value,{_,{_,_,_}=MFA}} ->
+	    MFA;
+	_ ->
+	    false
+    end.
+
+%% -----------------------------------------------------
+%% Translate the initial call to some useful information.
+%% -----------------------------------------------------
 
 trans_init(gen,init_it,[gen_server,_,_,supervisor,{_,Module,_},_]) ->
     {supervisor,Module,1};
@@ -256,7 +296,7 @@ trans_init(gen,init_it,[gen_fsm,_,_,_,Module|_]) ->
     {Module,init,1};
 trans_init(gen,init_it,[gen_event|_]) ->
     {gen_event,init_it,6};
-trans_init(M,F,A) when is_atom(M), is_atom(F) ->
+trans_init(M, F, A) when is_atom(M), is_atom(F) ->
     {M,F,length(A)}.
 
 %% -----------------------------------------------------
@@ -269,8 +309,7 @@ crash_report(Class, Reason, StartF) ->
     OwnReport = my_info(Class, Reason, StartF),
     LinkReport = linked_info(self()),
     Rep = [OwnReport,LinkReport],
-    error_logger:error_report(crash_report, Rep),
-    Rep.
+    error_logger:error_report(crash_report, Rep).
 
 my_info(Class, Reason, StartF) ->
     [{pid, self()},
@@ -302,9 +341,9 @@ get_cleaned_dictionary(Pid) ->
 	_                 -> {dictionary,[]}
     end.
 
-clean_dict([E|Dict]) when element(1,E) =:= '$ancestors' ->
+clean_dict([{'$ancestors',_}|Dict]) ->
     clean_dict(Dict);
-clean_dict([E|Dict]) when element(1,E) =:= '$initial_call' ->
+clean_dict([{'$initial_call',_}|Dict]) ->
     clean_dict(Dict);
 clean_dict([E|Dict]) ->
     [E|clean_dict(Dict)];
@@ -358,8 +397,8 @@ make_neighbour_report(Pid) ->
  
 get_initial_call(Pid) ->
     case get_dictionary(Pid,'$initial_call') of
-	{'$initial_call',Mfa} ->
-	    {initial_call,Mfa};
+	{'$initial_call',{M,F,A}} ->
+	    {initial_call,{M,F,make_dummy_args(A, [])}};
 	_ ->
 	    get_process_info(Pid,initial_call)
     end.
@@ -457,16 +496,10 @@ check(Res)               -> Res.
 %%% -----------------------------------------------------------
 
 format([OwnReport,LinkReport]) ->
-    OwnFormat = format_own(OwnReport),
-    LinkFormat = format_link(LinkReport),
+    OwnFormat = format_report(OwnReport),
+    LinkFormat = format_report(LinkReport),
     io_lib:format("  crasher:~n~s  neighbours:~n~s",
 		  [OwnFormat,LinkFormat]).
-
-format_own(Report) ->
-    format_report(Report).
-
-format_link(Report) ->
-    format_report(Report).
 
 format_report(Rep) when is_list(Rep) ->
     format_rep(Rep);
@@ -474,7 +507,7 @@ format_report(Rep) ->
     io_lib:format("~p~n",[Rep]).
 
 format_rep([{initial_call,InitialCall}|Rep]) ->
-    [format_call(InitialCall)|format_rep(Rep)];
+    [format_mfa(InitialCall)|format_rep(Rep)];
 format_rep([{error_info,{Class,Reason,StackTrace}}|Rep]) ->
     [format_exception(Class, Reason, StackTrace)|format_rep(Rep)];
 format_rep([{Tag,Data}|Rep]) ->
@@ -490,12 +523,14 @@ format_exception(Class, Reason, StackTrace) ->
     [EI, lib:format_exception(1+length(EI), Class, Reason, 
                               StackTrace, StackFun, PF), "\n"].
 
-format_call(StartF) when is_function(StartF) ->
-    ["    initial call: ", lib:format_fun(StartF), "\n"];
-format_call({M,F,As}=StartF) ->
-    IC = "    initial call: ",
-    try [IC, lib:format_call(1+length(IC), {M,F}, As, pp_fun()), "\n"]
-    catch error:_ -> format_tag(initial_call, StartF)
+format_mfa({M,F,Args}=StartF) ->
+    try
+	A = length(Args),
+	["    initial call: ",atom_to_list(M),$:,atom_to_list(F),$/,
+	 integer_to_list(A),"\n"]
+    catch
+	error:_ ->
+	    format_tag(initial_call, StartF)
     end.
 
 pp_fun() ->

@@ -504,9 +504,11 @@ validate_config_params([{ssl_ca_certificate_file, Value} | Rest]) ->
     ok = httpd_util:file_validate(ssl_certificate_file, Value),
     validate_config_params(Rest);
 
-validate_config_params([{ssl_password_callback_module, Value} | Rest]) ->
-    ok = httpd_util:file_validate(ssl_password_callback_module, Value),
+validate_config_params([{ssl_password_callback_module, Value} | Rest]) 
+  when is_atom(Value) ->
     validate_config_params(Rest);
+validate_config_params([{ssl_password_callback_module, Value} | _]) ->
+    throw({ssl_password_callback_module, Value});
 
 validate_config_params([{ssl_password_callback_function, Value} | Rest]) 
   when is_atom(Value) ->

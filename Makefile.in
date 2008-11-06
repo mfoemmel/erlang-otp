@@ -404,7 +404,7 @@ recreate_primary_bootstrap:
 
 # These modules should stay in the kernel directory to make building
 # of the emulator possible
-KERNEL_PRELOAD    = otp_ring0 init erl_prim_loader prim_inet prim_file erlang
+KERNEL_PRELOAD    = otp_ring0 init erl_prim_loader prim_inet prim_file zlib prim_zip erlang
 
 .PHONY: primary_bootstrap						\
 	primary_bootstrap_check_make					\
@@ -539,6 +539,7 @@ TESTS +=					\
 	otp_mibs_test				\
 	percept_test				\
 	pman_test				\
+	public_key_test                         \
 	sasl_test				\
 	snmp_test				\
 	runtime_tools_test			\
@@ -562,6 +563,7 @@ TESTS +=					\
 	hipe_test				\
 	odbc_test				\
 	parsetools_test				\
+	public_key_test                         \
 	ssl_test				\
 	ssh_test				\
 	syntax_tools_test			\

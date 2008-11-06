@@ -53,6 +53,9 @@
 #include <limits.h>
 #include "erl_printf_format.h"
 
+#include "sys.h"
+#undef ASSERT
+
 #ifdef DEBUG
 #include <assert.h>
 #define ASSERT(X) assert(X)
@@ -324,11 +327,17 @@ static int fmt_double(fmtfn_t fn,void*arg,double val,
     char format_str[7];
     char sbuf[32];
     char *bufp;
-    double dexp = log10(val);
-    int exp = (int) dexp;
+    double dexp;
+    int exp;
     size_t max_size = 1;
     size_t size;
     int new_fmt = fmt;
+    int fpe_was_unmasked;
+
+    fpe_was_unmasked = erts_block_fpe();
+
+    dexp = log10(val);
+    exp = (int) dexp;
 
     new_fmt &= ~FMTF_sgn;
     new_fmt &= ~FMTF_blk;
@@ -393,7 +402,8 @@ static int fmt_double(fmtfn_t fn,void*arg,double val,
 	break;
     }
     default:
-	return -EINVAL;
+	res = -EINVAL;
+	goto out;
     }
 
     format_str[fi++] = '\0';
@@ -405,15 +415,19 @@ static int fmt_double(fmtfn_t fn,void*arg,double val,
 	bufp = sbuf;
     else {
 	bufp = (char *) malloc(sizeof(char)*max_size);
-	if (!bufp)
-	    return -ENOMEM;
+	if (!bufp) {
+	    res = -ENOMEM;
+	    goto out;
+	}
     }
 
     size = sprintf(bufp, format_str, precision, val);
     if (size < 0) {
 	if (errno > 0)
-	    return -errno;
-	return -EIO;
+	    res = -errno;
+	else
+	    res = -EIO;
+	goto out;
     }
 
     ASSERT(max_size >= size);
@@ -423,6 +437,8 @@ static int fmt_double(fmtfn_t fn,void*arg,double val,
     if (bufp != sbuf)
 	free((void *) bufp);
 
+ out:
+    erts_unblock_fpe_conditional(fpe_was_unmasked);
     return res;
 }
 

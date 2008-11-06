@@ -25,7 +25,7 @@ include(`hipe/hipe_sparc_asm.m4')
  * standard_bif_interface_3(nbif_name, cbif_name)
  *
  * Generate native interface for a BIF with 1-3 parameters and
- * standard failure mode (may fail, but not with RESCHEDULE).
+ * standard failure mode.
  */
 define(standard_bif_interface_1,
 `
@@ -136,119 +136,12 @@ $1:
 #endif')
 
 /*
- * expensive_bif_interface_1(nbif_name, cbif_name)
- * expensive_bif_interface_2(nbif_name, cbif_name)
- * expensive_bif_interface_3(nbif_name, cbif_name)
- *
- * Generate native interface for a BIF with 1-3 parameters and
- * an expensive failure mode (may fail with RESCHEDULE).
- */
-define(expensive_bif_interface_1,
-`
-#ifndef HAVE_$1
-#`define' HAVE_$1
-	.global $1
-$1:
-	/* Set up C argument registers. */
-	mov	P, %o0
-	NBIF_ARG(%o1,1,0)
-
-	/* Save actual parameters in case we must reschedule. */
-	NBIF_SAVE_RESCHED_ARGS(1)
-
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_BIF
-	call	$2
-	nop
-	TEST_GOT_MBUF
-
-	/* Restore registers. Check for exception. */
-	__TEST_GOT_EXN(1f)
-	RESTORE_CONTEXT_BIF
-	NBIF_RET(1)
-1:
-	set	$1, %o2
-	ba	nbif_1_hairy_exception
-	nop
-	HANDLE_GOT_MBUF(1)
-	.size	$1, .-$1
-	.type	$1, #function
-#endif')
-
-define(expensive_bif_interface_2,
-`
-#ifndef HAVE_$1
-#`define' HAVE_$1
-	.global $1
-$1:
-	/* Set up C argument registers. */
-	mov	P, %o0
-	NBIF_ARG(%o1,2,0)
-	NBIF_ARG(%o2,2,1)
-
-	/* Save actual parameters in case we must reschedule. */
-	NBIF_SAVE_RESCHED_ARGS(2)
-
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_BIF
-	call	$2
-	nop
-	TEST_GOT_MBUF
-
-	/* Restore registers. Check for exception. */
-	__TEST_GOT_EXN(1f)
-	RESTORE_CONTEXT_BIF
-	NBIF_RET(2)
-1:
-	set	$1, %o2
-	b	nbif_2_hairy_exception
-	nop
-	HANDLE_GOT_MBUF(2)
-	.size	$1, .-$1
-	.type	$1, #function
-#endif')
-
-define(expensive_bif_interface_3,
-`
-#ifndef HAVE_$1
-#`define' HAVE_$1
-	.global $1
-$1:
-	/* Set up C argument registers. */
-	mov	P, %o0
-	NBIF_ARG(%o1,3,0)
-	NBIF_ARG(%o2,3,1)
-	NBIF_ARG(%o3,3,2)
-
-	/* Save actual parameters in case we must reschedule. */
-	NBIF_SAVE_RESCHED_ARGS(3)
-
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_BIF
-	call	$2
-	nop
-	TEST_GOT_MBUF
-
-	/* Restore registers. Check for exception. */
-	__TEST_GOT_EXN(1f)
-	RESTORE_CONTEXT_BIF
-	NBIF_RET(3)
-1:
-	set	$1, %o2
-	b	nbif_3_hairy_exception
-	nop
-	HANDLE_GOT_MBUF(3)
-	.size	$1, .-$1
-	.type	$1, #function
-#endif')
-
-/*
  * gc_bif_interface_0(nbif_name, cbif_name)
  * gc_bif_interface_1(nbif_name, cbif_name)
  * gc_bif_interface_2(nbif_name, cbif_name)
  *
  * Generate native interface for a BIF with 0-2 parameters and
- * standard failure mode (may fail, but not with RESCHEDULE).
+ * standard failure mode.
  * The BIF may do a GC.
  */
 define(gc_bif_interface_0,
@@ -320,79 +213,6 @@ $1:
 	TEST_GOT_EXN(2)
 	RESTORE_CONTEXT_GC
 	NBIF_RET(2)
-	HANDLE_GOT_MBUF(2)
-	.size	$1, .-$1
-	.type	$1, #function
-#endif')
-
-/*
- * expensive_gc_bif_interface_1(nbif_name, cbif_name)
- * expensive_gc_bif_interface_2(nbif_name, cbif_name)
- *
- * Generate native interface for a BIF with 1-2 parameters and
- * an expensive failure mode (may fail with RESCHEDULE).
- * The BIF may do a GC.
- */
-define(expensive_gc_bif_interface_1,
-`
-#ifndef HAVE_$1
-#`define' HAVE_$1
-	.global $1
-$1:
-	/* Set up C argument registers. */
-	mov	P, %o0
-	NBIF_ARG(%o1,1,0)
-
-	/* Save actual parameters in case we must reschedule. */
-	NBIF_SAVE_RESCHED_ARGS(1)
-
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_GC
-	call	$2
-	nop
-	TEST_GOT_MBUF
-
-	/* Restore registers. Check for exception. */
-	__TEST_GOT_EXN(1f)
-	RESTORE_CONTEXT_GC
-	NBIF_RET(1)
-1:
-	set	$1, %o2
-	ba	nbif_1_hairy_exception
-	nop
-	HANDLE_GOT_MBUF(1)
-	.size	$1, .-$1
-	.type	$1, #function
-#endif')
-
-define(expensive_gc_bif_interface_2,
-`
-#ifndef HAVE_$1
-#`define' HAVE_$1
-	.global $1
-$1:
-	/* Set up C argument registers. */
-	mov	P, %o0
-	NBIF_ARG(%o1,2,0)
-	NBIF_ARG(%o2,2,1)
-
-	/* Save actual parameters in case we must reschedule. */
-	NBIF_SAVE_RESCHED_ARGS(2)
-
-	/* Save caller-save registers and call the C function. */
-	SAVE_CONTEXT_GC
-	call	$2
-	nop
-	TEST_GOT_MBUF
-
-	/* Restore registers. Check for exception. */
-	__TEST_GOT_EXN(1f)
-	RESTORE_CONTEXT_GC
-	NBIF_RET(2)
-1:
-	set	$1, %o2
-	b	nbif_2_hairy_exception
-	nop
 	HANDLE_GOT_MBUF(2)
 	.size	$1, .-$1
 	.type	$1, #function

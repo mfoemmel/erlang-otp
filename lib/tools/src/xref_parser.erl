@@ -198,7 +198,7 @@ name_it(intersection)  -> ' * ';
 name_it(difference)    -> ' - ';
 name_it(Name) -> Name.   
 
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-09-02_20/otp_src_R12B-4/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/ldisk/daily_build/otp_prebuild_r12b.2008-11-05_12/otp_src_R12B-5/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the

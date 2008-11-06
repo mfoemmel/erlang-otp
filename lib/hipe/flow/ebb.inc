@@ -29,8 +29,8 @@
 %%--------------------------------------------------------------------
 
 %% XXX: Cheating big time! no recursive types
--type(ebb() :: {ebb_node, icode_lbl(), _}
-             | {ebb_leaf, icode_lbl()}).
+-type ebb() :: {ebb_node, icode_lbl(), _}
+             | {ebb_leaf, icode_lbl()}.
 
 -record(ebb_node, {label :: icode_lbl(), successors :: [ebb()]}).
 -record(ebb_leaf, {successor :: icode_lbl()}).
@@ -39,7 +39,7 @@
 %% Returns a list of extended basic blocks.
 %%--------------------------------------------------------------------
 
--spec(cfg/1 :: (#cfg{}) -> [ebb()]).
+-spec cfg(#cfg{}) -> [ebb()].
 
 cfg(CFG) ->
   Start = ?cfg:start_label(CFG),
@@ -181,20 +181,20 @@ add_succ([Lbl|Lbls], Visited, Node, MkFun, EBBs, CFG) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec(mk_node/2 :: (icode_lbl(), [ebb()]) -> #ebb_node{}).
+-spec mk_node(icode_lbl(), [ebb()]) -> #ebb_node{}.
 mk_node(Label, Successors) -> #ebb_node{label=Label, successors=Successors}.
 
--spec(node_label/1 :: (#ebb_node{}) -> icode_lbl()).
+-spec node_label(#ebb_node{}) -> icode_lbl().
 node_label(#ebb_node{label=Label}) -> Label.
 
--spec(node_successors/1 :: (#ebb_node{}) -> [ebb()]).
+-spec node_successors(#ebb_node{}) -> [ebb()].
 node_successors(#ebb_node{successors=Successors}) -> Successors.
 
--spec(mk_leaf/1 :: (icode_lbl()) -> #ebb_leaf{}).
+-spec mk_leaf(icode_lbl()) -> #ebb_leaf{}.
 mk_leaf(NextEbb) -> #ebb_leaf{successor=NextEbb}.
 %% leaf_next(Leaf) -> Leaf#ebb_leaf.successor.
 
--spec(type/1 :: (#ebb_node{}) -> 'node' ; (#ebb_leaf{}) -> 'leaf').
+-spec type(#ebb_node{}) -> 'node' ; (#ebb_leaf{}) -> 'leaf'.
 type(#ebb_node{}) -> node;
 type(#ebb_leaf{}) -> leaf.
 

@@ -29,7 +29,7 @@
 
 %%------------------------------------------------------------------------
 
--type(mfa_icode() :: {mfa(), #icode{}}).
+-type mfa_icode() :: {mfa(), #icode{}}.
 
 -record(icode_callgraph, {codedict :: dict(), ordered_sccs :: [[atom()]]}).
 
@@ -37,7 +37,7 @@
 %% Exported functions
 %%------------------------------------------------------------------------
 
--spec(construct/1 :: ([mfa_icode()]) -> #icode_callgraph{}).
+-spec construct([mfa_icode()]) -> #icode_callgraph{}.
 
 construct(List) ->
   Calls = get_local_calls(List),
@@ -50,14 +50,14 @@ construct(List) ->
   SCCs = hipe_digraph:reverse_preorder_sccs(DiGraph1),
   #icode_callgraph{codedict=dict:from_list(List), ordered_sccs=SCCs}.
 
--spec(construct_callgraph/1 :: ([mfa_icode()]) -> #hipe_digraph{}).
+-spec construct_callgraph([mfa_icode()]) -> #hipe_digraph{}.
 
 construct_callgraph(List) ->
   Calls = get_local_calls2(List),
   Edges = get_edges(Calls),  
   hipe_digraph:from_list(Edges).
 
--spec(to_list/1 :: (#icode_callgraph{}) -> [mfa_icode()]).
+-spec to_list(#icode_callgraph{}) -> [mfa_icode()].
 
 to_list(#icode_callgraph{codedict=Dict, ordered_sccs=SCCs}) ->
   FlatList = lists:flatten(SCCs),
@@ -67,13 +67,12 @@ to_list(#icode_callgraph{codedict=Dict, ordered_sccs=SCCs}) ->
 
 -ifndef(NO_UNUSED).
 
--spec(is_empty/1 :: (#icode_callgraph{}) -> bool()).
+-spec is_empty(#icode_callgraph{}) -> bool().
 
 is_empty(#icode_callgraph{ordered_sccs=SCCs}) ->
   length(SCCs) =:= 0.
 
--spec(take_first/1 ::
-      (#icode_callgraph{}) -> {[mfa_icode()], #icode_callgraph{}}).
+-spec take_first(#icode_callgraph{}) -> {[mfa_icode()], #icode_callgraph{}}.
 
 take_first(CG=#icode_callgraph{codedict=Dict, ordered_sccs=SCCs})
   when length(SCCs) > 0 ->
@@ -81,7 +80,7 @@ take_first(CG=#icode_callgraph{codedict=Dict, ordered_sccs=SCCs})
   SCCCode = [{Mod, dict:fetch(Mod, Dict)} || Mod <- H],
   {SCCCode, CG#icode_callgraph{ordered_sccs=T}}.
 
--spec(pp/1 :: (#icode_callgraph{}) -> 'ok').
+-spec pp(#icode_callgraph{}) -> 'ok'.
 
 pp(#icode_callgraph{ordered_sccs=SCCs}) ->
   io:format("Callgraph ~p\n", [SCCs]).
@@ -90,7 +89,7 @@ pp(#icode_callgraph{ordered_sccs=SCCs}) ->
 %%------------------------------------------------------------------------
 %% Get the modules called from this module
 
--spec(get_called_modules/1 :: ([mfa_icode()]) -> ordset(atom())).
+-spec get_called_modules([mfa_icode()]) -> ordset(atom()).
 
 get_called_modules(List) ->
   get_remote_calls(List, []).

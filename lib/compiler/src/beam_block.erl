@@ -23,8 +23,7 @@
 -export([module/2]).
 -export([live_at_entry/1]).			%Used by beam_type, beam_bool.
 -export([merge_blocks/2]).			%Used by beam_jump.
--import(lists, [map/2,mapfoldl/3,mapfoldr/3,reverse/1,reverse/2,foldl/3,
-		member/2,sort/1,all/2]).
+-import(lists, [mapfoldl/3,reverse/1,reverse/2,foldl/3,member/2]).
 -define(MAXREG, 1024).
 
 module({Mod,Exp,Attr,Fs0,Lc0}, _Opt) ->

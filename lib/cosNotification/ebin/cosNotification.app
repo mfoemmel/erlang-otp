@@ -1,6 +1,6 @@
 {application, cosNotification,
  [{description, "The Erlang CosNotification application"},
-  {vsn, "1.1.7"},
+  {vsn, "1.1.9"},
   {modules,
        [
 	'CosNotification_Common',

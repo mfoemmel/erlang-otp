@@ -35,31 +35,31 @@
 -include("../flow/hipe_bb.hrl").
 -include("hipe_icode_type.hrl").
 
--type(range_rep() :: {'neg_inf' | integer(), 'pos_inf' | integer()} | 'empty').
--type(fun_name() :: atom() | tuple()).
--type(inf_integer() :: 'neg_inf' | 'pos_inf' | integer()).
+-type range_rep() :: {'neg_inf' | integer(), 'pos_inf' | integer()} | 'empty'.
+-type fun_name() :: atom() | tuple().
+-type inf_integer() :: 'neg_inf' | 'pos_inf' | integer().
 
 -record(range, {range :: range_rep(),
 		other :: bool()}).
 
--record(ann,   {range :: #range{}, 
-                type  :: erl_type(), 
+-record(ann,   {range :: #range{},
+                type  :: erl_type(),
 		count :: integer()}).
 
--type(range_anno() :: {range_anno, #ann{}, fun((#ann{}) -> string())}). 
--type(args_fun() :: fun((mfa(),cfg()) -> [#range{}])). 
--type(call_fun() :: fun((mfa(),[#range{}]) -> #range{})). 		      
--type(final_fun() :: fun((mfa(),[#range{}]) -> ok)). 	 
--type(data() :: {mfa(), args_fun(), call_fun(), final_fun()}).
--type(label() :: integer()).
--type(info() :: gb_tree()).
--type(work_list() :: {[label()],[label()],set()}).
--type(variable() :: #icode_variable{}).
--type(annotated_variable() :: #icode_variable{}).
--type(argument() :: #icode_const{} | variable()).
--type(three_range_fun()   :: fun((#range{},#range{},#range{}) -> #range{})).
--type(instr_split_info()  :: {icode_instr(),[{label(),info()}]}).
--type(last_instr_return() :: {instr_split_info(), #range{}}).  
+-type range_anno() :: {range_anno, #ann{}, fun((#ann{}) -> string())}.
+-type args_fun() :: fun((mfa(),cfg()) -> [#range{}]).
+-type call_fun() :: fun((mfa(),[#range{}]) -> #range{}). 		      
+-type final_fun() :: fun((mfa(),[#range{}]) -> ok).
+-type data() :: {mfa(), args_fun(), call_fun(), final_fun()}.
+-type label() :: integer().
+-type info() :: gb_tree().
+-type work_list() :: {[label()],[label()],set()}.
+-type variable() :: #icode_variable{}.
+-type annotated_variable() :: #icode_variable{}.
+-type argument() :: #icode_const{} | variable().
+-type three_range_fun()   :: fun((#range{},#range{},#range{}) -> #range{}).
+-type instr_split_info()  :: {icode_instr(),[{label(),info()}]}.
+-type last_instr_return() :: {instr_split_info(), #range{}}.
 
 -record(state, {info_map	   :: gb_tree(), 
 		counter=dict:new() :: dict(), 
@@ -77,7 +77,7 @@
 
 %%---------------------------------------------------------------------
 
--spec(cfg/4 :: (cfg(), mfa(), comp_options(), #comp_servers{}) -> cfg()).
+-spec cfg(cfg(), mfa(), comp_options(), #comp_servers{}) -> cfg().
 
 cfg(Cfg, MFA, Options, Servers) ->
   case proplists:get_bool(concurrent_comp, Options) of
@@ -87,7 +87,7 @@ cfg(Cfg, MFA, Options, Servers) ->
       ordinary_cfg(Cfg, MFA)
   end.
 
--spec(concurrent_cfg/3 :: (cfg(), mfa(), pid()) -> cfg()).
+-spec concurrent_cfg(cfg(), mfa(), pid()) -> cfg().
 
 concurrent_cfg(Cfg, MFA, CompServer) ->
   CompServer ! {ready, {MFA,self()}},
@@ -96,8 +96,7 @@ concurrent_cfg(Cfg, MFA, CompServer) ->
   CompServer ! {done_rewrite, MFA},
   Ans.
 
--spec(do_analysis/2 :: 
-      (cfg(), mfa()) -> {args_fun(), call_fun(), final_fun()}).
+-spec do_analysis(cfg(), mfa()) -> {args_fun(), call_fun(), final_fun()}.
 
 do_analysis(Cfg, MFA) ->
   receive
@@ -108,19 +107,18 @@ do_analysis(Cfg, MFA) ->
       {NewArgsFun, NewCallFun, NewFinalFun}
   end.
 
--spec(do_rewrite/5 :: 
-      (cfg(), mfa(), args_fun(), call_fun(), final_fun()) -> cfg()).
+-spec do_rewrite(cfg(), mfa(), args_fun(), call_fun(), final_fun()) -> cfg().
 
 do_rewrite(Cfg, MFA, ArgsFun, CallFun, FinalFun) ->
   common_rewrite(Cfg, {MFA, ArgsFun, CallFun, FinalFun}).
  
--spec(ordinary_cfg/2 :: (cfg(), mfa()) -> cfg()).
+-spec ordinary_cfg(cfg(), mfa()) -> cfg().
 
 ordinary_cfg(Cfg, MFA) ->
   Data = make_data(Cfg,MFA),
   common_rewrite(Cfg, Data).
   
--spec(common_rewrite/2 :: (cfg(), data()) -> cfg()).
+-spec common_rewrite(cfg(), data()) -> cfg().
 
 common_rewrite(Cfg, Data) ->
   State = safe_analyse(Cfg, Data),
@@ -130,7 +128,7 @@ common_rewrite(Cfg, Data) ->
   Cfg3 = convert_cfg_to_types(Cfg2),
   hipe_icode_type:specialize(Cfg3).
 
--spec(make_data/2 :: (cfg(), mfa()) -> data()).
+-spec make_data(cfg(), mfa()) -> data().
 
 make_data(Cfg, {_M,_F,A}=MFA) ->
   NoArgs = 
@@ -144,7 +142,7 @@ make_data(Cfg, {_M,_F,A}=MFA) ->
   FinalFun = fun(_,_) -> ok end,
   {MFA, ArgsFun, CallFun, FinalFun}.
 
--spec(analyse/2 :: (cfg(), data()) -> 'ok').
+-spec analyse(cfg(), data()) -> 'ok'.
 
 analyse(Cfg, Data) ->
   try 
@@ -153,7 +151,7 @@ analyse(Cfg, Data) ->
   catch throw:no_input -> ok
   end.
 
--spec(safe_analyse/2 :: (cfg(), data()) -> #state{}).
+-spec safe_analyse(cfg(), data()) -> #state{}.
 
 safe_analyse(CFG, Data={MFA,_,_,_}) ->
   State = state__init(CFG, Data),
@@ -162,14 +160,14 @@ safe_analyse(CFG, Data={MFA,_,_,_}) ->
   (state__result_action(NewState))(MFA, [state__ret_type(NewState)]),
   NewState.
 
--spec(rewrite_blocks/1 :: (#state{}) -> #state{}).
+-spec rewrite_blocks(#state{}) -> #state{}.
 
 rewrite_blocks(State) ->
   CFG = state__cfg(State),
   Start = hipe_icode_cfg:start_label(CFG),
   rewrite_blocks([Start], State, [Start]).
 
--spec(rewrite_blocks/3 :: ([label()], #state{}, [label()]) -> #state{}).
+-spec rewrite_blocks([label()], #state{}, [label()]) -> #state{}.
 
 rewrite_blocks([Next|Rest], State, Visited) ->
   Info = state__info_in(State, Next),
@@ -182,7 +180,7 @@ rewrite_blocks([Next|Rest], State, Visited) ->
 rewrite_blocks([], State, _) ->
   State.
 
--spec(analyse_blocks/2 :: (#state{}, work_list()) -> #state{}).
+-spec analyse_blocks(#state{}, work_list()) -> #state{}.
 
 analyse_blocks(State, Work) ->
   case get_work(Work) of
@@ -199,8 +197,7 @@ analyse_blocks(State, Work) ->
       analyse_blocks(NewState, NewWork2)
   end.
 
--spec(analyse_block/4 :: 
-      (label(), info(), #state{}, bool()) -> {#state{}, [label()]}).
+-spec analyse_block(label(), info(), #state{}, bool()) -> {#state{}, [label()]}.
 
 analyse_block(Label, Info, State, Rewrite) ->
   BB = state__bb(State, Label),
@@ -211,9 +208,8 @@ analyse_block(Label, Info, State, Rewrite) ->
   State2 = state__ret_type_update(State1, RetType),
   state__update_info(State2, InfoList, Rewrite).
 
--spec(analyse_BB/5 ::
-      ([icode_instr()], info(), [icode_instr()], bool(), call_fun()) -> 
-	 {[icode_instr()], [info()], #range{}}).
+-spec analyse_BB([icode_instr()], info(), [icode_instr()], bool(), call_fun()) ->
+	 {[icode_instr()], [info()], #range{}}.
 
 analyse_BB([Last], Info, Code, Rewrite, LookupFun) ->
   %% io:format("I: ~w~n",[Last]),
@@ -223,8 +219,7 @@ analyse_BB([Insn|InsnList], Info, Code, Rewrite, LookupFun) ->
   {NewInfo,NewI} = analyse_insn(Insn, Info, LookupFun), 
   analyse_BB(InsnList, NewInfo, [NewI|Code], Rewrite, LookupFun).
 
--spec(analyse_insn/3 ::
-      (icode_instr(), info(), call_fun()) -> {info(), icode_instr()}).
+-spec analyse_insn(icode_instr(), info(), call_fun()) -> {info(), icode_instr()}.
 
 analyse_insn(I, Info, LookupFun) ->
   %% io:format("~w Info: ~p~n",[I,Info]),
@@ -239,14 +234,13 @@ analyse_insn(I, Info, LookupFun) ->
     end,
   {enter_vals(FinalI, Info), FinalI}.
 
--spec(handle_args/2 :: (icode_instr(), info()) -> icode_instr()).
+-spec handle_args(icode_instr(), info()) -> icode_instr().
 
 handle_args(I, Info) ->
   WidenFun = fun update_three/3,
   handle_args(I, Info, WidenFun).
 
--spec(handle_args/3 ::
-      (icode_instr(), info(), three_range_fun()) -> icode_instr()).
+-spec handle_args(icode_instr(), info(), three_range_fun()) -> icode_instr().
 
 handle_args(I, Info, WidenFun) ->
   Uses = hipe_icode:uses(I),
@@ -256,7 +250,7 @@ handle_args(I, Info, WidenFun) ->
   NewUses = lists:zipwith(JoinFun, Uses, PresentRanges),
   hipe_icode:subst_uses(lists:zip(Uses, NewUses),I).
 
--spec(join_info/3 :: (#ann{}, #range{}, three_range_fun()) -> #ann{}).
+-spec join_info(#ann{}, #range{}, three_range_fun()) -> #ann{}.
 
 join_info(Ann = #ann{range=R1,type=Type,count=?WIDEN}, R2, Fun)  ->
   Ann#ann{range = Fun(R1, R2, range_from_simple_type(Type))};
@@ -266,18 +260,17 @@ join_info(Ann = #ann{range=R1,type=Type,count=C}, R2, _Fun) when C < ?WIDEN ->
     NewR -> Ann#ann{range=NewR, count=C+1}
   end.
 
--spec(join_three/3 :: (#range{}, #range{}, #range{}) -> #range{}).
+-spec join_three(#range{}, #range{}, #range{}) -> #range{}.
 
 join_three(R1, R2, R3) ->
   inf(sup(R1, R2), R3).
 
--spec(update_info/2 :: (variable(), #range{}) -> annotated_variable()).
+-spec update_info(variable(), #range{}) -> annotated_variable().
 
 update_info(Var, Range) ->
   update_info(Var, Range, fun update_three/3).
 
--spec(update_info/3 ::
-      (variable(), #range{}, three_range_fun()) -> annotated_variable()).
+-spec update_info(variable(), #range{}, three_range_fun()) -> annotated_variable().
 
 update_info(Arg, R, Fun) ->
   case hipe_icode:is_annotated_variable(Arg) of
@@ -288,7 +281,7 @@ update_info(Arg, R, Fun) ->
       Arg
   end.
 
--spec(update_info1/3 :: (any(), #range{}, three_range_fun()) -> range_anno()).
+-spec update_info1(any(), #range{}, three_range_fun()) -> range_anno().
 
 update_info1({range_anno, Ann, _}, R2, Fun) ->
   make_range_anno(update_ann(Ann,R2,Fun));
@@ -303,22 +296,22 @@ update_ann(Ann = #ann{range=R1,type=Type,count=C}, R2, _Fun) ->
     NewR -> Ann#ann{range=NewR, count=C+1}
   end.
 
--spec(type_to_ann/1 :: (any()) -> #ann{}).
+-spec type_to_ann(any()) -> #ann{}.
 
 type_to_ann(Type) ->
   #ann{range = range_from_simple_type(Type), type = t_limit(Type,1), count=1}.
 
--spec(make_range_anno/1 :: (#ann{}) -> range_anno()).
+-spec make_range_anno(#ann{}) -> range_anno().
 
 make_range_anno(Ann) ->
   {range_anno, Ann, fun pp_ann/1}. 
 
--spec(update_three/3 :: (#range{}, #range{}, #range{}) -> #range{}).
+-spec update_three(#range{}, #range{}, #range{}) -> #range{}.
 
 update_three(_R1, R2, R3) ->
   inf(R2, R3).
 
--spec(safe_widen/3 :: (#range{},#range{},#range{}) -> #range{}).
+-spec safe_widen(#range{}, #range{}, #range{}) -> #range{}.
 
 safe_widen(#range{range=Old}, #range{range=New}, T = #range{range=Wide}) ->
   ResRange =
@@ -350,7 +343,7 @@ safe_widen(#range{range=Old}, #range{range=New}, T = #range{range=Wide}) ->
     end,
   T#range{range=ResRange}.
 
--spec(widen/3 :: (#range{}, #range{}, #range{}) -> #range{}).
+-spec widen(#range{}, #range{}, #range{}) -> #range{}.
 
 widen(#range{range=Old}, #range{range=New}, T = #range{range=Wide}) ->
   ResRange =
@@ -382,7 +375,7 @@ widen(#range{range=Old}, #range{range=New}, T = #range{range=Wide}) ->
     end,
   T#range{range=ResRange}.
 
--spec(analyse_call/2 :: (#icode_call{}, call_fun()) -> #icode_call{}).
+-spec analyse_call(#icode_call{}, call_fun()) -> #icode_call{}.
 
 analyse_call(Call, LookupFun) ->
   case hipe_icode:call_dstlist(Call) of
@@ -397,7 +390,7 @@ analyse_call(Call, LookupFun) ->
       hipe_icode:subst_defines(lists:zip(Dsts, NewDefs), Call)
   end.
 
--spec(analyse_move/1 :: (#icode_move{}) -> #icode_move{}).
+-spec analyse_move(#icode_move{}) -> #icode_move{}.
 
 analyse_move(Move) ->
   Src = hipe_icode:move_src(Move),
@@ -406,8 +399,7 @@ analyse_move(Move) ->
   NewDst = update_info(Dst, Range),  
   hipe_icode:subst_defines([{Dst,NewDst}], Move).
 
--spec(analyse_begin_handler/1 ::
-      (#icode_begin_handler{}) -> #icode_begin_handler{}).
+-spec analyse_begin_handler(#icode_begin_handler{}) -> #icode_begin_handler{}.
 
 analyse_begin_handler(Handler) ->
   SubstList =
@@ -415,7 +407,7 @@ analyse_begin_handler(Handler) ->
       Dst <- hipe_icode:begin_handler_dstlist(Handler)],
   hipe_icode:subst_defines(SubstList, Handler).
 
--spec(analyse_phi/1 :: (#icode_phi{}) -> #icode_phi{}).
+-spec analyse_phi(#icode_phi{}) -> #icode_phi{}.
     
 analyse_phi(Phi) ->
   {_, Args} = lists:unzip(hipe_icode:phi_arglist(Phi)),
@@ -426,8 +418,8 @@ analyse_phi(Phi) ->
   NewDst = update_info(Dst, DstRange, fun widen/3),  
   hipe_icode:subst_defines([{Dst, NewDst}], Phi).
 
--spec(analyse_last_insn/4 ::
-      (icode_instr(), info(), bool(), call_fun()) -> last_instr_return()).
+-spec analyse_last_insn(icode_instr(), info(), bool(), call_fun()) ->
+	  last_instr_return().
 
 analyse_last_insn(I, Info, Rewrite, LookupFun) ->
   %% io:format("~w Info: ~p~n",[I,Info]),
@@ -448,14 +440,13 @@ analyse_last_insn(I, Info, Rewrite, LookupFun) ->
     #icode_begin_try{} -> {analyse_begin_try(NewI, Info), none_type()}
   end.
 
--spec(analyse_return/2 :: (icode_instr(),info()) -> last_instr_return()).
+-spec analyse_return(icode_instr(),info()) -> last_instr_return().
 
 analyse_return(Insn, _Info) ->
   [RetRange] = get_range_from_args(hipe_icode:return_vars(Insn)),
   {{Insn,[]}, RetRange}.
 
--spec(analyse_enter/3 ::
-      (icode_instr(), info(), call_fun()) -> last_instr_return()).
+-spec analyse_enter(icode_instr(), info(), call_fun()) -> last_instr_return().
   
 analyse_enter(Insn, _Info, LookupFun) ->
   Args = hipe_icode:args(Insn),
@@ -464,8 +455,7 @@ analyse_enter(Insn, _Info, LookupFun) ->
   [RetRange] = analyse_call_or_enter_fun(Fun, Args, CallType, LookupFun),
   {{Insn,[]}, RetRange}.
 
--spec(analyse_switch_val/3 ::
-      (#icode_switch_val{},info(),bool()) -> instr_split_info()).
+-spec analyse_switch_val(#icode_switch_val{},info(),bool()) -> instr_split_info().
 
 analyse_switch_val(Switch, Info, Rewrite) -> 
   Var = hipe_icode:switch_val_term(Switch),
@@ -486,16 +476,14 @@ analyse_switch_val(Switch, Info, Rewrite) ->
       end
   end.
 
--spec(update_infos/3 :: 
-      (argument(), info(), [{#range{},label()}]) -> [{label(),info()}]).
+-spec update_infos(argument(), info(), [{#range{},label()}]) -> [{label(),info()}].
 
 update_infos(Arg, Info, [{Range, Label}|Rest]) ->
   [{Label,enter_define({Arg,Range},Info)} | update_infos(Arg,Info,Rest)];
 update_infos(_, _, []) -> [].
 
--spec(get_range_label_list/3 :: 
-      ([{argument(),label()}], #range{},[{#range{},label()}]) -> 
-	 {#range{},[{#range{},label()}]}).
+-spec get_range_label_list([{argument(),label()}], #range{}, [{#range{},label()}]) ->
+	 {#range{},[{#range{},label()}]}.
 
 get_range_label_list([{Val,Label}|Cases], SRange, Acc) ->
   VRange = get_range_from_arg(Val),
@@ -510,9 +498,8 @@ get_range_label_list([], SRange, Acc) ->
   {PointTypes, _} = lists:unzip(Acc),
   {remove_point_types(SRange, PointTypes), Acc}.
 
--spec(update_switch/3 :: 
-      (#icode_switch_val{}, [{#range{},label()}], bool()) ->
-	 #icode_switch_val{}).
+-spec update_switch(#icode_switch_val{}, [{#range{},label()}], bool()) ->
+	 #icode_switch_val{}.
 
 update_switch(Switch, LabelRangeList, KeepFail) ->
   S2 =
@@ -526,9 +513,8 @@ update_switch(Switch, LabelRangeList, KeepFail) ->
      true -> S2
   end.
 
--spec(label_range_list_to_cases/2 :: 
-      ([{#range{},label()}], [{#icode_const{},label()}]) ->
-	 'no_update' | [{#icode_const{},label()}]).
+-spec label_range_list_to_cases([{#range{},label()}], [{#icode_const{},label()}]) ->
+	 'no_update' | [{#icode_const{},label()}].
 
 label_range_list_to_cases([{#range{range={C,C},other=false},Label}|Rest],
 			  Acc) when is_integer(C) -> 
@@ -538,9 +524,8 @@ label_range_list_to_cases([{_NotAConstantRange,_Label}|_Rest], _Acc) ->
 label_range_list_to_cases([], Acc) ->
   lists:reverse(Acc).
 
--spec(analyse_switch_tuple_arity/2 ::
-      (#icode_switch_tuple_arity{},info()) ->
-	 {#icode_switch_tuple_arity{},[{label(),info()}]}).
+-spec analyse_switch_tuple_arity(#icode_switch_tuple_arity{}, info()) ->
+	 {#icode_switch_tuple_arity{},[{label(),info()}]}.
   
 analyse_switch_tuple_arity(Switch, Info) -> 
   Var = hipe_icode:switch_tuple_arity_term(Switch),
@@ -551,15 +536,13 @@ analyse_switch_tuple_arity(Switch, Info) ->
   Labels = [Fail|Case_labels],
   {Switch, [{Label,NewInfo} || Label <- Labels]}.
 
--spec(analyse_goto/2 ::
-      (#icode_goto{},info()) -> {#icode_goto{}, [{label(),info()},...]}).
+-spec analyse_goto(#icode_goto{},info()) -> {#icode_goto{}, [{label(),info()},...]}.
 
 analyse_goto(Insn, Info) ->
   GotoLabel = hipe_icode:goto_label(Insn),
   {Insn, [{GotoLabel,Info}]}.
 
--spec(analyse_fail/2 ::
-      (#icode_fail{}, info()) -> {#icode_fail{}, [{label(),info()}]}).
+-spec analyse_fail(#icode_fail{}, info()) -> {#icode_fail{}, [{label(),info()}]}.
 
 analyse_fail(Fail, Info) ->
   case hipe_icode:fail_label(Fail) of
@@ -567,18 +550,16 @@ analyse_fail(Fail, Info) ->
     Label -> {Fail, [{Label,Info}]}
   end.
 
--spec(analyse_begin_try/2 ::
-      (#icode_begin_try{}, info()) ->
-	 {#icode_begin_try{}, [{label(),info()},...]}).
+-spec analyse_begin_try(#icode_begin_try{}, info()) ->
+	 {#icode_begin_try{}, [{label(),info()},...]}.
 
 analyse_begin_try(Insn, Info) ->
   Label = hipe_icode:begin_try_label(Insn),
   Successor = hipe_icode:begin_try_successor(Insn),
   {Insn, [{Label,Info},{Successor,Info}]}.
 
--spec(analyse_last_call/3 :: 
-      (#icode_call{}, info(), call_fun()) ->
-	 {#icode_call{}, [{label(),info()},...]}).
+-spec analyse_last_call(#icode_call{}, info(), call_fun()) ->
+	 {#icode_call{}, [{label(),info()},...]}.
 
 analyse_last_call(Call, Info, LookupFun) ->
   %% hipe_icode_pp:pp_block([Insn]),
@@ -592,9 +573,8 @@ analyse_last_call(Call, Info, LookupFun) ->
       {NewI, [{Continuation,NewInfo}, {Fail,Info}]}
   end.
 
--spec(analyse_if/3 ::
-      (#icode_if{}, info(), bool()) ->
-	 {#icode_goto{} | #icode_if{}, [{label(),info()}]}).
+-spec analyse_if(#icode_if{}, info(), bool()) ->
+	 {#icode_goto{} | #icode_if{}, [{label(),info()}]}.
 
 analyse_if(If, Info, Rewrite) ->
   case hipe_icode:if_args(If) of
@@ -606,9 +586,9 @@ analyse_if(If, Info, Rewrite) ->
       {If, [{TrueLabel,Info},{FalseLabel,Info}]}
   end.
 
--spec(analyse_sane_if/5 :: 
-      (#icode_if{},info(),[argument(),...],[#range{},...],bool()) -> 
-	 {#icode_goto{} | #icode_if{},[{label(),info()}]}).
+-spec analyse_sane_if(#icode_if{}, info(), [argument(),...],
+		      [#range{},...], bool()) ->
+	 {#icode_goto{} | #icode_if{}, [{label(), info()}]}.
 
 analyse_sane_if(If, Info, [Arg1, Arg2], [Range1, Range2], Rewrite) ->
   case normalize_name(hipe_icode:if_op(If)) of
@@ -675,7 +655,7 @@ analyse_sane_if(If, Info, [Arg1, Arg2], [Range1, Range2], Rewrite) ->
     end,
   {NewIF, UpdateInfo}.
 
--spec(normalize_name/1 :: (atom()) -> atom()).
+-spec normalize_name(atom()) -> atom().
 
 normalize_name(Name) ->
   case Name of
@@ -688,8 +668,8 @@ normalize_name(Name) ->
     Name -> Name
   end.
 
--spec(range_equality_propagation/2 :: 
-      (#range{}, #range{}) -> {#range{}, #range{}, #range{}, #range{}}).
+-spec range_equality_propagation(#range{}, #range{}) ->
+	  {#range{}, #range{}, #range{}, #range{}}.
 
 range_equality_propagation(Range_1, Range_2) ->  
   True_range = inf(Range_1, Range_2),
@@ -712,8 +692,8 @@ range_equality_propagation(Range_1, Range_2) ->
   end,
   {True_range, True_range, False_range_1, False_range_2}.
 
--spec(range_inequality_propagation/2 :: 
-      (#range{}, #range{}) -> {#range{}, #range{}, #range{}, #range{}}).
+-spec range_inequality_propagation(#range{}, #range{}) ->
+	  {#range{}, #range{}, #range{}, #range{}}.
 
 %% Range1 < Range2
 range_inequality_propagation(Range1, Range2) ->
@@ -769,9 +749,8 @@ range_inequality_propagation(Range1, Range2) ->
    range_init(R1_false_range, R1_other),
    range_init(R2_false_range, R2_other)}.
 
--spec(analyse_type/3 ::
-      (#icode_type{}, info(), bool()) ->
-	 {#icode_goto{} | #icode_type{}, [{label(),info()}]}).
+-spec analyse_type(#icode_type{}, info(), bool()) ->
+	 {#icode_goto{} | #icode_type{}, [{label(),info()}]}.
 
 analyse_type(Type, Info, Rewrite) ->
   TypeTest = hipe_icode:type_test(Type),
@@ -819,7 +798,7 @@ analyse_type(Type, Info, Rewrite) ->
     end,
   {NewType,True ++ False}.
 
--spec(compare_with_integer/2 :: (integer(),#range{}) -> {#range{},#range{}}).
+-spec compare_with_integer(integer(), #range{}) -> {#range{}, #range{}}.
 
 compare_with_integer(N, OldVarRange) ->
   TestRange = range_init({N, N}, false),
@@ -846,7 +825,7 @@ compare_with_integer(N, OldVarRange) ->
 
 %%== Ranges ==================================================================
 
--spec(pp_ann/1 :: (#ann{} | erl_type()) -> [string()]).
+-spec pp_ann(#ann{} | erl_type()) -> [string()].
 
 pp_ann(#ann{range=#range{range=R, other=false}}) ->
   pp_range(R);
@@ -857,20 +836,20 @@ pp_ann(#ann{range=#range{range=R, other=true}, type=Type}) ->
 pp_ann(Type) ->
   t_to_string(Type).
 
--spec(pp_range/1 :: (range_rep()) -> string()).
+-spec pp_range(range_rep()) -> string().
 
 pp_range(empty) ->
   "none";
 pp_range({Min, Max}) ->
   val_to_string(Min) ++ ".." ++ val_to_string(Max).
 
--spec(val_to_string/1 :: ('pos_inf' | 'neg_inf' | integer()) -> string()).
+-spec val_to_string('pos_inf' | 'neg_inf' | integer()) -> string().
 
 val_to_string(pos_inf) -> "inf";
 val_to_string(neg_inf) -> "-inf";
 val_to_string(X) when is_integer(X) -> integer_to_list(X).
 
--spec(range_from_type/1 :: (_) -> [#range{}]).
+-spec range_from_type(_) -> [#range{}].
 
 range_from_type(Type) ->
   case t_components(Type) of
@@ -880,7 +859,7 @@ range_from_type(Type) ->
       [range_from_simple_type(Type)]
   end.
   
--spec(range_from_simple_type/1 :: (_) -> #range{}).
+-spec range_from_simple_type(_) -> #range{}.
 
 range_from_simple_type(Type) ->
   None = t_none(),
@@ -895,7 +874,7 @@ range_from_simple_type(Type) ->
       #range{range=Range, other=true}
   end.
 
--spec(range_init/2 :: (range_rep(), bool()) -> #range{}).
+-spec range_init(range_rep(), bool()) -> #range{}.
 
 range_init({Min,Max}, Other) ->
   case inf_geq(Max,Min) of
@@ -907,39 +886,39 @@ range_init({Min,Max}, Other) ->
 range_init(empty, Other) ->
   #range{range=empty, other=Other}.
 
--spec(range/1 :: (#range{}) -> range_rep()).
+-spec range(#range{}) -> range_rep().
 
 range(#range{range=R}) -> R.
 
--spec(other/1 :: (#range{}) -> bool()).
+-spec other(#range{}) -> bool().
 
 other(#range{other=O}) -> O.
 
--spec(set_other/2 :: (#range{}, bool()) -> #range{}).
+-spec set_other(#range{}, bool()) -> #range{}.
 
 set_other(R, O) -> R#range{other=O}.
 
--spec(range__min/1 :: (#range{}) -> 'empty' | 'neg_inf' | integer()).
+-spec range__min(#range{}) -> 'empty' | 'neg_inf' | integer().
 
 range__min(#range{range=empty}) -> empty;
 range__min(#range{range={Min,_}}) -> Min.
 
--spec(range__max/1 :: (#range{}) -> 'empty' | 'pos_inf' | integer()).
+-spec range__max(#range{}) -> 'empty' | 'pos_inf' | integer().
 
 range__max(#range{range=empty}) -> empty;
 range__max(#range{range={_,Max}}) -> Max.
 
--spec(range__is_none/1 :: (#range{}) -> bool()).
+-spec range__is_none(#range{}) -> bool().
 
 range__is_none(#range{range=empty, other=false}) -> true;
 range__is_none(#range{}) -> false.
 
--spec(range__is_empty/1 :: (#range{}) -> bool()).
+-spec range__is_empty(#range{}) -> bool().
 
 range__is_empty(#range{range=empty}) -> true;
 range__is_empty(#range{range={_,_}}) -> false.
 
--spec(remove_point_types/2 :: (#range{}, [#range{}]) -> #range{}).
+-spec remove_point_types(#range{}, [#range{}]) -> #range{}.
 
 remove_point_types(Range, Ranges) ->
   Sorted = lists:sort(Ranges),
@@ -947,7 +926,7 @@ remove_point_types(Range, Ranges) ->
   Range1 = lists:foldl(FoldFun, Range, Sorted),
   lists:foldl(FoldFun, Range1, lists:reverse(Sorted)).
 
--spec(range__remove_constant/2 :: (#range{},#range{}) -> #range{}).
+-spec range__remove_constant(#range{}, #range{}) -> #range{}.
 
 range__remove_constant(R = #range{range={C,C}}, #range{range={C,C}}) ->
   R#range{range=empty};
@@ -960,36 +939,36 @@ range__remove_constant(R = #range{}, #range{range={C,C}}) ->
 range__remove_constant(R = #range{}, _) ->
   R.
 
--spec(any_type/0 :: () -> #range{}).
+-spec any_type() -> #range{}.
 
 any_type() ->
   #range{range=any_r(), other=true}.
 
--spec(any_range/0 :: () -> #range{}).
+-spec any_range() -> #range{}.
 
 any_range() ->
   #range{range=any_r(), other=false}.
 
--spec(none_range/0 :: () -> #range{}).
+-spec none_range() -> #range{}.
 
 none_range() ->
   #range{range=empty, other=true}.
 
--spec(none_type/0 :: () -> #range{}).
+-spec none_type() -> #range{}.
 
 none_type() ->
   #range{range=empty, other=false}.
 
--spec(any_r/0 :: () -> {'neg_inf','pos_inf'}).
+-spec any_r() -> {'neg_inf','pos_inf'}.
 
 any_r() -> {neg_inf,pos_inf}.
 
--spec(get_range_from_args/1 :: ([argument()]) -> [#range{}]).
+-spec get_range_from_args([argument()]) -> [#range{}].
   
 get_range_from_args(Args) ->
   [get_range_from_arg(Arg) || Arg <- Args].
 
--spec(get_range_from_arg/1 :: (argument()) -> #range{}).
+-spec get_range_from_arg(argument()) -> #range{}.
 
 get_range_from_arg(Arg) ->
   case hipe_icode:is_const(Arg) of
@@ -1020,12 +999,12 @@ get_range_from_arg(Arg) ->
 %% inf([R1,R2|Rest]) ->
 %%   inf([inf(R1,R2)|Rest]).
 
--spec(inf/2 :: (#range{}, #range{}) -> #range{}).
+-spec inf(#range{}, #range{}) -> #range{}.
 
 inf(#range{range=R1, other=O1}, #range{range=R2, other=O2}) -> 
   #range{range=range_inf(R1,R2), other=other_inf(O1,O2)}.
 
--spec(range_inf/2 :: (range_rep(), range_rep()) -> range_rep()).
+-spec range_inf(range_rep(), range_rep()) -> range_rep().
 
 range_inf(empty, _) -> empty;
 range_inf(_, empty) -> empty;
@@ -1039,23 +1018,23 @@ range_inf({Min1,Max1}, {Min2,Max2}) ->
       empty
   end.
 
--spec(other_inf/2 :: (bool(), bool()) -> bool()).
+-spec other_inf(bool(), bool()) -> bool().
 
 other_inf(O1, O2) -> O1 and O2.
 
--spec(sup/1 :: ([#range{},...]) -> #range{}).
+-spec sup([#range{},...]) -> #range{}.
 
 sup([R]) ->
   R;
 sup([R1,R2|Rest]) ->
   sup([sup(R1, R2)|Rest]).
 
--spec(sup/2 :: (#range{}, #range{}) -> #range{}).
+-spec sup(#range{}, #range{}) -> #range{}.
 
 sup(#range{range=R1,other=O1}, #range{range=R2,other=O2}) -> 
   #range{range=range_sup(R1,R2), other=other_sup(O1,O2)}.
 
--spec(range_sup/2 :: (range_rep(), range_rep()) -> range_rep()).
+-spec range_sup(range_rep(), range_rep()) -> range_rep().
 	 
 range_sup(empty, R) -> R;
 range_sup(R, empty) -> R;
@@ -1064,14 +1043,14 @@ range_sup({Min1,Max1}, {Min2,Max2}) ->
   NewMax = inf_max([Max1,Max2]),
   {NewMin,NewMax}.
 
--spec(other_sup/2 :: (bool(), bool()) -> bool()).
+-spec other_sup(bool(), bool()) -> bool().
 
 other_sup(O1, O2) -> O1 or O2.
 
 %%== Call Support =============================================================
 
--spec(analyse_call_or_enter_fun/4 :: 
-      (fun_name(), [argument()], icode_call_type(), call_fun()) -> [#range{}]).
+-spec analyse_call_or_enter_fun(fun_name(), [argument()],
+				icode_call_type(), call_fun()) -> [#range{}].
 
 analyse_call_or_enter_fun(Fun, Args, CallType, LookupFun) ->
   %%io:format("Fun: ~p~n Args: ~p~n CT: ~p~n LF: ~p~n", [Fun, Args, CallType, LookupFun]),
@@ -1118,13 +1097,13 @@ analyse_call_or_enter_fun(Fun, Args, CallType, LookupFun) ->
       range_from_type(Type)
   end.
 
--type(bin_operation() :: fun((#range{},#range{}) -> #range{})).
--type(unary_operation() :: fun((#range{}) -> #range{})).
+-type bin_operation() :: fun((#range{},#range{}) -> #range{}).
+-type unary_operation() :: fun((#range{}) -> #range{}).
 
--spec(basic_type/1 :: 
-      (fun_name()) -> 'not_int' | 'not_analysed' | {bin, bin_operation()} |
-			{unary, unary_operation()} | {fcall, mfa()} |
-			{hipe_bs_primop, _}).
+-spec basic_type(fun_name()) -> 'not_int' | 'not_analysed'
+			     | {bin, bin_operation()}
+			     | {unary, unary_operation()}
+			     | {fcall, mfa()} | {hipe_bs_primop, _}.
 
 %% Arithmetic operations
 basic_type('+') -> {bin, fun(R1, R2) -> range_add(R1, R2) end};
@@ -1199,8 +1178,7 @@ basic_type(#element{}) -> not_analysed;
 basic_type(#unsafe_element{}) -> not_analysed;
 basic_type(#unsafe_update_element{}) -> not_analysed.
 
--spec(analyse_bs_get_integer/3 ::
-      (integer(), integer(), bool()) -> range_rep()).
+-spec analyse_bs_get_integer(integer(), integer(), bool()) -> range_rep().
 
 analyse_bs_get_integer(Size, Flags, true) ->
   Signed = Flags band 4,
@@ -1222,7 +1200,7 @@ analyse_bs_get_integer(Size, Flags, false) when is_integer(Size),
 
 %% Arithmetic
 
--spec(range_add/2 :: (#range{}, #range{}) -> #range{}).
+-spec range_add(#range{}, #range{}) -> #range{}.
 
 range_add(Range1, Range2) ->
   NewMin = inf_add(range__min(Range1), range__min(Range2)),
@@ -1230,7 +1208,7 @@ range_add(Range1, Range2) ->
   Other = other(Range1) orelse other(Range2),
   range_init({NewMin, NewMax}, Other).
 
--spec(range_sub/2 :: (#range{}, #range{}) -> #range{}).
+-spec range_sub(#range{}, #range{}) -> #range{}.
 
 range_sub(Range1, Range2) ->
   Min_sub = inf_min([inf_inv(range__max(Range2)), 
@@ -1242,7 +1220,7 @@ range_sub(Range1, Range2) ->
   Other = other(Range1) orelse other(Range2),
   range_init({NewMin, NewMax}, Other).
 
--spec(range_mult/2 :: (#range{}, #range{}) -> #range{}).
+-spec range_mult(#range{}, #range{}) -> #range{}.
 
 range_mult(#range{range=empty, other=true}, _Range2) ->
   range_init(empty, true);
@@ -1282,7 +1260,7 @@ range_mult(Range1, Range2) ->
   Other = other(Range1) orelse other(Range2),
   range_init(Range, Other).
 
--spec(extreme_divisors/1 :: (#range{}) -> range_rep()).
+-spec extreme_divisors(#range{}) -> range_rep().
 
 extreme_divisors(#range{range={0,0}}) -> {0,0};
 extreme_divisors(#range{range={0,Max}}) -> {1,Max};
@@ -1297,7 +1275,7 @@ extreme_divisors(#range{range={Min,Max}}) ->
       end
   end.
 
--spec(range_div/2 :: (#range{}, #range{}) -> #range{}).
+-spec range_div(#range{}, #range{}) -> #range{}.
 
 %% this is div, not /.
 range_div(_, #range{range={0,0}}) ->
@@ -1314,7 +1292,7 @@ range_div(Range1, Den) ->
 		  inf_div(Max1, Min2), inf_div(Max1, Max2)],
   range_init({inf_min(Min_max_list), inf_max(Min_max_list)}, false).
 
--spec(range_rem/2 :: (#range{}, #range{}) -> #range{}).
+-spec range_rem(#range{}, #range{}) -> #range{}.
 
 range_rem(Range1, Range2) ->
   %% Range1 desides the sign of the answer.
@@ -1340,7 +1318,7 @@ range_rem(Range1, Range2) ->
 
 %%--- Bit operations ----------------------------
 
--spec(range_bsr/2 :: (#range{}, #range{}) -> #range{}).
+-spec range_bsr(#range{}, #range{}) -> #range{}.
 
 range_bsr(Range1, Range2=#range{range={Min, Max}}) -> 
   New_Range2 = range_init({inf_inv(Max), inf_inv(Min)}, other(Range2)), 
@@ -1348,7 +1326,7 @@ range_bsr(Range1, Range2=#range{range={Min, Max}}) ->
   %% io:format("bsr res:~w~nInput:= ~w~n", [Ans, {Range1,Range2}]),
   Ans.
 
--spec(range_bsl/2 :: (#range{}, #range{}) -> #range{}).
+-spec range_bsl(#range{}, #range{}) -> #range{}.
 
 range_bsl(Range1, Range2) ->
   Min1 = range__min(Range1),
@@ -1367,13 +1345,13 @@ range_bsl(Range1, Range2) ->
     end,
   range_init({Min, Max}, false).
 
--spec(range_bnot/1 :: (#range{}) -> #range{}).
+-spec range_bnot(#range{}) -> #range{}.
 
 range_bnot(Range) ->
   Minus_one = range_init({-1,-1}, false),
   range_add(range_mult(Range, Minus_one), Minus_one).
 
--spec(width/1 :: (range_rep() | integer()) -> 'pos_inf' | non_neg_integer()).
+-spec width(range_rep() | integer()) -> 'pos_inf' | non_neg_integer().
 
 width({Min, Max}) -> inf_max([width(Min), width(Max)]);
 width(pos_inf) -> pos_inf;
@@ -1381,7 +1359,7 @@ width(neg_inf) -> pos_inf;
 width(X) when is_integer(X), X >= 0 -> poswidth(X, 0);
 width(X) when is_integer(X), X < 0 -> negwidth(X, 0).
 
--spec(poswidth/2 :: (integer(), non_neg_integer()) -> non_neg_integer()).
+-spec poswidth(integer(), non_neg_integer()) -> non_neg_integer().
 
 poswidth(X, N) ->
   case X < (1 bsl N) of
@@ -1389,7 +1367,7 @@ poswidth(X, N) ->
     false -> poswidth(X, N+1)
   end.
 
--spec(negwidth/2 :: (integer(), non_neg_integer()) -> non_neg_integer()).
+-spec negwidth(integer(), non_neg_integer()) -> non_neg_integer().
 
 negwidth(X, N) ->
   case X > (-1 bsl N) of
@@ -1397,7 +1375,7 @@ negwidth(X, N) ->
     false -> negwidth(X, N+1)
   end.
 
--spec(range_band/2 :: (#range{}, #range{}) -> #range{}).
+-spec range_band(#range{}, #range{}) -> #range{}.
 
 range_band(R1, R2) ->
   {Min1, Max1} = range(R1),
@@ -1431,7 +1409,7 @@ range_band(R1, R2) ->
     end,
   range_init(Range, false).  
 
--spec(range_bor/2 :: (#range{}, #range{}) -> #range{}).
+-spec range_bor(#range{}, #range{}) -> #range{}.
 
 range_bor(R1, R2) ->
   {Min1, Max1} = range(R1),
@@ -1465,8 +1443,7 @@ range_bor(R1, R2) ->
     end,
   range_init(Range, false).  
 
--spec(classify_range/1 ::
-      (#range{}) -> 'minus_minus' | 'minus_plus' | 'plus_plus').
+-spec classify_range(#range{}) -> 'minus_minus' | 'minus_plus' | 'plus_plus'.
 
 classify_range(Range) ->
   case range(Range) of
@@ -1479,8 +1456,8 @@ classify_range(Range) ->
       classify_int_range(Number1, Number2)
   end.
 
--spec(classify_int_range/2 :: 
-      (integer(), integer()) -> 'minus_minus' | 'minus_plus' | 'plus_plus').
+-spec classify_int_range(integer(), integer()) ->
+	  'minus_minus' | 'minus_plus' | 'plus_plus'.
 
 classify_int_range(Number1, _Number2) when Number1 >= 0 ->
   plus_plus;
@@ -1489,7 +1466,7 @@ classify_int_range(_Number1, Number2) when Number2 < 0 ->
 classify_int_range(_Number1, _Number2) ->
   minus_plus.
       
--spec(range_bxor/2 :: (#range{}, #range{}) -> #range{}).
+-spec range_bxor(#range{}, #range{}) -> #range{}.
 
 range_bxor(R1, R2) ->
   {Min1, Max1} = range(R1),
@@ -1536,7 +1513,7 @@ range_bxor(R1, R2) ->
 %% Inf operations
 %%---------------------------------------------------------------------------
 
--spec(inf_max/1 :: ([inf_integer(),...]) -> inf_integer()).
+-spec inf_max([inf_integer(),...]) -> inf_integer().
 
 inf_max([H|T]) ->
   lists:foldl(fun (Elem, Max) ->
@@ -1546,7 +1523,7 @@ inf_max([H|T]) ->
 		  end
 	      end, H, T).
 
--spec(inf_min/1 :: ([inf_integer(),...]) -> inf_integer()).
+-spec inf_min([inf_integer(),...]) -> inf_integer().
 
 inf_min([H|T]) ->
   lists:foldl(fun (Elem, Min) ->
@@ -1556,14 +1533,14 @@ inf_min([H|T]) ->
 		  end
 	      end, H, T).
 
--spec(inf_abs/1 :: (inf_integer()) -> 'pos_inf' | integer()).
+-spec inf_abs(inf_integer()) -> 'pos_inf' | integer().
 
 inf_abs(pos_inf) -> pos_inf;
 inf_abs(neg_inf) -> pos_inf;
 inf_abs(Number) when is_integer(Number), (Number < 0) -> - Number;
 inf_abs(Number) when is_integer(Number) -> Number.
 
--spec(inf_add/2 :: (inf_integer(), inf_integer()) -> inf_integer()).
+-spec inf_add(inf_integer(), inf_integer()) -> inf_integer().
 
 inf_add(pos_inf, _Number) -> pos_inf;
 inf_add(neg_inf, _Number) -> neg_inf;
@@ -1572,13 +1549,13 @@ inf_add(_Number, neg_inf) -> neg_inf;
 inf_add(Number1, Number2) when is_integer(Number1), is_integer(Number2) ->
   Number1 + Number2.
 
--spec(inf_inv/1 :: (inf_integer()) -> inf_integer()).
+-spec inf_inv(inf_integer()) -> inf_integer().
 
 inf_inv(pos_inf) -> neg_inf;
 inf_inv(neg_inf) -> pos_inf;
 inf_inv(Number) -> -Number.
 
--spec(inf_geq/2 :: (inf_integer(), inf_integer()) -> bool()).
+-spec inf_geq(inf_integer(), inf_integer()) -> bool().
 
 inf_geq(pos_inf, _) -> true;
 inf_geq(_, pos_inf) -> false;
@@ -1586,14 +1563,14 @@ inf_geq(_, neg_inf) -> true;
 inf_geq(neg_inf, _) -> false;
 inf_geq(A, B) -> A >= B.
 
--spec(inf_greater_zero/1 :: (inf_integer()) -> bool()).
+-spec inf_greater_zero(inf_integer()) -> bool().
 
 inf_greater_zero(pos_inf) -> true;
 inf_greater_zero(neg_inf) -> false;
 inf_greater_zero(Number) when is_integer(Number), Number >= 0 -> true;
 inf_greater_zero(Number) when is_integer(Number), Number < 0 -> false.
 
--spec(inf_div/2 :: (inf_integer(), inf_integer()) -> inf_integer()).
+-spec inf_div(inf_integer(), inf_integer()) -> inf_integer().
 
 inf_div(Number, 0) ->
   Greater = inf_greater_zero(Number),
@@ -1622,7 +1599,7 @@ inf_div(Number, neg_inf) ->
   end;
 inf_div(Number1, Number2) -> Number1 div Number2.
 
--spec(inf_mult/2 :: (inf_integer(), inf_integer()) -> inf_integer()).
+-spec inf_mult(inf_integer(), inf_integer()) -> inf_integer().
 
 inf_mult(neg_inf, Number) -> 
   Greater = inf_greater_zero(Number), 
@@ -1638,7 +1615,7 @@ inf_mult(Number, pos_inf) -> inf_mult(pos_inf, Number);
 inf_mult(Number, neg_inf) -> inf_mult(neg_inf, Number);
 inf_mult(Number1, Number2) -> Number1 * Number2.
 
--spec(inf_bsl/2 :: (inf_integer(), _) -> inf_integer()).
+-spec inf_bsl(inf_integer(), _) -> inf_integer().
 
 inf_bsl(pos_inf, _) -> pos_inf;
 inf_bsl(neg_inf, _) -> neg_inf;
@@ -1657,7 +1634,7 @@ inf_bsl(Number1, Number2) when is_integer(Number1), is_integer(Number2) ->
 
 %% State
 
--spec(state__init/2 :: (cfg(), data()) -> #state{}).
+-spec state__init(cfg(), data()) -> #state{}.
 
 state__init(Cfg, {MFA, ArgsFun, CallFun, FinalFun}) ->
   Start = hipe_icode_cfg:start_label(Cfg),  
@@ -1680,19 +1657,19 @@ state__init(Cfg, {MFA, ArgsFun, CallFun, FinalFun}) ->
 	     lookup_fun=CallFun, result_action=FinalFun}
   end.
 
--spec(state__cfg/1 :: (#state{}) -> cfg()).
+-spec state__cfg(#state{}) -> cfg().
 
 state__cfg(#state{cfg=Cfg}) ->
   Cfg.
 
--spec(state__bb/2 :: (#state{}, label()) -> bb()).
+-spec state__bb(#state{}, label()) -> bb().
 
 state__bb(#state{cfg=Cfg}, Label) ->
   BB = hipe_icode_cfg:bb(Cfg, Label),
   true = hipe_bb:is_bb(BB), % Just an assert
   BB.
   
--spec(state__bb_add/3 :: (#state{}, label(), bb()) -> #state{}).
+-spec state__bb_add(#state{}, label(), bb()) -> #state{}.
 
 state__bb_add(S=#state{cfg=Cfg}, Label, BB) ->
   NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, BB),
@@ -1903,7 +1880,7 @@ convert_ann_to_types(#ann{range=#range{other=true}, type=Type}) ->
 %% Icode Coordinator Callbacks
 %%=====================================================================
 
--spec(replace_nones/1 :: ([#range{}]) -> [#range{}]).
+-spec replace_nones([#range{}]) -> [#range{}].
 replace_nones(Args) ->
   [replace_none(Arg) || Arg <- Args].
 
@@ -1913,7 +1890,7 @@ replace_none(Arg) ->
     false -> Arg
   end.
 
--spec(update__info/2 :: ([#range{}], [#range{}]) -> {bool(), [#ann{}]}).
+-spec update__info([#range{}], [#range{}]) -> {bool(), [#ann{}]}.
 update__info(NewRanges, OldRanges) ->
   SupFun = fun (Ann, Range) -> 
 	       join_info(Ann, Range, fun safe_widen/3)
@@ -1923,19 +1900,19 @@ update__info(NewRanges, OldRanges) ->
   Change = lists:zipwith(EqFun, ResRanges, OldRanges),
   {lists:all(fun (X) -> X end, Change), ResRanges}.
 
--spec(new__info/1 :: ([#range{}]) -> [#ann{}]).
+-spec new__info/1 :: ([#range{}]) -> [#ann{}].
 new__info(NewRanges) ->
   [#ann{range=Range,count=1,type=t_any()} || Range <- NewRanges].
 
--spec(return__info/1 :: ([#ann{}]) -> [#range{}]).
+-spec return__info/1 :: ([#ann{}]) -> [#range{}].
 return__info(Ranges) ->
   [Range || #ann{range=Range} <- Ranges].
 
--spec(return_none/0 :: () -> [#range{}]).
+-spec return_none/0 :: () -> [#range{}].
 return_none() ->
   [none_type()].
 
--spec(return_none_args/2 :: (#cfg{}, mfa()) -> [#range{}]).
+-spec return_none_args/2 :: (#cfg{}, mfa()) -> [#range{}].
 return_none_args(Cfg, {_M,_F,A}) ->
   NoArgs =
     case hipe_icode_cfg:is_closure(Cfg) of
@@ -1944,7 +1921,7 @@ return_none_args(Cfg, {_M,_F,A}) ->
     end,
   lists:duplicate(NoArgs, none_type()).
 
--spec(return_any_args/2 :: (#cfg{}, mfa()) -> [#range{}]).
+-spec return_any_args/2 :: (#cfg{}, mfa()) -> [#range{}].
 return_any_args(Cfg, {_M,_F,A}) ->
   NoArgs = 
     case hipe_icode_cfg:is_closure(Cfg) of

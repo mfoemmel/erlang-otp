@@ -31,7 +31,7 @@
 
 -include("dialyzer.hrl").
 
--type(gs_object() :: any()).
+-type gs_object() :: any().
 
 -record(mode, {start_byte_code     :: gs_object(), 
 	       start_src_code      :: gs_object()}).
@@ -77,7 +77,7 @@
 	       
 %%------------------------------------------------------------------------
 
--spec(start/1 :: (#options{}) -> ?RET_NOTHING_SUSPICIOUS).
+-spec start(#options{}) -> ?RET_NOTHING_SUSPICIOUS.
 
 start(DialyzerOptions = #options{}) ->
   process_flag(trap_exit, true),
@@ -357,7 +357,7 @@ start(DialyzerOptions = #options{}) ->
 %%  Main GUI Loop
 %%
 
--spec(gui_loop/1 :: (#gui_state{}) -> ?RET_NOTHING_SUSPICIOUS).
+-spec gui_loop(#gui_state{}) -> ?RET_NOTHING_SUSPICIOUS.
 
 gui_loop(State = #gui_state{}) ->
   TopWin = State#gui_state.top,

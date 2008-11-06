@@ -289,7 +289,7 @@ not_active_here(Tab) ->
     not active_here(Tab).
 
 exists(Fname) ->
-    case file:rawopen(Fname, read) of
+    case file:open(Fname, [raw,read]) of
 	{ok, F} ->file:close(F), true;
 	_ -> false
     end.
@@ -977,9 +977,9 @@ save2(DbgInfo) ->
     set({'$$$_report', P+1}, {date(), time(), DbgInfo}).
 
 copy_file(From, To) ->
-    case file:rawopen(From, {binary, read}) of
+    case file:open(From, [raw, binary, read]) of
 	{ok, F} ->
-	    case file:rawopen(To, {binary, write}) of
+	    case file:open(To, [raw, binary, write]) of
 		{ok, T} ->
 		    Res = copy_file_loop(F, T, 8000),
 		    file:close(F),

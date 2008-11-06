@@ -174,13 +174,17 @@ Eterm erts_bs_get_binary_all_2(Process *p, ErlBinMatchBuffer* mb);
  */
 
 int erts_new_bs_put_integer(ERL_BITS_PROTO_3(Eterm Integer, Uint num_bits, unsigned flags));
+int erts_bs_put_utf8(ERL_BITS_PROTO_1(Eterm Integer));
+int erts_bs_put_utf16(ERL_BITS_PROTO_2(Eterm Integer, Uint flags));
 int erts_new_bs_put_binary(ERL_BITS_PROTO_2(Eterm Bin, Uint num_bits));
 int erts_new_bs_put_binary_all(ERL_BITS_PROTO_2(Eterm Bin, Uint unit));
 int erts_new_bs_put_float(Process *c_p, Eterm Float, Uint num_bits, int flags);
 void erts_new_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes));
 
 Uint erts_bits_bufs_size(void);
-Uint32 erts_bs_get_unaligned_uint32(Process *p, ErlBinMatchBuffer* mb);
+Uint32 erts_bs_get_unaligned_uint32(ErlBinMatchBuffer* mb);
+void erts_align_utf8_bytes(ErlBinMatchBuffer* mb, byte* buf);
+Eterm erts_bs_get_utf16(ErlBinMatchBuffer* mb, Uint flags);
 Eterm erts_bs_append(Process* p, Eterm* reg, Uint live, Eterm build_size_term,
 		     Uint extra_words, Uint unit);
 Eterm erts_bs_private_append(Process* p, Eterm bin, Eterm sz, Uint unit);

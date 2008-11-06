@@ -28,7 +28,7 @@ At Ericsson we have a "Daily Build and Test" that runs on:
     Linux/Montavista PPC    3.1
     FreeBSD x86             5.0
     Mac OS X/Intel          10.4.11 (Tiger)
-    Mac OS X/Intel          10.5.3 (Leopard)
+    Mac OS X/Intel          10.5.5 (Leopard)
     Windows x86		    XP SP2, 2003, Vista
 
 
@@ -365,10 +365,8 @@ Mac OS X (Darwin)
 We test Mac OS X 10.4.11 (Tiger) and Mac OS X 10.5.x (Leopard)
 in our daily builds.
 
-Earlier releases of Mac OS X might work, but we have not
-tested them. On earlier releases, use the "gnutar" command
-to unpack the sources. (If a non-GNU tar is used, some files
-will not be correctly extracted and the build will fail.)
+Building on Mac OS X 10.3.x (Panther) might also work, but has
+not been tested by us.
 
 Make sure that the command "hostname" returns a valid fully qualified
 host name (this is configured in "/etc/hostconfig").

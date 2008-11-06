@@ -1861,17 +1861,16 @@ define etp-ets-tables
 # Non-reentrant
   printf "%% Dumping < %lu ETS tables\n", (unsigned long)db_max_tabs
   while $etp_ets_tables_i < db_max_tabs
-    if (db_tables[$etp_ets_tables_i].id != 0x18) && \
-       (db_tables[$etp_ets_tables_i].id != 0xd8)
+    if (meta_main_tab[$etp_ets_tables_i].u.next_free & 3) == 0
       printf "%% %d:", $etp_ets_tables_i
-      etp-1 ((Eterm)(db_tables[$etp_ets_tables_i].id)) 0
+      etp-1 ((Eterm)(meta_main_tab[$etp_ets_tables_i].u.tb->common.id)) 0
       printf " "
-      etp-1 ((Eterm)(db_tables[$etp_ets_tables_i].t->common.owner)) 0
+      etp-1 ((Eterm)(meta_main_tab[$etp_ets_tables_i].u.tb->common.owner)) 0
       printf "\n"
     end
     set $etp_ets_tables_i++
   end
-  set $etp_ets_table_i = 0
+  set $etp_ets_tables_i = 0
 end
 
 document etp-ets-tables
@@ -1888,14 +1887,14 @@ define etp-ets-tabledump
 # Non-reentrant
   printf "%% Dumping ETS table %d:", ($arg0)
   set $etp_ets_tabledump_n = 0
-  set $etp_ets_tabledump_t = db_tables[($arg0)].t
+  set $etp_ets_tabledump_t = meta_main_tab[($arg0)].u.tb
   set $etp_ets_tabledump_i = 0
   etp-1 ($etp_ets_tabledump_t->common.the_name) 0
   printf " status=%#x\n", $etp_ets_tabledump_t->common.status
   if $etp_ets_tabledump_t->common.status & 0x130
     # Hash table
     set $etp_ets_tabledump_h = $etp_ets_tabledump_t->hash
-    printf "%% nitems=%d\n", $etp_ets_tabledump_h->nitems
+    printf "%% nitems=%d\n", $etp_ets_tabledump_t->common.nitems
     while $etp_ets_tabledump_i < $etp_ets_tabledump_h->nactive
       set $etp_ets_tabledump_l = $etp_ets_tabledump_h->seg \
             [$etp_ets_tabledump_i>>8][$etp_ets_tabledump_i&0xFF]

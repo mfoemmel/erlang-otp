@@ -720,6 +720,12 @@ bif ets:update_element/3
 bif erlang:decode_packet/3
 
 #
+# New Bifs in R12B-5
+#
+bif unicode:characters_to_binary/2
+bif unicode:characters_to_list/2
+
+#
 # Obsolete
 #
 

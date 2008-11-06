@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE chapter SYSTEM "chapter.dtd">
+
+<chapter>
+  <header>
+    <copyright>
+      <year>2004</year>
+      <year>2008</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>Common Test Release Notes</title>
+    <prepared>Peter Andersson</prepared>
+    <responsible>Peter Andersson</responsible>
+    <docno></docno>
+    <approved></approved>
+    <checked></checked>
+    <date>2007-12-01</date> 
+    <rev>A</rev>
+    <file>notes.xml</file>
+    </header>
+
+<section><title>Common_Test 1.3.4</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Common Test now uses the re application instead of the
+	    previous rx driver to perform regular expression matching
+	    on telnet strings. Since re works on all supported
+	    operating systems, it is now possible to run telnet
+	    sessions also on platforms such as e.g. Windows (which
+	    was not the case with the previous rx driver). Note that
+	    the rx driver is obsolete from now on, and will be
+	    removed from Common Test after OTP R12B.</p>
+          <p>
+	    Own Id: OTP-7528</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Common_Test 1.3.3</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Various updates and improvements, plus some minor bug
+	    fixes, have been implemented in Common Test and Test
+	    Server.</p>
+          <p>
+	    Own Id: OTP-7112</p>
+        </item>
+        <item>
+          <p>
+	    It is now possible, by means of the new function
+	    ct:abort_current_testcase/1 or
+	    test_server_ctrl:abort_current_testcase/1, to abort the
+	    currently executing test case.</p>
+          <p>
+	    Own Id: OTP-7518 Aux Id: OTP-7112 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Common_Test 1.3.2</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    The configure test of the rx lib in Common Test was not
+	    performed during the general OTP application
+	    configuration phase. This made e.g. autoconf impossible.
+	    This has been changed to correspond with the normal OTP
+	    build procedure.</p>
+          <p>
+	    Own Id: OTP-7379</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Common_Test 1.3.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    The rx library, included with common_test, failed to
+	    build on on some architectures because the -fPIC compiler
+	    option was missing.</p>
+          <p>
+	    Own Id: OTP-7111</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+  <section><title>common_test 1.3.0</title>
+  </section>
+</chapter>
+
+
+
+
+

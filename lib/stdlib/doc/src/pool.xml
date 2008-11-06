@@ -75,7 +75,7 @@
       </desc>
     </func>
     <func>
-      <name>attach(Node) -> allready_attached | attached</name>
+      <name>attach(Node) -> already_attached | attached</name>
       <fsummary>Ensure that a pool master is running</fsummary>
       <type>
         <v>Node = node()</v>

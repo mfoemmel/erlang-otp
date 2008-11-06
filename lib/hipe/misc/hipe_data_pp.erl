@@ -9,9 +9,9 @@
 %%  History  :	* 2001-02-25 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2008/04/20 13:01:13 $
-%%              $Revision: 1.9 $
+%%              $Author: kostis $
+%%              $Date: 2008/09/14 12:56:14 $
+%%              $Revision: 1.10 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -20,8 +20,13 @@
 -module(hipe_data_pp).
 -export([pp/4]).
 
+-type io_device()      :: atom() | pid().	% XXX: DOES NOT BELONG HERE
+-type hipe_code_type() :: 'icode' | 'rtl' | 'arm' | 'ppc' | 'sparc' | 'x86'.
+
 %% --------------------------------------------------------------------
 %% Pretty print
+
+-spec pp(io_device(), dict:dict(), hipe_code_type(), string()) -> 'ok'.
 
 pp(Dev, Table, CodeType, Pre) ->
   Ls = hipe_consttab:labels(Table),

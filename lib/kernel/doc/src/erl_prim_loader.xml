@@ -47,6 +47,14 @@
       by the user must fulfill the protocol defined below, and it is
       started with the <c>erl_prim_loader</c> by evaluating
       <c>open_port({spawn,Loader},[binary])</c>.</p>
+
+    <warning><p>The support for loading of code from archive files is
+     experimental. The sole purpose of releasing it before it is ready
+     is to obtain early feedback. The file format, semantics,
+     interfaces etc. may be changed in a future release. The functions
+     <c>list_dir/1</c> and <c>read_file_info/1</c> as well as the flag
+     <c>-loader_debug</c> are also experimental</p></warning>
+
   </description>
   <funcs>
     <func>
@@ -56,7 +64,7 @@
         <v>Id = term()</v>
         <v>Loader = atom() | string()</v>
         <v>Hosts = [Host]</v>
-        <v>&nbsp;Host = atom()</v>
+        <v>Host = atom()</v>
         <v>Pid = pid()</v>
         <v>What = term()</v>
       </type>
@@ -72,32 +80,37 @@
         <p>If <c>-loader</c> is <c>inet</c>, the <c>-id Id</c>,
           <c>-hosts Hosts</c>, and <c>-setcookie Cookie</c> flags must
           also be supplied. <c>Hosts</c> identifies hosts which this
-          node can contact in order to load modules. One Erlang runtime
-          system with a <c>erl_boot_server</c> process must be started
-          on each of hosts given in <c>Hosts</c> in order to answer
-          the requests. See <c>erl_boot_server(3)</c>.</p>
+          node can contact in order to load modules. One Erlang
+          runtime system with a <c>erl_boot_server</c> process must be
+          started on each of hosts given in <c>Hosts</c> in order to
+          answer the requests. See <seealso
+          marker="erl_boot_server">erl_boot_server(3)</seealso>.</p>
         <p>If <c>-loader</c> is something else, the given port program
           is started. The port program is supposed to follow
           the protocol specified below.</p>
       </desc>
     </func>
     <func>
-      <name>get_file(File) -> {ok, Bin, FullName} | error</name>
+      <name>get_file(Filename) -> {ok, Bin, FullName} | error</name>
       <fsummary>Get a file</fsummary>
       <type>
-        <v>File = string()</v>
+        <v>Filename = string()</v>
         <v>Bin = binary()</v>
         <v>FullName = string()</v>
       </type>
       <desc>
         <p>This function fetches a file using the low level loader.
-          <c>File</c> is either an absolute file name or just the name
+          <c>Filename</c> is either an absolute file name or just the name
           of the file, for example <c>"lists.beam"</c>. If an internal
           path is set to the loader, this path is used to find the file.
           If a user supplied loader is used, the path can be stripped
           off if it is obsolete, and the loader does not use a path.
           <c>FullName</c> is the complete name of the fetched file.
           <c>Bin</c> is the contents of the file as a binary.</p>
+
+	  <p>The <c>Filename</c> can also be a file in an archive. For example
+          <c>/otp/root/lib/mnesia-4.4.7.ez/mnesia-4.4.7/ebin/mnesia_backup.beam</c>
+          See <seealso marker="code">code(3)</seealso> about archive files.</p>
       </desc>
     </func>
     <func>
@@ -105,7 +118,7 @@
       <fsummary>Get the path set in the loader</fsummary>
       <type>
         <v>Path = [Dir]</v>
-        <v>&nbsp;Dir = string()</v>
+        <v>Dir = string()</v>
       </type>
       <desc>
         <p>This function gets the path set in the loader. The path is
@@ -114,11 +127,53 @@
       </desc>
     </func>
     <func>
+      <name>list_dir(Dir) -> {ok, Filenames} | error</name>
+      <fsummary>List files in a directory</fsummary>
+      <type>
+        <v>Dir = name()</v>
+        <v>Filenames = [Filename]</v>
+        <v>Filename = string()</v>
+      </type>
+      <desc>
+        <p>Lists all the files in a directory. Returns
+          <c>{ok, Filenames}</c> if successful. Otherwise, it returns
+          <c>error</c>. <c>Filenames</c> is a list of
+          the names of all the files in the directory. The names are
+          not sorted.</p>
+	  <p>The <c>Dir</c> can also be a directory in an archive. For example
+          <c>/otp/root/lib/mnesia-4.4.7.ez/mnesia-4.4.7/ebin</c>
+           See <seealso marker="code">code(3)</seealso> about archive files.</p>
+      </desc>
+    </func>
+    <func>
+      <name>read_file_info(Filename) -> {ok, FileInfo} | error</name>
+      <fsummary>Get information about a file</fsummary>
+      <type>
+        <v>Filename = name()</v>
+        <v>FileInfo = #file_info{}</v>
+      </type>
+      <desc>
+        <p>Retrieves information about a file. Returns
+          <c>{ok, FileInfo}</c> if successful, otherwise
+          <c>error</c>. <c>FileInfo</c> is a record
+          <c>file_info</c>, defined in the Kernel include file
+          <c>file.hrl</c>. Include the following directive in the module
+          from which the function is called:</p>
+        <code type="none">
+-include_lib("kernel/include/file.hrl").</code>
+        <p>See <seealso marker="file">file(3)</seealso> for more info about
+          the record <c>file_info</c>.</p>
+	<p>The <c>Filename</c> can also be a file in an archive. For example
+          <c>/otp/root/lib/mnesia-4.4.7.ez/mnesia-4.4.7/ebin/mnesia_backup.beam</c>
+          See <seealso marker="code">code(3)</seealso> about archive files.</p>
+      </desc>
+    </func>
+    <func>
       <name>set_path(Path) -> ok</name>
       <fsummary>Set the path of the loader</fsummary>
       <type>
         <v>Path = [Dir]</v>
-        <v>&nbsp;Dir = string()</v>
+        <v>Dir = string()</v>
       </type>
       <desc>
         <p>This function sets the path of the loader if <c>init</c>
@@ -158,6 +213,11 @@ stop              eof                terminate</pre>
           program is started.</p>
         <p>If the <c>-loader</c> flag is omitted, it defaults to
           <c>efile</c>.</p>
+      </item>
+      <tag><c>-loader_debug</c></tag>
+      <item>
+          <p>Makes the <c>efile</c> loader write some debug information,
+           such as the reason for failures, while it handles files.</p>
       </item>
       <tag><c>-hosts Hosts</c></tag>
       <item>

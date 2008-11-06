@@ -16,18 +16,21 @@
 %%     $Id$
 %%
 -module(re).
--export([grun/2,grun/3,replace/3,replace/4]).
+-export([grun/3,replace/3,replace/4,split/2,split/3]).
 
-replace(Subject,RE,Replacement) ->
-    replace(Subject,RE,Replacement,[]).
-replace(Subject,RE,Replacement,Options) ->
-    {NewOpt,Convert,Unicode} =
-	case (catch process_repl_params(Options,iodata,false)) of
-	    badopt ->
-		erlang:error(badarg,[Subject,RE,Replacement,Options]);
-	    Good ->
-		Good
-	end,
+%% Emulator builtins in this module:
+%% re:compile/1
+%% re:compile/2
+%% re:run/2
+%% re:run/3
+
+split(Subject,RE) ->
+    split(Subject,RE,[]).
+
+split(Subject,RE,Options) ->
+    try
+    {NewOpt,Convert,Unicode,Limit,Strip,Group} =
+	process_split_params(Options,iodata,false,-1,false,false),
     FlatSubject = 
 	case is_binary(Subject) of
 	    true ->
@@ -35,14 +38,199 @@ replace(Subject,RE,Replacement,Options) ->
 	    false ->
 		case Unicode of
 		    true ->
-			to_utf8(Subject);
+			unicode:characters_to_binary(Subject,unicode);
+		    false ->
+			iolist_to_binary(Subject)
+		end
+	end,
+    case compile_split(RE,NewOpt) of
+	{error,_Err} ->
+	    throw(badre);
+	{PreCompiled, NumSub, RunOpt} ->
+	    % OK, lets run
+	    case re:run(FlatSubject,PreCompiled,RunOpt ++ [global]) of
+		nomatch ->
+		    case Group of
+			true ->
+			    convert_any_split_result([[FlatSubject]], 
+						     Convert, Unicode,true);
+			false ->
+			    convert_any_split_result([FlatSubject], 
+						     Convert, Unicode,false)
+		    end;
+		{match, Matches} ->
+		    Res = do_split(FlatSubject, 0, Matches, NumSub, 
+				   Limit, Group),
+		    Stripped = case Strip of
+				   true ->
+				       backstrip_empty(Res,Group);
+				   false ->
+				       Res
+			       end,
+		    convert_any_split_result(Stripped, Convert, Unicode, Group)
+	    end
+    end
+    catch
+	throw:badopt ->
+	    erlang:error(badarg,[Subject,RE,Options]);
+	throw:badre ->
+	    erlang:error(badarg,[Subject,RE,Options]);
+	error:badarg ->
+	    erlang:error(badarg,[Subject,RE,Options])
+    end.
+
+backstrip_empty(List,false) ->
+    do_backstrip_empty(List);
+backstrip_empty(List, true) ->
+    do_backstrip_empty_g(List).
+
+do_backstrip_empty_g([]) ->
+    [];
+do_backstrip_empty_g([H]) ->
+    case do_backstrip_empty(H) of
+	[] ->
+	    [];
+	_ ->
+	    [H]
+    end;
+do_backstrip_empty_g([H|T]) ->
+    case do_backstrip_empty_g(T) of
+	[] ->
+	    case do_backstrip_empty(H) of
+		[] ->
+		    [];
+		_ ->
+		    [H]
+	    end;
+	Other ->
+	    [H|Other]
+    end.
+
+do_backstrip_empty([]) ->
+    [];
+do_backstrip_empty([<<>>]) ->
+    [];
+do_backstrip_empty([<<>>|T]) ->
+    case do_backstrip_empty(T) of
+	[] ->
+	    [];
+	Other ->
+	    [<<>>|Other]
+    end;
+do_backstrip_empty([H|T]) ->
+    [H|do_backstrip_empty(T)].
+
+convert_any_split_result(List,Type,Uni,true) ->
+    [ convert_split_result(Part,Type,Uni) || Part <- List ];
+convert_any_split_result(List,Type,Uni, false) ->
+    convert_split_result(List,Type,Uni).
+
+convert_split_result(List, iodata, _Unicode) ->
+    List;
+convert_split_result(List, binary, _Unicode) ->
+    %% As it happens, the iodata is actually binaries
+    List;
+convert_split_result(List, list, true) ->
+    [unicode:characters_to_list(Element,unicode) || Element <- List];
+convert_split_result(List, list, false) ->
+    [binary_to_list(Element) || Element <- List].
+
+do_split(Subj, Off,  _, _, 0, false) ->
+    <<_:Off/binary,Rest/binary>> = Subj,
+    [Rest];
+do_split(Subj, Off, [], _, _, false) ->
+    <<_:Off/binary,Rest/binary>> = Subj,
+    [Rest];
+do_split(Subj, Off, _, _, _,false) when byte_size(Subj) =< Off ->
+    [<<>>];
+do_split(Subj, Off,  _, _, 0, true) ->
+    <<_:Off/binary,Rest/binary>> = Subj,
+    [[Rest]];
+do_split(Subj, Off, [], _, _, true) ->
+    <<_:Off/binary,Rest/binary>> = Subj,
+    [[Rest]];
+do_split(Subj, Off, _, _, _,true) when byte_size(Subj) =< Off ->
+    [[<<>>]];
+do_split(Subj, Offset, [[{MainI,MainL}|Sub]|T], NumSub, Limit, Group) ->
+    NewOffset = MainI+MainL,
+    KeptLen =  MainI - Offset,
+    case {KeptLen,empty_sub(Sub),MainL} of
+	{0,true,0} ->
+	    do_split(Subj,NewOffset,T,NumSub,Limit,Group);
+	_ ->
+	    <<_:Offset/binary,Keep:KeptLen/binary,_/binary>> = Subj,
+	    ESub = extend_subpatterns(Sub,NumSub),
+	    Tail = do_split(Subj, NewOffset, T, NumSub, Limit - 1,Group),
+	    case Group of
+		false ->
+		    [Keep | dig_subpatterns(Subj,lists:reverse(ESub),Tail)];
+		true ->
+		    [[Keep | dig_subpatterns(Subj,lists:reverse(ESub),[])]|
+		     Tail]
+	    end
+    end.
+empty_sub([]) ->
+    true;
+empty_sub([{_,0}|T]) ->
+    empty_sub(T);
+empty_sub(_) ->
+    false.
+
+dig_subpatterns(_,[],Acc) ->
+    Acc;
+dig_subpatterns(Subj,[{-1,0}|T],Acc) ->
+    dig_subpatterns(Subj,T,[<<>>|Acc]);
+dig_subpatterns(Subj,[{I,L}|T],Acc) ->
+    <<_:I/binary,Part:L/binary,_/binary>> = Subj,
+    dig_subpatterns(Subj,T,[Part|Acc]).
+
+extend_subpatterns(_,0) ->
+    [];
+extend_subpatterns([],N) ->
+    [{0,0} | extend_subpatterns([],N-1)];
+extend_subpatterns([H|T],N) ->
+    [H | extend_subpatterns(T,N-1)].
+
+compile_split({re_pattern,N,_,_} = Comp, Options) ->
+    {Comp,N,Options};
+compile_split(Pat,Options0) when not is_tuple(Pat) ->
+    Options = lists:filter(fun(O) ->
+				   (not runopt(O))
+			   end, Options0),
+    case re:compile(Pat,Options) of
+	{error,Err} ->
+	    {error,Err};
+	{ok, {re_pattern,N,_,_} = Comp} ->
+	    NewOpt = lists:filter(fun(OO) -> (not copt(OO)) end, Options0),
+	    {Comp,N,NewOpt}
+    end;
+compile_split(_,_) ->
+    throw(badre).
+	    
+    
+
+
+replace(Subject,RE,Replacement) ->
+    replace(Subject,RE,Replacement,[]).
+replace(Subject,RE,Replacement,Options) ->
+    try
+    {NewOpt,Convert,Unicode} =
+	process_repl_params(Options,iodata,false),
+    FlatSubject = 
+	case is_binary(Subject) of
+	    true ->
+		Subject;
+	    false ->
+		case Unicode of
+		    true ->
+			unicode:characters_to_binary(Subject,unicode);
 		    false ->
 			iolist_to_binary(Subject)
 		end
 	end,
     case do_replace(FlatSubject,Subject,RE,Replacement,NewOpt) of
-	{error, Err} ->
-	    {error, Err};
+	{error,_Err} ->
+	    throw(badre);
 	IoList ->
 	    case Convert of
 		iodata ->
@@ -54,16 +242,22 @@ replace(Subject,RE,Replacement,Options) ->
 			false ->
 			    binary_to_list(iolist_to_binary(IoList));
 			true ->
-			    utf8_to_list(iolist_to_binary(IoList))
+			    unicode:characters_to_list(IoList,unicode)
 		    end
 	    end
+    end
+    catch
+	throw:badopt ->
+	    erlang:error(badarg,[Subject,RE,Replacement,Options]);
+	throw:badre ->
+	    erlang:error(badarg,[Subject,RE,Replacement,Options]);
+	error:badarg ->
+	    erlang:error(badarg,[Subject,RE,Replacement,Options])
     end.
     
 
 do_replace(FlatSubject,Subject,RE,Replacement,Options) ->
     case re:run(FlatSubject,RE,Options) of
-	{error, Error} ->
-	    {error, Error};
 	nomatch ->
 	    Subject;
 	{match,[Mlist|T]} when is_list(Mlist) ->
@@ -93,8 +287,44 @@ process_repl_params([H|T],C,U) ->
     {NT,NC,NU} = process_repl_params(T,C,U),
     {[H|NT],NC,NU}.
 
+process_split_params([],Convert,Unicode,Limit,Strip,Group) ->
+    {[],Convert,Unicode,Limit,Strip,Group};
+process_split_params([unicode|T],C,_U,L,S,G) ->
+    {NT,NC,NU,NL,NS,NG} = process_split_params(T,C,true,L,S,G), 
+    {[unicode|NT],NC,NU,NL,NS,NG};
+process_split_params([trim|T],C,U,_L,_S,G) ->
+    process_split_params(T,C,U,-1,true,G); 
+process_split_params([{parts,0}|T],C,U,_L,_S,G) ->
+    process_split_params(T,C,U,-1,true,G); 
+process_split_params([{parts,N}|T],C,U,_L,_S,G) when is_integer(N), N >= 1 ->
+    process_split_params(T,C,U,N-1,false,G); 
+process_split_params([{parts,infinity}|T],C,U,_L,_S,G) ->
+    process_split_params(T,C,U,-1,false,G); 
+process_split_params([{parts,_}|_],_,_,_,_,_) ->
+    throw(badopt); 
+process_split_params([group|T],C,U,L,S,_G) ->
+    process_split_params(T,C,U,L,S,true); 
+process_split_params([global|_],_,_,_,_,_) ->
+    throw(badopt);
+process_split_params([{capture,_,_}|_],_,_,_,_,_) ->
+    throw(badopt);
+process_split_params([{capture,_}|_],_,_,_,_,_) ->
+    throw(badopt);
+process_split_params([{return,iodata}|T],_C,U,L,S,G) ->
+    process_split_params(T,iodata,U,L,S,G);
+process_split_params([{return,list}|T],_C,U,L,S,G) ->
+    process_split_params(T,list,U,L,S,G);
+process_split_params([{return,binary}|T],_C,U,L,S,G) ->
+    process_split_params(T,binary,U,L,S,G);
+process_split_params([{return,_}|_],_,_,_,_,_) ->
+    throw(badopt);
+process_split_params([H|T],C,U,L,S,G) ->
+    {NT,NC,NU,NL,NS,NG} = process_split_params(T,C,U,L,S,G),
+    {[H|NT],NC,NU,NL,NS,NG}.
+
 apply_mlist(Subject,Replacement,Mlist) ->
-    do_mlist(Subject,Subject,0,precomp_repl(iolist_to_binary(Replacement)),Mlist).
+    do_mlist(Subject,Subject,0,precomp_repl(iolist_to_binary(Replacement)),
+	     Mlist).
 
 
 precomp_repl(<<>>) ->
@@ -161,7 +391,8 @@ do_replace(Subject,Repl,SubExprs0) ->
 			  SPos < 0 ->
 			      <<>>;
 			  true ->
-			      <<_:SPos/binary,Res:SLen/binary,_/binary>> = Subject,
+			      <<_:SPos/binary,Res:SLen/binary,_/binary>> = 
+				  Subject,
 			      Res
 		      end
 	      end;
@@ -240,8 +471,6 @@ process_parameters([H|T],Init0,Select0,Return0,false) ->
 process_parameters(_,_,_,_,_) ->
     throw(badlist).
 
-postprocess(nomatch,_,_,_,_) ->
-    nomatch;
 postprocess({match,[]},_,_,_,_) ->
     nomatch;
 postprocess({match,_},none,_,_,_) ->
@@ -273,7 +502,7 @@ listify({match,M},Flat,Uni) ->
 		case Uni of
 		    true ->
 			<<_:SPos/binary,Res:SLen/binary,_/binary>> = Flat,
-			utf8_to_list(Res);
+			unicode:characters_to_list(Res,unicode);
 		    false ->
 			Start = SPos + 1,
 			End = SPos + SLen,
@@ -281,21 +510,42 @@ listify({match,M},Flat,Uni) ->
 		end
 	end || {I,L} <- One ] || One <- M ]}.
 
-
-grun(A,B) ->
-    grun(A,B,[]).
-
-grun(Subject,RE,{Options,NeedClean}) when is_binary(Subject) ->
-    do_grun(Subject,Subject,check_for_unicode(RE,Options),RE,{Options,NeedClean});
-
+%% Might be called either with two-tuple (if regexp was already compiled)
+%% or with 3-tuple (saving original RE for exceptions
 grun(Subject,RE,{Options,NeedClean}) ->
+    try
+	grun2(Subject,RE,{Options,NeedClean})
+    catch
+	error:AnyError ->
+	    {'EXIT',{new_stacktrace,[{Mod,_,L}|Rest]}} = 
+		(catch erlang:error(new_stacktrace,
+				    [Subject,RE,Options])),
+	    erlang:raise(error,AnyError,[{Mod,run,L}|Rest])
+    end;
+grun(Subject,RE,{Options,NeedClean,OrigRE}) ->
+    try
+	grun2(Subject,RE,{Options,NeedClean})
+    catch
+	error:AnyError ->
+	    {'EXIT',{new_stacktrace,[{Mod,_,L}|Rest]}} = 
+		(catch erlang:error(new_stacktrace,
+				    [Subject,OrigRE,Options])),
+	    erlang:raise(error,AnyError,[{Mod,run,L}|Rest])
+    end.
+
+grun2(Subject,RE,{Options,NeedClean}) ->
     Unicode = check_for_unicode(RE,Options),
     FlatSubject = 
-	case Unicode of
+	case is_binary(Subject) of
 	    true ->
-		to_utf8(Subject);
+		Subject;
 	    false ->
-		iolist_to_binary(Subject)
+		case Unicode of
+		    true ->
+			unicode:characters_to_binary(Subject,unicode);
+		    false ->
+			iolist_to_binary(Subject)
+		end
 	end,
     do_grun(FlatSubject,Subject,Unicode,RE,{Options,NeedClean}).
 
@@ -309,81 +559,10 @@ do_grun(FlatSubject,Subject,Unicode,RE,{Options0,NeedClean}) ->
 	    CorrectReturn ->
 		CorrectReturn
 	end,
-    try
-	postprocess(loopexec(FlatSubject,RE,InitialOffset,byte_size(FlatSubject),
-			     Unicode,StrippedOptions),
-		    SelectReturn,ConvertReturn,FlatSubject,Unicode)
-    catch
-	error:ErReason ->
-	    erlang:raise(error,ErReason,erlang:get_stacktrace());
-	_:_ ->
-	    erlang:error(badarg,[Subject,RE,Options0])
-    end.
-    
-int_to_utf8(I) when I =< 16#7F ->
-    <<I>>;
-int_to_utf8(I) when I =< 16#7FF ->
-    B2 = I band 16#3f,
-    B1 = (I bsr 6) band 16#1f,  
-    <<1:1,1:1,0:1,B1:5,1:1,0:1,B2:6>>;
-int_to_utf8(I) when I =< 16#FFFF ->
-    B3 = I band 16#3f,
-    B2 = (I bsr 6) band 16#3f,
-    B1 = (I bsr 12) band 16#f,
-    <<1:1,1:1,1:1,0:1,B1:4,1:1,0:1,B2:6,1:1,0:1,B3:6>>;
-int_to_utf8(I) when I =< 16#10FFFF ->
-    B4 = I band 16#3f,
-    B3 = (I bsr 6) band 16#3f,
-    B2 = (I bsr 12) band 16#3f,
-    B1 = (I bsr 18) band 16#7,
-    <<1:1,1:1,1:1,1:1,0:1,B1:3,1:1,0:1,B2:6,1:1,0:1,B3:6,1:1,0:1,B4:6>>;
-int_to_utf8(_) ->
-    exit(unsupported_utf8).
-
-to_utf8(X) when is_binary(X) ->
-    X;
-to_utf8([]) ->
-    <<>>;
-to_utf8(I) when is_integer(I) ->
-    int_to_utf8(I);
-to_utf8([Head | Tail]) ->
-    HBin = to_utf8(Head),
-    TBin = to_utf8(Tail),
-    <<HBin/binary,TBin/binary>>.
-
-utf8_to_list(<<>>) ->
-    [];
-utf8_to_list(Bin) ->
-    N = utf8_siz(Bin),
-    <<X:N/binary,Rest/binary>> = Bin,
-    [utf8_to_int(X) | utf8_to_list(Rest)].
-utf8_siz(<<0:1,_:7,_/binary>>) ->
-    1;
-utf8_siz(<<1:1,1:1,0:1,_:5,_/binary>>) ->
-    2;
-utf8_siz(<<1:1,1:1,1:1,0:1,_:4,_/binary>>) ->
-    3;
-utf8_siz(<<1:1,1:1,1:1,1:1,0:1,_:3,_/binary>>) ->
-    4.
-
-utf8_to_int(<<0:1,B:7>>) ->
-    B;
-utf8_to_int(<<1:1,1:1,0:1,B1:5,1:1,0:1,B2:6>>) ->
-    (B1 bsl 6) bor B2;
-utf8_to_int(<<1:1,1:1,1:1,0:1,B1:4,1:1,0:1,B2:6,1:1,0:1,B3:6>>) ->
-    (B1 bsl 12) bor (B2 bsl 6) bor B3;
-utf8_to_int(<<1:1,1:1,1:1,1:1,0:1,B1:3,1:1,0:1,
-             B2:6,1:1,0:1,B3:6,1:1,0:1,B4:6>>) ->
-    Res = (B1 bsl 18) bor (B2 bsl 12) bor (B3 bsl 6) bor B4,
-    case Res of
-        X when X > 16#10FFFF ->
-            exit(unsupported_utf8);
-        Other ->
-            Other
-    end;
-utf8_to_int(_) ->
-    exit(unsupported_utf8).
-
+    postprocess(loopexec(FlatSubject,RE,InitialOffset,
+			 byte_size(FlatSubject),
+			 Unicode,StrippedOptions),
+		SelectReturn,ConvertReturn,FlatSubject,Unicode).
 
 loopexec(_,_,X,Y,_,_) when X > Y ->
     {match,[]};
@@ -462,4 +641,28 @@ copt(ungreedy) ->
 copt(unicode) ->
     true;
 copt(_) ->
+    false.
+
+%bothopt({newline,_}) ->
+%    true;
+%bothopt(anchored) ->
+%    true;
+%bothopt(_) ->
+%    false.
+
+runopt(notempty) ->
+    true;
+runopt(notbol) ->
+    true;
+runopt(noteol) ->
+    true;
+runopt({offset,_}) ->
+    true;
+runopt({capture,_,_}) ->
+    true;
+runopt({capture,_}) ->
+    true;
+runopt(global) ->
+    true;
+runopt(_) ->
     false.

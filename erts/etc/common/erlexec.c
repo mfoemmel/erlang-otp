@@ -83,6 +83,7 @@ static char *plusM_au_alloc_switches[] = {
     "mmsbc",
     "msbclt",
     "ramv",
+    "rmbcmt",
     "rsbcmt",
     "rsbcst",
     "sbct",
@@ -913,6 +914,20 @@ int main(int argc, char **argv)
 	int status = fork();
 	if (status != 0)	/* Parent */
 	    return 0;
+
+	/* Detach from controlling terminal */
+#ifdef HAVE_SETSID
+	setsid();
+#elif defined(TIOCNOTTY)
+	{
+	  int fd = open("/dev/tty", O_RDWR);
+	  if (fd >= 0) {
+	    ioctl(fd, TIOCNOTTY, NULL);
+	    close(fd);
+	  }
+	}
+#endif
+
 	status = fork();
 	if (status != 0)	/* Parent */
 	    return 0;

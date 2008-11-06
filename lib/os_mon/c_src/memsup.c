@@ -404,13 +404,13 @@ get_extended_mem_sysconf(memory_ext *me) {
 #endif
 
 #if defined(BSD4_4)
-static void
+static int
 get_extended_mem_bsd4(memory_ext *me) {
     struct vmtotal vt;
     long pgsz;
 
-    if (!get_vmtotal(&vt)) goto fail;
-    if ((pgsz = sysconf(_SC_PAGESIZE)) == -1) goto fail;
+    if (!get_vmtotal(&vt)) return 0;
+    if ((pgsz = sysconf(_SC_PAGESIZE)) == -1) return 0;
 
     me->total      = (vt.t_free + vt.t_rm);
     me->free       = vt.t_free;
@@ -418,10 +418,7 @@ get_extended_mem_bsd4(memory_ext *me) {
     
     me->flag = F_MEM_TOTAL | F_MEM_FREE;
     
-    return;
-fail:
-    print_error("%s", strerror(errno));
-    exit(1);
+    return 1;
 }
 #endif
 

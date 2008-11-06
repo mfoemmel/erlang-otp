@@ -52,7 +52,7 @@
 %%         set the operation can be externally defined.
 %%
 
--spec(analyze/1 :: (core_module()) -> {dict(), [_], dict()}).
+-spec analyze(core_module()) -> {dict(), [_], dict()}.
 
 analyze(Tree) ->
   %% io:format("Handling ~w\n", [cerl:atom_val(cerl:module_name(Tree))]),
@@ -459,7 +459,7 @@ all_vars(Tree, AccIn) ->
 %%
 %% The state
 
--type(local_set() :: 'none' | #set{}).
+-type local_set() :: 'none' | #set{}.
 
 -record(state, {deps    :: dict(), 
 		esc     :: local_set(), 

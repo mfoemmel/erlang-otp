@@ -135,7 +135,7 @@
 	  topologyDirection,
 	  
 	  %% After extension mark
-	  streamID = asn1_NOVALUE  %% Only in ASN.1
+	  streamID = asn1_NOVALUE 
 	 }).
 
 -record('AmmRequest',

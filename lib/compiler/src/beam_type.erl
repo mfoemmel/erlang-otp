@@ -21,7 +21,7 @@
 
 -export([module/2]).
 
--import(lists, [map/2,foldl/3,reverse/1,reverse/2,filter/2,member/2]).
+-import(lists, [foldl/3,reverse/1,filter/2]).
 
 module({Mod,Exp,Attr,Fs0,Lc}, _Opts) ->
     Fs = [function(F) || F <- Fs0],
@@ -525,7 +525,7 @@ save_reg({I,V,dirty}, Save, Acc) ->
 save_reg(_, _, Acc) -> Acc.
 
 kill_regs(Rs, Kill) ->
-    map(fun(R) -> kill_reg(R, Kill) end, Rs).
+    [kill_reg(R, Kill) || R <- Rs].
 
 kill_reg({_,V,_}=R, Kill) ->
     case gb_sets:is_member(V, Kill) of

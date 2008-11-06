@@ -14,21 +14,21 @@
 
 %%------------------------------------------------------------------------
 
--type(set()     :: tuple()).  % XXX: temporarily
--type(dict()    :: tuple()).  % XXX: temporarily
--type(ordset(T) :: [T]).      % XXX: temporarily
+-type set()     :: tuple().  % XXX: temporarily
+-type dict()    :: tuple().  % XXX: temporarily
+-type ordset(T) :: [T].      % XXX: temporarily
 
 -include("hipe_digraph.hrl").
 
 %%------------------------------------------------------------------------
 
--spec(new/0 :: () -> #hipe_digraph{}).
+-spec new() -> #hipe_digraph{}.
 
 new() ->
   #hipe_digraph{edges=dict:new(), rev_edges=dict:new(), 
 		leaves=ordsets:new(), nodes=sets:new()}.
 
--spec(from_list/1 :: ([_]) -> #hipe_digraph{}).
+-spec from_list([_]) -> #hipe_digraph{}.
 
 from_list(List) ->
   Edges = lists:foldl(fun({From, To}, Dict) -> 
@@ -49,7 +49,7 @@ from_list(List) ->
   Nodes = sets:union(Keys1, Keys2),
   #hipe_digraph{edges=Edges, leaves=[], rev_edges=RevEdges, nodes=Nodes}.
 
--spec(to_list/1 :: (#hipe_digraph{}) -> [_]).
+-spec to_list(#hipe_digraph{}) -> [_].
 
 to_list(#hipe_digraph{edges=Edges}) ->
   List1 = dict:to_list(Edges),
@@ -58,18 +58,18 @@ to_list(#hipe_digraph{edges=Edges}) ->
 		      end, [], List1),
   lists:flatten(List2).
 
--spec(add_node/2 :: (_, #hipe_digraph{}) -> #hipe_digraph{}).
+-spec add_node(_, #hipe_digraph{}) -> #hipe_digraph{}.
 
 add_node(NewNode, DG = #hipe_digraph{nodes=Nodes}) ->
   DG#hipe_digraph{nodes=sets:add_element(NewNode, Nodes)}.
 
--spec(add_node_list/2 :: ([_], #hipe_digraph{}) -> #hipe_digraph{}).
+-spec add_node_list([_], #hipe_digraph{}) -> #hipe_digraph{}.
 
 add_node_list(NewNodes, DG = #hipe_digraph{nodes=Nodes}) ->
   Set = sets:from_list(NewNodes),
   DG#hipe_digraph{nodes=sets:union(Set, Nodes)}.
 
--spec(add_edge/3 :: (_, _, #hipe_digraph{}) -> #hipe_digraph{}).
+-spec add_edge(_, _, #hipe_digraph{}) -> #hipe_digraph{}.
 
 add_edge(From, To, #hipe_digraph{edges=Edges, rev_edges=RevEdges, 
 				 leaves=Leaves, nodes=Nodes}) ->
@@ -85,8 +85,7 @@ add_edge(From, To, #hipe_digraph{edges=Edges, rev_edges=RevEdges,
 
 %%-------------------------------------------------------------------------
 
--spec(take_indep_scc/1 ::
-      (#hipe_digraph{}) -> 'none' | {'ok', [_], #hipe_digraph{}}).
+-spec take_indep_scc(#hipe_digraph{}) -> 'none' | {'ok', [_], #hipe_digraph{}}.
 
 take_indep_scc(DG = #hipe_digraph{edges=Edges, rev_edges=RevEdges, 
 				  leaves=Leaves, nodes=Nodes}) ->
@@ -159,7 +158,7 @@ reverse_preorder(Nodes0 = [H|_], Edges) ->
 
 %%---------------------------------------------------------------------
 
--spec(reverse_preorder_sccs/1 :: (#hipe_digraph{}) -> [[_]]).
+-spec reverse_preorder_sccs(#hipe_digraph{}) -> [[_]].
 
 reverse_preorder_sccs(DG) ->
   reverse_preorder_sccs(DG, []).
@@ -172,7 +171,7 @@ reverse_preorder_sccs(DG, Acc) ->
 
 %%---------------------------------------------------------------------
 
--spec(get_parents/2 :: (_, #hipe_digraph{}) -> [_]).
+-spec get_parents(_, #hipe_digraph{}) -> [_].
 
 get_parents(Node, #hipe_digraph{rev_edges=RevEdges}) ->
   case dict:is_key(Node, RevEdges) of
@@ -180,7 +179,7 @@ get_parents(Node, #hipe_digraph{rev_edges=RevEdges}) ->
     false -> []
   end.
 
--spec(get_children/2 :: (_, #hipe_digraph{}) -> [_]).
+-spec get_children(_, #hipe_digraph{}) -> [_].
 
 get_children(Node, #hipe_digraph{edges=Edges}) ->
   case dict:is_key(Node, Edges) of

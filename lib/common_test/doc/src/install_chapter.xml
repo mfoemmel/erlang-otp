@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE chapter SYSTEM "chapter.dtd">
+
+<chapter>
+  <header>
+    <copyright>
+      <year>2007</year>
+      <year>2008</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>Installation</title>
+    <prepared>Peter Andersson</prepared>
+    <docno></docno>
+    <date>2007-07-03</date>
+    <rev></rev>
+  </header>
+
+  <section>
+    <title>Unix</title>
+
+    <p>Copy the Common Test and Test Server application
+    directories, <c><![CDATA[common_test-<vsn>]]></c> and
+    <c><![CDATA[test_server-<vsn>]]></c>, to a location of your choice. They do
+    not have to be placed among the Erlang applications under the OTP
+    lib directory, nor do they need to have a particular path relative
+    to your test suite modules. In the Common Test directory you
+    find the shell script <c>install.sh</c>. Execute this script
+    to generate the Common Test start script <c>run_test</c> in the
+    sub directory <c><![CDATA[common_test-<vsn>/priv/bin]]></c>.</p>
+
+    <p><c>install.sh</c> takes one input parameter which specifies the
+    absolute path to the top directory of Common Test and Test
+    Server. (This path is inserted in the <c>run_test</c> script so
+    that when the script starts Erlang, the Erlang code server will be
+    able to load the Common Test and Test Server application
+    modules). Example (assuming Common Test and Test Server have been
+    placed in <c>/usr/local/test_tools</c>):</p>
+
+    <p><c> 
+    $ install.sh /usr/local/test_tools
+    </c></p>
+
+    <p>Note that the <c><![CDATA[common_test-<vsn>]]></c> and
+    <c><![CDATA[test_server-<vsn>]]></c> directories must be located under the
+    same top directory for the installation to work properly. Note also
+    that the install script does not e.g. copy files or update environment
+    variables. It only generates the <c>run_test</c> script.</p> 
+    
+    <p>If the directories are later moved, make sure to run <c>install.sh</c>
+    again or edit the <c>run_test</c> script (Bourne shell) manually.</p> 
+
+    <p>For more information on the <c>run_test</c> script, please see
+    the reference manual.</p>
+    </section>
+
+  <section>
+    <title>Windows</title>
+
+    <p>On Windows it is very convenient to use Cygwin (<c>www.cygwin.com</c>)
+    for running Common Test and Erlang, since it enables you to use the
+    <c>run_test</c> script for starting Common Test. If you are a Cygwin
+    user, simply follow the instructions for installing Common Test 
+    on Unix above.</p>
+
+    <p>If you do not use Cygwin, you have to rely on the API functions
+    in the <c>ct</c> module (instead of <c>run_test</c>) for running
+    Common Test. In this case you do not need to install Common Test
+    (i.e. no need to generate the <c>run_test</c> script). Simply copy the
+    <c><![CDATA[common_test-<vsn>]]></c> and <c><![CDATA[test_server-<vsn>]]></c> 
+    directories to a location of your choice. They do not have to be placed among
+    the Erlang applications under the OTP lib directory, nor do they
+    need to have a particular path relative to your test suite
+    modules.</p>
+
+    <p>When you start the Erlang node on which you will be running
+    Common Test, make sure the Common Test and Test Server <c>ebin</c> 
+    directories are included in the Erlang code server path (so the
+    application modules can be loaded). If you do copy the application
+    directories to the OTP lib directory, there is no need to
+    explicitly update the code server path as the code server will be
+    able to locate the modules automatically.</p>
+    </section>
+</chapter>
+
+
+
+
+
+
+
+

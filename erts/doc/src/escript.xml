@@ -5,7 +5,7 @@
   <header>
     <copyright>
       <year>2007</year>
-      <year>2007</year>
+      <year>2008</year>
       <holder>Ericsson AB, All Rights Reserved</holder>
     </copyright>
     <legalnotice>
@@ -48,6 +48,7 @@
 $ <input>cat factorial</input>        
 #!/usr/bin/env escript
 %% -*- erlang -*-
+%%! -smp enable -sname factorial -mnesia debug verbose
 main([String]) ->
     try
 \011N = list_to_integer(String),
@@ -81,12 +82,24 @@ usage: factorial integer        </pre>
 $ <input>escript factorial 5</input>        </pre>
         <p>the contents of the first line does not matter, but it cannot contain
           Erlang code as it will be <em>ignored</em>.</p>
+        <p>The second line in the example, contains an optional
+          directive to the <c>Emacs</c> editor which causes it to
+          enter the major mode for editing Erlang source files. If the
+          directive is present it must be located on the second
+          line.</p>
+	<p>On the third line (or second line depending on the presence
+          of the Emacs directive), it is possible to give arguments to
+          the emulator, such as </p>
+        <pre>
+%%! -smp enable -sname factorial -mnesia debug verbose</pre>
+        <p>Such an argument line must start with <c>%%!</c> and the
+          rest of the line will interpreted as arguments to the emulator.</p>
         <p>If you know the location of the <c><![CDATA[escript]]></c> executable, the first
           line can directly give the path to <c><![CDATA[escript]]></c>. For instance:</p>
         <pre>
 #!/usr/local/bin/escript        </pre>
         <p>As any other kind of scripts, Erlang scripts will not work on
-          Unix platforms if they execution bit for the script file is not set.
+          Unix platforms if the execution bit for the script file is not set.
           (Use <c><![CDATA[chmod +x script-name]]></c> to turn on the execution bit.)
           </p>
         <p>An Erlang script file must always contain the function <em>main/1</em>.
@@ -96,13 +109,45 @@ $ <input>escript factorial 5</input>        </pre>
         <p>Call <c><![CDATA[escript:script_name/0]]></c> from your to script to retrieve
           the pathname of the script (the pathname is usually, but not always,
           absolute).</p>
-        <p>It is not necessary to export the <c><![CDATA[main/1]]></c> function.</p>
         <p>By default, the script will be interpreted. You can force it to be
           compiled by including the following line somewhere in the script file:</p>
         <pre>
 -mode(compile).        </pre>
-        <p>Pre-processor directives in the script files are ignored, with the
-          exception for the <c><![CDATA[-include_lib]]></c> directive. For instance, use</p>
+
+        <p>It is not necessary to export the <c><![CDATA[main/1]]></c>
+          function when the script is interpreted or dynamically
+          compiled.</p>
+        <p>It is also possible to have a precompiled script which
+          contains a <c>beam</c> file. In a precompiled script, the
+          interpretation of the script header is exactly the same as
+          in a script containing source code. That means that you can
+          make a <c>beam</c> file executable by prepending the file
+          with the lines starting with <c>#!</c> and <c>%%!</c>
+          mentioned above. In a precompiled script, the function
+          <c>main/1</c> must be exported.</p>
+        <p>As yet another option it is possible to have an entire
+          Erlang archive in the script. In a archive script, the
+          interpretation of the script header is exactly the same as
+          in a script containing source code. That means that you can
+          make an archive file executable by prepending the file with
+          the lines starting with <c>#!</c> and <c>%%!</c> mentioned
+          above. In an archive script, the function <c>main/1</c> must
+          be exported. By default the <c>main/1</c> function in
+          the module with the same name as the basename of the
+          <c>escript</c> file will be invoked. This behavior can be
+          overridden by setting the flag <c>-escript main Module</c>
+          as one of the emulator flags. The <c>Module</c> must be the
+          name of a module which has an exported <c>main/1</c>
+          function. See <seealso marker="kernel:code">code(3)</seealso>
+          for more information about archives and code loading.</p>
+	<warning><p>The support for loading of code from archive files
+         is experimental. The sole purpose of releasing it before it
+         is ready is to obtain early feedback. The file format,
+         semantics, interfaces etc. may be changed in a future
+         release. The flag <c>-escript</c> is also experimental.</p></warning>
+        <p>Pre-processor directives in the script files are ignored,
+          with the exception for the <c><![CDATA[-include_lib]]></c>
+          directive. For instance, use</p>
         <pre>
 -include_lib("kernel/include/file.hrl").        </pre>
         <p>to include the record definitions for the records used by the

@@ -650,7 +650,7 @@ pi_pid2proc(Process *c_p, Eterm pid, ErtsProcLocks info_locks)
      * If we are looking up another process and we need the main
      * lock we first do a try lock. If that fail, we do a lookup
      * with erts_pid2proc_not_running() instead. We may then have
-     * to reschedule in order to wait for the other process to be
+     * to yield in order to wait for the other process to be
      * scheduled out. When the other process has been scheduled
      * out we will be scheduled in again. This way the penalty is
      * only for the process doing the process_info, instead of
@@ -696,7 +696,8 @@ process_info_aux(Process *BIF_P,
 #define ERTS_PI_DEF_RES_ELEM_IX_BUF_SZ ERTS_PI_ARGS
 
 static Eterm
-process_info_list(Process *c_p, Eterm pid, Eterm list, int always_wrap)
+process_info_list(Process *c_p, Eterm pid, Eterm list, int always_wrap,
+		  int *yield)
 {
     int def_res_elem_ix_buf[ERTS_PI_DEF_RES_ELEM_IX_BUF_SZ];
     int *res_elem_ix = &def_res_elem_ix_buf[0];
@@ -708,6 +709,8 @@ process_info_list(Process *c_p, Eterm pid, Eterm list, int always_wrap)
     ErtsProcLocks locks = (ErtsProcLocks) 0;
     int res_len, ix;
     Process *rp = NULL;
+
+    *yield = 0;
 
     for (ix = 0; ix < ERTS_PI_ARGS; ix++)
 	part_res[ix] = THE_NON_VALUE;
@@ -758,6 +761,12 @@ process_info_list(Process *c_p, Eterm pid, Eterm list, int always_wrap)
     rp = pi_pid2proc(c_p, pid, locks);
     if (!rp) {
 	res = am_undefined;
+	goto done;
+    }
+    else if (rp == ERTS_PROC_LOCK_BUSY) {
+	rp = NULL;
+	res = THE_NON_VALUE;
+	*yield = 1;
 	goto done;
     }
 
@@ -812,6 +821,7 @@ process_info_list(Process *c_p, Eterm pid, Eterm list, int always_wrap)
 BIF_RETTYPE process_info_1(BIF_ALIST_1)
 {
     Eterm res;
+    int yield;
 
     if (is_external_pid(BIF_ARG_1)
 	&& external_pid_dist_entry(BIF_ARG_1) == erts_this_dist_entry)
@@ -822,11 +832,13 @@ BIF_RETTYPE process_info_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, BADARG);
     }
 
-    res = process_info_list(BIF_P, BIF_ARG_1, pi_1_keys_list, 0);
-    if (res == am_undefined)
-	ERTS_SMP_BIF_CHK_RESCHEDULE(BIF_P);
-    else if (is_non_value(res))
-	BIF_ERROR(BIF_P, BADARG);
+    res = process_info_list(BIF_P, BIF_ARG_1, pi_1_keys_list, 0, &yield);
+    if (is_non_value(res)) {
+	if (!yield)
+	    BIF_ERROR(BIF_P, BADARG);
+	else
+	    ERTS_BIF_YIELD1(bif_export[BIF_process_info_1], BIF_P, BIF_ARG_1);
+    }
 
     ASSERT(!(BIF_P->flags & F_P2PNR_RESCHED));
     BIF_RET(res);
@@ -839,6 +851,7 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
     Process *rp;
     Eterm pid = BIF_ARG_1;
     ErtsProcLocks info_locks;
+    int yield;
 
     if (is_external_pid(pid)
 	&& external_pid_dist_entry(pid) == erts_this_dist_entry)
@@ -853,11 +866,14 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 	BIF_RET(NIL);
 
     if (is_list(BIF_ARG_2)) {
-	res = process_info_list(BIF_P, BIF_ARG_1, BIF_ARG_2, 1);
-	if (res == am_undefined)
-	    ERTS_SMP_BIF_CHK_RESCHEDULE(BIF_P);
-	else if (is_non_value(res))
-	    BIF_ERROR(BIF_P, BADARG);
+	res = process_info_list(BIF_P, BIF_ARG_1, BIF_ARG_2, 1, &yield);
+	if (is_non_value(res)) {
+	    if (!yield)
+		BIF_ERROR(BIF_P, BADARG);
+	    else
+		ERTS_BIF_YIELD2(bif_export[BIF_process_info_2], BIF_P,
+				BIF_ARG_1, BIF_ARG_2);
+	}
 	ASSERT(!(BIF_P->flags & F_P2PNR_RESCHED));
 	BIF_RET(res);
     }
@@ -868,12 +884,13 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
     info_locks = pi_locks(BIF_ARG_2); 
 
     rp = pi_pid2proc(BIF_P, pid, info_locks);
-    if (rp)
-	res = process_info_aux(BIF_P, rp, pid, BIF_ARG_2, 0);
-    else {
-	ERTS_SMP_BIF_CHK_RESCHEDULE(BIF_P);
+    if (!rp)
 	res = am_undefined;
-    }
+    else if (rp == ERTS_PROC_LOCK_BUSY)
+	ERTS_BIF_YIELD2(bif_export[BIF_process_info_2], BIF_P,
+			BIF_ARG_1, BIF_ARG_2);
+    else 
+	res = process_info_aux(BIF_P, rp, pid, BIF_ARG_2, 0);
     ASSERT(is_value(res));
 
 #ifdef ERTS_SMP
@@ -2426,13 +2443,13 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
 #else
 	if (prt->status & ERTS_PORT_SFLG_PORT_SPECIFIC_LOCK) {
 	    DECL_AM(port_level);
-	    ASSERT(prt->drv_ptr->driver_flags
+	    ASSERT(prt->drv_ptr->flags
 		   & ERL_DRV_FLAG_USE_PORT_LOCKING);
 	    res = AM_port_level;
 	}
 	else {
 	    DECL_AM(driver_level);
-	    ASSERT(!(prt->drv_ptr->driver_flags
+	    ASSERT(!(prt->drv_ptr->flags
 		     & ERL_DRV_FLAG_USE_PORT_LOCKING));
 	    res = AM_driver_level;
 	}
@@ -2725,7 +2742,9 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 	    /* Used by (emulator) */
 	    int res;
 #ifdef HAVE_ERTS_CHECK_IO_DEBUG
+	    erts_smp_proc_unlock(BIF_P,ERTS_PROC_LOCK_MAIN);
 	    res = erts_check_io_debug();
+	    erts_smp_proc_lock(BIF_P,ERTS_PROC_LOCK_MAIN);
 #else
 	    res = 0;
 #endif
@@ -3042,13 +3061,25 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 		BIF_RET(make_small(max_loops));
 	    }
 	}
+	else if (ERTS_IS_ATOM_STR("unicode_loop_limit", BIF_ARG_1)) {
+	    /* Used by unicode_SUITE (stdlib) */
+	    Uint max_loops;
+	    if (is_atom(BIF_ARG_2) && ERTS_IS_ATOM_STR("default", BIF_ARG_2)) {
+		max_loops = erts_unicode_set_loop_limit(-1);
+		BIF_RET(make_small(max_loops));
+	    } else if (term_to_Uint(BIF_ARG_2, &max_loops) != 0) {
+		max_loops = erts_unicode_set_loop_limit(max_loops);
+		BIF_RET(make_small(max_loops));
+	    }
+	}
 	else if (ERTS_IS_ATOM_STR("hipe_test_reschedule_suspend", BIF_ARG_1)) {
 	    /* Used by hipe test suites */
 	    long flag = erts_smp_atomic_read(&hipe_test_reschedule_flag);
 	    if (!flag && BIF_ARG_2 != am_false) {
 		erts_smp_atomic_set(&hipe_test_reschedule_flag, 1);
 		erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, NULL);
-		BIF_ERROR(BIF_P, RESCHEDULE);
+		ERTS_BIF_YIELD2(bif_export[BIF_erts_debug_set_internal_state_2],
+				BIF_P, BIF_ARG_1, BIF_ARG_2);
 	    }
 	    erts_smp_atomic_set(&hipe_test_reschedule_flag, !flag);
 	    BIF_RET(NIL);

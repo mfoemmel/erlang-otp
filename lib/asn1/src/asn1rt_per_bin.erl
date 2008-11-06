@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2001-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1rt_per_bin).
 
@@ -35,6 +37,8 @@
 -export([encode_octet_string/2, decode_octet_string/2,
 	 encode_null/1, decode_null/1,
 	 encode_object_identifier/1, decode_object_identifier/1,
+	 encode_real/1, decode_real/1,
+	 encode_relative_oid/1, decode_relative_oid/1,
 	 complete/1]).
 
 
@@ -1867,12 +1871,13 @@ e_object_elements([H|T],Acc) ->
     e_object_elements(T,[e_object_element(H)|Acc]).
 
 e_object_element(Num) when Num < 128 ->
-    Num;
-%% must be changed to handle more than 2 octets
-e_object_element(Num) ->  %% when Num < ???
-    Left = ((Num band 2#11111110000000) bsr 7) bor 2#10000000,
-    Right = Num band 2#1111111 ,
-    [Left,Right].
+    [Num];
+e_object_element(Num) ->
+    [e_o_e(Num bsr 7)|[Num band 2#1111111]].
+e_o_e(Num) when Num < 128 ->
+    Num bor 2#10000000;
+e_o_e(Num) ->
+    [e_o_e(Num bsr 7)|[(Num band 2#1111111) bor 2#10000000]].
 
 
 
@@ -1900,6 +1905,47 @@ dec_subidentifiers([H|T],Av,Al) ->
     dec_subidentifiers(T,0,[(Av bsl 7) + H |Al]);
 dec_subidentifiers([],_Av,Al) ->
     lists:reverse(Al).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% encode_relative_oid(Val) -> CompleteList
+%% encode_relative_oid({Name,Val}) -> CompleteList
+encode_relative_oid({Name,Val}) when is_atom(Name) ->
+    encode_relative_oid(Val);
+encode_relative_oid(Val) when is_tuple(Val) ->
+    encode_relative_oid(tuple_to_list(Val));
+encode_relative_oid(Val) when is_list(Val) ->
+    Octets = list_to_binary([e_object_element(X)||X <- Val]),
+    [encode_length(undefined,size(Octets)),{octets,Octets}].
+    
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% decode_relative_oid(Val) -> {ROID,Rest}
+%% decode_relative_oid({Name,Val}) -> {ROID,Rest}
+decode_relative_oid(Bytes) ->
+    {Len,Bytes2} = decode_length(Bytes,undefined),
+    {Octs,Bytes3} = getoctets_as_list(Bytes2,Len),
+    ObjVals = dec_subidentifiers(Octs,0,[]),
+    {list_to_tuple(ObjVals),Bytes3}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% encode_real(Val) -> CompleteList
+%% encode_real({Name,Val}) -> CompleteList
+encode_real({Name,Val}) when is_atom(Name) ->
+    encode_real(Val);
+encode_real(Real) ->
+    {EncVal,Len} = ?RT_COMMON:encode_real([],Real),
+    [encode_length(undefined,Len),{octets,EncVal}].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% decode_real(Val) -> {REALvalue,Rest}
+%% decode_real({Name,Val}) -> {REALvalue,Rest}
+decode_real(Bytes) ->
+    {Len,{0,Bytes2}} = decode_length(Bytes,undefined),
+    {RealVal,Rest,Len} = ?RT_COMMON:decode_real(Bytes2,Len),
+    {RealVal,{0,Rest}}.
+    
 
 get_constraint([{Key,V}],Key) ->
     V;

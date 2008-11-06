@@ -112,7 +112,7 @@
     <func>
       <name>world() -> [node()]</name>
       <name>world(Arg) -> [node()]</name>
-      <fsummary>Lookup and connect to all nodes at all hosts in<c>.hosts.erlang</c></fsummary>
+      <fsummary>Lookup and connect to all nodes at all hosts in <c>.hosts.erlang</c></fsummary>
       <type>
         <v>Arg = silent | verbose</v>
       </type>
@@ -120,9 +120,10 @@
         <p>This function calls <c>names(Host)</c> for all hosts which
           are specified in the Erlang host file <c>.hosts.erlang</c>,
           collects the replies and then evaluates <c>ping(Node)</c> on
-          all those nodes. Returns the list of all found nodes,
-          regardless of the return value of <c>ping(Node)</c>.</p>
-        <p><c>Arg</c> defaults to <c>silent</c>. If <c>Arg == verbose</c>, the function writes information about which
+          all those nodes. Returns the list of all nodes that were,
+	  successfully pinged.</p>
+        <p><c>Arg</c> defaults to <c>silent</c>.
+	 If <c>Arg == verbose</c>, the function writes information about which
           nodes it is pinging to stdout.</p>
         <p>This function can be useful when a node is started, and
           the names of the other nodes in the network are not initially

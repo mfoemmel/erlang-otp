@@ -1208,9 +1208,10 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 	  TmpJmp
       end;
     #switch{} ->
-      NewLbls = lists:map(fun(Lbl) when Lbl =:= ToOld -> ToNew;
-			     (Lbl) -> (Lbl)
-			  end, switch_labels(Jmp)),
+      NewLbls = [case Lbl =:= ToOld of
+		   true -> ToNew;
+		   false -> Lbl
+		 end || Lbl <- switch_labels(Jmp)],
       switch_labels_update(Jmp, NewLbls);
     #alub{} ->
       TmpJmp = case alub_true_label(Jmp) of

@@ -59,7 +59,7 @@
 
 %%========================================================================
 
--spec(chunk_name/1 :: (hipe_architecture()) -> string()).
+-spec chunk_name(hipe_architecture()) -> string().
 %% @doc
 %%    Returns the native code chunk name of the Architecture.
 %%    (On which presumably we are running.)
@@ -78,7 +78,7 @@ chunk_name(Architecture) ->
 
 %%========================================================================
 
--spec(load_hipe_modules/0 :: () -> 'ok').
+-spec load_hipe_modules() -> 'ok'.
 %% @doc
 %%    Ensures HiPE's loader modules are loaded.
 %%    Called from code.erl at start-up.
@@ -88,8 +88,8 @@ load_hipe_modules() ->
 
 %%========================================================================
 
--spec(load_native_code/2 :: (Mod, binary()) -> 'no_native' | {'module',Mod}
-						when is_subtype(Mod, atom())).
+-spec load_native_code(Mod, binary()) -> 'no_native' | {'module', Mod}
+					  when is_subtype(Mod, atom()).
 %% @doc
 %%    Loads the native code of a module Mod.
 %%    Returns {module,Mod} on success (for compatibility with
@@ -116,7 +116,7 @@ load_native_code(Mod, Bin) when is_atom(Mod), is_binary(Bin) ->
 
 %%========================================================================
 
--spec(post_beam_load/1 :: (atom()) -> 'ok').
+-spec post_beam_load(atom()) -> 'ok'.
 
 post_beam_load(Mod) when is_atom(Mod) ->
   Architecture = erlang:system_info(hipe_architecture),
@@ -139,8 +139,8 @@ version_check(Version, Mod) when is_atom(Mod) ->
 
 %%========================================================================
 
--spec(load_module/3 :: (Mod, binary(), _) -> 'bad_crc' | {'module',Mod}
-	     					when is_subtype(Mod,atom())).
+-spec load_module(Mod, binary(), _) -> 'bad_crc' | {'module',Mod}
+	     				when is_subtype(Mod,atom()).
 load_module(Mod, Bin, Beam) ->
   load_module(Mod, Bin, Beam, []).
 
@@ -152,8 +152,8 @@ load_module(Mod, Bin, Beam, OldReferencesToPatch) ->
 
 %%========================================================================
 
--spec(load/2 :: (Mod, binary()) -> 'bad_crc' | {'module',Mod}
-	     				when is_subtype(Mod,atom())).
+-spec load(Mod, binary()) -> 'bad_crc' | {'module',Mod}
+			      when is_subtype(Mod,atom()).
 load(Mod, Bin) ->
   ?debug_msg("********* Loading funs in module ~w *********\n",[Mod]),
   %% Loading just some functions in a module; patch closures separately.

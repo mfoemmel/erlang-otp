@@ -1,5 +1,5 @@
   /*<copyright>
-   * <year>2001-2007</year>
+   * <year>2001-2008</year>
    * <holder>Ericsson AB, All Rights Reserved</holder>
    *</copyright>
    *<legalnotice>
@@ -47,8 +47,16 @@
 #include <string.h>
 #include <ctype.h>
 
-#define TRUE  1;
-#define FALSE 0;
+#define TRUE       1
+#define FALSE      0
+#define SP         0x20
+#define HTAB       0x09
+#define CR         0x0d
+#define LF         0x0a
+#define SEMI_COLON 0x3b
+#define BACKSLASH  0x5c
+#define RBRKT      0x7b
+#define NUL        0x0
 
 #define FREE(bufP)        driver_free(bufP)
 #define ALLOC(sz)         driver_alloc(sz)
@@ -202,6 +210,8 @@ static ErlDrvTermData mfs_V91Token = 0;
 static ErlDrvTermData mfs_VersionToken = 0;
 static ErlDrvTermData mfs_asn1_NOVALUE = 0;
 static ErlDrvTermData mfs_endOfMessage = 0;
+static ErlDrvTermData mfs_PropertyParm = 0;
+static ErlDrvTermData mfs_ErrorDescriptor = 0;
 
 /* MEGACO_DUMMY_DECL_YY_LINENO
  * Note that this construction is intended to make it
@@ -222,7 +232,7 @@ static char* 	       mfs_digit_map_short_ptr = 0;
 static char* 	       mfs_digit_map_long_ptr  = 0;
 static char* 	       mfs_digit_map_duration_ptr = 0;
 static int 	       mfs_error               = FALSE;
-static char 	       mfs_error_msg[256];
+static char 	       mfs_error_msg[512];
 static char* 	       mfs_text_buf            = 0;
 static char* 	       mfs_text_ptr            = 0;
 static ErlDrvTermData* mfs_term_spec           = 0;
@@ -233,8 +243,9 @@ static int   	       mfs_token_counter       = 0;
 static void mfs_alloc_failed(char* msg, int sz);
 static void mfs_fatal_error(char* msg); 
 static void mfs_short_load_token(ErlDrvTermData token_tag);
-static void mfs_lower_load_token(ErlDrvTermData token_tag);
+static void mfs_lower_load_token(ErlDrvTermData token_tag, int is_empty);
 static void mfs_octet_load_token(ErlDrvTermData token_tag, int is_empty);
+static void mfs_load_property_groups();
 static void mfs_load_map_name();
 static void mfs_load_map_value();
 static void mfs_load_map_timer();
@@ -270,7 +281,9 @@ static ErlDrvEntry mfs_entry = {
     NULL               /* outputv, vector output interface */
 };    
 
-#define LOAD_TOKEN(TokenTag) mfs_lower_load_token(TokenTag)
+#define LOAD_TOKEN(TokenTag) mfs_lower_load_token(TokenTag, FALSE)
+
+#define LOAD_EMPTY_TOKEN(TokenTag) mfs_lower_load_token(TokenTag, TRUE)
 
 #define LOAD_SHORT_TOKEN(TokenTag) mfs_short_load_token(TokenTag)
 
@@ -282,15 +295,16 @@ static ErlDrvEntry mfs_entry = {
 /* OTP-4236 */
 #define ASSIGN_TERM_SPEC(what)                     \
 {                                                  \
-   if (mfs_term_spec != NULL)                      \
+   if (mfs_term_spec != NULL) {                    \
      mfs_term_spec[mfs_term_spec_index++] = what;  \
+   }                                               \
 }
 
 %}
 
 %x SKIP_RBRKT MTP_HEXDIG LOCAL_OCTETS REMOTE_OCTETS 
 %x MAP_NAME MAP_OPT_LBRKT MAP_VALUE MAP_SKIP_COMMA MAP_BODY
-%x QUOTED_CHARS SKIP_DQUOTE 
+%x QUOTED_CHARS SKIP_DQUOTE
 
 digit       ([0-9])
 alpha       ([a-zA-Z])
@@ -364,7 +378,7 @@ wild        ((w\-)?)
 
 <MAP_SKIP_COMMA>{comma}                 BEGIN(MAP_VALUE);
 
-<MAP_BODY>{octet}+                     {mfs_load_map_value(); mfs_load_map_token(); BEGIN(SKIP_RBRKT);}
+<MAP_BODY>{octet}+                      {mfs_load_map_value(); mfs_load_map_token(); BEGIN(SKIP_RBRKT);}
 
 {equal}                                 LOAD_SHORT_TOKEN(mfs_EQUAL);
 {colon}                                 LOAD_SHORT_TOKEN(mfs_COLON);
@@ -380,6 +394,7 @@ wild        ((w\-)?)
 
 {dquote}                                BEGIN(QUOTED_CHARS);
 
+<QUOTED_CHARS>{dquote}                  {LOAD_EMPTY_TOKEN(mfs_QuotedChars); BEGIN(INITIAL);}
 <QUOTED_CHARS>({safechar}|{restchar}|{wsp})+ {LOAD_TOKEN(mfs_QuotedChars); BEGIN(SKIP_DQUOTE);}
 
 <SKIP_DQUOTE>{dquote}                   BEGIN(INITIAL);
@@ -631,7 +646,7 @@ v                                       LOAD_TOKEN(mfs_VersionToken);
 
 /* #define MFS_DEBUG true */    /* temporary */
 #if defined(MFS_DEBUG)
-#  define DBG( proto ) mfs_dbg proto
+#  define DBG( proto ) printf proto
 #  define DBG_BUF(func, bufName, buf, bufSz) mfs_dbg_buf_print(func, bufName, buf, bufSz)
 #else
 #  define DBG( proto ) ((void) 0)
@@ -641,22 +656,9 @@ v                                       LOAD_TOKEN(mfs_VersionToken);
 
 #if defined(MFS_DEBUG)
 
-#define MFS_LOG_FILE_NAME "megaco_flex_scanner_drv.log"
-#define MFS_LOG_FILE_MODE "a"
-
 #define CHUNK 16
 
-static void mfs_dbg(char *s, ...) {
-  FILE *f;
-  va_list args;
-  va_start(args, s); /* The first arg without name */
-  f = fopen(MFS_LOG_FILE_NAME, MFS_LOG_FILE_MODE);
-  vfprintf(f, s, args);
-  fclose(f);
-  va_end(args);
-}
-
-static void hexdump(FILE *out, unsigned char *buf, int bufsz)
+static void hexdump(unsigned char *buf, int bufsz)
 {
   int i,j;
   int count;
@@ -664,40 +666,37 @@ static void hexdump(FILE *out, unsigned char *buf, int bufsz)
   /* do this in chunks of CHUNK bytes */
   for (i=0; i<bufsz; i+=CHUNK) {
     /* show the offset */
-    fprintf(out,"0x%06x  ", i);
+    printf("0x%06x  ", i);
 
     /* max of CHUNK or remaining bytes */
     count = ((bufsz-i) > CHUNK ? CHUNK : bufsz-i);
     
     /* show the bytes */
     for (j=0; j<count; j++) {
-      if (j==CHUNK/2) fprintf(out," ");
-      fprintf(out,"%02x ",buf[i+j]);
+      if (j==CHUNK/2) printf(" ");
+      printf("%02x ",buf[i+j]);
     }
     
     /* pad with spaces if less than CHUNK */
     for (j=count; j<CHUNK; j++) {
-      if (j==CHUNK/2) fprintf(out," ");
-      fprintf(out,"   ");
+      if (j==CHUNK/2) printf(" ");
+      printf("   ");
     }
 
     /* divider between hex and ascii */
-    fprintf(out," ");
+    printf(" ");
   
     for (j=0; j<count; j++) 
-      fprintf(out,"%c",(isprint(buf[i+j]) ? buf[i+j] : '.'));
+      printf("%c",(isprint(buf[i+j]) ? buf[i+j] : '.'));
  
-    fprintf(out,"\n");
+    printf("\n");
   }
 }
 
 static void mfs_dbg_buf_print(char* func, char* bufName, char* buf, int len)
 {
-  FILE *f;
-  f = fopen(MFS_LOG_FILE_NAME, MFS_LOG_FILE_MODE);
-  fprintf(f, "%s -> %s (%d):\n", func, bufName, len);
-  hexdump(f, (unsigned char*) buf, len);
-  fclose(f);
+  printf("%s -> %s (%d):\n", func, bufName, len);
+  hexdump((unsigned char*) buf, len);
 }
 
 
@@ -757,7 +756,7 @@ static void mfs_ensure_term_spec(int size)
 
     DBG( ("mfs_ensure_term_spec -> "
 	  "term_spec is at 0x%X, new term_spec_size is %d\n", 
-	  mfs_term_spec, mfs_term_spec_size) );
+	  (unsigned int) mfs_term_spec, mfs_term_spec_size) );
 
     tmp = REALLOC(mfs_term_spec, mfs_term_spec_size * sizeof(ErlDrvTermData));
 
@@ -778,7 +777,7 @@ static void mfs_ensure_term_spec(int size)
     }
 
     DBG( ("mfs_ensure_term_spec -> new term_spec is at 0x%X\n", 
-	  mfs_term_spec) );
+	  (unsigned int) mfs_term_spec) );
   }
   /* OTP-4236 - END */
 }
@@ -787,10 +786,8 @@ static void mfs_short_load_token(ErlDrvTermData TokenTag)
 {
   /* Build a {TokenTag, LineNumber} tuple */
 
-  /*
   DBG( ("mfs_short_load_token -> entry with"
 	"\n   TokenTag: %ld\n", TokenTag) );
-  */
 
   mfs_ensure_term_spec(6); 
   mfs_token_counter++; 
@@ -807,9 +804,42 @@ static void mfs_octet_load_token(ErlDrvTermData TokenTag, int is_empty)
   /* Build a {TokenTag, LineNumber, String} tuple */
 
   DBG( ("mfs_octet_load_token -> entry with"
+	"\n   TokenTag: %d"
+	"\n   is_empty: %d"
+	"\n   yyleng:   %d"
+        "\n", (int) TokenTag, is_empty, yyleng) );
+
+  mfs_ensure_term_spec(9); 
+  mfs_token_counter++; 
+  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(TokenTag);
+  ASSIGN_TERM_SPEC(ERL_DRV_INT);
+  ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
+
+  if (is_empty) {
+
+    ASSIGN_TERM_SPEC(ERL_DRV_NIL);         // End of list
+
+  } else {
+
+    mfs_load_property_groups();
+
+  }
+
+  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(3);
+}
+
+static void mfs_lower_load_token(ErlDrvTermData TokenTag, int is_empty)
+{
+  /* Build a {TokenTag, LineNumber, LowerCaseString} tuple */
+  int i;
+
+  DBG( ("mfs_lower_load_token -> entry with"
 	"\n   TokenTag: %ld"
-	"\n   is_empty: %ld\n", TokenTag, is_empty) );
-  
+	"\n   is_empty: %d"
+        "\n", TokenTag, is_empty) );
+
   mfs_ensure_term_spec(9); 
   mfs_token_counter++; 
   ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
@@ -819,57 +849,287 @@ static void mfs_octet_load_token(ErlDrvTermData TokenTag, int is_empty)
   ASSIGN_TERM_SPEC(ERL_DRV_STRING);
 
   if (is_empty) {
-    *mfs_text_ptr = 0;
-    ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_text_ptr);
-    mfs_text_ptr++;
+
+    ASSIGN_TERM_SPEC((ErlDrvTermData)"");
     ASSIGN_TERM_SPEC(0);
+
   } else {
-    strncpy(mfs_text_ptr, yytext, yyleng);
-
-    DBG_BUF("mfs_octet_load_token", "mfs_text_ptr", 
-	    mfs_text_ptr, yyleng);
-
+    for ( i = 0; i < yyleng; ++i ) {
+      mfs_text_ptr[i] = tolower(yytext[i]);
+    }
+    
+    DBG_BUF("mfs_lower_load_token", "mfs_text_ptr", 
+             mfs_text_ptr, yyleng);
+    
     ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_text_ptr);
     mfs_text_ptr += yyleng;
     ASSIGN_TERM_SPEC(yyleng);
   }
+
   ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
   ASSIGN_TERM_SPEC(3);
 }
 
-static void mfs_lower_load_token(ErlDrvTermData TokenTag)
+#define PG_ERR_PRE "bad_property_parm:"
+#define PG_ERR1    "Could not find property parm value for"
+#define PG_ERR2    "Could not find proper property parm name"
+
+static void mfs_load_property_groups()
 {
-  /* Build a {TokenTag, LineNumber, LowerCaseString} tuple */
-  int i;
+  DBG( ("mfs_load_property_groups -> entry\n") );
 
+  /* 
+   * Process the property groups string 
+   * v= is a property group delimiter
+   */
+  
   /*
-  DBG( ("mfs_lower_load_token -> entry with"
-	"\n   TokenTag: %ld\n", TokenTag) );
-  */
+   * For each string, look for the first '='.
+   * Everything to the left is the name and 
+   * everything to the right is the value.
+   */
+  
+  int i = 0;  // loop counter
+  int numGroups = 0;  // Number of property groups
+  int numPps    = 0;  // Number of property parms (in the group)
+  char* name;         // Pointer to the name buffer
+  int nameStart = 0;  // Start position of the property parm name
+  int nameLen;        // Length of the name part
+  char* value;        // Pointer to the value buffer
+  int valueStart = 0; // Start position of the property parm name
+  int valueLen   = 0; // Length of the value part
 
-  mfs_ensure_term_spec(9); 
-  mfs_token_counter++; 
-  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-  ASSIGN_TERM_SPEC(TokenTag);
-  ASSIGN_TERM_SPEC(ERL_DRV_INT);
-  ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
-  ASSIGN_TERM_SPEC(ERL_DRV_STRING);
+  mfs_ensure_term_spec(10);  /* Just in case... */
+ 
+  while (i <= yyleng) {
+    
+    /* Skip white-spaces and end-of-line */
 
-  for ( i = 0; i < yyleng; ++i ) {
-    mfs_text_ptr[i] = tolower(yytext[i]);
+    DBG( ("mfs_load_property_groups -> "
+          "skip white-spaces and end-of-line: i = %d\n", i) );
+
+    if ((yytext[i] != SP)   && 
+        (yytext[i] != HTAB) && 
+        (yytext[i] != LF)   &&
+        (yytext[i] != CR)   &&
+        (yytext[i] != NUL)) {
+
+      DBG( ("mfs_load_property_groups -> "
+            "start looking for delimiter ('=')\n") );
+
+      /* Start looking for '=' */
+      nameStart = i;
+      nameLen   = 0;
+      while (i <= yyleng) { 
+
+        /* Is it a name-value delimiter? */
+        if (yytext[i] == '=') {
+
+          /* 
+           * Found the name/value delimiter 
+           */
+          nameLen = i-nameStart;
+
+          DBG( ("mfs_load_property_groups -> "
+                "found delimiter at %d (name length = %d)\n", i, nameLen) );
+
+          /* 
+           * "v=" is the start of a new group.
+           * So, check if this maybe is the beginning of
+           * the first group or not. If not, we need to
+           * "terminate" the previous group.
+           */
+          if (0 == strncmp("v", &yytext[nameStart], nameLen)) {
+
+            DBG( ("mfs_load_property_groups -> "
+                    "found a 'v' when group count is %d\n", numGroups) );
+
+            if (numGroups > 0) {
+              /* 
+               * End the previous group 
+               * (only if this is not the first group) 
+               */
+
+              DBG( ("mfs_load_property_groups -> "
+                    "start of new group - terminate previous group\n") );
+
+              mfs_ensure_term_spec(3);
+              ASSIGN_TERM_SPEC(ERL_DRV_NIL);                  // End of list
+              ASSIGN_TERM_SPEC(ERL_DRV_LIST);                 // List
+              ASSIGN_TERM_SPEC((ErlDrvTermData) numPps + 1);  // Length of (group) list
+              numPps = 0; /* reset for next group */
+            } // if ...
+            numGroups++;
+          } // if ...
+          numPps++;
+          i++;
+          
+          /* 
+           * Now, look for the end of the value string,
+           * which is an EOL = (CR [LF] / LF )
+           */ 
+
+          DBG( ("mfs_load_property_groups -> "
+                "start looking for end of value\n") );
+          valueStart = i;
+          valueLen   = 0;
+          while (i <= yyleng) { 
+            if ((yytext[i] == CR) || (yytext[i] == LF)) {
+              valueLen = i-valueStart;
+              DBG( ("mfs_load_property_groups -> "
+                    "found end of value at %d\n", i) );
+              break;
+            } else {
+              i++;
+            } // if ...
+          } // while ...
+
+          /* Name */
+          name = ALLOC(nameLen + 1); // Make room for the NULL termination
+          strncpy(name, &yytext[nameStart], nameLen);
+          name[nameLen] = 0;
+
+          /* Check that we actually got a proper value */
+          if (valueLen == 0) {
+            /* Invalid property parm value */
+            DBG( ("mfs_load_property_groups -> "
+                  "property parm value not found\n") );
+
+            /**********************************************
+             * -record('ErrorDescriptor',
+             *         {
+             *           errorCode,
+             *           errorText = asn1_NOVALUE
+             *          }).
+             */ 
+    
+            if (0 >= sprintf(mfs_error_msg, "%s %s %s", 
+                             PG_ERR_PRE, PG_ERR1, name)) {
+              mfs_fatal_error(PG_ERR1);
+            }
+            mfs_error = TRUE;
+
+            DBG( ("mfs_load_property_groups -> "
+                  "done after value error (~s)\n", name) );
+
+            return;  // Bail out
+
+          } else {
+
+
+            /***************************************
+             * -record('PropertyParm',
+             *         {
+             *           name,
+             *           value,
+             *           extraInfo = asn1_NOVALUE
+             *          }). % with extension mark
+             */ 
+  
+            mfs_ensure_term_spec(15);       // 2 + 3 + 6 + 2 + 2
+  
+            DBG( ("mfs_load_property_groups -> "
+                  "insert PropertyParm record name\n") );
+            ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+            ASSIGN_TERM_SPEC((ErlDrvTermData) mfs_PropertyParm);
+  	  
+            /* Name */
+            DBG( ("mfs_load_property_groups -> insert name field\n") );
+            ASSIGN_TERM_SPEC(ERL_DRV_STRING);
+            ASSIGN_TERM_SPEC((ErlDrvTermData) name);
+            ASSIGN_TERM_SPEC((ErlDrvTermData) nameLen);
+  	
+            /* 
+             * value, which is actually a list of length 1 
+             * where the "actual value" is the (only) element
+             */
+            DBG( ("mfs_load_property_groups -> "
+                  "insert value field (length = %d)\n", valueLen) );
+            value = ALLOC(valueLen);
+            strncpy(value, &yytext[valueStart], valueLen);
+            ASSIGN_TERM_SPEC(ERL_DRV_STRING);
+            ASSIGN_TERM_SPEC((ErlDrvTermData) value);
+            ASSIGN_TERM_SPEC((ErlDrvTermData) valueLen);
+            ASSIGN_TERM_SPEC(ERL_DRV_NIL);             // End of value list
+            ASSIGN_TERM_SPEC(ERL_DRV_LIST); 
+            ASSIGN_TERM_SPEC((ErlDrvTermData) 1 + 1);  // Length of (group) list
+  	  
+            /* extraInfo - never used */
+            DBG( ("mfs_load_property_groups -> insert the extraInfo field\n") );
+            ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+            ASSIGN_TERM_SPEC((ErlDrvTermData) mfs_asn1_NOVALUE);
+  
+            DBG( ("mfs_load_property_groups -> "
+                  "terminate PropertyParm tuple\n") );
+            ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
+            ASSIGN_TERM_SPEC((ErlDrvTermData) 4);
+            break;
+
+          } // if (valueLen == 0) ...
+
+        } else {
+          DBG( ("mfs_load_property_groups -> "
+                "b) skipping %d [%d] (%d)\n", i, yyleng - i, yytext[i]) );
+          i++;
+        }  // if (yytext[i] == '=')
+
+      } // while (i <= yyleng)
+
+      /* Check that we actually got a proper name  */
+      if (nameLen == 0) {
+        /* Invalid property parm name */
+        DBG( ("mfs_load_property_groups -> "
+              "property parm name not found when "
+              "nameStart = %d\n", nameStart) );
+
+        if (0 >= sprintf(mfs_error_msg, "%s %s (name start at %d)", 
+                         PG_ERR_PRE, PG_ERR2, nameStart)) {
+          mfs_fatal_error(PG_ERR2);
+        }
+
+        mfs_error = TRUE;
+
+        DBG( ("mfs_load_property_groups -> done after name error\n") );
+
+        return;  // Bail out
+
+      } // if (nameLen == 0) ...
+
+    } else {
+      DBG( ("mfs_load_property_groups -> "
+            "a) skipping %d [%d] (%d)\n", i, yyleng - i, yytext[i]) );
+      i++; // next
+    } // if ((yytext[i] != SP)...
+  } // while ...      
+      
+  mfs_ensure_term_spec(4); // 2 + 2 just in case
+
+  /* Make sure we actually have some groups */
+
+  if (numGroups > 0) {
+
+    DBG( ("mfs_load_property_groups -> "
+          "terminate group (list of properties) list (length = %d)\n", 
+          numPps) );
+
+    /* Terminate the final group */
+    ASSIGN_TERM_SPEC(ERL_DRV_NIL);                  // End of list
+    ASSIGN_TERM_SPEC(ERL_DRV_LIST); 
+    ASSIGN_TERM_SPEC((ErlDrvTermData) numPps + 1);  // Length of (group) list
+    
   }
 
-  /*
-  DBG_BUF("mfs_lower_load_token", "mfs_text_ptr", 
-           mfs_text_ptr, yyleng);
-  */
+  DBG( ("mfs_load_property_groups -> "
+        "terminate groups (list of property groups) list (length = %d)\n", 
+        numGroups) );
+  
+  ASSIGN_TERM_SPEC(ERL_DRV_NIL);                    // End of list
+  ASSIGN_TERM_SPEC(ERL_DRV_LIST);
+  ASSIGN_TERM_SPEC((ErlDrvTermData) numGroups + 1); // Length of (groups) list
 
-  ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_text_ptr);
-  mfs_text_ptr += yyleng;
-  ASSIGN_TERM_SPEC(yyleng);
-  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
-  ASSIGN_TERM_SPEC(3);
+  DBG( ("mfs_load_property_groups -> done\n") );
 }
+
 
 static void mfs_load_map_name()
 {
@@ -967,6 +1227,7 @@ static void mfs_load_map_timer()
 
 static void load_timer_field(char* text)
 {
+
   mfs_ensure_term_spec(2);    /* OTP-4236 */
   if (text == NULL) {
     ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
@@ -1198,6 +1459,8 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
   mfs_VersionToken = driver_mk_atom("VersionToken");
   mfs_asn1_NOVALUE = driver_mk_atom("asn1_NOVALUE");
   mfs_endOfMessage = driver_mk_atom("endOfMessage");
+  mfs_PropertyParm = driver_mk_atom("PropertyParm"); 
+  mfs_ErrorDescriptor = driver_mk_atom("ErrorDescriptor"); 
 
   DBG( ("mfs_start -> exit\n") );
 
@@ -1338,7 +1601,7 @@ static int mfs_control(ErlDrvData          handle,
      * we have to make do with what we got
      */
     if (res_buf_len < len) {
-      void *tmp = REALLOC(*res_buf, len);
+      void *tmp = ALLOC(len);
       if (tmp != NULL)
 	*res_buf = tmp;
       else

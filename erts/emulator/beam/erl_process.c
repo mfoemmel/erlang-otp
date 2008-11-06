@@ -402,6 +402,7 @@ init_sched_thr_data(ErtsSchedulerData *esdp, Uint id)
     esdp->free_process = NULL;
 #endif
     esdp->current_process = NULL;
+    esdp->yield_reduction_bump = 0;
 #ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
     esdp->check_children = 0;
 #endif
@@ -550,7 +551,7 @@ block_multi_scheduling_block(ErtsSchedulerData *esdp)
 
 /*
  * Return values:
- *  < 0: reschedule operation
+ *  < 0: yield operation
  *  0:   multi-scheduling
  *  > 1: multi-scheduling blocked
  */
@@ -563,51 +564,52 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int all)
     int have_unlocked_plocks = 0;
 
     erts_smp_sched_lock();
-    if (is_setting_block_multi_scheduling) {
-	p->freason = RESCHEDULE;
-	res = -1; /* Reschedule */
-    }
-    else if (on) {
-	res = 1;
-
-	if (block_multi_scheduling) {
-	    plp = erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
-	    plp->pid = p->id;
-	    plp->next = block_multi_scheduling_procs;
-	    block_multi_scheduling_procs = plp;
-	    p->flags |= F_HAVE_BLCKD_MSCHED;
+    if (on) {
+	if (is_setting_block_multi_scheduling) {
+	    res = -1; /* Yield */
 	}
 	else {
-	    is_setting_block_multi_scheduling = 1;
-	    erts_smp_mtx_lock(&msched_blk_mtx);
-	    block_multi_scheduling = 1;
-	    erts_smp_mtx_unlock(&msched_blk_mtx);
-	    p->flags |= F_HAVE_BLCKD_MSCHED;
-	    if (plocks) {
-		have_unlocked_plocks = 1;
-		erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
+	    res = 1; /* Multi scheduling blocked */
+
+	    if (block_multi_scheduling) {
+		plp = erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
+		plp->pid = p->id;
+		plp->next = block_multi_scheduling_procs;
+		block_multi_scheduling_procs = plp;
+		p->flags |= F_HAVE_BLCKD_MSCHED;
 	    }
-	    erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
-				    prepare_for_block,
-				    resume_after_block,
-				    NULL);
-	    wake_all_schedulers();
-	    while (used_schedulers != 1)
-		erts_smp_cnd_wait(&schdlq_cnd, &schdlq_mtx);
-	    erts_smp_activity_end(ERTS_ACTIVITY_WAIT,
-				  prepare_for_block,
-				  resume_after_block,
-				  NULL);
-	    plp = erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
-	    plp->pid = p->id;
-	    plp->next = block_multi_scheduling_procs;
-	    block_multi_scheduling_procs = plp;
-	    is_setting_block_multi_scheduling = 0;
+	    else {
+		is_setting_block_multi_scheduling = 1;
+		erts_smp_mtx_lock(&msched_blk_mtx);
+		block_multi_scheduling = 1;
+		erts_smp_mtx_unlock(&msched_blk_mtx);
+		p->flags |= F_HAVE_BLCKD_MSCHED;
+		if (plocks) {
+		    have_unlocked_plocks = 1;
+		    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
+		}
+		erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
+					prepare_for_block,
+					resume_after_block,
+					NULL);
+		wake_all_schedulers();
+		while (used_schedulers != 1)
+		    erts_smp_cnd_wait(&schdlq_cnd, &schdlq_mtx);
+		erts_smp_activity_end(ERTS_ACTIVITY_WAIT,
+				      prepare_for_block,
+				      resume_after_block,
+				      NULL);
+		plp = erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
+		plp->pid = p->id;
+		plp->next = block_multi_scheduling_procs;
+		block_multi_scheduling_procs = plp;
+		is_setting_block_multi_scheduling = 0;
+	    }
 	}
     }
     else {
 	if (!block_multi_scheduling)
-	    res = 0;
+	    res = 0; /* Multi scheduling enabled */
 	else {
 	    Eterm pid = p->id;
 	    ProcessList **plpp = &block_multi_scheduling_procs;
@@ -628,9 +630,9 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int all)
 	    }
 
 	    if (block_multi_scheduling_procs)
-		res = 1;
+		res = 1; /* Multi scheduling blocked */
 	    else {
-		res = 0;
+		res = 0; /* Multi scheduling enabled */
 		erts_smp_mtx_lock(&msched_blk_mtx);
 		block_multi_scheduling = 0;
 		erts_smp_cnd_broadcast(&msched_blk_cnd);
@@ -917,92 +919,15 @@ handle_pend_sync_suspend(Process *suspendee,
     }
 }
 
-Process *
-erts_suspend_another_process(Process *c_p, ErtsProcLocks c_p_locks,
-			     Eterm suspendee, ErtsProcLocks suspendee_locks)
-{
-    Process *rp;
-    int unlock_c_p_status;
-
-    ASSERT(c_p->id != suspendee);
-
-    ERTS_SMP_LC_ASSERT(c_p_locks & ERTS_PROC_LOCK_MAIN);
-    ERTS_SMP_LC_ASSERT(c_p_locks == erts_proc_lc_my_proc_locks(c_p));
-
-    c_p->freason = EXC_NULL;
-
-    if (c_p_locks & ERTS_PROC_LOCK_STATUS)
-	unlock_c_p_status = 0;
-    else {
-	unlock_c_p_status = 1;
-	erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_STATUS);
-    }
-
-    if (c_p->suspendee == suspendee) {
-    suspended:
-	if (unlock_c_p_status)
-	    erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_STATUS);
-	return erts_pid2proc(c_p, c_p_locks, suspendee, suspendee_locks);
-    }
-    
-    rp = erts_pid2proc(c_p, c_p_locks|ERTS_PROC_LOCK_STATUS,
-		       suspendee, ERTS_PROC_LOCK_STATUS);
-
-    if (rp) {
-	if (c_p->pending_suspenders) {
-	    /*
-	     * If we got pending suspenders and suspend ourselves waiting
-	     * to suspend another process or suspend another process
-	     * we might deadlock. In this case we have to reschedule,
-	     * be suspended by someone else and then do it all over again.
-	     */
-	    goto reschedule;
-	}
-	erts_smp_sched_lock();
-	if (!(rp->scheduler_flags & ERTS_PROC_SCHED_FLG_SCHEDULED)) {
-	    ErtsProcLocks need_locks = suspendee_locks & ~ERTS_PROC_LOCK_STATUS;
-	    suspend_process(rp);
-	    erts_smp_sched_unlock();
-	    c_p->suspendee = suspendee;
-	    if (need_locks && erts_smp_proc_trylock(rp, need_locks) == EBUSY) {
-		erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
-		goto suspended;
-	    }
-	}
-	else {
-	    /* Mark rp pending for suspend by c_p */
-	    add_pend_suspend(rp, c_p->id, handle_pend_sync_suspend);
-
-	    ASSERT(is_nil(c_p->suspendee));
-
-	    /* Suspend c_p; when rp is suspended c_p will be resumed. */
-	    suspend_process(c_p);
-	    erts_smp_sched_unlock();
-	reschedule:
-	    /* Reschedule (caller is assumed to return to process_main
-	       immediately). */
-	    c_p->freason = RESCHEDULE;
-	    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
-	    rp = NULL;
-	}
-    }
-
-    if (rp && !(suspendee_locks & ERTS_PROC_LOCK_STATUS))
-	erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
-    if (unlock_c_p_status)
-	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_STATUS);
-
-    return rp;
-}
-
 /*
  * Like erts_pid2proc() but:
  *
  * * At least ERTS_PROC_LOCK_MAIN have to be held on c_p.
  * * At least ERTS_PROC_LOCK_MAIN have to be taken on pid.
  * * It also waits for proc to be in a state != running and garbing.
- * * If NULL is returned, process might have to be rescheduled.
- *   Use ERTS_SMP_BIF_CHK_RESCHEDULE(P) to check this.
+ * * If ERTS_PROC_LOCK_BUSY is returned, the calling process has to
+ *   yield (ERTS_BIF_YIELD[0-3]()). c_p might in this case have been
+ *   suspended.
  */
 
 
@@ -1017,8 +942,6 @@ erts_pid2proc_not_running(Process *c_p, ErtsProcLocks c_p_locks,
 
     ERTS_SMP_LC_ASSERT(c_p_locks & ERTS_PROC_LOCK_MAIN);
     ERTS_SMP_LC_ASSERT(pid_locks & (ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS));
-
-    c_p->freason = EXC_NULL;
 
     if (c_p->id == pid)
 	return erts_pid2proc(c_p, c_p_locks, pid, pid_locks);
@@ -1060,7 +983,7 @@ erts_pid2proc_not_running(Process *c_p, ErtsProcLocks c_p_locks,
 	    /*
 	     * If we got pending suspenders and suspend ourselves waiting
 	     * to suspend another process we might deadlock.
-	     * In this case we have to reschedule, be suspended by
+	     * In this case we have to yield, be suspended by
 	     * someone else and then do it all over again.
 	     */
 	    if (!c_p->pending_suspenders) {
@@ -1072,11 +995,9 @@ erts_pid2proc_not_running(Process *c_p, ErtsProcLocks c_p_locks,
 		suspend_process(c_p);
 		c_p->flags |= F_P2PNR_RESCHED;
 	    }
-	    /* Reschedule (caller is assumed to return to process_main
-	       immediately). */
-	    c_p->freason = RESCHEDULE;
+	    /* Yield (caller is assumed to yield immediately in bif). */
 	    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
-	    rp = NULL;
+	    rp = ERTS_PROC_LOCK_BUSY;
 	}
 	else {
 	    ErtsProcLocks need_locks = pid_locks & ~ERTS_PROC_LOCK_STATUS;
@@ -1102,7 +1023,7 @@ erts_pid2proc_not_running(Process *c_p, ErtsProcLocks c_p_locks,
     }
 
  done:
-    if (rp && !(pid_locks & ERTS_PROC_LOCK_STATUS))
+    if (rp && rp != ERTS_PROC_LOCK_BUSY && !(pid_locks & ERTS_PROC_LOCK_STATUS))
 	erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
     if (unlock_c_p_status)
 	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_STATUS);
@@ -1338,7 +1259,7 @@ suspend_process_2(BIF_ALIST_2)
 			   == erts_proc_lc_my_proc_locks(suspendee));
 
 	if (BIF_P->suspendee == BIF_ARG_1) {
-	    /* We are back after a reschedule and the suspendee
+	    /* We are back after a yield and the suspendee
 	       has been suspended on behalf of us. */
 	    ASSERT(smon->active >= 1);
 	    BIF_P->suspendee = NIL;
@@ -1362,11 +1283,11 @@ suspend_process_2(BIF_ALIST_2)
 	    /*
 	     * If we have pending suspenders and suspend ourselves waiting
 	     * to suspend another process, or suspend another process
-	     * we might deadlock. In this case we have to reschedule,
+	     * we might deadlock. In this case we have to yield,
 	     * be suspended by someone else, and then do it all over again.
 	     */
 	    if (BIF_P->pending_suspenders)
-		goto reschedule;
+		goto yield;
 
 	    if (!unless_suspending && smon->pending == INT_MAX)
 		goto system_limit;
@@ -1398,7 +1319,7 @@ suspend_process_2(BIF_ALIST_2)
 		 */
 		suspend_process(BIF_P);
 		erts_smp_sched_unlock();
-		goto reschedule;
+		goto yield;
 	    }
 	}
 	/* --- Synchronous suspend end ------------------------------------- */
@@ -1414,8 +1335,8 @@ suspend_process_2(BIF_ALIST_2)
     BIF_RET(res);
 
  system_limit:
-    res = SYSTEM_LIMIT;
-    goto do_error;
+    ERTS_BIF_PREP_ERROR(res, BIF_P, SYSTEM_LIMIT);
+    goto do_return;
 
  no_suspendee:
 #ifdef ERTS_SMP
@@ -1424,20 +1345,21 @@ suspend_process_2(BIF_ALIST_2)
     erts_delete_suspend_monitor(&BIF_P->suspend_monitors, BIF_ARG_1);
 
  badarg:
-    res = BADARG;
+    ERTS_BIF_PREP_ERROR(res, BIF_P, BADARG);
 #ifdef ERTS_SMP
-    goto do_error;
+    goto do_return;
 
- reschedule:
-    res = RESCHEDULE;
+ yield:
+    ERTS_BIF_PREP_YIELD2(res, bif_export[BIF_suspend_process_2],
+			 BIF_P, BIF_ARG_1, BIF_ARG_2);
 #endif
 
- do_error:
+ do_return:
     if (suspendee)
 	erts_smp_proc_unlock(suspendee, ERTS_PROC_LOCK_STATUS);
     if (xlocks)
 	erts_smp_proc_unlock(BIF_P, xlocks);
-    BIF_ERROR(BIF_P, res);
+    return res;
 
 }
 
@@ -1944,9 +1866,10 @@ Process *schedule(Process *p, int calls)
 	esdp = &erts_scheduler_data;
 	ASSERT(esdp->current_process == p);
 #endif
-	function_calls += calls;
-	reductions += calls;
 	ASSERT(esdp && esdp == erts_get_scheduler_data());
+
+	calls -= esdp->yield_reduction_bump;
+	esdp->yield_reduction_bump = 0;
 
 	p->reds += calls;
 
@@ -1991,6 +1914,9 @@ Process *schedule(Process *p, int calls)
 	}
 #endif
 	erts_smp_sched_lock();
+
+	function_calls += calls;
+	reductions += calls;
 
 	esdp->current_process = NULL;
 #ifdef ERTS_SMP
@@ -2179,7 +2105,8 @@ Process *schedule(Process *p, int calls)
 	 */
 
 	if (port_runq_len) {
-	    int have_outstanding_io = erts_port_task_execute();
+	    int have_outstanding_io;
+	    have_outstanding_io = erts_port_task_execute(&esdp->current_port);
 	    if (have_outstanding_io && function_calls > 2*input_reductions) {
 		/*
 		 * If we have performed more than 2*INPUT_REDUCTIONS since
@@ -4032,7 +3959,7 @@ continue_exit_process(Process *p
     ErtsProcLocks curr_locks = ERTS_PROC_LOCK_MAIN;
     Eterm reason = p->fvalue;
 #ifdef DEBUG
-    int reschedule_allowed = 1;
+    int yield_allowed = 1;
 #endif
 
     ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN == erts_proc_lc_my_proc_locks(p));
@@ -4045,7 +3972,7 @@ continue_exit_process(Process *p
 
     if (p->flags & F_USING_DB) {
 	if (erts_db_process_exiting(p, ERTS_PROC_LOCK_MAIN))
-	    goto reschedule;
+	    goto yield;
 	p->flags &= ~F_USING_DB;
     }
 
@@ -4080,11 +4007,11 @@ continue_exit_process(Process *p
     curr_locks = ERTS_PROC_LOCKS_ALL;
 
     /*
-     * From this point on we are no longer allowed to reschedule
+     * From this point on we are no longer allowed to yield
      * this process.
      */
 #ifdef DEBUG
-    reschedule_allowed = 0;
+    yield_allowed = 0;
 #endif
 
     {
@@ -4176,17 +4103,15 @@ continue_exit_process(Process *p
 
     delete_process(p);
 
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN); /* Make process_main() happy */
+    erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
     ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(p);
-#endif
 
     return;
 
- reschedule:
+ yield:
 
 #ifdef DEBUG
-    ASSERT(reschedule_allowed);
+    ASSERT(yield_allowed);
 #endif
 
     ERTS_SMP_LC_ASSERT(curr_locks == erts_proc_lc_my_proc_locks(p));
@@ -4315,6 +4240,8 @@ print_function_from_pc(int to, void *to_arg, Eterm* x)
             erts_print(to, to_arg, "<continue terminate process>");
         } else if (x == beam_apply+1) {
             erts_print(to, to_arg, "<terminate process normally>");
+	} else if (x == 0) {
+            erts_print(to, to_arg, "invalid");
         } else {
             erts_print(to, to_arg, "unknown function");
         }
@@ -4812,12 +4739,10 @@ processes_bif_engine(Process *p, Eterm *res_accp, Binary *mbp)
 		
 		reds = indices/ERTS_PROCESSES_BIF_TAB_INSPECT_INDICES_PER_RED;
 
-		/* Bump all reds if we haven't got enough reductions
-		   to complete next chunk */
-		if (reds > have_reds) {
-		    BUMP_ALL_REDS(p);
+		/* Pretend we have no reds left if we haven't got enough
+		   reductions to complete next chunk */
+		if (reds > have_reds)
 		    have_reds = 0;
-		}
 	    }
 
 	    break;
@@ -5065,7 +4990,7 @@ static BIF_RETTYPE processes_trap(BIF_ALIST_2)
     }
     else {
 	ERTS_PROCS_DBG_TRACE(BIF_P->id, processes_trap, trap);
-	BIF_TRAP2(&processes_trap_export, BIF_P, res_acc, BIF_ARG_2);
+	ERTS_BIF_YIELD2(&processes_trap_export, BIF_P, res_acc, BIF_ARG_2);
     }
 }
 
@@ -5087,7 +5012,6 @@ BIF_RETTYPE processes_0(BIF_ALIST_0)
      *                ignore processes created after processes/0 has
      *                begun executing.
      */
-    int have_reds = ERTS_BIF_REDS_LEFT(BIF_P);
     Eterm res_acc = NIL;
     Binary *mbp = erts_create_magic_binary(sizeof(ErtsProcessesBifData),
 					   cleanup_processes_bif_data);
@@ -5097,11 +5021,8 @@ BIF_RETTYPE processes_0(BIF_ALIST_0)
     pbdp->state = INITIALIZING;
     ERTS_PROCS_DBG_INIT(BIF_P, pbdp);
 
-    if (have_reds < ERTS_PROCESSES_BIF_MIN_START_REDS) {
-	BUMP_ALL_REDS(BIF_P);
-	have_reds = 0;
-    }
-    if (have_reds && processes_bif_engine(BIF_P, &res_acc, mbp)) {
+    if (ERTS_BIF_REDS_LEFT(BIF_P) >= ERTS_PROCESSES_BIF_MIN_START_REDS
+	&& processes_bif_engine(BIF_P, &res_acc, mbp)) {
 	erts_bin_free(mbp);
 	ERTS_PROCS_DBG_CHK_RESLIST(res_acc);
 	ERTS_PROCS_DBG_TRACE(BIF_P->id, processes_0, return);
@@ -5116,7 +5037,7 @@ BIF_RETTYPE processes_0(BIF_ALIST_0)
 	magic_bin = erts_mk_magic_binary_term(&hp, &MSO(BIF_P), mbp);
 	ERTS_PROCS_DBG_VERIFY_HEAP_ALLOC_USED(pbdp, hp);
 	ERTS_PROCS_DBG_TRACE(BIF_P->id, processes_0, trap);
-	BIF_TRAP2(&processes_trap_export, BIF_P, res_acc, magic_bin);
+	ERTS_BIF_YIELD2(&processes_trap_export, BIF_P, res_acc, magic_bin);
     }
 }
 

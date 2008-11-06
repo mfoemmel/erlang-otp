@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE appref SYSTEM "appref.dtd">
+
+<appref>
+  <header>
+    <copyright>
+      <year>2003</year>
+      <year>2008</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>Common Test</title>
+    <prepared>Kenneth Lundin, Peter Andersson</prepared>
+    <responsible>Peter Andersson</responsible>
+    <docno></docno>
+    <approved></approved>
+    <checked></checked>
+    <date>2003-10-21</date>
+    <rev>PA1</rev>
+    <file>common_test_app.sgml</file>
+  </header>
+  <app>common_test</app> 
+  <appsummary>A framework for automatic testing of a variety of target nodes</appsummary>
+
+  <description>
+
+    <p>The <em>Common Test </em> framework is an environment for
+      writing and executing automatic and semi-automatic test
+      cases.
+      
+      The framework is based on the underlying implementation as is used 
+      with great success in the Visual Test Server (AXD301) and by
+      Erlang/OTP.
+
+      The main function in this framework is the test server which runs
+      all the test cases.</p>
+
+    <p>In brief the test server supports:</p>
+
+    <list>
+      <item>Running multiple test suites</item>
+      <item>Logging of the events in a test suite, on both suite and
+      case levels</item>
+      <item>HTML presentation of test suite results</item>
+      <item>HTML presentation of test suite code</item>
+      <item>Support functions for test suite authors</item>
+      <item>Step by step execution</item>
+    </list>
+
+    
+    <p>The following sections describes the callback functions the
+      test server expects to find in a test suite. For more details
+      see <seealso marker="write_test_chapter">Common Test User's
+      Guide.</seealso> </p>
+    
+  </description>
+
+  <section>
+    <title>TEST CASE CALLBACK FUNCTIONS</title>
+    <p>The following functions define the callback interface
+      for a test suite.</p>
+  </section>
+  
+  <funcs>
+    <func>
+      <name>Module:all() -> TestCases | {skip,Reason} </name>
+      <fsummary>Returns the list of all test cases in the module.</fsummary>
+      <type>
+	<v>TestCases = [atom() | {sequence,SeqName}]</v>
+	<v>Reason = term()</v>
+	<v>SeqName = atom()</v>
+      </type>
+      
+      <desc>	
+	<p> MANDATORY </p>
+	
+	<p>This function must return the list of all test cases in the
+	  test suite module. Each test case is represented by an atom,
+	  the name of the test case function.</p>
+	
+	<p> If <c>{skip,Reason}</c> is returned, all test cases
+      in the module will be skipped, and the <c>Reason</c> will
+      be printed on the HTML result page.</p>
+
+	<p>For details on sequences, see 
+	  <seealso marker="dependencies_chapter#sequences">Dependencies between 
+	    Test Cases and Suites</seealso> in the User's Guide.</p>
+      
+    </desc>
+    </func>
+
+    <func>
+      <name>Module:sequences() -> Sequences </name>
+      <fsummary>Returns a list of test cases that depend on each other.</fsummary>
+      <type>
+	<v>Sequences = [{SeqName,Testcases}]</v>
+	<v>SeqName = atom()</v>
+	<v>Testcases = [atom()]</v>
+      </type>
+      
+      <desc>	
+	<p> OPTIONAL </p>
+	
+	<p>See <seealso marker="dependencies_chapter#sequences">Dependencies between 
+	    Test Cases and Suites</seealso> in the User's Guide for details.</p>
+      
+    </desc>
+    </func>
+
+      <func>
+	<name>Module:suite() -> [Info] </name>
+	<fsummary> Function for providing default test suite data.</fsummary>
+	<type>
+	<v> Info = {timetrap,Time} | {require,Required} | 
+	    {require,Name,Required} | {userdata,UserData} |
+	    {silent_connections,Conns} | {stylesheet,CSSFile}</v>
+	<v> Time = MilliSec | {seconds,integer()} | {minutes,integer()}
+	  | {hours,integer()}</v>
+	<v> MilliSec = integer()</v>
+	<v> Required = Key | {Key,SubKeys}</v>
+	<v> Key = atom()</v>
+	<v> SubKeys = SubKey | [SubKey]</v>
+	<v> SubKey = atom()</v>
+	<v> Name = atom()</v>
+	<v> UserData = term()</v>
+	<v> Conns = [atom()]</v>
+	<v> CSSFile = string()</v>
+	</type>
+	<desc>	
+	  
+	  <p> OPTIONAL </p>
+	  
+	  <p>Use this function to set default data for the test suite.</p>
+    </desc>      
+    </func>
+
+      <func>
+	<name>Module:init_per_suite(Config) -> NewConfig | {skip,Reason} | {skip_and_save,Reason,Config}</name>
+	<fsummary> Test suite initialization. </fsummary>
+	<type>
+	  <v> Config = NewConfig = [{Key, Value}]</v>
+	  <v> Key = atom()</v>
+	  <v> Value = term()</v>
+	  <v> Reason = term()</v>
+	</type>
+	<desc>	
+	  
+	  <p> OPTIONAL </p>
+	  
+	  <p>This function is called as the first test case in the
+	  suite. It typically contains initialization which is common for
+	  all test cases in the suite, and which shall only be done
+	  once. The <c>Config</c> parameter is the configuration
+	  which can be modified here. Whatever is returned from this
+	  function is given as <c>Config</c> to all test cases
+	  in the suite. If <c>{skip,Reason}</c> is returned, all test
+	  cases in the suite will be skipped and <c>Reason</c> printed
+	  in the overview log for the suite.</p>
+	  <p>For information on <c>save_config</c> and <c>skip_and_save</c>, 
+	  please see 
+	  <seealso marker="dependencies_chapter#save_config">Dependencies 
+	  between Test Cases and Suites</seealso> in the User's Guide.</p>
+    </desc>      
+    </func>
+      
+      <func>
+	<name>Module:end_per_suite(Config) -> void() | {save_config,Config}</name>
+	<fsummary>Test suite finalization.  </fsummary>
+	<type>
+	  <v> Config = [{Key, Value}]</v>
+	  <v> Key = atom()</v>
+	  <v> Value = term()</v>
+	</type>
+	
+	<desc>	
+	  <p> OPTIONAL </p>
+	  
+	  <p>This function is called as the last test case in the
+	    suite. It is meant to be used for cleaning up after <c>init_per_suite</c>.
+	    For information on <c>save_config</c>, please see 
+	    <seealso marker="dependencies_chapter#save_config">Dependencies between 
+	    Test Cases and Suites</seealso> in the User's Guide.</p>
+    </desc>
+    </func>
+
+      <func>
+	<name>Module:init_per_testcase(TestCase, Config) -> NewConfig | {skip,Reason}</name>
+	<fsummary> Test case initialization. </fsummary>
+	<type>
+	  <v> Config = NewConfig = [{Key, Value}]</v>
+	  <v> Key = atom()</v>
+	  <v> Value = term()</v>
+	  <v> Reason = term()</v>
+	</type>
+	<desc>	
+	  
+	  <p>OPTIONAL</p>
+	  
+	  <p>This function is called before each test case. The
+	  <c>TestCase</c> argument is the name of the test case, and
+	  <c>Config</c> is the configuration which can be modified
+	  here. Whatever is returned from this function is given as
+	  <c>Config</c> to the test case. If <c>{skip,Reason}</c> is returned, 
+	  the test case will be skipped and <c>Reason</c> printed
+	  in the overview log for the suite.</p>
+    </desc>
+    </func>
+      
+      <func>
+	<name>Module:end_per_testcase(TestCase, Config) -> void() | {save_config,Config}</name>
+	<fsummary>Test case finalization.  </fsummary>
+	<type>
+	  <v>Config = [{Key, Value}]</v>
+	  <v> Key = atom()</v>
+	  <v> Value = term()</v>
+	</type>
+	<desc>	
+	  
+	  <p> OPTIONAL </p>
+	  
+	  <p> This function is called after each test case, and can be used
+	    to clean up whatever the test case has done. The return value is
+	    ignored. For information on <c>save_config</c>, please see 
+	  <seealso marker="dependencies_chapter#save_config">Dependencies between 
+	    Test Cases and Suites</seealso> in the User's Guide</p>
+	</desc>
+      </func>
+      
+    <func>
+      <name>Module:testcase() -> [Info] </name>
+      <fsummary> Test case info function. </fsummary>
+      <type>
+	<v> Info = {timetrap,Time} | {require,Required} | 
+	    {require,Name,Required} | {userdata,UserData} |
+	    {silent_connections,Conns}</v>
+	<v> Time = MilliSec | {seconds,integer()} | {minutes,integer()}
+	  | {hours,integer()}</v>
+	<v> MilliSec = integer()</v>
+	<v> Required = Key | {Key,SubKeys}</v>
+	<v> Key = atom()</v>
+	<v> SubKeys = SubKey | [SubKey]</v>
+	<v> SubKey = atom()</v>
+	<v> Name = atom()</v>
+	<v> UserData = term()</v>
+	<v> Conns = [atom()]</v>
+      </type>
+      
+      <desc>	
+	
+	<p>OPTIONAL</p>
+	  
+	<p>This is the test case info function. It shall return a
+	  list of tagged tuples that specify various properties
+	  regarding the test case.</p>
+	  
+	<p>The <c>timetrap</c> tag sets the maximum time the
+	  test case is allowed to take. If the timetrap time is
+	  exceeded, the test case fails with reason
+	  <c>timetrap_timeout</c>. <c>init_per_testcase</c>
+	  and <c>end_per_testcase</c> are included in the
+	  timetrap time.</p>
+	
+	<p>The <c>require</c> tag specifies configuration variables
+	  that are required by the test case. If the required
+	  configuration variables are not found in any of the
+	  configuration files, the test case is skipped. For more
+	  information about the 'require' functionality, see the
+	  reference manual for the function
+	  <c>ct:require/[1,2]</c>.</p>
+
+	<p>If <c>timetrap</c> and/or <c>require</c> is not set, the
+	  default values specified in the <c>suite/0</c> return list
+	  will be used.</p>
+	
+	<p>Apart from the above mentioned tags, there is no limitation for
+	  which tags that can be specified in the test case info
+	  function.</p>
+      </desc>
+    </func>
+      
+    
+    <func>
+	<name>Module:testcase(Config) ->  ok | {skip,Reason} | {comment,Comment} | {save_config,Config} | {skip_and_save,Reason,Config} | exit() </name>
+      <fsummary> A test case </fsummary>
+      <type>
+	<v>Config = [{Key, Value}]</v>
+	<v> Key = atom()</v>
+	  <v> Value = term()</v>
+      </type>
+      
+      <desc>	  
+	<p> MANDATORY </p>
+	
+	<p>This is the implementation of a test case. Here you must
+	  call the functions you want to test, and do whatever you
+	  need to check the result. If someting fails, make sure the
+	  process crashes or call <c>ct:fail/[0,1]</c> (which
+	  also will cause the process to crash).</p>
+	
+	<p>Elements from the <c>Config</c> parameter can be read
+	  with the <c>?config</c> macro. The <c>config</c>
+	  macro is defined in <c>ct.hrl</c></p>
+
+	<p>You can return <c>{skip,Reason}</c> if you decide not to
+	  run the test case after all. <c>Reason</c> will then be
+	  printed in 'Comment' field on the HTML result page.</p>
+	
+	<p>You can return <c>{comment,Comment}</c> if you wish to
+	  print some information in the 'Comment' field on the HTML
+	  result page.</p>
+	
+	<p>If the function returns anything else, it is considered a
+	  success.</p>
+
+	<p>For information on <c>save_config</c> and <c>skip_and_save</c>, please see 
+	  <seealso marker="dependencies_chapter#save_config">Dependencies between 
+	    Test Cases and Suites</seealso> in the User's Guide.</p>
+      </desc>
+    </func>
+    
+  </funcs>
+
+</appref>
+
+

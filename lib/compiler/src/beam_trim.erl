@@ -18,7 +18,8 @@
 
 -module(beam_trim).
 -export([module/2]).
--import(lists, [map/2,reverse/1,reverse/2,splitwith/2,sort/1,foldl/3]).
+
+-import(lists, [reverse/1,reverse/2,splitwith/2,sort/1]).
 
 -record(st,
 	{safe,					%Safe labels.
@@ -26,7 +27,7 @@
 	 }).
 
 module({Mod,Exp,Attr,Fs0,Lc}, _Opts) ->
-    Fs = map(fun function/1, Fs0),
+    Fs = [function(F) || F <- Fs0],
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
 
 function({function,Name,Arity,CLabel,Is0}) ->

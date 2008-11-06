@@ -385,6 +385,14 @@
        more or less be translated into an allocate, copy, free sequence.
        This often reduce memory fragmentation, but costs performance.
       </item>
+      <tag><c><![CDATA[+M<S>rmbcmt <ratio>]]></c></tag>
+      <item>      <marker id="M_rmbcmt"></marker>
+
+       Relative multiblock carrier move threshold (in percent). When
+       a block located in a multiblock carrier is shrunk,
+       the block will be moved if the ratio of the size of the returned
+       memory compared to the previous size is more than this threshold;
+       otherwise, the block will be shrunk at current location.</item>
       <tag><c><![CDATA[+M<S>rsbcmt <ratio>]]></c></tag>
       <item>      <marker id="M_rsbcmt"></marker>
 

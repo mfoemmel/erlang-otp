@@ -70,6 +70,7 @@
 byte() = 0 ... 255
 ioelem() = byte() | binary() | iolist()
 iolist() = [ioelem()]
+Mpint() = <![CDATA[<<ByteLen:32/integer-big, Bytes:ByteLen/binary>>]]>
     </pre>
     <p></p>
   </description>
@@ -360,7 +361,7 @@ iolist() = [ioelem()]
       </desc>
     </func>
     <func>
-      <name>erlint(Mpint) -> </name>
+      <name>erlint(Mpint) -> N</name>
       <name>mpint(N) -> Mpint</name>
       <fsummary>Convert between binary multi-precision integer and erlang big integer</fsummary>
       <type>
@@ -415,38 +416,185 @@ iolist() = [ioelem()]
           using the <c>crypto</c> library.</p>
       </desc>
     </func>
+
     <func>
-      <name>rsa_verify(Digest, Signature, Key) -> Verified</name>
+      <name>rsa_sign(Data, Key) -> Signature</name>
+      <name>rsa_sign(DigestType, Data, Key) -> Signature</name> 
+      <fsummary>Sign the data using rsa with the given key.</fsummary>
+      <type>
+        <v>Data = Mpint</v>
+        <v>Key = [E, N, D]</v>
+        <v>E, N, D = Mpint</v>
+        <d>Where <c>E</c> is the public exponent, <c>N</c> is public modulus and 
+	  <c>D</c> is the private exponent.</d>
+	<v>DigestType = md5 | sha</v>
+	<d>The default <c>DigestType</c> is sha.</d>
+        <v>Mpint = binary()</v>
+        <v>Signature = binary()</v>
+      </type>
+      <desc>
+        <p>Calculates a <c>DigestType</c> digest of the <c>Data</c>
+	  and creates a RSA signature with the private key <c>Key</c>
+	  of the digest.</p>
+      </desc>
+    </func>
+
+    <func>
+      <name>rsa_verify(Data, Signature, Key) -> Verified</name>
+      <name>rsa_verify(DigestType, Data, Signature, Key) -> Verified </name> 
       <fsummary>Verify the digest and signature using rsa with given public key.</fsummary>
       <type>
         <v>Verified = boolean()</v>
-        <v>Digest, Signature = MPint</v>
+        <v>Data, Signature = Mpint</v>
         <v>Key = [E, N]</v>
-        <v>E, N = MPint</v>
-        <v>MPint = binary()</v>
+        <v>E, N = Mpint</v>
+        <d>Where <c>E</c> is the public exponent and <c>N</c> is public modulus.</d>
+	<v>DigestType = md5 | sha</v>
+	<d> The default <c>DigestType</c> is sha.</d>
+        <v>Mpint = binary()</v>
       </type>
       <desc>
-        <p>Verifies the digest and signature using the public key <c>Key</c>,
-          using the <c>crypto</c> library function for RSA signature
-          verification.</p>
+        <p>Calculates a <c>DigestType</c> digest of the <c>Data</c>
+          and verifies that the digest matches the RSA signature using the
+          signer's public key <c>Key</c>.
+	</p>
+      </desc>
+    </func>
+    
+    <func>
+      <name>rsa_public_encrypt(PlainText, PublicKey, Padding) -> ChipherText</name> 
+      <fsummary>Encrypts Msg using the public Key.</fsummary>
+      <type>
+	<v>PlainText = binary()</v>
+	<v>PublicKey = [E, N]</v>
+	<v>E, N = Mpint</v>	
+	<d>Where <c>E</c> is the public exponent and <c>N</c> is public modulus.</d>
+	<v>Padding = rsa_pkcs1_padding | rsa_pkcs1_oaep_padding | rsa_no_padding</v>
+        <v>ChipherText = binary()</v>
+      </type>
+      <desc>
+	<p>Encrypts the <c>PlainText</c> (usually a session key) using the <c>PublicKey</c>
+	  and returns the chipher. The <c>Padding</c> decides what padding mode is used,
+	  <c>rsa_pkcs1_padding</c> is PKCS #1 v1.5 currently the most
+	  used mode and <c>rsa_pkcs1_oaep_padding</c> is EME-OAEP as
+	  defined in PKCS #1 v2.0 with SHA-1, MGF1 and an empty encoding
+	  parameter. This mode is recommended for all new applictions.
+	  The size of the <c>Msg</c> must be less
+	  than <c>byte_size(N)-11</c> if
+	  <c>rsa_pkcs1_padding</c> is used, <c>byte_size(N)-41</c> if 
+	  <c>rsa_pkcs1_oaep_padding</c> is used and <c>byte_size(N)</c> if <c>rsa_no_padding</c> 
+	  is used.
+	  Where byte_size(N) is the size part of an <c>Mpint-1</c>.
+	</p>
+      </desc>
+    </func>
+
+    <func>
+      <name>rsa_private_decrypt(ChipherText, PrivateKey, Padding) -> PlainText</name> 
+      <fsummary>Decrypts ChipherText using the private Key.</fsummary>
+      <type>
+	<v>ChipherText = binary()</v>
+	<v>PrivateKey = [E, N, D]</v>
+	<v>E, N, D = Mpint</v>
+	<d>Where <c>E</c> is the public exponent, <c>N</c> is public modulus  and 
+	  <c>D</c> is the private exponent.</d>
+	<v>Padding = rsa_pkcs1_padding | rsa_pkcs1_oaep_padding | rsa_no_padding</v>
+        <v>PlainText = binary()</v>
+      </type>
+      <desc>
+	<p>Decrypts the <c>ChipherText</c> (usually a session key encrypted with 
+	  <seealso marker="#rsa_public_encrypt/3">rsa_public_encrypt/3</seealso>) 
+	  using the <c>PrivateKey</c> and returns the
+	  message. The <c>Padding</c> is the padding mode that was
+	  used to encrypt the data, 
+	  see <seealso marker="#rsa_public_encrypt/3">rsa_public_encrypt/3</seealso>.
+	</p>
       </desc>
     </func>
     <func>
-      <name>dss_verify(Digest, Signature, Key) -> Verified</name>
-      <fsummary>Verify the digest and signature using rsa with given public key.</fsummary>
+      <name>rsa_private_encrypt(PlainText, PrivateKey, Padding) -> ChipherText</name> 
+      <fsummary>Encrypts Msg using the private Key.</fsummary>
       <type>
-        <v>Verified = boolean()</v>
-        <v>Digest, Signature = MPint</v>
-        <v>Key = [P, Q, G, Y]</v>
-        <v>P, Q, G, Y = MPint</v>
-        <v>MPint = binary()</v>
+	<v>PlainText = binary()</v>
+	<v>PrivateKey = [E, N, D]</v>
+	<v>E, N, D = Mpint</v>	
+	<d>Where <c>E</c> is the public exponent, <c>N</c> is public modulus and 
+	  <c>D</c> is the private exponent.</d>
+	<v>Padding = rsa_pkcs1_padding | rsa_no_padding</v>
+        <v>ChipherText = binary()</v>
       </type>
       <desc>
-        <p>Verifies the digest and signature using the public key <c>Key</c>,
-          using the <c>crypto</c> library function for DSS signature
-          verification.</p>
+	<p>Encrypts the <c>PlainText</c> using the <c>PrivateKey</c>
+	  and returns the chipher. The <c>Padding</c> decides what padding mode is used,
+	  <c>rsa_pkcs1_padding</c> is PKCS #1 v1.5 currently the most
+	  used mode.
+	  The size of the <c>Msg</c> must be less than <c>byte_size(N)-11</c> if
+	  <c>rsa_pkcs1_padding</c> is used, and <c>byte_size(N)</c> if <c>rsa_no_padding</c> 
+	  is used.  Where byte_size(N) is the size part of an <c>Mpint-1</c>.
+	</p>
       </desc>
     </func>
+
+    <func>
+      <name>rsa_public_decrypt(ChipherText, PublicKey, Padding) -> PlainText</name> 
+      <fsummary>Decrypts ChipherText using the public Key.</fsummary>
+      <type>
+	<v>ChipherText = binary()</v>
+	<v>PublicKey = [E, N]</v>
+	<v>E, N = Mpint</v>
+	<d>Where <c>E</c> is the public exponent and <c>N</c> is public modulus</d>
+	<v>Padding = rsa_pkcs1_padding | rsa_no_padding</v>
+        <v>PlainText = binary()</v>
+      </type>
+      <desc>
+	<p>Decrypts the <c>ChipherText</c> (encrypted with 
+	  <seealso marker="#rsa_private_encrypt/3">rsa_private_encrypt/3</seealso>) 
+	  using the <c>PrivateKey</c> and returns the
+	  message. The <c>Padding</c> is the padding mode that was
+	  used to encrypt the data, 
+	  see <seealso marker="#rsa_private_encrypt/3">rsa_private_encrypt/3</seealso>.
+	</p>
+      </desc>
+    </func>
+      
+    <func>
+      <name>dss_sign(Data, Key) -> Signature</name>
+      <fsummary>Sign the data using dsa with given private key.</fsummary>
+      <type>
+        <v>Digest = Mpint</v>
+        <v>Key = [P, Q, G, X]</v>
+        <v>P, Q, G, X = Mpint</v>
+	<d> Where <c>P</c>, <c>Q</c> and <c>G</c> are the dss
+	  parameters and <c>X</c> is the private key.</d>
+        <v>Mpint = binary()</v>
+        <v>Signature = binary()</v>
+      </type>
+      <desc>
+        <p>Calculates the sha digest of the <c>Data</c>
+	  and creates a DSS signature with the private key <c>Key</c>
+	  of the digest.</p>
+      </desc>
+    </func>
+
+    <func>
+      <name>dss_verify(Data, Signature, Key) -> Verified</name>
+      <fsummary>Verify the data and signature using dsa with given public key.</fsummary>
+      <type>
+        <v>Verified = boolean()</v>
+        <v>Digest, Signature = Mpint</v>
+        <v>Key = [P, Q, G, Y]</v>
+        <v>P, Q, G, Y = Mpint</v>
+	<d> Where <c>P</c>, <c>Q</c> and <c>G</c> are the dss
+	  parameters and <c>Y</c> is the public key.</d>
+        <v>Mpint = binary()</v>
+      </type>
+      <desc>
+        <p>Calculates the sha digest of the <c>Data</c> and verifies that the
+          digest matches the DSS signature using the public key <c>Key</c>.
+	</p>
+      </desc>
+    </func>
+
     <func>
       <name>rc4_encrypt(Key, Data) -> Result</name>
       <fsummary>Encrypt data using RC4</fsummary>
@@ -460,6 +608,40 @@ iolist() = [ioelem()]
 	  decryption.</p>
       </desc>
     </func>
+
+    <func>
+      <name>dh_generate_key(DHParams) -> {PublicKey,PrivateKey} </name>
+      <name>dh_generate_key(PrivateKey, DHParams) -> {PublicKey,PrivateKey} </name>
+      <fsummary>Generates a Diffie-Hellman public key</fsummary>
+      <type>
+	<v>DHParameters = [P, G]</v>
+	<v>P, G = Mpint</v>
+	<d> Where <c>P</c> is the shared prime number and <c>G</c> is the shared generator.</d>
+	<v>PublicKey, PrivateKey = Mpint()</v>
+      </type>
+      <desc>
+	<p>Generates a Diffie-Hellman <c>PublicKey</c> and <c>PrivateKey</c> (if not given).
+	</p>
+      </desc>
+    </func>
+
+    <func>
+      <name>dh_compute_key(OthersPublicKey, MyPrivateKey, DHParams) -> SharedSecret</name>
+      <fsummary>Computes the shared secret</fsummary>
+      <type>
+	<v>DHParameters = [P, G]</v>
+	<v>P, G = Mpint</v>
+	<d> Where <c>P</c> is the shared prime number and <c>G</c> is the shared generator.</d>
+	<v>OthersPublicKey, MyPrivateKey = Mpint()</v>
+	<v>SharedSecret = binary()</v>
+      </type>
+      <desc>
+	<p>Computes the shared secret from the private key and the other party's public key.
+	</p>
+      </desc>
+    </func>
+   
+
     <func>
       <name>exor(Data1, Data2) -> Result</name>
       <fsummary>XOR data</fsummary>
@@ -491,14 +673,13 @@ iolist() = [ioelem()]
     <p>Thus the encryption of every segment depends on the encryption
       key (which is secret) and the encryption of the previous
       segment, except the first segment which has to be provided with
-      a first initializing vector. That vector could be chosen at
-      random, or be counter of some kind. It does not have to be
+      an initial initializing vector. That vector could be chosen at
+      random, or be a counter of some kind. It does not have to be
       secret.
       </p>
     <p>The following example is drawn from the old FIPS 81 standard
       (replaced by NIST SP 800-38A), where both the plain text and the
-      resulting cipher text is settled. We use the Erlang bitsyntax to
-      define binary literals. The following Erlang code fragment
+      resulting cipher text is settled. The following code fragment
       returns `true'.
       </p>
     <pre><![CDATA[
@@ -506,21 +687,30 @@ iolist() = [ioelem()]
       Key = <<16#01,16#23,16#45,16#67,16#89,16#ab,16#cd,16#ef>>,
       IVec = <<16#12,16#34,16#56,16#78,16#90,16#ab,16#cd,16#ef>>,
       P = "Now is the time for all ",
-      C = crypto:des_cbc_encrypt(K, I, P),
-      C == <<16#e5,16#c7,16#cd,16#de,16#87,16#2b,16#f2,16#7c,
+      C = crypto:des_cbc_encrypt(Key, IVec, P),
+         % Which is the same as 
+      P1 = "Now is t", P2 = "he time ", P3 = "for all ",
+      C1 = crypto:des_cbc_encrypt(Key, IVec, P1),
+      C2 = crypto:des_cbc_encrypt(Key, C1, P2),
+      C3 = crypto:des_cbc_encrypt(Key, C2, P3),
+
+      C = <<C1/binary, C2/binary, C3/binary>>,
+      C = <<16#e5,16#c7,16#cd,16#de,16#87,16#2b,16#f2,16#7c,
              16#43,16#e9,16#34,16#00,16#8c,16#38,16#9c,16#0f,
              16#68,16#37,16#88,16#49,16#9a,16#7c,16#05,16#f6>>,
       <<"Now is the time for all ">> == 
-                        crypto:des_cbc_decrypt(Key,IVec,C).
+                        crypto:des_cbc_decrypt(Key, IVec, C).
     ]]></pre>
     <p>The following is true for the DES CBC mode. For all
       decompositions <c>P1 ++ P2 = P</c> of a plain text message
       <c>P</c> (where the length of all quantities are multiples of 8
-      bytes), the encryption <c>C</c> of <c>P</c> is equal to <c>C1 ++ C2</c>, where <c>C1</c> is obtained by encrypting <c>P1</c> with
+      bytes), the encryption <c>C</c> of <c>P</c> is equal to <c>C1 ++
+      C2</c>, where <c>C1</c> is obtained by encrypting <c>P1</c> with
       <c>Key</c> and the initializing vector <c>IVec</c>, and where
-      <c>C2</c> is obtained by encrypting <c>P2</c> with <c>Key</c> and
-      the initializing vector <c>l(C1)</c>, where <c>l(B)</c> denotes 
-      the last 8 bytes of the binary <c>B</c>.
+      <c>C2</c> is obtained by encrypting <c>P2</c> with <c>Key</c>
+      and the initializing vector <c>last8(C1)</c>,
+      where <c>last(Binary)</c> denotes the last 8 bytes of the
+      binary <c>Binary</c>.
       </p>
     <p>Similarly, for all decompositions <c>C1 ++ C2 = C</c> of a
       cipher text message <c>C</c> (where the length of all quantities
@@ -529,11 +719,11 @@ iolist() = [ioelem()]
       decrypting <c>C1</c> with <c>Key</c> and the initializing vector
       <c>IVec</c>, and where <c>P2</c> is obtained by decrypting
       <c>C2</c> with <c>Key</c> and the initializing vector
-      <c>l(C1)</c>, where <c>l(.)</c> is as above.
+      <c>last8(C1)</c>, where <c>last8(Binary)</c> is as above.
       </p>
     <p>For DES3 (which uses three 64 bit keys) the situation is the
       same.
-      </p>
+    </p>
   </section>
 </erlref>
 

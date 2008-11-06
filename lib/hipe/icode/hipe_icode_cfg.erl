@@ -30,31 +30,32 @@
 
 %%----------------------------------------------------------------------
 
--type(io_device() :: any()).    % XXX: DOES NOT BELONG HERE
+-type io_device() :: any().    % XXX: DOES NOT BELONG HERE
 
 %%----------------------------------------------------------------------
 %% Prototypes for exported functions which are Icode specific
 %%----------------------------------------------------------------------
 
--spec(labels/1            :: (#cfg{}) -> [icode_lbl()]).
--spec(postorder/1         :: (#cfg{}) -> [icode_lbl()]).
--spec(reverse_postorder/1 :: (#cfg{}) -> [icode_lbl()]).
+-spec labels(#cfg{}) -> [icode_lbl()].
+-spec postorder(#cfg{}) -> [icode_lbl()].
+-spec reverse_postorder(#cfg{}) -> [icode_lbl()].
 
--spec(is_visited/2 :: (icode_lbl(), gb_tree()) -> bool()).
--spec(visit/2      :: (icode_lbl(), gb_tree()) -> gb_tree()).
+-spec is_visited(icode_lbl(), gb_tree()) -> bool().
+-spec visit(icode_lbl(), gb_tree()) -> gb_tree().
 
--spec(bb/2       :: (#cfg{}, icode_lbl()) -> 'not_found' | bb()).
--spec(bb_add/3   :: (#cfg{}, icode_lbl(), bb()) -> #cfg{}).
--spec(pred/2     :: (#cfg{}, icode_lbl()) -> [icode_lbl()]).
--spec(succ/2     :: (#cfg{}, icode_lbl()) -> [icode_lbl()]).
--spec(redirect/4 :: (#cfg{}, icode_lbl(), icode_lbl(), icode_lbl()) -> #cfg{}).
+-spec bb(#cfg{}, icode_lbl()) -> 'not_found' | bb().
+-spec bb_add(#cfg{}, icode_lbl(), bb()) -> #cfg{}.
+-spec pred(#cfg{}, icode_lbl()) -> [icode_lbl()].
+-spec succ(#cfg{}, icode_lbl()) -> [icode_lbl()].
+-spec redirect(#cfg{}, icode_lbl(), icode_lbl(), icode_lbl()) -> #cfg{}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Interface to Icode
 %%
 
--spec(linear_to_cfg/1 :: (#icode{}) -> #cfg{}).
+-spec linear_to_cfg(#icode{}) -> #cfg{}.
+
 linear_to_cfg(LinearIcode) ->
   %% hipe_icode_pp:pp(Icode),
   Code = hipe_icode:icode_code(LinearIcode),
@@ -84,7 +85,7 @@ linear_to_cfg(LinearIcode) ->
 %% remove_blocks(CFG, [Lbl|Lbls]) ->
 %%   remove_blocks(bb_remove(CFG, Lbl), Lbls).
 
--spec(is_label/1 :: (icode_instr()) -> bool()).
+-spec is_label(icode_instr()) -> bool().
 is_label(Instr) ->
   hipe_icode:is_label(Instr).
 
@@ -104,20 +105,20 @@ fails_to(Instr) ->
   hipe_icode:fails_to(Instr).
 
 %% True if instr has no effect.
--spec(is_comment/1 :: (icode_instr()) -> bool()).
+-spec is_comment(icode_instr()) -> bool().
 is_comment(Instr) ->
   hipe_icode:is_comment(Instr).
 
 %% True if instr is just a jump (no side-effects).
--spec(is_goto/1 :: (icode_instr()) -> bool()).
+-spec is_goto(icode_instr()) -> bool().
 is_goto(Instr) ->
   hipe_icode:is_goto(Instr).
 
--spec(is_branch/1 :: (icode_instr()) -> bool()).
+-spec is_branch(icode_instr()) -> bool().
 is_branch(Instr) ->
   hipe_icode:is_branch(Instr).
 
--spec(is_pure_branch/1 :: (icode_instr()) -> bool()).
+-spec is_pure_branch(icode_instr()) -> bool().
 is_pure_branch(Instr) ->
   case Instr of
     #icode_if{} -> true;
@@ -139,7 +140,7 @@ is_pure_branch(Instr) ->
     #icode_comment{} -> false
   end.
 
--spec(is_phi/1 :: (icode_instr()) -> bool()).
+-spec is_phi(icode_instr()) -> bool().
 is_phi(I) ->
   hipe_icode:is_phi(I).
 
@@ -157,17 +158,19 @@ redirect_ops(_, CFG, _) -> %% We do not refer to labels in Icode ops.
 
 %%----------------------------------------------------------------------------
 
--spec(pp/1 :: (#cfg{}) -> 'ok').
+-spec pp(#cfg{}) -> 'ok'.
+
 pp(CFG) ->
   hipe_icode_pp:pp(cfg_to_linear(CFG)).
 
--spec(pp/2 :: (io_device(), #cfg{}) -> 'ok').
+-spec pp(io_device(), #cfg{}) -> 'ok'.
+
 pp(Dev, CFG) ->
   hipe_icode_pp:pp(Dev, cfg_to_linear(CFG)).
 
 %%----------------------------------------------------------------------------
 
--spec(cfg_to_linear/1 :: (#cfg{}) -> #icode{}).
+-spec cfg_to_linear(#cfg{}) -> #icode{}.
 cfg_to_linear(CFG) ->
   Code = linearize_cfg(CFG),
   IsClosure = is_closure(CFG),

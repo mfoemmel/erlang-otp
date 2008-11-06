@@ -114,6 +114,7 @@ MODULES= \
 	supervisor_bridge \
 	sys \
 	timer \
+	unicode \
 	win32reg \
 	zip
 

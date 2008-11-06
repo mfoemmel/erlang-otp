@@ -824,6 +824,131 @@ erts_new_bs_put_integer(ERL_BITS_PROTO_3(Eterm arg, Uint num_bits, unsigned flag
 }
 
 int
+erts_bs_put_utf8(ERL_BITS_PROTO_1(Eterm arg))
+{
+    Uint bin_offset = erts_bin_offset;
+    Uint bit_offset;
+    Uint num_bits;
+    byte tmp_buf[4];
+    byte* dst;
+    Sint val;
+
+    if (is_not_small(arg)) {
+	return 0;
+    }
+    val = signed_val(arg);
+    if (val < 0) {
+	return 0;
+    }
+
+    if ((bit_offset = BIT_OFFSET(bin_offset)) == 0) {
+	/* We can write directly into the destination binary. */
+	dst = erts_current_bin+BYTE_OFFSET(bin_offset);
+    } else {
+	/* Unaligned destination binary. Must use a temporary buffer. */
+	dst = tmp_buf;
+    }
+    if (val < 0x80) {
+	dst[0] = val;
+	num_bits = 8;
+    } else if (val < 0x800) {
+	dst[0] = 0xC0 | (val >> 6);
+	dst[1] = 0x80 | (val & 0x3F);
+	num_bits = 16;
+    } else if (val < 0x10000UL) {
+	if ((0xD800 <= val && val <= 0xDFFF) ||
+	    val == 0xFFFE || val == 0xFFFF) {
+	    return 0;
+	}
+	dst[0] = 0xE0 | (val >> 12);
+	dst[1] = 0x80 | ((val >> 6) & 0x3F);
+	dst[2] = 0x80 | (val & 0x3F);
+	num_bits = 24;
+    } else if (val < 0x110000) {
+	dst[0] = 0xF0 | (val >> 18);
+	dst[1] = 0x80 | ((val >> 12) & 0x3F);
+	dst[2] = 0x80 | ((val >> 6) & 0x3F);
+	dst[3] = 0x80 | (val & 0x3F);
+	num_bits = 32;
+    } else {
+	return 0;
+    }
+
+    if (bin_offset != 0) {
+	erts_copy_bits(dst, 0, 1, erts_current_bin, bin_offset, 1, num_bits);
+    }
+
+    erts_bin_offset += num_bits;
+
+    return 1;
+}
+
+int
+erts_bs_put_utf16(ERL_BITS_PROTO_2(Eterm arg, Uint flags))
+{
+    Uint bin_offset = erts_bin_offset;
+    Uint bit_offset;
+    Uint num_bits;
+    byte tmp_buf[4];
+    byte* dst;
+    Uint val;
+
+    if (is_not_small(arg)) {
+	return 0;
+    }
+    val = unsigned_val(arg);
+    if (val > 0x10FFFF || (0xD800 <= val && val <= 0xDFFF) ||
+	val == 0xFFFE || val == 0xFFFF) {
+	return 0;
+    }
+
+    if ((bit_offset = BIT_OFFSET(bin_offset)) == 0) {
+	/* We can write directly into the destination binary. */
+	dst = erts_current_bin+BYTE_OFFSET(bin_offset);
+    } else {
+	/* Unaligned destination binary. Must use a temporary buffer. */
+	dst = tmp_buf;
+    }
+
+    if (val < 0x10000UL) {
+	num_bits = 16;
+	if (flags & BSF_LITTLE) {
+	    dst[0] = val;
+	    dst[1] = val >> 8;
+	} else {
+	    dst[0] = val >> 8;
+	    dst[1] = val;
+	}
+    } else {
+	Uint16 w1, w2;
+
+	num_bits = 32;
+	val = val - 0x10000UL;
+	w1 = 0xD800 | (val >> 10);
+	w2 = 0xDC00 | (val & 0x3FF);
+	if (flags & BSF_LITTLE) {
+	    dst[0] = w1;
+	    dst[1] = w1 >> 8;
+	    dst[2] = w2;
+	    dst[3] = w2 >> 8;
+	} else {
+	    dst[0] = w1 >> 8;
+	    dst[1] = w1;
+	    dst[2] = w2 >> 8;
+	    dst[3] = w2;
+	}
+    }
+
+    if (bin_offset != 0) {
+	erts_copy_bits(dst, 0, 1, erts_current_bin, bin_offset, 1, num_bits);
+    }
+
+    erts_bin_offset += num_bits;
+    return 1;
+}
+     
+
+int
 erts_new_bs_put_binary(ERL_BITS_PROTO_2(Eterm arg, Uint num_bits))
 {
     byte *bptr;
@@ -1388,7 +1513,7 @@ erts_emasculate_writable_binary(ProcBin* pb)
 }
 
 Uint32
-erts_bs_get_unaligned_uint32(Process *p, ErlBinMatchBuffer* mb)
+erts_bs_get_unaligned_uint32(ErlBinMatchBuffer* mb)
 {
     Uint bytes;
     Uint bits;
@@ -1412,6 +1537,92 @@ erts_bs_get_unaligned_uint32(Process *p, ErlBinMatchBuffer* mb)
     return LSB[0] | (LSB[1]<<8) | (LSB[2]<<16) | (LSB[3]<<24);
 }
 
+void
+erts_align_utf8_bytes(ErlBinMatchBuffer* mb, byte* buf)
+{
+    Uint bits = mb->size - mb->offset;
+
+    /*
+     * Copy up to 4 bytes into the supplied buffer.
+     */
+
+    ASSERT(bits >= 8);
+    if (bits <= 15) {
+	bits = 8;
+    } else if (bits >= 32) {
+	bits = 32;
+    } else if (bits >= 24) {
+	bits = 24;
+    } else {
+	bits = 16;
+    }
+    erts_copy_bits(mb->base, mb->offset, 1, buf, 0, 1, bits);
+}
+
+Eterm
+erts_bs_get_utf16(ErlBinMatchBuffer* mb, Uint flags)
+{
+    Uint bit_offset;
+    Uint num_bits = mb->size - mb->offset;
+    byte* src;
+    byte tmp_buf[4];
+    Uint16 w1;
+    Uint16 w2;
+
+    if (num_bits < 16) {
+	return THE_NON_VALUE;
+    }
+
+    /*
+     * Set up the pointer to the source bytes.
+     */
+    if ((bit_offset = BIT_OFFSET(mb->offset)) == 0) {
+	/* We can access the binary directly because the bytes are aligned. */
+	src = mb->base + BYTE_OFFSET(mb->offset);
+    } else {
+	/*
+	 * We must copy the data to a temporary buffer. If possible,
+	 * get 4 bytes, otherwise two bytes.
+	 */
+	Uint n = num_bits < 32 ? 16 : 32;
+	erts_copy_bits(mb->base, mb->offset, 1, tmp_buf, 0, 1, n);
+	src = tmp_buf;
+    }
+    
+    /*
+     * Get the first (and maybe only) 16-bit word. See if we are done.
+     */
+    if (flags & BSF_LITTLE) {
+	w1 = src[0] | (src[1] << 8);
+    } else {
+	w1 = (src[0] << 8) | src[1];
+    }
+    if (w1 < 0xD800 || w1 > 0xDFFF) {
+	if (w1 == 0xFFFE || w1 == 0xFFFF) {
+	    return THE_NON_VALUE;
+	}
+	mb->offset += 16;
+	return make_small(w1);
+    } else if (w1 > 0xDBFF) {
+	return THE_NON_VALUE;
+    }
+
+    /*
+     * Get the second 16-bit word and combine it with the first.
+     */
+    if (num_bits < 32) {
+	return THE_NON_VALUE;
+    } else if (flags & BSF_LITTLE) {
+	w2 = src[2] | (src[3] << 8);
+    } else {
+	w2 = (src[2] << 8) | src[3];
+    }
+    if (!(0xDC00 <= w2 && w2 <= 0xDFFF)) {
+	return THE_NON_VALUE;
+    }
+    mb->offset += 32;
+    return make_small((((w1 & 0x3FF) << 10) | (w2 & 0x3FF)) + 0x10000UL);
+}
 
 static byte
 get_bit(byte b, size_t offs) 

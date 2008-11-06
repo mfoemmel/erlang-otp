@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1997-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1ct_gen).
 
@@ -1421,8 +1423,8 @@ gen_record(TorPtype,Name,Type,Num) when record(Type,type) ->
 			emit(["%% with extensions",nl]),
 			gen_record2(Name,'SEQUENCE',Extl,"",ext),
 			case Extl of
-			    [] -> true;
-			    _ -> emit([",",nl])
+			    [_H|_] when Rootl2 /= [] -> emit([",",nl]);
+			    _ -> ok
 			end,
 			emit(["%% end of extensions",nl]),
 			gen_record2(Name,'SEQUENCE',Rootl2,"",noext),
@@ -1563,7 +1565,10 @@ gen_check_call(TopType,Cname,Type,InnerType,WhatKind,DefaultValue,Element) ->
 	    %% Must look for check functions in InnerType,
 	    %% that may be referenced  or internal defined 
 	    %% constructed types not used elsewhere.
-	    lookahead_innertype(NameList,InnerType,Type)
+	    lookahead_innertype(NameList,InnerType,Type);
+	_ ->
+	    %% Generate Dummy function call i.e. anything is accepted
+	    emit(["fun() -> true end ()"])
     end.
 
 gen_prim_check_call(PrimType,DefaultValue,Element,Type) ->
@@ -1590,6 +1595,9 @@ gen_prim_check_call(PrimType,DefaultValue,Element,Type) ->
 	    emit({"asn1rt_check:check_null(",DefaultValue,", ",
 		  Element,")"});
 	'OBJECT IDENTIFIER' ->
+	    emit({"asn1rt_check:check_objectidentifier(",DefaultValue,
+		  ", ",Element,")"});
+	'RELATIVE-OID' ->
 	    emit({"asn1rt_check:check_objectidentifier(",DefaultValue,
 		  ", ",Element,")"});
 	'ObjectDescriptor' ->
@@ -1699,6 +1707,7 @@ lookahead_reference(#'Externaltypereference'{module=M,type=T}) ->
     end.
 
 insert_once(Table,Object) ->
+    _Info = ets:info(Table),
     case ets:lookup(Table,element(1,Object)) of
 	[] ->
 	    ets:insert(Table,Object); %returns true
@@ -1712,6 +1721,8 @@ unify_if_string(PrimType) ->
 	'PrintableString' ->
 	    restrictedstring;
 	'TeletexString' ->
+	    restrictedstring;
+	'T61String' ->
 	    restrictedstring;
 	'VideotexString' ->
 	    restrictedstring;
@@ -1810,6 +1821,7 @@ prim_bif(X) ->
 		    'ENUMERATED',
 		    'REAL',
 		    'OBJECT IDENTIFIER',
+		    'RELATIVE-OID',
 		    'ANY',
 		    'NULL',
 		    'BIT STRING' ,
@@ -1817,6 +1829,7 @@ prim_bif(X) ->
 		    'ObjectDescriptor',
 		    'NumericString',
 		    'TeletexString',
+		    'T61String',
 		    'VideotexString',
 		    'UTCTime',
 		    'GeneralizedTime',

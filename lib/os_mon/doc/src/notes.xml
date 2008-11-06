@@ -31,6 +31,31 @@
   </header>
   <p>This document describes the changes made to the OS_Mon application.</p>
 
+<section><title>Os_Mon 2.1.8</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>A problem with <c>OTP-OS-MON-MIB.mib</c> for 64-bit
+	    environments has now been fixed. The mib has been
+	    extended with 64-bit memory retrieval
+	    counterparts.</p><p>In addition, a new function
+	    <c>get_os_wordsize/0</c> has been added in the
+	    <c>memsup</c> module</p>
+          <p>
+	    Own Id: OTP-7441</p>
+        </item>
+        <item>
+	    <p>An error in <c>memsup.c</c> caused the compilation to
+	    crash on bsd environments. This has now been fixed.</p>
+          <p>
+	    Own Id: OTP-7558</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Os_Mon 2.1.7</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

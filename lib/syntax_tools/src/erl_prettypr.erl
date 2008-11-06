@@ -912,7 +912,9 @@ lay_2(Node, Ctxt) ->
 			   nest(Ctxt1#ctxt.sub_indent, D4)
 			   | Es2]
 		  end,
-	    sep([text("try"), nest(Ctxt1#ctxt.sub_indent, D1) | Es3]);
+	    sep([par([follow(text("try"), D1, Ctxt1#ctxt.sub_indent),
+		      hd(Es3)])
+		 | tl(Es3)]);
 
 	warning_marker ->
 	    E = erl_syntax:warning_marker_info(Node),
@@ -964,7 +966,7 @@ lay_string_1(S, L, W) when L > W, W > 0 ->
 	    text(S);
 	{S1, S2} ->
 	    above(text(S1 ++ "\""),
-		  lay_string_1([$" | S2], L - W + 1, W))
+		  lay_string_1([$" | S2], L - W + 1, W))  %" stupid emacs
     end;
 lay_string_1(S, _L, _W) ->
     text(S).
@@ -1023,7 +1025,7 @@ make_fun_clause(N, P, G, B, Ctxt) ->
 
 make_fun_clause_head(N, P, Ctxt) ->
     D = lay_parentheses(P, Ctxt),
-    if N == none ->
+    if N =:= none ->
 	    D;
        true ->
 	    beside(N, D)
@@ -1038,7 +1040,7 @@ make_case_clause(P, G, B, Ctxt) ->
 
 make_if_clause(_P, G, B, Ctxt) ->
     %% We ignore the patterns; they should be empty anyway.
-    G1 = if G == none ->
+    G1 = if G =:= none ->
 		 text("true");
 	    true ->
 		 G

@@ -107,6 +107,7 @@ exec(Server, Instructions, Timeout) when is_list(Instructions) ->
 %%----------------------------------------------------------------------
 
 init([]) ->
+    random_init(),
     {ok, #state{}}.
 
 
@@ -182,17 +183,25 @@ handle_parse(start_transport = Instruction, State) ->
     {ok, Instruction, State};
 
 handle_parse(listen = _Instruction, State) ->
-    Instruction = {listen, []}, 
+    MeybeRetry  = make_connect_retry_fun2(), 
+    Instruction = {listen, [], MeybeRetry}, 
     {ok, Instruction, State};
 
-handle_parse({listen, Opts} = Instruction, State) 
+handle_parse({listen, Opts} = _Instruction, State) 
   when is_list(Opts) ->
+    MeybeRetry  = make_connect_retry_fun2(), 
+    Instruction = {listen, Opts, MeybeRetry},     
+    {ok, Instruction, State};
+
+handle_parse({listen, Opts, MeybeRetry} = Instruction, State) 
+  when is_list(Opts) andalso is_function(MeybeRetry) ->
     {ok, Instruction, State};
 
 handle_parse(connect = _Instruction, State) ->
     case inet:gethostname() of
 	{ok, LocalHost} ->
-	    Instruction = {connect, LocalHost, []},
+	    MeybeRetry  = make_connect_retry_fun2(), 
+	    Instruction = {connect, LocalHost, [], MeybeRetry},
 	    {ok, Instruction, State};
 	Error ->
 	    Error
@@ -203,19 +212,30 @@ handle_parse({connect, Opts} = _Instruction, State)
     verify_connect_opts(Opts),
     case inet:gethostname() of
 	{ok, LocalHost} ->
-	    Instruction = {connect, LocalHost, Opts},
+	    MeybeRetry  = make_connect_retry_fun2(), 
+	    Instruction = {connect, LocalHost, Opts, MeybeRetry},
 	    {ok, Instruction, State};
 	Error ->
 	    Error
     end;
 
 handle_parse({connect, Host} = _Instruction, State) 
-  when is_atom(Host) orelse is_list(Host) ->
-    Instruction = {connect, Host, []},
+  when is_atom(Host) ->
+    MeybeRetry  = make_connect_retry_fun2(), 
+    Instruction = {connect, Host, [], MeybeRetry},
     {ok, Instruction, State};
 
-handle_parse({connect, Host, Opts} = Instruction, State)
-  when is_atom(Host) orelse is_list(Host) ->
+handle_parse({connect, Host, Opts} = _Instruction, State)
+  when (is_atom(Host) orelse is_list(Host)) andalso is_list(Opts) ->
+    verify_connect_opts(Opts),
+    MeybeRetry  = make_connect_retry_fun2(), 
+    Instruction = {connect, Host, Opts, MeybeRetry},
+    {ok, Instruction, State};
+
+handle_parse({connect, Host, Opts, MeybeRetry} = Instruction, State)
+  when (is_atom(Host) orelse is_list(Host)) andalso 
+       is_list(Opts) andalso 
+       is_function(MeybeRetry) ->
     verify_connect_opts(Opts),
     {ok, Instruction, State};
 
@@ -295,11 +315,11 @@ handle_parse(Instruction, _State) ->
 
 
 make_verifier({Tag, No, VerifyFunc} = Verify)
-  when is_atom(Tag) and is_integer(No) and is_function(VerifyFunc) ->
+  when is_atom(Tag) andalso is_integer(No) andalso is_function(VerifyFunc) ->
     Verify;
 make_verifier({Tag, No, {VMod, VFunc, VArgs}})
-  when is_atom(Tag) and is_integer(No) and
-       (is_atom(VMod) and is_atom(VFunc) and is_list(VArgs)) ->
+  when is_atom(Tag) andalso is_integer(No) andalso
+       (is_atom(VMod) andalso is_atom(VFunc) andalso is_list(VArgs)) ->
     VerifyFunc = fun(X) ->
                          io:format("[megaco_callback ~w] calling ~w:~w with"
                                    "~n   X: ~p"
@@ -319,6 +339,23 @@ verify_connect_opts([{Key, _}|Opts]) when is_atom(Key) ->
     verify_connect_opts(Opts);
 verify_connect_opts([H|_]) ->
     error({bad_opts_list, H}).
+
+%% make_connect_retry_fun1() ->
+%%      fun(Error, _) -> 
+%% 	     {false, Error} 
+%%      end.
+
+make_connect_retry_fun2() ->
+     fun(Error, noError) -> 
+	     Timeout = 250,
+	     sleep(random(Timeout) + 100),
+	     {true, {3, Timeout*2, Error}};
+	(_Error, {0, _Timeout, OriginalError}) ->
+	     {false, OriginalError};
+	(_Error, {N, Timeout, OriginalError}) ->
+	     sleep(random(Timeout) + 100), 
+	     {true, {N-1, Timeout*2, OriginalError}}
+     end.
 
 
 %% ----- instruction exececutor -----
@@ -404,7 +441,7 @@ handle_exec(start_transport, #state{recv_handle = RH} = State) ->
 	    error({failed_starting_transport, TM, Crap})
     end;
 
-handle_exec({listen, Opts0},
+handle_exec({listen, Opts0, MaybeRetry},
      #state{recv_handle = RH, port = Port, transport_sup = Pid} = State)
   when RH#megaco_receive_handle.send_mod =:= megaco_tcp ->
     p("listen(tcp)", []),
@@ -412,13 +449,13 @@ handle_exec({listen, Opts0},
 	    {port,           Port}, 
 	    {receive_handle, RH},
 	    {tcp_options,    [{nodelay, true}]} | Opts0],
-    case (catch megaco_tcp:listen(Pid, Opts)) of
+    case (catch handle_exec_listen_tcp(Pid, Opts, MaybeRetry)) of
         ok ->
             {ok, State};
         Else ->
             error({tcp_listen_failed, Opts0, Else})
     end;
-handle_exec({listen, Opts0},
+handle_exec({listen, Opts0, _MaybeRetry},
      #state{recv_handle = RH, port = Port, transport_sup = Pid} = State)
   when RH#megaco_receive_handle.send_mod =:= megaco_udp ->
     p("listen(udp) - open"),
@@ -430,18 +467,18 @@ handle_exec({listen, Opts0},
             error({udp_open, Opts0, Else})
     end;
 
-handle_exec({connect, Host, Opts0},
+handle_exec({connect, Host, Opts0, MaybeRetry},
      #state{transport_sup = Sup,
-	     recv_handle   = RH,
-	     port          = Port} = State) 
+	     recv_handle  = RH,
+	     port         = Port} = State) 
   when RH#megaco_receive_handle.send_mod =:= megaco_tcp ->
-    p("connect[megaco_tcp] to ~p", [Host]),
+    p("connect[megaco_tcp] to ~p:~p", [Host, Port]),
     PrelMid = preliminary_mid,
     Opts = [{host,           Host}, 
 	    {port,           Port}, 
 	    {receive_handle, RH},
 	    {tcp_options,    [{nodelay, true}]} | Opts0],
-    case (catch megaco_tcp:connect(Sup, Opts)) of
+    case (catch handle_exec_connect_tcp(Host, Opts, Sup, MaybeRetry)) of
 	{ok, SH, ControlPid} ->
 	    d("tcp connected: ~p, ~p", [SH, ControlPid]),
 	    megaco_connector_start(RH, PrelMid, SH, ControlPid),
@@ -451,7 +488,7 @@ handle_exec({connect, Host, Opts0},
 	    error({tcp_connect_failed, Host, Opts0, Error})
     end;
 
-handle_exec({connect, Host, Opts0},
+handle_exec({connect, Host, Opts0, _MaybeRetry},
      #state{transport_sup = Sup,
 	     recv_handle   = RH,
 	     port          = Port} = State) 
@@ -471,7 +508,7 @@ handle_exec({connect, Host, Opts0},
 	    error({udp_connect_failed, Host, Opts0, Error})
     end;
 
-handle_exec({connect, Host, Opts0},
+handle_exec({connect, Host, Opts0, _MaybeRetry},
      #state{transport_sup = Sup,
 	     recv_handle   = RH,
 	     port          = Port} = State) 
@@ -635,7 +672,7 @@ handle_exec({megaco_callback, Tag, Verify}, State) when is_function(Verify) ->
     end;
 
 handle_exec({megaco_callback, Tag, {VMod, VFunc, VArgs}}, State)
-  when is_atom(VMod) and is_atom(VFunc) and is_list(VArgs) ->
+  when is_atom(VMod) andalso is_atom(VFunc) andalso is_list(VArgs) ->
     p("megaco_callback [~w]", [Tag]),
     receive
         {handle_megaco_callback, Type, Msg, Pid} ->
@@ -866,7 +903,44 @@ terminate(Reason, #state{result = Result} = State) ->
     {error, {Reason, Result}}.
 
 
+%%----------------------------------------------------------------------
 
+handle_exec_listen_tcp(Sup, Opts, MaybeRetry) ->
+    handle_exec_listen_tcp(Sup, Opts, MaybeRetry, noError).
+
+handle_exec_listen_tcp(Sup, Opts, MaybeRetry, Error0) ->
+    case (catch megaco_tcp:listen(Sup, Opts)) of
+        ok ->
+            ok;
+	Error1 ->
+	    case (catch MaybeRetry(Error1, Error0)) of
+		{true, Error2} ->
+		    handle_exec_listen_tcp(Sup, Opts, MaybeRetry, Error2);
+		{false, Error3} ->
+		    {error, Error3}
+	    end
+    end.
+	    
+
+handle_exec_connect_tcp(Host, Opts, Sup, MaybeRetry) 
+  when is_function(MaybeRetry) ->
+    handle_exec_connect_tcp(Host, Opts, Sup, MaybeRetry, noError).
+
+handle_exec_connect_tcp(Host, Opts, Sup, MaybeRetry, Error0) ->
+    case (catch megaco_tcp:connect(Sup, Opts)) of
+	{ok, SH, ControlPid} ->
+	    d("tcp connected: ~p, ~p", [SH, ControlPid]),
+	    {ok, SH, ControlPid};
+	Error1 ->
+	    case (catch MaybeRetry(Error1, Error0)) of
+		{true, Error2} ->
+		    handle_exec_connect_tcp(Host, Opts, Sup, 
+					    MaybeRetry, Error2);
+		{false, Error3} ->
+		    {error, Error3}
+	    end
+    end.
+    
 
 
 %%----------------------------------------------------------------------
@@ -1001,6 +1075,14 @@ handle_megaco_callback_reply(_, _, _, _) ->
 %%----------------------------------------------------------------------
 %% internal utility functions
 %%----------------------------------------------------------------------
+
+random_init() ->
+    {A,B,C} = now(),
+    random:seed(A,B,C).
+
+random(N) ->
+    random:uniform(N).
+
 
 get_config(Key, Opts) ->
     {value, {Key, Val}} = lists:keysearch(Key, 1, Opts),

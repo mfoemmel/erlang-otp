@@ -1,9 +1,16 @@
 %% -*- erlang-indent-level: 2 -*-
-%%--------------------------------------------------------------------
+%%===========================================================================
 %% File        : typer.hrl
-%% Author      : Bingwen He <Bingwen.He@gmail.com>
+%% Author      : Kostis Sagonas <kostis@it.uu.se>
 %% Description : Header file for the typer application
-%%--------------------------------------------------------------------
+%%===========================================================================
+
+-define(SHOW, show).
+-define(SHOW_EXPORTED, show_exported).
+-define(ANNOTATE, annotate).
+-define(ANNOTATE_INC_FILES, annotate_inc_files).
+
+-type mode() :: ?SHOW | ?SHOW_EXPORTED | ?ANNOTATE | ?ANNOTATE_INC_FILES.
 
 %%
 %% The following are needed for some dialyzer records below
@@ -12,12 +19,12 @@
 -include("dialyzer_callgraph.hrl").
 
 %% XXX: The following appear here only temporarily
-%-type(dict()                :: tuple()).
--type(dialyzer_plt()        :: tuple()).
--type(dialyzer_codeserver() :: tuple()).
+%-type dict()                :: tuple().
+-type dialyzer_plt()        :: tuple().
+-type dialyzer_codeserver() :: tuple().
 
 -record(typer_analysis,
-	{mode		 :: atom(),
+	{mode		 :: mode(),
 	 macros=[]	 :: [{atom(),_}], % {macro_name, value}
 	 includes=[]	 :: [string()],
 	 

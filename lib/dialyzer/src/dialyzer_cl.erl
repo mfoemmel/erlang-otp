@@ -32,7 +32,7 @@
 -include("dialyzer.hrl").
 -include_lib("kernel/include/file.hrl").
 
--type(io_device() :: pid()).	% XXX: This should be imported from 'file'
+-type io_device() :: pid().	% XXX: This should be imported from 'file'
 
 -record(cl_state,
 	{backend_pid                            :: pid(),
@@ -51,8 +51,7 @@
 
 %%--------------------------------------------------------------------
 
--spec(start/1 :: (#options{}) -> dial_ret()
-			       | {dial_ret(),[dial_warning()]}).
+-spec start(#options{}) -> dial_ret() | {dial_ret(),[dial_warning()]}.
 
 start(#options{} = Options) ->
   process_flag(trap_exit, true),
@@ -113,11 +112,21 @@ check_plt(Opts) ->
   plt_common(Opts1, [], []).
 
 init_opts_for_check(Opts) ->
-  case Opts#options.init_plt of
-    none -> Opts#options{init_plt=get_default_plt(),
-			 output_plt=get_default_plt()};
-    Plt -> Opts#options{output_plt=Plt}
-  end.
+  Plt =
+    case Opts#options.init_plt of
+      none -> get_default_plt();
+      Plt0 -> Plt0
+    end,
+  Opts#options{files           = [],
+	       files_rec       = [],
+	       analysis_type   = plt_check,
+	       defines         = [],
+	       from            = byte_code,
+	       init_plt        = Plt,
+	       include_dirs    = [],
+	       output_plt      = Plt,
+	       use_contracts   = true
+	      }.
 
 %%--------------------------------------------------------------------
 
@@ -227,8 +236,9 @@ report_check(#options{report_mode=ReportMode, init_plt=InitPlt}) ->
 report_old_version(#options{report_mode=ReportMode, init_plt=InitPlt}) ->
   case ReportMode of
     quiet -> ok;
-    _ -> 
-      io:format("The PLT ~s was built with an old version of Dialyzer.\n",
+    _ ->
+      io:put_chars(" no\n"),
+      io:format("    (the PLT ~s was built with an old version of Dialyzer)\n",
 		[InitPlt])
   end.
 
@@ -410,7 +420,7 @@ expand_dependent_modules_1([], Included, _ModDeps) ->
 
 -define(MIN_FILES_FOR_NATIVE_COMPILE, 20).
 
--spec(hipe_compile/2 :: ([string()], #options{}) -> 'ok').
+-spec hipe_compile([string()], #options{}) -> 'ok'.
 
 hipe_compile(Files, #options{erlang_mode=ErlangMode}) ->
   case (length(Files) < ?MIN_FILES_FOR_NATIVE_COMPILE) orelse ErlangMode of
@@ -465,7 +475,7 @@ init_output(State0, DialyzerOptions) ->
       end
   end.
 
--spec(maybe_close_output_file/1 :: (#cl_state{}) -> 'ok').
+-spec maybe_close_output_file(#cl_state{}) -> 'ok'.
 maybe_close_output_file(State) ->
   case State#cl_state.output of
     standard_io -> ok;
@@ -479,7 +489,7 @@ maybe_close_output_file(State) ->
 
 -define(LOG_CACHE_SIZE, 10).
 
-%%-spec(cl_loop/1 :: (#cl_state{}) -> 
+%%-spec cl_loop(#cl_state{}) -> 
 cl_loop(State) ->
   cl_loop(State, []).
 
@@ -510,7 +520,7 @@ cl_loop(State, LogCache) ->
       cl_loop(State, LogCache)
   end.
 
--spec(failed_anal_msg/2 :: (string(), [_]) -> string()).
+-spec failed_anal_msg(string(), [_]) -> string().
 
 failed_anal_msg(Reason, LogCache) when length(Reason) > 0 ->
   Msg1 = io_lib:format("Analysis failed with error: ~s\n", [Reason]),
@@ -521,17 +531,17 @@ failed_anal_msg(Reason, LogCache) when length(Reason) > 0 ->
 			    [lists:reverse(LogCache)])
   end.
 
--spec(store_warnings/2 :: (#cl_state{}, [dial_warning()]) -> #cl_state{}).
+-spec store_warnings(#cl_state{}, [dial_warning()]) -> #cl_state{}.
 
 store_warnings(State = #cl_state{stored_warnings=StoredWarnings}, Warnings) ->
   State#cl_state{stored_warnings=StoredWarnings ++ Warnings}.
 
--spec(error/1 :: (string()) -> no_return()).
+-spec error(string()) -> no_return().
 
 error(Msg) ->
   throw({dialyzer_error, Msg}).
 
--spec(error/2 :: (#cl_state{}, string()) -> no_return()).
+-spec error(#cl_state{}, string()) -> no_return().
 
 error(State, Msg) ->
   case State#cl_state.output of
@@ -571,17 +581,21 @@ print_ext_calls(#cl_state{report_mode=quiet}) ->
 print_ext_calls(#cl_state{output=Output, external_calls=Calls,
 			  stored_warnings=Warnings,
 			  output_format=Format}) ->
-  case Warnings =:= [] of
-    true -> io:nl(Output); %% Need to do a newline first
-    false -> ok
-  end,
-  case Format of
-    formatted ->
-      io:put_chars(Output, "Unknown functions:\n"),
-      do_print_ext_calls(Output, Calls, "  ");
-    raw ->
-      io:put_chars(Output, "%% Unknown functions:\n"),
-      do_print_ext_calls(Output, Calls, "%%  ")
+  case Calls =:= [] of
+    true -> ok;
+    false ->
+      case Warnings =:= [] of
+	true -> io:nl(Output); %% Need to do a newline first
+	false -> ok
+      end,
+      case Format of
+	formatted ->
+	  io:put_chars(Output, "Unknown functions:\n"),
+	  do_print_ext_calls(Output, Calls, "  ");
+	raw ->
+	  io:put_chars(Output, "%% Unknown functions:\n"),
+	  do_print_ext_calls(Output, Calls, "%%  ")
+      end
   end.
 
 do_print_ext_calls(Output, [{M,F,A}|T], Before) ->
@@ -656,7 +670,7 @@ add_file_fun(Extension) ->
       end
   end.
 
--spec(start_analysis/2 :: (#cl_state{}, #analysis{}) -> #cl_state{}).
+-spec start_analysis(#cl_state{}, #analysis{}) -> #cl_state{}.
 start_analysis(State, Analysis) ->
   Self = self(),
   LegalWarnings = State#cl_state.legal_warnings,

@@ -23,8 +23,6 @@
 %% Internal API.
 -export([start/0, start/1]).
 
--import(lists, [foldl/3,flatmap/2,member/2,reverse/1,foreach/2]).
-
 script_name() ->
     [ScriptName|_] = init:get_plain_arguments(),
     ScriptName.
@@ -43,8 +41,13 @@ start(EscriptOptions) ->
 	%% surprising for users of escript, make sure to reset
 	%% trap_exit to false.
 	process_flag(trap_exit, false),
-	[File|Args] = init:get_plain_arguments(),
-	do_run(File, Args, EscriptOptions)
+	case init:get_plain_arguments() of
+	    [File|Args] ->
+		do_run(File, Args, EscriptOptions);
+	    [] ->
+		io:format("escript: Missing filename\n", []),
+		my_halt(127)
+	end
     catch
 	throw:Str ->
 	    io:format("escript: ~s\n", [Str]),
@@ -61,8 +64,10 @@ start(EscriptOptions) ->
 
 do_run(File, Args, Options) ->
     {Parse,Mode} = parse_file(File),
-    case Options of
-	["s"] ->
+    case lists:member("s", Options) of
+	true when Mode =:= run ->
+	    my_halt(0);
+	true ->
 	    %% Syntax check only.
 	    case compile:forms(Parse, [report,strong_validation]) of
 		{ok,_} ->
@@ -70,14 +75,16 @@ do_run(File, Args, Options) ->
 		_Other ->
 		    fatal("There were compilation errors.")
 	    end;
-	_ ->
+	false ->
 	    eval_module(Mode, Parse, File, Args)
     end.
 
 eval_module(interpret, Parse, File, Args) ->
     interpret(File, Parse, Args);
 eval_module(compile, Parse, _File, Args) ->
-    compile(Parse, Args).
+    compile(Parse, Args);
+eval_module(run, Module, _File, Args) ->
+    run_code(Module, Args).
 
 interpret(File, Parse0, Args) ->
     case erl_lint:module(Parse0) of
@@ -136,9 +143,9 @@ parse_to_dict([{function,_,Name,Arity,Clauses}|T], Dict0) ->
     Dict = dict:store({local, Name,Arity}, Clauses, Dict0),
     parse_to_dict(T, Dict);
 parse_to_dict([{attribute,_,import,{Mod,Funcs}}|T], Dict0) ->
-    Dict = foldl(fun(I, D) ->
-			 dict:store({remote,I}, Mod, D)
-		 end, Dict0, Funcs),
+    Dict = lists:foldl(fun(I, D) ->
+			       dict:store({remote,I}, Mod, D)
+		       end, Dict0, Funcs),
     parse_to_dict(T, Dict);
 parse_to_dict([_|T], Dict) ->
     parse_to_dict(T, Dict);
@@ -153,16 +160,110 @@ mk_mod() ->
 		       integer_to_list(K)),
     {attribute,0,module, Mod}.
 
+-define(PRETTY_APPLY(M, F, A), pretty_apply(?MODULE, ?LINE, M, F, A)).
+
 parse_file(File) ->
     parse_check_error(File, parse_file(File, 0, [], interpret)).
 
 parse_file(File, Nerrs, L, Mode) ->
-    {ok, P} = file:open(File, [read]),
-    %% This is to skip the first line in the script
-    io:get_line(P, ''),
-    Ret = parse_loop(P, File, io:parse_erl_form(P, '', 2), Nerrs, L, Mode),
-    file:close(P),
-    Ret.
+    {ok, P} = 
+	case file:open(File, [read]) of
+	    {ok, P0} ->
+		{ok, P0};
+	    {error, R} ->
+		fatal(lists:concat([file:format_error(R), ": '", File, "'"]))
+	end,
+    {HeaderSz, BodyLineNo, FirstBodyLine} = skip_header(P),
+    case FirstBodyLine of
+	[$P, $K | _] ->
+	    %% Archive file
+	    ok = ?PRETTY_APPLY(file, close, [P]),
+	    {ok, <<_FirstLine:HeaderSz/binary, Bin/binary>>} =
+		?PRETTY_APPLY(file, read_file, [File]),
+	    case code:set_primary_archive(File, Bin) of
+		ok ->
+		    Mod = 
+			case init:get_argument(escript) of
+			    {ok, [["main", M]]} -> 
+				list_to_atom(M);
+			    _ -> 
+				Ext = init:archive_extension(),
+				list_to_atom(filename:basename(File, Ext))
+			end,
+    		    {Nerrs,Mod,run};
+		{error, bad_eocd} ->
+		    fatal("Not an archive file");
+		{error, Reason} ->
+		    fatal(Reason)
+	    end;
+	[$F, $O, $R, $1 | _] ->
+	    %% Beam file
+	    ok = ?PRETTY_APPLY(file, close, [P]),
+	    {ok, <<_FirstLine:HeaderSz/binary, Bin/binary>>} =
+		?PRETTY_APPLY(file, read_file, [File]),
+	    case beam_lib:version(Bin) of
+		{ok, {Mod, _Version}} ->
+		    {module, Mod} = erlang:load_module(Mod, Bin),
+		    {Nerrs,Mod,run};
+		{error, beam_lib, Reason} when is_tuple(Reason) ->
+		    fatal(element(1, Reason));
+		{error, beam_lib, Reason} ->
+		    fatal(Reason)
+	    end;
+	_ ->
+	    %% Source code
+	    {ok, _} = ?PRETTY_APPLY(file, position, [P, {bof, HeaderSz}]), % Goto prev pos
+	    Ret = parse_loop(P, File, io:parse_erl_form(P, '', BodyLineNo), Nerrs, L, Mode),
+	    ok = ?PRETTY_APPLY(file, close, [P]),
+	    Ret
+    end.
+
+pretty_apply(Module, Line, M, F, A) ->
+    case apply(M, F, A) of
+	ok ->
+	    ok;
+	{ok, Res} ->
+	    {ok, Res};
+	{error, Reason} ->
+	    fatal({Module, Line, M, F, A, Reason})
+    end.
+	    
+%% Skip header and return first body line
+skip_header(P) ->
+    %% Skip shebang on first line
+    get_line(P),
+    {ok, HeaderSz1} = file:position(P, cur),
+    
+    %% Look for special comment on second line
+    Line2 = get_line(P),
+    {ok, HeaderSz2} = file:position(P, cur),
+    case Line2 of
+	[$\%, $\%, $\! | _] ->
+	    %% Skip special comment on second line
+	    Line3 = get_line(P),
+	    {HeaderSz2, 3, Line3};
+	 _ ->
+		%% Look for special comment on third line
+		Line3 = get_line(P),
+		{ok, HeaderSz3} = file:position(P, cur),
+		case Line3 of
+		    [$\%, $\%, $\! | _] -> 
+		        %% Skip special comment on third line
+		        Line4 = get_line(P),
+		        {HeaderSz3, 4, Line4};
+		    _ ->
+		        %% Just skip shebang on first line
+			{HeaderSz1, 2, Line2}
+   	        end
+    end.
+    
+get_line(P) ->
+    case io:get_line(P, '') of
+	eof ->
+	    fatal("Premature end of file reached");
+	Line ->
+	    Line
+    end.
 
 parse_include_lib(File, Nerrs, L0, Mode) ->
     case open_lib_dir(File) of
@@ -188,8 +289,10 @@ open_lib_dir(File0) ->
 	    {error,bad_libdir}
     end.
 
+parse_check_error(_File, {0,Module,Mode = run}) when is_atom(Module) ->
+    {Module,Mode};
 parse_check_error(File, {0,L0,Mode}) ->
-    L = reverse(L0),
+    L = lists:reverse(L0),
     Code = [{attribute,0,file,{File,1}},
 	    mk_mod()|case is_main_exported(L) of
 			 false ->
@@ -198,7 +301,8 @@ parse_check_error(File, {0,L0,Mode}) ->
 			     L
 		     end],
     {Code,Mode};
-parse_check_error(_, _) -> fatal("There were compilation errors.").
+parse_check_error(_, _) ->
+    fatal("There were compilation errors.").
 
 maybe_expand_records(Code) ->
     case erase(there_are_records) of
@@ -256,7 +360,7 @@ code_handler(Name, Args, Dict, File) ->
     end.
 
 is_main_exported([{attribute,_,export,Fs}|T]) ->
-    case member({main,1}, Fs) of
+    case lists:member({main,1}, Fs) of
 	false -> is_main_exported(T);
 	true -> true
     end;
@@ -267,9 +371,9 @@ fatal(Str) ->
     throw(Str).
 				
 report_errors(Errors) ->
-    foreach(fun ({{F,_L},Eds}) -> list_errors(F, Eds);
-		({F,Eds}) -> list_errors(F, Eds) end,
-	    Errors).
+    lists:foreach(fun ({{F,_L},Eds}) -> list_errors(F, Eds);
+		      ({F,Eds}) -> list_errors(F, Eds) end,
+		  Errors).
 
 list_errors(F, [{Line,Mod,E}|Es]) ->
     io:fwrite("~s:~w: ~s\n", [F,Line,Mod:format_error(E)]),
@@ -280,11 +384,11 @@ list_errors(F, [{Mod,E}|Es]) ->
 list_errors(_F, []) -> ok.
 
 report_warnings(Ws0) ->
-    Ws1 = flatmap(fun({{F,_L},Eds}) -> format_message(F, Eds);
-		     ({F,Eds}) -> format_message(F, Eds) end,
+    Ws1 = lists:flatmap(fun({{F,_L},Eds}) -> format_message(F, Eds);
+			   ({F,Eds}) -> format_message(F, Eds) end,
 		  Ws0),
     Ws = ordsets:from_list(Ws1),
-    foreach(fun({_,Str}) -> io:put_chars(Str) end, Ws).
+    lists:foreach(fun({_,Str}) -> io:put_chars(Str) end, Ws).
 
 format_message(F, [{Line,Mod,E}|Es]) ->
     M = {{F,Line},io_lib:format("~s:~w: Warning: ~s\n", [F,Line,Mod:format_error(E)])},

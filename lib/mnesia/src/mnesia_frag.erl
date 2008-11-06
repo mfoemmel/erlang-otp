@@ -31,8 +31,8 @@
 	 read/5, match_object/5, all_keys/4,
 	 select/5,select/6,select_cont/3,
 	 index_match_object/6, index_read/6,
-	 foldl/6, foldr/6,
-	 table_info/4
+	 foldl/6, foldr/6, table_info/4,
+	 first/3, next/4, prev/4, last/3
        ]).
 
 %header_doc_include
@@ -186,6 +186,108 @@ table_info2(ActivityId, Opaque, Tab, Frag, Item) ->
 	_ ->
 	    mnesia:table_info(ActivityId, Opaque, Frag, Item)
     end.
+
+first(ActivityId, Opaque, Tab) ->
+    case ?catch_val({Tab, frag_hash}) of
+	{'EXIT', _} ->
+	    mnesia:first(ActivityId, Opaque, Tab);
+	FH ->
+	    FirstFrag = Tab,
+	    case mnesia:first(ActivityId, Opaque, FirstFrag) of
+		'$end_of_table' ->
+		    search_first(ActivityId, Opaque, Tab, 1, FH);
+		Next ->
+		    Next
+	    end
+    end.
+
+search_first(ActivityId, Opaque, Tab, N, FH) when N =< FH#frag_state.n_fragments ->
+    NextN = N + 1,
+    NextFrag = n_to_frag_name(Tab, NextN),
+    case mnesia:first(ActivityId, Opaque, NextFrag) of
+	'$end_of_table' ->
+	    search_first(ActivityId, Opaque, Tab, NextN, FH);
+	Next ->
+	    Next
+    end;
+search_first(_ActivityId, _Opaque, _Tab, _N, _FH) ->
+    '$end_of_table'.
+
+last(ActivityId, Opaque, Tab) ->
+    case ?catch_val({Tab, frag_hash}) of
+	{'EXIT', _} ->
+	    mnesia:last(ActivityId, Opaque, Tab);
+	FH ->
+	    LastN = FH#frag_state.n_fragments,
+	    search_last(ActivityId, Opaque, Tab, LastN, FH)
+    end.
+
+search_last(ActivityId, Opaque, Tab, N, FH) when N >= 1 ->
+    Frag = n_to_frag_name(Tab, N),
+    case mnesia:last(ActivityId, Opaque, Frag) of
+	'$end_of_table' ->
+	    PrevN = N - 1,
+	    search_last(ActivityId, Opaque, Tab, PrevN, FH);
+	Prev ->
+	    Prev
+    end;
+search_last(_ActivityId, _Opaque, _Tab, _N, _FH) ->
+    '$end_of_table'.
+
+prev(ActivityId, Opaque, Tab, Key) ->
+    case ?catch_val({Tab, frag_hash}) of
+	{'EXIT', _} ->
+	    mnesia:prev(ActivityId, Opaque, Tab, Key);
+	FH ->
+	    N = key_to_n(FH, Key),
+	    Frag = n_to_frag_name(Tab, N),
+	    case mnesia:prev(ActivityId, Opaque, Frag, Key) of
+		'$end_of_table' ->
+		    search_prev(ActivityId, Opaque, Tab, N);
+		Prev ->
+		    Prev
+	    end
+    end.
+
+search_prev(ActivityId, Opaque, Tab, N) when N > 1 ->
+    PrevN = N - 1,
+    PrevFrag = n_to_frag_name(Tab, PrevN),
+    case mnesia:last(ActivityId, Opaque, PrevFrag) of
+	'$end_of_table' ->
+	    search_prev(ActivityId, Opaque, Tab, PrevN);
+	Prev ->
+	    Prev
+    end;
+search_prev(_ActivityId, _Opaque, _Tab, _N) ->
+    '$end_of_table'.
+
+next(ActivityId, Opaque, Tab, Key) ->
+    case ?catch_val({Tab, frag_hash}) of
+	{'EXIT', _} ->
+	    mnesia:next(ActivityId, Opaque, Tab, Key);
+	FH ->
+	    N = key_to_n(FH, Key),
+	    Frag = n_to_frag_name(Tab, N),
+	    case mnesia:next(ActivityId, Opaque, Frag, Key) of
+		'$end_of_table' ->
+		    search_next(ActivityId, Opaque, Tab, N, FH);
+		Prev ->
+		    Prev
+	    end
+    end.
+
+search_next(ActivityId, Opaque, Tab, N, FH) when N < FH#frag_state.n_fragments ->
+    NextN = N + 1,
+    NextFrag = n_to_frag_name(Tab, NextN),
+    case mnesia:first(ActivityId, Opaque, NextFrag) of
+	'$end_of_table' ->
+	    search_next(ActivityId, Opaque, Tab, NextN, FH);
+	Next ->
+	    Next
+    end;
+search_next(_ActivityId, _Opaque, _Tab, _N, _FH) ->
+    '$end_of_table'.
+
 %impl_doc_include
 
 frag_size(ActivityId, Opaque, Tab) ->
@@ -194,8 +296,6 @@ frag_size(ActivityId, Opaque, Tab) ->
 frag_memory(ActivityId, Opaque, Tab) ->
     [{F, remote_table_info(ActivityId, Opaque, F, memory)} || F <- frag_names(Tab)].
 
-    
-  
 remote_table_info(ActivityId, Opaque, Tab, Item) ->
     N = val({Tab, where_to_read}),
     case rpc:call(N, mnesia, table_info, [ActivityId, Opaque, Tab, Item]) of
@@ -295,7 +395,7 @@ verify_numbers(FH,MatchSpec) ->
 		HashMod:match_spec_to_frag_numbers(HashState, MatchSpec)
 	end,
     N = FH#frag_state.n_fragments,
-    VerifyFun = fun(F) when integer(F), F >= 1, F =< N -> false;
+    VerifyFun = fun(F) when is_integer(F), F >= 1, F =< N -> false;
 		   (_F) -> true
 		end,
     case catch lists:filter(VerifyFun, FragNumbers) of
@@ -396,7 +496,7 @@ expand_cstruct(Cs, Mode) ->
     %% Verify node_pool
     BadPool = {bad_type, Tab, {node_pool, Pool}},
     mnesia_schema:verify(list, mnesia_lib:etype(Pool), BadPool),
-    NotAtom = fun(A) when atom(A) -> false;
+    NotAtom = fun(A) when is_atom(A) -> false;
 		 (_A) -> true
 	      end,
     mnesia_schema:verify([], [P || P <- Pool, NotAtom(P)], BadPool),
@@ -405,7 +505,7 @@ expand_cstruct(Cs, Mode) ->
     ND  = mnesia_schema:pick(Tab, n_disc_copies, Props, 0),
     NDO = mnesia_schema:pick(Tab, n_disc_only_copies, Props, 0),
     
-    PosInt = fun(I) when integer(I), I >= 0 -> true;
+    PosInt = fun(I) when is_integer(I), I >= 0 -> true;
 		(_I) -> false
 	     end,
     mnesia_schema:verify(true, PosInt(NR),
@@ -450,7 +550,7 @@ do_expand_cstruct(Cs, FH, N, Pool, NR, ND, NDO, Mode) ->
     Cs2 = Cs#cstruct{frag_properties = lists:sort(CommonProps)},
     expand_frag_cstructs(N, NR, ND, NDO, Cs2, Pool, Pool, FH, Mode).
 
-verify_n_fragments(N, Cs, Mode) when integer(N), N >= 1 ->
+verify_n_fragments(N, Cs, Mode) when is_integer(N), N >= 1 ->
     case Mode of
 	create ->
 	    Cs#cstruct{ram_copies = [],
@@ -556,9 +656,9 @@ set_frag_node(Cs, Pos, Head) ->
     Ns = element(Pos, Cs),
     {Node, Count2} =  
 	case Head of
-	    {N, Count} when atom(N), integer(Count), Count >= 0 ->
+	    {N, Count} when is_atom(N), is_integer(Count), Count >= 0 ->
 		{N, Count + 1};
-	    N when atom(N) ->
+	    N when is_atom(N) ->
 		{N, 1};
 	    BadNode ->
 		mnesia:abort({bad_type, Cs#cstruct.name, BadNode})
@@ -577,14 +677,14 @@ rearrange_dist(_Cs, [], Dist, _) ->
 
 insert_dist(Cs, Node, Count, [Head | Tail], Pool) ->
     case Head of
-	{Node2, Count2} when atom(Node2), integer(Count2), Count2 >= 0 ->
+	{Node2, Count2} when is_atom(Node2), is_integer(Count2), Count2 >= 0 ->
 	    case node_diff(Node, Count, Node2, Count2, Pool) of
 		less ->
 		    [{Node, Count}, Head | Tail];
 		greater ->
 		    [Head | insert_dist(Cs, Node, Count, Tail, Pool)]
 	    end;
-	Node2 when atom(Node2) -> 
+	Node2 when is_atom(Node2) -> 
 	    insert_dist(Cs, Node, Count, [{Node2, 0} | Tail], Pool);
 	BadNode ->
 	    mnesia:abort({bad_type, Cs#cstruct.name, BadNode})
@@ -680,7 +780,7 @@ make_deactivate(Tab) ->
 %% Add a fragment to a fragmented table  and fill it with half of
 %% the records from one of the old fragments
     
-make_multi_add_frag(Tab, SortedNs) when list(SortedNs) ->
+make_multi_add_frag(Tab, SortedNs) when is_list(SortedNs) ->
     verify_multi(Tab),
     Ops = make_add_frag(Tab, SortedNs),
 
@@ -743,7 +843,7 @@ make_add_frag(Tab, SortedNs) ->
 
     [BaseOp, NewOp | SplitOps].
 
-replace_frag_hash(Cs, FH) when record(FH, frag_state) ->
+replace_frag_hash(Cs, FH) when is_record(FH, frag_state) ->
     Fun = fun(Prop) ->
 		  case Prop of
 		      {n_fragments, _} ->
@@ -776,7 +876,7 @@ adjust_before_split(FH) ->
     N = FH#frag_state.n_fragments + 1,
     FromFrags2 = (catch lists:sort(FromFrags)),
     UnionFrags = (catch lists:merge(FromFrags2, lists:sort(AdditionalWriteFrags))),
-    VerifyFun = fun(F) when integer(F), F >= 1, F =< N -> false;
+    VerifyFun = fun(F) when is_integer(F), F >= 1, F =< N -> false;
 		   (_F) -> true
 		end,
     case catch lists:filter(VerifyFun, UnionFrags) of
@@ -871,7 +971,7 @@ adjust_before_merge(FH) ->
     N = FH#frag_state.n_fragments,
     FromFrags2 = (catch lists:sort(FromFrags)),
     UnionFrags = (catch lists:merge(FromFrags2, lists:sort(AdditionalWriteFrags))),
-    VerifyFun = fun(F) when integer(F), F >= 1, F =< N -> false;
+    VerifyFun = fun(F) when is_integer(F), F >= 1, F =< N -> false;
 		   (_F) -> true
 		end,
     case catch lists:filter(VerifyFun, UnionFrags) of
@@ -954,7 +1054,7 @@ make_multi_add_node(Tab, Node)  ->
     MoreOps = [make_add_node(T, Node) || T <- lookup_foreigners(Tab)],
     [Ops | MoreOps].
     
-make_add_node(Tab, Node) when atom(Node)  ->
+make_add_node(Tab, Node) when is_atom(Node)  ->
     Pool = lookup_prop(Tab, node_pool),
     case lists:member(Node, Pool) of
 	false ->
@@ -983,7 +1083,7 @@ make_multi_del_node(Tab, Node)  ->
     MoreOps = [make_del_node(T, Node) || T <- lookup_foreigners(Tab)],
     [Ops | MoreOps].
     
-make_del_node(Tab, Node) when atom(Node) ->
+make_del_node(Tab, Node) when is_atom(Node) ->
     Cs = mnesia_schema:incr_version(val({Tab, cstruct})),
     mnesia_schema:ensure_active(Cs),
     Pool = lookup_prop(Tab, node_pool),
@@ -1035,7 +1135,7 @@ val(Var) ->
 
 set_frag_hash(Tab, Props) ->
     case props_to_frag_hash(Tab, Props) of
-	FH when record(FH, frag_state) ->
+	FH when is_record(FH, frag_state) ->
 	    mnesia_lib:set({Tab, frag_hash}, FH);
 	no_hash ->
 	    mnesia_lib:unset({Tab, frag_hash})
@@ -1082,7 +1182,7 @@ lookup_prop(Tab, Prop) ->
 
 lookup_frag_hash(Tab) ->
     case ?catch_val({Tab, frag_hash}) of
-	FH when record(FH, frag_state) ->
+	FH when is_record(FH, frag_state) ->
 	    FH;
 	{frag_hash, K, N, _S, _D} = FH ->
 	    %% Old style. Kept for backwards compatibility.
@@ -1166,7 +1266,7 @@ key_to_n(FH, Key) ->
 		HashMod:key_to_frag_number(HashState, Key)
 	end,
     if
-	integer(N), N >= 1, N =< FH#frag_state.n_fragments ->
+	is_integer(N), N >= 1, N =< FH#frag_state.n_fragments ->
 	    N;
 	true ->
 	    mnesia:abort({"key_to_frag_number: Fragment number out of range",
