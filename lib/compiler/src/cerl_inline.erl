@@ -2273,12 +2273,10 @@ reduce_bif_call_1(erlang, setelement, 3, [X, Y, Z], Env) ->
 	false ->
 	    false
     end;
-reduce_bif_call_1(erlang, size, 1, [X], _Env) ->
+reduce_bif_call_1(erlang, size, 1, [X], Env) ->
     case is_c_tuple(X) of
 	true ->
-	    %% Just evaluate the tuple for effect and use the size (the
-	    %% arity) as the result.
-	    {true, make_seq(X, c_int(tuple_arity(X)))};
+	    reduce_bif_call_1(erlang, tuple_size, 1, [X], Env);
 	false ->
 	    false
     end;
@@ -2287,6 +2285,15 @@ reduce_bif_call_1(erlang, tl, 1, [X], _Env) ->
 	true ->
 	    %% Cf. `element/2' above.
 	    {true, make_seq(cons_hd(X), cons_tl(X))};
+	false ->
+	    false
+    end;
+reduce_bif_call_1(erlang, tuple_size, 1, [X], _Env) ->
+    case is_c_tuple(X) of
+	true ->
+	    %% Just evaluate the tuple for effect and use the size (the
+	    %% arity) as the result.
+	    {true, make_seq(X, c_int(tuple_arity(X)))};
 	false ->
 	    false
     end;

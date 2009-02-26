@@ -335,6 +335,10 @@ switch_cmd({ok,[{atom,_,k}],_}, Iport, Oport, Gr) ->
 switch_cmd({ok,[{atom,_,j}],_}, Iport, Oport, Gr) ->
     io_requests(gr_list(Gr), Iport, Oport),
     switch_loop(Iport, Oport, Gr);
+switch_cmd({ok,[{atom,_,s},{atom,_,Shell}],_}, Iport, Oport, Gr0) ->
+    Pid = group:start(self(), {Shell,start,[]}),
+    Gr = gr_add_cur(Gr0, Pid, {Shell,start,[]}),
+    switch_loop(Iport, Oport, Gr);
 switch_cmd({ok,[{atom,_,s}],_}, Iport, Oport, Gr0) ->
     Pid = group:start(self(), {shell,start,[]}),
     Gr = gr_add_cur(Gr0, Pid, {shell,start,[]}),
@@ -353,6 +357,11 @@ switch_cmd({ok,[{atom,_,r}],_}, Iport, Oport, Gr0) ->
 switch_cmd({ok,[{atom,_,r},{atom,_,Node}],_}, Iport, Oport, Gr0) ->
     Pid = group:start(self(), {Node,shell,start,[]}),
     Gr = gr_add_cur(Gr0, Pid, {Node,shell,start,[]}),
+    switch_loop(Iport, Oport, Gr);
+switch_cmd({ok,[{atom,_,r},{atom,_,Node},{atom,_,Shell}],_},
+	   Iport, Oport, Gr0) ->
+    Pid = group:start(self(), {Node,Shell,start,[]}),
+    Gr = gr_add_cur(Gr0, Pid, {Node,Shell,start,[]}),
     switch_loop(Iport, Oport, Gr);
 switch_cmd({ok,[{atom,_,q}],_}, Iport, Oport, Gr) ->
     case erlang:system_info(break_ignored) of
@@ -388,14 +397,15 @@ list_commands(Iport, Oport) ->
 		  false ->
 		      [{put_chars,"  q        - quit erlang\n"}]
 	      end,
-    io_requests([{put_chars,"  c [nn]   - connect to job\n"},
-		 {put_chars,"  i [nn]   - interrupt job\n"},
-		 {put_chars,"  k [nn]   - kill job\n"},
-		 {put_chars,"  j        - list all jobs\n"},
-		 {put_chars,"  s        - start local shell\n"},
-		 {put_chars,"  r [node] - start remote shell\n"}] ++
+     io_requests([{put_chars,"  c [nn]            - connect to job\n"},
+		  {put_chars,"  i [nn]            - interrupt job\n"},
+		  {put_chars,"  k [nn]            - kill job\n"},
+		  {put_chars,"  j                 - list all jobs\n"},
+		  {put_chars,"  s [shell]         - start local shell\n"},
+		  {put_chars,"  r [node [shell]]  - start remote shell\n"}] ++
 		 QuitReq ++
-		 [{put_chars,"  ? | h    - this message\n"}], Iport, Oport).
+		 [{put_chars,"  ? | h             - this message\n"}],
+		 Iport, Oport).
 
 get_line({done,Line,_Rest,Rs}, Iport, Oport) ->
     io_requests(Rs, Iport, Oport),

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2002-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1ct_constructed_ber_bin_v2).
 
@@ -179,6 +181,7 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
 
 gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:start(),
+    asn1ct_name:clear(),
     asn1ct_name:new(tag),
     #'SEQUENCE'{tablecinf=TableConsInfo,components=CList} = D#type.def,
     Ext = extensible(CList),
@@ -228,12 +231,7 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 			{{AttrN,ObjectSetRef},UniqueFieldName,ValIndex}
 		end;
 	    _ ->
-% 		case D#type.tablecinf of
-% 		    [{objfun,_}|_] ->
-% 			{{"got objfun through args","ObjFun"},false,false};
-% 		    _ ->
 		{false,false,false}
-%	end
 	end,
     RecordName = lists:concat([get_record_name_prefix(),
 			       asn1ct_gen:list2rname(Typename)]),
@@ -344,7 +342,8 @@ gen_encode_set(Erules,Typename,D) when record(D,type) ->
 
 gen_decode_set(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:start(),
-    asn1ct_name:new(term),
+    asn1ct_name:clear(),
+%%    asn1ct_name:new(term),
     asn1ct_name:new(tag),
     #'SET'{tablecinf=TableConsInfo,components=TCompList} = D#type.def,
     Ext = extensible(TCompList),
@@ -358,7 +357,7 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 		   _ -> TCompList
 	       end,
 
-    asn1ct_name:clear(),
+    %% asn1ct_name:clear(),
     asn1ct_name:new(tlv),
     case CompList of
 	[] -> % empty sequence
@@ -370,12 +369,19 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:new(v),
 
 
-    {DecObjInf,UniqueFName} =
+    {DecObjInf,UniqueFName,ValueIndex} =
 	case TableConsInfo of
-	    {ObjectSetRef,AttrN,_N,UniqueFieldName} ->%% N is index of attribute that determines constraint
+%%	    {ObjectSetRef,AttrN,_N,UniqueFieldName} ->%% N is index of attribute that determines constraint
+	    #simpletableattributes{objectsetname=ObjectSetRef,
+				   c_name=AttrN,
+				   usedclassfield=UniqueFieldName,
+				   uniqueclassfield=UniqueFieldName,
+				   valueindex=ValIndex} ->
 		F = fun(#'ComponentType'{typespec=CT})->
-			    case {CT#type.constraint,CT#type.tablecinf} of
-				{[],[{objfun,_}|_]} -> true;
+			    case {asn1ct_gen:get_constraint(CT#type.constraint,
+							    componentrelation),
+				  CT#type.tablecinf} of
+				{no,[{objfun,_}|_]} -> true;
 				_ -> false
 			    end
 		    end,
@@ -383,13 +389,13 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 		    true -> % when component relation constraint establish
 			%% relation from a component to another components
 			%% subtype component
-			{{AttrN,{deep,ObjectSetRef,UniqueFieldName}},
-			 UniqueFieldName};
+			{{AttrN,{deep,ObjectSetRef,UniqueFieldName,ValIndex}},
+			 UniqueFieldName,ValIndex};
 		    false ->
-			{{AttrN,ObjectSetRef},UniqueFieldName}
+			{{AttrN,ObjectSetRef},UniqueFieldName,ValIndex}
 		end;
 	    _ ->
-		{false,false}
+		{false,false,false}
 	end,
 
     case CompList of
@@ -426,7 +432,8 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 		{_,[]} ->
 		    ok;
 		{[{ObjSetRef,LeadingAttr,Term}],PostponedDecArgs} ->
-		    DecObj = lists:concat(['DecObj',LeadingAttr,Term]),
+		    DecObj = asn1ct_gen:un_hyphen_var(lists:concat(['DecObj',LeadingAttr,Term])),
+		    ValueMatch = value_match(ValueIndex,Term),
 		    {ObjSetMod,ObjSetName} =
 			case ObjSetRef of
 			    {M,O} ->
@@ -436,7 +443,7 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 			end,
 		    emit([DecObj," =",nl,
 			  "   ",ObjSetMod,":'getdec_",ObjSetName,"'(",
-			  {asis,UniqueFName},", ",Term,"),",nl]),
+			  {asis,UniqueFName},", ",ValueMatch,"),",nl]),
 		    gen_dec_postponed_decs(DecObj,PostponedDecArgs)
 	    end,
 	    demit(["Result = "]), %dbg
@@ -486,6 +493,7 @@ gen_encode_sof(Erules,Typename,_InnerTypename,D) when record(D,type) ->
 
 gen_decode_sof(Erules,TypeName,_InnerTypeName,D) when record(D,type) ->
     asn1ct_name:start(),
+    asn1ct_name:clear(),
     {SeqOrSetOf, _TypeTag, Cont} = 
 	case D#type.def of
 	    {'SET OF',_Cont} -> {'SET OF','SET',_Cont};

@@ -74,9 +74,9 @@
 -define(CFG,  hipe_rtl_cfg).
 -include("../ssa/hipe_ssa_const_prop.inc").
 
--type(bool_lattice() :: 'true' | 'false' | 'top' | 'bottom').
--type(conditional()  :: 'eq' | 'ne' | 'ge' | 'geu' | 'gt' | 'gtu' | 'le'
-                      | 'leu' | 'lt' | 'ltu' | 'overflow' | 'not_overflow').
+-type bool_lattice() :: 'true' | 'false' | 'top' | 'bottom'.
+-type conditional()  :: 'eq' | 'ne' | 'ge' | 'geu' | 'gt' | 'gtu' | 'le'
+                      | 'leu' | 'lt' | 'ltu' | 'overflow' | 'not_overflow'.
 
 %%-----------------------------------------------------------------------------
 %% Procedure : visit_expression/2
@@ -85,7 +85,7 @@
 %%	       instruction.
 %% Arguments : Instructions - the instruction
 %%             Environment  - have a guess.
-%% Returns   : { FlowWorkList, SSAWorkList, Environment} 
+%% Returns   : {FlowWorkList, SSAWorkList, Environment}
 %%-----------------------------------------------------------------------------
 visit_expression(Instruction, Environment) ->
   case Instruction of
@@ -382,9 +382,9 @@ maybe_top_or_bottom([top | Rest], _) -> maybe_top_or_bottom(Rest, top);
 maybe_top_or_bottom([bottom | _], _) -> bottom;
 maybe_top_or_bottom([_ | Rest],  TB) -> maybe_top_or_bottom(Rest, TB).
 
--spec(partial_eval_branch/5 :: (conditional(), bool_lattice(), bool_lattice(),
-				bool_lattice() | 0, bool_lattice() | 0) ->
-	 bool_lattice()).
+-spec partial_eval_branch(conditional(), bool_lattice(), bool_lattice(),
+			  bool_lattice() | 0, bool_lattice() | 0) ->
+	 bool_lattice().
 partial_eval_branch(Cond, N0, Z0, V0, C0) ->
   {N, Z, V, C} =
     if Cond =:= 'eq';

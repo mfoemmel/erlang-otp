@@ -515,6 +515,19 @@
           on <c><![CDATA[erlang:now/0]]></c>. If the system time jumps, timers
           then time out at the wrong time.</p>
       </item>
+      <tag><c><![CDATA[+d]]></c></tag>
+      <item>
+        <p>If the emulator detects an internal error (or runs out of memory),
+	it will by default generate both a crash dump and a core dump.
+	The core dump will, however, not be very useful since the content
+	of process heaps is destroyed by the crash dump generation.</p>
+
+	<p>The <c>+d</c> option instructs the emulator to only produce a
+	core dump and no crash dump if an internal error is detected.</p>
+
+	<p>Calling <c>erlang:halt/1</c> with a string argument will still
+	produce a crash dump.</p>
+      </item>
       <tag><c><![CDATA[+h Size]]></c></tag>
       <item>
         <p>Sets the default heap size of processes to the size

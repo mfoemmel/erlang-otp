@@ -1239,10 +1239,10 @@ count_balance(Tab, [Frag | Frags], Bal, Size, BalPos) ->
     First = mnesia:dirty_first(Frag),
     {Bal2, Size2} = count_frag_balance(Frag, First, Bal, Size, BalPos),
     count_balance(Tab, Frags, Bal2, Size2, BalPos);
-count_balance(Tab, [], Bal, Size, BalPos) ->
+count_balance(Tab, [], Bal, Size, _BalPos) ->
     #summary{table = Tab, node = node(), balance = Bal, size = Size}.
 
-count_frag_balance(Frag, '$end_of_table', Bal, Size, _BalPos) ->
+count_frag_balance(_Frag, '$end_of_table', Bal, Size, _BalPos) ->
     {Bal, Size};
 count_frag_balance(Frag, Key, Bal, Size, BalPos) ->
     [Record] = mnesia:dirty_read({Frag, Key}),

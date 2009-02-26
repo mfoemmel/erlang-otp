@@ -9,6 +9,10 @@ IMPORTS
         FROM RFC1155-SMI
     Gauge
         FROM RFC1155-SMI
+    Unsigned32
+        FROM SNMPv2-SMI
+    Counter64
+        FROM SNMPv2-SMI
     DisplayString
         FROM RFC1213-MIB
     otpModules
@@ -18,6 +22,7 @@ IMPORTS
     erlNodeId
         FROM OTP-MIB
     ;
+
 
 -- otpOsMonModule MODULE-IDENTITY
 --     LAST-UPDATED  "0305090900Z"
@@ -54,6 +59,40 @@ IMPORTS
 --     DESCRIPTION
 --         "The initial revision of MIB module OTP-OS-MON-MIB."
 --     ::= { otpModules 4 }
+
+OTPCounterBasedGauge64 ::=
+--TEXTUAL-CONVENTION
+--   STATUS       mandatory
+--   DESCRIPTION
+--         "The CounterBasedGauge64 type represents a non-negative
+--         integer, which may increase or decrease, but shall never
+--         exceed a maximum value, nor fall below a minimum value. The
+--         maximum value can not be greater than 2^64-1
+--         (18446744073709551615 decimal), and the minimum value can
+-- 
+--         not be smaller than 0.  The value of a CounterBasedGauge64
+--         has its maximum value whenever the information being modeled
+--         is greater than or equal to its maximum value, and has its
+--         minimum value whenever the information being modeled is
+--         smaller than or equal to its minimum value.  If the
+--         information being modeled subsequently decreases below
+--         (increases above) the maximum (minimum) value, the
+--         CounterBasedGauge64 also decreases (increases).
+-- 
+--         Note that this TC is not strictly supported in SMIv2,
+--         because the 'always increasing' and 'counter wrap' semantics
+--         associated with the Counter64 base type are not preserved.
+--         It is possible that management applications which rely
+--         solely upon the (Counter64) ASN.1 tag to determine object
+--         semantics will mistakenly operate upon objects of this type
+--         as they would for Counter64 objects.
+-- 
+--         This textual convention represents a limited and short-term
+--         solution, and may be deprecated as a long term solution is
+--         defined and deployed to replace it."
+--SYNTAX
+
+Counter64
 
 otpOsMonMIB     OBJECT IDENTIFIER ::= { otpApplications 2 }
 otpOsMonMIBConformance
@@ -112,14 +151,18 @@ loadEntry OBJECT-TYPE
     ::= { loadTable 1 }
 
 LoadEntry ::= SEQUENCE {
-    loadErlNodeName                 DisplayString,
-    loadSystemTotalMemory           Gauge,
-    loadSystemUsedMemory            Gauge,
-    loadLargestErlProcess           DisplayString,
-    loadLargestErlProcessUsedMemory Gauge,
-    loadCpuLoad                     INTEGER,
-    loadCpuLoad5                    INTEGER,
-    loadCpuLoad15                   INTEGER
+    loadErlNodeName                   DisplayString,
+    loadSystemTotalMemory             Gauge,
+    loadSystemUsedMemory              Gauge,
+    loadLargestErlProcess             DisplayString,
+    loadLargestErlProcessUsedMemory   Gauge,
+    loadCpuLoad                       INTEGER,
+    loadCpuLoad5                      INTEGER,
+    loadCpuLoad15                     INTEGER,
+    loadOsWordsize                    Unsigned32,
+    loadSystemTotalMemory64           OTPCounterBasedGauge64,
+    loadSystemUsedMemory64            OTPCounterBasedGauge64,
+    loadLargestErlProcessUsedMemory64 OTPCounterBasedGauge64
     }
 
 loadErlNodeName OBJECT-TYPE
@@ -193,6 +236,42 @@ loadCpuLoad15 OBJECT-TYPE
         "The average load the last 15 minutes in percent of the CPU
 	where the Erlang node runs."
     ::= { loadEntry 8}
+
+loadOsWordsize OBJECT-TYPE
+    SYNTAX      Unsigned32
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+        "The wordsize of the operating operating system."
+    ::= { loadEntry 9 }
+
+loadSystemTotalMemory64 OBJECT-TYPE
+    SYNTAX      OTPCounterBasedGauge64
+--     UNITS       "bytes"
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+        "The amount of total memory in the system for 64-bit operating system."
+    ::= { loadEntry 10 }
+
+loadSystemUsedMemory64 OBJECT-TYPE
+    SYNTAX      OTPCounterBasedGauge64
+--     UNITS       "bytes"
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+        "The amount of used memory for 64-bit operating system."
+    ::= { loadEntry 11 }
+
+loadLargestErlProcessUsedMemory64 OBJECT-TYPE
+    SYNTAX      OTPCounterBasedGauge64
+--     UNITS       "bytes"
+    ACCESS      read-only
+    STATUS      mandatory
+    DESCRIPTION
+        "The amount of memory used by the largest Erlang
+        process for 64-bit operating system.."
+    ::= { loadEntry 12 }
 
 diskAlmostFullThreshold OBJECT-TYPE
     SYNTAX      INTEGER (0..100)
@@ -311,7 +390,11 @@ otpOsMonMIBGroups
 --               loadLargestErlProcessUsedMemory,
 --               loadCpuLoad,
 --               loadCpuLoad5,
---               loadCpuLoad15}
+--               loadCpuLoad15,
+--               loadOsWordsize,
+--               loadSystemTotalMemory64,
+--               loadSystemUsedMemory64,
+--               loadLargestErlProcessUsedMemory64}
 --     STATUS  mandatory
 --     DESCRIPTION
 --             "A collection of objects providing basic instrumentation

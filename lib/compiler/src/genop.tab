@@ -251,3 +251,21 @@ BEAM_FORMAT_NUMBER=0
 135: bs_private_append/6
 136: trim/2
 137: bs_init_bits/6
+
+# R12B-5
+138: bs_get_utf8/5
+139: bs_skip_utf8/4
+
+140: bs_get_utf16/5
+141: bs_skip_utf16/4
+
+142: bs_get_utf32/5
+143: bs_skip_utf32/4
+
+144: bs_utf8_size/3
+145: bs_put_utf8/3
+
+146: bs_utf16_size/3
+147: bs_put_utf16/3
+
+148: bs_put_utf32/3

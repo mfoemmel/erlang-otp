@@ -54,6 +54,8 @@ PRE_LOADED_MODULES = \
 	init \
 	prim_file \
 	prim_inet \
+	zlib \
+	prim_zip \
 	otp_ring0 \
 	erlang
 
@@ -64,7 +66,6 @@ MODULES = \
 	application_starter \
 	auth \
 	code \
-	code_aux \
 	code_server \
 	disk_log \
 	disk_log_1 \
@@ -121,8 +122,7 @@ MODULES = \
 	user \
 	user_drv \
 	user_sup \
-	wrap_log_reader \
-	zlib
+	wrap_log_reader
 
 HRL_FILES= ../include/file.hrl ../include/inet.hrl ../include/inet_sctp.hrl
 INTERNAL_HRL_FILES= application_master.hrl disk_log.hrl \
@@ -189,7 +189,7 @@ EPMD_FLAGS = -Depmd_port_no=$(EPMD_PORT_NO)	\
              -Derlang_daemon_port=$(EPMD_PORT_NO)
 
 $(EBIN)/erl_epmd.beam: $(ESRC)/erl_epmd.erl
-	$(ERLC) -bbeam $(ERL_COMPILE_FLAGS) $(EPMD_FLAGS) -o$(EBIN) $<
+	$(ERLC) $(ERL_COMPILE_FLAGS) $(EPMD_FLAGS) -o$(EBIN) $<
 
 # ----------------------------------------------------
 # Release Target

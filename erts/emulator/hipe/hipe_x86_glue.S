@@ -312,7 +312,7 @@ nbif_3_gc_after_bif:
 
 /*
  * We end up here when a BIF called from native signals an
- * exceptional condition, and RESCHEDULE cannot occur.
+ * exceptional condition.
  * The stack/heap registers were just read from P.
  */
 	GLOBAL(nbif_1_simple_exception)
@@ -360,40 +360,6 @@ nbif_0_trap_exception:
 .handle_trap:
 	movl	%eax, P_ARITY(P)
 	movl	$HIPE_MODE_SWITCH_RES_TRAP, %eax
-	jmp	.nosave_exit
-
-/*
- * We end up here when a BIF called from native signals an
- * exceptional condition, and RESCHEDULE can occur.
- * %edx contains the address of the nbif which failed.
- * The stack/heap registers were just read from P.
- * P_ARG0(P) is the first actual parameter, if X86_NR_ARG_REGS > 0.
- * P_ARG1(P) is the second actual parameter (if defined), if X86_NR_ARG_REGS > 1.
- * P_ARG2(P) is the third actual parameter (if defined), if X86_NR_ARG_REGS > 2.
- */
-	GLOBAL(nbif_1_hairy_exception)
-	GLOBAL(nbif_2_hairy_exception)
-	GLOBAL(nbif_3_hairy_exception)
-	.align	4
-nbif_1_hairy_exception:
-	movl	$1, %eax
-	jmp	.nbif_hairy_exception
-	.align	4
-nbif_2_hairy_exception:
-	movl	$2, %eax
-	jmp	.nbif_hairy_exception
-	.align	4
-nbif_3_hairy_exception:
-	movl	$3, %eax
-	/*FALLTHROUGH*/
-	.align	4
-.nbif_hairy_exception:
-	cmpl	$FREASON_RESCHEDULE, P_FREASON(P)
-	jne	.nbif_simple_exception
-	/* handle reschedule */
-	movl	%edx, P_NCALLEE(P)
-	movl	%eax, P_ARITY(P)
-	movl	$HIPE_MODE_SWITCH_RES_RESCHEDULE, %eax
 	jmp	.nosave_exit
 
 /*

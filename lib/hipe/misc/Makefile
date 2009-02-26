@@ -99,4 +99,5 @@ release_docs_spec:
 distclean:	clean
 realclean:	clean
 
+$(EBIN)/hipe_consttab.beam: hipe_consttab.hrl
 $(EBIN)/hipe_sdi.beam: hipe_sdi.hrl

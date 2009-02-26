@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2007-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%----------------------------------------------------------------------
 %% Purpose: Manages ssl sessions and trusted certifacates
 %%----------------------------------------------------------------------
@@ -22,13 +24,14 @@
 -behaviour(gen_server).
 
 %% Internal application API
--export([start_link/0, register_trusted_certs/1, 
-	 lookup_trusted_cert/3, client_session_id/3, server_session_id/2,
+-export([start_link/0, start_link/1, 
+	 connection_init/2, cache_pem_file/1,
+	 lookup_trusted_cert/3, client_session_id/3, server_session_id/3,
 	 register_session/2, register_session/3, invalidate_session/2,
 	 invalidate_session/3]).
 
 % Spawn export
--export([init_session_validator/0]).
+-export([init_session_validator/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -39,13 +42,16 @@
 
 -record(state, {
 	  session_cache,
+	  session_cache_cb,
+	  session_lifetime,
 	  certificate_db,
 	  session_validation_timer
 	 }).
 
--define('24H_in_sec', 86400).
 -define('24H_in_msec', 8640000).
+-define('24H_in_sec', 8640).
 -define(SESSION_VALIDATION_INTERVAL, 60000).
+-define(CERTIFICATE_CACHE_CLEANUP, 30000).
 
 %%====================================================================
 %% API
@@ -56,13 +62,25 @@
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link(Opts) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Opts], []).
 
 %%--------------------------------------------------------------------
 %% Function: 
 %% Description: 
 %%--------------------------------------------------------------------
-register_trusted_certs(File) ->
-    call({trusted_certs, File}).
+connection_init(TrustedcertsFile, Role) ->
+    call({connection_init, TrustedcertsFile, Role}).
+
+cache_pem_file(File) ->   
+    case ets:lookup(ssl_file_to_ref,File) of
+	[{_,_,Content}] -> 
+	    {ok, Content};
+	[] ->
+	    {ok, Db} = call({cache_pem, File}),
+	    [{_,_,Content}] = ets:lookup(Db,File),
+	    {ok, Content}
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: 
@@ -82,8 +100,8 @@ client_session_id(Host, Port, SslOpts) ->
 %% Function: 
 %% Description: 
 %%--------------------------------------------------------------------
-server_session_id(Port, SuggestedSessionId) ->
-    call({server_session_id, Port, SuggestedSessionId}).
+server_session_id(Port, SuggestedSessionId, SslOpts) ->
+    call({server_session_id, Port, SuggestedSessionId, SslOpts}).
 
 %%--------------------------------------------------------------------
 %% Function: 
@@ -116,13 +134,19 @@ invalidate_session(Port, Session) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([]) ->
+init(Opts) ->
     process_flag(trap_exit, true),
+    CacheCb = proplists:get_value(session_cache, Opts, ssl_session_cache),
+    SessionLifeTime =  
+	proplists:get_value(session_lifetime, Opts, ?'24H_in_sec'),
     CertDb = ssl_certificate_db:create(),
-    SessionCache = ssl_session:create_cache(),
-    Timer = erlang:send_after(?'24H_in_msec', self(), validate_sessions),
+    SessionCache = CacheCb:init(),
+    Timer = erlang:send_after(SessionLifeTime * 1000, 
+			      self(), validate_sessions),
     {ok, #state{certificate_db = CertDb,
 		session_cache = SessionCache,
+		session_cache_cb = CacheCb,
+		session_lifetime = SessionLifeTime ,
 		session_validation_timer = Timer}}.
 
 %%--------------------------------------------------------------------
@@ -134,26 +158,48 @@ init([]) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
-handle_call({{trusted_certs, File}, Pid}, _From, 
-	    State = #state{certificate_db = Db}) ->
+handle_call({{connection_init, TrustedcertsFile, Role}, Pid}, _From, 
+	    State = #state{certificate_db = Db,
+			   session_cache = Cache}) ->
     erlang:monitor(process, Pid),
     Result = 
-	case (catch ssl_certificate_db:add_trusted_certs(Pid, File, Db)) of
+	case (catch ssl_certificate_db:add_trusted_certs(Pid, 
+							 TrustedcertsFile, 
+							 Db)) of
 	    {ok, Ref} ->
-		{ok, Ref};
+		{ok, Ref, Cache};
+	    _ when Role == client ->
+		%% Client does not have to have any trusted certs
+		%% depending on configuration a connection may
+		%% be allowed anyway.
+		{ok, make_ref(), Cache};
 	    Error ->
 		{error, Error}
 	end,
     {reply, Result, State};
 
-handle_call({{client_session_id, Host, Port, SslOpts}, _}, _, State) ->
-    Id = ssl_session:id({Host, Port, SslOpts}),
+handle_call({{client_session_id, Host, Port, SslOpts}, _}, _, 
+	    #state{session_cache = Cache,
+		  session_cache_cb = CacheCb} = State) ->
+    Id = ssl_session:id({Host, Port, SslOpts}, Cache, CacheCb),
     {reply, Id, State};
 
-handle_call({{server_session_id, Port, SuggestedSessionId}, _}, _, State) ->
-    Id = ssl_session:id(Port, SuggestedSessionId),
+handle_call({{server_session_id, Port, SuggestedSessionId, SslOpts}, _},
+	    _, #state{session_cache_cb = CacheCb,
+		      session_cache = Cache,
+		      session_lifetime = LifeTime} = State) ->
+    Id = ssl_session:id(Port, SuggestedSessionId, SslOpts,
+			Cache, CacheCb, LifeTime),
     {reply, Id, State};
 
+handle_call({{cache_pem, File},Pid}, _, State = #state{certificate_db = Db}) ->
+    try ssl_certificate_db:cache_pem_file(Pid,File,Db) of
+	Result ->
+	    {reply, Result, State}
+    catch _:Reason ->
+	    {reply, {error, Reason}, State}
+    end;
+	       
 handle_call(_,_, State) ->
     {reply, ok, State}.
 %%--------------------------------------------------------------------
@@ -162,24 +208,34 @@ handle_call(_,_, State) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
-handle_cast({register_session, Host, Port, Session}, State) ->
+handle_cast({register_session, Host, Port, Session}, 
+	    #state{session_cache = Cache,
+		   session_cache_cb = CacheCb} = State) ->
     TimeStamp = calendar:datetime_to_gregorian_seconds({date(), time()}),
     NewSession = Session#session{time_stamp = TimeStamp},
-    ssl_session:cache_update(Host, Port, NewSession),
+    CacheCb:update(Cache, {{Host, Port}, 
+		   NewSession#session.session_id}, NewSession),
     {noreply, State};
 
-handle_cast({register_session, Port, Session}, State) ->    
+handle_cast({register_session, Port, Session},  
+	    #state{session_cache = Cache,
+		   session_cache_cb = CacheCb} = State) ->    
     TimeStamp = calendar:datetime_to_gregorian_seconds({date(), time()}),
     NewSession = Session#session{time_stamp = TimeStamp},
-    ssl_session:cache_update(Port, NewSession),
+    CacheCb:update(Cache, {Port, NewSession#session.session_id}, NewSession),
     {noreply, State};
 
-handle_cast({invalidate_session, Host, Port, Session}, State) ->
-    ssl_session:cache_delete(Host, Port, Session),
+handle_cast({invalidate_session, Host, Port, 
+	     #session{session_id = ID}}, 
+	    #state{session_cache = Cache,
+		   session_cache_cb = CacheCb} = State) ->
+    CacheCb:delete(Cache, {{Host, Port}, ID}),
     {noreply, State};
 
-handle_cast({invalidate_session, Port, Session}, State) ->
-    ssl_session:cache_delete(Port, Session),
+handle_cast({invalidate_session, Port, #session{session_id = ID}}, 
+	    #state{session_cache = Cache,
+		   session_cache_cb = CacheCb} = State) ->
+    CacheCb:delete(Cache, {Port, ID}),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -188,10 +244,13 @@ handle_cast({invalidate_session, Port, Session}, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%-------------------------------------------------------------------- 
-handle_info(validate_sessions, State) ->
+handle_info(validate_sessions, #state{session_cache_cb = CacheCb,
+				      session_cache = Cache,
+				      session_lifetime = LifeTime
+				     } = State) ->
     Timer = erlang:send_after(?SESSION_VALIDATION_INTERVAL, 
 			      self(), validate_sessions),
-    start_session_validator(),
+    start_session_validator(Cache, CacheCb, LifeTime),
     {noreply, State#state{session_validation_timer = Timer}};
 
 handle_info({'EXIT', _, _}, State) ->
@@ -202,7 +261,11 @@ handle_info({'EXIT', _, _}, State) ->
 handle_info({'DOWN', _Ref, _Type, _Pid, ecacertfile}, State) ->
     {noreply, State};
 
-handle_info({'DOWN', _Ref, _Type, Pid, _Reason}, 
+handle_info({'DOWN', _Ref, _Type, Pid, _Reason}, State) ->
+    erlang:send_after(?CERTIFICATE_CACHE_CLEANUP, self(), 
+		      {remove_trusted_certs, Pid}),
+    {noreply, State};
+handle_info({remove_trusted_certs, Pid}, 
 	    State = #state{certificate_db = Db}) ->
     ssl_certificate_db:remove_trusted_certs(Pid, Db),
     {noreply, State};
@@ -219,10 +282,11 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, #state{certificate_db = Db,
 			  session_cache = SessionCache,
+			  session_cache_cb = CacheCb,
 			  session_validation_timer = Timer}) ->
     erlang:cancel_timer(Timer),
     ssl_certificate_db:remove(Db),
-    ssl_session:remove_cache(SessionCache),
+    CacheCb:terminate(SessionCache),
     ok.
 
 %%--------------------------------------------------------------------
@@ -241,43 +305,34 @@ call(Msg) ->
 cast(Msg) ->
     gen_server:cast(?MODULE, Msg).
  
-validate_session(Host, Port, Session) ->
-    case valid_session(Session) of
+validate_session(Host, Port, Session, LifeTime) ->
+    case ssl_session:valid_session(Session, LifeTime) of
 	true ->
 	    ok;
 	false ->
 	    invalidate_session(Host, Port, Session)
     end.
 
-validate_session(Port, Session) ->
-    case valid_session(Session) of
+validate_session(Port, Session, LifeTime) ->
+    case ssl_session:valid_session(Session, LifeTime) of
 	true ->
 	    ok;
 	false ->
 	    invalidate_session(Port, Session)
     end.
-
-valid_session(#session{time_stamp = TimeStamp}) ->
-    Now =  calendar:datetime_to_gregorian_seconds({date(), time()}),
-    Now - TimeStamp < ?'24H_in_sec'.
 		    
-start_session_validator() ->
-    spawn_link(ssl_manager, init_session_validator, []).
+start_session_validator(Cache, CacheCb, LifeTime) ->
+    spawn_link(?MODULE, init_session_validator, 
+	       [[Cache, CacheCb, LifeTime]]).
 
-init_session_validator() ->
-    ssl_session:safe_fix_cache(true),
-    Key = ssl_session:cache_first(),
-    session_validation(Key).
+init_session_validator([Cache, CacheCb, LifeTime]) ->
+    CacheCb:foldl(fun session_validation/2,
+		  LifeTime, Cache).
 
-session_validation(cache_end) ->
-    ssl_session:safe_fix_cache(false),
-    ok;
-session_validation(Key = {Host, Port, SessionId}) ->
-    Session = ssl_session:cache_lookup(Host, Port, SessionId),
-    validate_session(Host, Port, Session),
-    session_validation(ssl_session:cache_next(Key));
-session_validation(Key = {Port, SessionId}) ->
-    Session = ssl_session:cache_lookup(Port, SessionId),
-    validate_session(Port, Session),
-    session_validation(ssl_session:cache_next(Key)).
+session_validation({{Host, Port, _}, Session}, LifeTime) ->
+    validate_session(Host, Port, Session, LifeTime),
+    LifeTime;
+session_validation({{Port, _}, Session}, LifeTime) ->
+    validate_session(Port, Session, LifeTime),
+    LifeTime.
     

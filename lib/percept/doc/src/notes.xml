@@ -31,6 +31,40 @@
   </header>
   <p>This document describes the changes made to the Percept application.</p>
 
+<section><title>Percept 0.7.3</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>External pids caused the webserver to crash. This has
+	    now been fixed.</p>
+          <p>
+	    Own Id: OTP-7515 Aux Id: seq11004 </p>
+        </item>
+        <item>
+	    <p>Fixed a timestamp problem where some events could be
+	    sent out of order. Minor fixes to presentation of
+	    data.</p>
+          <p>
+	    Own Id: OTP-7544 Aux Id: otp-7442 </p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Performance enhancement for the egd render engine
+	    (Thanks to Magnus Thoäng).</p>
+          <p>
+	    Own Id: OTP-7616</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Percept 0.7.2</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

@@ -25,15 +25,15 @@
 
 %%-----------------------------------------------------------------------
 
--type(dial_cl_parse_ret() :: {'check_init',#options{}}
+-type dial_cl_parse_ret() :: {'check_init',#options{}}
                            | {'plt_info', #options{}}
                            | {'cl',#options{}}
                            | {'gui',#options{}} 
-                           | {'error',string()}).
+                           | {'error',string()}.
 
 %%-----------------------------------------------------------------------
 
--spec(start/0 :: () -> dial_cl_parse_ret()).
+-spec start() -> dial_cl_parse_ret().
 
 start() ->
   init(),
@@ -58,6 +58,9 @@ cl(["--build_plt"|T]) ->
 cl(["--check_plt"|T]) ->
   put(dialyzer_options_mode, cl),
   put(dialyzer_options_analysis_type, plt_check),
+  cl(T);
+cl(["--no_check_plt"|T]) ->
+  put(dialyzer_options_check_plt, false),
   cl(T);
 cl(["--plt_info"|T]) ->
   put(dialyzer_options_mode, cl),
@@ -191,6 +194,7 @@ cl([]) ->
     OptsRecord -> {RetTag, OptsRecord}
   end.
 
+%%-----------------------------------------------------------------------
 
 command_line(T0) ->
   {Args,T} = collect_args(T0),
@@ -217,6 +221,7 @@ init() ->
   put(dialyzer_options_defines,         DefaultOpts#options.defines),
   put(dialyzer_options_files,           DefaultOpts#options.files),
   put(dialyzer_output_format,           formatted),
+  put(dialyzer_options_check_plt,       DefaultOpts#options.check_plt),
   ok.
 
 append_defines([Def, Val]) ->
@@ -235,25 +240,25 @@ append_var(Var, List) when is_list(List) ->
 
 %%-----------------------------------------------------------------------
 
--spec(collect_args/1 :: ([string()]) -> {[string()],[string()]}).
+-spec collect_args([string()]) -> {[string()], [string()]}.
 
 collect_args(List) ->
   collect_args_1(List, []).
 
 collect_args_1(["-"++_|_]=L, Acc) ->
-  {lists:reverse(Acc),L};
+  {lists:reverse(Acc), L};
 collect_args_1([Arg|T], Acc) ->
   collect_args_1(T, [Arg|Acc]);
 collect_args_1([], Acc) ->
-  {lists:reverse(Acc),[]}.
+  {lists:reverse(Acc), []}.
 
 %%-----------------------------------------------------------------------
 
 cl_options() ->
-  [{files,get(dialyzer_options_files)},
-   {files_rec,get(dialyzer_options_files_rec)},
-   {output_file,get(dialyzer_output)},
-   {output_format,get(dialyzer_output_format)},
+  [{files, get(dialyzer_options_files)},
+   {files_rec, get(dialyzer_options_files_rec)},
+   {output_file, get(dialyzer_output)},
+   {output_format, get(dialyzer_output_format)},
    {analysis_type, get(dialyzer_options_analysis_type)},
    {get_warnings, get(dialyzer_options_get_warnings)}
    |common_options()].
@@ -266,7 +271,8 @@ common_options() ->
    {output_plt, get(dialyzer_output_plt)},
    {report_mode, get(dialyzer_options_report_mode)},
    {use_spec, get(dialyzer_options_use_contracts)},
-   {warnings, get(dialyzer_warnings)}].
+   {warnings, get(dialyzer_warnings)},
+   {check_plt, get(dialyzer_options_check_plt)}].
 
 %%-----------------------------------------------------------------------
 
@@ -299,8 +305,8 @@ help_message() ->
 		[-pa dir]* [--plt plt] [-Ddefine]* [-I include_dir]* 
 		[--output_plt file] [-Wwarn]* [--src] 
 		[-c applications] [-r applications] [-o outfile]
-		[--build_plt] [--add_to_plt] [--remove_from_plt] [--check_plt]
-                [--plt_info] [--get_warnings]
+		[--build_plt] [--add_to_plt] [--remove_from_plt]
+                [--check_plt] [--no_check_plt] [--plt_info] [--get_warnings]
 Options: 
    -c applications (or --command-line applications)
        Use Dialyzer from the command line (no GUI) to detect defects in the
@@ -361,6 +367,9 @@ Options:
        dependent files.
    --check_plt
        Checks the plt for consistency and rebuilds it if it is not up-to-date.
+   --no_check_plt
+       Skip the plt check when running Dialyzer. Useful when working with
+       installed plts that never change.
    --plt_info
        Makes Dialyzer print information about the plt and then quit. The plt 
        can be specified with --plt.

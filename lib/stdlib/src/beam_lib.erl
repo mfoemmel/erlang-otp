@@ -261,10 +261,10 @@ strip_file(File) ->
 		{ok, Fd} ->
 		    case file:write(Fd, Stripped) of
 			ok ->
-			    file:close(Fd),
+			    ok = file:close(Fd),
 			    {ok, {Mod, FileName}};
 			Error ->
-			    file:close(Fd),
+			    ok = file:close(Fd),
 			    file_error(FileName, Error)
 		    end;
 		Error ->
@@ -610,10 +610,10 @@ read_all(Fd, FileName, Bins) ->
 	{ok, Bin} ->
 	    read_all(Fd, FileName, [Bin | Bins]);
 	eof ->
-	    file:close(Fd),
+	    ok = file:close(Fd),
 	    #bb{bin = uncompress(reverse(Bins)), source = FileName};
 	Error ->
-	    file:close(Fd),
+	    ok = file:close(Fd),
 	    file_error(FileName, Error)
     end.
 

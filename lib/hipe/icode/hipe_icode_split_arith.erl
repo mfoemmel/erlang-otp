@@ -18,7 +18,7 @@
 
 %%-------------------------------------------------------------------
 
--spec(cfg/3 :: (#cfg{}, mfa(), comp_options()) -> #cfg{}).
+-spec cfg(#cfg{}, mfa(), comp_options()) -> #cfg{}.
 
 cfg(Cfg, _MFA, Options) ->
   Icode = hipe_icode_cfg:cfg_to_linear(Cfg),

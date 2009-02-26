@@ -8,9 +8,9 @@
 %%% Created : 23 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%
 %%% CVS      :
-%%%              $Author: tobiasl $
-%%%              $Date: 2008/04/25 12:34:59 $
-%%%              $Revision: 1.45 $
+%%%              $Author: kostis $
+%%%              $Date: 2008/10/27 21:08:15 $
+%%%              $Revision: 1.47 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
@@ -26,7 +26,7 @@
 
 %%--------------------------------------------------------------------
 
--spec(cfg/1 :: (#cfg{}) -> #cfg{}).
+-spec cfg(#cfg{}) -> #cfg{}.
 
 cfg(Cfg) ->
   %%hipe_icode_cfg:pp(Cfg),
@@ -302,13 +302,13 @@ check_for_fop_candidates(I, Map, Acc) ->
 %% end the fp ebb.
 
 handle_untagged_arguments(I, Map) ->
-  case lists:filter(fun(X)-> must_be_tagged(X, Map) end, hipe_icode:uses(I)) of
+  case [X || X <- hipe_icode:uses(I), must_be_tagged(X, Map)] of
     [] ->
       [I];
     Tag ->
       TagIntrs = 
 	[hipe_icode:mk_primop([Dst], unsafe_tag_float, 
-			      [gb_trees:get(Dst, Map)]) || Dst<-Tag],
+			      [gb_trees:get(Dst, Map)]) || Dst <- Tag],
       [I|TagIntrs]
   end.
 

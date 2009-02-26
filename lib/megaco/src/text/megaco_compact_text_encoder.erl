@@ -341,10 +341,29 @@ decode_mini_message(EC, _, Bin) when is_binary(Bin) ->
 
 
 parse_error(Reason, Tokens, Chars) ->
-    {error, [{reason, Reason}, {token, Tokens}, {chars, Chars}]}.
+    %%     io:format("parse_error -> entry with"
+    %%               "~n   Reason: ~p"
+    %%            "~n   Tokens: ~p"
+    %%            "~n", [Reason, Tokens]),
+    case Reason of
+        "bad_property_parm: " ++ NewReason ->
+            {error, {bad_property_parm, NewReason}};
+        _ ->
+            {error, [{reason, Reason}, {token, Tokens}, {chars, Chars}]}
+    end.
 
 parse_error(Reason, Line, Tokens, Chars) ->
-    {error, [{reason, Reason, Line}, {token, Tokens}, {chars, Chars}]}.
+    %%     io:format("parse_error -> entry with"
+    %%               "~n   Reason: ~p"
+    %%               "~n   Line:   ~p"
+    %%               "~n   Tokens: ~p"
+    %%               "~n", [Reason, Line, Tokens]),
+    case Reason of
+        "bad_property_parm: " ++ NewReason ->
+            {error, {bad_property_parm, NewReason}};
+        _ ->
+            {error, [{reason, Reason, Line}, {token, Tokens}, {chars, Chars}]}
+    end.
 
 
 %%----------------------------------------------------------------------

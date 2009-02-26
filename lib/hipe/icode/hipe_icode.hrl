@@ -8,12 +8,12 @@
 %% THESE DO NOT REALLY BELONG HERE -- PLEASE REMOVE ASAP!
 %%---------------------------------------------------------------------
 
--type(set()	 :: tuple()).
--type(ordset(T)	 :: [T]).
--type(gb_set()	 :: tuple()).
--type(gb_tree()	 :: tuple()).
--type(erl_type() :: any()).    %% XXX: belongs to 'erl_types'
-%%-type(erl_type() :: 'any' | 'none' | 'unit' | {'c',_,_,_}).
+-type set()	 :: tuple().
+-type ordset(T)	 :: [T].
+-type gb_set()	 :: tuple().
+-type gb_tree()	 :: tuple().
+-type erl_type() :: any().    %% XXX: belongs to 'erl_types'
+%%-type erl_type() :: 'any' | 'none' | 'unit' | {'c',_,_,_}.
 
 %%---------------------------------------------------------------------
 %% Include files needed for the compilation of this header file
@@ -25,10 +25,10 @@
 %% Icode argument types
 %%---------------------------------------------------------------------
 
--type(simple_const()     :: atom() | [] | integer() | float()).
--type(structured_const() :: list() | tuple()).
+-type simple_const()     :: atom() | [] | integer() | float().
+-type structured_const() :: list() | tuple().
 
--type(icode_lbl() :: non_neg_integer()).
+-type icode_lbl() :: non_neg_integer().
 
 %%---------------------------------------------------------------------
 %% Icode records
@@ -38,7 +38,7 @@
 
 -record(icode_const, {value :: #flat{}}).
 
--type(variable_annotation() :: {atom(), any(), fun((any()) -> string())}).
+-type variable_annotation() :: {atom(), any(), fun((any()) -> string())}.
 
 -record(icode_variable, {name :: non_neg_integer(), 
 			 kind :: 'var' | 'reg' | 'fvar',
@@ -48,30 +48,30 @@
 %% Type declarations for Icode instructions
 %%---------------------------------------------------------------------
 
--type(icode_if_op()  :: '>' | '<' | '>=' | '=<' | '=:=' | '=/=' | '==' | '/='
+-type icode_if_op()  :: '>' | '<' | '>=' | '=<' | '=:=' | '=/=' | '==' | '/='
                       | 'fixnum_eq' | 'fixnum_neq' | 'fixnum_lt'
                       | 'fixnum_le' | 'fixnum_ge' | 'fixnum_gt' 
-                      | 'suspend_msg_timeout').
+                      | 'suspend_msg_timeout'.
 
--type(icode_type_test()	:: 'atom' | 'bignum' | 'binary' | 'bitrst' | 'boolean'
+-type icode_type_test()	:: 'atom' | 'bignum' | 'binary' | 'bitrst' | 'boolean'
                          | 'cons' | 'constant' | 'fixnum' | 'float'
                          | 'function' | 'function2' | 'integer' | 'list' | 'nil'
                          | 'number' | 'pid' | 'port' | 'reference' | 'tuple'
                          | {'atom', atom()} | {'integer', integer()}
-                         | {'record', atom(), byte()} | {'tuple', byte()}).
+                         | {'record', atom(), byte()} | {'tuple', byte()}.
  
--type(icode_primop()	:: atom() | tuple()). % XXX: temporarily, I hope
+-type icode_primop()	:: atom() | tuple(). % XXX: temporarily, I hope
 
--type(icode_var()	:: #icode_variable{kind::'var'}).
--type(icode_reg()	:: #icode_variable{kind::'reg'}).
--type(icode_fvar()	:: #icode_variable{kind::'fvar'}).
--type(icode_argument()	:: #icode_const{} | #icode_variable{}).
--type(icode_term_arg()	:: icode_var() | #icode_const{}).
+-type icode_var()	:: #icode_variable{kind::'var'}.
+-type icode_reg()	:: #icode_variable{kind::'reg'}.
+-type icode_fvar()	:: #icode_variable{kind::'fvar'}.
+-type icode_argument()	:: #icode_const{} | #icode_variable{}.
+-type icode_term_arg()	:: icode_var() | #icode_const{}.
 
--type(icode_switch_case() :: {#icode_const{}, icode_lbl()}).
+-type icode_switch_case() :: {#icode_const{}, icode_lbl()}.
 
--type(icode_call_type()   :: 'local' | 'primop' | 'remote').
--type(icode_exit_class()  :: 'error' | 'exit' | 'rethrow' | 'throw').
+-type icode_call_type()   :: 'local' | 'primop' | 'remote'.
+-type icode_exit_class()  :: 'error' | 'exit' | 'rethrow' | 'throw'.
 
 %%---------------------------------------------------------------------
 %% Icode instructions
@@ -142,14 +142,14 @@
 %% Icode instructions
 %%---------------------------------------------------------------------
 
--type(icode_instr()  :: #icode_begin_handler{} | #icode_begin_try{}
+-type icode_instr()  :: #icode_begin_handler{} | #icode_begin_try{}
 		      | #icode_call{} | #icode_comment{} | #icode_end_try{}
 		      | #icode_enter{} | #icode_fail{}
                       | #icode_goto{} | #icode_if{} | #icode_label{}
 		      | #icode_move{} | #icode_phi{} | #icode_return{}
                       | #icode_switch_tuple_arity{} | #icode_switch_val{}
-		      | #icode_type{}).
--type(icode_instrs() :: [icode_instr()]).
+		      | #icode_type{}.
+-type icode_instrs() :: [icode_instr()].
 
 %%---------------------------------------------------------------------
 %% The Icode data structure

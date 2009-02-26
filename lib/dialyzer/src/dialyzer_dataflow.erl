@@ -83,23 +83,22 @@
 
 %%--------------------------------------------------------------------
 
--spec(get_warnings/5 ::
-      (core_module(), #dialyzer_plt{}, #dialyzer_callgraph{}, dict(), set()) ->
-	 {[dial_warning()],dict()}).
+-spec get_warnings(core_module(), #dialyzer_plt{}, #dialyzer_callgraph{}, dict(), set()) ->
+	 {[dial_warning()],dict()}.
 get_warnings(Tree, Plt, Callgraph, Records, NoWarnUnused) ->
-  State = analyze_module(Tree, Plt, Callgraph, Records, true),
-  {state__get_warnings(State, NoWarnUnused), state__all_fun_types(State)}.
+  State1 = analyze_module(Tree, Plt, Callgraph, Records, true),
+  State2 = find_mismatched_record_patterns(Tree, State1),
+  {state__get_warnings(State2, NoWarnUnused), state__all_fun_types(State2)}.
 
--spec(get_fun_types/4 ::
-      (core_module(), #dialyzer_plt{}, #dialyzer_callgraph{}, dict()) -> 
-	 dict()).
+-spec get_fun_types(core_module(), #dialyzer_plt{}, #dialyzer_callgraph{}, dict()) -> 
+	 dict().
 get_fun_types(Tree, Plt, Callgraph, Records) ->
   State = analyze_module(Tree, Plt, Callgraph, Records, false),
   state__all_fun_types(State).
 
 %%--------------------------------------------------------------------
 
--spec(pp/1 :: (string()) -> 'ok').
+-spec pp(string()) -> 'ok'.
 pp(File) ->
   {ok, Code} = dialyzer_utils:get_core_from_src(File, [no_copt]),
   Plt = get_def_plt(),
@@ -110,8 +109,7 @@ pp(File) ->
 
 %% This is used in the testsuite.
 
--spec(get_top_level_signatures/2 ::
-      (any(), dict()) -> [{{atom(), byte()}, erl_type()}]).
+-spec get_top_level_signatures(any(), dict()) -> [{{atom(), byte()}, erl_type()}].
 
 get_top_level_signatures(Code, Records) ->
   {Tree, _} = cerl_trees:label(cerl:from_records(Code)),
@@ -284,6 +282,10 @@ traverse(Tree, Map, State) ->
   ?debug("Handling ~p\n", [cerl:type(Tree)]),
   %%debug_pp_map(Map),
   case cerl:type(Tree) of
+    alias ->
+      %% This only happens when checking for illegal record patterns
+      %% so the handling is a bit rudimentary.
+      traverse(cerl:alias_pat(Tree), Map, State);
     apply -> 
       handle_apply(Tree, Map, State);
     binary ->
@@ -371,7 +373,7 @@ traverse(Tree, Map, State) ->
     values ->
       Elements = cerl:values_es(Tree),
       {State1, Map1, EsType} = traverse_list(Elements, Map, State),
-      Type  = t_product(EsType),
+      Type = t_product(EsType),
       {State1, Map1, Type};
     var ->
       ?debug("Looking up unknown variable: ~p\n", [Tree]),
@@ -840,7 +842,7 @@ handle_tuple(Tree, Map, State) ->
 						  Tree, Msg),
 		      {State2, Map1, t_none()};
 		    false ->
-		      case bind_pat_vars(Elements, t_tuple_args(InfTupleType), 
+		      case bind_pat_vars(Elements, t_tuple_args(Prototype), 
 					 [], Map1, State1) of
 			{error, {ErrorPat, ErrorType}} ->
 			  Msg = {record_constr, 
@@ -862,8 +864,7 @@ handle_tuple(Tree, Map, State) ->
       end
   end.
 
-%%________________________________________
-%%
+%%----------------------------------------
 %% Clauses
 %%
 
@@ -1019,8 +1020,7 @@ bind_subst_list([Arg|ArgLeft], [Pat|PatLeft], Map) ->
 bind_subst_list([], [], Map) ->
   Map.
 
-%%________________________________________
-%%
+%%----------------------------------------
 %% Patterns
 %%
 
@@ -1217,8 +1217,7 @@ bind_bin_segs([], _BinType, Acc, Map, _State) ->
 bind_error(Pats, Type) ->
   throw({bind_error, Pats, Type}).
   
-%%________________________________________
-%%
+%%----------------------------------------
 %% Guards
 %%
 
@@ -1440,7 +1439,6 @@ invert_comp('=<') -> '>=';
 invert_comp('<')  -> '>';
 invert_comp('>=') -> '=<';
 invert_comp('>')  -> '<'.
-  
 
 bind_comp_literal_var(Lit, Var, VarType, CompOp, Map) ->
   LitVal = cerl:concrete(Lit),
@@ -1463,7 +1461,6 @@ bind_comp_literal_var(Lit, Var, VarType, CompOp, Map) ->
     true -> error;
     false -> {ok, enter_type(Var, NewVarType, Map)}
   end.
-
 
 handle_guard_is_function(Guard, Map, Env, Eval, State) ->
   Args = cerl:call_args(Guard),
@@ -1612,7 +1609,6 @@ handle_guard_eqeq(Guard, Map, Env, Eval, State) ->
     {_, _} ->
       bind_eqeq_guard(Guard, Arg1, Arg2, Map, Env, Eval, State)
   end.
-
 
 bind_eqeq_guard(Guard, Arg1, Arg2, Map, Env, Eval, State) ->
   {Map1, Type1} = bind_guard(Arg1, Map, Env, dont_know, State),
@@ -1802,7 +1798,7 @@ bind_guard_list([G|Left], Map, Env, Eval, State, Acc) ->
 bind_guard_list([], Map, _Env, _Eval, _State, Acc) ->
   {Map, lists:reverse(Acc)}.
 
--spec(signal_guard_fail/3 :: (_, [_], #state{}) -> no_return()).
+-spec signal_guard_fail(_, [_], #state{}) -> no_return().
 
 signal_guard_fail(Guard, ArgTypes, State) ->
   Args = cerl:call_args(Guard),
@@ -1832,7 +1828,7 @@ is_infix_op({erlang, '>=', 2}) -> true;
 is_infix_op({M, F, A}) when is_atom(M), is_atom(F),
 			    is_integer(A), 0 =< A, A =< 255 -> false.
 
--spec(signal_guard_fatal_fail/3 :: (_, [_], #state{}) -> no_return()).
+-spec signal_guard_fatal_fail(_, [_], #state{}) -> no_return().
 
 signal_guard_fatal_fail(Guard, ArgTypes, State) ->
   Args = cerl:call_args(Guard),      
@@ -2101,7 +2097,7 @@ debug_pp_map(_Map) -> ok.
 %%%
 %%% ===========================================================================
 
--spec(wrap_if_single/1 :: (_) -> [_]).
+-spec wrap_if_single(_) -> [_].
 
 wrap_if_single(X) when is_list(X) -> X;
 wrap_if_single(X) -> [X].
@@ -2449,12 +2445,12 @@ state__add_work_from_fun(Tree, State = #state{callgraph=Callgraph,
 	  LabelList = [dialyzer_callgraph:lookup_label(MFA, Callgraph)
 		       || MFA <- MFAList],
 	  %% Must filter the result for results in this module.	  
-	  FilteredList = lists:filter(fun({ok, L})->dict:is_key(L, TreeMap)end,
-				      LabelList),
+	  FilteredList = [L || {ok, L} <- LabelList, dict:is_key(L, TreeMap)],
 	  ?debug("~w: Will try to add:~w\n", 
 		 [state__lookup_name(get_label(Tree), State), MFAList]),
-	  lists:foldl(fun({ok, X}, AccState)->
-			  state__add_work(X, AccState)end,
+	  lists:foldl(fun(L, AccState) ->
+			  state__add_work(L, AccState)
+		      end,
 		      State, FilteredList)
       end
   end.
@@ -2574,14 +2570,14 @@ get_file([_|Tail]) -> get_file(Tail).
 is_compiler_generated(Ann) ->
   lists:member(compiler_generated, Ann) orelse (get_line(Ann) < 1).
 
--spec(format_args/3 :: ([_], [_], #state{}) -> [char(),...]).
+-spec format_args([_], [_], #state{}) -> [char(),...].
 
 format_args([], [], _State) ->
   "()";
 format_args(ArgList, TypeList, State) ->
   "(" ++ format_args_1(ArgList, TypeList, State) ++ ")".
 
--spec(format_args_1/3 :: ([any(),...], [any(),...], #state{}) -> string()).
+-spec format_args_1([any(),...], [any(),...], #state{}) -> string().
 
 format_args_1([Arg], [Type], State) ->
   format_arg(Arg) ++ format_type(Type, State);
@@ -2610,12 +2606,12 @@ format_arg(Arg) ->
       Default
   end.
 
--spec(format_type/2 :: (_, #state{}) -> string()).
+-spec format_type(_, #state{}) -> string().
 
 format_type(Type, #state{records=R}) ->
   t_to_string(Type, R).
 
--spec(format_sig_args/2 :: (_, #state{}) -> string()).
+-spec format_sig_args(_, #state{}) -> string().
 
 format_sig_args(#contract{}, #state{}) ->
   erlang:error("Cannot format sig args for contracts");
@@ -2735,6 +2731,71 @@ find_terminals_list([], Explicit, Normal) ->
 
 %%----------------------------------------------------------------------------
 
+%% If you write a record pattern in a matching that violates the
+%% definition it will never match. However, the warning is lost in the
+%% regular analysis. This after-pass catches it.
+
+find_mismatched_record_patterns(Tree, State) ->
+  cerl_trees:fold(
+    fun(SubTree, AccState) ->
+	case cerl:is_c_clause(SubTree) of
+	  true -> lists:foldl(fun(P, AccState1) ->
+				  find_rec_warnings(P, AccState1)
+			      end, AccState, cerl:clause_pats(SubTree));
+	  false -> AccState
+	end
+    end, State, Tree).
+
+find_rec_warnings(Tree, State) ->
+  cerl_trees:fold(
+    fun(SubTree, AccState) ->
+	case cerl:is_c_tuple(SubTree) of
+	  true -> find_rec_warnings_tuple(SubTree, AccState);
+	  false -> AccState
+	end
+    end, State, Tree).
+
+find_rec_warnings_tuple(Tree, State) ->
+  Elements = cerl:tuple_es(Tree),
+  {_, _, EsType} = traverse_list(Elements, map__new(), State),
+  TupleType = t_tuple(EsType),
+  case t_is_none(TupleType) of
+    true -> State;
+    false ->
+      %% Let's find out if this is a record construction.
+      case Elements of
+	[Tag|Left] ->
+	  case cerl:is_c_atom(Tag) of
+	    true ->
+	      TagVal = cerl:atom_val(Tag),
+	      case state__lookup_record(TagVal, length(Left), State) of
+		error -> State;
+		{ok, Prototype} -> 
+		  InfTupleType = t_inf(Prototype, TupleType),
+		  case t_is_none(InfTupleType) of
+		    true ->
+		      Msg = {record_matching, 
+			     [format_patterns([Tree]), TagVal]},
+		      state__add_warning(State, ?WARN_MATCHING, Tree, Msg);
+		    false ->
+		      State
+		  end
+	      end;
+	    false ->
+	      State
+	  end;
+	_ ->
+	  State
+      end
+  end.
+		      
+
+
+  
+
+
+%%----------------------------------------------------------------------------
+
 -ifdef(DEBUG_PP).
 debug_pp(Tree, true) -> 
   io:put_chars(cerl_prettypr:format(Tree, [{hook, cerl_typean:pp_hook()}])),
@@ -2766,7 +2827,7 @@ debug_pp(_Tree, _UseHook) ->
 
 %%----------------------------------------------------------------------------
 
--spec(to_dot/1 :: (#dialyzer_callgraph{}) -> 'ok').
+-spec to_dot(#dialyzer_callgraph{}) -> 'ok'.
 
 -ifdef(DOT).
 to_dot(CG) ->

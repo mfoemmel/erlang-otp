@@ -295,32 +295,36 @@ config_agent_sys() ->
 				    "(silence/info/log/debug/trace)?", 
 				    "silence",
 				    fun verify_verbosity/1),
-		NoteStoreVerb = ask("20. Note store verbosity "
+		MibServerCache = ask("20. Mib server cache "
+				    "(true/false)?", 
+				    "true",
+				    fun verify_bool/1),
+		NoteStoreVerb = ask("21. Note store verbosity "
 				    "(silence/info/log/debug/trace)?", 
 				    "silence",
 				    fun verify_verbosity/1),
-		NoteStoreTimeout = ask("21. Note store GC timeout?", "30000",
+		NoteStoreTimeout = ask("22. Note store GC timeout?", "30000",
 				       fun verify_timeout/1),
 		ATL = 
-		    case ask("22. Shall the agent use an audit trail log "
+		    case ask("23. Shall the agent use an audit trail log "
 			     "(y/n)?",
 			     "n", fun verify_yes_or_no/1) of
 			yes ->
-			    ATLType = ask("22b. Audit trail log type "
+			    ATLType = ask("23b. Audit trail log type "
 					  "(write/read_write)?",
 					  "read_write", fun verify_atl_type/1),
-			    ATLDir = ask("22c. Where to store the "
+			    ATLDir = ask("23c. Where to store the "
 					 "audit trail log?",
 					 DefDir, fun verify_dir/1),
-			    ATLMaxFiles = ask("22d. Max number of files?", 
+			    ATLMaxFiles = ask("23d. Max number of files?", 
 					      "10", 
 					      fun verify_pos_integer/1),
-			    ATLMaxBytes = ask("22e. Max size (in bytes) "
+			    ATLMaxBytes = ask("23e. Max size (in bytes) "
 					      "of each file?", 
 					      "10240", 
 					      fun verify_pos_integer/1),
 			    ATLSize = {ATLMaxBytes, ATLMaxFiles},
-			    ATLRepair = ask("22f. Audit trail log repair "
+			    ATLRepair = ask("23f. Audit trail log repair "
 					    "(true/false/truncate/snmp_repair)?", "true",
 					    fun verify_atl_repair/1),
 			    [{audit_trail_log, [{type,   ATLType},
@@ -330,33 +334,33 @@ config_agent_sys() ->
 			no ->
 			    []
 		    end,
-		NetIfVerb = ask("23. Network interface verbosity "
+		NetIfVerb = ask("24. Network interface verbosity "
 				"(silence/info/log/debug/trace)?", 
 				"silence",
 				fun verify_verbosity/1),
-		NetIfMod = ask("24. Which network interface module shall be used?",
+		NetIfMod = ask("25. Which network interface module shall be used?",
 			       "snmpa_net_if", fun verify_module/1),
 		NetIfOpts = 
 		    case NetIfMod of
 			snmpa_net_if ->
 			    NetIfBindTo = 
-				ask("24a. Bind the agent IP address "
+				ask("25a. Bind the agent IP address "
 				    "(true/false)?",
 				    "false", fun verify_bool/1),
 			    NetIfNoReuse = 
-				ask("24b. Shall the agents "
+				ask("25b. Shall the agents "
 				    "IP address "
 				    "and port be not reusable "
 				    "(true/false)?",
 				    "false", fun verify_bool/1),
 			    NetIfReqLimit = 
-				ask("24c. Agent request limit "
+				ask("25c. Agent request limit "
 				    "(used for flow control) "
 				    "(infinity/pos integer)?", 
 				    "infinity",
 				    fun verify_netif_req_limit/1),
 			    NetIfRecbuf = 
-				case ask("24d. Receive buffer size of the "
+				case ask("25d. Receive buffer size of the "
 					 "agent (in bytes) "
 					 "(default/pos integer)?", 
 					 "default", 
@@ -367,7 +371,7 @@ config_agent_sys() ->
 					[{recbuf, RecBufSz}]
 				end,
 			    NetIfSndbuf = 
-				case ask("24e. Send buffer size of the agent "
+				case ask("25e. Send buffer size of the agent "
 					 "(in bytes) (default/pos integer)?", 
 					 "default", 
 					 fun verify_netif_sndbuf/1) of
@@ -377,7 +381,7 @@ config_agent_sys() ->
 					[{sndbuf, SndBufSz}]
 				end,
 			    NetIfFilter = 
-				case ask("24f. Do you wish to specify a "
+				case ask("25f. Do you wish to specify a "
 					 "network interface filter module "
 					 "(or use default)",
 					 "default", fun verify_module/1) of
@@ -404,7 +408,8 @@ config_agent_sys() ->
 		 {multi_threaded,  MultiThreaded},
 		 {mib_server,      [{mibentry_override,  MeOverride},
 				    {trapentry_override, TrapOverride},
-				    {verbosity,          MibServerVerb}]},
+				    {verbosity,          MibServerVerb},
+				    {cache,              MibServerCache}]},
 		 {note_store,      [{timeout,   NoteStoreTimeout},
 				    {verbosity, NoteStoreVerb}]},
 		 {net_if, NetIf}] ++ ATL;

@@ -9,24 +9,22 @@
 #define HIPE_MODE_SWITCH_CMD_RETURN		1
 #define HIPE_MODE_SWITCH_CMD_THROW		2
 #define HIPE_MODE_SWITCH_CMD_RESUME		3
-#define HIPE_MODE_SWITCH_CMD_RESCHEDULE		4
 
 /* result codes for beam_emu <- hipe_mode_switch() return */
-#define HIPE_MODE_SWITCH_RES_RETURN		5
-#define HIPE_MODE_SWITCH_RES_CALL		6
-#define HIPE_MODE_SWITCH_RES_THROW		7
+#define HIPE_MODE_SWITCH_RES_RETURN		4
+#define HIPE_MODE_SWITCH_RES_CALL		5
+#define HIPE_MODE_SWITCH_RES_THROW		6
 
 /* additional result codes for hipe_mode_switch() <- native return */
-#define HIPE_MODE_SWITCH_RES_SUSPEND		8
-#define HIPE_MODE_SWITCH_RES_WAIT		9
-#define HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT	10
-#define HIPE_MODE_SWITCH_RES_RESCHEDULE		11
-#define HIPE_MODE_SWITCH_RES_TRAP		12
+#define HIPE_MODE_SWITCH_RES_SUSPEND		7
+#define HIPE_MODE_SWITCH_RES_WAIT		8
+#define HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT	9
+#define HIPE_MODE_SWITCH_RES_TRAP		10
 
-#define HIPE_MODE_SWITCH_CMD_CALL_CLOSURE	13 /* BEAM -> mode_switch */
-#define HIPE_MODE_SWITCH_RES_CALL_CLOSURE	14 /* mode_switch <- native */
+#define HIPE_MODE_SWITCH_CMD_CALL_CLOSURE	11 /* BEAM -> mode_switch */
+#define HIPE_MODE_SWITCH_RES_CALL_CLOSURE	12 /* mode_switch <- native */
 
-#define HIPE_MODE_SWITCH_RES_APPLY		15 /* mode_switch <- native */
+#define HIPE_MODE_SWITCH_RES_APPLY		13 /* mode_switch <- native */
 
 #ifndef ASM
 

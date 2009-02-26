@@ -62,11 +62,12 @@ stop() ->
 connect(Host, Port, Options) ->
     {SocketOpts, Opts} = handle_options(Options),
     Timeout = proplists:get_value(timeout, Opts, ?DEFAULT_TIMEOUT),
-    Address = ip_address(Host),
+    DisableIpv6 =  proplists:get_value(ip_v6_disabled, Opts, false),
+    {Address, Inet} = ip_address_and_inetopt(Host, DisableIpv6),
     try sshc_sup:start_child([[{address, Address}, {port, Port}, 
 			      {role, client},
 			      {channel_pid, self()},
-			      {socket_opts, SocketOpts}, 
+			      {socket_opts, [Inet | SocketOpts]}, 
 			      {ssh_opts, [{host, Host}| Opts]}]]) of 
 	{ok, ConnectionSup} ->
 	    {ok, Manager} = 
@@ -117,16 +118,20 @@ daemon(Port, Opts) ->
 
 daemon(HostAddr, Port, Opts) ->
     Shell = proplists:get_value(shell, Opts, {shell, start, []}),
-    Address = case HostAddr of
-		  any ->
-		      ip_address("localhost");
-		  Str when is_list(Str) ->
-		      ip_address(Str);
-		  _ ->
-		      HostAddr
-	      end,
+    DisableIpv6 =  proplists:get_value(ip_v6_disabled, Opts, false),
+    {Address, Inet} = case HostAddr of
+			  any ->
+			      {ok, Host} = inet:gethostname(), 
+			      ip_address_and_inetopt(Host, DisableIpv6);
+			  Str when is_list(Str) ->
+			      ip_address_and_inetopt(Str, DisableIpv6);
+			  {_,_,_,_} ->
+			      {HostAddr, inet};
+			  {_,_,_,_,_,_,_,_} ->
+			      {HostAddr, inet6}
+			  end,
     start_daemon(Address, Port, [{role, server}, 
-				{shell, Shell} | Opts]).
+				{shell, Shell} | Opts], Inet).
 
 %%--------------------------------------------------------------------
 %% Function: stop_listener(SysRef) -> ok
@@ -185,13 +190,13 @@ attach(ConnectionRef, ChannelPid, Timeout) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-start_daemon(Address, Port, Options) ->
+start_daemon(Address, Port, Options, Inet) ->
     {SocketOpts, Opts} = handle_options([{ip, Address} | Options]),
     case ssh_system_sup:system_supervisor(Address, Port) of
 	undefined ->
 	    try sshd_sup:start_child([{address, Address}, 
 				      {port, Port}, {role, server},
-				      {socket_opts, SocketOpts}, 
+				      {socket_opts, [Inet | SocketOpts]}, 
 				      {ssh_opts, Opts}]) of
 		{ok, SysSup} ->
 		    {ok, SysSup};
@@ -203,7 +208,7 @@ start_daemon(Address, Port, Options) ->
 	    end;
 	Sup  ->
 	    case ssh_system_sup:restart_acceptor(Address, Port) of
-		ok ->
+		{ok, _} ->
 		    {ok, Sup};
 		_  ->
 		    {error, eaddrinuse}
@@ -259,6 +264,8 @@ handle_options([{disconnectfun , _} = Opt | Rest], SockOpts, Opts) ->
     handle_options(Rest, SockOpts, [Opt | Opts]);
 handle_options([{failfun, _} = Opt | Rest], SockOpts, Opts) -> 
     handle_options(Rest, SockOpts, [Opt | Opts]);
+handle_options([{ip_v6_disabled, _} = Opt | Rest], SockOpts, Opts) -> 
+    handle_options(Rest, SockOpts, [Opt | Opts]);
 handle_options([{ip, _} = Opt | Rest], SockOpts, Opts) -> 
     handle_options(Rest, [Opt |SockOpts], Opts);
 handle_options([{ifaddr, _} = Opt | Rest], SockOpts, Opts) -> 
@@ -270,13 +277,24 @@ handle_options([{nodelay, _} = Opt | Rest], SockOpts, Opts) ->
 handle_options([Opt | Rest], SockOpts, Opts) ->
     handle_options(Rest, SockOpts, [Opt | Opts]).
 
-ip_address(Host) ->
-    {ok, Ip} =  case (catch inet:getaddr(Host,inet6)) of
-		    {ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
-			inet:getaddr(Host, inet);
-		    {ok, IPAddr} ->
-			{ok, IPAddr};
-		    _ ->
-			inet:getaddr(Host, inet) 
-		end,
-    Ip.
+
+ip_address_and_inetopt(Host, true) ->
+    {ok, Ip} = inet:getaddr(Host, inet),
+    {Ip, inet};
+
+ip_address_and_inetopt("localhost", false) ->
+    {ok, Host} = inet:gethostname(), 
+    {_, Inet} = ip_address_and_inetopt(Host, false),
+    {ok, Ip} = inet:getaddr("localhost", Inet),
+    {Ip, Inet};
+
+ip_address_and_inetopt(Host, false) ->
+    {{ok, Ip}, Inet} =  case (catch inet:getaddr(Host,inet6)) of
+			    {ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
+				{inet:getaddr(Host, inet), inet};
+			    {ok, IPAddr} ->
+				{{ok, IPAddr}, inet6};
+			    _ ->
+				{inet:getaddr(Host, inet), inet} 
+			end,
+    {Ip, Inet}.

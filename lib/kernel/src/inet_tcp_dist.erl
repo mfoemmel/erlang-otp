@@ -62,7 +62,7 @@ select(Node) ->
 %% ------------------------------------------------------------
 
 listen(Name) ->
-    case do_listen([{active, false}, {packet,2}]) of
+    case do_listen([{active, false}, {packet,2}, {reuseaddr, true}]) of
 	{ok, Socket} ->
 	    TcpAddress = get_tcp_address(Socket),
 	    {_,Port} = TcpAddress#net_address.address,

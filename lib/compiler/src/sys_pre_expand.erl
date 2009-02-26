@@ -585,6 +585,7 @@ pat_bit_size(Size, St) ->
 make_bit_type(Line, default, Type0) ->
     case erl_bits:set_bit_type(default, Type0) of
         {ok,all,Bt} -> {{atom,Line,all},erl_bits:as_list(Bt)};
+	{ok,undefined,Bt} -> {{atom,Line,undefined},erl_bits:as_list(Bt)};
         {ok,Size,Bt} -> {{integer,Line,Size},erl_bits:as_list(Bt)}
     end;
 make_bit_type(_Line, Size, Type0) ->            %Integer or 'all'
@@ -615,9 +616,9 @@ bin_element({bin_element,Line,Expr,Size,Type}, {Es,St0}) ->
     {[{bin_element,Line,Expr1,Size2,Type1}|Es],St2}.
 
 bin_expand_strings(Es) ->
-    foldr(fun ({bin_element,Line,{string,_,S},default,default}, Es1) ->
+    foldr(fun ({bin_element,Line,{string,_,S},Sz,Ts}, Es1) ->
                   foldr(fun (C, Es2) ->
-                                [{bin_element,Line,{char,Line,C},default,default}|Es2]
+                                [{bin_element,Line,{char,Line,C},Sz,Ts}|Es2]
                         end, Es1, S);
               (E, Es1) -> [E|Es1]
           end, [], Es).

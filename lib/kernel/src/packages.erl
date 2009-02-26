@@ -26,8 +26,9 @@
 %% list containing atoms. A name may be empty, but may not contain two
 %% consecutive period (`.') characters or end with a period character.
 
--spec(to_string/1 :: (atom() | string()) -> string()).
+-type package_name() :: atom() | string().
 
+-spec to_string(package_name()) -> string().
 to_string(Name) when is_atom(Name) ->
     atom_to_list(Name);
 to_string(Name) ->
@@ -38,9 +39,11 @@ to_string(Name) ->
 %% dangling period characters, if any of the segments after the first
 %% are empty. Use 'is_valid' to check the result if necessary.
 
+-spec concat(package_name(), package_name()) -> string().
 concat(A, B) ->
     concat([A, B]).
 
+-spec concat([package_name()]) -> string().
 concat([H | T]) when is_atom(H) ->
     concat([atom_to_list(H) | T]);
 concat(["" | T]) ->
@@ -59,6 +62,7 @@ concat_1([]) ->
 concat_1(Name) ->
     erlang:error({badarg, Name}).
 
+-spec is_valid(package_name()) -> bool().
 is_valid(Name) when is_atom(Name) ->
     is_valid_1(atom_to_list(Name));
 is_valid([$. | _]) ->
@@ -73,6 +77,7 @@ is_valid_1([H | T]) when is_integer(H), H >= 0 ->
 is_valid_1([]) -> true;
 is_valid_1(_) -> false.
 
+-spec split(package_name()) -> [string()].
 split(Name) when is_atom(Name) ->
     split_1(atom_to_list(Name), []);
 split(Name) ->
@@ -91,6 +96,7 @@ split_1(_, _) ->
 %% length larger than one (i.e., if the name can be split into two or
 %% more segments), but is cheaper.
 
+-spec is_segmented(package_name()) -> bool().
 is_segmented(Name) when is_atom(Name) ->
     is_segmented_1(atom_to_list(Name));
 is_segmented(Name) ->
@@ -103,18 +109,21 @@ is_segmented_1([]) -> false;
 is_segmented_1(_) ->
     erlang:error(badarg).
 
+-spec last(package_name()) -> string().
 last(Name) ->
     last_1(split(Name)).
 
 last_1([H]) -> H;
 last_1([_ | T]) -> last_1(T).
 
+-spec first(package_name()) -> [string()].
 first(Name) ->
     first_1(split(Name)).
 
 first_1([H | T]) when T =/= [] -> [H | first_1(T)];
 first_1(_) -> [].
 
+-spec strip_last(package_name()) -> string().
 strip_last(Name) ->
     concat(first(Name)).
 
@@ -122,9 +131,11 @@ strip_last(Name) ->
 %% current code server search path. (There is no guarantee that the
 %% modules are loadable; only that the object files exist.)
 
+-spec find_modules(package_name()) -> [string()].
 find_modules(P) ->
     find_modules(P, code:get_path()).
 
+-spec find_modules(package_name(), [string()]) -> [string()].
 find_modules(P, Paths) ->
     P1 = filename:join(packages:split(P)),
     find_modules(P1, Paths, code:objfile_extension(), sets:new()).

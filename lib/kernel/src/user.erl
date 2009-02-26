@@ -132,14 +132,14 @@ server_loop(Port, Q) ->
 	{Port,{data,Bytes}} ->
 	    case get(shell) of
 		noshell ->
-		    case string_chr(Bytes, [7,3]) of
-			0 ->
+		    server_loop(Port, queue:snoc(Q, Bytes));
+		_ ->
+		    case contains_ctrl_g_or_ctrl_c(Bytes) of
+			false ->
 			    server_loop(Port, queue:snoc(Q, Bytes));
 			_ ->
 			    throw(new_shell)
-		    end;
-		_ ->
-		    server_loop(Port, queue:snoc(Q, Bytes))
+		    end
 	    end;
 	{io_request,From,ReplyAs,Request} when is_pid(From) ->
 	    server_loop(Port, do_io_request(Request, From, ReplyAs, Port, Q));
@@ -341,8 +341,8 @@ get_chars_bytes(State, M, F, Xa, Port, Q, Bytes) ->
 	noshell ->
 	    get_chars_apply(State, M, F, Xa, Port, queue:snoc(Q, Bytes));
 	_ ->
-	    case string_chr(Bytes, [7,3]) of
-		0 ->
+	    case contains_ctrl_g_or_ctrl_c(Bytes) of
+		false ->
 		    get_chars_apply(State, M, F, Xa, Port, 
 				    queue:snoc(Q, Bytes));
 		_ ->
@@ -391,6 +391,10 @@ get_chars_more(State, M, F, Xa, Port, Q) ->
 
 %% prompt(Port, Prompt)
 %%  Print Prompt onto Port
+
+%% common case, reduces execution time by 20%
+prompt(_Port, '') -> ok;
+
 prompt(Port, Prompt) ->
     put_port(io_lib:format_prompt(Prompt), Port).
 
@@ -400,42 +404,13 @@ err_func(io_lib, get_until, {_,F,_}) ->
 err_func(_, F, _) ->
     F.
 
-%% Search for characters in a list or binary
-string_chr(Bin, Characters) when is_binary(Bin), is_list(Characters) ->
-    string_chr_bin(0, Bin, Characters);
-string_chr(List, Characters) when is_list(List), is_list(Characters) ->
-    string_chr_list(1, List, Characters).
-
-string_chr_bin(I, B, Cs) when I < byte_size(B) ->
-    J = I+1,
-    case string_chr_bin_check(I, B, Cs) of
-	ok ->
-	    J;
-	0 ->
-	    string_chr_bin(J, B, Cs)
-    end;
-string_chr_bin(_, _, _) ->
-    0.
-
-string_chr_bin_check(I, B, [C|Cs]) ->
-    case B of
-	<<_:I/binary,C,_/binary>> ->
-	    ok;
-	_ ->
-	    string_chr_bin_check(I, B, Cs)
-    end;
-string_chr_bin_check(_, _, []) ->
-    0.
-    
-string_chr_list(I, [C|T], Cs) ->
-    case lists:member(C, Cs) of
-	true ->
-	    I;
-	false ->
-	    string_chr_list(I+1, T, Cs)
-    end;
-string_chr_list(_, [], _) ->
-    0.
+%% using regexp reduces execution time by >50% compared to old code
+%% running two regexps in sequence is much faster than \\x03|\\x07
+contains_ctrl_g_or_ctrl_c(BinOrList)->
+    case {re:run(BinOrList, <<3>>),re:run(BinOrList, <<7>>)} of
+	{nomatch, nomatch} -> false;
+	_ -> true
+    end.
 
 %% Convert a buffer between list and binary
 cast(Data) ->

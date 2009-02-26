@@ -707,15 +707,24 @@ select_bin_seg(#l{ke={val_clause,{bin_int,Ctx,Sz,U,Fs,Val,Es},B},i=I,vdb=Vdb},
 
 select_extract_int([{var,Tl}], Val, {integer,Sz}, U, Fs, Vf,
 		   I, Vdb, Bef, Ctx, St) ->
-    EmptyBindings = erl_eval:new_bindings(),
-    EvalFun = fun({integer,_,S}, B) -> {value,S,B} end,
-    Expr = [{bin_element,0,{integer,0,Val},{integer,0,Sz},[{unit,U}|Fs]}],
-    {value,Bin,EmptyBindings} = eval_bits:expr_grp(Expr, EmptyBindings, EvalFun),
     Bits = U*Sz,
+    Bin = case member(big, Fs) of
+	      true ->
+		  <<Val:Bits>>;
+	      false ->
+		  true = member(little, Fs),	%Assertion.
+		  <<Val:Bits/little>>
+	  end,
     Bits = bit_size(Bin),			%Assertion.
     CtxReg = fetch_var(Ctx, Bef),
-    {[{test,bs_match_string,{f,Vf},[CtxReg,Bin]},{bs_save2,CtxReg,{Ctx,Tl}}],
-     clear_dead(Bef, I, Vdb),St}.
+    Is = if
+	     Bits =:= 0 ->
+		 [{bs_save2,CtxReg,{Ctx,Tl}}];
+	     true ->
+		 [{test,bs_match_string,{f,Vf},[CtxReg,Bin]},
+		  {bs_save2,CtxReg,{Ctx,Tl}}]
+	 end,
+    {Is,clear_dead(Bef, I, Vdb),St}.
 
 select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
 		   I, Vdb, Bef, Ctx, _Body, St) ->
@@ -723,17 +732,20 @@ select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
     {Es,Aft} =
 	case vdb_find(Hd, Vdb) of
 	    {_,_,Lhd} when Lhd =< I ->
+		%% The extracted value will not be used.
 		CtxReg = fetch_var(Ctx, Bef),
-		{[{test,bs_skip_bits2,{f,Vf},[CtxReg,SizeReg,Unit,{field_flags,Flags}]},
-		  {bs_save2,CtxReg,{Ctx,Tl}}],Bef};
+		Live = max_reg(Bef#sr.reg),
+		Skip = build_skip_instr(Type, Vf, CtxReg, Live,
+					SizeReg, Unit, Flags),
+		{[Skip,{bs_save2,CtxReg,{Ctx,Tl}}],Bef};
 	    {_,_,_} ->
 		Reg = put_reg(Hd, Bef#sr.reg),
 		Int1 = Bef#sr{reg=Reg},
 		Rhd = fetch_reg(Hd, Reg),
 		CtxReg = fetch_reg(Ctx, Reg),
-		Name = get_bits_instr(Type),
 		Live = max_reg(Bef#sr.reg),
-		{[{test,Name,{f,Vf},[CtxReg,Live,SizeReg,Unit,{field_flags,Flags},Rhd]},
+		{[build_bs_instr(Type, Vf, CtxReg, Live, SizeReg,
+				 Unit, Flags, Rhd),
 		  {bs_save2,CtxReg,{Ctx,Tl}}],Int1}
 	end,
     {Es,clear_dead(Aft, I, Vdb),St};
@@ -808,8 +820,40 @@ get_bin_size_reg({var,V}, Bef) ->
 get_bin_size_reg(Literal, _Bef) ->
     Literal.
 
-get_bits_instr(integer) -> bs_get_integer2;
-get_bits_instr(float)   -> bs_get_float2;
+build_bs_instr(Type, Vf, CtxReg, Live, SizeReg, Unit, Flags, Rhd) ->
+    {Format,Name} = case Type of
+			integer -> {plain,bs_get_integer2};
+			float ->   {plain,bs_get_float2};
+			binary ->  {plain,bs_get_binary2};
+			utf8 ->    {utf,bs_get_utf8};
+			utf16 ->   {utf,bs_get_utf16};
+			utf32 ->   {utf,bs_get_utf32}
+		   end,
+    case Format of
+	plain ->
+	    {test,Name,{f,Vf},
+	     [CtxReg,Live,SizeReg,Unit,{field_flags,Flags},Rhd]};
+	utf ->
+	    {test,Name,{f,Vf},
+	     [CtxReg,Live,{field_flags,Flags},Rhd]}
+    end.
+
+build_skip_instr(Type, Vf, CtxReg, Live, SizeReg, Unit, Flags) ->
+    {Format,Name} = case Type of
+			utf8 -> {utf,bs_skip_utf8};
+			utf16 -> {utf,bs_skip_utf16};
+			utf32 -> {utf,bs_skip_utf32};
+			_ -> {plain,bs_skip_bits2}
+		    end,
+    case Format of
+	plain ->
+	    {test,Name,{f,Vf},[CtxReg,SizeReg,Unit,{field_flags,Flags}]};
+	utf ->
+	    {test,Name,{f,Vf},[CtxReg,Live,{field_flags,Flags}]}
+    end.
+
+%% get_bits_instr(integer) -> bs_get_integer2;
+%% get_bits_instr(float)   -> bs_get_float2;
 get_bits_instr(binary)  -> bs_get_binary2.
 
 select_val(#l{ke={val_clause,{tuple,Es},B},i=I,vdb=Vdb}, V, Vf, Bef, St0) ->
@@ -1440,12 +1484,13 @@ cg_binary([{bs_put_binary,Fail,{atom,all},U,_Flags,Src}|PutCode],
 cg_binary(PutCode, Target, Temp, Fail, MaxRegs, _Anno) ->
     Live = cg_live(Target, MaxRegs),
     {InitOp,SzCode} = cg_binary_size(PutCode, Target, Temp, Fail, Live),
-    Code = SzCode ++ [{InitOp,Fail,Target,0,MaxRegs,{field_flags,[]},Target}|PutCode],
+
+    Code = SzCode ++ [{InitOp,Fail,Target,0,MaxRegs,
+		       {field_flags,[]},Target}|PutCode],
     cg_bin_opt(Code).
 
 cg_live({x,X}, MaxRegs) when X =:= MaxRegs -> MaxRegs+1;
 cg_live({x,X}, MaxRegs) when X < MaxRegs -> MaxRegs.
-
 
 %% Generate code that calculate the size of the bitstr to be
 %% built in BITS.
@@ -1455,12 +1500,18 @@ cg_bitstr_size(PutCode, Target, Temp, Fail, Live) ->
     reverse(cg_gen_binsize(Es, Target, Temp, Fail, Live,
 			   [{move,{integer,Bits},Target}])).
 
+cg_bitstr_size_1([{bs_put_utf8,_,_,Src}|Next], Bits, Acc) ->
+    cg_bitstr_size_1(Next, Bits, [{'*',{bs_utf8_size,Src},8}|Acc]);
+cg_bitstr_size_1([{bs_put_utf16,_,_,Src}|Next], Bits, Acc) ->
+    cg_bitstr_size_1(Next, Bits, [{'*',{bs_utf16_size,Src},8}|Acc]);
+cg_bitstr_size_1([{bs_put_utf32,_,_,_}|Next], Bits, Acc) ->
+    cg_bitstr_size_1(Next, Bits+32, Acc);
 cg_bitstr_size_1([{_,_,S,U,_,Src}|Next], Bits, Acc) ->
     case S of
 	{integer,N} -> cg_bitstr_size_1(Next, Bits+N*U, Acc);
 	{atom,all} -> cg_bitstr_size_1(Next, Bits, [{bit_size,Src}|Acc]);
 	_ when U =:= 1 -> cg_bitstr_size_1(Next, Bits, [S|Acc]);
-	_ -> cg_bitstr_size_1(Next, Bits, [{'*',S,U}])
+	_ -> cg_bitstr_size_1(Next, Bits, [{'*',S,U}|Acc])
     end;
 cg_bitstr_size_1([], Bits, Acc) -> {Bits,Acc}.
 
@@ -1472,6 +1523,12 @@ cg_binary_size(PutCode, Target, Temp, Fail, Live) ->
     SizeExpr = reverse(cg_gen_binsize(Szs, Target, Temp, Fail, Live, [{move,{integer,0},Target}])),
     {InitInstruction,SizeExpr}.
 
+cg_binary_size_1([{bs_put_utf8,_Fail,_Flags,Src}|T], Bits, Acc) ->
+    cg_binary_size_1(T, Bits, [{8,{bs_utf8_size,Src}}|Acc]);
+cg_binary_size_1([{bs_put_utf16,_Fail,_Flags,Src}|T], Bits, Acc) ->
+    cg_binary_size_1(T, Bits, [{8,{bs_utf16_size,Src}}|Acc]);
+cg_binary_size_1([{bs_put_utf32,_Fail,_Flags,_Src}|T], Bits, Acc) ->
+    cg_binary_size_1(T, Bits+32, Acc);
 cg_binary_size_1([{_Put,_Fail,S,U,_Flags,Src}|T], Bits, Acc) ->
     cg_binary_size_2(S, U, Src, T, Bits, Acc);
 cg_binary_size_1([], Bits, Acc) ->
@@ -1520,6 +1577,21 @@ cg_binary_bytes_to_bits_1([H|T]) ->
     [H|cg_binary_bytes_to_bits_1(T)];
 cg_binary_bytes_to_bits_1([]) -> [].
 
+cg_gen_binsize([{'*',{bs_utf8_size,Src},B}|T], Target, Temp, Fail, Live, Acc) ->
+    Size = {bs_utf8_size,Fail,Src,Temp},
+    Add = {bs_add,Fail,[Target,Temp,B],Target},
+    cg_gen_binsize(T, Target, Temp, Fail, Live,
+		   [Add,Size|Acc]);
+cg_gen_binsize([{'*',{bs_utf16_size,Src},B}|T], Target, Temp, Fail, Live, Acc) ->
+    Size = {bs_utf16_size,Fail,Src,Temp},
+    Add = {bs_add,Fail,[Target,Temp,B],Target},
+    cg_gen_binsize(T, Target, Temp, Fail, Live,
+		   [Add,Size|Acc]);
+cg_gen_binsize([{'*',{bs_utf32_size,Src},B}|T], Target, Temp, Fail, Live, Acc) ->
+    Size = {bs_utf32_size,Fail,Src,Temp},
+    Add = {bs_add,Fail,[Target,Temp,B],Target},
+    cg_gen_binsize(T, Target, Temp, Fail, Live,
+		   [Add,Size|Acc]);
 cg_gen_binsize([{'*',A,B}|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize(T, Target, Temp, Fail, Live,
 		   [{bs_add,Fail,[Target,A,B],Target}|Acc]);
@@ -1529,17 +1601,19 @@ cg_gen_binsize([{bit_size,B}|T], Target, Temp, Fail, Live, Acc) ->
 cg_gen_binsize([{byte_size,B}|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
 		   [{gc_bif,byte_size,Fail,Live,[B],Temp}|Acc]);
+cg_gen_binsize([{bs_utf8_size,B}|T], Target, Temp, Fail, Live, Acc) ->
+    cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
+		   [{bs_utf8_size,Fail,B,Temp}|Acc]);
+cg_gen_binsize([{bs_utf16_size,B}|T], Target, Temp, Fail, Live, Acc) ->
+    cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
+		   [{bs_utf16_size,Fail,B,Temp}|Acc]);
+cg_gen_binsize([{bs_utf32_size,B}|T], Target, Temp, Fail, Live, Acc) ->
+    cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
+		   [{bs_utf32_size,Fail,B,Temp}|Acc]);
 cg_gen_binsize([E0|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize(T, Target, Temp, Fail, Live,
 		   [{bs_add,Fail,[Target,E0,1],Target}|Acc]);
 cg_gen_binsize([], _, _, _, _, Acc) -> Acc.
-
-%% cg_gen_binsize_init([{'*',A,B}|T], Target, Fail, Live, Acc) ->
-%%     {bs_add,Fail,[{integer,0},A,B],Target};
-%% cg_gen_binsize_init([{bit_size,B}|T], Target, Fail, Live, Acc) ->
-%%     {gc_bif,bit_size,Fail,Live,[B],Target};
-%% cg_gen_binsize_init([{byte_size,B}|T], Target, Fail, Live, Acc) ->
-%%     {gc_bif,byte_size,Fail,Live,[B],Target}.
 
 
 %% cg_bin_opt(Code0) -> Code
@@ -1578,12 +1652,20 @@ cg_bin_put({bin_seg,[],S0,U,T,Fs,[E0,Next]}, Fail, Bef) ->
 	     {var,V} -> fetch_var(V, Bef);
 	     Other ->   Other
 	 end,
-    Op = case T of
-	     integer -> bs_put_integer;
-	     binary  -> bs_put_binary;
-	     float   -> bs_put_float
-	 end,
-    [{Op,Fail,S1,U,{field_flags,Fs},E1}|cg_bin_put(Next, Fail, Bef)];
+    {Format,Op} = case T of
+		      integer -> {plain,bs_put_integer};
+		      utf8 ->    {utf,bs_put_utf8};
+		      utf16 ->   {utf,bs_put_utf16};
+		      utf32 ->   {utf,bs_put_utf32};
+		      binary  -> {plain,bs_put_binary};
+		      float   -> {plain,bs_put_float}
+		  end,
+    case Format of
+	plain ->
+	    [{Op,Fail,S1,U,{field_flags,Fs},E1}|cg_bin_put(Next, Fail, Bef)];
+	utf ->
+	    [{Op,Fail,{field_flags,Fs},E1}|cg_bin_put(Next, Fail, Bef)]
+    end;
 cg_bin_put({bin_end,[]}, _, _) -> [].
 
 cg_build_args(As, Bef) ->
@@ -1821,9 +1903,7 @@ save_stack(Stk0, Fb, Lf, Vdb) ->
 %%  stack/reg info used is that after the new stack has been made.
 
 saves(Ss, Reg, Stk) ->
-    map(fun (V) ->
-		{move,fetch_reg(V, Reg),fetch_stack(V, Stk)}
-	end, Ss).
+    [{move,fetch_reg(V, Reg),fetch_stack(V, Stk)} || V <- Ss].
 
 %% comment(C) -> ['%'{C}].
 

@@ -23,12 +23,12 @@
 
 %%--------------------------------------------------------------------
 
--spec(cfg/1 :: (#cfg{}) -> #cfg{}).
+-spec cfg(#cfg{}) -> #cfg{}.
 
 cfg(Cfg) ->
   Linear =  hipe_icode_cfg:cfg_to_linear(Cfg),
   #icode{code = StraightCode} = Linear,
-  FinalCode = lists:flatten(lists:map(fun inline_bif/1, StraightCode)),
+  FinalCode = lists:flatten([inline_bif(I) || I <- StraightCode]),
   Cfg1 = hipe_icode_cfg:linear_to_cfg(Linear#icode{code = FinalCode}),
   hipe_icode_cfg:remove_unreachable_code(Cfg1).
 

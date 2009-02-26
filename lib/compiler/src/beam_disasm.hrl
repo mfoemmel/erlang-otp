@@ -9,16 +9,16 @@
 %%
 %% Possibly the following type declaration does not belong here...
 %%
--type(beam_instr() :: 'bs_init_writable' | 'fclearerror' | 'if_end'
+-type beam_instr() :: 'bs_init_writable' | 'fclearerror' | 'if_end'
                     | 'remove_message' | 'return' | 'send' | 'timeout'
-                    | tuple()).  %% XXX: Very underspecified - FIX THIS
+                    | tuple().  %% XXX: Very underspecified - FIX THIS
 
 %%
 %% This is a labeled_export tuple returned by beam_lib:chunks/2.
 %% It has the form {fun_name(), arity(), label()}.
 %% DOES NOT BELONG HERE - IT BELONGS IN beam_lib.hrl BUT THERE IS NO SUCH FILE
 %%
--type(lbl_export() :: {atom(), byte(), non_neg_integer()}).
+-type lbl_export() :: {atom(), byte(), non_neg_integer()}.
 
 %%-----------------------------------------------------------------------
 %% Record definitions

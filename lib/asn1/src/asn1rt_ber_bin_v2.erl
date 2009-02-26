@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2002-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1rt_ber_bin_v2).
  
@@ -30,11 +32,12 @@
 	 decode_integer/3, decode_integer/4,
 	 encode_enumerated/2,
 	 encode_enumerated/4,decode_enumerated/4,
-	 encode_real/2,decode_real/3,
+	 encode_real/3,decode_real/2,
 	 encode_bit_string/4,decode_bit_string/4,
 	 decode_compact_bit_string/4,
 	 encode_octet_string/3,decode_octet_string/3,
 	 encode_null/2,decode_null/2,
+	 encode_relative_oid/2,decode_relative_oid/2,
 	 encode_object_identifier/2,decode_object_identifier/2,
 	 encode_restricted_string/4,decode_restricted_string/4,
 	 encode_universal_string/3,decode_universal_string/3,
@@ -141,12 +144,7 @@ encode_tlv(TlvTag,TlvVal,Form) ->
 
 encode_tlv_tag(ClassTagNo,Form) ->
     Class = ClassTagNo bsr 16,
-    case encode_tag_val({Class bsl 6,Form,(ClassTagNo - (Class bsl 16))}) of
-	T when list(T) ->
-	    list_to_binary(T);
-	T ->
-	    T
-    end.
+    encode_tag_val({Class bsl 6,Form,(ClassTagNo - (Class bsl 16))}).
 
 encode_tlv_val(TlvL) when list(TlvL) ->
     encode_tlv_list(TlvL,[]);
@@ -667,18 +665,8 @@ encode_tag_val({Class, Form, TagNo}) when (TagNo =< 30) ->
 encode_tag_val({Class, Form, TagNo}) -> 
     {Octets,_Len} = mk_object_val(TagNo),
     BinOct = list_to_binary(Octets),
-    <<(Class bsr 6):2, (Form bsr 5):1, 31:5,BinOct/binary>>; 
+    <<(Class bsr 6):2, (Form bsr 5):1, 31:5,BinOct/binary>>.
  
-%% asumes whole correct tag bitpattern, multiple of 8 
-encode_tag_val(Tag) when (Tag =< 255) -> Tag;  %% används denna funktion??!!
-%% asumes correct bitpattern of 0-5 
-encode_tag_val(Tag) -> encode_tag_val2(Tag,[]). 
- 
-encode_tag_val2(Tag, OctAck) when (Tag =< 255) -> 
-    [Tag | OctAck]; 
-encode_tag_val2(Tag, OctAck) -> 
-    encode_tag_val2(Tag bsr 8, [255 band Tag | OctAck]). 
-
 
 %%=============================================================================== 
 %% Decode a tag 
@@ -1040,53 +1028,19 @@ decode_enumerated1(Val, NamedNumberList) ->
 %%============================================================================ 
  
 %% only base 2 internally so far!! 
-encode_real(0, TagIn) ->
+encode_real(_C,0, TagIn) ->
     encode_tags(TagIn, {[],0}); 
-encode_real('PLUS-INFINITY', TagIn) ->
+encode_real(_C,'PLUS-INFINITY', TagIn) ->
     encode_tags(TagIn, {[64],1}); 
-encode_real('MINUS-INFINITY', TagIn) -> 
+encode_real(_C,'MINUS-INFINITY', TagIn) -> 
     encode_tags(TagIn, {[65],1}); 
-encode_real(Val, TagIn) when tuple(Val)-> 
-    encode_tags(TagIn, encode_real(Val)). 
+encode_real(C,Val, TagIn) when is_tuple(Val); is_list(Val) -> 
+    encode_tags(TagIn, encode_real(C,Val)). 
  
-%%%%%%%%%%%%%% 
-%% not optimal efficient..  
-%% only base 2 of Mantissa encoding! 
-%% only base 2 of ExpBase encoding! 
-encode_real({Man, Base, Exp}) -> 
-%%    io:format("Mantissa: ~w Base: ~w, Exp: ~w~n",[Man, Base, Exp]), 
-     
-    OctExp = if Exp >= 0 -> list_to_binary(encode_integer_pos(Exp, [])); 
-		true     -> list_to_binary(encode_integer_neg(Exp, []))
-	     end, 
-%%    ok = io:format("OctExp: ~w~n",[OctExp]), 
-    SignBit = if  Man > 0 -> 0;  % bit 7 is pos or neg, no Zeroval 
-		  true -> 1
-	      end, 
-%%    ok = io:format("SignBitMask: ~w~n",[SignBitMask]), 
-    InBase = if  Base =:= 2 -> 0;   % bit 6,5: only base 2 this far! 
-			   true -> 
-			       exit({error,{asn1, {encode_real_non_supported_encodeing, Base}}}) 
-		       end, 
-    SFactor = 0,   % bit 4,3: no scaling since only base 2 
-    OctExpLen = size(OctExp), 
-    if OctExpLen > 255 -> 
-	    exit({error,{asn1, {to_big_exp_in_encode_real, OctExpLen}}}); 
-       true  -> true %% make real assert later.. 
-    end,  
-    {LenCode, EOctets} = case OctExpLen of   % bit 2,1  
-			     1 -> {0, OctExp}; 
-			     2 -> {1, OctExp}; 
-			     3 -> {2, OctExp}; 
-			     _ -> {3, <<OctExpLen, OctExp/binary>>}  
-			 end, 
-    FirstOctet = <<1:1,SignBit:1,InBase:2,SFactor:2,LenCode:2>>,
-    OctMantissa = if Man > 0 -> list_to_binary(minimum_octets(Man)); 
-		     true    -> list_to_binary(minimum_octets(-(Man))) % signbit keeps track of sign 
-		  end, 
-    %%    ok = io:format("LenMask: ~w EOctets: ~w~nFirstOctet: ~w OctMantissa: ~w OctExpLen: ~w~n", [LenMask, EOctets, FirstOctet, OctMantissa, OctExpLen]), 
-    Bin = <<FirstOctet/binary, EOctets/binary, OctMantissa/binary>>,
-    {Bin, size(Bin)}. 
+
+
+encode_real(C,Val) ->
+    ?RT_COMMON:encode_real(C,Val). 
  
  
 %%============================================================================ 
@@ -1096,15 +1050,24 @@ encode_real({Man, Base, Exp}) ->
 %%  {{Mantissa, Base, Exp} | realval | PLUS-INFINITY | MINUS-INFINITY | 0, 
 %%     RestBuff} 
 %%  
-%% only for base 2 decoding sofar!! 
+%% only for base 2 and 10 decoding sofar!! 
 %%============================================================================ 
  
-decode_real(Tlv, Form, Tags) ->
+decode_real(Tlv, Tags) ->
     Buffer = match_tags(Tlv,Tags),
-    decode_real_notag(Buffer, Form).
+    decode_real_notag(Buffer).
 
-decode_real_notag(_Buffer, _Form) ->
-    exit({error,{asn1, {unimplemented,real}}}).
+decode_real_notag(Buffer) ->
+    Len =
+	case Buffer of
+	    Bin when is_binary(Bin) ->
+		size(Bin);
+	    {_T,_V} ->
+		exit({error,{asn1,{real_not_in_primitive_form,Buffer}}})
+	end,
+    {Val,_Rest,Len} = ?RT_COMMON:decode_real(Buffer,Len),
+    Val.
+%%    exit({error,{asn1, {unimplemented,real}}}).
 %%  decode_real2(Buffer, Form, size(Buffer)).
 
 % decode_real2(Buffer, Form, Len) ->
@@ -1607,16 +1570,6 @@ enc_obj_id_tail([H|T], Ack, Len) ->
     {B, L} = mk_object_val(H),
     enc_obj_id_tail(T, [B|Ack], Len+L).
 
-%% e_object_identifier([List of Obect Identifiers]) -> 
-%% {[Encoded Octetlist of ObjIds], IntLength} 
-%% 
-%%e_object_identifier([E1, E2 | Tail]) -> 
-%%    Head = 40*E1 + E2,  % wow! 
-%%    F = fun(Val, AckLen) -> 
-%%		{L, Ack} = mk_object_val(Val), 
-%%		{L, Ack + AckLen} 
-%%	end, 
-%%    {Octets, Len} = lists:mapfoldl(F, 0, [Head | Tail]).
 
 %%%%%%%%%%% 
 %% mk_object_val(Value) -> {OctetList, Len} 
@@ -1661,6 +1614,35 @@ dec_subidentifiers(<<1:1,H:7,T/binary>>,Av,Al) ->
 dec_subidentifiers(<<H,T/binary>>,Av,Al) -> 
     dec_subidentifiers(T,0,[((Av bsl 7) + H)|Al]). 
 
+%%============================================================================ 
+%% RELATIVE-OID, ITU_T X.690 Chapter 8.20 
+%%
+%% encode Relative Object Identifier 
+%%============================================================================ 
+encode_relative_oid({Name,Val},TagIn) when is_atom(Name) ->
+    encode_relative_oid(Val,TagIn);
+encode_relative_oid(Val,TagIn) when is_tuple(Val) ->
+    encode_relative_oid(tuple_to_list(Val),TagIn);
+encode_relative_oid(Val,TagIn) ->
+    encode_tags(TagIn, enc_relative_oid(Val)).
+
+enc_relative_oid(Tuple) when is_tuple(Tuple) ->
+    enc_relative_oid(tuple_to_list(Tuple));
+enc_relative_oid(Val) ->
+    lists:mapfoldl(fun(X,AccIn) ->
+			   {SO,L}=mk_object_val(X),
+			   {SO,L+AccIn}
+		   end
+		   ,0,Val).
+
+%%============================================================================ 
+%% decode Relative Object Identifier value   
+%%    (Buffer, HasTag, TotalLen) -> {{ObjId}, Remain, RemovedBytes}  
+%%============================================================================ 
+decode_relative_oid(Tlv, Tags) ->
+    Val = match_tags(Tlv, Tags),
+    ObjVals = dec_subidentifiers(Val,0,[]), 
+    list_to_tuple(ObjVals).
 
 %%============================================================================ 
 %% Restricted character string types, ITU_T X.690 Chapter 8.20 

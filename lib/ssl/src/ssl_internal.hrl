@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2007-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 
 
@@ -45,20 +47,30 @@
 -define(TRUE, 0).
 -define(FALSE, 1).
 
--define(DEFAULT_SUPPORTED_VERSIONS, [sslv3]). % TODO: This is temporary
+-define(DEFAULT_SUPPORTED_VERSIONS, [tlsv1, sslv3]). % TODO: This is temporary
 %-define(DEFAULT_SUPPORTED_VERSIONS, ['tlsv1.1', tlsv1, sslv3]).
 
 -record(ssl_options, {
-	  verify,     % 
-	  depth,      %
-	  certfile,   %
-	  keyfile,    %
-	  key,	      %
-	  password,   %
-	  cacertfile, %
-	  ciphers,    %
-	  reuse_sessions, %
-	  debug       %
+	  versions,   % 'tlsv1.1' | tlsv1 | sslv3
+	  verify,     %   verify_none | verify_peer
+	  verify_fun, % fun(CertVerifyErrors) -> boolean()
+	  fail_if_no_peer_cert, % boolean()
+	  verify_client_once,  % boolean()
+	  depth,      % integer()
+	  certfile,   % file()
+	  keyfile,    % file()
+	  key,	      % 
+	  password,   % 
+	  cacertfile, % file()
+	  ciphers,    % 
+	  %% Local policy for the server if it want's to reuse the session
+	  %% or not. Defaluts to allways returning true.
+	  %% fun(SessionId, PeerCert, Compression, CipherSuite) -> boolean()
+	  reuse_session,  
+	  %% If false sessions will never be reused, if true they
+	  %% will be reused if possible.
+	  reuse_sessions, % boolean()
+	  debug           %
 	  }).
 
 -record(socket_options, {

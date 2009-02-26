@@ -17,14 +17,14 @@
 %%
 
 -record(zip_file, {
-	  name,        % file name
-	  info,        % file_info
-	  comment,     % zip file comment
-	  offset,      % offset of file's local header in archive
-	  comp_size    % compressed size
+	  name      :: string(),	  % file name
+	  info	    :: #file_info{},
+	  comment   :: string(),	  % zip file comment
+	  offset    :: non_neg_integer(), % offset of file's local header in archive
+	  comp_size :: non_neg_integer()  % compressed size
 	 }).
 
 -record(zip_comment, {
-	  comment      % zip archive comment
+	  comment   :: string()		  % zip archive comment
 	 }).
 

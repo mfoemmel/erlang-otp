@@ -1,7 +1,6 @@
 #-*-makefile-*-   ; force emacs to enter makefile-mode
 
-MODULES = \
-	snmp_test_lib \
+SUITE_MODULES = \
 	snmp_SUITE \
 	snmp_app_test \
 	snmp_appup_test \
@@ -18,7 +17,10 @@ MODULES = \
 	snmp_manager_user \
 	snmp_manager_user_test \
 	snmp_manager_user_test_lib \
-	snmp_manager_test \
+	snmp_manager_test
+
+TEST_UTIL_MODULES = \
+	snmp_test_lib \
 	snmp_test_manager \
 	snmp_test_mgr \
 	snmp_test_mgr_misc \
@@ -26,6 +28,14 @@ MODULES = \
 	klas3 \
 	test1 \
 	test2
+
+TEST_SERVER_MODULES = \
+	snmp_test_server \
+	snmp_test_suite
+
+MODULES = \
+	$(TEST_UTIL_MODULES) \
+	$(SUITE_MODULES)
 
 HRL_FILES = snmp_test_lib.hrl
 

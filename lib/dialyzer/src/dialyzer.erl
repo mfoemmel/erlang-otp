@@ -49,7 +49,7 @@
 %%  - plt_info/1:       Get information of the specified plt.
 %%--------------------------------------------------------------------
 
--spec(plain_cl/0 :: () -> no_return()).
+-spec plain_cl() -> no_return().
 
 plain_cl() ->
   case dialyzer_cl_parse:start() of
@@ -61,15 +61,23 @@ plain_cl() ->
       try check_gui_options(Opts)
       catch throw:{dialyzer_error, Msg} -> cl_error(Msg)
       end,
-      case cl_check_init(Opts) of
-	{error, _} = Error -> gui_halt(Error, Opts);
-	{ok, ?RET_NOTHING_SUSPICIOUS} ->
+      case Opts#options.check_plt of
+	true ->
+	  case cl_check_init(Opts#options{get_warnings=false}) of
+	    {error, _} = Error -> cl_halt(Error, Opts);
+	    {ok, _} -> gui_halt(internal_gui(Opts), Opts)
+	  end;
+	false ->
 	  gui_halt(internal_gui(Opts), Opts)
       end;
     {cl, Opts} -> 
-      case cl_check_init(Opts) of
-	{error, _} = Error -> cl_halt(Error, Opts);
-	{ok, ?RET_NOTHING_SUSPICIOUS} ->
+      case Opts#options.check_plt of
+	true ->
+	  case cl_check_init(Opts#options{get_warnings=false}) of
+	    {error, _} = Error -> cl_halt(Error, Opts);
+	    {ok, _} -> cl_halt(cl(Opts), Opts)
+	  end;
+	false ->
 	  cl_halt(cl(Opts), Opts)
       end;
     {error, Msg} -> 
@@ -105,7 +113,7 @@ print_plt_info(Opts) ->
 	Msg = io_lib:format("Could not read the plt file ~p\n", [Plt]),
 	throw({dialyzer_error, Msg});
       {error, no_such_file} ->
-	Msg = io_lib:format("The plt file ~p does not exist.\n", [Plt]),
+	Msg = io_lib:format("The plt file ~p does not exist\n", [Plt]),
 	throw({dialyzer_error, Msg})
     end,
   case Opts#options.output_file of
@@ -131,7 +139,7 @@ cl(Opts) ->
       end,
   doit(F).
 
--spec(run/1 :: (dial_options()) -> [dial_warning()]).
+-spec run(dial_options()) -> [dial_warning()].
 
 run(Opts) when length(Opts) > 0 ->
   try
@@ -161,12 +169,12 @@ internal_gui(OptsRecord) ->
       end,
   doit(F).
 
--spec(gui/0 :: () -> 'ok').
+-spec gui() -> 'ok'.
 
 gui() ->
   gui([]).
 
--spec(gui/1 :: (dial_options()) -> 'ok').
+-spec gui(dial_options()) -> 'ok'.
 
 gui(Opts) ->
   try
@@ -198,8 +206,7 @@ check_gui_options(#options{analysis_type=Mode}) ->
   Msg = io_lib:format("Analysis mode ~w is illegal in gui mode", [Mode]),
   throw({dialyzer_error, Msg}).
 
--spec(plt_info/1 :: (string()) -> {ok, [{'files', [string()]}]}
-				| {error, atom()}) .
+-spec plt_info(string()) -> {ok, [{'files', [string()]}]} | {error, atom()}.
 
 plt_info(Plt) ->
   case dialyzer_plt:included_files(Plt) of
@@ -226,8 +233,7 @@ cl_error(Msg) ->
 gui_halt(R, Opts) ->
   cl_halt(R, Opts#options{report_mode=quiet}).
 
--spec(cl_halt/2 ::
-      ({'ok',atom()} | {'error',string()}, #options{}) -> no_return()).
+-spec cl_halt({'ok',dial_ret()} | {'error',string()}, #options{}) -> no_return().
 
 cl_halt({ok, R = ?RET_NOTHING_SUSPICIOUS},  #options{report_mode=quiet}) -> 
   halt(R);
@@ -246,14 +252,14 @@ cl_halt({error, Msg1}, #options{output_file=Output}) ->
   cl_check_log(Output),
   halt(?RET_INTERNAL_ERROR).
 
--spec(cl_check_log/1 :: (string()) -> 'ok').
+-spec cl_check_log(string()) -> 'ok'.
 
 cl_check_log(none) ->
   ok;
 cl_check_log(Output) ->
   io:format("  Check output file `~s' for details\n", [Output]).
 
--spec(format_warning/1 :: (dial_warning()) -> string()).
+-spec format_warning(dial_warning()) -> string().
 
 format_warning({_Tag, {File, Line}, Msg}) when is_list(File), 
 					       is_integer(Line) ->
@@ -285,6 +291,9 @@ message_to_string({exact_eq, [Type1, Type2]}) ->
 message_to_string({improper_list_constr, [TlType]}) ->
   io_lib:format("Cons will produce an improper list since its "
 		"2nd argument is ~s\n", [TlType]);
+message_to_string({record_matching, [String, Name]}) ->
+  io_lib:format("The ~s violates the "
+		"declared type for #~w{}\n", [String, Name]);
 message_to_string({record_constr, [Types, Name]}) ->
   io_lib:format("Record construction ~s violates the "
 		"declared type for #~w{}\n", [Types, Name]);
@@ -301,7 +310,7 @@ message_to_string({pattern_match, [Pat, Type]}) ->
 message_to_string({guard_fail, []}) ->
   "Clause guard cannot succeed.\n";
 message_to_string({guard_fail, [Arg1, Infix, Arg2]}) ->
-  io_lib:format("Guard test ~s ~s ~s can never succeed.\n",
+  io_lib:format("Guard test ~s ~s ~s can never succeed\n",
 		[Arg1, Infix, Arg2]);
 message_to_string({guard_fail, [Guard, Args]}) ->
   io_lib:format("Guard test ~w~s can never succeed\n", [Guard, Args]);
@@ -325,25 +334,25 @@ message_to_string({no_return, [Type|Name]}) ->
   end;
 message_to_string({spec_missing_fun, [M, F, A]}) ->
   io_lib:format("Contract for function that does not exist: ~w:~w/~w\n",
-		[M,F,A]);
+		[M, F, A]);
 message_to_string({invalid_contract, [M, F, A, Sig]}) ->
   io_lib:format("Invalid type specification for function ~w:~w/~w. "
 		"The success typing is ~s\n", 
 		[M, F, A, Sig]);
 message_to_string({overlapping_contract, []}) ->
   "Overloaded contract has overlapping domains;"
-    " such contracts are currently unsupported and are simply ignored \n";
+    " such contracts are currently unsupported and are simply ignored\n";
 message_to_string({contract_subtype, [M, F, A, Contract, Sig]}) ->
   io_lib:format("Type specification ~w:~w/~w :: ~s "
 		"is a subtype of the success typing: ~s\n", 
 		[M, F, A, Contract, Sig]);
 message_to_string({contract_supertype, [M, F, A, Contract, Sig]}) ->
   io_lib:format("Type specification ~w:~w/~w :: ~s "
-		"is a supertype of the success typing: ~s\n", 
+		"is a supertype of the success typing: ~s\n",
 		[M, F, A, Contract, Sig]);
 message_to_string({contract_diff, [M, F, A, Contract, Sig]}) ->
   io_lib:format("Type specification ~w:~w/~w :: ~s "
-		"is not equal to the success typing: ~s\n", 
+		"is not equal to the success typing: ~s\n",
 		[M, F, A, Contract, Sig]);
 message_to_string({call_to_missing, [M, F, A]}) ->
   io_lib:format("Call to missing or unexported function ~w:~w/~w\n", [M, F, A]);
@@ -366,24 +375,24 @@ call_or_apply_to_string(ArgNs, FailReason, SigArgs, SigRet,
     only_sig ->
       case ArgNs =:= [] of
 	true -> 
-	  %% We do not know which arguments that caused the failure. 
-	  io_lib:format("will fail since the success typing arguments"
+	  %% We do not know which arguments caused the failure. 
+	  io_lib:format("will never return since the success typing arguments"
 			" are ~s\n", [SigArgs]);
 	false ->
-	  io_lib:format("will fail since it differs in argument" 
+	  io_lib:format("will never return since it differs in argument" 
 			" ~s from the success typing arguments: ~s\n", 
 			[PositionString, SigArgs])
       end;
     only_contract -> 
       case (ArgNs =:= []) orelse IsOverloaded of
 	true ->
-	  %% We do not know which arguments that caused the failure. 
+	  %% We do not know which arguments caused the failure. 
 	  io_lib:format("breaks the contract ~s\n", [Contract]);
 	false ->
 	  io_lib:format("breaks the contract ~s in argument ~s\n",
 			[Contract, PositionString])
       end;
     both  ->
-      io_lib:format("will fail since the success typing is ~s -> ~s and "
-		    "the contract is ~s\n", [SigArgs, SigRet, Contract])
+      io_lib:format("will never return since the success typing is ~s -> ~s"
+		    " and the contract is ~s\n", [SigArgs, SigRet, Contract])
   end.

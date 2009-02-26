@@ -193,11 +193,12 @@
       <name>sleep(Time) -> ok</name>
       <fsummary>Suspend the calling process for <c>Time</c>amount of milliseconds.</fsummary>
       <type>
-        <v>Time = integer() in milliseconds</v>
+        <v>Time = integer() in milliseconds or the atom infinity</v>
       </type>
       <desc>
         <p>Suspends the process calling this function for <c>Time</c> amount
-          of milliseconds and then returns <c>ok</c>. Naturally, this 
+          of milliseconds and then returns <c>ok</c>, or supend the process
+	  forever if <c>Time</c> is the atom <c>infinity</c>. Naturally, this 
           function does <em>not</em> return immediately.</p>
       </desc>
     </func>

@@ -21,8 +21,8 @@
 %%
 %% CVS:
 %%    $Author: kostis $
-%%    $Date: 2008/03/28 21:37:50 $
-%%    $Revision: 1.8 $
+%%    $Date: 2008/10/01 08:59:40 $
+%%    $Revision: 1.9 $
 %% ============================================================================
 %% Exported functions (short description):
 %%   stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) -> 
@@ -52,8 +52,8 @@
 
 %%----------------------------------------------------------------------------
 
--type(dict()    :: tuple()).  % XXX: Temporarily
--type(gb_tree() :: tuple()).  % XXX: Temporarily
+-type dict()    :: tuple().  % XXX: Temporarily
+-type gb_tree() :: tuple().  % XXX: Temporarily
 
 %%----------------------------------------------------------------------------
 
@@ -75,9 +75,9 @@
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec(stackalloc/6 ::
-      (#cfg{}, [_], non_neg_integer(), comp_options(),
-       atom(), hipe_temp_map()) -> {hipe_spill_map(), non_neg_integer()}).
+-spec stackalloc(#cfg{}, [_], non_neg_integer(),
+		 comp_options(), atom(), hipe_temp_map()) ->
+                                {hipe_spill_map(), non_neg_integer()}.
 
 stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) ->
   ?debug_msg("LinearScan: ~w\n", [erlang:statistics(runtime)]),

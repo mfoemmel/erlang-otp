@@ -64,7 +64,7 @@ int ei_skip_term(const char* buf, int* index)
 	    ei_skip_term(buf, index);
 	break;
     case ERL_BINARY_EXT:
-	if (ei_decode_binary(buf, index, NULL, (long*)&n) < 0)
+	if (ei_decode_binary(buf, index, NULL, NULL) < 0)
 	    return -1;
 	break;
     case ERL_SMALL_INTEGER_EXT:

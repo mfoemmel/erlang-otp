@@ -53,63 +53,74 @@ start_link(Args) ->
 %% Init the code_server process.
 %% -----------------------------------------------------------
 
-init(Ref, Parent, [Root,Mode]) ->
+init(Ref, Parent, [Root,Mode0]) ->
     register(?MODULE, self()),
     process_flag(trap_exit, true),
-
-    IPath = if Mode =:= interactive ; Mode =:= minimal ->
-		    LibDir = filename:append(Root, "lib"),
-		    {ok,Dirs} = erl_prim_loader:list_dir(LibDir),
-		    {Paths,_Libs} = make_path(LibDir, Dirs),
-		    UserLibPaths  = get_user_lib_dirs(),
-		    ["."] ++ UserLibPaths ++ Paths;
-	       true ->
-		    []
-	    end,
 
     Db = ets:new(code, [private]),
     foreach(fun (M) -> ets:insert(Db, {M,preloaded}) end, erlang:pre_loaded()),
     ets:insert(Db, init:fetch_loaded()),
-    
-    Mode1 = if Mode =:= minimal -> interactive;
-	       true -> Mode
-	    end,
 
-    Path = add_loader_path(IPath, Mode1),
+    Mode = 
+	case Mode0 of
+	    minimal    -> interactive;
+	    _          -> Mode0
+	end,
+
+    IPath =
+	case Mode of
+	    interactive ->
+		LibDir = filename:append(Root, "lib"),
+		{ok,Dirs} = erl_prim_loader:list_dir(LibDir),
+		{Paths,_Libs} = make_path(LibDir,Dirs),
+		UserLibPaths = get_user_lib_dirs(),
+		["."] ++ UserLibPaths ++ Paths;
+	    _ ->
+		[]
+	end,
+
+    Path = add_loader_path(IPath, Mode),
     State0 = #state{root = Root,
 		    path = Path,
 		    moddb = Db,
 		    namedb = init_namedb(Path),
-		    mode = Mode1},
+		    mode = Mode},
 
-    State = case init:get_argument(code_path_cache) of
-		error -> 
-		    State0;
-		{ok, _} -> 
-		    create_cache(State0)
-	    end,
-    
+    State =
+	case init:get_argument(code_path_cache) of
+	    {ok, _} -> 
+		create_cache(State0);
+	    error -> 
+		State0
+	end,
+
     Parent ! {Ref,{ok,self()}},
     loop(State#state{supervisor=Parent}).
 
 get_user_lib_dirs() ->
     case os:getenv("ERL_LIBS") of
 	LibDirs0 when is_list(LibDirs0) ->
-	    case os:type() of
-		{win32, _} -> Sep = $;;
-		_          -> Sep = $:
-				  end,
+	    Sep =
+		case os:type() of
+		    {win32, _} -> $;;
+		    _          -> $:
+		end,
 	    LibDirs = split_paths(LibDirs0, Sep, [], []),
 	    get_user_lib_dirs_1(LibDirs);
-	false -> []
+	false ->
+	    []
     end.
 
 get_user_lib_dirs_1([Dir|DirList]) ->
-    {ok, Dirs} = erl_prim_loader:list_dir(Dir),
-    {Paths,_Libs} = make_path(Dir, Dirs),
-    %% Only add paths trailing with ./ebin.
-    [P || P <- Paths, filename:basename(P) =:= "ebin"] ++
-	get_user_lib_dirs_1(DirList);
+    case erl_prim_loader:list_dir(Dir) of
+	{ok, Dirs} ->
+	    {Paths,_Libs} = make_path(Dir, Dirs),
+	    %% Only add paths trailing with ./ebin.
+	    [P || P <- Paths, filename:basename(P) =:= "ebin"] ++
+		get_user_lib_dirs_1(DirList);
+	error ->
+	    get_user_lib_dirs_1(DirList)
+    end;
 get_user_lib_dirs_1([]) -> [].
 
 
@@ -233,7 +244,7 @@ handle_call({load_file,Mod},{_From,_Tag}, S) ->
     case modp(Mod) of
 	false ->
 	    {reply,{error, badarg},S};
-	_ ->
+	true ->
 	    {St,Status} = load_file(Mod, S),
 	    {reply,Status,St}
     end;
@@ -288,7 +299,7 @@ handle_call({load_abs,File,Mod}, {_From,_Tag}, S) ->
     case modp(File) of
 	false ->
 	    {reply,{error,badarg},S};
-	_ ->
+	true ->
 	    Status = load_abs(File,Mod,S#state.moddb),
 	    {reply,Status,S}
     end;
@@ -365,8 +376,16 @@ handle_call(stop,{_From,_Tag}, S) ->
 handle_call({is_cached,_File}, {_From,_Tag}, S=#state{cache=no_cache}) ->
     {reply, no, S};
 
+handle_call({set_primary_archive, File, ArchiveBin}, {_From,_Tag}, S=#state{mode=Mode}) ->
+    case erl_prim_loader:set_primary_archive(File, ArchiveBin) of
+	{ok, Files} ->
+	    {reply, {ok, Mode, Files}, S};
+	{error, Reason} ->
+	    {reply, {error, Reason}, S}
+    end;
+
 handle_call({is_cached,File}, {_From,_Tag}, S=#state{cache=Cache}) ->
-    ObjExt = code_aux:objfile_extension(),
+    ObjExt = objfile_extension(),
     Ext = filename:extension(File),
     Type = case Ext of
 	       ObjExt -> obj;
@@ -424,12 +443,12 @@ rehash_cache(St = #state{cache = OldCache}) ->
     rehash_cache(Cache, St).
 
 rehash_cache(Cache, St = #state{path = Path}) ->
-    Exts = [{obj,code_aux:objfile_extension()}, {app,".app"}],
+    Exts = [{obj,objfile_extension()}, {app,".app"}],
     {Cache,NewPath} = locate_mods(lists:reverse(Path), first, Exts, Cache, []),
     St#state{cache = Cache, path=NewPath}.
 
 update_cache(Dirs, Where, Cache0) ->
-    Exts = [{obj,code_aux:objfile_extension()}, {app,".app"}],
+    Exts = [{obj,objfile_extension()}, {app,".app"}],
     {Cache, _} = locate_mods(Dirs, Where, Exts, Cache0, []),
     Cache.
 
@@ -482,19 +501,21 @@ make_path(BundleDir,Bundles0) ->
     make_path(BundleDir,Bundles,[],[]).
 
 choose_bundles(Bundles) ->
-    Bs = lists:sort([cr_b(B) || B <- Bundles]),
+    ArchiveExt = archive_extension(),
+    Bs = lists:sort([create_bundle(B,ArchiveExt) || B <- Bundles]),
     [FullName || {_Name,_NumVsn,FullName} <-
-		     choose(lists:reverse(Bs), [])].
+		     choose(lists:reverse(Bs), [], ArchiveExt)].
 
-cr_b(FullName) ->
-    case split(FullName, "-") of
+create_bundle(FullName,ArchiveExt) ->
+    BaseName = filename:basename(FullName,ArchiveExt),
+    case split(BaseName, "-") of
 	Toks when length(Toks) > 1 ->
 	    VsnStr = lists:last(Toks),
 	    case vsn_to_num(VsnStr) of
 		{ok, VsnNum} ->
 		    Name = join(lists:sublist(Toks,length(Toks)-1),"-"),
 		    {Name,VsnNum,FullName};
-		_ ->
+		false ->
 		    {FullName, [0], FullName}
 	    end;
 	_ ->
@@ -515,9 +536,9 @@ is_vsn(Str) when is_list(Str) ->
     lists:all(fun is_numstr/1, Vsns).
 
 is_numstr(Cs) ->
-    lists:all(fun (C) when $0 =< C, C =< $9 -> 
-		      true; 
-		  (_) -> false end, Cs).
+    lists:all(fun (C) when $0 =< C, C =< $9 -> true; 
+		  (_)                       -> false
+	      end, Cs).
 
 split(Cs, S) ->
     split1(Cs, S, []).
@@ -545,55 +566,85 @@ join([H], _) ->
 join([], _) ->
     [].
 
-
-choose([{Name,NumVsn,FullName}|Bs],Ack) ->
-    case lists:keymember(Name,1,Ack) of
-	true ->
-	    choose(Bs,Ack);
-	_ ->
-	    choose(Bs,[{Name,NumVsn,FullName}|Ack])
+choose([{Name,NumVsn,NewFullName}=New|Bs], Acc, ArchiveExt) ->
+    case lists:keysearch(Name,1,Acc) of
+	{value, {_, NV, OldFullName}} when NV =:= NumVsn ->
+	    case filename:extension(OldFullName) =:= ArchiveExt of
+		false ->
+		    choose(Bs,Acc, ArchiveExt);
+		true ->
+		    Acc2 = lists:keystore(Name, 1, Acc, New),
+		    choose(Bs,Acc2, ArchiveExt)
+	    end;
+	{value, {_, _, _}} ->
+	    choose(Bs,Acc, ArchiveExt);
+	false ->
+	    choose(Bs,[{Name,NumVsn,NewFullName}|Acc], ArchiveExt)
     end;
-choose([],Ack) ->
-    Ack.
+choose([],Acc, _ArchiveExt) ->
+    Acc.
 
 make_path(_,[],Res,Bs) ->
     {Res,Bs};
 make_path(BundleDir,[Bundle|Tail],Res,Bs) ->
     Dir = filename:append(BundleDir,Bundle),
-    Bin = filename:append(Dir,"ebin"),
-    %% First try with /ebin otherwise just add the dir
-    case erl_prim_loader:read_file_info(Bin) of
-	{ok, #file_info{type=directory}} -> 
-	    make_path(BundleDir,Tail,[Bin|Res],[Bundle|Bs]);
+    Ebin = filename:append(Dir,"ebin"),
+    %% First try with /ebin
+    case erl_prim_loader:read_file_info(Ebin) of
+	{ok,#file_info{type=directory}} ->
+	    make_path(BundleDir,Tail,[Ebin|Res],[Bundle|Bs]);
 	_ ->
-	    case erl_prim_loader:read_file_info(Dir) of
-		{ok,#file_info{type=directory}} ->
-		    make_path(BundleDir,Tail,
-			      [Dir|Res],[Bundle|Bs]);
+	    %% Second try with archive
+	    case {filename:extension(Dir), archive_extension()} of
+		{Ext, Ext} ->
+		    Base = filename:basename(Dir, Ext),
+		    Ebin2 = filename:join([Dir, Base, "ebin"]),
+		    %% Add the dir in archive if it exists
+		    case erl_prim_loader:read_file_info(Ebin2) of
+			{ok,#file_info{type=directory}} -> 
+			    make_path(BundleDir,Tail,[Ebin2|Res],[Bundle|Bs]);
+			_ ->
+			    make_path(BundleDir,Tail,Res,Bs)
+		    end;
 		_ ->
-		    make_path(BundleDir,Tail,Res,Bs)
+		    case erl_prim_loader:read_file_info(Dir) of
+			{ok,#file_info{type=directory}} ->
+			    make_path(BundleDir,Tail,[Dir|Res],[Bundle|Bs]);
+			_ ->
+			    make_path(BundleDir,Tail,Res,Bs)
+		    end
 	    end
     end.
-
-
 
 %%
 %% Add the erl_prim_loader path.
 %% 
 %%
-add_loader_path(IPath,Mode) ->
-    {ok,P0} = erl_prim_loader:get_path(),
+add_loader_path(IPath0,Mode) ->
+    {ok,PrimP0} = erl_prim_loader:get_path(),
     case Mode of
         embedded ->
-            strip_path(P0,Mode);  %% i.e. only normalize
+            strip_path(PrimP0, Mode);  % i.e. only normalize
         _ ->
-            Pa = get_arg(pa),
-            Pz = get_arg(pz),
-            P = exclude_pa_pz(P0,Pa,Pz),
-            Path0 = strip_path(P,Mode),
-            Path = add(Path0,IPath,[]),
+            Pa0 = get_arg(pa),
+            Pz0 = get_arg(pz),
+
+            Pa = patch_path(Pa0),
+            Pz = patch_path(Pz0),
+	    PrimP = patch_path(PrimP0),
+	    IPath = patch_path(IPath0),
+
+            P = exclude_pa_pz(PrimP,Pa,Pz),
+            Path0 = strip_path(P, Mode),
+            Path = add(Path0, IPath, []),
             add_pa_pz(Path,Pa,Pz)
     end.
+
+patch_path(Path) ->
+    case check_path(Path) of
+	{ok, NewPath} -> NewPath;
+	{error, _Reason} -> Path
+    end.	    
 
 %% As the erl_prim_loader path includes the -pa and -pz
 %% directories they have to be removed first !!
@@ -612,16 +663,16 @@ excl([D|Ds], P) ->
 %% Only if mode is interactive, in an embedded
 %% system we can't rely on file.
 %%
-strip_path([P0|Ps], embedded) ->
-    P = filename:join([P0]), % Normalize
-    [P|strip_path(Ps, embedded)];
-strip_path([P0|Ps], I) ->
+
+strip_path([P0|Ps], Mode) ->
     P = filename:join([P0]), % Normalize
     case check_path([P]) of
-	true ->
-	    [P|strip_path(Ps, I)];
+	{ok, [NewP]} ->
+	    [NewP|strip_path(Ps, Mode)];
+	_ when Mode =:= embedded ->
+	    [P|strip_path(Ps, Mode)];
 	_ ->
-	    strip_path(Ps, I)
+	    strip_path(Ps, Mode)
     end;
 strip_path(_, _) ->
     [].
@@ -632,22 +683,22 @@ strip_path(_, _) ->
 %% e.g. .../test-3.2/ebin should exclude .../test-*/ebin (and .../test/ebin).
 %% Put the Path directories first in resulting path.
 %%
-add(Path,["."|IPath],Ack) ->
-    RPath = add1(Path,IPath,Ack),
+add(Path,["."|IPath],Acc) ->
+    RPath = add1(Path,IPath,Acc),
     ["."|lists:delete(".",RPath)];
-add(Path,IPath,Ack) ->
-    add1(Path,IPath,Ack).
+add(Path,IPath,Acc) ->
+    add1(Path,IPath,Acc).
 
-add1([P|Path],IPath,Ack) ->
-    case lists:member(P,Ack) of
+add1([P|Path],IPath,Acc) ->
+    case lists:member(P,Acc) of
 	true ->
-	    add1(Path,IPath,Ack); % Already added
-	_ ->
+	    add1(Path,IPath,Acc); % Already added
+	false ->
 	    IPath1 = exclude(P,IPath),
-	    add1(Path,IPath1,[P|Ack])
+	    add1(Path,IPath1,[P|Acc])
     end;
-add1(_,IPath,Ack) ->
-    lists:reverse(Ack) ++ IPath.
+add1(_,IPath,Acc) ->
+    lists:reverse(Acc) ++ IPath.
 
 add_pa_pz(Path0, Patha, Pathz) ->
     {_,Path1} = add_paths(first,Patha,Path0,false),
@@ -689,22 +740,60 @@ get_name1(Dir) ->
 	_                  -> ""        % No name !
     end.
 
-get_name2([$-|_],Ack) -> lists:reverse(Ack);
-get_name2([H|T],Ack)  -> get_name2(T,[H|Ack]);
-get_name2(_,Ack)      -> lists:reverse(Ack).
+get_name2([$-|_],Acc) -> lists:reverse(Acc);
+get_name2([H|T],Acc)  -> get_name2(T,[H|Acc]);
+get_name2(_,Acc)      -> lists:reverse(Acc).
 
-check_path([]) -> 
-    true;
-check_path([Dir |Tail]) ->
+check_path(Path) ->
+    PathChoice = init:code_path_choice(),
+    ArchiveExt = archive_extension(),
+    do_check_path(Path, PathChoice, ArchiveExt, []).
+    
+do_check_path([], _PathChoice, _ArchiveExt, Acc) -> 
+    {ok, lists:reverse(Acc)};
+do_check_path([Dir | Tail], PathChoice = strict, ArchiveExt, Acc) ->
+    %% Be strict. Use dir as explicitly as stated
     case catch erl_prim_loader:read_file_info(Dir) of
 	{ok, #file_info{type=directory}} -> 
-	    check_path(Tail);
-	_ -> 
+	    do_check_path(Tail, PathChoice, ArchiveExt, [Dir | Acc]);
+	_ ->
 	    {error, bad_directory}
     end;
-check_path(_) ->
-    {error, bad_path}.
-
+do_check_path([Orig | Tail], PathChoice = relaxed, ArchiveExt, Acc) ->
+    %% Be relaxed
+    case catch lists:reverse(filename:split(Orig)) of
+	{'EXIT', _} ->
+	    {error, bad_directory};
+	["ebin", App, OptArchive | RevTop] ->
+	    Ext = filename:extension(OptArchive),
+	    Base = filename:basename(OptArchive, Ext),
+	    if
+		Ext =:= ArchiveExt, Base =:= App ->
+		    %% Orig archive
+		    Archive = Orig,
+		    Top = lists:reverse(RevTop),
+		    Dir = filename:join(Top ++ [App, "ebin"]);
+		true ->
+		    %% Orig directory
+		    Dir = Orig,
+		    Top = lists:reverse([OptArchive | RevTop]),
+		    Archive = filename:join(Top ++ [App ++ Ext, App, "ebin"])
+	    end,
+	    %% First try dir, second try archive and at last use orig if both fails.
+	    case erl_prim_loader:read_file_info(Dir) of
+		{ok, #file_info{type = directory}} ->
+		    do_check_path(Tail, PathChoice, ArchiveExt, [Dir | Acc]);
+		_ ->
+		    case erl_prim_loader:read_file_info(Archive) of
+			{ok, #file_info{type = directory}} ->
+			    do_check_path(Tail, PathChoice, ArchiveExt, [Archive | Acc]);
+			_ ->
+			    do_check_path(Tail, PathChoice, ArchiveExt, [Orig | Acc])
+		    end
+	    end;    
+	_ ->
+	    do_check_path(Tail, PathChoice, ArchiveExt, [Orig | Acc])
+    end.
 
 %%
 %% Add new path(s).
@@ -716,12 +805,12 @@ add_path(Where,Dir0,Path,NameDb) when is_list(Dir0) ->
 	true ->
 	    Dir = filename:join([Dir0]), % Normalize
 	    case check_path([Dir]) of
-		true ->
-		    {true, do_add(Where,Dir,Path,NameDb)};
+		{ok, [NewDir]} ->
+		    {true, do_add(Where,NewDir,Path,NameDb)};
 		Error ->
 		    {Error, Path}
 	    end;
-	_ ->
+	false ->
 	    {{error, bad_directory}, Path}
     end;
 add_path(_,_,Path,_) ->
@@ -741,7 +830,7 @@ do_add(last,Dir,Path,NameDb) ->
     case lists:member(Dir,Path) of
 	true ->
 	    Path;
-	_ ->
+	false ->
 	    maybe_update(Dir,NameDb),
 	    Path ++ [Dir]
     end.
@@ -766,10 +855,10 @@ update(Dir,NameDb) ->
 set_path(NewPath0, OldPath, NameDb) ->
     NewPath = normalize(NewPath0),
     case check_path(NewPath) of
-	true ->
+	{ok, NewPath2} ->
 	    ets:delete(NameDb),
-	    NewDb = init_namedb(NewPath),
-	    {true, NewPath, NewDb};
+	    NewDb = init_namedb(NewPath2),
+	    {true, NewPath2, NewDb};
 	Error ->
 	    {Error, OldPath, NameDb}
     end.
@@ -783,8 +872,8 @@ normalize([P|Path]) when is_atom(P) ->
     normalize([atom_to_list(P)|Path]);
 normalize([P|Path]) when is_list(P) ->
     case int_list(P) of
-	true -> [filename:join([P])|normalize(Path)];
-	_    -> [P|normalize(Path)]
+	true  -> [filename:join([P])|normalize(Path)];
+	false -> [P|normalize(Path)]
     end;
 normalize([P|Path]) ->
     [P|normalize(Path)];
@@ -822,10 +911,45 @@ insert_name(Dir, Db) ->
     end.
 
 insert_name(Name, Dir, Db) ->
-    ets:insert(Db, {Name, del_ebin(Dir)}),
+    AppDir = del_ebin(Dir),
+    SubDirs = archive_subdirs(AppDir),
+    ets:insert(Db, {Name, AppDir, SubDirs}),
     true.
 
+archive_subdirs(AppDir) ->
+    IsDir =
+	fun(RelFile) ->
+		File = filename:join([AppDir, RelFile]),
+		case erl_prim_loader:read_file_info(File) of
+		    {ok, #file_info{type = directory}} ->
+			false;
+		    _ ->
+			true
+		end
+	end,
+    ArchiveDirs = all_archive_subdirs(AppDir),
+    lists:filter(IsDir, ArchiveDirs).
 
+all_archive_subdirs(AppDir) ->
+    Ext = archive_extension(),
+    ArchiveDir = filename:join([AppDir ++ Ext, 
+				filename:basename(AppDir)]),
+    case erl_prim_loader:list_dir(ArchiveDir) of
+	{ok, Files} ->
+	    IsDir =
+		fun(RelFile) ->
+			File = filename:join([ArchiveDir, RelFile]),
+			case erl_prim_loader:read_file_info(File) of
+			    {ok, #file_info{type = directory}} ->
+				true;
+			    _ ->
+				false
+			end
+		end,
+	    lists:filter(IsDir, Files);
+	_ ->
+	    []
+    end.
 
 %%
 %% Delete a directory from Path.
@@ -833,7 +957,7 @@ insert_name(Name, Dir, Db) ->
 %% the complete directory name.
 %%
 del_path(Name0,Path,NameDb) ->
-    case catch code_aux:to_list(Name0)of
+    case catch to_list(Name0)of
 	{'EXIT',_} ->
 	    {{error,bad_name},Path};
 	Name ->
@@ -898,13 +1022,13 @@ replace_path1(Name, Dir, [], NameDb) ->
     [Dir].
 
 check_pars(Name,Dir) ->
-    N = code_aux:to_list(Name),
-    D = filename:join([code_aux:to_list(Dir)]), % Normalize
+    N = to_list(Name),
+    D = filename:join([to_list(Dir)]), % Normalize
     case get_name(Dir) of
 	N ->
 	    case check_path([D]) of
-		true ->
-		    {ok,N,D};
+		{ok, [NewD]} ->
+		    {ok,N,NewD};
 		Error ->
 		    Error
 	    end;
@@ -915,8 +1039,20 @@ check_pars(Name,Dir) ->
 
 del_ebin(Dir) ->
     case filename:basename(Dir) of
-	"ebin" -> filename:dirname(Dir);
-	_      -> Dir
+	"ebin" -> 
+	    Dir2 = filename:dirname(Dir),
+	    Dir3 = filename:dirname(Dir2),
+	    Ext = archive_extension(),
+	    case filename:extension(Dir3) of
+		E when E =:= Ext ->
+		    %% Strip archive extension
+		    filename:join([filename:dirname(Dir3), 
+				   filename:basename(Dir3, Ext)]);
+		_ ->
+		    Dir2
+	    end;
+	_ ->
+	    Dir
     end.
 
 
@@ -939,7 +1075,7 @@ delete_name_dir(Dir, Db) ->
 	Name ->
 	    Dir0 = del_ebin(Dir),
 	    case lookup_name(Name, Db) of
-		{ok, Dir0} ->
+		{ok, Dir0, _SubDirs} ->
 		    ets:delete(Db, Name), 
 		    true;
 		_ -> false
@@ -948,8 +1084,8 @@ delete_name_dir(Dir, Db) ->
 
 lookup_name(Name, Db) ->
     case ets:lookup(Db, Name) of
-	[{Name, Dir}] -> {ok, Dir};
-	_             -> false
+	[{Name, Dir, SubDirs}] -> {ok, Dir, SubDirs};
+	_ -> false
     end.
 
 
@@ -962,26 +1098,40 @@ do_dir(Root,root_dir,_) ->
     Root;
 do_dir(_Root,compiler_dir,NameDb) ->
     case lookup_name("compiler", NameDb) of
-	{ok, Dir} -> Dir;
-	_         -> ""
+	{ok, Dir,_SubDirs} -> Dir;
+	_  -> ""
     end;
 do_dir(_Root,{lib_dir,Name},NameDb) ->
-    case catch lookup_name(code_aux:to_list(Name), NameDb) of
-	{ok, Dir} -> Dir;
+    case catch lookup_name(to_list(Name), NameDb) of
+	{ok, Dir, _SubDirs} -> Dir;
 	_         -> {error, bad_name}
+    end;
+do_dir(_Root,{lib_dir,Name,SubDir0},NameDb) ->
+    SubDir = atom_to_list(SubDir0),
+    case catch lookup_name(to_list(Name), NameDb) of
+	{ok, Dir, SubDirs} -> 
+	    case lists:member(SubDir, SubDirs) of
+		true ->
+		    %% Subdir is in archive
+		    filename:join([Dir ++ archive_extension(),
+				   filename:basename(Dir),
+				   SubDir]);
+		false ->
+		    %% Subdir is regular directory
+		    filename:join([Dir, SubDir])
+	    end;
+	_  -> 
+	    {error, bad_name}
     end;
 do_dir(_Root,{priv_dir,Name},NameDb) ->
-    case catch lookup_name(code_aux:to_list(Name), NameDb) of
-	{ok, Dir} -> filename:append(Dir, "priv");
-	_         -> {error, bad_name}
-    end;
+    do_dir(_Root,{lib_dir,Name,priv},NameDb);
 do_dir(_, _, _) ->
     'bad request to code'.
 
 stick_dir(Dir, Stick, St) ->
     case erl_prim_loader:list_dir(Dir) of
 	{ok,Listing} ->
-	    Mods = get_mods(Listing, code_aux:objfile_extension()),
+	    Mods = get_mods(Listing, objfile_extension()),
 	    Db = St#state.moddb,
 	    case Stick of
 		true ->
@@ -989,17 +1139,18 @@ stick_dir(Dir, Stick, St) ->
 		false ->
 		    foreach(fun (M) -> ets:delete(Db, {sticky,M}) end, Mods)
 	    end;
-	Error -> Error
+	Error -> 
+	    Error
     end.
 
 stick_mod(M, Stick, St) ->
-  Db = St#state.moddb,
-  case Stick of
-    true ->
-      ets:insert(Db, {{sticky,M},true});
-    false ->
-      ets:delete(Db, {sticky,M})
-  end.
+    Db = St#state.moddb,
+    case Stick of
+	true ->
+	    ets:insert(Db, {{sticky,M},true});
+	false ->
+	    ets:delete(Db, {sticky,M})
+    end.
 
 get_mods([File|Tail], Extension) ->
     case filename:extension(File) of
@@ -1018,7 +1169,8 @@ is_sticky(Mod, Db) ->
 		[] -> false;
 		_  -> true
 	    end;
-	_ -> false
+	false ->
+	    false
     end.
 
 add_paths(Where,[Dir|Tail],Path,NameDb) ->
@@ -1031,9 +1183,9 @@ add_paths(_,_,Path,_) ->
 do_load_binary(Module,File,Binary,Db) ->
     case {modp(Module),modp(File)} of
 	{true, true} when is_binary(Binary) ->
-	    case erlang:module_loaded(code_aux:to_atom(Module)) of
+	    case erlang:module_loaded(to_atom(Module)) of
 		true ->
-		    code_aux:do_purge(Module);
+		    do_purge(Module);
 		false ->
 		    ok
 	    end,
@@ -1048,7 +1200,7 @@ modp(_)                       -> false.
 
 
 load_abs(File, Mod0, Db) ->
-    Ext = code_aux:objfile_extension(),
+    Ext = objfile_extension(),
     FileName0 = lists:concat([File, Ext]),
     FileName = absname(FileName0),
     Mod = if Mod0 =:= [] ->
@@ -1064,13 +1216,13 @@ load_abs(File, Mod0, Db) ->
     end.
 
 try_load_module(Mod, Dir, Db) ->
-    File = filename:append(Dir, code_aux:to_path(Mod) ++ 
-			   code_aux:objfile_extension()),
+    File = filename:append(Dir, to_path(Mod) ++ 
+			   objfile_extension()),
     case erl_prim_loader:get_file(File) of
 	error -> 
 	    %% No cache case tries with erl_prim_loader here
 	    %% Should the caching code do it??
-%           File2 = code_aux:to_path(Mod) ++ code_aux:objfile_extension(),
+%           File2 = to_path(Mod) ++ objfile_extension(),
 % 	    case erl_prim_loader:get_file(File2) of
 % 		error -> 
 	    error;     % No more alternatives !
@@ -1082,7 +1234,7 @@ try_load_module(Mod, Dir, Db) ->
     end.
 
 try_load_module(File, Mod, Bin, Db) ->
-    M = code_aux:to_atom(Mod),
+    M = to_atom(Mod),
 
     case is_sticky(M, Db) of
 	true ->                         %% Sticky file reject the load
@@ -1156,7 +1308,7 @@ load_file(Mod, St0=#state{moddb=Db,cache=Cache}) ->
     end.
 
 mod_to_bin([Dir|Tail], Mod) ->
-    File = filename:append(Dir, code_aux:to_path(Mod) ++ code_aux:objfile_extension()),
+    File = filename:append(Dir, to_path(Mod) ++ objfile_extension()),
     case erl_prim_loader:get_file(File) of
 	error -> 
 	    mod_to_bin(Tail, Mod);
@@ -1165,7 +1317,7 @@ mod_to_bin([Dir|Tail], Mod) ->
     end;
 mod_to_bin([], Mod) ->
     %% At last, try also erl_prim_loader's own method
-    File = code_aux:to_path(Mod) ++ code_aux:objfile_extension(),
+    File = to_path(Mod) ++ objfile_extension(),
     case erl_prim_loader:get_file(File) of
 	error -> 
 	    error;     % No more alternatives !
@@ -1214,7 +1366,7 @@ absname_vr([[X, $:]|Name], _, _AbsBase) ->
 %%  module. Return true if any processes killed, else false.
 
 do_purge(Mod) ->
-    do_purge(processes(), Mod, false).
+    do_purge(processes(), to_atom(Mod), false).
 
 do_purge([P|Ps], Mod, Purged) ->
     case erlang:check_process_code(P, Mod) of
@@ -1284,3 +1436,18 @@ info_msg(Format, Args) ->
     Msg = {notify,{info_msg, group_leader(), {self(), Format, Args}}},
     error_logger ! Msg,
     ok.
+
+objfile_extension() ->
+    init:objfile_extension().
+
+archive_extension() ->
+    init:archive_extension().
+
+to_list(X) when is_list(X) -> X;
+to_list(X) when is_atom(X) -> atom_to_list(X).
+
+to_atom(X) when is_atom(X) -> X;
+to_atom(X) when is_list(X) -> list_to_atom(X).
+
+to_path(X) ->
+    filename:join(packages:split(X)).

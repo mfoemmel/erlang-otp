@@ -2592,8 +2592,8 @@ proc_exit_cleanup_fixations_meta_data(Eterm pid, ErtsDbProcCleanupState *state)
 /*
  * erts_db_process_exiting() is called when a process terminates.
  * It returns 0 when completely done, and !0 when it wants to
- * be rescheduled. c_p->u.exit_data can hold a pointer to
- * a state during rescheduling.
+ * yield. c_p->u.exit_data can hold a pointer to a state while
+ * yielding.
  */
 #define ERTS_DB_INTERNAL_ERROR(LSTR) \
   erl_exit(ERTS_ABORT_EXIT, "%s:%d:erts_db_process_exiting(): " LSTR "\n", \
@@ -2650,12 +2650,12 @@ erts_db_process_exiting(Process *c_p, ErtsProcLocks c_p_locks)
 		}
 		meta_main_tab_unlock(ix);
 		if (tb) {
-		    int resched;
+		    int do_yield;
 		    db_lock_take_over_ref(tb, LCK_WRITE);
 		    /* Ownership may have changed since
 		       we looked up the table. */
 		    if (tb->common.owner != pid)
-			resched = 0;
+			do_yield = 0;
 		    else {
 			int first_call;
 #ifdef HARDDEBUG
@@ -2680,15 +2680,15 @@ erts_db_process_exiting(Process *c_p, ErtsProcLocks c_p_locks)
 			    free_fixations_locked(tb);
 			}
 
-			resched = free_table_cont(c_p, tb, first_call, 0);
+			do_yield = free_table_cont(c_p, tb, first_call, 0);
 		    }
 		    db_unlock(tb, LCK_WRITE);
-		    if (resched)
-			goto reschedule;
+		    if (do_yield)
+			goto yield;
 		}
 		state->slots.ix++;
 		if (ERTS_BIF_REDS_LEFT(c_p) <= 0)
-		    goto reschedule;
+		    goto yield;
 	    }
 
 	    proc_exit_cleanup_tables_meta_data(pid, state);
@@ -2763,7 +2763,7 @@ erts_db_process_exiting(Process *c_p, ErtsProcLocks c_p_locks)
 		}
 		state->slots.ix++;
 		if (ERTS_BIF_REDS_LEFT(c_p) <= 0)
-		    goto reschedule;
+		    goto yield;
 	    }
 
 	    proc_exit_cleanup_fixations_meta_data(pid, state);
@@ -2782,7 +2782,7 @@ erts_db_process_exiting(Process *c_p, ErtsProcLocks c_p_locks)
 	}
     }
 
- reschedule:
+ yield:
 
     switch (state->progress) {
     case ErtsDbProcCleanupProgressTables:

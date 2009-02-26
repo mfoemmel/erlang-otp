@@ -2,7 +2,7 @@
 
 {application, stdlib,
  [{description, "ERTS  CXC 138 10"},
-  {vsn, "1.15.4"},
+  {vsn, "1.15.5"},
   {modules, [array,
 	     base64,
 	     beam_lib,
@@ -78,6 +78,7 @@
 	     supervisor_bridge,
 	     sys,
 	     timer,
+	     unicode,
 	     win32reg,
 	     zip]},
   {registered,[timer_server,rsh_starter,take_over_monitor,pool_master,

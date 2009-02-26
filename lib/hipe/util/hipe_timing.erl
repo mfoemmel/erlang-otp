@@ -18,7 +18,7 @@
 
 %%=====================================================================
 
--spec(start/2 :: (string(), atom()) -> 'ok').
+-spec start(string(), atom()) -> 'ok'.
 
 start(Text, Mod) when is_atom(Mod) ->
   Timers = 
@@ -31,7 +31,7 @@ start(Text, Mod) when is_atom(Mod) ->
   put(hipe_timers, [Total|Timers]),
   ?msg("[@~7w]" ++ Space ++ "> ~s~n", [Total,Text]).
 
--spec(stop/2 :: (string(), atom()) -> 'ok').
+-spec stop(string(), atom()) -> 'ok'.
 
 stop(Text, Mod) when is_atom(Mod) ->
   {Total,_Last} = erlang:statistics(runtime),
@@ -46,7 +46,7 @@ stop(Text, Mod) when is_atom(Mod) ->
       ?msg("[@~7w]< ~s: ~w~n", [Total, Text, Total])
   end.
 
--spec(start_optional_timer/2 :: (string(), atom()) -> 'ok').
+-spec start_optional_timer(string(), atom()) -> 'ok'.
 
 start_optional_timer(Text, Mod) ->
   case get(hipe_time) of 
@@ -61,7 +61,7 @@ start_optional_timer(Text, Mod) ->
     _ -> ok
   end.
 
--spec(stop_optional_timer/2 :: (string(), atom()) -> 'ok').
+-spec stop_optional_timer(string(), atom()) -> 'ok'.
 
 stop_optional_timer(Text, Mod) ->
   case get(hipe_time) of
@@ -76,7 +76,7 @@ stop_optional_timer(Text, Mod) ->
     _ -> ok
   end.
 
--spec(start_timer/0 :: () -> non_neg_integer()).
+-spec start_timer() -> non_neg_integer().
 
 start_timer() ->
   {Total,_Last} = erlang:statistics(runtime),

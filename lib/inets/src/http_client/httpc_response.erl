@@ -222,9 +222,9 @@ parse_reason_phrase(<<?CR, ?LF, Rest/binary>>, Phrase,
  		    MaxHeaderSize, Result, Relaxed) ->
     parse_headers(Rest, [], [], MaxHeaderSize,
  		  [lists:reverse(Phrase) | Result], Relaxed); 
-parse_reason_phrase(<<?LF>> = Data, Phrase, MaxHeaderSize, Result, Relaxed) ->
+parse_reason_phrase(<<?LF>>, Phrase, MaxHeaderSize, Result, Relaxed) ->
     %% If ?CR is is missing RFC2616 section-19.3 
-    parse_reason_phrase(<<?CR, ?LF>> = Data, Phrase, MaxHeaderSize, Result, 
+    parse_reason_phrase(<<?CR, ?LF>>, Phrase, MaxHeaderSize, Result, 
 			Relaxed);
 parse_reason_phrase(<<?CR>> = Data, Phrase, MaxHeaderSize, Result, Relaxed) ->
     {?MODULE, parse_reason_phrase, 

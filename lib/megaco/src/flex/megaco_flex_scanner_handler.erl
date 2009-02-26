@@ -76,9 +76,11 @@ get_config(Pid) ->
 %%----------------------------------------------------------------------
 init([]) ->
     process_flag(trap_exit, true),
-    case megaco_flex_scanner:start() of
+    case (catch megaco_flex_scanner:start()) of
 	{ok, Port} ->
 	    {ok, #state{conf = {flex, Port}}};
+	{error, Reason} ->
+	    {stop, {failed_starting_scanner, Reason}};
 	Else ->
 	    {stop, {failed_starting_scanner, Else}}
     end.
@@ -159,12 +161,11 @@ terminate(_Reason, _S) ->
 %% Purpose: Called to change the internal state
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change({down, _Vsn}, #state{conf = Conf} = State, 
-	    downgrade_to_pre_3_8_1) ->
+code_change({down, _Vsn}, #state{conf = Conf} = State, downgrade_to_pre_3_9_1) ->
     Port = update_flex_scanner(Conf),
     {ok, State#state{conf = {flex, Port}}};
 
-code_change(_Vsn, #state{conf = Conf} = State, upgrade_from_pre_3_8_1) ->
+code_change(_Vsn, #state{conf = Conf} = State, upgrade_from_pre_3_9_1) ->
     Port = update_flex_scanner(Conf),
     {ok, State#state{conf = {flex, Port}}};
 

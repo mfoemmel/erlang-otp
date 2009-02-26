@@ -1,29 +1,32 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2007-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%----------------------------------------------------------------------
 %% Purpose: Storage for trused certificats 
 %%----------------------------------------------------------------------
 
 -module(ssl_certificate_db).
 
--include("ssl_pkix.hrl").
+-include_lib("public_key/include/public_key.hrl").
 
 -export([create/0, remove/1, add_trusted_certs/3, 
-	 remove_trusted_certs/2, lookup_trusted_cert/3, issuer_candidate/1]).
+	 remove_trusted_certs/2, lookup_trusted_cert/3, issuer_candidate/1,
+	 cache_pem_file/3]).
 
 %%====================================================================
 %% Internal application API
@@ -39,8 +42,8 @@
 %%--------------------------------------------------------------------
 create() ->
     [ets:new(certificate_db_name(), [named_table, set, protected]),
-     ets:new(ssl_file_to_ref, [set, private]),
-     ets:new(ssl_pid_to_file, [set, private])]. 
+     ets:new(ssl_file_to_ref, [named_table, set, protected]),
+     ets:new(ssl_pid_to_file, [bag, private])]. 
 
 %%--------------------------------------------------------------------
 %% Function: delete(Db) -> _
@@ -52,7 +55,7 @@ remove(Dbs) ->
     lists:foreach(fun(Db) -> true = ets:delete(Db) end, Dbs).
 
 %%--------------------------------------------------------------------
-%% Function: lookup_trusted_cert(Ref, SerialNumber, Issuer) -> BinCert
+%% Function: lookup_trusted_cert(Ref, SerialNumber, Issuer) -> {BinCert,DecodedCert}
 %% Ref = ref()
 %% SerialNumber = integer()
 %% Issuer = {rdnSequence, IssuerAttrs}
@@ -66,8 +69,8 @@ lookup_trusted_cert(Ref, SerialNumber, Issuer) ->
     case lookup({Ref, SerialNumber, Issuer}, certificate_db_name()) of
 	undefined ->
 	    undefined;
-	BinCert ->
-	    {ok, BinCert}
+	[Certs] ->
+	    {ok, Certs}
     end.
 
 %%--------------------------------------------------------------------
@@ -82,17 +85,32 @@ lookup_trusted_cert(Ref, SerialNumber, Issuer) ->
 %% together with the cert serialnumber and issuer.
 %%--------------------------------------------------------------------
 add_trusted_certs(Pid, File, [CertsDb, FileToRefDb, PidToFileDb]) ->
-    {Ref, Counter} = case lookup(File, FileToRefDb) of
-			undefined ->
-			    NewRef = make_ref(),
-			    add_certs_from_file(File, NewRef, CertsDb),
-			    {NewRef, 0};
-			{OldRef, OldCounter} ->
-			    {OldRef, OldCounter}
-		    end,
+    Ref = case lookup(File, FileToRefDb) of
+	      undefined ->
+		  NewRef = make_ref(),
+		  add_certs_from_file(File, NewRef, CertsDb),
+		  insert(File, NewRef, 1, FileToRefDb),	     
+		  NewRef;
+	      [OldRef] ->
+		  ref_count(File,FileToRefDb,1),
+		  OldRef
+	  end,
     insert(Pid, File, PidToFileDb),
-    insert(File, {Ref, Counter + 1}, FileToRefDb),
     {ok, Ref}.
+
+%%--------------------------------------------------------------------
+%% Function: cache_pem_file(Pid, File, Db) -> FileContent
+%%
+%% Description: Cache file as binary in DB
+%%--------------------------------------------------------------------
+cache_pem_file(Pid, File, [_CertsDb, FileToRefDb, PidToFileDb]) ->
+    try ref_count(File, FileToRefDb,1)
+    catch _:_ -> 
+	    {ok, Content} = public_key:pem_to_der(File),
+	    insert(File,Content,1,FileToRefDb)
+    end,
+    insert(Pid, File, PidToFileDb),
+    {ok, FileToRefDb}.
 
 %%--------------------------------------------------------------------
 %% Function: remove_trusted_certs(Pid, Db) -> _ 
@@ -100,16 +118,24 @@ add_trusted_certs(Pid, File, [CertsDb, FileToRefDb, PidToFileDb]) ->
 %% Description: Removes trusted certs originating from 
 %% the file associated to Pid from the runtime database.  
 %%--------------------------------------------------------------------
-remove_trusted_certs(Pid, [CertsDb, FileToRef, PidToFileDb]) ->
-    File = lookup(Pid, PidToFileDb),
+remove_trusted_certs(Pid, [CertsDb, FileToRefDb, PidToFileDb]) ->
+    Files = lookup(Pid, PidToFileDb),
     delete(Pid, PidToFileDb),
-    case lookup(File, FileToRef) of
-	{Ref, 1} ->
-	    remove_certs(Ref, CertsDb),
-	    delete(File, FileToRef);
-	{Ref, Counter} ->
-	    insert(File, {Ref, Counter - 1}, FileToRef)
-    end.
+    Clear = fun(File) ->
+		    case ref_count(File, FileToRefDb, -1) of
+			0 -> 
+			    case lookup(File, FileToRefDb) of
+				[Ref] when is_reference(Ref) ->
+				    remove_certs(Ref, CertsDb);
+				_ -> ok
+			    end,
+			    delete(File, FileToRefDb);
+			_ ->
+			    ok
+		    end
+	    end,
+    [Clear(File) || File <- Files],
+    ok.
 
 %%--------------------------------------------------------------------
 %% Function: issuer_candidate() -> {Key, Candidate} | no_more_candidates   
@@ -117,9 +143,9 @@ remove_trusted_certs(Pid, [CertsDb, FileToRef, PidToFileDb]) ->
 %%     Candidate
 %%     
 %%     
-%% Description: If a certificat does note define its issuer through
+%% Description: If a certificat does not define its issuer through
 %%              the extension 'ce-authorityKeyIdentifier' we can
-%%              try to find the issuer in the database over knows
+%%              try to find the issuer in the database over known
 %%              certificates.
 %%--------------------------------------------------------------------
 issuer_candidate(no_candidate) ->
@@ -128,7 +154,8 @@ issuer_candidate(no_candidate) ->
  	'$end_of_table' ->
  	    no_more_candidates;
  	Key ->
- 	    {Key, lookup(Key, Db)}
+	    [Cert] = lookup(Key, Db),
+ 	    {Key, Cert}
     end;
 
 issuer_candidate(PrevCandidateKey) ->	    
@@ -137,7 +164,8 @@ issuer_candidate(PrevCandidateKey) ->
  	'$end_of_table' ->
  	    no_more_candidates;
  	Key ->
- 	    {Key, lookup(Key, Db)}
+	    [Cert] = lookup(Key, Db),
+ 	    {Key, Cert}
     end.
 
 %%--------------------------------------------------------------------
@@ -149,41 +177,38 @@ certificate_db_name() ->
 insert(Key, Data, Db) ->
     true = ets:insert(Db, {Key, Data}).
 
+insert(Key, Data, Count, Db) ->
+    true = ets:insert(Db, {Key, Count, Data}).
+
+ref_count(Key, Db,N) ->
+    ets:update_counter(Db,Key,N).
+
 delete(Key, Db) ->
     true = ets:delete(Db, Key).
 
 lookup(Key, Db) ->
-   case ets:lookup(Db, Key) of
-       [{Key, Data}] ->
-	   Data;
-       [] ->
-	   undefined
-   end.
+    case ets:lookup(Db, Key) of
+	[] ->
+	    undefined;
+	Contents  ->
+	    Pick = fun({_, Data}) -> Data;
+		      ({_,_,Data}) -> Data
+		   end,
+	    [Pick(Data) || Data <- Contents]
+    end.
 
 remove_certs(Ref, CertsDb) ->
-    ets:match_delete(CertsDb, {'_', Ref, '_'}).
+    ets:match_delete(CertsDb, {{Ref, '_', '_'}, '_'}).
 
 add_certs_from_file(File, Ref, CertsDb) ->   
     Decode = fun(Cert) ->
-		     {ok, ErlCert} = ssl_pkix:decode_cert(Cert, [ssl]),
-		     {Cert, ErlCert}
+		     {ok, ErlCert} = public_key:pkix_decode_cert(Cert, otp),
+		     TBSCertificate = ErlCert#'OTPCertificate'.tbsCertificate,
+		     SerialNumber = TBSCertificate#'OTPTBSCertificate'.serialNumber,
+		     Issuer = public_key:pkix_normalize_general_name(
+				TBSCertificate#'OTPTBSCertificate'.issuer),
+		     insert({Ref, SerialNumber, Issuer}, {Cert,ErlCert}, CertsDb)
 	     end,
-
-    Certs =  case ssl_pkix:decode_cert_file(File, [pem]) of
-		 {ok, Bin} when is_binary(Bin) ->
-		     [Decode(Bin)];
-		 {ok, List} when is_list(List) ->
-		     lists:map(Decode, List)
-	     end,
+    {ok,Der} = public_key:pem_to_der(File),
+    [Decode(Cert) || {cert, Cert, not_encrypted} <- Der].
     
-    SaveCert = 
-	fun({Cert, ErlCert}) ->
-		TBSCertificate = ErlCert#'Certificate'.tbsCertificate,
-		SerialNumber = TBSCertificate#'TBSCertificate'.serialNumber,
-		Issuer = 
-		    ssl_certificate:normalize_general_name(
-		      TBSCertificate#'TBSCertificate'.issuer),
-		insert({Ref, SerialNumber, Issuer}, Cert, CertsDb)
-	end,
-    
-    lists:foreach(SaveCert, Certs).

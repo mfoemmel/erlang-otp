@@ -40,6 +40,7 @@
 	 root_dir/0,
 	 lib_dir/0,
 	 lib_dir/1,
+	 lib_dir/2,
 	 compiler_dir/0,
 	 priv_dir/1,
 	 stick_dir/1,
@@ -60,6 +61,8 @@
 	 start_link/0, start_link/1,
 	 which/1,
 	 where_is_file/1,
+	 where_is_file/2,
+	 set_primary_archive/2,
 	 clash/0]).
 
 -include_lib("kernel/include/file.hrl").
@@ -97,6 +100,7 @@
 %% unstick_dir(Dir)             -> ok | error
 %% is_sticky(Module)            -> true | false
 %% which(Module)                -> Filename
+%% set_primary_archive((FileName, Bin)  -> ok | {error, Reason}
 %% clash() ->                   -> print out
 
 %%----------------------------------------------------------------------------
@@ -115,13 +119,15 @@
 
 -spec objfile_extension() -> string().
 objfile_extension() ->
-    code_aux:objfile_extension().
+    init:objfile_extension().
 
 -spec load_file(Module :: atom()) -> load_ret(). 
-load_file(Mod) when is_atom(Mod) -> call({load_file,Mod}).
+load_file(Mod) when is_atom(Mod) ->
+    call({load_file,Mod}).
 
 -spec ensure_loaded(Module :: atom()) -> load_ret().
-ensure_loaded(Mod) when is_atom(Mod) -> call({ensure_loaded,Mod}).
+ensure_loaded(Mod) when is_atom(Mod) -> 
+    call({ensure_loaded,Mod}).
 
 %% XXX File as an atom is allowed only for backwards compatibility.
 -spec load_abs(Filename :: string()) -> load_ret().
@@ -178,6 +184,9 @@ lib_dir() -> call({dir,lib_dir}).
 %% XXX is_list() is for backwards compatibility -- take out in future version
 -spec lib_dir(App :: atom()) -> string() | {'error', 'bad_name'}.
 lib_dir(App) when is_atom(App) ; is_list(App) -> call({dir,{lib_dir,App}}).
+
+-spec lib_dir(App :: atom(), SubDir :: atom()) -> string() | {'error', 'bad_name'}.
+lib_dir(App, SubDir) when is_atom(App), is_atom(SubDir) -> call({dir,{lib_dir,App,SubDir}}).
 
 -spec compiler_dir() -> string().
 compiler_dir() -> call({dir,compiler_dir}).
@@ -267,7 +276,6 @@ do_start(Flags) ->
     %% the code_server.
     %% Otherwise a deadlock may occur when the code_server is starting.
     code_server:module_info(module),
-    code_aux:module_info(module),
     packages:module_info(module),
     catch hipe_unified_loader:load_hipe_modules(),
     gb_sets:module_info(module),
@@ -284,13 +292,13 @@ do_start(Flags) ->
 	    Root = filename:join([Root0]), % Normalize.  Use filename
 	    case code_server:start_link([Root,Mode]) of
 		{ok,Pid} ->
-		    case Mode of
-			interactive ->
+		    if 
+			Mode =:= interactive ->
 			    case lists:member(stick,Flags) of
 				true -> do_stick_dirs();
 				_    -> ok
 			    end;
-			_ ->
+			true ->
 			    ok
 		    end,
 		    {ok,Pid};
@@ -321,7 +329,8 @@ do_s(Lib) ->
 
 get_mode(Flags) ->
     case lists:member(embedded, Flags) of
-	true -> embedded;
+	true ->
+	    embedded;
 	_Otherwise -> 
 	    case init:get_argument(mode) of
 		{ok,[["embedded"]]} ->
@@ -351,7 +360,7 @@ which(Module) when is_atom(Module) ->
     end.
 
 which2(Module) ->
-    Base = code_aux:to_path(Module),
+    Base = to_path(Module),
     File = filename:basename(Base) ++ objfile_extension(),
     Path = get_path(),
     which(File, filename:dirname(Base), Path).
@@ -361,10 +370,11 @@ which2(Module) ->
 which(_,_,[]) ->
     non_existing;
 which(File,Base,[Directory|Tail]) ->
-    Path = if Base =:= "." -> Directory;
-	      true -> filename:join(Directory, Base)
+    Path = if
+	       Base =:= "." -> Directory;
+	       true -> filename:join(Directory, Base)
 	   end,
-    case file:list_dir(Path) of
+    case erl_prim_loader:list_dir(Path) of
 	{ok,Files} ->
 	    case lists:member(File,Files) of
 		true ->
@@ -372,7 +382,7 @@ which(File,Base,[Directory|Tail]) ->
 		false ->
 		    which(File,Base,Tail)
 	    end;
-	_ ->
+	_Error ->
 	    which(File,Base,Tail)
     end.
 
@@ -390,9 +400,40 @@ where_is_file(File) when is_list(File) ->
 	    filename:join(Dir, File)
     end.
 
+-spec(where_is_file/2 :: (Path :: string(), Filename :: string()) -> string() | atom()).
+
+where_is_file(Path, File) when is_list(Path), is_list(File) ->
+    CodePath = get_path(),
+    if
+	Path =:= CodePath ->
+	    case call({is_cached, File}) of
+		no ->
+		    which(File, ".", Path);
+		Dir ->
+		    filename:join(Dir, File)
+	    end;
+	true ->
+	    which(File, ".", Path)
+    end.
+
+-spec(set_primary_archive/2 :: (ArchiveFile :: string(), ArchiveBin :: binary()) -> 'ok' | {'error', atom()}).
+
+set_primary_archive(ArchiveFile0, ArchiveBin) when is_list(ArchiveFile0), is_binary(ArchiveBin) ->
+    ArchiveFile = filename:absname(ArchiveFile0),
+    case call({set_primary_archive, ArchiveFile, ArchiveBin}) of
+	{ok, []} ->
+	    ok;
+	{ok, _Mode, Ebins} ->
+	    %% Prepend the code path with the ebins found in the archive
+	    Ebins2 = [filename:join([ArchiveFile, E]) || E <- Ebins],
+	    add_pathsa(Ebins2); % Returns ok
+	{error, Reason} ->
+	    {error, Reason}
+    end.
+    
 %% Search the entire path system looking for name clashes
 
--spec clash() -> 'ok'.
+-spec(clash() -> 'ok').
 
 clash() ->
     Path = get_path(),
@@ -441,3 +482,6 @@ has_ext(Ext, Extlen,File) ->
 	Ext -> true;
 	_ -> false
     end.
+
+to_path(X) ->
+    filename:join(packages:split(X)).

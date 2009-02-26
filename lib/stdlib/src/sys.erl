@@ -329,7 +329,7 @@ close_log_file(Debug) ->
 	[] ->
 	    Debug;
 	Fd -> 
-	    file:close(Fd),
+	    ok = file:close(Fd),
 	    remove_debug(log_to_file, Debug)
     end.
 

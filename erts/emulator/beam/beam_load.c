@@ -3280,42 +3280,6 @@ gen_func_info(LoaderState* stp, GenOpArg mod, GenOpArg func,
 }
 
 
-static GenOp*
-gen_func_info_mi(LoaderState* stp, GenOpArg mod,
-		 GenOpArg arity, GenOpArg label)
-{
-    GenOp* fi;
-    GenOp* op;
-
-    NEW_GENOP(stp, fi);
-    fi->op = genop_i_func_info_4;
-    fi->arity = 4;
-    fi->a[0].type = TAG_u;	/* untagged Zero */
-    fi->a[0].val = 0;
-    fi->a[1] = mod;
-    fi->a[2].type = TAG_a;
-    fi->a[2].val = am_module_info;
-    fi->a[3] = arity;
-
-    NEW_GENOP(stp, op);
-    op->op = genop_label_1;
-    op->arity = 1;
-    op->a[0] = label;
-    
-    fi->next = op;
-    op->next = NULL;
-
-    NEW_GENOP(stp, op->next);
-    op = op->next;
-    op->op = arity.val == 0 ? genop_i_module_info_0_0 :
-	genop_i_module_info_1_0;
-    op->arity = 1;
-    op->a[0] = mod;
-    op->next = NULL;
-    return fi;
-}
-
-
 
 static GenOp*
 gen_make_fun2(LoaderState* stp, GenOpArg idx)
@@ -3975,6 +3939,10 @@ transform_engine(LoaderState* st)
 	    i = *pc++;
 	    instr->a[ap].type = i;
 	    instr->a[ap].val = 0;
+	    break;
+	case TOP_store_val:
+	    i = *pc++;
+	    instr->a[ap].val = i;
 	    break;
 	case TOP_store_var:
 	    i = *pc++;
@@ -4981,8 +4949,10 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
     int code_size;
     int rval;
     int i;
+    ErlDrvBinary* bin = NULL;
     byte* temp_alloc = NULL;
     byte* bytes;
+    Uint size;
 
     /*
      * Must initialize state.lambdas here because the error handling code
@@ -5006,18 +4976,34 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
     if ((n = list_length(Funcs)) < 0) {
 	goto error;
     }
+#ifdef HIPE	/* XXX: temporary fix for R12B-5, will go away before R13 */
     n += 2;			/* module_info/0 and module_info/1 */
+#endif
     if ((bytes = erts_get_aligned_binary_bytes(Beam, &temp_alloc)) == NULL) {
 	goto error;
     }
+    size = binary_size(Beam);
 
+    /*
+     * Uncompressed if needed.
+     */
+    if (!(size >= 4 && bytes[0] == 'F' && bytes[1] == 'O' &&
+	  bytes[2] == 'R' && bytes[3] == '1')) {
+	bin = (ErlDrvBinary *) erts_gzinflate_buffer((char*)bytes, size);
+	if (bin == NULL) {
+	    goto error;
+	}
+	bytes = (byte*)bin->orig_bytes;
+	size = bin->orig_size;
+    }
+    
     /*
      * Scan the Beam binary and read the interesting sections.
      */
 
     state.file_name = "IFF header for Beam file";
     state.file_p = bytes;
-    state.file_left = binary_size(Beam);
+    state.file_left = size;
     state.module = Mod;
     state.group_leader = p->group_leader;
     state.num_functions = n;
@@ -5125,14 +5111,16 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
 	fp = make_stub(fp, Mod, func, arity, (Uint)native_address, op);
     }
 
+#ifdef HIPE	/* XXX: temporary fix for R12B-5, will go away before R13 */
     /*
      * Add the module_info/0,1 functions.
      */
 
     ptrs[i++] = (Eterm) fp;
-    fp = make_stub(fp, Mod, am_module_info, 0, 0, (Eterm) BeamOp(op_i_module_info_0));
+    fp = make_stub(fp, Mod, am_module_info, 0, 0, (Eterm) BeamOp(op_hipe_module_info_0));
     ptrs[i++] = (Eterm) fp;
-    fp = make_stub(fp, Mod, am_module_info, 1, 0, (Eterm) BeamOp(op_i_module_info_1));
+    fp = make_stub(fp, Mod, am_module_info, 1, 0, (Eterm) BeamOp(op_hipe_module_info_1));
+#endif
 
     /*
      * Insert the last pointer and the int_code_end instruction.
@@ -5182,6 +5170,9 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
 	if (state.lambdas != state.def_lambdas) {
 	    erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.lambdas);
 	}
+	if (bin != NULL) {
+	    driver_free_binary(bin);
+	}
 	return Mod;
     }
 
@@ -5193,6 +5184,11 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
     if (state.lambdas != state.def_lambdas) {
 	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.lambdas);
     }
+    if (bin != NULL) {
+	driver_free_binary(bin);
+    }
+
+	
     BIF_ERROR(p, BADARG);
 }
 

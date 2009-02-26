@@ -3170,9 +3170,14 @@ end_merge_join(Reply, M) ->
 init_merge_join(#m{id = MergeId, tmpdir = TmpDir, tmp_usage = TmpUsage}) ->
     case tmp_merge_file(MergeId) of
         {Fd, FileName} ->
-            case file:truncate(Fd) of
-                ok ->
-                    ok;
+            case file:position(Fd, bof) of
+                {ok, 0} ->
+                    case file:truncate(Fd) of
+                        ok ->
+                            ok;
+                        Error ->
+                            file_error(FileName, Error)
+                    end;
                 Error ->
                     file_error(FileName, Error)
             end;

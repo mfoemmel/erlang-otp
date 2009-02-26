@@ -1396,6 +1396,8 @@ do_merge_terminationStateDescriptor([], TSD) ->
     PP = TSD#'TerminationStateDescriptor'.propertyParms,
     TSD#'TerminationStateDescriptor'{propertyParms = lists:reverse(PP)}.
 
+-ifdef(megaco_nscanner_props).
+
 -ifdef(megaco_parser_inline).
 -compile({inline,[{ensure_prop_groups,1}]}).
 -endif.
@@ -1482,6 +1484,45 @@ do_parse_prop_value([], Name, Value, Group, Groups) ->
 make_prop_parm(Name, Value) ->
     #'PropertyParm'{name  = lists:reverse(Name),
                     value = [lists:reverse(Value)]}.
+
+-else. % -ifdef(megaco_nscanner_props).
+
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_prop_groups,1}]}).
+-endif.
+ensure_prop_groups(Token) ->
+    {_TokenTag, _Line, Groups} = Token,
+    Groups.
+
+%% -ifdef(megaco_parser_inline).
+%% -compile({inline,[{do_ensure_prop_groups,1}]}).
+%% -endif.
+%% do_ensure_prop_groups(Groups) when is_list(Groups) ->
+%%     [ensure_prop_group(Group) || Group <- Groups];
+%% do_ensure_prop_groups(BadGroups) ->
+%%     throw({error, {?MODULE, {bad_property_groups, BadGroups}}}).
+
+%% -ifdef(megaco_parser_inline).
+%% -compile({inline,[{ensure_prop_group,1}]}).
+%% -endif.
+%% ensure_prop_group(Group) when is_list(Group) ->
+%%     [ensure_prop_parm(PropParm) || PropParm <- Group];
+%% ensure_prop_group(BadGroup) ->
+%%     throw({error, {?MODULE, {bad_property_group, BadGroup}}}).
+
+%% -ifdef(megaco_parser_inline).
+%% -compile({inline,[{ensure_prop_parm,1}]}).
+%% -endif.
+%% ensure_prop_parm(#property_parm{name  = Name,
+%% 				value = Value}) ->
+%%     #'PropertyParm'{name  = Name,
+%%                     value = Value};
+%% ensure_prop_parm(PP) when is_record(PP, 'PropertyParm') ->
+%%     PP;
+%% ensure_prop_parm(BadPropParm) ->
+%%     throw({error, {?MODULE, {bad_property_parm, BadPropParm}}}).
+
+-endif. % -ifdef(megaco_nscanner_props).
 
 -ifdef(megaco_parser_inline).
 -compile({inline,[{ensure_uint,3}]}).

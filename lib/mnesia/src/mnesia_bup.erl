@@ -109,20 +109,16 @@ safe_apply(R, write, [_, Items]) when Items =:= [] ->
     R;
 safe_apply(R, What, Args) ->
     Abort = fun(Re) -> abort_restore(R, What, Args, Re) end,
-    receive
-        {'EXIT', Pid, Re} -> Abort({'EXIT', Pid, Re})
-    after 0 ->
-            Mod = R#restore.bup_module,
-            case catch apply(Mod, What, Args) of
-                {ok, Opaque, Items} when What =:= read ->
-                    {R#restore{bup_data = Opaque}, Items};
-                {ok, Opaque}  when What =/= read->
-                    R#restore{bup_data = Opaque};
-                {error, Re} ->
-                    Abort(Re);
-                Re ->
-                    Abort(Re)
-            end
+    Mod = R#restore.bup_module,
+    case catch apply(Mod, What, Args) of
+	{ok, Opaque, Items} when What =:= read ->
+	    {R#restore{bup_data = Opaque}, Items};
+	{ok, Opaque}  when What =/= read->
+	    R#restore{bup_data = Opaque};
+	{error, Re} ->
+	    Abort(Re);
+	Re ->
+	    Abort(Re)
     end.
 
 abort_restore(R, What, Args, Reason) ->

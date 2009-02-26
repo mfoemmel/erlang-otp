@@ -27,11 +27,12 @@
 -export([
 	profile/1,
 	analyze/1,
+	analyze_dist/1,
 	webserver/1
 	]).
 
 %% Default timetrap timeout (set in init_per_testcase)
--define(default_timeout, ?t:minutes(1)).
+-define(default_timeout, ?t:minutes(2)).
 
 init_per_suite(Config) when is_list(Config) ->
     Config.
@@ -50,11 +51,10 @@ end_per_testcase(_Case, Config) ->
 
 all(suite) ->
     % Test cases
-    [	
-    	webserver,
+    [	webserver,
 	profile,
-	analyze
-    ].
+	analyze,
+	analyze_dist].
 
 %%----------------------------------------------------------------------
 %% Tests
@@ -86,12 +86,35 @@ profile(Config) when is_list(Config) ->
 analyze(suite) ->
     [];
 analyze(doc) ->
-    ["Percept profile test."];
+    ["Percept analyze test."];
 analyze(Config) when is_list(Config) ->
+    Begin = processes(),
     Path = ?config(data_dir, Config),
     File = filename:join([Path,"profile_test.dat"]),
+    T0 = erlang:now(),
     ?line ok = percept:analyze(File),
-    
+    T1 = erlang:now(),
+    Secs = timer:now_diff(T1,T0)/1000000,
+    io:format("percept:analyze/1 took ~.2f s.~n", [Secs]),
+    ?line {stopped, _} = percept_db:stop(),
+    print_remainers(remainers(Begin, processes())),
+    ok.
+
+analyze_dist(suite) ->
+    [];
+analyze_dist(doc) ->
+    ["Percept analyze distribution test."];
+analyze_dist(Config) when is_list(Config) ->
+    Begin = processes(),
+    Path = ?config(data_dir, Config),
+    File = filename:join([Path,"ipc-dist.dat"]),
+    T0 = erlang:now(),
+    ?line ok = percept:analyze(File),
+    T1 = erlang:now(),
+    Secs = timer:now_diff(T1,T0)/1000000,
+    io:format("percept:analyze/1 took ~.2f s.~n", [Secs]),
+    ?line {stopped, _} = percept_db:stop(),
+    print_remainers(remainers(Begin, processes())),
     ok.
 
 %%----------------------------------------------------------------------
@@ -101,3 +124,26 @@ analyze(Config) when is_list(Config) ->
 %%----------------------------------------------------------------------
 %% Auxiliary
 %%----------------------------------------------------------------------
+
+print_remainers([])   -> ok;
+print_remainers([Pid|Pids]) ->
+    io:format("[Pid ~p] [Entry ~p] [Name ~p]~n", [
+	Pid,
+	erlang:process_info(Pid, initial_call),
+	erlang:process_info(Pid, registered_name)
+    ]),
+    print_remainers(Pids).
+
+remainers(Begin, End) -> remainers(Begin, End, []).
+remainers(_, [], Out) -> lists:reverse(Out);
+remainers(Begin, [Pid|End], Out) ->
+    case lists:member(Pid, Begin) of
+	true  -> remainers(Begin, End, Out);
+	false -> remainers(Begin, End, [Pid|Out])
+    end.
+
+
+
+    
+
+

@@ -350,7 +350,7 @@ collect(Z,Acc) ->
 	{Z, {data, Bin}} ->
 	    collect(Z,[Bin|Acc])
     after 0 ->
-	    lists:reverse(Acc)
+	    reverse(Acc)
     end.
 
 -spec(flush/1 :: (zstream()) -> 'ok').
@@ -409,3 +409,11 @@ call(Z, Cmd, Arg) ->
 	error:badarg -> %% Rethrow loses port_control from stacktrace.
 	    erlang:error(badarg)
     end.
+
+reverse(X) ->
+    reverse(X, []).
+
+reverse([H|T], Y) ->
+    reverse(T, [H|Y]);
+reverse([], X) -> 
+    X.

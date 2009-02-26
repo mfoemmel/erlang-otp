@@ -159,7 +159,7 @@ file(Args) ->
 	end,
     run(F).
 
--spec(invalid_args/2 :: (string(), list()) -> no_return()).
+-spec invalid_args(string(), list()) -> no_return().
 
 invalid_args(Where, Args) ->
     report("invalid arguments to ~s: ~w.", [Where, Args]),

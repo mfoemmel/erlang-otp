@@ -1,0 +1,9 @@
+{application, public_key,
+  [{description, "Public key infrastructure"},
+   {vsn, "%VSN%"},
+   {modules, [
+	     public_key
+            ]},
+   {applications, [crypto, kernel, stdlib]}  
+   ]
+}.

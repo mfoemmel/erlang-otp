@@ -704,20 +704,47 @@ enc_TopologyRequest(Val, State)
      ?RBRKT_INDENT(State)
     ].
 
-enc_TopologyRequest1(Val, State)
-  when is_record(Val, 'TopologyRequest') ->
+enc_TopologyRequest1(#'TopologyRequest'{terminationFrom   = From,
+					terminationTo     = To,
+					topologyDirection = Dir,
+					streamID          = asn1_NOVALUE}, 
+		     State) ->
     [
      fun(S) ->
 	     [
-	      enc_TerminationID(Val#'TopologyRequest'.terminationFrom, S),
+	      enc_TerminationID(From, S),
 	      ?COMMA_INDENT(S), 
-	      enc_TerminationID(Val#'TopologyRequest'.terminationTo, S),
+	      enc_TerminationID(To, S),
 	      ?COMMA_INDENT(S),
-	      case Val#'TopologyRequest'.topologyDirection of
+	      case Dir of
 		  bothway -> ?BothwayToken;
 		  isolate -> ?IsolateToken;
 		  oneway ->  ?OnewayToken
 	      end
+	     ]
+     end(?INC_INDENT(State))
+    ];
+enc_TopologyRequest1(#'TopologyRequest'{terminationFrom   = From,
+					terminationTo     = To,
+					topologyDirection = Dir,
+					streamID          = SID}, 
+		     State) ->
+    [
+     fun(S) ->
+	     [
+	      enc_TerminationID(From, S),
+	      ?COMMA_INDENT(S), 
+	      enc_TerminationID(To, S),
+	      ?COMMA_INDENT(S),
+	      case Dir of
+		  bothway -> ?BothwayToken;
+		  isolate -> ?IsolateToken;
+		  oneway ->  ?OnewayToken
+	      end,
+	      ?COMMA_INDENT(S),
+	      ?StreamToken,
+	      ?EQUAL, 
+	      enc_StreamID(SID, S)
 	     ]
      end(?INC_INDENT(State))
     ].

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE application SYSTEM "application.dtd">
+
+<application>
+  <header>
+    <copyright>
+      <year>1999</year>
+      <year>2007</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>cosEvent Reference Manual</title>
+    <prepared></prepared>
+    <docno></docno>
+    <date>1998-05-05</date>
+    <rev>2.0</rev>
+    <file>ref_man.xml</file>
+  </header>
+  <description>
+    <p>The <em>cosEvent</em> application is an Erlang implementation of
+      a CORBA Service CosEvent.</p>
+  </description>
+  <include file="cosEventApp"></include>
+  <include file="CosEventChannelAdmin"></include>
+  <include file="CosEventChannelAdmin_ConsumerAdmin"></include>
+  <include file="CosEventChannelAdmin_SupplierAdmin"></include>
+  <include file="CosEventChannelAdmin_EventChannel"></include>
+  <include file="CosEventChannelAdmin_ProxyPullConsumer"></include>
+  <include file="CosEventChannelAdmin_ProxyPushConsumer"></include>
+  <include file="CosEventChannelAdmin_ProxyPullSupplier"></include>
+  <include file="CosEventChannelAdmin_ProxyPushSupplier"></include>
+</application>
+

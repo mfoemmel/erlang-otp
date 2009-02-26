@@ -9,4 +9,4 @@
 
 -record(bb, {code=[] :: [_]}).
 
--type(bb() :: #bb{}).
+-type bb() :: #bb{}.

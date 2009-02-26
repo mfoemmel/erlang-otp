@@ -1860,9 +1860,12 @@ BIF_RETTYPE setnode_3(BIF_ALIST_3)
 
     if (dep->status & ERTS_DE_SFLG_INITIALIZING) {
 	/* This should normally never happen. If it happen,
-	   reschedule until not initializing and decide then
+	   yield until not initializing and decide then
 	   if we should succeed or fail. */
-	goto reschedule;
+	erts_smp_dist_entry_unlock(dep);
+	erts_deref_dist_entry(dep);
+	ERTS_BIF_YIELD3(bif_export[BIF_setnode_3], BIF_P,
+			BIF_ARG_1, BIF_ARG_2, BIF_ARG_3);
     }
 
     if (dep->cid == BIF_ARG_2)
@@ -1932,11 +1935,6 @@ BIF_RETTYPE setnode_3(BIF_ALIST_3)
     erts_smp_dist_entry_unlock(dep);
     erts_deref_dist_entry(dep);
     BIF_RET(am_true);
-
- reschedule:
-    erts_smp_dist_entry_unlock(dep);
-    erts_deref_dist_entry(dep);
-    BIF_ERROR(BIF_P, RESCHEDULE);
 
  error_de:
     dep->status &= ~ERTS_DE_SFLG_INITIALIZING;

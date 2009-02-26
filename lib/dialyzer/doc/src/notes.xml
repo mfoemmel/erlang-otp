@@ -32,6 +32,25 @@
   <p>This document describes the changes made to the Dialyzer
     application.</p>
 
+<section><title>Dialyzer 1.8.3</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Added the <c>--no_check_plt</c> option that makes the
+	    startup time faster when working with stable PLTs that do
+	    not change.</p>
+	    <p>Changed the phrasing of some warnings so that they do
+	    not cause confusion to some users and correspond better
+	    to reality.</p>
+          <p>
+	    Own Id: OTP-7632</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Dialyzer 1.8.2</title>
 
     <section><title>Improvements and New Features</title>

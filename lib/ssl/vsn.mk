@@ -1,1 +1,7 @@
-SSL_VSN = 3.9
+SSL_VSN = 3.10
+
+TICKETS = OTP-7258 \
+	  OTP-6894 \
+	  OTP-7037 \
+	  OTP-7039 \
+	  OTP-7150

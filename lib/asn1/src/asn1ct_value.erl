@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1997-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1ct_value).
 
@@ -225,8 +227,44 @@ get_type_prim(D,Erule) ->
 	    Len = random(3),
 	    Olist = [(random(1000)-1)||_X <-lists:seq(1,Len)],
 	    list_to_tuple([random(3)-1,random(40)-1|Olist]);
+	'RELATIVE-OID' ->
+	    Len = random(5),
+	    Olist = [(random(16#ffff)-1)||_X <-lists:seq(1,Len)],
+	    list_to_tuple(Olist);
 	'ObjectDescriptor' ->
 	    "Dummy ObjectDescriptor";
+	'REAL' ->
+	    %% Base is 2 or 10, format is string (base 10) or tuple
+	    %% (base 2 or 10)
+	    %% Tuple: {Mantissa, Base, Exponent}
+	    case random(3) of
+		1 ->
+		    %% base 2
+		    case random(3) of
+			3 ->
+			    {129,2,10};
+			2 ->
+			    {1,2,1};
+			_ ->
+			    {2#11111111,2,2}
+		    end;
+%% 		    Sign1 = random_sign(integer),
+%% 		    Sign2 = random_sign(integer),
+%% 		    {Sign1*random(10000),2,Sign2*random(1028)};
+%% 		2 ->
+%% 		    %% base 10 tuple format
+%% 		    Sign1 = random_sign(integer),
+%% 		    Sign2 = random_sign(integer),
+%% 		    {Sign1*random(10000),10,Sign2*random(1028)};
+		_ ->
+		    %% base 10 string format, NR3 format
+		    case random(2) of
+			2 ->
+			    "123.E10";
+			_ ->
+			    "-123.E-10"
+		    end
+	    end;
 	'BOOLEAN' ->
 	    true;
 	'OCTET STRING' ->
@@ -235,6 +273,8 @@ get_type_prim(D,Erule) ->
 	    adjust_list(size_random(C),c_string(C,"0123456789"));
 	'TeletexString' ->
 	    adjust_list(size_random(C),c_string(C,"TeletexString"));
+	'T61String' ->
+	    adjust_list(size_random(C),c_string(C,"T61String"));
 	'VideotexString' ->
 	    adjust_list(size_random(C),c_string(C,"VideotexString"));
 	'UTCTime' ->
@@ -275,6 +315,21 @@ c_string(C,Default) ->
 	    [V];
 	no ->
 	    Default
+    end.
+
+random_sign(integer) ->
+    case random(2) of
+	2 ->
+	    -1;
+	_ ->
+	    1
+    end;
+random_sign(string) ->
+    case random(2) of
+	2 ->
+	    "-";
+	_ ->
+	    ""
     end.
 
 random(Upper) ->

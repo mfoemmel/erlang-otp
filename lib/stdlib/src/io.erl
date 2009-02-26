@@ -356,12 +356,6 @@ io_request(Pid, {put_chars,Chars}=Request0)
 		Request0
 	end,
     Request;
-io_request(Pid, {get_chars,Prompt,N}) when node(Pid) =/= node() ->
-    %% Do not send new I/O request to possibly old I/O server
-    {get_until,Prompt,io_lib,collect_chars,[N]};
-io_request(Pid, {get_line,Prompt}) when node(Pid) =/= node() ->
-    %% Do not send new I/O request to possibly old I/O server
-    {get_until,Prompt,io_lib,collect_line,[]};
 io_request(_Pid, {fread,Prompt,Format}) ->
     {get_until,Prompt,io_lib,fread,[Format]};
 io_request(_Pid, R) ->				%Pass this straight through

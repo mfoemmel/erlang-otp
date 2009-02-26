@@ -134,7 +134,7 @@ do(Info) ->
 %%
 %% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
 %%-------------------------------------------------------------------------
-load("TransferDiskLogSiSize " ++ TransferDiskLogSize, []) ->
+load("TransferDiskLogSize " ++ TransferDiskLogSize, []) ->
     case regexp:split(TransferDiskLogSize," ") of
 	{ok,[MaxBytes,MaxFiles]} ->
 	    case httpd_conf:make_integer(MaxBytes) of

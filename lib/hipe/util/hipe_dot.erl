@@ -14,9 +14,9 @@
 
 %%--------------------------------------------------------------------
 
--type(node()    :: any()).
--type(edge()    :: {node(),node()}).
--type(digraph() :: tuple()). % XXX: Temporarily
+-type gnode()   :: any().
+-type edge()    :: {gnode(), gnode()}.
+-type digraph() :: tuple(). % XXX: Temporarily
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -53,15 +53,14 @@
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
--spec(translate_digraph/3 ::
-      (digraph(), string(), string()) -> 'ok').
+-spec translate_digraph(digraph(), string(), string()) -> 'ok'.
 
 translate_digraph(G, FileName, GName) ->
   translate_digraph(G, FileName, GName, 
 		    fun(X) -> io_lib:format("~p", [X]) end, []).
 
--spec(translate_digraph/5 ::
-      (digraph(), string(), string(), fun((_) -> string()), [_]) -> 'ok').
+-spec translate_digraph(digraph(), string(), string(),
+			fun((_) -> string()), [_]) -> 'ok'.
 
 translate_digraph(G, FileName, GName, Fun, Opts) ->
   Edges = [digraph:edge(G,X) || X <- digraph:edges(G)],
@@ -70,22 +69,20 @@ translate_digraph(G, FileName, GName, Fun, Opts) ->
 
 %%--------------------------------------------------------------------
 
--spec(translate_list/3 ::
-      ([edge()], string(), string()) -> 'ok').
+-spec translate_list([edge()], string(), string()) -> 'ok'.
 
 translate_list(List, FileName, GName) ->
   translate_list(List, FileName, GName,
 		 fun(X) -> lists:flatten(io_lib:format("~p", [X])) end, []).
 
--spec(translate_list/4 ::
-      ([edge()], string(), string(), [_]) -> 'ok').
+-spec translate_list([edge()], string(), string(), [_]) -> 'ok'.
 
 translate_list(List, FileName, GName, Opts) ->
   translate_list(List, FileName, GName,
 		 fun(X) -> lists:flatten(io_lib:format("~p", [X])) end, Opts).
 
--spec(translate_list/5 ::
-      ([edge()], string(), string(), fun((_) -> string()), [_]) -> 'ok').
+-spec translate_list([edge()], string(), string(),
+		     fun((_) -> string()), [_]) -> 'ok'.
 
 translate_list(List, FileName, GName, Fun, Opts) ->
   {NodeList1, NodeList2} = lists:unzip(List),
@@ -143,8 +140,8 @@ edgeoptions([{all_edges,{OptName, OptVal}}|T], Fun, V1, V2) ->
    case legal_edgeoption(OptName) of
      true ->
        [io_lib:format(",~p=~p ",[OptName, OptVal])|edgeoptions(T, Fun, V1, V2)]
-     %% false ->
-     %%  edgeoptions(T, Fun, V1,V2)
+       %% false ->
+       %%  edgeoptions(T, Fun, V1,V2)
    end;
 edgeoptions([{N1,N2,{OptName, OptVal}}|T], Fun, V1, V2) ->
   case %% legal_edgeoption(OptName) andalso

@@ -112,7 +112,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # FLAGS
 # ----------------------------------------------------
 
-ERL_COMPILE_FLAGS += +inline +warn_obsolete_guard -I../../stdlib/include -I$(EGEN) -W
+ERL_COMPILE_FLAGS += +inline +warn_obsolete_guard +warn_unused_import -I../../stdlib/include -I$(EGEN) -W
 
 # ----------------------------------------------------
 # Targets

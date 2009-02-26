@@ -6,9 +6,9 @@
 %%              
 %%  History  :	* 2000-11-03 Erik Johansson (happi@it.uu.se): Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2008/04/20 13:01:13 $
-%%              $Revision: 1.12 $
+%%              $Author: kostis $
+%%              $Date: 2008/10/27 21:10:18 $
+%%              $Revision: 1.13 $
 %% ====================================================================
 %%
 %% Defines:
@@ -295,14 +295,14 @@
 %% Basic types of the 'hipe' application used in other parts of the system
 %%----------------------------------------------------------------------------
 
--type(comp_option()  :: atom() | {atom(), atom()}).
--type(comp_options() :: [comp_option()]).
+-type comp_option()  :: atom() | {atom(), atom()}.
+-type comp_options() :: [comp_option()].
 
--type(hipe_architecture() ::
-		'amd64' | 'arm' | 'powerpc' | 'ppc64' | 'ultrasparc' | 'x86').
+-type hipe_architecture() ::
+		'amd64' | 'arm' | 'powerpc' | 'ppc64' | 'ultrasparc' | 'x86'.
 
--type(hipe_map()       :: [{non_neg_integer(),
+-type hipe_map()       :: [{non_neg_integer(),
 	                    'unknown' | {'reg' | 'fp_reg' | 'spill',
-	                                 non_neg_integer()}}]).
--type(hipe_temp_map()  :: tuple()).
--type(hipe_spill_map() :: [{non_neg_integer(), {'spill',non_neg_integer()}}]).
+	                                 non_neg_integer()}}].
+-type hipe_temp_map()  :: tuple().
+-type hipe_spill_map() :: [{non_neg_integer(), {'spill',non_neg_integer()}}].

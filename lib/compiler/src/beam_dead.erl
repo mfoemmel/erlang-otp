@@ -145,10 +145,10 @@
 %%%	therefore the is_boolean test is redundant.)
 %%%
 
--import(lists, [map/2,mapfoldl/3,reverse/1,reverse/2,keysearch/3,foreach/2]).
+-import(lists, [mapfoldl/3,reverse/1]).
 
 module({Mod,Exp,Attr,Fs0,_}, _Opts) ->
-    Fs1 = map(fun split_blocks/1, Fs0),
+    Fs1 = [split_blocks(F) || F <- Fs0],
     {Fs2,Lc1} = beam_clean:clean_labels(Fs1),
     {Fs,Lc} = mapfoldl(fun function/2, Lc1, Fs2),
     %%{Fs,Lc} = {Fs2,Lc1},

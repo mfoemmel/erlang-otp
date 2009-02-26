@@ -66,7 +66,7 @@
 
 %%----------------------------------------------------------------------------
 
--spec(fix_catches/1 :: (#cfg{}) -> #cfg{}).
+-spec fix_catches(#cfg{}) -> #cfg{}.
 
 fix_catches(CFG) ->
   {Map, State} = build_mapping(find_catches(init_state(CFG))),

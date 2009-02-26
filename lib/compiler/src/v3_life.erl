@@ -45,7 +45,7 @@
 -export([vdb_find/2]).
 
 -import(lists, [member/2,map/2,foldl/3,reverse/1,sort/1]).
--import(ordsets, [add_element/2,intersection/2,union/2,union/1]).
+-import(ordsets, [add_element/2,intersection/2,union/2]).
 
 -include("v3_kernel.hrl").
 -include("v3_life.hrl").
@@ -297,11 +297,11 @@ match(#k_select{anno=A,var=V,types=Kts}, Ls0, I, Ctxt, Vdb0) ->
 	       false -> A#k.a
 	   end,
     Vdb1 = use_vars(union(A#k.us, Ls1), I, Vdb0),
-    Ts = map(fun (Tc) -> type_clause(Tc, Ls1, I+1, Ctxt, Vdb1) end, Kts),
+    Ts = [type_clause(Tc, Ls1, I+1, Ctxt, Vdb1) || Tc <- Kts],
     #l{ke={select,literal2(V, Ctxt),Ts},i=I,vdb=Vdb1,a=Anno};
 match(#k_guard{anno=A,clauses=Kcs}, Ls, I, Ctxt, Vdb0) ->
     Vdb1 = use_vars(union(A#k.us, Ls), I, Vdb0),
-    Cs = map(fun (G) -> guard_clause(G, Ls, I+1, Ctxt, Vdb1) end, Kcs),
+    Cs = [guard_clause(G, Ls, I+1, Ctxt, Vdb1) || G <- Kcs],
     #l{ke={guard,Cs},i=I,vdb=Vdb1,a=A#k.a};
 match(Other, Ls, I, _Ctxt, Vdb0) ->
     Vdb1 = use_vars(Ls, I, Vdb0),
@@ -311,7 +311,7 @@ match(Other, Ls, I, _Ctxt, Vdb0) ->
 type_clause(#k_type_clause{anno=A,type=T,values=Kvs}, Ls, I, Ctxt, Vdb0) ->
     %%ok = io:format("life ~w: ~p~n", [?LINE,{T,Kvs}]),
     Vdb1 = use_vars(union(A#k.us, Ls), I+1, Vdb0),
-    Vs = map(fun (Vc) -> val_clause(Vc, Ls, I+1, Ctxt, Vdb1) end, Kvs),
+    Vs = [val_clause(Vc, Ls, I+1, Ctxt, Vdb1) || Vc <- Kvs],
     #l{ke={type_clause,type(T),Vs},i=I,vdb=Vdb1,a=A#k.a}.
 
 val_clause(#k_val_clause{anno=A,val=V,body=Kb}, Ls0, I, Ctxt0, Vdb0) ->
@@ -376,7 +376,7 @@ type(k_bin_end) -> bin_end.
 
 variable(#k_var{name=N}) -> {var,N}.
 
-var_list(Ks) -> map(fun variable/1, Ks).
+var_list(Ks) -> [variable(K) || K <- Ks].
 
 %% atomic(Klit) -> Lit.
 %% atomic_list([Klit]) -> [Lit].
@@ -390,7 +390,7 @@ atomic(#k_atom{val=N}) -> {atom,N};
 %%atomic(#k_string{val=S}) -> {string,S};
 atomic(#k_nil{}) -> nil.
 
-atomic_list(Ks) -> map(fun atomic/1, Ks).
+atomic_list(Ks) -> [atomic(K) || K <- Ks].
 
 %% literal(Klit) -> Lit.
 %% literal_list([Klit]) -> [Lit].
@@ -417,7 +417,7 @@ literal(#k_literal{val=V}, _Ctxt) ->
     {literal,V}.
 
 literal_list(Ks, Ctxt) ->
-    map(fun(K) -> literal(K, Ctxt) end, Ks).
+    [literal(K, Ctxt) || K <- Ks].
 
 literal2(#k_var{name=N}, _) -> {var,N};
 literal2(#k_int{val=I}, _) -> {integer,I};
@@ -444,7 +444,7 @@ literal2(#k_tuple{es=Es}, Ctxt) ->
     {tuple,literal_list2(Es, Ctxt)}.
 
 literal_list2(Ks, Ctxt) ->
-    map(fun(K) -> literal2(K, Ctxt) end, Ks).
+    [literal2(K, Ctxt) || K <- Ks].
 
 %% literal_bin(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg,next=N}) ->
 %%     {bin_seg,literal(S),U,T,Fs,[literal(Seg),literal(N)]}
@@ -457,7 +457,7 @@ is_gc_bif(Name, Arity) ->
     case get_opt(no_gc_bifs) of
 	true -> false;
 	false -> is_gc_bif_1(Name, Arity)
-end.
+    end.
 
 is_gc_bif_1(hd, 1) -> false;
 is_gc_bif_1(tl, 1) -> false;

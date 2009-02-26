@@ -35,7 +35,7 @@
 %%
 %%--------------------------------------------------------------------
 
--spec(cfg/1 :: (#cfg{}) -> #cfg{}).
+-spec cfg(#cfg{}) -> #cfg{}.
 
 cfg(Cfg) ->
   Labels = ?cfg:reverse_postorder(Cfg),

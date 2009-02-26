@@ -47,18 +47,18 @@
 %% Types -- alphabetically
 %%------------------------------------------------------------------------
 
--type(dlog_format()      :: 'external' | 'internal').
--type(dlog_format_type() :: 'halt_ext' | 'halt_int' | 'wrap_ext' | 'wrap_int').
--type(dlog_head()        :: 'none' | {'ok', binary()} | mfa()).
--type(dlog_mode()        :: 'read_only' | 'read_write' ).
--type(dlog_options()     :: [{atom(), any()}]).
--type(dlog_repair()      :: 'truncate' | bool()).
--type(dlog_size()        :: 'infinity' | pos_integer()
-                          | {pos_integer(), pos_integer()}).
--type(dlog_status()      :: 'ok' | {'blocked', 'false' | [_]}).%QueueLogRecords
--type(dlog_type()        :: 'halt' | 'wrap').
+-type dlog_format()      :: 'external' | 'internal'.
+-type dlog_format_type() :: 'halt_ext' | 'halt_int' | 'wrap_ext' | 'wrap_int'.
+-type dlog_head()        :: 'none' | {'ok', binary()} | mfa().
+-type dlog_mode()        :: 'read_only' | 'read_write'.
+-type dlog_options()     :: [{atom(), any()}].
+-type dlog_repair()      :: 'truncate' | bool().
+-type dlog_size()        :: 'infinity' | pos_integer()
+                          | {pos_integer(), pos_integer()}.
+-type dlog_status()      :: 'ok' | {'blocked', 'false' | [_]}. %QueueLogRecords
+-type dlog_type()        :: 'halt' | 'wrap'.
 
--type(node() :: atom()).
+-type node() :: atom().		%% XXX: to be taken out in the next release
 
 %%------------------------------------------------------------------------
 %% Records

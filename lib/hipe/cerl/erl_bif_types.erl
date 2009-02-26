@@ -32,10 +32,8 @@
 -define(BITS, 128). %This is only in bsl to convert answer to pos_inf/neg_inf.
 -define(TAG_IMMED1_SIZE, 4).
 
--export([type/3, type/4, arg_types/1, arg_types/3, 
+-export([type/3, type/4, arg_types/3, 
 	 is_known/3, infinity_add/2]).
-
--include("../icode/hipe_icode_primops.hrl").
 
 -import(erl_types, [
 		    number_max/1,
@@ -103,6 +101,7 @@
 		    t_list_termination/1,
 		    t_mfa/0,
 		    t_nil/0,
+		    t_node/0,
 		    t_none/0,
 		    t_nonempty_list/0,
 		    t_nonempty_list/1,
@@ -116,6 +115,7 @@
 		    t_subtract/2,
 		    t_sup/1,
 		    t_sup/2,
+		    t_timeout/0,
 		    t_tuple/0,
 		    t_tuple/1,
 		    t_tuple_args/1,
@@ -686,7 +686,8 @@ type(erlang, binary_to_term, 1, Xs) ->
 type(erlang, bitsize, 1, Xs) ->	% XXX: TAKE OUT
   type(erlang, bit_size, 1, Xs);
 type(erlang, bit_size, 1, Xs) ->
-  strict(arg_types(erlang, bit_size, 1), Xs, fun (_) -> t_non_neg_integer() end);
+  strict(arg_types(erlang, bit_size, 1), Xs,
+	 fun (_) -> t_non_neg_integer() end);
 type(erlang, bitstr_to_list, 1, Xs) ->	% XXX: TAKE OUT
   type(erlang, bitstring_to_list, 1, Xs);
 type(erlang, bitstring_to_list, 1, Xs) ->
@@ -696,10 +697,17 @@ type(erlang, bump_reductions, 1, Xs) ->
   strict(arg_types(erlang, bump_reductions, 1), Xs,
 	 fun (_) -> t_atom('true') end);
 type(erlang, byte_size, 1, Xs) ->
-  strict(arg_types(erlang, byte_size, 1), Xs, fun (_) -> t_non_neg_integer() end);
+  strict(arg_types(erlang, byte_size, 1), Xs,
+	 fun (_) -> t_non_neg_integer() end);
 type(erlang, cancel_timer, 1, Xs) ->
   strict(arg_types(erlang, cancel_timer, 1), Xs,
 	 fun (_) -> t_sup(t_integer(), t_atom('false')) end);
+type(erlang, characters_to_list, 2, Xs) ->
+  strict(arg_types(erlang, characters_to_list, 2), Xs,
+	 fun (_) -> t_string() end);
+type(erlang, characters_to_utf8, 2, Xs) ->
+  strict(arg_types(erlang, characters_to_list, 2), Xs,
+	 fun (_) -> t_binary() end);
 type(erlang, check_process_code, 2, Xs) ->
   strict(arg_types(erlang, check_process_code, 2), Xs,
 	 fun (_) -> t_bool() end);
@@ -1083,12 +1091,12 @@ type(erlang, monitor_node, 2, Xs) ->
 type(erlang, monitor_node, 3, Xs) ->
   strict(arg_types(erlang, monitor_node, 3), Xs,
 	 fun (_) -> t_atom('true') end);
-type(erlang, node, 0, _) -> t_atom();
+type(erlang, node, 0, _) -> t_node();
 type(erlang, node, 1, Xs) ->
-  strict(arg_types(erlang, node, 1), Xs, fun (_) -> t_atom() end);
-type(erlang, nodes, 0, _) -> t_list(t_atom());
+  strict(arg_types(erlang, node, 1), Xs, fun (_) -> t_node() end);
+type(erlang, nodes, 0, _) -> t_list(t_node());
 type(erlang, nodes, 1, Xs) ->
-  strict(arg_types(erlang, nodes, 1), Xs, fun (_) -> t_list(t_atom()) end);
+  strict(arg_types(erlang, nodes, 1), Xs, fun (_) -> t_list(t_node()) end);
 type(erlang, now, 0, _) ->
   t_time();
 type(erlang, open_port, 2, Xs) ->
@@ -1309,8 +1317,7 @@ type(erlang, seq_trace_print, 1, Xs) ->
 type(erlang, seq_trace_print, 2, Xs) ->
   strict(arg_types(erlang, seq_trace_print, 2), Xs, fun (_) -> t_bool() end);
 type(erlang, set_cookie, 2, Xs) ->
-  strict(arg_types(erlang, set_cookie, 2), Xs,
-	 fun (_) -> t_atom('true') end);
+  strict(arg_types(erlang, set_cookie, 2), Xs, fun (_) -> t_atom('true') end);
 type(erlang, setelement, 3, Xs) ->
   strict(arg_types(erlang, setelement, 3), Xs,
 	 fun ([X1, X2, X3]) ->
@@ -2558,6 +2565,24 @@ type(os, getenv, 1, Xs) ->
 type(os, getpid, 0, _) -> t_string();
 type(os, putenv, 2, Xs) ->
   strict(arg_types(os, putenv, 2), Xs, fun (_) -> t_atom('true') end);
+%%-- re -----------------------------------------------------------------------
+type(re, run, 2, Xs) ->
+  strict(arg_types(re, run, 2), Xs,
+	 fun (_) ->
+	     t_sup([t_tuple([t_atom('match'), t_re_Captured()]),
+		    t_atom('nomatch'),
+		    t_tuple([t_atom('error'),
+			     t_tuple([t_string(), t_non_neg_integer()])])])
+	 end);
+type(re, run, 3, Xs) ->
+  strict(arg_types(re, run, 3), Xs,
+	 fun (_) ->
+	     t_sup([t_tuple([t_atom('match'), t_re_Captured()]),
+		    t_atom('match'),
+		    t_atom('nomatch'),
+		    t_tuple([t_atom('error'),
+			     t_tuple([t_string(), t_non_neg_integer()])])])
+	 end);
 %%-- string -------------------------------------------------------------------
 type(string, chars, 2, Xs) ->  % NOTE: added to avoid loss of information
   strict(arg_types(string, chars, 2), Xs, fun (_) -> t_string() end);
@@ -2605,9 +2630,9 @@ type(M, F, A, Xs) when is_atom(M), is_atom(F),
 %%-----------------------------------------------------------------------------
 
 strict(Xs, Ts, F) ->
-%%  io:format("inf lists arg~n1:~p~n2:~p ~n", [Xs, Ts]),
+  %% io:format("inf lists arg~n1:~p~n2:~p ~n", [Xs, Ts]),
   Xs1 = inf_lists(Xs, Ts),
-%%  io:format("inf lists return ~p ~n", [Xs1]),
+  %% io:format("inf lists return ~p ~n", [Xs1]),
   case any_is_none_or_unit(Xs1) of
     true -> t_none();
     false -> F(Xs1)
@@ -2707,8 +2732,8 @@ infinity_min([H|T]) ->
 		  T)
   end.
 
--spec(infinity_abs/1 :: ('pos_inf' | 'neg_inf') -> 'pos_inf'
-                      ; (integer()) -> non_neg_integer()).
+-spec infinity_abs('pos_inf' | 'neg_inf') -> 'pos_inf'
+		; (integer()) -> non_neg_integer().
 
 infinity_abs(pos_inf) -> pos_inf;
 infinity_abs(neg_inf) -> pos_inf;
@@ -2994,49 +3019,6 @@ arith(Op, X1, X2) ->
       end
   end.
 
-
-%% =====================================================================
-%% @doc
-%% function arg_types returns a list of the demanded argument types for
-%% a bif to succeed.
-
-arg_types({M, F, A}) ->
-  arg_types(M, F, A);
-arg_types('+') ->
-  [t_number(), t_number()];
-arg_types('-') ->
-  [t_number(), t_number()];
-arg_types('*') ->
-  [t_number(), t_number()];
-arg_types('/') ->
-  [t_number(), t_number()];
-arg_types('div') ->
-  [t_integer(), t_integer()];
-arg_types('rem') ->
-  [t_integer(), t_integer()];
-arg_types('band') ->
-  [t_integer(), t_integer()];
-arg_types('bor') ->
-  [t_integer(), t_integer()];
-arg_types('bxor') ->
-  [t_integer(), t_integer()];
-arg_types('bsr') ->
-  [t_integer(), t_integer()];
-arg_types('bsl') ->
-  [t_integer(), t_integer()];
-arg_types('bnot') ->
-  [t_integer()];
-%% arg_types(redtest) ->
-%%   [];
-arg_types(#element{}) ->
-  [t_pos_fixnum(), t_tuple()];
-%% arg_types({unsafe_element, N}) ->
-%%   [t_tuple()];
-arg_types(_BIF) ->
-  %% io:format("~w\n", [_BIF]),
-  any.                     % safe approximation for all bifs.
-
-
 %%------- code ----------------------------------------------------------------
 arg_types(code, add_path, 1) ->
   [t_string()];
@@ -3158,7 +3140,7 @@ arg_types(erl_ddll, try_unload, 2) ->
 %%------- erlang --------------------------------------------------------------
 arg_types(erlang, '!', 2) ->
   Pid = t_sup([t_pid(), t_port(), t_atom(),
-	       t_tuple([t_atom(), t_atom()])]),
+	       t_tuple([t_atom(), t_node()])]),
   [Pid, t_any()];
 arg_types(erlang, '==', 2) ->
   [t_any(), t_any()];
@@ -3179,21 +3161,21 @@ arg_types(erlang, '=<', 2) ->
 arg_types(erlang, '+', 1) ->
   [t_number()];
 arg_types(erlang, '+', 2) ->
-  arg_types('+');
+  [t_number(), t_number()];
 arg_types(erlang, '++', 2) ->
   [t_list(), t_any()];
 arg_types(erlang, '-', 1) ->
   [t_number()];
 arg_types(erlang, '-', 2) ->
-  arg_types('-');
+  [t_number(), t_number()];
 arg_types(erlang, '--', 2) ->
   [t_list(), t_list()];
 arg_types(erlang, '*', 2) ->
-  arg_types('*');
+  [t_number(), t_number()];
 arg_types(erlang, '/', 2) ->
-  arg_types('/');
+  [t_number(), t_number()];
 arg_types(erlang, 'div', 2) ->
-  arg_types('div');
+  [t_integer(), t_integer()];
 arg_types(erlang, 'rem', 2) ->
   [t_integer(), t_integer()];
 arg_types(erlang, 'and', 2) ->
@@ -3250,6 +3232,10 @@ arg_types(erlang, byte_size, 1) ->
   [t_binary()];
 arg_types(erlang, cancel_timer, 1) ->
   [t_ref()];
+arg_types(erlang, characters_to_list, 2) ->
+  [t_ML(), t_encoding()];
+arg_types(erlang, characters_to_utf8, 2) ->
+  [t_ML(), t_encoding()];
 arg_types(erlang, check_process_code, 2) ->
   [t_pid(), t_atom()];
 arg_types(erlang, concat_binary, 1) ->
@@ -3263,7 +3249,7 @@ arg_types(erlang, delete_module, 1) ->
 arg_types(erlang, demonitor, 1) ->
   [t_ref()];
 arg_types(erlang, disconnect_node, 1) ->
-  [t_atom()];
+  [t_node()];
 arg_types(erlang, display, 1) ->
   [t_any()];
 arg_types(erlang, dist_exit, 3) ->
@@ -3436,11 +3422,11 @@ arg_types(erlang, md5_update, 2) ->
 arg_types(erlang, module_loaded, 1) ->
   [t_atom()];
 arg_types(erlang, monitor, 2) ->
-  [t_atom(), t_sup([t_pid(), t_atom(), t_tuple([t_atom(), t_atom()])])];
+  [t_atom(), t_sup([t_pid(), t_atom(), t_tuple([t_atom(), t_node()])])];
 arg_types(erlang, monitor_node, 2) ->
-  [t_atom(), t_bool()];
+  [t_node(), t_bool()];
 arg_types(erlang, monitor_node, 3) ->
-  [t_atom(), t_bool(), t_list(t_atom('allow_passive_connect'))];
+  [t_node(), t_bool(), t_list(t_atom('allow_passive_connect'))];
 arg_types(erlang, node, 0) ->
   [];
 arg_types(erlang, node, 1) ->
@@ -3448,7 +3434,8 @@ arg_types(erlang, node, 1) ->
 arg_types(erlang, nodes, 0) ->
   [];
 arg_types(erlang, nodes, 1) ->
-  [t_sup(t_atom(), t_list(t_atom()))];
+  NodesArg = t_atoms(['visible', 'hidden', 'connected', 'this', 'known']),
+  [t_sup(NodesArg, t_list(NodesArg))];
 arg_types(erlang, now, 0) ->
   [];
 arg_types(erlang, open_port, 2) ->
@@ -3552,7 +3539,7 @@ arg_types(erlang, seq_trace_print, 1) ->
 arg_types(erlang, seq_trace_print, 2) ->
   [t_sup(t_atom(), t_fixnum()), t_any()];
 arg_types(erlang, set_cookie, 2) ->
-  [t_atom(), t_atom()];
+  [t_node(), t_atom()];
 arg_types(erlang, setelement, 3) ->
   [t_pos_integer(), t_tuple(), t_any()];
 arg_types(erlang, setnode, 2) ->
@@ -3564,11 +3551,11 @@ arg_types(erlang, size, 1) ->
 arg_types(erlang, spawn, 1) -> %% TODO: Tuple?
   [t_fun()];
 arg_types(erlang, spawn, 2) -> %% TODO: Tuple?
-  [t_atom(), t_fun()];
+  [t_node(), t_fun()];
 arg_types(erlang, spawn, 3) -> %% TODO: Tuple?
   [t_atom(), t_atom(), t_list()];
 arg_types(erlang, spawn, 4) -> %% TODO: Tuple?
-  [t_atom(), t_atom(), t_atom(), t_list()];
+  [t_node(), t_atom(), t_atom(), t_list()];
 arg_types(erlang, spawn_link, 1) ->
   arg_types(erlang, spawn, 1);  % same
 arg_types(erlang, spawn_link, 2) ->
@@ -3584,7 +3571,7 @@ arg_types(erlang, spawn_opt, 2) ->
 arg_types(erlang, spawn_opt, 3) ->
   [t_atom(), t_fun(), t_list(t_spawn_options())];
 arg_types(erlang, spawn_opt, 4) ->
-  [t_atom(), t_atom(), t_list(), t_list(t_spawn_options())];
+  [t_node(), t_atom(), t_list(), t_list(t_spawn_options())];
 arg_types(erlang, split_binary, 2) ->
   [t_binary(), t_non_neg_integer()];
 arg_types(erlang, start_timer, 3) ->
@@ -4121,6 +4108,11 @@ arg_types(os, getpid, 0) ->
   [];
 arg_types(os, putenv, 2) ->
   [t_string(), t_string()];
+%%-- re -----------------------------------------------------------------------
+arg_types(re, run, 2) ->
+  [t_file_io_data(), t_re_RE()];
+arg_types(re, run, 3) ->
+  [t_file_io_data(), t_re_RE(), t_list(t_re_run_option())];
 %%------- string --------------------------------------------------------------
 arg_types(string, chars, 2) ->
   [t_char(), t_non_neg_integer()];
@@ -4174,9 +4166,6 @@ check_fun_application(Fun, Args) ->
 %% =====================================================================
 
 t_socket() -> t_port(). % alias
-
-t_timeout() ->
-  t_sup(t_non_neg_integer(), t_atom('infinity')).
 
 t_ip_address() ->
   T_int16 = t_from_range(0,  16#FFFF),
@@ -4277,6 +4266,35 @@ t_code_load_error_rsn() ->	% also used in erlang:load_module/2
 %% These are used for the built-in functions of 'erlang'
 %% =====================================================================
 
+t_ML() ->     %% a possibly deep list of integers or binaries
+  t_list([t_integer(), t_binary(), t_list()]).
+
+t_decode_packet_option() ->
+  t_sup([t_tuple([t_atom('packet_size'), t_non_neg_integer()]),
+	 t_tuple([t_atom('line_length'), t_non_neg_integer()])]).
+
+t_decode_packet_type() ->
+  t_sup(t_inet_setoption_packettype(), t_atom('httph')).
+
+t_dist_exit() ->
+  t_sup([t_atom('kill'), t_atom('noconnection'), t_atom('normal')]).
+
+t_encoding() ->
+  t_sup([t_atom('latin1'), t_atom('unicode')]).
+
+t_match_spec_test_errors() ->
+  t_list(t_sup(t_tuple([t_atom('error'), t_string()]),
+	       t_tuple([t_atom('warning'), t_string()]))).
+
+t_module_info_2() ->
+ t_sup([t_atom('module'),
+	t_atom('imports'),
+	t_atom('exports'),
+	t_atom('functions'),
+	t_atom('attributes'),
+	t_atom('compile'),
+	t_atom('native_addresses')]).
+
 t_pinfo() ->
   t_sup([t_pinfo_item(), t_list(t_pinfo_item())]).
 
@@ -4306,29 +4324,6 @@ t_pinfo_item() ->
 	 t_atom('suspending'),
 	 t_atom('total_heap_size'),
 	 t_atom('trap_exit')]).
-
-t_decode_packet_option() ->
-  t_sup([t_tuple([t_atom('packet_size'), t_non_neg_integer()]),
-	 t_tuple([t_atom('line_length'), t_non_neg_integer()])]).
-
-t_decode_packet_type() ->
-  t_sup(t_inet_setoption_packettype(), t_atom('httph')).
-
-t_dist_exit() ->
-  t_sup([t_atom('kill'), t_atom('noconnection'), t_atom('normal')]).
-
-t_match_spec_test_errors() ->
-  t_list(t_sup(t_tuple([t_atom('error'), t_string()]),
-	       t_tuple([t_atom('warning'), t_string()]))).
-
-t_module_info_2() ->
- t_sup([t_atom('module'),
-	t_atom('imports'),
-	t_atom('exports'),
-	t_atom('functions'),
-	t_atom('attributes'),
-	t_atom('compile'),
-	t_atom('native_addresses')]).
 
 t_process_priority_level() ->
   t_sup([t_atom('max'), t_atom('high'), t_atom('normal'), t_atom('low')]).
@@ -4429,45 +4424,6 @@ t_ets_info_items() ->
 	 t_atom('protection'),
 	 t_atom('size'),
 	 t_atom('type')]).
-
-%% =====================================================================
-%% These are used for the built-in functions of 'inet'
-%% =====================================================================
-
-t_inet_setoption() ->
-  t_sup([%% first the 2-tuple options
-	 t_tuple([t_atom('active'), t_sup(t_bool(), t_atom('once'))]),
-	 t_tuple([t_atom('broadcast'), t_bool()]),
-	 t_tuple([t_atom('delay_send'), t_bool()]),
-	 t_tuple([t_atom('dontroute'), t_bool()]),
-	 t_tuple([t_atom('exit_on_close'), t_bool()]),
-	 t_tuple([t_atom('header'), t_non_neg_integer()]),
-	 t_tuple([t_atom('keepalive'), t_bool()]),
-	 t_tuple([t_atom('nodelay'), t_bool()]),
-	 t_tuple([t_atom('packet'), t_inet_setoption_packettype()]),
-	 t_tuple([t_atom('packet_size'), t_non_neg_integer()]),
-	 t_tuple([t_atom('read_packets'), t_non_neg_integer()]),
-	 t_tuple([t_atom('recbuf'), t_non_neg_integer()]),
-	 t_tuple([t_atom('reuseaddr'), t_bool()]),
-	 t_tuple([t_atom('send_timeout'), t_non_neg_integer()]),
-	 t_tuple([t_atom('sndbuf'), t_non_neg_integer()]),
-	 t_tuple([t_atom('priority'), t_non_neg_integer()]),
-	 t_tuple([t_atom('tos'), t_non_neg_integer()]),
-	 %% and a 4-tuple option
-	 t_tuple([t_atom('raw'),
-		  t_non_neg_integer(),	% protocol level
-		  t_non_neg_integer(),	% option number
-		  t_binary()])]).	% actual option value
-
-t_inet_setoption_packettype() ->
-  t_sup([t_atom('raw'),
-	 t_integers([0,1,2,4]),
-	 t_atom('asn1'), t_atom('cdr'), t_atom('sunrm'),
-	 t_atom('fcgi'), t_atom('tpkt'), t_atom('line'),
-	 t_atom('http')]).	%% but t_atom('httph') is not needed
-
-t_inet_posix_error() ->
-  t_atom().  %% XXX: Very underspecified
 
 %% =====================================================================
 %% These are used for the built-in functions of 'file'
@@ -4630,6 +4586,45 @@ t_insn_type() ->
 	 t_atom('closure')]).
 
 %% =====================================================================
+%% These are used for the built-in functions of 'inet'
+%% =====================================================================
+
+t_inet_setoption() ->
+  t_sup([%% first the 2-tuple options
+	 t_tuple([t_atom('active'), t_sup(t_bool(), t_atom('once'))]),
+	 t_tuple([t_atom('broadcast'), t_bool()]),
+	 t_tuple([t_atom('delay_send'), t_bool()]),
+	 t_tuple([t_atom('dontroute'), t_bool()]),
+	 t_tuple([t_atom('exit_on_close'), t_bool()]),
+	 t_tuple([t_atom('header'), t_non_neg_integer()]),
+	 t_tuple([t_atom('keepalive'), t_bool()]),
+	 t_tuple([t_atom('nodelay'), t_bool()]),
+	 t_tuple([t_atom('packet'), t_inet_setoption_packettype()]),
+	 t_tuple([t_atom('packet_size'), t_non_neg_integer()]),
+	 t_tuple([t_atom('read_packets'), t_non_neg_integer()]),
+	 t_tuple([t_atom('recbuf'), t_non_neg_integer()]),
+	 t_tuple([t_atom('reuseaddr'), t_bool()]),
+	 t_tuple([t_atom('send_timeout'), t_non_neg_integer()]),
+	 t_tuple([t_atom('sndbuf'), t_non_neg_integer()]),
+	 t_tuple([t_atom('priority'), t_non_neg_integer()]),
+	 t_tuple([t_atom('tos'), t_non_neg_integer()]),
+	 %% and a 4-tuple option
+	 t_tuple([t_atom('raw'),
+		  t_non_neg_integer(),	% protocol level
+		  t_non_neg_integer(),	% option number
+		  t_binary()])]).	% actual option value
+
+t_inet_setoption_packettype() ->
+  t_sup([t_atom('raw'),
+	 t_integers([0,1,2,4]),
+	 t_atom('asn1'), t_atom('cdr'), t_atom('sunrm'),
+	 t_atom('fcgi'), t_atom('tpkt'), t_atom('line'),
+	 t_atom('http')]).	%% but t_atom('httph') is not needed
+
+t_inet_posix_error() ->
+  t_atom().  %% XXX: Very underspecified
+
+%% =====================================================================
 %% These are used for the built-in functions of 'io'
 %% =====================================================================
 
@@ -4641,6 +4636,50 @@ t_io_device() ->
 %% but the Format can also be a (deep) list, hence the type below
 t_io_format_string() ->
   t_sup([t_atom(), t_list(), t_binary()]).
+
+%% =====================================================================
+%% These are used for the built-in functions of 're'; the functions
+%% whose last name component starts with a capital letter are types
+%% =====================================================================
+
+t_re_MP() ->  %% it's supposed to be an opaque data type
+  t_tuple([t_atom('re_pattern'), t_integer(), t_integer(), t_binary()]).
+
+t_re_RE() ->
+  t_sup(t_re_MP(), t_file_io_data()).
+
+t_re_compile_option() ->
+  t_sup([t_atoms(['anchored', 'caseless', 'dollar_endonly', 'dotall',
+		  'extended', 'firstline', 'multiline', 'no_auto_capture',
+		  'dupnames', 'ungreedy']),
+	 t_tuple([t_atom('newline'), t_re_NLSpec()])]).
+
+t_re_run_option() ->
+  t_sup([t_atoms(['anchored', 'global', 'notbol', 'noteol', 'notempty']),
+	 t_tuple([t_atom('offset'), t_integer()]),
+	 t_tuple([t_atom('newline'), t_re_NLSpec()]),
+	 t_tuple([t_atom('capture'), t_re_ValueSpec()]),
+	 t_tuple([t_atom('capture'), t_re_ValueSpec(), t_re_Type()]),
+	 t_re_compile_option()]).
+
+t_re_Type() ->
+  t_atoms(['index', 'list', 'binary']).
+
+t_re_NLSpec() ->
+  t_atoms(['cr', 'crlf', 'lf', 'anycrlf']).
+
+t_re_ValueSpec() ->
+  t_sup(t_atoms(['all', 'all_but_first', 'first']), t_re_ValueList()).
+
+t_re_ValueList() ->
+  t_list(t_sup([t_integer(), t_string(), t_atom()])).
+
+t_re_Captured() ->
+  t_list(t_sup(t_re_CapturedData(), t_list(t_re_CapturedData()))).
+
+t_re_CapturedData() ->
+  t_sup([t_tuple([t_integer(), t_integer()]), t_string(), t_binary()]).
+
 
 %% =====================================================================
 %% Some testing code for ranges below

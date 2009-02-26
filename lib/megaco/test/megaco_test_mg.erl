@@ -190,7 +190,9 @@ await_started(Node, MonRef, Pid) ->
 	    true = erlang:monitor_node(Node, false),	    
 	    exit({failed_starting, Pid, Reason})
 
-    after 10000 ->
+    %% This timeout was originally 10 secs, but on some debug compiled
+    %% platforms, it was simply not long enough
+    after 20000 ->
 	    NodePing = net_adm:ping(Node), 
 	    ProcInfo = (catch proc_info(Pid)),
 	    FlushQ = megaco_test_lib:flush(), 
@@ -384,7 +386,7 @@ init(Config) ->
     d("init -> get user info (receive_handle)"),
     RH = megaco:user_info(Mid,receive_handle),
     d("init -> parse receive info"),
-    {MgcPort,RH1} = parse_receive_info(RI, RH),
+    {MgcPort, RH1} = parse_receive_info(RI, RH),
     d("init -> start transport"),
     {ok, _CH} = start_transport(MgcPort, RH1),
     Mid.
@@ -879,28 +881,46 @@ start_transport(_, #megaco_receive_handle{send_mod = Mod}) ->
 
 
 start_tcp(MgcPort, RH) ->
-    d("start tcp transport (~p)", [MgcPort]),
+    d("start tcp transport: "
+      "~n   MGC Port:       ~p"
+      "~n   Receive handle: ~p", [MgcPort, RH]),
     case megaco_tcp:start_transport() of
 	{ok, Sup} ->
 	    d("tcp transport started: ~p", [Sup]),
-	    {ok, LocalHost} = inet:gethostname(),
-	    Opts = [{host,           LocalHost},
-		    {port,           MgcPort}, 
-		    {receive_handle, RH},
-		    {tcp_options,    [{nodelay, true}]}],
-	    d("tcp connect", []),
-	    case megaco_tcp:connect(Sup, Opts) of
-		{ok, SendHandle, ControlPid} ->
-		    d("tcp connected: ~p, ~p", [SendHandle, ControlPid]),
-		    megaco_tcp_connect(RH, LocalHost, SendHandle, ControlPid);
-		{error, Reason} ->
-		    throw({error, {megaco_tcp_connect, Reason}})
-	    end;
+	    start_tcp_connect(RH, MgcPort, Sup);
         {error, Reason} ->
             throw({error, {megaco_tcp_start_transport, Reason}})
     end.
 
-megaco_tcp_connect(RH, _LocalHost, SendHandle, ControlPid) ->
+start_tcp_connect(RH, Port, Sup) ->
+    {ok, LocalHost} = inet:gethostname(),
+    Opts = [{host,           LocalHost},
+	    {port,           Port}, 
+	    {receive_handle, RH},
+	    {tcp_options,    [{nodelay, true}]}],
+    try_start_tcp_connect(RH, Sup, Opts, 250, noError).
+
+try_start_tcp_connect(RH, Sup, Opts, Timeout, Error0) when (Timeout < 5000) ->
+    Sleep = random(Timeout) + 100,
+    d("try tcp connect (~p,~p)", [Timeout, Sleep]),
+    case megaco_tcp:connect(Sup, Opts) of
+	{ok, SendHandle, ControlPid} ->
+	    d("tcp connected: ~p, ~p", [SendHandle, ControlPid]),
+	    megaco_tcp_connect(RH, SendHandle, ControlPid);
+	Error1 when Error0 =:= noError -> % Keep the first error
+	    d("failed connecting [1]: ~p", [Error1]),
+	    sleep(Sleep),
+	    try_start_tcp_connect(RH, Sup, Opts, Timeout*2, Error1);
+	Error2 ->	
+	    d("failed connecting [2]: ~p", [Error2]),
+	    sleep(Sleep),
+	    try_start_tcp_connect(RH, Sup, Opts, Timeout*2, Error0)
+    end;
+try_start_tcp_connect(_RH, Sup, _Opts, _Timeout, Error) ->
+    megaco_tcp:stop_transport(Sup),
+    throw({error, {megaco_tcp_connect, Error}}).
+    
+megaco_tcp_connect(RH, SendHandle, ControlPid) ->
     PrelMgcMid = preliminary_mid,
     d("megaco connect", []),    
     {ok, CH} = megaco:connect(RH, PrelMgcMid, SendHandle, ControlPid),
@@ -1044,7 +1064,8 @@ make_notify_request(Offset, N, Actions, ReplyDatas) when N > 0 ->
     TimeStamp = cre_timeNotation(),
     Event     = cre_observedEvent("al/of", TimeStamp),
     Desc      = cre_observedEventsDesc(2000 + N, [Event]),
-    NotifyReq = cre_notifyReq([#megaco_term_id{id = tid(100+Offset-N)}],Desc),
+    TidNum    = 2#10000000 + Offset - N,
+    NotifyReq = cre_notifyReq([#megaco_term_id{id = tid(TidNum)}],Desc),
     CmdReq    = cre_commandReq({notifyReq, NotifyReq}),
     ActReq    = cre_actionReq(?megaco_null_context_id, [CmdReq]),
     make_notify_request(Offset, N-1, [[ActReq]|Actions], [Desc|ReplyDatas]).
@@ -1469,7 +1490,9 @@ random_init() ->
     random:seed(A,B,C).
 
 random() ->
-    10 * random:uniform(50).
+    random(50).
+random(N) ->
+    random:uniform(N).
 
 
 apply_load_timer() ->

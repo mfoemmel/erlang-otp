@@ -197,21 +197,20 @@
 -endif.
 
 -include("hipe.hrl").
--include("../rtl/hipe_literals.hrl").
 -include("../../compiler/src/beam_disasm.hrl").
 
 %%-------------------------------------------------------------------
 %% Basic type declaration for exported functions of the 'hipe' module
 %%-------------------------------------------------------------------
 
--type(mod() :: atom()).
--type(c_unit() :: mod() | mfa()).
--type(f_unit() :: mod() | binary()).
--type(ret_rtl() :: [_]).
--type(c_ret() :: {'ok',c_unit()} | {'error',_} |
-                 {'ok',c_unit(),ret_rtl()}). %% The last for debugging only
--type(compile_file() :: atom() | string() | binary()).
--type(compile_ret() :: {hipe_architecture(), binary()} | list()).
+-type mod() :: atom().
+-type c_unit() :: mod() | mfa().
+-type f_unit() :: mod() | binary().
+-type ret_rtl() :: [_].
+-type c_ret() :: {'ok',c_unit()} | {'error',_} |
+                 {'ok',c_unit(),ret_rtl()}. %% The last for debugging only
+-type compile_file() :: atom() | string() | binary().
+-type compile_ret() :: {hipe_architecture(), binary()} | list().
 
 %%-------------------------------------------------------------------
 
@@ -228,8 +227,8 @@
 %%
 %% @see load/2
 
--spec(load/1 :: (Mod) -> {'module', Mod} | {'error', _}
-			   when is_subtype(Mod, mod())).
+-spec load(Mod) -> {'module', Mod} | {'error', _}
+			when is_subtype(Mod, mod()).
 
 load(Mod) ->
   load(Mod, beam_file(Mod)).
@@ -250,8 +249,8 @@ load(Mod) ->
 %%
 %% @see load/1
 
--spec(load/2 :: (Mod, string()) -> {'module', Mod} | {'error', _}
-				    when is_subtype(Mod, mod())).
+-spec load(Mod, string()) -> {'module', Mod} | {'error', _}
+				    when is_subtype(Mod, mod()).
 
 load(Mod, BeamFileName) when is_list(BeamFileName) ->
   Architecture = erlang:system_info(hipe_architecture),
@@ -267,7 +266,7 @@ load(Mod, BeamFileName) when is_list(BeamFileName) ->
 %%
 %% @equiv c(Name, [])
 
--spec(c/1 :: (c_unit()) -> c_ret()).
+-spec c(c_unit()) -> c_ret().
 
 c(Name) ->
   c(Name, []).
@@ -296,7 +295,7 @@ c(Name) ->
 %% @see f/2
 %% @see compile/2
 
--spec(c/2 :: (c_unit(), comp_options()) -> c_ret()).
+-spec c(c_unit(), comp_options()) -> c_ret().
 
 c(Name, Options) ->
   c(Name, beam_file(Name), Options).
@@ -332,7 +331,7 @@ c(Name, File, Opts) ->
 %%
 %% @equiv f(File, [])
 
--spec(f/1 :: (f_unit()) -> {'ok', mod()} | {'error', _}).
+-spec f(f_unit()) -> {'ok', mod()} | {'error', _}.
 
 f(File) ->
   f(File, []).
@@ -348,7 +347,7 @@ f(File) ->
 %%
 %% @see c/3
 
--spec(f/2 :: (f_unit(), comp_options()) -> {'ok', mod()} | {'error', _}).
+-spec f(f_unit(), comp_options()) -> {'ok', mod()} | {'error', _}.
 
 f(File, Opts) ->
   case file(File, user_compile_opts(Opts)) of
@@ -371,7 +370,7 @@ user_compile_opts(Opts) ->
 %% 
 %% @equiv compile(Name, [])
 
--spec(compile/1 :: (c_unit()) -> {'ok', compile_ret()} | {'error', _}).
+-spec compile(c_unit()) -> {'ok', compile_ret()} | {'error', _}.
 
 compile(Name) ->
   compile(Name, []).
@@ -396,14 +395,12 @@ compile(Name) ->
 %% @see file/2
 %% @see load/2
 
--spec(compile/2 ::
-      (c_unit(), comp_options()) ->
-	 {'ok', compile_ret()} | {'error', _}).
+-spec compile(c_unit(), comp_options()) -> {'ok', compile_ret()} | {'error', _}.
 
 compile(Name, Options) ->
   compile(Name, beam_file(Name), Options).
 
--spec(beam_file/1 :: (mod() | mfa()) -> string()).
+-spec beam_file(mod() | mfa()) -> string().
 
 beam_file({M,F,A}) when is_atom(M), is_atom(F), is_integer(A), A >= 0 ->
   beam_file(M);
@@ -428,9 +425,8 @@ beam_file(Module) when is_atom(Module) ->
 %%
 %% @see compile/2
 
--spec(compile/3 ::
-      (c_unit(), compile_file(), comp_options()) ->
-	 {'ok', compile_ret()} | {'error', _}).
+-spec compile(c_unit(), compile_file(), comp_options()) ->
+	 {'ok', compile_ret()} | {'error', _}.
 
 compile(Name, File, Opts0) ->
   Opts1 = expand_kt2(Opts0),
@@ -462,7 +458,7 @@ compile(Name, File, Opts0) ->
 	  end
       end;
     {src_file, Source} ->
-      CoreOpts1 = [X || X = {core_transform, _} <-Opts],
+      CoreOpts1 = [X || X = {core_transform, _} <- Opts],
       CoreOpts2 = [report_errors, to_core, binary, {i,"../include"}|CoreOpts1],
       %% io:format("Using: ~w\n", [CoreOpts2]),
       case compile:file(Source, CoreOpts2) of
@@ -492,9 +488,8 @@ compile(Name, File, Opts0) ->
       run_compiler(Name, DisasmFun, IcodeFun, NewOpts)
   end.
 
--spec(compile_core/4 ::
-      (mod(), _, compile_file(), comp_options()) ->
-	 {'ok', compile_ret()} | {'error', _}).
+-spec compile_core(mod(), _, compile_file(), comp_options()) ->
+	 {'ok', compile_ret()} | {'error', _}.
 
 compile_core(Name, Core0, File, Opts) ->
   Core = cerl:from_records(Core0),
@@ -522,9 +517,8 @@ compile_core(Name, Core0, File, Opts) ->
 %%
 %% @see compile/3
 
--spec(compile/4 ::
-      (mod(), _, compile_file(), comp_options()) ->
-	 {'ok', compile_ret()} | {'error', _}).
+-spec compile(mod(), _, compile_file(), comp_options()) ->
+	 {'ok', compile_ret()} | {'error', _}.
 
 compile(Name, [], File, Opts) ->
   compile(Name, File, Opts);
@@ -543,8 +537,8 @@ compile(Name, Core, File, Opts) when is_atom(Name) ->
 %% 
 %% @equiv file(File, [])
 
--spec(file/1 :: (Mod) -> {'ok', Mod, compile_ret()} | {'error', _}
-			  when is_subtype(Mod, mod())).
+-spec file(Mod) -> {'ok', Mod, compile_ret()} | {'error', _}
+			  when is_subtype(Mod, mod()).
 
 file(File) ->
   file(File, []).
@@ -562,16 +556,16 @@ file(File) ->
 %% @see file/1
 %% @see compile/2
 
--spec(file/2 :: (Mod, comp_options()) -> {'ok', Mod, compile_ret()}
-				      |  {'error', _}
-					  when is_subtype(Mod, mod())).
+-spec file(Mod, comp_options()) -> {'ok', Mod, compile_ret()}
+				|  {'error', _}
+				     when is_subtype(Mod, mod()).
 file(File, Options) when is_atom(File) ->
   case beam_lib:info(File) of
     L when is_list(L) ->
-      {value,{module,Mod}} = lists:keysearch(module,1,L),
+      {value, {module, Mod}} = lists:keysearch(module, 1, L),
       case compile(Mod, File, Options) of
-	{ok, Bin} ->
-	  {ok, Mod, Bin};
+	{ok, CompRet} ->
+	  {ok, Mod, CompRet};
 	Other ->
 	  Other
       end;
@@ -585,16 +579,16 @@ file(File, Options) when is_atom(File) ->
 %%-----------------------------------------------------------------------
 
 %% @doc
-%% Get BEAM code from `.beam' files or direct from binaries.
+%% Get BEAM code from `.beam' files or directly from binaries.
 %%   File is either a file name or a binary containing the BEAM code.
 
 disasm(File) ->
   case beam_disasm:file(File) of
     #beam_file{exports=BeamExports, comp_info=CompInfo, code=BeamCode} ->
       {value,{options,CompOpts}} = lists:keysearch(options,1,CompInfo),
-      HCompOpts = case lists:keysearch(hipe,1,CompOpts) of
-		    {value,{hipe,L}} when is_list(L) -> L;
-		    {value,{hipe,X}} -> [X];
+      HCompOpts = case lists:keysearch(hipe, 1, CompOpts) of
+		    {value, {hipe, L}} when is_list(L) -> L;
+		    {value, {hipe, X}} -> [X];
 		    _ -> []
 		  end,
       Exports = fix_beam_exports(BeamExports),
@@ -613,7 +607,7 @@ fix_beam_exports([], Exports) ->
   Exports.
 
 get_beam_icode({M,_F,_A} = MFA, {BeamCode, Exports}, _File, Options) ->
-  ?option_time({ok,Icode} = 
+  ?option_time({ok, Icode} = 
 	       (catch {ok, hipe_beam_to_icode:mfa(BeamCode, MFA, Options)}),
 	       "BEAM-to-Icode", Options),
   {{M, Exports, Icode}, false};
@@ -1042,7 +1036,7 @@ post(Res, Icode, Options) ->
 %% --------------------------------------------------------------------
 
 %% @doc Returns the current HiPE version as a string().
--spec(version/0 :: () -> string()).
+-spec version() -> string().
 version() ->
   ?VERSION_STRING().
 
@@ -1052,7 +1046,7 @@ version() ->
 %%
 
 %% @doc Prints on-line documentation to the standard output.
--spec(help/0 :: () -> 'ok').
+-spec help() -> 'ok'.
 help() ->
   M =
     "The HiPE Compiler (Version " ++ ?VERSION_STRING() ++ ")\n" ++
@@ -1082,7 +1076,7 @@ help() ->
   io:put_chars(M),
   ok.
 
--spec(help_hiper/0 :: () -> 'ok').
+-spec help_hiper() -> 'ok'.
 help_hiper() ->
   M =
     " This interface is supposed to be used by HiPE-developers only!\n" ++
@@ -1116,7 +1110,7 @@ help_hiper() ->
 %% for available options. Right now, you only see host machine options.
 
 %% @doc Prints documentation about options to the standard output.
--spec(help_options/0 :: () -> 'ok').
+-spec help_options() -> 'ok'.
 help_options() ->
   set_architecture([]), %% needed for target-specific option expansion
   O1 = expand_options([o1]),
@@ -1156,7 +1150,7 @@ help_options() ->
 %% Documentation of the individual options.
 %% If you add an option, please add help-text here.
 
--spec(option_text/1 :: (atom()) -> string()).
+-spec option_text(atom()) -> string().
 
 option_text('O') ->
   "Specify optimization level. Used as o1, o2, o3.\n" ++
@@ -1243,13 +1237,13 @@ option_text(Opt) when is_atom(Opt) ->
 
 %% @doc Prints documentation about a specific option to the standard
 %% output.
--spec(help_option/1 :: (comp_option()) -> 'ok').
+-spec help_option(comp_option()) -> 'ok'.
 help_option(Opt) ->
   set_architecture([]), %% needed for target-specific option expansion
   case expand_options([Opt]) of
     [Opt] ->
       Name = if is_atom(Opt) -> Opt;
-		is_tuple(Opt), tuple_size(Opt) =:= 2 -> element(1, Opt)
+		tuple_size(Opt) =:= 2 -> element(1, Opt)
 	     end,
       case option_text(Name) of
 	"" ->  
@@ -1270,7 +1264,7 @@ help_option(Opt) ->
 
 %% @doc Prints documentation about debugging options to the standard
 %% output.
--spec(help_debug_options/0 :: () -> 'ok').
+-spec help_debug_options() -> 'ok'.
 help_debug_options() ->
   io:format("HiPE compiler debug options:\n" ++
 	    "  Might require that some modules have been compiled " ++ 
@@ -1503,13 +1497,13 @@ opt_expansions() ->
 %% This expands "basic" options, which may be tested early and cannot be
 %% in conflict with options found in the source code.
 
--spec(expand_basic_options/1 :: (comp_options()) -> comp_options()).
+-spec expand_basic_options(comp_options()) -> comp_options().
 expand_basic_options(Opts) ->
   proplists:normalize(Opts, [{negations, opt_negations()},
 			     {aliases, opt_aliases()},
 			     {expand, opt_basic_expansions()}]).
 
--spec(expand_kt2/1 :: (comp_options()) -> comp_options()).
+-spec expand_kt2(comp_options()) -> comp_options().
 expand_kt2(Opts) -> 
   proplists:normalize(Opts, [{expand, [{kt2_type,
 					[{use_callgraph, fixpoint}, core, 
@@ -1520,14 +1514,14 @@ expand_kt2(Opts) ->
 %% are expanded here. Basic expansions are processed here also, since
 %% this function is called from the help functions.
 
--spec(expand_options/1 :: (comp_options()) -> comp_options()).
+-spec expand_options(comp_options()) -> comp_options().
 expand_options(Opts) ->
   proplists:normalize(Opts, [{negations, opt_negations()},
 			     {aliases, opt_aliases()},
 			     {expand, opt_basic_expansions()},
 			     {expand, opt_expansions()}]).
 
--spec(check_options/1 :: (comp_options()) -> 'ok').
+-spec check_options(comp_options()) -> 'ok'.
 check_options(Opts) ->
   Keys = ordsets:from_list(opt_keys()),
   Used = ordsets:from_list(proplists:get_keys(Opts)),

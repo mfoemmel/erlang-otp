@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2004-2007</year>
+%% <year>2004-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -100,7 +100,7 @@ process_msg(Msg, TDomain, Addr, Port, State, NoteStore, Logger) ->
 
 	%% Version 1
 	#message{version = 'version-1', vsn_hdr = Community, data = Data} 
-	  when State#state.v1 == true ->
+	  when State#state.v1 =:= true ->
 	    HS = ?empty_msg_size + length(Community),
 	    process_v1_v2c_msg('version-1', NoteStore, Msg, TDomain, 
 			       Addr, Port, 
@@ -108,7 +108,7 @@ process_msg(Msg, TDomain, Addr, Port, State, NoteStore, Logger) ->
 
 	%% Version 2
 	#message{version = 'version-2', vsn_hdr = Community, data = Data}
-	  when State#state.v2c == true ->
+	  when State#state.v2c =:= true ->
 	    HS = ?empty_msg_size + length(Community),
 	    process_v1_v2c_msg('version-2', NoteStore, Msg, TDomain, 
 			       Addr, Port, 
@@ -116,7 +116,7 @@ process_msg(Msg, TDomain, Addr, Port, State, NoteStore, Logger) ->
 
 	%% Version 3
 	#message{version = 'version-3', vsn_hdr = H, data = Data}
-	  when State#state.v3 == true ->
+	  when State#state.v3 =:= true ->
 	    ?vlog("v3:"
 		"~n   msgID:       ~p"
 		"~n   msgFlags:    ~p"
@@ -166,14 +166,14 @@ process_v1_v2c_msg(Vsn, _NoteStore, Msg, snmpUDPDomain,
     ?vtrace("process_v1_v2c_msg -> PduMS: ~p", [PduMS]),
     
     case (catch snmp_pdus:dec_pdu(Data)) of
-	Pdu when record(Pdu, pdu) ->
+	Pdu when is_record(Pdu, pdu) ->
 	    ?vtrace("process_v1_v2c_msg -> was a pdu", []),
 	    Log(Msg),
 	    inc_snmp_in(Pdu),
 	    MsgData = {Community, sec_model(Vsn)},
 	    {ok, Vsn, Pdu, PduMS, MsgData};
 
-	Trap when record(Trap, trappdu) ->
+	Trap when is_record(Trap, trappdu) ->
 	    ?vtrace("process_v1_v2c_msg -> was a trap", []),
 	    Log(Msg),
 	    inc_snmp_in(Trap),
@@ -247,7 +247,7 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 	       contextName     = CtxName,
 	       data            = PDU} =
 	case (catch snmp_pdus:dec_scoped_pdu(ScopedPDUBytes)) of
-	    ScopedPDU when record(ScopedPDU, scopedPdu) -> 
+	    ScopedPDU when is_record(ScopedPDU, scopedPdu) -> 
 		ScopedPDU;
 	    {'EXIT', Reason} ->
 		?vlog("failed decoding scoped pdu: "
@@ -299,7 +299,7 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 		    %% BMK BMK: Should we discard the cached info
 		    %% BMK BMK: or do we let the gc deal with it?
  		    {ok, 'version-3', PDU, PduMMS, ok};
- 		_ when tuple(Note) ->
+ 		_ when is_tuple(Note) ->
  		    ?vlog("process_v3_msg -> 7.2.11b: error"
  			  "~n   Note: ~p", [Note]),
 		    Recv  = {SecEngineID, MsgSecModel, SecName, SecLevel,
@@ -338,11 +338,15 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 	    SnmpEngineID = get_engine_id(),
 	    case SecEngineID of
 		SnmpEngineID -> % 7.2.13.b
-		    ?vtrace("valid securityEngineID: ~p",[SnmpEngineID]),
+		    ?vtrace("valid securityEngineID: ~p", [SecEngineID]),
 		    %% 4.2.2.1.1 - we don't handle proxys yet => we only 
 		    %% handle CtxEngineID to ourselves
-		    case CtxEngineID of
-			SnmpEngineID ->
+		    %% Check that we actually know of an agent with this
+		    %% CtxEngineID and Addr/Port
+		    case is_known_engine_id(CtxEngineID, Addr, Port) of
+			true ->
+			    ?vtrace("and the agent EngineID (~p) "
+				    "is know to us", [CtxEngineID]),
 			    %% Uses ACMData that snmpm_acm knows of.
 			    %% BUGBUG BUGBUG
 			    ACMData = 
@@ -366,7 +370,7 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 							Data, 
 							ErrorInfo, 
 							Log) of
-				{ok, Report} when NIsReportable == true ->
+				{ok, Report} when NIsReportable =:= true ->
 				    discard(snmpUnknownPDUHandlers, Report);
 				_ ->
 				    discard(snmpUnknownPDUHandlers)
@@ -386,7 +390,7 @@ process_v3_msg(NoteStore, Msg, Hdr, Data, Addr, Port, Log) ->
 
 
 sec_error(T1, T2) 
-  when tuple(T1), tuple(T2), size(T1) == size(T2) ->
+  when is_tuple(T1) andalso is_tuple(T2) andalso (size(T1) =:= size(T2)) ->
     Tags = {sec_engine_id, msg_sec_model, sec_name, sec_level, 
 	    ctx_engine_id, ctx_name, request_id}, 
     sec_error(size(T1), T1, T2, Tags, []);
@@ -396,7 +400,7 @@ sec_error(T1, T2) ->
 sec_error(0, _T1, _T2, _Tags, Acc) ->
     Acc;
 sec_error(Idx, T1, T2, Tags, Acc) ->
-    case element(Idx, T1) == element(Idx, T2) of
+    case element(Idx, T1) =:= element(Idx, T2) of
 	true ->
 	    sec_error(Idx - 1, T1, T2, Tags, Acc);
 	false ->
@@ -432,7 +436,8 @@ is_reportable([MsgFlag]) ->
 
 check_sec_module_result({ok, X}, _, _, _, _) ->
     X;
-check_sec_module_result({error, Reason, Info}, _, _, _, _) when list(Info) ->
+check_sec_module_result({error, Reason, Info}, _, _, _, _) 
+  when is_list(Info) ->
     %% case 7.2.6 b
     discard({securityError, Reason, Info});
 check_sec_module_result({error, Reason, ErrorInfo}, V3Hdr, Data, true, Log) ->
@@ -458,7 +463,7 @@ check_sec_module_result(Res, _, _, _, _) ->
 	    "~n   Res: ~p", [Res]),
     discard({securityError, Res}).
 
-get_scoped_pdu(D) when list(D) ->
+get_scoped_pdu(D) when is_list(D) ->
     (catch snmp_pdus:dec_scoped_pdu(D));
 get_scoped_pdu(D) ->
     D.
@@ -653,7 +658,7 @@ generate_v3_response_msg(#pdu{type = Type} = Pdu, MsgID,
 		    inc_snmp_out(Pdu),
 		    {ok, Packet};
 		
-		{ok, _Packet} when Pdu#pdu.error_status == tooBig ->
+		{ok, _Packet} when Pdu#pdu.error_status =:= tooBig ->
 		    ?vlog("packet max size exceeded (tooBog): "
 			  "~n   MMS: ~p", [MMS]),
 		    inc(snmpSilentDrops),
@@ -687,11 +692,11 @@ generate_v3_outgoing_msg(Message,
 	{error, Reason} ->
 	    config_err("~p (message: ~p)", [Reason, Message]),
 	    {discarded, Reason};
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {ok, Bin};
-	OutMsg when list(OutMsg) ->
+	OutMsg when is_list(OutMsg) ->
 	    case (catch list_to_binary(OutMsg)) of
-		Bin when binary(Bin) ->
+		Bin when is_binary(Bin) ->
 		    {ok, Bin};
 		{'EXIT', Reason} ->
 		    {error, Reason}
@@ -782,11 +787,11 @@ generate_v1_v2c_outgoing_msg(Message) ->
     case (catch snmp_pdus:enc_message_only(Message)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {ok, Bin};
-	Packet when list(Packet) ->
+	Packet when is_list(Packet) ->
 	    case (catch list_to_binary(Packet)) of
-		Bin when binary(Bin) ->
+		Bin when is_binary(Bin) ->
 		    {ok, Bin};
 		{'EXIT', Reason} ->
 		    {error, Reason}
@@ -796,7 +801,7 @@ generate_v1_v2c_outgoing_msg(Message) ->
 
 
 generate_v3_report_msg(MsgID, SecModel, ScopedPdu, ErrInfo, Log) 
-  when record(ScopedPdu, scopedPdu) ->
+  when is_record(ScopedPdu, scopedPdu) ->
     ReqID = (ScopedPdu#scopedPdu.data)#pdu.request_id,
     generate_v3_report_msg2(MsgID, ReqID, SecModel, ErrInfo, Log);
 generate_v3_report_msg(MsgID, SecModel, _, ErrInfo, Log) ->
@@ -854,6 +859,9 @@ get_engine_id() ->
 %% The engine id of the agent
 get_agent_engine_id(Name) ->
     snmpm_config:get_agent_engine_id(Name).
+
+is_known_engine_id(EngineID, Addr, Port) ->
+    snmpm_config:is_known_engine_id(EngineID, Addr, Port).
 
 % get_agent_engine_id(Addr, Port) ->
 %     case snmpm_config:get_agent_engine_id(Addr, Port) of
@@ -960,7 +968,7 @@ inc(Name, N) -> snmpm_config:incr_stats_counter(Name, N).
 
 inc_snmp_in(#pdu{type = Type}) ->
     inc_in_type(Type);
-inc_snmp_in(TrapPdu) when record(TrapPdu, trappdu) ->
+inc_snmp_in(TrapPdu) when is_record(TrapPdu, trappdu) ->
     inc(snmpInPkts),
     inc(snmpInTraps).
 

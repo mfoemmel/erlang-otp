@@ -1068,10 +1068,12 @@ mediaParm            -> terminationStateDescriptor
 
 %% at-most-once .
 %% Specially treated by the scanner.
-streamParm           -> 'LocalDescriptorToken'
-		      : {local, #'LocalRemoteDescriptor'{propGrps = ensure_prop_groups('$1')} } .
-streamParm           -> 'RemoteDescriptorToken'
-		      : {remote, #'LocalRemoteDescriptor'{propGrps = ensure_prop_groups('$1')}} .
+streamParm           -> 'LocalDescriptorToken' :
+                      PGs = ensure_prop_groups('$1'), 
+		      {local, #'LocalRemoteDescriptor'{propGrps = PGs}} .
+streamParm           -> 'RemoteDescriptorToken' : 
+                      PGs = ensure_prop_groups('$1'), 
+		      {remote, #'LocalRemoteDescriptor'{propGrps = PGs}} .
 streamParm           -> localControlDescriptor  : {control, '$1'} .
 streamParm           -> statisticsDescriptor    : {statistics, '$1'} .
 

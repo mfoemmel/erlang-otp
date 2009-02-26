@@ -154,6 +154,7 @@ handle_error(Reason, ConfigDb) ->
     String = lists:flatten(io_lib:format("Accept error: ~p", [Reason])),
     accept_failed(ConfigDb, String).
 
+-spec accept_failed(_, string()) -> no_return(). 
 
 accept_failed(ConfigDb, String) ->
     error_logger:error_report(String),

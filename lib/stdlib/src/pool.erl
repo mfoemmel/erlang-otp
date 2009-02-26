@@ -101,7 +101,7 @@ handle_call(get_nodes, _From, Nodes)->
     {reply, Nodes, Nodes};
 
 handle_call(get_node, _From, [{Load,N}|Tail]) ->
-    {reply, N, lists:append(Tail, [{Load+1, N}])};
+    {reply, N, Tail++[{Load+1, N}]};
 
 handle_call({attach, Node}, _From, Nodes) ->
     case lists:keysearch(Node,2,Nodes) of
@@ -110,13 +110,13 @@ handle_call({attach, Node}, _From, Nodes) ->
 	false ->
 	    erlang:monitor_node(Node, true),
 	    spawn_link(Node, pool, statistic_collector, []),
-	    {reply, attached, lists:append(Nodes,[{999999,Node}])}
+	    {reply, attached, Nodes++[{999999,Node}]}
     end;
 
 handle_call({spawn,Gl, M, F, A}, _From, Nodes) ->
     [{Load,N}|Tail] = Nodes,
     Pid = spawn(N, pool, do_spawn, [Gl, M, F, A]),
-    {reply, Pid, lists:append(Tail, [{Load+1, N}]) };
+    {reply, Pid, Tail++[{Load+1, N}]};
 
 handle_call(stop, _From, Nodes) ->
     %% clean up in terminate/2

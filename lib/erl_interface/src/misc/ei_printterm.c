@@ -208,20 +208,21 @@ static int print_term(FILE* fp, ei_x_buff* x,
     case ERL_BINARY_EXT:
 	p = ei_malloc(n);
 	if (p == NULL) goto err;
-	if (ei_decode_binary(buf, index, p, (long*)&n) < 0) {
+	if (ei_decode_binary(buf, index, p, &l) < 0) {
 	    ei_free(p);
 	    goto err;
 	}
 	ch_written += xprintf(fp, x, "#Bin<");
-	m = n;
-	if (n > BINPRINTSIZE)
+	if (l > BINPRINTSIZE)
 	    m = BINPRINTSIZE;
+	else
+	    m = l;
 	--m;
 	for (i = 0; i < m; ++i) {
 	    ch_written += xprintf(fp, x, "%d,", p[i]);
 	}
 	ch_written += xprintf(fp, x, "%d", p[i]);
-	if (n > BINPRINTSIZE)
+	if (l > BINPRINTSIZE)
 	    ch_written += xprintf(fp, x, ",...");
 	xputc('>', fp, x); ++ch_written;
 	ei_free(p);

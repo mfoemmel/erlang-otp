@@ -31,6 +31,124 @@
   </header>
   <p>This document describes the changes made to the STDLIB application.</p>
 
+<section><title>STDLIB 1.15.5</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>A bug in the <c>qlc</c> module has been fixed: when
+	    merge joining two query handles the temporary file used
+	    for equivalence classes was not truncated properly which
+	    could result in poor performance.</p>
+          <p>
+	    Own Id: OTP-7552</p>
+        </item>
+        <item>
+          <p>
+	    The characters 16#C0 and 16#E0 ("A" and "a" with grave
+	    accent), were not properly converted by the
+	    <c>string:to_lower/1</c> and <c>string:to_upper/1</c>
+	    functions. (Thanks to Richard O'Keefe.)</p>
+          <p>
+	    Own Id: OTP-7589</p>
+        </item>
+        <item>
+          <p>
+	    The function <c>pool:attach/1</c> now returns
+	    <c>already_attached</c> if the node is already attached,
+	    rather than <c>allready_attached</c> (sic!). (Thanks to
+	    Edwin Fine.)</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7603</p>
+        </item>
+        <item>
+	    <p>The documentation for <c>io:get_line/1,2</c> now
+	    mentions that the return value can also be
+	    <c>{error,Reason}</c>.</p>
+          <p>
+	    Own Id: OTP-7604 Aux Id: seq11063 </p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    The split function is now added to the re library.
+	    Exceptions and errors from both run, replace and split
+	    are made more consistent.</p>
+          <p>
+	    Own Id: OTP-7514 Aux Id: OTP-7494 </p>
+        </item>
+        <item>
+	    <p>Processes spawned using <c>proc_lib</c> (including
+	    <c>gen_server</c> and other library modules that use
+	    <c>proc_lib</c>) no longer keep the entire argument list
+	    for the initial call, but only the arity.</p>
+	    <p>Also, if <c>proc_lib:spawn/1</c> is used to spawn a
+	    fun, the actual fun is not kept, but only module,
+	    function name, and arity of the function that implements
+	    the fun.</p>
+	    <p>The reason for the change is that keeping the initial
+	    fun (or a fun in an argument list), would prevent
+	    upgrading the code for the module. A secondary reason is
+	    that keeping the fun and function arguments could waste a
+	    significant amount of memory.</p>
+	    <p>The drawback with the change is that the crash reports
+	    will provide less precise information about the initial
+	    call (only <c>Module:Function/Arity</c> instead of
+	    <c>Module:Function(Arguments)</c>). The function
+	    <c>proc_lib:initial_call/1</c> still returns a list, but
+	    each argument has been replaced with a dummy atom.</p>
+          <p>
+	    Own Id: OTP-7531 Aux Id: seq11036 </p>
+        </item>
+        <item>
+          <p>
+	    There is now experimental support for loading of code
+	    from archive files. See the documentation of <c>code</c>,
+	    <c>init</c>, <c>erl_prim_loader </c> and <c>escript</c>
+	    for more info.</p>
+          <p>
+	    The error handling of <c>escripts</c> has been improved.</p>
+          <p>
+	    An <c>escript</c> may now set explicit arguments to the
+	    emulator, such as <c>-smp enabled</c>.</p>
+          <p>
+	    An <c>escript</c> may now contain a precompiled beam
+	    file.</p>
+          <p>
+	    An <c>escript</c> may now contain an archive file
+	    containing one or more applications (experimental).</p>
+          <p>
+	    The internal module <c>code_aux</c> has been removed.</p>
+          <p>
+	    Own Id: OTP-7548 Aux Id: otp-6622 </p>
+        </item>
+        <item>
+          <p>
+	    Enabled explicit control of which types of files that
+	    should be compressed in a ZIP archive.</p>
+          <p>
+	    Own Id: OTP-7549 Aux Id: otp-6622 </p>
+        </item>
+        <item>
+          <p>
+	    In the job control mode, the "s" and "r" commands now
+	    take an optional argument to specify which shell to
+	    start. (Thanks to Robert Virding.)</p>
+          <p>
+	    Own Id: OTP-7617</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>STDLIB 1.15.4</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

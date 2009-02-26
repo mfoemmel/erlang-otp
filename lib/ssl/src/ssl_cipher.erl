@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2007-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Help functions for handling the SSL ciphers
@@ -25,56 +27,14 @@
 -include("ssl_internal.hrl").
 -include("ssl_record.hrl").
 -include("ssl_cipher.hrl").
--include("ssl_pkix.hrl").
 -include("ssl_debug.hrl").
 
--export([master_secret/4, setup_keys/9, get_handshake_hashes/4, mac_hash/7,
-	 security_parameters/2, suite_definition/1,
-	 rsa_encrypt/2, rsa_decrypt/3,
-	 digest/2, decipher/4, cipher/4, % hmac_hash/3
-	 verify_signature/5, digitally_sign/3,
+-export([security_parameters/2, suite_definition/1,
+	 decipher/4, cipher/4, 
 	 suite/1, suites/1,
-	 openssl_suite/1, openssl_suite_name/1,
-	 format_encryption_block/3, unformat_encryption_block/2]).
+	 openssl_suite/1, openssl_suite_name/1]).
 
-master_secret(#protocol_version{major = 3, minor = 0}, 
-	      PremasterSecret, ClientRandom, ServerRandom) ->
-    ssl_ssl3:master_secret(PremasterSecret, ClientRandom, ServerRandom);
-
-master_secret(#protocol_version{major = 3, minor = N},
-	      PremasterSecret, ClientRandom, ServerRandom) when  N == 1;
-								 N == 2 ->
-    ssl_tls1:master_secret(PremasterSecret, ClientRandom, ServerRandom).
-
-setup_keys(#protocol_version{major = 3, minor = 0}, Exportable, MasterSecret,
-	   ServerRandom, ClientRandom, HashSize, KML, EKML, IVS) ->
-    ssl_ssl3:setup_keys(Exportable, MasterSecret, ServerRandom, 
-			ClientRandom, HashSize, KML, EKML, IVS);
-
-setup_keys(#protocol_version{major = 3, minor = N}, _Exportable, MasterSecret,
-	   ServerRandom, ClientRandom, HashSize, KML, _EKML, IVS) when  N == 1; 
-								 N == 2 ->
-    ssl_tls1:setup_keys(MasterSecret, ServerRandom, ClientRandom, HashSize, 
-			KML, IVS).
-
-get_handshake_hashes(#protocol_version{major = 3, minor = 0},
-		Role, MasterSecret, Hashes) ->
-    ssl_ssl3:get_handshake_hashes(Role, MasterSecret, Hashes);
-get_handshake_hashes(#protocol_version{major = 3, minor = N},
-		Role, MasterSecret, Hashes) when  N == 1; 
-						  N == 2 ->
-    ssl_tls1:get_handshake_hashes(Role, MasterSecret, Hashes).
-
-
-mac_hash(?NULL, #protocol_version{}, _MacSecret, _SeqNo, _Type,
-	 _Length, _Fragment) ->
-    <<>>;
-mac_hash(MacAlg, #protocol_version{major = 3, minor = 0},
-	 MacSecret, SeqNo, Type, Length, Fragment) ->
-    ssl_ssl3:mac_hash(MacAlg, MacSecret, SeqNo, Type, Length, Fragment);
-mac_hash(MacAlg, #protocol_version{major = 3, minor = N},
-	 MacSecret, SeqNo, Type, Length, Fragment)  when  N == 1; N == 2 ->
-    ssl_tls1:mac_hash(MacAlg, MacSecret, SeqNo, Type, Length, Fragment).
+-compile(inline).
 
 %%--------------------------------------------------------------------
 %% Function: security_parameters(CipherSuite, SecParams) -> 
@@ -103,7 +63,8 @@ security_parameters(CipherSuite, SecParams) ->
       exportable = Exportable}.
 
 %%--------------------------------------------------------------------
-%% Function: cipher(Method, CipherState, Mac, Data) -> {Encrypted, UpdateCipherState}
+%% Function: cipher(Method, CipherState, Mac, Data) -> 
+%%                                         {Encrypted, UpdateCipherState}
 %%
 %% Method - integer() (as defined in ssl_cipher.hrl)
 %% CipherState, UpdatedCipherState - #cipher_state{}
@@ -113,19 +74,18 @@ security_parameters(CipherSuite, SecParams) ->
 %% the cipher state
 %%-------------------------------------------------------------------
 cipher(?NULL, CipherState, <<>>, Fragment) ->
-    {generic_stream_cipher_to_list(
-       #generic_stream_cipher{content=Fragment, mac= <<>>}), CipherState};
+    GenStreamCipherList = [Fragment, <<>>],
+    {GenStreamCipherList, CipherState};
 cipher(?RC4, CipherState, Mac, Fragment) ->
     State0 = case CipherState#cipher_state.state of
                  undefined -> crypto:rc4_set_key(CipherState#cipher_state.key);
                  S -> S
              end,
-    GSC = #generic_stream_cipher{content = Fragment, mac = Mac},
-    L = generic_stream_cipher_to_list(GSC),
-    ?DBG_HEX(L),
+    GenStreamCipherList = [Fragment, Mac],
+
+    ?DBG_HEX(GenStreamCipherList),
     ?DBG_HEX(State0),
-    {State1, T} = 
-	crypto:rc4_encrypt_with_state(State0, L),
+    {State1, T} = crypto:rc4_encrypt_with_state(State0, GenStreamCipherList),
     ?DBG_HEX(T),
     {T, CipherState#cipher_state{state = State1}};
 cipher(?DES, CipherState, Mac, Fragment) ->
@@ -155,26 +115,22 @@ cipher(?RC2, CipherState, Mac, Fragment) ->
 			 crypto:rc2_40_cbc_encrypt(Key, IV, T)
 		 end, block_size(rc2_cbc_40), CipherState, Mac, Fragment).
 
-block_cipher(Fun, BlockSz, CipherState0, Mac, Fragment ) ->
-    #cipher_state{key=Key, iv=IV} = CipherState0,
-    TotSz = size(Mac)+erlang:iolist_size(Fragment)+1,
-    {Padding, PaddingLength} = get_padding(TotSz, BlockSz),
-    GBC = #generic_block_cipher{content = Fragment,
-				mac = Mac,
-				padding = Padding,
-				padding_length = PaddingLength},
-    L = generic_block_cipher_to_list(GBC),
+block_cipher(Fun, BlockSz, #cipher_state{key=Key, iv=IV} = CS0, 
+	     Mac, Fragment) ->
+    TotSz = erlang:byte_size(Mac) + erlang:iolist_size(Fragment)+1,
+    {PaddingLength, Padding} = get_padding(TotSz, BlockSz),
+    L = [Fragment, Mac, PaddingLength, Padding],
     ?DBG_HEX(Key),
     ?DBG_HEX(IV),
     ?DBG_HEX(L),
     T = Fun(Key, IV, L),
     ?DBG_HEX(T),
     NextIV = next_iv(T, IV),
-    CipherState1 = CipherState0#cipher_state{iv=NextIV},
-    {T, CipherState1}.
+    {T, CS0#cipher_state{iv=NextIV}}.
 
 %%--------------------------------------------------------------------
-%% Function: decipher(Method, CipherState, Mac, Data) -> {Decrypted, UpdateCipherState}
+%% Function: decipher(Method, CipherState, Mac, Data) -> 
+%%                                           {Decrypted, UpdateCipherState}
 %%
 %% Method - integer() (as defined in ssl_cipher.hrl)
 %% CipherState, UpdatedCipherState - #cipher_state{}
@@ -225,8 +181,8 @@ decipher(?RC2, HashSz, CipherState, Fragment) ->
 			   crypto:rc2_40_cbc_decrypt(Key, IV, T)
 		   end, CipherState, HashSz, Fragment).
 
-block_decipher(Fun, CipherState0, HashSz, Fragment) ->
-    #cipher_state{key=Key, iv=IV} = CipherState0,
+block_decipher(Fun, #cipher_state{key=Key, iv=IV} = CipherState0, 
+	       HashSz, Fragment) ->
     ?DBG_HEX(Key),
     ?DBG_HEX(IV),
     ?DBG_HEX(Fragment),
@@ -240,96 +196,6 @@ block_decipher(Fun, CipherState0, HashSz, Fragment) ->
     {Content, Mac, CipherState1}.
 
 %%--------------------------------------------------------------------
-%% Function: rsa_encrypt(Plain, Key) -> Encrypted
-%% Function: rsa_encrypt(Plain, Mod, Exp) -> Encrypted
-%%
-%% Plain - integer()
-%% Key -  #'RSAPublicKey'{} | #'RSAPrivateKey'{}
-%% Mod -   integer()
-%% Exp -   integer()
-%% Encrypted - binary()
-%%
-%% Description: Rsa encrypts <Plain> using the parameters <Mod> and <Exp>
-%%-------------------------------------------------------------------
-rsa_encrypt(Plain, #'RSAPublicKey'{modulus=M, publicExponent=E}) ->
-    rsa_mod_exp(Plain, M, E);
-rsa_encrypt(Plain, #'RSAPrivateKey'{modulus=M, privateExponent=E}) ->
-    rsa_mod_exp(Plain, M, E).
-
-%%--------------------------------------------------------------------
-%% Function: rsa_decrypt(Encrypted, Mod, Exp) -> Plain
-%%
-%% Encrypted - iolist()
-%% Mod -       integer()
-%% Exp -       integer()
-%% Plain -     binary()
-%%
-%% Description: Rsa encrypts <Plain> using the parameters <Mod> and <Exp>
-%%-------------------------------------------------------------------
-rsa_decrypt(Encrypted, Mod, Exp) ->
-    rsa_mod_exp(Encrypted, Mod, Exp).
-
-rsa_mod_exp(Encrypted, Mod, Exp) ->
-    mpint2binary(crypto:mod_exp(iolist2mpint(Encrypted), crypto:mpint(Exp),
-			crypto:mpint(Mod))). % stupid crypto got it backwards!?
-
-
-%%--------------------------------------------------------------------
-%% Function: digest(Algorithm, Cert) -> Digest
-%%
-%% Algorithm = pkix1 algorithm
-%% Cert = binary() - asn1 cert
-%% Digest = binary()
-%%
-%% Description: Calculates the digest of <Cert> using <Algorithm>.  
-%%-------------------------------------------------------------------
-digest(sha1WithRSAEncryption, Cert) ->
-    TBSCert = ssl_pkix:encoded_tbs_cert(Cert),
-    crypto:sha(TBSCert);
-
-digest(md5WithRSAEncryption, Cert) ->
-    TBSCert = ssl_pkix:encoded_tbs_cert(Cert),
-    crypto:md5(TBSCert).
-
-%%--------------------------------------------------------------------
-%% Function: verify_signature(Algorithm, Digest, Signature, Key, Params) -> 
-%%                                                     true | false
-%% Algorithm = pkix1 algorithm
-%% Digest = binary()
-%% Signature = binary()
-%% Key =  pkix1 key
-%% Params =  pkix1 params
-%%
-%% Description: Verifies the signature <Signature> by encrypting
-%% the Signature using Key and Params and comapring it to Digest.
-%%-------------------------------------------------------------------
-verify_signature(rsaEncryption, Digest, Signature, Key, _Params) ->
-    B = rsa_encrypt(Signature, Key), 		% 10.2.2, rfc2313
-    D = unformat_encryption_block(B, 1),%% TODO:  check that it's really type 1 formatted!
-    Dig = ssl_pkix:signature_digest(D),		% 10.2.3
-    Dig == Digest.				% 10.2.4
-%% TODO: more claused of verify_signature, DSS
-
-%%--------------------------------------------------------------------
-%% Function: digitally_sign(Algorithm, Digest, Key, Params) -> 
-%%						Signature
-%% Algorithm = pkix1 algorithm
-%% Digest = binary()
-%% Signature = binary()
-%% Key =  pkix1 key
-%% Params =  pkix1 params
-%%
-%% Description: create a signature
-%%-------------------------------------------------------------------
-digitally_sign(rsa, Hashes, Key) ->
-    Sz = int_byte_size(Key#'RSAPrivateKey'.modulus),
-    F = format_encryption_block(Hashes, Sz+1, 1),
-    ?DBG_TERM(Key),
-    rsa_encrypt(F, Key).
-%% TODO: more claused of digitally_sign, DSS
-    
-
-%%--------------------------------------------------------------------
 %% Function: suites(Version) -> [Suite]
 %%
 %% Version = version()
@@ -337,9 +203,9 @@ digitally_sign(rsa, Hashes, Key) ->
 %%
 %% Description: Returns a list of supported cipher suites.
 %%--------------------------------------------------------------------
-suites(#protocol_version{major = 3, minor = 0}) ->
+suites({3, 0}) ->
     ssl_ssl3:suites();
-suites(#protocol_version{major = 3, minor = N}) when N == 1; N == 2 ->
+suites({3, N}) when N == 1; N == 2 ->
     ssl_tls1:suites().
 
 %%--------------------------------------------------------------------
@@ -753,8 +619,9 @@ openssl_suite_name(Cipher) ->
 
 bulk_cipher_algorithm(null) ->
     ?NULL;
-bulk_cipher_algorithm(idea_cbc) ->
-    ?IDEA;
+%% Not supported yet
+%% bulk_cipher_algorithm(idea_cbc) ->
+%%     ?IDEA;
 bulk_cipher_algorithm(Cipher) when Cipher == rc2_cbc_40;
 				   Cipher == rc2_cbc_56 ->
     ?RC2;
@@ -900,16 +767,6 @@ generic_stream_cipher_from_bin(T, HashSz) ->
 check_padding(_GBC) ->
     ok.
 
-generic_block_cipher_to_list(#generic_block_cipher{content=Content,
-						   mac=Mac,
-						   padding=Padding,
-						   padding_length=PaddingLength}) ->
-    [Content, Mac, Padding, PaddingLength].
-
-generic_stream_cipher_to_list(#generic_stream_cipher{content=Content,
-						     mac=Mac}) ->
-    [Content, Mac].
-
 get_padding(Length, BlockSize) ->
     get_padding_aux(BlockSize, Length rem BlockSize).
 
@@ -919,19 +776,6 @@ get_padding_aux(BlockSize, PadLength) ->
     N = BlockSize - PadLength,
     {N, list_to_binary(lists:duplicate(N, N))}.
 
-mpint2binary(<<_, _, _, _, 0, Rest/binary>>) ->
-    Rest;
-mpint2binary(<<_, _, _, _, Rest/binary>>) ->
-    Rest.
-
-iolist2mpint(L) ->
-    Bin = erlang:iolist_to_binary(L),
-    Sz = size(Bin),
-    <<?UINT32(Sz), Bin/binary>>.
-
-int_byte_size(I) when is_integer(I) ->
-    size(mpint2binary(crypto:mpint(I))).
-
 next_iv(Bin, IV) ->
     BinSz = size(Bin),
     IVSz = size(IV),
@@ -939,42 +783,3 @@ next_iv(Bin, IV) ->
     <<_:FirstPart/binary, NextIV:IVSz/binary>> = Bin,
     NextIV.
 
-filler(0, Sz) ->
-    lists:duplicate(Sz, 0);
-filler(1, Sz) ->
-    lists:duplicate(Sz, 255);
-filler(2, Sz) ->
-    rand_nonzero_bytes(Sz).
-
-format_encryption_block(Data, WantedLength, BlockType) ->
-    Sz = erlang:iolist_size(Data),
-    Filler = filler(BlockType, WantedLength - Sz - 4),
-    [0, BlockType, Filler, 0, Data].
-
-rand_nonzero_bytes(N) ->
-    L = binary_to_list(crypto:rand_bytes(N)),
-    Lnz = lists:map(fun(0) ->
-                            crypto:rand_uniform(1, 256);
-                       (B) ->
-                            B
-                    end, L),
-    list_to_binary(Lnz).
-
-
-after_zero(<<0, Rest/binary>>) ->
-    Rest;
-after_zero(<<_, Rest/binary>>) ->
-    after_zero(Rest);
-after_zero(<<>>) ->
-    <<>>.
-
-after_initial_zeroes(<<0, Rest/binary>>) ->
-    after_initial_zeroes(Rest);
-after_initial_zeroes(<<Binary/binary>>) ->
-    Binary.
-
-%% TODO kolla att filler verkligen är rätt värde
-unformat_encryption_block(Data, 0) ->
-    after_initial_zeroes(Data);
-unformat_encryption_block(Data, _BlockType) ->
-    after_zero(after_initial_zeroes(Data)).

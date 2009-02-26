@@ -51,8 +51,8 @@
 
 %% =====================================================================
 
--type(filename() :: string()).
--type(options()  :: [atom() | {atom(),_}]).
+-type filename() :: string().
+-type options()  :: [atom() | {atom(), any()}].
 
 %% =====================================================================
 
@@ -265,11 +265,10 @@ file(Name) ->
 %%
 %%   <dt>{test, bool()}</dt>
 %%
-%%       <dd>If the value is `true', no files will be
-%%       modified; this is typically most useful if the
-%%       `verbose' flag is enabled, to generate reports
-%%       about the program files without affecting them. The default
-%%       value is `false'.</dd>
+%%       <dd>If the value is `true', no files will be modified; this
+%%       is typically most useful if the `verbose' flag is enabled, to
+%%       generate reports about the program files without affecting
+%%       them. The default value is `false'.</dd>
 %% </dl>
 %%
 %% See the function `module/2' for further options.
@@ -289,11 +288,14 @@ file(Name, Opts) ->
     end.
 
 file_1(Parent, Name, Opts) ->
-    case catch file_2(Name, Opts) of
-        {'EXIT', Reason} ->
-            Parent ! {self(), {error, Reason}};
-        _ ->
-            Parent ! {self(), ok}
+    try file_2(Name, Opts) of
+	_ ->
+	    Parent ! {self(), ok}
+    catch
+	throw:syntax_error ->       % ignore syntax errors
+	    Parent ! {self(), ok};
+	error:Reason ->
+	    Parent ! {self(), {error, Reason}}
     end.
 
 file_2(Name, Opts) ->
@@ -312,7 +314,7 @@ file_2(Name, Opts) ->
 
 read_module(Name, Opts) ->
     verbose("reading module `~s'.", [filename(Name)], Opts),
-    case epp_dodger:parse_file(Name) of
+    case epp_dodger:parse_file(Name, [no_fail]) of
         {ok, Forms} ->
             check_forms(Forms, Name),
             Forms;
@@ -496,7 +498,7 @@ module(Forms) ->
 %% definition. The given `Forms' may be either a single
 %% syntax tree of type `form_list', or a list of syntax
 %% trees representing "program forms". In either case,
-%% `Forms' must represents a single complete module
+%% `Forms' must represent a single complete module
 %% definition. The returned syntax tree has type
 %% `form_list' and represents a tidied-up version of the
 %% same source code.
@@ -529,10 +531,9 @@ module(Forms) ->
 %%
 %%   <dt>{auto_list_comp, bool()}</dt>
 %%
-%%       <dd>If the value is `true', calls to
-%%       `lists:map/2' and `lists:filter/2' will
-%%       be rewritten using list comprehensions. The default value is
-%%       `true'.</dd>
+%%       <dd>If the value is `true', calls to `lists:map/2' and
+%%       `lists:filter/2' will be rewritten using list comprehensions.
+%%       The default value is `true'.</dd>
 %%
 %%   <dt>{file, string()}</dt>
 %%
@@ -542,12 +543,11 @@ module(Forms) ->
 %%
 %%   <dt>{idem, bool()}</dt>
 %%
-%%       <dd>If the value is `true', all options that affect
-%%       how the code is modified are set to "no changes". For example,
-%%       to only update guard tests, and nothing else, use the options
-%%       `[new_guard_tests, idem]'. (Recall that options
-%%       closer to the beginning of the list have higher
-%%       precedence.)</dd>
+%%       <dd>If the value is `true', all options that affect how the
+%%       code is modified are set to "no changes". For example, to
+%%       only update guard tests, and nothing else, use the options
+%%       `[new_guard_tests, idem]'. (Recall that options closer to the
+%%       beginning of the list have higher precedence.)</dd>
 %%
 %%   <dt>{keep_unused, bool()}</dt>
 %%
@@ -557,26 +557,24 @@ module(Forms) ->
 %%
 %%   <dt>{new_guard_tests, bool()}</dt>
 %%
-%%       <dd>If the value is `true', guard tests will be
-%%       updated to use the new names, e.g. "`is_integer(X)'"
-%%       instead of "`integer(X)'". The default value is
-%%       `true'. See also `old_guard_tests'.</dd>
+%%       <dd>If the value is `true', guard tests will be updated to
+%%       use the new names, e.g. "`is_integer(X)'" instead of
+%%       "`integer(X)'". The default value is `true'. See also
+%%       `old_guard_tests'.</dd>
 %%
 %%   <dt>{no_imports, bool()}</dt>
 %%
-%%       <dd>If the value is `true', all import statements
-%%       will be removed and calls to imported functions will be
-%%       expanded to explicit remote calls. The default value is
-%%       `false'.</dd>
+%%       <dd>If the value is `true', all import statements will be
+%%       removed and calls to imported functions will be expanded to
+%%       explicit remote calls. The default value is `false'.</dd>
 %%
 %%   <dt>{old_guard_tests, bool()}</dt>
 %%
-%%       <dd>If the value is `true', guard tests will be
-%%       changed to use the old names instead of the new ones,
-%%       e.g. "`integer(X)'" instead of
-%%       "`is_integer(X)'". The default value is
-%%       `false'. This option overrides the
-%%       `new_guard_tests' option.</dd>
+%%       <dd>If the value is `true', guard tests will be changed to
+%%       use the old names instead of the new ones, e.g.
+%%       "`integer(X)'" instead of "`is_integer(X)'". The default
+%%       value is `false'. This option overrides the `new_guard_tests'
+%%       option.</dd>
 %%
 %%   <dt>{quiet, bool()}</dt>
 %%
@@ -588,10 +586,9 @@ module(Forms) ->
 %%                  {atom(), atom()}}]}</dt>
 %%
 %%       <dd>The value is a list of pairs, associating tuples
-%%       `{Module, Name, Arity}' with tuples
-%%       `{NewModule, NewName}', specifying renamings of
-%%       calls to remote functions. By default, the value is the empty
-%%       list.
+%%       `{Module, Name, Arity}' with tuples `{NewModule, NewName}',
+%%       specifying renamings of calls to remote functions. By
+%%       default, the value is the empty list.
 %%
 %%       The renaming affects only remote calls (also when
 %%       disguised by import declarations); local calls within a
@@ -608,10 +605,9 @@ module(Forms) ->
 %%
 %%   <dt>{verbose, bool()}</dt>
 %%
-%%       <dd>If the value is `true', progress messages
-%%       will be output while the program is running, unless the
-%%       `quiet' option is `true'. The default
-%%       value is `false'.</dd>
+%%       <dd>If the value is `true', progress messages will be output
+%%       while the program is running, unless the `quiet' option is
+%%       `true'. The default value is `false'.</dd>
 %%
 %% </dl>
 
@@ -674,6 +670,11 @@ analyze_forms(Forms, File) ->
             throw(R)
     end.
 
+%% XXX: The following should be imported from erl_syntax_lib
+-type key()       :: atom().
+-type info_pair() :: {key(), any()}.
+
+-spec get_module_name([info_pair()], string()) -> atom().
 get_module_name(List, File) ->
     case lists:keysearch(module, 1, List) of
         {value, {module, M}} ->
@@ -692,6 +693,7 @@ get_module_attributes(List) ->
             []
     end.
 
+-spec get_module_exports([info_pair()]) -> [{atom(), byte()}].
 get_module_exports(List) ->
     case lists:keysearch(exports, 1, List) of
         {value, {exports, Es}} ->
@@ -700,6 +702,7 @@ get_module_exports(List) ->
             []
     end.
 
+-spec get_module_imports([info_pair()]) -> [{atom(), atom()}].
 get_module_imports(List) ->
     case lists:keysearch(imports, 1, List) of
         {value, {imports, Is}} ->
@@ -712,6 +715,7 @@ compile_attrs(As) ->
     lists:append([if is_list(T) -> T; true -> [T] end
                   || {compile, T} <- As]).
 
+-spec flatten_imports([{atom(), [atom()]}]) -> [{atom(), atom()}].
 flatten_imports(Is) ->
     [{F, M} || {M, Fs} <- Is, F <- Fs].
 
@@ -733,6 +737,7 @@ check_imports(Is, Opts, File) ->
             end
     end.
 
+-spec check_imports_1([{atom(), atom()}]) -> bool().
 check_imports_1([{F1, M1}, {F2, M2} | _Is]) when F1 =:= F2, M1 =/= M2 ->
     false;
 check_imports_1([_ | Is]) ->
@@ -923,19 +928,21 @@ hidden_uses_2(Tree, Used) ->
             Used
     end.
 
--record(env, {file,
+-type context() :: 'guard_expr' | 'guard_test' | 'normal'.
+
+-record(env, {file		       :: filename(),
               module,
               current,
               imports,
-              context = normal,
-              verbosity = 1,
-              quiet = false,
-              no_imports = false,
-              spawn_funs = false,
-              auto_list_comp = true,
-              auto_export_vars = false,
-              new_guard_tests = true,
-	      old_guard_tests = false}).
+              context = normal	       :: context(),
+              verbosity = 1	       :: 0 | 1 | 2,
+              quiet = false            :: bool(),
+              no_imports = false       :: bool(),
+              spawn_funs = false       :: bool(),
+              auto_list_comp = true    :: bool(),
+              auto_export_vars = false :: bool(),
+              new_guard_tests = true   :: bool(),
+	      old_guard_tests = false  :: bool()}).
 
 -record(st, {varc, used, imported, vars, functions, new_forms, rename}).
 
@@ -1098,7 +1105,7 @@ visit_atom_application(F, As, Tree, #env{context = guard_test} = Env,
 			 N
 		 end
 	 end,
-    if N1 /= N ->
+    if N1 =/= N ->
             report({Env#env.file, erl_syntax:get_pos(F),
 		    "changing guard test `~w' to `~w'."},
 		   [N, N1], Env#env.verbosity);
@@ -1307,6 +1314,7 @@ visit_nonlocal_application(F, As, Tree, Env, St0) ->
             visit_application_final(F, As, Tree, St0)
     end.
 
+%% --- lists:append/2 and lists:subtract/2 ---
 visit_remote_application({lists, append, 2}, F, [A1, A2], Tree, Env,
                          St0) ->
     report({Env#env.file, erl_syntax:get_pos(F),
@@ -1323,10 +1331,11 @@ visit_remote_application({lists, subtract, 2}, F, [A1, A2], Tree, Env,
 	   [], Env#env.verbosity),
     Tree1 = erl_syntax:infix_expr(A1, erl_syntax:operator('--'), A2),
     visit(rewrite(Tree, Tree1), Env, St0);
-
+%% --- lists:map/2 and lists:filter/2 ---
 visit_remote_application({lists, filter, 2}, F, [A1, A2] = As, Tree,
                          Env, St0) ->
     case Env#env.auto_list_comp
+	and (erl_syntax:type(A1) =/= variable)
 	and (get_var_exports(A1) =:= [])
 	and (get_var_exports(A2) =:= []) of
         true ->
@@ -1346,6 +1355,7 @@ visit_remote_application({lists, filter, 2}, F, [A1, A2] = As, Tree,
 visit_remote_application({lists, map, 2}, F, [A1, A2] = As, Tree, Env,
                          St0) ->
     case Env#env.auto_list_comp
+	and (erl_syntax:type(A1) =/= variable)
 	and (get_var_exports(A1) =:= [])
 	and (get_var_exports(A2) =:= []) of
         true ->
@@ -1362,6 +1372,7 @@ visit_remote_application({lists, map, 2}, F, [A1, A2] = As, Tree, Env,
         false ->
             visit_application_final(F, As, Tree, St0)
     end;
+%% --- all other functions ---
 visit_remote_application({M, N, A} = Name, F, As, Tree, Env, St) ->
     case is_auto_imported(Name) of
         true ->
@@ -1385,7 +1396,9 @@ visit_remote_application({M, N, A} = Name, F, As, Tree, Env, St) ->
             end
     end.
 
+-spec auto_expand_import(mfa(), #st{}) -> bool().
 auto_expand_import({lists, append, 2}, _St) -> true;
+auto_expand_import({lists, subtract, 2}, _St) -> true;
 auto_expand_import({lists, filter, 2}, _St) -> true;
 auto_expand_import({lists, map, 2}, _St) -> true;
 auto_expand_import(Name, St) ->
@@ -1609,7 +1622,7 @@ make_matches(E, Vs, Ts) ->
 
 make_matches([V | Vs], [T | Ts]) ->
     [erl_syntax:match_expr(V, T) | make_matches(Vs, Ts)];
-make_matches([V | Vs], T) when T /= [] ->
+make_matches([V | Vs], T) when T =/= [] ->
     [erl_syntax:match_expr(V, T) | make_matches(Vs, T)];
 make_matches([], _) ->
     [].
@@ -1621,6 +1634,7 @@ rename_remote_call(F, St) ->
         {ok, F1} -> F1
     end.
 
+-spec rename_remote_call_1(mfa()) -> {atom(), atom()} | 'false'.
 rename_remote_call_1({dict, dict_to_list, 1}) -> {dict, to_list};
 rename_remote_call_1({dict, list_to_dict, 1}) -> {dict, from_list};
 rename_remote_call_1({erl_eval, arg_list, 2}) -> {erl_eval, expr_list};
@@ -1654,11 +1668,13 @@ rename_remote_call_1({string, index, 2}) -> {string, str};
 rename_remote_call_1({unix, cmd, 1}) -> {os, cmd};
 rename_remote_call_1(_) -> false.
 
+-spec rewrite_guard_test(atom(), byte()) -> atom().
 rewrite_guard_test(atom, 1) -> is_atom;
 rewrite_guard_test(binary, 1) -> is_binary;
 rewrite_guard_test(constant, 1) -> is_constant;
 rewrite_guard_test(float, 1) -> is_float;
 rewrite_guard_test(function, 1) -> is_function;
+rewrite_guard_test(function, 2) -> is_function;
 rewrite_guard_test(integer, 1) -> is_integer;
 rewrite_guard_test(list, 1) -> is_list;
 rewrite_guard_test(number, 1) -> is_number;
@@ -1667,13 +1683,16 @@ rewrite_guard_test(port, 1) -> is_port;
 rewrite_guard_test(reference, 1) -> is_reference;
 rewrite_guard_test(tuple, 1) -> is_tuple;
 rewrite_guard_test(record, 2) -> is_record;
+rewrite_guard_test(record, 3) -> is_record;
 rewrite_guard_test(N, _A) -> N.
 
+-spec reverse_guard_test(atom(), byte()) -> atom().
 reverse_guard_test(is_atom, 1) -> atom;
 reverse_guard_test(is_binary, 1) -> binary;
 reverse_guard_test(is_constant, 1) -> constant;
 reverse_guard_test(is_float, 1) -> float;
 reverse_guard_test(is_function, 1) -> function;
+reverse_guard_test(is_function, 2) -> function;
 reverse_guard_test(is_integer, 1) -> integer;
 reverse_guard_test(is_list, 1) -> list;
 reverse_guard_test(is_number, 1) -> number;
@@ -1682,6 +1701,7 @@ reverse_guard_test(is_port, 1) -> port;
 reverse_guard_test(is_reference, 1) -> reference;
 reverse_guard_test(is_tuple, 1) -> tuple;
 reverse_guard_test(is_record, 2) -> record;
+reverse_guard_test(is_record, 3) -> record;
 reverse_guard_test(N, _A) -> N.
 
 

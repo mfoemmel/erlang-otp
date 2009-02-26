@@ -649,12 +649,6 @@ valfun_4({test,bs_start_match2,{f,Fail},[Src,Live,Slots,Dst]}, Vst0) ->
     Vst1 = prune_x_regs(Live, Vst0),
     Vst = branch_state(Fail, Vst1),
     set_type_reg(bsm_match_state(Slots), Dst, Vst);
-valfun_4({test,_Test,{f,Fail},[Ctx,Live,_,_,_,Dst]}, Vst0) ->
-    bsm_validate_context(Ctx, Vst0),
-    verify_live(Live, Vst0),
-    Vst1 = prune_x_regs(Live, Vst0),
-    Vst = branch_state(Fail, Vst1),
-    set_type_reg(term, Dst, Vst);
 valfun_4({test,bs_match_string,{f,Fail},[Ctx,_,_]}, Vst) ->
     bsm_validate_context(Ctx, Vst),
     branch_state(Fail, Vst);
@@ -668,6 +662,24 @@ valfun_4({test,bs_test_tail2,{f,Fail},[Ctx,_]}, Vst) ->
 valfun_4({test,bs_test_unit,{f,Fail},[Ctx,_]}, Vst) ->
     bsm_validate_context(Ctx, Vst),
     branch_state(Fail, Vst);
+valfun_4({test,bs_skip_utf8,{f,Fail},[Ctx,Live,_]}, Vst) ->
+    validate_bs_skip_utf(Fail, Ctx, Live, Vst);
+valfun_4({test,bs_skip_utf16,{f,Fail},[Ctx,Live,_]}, Vst) ->
+    validate_bs_skip_utf(Fail, Ctx, Live, Vst);
+valfun_4({test,bs_skip_utf32,{f,Fail},[Ctx,Live,_]}, Vst) ->
+    validate_bs_skip_utf(Fail, Ctx, Live, Vst);
+valfun_4({test,bs_get_integer2,{f,Fail},[Ctx,Live,_,_,_,Dst]}, Vst) ->
+    validate_bs_get(Fail, Ctx, Live, Dst, Vst);
+valfun_4({test,bs_get_float2,{f,Fail},[Ctx,Live,_,_,_,Dst]}, Vst) ->
+    validate_bs_get(Fail, Ctx, Live, Dst, Vst);
+valfun_4({test,bs_get_binary2,{f,Fail},[Ctx,Live,_,_,_,Dst]}, Vst) ->
+    validate_bs_get(Fail, Ctx, Live, Dst, Vst);
+valfun_4({test,bs_get_utf8,{f,Fail},[Ctx,Live,_,Dst]}, Vst) ->
+    validate_bs_get(Fail, Ctx, Live, Dst, Vst);
+valfun_4({test,bs_get_utf16,{f,Fail},[Ctx,Live,_,Dst]}, Vst) ->
+    validate_bs_get(Fail, Ctx, Live, Dst, Vst);
+valfun_4({test,bs_get_utf32,{f,Fail},[Ctx,Live,_,Dst]}, Vst) ->
+    validate_bs_get(Fail, Ctx, Live, Dst, Vst);
 valfun_4({bs_save2,Ctx,SavePoint}, Vst) ->
     bsm_save(Ctx, SavePoint, Vst);
 valfun_4({bs_restore2,Ctx,SavePoint}, Vst) ->
@@ -720,6 +732,12 @@ valfun_4({bs_add,{f,Fail},[A,B,_],Dst}, Vst) ->
     assert_term(A, Vst),
     assert_term(B, Vst),
     set_type_reg({integer,[]}, Dst, branch_state(Fail, Vst));
+valfun_4({bs_utf8_size,{f,Fail},A,Dst}, Vst) ->
+    assert_term(A, Vst),
+    set_type_reg({integer,[]}, Dst, branch_state(Fail, Vst));
+valfun_4({bs_utf16_size,{f,Fail},A,Dst}, Vst) ->
+    assert_term(A, Vst),
+    set_type_reg({integer,[]}, Dst, branch_state(Fail, Vst));
 valfun_4({bs_bits_to_bytes2,Src,Dst}, Vst) ->
     assert_term(Src, Vst),
     set_type_reg({integer,[]}, Dst, Vst);
@@ -769,6 +787,18 @@ valfun_4({bs_put_integer,{f,Fail},_,_,_,Src}=I, Vst0) ->
     assert_term(Src, Vst0),
     Vst = bs_align_check(I, Vst0),
     branch_state(Fail, Vst);
+valfun_4({bs_put_utf8,{f,Fail},_,Src}=I, Vst0) ->
+    assert_term(Src, Vst0),
+    Vst = bs_align_check(I, Vst0),
+    branch_state(Fail, Vst);
+valfun_4({bs_put_utf16,{f,Fail},_,Src}=I, Vst0) ->
+    assert_term(Src, Vst0),
+    Vst = bs_align_check(I, Vst0),
+    branch_state(Fail, Vst);
+valfun_4({bs_put_utf32,{f,Fail},_,Src}=I, Vst0) ->
+    assert_term(Src, Vst0),
+    Vst = bs_align_check(I, Vst0),
+    branch_state(Fail, Vst);
 %% Old bit syntax construction (before R10B).
 valfun_4({bs_init,_,_}, Vst) ->
     bs_zero_bits(Vst);
@@ -781,6 +811,25 @@ valfun_4({bs_final2,Src,Dst}, Vst0) ->
     set_type_reg(binary, Dst, Vst0);
 valfun_4(_, _) ->
     error(unknown_instruction).
+
+%%
+%% Common code for validating bs_get* instructions.
+%%
+validate_bs_get(Fail, Ctx, Live, Dst, Vst0) ->
+    bsm_validate_context(Ctx, Vst0),
+    verify_live(Live, Vst0),
+    Vst1 = prune_x_regs(Live, Vst0),
+    Vst = branch_state(Fail, Vst1),
+    set_type_reg(term, Dst, Vst).
+
+%%
+%% Common code for validating bs_skip_utf* instructions.
+%%
+validate_bs_skip_utf(Fail, Ctx, Live, Vst0) ->
+    bsm_validate_context(Ctx, Vst0),
+    verify_live(Live, Vst0),
+    Vst = prune_x_regs(Live, Vst0),
+    branch_state(Fail, Vst).
 
 %%
 %% Special state handling for setelement/3 and the set_tuple_element/3 instruction.
@@ -1064,6 +1113,15 @@ bsm_restore(Reg, SavePoint, Vst) ->
 bs_zero_bits(#vst{current=St}=Vst) ->
     Vst#vst{current=St#st{bits=0}}.
 
+bs_align_check({bs_put_utf8,_,Flags,_}, #vst{current=#st{}=St}=Vst) ->
+    bs_verify_flags(Flags, St),
+    Vst;
+bs_align_check({bs_put_utf16,_,Flags,_}, #vst{current=#st{}=St}=Vst) ->
+    bs_verify_flags(Flags, St),
+    Vst;
+bs_align_check({bs_put_utf32,_,Flags,_}, #vst{current=#st{}=St}=Vst) ->
+    bs_verify_flags(Flags, St),
+    Vst;
 bs_align_check({_,_,Sz,U,Flags,_}, #vst{current=#st{bits=Bits}=St}=Vst) ->
     bs_verify_flags(Flags, St),
     bs_update_bits(Bits, Sz, U, St, Vst).

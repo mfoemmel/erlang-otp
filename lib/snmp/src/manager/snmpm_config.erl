@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2004-2007</year>
+%% <year>2004-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -38,7 +38,7 @@
 	 agent_info/3, update_agent_info/5, 
 	 which_agents/0, which_agents/1, 
 
-	 get_agent_engine_id/1, get_agent_engine_id/2, 
+	 get_agent_engine_id/1, get_agent_engine_id/2, is_known_engine_id/3, 
 	 get_agent_engine_max_message_size/2, 
 	 get_agent_version/2, 
 	 get_agent_mp_model/2, 
@@ -318,6 +318,18 @@ update_agent_info(UserId, Addr0, Port, Item, Val0)
 	    Error
     end.
 
+is_known_engine_id(EngineID, Addr, Port) ->
+    case agent_info(Addr, Port, engine_id) of
+	{ok, EngineID} ->
+	    true;
+	{ok, _OtherEngineID} ->
+	    false;
+	_ ->
+	    false
+    end.
+	    
+				     
+    
 get_agent_engine_id(Name) ->
     Pat = {{'$1', '$2', target_name}, Name},
     case ets:match(snmpm_agent_table, Pat) of
@@ -922,6 +934,8 @@ do_dets_open(Name, Filename, Repair, AutoSave) ->
     dets:open_file(Name, Opts).
 
 
+dets_filename(Name, Dir) when is_atom(Name) ->
+    dets_filename(atom_to_list(Name), Dir);
 dets_filename(Name, Dir) ->
     filename:join(dets_filename1(Dir), Name).
 
@@ -2211,9 +2225,7 @@ handle_register_user(#user{id = Id} = User) ->
 	    ok;
 	_ ->
 	    {error, {already_registered, User}}
-    end;
-handle_register_user(BadUser) ->
-    {error, {bad_user, BadUser}}.
+    end.
 
 handle_unregister_user(UserId) ->
     ?vdebug("handle_unregister_user -> entry with"

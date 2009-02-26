@@ -1710,85 +1710,84 @@ do_merge_terminationStateDescriptor([], TSD) ->
     PP = TSD#'TerminationStateDescriptor'.propertyParms,
     TSD#'TerminationStateDescriptor'{propertyParms = lists:reverse(PP)}.
 
+-ifdef(megaco_nscanner_props).
+
 -ifdef(megaco_parser_inline).
 -compile({inline,[{ensure_prop_groups,1}]}).
 -endif.
 ensure_prop_groups(Token) ->
     {_TokenTag, _Line, Text} = Token,
     Group  = [],
-    Groups = [],
-    parse_prop_name(Text, Group, Groups).
+    parse_prop_name(Text, Group).
 
-parse_prop_name([Char | Rest] = All, Group, Groups) ->
+parse_prop_name([Char | Rest] = All, Group) ->
     if 
         ?white_space(Char) ->
-            parse_prop_name(Rest, Group, Groups);
+            parse_prop_name(Rest, Group);
         ?end_of_line(Char) ->
-            parse_prop_name(Rest, Group, Groups);
+            parse_prop_name(Rest, Group);
         true ->
             Name = [],
-            do_parse_prop_name(All, Name, Group, Groups)
+            do_parse_prop_name(All, Name, Group)
     end;
-parse_prop_name([] = All, Group, Groups) ->
+parse_prop_name([] = All, Group) ->
     Name = [],
-    do_parse_prop_name(All, Name, Group, Groups).
+    do_parse_prop_name(All, Name, Group).
 
-do_parse_prop_name([Char | Rest], Name, Group, Groups) 
+do_parse_prop_name([Char | Rest], Name, Group) 
   when (Char =:= $=) andalso (Name =/= []) ->
     %% Now we have a complete name
     if
 	(Name =:= "v") andalso (Group =/= []) ->
 	    %% v= is a property group delimiter,
 	    %% lets create yet another property group.
-	    Groups2 = [lists:reverse(Group) | Groups],
-	    Group2 = [],
-	    parse_prop_value(Rest, Name, Group2, Groups2);
+	    NewGroup = [],
+	    [lists:reverse(Group) | parse_prop_value(Rest, Name, NewGroup)];
 	true ->
 	    %% Use current property group
-	    parse_prop_value(Rest, Name, Group, Groups)
+	    parse_prop_value(Rest, Name, Group)
     end;
-do_parse_prop_name([Char | Rest], Name, Group, Groups) ->
+do_parse_prop_name([Char | Rest], Name, Group) ->
     case ?classify_char4(Char) of
         safe_char_upper ->
-            do_parse_prop_name(Rest, [Char | Name], Group, Groups);
+            do_parse_prop_name(Rest, [Char | Name], Group);
         safe_char ->
-            do_parse_prop_name(Rest, [Char | Name], Group, Groups);
+            do_parse_prop_name(Rest, [Char | Name], Group);
         _ ->
             return_error(0, {bad_prop_name, lists:reverse(Name), Char})
     end;
-do_parse_prop_name([], [], [], Groups) ->
-    lists:reverse(Groups);
-do_parse_prop_name([], [], Group, Groups) ->
-    Group2 = lists:reverse(Group),
-    lists:reverse([Group2 | Groups]);
-do_parse_prop_name([], Name, Group, Groups) when Name =/= [] ->
+do_parse_prop_name([], [], []) ->
+    [];
+do_parse_prop_name([], [], Group) ->
+    [lists:reverse(Group)];
+do_parse_prop_name([], Name, Group) when Name =/= [] ->
     %% Assume end of line
     Value = [],
-    PP = make_prop_parm(Name, Value),
+    PP     = make_prop_parm(Name, Value),
     Group2 = lists:reverse([PP | Group]),
-    lists:reverse([Group2 | Groups]).
-
+    [Group2].
+                   
 -ifdef(megaco_parser_inline).
--compile({inline,[{parse_prop_value,4}]}).
+-compile({inline,[{parse_prop_value,3}]}).
 -endif.
-parse_prop_value(Chars, Name, Group, Groups) ->
+parse_prop_value(Chars, Name, Group) ->
     Value = [],
-    do_parse_prop_value(Chars, Name, Value, Group, Groups).
+    do_parse_prop_value(Chars, Name, Value, Group).
 
-do_parse_prop_value([Char | Rest], Name, Value, Group, Groups) ->
+do_parse_prop_value([Char | Rest], Name, Value, Group) ->
     if
         ?end_of_line(Char) ->
             %% Now we have a complete "name=value" pair
             PP = make_prop_parm(Name, Value),
-            parse_prop_name(Rest, [PP | Group], Groups);
+            parse_prop_name(Rest, [PP | Group]);
         true ->
-            do_parse_prop_value(Rest, Name, [Char | Value], Group, Groups)
+            do_parse_prop_value(Rest, Name, [Char | Value], Group)
     end;
-do_parse_prop_value([], Name, Value, Group, Groups) ->
+do_parse_prop_value([], Name, Value, Group) ->
     %% Assume end of line
-    PP = make_prop_parm(Name, Value),
+    PP     = make_prop_parm(Name, Value),
     Group2 = lists:reverse([PP | Group]),
-    lists:reverse([Group2 | Groups]).
+    [Group2].
 
 -ifdef(megaco_parser_inline).
 -compile({inline,[{make_prop_parm,2}]}).
@@ -1796,6 +1795,42 @@ do_parse_prop_value([], Name, Value, Group, Groups) ->
 make_prop_parm(Name, Value) ->
     #'PropertyParm'{name  = lists:reverse(Name),
                     value = [lists:reverse(Value)]}.
+
+-else. % -ifdef(megaco_nscanner_props).
+
+-ifdef(megaco_parser_inline).
+-compile({inline,[{ensure_prop_groups,1}]}).
+-endif.
+ensure_prop_groups(Token) ->
+    {_TokenTag, _Line, Groups} = Token,
+    Groups.
+
+%% do_ensure_prop_groups(Groups) when is_list(Groups) ->
+%%     [ensure_prop_group(Group) || Group <- Groups];
+%% do_ensure_prop_groups(BadGroups) ->
+%%     throw({error, {?MODULE, {bad_property_groups, BadGroups}}}).
+
+%% -ifdef(megaco_parser_inline).
+%% -compile({inline,[{ensure_prop_group,1}]}).
+%% -endif.
+%% ensure_prop_group(Group) when is_list(Group) ->
+%%     [ensure_prop_parm(PropParm) || PropParm <- Group];
+%% ensure_prop_group(BadGroup) ->
+%%     throw({error, {?MODULE, {bad_property_group, BadGroup}}}).
+
+%% -ifdef(megaco_parser_inline).
+%% -compile({inline,[{ensure_prop_parm,1}]}).
+%% -endif.
+%% ensure_prop_parm(#property_parm{name  = Name,
+%% 				value = Value}) ->
+%%     #'PropertyParm'{name  = Name,
+%%                     value = Value};
+%% ensure_prop_parm(PP) when is_record(PP, 'PropertyParm') ->
+%%     PP;
+%% ensure_prop_parm(BadPropParm) ->
+%%     throw({error, {?MODULE, {bad_property_parm, BadPropParm}}}).
+
+-endif. % -ifdef(megaco_nscanner_props).
 
 -ifdef(megaco_parser_inline).
 -compile({inline,[{ensure_uint,3}]}).

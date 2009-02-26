@@ -436,8 +436,6 @@ erts_port_task_abort(ErtsPortTaskHandle *pthp)
     ptqp = ptp->queue;
     pp = ptqp->port;
 
-    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(pp));
-
     ERTS_PT_CHK_PRES_PORTQ(pp);
     ASSERT(ptqp);
     ASSERT(ptqp->first);
@@ -714,7 +712,7 @@ resume_after_block(void *vresp)
  */
 
 int
-erts_port_task_execute(void)
+erts_port_task_execute(Port **curr_port_pp)
 {
     int port_was_enqueued = 0;
     Port *pp;
@@ -743,6 +741,9 @@ erts_port_task_execute(void)
 	res = 0;
 	goto done;
     }
+
+    *curr_port_pp = pp;
+
     ASSERT(pp->sched.taskq);
     ASSERT(pp->sched.taskq->first);
     ptqp = pp->sched.taskq;
@@ -770,6 +771,7 @@ erts_port_task_execute(void)
     ERTS_PT_CHK_PRES_PORTQ(pp);
     ptp = pop_task(ptqp);
 
+    erts_block_fpe();
 
     while (ptp) {
 	ASSERT(pp->sched.taskq != pp->sched.exe_taskq);
@@ -778,6 +780,8 @@ erts_port_task_execute(void)
 	erts_smp_tasks_unlock();
 
 	ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(pp));
+	ERTS_SMP_CHK_NO_PROC_LOCKS;
+	ASSERT(pp->drv_ptr);
 
 	switch (ptp->type) {
 	case ERTS_PORT_TASK_FREE: /* May be pushed in q at any time */
@@ -786,20 +790,26 @@ erts_port_task_execute(void)
 		ASSERT(erts_port_task_outstanding_io_tasks >= io_tasks_executed);
 		erts_port_task_outstanding_io_tasks -= io_tasks_executed;
 	    }
+	    erts_unblock_fpe();
 	    goto free_port;
 	case ERTS_PORT_TASK_TIMEOUT:
-	    erts_port_ready_timeout(pp);
+	    if (!(pp->status & ERTS_PORT_SFLGS_DEAD))
+		(*pp->drv_ptr->timeout)((ErlDrvData) pp->drv_data);
 	    break;
 	case ERTS_PORT_TASK_INPUT:
-	    erts_port_ready_input(pp, ptp->event);
+	    ASSERT((pp->status & ERTS_PORT_SFLGS_DEAD) == 0);
+	    /* NOTE some windows drivers use ->ready_input for input and output */
+	    (*pp->drv_ptr->ready_input)((ErlDrvData) pp->drv_data, ptp->event);
 	    io_tasks_executed++;
 	    break;
 	case ERTS_PORT_TASK_OUTPUT:
-	    erts_port_ready_output(pp, ptp->event);
+	    ASSERT((pp->status & ERTS_PORT_SFLGS_DEAD) == 0);
+	    (*pp->drv_ptr->ready_output)((ErlDrvData) pp->drv_data, ptp->event);
 	    io_tasks_executed++;
 	    break;
 	case ERTS_PORT_TASK_EVENT:
-	    erts_port_ready_event(pp, ptp->event, ptp->event_data);
+	    ASSERT((pp->status & ERTS_PORT_SFLGS_DEAD) == 0);
+	    (*pp->drv_ptr->event)((ErlDrvData) pp->drv_data, ptp->event, ptp->event_data);
 	    io_tasks_executed++;
 	    break;
 	default:
@@ -808,6 +818,9 @@ erts_port_task_execute(void)
 		     (int) ptp->type);
 	    break;
 	}
+
+	if ((pp->status & ERTS_PORT_SFLG_CLOSING) && erts_is_port_ioq_empty(pp))
+	    erts_terminate_port(pp);
 
 	ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(pp));
 
@@ -825,6 +838,8 @@ erts_port_task_execute(void)
 
 	ptp = pop_task(ptqp);
     }
+
+    erts_unblock_fpe();
 
     if (io_tasks_executed) {
 	ASSERT(erts_port_task_outstanding_io_tasks >= io_tasks_executed);
@@ -869,6 +884,8 @@ erts_port_task_execute(void)
 	    erts_smp_tasks_lock();
 	}
     }
+
+    *curr_port_pp = NULL;
 
     if (pp->sched.taskq) {
 	ASSERT(!(pp->status & ERTS_PORT_SFLGS_DEAD));

@@ -103,7 +103,7 @@ literal_value(#c_cons{hd=H,tl=T}) ->
 literal_value(#c_tuple{es=Es}) ->
     list_to_tuple(literal_value_list(Es)).
 
-literal_value_list(Vals) -> lists:map(fun literal_value/1, Vals).
+literal_value_list(Vals) -> [literal_value(V) || V <- Vals].
 
 literal_value_bin(#c_bitstr{val=Val,size=Sz,unit=U,type=T,flags=Fs}) ->
     %% We will only handle literals constructed by make_literal/1.
@@ -143,7 +143,7 @@ make_literal(Bs) when is_binary(Bs) ->
 	    #c_literal{val=Bs}
     end.
 
-make_literal_list(Vals) -> lists:map(fun make_literal/1, Vals). 
+make_literal_list(Vals) -> [make_literal(V) || V <- Vals]. 
 
 concrete_list([#c_literal{val=V}|T]) -> [V|concrete_list(T)];
 concrete_list([]) -> [].
@@ -227,12 +227,11 @@ map(F, #c_catch{body=Body}=R) ->
     F(R#c_catch{body=map(F, Body)});
 map(F, T) -> F(T).				%Atomic nodes.
 
-map_list(F, L) -> lists:map(fun (E) -> map(F, E) end, L).
+map_list(F, L) -> [map(F, E) || E <- L].
 
 map_def_list(F, L) ->
     lists:map(fun ({N,V}) -> {N,map(F, V)} end, L).
-					
-    
+
 
 %% fold(FoldFun, Accumulator, CoreExpr) -> Accumulator.
 %%  This function traverses the core parse format, at each level

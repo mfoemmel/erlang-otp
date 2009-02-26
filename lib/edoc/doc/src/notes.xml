@@ -32,6 +32,37 @@
   <p>This document describes the changes made to the EDoc
     application.</p>
 
+<section><title>Edoc 0.7.6.2</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Minor updates.</p>
+          <p>
+	    Own Id: OTP-7642</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Edoc 0.7.6.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Correction to work with new versions of STDLIB that no
+	    longer has the <c>erl_internal:obsolete/3</c> function.</p>
+          <p>
+	    Own Id: OTP-7539</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Edoc 0.7.6</title>
 
     <section><title>Improvements and New Features</title>

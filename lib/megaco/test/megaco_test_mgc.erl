@@ -275,6 +275,7 @@ mgc(Parent, Verbosity, Config) ->
 
 init(Config) ->
     d("init -> entry"),
+    random_init(),
     Mid = get_conf(local_mid, Config),
     RI  = get_conf(receive_info, Config),
 
@@ -308,10 +309,10 @@ init(Config) ->
     d("init -> get user info (receive_handle)"),
     RH = megaco:user_info(Mid,receive_handle),
     d("init -> parse receive info"),
-    ListenTo = parse_receive_info(RI, RH),
+    Transports = parse_receive_info(RI, RH),
 
     d("init -> start transports"),
-    {Tcp, Udp} = start_transports(ListenTo),
+    {Tcp, Udp} = start_transports(Transports),
     {Mid, Tcp, Udp}.
     
 
@@ -529,16 +530,18 @@ parse_receive_info([], _RH) ->
 parse_receive_info(RI, RH) ->
     parse_receive_info(RI, RH, []).
 
-parse_receive_info([], _RH, ListenTo) ->
-    ListenTo;
-parse_receive_info([RI|RIs], RH, ListenTo) ->
+parse_receive_info([], _RH, Transports) ->
+    d("parse_receive_info -> done when"
+      "~n   Transports: ~p", [Transports]),
+    Transports;
+parse_receive_info([RI|RIs], RH, Transports) ->
     d("parse_receive_info -> parse receive info"),
     case (catch parse_receive_info1(RI, RH)) of
 	{error, Reason} ->
 	    i("failed parsing receive info: ~p~n~p", [RI, Reason]),
 	    exit({failed_parsing_recv_info, RI, Reason});
 	RH1 ->
-	    parse_receive_info(RIs, RH, [RH1|ListenTo])
+	    parse_receive_info(RIs, RH, [RH1|Transports])
     end.
     
 parse_receive_info1(RI, RH) ->
@@ -553,67 +556,125 @@ parse_receive_info1(RI, RH) ->
     RH1 = RH#megaco_receive_handle{send_mod        = TM,
 				   encoding_mod    = EM,
 				   encoding_config = EC},
+    d("parse_receive_info1 -> "
+      "~n   Port:           ~p"
+      "~n   Receive handle: ~p", [TP, RH1]),
     {TP, RH1}.
 
 
+
+%% --------------------------------------------------------
+%% On some platforms there seem to take some time before 
+%% a port is released by the OS (after having been used, 
+%% as is often the case in the test suites).
+%% So, starting the transports is done in two steps.
+%% First)  Start the actual transport(s)
+%% Second) Create the listener (tcp) or open the 
+%%         send/receive port (udp). 
+%% The second step *may* need to be repeated!
+%% --------------------------------------------------------
 start_transports([]) ->
     throw({error, no_transport});
-start_transports(ListenTo) ->
-    start_transports(ListenTo, undefined, undefined).
+start_transports(Transports) when is_list(Transports) ->
+    {Tcp, Udp} = start_transports1(Transports, undefined, undefined),
+    ok = start_transports2(Transports, Tcp, Udp),
+    {Tcp, Udp}.
     
-
-start_transports([], TcpSup, UdpSup) ->
-    {TcpSup, UdpSup};
-start_transports([{Port, RH}|ListenTo], TcpSup, UdpSup) 
-  when RH#megaco_receive_handle.send_mod == megaco_tcp ->
-    TcpSup1 = start_tcp(RH, Port, TcpSup),
-    start_transports(ListenTo, TcpSup1, UdpSup);
-start_transports([{Port, RH}|ListenTo], TcpSup, UdpSup) 
-  when RH#megaco_receive_handle.send_mod == megaco_udp ->
-    UdpSup1 = start_udp(RH, Port, UdpSup),
-    start_transports(ListenTo, TcpSup, UdpSup1);
-start_transports([{_Port, RH}|_ListenTo], _TcpSup, _UdpSup) ->
-    throw({error, {bad_send_mod, RH#megaco_receive_handle.send_mod}}).
-
-
-start_tcp(RH, Port, undefined) ->
-    d("start tcp transport"),
+start_transports1([], Tcp, Udp) ->
+    {Tcp, Udp};
+start_transports1([{_Port, RH}|Transports], Tcp, Udp) 
+  when ((RH#megaco_receive_handle.send_mod =:= megaco_tcp) andalso 
+	(not is_pid(Tcp)))  ->
     case megaco_tcp:start_transport() of
 	{ok, Sup} ->
-	    start_tcp(RH, Port, Sup);
+	    start_transports1(Transports, Sup, Udp);
 	Else ->
 	    throw({error, {failed_starting_tcp_transport, Else}})
     end;
-start_tcp(RH, Port, Sup) when pid(Sup) ->
+start_transports1([{_Port, RH}|Transports], Tcp, Udp) 
+  when ((RH#megaco_receive_handle.send_mod =:= megaco_udp) andalso 
+	(not is_pid(Udp))) ->
+    case megaco_udp:start_transport() of
+	{ok, Sup} ->
+	    start_transports1(Transports, Tcp, Sup);
+	Else ->
+	    throw({error, {failed_starting_udp_transport, Else}})
+    end;
+start_transports1([_|Transports], Tcp, Udp) ->
+    start_transports1(Transports, Tcp, Udp).
+
+start_transports2([], _, _) ->
+    ok;
+start_transports2([{Port, RH}|Transports], Tcp, Udp) 
+  when RH#megaco_receive_handle.send_mod =:= megaco_tcp ->
+    start_tcp(RH, Port, Tcp),
+    start_transports2(Transports, Tcp, Udp);
+start_transports2([{Port, RH}|Transports], Tcp, Udp) 
+  when RH#megaco_receive_handle.send_mod =:= megaco_udp ->
+    start_udp(RH, Port, Udp),
+    start_transports2(Transports, Tcp, Udp).
+
+start_tcp(RH, Port, Sup) ->
+    d("start tcp transport"),
+    start_tcp(RH, Port, Sup, 250).
+
+start_tcp(RH, Port, Sup, Timeout) 
+  when is_pid(Sup) andalso is_integer(Timeout) andalso (Timeout > 0) ->
     d("tcp listen on ~p", [Port]),
     Opts = [{port,           Port}, 
 	    {receive_handle, RH}, 
 	    {tcp_options,    [{nodelay, true}]}],
+    try_start_tcp(Sup, Opts, Timeout, noError).
+
+try_start_tcp(Sup, Opts, Timeout, Error0) when (Timeout < 5000) ->
+    Sleep = random(Timeout) + 100,
+    d("try create tcp listen socket (~p,~p)", [Timeout, Sleep]),
     case megaco_tcp:listen(Sup, Opts) of
 	ok ->
+	    d("listen socket created", []),
 	    Sup;
-	Else ->
-	    throw({error, {failed_starting_tcp_listen, Else}})
-    end.
-
-
-start_udp(RH, Port, undefined) ->
-    d("start udp transport"),
-    case megaco_udp:start_transport() of
-	{ok, Sup} ->
-	    start_udp(RH, Port, Sup);
-	Else ->
-	    throw({error, {failed_starting_udp_transport, Else}})
+	Error1 when Error0 =:= noError -> % Keep the first error
+	    d("failed creating listen socket [1]: ~p", [Error1]),
+	    sleep(Sleep),
+	    try_start_tcp(Sup, Opts, Timeout*2, Error1);
+	Error2 ->
+	    d("failed creating listen socket [2]: ~p", [Error2]),
+	    sleep(Sleep),
+	    try_start_tcp(Sup, Opts, Timeout*2, Error0)
     end;
+try_start_tcp(Sup, _Opts, _Timeout, Error) ->
+    megaco_tcp:stop_transport(Sup),
+    throw({error, {failed_starting_tcp_listen, Error}}).
+
+
 start_udp(RH, Port, Sup) ->
-    d("open udp ~p", [Port]),
+    d("start udp transport"),
+    start_udp(RH, Port, Sup, 250).
+
+start_udp(RH, Port, Sup, Timeout) ->
+    d("udp open ~p", [Port]),
     Opts = [{port, Port}, {receive_handle, RH}],
+    try_start_udp(Sup, Opts, Timeout, noError).
+
+try_start_udp(Sup, Opts, Timeout, Error0) when (Timeout < 5000) ->
+    d("try open udp socket (~p)", [Timeout]),
     case megaco_udp:open(Sup, Opts) of
 	{ok, _SendHandle, _ControlPid} ->
+	    d("port opened", []),
 	    Sup;
-	Else ->
-	    exit({error, {failed_starting_udp_listen, Else}})
-    end.
+	Error1 when Error0 =:= noError -> % Keep the first error
+	    d("failed open port [1]: ~p", [Error1]),
+	    sleep(Timeout),
+	    try_start_udp(Sup, Opts, Timeout*2, Error1);
+	Error2 ->
+	    d("failed open port [2]: ~p", [Error2]),
+	    sleep(Timeout),
+	    try_start_udp(Sup, Opts, Timeout*2, Error0)
+    end;
+try_start_udp(Sup, _Opts, _Timeout, Error) ->
+    megaco_udp:stop_transport(Sup),
+    throw({error, {failed_starting_udp_open, Error}}).
+
 
 %% -----------------------
 %% Handle megaco callbacks
@@ -996,6 +1057,16 @@ get_conf(Key, Config) ->
 	_ ->
 	    exit({error, {not_found, Key, Config}})
     end.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+random_init() ->
+    {A,B,C} = now(),
+    random:seed(A,B,C).
+
+random(N) ->
+    random:uniform(N).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1,0 +1,4 @@
+PUBLIC_KEY_VSN = 0.1
+
+TICKETS = \
+	OTP-7637

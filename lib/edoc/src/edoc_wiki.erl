@@ -281,7 +281,7 @@ expand_uri([C | Cs], N, L, Ss, Us, As) ->
 expand_uri([], _, L, _Ss, Us, _As) ->
     expand_uri_error(Us, L).
 
--spec(expand_uri_error/2 :: (list(), pos_integer()) -> no_return()).
+-spec expand_uri_error(list(), pos_integer()) -> no_return().
 
 expand_uri_error(Us, L) ->
     {Ps, _} = edoc_lib:split_at(lists:reverse(Us), $:),

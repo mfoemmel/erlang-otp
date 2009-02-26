@@ -2066,7 +2066,7 @@ erts_bif_trace(int bif_index, Process* p,
 	 * they usually appear in normal code... */
 	if (is_non_value(result)) {
 	    Uint reason = p->freason;
-	    if (reason != TRAP && reason != RESCHEDULE) {
+	    if (reason != TRAP) {
 		Eterm class;
 		Eterm value = p->fvalue;
 		Eterm nocatch[3];

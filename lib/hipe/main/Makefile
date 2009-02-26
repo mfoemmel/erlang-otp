@@ -37,8 +37,12 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe hipe_main
-
+ifdef HIPE_ENABLED
+HIPE_MODULES = hipe
+else
+HIPE_MODULES =
+endif
+MODULES = hipe_main $(HIPE_MODULES)
 
 ## hipe.hrl is automatically generated from hipe.hrl.src -- see below
 HRL_FILES= hipe.hrl
@@ -66,8 +70,7 @@ ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_obsolete_guard +warn_untyped_reco
 hipe.hrl: ../vsn.mk hipe.hrl.src
 	sed -e "s;%VSN%;$(HIPE_VSN);" hipe.hrl.src > hipe.hrl
 
-$(EBIN)/hipe.beam: hipe.hrl
-$(EBIN)/hipe.beam: ../rtl/hipe_literals.hrl ../../compiler/src/beam_disasm.hrl
+$(EBIN)/hipe.beam: hipe.hrl ../../compiler/src/beam_disasm.hrl
 $(EBIN)/hipe_main.beam: hipe.hrl ../icode/hipe_icode.hrl #../rtl/hipe_rtl.hrl
 
 debug opt: $(TARGET_FILES) 

@@ -213,7 +213,7 @@ get_value(Key, List) ->
 %% <code>Value</code>, otherwise <code>Default</code> is returned.
 %%
 %% @see lookup/2
-%% @see get_value/1
+%% @see get_value/2
 %% @see get_all_values/2
 %% @see get_bool/2
 

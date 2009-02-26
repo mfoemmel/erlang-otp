@@ -247,14 +247,37 @@
   <section>
     <marker id="flags"></marker>
     <title>Command Line Flags</title>
+    <warning><p>The support for loading of code from archive files is
+     experimental. The sole purpose of releasing it before it is ready
+     is to obtain early feedback. The file format, semantics,
+     interfaces etc. may be changed in a future release. The
+     <c>-code_path_choice</c> flag is also experimental.</p></warning>
+
     <p>The <c>init</c> module interprets the following command line
       flags:</p>
+
     <taglist>
       <tag><c>--</c></tag>
       <item>
         <p>Everything following <c>--</c> up to the next flag is
           considered plain arguments and can be retrieved using
           <c>get_plain_arguments/0</c>.</p>
+      </item>
+      <tag><c>-code_path_choice Choice</c></tag>
+      <item>
+        <p>This flag can be set to <c>strict</c> or <c>relaxed</c>. It
+         controls whether each directory in the code path should be
+         interpreted strictly as it appears in the <c>boot script</c> or if
+         <c>init</c> should be more relaxed and try to find a suitable
+         directory if it can choose from a regular ebin directory and
+         an ebin directory in an archive file. This flag is particular
+         useful when you want to elaborate with code loading from
+         archives without editing the <c>boot script</c>. See <seealso
+         marker="sasl:script">script(4)</seealso> for more information
+         about interpretation of boot scripts. The flag does also have
+         a similar affect on how the code server works. See <seealso
+         marker="code">code(3)</seealso>.</p>
+	 
       </item>
       <tag><c>-eval Expr</c></tag>
       <item>

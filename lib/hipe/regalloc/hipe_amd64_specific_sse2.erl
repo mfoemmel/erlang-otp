@@ -36,6 +36,15 @@
 -export([defun_to_cfg/1,
 	 check_and_rewrite/2]).
 
+%%----------------------------------------------------------------------------
+
+-type dict()    :: tuple().  % XXX: Temporarily
+-type gb_tree() :: tuple().  % XXX: Temporarily
+
+-include("../flow/cfg.hrl").
+
+%%----------------------------------------------------------------------------
+
 defun_to_cfg(Defun) ->
   hipe_x86_cfg:init(Defun).
 
@@ -60,6 +69,7 @@ is_fixed(_Reg) ->
 is_arg(_Reg) ->
   false.
 
+-spec args(#cfg{}) -> [].
 args(_CFG) ->
   [].
  
@@ -71,13 +81,13 @@ non_alloc(_) ->
 analyze(CFG) ->
   hipe_amd64_liveness:analyze(CFG).
 
-livein(Liveness,L) ->
-  [X || X <- hipe_amd64_liveness:livein(Liveness,L),
+livein(Liveness, L) ->
+  [X || X <- hipe_amd64_liveness:livein(Liveness, L),
  	     hipe_x86:temp_is_allocatable(X),
 	     hipe_x86:temp_type(X) =:= 'double'].
 
-liveout(BB_in_out_liveness,Label) ->
-  [X || X <- hipe_amd64_liveness:liveout(BB_in_out_liveness,Label),
+liveout(BB_in_out_liveness, Label) ->
+  [X || X <- hipe_amd64_liveness:liveout(BB_in_out_liveness, Label),
  	     hipe_x86:temp_is_allocatable(X),
 	     hipe_x86:temp_type(X) =:= 'double'].
 
@@ -103,13 +113,14 @@ labels(CFG) ->
 var_range(_CFG) ->
   hipe_gensym:var_range(x86).
 
+-spec number_of_temporaries(#cfg{}) -> non_neg_integer().
 number_of_temporaries(_CFG) ->
   Highest_temporary = hipe_gensym:get_var(x86),
   %% Since we can have temps from 0 to Max adjust by +1.
   Highest_temporary + 1.
 
-bb(CFG,L) ->
-  hipe_x86_cfg:bb(CFG,L).
+bb(CFG, L) ->
+  hipe_x86_cfg:bb(CFG, L).
 
 %% AMD64 stuff
 
@@ -156,5 +167,6 @@ is_move(Instruction) ->
 reg_nr(Reg) ->
   hipe_x86:temp_reg(Reg).
 
+-spec new_spill_index(non_neg_integer()) -> pos_integer().
 new_spill_index(SpillIndex) when is_integer(SpillIndex) ->
   SpillIndex+1.

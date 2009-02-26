@@ -26,6 +26,7 @@
 	concurrency_page/3,
 	process_info_page/3
 	]).
+
 -export([
 	value2pid/1, 
 	pid2value/1, 
@@ -82,6 +83,7 @@ load_database_page(SessionID, Env, Input) ->
     load_database_content(SessionID, Env, Input),
     mod_esi:deliver(SessionID, footer()).
 
+
 %%% --------------------------- %%%
 %%% 	Content pages		%%%
 %%% --------------------------- %%%
@@ -102,8 +104,6 @@ overview_content(_Env, Input) ->
 	table_line(["Profile time:", TotalProfileTime]) ++
 	table_line(["Processes:", RegisteredProcesses]) ++
 	table_line(["Ports:", RegisteredPorts]) ++
-%    	table_line(["Active processes:", 0]) ++
-%    	table_line(["Average concurrency:", 0]) ++ 
     	table_line(["Min. range:", Min]) ++
     	table_line(["Max. range:", Max]) ++
     	"</table>",
@@ -126,16 +126,18 @@ overview_content(_Env, Input) ->
 	    	<option disabled=true value=\""++ url_graph(Width, Height, Min, Max, []) ++"\" />Processes
 	    	<option value=\""++ url_graph(Width, Height, Min, Max, []) ++"\" />Ports & Processes
 	    </select>",
-	    "<input type=submit value=Update>" 
+	    "<input type=submit value=Update>"
 	    ]) ++
 	table_line([
 	    "Max:", 
 	    "<input name=range_max value=" ++ term2html(float(Max)) ++">",
 	    "",
-	    "<a href=/cgi-bin/percept_html/codelocation_page?range_min=" ++ term2html(Min) ++ "&range_max=" ++ term2html(Max) ++ ">Code location</a>"
+	    "<a href=/cgi-bin/percept_html/codelocation_page?range_min=" ++
+	    term2html(Min) ++ "&range_max=" ++ term2html(Max) ++ ">Code location</a>"
 	    ]) ++
     	"</table>",
-    
+   
+ 
     MainTable = 
 	"<table>" ++
 	table_line([div_tag_graph(Width, Height, Min, Max, [])]) ++
@@ -183,14 +185,6 @@ url_graph(W, H, Min, Max, []) ->
     	++ "&range_max=" ++ term2html(float(Max))
 	++ "&width=" ++ term2html(float(W))
 	++ "&height=" ++ term2html(float(H)).
-%url_graph(W, H, Min, Max, Pids) ->
-%    PidValues = [pid2value(Pid) || Pid <- Pids],
-%    PidRequests = join_strings_with(PidValues, ":"),
-%    "/cgi-bin/percept_graph/graph?range_min=" ++ term2html(float(Min)) 
-%    	++ "&range_max=" ++ term2html(float(Max))
-%	++ "&width=" ++ term2html(float(W))
-%	++ "&height=" ++ term2html(float(H))
-%	++ "&pids=" ++ PidRequests.
 
 %%% process_info_content
 
@@ -224,7 +218,11 @@ process_info_content(_Env, Input) ->
     table_line(["<b>Arguments</b>", ArgumentString, ""]) ++ 
     table_line(["<b>Timetable</b>", TimeTable, ""]) ++
     table_line(["Parent", pid2html(I#information.parent), ""]) ++
-    table_line(["Children", term2html(I#information.children), ""]) ++
+    table_line(["Children", 
+	lists:flatten(lists:map(
+	    fun(Child) ->
+		pid2html(Child) ++ " "
+	    end, I#information.children)), ""]) ++
     "</table>",
     
     PidActivities = percept_db:select({activity, [{id, Pid}]}),

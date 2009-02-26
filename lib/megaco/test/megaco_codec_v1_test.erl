@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2003-2007</year>
+%% <year>2003-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -131,6 +131,16 @@
 	 compact_otp6017_msg02/1, 
 	 compact_otp6017_msg03/1, 
 
+	 flex_compact_tickets/1, 
+         flex_compact_otp7431_msg01a/1,
+         flex_compact_otp7431_msg01b/1,
+         flex_compact_otp7431_msg02/1,
+         flex_compact_otp7431_msg03/1,
+         flex_compact_otp7431_msg04/1,
+         flex_compact_otp7431_msg05/1,
+         flex_compact_otp7431_msg06/1,
+         flex_compact_otp7431_msg07/1,
+
 	 pretty_tickets/1, 
 	 pretty_otp4632_msg1/1, 
 	 pretty_otp4632_msg2/1, 
@@ -181,6 +191,13 @@
          flex_pretty_otp5600_msg2/1,
          flex_pretty_otp5601_msg1/1,
          flex_pretty_otp5793_msg01/1,
+         flex_pretty_otp7431_msg01/1,
+         flex_pretty_otp7431_msg02/1,
+         flex_pretty_otp7431_msg03/1,
+         flex_pretty_otp7431_msg04/1,
+         flex_pretty_otp7431_msg05/1,
+         flex_pretty_otp7431_msg06/1,
+         flex_pretty_otp7431_msg07/1,
 
 	 init_per_testcase/2, fin_per_testcase/2]).  
 
@@ -590,6 +607,7 @@ tickets(suite) ->
     [
      compact_tickets,
      pretty_tickets,
+     flex_compact_tickets,
      flex_pretty_tickets
     ].
 
@@ -639,6 +657,24 @@ compact_tickets(suite) ->
      compact_otp6017_msg02,
      compact_otp6017_msg03
     ].
+
+flex_compact_tickets(suite) ->
+    {req, [], 
+     {conf, flex_compact_init, flex_compact_tickets_cases(), 
+      flex_compact_finish}}.
+
+flex_compact_tickets_cases() ->
+    [
+     flex_compact_otp7431_msg01a,
+     flex_compact_otp7431_msg01b,
+     flex_compact_otp7431_msg02,
+     flex_compact_otp7431_msg03, 
+     flex_compact_otp7431_msg04,
+     flex_compact_otp7431_msg05,
+     flex_compact_otp7431_msg06,
+     flex_compact_otp7431_msg07
+    ].
+
 
 pretty_tickets(suite) ->
     [
@@ -697,8 +733,14 @@ flex_pretty_tickets_cases() ->
      flex_pretty_otp5600_msg1,
      flex_pretty_otp5600_msg2,
      flex_pretty_otp5601_msg1,
-     flex_pretty_otp5793_msg01
-
+     flex_pretty_otp5793_msg01,
+     flex_pretty_otp7431_msg01,
+     flex_pretty_otp7431_msg02,
+     flex_pretty_otp7431_msg03, 
+     flex_pretty_otp7431_msg04,
+     flex_pretty_otp7431_msg05,
+     flex_pretty_otp7431_msg06,
+     flex_pretty_otp7431_msg07
     ].
 
 
@@ -726,6 +768,7 @@ flex_pretty_test_msgs(suite) ->
     [];
 flex_pretty_test_msgs(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
+    %% Msgs = msgs1(), 
     Msgs = msgs1() ++ msgs2() ++ msgs3(),
     Conf = flex_scanner_conf(Config),
     DynamicDecode = false,
@@ -845,6 +888,220 @@ flex_pretty_otp5793_msg01(Config) when list(Config) ->
     Conf = flex_scanner_conf(Config),
     pretty_otp5793(ok, pretty_otp5793_msg1(), [Conf]).
 
+flex_pretty_otp7431_msg01(suite) ->
+    [];
+flex_pretty_otp7431_msg01(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(ok, flex_pretty_otp7431_msg1(), [Conf]).
+
+flex_pretty_otp7431_msg02(suite) ->
+    [];
+flex_pretty_otp7431_msg02(Config) when list(Config) ->
+%%     put(severity,trc),
+%%     put(dbg,true),
+    d("flex_pretty_otp7431_msg02 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg2(), [Conf]).
+
+flex_pretty_otp7431_msg03(suite) ->
+    [];
+flex_pretty_otp7431_msg03(Config) when list(Config) ->
+%%     put(severity,trc),
+%%     put(dbg,true),
+    d("flex_pretty_otp7431_msg03 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg3(), [Conf]).
+
+flex_pretty_otp7431_msg04(suite) ->
+    [];
+flex_pretty_otp7431_msg04(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg04 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg4(), [Conf]).
+
+flex_pretty_otp7431_msg05(suite) ->
+    [];
+flex_pretty_otp7431_msg05(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg05 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg5(), [Conf]).
+
+flex_pretty_otp7431_msg06(suite) ->
+    [];
+flex_pretty_otp7431_msg06(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg06 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg6(), [Conf]).
+
+flex_pretty_otp7431_msg07(suite) ->
+    [];
+flex_pretty_otp7431_msg07(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg07 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg7(), [Conf]).
+
+flex_pretty_otp7431(Expected, Msg, Conf) ->
+    otp7431(Expected, megaco_pretty_text_encoder, Msg, Conf).
+
+otp7431(Expected, Codec, Msg0, Conf) ->
+    Bin0 = list_to_binary(Msg0),
+    case decode_message(Codec, false, Conf, Bin0) of
+	{ok, _Msg1} when Expected =:= ok ->
+ 	    io:format(" decoded", []),
+	    ok;
+	{error, {bad_property_parm, Reason}} when (Expected =:= error) andalso 
+						  is_list(Reason) ->
+	    io:format("expected result: ~s", [Reason]),
+	    ok;
+	Else ->
+	    io:format("unexpected result", []),
+	    exit({unexpected_decode_result, Else})
+    end.
+    
+
+flex_pretty_otp7431_msg1() ->
+"MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+      Add = A4444,
+      Add = A4445 {
+         Media {
+            Stream = 1 {
+               Local { 
+v=0 
+o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+s=- 
+t= 0 0 
+c=IN IP4 124.124.124.222 
+m=audio 2222 RTP/AVP 4 
+a=ptime:30 
+a=recvonly 
+               } ; RTP profile for G.723.1 is 4
+            }
+         }
+      }
+   } 
+}".
+
+flex_pretty_otp7431_msg2() ->
+"MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+      Add = A4444,
+      Add = A4445 {
+         Media {
+            Stream = 1 {
+               Local { 
+v=0 
+o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+s=- 
+t= 0 0 
+c=IN IP4 124.124.124.222 
+m=audio 2222 RTP/AVP 4 
+a=ptime:30 
+a=             }
+            }
+         }
+      }
+   } 
+}".
+
+flex_pretty_otp7431_msg3() ->
+"MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+      Add = A4444,
+      Add = A4445 {
+         Media {
+            Stream = 1 {
+               Local { 
+v=0 
+o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+s=- 
+t= 0 0 
+c=IN IP4 124.124.124.222 
+m=audio 2222 RTP/AVP 4 
+a=ptime:30 
+a             }
+            }
+         }
+      }
+   } 
+}".
+
+flex_pretty_otp7431_msg4() ->
+"MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+      Add = A4444,
+      Add = A4445 {
+         Media {
+            Stream = 1 {
+               Local { 
+v=0 
+o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+s=- 
+t= 0 0 
+c=IN IP4 124.124.124.222 
+m=audio 2222 RTP/AVP 4 
+a=ptime:30 
+a}
+            }
+         }
+      }
+   } 
+}".
+
+flex_pretty_otp7431_msg5() ->
+"MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+      Add = A4444,
+      Add = A4445 {
+         Media {
+            Stream = 1 {
+               Local { 
+v=            }
+            }
+         }
+      }
+   } 
+}".
+
+flex_pretty_otp7431_msg6() ->
+"MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+      Add = A4444,
+      Add = A4445 {
+         Media {
+            Stream = 1 {
+               Local { 
+v            }
+            }
+         }
+      }
+   } 
+}".
+
+flex_pretty_otp7431_msg7() ->
+"MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+      Add = A4444,
+      Add = A4445 {
+         Media {
+            Stream = 1 {
+               Local { 
+v}
+            }
+         }
+      }
+   } 
+}".
+
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -872,6 +1129,7 @@ flex_compact_test_msgs(suite) ->
 flex_compact_test_msgs(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = msgs1() ++ msgs2() ++ msgs3(),
+    %% Msgs = msgs1(), 
     Conf = flex_scanner_conf(Config), 
     DynamicDecode = true,
     test_msgs(megaco_compact_text_encoder, DynamicDecode, [Conf], Msgs).
@@ -2405,6 +2663,178 @@ compact_otp6017_msg(CID) when is_integer(CID) ->
     "MEGACO/" ?VERSION_STR " MG1 T=12345678{C=" ++ 
 	integer_to_list(CID) ++
 	"{SC=root{SV{MT=RS,RE=901}}}}".
+
+
+%% ==============================================================
+%%
+%% F l e x   C o m p a c t   T e s t c a s e s
+%%
+
+flex_compact_otp7431_msg01a(suite) ->
+    [];
+flex_compact_otp7431_msg01a(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg01a -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(ok, flex_compact_otp7431_msg1a(), [Conf]).
+
+flex_compact_otp7431_msg01b(suite) ->
+    [];
+flex_compact_otp7431_msg01b(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg01b -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(ok, flex_compact_otp7431_msg1b(), [Conf]).
+
+flex_compact_otp7431_msg02(suite) ->
+    [];
+flex_compact_otp7431_msg02(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg02 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg2(), [Conf]).
+
+flex_compact_otp7431_msg03(suite) ->
+    [];
+flex_compact_otp7431_msg03(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg03 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg3(), [Conf]).
+
+flex_compact_otp7431_msg04(suite) ->
+    [];
+flex_compact_otp7431_msg04(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg04 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg4(), [Conf]).
+
+flex_compact_otp7431_msg05(suite) ->
+    [];
+flex_compact_otp7431_msg05(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg05 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg5(), [Conf]).
+
+flex_compact_otp7431_msg06(suite) ->
+    [];
+flex_compact_otp7431_msg06(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg06 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg6(), [Conf]).
+
+flex_compact_otp7431_msg07(suite) ->
+    [];
+flex_compact_otp7431_msg07(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg07 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg7(), [Conf]).
+
+
+flex_compact_otp7431(Expected, Msg, Conf) ->
+    otp7431(Expected, megaco_compact_text_encoder, Msg, Conf).
+
+flex_compact_otp7431_msg1a() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a=recvonly
+}}}}}}".
+
+flex_compact_otp7431_msg1b() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a=recvonly
+
+
+
+}}}}}}".
+
+flex_compact_otp7431_msg2() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a=     }
+}}}}}".
+
+
+flex_compact_otp7431_msg3() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a     }
+}}}}}".
+
+
+flex_compact_otp7431_msg4() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a}
+}}}}}".
+
+
+flex_compact_otp7431_msg5() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=       }
+}}}}}".
+
+
+flex_compact_otp7431_msg6() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v       }
+}}}}}".
+
+flex_compact_otp7431_msg7() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v}
+}}}}}".
 
 
 %% ==============================================================
@@ -5565,7 +5995,7 @@ chk_commandRequest_command(C1,C2) ->
     wrong_type({commandRequest_command,C1,C2}).
     
 
-chk_AmmRequest(R,R) when record(R,'AmmRequest') ->
+chk_AmmRequest(R,R) when is_record(R,'AmmRequest') ->
     ok;
 chk_AmmRequest(#'AmmRequest'{terminationID = Tids1,
 			     descriptors   = D1},
@@ -5579,8 +6009,8 @@ chk_AmmRequest(R1,R2) ->
 
 chk_AmmRequest_descriptors([],[]) ->
     ok;
-chk_AmmRequest_descriptors(D1,D2) when list(D1), list(D2), 
-				       length(D1) == length(D2) ->
+chk_AmmRequest_descriptors(D1,D2) 
+  when is_list(D1) andalso is_list(D2) andalso (length(D1) =:= length(D2)) ->
     chk_AmmRequest_descriptors1(D1,D2);
 chk_AmmRequest_descriptors(D1,D2) ->
     wrong_type({ammRequest_descriptors,D1,D2}).
@@ -5666,19 +6096,69 @@ chk_ServiceChangeRequest(R1,R2) ->
     wrong_type({'ServiceChangeRequest',R1,R2}).
 
 
-chk_MediaDescriptor(D,D) when record(D,'MediaDescriptor') ->
+chk_MediaDescriptor(D,D) when is_record(D,'MediaDescriptor') ->
     ok;
 chk_MediaDescriptor(#'MediaDescriptor'{termStateDescr = Tsd1,
 				       streams        = S1} = D1,
 		    #'MediaDescriptor'{termStateDescr = Tsd2,
 				       streams        = S2} = D2) ->
-    Tsd1 = Tsd2,
-    S1   = S2,
+    chk_MediaDescriptor_tsd(Tsd1, Tsd2),
+    chk_MediaDescriptor_streams(S1, S2),
     equal({'MediaDescriptor',D1,D2});
 chk_MediaDescriptor(D1,D2) ->
     wrong_type({'MediaDescriptor',D1,D2}).
 
-chk_ModemDescriptor(D,D) when record(D,'ModemDescriptor') ->
+chk_MediaDescriptor_tsd(D, D) ->
+    ok;
+chk_MediaDescriptor_tsd(D1, D2) ->
+    not_equal({termStateDescr, D1, D2}).
+
+chk_MediaDescriptor_streams({oneStream, S}, {oneStream, S}) ->
+    ok;
+chk_MediaDescriptor_streams({oneStream, S1}, {oneStream, S2}) ->
+    not_equal({oneStream, S1, S2});
+chk_MediaDescriptor_streams({multiStream, MS}, {multiStream, MS}) ->
+    ok;
+chk_MediaDescriptor_streams({multiStream, MS1}, {multiStream, MS2}) ->
+    chk_StreamDescriptors(MS1, MS2);
+chk_MediaDescriptor_streams(S1, S2) ->
+    not_equal({streams, S1, S2}).
+    
+chk_StreamDescriptors([], []) ->
+    ok;
+chk_StreamDescriptors([SD1|MS1], [SD2|MS2]) ->
+    chk_StreamDescriptor(SD1, SD2),
+    chk_StreamDescriptors(MS1, MS2).
+
+chk_StreamDescriptor(SD, SD) when is_record(SD, 'StreamDescriptor') ->
+    ok;
+chk_StreamDescriptor(#'StreamDescriptor'{streamID    = SID1,
+					 streamParms = SP1} = SD1, 
+		     #'StreamDescriptor'{streamID    = SID2,
+					 streamParms = SP2} = SD2) ->
+    SID1 = SID2,
+    chk_StreamParms(SP1, SP2),
+    equal({'StreamDescriptor',SD1, SD2});
+chk_StreamDescriptor(SD1, SD2) ->
+    wrong_type({'StreamDescriptor',SD1,SD2}).
+
+
+chk_StreamParms(SP, SP) when is_record(SP, 'StreamParms') ->
+    ok;
+chk_StreamParms(#'StreamParms'{localControlDescriptor = LCD1,
+			       localDescriptor        = LD1,
+			       remoteDescriptor       = RD1} = SP1,
+		#'StreamParms'{localControlDescriptor = LCD2,
+			       localDescriptor        = LD2,
+			       remoteDescriptor       = RD2} = SP2) ->
+    LCD1 = LCD2,
+    LD1  = LD2,
+    RD1  = RD2,
+    equal({'StreamParms', SP1, SP2});
+chk_StreamParms(SP1, SP2) ->
+    wrong_type({'StreamDescriptor', SP1, SP2}).
+
+chk_ModemDescriptor(D,D) when is_record(D,'ModemDescriptor') ->
     ok;
 chk_ModemDescriptor(#'ModemDescriptor'{mtl = T1,
 				       mpl = P1} = D1,

@@ -355,6 +355,7 @@ iolist() = [char() | binary() | iolist()]
           has not already been delivered to the message queue.</p>
       </desc>
     </func>
+
     <func>
       <name>check_process_code(Pid, Module) -> bool()</name>
       <fsummary>Check if a process is executing old code for a module</fsummary>

@@ -85,13 +85,14 @@ nofill_delay(Code) ->
 %%
 
 fill_delay0(Code) ->
-  case catch find_delay(Code) of
-    no_branch ->
-      Code;
+  try find_delay(Code) of
     {NewCode, _, _, _} ->
       [NewCode | [hipe_sparc:nop_create()]];
     {NewCode, Delay} ->
       [NewCode | [Delay]]
+  catch
+    throw:no_branch ->
+      Code
   end.
 
 %%

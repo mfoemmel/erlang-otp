@@ -44,52 +44,49 @@
 
 %%--------------------------------------------------------------------
 
--spec(new/0 :: () -> #dialyzer_codeserver{}).
+-spec new() -> #dialyzer_codeserver{}.
 new() ->
   Table = table__new(),
   Exports = sets:new(),
   #dialyzer_codeserver{table=Table, exports=Exports, next_core_label=0,
 		       records=dict:new(), contracts=dict:new()}.
 
--spec(delete/1 :: (#dialyzer_codeserver{}) -> 'ok').
+-spec delete(#dialyzer_codeserver{}) -> 'ok'.
 delete(#dialyzer_codeserver{table=Table}) ->
   table__delete(Table).
 
--spec(insert/2:: ([_], #dialyzer_codeserver{}) -> #dialyzer_codeserver{}).
+-spec insert([_], #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
 insert(List, CS) ->
   NewTable = table__insert(CS#dialyzer_codeserver.table, List),
   CS#dialyzer_codeserver{table=NewTable}.
 
--spec(insert_exports/2 ::
-      ([mfa()], #dialyzer_codeserver{}) -> #dialyzer_codeserver{}).
+-spec insert_exports([mfa()], #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
 insert_exports(List, CS = #dialyzer_codeserver{exports=Exports}) ->
   Set = sets:from_list(List),
   NewExports = sets:union(Exports, Set),
   CS#dialyzer_codeserver{exports=NewExports}.
 
--spec(is_exported/2 :: (mfa(), #dialyzer_codeserver{}) -> bool()).
+-spec is_exported(mfa(), #dialyzer_codeserver{}) -> bool().
 is_exported(MFA, #dialyzer_codeserver{exports=Exports}) ->
   sets:is_element(MFA, Exports).
 
--spec(all_exports/1 :: (#dialyzer_codeserver{}) -> set()).
+-spec all_exports(#dialyzer_codeserver{}) -> set().
 all_exports(#dialyzer_codeserver{exports=Exports}) ->
   Exports.
 
--spec(lookup/2 :: (_, #dialyzer_codeserver{}) -> any()).
+-spec lookup(_, #dialyzer_codeserver{}) -> any().
 lookup(Id, CS) ->
   table__lookup(CS#dialyzer_codeserver.table, Id).
 
--spec(next_core_label/1 :: (#dialyzer_codeserver{}) -> non_neg_integer()).
+-spec next_core_label(#dialyzer_codeserver{}) -> non_neg_integer().
 next_core_label(#dialyzer_codeserver{next_core_label=NCL}) ->
   NCL.
 
--spec(update_next_core_label/2 ::
-      (non_neg_integer(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}).
+-spec update_next_core_label(non_neg_integer(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
 update_next_core_label(NCL, CS = #dialyzer_codeserver{}) ->
   CS#dialyzer_codeserver{next_core_label=NCL}.
 
--spec(store_records/3 ::
-      (atom(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}).
+-spec store_records(atom(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
 store_records(Module, Dict, 
 	      CS=#dialyzer_codeserver{records=RecDict}) when is_atom(Module) ->
   case dict:size(Dict) =:= 0 of
@@ -98,7 +95,7 @@ store_records(Module, Dict,
       CS#dialyzer_codeserver{records=dict:store(Module, Dict, RecDict)}
   end.
 
--spec(lookup_records/2 :: (atom(), #dialyzer_codeserver{}) -> dict()). 
+-spec lookup_records(atom(), #dialyzer_codeserver{}) -> dict(). 
 lookup_records(Module, 
 	       #dialyzer_codeserver{records=RecDict}) when is_atom(Module) ->
   case dict:find(Module, RecDict) of
@@ -106,8 +103,7 @@ lookup_records(Module,
     {ok, Dict} -> Dict
   end.
 
--spec(store_contracts/3 ::
-      (atom(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}). 
+-spec store_contracts(atom(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}. 
 store_contracts(Module, Dict, 
 		CS=#dialyzer_codeserver{contracts=C}) when is_atom(Module) ->
   case dict:size(Dict) =:= 0 of
@@ -115,7 +111,7 @@ store_contracts(Module, Dict,
     false -> CS#dialyzer_codeserver{contracts=dict:store(Module, Dict, C)}
   end.
 
--spec(lookup_contracts/2 :: (atom(), #dialyzer_codeserver{}) -> dict()). 
+-spec lookup_contracts(atom(), #dialyzer_codeserver{}) -> dict(). 
 lookup_contracts(Mod, 
 		 #dialyzer_codeserver{contracts=ContDict}) when is_atom(Mod) ->
   case dict:find(Mod, ContDict) of
@@ -123,8 +119,7 @@ lookup_contracts(Mod,
     {ok, Dict} -> Dict
   end.
 
--spec(lookup_contract/2 ::
-      (mfa(), #dialyzer_codeserver{}) -> 'error' | {'ok',_}).
+-spec lookup_contract(mfa(), #dialyzer_codeserver{}) -> 'error' | {'ok',_}.
 lookup_contract(MFA={M,_F,_A}, #dialyzer_codeserver{contracts=ContDict}) ->
   case dict:find(M, ContDict) of
     error -> error;

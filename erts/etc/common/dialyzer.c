@@ -327,7 +327,7 @@ run_erlang(char* progname, char** argv)
 
     status = my_spawnvp(argv)/*_spawnvp(_P_WAIT,progname,argv)*/;
     if (status == -1) {
-	fprintf(stderr, "erlc: Error executing '%s': %d", progname, 
+	fprintf(stderr, "dialyzer: Error executing '%s': %d", progname, 
 		GetLastError());
     }
     return status;
@@ -347,7 +347,7 @@ error(char* format, ...)
     va_start(ap, format);
     vsprintf(sbuf, format, ap);
     va_end(ap);
-    fprintf(stderr, "erlc: %s\n", sbuf);
+    fprintf(stderr, "dialyzer: %s\n", sbuf);
     exit(1);
 }
 

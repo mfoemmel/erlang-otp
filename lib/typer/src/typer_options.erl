@@ -7,12 +7,11 @@
 
 -module(typer_options).
 
--export([process/0, option_type/1]).
+-export([process/0]).
 
 %%---------------------------------------------------------------------------
 
 -include("typer.hrl").
--include("typer_options.hrl").
 
 %%---------------------------------------------------------------------------
 %% Exported functions
@@ -30,13 +29,6 @@ process() ->
 	   Mode when is_atom(Mode) -> Analysis
 	 end}.
 
--spec option_type(typer_option()) -> 'for_annotation' | 'for_show'.
-
-option_type(?SHOW) -> for_show;
-option_type(?SHOW_EXPORTED) -> for_show;
-option_type(?ANNOTATE) -> for_annotation;
-option_type(?ANNOTATE_INC_FILES) -> for_annotation.
-
 %%---------------------------------------------------------------------------
 %% Internal functions
 %%---------------------------------------------------------------------------
@@ -53,57 +45,58 @@ cl(["--help"|_]) -> help_message();
 cl(["-v"|_])        -> version_message();
 cl(["--version"|_]) -> version_message();
 cl(["--comments"|Opts]) -> {comments, Opts};
-cl(["--show"|Opts]) -> {{mode,?SHOW}, Opts};
-cl(["--show-exported"|Opts]) -> {{mode,?SHOW_EXPORTED}, Opts};
-cl(["--annotate"|Opts]) -> {{mode,?ANNOTATE}, Opts};
-cl(["--annotate-inc-files"|Opts]) -> {{mode,?ANNOTATE_INC_FILES}, Opts};
+cl(["--show"|Opts]) -> {{mode, ?SHOW}, Opts};
+cl(["--show_exported"|Opts]) -> {{mode, ?SHOW_EXPORTED}, Opts};
+cl(["--show-exported"|Opts]) -> {{mode, ?SHOW_EXPORTED}, Opts};
+cl(["--annotate"|Opts]) -> {{mode, ?ANNOTATE}, Opts};
+cl(["--annotate-inc-files"|Opts]) -> {{mode, ?ANNOTATE_INC_FILES}, Opts};
 cl(["--plt",Plt|Opts]) -> {{plt, Plt}, Opts};
 cl(["-D"++Defines|Opts]) ->
   case Defines of
     "" -> typer:error("no defines specified after -D");
     _ ->
-      {ok,Result} = regexp:split(Defines, "="),
+      {ok, Result} = regexp:split(Defines, "="),
       Elem = collect_defines(Result),
-      {{macros,Elem}, Opts}
+      {{macros, Elem}, Opts}
   end;
 cl(["-I",Dir|Opts]) -> {{inc,Dir}, Opts};
 cl(["-I"++Dir|Opts]) ->
   case Dir of
     "" -> typer:error("no include directory specified after -I");
-    _ -> {{inc,Dir}, Opts}
+    _ -> {{inc, Dir}, Opts}
   end;
 cl(["-T"|Opts]) ->
   {Files, RestOpts} = dialyzer_cl_parse:collect_args(Opts),
   case Files of
     [] -> typer:error("no file or directory specified after -T");
-    [_|_] -> {{trust,Files}, RestOpts}
+    [_|_] -> {{trust, Files}, RestOpts}
   end;
 cl(["-r"|Opts]) ->
   {Files, RestOpts} = dialyzer_cl_parse:collect_args(Opts),
-  {{a_dir_r,Files}, RestOpts};
+  {{a_dir_r, Files}, RestOpts};
 cl(["-"++H|_]) -> typer:error("unknown option -"++H);
 cl(Opts) -> 
   {Args, RestOpts} = dialyzer_cl_parse:collect_args(Opts),
-  {{analyze,Args}, RestOpts}.
+  {{analyze, Args}, RestOpts}.
 
 collect_defines(Result) ->
   case Result of
-    [Def,Val] ->
-      {ok,Tokens,_} = erl_scan:string(Val++"."),
-      {ok,ErlVal} = erl_parse:parse_term(Tokens),
+    [Def, Val] ->
+      {ok, Tokens, _} = erl_scan:string(Val++"."),
+      {ok, ErlVal} = erl_parse:parse_term(Tokens),
       {list_to_atom(Def), ErlVal};
     [Def] ->
       {list_to_atom(Def), true}
   end.
 
 %% Get information about files that the user trusts and wants to analyze
-analyze_result({analyze,Val}, Args, Analysis) -> 
+analyze_result({analyze, Val}, Args, Analysis) -> 
   NewVal = Args#args.analyze ++ Val,
   {Args#args{analyze=NewVal}, Analysis};
-analyze_result({a_dir_r,Val}, Args, Analysis) -> 
+analyze_result({a_dir_r, Val}, Args, Analysis) -> 
   NewVal = Args#args.analyzed_dir_r ++ Val,
   {Args#args{analyzed_dir_r=NewVal}, Analysis};
-analyze_result({trust,Val}, Args, Analysis) -> 
+analyze_result({trust, Val}, Args, Analysis) -> 
   NewVal = Args#args.trust ++ Val,
   {Args#args{trust=NewVal}, Analysis};
 analyze_result(comments, Args, Analysis) ->
@@ -114,10 +107,10 @@ analyze_result({mode, Val}, Args, Analysis) ->
     undefined -> {Args, Analysis#typer_analysis{mode=Val}};
     _ -> mode_error()
   end;
-analyze_result({macros,Val}, Args, Analysis) ->
+analyze_result({macros, Val}, Args, Analysis) ->
   NewVal = Analysis#typer_analysis.macros ++ [Val],
   {Args, Analysis#typer_analysis{macros=NewVal}};
-analyze_result({inc,Val}, Args, Analysis) -> 
+analyze_result({inc, Val}, Args, Analysis) -> 
   NewVal = Analysis#typer_analysis.includes ++ [Val],
   {Args, Analysis#typer_analysis{includes=NewVal}};
 analyze_result({plt, Plt}, Args, Analysis) ->
@@ -136,7 +129,7 @@ version_message() ->
 
 -spec help_message() -> no_return().
 help_message() ->
-  S = " Usage: typer [--help] [--version] [--comments] [--plt PltFile]
+  S = " Usage: typer [--help] [--version] [--comments] [--plt PLT]
               [--show | --show-exported | --annotate | --annotate-inc-files]
               [-Ddefine]* [-I include_dir]* [-T application]* [-r] file*
 
@@ -144,22 +137,23 @@ help_message() ->
    -r dir*
        search directories recursively for .erl files below them
    --show
-       Prints type contracts for all functions on stdout.
+       Prints type specifications for all functions on stdout.
        (this is the default behaviour; this option is not really needed)
-   --show-exported
-       Same as --show, but prints contracts for exported functions only
+   --show-exported (or --show_exported)
+       Same as --show, but prints specifications for exported functions only
+       Specs are displayed sorted alphabetically on the function's name
    --annotate
-       Annotates the specified files with type contracts
+       Annotates the specified files with type specifications
    --annotate-inc-files
        Same as --annotate but annotates all -include() files as well as
-       all .erl files (use this option with caution)
+       all .erl files (use this option with caution - has not been tested much)
    --comments
-       Print type information using comments, not type contracts
-   --plt PltFile
-       Use the specified dialyzer plt file rather than the default one
+       Prints type information using Edoc comments, not type specs
+   --plt PLT
+       Use the specified dialyzer PLT file rather than the default one
    -T file*
-       The file(s) already contain type annotations and these annotations
-       are to be trusted in order to print contracts for the rest of the files
+       The specified file(s) already contain type specifications and these
+       are to be trusted in order to print specs for the rest of the files
        (Multiple files or dirs, separated by spaces, can be specified.)
    -Dname (or -Dname=value)
        pass the defined name(s) to TypEr

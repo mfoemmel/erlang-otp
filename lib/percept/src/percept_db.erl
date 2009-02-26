@@ -40,27 +40,6 @@
 %%
 %%==========================================================================
 
--type(activity_option() :: 
-	{'ts_min', timestamp()} | 
-	{'ts_max', timestamp()} |
-	{'ts_exact', bool()} |
-	{'mfa', true_mfa()} |
-	{'state', state()} |
-	{'id', 'all' | 'procs' | 'ports' | pid() | port()}).
-
--type(scheduler_option() :: 
-	{'ts_min', timestamp()} | 
-	{'ts_max', timestamp()} |
-	{'ts_exact', bool()} |
-	{'id', scheduler_id()}).
-	
--type(system_option() ::
-	'start_ts' | 'stop_ts').
-
--type(information_option() ::
-	'all' | 'procs' | 'ports' |
-	pid() | port()).
-
 %% @type activity_option() = 
 %%	{ts_min, timestamp()} | 
 %%	{ts_max, timestamp()} | 
@@ -194,12 +173,13 @@ init_percept_db() ->
     
     % System warnings
     ets:new(pdb_warnings, [named_table, private, {keypos, 1}, ordered_set]),
+    put(debug, 0),
     loop_percept_db().
 
 loop_percept_db() ->
     receive
 	{insert, Trace} ->
-	    insert_trace(Trace),
+	    insert_trace(clean_trace(Trace)),
 	    loop_percept_db();
 	{select, Pid, Query} ->
 	    Pid ! select_query(Query),
@@ -224,6 +204,22 @@ loop_percept_db() ->
 %%
 %%==========================================================================
 
+%% cleans trace messages from external pids
+
+clean_trace(Trace) when is_tuple(Trace) -> list_to_tuple(clean_trace(tuple_to_list(Trace)));
+clean_trace(Trace) when is_list(Trace) -> clean_list(Trace, []);
+clean_trace(Trace) when is_pid(Trace) ->
+    PidStr = pid_to_list(Trace),
+    [_,P2,P3p] = string:tokens(PidStr,"."),
+    P3 = lists:sublist(P3p, 1, length(P3p) - 1),
+    erlang:list_to_pid("<0." ++ P2 ++ "." ++ P3 ++ ">");
+clean_trace(Trace) -> Trace.
+
+clean_list([], Out) -> lists:reverse(Out);
+clean_list([Element|Trace], Out) ->
+    clean_list(Trace, [clean_trace(Element)|Out]).
+
+
 insert_trace(Trace) ->
     case Trace of
 	{profile_start, Ts} ->
@@ -236,13 +232,12 @@ insert_trace(Trace) ->
     	%%% ---------------------------------------------
     	{profile, Id, State, Mfa, TS} when is_pid(Id) ->
 	    % Update runnable count in activity and db
+	    
 	    case check_activity_consistency(Id, State) of
 		invalid_state -> 
-		    io:format("insert_trace, bad_state: ~p~n", [Trace]),
 		    ignored;
 		ok ->
 		    Rc = get_runnable_count(procs, State),
-	    
 		    % Update registered procs
 		    % insert proc activity
 		    update_activity(#activity{
@@ -258,7 +253,6 @@ insert_trace(Trace) ->
 	{profile, Id, State, Mfa, TS} when is_port(Id) ->
 	    case check_activity_consistency(Id, State) of
 		invalid_state -> 
-		    io:format("insert_trace, bad_state: ~p~n", [Trace]),
 		    ignored;
 		ok ->
 		    % Update runnable count in activity and db
@@ -288,12 +282,10 @@ insert_trace(Trace) ->
 	%%% erlang:trace, option: procs
 	%%% ---------------------------
 	{trace_ts, Parent, spawn, Pid, Mfa, TS} ->
-	    % Update registered procs
-
+	    InformativeMfa = mfa2informative(Mfa),
 	    % Update id_information
-	    update_information(#information{id = Pid, start = TS, parent = Parent, entry = Mfa}),
+	    update_information(#information{id = Pid, start = TS, parent = Parent, entry = InformativeMfa}),
 	    update_information_child(Parent, Pid),
-
 	    ok;
 	{trace_ts, Pid, exit, _Reason, TS} ->
 	    % Update registered procs
@@ -309,6 +301,9 @@ insert_trace(Trace) ->
 	{trace_ts, Pid, register, Name, _Ts} when is_pid(Pid) ->
 	    % Update id_information
 	    update_information(#information{id = Pid, name = Name}),
+	    ok;
+	{trace_ts, _Pid, unregister, _Name, _Ts} -> 
+	    % Not implemented
 	    ok;
 	{trace_ts, Pid, getting_unlinked, _Id, _Ts} when is_pid(Pid) ->
 	    % Update id_information
@@ -339,12 +334,29 @@ insert_trace(Trace) ->
 	    io:format("insert_trace, unhandled: ~p~n", [Unhandled])
     end.
 
+mfa2informative({erlang, apply, [M, F, Args]})  -> mfa2informative({M, F,Args});
+mfa2informative({erlang, apply, [Fun, Args]}) ->
+    FunInfo = erlang:fun_info(Fun), 
+    M = case proplists:get_value(module, FunInfo, undefined) of
+	    []        -> undefined_fun_module;
+	    undefined -> undefined_fun_module;
+	    Module    -> Module
+	end,
+    F = case proplists:get_value(name, FunInfo, undefined) of
+	    []        -> undefined_fun_function;
+	    undefined -> undefined_fun_function;
+	    Function  -> Function
+	end,
+    mfa2informative({M, F, Args});
+mfa2informative(Mfa) -> Mfa.
+
 %% consolidate_db() -> bool()
 %% Purpose:
 %%	Check start/stop time
 %%	Activity consistency
 
 consolidate_db() ->
+    io:format("Consolidating...~n"),
     % Check start/stop timestamps
     case select_query({system, start_ts}) of
 	undefined ->
@@ -358,7 +370,26 @@ consolidate_db() ->
 	    update_system_stop_ts(Max);
 	_ -> ok
     end,
+    consolidate_runnability(),
     ok.
+
+consolidate_runnability() ->
+    put({runnable, procs}, undefined),
+    put({runnable, ports}, undefined),
+    consolidate_runnability_loop(ets:first(pdb_activity)).
+
+consolidate_runnability_loop('$end_of_table') -> ok;
+consolidate_runnability_loop(Key) ->
+    case ets:lookup(pdb_activity, Key) of
+	[#activity{id = Id, state = State } = A] when is_pid(Id) ->
+	    Rc = get_runnable_count(procs, State),
+	    ets:insert(pdb_activity, A#activity{ runnable_count = Rc});
+	[#activity{id = Id, state = State } = A] when is_port(Id) ->
+	    Rc = get_runnable_count(ports, State),
+	    ets:insert(pdb_activity, A#activity{ runnable_count = Rc});
+	_ -> throw(consolidate)
+    end,
+    consolidate_runnability_loop(ets:next(pdb_activity, Key)).
 
 list_all_ts() ->
     ATs = [ Act#activity.timestamp || 
@@ -390,14 +421,14 @@ list_all_ts() ->
 %%	during the profile duration.
 
 get_runnable_count(Type, State) ->
-    case get({runnable, Type}) of 
-    	undefined when State == active -> 
+    case {get({runnable, Type}), State} of 
+    	{undefined, active} -> 
 	    put({runnable, Type}, 1),
 	    1;
-	N when State == active ->
+	{N, active} ->
 	    put({runnable, Type}, N + 1),
 	    N + 1;
-	N when State == inactive ->
+	{N, inactive} ->
 	    put({runnable, Type}, N - 1),
 	    N - 1;
 	Unhandled ->
@@ -411,7 +442,6 @@ check_activity_consistency(Id, State) ->
 	    io:format("check_activity_consistency, state flow invalid.~n"),
 	    invalid_state;
 	undefined when State == inactive -> 
-	    io:format("check_activity_consistency, invalid start state: ~p.~n",[State]),
 	    invalid_state;
 	_ ->
 	    put({previous_state, Id}, State),
@@ -520,7 +550,7 @@ select_query_activity(Query) ->
 		true ->
 		    case catch select_query_activity_exact_ts(Options) of
 			{'EXIT', Reason} ->
-	    		    io:format("select_query_activity, error: ~p~n", [Reason]),
+	    		    io:format(" - select_query_activity [ catch! ]: ~p~n", [Reason]),
 			    [];
 		    	Match ->
 			    Match
@@ -529,7 +559,7 @@ select_query_activity(Query) ->
 		    MS = activity_ms(Options),
 		    case catch ets:select(pdb_activity, MS) of
 			{'EXIT', Reason} ->
-	    		    io:format("select_query_activity, error: ~p~n", [Reason]),
+	    		    io:format(" - select_query_activity [ catch! ]: ~p~n", [Reason]),
 			    [];
 		    	Match ->
 			    Match
@@ -541,60 +571,48 @@ select_query_activity(Query) ->
     end.
 
 select_query_activity_exact_ts(Options) ->
-    TsMinMember = lists:keymember(ts_min, 1, Options),
-    TsMaxMember = lists:keymember(ts_max, 1, Options),
-    if 
-	TsMinMember == true , TsMaxMember == true ->
-	    % Extract timestamps	    
-	    {value, {ts_min, TsMin}} = lists:keysearch(ts_min, 1, Options),
-	    {value, {ts_max, TsMax}} = lists:keysearch(ts_max, 1, Options),
-	    
+    case { proplists:get_value(ts_min, Options, undefined), proplists:get_value(ts_max, Options, undefined) } of
+	{undefined, undefined} -> [];
+	{undefined, _        } -> [];
+	{_        , undefined} -> [];
+	{TsMin    , TsMax    } ->
 	    % Remove unwanted options
-	    Opts = lists:filter(
-		fun(Opt) ->
-		    case Opt of
-			{ts_min, _ } -> false;
-			{ts_max, _ } -> false;
-			{ts_exact, _ } -> false;
-			_ -> true
-		    end
-		end, Options),
+	    Opts = lists_filter([ts_exact], Options),
 	    Ms = activity_ms(Opts),
-	    Activities = ets:select(pdb_activity, Ms),
-	    filter_activities_exact_ts(Activities, TsMin,TsMax);
-	true ->
-	    io:format("select_query_activity, error: exact needs ts_min and ts_max~n"),
-	    []
+	    case ets:select(pdb_activity, Ms) of
+		% no entries within interval
+		[] -> 
+		    Opts2 = lists_filter([ts_max, ts_min], Opts) ++ [{ts_min, TsMax}],
+		    Ms2   = activity_ms(Opts2),
+		    case ets:select(pdb_activity, Ms2, 1) of
+			'$end_of_table' -> [];
+			{[E], _}  -> 
+			    [PrevAct] = ets:lookup(pdb_activity, ets:prev(pdb_activity, E#activity.timestamp)),
+			    [PrevAct#activity{ timestamp = TsMin} , E] 
+		    end;
+		Acts ->
+		    [Head| _] = Acts,
+		    if
+			Head#activity.timestamp == TsMin -> Acts;
+			true ->
+			    PrevTs = ets:prev(pdb_activity, Head#activity.timestamp),
+			    case ets:lookup(pdb_activity, PrevTs) of
+				[] -> Acts;
+				[PrevAct] -> [PrevAct#activity{timestamp = TsMin}|Acts]
+			    end
+		    end
+	    end
     end.
 
-filter_activities_exact_ts(Activities, TsMin, TsMax) ->
-    filter_activities_exact_ts_pre(Activities, {undefined, TsMin, TsMax}, []).
-
-filter_activities_exact_ts_pre([], _, Out) ->
-    lists:reverse(Out);
-filter_activities_exact_ts_pre([A | As], {PreA, TsMin, TsMax}, Out) ->
-    if 
-	A#activity.timestamp < TsMin ->
-	    filter_activities_exact_ts_pre(As, {A,TsMin, TsMax}, Out);
-	PreA == undefined ->
-	    filter_activities_exact_ts_end(As, {A,TsMin, TsMax}, [ A | Out]);
-	true ->
-	    B = PreA#activity{timestamp = TsMin},
-	    filter_activities_exact_ts_end(As, {A,TsMin, TsMax}, [A,B])
-    end.
-filter_activities_exact_ts_end([],_, Out) ->
-    lists:reverse(Out);
-filter_activities_exact_ts_end([A | As], {_PreA, TsMin, TsMax}, Out) ->
-    if
-	A#activity.timestamp > TsMin , A#activity.timestamp < TsMax ->
-	    filter_activities_exact_ts_end(As, {A,TsMin, TsMax}, [A | Out]);
-	A#activity.timestamp >= TsMax ->
-	    B = A#activity{timestamp = TsMax},
-	    filter_activities_exact_ts_end([], {A,TsMin, TsMax}, [B | Out]);
-	true ->
-	    io:format("filter_activities_exact_ts_pro, error: range problems~n"),
-	    []
-    end.
+lists_filter([], Options) -> Options;
+lists_filter([D|Ds], Options) ->
+    lists_filter(Ds, lists:filter(
+	fun ({Pred, _}) ->
+	    if 
+		Pred == D -> false;
+		true      -> true
+	    end
+	end, Options)).
 
 % Options:
 % {ts_min, timestamp()}

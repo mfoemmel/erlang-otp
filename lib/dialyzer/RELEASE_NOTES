@@ -6,6 +6,16 @@
 To be released
 --------------
 
+
+Version 1.8.3 (in Erlang/OTP R12B-5)
+------------------------------------
+ - Added the --no_check_plt option that makes the startup time faster
+   when working with stable PLTs that do not change.
+ - Changed the phrasing of some warnings so that they do not cause confusion
+   to some users and correspond better to reality.
+
+Version 1.8.2 (in Erlang/OTP R12B-4)
+------------------------------------
  - The return type of the Erlang interface dialyzer:run/1 has changed
    to only return a list of warnings. If something goes wrong dialyzer
    dies with an exception.

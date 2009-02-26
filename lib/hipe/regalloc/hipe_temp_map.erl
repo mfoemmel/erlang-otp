@@ -10,9 +10,9 @@
 %%  History  :	* 2001-07-24 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2008/04/20 13:01:13 $
-%%              $Revision: 1.14 $
+%%              $Author: kostis $
+%%              $Date: 2008/09/14 13:01:32 $
+%%              $Revision: 1.15 $
 %% ===========================================================================
 %%  Exports  :
 %%
@@ -35,7 +35,7 @@
 %% element 1
 %%----------------------------------------------------------------------------
 
--spec(cols2tuple/2 :: (hipe_map(), atom()) -> hipe_temp_map()).
+-spec cols2tuple(hipe_map(), atom()) -> hipe_temp_map().
 
 cols2tuple(Map, Target) ->
   ?ASSERT(check_list(Map)),
@@ -67,7 +67,7 @@ cols2tuple(N, SourceMapping, Vs, Target) ->
 %%
 %% True if temp Temp is spilled.
 %%
--spec(is_spilled/2 :: (non_neg_integer(), hipe_temp_map()) -> bool()).
+-spec is_spilled(non_neg_integer(), hipe_temp_map()) -> bool().
 
 is_spilled(Temp, Map) ->
   case element(Temp+1, Map) of
@@ -102,7 +102,7 @@ is_spilled(Temp, Map) ->
 %%
 %% Converts a temp_map tuple back to a (sorted) key-list.
 %%
--spec(to_substlist/1 :: (hipe_temp_map()) -> hipe_map()).
+-spec to_substlist(hipe_temp_map()) -> hipe_map().
 
 to_substlist(Map) ->
   T = tuple_to_list(Map),

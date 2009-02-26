@@ -118,6 +118,8 @@
       <item>makes Dialyzer a bit more verbose</item>
       <tag><c><![CDATA[--check_plt]]></c></tag>
       <item>Only checks if the init plt is up to date and rebuilds it if this is not the case</item>
+      <tag><c><![CDATA[--no_check_plt]]></c></tag>
+      <item>Skip the plt check when running Dialyzer. Useful when working with installed plts that never change.</item>
       <tag><c><![CDATA[--build_plt]]></c></tag>
       <item>The analysis starts from an empty plt and creates a new one from the
        files specified with -c and -r. Only works for beam files.

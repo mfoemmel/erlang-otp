@@ -41,6 +41,13 @@
       instance of this server running.</p>
     <p>This server can be started with the <c>kernel</c> configuration
       parameter <c>start_boot_server</c>.</p>
+    <p>The <c>erl_boot_server</c> can both read regular files as well as
+      files in archives. See <seealso marker="code">code(3)</seealso>
+      and <seealso marker="erl_prim_loader">erl_prim_loader(3)</seealso>.</p>
+    <warning><p>The support for loading of code from archive files is
+     experimental. The sole purpose of releasing it before it is ready
+     is to obtain early feedback. The file format, semantics,
+     interfaces etc. may be changed in a future release.</p></warning>
   </description>
   <funcs>
     <func>
@@ -48,7 +55,7 @@
       <fsummary>Start the boot server</fsummary>
       <type>
         <v>Slaves = [Host]</v>
-        <v>&nbsp;Host = atom()</v>
+        <v>Host = atom()</v>
         <v>Pid = pid()</v>
         <v>What = term()</v>
       </type>
@@ -63,7 +70,7 @@
       <fsummary>Start the boot server and links the caller</fsummary>
       <type>
         <v>Slaves = [Host]</v>
-        <v>&nbsp;Host = atom()</v>
+        <v>Host = atom()</v>
         <v>Pid = pid()</v>
         <v>What = term()()</v>
       </type>
@@ -78,7 +85,7 @@
       <fsummary>Add a slave to the list of allowed slaves</fsummary>
       <type>
         <v>Slave = Host</v>
-        <v>&nbsp;Host = atom()</v>
+        <v>Host = atom()</v>
         <v>What = term()</v>
       </type>
       <desc>
@@ -90,7 +97,7 @@
       <fsummary>Delete a slave from the list of allowed slaves</fsummary>
       <type>
         <v>Slave = Host</v>
-        <v>&nbsp;Host = atom()</v>
+        <v>Host = atom()</v>
         <v>What = void()</v>
       </type>
       <desc>
@@ -103,7 +110,7 @@
       <fsummary>Return the current list of allowed slave hosts</fsummary>
       <type>
         <v>Slaves = [Host]</v>
-        <v>&nbsp;Host = atom()</v>
+        <v>Host = atom()</v>
       </type>
       <desc>
         <p>Returns the current list of allowed slave hosts.</p>

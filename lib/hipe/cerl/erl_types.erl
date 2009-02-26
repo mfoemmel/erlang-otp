@@ -18,15 +18,15 @@
 %% License along with this library; if not, write to the Free Software
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
-%%
-%% Original author: Richard Carlsson. Rewritten in whole based on the 
-%%                                    original implementation 
-%%                                    by Tobias Lindahl
+%% 
+%% The initial author of this file is Richard Carlsson. However, the
+%% current type representation was written by Tobias Lindahl based on
+%% the original implementation.
 %%
 %% Author contact: tobiasl@it.uu.se, richardc@it.uu.se
 %%
 %% $Id$
-%%
+%%=====================================================================
 
 -module(erl_types).
 
@@ -34,7 +34,7 @@
 -define(UNIT_MULTIPLIER, 8).
 
 -define(TAG_IMMED1_SIZE, 4).
--define(BITS, (hipe_rtl_arch:word_size() * 8) - ?TAG_IMMED1_SIZE).
+-define(BITS, (erlang:system_info(wordsize) * 8) - ?TAG_IMMED1_SIZE).
 
 %-define(widening_debug, fun(X, Y) -> io:format("widening: ~s ~p~n", [X, Y]) end).
 -define(widening_debug, fun(_, _) -> ok end).
@@ -145,10 +145,13 @@
 	 t_matchstate_update_present/2,
 	 t_matchstate_update_slot/3,
 	 t_mfa/0,
+	 t_module/0,
 	 t_nil/0,	 
+	 t_node/0,
 	 t_none/0,
 	 t_nonempty_list/0,
 	 t_nonempty_list/1,
+	 t_nonempty_string/0,
 	 t_number/0,
 	 t_number/1,
 	 t_number_vals/1,
@@ -164,6 +167,7 @@
 	 t_subtract_list/2,
 	 t_sup/1,
 	 t_sup/2,
+	 t_timeout/0,
 	 t_to_string/1,
 	 t_to_string/2,
 	 t_tuple/0,
@@ -176,7 +180,7 @@
 	 t_unit/0,
 	 t_var/1,
 	 t_var_name/1,
-	 %%t_assign_variables_to_subtype/2,
+	 %% t_assign_variables_to_subtype/2,
 	 subst_all_vars_to_any/1,
 	 any_none_or_unit/1,
 	 lift_list_to_pos_empty/1
@@ -706,7 +710,6 @@ t_list(Contents) ->
 t_list_elements(?list(Contents, _, _)) -> Contents;
 t_list_elements(?nil) -> ?none.
 
-
 t_list_termination(?nil) -> ?nil;
 t_list_termination(?list(_, Term, _)) -> Term.
 
@@ -719,6 +722,9 @@ t_nonempty_list() ->
 
 t_nonempty_list(Type) ->
   t_cons(Type, ?nil).
+
+t_nonempty_string() ->
+  t_nonempty_list(t_char()).
 
 t_string() ->
   t_list(t_char()).
@@ -813,7 +819,7 @@ t_is_tuple(?tuple_set(_)) -> true;
 t_is_tuple(_) -> false.
 
 %%-----------------------------------------------------------------------------
-%% Non-primitive types, including some handy syntactic-sugar types
+%% Non-primitive types, including some handy syntactic sugar types
 %%
 
 t_constant() ->
@@ -850,6 +856,12 @@ t_non_neg_fixnum() ->
 t_mfa() ->
   t_tuple([t_atom(), t_atom(), t_arity()]).
 
+t_module() ->
+  t_atom().
+
+t_node() ->
+  t_atom().
+
 t_iolist() ->
   t_iolist(1).
 
@@ -858,6 +870,9 @@ t_iolist(N) when N > 0 ->
 		        t_sup(t_binary(),t_nil()));
 t_iolist(0) ->
   t_maybe_improper_list(t_any(),t_sup(t_binary(),t_nil())).
+
+t_timeout() ->
+  t_sup(t_non_neg_integer(), t_atom('infinity')).
 
 %%------------------------------------
 
@@ -1002,11 +1017,14 @@ t_from_range_unsafe(pos_inf, neg_inf) -> t_none().
 t_is_fixnum(?int_range(neg_inf, _)) -> false;
 t_is_fixnum(?int_range(_, pos_inf)) -> false;
 t_is_fixnum(?int_range(From, To)) ->
-  hipe_tagscheme:is_fixnum(From) andalso hipe_tagscheme:is_fixnum(To);
+  is_fixnum(From) andalso is_fixnum(To);
 t_is_fixnum(?int_set(Set)) ->
-  hipe_tagscheme:is_fixnum(set_min(Set)) 
-    andalso hipe_tagscheme:is_fixnum(set_max(Set));
+  is_fixnum(set_min(Set)) andalso is_fixnum(set_max(Set));
 t_is_fixnum(_) -> false.
+
+is_fixnum(N) when is_integer(N) ->
+  Bits = ?BITS,
+  (N =< ((1 bsl (Bits - 1)) - 1)) andalso (N >= -(1 bsl (Bits - 1))).
 
 infinity_geq(pos_inf, _) -> true;
 infinity_geq(_, pos_inf) -> false;
@@ -1029,7 +1047,6 @@ number_min(?number(?any, _Tag)) -> neg_inf.
 number_max(?int_range(_, To)) -> To;
 number_max(?int_set(Set)) -> set_max(Set);
 number_max(?number(?any, _Tag)) -> pos_inf.
-
 
 %% int_range(neg_inf, pos_inf)         -> t_integer();
 %% int_range(neg_inf, To)              -> ?int_range(neg_inf, To);
@@ -1274,7 +1291,7 @@ force_union(T = ?nil) ->            ?list_union(T);
 force_union(T = ?number(_,_)) ->    ?number_union(T);
 force_union(T = ?tuple(_, _, _)) -> ?tuple_union(T);
 force_union(T = ?tuple_set(_)) ->   ?tuple_union(T);
-force_union(T = ?matchstate(_,_)) ->   ?matchstate_union(T);
+force_union(T = ?matchstate(_,_)) -> ?matchstate_union(T);
 force_union(T = ?union(_)) ->       T.
 
 %%-----------------------------------------------------------------------------
@@ -1656,7 +1673,6 @@ unify_tuple_set_and_tuple(?tuple_set([{Arity, List}]),
   %% Collapse the tuple set.
   {NewElements, Dict1} = unify_lists(sup_tuple_elements(List), Elements2, Dict),
   {t_tuple(NewElements), Dict1}.
-
 
 unify_lists(L1, L2, Dict) ->
   unify_lists(L1, L2, Dict, []).
@@ -2347,11 +2363,13 @@ t_from_form({type, _L, list, []}, _RecDict, _VarDict) -> t_list();
 t_from_form({type, _L, list, [Type]}, RecDict, VarDict) -> 
   t_list(t_from_form(Type, RecDict, VarDict));
 t_from_form({type, _L, mfa, []}, _RecDict, _VarDict) -> t_mfa();
+t_from_form({type, _L, module, []}, _RecDict, _VarDict) -> t_module();
 t_from_form({type, _L, nil, []}, _RecDict, _VarDict) -> t_nil();
 t_from_form({type, _L, neg_integer, []}, _RecDict, _VarDict) -> t_neg_integer();
 t_from_form({type, _L, non_neg_integer, []}, _RecDict, _VarDict) -> 
   t_non_neg_integer();
 t_from_form({type, _L, no_return, []}, _RecDict, _VarDict) -> t_unit();
+t_from_form({type, _L, node, []}, _RecDict, _VarDict) -> t_node();
 t_from_form({type, _L, none, []}, _RecDict, _VarDict) -> t_none();
 t_from_form({type, _L, nonempty_list, []}, _RecDict, _VarDict) -> 
   t_nonempty_list();
@@ -2367,6 +2385,8 @@ t_from_form({type, _L, nonempty_maybe_improper_list, [Cont, Term]},
 	    RecDict, VarDict) -> 
   t_cons(t_from_form(Cont, RecDict, VarDict), 
 	 t_from_form(Term, RecDict, VarDict));
+t_from_form({type, _L, nonempty_string, []}, _RecDict, _VarDict) -> 
+  t_nonempty_string();
 t_from_form({type, _L, number, []}, _RecDict, _VarDict) -> t_number();
 t_from_form({type, _L, pid, []}, _RecDict, _VarDict) -> t_pid();
 t_from_form({type, _L, port, []}, _RecDict, _VarDict) -> t_port();
@@ -2386,6 +2406,8 @@ t_from_form({type, _L, record, [Name|Fields]}, RecDict, VarDict) ->
   record_from_form(Name, Fields, RecDict, VarDict);
 t_from_form({type, _L, ref, []}, _RecDict, _VarDict) -> t_ref();
 t_from_form({type, _L, string, []}, _RecDict, _VarDict) -> t_string();
+t_from_form({type, _L, term, []}, _RecDict, _VarDict) -> t_any();
+t_from_form({type, _L, timeout, []}, _RecDict, _VarDict) -> t_timeout();
 t_from_form({type, _L, tuple, any}, _RecDict, _VarDict) -> t_tuple();
 t_from_form({type, _L, tuple, Args}, RecDict, VarDict) -> 
   t_tuple([t_from_form(A, RecDict, VarDict) || A <- Args]);
@@ -2477,8 +2499,12 @@ t_form_to_string({type, _L, 'fun', [{type, _, product, Domain}, Range]}) ->
     ++ t_form_to_string(Range) ++ ")";
 t_form_to_string({type, _L, list, [Type]}) -> 
   "[" ++ t_form_to_string(Type) ++ "]";
+t_form_to_string({type, _L, mfa, []}) -> "mfa()";
+t_form_to_string({type, _L, module, []}) -> "module()";
+t_form_to_string({type, _L, node, []}) -> "node()";
 t_form_to_string({type, _L, nonempty_list, [Type]}) ->
   "[" ++ t_form_to_string(Type) ++ ",...]";
+t_form_to_string({type, _L, nonempty_string, []}) -> "nonempty_string()";
 t_form_to_string({type, _L, product, Elements}) ->
   "<" ++ sequence(t_form_to_string_list(Elements), ",") ++ ">";
 t_form_to_string({type, _L, range, [{integer, _, From}, {integer, _, To}]}) ->
@@ -2490,15 +2516,24 @@ t_form_to_string({type, _L, record, [{atom, _, Name}|Fields]}) ->
   io_lib:format("#~w{~s}", [Name, FieldString]);
 t_form_to_string({type, _L, field_type, [{atom, _, Name}, Type]}) ->
   io_lib:format("~w::~s", [Name, t_form_to_string(Type)]);
+t_form_to_string({type, _L, term, any}) -> "term()";
+t_form_to_string({type, _L, timeout, any}) -> "timeout()";
 t_form_to_string({type, _L, tuple, any}) -> "tuple()";
 t_form_to_string({type, _L, tuple, Args}) ->
   "{" ++ sequence(t_form_to_string_list(Args), ",") ++ "}";
 t_form_to_string({type, _L, union, Args}) ->
   sequence(t_form_to_string_list(Args), " | ");
-t_form_to_string({type, _L, mfa, []}) -> "mfa()";
 t_form_to_string(T = {type, _L, Name, []}) ->
   try t_to_string(t_from_form(T))
   catch throw:{error, _} -> atom_to_list(Name) ++ "()"
+  end;
+t_form_to_string({type, _L, binary, [{integer, _, X}, {integer, _, Y}]}) ->
+  case Y of
+    0 ->
+      case X of
+	0 -> "<<>>";
+	_ -> io_lib:format("<<_:~w>>", [X])
+      end
   end;
 t_form_to_string({type, _L, Name, List}) -> 
   io_lib:format("~w(~s)", [Name, sequence(t_form_to_string_list(List), ",")]).
@@ -2550,7 +2585,7 @@ lookup_type(Name, RecDict) ->
 
 type_is_defined(Name, RecDict) ->
   dict:is_key({type, Name}, RecDict).
-      
+
 %% -----------------------------------
 %% Set
 %%

@@ -50,7 +50,9 @@
 	  comment,     % zip-file comment
 	  open_opts,   % options passed to file:open
 	  feedback,    % feeback (fun)
-	  cwd          % directory to relate paths to
+	  cwd,         % directory to relate paths to
+	  compress,    % compress files with these suffixes
+	  uncompress   % uncompress files with these suffixes
 	 }).
 
 -record(list_dir_opts, {
@@ -449,6 +451,36 @@ get_zip_opt([{cwd, CWD} | Rest], Opts) ->
     get_zip_opt(Rest, Opts#zip_opts{cwd = CWD});
 get_zip_opt([{comment, C} | Rest], Opts) ->
     get_zip_opt(Rest, Opts#zip_opts{comment = C});
+get_zip_opt([{compress, Which} = O| Rest], Opts) ->
+    Which2 = 
+	case Which of
+	    all ->
+		all;
+	    Suffixes when is_list(Suffixes) ->
+		lists:usort(Suffixes);
+	    {add, Suffixes} when is_list(Suffixes) ->
+		lists:usort(Opts#zip_opts.compress ++ Suffixes);
+	    {del, Suffixes} when is_list(Suffixes) ->
+		lists:usort(Opts#zip_opts.compress -- Suffixes);
+	    _ ->
+		throw({bad_option, O})
+	end,
+    get_zip_opt(Rest, Opts#zip_opts{compress = Which2});
+get_zip_opt([{uncompress, Which} = O| Rest], Opts) ->
+    Which2 = 
+	case Which of
+	    all ->
+		all;
+	    Suffixes when is_list(Suffixes) ->
+		lists:usort(Suffixes);
+	    {add, Suffixes} when is_list(Suffixes) ->
+		lists:usort(Opts#zip_opts.uncompress ++ Suffixes);
+	    {del, Suffixes} when is_list(Suffixes) ->
+		lists:usort(Opts#zip_opts.uncompress -- Suffixes);
+	    _ ->
+		throw({bad_option, O})
+	end,
+    get_zip_opt(Rest, Opts#zip_opts{uncompress = Which2});
 get_zip_opt([Unknown | _Rest], _Opts) ->
     throw({bad_option, Unknown}).
 
@@ -479,12 +511,15 @@ fun_and_1(Fun1, Fun2) ->
 
 %% getting options
 get_zip_options(Files, Options) ->
+    Suffixes = [".Z", ".zip", ".zoo", ".arc", ".lzh", ".arj"],
     Opts = #zip_opts{output = fun file_io/2,
-		     input = get_zip_input(hd(Files)),
+		     input = get_zip_input({files, Files}),
 		     open_opts = [raw, write],
 		     comment = "",
 		     feedback = fun silent/1,
-		     cwd = ""
+		     cwd = "",
+		     compress = all,
+		     uncompress = Suffixes
 		    },
     get_zip_opt(Options, Opts).
 
@@ -512,7 +547,11 @@ get_input(F) when is_list(F) ->
 get_zip_input({F, B}) when is_binary(B), is_list(F) ->
     fun binary_io/2;
 get_zip_input(F) when is_list(F) ->
-    fun file_io/2.
+    fun file_io/2;
+get_zip_input({files, []}) ->
+    fun binary_io/2;
+get_zip_input({files, [File | _]}) ->
+    get_zip_input(File).
 
 get_list_dir_options(F, Options) ->
     Opts = #list_dir_opts{raw_iterator = fun raw_file_info_public/5,
@@ -561,8 +600,16 @@ put_eocd(N, Pos, Sz, Comment, Output, Out0) ->
     B = [<<?END_OF_CENTRAL_DIR_MAGIC:32/little>>, BEOCD, Comment], % BComment],
     Output({write, B}, Out0).
 
-get_filename({Name, _}) -> Name;
-get_filename(Name) -> Name.
+get_filename({Name, _}, Type) ->
+    get_filename(Name, Type);
+get_filename(Name, regular) ->
+    Name;
+get_filename(Name, directory) ->
+    %% Ensure trailing slash
+    case lists:reverse(Name) of
+	[$/ | _Rev] -> Name;
+	Rev         -> lists:reverse([$/ | Rev])
+    end.
 
 add_cwd(_CWD, {_Name, _} = F) -> F;
 add_cwd("", F) -> F;
@@ -571,51 +618,75 @@ add_cwd(CWD, F) -> filename:join(CWD, F).
 %% already compressed data should be stored as is in archive,
 %% a simple name-match is used to check for this
 %% files smaller than 10 bytes are also stored, not compressed
-get_comp_method(_, N) when is_integer(N), N < 10 ->
+get_comp_method(_, N, _, _) when is_integer(N), N < 10 ->
     ?STORED;
-get_comp_method(L, _) ->
-    case lists:member(L, [".Z", ".zip", ".zoo", ".arc", ".lzh", ".arj"]) of
-	true -> ?STORED;
-	_ -> ?DEFLATED
+get_comp_method(_, _, _, directory) ->
+    ?STORED;
+get_comp_method(F, _, #zip_opts{compress = Compress, uncompress = Uncompress}, _) ->
+    Ext = filename:extension(F),
+    Test = fun(Which) -> (Which =:= all) orelse lists:member(Ext, Which) end,
+    case Test(Compress) andalso not Test(Uncompress) of
+	true  -> ?DEFLATED;
+	false -> ?STORED
     end.
 
 put_z_files([], _Z, Out, Pos, _Opts, Acc) ->
     {Out, lists:reverse(Acc, []), Pos};
 put_z_files([F | Rest], Z, Out0, Pos0,
-	       #zip_opts{input = Input, output = Output, open_opts = OpO,
-			 feedback = FB, cwd = CWD} = Opts, Acc) ->
+	    #zip_opts{input = Input, output = Output, open_opts = OpO,
+		      feedback = FB, cwd = CWD} = Opts, Acc) ->
     In0 = [],
     F1 = add_cwd(CWD, F),
     FileInfo = Input({file_info, F1}, In0),
-    UncompSize = FileInfo#file_info.size,
-    FileName = get_filename(F),
-    CompMethod = get_comp_method(filename:extension(FileName), UncompSize),
-    LH = local_file_header_from_info_method_name(FileInfo, CompMethod,
-						 FileName),
+    Type = FileInfo#file_info.type,
+    UncompSize =
+	case Type of
+	    regular -> FileInfo#file_info.size;
+	    directory -> 0
+	end,
+    FileName = get_filename(F, Type),
+    CompMethod = get_comp_method(FileName, UncompSize, Opts, Type),
+    LH = local_file_header_from_info_method_name(FileInfo, UncompSize, CompMethod, FileName),
     BLH = local_file_header_to_bin(LH),
     B = [<<?LOCAL_FILE_MAGIC:32/little>>, BLH],
     Out1 = Output({write, B}, Out0),
     Out2 = Output({write, FileName}, Out1),
-    Pos1 = Pos0 + ?LOCAL_FILE_HEADER_SZ
-	+ LH#local_file_header.file_name_length,
     {Out3, CompSize, CRC} = put_z_file(CompMethod, UncompSize, Out2, F1,
-				       0, Input, Output, OpO, Z),
+				       0, Input, Output, OpO, Z, Type),
     FB(FileName),
     Patch = <<CRC:32/little, CompSize:32/little>>,
-    Out4 = Output({pwrite, Pos0 + ?LOCAL_FILE_HEADER_CRC32_OFFSET, Patch},
-		  Out3),
+    Out4 = Output({pwrite, Pos0 + ?LOCAL_FILE_HEADER_CRC32_OFFSET, Patch}, Out3),
     Out5 = Output({seek, eof, 0}, Out4),
-    put_z_files(Rest, Z, Out5, Pos1 + CompSize, Opts,
-		   [{LH#local_file_header{comp_size = CompSize, crc32 = CRC},
-		     FileName, Pos0} | Acc]).
+    Pos1 = Pos0 + ?LOCAL_FILE_HEADER_SZ	+ LH#local_file_header.file_name_length,
+    Pos2 = Pos1 + CompSize,
+    LH2 = LH#local_file_header{comp_size = CompSize, crc32 = CRC},
+    ThisAcc = [{LH2, FileName, Pos0}],
+    {Out6, SubAcc, Pos3} =
+	case Type of
+	    regular ->
+		{Out5, ThisAcc, Pos2};
+	    directory ->
+		Files = Input({list_dir, F1}, []),
+		RevFiles = reverse_join_files(F, Files, []),
+		put_z_files(RevFiles, Z, Out5, Pos2, Opts, ThisAcc)
+	end,
+    Acc2 = lists:reverse(SubAcc) ++ Acc,
+    put_z_files(Rest, Z, Out6, Pos3, Opts, Acc2).
+
+reverse_join_files(Dir, [File | Files], Acc) ->
+    reverse_join_files(Dir, Files, [filename:join([Dir, File]) | Acc]);
+reverse_join_files(_Dir, [], Acc) ->
+    Acc.
 
 %% flag for zlib
 -define(MAX_WBITS, 15).
 
 %% compress a file
-put_z_file(_Method, 0, Out, _F, Pos, _Input, _Output, _OpO, _Z) ->
+put_z_file(_Method, Sz, Out, _F, Pos, _Input, _Output, _OpO, _Z, directory) ->
+    {Out, Pos + Sz, 0};
+put_z_file(_Method, 0, Out, _F, Pos, _Input, _Output, _OpO, _Z, regular) ->
     {Out, Pos, 0};
-put_z_file(?STORED, UncompSize, Out0, F, Pos0, Input, Output, OpO, Z) ->
+put_z_file(?STORED, UncompSize, Out0, F, Pos0, Input, Output, OpO, Z, regular) ->
     In0 = [],
     In1 = Input({open, F, OpO -- [write]}, In0),
     CRC0 = zlib:crc32(Z, <<>>),
@@ -624,7 +695,7 @@ put_z_file(?STORED, UncompSize, Out0, F, Pos0, Input, Output, OpO, Z) ->
     CRC = zlib:crc32(Z, CRC0, Data),
     Input(close, In2),
     {Out1, Pos0+erlang:iolist_size(Data), CRC};
-put_z_file(?DEFLATED, UncompSize, Out0, F, Pos0, Input, Output, OpO, Z) ->
+put_z_file(?DEFLATED, UncompSize, Out0, F, Pos0, Input, Output, OpO, Z, regular) ->
     In0 = [],
     In1 = Input({open, F, OpO -- [write]}, In0),
     ok = zlib:deflateInit(Z, default, deflated, -?MAX_WBITS, 8, default),
@@ -824,7 +895,8 @@ eocd_to_bin(#eocd{disk_num = DiskNum,
      ZipCommentLength:16/little>>.
 
 %% put together a local file header 
-local_file_header_from_info_method_name(#file_info{size = Size, mtime = MTime},
+local_file_header_from_info_method_name(#file_info{mtime = MTime},
+					UncompSize,
 					CompMethod, Name) ->
     {ModDate, ModTime} = dos_date_time_from_datetime(MTime),
     #local_file_header{version_needed = 20,
@@ -834,7 +906,7 @@ local_file_header_from_info_method_name(#file_info{size = Size, mtime = MTime},
 		       last_mod_date = ModDate,
 		       crc32 = -1,
 		       comp_size = -1,
-		       uncomp_size = Size,
+		       uncomp_size = UncompSize,
 		       file_name_length = length(Name),
 		       extra_field_length = 0}.
 
@@ -1024,7 +1096,7 @@ raw_file_info_etc(CD, FileName, FileComment, BExtraField, Acc)
     #cd_file_header{comp_size = CompSize,
 		    local_header_offset = Offset,
 		    crc32 = CRC} = CD,
-    FileInfo = cd_file_header_to_file_info(CD, BExtraField),
+    FileInfo = cd_file_header_to_file_info(FileName, CD, BExtraField),
     [{#zip_file{name = FileName, info = FileInfo, comment = FileComment,
 		offset = Offset, comp_size = CompSize}, #zip_file_extra{crc32 = CRC}} | Acc];
 raw_file_info_etc(EOCD, _, Comment, _, Acc) when is_record(EOCD, eocd) ->
@@ -1041,14 +1113,19 @@ raw_file_info_public(CD, FileName, FileComment, BExtraField, Acc0) ->
       
 
 %% make a file_info from a central directory header
-cd_file_header_to_file_info(
-  #cd_file_header{uncomp_size = UncompSize,
-		  last_mod_time = ModTime,
-		  last_mod_date = ModDate},
-  ExtraField) ->
+cd_file_header_to_file_info(FileName,
+			    #cd_file_header{uncomp_size = UncompSize,
+					    last_mod_time = ModTime,
+					    last_mod_date = ModDate},
+			    ExtraField) ->
     T = dos_date_time_to_datetime(ModDate, ModTime),
+    Type =
+	case lists:last(FileName) of
+	    $/ -> directory;
+	    _  -> regular
+	end,
     FI = #file_info{size = UncompSize,
-		    type = regular,
+		    type = Type,
 		    access = read_write,
 		    atime = T,
 		    mtime = T,
@@ -1100,14 +1177,14 @@ get_z_files([{#zip_file{offset = Offset},_} = ZFile | Rest], Z, In0,
 get_z_file(In0, Z, Input, Output, OpO, FB, CWD, {ZipFile,Extra}) ->
     case Input({read, ?LOCAL_FILE_HEADER_SZ}, In0) of
 	{eof, In1} ->
-	    In1;
+	    {eof, In1};
 	%% Local File Header
 	{<<?LOCAL_FILE_MAGIC:32/little, B/binary>>, In1} ->
 	    LH = local_file_header_from_bin(B),
 	    #local_file_header{gp_flag = GPFlag,
 			       comp_method = CompMethod,
 			       file_name_length = FileNameLen,
-		       extra_field_length = ExtraLen} = LH,
+			       extra_field_length = ExtraLen} = LH,
 
 	    {CompSize,CRC32} = case GPFlag band 8 =:= 8 of
 				   true -> {ZipFile#zip_file.comp_size,
@@ -1388,14 +1465,25 @@ local_file_header_from_bin(_) ->
 %%     FI.
 
 %% io functions
+binary_io({file_info, {_Filename, _B, #file_info{} = FI}}, _A) ->
+    FI;
 binary_io({file_info, {_Filename, B}}, A) ->
     binary_io({file_info, B}, A);
 binary_io({file_info, B}, _) ->
+    {Type, Size} =
+	if
+	    is_binary(B) -> {regular, byte_size(B)};
+	    B =:= directory -> {directory, 0}
+	end,
     Now = calendar:local_time(),
-    #file_info{size = byte_size(B), type = regular, access = read_write,
-	       atime = Now, mtime = Now, ctime = Now,
-	       mode = 0, links = 1, major_device = 0,
-	       minor_device = 0, inode = 0, uid = 0, gid = 0};
+    #file_info{size = Size, type = Type,
+	       access = read_write, atime = Now,
+	       mtime = Now, ctime = Now, mode = 0,
+	       links = 1, major_device = 0,
+	       minor_device = 0, inode = 0,
+	       uid = 0, gid = 0};
+binary_io({open, {_Filename, B, _FI}, _Opts}, _) ->
+    {0, B};
 binary_io({open, {_Filename, B}, _Opts}, _) ->
     {0, B};
 binary_io({open, B, _Opts}, _) when is_binary(B) ->
@@ -1431,6 +1519,8 @@ binary_io(close, {_Pos, B}) ->
     B;
 binary_io({close, FN}, {_Pos, B}) ->
     {FN, B};
+binary_io({list_dir, _F}, _B) ->
+    [];
 binary_io({set_file_info, _F, _FI}, B) ->
     B;
 binary_io({ensure_dir, _Dir}, B) ->
@@ -1443,7 +1533,7 @@ file_io({file_info, F}, _) ->
     end;
 file_io({open, FN, Opts}, _) ->
     case lists:member(write, Opts) of
-	true -> filelib:ensure_dir(FN);
+	true -> ok = filelib:ensure_dir(FN);
 	_ -> ok
     end,
     case file:open(FN, Opts++[binary]) of
@@ -1484,11 +1574,16 @@ file_io({close, FN}, H) ->
     end;
 file_io(close, H) ->
     file_io({close, ok}, H);
+file_io({list_dir, F}, _H) ->
+    case file:list_dir(F) of
+	{ok, Files} -> Files;
+	{error, Error} -> throw(Error)
+    end;
 file_io({set_file_info, F, FI}, H) ->
     case file:write_file_info(F, FI) of
 	ok -> H;
 	{error, Error} -> throw(Error)
     end;
 file_io({ensure_dir, Dir}, H) ->
-    filelib:ensure_dir(Dir),
+    ok = filelib:ensure_dir(Dir),
     H.

@@ -1576,6 +1576,7 @@ simple_system_op(Conf) when list(Conf) ->
     ?line {error, not_found} = snmpm_config:system_info(kalle),
     
     ?line ok = config_stop(),
+    await_config_not_running(),
 
     p("done"),
     ok.
@@ -1789,6 +1790,7 @@ register_agent_using_file(Conf) when list(Conf) ->
     %% --
     p("stop config process"),
     ?line ok = snmpm_config:stop(),
+    await_config_not_running(),
 
     %% --
     p("done"),
@@ -1919,6 +1921,7 @@ register_usm_user_using_file(Conf) when list(Conf) ->
     %% --
     p("stop config process"),
     ?line ok = snmpm_config:stop(),
+    await_config_not_running(),
 
     %% --
     p("done"),
@@ -2019,6 +2022,7 @@ register_usm_user_using_function(Conf) when list(Conf) ->
     %% --
     p("stop config process"),
     ?line ok = snmpm_config:stop(),
+    await_config_not_running(),
 
     %% --
     p("done"),
@@ -2130,6 +2134,7 @@ create_and_increment(Conf) when list(Conf) ->
     ?line EndVal   = snmpm_config:incr_counter(test_id, IncVal),
 
     ?line ok = snmpm_config:stop(),
+    await_config_not_running(),
     ok.
 
 
@@ -2187,12 +2192,13 @@ stats_create_and_increment(Conf) when list(Conf) ->
     ?line 10 = loop(10, -1, Stats1Inc),
 
     ?line ok = snmpm_config:stop(),
+    await_config_not_running(),
     ok.
 
 
 loop(0, Acc, _) ->
     Acc;
-loop(N, _, F) when N > 0, function(F) ->
+loop(N, _, F) when (N > 0) andalso is_function(F) ->
     Acc = F(),
     loop(N-1, Acc, F).
 
@@ -2219,28 +2225,39 @@ otp_7219(Config) when list(Config) ->
     ConfDir = ?config(manager_conf_dir, Config),
     DbDir   = ?config(manager_db_dir, Config),
 
+    p("write manager configuration"),
     write_manager_conf(ConfDir),
 
     Opts1 = [{versions, [v1]}, 
 	     {inform_request_behaviour, user}, 
 	     {config, [{verbosity, trace}, {dir, ConfDir}, {db_dir, DbDir}]}],
 
+    p("start manager config"),
     ?line {ok, _Pid1} = snmpm_config:start_link(Opts1),
 
+    p("get some manager config"),
     {ok, {user, _}} = snmpm_config:system_info(net_if_irb),
 
+    p("stop manager config"),
     ?line ok = snmpm_config:stop(),
+    await_config_not_running(),
 
     IRB_TO = 15322, 
     Opts2 = [{versions, [v1]}, 
 	     {inform_request_behaviour, {user, IRB_TO}}, 
 	     {config, [{verbosity, trace}, {dir, ConfDir}, {db_dir, DbDir}]}],
 
+    p("start manager config"),
     ?line {ok, _Pid2} = snmpm_config:start_link(Opts2),
 
+    p("get some manager config"),
     {ok, {user, IRB_TO}} = snmpm_config:system_info(net_if_irb),
 
+    p("stop manager config"),
     ?line ok = snmpm_config:stop(),
+    await_config_not_running(),
+
+    p("done"),
     ok.
 
 

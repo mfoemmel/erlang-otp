@@ -96,36 +96,48 @@ static void set_current_fp_exception(void)
 static void unmask_x87(void)
 {
     unsigned short cw;
+
     __asm__ __volatile__("fstcw %0" : "=m"(cw));
     cw &= ~(0x01|0x04|0x08);   /* unmask IM, ZM, OM */
     __asm__ __volatile__("fldcw %0" : : "m"(cw));
 }
 
-static void mask_x87(void)
+/* mask x87 FPE, return true if the previous state was unmasked */
+static int mask_x87(void)
 {
     unsigned short cw;
+    int unmasked;
+
     __asm__ __volatile__("fstcw %0" : "=m"(cw));
+    unmasked = (cw & (0x01|0x04|0x08)) == 0;
     /* or just set cw = 0x37f */
     cw |= (0x01|0x04|0x08); /* mask IM, ZM, OM */
     __asm__ __volatile__("fldcw %0" : : "m"(cw));
+    return unmasked;
 }
 
 static void unmask_sse2(void)
 {
     unsigned int mxcsr;
+
     __asm__ __volatile__("stmxcsr %0" : "=m"(mxcsr));
     mxcsr &= ~(0x003F|0x0680); /* clear exn flags, unmask OM, ZM, IM (not PM, UM, DM) */
     __asm__ __volatile__("ldmxcsr %0" : : "m"(mxcsr));
 }
 
-static void mask_sse2(void)
+/* mask SSE2 FPE, return true if the previous state was unmasked */
+static int mask_sse2(void)
 {
     unsigned int mxcsr;
+    int unmasked;
+
     __asm__ __volatile__("stmxcsr %0" : "=m"(mxcsr));
+    unmasked = (mxcsr & 0x0680) == 0;
     /* or just set mxcsr = 0x1f80 */
     mxcsr &= ~0x003F; /* clear exn flags */
     mxcsr |=  0x0680; /* mask OM, ZM, IM (not PM, UM, DM) */
     __asm__ __volatile__("ldmxcsr %0" : : "m"(mxcsr));
+    return unmasked;
 }
 
 #if defined(__x86_64__) || defined(__DARWIN__)
@@ -221,16 +233,27 @@ static int cpu_has_sse2(void)
 
 static void unmask_fpe(void)
 {
+    __asm__ __volatile__("fnclex");
     unmask_x87();
     if (cpu_has_sse2())
 	unmask_sse2();
 }
 
-static void mask_fpe(void)
+static void unmask_fpe_conditional(int unmasked)
 {
-    mask_x87();
+    if (unmasked)
+	unmask_fpe();
+}
+
+/* mask x86 FPE, return true if the previous state was unmasked */
+static int mask_fpe(void)
+{
+    int unmasked;
+
+    unmasked = mask_x87();
     if (cpu_has_sse2())
-	mask_sse2();
+	unmasked |= mask_sse2();
+    return unmasked;
 }
 
 void erts_restore_fpu(void)
@@ -259,13 +282,23 @@ static void unmask_fpe(void)
     __asm__ __volatile__(LDX " %0, %%fsr" : : "m"(fsr));
 }
 
-static void mask_fpe(void)
+static void unmask_fpe_conditional(int unmasked)
+{
+    if (unmasked)
+	unmask_fpe();
+}
+
+/* mask SPARC FPE, return true if the previous state was unmasked */
+static int mask_fpe(void)
 {
     unsigned long fsr;
+    int unmasked;
 
     __asm__(STX " %%fsr, %0" : "=m"(fsr));
+    unmasked = ((fsr >> 23) & 0x1A) == 0x1A;
     fsr &= ~(0x1FUL << 23);	/* clear FSR[TEM] field */
     __asm__ __volatile__(LDX " %0, %%fsr" : : "m"(fsr));
+    return unmasked;
 }
 
 #elif (defined(__powerpc__) && defined(__linux__)) || (defined(__ppc__) && defined(__DARWIN__))
@@ -314,7 +347,7 @@ static void *fpu_fpe_enable(void *arg)
 	exit(1);
     }
     if ((state.srr1 & (FE1_MASK|FE0_MASK)) != (FE1_MASK|FE0_MASK)) {
-#if 0
+#if 1
 	/* This would also have to be performed in the SIGFPE handler
 	   to work around the MSR reset older Darwin releases do. */
 	state.srr1 |= (FE1_MASK|FE0_MASK);
@@ -347,9 +380,21 @@ static void set_fpscr(unsigned int fpscr)
 	double d;
 	unsigned int fpscr[2];
     } u;
+
     u.fpscr[0] = 0xFFF80000;
     u.fpscr[1] = fpscr;
     __asm__ __volatile__("mtfsf 255,%0" : : "f"(u.d));
+}
+
+static unsigned int get_fpscr(void)
+{
+    union {
+	double d;
+	unsigned int fpscr[2];
+    } u;
+
+    __asm__("mffs %0" : "=f"(u.d));
+    return u.fpscr[1];
 }
 
 static void unmask_fpe(void)
@@ -358,15 +403,44 @@ static void unmask_fpe(void)
     set_fpscr(0x80|0x40|0x10);	/* VE, OE, ZE; not UE or XE */
 }
 
-static void mask_fpe(void)
+static void unmask_fpe_conditional(int unmasked)
 {
+    if (unmasked)
+	unmask_fpe();
+}
+
+/* mask PowerPC FPE, return true if the previous state was unmasked */
+static int mask_fpe(void)
+{
+    int unmasked;
+
+    unmasked = (get_fpscr() & (0x80|0x40|0x10)) == (0x80|0x40|0x10);
     set_fpscr(0x00);
+    return unmasked;
 }
 
 #else
 
-#define unmask_fpe()	fpsetmask(FP_X_INV | FP_X_OFL | FP_X_DZ)
-#define mask_fpe()	fpsetmask(0)	/* XXX: check this */
+static void unmask_fpe(void)
+{
+    fpsetmask(FP_X_INV | FP_X_OFL | FP_X_DZ);
+}
+
+static void unmask_fpe_conditional(int unmasked)
+{
+    if (unmasked)
+	unmask_fpe();
+}
+
+/* mask IEEE FPE, return true if previous state was unmasked */
+static int mask_fpe(void)
+{
+    const fp_except unmasked_mask = FP_X_INV | FP_X_OFL | FP_X_DZ;
+    fp_except old_mask;
+
+    old_mask = fpsetmask(0);
+    return (old_mask & unmasked_mask) == unmasked_mask;
+}
 
 #endif
 
@@ -684,21 +758,47 @@ void erts_thread_init_float(void)
     erts_thread_init_fp_exception();
 #endif
 
-#if !defined(NO_FPE_SIGNALS) && (defined(__DARWIN__) || defined(__FreeBSD__))
+#ifndef NO_FPE_SIGNALS
+    /* NOTE:
+     *  erts_thread_disable_fpe() is called in all threads at
+     *  creation. We at least need to call unmask_fpe()
+     */
+#if defined(__DARWIN__) || defined(__FreeBSD__)
     /* Darwin (7.9.0) does not appear to propagate FP exception settings
        to a new thread from its parent. So if we want FP exceptions, we
        must manually re-enable them in each new thread.
        FreeBSD 6.1 appears to suffer from a similar issue. */
     erts_thread_catch_fp_exceptions();
+#else
+    unmask_fpe();
+#endif
+
 #endif
 }
 
 void erts_thread_disable_fpe(void)
 {
 #if !defined(NO_FPE_SIGNALS)
-    mask_fpe();
+    (void)mask_fpe();
 #endif
 }
+
+#if !defined(NO_FPE_SIGNALS)
+int erts_sys_block_fpe(void)
+{
+    return mask_fpe();
+}
+
+void erts_sys_unblock_fpe_conditional(int unmasked)
+{
+    unmask_fpe_conditional(unmasked);
+}
+
+void erts_sys_unblock_fpe(void)
+{
+    unmask_fpe();
+}
+#endif
 
 /* The following check is incorporated from the Vee machine */
     

@@ -18,7 +18,7 @@
 
 %%--------------------------------------------------------------------
 
--spec(cfg/1 :: (#cfg{}) -> #cfg{}).
+-spec cfg(#cfg{}) -> #cfg{}.
 
 cfg(Cfg1) ->
   Start = hipe_icode_cfg:start_label(Cfg1),

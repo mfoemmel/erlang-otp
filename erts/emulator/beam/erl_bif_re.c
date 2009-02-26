@@ -853,8 +853,9 @@ re_run_3(BIF_ALIST_3)
 				   &errstr, &errofset, default_table);
 	    if (!result) {
 		erts_free(ERTS_ALC_T_RE_TMP_BUF, expr);
-		BIF_RET(build_compile_result(BIF_P, am_error, NULL, errcode, 
-					     errstr, errofset, 0, 0));
+		/* Compilation error gives badarg except in the compile 
+		   function */
+		BIF_ERROR(BIF_P,BADARG);
 	    }
 	    if (pflags & PARSE_FLAG_GLOBAL) {
 		Eterm precompiled = 
@@ -866,11 +867,12 @@ re_run_3(BIF_ALIST_3)
 					 0);
 		Eterm *hp,r;
 		erts_free(ERTS_ALC_T_RE_TMP_BUF, expr);
-		hp = HAlloc(BIF_P,3);
-		r = TUPLE2(hp,BIF_ARG_3,
+		hp = HAlloc(BIF_P,4);
+		/* BIF_ARG_2 is in the tuple just to make exceptions right */
+		r = TUPLE3(hp,BIF_ARG_3,
 			   ((pflags & PARSE_FLAG_UNIQUE_COMPILE_OPT) ? 
 			    am_true : 
-			    am_false));
+			    am_false), BIF_ARG_2);
 		BIF_TRAP3(grun_trap_exportp, BIF_P, BIF_ARG_1, precompiled, r);
 	    }
 

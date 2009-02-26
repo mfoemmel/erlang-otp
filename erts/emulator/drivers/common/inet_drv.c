@@ -39,6 +39,10 @@
 #include <sys/types.h>
 #include <errno.h>
 
+#define IDENTITY(c) c
+#define STRINGIFY_1(b) IDENTITY(#b)
+#define STRINGIFY(a) STRINGIFY_1(a)
+
 #ifndef _OSE_
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -288,6 +292,14 @@ extern void select_release(void);
 #     define sai_adaptation_ind          sai_adaption_ind
 #     define ssb_adaptation_ind          ssb_adaption_ind
 #     define sctp_adaptation_layer_event sctp_adaption_layer_event
+#endif
+
+static void *h_libsctp = NULL;
+#ifdef __GNUC__
+static typeof(sctp_bindx) *p_sctp_bindx = NULL;
+#else
+static int (*p_sctp_bindx)(int sd, struct sockaddr *addrs,
+			   int addrcnt, int flags) = NULL;
 #endif
 
 #endif /* SCTP supported */
@@ -836,6 +848,7 @@ static int tcp_inet_init(void);
 static void tcp_inet_stop(ErlDrvData);
 static void tcp_inet_command(ErlDrvData, char*, int);
 static void tcp_inet_commandv(ErlDrvData, ErlIOVec*);
+static void tcp_inet_flush(ErlDrvData drv_data);
 static void tcp_inet_drv_input(ErlDrvData, ErlDrvEvent);
 static void tcp_inet_drv_output(ErlDrvData data, ErlDrvEvent event);
 static ErlDrvData tcp_inet_start(ErlDrvPort, char* command);
@@ -867,7 +880,7 @@ static struct erl_drv_entry tcp_inet_driver_entry =
     tcp_inet_timeout,
     tcp_inet_commandv,
     NULL,
-    NULL,
+    tcp_inet_flush,
     NULL,
     NULL,
     ERL_DRV_EXTENDED_MARKER,
@@ -3275,43 +3288,8 @@ sock_init(void) /* May be called multiple times. */
 #endif
 }
 
-static int inet_init()
-{
-    if (!sock_init())
-	goto error;
-
-    buffer_stack_pos = 0;
-
-    erts_smp_spinlock_init(&inet_buffer_stack_lock, "inet_buffer_stack_lock");
-
-    ASSERT(sizeof(struct in_addr) == 4);
-#   if defined(HAVE_IN6) && defined(AF_INET6)
-    ASSERT(sizeof(struct in6_addr) == 16);
-#   endif
-
-#ifdef DEBUG
-    tot_buf_allocated = 0;
-    max_buf_allocated = 0;
-    tot_buf_stacked = 0;
-#endif
-    INIT_ATOM(ok);
-    INIT_ATOM(tcp);
-    INIT_ATOM(udp);
-    INIT_ATOM(error);
-    INIT_ATOM(inet_async);
-    INIT_ATOM(inet_reply);
-    INIT_ATOM(timeout);
-    INIT_ATOM(closed);
-    INIT_ATOM(tcp_closed);
-    INIT_ATOM(tcp_error);
-    INIT_ATOM(udp_error);
-    INIT_ATOM(empty_out_q);
-    INIT_ATOM(ssl_tls);
 #ifdef HAVE_SCTP
-    /* Check the size of SCTP AssocID -- currently both this driver and the
-       Erlang part require 32 bit: */
-    ASSERT(sizeof(sctp_assoc_t)==ASSOC_ID_LEN);
-    
+static void inet_init_sctp(void) {
     INIT_ATOM(sctp);
     INIT_ATOM(sctp_error);
     INIT_ATOM(true);
@@ -3422,7 +3400,41 @@ static int inet_init()
     ** INIT_ATOM(bound);
     ** INIT_ATOM(listen);
     */
+}
 #endif /* HAVE_SCTP */
+
+static int inet_init()
+{
+    if (!sock_init())
+	goto error;
+
+    buffer_stack_pos = 0;
+
+    erts_smp_spinlock_init(&inet_buffer_stack_lock, "inet_buffer_stack_lock");
+
+    ASSERT(sizeof(struct in_addr) == 4);
+#   if defined(HAVE_IN6) && defined(AF_INET6)
+    ASSERT(sizeof(struct in6_addr) == 16);
+#   endif
+
+#ifdef DEBUG
+    tot_buf_allocated = 0;
+    max_buf_allocated = 0;
+    tot_buf_stacked = 0;
+#endif
+    INIT_ATOM(ok);
+    INIT_ATOM(tcp);
+    INIT_ATOM(udp);
+    INIT_ATOM(error);
+    INIT_ATOM(inet_async);
+    INIT_ATOM(inet_reply);
+    INIT_ATOM(timeout);
+    INIT_ATOM(closed);
+    INIT_ATOM(tcp_closed);
+    INIT_ATOM(tcp_error);
+    INIT_ATOM(udp_error);
+    INIT_ATOM(empty_out_q);
+    INIT_ATOM(ssl_tls);
 
     INIT_ATOM(http_eoh);
     INIT_ATOM(http_header);
@@ -3445,7 +3457,20 @@ static int inet_init()
     add_driver_entry(&tcp_inet_driver_entry);
     add_driver_entry(&udp_inet_driver_entry);
 #  ifdef HAVE_SCTP
-    add_driver_entry(&sctp_inet_driver_entry);
+    /* Check the size of SCTP AssocID -- currently both this driver and the
+       Erlang part require 32 bit: */
+    ASSERT(sizeof(sctp_assoc_t)==ASSOC_ID_LEN);
+#   ifndef LIBSCTP
+#     error LIBSCTP not defined
+#   endif
+    if (erts_sys_ddll_open_noext(STRINGIFY(LIBSCTP), &h_libsctp) == 0) {
+	void *ptr;
+	if (erts_sys_ddll_sym(h_libsctp, "sctp_bindx", &ptr) == 0) {
+	    p_sctp_bindx = ptr;
+	    inet_init_sctp();
+	    add_driver_entry(&sctp_inet_driver_entry);
+	}
+    }
 #  endif
 #endif /* _OSE_ */
     /* remove the dummy inet driver */
@@ -7239,19 +7264,18 @@ static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 			     buf, &len) == NULL)
 	    return ctl_error(EINVAL, rbuf, rsize);
 	
-	sock_select(INETP(desc), FD_CONNECT, 1);
 	code = sock_connect(desc->inet.s, 
 			    (struct sockaddr*) &desc->inet.remote, len);
 	if ((code == SOCKET_ERROR) && 
 		((sock_errno() == ERRNO_BLOCK) ||  /* Winsock2 */
 		 (sock_errno() == EINPROGRESS))) {	/* Unix & OSE!! */
+          sock_select(INETP(desc), FD_CONNECT, 1);
 	    desc->inet.state = TCP_STATE_CONNECTING;
 	    if (timeout != INET_INFINITY)
 		driver_set_timer(desc->inet.port, timeout);
 	    enq_async(INETP(desc), tbuf, INET_REQ_CONNECT);
 	}
 	else if (code == 0) { /* ok we are connected */
-	    sock_select(INETP(desc), FD_CONNECT, 0);
 	    desc->inet.state = TCP_STATE_CONNECTED;
 	    if (desc->inet.active)
 		sock_select(INETP(desc), (FD_READ|FD_CLOSE), 1);
@@ -7259,7 +7283,6 @@ static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 	    async_ok(INETP(desc));
 	}
 	else {
-	    sock_select(INETP(desc), FD_CONNECT, 0);
 	    return ctl_error(sock_errno(), rbuf, rsize);
 	}
 	return ctl_reply(INET_REP_OK, tbuf, 2, rbuf, rsize);
@@ -7564,6 +7587,15 @@ static void tcp_inet_commandv(ErlDrvData e, ErlIOVec* ev)
     DEBUGF(("tcp_inet_commandv(%ld) }\r\n", (long)desc->inet.port)); 
 }
 
+static void tcp_inet_flush(ErlDrvData e)
+{
+    tcp_descriptor* desc = (tcp_descriptor*)e;
+    if (!(desc->inet.event_mask & FD_WRITE)) {
+	/* Discard send queue to avoid hanging port (OTP-7615) */
+	tcp_clear_output(desc);
+    }
+}
+
 static void tcp_inet_process_exit(ErlDrvData e, ErlDrvMonitor *monitorp) 
 {
     tcp_descriptor* desc = (tcp_descriptor*)e;
@@ -7623,6 +7655,7 @@ static int tcp_recv_closed(tcp_descriptor* desc)
 	/* passive mode do not terminate port ! */
 	tcp_clear_input(desc);
 	if (desc->inet.exitf) {
+	    tcp_clear_output(desc);
 	    desc_close(INETP(desc));
 	} else {
 	    desc_close_read(INETP(desc));
@@ -8964,7 +8997,7 @@ static int packet_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 	    rflag = add_flag ? SCTP_BINDX_ADD_ADDR : SCTP_BINDX_REM_ADDR;
 
 	    /* Invoke the call: */
-	    if (sctp_bindx(desc->s, addrs, n, rflag) < 0)
+	    if (p_sctp_bindx(desc->s, addrs, n, rflag) < 0)
 		return ctl_error(sock_errno(), rbuf, rsize);
 
 	    desc->state = INET_STATE_BOUND;

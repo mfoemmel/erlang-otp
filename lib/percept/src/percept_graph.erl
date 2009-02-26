@@ -33,86 +33,51 @@
 
 graph(SessionID, Env, Input) ->
     mod_esi:deliver(SessionID, header()),
-    case graph(Env,Input) of
-    	Binaries when is_list(Binaries) ->
-	    lists:foreach(fun (B) ->
-        	mod_esi:deliver(SessionID, binary_to_list(B))
-	    end, Binaries);
-	Binary ->
-	    mod_esi:deliver(SessionID, binary_to_list(Binary))
-    end.
-
+    mod_esi:deliver(SessionID, binary_to_list(graph(Env, Input))).
+ 
 %% activity
 %% @spec activity(SessionID, Env, Input) -> term() 
 %% @doc An ESI callback implementation used by the httpd server.
 
 activity(SessionID, Env, Input) ->
     mod_esi:deliver(SessionID, header()),
-    case activity_bar(Env,Input) of
-    	Binaries when is_list(Binaries) ->
-	    lists:foreach(fun (B) ->
-        	mod_esi:deliver(SessionID, binary_to_list(B))
-	    end, Binaries);
-	Binary ->
-	    mod_esi:deliver(SessionID, binary_to_list(Binary))
-    end.
+    mod_esi:deliver(SessionID, binary_to_list(activity_bar(Env, Input))).
 
 proc_lifetime(SessionID, Env, Input) ->
     mod_esi:deliver(SessionID, header()),
-    case proc_lifetime(Env,Input) of
-    	Binaries when is_list(Binaries) ->
-	    lists:foreach(fun (B) ->
-        	mod_esi:deliver(SessionID, binary_to_list(B))
-	    end, Binaries);
-	Binary ->
-	    mod_esi:deliver(SessionID, binary_to_list(Binary))
-    end.
+    mod_esi:deliver(SessionID, binary_to_list(proc_lifetime(Env, Input))).
 
 percentage(SessionID, Env, Input) ->
     mod_esi:deliver(SessionID, header()),
-    case percentage(Env,Input) of
-    	Binaries when is_list(Binaries) ->
-	    lists:foreach(fun (B) ->
-        	mod_esi:deliver(SessionID, binary_to_list(B))
-	    end, Binaries);
-	Binary ->
-	    mod_esi:deliver(SessionID, binary_to_list(Binary))
-    end.
+    mod_esi:deliver(SessionID, binary_to_list(percentage(Env,Input))).
 
 scheduler_graph(SessionID, Env, Input) ->
     mod_esi:deliver(SessionID, header()),
-    case scheduler_graph(Env,Input) of
-    	Binaries when is_list(Binaries) ->
-	    lists:foreach(fun (B) ->
-        	mod_esi:deliver(SessionID, binary_to_list(B))
-	    end, Binaries);
-	Binary ->
-	    mod_esi:deliver(SessionID, binary_to_list(Binary))
-    end.
+    mod_esi:deliver(SessionID, binary_to_list(scheduler_graph(Env, Input))).
 
 graph(_Env, Input) ->
     Query = httpd:parse_query(Input),
    
     RangeMin = percept_html:get_option_value("range_min", Query),
     RangeMax = percept_html:get_option_value("range_max", Query),
-    Pids = percept_html:get_option_value("pids", Query),
-    Width = percept_html:get_option_value("width", Query),
-    Height = percept_html:get_option_value("height", Query),
+    Pids     = percept_html:get_option_value("pids", Query),
+    Width    = percept_html:get_option_value("width", Query),
+    Height   = percept_html:get_option_value("height", Query),
     
     % Convert Pids to id option list
-    IDs = [ {id, ID} || ID <- Pids],
+    IDs      = [ {id, ID} || ID <- Pids],
    
     % seconds2ts
-    StartTs = percept_db:select({system, start_ts}),
-    TsMin = percept_analyzer:seconds2ts(RangeMin, StartTs),
-    TsMax = percept_analyzer:seconds2ts(RangeMax, StartTs),
+    StartTs  = percept_db:select({system, start_ts}),
+    TsMin    = percept_analyzer:seconds2ts(RangeMin, StartTs),
+    TsMax    = percept_analyzer:seconds2ts(RangeMax, StartTs),
     
-    Options = [{ts_exact, true},{ts_min, TsMin},{ts_max, TsMax} | IDs],
+    Options  = [{ts_exact, true},{ts_min, TsMin},{ts_max, TsMax} | IDs],
     
     Activities = percept_db:select({activity, Options}),
     
-    Counts = percept_analyzer:activities2count(Activities, StartTs),
-    
+    Counts   = percept_analyzer:activities2count(Activities, StartTs),
+
     percept_image:graph(Width, Height,Counts).
 
 scheduler_graph(_Env, Input) -> 
@@ -165,4 +130,4 @@ percentage(_Env, Input) ->
     percept_image:percentage(round(Width), round(Height), float(Percentage)).
 
 header() ->
-    "Content-Type: image/jpeg\r\n\r\n".
+    "Content-Type: image/png\r\n\r\n".

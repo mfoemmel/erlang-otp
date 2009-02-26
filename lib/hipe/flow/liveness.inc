@@ -53,7 +53,7 @@
 %% The generic liveness analysis
 %%
 
--spec(analyze/1 :: (#cfg{}) -> gb_tree()).
+-spec analyze(#cfg{}) -> gb_tree().
 
 -ifdef(HIPE_LIVENESS_CALC_LARGEST_LIVESET).
 analyze(CFG) ->
@@ -191,7 +191,7 @@ successors(L, Liveness) ->
   {_GK, _LiveIn, Successors} = liveness_lookup(L, Liveness),
   Successors.
 
--spec(livein/2 :: (gb_tree(), _) -> [_]).
+-spec livein(gb_tree(), _) -> [_].
 
 livein(Liveness, L) ->
   {_GK, LiveIn, _Successors} = liveness_lookup(L, Liveness),
@@ -294,7 +294,7 @@ liveness_update(Label, Val, Liveness) ->
 
 -ifdef(PRETTY_PRINT).
 
--spec(pp/1 :: (#cfg{}) -> 'ok').
+-spec pp(#cfg{}) -> 'ok'.
 pp(Cfg) ->
   Liveness = analyze(Cfg),
   Labels = cfg_labels(Cfg),

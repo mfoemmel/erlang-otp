@@ -102,6 +102,10 @@ struct ErtsSchedulerData_ {
 
     Process *current_process;
 
+    struct port *current_port;
+
+    Sint yield_reduction_bump;
+
 #ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
     /* NOTE: These fields are modified under held mutexes by other threads */
     int check_children; /* schdlq mutex */
@@ -680,10 +684,6 @@ void erts_handle_pending_exit(Process *, ErtsProcLocks);
 #define ERTS_PROC_PENDING_EXIT(P) 0
 #endif
 
-#ifdef ERTS_SMP
-Process *erts_suspend_another_process(Process *c_p, ErtsProcLocks c_p_locks,
-				      Eterm suspendee, ErtsProcLocks suspendee_locks);
-#endif
 void erts_deep_process_dump(int, void *);
 
 Sint erts_test_next_pid(int, Uint);

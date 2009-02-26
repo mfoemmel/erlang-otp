@@ -31,6 +31,282 @@
   </header>
   <p>This document describes the changes made to the ERTS application.</p>
 
+<section><title>Erts 5.6.5</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    A bug in inet_drv concerning gen_tcp:connect has been
+	    corrected. A connect towards a non-open port through open
+	    firewalls could sometimes erroneously be successful. Any
+	    subsequent operation would fail, though.</p>
+          <p>
+	    Own Id: OTP-6542</p>
+        </item>
+        <item>
+          <p>
+	    Floating point arithmetics in drivers could cause a
+	    runtime system crash and/or unexpected results on runtime
+	    systems with floating point exceptions enabled. Floating
+	    point exceptions are disabled unless explicitly enabled
+	    or if hipe is enabled.</p>
+          <p>
+	    Own Id: OTP-7237</p>
+        </item>
+        <item>
+          <p>
+	    A bug when many sockets got signalled simultaneously
+	    causing the emulator to panic with the message
+	    "Inconsistent, why isnt io reported?" is now corrected.</p>
+          <p>
+	    Own Id: OTP-7420</p>
+        </item>
+        <item>
+          <p>
+	    Starting erl with option "-detached" now disconnects
+	    correctly from terminal session on Unix.</p>
+          <p>
+	    Own Id: OTP-7461</p>
+        </item>
+        <item>
+          <p>
+	    Mended gdb etp-commands for ETS access.</p>
+          <p>
+	    Own Id: OTP-7538</p>
+        </item>
+        <item>
+          <p>
+	    <c>erlang:decode_packet/3</c> allows white space between
+	    HTTP header tag and colon according to RFC2616.</p>
+          <p>
+	    Own Id: OTP-7543</p>
+        </item>
+        <item>
+          <p>
+	    An emulator compiled for SCTP now starts even if the
+	    dynamic libraries are not present. The SCTP driver is
+	    then of course not loaded.</p>
+          <p>
+	    Own Id: OTP-7551</p>
+        </item>
+        <item>
+	    <p>To build on Mac OS X, 10.3.0 or later is now required
+	    because of fixes for two problems:</p>
+	    <p>There would be a resource leak when <c>erl_ddl</c>
+	    attempted to unload a driver. This problem has been
+	    corrected by using <c>dlopen()</c> (which works on all
+	    modern Unix-like platforms) instead of the Mac OS X
+	    specific API calls.</p>
+	    <p>Signal handling in the run-time system for HiPE has
+	    been updated to work on later versions of Mac OS X than
+	    10.2.x. Therefore, <c>--enable-hipe</c> now works on Mac
+	    OS X with Intel CPUs.</p>
+	    <p>Thanks to Geoff Cant for the patches.</p>
+          <p>
+	    Own Id: OTP-7562</p>
+        </item>
+        <item>
+	    <p>Corrected some information about the protocol between
+	    EPMD and Erlang nodes. (Thanks to Michael Regen.)</p>
+          <p>
+	    Own Id: OTP-7594</p>
+        </item>
+        <item>
+          <p>
+	    When using
+	    <c>erlang:system_monitor(Pid,{long_gc,Time})</c>, and the
+	    GC time exceeded 1 second, it sometimes erroneously
+	    showed up as about 4300 seconds. (This bug was corrected
+	    in R9C, but re-introduced in R12B.) (Thanks to Chris
+	    Newcombe.)</p>
+          <p>
+	    Own Id: OTP-7622 Aux Id: OTP-4903, seq8379 </p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    The driver entry of a dynamically loaded driver is now
+	    copied when loaded which enables some internal
+	    optimizations. Note that drivers that modify the driver
+	    entry during execution will not work anymore. Such a
+	    miss-use of the driver interface is however not
+	    supported.</p>
+          <p>
+	    Own Id: OTP-6900</p>
+        </item>
+        <item>
+          <p>
+	    The split function is now added to the re library.
+	    Exceptions and errors from both run, replace and split
+	    are made more consistent.</p>
+          <p>
+	    Own Id: OTP-7514 Aux Id: OTP-7494 </p>
+        </item>
+        <item>
+          <p>
+	    Fixed harmless compiler warnings when building the
+	    emulator and minor build changes in order to avoid
+	    unnecessary rebuilds.</p>
+          <p>
+	    Own Id: OTP-7530</p>
+        </item>
+        <item>
+          <p>
+	    There is now experimental support for loading of code
+	    from archive files. See the documentation of <c>code</c>,
+	    <c>init</c>, <c>erl_prim_loader </c> and <c>escript</c>
+	    for more info.</p>
+          <p>
+	    The error handling of <c>escripts</c> has been improved.</p>
+          <p>
+	    An <c>escript</c> may now set explicit arguments to the
+	    emulator, such as <c>-smp enabled</c>.</p>
+          <p>
+	    An <c>escript</c> may now contain a precompiled beam
+	    file.</p>
+          <p>
+	    An <c>escript</c> may now contain an archive file
+	    containing one or more applications (experimental).</p>
+          <p>
+	    The internal module <c>code_aux</c> has been removed.</p>
+          <p>
+	    Own Id: OTP-7548 Aux Id: otp-6622 </p>
+        </item>
+        <item>
+          <p>
+	    The reallocation functionality part of the ERTS internal
+	    memory allocators, now consider current block in
+	    combination with surrounding free blocks as an
+	    alternative location for a reallocation.</p>
+          <p>
+	    Own Id: OTP-7555</p>
+        </item>
+        <item>
+	    <p>There could remain false references from a process to
+	    a module that has been called earlier, so that the
+	    process would be killed if the module was reloaded.
+	    (Thanks to Richard Carlsson.)</p>
+	    <p>Also, the fix for this bug also made it possible to
+	    make stack backtraces (as returned from
+	    <c>erlang:get_stacktrace/0</c> and other functions) more
+	    correct in that the immediate caller is always included
+	    in the stack backtrace (it could sometimes be
+	    missing).</p>
+          <p>
+	    Own Id: OTP-7559</p>
+        </item>
+        <item>
+          <p>
+	    Improved locking in IO-handling for better smp
+	    performance.</p>
+          <p>
+	    Own Id: OTP-7560</p>
+        </item>
+        <item>
+          <p>
+	    Improved BIF rescheduling functionanality.</p>
+          <p>
+	    Own Id: OTP-7587</p>
+        </item>
+        <item>
+          <p>
+	    Loading a module compiled with Erlang/OTP R9C and calling
+	    <c>module_info/0</c> in the module would crash the
+	    emulator. The emulator now refuses to load any module
+	    compiled with R9C or earlier. (Note: only trivial modules
+	    compiled with R10B or earlier could be loaded anyway.)
+	    (Thanks to Martin Kjellin.)</p>
+          <p>
+	    Own Id: OTP-7590</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Erts 5.6.4.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    A process calling one of the following BIFs could under
+	    very rare conditions deadlock in the runtime system with
+	    SMP support: <c>check_process_code/2</c>,
+	    <c>garbage_collect/1</c>, <c>process_info/[1,2]</c>,
+	    <c>system_flag/2</c>, and
+	    <c>erlang:suspend_process/[1,2]</c>.</p>
+          <p>
+	    Own Id: OTP-7582</p>
+        </item>
+        <item>
+          <p>
+	    A couple of statistics variables were not managed in a
+	    thread safe manner in the runtime system with SMP
+	    support.</p>
+          <p>
+	    Own Id: OTP-7583</p>
+        </item>
+        <item>
+          <p>
+	    An extremely rare race condition when terminating a
+	    process could potentially cause a runtime system crash.</p>
+          <p>
+	    Own Id: OTP-7584</p>
+        </item>
+        <item>
+          <p>
+	    Under certain conditions and when using run_erl/to_erl,
+	    the terminal Erlang driver (ttsl_drv) could crash the
+	    emulator by doing a division by zero due to incorrect
+	    handling of terminals reporting a zero width. For
+	    terminals reporting zero width, the driver now fallbacks
+	    to a default width of 80 and a default height of 24
+	    (vt100), as a fallback behaviour. This fixes the crashes
+	    and also makes output on "dumb" terminals much more
+	    readable.</p>
+          <p>
+	    Own Id: OTP-7592 Aux Id: seq11073 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Erts 5.6.4.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    A new <c>erts_alloc</c> parameter
+	    <c>+M&lt;S&gt;rmbcmt</c> (relative multiblock carrier
+	    move threshold) has been added. It determines when to
+	    force a moving realloc in a multiblock carrier when a
+	    block is shrunk. For more information see the
+	    <c>erts_alloc(3)</c> documentation.</p>
+          <p>
+	    Own Id: OTP-7540</p>
+        </item>
+        <item>
+	    <p>The new option <c>+d</c> can be given to <c>erl</c> to
+	    suppress the crash dump generation if an internal error
+	    is detected. As a result, a more useful core dump is
+	    produced.</p>
+          <p>
+	    Own Id: OTP-7578 Aux Id: seq11052 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Erts 5.6.4</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

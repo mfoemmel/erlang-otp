@@ -91,12 +91,14 @@ static void tree_delete(Allctr_t *allctr, Block_t *del);
 /* Prototypes of callback functions */
 
 /* "address order best fit" specific callback functions */
-static Block_t *	aobf_get_free_block	(Allctr_t *, Uint);
+static Block_t *	aobf_get_free_block	(Allctr_t *, Uint,
+						 Block_t *, Uint);
 static void		aobf_link_free_block	(Allctr_t *, Block_t *);
 #define			aobf_unlink_free_block	tree_delete
 
 /* "best fit" specific callback functions */
-static Block_t *	bf_get_free_block	(Allctr_t *, Uint);
+static Block_t *	bf_get_free_block	(Allctr_t *, Uint,
+						 Block_t *, Uint);
 static void		bf_link_free_block	(Allctr_t *, Block_t *);
 static ERTS_INLINE void	bf_unlink_free_block	(Allctr_t *, Block_t *);
 
@@ -637,12 +639,15 @@ aobf_unlink_free_block(Allctr_t *allctr, Block_t *block)
 #endif
 
 static Block_t *
-aobf_get_free_block(Allctr_t *allctr, Uint size)
+aobf_get_free_block(Allctr_t *allctr, Uint size,
+		    Block_t *cand_blk, Uint cand_size)
 {
     BFAllctr_t *bfallctr = (BFAllctr_t *) allctr;
     RBTree_t *x = bfallctr->root;
     RBTree_t *blk = NULL;
     Uint blk_sz;
+
+    ASSERT(!cand_blk || cand_size >= size);
 
     while (x) {
 	blk_sz = BLK_SZ(x);
@@ -661,6 +666,14 @@ aobf_get_free_block(Allctr_t *allctr, Uint size)
 #ifdef HARD_DEBUG
     ASSERT(blk == check_tree(bfallctr, size));
 #endif
+
+    if (cand_blk) {
+	blk_sz = BLK_SZ(blk);
+	if (cand_size < blk_sz)
+	    return NULL; /* cand_blk was better */
+	if (cand_size == blk_sz && ((void *) cand_blk) < ((void *) blk))
+	    return NULL; /* cand_blk was better */
+    }
 
     aobf_unlink_free_block(allctr, (Block_t *) blk);
 
@@ -782,12 +795,15 @@ bf_unlink_free_block(Allctr_t *allctr, Block_t *block)
 
 
 static Block_t *
-bf_get_free_block(Allctr_t *allctr, Uint size)
+bf_get_free_block(Allctr_t *allctr, Uint size,
+		  Block_t *cand_blk, Uint cand_size)
 {
     BFAllctr_t *bfallctr = (BFAllctr_t *) allctr;
     RBTree_t *x = bfallctr->root;
     RBTree_t *blk = NULL;
     Uint blk_sz;
+
+    ASSERT(!cand_blk || cand_size >= size);
 
     while (x) {
 	blk_sz = BLK_SZ(x);
@@ -814,6 +830,9 @@ bf_get_free_block(Allctr_t *allctr, Uint size)
 	ASSERT(BLK_SZ(ct_blk) == BLK_SZ(blk));
     }
 #endif
+
+    if (cand_blk && cand_size <= BLK_SZ(blk))
+	return NULL; /* cand_blk was better */
 
     /* Use next block if it exist in order to avoid replacing
        the tree node */

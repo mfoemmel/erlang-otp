@@ -194,7 +194,8 @@ wait_for_slave(Parent, Host, Name, Node, Args, LinkTo, Prog) ->
 		    Node = list_to_atom(lists:concat([Name, "@", Host])),
 		    case net_adm:ping(Node) of
 			pong ->
-			    spawn(Node, erlang, halt, []);
+			    spawn(Node, erlang, halt, []),
+			    ok;
 			_ ->
 			    ok
 		    end,

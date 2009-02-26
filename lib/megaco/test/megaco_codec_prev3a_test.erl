@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2005-2007</year>
+%% <year>2005-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -132,6 +132,15 @@
          compact_otp6017_msg02/1,
          compact_otp6017_msg03/1,
 
+	 flex_compact_tickets/1, 
+         flex_compact_otp7431_msg01/1,
+         flex_compact_otp7431_msg02/1,
+         flex_compact_otp7431_msg03/1,
+         flex_compact_otp7431_msg04/1,
+         flex_compact_otp7431_msg05/1,
+         flex_compact_otp7431_msg06/1,
+         flex_compact_otp7431_msg07/1,
+
 	 pretty_tickets/1, 
 	 pretty_otp4632_msg1/1, 
 	 pretty_otp4632_msg2/1, 
@@ -184,6 +193,13 @@
          flex_pretty_otp5600_msg2/1,
          flex_pretty_otp5601_msg1/1,
          flex_pretty_otp5793_msg01/1,
+         flex_pretty_otp7431_msg01/1,
+         flex_pretty_otp7431_msg02/1,
+         flex_pretty_otp7431_msg03/1,
+         flex_pretty_otp7431_msg04/1,
+         flex_pretty_otp7431_msg05/1,
+         flex_pretty_otp7431_msg06/1,
+         flex_pretty_otp7431_msg07/1,
 
 	 init_per_testcase/2, fin_per_testcase/2]).  
 
@@ -402,6 +418,7 @@ erl_dist_m(suite) ->
 tickets(suite) ->
     [
      compact_tickets,
+     flex_compact_tickets,
      pretty_tickets,
      flex_pretty_tickets
     ].
@@ -452,6 +469,23 @@ compact_tickets(suite) ->
      compact_otp6017_msg02,
      compact_otp6017_msg03
     ].
+
+flex_compact_tickets(suite) ->
+    {req, [],
+     {conf, flex_compact_init, flex_compact_tickets_cases(),
+      flex_compact_finish}}.
+
+flex_compact_tickets_cases() ->
+    [
+     flex_compact_otp7431_msg01,
+     flex_compact_otp7431_msg02,
+     flex_compact_otp7431_msg03, 
+     flex_compact_otp7431_msg04,
+     flex_compact_otp7431_msg05,
+     flex_compact_otp7431_msg06,
+     flex_compact_otp7431_msg07
+    ].
+
 
 pretty_tickets(suite) ->
     [
@@ -512,7 +546,14 @@ flex_pretty_tickets_cases() ->
      flex_pretty_otp5600_msg1,
      flex_pretty_otp5600_msg2,
      flex_pretty_otp5601_msg1,
-     flex_pretty_otp5793_msg01
+     flex_pretty_otp5793_msg01,
+     flex_pretty_otp7431_msg01,
+     flex_pretty_otp7431_msg02,
+     flex_pretty_otp7431_msg03, 
+     flex_pretty_otp7431_msg04,
+     flex_pretty_otp7431_msg05,
+     flex_pretty_otp7431_msg06,
+     flex_pretty_otp7431_msg07
     ].
 
 		
@@ -671,6 +712,220 @@ flex_pretty_otp5793_msg01(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config),
     pretty_otp5793(ok, pretty_otp5793_msg1(), [Conf]).
+
+
+flex_pretty_otp7431_msg01(suite) ->
+    [];
+flex_pretty_otp7431_msg01(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(ok, flex_pretty_otp7431_msg1(), [Conf]).
+
+flex_pretty_otp7431_msg02(suite) ->
+    [];
+flex_pretty_otp7431_msg02(Config) when list(Config) ->
+    %%     put(severity,trc),
+    %%     put(dbg,true),
+    d("flex_pretty_otp7431_msg02 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg2(), [Conf]).
+
+flex_pretty_otp7431_msg03(suite) ->
+    [];
+flex_pretty_otp7431_msg03(Config) when list(Config) ->
+    %%     put(severity,trc),
+    %%     put(dbg,true),
+    d("flex_pretty_otp7431_msg03 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg3(), [Conf]).
+
+flex_pretty_otp7431_msg04(suite) ->
+    [];
+flex_pretty_otp7431_msg04(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg04 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg4(), [Conf]).
+
+flex_pretty_otp7431_msg05(suite) ->
+    [];
+flex_pretty_otp7431_msg05(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg05 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg5(), [Conf]).
+
+flex_pretty_otp7431_msg06(suite) ->
+    [];
+flex_pretty_otp7431_msg06(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg06 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg6(), [Conf]).
+
+flex_pretty_otp7431_msg07(suite) ->
+    [];
+flex_pretty_otp7431_msg07(Config) when list(Config) ->
+    d("flex_pretty_otp7431_msg07 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config),
+    flex_pretty_otp7431(error, flex_pretty_otp7431_msg7(), [Conf]).
+
+flex_pretty_otp7431(Expected, Msg, Conf) ->
+    otp7431(Expected, megaco_pretty_text_encoder, Msg, Conf).
+
+otp7431(Expected, Codec, Msg0, Conf) ->
+    Bin0 = list_to_binary(Msg0),
+    case decode_message(Codec, false, Conf, Bin0) of
+	{ok, _Msg1} when Expected =:= ok ->
+ 	    io:format(" decoded", []);
+	{error, {bad_property_parm, Reason}} when (Expected =:= error) andalso 
+						  is_list(Reason) ->
+	    io:format("expected result: ~s", [Reason]),
+	    ok;
+	Else ->
+	    io:format("unexpected result", []),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+
+flex_pretty_otp7431_msg1() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v=0 
+				      o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+				      s=- 
+				      t= 0 0 
+				      c=IN IP4 124.124.124.222 
+				      m=audio 2222 RTP/AVP 4 
+				      a=ptime:30 
+				      a=recvonly 
+				     } ; RTP profile for G.723.1 is 4
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg2() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v=0 
+				      o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+				      s=- 
+				      t= 0 0 
+				      c=IN IP4 124.124.124.222 
+				      m=audio 2222 RTP/AVP 4 
+				      a=ptime:30 
+				      a=             }
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg3() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v=0 
+				      o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+				      s=- 
+				      t= 0 0 
+				      c=IN IP4 124.124.124.222 
+				      m=audio 2222 RTP/AVP 4 
+				      a=ptime:30 
+				      a             }
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg4() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v=0 
+				      o=- 2890844526 2890842807 IN IP4 124.124.124.222 
+				      s=- 
+				      t= 0 0 
+				      c=IN IP4 124.124.124.222 
+				      m=audio 2222 RTP/AVP 4 
+				      a=ptime:30 
+				      a}
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg5() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v=            }
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg6() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v            }
+				   }
+			}
+		      }
+	      } 
+       }".
+
+flex_pretty_otp7431_msg7() ->
+    "MEGACO/" ?VERSION_STR " [124.124.124.222]:55555 Reply = 10003 {
+   Context = 2000 {
+	       Add = A4444,
+	       Add = A4445 {
+		       Media {
+			 Stream = 1 {
+				    Local { 
+				      v}
+				   }
+			}
+		      }
+	      } 
+       }".
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2291,6 +2546,147 @@ compact_otp6017_msg(CID) when is_integer(CID) ->
     "MEGACO/" ?VERSION_STR " MG1 T=12345678{C=" ++
         integer_to_list(CID) ++
         "{SC=root{SV{MT=RS,RE=901}}}}".
+
+
+%% ==============================================================
+%%
+%% F l e x   C o m p a c t   T e s t c a s e s
+%%
+
+
+flex_compact_otp7431_msg01(suite) ->
+    [];
+flex_compact_otp7431_msg01(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg01 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(ok, flex_compact_otp7431_msg1(), [Conf]).
+
+flex_compact_otp7431_msg02(suite) ->
+    [];
+flex_compact_otp7431_msg02(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg02 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg2(), [Conf]).
+
+flex_compact_otp7431_msg03(suite) ->
+    [];
+flex_compact_otp7431_msg03(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg03 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg3(), [Conf]).
+
+flex_compact_otp7431_msg04(suite) ->
+    [];
+flex_compact_otp7431_msg04(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg04 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg4(), [Conf]).
+
+flex_compact_otp7431_msg05(suite) ->
+    [];
+flex_compact_otp7431_msg05(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg05 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg5(), [Conf]).
+
+flex_compact_otp7431_msg06(suite) ->
+    [];
+flex_compact_otp7431_msg06(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg06 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg6(), [Conf]).
+
+flex_compact_otp7431_msg07(suite) ->
+    [];
+flex_compact_otp7431_msg07(Config) when list(Config) ->
+    %% put(severity,trc),
+    %% put(dbg,true),
+    d("flex_comppact_otp7431_msg07 -> entry", []),
+    Conf = flex_scanner_conf(Config),
+    flex_compact_otp7431(error, flex_compact_otp7431_msg7(), [Conf]).
+
+
+flex_compact_otp7431(Expected, Msg, Conf) ->
+    otp7431(Expected, megaco_compact_text_encoder, Msg, Conf).
+
+flex_compact_otp7431_msg1() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a=recvonly
+}}}}}}".
+
+flex_compact_otp7431_msg2() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+a=     }
+}}}}}".
+
+
+flex_compact_otp7431_msg3() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a     }
+}}}}}".
+
+
+flex_compact_otp7431_msg4() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=0
+o=- 2890844526 2890842807 IN IP4 124.124.124.222
+s=-
+t= 0 0
+c=IN IP4 124.124.124.222
+m=audio 2222 RTP/AVP 4
+a=ptime:30
+a}
+}}}}}".
+
+
+flex_compact_otp7431_msg5() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v=       }
+}}}}}".
+
+
+flex_compact_otp7431_msg6() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v       }
+}}}}}".
+
+flex_compact_otp7431_msg7() ->
+    "!/1 [124.124.124.222]:55555
+P=10003{C=2000{A=a4444,A=a4445{M{ST=1{L{
+v}
+}}}}}".
 
 
 %% ==============================================================

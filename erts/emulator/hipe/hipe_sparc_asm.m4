@@ -84,13 +84,6 @@ ifelse(eval(NR_ARG_REGS >= 6),0,,
 `defarg(5,`%o0')')dnl
 
 /*
- * TEMP_ARG{0,1,2}:
- *	Used by NBIF_SAVE_RESCHED_ARGS to save argument
- *	registers in locations preserved by C.
- *	May be registers or process-private memory locations.
- *	Must not be C caller-save registers.
- *	Must not overlap with any Erlang global registers.
- *
  * TEMP_ARG0:
  *	Used in nbif_stack_trap_ra to preserve the return value.
  *	Must be a C callee-save register.
@@ -101,10 +94,19 @@ ifelse(eval(NR_ARG_REGS >= 6),0,,
  *	(TEMP_RA contains the caller's saved return address).
  *	Must be a C callee-save register.
  *	Must be otherwise unused in the call path.
+ *
+ * TEMP_ARG0:
+ *	Used to pass the callee address in native-to-BEAM traps
+ *	(nbif_callemu).
+ *	Must be otherwise unused in the call path.
+ *
+ * TEMP_ARG1:
+ *	Used to pass the callee arity in native-to-BEAM traps
+ *      (nbif_callemu).
+ *	Must be otherwise unused in the call path.
  */
 `#define TEMP_ARG0	%i4'
 `#define TEMP_ARG1	%i5'
-`#define TEMP_ARG2	%l7'
 
 dnl XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 dnl X								X
@@ -177,21 +179,6 @@ define(NBIF_RET,`NBIF_RET_N(eval(RET_POP($1)))')dnl
 `/* #define NBIF_RET_2	'NBIF_RET(2)` */'
 `/* #define NBIF_RET_3	'NBIF_RET(3)` */'
 `/* #define NBIF_RET_5	'NBIF_RET(5)` */'
-
-dnl
-dnl NBIF_SAVE_RESCHED_ARGS(ARITY)
-dnl Used in the expensive_bif_interface_{1,3}() macros to copy
-dnl caller-save argument registers to non-volatile locations.
-dnl Currently, 1 <= ARITY <= 3, so this simply moves the arguments
-dnl to C callee-save registers.
-dnl
-define(NBIF_MIN,`ifelse(eval($1 > $2),0,$1,$2)')dnl
-define(NBIF_SVA_1,`ifelse(eval($1 < NR_ARG_REGS),0,,`mov	ARG$1,TEMP_ARG$1; ')')dnl
-define(NBIF_SVA_N,`ifelse(eval($1 >= 0),0,,`NBIF_SVA_N(eval($1-1))NBIF_SVA_1($1)')')dnl
-define(NBIF_SAVE_RESCHED_ARGS,`NBIF_SVA_N(eval(NBIF_MIN($1,NR_ARG_REGS)-1))')dnl
-`/* #define NBIF_SAVE_RESCHED_ARGS_1 'NBIF_SAVE_RESCHED_ARGS(1)` */'
-`/* #define NBIF_SAVE_RESCHED_ARGS_2 'NBIF_SAVE_RESCHED_ARGS(2)` */'
-`/* #define NBIF_SAVE_RESCHED_ARGS_3 'NBIF_SAVE_RESCHED_ARGS(3)` */'
 
 dnl
 dnl QUICK_CALL_RET(CFUN,ARITY)

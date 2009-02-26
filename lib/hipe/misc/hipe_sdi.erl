@@ -18,11 +18,11 @@
 
 %%------------------------------------------------------------------------
 
--type(gb_tree()    :: tuple()).  % temporarily until there is a proper datatype
--type(hipe_array() :: integer()).% declare this in hipe.hrl or builtin?
+-type gb_tree()    :: tuple().   % temporarily until there is a proper datatype
+-type hipe_array() :: integer(). % declare this in hipe.hrl or builtin?
 
--type(label()      :: non_neg_integer()).
--type(address()    :: non_neg_integer()).
+-type label()      :: non_neg_integer().
+-type address()    :: non_neg_integer().
 
 %%------------------------------------------------------------------------
 

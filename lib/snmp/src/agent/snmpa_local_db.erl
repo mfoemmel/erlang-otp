@@ -211,6 +211,8 @@ do_dets_open(Name, Filename, Opts) ->
     dets:open_file(Name, Args).
 
     
+dets_filename(Name, Dir) when is_atom(Name) ->
+    dets_filename(atom_to_list(Name), Dir);
 dets_filename(Name, Dir) ->
     filename:join(dets_filename1(Dir), Name).
     
@@ -909,23 +911,9 @@ delete(UnknownDb, Key, _) ->
 match(volatile, Name, Pattern, #state{ets = Ets}) ->
     ets:match(Ets, {{Name,'_'},{Pattern,'_','_'}});
 match(persistent, Name, Pattern, #state{dets = Dets}) ->
-    case dets_match(Dets, {{Name,'_'},{Pattern,'_','_'}}) of
-	{error, Reason} ->
-	    error_msg("DETS (persistent) match failed for {~w,~w}: ~n~w", 
-		      [Name, Pattern, Reason]),
-	    [];
-	Match ->
-	    Match
-    end;
+    dets_match(Dets, {{Name,'_'},{Pattern,'_','_'}});
 match(permanent, Name, Pattern, #state{dets = Dets}) ->
-    case dets_match(Dets, {{Name,'_'},{Pattern,'_','_'}})  of
-	{error, Reason} ->
-	    error_msg("DETS (permanent) match failed for {~w,~w}: ~n~w", 
-		      [Name, Pattern, Reason]),
-	    [];
-	Match ->
-	    Match
-    end;
+    dets_match(Dets, {{Name,'_'},{Pattern,'_','_'}});
 match(UnknownDb, Name, Pattern, _) ->
     error_msg("Tried to match [~p,~p] from unknown db ~w", 
 	      [Name, Pattern, UnknownDb]),
@@ -933,15 +921,16 @@ match(UnknownDb, Name, Pattern, _) ->
 
 lookup(volatile, Key, #state{ets = Ets}) ->
     case ets:lookup(Ets, Key) of
-	[{_, Val}] -> {value, Val};
-	[] -> undefined
+	[{_, Val}] -> 
+	    {value, Val};
+	[] -> 
+	    undefined
     end;
 lookup(persistent, Key, #state{dets = Dets}) ->
     case dets_lookup(Dets, Key) of
-	[{_, Val}] -> {value, Val};
-	[] -> undefined;
-	{error, Reason} ->
-	    error_msg("DETS lookup of ~w failed: ~n~w", [Key, Reason]),
+	[{_, Val}] -> 
+	    {value, Val};
+	[] -> 
 	    undefined
     end;
 lookup(permanent, Key, #state{dets = Dets}) ->
@@ -949,10 +938,6 @@ lookup(permanent, Key, #state{dets = Dets}) ->
 	[{_, Val}] -> 
 	    {value, Val};
 	[] -> 
-	    undefined;
-	{error, Reason} ->
-	    error_msg("DETS (permanent) lookup ~w failed: ~n~w", 
-		      [Key, Reason]),
 	    undefined
     end;
 lookup(UnknownDb, Key, _) ->

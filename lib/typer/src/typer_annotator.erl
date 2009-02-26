@@ -15,13 +15,12 @@
 %%----------------------------------------------------------------------------
 
 -include("typer.hrl").
--include("typer_options.hrl").
 
 %%----------------------------------------------------------------------------
 
 -define(TYPER_ANN_DIR, "typer_ann").
 
--type(func_info() :: {pos_integer(), atom(), byte()}).
+-type func_info() :: {pos_integer(), atom(), byte()}.
 
 -record(info, {recMap = typer_map:new() :: dict(),
 	       funcs = []               :: [func_info()],
@@ -35,22 +34,11 @@
 -spec annotate(#typer_analysis{}) -> 'ok'.
 
 annotate(Analysis) ->
-  case typer_options:option_type(Analysis#typer_analysis.mode) of
-    for_show ->
-      Fun = fun({File,Module}) -> 
-	      Info = get_final_info(File, Module, Analysis),
-	      show_type_info_only(File, Info)
-	    end,
-      lists:foreach(Fun, Analysis#typer_analysis.final_files);
-    for_annotation ->
-      annotate_file(Analysis)
-  end.
-
-annotate_file(Analysis) ->
-  Mode = Analysis#typer_analysis.mode,
-  case Mode of
+  case Analysis#typer_analysis.mode of
+    ?SHOW -> show(Analysis);
+    ?SHOW_EXPORTED -> show(Analysis);
     ?ANNOTATE ->
-      Fun = fun({File,Module}) ->
+      Fun = fun({File, Module}) ->
 		Info = get_final_info(File, Module, Analysis),
 		write_typed_file(File, Info)
 	    end,
@@ -88,6 +76,13 @@ write_inc_files(Inc) ->
 	write_typed_file(File, Info)
     end,
   lists:foreach(Fun, dict:fetch_keys(Inc#inc.map)).
+
+show(Analysis) ->
+  Fun = fun({File, Module}) -> 
+	    Info = get_final_info(File, Module, Analysis),
+	    show_type_info_only(File, Info)
+	end,
+  lists:foreach(Fun, Analysis#typer_analysis.final_files).
 
 get_final_info(File, Module, Analysis) ->
   RecMap = get_recMap(File, Analysis),
@@ -215,15 +210,15 @@ get_type({MFA = {M,F,A}, Range, Arg}, CodeServer, RecMap) ->
 	{error, What} ->
 	  typer:error(
 	    io_lib:format("Error in contract of function ~w:~w/~w: ~s",
-			  [M,F,A,What]));
+			  [M, F, A, What]));
 	error ->
 	  CString = dialyzer_contracts:contract_to_string(C),
 	  SigString = dialyzer_utils:format_sig(Sig, RecMap),
 	  typer:error(
-	    io_lib:format("Error in contract of function ~w:~w/~w. " 
-			  "The contract is\n" ++ CString ++ 
-			  "\tbut the inferred signature is\n~s",
-			  [M,F,A,SigString]))
+	    io_lib:format("Error in contract of function ~w:~w/~w\n" 
+			  "\t The contract is: " ++ CString ++ "\n" ++
+			  "\t but the inferred signature is: ~s",
+			  [M, F, A, SigString]))
       end;
     error ->
       {{F,A},{Range,Arg}}
@@ -319,7 +314,7 @@ write_typed_file([First|RestCh], File, Info, LineNo, Acc) ->
 
 raw_write(F, A, Info, File, Content) ->
   TypeInfo = get_type_string(F, A, Info, file),
-  ContentList = lists:reverse(Content)++TypeInfo++"\n",
+  ContentList = lists:reverse(Content) ++ TypeInfo ++ "\n",
   ContentBin = list_to_binary(ContentList),
   file:write_file(File, ContentBin, [append]).
 
@@ -339,19 +334,19 @@ get_type_string(F, A, Info, Mode) ->
 	{file, {contract, _}} -> "";
 	_ ->
 	  Prefix = lists:concat(["-spec ", F]),
-	  lists:concat([Prefix, TypeStr, ["."]])
+	  lists:concat([Prefix, TypeStr, "."])
       end;
     false ->
-      Prefix = lists:concat(["%% @typer_spec ", F, "/", A, " :: "]),
-      lists:concat([Prefix, TypeStr])
+      Prefix = lists:concat(["%% @spec ", F]),
+      lists:concat([Prefix, TypeStr, "."])
   end.
  
 show_type_info_only(File, Info) ->
   io:format("\n%% File: ~p\n%% ", [File]),
-  OutputString = lists:concat(["~.",length(File)+8,"c~n"]),
+  OutputString = lists:concat(["~.", length(File)+8, "c~n"]),
   io:fwrite(OutputString, [$-]),
-  Fun = fun ({_LineNo,F,A}) ->
-	    TypeInfo = get_type_string(F,A,Info,show),
+  Fun = fun ({_LineNo, F, A}) ->
+	    TypeInfo = get_type_string(F, A, Info, show),
 	    io:format("~s\n", [TypeInfo])
 	end,
   lists:foreach(Fun, Info#info.funcs).

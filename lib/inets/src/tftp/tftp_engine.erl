@@ -1,3 +1,23 @@
+%%<copyright>
+%% <year>2005-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%%
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
+%%
+
 %%%-------------------------------------------------------------------
 %%% File    : tftp_engine.erl
 %%% Author  : Hakan Mattsson <hakan@erix.ericsson.se>
@@ -41,12 +61,14 @@
 
 -include("tftp.hrl").
 
+-type prep_status() :: 'error' | 'last' | 'more' | 'terminate'.
+
 -record(daemon_state, {config, n_servers, server_tab, file_tab}).
 -record(server_info, {pid, req, peer}).
 -record(file_info, {peer_req, pid}).
 -record(sys_misc, {module, function, arguments}).
 -record(error, {where, code, text, filename}).
--record(prepared, {status, result, block_no, next_data, prev_data}).
+-record(prepared, {status :: prep_status(), result, block_no, next_data, prev_data}).
 -record(transfer_res, {status, decoded_msg, prepared}).
 -define(ERROR(Where, Code, Text, Filename),
 	#error{where = Where, code = Code, text = Text, filename = Filename}).
@@ -353,7 +375,10 @@ server_init(Config, Req) when is_record(Config, config),
             end;
         #error{} = Error ->
             terminate(Config2, Req, Error)
-    end.
+    end;
+server_init(Config, Req) when is_record(Req, tftp_msg_req) ->
+    Config2 = upgrade_config(Config),
+    server_init(Config2, Req).
 
 %%%-------------------------------------------------------------------
 %%% Client
@@ -576,6 +601,8 @@ common_loop(Config, Callback, Req, TransferRes, LocalAccess, ExpectedBlockNo) ->
     Config2 = upgrade_config(Config),
     common_loop(Config2, Callback, Req, TransferRes, LocalAccess, ExpectedBlockNo).
 
+-spec common_read(#config{}, #callback{}, _, 'read', _, _, #prepared{}) -> no_return().
+
 common_read(Config, _, Req, _, _, _, #prepared{status = terminate, result = Result}) ->
     terminate(Config, Req, {ok, Result});
 common_read(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, Prepared)
@@ -605,7 +632,7 @@ common_read(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, 
             terminate(Config, Req, ?ERROR(read, Code, Text, Req#tftp_msg_req.filename))
     end;
 common_read(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, Prepared) 
-  when ActualBlockNo =< ExpectedBlockNo , is_record(Prepared, prepared) ->
+  when ActualBlockNo =< ExpectedBlockNo, is_record(Prepared, prepared) ->
     %% error_logger:error_msg("TFTP READ ~s: Expected block ~p but got block ~p - IGNORED\n",
     %%                     [Req#tftp_msg_req.filename, ExpectedBlockNo, ActualBlockNo]),
     case Prepared of
@@ -634,6 +661,8 @@ common_read(Config, Callback, Req, _LocalAccess, ExpectedBlockNo, ActualBlockNo,
     send_msg(Config, Req, Error),
     terminate(Config, Req, ?ERROR(read, Code, Text, Req#tftp_msg_req.filename)).
 
+-spec do_common_read(#config{}, #callback{} | undefined, _, 'read', integer(), binary(), #prepared{}) -> no_return().
+
 do_common_read(Config, Callback, Req, LocalAccess, BlockNo, Data, Prepared)
   when is_binary(Data), is_record(Prepared, prepared) ->
     NextBlockNo = BlockNo + 1,
@@ -652,6 +681,8 @@ do_common_read(Config, Callback, Req, LocalAccess, BlockNo, Data, Prepared)
             send_msg(Config, Req, Error),
             terminate(Config, Req, ?ERROR(read, Code, Text, Req#tftp_msg_req.filename))
     end.
+
+-spec common_write(#config{}, #callback{}, _, 'write', integer(), integer(), _, #prepared{}) -> no_return().
 
 common_write(Config, _, Req, _, _, _, _, #prepared{status = terminate, result = Result}) ->
     terminate(Config, Req, {ok, Result});
@@ -676,8 +707,7 @@ common_write(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo,
             {undefined, Error} =
                 callback({abort, {Code, Text}}, Config, Callback, Req),
             send_msg(Config, Req, Error),
-            Error = #tftp_msg_error{code = Code, text = Text},
-            {undefined, #prepared{status = error, result = Error}}
+	    terminate(Config, Req, ?ERROR(write, Code, Text, Req#tftp_msg_req.filename))
     end;
 common_write(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, Data, Prepared)
   when ActualBlockNo =:= (ExpectedBlockNo - 1), is_binary(Data), is_record(Prepared, prepared) ->
@@ -729,6 +759,8 @@ pre_terminate(Config, Req, Result) ->
         true ->
             Config#config{polite_ack = true}
     end.
+
+-spec terminate(#config{}, #tftp_msg_req{}, {'ok', _} | #error{}) -> no_return().
 
 terminate(Config, Req, Result) ->
     Result2 =
@@ -1440,6 +1472,8 @@ system_continue(_Parent, _Debug, #sys_misc{module = Mod, function = Fun, argumen
 system_continue(Parent, Debug, {Fun, Args}) ->
     %% Handle upgrade from old releases. Please, remove this clause in next release.
     system_continue(Parent, Debug, #sys_misc{module = ?MODULE, function = Fun, arguments = Args}).
+
+-spec system_terminate(_, _, _, #sys_misc{} | {_, _}) -> no_return().
 
 system_terminate(Reason, _Parent, _Debug, #sys_misc{}) ->
     exit(Reason);

@@ -146,6 +146,59 @@ do {							\
       return THE_NON_VALUE;			\
  } while(0)
 
+#define ERTS_BIF_YIELD_BUMP_REDS__(P)					\
+    ERTS_GET_SCHEDULER_DATA_FROM_PROC((P))->yield_reduction_bump	\
+      = ERTS_BIF_REDS_LEFT((P));					\
+    BUMP_ALL_REDS((P))
+
+#define ERTS_BIF_PREP_YIELD0(RET, TRP, P)				\
+do {									\
+    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_BIF_PREP_TRAP0(RET, (TRP), (P));				\
+} while (0)
+
+#define ERTS_BIF_PREP_YIELD1(RET, TRP, P, A0)				\
+do {									\
+    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_BIF_PREP_TRAP1(RET, (TRP), (P), (A0));				\
+} while (0)
+
+#define ERTS_BIF_PREP_YIELD2(RET, TRP, P, A0, A1)			\
+do {									\
+    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_BIF_PREP_TRAP2(RET, (TRP), (P), (A0), (A1));			\
+} while (0)
+
+#define ERTS_BIF_PREP_YIELD3(RET, TRP, P, A0, A1, A2)			\
+do {									\
+    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_BIF_PREP_TRAP3(RET, (TRP), (P), (A0), (A1), (A2));		\
+} while (0)
+
+#define ERTS_BIF_YIELD0(TRP, P)						\
+do {									\
+    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    BIF_TRAP0((TRP), (P));						\
+} while (0)
+
+#define ERTS_BIF_YIELD1(TRP, P, A0)					\
+do {									\
+    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    BIF_TRAP1((TRP), (P), (A0));					\
+} while (0)
+
+#define ERTS_BIF_YIELD2(TRP, P, A0, A1)					\
+do {									\
+    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    BIF_TRAP2((TRP), (P), (A0), (A1));					\
+} while (0)
+
+#define ERTS_BIF_YIELD3(TRP, P, A0, A1, A2)				\
+do {									\
+    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    BIF_TRAP3((TRP), (P), (A0), (A1), (A2));				\
+} while (0)
+
 #define ERTS_BIF_EXITED(PROC)		\
 do {					\
     KILL_CATCHES((PROC));		\
@@ -159,10 +212,6 @@ do {					\
 } while (0)
 
 #ifdef ERTS_SMP
-/* "Call" ERTS_SMP_BIF_CHK_RESCHEDULE(P) when current process might have
-   to be rescheduled in order to avoid deadlock */
-#define ERTS_SMP_BIF_CHK_RESCHEDULE(P) \
-do { if ((P)->freason == RESCHEDULE) return THE_NON_VALUE; } while (0)
 #define ERTS_SMP_BIF_CHK_PENDING_EXIT(P, L)				\
 do {									\
     ERTS_SMP_LC_ASSERT((L) == erts_proc_lc_my_proc_locks((P)));		\
@@ -180,7 +229,6 @@ do {									\
 	erts_smp_proc_unlock((P), ERTS_PROC_LOCK_STATUS);		\
 } while (0)
 #else
-#define ERTS_SMP_BIF_CHK_RESCHEDULE(P)
 #define ERTS_SMP_BIF_CHK_PENDING_EXIT(P, L)
 #endif
 

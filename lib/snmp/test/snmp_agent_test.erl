@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2003-2007</year>
+%% <year>2003-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -148,9 +148,9 @@ cases() ->
              test_v2, 
              test_v1_v2, 
              test_v3, 
-	     test_multi_threaded, 
-     	     mib_storage, 
-       	     tickets
+             test_multi_threaded, 
+             mib_storage, 
+             tickets
 	    ]
     end.
 
@@ -2618,25 +2618,45 @@ db_notify_client(suite) -> [];
 db_notify_client(Config) when list(Config) ->
     ?P(db_notify_client), 
     {SaNode, MgrNode, MibDir} = init_case(Config),
-    ?DBG("~n\tSaNode: ~p~n\tMgrNode: ~p~n\tMibDir: ~p",
-	   [SaNode,MgrNode,MibDir]),
+    ?DBG("db_notify_client -> case initiated: "
+	 "~n   SaNode:  ~p"
+	 "~n   MgrNode: ~p"
+	 "~n   MibDir:  ~p", [SaNode, MgrNode, MibDir]),
+    ?DBG("db_notify_client -> maximize verbosity", []),
+    snmpa_local_db:verbosity(trace),
+    Self = self(), 
+    ?DBG("db_notify_client -> register self (~p) notify client", [Self]),
     snmpa_local_db:register_notify_client(self(),?MODULE),
 
-    %% This call (the manager) will issue to set operations, so
+    %% This call (to the manager) will issue to set operations, so
     %% we expect to receive to notify(insert) calls.
     try_test(db_notify_client_test),
 
-    ?DBG("await first notify",[]),
+    ?DBG("db_notify_client -> await first notify",[]),
     receive 
-	{db_notify_test_reply,insert} -> ?DBG("first notify received",[]),ok
+	{db_notify_test_reply, insert} -> 
+	    ?DBG("db_notify_client -> first notify received",[]),
+	    ok
+    after 10000 ->
+	    ?FAIL({timeout, waiting_for_first_event})
     end,
     
-    ?DBG("await second notify",[]),
+    ?DBG("db_notify_client -> await second notify",[]),
     receive 
-	{db_notify_test_reply,insert} -> ?DBG("second notify received",[]),ok
+	{db_notify_test_reply, insert} -> 
+	    ?DBG("db_notify_client -> second notify received",[]),
+	    ok
+    after 10000 ->
+	    ?FAIL({timeout, waiting_for_second_event})
     end,
 
-    snmpa_local_db:unregister_notify_client(self()).
+    ?DBG("db_notify_client -> unregister self (~p) notify client", [Self]),
+    snmpa_local_db:unregister_notify_client(self()),
+    ?DBG("db_notify_client -> minimize verbosity", []),
+    snmpa_local_db:verbosity(silence),
+
+    ?DBG("db_notify_client -> done", []),
+    ok.
 
 
 %% This is run in the manager node
@@ -2649,9 +2669,9 @@ db_notify_client_test() ->
     s([{[sysLocation, 0], "new_value"}]),
     ?line expect(5, [{[sysLocation, 0], "new_value"}]).
 
-notify(Pid,What) -> 
+notify(Pid, What) -> 
     ?DBG("notify(~p,~p) -> called",[Pid,What]),
-    Pid ! {db_notify_test_reply,What}.
+    Pid ! {db_notify_test_reply, What}.
 
 
 %% Req: system group, OLD-SNMPEA-MIB, Klas1
@@ -4133,16 +4153,22 @@ snmp_framework_mib() ->
     ?line [EngineTime] = get_req(2, [[snmpEngineTime,0]]),
     ?SLEEP(5000),
     ?line [EngineTime2] = get_req(3, [[snmpEngineTime,0]]),
+    ?DBG("snmp_framework_mib -> time(s): "
+	 "~n   EngineTime 1 = ~p"
+	 "~n   EngineTime 2 = ~p", [EngineTime, EngineTime2]),
     if 
-	EngineTime+7 < EngineTime2 ->
+	(EngineTime+7) < EngineTime2 ->
 	    ?line ?FAIL({too_large_diff, EngineTime, EngineTime2});
-	EngineTime+4 > EngineTime2 ->
+	(EngineTime+4) > EngineTime2 ->
 	    ?line ?FAIL({too_large_diff, EngineTime, EngineTime2});
-	true -> ok
+	true -> 
+	    ok
     end,
     ?line case get_req(4, [[snmpEngineBoots,0]]) of
-	      [Boots] when integer(Boots) -> ok;
-	      Else -> ?FAIL(Else)
+	      [Boots] when is_integer(Boots) -> 
+		  ok;
+	      Else -> 
+		  ?FAIL(Else)
 	  end,
     ok.
 
@@ -4890,20 +4916,54 @@ loop_it_2(Oid, N) ->
 %%%-----------------------------------------------------------------
 
 reported_bugs(suite) ->
-    [otp_1128, otp_1129, otp_1131, otp_1162,
-     otp_1222, otp_1298, otp_1331, otp_1338,
-     otp_1342, otp_2776, otp_2979, otp_3187, otp_3725].
+    [
+     otp_1128, 
+     otp_1129, 
+     otp_1131, 
+     otp_1162,
+     otp_1222, 
+     otp_1298, 
+     otp_1331, 
+     otp_1338,
+     otp_1342, 
+     otp_2776, 
+     otp_2979, 
+     otp_3187, 
+     otp_3725
+    ].
 
 reported_bugs_2(suite) ->
-    [otp_1128_2, otp_1129_2, otp_1131_2, otp_1162_2,
-     otp_1222_2, otp_1298_2, otp_1331_2, otp_1338_2,
-     otp_1342_2, otp_2776_2, otp_2979_2, otp_3187_2].
+    [
+     otp_1128_2, 
+     otp_1129_2, 
+     otp_1131_2, 
+     otp_1162_2,
+     otp_1222_2, 
+     otp_1298_2, 
+     otp_1331_2, 
+     otp_1338_2,
+     otp_1342_2, 
+     otp_2776_2, 
+     otp_2979_2, 
+     otp_3187_2
+    ].
 
 reported_bugs_3(suite) ->
-    [otp_1128_3, otp_1129_3, otp_1131_3, otp_1162_3,
-     otp_1222_3, otp_1298_3, otp_1331_3, otp_1338_3,
-     otp_1342_3, otp_2776_3, otp_2979_3, otp_3187_3,
-     otp_3542].
+    [
+     otp_1128_3, 
+     otp_1129_3, 
+     otp_1131_3, 
+     otp_1162_3,
+     otp_1222_3, 
+     otp_1298_3, 
+     otp_1331_3, 
+     otp_1338_3,
+     otp_1342_3, 
+     otp_2776_3, 
+     otp_2979_3, 
+     otp_3187_3,
+     otp_3542
+    ].
 
 
 %% These are (ticket) test cases where the initiation has to be done

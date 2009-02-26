@@ -1,6 +1,6 @@
 {application, orber,
  [{description, "The Erlang ORB application"},
-  {vsn, "3.6.9"},
+  {vsn, "3.6.10"},
   {modules,
      [	
         'CosNaming_Binding',

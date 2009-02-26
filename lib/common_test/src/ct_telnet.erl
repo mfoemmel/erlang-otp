@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2003-2007</year>
+%% <year>2003-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -24,8 +24,6 @@
 %%% perform string matching on the result.
 %%% (See the <code>unix_telnet</code> manual page for information 
 %%% about how ct_telnet may be used specifically with unix hosts.)</p>
-%%% <p>The rx driver used by ct_telnet for handling regular expressions is
-%%% currently only ported to Unix and Linux and will not work on Windows!</p>
 %%% <p>The following default values are defined in ct_telnet:</p>
 %%% <pre>
 %%% Connection timeout = 10 sec (time to wait for connection)
@@ -56,7 +54,7 @@
 
 %%% @type prompt_regexp() = string(). A regular expression which
 %%% matches all possible prompts for a specific type of target. The
-%%% regexp must not have any groups i.e. when matching, rx:match shall
+%%% regexp must not have any groups i.e. when matching, re:run/3 shall
 %%% return a list with one single element.
 %%%
 %%% @see unix_telnet
@@ -1010,18 +1008,18 @@ match_line(Line,[{prompt,PromptType}|Patterns],FoundPrompt,EO,RetTag)
   when PromptType=/=FoundPrompt ->
     match_line(Line,Patterns,FoundPrompt,EO,RetTag);
 match_line(Line,[{Tag,Pattern}|Patterns],FoundPrompt,EO,RetTag) ->
-    case rx:match(Line,Pattern) of
+    case re:run(Line,Pattern,[{capture,all,list}]) of
 	nomatch ->
 	    match_line(Line,Patterns,FoundPrompt,EO,RetTag);
-	Match ->
+	{match,Match} ->
 	    try_cont_log("<b>MATCH:</b> ~s", [Line]),
 	    {RetTag,{Tag,Match}}
     end;
 match_line(Line,[Pattern|Patterns],FoundPrompt,EO,RetTag) ->
-    case rx:match(Line,Pattern) of
+    case re:run(Line,Pattern,[{capture,all,list}]) of
 	nomatch ->
 	    match_line(Line,Patterns,FoundPrompt,EO,RetTag);
-	Match ->
+	{match,Match} ->
 	    try_cont_log("<b>MATCH:</b> ~s", [Line]),
 	    {RetTag,Match}
     end;
@@ -1122,11 +1120,11 @@ split_lines([],Line,Lines) ->
 match_prompt(Str,Prx) ->
     match_prompt(Str,Prx,[]).
 match_prompt(Str,Prx,Acc) ->
-    case rx:match_pos(Str,Prx) of
+    case re:run(Str,Prx) of
 	nomatch ->
 	    noprompt;
-	[{Start,End}] ->
-	    case split_prompt_string(Str,Start,End,1,[],[]) of
+	{match,[{Start,Len}]} ->
+	    case split_prompt_string(Str,Start+1,Start+Len,1,[],[]) of
 		{noprompt,Done,Rest} ->
 		    match_prompt(Rest,Prx,Done);
 		{prompt,UptoPrompt,Prompt,Rest} ->

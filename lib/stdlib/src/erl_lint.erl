@@ -1,4 +1,5 @@
 %% -*- erlang-indent-level: 4 -*-
+%%=======================================================================
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -33,13 +34,13 @@
 
 -import(lists, [member/2,map/2,foldl/3,foldr/3,mapfoldl/3,all/2,reverse/1]).
 
-%% bool_option(OnOpt, OffOpt, Default, Options) -> true | false.
+%% bool_option(OnOpt, OffOpt, Default, Options) -> bool().
 %% value_option(Flag, Default, Options) -> Value.
 %% value_option(Flag, Default, OnOpt, OnVal, OffOpt, OffVal, Options) ->
 %%              Value.
 %%  The option handling functions.
 
--spec(bool_option/4 :: (atom(), atom(), bool(), [_]) -> bool()).
+-spec bool_option(atom(), atom(), bool(), [_]) -> bool().
 
 bool_option(On, Off, Default, Opts) ->
     foldl(fun (Opt, _Def) when Opt =:= On -> true;
@@ -253,6 +254,8 @@ format_error(unsized_binary_not_at_end) ->
     "a binary field without size is only allowed at the end of a binary pattern";
 format_error(typed_literal_string) ->
     "a literal string in a binary pattern must not have a type or a size";
+format_error(utf_bittype_size_or_unit) ->
+    "neither size nor unit must be given for segments of type utf8/utf16/utf32";
 format_error({bad_bitsize,Type}) ->
     io_lib:format("bad ~s bit size", [Type]);
 %% --- behaviours ---
@@ -276,6 +279,13 @@ format_error({type_ref, {TypeName, Arity}}) ->
     io_lib:format("type ~w~s undefined", [TypeName, gen_type_paren(Arity)]);
 format_error({unused_type, {TypeName, Arity}}) ->
     io_lib:format("type ~w~s is unused", [TypeName, gen_type_paren(Arity)]);
+format_error({new_builtin_type, {TypeName, Arity}}) ->
+    io_lib:format("type ~w~s is a new builtin type; "
+		  "its (re)definition is allowed only until the next release", 
+		  [TypeName, gen_type_paren(Arity)]);
+format_error({builtin_type, {TypeName, Arity}}) ->
+    io_lib:format("type ~w~s is a builtin type; it cannot be redefined", 
+		  [TypeName, gen_type_paren(Arity)]);
 format_error({redefine_type, {TypeName, Arity}}) ->
     io_lib:format("type ~w~s already defined", 
 		  [TypeName, gen_type_paren(Arity)]);
@@ -1319,8 +1329,7 @@ rbia_fields([_|Fs], I, Acc) ->
     rbia_fields(Fs, I+1, Acc);
 rbia_fields([], _, Acc) -> Acc.
 
-%% is_pattern_expr(Expression) ->
-%%      true | false.
+%% is_pattern_expr(Expression) -> bool().
 %%  Test if a general expression is a valid pattern expression.
 
 is_pattern_expr(Expr) ->
@@ -1373,11 +1382,19 @@ pattern_bin(Es, Vt, Old, Bvt0, St0) ->
 			       {0,[],Bvt0,St0}, Es),
     {Esvt,Bvt,St1}.
 
-pattern_element({bin_element,Line,{string,_,_},Size,Ts}, _, _, {Sz,Esvt,Bvt,St0})
-  when Ts =/= default; Size =/= default  ->
-    St = add_error(Line, typed_literal_string, St0),
-    {Sz,Esvt,Bvt,St};
-pattern_element({bin_element,Line,E,Sz0,Ts}, Vt, Old, {Size0,Esvt,Bvt,St0}) ->
+pattern_element({bin_element,Line,{string,_,_},Size,Ts}=Be, Vt,
+		Old, {Sz,Esvt,Bvt,St0}=Acc) ->
+    case good_string_size_type(Size, Ts) of
+	true ->
+	    pattern_element_1(Be, Vt, Old, Acc);
+	false ->
+	    St = add_error(Line, typed_literal_string, St0),
+	    {Sz,Esvt,Bvt,St}
+    end;
+pattern_element(Be, Vt, Old, Acc) ->
+    pattern_element_1(Be, Vt, Old, Acc).
+
+pattern_element_1({bin_element,Line,E,Sz0,Ts}, Vt, Old, {Size0,Esvt,Bvt,St0}) ->
     {Pevt,Bvt1,St1} = pat_bit_expr(E, Old, Bvt, St0),
     %% vtmerge or vtmerge_pat doesn't matter here
     {Sz1,Szvt,Bvt2,St2} = pat_bit_size(Sz0, vtmerge(Vt, Esvt), Bvt, St1),
@@ -1390,6 +1407,16 @@ pattern_element({bin_element,Line,E,Sz0,Ts}, Vt, Old, {Size0,Esvt,Bvt,St0}) ->
     {Size1,St5} = add_bit_size(Line, Sz4, Size0, false, St4),
     {Size1,vtmerge(Szvt,vtmerge(Pevt, Esvt)),
      vtmerge(Bvt2,vtmerge(Bvt, Bvt1)), St5}.
+
+good_string_size_type(default, default) ->
+    true;
+good_string_size_type(default, Ts) ->
+    lists:any(fun(utf8) -> true;
+		 (utf16) -> true;
+		 (utf32) -> true;
+		 (_) -> false
+	      end, Ts);
+good_string_size_type(_, _) -> false.
 
 %% pat_bit_expr(Pattern, OldVarTable, BinVarTable,State) -> 
 %%              {UpdVarTable,UpdBinVarTable,State}.
@@ -1431,7 +1458,7 @@ pat_bit_size(Size, _Vt, _Bvt, St) ->
 
 expr_bin(Es, Vt, St0, Check) ->
     {_Sz,Esvt,St1} = foldl(fun (E, Acc) -> bin_element(E, Vt, Acc, Check) end,
-                          {0,[],St0}, Es),
+			   {0,[],St0}, Es),
     {Esvt,St1}.
 
 bin_element({bin_element,Line,E,Sz0,Ts}, Vt, {Size0,Esvt,St0}, Check) ->
@@ -1477,10 +1504,13 @@ bit_type(Line, Size0, Type, St) ->
 %%   float == 32 or 64
 
 bit_size_check(_Line, unknown, _, St) -> {unknown,St};
+bit_size_check(_Line, undefined, #bittype{type=Type}, St) ->
+    true = (Type =:= utf8) or (Type =:= utf16) or (Type =:= utf32), %Assertion.
+    {undefined,St};
 bit_size_check(Line, all, #bittype{type=Type}, St) ->
-    if
-        Type =:= binary -> {all,St};
-        true -> {unknown,add_error(Line, illegal_bitsize, St)}
+    case Type of
+        binary -> {all,St};
+        _ -> {unknown,add_error(Line, illegal_bitsize, St)}
     end;
 bit_size_check(Line, Size, #bittype{type=Type,unit=Unit}, St) ->
     Sz = Unit * Size,                           %Total number of bits!
@@ -1502,7 +1532,9 @@ add_bit_size(Line, _Sz1, all, false, St) ->
 add_bit_size(_Line, _Sz1, all, true, St) ->
     {all,St};
 add_bit_size(_Line, all, _Sz2, _B, St) -> {all,St};
+add_bit_size(_Line, undefined, _Sz2, _B, St) -> {undefined,St};
 add_bit_size(_Line, unknown, _Sz2, _B, St) -> {unknown,St};
+add_bit_size(_Line, _Sz1, undefined, _B, St) -> {unknown,St};
 add_bit_size(_Line, _Sz1, unknown, _B, St) -> {unknown,St};
 add_bit_size(_Line, Sz1, Sz2, _B, St) -> {Sz1 + Sz2,St}.
 
@@ -1657,7 +1689,7 @@ gexpr_list(Es, Vt, St) ->
                   {vtmerge(Evt, Esvt),St1}
           end, {[],St}, Es).
 
-%% is_guard_test(Expression) -> true | false.
+%% is_guard_test(Expression) -> bool().
 %%  Test if a general expression is a guard test.
 is_guard_test(E) ->
     is_guard_test2(E, dict:new()).
@@ -1671,7 +1703,7 @@ is_guard_test(Expression, Forms) ->
                 end, start(), RecordAttributes),
     is_guard_test2(zip_file_and_line(Expression, "nofile"), St0#lint.records).
 
-%% is_guard_test2(Expression, RecordDefs) -> true | false.
+%% is_guard_test2(Expression, RecordDefs) -> bool().
 is_guard_test2({call,Line,{atom,Lr,record},[E,A]}, RDs) ->
     is_gexpr({call,Line,{atom,Lr,is_record},[E,A]}, RDs);
 is_guard_test2({call,_Line,{atom,_La,Test},As}=Call, RDs) ->
@@ -1683,7 +1715,7 @@ is_guard_test2(G, RDs) ->
     %%Everything else is a guard expression.
     is_gexpr(G, RDs).
 
-%% is_guard_expr(Expression) -> true | false.
+%% is_guard_expr(Expression) -> bool().
 %%  Test if an expression is a guard expression.
 
 is_guard_expr(E) -> is_gexpr(E, []). 
@@ -2264,12 +2296,26 @@ type_def(_Line, {record, _RecName}, Fields, [], St0) ->
 type_def(Line, TypeName, ProtoType, Args, St0) ->
     TypeDefs = St0#lint.types,
     Arity = length(Args),
-    case (dict:is_key({TypeName, Arity}, TypeDefs) orelse 
-	  is_var_arity_type(TypeName)) of
+    TypePair = {TypeName, Arity},
+    case (dict:is_key(TypePair, TypeDefs) orelse is_var_arity_type(TypeName)) of
 	true ->
-	    add_error(Line, {redefine_type, {TypeName, Arity}}, St0);
+	    case dict:is_key(TypePair, default_types()) of
+		true  ->
+		    case is_newly_introduced_builtin_type(TypePair) of
+			%% allow some types just for bootstrapping R12B-5
+			true ->
+			    Warn = {new_builtin_type, TypePair},
+			    St1 = add_warning(Line, Warn, St0),
+			    NewDefs = dict:store(TypePair, Line, TypeDefs),
+			    CheckType = {type, -1, product, [ProtoType|Args]},
+			    check_type(CheckType, St1#lint{types=NewDefs});
+			false ->
+			    add_error(Line, {builtin_type, TypePair}, St0)
+		    end;
+	        false -> add_error(Line, {redefine_type, TypePair}, St0)
+	    end;
 	false ->
-	    NewDefs = dict:store({TypeName, Arity}, Line, TypeDefs),
+	    NewDefs = dict:store(TypePair, Line, TypeDefs),
 	    CheckType = {type, -1, product, [ProtoType|Args]},
 	    check_type(CheckType, St0#lint{types=NewDefs})
     end.
@@ -2419,33 +2465,45 @@ default_types() ->
 		{'fun', 2},
 		{function, 0},
 		{identifier, 0},
-		{iolist, 0},
 		{integer, 0},
 		{integer, 1},
+		{iolist, 0},
 		{list, 0},
 		{list, 1},
+		{maybe_improper_list, 0},
+		{maybe_improper_list, 2},
 		{mfa, 0},
-		{nil, 0},
+		{module, 0},
 		{neg_integer, 0},
-		{non_neg_integer, 0},
+		{nil, 0},
 		{no_return, 0},
+		{node, 0},
+		{non_neg_integer, 0},
 		{none, 0},
 		{nonempty_list, 0},
 		{nonempty_list, 1},
 		{nonempty_improper_list, 2},
 		{nonempty_maybe_improper_list, 0},
 		{nonempty_maybe_improper_list, 2},
+		{nonempty_string, 0},
 		{number, 0},
 		{pid, 0},
 		{port, 0},
 		{pos_integer, 0},
-		{maybe_improper_list, 0},
-		{maybe_improper_list, 2},
 		{range, 2},
 		{ref, 0},
 		{string, 0},
+		{term, 0},
+		{timeout, 0},
 		{var, 1}],
     dict:from_list([{T, -1} || T <- DefTypes]).
+
+is_newly_introduced_builtin_type({module, 0}) -> true;
+is_newly_introduced_builtin_type({node, 0}) -> true;
+is_newly_introduced_builtin_type({nonempty_string, 0}) -> true;
+is_newly_introduced_builtin_type({term, 0}) -> true;
+is_newly_introduced_builtin_type({timeout, 0}) -> true;
+is_newly_introduced_builtin_type({Name, _}) when is_atom(Name) -> false.
 
 %% spec_decl(Line, Fun, Types, State) -> State.
 
@@ -2616,7 +2674,7 @@ icrt_export(Csvt, Vt, In, St) ->
     Some = ordsets:subtract(vtnames(Vt1), vtnames(Vt)),
     Xvt = vtexport(All, In, []),
     Evt = vtunsafe(ordsets:subtract(Some, All), In, Xvt),
-    Unused = vtmerge(map(fun (Vt0) -> unused_vars(Vt0, Vt, St) end, Csvt)),
+    Unused = vtmerge([unused_vars(Vt0, Vt, St) || Vt0 <- Csvt]),
     %% Exported and unsafe variables may be unused:
     Uvt = vtmerge(Evt, Unused),
     %% Make exported and unsafe unused variables unused in subsequent code:

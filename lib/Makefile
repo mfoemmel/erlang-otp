@@ -56,20 +56,20 @@ else
         OTHER_SUB_DIRECTORIES += 			\
           snmp otp_mibs appmon erl_interface asn1 jinterface gs inets ic \
           mnesia crypto orber os_mon parsetools syntax_tools pman \
-          ssl toolbar tv observer debugger odbc runtime_tools \
+          public_key ssl toolbar tv observer debugger odbc runtime_tools \
           cosTransactions cosEvent cosTime cosNotification cosProperty \
           cosFileTransfer cosEventDomain et megaco webtool \
-	  xmerl edoc ssh inviso typer docbuilder test_server common_test percept
+	  xmerl edoc eunit ssh inviso typer docbuilder test_server common_test percept
 # dialyzer
         OTHER_SUB_DIRECTORIES += hipe
       else # BUILD_ALL on unix
         OTHER_SUB_DIRECTORIES += \
           snmp otp_mibs appmon erl_interface asn1 jinterface debugger gs inets \
           ic mnesia  crypto orber os_mon parsetools syntax_tools \
-          pman ssl toolbar tv observer odbc \
+          pman public_key ssl toolbar tv observer odbc \
           runtime_tools cosTransactions cosEvent cosTime cosNotification \
           cosProperty cosFileTransfer cosEventDomain et megaco webtool \
-	  xmerl edoc ssh inviso typer docbuilder test_server common_test percept
+	  xmerl edoc eunit ssh inviso typer docbuilder test_server common_test percept
 # dialyzer
         OTHER_SUB_DIRECTORIES += hipe $(TSP_APP)
       endif

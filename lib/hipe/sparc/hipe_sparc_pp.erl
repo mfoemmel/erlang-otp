@@ -213,7 +213,7 @@ pp_sdesc_live(Dev, Live) -> pp_sdesc_live(Dev, Live, 1).
 
 pp_sdesc_live(Dev, Live, I) ->
   io:format(Dev, "~s", [to_hex(element(I, Live))]),
-  if I < size(Live) ->
+  if I < tuple_size(Live) ->
       io:format(Dev, ",", []),
       pp_sdesc_live(Dev, Live, I+1);
      true -> []

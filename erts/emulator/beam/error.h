@@ -142,7 +142,6 @@
  * Internal pseudo-error codes.
  */
 #define TRAP		(1 << 8)	/* BIF Trap to erlang code */
-#define RESCHEDULE	(2 << 8)	/* BIF must be rescheduled */
 
 /*
  * Aliases for some common exit codes.

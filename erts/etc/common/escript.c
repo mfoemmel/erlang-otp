@@ -56,6 +56,7 @@ static int eargc;		/* Number of arguments in eargv. */
 #define PUSH(s) eargv[eargc++] = QUOTE(s)
 #define PUSH2(s, t) PUSH(s); PUSH(t)
 #define PUSH3(s, t, u) PUSH2(s, t); PUSH(u)
+#define LINEBUFSZ 1024
 
 /*
  * Local functions.
@@ -63,6 +64,7 @@ static int eargc;		/* Number of arguments in eargv. */
 
 static void error(char* format, ...);
 static char* emalloc(size_t size);
+static void efree(void *p);
 static char* strsave(char* string);
 static void push_words(char* src);
 static int run_erlang(char* name, char** argv);
@@ -99,6 +101,24 @@ char *strerror(int errnum)
 }
 #endif /* !HAVE_STRERROR */
 
+static void
+set_env(char *key, char *value)
+{
+#ifdef __WIN32__
+    if (!SetEnvironmentVariable((LPCTSTR) key, (LPCTSTR) value))
+	error("SetEnvironmentVariable(\"%s\", \"%s\") failed!", key, value);
+#else
+    size_t size = strlen(key) + 1 + strlen(value) + 1;
+    char *str = emalloc(size);
+    sprintf(str, "%s=%s", key, value);
+    if (putenv(str) != 0)
+	error("putenv(\"%s\") failed!", str);
+#ifdef HAVE_COPYING_PUTENV
+    efree(str);
+#endif
+#endif
+}
+
 static char *
 get_env(char *key)
 {
@@ -108,12 +128,12 @@ get_env(char *key)
     while (1) {
 	DWORD nsz;
 	if (value)
-	    free(value);
+	    efree(value);
 	value = emalloc(size);
 	SetLastError(0);
 	nsz = GetEnvironmentVariable((LPCTSTR) key, (LPTSTR) value, size);
 	if (nsz == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
-	    free(value);
+	    efree(value);
 	    return NULL;
 	}
 	if (nsz <= size)
@@ -130,8 +150,87 @@ free_env_val(char *value)
 {
 #ifdef __WIN32__
     if (value)
-	free(value);
+	efree(value);
 #endif
+}
+
+static void
+append_shebang_args_to_erl_flags(char* argprefix, int argc, char** argv)
+{
+    if (argc > 1) {
+	/* Open script file */
+	FILE* fd = fopen (argv[1],"r");
+
+	if (fd != NULL)	{
+	    /* Read first line in script file */
+	    char linebuf[LINEBUFSZ];
+	    char* ptr = fgets(linebuf, LINEBUFSZ, fd);
+
+	    if (ptr != NULL && linebuf[0] == '#' && linebuf[1] == '!') {
+		/* Try to find args on second or third line */
+		ptr = fgets(linebuf, LINEBUFSZ, fd);
+		if (ptr != NULL && linebuf[0] == '%' && linebuf[1] == '%' && linebuf[2] == '!') {
+		    /* Use second line */
+		} else {
+		    /* Try third line */
+		    ptr = fgets(linebuf, LINEBUFSZ, fd);
+		    if (ptr != NULL && linebuf[0] == '%' && linebuf[1] == '%' && linebuf[2] == '!') {
+			/* Use third line */
+		    } else {
+			/* Do not use any line */
+			ptr = NULL;
+		    }
+		}
+	  
+		if (ptr != NULL) {
+		    /* Use entire line but the leading chars */
+		    char* emulator_flags = linebuf;
+		    emulator_flags++;
+		    emulator_flags++;
+	    
+		    /* Get rid of trailing newline */
+		    {
+			char* linenl = strstr(emulator_flags, "\n");
+			if (linenl) {
+			    linenl[0] = (char)NULL;
+			}
+		    }
+	    
+		    /* Skip leading spaces */
+		    while (emulator_flags && emulator_flags[0] == ' ') {
+			emulator_flags++;
+		    }
+	    
+		    if (emulator_flags) {
+			/* Read old env setting */
+			char* varname = "ERL_FLAGS";
+			char* oldenv = getenv(varname);
+			if (oldenv) {
+			    /* Copy flags from script */
+			    char* newenv = emalloc(strlen(oldenv)+LINEBUFSZ);
+			    char* tmpenv = newenv;
+			    strcpy(tmpenv, emulator_flags);
+			    tmpenv += strlen(emulator_flags);
+			    /* Append flags from old env setting */
+			    strcpy(tmpenv, " ");
+			    tmpenv++;
+			    strcpy(tmpenv, oldenv);
+			    set_env(varname, newenv);
+			    efree(newenv);
+			} else {
+			    /* Set new env */
+			    set_env(varname, emulator_flags);
+			}
+		    }
+		} 
+	    }
+	    fclose(fd);
+	} else {
+	    error("Failed to open file: %s", argv[1]);
+	}
+    } else {
+	error("Missing filename\n");
+    }
 }
 
 int
@@ -140,7 +239,8 @@ main(int argc, char** argv)
     int eargv_size;
     int eargc_base;		/* How many arguments in the base of eargv. */
     char* emulator;
-    char *env;
+    char* env;
+    char* invoker = argv[0];
 
     emulator = env = get_env("ESCRIPT_EMULATOR");
     if (emulator == NULL) {
@@ -177,10 +277,17 @@ main(int argc, char** argv)
      * Push all options (without the hyphen) before the script name.
      */
 
-    while(argc > 1 && argv[1][0] == '-') {
+    while (argc > 1 && argv[1][0] == '-') {
 	PUSH(argv[1]+1);
-	argc--, argv++;
+      	argc--, argv++;
     }
+
+    /*
+     * Read options from the first row in the script and append them
+     * to ERL_FLAGS
+     */
+
+    append_shebang_args_to_erl_flags(invoker, argc, argv);
 
     /*
      * Push the script name and everything following it as extra arguments.
@@ -245,7 +352,7 @@ char *make_commandline(char **argv)
     }
     if (!siz) {
 	siz = num;
-	buff = malloc(siz*sizeof(char));
+	buff = emalloc(siz*sizeof(char));
     } else if (siz < num) {
 	siz = num;
 	buff = realloc(buff,siz*sizeof(char));
@@ -326,7 +433,7 @@ run_erlang(char* progname, char** argv)
 
     status = my_spawnvp(argv)/*_spawnvp(_P_WAIT,progname,argv)*/;
     if (status == -1) {
-	fprintf(stderr, "erlc: Error executing '%s': %d", progname, 
+	fprintf(stderr, "escript: Error executing '%s': %d", progname, 
 		GetLastError());
     }
     return status;
@@ -346,7 +453,7 @@ error(char* format, ...)
     va_start(ap, format);
     vsprintf(sbuf, format, ap);
     va_end(ap);
-    fprintf(stderr, "erlc: %s\n", sbuf);
+    fprintf(stderr, "escript: %s\n", sbuf);
     exit(1);
 }
 
@@ -357,6 +464,12 @@ emalloc(size_t size)
   if (p == NULL)
     error("Insufficient memory");
   return p;
+}
+
+static void
+efree(void *p) 
+{
+    free(p);
 }
 
 static char*

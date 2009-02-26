@@ -43,6 +43,14 @@
 -include("snmp_types.hrl").
 -include("snmpc.hrl").
 
+
+%%----------------------------------------------------------------------------
+%% Some basic types 
+%%----------------------------------------------------------------------------
+
+-type severity() :: 'silence' | 'warning' | 'info' | 'log' | 'debug' | 'trace'.
+
+
 test_father(FatherName, NewVarName, SubIndex, Line) ->
     CDATA = get(cdata),
     case lists:keysearch(FatherName, #me.aliasname, CDATA#cdata.mes) of
@@ -369,7 +377,7 @@ import_built_in({_tag,Obj}, Nodes, Types, Macros, MibName, Line) ->
 include_lib([]) -> [];
 include_lib([Dir|Dirs]) ->
     [Appl|Path] = filename:split(Dir),
-    case code:lib_dir(Appl) of
+    case code:lib_dir(list_to_atom(Appl)) of
 	{error, _Reason} ->
 	    include_lib(Dirs);
 	DirPath ->
@@ -1512,7 +1520,7 @@ printable(debug,debug)     -> debug;
 printable(trace,V)         -> V;
 printable(_V,_S)           -> false.
 
-
+-spec image_of_severity(Sev :: severity()) -> string().
 image_of_severity(warning)  -> "Warning: ";
 image_of_severity(info)     -> "Info: ";
 image_of_severity(log)      -> "Log: ";
@@ -1584,6 +1592,7 @@ check_sub_ids([_H | T], Name, Line) ->
     check_sub_ids(T, Name, Line);
 check_sub_ids([], _Name, _Line) ->
     ok.
+
 
 %%-----------------------------------------------------------------
 %% Handle forward references:

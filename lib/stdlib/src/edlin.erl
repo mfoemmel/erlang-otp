@@ -27,7 +27,7 @@
 
 -export([edit_line1/2]).
 
--import(lists, [append/2, reverse/1, reverse/2]).
+-import(lists, [reverse/1, reverse/2]).
 
 %-import([nthtail/2, keysearch/3, prefix/2]).
 
@@ -78,7 +78,7 @@ edit([C|Cs], P, {Bef,Aft}, Prefix, Rs0) ->
 	ctlx ->
 	    edit(Cs, P, {Bef,Aft}, ctlx, Rs0);
 	new_line ->
-	    {done,reverse(Bef, append(Aft, "\n")),Cs,
+	    {done, reverse(Bef, Aft ++ "\n"), Cs,
 	     reverse(Rs0, [{move_rel,length(Aft)},{put_chars,"\n"}])};
 	redraw_line ->
 	    Rs1 = erase(P, Bef, Aft, Rs0),
@@ -95,7 +95,7 @@ edit([C|Cs], P, {Bef,Aft}, Prefix, Rs0) ->
 %% 	    case expand(Bef) of
 %% 		{yes,Str} ->
 %% 		    edit([redraw_line|
-%% 			  append(Str, Cs)], P, {Bef,Aft}, none, Rs0);
+%% 			  (Str ++ Cs)], P, {Bef,Aft}, none, Rs0);
 %% 		no ->
 %% 		    %% don't beep if there's only whitespace before
 %% 		    %% us - user may have pasted in a lot of indented stuff.

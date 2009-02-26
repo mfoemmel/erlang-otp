@@ -208,7 +208,11 @@ start_and_stop(Config) when is_list(Config) ->
                 p("received listening message from server [~p] => "
                   "send continue to client [~p]~n", [Server, Client]),
                 Client ! {continue, self()},
-                ok
+                ok;
+	    {'EXIT', Server, {skip, Reason}} ->
+		?SKIP(Reason);
+	    {'EXIT', Client, {skip, Reason}} ->
+		?SKIP(Reason)
         after 5000 ->
                 {error, server_timeout}
         end,
@@ -359,8 +363,11 @@ sendreceive(Config) when list(Config) ->
                 p("received operational message from server [~p] => "
                   "send continue to client [~p]~n", [Server, Client]),
                 Client ! {continue, self()},
-                ok
-        after 5000 ->
+                ok;
+	    {'EXIT', Server, {skip, Reason}} ->
+		?SKIP(Reason);
+	    {'EXIT', Client, {skip, Reason}} ->
+		?SKIP(Reason)        after 5000 ->
                 {error, server_timeout}
         end,
 
@@ -578,7 +585,11 @@ block_unblock(Config) when is_list(Config) ->
                 p("received operational message from server [~p] => "
                   "send continue to client [~p]~n", [Server, Client]),
                 Client ! {continue, self()},
-                ok
+                ok;
+	    {'EXIT', Server, {skip, Reason1}} ->
+		?SKIP(Reason1);
+	    {'EXIT', Client, {skip, Reason2}} ->
+		?SKIP(Reason2)
         after 5000 ->
                 {error, server_timeout}
         end,
@@ -591,7 +602,11 @@ block_unblock(Config) when is_list(Config) ->
 		p("received blocked message from client [~p] => "
 		  "send continue to server [~p]~n", [Client, Server]),
 		Server ! {continue, self()},
-		ok
+		ok;
+	    {'EXIT', Server, {skip, Reason3}} ->
+		?SKIP(Reason3);
+	    {'EXIT', Client, {skip, Reason4}} ->
+		?SKIP(Reason4)
 	after 5000 ->
 		{error, timeout}
 	end,

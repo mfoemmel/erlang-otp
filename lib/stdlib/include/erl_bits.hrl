@@ -20,7 +20,7 @@
 %% Generic compiler options, passed from the erl_compile module.
 
 -record(bittype, {
-          type   :: 'integer' | 'float' | 'binary',
+          type   :: 'integer' | 'float' | 'binary' | 'utf8' | 'utf16' | 'utf32',
 	  unit   :: 1..256,       %% element unit
           sign   :: 'signed' | 'unsigned',
           endian :: 'big' | 'little' | 'native'

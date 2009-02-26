@@ -19,8 +19,7 @@
 -module(beam_bsm).
 -export([module/2,format_error/1]).
 
--import(lists, [member/2,keymember/3,map/2,foldl/3,mapfoldl/3,reverse/1,
-		sort/1,all/2]).
+-import(lists, [member/2,foldl/3,reverse/1,sort/1,all/2]).
 
 %%%
 %%% We optimize bit syntax matching where the tail end of a binary is
@@ -71,7 +70,7 @@
 
 module({Mod,Exp,Attr,Fs0,Lc}, Opts) ->
     D = #btb{f=btb_index(Fs0)},
-    Fs = map(fun(F) -> function(F, D) end, Fs0),
+    Fs = [function(F, D) || F <- Fs0],
     Code = {Mod,Exp,Attr,Fs,Lc},
     case proplists:get_bool(bin_opt_info, Opts) of
 	true ->
@@ -312,6 +311,21 @@ btb_reaches_match_2([{bs_put_binary,{f,0},_,_,_,Src}=I|Is], Regs, D) ->
     btb_ensure_not_used([Src], I, Regs),
     btb_reaches_match_1(Is, Regs, D);
 btb_reaches_match_2([{bs_put_string,_,_}|Is], Regs, D) ->
+    btb_reaches_match_1(Is, Regs, D);
+btb_reaches_match_2([{bs_utf8_size,_,Src,Dst}=I|Is], Regs, D) ->
+    btb_ensure_not_used([Src], I, Regs),
+    btb_reaches_match_1(Is, btb_kill([Dst], Regs), D);
+btb_reaches_match_2([{bs_utf16_size,_,Src,Dst}=I|Is], Regs, D) ->
+    btb_ensure_not_used([Src], I, Regs),
+    btb_reaches_match_1(Is, btb_kill([Dst], Regs), D);
+btb_reaches_match_2([{bs_put_utf8,_,_,Src}=I|Is], Regs, D) ->
+    btb_ensure_not_used([Src], I, Regs),
+    btb_reaches_match_1(Is, Regs, D);
+btb_reaches_match_2([{bs_put_utf16,_,_,Src}=I|Is], Regs, D) ->
+    btb_ensure_not_used([Src], I, Regs),
+    btb_reaches_match_1(Is, Regs, D);
+btb_reaches_match_2([{bs_put_utf32,_,_,Src}=I|Is], Regs, D) ->
+    btb_ensure_not_used([Src], I, Regs),
     btb_reaches_match_1(Is, Regs, D);
 btb_reaches_match_2([{bs_restore2,Src,_}=I|Is], Regs0, D) ->
     case btb_contains_context(Src, Regs0) of

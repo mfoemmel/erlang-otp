@@ -31,6 +31,22 @@
   </header>
   <p>This document describes the changes made to the Jinterface application.</p>
 
+<section><title>Jinterface 1.4.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    A bug when Jinterface did not detect remote node
+	    disconnects has been corrected.</p>
+          <p>
+	    Own Id: OTP-7624</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Jinterface 1.4.1</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

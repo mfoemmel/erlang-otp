@@ -286,10 +286,8 @@ ifdef USE_PERFCTR
 LIBS += -lperfctr
 endif
 endif
-WITH_SCTP=@WITH_SCTP@
-ifdef WITH_SCTP
-LIBS += -lsctp
-endif
+
+LIBSCTP = @LIBSCTP@
 
 ORG_THR_LIBS=@EMU_THR_LIBS@
 THR_LIB_NAME=@EMU_THR_LIB_NAME@
@@ -388,7 +386,7 @@ endif
 	$(RM) -f $(BINDIR)/hipe_mkliterals $(BINDIR)/hipe_mkliterals.*
 	@set -e ; cd zlib && $(MAKE) clean
 	@set -e ; cd pcre && $(MAKE) clean
- 
+
 .PHONY: all sae zlib pcre clean
 
 docs:
@@ -448,7 +446,7 @@ GENERATE=	$(CREATE_DIRS) \
 		$(TTF_DIR)/beam_opcodes.h \
 		$(TARGET)/erl_bif_table.c \
 		$(TARGET)/erl_version.h \
-		$(TARGET)/driver_tab.c \
+		$(TTF_DIR)/driver_tab.c \
 		$(TTF_DIR)/erl_alloc_types.h
 
 ifeq ($(TARGET),win32)
@@ -457,11 +455,11 @@ else
 GENERATE +=	$(TARGET)/preload.c
 endif
 
-
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 else
 ifeq ($(findstring ose,$(TARGET)),ose)
 else
+ifdef HIPE_ENABLED
 GENERATE +=	$(TTF_DIR)/hipe_x86_asm.h \
 		$(TTF_DIR)/hipe_amd64_asm.h \
 		$(TTF_DIR)/hipe_sparc_asm.h \
@@ -469,6 +467,7 @@ GENERATE +=	$(TTF_DIR)/hipe_x86_asm.h \
 		$(TTF_DIR)/hipe_arm_asm.h \
 		$(TTF_DIR)/hipe_literals.h \
 		$(BINDIR)/hipe_mkliterals$(TF_MARKER)
+endif
 endif
 endif
 
@@ -519,17 +518,20 @@ $(TARGET)/erl_version.h: ../vsn.mk
 	LANG=C $(PERL) utils/make_version -o $@ $(SYSTEM_VSN) $(VSN)$(SERIALNO) $(TARGET)
 
 # driver table
-$(TARGET)/driver_tab.c:	Makefile.in
+$(TTF_DIR)/driver_tab.c: Makefile.in
 	LANG=C $(PERL) utils/make_driver_tab -o $@ $(DRV_OBJS)
 
-# preloaded code
-# Note: if you change this list, also change RELSRC_PRELOAD in
-#       /clearcase/otp/system/build/Makefile
+# Preloaded code.
+# 
+# This list must be consistent with PRE_LOADED_MODULES in
+# lib/kernel/src/Makefile.
 ifeq ($(TARGET),win32)
 $(TARGET)/beams.rc: $(ERL_TOP)/lib/kernel/ebin/otp_ring0.beam \
 			$(ERL_TOP)/lib/kernel/ebin/init.beam \
 			$(ERL_TOP)/lib/kernel/ebin/prim_inet.beam \
 			$(ERL_TOP)/lib/kernel/ebin/prim_file.beam \
+			$(ERL_TOP)/lib/kernel/ebin/zlib.beam \
+			$(ERL_TOP)/lib/kernel/ebin/prim_zip.beam \
 			$(ERL_TOP)/lib/kernel/ebin/erl_prim_loader.beam \
 			$(ERL_TOP)/lib/kernel/ebin/erlang.beam
 	LANG=C $(PERL) utils/make_preload $(MAKE_PRELOAD_EXTRA) -rc $^ > $@
@@ -538,6 +540,8 @@ $(TARGET)/preload.c: $(ERL_TOP)/lib/kernel/ebin/otp_ring0.beam \
 			$(ERL_TOP)/lib/kernel/ebin/init.beam \
 			$(ERL_TOP)/lib/kernel/ebin/prim_inet.beam \
 			$(ERL_TOP)/lib/kernel/ebin/prim_file.beam \
+			$(ERL_TOP)/lib/kernel/ebin/zlib.beam \
+			$(ERL_TOP)/lib/kernel/ebin/prim_zip.beam \
 			$(ERL_TOP)/lib/kernel/ebin/erl_prim_loader.beam \
 			$(ERL_TOP)/lib/kernel/ebin/erlang.beam
 	LANG=C $(PERL) utils/make_preload -old $^ > $@
@@ -546,7 +550,9 @@ endif
 # ----------------------------------------------------------------------
 # Pattern rules
 #
-INCLUDES  = -Ibeam -Isys/$(ERLANG_OSTYPE) -Isys/common -I$(TTF_DIR) -I$(TARGET) -Izlib -Ipcre -Ihipe -I../include/internal -I../include/internal/$(TARGET)
+COMMON_INCLUDES = -Ibeam -Isys/$(ERLANG_OSTYPE) -Isys/common -I$(TARGET) -Izlib -Ipcre -Ihipe -I../include/internal -I../include/internal/$(TARGET)
+
+INCLUDES  =  -I$(TTF_DIR) $(COMMON_INCLUDES)
 
 ifdef PERFCTR_PATH
 INCLUDES += -I$(PERFCTR_PATH)/usr.lib -I$(PERFCTR_PATH)/linux/include
@@ -615,7 +621,7 @@ $(OBJDIR)/%.o: sys/common/%.c
 	$(CC) $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@
 
 $(OBJDIR)/%.o: drivers/common/%.c
-	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -Idrivers/$(ERLANG_OSTYPE) -c $< -o $@
+	$(CC) $(CFLAGS) -DLIBSCTP=$(LIBSCTP) $(INCLUDES) -Idrivers/common -Idrivers/$(ERLANG_OSTYPE) -c $< -o $@
 
 $(OBJDIR)/%.o: drivers/$(ERLANG_OSTYPE)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -Idrivers/$(ERLANG_OSTYPE) -I../etc/$(ERLANG_OSTYPE) -c $< -o $@
@@ -637,7 +643,7 @@ CS_SRC = sys/$(ERLANG_OSTYPE)/erl_child_setup.c
 
 $(BINDIR)/$(CS_EXECUTABLE): $(CS_SRC)
 	$(CS_PURIFY) $(CC) -o $(BINDIR)/$(CS_EXECUTABLE) \
-	$(CS_CFLAGS) $(INCLUDES) $(CS_SRC)
+	$(CS_CFLAGS) $(COMMON_INCLUDES) $(CS_SRC)
 
 $(OBJDIR)/%.elib.o: beam/%.c
 	$(CC) $(ELIB_FLAGS) $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@
@@ -735,7 +741,8 @@ RUN_OBJS = \
 	$(OBJDIR)/erl_monitors.o	$(OBJDIR)/erl_process_dump.o \
 	$(OBJDIR)/erl_obsolete.o	$(OBJDIR)/erl_bif_timer.o \
 	$(OBJDIR)/erl_drv_thread.o      $(OBJDIR)/erl_bif_chksum.o \
-	$(OBJDIR)/erl_bif_re.o		$(OBJDIR)/packet_parser.o
+	$(OBJDIR)/erl_bif_re.o		$(OBJDIR)/erl_unicode.o \
+	$(OBJDIR)/packet_parser.o	$(OBJDIR)/safe_hash.o
 
 ifeq ($(TARGET),win32)
 DRV_OBJS = \
@@ -806,7 +813,6 @@ OS_OBJS +=	$(OBJDIR)/erl_mseg.o \
 		$(OBJDIR)/erl_$(ERLANG_OSTYPE)_sys_ddll.o \
 		$(OBJDIR)/erl_mtrace_sys_wrap.o
 
-HIPE_x86_darwin_OBJS=$(OBJDIR)/mach_override.o
 HIPE_x86_OS_OBJS=$(HIPE_x86_$(OPSYS)_OBJS)
 HIPE_x86_OBJS=$(OBJDIR)/hipe_x86.o $(OBJDIR)/hipe_x86_glue.o $(OBJDIR)/hipe_x86_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o $(HIPE_x86_OS_OBJS)
 HIPE_amd64_OBJS=$(OBJDIR)/hipe_amd64.o $(OBJDIR)/hipe_amd64_glue.o $(OBJDIR)/hipe_amd64_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o

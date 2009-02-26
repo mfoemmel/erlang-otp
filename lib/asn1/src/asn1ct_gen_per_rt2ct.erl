@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2002-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1ct_gen_per_rt2ct).
 
@@ -176,6 +178,8 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	    emit({"?RT_PER:encode_null(",Value,")"});
 	'OBJECT IDENTIFIER' ->
 	    emit({"?RT_PER:encode_object_identifier(",Value,")"});
+	'RELATIVE-OID' ->
+	    emit({"?RT_PER:encode_relative_oid(",Value,")"});
 	'ObjectDescriptor' ->
 	    emit({"?RT_PER:encode_ObjectDescriptor(",{asis,Constraint},
 		  ",",Value,")"});
@@ -190,7 +194,8 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 
 	'NumericString' ->
 	    emit_enc_known_multiplier_string('NumericString',Constraint,Value);
-	'TeletexString' ->
+	TString when TString == 'TeletexString';
+		     TString == 'T61String' ->
 	    emit({"?RT_PER:encode_TeletexString(",{asis,Constraint},",",Value,")"});
 	'VideotexString' ->
 	    emit({"?RT_PER:encode_VideotexString(",{asis,Constraint},",",Value,")"});
@@ -583,9 +588,6 @@ emit_enc_enumerated_case(_Erule,_C, {asn1_enum,High}, _) ->
     %% present in the extension range.
     emit(["{asn1_enum,EnumV} when integer(EnumV), EnumV > ",High," -> ",
 	  "[1,?RT_PER:encode_small_number(EnumV)]"]);
-emit_enc_enumerated_case(_Erule,_C, 'EXT_MARK', _Count) -> 
-    %% ENUMERATED with extensionmark
-    true;
 emit_enc_enumerated_case(_Erule,_C, {1,EnumName}, Count) ->
     %% ENUMERATED with extensionmark
     %% values higher than extension root
@@ -593,10 +595,10 @@ emit_enc_enumerated_case(_Erule,_C, {1,EnumName}, Count) ->
 emit_enc_enumerated_case(_Erule,C, {0,EnumName}, Count) ->
     %% ENUMERATED with extensionmark
     %% values within extension root
-    emit(["'",EnumName,"' -> [0,?RT_PER:encode_integer(",{asis,C},", ",Count,")]"]);
-%% This clause is invoked in case of an ENUMERATED without extension mark
-emit_enc_enumerated_case(_Erule,_C, EnumName, Count) ->
-    emit(["'",EnumName,"' -> ",Count]).
+    emit(["'",EnumName,"' -> [0,?RT_PER:encode_integer(",{asis,C},", ",Count,")]"]).
+%% %% This clause is invoked in case of an ENUMERATED without extension mark
+%% emit_enc_enumerated_case(_Erule,_C, EnumName, Count) ->
+%%     emit(["'",EnumName,"' -> ",Count]).
 
 
 get_constraint([{Key,V}],Key) ->
@@ -1180,8 +1182,8 @@ emit_ext_encfun(ModuleName,Name) ->
 	  Name,"'(T,V,O) end"]).
 
 emit_default_getenc(ObjSetName,UniqueName) ->
-    emit(["'getenc_",ObjSetName,"'(",{asis,UniqueName},", _) ->",nl]),
-    emit([indent(4),"fun(C,V,_) -> exit({'Type not compatible with table constraint',{component,C},{value,V}}) end"]).
+    emit(["'getenc_",ObjSetName,"'(",{asis,UniqueName},", ErrV) ->",nl]),
+    emit([indent(4),"fun(C,V,_) -> exit({'Type not compatible with table constraint',{component,C},{value,V},{unique_name_and_value,",{asis,UniqueName},",ErrV}}) end"]).
 
 
 %% gen_inlined_enc_funs for each object iterates over all fields of a
@@ -1380,8 +1382,8 @@ emit_ext_decfun(ModuleName,Name) ->
 	  Name,"'(T,V,O1,O2) end"]).
 
 emit_default_getdec(ObjSetName,UniqueName) ->
-    emit(["'getdec_",ObjSetName,"'(",{asis,UniqueName},", _) ->",nl]),
-    emit([indent(2), "fun(C,V,_,_) -> exit({{component,C},{value,V}}) end"]).
+    emit(["'getdec_",ObjSetName,"'(",{asis,UniqueName},", ErrV) ->",nl]),
+    emit([indent(2), "fun(C,V,_,_) -> exit({{component,C},{value,V},{unique_name_and_value,",{asis,UniqueName},",ErrV}}) end"]).
 
 
 gen_inlined_dec_funs(Fields,[{typefield,Name,_}|Rest],
@@ -1605,6 +1607,9 @@ gen_dec_prim(Erules,Att,BytesVar) ->
 	'OBJECT IDENTIFIER' ->
 	    emit({"?RT_PER:decode_object_identifier(",
 		  BytesVar,")"});
+	'RELATIVE-OID' ->
+	    emit({"?RT_PER:decode_relative_oid(",
+		  BytesVar,")"});
 	'ObjectDescriptor' ->
 	    emit({"?RT_PER:decode_ObjectDescriptor(",
 		  BytesVar,")"});
@@ -1629,7 +1634,8 @@ gen_dec_prim(Erules,Att,BytesVar) ->
 	'NumericString' ->
 	    emit_dec_known_multiplier_string('NumericString',
 					     Constraint,BytesVar);
-	'TeletexString' ->
+	TString when TString == 'TeletexString';
+		     TString == 'T61String' ->
 	    emit({"?RT_PER:decode_TeletexString(",BytesVar,",",
 		  {asis,Constraint},")"});
 

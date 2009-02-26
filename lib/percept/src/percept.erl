@@ -234,13 +234,8 @@ parse_and_insert_loop(Filename, Pid, Ref, DB, T0) ->
     	    io:format("    ~p created processes.~n", [length(percept_db:select({information, procs}))]),
      	    io:format("    ~p opened ports.~n", [length(percept_db:select({information, ports}))]),
 	    ok;
-	{'DOWN',Ref, process, Pid, normal} -> 
-	    parse_and_insert_loop(Filename, Pid, Ref, DB, T0);
-	{'DOWN',Ref, process, Pid, Reason} -> 
-	    {error, Reason};
-	Unhandled ->
-    	    io:format("percept:analyze, receive unhandled ~p ~n", [Unhandled]),
-	    {error, Unhandled}
+	{'DOWN',Ref, process, Pid, normal} -> parse_and_insert_loop(Filename, Pid, Ref, DB, T0);
+	{'DOWN',Ref, process, Pid, Reason} -> {error, Reason}
     end.
 
 mk_trace_parser(Pid) -> 

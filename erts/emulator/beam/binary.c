@@ -100,6 +100,45 @@ new_binary(Process *p, byte *buf, int len)
     return make_binary(pb);
 }
 
+/* 
+ * When heap binary is not desired...
+ */
+
+Eterm erts_new_mso_binary(Process *p, byte *buf, int len)
+{
+    ProcBin* pb;
+    Binary* bptr;
+
+    /*
+     * Allocate the binary struct itself.
+     */
+    bptr = erts_bin_nrml_alloc(len);
+    bptr->flags = 0;
+    bptr->orig_size = len;
+    erts_refc_init(&bptr->refc, 1);
+    if (buf != NULL) {
+	sys_memcpy(bptr->orig_bytes, buf, len);
+    }
+
+    /*
+     * Now allocate the ProcBin on the heap.
+     */
+    pb = (ProcBin *) HAlloc(p, PROC_BIN_SIZE);
+    pb->thing_word = HEADER_PROC_BIN;
+    pb->size = len;
+    pb->next = MSO(p).mso;
+    MSO(p).mso = pb;
+    pb->val = bptr;
+    pb->bytes = (byte*) bptr->orig_bytes;
+    pb->flags = 0;
+
+    /*
+     * Miscellanous updates. Return the tagged binary.
+     */
+    MSO(p).overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+    return make_binary(pb);
+}
+
 /*
  * Create a brand new binary from scratch on the heap.
  */

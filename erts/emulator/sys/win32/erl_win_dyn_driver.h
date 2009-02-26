@@ -95,7 +95,7 @@ WDD_TYPEDEF(void, driver_pdl_unlock, (ErlDrvPDL));
 WDD_TYPEDEF(long, driver_pdl_get_refc, (ErlDrvPDL));
 WDD_TYPEDEF(long, driver_pdl_inc_refc, (ErlDrvPDL));
 WDD_TYPEDEF(long, driver_pdl_dec_refc, (ErlDrvPDL));
-WDD_TYPEDEF(int, driver_system_info, (ErlDrvSysInfo *, size_t));
+WDD_TYPEDEF(void, driver_system_info, (ErlDrvSysInfo *, size_t));
 WDD_TYPEDEF(int, driver_get_now, (ErlDrvNowData *));
 WDD_TYPEDEF(int, driver_monitor_process, (ErlDrvPort port, 
 					  ErlDrvTermData process, 

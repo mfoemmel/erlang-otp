@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1997-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1ct).
 
@@ -384,27 +386,27 @@ exit_if_nameduplicate2(Name,Rest) ->
     end.
 
 compare_defs(D1,D2) ->
-    compare_defs2(unset_pos(D1),unset_pos(D2)).
+    compare_defs2(unset_pos_mod(D1),unset_pos_mod(D2)).
 compare_defs2(D,D) ->
     equal;
 compare_defs2(_,_) ->
     not_equal.
 
-unset_pos(Def) when is_record(Def,typedef) ->
+unset_pos_mod(Def) when is_record(Def,typedef) ->
     Def#typedef{pos=undefined};
-unset_pos(Def) when is_record(Def,classdef) ->
+unset_pos_mod(Def) when is_record(Def,classdef) ->
     Def#classdef{pos=undefined};
-unset_pos(Def) when is_record(Def,valuedef) ->
-    Def#valuedef{pos=undefined};
-unset_pos(Def) when is_record(Def,ptypedef) ->
+unset_pos_mod(Def) when is_record(Def,valuedef) ->
+    Def#valuedef{pos=undefined,module=undefined};
+unset_pos_mod(Def) when is_record(Def,ptypedef) ->
     Def#ptypedef{pos=undefined};
-unset_pos(Def) when is_record(Def,pvaluedef) ->
+unset_pos_mod(Def) when is_record(Def,pvaluedef) ->
     Def#pvaluedef{pos=undefined};
-unset_pos(Def) when is_record(Def,pvaluesetdef) ->
+unset_pos_mod(Def) when is_record(Def,pvaluesetdef) ->
     Def#pvaluesetdef{pos=undefined};
-unset_pos(Def) when is_record(Def,pobjectdef) ->
+unset_pos_mod(Def) when is_record(Def,pobjectdef) ->
     Def#pobjectdef{pos=undefined};
-unset_pos(Def) when is_record(Def,pobjectsetdef) ->
+unset_pos_mod(Def) when is_record(Def,pobjectsetdef) ->
     Def#pobjectsetdef{pos=undefined}.
 
 get_pos_of_def(#typedef{pos=Pos}) ->

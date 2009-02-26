@@ -1,6 +1,6 @@
 {application, sasl,
    [{description, "SASL  CXC 138 11"},
-    {vsn, "2.1.5.3"},
+    {vsn, "2.1.5.4"},
     {modules, [sasl, 
 	       alarm_handler, 
                format_lib_supp, 

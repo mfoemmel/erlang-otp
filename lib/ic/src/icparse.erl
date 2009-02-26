@@ -1,5 +1,5 @@
 -module(icparse).
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-09-02_20/otp_src_R12B-4/lib/ic/src/icyeccpre.hrl", 0).
+-file("/ldisk/daily_build/otp_prebuild_r12b.2008-11-05_12/otp_src_R12B-5/lib/ic/src/icyeccpre.hrl", 0).
 %%<copyright>
 %% <year>1997-2007</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>

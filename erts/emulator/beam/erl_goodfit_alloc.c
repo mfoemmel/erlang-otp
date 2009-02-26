@@ -161,7 +161,8 @@ BKT_MIN_SZ(GFAllctr_t *gfallctr, int ix)
 
 
 /* Prototypes of callback functions */
-static Block_t *	get_free_block		(Allctr_t *, Uint);
+static Block_t *	get_free_block		(Allctr_t *, Uint,
+						 Block_t *, Uint);
 static void		link_free_block		(Allctr_t *, Block_t *);
 static void		unlink_free_block	(Allctr_t *, Block_t *);
 static void		update_last_aux_mbc	(Allctr_t *, Carrier_t *);
@@ -376,11 +377,14 @@ search_bucket(Allctr_t *allctr, int ix, Uint size)
 }
 
 static Block_t *
-get_free_block(Allctr_t *allctr, Uint size)
+get_free_block(Allctr_t *allctr, Uint size,
+	       Block_t *cand_blk, Uint cand_size)
 {
     GFAllctr_t *gfallctr = (GFAllctr_t *) allctr;
     int unsafe_bi, min_bi;
     Block_t *blk;
+
+    ASSERT(!cand_blk || cand_size >= size);
 
     unsafe_bi = BKT_IX(gfallctr, size);
     
@@ -391,6 +395,8 @@ get_free_block(Allctr_t *allctr, Uint size)
     if (min_bi == unsafe_bi) {
 	blk = search_bucket(allctr, min_bi, size);
 	if (blk) {
+	    if (cand_blk && cand_size <= BLK_SZ(blk))
+		return NULL; /* cand_blk was better */
 	    unlink_free_block(allctr, blk);
 	    return blk;
 	}
@@ -409,6 +415,8 @@ get_free_block(Allctr_t *allctr, Uint size)
     /* We are guaranteed to find a block that fits in this bucket */
     blk = search_bucket(allctr, min_bi, size);
     ASSERT(blk);
+    if (cand_blk && cand_size <= BLK_SZ(blk))
+	return NULL; /* cand_blk was better */
     unlink_free_block(allctr, blk);
     return blk;
 }

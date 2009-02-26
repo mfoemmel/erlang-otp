@@ -45,6 +45,8 @@ extern int erts_async_max_threads;
 #define ERTS_ASYNC_THREAD_MAX_STACK_SIZE 8192	/* Kilo words */
 extern int erts_async_thread_suggested_stack_size;
 
+typedef struct erts_driver_t_ erts_driver_t;
+
 #define MAXINDX 255
 
 typedef struct cache {
@@ -145,7 +147,7 @@ struct port {
     ErlIOQueue ioq;              /* driver accessible i/o queue */
     DistEntry *dist_entry;       /* Dist entry used in DISTRIBUTION */
     char *name;		         /* String used in the open */
-    ErlDrvEntry* drv_ptr;
+    erts_driver_t* drv_ptr;
     long drv_data;
     ProcessList *suspended;	 /* List of suspended processes. */
     LineBuf *linebuf;            /* Buffer to hold data not ready for
@@ -221,17 +223,40 @@ typedef struct {
  * This structure represents a link to the next driver.
  */
 
-typedef struct de_list {
-    ErlDrvEntry    *drv;	/* Pointer to entry for driver. */
-    DE_Handle      *de_hndl;	/* Handle for DLL or SO (for dynamic drivers). */
-    struct de_list *next;	/* Pointer to next. */
-    struct de_list *prev;       /* Pointer to previous */
+struct erts_driver_t_ {
+    erts_driver_t *next;
+    erts_driver_t *prev;
+    char *name;
+    struct {
+	int major;
+	int minor;
+    } version;
+    int flags;
+    DE_Handle *handle;
 #ifdef ERTS_SMP
-    erts_smp_mtx_t *driver_lock;
+    erts_smp_mtx_t *lock;
 #endif
-} DE_List;
+    ErlDrvEntry *entry;
+    ErlDrvData (*start)(ErlDrvPort port, char *command, SysDriverOpts* opts);
+    void (*stop)(ErlDrvData drv_data);
+    void (*finish)(void);
+    void (*flush)(ErlDrvData drv_data);
+    void (*output)(ErlDrvData drv_data, char *buf, int len);
+    void (*outputv)(ErlDrvData drv_data, ErlIOVec *ev); /* Might be NULL */
+    int (*control)(ErlDrvData drv_data, unsigned int command, char *buf, 
+		   int len, char **rbuf, int rlen); /* Might be NULL */
+    int (*call)(ErlDrvData drv_data, unsigned int command, char *buf, 
+		int len, char **rbuf, int rlen, unsigned int *flags); /* Might be NULL */ 
+    void (*event)(ErlDrvData drv_data, ErlDrvEvent event,
+		  ErlDrvEventData event_data);
+    void (*ready_input)(ErlDrvData drv_data, ErlDrvEvent event); 
+    void (*ready_output)(ErlDrvData drv_data, ErlDrvEvent event);  
+    void (*timeout)(ErlDrvData drv_data);
+    void (*ready_async)(ErlDrvData drv_data, ErlDrvThreadData thread_data); /* Might be NULL */ 
+    void (*process_exit)(ErlDrvData drv_data, ErlDrvMonitor *monitor);
+};
 
-extern DE_List *driver_list;
+extern erts_driver_t *driver_list;
 extern erts_smp_mtx_t erts_driver_list_lock;
 
 extern void erts_ddll_init(void);
@@ -584,6 +609,7 @@ do {										\
 
 void erts_emasculate_writable_binary(ProcBin* pb);
 Eterm erts_new_heap_binary(Process *p, byte *buf, int len, byte** datap);
+Eterm erts_new_mso_binary(Process*, byte*, int);
 Eterm new_binary(Process*, byte*, int);
 Eterm erts_realloc_binary(Eterm bin, size_t size);
 void erts_cleanup_mso(ProcBin* pb);
@@ -880,9 +906,12 @@ typedef struct {
 } ErtsPortNames;
 
 
-int erts_add_driver_entry(ErlDrvEntry *drv, int driver_list_locked);
+int erts_add_driver_entry(ErlDrvEntry *drv, DE_Handle *handle, int driver_list_locked);
+void erts_destroy_driver(erts_driver_t *drv);
 void erts_wake_process_later(Port*, Process*);
-int erts_open_driver(ErlDrvEntry*, Eterm, char*, SysDriverOpts*, int *);
+int erts_open_driver(erts_driver_t*, Eterm, char*, SysDriverOpts*, int *);
+int erts_is_port_ioq_empty(Port *);
+void erts_terminate_port(Port *);
 void close_port(Eterm);
 void init_io(void);
 void cleanup_io(void);
@@ -900,15 +929,11 @@ ErtsPortNames *erts_get_port_names(Eterm);
 void erts_free_port_names(ErtsPortNames *);
 Uint erts_port_ioq_size(Port *pp);
 void erts_stale_drv_select(Eterm, ErlDrvEvent, int, int);
-void erts_port_ready_input(Port *, ErlDrvEvent);
-void erts_port_ready_output(Port *, ErlDrvEvent);
-void erts_port_ready_event(Port *, ErlDrvEvent, ErlDrvEventData);
 void erts_port_cleanup(Port *);
 void erts_fire_port_monitor(Port *prt, Eterm ref);
 #ifdef ERTS_SMP
 void erts_smp_xports_unlock(Port *);
 #endif
-void erts_port_ready_timeout(Port *p);
 
 #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
 int erts_lc_is_port_locked(Port *);
@@ -1343,9 +1368,12 @@ extern int erts_cpu_timestamp;
 #endif
 /* erl_bif_chksum.c */
 void erts_init_bif_chksum(void);
-/* erl_bif_chksum.c */
+/* erl_bif_re.c */
 void erts_init_bif_re(void);
 Sint erts_re_set_loop_limit(Sint limit);
+/* erl_unicode.c */
+void erts_init_unicode(void);
+Sint erts_unicode_set_loop_limit(Sint limit);
 /* erl_trace.c */
 void erts_init_trace(void);
 void erts_trace_check_exiting(Eterm exiting);
@@ -1559,6 +1587,10 @@ extern void erts_match_prog_foreach_offheap(Binary *b,
 #define BIF_TRACE_AS_LOCAL  0x1
 #define BIF_TRACE_AS_GLOBAL 0x2
 #define BIF_TRACE_AS_META   0x4
+
+extern erts_driver_t vanilla_driver;
+extern erts_driver_t spawn_driver;
+extern erts_driver_t fd_driver;
 
 /* Should maybe be placed in erl_message.h, but then we get an include mess. */
 

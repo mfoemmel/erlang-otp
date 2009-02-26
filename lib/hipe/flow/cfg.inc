@@ -121,22 +121,22 @@
 %% Primitives (not all of these are exported)
 %%
 
--spec(start_label/1 :: (#cfg{}) -> non_neg_integer()).
+-spec start_label(#cfg{}) -> non_neg_integer().
 start_label(CFG) -> (CFG#cfg.info)#cfg_info.start_label.
 
 -ifndef(GEN_CFG).
--spec(start_label_update/2 :: (#cfg{}, non_neg_integer()) -> #cfg{}).
+-spec start_label_update(#cfg{}, non_neg_integer()) -> #cfg{}.
 start_label_update(CFG, NewStartLabel) ->
   Info = CFG#cfg.info,
   CFG#cfg{info=Info#cfg_info{start_label=NewStartLabel}}.
 
--spec(function/1 :: (#cfg{}) -> mfa()).
+-spec function(#cfg{}) -> mfa().
 function(CFG) -> (CFG#cfg.info)#cfg_info.'fun'.
 
--spec(is_closure/1 :: (#cfg{}) -> bool()).
+-spec is_closure(#cfg{}) -> bool().
 is_closure(CFG) -> (CFG#cfg.info)#cfg_info.is_closure.
 
--spec(is_leaf/1 :: (#cfg{}) -> bool()).
+-spec is_leaf(#cfg{}) -> bool().
 is_leaf(CFG) -> (CFG#cfg.info)#cfg_info.is_leaf.
 
 mk_empty_cfg(Fun, StartLbl, Data, Closure, Leaf, Params) ->
@@ -151,7 +151,7 @@ data(CFG) -> CFG#cfg.data.
 -endif.	% GEN_CFG
 
 -ifdef(REMOVE_TRIVIAL_BBS_NEEDED).
--spec(update_data/2 :: (#cfg{}, cfg_data()) -> #cfg{}).
+-spec update_data(#cfg{}, cfg_data()) -> #cfg{}.
 update_data(CFG, D) ->
   CFG#cfg{data=D}.
 -endif.
@@ -167,12 +167,12 @@ params_update(CFG, NewParams) ->
 -endif.
 
 -ifdef(CLOSURE_ARITY_NEEDED).
--spec(closure_arity/1 :: (#cfg{}) -> byte()).
+-spec closure_arity(#cfg{}) -> byte().
 closure_arity(CFG) ->
   Info = CFG#cfg.info,
   Info#cfg_info.closure_arity.
 
--spec(closure_arity_update/2 :: (#cfg{}, byte()) -> #cfg{}).
+-spec closure_arity_update(#cfg{}, byte()) -> #cfg{}.
 closure_arity_update(CFG, Arity) ->
   Info = CFG#cfg.info,
   CFG#cfg{info=Info#cfg_info{closure_arity=Arity}}.
@@ -220,11 +220,11 @@ bb(CFG, Label) ->
 %% Remove duplicates from a list. The first instance
 %% (in left-to-right order) of an element is kept,
 %% remaining instances are removed.
--spec(remove_duplicates/1 :: ([Elem]) -> [Elem]).
+-spec remove_duplicates([Elem]) -> [Elem].
 remove_duplicates(List) ->
   remove_duplicates(List, []).
 
--spec(remove_duplicates/2 :: ([Elem], [Elem]) -> [Elem]).
+-spec remove_duplicates([Elem], [Elem]) -> [Elem].
 remove_duplicates([H|T], Acc) ->
   NewAcc =
     case lists:member(H, Acc) of
@@ -532,7 +532,7 @@ breadth_list([], Vis, _CFG, BO) ->
   {Vis, BO}.
 -endif.
 
--spec(none_visited/0 :: () -> gb_set()).
+-spec none_visited() -> gb_set().
 none_visited() -> 
   gb_sets:empty().
 
@@ -656,7 +656,7 @@ find_new_label(Old, Map) ->
 
 -ifdef(REMOVE_TRIVIAL_BBS_NEEDED).
 
--spec(remove_trivial_bbs/1 :: (#cfg{}) -> #cfg{}).
+-spec remove_trivial_bbs(#cfg{}) -> #cfg{}.
 remove_trivial_bbs(CFG) ->
   ?opt_start_timer("Merge BBs"),
   CFG0 = merge_bbs(rewrite_trivial_branches(CFG)),
@@ -813,7 +813,7 @@ is_empty_bb([]) ->
 
 %% Rewrite all pure branches with one successor to goto:s
 
--spec(rewrite_trivial_branches/1 :: (#cfg{}) -> #cfg{}).
+-spec rewrite_trivial_branches(#cfg{}) -> #cfg{}.
 rewrite_trivial_branches(CFG) ->
   rewrite_trivial_branches(postorder(CFG), CFG).
 
@@ -920,7 +920,7 @@ merge(BB, BB2, BB2_Label) ->
 
 -ifdef(REMOVE_UNREACHABLE_CODE).
 
--spec(remove_unreachable_code/1 :: (#cfg{}) -> #cfg{}).
+-spec remove_unreachable_code(#cfg{}) -> #cfg{}.
 
 remove_unreachable_code(CFG) ->
   Start = start_label(CFG),

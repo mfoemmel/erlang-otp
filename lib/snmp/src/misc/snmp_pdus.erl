@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>1996-2007</year>
+%% <year>1996-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -46,24 +46,33 @@ get_encoded_length(Length) ->
 
 dec_message([48 | Bytes]) ->
     Bytes2 = get_data_bytes(Bytes),
-    {SNMPversion, Rest1} = dec_int_tag(Bytes2),
-    case dec_snmp_ver(SNMPversion) of
-	'version-3' ->
-	    dec_rest_v3_msg(Rest1);
-	Vsn -> % 1 or 2
-	    dec_rest_v1_v2_msg(Vsn, Rest1)
+    case dec_snmp_version(Bytes2) of
+	{'version-3', Rest} ->
+	    dec_rest_v3_msg(Rest);
+	{Vsn, Rest} -> % 1 or 2
+	    dec_rest_v1_v2_msg(Vsn, Rest)
     end.
 
 dec_message_only([48 | Bytes]) ->
     Bytes2 = get_data_bytes(Bytes),
-    {SNMPversion, Rest1} = dec_int_tag(Bytes2),
-    case dec_snmp_ver(SNMPversion) of
-	'version-3' ->
-	    dec_rest_v3_msg_only(Rest1);
-	Vsn -> % 1 or 2
-	    dec_rest_v1_v2_msg_only(Vsn, Rest1)
+    case dec_snmp_version(Bytes2) of
+	{'version-3', Rest} ->
+	    dec_rest_v3_msg_only(Rest);
+	{Vsn, Rest} -> % 1 or 2
+	    dec_rest_v1_v2_msg_only(Vsn, Rest)
     end.
 
+dec_snmp_version(Bytes) ->
+    case (catch dec_int_tag(Bytes, 10)) of
+	{error, {bad_integer, BadInt}} ->
+	    exit({bad_version, BadInt});
+	{SNMPversion, Rest} when is_integer(SNMPversion) andalso is_list(Rest) ->
+	    {dec_snmp_ver(SNMPversion), Rest};
+	{'EXIT', Reason} ->
+	    exit(Reason)
+    end.
+	    
+	    
 dec_snmp_ver(0) ->
     'version-1';
 dec_snmp_ver(1) ->
@@ -303,7 +312,7 @@ dec_value([130,0|T]) ->
 get_data_bytes(Bytes) ->
     {Size, Tail} = dec_len(Bytes),
     if
-	length(Tail) == Size ->
+	length(Tail) =:= Size ->
 	    Tail;
 	true ->
 	    exit({error, {wrong_length, Bytes}})
@@ -320,13 +329,27 @@ split_at([H|T], N, Acc) ->
 
 dec_int_tag([2 | Bytes]) ->
     dec_integer_notag(Bytes).
+dec_int_tag([2 | Bytes], SizeLimit) ->
+    dec_integer_notag(Bytes, SizeLimit).
 
 dec_integer_notag(Ints) ->
-    {Size, Ints2} = dec_len(Ints),
-    if hd(Ints2) band 128 == 0 -> %% Positive number
-	    dec_pos_int(Ints2, Size, 8 * (Size - 1));
+    dec_integer_notag(Ints, infinity).
+dec_integer_notag(Ints, SizeLimit) ->
+    case dec_len(Ints) of
+	{Size, Ints2} when SizeLimit =:= infinity ->
+	    do_dec_integer_notag(Size, Ints2);
+	{Size, Ints2} when (is_integer(SizeLimit) andalso 
+			    (Size =< SizeLimit)) ->
+	    do_dec_integer_notag(Size, Ints2);
+	{BadSize, _BadInts2} ->
+	    throw({error, {bad_integer, {BadSize, SizeLimit}}})
+    end.
+
+do_dec_integer_notag(Size, Ints) ->
+    if hd(Ints) band 128 == 0 -> %% Positive number
+	    dec_pos_int(Ints, Size, 8 * (Size - 1));
        true -> %% Negative
-	    dec_neg_int(Ints2, Size, 8 * (Size - 1))
+	    dec_neg_int(Ints, Size, 8 * (Size - 1))
     end.
 
 
@@ -368,10 +391,10 @@ dec_oid_element([Dig|Tail], Neaten, Num) when Dig < 128 ->
 dec_oid_element([Dig|Tail],Neaten, Num) ->
     dec_oid_element(Tail, Neaten+1, Num*128 + (Dig band 127)).
 
-chk_msg_id(MsgId) when MsgId >= 0, MsgId =< 2147483647 -> ok;
+chk_msg_id(MsgId) when (MsgId >= 0) andalso (MsgId =< 2147483647) -> ok;
 chk_msg_id(MsgId) -> exit({bad_msg_id, MsgId}).
     
-chk_msg_max_size(MMS) when MMS >= 484, MMS =< 2147483647 -> ok;
+chk_msg_max_size(MMS) when (MMS >= 484) andalso (MMS =< 2147483647) -> ok;
 chk_msg_max_size(MMS) -> exit({bad_msg_max_size, MMS}).
     
 chk_msg_sec_model(MsgSecurityModel) when MsgSecurityModel >= 0,
@@ -401,9 +424,9 @@ dec_len([Hd|Tl]) when Hd >= 0 ->
 	true ->
 	    %% Long form
 	    No = Hd band 127,  % clear 8th bit
-	    {DigList,Rest} = head(No,Tl),
+	    {DigList, Rest} = head(No, Tl),
 	    Size = dec_integer_len(DigList),
-	    {Size,Rest}
+	    {Size, Rest}
     end.
 
 dec_integer_len([D]) ->
@@ -502,23 +525,23 @@ enc_scoped_pdu(#scopedPdu{contextEngineID = ContextEngineID,
     [48 | Len] ++ Bytes.
 
 
-enc_pdu(PDU) when PDU#pdu.type == 'get-request' ->
+enc_pdu(PDU) when PDU#pdu.type =:= 'get-request' ->
     enc_pdu(160, PDU);
-enc_pdu(PDU) when PDU#pdu.type == 'get-next-request' ->
+enc_pdu(PDU) when PDU#pdu.type =:= 'get-next-request' ->
     enc_pdu(161, PDU);
-enc_pdu(PDU) when PDU#pdu.type == 'get-response' ->
+enc_pdu(PDU) when PDU#pdu.type =:= 'get-response' ->
     enc_pdu(162, PDU);
-enc_pdu(PDU) when PDU#pdu.type == 'set-request' ->
+enc_pdu(PDU) when PDU#pdu.type =:= 'set-request' ->
     enc_pdu(163, PDU);
-enc_pdu(PDU) when PDU#pdu.type == 'get-bulk-request' ->
+enc_pdu(PDU) when PDU#pdu.type =:= 'get-bulk-request' ->
     enc_pdu(165, PDU);
-enc_pdu(PDU) when PDU#pdu.type == 'inform-request' ->
+enc_pdu(PDU) when PDU#pdu.type =:= 'inform-request' ->
     enc_pdu(166, PDU);
-enc_pdu(PDU) when PDU#pdu.type == 'snmpv2-trap' ->
+enc_pdu(PDU) when PDU#pdu.type =:= 'snmpv2-trap' ->
     enc_pdu(167, PDU);
-enc_pdu(PDU) when PDU#pdu.type == report ->
+enc_pdu(PDU) when PDU#pdu.type =:= report ->
     enc_pdu(168, PDU);
-enc_pdu(TrapPDU) when record(TrapPDU, trappdu) ->
+enc_pdu(TrapPDU) when is_record(TrapPDU, trappdu) ->
     enc_Trap(TrapPDU).
 
 
@@ -553,7 +576,7 @@ enc_usm_security_parameters(
     Len = elength(length(Bytes7)),
     [48 | Len] ++ Bytes7.
 
-err_val(Int,'get-bulk-request') when integer(Int) -> Int;
+err_val(Int,'get-bulk-request') when is_integer(Int) -> Int;
 err_val(ErrStat, _) ->
     {value, {_ErrStat, Val}} = lists:keysearch(ErrStat, 1, errMsgs()),
     Val.
@@ -567,7 +590,7 @@ errMsgs() ->
      {resourceUnavailable,13},{commitFailed,14},{undoFailed,15},
      {authorizationError,16},{notWritable,17},{inconsistentName,18}].
 
-enc_VarBindList(EncodedVBs) when integer(hd(EncodedVBs)) ->
+enc_VarBindList(EncodedVBs) when is_integer(hd(EncodedVBs)) ->
     Len1 = elength(length(EncodedVBs)),
     lists:append([48 | Len1],EncodedVBs);
 enc_VarBindList(VBs) ->
@@ -615,14 +638,16 @@ enc_value(Type, Val) ->
     Len2 = elength(length(Bytes2)),
     lists:append([enc_val_tag(Type,Val) | Len2],Bytes2).
 
-enc_val_tag('Counter32',Val) when Val >= 0, Val =< 4294967295 ->
+enc_val_tag('Counter32',Val) when (Val >= 0) andalso (Val =< 4294967295) ->
     65;
-enc_val_tag('Unsigned32', Val) when Val >= 0, Val =< 4294967295 ->
+enc_val_tag('Unsigned32', Val) when (Val >= 0) andalso (Val =< 4294967295) ->
     66;
-enc_val_tag('TimeTicks', Val) when Val >= 0, Val =< 4294967295 ->
+enc_val_tag('TimeTicks', Val) when (Val >= 0) andalso (Val =< 4294967295) ->
     67;
-enc_val_tag('Counter64', Val) when Val >= 0, Val =< 18446744073709551615 ->
+enc_val_tag('Counter64', Val) when ((Val >= 0) andalso 
+				    (Val =< 18446744073709551615)) ->
     70.
+
 
 %%----------------------------------------------------------------------
 %% Impl according to RFC1906, section 8
@@ -650,7 +675,7 @@ octet_str_to_bits([Byte|Bytes],Mul) ->
     Mul*rev_int8(Byte)+octet_str_to_bits(Bytes,Mul*256).
     
 
-enc_Trap(TrapPdu) when record(TrapPdu, trappdu) ->
+enc_Trap(TrapPdu) when is_record(TrapPdu, trappdu) ->
     Bytes1 = enc_trap_data(TrapPdu),
     Len1 = elength(length(Bytes1)),
     lists:append([164 | Len1],Bytes1).

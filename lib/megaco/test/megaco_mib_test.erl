@@ -876,14 +876,31 @@ mgc_start_tcp(RH, Port, undefined) ->
 	Else ->
 	    throw({error, {failed_starting_tcp_transport, Else}})
     end;
-mgc_start_tcp(RH, Port, Sup) when pid(Sup) ->
+mgc_start_tcp(RH, Port, Sup) when is_pid(Sup) ->
     d("tcp listen on ~p", [Port]),
     Opts = [{port,           Port}, 
 	    {receive_handle, RH}, 
 	    {tcp_options,    [{nodelay, true}]}],
+    mgc_tcp_create_listen(Sup, Opts, 3).
+
+mgc_tcp_create_listen(Sup, Opts, N) ->
+    mgc_tcp_create_listen(Sup, Opts, N, 1, undefined).
+
+mgc_tcp_create_listen(_Sup, _Opts, N, N, InitialReason) ->
+    d("failed creating mgc tcp listen socket after ~p tries: ~p", 
+      [N, InitialReason]),
+    throw({error, {failed_starting_tcp_listen, InitialReason}});
+mgc_tcp_create_listen(Sup, Opts, MaxN, N, InitialReason) 
+  when is_integer(N) andalso is_integer(MaxN) andalso (MaxN > N) ->
+    d("try create mgc tcp listen socket [~w]", [N]),
     case megaco_tcp:listen(Sup, Opts) of
 	ok ->
 	    Sup;
+	{error, {could_not_start_listener, {gen_tcp_listen, eaddrinuse} = Reason}} ->
+	    sleep(N * 200),
+	    mgc_tcp_create_listen(Sup, Opts, MaxN, N + 1, Reason);
+	{error, Reason} ->
+	    throw({error, {failed_starting_tcp_listen, Reason}});
 	Else ->
 	    throw({error, {failed_starting_tcp_listen, Else}})
     end.

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1997-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(asn1ct_gen_per).
 
@@ -171,6 +173,8 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	    emit({"?RT_PER:encode_null(",Value,")"});
 	'OBJECT IDENTIFIER' ->
 	    emit({"?RT_PER:encode_object_identifier(",Value,")"});
+	'RELATIVE-OID' ->
+	    emit({"?RT_PER:encode_relative_oid(",Value,")"});
 	'ObjectDescriptor' ->
 	    emit({"?RT_PER:encode_ObjectDescriptor(",{asis,Constraint},
 		  ",",Value,")"});
@@ -180,7 +184,8 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	    emit({"?RT_PER:encode_octet_string(",{asis,Constraint},",",Value,")"});
 	'NumericString' ->
 	    emit({"?RT_PER:encode_NumericString(",{asis,Constraint},",",Value,")"});
-	'TeletexString' ->
+	TString when TString == 'TeletexString';
+		     TString == 'T61String' ->
 	    emit({"?RT_PER:encode_TeletexString(",{asis,Constraint},",",Value,")"});
 	'VideotexString' ->
 	    emit({"?RT_PER:encode_VideotexString(",{asis,Constraint},",",Value,")"});
@@ -296,14 +301,14 @@ effective_constr(_,[]) ->
 effective_constr('SingleValue',List) ->
     SVList = lists:flatten(lists:map(fun(X)->element(2,X)end,List)),
     % sort and remove duplicates
-%    SortedSVList = lists:sort(SVList),
+    SortedSVList = lists:sort(SVList),
     RemoveDup = fun([],_) ->[];
 		   ([H],_) -> [H];
 		   ([H,H|T],F) -> F([H|T],F);
 		   ([H|T],F) -> [H|F(T,F)]
 		end,
     
-    case RemoveDup(SVList,RemoveDup) of
+    case RemoveDup(SortedSVList,RemoveDup) of
 	[N] ->
 	    [{'SingleValue',N}];
 	L when list(L) -> 
@@ -319,19 +324,27 @@ greatest_common_range([],VR) ->
     VR;
 greatest_common_range(SV,[]) ->
     SV;
-greatest_common_range([{_,Int}],[{_,{'MIN',Ub}}]) when integer(Int),
+greatest_common_range(SV,VR) ->
+    greatest_common_range2(mk_vr(SV),mk_vr(VR)).
+greatest_common_range2({_,Int},{'MIN',Ub}) when integer(Int),
 						       Int > Ub ->
     [{'ValueRange',{'MIN',Int}}];
-greatest_common_range([{_,Int}],[{_,{Lb,Ub}}]) when integer(Int),
+greatest_common_range2({_,Int},{Lb,Ub}) when integer(Int),
 						    Int < Lb ->
     [{'ValueRange',{Int,Ub}}];
-greatest_common_range([{_,Int}],VR=[{_,{_Lb,_Ub}}]) when integer(Int) ->
-    VR;
-greatest_common_range([{_,L}],[{_,{Lb,Ub}}]) when list(L) ->
+greatest_common_range2({_,Int},VR={_Lb,_Ub}) when integer(Int) ->
+    [{'ValueRange',VR}];
+greatest_common_range2({_,L},{Lb,Ub}) when list(L) ->
     Min = least_Lb([Lb|L]),
     Max = greatest_Ub([Ub|L]),
     [{'ValueRange',{Min,Max}}].
-    
+
+mk_vr([{Type,I}]) when is_atom(Type), is_integer(I) ->
+    {I,I};
+mk_vr([{Type,{Lb,Ub}}]) when is_atom(Type) ->
+    {Lb,Ub};
+mk_vr(Other) ->
+    Other.
 
 least_Lb(L) ->
     case lists:member('MIN',L) of
@@ -487,11 +500,13 @@ gen_encode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
     case is_already_generated(enc,TypeDef#typedef.name) of
 	true -> ok;
 	_ ->
-	    Name = lists:concat(["enc_",TypeDef#typedef.name]),
-	    emit({Name,"(Val) ->",nl}),
+%%	    FuncName = list_to_atom(lists:concat(["enc_",TypeDef#typedef.name])),
+	    FuncName = asn1ct_gen:list2rname(TypeDef#typedef.name ++ [enc]),
+	    emit(["'",FuncName,"'(Val) ->",nl]),
 	    Def = TypeDef#typedef.typespec,
 	    InnerType = asn1ct_gen:get_inner(Def#type.def),
-	    asn1ct_gen:gen_encode_constructed(Erules,Name,InnerType,Def),
+	    asn1ct_gen:gen_encode_constructed(Erules,TypeDef#typedef.name,
+					      InnerType,Def),
 	    gen_encode_constr_type(Erules,Rest)
     end;
 gen_encode_constr_type(_,[]) ->
@@ -518,7 +533,8 @@ gen_encode_field_call(ObjName,FieldName,Type) ->
 	{constructed,bif} ->
 	    emit({"   'enc_",ObjName,'_',FieldName,
 		  "'(Val)"}),
-	    [Type#typedef{name=list_to_atom(lists:concat([ObjName,'_',FieldName]))}];
+%%	    [Type#typedef{name=list_to_atom(lists:concat([ObjName,'_',FieldName]))}];
+	    [Type#typedef{name=[FieldName,ObjName]}];
 	{ExtMod,TypeName} ->
 	    emit({"   '",ExtMod,"':'enc_",TypeName,
 		  "'(Val)"}),
@@ -535,7 +551,8 @@ gen_encode_default_call(ClassName,FieldName,Type) ->
     	{constructed,bif} ->
 %%	    asn1ct_gen:gen_encode_constructed(Erules,Typename,InnerType,Type);
 	    emit(["   'enc_",ClassName,'_',FieldName,"'(Val)"]),
-	    [#typedef{name=list_to_atom(lists:concat([ClassName,'_',FieldName])),
+%%	    [#typedef{name=list_to_atom(lists:concat([ClassName,'_',FieldName])),
+	    [#typedef{name=[FieldName,ClassName],
 		      typespec=Type}];
 	{primitive,bif} ->
 	    gen_encode_prim(per,Type,"false","Val"),
@@ -653,7 +670,8 @@ gen_decode_field_call(ObjName,FieldName,Bytes,Type) ->
 	{constructed,bif} ->
 	    emit({"   'dec_",ObjName,'_',FieldName,
 		  "'(",Bytes,",telltype)"}),
-	    [Type#typedef{name=list_to_atom(lists:concat([ObjName,'_',FieldName]))}];
+%%	    [Type#typedef{name=list_to_atom(lists:concat([ObjName,'_',FieldName]))}];
+	    [Type#typedef{name=[FieldName,ObjName]}];
 	{ExtMod,TypeName} ->
 	    emit({"   '",ExtMod,"':'dec_",TypeName,
 		  "'(",Bytes,", telltype)"}),
@@ -669,7 +687,8 @@ gen_decode_default_call(ClassName,FieldName,Bytes,Type) ->
     case asn1ct_gen:type(InnerType) of
     	{constructed,bif} ->
 	    emit(["   'dec_",ClassName,'_',FieldName,"'(",Bytes,", telltype)"]),
-	    [#typedef{name=list_to_atom(lists:concat([ClassName,'_',FieldName])),
+%%	    [#typedef{name=list_to_atom(lists:concat([ClassName,'_',FieldName])),
+	    [#typedef{name=[FieldName,ClassName],
 		      typespec=Type}];
 	{primitive,bif} ->
 	    gen_dec_prim(per,Type,Bytes),
@@ -687,7 +706,7 @@ gen_decode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
     case is_already_generated(dec,TypeDef#typedef.name) of
 	true -> ok;
 	_ ->
-	    gen_decode(Erules,TypeDef)
+	    gen_decode(Erules,TypeDef#typedef{name=asn1ct_gen:list2rname(TypeDef#typedef.name)})
     end,
     gen_decode_constr_type(Erules,Rest);
 gen_decode_constr_type(_,[]) ->
@@ -810,8 +829,8 @@ emit_ext_encfun(ModuleName,Name) ->
 	  Name,"'(T,V,O) end"]).
 
 emit_default_getenc(ObjSetName,UniqueName) ->
-    emit(["'getenc_",ObjSetName,"'(",{asis,UniqueName},", _) ->",nl]),
-    emit([indent(4),"fun(C,V,_) -> exit({'Type not compatible with table constraint',{component,C},{value,V}}) end"]).
+    emit(["'getenc_",ObjSetName,"'(",{asis,UniqueName},", ErrV) ->",nl]),
+    emit([indent(4),"fun(C,V,_) -> exit({'Type not compatible with table constraint',{component,C},{value,V},{unique_name_and_value,",{asis,UniqueName},",ErrV}}) end"]).
 
 
 %% gen_inlined_enc_funs for each object iterates over all fields of a
@@ -1005,8 +1024,8 @@ emit_ext_decfun(ModuleName,Name) ->
 	  Name,"'(T,V,O1,O2) end"]).
 
 emit_default_getdec(ObjSetName,UniqueName) ->
-    emit(["'getdec_",ObjSetName,"'(",{asis,UniqueName},", _) ->",nl]),
-    emit([indent(2), "fun(C,V,_,_) -> exit({{component,C},{value,V}}) end"]).
+    emit(["'getdec_",ObjSetName,"'(",{asis,UniqueName},", ErrV) ->",nl]),
+    emit([indent(2), "fun(C,V,_,_) -> exit({{component,C},{value,V},{unique_name_and_value,",{asis,UniqueName},",ErrV}}) end"]).
 
 
 gen_inlined_dec_funs(Fields,[{typefield,Name,_}|Rest],
@@ -1223,6 +1242,9 @@ gen_dec_prim(Erules,Att,BytesVar) ->
 	'OBJECT IDENTIFIER' ->
 	    emit({"?RT_PER:decode_object_identifier(",
 		  BytesVar,")"});
+	'RELATIVE-OID' ->
+	    emit({"?RT_PER:decode_relative_oid(",
+		  BytesVar,")"});
 	'ObjectDescriptor' ->
 	    emit({"?RT_PER:decode_ObjectDescriptor(",
 		  BytesVar,")"});
@@ -1247,7 +1269,8 @@ gen_dec_prim(Erules,Att,BytesVar) ->
 	'NumericString' ->
 	    emit({"?RT_PER:decode_NumericString(",BytesVar,",",
 		  {asis,Constraint},")"});
-	'TeletexString' ->
+	TString when TString == 'TeletexString';
+		     TString == 'T61String' ->
 	    emit({"?RT_PER:decode_TeletexString(",BytesVar,",",
 		  {asis,Constraint},")"});
 	'VideotexString' ->

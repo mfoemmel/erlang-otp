@@ -43,11 +43,18 @@
 
 %% API
 -export([open/3, opendir/2, close/2, readdir/2, pread/4, read/3,
+         open/4, opendir/3, close/3, readdir/3, pread/5, read/4,
 	 apread/4, aread/3, pwrite/4, write/3, apwrite/4, awrite/3,
+	 apread/5, aread/4, pwrite/5, write/4, apwrite/5, awrite/4,
 	 position/3, real_path/2, read_file_info/2, get_file_info/2,
+	 position/4, real_path/3, read_file_info/3, get_file_info/3,
 	 write_file_info/3, read_link_info/2, read_link/2, make_symlink/3,
+	 write_file_info/4, read_link_info/3, read_link/3, make_symlink/4,
 	 rename/3, delete/2, make_dir/2, del_dir/2, stop/1, send_window/1,
-	 recv_window/1, list_dir/2, read_file/2, write_file/3]).
+	 rename/4, delete/3, make_dir/3, del_dir/3, stop/2, send_window/2,
+	 recv_window/1, list_dir/2, read_file/2, write_file/3,
+	 recv_window/2, list_dir/3, read_file/3, write_file/4]).
+
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -85,61 +92,99 @@
 %% External functions
 %%====================================================================
 open(Pid, File, Mode) ->
-    gen_server:call(Pid, {open, false, File, Mode}, ?FILEOP_TIMEOUT).
+    open(Pid, File, Mode, ?FILEOP_TIMEOUT).
+open(Pid, File, Mode, FileOpTimeout) ->
+    gen_server:call(Pid, {open, false, File, Mode}, FileOpTimeout).
 
 opendir(Pid, Path) ->
-    gen_server:call(Pid, {opendir, false, Path}, ?FILEOP_TIMEOUT).
+    opendir(Pid, Path, ?FILEOP_TIMEOUT).
+opendir(Pid, Path, FileOpTimeout) ->
+    gen_server:call(Pid, {opendir, false, Path}, FileOpTimeout).
 
 close(Pid, Handle) ->
-    gen_server:call(Pid, {close,false,Handle}, ?FILEOP_TIMEOUT).
+    close(Pid, Handle, ?FILEOP_TIMEOUT).
+close(Pid, Handle, FileOpTimeout) ->
+    gen_server:call(Pid, {close,false,Handle}, FileOpTimeout).
 
 readdir(Pid,Handle) ->
-    gen_server:call(Pid, {readdir,false,Handle}, ?FILEOP_TIMEOUT).
+    readdir(Pid,Handle, ?FILEOP_TIMEOUT).
+readdir(Pid,Handle, FileOpTimeout) ->
+    gen_server:call(Pid, {readdir,false,Handle}, FileOpTimeout).
 
 pread(Pid, Handle, Offset, Len) ->
-    gen_server:call(Pid, {pread,false,Handle, Offset, Len}, ?FILEOP_TIMEOUT).
+    pread(Pid, Handle, Offset, Len, ?FILEOP_TIMEOUT).
+pread(Pid, Handle, Offset, Len, FileOpTimeout) ->
+    gen_server:call(Pid, {pread,false,Handle, Offset, Len}, FileOpTimeout).
 
 read(Pid, Handle, Len) ->
-    gen_server:call(Pid, {read,false,Handle, Len}, ?FILEOP_TIMEOUT).    
+    read(Pid, Handle, Len, ?FILEOP_TIMEOUT).
+read(Pid, Handle, Len, FileOpTimeout) ->
+    gen_server:call(Pid, {read,false,Handle, Len}, FileOpTimeout).    
 
 apread(Pid, Handle, Offset, Len) ->
-    gen_server:call(Pid, {pread,true,Handle, Offset, Len}, ?FILEOP_TIMEOUT).
+    apread(Pid, Handle, Offset, Len, ?FILEOP_TIMEOUT).
+apread(Pid, Handle, Offset, Len, FileOpTimeout) ->
+    gen_server:call(Pid, {pread,true,Handle, Offset, Len}, FileOpTimeout).
 
 aread(Pid, Handle, Len) ->
-    gen_server:call(Pid, {read,true,Handle, Len}, ?FILEOP_TIMEOUT).    
+    aread(Pid, Handle, Len, ?FILEOP_TIMEOUT).
+aread(Pid, Handle, Len, FileOpTimeout) ->
+    gen_server:call(Pid, {read,true,Handle, Len}, FileOpTimeout).    
 
 pwrite(Pid, Handle, Offset, Data) ->
-    gen_server:call(Pid, {pwrite,false,Handle,Offset,Data}, ?FILEOP_TIMEOUT).
+    pwrite(Pid, Handle, Offset, Data, ?FILEOP_TIMEOUT).
+pwrite(Pid, Handle, Offset, Data, FileOpTimeout) ->
+    gen_server:call(Pid, {pwrite,false,Handle,Offset,Data}, FileOpTimeout).
 
 write(Pid, Handle, Data) ->
-    gen_server:call(Pid, {write,false,Handle,Data}, ?FILEOP_TIMEOUT).
+    write(Pid, Handle, Data, ?FILEOP_TIMEOUT).
+write(Pid, Handle, Data, FileOpTimeout) ->
+    gen_server:call(Pid, {write,false,Handle,Data}, FileOpTimeout).
 
 apwrite(Pid, Handle, Offset, Data) ->
-    gen_server:call(Pid, {pwrite,true,Handle,Offset,Data}, ?FILEOP_TIMEOUT).
+    apwrite(Pid, Handle, Offset, Data, ?FILEOP_TIMEOUT).
+apwrite(Pid, Handle, Offset, Data, FileOpTimeout) ->
+    gen_server:call(Pid, {pwrite,true,Handle,Offset,Data}, FileOpTimeout).
 
 awrite(Pid, Handle, Data) ->
-    gen_server:call(Pid, {write,true,Handle,Data}, ?FILEOP_TIMEOUT).
+    awrite(Pid, Handle, Data, ?FILEOP_TIMEOUT).
+awrite(Pid, Handle, Data, FileOpTimeout) ->
+    gen_server:call(Pid, {write,true,Handle,Data}, FileOpTimeout).
 
 position(Pid, Handle, Pos) ->
-    gen_server:call(Pid, {position, Handle, Pos}, ?FILEOP_TIMEOUT).
+    position(Pid, Handle, Pos, ?FILEOP_TIMEOUT).
+position(Pid, Handle, Pos, FileOpTimeout) ->
+    gen_server:call(Pid, {position, Handle, Pos}, FileOpTimeout).
 
 real_path(Pid, Path) ->
-    gen_server:call(Pid, {real_path, false, Path}, ?FILEOP_TIMEOUT).
+    real_path(Pid, Path, ?FILEOP_TIMEOUT).
+real_path(Pid, Path, FileOpTimeout) ->
+    gen_server:call(Pid, {real_path, false, Path}, FileOpTimeout).
 
 read_file_info(Pid, Name) ->
-    gen_server:call(Pid, {read_file_info,false,Name}, ?FILEOP_TIMEOUT).
+    read_file_info(Pid, Name, ?FILEOP_TIMEOUT).
+read_file_info(Pid, Name, FileOpTimeout) ->
+    gen_server:call(Pid, {read_file_info,false,Name}, FileOpTimeout).
 
 get_file_info(Pid, Handle) ->
-    gen_server:call(Pid, {get_file_info,false,Handle}, ?FILEOP_TIMEOUT).
+    get_file_info(Pid, Handle, ?FILEOP_TIMEOUT).
+get_file_info(Pid, Handle, FileOpTimeout) ->
+    gen_server:call(Pid, {get_file_info,false,Handle}, FileOpTimeout).
 
 write_file_info(Pid, Name, Info) ->
-    gen_server:call(Pid, {write_file_info,false,Name, Info}, ?FILEOP_TIMEOUT).
+    write_file_info(Pid, Name, Info, ?FILEOP_TIMEOUT).
+write_file_info(Pid, Name, Info, FileOpTimeout) ->
+    gen_server:call(Pid, {write_file_info,false,Name, Info}, FileOpTimeout).
 
 read_link_info(Pid, Name) ->
-    gen_server:call(Pid, {read_link_info,false,Name}, ?FILEOP_TIMEOUT).
+    read_link_info(Pid, Name, ?FILEOP_TIMEOUT).
+read_link_info(Pid, Name, FileOpTimeout) ->
+    gen_server:call(Pid, {read_link_info,false,Name}, FileOpTimeout).
 
 read_link(Pid, LinkName) ->
-    case gen_server:call(Pid, {read_link,false,LinkName}, ?FILEOP_TIMEOUT) of
+    read_link(Pid, LinkName, ?FILEOP_TIMEOUT).
+read_link(Pid, LinkName, FileOpTimeout) ->
+    case gen_server:call(Pid, {read_link,false,LinkName}, FileOpTimeout) of
 	 {ok, [{Name, _Attrs}]} ->
 	    {ok, Name};
 	ErrMsg ->
@@ -147,36 +192,55 @@ read_link(Pid, LinkName) ->
     end.
 
 make_symlink(Pid, Name, Target) ->
-    gen_server:call(Pid, {make_symlink,false, Name, Target}, ?FILEOP_TIMEOUT).
+    make_symlink(Pid, Name, Target, ?FILEOP_TIMEOUT).
+make_symlink(Pid, Name, Target, FileOpTimeout) ->
+    gen_server:call(Pid, {make_symlink,false, Name, Target}, FileOpTimeout).
  
 rename(Pid, FromFile, ToFile) ->
-    gen_server:call(Pid, {rename,false,FromFile, ToFile}, ?FILEOP_TIMEOUT).
+    rename(Pid, FromFile, ToFile, ?FILEOP_TIMEOUT).
+rename(Pid, FromFile, ToFile, FileOpTimeout) ->
+    gen_server:call(Pid, {rename,false,FromFile, ToFile}, FileOpTimeout).
 
 delete(Pid, Name) ->
-    gen_server:call(Pid, {delete,false,Name}, ?FILEOP_TIMEOUT).
+    delete(Pid, Name, ?FILEOP_TIMEOUT).
+delete(Pid, Name, FileOpTimeout) ->
+    gen_server:call(Pid, {delete,false,Name}, FileOpTimeout).
 
 make_dir(Pid, Name) ->
-    gen_server:call(Pid, {make_dir,false,Name}, ?FILEOP_TIMEOUT).
+    make_dir(Pid, Name, ?FILEOP_TIMEOUT).
+make_dir(Pid, Name, FileOpTimeout) ->
+    gen_server:call(Pid, {make_dir,false,Name}, FileOpTimeout).
 
 del_dir(Pid, Name) ->
-    gen_server:call(Pid, {del_dir,false,Name}, ?FILEOP_TIMEOUT).
+    del_dir(Pid, Name, ?FILEOP_TIMEOUT).
+del_dir(Pid, Name, FileOpTimeout) ->
+    gen_server:call(Pid, {del_dir,false,Name}, FileOpTimeout).
 
 
 stop(Pid) ->
-    gen_server:call(Pid, stop).
+    gen_server:call(Pid, stop, ?FILEOP_TIMEOUT).
+stop(Pid, Timeout) ->
+    gen_server:call(Pid, stop, Timeout).
 
 send_window(Pid) ->
-    gen_server:call(Pid, send_window, ?FILEOP_TIMEOUT).
+    send_window(Pid, ?FILEOP_TIMEOUT).
+send_window(Pid, FileOpTimeout) ->
+    gen_server:call(Pid, send_window, FileOpTimeout).
 
 recv_window(Pid) ->
-    gen_server:call(Pid, recv_window, ?FILEOP_TIMEOUT).
+    recv_window(Pid, ?FILEOP_TIMEOUT).
+recv_window(Pid, FileOpTimeout) ->
+    gen_server:call(Pid, recv_window, FileOpTimeout).
 
 
 list_dir(Pid, Name) ->
-    case opendir(Pid, Name) of
+    list_dir(Pid, Name, ?FILEOP_TIMEOUT).
+
+list_dir(Pid, Name, FileOpTimeout) ->
+    case opendir(Pid, Name, FileOpTimeout) of
 	{ok,Handle} ->
-	    Res = do_list_dir(Pid, Handle, []),
-	    close(Pid, Handle),
+	    Res = do_list_dir(Pid, Handle, FileOpTimeout, []),
+	    close(Pid, Handle, FileOpTimeout),
 	    case Res of
 		{ok, List} ->
 		    NList = foldl(fun({Nm, _Info},Acc) -> 
@@ -189,10 +253,10 @@ list_dir(Pid, Name) ->
 	    Error
     end.
 
-do_list_dir(Pid, Handle, Acc) ->
-    case readdir(Pid, Handle) of
-	{name, Names} ->
-	    do_list_dir(Pid, Handle, Acc ++ Names);
+do_list_dir(Pid, Handle, FileOpTimeout, Acc) ->
+    case readdir(Pid, Handle, FileOpTimeout) of
+	{ok, Names} ->
+	    do_list_dir(Pid, Handle, FileOpTimeout, Acc ++ Names);
 	eof ->
 	    {ok, Acc};
 	Error ->
@@ -201,55 +265,62 @@ do_list_dir(Pid, Handle, Acc) ->
 
 
 read_file(Pid, Name) ->
-    case open(Pid, Name, [read, binary]) of
+    read_file(Pid, Name, ?FILEOP_TIMEOUT).
+
+read_file(Pid, Name, FileOpTimeout) ->
+    case open(Pid, Name, [read, binary], FileOpTimeout) of
 	{ok, Handle} ->
-	    {ok,{_WindowSz,PacketSz}} = recv_window(Pid),
-	    Res = read_file_loop(Pid, Handle, PacketSz, []),
+	    {ok,{_WindowSz,PacketSz}} = recv_window(Pid, FileOpTimeout),
+	    Res = read_file_loop(Pid, Handle, PacketSz, FileOpTimeout, []),
 	    close(Pid, Handle),
 	    Res;
 	Error ->
 	    Error
     end.
 
-read_file_loop(Pid, Handle, PacketSz, Acc) ->
-    case read(Pid, Handle, PacketSz) of
+read_file_loop(Pid, Handle, PacketSz, FileOpTimeout, Acc) ->
+    case read(Pid, Handle, PacketSz, FileOpTimeout) of
 	{ok, Data}  ->
-	    read_file_loop(Pid, Handle, PacketSz, [Data|Acc]);
+	    read_file_loop(Pid, Handle, PacketSz, FileOpTimeout, [Data|Acc]);
 	eof ->
 	    {ok, list_to_binary(reverse(Acc))};
 	Error ->
 	    Error
     end.
 
-write_file(Pid, Name, List) when list(List) ->
-    write_file(Pid, Name, list_to_binary(List));
-write_file(Pid, Name, Bin) ->
-    case open(Pid, Name, [write, binary]) of
+write_file(Pid, Name, List) ->
+    write_file(Pid, Name, List, ?FILEOP_TIMEOUT).
+
+write_file(Pid, Name, List, FileOpTimeout) when list(List) ->
+    write_file(Pid, Name, list_to_binary(List), FileOpTimeout);
+write_file(Pid, Name, Bin, FileOpTimeout) ->
+    case open(Pid, Name, [write, binary], FileOpTimeout) of
 	{ok, Handle} ->
-	    {ok,{_Window,Packet}} = send_window(Pid),
-	    Res = write_file_loop(Pid, Handle, 0, Bin, size(Bin), Packet),
-	    close(Pid, Handle),
+	    {ok,{_Window,Packet}} = send_window(Pid, FileOpTimeout),
+	    Res = write_file_loop(Pid, Handle, 0, Bin, size(Bin), Packet,
+				  FileOpTimeout),
+	    close(Pid, Handle, FileOpTimeout),
 	    Res;
 	Error ->
 	    Error
     end.
 
-write_file_loop(_Pid, _Handle, _Pos, _Bin, 0, _PacketSz) ->
+write_file_loop(_Pid, _Handle, _Pos, _Bin, 0, _PacketSz,_FileOpTimeout) ->
     ok;
-write_file_loop(Pid, Handle, Pos, Bin, Remain, PacketSz) ->
+write_file_loop(Pid, Handle, Pos, Bin, Remain, PacketSz, FileOpTimeout) ->
     if Remain >= PacketSz ->
 	    <<_:Pos/binary, Data:PacketSz/binary, _/binary>> = Bin,
-	    case write(Pid, Handle, Data) of
+	    case write(Pid, Handle, Data, FileOpTimeout) of
 		ok ->
 		    write_file_loop(Pid, Handle, 
 				    Pos+PacketSz, Bin, Remain-PacketSz,
-				    PacketSz);
+				    PacketSz, FileOpTimeout);
 		Error ->
 		    Error
 	    end;
        true ->
 	    <<_:Pos/binary, Data/binary>> = Bin,
-	    write(Pid, Handle, Data)
+	    write(Pid, Handle, Data, FileOpTimeout)
     end.
 
 
@@ -980,5 +1051,4 @@ lseek_pos({eof, Offset}, _CurOffset, CurSize)
 	    {ok, NewOffset}
     end;
 lseek_pos(_, _, _) ->
-    {error, einval}.
-
+    {error, einval}. 

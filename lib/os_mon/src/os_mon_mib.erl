@@ -44,10 +44,19 @@
 -export([get_load/1, get_disks/1]).
 
 %% Shadow tables  
--record(loadTable,
-	{loadErlNodeName, loadSystemTotalMemory, loadSystemUsedMemory,
-	 loadLargestErlProcess, loadLargestErlProcessUsedMemory,
-	 loadCpuLoad, loadCpuLoad5, loadCpuLoad15}).
+-record(loadTable, {
+	loadErlNodeName, 
+	loadSystemTotalMemory, 
+	loadSystemUsedMemory,
+	loadLargestErlProcess, 
+	loadLargestErlProcessUsedMemory,
+	loadCpuLoad, 
+	loadCpuLoad5, 
+	loadCpuLoad15,
+	loadOsWordsize,
+	loadSystemTotalMemory64, 
+	loadSystemUsedMemory64,
+	loadLargestErlProcessUsedMemory64}).
 
 -record(diskTable,
 	{key, diskDescr, diskKBytes, diskCapacity}).
@@ -168,26 +177,30 @@ update_disk_table() ->
 %%% Exported for internal use via rpc
 %%%========================================================================
 get_load(Node) ->
-    case memsup:get_memory_data() of
-	{Total, Allocated, {Pid, PidAllocated}} ->
-	    #loadTable{loadErlNodeName = atom_to_list(Node),
-		       loadSystemTotalMemory = Total,
-		       loadSystemUsedMemory = Allocated,
-		       loadLargestErlProcess = pid_to_str(Pid),
-		       loadLargestErlProcessUsedMemory = PidAllocated,
-		       loadCpuLoad = get_cpu_load(avg1),
-		       loadCpuLoad5 = get_cpu_load(avg5),
-		       loadCpuLoad15 = get_cpu_load(avg15)};
-	{Total, Allocated, undefined} ->
-	    #loadTable{loadErlNodeName = atom_to_list(Node),
-		       loadSystemTotalMemory = Total,
-		       loadSystemUsedMemory = Allocated,
-		       loadLargestErlProcess = "undefined",
-		       loadLargestErlProcessUsedMemory = 0,
-		       loadCpuLoad = get_cpu_load(avg1),
-		       loadCpuLoad5 = get_cpu_load(avg5),
-		       loadCpuLoad15 = get_cpu_load(avg15)}
-    end.
+    {Total, Allocated, PidString, PidAllocated} = case memsup:get_memory_data() of
+	{MemTot, MemAlloc, undefined}     -> {MemTot, MemAlloc, "undefined", 0};
+	{MemTot, MemAlloc, {Pid, PidMem}} -> {MemTot, MemAlloc, pid_to_str(Pid), PidMem} 
+    end,
+    OsWordsize = case memsup:get_os_wordsize() of
+	WS when is_integer(WS) -> WS;
+	_                      -> 0
+    end,
+    #loadTable{
+	loadErlNodeName                   = atom_to_list(Node),
+	loadSystemTotalMemory             = mask_int32(Total),
+	loadSystemUsedMemory              = mask_int32(Allocated),
+	loadLargestErlProcess             = PidString,
+	loadLargestErlProcessUsedMemory   = mask_int32(PidAllocated),
+	loadCpuLoad                       = get_cpu_load(avg1),   
+	loadCpuLoad5                      = get_cpu_load(avg5),
+	loadCpuLoad15                     = get_cpu_load(avg15),
+	loadOsWordsize                    = OsWordsize,  
+	loadSystemTotalMemory64           = Total,
+	loadSystemUsedMemory64            = Allocated,
+	loadLargestErlProcessUsedMemory64 = PidAllocated
+    }.
+
+mask_int32(Value) -> Value band ((1 bsl 32) - 1).
 
 get_disks(NodeId) ->
     element(1,

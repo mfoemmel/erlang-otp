@@ -21,8 +21,11 @@
 -module(crypto).
 
 -export([start/0, stop/0, info/0, info_lib/0]).
+-export([md4/1, md4_init/0, md4_update/2, md4_final/1]).
 -export([md5/1, md5_init/0, md5_update/2, md5_final/1]).
 -export([sha/1, sha_init/0, sha_update/2, sha_final/1]).
+%-export([sha256/1, sha256_init/0, sha256_update/2, sha256_final/1]).
+%-export([sha512/1, sha512_init/0, sha512_update/2, sha512_final/1]).
 -export([md5_mac/2, md5_mac_96/2, sha_mac/2, sha_mac_96/2]).
 -export([des_cbc_encrypt/3, des_cbc_decrypt/3, des_cbc_ivec/1]).
 -export([des3_cbc_encrypt/5, des3_cbc_decrypt/5]).
@@ -31,13 +34,18 @@
 -export([exor/2]).
 -export([rc4_encrypt/2, rc4_set_key/1, rc4_encrypt_with_state/2]).
 -export([rc2_40_cbc_encrypt/3, rc2_40_cbc_decrypt/3]).
--export([dss_verify/3, rsa_verify/3]).
+-export([dss_verify/3, rsa_verify/3, rsa_verify/4]).
+-export([dss_sign/2, rsa_sign/2, rsa_sign/3]).
+-export([rsa_public_encrypt/3, rsa_private_decrypt/3]).
+-export([rsa_private_encrypt/3, rsa_public_decrypt/3]).
+-export([dh_generate_key/1, dh_generate_key/2, dh_compute_key/3]).
 -export([rand_bytes/1, rand_bytes/3, rand_uniform/2]).
 -export([mod_exp/3, mpint/1, erlint/1]).
 %% -export([idea_cbc_encrypt/3, idea_cbc_decrypt/3]).
 -export([aes_cbc_128_encrypt/3, aes_cbc_128_decrypt/3]).
 -export([aes_cbc_256_encrypt/3, aes_cbc_256_decrypt/3]).
 
+-export([dh_generate_parameters/2, dh_check/1]). %% Testing see below
 
 -define(INFO,		 0).
 -define(MD5,		 1).
@@ -62,7 +70,8 @@
 -define(RAND_UNIFORM,    20).
 -define(MOD_EXP,	 21).
 -define(DSS_VERIFY,	 22).
--define(RSA_VERIFY,	 23).
+-define(RSA_VERIFY_SHA,	 23).
+%-define(RSA_VERIFY_MD5,	 35).
 -define(AES_CBC_128_ENCRYPT, 24).
 -define(AES_CBC_128_DECRYPT, 25).
 -define(XOR,		 26).
@@ -74,30 +83,55 @@
 -define(AES_CBC_256_ENCRYPT, 32).
 -define(AES_CBC_256_DECRYPT, 33).
 -define(INFO_LIB,34).
+%-define(RSA_VERIFY_SHA,	 23).
+-define(RSA_VERIFY_MD5,	 35).
+-define(RSA_SIGN_SHA,    36).
+-define(RSA_SIGN_MD5,    37).
+-define(DSS_SIGN,        38).
+-define(RSA_PUBLIC_ENCRYPT,  39).
+-define(RSA_PRIVATE_DECRYPT, 40).
+-define(RSA_PRIVATE_ENCRYPT, 41).
+-define(RSA_PUBLIC_DECRYPT,  42).
+-define(DH_GENERATE_PARAMS,  43).
+-define(DH_CHECK,            44).
+-define(DH_GENERATE_KEY,     45).
+-define(DH_COMPUTE_KEY,      46).
+-define(MD4,		 47).
+-define(MD4_INIT,	 48).
+-define(MD4_UPDATE,	 49).
+-define(MD4_FINAL,	 50).
+
+%% -define(SHA256,		 51).
+%% -define(SHA256_INIT,	 52).
+%% -define(SHA256_UPDATE,	 53).
+%% -define(SHA256_FINAL,	 54).
+%% -define(SHA512,		 55).
+%% -define(SHA512_INIT,	 56).
+%% -define(SHA512_UPDATE,	 57).
+%% -define(SHA512_FINAL,	 58).
+
+
 %% -define(IDEA_CBC_ENCRYPT, 34).
 %% -define(IDEA_CBC_DECRYPT, 35).
 
-
--define(FUNC_LIST, [md5,
-		    md5_init,
-		    md5_update,
-		    md5_final,
-		    sha,
-		    sha_init,
-		    sha_update,
-		    sha_final,
-		    md5_mac,
-		    md5_mac_96,
-		    sha_mac,
-		    sha_mac_96,
+-define(FUNC_LIST, [md4, md4_init, md4_update, md4_final,
+		    md5, md5_init, md5_update, md5_final,
+		    sha, sha_init, sha_update, sha_final,
+%% 		    sha256, sha256_init, sha256_update, sha256_final,
+%% 		    sha512, sha512_init, sha512_update, sha512_final,
+		    md5_mac,  md5_mac_96,
+		    sha_mac,  sha_mac_96,
 		    des_cbc_encrypt, des_cbc_decrypt,
 		    des_ede3_cbc_encrypt, des_ede3_cbc_decrypt,
 		    aes_cfb_128_encrypt, aes_cfb_128_decrypt,
 		    rand_bytes,
 		    rand_uniform,
 		    mod_exp,
-		    dss_verify,
-		    rsa_verify,
+		    dss_verify,dss_sign,
+		    rsa_verify,rsa_sign,
+		    rsa_public_encrypt,rsa_private_decrypt, 
+		    rsa_private_encrypt,rsa_public_decrypt, 
+		    dh_generate_key, dh_compute_key,
 		    aes_cbc_128_encrypt, aes_cbc_128_decrypt,
 		    exor,
 		    rc4_encrypt, rc4_set_key, rc4_encrypt_with_state,
@@ -113,8 +147,9 @@ stop() ->
     application:stop(crypto).
 
 info() ->
-    lists:map(fun(I) -> lists:nth(I, ?FUNC_LIST) end, 
-	      binary_to_list(control(?INFO, []))).
+    lists:map(fun(I) -> 
+		      lists:nth(I, ?FUNC_LIST) 
+	      end, binary_to_list(control(?INFO, []))).
 
 info_lib() ->
     <<_DrvVer:8, NameSize:8, Name:NameSize/binary,
@@ -144,6 +179,21 @@ md5_final(Context) ->
     control(?MD5_FINAL, Context).
 
 %%
+%%  MD4
+%%
+md4(Data) ->
+    control(?MD4, Data).
+
+md4_init() ->
+    control(?MD4_INIT, []).
+
+md4_update(Context, Data) ->
+    control(?MD4_UPDATE, [Context, Data]).
+
+md4_final(Context) ->
+    control(?MD4_FINAL, Context).
+
+%%
 %% SHA
 %%
 sha(Data) ->
@@ -157,6 +207,32 @@ sha_update(Context, Data) ->
 
 sha_final(Context) ->
     control(?SHA_FINAL, Context).
+
+%% sha256 and sha512 requires openssl-0.9.8 removed for now
+
+%% sha256(Data) ->
+%%     control(?SHA256, Data).
+
+%% sha256_init() ->
+%%     control(?SHA256_INIT, []).
+
+%% sha256_update(Context, Data) ->
+%%     control(?SHA256_UPDATE, [Context, Data]).
+
+%% sha256_final(Context) ->
+%%         control(?SHA256_FINAL, Context).
+
+%% sha512(Data) ->
+%%     control(?SHA512, Data).
+
+%% sha512_init() ->
+%%     control(?SHA512_INIT, []).
+
+%% sha512_update(Context, Data) ->
+%%     control(?SHA512_UPDATE, [Context, Data]).
+
+%% sha512_final(Context) ->
+%%     control(?SHA512_FINAL, Context).
 
 %%
 %%  MESSAGE AUTHENTICATION CODES
@@ -286,12 +362,95 @@ mod_exp(Base, Exponent, Modulo) ->
 %% DSS, RSA - verify
 %%
 
-dss_verify(Dgst,Signature,Key) ->
-    control(?DSS_VERIFY, [Dgst,Signature,Key]) == <<1>>.
+%% Key = [P,Q,G,Y]   P,Q,G=DSSParams  Y=PublicKey
+dss_verify(Data,Signature,Key) ->
+    control(?DSS_VERIFY, [Data,Signature,Key]) == <<1>>.
 
-rsa_verify(Dgst,Signature,Key) ->
-    control(?RSA_VERIFY, [Dgst,Signature,Key]) == <<1>>.
+% Key = [E,N]  E=PublicExponent N=PublicModulus
+rsa_verify(Data,Signature,Key) ->
+    rsa_verify(sha, Data,Signature,Key).
+rsa_verify(Type,Data,Signature,Key) ->
+    control(rsa_verify_digest_type(Type), [Data,Signature,Key]) == <<1>>.
 
+rsa_verify_digest_type(md5) -> ?RSA_VERIFY_MD5;
+rsa_verify_digest_type(sha) -> ?RSA_VERIFY_SHA;
+rsa_verify_digest_type(Bad) -> erlang:error(badarg, [Bad]).
+
+%%
+%% DSS, RSA - sign
+%%
+%% Key = [P,Q,G,X]   P,Q,G=DSSParams  X=PrivateKey
+dss_sign(Data, Key) ->
+    <<Ret:8, Signature/binary>> = control(?DSS_SIGN, [Data,Key]),
+    case Ret of
+	1 -> Signature;
+	0 -> erlang:error(badkey, [Data, Key])
+    end.
+
+%% Key = [E,N,D]  E=PublicExponent N=PublicModulus  D=PrivateExponent
+rsa_sign(Data,Key) ->
+    rsa_sign(sha, Data, Key).
+rsa_sign(Type, Data, Key) ->
+    <<Ret:8, Signature/binary>> = control(rsa_sign_digest_type(Type), [Data,Key]),
+    case Ret of
+	1 -> Signature;
+	0 -> erlang:error(badkey, [Type,Data,Key])
+    end.
+
+rsa_sign_digest_type(md5) -> ?RSA_SIGN_MD5;
+rsa_sign_digest_type(sha) -> ?RSA_SIGN_SHA;
+rsa_sign_digest_type(Bad) -> erlang:error(badarg, [Bad]).
+
+%%
+%%  rsa_public_encrypt
+%%  rsa_private_decrypt
+
+%% Binary, Key = [E,N]
+rsa_public_encrypt(BinMesg, Key, Padding) ->
+    Size = iolist_size(BinMesg),
+    <<Ret:8, Signature/binary>> = 
+	control(?RSA_PUBLIC_ENCRYPT, [<<Size:32>>,BinMesg,Key,rsa_pad(Padding)]),
+    case Ret of
+	1 -> Signature;
+	0 -> erlang:error(encrypt_failed, [BinMesg,Key, Padding])
+    end.    
+
+%% Binary, Key = [E,N,D]
+rsa_private_decrypt(BinMesg, Key, Padding) ->
+    Size = iolist_size(BinMesg),
+    <<Ret:8, Signature/binary>> = 
+	control(?RSA_PRIVATE_DECRYPT, [<<Size:32>>,BinMesg,Key,rsa_pad(Padding)]),
+    case Ret of
+	1 -> Signature;
+	0 -> erlang:error(decrypt_failed, [BinMesg,Key, Padding])
+    end.    
+
+rsa_pad(rsa_pkcs1_padding) -> 1;
+rsa_pad(rsa_pkcs1_oaep_padding) -> 2;
+%% rsa_pad(rsa_sslv23_padding) -> 3;
+rsa_pad(rsa_no_padding) -> 0;
+rsa_pad(Bad) -> erlang:error(badarg, [Bad]).
+    
+%% Binary, Key = [E,N,D]
+rsa_private_encrypt(BinMesg, Key, Padding) ->
+    Size = iolist_size(BinMesg),
+    <<Ret:8, Signature/binary>> = 
+	control(?RSA_PRIVATE_ENCRYPT, [<<Size:32>>,BinMesg,Key,rsa_pad(Padding)]),
+    case Ret of
+	1 -> Signature;
+	0 -> erlang:error(encrypt_failed, [BinMesg,Key, Padding])
+    end.    
+
+%% Binary, Key = [E,N]
+rsa_public_decrypt(BinMesg, Key, Padding) ->
+    Size = iolist_size(BinMesg),
+    <<Ret:8, Signature/binary>> = 
+	control(?RSA_PUBLIC_DECRYPT, [<<Size:32>>,BinMesg,Key,rsa_pad(Padding)]),
+    case Ret of
+	1 -> Signature;
+	0 -> erlang:error(decrypt_failed, [BinMesg,Key, Padding])
+    end.
+    
 %%
 %% AES - with 128 or 256 bit key in cipher block chaining mode (CBC)
 %%
@@ -338,6 +497,68 @@ rc2_40_cbc_encrypt(Key, IVec, Data) ->
 
 rc2_40_cbc_decrypt(Key, IVec, Data) ->
     control(?RC2_40_CBC_DECRYPT, [Key, IVec, Data]).
+
+%%
+%% DH Diffie-Hellman functions
+%% 
+
+%% Generate (and check) Parameters is not documented because they are implemented
+%% for testing (and offline parameter generation) only.
+%% From the openssl doc: 
+%%  DH_generate_parameters() may run for several hours before finding a suitable prime.
+%% Thus dh_generate_parameters may in this implementation block 
+%% the emulator for several hours.
+%%
+%% usage: dh_generate_parameters(1024, 2 or 5) -> 
+%%    [Prime=mpint(), SharedGenerator=mpint()]
+dh_generate_parameters(PrimeLen, Generator) 
+  when is_integer(PrimeLen), is_integer(Generator) ->
+    case control(?DH_GENERATE_PARAMS, <<PrimeLen:32, Generator:32>>) of
+	<<0:8, _/binary>> ->
+	    erlang:error(generation_failed, [PrimeLen,Generator]);
+	<<1:8, PLen0:32, _:PLen0/binary, GLen0:32,_:GLen0/binary>> = Bin -> 
+	    PLen = PLen0+4, 
+	    GLen = GLen0+4,
+	    <<_:8, PBin:PLen/binary,GBin:GLen/binary>> = Bin,
+	    [PBin, GBin]
+    end.
+
+%% Checks that the DHParameters are ok.
+%% DHParameters = [P (Prime)= mpint(), G(Generator) = mpint()]
+dh_check(DHParameters) ->
+    case control(?DH_CHECK, DHParameters) of
+	<<0:32>>  -> ok;
+	<<_:24,_:1,_:1,_:1,1:1>> -> not_prime;
+	<<_:24,_:1,_:1,1:1,0:1>> -> not_strong_prime;
+	<<_:24,_:1,1:1,0:1,0:1>> -> unable_to_check_generator;
+	<<_:24,1:1,0:1,0:1,0:1>> -> not_suitable_generator;
+	<<16#FFFF:32>> -> {error, check_failed};
+	<<X:32>>  -> {unknown, X}
+    end.
+
+%% DHParameters = [P (Prime)= mpint(), G(Generator) = mpint()]
+%% PrivKey = mpint()
+dh_generate_key(DHParameters) ->
+    dh_generate_key(<<0:32>>, DHParameters).
+dh_generate_key(PrivateKey, DHParameters) ->
+    case control(?DH_GENERATE_KEY, [PrivateKey, DHParameters]) of
+	<<0:8, _/binary>> ->
+	    erlang:error(generation_failed, [PrivateKey,DHParameters]);
+	Bin = <<1:8, PubLen0:32, _:PubLen0/binary, PrivLen0:32, _:PrivLen0/binary>> -> 
+	    PubLen = PubLen0+4, 
+	    PrivLen = PrivLen0+4,
+	    <<_:8, PubBin:PubLen/binary,PrivBin:PrivLen/binary>> = Bin,
+	    {PubBin, PrivBin}
+    end.
+
+%% DHParameters = [P (Prime)= mpint(), G(Generator) = mpint()]
+%% MyPrivKey, OthersPublicKey = mpint() 
+dh_compute_key(OthersPublicKey, MyPrivateKey, DHParameters) ->
+    case control(?DH_COMPUTE_KEY, [OthersPublicKey, MyPrivateKey, DHParameters]) of
+	<<0:8, _/binary>> ->
+	    erlang:error(computation_failed, [OthersPublicKey,MyPrivateKey,DHParameters]);
+	<<1:8, Binary/binary>> -> Binary
+    end.
 
 %%
 %%  LOCAL FUNCTIONS

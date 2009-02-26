@@ -1,6 +1,6 @@
 %%--------------------------------------------------------------------
 %%<copyright>
-%% <year>1999-2007</year>
+%% <year>1999-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -266,6 +266,8 @@ check_options([{interceptors, false}|Options], Local, Proxy) ->
     check_options(Options, [{interceptors, false}|Local], Proxy);
 check_options([{interceptors, {native, LPIs}}|Options], Local, Proxy) ->
     check_options(Options, [{interceptors, {native, LPIs}}|Local], Proxy);
+check_options([{fake, option}|Options], Local, Proxy) ->
+    check_options(Options, Local, [{fake, option}|Proxy]);
 check_options([_|Options], Local, Proxy) ->
     check_options(Options, Local, Proxy);
 check_options([], Local, Proxy) ->

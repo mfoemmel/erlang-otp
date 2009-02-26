@@ -306,7 +306,7 @@ esac
 MIXED_CYGWIN=no
 
 AC_MSG_CHECKING(for mixed cygwin and native VC++ environment)
-if test "X$CC" = "Xcc.sh" -a "X$host" = "Xwin32" -a "x$GCC" != x"yes"; then
+if test "X$host" = "Xwin32" -a "x$GCC" != x"yes"; then
 	if test -x /usr/bin/cygpath; then
 		CFLAGS="-O2"
 		MIXED_CYGWIN=yes
@@ -324,7 +324,7 @@ fi
 AC_SUBST(MIXED_CYGWIN_VC)
 
 AC_MSG_CHECKING(for mixed cygwin and native MinGW environment)
-if test "X$CC" = "Xcc.sh" -a "X$host" = "Xwin32" -a "x$GCC" = x"yes"; then
+if test "X$host" = "Xwin32" -a "x$GCC" = x"yes"; then
 	if test -x /usr/bin/cygpath; then
 		CFLAGS="-O2"
 		MIXED_CYGWIN=yes
@@ -1133,14 +1133,12 @@ AC_CHECK_HEADER(sys/epoll.h, have_kernel_poll=epoll)
 AC_CHECK_HEADER(sys/devpoll.h, have_kernel_poll=/dev/poll)
 
 dnl Check for kernel SCTP support
-AC_SUBST(WITH_SCTP)
+AC_SUBST(LIBSCTP)
 if test "x$enable_sctp" == "xyes" ; then
     AC_CHECK_HEADER(netinet/sctp.h,
-        [AC_CHECK_LIB(sctp, sctp_bindx,
-	    [WITH_SCTP=1,
-             AC_DEFINE(HAVE_SCTP_H, [1],
-                [Define to 1 if you have the <netinet/sctp.h> header file])])
-        ],
+        [LIBSCTP=libsctp.so.1
+	 AC_DEFINE(HAVE_SCTP_H, [1],
+            [Define to 1 if you have the <netinet/sctp.h> header file])],
 	[],
 	[#if HAVE_SYS_SOCKET_H
 	 #include <sys/socket.h>
@@ -1370,7 +1368,7 @@ AC_CHECK_FUNCS([ieee_handler fpsetmask finite isnan isinf res_gethostbyname dlop
 		pread pwrite writev memmove strerror strerror_r strncasecmp \
 		gethrtime localtime_r gmtime_r mremap memcpy mallopt \
 		sbrk _sbrk __sbrk brk _brk __brk \
-		flockfile fstat strlcpy strlcat])
+		flockfile fstat strlcpy strlcat setsid])
 AC_FUNC_SETVBUF_REVERSED
 
 disable_vfork=false

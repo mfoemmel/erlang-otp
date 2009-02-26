@@ -152,7 +152,7 @@ erts_port_task_have_outstanding_io_tasks(void)
 #endif
 
 #ifdef ERTS_INCLUDE_SCHEDULER_INTERNALS
-int erts_port_task_execute(void);
+int erts_port_task_execute(Port **);
 void erts_port_task_init(void);
 #endif
 

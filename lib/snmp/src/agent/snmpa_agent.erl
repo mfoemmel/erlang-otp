@@ -39,7 +39,8 @@
 -export([validate_err/3, make_value_a_correct_value/3, 
 	 do_get/3, do_get/4, 
 	 get/2, get/3, get_next/2, get_next/3]).
--export([mib_of/1, mib_of/2, me_of/1, me_of/2]).
+-export([mib_of/1, mib_of/2, me_of/1, me_of/2,
+	 invalidate_mibs_cache/1]).
 -export([get_agent_mib_storage/0, db/1, 
 	 backup/2]).
 -export([get_log_type/1,      set_log_type/2]).
@@ -192,14 +193,17 @@ set_request_limit(Agent, NewLimit) ->
 mib_of(Oid) when list(Oid) ->
     mib_of(snmp_master_agent, Oid).
 
-mib_of(Agent, Oid) when list(Oid) ->
+mib_of(Agent, Oid) when is_list(Oid) ->
     call(Agent, {mib_of, Oid}).
 
-me_of(Oid) when list(Oid) ->
+me_of(Oid) when is_list(Oid) ->
     me_of(snmp_master_agent, Oid).
 
-me_of(Agent, Oid) when list(Oid) ->
+me_of(Agent, Oid) when is_list(Oid) ->
     call(Agent, {me_of, Oid}).
+
+invalidate_mibs_cache(Agent) ->
+    call(Agent, invalidate_mibs_cache).
 
 init([Prio, Parent, Ref, Options]) ->
     ?d("init -> entry with"
@@ -825,6 +829,11 @@ handle_call(which_mibs, _From, S) ->
 handle_call({whereis_mib, Mib}, _From, S) ->
     ?vlog("whereis mib ~p", [Mib]),
     {reply, snmpa_mib:whereis_mib(get(mibserver), Mib), S};
+
+handle_call(invalidate_mibs_cache, _From, S) ->
+    ?vlog("invalidate_mibs_cache", []),
+    snmpa_mib:invalidate_cache(get(mibserver)),
+    {reply, ignore, S};
 
 handle_call(info, _From, S) ->
     ?vlog("info", []),

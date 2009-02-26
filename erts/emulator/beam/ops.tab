@@ -47,6 +47,15 @@ is_atom p R => too_old_compiler
 
 is_eq_exact p S1 S2 => too_old_compiler
 
+# In R9C and earlier, the loader used to insert special instructions inside
+# the module_info/0,1 functions. (In R10B and later, the compiler inserts
+# an explicit call to an undocumented BIF, so that no loader trickery is
+# necessary.) Since the instructions don't work correctly in R12B, simply
+# refuse to load the module.
+
+func_info M=a a==am_module_info A=u==0 | label L | move n r => too_old_compiler
+func_info M=a a==am_module_info A=u==1 | label L | move n r => too_old_compiler
+
 #
 # All the other instructions.
 #
@@ -55,8 +64,6 @@ label L
 i_func_info I a a I
 int_code_end
 
-i_module_info_0
-i_module_info_1
 i_trace_breakpoint
 i_mtrace_breakpoint
 i_debug_breakpoint
@@ -985,8 +992,6 @@ is_function f y
 is_function f r
 is_function Fail=f c => jump Fail
 
-func_info M=a a==am_module_info A=u==0 | label L | move n r => gen_func_info_mi(M, A, L)
-func_info M=a a==am_module_info A=u==1 | label L | move n r => gen_func_info_mi(M, A, L)
 func_info M=a F=a A=u | label L => gen_func_info(M, F, A, L)
 
 # ================================================================
@@ -1096,6 +1101,31 @@ bs_context_to_binary r
 bs_context_to_binary x
 bs_context_to_binary y
 
+#
+# Utf8/utf16/utf32 support. (R12B-5)
+#
+bs_get_utf8 Fail=f Ms=rx u u Dst=d => i_bs_get_utf8 Ms Fail Dst
+i_bs_get_utf8 r f d
+i_bs_get_utf8 x f d
+
+bs_skip_utf8 Fail=f Ms=rx u u => i_bs_get_utf8 Ms Fail x
+
+bs_get_utf16 Fail=f Ms=rx u Flags=u Dst=d => i_bs_get_utf16 Ms Fail Flags Dst
+bs_skip_utf16 Fail=f Ms=rx u Flags=u => i_bs_get_utf16 Ms Fail Flags x
+
+i_bs_get_utf16 r f I d
+i_bs_get_utf16 x f I d
+
+bs_get_utf32 Fail=f Ms=rx Live=u Flags=u Dst=d => \
+	bs_get_integer2 Fail Ms Live i=32 u=1 Flags Dst | \
+	i_fetch Dst Ms | \
+	i_bs_validate_unicode_retract Fail
+bs_skip_utf32 Fail=f Ms=rx Live=u Flags=u => \
+	bs_get_integer2 Fail Ms Live i=32 u=1 Flags x | \
+	i_fetch x Ms | \
+	i_bs_validate_unicode_retract Fail
+
+i_bs_validate_unicode_retract j
 %hot
 
 #
@@ -1187,6 +1217,41 @@ bs_put_integer Fail=j Sz=sq Unit=u Flags=u Src=s => \
 
 i_new_bs_put_integer j s I s
 i_new_bs_put_integer_imm j I I s
+
+#
+# Utf8/utf16/utf32 support. (R12B-5)
+#
+
+bs_utf8_size Fail Literal=q Dst=d => \
+	move Literal x | bs_utf8_size Fail x Dst
+bs_utf8_size j Src=s Dst=d => i_bs_utf8_size Src Dst
+
+i_bs_utf8_size s d
+
+bs_utf16_size Fail Literal=q Dst=d => \
+	move Literal x | bs_utf16_size Fail x Dst
+bs_utf16_size j Src=s Dst=d => i_bs_utf16_size Src Dst
+
+i_bs_utf16_size s d
+
+bs_put_utf8 Fail=j Flags=u Literal=q => \
+	move Literal x | bs_put_utf8 Fail Flags x
+bs_put_utf8 Fail=j u Src=s => i_bs_put_utf8 Fail Src
+
+i_bs_put_utf8 j s
+
+bs_put_utf16 Fail=j Flags=u Literal=q => \
+	move Literal x | bs_put_utf16 Fail Flags x
+bs_put_utf16 Fail=j Flags=u Src=s => i_bs_put_utf16 Fail Flags Src
+
+i_bs_put_utf16 j I s
+
+bs_put_utf32 Fail=j Flags=u Literal=q => \
+	move Literal x | bs_put_utf32 Fail Flags x
+bs_put_utf32 Fail=j Flags=u Src=s => \
+   i_bs_validate_unicode Fail Src | bs_put_integer Fail i=32 u=1 Flags Src
+
+i_bs_validate_unicode j s
 
 #
 # Storing floats into binaries.

@@ -41,7 +41,7 @@
 	]).
 
 -export([
-	 timeout/2
+	 timeout/3
 	]).
 
 -include("megaco_test_lib.hrl").
@@ -391,12 +391,18 @@ integer_timer_start_and_stop(Config) when list(Config) ->
 
 tmr_start(Timeout) ->
     Pid = self(), 
-    megaco_monitor:apply_after(?MODULE, timeout, [Pid, Timeout], Timeout).
+    megaco_monitor:apply_after(?MODULE, timeout, [Pid, Timeout, get(tc)], Timeout).
 
 tmr_stop(Ref) ->
     megaco_monitor:cancel_apply_after(Ref).
 
-timeout(Pid, Timeout) ->
+timeout(Pid, Timeout, Tc) ->
+    put(sname, timer),
+    put(tc, Tc), 
+    print("DBG",
+	  "timeout -> entry with"
+	  "~n   Pid:     ~p"
+	  "~n   Timeout: ~p", [Pid, Timeout]),
     Pid ! {timeout, Timeout}.
 
 
@@ -421,30 +427,39 @@ i(F) ->
     i(F, []).
 
 i(F, A) ->
-    print(info, get(verbosity), now(), get(tc), "INF", F, A).
+    print(info, "INF", F, A).
 
 d(F) ->
     d(F, []).
 
 d(F, A) ->
-    print(debug, get(verbosity), now(), get(tc), "DBG", F, A).
+    print(debug, "DBG", F, A).
 
 printable(_, debug)   -> true;
 printable(info, info) -> true;
 printable(_,_)        -> false.
 
-print(Severity, Verbosity, Ts, Tc, P, F, A) ->
-    print(printable(Severity,Verbosity), Ts, Tc, P, F, A).
 
-print(true, Ts, Tc, P, F, A) ->
+print(Severity, Prefix, F, A) ->
+    print1(printable(Severity, get(verbosity)), Prefix, F, A).
+
+print1(true, Prefix, F, A) ->
+    print(Prefix, F, A);
+print1(_, _, _, _) ->
+    ok.
+
+print(Prefix, F, A) ->
     io:format("*** [~s] ~s ~p ~s:~w ***"
               "~n   " ++ F ++ "~n", 
-              [format_timestamp(Ts), P, self(), get(sname), Tc | A]);
-print(_, _, _, _, _, _) ->
-    ok.
+              [formated_timestamp(), Prefix, self(), get(sname), get(tc) | A]).
+
+    
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+formated_timestamp() ->
+    format_timestamp(now()).
 
 format_timestamp({_N1, _N2, N3} = Now) ->
     {Date, Time}   = calendar:now_to_datetime(Now),

@@ -24,6 +24,7 @@
 	minmax/1,
 	waiting_activities/1,
 	activities2count/2,
+	activities2count/3,
 	analyze_activities/2,
 	runnable_count/1,
 	runnable_count/2,
@@ -80,27 +81,39 @@ mean([Value | List], {Sum, StdDevSquare, N}) ->
 %%	Also checks active/inactive consistency.
 %%	A task will always begin with an active state and end with an inactive state.
 
-activities2count(Acts, StartTs) when is_list(Acts) ->
-    activities2count_loop(Acts, {StartTs, {0,0}}, []).
+activities2count(Acts, StartTs) when is_list(Acts) -> activities2count(Acts, StartTs, separated).
 
-activities2count_loop([], _, Out) -> 
-    lists:reverse(Out);
-activities2count_loop([Act | Acts], {StartTs, {Procs, Ports}}, Out) ->
-    Ts = Act#activity.timestamp,
-    Id = Act#activity.id,
-    Rc = Act#activity.runnable_count,
+activities2count(Acts, StartTs, Type) when is_list(Acts) -> activities2count_loop(Acts, {StartTs, {0,0}}, Type, []).
+
+activities2count_loop([], _, _, Out) -> lists:reverse(Out);
+activities2count_loop(
+	[#activity{ timestamp = Ts, id = Id, runnable_count = Rc} | Acts], 
+	{StartTs, {Procs, Ports}}, separated, Out) ->
     
     Time = ?seconds(Ts, StartTs),
     case Id of 
 	Id when is_port(Id) ->
 	    Entry = {Time, Procs, Rc},
-	    activities2count_loop(Acts, {StartTs, {Procs, Rc}}, [Entry | Out]);
+	    activities2count_loop(Acts, {StartTs, {Procs, Rc}}, separated, [Entry | Out]);
 	Id when is_pid(Id) ->
 	    Entry = {Time, Rc, Ports},
-	    activities2count_loop(Acts, {StartTs, {Rc, Ports}}, [Entry | Out]);
+	    activities2count_loop(Acts, {StartTs, {Rc, Ports}}, separated, [Entry | Out]);
 	Other ->
 	    io:format("activities2count error: case dropped ~p~n", [Other]),
-   	    activities2count_loop(Acts, {StartTs,{Procs, Ports}}, Out)
+   	    activities2count_loop(Acts, {StartTs,{Procs, Ports}}, separated, Out)
+    end;
+activities2count_loop(
+	[#activity{ timestamp = Ts, id = Id, runnable_count = Rc} | Acts], 
+	{StartTs, {Procs, Ports}}, summated, Out) ->
+	
+    Time = ?seconds(Ts, StartTs), 
+    case Id of 
+	Id when is_port(Id) ->
+	    Entry = {Time, Procs + Rc},
+	    activities2count_loop(Acts, {StartTs, {Procs, Rc}}, summated, [Entry | Out]);
+	Id when is_pid(Id) ->
+	    Entry = {Time, Rc + Ports},
+	    activities2count_loop(Acts, {StartTs, {Rc, Ports}}, summated, [Entry | Out])
     end.
 
 %% @spec waiting_activities([#activity{}]) -> FunctionList
@@ -204,16 +217,22 @@ waiting_activities_mfa_list([Activity|Activities], ListedMfas) ->
 %% @doc Calculates a timestamp given a duration in seconds and a starting timestamp. 
 
 seconds2ts(Seconds, {Ms, S, Us}) ->
-    % Calculate mega seconds integer (I guess it's zero most of the time)
-    MsInteger = trunc(Seconds) div 1000000,
+    % Calculate mega seconds integer
+    MsInteger = trunc(Seconds) div 1000000 ,
 
     % Calculate the reminder for seconds
-    SInteger = trunc(Seconds),
+    SInteger  = trunc(Seconds),
 
     % Calculate the reminder for micro seconds
     UsInteger = trunc((Seconds - SInteger) * 1000000),
 
-    {Ms + MsInteger, S + SInteger, Us + UsInteger}.
+    % Wrap overflows
+
+    UsOut = (UsInteger + Us) rem 1000000,
+    SOut  = ((SInteger + S) + (UsInteger + Us) div 1000000) rem 1000000,
+    MsOut = (MsInteger+ Ms) + ((SInteger + S) + (UsInteger + Us) div 1000000) div 1000000,
+
+    {MsOut, SOut, UsOut}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
@@ -243,8 +262,14 @@ analyze_activities(Threshold, Activities) ->
 %% @hidden
 
 runnable_count(Activities) ->
-    runnable_count(Activities, 0, []).
+    Threshold = runnable_count_threshold(Activities),
+    runnable_count(Activities, Threshold, []).
 
+runnable_count_threshold(Activities) ->
+    CountedActs = runnable_count(Activities, 0),
+    Counts      = [C || {C, _} <- CountedActs],
+    Min         = lists:min(Counts),
+    0 - Min.
 %% @spec runnable_count([#activity{}],integer()) -> [{integer(),#activity{}}]
 %% @hidden
 

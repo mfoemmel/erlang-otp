@@ -188,10 +188,12 @@ static int verify_dns_configuration(void)
 #define advance_buf(buf,len,n) ((buf)+=(n),(len)-=(n))
 
 /* "and now the tricky part..." */
-static int copy_hostent(struct hostent *dest, struct hostent *src, char *buffer, int buflen)
+static int copy_hostent(struct hostent *dest, const struct hostent *src, char *buffer, int buflen)
 {
   char **pptr;
   int len;
+  char **src_aliases   = NULL;
+  char **src_addr_list = NULL;
 
   /* fix initial buffer alignment */
   align_buf(buffer, buflen);
@@ -213,11 +215,14 @@ static int copy_hostent(struct hostent *dest, struct hostent *src, char *buffer,
   align_buf(buffer, buflen);
   pptr = (char **)buffer;
   dest->h_aliases = pptr;          /* save head of pointer array */
-  while (*(src->h_aliases)) {
+  
+  src_aliases = src->h_aliases;
+  
+  while(*(src_aliases)) {
     if (buflen < sizeof(*pptr)) return -1;
-    *pptr = *src->h_aliases;
+    *pptr = src_aliases;
     advance_buf(buffer,buflen,sizeof(*pptr));
-    src->h_aliases++;
+    src_aliases++;
     pptr++;
   }  
   if (buflen < sizeof(*pptr)) return -1;
@@ -240,11 +245,14 @@ static int copy_hostent(struct hostent *dest, struct hostent *src, char *buffer,
   align_buf(buffer, buflen);
   pptr = (char **)buffer;
   dest->h_addr_list = pptr;        /* save head of pointer array */
-  while (*(src->h_addr_list)) {
+  
+  src_addr_list = src->h_addr_list;
+  
+  while(*(src_addr_list)) {
     if (buflen < sizeof(*pptr)) return -1;
-    *pptr = *src->h_addr_list;
+    *pptr = *src_addr_list;
     advance_buf(buffer,buflen,sizeof(*pptr));
-    src->h_addr_list++;
+    src_addr_list++;
     pptr++;
   }  
   if (buflen < sizeof(*pptr)) return -1;
@@ -619,7 +627,7 @@ struct hostent *ei_gethostbyname_r(const char *name,
 #ifndef HAVE_GETHOSTBYNAME_R
   return my_gethostbyname_r(name,hostp,buffer,buflen,h_errnop);
 #else
-#ifdef __GLIBC__
+#if (defined(__GLIBC__) || (__FreeBSD_version >= 602000))
   struct hostent *result;
 
   gethostbyname_r(name, hostp, buffer, buflen, &result, h_errnop);

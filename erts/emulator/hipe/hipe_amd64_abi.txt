@@ -107,7 +107,7 @@ See <http://www.x86-64.org/abi.pdf>.
 
 %rax, %rdx, %rcx, %rsi, %rdi, %r8, %r9, %r10, %r11 are clobbered by calls (caller-save)
 %rsp, %rbp, %rbx, %r12, %r13, %r14, %r15 are preserved by calls (callee-save)
-[note: %rsi and %rdi are calleR-save, nor calleE-save as in the x86 ABI]
+[note: %rsi and %rdi are calleR-save, not calleE-save as in the x86 ABI]
 %rsp is the stack pointer (fixed). It is required that ((%rsp+8) & 15) == 0
 when a function is entered. (Section 3.2.2 in the ABI document.)
 %rbp is optional frame pointer or local variable
@@ -122,3 +122,24 @@ A memory return value (exact definition is complicated, but basically "large str
 is implemented as follows: the caller passes a pointer in %rdi as a hidden first
 parameter, the callee stores the result there and returns this pointer in %rax.
 The caller deallocates stacked parameters after return (addq $N, %rsp).
+
+Windows 64-bit C Calling Conventions
+====================================
+See "Calling Convention for x64 64-Bit Environments" in msdn.
+
+%rax, %rcx, %rdx, %r8, %r9, %r10, %r11 are clobbered by calls (caller-save).
+%rsp, %rbp, %rbx, %rsi, %rdi, %r12, %r13, %r14, %r15 are preserved
+by calls (callee-save).
+[Note: %rsi and %rdi are calleE-save not calleR-save as in the Linux/Solaris ABI]
+%rsp is the stack pointer (fixed). %rsp & 15 should be 0 at all times,
+except at the start of a function's prologue when ((%rsp+8) & 15) == 0.
+Leaf functions may leave (%rsp & 15) != 0.
+The first four integer parameters are passed in %rcx, %rdx, %r8, and %r9.
+Remaining integer parameters are pushed right-to-left on the stack,
+starting at the fifth slot above the caller's stack pointer.
+The bottom of the caller's frame contains 4 slots in which the callee may
+save the four integer parameter registers.
+An integer return value is put in %rax. Large integers (_m128), floats,
+and doubles are returned in %xmm0. Larger return values cause the caller
+to pass a pointer to a result buffer in %rcx as a hidden first parameter.
+The caller may deallocate stacked parameters after return (addq $N, %rsp).

@@ -34,8 +34,8 @@
 
 %%=====================================================================
 
--type(comp_icode_ret() :: {'native',hipe_architecture(),{'unprofiled',_}}
-			| {'rtl',tuple()}).
+-type comp_icode_ret() :: {'native',hipe_architecture(),{'unprofiled',_}}
+			| {'rtl',tuple()}.
 
 %%=====================================================================
 
@@ -54,8 +54,8 @@
 %% generated). The compiler options must have already been expanded
 %% (cf. `<a href="hipe.html">hipe:expand_options</a>'). </p>
 
--spec(compile_icode/4 ::
-      (mfa(), #icode{}, comp_options(), #comp_servers{}) -> comp_icode_ret()).
+-spec compile_icode(mfa(), #icode{}, comp_options(), #comp_servers{}) ->
+	 comp_icode_ret().
 
 compile_icode(MFA, LinearIcode, Options, Servers) ->
   compile_icode(MFA, LinearIcode, Options, Servers, get(hipe_debug)).

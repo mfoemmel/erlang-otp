@@ -1501,7 +1501,7 @@ add_system_files(Tar, RelName, Release, Path1) ->
 		   [RelDir, "."|Path1]
 	   end,
 
-    ToDir = filename:join(releases, SVsn),
+    ToDir = filename:join("releases", SVsn),
     case lookup_file(RelName0 ++ ".boot", Path) of
 	false ->
 	    throw({error, {tar_error,{add, RelName0++".boot",enoent}}});

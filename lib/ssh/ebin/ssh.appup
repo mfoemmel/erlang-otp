@@ -1,9 +1,11 @@
-{"1.0",	
- [		
- {"0.9.9.6", [{restart_application, ssh}]},		
- ],				    
- [		
-  {"0.9.9.6", [{restart_application, ssh}]}
+{"1.0.2",	
+ [
+  {"1.0.1", [{load_module, ssh_sftpd, soft_purge, soft_purge, []}]},
+  {"1.0", [{restart_application, ssh}]}
+ ]				    
+ [
+  {"1.0.1", [{load_module, ssh_sftpd, soft_purge, soft_purge, []}]},	
+  {"1.0", [{restart_application, ssh}]}
  ] 
 }.
 

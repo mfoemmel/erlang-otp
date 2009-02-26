@@ -1741,7 +1741,10 @@ prepare_op(_Tid, {op, sync_trans}, {part, CoordPid}) ->
     receive 
 	{sync_trans, CoordPid} ->
 	    {false, optional};
-	Else ->
+	{mnesia_down, _Node} = Else ->
+	    mnesia_lib:verbose("sync_op terminated due to ~p~n", [Else]),
+	    mnesia:abort(Else);
+	{'EXIT', _, _} = Else ->
 	    mnesia_lib:verbose("sync_op terminated due to ~p~n", [Else]),
 	    mnesia:abort(Else)
     end;
@@ -2525,10 +2528,16 @@ arrange_restore(R, Fun, Recs) ->
 restore_items([Rec | Recs], Header, Schema, R) ->
     Tab = element(1, Rec),
     case lists:keysearch(Tab, 1, R#r.tables) of
-	{value, {Tab, Where, Snmp, RecName}} ->
-	    {Rest, NRecs} =
-		restore_tab_items([Rec | Recs], Tab, RecName, Where, Snmp,
-				  R#r.recs, R#r.insert_op),
+	{value, {Tab, Where0, Snmp, RecName}} ->
+	    Where = case Where0 of
+			undefined -> 
+			    val({Tab, where_to_commit});
+			_ ->
+			    Where0
+		    end,
+	    {Rest, NRecs} = restore_tab_items([Rec | Recs], Tab, 
+					      RecName, Where, Snmp,
+					      R#r.recs, R#r.insert_op),
 	    restore_items(Rest, Header, Schema, R#r{recs = NRecs});
 	false ->
 	    Rest = skip_tab_items(Recs, Tab),
@@ -2559,10 +2568,9 @@ restore_schema([{schema, Tab, List} | Schema], R) ->
     case restore_func(Tab, R) of
 	clear_tables -> 
 	    do_clear_table(Tab),
-	    Where = val({Tab, where_to_commit}),
 	    Snmp = val({Tab, snmp}), 
 	    RecName = val({Tab, record_name}), 
-	    R2 = R#r{tables = [{Tab, Where, Snmp, RecName} | R#r.tables]},
+	    R2 = R#r{tables = [{Tab, undefined, Snmp, RecName} | R#r.tables]},
 	    restore_schema(Schema, R2);
 	recreate_tables -> 
 	    case ?catch_val({Tab, cstruct}) of
@@ -2586,10 +2594,9 @@ restore_schema([{schema, Tab, List} | Schema], R) ->
 	    restore_schema(Schema, R2);
 	keep_tables -> 
 	    get_tid_ts_and_lock(Tab, write),
-	    Where = val({Tab, where_to_commit}),
 	    Snmp = val({Tab, snmp}),
 	    RecName = val({Tab, record_name}), 
-	    R2 = R#r{tables = [{Tab, Where, Snmp, RecName} | R#r.tables]},
+	    R2 = R#r{tables = [{Tab, undefined, Snmp, RecName} | R#r.tables]},
 	    restore_schema(Schema, R2);
 	skip_tables -> 
 	    restore_schema(Schema, R)

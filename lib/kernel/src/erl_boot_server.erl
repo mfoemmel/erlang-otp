@@ -39,18 +39,18 @@
 -export([code_change/3]).
 -export([boot_init/1, boot_accept/3]).
 
-
 -record(state, 
 	{
-	 priority = 0,  %% priority of this server
-	 version = "",  %% Version handled i.e "4.5.3" etc
-	 udp_sock,      %% listen port for broadcase requests
-	 udp_port,      %% port number must be ?EBOOT_PORT!
-	 listen_sock,   %% listen sock for incoming file requests
-	 listen_port,   %% listen port number
-	 slaves,        %% list of accepted ip addresses
-	 bootp          %% boot process 
-	}).
+	  priority = 0,  %% priority of this server
+	  version = "",  %% Version handled i.e "4.5.3" etc
+	  udp_sock,      %% listen port for broadcase requests
+	  udp_port,      %% port number must be ?EBOOT_PORT!
+	  listen_sock,   %% listen sock for incoming file requests
+	  listen_port,   %% listen port number
+	  slaves,        %% list of accepted ip addresses
+	  bootp,         %% boot process
+	  prim_state     %% state for efile code loader
+	 }).
 
 -define(single_addr_mask, {255, 255, 255, 255}).
 
@@ -184,8 +184,7 @@ init(Slaves) ->
     Pid ! {Ref, L},
     %% We trap exit inorder to restart boot_init and udp_port 
     process_flag(trap_exit, true),
-    {ok, #state {
-		 priority = 0,
+    {ok, #state {priority = 0,
 		 version = erlang:system_info(version),
 		 udp_sock = U, 
 		 udp_port = UPort,
@@ -194,7 +193,6 @@ init(Slaves) ->
 		 slaves = ordsets:from_list(Slaves),
 		 bootp = Pid
 		}}.
-
 
 handle_call({add,Address}, _, S0) ->
     Slaves = ordsets:add_element(Address, S0#state.slaves),
@@ -285,35 +283,47 @@ boot_accept(Server, Listen, Tag) ->
 	{ok, Socket} ->
 	    {ok,{IP,_Port}} = inet:peername(Socket),
 	    true = member_address(IP, which_slaves()),
-	    boot_loop(Socket)
+	    PS = erl_prim_loader:prim_init(),
+	    boot_loop(Socket, PS)
     end.
 
-
-boot_loop(Socket) ->
+boot_loop(Socket, PS) ->
     receive
 	{tcp, Socket, Data} ->
-	    handle_command(Socket, Data),
-	    boot_loop(Socket);
+	    PS2 = handle_command(Socket, PS, Data),
+	    boot_loop(Socket, PS2);
 	{tcp_closed, Socket} ->
 	    true
     end.
 
-handle_command(S, Msg) ->
+handle_command(S, PS, Msg) ->
     case catch binary_to_term(Msg) of
 	{get,File} ->
-	    send_file_result(S, get, file:read_file(File));
+	    {Res, PS2} = erl_prim_loader:prim_get_file(PS, File),
+	    send_file_result(S, get, Res),
+	    PS2;
 	{list_dir,Dir} ->
-	    send_file_result(S, list_dir, file:list_dir(Dir));
-	{read_file_info,Elem} ->
-	    send_file_result(S, read_file_info, file:read_file_info(Elem));
+	    {Res, PS2} = erl_prim_loader:prim_list_dir(PS, Dir),
+	    send_file_result(S, list_dir, Res),
+	    PS2;
+	{read_file_info,File} ->
+	    {Res, PS2} = erl_prim_loader:prim_read_file_info(PS, File),
+	    send_file_result(S, read_file_info, Res),
+	    PS2;
 	get_cwd ->
-	    send_file_result(S, get_cwd, file:get_cwd());
+	    {Res, PS2} = erl_prim_loader:prim_get_cwd(PS, []),
+	    send_file_result(S, get_cwd, Res),
+	    PS2;
 	{get_cwd,Drive} ->
-	    send_file_result(S, get_cwd, file:get_cwd(Drive));
+	    {Res, PS2} = erl_prim_loader:prim_get_cwd(PS, [Drive]),
+	    send_file_result(S, get_cwd, Res),
+	    PS2;
 	{'EXIT',Reason} ->
-	    send_result(S, {error,Reason});
+	    send_result(S, {error,Reason}),
+	    PS;
 	_Other ->
-	    send_result(S, {error,unknown_command})
+	    send_result(S, {error,unknown_command}),
+	    PS
     end.
 
 send_file_result(S, Cmd, Result) ->
@@ -321,4 +331,3 @@ send_file_result(S, Cmd, Result) ->
 
 send_result(S, Result) ->
     gen_tcp:send(S, term_to_binary(Result)).
-

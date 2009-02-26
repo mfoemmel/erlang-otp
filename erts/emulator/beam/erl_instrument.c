@@ -29,6 +29,9 @@ typedef union { long l; double d; } Align_t;
 
 typedef struct {
     Uint size;
+#ifdef VALGRIND
+    void* valgrind_leak_suppressor;
+#endif
     Align_t mem[1];
 } StatBlock_t;
 
@@ -281,6 +284,11 @@ stat_alloc(ErtsAlcType_t n, void *extra, Uint size)
     if (res) {
 	stat_upd_alloc(n, size);
 	((StatBlock_t *) res)->size = size;
+#ifdef VALGRIND
+	/* Suppress "possibly leaks" by storing an actual dummy pointer
+	   to the _start_ of the allocated block.*/
+	((StatBlock_t *) res)->valgrind_leak_suppressor = res;
+#endif
 	res = (void *) ((StatBlock_t *) res)->mem;
     }
 
@@ -314,6 +322,9 @@ stat_realloc(ErtsAlcType_t n, void *extra, void *ptr, Uint size)
     if (res) {
 	stat_upd_realloc(n, size, old_size);
 	((StatBlock_t *) res)->size = size;
+#ifdef VALGRIND
+	((StatBlock_t *) res)->valgrind_leak_suppressor = res;
+#endif
 	res = (void *) ((StatBlock_t *) res)->mem;
     }
 

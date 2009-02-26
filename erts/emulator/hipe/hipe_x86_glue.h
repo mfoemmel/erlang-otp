@@ -202,34 +202,6 @@ static __inline__ unsigned int hipe_throw_to_native(Process *p)
     return x86_throw_to_native(p);
 }
 
-/* Native called a BIF which failed with RESCHEDULE.
-   Move the parameters to a safe place. */
-static __inline__ void hipe_reschedule_from_native(Process *p)
-{
-#if NR_ARG_REGS == 0
-    ASSERT(p->arity == 0);
-#else
-    if (p->arg_reg != p->def_arg_reg) {
-	unsigned int i;
-	for (i = 0; i < p->arity; ++i)
-	    p->arg_reg[i] = p->def_arg_reg[i];
-    }
-#endif
-}
-
-/* Resume a BIF call which had failed with RESCHEDULE. */
-static __inline__ unsigned int
-hipe_reschedule_to_native(Process *p, unsigned int arity, Eterm reg[])
-{
-#if NR_ARG_REGS == 0
-    ASSERT(arity == 0);
-    return x86_tailcall_to_native(p);
-#else
-    p->arity = 0;
-    return hipe_tailcall_to_native(p, arity, reg);
-#endif
-}
-
 /* Return the address of a stub switching a native closure call to BEAM. */
 static __inline__ void *hipe_closure_stub_address(unsigned int arity)
 {

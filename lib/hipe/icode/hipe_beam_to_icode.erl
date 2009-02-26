@@ -59,7 +59,7 @@
 %% Exported types
 %%-----------------------------------------------------------------------
 
--type(hipe_beam_to_icode_ret() :: [{mfa(),#icode{}}]).
+-type hipe_beam_to_icode_ret() :: [{mfa(),#icode{}}].
 
 
 %%-----------------------------------------------------------------------
@@ -81,7 +81,7 @@
 %% @end
 %%-----------------------------------------------------------------------
 
--spec(module/2 :: ([#function{}], comp_options()) -> hipe_beam_to_icode_ret()).
+-spec module([#function{}], comp_options()) -> hipe_beam_to_icode_ret().
 
 module(BeamFuns, Options) ->
   BeamCode0 = [beam_disasm:function__code(F) || F <- BeamFuns],
@@ -127,7 +127,7 @@ exclude_module_info_code([], Acc) ->
 %% @end
 %%-----------------------------------------------------------------------
 
--spec(mfa/3 :: (list(), mfa(), comp_options()) -> hipe_beam_to_icode_ret()).
+-spec mfa(list(), mfa(), comp_options()) -> hipe_beam_to_icode_ret().
 
 mfa(_, {M,module_info,A}, _) when is_atom(M), (A =:= 0 orelse A =:= 1) ->
   [];  % the module_info/[0,1] functions are just stubs in a BEAM file
@@ -701,8 +701,7 @@ trans_fun([{call_ext_only,_N,{extfunc,M,F,A}}|Instructions], Env) ->
 %%   name of the function (or rather the primop).
 %% TODO: Make sure all cases of argument types are covered.
 %%--------------------------------------------------------------------
-
-trans_fun([{test,bs_start_match2,{f,Lbl},[X,_Live, Max, Ms]}|Instructions], Env) ->
+trans_fun([{test,bs_start_match2,{f,Lbl},[X,_Live,Max,Ms]}|Instructions], Env) ->
   Bin = trans_arg(X),
   MsVar = mk_var(Ms),
   trans_op_call({hipe_bs_primop, {bs_start_match, Max}}, Lbl, [Bin],
@@ -742,7 +741,7 @@ trans_fun([{test,bs_get_integer2,{f,Lbl},[Ms,_Live,Size,Unit,{field_flags,Flags0
 trans_fun([{test,bs_get_binary2,{f,Lbl},[Ms,_Live,Size,Unit,{field_flags,Flags},X]}| 
 	   Instructions], Env) ->
   MsVar = mk_var(Ms),
-  {Name, Args, Dsts} = 
+  {Name, Args, Dsts} =
     case Size of
       {atom, all} -> %% put all bits
 	if Ms =:= X ->
@@ -810,7 +809,7 @@ trans_fun([{test,bs_match_string,{f,Lbl},[Ms,BitSize,Bin]}|
       I3 = hipe_icode:mk_type([TmpVar], {integer,Int}, TrueLabName, FalseLabName),
       I1 ++ I2 ++ [I3,True] ++ trans_fun(Instructions, Env2)
   end;
-trans_fun([{bs_context_to_binary,Var}| Instructions], Env) -> 
+trans_fun([{bs_context_to_binary,Var}|Instructions], Env) -> 
   %% the current match buffer
   IcodeVar = trans_arg(Var),
   [hipe_icode:mk_primop([IcodeVar],{hipe_bs_primop,bs_context_to_binary},[IcodeVar])|
@@ -851,7 +850,7 @@ trans_fun([{bs_save2,Ms,IndexName}| Instructions], Env) ->
   MsVar = mk_var(Ms),
   [hipe_icode:mk_primop([MsVar],{hipe_bs_primop,{bs_save,Index}},[MsVar]) |
    trans_fun(Instructions, Env)];
-trans_fun([{bs_restore2,Ms,IndexName}| Instructions], Env) ->
+trans_fun([{bs_restore2,Ms,IndexName}|Instructions], Env) ->
   Index =
     case IndexName of
       {atom, start} -> 0;
@@ -864,7 +863,6 @@ trans_fun([{test,bs_test_tail2,{f,Lbl},[Ms,Numbits]}| Instructions], Env) ->
   MsVar = mk_var(Ms),
   trans_op_call({hipe_bs_primop,{bs_test_tail,Numbits}}, 
 		Lbl, [MsVar], [], Env, Instructions);
-
 %%--------------------------------------------------------------------
 %% New bit syntax instructions added in February 2004 (R10B).
 %%--------------------------------------------------------------------
@@ -951,7 +949,20 @@ trans_fun([{bs_add, {f,Lbl}, [Old,New,Unit], Res}|Instructions], Env) ->
 	hipe_icode:mk_primop([Dst], '+', [Temp, OldVar])
     end,
   MultIs ++ IsPos ++ [AddI|trans_fun(Instructions, Env)];
-	   
+%%--------------------------------------------------------------------
+%% Bit syntax instructions added in R12B-5 (Fall 2008) - PER PLEASE FIX
+%%--------------------------------------------------------------------
+%%trans_fun([{test,bs_get_utf8,{f,Lbl},[A1,A2,FF,A4]}|Instructions], Env) ->
+%%trans_fun([{test,bs_skip_utf8,{f,Lbl},[A1,A2,FF]}|Instructions], Env) ->
+%%trans_fun([{test,bs_get_utf16,{f,Lbl},[A1,A2,FF,A4]}|Instructions], Env) ->
+%%trans_fun([{test,bs_skip_utf16,{f,Lbl},[A1,A2,FF]}|Instructions], Env) ->
+%%trans_fun([{test,bs_get_utf32,{f,Lbl},[A1,A2,FF,A4]}|Instructions], Env) ->
+%%trans_fun([{test,bs_skip_utf32,{f,Lbl},[A1,A2,FF]}|Instructions], Env) ->
+%%trans_fun([{bs_utf8_size,{f,Lbl},A2,A3}|Instructions], Env) ->
+%%trans_fun([{bs_put_utf8,{f,Lbl},FF,A3}|Instructions], Env) ->
+%%trans_fun([{bs_utf16_size,{f,Lbl},A2,A3}|Instructions], Env) ->
+%%trans_fun([{bs_put_utf16,{f,Lbl},FF,A3}|Instructions], Env) ->
+%%trans_fun([{bs_put_utf32,{f,Lbl},FF,A3}|Instructions], Env) ->
 %%--------------------------------------------------------------------
 %%--- Translation of floating point instructions ---
 %%--------------------------------------------------------------------
@@ -1127,7 +1138,6 @@ trans_fun([{test,is_bitstr,{f,Lbl},[Arg]}|Instructions], Env) ->
 trans_fun([{trim,N,NY}|Instructions], Env) ->
   %% trim away N registers leaving NY registers
   Moves = trans_trim(N, NY),
-  %% io:format("trim ~w ~w\n  ~w\n", [N, NY, Moves]),
   Moves ++ trans_fun(Instructions, Env);
 %%--------------------------------------------------------------------
 %%--- ERROR HANDLING ---
@@ -1192,8 +1202,7 @@ trans_bif(Arity, BifName, Lbl, Args, DestReg, Env) ->
   end.
 
 trans_op_call(Name, Lbl, Args, Dests, Env, Instructions) ->
-  {Code,Env1} =
-    trans_one_op_call(Name, Lbl, Args, Dests, Env),
+  {Code, Env1} = trans_one_op_call(Name, Lbl, Args, Dests, Env),
   [Code|trans_fun(Instructions, Env1)].
 
 trans_one_op_call(Name, Lbl, Args, Dests, Env) ->
@@ -1205,8 +1214,12 @@ trans_one_op_call(Name, Lbl, Args, Dests, Env) ->
 	make_fallthrough_guard(Dests, Name, Args, map_label(Lbl), Env)
     end.
 
+%%-----------------------------------------------------------------------
+%% trans_bin_call
+%%-----------------------------------------------------------------------
+
 trans_bin_call(Name, Lbl, Args, Dests, Base, Offset, Env, Instructions) ->
-  {Code,Env1} =
+  {Code, Env1} =
     case Lbl of
       0 -> % Op is not in a guard
 	I = hipe_icode:mk_primop(Dests, Name, Args),
@@ -1216,8 +1229,8 @@ trans_bin_call(Name, Lbl, Args, Dests, Base, Offset, Env, Instructions) ->
     end,
   [Code|trans_bin(Instructions, Base, Offset, Env1)].
 
-%% Translate instructions for building binaries separetly to give them
-%% an appropriate state
+%% Translate instructions for building binaries separately to give
+%% them an appropriate state
 
 trans_bin([{bs_put_float,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
 	   Instructions], Base, Offset, Env) ->
@@ -2172,7 +2185,7 @@ fix_fallthroughs([], I, Acc) ->
 %% label.
 %%-----------------------------------------------------------------------
 
--spec(remove_dead_code/1 :: (icode_instrs()) -> icode_instrs()).
+-spec remove_dead_code(icode_instrs()) -> icode_instrs().
 remove_dead_code([I|Is]) ->
   case I of
     #icode_fail{} ->
@@ -2184,7 +2197,7 @@ remove_dead_code([]) ->
   [].
 
 %% returns the instructions from the closest label
--spec(skip_to_label/1 :: (icode_instrs()) -> icode_instrs()).
+-spec skip_to_label(icode_instrs()) -> icode_instrs().
 skip_to_label([I|Is]) ->
   case I of
     #icode_label{} -> [I|Is];

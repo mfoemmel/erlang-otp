@@ -33,8 +33,8 @@
 
 %%---------------------------------------------------------------------------
 
--type(dict()    :: tuple()).  % XXX: Temporarily
--type(gb_tree() :: tuple()).  % XXX: Temporarily
+-type dict()    :: tuple().  % XXX: Temporarily
+-type gb_tree() :: tuple().  % XXX: Temporarily
 
 %%---------------------------------------------------------------------------
 
@@ -51,9 +51,9 @@
 %%  where Location is {spill,M}.
 %% {spill,M} denotes the Mth spilled node
 
--spec(stackalloc/6 ::
-      (#cfg{}, [_], non_neg_integer(), comp_options(),
-       atom(), hipe_temp_map()) -> {hipe_spill_map(), non_neg_integer()}).
+-spec stackalloc(#cfg{}, [_], non_neg_integer(),
+		 comp_options(), atom(), hipe_temp_map()) ->
+                                {hipe_spill_map(), non_neg_integer()}.
 
 stackalloc(CFG, _StackSlots, SpillIndex, _Options, Target, TempMap) ->
   ?report2("building IG~n", []),

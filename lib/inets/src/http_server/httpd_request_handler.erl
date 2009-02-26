@@ -91,36 +91,48 @@ init([Manager, ConfigDB,AcceptTimeout]) ->
     
     {SocketType, Socket} = await_socket_ownership_transfer(AcceptTimeout),
     
+    TimeOut = httpd_util:lookup(ConfigDB, keep_alive_timeout, 150000),
+
+    Then = erlang:now(),
+    
+    case http_transport:negotiate(SocketType,Socket,TimeOut) of
+	{error, Error} ->
+	    exit(Error); %% Can be 'normal'.
+	ok ->
+	    NewTimeout = TimeOut - timer:now_diff(now(),Then) div 1000,
+	    continue_init(Manager, ConfigDB, SocketType,Socket,NewTimeout)
+    end.
+
+continue_init(Manager, ConfigDB, SocketType, Socket, TimeOut) ->
     Resolve = http_transport:resolve(),
+    
     Peername = httpd_socket:peername(SocketType, Socket),
     InitData = #init_data{peername = Peername, resolve = Resolve},
-    Mod = #mod{config_db = ConfigDB, 
-	       socket_type = SocketType, 
-	       socket = Socket,
-	       init_data = InitData},
-
-    MaxHeaderSize = httpd_util:lookup(ConfigDB, max_header_size, 
+    Mod = #mod{config_db = ConfigDB,
+               socket_type = SocketType,
+               socket = Socket,
+               init_data = InitData},
+    
+    MaxHeaderSize = httpd_util:lookup(ConfigDB, max_header_size,
 				      ?HTTP_MAX_HEADER_SIZE),
-    MaxURISize = httpd_util:lookup(ConfigDB, max_uri_size, 
+    MaxURISize = httpd_util:lookup(ConfigDB, max_uri_size,
 				   ?HTTP_MAX_URI_SIZE),
-    TimeOut = httpd_util:lookup(ConfigDB, keep_alive_timeout, 150000),
-    NrOfRequest = httpd_util:lookup(ConfigDB, 
+    NrOfRequest = httpd_util:lookup(ConfigDB,
 				    max_keep_alive_request, infinity),
     
     {_, Status} = httpd_manager:new_connection(Manager),
     
-    
     State = #state{mod = Mod, manager = Manager, status = Status,
 		   timeout = TimeOut, max_keep_alive_request = NrOfRequest,
-		   mfa = {httpd_request, parse, [{MaxURISize, 
-						  MaxHeaderSize}]}}, 
+		   mfa = {httpd_request, parse, [{MaxURISize,
+						  MaxHeaderSize}]}},
     
     NewState = activate_request_timeout(State),
-
+    
     http_transport:setopts(SocketType, Socket, [binary,{packet, 0},
 						{active, once}]),
     gen_server:enter_loop(?MODULE, [], NewState).
-	    
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -526,4 +538,3 @@ error_log(Mod, #mod{config_db = ConfigDB} = Info, String) ->
 	_ ->
 	    ok
     end.
-

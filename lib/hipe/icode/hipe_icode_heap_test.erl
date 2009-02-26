@@ -27,7 +27,7 @@
 
 %-------------------------------------------------------------------------
 
--spec(cfg/1 :: (#cfg{}) -> #cfg{}).
+-spec cfg(#cfg{}) -> #cfg{}.
 
 cfg(CFG) ->
   Icode = hipe_icode_cfg:cfg_to_linear(CFG),

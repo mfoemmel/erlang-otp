@@ -48,17 +48,16 @@
 %%
 %% ============================================================================
 
--type(abstract_code() :: [_]).
+-type abstract_code() :: [_].
 
--spec(get_abstract_code_from_src/1 :: 
-      (atom() | string()) -> {'ok', abstract_code()} | {'error', [string()]}).
+-spec get_abstract_code_from_src(atom() | string()) ->
+		{'ok', abstract_code()} | {'error', [string()]}.
 
 get_abstract_code_from_src(File) ->
   get_abstract_code_from_src(File, ?SRC_COMPILE_OPTS).
 
--spec(get_abstract_code_from_src/2 ::
-      (atom() | string(), [_]) ->
-	 {'ok', abstract_code()} | {'error', [string()]}).
+-spec get_abstract_code_from_src(atom() | string(), [_]) ->
+		{'ok', abstract_code()} | {'error', [string()]}.
 
 get_abstract_code_from_src(File, Opts) ->
   case compile:file(File, [to_pp, binary|Opts]) of
@@ -67,14 +66,12 @@ get_abstract_code_from_src(File, Opts) ->
     {ok, _, AbstrCode} -> {ok, AbstrCode}
   end.
 
--spec(get_core_from_src/1 ::
-      (string()) -> {'ok', core_records()} | {'error', string()}).
+-spec get_core_from_src(string()) -> {'ok', core_records()} | {'error', string()}.
 
 get_core_from_src(File) ->
   get_core_from_src(File, []).
 
--spec(get_core_from_src/2 ::
-      (string(), [_]) -> {'ok', core_records()} | {'error', string()}).
+-spec get_core_from_src(string(), [_]) -> {'ok', core_records()} | {'error', string()}.
 
 get_core_from_src(File, Opts) ->
   case get_abstract_code_from_src(File, Opts) of
@@ -86,8 +83,7 @@ get_core_from_src(File, Opts) ->
       end
   end.
 
--spec(get_abstract_code_from_beam/1 :: 
-      (string()) -> 'error' | {'ok', abstract_code()}).
+-spec get_abstract_code_from_beam(string()) -> 'error' | {'ok', abstract_code()}.
 
 get_abstract_code_from_beam(File) ->
   case beam_lib:chunks(File, [abstract_code]) of
@@ -101,14 +97,12 @@ get_abstract_code_from_beam(File) ->
       error
   end.
 
--spec(get_core_from_abstract_code/1 ::
-      (abstract_code()) -> 'error' | {ok, core_records()}).
+-spec get_core_from_abstract_code(abstract_code()) -> 'error' | {ok, core_records()}.
 
 get_core_from_abstract_code(AbstrCode) ->
   get_core_from_abstract_code(AbstrCode, []).
 
--spec(get_core_from_abstract_code/2 ::
-      (abstract_code(), [_]) -> 'error' | {ok, core_records()}).
+-spec get_core_from_abstract_code(abstract_code(), [_]) -> 'error' | {ok, core_records()}.
 
 get_core_from_abstract_code(AbstrCode, Opts) ->
   %% We do not want the parse_transorms left since we have already
@@ -128,15 +122,14 @@ get_core_from_abstract_code(AbstrCode, Opts) ->
 %%
 %% ============================================================================
 
+-spec get_record_and_type_info(abstract_code()) ->
+		{'ok', dict()} | {'error', string()}.
 
--spec(get_record_and_type_info/1 :: 
-      (abstract_code()) -> {'ok', dict()} | {'error', string()}).
-	 
 get_record_and_type_info(AbstractCode) ->
   get_record_and_type_info(AbstractCode, dict:new()).
 
--spec(get_record_and_type_info/2 :: 
-      (abstract_code(), dict()) -> {'ok', dict()} | {'error', string()}).
+-spec get_record_and_type_info(abstract_code(), dict()) ->
+		{'ok', dict()} | {'error', string()}.
 
 get_record_and_type_info([{attribute, _, record, {Name, Fields0}}|Left], 
 			 RecDict) ->
@@ -232,8 +225,7 @@ get_record_fields([], _RecDict, Acc) ->
 %%
 %% ============================================================================
 
--spec(get_spec_info/2 :: 
-      (abstract_code(), dict()) -> {'ok', dict()} | {'error', string()}).
+-spec get_spec_info(abstract_code(), dict()) -> {'ok', dict()} | {'error', string()}.
 
 get_spec_info(AbstractCode, RecordsDict) ->
   {value, {attribute, _, module, ModName}} =
@@ -293,7 +285,7 @@ cleanup_parse_transforms([Other|Left]) ->
 cleanup_parse_transforms([]) ->
   [].
 
--spec(format_errors/1 :: ([{atom(), string()}]) -> [string()]).
+-spec format_errors([{atom(), string()}]) -> [string()].
 
 format_errors([{Mod, Errors}|Left]) ->
   FormatedError = 
@@ -303,12 +295,12 @@ format_errors([{Mod, Errors}|Left]) ->
 format_errors([]) ->
   [].
 
--spec(format_sig/1 :: (erl_type()) -> string()).
+-spec format_sig(erl_type()) -> string().
 
 format_sig(Type) ->
   format_sig(Type, dict:new()).
 
--spec(format_sig/2 :: (erl_type(), dict()) -> string()).
+-spec format_sig(erl_type(), dict()) -> string().
 
 format_sig(Type, RecDict) ->
   "fun(" ++ Sig = lists:flatten(erl_types:t_to_string(Type, RecDict)),
@@ -321,7 +313,7 @@ format_sig(Type, RecDict) ->
 %% Created     : 5 March 2007
 %%-------------------------------------------------------------------
 
--spec(pp_hook/0 :: () -> fun((core_tree(), _, _) -> any())).
+-spec pp_hook() -> fun((core_tree(), _, _) -> any()).
 
 pp_hook() ->
   fun pp_hook/3.

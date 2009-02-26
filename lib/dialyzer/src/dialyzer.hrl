@@ -12,9 +12,9 @@
 -define(RET_INTERNAL_ERROR, 1).
 -define(RET_DISCREPANCIES, 2).
 
--type(dial_ret() :: ?RET_NOTHING_SUSPICIOUS
+-type dial_ret() :: ?RET_NOTHING_SUSPICIOUS
                   | ?RET_INTERNAL_ERROR 
-                  | ?RET_DISCREPANCIES).
+                  | ?RET_DISCREPANCIES.
 
 -define(SRC_COMPILE_OPTS, 
 	[no_copt, to_core, binary, return_errors, 
@@ -46,53 +46,53 @@
 %%   1. It is the set of warnings that will be collected.
 %%   2. It is also the set of tags for warnings that will be returned.
 %%
--type(dial_warn_tag() :: ?WARN_RETURN_NO_RETURN | ?WARN_RETURN_ONLY_EXIT
+-type dial_warn_tag() :: ?WARN_RETURN_NO_RETURN | ?WARN_RETURN_ONLY_EXIT
                        | ?WARN_NOT_CALLED | ?WARN_NON_PROPER_LIST
                        | ?WARN_MATCHING | ?WARN_FUN_APP
                        | ?WARN_FAILING_CALL | ?WARN_CALLGRAPH
                        | ?WARN_CONTRACT_TYPES | ?WARN_CONTRACT_SYNTAX
                        | ?WARN_CONTRACT_NOT_EQUAL | ?WARN_CONTRACT_SUBTYPE
                        | ?WARN_CONTRACT_SUPERTYPE | ?WARN_TERM_COMP
-                       | ?WARN_UNMATCHED_RETURN).
+                       | ?WARN_UNMATCHED_RETURN.
 
 %%
 %% This is the representation of each warning as they will be returned
 %% to dialyzer's callers
 %%
--type(file_line()    :: {string(), non_neg_integer()}).
--type(dial_warning() :: {dial_warn_tag(), file_line(), {atom(),[_]}}).
+-type file_line()    :: {string(), non_neg_integer()}.
+-type dial_warning() :: {dial_warn_tag(), file_line(), {atom(),[_]}}.
 
 %%
 %% This is the representation of dialyzer's internal errors
 %%
--type(dial_error()   :: any()).    %% XXX: underspecified
+-type dial_error()   :: any().    %% XXX: underspecified
 
 %%--------------------------------------------------------------------
 %% THESE TYPES SHOULD ONE DAY DISAPPEAR -- THEY DO NOT BELONG HERE
 %%--------------------------------------------------------------------
  
--type(dict()         :: tuple()).  %% XXX: temporarily
--type(orddict()      :: [{_, _}]). %% XXX: temporarily
--type(set()          :: tuple()).  %% XXX: temporarily
--type(ordset(T)      :: [T]).      %% XXX: temporarily
--type(core_module()  :: {'module',_,_,_,_,_}). % XXX: belongs in 'cerl*'
--type(core_tree()    :: tuple()).  %% XXX: belongs in 'cerl*'
--type(core_records() :: tuple()).  %% XXX: belongs in 'cerl*'
--type(erl_type()     :: any()).    %% XXX: belongs to 'erl_types'
+-type dict()         :: tuple() .  %% XXX: temporarily
+-type orddict()      :: [{_, _}] . %% XXX: temporarily
+-type set()          :: tuple() .  %% XXX: temporarily
+-type ordset(T)      :: [T] .      %% XXX: temporarily
+-type core_module()  :: {'module',_,_,_,_,_} . % XXX: belongs in 'cerl*'
+-type core_tree()    :: tuple() .  %% XXX: belongs in 'cerl*'
+-type core_records() :: tuple() .  %% XXX: belongs in 'cerl*'
+-type erl_type()     :: any() .    %% XXX: belongs to 'erl_types'
 
 %%--------------------------------------------------------------------
 %% Basic types used either in the record definitions below or in other
 %% parts of the application
 %%--------------------------------------------------------------------
 
--type(anal_type()    :: 'succ_typings' | 'plt_build').
--type(anal_type1()   :: anal_type() | 'plt_add' | 'plt_check' | 'plt_remove').
--type(start_from()   :: 'byte_code' | 'src_code').
--type(define()       :: {atom(), any()}).
--type(md5()          :: [{string(), binary()}]).
--type(rep_mode()     :: 'quiet' | 'normal' | 'verbose').
--type(dial_option()  :: {atom(), any()}).
--type(dial_options() :: [dial_option()]).
+-type anal_type()    :: 'succ_typings' | 'plt_build'.
+-type anal_type1()   :: anal_type() | 'plt_add' | 'plt_check' | 'plt_remove'.
+-type start_from()   :: 'byte_code' | 'src_code'.
+-type define()       :: {atom(), any()}.
+-type md5()          :: [{string(), binary()}].
+-type rep_mode()     :: 'quiet' | 'normal' | 'verbose'.
+-type dial_option()  :: {atom(), any()}.
+-type dial_options() :: [dial_option()].
 
 %%--------------------------------------------------------------------
 %% Record declarations used by various files
@@ -131,7 +131,9 @@
 		  erlang_mode     = false	    :: bool(),
 		  use_contracts   = true            :: bool(),
 		  output_file     = none	    :: 'none' | string(),
-		  output_format   = formatted       :: 'raw' | 'formatted'}).
+		  output_format   = formatted       :: 'raw' | 'formatted',
+		  check_plt       = true            :: bool()
+		 }).
 
 -record(contract, {contracts	  = []		    :: [_],        % ???
 		   args		  = []		    :: [erl_type()],

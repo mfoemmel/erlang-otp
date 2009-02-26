@@ -147,14 +147,14 @@ do_start_all([Node | Nodes], Acc, Cookie) when atom(Node) ->
 	    stop_slave_nodes(Acc),
 	    exit({bad_node_name, Node})
     end;
-do_start_all([], StartedNodes, Cookie) ->
+do_start_all([], StartedNodes, _Cookie) ->
     StartedNodes.
 
 load_modules(Node) ->
     Fun = 
 	fun(Mod) ->
 		case code:get_object_code(Mod) of
-		    {Module, Bin, Fname} ->
+		    {_Module, Bin, Fname} ->
 			rpc:call(Node, code,load_binary,[Mod,Fname,Bin]);
 		    Other ->
 			Other

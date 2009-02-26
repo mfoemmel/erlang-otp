@@ -43,12 +43,13 @@ HIPE_MODULES = hipe_rtl hipe_rtl_cfg \
 	  hipe_rtl_arith_32 hipe_rtl_arith_64 \
 	  hipe_rtl_ssa hipe_rtl_ssa_const_prop \
 	  hipe_rtl_cleanup_const hipe_rtl_symbolic hipe_rtl_lcm \
-	  hipe_rtl_ssapre hipe_rtl_binary hipe_rtl_ssa_avail_expr
+	  hipe_rtl_ssapre hipe_rtl_binary hipe_rtl_ssa_avail_expr \
+	  hipe_rtl_arch hipe_tagscheme
 else
 HIPE_MODULES =
 endif
 
-MODULES = hipe_rtl_arch hipe_tagscheme $(HIPE_MODULES)
+MODULES = $(HIPE_MODULES)
 
 HRL_FILES= hipe_literals.hrl
 ERL_FILES= $(MODULES:%=%.erl)

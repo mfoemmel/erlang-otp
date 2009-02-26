@@ -128,7 +128,7 @@ split_dirs_and_files(Elems, Dir) ->
 
 %% Removes duplicate filenames but it keeps the order of the input list
 
--spec remove_dup/1 :: ([string()]) -> [string()].
+-spec remove_dup([string()]) -> [string()].
 
 remove_dup(Files) ->
   Test_Dup = fun (File, Acc) ->

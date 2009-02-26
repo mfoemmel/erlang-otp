@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1999-2008</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 
 %%% Purpose : Main API module for SSL.
@@ -43,6 +45,8 @@
 %% Function: start([, Type]) -> ok
 %%
 %%  Type =  permanent | transient | temporary
+%%  Vsns = [Vsn] 
+%%  Vsn = ssl3 | tlsv1 | 'tlsv1.1'
 %%
 %% Description: Starts the ssl application. Default type
 %% is temporary. see application(3)
@@ -289,7 +293,14 @@ peercert(#sslsocket{pid = Pid, fd = new_ssl}, Opts) ->
 	{ok, undefined} ->
 	    {error, no_peercert};
         {ok, BinCert} ->
-            ssl_pkix:decode_cert(BinCert, Opts);
+	    PKOpts = [case Opt of ssl -> otp; pkix -> plain end || 
+			 Opt <- Opts, Opt =:= ssl orelse Opt =:= pkix],
+	    case PKOpts of
+		[Opt] ->
+		    public_key:pkix_decode_cert(BinCert, Opt);
+		[] ->
+		    {ok, BinCert}
+	    end;
         {error, Reason}  ->
             {error, Reason}
     end;
@@ -324,11 +335,11 @@ cipher_suites() ->
     cipher_suites(erlang).
   
 cipher_suites(erlang) ->
-    Version = ssl_record:highest_protocol_version(),
+    Version = ssl_record:highest_protocol_version([]),
     [ssl_cipher:suite_definition(S) || S <- ssl_cipher:suites(Version)];    
 
 cipher_suites(openssl) ->
-    Version = ssl_record:highest_protocol_version(),
+    Version = ssl_record:highest_protocol_version([]),
     [ssl_cipher:openssl_suite_name(S) || S <- ssl_cipher:suites(Version)].
 
 %%--------------------------------------------------------------------
@@ -411,14 +422,13 @@ session_info(#sslsocket{pid = Pid, fd = new_ssl}) ->
 %% Description: Returns a list of relevant versions.
 %%--------------------------------------------------------------------
 versions() ->
-%%     TODO: uncomment rel imp when all protocolversions are supported    
-%%     Vsns = ssl_record:supported_protocol_versions(),
-%%     SupportedVsns =  lists:map(fun(Version) -> 
-%% 				       ssl_record:protocol_version(Version)
-%% 			       end, Vsns),
-%%     AvailableVsns = ?DEFAULT_SUPPORTED_VERSIONS,
-    SupportedVsns = [sslv3], AvailableVsns = [sslv3],
-    [{ssl_app, ?VSN}, {supported, SupportedVsns}, {available, AvailableVsns}].
+    Vsns = ssl_record:supported_protocol_versions(),
+    SupportedVsns =  lists:map(fun(Version) -> 
+ 				       ssl_record:protocol_version(Version)
+ 			       end, Vsns),
+    AvailableVsns = ?DEFAULT_SUPPORTED_VERSIONS,
+    [{ssl_app, ?VSN}, {supported, SupportedVsns}, 
+     {available, AvailableVsns}].
 
 %%%--------------------------------------------------------------
 %%% Internal functions
@@ -490,10 +500,43 @@ old_listen(Port, Options) ->
     ssl_broker:listen(Pid, Port, Options).
 
 handle_options(Opts0) ->
-    Opts = proplists:expand([{binary, {mode, binary}},
-			     {list, {mode, list}}], Opts0),
+    Opts = proplists:expand([{binary, [{mode, binary}]},
+			     {list, [{mode, list}]}], Opts0),
+    
+    ReuseSessionFun = fun(_, _, _, _) ->
+			      true
+		      end,
+
+    VerifyFun =  fun(_) ->
+			 false
+		 end,
+
+
+    {Verify, FailIfNoPeerCert} = 
+	%% Handle 0, 1, 2 for backwards compatibility
+	case proplists:get_value(verify, Opts, verify_none) of
+	    0 ->
+		{verify_none, false};
+	    1  ->
+		{verify_peer, false};
+	    2 ->
+		{verify_peer, true};
+	    verify_none ->
+		{verify_none, false};
+	    verify_peer ->
+		{verify_peer, proplists:get_value(fail_if_no_peer_cert,
+						  Opts, false)};
+	    Value ->
+		throw({error, {eoptions, {verify, Value}}})
+	end,   
+
     SSLOptions = #ssl_options{
-      verify     = handle_option(verify, Opts, 0), 
+      versions   = handle_option(versions, Opts, []),
+      verify     = validate_option(verify, Verify),
+      verify_fun = handle_option(verify_fun, Opts, VerifyFun),
+      fail_if_no_peer_cert = validate_option(fail_if_no_peer_cert, 
+					     FailIfNoPeerCert),
+      verify_client_once =  handle_option(verify_client_once, Opts, false),
       depth      = handle_option(depth,  Opts, 1),
       certfile   = handle_option(certfile, Opts, ""),
       keyfile    = handle_option(keyfile,  Opts, ""),
@@ -501,6 +544,8 @@ handle_options(Opts0) ->
       password   = handle_option(password, Opts, ""),
       cacertfile = handle_option(cacertfile, Opts, ""),
       ciphers    = handle_option(ciphers, Opts, []),
+      %% Server side option
+      reuse_session = handle_option(reuse_session, Opts, ReuseSessionFun),
       reuse_sessions = handle_option(reuse_sessions, Opts, true),
       debug      = handle_option(debug, Opts, [])
      },
@@ -511,10 +556,11 @@ handle_options(Opts0) ->
       active  = handle_option(active, Opts, true)
      },
     
-    SslOREmulated = [verify, depth, certfile, keyfile,
+    SslOREmulated = [versions, verify, verify_fun, 
+		     depth, certfile, keyfile,
 		     key, password, cacertfile, ciphers,
 		     debug, mode, packet, header, active,
-		     reuse_sessions, ssl_imp],
+		     reuse_session, reuse_sessions, ssl_imp],
 
     SockOpts = lists:foldl(fun(Key, PropList) -> 
 				    proplists:delete(Key, PropList)
@@ -526,12 +572,22 @@ handle_option(OptionName, Opts, Default) ->
     validate_option(OptionName, 
 		    proplists:get_value(OptionName, Opts, Default)).
 
+
+validate_option(versions, Versions)  ->
+    validate_versions(Versions, Versions);
 validate_option(ssl_imp, Value) when Value == new; Value == old ->
     Value;
-validate_option(verify, Value) when Value == 0; 
-                                    Value == 1;
-                                    Value == 2 ->
+validate_option(verify, Value) 
+  when Value == verify_none; Value == verify_peer ->
+    Value;
+validate_option(verify_fun, Value) when is_function(Value) ->
    Value;
+validate_option(fail_if_no_peer_cert, Value) 
+  when Value == true; Value == false ->
+    Value;
+validate_option(verify_client_once, Value) 
+  when Value == true; Value == false ->
+    Value;
 validate_option(depth, Value) when is_integer(Value), 
                                    Value >= 0, Value =< 255->
     Value;
@@ -548,7 +604,7 @@ validate_option(password, Value) when is_list(Value) ->
 validate_option(cacertfile, Value) when is_list(Value), Value =/= "" ->
     Value;
 validate_option(ciphers, Value)  when is_list(Value) ->
-    Version = ssl_record:highest_protocol_version(),
+    Version = ssl_record:highest_protocol_version([]),
     try cipher_suites(Version, Value) of
 	Ciphers ->
 	    Ciphers
@@ -556,6 +612,9 @@ validate_option(ciphers, Value)  when is_list(Value) ->
 	exit:_ ->
 	    throw({error, {eoptions, {ciphers, Value}}})
     end;
+
+validate_option(reuse_session, Value) when is_function(Value) ->
+    Value;
 
 validate_option(reuse_sessions, Value) when Value == true; 
 					    Value == false ->
@@ -569,7 +628,13 @@ validate_option(packet, Value) when Value == raw;
 				    Value == 1;
 				    Value == 2;
 				    Value == 4;
+				    Value == asn1;
+				    Value == fcgi;
+				    Value == sunrm;
+				    Value == http;
+				    Value == httph;
 				    Value == cdr;
+				    Value == tpkt;
 				    Value == line  ->
     Value;
 validate_option(header, Value)  when is_integer(Value) ->
@@ -584,6 +649,16 @@ validate_option(debug, Value) when is_list(Value); Value == true ->
 validate_option(Opt, Value) ->
     throw({error, {eoptions, {Opt, Value}}}).
     
+validate_versions([], Versions) ->
+    Versions;
+validate_versions([Version | Rest], Versions) when Version == 'tlsv1.1'; 
+                                                   Version == tlsv1; 
+                                                   Version == sslv3 ->
+    validate_versions(Rest, Versions);					   
+validate_versions(Ver, Versions) ->
+    throw({error, {eoptions, {Ver, {versions, Versions}}}}).
+
+
 listen_options({_, _, InetOpts}) ->
     %% Packet, mode, active and header must be  
     %% emulated. 
@@ -601,7 +676,8 @@ emulated_options() ->
     [mode, packet, active, header].
 
 internal_inet_values() ->
-    [{packet, 0}, {header, 0},{active, false}, {mode, binary}].
+    [{packet, 0},{header, 0},{active, false},{mode,binary}].
+    %%[{packet, ssl},{header, 0},{active, false},{mode,binary}].
 
 ssl_connection_options({SslOpts, SocketOpts, _}) ->
     {SslOpts, SocketOpts}.

@@ -46,7 +46,7 @@ register_user(User, Cm) ->
     gen_server:cast(?MODULE, {register, {User, Cm}}).
 
 lookup_user(Cm) ->
-    gen_server:call(?MODULE, {get_user, Cm}, infinty).
+    gen_server:call(?MODULE, {get_user, Cm}, infinity).
 
 %%====================================================================
 %% gen_server callbacks
@@ -119,7 +119,7 @@ insert({User, Cm}, #state{user_db = Db} = State) ->
 
 lookup(_, []) ->
     undefined;
-lookup(Cm, [{User, Cm}]) ->
+lookup(Cm, [{User, Cm} | _Rest]) ->
     User;
 lookup(Cm, [_ | Rest]) ->
     lookup(Cm, Rest).

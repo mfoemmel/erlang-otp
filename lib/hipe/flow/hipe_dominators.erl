@@ -19,8 +19,8 @@
 	 domFrontier_create/2,
 	 domFrontier_get/2]).
 
--type(dict()	:: tuple()).	% XXX: Temporarily
--type(gb_tree()	:: tuple()).	% XXX: Temporarily
+-type dict()	:: tuple().	% XXX: Temporarily
+-type gb_tree()	:: tuple().	% XXX: Temporarily
 
 -include("cfg.hrl").
 
@@ -49,7 +49,7 @@
 %% Returns   : A dominator tree
 %%>----------------------------------------------------------------------<
 
--spec(domTree_create/1 :: (#cfg{}) -> #domTree{}).
+-spec domTree_create(#cfg{}) -> #domTree{}.
 
 domTree_create(CFG) ->
   {WorkData, DFS, N} = dfs(CFG),

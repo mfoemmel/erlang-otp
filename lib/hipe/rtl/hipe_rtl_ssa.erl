@@ -25,11 +25,11 @@
 
 defs_to_rename(Statement) ->
   Defs = hipe_rtl:defines(Statement),
-  lists:filter(fun(X) -> not hipe_rtl_arch:is_precoloured(X) end, Defs).
+  [D || D <- Defs, not hipe_rtl_arch:is_precoloured(D)].
 
 uses_to_rename(Statement) ->
   Uses = hipe_rtl:uses(Statement),
-  lists:filter(fun(X) -> not hipe_rtl_arch:is_precoloured(X) end, Uses).
+  [U || U <- Uses, not hipe_rtl_arch:is_precoloured(U)].
 
 liveout_no_succ() ->
   hipe_rtl_arch:live_at_return().

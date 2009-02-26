@@ -35,13 +35,13 @@
 %% Types used in this file
 %%-----------------------------------------------------------------
 
--type(msg_tag() :: 'error' | 'error_report'
+-type msg_tag() :: 'error' | 'error_report'
 		 | 'info' | 'info_msg' | 'info_report'
-		 | 'warning_msg' | 'warning_report').
+		 | 'warning_msg' | 'warning_report'.
 
 %%-----------------------------------------------------------------
 
--spec(start/0 :: () -> {'ok', pid()} | {'error', any()}).
+-spec start() -> {'ok', pid()} | {'error', any()}.
 
 start() ->
     case gen_event:start({local, error_logger}) of
@@ -51,7 +51,7 @@ start() ->
 	Error -> Error
     end.
 
--spec(start_link/0 :: () -> {'ok', pid()} | {'error', any()}).
+-spec start_link() -> {'ok', pid()} | {'error', any()}.
 
 start_link() ->
     case gen_event:start_link({local, error_logger}) of
@@ -66,17 +66,17 @@ start_link() ->
 %% Used for simple messages; error or information.
 %%-----------------------------------------------------------------
 
--spec(error_msg/1 :: (Format :: string()) -> 'ok').
+-spec error_msg(Format :: string()) -> 'ok'.
 
 error_msg(Format) ->
     error_msg(Format,[]).
 
--spec(error_msg/2 :: (Format :: string(), Args :: list()) -> 'ok').
+-spec error_msg(Format :: string(), Args :: list()) -> 'ok'.
 
 error_msg(Format, Args) ->
     notify({error, group_leader(), {self(), Format, Args}}).
 
--spec(format/2 :: (Format :: string(), Args :: list()) -> 'ok').
+-spec format(Format :: string(), Args :: list()) -> 'ok'.
 
 format(Format, Args) ->
     notify({error, group_leader(), {self(), Format, Args}}).
@@ -87,15 +87,12 @@ format(Format, Args) ->
 %% The 'std_error' error_report type can always be used.
 %%-----------------------------------------------------------------
 
--spec(error_report/1 :: (Report :: any()) -> 'ok').
+-spec error_report(Report :: any()) -> 'ok'.
 
 error_report(Report) -> 
     error_report(std_error, Report).
 
--spec(error_report/2 :: (
-	Type :: any(),
-	Report :: any()) ->
-	'ok').
+-spec error_report(Type :: any(), Report :: any()) -> 'ok'.
 
 error_report(Type, Report) ->
     notify({error_report, group_leader(), {self(), Type, Report}}).
@@ -109,28 +106,25 @@ error_report(Type, Report) ->
 %% mapped to std_info or std_error accordingly.
 %%-----------------------------------------------------------------
 
--spec(warning_report/1 :: (Report :: any()) -> 'ok').
+-spec warning_report(Report :: any()) -> 'ok'.
 
 warning_report(Report) -> 
     warning_report(std_warning, Report).
 
--spec(warning_report/2 :: (
-	Type :: any(),
-	Report :: any()) -> 
-	'ok').
+-spec warning_report(Type :: any(), Report :: any()) -> 'ok'.
 
 warning_report(Type, Report) ->
-    {Tag, NType} = case (catch error_logger:warning_map()) of
+    {Tag, NType} = case error_logger:warning_map() of
 		       info ->
 			   if 
 			       Type =:= std_warning ->
-				   {info_report,std_info};
+				   {info_report, std_info};
 			       true ->
-				   {info_report,Type}
+				   {info_report, Type}
 			   end;
 		       warning ->
-			   {warning_report,Type};
-		       _Else ->
+			   {warning_report, Type};
+		       error ->
 			   if
 			       Type =:= std_warning ->
 				   {error_report, std_error};
@@ -146,23 +140,20 @@ warning_report(Type, Report) ->
 %% other types of reports.
 %%-----------------------------------------------------------------
 
--spec(warning_msg/1 :: (Format :: string()) -> 'ok').
+-spec warning_msg(Format :: string()) -> 'ok'.
 
 warning_msg(Format) ->
     warning_msg(Format,[]).
 
--spec(warning_msg/2 :: (
-	Format :: string(),
-	Args :: list()) ->
-	'ok').
+-spec warning_msg(Format :: string(), Args :: list()) -> 'ok'.
 
 warning_msg(Format, Args) ->
-    Tag = case (catch error_logger:warning_map()) of
+    Tag = case error_logger:warning_map() of
 	      warning ->
 		  warning_msg;
 	      info ->
 		  info_msg;
-	      _Else ->
+	      error ->
 		  error
 	  end,
     notify({Tag, group_leader(), {self(), Format, Args}}).
@@ -173,12 +164,12 @@ warning_msg(Format, Args) ->
 %% The 'std_info' info_report type can always be used.
 %%-----------------------------------------------------------------
 
--spec(info_report/1 :: (Report :: any()) -> 'ok').
+-spec info_report(Report :: any()) -> 'ok'.
 
 info_report(Report) -> 
     info_report(std_info, Report).
 
--spec(info_report/2 :: (Type :: any(), Report :: any()) -> 'ok').
+-spec info_report(Type :: any(), Report :: any()) -> 'ok'.
 
 info_report(Type, Report) ->
     notify({info_report, group_leader(), {self(), Type, Report}}).
@@ -188,12 +179,12 @@ info_report(Type, Report) ->
 %% information messages.
 %%-----------------------------------------------------------------
 
--spec(info_msg/1 :: (Format :: string()) -> 'ok').
+-spec info_msg(Format :: string()) -> 'ok'.
 
 info_msg(Format) ->
     info_msg(Format,[]).
 
--spec(info_msg/2 :: (Format :: string(), Args :: list()) -> 'ok').
+-spec info_msg(Format :: string(), Args :: list()) -> 'ok'.
 
 info_msg(Format, Args) ->
     notify({info_msg, group_leader(), {self(), Format, Args}}).
@@ -202,17 +193,18 @@ info_msg(Format, Args) ->
 %% Used by the init process.  Events are tagged 'info'.
 %%-----------------------------------------------------------------
 
--spec(error_info/1 :: (Error :: any()) -> 'ok').
+-spec error_info(Error :: any()) -> 'ok'.
 
 error_info(Error) ->
     notify({info, group_leader(), {self(), Error, []}}).
 
--spec(notify/1 :: ({msg_tag(), pid(), {pid(), any(), any()}}) -> 'ok').
+-spec notify({msg_tag(), pid(), {pid(), any(), any()}}) -> 'ok'.
 
 notify(Msg) ->
     gen_event:notify(error_logger, Msg).
 
--spec(swap_handler/1 :: (Type :: atom() | {atom(), string()}) -> any()).
+-type swap_handler_type() :: 'false' | 'silent' | 'tty' | {'logfile', string()}.
+-spec swap_handler(Type :: swap_handler_type()) -> any().
 
 swap_handler(tty) ->
     gen_event:swap_handler(error_logger, {error_logger, swap},
@@ -228,17 +220,17 @@ swap_handler(silent) ->
 swap_handler(false) ->
     ok. % keep primitive event handler as-is
 
--spec(add_report_handler/1 :: (Module :: atom()) -> any()). 
+-spec add_report_handler(Module :: atom()) -> any(). 
 
 add_report_handler(Module) when is_atom(Module) ->
     gen_event:add_handler(error_logger, Module, []).
 
--spec(add_report_handler/2 :: (atom(), any()) -> any()). 
+-spec add_report_handler(atom(), any()) -> any(). 
 
 add_report_handler(Module, Args) when is_atom(Module) ->
     gen_event:add_handler(error_logger, Module, Args).
 
--spec(delete_report_handler/1 :: (Module :: atom()) -> any()).
+-spec delete_report_handler(Module :: atom()) -> any().
 
 delete_report_handler(Module) when is_atom(Module) ->
     gen_event:delete_handler(error_logger, Module, []).
@@ -255,10 +247,9 @@ simple_logger() ->
 
 %% Log all errors to File for all eternity
 
--spec(logfile/1 :: 
-	(Request :: {'open', string()}) -> 'ok' | {'error',any()};
-	(Request :: 'close') -> 'ok' | {'error', any()};
-	(Request :: 'filename') -> atom() | string() | {'error', any()}).
+-spec logfile(Request :: {'open', string()}) -> 'ok' | {'error',any()}
+           ; (Request :: 'close') -> 'ok' | {'error', any()}
+	   ; (Request :: 'filename') -> atom() | string() | {'error', any()}.
 
 logfile({open, File}) ->
     case lists:member(error_logger_file_h,
@@ -285,9 +276,8 @@ logfile(filename) ->
 
 %% Possibly turn off all tty printouts, maybe we only want the errors
 %% to go to a file
-%% Flag = true | false
 
--spec(tty/1 :: (Bool :: bool()) -> 'ok').
+-spec tty(Flag :: bool()) -> 'ok'.
 
 tty(true) ->
     Hs = gen_event:which_handlers(error_logger),
@@ -318,8 +308,8 @@ init(_) ->  %% Start and just relay to other
     
 handle_event({Type, GL, Msg}, State) when node(GL) =/= node() ->
     gen_event:notify({error_logger, node(GL)},{Type, GL, Msg}),
-%    handle_event2({Type, GL, Msg}, State);  %% Shall we do something at this
-    {ok, State};                                  %% node too ???
+    %% handle_event2({Type, GL, Msg}, State);  %% Shall we do something
+    {ok, State};                               %% at this node too ???
 handle_event({info_report, _, {_, Type, _}}, State) when Type =/= std_info ->
     {ok, State};   %% Ignore other info reports here
 handle_event(Event, State) ->
@@ -334,7 +324,6 @@ handle_info(_, State) ->
     {ok, State}.
 
 handle_call(_Query, State) -> {ok, {error, bad_query}, State}.
-
 
 terminate(swap, {_, 0, Buff}) ->
     {error_logger, Buff};

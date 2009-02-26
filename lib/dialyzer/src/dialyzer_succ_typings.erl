@@ -59,16 +59,14 @@
 
 %%--------------------------------------------------------------------
 
--spec(analyze_callgraph/3 ::
-      (#dialyzer_callgraph{}, #dialyzer_plt{}, #dialyzer_codeserver{}) ->
-	 #dialyzer_plt{}).
+-spec analyze_callgraph(#dialyzer_callgraph{}, #dialyzer_plt{}, #dialyzer_codeserver{}) ->
+	 #dialyzer_plt{}.
 
 analyze_callgraph(Callgraph, Plt, Codeserver) ->
   analyze_callgraph(Callgraph, Plt, Codeserver, none).
 
--spec(analyze_callgraph/4 ::
-      (#dialyzer_callgraph{}, #dialyzer_plt{},
-       #dialyzer_codeserver{}, 'none' | pid()) -> #dialyzer_plt{}).
+-spec analyze_callgraph(#dialyzer_callgraph{}, #dialyzer_plt{},
+			#dialyzer_codeserver{}, 'none' | pid()) -> #dialyzer_plt{}.
 
 analyze_callgraph(Callgraph, Plt, Codeserver, Parent) ->
   State = #state{callgraph=Callgraph, plt=Plt, 
@@ -99,11 +97,10 @@ get_refined_success_typings(State) ->
       end
   end.
 
--type(doc_plt() :: 'undefined' | #dialyzer_plt{}).
--spec(get_warnings/6 :: 
-      (#dialyzer_callgraph{}, #dialyzer_plt{}, doc_plt(), 
-       #dialyzer_codeserver{}, set(), pid()) -> 
-	 {[dial_warning()], #dialyzer_plt{}, doc_plt()}).
+-type doc_plt() :: 'undefined' | #dialyzer_plt{}.
+-spec get_warnings(#dialyzer_callgraph{}, #dialyzer_plt{}, doc_plt(), 
+		   #dialyzer_codeserver{}, set(), pid()) -> 
+	 {[dial_warning()], #dialyzer_plt{}, doc_plt()}.
 
 get_warnings(Callgraph, Plt, DocPlt, Codeserver, NoWarnUnused, Parent) ->
   InitState = #state{callgraph=Callgraph, plt=Plt, no_warn_unused=NoWarnUnused,
@@ -155,8 +152,7 @@ refine_succ_typings([], State, Fixpoint) ->
     false -> {not_fixpoint, Fixpoint, State}
   end.
 
--spec(refine_one_module/2 ::
-      (atom(), #state{}) -> {#state{}, ordset(non_neg_integer())}). % labels
+-spec refine_one_module(atom(), #state{}) -> {#state{}, ordset(non_neg_integer())}. % labels
 
 refine_one_module(M, State) ->      
   {ok, Tree} = dialyzer_codeserver:lookup(M, State#state.codeserver),
@@ -420,7 +416,7 @@ format_scc(SCC) ->
 %%
 %% ============================================================================
 
--spec(doit/1 :: (atom() | string()) -> 'ok').
+-spec doit(atom() | string()) -> 'ok'.
 
 doit(Module) ->
   {ok, AbstrCode} = dialyzer_utils:get_abstract_code_from_src(Module),
@@ -441,8 +437,8 @@ doit(Module) ->
   pp_signatures(Sigs, Records),
   ok.
 
--spec(get_top_level_signatures/3 ::
-      (core_records(), dict(), dict()) -> ordset({{atom(),byte()},erl_type()})).
+-spec get_top_level_signatures(core_records(), dict(), dict()) ->
+		ordset({{atom(),byte()},erl_type()}).
 
 get_top_level_signatures(Code, Records, Contracts) ->
   Tree = cerl:from_records(Code),

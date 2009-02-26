@@ -1,7 +1,24 @@
 %% inets-4.7.17 was not widely spread
 %% so most people will go from 4.7.16 -> 5.0!
-{"5.0.10",
+{"5.0.12",
  [
+  {"5.0.11",
+   [
+    {load_module, http_transport, soft_purge, soft_purge, []},		    
+    {load_module, httpd_request_handler, soft_purge, soft_purge, []}
+   ]
+  },		  
+  {"5.0.10",
+   [
+    {load_module, httpc_response, soft_purge, soft_purge, []},
+    {load_module, http_chunk, soft_purge, soft_purge, []},
+    {load_module, http_transport, soft_purge, soft_purge, []},		    
+    {load_module, mod_disk_log, soft_purge, soft_purge, []},
+    {load_module, httpd_request_handler, soft_purge, soft_purge, []},
+    {load_module, httpd_conf, soft_purge, soft_purge, []},
+    {load_module, tftp_engine, soft_purge, soft_purge, []}
+   ]
+  },
   {"5.0.5",
    [
     {load_module, tftp,        soft_purge, soft_purge, []},
@@ -63,6 +80,23 @@
   }     
  ],
  [
+  {"5.0.11",
+   [
+    {load_module, http_transport, soft_purge, soft_purge, []},		    
+    {load_module, httpd_request_handler, soft_purge, soft_purge, []}
+   ]
+  },
+  {"5.0.10",
+   [ 
+    {load_module, httpc_response, soft_purge, soft_purge, []},	
+    {load_module, http_chunk, soft_purge, soft_purge, []},
+    {load_module, http_transport, soft_purge, soft_purge, []},		    
+    {load_module, mod_disk_log, soft_purge, soft_purge, []},
+    {load_module, httpd_request_handler, soft_purge, soft_purge, []},
+    {load_module, httpd_conf, soft_purge, soft_purge, []},
+    {load_module, tftp_engine, soft_purge, soft_purge, []}
+   ]
+  },
   {"5.0.5",
    [
     {load_module, tftp,        soft_purge, soft_purge, []},

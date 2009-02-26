@@ -191,6 +191,9 @@ Options:
        dependent files.
    --check_plt
        Checks the plt for consistency and rebuilds it if it is not up-to-date.
+   --no_check_plt
+       Skip the plt check when running Dialyzer. Useful when working with
+       installed plts that never change.
    --plt_info
        Makes Dialyzer print information about the plt and then quit. The plt 
        can be specified with --plt.

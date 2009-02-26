@@ -19,15 +19,17 @@
 
 -export([obsolete/3]).
 
+%%----------------------------------------------------------------------
 
-%% obsolete(Module, Name, Arity) ->
-%%   no | {Tag,ReplacementMFA,Release} | {Tag,String}
-%%   Tag = deprecated | removed | experimental
-%%   ReplacementMFA = {atom(),atom(),integer()}
-%%   Release = string()
+-type tag()     :: 'deprecated' | 'removed'. %% | 'experimental'.
+-type mfas()    :: mfa() | {atom(), atom(), [byte()]}.
+-type release() :: string().
 
-obsolete(Mod, Name, Arity) ->
-    case obsolete_1(Mod, Name, Arity) of
+-spec obsolete(atom(), atom(), byte()) ->
+	'no' | {tag(), string()} | {tag(), mfas(), release()}.
+
+obsolete(Module, Name, Arity) ->
+    case obsolete_1(Module, Name, Arity) of
 	{deprecated=Tag,{_,_,_}=Replacement} ->
 	    {Tag,Replacement,"in a future release"};
 	{_,String}=Ret when is_list(String) ->
@@ -319,6 +321,9 @@ obsolete_1(ssh_sshd, stop, 1) ->
 
 obsolete_1(_, _, _) ->
     no.
+
+
+-spec is_snmp_agent_function(atom(), byte()) -> bool().
 
 is_snmp_agent_function(c,                     1) -> true;
 is_snmp_agent_function(c,                     2) -> true;

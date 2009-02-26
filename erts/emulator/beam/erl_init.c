@@ -107,6 +107,8 @@ int erts_disable_tolerant_timeofday; /* Time correction can be disabled it is
 
 int erts_modified_timing_level;
 
+int erts_no_crash_dump = 0;	/* Use -d to suppress crash dump. */
+
 /*
  * Other global variables.
  */
@@ -250,6 +252,7 @@ erl_init(void)
     erts_init_bif();
     erts_init_bif_chksum();
     erts_init_bif_re();
+    erts_init_unicode(); /* after RE to get access to PCRE unicode */
     erts_delay_trap = erts_export_put(am_erlang, am_delay_trap, 2);
     erts_late_init_process();
 #if HAVE_ERTS_MSEG
@@ -500,6 +503,10 @@ void erts_usage(void)
 
     erts_fprintf(stderr, "-c         disable continuous date/time correction with\n");
     erts_fprintf(stderr, "           respect to uptime\n");
+
+    erts_fprintf(stderr, "-d         don't write a crash dump for internally detected errors\n");
+    erts_fprintf(stderr, "           (halt(String) will still produce a crash dump)\n");
+
     erts_fprintf(stderr, "-h number  set minimum heap size in words (default %d)\n",
 	       H_DEFAULT_SIZE);
 
@@ -710,6 +717,8 @@ erl_start(int argc, char **argv)
 	     * Erlang 5.3/OTP R9C.
 	     *
 	     * -S, and -T has been reused in Erlang 5.5/OTP R11B.
+	     *
+	     * -d has been reused in a patch R12B-4.
 	     */
 
 	case '#' :
@@ -808,6 +817,17 @@ erl_start(int argc, char **argv)
                     ("using minimum heap size %d\n",H_MIN_SIZE));
 	    break;
 
+	case 'd':
+	    /*
+	     * Never produce crash dumps for internally detected
+	     * errors; only produce a core dump. (Generation of
+	     * crash dumps is destructive and makes it impossible
+	     * to inspect the contents of process heaps in the
+	     * core dump.)
+	     */
+	    erts_no_crash_dump = 1;
+	    break;
+
 	case 'e':
 	    /* set maximum number of ets tables */
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
@@ -873,6 +893,10 @@ erl_start(int argc, char **argv)
 
 	case 'S' : /* Was handled in early_init() just read past it */
 	    (void) get_arg(argv[i]+2, argv[i+1], &i);
+	    break;
+
+	case 's' : /* Reserved for SMP scheduler /Rickard */
+	    erts_usage();
 	    break;
 
 	case 'T' :
@@ -1145,7 +1169,10 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
 	erts_mtrace_exit((Uint32) an);
 
     /* Produce an Erlang core dump if error */
-    if(n > 0 && erts_initialized) erl_crash_dump_v(file,line,fmt,args); 
+    if (n > 0 && erts_initialized &&
+	(erts_no_crash_dump == 0 || n == ERTS_DUMP_EXIT)) {
+	erl_crash_dump_v(file, line, fmt, args); 
+    }
 
     /* need to reinitialize va_args thing */
     va_end(args);
@@ -1188,7 +1215,10 @@ void erl_exit(int n, char *fmt,...)
 	erts_mtrace_exit((Uint32) an);
 
     /* Produce an Erlang core dump if error */
-    if(n > 0 && erts_initialized) erl_crash_dump_v((char*) NULL,0,fmt,args); 
+    if (n > 0 && erts_initialized &&
+	(erts_no_crash_dump == 0 || n == ERTS_DUMP_EXIT)) {
+	erl_crash_dump_v((char*) NULL, 0, fmt, args);
+    }
 
     /* need to reinitialize va_args thing */
     va_end(args);

@@ -73,7 +73,7 @@
 -export([module/2,format_error/1]).
 
 -import(lists, [reverse/1,map/2,member/2,foldl/3,foldr/3,mapfoldl/3,
-		splitwith/2,any/2,keysearch/3]).
+		splitwith/2,keysearch/3]).
 -import(ordsets, [add_element/2,del_element/2,is_element/2,
 		  union/1,union/2,intersection/2,subtract/2]).
 
@@ -644,7 +644,8 @@ constant_bin_1(Es) ->
     EmptyBindings = erl_eval:new_bindings(),
     EvalFun = fun({integer,_,I}, B) -> {value,I,B};
 		 ({char,_,C}, B) -> {value,C,B};
-		 ({float,_,F}, B) -> {value,F,B}
+		 ({float,_,F}, B) -> {value,F,B};
+		 ({atom,_,undefined}, B) -> {value,undefined,B}
 	      end,
     case eval_bits:expr_grp(Es, EmptyBindings, EvalFun) of
 	{value,Bin,EmptyBindings} ->
@@ -662,6 +663,12 @@ verify_suitable_fields([{bin_element,_,Val,SzTerm,Opts}|Es]) ->
     end,
     {value,{unit,Unit}} = keysearch(unit, 1, Opts),
     case {SzTerm,Val} of
+	{{atom,_,undefined},{char,_,_}} ->
+	    %% UTF-8/16/32.
+	    ok;
+	{{atom,_,undefined},{integer,_,_}} ->
+	    %% UTF-8/16/32.
+	    ok;
 	{{integer,_,Sz},_} when Sz*Unit =< 256 ->
 	    %% Don't be cheap - always accept fields up to this size.
 	    ok;
@@ -707,9 +714,13 @@ bitstr({bin_element,_,E0,Size0,[Type,{unit,Unit}|Flags]}, St0) ->
     case {Type,E1} of
 	{_,#c_var{}} -> ok;
 	{integer,#c_literal{val=I}} when is_integer(I) -> ok;
+	{utf8,#c_literal{val=I}} when is_integer(I) -> ok;
+	{utf16,#c_literal{val=I}} when is_integer(I) -> ok;
+	{utf32,#c_literal{val=I}} when is_integer(I) -> ok;
 	{float,#c_literal{val=V}} when is_number(V) -> ok;
 	{binary,#c_literal{val=V}} when is_bitstring(V) -> ok;
-	{_,_} -> throw(bad_binary)
+	{_,_} ->
+	    throw(bad_binary)
     end,
     {#c_bitstr{val=E1,size=Size1,
 	       unit=core_lib:make_literal(Unit),
@@ -1161,7 +1172,7 @@ pattern({match,_,P1,P2}, St) ->
 
 %% pat_bin([BinElement], State) -> [BinSeg].
 
-pat_bin(Ps, St) -> map(fun(P) -> pat_segment(P, St) end, Ps).
+pat_bin(Ps, St) -> [pat_segment(P, St) || P <- Ps].
 
 pat_segment({bin_element,_,Term,Size,[Type,{unit,Unit}|Flags]}, St) ->
     #c_bitstr{val=pattern(Term, St),size=pattern(Size, St),
@@ -1208,7 +1219,7 @@ pat_alias_list(_, _) -> throw(nomatch).
 
 %% pattern_list([P], State) -> [P].
 
-pattern_list(Ps, St) -> map(fun(P) -> pattern(P, St) end, Ps).
+pattern_list(Ps, St) -> [pattern(P, St) || P <- Ps].
 
 %% first([A]) -> [A].
 %% last([A]) -> A.

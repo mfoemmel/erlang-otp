@@ -350,7 +350,11 @@ print_op(int to, void *to_arg, int op, int size, Eterm* addr)
 	    erts_print(to, to_arg, "x(0)");
 	    break;
 	case 'x':		/* x(N) */
-	    erts_print(to, to_arg, "x(%d)", reg_index(ap[0]));
+	    if (reg_index(ap[0]) == 0) {
+		erts_print(to, to_arg, "X[0]");
+	    } else {
+		erts_print(to, to_arg, "x(%d)", reg_index(ap[0]));
+	    }
 	    ap++;
 	    break;
 	case 'y':		/* y(N) */
@@ -363,7 +367,11 @@ print_op(int to, void *to_arg, int op, int size, Eterm* addr)
 	case 's':		/* Any source (tagged constant or register) */
 	    tag = beam_reg_tag(*ap);
 	    if (tag == X_REG_DEF) {
-		erts_print(to, to_arg, "x(%d)", reg_index(*ap));
+		if (reg_index(*ap) == 0) {
+		    erts_print(to, to_arg, "x[0]");
+		} else {
+		    erts_print(to, to_arg, "x(%d)", reg_index(*ap));
+		}
 		ap++;
 		break;
 	    } else if (tag == Y_REG_DEF) {
@@ -390,7 +398,11 @@ print_op(int to, void *to_arg, int op, int size, Eterm* addr)
 	case 'd':		/* Destination (x(0), x(N), y(N)) */
 	    switch (beam_reg_tag(*ap)) {
 	    case X_REG_DEF:
-		erts_print(to, to_arg, "x(%d)", reg_index(*ap));
+		if (reg_index(*ap) == 0) {
+		    erts_print(to, to_arg, "x[0]");
+		} else {
+		    erts_print(to, to_arg, "x(%d)", reg_index(*ap));
+		}
 		break;
 	    case Y_REG_DEF:
 		erts_print(to, to_arg, "y(%d)", reg_index(*ap) - CP_SIZE);

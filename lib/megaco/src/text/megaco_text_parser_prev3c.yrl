@@ -64,7 +64,7 @@
 %% This is ugly but...
 %%----------------------------------------------------------------------
 
-Expect 90.
+Expect 92.
 
 
 %%----------------------------------------------------------------------
@@ -378,7 +378,6 @@ Terminals
     'LoopbackToken'
     'MediaToken'
     %% 'MegacopToken'
-    %% 'MessageSegmentToken'
     'MethodToken'
     'MgcIdToken'
     'ModeToken'
@@ -423,7 +422,6 @@ Terminals
     'RestartToken'
     'SEP'
     'SafeChars'
-    %% 'SegmentationCompleteToken'
     'SendonlyToken'
     'SendrecvToken'
     'ServiceChangeAddressToken'
@@ -454,6 +452,8 @@ Terminals
     'V90Token'
     'V91Token'
     'VersionToken'
+    'MessageSegmentToken'            %% OTP-7534: v3-fix
+    'SegmentationCompleteToken'      %% OTP-7534: v3-fix
     endOfMessage
 
 .
@@ -1057,10 +1057,12 @@ mediaParm            -> terminationStateDescriptor
 
 %% at-most-once .
 %% Specially treated by the scanner.
-streamParm           -> 'LocalDescriptorToken'
-		      : {local, #'LocalRemoteDescriptor'{propGrps = ensure_prop_groups('$1')} } .
-streamParm           -> 'RemoteDescriptorToken'
-		      : {remote, #'LocalRemoteDescriptor'{propGrps = ensure_prop_groups('$1')}} .
+streamParm           -> 'LocalDescriptorToken' : 
+                        PGs = ensure_prop_groups('$1'), 
+		        {local, #'LocalRemoteDescriptor'{propGrps = PGs} } .
+streamParm           -> 'RemoteDescriptorToken' : 
+                        PGs = ensure_prop_groups('$1'), 
+		        {remote, #'LocalRemoteDescriptor'{propGrps = PGs}} .
 streamParm           -> localControlDescriptor  : {control, '$1'} .
 streamParm           -> statisticsDescriptor    : {statistics, '$1'} .
 
@@ -1654,6 +1656,10 @@ safeToken2           -> 'V76Token'              : '$1' .
 safeToken2           -> 'V90Token'              : '$1' .
 safeToken2           -> 'V91Token'              : '$1' .
 safeToken2           -> 'VersionToken'          : '$1' .
+%% <OTP-7534>
+safeToken2           -> 'MessageSegmentToken'        : '$1' . % v3
+safeToken2           -> 'SegmentationCompleteToken'  : '$1' . % v3
+%% </OTP-7534>
 
 Erlang code.
 

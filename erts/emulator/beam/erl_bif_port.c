@@ -41,11 +41,7 @@
 #include "register.h"
 #include "external.h"
 #include "packet_parser.h"
-
-extern ErlDrvEntry fd_driver_entry;
-extern ErlDrvEntry vanilla_driver_entry;
-extern ErlDrvEntry spawn_driver_entry;
-
+#include "erl_bits.h"
 
 static int open_port(Process* p, Eterm name, Eterm settings, int *err_nump);
 static byte* convert_environment(Process* p, Eterm env);
@@ -157,8 +153,8 @@ BIF_RETTYPE port_command_2(BIF_ALIST_2)
 	if (erts_system_monitor_flags.busy_port) {
 	    monitor_generic(BIF_P, am_busy_port, p->id);
 	}
-	ERTS_BIF_PREP_ERROR(res, BIF_P, RESCHEDULE);
-    
+	ERTS_BIF_PREP_YIELD2(res, bif_export[BIF_port_command_2], BIF_P,
+			     BIF_ARG_1, BIF_ARG_2);    
     } else {
 	int wres;
 	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
@@ -206,7 +202,7 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
     byte *bytes;
     byte *endp;
     size_t real_size;
-    ErlDrvEntry *drv;
+    erts_driver_t *drv;
     byte port_input[256];	/* Default input buffer to encode in */
     byte port_result[256];	/* Buffer for result from port. */
     byte* port_resp;		/* Pointer to result buffer. */
@@ -297,6 +293,7 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
     }
     erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
     prc  = (char *) port_resp;
+    erts_block_fpe();
     ret = drv->call((ErlDrvData)p->drv_data, 
 		    (unsigned) op,
 		    (char *) bytes, 
@@ -304,7 +301,7 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
 		    &prc, 
 		    (int) sizeof(port_result),
 		    &ret_flags);
-    
+    erts_unblock_fpe();
     if (IS_TRACED_FL(p, F_TRACE_SCHED_PORTS)) {
     	trace_sched_ports_where(p, am_out, am_call);
     }
@@ -562,7 +559,7 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
     Uint arity;
     Eterm* tp;
     Uint* nargs;
-    ErlDrvEntry* driver;
+    erts_driver_t* driver;
     char* name_buf = NULL;
     SysDriverOpts opts;
     int binary_io;
@@ -708,7 +705,7 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 		erl_exit(1, "%s:%d: Internal error\n", __FILE__, __LINE__);
 	    name_buf[i] = '\0';
 	}
-	driver = &vanilla_driver_entry;
+	driver = &vanilla_driver;
     } else {   
 	if (is_not_tuple(name)) {
 	    goto badarg;		/* Not a process or fd port */
@@ -740,7 +737,7 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 	    } else {
 		goto badarg;
 	    }
-	    driver = &spawn_driver_entry;
+	    driver = &spawn_driver;
 	} else if (*tp == am_fd) { /* An fd port */
 	    int n;
 	    struct Sint_buf sbuf;
@@ -765,13 +762,13 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 	    p = Sint_to_buf(opts.ofd, &sbuf);
 	    sys_strcpy(name_buf+n+1, p);
 
-	    driver = &fd_driver_entry;
+	    driver = &fd_driver;
 	} else {
 	    goto badarg;
 	}
     }
 
-    if (driver != &spawn_driver_entry && opts.exit_status) {
+    if (driver != &spawn_driver && opts.exit_status) {
 	goto badarg;
     }
 

@@ -239,6 +239,10 @@ static void ttysl_get_window_size(Uint32 *width, Uint32 *height)
     if (ioctl(ttysl_fd,TIOCGWINSZ,&ws) == 0) {
 	*width = (Uint32) ws.ws_col;
 	*height = (Uint32) ws.ws_row;
+	if (*width <= 0) 
+	    *width = DEF_WIDTH;
+	if (*height <= 0) 
+	    *height = DEF_HEIGHT;
 	return;
     }
 #endif
@@ -679,6 +683,8 @@ static int start_termcap(void)
     }
     c = capbuf;
     cols = tgetnum("co");
+    if (cols <= 0)
+	cols = DEF_WIDTH;
     xn = tgetflag("xn");
     up = tgetstr("up", &c);
     if (!(down = tgetstr("do", &c)))

@@ -233,6 +233,7 @@ atom imports
 atom in
 atom in_exiting
 atom inactive
+atom incomplete
 atom inconsistent
 atom index
 atom infinity
@@ -254,6 +255,7 @@ atom known
 atom label
 atom large_heap
 atom last_calls
+atom latin1
 atom Le='=<'
 atom lf
 atom line
@@ -489,6 +491,7 @@ atom unicode
 atom unregister
 atom use_stdio
 atom used
+atom utf8
 atom unblock
 atom uniq
 atom unless_suspending

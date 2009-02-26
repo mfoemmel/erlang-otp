@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE erlref SYSTEM "erlref.dtd">
+
+<erlref>
+  <header>
+    <copyright>
+      <year>1996</year>
+      <year>2009</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>erlang</title>
+    <prepared></prepared>
+    <docno></docno>
+    <date></date>
+    <rev></rev>
+  </header>
+  <module>unicode</module>
+  <modulesummary>Functions for converting Unicode characters</modulesummary>
+  <description>
+  <p>This module contains functions for converting between different character representations. Basically it converts between iso-latin-1 characters and Unicode ditto, but it can also convert between different Unicode encodings (like UTF-8, UTF-16 and UTF-32).</p>
+  <p>The default Unicode encoding in Erlang is in binaries UTF-8, which is also the format in which built in functions and libraries in OTP expect to find binary Unicode data. In lists, Unicode data is encoded as integers, each integer representing one character and encoded simply as the Unicode codepoint for the character.</p> 
+  <p>Other Unicode encodings than integers representing codepoints or UTF-8 in binaries are referred to as &quot;external encodings&quot;. The iso-latin-1 encoding is in binaries and lists referred to as latin1-encoding.</p>
+  <p>It is recommended to only use external encodings for communication with external entities where this is required. When working inside the Erlang/OTP environment, it is recommended to keep binaries in UTF-8 when representing Unicode characters. Latin1 encoding is supported both for backward compatibility and for communication with external entities not supporting Unicode character sets.</p>
+  </description>
+
+  <section>
+    <title>DATA TYPES</title>
+    <marker id="charlist_definition"></marker>
+    <code type="none">
+unicode_binary() = binary() with characters encoded in UTF-8 coding standard
+unicode_char() = integer() representing valid unicode codepoint
+
+chardata() = charlist() | unicode_binary()
+
+charlist() = [unicode_char() | unicode_binary() | charlist()]
+  a unicode_binary is allowed as the tail of the list</code>
+
+    <code type="none">
+external_unicode_binary() = binary() with characters coded in a user specified Unicode encoding other than UTF-8 (UTF-16 or UTF-32)
+
+external_chardata() = external_charlist() | external_unicode_binary()
+
+external_charlist() = [unicode_char() | external_unicode_binary() | external_charlist()]
+  a external_unicode_binary is allowed as the tail of the list</code>
+
+    <code type="none">
+latin1_binary() = binary() with characters coded in iso-latin-1
+latin1_char() = integer() representing valid latin1 character (0-255)
+
+latin1_chardata() = latin1_charlist() | latin1_binary()
+
+latin1_charlist() = [latin1_char() | latin1_binary() | latin1_charlist()]
+  a latin1_binary is allowed as the tail of the list</code>
+  </section>
+  <funcs>
+    <func>
+      <name>erlang:characters_to_list(Data, Encoding) -> list() | {error, list(), RestData} | {incomplete, list(), binary()} </name>
+      <fsummary>Convert a collection of characters to list of Unicode characters</fsummary>
+      <type>
+        <v>Data = ListData | binary()</v>
+        <v>RestData = ListData | binary()</v>
+	<v>ListData = [ int() | binary() ] (binary allowed as tail of list)</v>
+        <v>Encoding = unicode | latin1</v>
+      </type>
+      <desc>
+
+      <p>This function converts a possibly deep list of integers and
+      binaries into a list of integers representing unicode
+      characters. The binaries in the input may have characters
+      encoded as latin1 (0 - 255, one character per byte), in which
+      case the <c>Encoding</c> parameter should be given as
+      <c>latin1</c>, or have characters encoded as UTF-8, in
+      which case the <c>Encoding</c> should be given as
+      <c>unicode</c>. Only when the <c>Encoding</c> is <c>unicode</c>,
+      integers in the list are allowed to be grater than 255.</p>
+      
+      <p>If <c>Encoding</c> is <c>latin1</c>, the <c>Data</c> parameter
+      corresponds to the <c>iodata()</c> type, but for <c>unicode</c>,
+      the <c>Data</c> parameter can contain integers greater than 255
+      (unicode characters beyond the iso-latin-1 range), which would
+      make it invalid as <c>iodata()</c>.</p>
+
+      <p>The purpose of the function is mainly to be able to convert
+      combinations of unicode characters into a pure unicode
+      string in list representation for further processing. For
+      writing the data to an external entity, the reverse function
+      <seealso
+      marker="#erlang:characters_to_utf8/2">erlang:characters_to_utf8/2</seealso>
+      comes in handy.</p>
+
+      <p>If for some reason, the data cannot be converted, either
+      because of illegal unicode/latin1 characters in the list, or
+      because of invalid UTF-8 encoding in any binaries, an error
+      tuple is returned. The error tuple contains the tag
+      <c>error</c>, a list representing the characters that could be
+      converted before the error occured and a representation of the
+      characters including and after the offending integer/bytes. The
+      last part is mostly for debugging as it still constitutes a
+      possibly deep and/or mixed list, not necessarily of the same
+      depth as the original data. The error occurs when traversing the
+      list and whatever's left to decode is simply returned as is.</p>
+
+      <p>However, if the input <c>Data</c> is a pure binary, the third
+      part of the error tuple is guaranteed to be a binary as
+      well.</p>
+
+      <p>Errors occur for the following reasons:</p>
+      <list type="bulleted">
+
+           <item>Integers out of range - If <c>Encoding</c> is
+	   <c>latin1</c>, an error occurs whenever an integer greater
+	   than 255 is found in the lists. If <c>Encoding</c> is
+	   unicode, error occurs whenever an integer greater than
+	   <c>16#10FFFF</c> (the maximum unicode character) or in the
+	   range <c>16#D800</c> to <c>16#DFFF</c> (invalid unicode
+	   range) is found.</item>
+
+	   <item>UTF-8 encoding incorrect - If <c>Encoding</c> is
+	   <c>unicode</c>, the bytes in any binaries have to be valid
+	   UTF-8. Errors can occur for various
+	   reasons, including &quot;pure&quot; decoding errors 
+	   (like the upper
+	   bits of the bytes being wrong), the bytes are decoded to a
+	   too large number, the bytes are decoded to a code-point in the 
+	   invalid unicode
+	   range or encoding is &quot;overlong&quot;, meaning that a
+	   number should have been encoded in fewer bytes. The
+	   case of a truncated UTF-8 is handled specially, see the
+	   paragraph about incomplete binaries below. If
+	   <c>Encoding</c> is <c>latin1</c>, binaries are always valid 
+	   as long as they contain whole bytes,
+	   as each byte falls into the valid iso-latin-1 range.</item>
+
+      </list>	   
+
+      <p>A special type of error is when no actual invalid integers or
+      bytes are found, but a trailing <c>binary()</c> consists of too
+      few bytes to decode the last character. This error might occur
+      if bytes are read from a file in chunks or binaries in other
+      ways are split on non UTF-8 boundaries. In this case an
+      <c>incomplete</c> tuple is returned instead of the <c>error</c>
+      tuple. It consists of the same parts as the <c>error</c> tuple, but
+      the tag is <c>incomplete</c> instead of <c>error</c> and the
+      last element is always guaranteed to be a binary consisting of
+      the first part of a (so far) valid UTF-8 character.</p>
+
+      <p>If one UTF-8 characters is split over two consecutive
+      binaries in the <c>Data</c>, the conversion succeeds. This means
+      that a character can be decoded from a range of binaries as long
+      as the whole range is given as input without errors
+      occuring. Example:</p>
+
+<code>
+     decode_data(Data) ->
+         case erlang:characters_to_list(Data,unicode) of
+             {inclomplete,Encoded, Rest} ->
+	           More = get_some_more_data(),
+		   Encoded ++ decode_data([Rest, More]);
+	     {error,Encoded,Rest} ->
+	           handle_error(Encoded,Rest);
+             List ->
+	           List
+         end.
+</code>
+      <p>Bit-strings that are not whole bytes are however not allowed,
+      so a UTF-8 character has to be split along 8-bit boundaries to
+      ever be decoded.</p>
+
+      <p>If any parameters are of the wrong type, the list structure
+      is invalid (a number as tail) or the binaries does not contain
+      whole bytes (bit-strings), a <c>badarg</c> exception is
+      thrown.</p>
+ 
+      </desc>
+    </func>
+    
+    <func>
+      <name>erlang:characters_to_utf8(Data, Encoding) -> binary() | {error, binary(), RestData} | {incomplete, binary(), binary()} </name>
+      <fsummary>Convert a collection of characters to an UTF-8 binary</fsummary>
+      <type>
+        <v>Data = ListData | binary()</v>
+        <v>RestData = ListData | binary()</v>
+	<v>ListData = [ int() | binary() ] (binary allowed as tail of list)</v>
+        <v>Encoding = unicode | latin1</v>
+      </type>
+      <desc>
+
+      <p>This function behaves as <seealso
+      marker="#erlang:characters_to_list/2">erlang:characters_to_list/2</seealso>,
+      but produces an UTF-8 binary instead of a unicode list. Note
+      that even if <c>Encoding</c> is given as <c>latin1</c>, the
+      output is UTF-8. The <c>Encoding</c> defines how input is to be
+      interpreted, not what output is generated. To convert a possibly
+      deep list of iso-latin-1 characters to a iso-latin-1 binary, use
+      <seealso
+      marker="#iolist_to_binary/1">iolist_to_binary/1</seealso>.</p>
+
+      <p>Errors and exceptions occur as in <seealso
+      marker="#erlang:characters_to_list/2">erlang:characters_to_list/2</seealso>,
+      but of course the second element in the <c>error</c> or
+      <c>incomplete</c> tuple will be a <c>binary()</c> and not a
+      <c>list()</c>.</p>
+
+      </desc>
+    </func>
+  </funcs>
+</erlref>

@@ -1145,7 +1145,9 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 	case NEW_FLOAT_EXT:
 	    {
 		FloatDef ff;
+#ifndef NO_FPE_SIGNALS
 		volatile int *fpexnp = erts_get_current_fp_exception();
+#endif
 
 #ifdef WORDS_BIGENDIAN
 		ff.fw[0] = get_int32(ep);

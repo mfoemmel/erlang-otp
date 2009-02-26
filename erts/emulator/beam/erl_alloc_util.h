@@ -41,6 +41,7 @@ typedef struct {
     Uint asbcst;
     Uint rsbcst;
     Uint rsbcmt;
+    Uint rmbcmt;
     Uint mmbcs;
     Uint mmsbc;
     Uint mmmbc;
@@ -72,6 +73,7 @@ typedef struct {
     2*1024*2024,	/* (amount) asbcst: abs sbc shrink threshold     */\
     20,			/* (%)      rsbcst: rel sbc shrink threshold     */\
     80,			/* (%)      rsbcmt: rel sbc move threshold       */\
+    50,			/* (%)      rmbcmt: rel mbc move threshold       */\
     1024*1024,		/* (bytes)  mmbcs:  main multiblock carrier size */\
     256,		/* (amount) mmsbc:  max mseg sbcs                */\
     10,			/* (amount) mmmbc:  max mseg mbcs                */\
@@ -244,6 +246,7 @@ struct Allctr_t_ {
     int			ramv;
     Uint		sbc_threshold;
     Uint		sbc_move_threshold;
+    Uint		mbc_move_threshold;
     Uint		main_carrier_size;
     Uint		max_mseg_sbcs;
     Uint		max_mseg_mbcs;
@@ -269,7 +272,8 @@ struct Allctr_t_ {
     Carrier_t *		main_carrier;
 
     /* Callback functions (first 4 are mandatory) */
-    Block_t *		(*get_free_block)	(Allctr_t *, Uint);
+    Block_t *		(*get_free_block)	(Allctr_t *, Uint,
+						 Block_t *, Uint);
     void		(*link_free_block)	(Allctr_t *, Block_t *);
     void		(*unlink_free_block)	(Allctr_t *, Block_t *);
     Eterm		(*info_options)		(Allctr_t *, char *, int *,

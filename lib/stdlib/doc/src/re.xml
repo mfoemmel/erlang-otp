@@ -36,10 +36,6 @@
   <module>re</module>
   <modulesummary>Perl like regular expressions for Erlang</modulesummary>
   <description>
-  <warning>
-  <p>This is an experimental module and the interface is subject to change.
-  The purpose is to be a reference implementation of what's described in the EEP "Built in regular expressions in Erlang", available at www.erlang.org for review. No production code should be based on this module until the draft is accepted and the module corrected accordingly.</p>
-  </warning>
 
     <p>This module contains functions for regular expression
       matching for strings and binaries.</p>
@@ -47,8 +43,8 @@
     <p>The regular expression syntax and semantics resemble that of
     Perl.  This library in many ways replaces the old regexp library
     written purely in Erlang, as it has a richer syntax as well as
-    many more options. The library is also many times faster than the
-    pure Erlang implementation.</p>
+    many more options. The library is also faster than the
+    older regexp implementation.</p>
 
     <p>Although the library's matching algorithms are currently based
     on the PCRE library, it is not to be viewed as an Erlang to PCRE
@@ -57,6 +53,15 @@
     many parts of no interest to the Erlang programmer, why only the
     relevant part of the documentation is included here. There should
     bee no need to go directly to the PCRE library documentation.</p>
+
+    <note>
+    <p>The Erlang literal syntax for strings give special
+    meaning to the &quot;\\&quot; (backslash) character. To literally write
+    a regular expression or a replacement string containing a
+    backslash in your code or in the shell, two backslashes have to be written:
+    &quot;\\\\&quot;.</p>
+    </note>
+
 
   </description>
   <section>
@@ -155,23 +160,20 @@ This option makes it possible to include comments inside complicated patterns. N
     </func> 
 
     <func>
-      <name>run(Subject,RE) -> {match, Captured} | nomatch | {error, ErrSpec}</name>
+      <name>run(Subject,RE) -> {match, Captured} | nomatch</name>
       <fsummary>Match a subject against regular expression and capture subpatterns</fsummary>
       <type>
 	<v>Subject = iodata()</v> 
         <v>RE = mp() | iodata()</v>
 	<v>Captured = [ CaptureData ]</v>
-	<v>CaptureData = {int(),int()} | string() | binary()</v>
-	<v>ErrSpec = {ErrString, Position}</v>
-	<v>ErrString = string()</v>
-	<v>Position = int()</v> 	
+	<v>CaptureData = {int(),int()}</v>
       </type>
       <desc>
       <p>The same as <c>run(Subject,RE,[])</c>.</p>
       </desc>
     </func> 
     <func>
-      <name>run(Subject,RE,Options) -> {match, Captured} | match | nomatch | {error, ErrSpec}</name>
+      <name>run(Subject,RE,Options) -> {match, Captured} | match | nomatch</name>
       <fsummary>Match a subject against regular expression and capture subpatterns</fsummary>
       <type>
 	<v>Subject = iodata()</v> 
@@ -190,9 +192,6 @@ This option makes it possible to include comments inside complicated patterns. N
 	</v>
 	<v>Captured = [ CaptureData ] | [ [ CaptureData ] ... ]</v>
 	<v>CaptureData = {int(),int()} | string() | binary()</v>
-	<v>ErrSpec = {ErrString, Position}</v>
-	<v>ErrString = string()</v>
-	<v>Position = int()</v> 	
       </type>
       <desc>
 
@@ -203,10 +202,9 @@ This option makes it possible to include comments inside complicated patterns. N
       or as a pre compiled <c>mp()</c> in which case it is executed
       against the subject directly.</p>
 
-      <p>When compilation is involved, the function may return
-      compilation errors as when compiling separately (<c>{error,
-      {string(),int()}}</c>); when only matching, no errors are
-      returned.</p>
+      <p>When compilation is involved, the exception <c>badarg</c> is thrown if
+      a compilation error occurs. To locate the error in the regular
+      expression, use the function <c>re:compile/2</c> to get more information.</p>
 
       <p>If the regular expression is previously compiled, the option
       list can only contain the options <c>anchored</c>,
@@ -260,9 +258,12 @@ This option makes it possible to include comments inside complicated patterns. N
       hence be a <c>list()</c> of <c>list()</c>'s when this
       option is given.</p>
 
-      <p>With this option, <c>re:run/3</c> handles empty matches in the same
-      way as Perl, meaning that a match at any point giving an empty
-      string (with length 0) will be retried with the options
+      <p>When the regular expression matches an empty string, the
+      behaviour might seem non-intuitive, why the behaviour requites
+      some clarifying.  With the global option, <c>re:run/3</c>
+      handles empty matches in the same way as Perl, meaning that a
+      match at any point giving an empty string (with length 0) will
+      be retried with the options
       <c>[anchored, notempty]</c> as well. If that 
       search gives a result of length &gt; 0, the result is included. 
       An example:</p>
@@ -302,8 +303,6 @@ This option makes it possible to include comments inside complicated patterns. N
       <p>The result of the call is:</p>
 
 <code>     {match,[[{0,0},{0,0}],[{1,0},{1,0}],[{1,2},{1,2}],[{3,0},{3,0}]]}</code>
-      <p>Confusing as this behavior might be, it is compatible with
-      Perl and therefore retained.</p>
 </item>
 
       <tag><c>notempty</c></tag>
@@ -489,22 +488,19 @@ This option makes it possible to include comments inside complicated patterns. N
       </desc>
     </func>
    <func>
-      <name>replace(Subject,RE,Replacement) -> iodata() | {error, ErrSpec}</name>
+      <name>replace(Subject,RE,Replacement) -> iodata() </name>
       <fsummary>Match a subject against regular expression and replace matching elements with Replacement</fsummary>
       <type>
 	<v>Subject = iodata()</v> 
         <v>RE = mp() | iodata()</v>
 	<v>Replacement = iodata()</v> 
-	<v>ErrSpec = {ErrString, Position}</v>
-	<v>ErrString = string()</v>
-	<v>Position = int()</v> 	
       </type>
       <desc>
       <p>The same as <c>replace(Subject,RE,Replacement,[])</c>.</p>
       </desc>
     </func> 
     <func>
-      <name>replace(Subject,RE,Replacement, Options) -> iodata() | binary() | list() | {error, ErrSpec}</name>
+      <name>replace(Subject,RE,Replacement, Options) -> iodata() | binary() | list()</name>
       <fsummary>Match a subject against regular expression and replace matching elements with Replacement</fsummary>
       <type>
 	<v>Subject = iodata()</v> 
@@ -519,9 +515,6 @@ This option makes it possible to include comments inside complicated patterns. N
 	| any | bsr_anycrlf
 -->
 	</v>
-	<v>ErrSpec = {ErrString, Position}</v>
-	<v>ErrString = string()</v>
-	<v>Position = int()</v> 	
       </type>
       <desc>
       <p>Replaces the matched part of the <c>Subject</c> string with the content of <c>Replacement</c>.</p>
@@ -547,10 +540,214 @@ This option makes it possible to include comments inside complicated patterns. N
       <code>    re:replace("abcd","c","[\\\&amp;]",[{return,list}]).</code>
       <p>gives</p>
       <code>    "ab[&amp;]d"</code>
-      <p>The <c>{error, ErrSpec}</c> return value can only arise from compilation, i.e. when a non precompiled malformed <c>RE</c> is given.</p>
+      <p>As with <c>re:run/3</c>, compilation errors raise the <c>badarg</c>
+      exception, <c>re:compile/2</c> can be used to get more information
+      about the error.</p>
       </desc>
     </func>
-     
+    <func>
+      <name>split(Subject,RE) -> SplitList</name>
+      <fsummary>Split a string by tokens specified as a regular expression</fsummary>
+      <type>
+	<v>Subject = iodata()</v> 
+        <v>RE = mp() | iodata()</v>
+	<v>SplitList = [ iodata() ]</v>
+      </type>
+      <desc>
+      <p>The same as <c>split(Subject,RE,[])</c>.</p>
+      </desc>
+    </func>
+
+    <func>
+      <name>split(Subject,RE,Options) -> SplitList</name>
+      <fsummary>Split a string by tokens specified as a regular expression</fsummary>
+      <type>
+	<v>Subject = iodata()</v> 
+        <v>RE = mp() | iodata()</v>
+	<v>Options = [ Option ]</v>
+	<v>Option = anchored | global | notbol | noteol | notempty | {offset, int()} | {newline, NLSpec} | {return, ReturnType} | {parts, NumParts} | group | trim | CompileOpt</v>
+	<v>NumParts = int() | infinity</v>
+	<v>ReturnType = iodata | list | binary</v>
+	<v>CompileOpt = see compile/2 above</v>
+	<v>NLSpec = cr | crlf | lf | anycrlf 
+<!-- XXX Unicode
+	| any | bsr_anycrlf
+-->
+	</v>
+	<v>SplitList = [ RetData ] | [ GroupedRetData ]</v>
+	<v>GroupedRetData = [ RetData ]</v>
+	<v>RetData = iodata() | binary() | list()</v>
+      </type>
+      <desc>
+      <p>This function splits the input into parts by finding tokens
+      according to the regular expression supplied.</p>
+
+      <p>The splitting is done basically by running a global regexp match and 
+      dividing the initial string wherever a match occurs. The matching part 
+      of the string is removed from the output.</p>
+
+      <p>The result is given as a list of &quot;strings&quot;, the
+      preferred datatype given in the <c>return</c> option (default iodata).</p> 
+      <p>If subexpressions are given in the regular expression, the
+      matching subexpressions are returned in the resulting list as
+      well. An example:</p>
+
+<code>    re:split("Erlang","[ln]",[{return,list}]).</code>
+
+      <p>will yield the result:</p>
+
+<code>    ["Er","a","g"]</code>
+
+      <p>while</p>
+
+<code>    re:split("Erlang","([ln])",[{return,list}]).</code>
+
+      <p>will yield</p>
+
+<code>    ["Er","l","a","n","g"]</code>
+
+      <p>The text matching the subexpression (marked by the parantheses 
+      in the regexp) is 
+      inserted in the result list where it was found. In effect this means 
+      that concatenating the result of a split where the whole regexp is a 
+      single subexpression (as in the example above) will always result in 
+      the original string.</p>
+
+      <p>As there is no matching subexpression for the last part in
+      the example (the &quot;g&quot;), there is nothing inserted after
+      that. To make the group of strings and the parts matching the
+      subexpressions more obvious, one might use the <c>group</c>
+      option, which groups together the part of the subject string with the
+      parts matching the subexpressions when the string was split:</p>
+
+<code>    re:split("Erlang","([ln])",[{return,list},group]).</code>
+
+      <p>gives:</p>
+
+<code>    [["Er","l"],["a","n"],["g"]]</code>      
+
+      <p>Here the regular expression matched first the &quot;l&quot;,
+      causing &quot;Er&quot; to be the first part in the result. When
+      the regular expression matched, the (only) subexpression was
+      bound to the &quot;l&quot;, why the &quot;l&quot; is inserted
+      in the group together with &quot;Er&quot;. The next match is of
+      the &quot;n&quot;, making &quot;a&quot; the next part to be
+      returned. As the subexpression is bound to the substring
+      &quot;n&quot; in this case, the &quot;n&quot; is inserted into
+      this group. The last group consists of the rest of the string,
+      as no more matches are found.</p>
+
+
+      <p>By default, all parts of the string, including the empty
+      strings are returned from the function. As an example:</p>      
+
+<code>    re:split("Erlang","[lg]",[{return,list}]).</code>
+
+      <p>The result will be:</p>
+
+<code>    ["Er","an",[]]</code>
+
+      <p>as the matching of the &quot;g&quot; in the end of the string
+      leaves an empty rest which is also returned. This behaviour
+      differs from the default behaviour of the split function in
+      Perl, where empty strings at the end are by default removed. To
+      get the
+      &quot;trimming&quot; default behavior of Perl, specify
+      <c>trim</c> as an option:</p>
+
+<code>    re:split("Erlang","[lg]",[{return,list},trim]).</code>
+
+      <p>The result will be:</p>
+
+<code>    ["Er","an"]</code>
+      
+      <p>The &quot;trim&quot; option in effect says; &quot;give me as
+      many parts as possible except the empty ones&quot;, which might
+      be useful in some circumstances. You can also specify how many
+      parts you want, by specifying <c>{parts,</c>N<c>}</c>:</p>
+
+<code>    re:split("Erlang","[lg]",[{return,list},{parts,2}]).</code>
+          
+      <p>This will give:</p>
+
+<code>    ["Er","ang"]</code>
+
+      <p>Note that the last part is &quot;ang&quot;, not
+      &quot;an&quot;, as we only specified splitting into two parts,
+      and the splitting stops when enough parts are given, why the
+      result differs from that of <c>trim</c>.</p>
+
+      <p>More than three parts are not possible with this indata, why</p>
+
+<code>    re:split("Erlang","[lg]",[{return,list},{parts,4}]).</code>
+
+      <p>will give the same result as the default, which is to be
+      viewed as &quot;an infinite number of parts&quot;.</p> 
+
+      <p>Specifying <c>0</c> as the number of parts gives the same
+      effect as the option <c>trim</c>. If subexpressions are
+      captured, empty subexpression matches at the end are also
+      stripped from the result if <c>trim</c> or <c>{parts,0}</c> is
+      specified.</p>
+
+      <p>If you are familiar with Perl, the <c>trim</c>
+      behaviour corresponds exactly to the Perl default, the
+      <c>{parts,N}</c> where N is a positive integer corresponds
+      exactly to the Perl behaviour with a positive numerical third
+      parameter and the default behaviour of <c>re:split/3</c> corresponds
+      to that when the Perl routine is given a negative integer as the
+      third parameter.</p>
+
+      <p>Summary of options not previously described for the <c>re:run/3</c> function:</p>
+      <taglist>
+      <tag>{return,ReturnType}</tag>
+      <item><p>Specifies how the parts of the original string are presented in the result list. The possible types are:</p>
+      <taglist>
+        <tag>iodata</tag>
+	<item>The variant of <c>iodata()</c> that gives the least copying of data with the current implementation (often a binary, but don't depend on it).</item>
+	<tag>binary</tag>
+	<item>All parts returned as binaries.</item>
+	<tag>list</tag>
+	<item>All parts returned as lists of characters (&quot;strings&quot;).</item>
+	</taglist>
+      </item>
+      <tag>group</tag>
+      <item>
+
+      <p>Groups together the part of the string with
+      the parts of the string matching the subexpressions of the
+      regexp.</p>
+      <p>The return value from the function will in this case be a
+      <c>list()</c> of <c>list()</c>'s.  Each sublist begins with the
+      string picked out of the subject string, followed by the parts
+      matching each of the subexpressions in order of occurence in the
+      regular expression.</p>
+
+      </item>
+      <tag>{parts,N}</tag>
+      <item>
+
+      <p>Specifies the number of parts the subject string is to be
+      split into.</p>
+
+      <p>The number of parts should be a positive integer for a specific maximum on the
+      number of parts and <c>infinity</c> for the maximum number of
+      parts possible (the default). Specifying <c>{parts,0}</c> gives as many parts as
+      possible disregarding empty parts at the end, the same as
+      specifying <c>trim</c></p>
+      </item>
+      <tag>trim</tag>
+      <item>
+
+      <p>Specifies that empty parts at the end of the result list are
+      to be disregarded. The same as specifying <c>{parts,0}</c>. This
+      corresponds to the default behaviour of the <c>split</c>
+      built in function in Perl.</p>
+      </item>
+      </taglist>
+
+      </desc>
+    </func>     
     </funcs>
     
 

@@ -5,7 +5,7 @@
   <header>
     <copyright>
       <year>1996</year>
-      <year>2007</year>
+      <year>2008</year>
       <holder>Ericsson AB, All Rights Reserved</holder>
     </copyright>
     <legalnotice>
@@ -126,6 +126,127 @@
   </section>
 
   <section>
+    <title>Loading of Code From Archive Files</title>
+
+    <warning><p>The support for loading of code from archive files is
+     experimental. The sole purpose of releasing it before it is ready
+     is to obtain early feedback. The file format, semantics,
+     interfaces etc. may be changed in a future release. The function
+     <c>lib_dir/2</c> and the flag <c>-code_path_choice</c> are also
+     experimental.</p></warning>
+
+    <p>In the current implementation, Erlang archives are <c>ZIP</c>
+     files with <c>.ez</c> extension. Erlang archives may also be
+     enclosed in <c>escript</c> files whose file extension is arbitary.</p>
+
+    <p>Erlang archive files may contain entire Erlang applications or
+     parts of applications. The structure in an archive file is the
+     same as the directory structure for an application. If you for
+     example would create an archive of <c>mnesia-4.4.7</c>, the
+     archive file must be named <c>mnesia-4.4.7.ez</c> and it must
+     contain a top directory with the name <c>mnesia-4.4.7</c>. If the
+     version part of the name is omitted, it must also be omitted in
+     the archive. That is, a <c>mnesia.ez</c> archive must contain a
+     <c>mnesia</c> top directory.</p>
+
+    <p>An archive file for an application may for example be
+     created like this:</p>
+
+<pre>
+   zip:create("mnesia-4.4.7.ez", 
+              ["mnesia-4.4.7"], 
+              [{cwd, code:lib_dir()},
+               {compress, all},
+               {uncompress,[".beam",".app"]}]).</pre>
+
+    <p>Any file in the archive may be compressed, but in order to
+     speed up the access of frequently read files, it may be a good
+     idea to store <c>beam</c> and <c>app</c> files uncompressed in
+     the archive.</p>
+
+    <p>Normally the top directory of an application is located either
+     in the library directory <c>$OTPROOT/lib</c> or in a directory
+     referred to by the environment variable <c>ERL_LIBS</c>. At
+     startup when the inititial code path is computed, the code server
+     will also look for archive files in these directories and
+     possibly add <c>ebin</c> directories in archives to the code path. The
+     code path will then contain paths to directories that looks like
+     <c>$OTPROOT/lib/mnesia.ez/mnesia/ebin</c> or
+     <c>$OTPROOT/lib/mnesia-4.4.7.ez/mnesia-4.4.7/ebin</c>.</p>
+
+    <p>The code server uses the module <c>erl_prim_loader</c>
+     (possibly via the <c>erl_boot_server</c>) to read code files from
+     archives. But the functions in <c>erl_prim_loader</c> may also be
+     used by other applications to read files from archives. For
+     example, the call
+     <c>erl_prim_loader:list_dir("/otp/root/lib/mnesia-4.4.7.ez/mnesia-4.4.7/examples/bench)"</c>
+     would list the contents of a directory inside an archive.
+     See <seealso marker="erl_prim_loader">erl_prim_loader(3)</seealso></p>
+
+    <p>An application archive file and a regular application directory
+     may coexist. This may be useful when there is a need of having
+     parts of the application as regular files. A typical case is the
+     <c>priv</c> directory which must reside as a regular directory in
+     order to be able to dynamically link in drivers and start port
+     programs. For other applications that do not have this need, the
+     <c>priv</c> directory may reside in the archive and the files
+     under the <c>priv</c> directory may be read via the
+     <c>erl_prim_loader</c>.</p>
+
+    <p>At the time point when a directory is added to the code path as
+     well as when the entire code path is (re)set, the code server
+     will decide which subdirecories in an application that shall be
+     read from the archive and which that shall be read as regular
+     files. If directories are added or removed afterwards, the file
+     access may fail if the code path is not updated (possibly to the
+     same path as before in order to trigger the directory resolution
+     update). For each directory on the second level (ebin, priv, src
+     etc.) in the application archive, the code server will firstly
+     choose the regular directory if it exists and secondly from the
+     archive. The function
+     <c>code:lib_dir/2</c> returns the path to the subdirectory. For
+     example <c>code:lib_dir(megaco,ebin)</c> may return
+     <c>/otp/root/lib/megaco-3.9.1.1.ez/megaco-3.9.1.1/ebin</c> while
+     <c>code:lib_dir(megaco,priv)</c> may return
+     <c>/otp/root/lib/megaco-3.9.1.1/priv</c>.</p>
+
+    <p>When an <c>escript</c> file contains an archive, there are
+     neither restrictions on the name of the <c>escript</c> nor on how
+     many applications that may be stored in the embedded
+     archive. Single <c>beam</c> files may also reside on the top
+     level in the archive. At startup, both the top directory in the
+     embedded archive as well as all (second level) <c>ebin</c>
+     directories in the embedded archive are added to the code path.
+     See <seealso marker="erts:escript">escript(1)</seealso></p>
+
+    <p>By default the choice of directories in the code path is
+     <c>strict</c>. The directory that ends up in the code path will
+     be exactly the stated one. This means that if for example the
+     directory <c>$OTPROOT/lib/mnesia-4.4.7/ebin</c> is explicitly
+     added to the code path, the code server will not load files from
+     <c>$OTPROOT/lib/mnesia-4.4.7.ez/mnesia-4.4.7/ebin</c> and vice
+     versa. </p>
+
+    <p>This behavior can be controlled via the command line flag
+     <c>-code_path_choice Choice</c>. If the flag is set to <c>relaxed</c>,
+     the code server will instead choose a suiteable directory
+     depending on the actual file structure. If there exists a regular
+     application ebin directory,situation it will be choosen. But if it does
+     not exist, the ebin directory in the archive is choosen if it
+     exists. If neither of them exists the original directory will be
+     choosen.</p>
+
+    <p>The command line flag <c>-code_path_choice Choice</c> does also
+     affect how <c>init</c> interprets the <c>boot script</c>. The
+     interpretation of the explicit code paths in the <c>boot
+     script</c> may be <c>strict</c> or <c>relaxed</c>. it is
+     particular useful to set the flag to <c>relaxed</c> when you want
+     to elaborate with code loading from archives without editing the
+     <c>boot script</c>.  See <seealso
+     marker="init">init(3)</seealso></p> </section>
+
+  <section>
+
     <title>Current and Old Code</title>
     <p>The code of a module can exists in two variants in a system:
       <em>current code</em> and <em>old code</em>. When a module is
@@ -173,7 +294,7 @@
       <fsummary>Set the code server search path</fsummary>
       <type>
         <v>Path = [Dir]</v>
-        <v>&nbsp;Dir = string()</v>
+        <v>Dir = string()</v>
         <v>What = bad_directory | bad_path</v>
       </type>
       <desc>
@@ -189,7 +310,7 @@
       <fsummary>Return the code server search path</fsummary>
       <type>
         <v>Path = [Dir]</v>
-        <v>&nbsp;Dir = string()</v>
+        <v>Dir = string()</v>
       </type>
       <desc>
         <p>Returns the code path</p>
@@ -234,7 +355,7 @@
       <fsummary>Add directories to the end of the code path</fsummary>
       <type>
         <v>Dirs = [Dir]</v>
-        <v>&nbsp;Dir = string()</v>
+        <v>Dir = string()</v>
       </type>
       <desc>
         <p>Adds the directories in <c>Dirs</c> to the end of the code
@@ -248,7 +369,7 @@
       <fsummary>Add directories to the beginning of the code path</fsummary>
       <type>
         <v>Dirs = [Dir]</v>
-        <v>&nbsp;Dir = string()</v>
+        <v>Dir = string()</v>
       </type>
       <desc>
         <p>Adds the directories in <c>Dirs</c> to the beginning of
@@ -371,10 +492,8 @@
       </type>
       <desc>
         <p>This function can be used to load object code on remote
-          Erlang nodes. It can also be used to load object code where
-          the file name and module name differ. This, however, is a
-          very unusual situation and not recommended. The parameter
-          <c>Binary</c> must contain object code for <c>Module</c>.
+          Erlang nodes. The argument <c>Binary</c> must contain
+	  object code for <c>Module</c>.
           <c>Filename</c> is only used by the code server to keep a
           record of from which file the object code for <c>Module</c>
           comes. Accordingly, <c>Filename</c> is not opened and read by
@@ -437,7 +556,7 @@
       <type>
         <v>Module = atom()</v>
         <v>Loaded = Absname | preloaded | cover_compiled</v>
-        <v>&nbsp;Absname = string()</v>
+        <v>Absname = string()</v>
       </type>
       <desc>
         <p>Checks if <c>Module</c> is loaded. If it is,
@@ -457,7 +576,7 @@
       <type>
         <v>Module = atom()</v>
         <v>Loaded = Absname | preloaded | cover_compiled</v>
-        <v>&nbsp;Absname = string()</v>
+        <v>Absname = string()</v>
       </type>
       <desc>
         <p>Returns a list of tuples <c>{Module, Loaded}</c> for all
@@ -472,7 +591,7 @@
       <type>
         <v>Module = atom()</v>
         <v>Which = Filename | non_existing | preloaded | cover_compiled</v>
-        <v>&nbsp;Filename = string()</v>
+        <v>Filename = string()</v>
       </type>
       <desc>
         <p>If the module is not loaded, this function searches the code
@@ -540,19 +659,56 @@ rpc:call(Node, code, load_binary, [Module, Filename, Binary]),
       <desc>
         <p>This function is mainly intended for finding out the path
           for the "library directory", the top directory, for an
-          application <c>Name</c> located under <c>$OTPROOT/lib</c>.</p>
-        <p>If there is a directory called <c>Name</c> in the code path,
-          optionally with a <c>-Vsn</c> suffix and/or an <c>ebin</c>
-          subdirectory, the name of this directory is returned.</p>
+          application <c>Name</c> located under <c>$OTPROOT/lib</c> or
+          on a directory referred to via the <c>ERL_LIBS</c>
+          environment variable.</p>
+        <p>If there is a regular directory called <c>Name</c> or
+          <c>Name-Vsn</c> in the code path with an <c>ebin</c>
+          subdirectory, the path to this directory is returned (not
+          the <c>ebin</c> directory). If the directory refers to a
+          directory in an archive, the archive name is stripped away
+          before the path is returned.  For example, if the directory
+          <c>/usr/local/otp/lib/mnesia-4.2.2.ez/mnesia-4.2.2/ebin</c>
+          is in the path, <c>/usr/local/otp/lib/mnesia-4.2.2/ebin</c>
+          will be returned. This means that the library directory for
+          an application is the same, regardless of whether the
+          application resides in an archive or not.</p>
+
         <pre>
 > <input>code:lib_dir(mnesia).</input>
 "/usr/local/otp/lib/mnesia-4.2.2"</pre>
         <p>Returns <c>{error, bad_name}</c> if <c>Name</c>
-	is not the name of an application under <c>$OTPROOT/lib</c>.
-	Fails with an exception if <c>Name</c> has the wrong type.</p>
+	 is not the name of an application under <c>$OTPROOT/lib</c> or
+	 on a directory referred to via the <c>ERL_LIBS</c>
+         environment variable. Fails with an exception if <c>Name</c>
+         has the wrong type.</p>
 
-	<warning><p>For backward compatibiliy, <c>Name</c> is also allowed to
+	<warning><p>For backward compatibility, <c>Name</c> is also allowed to
 	be a string. That will probably change in a future release.</p></warning>
+      </desc>
+    </func>
+    <func>
+      <name>lib_dir(Name, SubDir) -> string() | {error, bad_name}</name>
+      <fsummary>subdirectory for an application</fsummary>
+      <type>
+        <v>Name = atom()</v>
+        <v>SubDir = atom()</v>
+      </type>
+      <desc>
+        <p>Returns the path to a subdirectory directly under the top
+         directory of an application. Normally the subdirectories
+         resides under the top directory for the application, but when
+         applications at least partly resides in an archive the
+         situation is different. Some of the subdirectories may reside
+         as regular directories while other resides in an archive
+         file. It is not checked if this directory really exists.</p>
+
+        <pre>
+> <input>code:lib_dir(megaco, priv).</input>
+"/usr/local/otp/lib/megaco-3.9.1.1/priv"</pre>
+
+        <p>Fails with an exception if <c>Name</c> or <c>SubDir</c> has
+        the wrong type.</p>
       </desc>
     </func>
     <func>
@@ -570,22 +726,10 @@ rpc:call(Node, code, load_binary, [Module, Filename, Binary]),
         <v>Name = atom()</v>
       </type>
       <desc>
-        <p>This function is mainly intended for finding out the path
-          for the <c>priv</c> directory for an application <c>Name</c>
-          located under <c>$OTPROOT/lib</c>.</p>
-        <p>If there is a directory called <c>Name</c> in the code path,
-          optionally with a <c>-Vsn</c> suffix and/or an <c>ebin</c>
-          subdirectory, the function returns the name of this directory
-          with <c>priv</c> appended. It is not checked if this
-          directory really exists.</p>
-        <pre>
-> <input>code:priv_dir(mnesia).</input>
-"/usr/local/otp/lib/mnesia-4.2.2/priv"</pre>
-        <p>Returns <c>{error, bad_name}</c> if <c>Name</c>
-	is not the name of an application under <c>$OTPROOT/lib</c>.
-	Fails with an exception if <c>Name</c> has the wrong type.</p>
+        <p>Returns the path to the <c>priv</c> directory in an
+         application. Equivalent to <c>code:lib_dir(Name,priv).</c>.</p>
 
-	<warning><p>For backward compatibiliy, <c>Name</c> is also allowed to
+	<warning><p>For backward compatibility, <c>Name</c> is also allowed to
 	be a string. That will probably change in a future release.</p></warning>
       </desc>
     </func>
@@ -623,6 +767,20 @@ rpc:call(Node, code, load_binary, [Module, Filename, Binary]),
       </desc>
     </func>
     <func>
+      <name>is_sticky(Module) -> true | false</name>
+      <fsummary>Test whether a module is sticky</fsummary>
+      <type>
+        <v>Module = atom()</v>
+      </type>
+      <desc>
+        <p>This function returns <c>true</c> if <c>Module</c> is the
+	name of a module that has been loaded from a sticky directory
+	(or in other words: an attempt to reload the module will fail),
+	or <c>false</c> if <c>Module</c> is not a loaded module or is
+	not sticky.</p>
+      </desc>
+    </func>
+    <func>
       <name>rehash() -> ok</name>
       <fsummary>Rehash or create code path cache</fsummary>
       <desc>
@@ -648,10 +806,24 @@ rpc:call(Node, code, load_binary, [Module, Filename, Binary]),
     </func>
     <func>
       <name>clash() -> ok</name>
-      <fsummary>Searche for modules with identical names.</fsummary>
+      <fsummary>Search for modules with identical names.</fsummary>
       <desc>
         <p>Searches the entire code space for module names with
           identical names and writes a report to <c>stdout</c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>is_module_native(Module) -> true | false | undefined</name>
+      <fsummary>Test whether a module has native code</fsummary>
+      <type>
+        <v>Module = atom()</v>
+      </type>
+      <desc>
+        <p>This function returns <c>true</c> if <c>Module</c> is 
+	name of a loaded module that has native code loaded, and 
+	<c>false</c> if <c>Module</c> is loaded but does not have
+	native. If <c>Module</c> is not loaded, this function returns
+	<c>undefined</c>.</p>
       </desc>
     </func>
   </funcs>

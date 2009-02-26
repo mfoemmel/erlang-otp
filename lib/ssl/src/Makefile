@@ -1,19 +1,21 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#<copyright>
+# <year>1999-2008</year>
+# <holder>Ericsson AB, All Rights Reserved</holder>
+#</copyright>
+#<legalnotice>
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
-# 
+# retrieved online at http://www.erlang.org/.
+#
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
-# 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
-#     $Id$
+#
+# The Initial Developer of the Original Code is Ericsson AB.
+#</legalnotice>
 #
 
 include $(ERL_TOP)/make/target.mk
@@ -56,13 +58,15 @@ MODULES= \
 	ssl_handshake \
 	ssl_manager \
 	ssl_session \
+        ssl_session_cache_api \
+	ssl_session_cache \
 	ssl_record \
 	ssl_ssl2 \
 	ssl_ssl3 \
 	ssl_tls1 \
 
 INTERNAL_HRL_FILES = \
-	 ssl_int.hrl ssl_broker_int.hrl \
+	 ssl_int.hrl ssl_broker_int.hrl ssl_debug.hrl \
 	 ssl_alert.hrl ssl_cipher.hrl ssl_handshake.hrl ssl_internal.hrl \
 	 ssl_record.hrl
 
@@ -86,7 +90,8 @@ INCLUDE = ../include
 # FLAGS
 # ----------------------------------------------------
 EXTRA_ERLC_FLAGS = +warn_unused_vars
-ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/kernel/src -I$(INCLUDE) \
+ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/kernel/src -pa$(ERL_TOP)/lib/public_key/ebin \
+	-I$(INCLUDE) \
 	$(EXTRA_ERLC_FLAGS) -DVSN=\"$(VSN)\"
 
 

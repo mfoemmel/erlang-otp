@@ -1,3 +1,4 @@
+%% -*- erlang -*-
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -569,8 +570,8 @@ parse_term(Tokens) ->
 	{error,E} -> {error,E}
     end.
 
--type(attributes() :: 'export' | 'file' | 'import' | 'module'
-		    | 'record' | 'spec' | 'type').
+-type attributes() :: 'export' | 'file' | 'import' | 'module'
+		    | 'record' | 'spec' | 'type'.
 
 build_typed_attribute({atom,La,record}, 
 		      {typed_record, {atom,_Ln,RecordName}, RecTuple}) ->
@@ -704,7 +705,8 @@ build_attribute({atom,La,file}, Val) ->
     end;
 build_attribute({atom,La,Attr}, Val) ->
     case Val of
-	[Expr] ->
+	[Expr0] ->
+	    Expr = attribute_farity(Expr0),
 	    {attribute,La,Attr,term(Expr)};
 	_Other -> return_error(La, "bad attribute")
     end.
@@ -715,7 +717,19 @@ var_list({nil,_Ln}) -> [];
 var_list(Other) ->
     return_error(?line(Other), "bad variable list").
 
--spec(error_bad_decl/2 :: (integer(), attributes()) -> no_return()).
+attribute_farity({cons,L,H,T}) ->
+    {cons,L,attribute_farity(H),attribute_farity(T)};
+attribute_farity({tuple,L,Args0}) ->
+    Args = attribute_farity_list(Args0),
+    {tuple,L,Args};
+attribute_farity({op,L,'/',{atom,_,_}=Name,{integer,_,_}=Arity}) ->
+    {tuple,L,[Name,Arity]};
+attribute_farity(Other) -> Other.
+
+attribute_farity_list(Args) ->
+    [attribute_farity(A) || A <- Args].
+    
+-spec error_bad_decl(integer(), attributes()) -> no_return().
 
 error_bad_decl(L, S) ->
     return_error(L, io_lib:format("bad ~w declaration", [S])).
@@ -853,16 +867,7 @@ abstract(T) when is_float(T) -> {float,0,T};
 abstract(T) when is_atom(T) -> {atom,0,T};
 abstract([]) -> {nil,0};
 abstract(B) when is_bitstring(B) ->
-    {bin, 0, lists:map(fun(Byte) when is_integer(Byte) ->
-			       {bin_element, 0,
-				{integer, 0, Byte}, default, default};
-                          (Bits) ->
-                               Sz = bit_size(Bits),
-                               <<Val:Sz>> = Bits,
-                               {bin_element, 0,
-                                {integer, 0, Val}, {integer, 0, Sz}, default}
-		       end,
-		       bitstring_to_list(B))};
+    {bin, 0, [abstract_byte(Byte, 0) || Byte <- bitstring_to_list(B)]};
 abstract([C|T]) when is_integer(C), 0 =< C, C < 256 ->
     abstract_string(T, [C]);
 abstract([H|T]) ->
@@ -887,24 +892,20 @@ abstract_list([H|T]) ->
 abstract_list([]) ->
     [].
 
+abstract_byte(Byte, Line) when is_integer(Byte) ->
+    {bin_element, Line, {integer, Line, Byte}, default, default};
+abstract_byte(Bits, Line) ->
+    Sz = bit_size(Bits),
+    <<Val:Sz>> = Bits,
+    {bin_element, Line, {integer, Line, Val}, {integer, Line, Sz}, default}.
+
 %%% abstract/2 keeps the line number
 abstract(T, Line) when is_integer(T) -> {integer,Line,T};
 abstract(T, Line) when is_float(T) -> {float,Line,T};
 abstract(T, Line) when is_atom(T) -> {atom,Line,T};
 abstract([], Line) -> {nil,Line};
 abstract(B, Line) when is_bitstring(B) ->
-    {bin, Line, lists:map(fun(Byte) when is_integer(Byte) ->
-			       {bin_element, Line,
-				{integer, Line, Byte}, default, default};
-                          (Bits) ->
-                               Sz = bit_size(Bits),
-                               <<Val:Sz>> = Bits,
-                               {bin_element, Line,
-                                {integer, Line, Val},
-                                {integer, Line, Sz},
-                                default}
-		       end,
-		       bitstring_to_list(B))};
+    {bin, Line, [abstract_byte(Byte, Line) || Byte <- bitstring_to_list(B)]};
 abstract([C|T], Line) when is_integer(C), 0 =< C, C < 256 ->
     abstract_string(T, [C], Line);
 abstract([H|T], Line) ->

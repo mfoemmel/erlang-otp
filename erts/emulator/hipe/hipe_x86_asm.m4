@@ -252,27 +252,13 @@ define(NBIF_RET,`NBIF_RET_N(eval(RET_POP($1)))')dnl
 `/* #define NBIF_RET_5	'NBIF_RET(5)` */'
 
 dnl
-dnl NBIF_SAVE_RESCHED_ARGS(ARITY)
-dnl Used in the expensive_bif_interface_{1,2,3}() macros to copy
-dnl caller-save registers to non-volatile locations.
-dnl Currently, 1 <= ARITY <= 3, so this simply moves the argument
-dnl registers to the argument slots in the PCB.
-dnl
-define(NBIF_MIN,`ifelse(eval($1 > $2),0,$1,$2)')dnl
-define(NBIF_SVA_1,`ifelse(eval($1 < NR_ARG_REGS),0,,`movl ARG$1, P_ARG$1(P); ')')dnl
-define(NBIF_SVA_N,`ifelse(eval($1 >= 0),0,,`NBIF_SVA_N(eval($1-1))NBIF_SVA_1($1)')')dnl
-define(NBIF_SAVE_RESCHED_ARGS,`NBIF_SVA_N(eval(NBIF_MIN($1,NR_ARG_REGS)-1))')dnl
-`/* #define NBIF_SAVE_RESCHED_ARGS_1 'NBIF_SAVE_RESCHED_ARGS(1)` */'
-`/* #define NBIF_SAVE_RESCHED_ARGS_2 'NBIF_SAVE_RESCHED_ARGS(2)` */'
-`/* #define NBIF_SAVE_RESCHED_ARGS_3 'NBIF_SAVE_RESCHED_ARGS(3)` */'
-
-dnl
 dnl STORE_CALLER_SAVE
 dnl LOAD_CALLER_SAVE
 dnl Used to save and restore C caller-save argument registers around
 dnl calls to hipe_inc_nstack. The first 3 arguments registers are C 
 dnl caller-save, remaining ones are C callee-save.
 dnl
+define(NBIF_MIN,`ifelse(eval($1 > $2),0,$1,$2)')dnl
 define(NR_CALLER_SAVE,NBIF_MIN(NR_ARG_REGS,3))dnl
 define(STORE_CALLER_SAVE,`SAR_N(eval(NR_CALLER_SAVE-1))')dnl
 define(LOAD_CALLER_SAVE,`LAR_N(eval(NR_CALLER_SAVE-1))')dnl

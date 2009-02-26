@@ -49,7 +49,7 @@
 %% This is ugly but...
 %%----------------------------------------------------------------------
 
-Expect 113.
+Expect 135.
 
 
 %%----------------------------------------------------------------------
@@ -295,7 +295,7 @@ Terminals
     'BufferToken'
     'COLON'
     'COMMA'
-    'ContextAttrToken'   % OTP-7138: To fix a (flex) scanner problem
+    %% 'ContextAttrToken'   % OTP-7138: See OTP-7534 below
     'ContextAuditToken'
     'CtxToken'
     'DelayToken'
@@ -347,7 +347,7 @@ Terminals
     'NEQUAL'
     'NotifyCompletionToken'
     'NotifyToken'
-    'Nx64Token'  %% v2
+    'Nx64kToken'  %% v2
     'ObservedEventsToken'
     'OffToken'
     'OnToken'
@@ -401,6 +401,29 @@ Terminals
     'V90Token'
     'V91Token'
     'VersionToken'
+    'AndAUDITSelectToken'            %% OTP-7534: v3-fix
+    'BothToken'                      %% OTP-7534: v3-fix
+    'ContextAttrToken'               %% OTP-7534: v3-fix
+    'ContextListToken'               %% OTP-7534: v3-fix
+    'DirectionToken'                 %% OTP-7534: v3-fix
+    %% 'EmergencyOffToken'              %% OTP-7534: v3-fix
+    'EmergencyValueToken'            %% OTP-7534: v3-fix
+    'ExternalToken'                  %% OTP-7534: v3-fix
+    'IEPSToken'                      %% OTP-7534: v3-fix
+    'IntsigDelayToken'               %% OTP-7534: v3-fix
+    'InternalToken'                  %% OTP-7534: v3-fix
+    'IterationToken'                 %% OTP-7534: v3-fix
+    'MessageSegmentToken'            %% OTP-7534: v3-fix
+    'NeverNotifyToken'               %% OTP-7534: v3-fix
+    'NotifyImmediateToken'           %% OTP-7534: v3-fix
+    'NotifyRegulatedToken'           %% OTP-7534: v3-fix
+    'OnewayBothToken'                %% OTP-7534: v3-fix
+    'OnewayExternalToken'            %% OTP-7534: v3-fix
+    'OrAUDITselectToken'             %% OTP-7534: v3-fix
+    'RequestIDToken'                 %% OTP-7534: v3-fix
+    'ResetEventsDescriptorToken'     %% OTP-7534: v3-fix
+    'SegmentationCompleteToken'      %% OTP-7534: v3-fix
+    'ServiceChangeIncompleteToken'   %% OTP-7534: v3-fix
     endOfMessage
 
 .
@@ -930,10 +953,12 @@ mediaParm            -> terminationStateDescriptor
 
 %% at-most-onc .
 %% Specially treated by the scanner.
-streamParm           -> 'LocalDescriptorToken'
-		      : {local, #'LocalRemoteDescriptor'{propGrps = ensure_prop_groups('$1')} } .
-streamParm           -> 'RemoteDescriptorToken'
-		      : {remote, #'LocalRemoteDescriptor'{propGrps = ensure_prop_groups('$1')}} .
+streamParm           -> 'LocalDescriptorToken' : 
+                        PGs = ensure_prop_groups('$1'), 
+		        {local, #'LocalRemoteDescriptor'{propGrps = PGs}} .
+streamParm           -> 'RemoteDescriptorToken' : 
+                         PGs = ensure_prop_groups('$1'), 
+                         {remote, #'LocalRemoteDescriptor'{propGrps = PGs}} .
 streamParm           -> localControlDescriptor  : {control, '$1'} .
 
 streamDescriptor     -> 'StreamToken' 'EQUAL' streamID
@@ -1338,6 +1363,12 @@ terminationA         -> terminationID  : '$1' .
 terminationB         -> terminationID  : '$1' .
 
 topologyTriple       -> terminationA 'COMMA' terminationB 'COMMA' 
+                        topologyDirection 'COMMA' eventStream :
+                          #'TopologyRequest'{terminationFrom   = '$1',
+                                             terminationTo     = '$3',
+                                             topologyDirection = '$5',
+                                             streamID          = '$7'} .
+topologyTriple       -> terminationA 'COMMA' terminationB 'COMMA' 
                         topologyDirection :
                           #'TopologyRequest'{terminationFrom   = '$1',
                                              terminationTo     = '$3',
@@ -1372,7 +1403,7 @@ safeToken2           -> 'BothwayToken'          : '$1' .
 safeToken2           -> 'BriefToken'            : '$1' .
 safeToken2           -> 'BufferToken'           : '$1' .
 safeToken2           -> 'CtxToken'              : '$1' .
-safeToken2           -> 'ContextAttrToken'      : '$1' .
+%% safeToken2           -> 'ContextAttrToken'      : '$1' .
 safeToken2           -> 'ContextAuditToken'     : '$1' .
 %% v2-safeToken2           -> 'DigitMapToken'         : '$1' .
 %% safeToken2        -> 'DigitMapDescriptorToken' : '$1' .
@@ -1418,7 +1449,7 @@ safeToken2           -> 'MoveToken'             : '$1' .
 %% v2-safeToken2           -> 'MuxToken'              : '$1' .
 safeToken2           -> 'NotifyToken'           : '$1' .
 safeToken2           -> 'NotifyCompletionToken' : '$1' .
-safeToken2           -> 'Nx64Token'             : '$1' .
+safeToken2           -> 'Nx64kToken'            : '$1' .
 %% v2-safeToken2           -> 'ObservedEventsToken'   : '$1' .
 safeToken2           -> 'OnewayToken'           : '$1' .
 safeToken2           -> 'OffToken'              : '$1' .
@@ -1468,6 +1499,32 @@ safeToken2           -> 'V76Token'              : '$1' .
 safeToken2           -> 'V90Token'              : '$1' .
 safeToken2           -> 'V91Token'              : '$1' .
 safeToken2           -> 'VersionToken'          : '$1' .
+%% <OTP-7534>
+safeToken2           -> 'AndAUDITSelectToken'   : '$1' . 
+safeToken2           -> 'BothToken'             : '$1' . 
+safeToken2           -> 'ContextAttrToken'      : '$1' . 
+safeToken2           -> 'ContextListToken'      : '$1' . 
+safeToken2           -> 'DirectionToken'        : '$1' . 
+%% safeToken2           -> 'EmergencyOffToken'     : '$1' . 
+safeToken2           -> 'EmergencyValueToken'   : '$1' . 
+safeToken2           -> 'ExternalToken'         : '$1' . 
+safeToken2           -> 'IEPSToken'             : '$1' . 
+safeToken2           -> 'InternalToken'         : '$1' . 
+safeToken2           -> 'IntsigDelayToken'      : '$1' . 
+safeToken2           -> 'IterationToken'        : '$1' . 
+safeToken2           -> 'MessageSegmentToken'   : '$1' . 
+safeToken2           -> 'NeverNotifyToken'      : '$1' . 
+safeToken2           -> 'NotifyImmediateToken'  : '$1' . 
+safeToken2           -> 'NotifyRegulatedToken'  : '$1' . 
+safeToken2           -> 'OnewayBothToken'       : '$1' . 
+safeToken2           -> 'OnewayExternalToken'   : '$1' . 
+safeToken2           -> 'OrAUDITselectToken'    : '$1' . 
+safeToken2           -> 'RequestIDToken'        : '$1' . 
+safeToken2           -> 'ResetEventsDescriptorToken'    : '$1' . 
+safeToken2           -> 'SegmentationCompleteToken'     : '$1' . 
+safeToken2           -> 'ServiceChangeIncompleteToken'  : '$1' . 
+%% </OTP-7534>
+
 
 Erlang code.
 

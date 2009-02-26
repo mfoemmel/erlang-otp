@@ -22,7 +22,7 @@
 %% A general CFG instruction walktrough
 %%-------------------------------------------------------------------
 
--spec(cfg/3 :: (#cfg{}, mfa(), comp_options()) -> [_]).
+-spec cfg(#cfg{}, mfa(), comp_options()) -> [_].
 
 cfg(Cfg, _IcodeFun, _Options) ->
   Labels = hipe_icode_cfg:labels(Cfg),
@@ -46,7 +46,7 @@ walktrough_bb(BB, Info) ->
 %% The counter specific functions
 %%-------------------------------------------------------------------
 
--spec(compare/3 :: (gb_tree(), gb_tree(), gb_tree()) -> gb_tree()).
+-spec compare(gb_tree(), gb_tree(), gb_tree()) -> gb_tree().
 
 compare(Name, Old, New) ->
   NewList = gb_trees:to_list(New),

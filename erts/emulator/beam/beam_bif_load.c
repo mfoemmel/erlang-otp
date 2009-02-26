@@ -180,9 +180,11 @@ check_process_code_2(BIF_ALIST_2)
 	rp = erts_pid2proc_not_running(BIF_P, ERTS_PROC_LOCK_MAIN,
 				       BIF_ARG_1, ERTS_PROC_LOCK_MAIN);
 	if (!rp) {
-	    ERTS_BIF_CHK_EXITED(BIF_P);
-	    ERTS_SMP_BIF_CHK_RESCHEDULE(BIF_P);
 	    BIF_RET(am_false);
+	}
+	if (rp == ERTS_PROC_LOCK_BUSY) {
+	    ERTS_BIF_YIELD2(bif_export[BIF_check_process_code_2], BIF_P,
+			    BIF_ARG_1, BIF_ARG_2);
 	}
 	modp = erts_get_module(BIF_ARG_2);
 	res = check_process_code(rp, modp);

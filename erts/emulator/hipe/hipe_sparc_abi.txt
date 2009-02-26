@@ -19,18 +19,12 @@ They are used as temporary scratch registers and for function call
 parameters and results.
 
 The runtime system uses temporaries in specific contexts:
-%l7 (TEMP_ARG2) is used to preserve ARG2 in BIFs that may fail with
-RESCHEDULE.
-%i5 (TEMP_ARG1) is used to preserve ARG1 in BIFs that may fail with
-RESCHEDULE, and to pass the callee arity in native-to-BEAM traps.
-%i4 (TEMP_ARG0) is used to preserve ARG0 in BIFs that may fail
-with RESCHEDULE, preserve the return value in nbif_stack_trap_ra,
+%i5 (TEMP_ARG1) is used to pass the callee arity in native-to-BEAM traps.
+%i4 (TEMP_ARG0) is used to preserve the return value in nbif_stack_trap_ra,
 preserve RA in hipe_sparc_inc_stack (the caller saved its RA in
 TEMP_RA), to pass the callee address in native-to-BEAM traps,
 and to contain the target in BEAM-to-native calls.
 %i3 (TEMP_RA) is used to preserve RA around BIF calls.
-%o2 (ARG1) is used to pass the NBIF address when a BIF that may
-fail with RESCHEDULE throws an exception.
 %o1 (ARG0) is used for MBUF-after-BIF checks, for storing the
 arity of a BIF that throws an exception or does GC due to MBUF,
 and for checking P->flags for pending timeout.
