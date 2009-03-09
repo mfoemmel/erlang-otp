@@ -473,21 +473,33 @@ suspend_process(Process *p)
 static ERTS_INLINE void
 resume_process(Process *p)
 {
+    Uint32 *statusp;
     ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_STATUS & erts_proc_lc_my_proc_locks(p));
-    /* We may get called from trace([suspend], false) */
-    if (p->status != P_SUSPENDED)
+    switch (p->status) {
+    case P_SUSPENDED:
+	statusp = &p->status;
+	break;
+    case P_GARBING:
+	if (p->gcstatus == P_SUSPENDED) {
+	    statusp = &p->gcstatus;
+	    break;
+	}
+	/* Fall through */
+    default:
 	return;
+    }
+
     ASSERT(p->rcount > 0);
 
     if (--p->rcount > 0)  /* multiple suspend i.e trace and busy port */
 	return;
     switch(p->rstatus) {
     case P_RUNABLE:
-	p->status = P_WAITING;  /* make add_to_schedule_q work */
+	*statusp = P_WAITING;  /* make add_to_schedule_q work */
 	add_to_schedule_q(p);
 	break;
     case P_WAITING:
-	p->status = P_WAITING;
+	*statusp = P_WAITING;
 	break;
     default:
 	erl_exit(1, "bad state in resume_process()\n");
@@ -1548,8 +1560,16 @@ internal_add_to_schedule_q(Process *p)
     else
 	sq->last->next = p;
     sq->last = p;
-    if (p->status != P_EXITING) {
+
+    switch (p->status) {
+    case P_EXITING:
+	break;
+    case P_GARBING:
+	p->gcstatus = P_RUNABLE;
+	break;
+    default:
 	p->status = P_RUNABLE;
+	break;
     }
 
     runq_len++;
@@ -2925,6 +2945,7 @@ void erts_init_empty_process(Process *p)
     p->max_gen_gcs = 0;
     p->min_heap_size = 0;
     p->status = P_RUNABLE;
+    p->gcstatus = P_RUNABLE;
     p->rstatus = P_RUNABLE;
     p->rcount = 0;
     p->id = ERTS_INVALID_PID;

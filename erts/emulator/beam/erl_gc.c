@@ -341,7 +341,6 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 {
     Uint reclaimed_now = 0;
     int done = 0;
-    Uint saved_status = p->status;
     Uint ms1, s1, us1;
 
     if (IS_TRACED_FL(p, F_TRACE_GC)) {
@@ -349,6 +348,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     }
 
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
+    p->gcstatus = p->status;
     p->status = P_GARBING;
     if (erts_system_monitor_long_gc != 0) {
 	get_now(&ms1, &s1, &us1);
@@ -384,7 +384,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     ErtsGcQuickSanityCheck(p);
 
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
-    p->status = saved_status;
+    p->status = p->gcstatus;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
     if (IS_TRACED_FL(p, F_TRACE_GC)) {
         trace_gc(p, am_gc_end);
@@ -449,7 +449,6 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 void
 erts_garbage_collect_hibernate(Process* p)
 {
-    Uint saved_status = p->status;
     Uint heap_size;
     Eterm* heap;
     Eterm* htop;
@@ -466,6 +465,7 @@ erts_garbage_collect_hibernate(Process* p)
      * Preliminaries.
      */
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
+    p->gcstatus = p->status;
     p->status = P_GARBING;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
     erts_smp_locked_activity_begin(ERTS_ACTIVITY_GC);
@@ -580,7 +580,7 @@ erts_garbage_collect_hibernate(Process* p)
     ErtsGcQuickSanityCheck(p);
 
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
-    p->status = saved_status;
+    p->status = p->gcstatus;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
     erts_smp_locked_activity_end(ERTS_ACTIVITY_GC);
 }
@@ -589,7 +589,6 @@ erts_garbage_collect_hibernate(Process* p)
 void
 erts_garbage_collect_literals(Process* p, Eterm* literals, Uint lit_size)
 {
-    Uint saved_status = p->status;
     Uint byte_lit_size = sizeof(Eterm)*lit_size;
     Uint old_heap_size;
     Eterm* temp_lit;
@@ -605,6 +604,7 @@ erts_garbage_collect_literals(Process* p, Eterm* literals, Uint lit_size)
      * Set GC state.
      */
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
+    p->gcstatus = p->status;
     p->status = P_GARBING;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
     erts_smp_locked_activity_begin(ERTS_ACTIVITY_GC);
@@ -708,7 +708,7 @@ erts_garbage_collect_literals(Process* p, Eterm* literals, Uint lit_size)
      * Restore status.
      */
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
-    p->status = saved_status;
+    p->status = p->gcstatus;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
     erts_smp_locked_activity_end(ERTS_ACTIVITY_GC);
 }

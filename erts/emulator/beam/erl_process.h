@@ -207,6 +207,7 @@ struct process {
 				 * Only valid for the current process.
 				 */
     Uint32 status;		/* process STATE */
+    Uint32 gcstatus;		/* process gc STATE */
     Uint32 rstatus;		/* process resume STATE */
     Uint32 rcount;		/* suspend count */
     Eterm id;			/* The pid of this process */

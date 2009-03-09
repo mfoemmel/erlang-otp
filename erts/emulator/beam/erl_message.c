@@ -295,10 +295,27 @@ erts_queue_message(Process* receiver,
 
     ACTIVATE(receiver);
 
-    if (receiver->status == P_WAITING) {
-	add_to_schedule_q(receiver);
-    } else if (receiver->status == P_SUSPENDED) {
+    switch (receiver->status) {
+    case P_GARBING:
+	switch (receiver->gcstatus) {
+	case P_SUSPENDED:
+	    goto suspended;
+	case P_WAITING:
+	    goto waiting;
+	default:
+	    break;
+	}
+	break;
+    case P_SUSPENDED:
+    suspended:
 	receiver->rstatus = P_RUNABLE;
+	break;
+    case P_WAITING:
+    waiting:
+	add_to_schedule_q(receiver);
+	break;
+    default:
+	break;
     }
 
     if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
