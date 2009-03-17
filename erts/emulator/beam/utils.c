@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifdef HAVE_CONFIG_H
@@ -401,6 +402,9 @@ erts_bld_tuple(Uint **hpp, Uint *szp, Uint arity, ...)
 Eterm erts_bld_tuplev(Uint **hpp, Uint *szp, Uint arity, Eterm terms[])
 {
     Eterm res = THE_NON_VALUE;
+    /*
+     * Note callers expect that 'terms' is *not* accessed if hpp == NULL.
+     */
 
     ASSERT(arity < (((Uint)1) << (sizeof(Uint)*8 - _HEADER_ARITY_OFFS)));
 
@@ -504,6 +508,51 @@ erts_bld_atom_uint_2tup_list(Uint **hpp, Uint *szp,
 	    
 	    res = CONS(*hpp+3, TUPLE2(*hpp, atoms[i], ui), res);
 	    *hpp += 5;
+	}
+    }
+    return res;
+}
+
+Eterm
+erts_bld_atom_2uint_3tup_list(Uint **hpp, Uint *szp, Sint length,
+			      Eterm atoms[], Uint uints1[], Uint uints2[])
+{
+    Sint i;
+    Eterm res = THE_NON_VALUE;
+    if (szp) {
+	*szp += 6*length;
+	i = length;
+	while (--i >= 0) {
+	    if (!IS_USMALL(0, uints1[i]))
+		*szp += BIG_UINT_HEAP_SIZE;
+	    if (!IS_USMALL(0, uints2[i]))
+		*szp += BIG_UINT_HEAP_SIZE;
+	}
+    }
+    if (hpp) {
+	i = length;
+	res = NIL;
+
+	while (--i >= 0) {
+	    Eterm ui1;
+	    Eterm ui2;
+
+	    if (IS_USMALL(0, uints1[i]))
+		ui1 = make_small(uints1[i]);
+	    else {
+		ui1 = uint_to_big(uints1[i], *hpp);
+		*hpp += BIG_UINT_HEAP_SIZE;
+	    }
+	    
+	    if (IS_USMALL(0, uints2[i]))
+		ui2 = make_small(uints2[i]);
+	    else {
+		ui2 = uint_to_big(uints2[i], *hpp);
+		*hpp += BIG_UINT_HEAP_SIZE;
+	    }
+	    
+	    res = CONS(*hpp+4, TUPLE3(*hpp, atoms[i], ui1, ui2), res);
+	    *hpp += 6;
 	}
     }
     return res;
@@ -1510,7 +1559,7 @@ static int do_send_to_logger(Eterm tag, Eterm gleader, char *buf, int len)
 	erts_queue_error_logger_message(from, tuple3, bp);
     }
 #else
-    erts_queue_message(p, 0/* only used for smp build */, bp, tuple3, NIL);
+    erts_queue_message(p, NULL /* only used for smp build */, bp, tuple3, NIL);
 #endif
     return 0;
 }

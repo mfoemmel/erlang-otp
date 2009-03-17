@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1996</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1996</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>io_lib</title>
@@ -95,11 +93,13 @@ chars() = [char() | chars()]</code>
     </func>
     <func>
       <name>fwrite(Format, Data) -></name>
-      <name>format(Format, Data) -> chars()</name>
+      <name>format(Format, Data) -> chars() | UnicodeList</name>
       <fsummary>Write formatted output</fsummary>
       <type>
         <v>Format = atom() | string() | binary()</v>
         <v>Data = [term()]</v>
+	<v>UnicodeList = [Unicode]</v>
+	<v>Unicode = int() representing valid unicode codepoint</v>
       </type>
       <desc>
         <p>Returns a character list which represents <c>Data</c>
@@ -108,6 +108,14 @@ chars() = [char() | chars()]</code>
           description of the available formatting options. A fault is
           generated if there is an error in the format string or
           argument list.</p>
+
+	  <p>If (and only if) the Unicode translation modifier is used
+	  in the format string (i.e. ~ts or ~tc), the resulting list
+	  may contain characters beyond the ISO-latin-1 character
+	  range (in other words, numbers larger than 255). If so, the
+	  result is not an ordinary Erlang string(), but can well be
+	  used in any context where Unicode data is allowed.</p>
+	  
       </desc>
     </func>
     <func>
@@ -239,7 +247,7 @@ chars() = [char() | chars()]</code>
       </type>
       <desc>
         <p>Returns the list of characters needed to print a character
-          constant.</p>
+          constant in the ISO-latin-1 character set.</p>
       </desc>
     </func>
     <func>
@@ -262,7 +270,7 @@ chars() = [char() | chars()]</code>
       </type>
       <desc>
         <p>Returns <c>true</c> if <c>Term</c> is a flat list of
-          characters, otherwise it returns <c>false</c>.</p>
+          characters in the ISO-latin-1 range, otherwise it returns <c>false</c>.</p>
       </desc>
     </func>
     <func>
@@ -273,18 +281,18 @@ chars() = [char() | chars()]</code>
       </type>
       <desc>
         <p>Returns <c>true</c> if <c>Term</c> is a, possibly deep, list
-          of characters, otherwise it returns <c>false</c>.</p>
+          of characters in the ISO-latin-1 range, otherwise it returns <c>false</c>.</p>
       </desc>
     </func>
     <func>
       <name>printable_list(Term) -> bool()</name>
-      <fsummary>Test for a list of printable characters</fsummary>
+      <fsummary>Test for a list of printable ISO-latin-1 characters</fsummary>
       <type>
         <v>Term = term()</v>
       </type>
       <desc>
         <p>Returns <c>true</c> if <c>Term</c> is a flat list of
-          printable characters, otherwise it returns <c>false</c>.</p>
+          printable ISO-latin-1 characters, otherwise it returns <c>false</c>.</p>
       </desc>
     </func>
   </funcs>

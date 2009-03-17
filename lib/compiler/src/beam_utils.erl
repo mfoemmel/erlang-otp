@@ -1,46 +1,38 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Common utilities used by several optimization passes.
 %% 
 
 -module(beam_utils).
--export([is_killed/2,is_killed_block/2,is_killed/3,is_killed_at/3,
-	 is_not_used/3,
+-export([is_killed_block/2,is_killed/3,is_killed_at/3,
+	 is_not_used/3,is_not_used_at/3,
 	 empty_label_index/0,index_label/3,index_labels/1,
-	 code_at/2,bif_to_test/3]).
+	 code_at/2,bif_to_test/3,is_pure_test/1,
+	 live_opt/1,delete_live_annos/1,combine_heap_needs/2]).
 
--import(lists, [member/2,sort/1]).
+-import(lists, [member/2,sort/1,reverse/1]).
 
 -record(live,
 	{bl,					%Block check fun.
 	 lbl,					%Label to code index.
 	 res}).					%Result cache for each label.
 
-
-%% is_killed(Register, [Instruction]) -> true|false
-%%  Determine whether a register is killed by the instruction sequence.
-%%  If true is returned, it means that the register will not be
-%%  referenced in ANY way (not even indirectly by an allocate instruction);
-%%  i.e. it is OK to enter the instruction sequence with Register
-%%  containing garbage.
-
-is_killed(R, Is) ->
-    is_killed(R, Is, empty_label_index()).
 
 %% is_killed_block(Register, [Instruction]) -> true|false
 %%  Determine whether a register is killed by the instruction sequence inside
@@ -89,7 +81,7 @@ is_killed_at(R, Lbl, D) when is_integer(Lbl) ->
 
 %% is_not_used(Register, [Instruction], State) -> true|false
 %%  Determine whether a register is never used in the instruction sequence
-%%  (it could still referenced by an allocate instruction, meaning that
+%%  (it could still be referenced by an allocate instruction, meaning that
 %%  it MUST be initialized, but that its value does not matter).
 %%    The state is used to allow us to determine the usage state
 %%  across branches.
@@ -100,6 +92,21 @@ is_not_used(R, Is, D) ->
 	killed -> true;
 	used -> false;
 	unknown -> false
+    end.
+
+%% is_not_used(Register, [Instruction], State) -> true|false
+%%  Determine whether a register is never used in the instruction sequence
+%%  (it could still be referenced by an allocate instruction, meaning that
+%%  it MUST be initialized, but that its value does not matter).
+%%    The state is used to allow us to determine the usage state
+%%  across branches.
+
+is_not_used_at(R, Lbl, D) ->
+    St = #live{bl=fun check_used_block/2,lbl=D,res=gb_trees:empty()},
+    case check_liveness_at(R, Lbl, St) of
+	{killed,_} -> true;
+	{used,_} -> false;
+	{unknown,_} -> false
     end.
 
 %% index_labels(FunctionIs) -> State
@@ -121,7 +128,7 @@ empty_label_index() ->
 index_label(Lbl, Is0, Acc) ->
     Is = lists:dropwhile(fun({label,_}) -> true;
 			    (_) -> false end, Is0),
-    gb_trees:insert(Lbl, Is, Acc).
+    gb_trees:enter(Lbl, Is, Acc).
 
 
 %% code_at(Label, State) -> [I].
@@ -140,7 +147,6 @@ bif_to_test(is_atom,     [_]=Ops, Fail) -> {test,is_atom,Fail,Ops};
 bif_to_test(is_boolean,  [_]=Ops, Fail) -> {test,is_boolean,Fail,Ops};
 bif_to_test(is_binary,   [_]=Ops, Fail) -> {test,is_binary,Fail,Ops};
 bif_to_test(is_bitstring,[_]=Ops, Fail) -> {test,is_bitstr,Fail,Ops};
-bif_to_test(is_constant, [_]=Ops, Fail) -> {test,is_constant,Fail,Ops};
 bif_to_test(is_float,    [_]=Ops, Fail) -> {test,is_float,Fail,Ops};
 bif_to_test(is_function, [_]=Ops, Fail) -> {test,is_function,Fail,Ops};
 bif_to_test(is_function, [_,_]=Ops, Fail) -> {test,is_function2,Fail,Ops};
@@ -162,6 +168,64 @@ bif_to_test('=:=', [A,[]], Fail) -> {test,is_nil,Fail,[A]};
 bif_to_test('=:=', [_,_]=Ops, Fail) -> {test,is_eq_exact,Fail,Ops};
 bif_to_test('=/=', [_,_]=Ops, Fail) -> {test,is_ne_exact,Fail,Ops};
 bif_to_test(is_record, [_,_,_]=Ops, Fail) -> {test,is_record,Fail,Ops}.
+
+
+%% is_pure_test({test,Op,Fail,Ops}) -> true|false.
+%%  Return 'true' if the test instruction does not modify any
+%%  registers and/or bit syntax matching state, nor modifies
+%%  any bit syntax matching state.
+%%
+is_pure_test({test,is_eq,_,[_,_]}) -> true;
+is_pure_test({test,is_ne,_,[_,_]}) -> true;
+is_pure_test({test,is_eq_exact,_,[_,_]}) -> true;
+is_pure_test({test,is_ne_exact,_,[_,_]}) -> true;
+is_pure_test({test,is_ge,_,[_,_]}) -> true;
+is_pure_test({test,is_lt,_,[_,_]}) -> true;
+is_pure_test({test,is_nil,_,[_]}) -> true;
+is_pure_test({test,is_nonempty_list,_,[_]}) -> true;
+is_pure_test({test,test_arity,_,[_,_]}) -> true;
+is_pure_test({test,Op,_,Ops}) -> 
+    erl_internal:new_type_test(Op, length(Ops)).
+
+    
+%% live_opt([Instruction]) -> [Instruction].
+%%  Go through the instruction sequence in reverse execution
+%%  order, keep track of liveness and remove 'move' instructions
+%%  whose destination is a register that will not be used.
+%%  Also insert {'%live',Live} annotations at the beginning
+%%  and end of each block.
+%%
+live_opt([{label,Fail}=I1,
+	  {func_info,_,_,Live}=I2|Is]) ->
+    D = gb_trees:insert(Fail, Live, gb_trees:empty()),
+    [I1,I2|live_opt(reverse(Is), 0, D, [])].
+
+
+%% delete_live_annos([Instruction]) -> [Instruction].
+%%  Delete all live annotations.
+%%
+delete_live_annos([{block,Bl0}|Is]) ->
+    case delete_live_annos(Bl0) of
+	[] -> delete_live_annos(Is);
+	[_|_]=Bl -> [{block,Bl}|delete_live_annos(Is)]
+    end;
+delete_live_annos([{'%live',_}|Is]) ->
+    delete_live_annos(Is);
+delete_live_annos([I|Is]) ->
+    [I|delete_live_annos(Is)];
+delete_live_annos([]) -> [].
+    
+%% combine_heap_needs(HeapNeed1, HeapNeed2) -> HeapNeed
+%%  Combine the heap need for two allocation instructions.
+
+combine_heap_needs({alloc,Alloc1}, {alloc,Alloc2}) ->
+    {alloc,combine_alloc_lists(Alloc1, Alloc2)};
+combine_heap_needs({alloc,Alloc}, Words) when is_integer(Words) ->
+    {alloc,combine_alloc_lists(Alloc, [{words,Words}])};
+combine_heap_needs(Words, {alloc,Alloc}) when is_integer(Words) ->
+    {alloc,combine_alloc_lists(Alloc, [{words,Words}])};
+combine_heap_needs(H1, H2) when is_integer(H1), is_integer(H2) ->
+    H1+H2.
 
 %%%
 %%% Local functions.
@@ -185,6 +249,16 @@ check_liveness(R, [{block,Blk}|Is], #live{bl=BlockCheck}=St) ->
     end;
 check_liveness(R, [{label,_}|Is], St) ->
     check_liveness(R, Is, St);
+check_liveness(R, [{test,bs_start_match2,{f,Fail},[Bin,_,_,Dst]}|Is], St0) ->
+    case R of
+	Bin -> used;
+	Dst -> killed;
+	_ ->
+	    case check_liveness_at(R, Fail, St0) of
+		{killed,St} -> check_liveness(R, Is, St);
+		{Other,_} -> Other
+	    end
+    end;
 check_liveness(R, [{test,Bs,{f,Fail},[Ctx,_,Sz,_,_,Dst]}|Is], St0)
   when Bs =:= bs_get_integer2; Bs =:= bs_get_binary2; Bs =:= bs_get_float2 ->
     case R of
@@ -417,8 +491,16 @@ check_liveness(R, [{bs_context_to_binary,S}|Is], St) ->
 	S -> used;
 	_ -> check_liveness(R, Is, St)
     end;
-check_liveness(_R, _Is, _) ->
-%%     case _Is of
+check_liveness(R, [{loop_rec,{f,_},{x,0}}|Is], St) ->
+    case R of
+	{x,_} -> killed;
+	_ -> check_liveness(R, Is, St)
+    end;
+check_liveness(R, [{loop_rec_end,{f,Fail}}|_], St) ->
+    {Liveness,_} = check_liveness_at(R, Fail, St),
+    Liveness;
+check_liveness(_R, Is, _) when is_list(Is) ->
+%%     case Is of
 %% 	[I|_] ->
 %% 	    io:format("~p ~p\n", [_R,I]);
 %% 	_ -> ok
@@ -535,3 +617,241 @@ index_labels_1([{label,Lbl}|Is0], Acc) ->
 index_labels_1([_|Is], Acc) ->
     index_labels_1(Is, Acc);
 index_labels_1([], Acc) -> gb_trees:from_orddict(sort(Acc)).
+
+%% Help functions for combine_heap_needs.
+
+combine_alloc_lists(Al1, Al2) ->
+    combine_alloc_lists_1(sort(Al1++Al2)).
+
+combine_alloc_lists_1([{words,W1},{words,W2}|T])
+  when is_integer(W1), is_integer(W2) ->
+    [{words,W1+W2}|combine_alloc_lists_1(T)];
+combine_alloc_lists_1([{floats,F1},{floats,F2}|T])
+  when is_integer(F1), is_integer(F2) ->
+    [{floats,F1+F2}|combine_alloc_lists_1(T)];
+combine_alloc_lists_1([{words,_}=W|T]) ->
+    [W|combine_alloc_lists_1(T)];
+combine_alloc_lists_1([{floats,_}=F|T]) ->
+    [F|combine_alloc_lists_1(T)];
+combine_alloc_lists_1([]) -> [].
+
+%% live_opt/4.
+
+%% Bit syntax instructions.
+live_opt([{bs_context_to_binary,Src}=I|Is], Regs0, D, Acc) ->
+    Regs = x_live([Src], Regs0),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_add,Fail,[Src1,Src2,_],Dst}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src1,Src2], x_dead([Dst], Regs0)),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_init2,Fail,_,_,Live,_,_}=I|Is], _, D, Acc) ->
+    Regs1 = live_call(Live),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_init_bits,Fail,Src1,_,Live,_,Src2}=I|Is], _, D, Acc) ->
+    Regs1 = live_call(Live),
+    Regs2 = x_live([Src1,Src2], Regs1),
+    Regs = live_join_label(Fail, D, Regs2),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_append,Fail,Src1,_,_,_,Src2,_,Dst}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src1,Src2], x_dead([Dst], Regs0)),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_private_append,Fail,Src1,_,Src2,_,Dst}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src1,Src2], x_dead([Dst], Regs0)),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_put_binary,Fail,Src1,_,_,Src2}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src1,Src2], Regs0),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_put_float,Fail,Src1,_,_,Src2}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src1,Src2], Regs0),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_put_integer,Fail,Src1,_,_,Src2}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src1,Src2], Regs0),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_put_utf8,Fail,_,Src}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src], Regs0),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_put_utf16,Fail,_,Src}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src], Regs0),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_put_utf32,Fail,_,Src}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src], Regs0),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_restore2,Src,_}=I|Is], Regs0, D, Acc) ->
+    Regs = x_live([Src], Regs0),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_save2,Src,_}=I|Is], Regs0, D, Acc) ->
+    Regs = x_live([Src], Regs0),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_utf8_size,Fail,Src,Dst}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src], x_dead([Dst], Regs0)),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{bs_utf16_size,Fail,Src,Dst}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src], x_dead([Dst], Regs0)),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{test,bs_start_match2,Fail,[Src,Live,_,_]}=I|Is], _, D, Acc) ->
+    Regs0 = live_call(Live),
+    Regs1 = x_live([Src], Regs0),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+
+%% Other instructions.
+live_opt([{block,Bl0}|Is], Regs0, D, Acc) ->
+    Live0 = {'%live',live_regs(Regs0)},
+    {Bl,Regs} = live_opt_block(reverse(Bl0), Regs0, D, [Live0]),
+    Live = {'%live',live_regs(Regs)},
+    live_opt(Is, Regs, D, [{block,[Live|Bl]}|Acc]);
+live_opt([{label,L}=I|Is], Regs, D0, Acc) ->
+    D = gb_trees:insert(L, Regs, D0),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{jump,{f,L}}=I|Is], _, D, Acc) ->
+    Regs = gb_trees:get(L, D),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([return=I|Is], _, D, Acc) ->
+    live_opt(Is, 1, D, [I|Acc]);
+live_opt([{catch_end,_}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(1), D, [I|Acc]);
+live_opt([{badmatch,Src}=I|Is], _, D, Acc) ->
+    Regs = x_live([Src], 0),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{case_end,Src}=I|Is], _, D, Acc) ->
+    Regs = x_live([Src], 0),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([if_end=I|Is], _, D, Acc) ->
+    Regs = 0,
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([bs_init_writable=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(1), D, [I|Acc]);
+live_opt([{call,Arity,_}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Arity), D, [I|Acc]);
+live_opt([{call_ext,Arity,_}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Arity), D, [I|Acc]);
+live_opt([{call_fun,Arity}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Arity+1), D, [I|Acc]);
+live_opt([{call_last,Arity,_,_}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Arity), D, [I|Acc]);
+live_opt([{call_ext_last,Arity,_,_}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Arity), D, [I|Acc]);
+live_opt([{apply,Arity}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Arity+2), D, [I|Acc]);
+live_opt([{apply_last,Arity,_}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Arity+2), D, [I|Acc]);
+live_opt([{call_only,Arity,_}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Arity), D, [I|Acc]);
+live_opt([{call_ext_only,Arity,_}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Arity), D, [I|Acc]);
+live_opt([{make_fun2,_,_,_,Arity}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Arity), D, [I|Acc]);
+live_opt([send=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(2), D, [I|Acc]);
+live_opt([{test,_,Fail,Ss}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live(Ss, Regs0),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{select_val,Src,Fail,{list,List}}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src], Regs0),
+    Regs = live_join_labels([Fail|List], D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{select_tuple_arity,Src,Fail,{list,List}}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live([Src], Regs0),
+    Regs = live_join_labels([Fail|List], D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{'try',_,Fail}=I|Is], Regs0, D, Acc) ->
+    Regs = live_join_label(Fail, D, Regs0),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{try_case,_}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(1), D, [I|Acc]);
+live_opt([{loop_rec,_Fail,_Dst}=I|Is], _, D, Acc) ->
+    live_opt(Is, 0, D, [I|Acc]);
+live_opt([timeout=I|Is], _, D, Acc) ->
+    live_opt(Is, 0, D, [I|Acc]);
+
+%% Transparent instructions - they neither use nor modify x registers.
+live_opt([{bs_put_string,_,_}=I|Is], Regs, D, Acc) ->
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{deallocate,_}=I|Is], Regs, D, Acc) ->
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{kill,_}=I|Is], Regs, D, Acc) ->
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{try_case_end,_}=I|Is], Regs, D, Acc) ->
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{try_end,_}=I|Is], Regs, D, Acc) ->
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{loop_rec_end,_}=I|Is], Regs, D, Acc) ->
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{wait,_}=I|Is], Regs, D, Acc) ->
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{wait_timeout,_,{Tag,_}}=I|Is], Regs, D, Acc) when Tag =/= x ->
+    live_opt(Is, Regs, D, [I|Acc]);
+
+%% The following instructions can occur if the "compilation" has been
+%% started from a .S file using the 'asm' option.
+live_opt([{trim,_,_}=I|Is], Regs, D, Acc) ->
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{allocate,_,Live}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Live), D, [I|Acc]);
+live_opt([{allocate_heap,_,_,Live}=I|Is], _, D, Acc) ->
+    live_opt(Is, live_call(Live), D, [I|Acc]);
+
+live_opt([], _, _, Acc) -> Acc.
+
+live_opt_block([{set,[],[],{alloc,Live,_}}=I|Is], _, D, Acc) ->
+    live_opt_block(Is, live_call(Live), D, [I|Acc]);
+live_opt_block([{set,Ds,Ss,Op}=I|Is], Regs0, D, Acc) ->
+    Regs = case Op of
+	       {alloc,Live,_} -> live_call(Live);
+	       _ -> x_live(Ss, x_dead(Ds, Regs0))
+	   end,
+    case Ds of
+	[{x,X}] ->
+	    case (not is_live(X, Regs0)) andalso Op =:= move of
+		true ->
+		    live_opt_block(Is, Regs0, D, Acc);
+		false ->
+		    live_opt_block(Is, Regs, D, [I|Acc])
+	    end;
+	_ ->
+	    live_opt_block(Is, Regs, D, [I|Acc])
+    end;
+live_opt_block([], Regs, _, Acc) -> {Acc,Regs}.
+
+live_join_labels([{f,L}|T], D, Regs0) when L =/= 0 ->
+    Regs = gb_trees:get(L, D) bor Regs0,
+    live_join_labels(T, D, Regs);
+live_join_labels([_|T], D, Regs) ->
+    live_join_labels(T, D, Regs);
+live_join_labels([], _, Regs) -> Regs.
+
+live_join_label({f,0}, _, Regs) ->
+    Regs;
+live_join_label({f,L}, D, Regs) ->
+    gb_trees:get(L, D) bor Regs.
+
+live_call(Live) -> (1 bsl Live) - 1.
+
+live_regs(Regs) ->
+    live_regs_1(0, Regs).
+
+live_regs_1(N, 0) -> N;
+live_regs_1(N, Regs) -> live_regs_1(N+1, Regs bsr 1).
+
+x_dead([{x,N}|Rs], Regs) -> x_dead(Rs, Regs band (bnot (1 bsl N)));
+x_dead([_|Rs], Regs) -> x_dead(Rs, Regs);
+x_dead([], Regs) -> Regs.
+
+x_live([{x,N}|Rs], Regs) -> x_live(Rs, Regs bor (1 bsl N));
+x_live([_|Rs], Regs) -> x_live(Rs, Regs);
+x_live([], Regs) -> Regs.
+
+is_live(X, Regs) -> ((Regs bsr X) band 1) =:= 1.

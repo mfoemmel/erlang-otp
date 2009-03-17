@@ -1,8 +1,8 @@
 % This is an -*- erlang -*- file.
 
 {application, typer,
- [{description, "TYPe annotator for ERlang programs, version 0.1.5"},
-  {vsn, "0.1.5"},
+ [{description, "TYPe annotator for ERlang programs, version 0.1.6"},
+  {vsn, "0.1.6"},
   {modules, [typer,
 	     typer_annotator,
 	     typer_info,

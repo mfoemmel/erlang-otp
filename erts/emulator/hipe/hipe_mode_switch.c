@@ -1,3 +1,21 @@
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2001-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved online at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * %CopyrightEnd%
+ */
 /* $Id$
  * hipe_mode_switch.c
  */
@@ -302,21 +320,22 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	   * the callee's arity in p->arity (for BEAM gc purposes)
 	   *
 	   * We need to remove the BIF's parameters from the native
-	   * stack: to this end hipe_${ARCH}_glue.S overwrites p->arity
-	   * with the BIF's arity. We will recompute the callee's
-	   * arity by fetching it from its BEAM function head.
+	   * stack: to this end hipe_${ARCH}_glue.S stores the BIF's
+	   * arity in p->hipe.narity.
 	   */
-	  unsigned int i, is_recursive;
+	  unsigned int i, is_recursive, callee_arity;
 
-	  /* Here p->arity still describes the original BIF's arity.
+	  /* Save p->arity, then update it with the original BIF's arity.
 	     Get rid of any stacked parameters in that call. */
 	  /* XXX: hipe_call_from_native_is_recursive() copies data to
 	     reg[], which is useless in the TRAP case. Maybe write a
 	     specialised hipe_trap_from_native_is_recursive() later. */
+	  callee_arity = p->arity;
+	  p->arity = p->hipe.narity; /* caller's arity */
 	  is_recursive = hipe_call_from_native_is_recursive(p, reg);
 
 	  p->i = ((Export*)(p->def_arg_reg[3]))->address;
-	  p->arity = p->i[-1];
+	  p->arity = callee_arity;
 
 	  for (i = 0; i < p->arity; ++i)
 	      reg[i] = p->def_arg_reg[i];
@@ -408,7 +427,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  p->arity = 0;
 	  erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
 	  if (p->status != P_SUSPENDED)
-	      add_to_schedule_q(p);
+	      erts_add_to_runq(p);
 	  erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
 	  goto do_schedule;
       }
@@ -456,7 +475,7 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 
 	      reds_in = p->fcalls;
 	      o_reds = 0;
-	      if (p->ct != NULL) {
+	      if (ERTS_PROC_GET_SAVED_CALLS_BUF(p)) {
 		  o_reds = reds_in;
 		  reds_in = 0;
 		  p->fcalls = 0;

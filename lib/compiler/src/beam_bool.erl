@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose: Optimizes booleans in guards.
 
@@ -21,7 +22,7 @@
 
 -export([module/2]).
 
--import(lists, [reverse/1,reverse/2,foldl/3,mapfoldl/3]).
+-import(lists, [reverse/1,reverse/2,foldl/3,mapfoldl/3,map/2]).
 
 -define(MAXREG, 1024).
 
@@ -36,9 +37,15 @@ module({Mod,Exp,Attr,Fs0,Lc}, _Opts) ->
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
 
 function({function,Name,Arity,CLabel,Is0}, Lbl0) ->
-    %%io:format("~p/~p:\n", [Name,Arity]),
-    {Is,#st{next=Lbl}} = bool_opt(Is0, Lbl0),
-    {{function,Name,Arity,CLabel,Is},Lbl}.
+    try
+	{Is,#st{next=Lbl}} = bool_opt(Is0, Lbl0),
+	{{function,Name,Arity,CLabel,Is},Lbl}
+    catch
+	Class:Error ->
+	    Stack = erlang:get_stacktrace(),
+	    io:fwrite("Function: ~w/~w\n", [Name,Arity]),
+	    erlang:raise(Class, Error, Stack)
+    end.
 
 %%
 %% Optimize boolean expressions that use guard bifs. Rewrite to
@@ -52,7 +59,7 @@ bool_opt(Asm, Lbl) ->
 bopt([{block,Bl0}=Block|
       [{jump,{f,Succ}},
        {label,Fail},
-       {block,[{set,[Dst],[{atom,false}],move},{'%live',Live}]},
+       {block,[{set,[Dst],[{atom,false}],move}]},
        {label,Succ}|Is]=Is0], Acc0, St) ->
     case split_block(Bl0, Dst, Fail, Acc0, true) of
 	failed ->
@@ -62,7 +69,7 @@ bopt([{block,Bl0}=Block|
 		       [] -> Acc0;
 		       _ -> [{block,PreBlock}|Acc0]
 		   end,
-	    Acc = [{protected,[Dst],Bl,{Fail,Succ,Live}}|Acc1],
+	    Acc = [{protected,[Dst],Bl,{Fail,Succ}}|Acc1],
 	    bopt(Is, Acc, St)
     end;
 bopt([{test,is_eq_exact,{f,Fail},[Reg,{atom,true}]}=I|Is], [{block,_}|_]=Acc0, St0) ->
@@ -75,10 +82,10 @@ bopt([I|Is], Acc, St) ->
 bopt([], Acc, St) ->
     {bopt_reverse(Acc, []),St}.
 
-bopt_reverse([{protected,[Dst],Block,{Fail,Succ,Live}}|Is], Acc0) ->
+bopt_reverse([{protected,[Dst],Block,{Fail,Succ}}|Is], Acc0) ->
     Acc = [{block,Block},{jump,{f,Succ}},
 	   {label,Fail},
-	   {block,[{set,[Dst],[{atom,false}],move},{'%live',Live}]},
+	   {block,[{set,[Dst],[{atom,false}],move}]},
 	   {label,Succ}|Acc0],
     bopt_reverse(Is, Acc);
 bopt_reverse([I|Is], Acc) ->
@@ -104,55 +111,55 @@ bopt_block(Reg, Fail, OldIs, [{block,Bl0}|Acc0], St0) ->
 	    %% Bl1.
 	    Acc1 = make_block(BlPre, Acc0),
 	    {Bl,Acc} = extend_block(Bl1, Fail, Acc1),
-	    case catch bopt_block_1(Bl, Fail, St0) of
-		{'EXIT',_Reason} ->
-		    %% Optimization failed for one of the following reasons:
-		    %%
-		    %% 1. Not possible to rewrite because a boolean value is
-		    %%    passed to another guard bif, e.g. 'abs(A > B)'
-		    %%    (in this case, obviously nonsense code). Rare in
-		    %%    practice.
-		    %%
-		    %% 2. Not possible to rewrite because we have not seen
-		    %%    the complete boolean expression (it is spread out
-		    %%    over several blocks with jumps and labels).
-		    %%    The 'or' and 'and' instructions must have fully
-		    %%    known operands in order to be eliminated.
-		    %%
-		    %% 3. Other bug or limitation.
-
-		    %%io:format("~P\n", [_Reason,40]),
+	    try
+		{NewCode,St} = bopt_tree_cg(Bl, Fail, St0),
+		ensure_opt_safe(Bl, NewCode, OldIs, Fail, Acc, St),
+		{NewCode++Acc,St}
+	    catch
+		%% Not possible to rewrite because a boolean value is
+		%% passed to another guard bif, e.g. 'abs(A > B)'
+		%% (in this case, obviously nonsense code). Rare in
+		%% practice.
+		throw:mixed ->
 		    failed;
-		{NewCode,St} ->
-		    case is_opt_safe(Bl, NewCode, OldIs, Acc, St) of
-			false ->
-			    %% The optimization is not safe. (A register
-			    %% used by the instructions following the
-			    %% optimized code is either not assigned a
-			    %% value at all or assigned a different value.)
 
-%% 			    io:format("\nNot safe:\n"),
-%% 			    io:format("~p\n", [Bl]),
-%% 			    io:format("~p\n", [reverse(NewCode)]),
-%% 			    io:format("~p\n", [reverse(Acc0)]),
-			    failed;
-			true -> {NewCode++Acc,St}
-		    end
+		  %% The 'xor' operator was used. We currently don't
+		  %% find it worthwile to translate 'xor' operators
+		  %% (the code would be clumsy).
+		  throw:'xor' ->
+		    failed;
+
+		  %% The block does not contain a boolean expression,
+		  %% but only a call to a guard BIF.
+		  %% For instance: ... when element(1, T) ->
+ 		  throw:not_boolean_expr ->
+ 		    failed;
+
+		  %% The block contains a 'move' instruction that could
+		  %% not be handled.
+ 		  throw:move ->
+ 		    failed;
+
+		  %% The optimization is not safe. (A register
+		  %% used by the instructions following the
+		  %% optimized code is either not assigned a
+		  %% value at all or assigned a different value.)
+		  throw:all_registers_not_killed ->
+		    failed;
+		  throw:registers_used ->
+		    failed
 	    end
     end.
 
-bopt_block_1(Block, Fail, St) ->
-    {Pre0,[{_,Tree}]} = bopt_tree(Block),
-    Pre = update_fail_label(Pre0, Fail, []),
-    bopt_cg(Tree, Fail, make_block(Pre, []), St).
-
-%% is_opt_safe(OriginalCode, OptCode, FollowingCode,
-%%             ReversedPreceedingCode, State) -> true|false
+%% ensure_opt_safe(OriginalCode, OptCode, FollowingCode, Fail,
+%%             ReversedPreceedingCode, State) -> ok
 %%  Comparing the original code to the optimized code, determine
 %%  whether the optimized code is guaranteed to work in the same
 %%  way as the original code.
-
-is_opt_safe(Bl, NewCode, OldIs, PreceedingCode, St) ->
+%%
+%%  Throws an exception if the optmization is not safe.
+%%
+ensure_opt_safe(Bl, NewCode, OldIs, Fail, PreceedingCode, St) ->
     %% Here are the conditions that must be true for the
     %% optimization to be safe.
     %%
@@ -180,13 +187,28 @@ is_opt_safe(Bl, NewCode, OldIs, PreceedingCode, St) ->
     MustBeKilled = ordsets:subtract(NotSet, InitInPreceeding),
     MustBeUnused = ordsets:subtract(ordsets:union(NotSet, NewDst), MustBeKilled),
 
-    all_killed(MustBeKilled, OldIs, St) andalso
-	none_used(MustBeUnused, OldIs, St).
+    case all_killed(MustBeKilled, OldIs, Fail, St) of
+	false -> throw(all_registers_not_killed);
+	true -> ok
+    end,
+    case none_used(MustBeUnused, OldIs, Fail, St) of
+	false -> throw(registers_used);
+	true -> ok
+    end,
+    ok.
 
+update_fail_label([{set,_,_,move}=I|Is], Fail, Acc) ->
+    update_fail_label(Is, Fail, [I|Acc]);
 update_fail_label([{set,Ds,As,{bif,N,{f,_}}}|Is], Fail, Acc) ->
     update_fail_label(Is, Fail, [{set,Ds,As,{bif,N,{f,Fail}}}|Acc]);
-update_fail_label([], _, Acc) -> Acc.
-    
+update_fail_label([{set,Ds,As,{alloc,Regs,{gc_bif,N,{f,_}}}}|Is], Fail, Acc) ->
+    update_fail_label(Is, Fail,
+		      [{set,Ds,As,{alloc,Regs,{gc_bif,N,{f,Fail}}}}|Acc]);
+update_fail_label([], _, Acc) -> reverse(Acc).
+
+make_block(Bl) ->    
+    make_block(Bl, []).
+
 make_block([], Acc) -> Acc;
 make_block(Bl, Acc) -> [{block,Bl}|Acc].
 
@@ -224,8 +246,6 @@ split_block(Is0, Dst, Fail, PreIs, ProhibitFailLabel) ->
 	    failed;
 	false ->
 	    case reverse(Is0) of
-		[{'%live',_}|[{set,[Dst],_,_}|_]=Is] ->
-		    split_block_1(Is, Fail, ProhibitFailLabel);
 		[{set,[Dst],_,_}|_]=Is ->
 		    split_block_1(Is, Fail, ProhibitFailLabel);
 		_ -> failed
@@ -233,36 +253,37 @@ split_block(Is0, Dst, Fail, PreIs, ProhibitFailLabel) ->
     end.
 
 split_block_1(Is, Fail, ProhibitFailLabel) ->
-    case split_block_2(Is, Fail, ProhibitFailLabel, []) of
-	failed -> failed;
+    case split_block_2(Is, Fail, []) of
 	{[],_} -> failed;
-	{_,_}=Res -> Res
+	{_,PreBlock}=Res ->
+	    case ProhibitFailLabel andalso
+		split_block_label_used(PreBlock, Fail) of
+		true ->
+		    %% The failure label was used in the pre-block;
+		    %% not allowed, because the label may be removed.
+		    failed;
+		false ->
+		    Res
+	    end
     end.
 
-split_block_2([{set,[_],_,{bif,_,{f,Fail}}}=I|Is], Fail, Flag, Acc) ->
-    split_block_2(Is, Fail, Flag, [I|Acc]);
-split_block_2([{'%live',_}|Is], Fail, Flag, Acc) ->
-    split_block_2(Is, Fail, Flag, Acc);
-split_block_2(Is0, Fail, ProhibitFailLabel, Acc) ->
+split_block_2([{set,_,_,move}=I|Is], Fail, Acc) ->
+    split_block_2(Is, Fail, [I|Acc]);
+split_block_2([{set,[_],_,{bif,_,{f,Fail}}}=I|Is], Fail, Acc) ->
+    split_block_2(Is, Fail, [I|Acc]);
+split_block_2([{set,[_],_,{alloc,_,{gc_bif,_,{f,Fail}}}}=I|Is], Fail, Acc) ->
+    split_block_2(Is, Fail, [I|Acc]);
+split_block_2(Is0, _, Acc) ->
     Is = reverse(Is0),
-    Res = {Acc,Is},
-    case ProhibitFailLabel of
-	true ->
-	    %% We are done, but we must make sure that the failure label
-	    %% is not used in the pre-block (because it might be removed).
-	    split_block_3(Is, Fail, Res);
-	false ->
-	    %% Done. The caller will not remove the failure label.
-	    Res
-    end.
+    {Acc,Is}.
 
-split_block_3([{set,[_],_,{bif,_,{f,Fail}}}|_], Fail, _) ->
-    failed;
-split_block_3([{set,[_],_,{alloc,_,{gc_bif,_,{f,Fail}}}}|_], Fail, _) ->
-    failed;
-split_block_3([_|Is], Fail, Res) ->
-    split_block_3(Is, Fail, Res);
-split_block_3([], _, Res) -> Res.
+split_block_label_used([{set,[_],_,{bif,_,{f,Fail}}}|_], Fail) ->
+    true;
+split_block_label_used([{set,[_],_,{alloc,_,{gc_bif,_,{f,Fail}}}}|_], Fail) ->
+    true;
+split_block_label_used([_|Is], Fail) ->
+    split_block_label_used(Is, Fail);
+split_block_label_used([], _) -> false.
 
 dst_regs(Is) ->
     dst_regs(Is, []).
@@ -271,67 +292,96 @@ dst_regs([{block,Bl}|Is], Acc) ->
     dst_regs(Bl, dst_regs(Is, Acc));
 dst_regs([{set,[D],_,{bif,_,{f,_}}}|Is], Acc) ->
     dst_regs(Is, [D|Acc]);
+dst_regs([{set,[D],_,{alloc,_,{gc_bif,_,{f,_}}}}|Is], Acc) ->
+    dst_regs(Is, [D|Acc]);
 dst_regs([_|Is], Acc) ->
     dst_regs(Is, Acc);
 dst_regs([], Acc) -> ordsets:from_list(Acc).
 
-all_killed([R|Rs], OldIs, St) ->
-    case is_killed(R, OldIs, St) of
+all_killed([R|Rs], OldIs, Fail, St) ->
+    case is_killed(R, OldIs, Fail, St) of
  	false -> false;
-	true -> all_killed(Rs, OldIs, St)
+	true -> all_killed(Rs, OldIs, Fail, St)
     end;
-all_killed([], _, _) -> true.
+all_killed([], _, _, _) -> true.
 
-none_used([R|Rs], OldIs, St) ->
-    case is_not_used(R, OldIs, St) of
+none_used([R|Rs], OldIs, Fail, St) ->
+    case is_not_used(R, OldIs, Fail, St) of
  	false -> false;
-	true -> none_used(Rs, OldIs, St)
+	true -> none_used(Rs, OldIs, Fail, St)
     end;
-none_used([], _, _) -> true.
+none_used([], _, _, _) -> true.
 
-bopt_tree(Block0) ->
+bopt_tree_cg(Block0, Fail, St) ->
+    Free = free_variables(Block0),
     Block = ssa_block(Block0),
-    Reg = free_variables(Block),
-    %%io:format("~p\n", [Block]),
-    %%io:format("~p\n", [Reg]),
-    Res = bopt_tree_1(Block, Reg, []),
-    %%io:format("~p\n", [Res]),
-    Res.
+%%     io:format("~p\n", [Block0]),
+%%     io:format("~p\n", [Block]),
+%%     io:format("~p\n", [gb_trees:to_list(Free)]),
+    case bopt_tree(Block, Free, []) of
+	{Pre0,[{_,Tree}]} ->
+	    Pre1 = update_fail_label(Pre0, Fail, []),
+	    Regs0 = init_regs(gb_trees:keys(Free)),
+%%  	    io:format("~p\n", [dst_regs(Block0)]),
+%%  	    io:format("~p\n", [Pre1]),
+%%  	    io:format("~p\n", [Tree]),
+%%  	    io:nl(),
+	    {Pre,Regs} = rename_regs(Pre1, Regs0),
+%%  	    io:format("~p\n", [Regs0]),
+%%  	    io:format("~p\n", [Pre]),
+	    bopt_cg(Tree, Fail, Regs, make_block(Pre), St);
+	_Res ->
+	    throw(not_boolean_expr)
+    end.
 
-bopt_tree_1([{set,[Dst],As0,{bif,'not',_}}|Is], Forest0, Pre) ->
+bopt_tree([{set,[Dst],As0,{bif,'not',_}}|Is], Forest0, Pre) ->
     {[Arg],Forest1} = bopt_bool_args(As0, Forest0),
     Forest = gb_trees:enter(Dst, {'not',Arg}, Forest1),
-    bopt_tree_1(Is, Forest, Pre);
-bopt_tree_1([{set,[Dst],As0,{bif,'and',_}}|Is], Forest0, Pre) ->
+    bopt_tree(Is, Forest, Pre);
+bopt_tree([{set,[Dst],As0,{bif,'and',_}}|Is], Forest0, Pre) ->
     {As,Forest1} = bopt_bool_args(As0, Forest0),
-    AndList = make_and_list(As),
-    Forest = gb_trees:enter(Dst, {'and',AndList}, Forest1),
-    bopt_tree_1(Is, Forest, Pre);
-bopt_tree_1([{set,[Dst],[L0,R0],{bif,'or',_}}|Is], Forest0, Pre) ->
-    L = gb_trees:get(L0, Forest0),
-    R = gb_trees:get(R0, Forest0),
-    Forest1 = gb_trees:delete(L0, gb_trees:delete(R0, Forest0)),
-    OrList = make_or_list([L,R]),
-    Forest = gb_trees:enter(Dst, {'or',OrList}, Forest1),
-    bopt_tree_1(Is, Forest, Pre);
-bopt_tree_1([{protected,[Dst],_,_}=Prot|Is], Forest0, Pre) ->
+    Node = make_and_node(As),
+    Forest = gb_trees:enter(Dst, Node, Forest1),
+    bopt_tree(Is, Forest, Pre);
+bopt_tree([{set,[Dst],As0,{bif,'or',_}}|Is], Forest0, Pre) ->
+    {As,Forest1} = bopt_bool_args(As0, Forest0),
+    Node = make_or_node(As),
+    Forest = gb_trees:enter(Dst, Node, Forest1),
+    bopt_tree(Is, Forest, Pre);
+bopt_tree([{set,_,_,{bif,'xor',_}}|_], _, _) ->
+    throw('xor');
+bopt_tree([{protected,[Dst],Code,_}|Is], Forest0, Pre) ->
+    ProtForest0 = gb_trees:from_orddict([P || {_,any}=P <- gb_trees:to_list(Forest0)]),
+    {ProtPre,[{_,ProtTree}]} = bopt_tree(Code, ProtForest0, []),
+    Prot = {prot,ProtPre,ProtTree},
     Forest = gb_trees:enter(Dst, Prot, Forest0),
-    bopt_tree_1(Is, Forest, Pre);    
-bopt_tree_1([{set,[Dst],As,{bif,N,_}}=Bif|Is], Forest0, Pre) ->
+    bopt_tree(Is, Forest, Pre);    
+bopt_tree([{set,[Dst],[Src],move}=Move|Is], Forest, Pre) ->
+    case {Src,Dst} of
+	{{tmp,_},_} -> throw(move);
+	{_,{tmp,_}} -> throw(move);
+	_ -> ok
+    end,
+    bopt_tree(Is, Forest, [Move|Pre]);
+bopt_tree([{set,[Dst],As,{bif,N,_}}=Bif|Is], Forest0, Pre) ->
     Ar = length(As),
     case safe_bool_op(N, Ar) of
 	false ->
 	    bopt_good_args(As, Forest0),
 	    Forest = gb_trees:enter(Dst, any, Forest0),
-	    bopt_tree_1(Is, Forest, [Bif|Pre]);
+	    bopt_tree(Is, Forest, [Bif|Pre]);
 	true ->
 	    bopt_good_args(As, Forest0),
 	    Test = bif_to_test(Dst, N, As),
 	    Forest = gb_trees:enter(Dst, Test, Forest0),
-	    bopt_tree_1(Is, Forest, Pre)
+	    bopt_tree(Is, Forest, Pre)
     end;
-bopt_tree_1([], Forest, Pre) ->
-    {Pre,[R || {_,V}=R <- gb_trees:to_list(Forest), V =/= any]}.
+bopt_tree([{set,[Dst],As,{alloc,_,{gc_bif,_,_}}}=Bif|Is], Forest0, Pre) ->
+    bopt_good_args(As, Forest0),
+    Forest = gb_trees:enter(Dst, any, Forest0),
+    bopt_tree(Is, Forest, [Bif|Pre]);
+bopt_tree([], Forest, Pre) ->
+    {reverse(Pre),[R || {_,V}=R <- gb_trees:to_list(Forest), V =/= any]}.
 
 safe_bool_op(N, Ar) ->
     erl_internal:new_type_test(N, Ar) orelse erl_internal:comp_op(N, Ar).
@@ -339,8 +389,12 @@ safe_bool_op(N, Ar) ->
 bopt_bool_args(As, Forest) ->
     mapfoldl(fun bopt_bool_arg/2, Forest, As).
 
-bopt_bool_arg({T,_}=R, Forest) when T =:= x; T =:= y ->
-    {gb_trees:get(R, Forest),gb_trees:delete(R, Forest)};
+bopt_bool_arg({T,_}=R, Forest) when T =:= x; T =:= y; T =:= tmp ->
+    Val = case gb_trees:get(R, Forest) of
+	      any -> {test,is_eq_exact,fail,[R,{atom,true}]};
+	      Val0 -> Val0
+	  end,
+    {Val,gb_trees:delete(R, Forest)};
 bopt_bool_arg(Term, Forest) ->
     {Term,Forest}.
 
@@ -349,17 +403,25 @@ bopt_good_args([A|As], Regs) ->
     bopt_good_args(As, Regs);
 bopt_good_args([], _) -> ok.
 
-bopt_good_arg({x,_}=X, Regs) ->
+bopt_good_arg({Tag,_}=X, Regs) when Tag =:= x; Tag =:= tmp ->
     case gb_trees:get(X, Regs) of
 	any -> ok;
 	_Other ->
 	    %%io:format("not any: ~p: ~p\n", [X,_Other]),
-	    exit(bad_contents)
+	    throw(mixed)
     end;
 bopt_good_arg(_, _) -> ok.
 
 bif_to_test(_, N, As) ->
     beam_utils:bif_to_test(N, As, fail).
+
+make_and_node(Is) ->
+    AndList0 = make_and_list(Is),
+    case simplify_and_list(AndList0) of
+	[] -> {atom,true};
+	[Op] -> Op;
+	AndList -> {'and',AndList}
+    end.
 
 make_and_list([{'and',As}|Is]) ->
     make_and_list(As++Is);
@@ -367,31 +429,62 @@ make_and_list([I|Is]) ->
     [I|make_and_list(Is)];
 make_and_list([]) -> [].
 
+simplify_and_list([{atom,true}|T]) ->
+    simplify_and_list(T);
+simplify_and_list([{atom,false}=False|_]) ->
+    [False];
+simplify_and_list([H|T]) ->
+    [H|simplify_and_list(T)];
+simplify_and_list([]) -> [].
+
+make_or_node(Is) ->
+    OrList0 = make_or_list(Is),
+    case simplify_or_list(OrList0) of
+	[] -> {atom,false};
+	[Op] -> Op;
+	OrList -> {'or',OrList}
+    end.
+
 make_or_list([{'or',As}|Is]) ->
     make_or_list(As++Is);
 make_or_list([I|Is]) ->
     [I|make_or_list(Is)];
 make_or_list([]) -> [].
 
+simplify_or_list([{atom,false}|T]) ->
+    simplify_or_list(T);
+simplify_or_list([{atom,true}=True|_]) ->
+    [True];
+simplify_or_list([H|T]) ->
+    [H|simplify_or_list(T)];
+simplify_or_list([]) -> [].
+
 %% Code generation for a boolean tree.
 
-bopt_cg({'not',Arg}, Fail, Acc, St) ->
+bopt_cg({'not',Arg}, Fail, Rs, Acc, St) ->
     I = bopt_cg_not(Arg),
-    bopt_cg(I, Fail, Acc, St);
-bopt_cg({'and',As}, Fail, Acc, St) ->
-    bopt_cg_and(As, Fail, Acc, St);
-bopt_cg({'or',As}, Fail, Acc, St0) ->
+    bopt_cg(I, Fail, Rs, Acc, St);
+bopt_cg({'and',As}, Fail, Rs, Acc, St) ->
+    bopt_cg_and(As, Fail, Rs, Acc, St);
+bopt_cg({'or',As}, Fail, Rs, Acc, St0) ->
     {Succ,St} = new_label(St0),
-    bopt_cg_or(As, Succ, Fail, Acc, St);
-bopt_cg({test,N,fail,As}, Fail, Acc, St) ->
+    bopt_cg_or(As, Succ, Fail, Rs, Acc, St);
+bopt_cg({test,N,fail,As0}, Fail, Rs, Acc, St) ->
+    As = rename_sources(As0, Rs),
     Test = {test,N,{f,Fail},As},
     {[Test|Acc],St};
-bopt_cg({inverted_test,N,fail,As}, Fail, Acc, St0) ->
+bopt_cg({inverted_test,N,fail,As0}, Fail, Rs, Acc, St0) ->
+    As = rename_sources(As0, Rs),
     {Lbl,St} = new_label(St0),
     {[{label,Lbl},{jump,{f,Fail}},{test,N,{f,Lbl},As}|Acc],St};
-bopt_cg({protected,_,Bl0,{_,_,_}}, Fail, Acc, St0) ->
-    {Bl,St} = bopt_block_1(Bl0, Fail, St0),
-    {Bl++Acc,St}.
+bopt_cg({prot,Pre0,Tree}, Fail, Rs0, Acc, St0) ->
+    Pre1 = update_fail_label(Pre0, Fail, []),
+    {Pre,Rs} = rename_regs(Pre1, Rs0),
+    bopt_cg(Tree, Fail, Rs, make_block(Pre, Acc), St0);
+bopt_cg({atom,true}, _Fail, _Rs, Acc, St) ->
+    {Acc,St};
+bopt_cg({atom,false}, Fail, _Rs, Acc, St) ->
+    {[{jump,{f,Fail}}|Acc],St}.
 
 bopt_cg_not({'and',As0}) ->
     As = [bopt_cg_not(A) || A <- As0],
@@ -400,50 +493,122 @@ bopt_cg_not({'or',As0}) ->
     As = [bopt_cg_not(A) || A <- As0],
     {'and',As};
 bopt_cg_not({test,Test,Fail,As}) ->
-    {inverted_test,Test,Fail,As}.
+    {inverted_test,Test,Fail,As};
+bopt_cg_not({atom,Bool}) when is_boolean(Bool) ->
+    {atom,not Bool}.
 
-bopt_cg_and([{atom,false}|_], Fail, _, St) ->
-    {[{jump,{f,Fail}}],St};
-bopt_cg_and([{atom,true}|Is], Fail, Acc, St) ->
-    bopt_cg_and(Is, Fail, Acc, St);
-bopt_cg_and([I|Is], Fail, Acc0, St0) ->
-    {Acc,St} = bopt_cg(I, Fail, Acc0, St0),
-    bopt_cg_and(Is, Fail, Acc, St);
-bopt_cg_and([], _, Acc, St) -> {Acc,St}.
+bopt_cg_and([I|Is], Fail, Rs, Acc0, St0) ->
+    {Acc,St} = bopt_cg(I, Fail, Rs, Acc0, St0),
+    bopt_cg_and(Is, Fail, Rs, Acc, St);
+bopt_cg_and([], _, _, Acc, St) -> {Acc,St}.
 
-bopt_cg_or([I], Succ, Fail, Acc0, St0) ->
-    {Acc,St} = bopt_cg(I, Fail, Acc0, St0),
+bopt_cg_or([I], Succ, Fail, Rs, Acc0, St0) ->
+    {Acc,St} = bopt_cg(I, Fail, Rs, Acc0, St0),
     {[{label,Succ}|Acc],St};
-bopt_cg_or([I|Is], Succ, Fail, Acc0, St0) ->
+bopt_cg_or([I|Is], Succ, Fail, Rs, Acc0, St0) ->
     {Lbl,St1} = new_label(St0),
-    {Acc,St} = bopt_cg(I, Lbl, Acc0, St1),
-    bopt_cg_or(Is, Succ, Fail, [{label,Lbl},{jump,{f,Succ}}|Acc], St).
+    {Acc,St} = bopt_cg(I, Lbl, Rs, Acc0, St1),
+    bopt_cg_or(Is, Succ, Fail, Rs, [{label,Lbl},{jump,{f,Succ}}|Acc], St).
     
 new_label(#st{next=LabelNum}=St) when is_integer(LabelNum) ->
     {LabelNum,St#st{next=LabelNum+1}}.
 
 free_variables(Is) ->
     E = gb_sets:empty(),
-    free_vars_1(Is, E, E).
+    free_vars_1(Is, E, E, E).
 
-free_vars_1([{set,[Dst],As,{bif,_,_}}|Is], F0, N0) ->
+free_vars_1([{set,Ds,As,move}|Is], F0, N0, A) ->
     F = gb_sets:union(F0, gb_sets:difference(var_list(As), N0)),
-    N = gb_sets:union(N0, var_list([Dst])),
-    free_vars_1(Is, F, N);
-free_vars_1([{protected,_,Pa,_}|Is], F, N) ->
-    free_vars_1(Pa++Is, F, N);
-free_vars_1([], F, _) ->
-    gb_trees:from_orddict([{K,any} || K <- gb_sets:to_list(F)]).
+    N = gb_sets:union(N0, var_list(Ds)),
+    free_vars_1(Is, F, N, A);
+free_vars_1([{set,Ds,As,{bif,_,_}}|Is], F0, N0, A) ->
+    F = gb_sets:union(F0, gb_sets:difference(var_list(As), N0)),
+    N = gb_sets:union(N0, var_list(Ds)),
+    free_vars_1(Is, F, N, A);
+free_vars_1([{set,Ds,As,{alloc,Regs,{gc_bif,_,_}}}|Is], F0, N0, A0) ->
+    A = gb_sets:union(A0, gb_sets:from_list(free_vars_regs(Regs))),
+    F = gb_sets:union(F0, gb_sets:difference(var_list(As), N0)),
+    N = gb_sets:union(N0, var_list(Ds)),
+    free_vars_1(Is, F, N, A);
+free_vars_1([{protected,_,Pa,_}|Is], F, N, A) ->
+    free_vars_1(Pa++Is, F, N, A);
+free_vars_1([], F0, N, A) ->
+    F = case gb_sets:is_empty(A) of
+	    true ->
+		%% No GC BIFs.
+		{x,X} = gb_sets:smallest(N),
+		P = ordsets:from_list(free_vars_regs(X)),
+		ordsets:union(gb_sets:to_list(F0), P);
+	    false ->
+		%% At least one GC BIF.
+		gb_sets:to_list(gb_sets:union(F0, gb_sets:difference(A, N)))
+	end,
+    gb_trees:from_orddict([{K,any} || K <- F]).
 
 var_list(Is) ->
     var_list_1(Is, gb_sets:empty()).
 
-var_list_1([{x,_}=X|Is], D) ->
+var_list_1([{Tag,_}=X|Is], D) when Tag =:= x; Tag =:= y ->
     var_list_1(Is, gb_sets:add(X, D));
 var_list_1([_|Is], D) ->
     var_list_1(Is, D);
 var_list_1([], D) -> D.
 
+free_vars_regs(0) -> [];
+free_vars_regs(X) -> [{x,X-1}|free_vars_regs(X-1)].
+
+rename_regs(Is, Regs) ->
+    rename_regs(Is, Regs, []).
+
+rename_regs([{set,_,_,move}=I|Is], Regs, Acc) ->
+    rename_regs(Is, Regs, [I|Acc]);
+rename_regs([{set,[Dst0],Ss0,{alloc,_,Info}}|Is], Regs0, Acc) ->
+    Live = live_regs(Regs0),
+    Ss = rename_sources(Ss0, Regs0),
+    Regs = put_reg(Dst0, Regs0),
+    Dst = fetch_reg(Dst0, Regs),
+    rename_regs(Is, Regs, [{set,[Dst],Ss,{alloc,Live,Info}}|Acc]);
+rename_regs([{set,[Dst0],Ss0,Info}|Is], Regs0, Acc) ->
+    Ss = rename_sources(Ss0, Regs0),
+    Regs = put_reg(Dst0, Regs0),
+    Dst = fetch_reg(Dst0, Regs),
+    rename_regs(Is, Regs, [{set,[Dst],Ss,Info}|Acc]);
+rename_regs([], Regs, Acc) -> {reverse(Acc),Regs}.
+
+rename_sources(Ss, Regs) ->
+    map(fun({x,_}=R) -> fetch_reg(R, Regs);
+	   ({tmp,_}=R) -> fetch_reg(R, Regs);
+	   (E) -> E
+	end, Ss).
+
+%%%
+%%% Keeping track of register assignments.
+%%%
+
+init_regs(Free) ->
+    init_regs_1(Free, 0).
+	
+init_regs_1([{x,I}=V|T], I) ->
+    [{I,V}|init_regs_1(T, I+1)];
+init_regs_1([{x,X}|_]=T, I) when I < X ->
+    [{I,reserved}|init_regs_1(T, I+1)];
+init_regs_1([{y,_}|_], _) -> [];
+init_regs_1([], _) -> [].
+    
+put_reg(V, Rs) -> put_reg_1(V, Rs, 0).
+
+put_reg_1(V, [R|Rs], I) -> [R|put_reg_1(V, Rs, I+1)];
+put_reg_1(V, [], I) -> [{I,V}].
+
+fetch_reg(V, [{I,V}|_]) -> {x,I};
+fetch_reg(V, [_|SRs]) -> fetch_reg(V, SRs).
+
+live_regs(Regs) ->
+    foldl(fun ({I,_}, _) -> I;
+	      ([], Max) -> Max end,
+	  -1, Regs)+1.
+    
+    
 %%%
 %%% Convert a block to Static Single Assignment (SSA) form.
 %%%
@@ -453,8 +618,7 @@ var_list_1([], D) -> D.
 	 sub}).
 	 
 ssa_block(Is0) ->
-    Next = ssa_first_free(Is0, 0),
-    {Is,_} = ssa_block_1(Is0, #ssa{live=Next,sub=gb_trees:empty()}, []),
+    {Is,_} = ssa_block_1(Is0, #ssa{live=0,sub=gb_trees:empty()}, []),
     Is.
 
 ssa_block_1([{protected,[_],Pa0,Pb}|Is], Sub0, Acc) ->
@@ -481,12 +645,12 @@ ssa_in_use({x,_}=R, #ssa{sub=Sub0}=Ssa) ->
 ssa_in_use(_, Ssa) -> Ssa.
 
 ssa_assign({x,_}=R, #ssa{sub=Sub0}=Ssa0) ->
+    {NewReg,Ssa} = ssa_new_reg(Ssa0),
     case gb_trees:is_defined(R, Sub0) of
 	false ->
-	    Sub = gb_trees:insert(R, R, Sub0),
-	    Ssa0#ssa{sub=Sub};
+	    Sub = gb_trees:insert(R, NewReg, Sub0),
+	    Ssa#ssa{sub=Sub};
 	true ->
-	    {NewReg,Ssa} = ssa_new_reg(Ssa0),
 	    Sub1 = gb_trees:update(R, NewReg, Sub0),
 	    Sub = gb_trees:insert(NewReg, NewReg, Sub1),
 	    Ssa#ssa{sub=Sub}
@@ -503,40 +667,30 @@ ssa_sub(R0, #ssa{sub=Sub}) ->
     end.
 
 ssa_new_reg(#ssa{live=Reg}=Ssa) ->
-    {{x,Reg},Ssa#ssa{live=Reg+1}}.
-
-ssa_first_free([{protected,Ds,_,_}|Is], Next0) ->
-    Next = ssa_first_free_list(Ds, Next0),
-    ssa_first_free(Is, Next);
-ssa_first_free([{set,[Dst],As,_}|Is], Next0) ->
-    Next = ssa_first_free_list([Dst|As], Next0),
-    ssa_first_free(Is, Next);
-ssa_first_free([], Next) -> Next.
-
-ssa_first_free_list(Regs, Next) ->
-    foldl(fun({x,R}, N) when R >= N -> R+1;
-	     (_, N) -> N end, Next, Regs).
+    {{tmp,Reg},Ssa#ssa{live=Reg+1}}.
 
 ssa_last_target([{set,[Dst],_,_}]) -> Dst;
 ssa_last_target([_|Is]) -> ssa_last_target(Is).
 
-%% is_killed(Register, [Instruction], State) -> true|false
+%% is_killed(Register, [Instruction], FailLabel, State) -> true|false
 %%  Determine whether a register is killed in the instruction sequence.
 %%  The state is used to allow us to determine the kill state
 %%  across branches.
 
-is_killed(R, Is, #st{ll=Ll}) ->
-    beam_utils:is_killed(R, Is, Ll).
+is_killed(R, Is, Label, #st{ll=Ll}) ->
+    beam_utils:is_killed(R, Is, Ll) andalso
+	beam_utils:is_killed_at(R, Label, Ll).
 
-%% is_not_used(Register, [Instruction], State) -> true|false
+%% is_not_used(Register, [Instruction], FailLabel, State) -> true|false
 %%  Determine whether a register is never used in the instruction sequence
 %%  (it could still referenced by an allocate instruction, meaning that
 %%  it MUST be initialized).
 %%    The state is used to allow us to determine the usage state
 %%  across branches.
 
-is_not_used(R, Is, #st{ll=Ll}) ->
-    beam_utils:is_not_used(R, Is, Ll).
+is_not_used(R, Is, Label, #st{ll=Ll}) ->
+    beam_utils:is_not_used(R, Is, Ll) andalso
+	beam_utils:is_not_used_at(R, Label, Ll).
 
 %% initialized_regs([Instruction]) -> [Register])
 %%  Given a REVERSED instruction sequence, return a list of the registers
@@ -551,6 +705,11 @@ initialized_regs([{test,_,_,Src}|Is], Regs) ->
     initialized_regs(Is, add_init_regs(Src, Regs));
 initialized_regs([{block,Bl}|Is], Regs) ->
     initialized_regs(reverse(Bl, Is), Regs);
+initialized_regs([{bs_context_to_binary,Src}|Is], Regs) ->
+    initialized_regs(Is, add_init_regs([Src], Regs));
+initialized_regs([{label,_},{func_info,_,_,Arity}|_], Regs) ->
+    InitRegs = free_vars_regs(Arity),
+    add_init_regs(InitRegs, Regs);
 initialized_regs([_|_], Regs) -> Regs;
 initialized_regs([], Regs) -> Regs.
 
@@ -559,4 +718,3 @@ add_init_regs([{x,_}=X|T], Regs) ->
 add_init_regs([_|T], Regs) ->
     add_init_regs(T, Regs);
 add_init_regs([], Regs) -> Regs.
-   

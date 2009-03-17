@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>2001-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1rt_per_bin).
 
@@ -150,6 +150,12 @@ fixoptionals(OptList,OptLength,Val) when tuple(Val) ->
 fixoptionals([],_Val,Acc) ->
     %% Optbits
     Acc;
+fixoptionals([{Pos,DefVal}|Ot],Val,Acc) ->
+    case element(Pos,Val) of
+	asn1_DEFAULT -> fixoptionals(Ot,Val,Acc bsl 1);
+	DefVal -> fixoptionals(Ot,Val,Acc bsl 1);
+	_ -> fixoptionals(Ot,Val,(Acc bsl 1) + 1)
+    end;
 fixoptionals([Pos|Ot],Val,Acc) ->
     case element(Pos,Val) of
 	asn1_NOVALUE -> fixoptionals(Ot,Val,Acc bsl 1);
@@ -911,8 +917,14 @@ decode_length(Buffer,{Lb,Ub}) when Ub =< 65535 ,Lb >= 0 -> % constrained
 decode_length(Buffer,{Lb,_}) when integer(Lb), Lb >= 0 -> % Ub > 65535
     decode_length(Buffer,undefined);
 decode_length(Buffer,{VR={_Lb,_Ub},Ext}) when is_list(Ext) ->
-    {0,Buffer2} = getbit(Buffer),
-    decode_length(Buffer2, VR);
+    case getbit(Buffer) of
+	{0,Buffer2} ->
+	    decode_length(Buffer2, VR);
+	{1,Buffer2} ->
+	    decode_length(Buffer2, undefined)
+    end;
+%%     {0,Buffer2} = getbit(Buffer),
+%%     decode_length(Buffer2, VR);
 	
 
 %When does this case occur with {_,_Lb,Ub} ??
@@ -1109,6 +1121,20 @@ encode_bin_bit_string(C,UnusedAndBin={_Unused,_BinBits},NamedBitList) ->
 	{Lb,Ub} when integer(Lb),integer(Ub) ->
 	    [encode_length({Lb,Ub},size(Bin1)*8 - Unused1),
 	     align,UnusedAndBin1];
+	{{Fix,Fix},L} when is_integer(Fix),is_list(L) ->
+	    %% X.691 § 15.6, the rest of this paragraph is covered by
+	    %% the last, ie. Sc, clause in this case
+	    case (size(Bin1)*8)-Unused1 of
+		Size when Size =< Fix, Fix =< 16 ->
+		    {Unused2,Bin2} = pad_list(Fix,UnusedAndBin),
+		    <<BitVal:Fix,_:Unused2>> = Bin2,
+		    [{bits,1,0},{bits,Fix,BitVal}];
+		Size when Size =< Fix ->
+		    [{bits,1,0},align, pad_list(Fix, UnusedAndBin1)];
+		Size ->
+		    [{bits,1,1},encode_length(undefined,Size),
+		     align,UnusedAndBin1]
+	    end;
 	no ->
 	    [encode_length(undefined,size(Bin1)*8 - Unused1),
 	     align,UnusedAndBin1];
@@ -1116,6 +1142,7 @@ encode_bin_bit_string(C,UnusedAndBin={_Unused,_BinBits},NamedBitList) ->
 	    [encode_length(Sc,size(Bin1)*8 - Unused1),
 	     align,UnusedAndBin1]
     end.
+
 
 remove_trailing_bin([], {Unused,Bin},_) ->
     {Unused,Bin};
@@ -1221,6 +1248,15 @@ decode_compact_bit_string(Buffer, C, NamedNumberList) ->
 	    {Len,Bytes2} = decode_length(Buffer,undefined),
 	    Bytes3 = align(Bytes2),
 	    compact_bit_string(Bytes3,Len,NamedNumberList);
+	{{Fix,Fix},L} = Sc when is_list(L), is_integer(Fix), Fix =< 16 ->
+	    %% X.691 §15.6, special case of extension marker
+	    case decode_length(Buffer,Sc) of
+		{Len,Bytes2} when Len > Fix ->
+		    Bytes3 = align(Bytes2),
+		    compact_bit_string(Bytes3,Len,NamedNumberList);
+		{Len,Bytes2} ->
+		    compact_bit_string(Bytes2,Len,NamedNumberList)
+	    end;
 	Sc ->
 	    {Len,Bytes2} = decode_length(Buffer,Sc),
 	    Bytes3 = align(Bytes2),
@@ -1253,7 +1289,19 @@ decode_bit_string(Buffer, C, NamedNumberList) ->
 	    Bytes2 = align(Buffer),
 	    {BinBits,_} = decode_fragmented_bits(Bytes2,V),
 	    bit_list_or_named(BinBits,V,NamedNumberList);
-	Sc -> % extension marker
+	{{Fix,Fix},L} = Sc when is_list(L), is_integer(Fix), Fix =< 16 ->
+	    %% X.691 §15.6, special case of extension marker
+	    case decode_length(Buffer,Sc) of
+		{Len,Bytes2} when Len > Fix ->
+		     Bytes3 = align(Bytes2),
+		    bit_list_or_named(Bytes3,Len,NamedNumberList);
+		{Len,Bytes2} when Len > 16 ->
+		     Bytes3 = align(Bytes2),
+		    bit_list_or_named(Bytes3,Len,NamedNumberList);
+		{Len,Bytes2} ->
+		    bit_list_or_named(Bytes2,Len,NamedNumberList)
+	    end;
+	Sc -> %% X.691 §15.6, extension marker
 	    {Len,Bytes2} = decode_length(Buffer,Sc),
 	    Bytes3 = align(Bytes2),
 	    bit_list_or_named(Bytes3,Len,NamedNumberList)

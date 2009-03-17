@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2000-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Function inlining optimisation for Core.
 
@@ -97,8 +98,8 @@ inline_option(Opts) ->
 
 inline(Fs0, St0) ->
     %% Generate list of augmented functions.
-    Fs1 = map(fun ({#c_fname{id=F,arity=A},#c_fun{body=B}}=Def) ->
-		      Weight = core_lib:fold(fun weight_func/2, 0, B),
+    Fs1 = map(fun ({#c_var{name={F,A}},#c_fun{body=B}}=Def) ->
+		      Weight = cerl_trees:fold(fun weight_func/2, 0, B),
 		      #fstat{func=F,arity=A,def=Def,weight=Weight}
 	      end, Fs0),
     %% Get inlineable functions, and inline them with themselves.
@@ -117,7 +118,7 @@ inline(Fs0, St0) ->
 			      end
 		      end, [], Fs1),
     Is1 = map(fun (#ifun{body=B}=If) ->
-		      If#ifun{body=core_lib:map(match_fail_fun(), B)}
+		      If#ifun{body=cerl_trees:map(match_fail_fun(), B)}
 	      end, Is0),
     Is2 = [inline_inline(If, Is1) || If <- Is1],
     %% We would like to remove inlined, non-exported functions here,
@@ -139,7 +140,7 @@ is_inlineable(#fstat{func=F,arity=A}, _Thresh, Ofs) ->
 %%  ourselves.
 
 inline_inline(#ifun{body=B,weight=Iw}=If, Is) ->
-    Inline = fun (#c_apply{op=#c_fname{id=F,arity=A},args=As}=Call) ->
+    Inline = fun (#c_apply{op=#c_var{name={F,A}},args=As}=Call) ->
 		     case find_inl(F, A, Is) of
 			 #ifun{vars=Vs,body=B2,weight=W} when W < Iw ->
 			     #c_let{vars=Vs,
@@ -149,14 +150,14 @@ inline_inline(#ifun{body=B,weight=Iw}=If, Is) ->
 		     end;
 		 (Core) -> Core
 	     end,
-    If#ifun{body=core_lib:map(Inline, B)}.
+    If#ifun{body=cerl_trees:map(Inline, B)}.
 
 %% inline_func(Fstat, [Inline]) -> Fstat.
 %%  Try to inline calls in a normal function.  Here we inline anything
 %%  in the inline list.
 
 inline_func(#fstat{def={Name,F0}}=Fstat, Is) ->
-    Inline = fun (#c_apply{op=#c_fname{id=F,arity=A},args=As}=Call, Mod) ->
+    Inline = fun (#c_apply{op=#c_var{name={F,A}},args=As}=Call, Mod) ->
 		     case find_inl(F, A, Is) of
 			 #ifun{vars=Vs,body=B} ->
 			     {#c_let{vars=Vs,
@@ -167,7 +168,7 @@ inline_func(#fstat{def={Name,F0}}=Fstat, Is) ->
 		     end;
 		 (Core, Mod) -> {Core,Mod}
 	     end,
-    {F1,Mod} = core_lib:mapfold(Inline, false, F0),
+    {F1,Mod} = cerl_trees:mapfold(Inline, false, F0),
     Fstat#fstat{def={Name,F1},modified=Mod}.
 
 weight_func(_Core, Acc) -> Acc + 1.
@@ -194,17 +195,15 @@ find_inl(_, _, []) -> no.
 %% kill_id_anns(Body) -> Body'
 
 kill_id_anns(Body) ->
-    core_lib:map(fun(#c_fun{anno=A0}=CFun) ->
-			 A = kill_id_anns_1(A0),
-			 CFun#c_fun{anno=A};
-		    (Expr) when is_list(Expr) ->
-			 Expr;
-		    (Expr) ->
-			 %% Mark everything as compiler generated to suppress
-			 %% bogus warnings.
-			 A = [compiler_generated|core_lib:get_anno(Expr)],
-			 core_lib:set_anno(Expr, A)
-			 end, Body).
+    cerl_trees:map(fun(#c_fun{anno=A0}=CFun) ->
+			   A = kill_id_anns_1(A0),
+			   CFun#c_fun{anno=A};
+		      (Expr) ->
+			   %% Mark everything as compiler generated to suppress
+			   %% bogus warnings.
+			   A = [compiler_generated|core_lib:get_anno(Expr)],
+			   core_lib:set_anno(Expr, A)
+		   end, Body).
 
 kill_id_anns_1([{'id',_}|As]) ->
     kill_id_anns_1(As);

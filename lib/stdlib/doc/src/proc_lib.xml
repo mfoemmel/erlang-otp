@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1996</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1996</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>proc_lib</title>
@@ -46,14 +44,15 @@
     <p>While in "plain Erlang" a process is said to terminate normally
       only for the exit reason <c>normal</c>, a process started
       using <c>proc_lib</c> is also said to terminate normally if it
-      exits with reason <c>shutdown</c>. This is the reason used when
+      exits with reason <c>shutdown</c> or <c>{shutdown,Term}</c>.
+      <c>shutdown</c> is the reason used when
       an application (supervision tree) is stopped.</p>
     <p>When a process started using <c>proc_lib</c> terminates
-      abnormally -- that is, with another exit reason than <c>normal</c>
-      or <c>shutdown</c> -- a <em>crash report</em> is generated, which
-      is written to terminal by the default SASL event handler. That is,
-      the crash report is normally only visible if the SASL application
-      is started. See
+      abnormally -- that is, with another exit reason than <c>normal</c>,
+      <c>shutdown</c>, or <c>{shutdown,Term}</c> -- a <em>crash report</em>
+      is generated, which is written to terminal by the default SASL
+      event handler. That is, the crash report is normally only visible
+      if the SASL application is started. See
       <seealso marker="sasl:sasl_app">sasl(6)</seealso> and
       <seealso marker="sasl:error_logging">SASL User's Guide</seealso>.</p>
     <p>The crash report contains the previously stored information such
@@ -77,7 +76,7 @@
       <desc>
         <p>Spawns a new process and initializes it as described above.
           The process is spawned using the
-          <seealso marker="kernel:erlang#spawn/1">spawn</seealso> BIFs.</p>
+          <seealso marker="erts:erlang#spawn/1">spawn</seealso> BIFs.</p>
       </desc>
     </func>
     <func>
@@ -95,7 +94,7 @@
       <desc>
         <p>Spawns a new process and initializes it as described above.
           The process is spawned using the
-          <seealso marker="kernel:erlang#spawn_link/1">spawn_link</seealso>
+          <seealso marker="erts:erlang#spawn_link/1">spawn_link</seealso>
           BIFs.</p>
       </desc>
     </func>
@@ -115,7 +114,7 @@
       <desc>
         <p>Spawns a new process and initializes it as described above.
           The process is spawned using the
-          <seealso marker="kernel:erlang#spawn_opt/2">spawn_opt</seealso>
+          <seealso marker="erts:erlang#spawn_opt/2">spawn_opt</seealso>
           BIFs.</p>
         <note>
           <p>Using the spawn option <c>monitor</c> is currently not
@@ -306,7 +305,7 @@ init(Parent) ->
       </type>
       <desc>
         <p>This function does the same as (and does call) the BIF
-          <seealso marker="kernel:erlang#erlang:hibernate/3">hibernate/3</seealso>,
+          <seealso marker="erts:erlang#erlang:hibernate/3">hibernate/3</seealso>,
           but ensures that exception handling and logging continues to
           work as expected when the process wakes up. Always use this
           function instead of the BIF for processes started using

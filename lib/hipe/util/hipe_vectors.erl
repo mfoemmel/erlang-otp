@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %%			  VECTORS IN ERLANG
@@ -39,10 +57,10 @@ index([],_) ->
 vector_to_list(V) ->
     tuple_to_list(V).
 
-set(Vec,Ix,V) ->
-    setelement(Ix+1,Vec,V).
+set(Vec, Ix, V) ->
+    setelement(Ix+1, Vec, V).
 
-get(Vec,Ix) -> element(Ix+1,Vec).
+get(Vec, Ix) -> element(Ix+1, Vec).
 
 -endif. %% ifdef USE_TUPLES
 
@@ -50,8 +68,8 @@ get(Vec,Ix) -> element(Ix+1,Vec).
 
 -ifdef(USE_GBTREES).
 
--spec new(integer(), _) -> hipe_vector().
-new(N, V) when is_integer(N) ->
+-spec new(non_neg_integer(), _) -> hipe_vector().
+new(N, V) when is_integer(N), N >= 0 ->
     gb_trees:from_orddict(mklist(N, V)).
 
 mklist(N, V) ->
@@ -65,7 +83,7 @@ mklist(_, _, _) ->
 -spec size(hipe_vector()) -> non_neg_integer().
 size(V) -> gb_trees:size(V).
 
--spec list(hipe_vector()) -> [{_,_}].
+-spec list(hipe_vector()) -> [{_, _}].
 list(Vec) ->
     gb_trees:to_list(Vec).
 

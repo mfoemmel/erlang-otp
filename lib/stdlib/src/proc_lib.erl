@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(proc_lib).
 
@@ -156,10 +157,17 @@ wake_up(M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
     end.
 
 exit_p(Class, Reason) ->
-    {M,F,A} = get('$initial_call'),
-    MFA = {M,F,make_dummy_args(A, [])},
-    crash_report(Class, Reason, MFA),
-    exit(Reason).
+    case get('$initial_call') of
+	{M,F,A} when is_atom(M), is_atom(F), is_integer(A) ->
+	    MFA = {M,F,make_dummy_args(A, [])},
+	    crash_report(Class, Reason, MFA),
+	    exit(Reason);
+	_ ->
+	    %% The process dictionary has been cleared or
+	    %% possibly modified.
+	    crash_report(Class, Reason, []),
+	    exit(Reason)
+    end.
 
 start(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     start(M,F,A,infinity).
@@ -303,19 +311,24 @@ trans_init(M, F, A) when is_atom(M), is_atom(F) ->
 %% Generate a crash report.
 %% -----------------------------------------------------
 
-crash_report(exit, normal,_)      -> ok;
-crash_report(exit, shutdown,_)    -> ok;
+crash_report(exit, normal, _)       -> ok;
+crash_report(exit, shutdown, _)     -> ok;
+crash_report(exit, {shutdown,_}, _) -> ok;
 crash_report(Class, Reason, StartF) ->
     OwnReport = my_info(Class, Reason, StartF),
     LinkReport = linked_info(self()),
     Rep = [OwnReport,LinkReport],
     error_logger:error_report(crash_report, Rep).
 
+my_info(Class, Reason, []) ->
+    my_info_1(Class, Reason);
 my_info(Class, Reason, StartF) ->
+    [{initial_call, StartF}|my_info_1(Class, Reason)].
+
+my_info_1(Class, Reason) ->
     [{pid, self()},
      get_process_info(self(), registered_name),         
      {error_info, {Class,Reason,erlang:get_stacktrace()}}, 
-     {initial_call, StartF},
      get_ancestors(self()),        
      get_process_info(self(), messages),
      get_process_info(self(), links),

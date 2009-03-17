@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %%
 %% Defintion for Domain Name System
@@ -72,6 +73,8 @@
 -define(T_AAAA,         28).            %% ipv6 address
 %% SRV (RFC 2052)
 -define(T_SRV,          33).            %% services
+%% SPF (RFC 4408)
+-define(T_SPF,          99).            %% server policy framework
 %%      non standard
 -define(T_UINFO,	100).		%% user (finger) information
 -define(T_UID,		101).		%% user ID
@@ -105,6 +108,8 @@
 -define(S_AAAA,         aaaa).          %% ipv6 address
 %% SRV (RFC 2052)
 -define(S_SRV,          srv).           %% services
+%% SPF (RFC 4408)
+-define(S_SPF,          spf).            %% server policy framework
 %%      non standard
 -define(S_UINFO,	uinfo).		%% user (finger) information
 -define(S_UID,		uid).		%% user ID

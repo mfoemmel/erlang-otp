@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc
 %%
@@ -882,15 +900,17 @@ args(I) ->
     #alub{} -> [alub_src1(I), alub_src2(I)];
     #branch{} -> [branch_src1(I), branch_src2(I)];
     #call{} -> 
+      Args = call_arglist(I) ++ hipe_rtl_arch:call_used(),
       case call_is_known(I) of
-	false -> [call_fun(I)|call_arglist(I)];
-	true -> call_arglist(I)
+	false -> [call_fun(I) | Args];
+	true -> Args
       end;
     #comment{} -> [];
     #enter{} ->
+      Args = enter_arglist(I) ++ hipe_rtl_arch:tailcall_used(),
       case enter_is_known(I) of
-	false -> hipe_rtl_arch:add_ra_reg([enter_fun(I)|enter_arglist(I)]);
-	true -> hipe_rtl_arch:add_ra_reg(enter_arglist(I))
+	false -> [enter_fun(I) | Args];
+	true -> Args
       end;
     #fconv{} -> [fconv_src(I)];
     #fixnumop{} -> [fixnumop_src(I)];
@@ -910,7 +930,7 @@ args(I) ->
     #move{} -> [move_src(I)];
     #multimove{} -> multimove_srclist(I);
     #phi{} -> phi_args(I);
-    #return{} -> hipe_rtl_arch:add_ra_reg(return_varlist(I));
+    #return{} -> return_varlist(I) ++ hipe_rtl_arch:return_used();
     #store{} -> [store_base(I), store_offset(I), store_src(I)];
     #switch{} -> [switch_src(I)]
   end.
@@ -924,7 +944,7 @@ defines(Instr) ->
 	   #alu{} -> [alu_dst(Instr)];
 	   #alub{} -> [alub_dst(Instr)];
 	   #branch{} -> [];
-	   #call{} -> call_dstlist(Instr);
+	   #call{} -> call_dstlist(Instr) ++ hipe_rtl_arch:call_defined();
 	   #comment{} -> [];
 	   #enter{} -> [];
 	   #fconv{} -> [fconv_dst(Instr)];
@@ -990,7 +1010,7 @@ subst_uses(Subst, I) ->
       end;
     #comment{} ->
       I;
-    #enter{} -> %% XXX: Check why ra_reg is added in uses() but not updated here
+    #enter{} ->
       case enter_is_known(I) of
 	false -> 
 	  I0 = enter_fun_update(I, subst1(Subst, enter_fun(I))),

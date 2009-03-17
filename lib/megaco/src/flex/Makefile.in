@@ -1,22 +1,21 @@
-#<copyright>
-# <year>2001-2008</year>
-# <holder>Ericsson AB, All Rights Reserved</holder>
-#</copyright>
-#<legalnotice>
+# 
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2001-2009. All Rights Reserved.
+# 
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
 # retrieved online at http://www.erlang.org/.
-#
+# 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
-#
-# The Initial Developer of the Original Code is Ericsson AB.
-#</legalnotice>
-#
+# 
+# %CopyrightEnd%
+
 include $(ERL_TOP)/make/target.mk
 
 EBIN = ../../ebin
@@ -37,8 +36,16 @@ VSN=$(MEGACO_VSN)
 # reasonable defaults, if something different is needed it should
 # be set for that system only.
 # ----------------------------------------------------
+
+FLEX_VSN = $(shell flex --version)
+
+TMP_CFLAGS  = @DED_CFLAGS@ 
+ifeq ($(TYPE),valgrind)
+CFLAGS = $(subst -O2, , $(TMP_CFLAGS)) -DVALGRIND
+else
+CFLAGS = $(TMP_CFLAGS)
+endif
 CC      = @CC@
-CFLAGS  = @DED_CFLAGS@ 
 CFLAGS_MT = $(CFLAGS) -D_THREAD_SAFE -D_REENTRANT
 LD      = @DED_LD@
 LDFLAGS = @DED_LDFLAGS@
@@ -144,11 +151,21 @@ ifeq ($(MFS_DEBUG),true)
 CFLAGS += -DMFS_DEBUG=true
 endif
 
+ifeq ($(MFS_FLEX_PERF),true)
+LEX_FLAGS = -p
+endif
+
 ifeq ($(MFS_FLEX_DEBUG),true)
 LEX_FLAGS = -d
 endif
 
 CFLAGS += $(DRIVER_INCLUDES) $(DRV_FLAGS) -funroll-loops -Wall 
+
+#ifneq ($(FLEX_VSN),)
+#CFLAGS += -DFLEX_VERSION="$(FLEX_VSN)"
+#else
+#CFLAGS += -DFLEX_VERSION=unknown
+#endif
 
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
 LEX_FLAGS += -Ca
@@ -176,6 +193,8 @@ docs:
 info:
 	@echo "ENABLE_MEGACO_FLEX_SCANNER        = $(ENABLE_MEGACO_FLEX_SCANNER)"
 	@echo "ENABLE_MEGACO_FLEX_SCANNER_LINENO = $(ENABLE_MEGACO_FLEX_SCANNER_LINENO)"
+	@echo ""
+	@echo "FLEX_VSN     = $(FLEX_VSN)"
 	@echo ""
 	@echo "CFLAGS       = $(CFLAGS)"
 	@echo "CFLAGS_MT    = $(CFLAGS_MT)"
@@ -218,7 +237,7 @@ release_spec: opt
 	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src/flex
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER),true)
-	$(INSTALL_DATA) $(FLEX_FILES) $(RELSYSDIR)/src/flex
+	$(INSTALL_DATA) $(FLEX_FILES) $(C_TARGETS) $(RELSYSDIR)/src/flex
 	$(INSTALL_DATA) $(SOLIBS) $(RELSYSDIR)/priv/lib
 endif
 
@@ -229,14 +248,16 @@ megaco_flex_scanner_drv.flex: megaco_flex_scanner_drv.flex.src
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
 	@printf "\tflex scanner lineno enabled\n"
 	$(PERL) -p -e \
-          's/%MEGACO_YY_LINENO_OPTION%/%option yylineno/ ;  \
+          's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
+           s/%MEGACO_YY_LINENO_OPTION%/%option yylineno/ ;  \
            s/%MEGACO_DUMMY_DECL_YY_LINENO%/\/* static int yylineno = 1; *\// ; \
            s/%MEGACO_LINENO_OR_TOKENCOUNTER%/yylineno/' \
            < $< > $@
 else
 	@printf "\tflex scanner lineno disabled\n"
 	$(PERL) -p -e \
-          's/%MEGACO_YY_LINENO_OPTION%/  \/\* %option yylineno \*\// ; \
+          's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
+           s/%MEGACO_YY_LINENO_OPTION%/  \/\* %option yylineno \*\// ; \
            s/%MEGACO_DUMMY_DECL_YY_LINENO%/static int yylineno = 1;/ ; \
            s/%MEGACO_LINENO_OR_TOKENCOUNTER%/mfs_token_counter/' \
            < $< > $@

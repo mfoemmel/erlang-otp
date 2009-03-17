@@ -42,6 +42,7 @@ POSSIBILITY OF SUCH DAMAGE.
 from the subject string after a regex match has succeeded. The original idea
 for these functions came from Scott Wimer. */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -66,20 +67,20 @@ Returns:      the number of the named parentheses, or a negative number
 */
 
 int
-pcre_get_stringnumber(const pcre *code, const char *stringname)
+erts_pcre_get_stringnumber(const pcre *code, const char *stringname)
 {
 int rc;
 int entrysize;
 int top, bot;
 uschar *nametable;
 
-if ((rc = pcre_fullinfo(code, NULL, PCRE_INFO_NAMECOUNT, &top)) != 0)
+if ((rc = erts_pcre_fullinfo(code, NULL, PCRE_INFO_NAMECOUNT, &top)) != 0)
   return rc;
 if (top <= 0) return PCRE_ERROR_NOSUBSTRING;
 
-if ((rc = pcre_fullinfo(code, NULL, PCRE_INFO_NAMEENTRYSIZE, &entrysize)) != 0)
+if ((rc = erts_pcre_fullinfo(code, NULL, PCRE_INFO_NAMEENTRYSIZE, &entrysize)) != 0)
   return rc;
-if ((rc = pcre_fullinfo(code, NULL, PCRE_INFO_NAMETABLE, &nametable)) != 0)
+if ((rc = erts_pcre_fullinfo(code, NULL, PCRE_INFO_NAMETABLE, &nametable)) != 0)
   return rc;
 
 bot = 0;
@@ -115,7 +116,7 @@ Returns:      the length of each entry, or a negative number
 */
 
 int
-pcre_get_stringtable_entries(const pcre *code, const char *stringname,
+erts_pcre_get_stringtable_entries(const pcre *code, const char *stringname,
   char **firstptr, char **lastptr)
 {
 int rc;
@@ -123,13 +124,13 @@ int entrysize;
 int top, bot;
 uschar *nametable, *lastentry;
 
-if ((rc = pcre_fullinfo(code, NULL, PCRE_INFO_NAMECOUNT, &top)) != 0)
+if ((rc = erts_pcre_fullinfo(code, NULL, PCRE_INFO_NAMECOUNT, &top)) != 0)
   return rc;
 if (top <= 0) return PCRE_ERROR_NOSUBSTRING;
 
-if ((rc = pcre_fullinfo(code, NULL, PCRE_INFO_NAMEENTRYSIZE, &entrysize)) != 0)
+if ((rc = erts_pcre_fullinfo(code, NULL, PCRE_INFO_NAMEENTRYSIZE, &entrysize)) != 0)
   return rc;
-if ((rc = pcre_fullinfo(code, NULL, PCRE_INFO_NAMETABLE, &nametable)) != 0)
+if ((rc = erts_pcre_fullinfo(code, NULL, PCRE_INFO_NAMETABLE, &nametable)) != 0)
   return rc;
 
 lastentry = nametable + entrysize * (top - 1);
@@ -190,8 +191,8 @@ int entrysize;
 char *first, *last;
 uschar *entry;
 if ((re->options & PCRE_DUPNAMES) == 0 && (re->flags & PCRE_JCHANGED) == 0)
-  return pcre_get_stringnumber(code, stringname);
-entrysize = pcre_get_stringtable_entries(code, stringname, &first, &last);
+  return erts_pcre_get_stringnumber(code, stringname);
+entrysize = erts_pcre_get_stringtable_entries(code, stringname, &first, &last);
 if (entrysize <= 0) return entrysize;
 for (entry = (uschar *)first; entry <= (uschar *)last; entry += entrysize)
   {
@@ -232,7 +233,7 @@ Returns:         if successful:
 */
 
 int
-pcre_copy_substring(const char *subject, int *ovector, int stringcount,
+erts_pcre_copy_substring(const char *subject, int *ovector, int stringcount,
   int stringnumber, char *buffer, int size)
 {
 int yield;
@@ -277,12 +278,12 @@ Returns:         if successful:
 */
 
 int
-pcre_copy_named_substring(const pcre *code, const char *subject, int *ovector,
+erts_pcre_copy_named_substring(const pcre *code, const char *subject, int *ovector,
   int stringcount, const char *stringname, char *buffer, int size)
 {
 int n = get_first_set(code, stringname, ovector);
 if (n <= 0) return n;
-return pcre_copy_substring(subject, ovector, stringcount, n, buffer, size);
+return erts_pcre_copy_substring(subject, ovector, stringcount, n, buffer, size);
 }
 
 
@@ -309,7 +310,7 @@ Returns:         if successful: 0
 */
 
 int
-pcre_get_substring_list(const char *subject, int *ovector, int stringcount,
+erts_pcre_get_substring_list(const char *subject, int *ovector, int stringcount,
   const char ***listptr)
 {
 int i;
@@ -321,7 +322,7 @@ char *p;
 for (i = 0; i < double_count; i += 2)
   size += sizeof(char *) + ovector[i+1] - ovector[i] + 1;
 
-stringlist = (char **)(pcre_malloc)(size);
+stringlist = (char **)(erts_pcre_malloc)(size);
 if (stringlist == NULL) return PCRE_ERROR_NOMEMORY;
 
 *listptr = (const char **)stringlist;
@@ -347,16 +348,16 @@ return 0;
 *************************************************/
 
 /* This function exists for the benefit of people calling PCRE from non-C
-programs that can call its functions, but not free() or (pcre_free)() directly.
+programs that can call its functions, but not free() or (erts_pcre_free)() directly.
 
-Argument:   the result of a previous pcre_get_substring_list()
+Argument:   the result of a previous erts_pcre_get_substring_list()
 Returns:    nothing
 */
 
 void
-pcre_free_substring_list(const char **pointer)
+erts_pcre_free_substring_list(const char **pointer)
 {
-(pcre_free)((void *)pointer);
+(erts_pcre_free)((void *)pointer);
 }
 
 
@@ -387,7 +388,7 @@ Returns:         if successful:
 */
 
 int
-pcre_get_substring(const char *subject, int *ovector, int stringcount,
+erts_pcre_get_substring(const char *subject, int *ovector, int stringcount,
   int stringnumber, const char **stringptr)
 {
 int yield;
@@ -396,7 +397,7 @@ if (stringnumber < 0 || stringnumber >= stringcount)
   return PCRE_ERROR_NOSUBSTRING;
 stringnumber *= 2;
 yield = ovector[stringnumber+1] - ovector[stringnumber];
-substring = (char *)(pcre_malloc)(yield + 1);
+substring = (char *)(erts_pcre_malloc)(yield + 1);
 if (substring == NULL) return PCRE_ERROR_NOMEMORY;
 memcpy(substring, subject + ovector[stringnumber], yield);
 substring[yield] = 0;
@@ -434,12 +435,12 @@ Returns:         if successful:
 */
 
 int
-pcre_get_named_substring(const pcre *code, const char *subject, int *ovector,
+erts_pcre_get_named_substring(const pcre *code, const char *subject, int *ovector,
   int stringcount, const char *stringname, const char **stringptr)
 {
 int n = get_first_set(code, stringname, ovector);
 if (n <= 0) return n;
-return pcre_get_substring(subject, ovector, stringcount, n, stringptr);
+return erts_pcre_get_substring(subject, ovector, stringcount, n, stringptr);
 }
 
 
@@ -450,16 +451,16 @@ return pcre_get_substring(subject, ovector, stringcount, n, stringptr);
 *************************************************/
 
 /* This function exists for the benefit of people calling PCRE from non-C
-programs that can call its functions, but not free() or (pcre_free)() directly.
+programs that can call its functions, but not free() or (erts_pcre_free)() directly.
 
-Argument:   the result of a previous pcre_get_substring()
+Argument:   the result of a previous erts_pcre_get_substring()
 Returns:    nothing
 */
 
 void
-pcre_free_substring(const char *pointer)
+erts_pcre_free_substring(const char *pointer)
 {
-(pcre_free)((void *)pointer);
+(erts_pcre_free)((void *)pointer);
 }
 
 /* End of pcre_get.c */

@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2007-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Handles an ssl connection, e.i. both the setup
@@ -519,7 +520,7 @@ cipher(#certificate_verify{signature = Signature},
 					  Version, MasterSecret, 
 					  Algorithm, Hashes) of
 	valid ->
-	    {next_state, cipher, next_record_if_active(State)};
+	    {next_state, cipher, next_record(State)};
 	#alert{} = Alert ->
 	    handle_own_alert(Alert, Version, cipher, State), 
 	    {stop, normal, State}
@@ -921,7 +922,7 @@ ssl_init(SslOpts, Role) ->
     {ok, CertDbRef, CacheRef, OwnCert} = init_certificates(SslOpts, Role),
     PrivateKey =
 	init_private_key(SslOpts#ssl_options.key, SslOpts#ssl_options.keyfile,
-			 SslOpts#ssl_options.password),
+			 SslOpts#ssl_options.password, Role),
     ?DBG_TERM(PrivateKey),
     {ok, CertDbRef, CacheRef, OwnCert, PrivateKey}.
 
@@ -956,9 +957,13 @@ init_certificates(CertDbRef, CacheRef, CertFile, server) ->
 	    throw(ecertfile)
     end.
 
-init_private_key(undefined, KeyFile, Password) -> 
+init_private_key(undefined, "", _Password, client) -> 
+    undefined;
+init_private_key(undefined, KeyFile, Password, _)  -> 
     try 
-	{ok, [Der]} = ssl_manager:cache_pem_file(KeyFile),
+	{ok, List} = ssl_manager:cache_pem_file(KeyFile),
+	[Der] = [Der || Der = {PKey, _ , _} <- List,
+			PKey =:= rsa_private_key orelse PKey =:= dsa_private_key],
 	{ok, Decoded} = public_key:decode_private_key(Der,Password),
 	Decoded
     catch _E:_R ->
@@ -967,7 +972,7 @@ init_private_key(undefined, KeyFile, Password) ->
 	    error_logger:error_report(Report),
 	    throw(ekeyfile)
     end;
-init_private_key(PrivateKey, _, _) ->
+init_private_key(PrivateKey, _, _,_) ->
     PrivateKey.
 
 send_event(FsmPid, Event) ->
@@ -1026,7 +1031,7 @@ verify_client_cert(#state{client_certificate_requested = true, role = client,
     case ssl_handshake:client_certificate_verify(OwnCert, MasterSecret, 
 						 Version, KeyAlg, 
 						 PrivateKey, Hashes0) of
-        fixed_diffie_hellman ->
+	ignore -> %% No key or cert or fixed_diffie_hellman
             State;
         Verified ->
 	    SigAlg = ssl_handshake:sig_alg(KeyAlg),

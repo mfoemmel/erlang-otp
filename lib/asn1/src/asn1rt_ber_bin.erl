@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>2000-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2000-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1rt_ber_bin).
 
@@ -193,42 +193,35 @@ restbytes2(RemBytes,Bytes,ext) ->
 skipvalue(L, Bytes) ->
     skipvalue(L, Bytes, 0).
 
-skipvalue(indefinite, Bytes, Rb) ->
-    {_T,Bytes2,R2} = decode_tag(Bytes),
-    {{L,Bytes3},R3} = decode_length(Bytes2),
-    {Bytes4,Rb4} = case L of
-		       indefinite ->
-			   skipvalue(indefinite,Bytes3,R2+R3);
-		       _ ->
-			   <<_:L/binary, RestBytes/binary>> = Bytes3,
-			   {RestBytes, R2+R3+L}
-		   end,
-    case Bytes4 of
-	<<0,0,Bytes5/binary>> ->
-	    {Bytes5,Rb+Rb4+2};
-	_  -> skipvalue(indefinite,Bytes4,Rb+Rb4)
-    end;
 skipvalue(L, Bytes, Rb) ->
+    skipvalue(L, Bytes, Rb, 0).
+
+skipvalue(indefinite, Bytes, Rb, IndefLevel) ->
+    {T,Bytes2,R2} = decode_tag(Bytes),
+    {{L,Bytes3},R3} = decode_length(Bytes2),
+    case {T,L} of
+	{_,indefinite} ->
+	    skipvalue(indefinite,Bytes3,Rb+R2+R3,IndefLevel+1);
+	{{0,0,0},0} when IndefLevel =:= 0 ->
+	    %% See X690 8.1.5 NOTE, end of indefinite content
+	    {Bytes3,Rb+2};
+	{{0,0,0},0} ->
+	    skipvalue(indefinite,Bytes3,Rb+2,IndefLevel - 1);
+	_ ->
+	    <<_:L/binary, RestBytes/binary>> = Bytes3,
+	    skipvalue(indefinite,RestBytes,Rb+R2+R3+L, IndefLevel)
+	    %%{RestBytes, R2+R3+L}
+    end;
+%%     case Bytes4 of
+%% 	<<0,0,Bytes5/binary>> ->
+%% 	    {Bytes5,Rb+Rb4+2};
+%% 	_  -> skipvalue(indefinite,Bytes4,Rb+Rb4)
+%%     end;
+skipvalue(L, Bytes, Rb, _) ->
 %    <<Skip:L/binary, RestBytes/binary>> = Bytes,
     <<_:L/binary, RestBytes/binary>> = Bytes,
     {RestBytes,Rb+L}.
 
-%%skipvalue(indefinite, Bytes, Rb) ->
-%%    {T,Bytes2,R2} = decode_tag(Bytes),
-%%    {L,Bytes3,R3} = decode_length(Bytes2),
-%%    {Bytes4,Rb4} = case L of
-%%		 indefinite ->
-%%		     skipvalue(indefinite,Bytes3,R2+R3);
-%%		 _ ->
-%%		     lists:nthtail(L,Bytes3) %% konstigt !?
-%%	     end,
-%%    case Bytes4 of
-%%	[0,0|Bytes5] ->
-%%	    {Bytes5,Rb4+2};
-%%	_  -> skipvalue(indefinite,Bytes4,Rb4)
-%%    end;
-%%skipvalue(L, Bytes, Rb) ->
-%%    {lists:nthtail(L,Bytes),Rb+L}.
 
 skipvalue(Bytes) ->
     {_T,Bytes2,R2} = decode_tag(Bytes),

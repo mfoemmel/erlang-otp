@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(file_sorter).
 
@@ -185,7 +186,7 @@ options(Option) ->
 options([{format, Format} | L], Opts) when Format =:= binary; 
                                            Format =:= term;
                                            is_function(Format),
-                                             is_function(Format, 1) ->
+					   is_function(Format, 1) ->
     options(L, Opts#opts{format = Format});
 options([{format, binary_term} | L], Opts) ->
     options(L, Opts#opts{format = binary_term_fun()});
@@ -208,9 +209,9 @@ options([{order, Fun} | L], Opts) when is_function(Fun), is_function(Fun, 2) ->
 options([{order, Order} | L], Opts) when Order =:= ascending; 
                                          Order =:= descending ->
     options(L, Opts#opts{order = Order});
-options([{compressed, Bool} | L], Opts) when Bool; not Bool ->
+options([{compressed, Bool} | L], Opts) when is_boolean(Bool) ->
     options(L, Opts#opts{compressed = Bool});
-options([{unique, Bool} | L], Opts) when Bool; not Bool ->
+options([{unique, Bool} | L], Opts) when is_boolean(Bool) ->
     options(L, Opts#opts{unique = Bool});
 options([{header, Len} | L], Opts) 
                 when is_integer(Len), Len > 0, Len < ?MAXSIZE ->
@@ -1349,7 +1350,7 @@ write(Fd, FileName, B, W) ->
             file_error(FileName, Error, W)
     end.
 
--spec(file_error/3 :: (_, {'error',atom()}, #w{}) -> no_return()).
+-spec file_error(_, {'error',atom()}, #w{}) -> no_return().
 
 file_error(File, {error, Reason}, W) ->
     error({error, {file_error, File, Reason}}, W).

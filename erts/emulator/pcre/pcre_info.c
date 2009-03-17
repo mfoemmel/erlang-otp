@@ -38,10 +38,11 @@ POSSIBILITY OF SUCH DAMAGE.
 */
 
 
-/* This module contains the external function pcre_info(), which gives some
+/* This module contains the external function erts_pcre_info(), which gives some
 information about a compiled pattern. However, use of this function is now
 deprecated, as it has been superseded by pcre_fullinfo(). */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -59,7 +60,7 @@ of the private structure, but its interface was too rigid. It remains for
 backwards compatibility. The public options are passed back in an int - though
 the re->options field has been expanded to a long int, all the public options
 at the low end of it, and so even on 16-bit systems this will still be OK.
-Therefore, I haven't changed the API for pcre_info().
+Therefore, I haven't changed the API for erts_pcre_info().
 
 Arguments:
   argument_re   points to compiled code
@@ -73,14 +74,14 @@ Returns:        number of capturing subpatterns
 */
 
 PCRE_EXP_DEFN int
-pcre_info(const pcre *argument_re, int *optptr, int *first_byte)
+erts_pcre_info(const pcre *argument_re, int *optptr, int *first_byte)
 {
 real_pcre internal_re;
 const real_pcre *re = (const real_pcre *)argument_re;
 if (re == NULL) return PCRE_ERROR_NULL;
 if (re->magic_number != MAGIC_NUMBER)
   {
-  re = _pcre_try_flipped(re, &internal_re, NULL, NULL);
+  re = _erts_pcre_try_flipped(re, &internal_re, NULL, NULL);
   if (re == NULL) return PCRE_ERROR_BADMAGIC;
   }
 if (optptr != NULL) *optptr = (int)(re->options & PUBLIC_OPTIONS);

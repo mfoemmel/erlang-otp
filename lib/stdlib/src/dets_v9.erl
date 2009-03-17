@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(dets_v9).
 
@@ -316,8 +317,8 @@ prep_table_copy(Fd, Tab, Fname, Type, Kp, Ram, CacheSz, Auto, Parms) ->
 %% not writing the segments twice.)
 initiate_file(Fd, Tab, Fname, Type, Kp, MinSlots0, MaxSlots0, 
 	      Ram, CacheSz, Auto, DoInitSegments) ->
-    MaxSlots1 = lists:min([MaxSlots0, ?MAXSLOTS]),
-    MinSlots1 = lists:min([MinSlots0, MaxSlots1]),
+    MaxSlots1 = erlang:min(MaxSlots0, ?MAXSLOTS),
+    MinSlots1 = erlang:min(MinSlots0, MaxSlots1),
     MinSlots = slots2(MinSlots1),
     MaxSlots = slots2(MaxSlots1),
     M = Next = MinSlots,
@@ -685,7 +686,7 @@ output_objs(OldV, Head, SlotNums, Cntrs) when OldV =< 9 ->
 output_objs2(E, Acc, OldV, Head, Cache, SizeT, SlotNums, 0) ->
     NCache = write_all_sizes(Cache, SizeT, Head, more),
     %% Number of handled file_sorter chunks before writing:
-    Max = lists:max([1,lists:min([tuple_size(NCache),10])]),
+    Max = erlang:max(1, erlang:min(tuple_size(NCache), 10)),
     output_objs2(E, Acc, OldV, Head, NCache, SizeT, SlotNums, Max);
 output_objs2(E, Acc, OldV, Head, Cache, SizeT, SlotNums, ChunkI) ->
     fun(close) ->
@@ -770,7 +771,7 @@ compact_read(Head, WHead, SizeT, Cache, L, Min, SegBs, ASz)
     NCache = fast_write_all_sizes(Cache, SizeT, WHead),
     {SegBs, compact_input(Head, WHead, SizeT, NCache, L)};
 compact_read(Head, WHead, SizeT, Cache, [[From | To] | L], Min, SegBs, ASz) ->
-    Max = lists:max([?CHUNK_SIZE*3, Min]),
+    Max = erlang:max(?CHUNK_SIZE*3, Min),
     case check_pread_arg(Max, Head) of
         true ->
             case dets_utils:pread_n(Head#head.fptr, From, Max) of
@@ -859,7 +860,7 @@ read_bchunks(_Head, L, Min, Bs, ASz) when ASz + Min >= 4*?CHUNK_SIZE,
 					  Bs =/= [] ->
     {lists:reverse(Bs), L};
 read_bchunks(Head, {From, To, L}, Min, Bs, ASz) ->
-    Max = lists:max([?CHUNK_SIZE*2, Min]),
+    Max = erlang:max(?CHUNK_SIZE*2, Min),
     case check_pread_arg(Max, Head) of
         true ->
             case dets_utils:pread_n(Head#head.fptr, From, Max) of
@@ -1466,7 +1467,7 @@ fsck_input(Head, Fd, Cntrs, FileHeader) ->
                              1 bsl 32
                      end
              end,
-    MaxSz = lists:max([MaxSz0, ?CHUNK_SIZE]),
+    MaxSz = erlang:max(MaxSz0, ?CHUNK_SIZE),
     State0 = fsck_read(?BASE, Fd, [], 0),
     fsck_input(Head, State0, Fd, MaxSz, Cntrs).
 
@@ -1896,7 +1897,7 @@ write_cache(Head) ->
 	false ->
 	    {NewC, MaxInserts, PerKey} = dets_utils:reset_cache(C),
 	    %% MaxNoInsertedKeys is an upper limit on the number of new keys.
-	    MaxNoInsertedKeys = lists:min([MaxInserts, length(PerKey)]),
+	    MaxNoInsertedKeys = erlang:min(MaxInserts, length(PerKey)),
 	    Head1 = Head#head{cache = NewC},
 	    case may_grow(Head1, MaxNoInsertedKeys, once) of
 		{Head2, ok} ->
@@ -1914,7 +1915,7 @@ may_grow(#head{access = read}=Head, _N, _How) ->
 may_grow(Head, _N, _How) when Head#head.next >= Head#head.max_no_slots ->
     {Head, ok};
 may_grow(Head, N, How) ->
-    Extra = lists:min([2*?SEGSZP, Head#head.no_keys + N - Head#head.next]),
+    Extra = erlang:min(2*?SEGSZP, Head#head.no_keys + N - Head#head.next),
     case catch may_grow1(Head, Extra, How) of
 	{error, _Reason} = Error -> % alloc may throw error
 	    dets_utils:corrupt(Head, Error);

@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2005-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Test encoding/decoding (codec) module of Megaco/H.248
@@ -178,6 +179,11 @@
 	 pretty_otp6490_msg04/1, 
 	 pretty_otp6490_msg05/1, 
 	 pretty_otp6490_msg06/1, 
+         pretty_otp7671_msg01/1,
+         pretty_otp7671_msg02/1,
+         pretty_otp7671_msg03/1,
+         pretty_otp7671_msg04/1,
+         pretty_otp7671_msg05/1,
 
 	 flex_pretty_tickets/1, 
 	 flex_pretty_otp5042_msg1/1, 
@@ -524,7 +530,12 @@ pretty_tickets(suite) ->
      pretty_otp6490_msg03,
      pretty_otp6490_msg04,
      pretty_otp6490_msg05,
-     pretty_otp6490_msg06
+     pretty_otp6490_msg06,
+     pretty_otp7671_msg01,
+     pretty_otp7671_msg02,
+     pretty_otp7671_msg03,
+     pretty_otp7671_msg04,
+     pretty_otp7671_msg05
     ].
 
 flex_pretty_tickets(suite) ->
@@ -4145,6 +4156,195 @@ pretty_otp6490_msg06() ->
     
 
 
+%% --------------------------------------------------------------
+%%
+
+pretty_otp7671_msg01(suite) ->
+    [];
+pretty_otp7671_msg01(Config) when is_list(Config) ->
+%%     put(severity, trc),
+%%     put(dbg,      true),
+    d("pretty_otp7671_msg01 -> entry", []),
+    %% ?ACQUIRE_NODES(1, Config),
+    ok = pretty_otp7671( pretty_otp7671_msg01(), [] ),
+%%     erase(dbg),
+%%     erase(severity),
+    ok.
+
+pretty_otp7671_msg02(suite) ->
+    [];
+pretty_otp7671_msg02(Config) when is_list(Config) ->
+%%     put(severity, trc),
+%%     put(dbg,      true),
+    d("pretty_otp7671_msg02 -> entry", []),
+    %% ?ACQUIRE_NODES(1, Config),
+    ok = pretty_otp7671( pretty_otp7671_msg02(), [] ),
+%%     erase(dbg),
+%%     erase(severity),
+   ok.
+
+pretty_otp7671_msg03(suite) ->
+    [];
+pretty_otp7671_msg03(Config) when is_list(Config) ->
+%%     put(severity, trc),
+%%     put(dbg,      true),
+    d("pretty_otp7671_msg03 -> entry", []),
+    %% ?ACQUIRE_NODES(1, Config),
+    ok = pretty_otp7671( pretty_otp7671_msg03(), [] ),
+%%     erase(dbg),
+%%     erase(severity),
+    ok.
+
+pretty_otp7671_msg04(suite) ->
+    [];
+pretty_otp7671_msg04(Config) when is_list(Config) ->
+%%     put(severity, trc),
+%%     put(dbg,      true),
+    d("pretty_otp7671_msg04 -> entry", []),
+    %% ?ACQUIRE_NODES(1, Config),
+    ok = pretty_otp7671( pretty_otp7671_msg04(), [] , error, ignore),
+%%     erase(dbg),
+%%     erase(severity),
+    ok.
+
+pretty_otp7671_msg05(suite) ->
+    [];
+pretty_otp7671_msg05(Config) when is_list(Config) ->
+%%     put(severity, trc),
+%%     put(dbg,      true),
+    d("pretty_otp7671_msg05 -> entry", []),
+    Check = fun(M1, M2) -> cmp_otp7671_msg05(M1, M2) end,
+    ok = pretty_otp7671( pretty_otp7671_msg05(), [] , ok, ok, Check),
+%%     erase(dbg),
+%%     erase(severity),
+    ok.
+
+
+pretty_otp7671(Msg, Conf) ->
+    pretty_otp7671(Msg, Conf, ok).
+
+pretty_otp7671(Msg, Conf, ExpectedEncode) ->
+    pretty_otp7671(Msg, Conf, ExpectedEncode, ok).
+
+pretty_otp7671(Msg, Conf, ExpectedEncode, ExpectedDecode) ->
+    otp7671(Msg, megaco_pretty_text_encoder, Conf,
+            ExpectedEncode, ExpectedDecode).
+
+pretty_otp7671(Msg, Conf, ExpectedEncode, ExpectedDecode, Check) ->
+    otp7671(Msg, megaco_pretty_text_encoder, Conf,
+            ExpectedEncode, ExpectedDecode, Check).
+
+otp7671(Msg, Codec, Conf, ExpectedEncode, ExpectedDecode) ->
+    Check = fun(M1, M2) -> 
+		    exit({unexpected_decode_result, M1, M2})
+	    end,
+    otp7671(Msg, Codec, Conf, ExpectedEncode, ExpectedDecode, Check).
+
+otp7671(Msg, Codec, Conf, ExpectedEncode, ExpectedDecode, Check) ->
+    case (catch encode_message(Codec, Conf, Msg)) of
+        {error, _Reason} when ExpectedEncode =:= error ->
+            ok;
+        {error, Reason} when ExpectedEncode =:= ok ->
+            exit({unexpected_encode_failure, Reason});
+        {ok, Bin} when ExpectedEncode =:= error ->
+            exit({unexpected_encode_success, Msg, binary_to_list(Bin)});
+        {ok, Bin} when ExpectedEncode =:= ok ->
+            case decode_message(Codec, false, Conf, Bin) of
+                {ok, Msg} when ExpectedDecode =:= ok ->
+                    ok;
+                {ok, Msg2} when ExpectedDecode =:= ok ->
+		    Check(Msg, Msg2);
+                {ok, Msg} when ExpectedDecode =:= error ->
+                    exit({unexpected_decode_success, Msg});
+                {ok, Msg2} when ExpectedDecode =:= error ->
+                    exit({unexpected_decode_success, Msg, Msg2});
+                {error, _Reason} when ExpectedDecode =:= error ->
+                    ok;
+                {error, Reason} when ExpectedDecode == ok ->
+                    exit({unexpected_decode_failure, Msg, Reason})
+            end
+    end.
+
+
+pretty_otp7671_msg(DigitMapDesc) ->
+    AmmReq = cre_AmmReq([#megaco_term_id{id = ?A4444}],
+			[{digitMapDescriptor, DigitMapDesc}]),
+    CmdReq = cre_CmdReq({modReq, AmmReq}),
+    msg_request(?MGC_MID, 10001, ?megaco_null_context_id, [CmdReq]).
+
+pretty_otp7671_msg01() ->
+    Name         = "dialplan01",
+    DigitMapDesc = cre_DigitMapDesc(Name),
+    pretty_otp7671_msg(DigitMapDesc).
+
+pretty_otp7671_msg02() ->
+    Name         = "dialplan02",
+    Body         = "(0s| 00s|[1-7]xlxx|8lxxxxxxx|#xxxxxxx|*xx|9l1xxxxxxxxxx|9l011x.s)",
+    Value        = cre_DigitMapValue(Body),
+    DigitMapDesc = cre_DigitMapDesc(Name, Value),
+    pretty_otp7671_msg(DigitMapDesc).
+
+pretty_otp7671_msg03() ->
+    Body         = "(0s| 00s|[1-7]xlxx|8lxxxxxxx|#xxxxxxx|*xx|9l1xxxxxxxxxx|9l011x.s)",
+    Value        = cre_DigitMapValue(Body),
+    DigitMapDesc = cre_DigitMapDesc(Value),
+    pretty_otp7671_msg(DigitMapDesc).
+
+pretty_otp7671_msg04() ->
+    DigitMapDesc = cre_DigitMapDesc(),
+    pretty_otp7671_msg(DigitMapDesc).
+
+pretty_otp7671_msg05() ->
+    {'MegacoMessage',asn1_NOVALUE,
+     {'Message',?VERSION,
+      {domainName,{'DomainName',"tgc",asn1_NOVALUE}},
+      {transactions,
+       [{transactionRequest,
+	 {'TransactionRequest',12582952,
+	  [{'ActionRequest',0,asn1_NOVALUE,asn1_NOVALUE,
+	    [{'CommandRequest',
+	      {modReq,
+	       {'AmmRequest',
+		[{megaco_term_id,false,["root"]}],
+		[{digitMapDescriptor,
+		  {'DigitMapDescriptor',"dialplan1",
+		   {'DigitMapValue',asn1_NOVALUE,asn1_NOVALUE,asn1_NOVALUE,[],
+		    asn1_NOVALUE}}}]}},
+	      asn1_NOVALUE,asn1_NOVALUE}]}]}}]}}}.
+
+cmp_otp7671_msg05(#'MegacoMessage'{authHeader = asn1_NOVALUE, 
+				   mess       = M1}, 
+		  #'MegacoMessage'{authHeader = asn1_NOVALUE, 
+				   mess       = M2}) ->
+    #'Message'{messageBody = Body1} = M1,
+    #'Message'{messageBody = Body2} = M2,
+    {transactions, Trans1} = Body1,
+    {transactions, Trans2} = Body2,
+    [{transactionRequest, TR1}] = Trans1,
+    [{transactionRequest, TR2}] = Trans2,
+    #'TransactionRequest'{actions = Acts1} = TR1,
+    #'TransactionRequest'{actions = Acts2} = TR2,
+    [#'ActionRequest'{commandRequests = CR1}] = Acts1,
+    [#'ActionRequest'{commandRequests = CR2}] = Acts2,
+    [#'CommandRequest'{command = Cmd1}] = CR1,
+    [#'CommandRequest'{command = Cmd2}] = CR2,
+    {modReq, #'AmmRequest'{descriptors = Descs1}} = Cmd1,
+    {modReq, #'AmmRequest'{descriptors = Descs2}} = Cmd2,
+    [{digitMapDescriptor, 
+      #'DigitMapDescriptor'{digitMapName = Name, 
+			    digitMapValue = Value1}}] = Descs1,
+    [{digitMapDescriptor, 
+      #'DigitMapDescriptor'{digitMapName = Name, 
+			    digitMapValue = Value2}}] = Descs2,
+    #'DigitMapValue'{startTimer    = asn1_NOVALUE,
+		     shortTimer    = asn1_NOVALUE,
+		     longTimer     = asn1_NOVALUE,
+		     digitMapBody  = [],
+		     durationTimer = asn1_NOVALUE} = Value1,
+    asn1_NOVALUE = Value2,
+    ok.
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 expect_codec(Expect, Codec, Msg, Conf) ->
@@ -6864,6 +7064,10 @@ cre_LocalRemoteDesc(Grps) ->
 
 
 %% DigitMap related
+cre_DigitMapDesc() ->
+    ?MSG_LIB:cre_DigitMapDescriptor().
+cre_DigitMapDesc(NameOrVal) ->
+    ?MSG_LIB:cre_DigitMapDescriptor(NameOrVal).
 cre_DigitMapDesc(Name, Val) ->
     ?MSG_LIB:cre_DigitMapDescriptor(Name, Val).
 

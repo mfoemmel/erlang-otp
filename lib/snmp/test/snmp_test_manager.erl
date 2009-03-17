@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>2005-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 %%----------------------------------------------------------------------
 %% This module implements an SNMP manager used in the test suite
 %%----------------------------------------------------------------------
@@ -41,19 +41,21 @@
 
 
 %% Manager callback API:
--export([handle_error/3,
+-export([
+	 handle_error/3,
          handle_agent/4,
-         handle_pdu/5,
-         handle_trap/4,
-         handle_inform/4,
-         handle_report/4]).
+         handle_pdu/4,
+         handle_trap/3,
+         handle_inform/3,
+         handle_report/3
+	]).
 
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
 	 code_change/3, terminate/2]).
 
--record(state, {mgr, parent, req, addr, port}).
+-record(state, {mgr, parent, req, agent_target_name}).
 
 -define(SERVER, ?MODULE).
 -define(USER,   ?MODULE).
@@ -125,12 +127,12 @@ init([Parent, Opts]) ->
     end.
 
 do_init(Opts) ->
-    {MgrDir, MgrConf, MgrOpts, Addr, Port, AgentConf} = parse_opts(Opts),
+    {MgrDir, MgrConf, MgrOpts, AgentTargetName, AgentConf} = parse_opts(Opts),
     ok = snmp_config:write_manager_config(MgrDir, "", MgrConf),
     {ok, Pid} = snmpm:start_link(MgrOpts),
     ok = snmpm:register_user(?USER, ?MODULE, self()),
-    ok = snmpm:register_agent(?USER, Addr, Port, AgentConf),
-    {ok, #state{mgr = Pid, addr = Addr, port = Port}}.
+    ok = snmpm:register_agent(?USER, AgentTargetName, AgentConf),
+    {ok, #state{mgr = Pid, agent_target_name = AgentTargetName}}.
 
 
 parse_opts(Opts) ->
@@ -152,29 +154,9 @@ parse_opts(Opts) ->
     
     
     %% Retreive the agent configuration
-    AgentConf = get_opt(agent_config, Opts),
-    AgentAddr = get_opt(agent_addr, Opts),
-    AgentPort = get_opt(agent_port, Opts),
-%     AgentTargetName = get_opt(agent_target_name, Opts, "agent"),
-%     AgentMMS        = get_opt(agent_mms,  Opts, 484),
-%     AgentEngineId   = get_opt(agent_engine_id, Opts, "agentEngine"),
-%     AgentSecName    = get_opt(agent_sec_name, Opts, "initial"),
-%     AgentSecLevel   = get_opt(agent_sec_level, Opts, noAuthNoPriv),
-%     AgentSecModel   = get_opt(agent_sec_model, Opts, v1),
-%     AgentVersion    = get_opt(agent_version, Opts, v1),
-%     AgentCtx        = get_opt(agent_context, Opts, ""),
-%     AgentComm       = get_opt(agent_community, Opts, "all-rights"),
-
-%     AgentConf = [{target_name,      AgentTargetName},
-% 		 {community,        AgentComm},
-% 		 {engine_id,        AgentEngineId},
-% 		 {max_message_size, AgentMMS},
-% 		 {version,          AgentVersion},
-% 		 {sec_model,        AgentSecModel},
-% 		 {sec_name,         AgentSecName},
-% 		 {sec_level,        AgentSecLevel}],
-
-    {MgrDir, MgrConf, MgrOpts, AgentAddr, AgentPort, AgentConf}.
+    AgentConf   = get_opt(agent_config, Opts),
+    AgentTarget = get_opt(agent_target, Opts),
+    {MgrDir, MgrConf, MgrOpts, AgentTarget, AgentConf}.
 
 
 get_opt(Key, Opts) ->
@@ -208,23 +190,23 @@ handle_call(stop, _From, S) ->
     {stop, normal, S};
 
 handle_call({sync_get, Oids}, _From, 
-	    #state{addr = Addr, port = Port} = S) ->
-    Reply = (catch snmpm:g(?USER, Addr, Port, Oids)),
+	    #state{agent_target_name = TargetName} = S) ->
+    Reply = (catch snmpm:sync_get(?USER, TargetName, Oids)),
     {reply, Reply, S};
 
 handle_call({sync_get_next, Oids}, _From, 
-	    #state{addr = Addr, port = Port} = S) ->
-    Reply = (catch snmpm:gn(?USER, Addr, Port, Oids)),
+	    #state{agent_target_name = TargetName} = S) ->
+    Reply = (catch snmpm:sync_get_next(?USER, TargetName, Oids)),
     {reply, Reply, S};
 
 handle_call({sync_get_bulk, NR, MR, Oids}, _From, 
-	    #state{addr = Addr, port = Port} = S) ->
-    Reply = (catch snmpm:gb(?USER, Addr, Port, NR, MR, Oids)),
+	    #state{agent_target_name = TargetName} = S) ->
+    Reply = (catch snmpm:sync_get_bulk(?USER, TargetName, NR, MR, Oids)),
     {reply, Reply, S};
 
 handle_call({sync_set, VarsAndVals}, _From, 
-	    #state{addr = Addr, port = Port} = S) ->
-    Reply = (catch snmpm:s(?USER, Addr, Port,VarsAndVals)),
+	    #state{agent_target_name = TargetName} = S) ->
+    Reply = (catch snmpm:sync_set(?USER, TargetName, VarsAndVals)),
     {reply, Reply, S};
 
 handle_call(Req, From, State) ->
@@ -267,44 +249,40 @@ handle_info({snmp_agent, Addr, Port, Info, Pid},
     P ! {snmp_agent, Addr, Port, Info},
     {noreply, State};
 
-handle_info({snmp_pdu, Addr, Port, ReqId, Resp}, 
+handle_info({snmp_pdu, TargetName, ReqId, Resp}, 
 	    #state{parent = P} = State) ->
     info_msg("received snmp pdu: "
-	      "~n   Addr:  ~w"
-	      "~n   Port:  ~w"
-	      "~n   ReqId: ~w"
-	      "~n   Resp:  ~p", [Addr, Port, ReqId, Resp]),
-    P ! {snmp_pdu, Addr, Port, ReqId, Resp}, 
+	      "~n   TargetName: ~p"
+	      "~n   ReqId:      ~w"
+	      "~n   Resp:       ~p", [TargetName, ReqId, Resp]),
+    P ! {snmp_pdu, TargetName, ReqId, Resp}, 
     {noreply, State};
 
-handle_info({snmp_trap, Addr, Port, Info, Pid}, 
+handle_info({snmp_trap, TargetName, Info, Pid}, 
 	    #state{parent = P} = State) ->
     info_msg("received snmp trap: "
-	      "~n   Addr: ~w"
-	      "~n   Port: ~w"
-	      "~n   Info: ~p", [Addr, Port, Info]),
+	      "~n   TargetName: ~p"
+	      "~n   Info:       ~p", [TargetName, Info]),
     Pid ! {snmp_trap_reply, ignore, self()},
-    P ! {snmp_trap, Addr, Port, Info}, 
+    P ! {snmp_trap, TargetName, Info}, 
     {noreply, State};
 
-handle_info({snmp_inform, Addr, Port, Info, Pid}, 
+handle_info({snmp_inform, TargetName, Info, Pid}, 
 	    #state{parent = P} = State) ->
     info_msg("received snmp inform: "
-	      "~n   Addr: ~w"
-	      "~n   Port: ~w"
-	      "~n   Info: ~p", [Addr, Port, Info]),
+	      "~n   TargetName: ~p"
+	      "~n   Info:       ~p", [TargetName, Info]),
     Pid ! {snmp_inform_reply, ignore, self()},
-    P ! {snmp_inform, Addr, Port, Info}, 
+    P ! {snmp_inform, TargetName, Info}, 
     {noreply, State};
 
-handle_info({snmp_report, Addr, Port, Info, Pid}, 
+handle_info({snmp_report, TargetName, Info, Pid}, 
 	    #state{parent = P} = State) ->
     info_msg("received snmp report: "
-	      "~n   Addr: ~w"
-	      "~n   Port: ~w"
-	      "~n   Info: ~p", [Addr, Port, Info]),
+	      "~n   TargetName: ~p"
+	      "~n   Info:       ~p", [TargetName, Info]),
     Pid ! {snmp_report_reply, ignore, self()},
-    P ! {snmp_report, Addr, Port, Info}, 
+    P ! {snmp_report, TargetName, Info}, 
     {noreply, State};
 
 handle_info(Info, State) ->
@@ -358,13 +336,13 @@ handle_agent(Addr, Port, SnmpInfo, Pid) ->
     end.
 
 
-handle_pdu(Addr, Port, ReqId, SnmpResponse, Pid) ->
-    Pid ! {snmp_pdu, Addr, Port, ReqId, SnmpResponse},
+handle_pdu(TargetName, ReqId, SnmpResponse, Pid) ->
+    Pid ! {snmp_pdu, TargetName, ReqId, SnmpResponse},
     ignore.
 
 
-handle_trap(Addr, Port, SnmpTrapInfo, Pid) ->
-    Pid ! {snmp_trap, Addr, Port, SnmpTrapInfo, self()},
+handle_trap(TargetName, SnmpTrapInfo, Pid) ->
+    Pid ! {snmp_trap, TargetName, SnmpTrapInfo, self()},
     receive
 	{snmp_trap_reply, Reply, Pid} ->
 	    Reply
@@ -373,8 +351,8 @@ handle_trap(Addr, Port, SnmpTrapInfo, Pid) ->
     end.
 
 
-handle_inform(Addr, Port, SnmpInfo, Pid) ->
-    Pid ! {snmp_inform, Addr, Port, SnmpInfo, self()},
+handle_inform(TargetName, SnmpInfo, Pid) ->
+    Pid ! {snmp_inform, TargetName, SnmpInfo, self()},
     receive
 	{snmp_inform_reply, Reply, Pid} ->
 	    Reply
@@ -383,8 +361,8 @@ handle_inform(Addr, Port, SnmpInfo, Pid) ->
     end.
 
 
-handle_report(Addr, Port, SnmpInfo, Pid) ->
-    Pid ! {snmp_report, Addr, Port, SnmpInfo, self()},
+handle_report(TargetName, SnmpInfo, Pid) ->
+    Pid ! {snmp_report, TargetName, SnmpInfo, self()},
     receive
 	{snmp_report_reply, Reply, Pid} ->
 	    Reply

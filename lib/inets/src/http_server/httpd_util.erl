@@ -1,24 +1,24 @@
-%%<copyright>
-%% <year>1997-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(httpd_util).
--export([ip_address/1, key1search/2, key1search/3, lookup/2, lookup/3, multi_lookup/2,
+-export([ip_address/1, lookup/2, lookup/3, multi_lookup/2,
 	 lookup_mime/2, lookup_mime/3, lookup_mime_default/2,
 	 lookup_mime_default/3, reason_phrase/1, message/3, rfc1123_date/0,
 	 rfc1123_date/1, day/1, month/1, decode_hex/1,
@@ -35,32 +35,19 @@
 -export([encode_hex/1]).
 -include_lib("kernel/include/file.hrl").
 
--deprecated([{key1search, 2, next_major_release},
-	     {key1search, 3, next_major_release}
-	    ]).
-
+ip_address({_,_,_,_} = Address) ->
+    {ok, Address};
+ip_address({_,_,_,_,_,_,_,_} = Address) ->
+    {ok, Address};
 ip_address(Host) ->
-    case (catch inet:getaddr(Host,inet6)) of
-	{ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
-	    inet:getaddr(Host, inet);
-	{ok, IPAddr} ->
-	    {ok, IPAddr};
-	_ ->
-	    inet:getaddr(Host, inet) 
-    end.
-
-%% key1search
-
-key1search(TupleList,Key) ->
-    key1search(TupleList,Key,undefined).
-
-key1search(TupleList,Key,Undefined) ->
-    case lists:keysearch(Key,1,TupleList) of
-	{value,{Key,Value}} ->
-	    Value;
-	false ->
-	    Undefined
-    end.
+    Inet = case gen_tcp:listen(0, [inet6]) of
+	       {ok, Dummyport} ->
+		   gen_tcp:close(Dummyport),
+		   inet6;
+	       _ ->
+		   inet
+	   end,
+    inet:getaddr(Host, Inet).
 
 %% lookup
 

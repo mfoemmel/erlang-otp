@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %% ===========================================================================
 %% Copyright (c) 2002 by Niklas Andersson, Andreas Lundin, and Erik Johansson.
 %% ===========================================================================
@@ -21,8 +39,8 @@
 %%
 %% CVS:
 %%    $Author: kostis $
-%%    $Date: 2008/10/01 08:59:40 $
-%%    $Revision: 1.9 $
+%%    $Date: 2009/02/06 18:00:35 $
+%%    $Revision: 1.10 $
 %% ============================================================================
 %% Exported functions (short description):
 %%   stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) -> 
@@ -35,10 +53,10 @@
 %%    TempMap is the TempMap from the register allocation
 %%
 %%    The Coloring will be in the form of the "allocation datastructure"
-%%     described below, that is, a list of tuples on the form
+%%    described below, that is, a list of tuples on the form
 %%      {Name, {spill, SpillIndex}}
 %%    The NumberOfSpills is either 0 indicating no spill or the 
-%%     SpillIndex of the last spilled register.
+%%    SpillIndex of the last spilled register.
 %%
 %%  mapmerge
 %%
@@ -49,11 +67,6 @@
 
 %-define(DEBUG,1).
 -define(HIPE_INSTRUMENT_COMPILER, true).
-
-%%----------------------------------------------------------------------------
-
--type dict()    :: tuple().  % XXX: Temporarily
--type gb_tree() :: tuple().  % XXX: Temporarily
 
 %%----------------------------------------------------------------------------
 

@@ -38,9 +38,10 @@ POSSIBILITY OF SUCH DAMAGE.
 */
 
 
-/* This module contains the external function pcre_fullinfo(), which returns
+/* This module contains the external function erts_pcre_fullinfo(), which returns
 information about a compiled pattern. */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -66,7 +67,7 @@ Returns:           0 if data returned, negative on error
 */
 
 PCRE_EXP_DEFN int
-pcre_fullinfo(const pcre *argument_re, const pcre_extra *extra_data, int what,
+erts_pcre_fullinfo(const pcre *argument_re, const pcre_extra *extra_data, int what,
   void *where)
 {
 real_pcre internal_re;
@@ -81,7 +82,7 @@ if (extra_data != NULL && (extra_data->flags & PCRE_EXTRA_STUDY_DATA) != 0)
 
 if (re->magic_number != MAGIC_NUMBER)
   {
-  re = _pcre_try_flipped(re, &internal_re, study, &internal_study);
+  re = _erts_pcre_try_flipped(re, &internal_re, study, &internal_study);
   if (re == NULL) return PCRE_ERROR_BADMAGIC;
   if (study != NULL) study = &internal_study;
   }
@@ -141,7 +142,7 @@ switch (what)
   break;
 
   case PCRE_INFO_DEFAULT_TABLES:
-  *((const uschar **)where) = (const uschar *)(_pcre_default_tables);
+  *((const uschar **)where) = (const uschar *)(_erts_pcre_default_tables);
   break;
 
   case PCRE_INFO_OKPARTIAL:

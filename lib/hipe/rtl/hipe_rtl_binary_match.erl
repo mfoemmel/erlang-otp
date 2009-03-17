@@ -1,3 +1,21 @@
+%%%
+%%% %CopyrightBegin%
+%%% 
+%%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%%% 
+%%% The contents of this file are subject to the Erlang Public License,
+%%% Version 1.1, (the "License"); you may not use this file except in
+%%% compliance with the License. You should have received a copy of the
+%%% Erlang Public License along with this software. If not, it can be
+%%% retrieved online at http://www.erlang.org/.
+%%% 
+%%% Software distributed under the License is distributed on an "AS IS"
+%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%%% the License for the specific language governing rights and limitations
+%%% under the License.
+%%% 
+%%% %CopyrightEnd%
+%%%
 %%%-------------------------------------------------------------------
 %%% File    : hipe_rtl_binary_match.erl
 %%% Author  : Per Gustafsson <pergu@it.uu.se>
@@ -172,6 +190,12 @@ gen_rtl({bs_get_binary,Size,Flags}, [Dst,NewMs], Args,
       [hipe_rtl:mk_gctest(?SUB_BIN_WORDSIZE)] ++ 
 	update_ms(NewMs, Ms) ++ SizeCode ++ InCode
   end;
+gen_rtl(bs_get_utf8, [Dst,NewMs], [Ms], TrueLblName, FalseLblName) ->
+  update_ms(NewMs, Ms) ++ utf8_get_c_code(Dst, Ms, TrueLblName, FalseLblName);
+gen_rtl({bs_get_utf16,Flags}, [Dst,NewMs], [Ms], TrueLblName, FalseLblName) ->
+  update_ms(NewMs, Ms) ++ utf16_get_c_code(Flags, Dst, Ms, TrueLblName, FalseLblName);
+gen_rtl(bs_validate_unicode_retract, [NewMs], [Src,Ms], TrueLblName, FalseLblName) ->
+  update_ms(NewMs, Ms) ++ validate_unicode_retract_c_code(Src, Ms, TrueLblName, FalseLblName);
 gen_rtl({bs_test_tail, NumBits}, [NewMs], [Ms], TrueLblName, FalseLblName) ->
   {[Offset,BinSize], ExCode} = extract_matchstate_vars([offset,binsize], Ms),
     update_ms(NewMs, Ms) ++ ExCode ++
@@ -286,6 +310,29 @@ get_c_code(Func, Dst1, Ms, Size, Flags, TrueLblName, FalseLblName) ->
 		      FalseLblName, 
 		      TrueLblName, 0.01)].
 
+utf8_get_c_code(Dst, Ms, TrueLblName, FalseLblName) ->
+  MatchBuf = hipe_rtl:mk_new_reg(),
+  NonVal = hipe_rtl:mk_imm(hipe_tagscheme:mk_non_value()),
+  [hipe_tagscheme:extract_matchbuffer(MatchBuf, Ms),
+   hipe_rtl_arch:call_bif([Dst], bs_get_utf8, [MatchBuf], [], []),
+   hipe_rtl:mk_branch(Dst, eq, NonVal, FalseLblName, TrueLblName, 0.01)].
+
+utf16_get_c_code(Flags, Dst, Ms, TrueLblName, FalseLblName) ->
+  MatchBuf = hipe_rtl:mk_new_reg(),
+  NonVal = hipe_rtl:mk_imm(hipe_tagscheme:mk_non_value()),
+  FlagsReg = hipe_rtl:mk_new_reg_gcsafe(),
+  [hipe_tagscheme:extract_matchbuffer(MatchBuf, Ms),
+   hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+   hipe_rtl_arch:call_bif([Dst], bs_get_utf16, [MatchBuf, FlagsReg], [], []),
+   hipe_rtl:mk_branch(Dst, eq, NonVal, FalseLblName, TrueLblName, 0.01)].
+
+validate_unicode_retract_c_code(Src, Ms, TrueLblName, FalseLblName) ->
+  MatchBuf = hipe_rtl:mk_new_reg(),
+  Zero = hipe_rtl:mk_imm(0),
+  Tmp = hipe_rtl:mk_new_reg(),
+  [hipe_tagscheme:extract_matchbuffer(MatchBuf, Ms),
+   hipe_rtl_arch:call_bif([Tmp], bs_validate_unicode_retract, [MatchBuf,Src], [], []),
+   hipe_rtl:mk_branch(Tmp, eq, Zero, FalseLblName, TrueLblName, 0.01)].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Int Code %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

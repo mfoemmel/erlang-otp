@@ -1,3 +1,21 @@
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2001-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved online at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# %CopyrightEnd%
+#
 # $Id$
 # HiPE level 0 bifs: compiler and linker support
 #
@@ -104,6 +122,7 @@ atom set_timeout
 atom cmp_2
 atom op_exact_eqeq_2
 atom conv_big_to_float
+atom fclearerror_error
 atom bs_put_big_integer
 atom bs_put_small_float
 atom bs_put_bits
@@ -112,3 +131,12 @@ atom bs_get_integer_2
 atom bs_get_float_2
 atom bs_get_binary_2
 atom bs_reallocate
+atom bs_utf8_size
+atom bs_put_utf8
+atom bs_get_utf8
+atom bs_utf16_size
+atom bs_put_utf16be
+atom bs_put_utf16le
+atom bs_get_utf16
+atom bs_validate_unicode
+atom bs_validate_unicode_retract

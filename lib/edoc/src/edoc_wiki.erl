@@ -155,8 +155,8 @@ expand_heading(Cs, N, L, As) ->
     {Cs1, Cs2} = edoc_lib:split_at(Cs, $\n),
     case edoc_lib:strip_space(lists:reverse(Cs1)) of
 	[$=, $= | Cs3] ->
-	    {Es, Ts} = lists:splitwith(fun (X) -> X == $= end, Cs3),
-	    if length(Es) == N ->
+	    {Es, Ts} = lists:splitwith(fun (X) -> X =:= $= end, Cs3),
+	    if length(Es) =:= N ->
 		    Ts1 = edoc_lib:strip_space(
 			    lists:reverse(edoc_lib:strip_space(Ts))),
 		    expand_heading_2(Ts1, Cs2, N, L, As);
@@ -235,7 +235,7 @@ expand_double([], L, _, L0) ->
 expand_triple(Cs, L, As) ->
     expand_triple(Cs, L, As, L).
 
-expand_triple([$', $', $' | Cs], L, As, _L0) ->
+expand_triple([$', $', $' | Cs], L, As, _L0) ->      % ' stupid emacs
     expand(Cs, L, ">erp/<>]]" ++ edoc_lib:strip_space(As));
 expand_triple([$], $], $> | Cs], L, As, L0) ->
     expand_triple(Cs, L, ";tg&]]" ++ As, L0);
@@ -311,8 +311,8 @@ strip_empty_lines(Cs, N) ->
 par(Es) ->
     par(Es, [], []).
 
-par([E=#xmlText{} | Es], As, Bs) ->
-    par_text(E#xmlText.value, As, Bs, E, Es);
+par([E=#xmlText{value = Value} | Es], As, Bs) ->
+    par_text(Value, As, Bs, E, Es);
 par([E=#xmlElement{name = Name} | Es], As, Bs) ->
     %% (Note that paragraphs may not contain any further block-level
     %% elements, including other paragraphs. Tables get complicated.)
@@ -449,6 +449,8 @@ ptxt_2(Cs, As, Ss) ->
 	    {lists:reverse(As), lists:reverse(Ss), Cs}
     end.
 
+
+-spec throw_error(non_neg_integer(), {string(), [_]}) -> no_return().
 
 throw_error(L, D) ->
     throw({error, L, D}).

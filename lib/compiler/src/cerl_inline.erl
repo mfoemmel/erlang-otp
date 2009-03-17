@@ -1,20 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Richard Carlsson.
-%% Copyright (C) 1999-2002 Richard Carlsson.
-%% Portions created by Ericsson are Copyright 2001, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Core Erlang inliner.
 
@@ -443,7 +443,7 @@ i_var_1(R, Opnd, Ctxt, Env, S) ->
  		    %% If we use destructive update for the
  		    %% `inner-pending' flag, we must make sure to clear
  		    %% it also if we make a nonlocal return.
-		    st__clear_inner_pending(Opnd#opnd.loc, S1),
+		    _S2 = st__clear_inner_pending(Opnd#opnd.loc, S1),
 		    throw(X)
 	    end
     end.
@@ -1636,7 +1636,7 @@ copy_inline(R, Opnd, E, Ctxt, Env, S) ->
  	    %% If we use destructive update for the `outer-pending'
  	    %% flag, we must make sure to clear it upon a nonlocal
  	    %% return.
-	    st__clear_outer_pending(Opnd#opnd.loc, S1),
+	    _S2 = st__clear_outer_pending(Opnd#opnd.loc, S1),
             throw(X)
     end.
 
@@ -1703,8 +1703,8 @@ copy_inline_2(R, E, Ctxt, Env, S) ->
   	    %% If we use destructive update for the `inlined' flag, we
   	    %% must make sure to clear the flags of any nested
   	    %% app-contexts upon aborting; see `inline' for details.
- 	    reset_nested_apps(Ctxt, S3),    % for effect
-            residualize_var(R, S3);
+ 	    S4 = reset_nested_apps(Ctxt, S3),    % for effect
+            residualize_var(R, S4);
         {'EXIT', X} ->
             exit(X);
         X ->

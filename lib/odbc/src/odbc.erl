@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>1999-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %
 
 -module(odbc).
@@ -361,7 +362,7 @@ param_query(ConnectionReference, SQLQuery, Params) ->
 
 param_query(ConnectionReference, SQLQuery, Params, infinity) 
   when pid(ConnectionReference), list(SQLQuery), list(Params) ->
-    [{_, Values} | _] = Params,
+    Values = param_values(Params),
     NoRows = length(Values),
     NewParams = lists:map(fun fix_params/1, Params),
     ODBCCmd = [?PARAM_QUERY, term_to_binary({SQLQuery ++ [?STR_TERMINATOR],
@@ -371,7 +372,7 @@ param_query(ConnectionReference, SQLQuery, Params, infinity)
 param_query(ConnectionReference, SQLQuery, Params, TimeOut)
   when pid(ConnectionReference), list(SQLQuery), list(Params),
        integer(TimeOut), TimeOut > 0 ->
-    [{_, Values} | _] = Params,
+    Values = param_values(Params),
     NoRows = length(Values),
     NewParams = lists:map(fun fix_params/1, Params),
     ODBCCmd = [?PARAM_QUERY, term_to_binary({SQLQuery ++ [?STR_TERMINATOR],
@@ -430,12 +431,9 @@ init(Args) ->
     
     erlang:monitor(process, ClientPid),
     
-    Inet = case inet:getaddr("localhost", inet6) of
-	       {ok, {_,_,_,_}} ->
-		   inet;
-	       {ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
-		   inet;
-	       {ok, {_,_,_,_,_,_,_,_}} ->
+    Inet = case gen_tcp:listen(0, [inet6]) of
+	       {ok, Dummyport} ->
+		   gen_tcp:close(Dummyport),
 		   inet6;
 	       _ ->
 		   inet
@@ -881,6 +879,15 @@ decode(Binary) ->
 	    exit({badarg, odbc, param_query, 'Params'}); 
 	MultipleResultSets_or_Other ->
 	    MultipleResultSets_or_Other
+    end.
+
+%%-------------------------------------------------------------------------
+param_values(Params) ->
+    case Params of    
+	[{_, Values} | _] -> 
+	    Values;
+	[{_, _, Values} | _] -> 
+	    Values
     end.
 
 %%-------------------------------------------------------------------------

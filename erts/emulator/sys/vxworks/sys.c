@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1997-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 /*
  * system-dependent functions
@@ -552,6 +553,7 @@ static void stop(ErlDrvData);
 static void ready_input(ErlDrvData fd, ErlDrvEvent ready_fd);
 static void ready_output(ErlDrvData fd, ErlDrvEvent ready_fd);
 static void output(ErlDrvData fd, char *buf, int len);
+static void stop_select(ErlDrvEvent, void*);
 
 struct erl_drv_entry spawn_driver_entry = {
     spawn_init,
@@ -561,12 +563,23 @@ struct erl_drv_entry spawn_driver_entry = {
     ready_input,
     ready_output,
     "spawn",
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL
+    NULL, /* finish */
+    NULL, /* handle */
+    NULL, /* control */
+    NULL, /* timeout */
+    NULL, /* outputv */
+    NULL, /* ready_async */
+    NULL, /* flush */
+    NULL, /* call */
+    NULL, /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0, /* ERL_DRV_FLAGs */
+    NULL, /* handle2 */
+    NULL, /* process_exit */
+    stop_select
+
 };
 struct erl_drv_entry fd_driver_entry = {
     NULL,
@@ -576,12 +589,22 @@ struct erl_drv_entry fd_driver_entry = {
     ready_input,
     ready_output,
     "fd",
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL
+    NULL, /* finish */
+    NULL, /* handle */
+    NULL, /* control */
+    NULL, /* timeout */
+    NULL, /* outputv */
+    NULL, /* ready_async */
+    NULL, /* flush */
+    NULL, /* call */
+    NULL, /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0, /* ERL_DRV_FLAGs */
+    NULL, /* handle2 */
+    NULL, /* process_exit */
+    stop_select
 };
 struct erl_drv_entry vanilla_driver_entry = {
     NULL,
@@ -591,12 +614,22 @@ struct erl_drv_entry vanilla_driver_entry = {
     ready_input,
     ready_output,
     "vanilla",
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL
+    NULL, /* finish */
+    NULL, /* handle */
+    NULL, /* control */
+    NULL, /* timeout */
+    NULL, /* outputv */
+    NULL, /* ready_async */
+    NULL, /* flush */
+    NULL, /* call */
+    NULL, /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0, /* ERL_DRV_FLAGs */
+    NULL, /* handle2 */
+    NULL, /* process_exit */
+    stop_select
 };
 
 /*
@@ -649,7 +682,7 @@ static int set_driver_data(int port_num, int ifd, int ofd,
     } else {			/* DO_READ only */
       driver_data[ifd].ofd = -1;
     }
-    (void) driver_select(port_num, ifd, DO_READ, 1);
+    (void) driver_select(port_num, ifd, ERL_DRV_READ|ERL_DRV_USE, 1);
     return(ifd);
   } else {			/* DO_WRITE only */
     driver_data[ofd].packet_bytes = packet_bytes;
@@ -1020,7 +1053,7 @@ static void nbio_stop_fd(int port_num, int fd)
 {
   Pend *p, *p1;
     
-  driver_select(port_num,fd,DO_READ|DO_WRITE,0);
+  driver_select(port_num, fd, ERL_DRV_READ|ERL_DRV_WRITE, 0);
   clear_fd_data(fd);
   p = fd_data[fd].pending;
   SET_BLOCKING(fd);
@@ -1091,12 +1124,12 @@ static void stop(ErlDrvData drv_data)
 
     port_num = driver_data[fd].port_num;
     nbio_stop_fd(port_num, fd);
-    close(fd);
+    driver_select(port_num, fd, ERL_DRV_USE, 0); /* close(fd) */
 
     ofd = driver_data[fd].ofd;
     if (ofd != fd && ofd != -1) {
 	nbio_stop_fd(port_num, ofd);
-	close(ofd);
+	driver_select(port_num, ofd, ERL_DRV_USE, 0); /* close(fd) */
     }
 }
 
@@ -1118,7 +1151,7 @@ static int sched_write(int port_num,int fd, char *buf, int len, int pb)
   case 0: break;		/* Handles this case too */
   }
   sys_memcpy(p->buf + pb, buf, len);
-  driver_select(port_num, fd, DO_WRITE, 1);
+  driver_select(port_num, fd, ERL_DRV_WRITE|ERL_DRV_USE, 1);
   p->cpos = p->buf;
   p->fd = fd;
   p->next = NULL;
@@ -1203,6 +1236,10 @@ static void output(ErlDrvData drv_data, char *buf, int len)
     sched_write(port_num, ofd, buf + buf_done, len - buf_done,0);
 }
 
+static void stop_select(ErlDrvEvent fd, void* _)
+{
+    close((int)fd);
+}
 
 static int ensure_header(int fd,char *buf,int packet_size, int sofar)
 {
@@ -1223,7 +1260,7 @@ static int ensure_header(int fd,char *buf,int packet_size, int sofar)
 
 static int port_inp_failure(int port_num, int ready_fd, int res)
 {
-    (void) driver_select(port_num, ready_fd, DO_READ|DO_WRITE, 0); 
+    (void) driver_select(port_num, ready_fd, ERL_DRV_READ|ERL_DRV_WRITE, 0); 
     clear_fd_data(ready_fd);
     if (res == 0) {
 	if (driver_data[ready_fd].report_exit) {
@@ -1395,7 +1432,7 @@ static void ready_output(ErlDrvData drv_data, ErlDrvEvent drv_event)
   while(1) {
     if ((p = fd_data[ready_fd].pending) == NULL) {
       driver_select(driver_data[fd].port_num, ready_fd, 
-		    DO_WRITE, 0);
+		    ERL_DRV_WRITE, 0);
       return;
     }
     wval = write(p->fd, p->cpos, p->remain);
@@ -1404,7 +1441,7 @@ static void ready_output(ErlDrvData drv_data, ErlDrvEvent drv_event)
       erts_free(ERTS_ALC_T_PEND_DATA, p);
       if (fd_data[ready_fd].pending == NULL) {
 	driver_select(driver_data[fd].port_num, ready_fd, 
-		      DO_WRITE, 0);
+		      ERL_DRV_WRITE, 0);
 	set_busy_port(driver_data[fd].port_num, 0);
 	return;
       }
@@ -1416,7 +1453,7 @@ static void ready_output(ErlDrvData drv_data, ErlDrvEvent drv_event)
 	return;
       else {
 	driver_select(driver_data[fd].port_num, ready_fd, 
-		      DO_WRITE, 0);
+		      ERL_DRV_WRITE, 0);
 	driver_failure(driver_data[fd].port_num, -1);
 	return;
       }

@@ -42,6 +42,7 @@ POSSIBILITY OF SUCH DAMAGE.
 -----------------------------------------------------------------------------
 */
 
+/* %ExternalCopyright% */
 
 /* This module contains the external function pcre_maketables(), which builds
 character tables for PCRE in the current locale. The file is compiled on its

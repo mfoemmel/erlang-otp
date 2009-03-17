@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>2004-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 
 %%% @doc Common Test Framework callback module.
@@ -42,6 +41,16 @@
 %%% @doc Test server framework callback, called by the test_server
 %%% when a new test case is started.
 init_tc(Mod,Func,Config) ->
+    %% check if previous testcase was interpreted and has left
+    %% a "dead" trace window behind - if so, kill it
+    case ct_util:get_testdata(interpret) of
+	{What,kill,{TCPid,AttPid}} ->
+	    ct_util:kill_attached(TCPid,AttPid),
+	    ct_util:set_testdata({interpret,{What,kill,{undefined,undefined}}});
+	_ ->
+	    ok
+    end,
+	    
     %% check if we need to add defaults explicitly because
     %% there's no init_per_suite exported from Mod
     {InitFailed,DoInit} =
@@ -276,24 +285,29 @@ timetrap_first([],Info,[]) ->
 timetrap_first([],Info,Found) ->
     lists:reverse(Found) ++ lists:reverse(Info).
 
-configure([{require,Required}| Rest],Info,SuiteInfo,Scope,Config) ->
+configure([{require,Required}|Rest],Info,SuiteInfo,Scope,Config) ->
     case ct:require(Required) of
 	ok ->
 	    configure(Rest,Info,SuiteInfo,Scope,Config);
 	Error = {error,Reason} ->
-	    case lists:keymember(Required,2,SuiteInfo) of
-		true ->
-		    {suite0_failed,Reason};
-		false ->
-		    Error
+	    case required_default('_UNDEF',Required,Info,SuiteInfo,Scope) of
+		ok ->
+		    configure(Rest,Info,SuiteInfo,Scope,Config);
+		_ ->
+		    case lists:keymember(Required,2,SuiteInfo) of
+			true ->
+			    {suite0_failed,Reason};
+			false ->
+			    Error
+		    end
 	    end
     end;
-configure([{require,Name,Required}| Rest],Info,SuiteInfo,Scope,Config) ->
+configure([{require,Name,Required}|Rest],Info,SuiteInfo,Scope,Config) ->
     case ct:require(Name,Required) of
 	ok ->
 	    configure(Rest,Info,SuiteInfo,Scope,Config);
 	Error = {error,Reason} ->
-	    case required_default(Name,Info,SuiteInfo,Scope) of
+	    case required_default(Name,Required,Info,SuiteInfo,Scope) of
 		ok ->
 		    configure(Rest,Info,SuiteInfo,Scope,Config);
 		_ ->
@@ -305,39 +319,55 @@ configure([{require,Name,Required}| Rest],Info,SuiteInfo,Scope,Config) ->
 		    end
 	    end
     end;
-configure([{timetrap,off}| Rest],Info,SuiteInfo,Scope,Config) ->
+configure([{timetrap,off}|Rest],Info,SuiteInfo,Scope,Config) ->
     configure(Rest,Info,SuiteInfo,Scope,Config);
-configure([{timetrap,Time}| Rest],Info,SuiteInfo,Scope,Config) ->
+configure([{timetrap,Time}|Rest],Info,SuiteInfo,Scope,Config) ->
     Dog = test_server:timetrap(Time),
     configure(Rest,Info,SuiteInfo,Scope,[{watchdog,Dog}|Config]);
-configure([ _ | Rest],Info,SuiteInfo,Scope,Config) ->
+configure([_|Rest],Info,SuiteInfo,Scope,Config) ->
     configure(Rest,Info,SuiteInfo,Scope,Config);
 configure([],_,_,_,Config) ->
     {ok,[Config]}.
 
-required_default(Name,Info,SuiteInfo,{Func,true}) ->
-    %% this require element in Info may come from suite/0 and
-    %% should be scoped 'suite', or come from the testcase info
-    %% function and should then be scoped 'testcase'
-    case lists:keysearch(Name,1,SuiteInfo) of
-	{value,{Name,ConfigVal}} -> 
-	    ct_util:set_default_config(Name,[ConfigVal],suite);
-	false ->
-	    required_default(Name,Info,[],{Func,false})
+%% the require element in Info may come from suite/0 and
+%% should be scoped 'suite', or come from the testcase info
+%% function and should then be scoped 'testcase'
+required_default(Name,Key,Info,SuiteInfo,{Func,true}) ->
+    case try_set_default(Name,Key,SuiteInfo,suite) of
+	ok ->
+	    ok;
+	_ ->
+	    required_default(Name,Key,Info,[],{Func,false})
     end;
+required_default(Name,Key,Info,_,{init_per_suite,_}) ->
+    try_set_default(Name,Key,Info,suite);
+required_default(Name,Key,Info,_,_) ->
+    try_set_default(Name,Key,Info,testcase).
 
-required_default(Name,Info,_,Scope) ->
-    case lists:keysearch(Name,1,Info) of
-	{value,{Name,ConfigVal}} -> 
-	    case Scope of
-		{init_per_suite,_} ->
-		    ct_util:set_default_config(Name,[ConfigVal],suite);
-		_ ->
-		    ct_util:set_default_config(Name,[ConfigVal],testcase)
-	    end;
-	false -> 
-	    error
+try_set_default(Name,Key,Info,Where) ->
+    CfgElems = 
+	case lists:keysearch(Name,1,Info) of
+	    {value,{Name,Val}} ->
+		[Val];
+	    false ->
+		case catch [{Key,element(3,Elem)} || Elem <- Info,
+						     element(1,Elem)==default_config,
+						     element(2,Elem)==Key] of
+		    {'EXIT',_} -> [];
+		    Result -> Result
+		end
+	end,
+    case {Name,CfgElems} of
+	{_,[]} -> 
+	    no_default;
+	{'_UNDEF',_} ->
+    	    [ct_util:set_default_config([CfgVal],Where) || CfgVal <- CfgElems],
+	    ok;
+	_ ->
+    	    [ct_util:set_default_config(Name,[CfgVal],Where) || CfgVal <- CfgElems],
+	    ok
     end.
+	    
 
 %%%-----------------------------------------------------------------
 %%% @spec end_tc(Mod,Func,Args) -> ok
@@ -354,6 +384,17 @@ end_tc(Mod,Func,[Args]) ->
 	{value,{watchdog,Dog}} -> test_server:timetrap_cancel(Dog);
 	false -> ok
     end,
+
+    %% save the testcase process pid so that it can be used
+    %% to look up the attached trace window later
+    case ct_util:get_testdata(interpret) of
+	{What,kill,_} ->
+	    AttPid = ct_util:get_attached(self()),
+	    ct_util:set_testdata({interpret,{What,kill,{self(),AttPid}}});
+	_ ->
+	    ok
+    end,
+
     ct_util:delete_testdata(comment),
     ct_util:delete_suite_data(last_saved_config),
     case lists:keysearch(save_config,1,Args) of
@@ -493,11 +534,138 @@ mark_as_failed1(_,_,_,[]) ->
     ok.
 
 %%%-----------------------------------------------------------------
-%%% @spec get_suite(Mod,Func) -> Suite
+%%% @spec get_suite(Mod, Func) -> Tests
 %%%
-%%% @doc Return all cases in a module if <code>Func==all</code>.
-get_suite(Mod,all) ->
-    case catch apply(Mod,all,[]) of
+%%% @doc Called from test_server for every suite (<code>Func==all</code>)
+%%%      and every test case. If the former, all test cases in the suite
+%%%      should be returned. 
+
+get_suite(Mod, all) ->    
+    case catch apply(Mod, groups, []) of
+	{'EXIT',_} ->
+	    get_all(Mod, []);
+	GroupDefs when is_list(GroupDefs) ->
+	    case catch check_groups(Mod, GroupDefs) of
+		{error,_} = Error ->
+		    %% this makes test_server call error_in_suite as first
+		    %% (and only) test case so we can report Error properly
+		    [{?MODULE,error_in_suite,[[Error]]}];
+		ConfTests ->
+		    get_all(Mod, ConfTests)
+	    end;
+	_ ->
+	    E = "Bad return value from "++atom_to_list(Mod)++":groups/0",
+	    [{?MODULE,error_in_suite,[[{error,list_to_atom(E)}]]}]
+    end;
+
+%%!============================================================
+%%! Note: The handling of sequences in get_suite/2 and get_all/2
+%%! is deprecated and should be removed after OTP R13!
+%%!============================================================
+
+get_suite(Mod, Name) ->
+    %% Name may be name of a group or a test case. If it's a group,
+    %% it should be expanded to list of cases (in a conf term)
+    case catch apply(Mod, groups, []) of
+	{'EXIT',_} ->
+	    get_seq(Mod, Name);
+	GroupDefs when is_list(GroupDefs) ->
+	    case catch check_groups(Mod, GroupDefs) of
+		{error,_} = Error ->
+		    %% this makes test_server call error_in_suite as first
+		    %% (and only) test case so we can report Error properly
+		    [{?MODULE,error_in_suite,[[Error]]}];
+		ConfTests ->
+		    FindConf = fun({conf,Props,_,_,_}) ->
+				       case proplists:get_value(name, Props) of
+					   Name -> true;
+					   _    -> false
+				       end
+			       end,					 
+		    case lists:filter(FindConf, ConfTests) of
+			[] ->			% must be a test case
+			    get_seq(Mod, Name);
+			[ConfTest|_] ->
+			    ConfTest
+		    end
+	    end;
+	_ ->
+	    E = "Bad return value from "++atom_to_list(Mod)++":groups/0",
+	    [{?MODULE,error_in_suite,[[{error,list_to_atom(E)}]]}]
+    end.
+
+check_groups(_Mod, []) ->
+    [];
+check_groups(Mod, Defs) ->
+    check_groups(Mod, Defs, Defs, []).
+
+check_groups(Mod, [TC | Gs], Defs, Levels) when is_atom(TC), length(Levels)>0 ->
+    [TC | check_groups(Mod, Gs, Defs, Levels)];
+
+check_groups(Mod, [{group,SubName} | Gs], Defs, Levels) when is_atom(SubName) ->
+    case lists:member(SubName, Levels) of
+	true ->
+	    E = "Cyclic reference to group "++atom_to_list(SubName)++
+		" in "++atom_to_list(Mod)++":groups/0",
+	    throw({error,list_to_atom(E)});
+	false ->	    
+	    case find_group(Mod, SubName, Defs) of
+		{error,_} = Error ->
+		    throw(Error);
+		G ->
+		    [check_groups(Mod, [G], Defs, Levels) | 
+		     check_groups(Mod, Gs, Defs, Levels)]
+	    end
+    end;
+
+check_groups(Mod, [{Name,Tests} | Gs], Defs, Levels) when is_atom(Name),
+							  is_list(Tests) ->
+    check_groups(Mod, [{Name,[],Tests} | Gs], Defs, Levels);
+
+check_groups(Mod, [{Name,Props,Tests} | Gs], Defs, Levels) when is_atom(Name),
+								is_list(Props),
+								is_list(Tests) ->
+    {TestSpec,Levels1} = 
+	case Levels of
+	    [] ->
+		{check_groups(Mod, Tests, Defs, [Name]),[]};
+	    _ ->
+		{check_groups(Mod, Tests, Defs, [Name|Levels]),Levels}
+	end,
+    [make_conf(Mod, Name, Props, TestSpec) | 
+     check_groups(Mod, Gs, Defs, Levels1)];
+
+check_groups(Mod, [BadTerm | _Gs], _Defs, Levels) ->
+    Where = if length(Levels) == 0 ->
+		    atom_to_list(Mod)++":groups/0";
+	       true ->
+		    "group "++atom_to_list(lists:last(Levels))++
+			" in "++atom_to_list(Mod)++":groups/0"
+	    end,		 
+    Term = io_lib:format("~p", [BadTerm]),
+    E = "Bad term "++lists:flatten(Term)++" in "++Where,
+    throw({error,list_to_atom(E)});
+
+check_groups(_Mod, [], _Defs, _) ->
+    [].
+
+find_group(Mod, Name, Defs) ->
+    case lists:keysearch(Name, 1, Defs) of
+	{value,Def} -> 
+	    Def;
+	false ->
+	    E = "Invalid group "++atom_to_list(Name)++
+		" in "++atom_to_list(Mod)++":groups/0",
+	    throw({error,list_to_atom(E)})
+    end.
+
+make_conf(Mod, Name, Props, TestSpec) ->
+    {conf,[{name,Name}|Props],
+     {Mod,init_per_group},TestSpec,{Mod,end_per_group}}.
+
+
+get_all(Mod, ConfTests) ->	
+    case catch apply(Mod, all, []) of
 	{'EXIT',_} ->
 	    Reason = 
 		list_to_atom(atom_to_list(Mod)++":all/0 is missing"),
@@ -508,8 +676,34 @@ get_suite(Mod,all) ->
 	    case catch save_seqs(Mod,AllTCs) of
 		{error,What} ->
 		    [{?MODULE,error_in_suite,[[{error,What}]]}];
-		Seqs ->
-		    Seqs
+		SeqsAndTCs ->
+		    %% expand group references in all() using ConfTests
+		    Expand =
+			fun({group,Name}) ->
+				FindConf = 
+				    fun({conf,Props,_,_,_}) ->
+					    case proplists:get_value(name, Props) of
+						Name -> true;
+						_    -> false
+					    end
+					   end,					 
+				case lists:filter(FindConf, ConfTests) of
+				    [ConfTest|_] ->
+					ConfTest;
+				    [] ->
+					E = "Invalid reference to group "++
+					    atom_to_list(Name)++" in "++
+					    atom_to_list(Mod)++":all/0",
+					throw({error,list_to_atom(E)})
+				end;
+			   (SeqOrTC) -> SeqOrTC
+			end,
+		    case catch lists:map(Expand, SeqsAndTCs) of
+			{error,_} = Error ->
+			    [{?MODULE,error_in_suite,[[Error]]}];
+			Tests ->
+			    Tests
+		    end
 	    end;
 	Skip = {skip,_Reason} ->
 	    Skip;
@@ -517,8 +711,19 @@ get_suite(Mod,all) ->
 	    Reason = 
 		list_to_atom("Bad return value from "++atom_to_list(Mod)++":all/0"),
 	    [{?MODULE,error_in_suite,[[{error,Reason}]]}]
-    end;
-get_suite(Mod,Func) ->
+    end.
+
+
+%%!============================================================
+%%! The support for sequences by means of using sequences/0
+%%! will be removed in OTP R14. The code below is only kept 
+%%! for backwards compatibility. From OTP R13 groups with
+%%! sequence property should be used instead!
+%%!============================================================
+%%!============================================================
+%%! START OF DEPRECATED SUPPORT FOR SEQUENCES --->
+
+get_seq(Mod, Func) ->
     case ct_util:read_suite_data({seq,Mod,Func}) of
 	undefined ->
 	    case catch apply(Mod,sequences,[]) of
@@ -611,6 +816,9 @@ check_multiple(Mod,Seq,TCs) ->
        true ->
 	    ok
     end.
+
+%%! <---  END OF DEPRECATED SUPPORT FOR SEQUENCES
+%%!============================================================
 
 %% let test_server call this function as a testcase only so that
 %% the user may see info about what's missing in the suite

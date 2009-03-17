@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1997-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  *
  * This file handles differences between different Unix systems.
  * This should be the only place with conditional compilation
@@ -42,7 +43,7 @@
 #include <sys/stat.h>
 #include <sys/param.h>
 #include <fcntl.h>
-#include <errno.h>
+#include "erl_errno.h"
 #include <signal.h>
 
 
@@ -222,6 +223,7 @@ extern void sys_stop_cat(void);
 #endif
 
 #ifdef NO_FPE_SIGNALS
+
 #define erts_get_current_fp_exception() NULL
 #ifdef ERTS_SMP
 #define erts_thread_init_fp_exception() do{}while(0)
@@ -232,9 +234,12 @@ extern void sys_stop_cat(void);
 #  define __ERTS_SAVE_FP_EXCEPTION(fpexnp)
 #  define __ERTS_RESTORE_FP_EXCEPTION(fpexnp)
 
+#define erts_sys_block_fpe() 0
+#define erts_sys_unblock_fpe(x) do{}while(0)
+
 #else /* !NO_FPE_SIGNALS */
 
-extern volatile int *erts_get_current_fp_exception(void);
+extern volatile unsigned long *erts_get_current_fp_exception(void);
 #ifdef ERTS_SMP
 extern void erts_thread_init_fp_exception(void);
 #endif
@@ -262,24 +267,31 @@ extern void erts_thread_init_fp_exception(void);
       !defined(__builtin_expect)
 #    define __builtin_expect(x, expected_value) (x)
 #  endif
-static __inline__ int erts_check_fpe(volatile int *fp_exception, double f)
+static __inline__ int erts_check_fpe(volatile unsigned long *fp_exception, double f)
 {
     erts_fwait(fp_exception, f);
-    if (__builtin_expect(!*fp_exception, 1))
+    if (__builtin_expect(*fp_exception == 0, 1))
        return 0;
+    *fp_exception = 0;
     erts_restore_fpu();
     return 1;
 }
 #  undef erts_fwait
 #  undef erts_restore_fpu
-#  define __ERTS_FP_CHECK_INIT(fpexnp) do { *(fpexnp) = 0; } while (0)
+extern void erts_fp_check_init_error(volatile unsigned long *fp_exception);
+static __inline__ void __ERTS_FP_CHECK_INIT(volatile unsigned long *fp_exception)
+{
+    if (__builtin_expect(*fp_exception == 0, 1))
+	return;
+    erts_fp_check_init_error(fp_exception);
+}
 #  define __ERTS_FP_ERROR(fpexnp, f, Action) do { if (erts_check_fpe((fpexnp),(f))) { Action; } } while (0)
-#  define __ERTS_SAVE_FP_EXCEPTION(fpexnp) int old_erl_fp_exception = *(fpexnp)
+#  define __ERTS_SAVE_FP_EXCEPTION(fpexnp) unsigned long old_erl_fp_exception = *(fpexnp)
 #  define __ERTS_RESTORE_FP_EXCEPTION(fpexnp) \
               do { *(fpexnp) = old_erl_fp_exception; } while (0)
    /* This is for library calls where we don't trust the external
       code to always throw floating-point exceptions on errors. */
-static __inline__ int erts_check_fpe_thorough(volatile int *fp_exception, double f)
+static __inline__ int erts_check_fpe_thorough(volatile unsigned long *fp_exception, double f)
 {
     return erts_check_fpe(fp_exception, f) || !finite(f);
 }
@@ -287,8 +299,7 @@ static __inline__ int erts_check_fpe_thorough(volatile int *fp_exception, double
   do { if (erts_check_fpe_thorough((fpexnp),(f))) { Action; } } while (0)
 
 int erts_sys_block_fpe(void);
-void erts_sys_unblock_fpe_conditional(int);
-void erts_sys_unblock_fpe(void);
+void erts_sys_unblock_fpe(int);
 
 #endif /* !NO_FPE_SIGNALS */
 
@@ -300,13 +311,14 @@ void erts_sys_unblock_fpe(void);
 #ifdef NEED_CHILD_SETUP_DEFINES
 /* The child setup argv[] */
 #define CS_ARGV_PROGNAME_IX	0		/* Program name		*/
-#define CS_ARGV_WD_IX		1		/* Working directory	*/
-#define CS_ARGV_CMD_IX		2		/* Command		*/
-#define CS_ARGV_FD_CR_IX	3		/* Fd close range	*/
-#define CS_ARGV_DUP2_OP_IX(N)	((N) + 4)	/* dup2 operations	*/
+#define CS_ARGV_UNBIND_IX	1		/* Unbind from cpu	*/
+#define CS_ARGV_WD_IX		2		/* Working directory	*/
+#define CS_ARGV_CMD_IX		3		/* Command		*/
+#define CS_ARGV_FD_CR_IX	4		/* Fd close range	*/
+#define CS_ARGV_DUP2_OP_IX(N)	((N) + 5)	/* dup2 operations	*/
 
 #define CS_ARGV_NO_OF_DUP2_OPS	3		/* Number of dup2 ops	*/
-#define CS_ARGV_NO_OF_ARGS	7		/* Number of arguments	*/
+#define CS_ARGV_NO_OF_ARGS	8		/* Number of arguments	*/
 #endif /* #ifdef NEED_CHILD_SETUP_DEFINES */
 
 /* Threads */

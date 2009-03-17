@@ -1,3 +1,21 @@
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2005-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved online at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * %CopyrightEnd%
+ */
 /* $Id$
  */
 #include "hipe_arm_asm.h"
@@ -355,7 +373,7 @@ nbif_0_trap_exception:
 .handle_trap:
 	mov	r0, #HIPE_MODE_SWITCH_RES_TRAP
 	str	NSP, [P, #P_NSP]
-	str	r1, [P, #P_ARITY]
+	str	r1, [P, #P_NARITY]
 	str	TEMP_LR, [P, #P_NRA]
 	b	.nosave_exit
 
@@ -392,3 +410,7 @@ hipe_arm_inc_stack:
 	LOAD_ARG_REGS
 	# this relies on LOAD_ARG_REGS not clobbering TEMP_ARG0
 	mov	pc, TEMP_ARG0
+
+#if defined(__linux__) && defined(__ELF__)
+.section .note.GNU-stack,"",%progbits
+#endif

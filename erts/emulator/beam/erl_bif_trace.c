@@ -1,20 +1,22 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1999-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 /*
  * Trace BIFs.
  */
@@ -45,7 +47,6 @@ static Binary                     *erts_default_match_spec;
 static Binary                     *erts_default_meta_match_spec;
 static struct trace_pattern_flags  erts_default_trace_pattern_flags;
 static Eterm                       erts_default_meta_tracer_pid;
-
 
 static void new_seq_trace_token(Process* p); /* help func for seq_trace_2*/
 static int already_traced(Process *p, Process *tracee_p, Eterm tracer);
@@ -2032,6 +2033,8 @@ BIF_RETTYPE system_profile_2(Process *p, Eterm profiler, Eterm list) {
 	erts_set_system_profile(profiler);
 
 	erts_system_profile_flags.scheduler = !!scheduler;
+	if (erts_system_profile_flags.scheduler)
+	    erts_system_profile_setup_active_schedulers();
 	erts_system_profile_flags.runnable_ports = !!runnable_ports;
 	erts_system_profile_flags.runnable_procs = !!runnable_procs;
 	erts_system_profile_flags.exclusive = !!exclusive;

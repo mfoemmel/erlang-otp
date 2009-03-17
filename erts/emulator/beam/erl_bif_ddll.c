@@ -1,20 +1,22 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2006-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 /*
  * BIFs belonging to the 'erl_ddll' module together with utility
  * functions for dynamic loading. The actual loading is done in
@@ -360,33 +362,33 @@ BIF_RETTYPE erl_ddll_try_load_3(Process *p, Eterm path_term,
 	dh->status = ERL_DE_FORCE_RELOAD;
 #if DDLL_SMP
 	unlock_drv_list();
-	erts_smp_port_tab_lock();
 #endif
 	for (j = 0; j < erts_max_ports; j++) {
-	    if (!(erts_port[j].status & FREE_PORT_FLAGS) &&
-		erts_port[j].drv_ptr->handle == dh) {
+	    Port* prt = &erts_port[j];
+#ifdef DDLL_SMP
+	    erts_smp_port_state_lock(prt);
+#endif 
+	    if (!(prt->status & FREE_PORT_FLAGS) &&
+		prt->drv_ptr->handle == dh) {
 #if DDLL_SMP
-		erts_smp_atomic_inc(&erts_port[j].refc);
+		erts_smp_atomic_inc(&prt->refc);
 		/* Extremely rare spinlock */
-		while(erts_port[j].status & ERTS_PORT_SFLG_INITIALIZING) {
-		       erts_smp_port_tab_unlock();
-		       erts_smp_port_tab_lock();
+		while(prt->status & ERTS_PORT_SFLG_INITIALIZING) {
+		       erts_smp_port_state_unlock(prt);
+		       erts_smp_port_state_lock(prt);
 	        }
-		erts_smp_port_tab_unlock();
-		erts_smp_mtx_lock(erts_port[j].lock);
-		if (!(erts_port[j].status & ERTS_PORT_SFLGS_DEAD)) {
+		erts_smp_port_state_unlock(prt);
+		erts_smp_mtx_lock(prt->lock);
+		if (!(prt->status & ERTS_PORT_SFLGS_DEAD)) {
 		    driver_failure_atom(j, "driver_unloaded");
 		}
 #else
 		driver_failure_atom(j, "driver_unloaded");
 #endif
-		erts_port_release(&erts_port[j]);
-#if DDLL_SMP
-		erts_smp_port_tab_lock();
-#endif
+		erts_port_release(prt);
 	    }
+	    else erts_smp_port_state_unlock(prt);
 	}
-	erts_smp_port_tab_unlock();
 	/* Dereference, eventually causing driver destruction */
 #if DDLL_SMP
 	lock_drv_list(); 
@@ -588,34 +590,34 @@ done:
 	dh->status = ERL_DE_FORCE_UNLOAD;
 #if DDLL_SMP
 	unlock_drv_list();
-	erts_smp_port_tab_lock();
 #endif
 	for (j = 0; j < erts_max_ports; j++) {
-	    if (!(erts_port[j].status &  FREE_PORT_FLAGS) 
-		&& erts_port[j].drv_ptr->handle == dh) {
+	    Port* prt = &erts_port[j];
 #if DDLL_SMP
-		erts_smp_atomic_inc(&erts_port[j].refc);
+	    erts_smp_port_state_lock(prt);
+#endif
+	    if (!(prt->status &  FREE_PORT_FLAGS) 
+		&& prt->drv_ptr->handle == dh) {
+#if DDLL_SMP
+		erts_smp_atomic_inc(&prt->refc);
 		/* Extremely rare spinlock */
-		while(erts_port[j].status & ERTS_PORT_SFLG_INITIALIZING) {
-		       erts_smp_port_tab_unlock();
-		       erts_smp_port_tab_lock();
+		while(prt->status & ERTS_PORT_SFLG_INITIALIZING) {
+		       erts_smp_port_state_unlock(prt);
+		       erts_smp_port_state_lock(prt);
 	        }
-		erts_smp_port_tab_unlock();
-		erts_smp_mtx_lock(erts_port[j].lock);
-		if (!(erts_port[j].status & ERTS_PORT_SFLGS_DEAD)) {
+		erts_smp_port_state_unlock(prt);
+		erts_smp_mtx_lock(prt->lock);
+		if (!(prt->status & ERTS_PORT_SFLGS_DEAD)) {
 		    driver_failure_atom(j, "driver_unloaded");
 		}
 #else
 		driver_failure_atom(j, "driver_unloaded");
 #endif
-		erts_port_release(&erts_port[j]);
-#if DDLL_SMP
-		erts_smp_port_tab_lock();
-#endif
+		erts_port_release(prt);
 	    }
+	    else erts_smp_port_state_unlock(prt);
 	}
 #if DDLL_SMP
-	erts_smp_port_tab_unlock();
 	lock_drv_list(); 
 #endif
 	erts_ddll_dereference_driver(dh);
@@ -1045,35 +1047,33 @@ void erts_ddll_proc_dead(Process *p, ErtsProcLocks plocks)
 		    dh->status = ERL_DE_FORCE_UNLOAD;
 #if DDLL_SMP
 		    unlock_drv_list();
-		    erts_smp_port_tab_lock();
 #endif
 		    for (j = 0; j < erts_max_ports; j++) {
-			if (!(erts_port[j].status & FREE_PORT_FLAGS) &&
-			    erts_port[j].drv_ptr->handle == dh) {
+			Port* prt = &erts_port[j];
 #if DDLL_SMP
-			    erts_smp_atomic_inc(&erts_port[j].refc);
-			    while(erts_port[j].status & 
-				  ERTS_PORT_SFLG_INITIALIZING) {
-				erts_smp_port_tab_unlock();
-				erts_smp_port_tab_lock();
+			erts_smp_port_state_lock(prt);
+#endif
+			if (!(prt->status & FREE_PORT_FLAGS) &&
+			    prt->drv_ptr->handle == dh) {
+#if DDLL_SMP
+			    erts_smp_atomic_inc(&prt->refc);
+			    while(prt->status & ERTS_PORT_SFLG_INITIALIZING) {
+				erts_smp_port_state_unlock(prt);
+				erts_smp_port_state_lock(prt);
 			    }
-			    erts_smp_port_tab_unlock();
-			    erts_smp_mtx_lock(erts_port[j].lock);
-			    if (!(erts_port[j].status & 
-				  ERTS_PORT_SFLGS_DEAD)) {
+			    erts_smp_port_state_unlock(prt);
+			    erts_smp_mtx_lock(prt->lock);
+			    if (!(prt->status & ERTS_PORT_SFLGS_DEAD)) {
 				driver_failure_atom(j, "driver_unloaded");
 			    }
 #else
 			    driver_failure_atom(j, "driver_unloaded");
 #endif
-			    erts_port_release(&erts_port[j]);
-#if DDLL_SMP
-			    erts_smp_port_tab_lock();
-#endif
+			    erts_port_release(prt);
 			}
+			else erts_smp_port_state_unlock(prt);
 		    } 
 #if DDLL_SMP
-		    erts_smp_port_tab_unlock();
 		    lock_drv_list(); /* Needed for future list operations */
 #endif
 		    drv = drv->next; /* before allowing destruction */
@@ -1648,9 +1648,9 @@ static int do_unload_driver_entry(DE_Handle *dh, Eterm *save_name)
 	    } 
 	    /* XXX:PaN Future locking problems? Don't dare to let go of the diver_list lock here!*/
 	    if (q->finish) {
-		erts_block_fpe();
+		int fpe_was_unmasked = erts_block_fpe();
 		(*(q->finish))();
-		erts_unblock_fpe();
+		erts_unblock_fpe(fpe_was_unmasked);
 	    }
 	    erts_sys_ddll_close(dh->handle);
 	    erts_destroy_driver(q);
@@ -1739,11 +1739,10 @@ static void notify_proc(Process *proc, Eterm ref, Eterm driver_name, Eterm type,
     Eterm *hp;
     ErlHeapFragment *bp;
     ErlOffHeap *ohp;
-    ErtsProcLocks rp_locks = ERTS_PROC_LOCKS_MSG_SEND;
+    ErtsProcLocks rp_locks = 0;
     ERTS_SMP_CHK_NO_PROC_LOCKS;
 
     assert_drv_list_locked();
-    erts_smp_proc_lock(proc, rp_locks);
     if (errcode != 0) {
 	int need = load_error_need(errcode);
 	Eterm e;
@@ -1763,7 +1762,7 @@ static void notify_proc(Process *proc, Eterm ref, Eterm driver_name, Eterm type,
 	hp += REF_THING_SIZE;
 	mess = TUPLE5(hp,type,r,am_driver,driver_name,tag);
     }
-    erts_queue_message(proc, rp_locks, bp, mess, am_undefined);
+    erts_queue_message(proc, &rp_locks, bp, mess, am_undefined);
     erts_smp_proc_unlock(proc, rp_locks);
     ERTS_SMP_CHK_NO_PROC_LOCKS;
 }

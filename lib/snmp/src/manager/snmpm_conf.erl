@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>2006-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 -module(snmpm_conf).
 
 -include_lib("kernel/include/file.hrl").
@@ -77,14 +77,14 @@ write_manager_config(Dir, Conf) ->
     write_manager_config(Dir, Hdr, Conf).
 
 write_manager_config(Dir, Hdr, Conf) 
-  when is_list(Dir) and is_list(Hdr) and is_list(Conf) ->
+  when is_list(Dir) andalso is_list(Hdr) andalso is_list(Conf) ->
     Verify = fun()    -> verify_manager_conf(Conf)           end,
     Write  = fun(Fid) -> write_manager_conf(Fid, Hdr, Conf)  end,
     write_config_file(Dir, ?MANAGER_CONF_FILE, Verify, Write).
     
 
 append_manager_config(Dir, Conf) 
-  when is_list(Dir) and is_list(Conf) ->
+  when is_list(Dir) andalso is_list(Conf) ->
     Verify = fun()    -> verify_manager_conf(Conf)     end,
     Write  = fun(Fid) -> write_manager_conf(Fid, Conf) end,
     append_config_file(Dir, ?MANAGER_CONF_FILE, Verify, Write).
@@ -148,29 +148,32 @@ users_entry(UserId, UserMod) ->
     users_entry(UserId, UserMod, undefined).
 
 users_entry(UserId, UserMod, UserData) ->
-    {UserId, UserMod, UserData}.
+    users_entry(UserId, UserMod, UserData, []).
+
+users_entry(UserId, UserMod, UserData, DefaultAgentConfig) ->
+    {UserId, UserMod, UserData, DefaultAgentConfig}.
 
 
 write_users_config(Dir, Conf) ->
     Comment = 
 "%% This file defines the users the manager handles\n"
-"%% Each row is a 3-tuple:\n"
-"%% {UserId, UserMod, UserData}.\n"
+"%% Each row is a 4-tuple:\n"
+"%% {UserId, UserMod, UserData, DefaultAgentConfig}.\n"
 "%% For example\n"
-"%% {kalle, kalle_callback_user_mod, \"dummy\"}.\n"
+"%% {kalle, kalle_callback_user_mod, \"dummy\", []}.\n"
 "%%\n\n",
     Hdr = header() ++ Comment,
     write_users_config(Dir, Hdr, Conf).
 
 write_users_config(Dir, Hdr, Conf) 
-  when is_list(Dir) and is_list(Hdr) and is_list(Conf) ->
+  when is_list(Dir) andalso is_list(Hdr) andalso is_list(Conf) ->
     Verify = fun()   -> verify_users_conf(Conf)         end,
     Write  = fun(Fd) -> write_users_conf(Fd, Hdr, Conf) end,
     write_config_file(Dir, ?USERS_CONF_FILE, Verify, Write).
 
 
 append_users_config(Dir, Conf) 
-  when is_list(Dir) and is_list(Conf) ->
+  when is_list(Dir) andalso is_list(Conf) ->
     Verify = fun()   -> verify_users_conf(Conf)    end,
     Write  = fun(Fd) -> write_users_conf(Fd, Conf) end,
     append_config_file(Dir, ?USERS_CONF_FILE, Verify, Write).
@@ -206,7 +209,9 @@ write_users_conf(Fd, [H|T]) ->
     write_users_conf(Fd, T).
 
 do_write_users_conf(Fd, {Id, Mod, Data}) ->
-    io:format(Fd, "{~w, ~w, ~w}.~n", [Id, Mod, Data]);
+    do_write_users_conf(Fd, {Id, Mod, Data, []});
+do_write_users_conf(Fd, {Id, Mod, Data, DefaultAgentConfig}) ->
+    io:format(Fd, "{~w, ~w, ~w, ~w}.~n", [Id, Mod, Data, DefaultAgentConfig]);
 do_write_users_conf(_Fd, Crap) ->
    error({bad_users_config, Crap}).
 
@@ -233,14 +238,14 @@ write_agents_config(Dir, Conf) ->
     write_agents_config(Dir, Hdr, Conf).
 
 write_agents_config(Dir, Hdr, Conf) 
-  when is_list(Dir) and is_list(Hdr) and is_list(Conf) ->
+  when is_list(Dir) andalso is_list(Hdr) andalso is_list(Conf) ->
     Verify = fun()   -> verify_agents_conf(Conf)         end,
     Write  = fun(Fd) -> write_agents_conf(Fd, Hdr, Conf) end,
     write_config_file(Dir, ?AGENTS_CONF_FILE, Verify, Write).
 
 
 append_agents_config(Dir, Conf) 
-  when is_list(Dir) and is_list(Conf) ->
+  when is_list(Dir) andalso is_list(Conf) ->
     Verify = fun()   -> verify_agents_conf(Conf)    end,
     Write  = fun(Fd) -> write_agents_conf(Fd, Conf) end,
     append_config_file(Dir, ?AGENTS_CONF_FILE, Verify, Write).
@@ -308,14 +313,14 @@ write_usm_config(Dir, Conf) ->
     write_usm_config(Dir, Hdr, Conf).
 
 write_usm_config(Dir, Hdr, Conf) 
-  when is_list(Dir) and is_list(Hdr) and is_list(Conf) ->
+  when is_list(Dir) andalso is_list(Hdr) andalso is_list(Conf) ->
     Verify = fun()   -> verify_usm_conf(Conf)         end,
     Write  = fun(Fd) -> write_usm_conf(Fd, Hdr, Conf) end,
     write_config_file(Dir, ?USM_USERS_CONF_FILE, Verify, Write).
 
 
 append_usm_config(Dir, Conf) 
-  when is_list(Dir) and is_list(Conf) ->
+  when is_list(Dir) andalso is_list(Conf) ->
     Verify = fun()   -> verify_usm_conf(Conf)    end,
     Write  = fun(Fd) -> write_usm_conf(Fd, Conf) end,
     append_config_file(Dir, ?USM_USERS_CONF_FILE, Verify, Write).

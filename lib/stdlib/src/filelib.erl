@@ -1,20 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-%%
+%% %CopyrightEnd%
+
 -module(filelib).
 
 %% File utilities.
@@ -23,60 +24,123 @@
 	 compile_wildcard/1]).
 -export([fold_files/5, last_modified/1, file_size/1, ensure_dir/1]).
 
+-export([wildcard/3, is_dir/2, is_file/2, is_regular/2]).
+-export([fold_files/6, last_modified/2, file_size/2]).
+
 -include_lib("kernel/include/file.hrl").
+
+-define(HANDLE_ERROR(Expr),
+	try
+	    Expr
+	catch
+	    error:{badpattern,_}=UnUsUalVaRiAbLeNaMe ->
+		%% Get the stack backtrace correct.
+		erlang:error(UnUsUalVaRiAbLeNaMe)
+	end).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec wildcard(name()) -> [string()].
 wildcard(Pattern) when is_list(Pattern) ->
-    try
-	wildcard_comp(compile_wildcard(Pattern))
-    catch
-	error:{badpattern,_}=Error ->
-	    %% Get the stack backtrace correct.
-	    erlang:error(Error)
-    end.
+    ?HANDLE_ERROR(do_wildcard(Pattern, file)).
 
-wildcard_comp({compiled_wildcard,{exists,File}}) ->
-    case file:read_file_info(File) of
-	{ok,_} -> [File];
-	_ -> []
-    end;
-wildcard_comp({compiled_wildcard,[Base|Rest]}) ->
-    wildcard_1([Base], Rest).
-
--spec wildcard(name(), name()) -> [string()].
+-spec wildcard(name(), atom()) -> [string()].
 wildcard(Pattern, Cwd) when is_list(Pattern), is_list(Cwd) ->
-    try
-	wildcard_comp(compile_wildcard(Pattern), Cwd)
-    catch
-	error:{badpattern,_}=Error ->
-	    %% Get the stack backtrace correct.
-	    erlang:error(Error)
-    end.
+    ?HANDLE_ERROR(do_wildcard(Pattern, Cwd, file));
+wildcard(Pattern, Mod) when is_list(Pattern), is_atom(Mod) ->
+    ?HANDLE_ERROR(do_wildcard(Pattern, Mod)).
 
-wildcard_comp({compiled_wildcard,{exists,File}}, Cwd) ->
-    case file:read_file_info(filename:absname(File, Cwd)) of
-	{ok,_} -> [File];
-	_ -> []
-    end;
-wildcard_comp({compiled_wildcard,[current|Rest]}, Cwd0) ->
-    Cwd = filename:join([Cwd0]),		%Slash away redundant slashes.
-    PrefixLen = length(Cwd)+1,
-    [lists:nthtail(PrefixLen, N) || N <- wildcard_1([Cwd], Rest)];
-wildcard_comp({compiled_wildcard,[Base|Rest]}, _Cwd) ->
-    wildcard_1([Base], Rest).
+-spec wildcard(name(), name(), atom()) -> [string()].
+wildcard(Pattern, Cwd, Mod)
+  when is_list(Pattern), is_list(Cwd), is_atom(Mod) ->
+    ?HANDLE_ERROR(do_wildcard(Pattern, Cwd, Mod)).
 
 -spec is_dir(name()) -> bool().
 is_dir(Dir) ->
-    case file:read_file_info(Dir) of
+    do_is_dir(Dir, file).
+
+-spec is_dir(name(), atom()) -> bool().
+is_dir(Dir, Mod) when is_atom(Mod) ->
+    do_is_dir(Dir, Mod).
+
+-spec is_file(name()) -> bool().
+is_file(File) ->
+    do_is_file(File, file).
+
+-spec is_file(name(), atom()) -> bool().
+is_file(File, Mod) when is_atom(Mod) ->
+    do_is_file(File, Mod).
+
+-spec is_regular(name()) -> bool().
+is_regular(File) ->
+    do_is_regular(File, file).
+    
+-spec is_regular(name(), atom()) -> bool().
+is_regular(File, Mod) when is_atom(Mod) ->
+    do_is_regular(File, Mod).
+    
+-spec fold_files(name(), string(), bool(), fun((_,_) -> _), _) -> _.
+fold_files(Dir, RegExp, Recursive, Fun, Acc) ->
+    do_fold_files(Dir, RegExp, Recursive, Fun, Acc, file).
+
+-spec fold_files(name(), string(), bool(), fun((_,_) -> _), _, atom()) -> _.
+fold_files(Dir, RegExp, Recursive, Fun, Acc, Mod) when is_atom(Mod) ->
+    do_fold_files(Dir, RegExp, Recursive, Fun, Acc, Mod).
+
+-spec last_modified(name()) -> date_time() | 0.
+last_modified(File) ->
+    do_last_modified(File, file).
+
+-spec last_modified(name(), atom()) -> date_time() | 0.
+last_modified(File, Mod) when is_atom(Mod) ->
+    do_last_modified(File, Mod).
+
+-spec file_size(name()) -> non_neg_integer().
+file_size(File) ->
+    do_file_size(File, file).
+
+-spec file_size(name(), atom()) -> non_neg_integer().
+file_size(File, Mod) when is_atom(Mod) ->
+    do_file_size(File, Mod).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+do_wildcard(Pattern, Mod) when is_list(Pattern) ->
+    do_wildcard_comp(do_compile_wildcard(Pattern), Mod).
+
+do_wildcard_comp({compiled_wildcard,{exists,File}}, Mod) ->
+    case eval_read_file_info(File, Mod) of
+	{ok,_} -> [File];
+	_ -> []
+    end;
+do_wildcard_comp({compiled_wildcard,[Base|Rest]}, Mod) ->
+    do_wildcard_1([Base], Rest, Mod).
+
+do_wildcard(Pattern, Cwd, Mod) when is_list(Pattern), is_list(Cwd) ->
+    do_wildcard_comp(do_compile_wildcard(Pattern), Cwd, Mod).
+
+do_wildcard_comp({compiled_wildcard,{exists,File}}, Cwd, Mod) ->
+    case eval_read_file_info(filename:absname(File, Cwd), Mod) of
+	{ok,_} -> [File];
+	_ -> []
+    end;
+do_wildcard_comp({compiled_wildcard,[current|Rest]}, Cwd0, Mod) ->
+    Cwd = filename:join([Cwd0]),		%Slash away redundant slashes.
+    PrefixLen = length(Cwd)+1,
+    [lists:nthtail(PrefixLen, N) || N <- do_wildcard_1([Cwd], Rest, Mod)];
+do_wildcard_comp({compiled_wildcard,[Base|Rest]}, _Cwd, Mod) ->
+    do_wildcard_1([Base], Rest, Mod).
+
+do_is_dir(Dir, Mod) ->
+    case eval_read_file_info(Dir, Mod) of
 	{ok, #file_info{type=directory}} ->
 	    true;
 	_ ->
 	    false
     end.
 
--spec is_file(name()) -> bool().
-is_file(File) ->
-    case file:read_file_info(File) of
+do_is_file(File, Mod) ->
+    case eval_read_file_info(File, Mod) of
 	{ok, #file_info{type=regular}} ->
 	    true;
 	{ok, #file_info{type=directory}} ->
@@ -85,9 +149,8 @@ is_file(File) ->
             false
     end.
 
--spec is_regular(name()) -> bool().
-is_regular(File) ->
-    case file:read_file_info(File) of
+do_is_regular(File, Mod) ->
+    case eval_read_file_info(File, Mod) of
 	{ok, #file_info{type=regular}} ->
 	    true;
         _ ->
@@ -100,51 +163,50 @@ is_regular(File) ->
 %%   all files <F> in <Dir> that match the regular expression <RegExp>
 %%   If <Recursive> is true all sub-directories to <Dir> are processed
 
--spec fold_files(name(), string(), bool(), fun((_,_) -> _), _) -> _.
-fold_files(Dir, RegExp, Recursive, Fun, Acc) ->
-    {ok, Re1} = regexp:parse(RegExp),
-    fold_files1(Dir, Re1, Recursive, Fun, Acc).
+do_fold_files(Dir, RegExp, Recursive, Fun, Acc, Mod) ->
+    {ok, Re1} = re:compile(RegExp),
+    do_fold_files1(Dir, Re1, Recursive, Fun, Acc, Mod).
 
-fold_files1(Dir, RegExp, Recursive, Fun, Acc) ->
-    case file:list_dir(Dir) of
-	{ok, Files} -> fold_files2(Files, Dir, RegExp, Recursive, Fun, Acc);
+do_fold_files1(Dir, RegExp, Recursive, Fun, Acc, Mod) ->
+    case eval_list_dir(Dir, Mod) of
+	{ok, Files} -> do_fold_files2(Files, Dir, RegExp, Recursive, Fun, Acc, Mod);
 	{error, _}  -> Acc
     end.
 
-fold_files2([], _Dir, _RegExp, _Recursive, _Fun, Acc) -> Acc;
-fold_files2([File|T], Dir, RegExp, Recursive, Fun, Acc0) ->
+do_fold_files2([], _Dir, _RegExp, _Recursive, _Fun, Acc, _Mod) -> 
+    Acc;
+do_fold_files2([File|T], Dir, RegExp, Recursive, Fun, Acc0, Mod) ->
     FullName = filename:join(Dir, File),
-    case is_regular(FullName) of
+    case do_is_regular(FullName, Mod) of
 	true  ->
-	    case regexp:match(File, RegExp) of
-		{match, _, _}  -> 
+	    case re:run(File, RegExp, [{capture,none}]) of
+		match  -> 
 		    Acc = Fun(FullName, Acc0),
-		    fold_files2(T, Dir, RegExp, Recursive, Fun, Acc);
-		_ ->
-		    fold_files2(T, Dir, RegExp, Recursive, Fun, Acc0)
+		    do_fold_files2(T, Dir, RegExp, Recursive, Fun, Acc, Mod);
+		nomatch ->
+		    do_fold_files2(T, Dir, RegExp, Recursive, Fun, Acc0, Mod)
 	    end;
 	false ->
-	    case Recursive and is_dir(FullName) of
+	    case Recursive andalso do_is_dir(FullName, Mod) of
 		true ->
-		    Acc1 = fold_files1(FullName, RegExp, Recursive, Fun, Acc0),
-		    fold_files2(T, Dir, RegExp, Recursive, Fun, Acc1);
+		    Acc1 = do_fold_files1(FullName, RegExp, Recursive,
+					  Fun, Acc0, Mod),
+		    do_fold_files2(T, Dir, RegExp, Recursive, Fun, Acc1, Mod);
 		false ->
-		    fold_files2(T, Dir, RegExp, Recursive, Fun, Acc0)
+		    do_fold_files2(T, Dir, RegExp, Recursive, Fun, Acc0, Mod)
 	    end
     end.
 
--spec last_modified(name()) -> date_time() | 0.
-last_modified(File) ->
-    case file:read_file_info(File) of
+do_last_modified(File, Mod) ->
+    case eval_read_file_info(File, Mod) of
 	{ok, Info} ->
 	    Info#file_info.mtime;
 	_ ->
 	    0
     end.
 
--spec file_size(name()) -> non_neg_integer().
-file_size(File) ->
-    case file:read_file_info(File) of
+do_file_size(File, Mod) ->
+    case eval_read_file_info(File, Mod) of
 	{ok, Info} ->
 	    Info#file_info.size;
 	_ ->
@@ -161,7 +223,7 @@ ensure_dir("/") ->
     ok;
 ensure_dir(F) ->
     Dir = filename:dirname(F),
-    case is_dir(Dir) of
+    case do_is_dir(Dir, file) of
 	true ->
 	    ok;
 	false ->
@@ -174,24 +236,24 @@ ensure_dir(F) ->
 %%% Pattern matching using a compiled wildcard.
 %%%
 
-wildcard_1(Files, Pattern) ->
-    wildcard_2(Files, Pattern, []).
+do_wildcard_1(Files, Pattern, Mod) ->
+    do_wildcard_2(Files, Pattern, [], Mod).
 
-wildcard_2([File|Rest], Pattern, Result) ->
-    wildcard_2(Rest, Pattern, wildcard_3(File, Pattern, Result));
-wildcard_2([], _, Result) ->
+do_wildcard_2([File|Rest], Pattern, Result, Mod) ->
+    do_wildcard_2(Rest, Pattern, do_wildcard_3(File, Pattern, Result, Mod), Mod);
+do_wildcard_2([], _, Result, _Mod) ->
     Result.
 
-wildcard_3(Base, [Pattern|Rest], Result) ->
-    case list_dir(Base) of
+do_wildcard_3(Base, [Pattern|Rest], Result, Mod) ->
+    case do_list_dir(Base, Mod) of
 	{ok, Files0} ->
 	    Files = lists:sort(Files0),
 	    Matches = wildcard_4(Pattern, Files, Base, []),
-	    wildcard_2(Matches, Rest, Result);
+	    do_wildcard_2(Matches, Rest, Result, Mod);
 	_ ->
 	    Result
     end;
-wildcard_3(Base, [], Result) ->
+do_wildcard_3(Base, [], Result, _Mod) ->
     [Base|Result].
 
 wildcard_4(Pattern, [File|Rest], Base, Result) ->
@@ -244,8 +306,8 @@ do_alt([Alt|Rest], File) ->
 do_alt([], _File) ->
     false.
 
-list_dir(current) -> file:list_dir(".");
-list_dir(Dir) ->     file:list_dir(Dir).
+do_list_dir(current, Mod) -> eval_list_dir(".", Mod);
+do_list_dir(Dir, Mod) ->     eval_list_dir(Dir, Mod).
 
 join(current, File) -> File;
 join(Base, File) -> filename:join(Base, File).
@@ -254,13 +316,10 @@ join(Base, File) -> filename:join(Base, File).
 %%% Compiling a wildcard.
 
 compile_wildcard(Pattern) ->
-    try 
-	{compiled_wildcard,compile_wildcard_1(Pattern)}
-    catch
-	error:{badpattern,_}=Error ->
-	    %% Get the stack backtrace correct.
-	    erlang:error(Error)
-    end.
+    ?HANDLE_ERROR(do_compile_wildcard(Pattern)).
+
+do_compile_wildcard(Pattern) ->
+    {compiled_wildcard,compile_wildcard_1(Pattern)}.
 
 compile_wildcard_1(Pattern) ->
     [Root|Rest] = filename:split(Pattern),
@@ -362,3 +421,23 @@ compile_alt(Pattern, Result) ->
 
 error(Reason) ->
     erlang:error({badpattern,Reason}).
+
+eval_read_file_info(File, file) ->
+    file:read_file_info(File);
+eval_read_file_info(File, erl_prim_loader) ->
+    case erl_prim_loader:read_file_info(File) of
+	error -> {error, erl_prim_loader};
+	Res-> Res
+    end;
+eval_read_file_info(File, Mod) ->
+    Mod:read_file_info(File).
+
+eval_list_dir(Dir, file) ->
+    file:list_dir(Dir);
+eval_list_dir(Dir, erl_prim_loader) ->
+    case erl_prim_loader:list_dir(Dir) of
+	error -> {error, erl_prim_loader};
+	Res-> Res
+    end;
+eval_list_dir(Dir, Mod) ->
+    Mod:list_dir(Dir).

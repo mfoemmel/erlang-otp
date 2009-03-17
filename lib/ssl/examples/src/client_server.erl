@@ -1,3 +1,22 @@
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
+
 %%% Purpose: Example of SSL client and server using example certificates.
 
 -module(client_server).
@@ -17,14 +36,15 @@ start(CertOpts) ->
     %% Let the current process be the server that listens and accepts
     %% Listen
     {ok, LSock} = ssl:listen(0, mk_opts(listen)),
-    {ok, LPort} = ssl:port(LSock),
+    {ok, {_, LPort}} = ssl:sockname(LSock),
     io:fwrite("Listen: port = ~w.~n", [LPort]),
 
     %% Spawn the client process that connects to the server
     spawn(?MODULE, init_connect, [{LPort, CertOpts}]),
 
     %% Accept
-    {ok, ASock} = ssl:accept(LSock),
+    {ok, ASock} = ssl:transport_accept(LSock),
+    ok = ssl:ssl_accept(LSock),
     io:fwrite("Accept: accepted.~n"),
     {ok, Cert} = ssl:peercert(ASock, CertOpts),
     io:fwrite("Accept: peer cert:~n~p~n", [Cert]),

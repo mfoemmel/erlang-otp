@@ -18,32 +18,51 @@ AUTOCONF_SUBDIRS="$AUTOCONF_SUBDIRS erts ."
 usage ()
 {
     echo "Available options:"
-    echo "setup [-a] [<configure parameters>] - does autoconf, configure and opt."
-    echo "all [-a] <dir> - does autoconf, configure, primary, boot, release"
-    echo "autoconf - (re)build the configure scripts"
-    echo "configure [<configure parameters>] - does the actual configuration"
-    echo "plain [-a] - build a small Erlang system without bootstrap; plain flavor"
-    echo "opt [-a] - same as plain (above)"
-    echo "smp [-a] - build a small Erlang system without bootstrap; smp flavor"
-    echo "hybrid [-a] - build a small Erlang system without bootstrap; hybrid flavor"
-    echo "nofrag [-a] - build a small Erlang system without bootstrap; nofrag flavor"
-    echo "primary - creates the primary bootstrap, the one shipped"
-    echo "boot [-a] - bootstraps and build small system (after primary)"
-    echo "release <target_dir> - creates a small release to <target_dir>"
-    echo "release [-a] <target_dir> - creates full release to <target_dir>"
-    echo "tests <dir> - Build testsuites to <dir>"
+    echo "    setup [-a] [<configure parameters>] - does autoconf, configure and boot."
+    echo "    all [-a] <dir> - does autoconf, configure, boot, release"
+    echo "    autoconf - (re)build the configure scripts"
+    echo "    configure [<configure parameters>] - does the actual configuration"
+    echo "    smp [-a] - build a small Erlang system, smp flavor"
+    echo "    hybrid [-a] - build a small Erlang system, hybrid flavor"
+    echo "    nofrag [-a] - build a small Erlang system, nofrag flavor"
+    echo "    boot [-a] - bootstraps and build system (after configure)"
+    echo "    release <target_dir> - creates a small release to <target_dir>"
+    echo "    release [-a] <target_dir> - creates full release to <target_dir>"
+    echo "    tests <dir> - Build testsuites to <dir>"
     echo ""
-    echo "remove_prebuilt_files - create a minimal source tree"
-    echo "save_bootstrap - recreate primary bootstrap"
+    echo "These are for cleaning up an open source distribution"
+    echo "with prebuilt files, so that it resembles the clean developers"
+    echo "codebase:"
+    echo "    remove_prebuilt_files - create a minimal source tree"
+    echo "    save_bootstrap - recreate primary bootstrap"
     echo ""
-    echo "debuginfo_win32 <dir> - adds debug emulator and pdb files to <dir>"
-    echo "installer_win32 <dir> - creates a windows installer from <dir>" 
+    echo "Special targets for Windows(tm) build:"
+    echo "    debuginfo_win32 <dir> - adds debug emulator and pdb files to <dir>"
+    echo "    installer_win32 <dir> - creates a windows installer from <dir>" 
     echo ""
     echo "Before trying to build on windows, consider the following option"
-    echo "env_win32 - echo environment settings for win32 with visual C++, use with eval"
-    echo "env_mingw32 - echo environment settings for win32 with MinGW, use with eval"
+    echo "    env_win32 - echo environment settings for win32 with visual C++, use with eval"
+    echo "    env_mingw32 - echo environment settings for win32 with MinGW, use with eval"
+    echo ""
     echo "Before trying to build for vxworks, consider the following option"
-    echo "env_vxworks <cpu>  - echo environment settings for vxworks, use with eval"
+    echo "    env_vxworks <cpu>  - echo environment settings for vxworks, use with eval"
+    echo ""
+    echo "The following options concern the primary bootstrap."
+    echo "{prepare,update,commit,cancel}_primary is for actually updating"
+    echo "the checked in derivates of the main code base, they are not for"
+    echo "managing a downloaded spource-tree."
+    echo "    prepare_primary - prepares for building primary bootstrap (only in Clearcase)"
+    echo "    update_primary - creates the primary bootstrap, the one shipped"
+    echo "    commit_primary - commits a primary bootstrap (only in Clearcase)"
+    echo "    cancel_primary - uncheckout a primary bootstrap (only in Clearcase)"
+    echo ""
+    echo "The following options concern preloaded code."
+    echo "They are, like the primary bootstrap, mainly the concern of the"
+    echo "main developers."
+    echo "    prepare_preloaded - prepares for building preloaded code (only in Clearcase)"
+    echo "    update_preloaded - creates the preloaded beam code, the one shipped"
+    echo "    commit_preloaded - commits the preloaded code (only in Clearcase)"
+    echo "    cancel_preloaded - uncheckout preloaded code (only in Clearcase)"
 }
 
 check_erltop ()
@@ -74,11 +93,11 @@ target_contains ()
 # Special static config flags for certain platforms are set here  
 set_config_flags ()
 {
-	if target_contains win32; then
-		CONFIG_FLAGS="--build=$BUILDSYS --host=win32 --target=win32" 
-	fi
 	if target_contains linux; then 
-		CONFIG_FLAGS="--disable-hipe"
+	        XX=`echo $* | grep -v able-hipe`
+		if [ "$*" = "$XX" ]; then 
+		    CONFIG_FLAGS="--disable-hipe" 
+		fi
 	fi
 	if target_contains "univel-sysv4"; then
 		CONFIG_FLAGS="--x-libraries=/usr/lib/X11"
@@ -86,6 +105,15 @@ set_config_flags ()
 
 	if target_contains free_source; then
 		CONFIG_FLAGS="$CONFIG_FLAGS --host=$TARGET"
+	fi
+	if target_contains win32; then
+		CONFIG_FLAGS="--build=$BUILDSYS --host=win32 --target=win32" 
+	else
+	        # Link SSL static for all binary distributions if not overridden
+	        XX=`echo $* | grep -v dynamic-ssl-lib`
+		if [ "$*" = "$XX" ]; then 
+		    CONFIG_FLAGS="--disable-dynamic-ssl-lib $CONFIG_FLAGS"
+		fi
 	fi
 	CONFIG_FLAGS="$CONFIG_FLAGS $*"
 	export CONFIG_FLAGS;
@@ -135,10 +163,6 @@ do_autoconf ()
 					sed -e 's,lib/erl_interface,,' \
 					    -e 's,lib/gs,,' \
 					    -e 's,lib/megaco,,'`
-		    ;;
-		*ose*)
-		    AUTOCONF_SUBDIRS=`echo $AUTOCONF_SUBDIRS | \
-					sed -e 's,lib/erl_interface,,'`
 		    ;;
 	    esac
 	    TARGET=`$ERL_TOP/erts/autoconf/config.guess`
@@ -197,9 +221,9 @@ do_configure ()
 		  export OVERRIDE_TARGET
 		  TARGET=`$ERL_TOP/erts/autoconf/config.guess`
 		  mk_targetdir;;
-	    ose_*)
-		( cd erts/autoconf && \
-		  $ERL_TOP/erts/autoconf/configure.ose $TARGET )
+	    tile*)
+    		  set_config_flags $CONFIG_FLAGS "$@"
+		  ./configure --host=tile --cache-file=/dev/null $CONFIG_FLAGS || exit 1
 		  echo "Configuring for build host too..." >&2
 		  OVERRIDE_TARGET=
 		  export OVERRIDE_TARGET
@@ -215,8 +239,7 @@ do_configure ()
     fi
     set_config_flags $CONFIG_FLAGS "$@"
     if [ -z "$ONLY_ERTS" ]; then
-	./configure --cache-file=/dev/null $CONFIG_FLAGS \
-	    || exit 1
+	./configure --cache-file=/dev/null $CONFIG_FLAGS || exit 1
     else
 	echo "erts/configure --cache-file=/dev/null $CONFIG_FLAGS"
 	(cd $ERL_TOP/erts; ./configure --cache-file=/dev/null $CONFIG_FLAGS) || exit 1
@@ -230,7 +253,7 @@ do_lazy_configure ()
 {
     setup_make
     case $TARGET in
-	vxworks_*|ose_*)
+	vxworks_*|tile*)
 	    echo "Not supported for target: $TARGET" >&2
 	    exit 1
 	    ;;
@@ -268,7 +291,7 @@ do_lazy_configure_clean ()
 {
     setup_make
     case $TARGET in
-	vxworks_*|ose_*)
+	vxworks_*|tile*)
 	    echo "Not supported for target: $TARGET" >&2
 	    exit 1
 	    ;;
@@ -303,7 +326,7 @@ do_lazy_configure_target_clean ()
 {
     setup_make
     case $TARGET in
-	vxworks_*|ose_*)
+	vxworks_*|tile*)
 	    echo "Not supported for target: $TARGET" >&2
 	    exit 1
 	    ;;
@@ -334,6 +357,8 @@ do_lazy_configure_target_clean ()
 
 }
 
+    
+
 echo_setenv ()
 {
     case "$DAILY_BUILD_SCRIPT$SHELL" in
@@ -344,6 +369,13 @@ echo_setenv ()
 	*csh)
 	    echo "setenv $1 \"$2\"$3";;
     esac
+}
+
+echo_env_bootstrap ()
+{
+    boot_bin=$BOOTSTRAP_ROOT/bootstrap/bin
+    
+    echo_setenv PATH $boot_bin:$PATH
 }
 
 echo_env_erltop ()
@@ -394,15 +426,11 @@ echo_env_vxworks ()
     echo_envinfo
 }
 
-echo_env_ose ()
+echo_env_tile ()
 {
-    if [ -z "$1" ]; then 
-	echo "env_ose requires CPU architecture as parameter (ppc750, sfk etc)." >&2
-	exit 1
-    fi
     echo_env_erltop
     echo_setenv OVERRIDE_CONFIGURE true ';'
-    echo_setenv OVERRIDE_TARGET ose_$1
+    echo_setenv OVERRIDE_TARGET tile-tilera-linux-gnu
     echo_envinfo
 }
 
@@ -595,18 +623,191 @@ do_primary ()
     case $TARGET in
 	vxworks_*)
 	    do_primary_cross;;
-	ose_*)
+	tile*)
 	    do_primary_cross;;
 	*)
 	    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET primary_bootstrap || exit 1;
     esac
 }
 
+do_prepare ()
+{
+    CT=`lookup_prog_in_path cleartool`
+    if [ X"$CLEARCASE_ROOT" = X"" -o  X"$CT" = X"" ]; then 
+	echo "To prepare for update of primary bootstrap, you need to run in a clearcase view." >&2
+	return
+    fi
+
+    if [ X"$ERL_TOP" = X"" ]; then
+	echo "ERL_TOP is not set." >&2
+	return
+    fi
+
+    $CT ls -rec -view_only $ERL_TOP/bootstrap | xargs rm -rf
+
+    $CT find $ERL_TOP/bootstrap -cview -nxname -print | xargs $CT co -nc
+    echo '*****************************************************'
+    echo "Prepared for new bootstrap build - "
+    echo "directory bootstrap clean and completely checked out."
+    echo '*****************************************************'
+}
+
+do_commit ()
+{
+    CT=`lookup_prog_in_path cleartool`
+    if [ X"$CLEARCASE_ROOT" = X"" -o  X"$CT" = X"" ]; then 
+	echo "To prepare for update of primary bootstrap, you need to run in a clearcase view." >&2
+	return
+    fi
+
+    if [ X"$ERL_TOP" = X"" ]; then
+	echo "ERL_TOP is not set." >&2
+	return
+    fi
+
+
+    for x in compiler kernel stdlib orber/include; do
+	files=`$CT lspriv -do $ERL_TOP/bootstrap/lib/$x`
+	for y in $files; do
+	    echo "Creating $y"
+	    $CT mkelem -nc $y
+	done
+    done
+    $CT lsco -rec -me -cview -s $ERL_TOP/bootstrap | xargs $CT ci -nc -ident
+    $CT lsco -d -me -cview -s $ERL_TOP/bootstrap | xargs $CT ci -nc -ident
+
+    $CT ls -rec -view_only -nxname $ERL_TOP/bootstrap | xargs rm -rf
+
+
+    echo '*****************************************************'
+    echo "Checked in primary bootstrap."
+    echo '*****************************************************'
+}
+
+do_cancel ()
+{
+    CT=`lookup_prog_in_path cleartool`
+    if [ X"$CLEARCASE_ROOT" = X"" -o  X"$CT" = X"" ]; then 
+	echo "To prepare for update of primary bootstrap, you need to run in a clearcase view." >&2
+	return
+    fi
+
+    if [ X"$ERL_TOP" = X"" ]; then
+	echo "ERL_TOP is not set." >&2
+	return
+    fi
+    NOTEMPTY=`$CT lsco -rec -me -cview -s $ERL_TOP/bootstrap`
+    if [ X"$NOTEMPTY" != X"" ]; then
+	$CT lsco -rec -me -cview -s $ERL_TOP/bootstrap | xargs $CT unco -rm
+	$CT unco $ERL_TOP/bootstrap
+    fi
+    $CT ls -rec -view_only $ERL_TOP/bootstrap | xargs rm -rf
+    echo '*****************************************************'
+    echo "Cancelled all checkouts for primary bootstrap."
+    echo '*****************************************************'
+
+}
+do_prepare_prel ()
+{
+    CT=`lookup_prog_in_path cleartool`
+    if [ X"$CLEARCASE_ROOT" = X"" -o  X"$CT" = X"" ]; then 
+	echo "To prepare for update of preloaded code, you have to run in a Clearcase view" >&2
+	return
+    fi
+
+    if [ X"$ERL_TOP" = X"" ]; then
+	echo "ERL_TOP is not set." >&2
+	return
+    fi
+
+    setup_make
+    (cd $ERL_TOP/erts/preloaded/src && $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET prepare) || exit 1
+    echo '*****************************************************'
+    echo "Prepared for new preloaded code build - "
+    echo "Directory ERL_TOP/erts/prelaoded/ebin completely"
+    echo "checked out."
+    echo '*****************************************************'
+}
+
+do_update_prel ()
+{
+    CT=`lookup_prog_in_path cleartool`
+    if [ X"$CLEARCASE_ROOT" = X"" -o  X"$CT" = X"" ]; then 
+	echo "To prepare for update of preloaded code, you have to run in a Clearcase view" >&2
+	return
+    fi
+
+    if [ X"$ERL_TOP" = X"" ]; then
+	echo "ERL_TOP is not set." >&2
+	return
+    fi
+
+    setup_make
+    (cd $ERL_TOP/erts/preloaded/src && $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET clean) 
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET preloaded || exit 1
+    (cd $ERL_TOP/erts/preloaded/src && $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET copy)
+    echo '*****************************************************'
+    echo "Rebuilt preloaded code."
+    echo '*****************************************************'
+}    
+
+do_commit_prel ()
+{
+    CT=`lookup_prog_in_path cleartool`
+    if [ X"$CLEARCASE_ROOT" = X"" -o  X"$CT" = X"" ]; then 
+	echo "To prepare for update of primary bootstrap, you need to run in a clearcase view." >&2
+	return
+    fi
+
+    if [ X"$ERL_TOP" = X"" ]; then
+	echo "ERL_TOP is not set." >&2
+	return
+    fi
+    setup_make
+
+    (cd $ERL_TOP/erts/preloaded/ebin && $CT ci -ident -nc *.beam)
+    (cd $ERL_TOP/erts/preloaded && $CT ci -ident -nc ebin)
+
+    echo '*****************************************************'
+    echo "Checked in preloaded code."
+    echo '*****************************************************'
+}
+
+do_cancel_prel ()
+{
+    CT=`lookup_prog_in_path cleartool`
+    if [ X"$CLEARCASE_ROOT" = X"" -o  X"$CT" = X"" ]; then 
+	echo "To prepare for update of primary bootstrap, you need to run in a clearcase view." >&2
+	return
+    fi
+
+    if [ X"$ERL_TOP" = X"" ]; then
+	echo "ERL_TOP is not set." >&2
+	return
+    fi
+    setup_make
+    (cd $ERL_TOP/erts/preloaded/src && $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET cancel) || exit 1
+    echo '*****************************************************'
+    echo "Cancelled all checkouts for preloaded code."
+    echo '*****************************************************'
+
+}
+    
+
 do_boot_cross ()
 {
+    SAVE_TARGET=$TARGET
+    SAVE_OVERRIDE_TARGET=$OVERRIDE_TARGET
+    OVERRIDE_TARGET=
+    TARGET=`$ERL_TOP/erts/autoconf/config.guess`
+    
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET all_bootstraps || exit 1;
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET local_setup || exit 1;
+    TARGET=$SAVE_TARGET
+    OVERRIDE_TARGET=$SAVE_OVERRIDE_TARGET
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET libs || exit 1;
     $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET depend || exit 1;
     $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET emulator || exit 1;
-    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET libs || exit 1;
 }
 
 do_boot_emu_cross ()
@@ -620,7 +821,7 @@ do_boot ()
     case $TARGET in
 	vxworks_*)
 	    do_boot_cross;;
-        ose_*)
+        tile*)
 	    do_boot_cross;;
 	*)
 	    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET all || exit 1;;
@@ -633,7 +834,7 @@ do_boot_emu ()
     case $TARGET in
 	vxworks_*)
 	    do_boot_emu_cross;;
-        ose_*)
+        tile*)
 	    do_boot_emu_cross;;
 	*)
 	    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET emulator || exit 1;;
@@ -667,7 +868,7 @@ do_debuginfo_win32 ()
 	RELDIR="$1"
     fi
     BINDIR=$ERL_TOP/bin/$TARGET
-    EVSN=`cat erts/vsn.mk | sed 's,^VSN.*=[^0-9]*\([0-9].*\)$,@\1,g;s,^[^@].*,,g;s,^@,,g'`
+    EVSN=`grep '^VSN' erts/vsn.mk | sed 's,^VSN.*=[^0-9]*\([0-9].*\)$,@\1,g;s,^[^@].*,,g;s,^@,,g'`
     for f in beam.debug.dll beam.debug.smp.dll beam.pdb beam.smp.pdb erl.pdb werl.pdb erlexec.pdb; do
 	if [ -f $BINDIR/$f ]; then
 	    rm -f $RELDIR/erts-$EVSN/bin/$f
@@ -798,8 +999,16 @@ esac
 if [ ! -z "$OVERRIDE_TARGET" ]; then
     TARGET="$OVERRIDE_TARGET"
 fi
-if [ -z "$BOOTSTRAP_ROOT" ]; then
+
+# Setting a bootstrap root is inherently very dangerous now that the bootstrap
+# is prebuilt, avoid it if not forced by setting FORCE_BOOTSTRAP_ROOT=true!
+
+if [ X"$FORCE_BOOTSTRAP_ROOT" != X"true" ]; then
     BOOTSTRAP_ROOT="$ERL_TOP"
+else 
+    if [ -z "$BOOTSTRAP_ROOT" ]; then
+	BOOTSTRAP_ROOT="$ERL_TOP"
+    fi
 fi
 
 if [ X"$1" = X"" ]; then 
@@ -818,15 +1027,14 @@ export OTP_SMALL_BUILD
 
 TYPE=
 case "$1" in
-	all)
-		do_autoconf; 
-		do_configure; 
-		do_primary;
-		do_boot;
-		if [ $minus_a_flag = true ]; then 
-		    shift
-		fi;
-		do_release "$2";;
+ 	all)
+ 		do_autoconf; 
+ 		do_configure; 
+ 		do_boot;
+ 		if [ $minus_a_flag = true ]; then 
+ 		    shift
+ 		fi;
+ 		do_release "$2";;
 	setup)
 		shift;
 		if [ $minus_a_flag = true ]; then 
@@ -834,14 +1042,14 @@ case "$1" in
 		fi;
 		do_autoconf; 
 		do_configure "$@";
-		do_noboot_lib_and_erts;;
+		do_boot;;
 	lazy_setup)
 		shift;
 		if [ $minus_a_flag = true ]; then 
 		    shift
 		fi;
 		do_lazy_configure "$@";
-		do_noboot_lib_and_erts;;
+		do_boot;;
 	autoconf)
 		do_autoconf;;
 	configure)
@@ -857,7 +1065,7 @@ case "$1" in
 		shift;
 		do_lazy_configure_target_clean;;
 	opt)
-		do_noboot_lib_and_erts;;
+		do_boot;;
 	plain|smp|hybrid|nofrag)
 		if [ $minus_a_flag = false ]; then 
 		    TYPE=opt
@@ -866,9 +1074,27 @@ case "$1" in
 		if [ $FLAVOR = opt ]; then
 		    FLAVOR=plain
 		fi
-		do_noboot_lib_and_erts;;
-	primary)
+		do_boot;;
+	prepare_primary)
+		do_prepare;;
+	update_primary)
 		do_primary;;
+	commit_primary)
+		do_commit;;
+	cancel_primary)
+		do_cancel;;
+	prepare_preloaded)
+		do_prepare_prel;;
+	update_preloaded)
+		do_update_prel;;
+	commit_preloaded)
+		do_commit_prel;;
+	cancel_preloaded)
+		do_cancel_prel;;
+        primary)
+	        echo "Primary bootstrap is under version control since R13";
+		echo "Use {prepare,update,commit}_primary if you really are"; 
+		echo "updating the primary bootstrap...";;
 	boot)
 		do_boot;;
         emulator)
@@ -905,8 +1131,10 @@ case "$1" in
 		echo_env_mingw32;;
 	env_vxworks)
 		echo_env_vxworks "$2";;
-	env_ose)
-		echo_env_ose "$2";;
+	env_tile)
+		echo_env_tile "$2";;
+        env_bootstrap)
+	        echo_env_bootstrap;;
 	*)
 		usage;;
 esac

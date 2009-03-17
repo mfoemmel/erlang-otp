@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2001-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifdef HAVE_CONFIG_H
@@ -213,6 +214,7 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
     Eterm *hp;
     Eterm *hp_end;              /* To satisfy hybrid heap architecture */
     unsigned ret_flags = 0U;
+    int fpe_was_unmasked;
 
     bytes = &port_input[0];
     port_resp = port_result;
@@ -293,7 +295,7 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
     }
     erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
     prc  = (char *) port_resp;
-    erts_block_fpe();
+    fpe_was_unmasked = erts_block_fpe();
     ret = drv->call((ErlDrvData)p->drv_data, 
 		    (unsigned) op,
 		    (char *) bytes, 
@@ -301,7 +303,7 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
 		    &prc, 
 		    (int) sizeof(port_result),
 		    &ret_flags);
-    erts_unblock_fpe();
+    erts_unblock_fpe(fpe_was_unmasked);
     if (IS_TRACED_FL(p, F_TRACE_SCHED_PORTS)) {
     	trace_sched_ports_where(p, am_out, am_call);
     }
@@ -889,48 +891,101 @@ static byte* convert_environment(Process* p, Eterm env)
     return bytes;
 }
 
+/* ------------ decode_packet() and friends: */
 
 struct packet_callback_args
 {
     Process* p;  /* In */
     Eterm res;   /* Out */
+    int string_as_bin; /* return strings as binaries (http_bin): */
+    byte* aligned_ptr;
+    Eterm orig;
+    Uint bin_offs;
+    byte bin_bitoffs;
 };
+
+static Eterm
+http_bld_string(struct packet_callback_args* pca, Uint **hpp, Uint *szp,
+		const char *str, Sint len)
+{
+    Eterm res = THE_NON_VALUE;
+    Uint size;
+
+    if (pca->string_as_bin) {
+	size = heap_bin_size(len);
+    
+	if (szp) {
+	    *szp += (size > ERL_SUB_BIN_SIZE) ? ERL_SUB_BIN_SIZE : size;	
+	}
+	if (hpp) {
+	    res = make_binary(*hpp);
+	    if (size > ERL_SUB_BIN_SIZE) {
+		ErlSubBin* bin = (ErlSubBin*) *hpp;
+		bin->thing_word = HEADER_SUB_BIN;
+		bin->size = len;
+		bin->offs = pca->bin_offs + ((byte*)str - pca->aligned_ptr);
+		bin->orig = pca->orig;
+		bin->bitoffs = pca->bin_bitoffs;
+		bin->bitsize = 0;
+		bin->is_writable = 0;
+		*hpp += ERL_SUB_BIN_SIZE;
+	    }
+	    else {
+		ErlHeapBin* bin = (ErlHeapBin*) *hpp;
+		bin->thing_word = header_heap_bin(len);
+		bin->size = len;
+		memcpy(bin->data, str, len);
+		*hpp += size;
+	    }
+	}
+    }
+    else {
+	res = erts_bld_string_n(hpp, szp, str, len);
+    }
+    return res;
+}
 
 static int http_response_erl(void *arg, int major, int minor,
                              int status, const char* phrase, int phrase_len)
 {
     /* {http_response,{Major,Minor},Status,"Phrase"} */
     struct packet_callback_args* pca = (struct packet_callback_args*) arg;    
-    Eterm list, ver;
-    unsigned hsize = phrase_len*2 + 3 + 5;
-    Eterm* hp = HAlloc(pca->p, hsize);
+    Eterm phrase_term, ver;
+    Uint hsize = 3 + 5;
+    Eterm* hp;
 #ifdef DEBUG
-    Eterm* hend = hp + hsize;
+    Eterm* hend;
 #endif
 
-    list = erts_bld_string_n(&hp, NULL, phrase, phrase_len);
+    http_bld_string(pca, NULL, &hsize, phrase, phrase_len);
+    hp = HAlloc(pca->p, hsize);
+#ifdef DEBUG
+    hend = hp + hsize;
+#endif
+    phrase_term = http_bld_string(pca, &hp, NULL, phrase, phrase_len);
     ver = TUPLE2(hp, make_small(major), make_small(minor));
     hp += 3;
-    pca->res = TUPLE4(hp, am_http_response, ver, make_small(status), list);
+    pca->res = TUPLE4(hp, am_http_response, ver, make_small(status), phrase_term);
     ASSERT(hp+5==hend);
     return 1;
 }   
     
-static Eterm http_bld_uri(Eterm** hpp, Uint* szp, const PacketHttpURI* uri)
+static Eterm http_bld_uri(struct packet_callback_args* pca,
+			  Eterm** hpp, Uint* szp, const PacketHttpURI* uri)
 {
     Eterm s1, s2;
     if (uri->type == URI_STAR) {
         return am_Times; /* '*' */
     }
 
-    s1 = erts_bld_string_n(hpp, szp, uri->s1_ptr, uri->s1_len);
+    s1 = http_bld_string(pca, hpp, szp, uri->s1_ptr, uri->s1_len);
 
     switch (uri->type) {
     case URI_ABS_PATH:
         return erts_bld_tuple(hpp, szp, 2, am_abs_path, s1);
     case URI_HTTP:
     case URI_HTTPS:
-        s2 = erts_bld_string_n(hpp, szp, uri->s2_ptr, uri->s2_len);
+        s2 = http_bld_string(pca, hpp, szp, uri->s2_ptr, uri->s2_len);
         return erts_bld_tuple
             (hpp, szp, 5, am_absoluteURI, 
              ((uri->type==URI_HTTP) ? am_http : am_https),
@@ -941,7 +996,7 @@ static Eterm http_bld_uri(Eterm** hpp, Uint* szp, const PacketHttpURI* uri)
     case URI_STRING:
         return s1;
     case URI_SCHEME:
-        s2 = erts_bld_string_n(hpp, szp, uri->s2_ptr, uri->s2_len);
+        s2 = http_bld_string(pca, hpp, szp, uri->s2_ptr, uri->s2_len);
         return erts_bld_tuple(hpp, szp, 3, am_scheme, s1, s2);
                               
     default:
@@ -964,8 +1019,8 @@ static int http_request_erl(void* arg, const http_atom_t* meth,
 
     for (;;) {
         meth_term = (meth!=NULL) ? meth->atom :
-            erts_bld_string_n(hpp, szp, meth_ptr, meth_len);
-        uri_term = http_bld_uri(hpp, szp, uri);
+	    http_bld_string(pca, hpp, szp, meth_ptr, meth_len);
+        uri_term = http_bld_uri(pca, hpp, szp, uri);
         ver_term = erts_bld_tuple(hpp, szp, 2,
                                   make_small(major), make_small(minor));
         pca->res = erts_bld_tuple(hpp, szp, 4, am_http_request, meth_term,
@@ -984,23 +1039,34 @@ http_header_erl(void* arg, const http_atom_t* name, const char* name_ptr,
 {
     struct packet_callback_args* pca = (struct packet_callback_args*) arg;    
     Eterm bit_term, name_term, val_term;
-    Uint sz = value_len*2 + 6 + (name ? 0 : name_len*2);
-    Eterm* hp = HAlloc(pca->p,sz);
+    Uint sz = 6;
+    Eterm* hp;
 #ifdef DEBUG
-    Eterm* hend = hp + sz;
+    Eterm* hend;
 #endif
-
+    
     /* {http_header,Bit,Name,IValue,Value} */
+
+    if (name == NULL) {
+	http_bld_string(pca, NULL, &sz, name_ptr, name_len);
+    }
+    http_bld_string(pca, NULL, &sz, value_ptr, value_len);
+
+    hp = HAlloc(pca->p, sz);
+#ifdef DEBUG
+    hend = hp + sz;
+#endif	
+
     if (name != NULL) {
 	bit_term = make_small(name->index+1);
 	name_term = name->atom;
     }
-    else {
-	bit_term = make_small(0);
-	name_term = erts_bld_string_n(&hp,NULL,name_ptr,name_len);
+    else {	
+	bit_term = make_small(0);	
+	name_term = http_bld_string(pca, &hp,NULL,name_ptr,name_len);
     }
 
-    val_term = erts_bld_string_n(&hp, NULL, value_ptr, value_len);
+    val_term = http_bld_string(pca, &hp, NULL, value_ptr, value_len);
     pca->res = TUPLE5(hp, am_http_header, bit_term, name_term, am_undefined, val_term);
     ASSERT(hp+6==hend);
     return 1;
@@ -1018,15 +1084,20 @@ static int http_error_erl(void* arg, const char* buf, int len)
 {
     /* {http_error,Line} */
     struct packet_callback_args* pca = (struct packet_callback_args*) arg;
-    unsigned hsize = len*2 + 3;
-    Eterm* hp = HAlloc(pca->p, hsize);
+    Uint sz = 3;
+    Eterm* hp;
 #ifdef DEBUG
-    Eterm* hend = hp + hsize;
+    Eterm* hend;
 #endif
-    Eterm line;
 
-    line = erts_bld_string_n(&hp,NULL,buf,len);
-    pca->res = erts_bld_tuple(&hp,NULL,2,am_http_error,line);
+    http_bld_string(pca, NULL, &sz, buf, len);
+
+    hp = HAlloc(pca->p, sz);
+#ifdef DEBUG
+    hend = hp + sz;
+#endif
+    pca->res = erts_bld_tuple(&hp, NULL, 2, am_http_error,
+			      http_bld_string(pca, &hp, NULL, buf, len));
     ASSERT(hp==hend);
     return 1;
 }
@@ -1077,15 +1148,11 @@ BIF_RETTYPE decode_packet_3(BIF_ALIST_3)
     unsigned trunc_len = 0;  /* Truncate lines if longer, 0=no limit */
     int http_state = 0;      /* 0=request/response 1=header */
     int packet_sz;           /*-------Binaries involved: ------------------*/
-    Eterm orig;              /*| orig: original binary                     */
-    Uint bin_offs;           /*| bin: BIF_ARG_2, may be sub-binary of orig */
-    byte* bin_ptr;           /*| packet: prefix of bin                     */
-    byte bin_bitoffs;        /*| body: part of packet to return            */
-    byte bin_bitsz;          /*| rest: bin without packet                  */
-    Uint bin_sz;
-    char* body_ptr;
-    int body_sz;
-    byte* aligned_ptr;        /* bin_ptr or byte aligned temp copy */
+    byte* bin_ptr;           /*| orig: original binary                     */
+    byte bin_bitsz;          /*| bin: BIF_ARG_2, may be sub-binary of orig */
+    Uint bin_sz;             /*| packet: prefix of bin                     */
+    char* body_ptr;          /*| body: part of packet to return            */
+    int body_sz;             /*| rest: bin without packet                  */
     struct packet_callback_args pca;
     enum PacketParseType type;
     Eterm* hp;
@@ -1099,7 +1166,6 @@ BIF_RETTYPE decode_packet_3(BIF_ALIST_3)
         (!is_list(BIF_ARG_3) && !is_nil(BIF_ARG_3))) {
         BIF_ERROR(BIF_P, BADARG);
     }
-
     switch (BIF_ARG_1) {
     case make_small(0): case am_raw: type = TCP_PB_RAW; break;
     case make_small(1): type = TCP_PB_1; break;
@@ -1113,6 +1179,8 @@ BIF_RETTYPE decode_packet_3(BIF_ALIST_3)
     case am_tpkt: type = TCP_PB_TPKT; break;
     case am_http: type = TCP_PB_HTTP; break;
     case am_httph: type = TCP_PB_HTTPH; break;
+    case am_http_bin: type = TCP_PB_HTTP_BIN; break;
+    case am_httph_bin: type = TCP_PB_HTTPH_BIN; break;
     case am_ssl_tls: type = TCP_PB_SSL_TLS; break;
     default:
         BIF_ERROR(BIF_P, BADARG);
@@ -1144,15 +1212,15 @@ BIF_RETTYPE decode_packet_3(BIF_ALIST_3)
 
 
     bin_sz = binary_size(BIF_ARG_2);
-    ERTS_GET_BINARY_BYTES(BIF_ARG_2, bin_ptr, bin_bitoffs, bin_bitsz);  
-    if (bin_bitoffs != 0) {
-        aligned_ptr = erts_alloc(ERTS_ALC_T_TMP, bin_sz);
-        erts_copy_bits(bin_ptr, bin_bitoffs, 1, aligned_ptr, 0, 1, bin_sz*8);
+    ERTS_GET_BINARY_BYTES(BIF_ARG_2, bin_ptr, pca.bin_bitoffs, bin_bitsz);  
+    if (pca.bin_bitoffs != 0) {
+        pca.aligned_ptr = erts_alloc(ERTS_ALC_T_TMP, bin_sz);
+        erts_copy_bits(bin_ptr, pca.bin_bitoffs, 1, pca.aligned_ptr, 0, 1, bin_sz*8);
     }
     else {
-        aligned_ptr = bin_ptr;
+        pca.aligned_ptr = bin_ptr;
     }
-    packet_sz = packet_get_length(type, (char*)aligned_ptr, bin_sz,
+    packet_sz = packet_get_length(type, (char*)pca.aligned_ptr, bin_sz,
                                   max_plen, trunc_len, &http_state);
     if (!(packet_sz > 0 && packet_sz <= bin_sz)) {
         if (packet_sz < 0) {
@@ -1168,14 +1236,15 @@ BIF_RETTYPE decode_packet_3(BIF_ALIST_3)
     }
     /* We got a whole packet */
 
-    body_ptr = (char*) aligned_ptr;
+    body_ptr = (char*) pca.aligned_ptr;
     body_sz = packet_sz;
     packet_get_body(type, (const char**) &body_ptr, &body_sz);
 
-    ERTS_GET_REAL_BIN(BIF_ARG_2, orig, bin_offs, bin_bitoffs, bin_bitsz);
+    ERTS_GET_REAL_BIN(BIF_ARG_2, pca.orig, pca.bin_offs, pca.bin_bitoffs, bin_bitsz);
     pca.p = BIF_P;
     pca.res = THE_NON_VALUE;
-    code = packet_parse(type, (char*)aligned_ptr, packet_sz, &http_state,
+    pca.string_as_bin = (type == TCP_PB_HTTP_BIN || type == TCP_PB_HTTPH_BIN);
+    code = packet_parse(type, (char*)pca.aligned_ptr, packet_sz, &http_state,
 			&packet_callbacks_erl, &pca);
     if (code == 0) { /* no special packet parsing, make plain binary */
         ErlSubBin* body;
@@ -1186,9 +1255,9 @@ BIF_RETTYPE decode_packet_3(BIF_ALIST_3)
         body = (ErlSubBin *) hp;
         body->thing_word = HEADER_SUB_BIN;
         body->size = body_sz;
-        body->offs = bin_offs + (body_ptr - (char*)aligned_ptr);
-        body->orig = orig;
-        body->bitoffs = bin_bitoffs;
+        body->offs = pca.bin_offs + (body_ptr - (char*)pca.aligned_ptr);
+        body->orig = pca.orig;
+        body->bitoffs = pca.bin_bitoffs;
         body->bitsize = 0;
         body->is_writable = 0;
         hp += ERL_SUB_BIN_SIZE;
@@ -1210,9 +1279,9 @@ error:
     rest = (ErlSubBin *) hp;
     rest->thing_word = HEADER_SUB_BIN;
     rest->size = bin_sz - packet_sz;
-    rest->offs = bin_offs + packet_sz;
-    rest->orig = orig;
-    rest->bitoffs = bin_bitoffs;
+    rest->offs = pca.bin_offs + packet_sz;
+    rest->orig = pca.orig;
+    rest->bitoffs = pca.bin_bitoffs;
     rest->bitsize = bin_bitsz;   /* The extra bits go into the rest. */
     rest->is_writable = 0;
     hp += ERL_SUB_BIN_SIZE;
@@ -1221,8 +1290,8 @@ error:
     ASSERT(hp==hend); (void)hend;
 
 done:
-    if (aligned_ptr != bin_ptr) {
-        erts_free(ERTS_ALC_T_TMP, aligned_ptr);
+    if (pca.aligned_ptr != bin_ptr) {
+        erts_free(ERTS_ALC_T_TMP, pca.aligned_ptr);
     }
     BIF_RET(res);
 }

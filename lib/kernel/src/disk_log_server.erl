@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(disk_log_server).
 -behaviour(gen_server).
@@ -217,14 +218,13 @@ do_open({open, W, #arg{name = Name}=A}=Req, From, State) ->
 %% Spawning a process is a means to avoid deadlock when
 %% disk_log_servers mutually open disk_logs.
 
--spec(open_distr_rpc/3 :: ([_], _, _) -> no_return()). % XXX: underspecified
+-spec open_distr_rpc([node()], _, _) -> no_return(). % XXX: underspecified
 
 open_distr_rpc(Nodes, A, From) ->
     {AllReplies, BadNodes} = rpc:multicall(Nodes, ?MODULE, dist_open, [A]),
     {Ok, Bad} = cr(AllReplies, [], []),
     Old = find_old_nodes(Nodes, AllReplies, BadNodes),
-    NotOk = lists:map(fun(BadNode) -> {BadNode, {error, nodedown}} end, 
-		      BadNodes ++ Old),
+    NotOk = [{BadNode, {error, nodedown}} || BadNode <- BadNodes ++ Old],
     Reply = {Ok, Bad ++ NotOk},
     %% Send the reply to the waiting client:
     gen_server:reply(From, Reply),
@@ -313,11 +313,11 @@ erase_log(Name, Pid) ->
 
 do_accessible_logs() ->
     LocalSpec = {'$1','_',local},
-    Local0 = lists:map(fun hd/1, ets:match(?DISK_LOG_NAME_TABLE, LocalSpec)),
+    Local0 = [hd(L) || L <- ets:match(?DISK_LOG_NAME_TABLE, LocalSpec)],
     Local = lists:sort(Local0),
     Groups0 = ordsets:from_list(pg2:which_groups()),
     Groups = ordsets:to_list(ordsets:subtract(Groups0, Local)),
-    Dist = lists:filter(fun(L) -> dist_pids(L) =/= [] end, Groups),
+    Dist = [L || L <- Groups, dist_pids(L) =/= []],
     {Local, Dist}.
 
 get_local_pid(LogName) ->

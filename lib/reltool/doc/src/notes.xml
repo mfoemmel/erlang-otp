@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE chapter SYSTEM "chapter.dtd">
+
+<chapter>
+  <header>
+    <copyright>
+      <year>2009</year>
+      <year>2009</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+      </legalnotice>
+
+    <title>Reltool Release Notes</title>
+    <prepared>H&aring;kan Mattsson</prepared>
+    <docno></docno>
+    <date></date>
+    <rev>%VSN%</rev>
+  </header>
+  <p>This document describes the changes made to the Reltool system
+    from version to version. The intention of this document is to
+    list all incompatibilities as well as all enhancements and
+    bugfixes for every release of Reltool. Each release of Reltool
+    thus constitutes one section in this document. The title of each
+    section is the version number of Reltool.</p>
+
+  <section>
+
+    <title>Reltool 0.2</title>
+    
+    <section>
+      <title>Improvements and new features</title>
+      <p>This is the first (experimental) release of Reltool.</p>
+    </section>
+
+    <section>
+      <title>Known Bugs and Problems</title>
+      <list>
+        <item>
+          <p>
+            The application is experimental.</p>
+        </item>
+      </list>
+    </section>
+  </section>
+</chapter>

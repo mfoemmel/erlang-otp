@@ -1,20 +1,22 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 /*
  * This is a C version of the erl.exec Bourne shell script, including
  * additions required for Windows NT.
@@ -167,6 +169,7 @@ static char* strsave(char* string);
 static int is_one_of_strings(char *str, char *strs[]);
 static char *write_str(char *to, char *from);
 static void get_home(void);
+static void add_epmd_port(void);
 #ifdef __WIN32__
 static void get_start_erl_data(char *);
 static char* get_value(HKEY key, char* value_name, BOOL mustExit);
@@ -358,6 +361,8 @@ int main(int argc, char **argv)
     char *malloc_lib;
     int process_args = 1;
     int print_args_exit = 0;
+    int print_qouted_cmd_exit = 0;
+    erts_cpu_info_t *cpuinfo = NULL;
 
 #ifdef __WIN32__
     this_module_handle = module;
@@ -382,6 +387,21 @@ int main(int argc, char **argv)
 	goto skip_arg_massage;
     }   
     free_env_val(s);
+#else
+    int reset_cerl_detached = 0;
+
+    s = get_env("CERL_DETACHED_PROG");
+    if (s && strcmp(s, "") != 0) {
+	emu = s;
+	start_detached = 1;
+	reset_cerl_detached = 1;
+	ensure_EargsSz(argc + 1);
+	memcpy((void *) Eargsp, (void *) argv, argc * sizeof(char *));
+	Eargsp[argc] = emu;
+	Eargsp[argc] = NULL;
+	goto skip_arg_massage;
+    }
+    free_env_val(s);
 #endif
 
     initial_argv_massage(&argc, &argv); /* Merge with env; expand -args_file */
@@ -400,10 +420,10 @@ int main(int argc, char **argv)
     /*
      * Construct the path of the executable.
      */
-
+    cpuinfo = erts_cpu_info_create();
     /* '-smp auto' is default */ 
 #ifdef ERTS_HAVE_SMP_EMU
-    if (erts_no_of_cpus() > 1)
+    if (erts_get_cpu_configured(cpuinfo) > 1)
 	emu_type |= EMU_TYPE_SMP;
 #endif
 
@@ -437,7 +457,7 @@ int main(int argc, char **argv)
 		smp_auto:
 		    emu_type_passed |= EMU_TYPE_SMP;
 #ifdef ERTS_HAVE_SMP_EMU
-		    if (erts_no_of_cpus() > 1)
+		    if (erts_get_cpu_configured(cpuinfo) > 1)
 			emu_type |= EMU_TYPE_SMP;
 		    else
 #endif
@@ -494,6 +514,9 @@ int main(int argc, char **argv)
 	i++;
     }
 
+    erts_cpu_info_destroy(cpuinfo);
+    cpuinfo = NULL;
+
     if ((emu_type & EMU_TYPE_HYBRID) && (emu_type & EMU_TYPE_SMP)) {
 	/*
 	 * We have a conflict. Only using explicitly passed arguments
@@ -547,6 +570,9 @@ int main(int argc, char **argv)
 
     get_home();
     add_args("-home", home, NULL);
+
+    add_epmd_port();
+
     while (i < argc) {
 	if (!process_args) {	/* Copy arguments after '-extra' */
 	    add_arg(argv[i]);
@@ -623,6 +649,8 @@ int main(int argc, char **argv)
 			verbose = 1;
 		    } else if (strcmp(argv[i], "-emu_args_exit") == 0) {
 			print_args_exit = 1;
+		    } else if (strcmp(argv[i], "-emu_qouted_cmd_exit") == 0) {
+			print_qouted_cmd_exit = 1;
 		    } else if (strcmp(argv[i], "-env") == 0) { /* -env VARNAME VARVALUE */
 			if (i+2 >= argc)
 			    usage("-env");
@@ -747,6 +775,7 @@ int main(int argc, char **argv)
 		  case 'i':
 		  case 'P':
 		  case 'S':
+		  case 's':
 		  case 'T':
 		  case 'R':
 		  case 'W':
@@ -866,6 +895,14 @@ int main(int argc, char **argv)
 	Eargsp[EargsCnt++] = argsp[i];
     Eargsp[EargsCnt] = NULL;
     
+    if (print_qouted_cmd_exit) {
+	printf("\"%s\" ", emu);
+	for (i = 1; i < EargsCnt; i++)
+	    printf("\"%s\" ", Eargsp[i]);
+	printf("\n");
+	exit(0);
+    }
+
     if (print_args_exit) {
 	for (i = 1; i < EargsCnt; i++)
 	    printf("%s ", Eargsp[i]);
@@ -910,10 +947,15 @@ int main(int argc, char **argv)
     }
 
 #else
+
+ skip_arg_massage:
     if (start_detached) {
 	int status = fork();
 	if (status != 0)	/* Parent */
 	    return 0;
+
+	if (reset_cerl_detached)
+	    putenv("CERL_DETACHED_PROG=");
 
 	/* Detach from controlling terminal */
 #ifdef HAVE_SETSID
@@ -982,7 +1024,7 @@ usage_aux(void)
 	  "[-args_file FILENAME] "
 	  "[+A THREADS] [+a SIZE] [+B[c|d|i]] [+c] [+h HEAP_SIZE] [+K BOOLEAN] "
 	  "[+l] [+M<SUBSWITCH> <ARGUMENT>] [+P MAX_PROCS] [+R COMPAT_REL] "
-	  "[+r] [+S NO_OF_SCHEDULERS] [+T LEVEL] [+V] [+v] [+W<i|w>] "
+	  "[+r] [+s SCHEDULER_OPTION] [+S NO_SCHEDULERS:NO_SCHEDULERS_ONLINE] [+T LEVEL] [+V] [+v] [+W<i|w>] "
 	  "[args ...]\n");
   exit(1);
 }
@@ -1374,6 +1416,13 @@ get_home(void)
 
 #endif
 
+static void add_epmd_port(void)
+{
+    char* port = get_env("ERL_EPMD_PORT");
+    if (port != NULL) {
+	add_args("-epmd_port", port, NULL);	
+    }
+}
 
 static char **build_args_from_env(char *env_var)
 {

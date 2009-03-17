@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 /* 
  * Module: run_erl.c
@@ -39,11 +40,15 @@
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
+#ifdef HAVE_WORKING_POSIX_OPENPT
+#define _XOPEN_SOURCE 600 
+#endif
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/select.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -856,7 +861,21 @@ static int create_fifo(char *name, int perm)
 static int open_pty_master(char **ptyslave)
 {
   int mfd;
-#ifdef HAVE_OPENPTY
+
+/* Use the posix_openpt if working, as this guarantees creation of the 
+   slave device properly. */
+#if defined(HAVE_WORKING_POSIX_OPENPT)
+  if ((mfd = posix_openpt(O_RDWR)) >= 0) {
+	  if ((*ptyslave = ptsname(mfd)) == NULL ||
+	      grantpt(mfd) < 0 ||
+	      unlockpt(mfd) < 0) {
+		  close(mfd);
+		  return -1;
+	  }
+	  return mfd;
+  }
+  return -1;
+#elif defined(HAVE_OPENPTY)
 #  ifdef PATH_MAX
 #    define SLAVE_SIZE PATH_MAX
 #  else
@@ -1191,12 +1210,17 @@ static int extract_ctrl_seq(char* buf, int len)
 {
     static const char prefix[] = "\033_";
     static const char suffix[] = "\033\\";
-
-    char* start = find_str(buf,len,prefix);
-
-    if (start) {
-	char* command = start + strlen(prefix);
-	char* end = find_str(command,(buf+len)-command,suffix);
+    char* bufend = buf + len;
+    char* start = buf;
+    char* command;
+    char* end;
+    
+    for (;;) {
+	start = find_str(start, bufend-start, prefix);
+	if (!start) break;
+	
+	command = start + strlen(prefix);
+	end = find_str(command, bufend-command, suffix);
 	if (end) {
 	    unsigned col, row;
 	    if (sscanf(command,"version=%u", &protocol_ver)==1) {
@@ -1209,18 +1233,19 @@ static int extract_ctrl_seq(char* buf, int len)
 		ERROR2(LOG_ERR, "Ignoring unknown ctrl command '%.*s'\n",
 		       (int)(end-command), command);
 	    }
-
+	  
 	    /* Remove ctrl sequence from buf */
 	    end += strlen(suffix);
-	    memmove(start, end, (buf+len)-end);
-	    len -= end - start;
+	    memmove(start, end, bufend-end);
+	    bufend -= end - start;
 	}
 	else {
 	    ERROR2(LOG_ERR, "Missing suffix in ctrl sequence '%.*s'\n",
-		    (int)((buf+len)-start), start);
+		   (int)(bufend-start), start);
+	    break;
 	}
     }
-    return len;
+    return bufend - buf;
 }
 
 static void set_window_size(unsigned col, unsigned row)

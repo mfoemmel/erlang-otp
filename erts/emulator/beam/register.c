@@ -1,20 +1,22 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 /*
  * Manage registered processes.
  */
@@ -315,7 +317,7 @@ erts_whereis_name(Process *c_p,
 		  Eterm name,
 		  Process** proc,
 		  ErtsProcLocks need_locks,
-		  int allow_proc_exiting,
+		  int flags,
 		  Port** port)
 {
     RegProc* rp = NULL;
@@ -374,16 +376,20 @@ erts_whereis_name(Process *c_p,
 				       need_locks);
 		    current_c_p_locks = c_p_locks;
 		}
-		if (allow_proc_exiting || is_proc_alive(rp->p))
+		if ((flags & ERTS_P2P_FLG_ALLOW_OTHER_X) || is_proc_alive(rp->p))
 		    *proc = rp->p;
 		else {
 		    if (need_locks)
 			erts_smp_proc_unlock(rp->p, need_locks);
 		    *proc = NULL;
 		}
+		if (*proc && (flags & ERTS_P2P_FLG_SMP_INC_REFC))
+		    erts_smp_proc_inc_refc(rp->p);
 	    }
 #else
-	    if (rp->p && (allow_proc_exiting || rp->p->status != P_EXITING))
+	    if (rp->p
+		&& ((flags & ERTS_P2P_FLG_ALLOW_OTHER_X)
+		    || rp->p->status != P_EXITING))
 		*proc = rp->p;
 	    else
 		*proc = NULL;
@@ -439,10 +445,10 @@ erts_whereis_process(Process *c_p,
 		     ErtsProcLocks c_p_locks,
 		     Eterm name,
 		     ErtsProcLocks need_locks,
-		     int allow_exiting)
+		     int flags)
 {
     Process *proc;
-    erts_whereis_name(c_p,c_p_locks,name,&proc,need_locks,allow_exiting,NULL);
+    erts_whereis_name(c_p, c_p_locks, name, &proc, need_locks, flags, NULL);
     return proc;
 }
 

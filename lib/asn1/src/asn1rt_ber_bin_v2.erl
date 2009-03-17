@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>2002-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1rt_ber_bin_v2).
  
@@ -160,27 +160,21 @@ encode_tlv_list([],Acc) ->
 
 
 decode(B,driver) ->
-    case catch port_control(asn1_driver_port,2,B) of
+    case catch control(?TLV_DECODE,B) of
 	Bin when binary(Bin) ->
 	    binary_to_term(Bin);
 	List when list(List) -> handle_error(List,B);
-	{'EXIT',{badarg,Reason}} ->
-	    asn1rt_driver_handler:load_driver(),
-	    receive
-		driver_ready ->
-		    case catch port_control(asn1_driver_port,2,B) of
-			Bin2 when binary(Bin2) -> binary_to_term(Bin2);
+	{'EXIT',{badarg,_Reason}} ->
+	    case asn1rt:load_driver() of
+		ok ->
+		    case control(?TLV_DECODE,B) of
+			Bin when binary(Bin) -> binary_to_term(Bin);
 			List when list(List) -> handle_error(List,B);
-			Error -> exit(Error)
+			Other -> Other
 		    end;
-		{error,Error} -> % error when loading driver
-		    %% the driver could not be loaded
-		    exit(Error);
-		Error={port_error,Reason} ->
-		    exit(Error)
-	    end;
-	{'EXIT',Reason} ->
-	    exit(Reason)
+		Err ->
+		    Err
+	    end
     end.
 
 
@@ -211,6 +205,9 @@ error_pos([B|Bs]) ->
     BS = 8 * length(Bs),
     B bsl BS + error_pos(Bs).
 
+control(Cmd, Data) ->
+    Port = asn1rt_driver_handler:client_port(),
+    erlang:port_control(Port, Cmd, Data).
 
 decode(Bin) when binary(Bin) ->
     decode_primitive(Bin);

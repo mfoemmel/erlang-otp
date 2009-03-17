@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(ets).
 
@@ -40,6 +41,29 @@
 	 repair_continuation/2]).
 
 -export([i/0, i/1, i/2, i/3]).
+
+%%------------------------------------------------------------------------------
+
+-type tab()        :: atom() | tid().
+
+-type ext_info()   :: 'md5sum' | 'object_count'.
+-type protection() :: 'private' | 'protected' | 'public'.
+-type type()       :: 'bag' | 'duplicate_bag' | 'ordered_set' | 'set'.
+
+-type table_info() :: {'name', atom()}
+		    | {'type', type()}
+		    | {'protection', protection()}
+		    | {'named_table', bool()}
+		    | {'keypos', non_neg_integer()}
+		    | {'size', non_neg_integer()}
+		    | {'extended_info', [ext_info()]}
+		    | {'version', {non_neg_integer(), non_neg_integer()}}.
+
+%% these ones are also defined in erl_bif_types
+-type match_pattern() :: atom() | tuple().
+-type match_specs()   :: [{match_pattern(), [_], [_]}].
+
+%%------------------------------------------------------------------------------
 
 %% The following functions used to be found in this module, but
 %% are now BIFs (i.e. implemented in C).
@@ -79,38 +103,44 @@
 %% update_counter/3
 %%
 
+-opaque comp_match_spec() :: any().  %% this one is REALLY opaque
 
-match_spec_run(List,CompiledMS) ->
-    lists:reverse(ets:match_spec_run_r(List,CompiledMS,[])).
+-spec match_spec_run([tuple()], comp_match_spec()) -> [term()].
 
-% $end_of_table is an allowed continuation in ets...
-repair_continuation('$end_of_table',_) ->
+match_spec_run(List, CompiledMS) ->
+    lists:reverse(ets:match_spec_run_r(List, CompiledMS, [])).
+
+-type continuation() :: '$end_of_table'
+                      | {tab(),integer(),integer(),binary(),list(),integer()}
+                      | {tab(),_,_,integer(),binary(),list(),integer(),integer()}.
+
+-spec repair_continuation(continuation(), match_specs()) -> continuation().
+
+%% $end_of_table is an allowed continuation in ets...
+repair_continuation('$end_of_table', _) ->
     '$end_of_table';
-% ordered_set
-repair_continuation(Untouched = {Table,Lastkey,EndCondition,N2,Bin,L2,N3,N4}, MS) when
-(is_atom(Table) or is_integer(Table)),
-is_integer(N2),
-is_binary(Bin),
-byte_size(Bin) =:= 0,
-is_list(L2),
-is_integer(N3),
-is_integer(N4) ->
+%% ordered_set
+repair_continuation(Untouched = {Table,Lastkey,EndCondition,N2,Bin,L2,N3,N4}, MS)
+  when %% (is_atom(Table) or is_integer(Table)),
+       is_integer(N2),
+       byte_size(Bin) =:= 0,
+       is_list(L2),
+       is_integer(N3),
+       is_integer(N4) ->
     case ets:is_compiled_ms(Bin) of
 	true ->
 	    Untouched;
 	false ->
 	    {Table,Lastkey,EndCondition,N2,ets:match_spec_compile(MS),L2,N3,N4}
     end;
-
-% set/bag/duplicate_bag
-repair_continuation(Untouched = {Table,N1,N2,Bin,L,N3}, MS) when
-(is_atom(Table) or is_integer(Table)),
-is_integer(N1),
-is_integer(N2),
-is_binary(Bin),
-byte_size(Bin) =:= 0,
-is_list(L),
-is_integer(N3) ->
+%% set/bag/duplicate_bag
+repair_continuation(Untouched = {Table,N1,N2,Bin,L,N3}, MS)
+  when %% (is_atom(Table) or is_integer(Table)),
+       is_integer(N1),
+       is_integer(N2),
+       byte_size(Bin) =:= 0,
+       is_list(L),
+       is_integer(N3) ->
     case ets:is_compiled_ms(Bin) of
 	true ->
 	    Untouched;
@@ -118,8 +148,10 @@ is_integer(N3) ->
 	    {Table,N1,N2,ets:match_spec_compile(MS),L,N3}
     end.
 
+-spec fun2ms(function()) -> match_specs().
+
 fun2ms(ShellFun) when is_function(ShellFun) ->
-    % Check that this is really a shell fun...
+    %% Check that this is really a shell fun...
     case erl_eval:fun_data(ShellFun) of
         {fun_data,ImportList,Clauses} ->
             case ms_transform:transform_from_shell(
@@ -140,6 +172,7 @@ fun2ms(ShellFun) when is_function(ShellFun) ->
                            shell]}})
     end.
 
+-spec foldl(fun((_, term()) -> term()), term(), tab()) -> term().
 
 foldl(F, Accu, T) ->
     ets:safe_fixtable(T, true),
@@ -147,7 +180,7 @@ foldl(F, Accu, T) ->
     try
         do_foldl(F, Accu, First, T)
     after
-        ets:safe_fixtable(T, false)
+	ets:safe_fixtable(T, false)
     end.
 
 do_foldl(F, Accu0, Key, T) ->
@@ -159,6 +192,8 @@ do_foldl(F, Accu0, Key, T) ->
 		     lists:foldl(F, Accu0, ets:lookup(T, Key)),
 		     ets:next(T, Key), T)
     end.
+
+-spec foldr(fun((_, term()) -> term()), term(), tab()) -> term().
 
 foldr(F, Accu, T) ->
     ets:safe_fixtable(T, true),
@@ -179,10 +214,12 @@ do_foldr(F, Accu0, Key, T) ->
 		     ets:prev(T, Key), T)
     end.
 
+-spec from_dets(tab(), dets:tab_name()) -> 'true'.
+
 from_dets(EtsTable, DetsTable) ->
     case (catch dets:to_ets(DetsTable, EtsTable)) of
 	{error, Reason} ->
-	    erlang:error(Reason,[EtsTable,DetsTable]);
+	    erlang:error(Reason, [EtsTable,DetsTable]);
 	{'EXIT', {Reason1, _Stack1}} ->
 	    erlang:error(Reason1,[EtsTable,DetsTable]);
 	{'EXIT', EReason} ->
@@ -193,10 +230,12 @@ from_dets(EtsTable, DetsTable) ->
 	    erlang:error(Unexpected,[EtsTable,DetsTable])
     end.
 
+-spec to_dets(tab(), dets:tab_name()) -> tab().
+
 to_dets(EtsTable, DetsTable) ->
     case (catch dets:from_ets(DetsTable, EtsTable)) of
 	{error, Reason} ->
-	    erlang:error(Reason,[EtsTable,DetsTable]);
+	    erlang:error(Reason, [EtsTable,DetsTable]);
 	{'EXIT', {Reason1, _Stack1}} ->
 	    erlang:error(Reason1,[EtsTable,DetsTable]);
 	{'EXIT', EReason} ->
@@ -207,13 +246,18 @@ to_dets(EtsTable, DetsTable) ->
 	    erlang:error(Unexpected,[EtsTable,DetsTable])
     end.
 
-test_ms(Term,MS) ->
-    case erlang:match_spec_test(Term,MS,table) of
+-spec test_ms(tuple(), match_specs()) ->
+	{'ok', term()} | {'error', [{'warning'|'error', string()}]}.
+
+test_ms(Term, MS) ->
+    case erlang:match_spec_test(Term, MS, table) of
 	{ok, Result, _Flags, _Messages} ->
-	    {ok, Result}; 
-	{error, Errors} ->
-	    {error, Errors}
+	    {ok, Result};
+	{error, _Errors} = Error ->
+	    Error
     end.
+
+-spec init_table(tab(), fun(('read' | 'close') -> term())) -> 'true'.
 
 init_table(Table, Fun) ->
     ets:delete_all_objects(Table),
@@ -221,46 +265,52 @@ init_table(Table, Fun) ->
 
 init_table_continue(_Table, end_of_input) ->
     true;
-init_table_continue(Table, {List,Fun}) when is_list(List), is_function(Fun) ->
+init_table_continue(Table, {List, Fun}) when is_list(List), is_function(Fun) ->
     case (catch init_table_sub(Table, List)) of
 	{'EXIT', Reason} ->
 	    (catch Fun(close)),
 	    exit(Reason);
 	true ->
-	    init_table_continue(Table,Fun(read))
+	    init_table_continue(Table, Fun(read))
     end;
 init_table_continue(_Table, Error) ->
     exit(Error).
 
-init_table_sub(_Table,[]) ->
+init_table_sub(_Table, []) ->
     true;
 init_table_sub(Table, [H|T]) ->
-    ets:insert(Table,H),
-    init_table_sub(Table,T).
+    ets:insert(Table, H),
+    init_table_sub(Table, T).
+
+-spec match_delete(tab(), match_pattern()) -> 'true'.
 
 match_delete(Table, Pattern) ->
-    ets:select_delete(Table,[{Pattern,[],[true]}]),
+    ets:select_delete(Table, [{Pattern,[],[true]}]),
     true.
 
-%% Produce a list of {Key,Value} tuples from a table
+%% Produce a list of tuples from a table
+
+-spec tab2list(tab()) -> [tuple()].
 
 tab2list(T) ->
     ets:match_object(T, '_').
 
-filter(Tn, F, A) when is_atom(Tn) ; is_integer(Tn) ->
-    do_filter(Tn,ets:first(Tn),F,A, []).
+-spec filter(tab(), function(), [term()]) -> [term()].
 
-do_filter(_Tab, '$end_of_table', _,_, Ack) -> 
+filter(Tn, F, A) when is_atom(Tn) ; is_integer(Tn) ->
+    do_filter(Tn, ets:first(Tn), F, A, []).
+
+do_filter(_Tab, '$end_of_table', _, _, Ack) -> 
     Ack;
 do_filter(Tab, Key, F, A, Ack) ->
-    case apply(F, [ets:lookup(Tab, Key) | A]) of
+    case apply(F, [ets:lookup(Tab, Key)|A]) of
 	false ->
-	    do_filter(Tab, ets:next(Tab, Key), F,A,Ack);
+	    do_filter(Tab, ets:next(Tab, Key), F, A, Ack);
 	true ->
             Ack2 = ets:lookup(Tab, Key) ++ Ack,
-	    do_filter(Tab, ets:next(Tab, Key), F,A,Ack2);
+	    do_filter(Tab, ets:next(Tab, Key), F, A, Ack2);
 	{true, Value} ->
-	    do_filter(Tab, ets:next(Tab, Key), F,A,[Value | Ack])
+	    do_filter(Tab, ets:next(Tab, Key), F, A, [Value|Ack])
     end.
 
     
@@ -272,21 +322,29 @@ do_filter(Tab, Key, F, A, Ack) ->
 
 -define(MAJOR_F2T_VERSION,1).
 -define(MINOR_F2T_VERSION,0).
+
 -record(filetab_options,
 	{
-	  object_count = false,
-	  md5sum = false
+	  object_count = false :: bool(),
+	  md5sum       = false :: bool()      
 	 }).
 
-tab2file(Tab,File) ->
-    tab2file(Tab,File,[]).
+-type fname()      :: string() | atom().
+-type t2f_option() :: {'extended_info', [ext_info()]}.
+
+-spec tab2file(tab(), fname()) -> 'ok' | {'error', term()}.
+
+tab2file(Tab, File) ->
+    tab2file(Tab, File, []).
+
+-spec tab2file(tab(), fname(), [t2f_option()]) -> 'ok' | {'error', term()}.
 
 tab2file(Tab, File, Options) ->
     try
 	{ok, FtOptions} = parse_ft_options(Options),
 	file:delete(File),
 	case file:read_file_info(File) of
-	    {error,enoent} -> ok;
+	    {error, enoent} -> ok;
 	    _ -> throw(eaccess)
 	end,
 	Name = make_ref(),
@@ -299,7 +357,7 @@ tab2file(Tab, File, Options) ->
 	try
 	    Info0 = case ets:info(Tab) of
 		       undefined ->
-			   %%erlang:error(badarg,[Tab, File, Options]);
+			   %% erlang:error(badarg, [Tab, File, Options]);
 			   throw(badtab);
 		       I ->
 			   I
@@ -331,7 +389,7 @@ tab2file(Tab, File, Options) ->
 				  NewState = LogFun(InitState,Info),
 				  dump_file(
 				      ets:select(Tab,[{'_',[],['$_']}],100),
-				      LogFun, NewState,0)
+				      LogFun, NewState, 0)
 			      after
 				  (catch ets:safe_fixtable(Tab,false))
 			      end,
@@ -378,10 +436,10 @@ tab2file(Tab, File, Options) ->
 
 dump_file('$end_of_table', _LogFun, State, Num) ->
     {State,Num};
-dump_file({Terms,Context},LogFun,State,Num) ->
+dump_file({Terms, Context}, LogFun, State, Num) ->
     Count = length(Terms),
-    NewState = LogFun(State,Terms),
-    dump_file(ets:select(Context),LogFun,NewState,Num+Count).
+    NewState = LogFun(State, Terms),
+    dump_file(ets:select(Context), LogFun, NewState, Num + Count).
 
 ft_options_to_list(#filetab_options{md5sum = MD5, object_count = PS}) ->
     case PS of
@@ -396,16 +454,14 @@ ft_options_to_list(#filetab_options{md5sum = MD5, object_count = PS}) ->
 	    _ ->
 		[]
 	end.
-    
-	
 
-md5terms(State,[]) ->
-    {State,[]};
-md5terms(State,[H | T]) ->
+md5terms(State, []) ->
+    {State, []};
+md5terms(State, [H|T]) ->
     B = term_to_binary(H),
-    NewState = erlang:md5_update(State,B),
-    {FinState, TL} = md5terms(NewState,T),
-    {FinState,[B | TL]}.
+    NewState = erlang:md5_update(State, B),
+    {FinState, TL} = md5terms(NewState, T),
+    {FinState, [B|TL]}.
 
 parse_ft_options(Options) when is_list(Options) ->
     {Opt,Rest} = case (catch lists:keytake(extended_info,1,Options)) of
@@ -416,12 +472,12 @@ parse_ft_options(Options) when is_list(Options) ->
 		 end,
     case Rest of
 	[] ->
-	    parse_ft_info_options(#filetab_options{},Opt);
+	    parse_ft_info_options(#filetab_options{}, Opt);
 	Other ->
 	    throw({unknown_option, Other})
     end;
 parse_ft_options(Malformed) ->
-    throw({malformed_option,Malformed}).
+    throw({malformed_option, Malformed}).
 
 parse_ft_info_options(FtOpt,[]) ->
     {ok,FtOpt};
@@ -434,17 +490,22 @@ parse_ft_info_options(_,[Unexpected | _]) ->
 parse_ft_info_options(_,Malformed) ->
     throw({malformed_option,Malformed}).
 		     
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Read a dumped file from disk and create a corresponding table
 %% Opts := [Opt]
 %% Opt := {verify,bool()}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-type f2t_option() :: {'verify', bool()}.
+
+-spec file2tab(fname()) -> {'ok', tab()} | {'error', term()}.
 
 file2tab(File) ->
-    file2tab(File,[]).
+    file2tab(File, []).
 
-file2tab(File,Opts) ->
+-spec file2tab(fname(), [f2t_option()]) -> {'ok', tab()} | {'error', term()}.
+
+file2tab(File, Opts) ->
     try
 	{ok,Verify} = parse_f2t_opts(Opts,false),
 	Name = make_ref(),
@@ -474,7 +535,7 @@ file2tab(File,Opts) ->
 		true ->
 		    ok
 	    end,
-	    {ok,Tab, HeadCount} = create_tab(FullHeader),
+	    {ok, Tab, HeadCount} = create_tab(FullHeader),
 	    StrippedOptions = 				   
 	        case Verify of
 		    true ->
@@ -620,7 +681,6 @@ parse_f2t_opts([Unexpected|_],_) ->
     throw({unknown_option,Unexpected});
 parse_f2t_opts(Malformed,_) ->
     throw({malformed_option,Malformed}).
-    
 			   
 count_mandatory([]) ->
     0;
@@ -795,8 +855,7 @@ load_table(ReadFun, State, Tab) ->
 	    ets:insert(Tab,List),
 	    load_table(ReadFun,NewState,Tab)
     end.
-	    
-		   
+
 create_tab(I) ->
     {value, {name, Name}} = lists:keysearch(name, 1, I),
     {value, {type, Type}} = lists:keysearch(type, 1, I),
@@ -811,16 +870,18 @@ create_tab(I) ->
 	_:_ ->
 	    throw(cannot_create_table)
     end.
-	    
 
 named_table(true) -> [named_table];
 named_table(false) -> [].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% tabfile_info/1 reads the head information in an ets table
-%% dumpet to disk by means of file2tab and returns a list of 
-%% the relevant table information
+%% tabfile_info/1 reads the head information in an ets table dumped to
+%% disk by means of file2tab and returns a list of the relevant table
+%% information
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec tabfile_info(fname()) -> {'ok', [table_info()]} | {'error', term()}.
+
 tabfile_info(File) when is_list(File) ; is_atom(File) ->
     try
 	Name = make_ref(),
@@ -856,8 +917,20 @@ tabfile_info(File) when is_list(File) ; is_atom(File) ->
 	    {error,ExReason}
     end.
 
+-type qlc__query_handle() :: term().  %% XXX: belongs in 'qlc'
+
+-type num_objects()  :: 'default' | pos_integer().
+-type trav_method()  :: 'first_next' | 'last_prev'
+                      | 'select' | {'select', match_specs()}.
+-type table_option() :: {'n_objects', num_objects()}
+                      | {'traverse', trav_method()}.
+
+-spec table(tab()) -> qlc__query_handle().
+
 table(Tab) ->
     table(Tab, []).
+
+-spec table(tab(), table_option() | [table_option()]) -> qlc__query_handle().
 
 table(Tab, Opts) ->
     case options(Opts, [traverse, n_objects]) of
@@ -877,6 +950,10 @@ table(Tab, Opts) ->
             PreFun = fun(_) -> ets:safe_fixtable(Tab, true) end,
             PostFun = fun() -> ets:safe_fixtable(Tab, false) end,
             InfoFun = fun(Tag) -> table_info(Tab, Tag) end,
+            KeyEquality = case ets:info(Tab, type) of
+                              ordered_set -> '==';
+                              _ -> '=:='
+                          end,
             LookupFun = 
                 case Traverse of 
                     {select, _MS} ->
@@ -908,6 +985,7 @@ table(Tab, Opts) ->
                 end,
             qlc:table(TF, [{pre_fun, PreFun}, {post_fun, PostFun}, 
                            {info_fun, InfoFun}, {format_fun, FormatFun},
+                           {key_equality, KeyEquality},
                            {lookup_fun, LookupFun}] ++ QlcOptions)
     end.
          
@@ -984,6 +1062,8 @@ listify(T) ->
 %% End of table/2.
 
 %% Print info about all tabs on the tty
+-spec i() -> 'ok'.
+
 i() ->
     hform('id', 'name', 'type', 'size', 'mem', 'owner'),
     io:format(" -------------------------------------"
@@ -1040,11 +1120,19 @@ pad_right(String, Len) ->
 to_string(X) ->
     lists:flatten(io_lib:format("~p", [X])).
 
-%% view a specific table 
+%% view a specific table
+-spec i(tab()) -> 'ok'.
+
 i(Tab) ->
     i(Tab, 40).
+
+-spec i(tab(), pos_integer()) -> 'ok'.
+
 i(Tab, Height) ->
     i(Tab, Height, 80).
+
+-spec i(tab(), pos_integer(), pos_integer()) -> 'ok'.
+
 i(Tab, Height, Width) ->
     First = ets:first(Tab),
     display_items(Height, Width, Tab, First, 1, 1).
@@ -1066,13 +1154,14 @@ choice(Height, Width, P, Mode, Tab, Key, Turn, Opos) ->
 	    {re, Re} = Mode,
 	    re_search(Height, Width, Tab, Key, Re, 1, Opos);
 	"q\n" ->
-	    quit;
+	    ok;
 	"k\n" ->
-	    ets:delete(Tab);
+	    ets:delete(Tab),
+	    ok;
 	[$p|Digs]  ->
 	    catch case catch list_to_integer(nonl(Digs)) of
 		      {'EXIT', _} ->
-			  io:format("Bad digits \n", []);
+			  io:put_chars("Bad digits\n");
 		      Number when Mode =:= normal ->
 			  print_number(Tab, ets:first(Tab), Number);
 		      Number when Mode =:= eot ->
@@ -1083,7 +1172,13 @@ choice(Height, Width, P, Mode, Tab, Key, Turn, Opos) ->
 		  end,
 	    choice(Height, Width, P, Mode, Tab, Key, Turn, Opos);
 	[$/|Regexp]   -> %% from regexp
-	    re_search(Height, Width, Tab, ets:first(Tab), nonl(Regexp), 1, 1);
+	    case re:compile(nonl(Regexp)) of
+		{ok,Re} ->
+		    re_search(Height, Width, Tab, ets:first(Tab), Re, 1, 1);
+		{error,{ErrorString,_Pos}} ->
+		    io:format("~s\n", [ErrorString]),
+		    choice(Height, Width, P, Mode, Tab, Key, Turn, Opos)
+	    end;
 	_  ->
 	    choice(Height, Width, P, Mode, Tab, Key, Turn, Opos)
     end.
@@ -1134,10 +1229,8 @@ do_display_item(_Height, Width, I, Opos)  ->
 re_search(Height, Width, Tab, '$end_of_table', Re, Turn, Opos) ->
     P = 'EOT  (q)uit (p)Digits (k)ill /Regexp -->',
     choice(Height, Width, P, {re, Re}, Tab, '$end_of_table', Turn, Opos);
-
 re_search(Height, Width, Tab, Key, Re, Turn, Opos) when Turn < Height ->
     re_display(Height, Width, Tab, Key, ets:lookup(Tab, Key), Re, Turn, Opos);
-
 re_search(Height, Width, Tab, Key, Re, Turn, Opos)  ->
     P = '(c)ontinue (q)uit (p)Digits (k)ill /Regexp -->',
     choice(Height, Width, P, {re, Re}, Tab, Key, Turn, Opos).
@@ -1146,11 +1239,11 @@ re_display(Height, Width, Tab, Key, [], Re, Turn, Opos) ->
     re_search(Height, Width, Tab, ets:next(Tab, Key), Re, Turn, Opos);
 re_display(Height, Width, Tab, Key, [H|T], Re, Turn, Opos) ->
     Str = to_string(H),
-    case regexp:match(Str, Re) of
-	{match,_,_} ->
+    case re:run(Str, Re, [{capture,none}]) of
+	match ->
 	    do_display_item(Height, Width, H, Opos),
 	    re_display(Height, Width, Tab, Key, T, Re, Turn+1, Opos+1);
-	_ ->
+	nomatch ->
 	    re_display(Height, Width, Tab, Key, T, Re, Turn, Opos)
     end.
 
@@ -1168,10 +1261,9 @@ print_re_num(Tab, Key, Num, Re) ->
 
 re_match([], _) -> [];
 re_match([H|T], Re) ->
-    case regexp:match(to_string(H), Re) of
-	{match,_,_} -> 
+    case re:run(to_string(H), Re, [{capture,none}]) of
+	match -> 
 	    [H|re_match(T,Re)];
-	_ ->
+	nomatch ->
 	    re_match(T, Re)
     end.
-

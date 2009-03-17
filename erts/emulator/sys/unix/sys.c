@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifdef HAVE_CONFIG_H
@@ -290,6 +291,7 @@ erts_check_io_debug(void)
     return (*io_func.check_io_debug)();
 }
 
+
 static void
 init_check_io(void)
 {
@@ -375,6 +377,11 @@ void sys_tty_reset(void)
   }
 }
 
+#ifdef __tile__
+/* Direct malloc to spread memory around the caches of multiple tiles. */
+int malloc_use_hash = 1;
+#endif
+
 #ifdef USE_THREADS
 static void *ethr_internal_alloc(size_t size)
 {
@@ -399,6 +406,15 @@ static void ethr_internal_free(void *ptr)
 
 static sigset_t thr_create_sigmask;
 
+#endif /* #ifdef ERTS_THR_HAVE_SIG_FUNCS */
+
+typedef struct {
+#ifdef ERTS_THR_HAVE_SIG_FUNCS
+    sigset_t saved_sigmask;
+#endif
+    int unbind_child;
+} erts_thr_create_data_t;
+
 /*
  * thr_create_prepare() is called in parent thread before thread creation.
  * Returned value is passed as argument to thr_create_cleanup().
@@ -406,37 +422,58 @@ static sigset_t thr_create_sigmask;
 static void *
 thr_create_prepare(void)
 {
-    sigset_t *saved_sigmask;
-    saved_sigmask = (sigset_t *) erts_alloc(ERTS_ALC_T_TMP, sizeof(sigset_t));
-    erts_thr_sigmask(SIG_BLOCK, &thr_create_sigmask, saved_sigmask);
-    return (void *) saved_sigmask;
+    erts_thr_create_data_t *tcdp;
+    ErtsSchedulerData *esdp;
+
+    tcdp = erts_alloc(ERTS_ALC_T_TMP, sizeof(erts_thr_create_data_t));
+
+#ifdef ERTS_THR_HAVE_SIG_FUNCS
+    erts_thr_sigmask(SIG_BLOCK, &thr_create_sigmask, &tcdp->saved_sigmask);
+#endif
+    esdp = erts_get_scheduler_data();
+    tcdp->unbind_child = esdp && erts_is_scheduler_bound(esdp);
+
+    return (void *) tcdp;
 }
 
 
 /* thr_create_cleanup() is called in parent thread after thread creation. */
 static void
-thr_create_cleanup(void *saved_sigmask)
+thr_create_cleanup(void *vtcdp)
 {
+    erts_thr_create_data_t *tcdp = (erts_thr_create_data_t *) vtcdp;
+
+#ifdef ERTS_THR_HAVE_SIG_FUNCS
     /* Restore signalmask... */
-    erts_thr_sigmask(SIG_SETMASK, (sigset_t *) saved_sigmask, NULL);
-    erts_free(ERTS_ALC_T_TMP, saved_sigmask);
+    erts_thr_sigmask(SIG_SETMASK, &tcdp->saved_sigmask, NULL);
+#endif
+
+    erts_free(ERTS_ALC_T_TMP, tcdp);
 }
 
-#endif /* #ifdef ERTS_THR_HAVE_SIG_FUNCS */
-#endif /* #ifdef USE_THREADS */
+static void
+thr_create_prepare_child(void *vtcdp)
+{
+    erts_thr_create_data_t *tcdp = (erts_thr_create_data_t *) vtcdp;
 
 #ifndef NO_FPE_SIGNALS
-static void
-thr_create_prepare_child(void *unused)
-{
     /*
      * We do not want fp exeptions in other threads than the
      * scheduler threads. We enable fpe explicitly in the scheduler
      * threads after this.
      */
     erts_thread_disable_fpe();
-}
 #endif
+
+    if (tcdp->unbind_child) {
+	erts_smp_rwmtx_rlock(&erts_cpu_bind_rwmtx);
+	erts_unbind_from_cpu(erts_cpuinfo);
+	erts_smp_rwmtx_runlock(&erts_cpu_bind_rwmtx);
+    }
+    
+}
+
+#endif /* #ifdef USE_THREADS */
 
 void
 erts_sys_pre_init(void)
@@ -450,15 +487,13 @@ erts_sys_pre_init(void)
     eid.realloc = ethr_internal_realloc;
     eid.free = ethr_internal_free;
 
-#ifndef NO_FPE_SIGNALS
     eid.thread_create_child_func = thr_create_prepare_child;
-#endif
-#ifdef ERTS_THR_HAVE_SIG_FUNCS
     /* Before creation in parent */
     eid.thread_create_prepare_func = thr_create_prepare;
     /* After creation in parent */
     eid.thread_create_parent_func = thr_create_cleanup,
 
+#ifdef ERTS_THR_HAVE_SIG_FUNCS
     sigemptyset(&thr_create_sigmask);
     sigaddset(&thr_create_sigmask, SIGINT);   /* block interrupt */
     sigaddset(&thr_create_sigmask, SIGCHLD);  /* block child signals */
@@ -496,7 +531,7 @@ erts_sys_pre_init(void)
 #if !CHLDWTHR && !defined(ERTS_SMP)
     children_died = 0;
 #endif
-#endif
+#endif /* USE_THREADS */
     erts_smp_atomic_init(&sys_misc_mem_sz, 0);
     erts_smp_rwmtx_init(&environ_rwmtx, "environ");
 }
@@ -1005,7 +1040,7 @@ static void ready_input(ErlDrvData, ErlDrvEvent);
 static void ready_output(ErlDrvData, ErlDrvEvent);
 static void output(ErlDrvData, char*, int);
 static void outputv(ErlDrvData, ErlIOVec*);
-
+static void stop_select(ErlDrvEvent, void*);
 
 struct erl_drv_entry spawn_driver_entry = {
     spawn_init,
@@ -1027,7 +1062,9 @@ struct erl_drv_entry spawn_driver_entry = {
     ERL_DRV_EXTENDED_MARKER,
     ERL_DRV_EXTENDED_MAJOR_VERSION,
     ERL_DRV_EXTENDED_MINOR_VERSION,
-    ERL_DRV_FLAG_USE_PORT_LOCKING
+    ERL_DRV_FLAG_USE_PORT_LOCKING,
+    NULL, NULL,
+    stop_select
 };
 struct erl_drv_entry fd_driver_entry = {
     NULL,
@@ -1042,7 +1079,17 @@ struct erl_drv_entry fd_driver_entry = {
     fd_control,
     NULL,
     outputv,
-    NULL
+    NULL, /* ready_async */
+    NULL, /* flush */
+    NULL, /* call */
+    NULL, /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0, /* ERL_DRV_FLAGs */
+    NULL, /* handle2 */
+    NULL, /* process_exit */
+    stop_select
 };
 struct erl_drv_entry vanilla_driver_entry = {
     NULL,
@@ -1057,7 +1104,17 @@ struct erl_drv_entry vanilla_driver_entry = {
     NULL,
     NULL,
     NULL,
-    NULL
+    NULL,
+    NULL, /* flush */
+    NULL, /* call */
+    NULL, /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0, /* ERL_DRV_FLAGs */
+    NULL, /* handle2 */
+    NULL, /* process_exit */
+    stop_select
 };
 
 #if defined(USE_THREADS) && !defined(ERTS_SMP)
@@ -1142,7 +1199,7 @@ static int set_driver_data(int port_num,
 	} else {		/* DO_READ only */
 	    driver_data[ifd].ofd = -1;
 	}
-	(void) driver_select(port_num, ifd, DO_READ, 1);
+	(void) driver_select(port_num, ifd, (ERL_DRV_READ|ERL_DRV_USE), 1);
 	return(ifd);
     } else {			/* DO_WRITE only */
 	driver_data[ofd].packet_bytes = packet_bytes;
@@ -1303,6 +1360,9 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
     int saved_errno;
     long res;
     char *cmd_line;
+#ifndef QNX
+    int unbind;
+#endif
 #if !DISABLE_VFORK
     int no_vfork;
     size_t no_vfork_sz = sizeof(no_vfork);
@@ -1377,12 +1437,15 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
     } 
 
 #ifndef QNX
-
     /* Block child from SIGINT and SIGUSR1. Must be before fork()
        to be safe. */
     block_signals();
 
     CHLD_STAT_LOCK;
+
+    unbind = erts_is_scheduler_bound(NULL);
+    if (unbind)
+	erts_smp_rwmtx_rlock(&erts_cpu_bind_rwmtx);
 
 #if !DISABLE_VFORK
     /* See fork/vfork discussion before this function. */
@@ -1394,6 +1457,9 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
 	if (pid == 0) {
 	    /* The child! Setup child... */
+
+	    if (unbind && erts_unbind_from_cpu(erts_cpuinfo) != 0)
+		goto child_error;
 
 	    /* OBSERVE!
 	     * Keep child setup after vfork() (implemented below and in
@@ -1480,9 +1546,12 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	cs_argv[CS_ARGV_PROGNAME_IX] = child_setup_prog;
 	cs_argv[CS_ARGV_WD_IX] = opts->wd ? opts->wd : ".";
 	cs_argv[CS_ARGV_CMD_IX] = cmd_line; /* Command */
+	cs_argv[CS_ARGV_UNBIND_IX]
+	    = (unbind ? erts_get_unbind_from_cpu_str(erts_cpuinfo) : "false");
 	cs_argv[CS_ARGV_FD_CR_IX] = fd_close_range;
 	for (i = 0; i < CS_ARGV_NO_OF_DUP2_OPS; i++)
 	    cs_argv[CS_ARGV_DUP2_OP_IX(i)] = &dup2_op[i][0];
+
 	cs_argv[CS_ARGV_NO_OF_ARGS] = NULL;
 
 	DEBUGF(("Using vfork\n"));
@@ -1503,6 +1572,9 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	}
     }
 #endif
+
+    if (unbind)
+	erts_smp_rwmtx_runlock(&erts_cpu_bind_rwmtx);
 
     if (pid == -1) {
         saved_errno = errno;
@@ -1880,9 +1952,10 @@ static void stop(ErlDrvData fd)
 
     /* SMP note: Close has to be last thing done (open file descriptors work
        as locks on driver_data[] entries) */
-    close((int)(long)fd);
-    if (ofd >= 0)
-	(void) close(ofd);
+    driver_select(prt, (int)(long)fd, ERL_DRV_USE, 0);  /* close(fd); */
+    if (ofd >= 0) {
+	driver_select(prt, (int)(long)ofd, ERL_DRV_USE, 0);  /* close(ofd); */
+    }
 }
 
 static void outputv(ErlDrvData e, ErlIOVec* ev)
@@ -1927,7 +2000,7 @@ static void outputv(ErlDrvData e, ErlIOVec* ev)
 	    n = 0;
 	}
 	driver_enqv(ix, ev, n);  /* n is the skip value */
-	driver_select(ix, ofd, DO_WRITE, 1);
+	driver_select(ix, ofd, ERL_DRV_WRITE|ERL_DRV_USE, 1);
     }
     /* return 0;*/
 }
@@ -1982,7 +2055,7 @@ static void output(ErlDrvData e, char* buf, int len)
 	    n -= pb;
 	    driver_enq(ix, buf+n, len-n);
 	}
-	driver_select(ix, ofd, DO_WRITE, 1);
+	driver_select(ix, ofd, ERL_DRV_WRITE|ERL_DRV_USE, 1);
     }
     return; /* 0; */
 }
@@ -1993,7 +2066,7 @@ static int port_inp_failure(int port_num, int ready_fd, int res)
     int err = errno;
 
     ASSERT(res <= 0);
-    (void) driver_select(port_num, ready_fd, DO_READ|DO_WRITE, 0); 
+    (void) driver_select(port_num, ready_fd, ERL_DRV_READ|ERL_DRV_WRITE, 0); 
     clear_fd_data(ready_fd);
     if (res == 0) {
 	if (driver_data[ready_fd].report_exit) {
@@ -2167,7 +2240,7 @@ static void ready_output(ErlDrvData e, ErlDrvEvent ready_fd)
     
 
     if ((iv = (struct iovec*) driver_peekq(ix, &vsize)) == NULL) {
-	driver_select(ix, ready_fd, DO_WRITE, 0);
+	driver_select(ix, ready_fd, ERL_DRV_WRITE, 0);
 	return; /* 0; */
     }
     vsize = vsize > MAX_VSIZE ? MAX_VSIZE : vsize;
@@ -2180,12 +2253,17 @@ static void ready_output(ErlDrvData e, ErlDrvEvent ready_fd)
 	    return; /* 0; */
 	else {
 	    int res = errno;
-	    driver_select(ix, ready_fd, DO_WRITE, 0);
+	    driver_select(ix, ready_fd, ERL_DRV_WRITE, 0);
 	    driver_failure_posix(ix, res);
 	    return; /* -1; */
 	}
     }
     return; /* 0; */
+}
+
+static void stop_select(ErlDrvEvent fd, void* _)
+{
+    close((int)fd);
 }
 
 /*
@@ -2238,7 +2316,7 @@ static ErlDrvData async_drv_start(ErlDrvPort port_num,
     DEBUGF(("async_drv_start: %d\r\n", port_num));
 
     SET_NONBLOCKING(async_fd[0]);
-    driver_select(port_num, async_fd[0], DO_READ, 1);
+    driver_select(port_num, async_fd[0], ERL_DRV_READ, 1);
 
     if (init_async(async_fd[1]) < 0)
 	return ERL_DRV_ERROR_GENERAL;
@@ -2253,7 +2331,7 @@ static void async_drv_stop(ErlDrvData e)
 
     exit_async();
 
-    driver_select(port_num, async_fd[0], DO_READ, 0);
+    driver_select(port_num, async_fd[0], ERL_DRV_READ, 0);
 
     close(async_fd[0]);
     close(async_fd[1]);
@@ -2558,7 +2636,7 @@ report_exit_status(ErtsSysReportExit *rep, int status)
 	    driver_data[rep->ifd].status = status;
 	    (void) driver_select((ErlDrvPort) internal_port_index(pp->id),
 				 rep->ifd,
-				 DO_READ,
+				 (ERL_DRV_READ|ERL_DRV_USE),
 				 1);
 	}
 	if (rep->ofd >= 0) {
@@ -2566,7 +2644,7 @@ report_exit_status(ErtsSysReportExit *rep, int status)
 	    driver_data[rep->ofd].status = status;
 	    (void) driver_select((ErlDrvPort) internal_port_index(pp->id),
 				 rep->ofd,
-				 DO_WRITE,
+				 (ERL_DRV_WRITE|ERL_DRV_USE),
 				 1);
 	}
 	erts_port_release(pp);

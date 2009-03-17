@@ -1,22 +1,21 @@
-%%<copyright>
-%% <year>1998-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1998-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
 -module(snmp_target_mib).
 
 -export([configure/1, reconfigure/1,
@@ -159,7 +158,7 @@ check_target_addr({Name, Ip, Udp, Timeout, RetryCount, TagList,
     snmp_conf:check_integer(RetryCount, {gte,0}),
     snmp_conf:check_string(TagList),
     snmp_conf:check_string(Params),
-    snmp_conf:check_string(EngineId),
+    check_engine_id(EngineId),
     TAddr = Ip ++ [Udp div 256, Udp rem 256],
     check_mask(TMask, TAddr),
     snmp_conf:check_packet_size(MMS),
@@ -186,6 +185,11 @@ check_target_addr({Name, Ip, Udp, Timeout, RetryCount, TagList, Params,
 check_target_addr(X) ->
     error({invalid_target_addr, X}).
 
+
+check_engine_id(discovery) ->
+    ok;
+check_engine_id(EngineId) ->
+    snmp_conf:check_string(EngineId).
 
 check_mask([], _TAddr) ->
     ok;

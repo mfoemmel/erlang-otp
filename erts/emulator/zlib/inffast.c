@@ -3,6 +3,8 @@
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
+/* %ExternalCopyright% */
+
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif

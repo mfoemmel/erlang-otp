@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(dets).
 
@@ -94,6 +95,10 @@
 -include_lib("kernel/include/file.hrl").
 
 -include("dets.hrl").
+
+-type object()   :: tuple().
+-type pattern()  :: atom() | tuple().
+-type tab_name() :: atom() | ref().
 
 %%% This is the implementation of the mnesia file storage. Each (non
 %%% ram-copy) table is maintained in a corresponding .DAT file. The
@@ -190,9 +195,15 @@
 
 add_user(Pid, Tab, Args) ->
     req(Pid, {add_user, Tab, Args}).
-    
+
+-spec all() -> [tab_name()].
+
 all() ->
     dets_server:all().
+
+-type cont() :: #dets_cont{}.
+-spec bchunk(tab_name(), 'start' | cont()) ->
+    {cont(), binary() | tuple()} | '$end_of_table' | {'error', term()}.
 
 bchunk(Tab, start) ->
     badarg(treq(Tab, {bchunk_init, Tab}), [Tab, start]);
@@ -203,16 +214,22 @@ bchunk(Tab, #dets_cont{what = bchunk, tab = Tab} = State) ->
 bchunk(Tab, Term) ->
     erlang:error(badarg, [Tab, Term]).
 
+-spec close(tab_name()) -> 'ok' | {'error', term()}.
+
 close(Tab) ->  
     case dets_server:close(Tab) of
         badarg -> % Should not happen.
-             {error, not_owner}; % Backwards compatibility...
+	    {error, not_owner}; % Backwards compatibility...
         Reply ->
             Reply
     end.
 
+-spec delete(tab_name(), term()) -> 'ok' | {'error', term()}.
+
 delete(Tab, Key) ->
     badarg(treq(Tab, {delete_key, [Key]}), [Tab, Key]).
+
+-spec delete_all_objects(tab_name()) -> 'ok' | {'error', term()}.
 
 delete_all_objects(Tab) ->
     case treq(Tab, delete_all_objects) of
@@ -223,6 +240,8 @@ delete_all_objects(Tab) ->
 	Reply ->
 	    Reply
     end.
+
+-spec delete_object(tab_name(), object()) -> 'ok' | {'error', term()}.
 
 delete_object(Tab, O) ->
     badarg(treq(Tab, {delete_object, [O]}), [Tab, O]).
@@ -245,15 +264,23 @@ fsck(Fname, Version) ->
       end
     end.
 
+-spec first(tab_name()) -> term() | '$end_of_table'.
+
 first(Tab) ->
     badarg_exit(treq(Tab, first), [Tab]).
+
+-spec foldr(fun((object(), Acc) -> Acc), Acc, tab_name()) -> Acc | {'error', term()}.
 
 foldr(Fun, Acc, Tab) ->
     foldl(Fun, Acc, Tab).
 
+-spec foldl(fun((object(), Acc) -> Acc), Acc, tab_name()) -> Acc | {'error', term()}.
+
 foldl(Fun, Acc, Tab) ->
     Ref = make_ref(),
     do_traverse(Fun, Acc, Tab, Ref).
+
+-spec from_ets(tab_name(), ets:tab()) -> 'ok' | {'error', term()}.
 
 from_ets(DTab, ETab) ->
     ets:safe_fixtable(ETab, true),
@@ -377,6 +404,9 @@ match(State) when State#dets_cont.what =:= bindings ->
     badarg(chunk_match(State), [State]);
 match(Term) ->
     erlang:error(badarg, [Term]).
+
+-spec match_delete(tab_name(), pattern()) ->
+	non_neg_integer() | 'ok' | {'error', term()}.
 
 match_delete(Tab, Pat) ->
     badarg(match_delete(Tab, Pat, delete), [Tab, Pat]).
@@ -549,6 +579,7 @@ table(Tab, Opts) ->
                 end,
             qlc:table(TF, [{pre_fun, PreFun}, {post_fun, PostFun}, 
                            {info_fun, InfoFun}, {format_fun, FormatFun},
+                           {key_equality, '=:='},
                            {lookup_fun, LookupFun}])
     end.
          
@@ -2432,7 +2463,7 @@ fsck(Fd, Tab, Fname, FH, MinSlotsArg, MaxSlotsArg, Version) ->
     EstNoSlots0 = file_no_things(FH),
     MinSlots = choose_no_slots(MinSlotsArg, MinSlotsFile),
     MaxSlots = choose_no_slots(MaxSlotsArg, MaxSlotsFile),
-    EstNoSlots = lists:min([MaxSlots, lists:max([MinSlots, EstNoSlots0])]),
+    EstNoSlots = erlang:min(MaxSlots, erlang:max(MinSlots, EstNoSlots0)),
     SlotNumbers = {MinSlots, EstNoSlots, MaxSlots},
     %% When repairing: We first try and sort on slots using MinSlots.
     %% If the number of objects (keys) turns out to be significantly

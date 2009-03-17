@@ -1,23 +1,24 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(heart). 
 
-%%%-----------------------------------------------------------------
+%%%--------------------------------------------------------------------
 %%% This is a rewrite of pre_heart from BS.3.
 %%%
 %%% The purpose of this process-module is to act as an supervisor
@@ -27,7 +28,7 @@
 %%% then needed.
 %%%
 %%% It recognizes the flag '-heart'
-%%%-----------------------------------------------------------------
+%%%--------------------------------------------------------------------
 -export([start/0, init/2, set_cmd/1, clear_cmd/0, get_cmd/0, cycle/0]).
 
 -define(START_ACK, 1).
@@ -41,6 +42,10 @@
 -define(TIMEOUT, 5000).
 -define(CYCLE_TIMEOUT, 10000).
 
+%%---------------------------------------------------------------------
+
+-spec start() -> 'ignore' | {'error', term()} | {'ok', pid()}.
+
 start() ->
     case whereis(heart) of
 	undefined ->
@@ -48,7 +53,7 @@ start() ->
 	    %% of heart must be init.
 	    %% The init process is responsible to create a link
 	    %% to heart.
-	    Pid = spawn(heart, init, [self(), whereis(init)]),
+	    Pid = spawn(?MODULE, init, [self(), whereis(init)]),
 	    wait_for_init_ack(Pid);
 	Pid ->
 	    {ok, Pid}
@@ -64,6 +69,8 @@ wait_for_init_ack(From) ->
 	    {error, Error}
     end.
 
+-spec init(pid(), pid()) -> {'no_heart', pid()} | {'start_error', pid()}.
+
 init(Starter, Parent) ->
     process_flag(trap_exit, true),
     process_flag(priority, max),
@@ -78,24 +85,25 @@ init(Starter, Parent) ->
 	    Starter ! {start_error, self()}
     end.
 
--spec(set_cmd/1 :: (Cmd) -> 'ok' | {'error', {'bad_cmd', Cmd}}
-			    when is_subtype(Cmd, string())).
+-spec set_cmd(Cmd) -> 'ok' | {'error', {'bad_cmd', Cmd}}
+		      when is_subtype(Cmd, string()).
 set_cmd(Cmd) ->
     heart ! {self(), set_cmd, Cmd},
     wait().
 
--spec(get_cmd/0 :: () -> 'ok').
+-spec get_cmd() -> 'ok'.
 get_cmd() ->
     heart ! {self(), get_cmd},
     wait().
 
--spec(clear_cmd/0 :: () -> {'ok', string()}).
+-spec clear_cmd() -> {'ok', string()}.
 clear_cmd() ->
     heart ! {self(), clear_cmd},
     wait().
 
 
 %%% Should be used solely by the release handler!!!!!!!
+-spec cycle() -> 'ok' | {'error', term()}.
 cycle() ->
     heart ! {self(), cycle},
     wait().
@@ -110,7 +118,7 @@ start_portprogram() ->
     check_start_heart(),
     HeartCmd = "heart -pid " ++ os:getpid() ++ " " ++ 
 	get_heart_timeouts(),
-    case catch open_port({spawn, HeartCmd}, [{packet, 2}]) of
+    try open_port({spawn, HeartCmd}, [{packet, 2}]) of
 	Port when is_port(Port) ->
 	    case wait_ack(Port) of
 		ok ->
@@ -119,8 +127,9 @@ start_portprogram() ->
 		    report_problem({{port_problem, Reason},
 				    {heart, start_portprogram, []}}),
 		    error
-	    end;
-	{'EXIT', Reason} ->
+	    end
+    catch
+	_:Reason ->
 	    report_problem({{open_port, Reason}, 
 			    {heart, start_portprogram, []}}),
 	    error
@@ -128,12 +137,12 @@ start_portprogram() ->
 
 get_heart_timeouts() ->
     HeartOpts = case os:getenv("HEART_BEAT_TIMEOUT") of
-		    false -> [];
+		    false -> "";
 		    H when is_list(H) -> 
 			"-ht " ++ H
 		end,
     HeartOpts ++ case os:getenv("HEART_BEAT_BOOT_DELAY") of
-		     false -> [];
+		     false -> "";
 		     W when is_list(W) ->
 			 " -wt " ++ W
 		 end.
@@ -146,7 +155,7 @@ check_start_heart() ->
 	    throw(no_heart);
 	{ok, [[X|_]|_]} ->
 	    report_problem({{bad_heart_flag, list_to_atom(X)},
-			    {heart,check_start_heart,[]}}),
+			    {heart, check_start_heart, []}}),
 	    throw(error)
     end.
 
@@ -198,7 +207,7 @@ loop(Parent, Port, Cmd) ->
 	    loop(Parent, Port, Cmd)
     end.
 
--spec(no_reboot_shutdown/1 :: (port()) -> no_return()).
+-spec no_reboot_shutdown(port()) -> no_return().
 no_reboot_shutdown(Port) ->
     send_shutdown(Port),
     receive
@@ -214,22 +223,22 @@ do_cycle_port_program(Caller, Parent, Port, Cmd) ->
 		{'EXIT', Port, _Reason} ->
 		    send_heart_cmd(NewPort, Cmd),
 		    Caller ! {heart, ok},
-		    loop(Parent,NewPort,Cmd)
+		    loop(Parent, NewPort, Cmd)
 	    after
 		?CYCLE_TIMEOUT ->
 		    %% Huh! Two heart port programs running...
 		    %% well, the old one has to be sick not to respond
 		    %% so we'll settle for the new one...
 		    send_heart_cmd(NewPort, Cmd),
-		    Caller ! {heart,{error, stop_error}},
-		    loop(Parent,NewPort,Cmd)
+		    Caller ! {heart, {error, stop_error}},
+		    loop(Parent, NewPort, Cmd)
 	    end;
 	no_heart ->
-	    Caller ! {heart,{error, no_heart}},
-	    loop(Parent,Port,Cmd);
+	    Caller ! {heart, {error, no_heart}},
+	    loop(Parent, Port, Cmd);
 	error ->
-	    Caller ! {heart,{error, start_error}},
-	    loop(Parent,Port,Cmd)
+	    Caller ! {heart, {error, start_error}},
+	    loop(Parent, Port, Cmd)
     end.
     
 
@@ -246,7 +255,7 @@ get_heart_cmd(Port) ->
     Port ! {self(), {command, [?GET_CMD]}},
     receive
 	{Port, {data, [?HEART_CMD | Cmd]}} ->
-	    {ok,Cmd}
+	    {ok, Cmd}
     end.
 
 %% Sends shutdown command to the port.

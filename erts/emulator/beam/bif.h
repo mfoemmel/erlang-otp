@@ -1,22 +1,26 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 #ifndef __BIF_H__
 #define __BIF_H__
+
+extern Export* erts_format_cpu_topology_trap;
 
 #define BIF_RETTYPE Eterm
 
@@ -32,24 +36,68 @@
 #define BIF_ARG_3  A_3
 
 #define BUMP_ALL_REDS(p) do {			\
-    if ((p)->ct == NULL) 			\
+    if (!ERTS_PROC_GET_SAVED_CALLS_BUF((p))) 	\
 	(p)->fcalls = 0; 			\
     else 					\
 	(p)->fcalls = -CONTEXT_REDS;		\
 } while(0)
 
+
+#define ERTS_VBUMP_ALL_REDS(p)						\
+do {									\
+    if (!ERTS_PROC_GET_SAVED_CALLS_BUF((p))) {				\
+	if ((p)->fcalls > 0)						\
+	    ERTS_PROC_GET_SCHDATA((p))->virtual_reds += (p)->fcalls;	\
+	(p)->fcalls = 0;						\
+    }									\
+    else {								\
+	if ((p)->fcalls > -CONTEXT_REDS)				\
+	    ERTS_PROC_GET_SCHDATA((p))->virtual_reds			\
+		+= ((p)->fcalls - (-CONTEXT_REDS));			\
+	(p)->fcalls = -CONTEXT_REDS;					\
+    }									\
+} while(0)
+
 #define BUMP_REDS(p, gc) do {			   \
      (p)->fcalls -= (gc); 			   \
      if ((p)->fcalls < 0) { 			   \
-	if ((p)->ct == NULL) 		           \
+	if (!ERTS_PROC_GET_SAVED_CALLS_BUF((p)))   \
            (p)->fcalls = 0; 			   \
 	else if ((p)->fcalls < -CONTEXT_REDS)      \
            (p)->fcalls = -CONTEXT_REDS; 	   \
      } 						   \
 } while(0)
 
+
+#define ERTS_VBUMP_REDS(p, reds)					\
+do {									\
+    if (!ERTS_PROC_GET_SAVED_CALLS_BUF((p))) {				\
+	if ((p)->fcalls >= reds) {					\
+	    (p)->fcalls -= reds;					\
+	    ERTS_PROC_GET_SCHDATA((p))->virtual_reds += reds;		\
+	}								\
+	else {								\
+	    if ((p)->fcalls > 0)					\
+		ERTS_PROC_GET_SCHDATA((p))->virtual_reds += (p)->fcalls;\
+	    (p)->fcalls = 0;						\
+	}								\
+    }									\
+    else {								\
+	if ((p)->fcalls >= reds - CONTEXT_REDS) {			\
+	    (p)->fcalls -= reds;					\
+	    ERTS_PROC_GET_SCHDATA((p))->virtual_reds += reds;		\
+	}								\
+	else {								\
+	    if ((p)->fcalls > -CONTEXT_REDS)				\
+		ERTS_PROC_GET_SCHDATA((p))->virtual_reds		\
+		    += (p)->fcalls - (-CONTEXT_REDS);			\
+	    (p)->fcalls = -CONTEXT_REDS;				\
+	}								\
+    }									\
+} while(0)
+
 #define ERTS_BIF_REDS_LEFT(p)						\
-  ((p)->ct								\
+  (ERTS_PROC_GET_SAVED_CALLS_BUF((p))					\
    ? ((p)->fcalls > -CONTEXT_REDS ? ((p)->fcalls - (-CONTEXT_REDS)) : 0)\
    : ((p)->fcalls > 0 ? (p)->fcalls : 0))
 
@@ -146,56 +194,67 @@ do {							\
       return THE_NON_VALUE;			\
  } while(0)
 
-#define ERTS_BIF_YIELD_BUMP_REDS__(P)					\
-    ERTS_GET_SCHEDULER_DATA_FROM_PROC((P))->yield_reduction_bump	\
-      = ERTS_BIF_REDS_LEFT((P));					\
-    BUMP_ALL_REDS((P))
+extern Export bif_return_trap_export;
+#ifdef DEBUG
+#define ERTS_BIF_YIELD_RETURN(P, VAL, DEBUG_VAL)			\
+do {									\
+    ERTS_VBUMP_ALL_REDS(P);						\
+    BIF_TRAP2(&bif_return_trap_export, (P), (VAL), (DEBUG_VAL));	\
+} while (0)
+#else
+#define ERTS_BIF_YIELD_RETURN(P, VAL, DEBUG_VAL)			\
+do {									\
+    ERTS_VBUMP_ALL_REDS(P);						\
+    BIF_TRAP1(&bif_return_trap_export, (P), (VAL));			\
+} while (0)
+#endif
+
 
 #define ERTS_BIF_PREP_YIELD0(RET, TRP, P)				\
 do {									\
-    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_VBUMP_ALL_REDS((P));						\
     ERTS_BIF_PREP_TRAP0(RET, (TRP), (P));				\
 } while (0)
 
 #define ERTS_BIF_PREP_YIELD1(RET, TRP, P, A0)				\
 do {									\
-    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_VBUMP_ALL_REDS((P));						\
     ERTS_BIF_PREP_TRAP1(RET, (TRP), (P), (A0));				\
 } while (0)
 
 #define ERTS_BIF_PREP_YIELD2(RET, TRP, P, A0, A1)			\
 do {									\
-    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_VBUMP_ALL_REDS((P));						\
     ERTS_BIF_PREP_TRAP2(RET, (TRP), (P), (A0), (A1));			\
 } while (0)
 
 #define ERTS_BIF_PREP_YIELD3(RET, TRP, P, A0, A1, A2)			\
 do {									\
-    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_VBUMP_ALL_REDS((P));						\
     ERTS_BIF_PREP_TRAP3(RET, (TRP), (P), (A0), (A1), (A2));		\
 } while (0)
 
 #define ERTS_BIF_YIELD0(TRP, P)						\
 do {									\
-    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_VBUMP_ALL_REDS((P));						\
     BIF_TRAP0((TRP), (P));						\
 } while (0)
 
 #define ERTS_BIF_YIELD1(TRP, P, A0)					\
 do {									\
-    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_VBUMP_ALL_REDS((P));						\
     BIF_TRAP1((TRP), (P), (A0));					\
 } while (0)
 
 #define ERTS_BIF_YIELD2(TRP, P, A0, A1)					\
 do {									\
-    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_VBUMP_ALL_REDS((P));						\
     BIF_TRAP2((TRP), (P), (A0), (A1));					\
 } while (0)
 
 #define ERTS_BIF_YIELD3(TRP, P, A0, A1, A2)				\
 do {									\
-    ERTS_BIF_YIELD_BUMP_REDS__((P));					\
+    ERTS_VBUMP_ALL_REDS((P));						\
     BIF_TRAP3((TRP), (P), (A0), (A1), (A2));				\
 } while (0)
 

@@ -27,6 +27,7 @@
 #
 # Note for Slackware users: "makewhatis -v -w -c" will work.
 
+# %ExternalCopyright%
 PATH=/usr/bin:/bin
 
 DEFMANPATH=/usr/man

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(win32reg).
 
@@ -151,7 +152,7 @@ value({win32reg, Reg}, Name) when is_port(Reg) ->
 	    {error, Reason}
     end.
     
--spec values(reg_handle()) -> {'ok', [{name(), value()}]}.
+-spec values(reg_handle()) -> {'ok', [{name(), value()}]} | {'error', atom()}.
 
 values({win32reg, Reg}) when is_port(Reg) ->
     Cmd = [?cmd_get_all_values],
@@ -214,7 +215,7 @@ collect_values(P, Result) ->
 	    {error, Reason}
     end.
 
--spec collect_keys(port(), string()) -> {'ok', string()} | {'error', atom()}.
+-spec collect_keys(port(), string()) -> {'ok', [string()]} | {'error', atom()}.
 
 collect_keys(P, Result) ->
     case get_result(P) of

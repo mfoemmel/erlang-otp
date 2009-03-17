@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(group).
 
@@ -146,8 +147,25 @@ get_tty_geometry(Drv) ->
     Drv ! {self(),tty_geometry},
     receive
 	{Drv,tty_geometry,Geometry} ->
-	    %erlang:display({get_tty_geometry,Drv,Geometry}),
 	    Geometry
+    after 2000 ->
+	    timeout
+    end.
+get_unicode_state(Drv) ->
+    Drv ! {self(),get_unicode_state},
+    receive
+	{Drv,get_unicode_state,UniState} ->
+	    UniState;
+	{Drv,get_unicode_state,error} ->
+	    {error, internal}
+    after 2000 ->
+	    {error,timeout}
+    end.
+set_unicode_state(Drv,Bool) ->
+    Drv ! {self(),set_unicode_state,Bool},
+    receive
+	{Drv,set_unicode_state,_OldUniState} ->
+	    ok
     after 2000 ->
 	    timeout
     end.
@@ -169,31 +187,77 @@ io_request(Req, From, ReplyAs, Drv, Buf0) ->
 	    exit(R)
     end.
 
-io_request({put_chars,Binary}, Drv, Buf) when is_binary(Binary) -> % New in R9C
-    send_drv(Drv, {put_chars,Binary}),
-    {ok,ok,Buf};
-io_request({put_chars,Chars}, Drv, Buf) ->
-    case catch list_to_binary(Chars) of
+
+%% Put_chars, unicode is the normal message, characters are always in 
+%%standard unicode
+%% format.
+%% You might be tempted to send binaries unchecked, but the driver 
+%% expects unicode, so that is what we should send...
+%% io_request({put_chars,unicode,Binary}, Drv, Buf) when is_binary(Binary) -> 
+%%     send_drv(Drv, {put_chars,Binary}),
+%%     {ok,ok,Buf};
+io_request({put_chars,unicode,Chars}, Drv, Buf) ->
+    case catch unicode:characters_to_binary(Chars,utf8) of
 	Binary when is_binary(Binary) ->
-	    send_drv(Drv, {put_chars,Binary}),
+	    send_drv(Drv, {put_chars, unicode, Binary}),
 	    {ok,ok,Buf};
 	_ ->
-	    {error,{error,{put_chars,Chars}},Buf}
+	    {error,{error,{put_chars, unicode,Chars}},Buf}
     end;
-io_request({put_chars,M,F,As}, Drv, Buf) ->
+io_request({put_chars,unicode,M,F,As}, Drv, Buf) ->
     case catch apply(M, F, As) of
 	Binary when is_binary(Binary) ->
-	    send_drv(Drv, {put_chars,Binary}),
+	    send_drv(Drv, {put_chars, unicode,Binary}),
 	    {ok,ok,Buf};
 	Chars ->
-	    case catch list_to_binary(Chars) of
+	    case catch unicode:characters_to_binary(Chars,utf8) of
 		B when is_binary(B) ->
-		    send_drv(Drv, {put_chars,B}),
+		    send_drv(Drv, {put_chars, unicode,B}),
 		    {ok,ok,Buf};
 		_ ->
 		    {error,{error,F},Buf}
 	    end
     end;
+io_request({put_chars,latin1,Binary}, Drv, Buf) when is_binary(Binary) -> 
+    send_drv(Drv, {put_chars, unicode,unicode:characters_to_binary(Binary,latin1)}),
+    {ok,ok,Buf};
+io_request({put_chars,latin1,Chars}, Drv, Buf) ->
+    case catch unicode:characters_to_binary(Chars,latin1) of
+	Binary when is_binary(Binary) ->
+	    send_drv(Drv, {put_chars, unicode,Binary}),
+	    {ok,ok,Buf};
+	_ ->
+	    {error,{error,{put_chars,Chars}},Buf}
+    end;
+io_request({put_chars,latin1,M,F,As}, Drv, Buf) ->
+    case catch apply(M, F, As) of
+	Binary when is_binary(Binary) ->
+	    send_drv(Drv, {put_chars, unicode,unicode:characters_to_binary(Binary,latin1)}),
+	    {ok,ok,Buf};
+	Chars ->
+	    case catch unicode:characters_to_binary(Chars,latin1) of
+		B when is_binary(B) ->
+		    send_drv(Drv, {put_chars, unicode,B}),
+		    {ok,ok,Buf};
+		_ ->
+		    {error,{error,F},Buf}
+	    end
+    end;
+
+io_request({get_chars,Encoding,Prompt,N}, Drv, Buf) ->
+    get_chars(Prompt, io_lib, collect_chars, N, Drv, Buf, Encoding);
+io_request({get_line,Encoding,Prompt}, Drv, Buf) ->
+    get_chars(Prompt, io_lib, collect_line, [], Drv, Buf, Encoding);
+io_request({get_until,Encoding, Prompt,M,F,As}, Drv, Buf) ->
+    get_chars(Prompt, io_lib, get_until, {M,F,As}, Drv, Buf, Encoding);
+io_request({get_password,_Encoding},Drv,Buf) ->
+    get_password_chars(Drv, Buf);
+io_request({setopts,Opts}, Drv, Buf) when is_list(Opts) ->
+    setopts(Opts, Drv, Buf);
+io_request(getopts, Drv, Buf) ->
+    getopts(Drv, Buf);
+io_request({requests,Reqs}, Drv, Buf) ->
+    io_requests(Reqs, {ok,ok,Buf}, Drv);
 
 %% New in R12
 io_request({get_geometry,columns},Drv,Buf) ->
@@ -211,22 +275,22 @@ io_request({get_geometry,rows},Drv,Buf) ->
 	    {error,{error,enotsup},Buf}
     end;
 
-%% These are new in R9C
+%% BC with pre-R13
+io_request({put_chars,Chars}, Drv, Buf) ->
+    io_request({put_chars,latin1,Chars}, Drv, Buf);
+io_request({put_chars,M,F,As}, Drv, Buf) ->
+    io_request({put_chars,latin1,M,F,As}, Drv, Buf);
 io_request({get_chars,Prompt,N}, Drv, Buf) ->
-    get_chars(Prompt, io_lib, collect_chars, N, Drv, Buf);
-io_request({get_chars,Prompt,Mod,Func,XtraArg}, Drv, Buf) ->
-    get_chars(Prompt, Mod, Func, XtraArg, Drv, Buf);
+    io_request({get_chars,latin1,Prompt,N}, Drv, Buf);
 io_request({get_line,Prompt}, Drv, Buf) ->
-    get_chars(Prompt, io_lib, collect_line, [], Drv, Buf);
-io_request({setopts,Opts}, Drv, Buf) when is_list(Opts) ->
-    setopts(Opts, Drv, Buf);
-%% End of new in R9C
-io_request({get_until,Prompt,M,F,As}, Drv, Buf) ->
-    get_chars(Prompt, io_lib, get_until, {M,F,As}, Drv, Buf);
-io_request({requests,Reqs}, Drv, Buf) ->
-    io_requests(Reqs, {ok,ok,Buf}, Drv);
+    io_request({get_line,latin1,Prompt}, Drv, Buf);
+io_request({get_until, Prompt,M,F,As}, Drv, Buf) ->
+    io_request({get_until,latin1, Prompt,M,F,As}, Drv, Buf);
 io_request(get_password,Drv,Buf) ->
-    get_password_chars(Drv, Buf);
+    io_request({get_password,latin1},Drv,Buf);
+
+
+
 io_request(_, _Drv, Buf) ->
     {error,{error,request},Buf}.
 
@@ -257,19 +321,89 @@ send_drv_reqs(_Drv, []) -> [];
 send_drv_reqs(Drv, Rs) ->
     send_drv(Drv, {requests,Rs}).
 
+expand_encoding([]) ->
+    [];
+expand_encoding([latin1 | T]) ->
+    [{encoding,latin1} | expand_encoding(T)];
+expand_encoding([unicode | T]) ->
+    [{encoding,unicode} | expand_encoding(T)];
+expand_encoding([H|T]) ->
+    [H|expand_encoding(T)].
 %% setopts
-setopts(Opts0,_Drv, Buf) ->
-    Opts = proplists:substitute_negations([{list,binary}], Opts0),
+setopts(Opts0,Drv,Buf) ->
+    Opts = proplists:unfold(
+	     proplists:substitute_negations(
+	       [{list,binary}], 
+	       expand_encoding(Opts0))),
+    case check_valid_opts(Opts) of
+	true ->
+	    do_setopts(Opts,Drv,Buf);
+	false ->
+	    {error,{error,enotsup},Buf}
+    end.
+check_valid_opts([]) ->
+    true;
+check_valid_opts([{binary,_}|T]) ->
+    check_valid_opts(T);
+check_valid_opts([{encoding,Valid}|T]) when Valid =:= unicode; Valid =:= utf8; Valid =:= latin1 ->
+    check_valid_opts(T);
+check_valid_opts([{echo,_}|T]) ->
+    check_valid_opts(T);
+check_valid_opts([{expand_fun,_}|T]) ->
+    check_valid_opts(T);
+check_valid_opts(_) ->
+    false.
+
+do_setopts(Opts, Drv, Buf) ->
     put(expand_fun, proplists:get_value(expand_fun, Opts, get(expand_fun))),
     put(echo, proplists:get_value(echo, Opts, get(echo))),
-    case proplists:get_bool(binary, Opts) of
+    case proplists:get_value(encoding,Opts) of
+	Valid when Valid =:= unicode; Valid =:= utf8 ->
+	    set_unicode_state(Drv,true);
+	latin1 ->
+	    set_unicode_state(Drv,false);
+	_ ->
+	    ok
+    end,
+    case proplists:get_value(binary, Opts, case get(read_mode) of
+					      binary -> true;
+					      _ -> false
+					   end) of
 	true ->
 	    put(read_mode, binary),
 	    {ok,ok,Buf};
 	false ->
 	    put(read_mode, list),
+	    {ok,ok,Buf};
+	_ ->
 	    {ok,ok,Buf}
     end.
+
+getopts(Drv,Buf) ->
+    Exp = {expand_fun, case get(expand_fun) of
+			   Func when is_function(Func) ->
+			       Func;
+			   _ ->
+			       false
+		       end},
+    Echo = {echo, case get(echo) of
+		     Bool when Bool =:= true; Bool =:= false ->
+			 Bool;
+		     _ ->
+			 false
+		  end},
+    Bin = {binary, case get(read_mode) of
+		       binary ->
+			   true;
+		       _ ->
+			   false
+		   end},
+    Uni = {encoding, case get_unicode_state(Drv) of
+			true -> unicode;
+			_ -> latin1
+		     end},
+    {ok,[Exp,Echo,Bin,Uni],Buf}.
+    
 
 %% get_chars(Prompt, Module, Function, XtraArgument, Drv, Buffer)
 %%  Gets characters from the input Drv until as the applied function
@@ -289,36 +423,41 @@ get_password_chars(Drv,Buf) ->
 	    {exit, terminated}
     end.
 
-get_chars(Prompt, M, F, Xa, Drv, Buf) ->
+get_chars(Prompt, M, F, Xa, Drv, Buf, Encoding) ->
     Pbs = prompt_bytes(Prompt),
-    get_chars_loop(Pbs, M, F, Xa, Drv, Buf, start).
+    get_chars_loop(Pbs, M, F, Xa, Drv, Buf, start, Encoding).
 
-get_chars_loop(Pbs, M, F, Xa, Drv, Buf0, State) ->
+get_chars_loop(Pbs, M, F, Xa, Drv, Buf0, State, Encoding) ->
     Result = case get(echo) of 
 		 true ->
-		     get_line(Buf0, Pbs, Drv);
+		     get_line(Buf0, Pbs, Drv, Encoding);
 		 false ->
+		     % get_line_echo_off only deals with lists
+		     % and does not need encoding...
 		     get_line_echo_off(Buf0, Pbs, Drv)
 	     end,
     case Result of
 	{done,Line,Buf1} ->
-	    get_chars_apply(Pbs, M, F, Xa, Drv, Buf1, State, Line);
+	    get_chars_apply(Pbs, M, F, Xa, Drv, Buf1, State, Line, Encoding);
 	interrupted ->
 	    {error,{error,interrupted},[]};
 	terminated ->
 	    {exit,terminated}
     end.
 
-get_chars_apply(Pbs, M, F, Xa, Drv, Buf, State0, Line) ->
-    case catch M:F(State0, cast(Line,get(read_mode)), Xa) of
+get_chars_apply(Pbs, M, F, Xa, Drv, Buf, State0, Line, Encoding) ->
+    id(M,F),
+    case catch M:F(State0, cast(Line,get(read_mode), Encoding), Encoding, Xa) of
 	{stop,Result,Rest} ->
-	    {ok,Result,append(Rest, Buf)};
+	    {ok,Result,append(Rest, Buf, Encoding)};
 	{'EXIT',_} ->
 	    {error,{error,err_func(M, F, Xa)},[]};
 	State1 ->
-	    get_chars_loop(Pbs, M, F, Xa, Drv, Buf, State1)
+	    get_chars_loop(Pbs, M, F, Xa, Drv, Buf, State1, Encoding)
     end.
 
+id(M,F) ->
+    {M,F}.
 %% Convert error code to make it look as before
 err_func(io_lib, get_until, {_,F,_}) ->
     F;
@@ -332,23 +471,24 @@ err_func(_, F, _) ->
 %%	{done,LineChars,RestChars}
 %%	interrupted
 
-get_line(Chars, Pbs, Drv) ->
+get_line(Chars, Pbs, Drv, Encoding) ->
     {more_chars,Cont,Rs} = edlin:start(Pbs),
     send_drv_reqs(Drv, Rs),
-    get_line1(edlin:edit_line(Chars, Cont), Drv, new_stack(get(line_buffer))).
+    get_line1(edlin:edit_line(Chars, Cont), Drv, new_stack(get(line_buffer)), 
+	      Encoding).
 
-get_line1({done,Line,Rest,Rs}, Drv, _Ls) ->
+get_line1({done,Line,Rest,Rs}, Drv, _Ls, _Encoding) ->
     send_drv_reqs(Drv, Rs),
     put(line_buffer, [Line|lists:delete(Line, get(line_buffer))]),
     {done,Line,Rest};
-get_line1({undefined,{_A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0) 
+get_line1({undefined,{_A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0, Encoding) 
   when ((Mode =:= none) and (Char =:= $\^P))
        or ((Mode =:= meta_left_sq_bracket) and (Char =:= $A)) ->
     send_drv_reqs(Drv, Rs),
     case up_stack(Ls0) of
 	{none,_Ls} ->
 	    send_drv(Drv, beep),
-	    get_line1(edlin:edit_line(Cs, Cont), Drv, Ls0);
+	    get_line1(edlin:edit_line(Cs, Cont), Drv, Ls0, Encoding);
 	{Lcs,Ls} ->
 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
 	    {more_chars,Ncont,Nrs} = edlin:start(edlin:prompt(Cont)),
@@ -356,16 +496,16 @@ get_line1({undefined,{_A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0)
 	    get_line1(edlin:edit_line1(lists:sublist(Lcs, 1, length(Lcs)-1),
 				      Ncont),
 		      Drv,
-		      Ls)
+		      Ls, Encoding)
     end;
-get_line1({undefined,{_A,Mode,Char},_Cs,Cont,Rs}, Drv, Ls0) 
+get_line1({undefined,{_A,Mode,Char},_Cs,Cont,Rs}, Drv, Ls0, Encoding) 
   when ((Mode =:= none) and (Char =:= $\^N))
        or ((Mode =:= meta_left_sq_bracket) and (Char =:= $B)) ->
     send_drv_reqs(Drv, Rs),
     case down_stack(Ls0) of
 	{none,Ls} ->
 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
-	    get_line1(edlin:start(edlin:prompt(Cont)), Drv, Ls);
+	    get_line1(edlin:start(edlin:prompt(Cont)), Drv, Ls, Encoding);
 	{Lcs,Ls} ->
 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
 	    {more_chars,Ncont,Nrs} = edlin:start(edlin:prompt(Cont)),
@@ -373,9 +513,9 @@ get_line1({undefined,{_A,Mode,Char},_Cs,Cont,Rs}, Drv, Ls0)
 	    get_line1(edlin:edit_line1(lists:sublist(Lcs, 1, length(Lcs)-1),
 				      Ncont),
 		      Drv,
-		      Ls)
+		      Ls, Encoding)
     end;
-get_line1({expand, Before, Cs0, Cont,Rs}, Drv, Ls0) ->
+get_line1({expand, Before, Cs0, Cont,Rs}, Drv, Ls0, Encoding) ->
     send_drv_reqs(Drv, Rs),
     ExpandFun = get(expand_fun),
     {Found, Add, Matches} = ExpandFun(Before),
@@ -383,43 +523,43 @@ get_line1({expand, Before, Cs0, Cont,Rs}, Drv, Ls0) ->
 	no -> send_drv(Drv, beep);
 	yes -> ok
     end,
-    Cs1 = append(Add, Cs0),
+    Cs1 = append(Add, Cs0, Encoding), %%XXX:PaN should this always be unicode?
     Cs = case Matches of
 	     [] -> Cs1;
 	     _ -> MatchStr = edlin_expand:format_matches(Matches),
-		  send_drv(Drv, {put_chars, list_to_binary(MatchStr)}),
+		  send_drv(Drv, {put_chars, unicode, unicode:characters_to_binary(MatchStr,unicode)}),
 		  [$\^L | Cs1]
 	 end,
-    get_line1(edlin:edit_line(Cs, Cont), Drv, Ls0);
-get_line1({undefined,_Char,Cs,Cont,Rs}, Drv, Ls) ->
+    get_line1(edlin:edit_line(Cs, Cont), Drv, Ls0, Encoding);
+get_line1({undefined,_Char,Cs,Cont,Rs}, Drv, Ls, Encoding) ->
     send_drv_reqs(Drv, Rs),
     send_drv(Drv, beep),
-    get_line1(edlin:edit_line(Cs, Cont), Drv, Ls);
-get_line1({What,Cont0,Rs}, Drv, Ls) ->
+    get_line1(edlin:edit_line(Cs, Cont), Drv, Ls, Encoding);
+get_line1({What,Cont0,Rs}, Drv, Ls, Encoding) ->
     send_drv_reqs(Drv, Rs),
     receive
 	{Drv,{data,Cs}} ->
-	    get_line1(edlin:edit_line(Cs, Cont0), Drv, Ls);
+	    get_line1(edlin:edit_line(Cs, Cont0), Drv, Ls, Encoding);
 	{Drv,eof} ->
-	    get_line1(edlin:edit_line(eof, Cont0), Drv, Ls);
+	    get_line1(edlin:edit_line(eof, Cont0), Drv, Ls, Encoding);
 	{io_request,From,ReplyAs,Req} when is_pid(From) ->
 	    {more_chars,Cont,_More} = edlin:edit_line([], Cont0),
 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
 	    io_request(Req, From, ReplyAs, Drv, []), %WRONG!!!
 	    send_drv_reqs(Drv, edlin:redraw_line(Cont)),
-	    get_line1({more_chars,Cont,[]}, Drv, Ls);
+	    get_line1({more_chars,Cont,[]}, Drv, Ls, Encoding);
 	{'EXIT',Drv,interrupt} ->
 	    interrupted;
 	{'EXIT',Drv,_} ->
 	    terminated
     after
 	get_line_timeout(What)->
-	    get_line1(edlin:edit_line([], Cont0), Drv, Ls)
+	    get_line1(edlin:edit_line([], Cont0), Drv, Ls, Encoding)
     end.
 
 
 get_line_echo_off(Chars, Pbs, Drv) ->
-    send_drv_reqs(Drv, [{put_chars,Pbs}]),
+    send_drv_reqs(Drv, [{put_chars, unicode,Pbs}]),
     get_line_echo_off1(edit_line(Chars,[]), Drv).
 
 get_line_echo_off1({Chars,[]}, Drv) ->
@@ -509,7 +649,7 @@ get_password1({Chars,[]}, Drv) ->
 	    terminated
     end;
 get_password1({Chars,Rest},Drv) ->
-    send_drv_reqs(Drv,[{put_chars, "\n"}]),
+    send_drv_reqs(Drv,[{put_chars, unicode, "\n"}]),
     {done,lists:reverse(Chars),case Rest of done -> []; _ -> Rest end}.
 
 edit_password([],Chars) ->
@@ -530,14 +670,20 @@ edit_password([Char|Cs],Chars) ->
 prompt_bytes(Prompt) ->
     lists:flatten(io_lib:format_prompt(Prompt)).
 
-cast(L, binary) when is_list(L) ->
+cast(L, binary,latin1) when is_list(L) ->
     list_to_binary(L);
-cast(Other, _) ->
+cast(L, list, latin1) when is_list(L) ->
+    binary_to_list(list_to_binary(L)); %% Exception if not bytes
+cast(L, binary,unicode) when is_list(L) ->
+    unicode:characters_to_binary(L,utf8);
+cast(Other, _, _) ->
     Other.
 
-append(B, L) when is_binary(B) ->
+append(B, L, latin1) when is_binary(B) ->
     binary_to_list(B)++L;
-append(L1, L2) when is_list(L1) ->
+append(B, L, unicode) when is_binary(B) ->
+    unicode:characters_to_list(B,utf8)++L;
+append(L1, L2, _) when is_list(L1) ->
     L1++L2;
-append(_Eof, L) ->
+append(_Eof, L, _) ->
     L.

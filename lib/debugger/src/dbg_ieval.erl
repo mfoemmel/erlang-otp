@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1998-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(dbg_ieval).
 
@@ -620,6 +621,12 @@ eval_function(Mod, Fun, As0, Bs0, _Called, Ieval) when is_function(Fun);
 	    %% ({badarity,{{Mod,Name},As}})
 	    exception(error, Reason, Bs0, Ieval)
     end;
+
+%% Common Test adaptation
+eval_function(ct_line, line, As, Bs, extern, #ieval{level=Le}=Ieval) ->
+    debugged_cmd({apply,ct_line,line,As}, Bs, Ieval#ieval{level=Le+1}),
+    {value, ignore, Bs};
+
 eval_function(Mod, Name, As0, Bs0, Called, Ieval) ->
     #ieval{level=Le, line=Li, last_call=Lc} = Ieval,
 
@@ -871,23 +878,19 @@ expr({'if',Line,Cs}, Bs, Ieval) ->
 %% Andalso/orelse
 expr({'andalso',Line,E1,E2}, Bs, Ieval) ->
     case expr(E1, Bs, Ieval#ieval{line=Line, last_call=false}) of
-	{value,false,_}=Res -> Res;
-	{value,true,_} ->
-	    case expr(E2, Bs, Ieval#ieval{line=Line, last_call=false}) of
-		{value,Bool,_}=Res when is_boolean(Bool) -> Res;
-		{value,Val,_} -> exception(error, {badarg,Val}, Bs, Ieval)
-	    end;
+	{value,false,_}=Res ->
+	    Res;
+	{value,true,_} -> 
+	    expr(E2, Bs, Ieval#ieval{line=Line, last_call=false});
 	{value,Val,Bs} ->
 	    exception(error, {badarg,Val}, Bs, Ieval)
     end;
 expr({'orelse',Line,E1,E2}, Bs, Ieval) ->
     case expr(E1, Bs, Ieval#ieval{line=Line, last_call=false}) of
-	{value,true,_}=Res -> Res;
+	{value,true,_}=Res ->
+	    Res;
 	{value,false,_} ->
-	    case expr(E2, Bs, Ieval#ieval{line=Line, last_call=false}) of
-		{value,Bool,_}=Res when is_boolean(Bool) -> Res;
-		{value,Val,_} -> exception(error, {badarg,Val}, Bs, Ieval)
-	    end;
+	    expr(E2, Bs, Ieval#ieval{line=Line, last_call=false});
 	{value,Val,_} ->
 	    exception(error, {badarg,Val}, Bs, Ieval)
     end;
@@ -949,6 +952,11 @@ expr({make_fun,Line,Name,Cs}, Bs, #ieval{module=Module}=Ieval) ->
 			  Ieval#ieval{line=Line})
 	end,
     {value,Fun,Bs};
+
+%% Common test adaptation
+expr({call_remote,0,ct_line,line,As0}, Bs0, Ieval0) ->
+    {As,_Bs} = eval_list(As0, Bs0, Ieval0),
+    eval_function(ct_line, line, As, Bs0, extern, Ieval0);
 
 %% Local function call
 expr({local_call,Line,F,As0}, Bs0, #ieval{module=M} = Ieval0) ->

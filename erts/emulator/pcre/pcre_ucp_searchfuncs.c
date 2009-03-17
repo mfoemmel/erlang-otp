@@ -41,6 +41,8 @@ POSSIBILITY OF SUCH DAMAGE.
 /* This module contains code for searching the table of Unicode character
 properties. */
 
+/* %ExternalCopyright% */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -83,7 +85,7 @@ Returns:      the character type category
 */
 
 int
-_pcre_ucp_findprop(const unsigned int c, int *type_ptr, int *script_ptr)
+_erts_pcre_ucp_findprop(const unsigned int c, int *type_ptr, int *script_ptr)
 {
 int bot = 0;
 int top = sizeof(ucp_table)/sizeof(cnode);
@@ -139,7 +141,7 @@ Returns:      the other case or NOTACHAR if none
 */
 
 unsigned int
-_pcre_ucp_othercase(const unsigned int c)
+_erts_pcre_ucp_othercase(const unsigned int c)
 {
 int bot = 0;
 int top = sizeof(ucp_table)/sizeof(cnode);

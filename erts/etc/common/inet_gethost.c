@@ -1,4 +1,22 @@
 /*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1998-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved online at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * %CopyrightEnd%
+ */
+/*
  * Erlang port program to do the name service lookup for the erlang 
  * distribution and inet part of the kernel.
  * A pool of subprocess is kept, to which a pair of pipes is connected.
@@ -240,6 +258,9 @@ Worker *stalled_workers; /* May still deliver answers which we will
 static char *program_name;
 
 static int debug_level;
+#ifdef WIN32
+static HANDLE debug_console_allocated = INVALID_HANDLE_VALUE;
+#endif
 
 #ifdef NODEBUG
 #define DEBUGF(L,P) /* Nothing */
@@ -355,6 +376,17 @@ get_env_debug_level(void)
     return atoi(value);
 }
 
+#ifdef WIN32
+static void do_allocate_console(void)
+{
+    AllocConsole();
+    debug_console_allocated = CreateFile ("CONOUT$", GENERIC_WRITE, 
+					  FILE_SHARE_WRITE, NULL,
+					  OPEN_EXISTING, 
+					  FILE_ATTRIBUTE_NORMAL, NULL);
+}
+#endif
+
 /*
  * Main
  */
@@ -429,7 +461,8 @@ int main(int argc, char **argv)
 	}
 
 	if (debug_level >= 1) {
-	    AllocConsole();
+	    do_allocate_console();
+
 	    DEBUGF(1,("num_workers = %d, greedy_threshold = %d, "
 		      "debug_level = %d.",
 		      num_workers, greedy_threshold, debug_level));
@@ -799,31 +832,45 @@ static void main_loop(void)
 		}
 		switch (ctl = get_ctl(inbuff)) {
 		case SETOPT_DEBUG_LEVEL:
-		    debug_level = get_debug_level(inbuff);
-		    DEBUGF(debug_level, ("debug_level = %d", debug_level));
-		    for (w = 0; w < 3; ++w) {
-			for (i = 0; i < *wsizes[w]; i++) {
-			    int res;
-			    cw = &(workers[w][i]);
+		    {
+			int tmp_debug_level = get_debug_level(inbuff);
 #ifdef WIN32
-			    if ((res = send_mes_to_worker(qi, cw)) == 0) {
-				QueItem *m =
-				    ALLOC(sizeof(QueItem) - 1 + qi->req_size);
-				memcpy(qi->request, m->request,
+			if (debug_console_allocated == INVALID_HANDLE_VALUE && 
+			    tmp_debug_level > 0) {
+			    DWORD res;
+			    do_allocate_console();
+			    WriteFile(debug_console_allocated,
+				      "Hej\n",4,&res,NULL);
+			}
+#endif
+			debug_level = tmp_debug_level;
+			DEBUGF(debug_level, ("debug_level = %d", debug_level));
+			for (w = 0; w < 3; ++w) {
+			    for (i = 0; i < *wsizes[w]; i++) {
+				int res;
+#ifdef WIN32
+				QueItem *m;
+#endif
+				cw = &(workers[w][i]);
+#ifdef WIN32
+				m = ALLOC(sizeof(QueItem) - 1 + qi->req_size);
+				memcpy(m->request, qi->request,
 				       (m->req_size = qi->req_size));
 				m->next = NULL;
-				qi = m;
-			    }
+				if ((res = send_mes_to_worker(m, cw)) != 0) {
+				    FREE(m);
+				}
 #else
-			    res = send_request_to_worker(inbuff, insize, cw);
+				res = send_request_to_worker(inbuff, insize, cw);
 #endif
-			    if (res != 0) {
-			        kill_worker(cw);
-				(*wsizes[w])--;
-				*cw = workers[w][*wsizes[w]];
+				if (res != 0) {
+				    kill_worker(cw);
+				    (*wsizes[w])--;
+				    *cw = workers[w][*wsizes[w]];
+				}
 			    }
 			}
-	            }
+		    }
 	            break;
 		default:
 		    warning("Unknown control requested from erlang (%d), "
@@ -1692,7 +1739,7 @@ static int worker_loop(void)
 		    error_num = 0;
 		    DEBUGF(5,("getipnodebyname(,AF_INET6,,) OK"));
 		} else {
-		    DEBUGF(5,("getipnodebyname(,AF_INET6,,) error", error_num));
+		    DEBUGF(5,("getipnodebyname(,AF_INET6,,) error %d", error_num));
 		    error_num = map_netdb_error(error_num);
 		}
 #elif defined(HAVE_GETHOSTBYNAME2) /*#ifdef HAVE_GETADDRINFO */
@@ -1703,7 +1750,7 @@ static int worker_loop(void)
 		    DEBUGF(5,("gethostbyname2(, AF_INET6) OK"));
 		} else {
 		    error_num = map_netdb_error(h_errno);
-		    DEBUGF(5,("gethostbyname2(, AF_INET6) error: %d", h_errno));
+		    DEBUGF(5,("gethostbyname2(, AF_INET6) error %d", h_errno));
 		}
 #else
 		error_num = ERRCODE_NOTSUP;
@@ -2416,9 +2463,9 @@ static void debugf(char *format, ...)
     vsprintf(ptr,format,ap);
     strcat(ptr,"\r\n");
 #ifdef WIN32
-    {
+    if (debug_console_allocated != INVALID_HANDLE_VALUE) {
 	DWORD res;
-	WriteFile(GetStdHandle(STD_ERROR_HANDLE),buff,strlen(buff),&res,NULL);
+	WriteFile(debug_console_allocated,buff,strlen(buff),&res,NULL);
     }
 #else
     write(2,buff,strlen(buff));

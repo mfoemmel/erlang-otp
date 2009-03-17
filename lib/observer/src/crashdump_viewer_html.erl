@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(crashdump_viewer_html).
 
@@ -25,7 +26,6 @@
 -export([welcome/0,
 	 read_file_frame/0,
 	 redirect/1,
-	 get_translated_filename_frame/1,
 	 start_page/0,
 	 filename_frame/1,
 	 menu_frame/0,
@@ -100,29 +100,6 @@ read_file_frame_body() ->
       "WIDTH=100% HEIGHT=60%",
       tr("VALIGN=middle",
 	 td("ALIGN=center",Form))).
-
-
-%%%-----------------------------------------------------------------
-%%% Present a form to enter file name for the translated file
-get_translated_filename_frame(File) ->
-    header("Get translated filename",
-	   body(get_translated_filename_frame_body(File))).
-
-
-get_translated_filename_frame_body(File) ->
-    Text = 
-	["The crashdump must be translated, but I can't open the default file:",
-	 br(),File],
-    InfoParagraph = p(font("SIZE=+1",b(Text))),
-    Form = enter_write_file(
-	     "Please enter a filename for the translated file (full path):",
-	     "./translate"),
-    table(
-      "WIDTH=100% HEIGHT=60%",
-      [tr("VALIGN=middle",
-	  td("ALIGN=center",InfoParagraph)),
-       tr("VALIGN=middle",
-	  td("ALIGN=center",Form))]).
 
 
 %%%-----------------------------------------------------------------
@@ -1452,15 +1429,3 @@ replace_insrt([H|T],Insrt,Acc) ->
     replace_insrt(T,Insrt,[H|Acc]);
 replace_insrt([],[],Acc) ->
     Acc.
-
-%%%-----------------------------------------------------------------
-%%% 
-enter_write_file(Text,Action) ->
-    form(
-      ["name=read_file_form ACTION=",Action],
-      table(
-	"BORDER=0",
-	[tr(td("COLSPAN=2",Text)),
-	 tr(
-	   [td(input("TYPE=text NAME=path SIZE=60")),
-	    td("ALIGN=center",input("TYPE=submit VALUE=Ok"))])])).

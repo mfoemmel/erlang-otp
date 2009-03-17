@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>1997-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 
 -ifdef(debug).
@@ -25,11 +25,13 @@
 -endif.
 
 -define('RT_BER_BIN',"asn1rt_ber_bin").
-%%-define('RT_PER',"asn1rt_per_v1").
 -define('RT_PER_BIN',"asn1rt_per_bin").
 
 %% Some encoding are common for BER and PER. Shared code are in RT_COMMON
 -define('RT_COMMON',asn1rt_ber_bin).
+
+-define('COMPLETE_ENCODE',1).
+-define('TLV_DECODE',2).
 
 
 -record(module,{pos,name,defid,tagdefault='EXPLICIT',exports={exports,[]},imports={imports,[]}, extensiondefault=empty,typeorval}).

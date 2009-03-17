@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(code).
 
@@ -367,9 +368,9 @@ which2(Module) ->
 
 -spec which(string(), string(), [string()]) -> 'non_existing' | string().
 
-which(_,_,[]) ->
+which(_, _, []) ->
     non_existing;
-which(File,Base,[Directory|Tail]) ->
+which(File, Base, [Directory|Tail]) ->
     Path = if
 	       Base =:= "." -> Directory;
 	       true -> filename:join(Directory, Base)
@@ -380,16 +381,16 @@ which(File,Base,[Directory|Tail]) ->
 		true ->
 		    filename:append(Path, File);
 		false ->
-		    which(File,Base,Tail)
+		    which(File, Base, Tail)
 	    end;
 	_Error ->
-	    which(File,Base,Tail)
+	    which(File, Base, Tail)
     end.
 
 %% Search the code path for a specific file. Try to locate
 %% it in the code path cache if possible.
 
--spec where_is_file(Filename :: string()) -> string() | atom().
+-spec where_is_file(Filename :: string()) -> 'non_existing' | string().
 
 where_is_file(File) when is_list(File) ->
     case call({is_cached,File}) of
@@ -400,7 +401,7 @@ where_is_file(File) when is_list(File) ->
 	    filename:join(Dir, File)
     end.
 
--spec(where_is_file/2 :: (Path :: string(), Filename :: string()) -> string() | atom()).
+-spec where_is_file(Path :: string(), Filename :: string()) -> string() | atom().
 
 where_is_file(Path, File) when is_list(Path), is_list(File) ->
     CodePath = get_path(),
@@ -416,7 +417,7 @@ where_is_file(Path, File) when is_list(Path), is_list(File) ->
 	    which(File, ".", Path)
     end.
 
--spec(set_primary_archive/2 :: (ArchiveFile :: string(), ArchiveBin :: binary()) -> 'ok' | {'error', atom()}).
+-spec set_primary_archive(ArchiveFile :: string(), ArchiveBin :: binary()) -> 'ok' | {'error', atom()}.
 
 set_primary_archive(ArchiveFile0, ArchiveBin) when is_list(ArchiveFile0), is_binary(ArchiveBin) ->
     ArchiveFile = filename:absname(ArchiveFile0),
@@ -433,13 +434,13 @@ set_primary_archive(ArchiveFile0, ArchiveBin) when is_list(ArchiveFile0), is_bin
     
 %% Search the entire path system looking for name clashes
 
--spec(clash() -> 'ok').
+-spec clash() -> 'ok'.
 
 clash() ->
     Path = get_path(),
     Struct = lists:flatten(build(Path)),
     Len = length(search(Struct)),
-    io:format("** Found ~w name clashes in code paths ~n",[Len]).
+    io:format("** Found ~w name clashes in code paths ~n", [Len]).
 
 %% Internal for clash/0
 

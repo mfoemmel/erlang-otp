@@ -4,23 +4,21 @@
 <comref>
   <header>
     <copyright>
-      <year>2007</year>
-      <year>2008</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2007</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>escript</title>
@@ -75,9 +73,10 @@ $ <input>factorial</input>
 usage: factorial integer
 $ <input>factorial five</input>
 usage: factorial integer        </pre>
-        <p>Note that there should not be any module declaration in an Erlang
-          script file. Instead, the first line is usually the interpreter line
-          which invokes <c><![CDATA[escript]]></c>. If you invoke <c><![CDATA[escript]]></c> like this</p>
+        <p>The header of an Erlang script differs from a normal Erlang module.
+          The first line is intended to be the interpreter line, which invokes
+          <c><![CDATA[escript]]></c>. However if you invoke <c><![CDATA[escript]]></c>
+          like this</p>
         <pre>
 $ <input>escript factorial 5</input>        </pre>
         <p>the contents of the first line does not matter, but it cannot contain
@@ -102,29 +101,70 @@ $ <input>escript factorial 5</input>        </pre>
           Unix platforms if the execution bit for the script file is not set.
           (Use <c><![CDATA[chmod +x script-name]]></c> to turn on the execution bit.)
           </p>
+
+        <p>The rest of the Erlang script file may either contain
+          Erlang source code, an inlined <c>beam</c> file or an inlined
+          archive file.</p>
+
         <p>An Erlang script file must always contain the function <em>main/1</em>.
           When the script is run, the <c><![CDATA[main/1]]></c> will be called with a list
           of strings representing the arguments given to the script (not changed or
           interpreted in any way).</p>
-        <p>Call <c><![CDATA[escript:script_name/0]]></c> from your to script to retrieve
-          the pathname of the script (the pathname is usually, but not always,
-          absolute).</p>
-        <p>By default, the script will be interpreted. You can force it to be
-          compiled by including the following line somewhere in the script file:</p>
-        <pre>
--mode(compile).        </pre>
 
-        <p>It is not necessary to export the <c><![CDATA[main/1]]></c>
-          function when the script is interpreted or dynamically
-          compiled.</p>
-        <p>It is also possible to have a precompiled script which
-          contains a <c>beam</c> file. In a precompiled script, the
-          interpretation of the script header is exactly the same as
-          in a script containing source code. That means that you can
-          make a <c>beam</c> file executable by prepending the file
-          with the lines starting with <c>#!</c> and <c>%%!</c>
-          mentioned above. In a precompiled script, the function
+        <p>If the <c><![CDATA[main/1]]></c> function in the script returns successfully,
+          the exit status for the script will be 0. If an exception is generated
+          during execution, a short message will be printed and the script terminated
+          with exit status 127.</p>
+
+        <p>To return your own non-zero exit code, call <c><![CDATA[halt(ExitCode)]]></c>;
+          for instance:</p>
+        <pre>
+halt(1).</pre>
+
+        <p>Call <c><![CDATA[escript:script_name/0]]></c> from your to
+          script to retrieve the pathname of the script (the pathname
+          is usually, but not always, absolute).</p>
+
+        <p>If the file contains source code (as in the example above),
+          it will be processed by the preprocessor <c>epp</c>. This
+          means that you for example may use pre-defined macros (such as
+          <c><![CDATA[?MODULE]]></c>) as well as include directives like
+          the <c><![CDATA[-include_lib]]></c> directive. For instance, use</p>
+        <pre>
+-include_lib("kernel/include/file.hrl").        </pre>
+        <p>to include the record definitions for the records used by the
+          <c><![CDATA[file:read_file_info/1]]></c> function.</p>
+
+        <p>The script will be checked for syntactic and semantic
+          correctness before being run. If there are warnings (such as
+          unused variables), they will be printed and the script will
+          still be run. If there are errors, they will be printed and
+          the script will not be run and its exit status will be
+          127.</p>
+
+        <p>Both the module declaration and the export declaration of
+          the <c><![CDATA[main/1]]></c> function are optional.</p>
+
+        <p>By default, the script will be interpreted. You can force
+          it to be compiled by including the following line somewhere
+          in the script file:</p><pre>
+-mode(compile).</pre>
+
+        <p>Execution of interpreted code is slower than compiled code.
+          If much of the execution takes place in interpreted code it
+          may be worthwile to compile it, even though the compilation
+          itself will take a little while.</p>
+
+        <p>As mentioned earlier, it is possible to have a script which
+          contains precompiled <c>beam</c> code. In a precompiled
+          script, the interpretation of the script header is exactly
+          the same as in a script containing source code. That means
+          that you can make a <c>beam</c> file executable by
+          prepending the file with the lines starting with <c>#!</c>
+          and <c>%%!</c> mentioned above. In a precompiled script, the
+          function
           <c>main/1</c> must be exported.</p>
+
         <p>As yet another option it is possible to have an entire
           Erlang archive in the script. In a archive script, the
           interpretation of the script header is exactly the same as
@@ -132,8 +172,8 @@ $ <input>escript factorial 5</input>        </pre>
           make an archive file executable by prepending the file with
           the lines starting with <c>#!</c> and <c>%%!</c> mentioned
           above. In an archive script, the function <c>main/1</c> must
-          be exported. By default the <c>main/1</c> function in
-          the module with the same name as the basename of the
+          be exported. By default the <c>main/1</c> function in the
+          module with the same name as the basename of the
           <c>escript</c> file will be invoked. This behavior can be
           overridden by setting the flag <c>-escript main Module</c>
           as one of the emulator flags. The <c>Module</c> must be the
@@ -145,34 +185,6 @@ $ <input>escript factorial 5</input>        </pre>
          is ready is to obtain early feedback. The file format,
          semantics, interfaces etc. may be changed in a future
          release. The flag <c>-escript</c> is also experimental.</p></warning>
-        <p>Pre-processor directives in the script files are ignored,
-          with the exception for the <c><![CDATA[-include_lib]]></c>
-          directive. For instance, use</p>
-        <pre>
--include_lib("kernel/include/file.hrl").        </pre>
-        <p>to include the record definitions for the records used by the
-          <c><![CDATA[file:read_file_info/1]]></c> function.</p>
-        <p></p>
-        <p>Pre-defined macros (such as <c><![CDATA[?MODULE]]></c>) will not work.
-          A script does not have module name, so BIFs such as
-          <seealso marker="kernel:erlang#spawn/3">spawn/3</seealso>
-          that require a module name cannot be used.
-          Instead, use a BIF that take a fun, such as
-          <seealso marker="kernel:erlang#spawn/1">spawn/1</seealso>.</p>
-        <p>The script will be checked for syntactic and semantic correctness
-          before being run. If there are warnings (such as unused variables),
-          they will be printed and the script will still be run. If there are
-          errors, they will be printed and the script will not be run and its
-          exit status will be 127.</p>
-        <p>If the <c><![CDATA[main/1]]></c> function in the script returns successfully,
-          the exit status for the script will be 0. If an exception is generated
-          during execution, a short message will be printed and the script terminated
-          with exit status 127.</p>
-        <p></p>
-        <p>To return your own non-zero exit code, call <c><![CDATA[halt(ExitCode)]]></c>;
-          for instance:</p>
-        <pre>
-halt(1).        </pre>
       </desc>
     </func>
   </funcs>

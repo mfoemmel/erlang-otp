@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1998-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(dbg_iserver).
 -behaviour(gen_server).
@@ -100,6 +101,7 @@ ensure_started() ->
 %% exports                    Exp
 %% defs                       []
 %% mod_bin                    Binary
+%% mod_raw                    Raw Binary
 %% mod_file                   File
 %% module                     Mod
 %% {Mod,Name,Arity,Exported}  Cs
@@ -167,6 +169,15 @@ handle_call({get_meta, Pid}, _From, State) ->
 		    {error, not_interpreted}
 	    end,
     {reply, Reply, State};
+handle_call({get_attpid, Pid}, _From, State) ->
+    Reply = case get_proc({pid, Pid}, State#state.procs) of
+		{true, Proc} ->
+		    {ok, Proc#proc.attpid};
+		false ->
+		    {error, not_interpreted}
+	    end,
+    {reply, Reply, State};
+    
 
 %% Breakpoint handling
 handle_call({new_break, Point, Options}, _From, State) ->
@@ -279,6 +290,25 @@ handle_call({contents, Mod, Pid}, _From, State) ->
 				ModDbs)
 	    end,
     [{mod_bin, Bin}] = ets:lookup(ModDb, mod_bin),
+    {reply, {ok, Bin}, State};
+handle_call({raw_contents, Mod, Pid}, _From, State) ->
+    Db = State#state.db,
+    [{{Mod, refs}, ModDbs}] = ets:lookup(Db, {Mod, refs}),
+    ModDb = if
+		Pid==any -> hd(ModDbs);
+		true ->
+		    lists:foldl(fun(T, not_found) ->
+					[{T, Pids}] = ets:lookup(Db, T),
+					case lists:member(Pid, Pids) of
+					    true -> T;
+					    false -> not_found
+					end;
+				   (_T, T) -> T
+				end,
+				not_found,
+				ModDbs)
+	    end,
+    [{mod_raw, Bin}] = ets:lookup(ModDb, mod_raw),
     {reply, {ok, Bin}, State};
 handle_call({is_interpreted, Mod, Name, Arity}, _From, State) ->
     Db = State#state.db,

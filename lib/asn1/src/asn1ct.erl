@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>1997-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1ct).
 
@@ -780,7 +780,7 @@ parse({false,Tokens},_,_) ->
 check({true,M},File,OutFile,Includes,EncodingRule,DbFile,Options,InputMods) ->
 
     start(Includes),
-    case asn1ct_check:storeindb(M) of 
+    case asn1ct_check:storeindb(#state{erule=EncodingRule},M) of 
 	ok   ->
 	    Module = asn1_db:dbget(M#module.name,'MODULE'),
 	    State = #state{mname=Module#module.name,
@@ -861,14 +861,14 @@ parse_and_save(Module,S) ->
 	{file,SuffixedASN1source} ->
 	    case dbfile_uptodate(SuffixedASN1source,Options1) of
 		false ->
-		    parse_and_save1(SuffixedASN1source,Options1,Includes);
+		    parse_and_save1(S,SuffixedASN1source,Options1,Includes);
 		_ -> ok
 	    end;
 	Err ->
 	    io:format("Warning: could not do a consistency check of the ~p file: no asn1 source file was found.~n",[lists:concat([Module,".asn1db"])]),
 	    {error,{asn1,input_file_error,Err}}
     end.
-parse_and_save1(File,Options,Includes) ->
+parse_and_save1(S,File,Options,Includes) ->
     Ext = filename:extension(File),
     Base = filename:basename(File,Ext),
     DbFile = outfile(Base,"asn1db",Options),
@@ -882,7 +882,7 @@ parse_and_save1(File,Options,Includes) ->
 	end,
 %    start(["."|Includes]),
     start(Includes),
-    case asn1ct_check:storeindb(M) of 
+    case asn1ct_check:storeindb(S,M) of 
 	ok   ->
 	    asn1_db:dbsave(DbFile,M#module.name)
     end.
@@ -1059,17 +1059,15 @@ get_runtime_mod(Options) ->
 	    per -> ["asn1rt_per_bin.erl"];
 	    ber -> ["asn1rt_ber_bin.erl"];
 	    per_bin ->
-		case {lists:member(optimize,Options),
-		      lists:member(bit_opt,Options)} of
-		    {true,_} -> ["asn1rt_per_bin_rt2ct.erl"];
-%		    {_,true} -> ["asn1rt_per_bin_v2.erl"];
+		case lists:member(optimize,Options) of
+		    true -> ["asn1rt_per_bin_rt2ct.erl"];
 		    _ -> ["asn1rt_per_bin.erl"]
 		end;
 	    ber_bin -> ["asn1rt_ber_bin.erl"];
 	    ber_bin_v2 -> ["asn1rt_ber_bin_v2.erl"];
 	    uper_bin -> ["asn1rt_uper_bin.erl"]
 	end,
-    RtMod1++["asn1rt_check.erl","asn1rt_driver_handler.erl"].
+    RtMod1++["asn1rt_check.erl","asn1rt_driver_handler.erl","asn1rt.erl"].
     
 
 erl_compile(OutFile,Options) ->

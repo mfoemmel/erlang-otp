@@ -1,19 +1,22 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
+%%
+
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -457,10 +460,7 @@ stop() ->
 sync_stop(Pid) ->
     Pid ! {self(), stop},
     receive
-	{Pid, {stopped, Res}} ->
-	    Res;
-	Else ->
-	    exit({stop_error, Else})
+	{Pid, {stopped, Res}} ->  Res
     after timer:minutes(1) ->
 	    exit(Pid, kill),
 	    {error, brutal_kill}
@@ -861,22 +861,24 @@ add_time(Acc, New) ->
 	     acc_time = New#time.acc_time + Acc#time.acc_time,
 	     max_time = lists:max([New#time.max_time, Acc#time.max_time])}.
 
+-define(AVOID_DIV_ZERO(_What_), try (_What_) catch _:_ -> 0 end).
+
 show_report(State) ->
     Now    = now_to_micros(erlang:now()),
     Iters  = State#reporter_state.n_iters,
     Time   = State#reporter_state.curr,
     Max    = Time#time.max_time,
     N      = Time#time.n_trans,
-    Avg    = Time#time.acc_time div N,
+    Avg    = ?AVOID_DIV_ZERO(Time#time.acc_time div N),
     AliveN = length(State#reporter_state.driver_pids),
-    Tps    = (?SECOND * AliveN) div Avg,
+    Tps    = ?AVOID_DIV_ZERO((?SECOND * AliveN) div Avg),
     PrevTps= State#reporter_state.prev_tps,
     {DiffSign, DiffTps} = signed_diff(Iters, Tps, PrevTps),
-    Unfairness = Time#time.max_n / Time#time.min_n,
-    BruttoAvg = (Now - State#reporter_state.prev_micros) div N,
+    Unfairness = ?AVOID_DIV_ZERO(Time#time.max_n / Time#time.min_n),
+    BruttoAvg = ?AVOID_DIV_ZERO((Now - State#reporter_state.prev_micros) div N),
 %%    io:format("n_iters=~p, n_trans=~p, n_drivers=~p, avg=~p, now=~p, prev=~p~n",
 %%	      [Iters, N, AliveN, BruttoAvg, Now, State#reporter_state.prev_micros]),
-    BruttoTps = ?SECOND div BruttoAvg,
+    BruttoTps = ?AVOID_DIV_ZERO(?SECOND div BruttoAvg),
     case Iters > 0 of
 	true ->
 	    io:format("TPC-B: ~p iter ~s~p diff ~p (~p) tps ~p avg micros ~p max micros ~p unfairness~n",

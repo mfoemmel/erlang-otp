@@ -1,20 +1,22 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 1996-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
+# retrieved online at http://www.erlang.org/.
 # 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
-#     $Id$
+# %CopyrightEnd%
 #
+
 include $(ERL_TOP)/make/target.mk
 include ../vsn.mk
 
@@ -97,11 +99,18 @@ ENABLE_ALLOC_TYPE_VARS += gprof
 NO_INLINE_FUNCTIONS=true
 else
 
+ifeq ($(TYPE),lcnt)
+PURIFY = 
+TYPEMARKER = .lcnt
+TYPE_FLAGS = @CFLAGS@ -DERTS_ENABLE_LOCK_COUNT
+else
+
 # If type isn't one of the above, it *is* opt type...
 override TYPE=opt
 PURIFY =
 TYPEMARKER =
 TYPE_FLAGS = @CFLAGS@
+endif
 endif
 endif
 endif
@@ -126,6 +135,7 @@ FLAVOR_MARKER=.hybrid
 FLAVOR_FLAGS=-DHYBRID
 ENABLE_ALLOC_TYPE_VARS += hybrid
 else
+
 
 # If flavor isn't one of the above, it *is* plain flavor...
 override FLAVOR=plain
@@ -194,20 +204,28 @@ ifeq (@EMU_LOCK_CHECKING@,yes)
 NO_INLINE_FUNCTIONS=true
 endif
 
+ifneq ($(filter tile-%,$(TARGET)), )
+# -O2 generally produces faster for tile-cc, because the code is smaller.
+# Since tile-cc looks like gcc, we need to override the normal gcc -O3 setting.
+OPT_LEVEL = -O2
+else
+OPT_LEVEL = -O3
+endif
+
 ifeq ($(CC), gcc)
 ifeq ($(NO_INLINE_FUNCTIONS),true)
-GEN_OPT_FLGS = -O3 -fno-inline-functions
+GEN_OPT_FLGS = $(OPT_LEVEL) -fno-inline-functions
 else
 ifeq ($(OMIT_OMIT_FP),yes)
-GEN_OPT_FLGS = -O3
+GEN_OPT_FLGS = $(OPT_LEVEL)
 else
-GEN_OPT_FLGS = -O3 -fomit-frame-pointer
+GEN_OPT_FLGS = $(OPT_LEVEL) -fomit-frame-pointer
 endif
 endif
 UNROLL_FLG = -funroll-loops
 else
 ifeq ($(TARGET), win32)
-GEN_OPT_FLGS = -O3 
+GEN_OPT_FLGS = $(OPT_LEVEL)
 UNROLL_FLG = 
 RC=rc.sh
 ifeq ($(USING_MINGW), yes)
@@ -238,41 +256,27 @@ CS_CFLAGS = $(subst -O2, $(GEN_OPT_FLGS) $(UNROLL_FLG), $(CS_CFLAGS_))
 else
 CS_CFLAGS = $(CS_CFLAGS_)
 endif
+CS_LIBS = -L../lib/internal/$(TARGET) -lerts_internal @ERTS_INTERNAL_X_LIBS@
 
-LIBS	+= @TERMCAP_LIB@ -L../lib/internal/$(TARGET)
+LIBS	+= @TERMCAP_LIB@ -L../lib/internal/$(TARGET) @ERTS_INTERNAL_X_LIBS@
 
 ifeq ($(TARGET),win32)
 LIBS    += \
 	-L$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE) -lz \
 	-L$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE) -lepcre
-
-#LIBS    += \
-#	-L$(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET) -lz \
-#	-L$(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE) -lepcre
-
 DEPLIBS = \
 	$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/z.lib \
 	$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/epcre.lib
-#DEPLIBS = \
-#	$(ERL_TOP)/erts/obj/$(TARGET)/z.lib \
-# 	$(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/epcre.lib
 else
 # Build on darwin fails if -lz is used
 LIBS    += \
 	$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/libz.a \
 	$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/libepcre.a
-
-#LIBS    += \
-#	$(ERL_TOP)/erts/obj/$(TARGET)/libz.a \
-#	$(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/libepcre.a
-
 DEPLIBS = \
 	$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/libz.a \
-	$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/libepcre.a
-
-#DEPLIBS = \
-#	$(ERL_TOP)/erts/obj/$(TARGET)/libz.a \
-#	$(ERL_TOP)/erts/emulator/obj/$(TARGET)/$(TYPE)/libepcre.a
+	$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/libepcre.a \
+	$(ERL_TOP)/erts/lib/internal/$(TARGET)/liberts_internal.a 
+# rem liberts_internal.a
 endif
 
 ELIB_FLAGS = -DENABLE_ELIB_MALLOC -DELIB_ALLOC_IS_CLIB -DELIB_HEAP_SBRK
@@ -526,24 +530,24 @@ $(TTF_DIR)/driver_tab.c: Makefile.in
 # This list must be consistent with PRE_LOADED_MODULES in
 # lib/kernel/src/Makefile.
 ifeq ($(TARGET),win32)
-$(TARGET)/beams.rc: $(ERL_TOP)/lib/kernel/ebin/otp_ring0.beam \
-			$(ERL_TOP)/lib/kernel/ebin/init.beam \
-			$(ERL_TOP)/lib/kernel/ebin/prim_inet.beam \
-			$(ERL_TOP)/lib/kernel/ebin/prim_file.beam \
-			$(ERL_TOP)/lib/kernel/ebin/zlib.beam \
-			$(ERL_TOP)/lib/kernel/ebin/prim_zip.beam \
-			$(ERL_TOP)/lib/kernel/ebin/erl_prim_loader.beam \
-			$(ERL_TOP)/lib/kernel/ebin/erlang.beam
+$(TARGET)/beams.rc: $(ERL_TOP)/erts/preloaded/ebin/otp_ring0.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/init.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/prim_inet.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/prim_file.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/zlib.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/prim_zip.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/erl_prim_loader.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/erlang.beam
 	LANG=C $(PERL) utils/make_preload $(MAKE_PRELOAD_EXTRA) -rc $^ > $@
 else
-$(TARGET)/preload.c: $(ERL_TOP)/lib/kernel/ebin/otp_ring0.beam \
-			$(ERL_TOP)/lib/kernel/ebin/init.beam \
-			$(ERL_TOP)/lib/kernel/ebin/prim_inet.beam \
-			$(ERL_TOP)/lib/kernel/ebin/prim_file.beam \
-			$(ERL_TOP)/lib/kernel/ebin/zlib.beam \
-			$(ERL_TOP)/lib/kernel/ebin/prim_zip.beam \
-			$(ERL_TOP)/lib/kernel/ebin/erl_prim_loader.beam \
-			$(ERL_TOP)/lib/kernel/ebin/erlang.beam
+$(TARGET)/preload.c: $(ERL_TOP)/erts/preloaded/ebin/otp_ring0.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/init.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/prim_inet.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/prim_file.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/zlib.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/prim_zip.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/erl_prim_loader.beam \
+			$(ERL_TOP)/erts/preloaded/ebin/erlang.beam
 	LANG=C $(PERL) utils/make_preload -old $^ > $@
 endif
 
@@ -577,6 +581,14 @@ $(OBJDIR)/beams.$(RES_EXT): $(TARGET)/beams.rc
 	$(RC) -o $@  -I$(ERL_TOP)/erts/etc/win32 $(TARGET)/beams.rc 
 
 endif
+
+ifneq ($(filter tile-%,$(TARGET)),)
+$(OBJDIR)/beam_emu.o: beam/beam_emu.c
+       $(CC) $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) \
+         -OPT:Olimit=0 -WOPT:lpre=off:spre=off:epre=off \
+         $(INCLUDES) -c $< -o $@
+endif
+
 
 $(OBJDIR)/%.o: beam/%.c
 	$(CC) $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@
@@ -643,7 +655,7 @@ CS_SRC = sys/$(ERLANG_OSTYPE)/erl_child_setup.c
 
 $(BINDIR)/$(CS_EXECUTABLE): $(CS_SRC)
 	$(CS_PURIFY) $(CC) -o $(BINDIR)/$(CS_EXECUTABLE) \
-	$(CS_CFLAGS) $(COMMON_INCLUDES) $(CS_SRC)
+	$(CS_CFLAGS) $(COMMON_INCLUDES) $(CS_SRC) $(CS_LIBS)
 
 $(OBJDIR)/%.elib.o: beam/%.c
 	$(CC) $(ELIB_FLAGS) $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@

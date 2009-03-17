@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>2002-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1rt_per_bin_rt2ct).
 
@@ -130,6 +130,12 @@ fixoptionals(OptList,_OptLength,Val) when tuple(Val) ->
 fixoptionals([],_,Acc) ->
     %% Optbits
     lists:reverse(Acc);
+fixoptionals([{Pos,DefVal}|Ot],Val,Acc) ->
+    case element(Pos,Val) of
+	asn1_DEFAULT -> fixoptionals(Ot,Val,[0|Acc]);
+	DefVal -> fixoptionals(Ot,Val,[0|Acc]);
+	_ -> fixoptionals(Ot,Val,[1|Acc])
+    end;
 fixoptionals([Pos|Ot],Val,Acc) ->
     case element(Pos,Val) of
 	asn1_NOVALUE -> fixoptionals(Ot,Val,[0|Acc]);
@@ -821,7 +827,9 @@ decode_length(Buffer,{Lb,_Ub}) when integer(Lb), Lb >= 0 -> % Ub > 65535
 decode_length(Buffer,{{Lb,Ub},Ext}) when is_list(Ext) -> 
     case getbit(Buffer) of
 	{0,Buffer2} ->
-	    decode_length(Buffer2, {Lb,Ub})
+	    decode_length(Buffer2, {Lb,Ub});
+	{1,Buffer2} ->
+	    decode_length(Buffer2, undefined)
     end;
 
 
@@ -950,6 +958,14 @@ encode_bit_string(no, BitListValue,[])
   when list(BitListValue) ->
     [encode_length(undefined,length(BitListValue)),
      2,BitListValue];
+encode_bit_string({{Fix,Fix},Ext}, BitListValue,[]) 
+  when is_integer(Fix), is_list(Ext) ->
+    case length(BitListValue) of
+	Len when Len =< Fix ->
+	    [0,encode_bit_string(Fix,BitListValue,[])];
+	_ ->
+	    [1,encode_bit_string(no,BitListValue,[])]
+    end;
 encode_bit_string(C, BitListValue,[]) 
   when list(BitListValue) ->
     [encode_length(C,length(BitListValue)),
@@ -963,6 +979,14 @@ encode_bit_string(no, BitListValue,_NamedBitList)
 					    lists:reverse(BitListValue))),
     [encode_length(undefined,length(NewBitLVal)),
      2,NewBitLVal];
+encode_bit_string({{Fix,Fix},Ext}, BitListValue,_NamedBitList) 
+  when is_integer(Fix), is_list(Ext) ->
+    case length(BitListValue) of
+	Len when Len =< Fix ->
+	    [0,encode_bit_string(Fix,BitListValue,_NamedBitList)];
+	_ ->
+	    [1,encode_bit_string(no,BitListValue,_NamedBitList)]
+    end;
 encode_bit_string(C,BitListValue,_NamedBitList) 
   when list(BitListValue) ->% C = {_,'MAX'}
 %     NewBitLVal = lists:reverse(lists:dropwhile(fun(0)->true;(1)->false end,
@@ -1009,8 +1033,19 @@ encode_bin_bit_string(C,{_,BinBits},_NamedBitList)
   when integer(C),C=<16 ->
     [45,C,size(BinBits),BinBits];
 encode_bin_bit_string(C,{_Unused,BinBits},_NamedBitList)
-  when integer(C) ->
+  when integer(C), C =< 255 ->
     [2,45,C,size(BinBits),BinBits];
+encode_bin_bit_string(C,{_Unused,BinBits},_NamedBitList)
+  when integer(C), C =< 65535 ->
+    case size(BinBits) of
+	Size when Size =< 255 ->
+	    [2,46,<<C:16>>,Size,BinBits];
+	Size ->
+	    [2,47,<<C:16>>,<<Size:16>>,BinBits]
+    end;
+%% encode_bin_bit_string(C,{_Unused,BinBits},_NamedBitList)
+%%   when integer(C) ->
+%%     exit({error,{asn1, {bitstring_size, not_supported, C}}});
 encode_bin_bit_string(C,UnusedAndBin={_,_},NamedBitList) ->
 %    UnusedAndBin1 = {Unused1,Bin1} = 
     {Unused1,Bin1} = 
@@ -1027,6 +1062,14 @@ encode_bin_bit_string(C,UnusedAndBin={_,_},NamedBitList) ->
 	    Size=size(Bin1),
 	    [encode_length(undefined,Size*8 - Unused1),
 	     2,octets_unused_to_complete(Unused1,Size,Bin1)];
+	{{Fix,Fix},Ext} when is_integer(Fix),is_list(Ext) ->
+	    %%[encode_length(Sc,size(Bin1)*8 - Unused1),
+	    case size(Bin1)*8 - Unused1 of
+		Size when Size =< Fix  ->
+		    [0,encode_bin_bit_string(Fix,UnusedAndBin,NamedBitList)];
+		_Size ->
+		    [1,encode_bin_bit_string(no,UnusedAndBin,NamedBitList)]
+	    end;
 	Sc -> 
 	    Size=size(Bin1),
 	    [encode_length(Sc,Size*8 - Unused1),
@@ -1121,6 +1164,17 @@ decode_compact_bit_string(Buffer, C, NamedNumberList) ->
 	    {Len,Bytes2} = decode_length(Buffer,undefined),
 	    Bytes3 = align(Bytes2),
 	    compact_bit_string(Bytes3,Len,NamedNumberList);
+	{{Fix,Fix},Ext} = Sc when is_integer(Fix), is_list(Ext) ->
+	    case decode_length(Buffer,Sc) of
+		{Len,Bytes2} when Len > Fix ->
+		    Bytes3 = align(Bytes2),
+		    compact_bit_string(Bytes3,Len,NamedNumberList);
+		{Len,Bytes2} when Len > 16 ->
+		    Bytes3 = align(Bytes2),
+		    compact_bit_string(Bytes3,Len,NamedNumberList);
+		{Len,Bytes2} ->
+		    compact_bit_string(Bytes2,Len,NamedNumberList)
+	    end;
 	Sc ->
 	    {Len,Bytes2} = decode_length(Buffer,Sc),
 	    Bytes3 = align(Bytes2),
@@ -1153,6 +1207,17 @@ decode_bit_string(Buffer, C, NamedNumberList) ->
 	    Bytes2 = align(Buffer),
 	    {BinBits,_Bytes3} = decode_fragmented_bits(Bytes2,V),
 	    bit_list_or_named(BinBits,V,NamedNumberList);
+	{{Fix,Fix},Ext} =Sc when is_integer(Fix), is_list(Ext) ->
+	    case decode_length(Buffer,Sc) of
+		{Len,Bytes2} when Len > Fix ->
+		    Bytes3 = align(Bytes2),
+		    bit_list_or_named(Bytes3,Len,NamedNumberList);
+		{Len,Bytes2} when Len > 16 ->
+		    Bytes3 = align(Bytes2),
+		    bit_list_or_named(Bytes3,Len,NamedNumberList);
+		{Len,Bytes2} ->
+		    bit_list_or_named(Bytes2,Len,NamedNumberList)
+	    end;
 	Sc -> % extension marker
 	    {Len,Bytes2} = decode_length(Buffer,Sc),
 	    Bytes3 = align(Bytes2),
@@ -1739,29 +1804,21 @@ complete(L) ->
 -else.
 
 complete(L) ->
-    case catch port_control(asn1_driver_port,1,L) of
+    case catch control(?COMPLETE_ENCODE,L) of
 	Bin when binary(Bin) ->
 	    Bin;
 	List when list(List) -> handle_error(List,L);
-	{'EXIT',{badarg,Reason}} ->
-	    asn1rt_driver_handler:load_driver(),
-	    receive
-		driver_ready ->
-		    case catch port_control(asn1_driver_port,1,L) of
-			Bin2 when binary(Bin2) -> Bin2;
+	{'EXIT',{badarg,_Reason}} ->
+	    case asn1rt:load_driver() of
+		ok ->
+		    case control(?COMPLETE_ENCODE,L) of
+			Bin when binary(Bin) ->Bin;
 			List when list(List) -> handle_error(List,L);
-			{'EXIT',Reason2={badarg,_R}} -> 
-			    exit({"failed to call driver probably due to bad asn1 value",Reason2});
-			Reason2 -> exit(Reason2)
+			Other -> Other
 		    end;
-		{error,Error} -> % error when loading driver
-		    %% the driver could not be loaded
-		    exit(Error);
-		Error={port_error,Reason} ->
-		    exit(Error)
-	    end;
-	{'EXIT',Reason} ->
-	    exit(Reason)
+		Err ->
+		    Err
+	    end
     end.
 
 
@@ -1772,6 +1829,9 @@ handle_error("1",L) -> % error in complete in driver
 handle_error(ErrL,L) ->
     exit({error,{asn1,ErrL,L}}).
 
+control(Cmd, Data) ->
+    Port = asn1rt_driver_handler:client_port(),
+    erlang:port_control(Port, Cmd, Data).
 -endif.
 
 

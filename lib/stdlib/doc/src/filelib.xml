@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>2003</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2003</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>filelib</title>
@@ -78,7 +76,7 @@ DeepList = [char() | atom() | DeepList]</code>
       <fsummary>Fold over all files matching a regular expression.</fsummary>
       <type>
         <v>Dir = dirname()</v>
-        <v>RegExp = regexp()</v>
+        <v>RegExp = regular_expression_string()</v>
         <v>Recursive = true|false</v>
         <v>Fun = fun(F, AccIn) -> AccOut</v>
         <v>AccIn = AccOut = term()</v>
@@ -86,10 +84,12 @@ DeepList = [char() | atom() | DeepList]</code>
       <desc>
         <p>The <c>fold_files/5</c> function folds the function
           <c>Fun</c> over all (regular) files <c>F</c> in the
-          directory <c>Dir</c> that match the regular expression <c>RegExp</c>.
+          directory <c>Dir</c> that match the regular expression <c>RegExp</c>
+	  (see the <seealso marker="re">re</seealso> module for a description
+	  of the allowed regular expressions).
           If <c>Recursive</c> is true all sub-directories to <c>Dir</c>
-          are processed. The match is tried on just the filename without
-          the directory part.</p>
+          are processed. The regular expression matching is done on just
+	  the filename without the directory part.</p>
       </desc>
     </func>
     <func>

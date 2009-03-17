@@ -42,6 +42,7 @@ POSSIBILITY OF SUCH DAMAGE.
 see if it was compiled with the opposite endianness. If so, it uses an
 auxiliary local function to flip the appropriate bytes. */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -99,7 +100,7 @@ Returns:           the new block if is is indeed a byte-flipped regex
 */
 
 real_pcre *
-_pcre_try_flipped(const real_pcre *re, real_pcre *internal_re,
+_erts_pcre_try_flipped(const real_pcre *re, real_pcre *internal_re,
   const pcre_study_data *study, pcre_study_data *internal_study)
 {
 if (byteflip(re->magic_number, sizeof(re->magic_number)) != MAGIC_NUMBER)

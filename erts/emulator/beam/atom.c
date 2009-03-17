@@ -1,21 +1,21 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
-
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -188,6 +188,7 @@ am_atom_put(const char* name, int len)
 {
     Atom a;
     Eterm ret;
+    int aix;
 
     /*
      * Silently truncate the atom if it is too long. Overlong atoms
@@ -204,9 +205,16 @@ am_atom_put(const char* name, int len)
     }
     a.len = len;
     a.name = (byte*)name;
-    atom_write_lock();
-    ret = make_atom(index_put(&erts_atom_table, (void*) &a));
-    atom_write_unlock();
+    atom_read_lock();
+    aix = index_get(&erts_atom_table, (void*) &a);
+    atom_read_unlock();
+    if (aix >= 0)
+	ret = make_atom(aix);
+    else {
+	atom_write_lock();
+	ret = make_atom(index_put(&erts_atom_table, (void*) &a));
+	atom_write_unlock();
+    }
     return ret;
 }
 

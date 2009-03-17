@@ -1027,6 +1027,10 @@ case $basic_machine in
 	tx39el)
 		basic_machine=mipstx39el-unknown
 		;;
+	tile*)
+		basic_machine=tile-tilera
+		os=-linux-gnu
+		;;
 	toad1)
 		basic_machine=pdp10-xkl
 		os=-tops20

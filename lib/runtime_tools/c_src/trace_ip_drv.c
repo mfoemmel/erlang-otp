@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1999-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 /*
 ** This is a trace port, which means it cannot be busy and takes
@@ -109,8 +110,8 @@
 */
 
 #ifndef __WIN32__
-#    define FLAG_READ DO_READ
-#    define FLAG_WRITE DO_WRITE
+#    define FLAG_READ ERL_DRV_READ
+#    define FLAG_WRITE ERL_DRV_WRITE
      typedef int SOCKET;
 #    define INVALID_SOCKET -1
 #    define IS_INVALID_SOCKET(S) ((S) < 0)
@@ -216,7 +217,10 @@ static void close_client(TraceIpData *data);
 static int trywrite(TraceIpData *data, unsigned char *buff, int bufflen);
 static SOCKET my_accept(SOCKET sock);
 static void close_unlink_port(TraceIpData *data);
-static int my_driver_select(TraceIpData *desc, SOCKET fd, int flags, int on);
+enum MySelectOp { SELECT_ON, SELECT_OFF, SELECT_CLOSE };
+static int my_driver_select(TraceIpData *desc, SOCKET fd, int flags, enum MySelectOp);
+static void stop_select(ErlDrvEvent event, void*);
+
 /*
 ** The driver struct
 */
@@ -239,7 +243,18 @@ ErlDrvEntry trace_ip_driver_entry = {
     NULL,                  /* void * that is not used */
     trace_ip_control,      /* F_PTR control, port_control callback */
     NULL,                  /* F_PTR timeout, reserved */
-    NULL                   /* F_PTR outputv, reserved */
+    NULL,                  /* F_PTR outputv, reserved */
+    NULL,                  /* ready_async */
+    NULL,                  /* flush */
+    NULL,                  /* call */
+    NULL,                  /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0, /* ERL_DRV_FLAGs */
+    NULL,
+    NULL,                  /* process_exit */
+    stop_select
 };
 
 /*
@@ -350,7 +365,7 @@ static ErlDrvData trace_ip_start(ErlDrvPort port, char *buff)
     ret->event_mask = 0;
     ret->event = 0;
 #endif
-    my_driver_select(ret, s, FLAG_READ, 1);
+    my_driver_select(ret, s, FLAG_READ, SELECT_ON);
     set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
 
     return (ErlDrvData) ret;
@@ -383,7 +398,7 @@ static void trace_ip_output(ErlDrvData handle, char *buff, int bufflen)
 	int written = trywrite(data, buff, bufflen);
 	if (written >= 0 && written < bufflen + 5) {
 	    enque_message(data, buff, bufflen, written);
-	    my_driver_select(data, data->fd, FLAG_WRITE, 1);
+	    my_driver_select(data, data->fd, FLAG_WRITE, SELECT_ON);
 	}
 	return;
     }
@@ -418,9 +433,9 @@ static void trace_ip_ready_input(ErlDrvData handle, ErlDrvEvent fd)
 	    data->fd = client;
 	    set_nonblocking(client);
 	    if (data->que[data->questart] != NULL) {
-		my_driver_select(data, data->fd, FLAG_WRITE | FLAG_READ, 1);
+		my_driver_select(data, data->fd, FLAG_WRITE | FLAG_READ, SELECT_ON);
 	    } else {
-		my_driver_select(data, data->fd, FLAG_READ, 1);
+		my_driver_select(data, data->fd, FLAG_READ, SELECT_ON);
 	    }
 	    data->flags &= ~(FLAG_LISTEN_PORT);
 	}
@@ -432,7 +447,7 @@ static void trace_ip_ready_input(ErlDrvData handle, ErlDrvEvent fd)
      * but better make sure.
      */
 
-    if ((SOCKET)fd == data->fd) {
+    if ((SOCKET)(long)fd == data->fd) {
 #ifdef __WIN32__
 	close_client(data);
 #else
@@ -496,7 +511,7 @@ static void trace_ip_ready_output(ErlDrvData handle, ErlDrvEvent fd)
 
     ASSERT(!(data->flags & FLAG_LISTEN_PORT) &&
 	   data->que[data->questart] != NULL &&
-	   (SOCKET)fd == data->fd);
+	   (SOCKET)(long)fd == data->fd);
     
     tim = data->que[data->questart];
     towrite = tim->siz - tim->written;
@@ -510,7 +525,7 @@ static void trace_ip_ready_output(ErlDrvData handle, ErlDrvEvent fd)
 	    ** We wrote the last message in the que, dont
 	    ** step forward, just 'deselect'
 	    */
-	    my_driver_select(data, data->fd, FLAG_WRITE, 0);
+	    my_driver_select(data, data->fd, FLAG_WRITE, SELECT_OFF);
 	    /*
 	    ** We are really done...
 	    */
@@ -734,8 +749,7 @@ static void clean_que(TraceIpData *data)
 */
 static void close_client(TraceIpData *data) 
 {
-    my_driver_select(data, data->fd, FLAG_WRITE | FLAG_READ, 0);
-    closesocket(data->fd);
+    my_driver_select(data, data->fd, FLAG_WRITE | FLAG_READ, SELECT_CLOSE);
     data->flags |= FLAG_LISTEN_PORT;
     if (!(data->flags & FLAG_FILL_ALWAYS)) {
 	clean_que(data);
@@ -792,8 +806,7 @@ static void close_unlink_port(TraceIpData *data)
     if (!IS_INVALID_SOCKET(data->fd)) {
 	close_client(data);
     }
-    my_driver_select(data, data->listenfd, FLAG_READ, 0);
-    closesocket(data->listenfd);
+    my_driver_select(data, data->listenfd, FLAG_READ, SELECT_CLOSE);
 
     for(tmp = &first_data; *tmp != NULL && *tmp != data; 
 	tmp = &((*tmp)->next))
@@ -812,7 +825,7 @@ static void close_unlink_port(TraceIpData *data)
 ** Mostly stolen from inet_drv in the emulator.
 */
 static int my_driver_select(TraceIpData *desc, SOCKET fd, 
-				 int flags, int on)
+			    int flags, enum MySelectOp op)
 {
     HANDLE *event;
     unsigned *event_mask;
@@ -831,14 +844,14 @@ static int my_driver_select(TraceIpData *desc, SOCKET fd,
 
     save_event_mask = *event_mask;
 
-    if (on) {
+    if (op==SELECT_ON) {
 	*event_mask |= flags;
     } else {
 	*event_mask &= (~flags);
     }
     if (*event_mask != 0 && *event == 0) { 
 	*event = WSACreateEvent();
-	driver_select(desc->port, *event, DO_READ, 1);
+	driver_select(desc->port, *event, ERL_DRV_READ|ERL_DRV_USE, 1);
     }
 
     /* The RIGHT WAY (TM) to do this is to make sure:
@@ -869,26 +882,41 @@ static int my_driver_select(TraceIpData *desc, SOCKET fd,
     }
     ret = 0;
 error:
-    if (*event_mask == 0 && *event != 0) {
+    if (*event_mask == 0 && *event != 0 && (op==SELECT_CLOSE || ret!=0)) {
 	WSAEventSelect(fd, NULL, 0); /* Not necessary? 
 					Well, actually I dont know, and
 					MS documentation states nothing
 					about what happens if WSAEventSelect
 					is called with empty event mask and 
 					then the event is deleted. */ 
-	driver_select(desc->port, *event, DO_READ, 0);
-	WSACloseEvent(*event);
+	driver_select(desc->port, *event, ERL_DRV_READ|ERL_DRV_USE, 0);
 	*event = 0;
+	if (op == SELECT_CLOSE) {
+	    closesocket(fd);
+	}
     }
     return ret;
 }
 
+static void stop_select(ErlDrvEvent event, void* _)
+{
+    WSACloseEvent((HANDLE)event);
+}
+
 #else /* UNIX/VXWORKS */
 
-static int my_driver_select(TraceIpData *desc, SOCKET fd, int flags, int on)
+static int my_driver_select(TraceIpData *desc, SOCKET fd, int flags, enum MySelectOp op)
 {
-    return driver_select(desc->port, sock2event(fd), flags, on);
+    if (op != SELECT_OFF) {
+	flags |= ERL_DRV_USE;
+    }
+    return driver_select(desc->port, sock2event(fd), flags, (op==SELECT_ON));
 }	    
+
+static void stop_select(ErlDrvEvent event, void* _)
+{
+    closesocket((SOCKET)(long)event);
+}
 
 #endif /* !__WIN32__ */
 

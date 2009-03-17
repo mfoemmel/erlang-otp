@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>1996-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 -module(snmp_misc).
 
 %% need definition of mib record
@@ -68,9 +68,10 @@
 	]).
 
 
-verify_behaviour(Behaviour, UserMod) when atom(Behaviour), atom(UserMod) ->
+verify_behaviour(Behaviour, UserMod) 
+  when is_atom(Behaviour) andalso is_atom(UserMod) ->
     case (catch UserMod:module_info(exports)) of
-        Exps when list(Exps) ->
+        Exps when is_list(Exps) ->
             Callbacks = Behaviour:behaviour_info(callbacks),
             (catch verify_behaviour2(Callbacks, Exps));
         _ ->
@@ -303,10 +304,10 @@ mem_size(X) ->
     M2 - M1.
 
 
-strip_extension_from_filename(FileName, Ext) when atom(FileName) ->
+strip_extension_from_filename(FileName, Ext) when is_atom(FileName) ->
     strip_extension_from_filename(atom_to_list(FileName), Ext);
 
-strip_extension_from_filename(FileName, Ext) when list(FileName) ->
+strip_extension_from_filename(FileName, Ext) when is_list(FileName) ->
     case lists:suffix(Ext, FileName) of
 	true -> lists:sublist(FileName, 1, length(FileName) - length(Ext));
 	false -> FileName
@@ -355,39 +356,51 @@ ensure_trailing_dir_delimiter(DirSuggestion) ->
     end.
 
 
-format_pdu(PDU, MiniMib) when record(PDU, pdu) ->
-    #pdu{type=T, error_status=ES, error_index=EI,
-	 request_id=RID,varbinds=VBs}=PDU,
+format_pdu(PDU, MiniMib) when is_record(PDU, pdu) ->
+    #pdu{type         = T, 
+	 error_status = ES, 
+	 error_index  = EI,
+	 request_id   = RID,
+	 varbinds     = VBs} = PDU,
     Txt1 = if
-	       ES == noError, EI == 0 -> "";
+	       (ES =:= noError) andalso (EI =:= 0) -> 
+		   "";
+	       (T =:= 'get-bulk-request') ->
+		   "";
 	       true ->
 		   io_lib:format("*!*!* An error occured. *!*!* ~n"
 				 "Error status = ~w, index = ~w.~n",
 				 [ES, EI])
 	   end,
-    Txt2 = if T=='snmpv2-trap' ->
+    Txt2 = if T =:= 'snmpv2-trap' ->
 		   io_lib:format("v2 Trap,          Request Id:~w~n", [RID]);
-	      T == 'get-request' ->
+	      T =:= 'get-request' ->
 		   io_lib:format("Get request,      Request Id:~w~n", [RID]);
-	      T == 'get-next-request' ->
+	      T =:= 'get-next-request' ->
 		   io_lib:format("Get-Next request, Request Id:~w~n", [RID]);
-	      T == 'get-bulk-request' ->
-		   io_lib:format("Get-Bulk request, Request Id:~w~n", [RID]);
-	      T == 'set-request' ->
+	      T =:= 'get-bulk-request' ->
+		   io_lib:format("Get-Bulk request, Request Id:~w~n"
+				 "  Non-repeaters = ~w~n"
+				 "  Max-repetitions = ~w~n", [RID, ES, EI]);
+	      T =:= 'set-request' ->
 		   io_lib:format("Set request,      Request Id:~w~n", [RID]);
-	      T == 'get-response' ->
+	      T =:= 'get-response' ->
 		   io_lib:format("Response,         Request Id:~w~n", [RID]);
-	      T == 'inform-request' ->
+	      T =:= 'inform-request' ->
 		   io_lib:format("Inform Request    Request Id:~w~n", [RID]);
-	      T == report ->
+	      T =:= report ->
 		   io_lib:format("Report            Request Id:~w~n", [RID]);
-	      true -> ""
+	      true -> 
+		   ""
 	   end,
     [Txt1, Txt2, format_vbs(VBs, MiniMib)|"\n"];
 
-format_pdu(#trappdu{enterprise = Enterprise, agent_addr = AgentAddr,
-		  generic_trap = GenericTrap, specific_trap = SpecificTrap,
-		  time_stamp = TimeStamp, varbinds = VBs}, MiniMib) ->
+format_pdu(#trappdu{enterprise    = Enterprise, 
+		    agent_addr    = AgentAddr,
+		    generic_trap  = GenericTrap, 
+		    specific_trap = SpecificTrap,
+		    time_stamp    = TimeStamp, 
+		    varbinds      = VBs}, MiniMib) ->
     [io_lib:format("v1 Trap~n"
 		   "     Generic: ~w~n"
 		   "  Enterprise: ~w~n"
@@ -402,12 +415,14 @@ format_pdu(#trappdu{enterprise = Enterprise, agent_addr = AgentAddr,
 format_vbs(Vbs, MiniMib) ->
     [format_vb(VB, MiniMib) || VB <- Vbs].
 
-format_vb(#varbind{oid = Oid, variabletype = Type, value = Value}, MiniMib) ->
+format_vb(#varbind{oid          = Oid, 
+		   variabletype = Type, 
+		   value        = Value}, MiniMib) ->
     {Soid, Mtype} = symbolify_oid(MiniMib, Oid),
     [io_lib:format("  ~w = ", [Soid]),
      format_val(Type, Mtype, Value, MiniMib) | "\n"].
 
-format(Max, F, A) when integer(Max) ->
+format(Max, F, A) when is_integer(Max) ->
     case lists:flatten(io_lib:format(F,A)) of
 	S when length(S) > Max ->
 	    case lists:suffix("\n", S) of

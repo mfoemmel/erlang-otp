@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Partitions assembly instructions into basic blocks and
 %% optimizes them.
@@ -21,8 +22,6 @@
 -module(beam_block).
 
 -export([module/2]).
--export([live_at_entry/1]).			%Used by beam_type, beam_bool.
--export([merge_blocks/2]).			%Used by beam_jump.
 -import(lists, [mapfoldl/3,reverse/1,reverse/2,foldl/3,member/2]).
 -define(MAXREG, 1024).
 
@@ -31,18 +30,31 @@ module({Mod,Exp,Attr,Fs0,Lc0}, _Opt) ->
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
 
 function({function,Name,Arity,CLabel,Is0}, Lc0) ->
-    %% Collect basic blocks and optimize them.
-    Is1 = beam_jump:remove_unused_labels(Is0),	%Extra labels may thwart optimizations.
-    Is2 = blockify(Is1),
-    {Is,Lc} = bsm_opt(Is2, Lc0),
+    try
+	%% Extra labels may thwart optimizations.
+	Is1 = beam_jump:remove_unused_labels(Is0),
 
-    %% Done.
-    {{function,Name,Arity,CLabel,Is},Lc}.
+	%% Collect basic blocks and optimize them.
+	Is2 = blockify(Is1),
+	Is3 = beam_utils:live_opt(Is2),
+	Is4 = opt_blocks(Is3),
+	Is5 = beam_utils:delete_live_annos(Is4),
+
+	%% Optimize bit syntax.
+	{Is,Lc} = bsm_opt(Is5, Lc0),
+
+	%% Done.
+	{{function,Name,Arity,CLabel,Is},Lc}
+    catch
+	Class:Error ->
+	    Stack = erlang:get_stacktrace(),
+	    io:fwrite("Function: ~w/~w\n", [Name,Arity]),
+	    erlang:raise(Class, Error, Stack)
+    end.
 
 %% blockify(Instructions0) -> Instructions
-%%  Collect sequences of instructions to basic blocks and
-%%  optimize the contents of the blocks. Also do some simple
-%%  optimations on instructions outside the blocks.
+%%  Collect sequences of instructions to basic blocks.
+%%  Also do some simple optimations on instructions outside the blocks.
 
 blockify(Is) ->
     blockify(Is, []).
@@ -86,16 +98,6 @@ blockify([{test,is_atom,{f,Fail},[Reg]}=I|
 	    blockify(Is, [{jump,BrTrue},
 			  {test,is_eq_exact,BrFalse,[Reg,AtomTrue]}|Acc])
     end;
-blockify([{test,is_eq,F,[_,_]=Ss}=I|Is], Acc) ->
-    case is_exact_eq_ok(Ss) of
-	false -> blockify(Is, [I|Acc]);
-	true -> blockify(Is, [{test,is_eq_exact,F,Ss}|Acc])
-    end;
-blockify([{test,is_ne,F,[_,_]=Ss}=I|Is], Acc) ->
-    case is_exact_eq_ok(Ss) of
-	false -> blockify(Is, [I|Acc]);
-	true -> blockify(Is, [{test,is_ne_exact,F,Ss}|Acc])
-    end;
 blockify([I|Is0]=IsAll, Acc) ->
     case is_bs_put(I) of
 	true ->
@@ -106,27 +108,18 @@ blockify([I|Is0]=IsAll, Acc) ->
 	    case collect(I) of
 		error -> blockify(Is0, [I|Acc]);
 		Instr when is_tuple(Instr) ->
-		    {Block0,Is} = collect_block(IsAll),
-		    Block = opt_block(Block0),
+		    {Block,Is} = collect_block(IsAll),
 		    blockify(Is, [{block,Block}|Acc])
 	    end
     end;
 blockify([], Acc) -> reverse(Acc).
 
-is_last_bool([I,{'%live',_}], Reg) ->
-    is_last_bool([I], Reg);
 is_last_bool([{set,[Reg],As,{bif,N,_}}], Reg) ->
     Ar = length(As),
     erl_internal:new_type_test(N, Ar) orelse erl_internal:comp_op(N, Ar)
 	orelse erl_internal:bool_op(N, Ar);
 is_last_bool([_|Is], Reg) -> is_last_bool(Is, Reg);
 is_last_bool([], _) -> false.
-
-is_exact_eq_ok([{atom,_},_]) -> true;
-is_exact_eq_ok([nil,_]) -> true;
-is_exact_eq_ok([_,{atom,_}]) -> true;
-is_exact_eq_ok([_,nil]) -> true;
-is_exact_eq_ok([_,_]) -> false.
 
 collect_block(Is) ->
     collect_block(Is, []).
@@ -141,23 +134,7 @@ collect_block([I|Is]=Is0, Acc) ->
 
 collect({allocate_zero,N,R}) -> {set,[],[],{alloc,R,{zero,N,0,[]}}};
 collect({test_heap,N,R})     -> {set,[],[],{alloc,R,{nozero,nostack,N,[]}}};
-collect({bif,N,nofail,As,D}) -> {set,[D],As,{bif,N}};
-collect({bif,N0,F,As,D})      ->
-    N = case N0 of
-	    '==' ->
-		case is_exact_eq_ok(As) of
-		    false -> N0;
-		    true -> '=:='
-
-		end;
-	    '/=' ->
-		case is_exact_eq_ok(As) of
-		    false -> N0;
-		    true -> '=/='
-		end;
-	    _ -> N0
-	end,
-    {set,[D],As,{bif,N,F}};
+collect({bif,N,F,As,D})      -> {set,[D],As,{bif,N,F}};
 collect({gc_bif,N,F,R,As,D}) -> {set,[D],As,{alloc,R,{gc_bif,N,F}}};
 collect({move,S,D})          -> {set,[D],[S],move};
 collect({put_list,S1,S2,D})  -> {set,[D],[S1,S2],put_list};
@@ -169,8 +146,15 @@ collect({set_tuple_element,S,D,I}) -> {set,[],[S,D],{set_tuple_element,I}};
 collect({get_list,S,D1,D2})  -> {set,[D1,D2],[S],get_list};
 collect(remove_message)      -> {set,[],[],remove_message};
 collect({'catch',R,L})       -> {set,[R],[],{'catch',L}};
-collect({'%live',_}=Live)    -> Live;
 collect(_)                   -> error.
+
+opt_blocks([{block,Bl0}|Is]) ->
+    %% The live annotation at the beginning is not useful.
+    [{'%live',_}|Bl] = Bl0,
+    [{block,opt_block(Bl)}|opt_blocks(Is)];
+opt_blocks([I|Is]) ->
+    [I|opt_blocks(Is)];
+opt_blocks([]) -> [].
 
 opt_block(Is0) ->
     %% We explicitly move any allocate instruction upwards before optimising
@@ -224,37 +208,7 @@ alloc_may_pass({set,_,_,{put_string,_,_}}) -> false;
 alloc_may_pass({set,_,_,_}) -> true.
     
 combine_alloc({_,Ns,Nh1,Init}, {_,nostack,Nh2,[]})  ->
-    {zero,Ns,beam_flatten:combine_heap_needs(Nh1, Nh2),Init}.
-
-merge_blocks([{set,[],[],{alloc,R,{Attr,Ns,Nh1,Init}}}=Alloc1|B1],
-	     [{set,[],[],{alloc,_,{_,nostack,Nh2,[]}}}|B2]=B2Orig) ->
-    case any_allocation(B1) of
-	true ->
-	    %% It is not safe to combine the allocations, because
-	    %% there is another allocation instruction (probably a
-	    %% gc_bif) that may "eat" the allocated space.
-	    [Alloc1|merge_blocks(B1, B2Orig)];
-	false ->
-	    %% It is safe to combine the allocations.
-	    Alloc = {set,[],[],
-		     {alloc,R,
-		      {Attr,Ns,beam_flatten:combine_heap_needs(Nh1, Nh2),Init}}},
-	    [Alloc|merge_blocks(B1, B2)]
-    end;
-merge_blocks(B1, B2) -> merge_blocks_1(B1++[{set,[],[],stop_here}|B2]).
-
-merge_blocks_1([{set,[],_,stop_here}|Is]) -> Is;
-merge_blocks_1([{set,[D],_,move}=I|Is]) ->
-    case beam_utils:is_killed_block(D, Is) of
-	true -> merge_blocks_1(Is);
-	false -> [I|merge_blocks_1(Is)]
-    end;
-merge_blocks_1([I|Is]) -> [I|merge_blocks_1(Is)].
-
-any_allocation([{set,_,_,{alloc,_,_}}|_]) -> true;
-any_allocation([_|Is]) -> any_allocation(Is);
-any_allocation([]) -> false.
-    
+    {zero,Ns,beam_utils:combine_heap_needs(Nh1, Nh2),Init}.
 
 %% opt([Instruction]) -> [Instruction]
 %%  Optimize the instruction stream inside a basic block.
@@ -274,7 +228,8 @@ opt([{set,[D1],[{integer,Idx1},Reg],{bif,element,{f,0}}}=I1,
 opt([{set,Ds0,Ss,Op}|Is0]) ->	
     {Ds,Is} = opt_moves(Ds0, Is0),
     [{set,Ds,Ss,Op}|opt(Is)];
-opt([I|Is]) -> [I|opt(Is)];
+opt([{'%live',_}=I|Is]) ->
+    [I|opt(Is)];
 opt([]) -> [].
 
 %% opt_moves([Dest], [Instruction]) -> {[Dest],[Instruction]}
@@ -287,7 +242,6 @@ opt_moves([D0]=Ds, Is0) ->
 	{D1,Is} -> {[D1],Is}
     end;
 opt_moves([X0,Y0], Is0) ->
-%%    {[X0,Y0],Is0}.
     {X,Is2} = case opt_move(X0, Is0) of
 		  not_possible -> {X0,Is0};
 		  {Y0,_} -> {X0,Is0};
@@ -331,8 +285,7 @@ opt_move_1(R, [I|Is], SafeRegs, Acc) ->
     case is_transparent(R, I) of
 	false -> not_possible;
 	true -> opt_move_1(R, Is, SafeRegs, [I|Acc])
-    end;
-opt_move_1(_, [], _, _) -> not_possible.
+    end.
 
 %% Reverse the instructions, while checking that there are no instructions that
 %% would interfere with using the new destination register chosen.
@@ -408,30 +361,15 @@ count_ones(0, Acc) -> Acc;
 count_ones(Bits, Acc) ->
     count_ones(Bits bsr 1, Acc + (Bits band 1)).
 
-%% live_at_entry(Is) -> NumberOfRegisters
-%%  Calculate the number of register live at the entry to the code
-%%  sequence.
-
-live_at_entry([{set,_,_,{alloc,R,_}}|_]) -> R;
-live_at_entry(Is0) ->
-    case reverse(Is0) of
-	[{'%live',Regs}|Is] -> live_at_entry_1(Is, (1 bsl Regs)-1);
-	_ -> unknown
-    end.
-
-live_at_entry_1([{set,[],[],{alloc,_,_}}|Is], Rset) ->
-    live_at_entry_1(Is, Rset);
-live_at_entry_1([{set,Ds,Ss,_}|Is], Rset0) ->
-    Rset = x_live(Ss, x_dead(Ds, Rset0)),
-    live_at_entry_1(Is, Rset);
-live_at_entry_1([], Rset) -> live_regs_1(0, Rset).
-
 %% Calculate the new number of live registers when we move an allocate
 %% instruction upwards, passing a 'set' instruction.
 
 alloc_live_regs({set,Ds,Ss,_}, Regs0) ->
     Rset = x_live(Ss, x_dead(Ds, (1 bsl Regs0)-1)),
-    live_regs_1(0, Rset).
+    live_regs(Rset).
+
+live_regs(Regs) ->
+    live_regs_1(0, Regs).
 
 live_regs_1(N, 0) -> N;
 live_regs_1(N, Regs) -> live_regs_1(N+1, Regs bsr 1).
@@ -501,16 +439,11 @@ opt_bs_1([{bs_put_integer,Fail,{integer,Sz},1,F,{integer,N}}=I|Is0], Acc) when S
 	little when Sz < 128 ->
 	    %% We only try to optimize relatively small fields, to avoid
 	    %% an explosion in code size.
-	    try <<N:Sz/little>> of
-		<<Int:Sz>> ->
-		    Flags = force_big(F),
-		    Is = [{bs_put_integer,Fail,{integer,Sz},1,
-			   Flags,{integer,Int}}|Is0],
-		    opt_bs_1(Is, Acc)
-	    catch
-		error:_ ->
-		    opt_bs_1(Is0, [I|Acc])
-	    end;
+	    <<Int:Sz>> = <<N:Sz/little>>,
+	    Flags = force_big(F),
+	    Is = [{bs_put_integer,Fail,{integer,Sz},1,
+		   Flags,{integer,Int}}|Is0],
+	    opt_bs_1(Is, Acc);
 	_ -> 					%native or too wide little field
 	    opt_bs_1(Is0, [I|Acc])
     end;
@@ -623,10 +556,10 @@ bsm_reroute([{select_val,Reg,F0,{list,Lbls0}}|Is], D, {_,Save}=S, Acc0) ->
     [F|Lbls] = bsm_subst_labels([F0|Lbls0], Save, D),
     Acc = [{select_val,Reg,F,{list,Lbls}}|Acc0],
     bsm_reroute(Is, D, S, Acc);
-bsm_reroute([{test,TestOp,F0,TestArgs}|Is], D, {_,Save}=S, Acc0) ->
+bsm_reroute([{test,TestOp,F0,TestArgs}=I|Is], D, {_,Save}=S, Acc0) ->
     F = bsm_subst_label(F0, Save, D),
     Acc = [{test,TestOp,F,TestArgs}|Acc0],
-    case bsm_not_bs_test(TestOp, length(TestArgs)) of
+    case bsm_not_bs_test(I) of
 	true ->
 	    %% The test instruction will not update the bit offset for the
 	    %% binary being matched. Therefore the save position can be kept.
@@ -659,21 +592,15 @@ bsm_opt_2([I|Is], Acc) ->
     bsm_opt_2(Is, [I|Acc]);
 bsm_opt_2([], Acc) -> reverse(Acc).
 
-%% bsm_not_bs_test(Name, Arity) -> true|false.
+%% bsm_not_bs_test({test,Name,_,Operands}) -> true|false.
 %%  Test whether is the test is a "safe", i.e. does not move the
 %%  bit offset for a binary.
 %%
-%%  true means that the test is safe, false that we don't know or
+%%  'true' means that the test is safe, 'false' that we don't know or
 %%  that the test moves the offset (e.g. bs_get_integer2).
 
-bsm_not_bs_test(is_eq_exact, 2)  -> true;
-bsm_not_bs_test(is_ne_exact, 2) -> true;
-bsm_not_bs_test(is_ge, 2) -> true;
-bsm_not_bs_test(is_lt, 2)  -> true;
-bsm_not_bs_test(is_eq, 2) -> true;
-bsm_not_bs_test(is_ne, 2) -> true;
-bsm_not_bs_test(bs_test_tail2, 2) -> true;
-bsm_not_bs_test(F, A) -> erl_internal:new_type_test(F, A).
+bsm_not_bs_test({test,bs_test_tail2,_,[_,_]}) -> true;
+bsm_not_bs_test(Test) -> beam_utils:is_pure_test(Test).
 
 bsm_subst_labels(Fs, Save, D) ->
     bsm_subst_labels_1(Fs, Save, D, []).
@@ -689,4 +616,3 @@ bsm_subst_label({f,Lbl0}=F, Save, D) ->
 	none -> F
     end;
 bsm_subst_label(Other, _, _) -> Other.
-    

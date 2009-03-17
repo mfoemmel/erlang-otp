@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>1997-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 -module(snmpa_mpd).
 
@@ -23,6 +22,7 @@
 	 discarded_pdu/1,
 	 process_packet/6,
 	 generate_response_msg/5, generate_msg/5, 
+	 generate_discovery_msg/4, 
 	 process_taddrs/1, 
 	 generate_req_id/0]).
 
@@ -30,6 +30,7 @@
 -include("snmp_types.hrl").
 -include("SNMP-MPD-MIB.hrl").
 -include("SNMPv2-TM.hrl").
+-include("SNMP-FRAMEWORK-MIB.hrl").
 
 -define(VMODULE,"MPD").
 -include("snmp_verbosity.hrl").
@@ -37,6 +38,14 @@
 -define(empty_msg_size, 24).
 
 -record(state, {v1 = false, v2c = false, v3 = false}).
+-record(note, {sec_engine_id, 
+	       sec_model, 
+	       sec_name, 
+	       sec_level, 
+	       ctx_engine_id, 
+	       ctx_name, 
+	       disco = false, 
+	       req_id}).
 
 					
 %%%-----------------------------------------------------------------
@@ -113,37 +122,43 @@ reset() ->
 process_packet(Packet, TDomain, TAddress, State, NoteStore, Log) ->
     inc(snmpInPkts),
     case catch snmp_pdus:dec_message_only(binary_to_list(Packet)) of
+
 	#message{version = 'version-1', vsn_hdr = Community, data = Data} 
-	  when State#state.v1 == true ->
+	  when State#state.v1 =:= true ->
 	    ?vlog("~n   v1, community: ~s", [Community]),
 	    HS = ?empty_msg_size + length(Community),
 	    v1_v2c_proc('version-1', NoteStore, Community, TDomain, TAddress, 
 			Data, HS, Log, Packet);
+
 	#message{version = 'version-2', vsn_hdr = Community, data = Data}
-	  when State#state.v2c == true ->
+	  when State#state.v2c =:= true ->
 	    ?vlog("~n   v2c, community: ~s", [Community]),
 	    HS = ?empty_msg_size + length(Community),
 	    v1_v2c_proc('version-2', NoteStore, Community, TDomain, TAddress, 
 			Data, HS, Log, Packet);
+
 	#message{version = 'version-3', vsn_hdr = V3Hdr, data = Data}
-	  when State#state.v3 == true ->
+	  when State#state.v3 =:= true ->
 	    ?vlog("~n   v3, msgID: ~p, msgFlags: ~p, msgSecModel: ~p",
-		  [V3Hdr#v3_hdr.msgID,V3Hdr#v3_hdr.msgFlags,
+		  [V3Hdr#v3_hdr.msgID,
+		   V3Hdr#v3_hdr.msgFlags,
 		   V3Hdr#v3_hdr.msgSecurityModel]),
-	    validate_catch(catch v3_proc(NoteStore, Packet, TDomain, TAddress,
-					 V3Hdr, Data, Log));
+	    v3_proc(NoteStore, Packet, TDomain, TAddress, V3Hdr, Data, Log);
+
 	{'EXIT', {bad_version, Vsn}} ->
 	    ?vtrace("exit: bad version: ~p",[Vsn]),
 	    inc(snmpInBadVersions),
 	    {discarded, snmpInBadVersions};
+
 	{'EXIT', Reason} ->
-	    ?vtrace("exit: ~p",[Reason]),
+	    ?vtrace("exit: ~p", [Reason]),
 	    inc(snmpInASNParseErrs),
 	    {discarded, Reason};
+
 	UnknownMessage ->
 	    ?vtrace("Unknown message: ~n   ~p"
 		"~nwhen"
-		"~n   State: ~p",[UnknownMessage, State]),
+		"~n   State: ~p", [UnknownMessage, State]),
 	    inc(snmpInBadVersions),
 	    {discarded, snmpInBadVersions}
     end.
@@ -151,11 +166,6 @@ process_packet(Packet, TDomain, TAddress, State, NoteStore, Log) ->
 discarded_pdu(false) -> ok;
 discarded_pdu(Variable) -> inc(Variable).
 
-validate_catch({'EXIT', Error}) -> 
-    ?vlog("exit signal reason: ~p",[Error]),
-    exit(Error);
-validate_catch(Res) -> Res.
-    
 
 %%-----------------------------------------------------------------
 %% Handles a Community based message (v1 or v2c).
@@ -180,15 +190,16 @@ v1_v2c_proc(Vsn, NoteStore, Community, snmpUDPDomain, {Ip, Udp},
 	    %% Make sure that we don't process duplicate SET request
 	    %% twice.  We don't know what could happen in that case.
 	    %% The mgr does, so he has to generate a new SET request.
-	    ?vdebug("PDU type: ~p",[Pdu#pdu.type]),
+	    ?vdebug("PDU type: ~p", [Pdu#pdu.type]),
 	    case Pdu#pdu.type of
 		'set-request' ->
+		    %% Check if this message has already been processed
 		    Key = {agent, Ip, ReqId},
 		    case snmp_note_store:get_note(NoteStore, Key) of
 			undefined -> 
-			    %% Set the note _after_ pdu processing. This makes
-			    %% duplicated requests be ignored even if pdu
-			    %% processing took long time.
+			    %% Set the processed note _after_ pdu processing. 
+			    %% This makes duplicated requests be ignored even 
+			    %% if pdu processing took long time.
 			    snmp_note_store:set_note(NoteStore, 
 						     100, Key, true),
 			    %% Uses ACMData that snmpa_acm knows of.
@@ -218,44 +229,63 @@ v1_v2c_proc(_Vsn, _NoteStore, _Community, TDomain, _TAddress,
 sec_model('version-1') -> ?SEC_V1;
 sec_model('version-2') -> ?SEC_V2C.
 
+
 %%-----------------------------------------------------------------
 %% Handles a SNMPv3 Message, following the procedures in rfc2272,
 %% section 4.2 and 7.2
 %%-----------------------------------------------------------------
 v3_proc(NoteStore, Packet, _TDomain, _TAddress, V3Hdr, Data, Log) ->
+    case (catch v3_proc(NoteStore, Packet, V3Hdr, Data, Log)) of
+	{'EXIT', Reason} ->
+	    exit(Reason);
+	Result ->
+	    Result
+    end.
+
+v3_proc(NoteStore, Packet, V3Hdr, Data, Log) ->
     %% 7.2.3
-    #v3_hdr{msgID = MsgID, msgMaxSize = MMS, msgFlags = MsgFlags,
-	    msgSecurityModel = MsgSecurityModel,
-	    msgSecurityParameters = SecParams, hdr_size = HdrSize} = V3Hdr,
-    ?vdebug("version 3 message header:"
+    #v3_hdr{msgID                 = MsgID, 
+	    msgMaxSize            = MMS, 
+	    msgFlags              = MsgFlags,
+	    msgSecurityModel      = MsgSecurityModel,
+	    msgSecurityParameters = SecParams, 
+	    hdr_size              = HdrSize} = V3Hdr,
+    ?vdebug("v3_proc -> version 3 message header:"
 	    "~n   msgID                 = ~p"
 	    "~n   msgMaxSize            = ~p"
 	    "~n   msgFlags              = ~p"
 	    "~n   msgSecurityModel      = ~p"
 	    "~n   msgSecurityParameters = ~w",
-	    [MsgID,MMS,MsgFlags,MsgSecurityModel,SecParams]),
+	    [MsgID, MMS, MsgFlags, MsgSecurityModel, SecParams]),
     %% 7.2.4
     SecModule = get_security_module(MsgSecurityModel),
     %% 7.2.5
     SecLevel = check_sec_level(MsgFlags),
     IsReportable = snmp_misc:is_reportable(MsgFlags),
     %% 7.2.6
-    ?vtrace("~n   SecModule    = ~p"
+    ?vtrace("v3_proc -> "
+	    "~n   SecModule    = ~p"
 	    "~n   SecLevel     = ~p"
 	    "~n   IsReportable = ~p",
 	    [SecModule,SecLevel,IsReportable]),
     SecRes = (catch SecModule:process_incoming_msg(Packet, Data,
 						   SecParams, SecLevel)),
-    ?vtrace("message processing result: ~n\t~p",[SecRes]),
-    {SecEngineID, SecName, ScopedPDUBytes, SecData} =
+    ?vtrace("v3_proc -> message processing result: "
+	    "~n   SecRes: ~p", [SecRes]),
+    {SecEngineID, SecName, ScopedPDUBytes, SecData, DiscoOrPlain} =
 	check_sec_module_result(SecRes, V3Hdr, Data, IsReportable, Log),
-    ?vtrace("SecEngineID = ~p, SecName = ~p",[SecEngineID,SecName]),
+    ?vtrace("v3_proc -> "
+	    "~n   DiscoOrPlain: ~p"
+	    "~n   SecEngineID:  ~p"
+	    "~n   SecName:      ~p", [DiscoOrPlain, SecEngineID, SecName]),
     %% 7.2.7
     #scopedPdu{contextEngineID = ContextEngineID,
-	       contextName = ContextName,
-	       data = PDU} =
-	case catch snmp_pdus:dec_scoped_pdu(ScopedPDUBytes) of
+	       contextName     = ContextName,
+	       data            = PDU} =
+	case (catch snmp_pdus:dec_scoped_pdu(ScopedPDUBytes)) of
 	    ScopedPDU when is_record(ScopedPDU, scopedPdu) -> 
+		?vtrace("v3_proc -> message processing result: "
+			"~n   ScopedPDU: ~p", [ScopedPDU]),
 		ScopedPDU;
 	    {'EXIT', Reason} ->
 		inc(snmpInASNParseErrs),
@@ -264,16 +294,18 @@ v3_proc(NoteStore, Packet, _TDomain, _TAddress, V3Hdr, Data, Log) ->
     %% We'll have to take care of the unlikely case that we receive an
     %% v1 trappdu in a v3 message explicitly...
     if
-	record(PDU, trappdu) ->
+	is_record(PDU, trappdu) ->
 	    inc(snmpUnknownPDUHandlers),
 	    throw({discarded, received_v1_trap});
 	true ->
 	    ok
     end,
-    ?vlog("~n   contextEngineID: \"~s\", context: \"~s\"",
-	  [ContextEngineID, ContextName]),
+    ?vlog("7.2.7 result: "
+	  "~n   contextEngineID: \"~s\""
+	  "~n   ContextName:     \"~s\"", [ContextEngineID, ContextName]),
     if
-	SecLevel == 3 -> % encrypted message - log decrypted pdu
+	SecLevel =:= ?'SnmpSecurityLevel_authPriv' -> 
+	    %% encrypted message - log decrypted pdu
 	    Log(PDU#pdu.type, {V3Hdr, ScopedPDUBytes});
 	true -> % otherwise, log binary
 	    Log(PDU#pdu.type, Packet)
@@ -297,16 +329,48 @@ v3_proc(NoteStore, Packet, _TDomain, _TAddress, V3Hdr, Data, Log) ->
     TotalLenOctets = snmp_pdus:get_encoded_length(TotMMS - 1),
     PduMMS = TotMMS - TotalLenOctets - 10 - HdrSize - 
 	length(ContextName) - length(ContextEngineID),
-    ?vdebug("PDU type: ~p",[PDU#pdu.type]),
+    ?vdebug("v3_proc -> PDU type: ~p", [PDU#pdu.type]),
     case PDU#pdu.type of
 	report ->
 	    %% 7.2.11
 	    throw({discarded, report});
 	'get-response' -> %% As a result of a sent inform-request?
 	    %% 7.2.12
-	    case snmp_note_store:get_note(NoteStore, {agent, MsgID}) of
-		{SecEngineID, MsgSecurityModel, SecName, SecLevel,
-		 ContextEngineID, ContextName} ->
+	    Key  = {agent, MsgID}, 
+	    Note = snmp_note_store:get_note(NoteStore, Key), 
+	    case Note of
+                #note{sec_engine_id = "",
+                      sec_model     = _MsgSecModel,
+                      sec_name      = "",
+                      sec_level     = _SecLevel,
+                      ctx_engine_id = _CtxEngineID,
+                      ctx_name      = _CtxName,
+                      disco         = true,
+                      req_id        = _ReqId} ->
+                    %% This is part of the discovery process initiated by us.
+                    %% Response to the discovery step 1 request
+                    ?vdebug("v3_proc -> discovery step 1 response", []),
+                    {ok, 'version-3', PDU, PduMMS, {discovery, SecEngineID}};
+                #note{sec_engine_id = SecEngineID,
+                      sec_model     = _MsgSecModel,
+                      sec_name      = SecName,
+                      sec_level     = SecLevel,
+                      ctx_engine_id = _CtxEngineID,
+                      ctx_name      = _CtxName,
+                      disco         = true,
+                      req_id        = _ReqId} ->
+                    %% This is part of the discovery process initiated by us.
+                    %% Response to the discovery step 2 request
+                    ?vdebug("v3_proc -> discovery step 2 response", []),
+                    {ok, 'version-3', PDU, PduMMS, discovery};
+		#note{sec_engine_id = SecEngineID, 
+		      sec_model     = MsgSecurityModel, 
+		      sec_name      = SecName, 
+		      sec_level     = SecLevel,
+		      ctx_engine_id = ContextEngineID, 
+		      ctx_name      = ContextName,
+		      disco         = false,
+		      req_id        = _ReqId} ->
 		    {ok, 'version-3', PDU, PduMMS, undefined};
 		_ ->
 		    inc(snmpUnknownPDUHandlers),
@@ -318,9 +382,22 @@ v3_proc(NoteStore, Packet, _TDomain, _TAddress, V3Hdr, Data, Log) ->
 	Type ->
 	    %% 7.2.13
 	    SnmpEngineID = snmp_framework_mib:get_engine_id(),
-	    ?vtrace("SnmpEngineID = ~p",[SnmpEngineID]),
+	    ?vtrace("v3_proc -> SnmpEngineID = ~p", [SnmpEngineID]),
 	    case SecEngineID of
-		SnmpEngineID ->
+		SnmpEngineID when (DiscoOrPlain =:= discovery) ->
+		    %% This is a discovery step 2 message!
+		    ?vtrace("v3_proc -> discovery step 2", []),
+		    generate_discovery2_report_msg(MsgID, 
+						   MsgSecurityModel, 
+						   SecName, 
+						   SecLevel, 
+						   ContextEngineID, 
+						   ContextName,
+						   SecData, 
+						   PDU, 
+						   Log);
+
+		SnmpEngineID when (DiscoOrPlain =:= plain) ->
 		    %% 4.2.2.1.1 - we don't handle proxys yet => we only 
 		    %% handle ContextEngineID to ourselves
 		    case ContextEngineID of
@@ -340,14 +417,30 @@ v3_proc(NoteStore, Packet, _TDomain, _TAddress, V3Hdr, Data, Log) ->
 					 [{securityLevel, SecLevel},
 					  {contextEngineID, ContextEngineID},
 					  {contextName, ContextName}]},
-			    case generate_v3_report_msg(MsgID, MsgSecurityModel,
-							Data, ErrorInfo,Log) of
-				{ok, Report} when NIsReportable == true ->
+			    case generate_v3_report_msg(MsgID, 
+							MsgSecurityModel,
+							Data, ErrorInfo,
+							Log) of
+				{ok, Report} when NIsReportable =:= true ->
 				    {discarded, snmpUnknownPDUHandlers, Report};
 				_ ->
 				    {discarded, snmpUnknownPDUHandlers}
 			    end
 		    end;
+
+		"" ->
+		    %% This is a discovery step 1 message!!
+		    ?vtrace("v3_proc -> discovery step 1", []),
+		    generate_discovery1_report_msg(MsgID, 
+						   MsgSecurityModel, 
+						   SecName, 
+						   SecLevel, 
+						   ContextEngineID, 
+						   ContextName,
+						   SecData, 
+						   PDU, 
+						   Log);
+		    
 		_ ->
 		    {discarded, {badSecurityEngineID, SecEngineID}}
 	    end
@@ -460,8 +553,8 @@ generate_response_msg(Vsn, RePdu, Type,
 		      Log, N) ->
     %% rfc2272: 7.1 steps 6-8
     ScopedPDU = #scopedPdu{contextEngineID = ContextEngineID,
-			   contextName = ContextName,
-			   data = RePdu},
+			   contextName     = ContextName,
+			   data            = RePdu},
     case catch snmp_pdus:enc_scoped_pdu(ScopedPDU) of
 	{'EXIT', Reason} ->
 	    user_err("failed encoded scoped pdu "
@@ -470,13 +563,13 @@ generate_response_msg(Vsn, RePdu, Type,
 	    {discarded, Reason};
 	ScopedPDUBytes -> 
 	    AgentMS = snmp_framework_mib:get_engine_max_message_size(),
-	    V3Hdr = #v3_hdr{msgID = MsgID,
+	    V3Hdr = #v3_hdr{msgID      = MsgID,
 			    msgMaxSize = AgentMS,
-			    msgFlags = snmp_misc:mk_msg_flags(Type, 
-							      SecLevel),
+			    msgFlags = snmp_misc:mk_msg_flags(Type, SecLevel),
 			    msgSecurityModel = MsgSecurityModel},
-	    Message = #message{version = Vsn, vsn_hdr = V3Hdr, 
-			       data = ScopedPDUBytes},
+	    Message = #message{version = Vsn, 
+			       vsn_hdr = V3Hdr, 
+			       data    = ScopedPDUBytes},
 	    %% We know that the security model is valid when we
 	    %% generate a response.
 	    SecModule = 
@@ -488,7 +581,8 @@ generate_response_msg(Vsn, RePdu, Type,
 	    ?vtrace("generate_response_msg -> SecEngineID: ~p", [SecEngineID]),
 	    case (catch SecModule:generate_outgoing_msg(Message, 
 							SecEngineID,
-							SecName, SecData, 
+							SecName, 
+							SecData, 
 							SecLevel)) of
 		{'EXIT', Reason} ->
 		    config_err("~p (message: ~p)", [Reason, Message]),
@@ -508,7 +602,7 @@ generate_response_msg(Vsn, RePdu, Type,
 		    case size(Packet) of
 			Len when Len =< AgentMS ->
 			    if
-				SecLevel == 3 -> 
+				SecLevel =:= 3 -> 
 				    %% encrypted - log decrypted pdu
 				    Log(Type, {V3Hdr, ScopedPDUBytes});
 				true -> 
@@ -518,7 +612,7 @@ generate_response_msg(Vsn, RePdu, Type,
 			    inc_snmp_cnt_vars(Type, RePdu),
 			    inc_snmp_out_vars(RePdu),
 			    {ok, Packet};
-			Len when N == 2 ->
+			Len when N =:= 2 ->
 			    ?vlog("packet max size exceeded: "
 				  "~n   Max: ~p"
 				  "~n   Len: ~p",
@@ -530,10 +624,10 @@ generate_response_msg(Vsn, RePdu, Type,
 				  "~n   N:   ~p"
 				  "~n   Max: ~p"
 				  "~n   Len: ~p",
-				  [N,AgentMS,Len]),
+				  [N, AgentMS, Len]),
 			    TooBigPdu = RePdu#pdu{error_status = tooBig,
-						  error_index = 0, 
-						  varbinds = []},
+						  error_index  = 0, 
+						  varbinds     = []},
 			    generate_response_msg(Vsn, TooBigPdu, Type, 
 						  {v3, MsgID, 
 						   MsgSecurityModel,
@@ -548,32 +642,98 @@ generate_response_msg(Vsn, RePdu, Type,
 generate_v3_report_msg(MsgID, MsgSecurityModel, Data, ErrorInfo, Log) ->
     {Varbind, SecName, Opts} = ErrorInfo,
     ReqId =
-	if record(Data, scopedPdu) -> 
+	if 
+	    is_record(Data, scopedPdu) -> 
 		(Data#scopedPdu.data)#pdu.request_id;
 	   true -> 
 		0 %% RFC2572, 7.1.3.c.4
 	end,
     ?vtrace("Report ReqId: ~p",[ReqId]),
-    Pdu = #pdu{type = report, request_id = ReqId,
-	       error_status = noError, error_index = 0,
-	       varbinds = [Varbind]},
-    SecLevel = snmp_misc:get_option(securityLevel, Opts, 0),
-    SnmpEngineID = snmp_framework_mib:get_engine_id(),
+    Pdu = #pdu{type         = report, 
+	       request_id   = ReqId,
+	       error_status = noError, 
+	       error_index  = 0,
+	       varbinds     = [Varbind]},
+    SecLevel        = snmp_misc:get_option(securityLevel, Opts, 0),
+    SnmpEngineID    = snmp_framework_mib:get_engine_id(),
     ContextEngineID = 
 	snmp_misc:get_option(contextEngineID, Opts, SnmpEngineID),
-    ContextName = snmp_misc:get_option(contextName, Opts, ""),
-    SecData = snmp_misc:get_option(sec_data, Opts, []),
+    ContextName     = snmp_misc:get_option(contextName, Opts, ""),
+    SecData         = snmp_misc:get_option(sec_data,    Opts, []),
 
     generate_response_msg('version-3', Pdu, report,
 			  {v3, MsgID, MsgSecurityModel, SecName, SecLevel,
 			   ContextEngineID, ContextName, SecData}, Log).
 
+%% req_id(#scopedPdu{data = #pdu{request_id = ReqId}}) ->
+%%     ?vtrace("Report ReqId: ~p",[ReqId]),
+%%     ReqId;
+%% req_id(_) ->
+%%     0. % RFC2572, 7.1.3.c.4
+
+    
+%% maybe_generate_discovery1_report_msg() ->
+%%     case (catch DiscoveryHandler:handle_discovery1(Ip, Udp, EngineId)) of
+%% 	{ok, Entry} when is_record(Entry, snmp_discovery_data1) ->
+%% 	    ok;
+%% 	ignore ->
+%% 	    ok;
+%% 	{error, Reason} ->
+	    
+%% Response to step 1 discovery message (from the manager)
+generate_discovery1_report_msg(MsgID, MsgSecurityModel, 
+			       SecName, SecLevel, 
+			       ContextEngineID, ContextName,
+			       {SecData, Oid, Value}, 
+			       #pdu{request_id = ReqId}, Log) ->
+    ?vtrace("generate_discovery1_report_msg -> entry with"
+	    "~n   ReqId: ~p"
+	    "~n   Value: ~p", [ReqId, Value]),
+    Varbind = #varbind{oid          = Oid, 
+		       variabletype = 'Counter32',
+		       value        = Value, 
+		       org_index    = 1}, 
+    PduOut = #pdu{type         = report, 
+		  request_id   = ReqId,
+		  error_status = noError, 
+		  error_index  = 0,
+		  varbinds     = [Varbind]},
+    case generate_response_msg('version-3', PduOut, report,
+			       {v3, MsgID, MsgSecurityModel, SecName, SecLevel,
+				ContextEngineID, ContextName, SecData}, Log) of
+	{ok, Packet} ->
+	    {discovery, Packet};
+	Error ->
+	    Error
+    end.
+
+%% Response to step 2 discovery message (from the manager)
+generate_discovery2_report_msg(MsgID, MsgSecurityModel, 
+			       SecName, SecLevel, 
+			       ContextEngineID, ContextName,
+			       SecData, #pdu{request_id = ReqId}, Log) ->
+    ?vtrace("generate_discovery2_report_msg -> entry with"
+	    "~n   ReqId: ~p", [ReqId]),
+    PduOut = #pdu{type         = report, 
+		  request_id   = ReqId,
+		  error_status = noError, 
+		  error_index  = 0,
+		  varbinds     = []},
+    case generate_response_msg('version-3', PduOut, report,
+			       {v3, MsgID, MsgSecurityModel, SecName, SecLevel,
+				ContextEngineID, ContextName, SecData}, Log) of
+	{ok, Packet} ->
+	    {discovery, Packet};
+	Error ->
+	    Error
+    end.
+
 
 too_big(Vsn, Pdu, Community, Log, _MMS, _Len) 
-  when Pdu#pdu.type == 'get-response' ->
+  when Pdu#pdu.type =:= 'get-response' ->
     ErrPdu =
 	if 
-	    Vsn == 'version-1' ->
+	    Vsn =:= 'version-1' ->
 		%% In v1, the varbinds should be identical to the incoming
 		%% request.  It isn't identical now!
 		%% Make acceptable (?) approximation.
@@ -637,7 +797,7 @@ generate_msg(Vsn, _NoteStore, Pdu, {community, Community}, To) ->
 		    ?vlog("packet max size exceeded: "
 			  "~n   Max: ~p"
 			  "~n   Len: ~p",
-			  [AgentMax,Len]),
+			  [AgentMax, Len]),
 		    {discarded, tooBig}
 	    end
     end;
@@ -659,6 +819,146 @@ generate_msg('version-3', NoteStore, Pdu,
     end.
 
 
+generate_discovery_msg(NoteStore, Pdu, MsgData, To) ->
+    Timeout = 1500, 
+    generate_discovery_msg(NoteStore, Pdu, MsgData, Timeout, To).
+
+generate_discovery_msg(NoteStore, Pdu, MsgData, Timeout, To) ->
+    {SecData, ContextEngineID, ContextName}       = MsgData,
+    {SecModel, SecName, SecLevelFlag, TargetName} = SecData,
+    ManagerEngineId = 
+	case get_target_engine_id(TargetName) of
+	    {ok, discovery} ->  
+		"";            % Discovery stage 1
+	    {ok, TargetEngineId} ->
+		TargetEngineId % Discovery stage 2
+	end,
+    generate_discovery_msg(NoteStore, Pdu, 
+			   ContextEngineID, ContextName, 
+			   SecModel, SecName, SecLevelFlag, 
+			   ManagerEngineId, Timeout, To).
+
+generate_discovery_msg(NoteStore, Pdu, 
+		       ContextEngineID, ContextName, 
+		       SecModel, _SecName, _SecLevelFlag, 
+		       "" = ManagerEngineID, Timeout, To) ->
+    %% Discovery step 1 uses SecLevel = noAuthNoPriv
+    SecName      = "", 
+    SecLevelFlag = 0, % ?'SnmpSecurityLevel_noAuthNoPriv', 
+    generate_discovery_msg2(NoteStore, Pdu, 
+			    ContextEngineID, ManagerEngineID, 
+			    SecModel, SecName, SecLevelFlag,
+			    ContextName, Timeout, To);
+generate_discovery_msg(NoteStore, Pdu, 
+		       ContextEngineID, ContextName, 
+		       SecModel, SecName, SecLevelFlag, 
+		       ManagerEngineID, Timeout, To) ->
+    generate_discovery_msg2(NoteStore, Pdu, 
+			    ContextEngineID, ManagerEngineID, 
+			    SecModel, SecName, SecLevelFlag,
+			    ContextName, Timeout, To).
+
+generate_discovery_msg2(NoteStore, Pdu, 
+			ContextEngineID, ManagerEngineID, 
+			SecModel, SecName, SecLevelFlag,
+			ContextName, Timeout, To) ->
+    %% rfc2272: 7.1.6
+    ScopedPDU = #scopedPdu{contextEngineID = ContextEngineID,
+			   contextName     = ContextName,
+			   data            = Pdu},
+    case (catch snmp_pdus:enc_scoped_pdu(ScopedPDU)) of
+	{'EXIT', Reason} ->
+	    user_err("failed encoding scoped pdu "
+		     "(pdu: ~w, contextName: ~w): ~n~w",
+		     [Pdu, ContextName, Reason]),
+	    {discarded, Reason};
+	ScopedPDUBytes -> 
+	    {ok, generate_discovery_msg(NoteStore, To, 
+					Pdu, ScopedPDUBytes, 
+					ContextEngineID, ManagerEngineID,
+					SecModel, SecName, SecLevelFlag,
+					ContextName, Timeout)}
+    end.
+
+%% Timeout is in msec but note timeout is in 1/10 seconds
+discovery_note_timeout(Timeout) ->
+    (Timeout div 100) + 1.
+    
+generate_discovery_msg(NoteStore, {?snmpUDPDomain, [A,B,C,D,U1,U2]}, 
+		       Pdu, ScopedPduBytes, 
+		       ContextEngineID, ManagerEngineID, 
+		       SecModel, SecName, SecLevelFlag, 
+		       ContextName, Timeout) ->
+    %% 7.1.7
+    ?vdebug("generate_discovery_msg -> 7.1.7 (~p)", [ManagerEngineID]),
+    MsgID     = generate_msg_id(),
+    PduType   = Pdu#pdu.type,
+    MsgFlags  = mk_msg_flags(PduType, SecLevelFlag), 
+    V3Hdr     = #v3_hdr{msgID            = MsgID,
+			msgMaxSize       = get_max_message_size(),
+			msgFlags         = MsgFlags,
+			msgSecurityModel = SecModel},
+    Message   = #message{version = 'version-3', 
+			 vsn_hdr = V3Hdr,
+			 data    = ScopedPduBytes},
+    SecModule = sec_module(SecModel),
+
+    %% 7.1.9b
+    ?vdebug("generate_discovery_msg -> 7.1.9b", []),
+    case generate_sec_discovery_msg(Message, SecModule, 
+				    ContextEngineID, 
+				    ManagerEngineID, 
+				    SecName, SecLevelFlag) of
+	{ok, Packet} ->
+	    %% 7.1.9c
+	    %% Store in cache for Timeout msec.
+	    NoteTimeout = discovery_note_timeout(Timeout),
+	    ?vdebug("generate_discovery_msg -> 7.1.9c [~w]", [NoteTimeout]),
+	    %% The request id is just in case when we receive a 
+	    %% report with incorrect securityModel and/or securityLevel
+	    Key  = {agent, MsgID}, 
+	    Note = #note{sec_engine_id = ManagerEngineID, 
+			 sec_model     = SecModel, 
+			 sec_name      = SecName, 
+			 sec_level     = SecLevelFlag,
+			 ctx_engine_id = ContextEngineID, 
+			 ctx_name      = ContextName, 
+			 disco         = true, 
+			 req_id        = Pdu#pdu.request_id},
+	    snmp_note_store:set_note(NoteStore, Timeout, Key, Note),
+	    %% Log(Packet),
+	    inc_snmp_out_vars(Pdu),
+	    ?vdebug("generate_discovery_msg -> done", []),
+	    {Packet, {{A,B,C,D}, U1 bsl 8 + U2}};
+
+	Error ->
+	    throw(Error)
+    end.
+
+generate_sec_discovery_msg(Message, SecModule, 
+			   ContextEngineID, ManagerEngineID, 
+			   SecName, SecLevelFlag) ->
+    case (catch SecModule:generate_discovery_msg(Message, ContextEngineID, 
+						 ManagerEngineID, 
+						 SecName, SecLevelFlag)) of
+	{'EXIT', Reason} ->
+	    config_err("~p (message: ~p)", [Reason, Message]),
+	    {discarded, Reason};
+	{error, Reason} ->
+	    config_err("~p (message: ~p)", [Reason, Message]),
+	    {discarded, Reason};
+	Bin when is_binary(Bin) ->
+	    {ok, Bin};
+	OutMsg when is_list(OutMsg) ->
+	    case (catch list_to_binary(OutMsg)) of
+		Bin when is_binary(Bin) ->
+		    {ok, Bin};
+		{'EXIT', Reason} ->
+		    {error, Reason}
+	    end
+    end.
+	
+    
 process_taddrs(Dests) ->
     ?vtrace("process_taddrs -> entry with"
 	    "~n   Dests: ~p", [Dests]),
@@ -736,20 +1036,27 @@ mk_v1_v2_packet_list([{Domain, Addr} | T],
     mk_v1_v2_packet_list(T, Packet, Len, Pdu, [Entry | Acc]).
 
 
+get_max_message_size() ->
+    snmp_framework_mib:get_engine_max_message_size().
+
+mk_msg_flags(PduType, SecLevel) ->
+    snmp_misc:mk_msg_flags(PduType, SecLevel).
+
 mk_v3_packet_entry(NoteStore, Domain, Addr, 
 		   {SecModel, SecName, SecLevel, TargetAddrName},
 		   ScopedPDUBytes, Pdu, ContextEngineID, ContextName) ->
     %% 7.1.7
     ?vtrace("mk_v3_packet_entry -> entry - 7.1.7", []),
-    PduType = Pdu#pdu.type,
-    MsgID = generate_msg_id(),
-    V3Hdr = #v3_hdr{msgID = MsgID,
-		    msgMaxSize =
-		    snmp_framework_mib:get_engine_max_message_size(),
-		    msgFlags = snmp_misc:mk_msg_flags(PduType, SecLevel),
-		    msgSecurityModel = SecModel},
-    Message = #message{version = 'version-3', vsn_hdr = V3Hdr,
-		       data = ScopedPDUBytes},
+    MsgID     = generate_msg_id(),
+    PduType   = Pdu#pdu.type,
+    MsgFlags  = mk_msg_flags(PduType, SecLevel), 
+    V3Hdr     = #v3_hdr{msgID            = MsgID,
+			msgMaxSize       = get_max_message_size(),
+			msgFlags         = MsgFlags, 
+			msgSecurityModel = SecModel},
+    Message   = #message{version = 'version-3', 
+			 vsn_hdr = V3Hdr,
+			 data    = ScopedPDUBytes},
     SecModule = 
 	case SecModel of
 	    ?SEC_USM ->
@@ -765,13 +1072,18 @@ mk_v3_packet_entry(NoteStore, Domain, Addr,
 	    _ ->
 		%% This is the implementation dependent target engine id
 		%% procedure.
-		case snmp_target_mib:get_target_engine_id(TargetAddrName) of
+		case get_target_engine_id(TargetAddrName) of
+		    {ok, discovery} ->  
+			config_err("Discovery has not yet been performed for "
+				   "snmpTargetAddrName ~p~n", 
+				   [TargetAddrName]),
+			throw({discarded, {discovery, TargetAddrName}});
 		    {ok, TargetEngineId} ->
 			?vtrace("TargetEngineId: ~p", [TargetEngineId]),
 			TargetEngineId;
 		    undefined ->
 			config_err("Can't find engineID for "
-				   "snmpTargetAddrName ~p \n",
+				   "snmpTargetAddrName ~p~n",
 				   [TargetAddrName]),
 			"" % this will trigger error in secmodule
 		end
@@ -795,16 +1107,23 @@ mk_v3_packet_entry(NoteStore, Domain, Addr,
 		    [size(Packet)]),
 	    Data = 
 		if
-		    SecLevel == 3 -> 
+		    SecLevel =:= 3 -> 
 			%% encrypted - log decrypted pdu
 			{Packet, {V3Hdr, ScopedPDUBytes}};
 		    true -> 
 			%% otherwise log the entire msg
 			Packet
 		end,
-	    CacheVal = {SecEngineID, SecModel, SecName, SecLevel,
-			ContextEngineID, ContextName},
-	    snmp_note_store:set_note(NoteStore, 1500, {agent,MsgID}, CacheVal),
+	    CacheKey = {agent, MsgID}, 
+	    CacheVal = #note{sec_engine_id = SecEngineID, 
+			     sec_model     = SecModel, 
+			     sec_name      = SecName, 
+			     sec_level     = SecLevel, 
+			     ctx_engine_id = ContextEngineID, 
+			     ctx_name      = ContextName,
+			     disco         = false,
+			     req_id        = Pdu#pdu.request_id},
+	    snmp_note_store:set_note(NoteStore, 1500, CacheKey, CacheVal),
 	    inc_snmp_out_vars(Pdu),
 	    {ok, {Domain, Addr, Data}}
     end.
@@ -881,6 +1200,13 @@ gen(Id) ->
     end.
 
 
+get_target_engine_id(TargetAddrName) ->
+    snmp_target_mib:get_target_engine_id(TargetAddrName).
+
+sec_module(?SEC_USM) ->
+    snmpa_usm.
+
+
 %%-----------------------------------------------------------------
 %% Version(s) functions
 %%-----------------------------------------------------------------
@@ -915,7 +1241,8 @@ init_counter(Counter) ->
     ets:insert(snmp_agent_table, {Counter, 0}).
 
 counters() ->
-    [snmpInPkts,
+    [
+     snmpInPkts,
      snmpOutPkts,
      snmpInBadVersions,
      snmpInBadCommunityNames,
@@ -950,6 +1277,8 @@ counters() ->
      snmpUnknownPDUHandlers
     ].
     
+
+
 %%-----------------------------------------------------------------
 %%  inc(VariableName) increments the variable (Counter) in
 %%  the local mib. (e.g. snmpInPkts)
@@ -960,7 +1289,7 @@ inc(Name, N) -> ets:update_counter(snmp_agent_table, Name, N).
 inc_snmp_in_vars(#pdu{type = Type}) ->
     inc_in_type(Type).
 
-inc_snmp_cnt_vars(_, #pdu{error_status = ErrStat}) when ErrStat /= noError ->
+inc_snmp_cnt_vars(_, #pdu{error_status = ErrStat}) when ErrStat =/= noError ->
     ok;
 inc_snmp_cnt_vars('get-request', #pdu{varbinds = Vbs}) ->
     inc(snmpInTotalReqVars, length(Vbs));

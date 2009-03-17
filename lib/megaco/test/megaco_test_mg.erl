@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2003-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Implements an "MG" used by the test suite
@@ -76,7 +77,8 @@
 	     load_counter    = 0,
 	     reply_counter   = 0,
 	     mload_info      = undefined,
-	     parent          = undefined}).
+	     parent          = undefined,
+	     dsi_timer}).
 
 
 %%% --------------------------------------------------------------------
@@ -88,11 +90,15 @@ start(Node, Mid, Encoding, Transport, Verbosity) ->
     start(Node, Mid, Encoding, Transport, Conf, Verbosity).
 
 start(Node, Mid, Encoding, Transport, Conf, Verbosity) ->
-    d("start mg[~p]: ~p", [Node, Mid]),
+    d("start mg[~p]: ~p"
+      "~n   Encoding:  ~p"
+      "~n   Transport: ~p"
+      "~n   Conf:      ~p", [Node, Mid, Encoding, Transport, Conf]),
     RI1    = encoding_config(Encoding),
     RI2    = transport_config(Transport),
-    RI     = {receive_info, RI1 ++ RI2},
-    Config = [{local_mid, Mid}, RI] ++ Conf,
+    {RI3, Conf1} = transport_opts(Conf), 
+    RI     = {receive_info, RI1 ++ RI2 ++ RI3},
+    Config = [{local_mid, Mid}, RI] ++ Conf1,
     Self   = self(),
     Fun    = 
 	fun() ->
@@ -161,7 +167,27 @@ select_encoding(Encoding) ->
 transport_config(tcp) ->
     [{transport_module, megaco_tcp}];
 transport_config(udp) ->
-    [{transport_module, megaco_udp}].
+    [{transport_module, megaco_udp}];
+transport_config(TransportConfig) when is_list(TransportConfig) ->
+    {value, {transport, Trans}} = 
+	lists:keysearch(transport, 1, TransportConfig),
+    transport_config(Trans) ++ 
+	case lists:keysearch(host, 1, TransportConfig) of
+	    {value, Value} ->
+		[Value];
+	    false ->
+		[]
+	end.
+    
+transport_opts(Config) ->
+    case lists:keysearch(transport_opts, 1, Config) of
+	{value, TO} ->
+	    Config1 = lists:keydelete(transport_opts, 1, Config),
+	    {[TO], Config1};
+	false ->
+	    {[], Config}
+    end.
+									
 
 await_started(Node, MonRef, Pid) ->
     i("await_started -> entry with"
@@ -332,9 +358,9 @@ mg(Parent, Verbosity, Config) ->
 	    exit(Error);
 	{'EXIT', Reason} ->
 	    exit({init_failed, Reason});
-	Mid ->
+	{ok, Mid, DSITimer} ->
 	    notify_started(Parent),
-	    MG = #mg{parent = Parent, mid = Mid},
+	    MG = #mg{parent = Parent, mid = Mid, dsi_timer = DSITimer},
 	    i("mg -> started"),
 	    put(verbosity, Verbosity),
 	    case (catch loop(MG)) of
@@ -357,12 +383,25 @@ init(Config) ->
     Mid = get_conf(local_mid, Config),
     d("init -> Mid: ~p", [Mid]),
     RI  = get_conf(receive_info, Config),
+    d("init -> RI: ~p", [RI]),
+
+    d("init -> maybe start the display system info timer"),
+    DSITimer = 
+	case get_conf(display_system_info, Config, undefined) of
+	    Time when is_integer(Time) ->
+		d("init -> creating display system info timer"),
+		create_timer(Time, display_system_info);
+	    _ ->
+		undefined
+	end,
+    Conf0 = lists:keydelete(display_system_info, 1, Config),
+
     d("init -> start megaco"),
     application:start(megaco),
 
 
     d("init -> possibly enable megaco trace"),
-    case lists:keysearch(megaco_trace, 1, Config) of
+    case lists:keysearch(megaco_trace, 1, Conf0) of
 	{value, {megaco_trace, true}} ->
 	    megaco:enable_trace(max, io);
 	{value, {megaco_trace, io}} ->
@@ -372,29 +411,34 @@ init(Config) ->
 	_ ->
 	    ok
     end,
-    Conf0 = lists:keydelete(megaco_trace, 1, Config),
+    Conf1 = lists:keydelete(megaco_trace, 1, Conf0),
     
     d("init -> start megaco user"),
-    Conf1 = lists:keydelete(local_mid,    1, Conf0),
-    Conf2 = lists:keydelete(receive_info, 1, Conf1),
-    ok = megaco:start_user(Mid, Conf2),
+    Conf2 = lists:keydelete(local_mid,    1, Conf1),
+    Conf3 = lists:keydelete(receive_info, 1, Conf2),
+    ok = megaco:start_user(Mid, Conf3),
     d("init -> update user info (user_mod)"),
     ok = megaco:update_user_info(Mid, user_mod,  ?MODULE),
     d("init -> update user info (user_args)"),
     ok = megaco:update_user_info(Mid, user_args, [self(), Mid]),
 
     d("init -> get user info (receive_handle)"),
-    RH = megaco:user_info(Mid,receive_handle),
+    RH = megaco:user_info(Mid, receive_handle),
     d("init -> parse receive info"),
-    {MgcPort, RH1} = parse_receive_info(RI, RH),
-    d("init -> start transport"),
-    {ok, _CH} = start_transport(MgcPort, RH1),
-    Mid.
+    {MgcPort, MgcHost, RH1, TO} = parse_receive_info(RI, RH),
+    d("init -> start transport (with ~p)", [TO]),
+    {ok, _CH} = start_transport(MgcPort, MgcHost, RH1, TO),
+    {ok, Mid, DSITimer}.
 
 
 loop(#mg{parent = Parent, mid = Mid} = S) ->
     d("loop -> await request", []),
     receive
+	{display_system_info, Time} ->
+	    display_system_info(S#mg.mid),
+	    NewTimer = create_timer(Time, display_system_info),
+	    loop(S#mg{dsi_timer = NewTimer});
+
 	{verbosity, V, Parent} ->
 	    i("loop -> received new verbosity: ~p", [V]),
 	    put(verbosity,V),
@@ -403,6 +447,8 @@ loop(#mg{parent = Parent, mid = Mid} = S) ->
 
 	{stop, Parent} ->
 	    i("loop -> stopping", []),
+	    display_system_info(S#mg.mid, "at finish "),
+	    cancel_timer(S#mg.dsi_timer),
 	    Res = do_stop(Mid),
 	    d("loop -> stop result: ~p", [Res]),
 	    server_reply(Parent, stopped, {ok, Res}),
@@ -542,7 +588,7 @@ loop(#mg{parent = Parent, mid = Mid} = S) ->
 		end,
 	    loop(S1);
 
-	apply_load_timeout ->
+	{apply_load_timeout, _} ->
 	    d("loop -> received apply_load timeout", []),
 	    S1 = do_apply_load(S),
 	    loop(S1);
@@ -864,40 +910,46 @@ parse_receive_info(RI, RH) ->
     TM = get_transport_module(RI),
     d("parse_receive_info -> get transport port"),
     TP = get_transport_port(RI),
+    d("parse_receive_info -> get transport host"),
+    TH = get_transport_host(RI),
+    d("parse_receive_info -> get transport opts"),
+    TO = get_transport_opts(RI),
     RH1 = RH#megaco_receive_handle{send_mod        = TM,
 				   encoding_mod    = EM,
 				   encoding_config = EC},
-    {TP, RH1}.
+    {TP, TH, RH1, TO}.
 
 
-start_transport(MgcPort,
-		   #megaco_receive_handle{send_mod = megaco_tcp} = RH) ->
-    start_tcp(MgcPort,RH);
-start_transport(MgcPort,
-		   #megaco_receive_handle{send_mod = megaco_udp} = RH) ->
-    start_udp(MgcPort,RH);
-start_transport(_, #megaco_receive_handle{send_mod = Mod}) ->
+start_transport(MgcPort, MgcHost, 
+		   #megaco_receive_handle{send_mod = megaco_tcp} = RH, TO) ->
+    start_tcp(MgcPort, MgcHost, RH, TO);
+start_transport(MgcPort, MgcHost, 
+		   #megaco_receive_handle{send_mod = megaco_udp} = RH, TO) ->
+    start_udp(MgcPort, MgcHost, RH, TO);
+start_transport(_, _, #megaco_receive_handle{send_mod = Mod}, _TO) ->
     throw({error, {bad_send_mod, Mod}}).
 
 
-start_tcp(MgcPort, RH) ->
+start_tcp(MgcPort, MgcHost, RH, TO) ->
     d("start tcp transport: "
-      "~n   MGC Port:       ~p"
-      "~n   Receive handle: ~p", [MgcPort, RH]),
+      "~n   MGC Port:          ~p"
+      "~n   MGC Host:          ~p"
+      "~n   Receive handle:    ~p"
+      "~n   Transport options: ~p", [MgcPort, MgcHost, RH, TO]),
     case megaco_tcp:start_transport() of
 	{ok, Sup} ->
 	    d("tcp transport started: ~p", [Sup]),
-	    start_tcp_connect(RH, MgcPort, Sup);
+	    start_tcp_connect(TO, RH, MgcPort, MgcHost, Sup);
         {error, Reason} ->
             throw({error, {megaco_tcp_start_transport, Reason}})
     end.
 
-start_tcp_connect(RH, Port, Sup) ->
-    {ok, LocalHost} = inet:gethostname(),
-    Opts = [{host,           LocalHost},
+start_tcp_connect(TO, RH, Port, Host, Sup) ->
+    d("try tcp connecting to: ~p:~p", [Host, Port]),
+    Opts = [{host,           Host},
 	    {port,           Port}, 
 	    {receive_handle, RH},
-	    {tcp_options,    [{nodelay, true}]}],
+	    {tcp_options,    [{nodelay, true}]}] ++ TO,
     try_start_tcp_connect(RH, Sup, Opts, 250, noError).
 
 try_start_tcp_connect(RH, Sup, Opts, Timeout, Error0) when (Timeout < 5000) ->
@@ -927,17 +979,18 @@ megaco_tcp_connect(RH, SendHandle, ControlPid) ->
     d("megaco connected: ~p", [CH]),    
     {ok, CH}.
 
-start_udp(MgcPort, RH) ->
+start_udp(MgcPort, MgcHost, RH, TO) ->
     d("start udp transport (~p)", [MgcPort]),
     case megaco_udp:start_transport() of
 	{ok, Sup} ->
 	    d("udp transport started: ~p", [Sup]),
-	    Opts = [{port, 0}, {receive_handle, RH}],
+	    Opts = [{port, 0}, {receive_handle, RH}] ++ TO,
 	    d("udp open", []),
 	    case megaco_udp:open(Sup, Opts) of
 		{ok, Handle, ControlPid} ->
 		    d("udp opened: ~p, ~p", [Handle, ControlPid]),
-		    megaco_udp_connect(MgcPort, RH, Handle, ControlPid);
+		    megaco_udp_connect(MgcPort, MgcHost, 
+				       RH, Handle, ControlPid);
 		{error, Reason} ->
                     throw({error, {megaco_udp_open, Reason}})
 	    end;
@@ -945,15 +998,13 @@ start_udp(MgcPort, RH) ->
             throw({error, {megaco_udp_start_transport, Reason}})
     end.
 
-megaco_udp_connect(MgcPort, RH, Handle, ControlPid) ->
-    {ok, LocalHost} = inet:gethostname(),
+megaco_udp_connect(MgcPort, MgcHost, RH, Handle, ControlPid) ->
     MgcMid     = preliminary_mid,
-    SendHandle = megaco_udp:create_send_handle(Handle, LocalHost, MgcPort),
+    SendHandle = megaco_udp:create_send_handle(Handle, MgcHost, MgcPort),
     d("megaco connect", []),    
-    {ok, CH}   = megaco:connect(RH, MgcMid, SendHandle, ControlPid),
+    {ok, CH} = megaco:connect(RH, MgcMid, SendHandle, ControlPid),
     d("megaco connected: ~p", [CH]),    
     {ok, CH}.
-
 
 
 update_load_times(#mg{load_counter = 0} = MG, Times) ->
@@ -1410,6 +1461,13 @@ get_transport_module(RI) ->
 get_transport_port(RI) ->
     get_conf(port, RI).
 
+get_transport_host(RI) ->
+    {ok, LocalHost} = inet:gethostname(),
+    get_conf(host, RI, LocalHost).
+
+get_transport_opts(RI) ->
+    get_conf(transport_opts, RI, []).
+
 
 get_conf(Key, Config) ->
     case lists:keysearch(Key, 1, Config) of
@@ -1417,6 +1475,14 @@ get_conf(Key, Config) ->
 	    Val;
 	_ ->
 	    exit({error, {not_found, Key, Config}})
+    end.
+
+get_conf(Key, Config, Default) ->
+    case lists:keysearch(Key, 1, Config) of
+	{value, {Key, Val}} ->
+	    Val;
+	_ ->
+	    Default
     end.
 
 
@@ -1495,6 +1561,25 @@ random(N) ->
     random:uniform(N).
 
 
+display_system_info(Mid) ->
+    display_system_info(Mid, "").
+
+display_system_info(Mid, Pre) ->
+    TimeStr = format_timestamp(now()),
+    MibStr  = lists:flatten(io_lib:format("~p ", [Mid])), 
+    megaco_test_lib:display_system_info(MibStr ++ Pre ++ TimeStr).
+
+
+create_timer(Time, Event) ->
+    erlang:send_after(Time, self(), {Event, Time}).
+
+cancel_timer(undefined) ->
+    ok;
+cancel_timer(Ref) ->
+    erlang:cancel_timer(Ref).
+
+
 apply_load_timer() ->
-    erlang:send_after(random(), self(), apply_load_timeout).
+    create_timer(random(), apply_load_timeout).
+
 

@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>2004-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %
 -module(http_transport).
 
@@ -71,25 +71,16 @@ connect(SocketType, Address, IPV6) ->
     connect(SocketType, Address, IPV6, infinity).
 
 connect(ip_comm, {Host, Port}, enabled, Timeout) ->
-    {Opts, NewHost} = 
-	case inet:getaddr(Host, inet6) of
-	    {ok, IPAddr = {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
-		case inet:getaddr(Host, inet) of
-		    {ok,NewIP} ->
-			{[binary, {packet, 0}, {active, false},
-			  {reuseaddr,true}], NewIP};
-		    _Error ->
-			{[binary, {packet, 0}, {active, false},
-			  {reuseaddr,true}, inet6], IPAddr}
-		end;
-	    {ok, IPAddr} ->
-		{[binary, {packet, 0}, {active, false},
-		  {reuseaddr,true}, inet6], IPAddr};
-	    _ ->
-		{[binary, {packet, 0}, {active, false},
-		  {reuseaddr,true}], Host}
-	end,
-    gen_tcp:connect(NewHost, Port, Opts, Timeout);
+    Opts = [inet6, binary, {packet, 0}, {active, false},{reuseaddr,true}],
+    
+    case gen_tcp:connect(Host, Port, Opts, Timeout) of
+	{error, nxdomain} -> 
+	    gen_tcp:connect(Host, Port, lists:delete(inet6, Opts), Timeout);
+	{error,eafnosupport}  ->
+	    gen_tcp:connect(Host, Port, lists:delete(inet6, Opts), Timeout);
+	Other ->
+	    Other
+    end;
 
 connect(ip_comm, {Host, Port}, disabled, Timeout) ->
     Opts = [binary, {packet, 0}, {active, false}, {reuseaddr,true}],
@@ -97,6 +88,10 @@ connect(ip_comm, {Host, Port}, disabled, Timeout) ->
 
 connect({ssl, SslConfig}, {Host, Port}, _, Timeout) ->
     Opts = [binary, {active, false}] ++ SslConfig,
+    ssl:connect(Host, Port, Opts, Timeout);
+
+connect({erl_ssl, SslConfig}, {Host, Port}, _, Timeout) ->
+    Opts = [binary, {active, false}, {ssl_imp, new}] ++ SslConfig,
     ssl:connect(Host, Port, Opts, Timeout).
 
 %%-------------------------------------------------------------------------
@@ -129,11 +124,20 @@ listen(ip_comm, Addr, Port) ->
 		 sock_opt(ip_comm, Addr, 
 			  [{backlog, 128}, {reuseaddr, true}])}
 	end,
-    gen_tcp:listen(NewPort, Opt);
+    case gen_tcp:listen(NewPort, Opt) of
+	{error,eafnosupport} ->
+	    gen_tcp:listen(NewPort, lists:delete(inet6, Opt));
+	Other ->
+	    Other
+    end;
 
 listen({ssl, SSLConfig} = Ssl, Addr, Port) ->
     Opt = sock_opt(Ssl, Addr, SSLConfig),
-    ssl:listen(Port, Opt).
+    ssl:listen(Port, Opt);
+
+listen({erl_ssl, SSLConfig} = Ssl, Addr, Port) ->
+    Opt = sock_opt(Ssl, Addr, SSLConfig),
+    ssl:listen(Port, [{ssl_imp, new} | Opt]).
 
 %%-------------------------------------------------------------------------
 %% accept(SocketType, ListenSocket) -> {ok, Socket} | {error, Reason}
@@ -265,7 +269,7 @@ sock_opt(_, any = Addr, Opt) ->
     sock_opt2([{ip, Addr} | Opt]);
 sock_opt(_, undefined, Opt) ->
     sock_opt2(Opt);
-sock_opt(_, Addr, Opt) when size(Addr) == 4 -> 
+sock_opt(_, {_,_,_,_} = Addr, Opt) -> 
     sock_opt2([{ip, Addr} | Opt]);
 sock_opt(ip_comm, Addr, Opt) -> 
     sock_opt2([inet6, {ip, Addr} | Opt]);
@@ -273,28 +277,19 @@ sock_opt(_, Addr, Opt) ->
     sock_opt2([{ip, Addr} | Opt]).
 
 sock_opt1(Opt) ->
-    case has_inet6_supported() of
-	yes ->
-	    sock_opt2([inet6 | Opt]);
-	no ->
-	    sock_opt2(Opt)
-    end.
+     sock_opt2([inet6 | Opt]).
 
 sock_opt2(Opt) ->
     [{packet, 0}, {active, false} | Opt].
 
-has_inet6_supported() ->
-    case (catch inet:getaddr("localhost", inet6)) of
-	{ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
-	    no;
-	{ok,_} -> yes;
-	_ ->
-	    no
-    end.
-
 negotiate(ip_comm,_,_) ->
     ok;
 negotiate({ssl,_},Socket,Timeout) ->
+    negotiate(Socket, Timeout);
+negotiate({erl_ssl, _}, Socket, Timeout) ->
+    negotiate(Socket, Timeout).
+
+negotiate(Socket, Timeout) ->
     case ssl:ssl_accept(Socket,Timeout) of
 	ok ->
 	    ok;

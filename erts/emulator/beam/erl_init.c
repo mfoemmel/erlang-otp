@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1997-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifdef HAVE_CONFIG_H
@@ -71,6 +72,10 @@ int erts_initialized = 0;
 static erts_tid_t main_thread;
 #endif
 
+erts_cpu_info_t *erts_cpuinfo;
+
+int erts_use_sender_punish;
+
 /*
  * Configurable parameters.
  */
@@ -96,6 +101,10 @@ Eterm erts_error_logger_warnings; /* What to map warning logs to, am_error,
 				     the default for BC */
 
 int erts_compat_rel;
+
+static int use_multi_run_queue;
+static int no_schedulers;
+static int no_schedulers_online;
 
 #ifdef DEBUG
 Uint32 verbose;             /* See erl_debug.h for information about verbose */
@@ -223,7 +232,11 @@ erl_init(void)
 
     erts_init_monitors();
     erts_init_gc();
+    init_time();
     erts_init_process();
+    erts_init_scheduling(use_multi_run_queue,
+			 no_schedulers,
+			 no_schedulers_online);
 
     H_MIN_SIZE = erts_next_heap_size(H_MIN_SIZE, 0);
 
@@ -241,7 +254,6 @@ erl_init(void)
     init_emulator();
     erts_bp_init();
     init_db(); /* Must be after init_emulator */
-    init_time();
     erts_bif_timer_init();
     erts_init_node_tables();
     init_dist();
@@ -527,9 +539,11 @@ void erts_usage(void)
 	       ERTS_MIN_COMPAT_REL, this_rel_num());
 
     erts_fprintf(stderr, "-r         force ets memory block to be moved on realloc\n");
-
-    erts_fprintf(stderr, "-S number  set number of schedulers on this node,\n");
-    erts_fprintf(stderr, "           valid range is [1-%d]\n",
+    erts_fprintf(stderr, "-s <opt>   set scheduling option, valid options are:\n");
+    erts_fprintf(stderr, "           [srq|mrq]\n");
+    erts_fprintf(stderr, "-S n1:n2   set number of schedulers (n1), and number of\n");
+    erts_fprintf(stderr, "           schedulers online (n2), valid range for both\n");
+    erts_fprintf(stderr, "           numbers are [1-%d]\n",
 		 ERTS_MAX_NO_OF_SCHEDULERS);
     erts_fprintf(stderr, "-T number  set modified timing level,\n");
     erts_fprintf(stderr, "           valid range is [0-%d]\n",
@@ -556,10 +570,12 @@ early_init(int *argc, char **argv) /*
 				   */
 {
     ErtsAllocInitOpts alloc_opts = ERTS_ALLOC_INIT_DEF_OPTS_INITER;
-#ifdef ERTS_SMP
     int ncpu;
-#endif
-
+    int ncpuonln;
+    int ncpuavail;
+    int schdlrs;
+    int schdlrs_onln;
+    use_multi_run_queue = 1;
     erts_printf_eterm_func = erts_printf_term;
     erts_disable_tolerant_timeofday = 0;
     display_items = 200;
@@ -570,6 +586,21 @@ early_init(int *argc, char **argv) /*
     H_MIN_SIZE = H_DEFAULT_SIZE;
 
     erts_initialized = 0;
+
+    erts_use_sender_punish = 1;
+
+    erts_cpuinfo = erts_cpu_info_create();
+
+#ifdef ERTS_SMP
+    ncpu = erts_get_cpu_configured(erts_cpuinfo);
+    ncpuonln = erts_get_cpu_online(erts_cpuinfo);
+    ncpuavail = erts_get_cpu_available(erts_cpuinfo);
+#else
+    ncpu = 1;
+    ncpuonln = 1;
+    ncpuavail = 1;
+#endif
+
     ignore_break = 0;
     replace_intr = 0;
     program = argv[0];
@@ -602,12 +633,14 @@ early_init(int *argc, char **argv) /*
      * We need to know the number of schedulers to use before we
      * can initialize the allocators.
      */
-#ifdef ERTS_SMP
-    ncpu = erts_no_of_cpus();
-    erts_no_schedulers = (Uint) (ncpu > 0 ? ncpu : 1);
-#else
-    erts_no_schedulers = 1;
-#endif
+    no_schedulers = (Uint) (ncpu > 0 ? ncpu : 1);
+    no_schedulers_online = (ncpuavail > 0
+			    ? ncpuavail
+			    : (ncpuonln > 0 ? ncpuonln : no_schedulers));
+
+    schdlrs = no_schedulers;
+    schdlrs_onln = no_schedulers_online;
+
     if (argc && argv) {
 	int i = 1;
 	while (i < *argc) {
@@ -618,20 +651,54 @@ early_init(int *argc, char **argv) /*
 	    if (argv[i][0] == '-') {
 		switch (argv[i][1]) {
 		case 'S' : {
-		    int no;
+		    int tot, onln;
 		    char *arg = get_arg(argv[i]+2, argv[i+1], &i);
-		    no = atoi(arg);
-		    if (no < 1 || ERTS_MAX_NO_OF_SCHEDULERS < no) {
+		    switch (sscanf(arg, "%d:%d", &tot, &onln)) {
+		    case 0:
+			switch (sscanf(arg, ":%d", &onln)) {
+			case 1:
+			    tot = no_schedulers;
+			    goto chk_S;
+			default:
+			    goto bad_S;
+			}
+		    case 1:
+			onln = tot < schdlrs_onln ? tot : schdlrs_onln;
+		    case 2:
+		    chk_S:
+			if (tot > 0)
+			    schdlrs = tot;
+			else
+			    schdlrs = no_schedulers + tot;
+			if (onln > 0)
+			    schdlrs_onln = onln;
+			else
+			    schdlrs_onln = no_schedulers_online + onln;
+			if (schdlrs < 1 || ERTS_MAX_NO_OF_SCHEDULERS < schdlrs) {
+			    erts_fprintf(stderr,
+					 "bad amount of schedulers %d\n",
+					 tot);
+			    erts_usage();
+			}
+			if (schdlrs_onln < 1 || schdlrs < schdlrs_onln) {
+			    erts_fprintf(stderr,
+					 "bad amount of schedulers online %d "
+					 "(total amount of schedulers %d)\n",
+					 schdlrs_onln, schdlrs);
+			    erts_usage();
+			}
+			break;
+		    default:
+		    bad_S:
 			erts_fprintf(stderr,
-				     "bad number of scheduler threads %s\n",
+				     "bad amount of schedulers %s\n",
 				     arg);
 			erts_usage();
+			break;
 		    }
+
 		    VERBOSE(DEBUG_SYSTEM,
-			    ("using %d scheduler(s)\n", no));
-#ifdef ERTS_SMP
-		    erts_no_schedulers = (Uint) no;
-#endif
+			    ("using %d:%d scheduler(s)\n", tot, onln));
 		    break;
 		}
 		default:
@@ -641,6 +708,13 @@ early_init(int *argc, char **argv) /*
 	    i++;
 	}
     }
+
+#ifdef ERTS_SMP
+    no_schedulers = schdlrs;
+    no_schedulers_online = schdlrs_onln;
+
+    erts_no_schedulers = (Uint) no_schedulers;
+#endif
 
     erts_alloc_init(argc, argv, &alloc_opts); /* Handles (and removes)
 						 -M flags. */
@@ -895,8 +969,18 @@ erl_start(int argc, char **argv)
 	    (void) get_arg(argv[i]+2, argv[i+1], &i);
 	    break;
 
-	case 's' : /* Reserved for SMP scheduler /Rickard */
-	    erts_usage();
+	case 's' :
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    if (sys_strcmp("mrq", arg) == 0)
+		use_multi_run_queue = 1;
+	    else if (sys_strcmp("srq", arg) == 0)
+		use_multi_run_queue = 0;
+	    else if (sys_strcmp("nsp", arg) == 0)
+		erts_use_sender_punish = 0;
+	    else {
+		erts_fprintf(stderr, "bad scheduling option %s\n", arg);
+		erts_usage();
+	    }
 	    break;
 
 	case 'T' :
@@ -1058,6 +1142,7 @@ erl_start(int argc, char **argv)
 #ifdef ERTS_SMP
     erts_start_schedulers();
     /* Let system specific code decide what to do with the main thread... */
+
     erts_sys_main_thread(); /* May or may not return! */
 #else
     process_main();

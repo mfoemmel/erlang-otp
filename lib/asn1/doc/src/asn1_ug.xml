@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>1999</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1997</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>Asn1</title>
@@ -365,6 +363,7 @@ erlc -o ../asnfiles -I ../asnfiles -I /usr/local/standards/asn1 Person.asn      
         </item>
       </taglist>
       <p>For a complete description of <c>erlc</c> see Erts Reference Manual.</p>
+      <p>For preferred option use see <seealso marker="#preferred option use">Preferred Option Use</seealso> section.</p>
       <p>The compiler and other compile-time functions can also be invoked from 
         the Erlang shell. Below follows a brief
         description of the primary functions, for a
@@ -394,10 +393,272 @@ asn1ct:decode('H323-MESSAGES','SomeChoiceType',Bytes).      </pre>
     </section>
 
     <section>
+      <marker id="preferred option use"></marker>
+      <title>Preferred Option Use</title>
+      <p>
+	It may not be obvious which compile options best fit a
+	situation. This section describes the format of the result of
+	encode and decode. It also gives some performance statistics
+	when using certain options. Finally there is a recommendation
+	which option combinations should be used.
+      </p>
+      <p>
+	The default option is <c>ber</c>. It is the same backend as
+	<c>ber_bin</c> except that the result of encode is transformed
+	to a flat list. Below is a table that gives the different
+	formats of input and output of encode and decode using the
+	<em>allowed combinations</em> of coding and optimization
+	options: (EAVF stands for how ASN1 values are represented in
+	Erlang which is described in the <seealso
+	marker="#ASN1Types">ASN1 Types chapter</seealso>)
+      </p>
+      <table>
+      <row>
+        <cell align="left" valign="middle"><em>Encoding Rule</em></cell>
+        <cell align="left" valign="middle"><em>Compile options, allowed combinations</em></cell>
+        <cell align="left" valign="middle"><em>encode input</em></cell>
+        <cell align="left" valign="middle"><em>encode output</em></cell>
+        <cell align="left" valign="middle"><em>decode input</em></cell>
+        <cell align="left" valign="middle"><em>decode output</em></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">BER</cell>
+        <cell align="left" valign="middle">[ber] (default)</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">flat list</cell>
+        <cell align="left" valign="middle">flat list / binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">BER</cell>
+        <cell align="left" valign="middle">[ber_bin]</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">iolist</cell>
+        <cell align="left" valign="middle">binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">BER</cell>
+        <cell align="left" valign="middle"><em>[ber_bin, optimize]</em></cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">iolist</cell>
+        <cell align="left" valign="middle">binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">BER</cell>
+        <cell align="left" valign="middle"><em>[ber_bin, optimize, driver]</em></cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">iolist</cell>
+        <cell align="left" valign="middle">iolist / binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">PER aligned variant</cell>
+        <cell align="left" valign="middle">[per]</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">flat list</cell>
+        <cell align="left" valign="middle">flat list</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">PER aligned variant</cell>
+        <cell align="left" valign="middle"><em>[per_bin]</em></cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">iolist / binary</cell>
+        <cell align="left" valign="middle">binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">PER aligned variant</cell>
+        <cell align="left" valign="middle"><em>[per_bin, optimize]</em></cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">binary</cell>
+        <cell align="left" valign="middle">binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">PER unaligned variant</cell>
+        <cell align="left" valign="middle"><em>[uper_bin]</em></cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">binary</cell>
+        <cell align="left" valign="middle">binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+
+      <row>
+        <cell align="left" valign="middle">DER</cell>
+        <cell align="left" valign="middle">[(ber), der]</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">flat list</cell>
+        <cell align="left" valign="middle">flat list / binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">DER</cell>
+        <cell align="left" valign="middle">[ber_bin, der]</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">iolist</cell>
+        <cell align="left" valign="middle">binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">DER</cell>
+        <cell align="left" valign="middle"><em>[ber_bin, optimize, der]</em></cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">iolist</cell>
+        <cell align="left" valign="middle">binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">DER</cell>
+        <cell align="left" valign="middle"><em>[ber_bin, optimize, driver, der]</em></cell>
+        <cell align="left" valign="middle">EAVF</cell>
+        <cell align="left" valign="middle">iolist</cell>
+        <cell align="left" valign="middle">binary</cell>
+        <cell align="left" valign="middle">EAVF</cell>
+      </row>
+
+
+      <tcaption>The output / input formats for different combinations of compile options.</tcaption>
+    </table>
+    <p>
+      Encode / decode speed comparison in one user case for the above
+      alternatives (except <c>DER</c>) is showed in the table below. The
+      <c>DER</c> alternatives are slower than their corresponding
+      <c>BER</c> alternative.
+    </p>
+
+    <table>
+      <row>
+	<cell align="left" valign="middle"><em>compile options</em></cell>
+	<cell align="left" valign="middle"><em>encode time</em></cell>
+	<cell align="left" valign="middle"><em>decode time</em></cell>
+      </row>
+      <row>
+	<cell align="left" valign="middle">[ber]</cell>
+	<cell align="left" valign="middle">120</cell>
+	<cell align="left" valign="middle">162</cell>
+      </row>
+      <row>
+	<cell align="left" valign="middle">[ber_bin]</cell>
+	<cell align="left" valign="middle">124</cell>
+	<cell align="left" valign="middle">154</cell>
+      </row>
+      <row>
+	<cell align="left" valign="middle"><em>[ber_bin, optimize]</em></cell>
+	<cell align="left" valign="middle">50</cell>
+	<cell align="left" valign="middle">78</cell>
+      </row>
+      <row>
+	<cell align="left" valign="middle"><em>[ber_bin, optimize, driver]</em></cell>
+	<cell align="left" valign="middle">50</cell>
+	<cell align="left" valign="middle">62</cell>
+      </row>
+      <row>
+	<cell align="left" valign="middle">[per]</cell>
+	<cell align="left" valign="middle">141</cell>
+	<cell align="left" valign="middle">133</cell>
+      </row>
+      <row>
+	<cell align="left" valign="middle"><em>[per_bin]</em></cell>
+	<cell align="left" valign="middle">125</cell>
+	<cell align="left" valign="middle">123</cell>
+      </row>
+      <row>
+	<cell align="left" valign="middle"><em>[per_bin, optimize]</em></cell>
+	<cell align="left" valign="middle">77</cell>
+	<cell align="left" valign="middle">72</cell>
+      </row>
+      <row>
+	<cell align="left" valign="middle"><em>[uper_bin]</em></cell>
+	<cell align="left" valign="middle">97</cell>
+	<cell align="left" valign="middle">104</cell>
+      </row>
+      <tcaption>
+	One example of difference in speed for the compile option alternatives.
+      </tcaption>
+    </table>
+
+    <p>
+      The sole compile options <c>ber</c>, <c>ber_bin</c> and <c>per</c>
+      are kept for backwards compatibility and should not be used in
+      new code.
+    </p>
+    <p>
+      You are strongly recommended to use the appropriate alternative
+      of the bold typed options. The <c>optimize</c> and
+      <c>driver</c> options does not affect the encode or decode
+      result, just the time spent in run-time. When <c>ber_bin</c> and
+      <c>driver</c> or <c>per_bin, optimize</c> and <c>driver</c> is
+      combined the C-code driver is used in choosen parts of encode /
+      decode procedure.
+    </p>
+    <table>
+      <row>
+        <cell align="left" valign="middle"><em>Compile options, allowed combinations</em></cell>
+        <cell align="left" valign="middle"><em>use of linked-in driver</em></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">[ber]</cell>
+        <cell align="left" valign="middle">no</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">[ber_bin]</cell>
+        <cell align="left" valign="middle">no</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><em>[ber_bin, optimize]</em></cell>
+        <cell align="left" valign="middle">no</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><em>[ber_bin, optimize, driver]</em></cell>
+        <cell align="left" valign="middle">yes</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">[per]</cell>
+        <cell align="left" valign="middle">no</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><em>[per_bin]</em></cell>
+        <cell align="left" valign="middle">no</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><em>[per_bin, optimize]</em></cell>
+        <cell align="left" valign="middle">yes</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><em>[uper_bin]</em></cell>
+        <cell align="left" valign="middle">no</cell>
+      </row>
+
+      <row>
+        <cell align="left" valign="middle">[(ber), der]</cell>
+        <cell align="left" valign="middle">no</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">[ber_bin, der]</cell>
+        <cell align="left" valign="middle">no</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><em>[ber_bin, optimize, der]</em></cell>
+        <cell align="left" valign="middle">no</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><em>[ber_bin, optimize, driver, der]</em></cell>
+        <cell align="left" valign="middle">yes</cell>
+      </row>
+
+
+      <tcaption>When the ASN1 linked-in driver is used.</tcaption>
+    </table>
+
+    </section>
+    <section>
       <title>Run-time Functions</title>
       <p>A brief description of the major functions is given here. For a
-        complete description of each function 
-        <seealso marker="asn1rt">see the Asn1 Reference Manual</seealso>, the <c>asn1rt</c> module.</p>
+        complete description of each function see
+        <seealso marker="asn1rt"> the Asn1 Reference Manual</seealso>, the <c>asn1rt</c> module.</p>
       <p>The generic run-time encode and decode functions can be invoked as below:</p>
       <pre>
 asn1rt:encode('H323-MESSAGES','SomeChoiceType',{call,"octetstring"}).

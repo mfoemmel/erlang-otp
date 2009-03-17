@@ -1,8 +1,26 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%----------------------------------------------------------------------
 %% File    : hipe_ig.erl
 %% Author  : Andreas Wallin <d96awa@csd.uu.se>
-%% Purpose : Creates an interference graph that tells what temporaries
+%% Purpose : Creates an interference graph that tells which temporaries
 %%           interfere with each other.
 %% Created : 5 Feb 2000
 %%----------------------------------------------------------------------
@@ -37,13 +55,19 @@
 	]).
 -endif.
 
-
--record(igraph, {adj_set, adj_list, ig_moves, degree, spill_costs, no_temps}).
-
 %%-ifndef(DEBUG).
 %%-define(DEBUG,true).
 %%-endif.
+
 -include("../main/hipe.hrl").
+-include("../flow/cfg.hrl").
+-include("hipe_spillcost.hrl").
+
+%%----------------------------------------------------------------------
+
+-record(igraph, {adj_set, adj_list, ig_moves, degree,
+		 spill_costs :: #spill_cost{},
+		 num_temps   :: non_neg_integer()}).
 
 %%----------------------------------------------------------------------
 %% Degree: array mapping nodes to integer degrees.
@@ -137,6 +161,8 @@ hipe_bifs_bitarray_sub(Array, BitNr) ->
 
 -record(adjset, {index, array}).
 -record(adjset_chunked, {index, chunks}).
+
+-spec adjset_new(non_neg_integer()) -> #adjset{} | #adjset_chunked{}.
 
 adjset_new(NrTemps) ->
   ArrayBits = (NrTemps * (NrTemps - 1)) div 2,
@@ -270,7 +296,7 @@ adjset_print(U, V, IG) ->
 %% Description: Selector functions. Used to get one of the encapsulated 
 %%               data-structure contained in the IG structure.
 %% Parameters:
-%%   IG             --  An interference graph
+%%   IG     --  An interference graph
 %%
 %% Returns: 
 %%   One of the encapsulated data-structures.
@@ -279,7 +305,10 @@ adj_set(IG)     -> IG#igraph.adj_set.
 adj_list(IG)    -> IG#igraph.adj_list.
 ig_moves(IG)    -> IG#igraph.ig_moves.    
 degree(IG)      -> IG#igraph.degree.
+
+-spec spill_costs(#igraph{}) -> #spill_cost{}.
 spill_costs(IG) -> IG#igraph.spill_costs.
+
 -ifdef(DEBUG_PRINTOUTS).
 number_of_temps(IG) -> IG#igraph.no_temps.
 -endif.
@@ -298,34 +327,35 @@ number_of_temps(IG) -> IG#igraph.no_temps.
 %%   An updated interference graph.
 %%----------------------------------------------------------------------
 
-%%set_adj_set(Adj_set, IG)         -> IG#igraph{adj_set  = Adj_set}.
+%%set_adj_set(Adj_set, IG)       -> IG#igraph{adj_set  = Adj_set}.
 set_adj_list(Adj_list, IG)       -> IG#igraph{adj_list = Adj_list}.
 set_ig_moves(IG_moves, IG)       -> IG#igraph{ig_moves = IG_moves}.
-%%set_degree(Degree, IG)           -> IG#igraph{degree   = Degree}.
+%%set_degree(Degree, IG)         -> IG#igraph{degree   = Degree}.
 set_spill_costs(Spill_costs, IG) -> IG#igraph{spill_costs = Spill_costs}.
 
 %%----------------------------------------------------------------------
 %% Function:    initial_ig
 %%
 %% Description: The initial interference record that we start with when
-%%               building the interference graph.
+%%              building the interference graph.
 %% Parameters:
-%%   No_temporaries --  Number of temporaries that exists in
-%%                       the CFG we work on. This is because we have some
-%%                       datastructures built out of vectors.
+%%   NumTemps -- Number of temporaries in the CFG we work on. This is
+%%               because we have some data structures built out of vectors.
 %%
 %% Returns: 
 %%   A new interference record
 %%----------------------------------------------------------------------
 
-initial_ig(No_temporaries, Target) ->
-    #igraph{adj_set     = adjset_new(No_temporaries),
-	    adj_list    = hipe_adj_list:new(No_temporaries),
-	    ig_moves    = hipe_ig_moves:new(No_temporaries),
-	    degree      = degree_new(No_temporaries, Target),
-	    spill_costs = hipe_spillcost:new(No_temporaries),
-	    no_temps    = No_temporaries
-	   }.
+-spec initial_ig(non_neg_integer(), atom()) -> #igraph{}.
+
+initial_ig(NumTemps, Target) ->
+  #igraph{adj_set     = adjset_new(NumTemps),
+	  adj_list    = hipe_adj_list:new(NumTemps),
+	  ig_moves    = hipe_ig_moves:new(NumTemps),
+	  degree      = degree_new(NumTemps, Target),
+	  spill_costs = hipe_spillcost:new(NumTemps),
+	  num_temps   = NumTemps
+	 }.
 
 %%----------------------------------------------------------------------
 %% Function:    build
@@ -333,23 +363,24 @@ initial_ig(No_temporaries, Target) ->
 %% Description: Constructs an interference graph for the specifyed CFG.
 %%
 %% Parameters:
-%%   CFG          --  A Control Flow Graph
-%%   Target       --  The module that contains the target-specific functions
+%%   CFG     -- A Control Flow Graph
+%%   Target  -- The module that contains the target-specific functions
 %%
 %% Returns: 
 %%   An interference graph for the given CFG.
 %%----------------------------------------------------------------------
 
+-spec build(#cfg{}, atom()) -> #igraph{}.
+
 build(CFG, Target) ->
-    BBs_in_out_liveness = Target:analyze(CFG),
-    Labels = Target:labels(CFG),
-    %% How many temporaries exist?
-    NumTemps = Target:number_of_temporaries(CFG),
-    IG0 = initial_ig(NumTemps, Target),
-   %%?debug_msg("initial adjset: ~p\n",[element(2, IG0)]),
-   %%?debug_msg("initial adjset array: ~.16b\n",[element(3, element(2, IG0))]),
-    IG = analyze_bbs(Labels, BBs_in_out_liveness, IG0, CFG, Target),
-    IG.
+  BBs_in_out_liveness = Target:analyze(CFG),
+  Labels = Target:labels(CFG),
+  %% How many temporaries exist?
+  NumTemps = Target:number_of_temporaries(CFG),
+  IG0 = initial_ig(NumTemps, Target),
+  %%?debug_msg("initial adjset: ~p\n",[element(2, IG0)]),
+  %%?debug_msg("initial adjset array: ~.16b\n",[element(3, element(2, IG0))]),
+  analyze_bbs(Labels, BBs_in_out_liveness, IG0, CFG, Target).
 
 %%----------------------------------------------------------------------
 %% Function:    analyze_bbs
@@ -389,7 +420,7 @@ analyze_bbs([L|Ls], BBs_in_out_liveness, IG, CFG, Target) ->
 					       Target),
     Newer_ig = set_spill_costs(hipe_spillcost:ref_in_bb(Ref,
 							spill_costs(New_ig)),
-			       New_ig),
+			      New_ig),
     analyze_bbs(Ls, BBs_in_out_liveness, Newer_ig, CFG, Target).
 
 %%----------------------------------------------------------------------
@@ -416,46 +447,46 @@ analyze_bbs([L|Ls], BBs_in_out_liveness, IG, CFG, Target) ->
 %% Ref: set of temporaries referred to in this bb
 analyze_bb_instructions([], Live, IG, _) -> {Live, IG, ordsets:new()};
 analyze_bb_instructions([Instruction|Instructions], Live, IG, Target) ->
-    %% Analyze last instruction first.
-    {Live0, IG0, Ref} = analyze_bb_instructions(Instructions, Live, 
-						IG, Target),
-    %% Check for temporaries that are defined and used in instruction
-    {Def, Use} = Target:def_use(Instruction),
-    %% Convert to register numbers
-    Def_numbers = ordsets:from_list(reg_numbers(Def, Target)),
-    Use_numbers = ordsets:from_list(reg_numbers(Use, Target)),
-    Ref_numbers = ordsets:union(Ref, ordsets:union(Def_numbers, Use_numbers)),
-    %% Increase spill cost on all used temporaries
-    IG1 = set_spill_costs(hipe_spillcost:inc_costs(Use_numbers,
-						   spill_costs(IG0)),
-			  IG0),
-    {Live1, IG2} = analyze_move(Instruction, 
-				Live0, 
-				Def_numbers, 
-				Use_numbers, 
-				IG1, 
-				Target),
-    %% Adding Def to Live here has the effect of creating edges between
-    %% the defined registers, which is O(N^2) for an instruction that
-    %% clobbers N registers.
-    %%
-    %% Adding Def to Live is redundant when:
-    %% 1. Def is empty, or
-    %% 2. Def is a singleton, or
-    %% 3. Def contains only precoloured registers, or
-    %% 4. Def contains exactly one non-precoloured register, and the
-    %%    remaining ones are all non-allocatable precoloured registers.
-    %%
-    %% HiPE's backends only create multiple-element Def sets
-    %% for CALL instructions, and then all elements are precoloured.
-    %%
-    %% Therefore we can avoid adding Def to Live. The benefit is greatest
-    %% on backends with many physical registers, since CALLs clobber all
-    %% physical registers.
-    Live2 = Live1, % ordsets:union(Live1, Def_numbers),
-    IG3 = interfere(Def_numbers, Live2, IG2, Target),
-    Live3 = ordsets:union(Use_numbers, ordsets:subtract(Live2, Def_numbers)),
-    {Live3, IG3, Ref_numbers}.
+  %% Analyze last instruction first.
+  {Live0, IG0, Ref} = analyze_bb_instructions(Instructions, Live, 
+					      IG, Target),
+  %% Check for temporaries that are defined and used in instruction
+  {Def, Use} = Target:def_use(Instruction),
+  %% Convert to register numbers
+  Def_numbers = ordsets:from_list(reg_numbers(Def, Target)),
+  Use_numbers = ordsets:from_list(reg_numbers(Use, Target)),
+  Ref_numbers = ordsets:union(Ref, ordsets:union(Def_numbers, Use_numbers)),
+  %% Increase spill cost on all used temporaries
+  IG1 = set_spill_costs(hipe_spillcost:inc_costs(Use_numbers,
+						 spill_costs(IG0)),
+			IG0),
+  {Live1, IG2} = analyze_move(Instruction, 
+			      Live0, 
+			      Def_numbers, 
+			      Use_numbers, 
+			      IG1, 
+			      Target),
+  %% Adding Def to Live here has the effect of creating edges between
+  %% the defined registers, which is O(N^2) for an instruction that
+  %% clobbers N registers.
+  %%
+  %% Adding Def to Live is redundant when:
+  %% 1. Def is empty, or
+  %% 2. Def is a singleton, or
+  %% 3. Def contains only precoloured registers, or
+  %% 4. Def contains exactly one non-precoloured register, and the
+  %%    remaining ones are all non-allocatable precoloured registers.
+  %%
+  %% HiPE's backends only create multiple-element Def sets
+  %% for CALL instructions, and then all elements are precoloured.
+  %%
+  %% Therefore we can avoid adding Def to Live. The benefit is greatest
+  %% on backends with many physical registers, since CALLs clobber all
+  %% physical registers.
+  Live2 = Live1, % ordsets:union(Live1, Def_numbers),
+  IG3 = interfere(Def_numbers, Live2, IG2, Target),
+  Live3 = ordsets:union(Use_numbers, ordsets:subtract(Live2, Def_numbers)),
+  {Live3, IG3, Ref_numbers}.
 
 %%----------------------------------------------------------------------
 %% Function:    analyze_move
@@ -466,15 +497,14 @@ analyze_bb_instructions([Instruction|Instructions], Live, IG, Target) ->
 %%               in the CFG. 
 %%
 %% Parameters:
-%%   Instruction    --  An instruction
-%%   Live           --  All temporaries that are live at the time.
-%%                      Live is a set of temporary "numbers only".
-%%   Def_numbers    --  Temporarys that are defined at this instruction
-%%   Use_numbers    --  Temporarys that are used at this instruction
-%%   IG             --  The interference graph in it's current state
-%%   Target         --  The module containing the target-specific
-%%                       functions
-%% Returns: 
+%%   Instruction  --  An instruction
+%%   Live         --  All temporaries that are live at the time.
+%%                    Live is a set of temporary "numbers only".
+%%   Def_numbers  --  Temporaries that are defined at this instruction
+%%   Use_numbers  --  Temporaries that are used at this instruction
+%%   IG           --  The interference graph in its current state
+%%   Target       --  The module containing the target-specific functions
+%% Returns:
 %%   Live  --  An updated live set
 %%   IG    --  An updated interference graph
 %%----------------------------------------------------------------------
@@ -501,10 +531,10 @@ analyze_move(Instruction, Live, Def_numbers, Use_numbers, IG, Target) ->
 %%               everything in the current live set.
 %%
 %% Parameters:
-%%   Define         --  A Define temporary
-%%   Defines        --  Rest of temporaries.
-%%   Live           --  Current live set
-%%   IG             --  An interference graph
+%%   Define      --  A Define temporary
+%%   Defines     --  Rest of temporaries.
+%%   Live        --  Current live set
+%%   IG          --  An interference graph
 %%
 %% Returns: 
 %%   An updated interference graph.
@@ -541,6 +571,7 @@ interfere_with_living(Define, [Live|Living], IG, Target) ->
 %% nodes_are_adjacent(U, V, IG)
 %% returns true if nodes U and V are adjacent in interference graph IG
 %%
+-spec nodes_are_adjacent(integer(), integer(), #igraph{}) -> bool().
 nodes_are_adjacent(U, V, IG) ->
   adjset_are_adjacent(U, V, adj_set(IG)).
 

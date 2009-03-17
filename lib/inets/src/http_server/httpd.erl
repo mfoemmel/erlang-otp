@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>1997-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 
 -module(httpd).
@@ -492,7 +492,7 @@ get_status(Port) when is_integer(Port) ->
 get_status(Port,Timeout) when is_integer(Port), is_integer(Timeout) ->
     get_status(undefined,Port,Timeout);
 
-get_status(Addr,Port) when is_list(Addr), is_integer(Port) ->
+get_status(Addr,Port) ->
     get_status(Addr,Port,5000).
 
 get_status(Addr,Port,Timeout) when is_integer(Port) ->

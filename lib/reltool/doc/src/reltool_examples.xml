@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE chapter SYSTEM "chapter.dtd">
+
+<chapter>
+  <header>
+    <copyright>
+      <year>2009</year>
+      <year>2009</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>Examples</title>
+    <prepared>H&aring;kan Mattsson</prepared>
+    <responsible>H&aring;kan Mattsson</responsible>
+    <docno></docno>
+    <approved>H&aring;kan Mattsson</approved>
+    <checked></checked>
+    <date></date>
+    <rev>%VSN%</rev>
+  </header>
+
+  <section>
+    <title>Start and stop windows and servers</title>
+
+    <pre>
+Erlang R13A (erts-5.7) [source] [64-bit] [smp:4:4] [rq:4] [async-threads:0] [kernel-poll:false]
+
+Eshell V5.7  (abort with ^G)
+1> reltool:start_server([]).
+{ok,&lt;0.35.0&gt;}
+2> reltool:get_config_server(Server).
+{ok,{sys,[]}}
+3>  reltool:stop(Server).
+ok
+    </pre>
+
+  </section>
+
+  <section>
+    <title>Generate release and script files</title>
+    <pre>
+5> {ok, Server} = reltool:start_server([{config, {sys, [{boot_rel, "NAME"}, {rel, "NAME", "VSN", [kernel, stdlib, sasl]}]}}]).
+{ok,&lt;0.1288.0&gt;}
+6>  reltool:get_config(Server).
+{ok,{sys,[{boot_rel,"NAME"},
+          {rel,"NAME","VSN",[kernel,stdlib,sasl]}]}}
+7>  reltool:get_rel(Server, "NAME").
+{ok,{release,{"NAME","VSN"},
+             {erts,"5.7"},
+             [{kernel,"2.13"},{stdlib,"1.16"},{sasl,"2.1.6"}]}}
+8>  reltool:get_script(Server, "NAME").
+{ok,{script,{"NAME","VSN"},
+            [{preLoaded,[erl_prim_loader,erlang,init,otp_ring0,
+                         prim_file,prim_inet,prim_zip,zlib]},
+             {progress,preloaded},
+             {path,["$ROOT/lib/kernel-2.13/ebin",
+                    "$ROOT/lib/stdlib-1.16/ebin"]},
+             {primLoad,[error_handler]},
+             {kernel_load_completed},
+             {progress,kernel_load_completed},
+             {path,["$ROOT/lib/kernel-2.13/ebin"]},
+             {primLoad,[application,application_controller,
+                        application_master,application_starter,auth,code,
+                        code_server,disk_log,disk_log_1,disk_log_server,
+                        disk_log_sup,dist_ac,dist_util,erl_boot_server|...]},
+             {path,["$ROOT/lib/stdlib-1.16/ebin"]},
+             {primLoad,[array,base64,beam_lib,c,calendar,dets,
+                        dets_server,dets_sup,dets_utils,dets_v8,dets_v9,dict|...]},
+             {path,["$ROOT/lib/sasl-2.1.6/ebin"]},
+             {primLoad,[alarm_handler,erlsrv,format_lib_supp,misc_supp,
+                        overload,rb,rb_format_supp,release_handler,
+                        release_handler_1,sasl|...]},
+             {progress,modules_loaded},
+             {path,["$ROOT/lib/kernel-2.13/ebin",
+                    "$ROOT/lib/stdlib-1.16/ebin","$ROOT/lib/sasl-2.1.6/ebin"]},
+             {kernelProcess,heart,{heart,start,[]}},
+             {kernelProcess,error_logger,{error_logger,start_link,[]}},
+             {kernelProcess,application_controller,
+                            {application_controller,start,[{...}]}},
+             {progress,init_kernel_started},
+             {apply,{application,load,[...]}},
+             {apply,{application,load,...}},
+             {progress,applications_loaded},
+             {apply,{...}},
+             {apply,...},
+             {...}|...]}}
+9>  reltool:stop(Server).
+ok
+    </pre>
+  </section>
+
+  <section>
+    <title>Create a target system</title>
+    <pre>
+11> file:list_dir("TARGET_DIR").
+{error,enoent}
+12>  reltool:create_target([{config, {sys, [{app, sasl, [{incl_cond, include}]},
+                                            {boot_rel, "NAME"},
+                                            {rel, "NAME", "VSN", [kernel, stdlib, sasl]}]}}],
+                           "TARGET_DIR").
+ok
+13> file:list_dir("TARGET_DIR").
+{ok,["bin","erts-5.7","lib","releases"]}
+14> file:list_dir("TARGET_DIR/lib").
+{ok,["erts-5.7","tools-2.6.3","syntax_tools-1.6",
+     "stdlib-1.16","sasl-2.1.6","kernel-2.13","hipe-3.7",
+     "compiler-4.6"]}
+15> file:list_dir("TARGET_DIR/erts-5.7").
+{ok,["bin"]}
+16> file:list_dir("TARGET_DIR/releases").
+{ok,["VSN","start_erl.data"]}
+    </pre>
+
+  </section>
+</chapter>

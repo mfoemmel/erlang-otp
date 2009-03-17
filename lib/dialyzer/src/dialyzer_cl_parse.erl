@@ -1,19 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
 %%-----------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 -module(dialyzer_cl_parse).
@@ -25,11 +27,11 @@
 
 %%-----------------------------------------------------------------------
 
--type dial_cl_parse_ret() :: {'check_init',#options{}}
+-type dial_cl_parse_ret() :: {'check_init', #options{}}
                            | {'plt_info', #options{}}
-                           | {'cl',#options{}}
-                           | {'gui',#options{}} 
-                           | {'error',string()}.
+                           | {'cl', #options{}}
+                           | {'gui', #options{}} 
+                           | {'error', string()}.
 
 %%-----------------------------------------------------------------------
 
@@ -59,6 +61,8 @@ cl(["--check_plt"|T]) ->
   put(dialyzer_options_mode, cl),
   put(dialyzer_options_analysis_type, plt_check),
   cl(T);
+cl(["-n"|T]) ->
+  cl(["--no_check_plt"|T]);
 cl(["--no_check_plt"|T]) ->
   put(dialyzer_options_check_plt, false),
   cl(T);
@@ -71,8 +75,8 @@ cl(["--get_warnings"|T]) ->
   cl(T);
 cl(["-D"|_]) ->
   error("No defines specified after -D");
-cl(["-D"++Defines|T]) ->
-  {ok,Def} = regexp:split(Defines, "="),
+cl(["-D"++Define|T]) ->
+  Def = re:split(Define, "=", [{return, list}]),
   append_defines(Def),
   cl(T);
 cl(["-h"|_]) ->
@@ -171,6 +175,11 @@ cl(["-Whelp"|_]) ->
 cl(["-W"++Warn|T]) ->
   append_var(dialyzer_warnings, [list_to_atom(Warn)]),
   cl(T);
+cl(["--dump_callgraph"]) ->
+  error("No outfile specified for --dump_callgraph");
+cl(["--dump_callgraph", File|T]) ->
+  put(dialyzer_callgraph_file, File),
+  cl(T);
 cl([H|_]) ->
   error("Unknown option: "++H);
 cl([]) ->
@@ -260,7 +269,8 @@ cl_options() ->
    {output_file, get(dialyzer_output)},
    {output_format, get(dialyzer_output_format)},
    {analysis_type, get(dialyzer_options_analysis_type)},
-   {get_warnings, get(dialyzer_options_get_warnings)}
+   {get_warnings, get(dialyzer_options_get_warnings)},
+   {callgraph_file, get(dialyzer_callgraph_file)}
    |common_options()].
 
 common_options() ->
@@ -277,26 +287,7 @@ common_options() ->
 %%-----------------------------------------------------------------------
 
 help_warnings() ->
-  S = "Warning options:
-    -Wno_return
-	Suppress warnings for functions of no return.
-    -Wno_unused
-	Suppress warnings for unused functions.
-    -Wno_improper_lists
-	Suppress warnings for construction of improper lists.
-    -Wno_tuple_as_fun
-	Suppress warnings for using tuples instead of funs.
-    -Wno_fun_app
-	Suppress warnings for fun applications that will fail.
-    -Wno_match
-	Suppress warnings for patterns that are unused or cannot match.
-    -Wunmatched_returns ***
-	Include warnings for function calls which ignore a structured return value.
-    -Werror_handling ***
-	Include warnings for functions that only return by means of an exception.
-Note:
-  *** These are options that turn on warnings rather than turning them off.
-",
+  S = warning_options_msg(),
   io:put_chars(S),
   erlang:halt(?RET_NOTHING_SUSPICIOUS).
 
@@ -308,114 +299,130 @@ help_message() ->
 		[--build_plt] [--add_to_plt] [--remove_from_plt]
                 [--check_plt] [--no_check_plt] [--plt_info] [--get_warnings]
 Options: 
-   -c applications (or --command-line applications)
-       Use Dialyzer from the command line (no GUI) to detect defects in the
-       specified applications (directories or .erl or .beam files)
-   -r applications
-       Same as -c only that directories are searched recursively for 
-       subdirectories containing .erl or .beam files (depending on the 
-       type of analysis)
-   -o outfile (or --output outfile)
-       When using Dialyzer from the command line, send the analysis
-       results to the specified \"outfile\" rather than to stdout
-   --raw
-       When using Dialyzer from the command line, output the raw analysis
-       results (Erlang terms) instead of the formatted result.
-       The raw format is easier to post-process (for instance, to filter
-       warnings or to output HTML pages)
-   --src
-       Override the default, which is to analyze BEAM files, and
-       analyze starting from Erlang source code instead
-   -Dname (or -Dname=value)
-       When analyzing from source, pass the define to Dialyzer (**)
-   -I include_dir
-       When analyzing from source, pass the include_dir to Dialyzer (**)
-   --output_plt file
-       Store the plt at the specified file after building it
-   --plt plt
-       Use the specified plt as the initial plt (if the plt was built 
-       during setup the files will be checked for consistency)
-   -pa dir
-       Include dir in the path for Erlang (useful when analyzing files
-       that have '-include_lib()' directives)
-   -Wwarn
-       A family of options which selectively turn on/off warnings
-       (for help on the names of warnings use dialyzer -Whelp)
-   --shell
-       Do not disable the Erlang shell while running the GUI
-   --version (or -v)
-       Prints the Dialyzer version and some more information and exits
-   --help (or -h)
-       Prints this message and exits
-   --quiet (or -q)
-       Makes Dialyzer a bit more quiet
-   --verbose
-       Makes Dialyzer a bit more verbose
-   --build_plt
-       The analysis starts from an empty plt and creates a new one from the
-       files specified with -c and -r. Only works for beam files.
-       Use --plt or --output_plt to override the default plt location.
-   --add_to_plt
-       The plt is extended to also include the files specified with -c and -r.
-       Use --plt to specify wich plt to start from, and --output_plt to 
-       specify where to put the plt. Note that the analysis might include 
-       files from the plt if they depend on the new files. 
-       This option only works with beam files.
-   --remove_from_plt
-       The information from the files specified with -c and -r is removed
-       from the plt. Note that this may cause a re-analysis of the remaining
-       dependent files.
-   --check_plt
-       Checks the plt for consistency and rebuilds it if it is not up-to-date.
-   --no_check_plt
-       Skip the plt check when running Dialyzer. Useful when working with
-       installed plts that never change.
-   --plt_info
-       Makes Dialyzer print information about the plt and then quit. The plt 
-       can be specified with --plt.
-   --get_warnings
-       Makes Dialyzer emit warnings even when manipulating the plt. Only 
-       emits warnings for files that are actually analyzed.
+  -c applications (or --command-line applications)
+      Use Dialyzer from the command line (no GUI) to detect defects in the
+      specified applications (directories or .erl or .beam files)
+  -r applications
+      Same as -c only that directories are searched recursively for 
+      subdirectories containing .erl or .beam files (depending on the 
+      type of analysis)
+  -o outfile (or --output outfile)
+      When using Dialyzer from the command line, send the analysis
+      results to the specified \"outfile\" rather than to stdout
+  --raw
+      When using Dialyzer from the command line, output the raw analysis
+      results (Erlang terms) instead of the formatted result.
+      The raw format is easier to post-process (for instance, to filter
+      warnings or to output HTML pages)
+  --src
+      Override the default, which is to analyze BEAM files, and
+      analyze starting from Erlang source code instead
+  -Dname (or -Dname=value)
+      When analyzing from source, pass the define to Dialyzer (**)
+  -I include_dir
+      When analyzing from source, pass the include_dir to Dialyzer (**)
+  --output_plt file
+      Store the plt at the specified file after building it
+  --plt plt
+      Use the specified plt as the initial plt (if the plt was built 
+      during setup the files will be checked for consistency)
+  -pa dir
+      Include dir in the path for Erlang (useful when analyzing files
+      that have '-include_lib()' directives)
+  -Wwarn
+      A family of options which selectively turn on/off warnings
+      (for help on the names of warnings use dialyzer -Whelp)
+  --shell
+      Do not disable the Erlang shell while running the GUI
+  --version (or -v)
+      Prints the Dialyzer version and some more information and exits
+  --help (or -h)
+      Prints this message and exits
+  --quiet (or -q)
+      Makes Dialyzer a bit more quiet
+  --verbose
+      Makes Dialyzer a bit more verbose
+  --build_plt
+      The analysis starts from an empty plt and creates a new one from the
+      files specified with -c and -r. Only works for beam files.
+      Use --plt or --output_plt to override the default plt location.
+  --add_to_plt
+      The plt is extended to also include the files specified with -c and -r.
+      Use --plt to specify wich plt to start from, and --output_plt to 
+      specify where to put the plt. Note that the analysis might include 
+      files from the plt if they depend on the new files. 
+      This option only works with beam files.
+  --remove_from_plt
+      The information from the files specified with -c and -r is removed
+      from the plt. Note that this may cause a re-analysis of the remaining
+      dependent files.
+  --check_plt
+      Checks the plt for consistency and rebuilds it if it is not up-to-date.
+      Actually, this option is of rare use as it is on by default.
+  --no_check_plt (or -n)
+      Skip the plt check when running Dialyzer. Useful when working with
+      installed plts that never change.
+  --plt_info
+      Makes Dialyzer print information about the plt and then quit. The plt 
+      can be specified with --plt.
+  --get_warnings
+      Makes Dialyzer emit warnings even when manipulating the plt. Only 
+      emits warnings for files that are actually analyzed.
+  --dump_callgraph file
+      Dump the call graph into the specified file whose format is determined
+      by the file name extension. Supported extensions are: raw, dot, and ps.
+      If something else is used as file name extension, default format '.raw'
+      will be used.
 
 Note:
   * denotes that multiple occurrences of these options are possible.
  ** options -D and -I work both from command-line and in the Dialyzer GUI;
     the syntax of defines and includes is the same as that used by \"erlc\".
 
-Warning options:
+" ++ warning_options_msg() ++ "
+The exit status of the command line version is:
+  0 - No problems were encountered during the analysis and no
+      warnings were emitted.
+  1 - Problems were encountered during the analysis.
+  2 - No problems were encountered, but warnings were emitted.
+",
+  io:put_chars(S),
+  erlang:halt(?RET_NOTHING_SUSPICIOUS).
+
+warning_options_msg() ->
+  "Warning options:
   -Wno_return
      Suppress warnings for functions that will never return a value.
   -Wno_unused
      Suppress warnings for unused functions.
   -Wno_improper_lists
      Suppress warnings for construction of improper lists.
+  -Wno_tuple_as_fun
+     Suppress warnings for using tuples instead of funs.
   -Wno_fun_app
      Suppress warnings for fun applications that will fail.
   -Wno_match
      Suppress warnings for patterns that are unused or cannot match.
+  -Wno_opaque
+     Suppress warnings for violations of opaqueness of data types.
   -Wunmatched_returns ***
-     Include warnings for function calls which ignore the return value(s).
+     Include warnings for function calls which ignore a structured return
+     value or do not match against one of many possible return value(s).
   -Werror_handling ***
      Include warnings for functions that only return by means of an exception.
+  -Wpossible_races ***
+     Include warnings for possible race conditions (currently experimental).
   -Wunderspecs ***
      Warn about underspecified functions 
-     (the -spec is strictly more allowing than the success typing)
+     (those whose -spec is strictly more allowing than the success typing).
+
+The following options are also available but their use is not recommended:
+(they are mostly for Dialyzer developers and internal debugging)
   -Woverspecs ***
      Warn about overspecified functions 
-     (the -spec is strictly less allowing than the success typing)
+     (those whose -spec is strictly less allowing than the success typing).
   -Wspecdiffs ***
-     Warn when the -spec is different than the success typing
+     Warn when the -spec is different than the success typing.
 
-Note:
-   *** These are options that turn on warnings rather than turning them off.
-
-
-The exit status of the command line version is:
-
-    0 - No problems were encountered during the analysis and no
-        warnings were emitted.
-    1 - Problems were encountered during the analysis.
-    2 - No problems were encountered, but warnings were emitted.
-",
-  io:put_chars(S),
-  erlang:halt(?RET_NOTHING_SUSPICIOUS).
+*** Identifies options that turn on warnings rather than turning them off.
+".

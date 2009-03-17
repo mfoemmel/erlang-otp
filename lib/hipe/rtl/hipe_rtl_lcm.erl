@@ -1,10 +1,26 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% File        : hipe_rtl_lcm.erl
 %% Author      : Henrik Nyman and Erik Cedheim
 %% Description : Performs Lazy Code Motion on RTL
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% $Id$
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc
 %%
@@ -24,14 +40,18 @@
 
 -include("../main/hipe.hrl").
 -include("hipe_rtl.hrl").
+-include("../flow/cfg.hrl").
 
 %%-define(LCM_DEBUG, true). %% When defined and true, produces debug printouts
 
 %%=============================================================================
-%% @spec rtl_lcm(CFG::cfg(), Options::options()) -> cfg()
+
 %%
 %% @doc Performs Lazy Code Motion on RTL.
 %%
+
+-spec rtl_lcm(cfg(), comp_options()) -> cfg().
+
 rtl_lcm(CFG, Options) ->
   %% Perform pre-calculation of the data sets.
   ?opt_start_timer("RTL LCM precalc"),
@@ -111,7 +131,6 @@ perform_lcm(CFG0, NodeInfo, EdgeInfo, ExprMap, IdMap, AllExp, BetweenMap,
 			  insert_exprs(CFG, Label, Succ, ExprMap, IdMap, 
 				       BtwMap, InsertList),
 			{NewCFG, NewBtwMap, ?SETS:union(MoveSet, InsertSet)};
-
 		      false ->
 			{CFG, BtwMap, MoveSet}
 		    end
@@ -149,7 +168,6 @@ moved_expr_do_replacement(_, _, _, []) ->
 moved_expr_do_replacement(Expr, Reg, NewReg, [Expr|Instrs]) ->
   NewExpr = expr_set_dst(Expr, NewReg),
   Move = mk_expr_move_instr(Reg, NewReg),
-
   pp_debug("  Replacing:~n", []),
   pp_debug_instr(Expr),
   pp_debug("  With:~n", []),
@@ -169,8 +187,8 @@ delete_exprs(Code, _, _, []) ->
   Code;
 delete_exprs(Code, ExprMap, IdMap, [ExprId|Exprs]) ->
   Expr = expr_id_map_get_expr(IdMap, ExprId),
-  %% Perform a foldl that goes through the code and delete all occurances of
-  %% the expression.
+  %% Perform a foldl that goes through the code and deletes all
+  %% occurences of the expression.
   NewCode =
     lists:reverse
       (lists:foldl(fun(CodeExpr, Acc) ->
@@ -180,7 +198,6 @@ delete_exprs(Code, ExprMap, IdMap, [ExprId|Exprs]) ->
                            true ->
                              pp_debug("  Deleting:         ", []),
                              pp_debug_instr(CodeExpr),
-                            
                              %% Lookup expression entry.
                              Defines = 
                                case expr_map_lookup(ExprMap, Expr) of
@@ -190,19 +207,16 @@ delete_exprs(Code, ExprMap, IdMap, [ExprId|Exprs]) ->
                                    exit({?MODULE, expr_map_lookup,
                                          "expression missing"})
                                end,
-                                 
                              MoveCode = 
-                               mk_expr_move_instr
-                                 (hipe_rtl:defines(CodeExpr), Defines),
-
+                               mk_expr_move_instr(hipe_rtl:defines(CodeExpr),
+						  Defines),
                              pp_debug("    Replacing with: ", []),
                              pp_debug_instr(MoveCode),
-                             
                              [MoveCode|Acc];
                            false ->
                              [CodeExpr|Acc]
                          end;
-                     false ->
+		       false ->
                              [CodeExpr|Acc]
                      end
                    end, 
@@ -212,9 +226,9 @@ delete_exprs(Code, ExprMap, IdMap, [ExprId|Exprs]) ->
 %%=============================================================================
 %% Goes through the given list of expressions and inserts them at 
 %% appropriate places in the code.
-insert_exprs(CFG, _, _, _, _, BetweenMap, [])->
+insert_exprs(CFG, _, _, _, _, BetweenMap, []) ->
   {CFG, BetweenMap};
-insert_exprs(CFG, Pred, Succ, ExprMap, IdMap, BetweenMap, [ExprId|Exprs])->
+insert_exprs(CFG, Pred, Succ, ExprMap, IdMap, BetweenMap, [ExprId|Exprs]) ->
   Expr = expr_id_map_get_expr(IdMap, ExprId),
   Instr = expr_map_get_instr(ExprMap, Expr),
   Succs = hipe_rtl_cfg:succ(CFG, Pred),
@@ -247,7 +261,7 @@ insert_exprs(CFG, Pred, Succ, ExprMap, IdMap, BetweenMap, [ExprId|Exprs])->
 %% is a branch operation).
 insert_expr_last(CFG0, Label, Instr) ->
   Code0 = hipe_bb:code(hipe_rtl_cfg:bb(CFG0, Label)),
-  %% FIXME Use hipe_bb:butlast() instead?
+  %% FIXME: Use hipe_bb:butlast() instead?
   Code1 = insert_expr_last_work(Label, Instr, Code0),
   hipe_rtl_cfg:bb_add(CFG0, Label, hipe_bb:mk_bb(Code1)).
 
@@ -291,11 +305,10 @@ insert_expr_between(CFG0, BetweenMap, Pred, Succ, Instr) ->
       CFG1 = hipe_rtl_cfg:bb_add(CFG0, NewLabelName, hipe_bb:mk_bb(Code)),
       CFG2 = hipe_rtl_cfg:redirect(CFG1, Pred, Succ, NewLabelName),
       NewBetweenMap = edge_bb_map_insert(BetweenMap, {Pred, Succ}, 
-					NewLabelName),
+					 NewLabelName),
       pp_debug("    Mapping edge (~w,~w) to label ~w~n", 
 	       [Pred, Succ, NewLabelName]),
       {CFG2, NewBetweenMap};
-
     {value, Label} ->
       pp_debug("    Using existing new bb for edge (~w,~w) with label ~w~n", 
 	       [Pred, Succ, Label]),
@@ -395,18 +408,16 @@ is_expr(I) ->
         #move{} -> false;
         #multimove{} -> false;
         #phi{} -> false;
-        %% #restore_catch{} -> false; %% Deprecated?
         #return{} -> false;
         #store{} -> false;
         #switch{} -> false
       end;
-    false->
+    false ->
       false
   end.
 
-
 %%=============================================================================
-%% Replaces destination of rtl expression with empty list.
+%% Replaces destination of RTL expression with empty list.
 %% 
 expr_set_dst(I, [Dst|Dsts]) ->
   case I of
@@ -427,7 +438,7 @@ expr_set_dst(I, [Dst|Dsts]) ->
   end.
 
 %%=============================================================================
-%% Replaces destination of rtl expression with empty list.
+%% Replaces destination of RTL expression with empty list.
 %% 
 expr_clear_dst(I) ->
   case I of
@@ -445,7 +456,6 @@ expr_clear_dst(I) ->
     #load_word_index{} -> hipe_rtl:load_word_index_dst_update(I, nil);
     %% #move{} -> hipe_rtl:move_dst_update(I, nil);
     _ -> exit({?MODULE, expr_clear_dst, "bad expression"})
-
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -523,9 +533,9 @@ calc_avail_node(Label, CFG, NodeInfo) ->
 
   %% Calculate avail out
   AvailOut = ?SETS:union(down_exp(NodeInfo, Label),
-                           ?SETS:subtract(AvailIn,
-					      killed_expr(NodeInfo, Label))),
-
+			 ?SETS:subtract(AvailIn,
+					killed_expr(NodeInfo, Label))),
+  
   {Changed, NodeInfo2} = 
     case avail_out(NodeInfo, Label) of
       none ->
@@ -552,7 +562,6 @@ calc_avail_node(Label, CFG, NodeInfo) ->
 		 none ->
 		   %% Initialize avail in to all expressions
 		   set_avail_in(NewNodeInfo, Succ, AvailOut);
-
 		 OldAvailIn ->
 		   set_avail_in(NewNodeInfo, Succ, 
 				?SETS:intersection(OldAvailIn, AvailOut))
@@ -560,7 +569,6 @@ calc_avail_node(Label, CFG, NodeInfo) ->
 	   end,
 	   NodeInfo2, Succs),
       {NodeInfo3, Succs};
-
     false ->
       {NodeInfo2, []}
   end.
@@ -604,8 +612,8 @@ calc_antic_node(Label, CFG, NodeInfo, AllExpr) ->
 
   %% Calculate antic in
   AnticIn = ?SETS:union(up_exp(NodeInfo, Label),
-			?SETS:subtract(AnticOut, killed_expr(NodeInfo, Label))),
-
+			?SETS:subtract(AnticOut,
+				       killed_expr(NodeInfo, Label))),
   {Changed, NodeInfo2} = 
     case antic_in(NodeInfo, Label) of
       %% If there weren't any old antic in we use this one.
@@ -634,7 +642,6 @@ calc_antic_node(Label, CFG, NodeInfo, AllExpr) ->
 		 none ->
 		   %% Initialize antic out to all expressions
 		   set_antic_out(NewNodeInfo, Pred, AnticIn);
-
 		 OldAnticOut ->
 		   set_antic_out(NewNodeInfo, Pred, 
 				 ?SETS:intersection(OldAnticOut, AnticIn))
@@ -642,7 +649,6 @@ calc_antic_node(Label, CFG, NodeInfo, AllExpr) ->
 	   end,
 	   NodeInfo2, Preds),
       {NodeInfo3, Preds};
-
     false ->
       {NodeInfo2, []}
   end.
@@ -670,12 +676,10 @@ calc_later_fixpoint(Work, CFG, NodeInfo, EdgeInfo) ->
 	calc_later_edge(From, To, CFG, NodeInfo, EdgeInfo),
       Work3 = add_work(Work2, AddWork),
       calc_later_fixpoint(Work3, CFG, NewNodeInfo, NewEdgeInfo);
-
     {{node, Label}, Work2} ->
       AddWork = calc_later_node(Label, CFG),
       Work3 = add_work(Work2, AddWork),
       calc_later_fixpoint(Work3, CFG, NodeInfo, EdgeInfo);
-
     fixpoint ->
       {NodeInfo, EdgeInfo}
   end.
@@ -834,7 +838,7 @@ calc_killed_expr_bb([Instr|Instrs], UseMap, AllExpr, KilledExprs) ->
   case Instr of
     #call{} -> AllExpr;
     #gctest{} -> AllExpr;
-    #store{} -> AllExpr;     %% FIXME: Only regs and vars clobbered, not fregs...
+    #store{} -> AllExpr;   %% FIXME: Only regs and vars clobbered, not fregs...
     #fstore{} -> 
       %% Kill all float expressions
       %% FIXME: Make separate function is_fp_expr
@@ -887,12 +891,13 @@ calc_earliest(CFG, NodeInfo, EdgeInfo, [To|Labels]) ->
   
 %%=============================================================================
 %% Calculates the earliest set for one edge.
+
 calc_earliest_edge(NodeInfo, IsStartLabel, From, To) ->
   AnticIn = antic_in(NodeInfo, To),
   AvailOut = avail_out(NodeInfo, From),
   
   case IsStartLabel of
-    true->
+    true ->
       ?SETS:subtract(AnticIn, AvailOut);
     false ->
       AnticOut = antic_out(NodeInfo, From),
@@ -964,7 +969,7 @@ calc_delete(CFG, NodeInfo, [Label|Labels]) ->
 init_work(Labels) ->
   {Labels, [], gb_sets:from_list(Labels)}.
 
-get_work({[Label|Left], List, Set})->
+get_work({[Label|Left], List, Set}) ->
   NewWork = {Left, List, gb_sets:delete(Label, Set)},
   {Label, NewWork};
 get_work({[], [], _Set}) ->
@@ -972,13 +977,13 @@ get_work({[], [], _Set}) ->
 get_work({[], List, Set}) ->
   get_work({lists:reverse(List), [], Set}).
 
-add_work(Work = {List1, List2, Set},[Label|Left])->
+add_work(Work = {List1, List2, Set}, [Label|Labels]) ->
   case gb_sets:is_member(Label, Set) of
     true ->
-      add_work(Work, Left);
+      add_work(Work, Labels);
     false ->
       %%io:format("Adding work: ~w\n", [Label]),
-      add_work({List1, [Label|List2], gb_sets:insert(Label, Set)}, Left)
+      add_work({List1, [Label|List2], gb_sets:insert(Label, Set)}, Labels)
   end;
 add_work(Work, []) ->
   Work.
@@ -1382,10 +1387,8 @@ mk_replacement_regs([Define|Defines], NewRegs) ->
 	true ->
 	  mk_replacement_regs(Defines, [hipe_rtl:mk_new_var()|NewRegs]);
 	false ->
-	  case hipe_rtl:is_fpreg(Define) of
-	    true ->
-	      mk_replacement_regs(Defines, [hipe_rtl:mk_new_fpreg()|NewRegs])
-	  end
+	  true = hipe_rtl:is_fpreg(Define),
+	  mk_replacement_regs(Defines, [hipe_rtl:mk_new_fpreg()|NewRegs])
       end
   end.
   
@@ -1451,7 +1454,7 @@ mk_expr_move_instr(_, []) ->
 %%   ?SETS:new();
 %% all_exprs_bb([Instr|Instrs]) ->
 %%   case is_expr(Instr) of
-%%     true->
+%%     true ->
 %%       Expr = expr_clear_dst(Instr),
 %%       ExprSet = all_exprs_bb(Instrs),
 %%       ?SETS:add_element(Expr, ExprSet);

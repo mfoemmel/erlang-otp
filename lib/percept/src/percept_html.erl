@@ -1,20 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-%% 
+%% %CopyrightEnd%
 
 -module(percept_html).
 -export([
@@ -92,25 +92,25 @@ overview_content(_Env, Input) ->
     Query = httpd:parse_query(Input),
     Min = get_option_value("range_min", Query),
     Max = get_option_value("range_max", Query),
-    Width = 700,
-    Height = 400,
+    Width  = 1200,
+    Height = 600,
     TotalProfileTime = ?seconds( percept_db:select({system, stop_ts}), 
     				 percept_db:select({system, start_ts})),
-    RegisteredProcesses = length(percept_db:select({information, procs})),
+    RegisteredProcs = length(percept_db:select({information, procs})),
     RegisteredPorts = length(percept_db:select({information, ports})), 
     
     InformationTable = 
 	"<table>" ++
 	table_line(["Profile time:", TotalProfileTime]) ++
-	table_line(["Processes:", RegisteredProcesses]) ++
+	table_line(["Processes:", RegisteredProcs]) ++
 	table_line(["Ports:", RegisteredPorts]) ++
     	table_line(["Min. range:", Min]) ++
     	table_line(["Max. range:", Max]) ++
     	"</table>",
     
     Header = "
-    <div id=\"percept_right\">" ++ InformationTable ++ "</div>\n
-    <div id=\"percept_middle\"><center>
+    <div id=\"content\">
+    <div>" ++ InformationTable ++ "</div>\n
     <form name=form_area method=POST action=/cgi-bin/percept_html/page>
     <input name=data_min type=hidden value=" ++ term2html(float(Min)) ++ ">
     <input name=data_max type=hidden value=" ++ term2html(float(Max)) ++ ">\n",
@@ -140,28 +140,25 @@ overview_content(_Env, Input) ->
  
     MainTable = 
 	"<table>" ++
-	table_line([div_tag_graph(Width, Height, Min, Max, [])]) ++
+	table_line([div_tag_graph()]) ++
 	table_line([RangeTable]) ++
 	"</table>",
 
-    Footer = "</center></div></form>",
+    Footer = "</div></form>",
     
     Header ++ MainTable ++ Footer.
 
-div_tag_graph(Width, Height, Min, Max, Pids) ->
-    UrlGraph = url_graph(Width, Height, Min, Max, Pids),
-    "
-    <div id=\"percept_graph\" 
+div_tag_graph() ->
+	%background:url('/images/loader.gif') no-repeat center;
+    "<div id=\"percept_graph\" 
 	onMouseDown=\"select_down(event)\" 
 	onMouseMove=\"select_move(event)\" 
 	onMouseUp=\"select_up(event)\"
 
 	style=\"
-	background-image:url('" ++ UrlGraph ++ "');
 	background-size: 100%;
 	background-origin: content;
-	width:" ++ term2html(Width) ++ "px;
-	height:"++ term2html(Height) ++ "px;
+	width: 100%;
 	position:relative;
 	\">
 	
@@ -169,6 +166,8 @@ div_tag_graph(Width, Height, Min, Max, Pids) ->
 	style=\"background-color:#ef0909;
 	position:relative;
 	visibility:hidden;
+      	border-left: 1px solid #101010;
+	border-right: 1px solid #101010;
 	z-index:2;
 	width:40px;
 	height:40px;\"></div></div>".
@@ -194,92 +193,72 @@ process_info_content(_Env, Input) ->
    
  
     [I] = percept_db:select({information, Pid}),
-    case I#information.entry of
-    	{_,_,Arguments} ->
-	    ArgumentString = lists:flatten( [term2html(Arg) ++ "<br>" || Arg <- Arguments]);
-	_ -> 
-	    ArgumentString = ""
+    ArgumentString = case I#information.entry of
+    	{_, _, Arguments} -> lists:flatten( [term2html(Arg) ++ "<br>" || Arg <- Arguments]);
+	_                 -> ""
     end,
 
     TimeTable = html_table([
-	["", "Timestamp", "Profile Time"],
-	["Start",
-		term2html(I#information.start),
-		term2html(procstarttime(I#information.start))],
-	["Stop",
-		term2html(I#information.stop),
-		term2html(procstoptime(I#information.stop))]
+	[{th, ""}, 
+	 {th, "Timestamp"}, 
+	 {th, "Profile Time"}],
+	[{td, "Start"},
+	 term2html(I#information.start),
+	 term2html(procstarttime(I#information.start))],
+	[{td, "Stop"},
+	 term2html(I#information.stop),
+	 term2html(procstoptime(I#information.stop))]
 	]),   
 
-    InfoTable = "<table>" ++
-    table_line(["<b>Pid</b>", I#information.id, ""]) ++
-    table_line(["<b>Name</b>", I#information.name, ""]) ++
-    table_line(["<b>Entrypoint</b>", mfa2html(I#information.entry), ""]) ++
-    table_line(["<b>Arguments</b>", ArgumentString, ""]) ++ 
-    table_line(["<b>Timetable</b>", TimeTable, ""]) ++
-    table_line(["Parent", pid2html(I#information.parent), ""]) ++
-    table_line(["Children", 
-	lists:flatten(lists:map(
-	    fun(Child) ->
-		pid2html(Child) ++ " "
-	    end, I#information.children)), ""]) ++
-    "</table>",
-    
+    InfoTable = html_table([
+	[{th, "Pid"},        term2html(I#information.id)],
+	[{th, "Name"},       term2html(I#information.name)],
+	[{th, "Entrypoint"}, mfa2html(I#information.entry)],
+	[{th, "Arguments"},  ArgumentString],
+	[{th, "Timetable"},  TimeTable],
+	[{th, "Parent"},     pid2html(I#information.parent)],
+	[{th, "Children"},   lists:flatten(lists:map(fun(Child) -> pid2html(Child) ++ " " end, I#information.children))]
+	]), 
+
     PidActivities = percept_db:select({activity, [{id, Pid}]}),
-    WaitingMfas = percept_analyzer:waiting_activities(PidActivities),
+    WaitingMfas   = percept_analyzer:waiting_activities(PidActivities),
+  
+    TotalWaitTime = lists:sum( [T || {T, _, _} <- WaitingMfas] ),
     
-    TotalWaitTime = lists:foldl(
-    	fun ({Time, _, _}, Out) ->
-	    Out + Time
-	end, 0, WaitingMfas),
-
-
-    WaitingMfaTable = "<table>" ++
-    table_line([	"<b>Percentage</b>", 
-			"<b>Total</b>", 
-			"<b>Mean</b>",
-			"<b>StdDev</b>", 
-			"<b>#recv</b>", 
-			"<b>Module:Function/Arity</b>\n"]) ++
-    lists:flatten([
-    	table_line([
-	    image_string(percentage, [
-		{width, 100},
-		{height, 10},
-		{percentage, Time/TotalWaitTime}]),
-	    term2html(Time), 
-	    term2html(Mean),
-	    term2html(StdDev),
-	    term2html(N), 
-	    mfa2html(MFA)
-	]) || {Time, MFA, {Mean, StdDev, N}} <- WaitingMfas]) ++
-    "</table>",
+    MfaTable = html_table([
+        [{th, "percentage"},
+         {th, "total"},         
+         {th, "mean"},
+         {th, "stddev"},
+         {th, "#recv"},
+         {th, "module:function/arity"}]] ++  [
+	[{td, image_string(percentage, [{width, 100}, {height, 10}, {percentage, Time/TotalWaitTime}])},
+	 {td, term2html(Time)},
+	 {td, term2html(Mean)},
+	 {td, term2html(StdDev)},
+	 {td, term2html(N)}, 
+	 {td, mfa2html(MFA)} ] || {Time, MFA, {Mean, StdDev, N}} <- WaitingMfas]),
    
-    "<div id=\"percept_content\">" ++
+    "<div id=\"content\">" ++
     InfoTable ++ "<br>" ++
-    WaitingMfaTable ++
+    MfaTable ++
     "</div>".
 
 %%% concurrency content
-
 concurrency_content(_Env, Input) ->
     %% Get query
     Query = httpd:parse_query(Input),
     
     %% Collect selected pids and generate id tags
-    Pids = [value2pid(PidValue) || {PidValue, Case} <- Query, 
-    	Case == "on", 
-	PidValue /= "select_all"],
-    
-    IDs = [{id, Pid} || Pid <- Pids],
+    Pids = [value2pid(PidValue) || {PidValue, Case} <- Query, Case == "on", PidValue /= "select_all"],
+    IDs  = [{id, Pid} || Pid <- Pids],
 
     % FIXME: A lot of extra work here, redo
 
     %% Analyze activities and calculate area bounds
     Activities = percept_db:select({activity, IDs}),
     StartTs = percept_db:select({system, start_ts}), 
-    Counts = [{Time, Y1 + Y2} 
-    	|| {Time, Y1, Y2} <- percept_analyzer:activities2count(Activities, StartTs)],
+    Counts = [{Time, Y1 + Y2} || {Time, Y1, Y2} <- percept_analyzer:activities2count2(Activities, StartTs)],
     {T0,_,T1,_} = percept_analyzer:minmax(Counts),
 
     % FIXME: End
@@ -293,29 +272,25 @@ concurrency_content(_Env, Input) ->
 	    Out ++ 
 	    	table_line([
 	    	    pid2html(Pid),
-		    image_string(activity, [
-			{"pid", ValueString}, 
-			{min, T0},
-			{max, T1},
-			{height, 10}])
+		   "<img onload=\"size_image(this, '" ++ 
+		   image_string_head("activity", [{"pid", ValueString}, {range_min, T0},{range_max, T1},{height, 10}], []) ++
+		   "')\" src=/images/white.png border=0 />"
 		])
 	end, [], Pids),
 
     %% Make pids request string
     PidsRequest = join_strings_with(PidValues, ":"),
 
-    "<div id=\"percept_content\">
+    "<div id=\"content\">
     <table cellspacing=0 cellpadding=0 border=0>" ++
     table_line([
     	"",
-	image_string(graph, [
-	    {range_min, T0},
-	    {range_max, T1},
-	    {"pids", PidsRequest}])
+	"<img onload=\"size_image(this, '" ++ 
+	image_string_head("graph", [{"pids", PidsRequest},{range_min, T0}, {range_max, T1}, {height, 400}], []) ++
+	"')\" src=/images/white.png border=0 />"
     ]) ++
     ActivityBarTable ++
-    "</table>
-    </div>\n".
+    "</table></div>\n".
 
 processes_content() ->
     Ports = percept_db:select({information, ports}),
@@ -335,7 +310,7 @@ processes_content() ->
     ProcsHtml = lists:foldl(
     	fun (I, Out) ->
 	    StartTime = procstarttime(I#information.start),
-	    EndTime = procstoptime(I#information.stop),
+	    EndTime   = procstoptime(I#information.stop),
 	    Prepare = 
 	    	table_line([
 		    "<input type=checkbox name=" ++ pid2value(I#information.id) ++ ">",
@@ -356,7 +331,7 @@ processes_content() ->
     PortsHtml = lists:foldl(
     	fun (I, Out) ->
 	    StartTime = procstarttime(I#information.start),
-	    EndTime = procstoptime(I#information.stop),
+	    EndTime   = procstoptime(I#information.stop),
 	    Prepare = 
 	    	table_line([
 		    "",
@@ -422,20 +397,21 @@ processes_content() ->
 	    PortsHtmlResult = ""
      end,
 
+    Right = "<div>"
+    ++ Selector ++ 
+    "</div>\n",
 
-    Middle = "<div id=\"percept_middle\">
+    Middle = "<div id=\"content\">
     <table>" ++
     ProcsHtmlResult ++
     PortsHtmlResult ++ 
-    "</table>
-    </div>\n",
-    
-    Right = "<div id=\"percept_right\">"
-    ++ Selector ++ 
+    "</table>" ++
+    Right ++ 
     "</div>\n",
     
     "<form name=process_select method=POST action=/cgi-bin/percept_html/concurrency_page>" ++
-    Right ++ Middle ++ "</form>".
+    Middle ++ 
+    "</form>".
 
 procstarttime(TS) ->
     case TS of
@@ -451,7 +427,7 @@ procstoptime(TS) ->
     end.
 
 databases_content() ->
-    "<div id=\"percept_content\">
+    "<div id=\"content\">
 	<form name=load_percept_file method=post action=/cgi-bin/percept_html/load_database_page>
 	<center>
 	<table>
@@ -469,7 +445,7 @@ load_database_content(SessionId, _Env, Input) ->
     Filename = filename:join(Path, File),
     % Check path/file/filename
     
-    mod_esi:deliver(SessionId, "<div id=\"percept_middle\">"), 
+    mod_esi:deliver(SessionId, "<div id=\"content\">"), 
     case file:read_file_info(Filename) of
 	{ok, _} ->
     	    Content = "<center>
@@ -489,37 +465,39 @@ load_database_content(SessionId, _Env, Input) ->
     mod_esi:deliver(SessionId, "</div>"). 
 
 codelocation_content(_Env, Input) ->
-    Query = httpd:parse_query(Input),
-    Min = get_option_value("range_min", Query),
-    Max = get_option_value("range_max", Query),
+    Query   = httpd:parse_query(Input),
+    Min     = get_option_value("range_min", Query),
+    Max     = get_option_value("range_max", Query),
     StartTs = percept_db:select({system, start_ts}),
-    TsMin = percept_analyzer:seconds2ts(Min, StartTs),
-    TsMax = percept_analyzer:seconds2ts(Max, StartTs),
-    Acts = percept_db:select({	activity, 
-				[{ts_min, TsMin}, {ts_max, TsMax}]
-				}),
-    Act0 = hd(Acts),
-    {_RcMin, RcMax} = percept_analyzer:minmax_activities(
-	Acts,
-	Act0#activity.runnable_count),
+    TsMin   = percept_analyzer:seconds2ts(Min, StartTs),
+    TsMax   = percept_analyzer:seconds2ts(Max, StartTs),
+    Acts    = percept_db:select({activity, [{ts_min, TsMin}, {ts_max, TsMax}]}),
 
-    "<div id=\"percept_content\">
-    <table>
-    <tr style=\"border-bottom:1px; \">
-	<td>Time</td><td>Pid</td><td>Activty</td><td>module:function/arity</td>
-    </tr>" ++ 
-    lists:flatten(
-	[ table_line([	term2html(?seconds(A#activity.timestamp,StartTs)),
-			pid2html(A#activity.id),
-			term2html(A#activity.state),
-			mfa2html(A#activity.where),
-			image_string(percentage, [
-			    {percentage, A#activity.runnable_count/RcMax},
-			    {height, 10},
-			    {width, 200}])	
-			]) || A <- Acts
-	]) ++ "</table></div>\n".
+    Secs  = [timer:now_diff(A#activity.timestamp,StartTs)/1000 || A <- Acts],
+    Delta = cl_deltas(Secs),
+    Zip   = lists:zip(Acts, Delta),
+    Table = html_table([
+	[{th, "delta [ms]"},
+	 {th, "time [ms]"},
+	 {th, " pid "},
+	 {th, "activity"},
+	 {th, "module:function/arity"},
+	 {th, "#runnables"}]] ++  [
+	[{td, term2html(D)},
+	 {td, term2html(timer:now_diff(A#activity.timestamp,StartTs)/1000)},
+	 {td,  pid2html(A#activity.id)},
+	 {td, term2html(A#activity.state)},
+	 {td,  mfa2html(A#activity.where)},
+	 {td, term2html(A#activity.runnable_count)}] || {A, D} <- Zip ]),
 
+    "<div id=\"content\">" ++
+    Table ++ 
+    "</div>".
+
+cl_deltas([])   -> [];
+cl_deltas(List) -> cl_deltas(List, [0.0]).
+cl_deltas([_], Out)       -> lists:reverse(Out);
+cl_deltas([A,B|Ls], Out) -> cl_deltas([B|Ls], [B - A | Out]).
 
 %%% --------------------------- %%%
 %%% 	Utility functions	%%%
@@ -544,16 +522,22 @@ join_strings_with(S1, S2, S) ->
 
 %%% Generic erlang2html
 
--spec(html_table/1 :: (Table :: [[string()]]) -> string()).
+-spec(html_table/1 :: (Rows :: [[string() | {'td' | 'th', string()}]]) -> string()).
 
-html_table(Table) ->
-    "<table>" ++ html_table_tr(Table) ++ "</table>".
-html_table_tr([]) -> "";
-html_table_tr([Tr|Table]) ->
-    "<tr>" ++ html_table_td(Tr) ++ "</tr>" ++ html_table_tr(Table).
-html_table_td([]) -> "";
-html_table_td([Td|Tr]) ->
-    "<td>" ++ Td ++ "</td>" ++ html_table_td(Tr).
+html_table(Rows) -> "<table>" ++ html_table_row(Rows) ++ "</table>".
+
+html_table_row(Rows) -> html_table_row(Rows, odd).
+html_table_row([], _) -> "";
+html_table_row([Row|Rows], odd ) -> "<tr class=\"odd\">" ++ html_table_data(Row) ++ "</tr>" ++ html_table_row(Rows, even);
+html_table_row([Row|Rows], even) -> "<tr class=\"even\">" ++ html_table_data(Row) ++ "</tr>" ++ html_table_row(Rows, odd ).
+
+html_table_data([]) -> "";
+html_table_data([{td, Data}|Row]) -> "<td>" ++ Data ++ "</td>" ++ html_table_data(Row);
+html_table_data([{th, Data}|Row]) -> "<th>" ++ Data ++ "</th>" ++ html_table_data(Row);
+html_table_data([Data|Row])       -> "<td>" ++ Data ++ "</td>" ++ html_table_data(Row).
+
+
+
 
 -spec(table_line/1 :: (Table :: [any()]) -> string()).
 
@@ -566,10 +550,8 @@ table_line([Element | Elements], Out) ->
 
 -spec(term2html/1 :: (any()) -> string()).
 
-term2html(Term) when is_float(Term)->
-   lists:flatten(io_lib:format("~f", [Term]));
-term2html(Term) ->
-   lists:flatten(io_lib:format("~p", [Term])).
+term2html(Term) when is_float(Term) -> lists:flatten(io_lib:format("~.4f", [Term]));
+term2html(Term) -> lists:flatten(io_lib:format("~p", [Term])).
 
 -spec(mfa2html/1 :: (MFA :: {
 	atom(), 
@@ -578,9 +560,9 @@ term2html(Term) ->
 	string()). 
 
 mfa2html({Module, Function, Arguments}) when is_list(Arguments) ->
-    io_lib:format("~p:~p/~p", [Module, Function, length(Arguments)]);
+    lists:flatten(io_lib:format("~p:~p/~p", [Module, Function, length(Arguments)]));
 mfa2html({Module, Function, Arity}) when is_integer(Arity) ->
-    io_lib:format("~p:~p/~p", [Module, Function, Arity]);
+    lists:flatten(io_lib:format("~p:~p/~p", [Module, Function, Arity]));
 mfa2html(_) ->
     "undefined".
 
@@ -605,26 +587,25 @@ image_string(Request) ->
 -spec(image_string/2 :: (atom() | string(), list()) -> string()).
 
 image_string(Request, Options) when is_atom(Request), is_list(Options) ->
-     image_string(erlang:atom_to_list(Request), Options, []);
+     image_string(image_string_head(erlang:atom_to_list(Request), Options, []));
 image_string(Request, Options) when is_list(Options) ->
-     image_string(Request, Options, []).
+     image_string(image_string_head(Request, Options, [])).
 
-%image_string(Request, [], Out) ->
-%    image_string(join_strings([Request | lists:reverse(Out)]));
-image_string(Request, [{Type, Value} | Opts], Out) when is_atom(Type), is_number(Value) ->
+image_string_head(Request, [{Type, Value} | Opts], Out) when is_atom(Type), is_number(Value) ->
     Opt = join_strings(["?",term2html(Type),"=",term2html(Value)]),
-    image_string0(Request, Opts, [Opt|Out]);
-image_string(Request, [{Type, Value} | Opts], Out) ->
+    image_string_tail(Request, Opts, [Opt|Out]);
+image_string_head(Request, [{Type, Value} | Opts], Out) ->
     Opt = join_strings(["?",Type,"=",Value]),
-    image_string0(Request, Opts, [Opt|Out]).
-image_string0(Request, [], Out) ->
-    image_string(join_strings([Request | lists:reverse(Out)]));
-image_string0(Request, [{Type, Value} | Opts], Out) when is_atom(Type), is_number(Value) ->
+    image_string_tail(Request, Opts, [Opt|Out]).
+
+image_string_tail(Request, [], Out) ->
+    join_strings([Request | lists:reverse(Out)]);
+image_string_tail(Request, [{Type, Value} | Opts], Out) when is_atom(Type), is_number(Value) ->
     Opt = join_strings(["&",term2html(Type),"=",term2html(Value)]),
-    image_string0(Request, Opts, [Opt|Out]);
-image_string0(Request, [{Type, Value} | Opts], Out) ->
+    image_string_tail(Request, Opts, [Opt|Out]);
+image_string_tail(Request, [{Type, Value} | Opts], Out) ->
     Opt = join_strings(["&",Type,"=",Value]),
-    image_string0(Request, Opts, [Opt|Out]).
+    image_string_tail(Request, Opts, [Opt|Out]).
         
 
 %%% percept conversions
@@ -675,9 +656,6 @@ get_default_option_value(Option) ->
 	    Acts = percept_db:select({activity, []}),
 	    #activity{ timestamp = Start } = hd(Acts),
 	    #activity{ timestamp = Stop } = hd(lists:reverse(Acts)),
- 
-%	    Start = percept_db:select({system, start_ts}),
-%	    Stop = percept_db:select({system, stop_ts}),
 	    ?seconds(Stop,Start);
 	"width" -> 700;
 	"height" -> 400;
@@ -704,42 +682,38 @@ get_number_value(Value) ->
 %%% 	html prime functions	%%%
 %%% --------------------------- %%%
 
-header() ->
-%    "Expires: 0\r\n" ++
- %   "Cache-Control: max-age=0, no-store, no-cache, must-revalidate\r\n" ++
-  %  "Pragma: no-cache\r\n" ++
+header() -> header([]).
+header(HeaderData) ->
     "Content-Type: text/html\r\n\r\n" ++
     "<html>
     <head>
     <meta http-equiv=\"Content-Type\" content=\"text/html; charset=iso-8859-1\">
-    <title>.percept.</title>
+    <title>percept</title>
     <link href=\"/css/percept.css\" rel=\"stylesheet\" type=\"text/css\">
     <script type=\"text/javascript\" src=\"/javascript/percept_error_handler.js\"></script>
     <script type=\"text/javascript\" src=\"/javascript/percept_select_all.js\"></script>
     <script type=\"text/javascript\" src=\"/javascript/percept_area_select.js\"></script>
+    " ++ HeaderData ++"
     </head>
-    <body>
-    <div id=\"percept_top\"><a href=/index.html><h1>.percept.</h1></a></div>
-    \n".
+    <body onLoad=\"load_image()\">
+    <div id=\"header\"><a href=/index.html>percept</a></div>\n".
 
 footer() ->
-     %<div id=\"percept_bottom\"></div>
     "</body>
      </html>\n".
 
 menu() ->
-    "<div id=\"percept_navigation\">
+    "<div id=\"menu\" class=\"menu_tabs\">
 	<ul>
-	<h2>Menu</h2>
-     	<li><a href=/cgi-bin/percept_html/page>overview</a></li>
-     	<li><a href=/cgi-bin/percept_html/processes_page>processes</a></li>
      	<li><a href=/cgi-bin/percept_html/databases_page>databases</a></li>
+     	<li><a href=/cgi-bin/percept_html/processes_page>processes</a></li>
+     	<li><a href=/cgi-bin/percept_html/page>overview</a></li>
      </ul></div>\n".
 
 -spec(error_msg/1 :: (Error :: string()) -> string()).
 
 error_msg(Error) ->
-    "<table bgcolor=#787878 width=300 border=0 cellspacing=0 cellpadding=0>
+    "<table width=300>
 	<tr height=5><td></td> <td></td></tr>
 	<tr><td width=150 align=right><b>Error: </b></td> <td align=left>"++ Error ++ "</td></tr>
 	<tr height=5><td></td> <td></td></tr>

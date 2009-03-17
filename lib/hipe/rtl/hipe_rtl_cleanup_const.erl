@@ -1,3 +1,22 @@
+%%% -*- erlang-indent-level: 2 -*-
+%%%
+%%% %CopyrightBegin%
+%%% 
+%%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%%% 
+%%% The contents of this file are subject to the Erlang Public License,
+%%% Version 1.1, (the "License"); you may not use this file except in
+%%% compliance with the License. You should have received a copy of the
+%%% Erlang Public License along with this software. If not, it can be
+%%% retrieved online at http://www.erlang.org/.
+%%% 
+%%% Software distributed under the License is distributed on an "AS IS"
+%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%%% the License for the specific language governing rights and limitations
+%%% under the License.
+%%% 
+%%% %CopyrightEnd%
+%%%
 %%%-------------------------------------------------------------------
 %%% File    : hipe_rtl_cleanup_const.erl
 %%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
@@ -17,11 +36,17 @@
 %% are really constants. Here is the place to add new backend-specific
 %% behaviour depending on this.
 
+%%--------------------------------------------------------------------
+
 -module(hipe_rtl_cleanup_const).
 
 -export([cleanup/1]).
 
 -include("hipe_rtl.hrl").
+
+%%--------------------------------------------------------------------
+
+%%-spec cleanup(#rtl{}) -> #rtl{}.
 
 cleanup(Rtl) ->
   Code = cleanup(hipe_rtl:rtl_code(Rtl), []),
@@ -43,19 +68,16 @@ cleanup_instr(Consts, I) ->
   cleanup_instr(ordsets:from_list(Consts), I, []).
 
 cleanup_instr([Const|Left], I, Acc) ->
+  Dst = hipe_rtl:mk_new_var(),
+  ConstLabel = hipe_rtl:const_label_label(Const),
+  Load = hipe_rtl:mk_load_address(Dst, ConstLabel, constant),
   case I of
     X when is_record(X, fp_unop) orelse is_record(X, fp) ->
-      Dst = hipe_rtl:mk_new_var(),
-      ConstLabel = hipe_rtl:const_label_label(Const),
-      Load = hipe_rtl:mk_load_address(Dst, ConstLabel, constant),
       Fdst = hipe_rtl:mk_new_fpreg(),
       Fconv = hipe_tagscheme:unsafe_untag_float(Fdst, Dst),		  
       NewI = hipe_rtl:subst_uses([{Const, Fdst}], I),
       cleanup_instr(Left, NewI, Fconv ++ [Load|Acc]);
     _ ->
-      Dst = hipe_rtl:mk_new_var(),
-      ConstLabel = hipe_rtl:const_label_label(Const),
-      Load = hipe_rtl:mk_load_address(Dst, ConstLabel, constant),
       NewI = hipe_rtl:subst_uses([{Const, Dst}], I),
       cleanup_instr(Left, NewI, [Load|Acc])
   end;

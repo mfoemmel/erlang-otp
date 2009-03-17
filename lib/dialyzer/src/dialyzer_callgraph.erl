@@ -1,19 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
 %%-----------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, Tobias Lindahl and Kostis Sagonas
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 %%%-------------------------------------------------------------------
@@ -45,12 +47,9 @@
 	 scan_core_tree/2,
 	 strip_module_deps/2,
 	 take_scc/1, 
-	 remove_external/1]).
-
--define(NO_UNUSED, true).
--ifndef(NO_UNUSED).
--export([to_dot/1]).
--endif.
+	 remove_external/1,
+	 to_dot/2,
+	 to_ps/3]).
 
 %%----------------------------------------------------------------------
 
@@ -69,7 +68,9 @@ new() ->
 		      postorder=[],
 		      rec_var_map=dict:new(),
 		      rev_name_map=dict:new(),
-		      self_rec=sets:new()}.
+		      self_rec=sets:new(),
+		      module_local_calls=[],
+		      inter_module_calls=[]}.
 
 -spec delete(#dialyzer_callgraph{}) -> 'true'.
 
@@ -108,23 +109,24 @@ lookup_label(Label, #dialyzer_callgraph{}) when is_integer(Label) ->
 
 -spec in_neighbours(mfa_or_funlbl(), #dialyzer_callgraph{}) -> 'none' | [any(),...].
 
-in_neighbours(Label, CG=#dialyzer_callgraph{}) when is_integer(Label) ->
-  Name = case dict:find(Label, CG#dialyzer_callgraph.name_map) of
+in_neighbours(Label, #dialyzer_callgraph{digraph = Digraph, name_map = NameMap})
+  when is_integer(Label) ->
+  Name = case dict:find(Label, NameMap) of
 	   {ok, Val} -> Val;
 	   error -> Label
 	 end,
-  digraph_in_neighbours(Name, CG#dialyzer_callgraph.digraph);
-in_neighbours(MFA={_,_,_}, CG=#dialyzer_callgraph{}) ->
-  digraph_in_neighbours(MFA, CG#dialyzer_callgraph.digraph).
+  digraph_in_neighbours(Name, Digraph);
+in_neighbours(MFA = {_,_,_}, #dialyzer_callgraph{digraph = Digraph}) ->
+  digraph_in_neighbours(MFA, Digraph).
 
 -spec is_self_rec(mfa_or_funlbl(), #dialyzer_callgraph{}) -> bool().
 
-is_self_rec(MfaOrLabel, #dialyzer_callgraph{self_rec=SelfRecs}) ->
+is_self_rec(MfaOrLabel, #dialyzer_callgraph{self_rec = SelfRecs}) ->
   sets:is_element(MfaOrLabel, SelfRecs).
 
 -spec is_escaping(integer(), #dialyzer_callgraph{}) -> bool().
 
-is_escaping(Label, #dialyzer_callgraph{esc=Esc}) when is_integer(Label) ->
+is_escaping(Label, #dialyzer_callgraph{esc = Esc}) when is_integer(Label) ->
   sets:is_element(Label, Esc).  
 
 -type callgraph_edge() :: {mfa_or_funlbl(),mfa_or_funlbl()}.
@@ -217,8 +219,8 @@ module_deps(#dialyzer_callgraph{digraph=DG}) ->
 -spec strip_module_deps(dict(), set()) -> dict().
 
 strip_module_deps(ModDeps, StripSet) ->
-  FilterFun1 = fun(Val) -> not sets:is_element(Val, StripSet)end,
-  MapFun = fun(_Key, ValSet) -> ordsets:filter(FilterFun1, ValSet)end,
+  FilterFun1 = fun(Val) -> not sets:is_element(Val, StripSet) end,
+  MapFun = fun(_Key, ValSet) -> ordsets:filter(FilterFun1, ValSet) end,
   ModDeps1 = dict:map(MapFun, ModDeps),
   FilterFun2 = fun(_Key, ValSet) -> ValSet =/= [] end,
   dict:filter(FilterFun2, ModDeps1).
@@ -322,13 +324,20 @@ scan_core_tree(Tree, CG=#dialyzer_callgraph{calls=OldCalls,
   NamedEdges3 = [{From, To} || {From, To} <- NamedEdges2++NamedEdges1,
 			       From =/= top, To =/= top],
 
-  CG1 = add_edges(NamedEdges3, Names3, CG),  
+  CG1 = add_edges(NamedEdges3, Names3, CG),
+  {ModuleLocalCalls, InterModuleCalls} =
+    case get(dialyzer_race_analysis) of
+      true -> {remove_top_elements(NamedEdges1), NamedEdges2};
+      _ -> {[], []}
+    end,
   CG1#dialyzer_callgraph{calls=NewCalls,
 			 esc=NewEsc,
 			 name_map=NewNameMap,
 			 rec_var_map=NewRecVarMap, 
 			 rev_name_map=NewRevNameMap,
-			 self_rec=SelfRecs}.
+			 self_rec=SelfRecs,
+			 module_local_calls=ModuleLocalCalls,
+			 inter_module_calls=InterModuleCalls}.
 
 build_maps(Tree, RecVarMap, NameMap, RevNameMap) ->
   %% We only care about the named (top level) functions. The anonymous
@@ -560,11 +569,9 @@ digraph_reaching_subgraph(Funs, DG) ->
 %% Utilities for 'dot'
 %%=============================================================================
 
--ifndef(NO_UNUSED).
+-spec to_dot(#dialyzer_callgraph{}, string()) -> 'ok'.
 
--spec to_dot(#dialyzer_callgraph{}) -> string().
-
-to_dot(CG = #dialyzer_callgraph{digraph=DG, esc=Esc}) ->
+to_dot(CG = #dialyzer_callgraph{digraph=DG, esc=Esc}, File) ->
   Fun = fun(L) ->
 	    case lookup_name(L, CG) of
 	      error -> L;
@@ -574,7 +581,27 @@ to_dot(CG = #dialyzer_callgraph{digraph=DG, esc=Esc}) ->
   Escaping = [{Fun(L), {color, red}} 
 	      || L <- sets:to_list(Esc), L =/= external],
   Vertices = digraph_edges(DG),
-  hipe_dot:translate_list(Vertices, "/tmp/cg.dot", "CG", Escaping),
-  os:cmd("dot -T ps -o /tmp/cg.ps /tmp/cg.dot").
+  hipe_dot:translate_list(Vertices, File, "CG", Escaping).
 
--endif.
+-spec to_ps(#dialyzer_callgraph{}, string(), string()) -> 'ok'.
+
+to_ps(CG = #dialyzer_callgraph{}, File, Args) ->
+  Dot_File = filename:rootname(File) ++ ".dot",
+  to_dot(CG, Dot_File),
+  Command = io_lib:format("dot -Tps ~s -o ~s ~s", [Args, File, Dot_File]),
+  _ = os:cmd(Command),
+  ok.
+
+%%=============================================================================
+%% Race Utilities
+%%=============================================================================
+
+remove_top_elements(ModuleLocalCalls) ->
+  case ModuleLocalCalls of
+    [] -> [];
+    [Head|Tail] ->
+      case Head of
+        {top, _Fun} -> remove_top_elements(Tail);
+        _Other -> [Head|remove_top_elements(Tail)]
+      end
+  end.

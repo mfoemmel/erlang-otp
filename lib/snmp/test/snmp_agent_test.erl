@@ -1,24 +1,22 @@
-%%<copyright>
-%% <year>2003-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
-%% Test: ts:run(snmp, snmp_agent_test, [batch]).
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 -module(snmp_agent_test).
 
 %% TODO
@@ -85,14 +83,15 @@
 	       end).
 
 
-all(suite) -> {req,
-	       [
-		mnesia, 
-		distribution,
-		{local_slave_nodes, 2}, 
-		{time, 360}
-	       ],
-	       [{conf, init_all, cases(), finish_all}]}.
+all(suite) -> 
+    {req,
+     [
+      mnesia, 
+      distribution,
+      {local_slave_nodes, 2}, 
+      {time, 360}
+     ],
+     [{conf, init_all, cases(), finish_all}]}.
 
 
 init_per_testcase(otp_7157_test = _Case, Config) when is_list(Config) ->
@@ -186,6 +185,7 @@ cases() ->
 %%%-----------------------------------------------------------------
 
 init_all(Conf) ->
+    ?DISPLAY_SUITE_INFO(), 
     snmp_agent_test_lib:init_all(Conf).
 
 finish_all(Conf) ->
@@ -619,8 +619,19 @@ mse_size_check(X)     -> ?P(mse_size_check), ms_size_check(X).
 msd_size_check(X)     -> ?P(msd_size_check), ms_size_check(X).
 msm_size_check(X)     -> ?P(msm_size_check), ms_size_check(X).
 
-msd_varm_mib_start(X) -> ?P(msd_varm_mib_start), varm_mib_start(X).
-msm_varm_mib_start(X) -> ?P(msm_varm_mib_start), varm_mib_start(X).
+msd_varm_mib_start(X) -> 
+    ?P(msd_varm_mib_start), 
+    varm_mib_start(X).
+
+msm_varm_mib_start(X) -> 
+    %% <CONDITIONAL-SKIP>
+    Skippable = [win32],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(X, Condition),
+    %% </CONDITIONAL-SKIP>
+
+    ?P(msm_varm_mib_start), 
+    varm_mib_start(X).
 
 ms_size_check(suite) -> [];
 ms_size_check(Config) when list(Config) ->
@@ -1088,7 +1099,8 @@ finish_v3(Config) when list(Config) ->
     delete_files(C1),
     lists:keydelete(vsn, 1, C1).
 
-test_multi_threaded(suite) -> {req, [], {conf, init_mt, mt_cases(), finish_mt}}.
+test_multi_threaded(suite) -> 
+    {req, [], {conf, init_mt, mt_cases(), finish_mt}}.
 
 mt_cases() ->
     [multi_threaded, mt_trap].
@@ -1097,9 +1109,10 @@ init_mt(Config) when list(Config) ->
     SaNode = ?config(snmp_sa, Config),
     create_tables(SaNode),
     AgentDir = ?config(agent_dir, Config),
-    MgrDir = ?config(mgr_dir, Config),
-    Ip = ?config(ip, Config),
-    ?line ok = config([v2], MgrDir, AgentDir, tuple_to_list(Ip), tuple_to_list(Ip)),
+    MgrDir   = ?config(mgr_dir, Config),
+    Ip       = ?config(ip, Config),
+    ?line ok = 
+	config([v2], MgrDir, AgentDir, tuple_to_list(Ip), tuple_to_list(Ip)),
     [{vsn, v2} | start_multi_threaded_agent(Config)].
 
 finish_mt(Config) when list(Config) ->
@@ -1545,7 +1558,15 @@ subagent(Config) when list(Config) ->
     
 subagent_2(X) -> ?P(subagent_2), subagent(X).
 
-subagent_3(X) -> ?P(subagent_3), subagent(X).
+subagent_3(X) -> 
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(X, Condition),
+    %% </CONDITIONAL-SKIP>
+
+    ?P(subagent_3), 
+    subagent(X).
 
 
 mnesia(suite) -> [];
@@ -1729,6 +1750,9 @@ sa_register_3(X) -> ?P(sa_register_3), sa_register(X).
 v1_trap(suite) -> [];
 v1_trap(Config) when list(Config) ->
     ?P(v1_trap), 
+    trap1(Config).
+
+trap1(Config) ->
     {SaNode, _MgrNode, _MibDir} = init_case(Config),
 
     ?P1("start subagent..."),
@@ -1762,6 +1786,9 @@ v1_trap(Config) when list(Config) ->
 v2_trap(suite) -> [];
 v2_trap(Config) when list(Config) ->
     ?P(v2_trap), 
+    trap2(Config).
+
+trap2(Config) ->
     {SaNode, _MgrNode, _MibDir} = init_case(Config),
 
     ?P1("start subagent..."),
@@ -1794,9 +1821,16 @@ v2_trap(Config) when list(Config) ->
     ?P1("stop subagent..."),
     ?line stop_subagent(SA).
 
-v3_trap(X) ->
+v3_trap(suite) -> [];
+v3_trap(Config) when is_list(Config) ->
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(Config, Condition),
+    %% </CONDITIONAL-SKIP>
+
     ?P(v3_trap), 
-    v2_trap(X).
+    trap2(Config).
 
 v2_inform(suite) ->
     {req, [], {conf, init_v2_inform, [v2_inform_i], finish_v2_inform}}.
@@ -1826,6 +1860,9 @@ finish_v3_inform(X) ->
 v2_inform_i(suite) -> [];
 v2_inform_i(Config) when list(Config) ->
     ?P(v2_inform_i), 
+    inform_i(Config).
+
+inform_i(Config) ->
     init_case(Config),
 
     MA = whereis(snmp_master_agent),
@@ -1845,7 +1882,15 @@ v2_inform_i(Config) when list(Config) ->
     ?line unload_master("TestTrap"),
     ?line unload_master("TestTrapv2").
 
-v3_inform_i(X) -> ?P(v3_inform_i), v2_inform_i(X).
+v3_inform_i(X) -> 
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(X, Condition),
+    %% </CONDITIONAL-SKIP>
+
+    ?P(v3_inform_i), 
+    inform_i(X).
 
 
 sa_error(suite) -> [];
@@ -1875,13 +1920,23 @@ sa_error(Config) when list(Config) ->
     ?P1("stop subagent..."),
     stop_subagent(SA).
 
-sa_error_2(X) -> ?P(sa_error_2), sa_error(X).
+sa_error_2(X) -> 
+    ?P(sa_error_2), 
+    sa_error(X).
 
-sa_error_3(X) -> ?P(sa_error_3), sa_error(X).
+sa_error_3(X) -> 
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(X, Condition),
+    %% </CONDITIONAL-SKIP>
+
+    ?P(sa_error_3), 
+    sa_error(X).
 
 
 next_across_sa(suite) -> [];
-next_across_sa(Config) when list(Config) ->
+next_across_sa(Config) when is_list(Config) ->
     ?P(next_across_sa), 
     {SaNode, _MgrNode, MibDir} = init_case(Config),
     MA = whereis(snmp_master_agent),
@@ -1917,9 +1972,19 @@ next_across_sa(Config) when list(Config) ->
     ?P1("stop subagent (2)..."),
     stop_subagent(SA2).
 
-next_across_sa_2(X) -> ?P(next_across_sa_2), next_across_sa(X).
+next_across_sa_2(X) -> 
+    ?P(next_across_sa_2), 
+    next_across_sa(X).
 
-next_across_sa_3(X) -> ?P(next_across_sa_3), next_across_sa(X).
+next_across_sa_3(X) -> 
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(X, Condition),
+    %% </CONDITIONAL-SKIP>
+
+    ?P(next_across_sa_3), 
+    next_across_sa(X).
 
 
 undo(suite) -> [];
@@ -1964,9 +2029,19 @@ undo(Config) when list(Config) ->
     ?P1("stop subagent..."), 
     stop_subagent(SA).
 
-undo_2(X) -> ?P(undo_2), undo(X).
+undo_2(X) -> 
+    ?P(undo_2), 
+    undo(X).
 
-undo_3(X) -> ?P(undo_3), undo(X).
+undo_3(X) -> 
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(X, Condition),
+    %% </CONDITIONAL-SKIP>
+
+    ?P(undo_3), 
+    undo(X).
 
 %% Req. Test2
 v1_processing(suite) -> [];
@@ -4032,6 +4107,12 @@ snmpv2_mib_2(Config) when list(Config) ->
 %% Req. SNMPv2-MIB
 snmpv2_mib_3(suite) -> [];
 snmpv2_mib_3(Config) when list(Config) ->
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(Config, Condition),
+    %% </CONDITIONAL-SKIP>
+
     ?P(snmpv2_mib_3), 
     init_case(Config),
 
@@ -4177,6 +4258,12 @@ snmp_framework_mib() ->
 %%-----------------------------------------------------------------
 snmp_mpd_mib_3(suite) -> [];
 snmp_mpd_mib_3(Config) when list(Config) ->
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(Config, Condition),
+    %% </CONDITIONAL-SKIP>
+
     ?P(snmp_mpd_mib_3), 
     init_case(Config),
     UnknownPDUHs = try_test(snmp_mpd_mib_a),
@@ -4285,11 +4372,19 @@ snmp_view_based_acm_mib(Config) when list(Config) ->
     ?line unload_master("Test2"),
     ?line unload_master("SNMP-VIEW-BASED-ACM-MIB").
 
-snmp_view_based_acm_mib_2(X) -> ?P(snmp_view_based_acm_mib_2), 
-				snmp_view_based_acm_mib(X).
+snmp_view_based_acm_mib_2(X) -> 
+    ?P(snmp_view_based_acm_mib_2), 
+    snmp_view_based_acm_mib(X).
 
-snmp_view_based_acm_mib_3(X) -> ?P(snmp_view_based_acm_mib_3), 
-				snmp_view_based_acm_mib(X).
+snmp_view_based_acm_mib_3(X) -> 
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(X, Condition),
+    %% </CONDITIONAL-SKIP>
+
+    ?P(snmp_view_based_acm_mib_3), 
+    snmp_view_based_acm_mib(X).
 
 snmp_view_based_acm_mib() ->
     snmpa:verbosity(net_if,trace),
@@ -4462,6 +4557,12 @@ mk_ln(X) ->
 %%-----------------------------------------------------------------
 snmp_user_based_sm_mib_3(suite) -> [];
 snmp_user_based_sm_mib_3(Config) when list(Config) ->
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(Config, Condition),
+    %% </CONDITIONAL-SKIP>
+
     ?P(snmp_user_based_sm_mib_3), 
     init_case(Config),
 
@@ -5048,7 +5149,15 @@ otp_1131(Config) when list(Config) ->
 
 otp_1131_2(X) -> ?P(otp_1131_2), otp_1131(X).
 
-otp_1131_3(X) -> ?P(otp_1131_3), otp_1131(X).
+otp_1131_3(X) -> 
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(X, Condition),
+    %% </CONDITIONAL-SKIP>
+
+    ?P(otp_1131_3), 
+    otp_1131(X).
 
 otp_1131() ->
     io:format("Testing bug reported in ticket OTP-1131...~n"),
@@ -5518,7 +5627,13 @@ otp_7157(suite) ->
 	       [otp_7157_test], 
 	       finish_otp_7157}}.
 
-init_otp_7157(Config) when list(Config) ->
+init_otp_7157(Config) when is_list(Config) ->
+    %% <CONDITIONAL-SKIP>
+    Skippable = [win32],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(Config, Condition),
+    %% </CONDITIONAL-SKIP>
+
     ?DBG("init_otp_7157 -> entry with"
 	   "~n   Config: ~p", [Config]),
     ?line AgentDir = ?config(agent_dir, Config),

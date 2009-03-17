@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>2004</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2004</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>ERTS Release Notes</title>
@@ -30,6 +28,507 @@
     <rev>nil</rev>
   </header>
   <p>This document describes the changes made to the ERTS application.</p>
+
+<section><title>Erts 5.7</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p><em>OpenSource:</em></p>
+	    <p>FreeBSD leap-seconds are handled according to patch
+	    submitted by OpenSource user Kenji Rikitake. No test case
+	    covers this functionality (unsupported platform).</p>
+          <p>
+	    Own Id: OTP-7609</p>
+        </item>
+        <item>
+          <p>
+	    A corrected bug in <c>ets</c> for <c>bag</c> and
+	    <c>duplicate_bag</c>. A <c>delete/2</c> or
+	    <c>lookup_element/3</c> could miss objects in a fixed
+	    table if one or more objects with the same key had
+	    already been deleted.</p>
+          <p>
+	    Own Id: OTP-7665</p>
+        </item>
+        <item>
+          <p>
+	    A new driver call-back <c>stop_select</c> is introduced
+	    to allow drivers to de-select and then close a file
+	    descriptor in a safe way in a SMP emulator. The old way
+	    was not strictly according to posix standard and could in
+	    some rare cases lead to unexpected behavior. A new flag
+	    <c>ERL_DRV_USE</c> can be passed to
+	    <c>driver_select()</c> to tell it that the descriptor
+	    should be closed. <c>stop_select</c> is then called when
+	    it is safe to do so. Old drivers will however still work
+	    as before.</p>
+          <p>
+	    Own Id: OTP-7670</p>
+        </item>
+        <item>
+          <p>
+	    A bug fixed for TCP sockets with option
+	    <c>{packet,http}</c>. An HTTP request with an absolute
+	    URI was returned with a corrupt path string. This bug did
+	    only exist in R12B-4 and R12B-5.</p>
+          <p>
+	    Own Id: OTP-7682 Aux Id: OTP-7647 </p>
+        </item>
+        <item>
+          <p>
+	    run_erl did in some cases fail to extract control
+	    sequences from to_erl (like: winsize=X,Y) and did instead
+	    send them to be interpreted by the erlang shell.</p>
+          <p>
+	    Own Id: OTP-7688</p>
+        </item>
+        <item>
+          <p>
+	    A bug in the installer on Windows not updating file
+	    associations properly is now corrected.</p>
+          <p>
+	    Own Id: OTP-7746</p>
+        </item>
+        <item>
+	    <p>More space than necessary could be allocated in
+	    binaries when appending to a binary (also in a binary
+	    comprehension) and the data appended did not consist of
+	    wholes bytes (e.g. 13 bits).</p>
+          <p>
+	    Own Id: OTP-7747</p>
+        </item>
+        <item>
+          <p>
+	    The gen_sctp option sctp_peer_addr_params,
+	    #sctp_paddrparams{address={IP,Port} was erroneously
+	    decoded in the inet driver. This bug has now been
+	    corrected.</p>
+          <p>
+	    Own Id: OTP-7755</p>
+        </item>
+        <item>
+          <p>
+	    Outstanding async driver jobs leaked memory if the
+	    issuing port died before the async jobs completed.</p>
+          <p>
+	    Own Id: OTP-7784</p>
+        </item>
+        <item>
+	    <p>A bug in the dynamic library loading affecting, among
+	    others, OpenSolaris is now corrected. (Thanks to Paul
+	    Fisher.)</p>
+          <p>
+	    Own Id: OTP-7796</p>
+        </item>
+        <item>
+          <p>
+	    run_erl compile errors fixed for FreeBSD</p>
+          <p>
+	    Own Id: OTP-7817</p>
+        </item>
+        <item>
+          <p>
+	    A bug in the inet driver for SCTP on Solaris showing for
+	    e.g gen_sctp:abort/1 and gen_sctp:eof/1 has been
+	    corrected. Patch suggestion by Simon Cornish.</p>
+          <p>
+	    Own Id: OTP-7866</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    The order of objects visited in select for ordered_set is
+	    now documented.</p>
+          <p>
+	    Own Id: OTP-7339</p>
+        </item>
+        <item>
+          <p>
+	    The runtime system with SMP support now uses multiple,
+	    scheduler specific run queues, instead of one globally
+	    shared run queue.</p>
+          <p>
+	    The lock protecting the shared run queue was heavily
+	    contended, and the shared run queue also caused Erlang
+	    processes to randomly migrate between schedulers with
+	    negative cache effects as a result.</p>
+          <p>
+	    With the current scheduler specific run queue solution,
+	    lock contention due to run queue protection has been
+	    reduced, and Erlang processes are only migrated when
+	    needed to balance the load between the schedulers. The
+	    reduced amount of migration also reduce lock contention
+	    on locks protecting the scheduler specific instances of
+	    the erts internal memory allocators.</p>
+          <p>
+	    The scheduler specific run queues are also a necessity
+	    for a lot of future planned NUMA (Non-Uniform Memory
+	    Access) specific optimizations.</p>
+          <p>
+	    Own Id: OTP-7500</p>
+        </item>
+        <item>
+	    <p>Support for Unicode is implemented as described in
+	    EEP10. Formatting and reading of unicode data both from
+	    terminals and files is supported by the io and io_lib
+	    modules. Files can be opened in modes with automatic
+	    translation to and from different unicode formats. The
+	    module 'unicode' contains functions for conversion
+	    between external and internal unicode formats and the re
+	    module has support for unicode data. There is also
+	    language syntax for specifying string and character data
+	    beyond the ISO-latin-1 range.</p>
+	    <p>The interactive shell will support input and output of
+	    unicode characters when the terminal and operating system
+	    supports it.</p>
+	    <p>Please see the EEP and the io/io_lib manual pages as
+	    well as the stdlib users guide for details.</p>
+	    <p><em>I/O-protocol incompatibilities:</em></p>
+	    <p>The io_protocol between io_Server and client is
+	    updated to handle protocol data in unicode formats. The
+	    updated protocol is now documented. The specification
+	    resides in the stdlib <em>users manual</em>, which is a
+	    new part of the manual.</p>
+	    <p><em>io module incompatibilities:</em></p>
+	    <p>The io:put_chars, io:get_chars and io:get_line all
+	    handle and return unicode data. In the case where
+	    binaries can be provided (as to io:put_chars), they shall
+	    be encoded in UTF-8. When binaries are returned (as by
+	    io:get_line/get_chars when the io_server is set in
+	    <em>binary mode</em>) the returned data is also
+	    <em>always</em> encoded as UTF-8. The file module however
+	    still returns byte-oriented data, why file:read can be
+	    used instead of io:get_chars to read binary data in
+	    ISO-latin-1.</p>
+	    <p><em>io_lib module incompatibilities:</em></p>
+	    <p>io_lib:format can, given new format directives (i.e
+	    "~ts" and "~tc"), return lists containing integers larger
+	    than 255. </p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7648 Aux Id: OTP-7580 OTP-7514 OTP-7494
+	    OTP-7443 OTP-7181 EEP10 EEP11 </p>
+        </item>
+        <item>
+          <p>
+	    The format of the string returned by
+	    <c>erlang:system_info(system_version)</c> (as well as the
+	    first message when Erlang is started) has changed. The
+	    string now contains the both the OTP version number as
+	    well as the erts version number.</p>
+          <p>
+	    Own Id: OTP-7649</p>
+        </item>
+        <item>
+          <p>
+	    Message passing has been further optimized for parallel
+	    execution. Serial message passing is slightly more
+	    expensive than before, but parallel send to a common
+	    receiver is much cheaper.</p>
+          <p>
+	    Own Id: OTP-7659</p>
+        </item>
+        <item>
+          <p>
+	    Lock contention on the atom table lock when decoding
+	    Erlang terms on the external format has been drastically
+	    reduced.</p>
+          <p>
+	    Own Id: OTP-7660</p>
+        </item>
+        <item>
+          <p>
+	    The undocumented, unsupported, and deprecated guard BIF
+	    <c>is_constant/1</c> has been removed.</p>
+          <p>
+	    *** INCOMPATIBILITY with R12B ***</p>
+          <p>
+	    Own Id: OTP-7673</p>
+        </item>
+        <item>
+          <p>
+	    The Erlang process lock implementation has been improved
+	    by Mat Hostetter at Tilera Corporation.</p>
+          <p>
+	    Own Id: OTP-7692</p>
+        </item>
+        <item>
+          <p>
+	    A <c>{nodedown, Node}</c> message passed by the
+	    <c>net_kernel:monitor_nodes/X</c> functionality is now
+	    guaranteed to be sent after <c>Node</c> has been removed
+	    from the result returned by <c>erlang:nodes/Y</c>.</p>
+          <p>
+	    Own Id: OTP-7725</p>
+        </item>
+        <item>
+	    <p>The short-circuit operators <c>andalso</c> and
+	    <c>orelse</c> no longer guarantees that their second
+	    argument is either <c>true</c> or <c>false</c>. As a
+	    consequence, <c>andalso</c>/<c>orelse</c> are now
+	    tail-recursive.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7748</p>
+        </item>
+        <item>
+          <p>
+	    A new BIF, <c>lists:keyfind/3</c>, has been added. It
+	    works like <c>lists:keysearch/3</c> except that it does
+	    not wrap the returned tuple in a <c>value</c> tuple in
+	    case of success. (Thanks to James Hague for suggesting
+	    this function.)</p>
+          <p>
+	    Own Id: OTP-7752</p>
+        </item>
+        <item>
+          <p>
+	    Optimization for drivers by creating small binaries
+	    direct on process heap.</p>
+          <p>
+	    Own Id: OTP-7762</p>
+        </item>
+        <item>
+	    <p><c>I bsl N</c> could cause the Erlang virtual machine
+	    to run of memory instead generating a <c>system_limit</c>
+	    if N was absurdly huge. (Thanks to Daniel Hedlund.)</p>
+	    <p>There would always be a garbage collection when
+	    evaluating <c>I bsl N</c> or <c>I bsr N</c> if <c>I</c>
+	    was a bignum.</p>
+	    <p>If <c>I</c> is an integer and <c>N</c> a bignum, <c>I
+	    bsl N</c> will now cause the correct <c>system_limit</c>
+	    exception instead of <c>bad_arith</c> as in earlier
+	    releases.</p>
+	    <p>If <c>I</c> is an integer and <c>N</c> a bignum, <c>I
+	    bsr N</c> will return either 0 or -1 depending on the
+	    sign of <c>I</c> instead of causing a <c>bad_arith</c>
+	    exception as in earlier releases.</p>
+          <p>
+	    Own Id: OTP-7764</p>
+        </item>
+        <item>
+          <p>
+	    Scheduler threads can now be bound to logical processors
+	    on newer Linux and Solaris systems. More systems will be
+	    supported in the future.</p>
+          <p>
+	    In some cases performance has increased drastically when
+	    binding schedulers. Schedulers are not bound by default,
+	    though. This since it might cause a performance
+	    degradation if multiple programs have bound to
+	    processors, e.g. multiple Erlang runtime systems. For
+	    more information see the documentation of
+	    <c>erlang:system_flag/2</c>.</p>
+          <p>
+	    In order to bind scheduler threads the CPU topology need
+	    to be known. On some newer Linux and Solaris systems the
+	    runtime system automatically detects the CPU topology. If
+	    the emulator isn't able to automatically detect the CPU
+	    topology, the CPU topology can be defined. For more
+	    information see the documentation of
+	    <c>erlang:system_flag/2</c>.</p>
+          <p>
+	    Own Id: OTP-7777</p>
+        </item>
+        <item>
+	    <p>The compiler will refuse to a compile file where the
+	    module name in the file differs from the output file
+	    name.</p>
+	    <p>When compiling using <c>erlc</c>, the current working
+	    directory will no be included in the code path (unless
+	    explicitly added using "-pa .").</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7793</p>
+        </item>
+        <item>
+          <p>
+	    The BIFs <c>atom_to_binary/2</c>,
+	    <c>binary_to_atom/2</c>, and
+	    <c>binary_to_existing_atom/2</c> have been added.</p>
+          <p>
+	    Own Id: OTP-7804</p>
+        </item>
+        <item>
+          <p>
+	    The amount of schedulers online can now be changed during
+	    operation. The amount of schedulers online defaults to
+	    the same amount as available logical processors. For more
+	    information see the documentation of
+	    <c>erlang:system_flag/2</c> and <c>erl</c>.</p>
+          <p>
+	    Own Id: OTP-7811</p>
+        </item>
+        <item>
+	    <p>The deprecated functions <c>erlang:fault/1</c>,
+	    <c>erlang:fault/2</c>, and <c>file:rawopen/2</c> have
+	    been removed.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7812</p>
+        </item>
+        <item>
+          <p>
+	    Erts internal dynamically allocated process and port
+	    specific data for rarely used data. This is used to
+	    reduce memory usage of processes and ports that do not
+	    use specific functionality. More functionality will be
+	    moved to process and port specific data in future
+	    releases.</p>
+          <p>
+	    Own Id: OTP-7818</p>
+        </item>
+        <item>
+          <p>
+	    New packet type <c>http_bin</c> for gen_tcp sockets and
+	    <c>erlang:decode_packet</c>. It works like <c>http</c>
+	    except that strings are returned as binaries instead of
+	    lists.</p>
+          <p>
+	    Own Id: OTP-7821</p>
+        </item>
+        <item>
+          <p>
+	    The obsolete wd_keeper program for embedded Solaris
+	    systems has been removed.</p>
+          <p>
+	    Own Id: OTP-7822</p>
+        </item>
+        <item>
+          <p>
+	    Nodes belonging to different independent clusters can now
+	    co-exist on the same host with the help of a new
+	    environment variable setting ERL_EPMD_PORT.</p>
+          <p>
+	    Own Id: OTP-7826</p>
+        </item>
+        <item>
+	    <p>There are new functions <c>erlang:min/2</c> and
+	    <c>erlang:max/2</c> to calculate the minimum and maximum
+	    of two terms, respectively. Note that the functions are
+	    not auto-imported, so they need to be imported explicitly
+	    or the <c>erlang</c> prefix must be used when calling
+	    them.</p>
+          <p>
+	    Own Id: OTP-7841</p>
+        </item>
+        <item>
+	    <p>The copyright notices have been updated.</p>
+          <p>
+	    Own Id: OTP-7851</p>
+        </item>
+        <item>
+	    <p>Enhanced build environment for cross compilation to
+	    Tilera Tile architecture.</p>
+	    <p>Support for native ethread atomics on Tilera
+	    Tile64/TilePro (Thanks to Tilera Corporation).</p>
+          <p>
+	    Own Id: OTP-7852</p>
+        </item>
+        <item>
+	    <p>The escape sequences <c>\x</c> and <c>\{</c> have been
+	    assigned new interpretations (they used to return the
+	    ASCII code for <c>x</c> and <c>{</c> respectively). One
+	    or more octal characters inside curly brackets after a
+	    leading backslash is from now on an alternative to the
+	    existing syntax <c>\NNN</c>, but can also be used for
+	    codes greater than 255. In a similar fashion, one or more
+	    hexadecimal characters can be put inside curly brackets
+	    after a leading <c>\x</c>. Furthermore, the escape
+	    sequences <c>\xH</c> and <c>\xHH</c>, where N is a
+	    hexadecimal character, can be used for codes less than
+	    256.</p>
+	    <p>NOTE: These new escape sequences are still considered
+	    experimental and may be changed in the R13B release.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7855</p>
+        </item>
+        <item>
+          <p>
+	    The PCRE library's exported function names are now
+	    prefixed with erts_ in the erlang emulator to avoid
+	    clashes with dynamically loaded drivers.</p>
+          <p>
+	    Own Id: OTP-7861</p>
+        </item>
+        <item>
+          <p>
+	    A runtime system with SMP support will now be built by
+	    default on most platforms if a usable posix thread
+	    library or native windows threads are found.</p>
+          <p>
+	    For more information see the top README file.</p>
+          <p>
+	    Own Id: OTP-7872</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+
+<section><title>Erts 5.6.5.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    A corrected bug in <c>ets</c> for <c>bag</c> and
+	    <c>duplicate_bag</c>. A <c>delete/2</c> or
+	    <c>lookup_element/3</c> could miss objects in a fixed
+	    table if one or more objects with the same key had
+	    already been deleted.</p>
+          <p>
+	    Own Id: OTP-7665</p>
+        </item>
+        <item>
+          <p>
+	    A bug fixed for TCP sockets with option
+	    <c>{packet,http}</c>. An HTTP request with an absolute
+	    URI was returned with a corrupt path string. This bug did
+	    only exist in R12B-4 and R12B-5.</p>
+          <p>
+	    Own Id: OTP-7682 Aux Id: OTP-7647 </p>
+        </item>
+        <item>
+          <p>
+	    Calling <c>gen_tcp:send()</c> from several processes on
+	    socket with option <c>send_timeout</c> could lead to much
+	    longer timeout than specified. The solution is a new
+	    socket option <c>{send_timeout_close,true}</c> that will
+	    do automatic close on timeout. Subsequent calls to send
+	    will then immediately fail due to the closed connection.</p>
+          <p>
+	    Own Id: OTP-7731 Aux Id: seq11161 </p>
+        </item>
+        <item>
+          <p>
+	    A process being garbage collected via the
+	    <c>garbage_collect/1</c> BIF or the
+	    <c>check_process_code/2</c> BIF didn't handle message
+	    receive and resume correctly during the garbage collect.
+	    When this occurred, the process returned to the state it
+	    had before the garbage collect instead of entering the
+	    new state.</p>
+          <p>
+	    Own Id: OTP-7738</p>
+        </item>
+      </list>
+    </section>
+
+</section>
 
 <section><title>Erts 5.6.5</title>
 

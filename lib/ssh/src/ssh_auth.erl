@@ -1,18 +1,22 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
+%%
+
 %%
 
 -module(ssh_auth).
@@ -224,7 +228,7 @@ handle_userauth_info_request(
     PromptInfos = decode_keyboard_interactive_prompts(NumPrompts,Data),
     Resps = keyboard_interact_get_responses(IoCb, Opts,
 					    Name, Instr, PromptInfos),
-    ?dbg(true, "keyboard_interactive_reply: resps=~n  ~p\n", [Resps]),
+    %%?dbg(true, "keyboard_interactive_reply: resps=~n#~p ~n", [Resps]),
     RespBin = list_to_binary(
 		lists:map(fun(S) -> <<?STRING(list_to_binary(S))>> end,
 			  Resps)),
@@ -291,7 +295,7 @@ user_name(Opts) ->
     end.
 
 check_password(User, Password, Opts) ->
-    ?dbg(true, " ~p ~p ~p ~n", [User, Password, Opts]),
+    %%?dbg(true, " ~p ~p ~p ~n", [User, Password, Opts]),
     case proplists:get_value(pwdfun, Opts) of
 	undefined ->
 	    Static = get_password_option(Opts, User),
@@ -308,9 +312,9 @@ get_password_option(Opts, User) ->
     end.
 	    
 verify_sig(SessionId, User, Service, Alg, KeyBlob, SigWLen, Opts) ->
-    {ok, Key} = ssh_file:decode_public_key_v2(KeyBlob, Alg),
     case ssh_file:lookup_user_key(User, Alg, Opts) of
 	{ok, OurKey} ->
+	    {ok, Key} = ssh_file:decode_public_key_v2(KeyBlob, Alg),
 	    case OurKey of
 		Key ->
 		    NewSig = build_sig_data(SessionId, 
@@ -405,7 +409,7 @@ userauth_keyboard_interactive_messages() ->
 userauth_pk_messages() ->
     [ {ssh_msg_userauth_pk_ok, ?SSH_MSG_USERAUTH_PK_OK,
        [string, % algorithm name
-	string]} % key blob
+	binary]} % key blob
      ].
 
 alg_to_module("ssh-dss") ->

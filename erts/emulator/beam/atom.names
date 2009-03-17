@@ -1,19 +1,20 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 1996-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
+# retrieved online at http://www.erlang.org/.
 # 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
-#     $Id$
+# %CopyrightEnd%
 #
 
 #
@@ -93,6 +94,7 @@ atom badarg badarith badarity badfile badmatch badsig badfun
 atom bag
 atom band
 atom big
+atom bif_return_trap
 atom binary
 atom block
 atom blocked
@@ -116,6 +118,8 @@ atom caseless
 atom catchlevel
 atom cd
 atom cdr
+atom characters_to_binary_int
+atom characters_to_list_int
 atom clear
 atom close
 atom closed
@@ -195,6 +199,7 @@ atom first
 atom firstline
 atom flags
 atom flush
+atom format_cpu_topology
 atom free
 atom fullsweep_after
 atom fullsweep_if_old_binaries
@@ -225,7 +230,7 @@ atom hidden
 atom hide
 atom high
 atom hipe_architecture
-atom http httph https http_response http_request http_header http_eoh http_error
+atom http httph https http_response http_request http_header http_eoh http_error http_bin httph_bin
 atom hybrid
 atom id
 atom if_clause
@@ -245,6 +250,7 @@ atom internal_error
 atom internal_status
 atom instruction_counts
 atom invalid
+atom is_constant
 atom is_seq_trace
 atom io
 atom keypos
@@ -341,6 +347,7 @@ atom notbol
 atom noteol
 atom notempty
 atom notify
+atom notsup
 atom nouse_stdio
 atom objects
 atom offset
@@ -429,12 +436,14 @@ atom runtime
 atom save_calls
 atom scheduler 
 atom scheduler_id
+atom schedulers_online
 atom scheme
 atom sensitive
 atom sequential_tracer
 atom sequential_trace_token
 atom serial
 atom set
+atom set_cpu_topology
 atom set_on_first_link
 atom set_on_first_spawn
 atom set_on_link
@@ -485,10 +494,12 @@ atom try_clause
 atom true
 atom tuple
 atom type
+atom ucompile
 atom undef
 atom ungreedy
 atom unicode
 atom unregister
+atom urun
 atom use_stdio
 atom used
 atom utf8

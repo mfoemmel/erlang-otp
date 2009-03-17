@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Convert annotated kernel expressions to annotated beam format.
 
@@ -54,10 +55,8 @@
 get_kanno(Kthing) -> element(2, Kthing).
 %%set_kanno(Kthing, Anno) -> setelement(2, Kthing, Anno).
 
-module(#k_mdef{name=M,exports=Es,attributes=As,body=Fs0}, Opts) ->
-    put(?MODULE, Opts),
+module(#k_mdef{name=M,exports=Es,attributes=As,body=Fs0}, _Opts) ->
     Fs1 = functions(Fs0, []),
-    erase(?MODULE),
     {ok,{M,Es,As,Fs1}}.
 
 functions([F|Fs], Acc) ->
@@ -78,7 +77,9 @@ function(#k_fdef{func=F,arity=Ar,vars=Vs,body=Kb}) ->
 		 #k_match{anno=#k{us=Ka#k.us,ns=[],a=Ka#k.a},
 			  vars=Vs,body=Kb,ret=[]}
 	 end,
+    put(guard_refc, 0),
     {B1,_,Vdb1} = body(B0, 1, Vdb0),
+    erase(guard_refc),
     {function,F,Ar,As,B1,Vdb1}.
 
 %% body(Kbody, I, Vdb) -> {[Expr],MaxI,Vdb}.
@@ -153,12 +154,12 @@ guard_expr(#k_bif{anno=A,op=Op,args=As,ret=Rs}, I, _Vdb) ->
     end;
 guard_expr(#k_put{anno=A,arg=Arg,ret=Rs}, I, _Vdb) ->
     #l{ke={set,var_list(Rs),literal(Arg, [])},i=I,a=A#k.a};
-guard_expr(#k_match{anno=A,body=Kb,ret=Rs}, I, Vdb) ->
+guard_expr(#k_guard_match{anno=A,body=Kb,ret=Rs}, I, Vdb) ->
     %% Support for andalso/orelse in guards.
     %% Work out imported variables which need to be locked.
     Mdb = vdb_sub(I, I+1, Vdb),
     M = match(Kb, A#k.us, I+1, [], Mdb),
-    #l{ke={match,M,var_list(Rs)},i=I,vdb=use_vars(A#k.us, I+1, Mdb),a=A#k.a};
+    #l{ke={guard_match,M,var_list(Rs)},i=I,vdb=use_vars(A#k.us, I+1, Mdb),a=A#k.a};
 guard_expr(G, I, Vdb) -> guard(G, I, Vdb).
 
 %% expr(Kexpr, I, Vdb) -> Expr.
@@ -175,6 +176,11 @@ expr(#k_match{anno=A,body=Kb,ret=Rs}, I, Vdb) ->
     Mdb = vdb_sub(I, I+1, Vdb),
     M = match(Kb, A#k.us, I+1, [], Mdb),
     #l{ke={match,M,var_list(Rs)},i=I,vdb=use_vars(A#k.us, I+1, Mdb),a=A#k.a};
+expr(#k_guard_match{anno=A,body=Kb,ret=Rs}, I, Vdb) ->
+    %% Work out imported variables which need to be locked.
+    Mdb = vdb_sub(I, I+1, Vdb),
+    M = match(Kb, A#k.us, I+1, [], Mdb),
+    #l{ke={guard_match,M,var_list(Rs)},i=I,vdb=use_vars(A#k.us, I+1, Mdb),a=A#k.a};
 expr(#k_try{anno=A,arg=Ka,vars=Vs,body=Kb,evars=Evs,handler=Kh,ret=Rs}, I, Vdb) ->
     %% Lock variables that are alive before the catch and used afterwards.
     %% Don't lock variables that are only used inside the try.
@@ -236,6 +242,9 @@ expr(#k_put{anno=A,arg=Arg,ret=Rs}, I, _Vdb) ->
     #l{ke={set,var_list(Rs),literal(Arg, [])},i=I,a=A#k.a};
 expr(#k_break{anno=A,args=As}, I, _Vdb) ->
     #l{ke={break,atomic_list(As)},i=I,a=A#k.a};
+expr(#k_guard_break{anno=A,args=As}, I, Vdb) ->
+    Locked = [V || {V,_,_} <- Vdb],
+    #l{ke={guard_break,atomic_list(As),Locked},i=I,a=A#k.a};
 expr(#k_return{anno=A,args=As}, I, _Vdb) ->
     #l{ke={return,atomic_list(As)},i=I,a=A#k.a}.
 
@@ -253,7 +262,7 @@ bif_op(#k_internal{name=N}) -> N.
 
 test_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=N}}) -> N.
 
-%% k_bif(Anno, Op, [Arg], [Ret]) -> Expr.
+%% k_bif(Anno, Op, [Arg], [Ret], Vdb) -> Expr.
 %%  Build bifs, do special handling of internal some calls.
 
 k_bif(_A, #k_internal{name=dsetelement,arity=3}, As, []) ->
@@ -330,7 +339,9 @@ val_clause(#k_val_clause{anno=A,val=V,body=Kb}, Ls0, I, Ctxt0, Vdb0) ->
 guard_clause(#k_guard_clause{anno=A,guard=Kg,body=Kb}, Ls, I, Ctxt, Vdb0) ->
     Vdb1 = use_vars(union(A#k.us, Ls), I+2, Vdb0),
     Gdb = vdb_sub(I+1, I+2, Vdb1),
+    OldRefc = put(guard_refc, get(guard_refc)+1),
     G = guard(Kg, I+1, Gdb),
+    put(guard_refc, OldRefc),
     B = match(Kb, Ls, I+2, Ctxt, Vdb1),
     #l{ke={guard_clause,G,B},
        i=I,vdb=use_vars((get_kanno(Kg))#k.us, I+2, Vdb1),
@@ -359,6 +370,7 @@ match_fail(#k_tuple{es=[#k_atom{val=try_clause},Val]}, I, A) ->
 
 %% type(Ktype) -> Type.
 
+type(k_literal) -> literal;
 type(k_int) -> integer;
 %%type(k_char) -> integer;			%Hhhmmm???
 type(k_float) -> float;
@@ -420,6 +432,7 @@ literal_list(Ks, Ctxt) ->
     [literal(K, Ctxt) || K <- Ks].
 
 literal2(#k_var{name=N}, _) -> {var,N};
+literal2(#k_literal{val=I}, _) -> {literal,I};
 literal2(#k_int{val=I}, _) -> {integer,I};
 literal2(#k_float{val=F}, _) -> {float,F};
 literal2(#k_atom{val=N}, _) -> {atom,N};
@@ -453,31 +466,19 @@ literal_list2(Ks, Ctxt) ->
 %% is_gc_bif(Name, Arity) -> true|false
 %%  Determines whether the BIF Name/Arity might do a GC.
 
-is_gc_bif(Name, Arity) ->
-    case get_opt(no_gc_bifs) of
-	true -> false;
-	false -> is_gc_bif_1(Name, Arity)
-    end.
-
-is_gc_bif_1(hd, 1) -> false;
-is_gc_bif_1(tl, 1) -> false;
-is_gc_bif_1(self, 0) -> false;
-is_gc_bif_1(node, 0) -> false;
-is_gc_bif_1(node, 1) -> false;
-is_gc_bif_1(element, 2) -> false;
-is_gc_bif_1(get, 1) -> false;
-is_gc_bif_1(raise, 2) -> false;
-is_gc_bif_1(tuple_size, 1) -> false;
-is_gc_bif_1(Bif, Arity) ->
+is_gc_bif(hd, 1) -> false;
+is_gc_bif(tl, 1) -> false;
+is_gc_bif(self, 0) -> false;
+is_gc_bif(node, 0) -> false;
+is_gc_bif(node, 1) -> false;
+is_gc_bif(element, 2) -> false;
+is_gc_bif(get, 1) -> false;
+is_gc_bif(raise, 2) -> false;
+is_gc_bif(tuple_size, 1) -> false;
+is_gc_bif(Bif, Arity) ->
     not (erl_internal:bool_op(Bif, Arity) orelse
 	 erl_internal:new_type_test(Bif, Arity) orelse
 	 erl_internal:comp_op(Bif, Arity)).
-
-%% get_opt(OptionName) -> true|false
-%%  Test a compiler option.
-get_opt(Opt) ->
-    proplists:get_bool(Opt, get(?MODULE)).
-
 
 %% new_var(VarName, I, Vdb) -> Vdb.
 %% new_vars([VarName], I, Vdb) -> Vdb.

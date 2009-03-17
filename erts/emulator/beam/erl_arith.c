@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1999-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 /*
@@ -185,8 +186,17 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 		}
 		goto big_shift;
 	    }
+	} else if (is_big(arg2)) {
+	    /*
+	     * N bsr NegativeBigNum == N bsl MAX_SMALL
+	     * N bsr PositiveBigNum == N bsl MIN_SMALL
+	     */
+	    arg2 = make_small(bignum_header_is_neg(*big_val(arg2)) ?
+			      MAX_SMALL : MIN_SMALL);
+	    goto do_bsl;
 	}
     } else {
+    do_bsl:
 	if (is_small(arg2)) {
 	    i = signed_val(arg2);
 
@@ -223,11 +233,26 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 		    else
 			ires -= (-i / D_EXP);
 		}
+
+		/*
+		 * Slightly conservative check the size to avoid
+		 * allocating huge amounts of memory for bignums that 
+		 * clearly would overflow the arity in the header
+		 * word.
+		 */
+		if (ires-8 > BIG_ARITY_MAX) {
+		    BIF_ERROR(p, SYSTEM_LIMIT);
+		}
 		need = BIG_NEED_SIZE(ires+1);
 		bigp = HAlloc(p, need);
 		arg1 = big_lshift(arg1, i, bigp);
 		maybe_shrink(p, bigp, arg1, need);
 		if (is_nil(arg1)) {
+		    /*
+		     * This result must have been only slight larger
+		     * than allowed since it wasn't caught by the
+		     * previous test.
+		     */
 		    BIF_ERROR(p, SYSTEM_LIMIT);
 		}
 		BIF_RET(arg1);
@@ -237,6 +262,23 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 		}
 		goto big_shift;
 	    }
+	} else if (is_big(arg2)) {
+	    if (bignum_header_is_neg(*big_val(arg2))) {
+		/*
+		 * N bsl NegativeBigNum is either 0 or -1, depending on
+		 * the sign of N. Since we don't believe this case
+		 * is common, do the calculation with the minimum
+		 * amount of code.
+		 */
+		arg2 = make_small(MIN_SMALL);
+		goto do_bsl;
+	    } else if (is_small(arg1) || is_big(arg1)) {
+		/*
+		 * N bsl PositiveBigNum is too large to represent.
+		 */
+		BIF_ERROR(p, SYSTEM_LIMIT);
+	    }
+	     /* Fall through if the left argument is not an integer. */
 	}
     }
     BIF_ERROR(p, BADARITH);

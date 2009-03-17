@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose: Information about the Erlang built-in functions.
 
@@ -62,7 +63,9 @@ is_pure(erlang, 'or', 2) -> true;
 is_pure(erlang, 'rem', 2) -> true;
 is_pure(erlang, 'xor', 2) -> true;
 is_pure(erlang, abs, 1) -> true;
+is_pure(erlang, atom_to_binary, 2) -> true;
 is_pure(erlang, atom_to_list, 1) -> true;
+is_pure(erlang, binary_to_atom, 2) -> true;
 is_pure(erlang, binary_to_list, 1) -> true;
 is_pure(erlang, binary_to_list, 3) -> true;
 is_pure(erlang, bit_size, 1) -> true;
@@ -79,7 +82,6 @@ is_pure(erlang, is_boolean, 1) -> true;
 is_pure(erlang, is_binary, 1) -> true;
 is_pure(erlang, is_bitstring, 1) -> true;
 %% erlang:is_builtin/3 depends on the state (i.e. the version of the emulator).
-is_pure(erlang, is_constant, 1) -> true;
 is_pure(erlang, is_float, 1) -> true;
 is_pure(erlang, is_function, 1) -> true;
 is_pure(erlang, is_integer, 1) -> true;
@@ -97,6 +99,8 @@ is_pure(erlang, list_to_float, 1) -> true;
 is_pure(erlang, list_to_integer, 1) -> true;
 is_pure(erlang, list_to_pid, 1) -> true;
 is_pure(erlang, list_to_tuple, 1) -> true;
+is_pure(erlang, max, 2) -> true;
+is_pure(erlang, min, 2) -> true;
 is_pure(erlang, phash, 2) -> false;
 is_pure(erlang, pid_to_list, 1) -> true;
 is_pure(erlang, round, 1) -> true;
@@ -168,7 +172,6 @@ is_safe(erlang, is_atom, 1) -> true;
 is_safe(erlang, is_boolean, 1) -> true;
 is_safe(erlang, is_binary, 1) -> true;
 is_safe(erlang, is_bitstring, 1) -> true;
-is_safe(erlang, is_constant, 1) -> true;
 is_safe(erlang, is_float, 1) -> true;
 is_safe(erlang, is_function, 1) -> true;
 is_safe(erlang, is_integer, 1) -> true;
@@ -179,6 +182,8 @@ is_safe(erlang, is_port, 1) -> true;
 is_safe(erlang, is_reference, 1) -> true;
 is_safe(erlang, is_tuple, 1) -> true;
 is_safe(erlang, make_ref, 0) -> true;
+is_safe(erlang, max, 2) -> true;
+is_safe(erlang, min, 2) -> true;
 is_safe(erlang, node, 0) -> true;
 is_safe(erlang, nodes, 0) -> true;
 is_safe(erlang, ports, 0) -> true;
@@ -208,6 +213,4 @@ is_exit_bif(erlang, exit, 1) -> true;
 is_exit_bif(erlang, throw, 1) -> true;
 is_exit_bif(erlang, error, 1) -> true;
 is_exit_bif(erlang, error, 2) -> true;
-is_exit_bif(erlang, fault, 1) -> true;
-is_exit_bif(erlang, fault, 2) -> true;
 is_exit_bif(_, _, _) -> false.

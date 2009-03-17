@@ -1,32 +1,24 @@
-%%% The contents of this file are subject to the Erlang Public License,
-%%% Version 1.0, (the "License"); you may not use this file except in
-%%% compliance with the License. You may obtain a copy of the License at
-%%% http://www.erlang.org/license/EPL1_0.txt
-%%%
-%%% Software distributed under the License is distributed on an "AS IS"
-%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%%% the License for the specific language governing rights and limitations
-%%% under the License.
-%%%
-%%% The Original Code is xmerl-0.19
-%%%
-%%% The Initial Developer of the Original Code is Ericsson Telecom
-%%% AB. Portions created by Ericsson are Copyright (C), 1998, Ericsson
-%%% Telecom AB. All Rights Reserved.
-%%%
-%%% Contributor(s): "Vlad Dumitrescu" <Vlad.Dumitrescu@erv.ericsson.se>.
-%%%
-%%%----------------------------------------------------------------------
-%%% #0.    BASIC INFORMATION
-%%%----------------------------------------------------------------------
-%%% File         : xmerl_xs.erl
-%%% Author       : Mikael Karlsson <mikael.karlsson@creado.com>
-%%%                Ulf Wiger <ulf.wiger@ericsson.com>
-%%% Description  : Implements XSLT like transformations in Erlang
-%%% 
-%%% Modules used : lists, xmerl_xpath, 
-%%%		   
-%%%----------------------------------------------------------------------
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
+
+%% Description  : Implements XSLT like transformations in Erlang
+
 %% @doc
 %       Erlang has similarities to XSLT since both languages
 % 	have a functional programming approach. Using <code>xmerl_xpath</code>
@@ -34,11 +26,9 @@
 %
 %     <p>XSLT stylesheets are often used when transforming XML
 %       documents, to other XML documents or (X)HTML for presentation.
-%       There are a number of brick-sized books written on the
-%       topic. XSLT contains quite many
-%       functions and learning them all may take some effort, which
-%       could be a reason why the author only has reached a basic level of
-%       understanding. This document assumes a basic level of
+%       XSLT contains quite many
+%       functions and learning them all may take some effort.
+%       This document assumes a basic level of
 %       understanding of XSLT.
 %     </p>
 %     <p>Since XSLT is based on a functional programming approach
@@ -56,9 +46,6 @@
 %     </p>
 
 -module(xmerl_xs).
--vsn('0.19').
--date('03-02-03').
--author('mikael.karlsson@creado.com').
 
 -export([xslapply/2, value_of/1, select/2, built_in_rules/2 ]).
 -include("xmerl.hrl").

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 2002, Ericsson AB.
-%% All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 -module(beam_dead).
@@ -126,24 +127,6 @@
 %%%
 %%%  provided that {x,0} is killed at both L2 and L3.
 %%%
-%%% (6) Remove redundant is_boolean such as the one in
-%%%
-%%%		test is_eq_exact Fail Reg true
-%%%		test is_boolean Fail Reg
-%%%
-%%%	The following sequence
-%%%
-%%%		test is_ne_eq_exact Fail Reg true
-%%%		test is_boolean Fail Reg
-%%%
-%%%	can be rewritten to
-%%%
-%%%		test is_eq_exact Fail Reg false
-%%%
-%%%	(The idea is that both tests end up in the same place if they fail,
-%%%	and that the is_boolean test never can fail if the first test succeeds;
-%%%	therefore the is_boolean test is redundant.)
-%%%
 
 -import(lists, [mapfoldl/3,reverse/1]).
 
@@ -155,46 +138,27 @@ module({Mod,Exp,Attr,Fs0,_}, _Opts) ->
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
 
 function({function,Name,Arity,CLabel,Is0}, Lc0) ->
-    Is1 = beam_jump:remove_unused_labels(Is0),
-    Is2 = bopt(Is1),
+    try
+	Is1 = beam_jump:remove_unused_labels(Is0),
 
-    %% Optimize away dead code.
-    {Is3,Lc} = forward(Is2, Lc0),
-    Is4 = backward(Is3),
-    Is = move_move_into_block(Is4, []),
-    {{function,Name,Arity,CLabel,Is},Lc}.
+	%% Initialize label information with the code
+	%% for the func_info label. Without it, a register
+	%% may seem to be live when it is not.
+	[{label,L},{func_info,_,_,_}=FI|_] = Is1,
+	D0 = beam_utils:empty_label_index(),
+	D = beam_utils:index_label(L, [FI], D0),
 
-%%%
-%%% Remove redundant is_boolean tests.
-%%%
-
-bopt(Is) ->
-    bopt_1(Is, []).
-
-bopt_1([{test,is_boolean,_,_}=I|Is], Acc0) ->
-    case opt_is_bool(I, Acc0) of
-	no -> bopt_1(Is, [I|Acc0]);
-	yes -> bopt_1(Is, Acc0);
-	{yes,Acc} -> bopt_1(Is, Acc)
-    end;
-bopt_1([I|Is], Acc) -> bopt_1(Is, [I|Acc]);
-bopt_1([], Acc) -> reverse(Acc).
-
-opt_is_bool({test,is_boolean,{f,Lbl},[Reg]}, Acc) ->
-    opt_is_bool_1(Acc, Reg, Lbl).
-
-opt_is_bool_1([{test,is_eq_exact,{f,Lbl},[Reg,{atom,true}]}|_], Reg, Lbl) ->
-    %% Instruction not needed in this context.
-    yes;
-opt_is_bool_1([{test,is_ne_exact,{f,Lbl},[Reg,{atom,true}]}|Acc], Reg, Lbl) ->
-    %% Rewrite to shorter test.
-    {yes,[{test,is_eq_exact,{f,Lbl},[Reg,{atom,false}]}|Acc]};
-opt_is_bool_1([{test,_,{f,Lbl},_}=Test|Acc0], Reg, Lbl) ->
-    case opt_is_bool_1(Acc0, Reg, Lbl) of
-	{yes,Acc} -> {yes,[Test|Acc]};
-	Other -> Other
-    end;
-opt_is_bool_1(_, _, _) -> no.
+	%% Optimize away dead code.
+	{Is2,Lc} = forward(Is1, Lc0),
+	Is3 = backward(Is2, D),
+	Is = move_move_into_block(Is3, []),
+	{{function,Name,Arity,CLabel,Is},Lc}
+    catch
+	Class:Error ->
+	    Stack = erlang:get_stacktrace(),
+	    io:fwrite("Function: ~w/~w\n", [Name,Arity]),
+	    erlang:raise(Class, Error, Stack)
+    end.
 
 %% We must split the basic block when we encounter instructions with labels,
 %% such as catches and BIFs. All labels must be visible outside the blocks.
@@ -204,8 +168,6 @@ split_blocks({function,Name,Arity,CLabel,Is0}) ->
     Is = split_blocks(Is0, []),
     {function,Name,Arity,CLabel,Is}.
 
-split_blocks([{block,[{'%live',_}=Live]}|Is], Acc) ->
-    split_blocks(Is, [Live|Acc]);
 split_blocks([{block,[]}|Is], Acc) ->
     split_blocks(Is, Acc);
 split_blocks([{block,Bl}|Is], Acc0) ->
@@ -231,9 +193,9 @@ split_block([I|Is], Bl, Acc) ->
 split_block([], Bl, Acc) -> make_block(Bl, Acc).
 
 make_block([], Acc) -> Acc;
-make_block([{'%live',_},{set,[D],Ss,{bif,Op,Fail}}|Bl]=Bl0, Acc) ->
+make_block([{set,[D],Ss,{bif,Op,Fail}}|Bl]=Bl0, Acc) ->
     %% If the last instruction in the block is a comparison or boolean operator
-    %% (such as '=:='), move it out of the block to faciliate further
+    %% (such as '=:='), move it out of the block to facilitate further
     %% optimizations.
     Arity = length(Ss),
     case erl_internal:comp_op(Op, Arity) orelse
@@ -248,7 +210,7 @@ make_block([{'%live',_},{set,[D],Ss,{bif,Op,Fail}}|Bl]=Bl0, Acc) ->
 		false -> [I,{block,reverse(Bl)}|Acc]
 	    end
     end;
-make_block([{'%live',_},{set,[Dst],[Src],move}|Bl], Acc) ->
+make_block([{set,[Dst],[Src],move}|Bl], Acc) ->
     %% Make optimization of {move,Src,Dst}, {jump,...} possible.
     I = {move,Src,Dst},
     case Bl =:= [] of
@@ -277,10 +239,7 @@ move_move_into_block([], Acc) -> reverse(Acc).
 forward(Is, Lc) ->
     forward(Is, gb_trees:empty(), Lc, []).
 
-forward([{'%live',_}|Is], D, Lc, Acc) ->
-    %% Remove - prevents optimizations.
-    forward(Is, D, Lc, Acc);
-forward([{block,[{'%live',_}]}|Is], D, Lc, Acc) ->
+forward([{block,[]}|Is], D, Lc, Acc) ->
     %% Empty blocks can prevent optimizations.
     forward(Is, D, Lc, Acc);
 forward([{select_val,Reg,_,{list,List}}=I|Is], D0, Lc, Acc) ->
@@ -299,6 +258,19 @@ forward([{label,Lbl}=LblI,{block,[{set,[Dst],[Lit],move}|BlkIs]}=Blk|Is], D, Lc,
 		_ -> Blk		       %Keep move instruction.
 	    end,
     forward([Block|Is], D, Lc, [LblI|Acc]);
+forward([{label,Lbl}=LblI|[{move,Lit,Dst}|Is1]=Is0], D, Lc, Acc) ->
+    Is = case gb_trees:lookup({Lbl,Dst}, D) of
+	     {value,Lit} ->
+		 %% The move instruction seems to be redundant, but also make
+		 %% sure that the instruction preceeding the label
+		 %% cannot fall through to the move instruction.
+		 case is_unreachable_after(Acc) of
+		     false -> Is0;	  %Must keep move instruction.
+		     true -> Is1     %Safe to remove move instruction.
+		  end;
+	     _ -> Is0		       %Keep move instruction.
+	  end,
+    forward(Is, D, Lc, [LblI|Acc]);
 forward([{test,is_eq_exact,_,[Dst,Src]}=I,
 	 {block,[{set,[Dst],[Src],move}|Bl]}|Is], D, Lc, Acc) ->
     forward([I,{block,Bl}|Is], D, Lc, Acc);
@@ -341,9 +313,32 @@ is_unreachable_after([I|_]) ->
 %%% Scan instructions in reverse execution order and remove dead code.
 %%%
 
-backward(Is) ->
-    backward(Is, beam_utils:empty_label_index(), []).
+backward(Is, D) ->
+    backward(Is, D, []).
 
+backward([{test,is_eq_exact,Fail,[Dst,{integer,Arity}]}=I|
+	  [{bif,tuple_size,Fail,[Reg],Dst}|Is]=Is0], D, Acc) ->
+    %% Provided that Dst is killed following this sequence,
+    %% we can rewrite the instructions like this:
+    %%
+    %% bif tuple_size Fail Reg Dst  ==>  is_tuple Fail Reg
+    %% is_eq_exact Fail Dst Integer    	 test_arity Fail Reg Integer
+    %%
+    %% (still two instructions, but they they will be combined to
+    %% one by the loader).
+    case beam_utils:is_killed(Dst, Acc, D) andalso (Arity bsr 32) =:= 0 of
+	false ->
+	    %% Not safe because the register Dst is not killed
+	    %% (probably cannot not happen in practice) or the arity
+	    %% does not fit in 32 bits (the loader will fail to load
+	    %% the module). We must move the first instruction to the
+	    %% accumulator to avoid an infinite loop.
+	    backward(Is0, D, [I|Acc]);
+	true ->
+	    %% Safe.
+	    backward([{test,test_arity,Fail,[Reg,Arity]},
+		      {test,is_tuple,Fail,[Reg]}|Is], D, Acc)
+    end;
 backward([{label,Lbl}=L|Is], D, Acc) ->
     backward(Is, beam_utils:index_label(Lbl, Acc, D), [L|Acc]);
 backward([{select_val,Reg,{f,Fail0},{list,List0}}|Is], D, Acc) ->
@@ -376,25 +371,49 @@ backward([{test,bs_start_match2,{f,To0},[Src|_]=Info}|Is], D, Acc) ->
     To = shortcut_bs_start_match(To0, Src, D),
     I = {test,bs_start_match2,{f,To},Info},
     backward(Is, D, [I|Acc]);
-backward([{test,Op,{f,To0},Ops}|Is], D, Acc) ->
-    To = shortcut_bs_test(To0, Is, D),
+backward([{test,is_eq_exact=Op,{f,To0},[Reg,{atom,Val}]=Ops}|Is], D, Acc) ->
+    To1 = shortcut_bs_test(To0, Is, D),
+    To = shortcut_fail_label(To1, Reg, Val, D),
     I = {test,Op,{f,To},Ops},
     backward(Is, D, [I|Acc]);
-backward([{block,[{'%live',_}]}|Is], D, Acc) ->
-    %% A redundant block could prevent some jump optimizations in beam_jump.
-    %% Ge rid of it.
-    backward(Is, D, Acc);
+backward([{test,Op,{f,To0},Ops0}|Is], D, Acc) ->
+    To1 = shortcut_bs_test(To0, Is, D),
+    To2 = shortcut_label(To1, D),
+    %% Try to shortcut a repeated test:
+    %%
+    %%        test Op {f,Fail1} Operands	test Op {f,Fail2} Operands
+    %%        . . .		          ==>   ...
+    %% Fail1: test Op {f,Fail2} Operands        Fail1: test Op {f,Fail2} Operands
+    %%
+    To = case beam_utils:code_at(To2, D) of
+	     [{test,Op,{f,To3},Ops}|_] ->
+		 case equal_ops(Ops0, Ops) of
+		     true -> To3;
+		     false -> To2
+		 end;
+	     _Code ->
+		 To2
+	 end,
+    I = {test,Op,{f,To},Ops0},
+    backward(Is, D, [I|Acc]);
 backward([{kill,_}=I|Is], D, [Exit|_]=Acc) ->
     case beam_jump:is_exit_instruction(Exit) of
 	false -> backward(Is, D, [I|Acc]);
 	true -> backward(Is, D, Acc)
     end;
-backward([{'%live',_}|Is], D, Acc) ->
-    backward(Is, D, Acc);
 backward([I|Is], D, Acc) ->
     backward(Is, D, [I|Acc]);
 backward([], _D, Acc) -> Acc.
 
+equal_ops([{field_flags,FlA0}|T0], [{field_flags,FlB0}|T1]) ->
+    FlA = lists:keydelete(anno, 1, FlA0),
+    FlB = lists:keydelete(anno, 1, FlB0),
+    FlA =:= FlB andalso equal_ops(T0, T1);
+equal_ops([Op|T0], [Op|T1]) ->
+    equal_ops(T0, T1);
+equal_ops([], []) -> true;
+equal_ops(_, _) -> false.
+    
 shortcut_select_list([{_,Val}=Lit,{f,To0}|T], Reg, D, Acc) ->
     To = shortcut_select_label(To0, Reg, Val, D),
     shortcut_select_list(T, Reg, D, [{f,To},Lit|Acc]);
@@ -415,7 +434,10 @@ shortcut_select_label(To0, Reg, Val, D) ->
 	    shortcut_select_label(To, Reg, Val, D);
   	[{test,is_eq_exact,{f,_},[Reg,{atom,Val}]},{label,To}|_] when is_atom(Val) ->
 	    shortcut_select_label(To, Reg, Val, D);
-  	[{test,is_eq_exact,{f,To},[Reg,{atom,_}]}|_] when is_atom(Val) ->
+  	[{test,is_eq_exact,{f,_},[Reg,{atom,Val}]},{jump,{f,To}}|_] when is_atom(Val) ->
+	    shortcut_select_label(To, Reg, Val, D);
+  	[{test,is_eq_exact,{f,To},[Reg,{atom,AnotherVal}]}|_]
+	when is_atom(Val), Val =/= AnotherVal ->
 	    shortcut_select_label(To, Reg, Val, D);
   	[{test,is_ne_exact,{f,To},[Reg,{atom,Val}]}|_] when is_atom(Val) ->
 	    shortcut_select_label(To, Reg, Val, D);
@@ -423,6 +445,16 @@ shortcut_select_label(To0, Reg, Val, D) ->
 	    shortcut_select_label(To, Reg, Val, D);
 	[{test,is_tuple,{f,To},[Reg]}|_] when is_atom(Val) ->
 	    shortcut_select_label(To, Reg, Val, D);
+	_ ->
+	    To0
+    end.
+
+shortcut_fail_label(To0, Reg, Val, D) ->
+    case beam_utils:code_at(To0, D) of
+ 	[{jump,{f,To}}|_] ->
+	    shortcut_fail_label(To, Reg, Val, D);
+  	[{test,is_eq_exact,{f,To},[Reg,{atom,Val}]}|_] when is_atom(Val) ->
+	    shortcut_fail_label(To, Reg, Val, D);
 	_ ->
 	    To0
     end.
@@ -476,9 +508,6 @@ not_possible() -> throw(not_possible).
 shortcut_bs_test(To, Is, D) ->
     shortcut_bs_test_1(beam_utils:code_at(To, D), Is, To, D).
 
-shortcut_bs_test_1(none, _, To, _) ->
-    %% Probably the func_info label.
-    To;
 shortcut_bs_test_1([{bs_restore2,Reg,SavePoint}|Is], PrevIs, To, D) ->
     shortcut_bs_test_2(Is, {Reg,SavePoint}, PrevIs, To, D);
 shortcut_bs_test_1([_|_], _, To, _) -> To.

@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>2004</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2004</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>Kernel Release Notes</title>
@@ -30,6 +28,135 @@
     <rev></rev>
   </header>
   <p>This document describes the changes made to the Kernel application.</p>
+
+<section><title>Kernel 2.13</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    The old Erlang DNS resolver inet_res has been corrected
+	    to handle TXT records with more than one character
+	    string. Patch courtesy of Geoff Cant.</p>
+          <p>
+	    Own Id: OTP-7588</p>
+        </item>
+        <item>
+	    <p>When chunk reading a disk log opened in read_only
+	    mode, bad terms could crash the disk log process.</p>
+          <p>
+	    Own Id: OTP-7641 Aux Id: seq11090 </p>
+        </item>
+        <item>
+          <p>
+	    <c>gen_tcp:send()</c> did sometimes (only observed on
+	    Solaris) return <c>{error,enotconn}</c> instead of the
+	    expected <c>{error,closed}</c> as the peer socket had
+	    been explicitly closed.</p>
+          <p>
+	    Own Id: OTP-7647</p>
+        </item>
+        <item>
+          <p>
+	    The gen_sctp option sctp_peer_addr_params,
+	    #sctp_paddrparams{address={IP,Port} was erroneously
+	    decoded in the inet driver. This bug has now been
+	    corrected.</p>
+          <p>
+	    Own Id: OTP-7755</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Erlang programs can now access STDERR on platforms where
+	    such a file descriptor is available by using the
+	    io_server 'standard_error', i.e.
+	    io:format(standard_error,"~s~n",[ErrorMessage]),</p>
+          <p>
+	    Own Id: OTP-6688</p>
+        </item>
+        <item>
+          <p>
+	    The format of the string returned by
+	    <c>erlang:system_info(system_version)</c> (as well as the
+	    first message when Erlang is started) has changed. The
+	    string now contains the both the OTP version number as
+	    well as the erts version number.</p>
+          <p>
+	    Own Id: OTP-7649</p>
+        </item>
+        <item>
+	    <p>As of this version, the global name server no longer
+	    supports nodes running Erlang/OTP R10B.</p>
+          <p>
+	    Own Id: OTP-7661</p>
+        </item>
+        <item>
+          <p>
+	    A <c>{nodedown, Node}</c> message passed by the
+	    <c>net_kernel:monitor_nodes/X</c> functionality is now
+	    guaranteed to be sent after <c>Node</c> has been removed
+	    from the result returned by <c>erlang:nodes/Y</c>.</p>
+          <p>
+	    Own Id: OTP-7725</p>
+        </item>
+        <item>
+	    <p>The deprecated functions <c>erlang:fault/1</c>,
+	    <c>erlang:fault/2</c>, and <c>file:rawopen/2</c> have
+	    been removed.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7812</p>
+        </item>
+        <item>
+          <p>
+	    Nodes belonging to different independent clusters can now
+	    co-exist on the same host with the help of a new
+	    environment variable setting ERL_EPMD_PORT.</p>
+          <p>
+	    Own Id: OTP-7826</p>
+        </item>
+        <item>
+	    <p>The copyright notices have been updated.</p>
+          <p>
+	    Own Id: OTP-7851</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Kernel 2.12.5.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>When chunk reading a disk log opened in read_only
+	    mode, bad terms could crash the disk log process.</p>
+          <p>
+	    Own Id: OTP-7641 Aux Id: seq11090 </p>
+        </item>
+        <item>
+          <p>
+	    Calling <c>gen_tcp:send()</c> from several processes on
+	    socket with option <c>send_timeout</c> could lead to much
+	    longer timeout than specified. The solution is a new
+	    socket option <c>{send_timeout_close,true}</c> that will
+	    do automatic close on timeout. Subsequent calls to send
+	    will then immediately fail due to the closed connection.</p>
+          <p>
+	    Own Id: OTP-7731 Aux Id: seq11161 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
 
 <section><title>Kernel 2.12.5</title>
 

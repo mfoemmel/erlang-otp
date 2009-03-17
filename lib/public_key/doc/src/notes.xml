@@ -34,6 +34,24 @@
     <file>notes.sgml</file>
   </header>
 
+<section><title>Public_Key 0.2</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            X509 certificate handling has been extended and improved
+            as a result of more extensive testning of both the ssl
+            and public_key application. Even more extensions of the
+            certificate handling is yet to be implemented.</p>
+          <p>
+            Own Id: OTP-7860</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+  
 <section><title>Public_Key 0.1</title>
 
     <section><title>Improvements and New Features</title>

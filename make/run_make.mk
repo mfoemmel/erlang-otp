@@ -27,7 +27,7 @@
 
 include $(ERL_TOP)/make/target.mk
 
-opt debug purify quantify purecov valgrind gcov gprof:
+opt debug purify quantify purecov valgrind gcov gprof lcnt:
 	$(MAKE) -f $(TARGET)/Makefile TYPE=$@
 
 plain smp hybrid frag smp_frag:

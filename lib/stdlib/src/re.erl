@@ -1,22 +1,23 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(re).
--export([grun/3,replace/3,replace/4,split/2,split/3]).
+-export([grun/3,urun/3,ucompile/2,replace/3,replace/4,split/2,split/3]).
 
 %% Emulator builtins in this module:
 %% re:compile/1
@@ -509,6 +510,88 @@ listify({match,M},Flat,Uni) ->
 			binary_to_list(Flat,Start,End)
 		end
 	end || {I,L} <- One ] || One <- M ]}.
+
+ubinarify({match,M},Flat) ->
+    {match, [ case {I,L} of
+		  {-1,0} ->
+		      <<>>;
+		  {SPos,SLen} ->
+		      <<_:SPos/binary,Res:SLen/binary,_/binary>> = Flat,
+		      Res
+		end || {I,L} <- M ]};
+ubinarify(Else,_) ->
+    Else.
+ulistify({match,M},Flat) ->
+    {match, [ case {I,L} of
+	    {_,0} ->
+		[];
+	    {SPos,SLen} ->
+		      <<_:SPos/binary,Res:SLen/binary,_/binary>> = Flat,
+		      unicode:characters_to_list(Res,unicode)
+	      end || {I,L} <- M ]};
+ulistify(Else,_) ->
+    Else.
+
+process_uparams([global|_T],_RetType) ->
+    throw(false);
+process_uparams([{capture,Values,Type}|T],_OldType) ->
+    process_uparams([{capture,Values}|T],Type);
+process_uparams([H|T],Type) ->
+    {NL,NType} = process_uparams(T,Type),
+    {[H|NL],NType};
+process_uparams([],Type) ->
+    {[],Type}.
+							   
+
+ucompile(RE,Options) ->
+    try
+	re:compile(unicode:characters_to_binary(RE,unicode))
+    catch
+	error:AnyError ->
+	    {'EXIT',{new_stacktrace,[{Mod,_,L}|Rest]}} = 
+		(catch erlang:error(new_stacktrace,
+				    [RE,Options])),
+	    erlang:raise(error,AnyError,[{Mod,compile,L}|Rest])
+    end.
+	
+
+urun(Subject,RE,Options) ->
+    try
+	urun2(Subject,RE,Options)
+    catch
+	error:AnyError ->
+	    {'EXIT',{new_stacktrace,[{Mod,_,L}|Rest]}} = 
+		(catch erlang:error(new_stacktrace,
+				    [Subject,RE,Options])),
+	    erlang:raise(error,AnyError,[{Mod,run,L}|Rest])
+    end.
+urun2(Subject0,RE0,Options0) ->
+    {Options,RetType} = case (catch process_uparams(Options0,index)) of
+			    {A,B} ->
+				{A,B};
+			    _ ->
+				{Options0,false}
+			end,
+    Subject = unicode:characters_to_binary(Subject0,unicode),
+    RE = case RE0 of
+	     BinRE when is_binary(BinRE) ->
+		 BinRE;
+	     {re_pattern,_,_,_} = ReCompiled ->
+		 ReCompiled;
+	     ListRE ->
+		 unicode:characters_to_binary(ListRE,unicode)
+	 end,
+    Ret = re:run(Subject,RE,Options),
+    case RetType of
+	binary ->
+	    ubinarify(Ret,Subject);
+	list ->
+	    ulistify(Ret,Subject);
+	_ ->
+	    Ret
+    end.
+    
+	
 
 %% Might be called either with two-tuple (if regexp was already compiled)
 %% or with 3-tuple (saving original RE for exceptions

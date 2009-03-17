@@ -1,19 +1,22 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
+%%
+
 %%
 %% This module exports the public interface of the Mnesia DBMS engine
 
@@ -92,7 +95,7 @@
 	 change_table_copy_type/3,
 	 read_table_property/2, write_table_property/2, delete_table_property/2,
 	 change_table_frag/2,
-	 clear_table/1,
+	 clear_table/1, clear_table/4,
 
 	 %% Table load
 	 dump_tables/1, wait_for_tables/2, force_load_table/1,
@@ -1798,8 +1801,10 @@ do_dirty_rpc(Tab, Node, M, F, Args) ->
     case rpc:call(Node, M, F, Args) of
 	{badrpc, Reason} ->
 	    timer:sleep(20), %% Do not be too eager, and can't use yield on SMP
+	    %% Sync with mnesia_monitor
+	    try sys:get_status(mnesia_monitor) catch _:_ -> ok end,
 	    case mnesia_controller:call({check_w2r, Node, Tab}) of % Sync
-		NewNode when NewNode == Node -> 
+		NewNode when NewNode =:= Node -> 
 		    ErrorTag = mnesia_lib:dirty_rpc_error_tag(Reason),
 		    mnesia:abort({ErrorTag, Args});
 		NewNode ->
@@ -1812,6 +1817,9 @@ do_dirty_rpc(Tab, Node, M, F, Args) ->
 			    %% the kind or granularity of the lock.
 			    %% --> Abort the transaction 
 			    mnesia:abort({node_not_running, Node});
+			{error, {node_not_running, _}} -> 
+			    %% Mnesia is stopping
+			    mnesia:abort({no_exists, Args});
 			_ ->
 			    %% Splendid! A dirty retry is safe
 			    %% 'Node' probably went down now
@@ -2377,7 +2385,31 @@ change_table_copy_type(T, N, S) ->
     mnesia_schema:change_table_copy_type(T, N, S).
 
 clear_table(Tab) ->
-    mnesia_schema:clear_table(Tab).
+    case get(mnesia_activity_state) of 
+	State = {Mod, Tid, _Ts} when element(1, Tid) =/= tid ->
+	    transaction(State, fun() -> do_clear_table(Tab) end, [], infinity, Mod, sync);
+	undefined -> 
+	    transaction(undefined, fun() -> do_clear_table(Tab) end, [], infinity, ?DEFAULT_ACCESS, sync);
+	true -> %% Not allowed for clear_table
+	    mnesia:abort({aborted, nested_transaction})
+    end.
+	    
+do_clear_table(Tab) ->
+    case get(mnesia_activity_state) of
+	{?DEFAULT_ACCESS, Tid, Ts}  ->
+	    clear_table(Tid, Ts, Tab, '_');
+	{Mod, Tid, Ts} ->
+	    Mod:clear_table(Tid, Ts, Tab, '_');
+	_ ->
+	    abort(no_transaction)
+    end.
+
+clear_table(Tid, Ts, Tab, Obj) when element(1, Tid) =:= tid ->
+    Store = Ts#tidstore.store,
+    mnesia_locker:wlock_table(Tid, Store, Tab), 
+    Oid = {Tab, '_'},
+    ?ets_insert(Store, {Oid, Obj, clear_table}),
+    ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Table mgt - user properties

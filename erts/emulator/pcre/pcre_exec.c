@@ -38,9 +38,11 @@ POSSIBILITY OF SUCH DAMAGE.
 */
 //#define ERLANG_DEBUG 1
 
-/* This module contains pcre_exec(), the externally visible function that does
+/* This module contains erts_pcre_exec(), the externally visible function that does
 pattern matching using an NFA algorithm, trying to mimic Perl as closely as
 possible. There are also some static supporting functions. */
+
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -275,7 +277,7 @@ argument of match(), which never changes. */
 
 #define RMATCH(ra,rb,rc,rd,re,rf,rg,rw)\
   {\
-  heapframe *newframe = (pcre_stack_malloc)(sizeof(heapframe));\
+  heapframe *newframe = (erts_pcre_stack_malloc)(sizeof(heapframe));\
   frame->Xwhere = rw; \
   newframe->Xeptr = ra;\
   newframe->Xecode = rb;\
@@ -298,7 +300,7 @@ argument of match(), which never changes. */
   {\
   heapframe *newframe = frame;\
   frame = newframe->Xprevframe;\
-  (pcre_stack_free)(newframe);\
+  (erts_pcre_stack_free)(newframe);\
   if (frame != NULL)\
     {\
     rrc = ra;\
@@ -315,7 +317,7 @@ argument of match(), which never changes. */
   {\
   heapframe *newframe = frame;\
   frame = newframe->Xprevframe;\
-  (pcre_stack_free)(newframe);\
+  (erts_pcre_stack_free)(newframe);\
   if (frame != NULL)\
     {\
     rrc = ra;\
@@ -491,11 +493,11 @@ if (md->state_save) {
   EDEBUGF(("Break restore!"));
   goto LOOP_COUNT_RETURN;
 }
-frame = (pcre_stack_malloc)(sizeof(heapframe));
+frame = (erts_pcre_stack_malloc)(sizeof(heapframe));
 #else
 #define COST(N)
 #define COST_CHK(N)
-heapframe *frame = (pcre_stack_malloc)(sizeof(heapframe));
+heapframe *frame = (erts_pcre_stack_malloc)(sizeof(heapframe));
 #endif
 
 frame->Xprevframe = NULL;            /* Marks the top level */
@@ -705,26 +707,26 @@ for (;;)
     RRETURN(MATCH_NOMATCH);
 
     case OP_PRUNE:
-    RMATCH(eptr, ecode + _pcre_OP_lengths[*ecode], offset_top, md,
+    RMATCH(eptr, ecode + _erts_pcre_OP_lengths[*ecode], offset_top, md,
       ims, eptrb, flags, RM51);
     if (rrc != MATCH_NOMATCH) RRETURN(rrc);
     RRETURN(MATCH_PRUNE);
 
     case OP_COMMIT:
-    RMATCH(eptr, ecode + _pcre_OP_lengths[*ecode], offset_top, md,
+    RMATCH(eptr, ecode + _erts_pcre_OP_lengths[*ecode], offset_top, md,
       ims, eptrb, flags, RM52);
     if (rrc != MATCH_NOMATCH) RRETURN(rrc);
     RRETURN(MATCH_COMMIT);
 
     case OP_SKIP:
-    RMATCH(eptr, ecode + _pcre_OP_lengths[*ecode], offset_top, md,
+    RMATCH(eptr, ecode + _erts_pcre_OP_lengths[*ecode], offset_top, md,
       ims, eptrb, flags, RM53);
     if (rrc != MATCH_NOMATCH) RRETURN(rrc);
     md->start_match_ptr = eptr;   /* Pass back current position */
     RRETURN(MATCH_SKIP);
 
     case OP_THEN:
-    RMATCH(eptr, ecode + _pcre_OP_lengths[*ecode], offset_top, md,
+    RMATCH(eptr, ecode + _erts_pcre_OP_lengths[*ecode], offset_top, md,
       ims, eptrb, flags, RM54);
     if (rrc != MATCH_NOMATCH) RRETURN(rrc);
     RRETURN(MATCH_THEN);
@@ -768,7 +770,7 @@ for (;;)
       flags = (op == OP_SCBRA)? match_cbegroup : 0;
       do /* PaN: OK */
         {
-        RMATCH(eptr, ecode + _pcre_OP_lengths[*ecode], offset_top, md,
+        RMATCH(eptr, ecode + _erts_pcre_OP_lengths[*ecode], offset_top, md,
           ims, eptrb, flags, RM1);
         if (rrc != MATCH_NOMATCH && rrc != MATCH_THEN) RRETURN(rrc);
         md->capture_last = save_capture_last;
@@ -812,14 +814,14 @@ for (;;)
         {
         if (flags == 0)    /* Not a possibly empty group */
           {
-          ecode += _pcre_OP_lengths[*ecode];
+          ecode += _erts_pcre_OP_lengths[*ecode];
           DPRINTF(("bracket 0 tail recursion\n"));
           goto TAIL_RECURSE;
           }
 
         /* Possibly empty group; can't use tail recursion. */
 
-        RMATCH(eptr, ecode + _pcre_OP_lengths[*ecode], offset_top, md, ims,
+        RMATCH(eptr, ecode + _erts_pcre_OP_lengths[*ecode], offset_top, md, ims,
           eptrb, flags, RM48);
         RRETURN(rrc);
         }
@@ -827,7 +829,7 @@ for (;;)
       /* For non-final alternatives, continue the loop for a NOMATCH result;
       otherwise return. */
 
-      RMATCH(eptr, ecode + _pcre_OP_lengths[*ecode], offset_top, md, ims,
+      RMATCH(eptr, ecode + _erts_pcre_OP_lengths[*ecode], offset_top, md, ims,
         eptrb, flags, RM2);
       if (rrc != MATCH_NOMATCH && rrc != MATCH_THEN) RRETURN(rrc);
       ecode += GET(ecode, 1);
@@ -1038,7 +1040,7 @@ for (;;)
     function is able to force a failure. */
 
     case OP_CALLOUT:
-    if (pcre_callout != NULL)
+    if (erts_pcre_callout != NULL)
       {
       pcre_callout_block cb;
       cb.version          = 1;   /* Version 1 of the callout block */
@@ -1053,7 +1055,7 @@ for (;;)
       cb.capture_top      = offset_top/2;
       cb.capture_last     = md->capture_last;
       cb.callout_data     = md->callout_data;
-      if ((rrc = (*pcre_callout)(&cb)) > 0) RRETURN(MATCH_NOMATCH);
+      if ((rrc = (*erts_pcre_callout)(&cb)) > 0) RRETURN(MATCH_NOMATCH);
       if (rrc < 0) RRETURN(rrc);
       }
     ecode += 2 + 2*LINK_SIZE;
@@ -1102,7 +1104,7 @@ for (;;)
       else
         {
         new_recursive.offset_save =
-          (int *)(pcre_malloc)(new_recursive.saved_max * sizeof(int));
+          (int *)(erts_pcre_malloc)(new_recursive.saved_max * sizeof(int));
         if (new_recursive.offset_save == NULL) RRETURN(PCRE_ERROR_NOMEMORY);
         }
 
@@ -1118,14 +1120,14 @@ for (;;)
       flags = (*callpat >= OP_SBRA)? match_cbegroup : 0;
       do /* PaN: OK */
         {
-        RMATCH(eptr, callpat + _pcre_OP_lengths[*callpat], offset_top,
+        RMATCH(eptr, callpat + _erts_pcre_OP_lengths[*callpat], offset_top,
           md, ims, eptrb, flags, RM6);
         if (rrc == MATCH_MATCH)
           {
           DPRINTF(("Recursion matched\n"));
           md->recursive = new_recursive.prevrec;
           if (new_recursive.offset_save != stacksave)
-            (pcre_free)(new_recursive.offset_save);
+            (erts_pcre_free)(new_recursive.offset_save);
           RRETURN(MATCH_MATCH);
           }
         else if (rrc != MATCH_NOMATCH && rrc != MATCH_THEN)
@@ -1144,7 +1146,7 @@ for (;;)
       DPRINTF(("Recursion didn't match\n"));
       md->recursive = new_recursive.prevrec;
       if (new_recursive.offset_save != stacksave)
-        (pcre_free)(new_recursive.offset_save);
+        (erts_pcre_free)(new_recursive.offset_save);
       RRETURN(MATCH_NOMATCH);
       }
     /* Control never reaches here */
@@ -1729,7 +1731,7 @@ for (;;)
     GETCHARINCTEST(c, eptr);
       {
       int chartype, script;
-      int category = _pcre_ucp_findprop(c, &chartype, &script);
+      int category = _erts_pcre_ucp_findprop(c, &chartype, &script);
 
       switch(ecode[1])
         {
@@ -1775,7 +1777,7 @@ for (;;)
     GETCHARINCTEST(c, eptr);
       {
       int chartype, script;
-      int category = _pcre_ucp_findprop(c, &chartype, &script);
+      int category = _erts_pcre_ucp_findprop(c, &chartype, &script);
       if (category == ucp_M) RRETURN(MATCH_NOMATCH);
       while (eptr < md->end_subject) /* PaN: OK */
         {
@@ -1784,7 +1786,7 @@ for (;;)
           {
           GETCHARLEN(c, eptr, len);
           }
-        category = _pcre_ucp_findprop(c, &chartype, &script);
+        category = _erts_pcre_ucp_findprop(c, &chartype, &script);
         if (category != ucp_M) break;
         eptr += len;
 	COST_CHK(1);
@@ -2143,7 +2145,7 @@ for (;;)
         {
         if (eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
         GETCHARINC(c, eptr);
-        if (!_pcre_xclass(c, data)) RRETURN(MATCH_NOMATCH);
+        if (!_erts_pcre_xclass(c, data)) RRETURN(MATCH_NOMATCH);
         }
 
       /* If max == min we can continue with the main loop without the
@@ -2162,7 +2164,7 @@ for (;;)
           if (rrc != MATCH_NOMATCH) RRETURN(rrc);
           if (fi >= max || eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
           GETCHARINC(c, eptr);
-          if (!_pcre_xclass(c, data)) RRETURN(MATCH_NOMATCH);
+          if (!_erts_pcre_xclass(c, data)) RRETURN(MATCH_NOMATCH);
           }
         /* Control never gets here */
         }
@@ -2177,7 +2179,7 @@ for (;;)
           int len = 1;
           if (eptr >= md->end_subject) break;
           GETCHARLEN(c, eptr, len);
-          if (!_pcre_xclass(c, data)) break;
+          if (!_erts_pcre_xclass(c, data)) break;
           eptr += len;
 	  COST_CHK(1);
           }
@@ -2253,7 +2255,7 @@ for (;;)
         if (fc != dc)
           {
 #ifdef SUPPORT_UCP
-          if (dc != _pcre_ucp_othercase(fc))
+          if (dc != _erts_pcre_ucp_othercase(fc))
 #endif
             RRETURN(MATCH_NOMATCH);
           }
@@ -2344,8 +2346,8 @@ for (;;)
 #ifdef SUPPORT_UCP
         unsigned int othercase;
         if ((ims & PCRE_CASELESS) != 0 &&
-            (othercase = _pcre_ucp_othercase(fc)) != NOTACHAR)
-          oclength = _pcre_ord2utf8(othercase, occhars);
+            (othercase = _erts_pcre_ucp_othercase(fc)) != NOTACHAR)
+          oclength = _erts_pcre_ord2utf8(othercase, occhars);
         else oclength = 0;
 #endif  /* SUPPORT_UCP */
 	COST(min);
@@ -2963,7 +2965,7 @@ for (;;)
             {
             if (eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
             GETCHARINCTEST(c, eptr);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_chartype == ucp_Lu ||
                  prop_chartype == ucp_Ll ||
                  prop_chartype == ucp_Lt) == prop_fail_result)
@@ -2976,7 +2978,7 @@ for (;;)
             {
             if (eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
             GETCHARINCTEST(c, eptr);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_category == prop_value) == prop_fail_result)
               RRETURN(MATCH_NOMATCH);
             }
@@ -2987,7 +2989,7 @@ for (;;)
             {
             if (eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
             GETCHARINCTEST(c, eptr);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_chartype == prop_value) == prop_fail_result)
               RRETURN(MATCH_NOMATCH);
             }
@@ -2998,7 +3000,7 @@ for (;;)
             {
             if (eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
             GETCHARINCTEST(c, eptr);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_script == prop_value) == prop_fail_result)
               RRETURN(MATCH_NOMATCH);
             }
@@ -3018,7 +3020,7 @@ for (;;)
 	for (i = 1; i <= min; i++)
           {
           GETCHARINCTEST(c, eptr);
-          prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+          prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
           if (prop_category == ucp_M) RRETURN(MATCH_NOMATCH);
           while (eptr < md->end_subject)
             {
@@ -3027,7 +3029,7 @@ for (;;)
               {
               GETCHARLEN(c, eptr, len);
               }
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if (prop_category != ucp_M) break;
             eptr += len;
 	    COST_CHK(1);
@@ -3460,7 +3462,7 @@ for (;;)
             if (rrc != MATCH_NOMATCH) RRETURN(rrc);
             if (fi >= max || eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
             GETCHARINC(c, eptr);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_chartype == ucp_Lu ||
                  prop_chartype == ucp_Ll ||
                  prop_chartype == ucp_Lt) == prop_fail_result)
@@ -3475,7 +3477,7 @@ for (;;)
             if (rrc != MATCH_NOMATCH) RRETURN(rrc);
             if (fi >= max || eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
             GETCHARINC(c, eptr);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_category == prop_value) == prop_fail_result)
               RRETURN(MATCH_NOMATCH);
             }
@@ -3488,7 +3490,7 @@ for (;;)
             if (rrc != MATCH_NOMATCH) RRETURN(rrc);
             if (fi >= max || eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
             GETCHARINC(c, eptr);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_chartype == prop_value) == prop_fail_result)
               RRETURN(MATCH_NOMATCH);
             }
@@ -3501,7 +3503,7 @@ for (;;)
             if (rrc != MATCH_NOMATCH) RRETURN(rrc);
             if (fi >= max || eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
             GETCHARINC(c, eptr);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_script == prop_value) == prop_fail_result)
               RRETURN(MATCH_NOMATCH);
             }
@@ -3523,7 +3525,7 @@ for (;;)
           if (rrc != MATCH_NOMATCH) RRETURN(rrc);
           if (fi >= max || eptr >= md->end_subject) RRETURN(MATCH_NOMATCH);
           GETCHARINCTEST(c, eptr);
-          prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+          prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
           if (prop_category == ucp_M) RRETURN(MATCH_NOMATCH);
           while (eptr < md->end_subject) /* PaN: Check */
             {
@@ -3532,7 +3534,7 @@ for (;;)
               {
               GETCHARLEN(c, eptr, len);
               }
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if (prop_category != ucp_M) break;
             eptr += len;
             }
@@ -3854,7 +3856,7 @@ for (;;)
             int len = 1;
             if (eptr >= md->end_subject) break;
             GETCHARLEN(c, eptr, len);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_chartype == ucp_Lu ||
                  prop_chartype == ucp_Ll ||
                  prop_chartype == ucp_Lt) == prop_fail_result)
@@ -3870,7 +3872,7 @@ for (;;)
             int len = 1;
             if (eptr >= md->end_subject) break;
             GETCHARLEN(c, eptr, len);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_category == prop_value) == prop_fail_result)
               break;
             eptr+= len;
@@ -3884,7 +3886,7 @@ for (;;)
             int len = 1;
             if (eptr >= md->end_subject) break;
             GETCHARLEN(c, eptr, len);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_chartype == prop_value) == prop_fail_result)
               break;
             eptr+= len;
@@ -3898,7 +3900,7 @@ for (;;)
             int len = 1;
             if (eptr >= md->end_subject) break;
             GETCHARLEN(c, eptr, len);
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if ((prop_script == prop_value) == prop_fail_result)
               break;
             eptr+= len;
@@ -3928,7 +3930,7 @@ for (;;)
           {
           if (eptr >= md->end_subject) break;
           GETCHARINCTEST(c, eptr);
-          prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+          prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
           if (prop_category == ucp_M) break;
           while (eptr < md->end_subject) 
             {
@@ -3937,7 +3939,7 @@ for (;;)
               {
               GETCHARLEN(c, eptr, len);
               }
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if (prop_category != ucp_M) break;
             eptr += len;
 	    COST_CHK(1);
@@ -3961,7 +3963,7 @@ for (;;)
               BACKCHAR(eptr);
               GETCHARLEN(c, eptr, len);
               }
-            prop_category = _pcre_ucp_findprop(c, &prop_chartype, &prop_script);
+            prop_category = _erts_pcre_ucp_findprop(c, &prop_chartype, &prop_script);
             if (prop_category != ucp_M) break;
             eptr--;
             }
@@ -4442,7 +4444,7 @@ LOOP_COUNT_RETURN:
    utf8 = newframe->Xcur_is_word;
    minimize = newframe->Xcondition;
    possessive = newframe->Xprev_is_word;
-   (pcre_stack_free)(newframe);
+   (erts_pcre_stack_free)(newframe);
    EDEBUGF(("LOOP_COUNT_RETURN: %d",frame->Xwhere));
    switch (frame->Xwhere) 
      {
@@ -4467,7 +4469,7 @@ LOOP_COUNT_BREAK:
    * possessive                     Xprev_is_word
    */ 
   {   
-    heapframe *newframe = (pcre_stack_malloc)(sizeof(heapframe));
+    heapframe *newframe = (erts_pcre_stack_malloc)(sizeof(heapframe));
     newframe->Xprevframe = frame;
     newframe->Xop = rrc; 
     newframe->Xfi = i;
@@ -4489,7 +4491,7 @@ LOOP_COUNT_BREAK:
 static void free_saved_match_state(heapframe *top) {
   while (top != NULL) {
     heapframe *nxt = top->Xprevframe;
-     (pcre_stack_free)(top);
+     (erts_pcre_stack_free)(top);
      top = nxt;
   }
 }
@@ -4617,7 +4619,7 @@ typedef struct {
 #endif  
   
 PCRE_EXP_DEFN int
-pcre_exec(const pcre *argument_re, const pcre_extra *extra_data,
+erts_pcre_exec(const pcre *argument_re, const pcre_extra *extra_data,
   PCRE_SPTR subject, int length, int start_offset, int options, int *offsets,
   int offsetcount)
 {
@@ -4721,7 +4723,7 @@ int req_byte;
  } else {
    if (extra_data != NULL && 
        (extra_data->flags & PCRE_EXTRA_LOOP_LIMIT)) {
-     exec_context = (PcreExecContext *) (pcre_malloc)(sizeof(PcreExecContext));
+     exec_context = (PcreExecContext *) (erts_pcre_malloc)(sizeof(PcreExecContext));
      *(extra_data->restart_data) = (void *) exec_context; 
      /* need freeing by special routine from client */
    } else {
@@ -4792,7 +4794,7 @@ if (extra_data != NULL)
 is a feature that makes it possible to save compiled regex and re-use them
 in other programs later. */
 
-if (tables == NULL) tables = _pcre_default_tables;
+if (tables == NULL) tables = _erts_pcre_default_tables;
 
 /* Check that the first field in the block is the magic number. If it is not,
 test for a regex that was compiled on a host of opposite endianness. If this is
@@ -4801,7 +4803,7 @@ study data too. */
 
 if (re->magic_number != MAGIC_NUMBER)
   {
-  re = _pcre_try_flipped(re, &internal_re, study, &internal_study);
+  re = _erts_pcre_try_flipped(re, &internal_re, study, &internal_study);
   if (re == NULL) return PCRE_ERROR_BADMAGIC;
   if (study != NULL) study = &internal_study;
   }
@@ -4914,7 +4916,7 @@ back the character offset. */
 #ifdef SUPPORT_UTF8
 if (utf8 && (options & PCRE_NO_UTF8_CHECK) == 0)
   {
-  if (_pcre_valid_utf8((uschar *)subject, length) >= 0)
+  if (_erts_pcre_valid_utf8((uschar *)subject, length) >= 0)
     return PCRE_ERROR_BADUTF8;
   if (start_offset > 0 && start_offset < length)
     {
@@ -4944,7 +4946,7 @@ ocount = offsetcount - (offsetcount % 3);
 if (re->top_backref > 0 && re->top_backref >= ocount/3)
   {
   ocount = re->top_backref * 3 + 3;
-  md->offset_vector = (int *)(pcre_malloc)(ocount * sizeof(int));
+  md->offset_vector = (int *)(erts_pcre_malloc)(ocount * sizeof(int));
   if (md->offset_vector == NULL) return PCRE_ERROR_NOMEMORY;
   using_temporary_offsets = TRUE;
   DPRINTF(("Got memory to hold back references\n"));
@@ -5304,10 +5306,10 @@ if (rc == MATCH_MATCH)
 #ifdef ERLANG_INTEGRATION
     if (extra_data == NULL || 
 	!(extra_data->flags & PCRE_EXTRA_LOOP_LIMIT)) {
-	(pcre_free)(md->offset_vector);
+	(erts_pcre_free)(md->offset_vector);
     }
 #else
-	(pcre_free)(md->offset_vector);
+	(erts_pcre_free)(md->offset_vector);
 #endif
     }
 
@@ -5336,7 +5338,7 @@ attempt has failed at all permitted starting positions. */
 if (using_temporary_offsets)
   {
   DPRINTF(("Freeing temporary memory\n"));
-  (pcre_free)(md->offset_vector);
+  (erts_pcre_free)(md->offset_vector);
   }
 
 if (rc != MATCH_NOMATCH)
@@ -5375,16 +5377,16 @@ else
 #undef re 
 #undef ims 
 
-void pcre_free_restart_data(void *restart_data) {
+void erts_pcre_free_restart_data(void *restart_data) {
   PcreExecContext *top = (PcreExecContext *) restart_data;
   /* We might be done, or we might not, so there might be some saved match_states here */
   if (top != NULL) {
     match_data *md = top->Xmd;
     if (top->Xusing_temporary_offsets && md->offset_vector != NULL) {
-	(pcre_free)(md->offset_vector);
+	(erts_pcre_free)(md->offset_vector);
     }
     free_saved_match_state(top->Xmd->state_save);
-    (pcre_free)(top);
+    (erts_pcre_free)(top);
   }
 }
 #endif

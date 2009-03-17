@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2006-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Misc utility functions for the mstone modules
@@ -30,6 +31,7 @@
 	 expand_dirs/2,
 	 display_os_info/0, 
 	 display_system_info/0, 
+	 display_alloc_info/0, 
 	 display_app_info/0,
 	 detect_version/3]).
 
@@ -127,6 +129,86 @@ otp_release() ->
 
 %%----------------------------------------------------------------------
 %% 
+%% D i s p l a y   A l l o c a t o r   I n f o 
+%% 
+%%----------------------------------------------------------------------
+
+display_alloc_info() ->
+    io:format("Allocator memory information:~n", []),
+    AllocInfo = alloc_info(),
+    display_alloc_info(AllocInfo).
+
+display_alloc_info([]) ->
+    ok;
+display_alloc_info([{Alloc, Mem}|AllocInfo]) ->
+    io:format("  ~15w: ~10w~n", [Alloc, Mem]),
+    display_alloc_info(AllocInfo).
+
+alloc_info() ->
+    case erlang:system_info(allocator) of
+        {_Allocator, _Version, Features, _Settings} ->
+            alloc_info(Features);
+        _ ->
+            []
+    end.
+
+alloc_info(Allocators) ->
+    Allocs = [temp_alloc, sl_alloc, std_alloc, ll_alloc, eheap_alloc,
+              ets_alloc, binary_alloc, driver_alloc],
+    alloc_info(Allocators, Allocs, []).
+
+alloc_info([], _, Acc) ->
+    lists:reverse(Acc);
+alloc_info([Allocator | Allocators], Allocs, Acc) ->
+    case lists:member(Allocator, Allocs) of
+        true ->
+            Instances0 = erlang:system_info({allocator, Allocator}),
+            Instances =
+                if
+                    is_list(Instances0) ->
+                        [Instance || Instance <- Instances0,
+                                     element(1, Instance) =:= instance];
+                    true ->
+                        []
+                end,
+            AllocatorMem = alloc_mem_info(Instances),
+            alloc_info(Allocators, Allocs, [{Allocator, AllocatorMem} | Acc]);
+
+        false ->
+            alloc_info(Allocators, Allocs, Acc)
+    end.
+
+
+alloc_mem_info(Instances) ->
+    alloc_mem_info(Instances, []).
+
+alloc_mem_info([], Acc) ->
+    lists:sum([Mem || {instance, _, Mem} <- Acc]);
+alloc_mem_info([{instance, N, Info}|Instances], Acc) ->
+    InstanceMemInfo = alloc_instance_mem_info(Info),
+    alloc_mem_info(Instances, [{instance, N, InstanceMemInfo} | Acc]).
+
+alloc_instance_mem_info(InstanceInfo) ->
+    MBCS = alloc_instance_mem_info(mbcs, InstanceInfo),
+    SBCS = alloc_instance_mem_info(sbcs, InstanceInfo),
+    MBCS + SBCS.
+
+alloc_instance_mem_info(Key, InstanceInfo) ->
+    case lists:keysearch(Key, 1, InstanceInfo) of
+        {value, {Key, Info}} ->
+            case lists:keysearch(blocks_size, 1, Info) of
+                {value, {blocks_size, Mem, _, _}} ->
+                    Mem;
+                _ ->
+                    0
+            end;
+        _ ->
+            0
+    end.
+
+
+%%----------------------------------------------------------------------
+%% 
 %% D i s p l a y   A p p   I n f o 
 %% 
 %%----------------------------------------------------------------------
@@ -145,9 +227,9 @@ display_asn1_info() ->
     AI = megaco_ber_bin_drv_media_gateway_control_v1:info(),
     Vsn = 
 	case lists:keysearch(vsn, 1, AI) of
-	    {value, {vsn, V}} when atom(V) ->
+	    {value, {vsn, V}} when is_atom(V) ->
 		atom_to_list(V);
-	    {value, {vsn, V}} when list(V) ->
+	    {value, {vsn, V}} when is_list(V) ->
 		V;
 	    _ ->
 		"unknown"
@@ -166,13 +248,42 @@ expand_dirs(Dirs, DrvInclude) ->
 
 expand_dirs([], _, EDirs) ->
     lists:reverse(lists:flatten(EDirs));
-expand_dirs([Dir|Dirs], DrvInclude, EDirs) when atom(Dir) ->
+expand_dirs([Dir|Dirs], DrvInclude, EDirs) when is_atom(Dir) ->
     EDir = expand_dir(atom_to_list(Dir), DrvInclude),
     expand_dirs(Dirs, DrvInclude, [EDir|EDirs]);
-expand_dirs([Dir|Dirs], DrvInclude, EDirs) when list(Dir) ->
+expand_dirs([Dir|Dirs], DrvInclude, EDirs) when is_list(Dir) ->
     EDir = expand_dir(Dir, DrvInclude),
     expand_dirs(Dirs, DrvInclude, [EDir|EDirs]).
 
+expand_dir(Dir, flex) ->
+    case Dir of
+	"pretty" ->
+	    [{Dir, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Dir, megaco_pretty_text_encoder, [flex_scanner]}];
+	"compact" ->
+	    [{Dir, megaco_compact_text_encoder, [flex_scanner]},
+	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
+	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
+	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
+	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
+	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
+	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
+	     {Dir, megaco_compact_text_encoder, [flex_scanner]}];
+	"ber" ->
+	    [];
+	"per" ->
+	    [];
+	"erlang" ->
+	    [];
+	Else ->
+	    error({invalid_codec, Else})
+    end;
 expand_dir(Dir, only_drv) ->
     case Dir of
 	"pretty" ->
@@ -286,13 +397,13 @@ read_message(Dir, FileName) ->
             error({file_empty, FileName});
 
         {ok, #file_info{type = Type}} ->
-            error({invalid_type, Type, FileName});
+            error({invalid_type, FileName, Type});
 
         {ok, Info} ->
-            error({unexpected_file_info, Info, FileName});
+            error({unexpected_file_info, FileName, Info});
 
         Error ->
-            error({failed_reading_file_info, Error})
+            error({failed_reading_file_info, File, Error})
 
     end.
 
@@ -302,7 +413,7 @@ read_files(Dir) ->
         {ok, Files} ->
             lists:sort(Files);
         Error ->
-            error({failed_listing_dir, Error})
+            error({failed_listing_dir, Dir, Error})
     end.
 
 
@@ -340,7 +451,7 @@ stop_flex_scanner(Pid) ->
 
 flex_scanner_handler(Pid) ->
     case (catch megaco_flex_scanner:start()) of
-        {ok, Port} when port(Port) ->
+        {ok, Port} when is_port(Port) ->
             Pid ! {flex_scanner_started, self(), {flex, Port}},
             flex_scanner_handler(Pid, Port);
         {error, {load_driver, {open_error, Reason}}} ->

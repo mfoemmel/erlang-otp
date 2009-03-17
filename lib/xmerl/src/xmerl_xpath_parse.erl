@@ -1,6 +1,6 @@
 -module(xmerl_xpath_parse).
 -export([parse/1, parse_and_scan/1, format_error/1]).
--file("xmerl_xpath_parse.yrl", 305).
+-file("xmerl_xpath_parse.yrl", 301).
 
 % token({Token, _Line}) ->
 % 	Token;
@@ -12,23 +12,24 @@ value({Token, _Line}) ->
 value({_Token, _Line, Value}) ->
 	Value.
 
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-11-05_12/otp_src_R12B-5/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
-%% ``The contents of this file are subject to the Erlang Public License,
+-file("/net/shelob/ldisk/daily_build/otp_prebuild_r13a.2009-03-16_22/otp_src_R13A/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -64,7 +65,7 @@ format_error(Message) ->
 return_error(Line, Message) ->
     throw({error, {Line, ?MODULE, Message}}).
 
--define(CODE_VERSION, "1.2").
+-define(CODE_VERSION, "1.3").
 
 yeccpars0(Tokens, MFA) ->
     try yeccpars1(Tokens, MFA, 0, [], [])
@@ -74,10 +75,6 @@ yeccpars0(Tokens, MFA) ->
             try yecc_error_type(Error, Stacktrace) of
                 {syntax_error, Token} ->
                     yeccerror(Token);
-                {missing_in_goto_table=Tag, State} ->
-                    Desc = {State, Tag},
-                    erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
-                                Stacktrace);
                 {missing_in_goto_table=Tag, Symbol, State} ->
                     Desc = {Symbol, State, Tag},
                     erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
@@ -88,16 +85,14 @@ yeccpars0(Tokens, MFA) ->
             Error % probably from return_error/2
     end.
 
-yecc_error_type(function_clause, [{?MODULE,F,[_,_,_,_,Token,_,_]} | _]) ->
-    "yeccpars2" ++ _ = atom_to_list(F),
-    {syntax_error, Token};
-yecc_error_type({case_clause,{State}}, [{?MODULE,yeccpars2,_}|_]) ->
-    %% Inlined goto-function
-    {missing_in_goto_table, State};
-yecc_error_type(function_clause, [{?MODULE,F,[State]}|_]) ->
-    "yeccgoto_" ++ SymbolL = atom_to_list(F),
-    {ok,[{atom,_,Symbol}]} = erl_scan:string(SymbolL),
-    {missing_in_goto_table, Symbol, State}.
+yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
+    case atom_to_list(F) of
+        "yeccpars2" ++ _ ->
+            {syntax_error, Token};
+        "yeccgoto_" ++ SymbolL ->
+            {ok,[{atom,_,Symbol}],_} = erl_scan:string(SymbolL),
+            {missing_in_goto_table, Symbol, State}
+    end.
 
 yeccpars1([Token | Tokens], Tokenizer, State, States, Vstack) ->
     yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, 
@@ -139,16 +134,19 @@ yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
 
 % For internal use only.
 yeccerror(Token) ->
-    {error,
-     {element(2, Token), ?MODULE,
-      ["syntax error before: ", yecctoken2string(Token)]}}.
+    Text = case erl_scan:token_info(Token, text) of
+               undefined -> yecctoken2string(Token);
+               {text, Txt} -> Txt
+           end,
+    {location, Location} = erl_scan:token_info(Token, location),
+    {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
 yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
 yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
-yecctoken2string({string,_,S}) -> io_lib:write_string(S);
+yecctoken2string({string,_,S}) -> io_lib:write_unicode_string(S);
 yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
 yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
 yecctoken2string({dot, _}) -> "'.'";
@@ -163,7 +161,7 @@ yecctoken2string(Other) ->
 
 
 
--file("./xmerl_xpath_parse.erl", 166).
+-file("./xmerl_xpath_parse.erl", 164).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);
@@ -1877,7 +1875,7 @@ yeccpars2_109(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_1(1, Cat, Ss, Stack, T, Ts, Tzr).
 
 -compile({inline,{yeccpars2_4_,1}}).
--file("xmerl_xpath_parse.yrl", 100).
+-file("xmerl_xpath_parse.yrl", 96).
 yeccpars2_4_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1885,7 +1883,7 @@ yeccpars2_4_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_9_,1}}).
--file("xmerl_xpath_parse.yrl", 126).
+-file("xmerl_xpath_parse.yrl", 122).
 yeccpars2_9_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1893,7 +1891,7 @@ yeccpars2_9_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_19_,1}}).
--file("xmerl_xpath_parse.yrl", 101).
+-file("xmerl_xpath_parse.yrl", 97).
 yeccpars2_19_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1901,7 +1899,7 @@ yeccpars2_19_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_20_,1}}).
--file("xmerl_xpath_parse.yrl", 128).
+-file("xmerl_xpath_parse.yrl", 124).
 yeccpars2_20_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1909,7 +1907,7 @@ yeccpars2_20_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_27_,1}}).
--file("xmerl_xpath_parse.yrl", 105).
+-file("xmerl_xpath_parse.yrl", 101).
 yeccpars2_27_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1917,7 +1915,7 @@ yeccpars2_27_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_32_,1}}).
--file("xmerl_xpath_parse.yrl", 179).
+-file("xmerl_xpath_parse.yrl", 175).
 yeccpars2_32_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1925,7 +1923,7 @@ yeccpars2_32_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_33_,1}}).
--file("xmerl_xpath_parse.yrl", 297).
+-file("xmerl_xpath_parse.yrl", 293).
 yeccpars2_33_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1933,7 +1931,7 @@ yeccpars2_33_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_35_,1}}).
--file("xmerl_xpath_parse.yrl", 180).
+-file("xmerl_xpath_parse.yrl", 176).
 yeccpars2_35_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1941,7 +1939,7 @@ yeccpars2_35_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_36_,1}}).
--file("xmerl_xpath_parse.yrl", 296).
+-file("xmerl_xpath_parse.yrl", 292).
 yeccpars2_36_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1949,7 +1947,7 @@ yeccpars2_36_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_38_,1}}).
--file("xmerl_xpath_parse.yrl", 177).
+-file("xmerl_xpath_parse.yrl", 173).
 yeccpars2_38_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1957,7 +1955,7 @@ yeccpars2_38_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_39_,1}}).
--file("xmerl_xpath_parse.yrl", 295).
+-file("xmerl_xpath_parse.yrl", 291).
 yeccpars2_39_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1965,7 +1963,7 @@ yeccpars2_39_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_42_,1}}).
--file("xmerl_xpath_parse.yrl", 148).
+-file("xmerl_xpath_parse.yrl", 144).
 yeccpars2_42_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -1973,7 +1971,7 @@ yeccpars2_42_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_44_,1}}).
--file("xmerl_xpath_parse.yrl", 146).
+-file("xmerl_xpath_parse.yrl", 142).
 yeccpars2_44_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -1981,7 +1979,7 @@ yeccpars2_44_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_47_,1}}).
--file("xmerl_xpath_parse.yrl", 193).
+-file("xmerl_xpath_parse.yrl", 189).
 yeccpars2_47_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1989,7 +1987,7 @@ yeccpars2_47_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_48_,1}}).
--file("xmerl_xpath_parse.yrl", 189).
+-file("xmerl_xpath_parse.yrl", 185).
 yeccpars2_48_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -1997,7 +1995,7 @@ yeccpars2_48_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_50_,1}}).
--file("xmerl_xpath_parse.yrl", 185).
+-file("xmerl_xpath_parse.yrl", 181).
 yeccpars2_50_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2005,7 +2003,7 @@ yeccpars2_50_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_51_,1}}).
--file("xmerl_xpath_parse.yrl", 187).
+-file("xmerl_xpath_parse.yrl", 183).
 yeccpars2_51_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2013,7 +2011,7 @@ yeccpars2_51_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_53_,1}}).
--file("xmerl_xpath_parse.yrl", 192).
+-file("xmerl_xpath_parse.yrl", 188).
 yeccpars2_53_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2021,7 +2019,7 @@ yeccpars2_53_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_55_,1}}).
--file("xmerl_xpath_parse.yrl", 118).
+-file("xmerl_xpath_parse.yrl", 114).
 yeccpars2_55_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2029,7 +2027,7 @@ yeccpars2_55_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_56_,1}}).
--file("xmerl_xpath_parse.yrl", 136).
+-file("xmerl_xpath_parse.yrl", 132).
 yeccpars2_56_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -2037,7 +2035,7 @@ yeccpars2_56_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_57_,1}}).
--file("xmerl_xpath_parse.yrl", 131).
+-file("xmerl_xpath_parse.yrl", 127).
 yeccpars2_57_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -2045,7 +2043,7 @@ yeccpars2_57_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_58_,1}}).
--file("xmerl_xpath_parse.yrl", 116).
+-file("xmerl_xpath_parse.yrl", 112).
 yeccpars2_58_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2053,7 +2051,7 @@ yeccpars2_58_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_62_,1}}).
--file("xmerl_xpath_parse.yrl", 152).
+-file("xmerl_xpath_parse.yrl", 148).
 yeccpars2_62_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2061,7 +2059,7 @@ yeccpars2_62_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_63_,1}}).
--file("xmerl_xpath_parse.yrl", 135).
+-file("xmerl_xpath_parse.yrl", 131).
 yeccpars2_63_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2069,7 +2067,7 @@ yeccpars2_63_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_64_,1}}).
--file("xmerl_xpath_parse.yrl", 122).
+-file("xmerl_xpath_parse.yrl", 118).
 yeccpars2_64_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2077,7 +2075,7 @@ yeccpars2_64_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_65_,1}}).
--file("xmerl_xpath_parse.yrl", 120).
+-file("xmerl_xpath_parse.yrl", 116).
 yeccpars2_65_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2085,7 +2083,7 @@ yeccpars2_65_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_66_,1}}).
--file("xmerl_xpath_parse.yrl", 159).
+-file("xmerl_xpath_parse.yrl", 155).
 yeccpars2_66_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2093,7 +2091,7 @@ yeccpars2_66_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_69_,1}}).
--file("xmerl_xpath_parse.yrl", 163).
+-file("xmerl_xpath_parse.yrl", 159).
 yeccpars2_69_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2101,7 +2099,7 @@ yeccpars2_69_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_70_,1}}).
--file("xmerl_xpath_parse.yrl", 111).
+-file("xmerl_xpath_parse.yrl", 107).
 yeccpars2_70_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2109,7 +2107,7 @@ yeccpars2_70_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_71_,1}}).
--file("xmerl_xpath_parse.yrl", 104).
+-file("xmerl_xpath_parse.yrl", 100).
 yeccpars2_71_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2117,7 +2115,7 @@ yeccpars2_71_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_72_,1}}).
--file("xmerl_xpath_parse.yrl", 266).
+-file("xmerl_xpath_parse.yrl", 262).
 yeccpars2_72_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2125,7 +2123,7 @@ yeccpars2_72_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_74_,1}}).
--file("xmerl_xpath_parse.yrl", 178).
+-file("xmerl_xpath_parse.yrl", 174).
 yeccpars2_74_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2133,7 +2131,7 @@ yeccpars2_74_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_77_,1}}).
--file("xmerl_xpath_parse.yrl", 251).
+-file("xmerl_xpath_parse.yrl", 247).
 yeccpars2_77_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2141,7 +2139,7 @@ yeccpars2_77_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_79_,1}}).
--file("xmerl_xpath_parse.yrl", 291).
+-file("xmerl_xpath_parse.yrl", 287).
 yeccpars2_79_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -2149,7 +2147,7 @@ yeccpars2_79_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_82_,1}}).
--file("xmerl_xpath_parse.yrl", 261).
+-file("xmerl_xpath_parse.yrl", 257).
 yeccpars2_82_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2157,7 +2155,7 @@ yeccpars2_82_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_83_,1}}).
--file("xmerl_xpath_parse.yrl", 259).
+-file("xmerl_xpath_parse.yrl", 255).
 yeccpars2_83_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2165,7 +2163,7 @@ yeccpars2_83_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_84_,1}}).
--file("xmerl_xpath_parse.yrl", 257).
+-file("xmerl_xpath_parse.yrl", 253).
 yeccpars2_84_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2173,7 +2171,7 @@ yeccpars2_84_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_85_,1}}).
--file("xmerl_xpath_parse.yrl", 249).
+-file("xmerl_xpath_parse.yrl", 245).
 yeccpars2_85_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2181,7 +2179,7 @@ yeccpars2_85_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_87_,1}}).
--file("xmerl_xpath_parse.yrl", 225).
+-file("xmerl_xpath_parse.yrl", 221).
 yeccpars2_87_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2189,7 +2187,7 @@ yeccpars2_87_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_90_,1}}).
--file("xmerl_xpath_parse.yrl", 230).
+-file("xmerl_xpath_parse.yrl", 226).
 yeccpars2_90_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2197,7 +2195,7 @@ yeccpars2_90_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_95_,1}}).
--file("xmerl_xpath_parse.yrl", 243).
+-file("xmerl_xpath_parse.yrl", 239).
 yeccpars2_95_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2205,7 +2203,7 @@ yeccpars2_95_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_96_,1}}).
--file("xmerl_xpath_parse.yrl", 239).
+-file("xmerl_xpath_parse.yrl", 235).
 yeccpars2_96_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2213,7 +2211,7 @@ yeccpars2_96_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_97_,1}}).
--file("xmerl_xpath_parse.yrl", 241).
+-file("xmerl_xpath_parse.yrl", 237).
 yeccpars2_97_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2221,7 +2219,7 @@ yeccpars2_97_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_98_,1}}).
--file("xmerl_xpath_parse.yrl", 237).
+-file("xmerl_xpath_parse.yrl", 233).
 yeccpars2_98_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2229,7 +2227,7 @@ yeccpars2_98_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_99_,1}}).
--file("xmerl_xpath_parse.yrl", 232).
+-file("xmerl_xpath_parse.yrl", 228).
 yeccpars2_99_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2237,7 +2235,7 @@ yeccpars2_99_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_100_,1}}).
--file("xmerl_xpath_parse.yrl", 213).
+-file("xmerl_xpath_parse.yrl", 209).
 yeccpars2_100_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2245,7 +2243,7 @@ yeccpars2_100_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_103_,1}}).
--file("xmerl_xpath_parse.yrl", 209).
+-file("xmerl_xpath_parse.yrl", 205).
 yeccpars2_103_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2253,7 +2251,7 @@ yeccpars2_103_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_104_,1}}).
--file("xmerl_xpath_parse.yrl", 208).
+-file("xmerl_xpath_parse.yrl", 204).
 yeccpars2_104_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2261,7 +2259,7 @@ yeccpars2_104_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_105_,1}}).
--file("xmerl_xpath_parse.yrl", 124).
+-file("xmerl_xpath_parse.yrl", 120).
 yeccpars2_105_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2269,7 +2267,7 @@ yeccpars2_105_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_107_,1}}).
--file("xmerl_xpath_parse.yrl", 219).
+-file("xmerl_xpath_parse.yrl", 215).
 yeccpars2_107_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2277,7 +2275,7 @@ yeccpars2_107_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_109_,1}}).
--file("xmerl_xpath_parse.yrl", 202).
+-file("xmerl_xpath_parse.yrl", 198).
 yeccpars2_109_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -2285,4 +2283,4 @@ yeccpars2_109_(__Stack0) ->
   end | __Stack].
 
 
--file("xmerl_xpath_parse.yrl", 316).
+-file("xmerl_xpath_parse.yrl", 312).

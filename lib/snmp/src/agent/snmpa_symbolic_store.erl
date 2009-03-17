@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>1996-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 -module(snmpa_symbolic_store).
 
@@ -52,7 +51,8 @@
 	 enum_to_int/2, int_to_enum/2, 
 	 table_info/1, add_table_infos/2, delete_table_infos/1,
 	 variable_info/1, add_variable_infos/2, delete_variable_infos/1,
-	 get_notification/1, set_notification/2, delete_notifications/1,
+	 get_notification/1, set_notification/2, 
+	 delete_notifications/1, which_notifications/0,
 	 add_types/2, delete_types/1]).
 
 %% API (for quick access to the db, note that this is only reads).
@@ -191,6 +191,9 @@ set_notification(Trap, MibName) ->
     call({set_notification, MibName, Trap}).
 delete_notifications(MibName) ->
     call({delete_notifications, MibName}).
+which_notifications() ->
+    call(which_notifications).
+
 
 verbosity(Verbosity) -> 
     cast({verbosity,Verbosity}).
@@ -210,6 +213,13 @@ oid_to_aliasname(Db,Oid) ->
 	{value,#symbol{info = Aliasname}} -> {value, Aliasname};
 	_ -> false
     end.
+
+which_notifications(Db) ->
+    Pattern = #symbol{key = {trap, '_'}, _ = '_'},
+    Symbols = snmpa_general_db:match_object(Db, Pattern),
+    [{Name, Mib, Rec} || #symbol{key      = {trap, Name}, 
+				 mib_name = Mib, 
+				 info     = Rec} <- Symbols].
 
 which_aliasnames(Db) ->
     Pattern = #symbol{key = {alias, '_'}, _ = '_'},
@@ -377,7 +387,7 @@ handle_call({int_to_enum, TypeOrObjName, Int}, _From, #state{db = DB} = S) ->
 
 handle_call({set_notification, MibName, Trap}, _From, #state{db = DB} = S) ->
     ?vlog("set notification:"
-	  "~n   ~p~n   ~p",[MibName,Trap]),
+	  "~n   ~p~n   ~p", [MibName,Trap]),
     set_notif(DB, MibName, Trap),
     {reply, true, S};
 
@@ -385,6 +395,11 @@ handle_call({delete_notifications, MibName}, _From, #state{db = DB} = S) ->
     ?vlog("delete notification: ~p",[MibName]),
     delete_notif(DB, MibName),
     {reply, true, S};
+
+handle_call(which_notifications, _From, #state{db = DB} = S) ->
+    ?vlog("which notifications", []),
+    Reply = which_notifications(DB), 
+    {reply, Reply, S};
 
 handle_call({get_notification, Key}, _From, #state{db = DB} = S) ->
     ?vlog("get notification: ~p",[Key]),
@@ -600,7 +615,7 @@ get_notif(Db, Key) ->
 	false -> undefined
     end.
 
-set_notif(Db, MibName, Trap) when record(Trap, trap) ->
+set_notif(Db, MibName, Trap) when is_record(Trap, trap) ->
     #trap{trapname = Name} = Trap,
     Rec = #symbol{key = {trap, Name}, mib_name = MibName, info = Trap},
     %% convert old v1 trap to oid

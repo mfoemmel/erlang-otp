@@ -1,3 +1,21 @@
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 -module(zip).
 
 %% Basic api
@@ -714,7 +732,7 @@ get_sync(_, _) -> full.
 put_z_data_loop(0, _In, Out, Pos, _Input, _Output, _Z) ->
     {Out, Pos};
 put_z_data_loop(UncompSize, In0, Out0, Pos0, Input, Output, Z) ->
-    N = min(?WRITE_BLOCK_SIZE, UncompSize),
+    N = erlang:min(?WRITE_BLOCK_SIZE, UncompSize),
     case Input({read, N}, In0) of
 	{eof, _In1} ->
 	    {Out0, Pos0};
@@ -909,13 +927,6 @@ local_file_header_from_info_method_name(#file_info{mtime = MTime},
 		       uncomp_size = UncompSize,
 		       file_name_length = length(Name),
 		       extra_field_length = 0}.
-
-
-%% min
-min(A, B) when A < B ->
-    A;
-min(_A, B) ->
-    B.
 
 
 %% small, simple, stupid zip-archive server
@@ -1248,7 +1259,7 @@ get_z_data(_, _, _, _, _, _, _, _) ->
 copy_data_loop(0, In, Out, _Input, _Output, CRC, _Z) ->
     {In, Out, CRC};
 copy_data_loop(CompSize, In0, Out0, Input, Output, CRC0, Z) ->
-    N = min(?READ_BLOCK_SIZE, CompSize),
+    N = erlang:min(?READ_BLOCK_SIZE, CompSize),
     case Input({read, N}, In0) of
 	{eof, In1} -> {Out0, In1};
 	{Uncompressed, In1} ->
@@ -1260,7 +1271,7 @@ copy_data_loop(CompSize, In0, Out0, Input, Output, CRC0, Z) ->
 get_z_data_loop(0, UncompSize, In, Out, _Input, _Output, _Z) ->
     {In, Out, UncompSize};
 get_z_data_loop(CompSize, UncompSize, In0, Out0, Input, Output, Z) ->
-    N = min(?READ_BLOCK_SIZE, CompSize),
+    N = erlang:min(?READ_BLOCK_SIZE, CompSize),
     case Input({read, N}, In0) of
 	{eof, In1} ->
 	    {Out0, In1};

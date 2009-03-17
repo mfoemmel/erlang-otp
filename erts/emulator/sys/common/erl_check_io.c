@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2006-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 /*
@@ -42,9 +43,15 @@
 #  define DRV_EV_STATE_HTAB_SIZE 1024
 #endif
 
-#define ERTS_EV_TYPE_NONE		((short) 0)
-#define ERTS_EV_TYPE_DRV_SEL		((short) 1)
-#define ERTS_EV_TYPE_DRV_EV		((short) 2)
+typedef char EventStateType;
+#define ERTS_EV_TYPE_NONE     ((EventStateType) 0)
+#define ERTS_EV_TYPE_DRV_SEL  ((EventStateType) 1) /* driver_select */
+#define ERTS_EV_TYPE_DRV_EV   ((EventStateType) 2) /* driver_event */
+#define ERTS_EV_TYPE_STOP_USE ((EventStateType) 3) /* pending stop_select */
+
+typedef char EventStateFlags;
+#define ERTS_EV_FLAG_USED   ((EventStateFlags) 1)   /* ERL_DRV_USE has been turned on */
+
 
 #if defined(ERTS_KERNEL_POLL_VERSION)
 #  define ERTS_CIO_EXPORT(FUNC) FUNC ## _kp
@@ -78,26 +85,31 @@ static struct pollset_info
 }pollset;
 #define NUM_OF_POLLSETS 1
 
-#ifdef ERTS_SMP
-struct removed_fd {
-    struct removed_fd *next;
-    ErtsSysFdType fd;
-};
-#endif
-
 typedef struct {
 #ifndef ERTS_SYS_CONTINOUS_FD_NUMBERS
     SafeHashBucket hb;
 #endif
     ErtsSysFdType fd;
     union {
-	ErtsDrvEventDataState *event;
-	ErtsDrvSelectDataState *select;
+	ErtsDrvEventDataState *event;     /* ERTS_EV_TYPE_DRV_EV */
+	ErtsDrvSelectDataState *select;   /* ERTS_EV_TYPE_DRV_SEL */
+	erts_driver_t* drv_ptr;           /* ERTS_EV_TYPE_STOP_USE */
     } driver;
     ErtsPollEvents events;
     unsigned short remove_cnt; /* number of removed_fd's referring to this fd */
-    short type;
+    EventStateType type;
+    EventStateFlags flags;
 } ErtsDrvEventState;
+
+#ifdef ERTS_SMP
+struct removed_fd {
+    struct removed_fd *next;
+    ErtsDrvEventState* state;
+#ifdef DEBUG
+    ErtsSysFdType fd;
+#endif
+};
+#endif
 
 #ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
 static int max_fds = -1;
@@ -148,6 +160,7 @@ static ERTS_INLINE ErtsDrvEventState* hash_new_drv_ev_state(ErtsSysFdType fd)
     tmpl.events = 0;
     tmpl.remove_cnt = 0;
     tmpl.type = ERTS_EV_TYPE_NONE;
+    tmpl.flags = 0;
     return  (ErtsDrvEventState *) safe_hash_put(&drv_ev_state_tab, (void *) &tmpl);
 }
 
@@ -161,17 +174,22 @@ static ERTS_INLINE void hash_erase_drv_ev_state(ErtsDrvEventState *state)
 static void stale_drv_select(Eterm id, ErtsDrvEventState *state, int mode);
 static void select_steal(ErlDrvPort ix, ErtsDrvEventState *state, 
 			 int mode, int on);
+static void print_select_op(erts_dsprintf_buf_t *dsbufp,
+			    ErlDrvPort ix, ErtsSysFdType fd, int mode, int on);
 #ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
 static void select_large_fd_error(ErlDrvPort, ErtsSysFdType, int, int);
 #endif
 #if ERTS_CIO_HAVE_DRV_EVENT
 static void event_steal(ErlDrvPort ix, ErtsDrvEventState *state, 
 			ErlDrvEventData event_data);
+static void print_event_op(erts_dsprintf_buf_t *dsbufp,
+			   ErlDrvPort, ErtsSysFdType, ErlDrvEventData);    
 #ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
 static void event_large_fd_error(ErlDrvPort, ErtsSysFdType, ErlDrvEventData);
 #endif
 #endif
-
+static void steal_pending_stop_select(erts_dsprintf_buf_t*, ErlDrvPort,
+				      ErtsDrvEventState*, int mode, int on);
 static ERTS_INLINE Eterm
 drvport2id(ErlDrvPort dp)
 {
@@ -188,7 +206,6 @@ drvport2id(ErlDrvPort dp)
 ERTS_SCHED_PREF_QUICK_ALLOC_IMPL(removed_fd, struct removed_fd, 64, ERTS_ALC_T_FD_LIST)
 #endif
 
-
 static ERTS_INLINE void
 remember_removed(ErtsDrvEventState *state, struct pollset_info* psi)
 {
@@ -199,7 +216,10 @@ remember_removed(ErtsDrvEventState *state, struct pollset_info* psi)
 	state->remove_cnt++;
 	ASSERT(state->remove_cnt > 0);
 	fdlp = removed_fd_alloc();
+	fdlp->state = state;
+#ifdef DEBUG
 	fdlp->fd = state->fd;
+#endif
 	erts_smp_spin_lock(&psi->removed_list_lock);
 	fdlp->next = psi->removed_list;
 	psi->removed_list = fdlp;
@@ -225,7 +245,7 @@ is_removed(ErtsDrvEventState *state)
 }
 
 
-static ERTS_INLINE void
+static void
 forget_removed(struct pollset_info* psi)
 {
 #ifdef ERTS_SMP
@@ -240,22 +260,47 @@ forget_removed(struct pollset_info* psi)
     erts_smp_spin_unlock(&psi->removed_list_lock);
 
     while (fdlp) {
-	ErtsDrvEventState *state;
-	erts_smp_mtx_t* mtx = fd_mtx(fdlp->fd);
-	erts_smp_mtx_lock(mtx);
-#ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
-	state = &drv_ev_state[(int) fdlp->fd];
-	ASSERT(state->remove_cnt > 0);
-	state->remove_cnt--;
-#else
-	state = hash_get_drv_ev_state(fdlp->fd);
+	erts_driver_t* drv_ptr = NULL;
+	erts_smp_mtx_t* mtx;
+	ErtsSysFdType fd;
+	ErtsDrvEventState *state = fdlp->state;	
 	ASSERT(state);
+	fd = state->fd;
+	ASSERT(fd == fdlp->fd);
+	mtx = fd_mtx(fd);
+	erts_smp_mtx_lock(mtx);
 	ASSERT(state->remove_cnt > 0);
-	if (--state->remove_cnt == 0 && state->type == ERTS_EV_TYPE_NONE) {
-	    hash_erase_drv_ev_state(state);
-	}
+	if (--state->remove_cnt == 0) {
+	    switch (state->type) {
+	    case ERTS_EV_TYPE_STOP_USE:
+		/* Now we can call stop_select */
+		drv_ptr = state->driver.drv_ptr;
+		ASSERT(drv_ptr);
+		state->type = ERTS_EV_TYPE_NONE;
+		state->flags = 0;
+		state->driver.drv_ptr = NULL;  
+		/* Fall through */
+	    case ERTS_EV_TYPE_NONE:
+#ifndef ERTS_SYS_CONTINOUS_FD_NUMBERS
+		hash_erase_drv_ev_state(state);
 #endif
+		break;
+	    case ERTS_EV_TYPE_DRV_SEL:
+	    case ERTS_EV_TYPE_DRV_EV:
+		break;
+	    default:
+		ASSERT(0);
+	    }
+	}
 	erts_smp_mtx_unlock(mtx);
+	if (drv_ptr) {
+	    int was_unmasked = erts_block_fpe();
+	    (*drv_ptr->stop_select) (fd, NULL);
+	    erts_unblock_fpe(was_unmasked);
+	    if (drv_ptr->handle) {
+		erts_ddll_dereference_driver(drv_ptr->handle);
+	    }
+	}
 	tofree = fdlp;
 	fdlp = fdlp->next;
 	removed_fd_free(tofree);
@@ -289,6 +334,7 @@ grow_drv_ev_state(int min_ix)
 	    drv_ev_state[i].events = 0;
 	    drv_ev_state[i].remove_cnt = 0;
 	    drv_ev_state[i].type = ERTS_EV_TYPE_NONE;
+	    drv_ev_state[i].flags = 0;
 	}
 	erts_smp_atomic_set(&drv_ev_state_len, new_len);
 	for (i=0; i<DRV_EV_STATE_LOCK_CNT; i++) {
@@ -303,14 +349,14 @@ grow_drv_ev_state(int min_ix)
 
 
 static ERTS_INLINE void
-abort_task(Eterm id, ErtsPortTaskHandle *pthp, short type)
+abort_task(Eterm id, ErtsPortTaskHandle *pthp, EventStateType type)
 {
     if (is_nil(id)) {
 	ASSERT(type == ERTS_EV_TYPE_NONE
 	       || !erts_port_task_is_scheduled(pthp));
     }
     else if (erts_port_task_is_scheduled(pthp)) {
-	erts_port_task_abort(pthp);
+	erts_port_task_abort(id, pthp);
 	ASSERT(erts_is_port_alive(id));
     }
 }
@@ -334,15 +380,15 @@ abort_tasks(ErtsDrvEventState *state, int mode)
 	    ASSERT(state->type == ERTS_EV_TYPE_DRV_SEL);
 	    /* Fall through */
 	}
-    case DO_READ|DO_WRITE:
-    case DO_WRITE:
+    case ERL_DRV_READ|ERL_DRV_WRITE:
+    case ERL_DRV_WRITE:
 	ASSERT(state->type == ERTS_EV_TYPE_DRV_SEL);
 	abort_task(state->driver.select->outport,
 		   &state->driver.select->outtask,
 		   state->type);
-	if (mode == DO_WRITE)
+	if (mode == ERL_DRV_WRITE)
 	    break;
-    case DO_READ:
+    case ERL_DRV_READ:
 	ASSERT(state->type == ERTS_EV_TYPE_DRV_SEL);
 	abort_task(state->driver.select->inport,
 		   &state->driver.select->intask,
@@ -356,6 +402,7 @@ abort_tasks(ErtsDrvEventState *state, int mode)
 static void
 deselect(ErtsDrvEventState *state, int mode)
 {
+    int do_wake = 0;
     ErtsPollEvents rm_events;
     ERTS_SMP_LC_ASSERT(erts_smp_lc_mtx_is_locked(fd_mtx(state->fd)));
     ASSERT(state->events);
@@ -367,17 +414,17 @@ deselect(ErtsDrvEventState *state, int mode)
     else {
 	rm_events = 0;
 	ASSERT(state->type == ERTS_EV_TYPE_DRV_SEL);
-	if (mode & DO_READ) {
+	if (mode & ERL_DRV_READ) {
 	    state->driver.select->inport = NIL;
 	    rm_events |= ERTS_POLL_EV_IN;
 	}
-	if (mode & DO_WRITE) {
+	if (mode & ERL_DRV_WRITE) {
 	    state->driver.select->outport = NIL;
 	    rm_events |= ERTS_POLL_EV_OUT;
 	}
     }
 
-    state->events = ERTS_CIO_POLL_CTL(pollset.ps, state->fd, rm_events, 0);
+    state->events = ERTS_CIO_POLL_CTL(pollset.ps, state->fd, rm_events, 0, &do_wake);
 
     if (!(state->events)) {
 	switch (state->type) {
@@ -403,6 +450,7 @@ deselect(ErtsDrvEventState *state, int mode)
 	    
 	state->driver.select = NULL;
 	state->type = ERTS_EV_TYPE_NONE;
+	state->flags = 0;
 	remember_removed(state, &pollset);
     }
 }
@@ -413,11 +461,13 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
 			       int mode,
 			       int on)
 {
+    void (*stop_select_fn)(ErlDrvEvent, void*) = NULL;
     Eterm id = drvport2id(ix);
     ErtsSysFdType fd = (ErtsSysFdType) e;
     ErtsPollEvents ctl_events = (ErtsPollEvents) 0;
     ErtsPollEvents new_events, old_events;
     ErtsDrvEventState *state;
+    int wake_poller;
     int ret;
 
     ERTS_SMP_LC_ASSERT(erts_drvport2port(ix)
@@ -435,6 +485,12 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
     }
 #endif
 
+    if (!on && (mode&ERL_DRV_USE_NO_CALLBACK) == ERL_DRV_USE) {
+	mode |= (ERL_DRV_READ | ERL_DRV_WRITE);
+	wake_poller = 1; /* to eject fd from pollset (if needed) */
+    }
+    else wake_poller = 0;
+
     erts_smp_mtx_lock(fd_mtx(fd));
 
 #ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
@@ -451,8 +507,18 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
     if (state->type == ERTS_EV_TYPE_DRV_EV)
 	select_steal(ix, state, mode, on);
 #endif
+    if (state->type == ERTS_EV_TYPE_STOP_USE) {
+	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	print_select_op(dsbufp, ix, state->fd, mode, on);
+	steal_pending_stop_select(dsbufp, ix, state, mode, on);
+	if (state->type == ERTS_EV_TYPE_STOP_USE) {
+	    ret = 0;
+	    goto done; /* stop_select still pending */
+	}
+	ASSERT(state->type == ERTS_EV_TYPE_NONE);
+    }
 
-    if (mode & DO_READ) {
+    if (mode & ERL_DRV_READ) {
 	if (state->type == ERTS_EV_TYPE_DRV_SEL) {
 	    Eterm owner = state->driver.select->inport;
 	    if (owner != id && is_not_nil(owner))
@@ -460,7 +526,7 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
 	}
 	ctl_events |= ERTS_POLL_EV_IN;
     }
-    if (mode & DO_WRITE) {
+    if (mode & ERL_DRV_WRITE) {
 	if (state->type == ERTS_EV_TYPE_DRV_SEL) {
 	    Eterm owner = state->driver.select->outport;
 	    if (owner != id && is_not_nil(owner))
@@ -469,12 +535,26 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
 	ctl_events |= ERTS_POLL_EV_OUT;
     }	
 
-    ASSERT(state->events
-	   ? (state->type == ERTS_EV_TYPE_DRV_SEL)
-	   : (state->type == ERTS_EV_TYPE_NONE));
+    ASSERT((state->type == ERTS_EV_TYPE_DRV_SEL) ||
+	   (state->type == ERTS_EV_TYPE_NONE && !state->events));
 
-    new_events = ERTS_CIO_POLL_CTL(pollset.ps, state->fd, ctl_events, on);
+    if (!on && state->events && !(state->events & ~ctl_events) &&
+	!(state->flags & ERTS_EV_FLAG_USED)) {
+	/* Old driver remove all events. At least wake poller.
+	   It will not make close() 100% safe but it will prevent
+	   actions delayed by poll timeout. */
+	wake_poller = 1;
+    }
+
+    new_events = ERTS_CIO_POLL_CTL(pollset.ps, state->fd, ctl_events, on, &wake_poller);
+
     if (new_events & (ERTS_POLL_EV_ERR|ERTS_POLL_EV_NVAL)) {
+	if (state->type == ERTS_EV_TYPE_DRV_SEL && !state->events) {
+	    state->type = ERTS_EV_TYPE_NONE;
+	    state->flags = 0;
+	    erts_free(ERTS_ALC_T_DRV_SEL_D_STATE, state->driver.select);
+	    state->driver.select = NULL;
+	}
 	ret = -1;
 	goto done;
     }
@@ -499,6 +579,7 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
 		dsdsp->outport = NIL;
 		erts_port_task_handle_init(&dsdsp->intask);
 		erts_port_task_handle_init(&dsdsp->outtask);
+		ASSERT(state->driver.select == NULL);
 		state->driver.select = dsdsp;
 		state->type = ERTS_EV_TYPE_DRV_SEL;
 	    }
@@ -507,24 +588,51 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
 		state->driver.select->inport = id;
 	    if (ctl_events & ERTS_POLL_EV_OUT)
 		state->driver.select->outport = id;
+	    if (mode & ERL_DRV_USE) {
+		state->flags |= ERTS_EV_FLAG_USED;
+	    }
 	}
-	else if (state->type == ERTS_EV_TYPE_DRV_SEL) {
-	    if (ctl_events & ERTS_POLL_EV_IN) {
-		abort_tasks(state, DO_READ);
-		state->driver.select->inport = NIL;
+	else { /* off */
+	    if (state->type == ERTS_EV_TYPE_DRV_SEL) {
+		if (ctl_events & ERTS_POLL_EV_IN) {
+		    abort_tasks(state, ERL_DRV_READ);
+		    state->driver.select->inport = NIL;
+		}
+		if (ctl_events & ERTS_POLL_EV_OUT) {
+		    abort_tasks(state, ERL_DRV_WRITE);
+		    state->driver.select->outport = NIL;
+		}
+		if (new_events == 0) {
+		    ASSERT(!erts_port_task_is_scheduled(&state->driver.select->intask));
+		    ASSERT(!erts_port_task_is_scheduled(&state->driver.select->outtask));
+		    remember_removed(state, &pollset);
+		    
+		    if ((mode & ERL_DRV_USE) || !(state->flags & ERTS_EV_FLAG_USED)) {
+			state->type = ERTS_EV_TYPE_NONE;
+			state->flags = 0;
+			erts_free(ERTS_ALC_T_DRV_SEL_D_STATE,
+				  state->driver.select);
+			state->driver.select = NULL;
+		    }
+		    /*else keep it, as fd will probably be selected upon again */
+		}
 	    }
-	    if (ctl_events & ERTS_POLL_EV_OUT) {
-		abort_tasks(state, DO_WRITE);
-		state->driver.select->outport = NIL;
-	    }
-	    if (new_events == 0) {
-		ASSERT(!erts_port_task_is_scheduled(&state->driver.select->intask));
-		ASSERT(!erts_port_task_is_scheduled(&state->driver.select->outtask));
-		erts_free(ERTS_ALC_T_DRV_SEL_D_STATE,
-			  state->driver.select);
-		state->driver.select = NULL;
-		state->type = ERTS_EV_TYPE_NONE;
-		remember_removed(state, &pollset);
+	    if ((mode & ERL_DRV_USE_NO_CALLBACK) == ERL_DRV_USE) {
+		erts_driver_t* drv_ptr = erts_drvport2port(ix)->drv_ptr;
+		ASSERT(new_events==0);
+		if (state->remove_cnt == 0 || !wake_poller) {
+		    /* Safe to close fd now as it is not in pollset
+		       or there was no need to eject fd (kernel poll) */
+		    stop_select_fn = drv_ptr->stop_select;
+		}
+		else {
+		    /* Not safe to close fd, postpone stop_select callback. */
+		    state->type = ERTS_EV_TYPE_STOP_USE;
+		    state->driver.drv_ptr = drv_ptr;
+		    if (drv_ptr->handle) {
+			erts_ddll_reference_referenced_driver(drv_ptr->handle);
+		    }
+		}
 	    }
 	}
     }
@@ -538,6 +646,11 @@ done:
     }
 #endif
     erts_smp_mtx_unlock(fd_mtx(fd));
+    if (stop_select_fn) {
+	int was_unmasked = erts_block_fpe();
+	(*stop_select_fn)(e, NULL);
+	erts_unblock_fpe(was_unmasked);
+    }
     return ret;
 }
 
@@ -555,6 +668,7 @@ ERTS_CIO_EXPORT(driver_event)(ErlDrvPort ix,
     ErtsPollEvents remove_events;
     Eterm id = drvport2id(ix);
     ErtsDrvEventState *state;
+    int do_wake = 0;
     int ret;
 
     ERTS_SMP_LC_ASSERT(erts_drvport2port(ix)
@@ -584,10 +698,19 @@ ERTS_CIO_EXPORT(driver_event)(ErlDrvPort ix,
     }
 #endif
 
-    if (state->type == ERTS_EV_TYPE_DRV_SEL
-	|| (state->type == ERTS_EV_TYPE_DRV_EV
-	    && state->driver.event->port != id)) {
+    switch (state->type) {
+    case ERTS_EV_TYPE_DRV_EV:
+	if (state->driver.event->port == id) break;
+	/*fall through*/
+    case ERTS_EV_TYPE_DRV_SEL:
 	event_steal(ix, state, event_data);
+	break;
+    case ERTS_EV_TYPE_STOP_USE: {
+	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	print_event_op(dsbufp, ix, fd, event_data);
+	steal_pending_stop_select(dsbufp, ix, state, 0, 1);
+	break;
+      }
     }
 
     ASSERT(state->type == ERTS_EV_TYPE_DRV_EV
@@ -605,14 +728,14 @@ ERTS_CIO_EXPORT(driver_event)(ErlDrvPort ix,
     }
 
     if (add_events) {
-	events = ERTS_CIO_POLL_CTL(pollset.ps, state->fd, add_events, 1);
+	events = ERTS_CIO_POLL_CTL(pollset.ps, state->fd, add_events, 1, &do_wake);
 	if (events & (ERTS_POLL_EV_ERR|ERTS_POLL_EV_NVAL)) {
 	    ret = -1;
 	    goto done;
 	}
     }
     if (remove_events) {
-	events = ERTS_CIO_POLL_CTL(pollset.ps, state->fd, remove_events, 0);
+	events = ERTS_CIO_POLL_CTL(pollset.ps, state->fd, remove_events, 0, &do_wake);
 	if (events & (ERTS_POLL_EV_ERR|ERTS_POLL_EV_NVAL)) {
 	    ret = -1;
 	    goto done;
@@ -677,20 +800,23 @@ need2steal(ErtsDrvEventState *state, int mode)
     int do_steal = 0;
     switch (state->type) {
     case ERTS_EV_TYPE_DRV_SEL:
-	if (mode & DO_READ)
+	if (mode & ERL_DRV_READ)
 	    do_steal |= chk_stale(state->driver.select->inport,
 				  state,
-				  DO_READ);
-	if (mode & DO_WRITE)
+				  ERL_DRV_READ);
+	if (mode & ERL_DRV_WRITE)
 	    do_steal |= chk_stale(state->driver.select->outport,
 				  state,
-				  DO_WRITE);
+				  ERL_DRV_WRITE);
 	break;
 #if ERTS_CIO_HAVE_DRV_EVENT
     case ERTS_EV_TYPE_DRV_EV:
 	do_steal |= chk_stale(state->driver.event->port, state, 0);
 	break;
 #endif
+    case ERTS_EV_TYPE_STOP_USE:
+	ASSERT(0);
+	break;
     default:
 	break;
     }
@@ -726,20 +852,20 @@ steal(erts_dsprintf_buf_t *dsbufp, ErtsDrvEventState *state, int mode)
 	int deselect_mode = 0;
 	Eterm iid = state->driver.select->inport;
 	Eterm oid = state->driver.select->outport;
-	if ((mode & DO_READ) && (is_not_nil(iid))) {
+	if ((mode & ERL_DRV_READ) && (is_not_nil(iid))) {
 	    erts_dsprintf(dsbufp, "input driver ");
 	    print_driver_name(dsbufp, iid);
 	    erts_dsprintf(dsbufp, "%T ", iid);
-	    deselect_mode |= DO_READ;
+	    deselect_mode |= ERL_DRV_READ;
 	}
-	if ((mode & DO_READ) && is_not_nil(iid)
-	    && (mode & DO_WRITE) && is_not_nil(oid))
+	if ((mode & ERL_DRV_WRITE) && is_not_nil(oid)) {
+	    if (deselect_mode) {
 	    erts_dsprintf(dsbufp, "and ");
-	if ((mode & DO_WRITE) && is_not_nil(oid)) {
+	    }
 	    erts_dsprintf(dsbufp, "output driver ");
 	    print_driver_name(dsbufp, oid);
 	    erts_dsprintf(dsbufp, "%T ", oid);
-	    deselect_mode |= DO_WRITE;
+	    deselect_mode |= ERL_DRV_WRITE;
 	}
 	if (deselect_mode)
 	    deselect(state, deselect_mode);
@@ -767,6 +893,10 @@ steal(erts_dsprintf_buf_t *dsbufp, ErtsDrvEventState *state, int mode)
 	break;
     }
 #endif
+    case ERTS_EV_TYPE_STOP_USE: {
+	ASSERT(0);
+	break;
+    }
     default:
 	erts_dsprintf(dsbufp, "no one\n", (int) state->fd);
 	ASSERT(0);
@@ -779,13 +909,14 @@ print_select_op(erts_dsprintf_buf_t *dsbufp,
 {
     Port *pp = erts_drvport2port(ix);
     erts_dsprintf(dsbufp,
-		  "driver_select(%p, %d, %s%s%s, %d) "
+		  "driver_select(%p, %d,%s%s%s%s, %d) "
 		  "by ",
 		  ix,
 		  (int) fd,
-		  mode & DO_READ ? "DO_READ" : "",
-		  (mode & (DO_READ|DO_WRITE)) == (DO_READ|DO_WRITE) ? "|" : "",
-		  mode & DO_WRITE ? "DO_WRITE" : "",
+		  mode & ERL_DRV_READ ? " ERL_DRV_READ" : "",
+		  mode & ERL_DRV_WRITE ? " ERL_DRV_WRITE" : "",
+		  mode & ERL_DRV_USE ? " ERL_DRV_USE" : "",
+		  mode & (ERL_DRV_USE_NO_CALLBACK & ~ERL_DRV_USE) ? "_NO_CALLBACK" : "",
 		  on);
     print_driver_name(dsbufp, pp->id);
     erts_dsprintf(dsbufp, "driver %T ", pp ? pp->id : NIL);
@@ -820,7 +951,48 @@ select_large_fd_error(ErlDrvPort ix, ErtsSysFdType fd, int mode, int on)
     large_fd_error_common(dsbufp, fd);
     erts_send_error_to_logger_nogl(dsbufp);
 }
-#endif
+#endif /* ERTS_SYS_CONTINOUS_FD_NUMBERS */
+
+
+
+static void
+steal_pending_stop_select(erts_dsprintf_buf_t *dsbufp, ErlDrvPort ix,
+			  ErtsDrvEventState *state, int mode, int on)
+{
+    ASSERT(state->type == ERTS_EV_TYPE_STOP_USE);
+    erts_dsprintf(dsbufp, "failed: fd=%d (re)selected before stop_select "
+		          "was called for driver %s\n",
+		  (int) state->fd, state->driver.drv_ptr->name);
+    erts_send_error_to_logger_nogl(dsbufp);
+
+    if (on) {
+	/* Either fd-owner changed its mind about closing
+	 * or closed fd before stop_select callback and fd is now reused.
+	 * In either case stop_select should not be called.
+	 */	    
+	state->type = ERTS_EV_TYPE_NONE;
+	state->flags = 0;
+	if (state->driver.drv_ptr->handle) {
+	    erts_ddll_dereference_driver(state->driver.drv_ptr->handle);
+	}
+	state->driver.drv_ptr = NULL;
+    }
+    else if ((mode & ERL_DRV_USE_NO_CALLBACK) == ERL_DRV_USE) {
+	erts_driver_t* drv_ptr = erts_drvport2port(ix)->drv_ptr;
+	if (drv_ptr != state->driver.drv_ptr) {
+	    /* Some other driver wants the stop_select callback */
+	    if (state->driver.drv_ptr->handle) {
+		erts_ddll_dereference_driver(state->driver.drv_ptr->handle);
+	    }
+	    if (drv_ptr->handle) {
+		erts_ddll_reference_referenced_driver(drv_ptr->handle);
+	    }
+	    state->driver.drv_ptr = drv_ptr;
+	}    
+    }
+
+}
+
 
 #if ERTS_CIO_HAVE_DRV_EVENT
 
@@ -844,11 +1016,15 @@ print_event_op(erts_dsprintf_buf_t *dsbufp,
 static void
 event_steal(ErlDrvPort ix, ErtsDrvEventState *state, ErlDrvEventData event_data)
 {
-    if (need2steal(state, DO_READ|DO_WRITE)) {
+    if (need2steal(state, ERL_DRV_READ|ERL_DRV_WRITE)) {
 	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
 	print_event_op(dsbufp, ix, state->fd, event_data);
-	steal(dsbufp, state, DO_READ|DO_WRITE);
+	steal(dsbufp, state, ERL_DRV_READ|ERL_DRV_WRITE);
 	erts_send_error_to_logger_nogl(dsbufp);
+    }
+    else if (state->type == ERTS_EV_TYPE_DRV_SEL) {
+	ASSERT(state->flags & ERTS_EV_FLAG_USED);
+	deselect(state, 0);
     }
 }
 
@@ -873,7 +1049,7 @@ iready(Eterm id, ErtsDrvEventState *state)
 				ERTS_PORT_TASK_INPUT,
 				(ErlDrvEvent) state->fd,
 				NULL) != 0) {
-	stale_drv_select(id, state, DO_READ);
+	stale_drv_select(id, state, ERL_DRV_READ);
     }
 }
 
@@ -885,7 +1061,7 @@ oready(Eterm id, ErtsDrvEventState *state)
 				ERTS_PORT_TASK_OUTPUT,
 				(ErlDrvEvent) state->fd,
 				NULL) != 0) {
-	stale_drv_select(id, state, DO_WRITE);
+	stale_drv_select(id, state, ERL_DRV_WRITE);
     }
 }
 
@@ -959,9 +1135,10 @@ ERTS_CIO_EXPORT(erts_check_io)(int do_wait)
 
     if (poll_ret != 0) {
 	erts_smp_atomic_set(&pollset.in_poll_wait, 0);
-
-	if (poll_ret == EAGAIN)
+	forget_removed(&pollset);
+	if (poll_ret == EAGAIN) {
 	    goto restart;
+	}
 
 	if (poll_ret != ETIMEDOUT
 	    && poll_ret != EINTR
@@ -1215,7 +1392,11 @@ ERTS_CIO_EXPORT(erts_init_check_io)(void)
     {
 	int i;
 	for (i=0; i<DRV_EV_STATE_LOCK_CNT; i++) {
+#ifdef ERTS_ENABLE_LOCK_COUNT
+	    erts_smp_mtx_init_x(&drv_ev_state_locks[i].lck, "drv_ev_state", make_small(i));
+#else
 	    erts_smp_mtx_init(&drv_ev_state_locks[i].lck, "drv_ev_state");
+#endif
 	}
     }
 #endif
@@ -1612,7 +1793,7 @@ static void doit_erts_check_io_debug(void *vstate, void *vcounters)
 #endif
 	else {
 	    err = 1;
-	    erts_printf("control_type=%d ", state->type);
+	    erts_printf("control_type=%d ", (int)state->type);
 #ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
 	    if (cio_events == ep_events) {
 		erts_printf("ev=0x%b32x", (Uint32) cio_events);

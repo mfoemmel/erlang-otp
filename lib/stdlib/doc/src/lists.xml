@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1996</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1996</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>lists</title>
@@ -326,6 +324,22 @@ flatmap(Fun, List1) ->
       </desc>
     </func>
     <func>
+      <name>keyfind(Key, N, TupleList) -> Tuple | false</name>
+      <fsummary>Search for an element in a list of tuples</fsummary>
+      <type>
+        <v>Key = term()</v>
+        <v>N = 1..tuple_size(Tuple)</v>
+        <v>TupleList = [Tuple]</v>
+        <v>Tuple = tuple()</v>
+      </type>
+      <desc>
+        <p>Searches the list of tuples <c>TupleList</c> for a
+          tuple whose <c>N</c>th element compares equal to <c>Key</c>.
+          Returns <c>Tuple</c> if such a tuple is found,
+          otherwise <c>false</c>.</p>
+      </desc>
+    </func>
+    <func>
       <name>keymap(Fun, N, TupleList1) -> TupleList2</name>
       <fsummary>Map a function over a list of tuples</fsummary>
       <type>
@@ -410,6 +424,9 @@ flatmap(Fun, List1) ->
           tuple whose <c>N</c>th element compares equal to <c>Key</c>.
           Returns <c>{value, Tuple}</c> if such a tuple is found,
           otherwise <c>false</c>.</p>
+      <note><p>This function is retained for backward compatibility.
+      The function <c>lists:keyfind/3</c> (introduced in R13A)
+      is in most cases more convenient.</p></note>
       </desc>
     </func>
     <func>
@@ -744,15 +761,23 @@ c</pre>
           the previous element, until <c>To</c> has been reached or
           passed (in the latter case, <c>To</c> is not an element of
           the sequence). <c>Incr</c> defaults to 1.</p>
-        <p>Failure: If <c><![CDATA[To<From]]></c> and <c>Incr</c> is positive, or
-          if <c>To>From</c> and <c>Incr</c> is negative, or if
-          <c>Incr==0</c> and <c>From/=To</c>.</p>
+        <p>Failure: If <c><![CDATA[To<From-Incr]]></c> and <c>Incr</c>
+          is positive, or if <c>To>From-Incr</c> and <c>Incr</c> is
+          negative, or if <c>Incr==0</c> and <c>From/=To</c>.</p>
+        <p>The following equalities hold for all sequences:</p>
+        <code type="none">
+length(lists:seq(From, To)) == To-From+1
+length(lists:seq(From, To, Incr)) == (To-From+Incr) div Incr</code>
         <p>Examples:</p>
         <pre>
 > <input>lists:seq(1, 10).</input>
 [1,2,3,4,5,6,7,8,9,10]
 > <input>lists:seq(1, 20, 3).</input>
 [1,4,7,10,13,16,19]
+> <input>lists:seq(1, 0, 1).</input>
+[]
+> <input>lists:seq(10, 6, 4).</input>
+[]
 > <input>lists:seq(1, 1, 0).</input>
 [1]</pre>
       </desc>
@@ -872,7 +897,13 @@ splitwith(Pred, List) ->
         <pre>
 > <input>lists:subtract("123212", "212").</input>
 "312".</pre>
-        <p><c>lists:subtract(A,B)</c> is equivalent to <c>A -- B</c>.</p>
+        <p><c>lists:subtract(A, B)</c> is equivalent to <c>A -- B</c>.</p>
+	<warning><p>The complexity of <c>lists:subtract(A, B)</c> is proportional
+	to <c>length(A)*length(B)</c>, meaning that it will be very slow if
+	both <c>A</c> and <c>B</c> are long lists.
+	(Using ordered lists and
+	<seealso marker="ordsets#subtract/2">ordsets:subtract/2</seealso>
+	is a much better choice if both lists are long.)</p></warning>
       </desc>
     </func>
     <func>

@@ -1,24 +1,50 @@
 %% -*- erlang-indent-level: 2 -*-
 %%=============================================================================
-%% $Id$
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 
 -module(hipe_pack_constants).
 -export([pack_constants/2, slim_refs/1, slim_constmap/1]).
 
+-include("hipe_consttab.hrl").
 -include("../../kernel/src/hipe_ext_format.hrl").
-
--type gb_set() :: tuple(). % temporarily until gb_set is an abstract datatype
-
--record(pcm_entry, {mfa       :: mfa(),
-		    label,
-		    const_num :: non_neg_integer(),
-		    start     :: non_neg_integer(),
-		    type,
-		    raw_data}).
 
 %%-----------------------------------------------------------------------------
 
-%%-spec pack_constants() ->
+-type raw_data() :: binary() | float() | list() | tuple().
+-type tbl_ref()  :: {hipe_constlbl(), non_neg_integer()}.
+
+-record(pcm_entry, {mfa       :: mfa(),
+		    label     :: hipe_constlbl(),
+		    const_num :: non_neg_integer(),
+		    start     :: non_neg_integer(),
+		    type      :: 0 | 1 | 2,
+		    raw_data  :: raw_data()}).
+
+%%-----------------------------------------------------------------------------
+
+-spec pack_constants([{mfa(),[_],hipe_consttab()}], ct_alignment()) ->
+	{ct_alignment(),
+	 non_neg_integer(),
+	 [#pcm_entry{}],
+	 [{mfa(),[tbl_ref() | {'sorted',non_neg_integer(),[tbl_ref()]}]}]}.
+
 pack_constants(Data, Align) ->
   pack_constants(Data, 0, Align, 0, [], []).
 
@@ -55,7 +81,7 @@ pack_labels([Label|Labels],MFA,ConstTab,AccSize,OldAlign,ConstNo, Acc, Refs) ->
       0 -> AccSize;
       N -> AccSize + (Align - N)
     end,
-  %% io:format("Const ~w\n",[Const]),
+  %% io:format("Const ~w\n", [Const]),
   RawType = hipe_consttab:const_type(Const),
   Type = ?CONST_TYPE2EXT(RawType),
   RawData = hipe_consttab:const_data(Const),
@@ -66,22 +92,26 @@ pack_labels([Label|Labels],MFA,ConstTab,AccSize,OldAlign,ConstNo, Acc, Refs) ->
       %% constant term is not duplicated.
       case lists:keysearch(RawData, 7, Acc) of
 	false ->
-	  NewInfo = {pcm_entry,MFA,Label,ConstNo,0,Type,RawData},
+	  NewInfo = #pcm_entry{mfa=MFA, label=Label, const_num=ConstNo,
+			       start=0, type=Type, raw_data=RawData},
 	  pack_labels(Labels, MFA, ConstTab, AccSize, OldAlign, ConstNo+1,
 		      [NewInfo|Acc], Refs);
-	{value, {pcm_entry, _OtherMFA, _OtherLabel, OtherConstNo, _OtherStart,
-		 Type, RawData}} ->
-	  NewInfo = {pcm_entry, MFA, Label, OtherConstNo, 0, Type, RawData},
+	{value, #pcm_entry{const_num=OtherConstNo,
+			   type=Type, raw_data=RawData}} ->
+	  NewInfo = #pcm_entry{mfa=MFA, label=Label, const_num=OtherConstNo,
+			       start=0, type=Type, raw_data=RawData},
 	  pack_labels(Labels, MFA, ConstTab, AccSize, OldAlign, ConstNo,
 		      [NewInfo|Acc], Refs);
 	{value, _} ->
-	  NewInfo = {pcm_entry, MFA, Label, ConstNo, 0, Type, RawData},
+	  NewInfo = #pcm_entry{mfa=MFA, label=Label, const_num=ConstNo,
+			       start=0, type=Type, raw_data=RawData},
 	  pack_labels(Labels, MFA, ConstTab, AccSize, OldAlign, ConstNo+1,
 		      [NewInfo|Acc], Refs)
       end;
-    sorted_block -> 
+    sorted_block ->
       Need = hipe_consttab:const_size(Const),
-      NewInfo = {pcm_entry,MFA,Label,ConstNo,Start,Type,RawData},
+      NewInfo = #pcm_entry{mfa=MFA, label=Label, const_num=ConstNo,
+			   start=Start, type=Type, raw_data=RawData},
       pack_labels(Labels, MFA, ConstTab, Start+Need, NewAlign, ConstNo+1,
 		  [NewInfo|Acc], Refs);
     block ->
@@ -95,7 +125,8 @@ pack_labels([Label|Labels],MFA,ConstTab,AccSize,OldAlign,ConstNo, Acc, Refs) ->
 	    {hipe_consttab:decompose({ElementType, TblData}),
 	     [{sorted,Start,TblRefs}]}
 	end,
-      NewInfo = {pcm_entry,MFA,Label,ConstNo,Start,Type,Data},
+      NewInfo = #pcm_entry{mfa=MFA, label=Label, const_num=ConstNo,
+			   start=Start, type=Type, raw_data=Data},
       pack_labels(Labels, MFA, ConstTab, Start+Need, NewAlign, ConstNo+1,
 		  [NewInfo|Acc], NewRefs++Refs)
   end;
@@ -125,7 +156,10 @@ get_sorted_refs([D|Rest], [_Ordering|Os]) ->
 get_sorted_refs([], []) ->
   {[], []}.
 
+-type ref_type() :: 0..4.
 
+-spec slim_refs([{ref_type(),non_neg_integer(),term()}]) ->
+	[{ref_type(), [{term(), [non_neg_integer()]}]}].
 slim_refs([]) -> [];
 slim_refs(Refs) ->
   [Ref|Rest] = lists:keysort(1, Refs),
@@ -164,11 +198,11 @@ compact_dests([], Dest, AccofDest, Acc) ->
 %% to the slimmed and flattened format ConstMap which is put in object
 %% files.
 %%
--spec slim_constmap([#pcm_entry{}]) -> [_].
+-spec slim_constmap([#pcm_entry{}]) -> [raw_data()].
 slim_constmap(Map) ->
   slim_constmap(Map, gb_sets:new(), []).
 
--spec slim_constmap([#pcm_entry{}], gb_set(), [_]) -> [_].
+-spec slim_constmap([#pcm_entry{}], gb_set(), [raw_data()]) -> [raw_data()].
 slim_constmap([#pcm_entry{const_num=ConstNo, start=Offset,
 			  type=Type, raw_data=Term}|Rest], Inserted, Acc) ->
   case gb_sets:is_member(ConstNo, Inserted) of

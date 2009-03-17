@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 2000, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(digraph_utils).
 
@@ -98,13 +99,23 @@ is_tree(G) ->
     andalso (length(components(G)) =:= 1).
 
 loop_vertices(G) ->
-    lists:filter(fun(V) -> is_reflexive_vertex(V, G) end, digraph:vertices(G)).
+    [V || V <- digraph:vertices(G), is_reflexive_vertex(V, G)].
 
 subgraph(G, Vs) ->
-    subgraph_opts(G, Vs, []).
+    try
+	subgraph_opts(G, Vs, [])
+    catch
+	throw:badarg ->
+	    erlang:error(badarg)
+    end.
 
 subgraph(G, Vs, Opts) ->
-    subgraph_opts(G, Vs, Opts).
+    try
+	subgraph_opts(G, Vs, Opts)
+    catch
+	throw:badarg ->
+	    erlang:error(badarg)
+    end.
 
 condensation(G) ->
     SCs = strong_components(G),
@@ -221,7 +232,7 @@ subgraph_opts([{type, Type} | Opts], _Type0, Keep, G, Vs)
   when Type =:= inherit; is_list(Type) ->
     subgraph_opts(Opts, Type, Keep, G, Vs);
 subgraph_opts([{keep_labels, Keep} | Opts], Type, _Keep0, G, Vs)
-  when Keep; not Keep ->
+  when is_boolean(Keep) ->
     subgraph_opts(Opts, Type, Keep, G, Vs);
 subgraph_opts([], inherit, Keep, G, Vs) ->
     Info = digraph:info(G),
@@ -230,13 +241,11 @@ subgraph_opts([], inherit, Keep, G, Vs) ->
     subgraph(G, Vs, [Cyclicity, Protection], Keep);
 subgraph_opts([], Type, Keep, G, Vs) ->
     subgraph(G, Vs, Type, Keep);
-subgraph_opts([Opt | _], _Type, _Keep, _G, _Vs) ->
-    {error, {invalid_option, Opt}}.
+subgraph_opts(_, _Type, _Keep, _G, _Vs) ->
+    throw(badarg).
 
 subgraph(G, Vs, Type, Keep) ->
-    case digraph:new(Type) of
-	Error = {error, _} ->
-	    Error;
+    try digraph:new(Type) of
 	SG ->
 	    lists:foreach(fun(V) -> subgraph_vertex(V, G, SG, Keep) end, Vs),
 	    EFun = fun(V) -> lists:foreach(fun(E) -> 
@@ -246,6 +255,9 @@ subgraph(G, Vs, Type, Keep) ->
 		   end,
 	    lists:foreach(EFun, digraph:vertices(SG)),
 	    SG
+    catch
+	error:badarg ->
+	    throw(badarg)
     end.
 
 subgraph_vertex(V, G, SG, Keep) ->
@@ -282,4 +294,3 @@ condense(I, T, SC, G, SCG, I2C) ->
     digraph:add_vertex(SCG, C),
     digraph:add_edge(SCG, SC, C),
     condense(ets:next(T, I), T, SC, G, SCG, I2C).
-

@@ -1,4 +1,0 @@
-#!/bin/sh
-
-rm -f runtests testcases.h regex.h
-

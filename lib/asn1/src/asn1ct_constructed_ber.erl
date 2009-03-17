@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>1997-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1ct_constructed_ber).
 
@@ -620,15 +620,21 @@ gen_decode_choice(Erules,Typename,D) when record(D,type) ->
 %%
 %%============================================================================
 
-gen_enc_sequence_call(Erules,TopType,[#'ComponentType'{name=Cname,typespec=Type,prop=Prop}|Rest],Pos,Ext,EncObj) ->
+gen_enc_sequence_call(Erules,TopType,[#'ComponentType'{name=Cname,typespec=Type,prop=Prop,textual_order=Order}|Rest],Pos,Ext,EncObj) ->
     asn1ct_name:new(encBytes),
     asn1ct_name:new(encLen),
+    CindexPos =
+	case Order of
+	    undefined ->
+		Pos;
+	    _ -> Order % der
+	end,
     Element = 
 	case TopType of
 	    ['EXTERNAL'] ->
-		io_lib:format("?RT_BER:cindex(~w,NewVal,~w)",[Pos+1,Cname]);
+		io_lib:format("?RT_BER:cindex(~w,NewVal,~w)",[CindexPos+1,Cname]);
 	    _ ->
-		io_lib:format("?RT_BER:cindex(~w,Val,~w)",[Pos+1,Cname])
+		io_lib:format("?RT_BER:cindex(~w,Val,~w)",[CindexPos+1,Cname])
 	end,
     InnerType = asn1ct_gen:get_inner(Type#type.def),
     print_attribute_comment(InnerType,Pos,Prop),

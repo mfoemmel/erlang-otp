@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 -module(erl_bits).
@@ -27,18 +28,22 @@
 
 %% Dummies.
 
+-spec system_bitdefault() -> 'no_system_bitdefault'.
 system_bitdefault() -> no_system_bitdefault.
+
+-spec system_bittypes() -> 'no_system_types'.
 system_bittypes() -> no_system_types.
 
-%% as_list(BitType) -> TypeList.
+-spec as_list(#bittype{}) ->
+    [bt_endian() | bt_sign() | bt_type() | {'unit', 'undefined' | bt_unit()}].
 
 as_list(Bt) ->
     [Bt#bittype.type,{unit,Bt#bittype.unit},Bt#bittype.sign,Bt#bittype.endian].
 
-%% set_bit_type(Size, TypeList) ->
-%%              {ok,Size,BitType} |
-%%              {error,{undefined_bittype,Name}} |
-%%              {error,{bittype_mismatch,T1,T2,What}}
+%% set_bit_type(Size, 'default' | TypeList) ->
+%%              {'ok', Size, #bittype{}} |
+%%              {'error', {'undefined_bittype', term()}} |
+%%              {'error', {'bittype_mismatch', term(), term(), string()}}.
 
 set_bit_type(Size, default) ->
     set_bit_type(Size, []);
@@ -60,27 +65,27 @@ set_bit_1([T0|Ts], Bt0) ->
     set_bit_1(Ts, Bt);
 set_bit_1([], Bt) -> Bt.
 
-type_to_record(integer) ->   #bittype{ type   = integer};
-type_to_record(utf8) ->      #bittype{ type   = utf8};
-type_to_record(utf16) ->     #bittype{ type   = utf16};
-type_to_record(utf32) ->     #bittype{ type   = utf32};
-type_to_record(float) ->     #bittype{ type   = float};
-type_to_record(binary) ->    #bittype{ type   = binary};
-type_to_record(bytes) ->     #bittype{ type   = binary,unit=8};
-type_to_record(bitstring) -> #bittype{ type   = binary,unit=1};
-type_to_record(bits) ->      #bittype{ type   = binary,unit=1};
+type_to_record(integer) ->   #bittype{type   = integer};
+type_to_record(utf8) ->      #bittype{type   = utf8};
+type_to_record(utf16) ->     #bittype{type   = utf16};
+type_to_record(utf32) ->     #bittype{type   = utf32};
+type_to_record(float) ->     #bittype{type   = float};
+type_to_record(binary) ->    #bittype{type   = binary};
+type_to_record(bytes) ->     #bittype{type   = binary, unit = 8};
+type_to_record(bitstring) -> #bittype{type   = binary, unit = 1};
+type_to_record(bits) ->      #bittype{type   = binary, unit = 1};
 
 type_to_record({unit,undefined}) ->
     #bittype{unit=undefined};
 type_to_record({unit,Sz}) when is_integer(Sz), Sz > 0, Sz =< 256 ->
     #bittype{unit=Sz};
 
-type_to_record(big) ->       #bittype{ endian = big };
-type_to_record(little) ->    #bittype{ endian = little };
-type_to_record(native) ->    #bittype{ endian = native };
+type_to_record(big) ->       #bittype{endian = big};
+type_to_record(little) ->    #bittype{endian = little};
+type_to_record(native) ->    #bittype{endian = native};
 
-type_to_record(signed) ->    #bittype{ sign   = signed };
-type_to_record(unsigned) ->  #bittype{ sign   = unsigned };
+type_to_record(signed) ->    #bittype{sign   = signed};
+type_to_record(unsigned) ->  #bittype{sign   = unsigned};
 
 type_to_record(Name) ->      throw({error,{undefined_bittype,Name}}).
 

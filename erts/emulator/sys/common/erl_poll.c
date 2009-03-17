@@ -1,20 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2006-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
- *
+ * %CopyrightEnd%
  */
 
 /*
@@ -122,14 +122,14 @@
   erts_smp_mtx_lock(&(PS)->mtx)
 #define ERTS_POLLSET_UNLOCK(PS) \
   erts_smp_mtx_unlock(&(PS)->mtx)
+
 #define ERTS_POLLSET_SET_POLLED_CHK(PS) \
   ((int) erts_smp_atomic_xchg(&(PS)->polled, (long) 1))
-#define ERTS_POLLSET_SET_POLLED(PS) \
-  erts_smp_atomic_set(&(PS)->polled, (long) 1)
 #define ERTS_POLLSET_UNSET_POLLED(PS) \
   erts_smp_atomic_set(&(PS)->polled, (long) 0)
 #define ERTS_POLLSET_IS_POLLED(PS) \
   ((int) erts_smp_atomic_read(&(PS)->polled))
+
 #define ERTS_POLLSET_SET_POLLER_WOKEN_CHK(PS) \
   ((int) erts_smp_atomic_xchg(&(PS)->woken, (long) 1))
 #define ERTS_POLLSET_SET_POLLER_WOKEN(PS) \
@@ -441,8 +441,8 @@ cleanup_wakeup_pipe(ErtsPollSet ps)
     int fd = ps->wake_fds[0];
     int res;
     do {
-	char *buf[32];
-	res = read(fd, (void *) buf, 32);
+	char buf[32];
+	res = read(fd, buf, sizeof(buf));
     } while (res > 0 || (res < 0 && errno == EINTR));
     if (res < 0 && errno != ERRNO_BLOCK) {
 	fatal_error("%s:%d:cleanup_wakeup_pipe(): "
@@ -457,6 +457,7 @@ cleanup_wakeup_pipe(ErtsPollSet ps)
 static void
 create_wakeup_pipe(ErtsPollSet ps)
 {
+    int do_wake = 0;
     int wake_fds[2];
     ps->wake_fds[0] = -1;
     ps->wake_fds[1] = -1;
@@ -478,7 +479,7 @@ create_wakeup_pipe(ErtsPollSet ps)
     ERTS_POLL_EXPORT(erts_poll_control)(ps,
 					wake_fds[0],
 					ERTS_POLL_EV_IN,
-					1);
+					1, &do_wake);
 #if ERTS_POLL_USE_FALLBACK
     /* We depend on the wakeup pipe being handled by kernel poll */
     if (ps->fds_status[wake_fds[0]].flags & ERTS_POLL_FD_FLG_INFLBCK)
@@ -1362,7 +1363,8 @@ handle_update_requests(ErtsPollSet ps)
 
 static ERTS_INLINE ErtsPollEvents
 poll_control(ErtsPollSet ps, int fd, ErtsPollEvents events, int on,
-	     int *have_set_have_update_requests, int *do_wake)
+	     int *have_set_have_update_requests,
+	     int *do_wake)
 {
     ErtsPollEvents new_events;
 
@@ -1392,8 +1394,10 @@ poll_control(ErtsPollSet ps, int fd, ErtsPollEvents events, int on,
 
     new_events = ps->fds_status[fd].events;
 
-    if (events == 0)
+    if (events == 0) {
+	*do_wake = 0;
 	goto done;
+    }
 
     if (on)
 	new_events |= events;
@@ -1416,6 +1420,7 @@ poll_control(ErtsPollSet ps, int fd, ErtsPollEvents events, int on,
 	&& !(ps->fds_status[fd].flags & ERTS_POLL_FD_FLG_RST)
 #endif
 	) {
+	*do_wake = 0;
 	goto done;
     }
 
@@ -1428,8 +1433,10 @@ poll_control(ErtsPollSet ps, int fd, ErtsPollEvents events, int on,
     if (ERTS_POLLSET_IS_POLLED(ps)) {
 	int update_fallback = 0;
 	conc_update_pollset(ps, fd, &update_fallback);
-	if (!update_fallback)
+	if (!update_fallback) {
+	    *do_wake = 0; /* no need to wake kernel poller */
 	    goto done;
+	}
     }
 #endif
 
@@ -1449,8 +1456,8 @@ poll_control(ErtsPollSet ps, int fd, ErtsPollEvents events, int on,
 
  done:
 #ifdef ERTS_POLL_DEBUG_PRINT
-    erts_printf("0x%x = poll_control(ps, %d, 0x%x, %s)\n",
-		 (int) new_events, fd, (int) events, on ? "on" : "off");
+     erts_printf("0x%x = poll_control(ps, %d, 0x%x, %s) do_wake=%d\n",
+		 (int) new_events, fd, (int) events, (on ? "on" : "off"), *do_wake);
 #endif
     return new_events;
 }
@@ -1462,21 +1469,24 @@ ERTS_POLL_EXPORT(erts_poll_controlv)(ErtsPollSet ps,
 {
     int i;
     int hshur = 0;
-    int do_wake = 0;
+    int do_wake;
+    int final_do_wake = 0;
 
     ERTS_POLLSET_LOCK(ps);
 
     for (i = 0; i < len; i++) {
+	do_wake = 0;
 	pcev[i].events = poll_control(ps,
 				      pcev[i].fd,
 				      pcev[i].events,
 				      pcev[i].on,
 				      &hshur,
 				      &do_wake);
+	final_do_wake |= do_wake;
     }
 
 #ifdef ERTS_SMP
-    if (do_wake)
+    if (final_do_wake)
 	wake_poller(ps);
 #endif /* ERTS_SMP */
 
@@ -1486,19 +1496,22 @@ ERTS_POLL_EXPORT(erts_poll_controlv)(ErtsPollSet ps,
 ErtsPollEvents
 ERTS_POLL_EXPORT(erts_poll_control)(ErtsPollSet ps,
 				    ErtsSysFdType fd,
-				    ErtsPollEvents events, int on)
+				    ErtsPollEvents events,
+				    int on,
+				    int* do_wake) /* In: Wake up polling thread */
+				                  /* Out: Poller is woken */
 {
     int hshur = 0;
-    int do_wake = 0;
     ErtsPollEvents res;
 
     ERTS_POLLSET_LOCK(ps);
 
-    res = poll_control(ps, fd, events, on, &hshur, &do_wake);
+    res = poll_control(ps, fd, events, on, &hshur, do_wake);
 
 #ifdef ERTS_SMP
-    if (do_wake)
+    if (*do_wake) {
 	wake_poller(ps);
+    }
 #endif /* ERTS_SMP */
 
     ERTS_POLLSET_UNLOCK(ps);
@@ -2122,7 +2135,7 @@ ERTS_POLL_EXPORT(erts_poll_interrupt_timed)(ErtsPollSet ps, int set, long msec)
 	}
 #ifdef ERTS_POLL_COUNT_AVOIDED_WAKEUPS
 	else {
-	    if (ERTS_POLLSET_SET_POLLED_CHK(ps))
+	    if (ERTS_POLLSET_IS_POLLED(ps))
 		erts_smp_atomic_inc(&ps->no_avoided_wakeups);
 	    erts_smp_atomic_inc(&ps->no_avoided_interrupts);
 	}
@@ -2260,7 +2273,11 @@ ERTS_POLL_EXPORT(erts_poll_create_pollset)(void)
     /* Force kernel poll fd into fallback (poll/select) set */
     ps->fds_status[kp_fd].flags
 	|= ERTS_POLL_FD_FLG_INFLBCK|ERTS_POLL_FD_FLG_USEFLBCK;
-    ERTS_POLL_EXPORT(erts_poll_control)(ps, kp_fd, ERTS_POLL_EV_IN, 1);
+    {
+	int do_wake = 0;
+	ERTS_POLL_EXPORT(erts_poll_control)(ps, kp_fd, ERTS_POLL_EV_IN, 1,
+					    &do_wake);
+    }    
 #endif
 #if ERTS_POLL_USE_KERNEL_POLL
     if (ps->internal_fd_limit <= kp_fd)

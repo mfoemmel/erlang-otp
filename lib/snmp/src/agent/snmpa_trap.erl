@@ -1,37 +1,41 @@
-%%<copyright>
-%% <year>1996-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 -module(snmpa_trap).
 
 %%%-----------------------------------------------------------------
-%%% This module takes care of all trap handling.
+%%% This module takes care of all trap(notification handling.
 %%%-----------------------------------------------------------------
 %% External exports
--export([construct_trap/2, try_initialise_vars/2, send_trap/6]).
+-export([construct_trap/2, 
+	 try_initialise_vars/2, send_trap/6]).
+-export([send_discovery/5]).
 
 %% Internal exports
 -export([init_v2_inform/9, init_v3_inform/9, send_inform/6]).
+-export([init_discovery_inform/12, send_discovery_inform/5]).
 
 -include("snmp_types.hrl").
 -include("SNMPv2-MIB.hrl").
 -include("SNMPv2-TM.hrl").
+-include("SNMPv2-TC.hrl").
 -include("SNMP-FRAMEWORK-MIB.hrl").
+-include("SNMP-TARGET-MIB.hrl").
 -define(enterpriseSpecific, 6).
 
 
@@ -122,21 +126,19 @@ construct_trap(Trap, Varbinds) ->
 	    user_err("construct_trap got undef Trap: ~w" , [Trap]),
 	    error;
 
-	{value, TRec} when is_record(TRec, trap) ->
+	{value, #trap{oidobjects = ListOfVars} = TRec} ->
 	    ?vdebug("construct_trap -> trap"
 		    "~n   ~p", [TRec]),
-	    ListOfVars = TRec#trap.oidobjects,
-	    OidVbs = [alias_to_oid(Vb) || Vb <- Varbinds],
-	    LV = initiate_vars(ListOfVars, OidVbs),
+	    OidVbs        = [alias_to_oid(Vb) || Vb <- Varbinds],
+	    LV            = initiate_vars(ListOfVars, OidVbs),
 	    InitiatedVars = try_initialise_vars(get(mibserver), LV),
 	    {ok, TRec, InitiatedVars};
 
-	{value, NRec} when is_record(NRec, notification) ->
+	{value, #notification{oidobjects = ListOfVars} = NRec} ->
 	    ?vdebug("construct_trap -> notification"
 		    "~n   ~p", [NRec]),
-	    ListOfVars = NRec#notification.oidobjects,
-	    OidVbs = [alias_to_oid(Vb) || Vb <- Varbinds],
-	    LV = initiate_vars(ListOfVars, OidVbs),
+	    OidVbs        = [alias_to_oid(Vb) || Vb <- Varbinds],
+	    LV            = initiate_vars(ListOfVars, OidVbs),
 	    InitiatedVars = try_initialise_vars(get(mibserver), LV), 
 	    {ok, NRec, InitiatedVars}
     end.
@@ -287,6 +289,13 @@ make_v1_trap_pdu(Enterprise, Specific, VarbindList, SysUpTime) ->
 	     time_stamp    = SysUpTime,
 	     varbinds      = VarbindList}.
 
+make_discovery_pdu(Vbs) ->
+    #pdu{type         = 'inform-request',
+	 request_id   = snmpa_mpd:generate_req_id(),
+	 error_status = noError,
+	 error_index  = 0,
+	 varbinds     = Vbs}.
+
 make_v2_notif_pdu(Vbs, Type) ->
     #pdu{type         = Type,
 	 request_id   = snmpa_mpd:generate_req_id(),
@@ -329,7 +338,16 @@ do_send_trap(TrapRec, NotifyName, ContextName, Recv, Vbs, NetIf) ->
     Dests       = find_dests(NotifyName),
     send_trap_pdus(Dests, ContextName, {TrapRec, VarbindList}, [], [], [],
 		   Recv, NetIf).
-	    
+
+send_discovery(TargetName, Record, ContextName, Vbs, NetIf) ->
+    case find_dest(TargetName) of
+	{ok, Dest} ->
+	    send_discovery_pdu(Dest, Record, ContextName, Vbs, NetIf);
+	Error ->
+	    Error
+    end.
+
+
 get_values(VariablesWithType) ->
     {Order, Varbinds} = extract_order(VariablesWithType, 1),
     case snmpa_agent:do_get(snmpa_acm:get_root_mib_view(), Varbinds, true) of
@@ -398,6 +416,7 @@ split_variables([{_No, {VarName, RowIndex, Value}} | _T]) ->
     throw(error);
 split_variables([]) -> {[], []}.
 
+
 %%-----------------------------------------------------------------
 %% Func: find_dests(NotifyName) -> 
 %%          [{DestAddr, TargetName, TargetParams, NotifyType}]
@@ -420,6 +439,181 @@ find_dests(NotifyName) ->
 	    Dests
     end.
 
+find_dest(TargetName) ->
+    AddrCols = [?snmpTargetAddrTDomain,
+		?snmpTargetAddrTAddress,
+		?snmpTargetAddrTimeout,
+		?snmpTargetAddrRetryCount,
+		?snmpTargetAddrParams,
+		?snmpTargetAddrRowStatus],
+    case snmp_target_mib:snmpTargetAddrTable(get, TargetName, AddrCols) of
+	[{value, TDomain},
+	 {value, TAddress},
+	 {value, Timeout},
+	 {value, RetryCount},
+	 {value, Params},
+	 {value, ?'RowStatus_active'}] ->
+	    ?vtrace("find_dest -> found snmpTargetAddrTable info:"
+		    "~n   TDomain:    ~p"
+		    "~n   TAddress:   ~p"
+		    "~n   Timeout:    ~p"
+		    "~n   RetryCount: ~p"
+		    "~n   Params:     ~p", 
+		    [TDomain, TAddress, Timeout, RetryCount, Params]),
+	    ParmCols = [?snmpTargetParamsMPModel,
+			?snmpTargetParamsSecurityModel,
+			?snmpTargetParamsSecurityName,
+			?snmpTargetParamsSecurityLevel,
+			?snmpTargetParamsRowStatus],
+	    case snmp_target_mib:snmpTargetParamsTable(get, Params, ParmCols) of
+		[{value, ?MP_V3}, 
+		 {value, SecModel}, 
+		 {value, SecName}, 
+		 {value, SecLevel},
+		 {value, ?'RowStatus_active'}] ->
+		    ?vtrace("find_dest -> found snmpTargetParamsTable info:"
+			    "~n   SecModel: ~p"
+			    "~n   SecModel: ~p"
+			    "~n   SecLevel: ~p", 
+			    [SecModel, SecName, SecLevel]),
+		    DestAddr     = {TDomain, TAddress},
+		    TargetParams = {SecModel, SecName, SecLevel},
+		    Val = {DestAddr, TargetName, TargetParams, Timeout, RetryCount},
+		    {ok, Val};
+		[{value, ?MP_V3}, 
+		 {value, _SecModel}, 
+		 {value, _SecName}, 
+		 {value, _SecLevel},
+		 {value, RowStatus}] ->
+		    {error, {invalid_RowStatus, RowStatus, snmpTargetParamsTable}};
+		[{value, MpModel}, 
+		 {value, _SecModel}, 
+		 {value, _SecName}, 
+		 {value, _SecLevel},
+		 {value, ?'RowStatus_active'}] ->
+		    {error, {invalid_MpModel, MpModel, snmpTargetParamsTable}};
+		[{value, _MpModel}, 
+		 {value, _SecModel}, 
+		 {value, _SecName}, 
+		 {value, _SecLevel},
+		 {value, RowStatus}] ->
+		    {error, {invalid_RowStatus, RowStatus, snmpTargetParamsTable}};
+		Bad ->
+		    ?vlog("find_dest -> "
+			  "could not find snmpTargetParamsTable info: "
+			  "~n   Bad: ~p", [Bad]),
+		    {error, {not_found, snmpTargetParamsTable}}
+	    end;
+	
+	[{value, _TDomain},
+	 {value, _TAddress},
+	 {value, _Timeout},
+	 {value, _RetryCount},
+	 {value, _Params},
+	 {value, RowStatus}] ->
+	    {error, {invalid_RowStatus, RowStatus, snmpTargetAddrTable}};
+	_ ->
+	    {error, {not_found, snmpTargetAddrTable}}
+    end.
+
+
+send_discovery_pdu({Dest, TargetName, {SecModel, SecName, SecLevel}, 
+		    Timeout, Retry}, 
+		   Record, ContextName, Vbs, NetIf) ->
+    ?vdebug("send_discovery_pdu -> entry with "
+	    "~n   Destination address: ~p"
+	    "~n   Target name:         ~p"
+	    "~n   Sec model:           ~p"
+	    "~n   Sec name:            ~p"
+	    "~n   Sec level:           ~p"
+	    "~n   Timeout:             ~p"
+	    "~n   Retry:               ~p"
+	    "~n   Record:              ~p"
+	    "~n   ContextName:         ~p",
+	    [Dest, TargetName, SecModel, SecName, SecLevel, 
+	     Timeout, Retry, Record, ContextName]),
+    case snmpa_vacm:get_mib_view(notify, SecModel, SecName, SecLevel,
+				 ContextName) of
+	{ok, MibView} ->
+	    case check_all_varbinds(Record, Vbs, MibView) of
+		true ->
+		    SysUpTime = snmp_standard_mib:sys_up_time(), 
+		    send_discovery_pdu(Record, Dest, Vbs, 
+				       SecModel, SecName, SecLevel, 
+				       TargetName, ContextName, 
+				       Timeout, Retry, 
+				       SysUpTime, NetIf);
+		false ->
+		    {error, {mibview_validation_failed, Vbs, MibView}}
+	    end;
+	{discarded, Reason} ->
+	    {error, {failed_get_mibview, Reason}}
+    end.
+
+send_discovery_pdu(Record, Dest, Vbs, 
+		   SecModel, SecName, SecLevel, TargetName, 
+		   ContextName, Timeout, Retry, SysUpTime, NetIf) ->
+    {_Oid, IVbs} = mk_v2_trap(Record, Vbs, SysUpTime), % v2 refers to SMIv2;
+    Sender = proc_lib:spawn_link(?MODULE, init_discovery_inform,
+				 [self(), 
+				  Dest, 
+				  SecModel, SecName, SecLevel, TargetName,
+				  ContextName, 
+				  Timeout, Retry, 
+				  IVbs, NetIf, 
+				  get(verbosity)]),
+    {ok, Sender, SecLevel}.
+
+init_discovery_inform(Parent, 
+		      Dest, 
+		      SecModel, SecName, SecLevel, TargetName, 
+		      ContextName, Timeout, Retry, Vbs, NetIf, Verbosity) ->
+    put(verbosity, Verbosity),
+    put(sname, madis),
+    Pdu = make_discovery_pdu(Vbs), 
+    ContextEngineId = snmp_framework_mib:get_engine_id(),
+    SecLevelFlag = mk_flag(SecLevel), 
+    SecData      = {SecModel, SecName, SecLevelFlag, TargetName}, 
+    MsgData      = {SecData, ContextEngineId, ContextName}, 
+%%     NoteTimeout = note_timeout(Timeout, Retry),
+%%     Msg         = {send_discovery, Pdu, MsgData, NoteTimeout, Dest, self()},
+    Msg          = {send_discovery, Pdu, MsgData, Dest, self()},
+    ?MODULE:send_discovery_inform(Parent, Timeout*10, Retry, Msg, NetIf).
+
+%% note_timeout(Timeout, Retry) 
+%%   when ((is_integer(Timeout) andalso (Timeout > 0)) andalso 
+%% 	(is_integer(Retry) andalso (Retry > 0)))
+%%     note_timeout(Timeout*10, Retry, 0);
+%% note_timeout(Timeout, Retry) 
+%%   when (is_integer(Timeout) andalso (Timeout > 0)) ->
+%%     Timeout*10.
+
+%% note_timeout(_Timeout, -1, NoteTimeout) ->
+%%     NoteTimeout;
+%% note_timeout(Timeout, Retry, NoteTimeout) when ->
+%%     note_timeout(Timeout*2, Retry-1, NoteTimeout+Timeout).
+
+send_discovery_inform(Parent, _Timeout, -1, _Msg, _NetIf) ->
+    Parent ! {discovery_response, {error, timeout}};
+send_discovery_inform(Parent, Timeout, Retry, Msg, NetIf) ->
+    NetIf ! Msg,
+    receive
+	{snmp_discovery_response_received, Pdu, undefined} ->
+	    ?vtrace("received stage 2 discovery response: "
+		    "~n   Pdu: ~p", [Pdu]),
+	    Parent ! {discovery_response, {ok, Pdu}};
+	{snmp_discovery_response_received, Pdu, ManagerEngineId} ->
+	    ?vtrace("received stage 1 discovery response: "
+		    "~n   Pdu:             ~p"
+		    "~n   ManagerEngineId: ~p", [Pdu, ManagerEngineId]),
+	    Parent ! {discovery_response, {ok, Pdu, ManagerEngineId}}
+    after
+	Timeout ->
+	    ?MODULE:send_discovery_inform(Parent, 
+					  Timeout*2, Retry-1, Msg, NetIf)
+    end.
+
+    
 %%-----------------------------------------------------------------
 %% NOTE: This function is executed in the master agent's context
 %% For each target, check if it has access to the objects in the
@@ -438,12 +632,12 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 	    "~n   V1Res:               ~p"
 	    "~n   V2Res:               ~p"
 	    "~n   V3Res:               ~p",
-	    [DestAddr,TargetName,MpModel,Type,V1Res,V2Res,V3Res]),
+	    [DestAddr, TargetName, MpModel, Type, V1Res, V2Res, V3Res]),
     case snmpa_vacm:get_mib_view(notify, SecModel, SecName, SecLevel,
 				 ContextName) of
 	{ok, MibView} ->
 	    case check_all_varbinds(TrapRec, Vbs, MibView) of
-		true when MpModel == ?MP_V1 ->
+		true when MpModel =:= ?MP_V1 ->
 		    ?vtrace("send_trap_pdus -> v1 mp model",[]),
 		    ContextEngineId = snmp_framework_mib:get_engine_id(),
 		    case snmp_community_mib:vacm2community({SecName,
@@ -462,7 +656,7 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 			    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 					   V1Res, V2Res, V3Res, Recv, NetIf)
 		    end;
-		true when MpModel == ?MP_V2C ->
+		true when MpModel =:= ?MP_V2C ->
 		    ?vtrace("send_trap_pdus -> v2c mp model",[]),
 		    ContextEngineId = snmp_framework_mib:get_engine_id(),
 		    case snmp_community_mib:vacm2community({SecName,
@@ -482,7 +676,7 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 			    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 					   V1Res, V2Res, V3Res, Recv, NetIf)
 		    end;
-		true when MpModel == ?MP_V3 ->
+		true when MpModel =:= ?MP_V3 ->
 		    ?vtrace("send_trap_pdus -> v3 mp model",[]),
 		    SecLevelF = mk_flag(SecLevel),
 		    MsgData = {SecModel, SecName, SecLevelF, TargetName},
@@ -703,13 +897,14 @@ send_inform(Addr, _Timeout, -1, _Msg,  Recv, _NetIf) ->
 	   []),
     deliver_recv(Recv, snmp_notification, {no_response, Addr});
 send_inform(Addr, Timeout, Retry, Msg, Recv, NetIf) ->
-    ?vtrace("~n   deliver send-pdu-request to net-if when"
+    ?vtrace("deliver send-pdu-request to net-if when"
 	    "~n   Timeout: ~p"
 	    "~n   Retry:   ~p",[Timeout, Retry]),
     NetIf ! Msg,
     receive
 	{snmp_response_received, _Vsn, _Pdu, _From} ->
-	    ?vtrace("~n   received response for ~p (~p)",[Recv,Retry]),
+	    ?vtrace("received response for ~p (when Retry = ~p)", 
+		    [Recv, Retry]),
 	    deliver_recv(Recv, snmp_notification, {got_response, Addr})
     after
 	Timeout ->

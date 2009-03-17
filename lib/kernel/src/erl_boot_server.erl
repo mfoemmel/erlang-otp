@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% A simple boot_server at a CP.
 %%
@@ -24,6 +25,7 @@
 -module(erl_boot_server).
 
 -include("inet_boot.hrl").
+
 -behaviour(gen_server).
 
 %% API functions.
@@ -42,37 +44,35 @@
 -record(state, 
 	{
 	  priority = 0,  %% priority of this server
-	  version = "",  %% Version handled i.e "4.5.3" etc
+	  version = ""   :: string(),	%% Version handled i.e "4.5.3" etc
 	  udp_sock,      %% listen port for broadcase requests
 	  udp_port,      %% port number must be ?EBOOT_PORT!
 	  listen_sock,   %% listen sock for incoming file requests
 	  listen_port,   %% listen port number
 	  slaves,        %% list of accepted ip addresses
-	  bootp,         %% boot process
+	  bootp          :: pid(),	%% boot process
 	  prim_state     %% state for efile code loader
 	 }).
 
 -define(single_addr_mask, {255, 255, 255, 255}).
 
--type(ip4_address() :: {0..255,0..255,0..255,0..255}).
+-type ip4_address() :: {0..255,0..255,0..255,0..255}.
 
--spec(start/1 :: (Slaves :: [atom()]) -> 
-	{'ok', pid()} | {'error', any()}).
+-spec start(Slaves :: [atom()]) -> {'ok', pid()} | {'error', any()}.
 
 start(Slaves) ->
     case check_arg(Slaves) of
-	{ok,AL} ->
+	{ok, AL} ->
 	    gen_server:start({local,boot_server}, erl_boot_server, AL, []);
 	_ ->
 	    {error, {badarg, Slaves}}
     end.
 
--spec(start_link/1 :: (Slaves :: [atom()]) ->
-	{'ok', pid()} | {'error', any()}).
+-spec start_link(Slaves :: [atom()]) -> {'ok', pid()} | {'error', any()}.
 
 start_link(Slaves) ->
     case check_arg(Slaves) of
-	{ok,AL} ->
+	{ok, AL} ->
 	    gen_server:start_link({local,boot_server},
 				  erl_boot_server, AL, []);
 	_ ->
@@ -94,8 +94,7 @@ check_arg([], Result) ->
 check_arg(_, _Result) ->
     error.
 
--spec(add_slave/1 :: (Slave :: atom()) ->
-	'ok' | {'error', any()}).
+-spec add_slave(Slave :: atom()) -> 'ok' | {'error', any()}.
 
 add_slave(Slave) ->
     case inet:getaddr(Slave, inet) of
@@ -105,8 +104,7 @@ add_slave(Slave) ->
 	    {error, {badarg, Slave}}
     end.
 
--spec(delete_slave/1 :: (Slave :: atom()) ->
-	'ok' | {'error', any()}).
+-spec delete_slave(Slave :: atom()) -> 'ok' | {'error', any()}.
 
 delete_slave(Slave) ->
     case inet:getaddr(Slave, inet) of
@@ -116,10 +114,8 @@ delete_slave(Slave) ->
 	    {error, {badarg, Slave}}
     end.
 
--spec(add_subnet/2 :: (
-	Mask :: ip4_address(), 
-	Addr :: ip4_address()) -> 
-	{'error', any()} | 'ok').  
+-spec add_subnet(Mask :: ip4_address(), Addr :: ip4_address()) ->
+	'ok' | {'error', any()}.
 
 add_subnet(Mask, Addr) when is_tuple(Mask), is_tuple(Addr) ->
     case member_address(Addr, [{Mask, Addr}]) of
@@ -129,16 +125,12 @@ add_subnet(Mask, Addr) when is_tuple(Mask), is_tuple(Addr) ->
 	    {error, empty_subnet}
     end.
 
--spec(delete_subnet/2 :: (
-	Mask :: ip4_address(), 
-	Addr :: ip4_address()) -> 
-	'ok').  
+-spec delete_subnet(Mask :: ip4_address(), Addr :: ip4_address()) -> 'ok'.
 
 delete_subnet(Mask, Addr) when is_tuple(Mask), is_tuple(Addr) ->
     gen_server:call(boot_server, {delete, {Mask, Addr}}).
 
--spec(which_slaves/0 :: () ->
-	[atom()]).
+-spec which_slaves() -> [atom()].
 
 which_slaves() ->
     gen_server:call(boot_server, which).
@@ -176,8 +168,8 @@ member_address(_, []) ->
 init(Slaves) ->
     {ok, U} = gen_udp:open(?EBOOT_PORT, []),
     {ok, L} = gen_tcp:listen(0, [binary,{packet,4}]),
-    {ok,Port} = inet:port(L),
-    {ok,UPort} = inet:port(U),
+    {ok, Port} = inet:port(L),
+    {ok, UPort} = inet:port(U),
     Ref = make_ref(),
     Pid = proc_lib:spawn_link(?MODULE, boot_init, [Ref]),
     gen_tcp:controlling_process(L, Pid),
@@ -197,11 +189,11 @@ init(Slaves) ->
 handle_call({add,Address}, _, S0) ->
     Slaves = ordsets:add_element(Address, S0#state.slaves),
     S0#state.bootp ! {slaves, Slaves},
-    {reply, ok, S0#state { slaves = Slaves}};
+    {reply, ok, S0#state{slaves = Slaves}};
 handle_call({delete,Address}, _, S0) ->
     Slaves = ordsets:del_element(Address, S0#state.slaves),
     S0#state.bootp ! {slaves, Slaves},
-    {reply, ok, S0#state { slaves = Slaves }};
+    {reply, ok, S0#state{slaves = Slaves}};
 handle_call(which, _, S0) ->
     {reply, ordsets:to_list(S0#state.slaves), S0}.
 
@@ -259,7 +251,7 @@ boot_init(Tag) ->
 
 boot_main(Listen) ->
     Tag = make_ref(),
-    Pid = proc_lib:spawn_link(?MODULE,boot_accept,[self(),Listen,Tag]),
+    Pid = proc_lib:spawn_link(?MODULE, boot_accept, [self(), Listen, Tag]),
     boot_main(Listen, Tag, Pid).
 
 boot_main(Listen, Tag, Pid) ->
@@ -281,7 +273,7 @@ boot_accept(Server, Listen, Tag) ->
     Server ! {Tag, continue},
     case Reply of
 	{ok, Socket} ->
-	    {ok,{IP,_Port}} = inet:peername(Socket),
+	    {ok, {IP, _Port}} = inet:peername(Socket),
 	    true = member_address(IP, which_slaves()),
 	    PS = erl_prim_loader:prim_init(),
 	    boot_loop(Socket, PS)

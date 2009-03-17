@@ -1,4 +1,23 @@
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %% This is an -*- erlang -*- file.
+%%
 {application, kernel,
  [
   {description, "ERTS  CXC 138 10"},
@@ -14,16 +33,12 @@
 	     dist_util,
 	     erl_boot_server,
 	     erl_distribution,
-	     erl_prim_loader,
 	     erl_reply,
-	     erlang,
 	     error_handler,
 	     error_logger,
 	     file,
              file_server,
              file_io_server,
-             prim_file,
-             prim_zip,
 	     global,
 	     global_group,
 	     global_search,
@@ -37,7 +52,6 @@
 	     inet_hosts,
 	     inet_gethost_native,
 	     inet_tcp_dist,
-	     init,
 	     kernel,
 	     kernel_config,
 	     net,
@@ -60,7 +74,6 @@
              gen_tcp,
              gen_udp,
 	     gen_sctp,
-	     prim_inet,
              inet,
              inet_db,
              inet_dns,
@@ -71,9 +84,8 @@
 	     inet_sctp,
              pg2,
 	     seq_trace,
-	     wrap_log_reader,
-	     zlib,
-	     otp_ring0]},
+	     standard_error,
+	     wrap_log_reader]},
   {registered, [application_controller,
 		erl_reply,
 		auth,

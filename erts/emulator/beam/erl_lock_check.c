@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2005-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 /*
@@ -81,6 +82,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
 #ifdef ERTS_SMP
     {	"bif_timers",				NULL			},
     {	"reg_tab",				NULL			},
+    {	"migration_info_update",		NULL			},
     {	"proc_main",				"pid"			},
     {	"nodes_monitors",			NULL			},
     {   "driver_list",                          NULL                    },
@@ -89,6 +91,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"dist_entry",				"address"		},
     {	"proc_status",				"pid"			},
     {	"proc_tab",				NULL			},
+    {   "ports_snapshot",                       NULL                    },
     {	"db_tab",				"address"		},
     {	"meta_pid_to_tab",			NULL 			},
     {	"meta_pid_to_fixed_tab",		NULL 			},
@@ -118,8 +121,9 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {   "pollset_rm_list",                      NULL                    },
     {   "removed_fd_pre_alloc_lock",            NULL                    },
     {   "state_prealloc",                       NULL                    },
-    {	"schdlq",				NULL			},
-    {	"multi_scheduling_block",		NULL			},
+    {	"schdlr_sspnd",				NULL			},
+    {	"cpu_bind",				NULL			},
+    {	"run_queue",				"address"		},
     {	"pollset",				"address"		},
 #ifdef __WIN32__
     {	"pollwaiter",				"address"		},
@@ -132,6 +136,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"sys_msg_q", 				NULL			},
     {	"atom_tab",				NULL			},
     {	"make_ref",				NULL			},
+    {	"misc_op_list_pre_alloc_lock",		"address"		},
     {	"message_pre_alloc_lock",		"address"		},
     {	"ptimer_pre_alloc_lock",		"address",		},
     {	"btm_pre_alloc_lock",			NULL,			},
@@ -146,7 +151,8 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"port_task_pre_alloc_lock",		"address"		},
     {	"port_taskq_pre_alloc_lock",		"address"		},
     {	"port_tasks_lock",			NULL			},
-    {	"port_tab_lock",			NULL			},
+    {   "get_free_port",                        NULL                    },
+    {	"port_state",			        "address"		},
     {	"xports_list_pre_alloc_lock",		"address"		},
     {	"inet_buffer_stack_lock",		NULL			},
     {	"gc_info",				NULL			},
@@ -158,6 +164,8 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"pollsets_lock",			NULL			},
     {	"async_id",				NULL			},
     {	"pix_lock",				"address"		},
+    {	"run_queues_lists",			NULL			},
+    {	"sched_stat",				NULL			},
 #endif
     {	"alloc_thr_ix_lock",			NULL			},
 #ifdef ERTS_SMP

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(dbg).
 -export([p/1,p/2,c/3,c/4,i/0,start/0,stop/0,stop_clear/0,tracer/0,
@@ -126,7 +127,9 @@ tpl(Module, Pattern) when is_atom(Module) ->
     do_tp({Module, '_', '_'}, Pattern, [local]);
 tpl({_Module, _Function, _Arity} = X, Pattern) ->
     do_tp(X,Pattern,[local]).
-do_tp({_Module, _Function, _Arity} = X, Pattern, Flags) when is_integer(Pattern) ->
+do_tp({_Module, _Function, _Arity} = X, Pattern, Flags)
+  when is_integer(Pattern);
+       is_atom(Pattern) ->
     case ets:lookup(get_pattern_table(), Pattern) of
 	[{_,NPattern}] ->
 	    do_tp(X, binary_to_term(NPattern), Flags);
@@ -148,7 +151,7 @@ do_tp({Module, _Function, _Arity} = X, Pattern, Flags) when is_list(Pattern) ->
     case lint_tp(Pattern) of
 	{ok,_} ->
 	    SaveInfo = case save_pattern(Pattern) of
-			   N when is_integer(N), N > 0 ->
+			   N when is_integer(N), N > 0;  is_atom(N)  ->
 			       [{saved, N}];
 			   _ ->
 			       []
@@ -215,7 +218,7 @@ do_ctp({_Module, _Function, _Arity}=MFA,Flags) ->
 
 %%
 %% ltp() -> ok
-%% List saved trace patterns.
+%% List saved and built-in trace patterns.
 %%
 ltp() ->
     pt_doforall(fun({X, El},_Ignore) -> 
@@ -226,26 +229,34 @@ ltp() ->
 %% dtp() | dtp(N) -> ok
 %% Delete saved pattern with number N or all saved patterns
 %%
+%% Do not delete built-in trace patterns.
 dtp() ->
-    pt_doforall(fun({Key, _}, _) ->
-			dtp(Key)
+    pt_doforall(fun ({Key, _}, _) when is_integer(Key) ->
+			dtp(Key);
+		    ({_, _}, _) ->
+			ok
 		end,
 		[]).
-dtp(N) ->
+dtp(N) when is_integer(N) ->
     ets:delete(get_pattern_table(), N),
+    ok;
+dtp(_) ->
     ok.
 
 %%
 %% wtp(FileName) -> ok | {error, Reason}
 %% Writes all current saved trace patterns to a file.
 %%
+%% Actually write the built-in trace patterns too.
 wtp(FileName) ->
     case file:open(FileName,[write]) of
 	{error, Reason} ->
 	    {error, Reason};
 	{ok, File} ->
-	    pt_doforall(fun({_, Val}, _) ->
-				io:format(File, "~p.~n", [Val])
+	    pt_doforall(fun ({_, Val}, _) when is_list(Val) ->
+				io:format(File, "~p.~n", [Val]);
+			    ({_, _}, _) ->
+				ok
 			end,
 			[]),
 	    file:close(File),
@@ -257,6 +268,8 @@ wtp(FileName) ->
 %% Reads in previously saved pattern file and merges the contents
 %% with what's there now.
 %%
+%% So the saved built-in trace patterns will merge with
+%% the already existing, which should be the same.
 rtp(FileName) ->
     T = get_pattern_table(),
     case file:consult(FileName) of
@@ -493,10 +506,10 @@ trace_client1(Type, OpenData, {Handler,HData}) ->
 	    Other
     end.
 
-stop_trace_client(Pid)->
+stop_trace_client(Pid) when is_pid(Pid) ->
     process_flag(trap_exit,true),
     link(Pid),
-    exit(to_pid(Pid),abnormal),
+    exit(to_pidspec(Pid),abnormal),
     Res = receive 
 	      {'EXIT', Pid, _} ->
 		  ok
@@ -659,21 +672,25 @@ loop({C,T}=SurviveLinks, Table) ->
 	{From, get_table} ->
 	    Tab = case Table of
 		      [] ->
-			  ets:new(dbg_tab, [ordered_set, public]);
+			  new_pattern_table();
 		      _exists ->
 			  Table
 		  end,
 	    reply(From, {ok, Tab}),
 	    loop(SurviveLinks, Tab);
 	{_From,stop} ->
-	    Nodes = [N || {N,_} <- get()],
+	    %% We want to make sure that all trace messages have been delivered
+	    %% on all nodes that might be traced. Since dbg:cn/1 does not turn off
+	    %% tracing on the node it removes from the list of active trace nodes,
+	    %% we will call erlang:trace_delivered/1 on ALL nodes that we have
+	    %% connections to.
 	    Delivered = fun() ->
 				Ref = erlang:trace_delivered(all),
 				receive
 				    {trace_delivered,all,Ref} -> ok
 				end
 			end,
-	    catch rpc:multicall(Nodes, erlang, apply, [Delivered,[]]),
+	    catch rpc:multicall(nodes(), erlang, apply, [Delivered,[]]),
 	    Ref = erlang:trace_delivered(all),
 	    receive
 		{trace_delivered,all,Ref} ->
@@ -836,40 +853,48 @@ resume([]) -> ok.
 
 %%% Utilities.
 
-trac(Pid, How, Flags) when is_atom(Pid) ->
-    %% Pid = all | new | existing | RegisteredName
+trac(Proc, How, Flags) when is_atom(Proc) ->
+    %% Proc = all | new | existing | RegisteredName
     %% Must go to all nodes
     case get() of
-	[] -> {error,no_tracers};
-	Nodes -> trac_on_nodes(Nodes,Pid,How,Flags)
+	[] ->
+	    {error,no_tracers};
+	Nodes ->
+	    Matched = [trac(Node, NodeInfo, Proc, How, Flags)
+		       || {Node, NodeInfo} <- Nodes],
+	    {ok,Matched}
     end;
-trac(Pid, How, Flags) ->
-    Node = node(Pid), 
-    case get(Node) of
-	undefined -> {error,{no_tracer_on_node,Node}};
-	NodeInfo -> trac_on_nodes([{Node,NodeInfo}],Pid,How,Flags)
+trac(Proc, How, Flags) ->
+    %% Proc = Pid | Integer | {X,Y,Z} | "<X.Y.Z>"
+    %% One node only
+    Pid = to_pid(Proc),
+    case Pid of
+	{badpid,_} ->
+	    {error,Pid};
+	_ ->
+	    Node = if is_pid(Pid) -> node(Pid); true -> node() end,
+	    case get(Node) of
+		undefined ->
+		    {error,{no_tracer_on_node,Node}};
+		NodeInfo ->
+		    Match = trac(Node, NodeInfo, Pid, How, Flags),
+		    {ok,[Match]}
+	    end
     end.
 
-trac_on_nodes(Nodes, AtomPid, How, Flags) ->
-    Matched = 
-	lists:map(
-	  fun({Node, {_Relay, Tracer}}) -> 
-		  case rpc:call(Node, ?MODULE, erlang_trace,
-				[AtomPid, How, [{tracer, Tracer} | Flags]]) of
-		      N when is_integer(N) ->
-			  {matched, Node, N};
-		      {badrpc,Reason} ->
-			  {matched, Node, 0, Reason};
-		      Else ->
-			  {matched, Node, 0, Else}
-		  end
-	  end,
-	  Nodes),
-    {ok,Matched}.
-
+trac(Node, {_Relay, Tracer}, AtomPid, How, Flags) ->
+    case rpc:call(Node, ?MODULE, erlang_trace,
+		  [AtomPid, How, [{tracer, Tracer} | Flags]]) of
+	N when is_integer(N) ->
+	    {matched, Node, N};
+	{badrpc,Reason} ->
+	    {matched, Node, 0, Reason};
+	Else ->
+	    {matched, Node, 0, Else}
+    end.
 
 erlang_trace(AtomPid, How, Flags) ->
-    case to_pid(AtomPid) of
+    case to_pidspec(AtomPid) of
 	{badpid,_} ->
 	    {no_proc,AtomPid};
 	P ->
@@ -1032,8 +1057,6 @@ ftup(Trace, Index, Size) ->
 
 
 
-trace_process({badpid,_}=Bad, _Flags) ->
-    {error,Bad};
 trace_process(Pid, [clear]) ->
     trac(Pid, false, all());
 trace_process(Pid, Flags0) ->
@@ -1041,7 +1064,7 @@ trace_process(Pid, Flags0) ->
 	{error,Reason} -> {error,Reason};
 	Flags -> trac(Pid, true, Flags)
     end.
-	    
+
 transform_flags(Flags0) ->
     transform_flags(Flags0,[]).
 transform_flags([],Acc) -> Acc;
@@ -1120,27 +1143,41 @@ ts(set_on_first_link) -> "sofl";
 ts(Other) -> atom_to_list(Other).
 
 %%
-%% Turn something into a pid, return 'nopid' on failure 
+%% Turn (pid or) atom into a PidSpec for erlang:trace,
+%% return {badpid,X} on failure 
 %%
 
-to_pid(new) -> new;
-to_pid(all) -> all;
-to_pid(existing) -> existing;
-to_pid(X) when is_pid(X) -> 
+to_pidspec(X) when is_pid(X) -> 
     case erlang:is_process_alive(X) of
 	true -> X;
 	false -> {badpid,X}
     end;
-to_pid(X) when is_atom(X) ->
+to_pidspec(new) -> new;
+to_pidspec(all) -> all;
+to_pidspec(existing) -> existing;
+to_pidspec(X) when is_atom(X) ->
     case whereis(X) of
 	undefined -> {badpid,X};
 	Pid -> Pid
     end;
-to_pid(X) when is_integer(X) -> to_pid({0,X,1});
+to_pidspec(X) -> {badpid,X}.
+
+%%
+%% Turn (pid or) integer or tuple or list into pid
+%%
+
+to_pid(X) when is_pid(X) -> X;
+to_pid(X) when is_integer(X) -> to_pid({0,X,0});
 to_pid({X,Y,Z}) ->
-    list_to_pid(lists:concat(["<",integer_to_list(X),".",
-			      integer_to_list(Y),".",
-			      integer_to_list(Z),">"]));
+    to_pid(lists:concat(["<",integer_to_list(X),".",
+			 integer_to_list(Y),".",
+			 integer_to_list(Z),">"]));
+to_pid(X) when is_list(X) ->
+    try list_to_pid(X) of
+	Pid -> Pid
+    catch
+	error:badarg -> {badpid,X}
+    end;
 to_pid(X) -> {badpid,X}.
 
 
@@ -1336,20 +1373,12 @@ get_tracer(Node) ->
     req({get_tracer,Node}).
 
 save_pattern([]) ->
-    false;
-
+    0;
 save_pattern(P) ->
     (catch save_pattern(P, get_pattern_table())).
 
 save_pattern(Pattern, PT) ->
-    Last = case ets:last(PT) of
-	       Int when is_integer(Int) ->
-		   Int;
-	       '$end_of_table' ->
-		   0;
-	       _Else ->
-		   throw({error, badtable})
-	   end,
+    Last = last_pattern(ets:last(PT), PT),
     BPattern = term_to_binary(Pattern),
     case ets:match_object(PT, {'_', BPattern}) of
 	[] ->
@@ -1358,12 +1387,31 @@ save_pattern(Pattern, PT) ->
 	[{N, BPattern}] ->
 	    N
     end.
-	    
+
+last_pattern('$end_of_table', _PT) ->
+    0;
+last_pattern(I, PT) when is_atom(I) ->
+    last_pattern(ets:prev(PT, I), PT);
+last_pattern(I, _PT) when is_integer(I) ->
+    I;
+last_pattern(_, _) ->
+    throw({error, badtable}).
+
 
 get_pattern_table() ->
     {ok, Ret} = req(get_table),
     Ret.
-		   
+
+new_pattern_table() ->
+    PT = ets:new(dbg_tab, [ordered_set, public]),
+    ets:insert(PT, 
+	       {x, 
+		term_to_binary([{'_',[],[{exception_trace}]}])}),
+    ets:insert(PT, 
+	       {exception_trace, 
+		term_to_binary(x)}),
+    PT.
+
 
 pt_doforall(Fun, Ld) ->
     T = get_pattern_table(),
@@ -1643,7 +1691,7 @@ h(ctpg) ->
        " - Clear global call trace pattern for the specified functions"]);
 h(ltp) ->
     help_display(["ltp() -> ok",
-		  " - Lists saved match_spec's on the console."]);
+		  " - Lists saved and built-in match_spec's on the console."]);
 h(dtp) ->
     help_display(["dtp() -> ok",
 		  " - Deletes all saved match_spec's.",

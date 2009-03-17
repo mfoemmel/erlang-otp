@@ -1,23 +1,22 @@
-  /*<copyright>
-   * <year>2001-2008</year>
-   * <holder>Ericsson AB, All Rights Reserved</holder>
-   *</copyright>
-   *<legalnotice>
+  /*
+   * %CopyrightBegin%
+   * 
+   * Copyright Ericsson AB 2001-2009. All Rights Reserved.
+   * 
    * The contents of this file are subject to the Erlang Public License,
    * Version 1.1, (the "License"); you may not use this file except in
    * compliance with the License. You should have received a copy of the
    * Erlang Public License along with this software. If not, it can be
    * retrieved online at http://www.erlang.org/.
-   *
+   * 
    * Software distributed under the License is distributed on an "AS IS"
    * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
    * the License for the specific language governing rights and limitations
    * under the License.
-   *
-   * The Initial Developer of the Original Code is Ericsson AB.
-   *</legalnotice>
+   * 
+   * %CopyrightEnd%
+   * 
    * ----------------------------------------------------------------------
-   *  Author:   Hakan Mattsson <hakan@cslab.ericsson.com>
    *  Purpose : Scanner for text encoded Megaco/H.248 messages
    * ----------------------------------------------------------------------
    * 
@@ -65,6 +64,8 @@
 #define YY_MAIN false
 
 #define YY_FATAL_ERROR(msg) mfs_fatal_error(msg)
+
+char flex_version[] = "%FLEX_VERSION%";
 
 static ErlDrvTermData mfs_AddToken = 0;
 static ErlDrvTermData mfs_AndAUDITSelectToken = 0;          /* v3 */
@@ -766,7 +767,7 @@ static void mfs_ensure_term_spec(int size)
        * Just give ut. I.e. free the memory we have (note that
        * the assign macro tests the buffer before assigning).
        */
-      driver_free(mfs_term_spec);
+      FREE(mfs_term_spec);
       mfs_term_spec = NULL;
 
       mfs_alloc_failed("failed reallocating term spec buffer", 
@@ -889,7 +890,7 @@ static void mfs_load_property_groups()
    * everything to the right is the value.
    */
   
-  int i = 0;  // loop counter
+  int i = 0;          // loop counter
   int numGroups = 0;  // Number of property groups
   int numPps    = 0;  // Number of property parms (in the group)
   char* name;         // Pointer to the name buffer
@@ -985,9 +986,10 @@ static void mfs_load_property_groups()
           } // while ...
 
           /* Name */
-          name = ALLOC(nameLen + 1); // Make room for the NULL termination
+          name = mfs_text_ptr; 
           strncpy(name, &yytext[nameStart], nameLen);
           name[nameLen] = 0;
+          mfs_text_ptr += (nameLen + 1); // Make room for the NULL termination
 
           /* Check that we actually got a proper value */
           if (valueLen == 0) {
@@ -1045,17 +1047,19 @@ static void mfs_load_property_groups()
              */
             DBG( ("mfs_load_property_groups -> "
                   "insert value field (length = %d)\n", valueLen) );
-            value = ALLOC(valueLen);
+            value = mfs_text_ptr; 
             strncpy(value, &yytext[valueStart], valueLen);
+            mfs_text_ptr += valueLen;
             ASSIGN_TERM_SPEC(ERL_DRV_STRING);
             ASSIGN_TERM_SPEC((ErlDrvTermData) value);
             ASSIGN_TERM_SPEC((ErlDrvTermData) valueLen);
-            ASSIGN_TERM_SPEC(ERL_DRV_NIL);             // End of value list
+            ASSIGN_TERM_SPEC(ERL_DRV_NIL);            // End of value list
             ASSIGN_TERM_SPEC(ERL_DRV_LIST); 
-            ASSIGN_TERM_SPEC((ErlDrvTermData) 1 + 1);  // Length of (group) list
+            ASSIGN_TERM_SPEC((ErlDrvTermData) 1 + 1); // Length of (group) list
   	  
             /* extraInfo - never used */
-            DBG( ("mfs_load_property_groups -> insert the extraInfo field\n") );
+            DBG( ("mfs_load_property_groups -> "
+                  "insert the extraInfo field\n") );
             ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
             ASSIGN_TERM_SPEC((ErlDrvTermData) mfs_asn1_NOVALUE);
   
@@ -1538,7 +1542,7 @@ static int mfs_control(ErlDrvData          handle,
 
     strncpy(*res_buf, mfs_error_msg, len);
 
-    driver_free(mfs_text_buf);
+    FREE(mfs_text_buf);
 
     return len;    
   }
@@ -1583,8 +1587,8 @@ static int mfs_control(ErlDrvData          handle,
                      mfs_term_spec, 
                      mfs_term_spec_index);
     
-    if (mfs_text_buf  != NULL) driver_free(mfs_text_buf);
-    if (mfs_term_spec != NULL) driver_free(mfs_term_spec);
+    if (mfs_text_buf  != NULL) FREE(mfs_text_buf);
+    if (mfs_term_spec != NULL) FREE(mfs_term_spec);
 
     DBG( ("mfs_control -> done (0)\n") );
 
@@ -1610,8 +1614,8 @@ static int mfs_control(ErlDrvData          handle,
 
     strncpy(*res_buf, mfs_error_msg, len);
 
-    if (mfs_text_buf  != NULL) driver_free(mfs_text_buf);
-    if (mfs_term_spec != NULL) driver_free(mfs_term_spec);
+    if (mfs_text_buf  != NULL) FREE(mfs_text_buf);
+    if (mfs_term_spec != NULL) FREE(mfs_term_spec);
 
     DBG( ("mfs_control -> done (%d)\n", len) );
 

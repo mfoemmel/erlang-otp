@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1997-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 /*
  * Message passing primitives.
@@ -240,37 +241,54 @@ link_mbuf_to_proc(Process *proc, ErlHeapFragment *bp)
 /* Add a message last in message queue */
 void
 erts_queue_message(Process* receiver,
-		   ErtsProcLocks receiver_locks,
+		   ErtsProcLocks *receiver_locks,
 		   ErlHeapFragment* bp,
 		   Eterm message,
 		   Eterm seq_trace_token)
 {
     ErlMessage* mp;
-
-#if !defined(ERTS_SMP)
+#ifdef ERTS_SMP
+    ErtsProcLocks need_locks;
+#else
     ASSERT(bp != NULL || receiver->mbuf == NULL);
 #endif
 
-    ERTS_SMP_LC_ASSERT(receiver_locks == erts_proc_lc_my_proc_locks(receiver));
-    ERTS_SMP_LC_ASSERT((ERTS_PROC_LOCKS_MSG_SEND & receiver_locks)
-		       == ERTS_PROC_LOCKS_MSG_SEND);
+    ERTS_SMP_LC_ASSERT(*receiver_locks == erts_proc_lc_my_proc_locks(receiver));
+
+    mp = message_alloc();
 
 #ifdef ERTS_SMP
-    if (ERTS_PROC_PENDING_EXIT(receiver)) {
-	/* Drop message if receiver has a pending exit ... */
+    need_locks = ~(*receiver_locks) & (ERTS_PROC_LOCK_MSGQ
+				       | ERTS_PROC_LOCK_STATUS);
+    if (need_locks) {
+	*receiver_locks |= need_locks;
+	if (erts_smp_proc_trylock(receiver, need_locks) == EBUSY) {
+	    if (need_locks == ERTS_PROC_LOCK_MSGQ) {
+		erts_smp_proc_unlock(receiver, ERTS_PROC_LOCK_STATUS);
+		need_locks = (ERTS_PROC_LOCK_MSGQ
+			      | ERTS_PROC_LOCK_STATUS);
+	    }
+	    erts_smp_proc_lock(receiver, need_locks);
+	}
+    }
+
+    if (receiver->is_exiting || ERTS_PROC_PENDING_EXIT(receiver)) {
+	/* Drop message if receiver is exiting or has a pending
+	 * exit ...
+	 */
 	if (bp)
 	    free_message_buffer(bp);
+	message_free(mp);
 	return;
     }
 #endif
 
-    mp = message_alloc();
     ERL_MESSAGE_TERM(mp) = message;
     ERL_MESSAGE_TOKEN(mp) = seq_trace_token;
     mp->next = NULL;
 
 #ifdef ERTS_SMP
-    if (receiver_locks & ERTS_PROC_LOCK_MAIN) {
+    if (*receiver_locks & ERTS_PROC_LOCK_MAIN) {
 	mp->bp = bp;
 
 	/*
@@ -295,10 +313,27 @@ erts_queue_message(Process* receiver,
 
     ACTIVATE(receiver);
 
-    if (receiver->status == P_WAITING) {
-	add_to_schedule_q(receiver);
-    } else if (receiver->status == P_SUSPENDED) {
+    switch (receiver->status) {
+    case P_GARBING:
+	switch (receiver->gcstatus) {
+	case P_SUSPENDED:
+	    goto suspended;
+	case P_WAITING:
+	    goto waiting;
+	default:
+	    break;
+	}
+	break;
+    case P_SUSPENDED:
+    suspended:
 	receiver->rstatus = P_RUNABLE;
+	break;
+    case P_WAITING:
+    waiting:
+	erts_add_to_runq(receiver);
+	break;
+    default:
+	break;
     }
 
     if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
@@ -621,6 +656,7 @@ erts_send_message(Process* sender,
 		  Eterm message,
 		  unsigned flags)
 {
+    Uint msize;
     ErlHeapFragment* bp = NULL;
     Eterm token = NIL;
 
@@ -629,11 +665,10 @@ erts_send_message(Process* sender,
     BM_START_TIMER(send);
 
     if (SEQ_TRACE_TOKEN(sender) != NIL && !(flags & ERTS_SND_FLG_NO_SEQ_TRACE)) {
-        Uint msize;
         Eterm* hp;
 
         BM_SWAP_TIMER(send,size);
-        msize = size_object(message);
+	msize = size_object(message);
         BM_SWAP_TIMER(size,send);
 
 	seq_trace_update_send(sender);
@@ -653,7 +688,7 @@ erts_send_message(Process* sender,
         BM_SWAP_TIMER(copy,send);
 
         erts_queue_message(receiver,
-			   *receiver_locks,
+			   receiver_locks,
 			   bp,
 			   message,
 			   token);
@@ -692,7 +727,7 @@ erts_send_message(Process* sender,
         ACTIVATE(receiver);
 
         if (receiver->status == P_WAITING) {
-            add_to_schedule_q(receiver);
+            erts_add_to_runq(receiver);
         } else if (receiver->status == P_SUSPENDED) {
             receiver->rstatus = P_RUNABLE;
         }
@@ -705,7 +740,23 @@ erts_send_message(Process* sender,
 #else
     } else if (sender == receiver) {
 	/* Drop message if receiver has a pending exit ... */
-	if (!ERTS_PROC_PENDING_EXIT(receiver)) {
+#ifdef ERTS_SMP
+	ErtsProcLocks need_locks = (~(*receiver_locks)
+				    & (ERTS_PROC_LOCK_MSGQ
+				       | ERTS_PROC_LOCK_STATUS));
+	if (need_locks) {
+	    *receiver_locks |= need_locks;
+	    if (erts_smp_proc_trylock(receiver, need_locks) == EBUSY) {
+		if (need_locks == ERTS_PROC_LOCK_MSGQ) {
+		    erts_smp_proc_unlock(receiver, ERTS_PROC_LOCK_STATUS);
+		    need_locks = ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS;
+		}
+		erts_smp_proc_lock(receiver, need_locks);
+	    }
+	}
+	if (!ERTS_PROC_PENDING_EXIT(receiver))
+#endif
+	{
 	    ErlMessage* mp = message_alloc();
 
 	    mp->bp = NULL;
@@ -732,30 +783,23 @@ erts_send_message(Process* sender,
 	return;
     } else {
 #ifdef ERTS_SMP
-        Uint msz;
 	ErlOffHeap *ohp;
         Eterm *hp;
-	/* Drop message if receiver has a pending exit ... */
-	if (!ERTS_PROC_PENDING_EXIT(receiver)) {
-	    BM_SWAP_TIMER(send,size);
-	    msz = size_object(message);
-	    BM_SWAP_TIMER(size,send);
-	    hp = erts_alloc_message_heap(msz,&bp,&ohp,receiver,receiver_locks);
-	    BM_SWAP_TIMER(send,copy);
-	    message = copy_struct(message, msz, &hp, ohp);
-	    BM_MESSAGE_COPIED(msz);
-	    BM_SWAP_TIMER(copy,send);
-	    erts_queue_message(receiver, 
-			       *receiver_locks,
-			       bp, message, token);
-	}
+	BM_SWAP_TIMER(send,size);
+	msize = size_object(message);
+	BM_SWAP_TIMER(size,send);
+	hp = erts_alloc_message_heap(msize,&bp,&ohp,receiver,receiver_locks);
+	BM_SWAP_TIMER(send,copy);
+	message = copy_struct(message, msize, &hp, ohp);
+	BM_MESSAGE_COPIED(msz);
+	BM_SWAP_TIMER(copy,send);
+	erts_queue_message(receiver, receiver_locks, bp, message, token);
         BM_SWAP_TIMER(send,system);
 #else
 	ErlMessage* mp = message_alloc();
-        Uint msize;
         Eterm *hp;
         BM_SWAP_TIMER(send,size);
-        msize = size_object(message);
+	msize = size_object(message);
         BM_SWAP_TIMER(size,send);
 	
 	if (receiver->stop - receiver->htop <= msize) {
@@ -776,7 +820,7 @@ erts_send_message(Process* sender,
 	LINK_MESSAGE(receiver, mp);
 
 	if (receiver->status == P_WAITING) {
-	    add_to_schedule_q(receiver);
+	    erts_add_to_runq(receiver);
 	} else if (receiver->status == P_SUSPENDED) {
 	    receiver->rstatus = P_RUNABLE;
 	}
@@ -824,7 +868,7 @@ erts_deliver_exit_message(Eterm from, Process *to, ErtsProcLocks *to_locksp,
 	/* the trace token must in this case be updated by the caller */
 	seq_trace_output(token, save, SEQ_TRACE_SEND, to->id, NULL);
 	temptoken = copy_struct(token, sz_token, &hp, &bp->off_heap);
-	erts_queue_message(to, *to_locksp, bp, save, temptoken);
+	erts_queue_message(to, to_locksp, bp, save, temptoken);
     } else {
 	ErlOffHeap *ohp;
 	sz_reason = size_object(reason);
@@ -841,6 +885,6 @@ erts_deliver_exit_message(Eterm from, Process *to, ErtsProcLocks *to_locksp,
 		     ? from
 		     : copy_struct(from, sz_from, &hp, ohp));
 	save = TUPLE3(hp, am_EXIT, from_copy, mess);
-	erts_queue_message(to, *to_locksp, bp, save, NIL);
+	erts_queue_message(to, to_locksp, bp, save, NIL);
     }
 }

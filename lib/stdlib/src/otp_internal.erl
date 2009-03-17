@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(otp_internal).
 
@@ -219,21 +220,21 @@ obsolete_1(httpd_util, to_upper, 1) ->
 obsolete_1(httpd_util, to_lower, 1) ->
     {removed, {string, to_lower, 1}, "R12B"};
 obsolete_1(erlang, is_constant, 1) ->
-    {deprecated, "Deprecated; will be removed in R13B"};
+    {removed, "Removed in R13B"};
 
 %% Added in R12B-0.
 obsolete_1(ssl, port, 1) ->
-    {deprecated, {ssl, sockname, 1}, "R13B"};
+    {removed, {ssl, sockname, 1}, "R13B"};
 obsolete_1(ssl, accept, A) when A =:= 1; A =:= 2 ->
-    {deprecated, "deprecated; use ssl:transport_accept/1,2 and ssl:ssl_accept/1,2"};
+    {removed, "deprecated; use ssl:transport_accept/1,2 and ssl:ssl_accept/1,2"};
 obsolete_1(erlang, fault, 1) ->
-    {deprecated, {erlang,error,1}, "R13B"};
+    {removed, {erlang,error,1}, "R13B"};
 obsolete_1(erlang, fault, 2) ->
-    {deprecated, {erlang,error,2}, "R13B"};
+    {removed, {erlang,error,2}, "R13B"};
 
 %% Added in R12B-2.
 obsolete_1(file, rawopen, 2) ->
-    {deprecated, "deprecated (will be removed in R13B); use file:open/2 with the raw option"};
+    {removed, "deprecated (will be removed in R13B); use file:open/2 with the raw option"};
 
 obsolete_1(httpd, start, 0) 	  -> {deprecated,{inets,start,[2,3]},"R14B"};
 obsolete_1(httpd, start, 1) 	  -> {deprecated,{inets,start,[2,3]},"R14B"};
@@ -257,8 +258,8 @@ obsolete_1(httpd, block, 4)	  -> {deprecated,{httpd,reload_config,2},"R14B"};
 obsolete_1(httpd, unblock, 0) 	  -> {deprecated,{httpd,reload_config,2},"R14B"};
 obsolete_1(httpd, unblock, 1)     -> {deprecated,{httpd,reload_config,2},"R14B"};
 obsolete_1(httpd, unblock, 2)     -> {deprecated,{httpd,reload_config,2},"R14B"};
-obsolete_1(httpd_util, key1search, 2) -> {deprecated,{proplists,get_value,2},"R13B"};
-obsolete_1(httpd_util, key1search, 3) -> {deprecated,{proplists,get_value,3},"R13B"};
+obsolete_1(httpd_util, key1search, 2) -> {removed,{proplists,get_value,2},"R13B"};
+obsolete_1(httpd_util, key1search, 3) -> {removed,{proplists,get_value,3},"R13B"};
 obsolete_1(ftp, open, 1)          -> {deprecated,{inets,start,[2,3]},"R14B"};
 obsolete_1(ftp, open, 2)          -> {deprecated,{inets,start,[2,3]},"R14B"};
 obsolete_1(ftp, open, 3)          -> {deprecated,{inets,start,[2,3]},"R14B"};
@@ -312,13 +313,25 @@ obsolete_1(ssh_cm, send, A) when A =:= 3; A =:= 4 ->
     {deprecated,{ssh_connection,send,A},"R14B"};
 obsolete_1(ssh_cm, send_ack, A) when 3 =< A, A =< 5 ->
     {deprecated,{ssh_connection,send,[3,4]},"R14B"};
-obsolete_1(ssh_ssh, connect, A) when 1 =< A, 3 =< 3 ->
+obsolete_1(ssh_ssh, connect, A) when 1 =< A, A =< 3 ->
     {deprecated,{ssh,shell,A},"R14B"};
 obsolete_1(ssh_sshd, listen, A) when 0 =< A, A =< 3 ->
     {deprecated,{ssh,daemon,[1,2,3]},"R14"};
 obsolete_1(ssh_sshd, stop, 1) ->
     {deprecated,{ssh,stop_listener,1}};
 
+%% Added in R13A.
+obsolete_1(regexp, _, _) ->
+    {deprecated, "the regexp module is deprecated (will be removed in R15A); use the re module instead"};
+
+obsolete_1(lists, flat_length, 1) ->
+    {deprecated,{lists,flatlength,1},"R14"};
+
+obsolete_1(ssh_sftp, connect, A) when 1 =< A, A =< 3 ->
+    {deprecated,{ssh_sftp,start_channel,A},"R14B"};
+obsolete_1(ssh_sftp, stop, 1) ->
+    {deprecated,{ssh_sftp,stop_channel,1},"R14B"};
+    
 obsolete_1(_, _, _) ->
     no.
 

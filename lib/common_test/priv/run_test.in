@@ -5,6 +5,10 @@ args=""
 while [ $1 ]; do
     if [ $1 = "-config" ]; then
 	args="$args -ct_config";
+    elif [ $1 = "-decrypt_key" ]; then
+	args="$args -ct_decrypt_key";
+    elif [ $1 = "-decrypt_file" ]; then
+	args="$args -ct_decrypt_file";
     elif [ $1 = "-vts" ]; then
 	vts=1;
 	args="$args $1";

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(io_lib_format).
 
@@ -56,8 +57,14 @@ collect_cseq(Fmt0, Args0) ->
     {F,Ad,Fmt1,Args1} = field_width(Fmt0, Args0),
     {P,Fmt2,Args2} = precision(Fmt1, Args1),
     {Pad,Fmt3,Args3} = pad_char(Fmt2, Args2),
-    {C,As,Fmt4,Args4} = collect_cc(Fmt3, Args3),
-    {{C,As,F,Ad,P,Pad},Fmt4,Args4}.
+    {Encoding,Fmt4,Args4} = encoding(Fmt3, Args3),
+    {C,As,Fmt5,Args5} = collect_cc(Fmt4, Args4),
+    {{C,As,F,Ad,P,Pad,Encoding},Fmt5,Args5}.
+
+encoding([$t|Fmt],Args) ->
+    {unicode,Fmt,Args};
+encoding(Fmt,Args) ->
+    {latin1,Fmt,Args}.
 
 field_width([$-|Fmt0], Args0) ->
     {F,Fmt,Args} = field_value(Fmt0, Args0),
@@ -121,8 +128,8 @@ collect_cc([$i|Fmt], [A|Args]) -> {$i,[A],Fmt,Args}.
 
 pcount(Cs) -> pcount(Cs, 0).
 
-pcount([{$p,_As,_F,_Ad,_P,_Pad}|Cs], Acc) -> pcount(Cs, Acc+1);
-pcount([{$P,_As,_F,_Ad,_P,_Pad}|Cs], Acc) -> pcount(Cs, Acc+1);
+pcount([{$p,_As,_F,_Ad,_P,_Pad,_Enc}|Cs], Acc) -> pcount(Cs, Acc+1);
+pcount([{$P,_As,_F,_Ad,_P,_Pad,_Enc}|Cs], Acc) -> pcount(Cs, Acc+1);
 pcount([_|Cs], Acc) -> pcount(Cs, Acc);
 pcount([], Acc) -> Acc.
 
@@ -131,8 +138,8 @@ pcount([], Acc) -> Acc.
 %%  remaining and only calculate indentation when necessary. Must also
 %%  be smart when calculating indentation for characters in format.
 
-build([{C,As,F,Ad,P,Pad}|Cs], Pc0, I) ->
-    S = control(C, As, F, Ad, P, Pad, I),
+build([{C,As,F,Ad,P,Pad,Enc}|Cs], Pc0, I) ->
+    S = control(C, As, F, Ad, P, Pad, Enc, I),
     Pc1 = decr_pc(C, Pc0),
     if
 	Pc1 > 0 -> [S|build(Cs, Pc1, indentation(S, I))];
@@ -165,55 +172,67 @@ indentation([], I) -> I.
 %%  This is the main dispatch function for the various formatting commands.
 %%  Field widths and precisions have already been calculated.
 
-control($w, [A], F, Adj, P, Pad, _I) ->
+control($w, [A], F, Adj, P, Pad, _Enc,_I) ->
     term(io_lib:write(A, -1), F, Adj, P, Pad);
-control($p, [A], F, Adj, P, Pad, I) ->
+control($p, [A], F, Adj, P, Pad, _Enc, I) ->
     print(A, -1, F, Adj, P, Pad, I);
-control($W, [A,Depth], F, Adj, P, Pad, _I) when is_integer(Depth) ->
+control($W, [A,Depth], F, Adj, P, Pad, _Enc, _I) when is_integer(Depth) ->
     term(io_lib:write(A, Depth), F, Adj, P, Pad);
-control($P, [A,Depth], F, Adj, P, Pad, I) when is_integer(Depth) ->
+control($P, [A,Depth], F, Adj, P, Pad, _Enc, I) when is_integer(Depth) ->
     print(A, Depth, F, Adj, P, Pad, I);
-control($s, [A], F, Adj, P, Pad, _I) when is_atom(A) ->
+control($s, [A], F, Adj, P, Pad, _Enc, _I) when is_atom(A) ->
     string(atom_to_list(A), F, Adj, P, Pad);
-control($s, [L0], F, Adj, P, Pad, _I) ->
+control($s, [L0], F, Adj, P, Pad, latin1, _I) ->
     L = iolist_to_chars(L0),
     string(L, F, Adj, P, Pad);
-control($e, [A], F, Adj, P, Pad, _I) when is_float(A) ->
+control($s, [L0], F, Adj, P, Pad, unicode, _I) ->
+    L = unicode:characters_to_list(L0),
+    uniconv(string(L, F, Adj, P, Pad));
+control($e, [A], F, Adj, P, Pad, _Enc, _I) when is_float(A) ->
     fwrite_e(A, F, Adj, P, Pad);
-control($f, [A], F, Adj, P, Pad, _I) when is_float(A) ->
+control($f, [A], F, Adj, P, Pad, _Enc, _I) when is_float(A) ->
     fwrite_f(A, F, Adj, P, Pad);
-control($g, [A], F, Adj, P, Pad, _I) when is_float(A) ->
+control($g, [A], F, Adj, P, Pad, _Enc, _I) when is_float(A) ->
     fwrite_g(A, F, Adj, P, Pad);
-control($b, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
+control($b, [A], F, Adj, P, Pad, _Enc, _I) when is_integer(A) ->
     unprefixed_integer(A, F, Adj, base(P), Pad, true);
-control($B, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
+control($B, [A], F, Adj, P, Pad, _Enc, _I) when is_integer(A) ->
     unprefixed_integer(A, F, Adj, base(P), Pad, false);
-control($x, [A,Prefix], F, Adj, P, Pad, _I) when is_integer(A), 
+control($x, [A,Prefix], F, Adj, P, Pad, _Enc, _I) when is_integer(A), 
                                                  is_atom(Prefix) ->
     prefixed_integer(A, F, Adj, base(P), Pad, atom_to_list(Prefix), true);
-control($x, [A,Prefix], F, Adj, P, Pad, _I) when is_integer(A) ->
+control($x, [A,Prefix], F, Adj, P, Pad, _Enc, _I) when is_integer(A) ->
     true = io_lib:deep_char_list(Prefix), %Check if Prefix a character list
     prefixed_integer(A, F, Adj, base(P), Pad, Prefix, true);
-control($X, [A,Prefix], F, Adj, P, Pad, _I) when is_integer(A), 
+control($X, [A,Prefix], F, Adj, P, Pad, _Enc, _I) when is_integer(A), 
                                                  is_atom(Prefix) ->
     prefixed_integer(A, F, Adj, base(P), Pad, atom_to_list(Prefix), false);
-control($X, [A,Prefix], F, Adj, P, Pad, _I) when is_integer(A) ->
+control($X, [A,Prefix], F, Adj, P, Pad, _Enc, _I) when is_integer(A) ->
     true = io_lib:deep_char_list(Prefix), %Check if Prefix a character list
     prefixed_integer(A, F, Adj, base(P), Pad, Prefix, false);
-control($+, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
+control($+, [A], F, Adj, P, Pad, _Enc, _I) when is_integer(A) ->
     Base = base(P),
     Prefix = [integer_to_list(Base), $#],
     prefixed_integer(A, F, Adj, Base, Pad, Prefix, true);
-control($#, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
+control($#, [A], F, Adj, P, Pad, _Enc, _I) when is_integer(A) ->
     Base = base(P),
     Prefix = [integer_to_list(Base), $#],
     prefixed_integer(A, F, Adj, Base, Pad, Prefix, false);
-control($c, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
+control($c, [A], F, Adj, P, Pad, unicode, _I) when is_integer(A) ->
+    char(A, F, Adj, P, Pad);
+control($c, [A], F, Adj, P, Pad, _Enc, _I) when is_integer(A) ->
     char(A band 255, F, Adj, P, Pad);
-control($~, [], F, Adj, P, Pad, _I) -> char($~, F, Adj, P, Pad);
-control($n, [], F, Adj, P, Pad, _I) -> newline(F, Adj, P, Pad);
-control($i, [_A], _F, _Adj, _P, _Pad, _I) -> [].
+control($~, [], F, Adj, P, Pad, _Enc, _I) -> char($~, F, Adj, P, Pad);
+control($n, [], F, Adj, P, Pad, _Enc, _I) -> newline(F, Adj, P, Pad);
+control($i, [_A], _F, _Adj, _P, _Pad, _Enc, _I) -> [].
 
+-ifdef(UNICODE_AS_BINARIES).
+uniconv(C) ->
+    unicode:characters_to_binary(C,unicode).
+-else.
+uniconv(C) ->
+    C.
+-endif.
 %% Default integer base
 base(none) ->
     10;
@@ -229,7 +248,7 @@ term(T, none, _Adj, none, _Pad) -> T;
 term(T, none, Adj, P, Pad) -> term(T, P, Adj, P, Pad);
 term(T, F, Adj, P0, Pad) ->
     L = lists:flatlength(T),
-    P = case P0 of none -> min(L, F); _ -> P0 end,
+    P = case P0 of none -> erlang:min(L, F); _ -> P0 end,
     if
 	L > P ->
 	    adjust(chars($*, P), chars(Pad, F-P), Adj);
@@ -607,9 +626,6 @@ newline(F, right, _P, _Pad) -> chars($\n, F).
 adjust(Data, [], _) -> Data;
 adjust(Data, Pad, left) -> [Data,Pad];
 adjust(Data, Pad, right) -> [Pad,Data].
-
-min(L, R) when L < R -> L;
-min(_L, R) -> R.
 
 %% Flatten and truncate a deep list to at most N elements.
 

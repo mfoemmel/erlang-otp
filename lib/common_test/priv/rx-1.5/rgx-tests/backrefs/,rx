@@ -1,4 +1,0 @@
-regexp is (abc|abcd)(d|)
-reg 0 == (0, 4) abcd
-reg 1 == (0, 4) abcd
-reg 2 == (4, 4) 

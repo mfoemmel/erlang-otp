@@ -1,4 +1,22 @@
 #! /bin/sh
+# 
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2002-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved online at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# %CopyrightEnd%
+# 
 # Icky cl wrapper that does it's best to behave like a Unixish cc.
 # Made to work for Erlang builds and to make configure happy, not really 
 # general I suspect.
@@ -60,6 +78,15 @@ while test -n "$1" ; do
 	    PREPROCESSING=true;
 	    LINKING=false;; # Obviously...
 	    #CMD="$CMD -E";;
+	-Owx)
+	    # Optimization hardcoded of wxErlang, needs to disable debugging too
+	    OPTIMIZE_FLAGS="-Ob2ity -Gs -Zi";
+	    DEBUG_FLAGS="";
+	    DEBUG_BUILD=false;
+	    if [ $MD_FORCED = false ]; then
+		MD=-MD;
+	    fi
+	    OPTIMIZED_BUILD=true;;
 	-O*)
 	    # Optimization hardcoded, needs to disable debugging too
 	    OPTIMIZE_FLAGS="-Ox -Zi";
@@ -124,6 +151,10 @@ while test -n "$1" ; do
 	/*.c)
 	    SOURCES="$SOURCES $x";;
 	*.c)
+	    SOURCES="$SOURCES $x";;
+	/*.cc)
+	    SOURCES="$SOURCES $x";;
+	*.cc)
 	    SOURCES="$SOURCES $x";;
 	/*.cpp)
 	    SOURCES="$SOURCES $x";;

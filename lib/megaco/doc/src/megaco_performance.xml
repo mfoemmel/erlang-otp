@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE chapter SYSTEM "chapter.dtd">
+
+<chapter>
+  <header>
+    <copyright>
+      <year>2002</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
+    </copyright>
+    <legalnotice>
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
+    </legalnotice>
+
+    <title>Performace comparison</title>
+    <prepared>H&aring;kan Mattsson</prepared>
+    <responsible>H&aring;kan Mattsson</responsible>
+    <docno></docno>
+    <approved>H&aring;kan Mattsson</approved>
+    <checked></checked>
+    <date>2007-06-15</date>
+    <rev>%VSN%</rev>
+    <file>megaco_performance.sgml</file>
+  </header>
+
+  <section>
+    <title>Comparison of encoder/decoders</title>
+    <p>The Megaco/H.248 standard defines both a plain text encoding and a 
+      binary encoding (ASN.1 BER) and we have implemented encoders and 
+      decoders for both. We do supply a bunch of different encoding/decoding 
+      modules and the user may in fact implement their own (like our erl_dist 
+      module). Using a non-standard encoding format has its obvious drawbacks, 
+      but may be useful in some configurations.</p>
+    <p>We have made four different measurements of our Erlang/OTP 
+      implementation of the Megaco/H.248 protocol stack, in order to compare 
+      our different encoders/decoders. The result of each one is summarized 
+      in a line chart:</p>
+
+    <section>
+      <title>Encoded message size in bytes</title>
+      <image file="message_size">
+        <icaption>Encoded message size in bytes</icaption>
+      </image>
+    </section>
+
+    <section>
+      <title>Encode time in micro seconds</title>
+      <image file="encode_time">
+        <icaption>Encode time in micro seconds</icaption>
+      </image>
+    </section>
+
+    <section>
+      <title>Decode time in micro seconds</title>
+      <image file="decode_time">
+        <icaption>Decode time in micro seconds</icaption>
+      </image>
+    </section>
+
+    <section>
+      <title>Sum of encode and decode time in micro seconds</title>
+      <image file="total_time">
+        <icaption>Sum of encode and decode time in micro seconds</icaption>
+      </image>
+    </section>
+  </section>
+
+  <section>
+    <title>Description of encoders/decoders</title>
+    <p>In Appendix A of the Megaco/H.248 specification (RFC 3525), there are 
+      about 30 messages that shows a representative call flow. We have also 
+      added a few extra version 1, version 2 and version 3 messages. 
+      We have used these messages as basis for our measurements. 
+      The numbers within parentheses are the plain average values. Our 
+      figures have not been weighted in regard to how frequent the different 
+      kinds of messages that are sent between the media gateway and its 
+      controller.</p>
+    <p>The test compares the following encoder/decoders:</p>
+    <list type="bulleted">
+      <item>
+        <p><em>pretty</em> - pretty printed text. In the text encoding, 
+          the protocol stack implementors have the choice of using a 
+          mix of short and long keywords. It is also possible to add 
+          white spaces to improve readability. The pretty text encoding 
+          utilizes long keywords and an indentation style like the 
+          text examples in the Megaco/H.248 specification.</p>
+      </item>
+      <item>
+        <p><em>compact</em> - the compact text encoding uses the shortest 
+          possible keywords and no optional white spaces.</p>
+      </item>
+      <item>
+        <p><em>ber</em> - ASN.1 BER.</p>
+      </item>
+      <item>
+        <p><em>per</em> - ASN.1 PER. Not standardized as a valid 
+          Megaco/H.248 encoding, but included for the matter of completeness 
+          as its encoding is extremely compact.</p>
+      </item>
+      <item>
+        <p><em>erl_dist</em> - Erlang's native distribution format. Not 
+          standardized as a valid Megaco/H.248 encoding, but included 
+          as a reference due to its well known performance characteristics. 
+          Erlang is a dynamically typed language and any Erlang data 
+          structure may be serialized to the erl_dist format by using 
+          built-in functions.</p>
+      </item>
+    </list>
+    <p>The actual encoded messages have been collected in one directory per 
+      encoding type, containing one file per encoded message.</p>
+    <p>Here follows an example of a text message to give a feeling of the 
+      difference between the pretty and compact versions of text messages. 
+      First the pretty printed, well indented version with long keywords:</p>
+    <p></p>
+    <pre>
+MEGACO/1 [124.124.124.222] 
+  Transaction = 9998 { 
+    Context = - { 
+      ServiceChange = ROOT { 
+  \011Services { 
+  \011  Method = Restart, 
+  \011  ServiceChangeAddress = 55555, 
+  \011  Profile = ResGW/1, 
+  \011  Reason = "901 MG Cold Boot"
+  \011}
+      }  
+    }
+  }    </pre>
+    <p>Then the compact text version without indentation and with short 
+      keywords:</p>
+    <pre>
+!/1 [124.124.124.222] T=9998{
+  C=-{SC=ROOT{SV{MT=RS,AD=55555,PF=ResGW/1,RE="901 MG Cold Boot"}}}}    </pre>
+  </section>
+
+  <section>
+    <title>Setup</title>
+    <p>The measurements has been performed on a 
+      HP workstation xw4400 with 
+      an Intel Core 2 Duo 2.13 GHz, 
+      3 GB memory and 
+      running SLES 10 SP1 i586, kernel 2.6.16.54-0.2.5-bigsmp
+      Software versions was open source OTP R12B-2 and megaco-3.8 
+      (R12B-1 and megaco-3.7.3).</p>
+  </section>
+
+  <section>
+    <title>Complete measurement result</title>
+    <p>This chapter details the effects of the possible encoding 
+      configurations for every codec. The result above are the fastest 
+      of these configurations for each codec. The figures presented are 
+      the average of all used messages.</p>
+    <p>For comparison, also included are performance figures for when both 
+      the test program and the codec's where <c>hipe compiled</c>. In the case 
+      of the binary codec's, the asn1 run-time was also <c>inlined</c>. </p>
+
+    <table>
+      <row>
+        <cell align="left" valign="middle"><em>Codec and config</em></cell>
+        <cell align="center" valign="middle"><em>Size</em></cell>
+        <cell align="center" valign="middle"><em>Encode</em></cell>
+        <cell align="center" valign="middle"><em>Decode</em></cell>
+        <cell align="center" valign="middle"><em>Total</em></cell>
+      </row>
+
+      <!-- PRETTY -->
+      <row>
+        <cell align="left" valign="middle">pretty</cell>
+        <cell align="right" valign="middle">336</cell>
+        <cell align="right" valign="middle">30 (31)</cell>
+        <cell align="right" valign="middle">98 (115)</cell>
+        <cell align="right" valign="middle">129 (146)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">pretty [flex]</cell>
+        <cell align="right" valign="middle">336</cell>
+        <cell align="right" valign="middle">31 (31)</cell>
+        <cell align="right" valign="middle">53 (60)</cell>
+        <cell align="right" valign="middle">84 (91)</cell>
+      </row>
+
+      <!-- PRETTY + HIPE -->
+      <row>
+        <cell align="left" valign="middle"><c>pretty hipe</c></cell>
+        <cell align="right" valign="middle"><c>336</c></cell>
+        <cell align="right" valign="middle"><c>18 (18)</c></cell>
+        <cell align="right" valign="middle"><c>50 (58)</c></cell>
+        <cell align="right" valign="middle"><c>68 (76)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>pretty [flex] hipe</c></cell>
+        <cell align="right" valign="middle"><c>336</c></cell>
+        <cell align="right" valign="middle"><c>18 (18)</c></cell>
+        <cell align="right" valign="middle"><c>44 (51)</c></cell>
+        <cell align="right" valign="middle"><c>62 (69)</c></cell>
+      </row>
+
+      <!-- COMPACT -->
+      <row>
+        <cell align="left" valign="middle">compact</cell>
+        <cell align="right" valign="middle">181</cell>
+        <cell align="right" valign="middle">26 (26)</cell>
+        <cell align="right" valign="middle">80 (91)</cell>
+        <cell align="right" valign="middle">106 (117)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">compact [flex]</cell>
+        <cell align="right" valign="middle">181</cell>
+        <cell align="right" valign="middle">26 (26)</cell>
+        <cell align="right" valign="middle">49 (56)</cell>
+        <cell align="right" valign="middle">75 (82)</cell>
+      </row>
+
+      <!-- COMPACT + HIPE -->
+      <row>
+        <cell align="left" valign="middle"><c>compact hipe</c></cell>
+        <cell align="right" valign="middle"><c>181</c></cell>
+        <cell align="right" valign="middle"><c>13 (14)</c></cell>
+        <cell align="right" valign="middle"><c>45 (53)</c></cell>
+        <cell align="right" valign="middle"><c>58 (67)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>compact [flex] hipe</c></cell>
+        <cell align="right" valign="middle"><c>181</c></cell>
+        <cell align="right" valign="middle"><c>13 (14)</c></cell>
+        <cell align="right" valign="middle"><c>39 (47)</c></cell>
+        <cell align="right" valign="middle"><c>52 (61)</c></cell>
+      </row>
+
+      <!-- PER -->
+      <row>
+        <cell align="left" valign="middle">per bin</cell>
+        <cell align="right" valign="middle">91</cell>
+        <cell align="right" valign="middle">84 (82)</cell>
+        <cell align="right" valign="middle">86 (87)</cell>
+        <cell align="right" valign="middle">170 (169)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">per bin [driver]</cell>
+        <cell align="right" valign="middle">91</cell>
+        <cell align="right" valign="middle">57 (57)</cell>
+        <cell align="right" valign="middle">58 (59)</cell>
+        <cell align="right" valign="middle">115 (116)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">per bin [native]</cell>
+        <cell align="right" valign="middle">91</cell>
+        <cell align="right" valign="middle">64 (63)</cell>
+        <cell align="right" valign="middle">64 (63)</cell>
+        <cell align="right" valign="middle">127 (126)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">per bin [driver,native]</cell>
+        <cell align="right" valign="middle">91</cell>
+        <cell align="right" valign="middle">36 (35)</cell>
+        <cell align="right" valign="middle">37 (38)</cell>
+        <cell align="right" valign="middle">72 (73)</cell>
+      </row>
+
+      <!-- PER + HIPE + INLINE -->
+      <row>
+        <cell align="left" valign="middle"><c>per bin hipe+inline</c></cell>
+        <cell align="right" valign="middle"><c>91</c></cell>
+        <cell align="right" valign="middle"><c>38 (38)</c></cell>
+        <cell align="right" valign="middle"><c>40 (38)</c></cell>
+        <cell align="right" valign="middle"><c>78 (76)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>per bin [driver] hipe+inline</c></cell>
+        <cell align="right" valign="middle"><c>91</c></cell>
+        <cell align="right" valign="middle"><c>33 (33)</c></cell>
+        <cell align="right" valign="middle"><c>33 (36)</c></cell>
+        <cell align="right" valign="middle"><c>66 (69)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>per bin [native] hipe+inline</c></cell>
+        <cell align="right" valign="middle"><c>91</c></cell>
+        <cell align="right" valign="middle"><c>28 (28)</c></cell>
+        <cell align="right" valign="middle"><c>30 (29)</c></cell>
+        <cell align="right" valign="middle"><c>58 (57)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>per bin [driver,native] hipe+inline</c></cell>
+        <cell align="right" valign="middle"><c>91</c></cell>
+        <cell align="right" valign="middle"><c>22 (22)</c></cell>
+        <cell align="right" valign="middle"><c>25 (25)</c></cell>
+        <cell align="right" valign="middle"><c>47 (47)</c></cell>
+      </row>
+
+      <!-- BER -->
+      <row>
+        <cell align="left" valign="middle">ber bin</cell>
+        <cell align="right" valign="middle">165</cell>
+        <cell align="right" valign="middle">46 (45)</cell>
+        <cell align="right" valign="middle">71 (70)</cell>
+        <cell align="right" valign="middle">116 (115)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">ber bin [driver]</cell>
+        <cell align="right" valign="middle">165</cell>
+        <cell align="right" valign="middle">46 (45)</cell>
+        <cell align="right" valign="middle">51 (51)</cell>
+        <cell align="right" valign="middle">97 (96)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">ber bin [native]</cell>
+        <cell align="right" valign="middle">165</cell>
+        <cell align="right" valign="middle">26 (26)</cell>
+        <cell align="right" valign="middle">48 (47)</cell>
+        <cell align="right" valign="middle">74 (73)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">ber bin [driver,native]</cell>
+        <cell align="right" valign="middle">165</cell>
+        <cell align="right" valign="middle">26 (26)</cell>
+        <cell align="right" valign="middle">29 (28)</cell>
+        <cell align="right" valign="middle">54 (54)</cell>
+      </row>
+
+      <!-- BER + HIPE + INLINE -->
+      <row>
+        <cell align="left" valign="middle"><c>ber bin hipe+inline</c></cell>
+        <cell align="right" valign="middle"><c>165</c></cell>
+        <cell align="right" valign="middle"><c>24 (24)</c></cell>
+        <cell align="right" valign="middle"><c>41 (41)</c></cell>
+        <cell align="right" valign="middle"><c>65 (65)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>ber bin [driver] hipe+inline</c></cell>
+        <cell align="right" valign="middle"><c>165</c></cell>
+        <cell align="right" valign="middle"><c>24 (24)</c></cell>
+        <cell align="right" valign="middle"><c>30 (30)</c></cell>
+        <cell align="right" valign="middle"><c>54 (54)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>ber bin [native] hipe+inline</c></cell>
+        <cell align="right" valign="middle"><c>165</c></cell>
+        <cell align="right" valign="middle"><c>14 (14)</c></cell>
+        <cell align="right" valign="middle"><c>31 (31)</c></cell>
+        <cell align="right" valign="middle"><c>45 (45)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>ber bin [driver,native] hipe+inline</c></cell>
+        <cell align="right" valign="middle"><c>165</c></cell>
+        <cell align="right" valign="middle"><c>14 (14)</c></cell>
+        <cell align="right" valign="middle"><c>20 (20)</c></cell>
+        <cell align="right" valign="middle"><c>34 (34)</c></cell>
+      </row>
+
+      <!-- ERLANG -->
+      <row>
+        <cell align="left" valign="middle">erl_dist</cell>
+        <cell align="right" valign="middle">875</cell>
+        <cell align="right" valign="middle">7 (7)</cell>
+        <cell align="right" valign="middle">13 (13)</cell>
+        <cell align="right" valign="middle">20 (20)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">erl_dist [megaco_compressed]</cell>
+        <cell align="right" valign="middle">405</cell>
+        <cell align="right" valign="middle">8 (8)</cell>
+        <cell align="right" valign="middle">9 (9)</cell>
+        <cell align="right" valign="middle">17 (17)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">erl_dist [compressed]</cell>
+        <cell align="right" valign="middle">345</cell>
+        <cell align="right" valign="middle">143 (142)</cell>
+        <cell align="right" valign="middle">31 (31)</cell>
+        <cell align="right" valign="middle">174 (173)</cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle">erl_dist [megaco_compressed,compressed]</cell>
+        <cell align="right" valign="middle">200</cell>
+        <cell align="right" valign="middle">119 (111)</cell>
+        <cell align="right" valign="middle">17 (18)</cell>
+        <cell align="right" valign="middle">137 (129)</cell>
+      </row>
+
+      <!-- ERLANG + HIPE -->
+      <row>
+        <cell align="left" valign="middle"><c>erl_dist hipe</c></cell>
+        <cell align="right" valign="middle"><c>875</c></cell>
+        <cell align="right" valign="middle"><c>7 (7)</c></cell>
+        <cell align="right" valign="middle"><c>13 (13)</c></cell>
+        <cell align="right" valign="middle"><c>20 (20)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>erl_dist [megaco_compressed] hipe</c></cell>
+        <cell align="right" valign="middle"><c>405</c></cell>
+        <cell align="right" valign="middle"><c>6 (6)</c></cell>
+        <cell align="right" valign="middle"><c>6 (6)</c></cell>
+        <cell align="right" valign="middle"><c>12 (12)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>erl_dist [compressed] hipe</c></cell>
+        <cell align="right" valign="middle"><c>345</c></cell>
+        <cell align="right" valign="middle"><c>135 (130)</c></cell>
+        <cell align="right" valign="middle"><c>30 (29)</c></cell>
+        <cell align="right" valign="middle"><c>165 (159)</c></cell>
+      </row>
+      <row>
+        <cell align="left" valign="middle"><c>erl_dist [megaco_compressed,compressed] hipe</c></cell>
+        <cell align="right" valign="middle"><c>200</c></cell>
+        <cell align="right" valign="middle"><c>107 (108)</c></cell>
+        <cell align="right" valign="middle"><c>14 (14)</c></cell>
+        <cell align="right" valign="middle"><c>121 (122)</c></cell>
+      </row>
+      <tcaption>Codec performance</tcaption>
+    </table>
+  </section>
+
+  <section>
+    <title>Summary</title>
+    <p>In our measurements we have seen that there are no significant 
+      differences in message sizes between ASN.1 BER and the compact 
+      text format. Some care should be taken when using the pretty text 
+      style (which is used in all the examples included in the protocol 
+      specification and preferred during debugging sessions) since the 
+      messages can then be quite large. If the message size really is a 
+      serious issue, our per encoder should be used, as the ASN.1 PER 
+      format is much more compact than all the other alternatives. Its 
+      major drawback is that it is has not been approved as a valid 
+      Megaco/H.248 message encoding.</p>
+    <p>When it comes to pure encode/decode performance, it turns out that:</p>
+    <list type="bulleted"> 
+      <item>
+        <p>our fastest binary encoder (ber) is about equal 
+          to our fastest text encoder (compact). </p>
+      </item>
+      <item>
+        <p>our fastest binary decoder (ber) is about 26% (47%) faster than our 
+          fastest text decoder (compact). </p>
+      </item>
+    </list> 
+    <p>If the pure encode/decode performance really is a serious issue, our 
+      erl_dist encoder could be used, as the encoding/decoding of the 
+      erlang distribution format is much faster than all the other 
+      alternatives. Its major drawback is that it is has not been approved 
+      as a valid Megaco/H.248 message encoding.</p>
+    <note>
+      <p>Please, observe that these performance figures are related to our 
+        implementation in Erlang/OTP. Measurements of other implementations 
+        using other tools and techniques may of course result in other 
+        figures. </p>
+    </note>
+  </section>
+</chapter>
+

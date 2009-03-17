@@ -1,19 +1,22 @@
-%%% ``The contents of this file are subject to the Erlang Public License,
-%%% Version 1.1, (the "License"); you may not use this file except in
-%%% compliance with the License. You should have received a copy of the
-%%% Erlang Public License along with this software. If not, it can be
-%%% retrieved via the world wide web at http://www.erlang.org/.
-%%% 
-%%% Software distributed under the License is distributed on an "AS IS"
-%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%%% the License for the specific language governing rights and limitations
-%%% under the License.
-%%% 
-%%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%%% AB. All Rights Reserved.''
-%%% 
-%%%     $Id$
+%%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1998-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
+
 %%%
 %%%----------------------------------------------------------------------
 %%% Purpose : Support tables so large that they need
@@ -32,7 +35,8 @@
 	 select/5,select/6,select_cont/3,
 	 index_match_object/6, index_read/6,
 	 foldl/6, foldr/6, table_info/4,
-	 first/3, next/4, prev/4, last/3
+	 first/3, next/4, prev/4, last/3,
+	 clear_table/4
        ]).
 
 %header_doc_include
@@ -117,6 +121,10 @@ all_keys(ActivityId, Opaque, Tab, LockKind) ->
     Match = [mnesia:all_keys(ActivityId, Opaque, Frag, LockKind)
 	     || Frag <- frag_names(Tab)],
     lists:append(Match).
+
+clear_table(ActivityId, Opaque, Tab, Obj) ->
+    [mnesia:clear_table(ActivityId, Opaque, Frag, Obj)  || Frag <- frag_names(Tab)],
+    ok.
 
 index_match_object(ActivityId, Opaque, Tab, Pat, Attr, LockKind) ->
     Match =

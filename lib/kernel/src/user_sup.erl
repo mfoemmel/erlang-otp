@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(user_sup).
 
@@ -29,8 +30,12 @@
 %% Internal exports.
 -export([init/1, terminate/2, relay/1]).
 
+-spec start() -> {'error', {'already_started', pid()}} | {'ok', pid()}.
+
 start() ->
     supervisor_bridge:start_link(user_sup, []).
+
+-spec init([]) -> 'ignore' | {'error', 'nouser'} | {'ok', pid(), pid()}.
 
 init([]) ->
     case get_user() of
@@ -58,6 +63,8 @@ start_slave(Master) ->
 	    halt()
     end.
 
+-spec relay(pid()) -> no_return().
+
 relay(Pid) ->
     register(user, self()),
     relay1(Pid).
@@ -71,9 +78,12 @@ relay1(Pid) ->
 
 
 %%-----------------------------------------------------------------
-%% Sleep awhile in order to let user write all (some) buffered 
+%% Sleep a while in order to let user write all (some) buffered 
 %% information before termination.
 %%-----------------------------------------------------------------
+
+-spec terminate(term(), pid()) -> 'ok'.
+
 terminate(_Reason, UserPid) ->
     receive after 1000 -> ok end,
     exit(UserPid, kill),
@@ -84,6 +94,7 @@ terminate(_Reason, UserPid) ->
 %% no more than 10 seconds).  This is so the application_controller
 %% is guaranteed that the user is started.
 %%-----------------------------------------------------------------
+
 start_user(Func,A) ->
     apply(Func, A),
     wait_for_user_p(100).
@@ -116,4 +127,3 @@ check_flags([{master, [Node]} | T], _) ->
     check_flags(T, {master, list_to_atom(Node)});
 check_flags([_H | T], User) -> check_flags(T, User);
 check_flags([], User) -> User.
-

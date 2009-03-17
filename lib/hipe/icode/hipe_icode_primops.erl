@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
 %% ====================================================================
@@ -22,7 +40,7 @@
 
 %%---------------------------------------------------------------------
 
--type io_device() :: any().    %% XXX: DOES NOT BELONG HERE
+-type io_device() :: atom() | pid().    %% XXX: DOES NOT BELONG HERE
 
 %%---------------------------------------------------------------------
 
@@ -108,6 +126,14 @@ is_safe({hipe_bs_primop, {bs_put_binary_all,_}}) -> false;
 is_safe({hipe_bs_primop, {bs_put_float,_,_,_}}) -> false;
 is_safe({hipe_bs_primop, {bs_put_integer,_,_,_}}) -> false;
 is_safe({hipe_bs_primop, {bs_put_string,_,_}}) -> false;  
+is_safe({hipe_bs_primop, bs_put_utf8}) -> false;
+is_safe({hipe_bs_primop, bs_utf8_size}) -> true;
+is_safe({hipe_bs_primop, bs_get_utf8}) -> false;
+is_safe({hipe_bs_primop, bs_utf16_size}) -> true;
+is_safe({hipe_bs_primop, {bs_put_utf16,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_utf16,_}}) -> false;
+is_safe({hipe_bs_primop, bs_validate_unicode}) -> false;
+is_safe({hipe_bs_primop, bs_validate_unicode_retract}) -> false;
 is_safe({hipe_bs_primop, {unsafe_bs_put_integer,_,_,_}}) -> false;
 is_safe({hipe_bs_primop, bs_final}) -> true;
 is_safe({hipe_bs_primop, bs_context_to_binary}) -> true;
@@ -202,6 +228,14 @@ fails({hipe_bs_primop, {bs_put_binary_all,_}}) -> true;
 fails({hipe_bs_primop, {bs_put_float,_,_,_}}) -> true;
 fails({hipe_bs_primop, {bs_put_integer,_,_,_}}) -> true;
 fails({hipe_bs_primop, {bs_put_string,_,_}}) -> true;  
+fails({hipe_bs_primop, bs_put_utf8}) -> true;
+fails({hipe_bs_primop, bs_utf8_size}) -> false;
+fails({hipe_bs_primop, bs_get_utf8}) -> true;
+fails({hipe_bs_primop, bs_utf16_size}) -> false;
+fails({hipe_bs_primop, {bs_put_utf16,_}}) -> true;
+fails({hipe_bs_primop, {bs_get_utf16,_}}) -> true;
+fails({hipe_bs_primop, bs_validate_unicode}) -> true;
+fails({hipe_bs_primop, bs_validate_unicode_retract}) -> true;
 fails({hipe_bs_primop, {unsafe_bs_put_integer,_,_,_}}) -> true;
 fails({hipe_bs_primop, bs_final}) -> false;
 fails({hipe_bs_primop, {bs_append,_,_,_,_}}) -> true;
@@ -299,6 +333,22 @@ pp(Dev, Op) ->
 	  io:format(Dev, "bs_bits_to_bytes", []);
 	bs_bits_to_bytes2 ->
 	  io:format(Dev, "bs_bits_to_bytes2", []);
+	bs_utf8_size ->
+	  io:format(Dev, "bs_utf8_size", []);
+	bs_put_utf8 ->
+	  io:format(Dev, "bs_put_utf8", []);
+	bs_get_utf8 ->
+	  io:format(Dev, "bs_get_utf8", []);
+	bs_utf16_size ->
+	  io:format(Dev, "bs_utf16_size", []);
+	{bs_put_utf16, Flags} ->
+	  io:format(Dev, "bs_put_utf16<~w>", [Flags]);
+	{bs_get_utf16, Flags} ->
+	  io:format(Dev, "bs_get_utf16<~w>", [Flags]);
+	bs_validate_unicode ->
+	  io:format(Dev, "bs_validate_unicode", []);
+	bs_validate_unicode_retract ->
+	  io:format(Dev, "bs_validate_unicode_retract", []);
 	bs_final ->
 	  io:format(Dev, "bs_final", []);
 	bs_final2 ->
@@ -593,6 +643,12 @@ type(Primop, Args) ->
     {hipe_bs_primop, {bs_put_string, _, Size}} ->
       [_Base, Type] = Args,
       erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(0,8*Size));
+    {hipe_bs_primop, bs_utf8_size} ->
+      [_Arg] = Args,
+      erl_types:t_from_range(1, 4);
+    {hipe_bs_primop, bs_utf16_size} ->
+      [_Arg] = Args,
+      erl_types:t_from_range(2, 4);	% XXX: really 2 | 4
     {hipe_bs_primop, bs_final} ->
       [_Base, Type] = Args,
       Type;
@@ -768,6 +824,10 @@ type(Primop) ->
       erl_types:t_any();
 %%% -----------------------------------------------------
 %%% Binaries    
+    {hipe_bs_primop, bs_get_utf8} ->
+      erl_types:t_product([erl_types:t_integer(), erl_types:t_matchstate()]);
+    {hipe_bs_primop, {bs_get_utf16, _Flags}} ->
+      erl_types:t_product([erl_types:t_integer(), erl_types:t_matchstate()]);
     {hipe_bs_primop, {bs_get_integer, _Size, _Flags}} ->
       erl_types:t_product([erl_types:t_integer(), erl_types:t_matchstate()]);
     {hipe_bs_primop, {bs_get_float, _, _}} ->

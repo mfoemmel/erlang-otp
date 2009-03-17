@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>2004</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2004</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>qlc</title>
@@ -118,11 +116,11 @@
     <p>Filters that do not return <c>bool()</c> but fail are handled
       differently depending on their syntax: if the filter is a guard
       it returns <c>false</c>, otherwise the query evaluation fails.
-      This behavior makes it possible for the <c>qlc</c> module  
-      to do some optimizations
-      without affecting the meaning of a query. For example, when some
-      position of a table is compared to one or more constants, only
-      the objects with matching values are candidates for further
+      This behavior makes it possible for the <c>qlc</c> module to do
+      some optimizations without affecting the meaning of a query. For
+      example, when testing some position of a table and one or more
+      constants for equality, only
+      the objects with equal values are candidates for further
       evaluation. The other objects are guaranteed to make the filter
       return <c>false</c>, but never fail. The (small) set of
       candidate objects can often be found by looking up some key
@@ -138,18 +136,17 @@
 
   <section><title>Join</title>
 
-    <p>The <c>qlc</c> module supports fast join of two query handles. 
-      Fast join is
-      possible if some position (<c>P1</c>) of one query handler is
-      compared to or matched against some position (<c>P2</c>) of
-      another query handle. Two fast join methods have been
+    <p>The <c>qlc</c> module supports fast join of two query handles.
+      Fast join is possible if some position <c>P1</c> of one query
+      handler and some position <c>P2</c> of another query handler are
+      tested for equality. Two fast join methods have been
       implemented:</p>
 
     <list type="bulleted">
       <item>Lookup join traverses all objects of one query handle and
          finds objects of the other handle (a QLC table) such that the
-         values at <c>P1</c> and <c>P2</c> match. The <c>qlc</c> module 
-         does not create
+         values at <c>P1</c> and <c>P2</c> match or compare equal.
+         The <c>qlc</c> module does not create
          any indices but looks up values using the key position and
          the indexed positions of the QLC table.
       </item>
@@ -291,7 +288,7 @@
             marker="filename">filename(3)</seealso>&nbsp;-</p>
       </item>
       <item><p><c>spawn_options() =&nbsp;</c> -&nbsp;see <seealso
-          marker="kernel:erlang">erlang(3)</seealso>&nbsp;-</p>
+          marker="erts:erlang">erlang(3)</seealso>&nbsp;-</p>
       </item>
 
     </list>
@@ -378,7 +375,9 @@ qlc:sort(qlc:q([X || X <- qlc:append(QH1, QH2)], {unique, true})).]]></code>
     <p>This query also removes duplicates but the answers will be
       sorted. If there are many answers temporary files will be used.
       Note that in order to get the first unique answer all answers
-      have to be found and sorted.</p>
+      have to be found and sorted. Both alternatives find duplicates
+      by comparing answers, that is, if A1 and A2 are answers found in
+      that order, then A2 is a removed if A1 == A2.</p>
 
     <p>To return just a few answers cursors can be used. The following
       code returns no more than five answers using an ETS table for
@@ -499,6 +498,8 @@ table(T) ->
     TF = fun() -> qlc_next(gb_trees:next(gb_trees:iterator(T))) end,
     InfoFun = fun(num_of_objects) -> gb_trees:size(T);
                  (keypos) -> 1;
+                 (is_sorted_key) -> true;
+                 (is_unique_objects) -> true;
                  (_) -> undefined
               end,
     LookupFun =
@@ -512,8 +513,9 @@ table(T) ->
         end,
     FormatFun =
         fun({all, NElements, ElementFun}) ->
-                Vals = gb_nodes(T, NElements, ElementFun),
-                {gb_trees, from_orddict, [Vals]};
+                ValsS = io_lib:format("gb_trees:from_orddict(~w)",
+                                      [gb_nodes(T, NElements, ElementFun)]),
+                io_lib:format("gb_table:table(~s)", [ValsS]);
            ({lookup, 1, KeyValues, _NElements, ElementFun}) ->
                 ValsS = io_lib:format("gb_trees:from_orddict(~w)",
                                       [gb_nodes(T, infinity, ElementFun)]),
@@ -524,7 +526,7 @@ table(T) ->
                               [ValsS, [ElementFun(KV) || KV <- KeyValues]])
         end,
     qlc:table(TF, [{info_fun, InfoFun}, {format_fun, FormatFun},
-                   {lookup_fun, LookupFun}]).
+                   {lookup_fun, LookupFun},{key_equality,'=='}]).
 
 qlc_next({X, V, S}) ->
     [{X,V} | fun() -> qlc_next(gb_trees:next(S)) end];
@@ -581,8 +583,8 @@ gb_iter(I0, N, EFun) ->
 qlc:q([T || P <- LE, F])]]></code>
 
     <p>and P is a tuple, the <c>qlc</c> module analyzes P and F in
-      compile time to find positions of the tuple P that are matched
-      or compared to constants. If such a position at runtime turns
+      compile time to find positions of the tuple P that are tested
+      for equality to constants. If such a position at runtime turns
       out to be the key position, the lookup function can be used,
       otherwise all objects of the table have to be traversed. It is
       the info function <c>InfoFun</c> that returns the key position.
@@ -592,6 +594,88 @@ qlc:q([T || P <- LE, F])]]></code>
       thereby introducing so called secondary keys. The <c>qlc</c>
       module prefers to look up objects using the key before secondary
       keys regardless of the number of constants to look up.</p>
+
+  </section>
+
+  <section><title>Key equality</title>
+
+    <p>In Erlang there are two operators for testing term equality,
+      namely <c>==/2</c> and <c>=:=/2</c>. The difference between them
+      is all about the integers that can be represented by floats. For
+      instance, <c>2 == 2.0</c> evaluates to
+      <c>true</c> while <c>2 =:= 2.0</c> evaluates to <c>false</c>.
+      Normally this is a minor issue, but the <c>qlc</c> module cannot
+      ignore the difference, which affects the user's choice of
+      operators in QLCs.</p>
+
+    <p>If the <c>qlc</c> module can find out at compile time that some
+      constant is free of integers, it does not matter which one of
+      <c>==/2</c> or <c>=:=/2</c> is used:</p>
+
+    <pre>
+1> <input>E1 = ets:new(t, [set]), % uses =:=/2 for key equality</input>
+<input>Q1 = qlc:q([K ||</input>
+<input>{K} &lt;- ets:table(E1),</input>
+<input>K == 2.71 orelse K == a]),</input>
+<input>io:format("~s~n", [qlc:info(Q1)]).</input>
+ets:match_spec_run(lists:flatmap(fun(V) ->
+                                        ets:lookup(20493, V)
+                                 end,
+                                 [a,2.71]),
+                   ets:match_spec_compile([{{'$1'},[],['$1']}]))</pre>
+
+    <p>In the example the <c>==/2</c> operator has been handled
+      exactly as <c>=:=/2</c> would have been handled. On the other
+      hand, if it cannot be determined at compile time that some
+      constant is free of integers and the table uses <c>=:=/2</c>
+      when comparing keys for equality (see the option <seealso
+      marker="#key_equality">key_equality</seealso>), the
+      <c>qlc</c> module will not try to look up the constant. The
+      reason is that there is in the general case no upper limit on
+      the number of key values that can compare equal to such a
+      constant; every combination of integers and floats has to be
+      looked up:</p>
+
+    <pre>
+2> <input>E2 = ets:new(t, [set]),</input>
+<input>true = ets:insert(E2, [{{2,2},a},{{2,2.0},b},{{2.0,2},c}]),</input>
+<input>F2 = fun(I) -></input>
+<input>qlc:q([V || {K,V} &lt;- ets:table(E2), K == I])</input>
+<input>end,</input>
+<input>Q2 = F2({2,2}),</input>
+<input>io:format("~s~n", [qlc:info(Q2)]).</input>
+ets:table(53264,
+          [{traverse,
+            {select,[{{'$1','$2'},[{'==','$1',{const,{2,2}}}],['$2']}]}}])
+3> <input>lists:sort(qlc:e(Q2)).</input>
+[a,b,c]</pre>
+
+    <p>Looking up just <c>{2,2}</c> would not return <c>b</c> and
+      <c>c</c>.</p>
+
+    <p>If the table uses <c>==/2</c> when comparing keys for equality,
+      the <c>qlc</c> module will look up the constant regardless of
+      which operator is used in the QLC. However, <c>==/2</c> is to
+      be preferred:</p>
+
+    <pre>
+4> <input>E3 = ets:new(t, [ordered_set]), % uses ==/2 for key equality</input>
+<input>true = ets:insert(E3, [{{2,2.0},b}]),</input>
+<input>F3 = fun(I) -></input>
+<input>qlc:q([V || {K,V} &lt;- ets:table(E3), K == I])</input>
+<input>end,</input>
+<input>Q3 = F3({2,2}),</input>
+<input>io:format("~s~n", [qlc:info(Q3)]).</input>
+ets:match_spec_run(ets:lookup(86033, {2,2}),
+                   ets:match_spec_compile([{{'$1','$2'},[],['$2']}]))
+5> <input>qlc:e(Q3).</input>
+[b]</pre>
+
+    <p>Lookup join is handled analogously to lookup of constants in a
+      table: if the join operator is <c>==/2</c> and the table where
+      constants are to be looked up uses <c>=:=/2</c> when testing
+      keys for equality, the <c>qlc</c> module will not consider
+      lookup join for that table.</p>
 
   </section>
 
@@ -832,8 +916,7 @@ begin
                    element(2, G1) =:= element(1, G2)],
               [{join,lookup}]),
     qlc:q([{X,Z,W} ||
-               [{X,Z}|{W,Y}] &lt;- V2,
-               X =:= Y])
+               [{X,Z}|{W,Y}] &lt;- V2])
 end</pre>
 
         <p>In this example the query list comprehension <c>V2</c> has
@@ -1039,8 +1122,8 @@ end</pre>
         <pre>
 1> <input>T = gb_trees:empty(),</input>
 <input>QH = qlc:q([X || {{X,Y},_} &lt;- gb_table:table(T),</input>
-<input>((X =:= 1) or (X =:= 2)),</input>
-<input>((Y =:= a) or (Y =:= b) or (Y =:= c))]),</input>
+<input>((X == 1) or (X == 2)) andalso</input>
+<input>((Y == a) or (Y == b) or (Y == c))]),</input>
 <input>io:format("~s~n", [qlc:info(QH)]).</input>
 ets:match_spec_run(
        lists:flatmap(fun(K) ->
@@ -1055,24 +1138,14 @@ ets:match_spec_run(
                             end
                      end,
                      [{1,a},{1,b},{1,c},{2,a},{2,b},{2,c}]),
-       ets:match_spec_compile([{{{'$1','$2'},'_'},
-                                [{'andalso',
-                                  {'or',
-                                   {'=:=','$1',1},
-                                   {'=:=','$1',2}},
-                                  {'or',
-                                   {'or',
-                                    {'=:=','$2',a},
-                                    {'=:=','$2',b}},
-                                   {'=:=','$2',c}}}],
-                                ['$1']}]))</pre>
+       ets:match_spec_compile([{{{'$1','$2'},'_'},[],['$1']}]))</pre>
 
         <p>In this example using the <c>gb_table</c> module from the
           <seealso marker="#implementing_a_qlc_table">Implementing a
           QLC table</seealso> section there are six keys to look up:
           <c>{1,a}</c>, <c>{1,b}</c>, <c>{1,c}</c>, <c>{2,a}</c>,
           <c>{2,b}</c>, and <c>{2,c}</c>. The reason is that the two
-          elements of the key {X,&nbsp;Y} are matched separately.</p>
+          elements of the key {X,&nbsp;Y} are compared separately.</p>
 
         <p>The <c>{lookup,&nbsp;true}</c> option can be used to ensure
           that the <c>qlc</c> module will look up constants in some 
@@ -1179,7 +1252,8 @@ ets:match_spec_run(
                   | {lookup_fun, LookupFun}
                   | {parent_fun, ParentFun}
                   | {post_fun, PostFun}
-                  | {pre_fun, PreFun}</v>
+                  | {pre_fun, PreFun}
+                  | {key_equality, KeyComparison}</v>
         <v>FormatFun = undefined  | fun(SelectedObjects) -> FormatedTable</v>
         <v>SelectedObjects = all
                            | {all, NElements, DepthFun}
@@ -1202,6 +1276,7 @@ ets:match_spec_run(
         <v>PreArg = {parent_value, ParentFunValue}  | {stop_fun, StopFun}</v>
         <v>ParentFunValue = undefined  | term()</v>
         <v>StopFun = undefined  | fun() -> void()</v>
+        <v>KeyComparison = '=:=' | '=='</v>
         <v>Position = int() > 0</v>
         <v>Keys = [term()]</v>
         <v>Mod = Fun = atom()</v>
@@ -1353,6 +1428,12 @@ ets:match_spec_run(
           (<c>{lookup,&nbsp;Position,&nbsp;Keys}</c> or
           <c>all</c>).</p>
 
+        <p><marker id="key_equality"></marker>The value of
+          <c>key_equality</c> is to be <c>'=:='</c> if the table
+          considers two keys equal if they match, and to be
+          <c>'=='</c> if two keys are equal if they compare equal. The
+          default is <c>'=:='</c>.</p>
+
         <p>See <seealso marker="ets#qlc_table">ets(3)</seealso>,
           <seealso marker="dets#qlc_table">dets(3)</seealso> and
           <seealso marker="mnesia:mnesia#qlc_table">mnesia(3)</seealso> 
@@ -1369,7 +1450,7 @@ ets:match_spec_run(
       <seealso marker="doc/reference_manual:part_frame">
            Erlang Reference Manual</seealso>,
       <seealso marker="erl_eval">erl_eval(3)</seealso>,
-      <seealso marker="kernel:erlang">erlang(3)</seealso>, 
+      <seealso marker="erts:erlang">erlang(3)</seealso>, 
       <seealso marker="ets">ets(3)</seealso>,
       <seealso marker="kernel:file">file(3)</seealso>, 
       <seealso marker="error_logger:file">error_logger(3)</seealso>, 

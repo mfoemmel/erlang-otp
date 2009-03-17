@@ -156,6 +156,7 @@ static void uds_output(ErlDrvData handle, ErlDrvEvent event);
 static void uds_finish(void);
 static int uds_control(ErlDrvData handle, unsigned int command, 
 		       char* buf, int count, char** res, int res_size);
+static void uds_stop_select(ErlDrvEvent event, void*);
 
 /* 
 ** Local helpers forward declarations
@@ -201,7 +202,18 @@ ErlDrvEntry uds_driver_entry = {
     NULL,                  /* void * that is not used (BC) */
     uds_control,           /* control, port_control callback */
     NULL,                  /* timeout, called on timeouts */
-    NULL                   /* outputv, vector output interface */
+    NULL,                  /* outputv, vector output interface */
+    NULL,                  /* ready_async */
+    NULL,                  /* flush */
+    NULL,                  /* call */
+    NULL,                  /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0,	/* ERL_DRV_FLAGs */
+    NULL,
+    NULL,                  /* process_exit */
+    uds_stop_select
 };
 
 /* Beginning of linked list of ports */
@@ -353,7 +365,7 @@ static void uds_input(ErlDrvData handle, ErlDrvEvent event)
 	ad->type = portTypeCommand;
 	ud->partner = NULL;
 	DEBUGF(("Accept successful."));
-	driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_READ, 0);
+	driver_select(ud->port, (ErlDrvEvent) ud->fd, ERL_DRV_READ, 0);
 	driver_output(ad->port, "Aok",3);
 	return;
     }
@@ -371,7 +383,7 @@ static void uds_output(ErlDrvData handle, ErlDrvEvent event)
    UdsData *ud = (UdsData *) handle;
    if (ud->type == portTypeConnector) {
        ud->type = portTypeCommand;
-       driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_WRITE, 0);
+       driver_select(ud->port, (ErlDrvEvent) ud->fd, ERL_DRV_WRITE, 0);
        driver_output(ud->port, "Cok",3);
        return;
    }
@@ -428,7 +440,7 @@ static int uds_control(ErlDrvData handle, unsigned int command,
 	   return report_control_error(res, res_size, "einval");
        }
        ud->type = portTypeCommand;
-       driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_READ, 0);
+       driver_select(ud->port, (ErlDrvEvent) ud->fd, ERL_DRV_READ, 0);
        ENSURE(1);
        **res = 0;
        return 1;
@@ -437,7 +449,7 @@ static int uds_control(ErlDrvData handle, unsigned int command,
 	   return report_control_error(res, res_size, "einval");
        }
        ud->type = portTypeIntermediate;
-       driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_READ, 0);
+       driver_select(ud->port, (ErlDrvEvent) ud->fd, ERL_DRV_READ, 0);
        ENSURE(1);
        **res = 0;
        return 1;
@@ -479,7 +491,11 @@ static int uds_control(ErlDrvData handle, unsigned int command,
    }
 #undef ENSURE
 }
-       
+
+static void uds_stop_select(ErlDrvEvent event, void* _)
+{
+    close((int)(long)event);
+}
 
 /*
 **
@@ -534,7 +550,8 @@ static void uds_command_connect(UdsData *ud, char *buff, int bufflen)
 	} else {
 	    DEBUGF(("Connect pending"));
 	    ud->type = portTypeConnector;
-	    driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_WRITE, 1);
+	    driver_select(ud->port, (ErlDrvEvent) ud->fd,
+			  ERL_DRV_WRITE|ERL_DRV_USE, 1);
 	} 
     } else {
 	DEBUGF(("Connect done"));
@@ -571,7 +588,7 @@ static void uds_command_accept(UdsData *ud, char *buff, int bufflen)
     lp->partner = ud;
     ud->partner = lp;
     ud->type = portTypeAcceptor;
-    driver_select(lp->port,(ErlDrvEvent) lp->fd,DO_READ,1);
+    driver_select(lp->port,(ErlDrvEvent) lp->fd, ERL_DRV_READ|ERL_DRV_USE, 1);
     /* Silent, answer will be sent in input routine */
 }
 
@@ -654,8 +671,8 @@ static void do_stop(UdsData *ud, int shutting_down)
 	FREE(ud->buffer); 
     }
     if (ud->fd >= 0) {
-	driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_READ | DO_WRITE, 0);
-	close(ud->fd);
+	driver_select(ud->port, (ErlDrvEvent) ud->fd,
+		      ERL_DRV_READ|ERL_DRV_WRITE|ERL_DRV_USE, 0);
     }
     if (ud->name) {
 	do_unlink(ud->name);
@@ -671,7 +688,8 @@ static void do_stop(UdsData *ud, int shutting_down)
 	    if (ud->type == portTypeAcceptor) {
 		UdsData *listener = ud->partner;
 		listener->partner = NULL;
-		driver_select(listener->port, (ErlDrvEvent) listener->fd, DO_READ, 0);
+		driver_select(listener->port, (ErlDrvEvent) listener->fd,
+			      ERL_DRV_READ, 0);
 	    } else {
 		UdsData *acceptor = ud->partner;
 		ASSERT(ud->type == portTypeListener);
@@ -742,7 +760,7 @@ static void do_recv(UdsData *ud)
 	if ((res = buffered_read_package(ud,&ibuf)) < 0) {
 	    if (res == NORMAL_READ_FAILURE) {
 		DEBUGF(("do_recv normal read failed"));
-		driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_READ, 1);
+		driver_select(ud->port, (ErlDrvEvent) ud->fd, ERL_DRV_READ|ERL_DRV_USE, 1);
 	    } else {
 		DEBUGF(("do_recv fatal read failed (%d) (%d)",errno, res));
 		driver_failure_eof(ud->port);
@@ -756,12 +774,12 @@ static void do_recv(UdsData *ud)
 			       before the actual buffer (where the packet
 			       header was) */
 	    driver_output(ud->port,ibuf - 1, res + 1);
-	    driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_READ,0);
+	    driver_select(ud->port, (ErlDrvEvent) ud->fd, ERL_DRV_READ, 0);
 	    return;
 	} else {
 	    ibuf[-1] = DIST_MAGIC_RECV_TAG; /* XXX */
 	    driver_output(ud->port,ibuf - 1, res + 1);
-	    driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_READ,1);
+	    driver_select(ud->port, (ErlDrvEvent) ud->fd, ERL_DRV_READ|ERL_DRV_USE, 1);
 	}
     }
 }
@@ -794,7 +812,7 @@ static int send_out_queue(UdsData *ud)
 	int wrote;
 	if (tmp == NULL) {
 	    DEBUGF(("Write queue empty."));
-	    driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_WRITE, 0);
+	    driver_select(ud->port, (ErlDrvEvent) ud->fd, ERL_DRV_WRITE, 0);
 	    if (ud->type == portTypeCommand) {
 		driver_output(ud->port, "Sok", 3);
 	    }
@@ -815,7 +833,7 @@ static int send_out_queue(UdsData *ud)
 	if ((wrote = writev(ud->fd, tmp, vlen)) < 0) {
 	    if (errno == EWOULDBLOCK) {
 		DEBUGF(("Write failed normal."));
-		driver_select(ud->port, (ErlDrvEvent) ud->fd, DO_WRITE, 1);
+		driver_select(ud->port, (ErlDrvEvent) ud->fd, ERL_DRV_WRITE|ERL_DRV_USE, 1);
 		return 0;
 	    } else {
 		DEBUGF(("Write failed fatal (%d).", errno));

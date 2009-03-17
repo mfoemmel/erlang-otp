@@ -173,8 +173,8 @@ other_pattern -> anno_variable '=' anno_pattern :
 
 atomic_pattern -> atomic_literal : '$1'.
 
-tuple_pattern -> '{' '}' : #c_tuple{es=[]}.
-tuple_pattern -> '{' anno_patterns '}' : #c_tuple{es='$2'}.
+tuple_pattern -> '{' '}' : c_tuple([]).
+tuple_pattern -> '{' anno_patterns '}' : c_tuple('$2').
 
 cons_pattern -> '[' anno_pattern tail_pattern :
 		    #c_cons{hd='$2',tl='$3'}.
@@ -255,23 +255,23 @@ atomic_literal -> atom : #c_literal{val=tok_val('$1')}.
 atomic_literal -> string : #c_literal{val=tok_val('$1')}.
 atomic_literal -> nil : #c_literal{val=[]}.
 
-tuple_literal -> '{' '}' : #c_tuple{es=[]}.
-tuple_literal -> '{' literals '}' : #c_tuple{es='$2'}.
+tuple_literal -> '{' '}' : c_tuple([]).
+tuple_literal -> '{' literals '}' : c_tuple('$2').
 
-cons_literal -> '[' literal tail_literal : #c_cons{hd='$2',tl='$3'}.
+cons_literal -> '[' literal tail_literal : c_cons('$2', '$3').
 
 tail_literal -> ']' : #c_literal{val=[]}.
 tail_literal -> '|' literal ']' : '$2'.
 tail_literal -> ',' literal tail_literal : #c_cons{hd='$2',tl='$3'}.
 
-tuple -> '{' '}' : #c_tuple{es=[]}.
-tuple -> '{' anno_expressions '}' : #c_tuple{es='$2'}.
+tuple -> '{' '}' : c_tuple([]).
+tuple -> '{' anno_expressions '}' : c_tuple('$2').
 
-cons -> '[' anno_expression tail : #c_cons{hd='$2',tl='$3'}.
+cons -> '[' anno_expression tail : c_cons('$2', '$3').
 
 tail -> ']' : #c_literal{val=[]}.
 tail -> '|' anno_expression ']' : '$2'.
-tail -> ',' anno_expression tail : #c_cons{hd='$2',tl='$3'}.
+tail -> ',' anno_expression tail : c_cons('$2', '$3').
 
 binary -> '#' '{' '}' '#' : #c_literal{val = <<>>}.
 binary -> '#' '{' segments '}' '#' : #c_binary{segments='$3'}.
@@ -289,7 +289,7 @@ segment -> '#' '<' anno_expression '>' '(' anno_expressions ')':
 	end.
 
 function_name -> atom '/' integer :
-	#c_fname{id=tok_val('$1'),arity=tok_val('$3')}.
+	#c_var{name={tok_val('$1'),tok_val('$3')}}.
 
 anno_function_name -> function_name : '$1'.
 anno_function_name -> '(' function_name '-|' annotation ')' :
@@ -371,19 +371,13 @@ timeout ->
 
 Erlang code.
 
--export([abstract/1,abstract/2,normalise/1]).
-
 %% The following directive is needed for (significantly) faster compilation
 %% of the generated .erl file by the HiPE compiler.  Please do not remove.
 -compile([{hipe,[{regalloc,linear_scan}]}]).
 
 -include("core_parse.hrl").
 
+-import(cerl, [c_cons/2,c_tuple/1]).
+
 tok_val(T) -> element(3, T).
 tok_line(T) -> element(2, T).
-
-abstract(T, _N) -> abstract(T).
-
-abstract(Term) -> core_lib:make_literal(Term).
-
-normalise(Core) -> core_lib:literal_value(Core).

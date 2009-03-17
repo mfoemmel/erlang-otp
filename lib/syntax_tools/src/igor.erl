@@ -900,7 +900,7 @@ module_header(Forms, Name, Vars, Env) ->
 
 update_header(Fs, Name, Vars) ->
     [M | Fs1] = lists:reverse(Fs),
-    Ps = if Vars == none -> [];
+    Ps = if Vars =:= none -> [];
 	    true -> [erl_syntax:list([erl_syntax:variable(V)
 				      || V <- Vars])]
 	 end,
@@ -928,7 +928,7 @@ make_export(Names) ->
     Es = [erl_syntax:arity_qualifier(erl_syntax:atom(F),
 				     erl_syntax:integer(A))
 	  || {F, A} <- Names],
-    if Es == [] ->
+    if Es =:= [] ->
 	    comment(["** Nothing is officially exported "
 		    "from this module! **"]);
        true ->
@@ -1134,7 +1134,7 @@ merge_namespaces(Modules, Env) ->
     %% Detect and warn about renamed interface functions
     {_, Maps0} = Acc1,
     case [{M, dict:to_list(Map)}
-	  || {M, Map} <- dict:to_list(Maps0), dict:size(Map) /= 0] of
+	  || {M, Map} <- dict:to_list(Maps0), dict:size(Map) =/= 0] of
 	[] ->
 	    ok;
 	Fs ->
@@ -1417,7 +1417,7 @@ join_aliases(Name, Expansions, Source, Target) ->
 %% the source module has the same name as the resulting module.
 
 join_attributes(Env, Name, Source, Target) ->
-    if Env#merge.target == Name ->
+    if Env#merge.target =:= Name ->
 	    ordsets:union(Source, Target);
        true ->
 	    if length(Env#merge.sources) =:= 1 ->
@@ -1620,7 +1620,7 @@ order_code(Modules, Trees, Env) ->
 
 order_code([M | Ms], [T | Ts], First, Rest, Env) ->
     T1 = erl_syntax:flatten_form_list(T),
-    case (M#module.name == Env#code.target) and
+    case (M#module.name =:= Env#code.target) and
 	Env#code.preserved of
 	true ->
 	    order_code(Ms, Ts, {M, T1}, Rest, Env);
@@ -1906,7 +1906,7 @@ transform_atom_application(Name, Arity, F, As, Env, St) ->
 		    {none, St};    % auto-import - do not change.
 		false ->
 		    case (Env#code.map)({Name, Arity}) of
-			{N, A} when N == Name, A =:= Arity ->
+			{N, A} when N =:= Name, A =:= Arity ->
 			    %% Not changed.
 			    {none, St};
 			{N, A} when A =:= Arity ->
@@ -1975,22 +1975,20 @@ transform_qualified_application_1(Module, Name, Arity, F, As, Env,
 %% change.
 
 transform_apply_call(F, As, Env, St) ->
-    case As of
-	[Module, Name, List] ->
-	    case (erl_syntax:type(Module) == atom)
-		and (erl_syntax:type(Name) == atom)
-		and erl_syntax:is_proper_list(List) of
-		true ->
-		    transform_apply_call_1(Module, Name, List, F,
-					   As, Env, St);
-		false ->
-		    %% We can't get enough information about the
-		    %% arguments to the `apply' call, so we do nothing
-		    %% but warn.
-		    warning_unsafe_call(apply, Env#code.module,
-					Env#code.target),
-		    {none, St}
-	    end
+    [Module, Name, List] = As,
+    case (erl_syntax:type(Module) =:= atom)
+	and (erl_syntax:type(Name) =:= atom)
+	and erl_syntax:is_proper_list(List) of
+	true ->
+	    transform_apply_call_1(Module, Name, List, F, As, Env,
+				   St);
+	false ->
+	    %% We can't get enough information about the
+	    %% arguments to the `apply' call, so we do nothing
+	    %% but warn.
+	    warning_unsafe_call(apply, Env#code.module,
+				Env#code.target),
+	    {none, St}
     end.
 
 %% Rewrite the apply-call to a static qualified call and handle that
@@ -2028,8 +2026,8 @@ transform_spawn_call(F, As, Env, St) ->
 %% Here, we can treat all dynamic-lookup spawns like `spawn/3'.
 
 transform_spawn_call_1(Module, Name, List, MakeSpawn, Env, St) ->
-    case (erl_syntax:type(Module) == atom)
-	and (erl_syntax:type(Name) == atom)
+    case (erl_syntax:type(Module) =:= atom)
+	and (erl_syntax:type(Name) =:= atom)
 	and erl_syntax:is_proper_list(List)
 	of
 	true ->
@@ -2129,7 +2127,7 @@ localise(Module, Name, Arity, MakeLocal, MakeRemote, MakeDynamic,
 			    %% insert an explicit "latest version"
 			    %% test.)
 			    Target = Env#code.target,
-			    case Module == Target of
+			    case Module =:= Target of
 				true ->
 				    %% Already calling the target module
 				    %% - do not insert irritating notes.
@@ -2776,7 +2774,7 @@ file_type(Name) ->
 write_module(Tree, Name, Dir, Opts) ->
     Name1 = filename(Name),
     Dir1 = filename(Dir),
-    Base = if Dir1 == "" ->
+    Base = if Dir1 =:= "" ->
 		   Name1;
 	      true ->
 		   case file_type(Dir1) of

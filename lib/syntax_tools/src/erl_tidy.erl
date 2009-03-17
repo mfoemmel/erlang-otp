@@ -184,8 +184,8 @@ dir_3(Name, Dir, Regexp, Env) ->
     dir_1(Dir1, Regexp, Env).
 
 dir_4(File, Regexp, Env) ->
-    case regexp:first_match(File, Regexp) of
-        {match, _, _} ->
+    case re:run(File, Regexp) of
+        {match, _} ->
             Opts = [{outfile, File}, {dir, ""} | Env#dir.options],
             case catch file(File, Opts) of
                 {'EXIT', Value} ->
@@ -193,10 +193,9 @@ dir_4(File, Regexp, Env) ->
                 _ ->
                     ok
             end;
-        _ ->
+        nomatch ->
             ok
     end.
-
 
 file__defaults() ->
     [{backup_suffix, ?DEFAULT_BACKUP_SUFFIX},
@@ -1397,6 +1396,7 @@ visit_remote_application({M, N, A} = Name, F, As, Tree, Env, St) ->
     end.
 
 -spec auto_expand_import(mfa(), #st{}) -> bool().
+
 auto_expand_import({lists, append, 2}, _St) -> true;
 auto_expand_import({lists, subtract, 2}, _St) -> true;
 auto_expand_import({lists, filter, 2}, _St) -> true;
@@ -1406,12 +1406,7 @@ auto_expand_import(Name, St) ->
         true ->
             true;
         false ->
-            case rename_remote_call(Name, St) of
-                false ->
-                    false;
-                _ ->
-                    true
-            end
+            rename_remote_call(Name, St) =/= false
     end.
 
 visit_list_comp(Tree, Env, St0) ->

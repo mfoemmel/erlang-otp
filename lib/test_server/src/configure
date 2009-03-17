@@ -5034,16 +5034,16 @@ fi
 done
 
 if test -n "$JAVAC"; then
-    echo "$as_me:$LINENO: checking for JDK version 1.2" >&5
-echo $ECHO_N "checking for JDK version 1.2... $ECHO_C" >&6
-if test "${ac_cv_prog_javac_ver_1_2+set}" = set; then
+    echo "$as_me:$LINENO: checking for JDK version 1.5" >&5
+echo $ECHO_N "checking for JDK version 1.5... $ECHO_C" >&6
+if test "${ac_cv_prog_javac_ver_1_5+set}" = set; then
   echo $ECHO_N "(cached) $ECHO_C" >&6
 else
   java_link='$JAVAC conftest.java 1>&5'
 cat > conftest.java <<EOF
 
 class conftest { public static void main(String[] args) {
-   java.util.Iterator iter;
+   for (String i : args);
    ; return; }}
 EOF
 if { (eval echo "$as_me:$LINENO: \"$java_link\"") >&5
@@ -5052,19 +5052,19 @@ if { (eval echo "$as_me:$LINENO: \"$java_link\"") >&5
   echo "$as_me:$LINENO: \$? = $ac_status" >&5
   (exit $ac_status); } && test -s conftest.class; then
    rm -rf conftest*
-   ac_cv_prog_javac_ver_1_2=yes
+   ac_cv_prog_javac_ver_1_5=yes
 else
    echo "configure: failed program was:" 1>&5
    cat conftest.java 1>&5
    echo "configure: PATH was $PATH" 1>&5
   rm -rf conftest*
-  ac_cv_prog_javac_ver_1_2=no
+  ac_cv_prog_javac_ver_1_5=no
 fi
 rm -f conftest*
 fi
-echo "$as_me:$LINENO: result: $ac_cv_prog_javac_ver_1_2" >&5
-echo "${ECHO_T}$ac_cv_prog_javac_ver_1_2" >&6
-  if test $ac_cv_prog_javac_ver_1_2 = no; then
+echo "$as_me:$LINENO: result: $ac_cv_prog_javac_ver_1_5" >&5
+echo "${ECHO_T}$ac_cv_prog_javac_ver_1_5" >&6
+  if test $ac_cv_prog_javac_ver_1_5 = no; then
     unset -v JAVAC
   fi
 fi

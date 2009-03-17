@@ -1,27 +1,27 @@
 %% -*- erlang-indent-level: 4 -*-
-%% =====================================================================
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %% Type analysis of Core Erlang programs.
 %%
 %% Copyright (C) 2001-2002 Richard Carlsson
 %%
-%% This library is free software; you can redistribute it and/or modify
-%% it under the terms of the GNU Lesser General Public License as
-%% published by the Free Software Foundation; either version 2 of the
-%% License, or (at your option) any later version.
-%%
-%% This library is distributed in the hope that it will be useful, but
-%% WITHOUT ANY WARRANTY; without even the implied warranty of
-%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-%% Lesser General Public License for more details.
-%%
-%% You should have received a copy of the GNU Lesser General Public
-%% License along with this library; if not, write to the Free Software
-%% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
-%% USA
-%%
 %% Author contact: richardc@it.uu.se
-%%
-%% $Id$
 %%
 %% @doc Type analysis of Core Erlang programs.
 
@@ -53,8 +53,8 @@
 	       c_values/1, call_args/1, call_module/1, call_name/1,
 	       case_arg/1, case_clauses/1, catch_body/1, clause_body/1,
 	       clause_guard/1, clause_pats/1, concrete/1, cons_hd/1,
-	       cons_tl/1, fun_body/1, fun_vars/1, get_ann/1,
-	       int_val/1, is_c_atom/1, is_c_int/1, let_arg/1, let_body/1, let_vars/1,
+	       cons_tl/1, fun_body/1, fun_vars/1, get_ann/1, int_val/1,
+	       is_c_atom/1, is_c_int/1, let_arg/1, let_body/1, let_vars/1,
 	       letrec_body/1, letrec_defs/1, module_defs/1,
 	       module_defs/1, module_exports/1, pat_vars/1,
 	       primop_args/1, primop_name/1, receive_action/1,
@@ -62,7 +62,6 @@
 	       seq_body/1, set_ann/2, try_arg/1, try_body/1,
 	       try_evars/1, try_handler/1, try_vars/1, tuple_arity/1,
 	       tuple_es/1, type/1, values_es/1, var_name/1]).
-
 
 -import(cerl_trees, [get_label/1]).
 
@@ -737,8 +736,8 @@ bind_args([V | Vs], [X | Xs], Vars, Limit, Ch) ->
 bind_args([], [], Vars, _Limit, Ch) ->
     {Vars, Ch}.
 
-% bind_arg(L, X, Vars, Limit) ->
-%     bind_arg(L, X, Vars, Limit, false).
+%% bind_arg(L, X, Vars, Limit) ->
+%%     bind_arg(L, X, Vars, Limit, false).
 
 bind_arg(L, X, Vars, Limit, Ch) ->
     X0 = dict:fetch(L, Vars),
@@ -778,21 +777,12 @@ top_or_bottom(T) ->
     end.
 
 strict(Xs, T) ->
-    case any_none(Xs) of
+    case erl_types:any_none(Xs) of
 	true ->
 	    t_none();
 	false ->
 	    T
     end.
-
-any_none([X | Xs]) ->
-    case t_is_none(X) of
-	true ->
-	    true;
-	false ->
-	    any_none(Xs)
-    end;
-any_none([]) -> false.
 
 %% Set abstraction for label sets.
 

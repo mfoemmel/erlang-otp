@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %%----------------------------------------------------------------------
 %%
@@ -469,6 +470,7 @@ get_pid(X) when is_tuple(X) -> element(2, X).
 
 
 %----------------------------------------------------------------------
+%%---------------------------------------------------------------------
 %% Handling process trees of processses that are linked to each other
 
 do_find_proc(Mode, DB, GL, Avoid) ->
@@ -626,6 +628,7 @@ check_sasl_ancestor(Paren, C) ->
 
 
 %----------------------------------------------------------------------
+%%---------------------------------------------------------------------
 %% Primitives for the database DB of all links, processes and the
 %% queue of not visited yet processes.
 
@@ -636,7 +639,7 @@ new_db(Mode, Pid) ->
     L1 = ets:new(links, [bag, public]),
     L2 = ets:new(extralinks, [bag, public]),
     Q = if
-	    Mode==sup -> queue:in({master, Pid}, queue:new());
+	    Mode =:= sup -> queue:in({master, Pid}, queue:new());
 	    true -> queue:in(Pid, queue:new())
 	end,
     #db{q=Q, p=P, links=L1, links2=L2}.
@@ -659,13 +662,13 @@ add_sec(C, Paren, DB) ->
 is_proc(#db{p=Tab}, P) ->
     ets:member(Tab, P).
 
-is_in_queue(#db{q={L1,L2}}, P) -> % Should really be in queue.erl
-    lists:member(P, L1) orelse lists:member(P, L2).
+is_in_queue(#db{q=Q}, P) ->
+    queue:member(P, Q).
 
 %% Group leader handling. No processes or Links to processes must be
 %% added when group leaders differ. Note that catch all is needed
 %% because net_sup is undefined when not networked but still present
-%% in the kerenl_sup child list. Blahh, didn't like that.
+%% in the kernel_sup child list. Blahh, didn't like that.
 groupl(P) ->
     case process_info(P, group_leader) of
 	{group_leader, GL} -> GL;

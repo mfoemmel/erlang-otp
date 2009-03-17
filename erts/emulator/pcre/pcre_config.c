@@ -38,8 +38,9 @@ POSSIBILITY OF SUCH DAMAGE.
 */
 
 
-/* This module contains the external function pcre_config(). */
+/* This module contains the external function erts_pcre_config(). */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -63,7 +64,7 @@ Returns:           0 if data returned, negative on error
 */
 
 PCRE_EXP_DEFN int
-pcre_config(int what, void *where)
+erts_pcre_config(int what, void *where)
 {
 switch (what)
   {

@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1997</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1997</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>inet</title>
@@ -295,6 +293,68 @@ fe80::204:acff:fe17:bf38
           code above.</p>
       </desc>
     </func>
+
+    <func>
+      <name>getstat(Socket)</name>
+      <name>getstat(Socket, Options) -> {ok, OptionValues} | {error, posix()}</name>
+      <fsummary>Get one or more statistic options for a socket</fsummary>
+      <type>
+        <v>Socket = term()</v>
+        <v>Options = [Opt]</v>
+        <v>OptionValues = [{Opt, Val}]</v>
+        <v>&nbsp;Opt, Val -- see below</v>
+      </type>
+      <desc>
+        <p>Gets one or more statistic options for a socket.</p>
+	<p><c>getstat(Socket)</c> is equivalent to
+	<c>getstat(Socket,&nbsp;[recv_avg,&nbsp;recv_cnt,&nbsp;recv_dvi,&nbsp;recv_max,&nbsp;recv_oct,&nbsp;send_avg,&nbsp;send_cnt,&nbsp;send_dvi,&nbsp;send_max,&nbsp;send_oct])</c></p>
+	  <p>The following options are available:</p>
+        <taglist>
+	  <tag><c>recv_avg</c></tag>
+	  <item>
+            <p>Average size of packets in bytes received to the socket.</p>
+	  </item>
+	  <tag><c>recv_cnt</c></tag>
+	  <item>
+            <p>Number of packets received to the socket.</p>
+	  </item>
+	  <tag><c>recv_dvi</c></tag>
+	  <item>
+            <p>Average packet size deviation in bytes received to the socket.</p>
+	  </item>
+	  <tag><c>recv_max</c></tag>
+	  <item>
+            <p>The size of the largerst packet in bytes received to the socket.</p>
+	  </item>
+	  <tag><c>recv_oct</c></tag>
+	  <item>
+            <p>Number of bytes received to the socket.</p>
+	  </item>
+
+	  <tag><c>send_avg</c></tag>
+	  <item>
+            <p>Average size of packets in bytes sent from the socket.</p>
+	  </item>
+	  <tag><c>send_cnt</c></tag>
+	  <item>
+            <p>Number of packets sent from the socket.</p>
+	  </item>
+	  <tag><c>send_dvi</c></tag>
+	  <item>
+            <p>Average packet size deviation in bytes received sent from the socket.</p>
+	  </item>
+	  <tag><c>send_max</c></tag>
+	  <item>
+            <p>The size of the largerst packet in bytes sent from the socket.</p>
+	  </item>
+	  <tag><c>send_oct</c></tag>
+	  <item>
+            <p>Number of bytes sent from the socket.</p>
+	  </item>
+        </taglist>
+      </desc>
+    </func>
+
     <func>
       <name>peername(Socket) -> {ok, {Address, Port}} | {error, posix()}</name>
       <fsummary>Return the address and port for the other end of a connection</fsummary>
@@ -489,11 +549,11 @@ fe80::204:acff:fe17:bf38
                   terminated with newline, lines longer than
                   the receive buffer are truncated.</p>
               </item>
-              <tag><c>http</c></tag>
+              <tag><c>http | http_bin</c></tag>
               <item>
                 <p>The Hypertext Transfer Protocol. The packets
                  are returned with the format according to <c>HttpPacket</c>
-                 described in <seealso marker="erlang#decode_packet/3">
+                 described in <seealso marker="erts:erlang#decode_packet/3">
                  erlang:decode_packet/3</seealso>. A socket in passive
                  mode will return <c>{ok, HttpPacket}</c> from <c>gen_tcp:recv</c>
                  while an active socket will send messages like <c>{http,
@@ -540,9 +600,19 @@ fe80::204:acff:fe17:bf38
               exceeded, the send operation will return
               <c>{error,timeout}</c>. How much of a packet that actually
               got sent is unknown, why the socket should be closed
-              whenever a timeout has occured. Default is
-              <c>infinity</c>.</p>
+              whenever a timeout has occured (see <c>send_timeout_close</c>).
+              Default is <c>infinity</c>.</p>
           </item>
+          <tag><c>{send_timeout_close, Boolean}</c></tag>
+          <item>
+            <p>Only allowed for connection oriented sockets.</p>
+            <p>Used together with <c>send_timeout</c> to specify whether
+              the socket will be automatically closed when the send operation
+              returns <c>{error,timeout}</c>. The recommended setting is
+              <c>true</c> which will automatically close the socket.
+              Default is <c>false</c> due to backward compatibility.</p>
+          </item>
+
           <tag><c>{sndbuf, Integer}</c></tag>
           <item>
             <p>Gives the size of the send buffer to use for the socket.</p>

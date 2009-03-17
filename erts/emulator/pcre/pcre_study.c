@@ -38,9 +38,10 @@ POSSIBILITY OF SUCH DAMAGE.
 */
 
 
-/* This module contains the external function pcre_study(), along with local
+/* This module contains the external function erts_pcre_study(), along with local
 supporting functions. */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -229,7 +230,7 @@ do
       tcode += 2;
 #ifdef SUPPORT_UTF8
       if (utf8 && tcode[-1] >= 0xc0)
-        tcode += _pcre_utf8_table4[tcode[-1] & 0x3f];
+        tcode += _erts_pcre_utf8_table4[tcode[-1] & 0x3f];
 #endif
       break;
 
@@ -242,7 +243,7 @@ do
       tcode += 4;
 #ifdef SUPPORT_UTF8
       if (utf8 && tcode[-1] >= 0xc0)
-        tcode += _pcre_utf8_table4[tcode[-1] & 0x3f];
+        tcode += _erts_pcre_utf8_table4[tcode[-1] & 0x3f];
 #endif
       break;
 
@@ -496,7 +497,7 @@ Returns:    pointer to a pcre_extra block, with study_data filled in and the
 */
 
 PCRE_EXP_DEFN pcre_extra *
-pcre_study(const pcre *external_re, int options, const char **errorptr)
+erts_pcre_study(const pcre *external_re, int options, const char **errorptr)
 {
 uschar start_bits[32];
 pcre_extra *extra;
@@ -535,7 +536,7 @@ if ((re->options & PCRE_ANCHORED) != 0 ||
 
 tables = re->tables;
 if (tables == NULL)
-  (void)pcre_fullinfo(external_re, NULL, PCRE_INFO_DEFAULT_TABLES,
+  (void)erts_pcre_fullinfo(external_re, NULL, PCRE_INFO_DEFAULT_TABLES,
   (void *)(&tables));
 
 compile_block.lcc = tables + lcc_offset;
@@ -553,10 +554,10 @@ if (set_start_bits(code, start_bits, (re->options & PCRE_CASELESS) != 0,
 the latter, which is pointed to by the former, which may also get additional
 data set later by the calling program. At the moment, the size of
 pcre_study_data is fixed. We nevertheless save it in a field for returning via
-the pcre_fullinfo() function so that if it becomes variable in the future, we
+the erts_pcre_fullinfo() function so that if it becomes variable in the future, we
 don't have to change that code. */
 
-extra = (pcre_extra *)(pcre_malloc)
+extra = (pcre_extra *)(erts_pcre_malloc)
   (sizeof(pcre_extra) + sizeof(pcre_study_data));
 
 if (extra == NULL)

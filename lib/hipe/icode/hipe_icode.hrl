@@ -1,3 +1,21 @@
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%=====================================================================
 %%
 %% Contains type and record definitions for all Icode data structures.
@@ -8,10 +26,7 @@
 %% THESE DO NOT REALLY BELONG HERE -- PLEASE REMOVE ASAP!
 %%---------------------------------------------------------------------
 
--type set()	 :: tuple().
 -type ordset(T)	 :: [T].
--type gb_set()	 :: tuple().
--type gb_tree()	 :: tuple().
 -type erl_type() :: any().    %% XXX: belongs to 'erl_types'
 %%-type erl_type() :: 'any' | 'none' | 'unit' | {'c',_,_,_}.
 
@@ -72,6 +87,8 @@
 
 -type icode_call_type()   :: 'local' | 'primop' | 'remote'.
 -type icode_exit_class()  :: 'error' | 'exit' | 'rethrow' | 'throw'.
+
+-type icode_comment_text() :: atom() | string() | {atom(), term()}.
 
 %%---------------------------------------------------------------------
 %% Icode instructions
@@ -136,7 +153,7 @@
 		     args              :: [icode_term_arg()],
 		     fail_label = [] :: [] | icode_lbl()}).
 
--record(icode_comment, {text :: atom() | string() | {atom(), any()}}).
+-record(icode_comment, {text :: icode_comment_text()}).
 
 %%---------------------------------------------------------------------
 %% Icode instructions

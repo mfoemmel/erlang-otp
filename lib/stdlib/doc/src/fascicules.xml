@@ -2,6 +2,9 @@
 <!DOCTYPE fascicules SYSTEM "fascicules.dtd">
 
 <fascicules>
+  <fascicule file="part" href="part_frame.html" entry="no">
+    STDLIB User's Guide
+  </fascicule>
   <fascicule file="ref_man" href="ref_man_frame.html" entry="yes">
     Reference Manual
   </fascicule>

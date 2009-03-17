@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1999</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1997</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>asn1rt</title>
@@ -40,7 +38,55 @@
       To encode and decode ASN.1 types in runtime the functions in this module
       should be used.</p>
   </description>
+
   <funcs>
+
+    <func>
+      <name>start() -> ok |{error,Reason}</name>
+      <fsummary>Starts the asn1 server.</fsummary>
+      <type>
+        <v>Reason = term()</v>
+      </type>
+      <desc>
+	<p>Starts the asn1 server that loads the drivers.</p> 
+	<p>The server schedules a driver that is not blocked by
+	another caller. The driver is used by the asn1 application if
+	specs are compiled with options <c>[per_bin, optimize]</c> or
+	<c>[ber_bin, optimize, driver]</c>. The server will be started
+	automatically at encode/decode if it isn't done explicitly. If
+	encode/decode with driver is used in test or industrial code
+	it is a performance gain to start it explicitly to avoid the
+	one time load in run-time.</p>
+      </desc>
+    </func>
+
+    <func>
+      <name>stop() -> ok |{error,Reason}</name>
+      <fsummary>Stops the asn1 server.</fsummary>
+      <type>
+        <v>Reason = term()</v>
+      </type>
+      <desc>
+	<p>Stops the asn1 server and unloads the drivers.</p>
+      </desc>
+    </func>
+
+    <func>
+      <name>decode(Module,Type,Bytes) -> {ok,Value}|{error,Reason}</name>
+      <fsummary>Decode from bytes into an ASN.1 value.</fsummary>
+      <type>
+        <v>Module = Type = atom()</v>
+        <v>Value = Reason = term()</v>
+        <v>Bytes = binary | [Int] when integer(Int), Int >= 0, Int =&lt; 255 | binary</v>
+      </type>
+      <desc>
+        <p>Decodes <c>Type</c> from <c>Module</c> from the list of bytes or
+          binary <c>Bytes</c>. If the module is compiled with <c>ber_bin</c>
+          or <c>per_bin</c> option <c>Bytes</c> must be a binary. 
+          Returns <c>{ok,Value}</c> if successful.</p>
+      </desc>
+    </func>
+
     <func>
       <name>encode(Module,Type,Value)-> {ok,BinOrList} | {error,Reason}</name>
       <fsummary>Encode an ASN.1 value.</fsummary>
@@ -62,33 +108,22 @@
           not always checked. </p>
       </desc>
     </func>
+
     <func>
-      <name>decode(Module,Type,Bytes) -> {ok,Value}|{error,Reason}</name>
-      <fsummary>Decode from bytes into an ASN.1 value.</fsummary>
+      <name>info(Module) ->  {ok,Info} | {error,Reason}</name>
+      <fsummary>Returns compiler information about the Module.</fsummary>
       <type>
-        <v>Module = Type = atom()</v>
-        <v>Value = Reason = term()</v>
-        <v>Bytes = binary | [Int] when integer(Int), Int >= 0, Int =&lt; 255 | binary</v>
+        <v>Module = atom()</v>
+        <v>Info = list()</v>
+        <v>Reason = term()</v>
       </type>
       <desc>
-        <p>Decodes <c>Type</c> from <c>Module</c> from the list of bytes or
-          binary <c>Bytes</c>. If the module is compiled with <c>ber_bin</c>
-          or <c>per_bin</c> option <c>Bytes</c> must be a binary. 
-          Returns <c>{ok,Value}</c> if successful.</p>
+        <p><c>info/1</c> returns the version of the asn1 compiler that was
+          used to comile the module. It also returns the compiler options
+          that was used.</p>
       </desc>
     </func>
-    <func>
-      <name>validate(Module,Type,Value) ->  ok | {error,Reason}</name>
-      <fsummary>Validate an ASN.1 value.</fsummary>
-      <type>
-        <v>Module = Type = atom()</v>
-        <v>Value = term()</v>
-      </type>
-      <desc>
-        <p>Validates that <c>Value</c> conforms  to <c>Type</c> 
-          from <c>Module</c>. <em>Not implemented in this version of the ASN.1 application.</em></p>
-      </desc>
-    </func>
+
     <func>
       <name>load_driver() ->  ok | {error,Reason}</name>
       <fsummary>Loads the linked-in driver.</fsummary>
@@ -106,6 +141,7 @@
           were compiled with the options <c>per_bin</c> and <c>optimize</c>.</p>
       </desc>
     </func>
+
     <func>
       <name>unload_driver() ->  ok | {error,Reason}</name>
       <fsummary>Unloads the linked-in driver.</fsummary>
@@ -121,20 +157,7 @@
           with the flags <c>per_bin</c> and <c>optimize</c>.</p>
       </desc>
     </func>
-    <func>
-      <name>info(Module) ->  {ok,Info} | {error,Reason}</name>
-      <fsummary>Returns compiler information about the Module.</fsummary>
-      <type>
-        <v>Module = atom()</v>
-        <v>Info = list()</v>
-        <v>Reason = term()</v>
-      </type>
-      <desc>
-        <p><c>info/1</c> returns the version of the asn1 compiler that was
-          used to comile the module. It also returns the compiler options
-          that was used.</p>
-      </desc>
-    </func>
+
     <func>
       <name>utf8_binary_to_list(UTF8Binary) ->  {ok,UnicodeList} | {error,Reason}</name>
       <fsummary>Transforms an utf8 encoded binary to a unicode list.</fsummary>
@@ -150,6 +173,7 @@
           is not a properly encoded UTF8 string.</p>
       </desc>
     </func>
+
     <func>
       <name>utf8_list_to_binary(UnicodeList) ->  {ok,UTF8Binary} | {error,Reason}</name>
       <fsummary>Transforms an unicode list ot an utf8 binary.</fsummary>
@@ -164,7 +188,21 @@
           value, to a UTF8 encoded binary.</p>
       </desc>
     </func>
-  </funcs>
   
+    <func>
+      <name>validate(Module,Type,Value) ->  ok | {error,Reason}</name>
+      <fsummary>Validate an ASN.1 value.</fsummary>
+      <type>
+        <v>Module = Type = atom()</v>
+        <v>Value = term()</v>
+      </type>
+      <desc>
+        <p>Validates that <c>Value</c> conforms  to <c>Type</c> 
+          from <c>Module</c>. <em>Not implemented in this version of the ASN.1 application.</em></p>
+      </desc>
+    </func>
+
+  </funcs>
+
 </erlref>
 

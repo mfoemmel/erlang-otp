@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%=======================================================================
 %% File        : hipe_icode_ssa_struct_reuse.erl
 %% Author      : Ragnar Osterlund <ragoster@gmail.com>
@@ -15,6 +33,7 @@
 %%=======================================================================
 
 -module(hipe_icode_ssa_struct_reuse).
+
 -export([struct_reuse/1]).
 
 -include("../main/hipe.hrl").
@@ -51,10 +70,9 @@
 %% var - maps variables to expression value numbers. These variables are
 %% defined or used by the structure expressions.
 
--record(maps, {var = gb_trees:empty()   :: gb_tree(),
+-record(maps, {var   = gb_trees:empty() :: gb_tree(),
 	       instr = gb_trees:empty() :: gb_tree(),
-	       expr = gb_trees:empty()  :: gb_tree()
-	      }).
+	       expr  = gb_trees:empty() :: gb_tree()}).
 
 maps_var(#maps{var = Out}) -> Out.
 maps_instr(#maps{instr = Out}) -> Out.
@@ -85,8 +103,7 @@ maps_var_insert(Var, Info, Maps = #maps{var = VarMap}) ->
 maps_balance(Maps) ->
   Maps#maps{instr = gb_trees:balance(maps_instr(Maps)),
 	    expr = gb_trees:balance(maps_expr(Maps)),
-	    var = gb_trees:balance(maps_var(Maps))
-	   }.
+	    var = gb_trees:balance(maps_var(Maps))}.
 
 maps_expr_key_enter(Expr, Maps) ->
   NewMaps = maps_instr_enter(expr_key(Expr), expr_id(Expr), Maps),
@@ -152,10 +169,10 @@ expr_create(Key, Defs) ->
 %% exprid - a expression value number which is the expression that
 %%          the variable is defined by.
 
--record(varinfo, {use = ?SETS:new()     :: ?SET(_),
-		  ref = none            :: 'none' | {non_neg_integer(),non_neg_integer()},
-		  elem = none           :: 'none' | {icode_var(), non_neg_integer()},
-		  exprid = none         :: 'none' | non_neg_integer()}).
+-record(varinfo, {use = ?SETS:new() :: ?SET(_),
+		  ref = none        :: 'none' | {non_neg_integer(),non_neg_integer()},
+		  elem = none       :: 'none' | {icode_var(), non_neg_integer()},
+		  exprid = none     :: 'none' | non_neg_integer()}).
 
 varinfo_exprid(#varinfo{exprid = Out}) -> Out.
 
@@ -340,28 +357,22 @@ nodes_create() -> #nodes{}.
 %% 	has been inserted is used to move the reduction test.
 
 -record(update, {inserted     = gb_trees:empty() :: gb_tree(),
-		 del_red_test = false            :: bool()
-		}).
+		 del_red_test = false            :: bool()}).
 
 update_inserted_lookup(#update{inserted = Inserted}, ExprId) ->
   gb_trees:lookup(ExprId, Inserted).
 
 update_inserted_add_new(Update = #update{inserted = Inserted}, ExprId, Defs) ->
-  VarList =  
-    lists:map(fun(Def) ->
-		  case hipe_icode:is_var(Def) of
-		    true -> hipe_icode:mk_new_var();
-		    false ->
-		      case hipe_icode:is_reg(Def) of
-			true -> hipe_icode:mk_new_reg();
-			false ->
-			  case hipe_icode:is_fvar(Def) of
-			    true -> hipe_icode:mk_new_fvar()
-			  end
-		      end
-		  end
-	      end, Defs),
-
+  VarList = [case hipe_icode:is_var(Def) of
+	       true -> hipe_icode:mk_new_var();
+	       false ->
+		 case hipe_icode:is_reg(Def) of
+		   true -> hipe_icode:mk_new_reg();
+		   false ->
+		     true = hipe_icode:is_fvar(Def),
+		     hipe_icode:mk_new_fvar()
+		 end
+	     end || Def <- Defs],
   NewInserted = gb_trees:enter(ExprId, VarList, Inserted),
   {Update#update{inserted = NewInserted}, VarList}.
 
@@ -371,7 +382,6 @@ update_inserted_add(Update = #update{inserted = Inserted}, ExprId, Defs) ->
 update_del_red_test(#update{del_red_test = DelRed}) -> DelRed.
 update_del_red_test_set(Update) -> 
   Update#update{del_red_test = true}.
-
 
 %%-----------------------------------------------------------------------------
 %% CODE AREA
@@ -443,8 +453,8 @@ construct_nodes(CFG) ->
   NewNodes = prune_nodes(Nodes, NonFailSet),
 
   %% fill in misc node tree info
-  Postorder = lists:filter(fun(Label) -> gb_sets:is_member(Label, NonFailSet) 
-			   end, hipe_icode_cfg:postorder(CFG)),
+  Postorder = [Label || Label <- hipe_icode_cfg:postorder(CFG),
+			gb_sets:is_member(Label, NonFailSet)],
 
   %% check postorder is valid
   PostOrderTmp = hipe_icode_cfg:postorder(CFG),
@@ -463,16 +473,14 @@ construct_nodes(CFG) ->
   StartLabel = hipe_icode_cfg:start_label(CFG),
   NewTree = gb_trees:balance(nodes_tree(NewNodes)),
   
-  NewNodes#nodes{
-    postorder = Postorder, 
-    rev_postorder = RevPostorder,
-    start_label = StartLabel,
-    tree = NewTree, 
-    domtree = DomTree}.
-
+  NewNodes#nodes{postorder = Postorder, 
+		 rev_postorder = RevPostorder,
+		 start_label = StartLabel,
+		 tree = NewTree, 
+		 domtree = DomTree}.
 
 %%-----------------------------------------------------------------------------
-%% Constucts a tree of nodes, one node for each basic block in CFG
+%% Constructs a tree of nodes, one node for each basic block in CFG
 
 nodes_from_cfg(CFG, DomTree) ->
   lists:foldl(fun(Label, {NodesAcc, NonFailAcc}) -> 
@@ -585,19 +593,13 @@ prune_nodes(Nodes, NonFailSet) ->
   lists:foldl(fun(Node, NodesAcc) -> 
    case gb_sets:is_member(node_label(Node), NonFailSet) of
       true ->
-	NewSucc = lists:filter(fun(Label) ->
-	  gb_sets:is_member(Label, NonFailSet) end, node_succ(Node)),
-
-	NewPred = lists:filter(fun(Label) ->
-	  gb_sets:is_member(Label, NonFailSet) end, node_pred(Node)),
-
+	NewSucc = [L || L <- node_succ(Node), gb_sets:is_member(L, NonFailSet)],
+	NewPred = [L || L <- node_pred(Node), gb_sets:is_member(L, NonFailSet)],
 	enter_node(Node#node{succ = NewSucc, pred = NewPred}, NodesAcc);
-
       false ->
 	remove_node(Node, NodesAcc)
     end
   end, Nodes, nodes_tree_values(Nodes)).
-
 
 %%-----------------------------------------------------------------------------
 %% Map calculations. 
@@ -610,7 +612,7 @@ create_maps(Nodes) ->
     Node = get_node(Label, Nodes),
     NewMapsAcc = maps_from_node_struct_type(MapsAcc, Node),
     NewMapsAcc2 = maps_from_node_struct_elems(NewMapsAcc, Node),
-    %NewMapsAcc3 = maps_from_node_atom_type(NewMapsAcc2, Node),
+    %% NewMapsAcc3 = maps_from_node_atom_type(NewMapsAcc2, Node),
     maps_from_node_code(NewMapsAcc2, Node)
   end, #maps{}, nodes_rev_postorder(Nodes)),
   maps_balance(Maps).
@@ -619,25 +621,19 @@ create_elem_expr_key(0, _, Key) -> Key;
 create_elem_expr_key(N, Var, Key) -> 
   create_elem_expr_key(N - 1, Var, [{Var, N} | Key]).
 
-
 %%-----------------------------------------------------------------------------
 %% Add all elements in the struct_type list of Node to Maps as expressions
 
 maps_from_node_struct_type(Maps, Node) ->
-  %debug_struct("Node Label: ", node_label(Node)),
-  %debug_struct("Node Tuple Type: ", node_struct_type(Node)),
-
+  %% debug_struct("Node Label: ", node_label(Node)),
+  %% debug_struct("Node Tuple Type: ", node_struct_type(Node)),
   lists:foldl(fun({Type, Var, Size}, MapsAcc) ->
-    Key = create_elem_expr_key(Size, Var, []),
-    InstrKey = hipe_icode:mk_primop([], Type, Key),
-
-    NewExpr2 = expr_create(InstrKey, [Var]),
-    NewExpr3 = expr_direct_replace_set(NewExpr2, true),
-    NewMapsAcc = maps_expr_key_enter(NewExpr3, MapsAcc),
-    NewMapsAcc
-
-  end, Maps, node_struct_type(Node)).
-
+		  Key = create_elem_expr_key(Size, Var, []),
+		  InstrKey = hipe_icode:mk_primop([], Type, Key),
+		  NewExpr2 = expr_create(InstrKey, [Var]),
+		  NewExpr3 = expr_direct_replace_set(NewExpr2, true),
+		  maps_expr_key_enter(NewExpr3, MapsAcc)
+	      end, Maps, node_struct_type(Node)).
 
 %%-----------------------------------------------------------------------------
 %%maps_from_node_atom_type(Maps, Node) ->
@@ -679,10 +675,9 @@ maps_from_node_struct_elems(Maps, Node) ->
 %% Also insert information about all affected variables into Maps.
 
 maps_from_node_code(Maps, Node) ->
-  %%debug_struct("Node Label: ", Label),
-  %%debug_struct("Node Code: ", Code),
-  %Label = node_label(Node),
-
+  %% debug_struct("Node Label: ", Label),
+  %% debug_struct("Node Code: ", Code),
+  %% Label = node_label(Node),
   lists:foldl(fun(Instr, MapsAcc) ->
     %% create two keys that are used to reference this structure creation
     %% instruction, so that we can lookup its expression value number
@@ -747,7 +742,6 @@ maps_varinfos_create(Defines, ExprId, Elem, MapsIn) ->
 
 maps_expr_varinfos_create(Instr, RefKey, Maps) ->
   Defines = hipe_icode:defines(Instr),
-
   case maps_instr_lookup(RefKey, Maps) of
     {value, ExprId} -> 
       Maps2 = Maps;
@@ -756,7 +750,6 @@ maps_expr_varinfos_create(Instr, RefKey, Maps) ->
       ExprId = expr_id(NewExpr),
       Maps2 = maps_expr_key_enter(NewExpr, Maps)
   end,
-  
   Maps3 = maps_varinfos_create(Defines, ExprId, none, Maps2),
   update_maps_var_use(Instr, ExprId, Maps3).
 
@@ -801,21 +794,18 @@ replace_call_vars_elems(Maps, Instr) ->
 
 update_maps_var_use(Instr, Id, Maps) ->
   lists:foldl(fun(Use, MapsAcc) ->
-    VarInfo = get_varinfo(Use, MapsAcc),
-
-    NewVarInfo = varinfo_use_add(VarInfo, Id),
-    MapsAcc2 = maps_var_enter(Use, NewVarInfo, MapsAcc),
-    
-    case varinfo_exprid(VarInfo) of
-      none ->
-	MapsAcc2;
-      VarExprId -> 
-	Expr = maps_expr_get(VarExprId, MapsAcc2),
-	NewExpr = expr_use_add(Expr, Id),
-	maps_expr_enter(NewExpr, MapsAcc2)
-    end
-
-  end, Maps, hipe_icode:uses(Instr)).
+		  VarInfo = get_varinfo(Use, MapsAcc),
+		  NewVarInfo = varinfo_use_add(VarInfo, Id),
+		  MapsAcc2 = maps_var_enter(Use, NewVarInfo, MapsAcc),
+		  case varinfo_exprid(VarInfo) of
+		    none ->
+		      MapsAcc2;
+		    VarExprId -> 
+		      Expr = maps_expr_get(VarExprId, MapsAcc2),
+		      NewExpr = expr_use_add(Expr, Id),
+		      maps_expr_enter(NewExpr, MapsAcc2)
+		  end
+	      end, Maps, hipe_icode:uses(Instr)).
 
 %%-----------------------------------------------------------------------------
 %% Looks up an old variable info or creates a new one if none is found.
@@ -834,12 +824,10 @@ get_varinfo(Var, Maps) ->
 %% the result.
 
 replace_call_variables(Filter, Instr) ->
-  NewArgs = lists:map(fun(Arg) -> 
-			  case hipe_icode:is_const(Arg) of
-			    false -> Filter(Arg);
-			    true -> Arg
-			  end
-		      end, hipe_icode:args(Instr)),
+  NewArgs = [case hipe_icode:is_const(Arg) of
+	       false -> Filter(Arg);
+	       true -> Arg
+	     end || Arg <- hipe_icode:args(Instr)],
   hipe_icode:call_args_update(Instr, NewArgs).
 
 %%-----------------------------------------------------------------------------
@@ -847,7 +835,6 @@ replace_call_variables(Filter, Instr) ->
 
 init_nodes(Nodes, Maps) ->
   AllExpr = maps_expr_keys(Maps),
-
   lists:foldl(fun(Node, NodesAcc) -> 
     UEExpr = calc_up_exposed_expr(maps_var(Maps), Node),
     %% print_list("Up ExprSet: ", ?SETS:to_list(UEExpr)),
@@ -863,12 +850,9 @@ init_nodes(Nodes, Maps) ->
 	_ ->
 	  AllExpr
       end,
-
-    enter_node(Node#node{
-      up_expr = UEExpr,
-      killed_expr = KilledExpr,
-      antic_out = AnticOut}, NodesAcc)
-
+    enter_node(Node#node{up_expr = UEExpr,
+			 killed_expr = KilledExpr,
+			 antic_out = AnticOut}, NodesAcc)
   end, nodes_all_expr_set(AllExpr, Nodes), nodes_tree_values(Nodes)).
 
 %%-----------------------------------------------------------------------------
@@ -906,19 +890,19 @@ calc_killed_expr(Node, Maps) ->
 
 calc_killed_expr_defs(Defs, UseSet, Maps) ->
   lists:foldl(fun(Def, Acc) -> 
-    case maps_var_lookup(Def, Maps) of
-      none ->
-	Acc;
-      {value, #varinfo{use = Use}} ->
-	?SETS:union(Acc, calc_killed_expr_use(Use, Maps))
-    end
-  end, UseSet, Defs).
+		  case maps_var_lookup(Def, Maps) of
+		    none ->
+		      Acc;
+		    {value, #varinfo{use = Use}} ->
+		      ?SETS:union(Acc, calc_killed_expr_use(Use, Maps))
+		  end
+	      end, UseSet, Defs).
 
 calc_killed_expr_use(ExprIds, Maps) ->
   ?SETS:fold(fun(Id, Acc) -> 
-    Expr = maps_expr_get(Id, Maps),
-    ?SETS:union(Acc, calc_killed_expr_use(expr_use(Expr), Maps))
-  end, ExprIds, ExprIds).
+		 Expr = maps_expr_get(Id, Maps),
+		 ?SETS:union(Acc, calc_killed_expr_use(expr_use(Expr), Maps))
+	     end, ExprIds, ExprIds).
 
 %%-----------------------------------------------------------------------------
 %% Calculate the anticipated in and anticipated out sets for each node
@@ -1071,9 +1055,7 @@ update_nodes_inserts(Nodes, Maps) ->
 rewrite_cfg(CFG, Nodes, Maps) ->
   {NewCFG, _Visited} =
     rewrite_cfg(CFG, ?SETS:new(), #update{}, Nodes, Maps, [nodes_start_label(Nodes)]),
-
-  %debug_struct("Visited: ", _Visited),
-
+  %% debug_struct("Visited: ", _Visited),
   NewCFG.
 
 %%-----------------------------------------------------------------------------
@@ -1086,20 +1068,16 @@ rewrite_cfg(CFG, Visited, Update, Nodes, Maps, Labels) ->
   lists:foldl(fun(Label, {CFGAcc, VisitedAcc}) -> 
     case ?SETS:is_element(Label, VisitedAcc) of
       false ->
-	%debug_struct("Visit: ", Label),
-
+	%% debug_struct("Visit: ", Label),
 	Node = get_node(Label, Nodes),
 	NewVisitedAcc = ?SETS:add_element(Label, VisitedAcc),
-
 	{NewCFGAcc, NewUpdate} = rewrite_bb(CFGAcc, Update, Maps, Node),
-	%debug_struct("Update inserted: ", update_inserted_list(NewUpdate)),
-
+	%% debug_struct("Update inserted: ", update_inserted_list(NewUpdate)),
 	rewrite_cfg(NewCFGAcc, NewVisitedAcc, NewUpdate, Nodes, Maps, node_succ(Node));
       true ->
 	{CFGAcc, VisitedAcc}
     end
   end, {CFG, Visited}, Labels).
-
 
 %%-----------------------------------------------------------------------------
 %% rewrite one single basic block in the CFG as described by the properties
@@ -1249,9 +1227,7 @@ rewrite_expr(Update, Instr, Defs) ->
 	  lists:nth(Num, DefList);
 	_ -> Ref
       end end, Instr),
-
   hipe_icode:call_dstlist_update(NewInstr, Defs).
-
 
 %%-----------------------------------------------------------------------------
 %% Make move instructions from Defs list to all variables in
@@ -1344,7 +1320,6 @@ instr_type(I) ->
       {tuple_arity, Var, Cases};
     _ -> other
   end.
-
     
 %%-----------------------------------------------------------------------------
 %% Expression ID counter
@@ -1374,17 +1349,14 @@ debug_count_case(Type, Case) ->
   Cases = get(Type), 
   NewCases = 
     case gb_trees:lookup(Case, Cases) of
-      {value, Value} ->
-	gb_trees:enter(Case, Value + 1, Cases);
-      _ -> gb_trees:insert(Case, 1, Cases)
+      {value, Value} -> gb_trees:enter(Case, Value + 1, Cases);
+      none -> gb_trees:insert(Case, 1, Cases)
     end,
   put(Type, NewCases).
 
-debug_init_case_count(Type) ->
-  Cases = get(Type), 
-  case Cases of
-    undefined ->
-      put(Type, gb_trees:empty());
+debug_init_case_count(Type) -> 
+  case get(Type) of
+    undefined -> put(Type, gb_trees:empty());
     _ -> ok
   end.
 
@@ -1393,20 +1365,18 @@ debug_print_case_count(Type) ->
   debug_struct("Case type: ", Type),
   debug_list("Cases: ", gb_trees:to_list(Cases)).
 
-
 set_debug_flag(Value) ->
-  put({struct_reuse,debug}, Value).
+  put({struct_reuse, debug}, Value).
 
-get_debug_flag() -> get({struct_reuse,debug}).
+get_debug_flag() -> get({struct_reuse, debug}).
 
 debug_function(FuncName, CFG) ->
   Linear = hipe_icode_cfg:cfg_to_linear(CFG),
   Func = hipe_icode:icode_fun(Linear),
-
   case Func =:= FuncName orelse FuncName =:= nil of
     true -> 
       set_debug_flag(true),
-      %debug_struct("Code: ", hipe_icode_cfg:bb(CFG, 15)),
+      %% debug_struct("Code: ", hipe_icode_cfg:bb(CFG, 15)),
       debug_struct("~nFunction name :", Func);
     false -> 
       set_debug_flag(undefined)
@@ -1414,8 +1384,7 @@ debug_function(FuncName, CFG) ->
 
 debug_cfg_pp(CFG) ->
   case get_debug_flag() of
-    true ->
-      hipe_icode_cfg:pp(CFG);
+    true -> hipe_icode_cfg:pp(CFG);
     _ -> none
   end.
 
@@ -1435,8 +1404,7 @@ debug(String) ->
 
 debug_list(String, List) ->
   case get_debug_flag() of
-    true ->
-      print_list(String, List);
+    true -> print_list(String, List);
     _ -> none
   end.
 

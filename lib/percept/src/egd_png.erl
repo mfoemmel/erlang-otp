@@ -1,20 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-%% 
+%% %CopyrightEnd%
+
 
 %% This code was originally written by Dan Gudmundsson for png-handling in
 %% wings3d (e3d__png).
@@ -87,15 +88,12 @@ compress_image(I,RowLen, Bin, Acc) ->
 filter_row(Row,_RowLen) ->
     [0,Row].
 
-png_type(g8) -> ?GREYSCALE;
-png_type(a8) -> ?GREYSCALE;
-png_type(r8g8b8) -> ?TRUECOLOUR;
-png_type(r8g8b8a8) -> ?TRUECOLOUR_A.
+% dialyzer warnings
+%png_type(g8) -> ?GREYSCALE;
+%png_type(a8) -> ?GREYSCALE;
+%png_type(r8g8b8a8) -> ?TRUECOLOUR_A;
+png_type(r8g8b8) -> ?TRUECOLOUR.
 
-%rgb_order(#e3d_image{type=b8g8r8}) -> r8g8b8;
-%rgb_order(#e3d_image{type=b8g8r8a8}) -> r8g8b8a8;
-%rgb_order(#e3d_image{type=Type}) -> Type.
-    
 create_chunk(Bin,Z) when is_list(Bin) ->
     create_chunk(list_to_binary(Bin),Z);
 create_chunk(Bin,Z) when is_binary(Bin) ->

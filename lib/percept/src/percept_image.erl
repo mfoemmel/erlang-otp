@@ -1,20 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-%% 
+%% %CopyrightEnd%
 
 -module(percept_image).
 -export([	proc_lifetime/5,
@@ -24,6 +24,7 @@
 		activities/3, 
 		activities/4]).
 -record(graph_area, {x = 0, y = 0, width, height}).
+-compile(inline).
 
 %%% -------------------------------------
 %%% GRAF
@@ -57,8 +58,7 @@ graph(Width, Height, Data) ->
     graf1(Width, Height, Bounds, Data).
 
 graf1(Width, Height, {Xmin, Ymin, Xmax, Ymax}, Data) ->
-    
-    %z Calculate areas
+    % Calculate areas
     HO = 20,
     GrafArea   = #graph_area{x = HO, y = 4, width = Width - 2*HO, height = Height - 17},
     XticksArea = #graph_area{x = HO, y = Height - 13, width = Width - 2*HO, height = 13},
@@ -90,58 +90,46 @@ graf1(Width, Height, {Xmin, Ymin, Xmax, Ymax}, Data) ->
 %% Color, {ForegroundColor, ProcFillColor, PortFillColor}
 %% DataBounds, {Xmin, Ymin, Xmax, Ymax}
 
-draw_graf(Im, [{SX,SY1,SY2}|Data], Colors, GraphArea, {Xmin, _Ymin, Xmax, Ymax}) ->
-    
-    #graph_area{width = Width, height = Height} = GraphArea,
+draw_graf(Im, Data, Colors, GA = #graph_area{x = X0, y = Y0, width = Width, height = Height}, {Xmin, _Ymin, Xmax, Ymax}) ->
+    Dx = (Width)/(Xmax - Xmin),
+    Dy = (Height)/(Ymax),
+    Plotdata = [{trunc(X0 + X*Dx - Xmin*Dx), trunc(Y0 + Height - Y1*Dy), trunc(Y0 + Height - (Y1 + Y2)*Dy)} || {X, Y1, Y2} <- Data],
+    draw_graf(Im, Plotdata, Colors, GA).
 
-    DX = (Width)/(Xmax - Xmin),
-    DY = (Height)/(Ymax),
-    
-    draw_graf0(Im, Data, Colors, Xmin, GraphArea, DX, DY, SX, SY1 + SY2).
+draw_graf(Im, [{X1, Yproc1, Yport1}, {X2, Yproc2, Yport2}|Data], C, GA) when X2 - X1 < 1 ->
+    draw_graf(Im, [{X1, [{Yproc2, Yport2},{Yproc1, Yport1}]}|Data], C, GA);
 
-draw_graf0(_, [], _, _, _, _, _, _, _) -> ok;
-draw_graf0(Im, [{X,Y1,Y2}|Data], {B, PrC, PoC}, Xmin, GraphArea, DX, DY, PX, PY) ->
-    #graph_area{x = X0, y = Y0, height = Height} = GraphArea,
-    NX1 = trunc(X0 + PX*DX - Xmin*DX),
-    NX2 = trunc(X0 + X*DX - Xmin*DX),
-    {OX,OY} = if 
-    	abs(trunc(NX1) - trunc(NX2)) > 0 ->
-	    NY1 = trunc(Y0 + Height - PY*DY),
-	    NY2 = trunc(Y0 + Height - Y1*DY),
-	    NY3 = trunc(Y0 + Height - (Y2 + Y1)*DY),
+draw_graf(Im, [{X1, Ys1}, {X2, Yproc2, Yport2}|Data], C, GA) when X2 - X1 < 1, is_list(Ys1) ->
+    draw_graf(Im, [{X1, [{Yproc2, Yport2}|Ys1]}|Data], C, GA);
 
-	    ZLY = trunc(Y0 + Height),
-    
-	    % Fill procs
-	    egd:filledRectangle(
-	    	Im,
-		{NX1,ZLY},
-		{NX2,NY2},
-	        PrC),
-    
-	    % fill ports
-	    egd:filledRectangle(
-	    	Im,
-		{NX1,NY2},
-		{NX2,NY3},
-	    	PoC),
-	    % top line
-	    egd:line(
-	    	Im,
-		{NX1,NY3},
-		{NX2,NY3},
-		B),
-	    % left line
-	    egd:line(
-		Im,
-	    	{NX1,NY1},
-		{NX1,NY3},
-		B),
-	    {X, Y1 + Y2};
-	true ->
-	    {PX,PY}
-    end,
-    draw_graf0(Im, Data, {B, PrC, PoC}, Xmin, GraphArea, DX, DY, OX, OY).
+draw_graf(Im, [{X1, Yproc1, Yport1}, {X2, Yproc2, Yport2}|Data], C = {B, PrC, PoC}, GA = #graph_area{y = Y0, height = H})  ->
+    GyZero  = trunc(Y0 + H),
+    egd:filledRectangle(Im, {X1, GyZero}, {X2, Yproc1}, PrC),
+    egd:filledRectangle(Im, {X1, Yproc1}, {X2, Yport1}, PoC),
+    egd:line(Im, {X1, Yport1}, {X2, Yport1}, B), % top line
+    egd:line(Im, {X1, Yport2}, {X1, Yport1}, B), % right line
+    egd:line(Im, {X2, Yport1}, {X2, Yport2}, B), % right line
+    draw_graf(Im, [{X2, Yproc2, Yport2}|Data], C, GA);
+
+draw_graf(Im, [{X1, Ys1 = [{Yproc1,Yport1}|_]}, {X2, Yproc2, Yport2}|Data], C = {B, PrC, PoC}, GA = #graph_area{y = Y0, height = H})  ->
+    GyZero  = trunc(Y0 + H),
+    Yprocs = [Yp || {Yp, _} <- Ys1],
+    Yports = [Yp || {_, Yp} <- Ys1],
+
+    YprMin = lists:min(Yprocs),
+    YprMax = lists:max(Yprocs),
+    YpoMax = lists:max(Yports),
+    egd:filledRectangle(Im, {X1, GyZero}, {X2, Yproc1}, PrC),
+    egd:filledRectangle(Im, {X1, Yproc1}, {X2, Yport1}, PoC),
+    egd:filledRectangle(Im, {X1, Yport1}, {X2, Yport1}, B), % top line
+    egd:filledRectangle(Im, {X2, Yport1}, {X2, Yport2}, B), % right line
+
+    egd:filledRectangle(Im, {X1, GyZero}, {X1, YprMin}, PrC), % left proc green line
+    egd:filledRectangle(Im, {X1, YprMax}, {X1, YpoMax}, PoC), % left port line
+    egd:filledRectangle(Im, {X1, YprMax}, {X1, YprMin}, B),
+     
+    draw_graf(Im, [{X2, Yproc2, Yport2}|Data], C, GA);
+draw_graf(_, _, _, _) -> ok.
 
 draw_xticks(Image, Color, XticksArea, {Xmin, Xmax}, Data) ->
     #graph_area{x = X0, y = Y0, width = Width} = XticksArea,
@@ -227,43 +215,41 @@ activities(Width, Height, Activities) ->
     activities0(Width, Height, {Xmin, Xmax}, Activities).
 
 activities0(Width, Height, {Xmin, Xmax}, Activities) ->
-    
     Image = egd:create(Width, Height),
     Grey = egd:color(Image, {200, 200, 200}),
     HO = 20,
     ActivityArea = #graph_area{x = HO, y = 0, width = Width - 2*HO, height = Height},
     egd:filledRectangle(Image, {0, 0}, {Width, Height}, Grey),
-    draw_activity2(Image, {Xmin, Xmax}, ActivityArea, Activities),
+    draw_activity(Image, {Xmin, Xmax}, ActivityArea, Activities),
     Binary = egd:render(Image, png),
     egd:destroy(Image),
     Binary.
 
-draw_activity2(Image, {Xmin, Xmax}, ActivityArea, [{X, Activity}|Activities]) ->
-    #graph_area{width = Width} = ActivityArea,
+draw_activity(Image, {Xmin, Xmax}, Area = #graph_area{ width = Width }, Acts) ->
+    White = egd:color({255, 255, 255}),
+    Green = egd:color({0,250, 0}),
+    Black = egd:color({0, 0, 0}),
 
-    White = egd:color(Image, {255, 255, 255}),
-    Green = egd:color(Image, {0, 255, 0}),
-    Black = egd:color(Image, {0, 0, 0}),
-    
-    DX = (Width)/(Xmax - Xmin),
-    draw_activity2(Image, {DX, X, Activity}, ActivityArea, {Green, White, Black}, Activities).
+    Dx    = Width/(Xmax - Xmin),
 
-draw_activity2(_Image, {_DX, _PX, _PA}, _ActivityArea, _Colors, []) -> ok;
-draw_activity2(Image, {DX, PX, PA}, ActivityArea, {C1, C2, C3}=Colors, [{X, Act}|Data]) ->
-    #graph_area{x = X0, height=Height} = ActivityArea,
-    X1 = erlang:trunc(X0 + DX*PX),
-    X2 = erlang:trunc(X0 + DX*X),
-    case PA of 
+    draw_activity(Image, {Xmin, Xmax}, Area, {White, Green, Black}, Dx, Acts).
+
+draw_activity(_, _, _, _, _, [_]) -> ok;
+draw_activity(Image, {Xmin, Xmax}, Area = #graph_area{ height = Height, x = X0 }, {Cw, Cg, Cb}, Dx, [{Xa1, State}, {Xa2, Act2} | Acts]) ->
+    X1 = erlang:trunc(X0 + Dx*Xa1 - Xmin*Dx),
+    X2 = erlang:trunc(X0 + Dx*Xa2 - Xmin*Dx),
+
+    case State of
 	inactive ->
-	    egd:filledRectangle(Image, {X1, 0}, {X2, Height - 1}, C2),
-	    egd:rectangle(Image, {X1, 0}, {X2, Height - 1}, C3),
-	    draw_activity2(Image, {DX, X, Act}, ActivityArea, Colors, Data);
+	    egd:filledRectangle(Image, {X1, 0}, {X2, Height - 1}, Cw),
+	    egd:rectangle(Image, {X1, 0}, {X2, Height - 1}, Cb);
 	active ->
-	    egd:filledRectangle(Image, {X1, 0}, {X2, Height - 1}, C1),
-	    egd:rectangle(Image, {X1, 0}, {X2, Height - 1}, C3),
-    	    draw_activity2(Image, {DX, X, Act}, ActivityArea, Colors, Data)
-    end.
+	    egd:filledRectangle(Image, {X1, 0}, {X2, Height - 1}, Cg),
+	    egd:rectangle(Image, {X1, 0}, {X2, Height - 1}, Cb)
+    end,
+    draw_activity(Image, {Xmin, Xmax}, Area, {Cw, Cg, Cb}, Dx, [{Xa2, Act2} | Acts]).
 
+ 
 
 %%% -------------------------------------
 %%% Process lifetime

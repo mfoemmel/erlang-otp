@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2007-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson AB.
- * Portions created by Ericsson are Copyright 2007, Ericsson AB.
- * All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 
@@ -44,19 +45,13 @@
  *   flag. If we are able to set the lock flag and the wait flag
  *   isn't set we are done. If the lock flag was already set we
  *   have to acquire the pix lock, set the wait flag, and put
- *   ourselves in the wait queue. If we are able to set the lock
- *   flag, but the wait flag was set, we have to acquire the pix
- *   lock and transfer the lock to the thread first in the wait
- *   queue. Process locks will always be acquired in fifo order.
- *     When releasing a process lock we first unset the lock flag
- *   (which will succeed). If the wait flag wasn't set we are done.
- *   If the wait flag was set, we have to reacquire the lock flag,
- *   acquire the pix lock, and transfer the lock to the first thread
- *   in the wait queue. It may not be possible to reacquire the
- *   the lock flag; another thread that was trying to lock the lock
- *   may have set it. When this happens the responsibility of the
- *   lock transfer has been taken over by the thread that set the
- *   lock flag.
+ *   ourselves in the wait queue.
+ *   Process locks will always be acquired in fifo order.
+ *     When releasing a process lock we first unset all lock flags
+ *   whose corresponding wait flag is clear (which will succeed).
+ *   If wait flags were set for the locks being released, we acquire
+ *   the pix lock, and transfer the lock to the first thread
+ *   in the wait queue.
  *     Note that wait flags may be read without the pix lock, but
  *   it is important that wait flags only are modified when the pix
  *   lock is held.
@@ -77,9 +72,8 @@ const Process erts_proc_lock_busy;
 #ifdef ERTS_SMP
 
 /*#define ERTS_PROC_LOCK_SPIN_ON_GATE*/
-#define ERTS_PROC_LOCK_SPIN_COUNT 2000
-
-#include "erl_misc_utils.h"
+#define ERTS_PROC_LOCK_SPIN_COUNT_MAX  16000
+#define ERTS_PROC_LOCK_SPIN_COUNT_BASE 1000
 
 #ifdef ERTS_PROC_LOCK_DEBUG
 #define ERTS_PROC_LOCK_HARD_DEBUG
@@ -163,13 +157,16 @@ erts_init_proc_lock(void)
     lc_id.proc_lock_msgq	= erts_lc_get_lock_order_id("proc_msgq");
     lc_id.proc_lock_status	= erts_lc_get_lock_order_id("proc_status");
 #endif
-    cpus = erts_no_of_cpus();
+    cpus = erts_get_cpu_configured(erts_cpuinfo);
     if (cpus > 1)
-	proc_lock_spin_count = ERTS_PROC_LOCK_SPIN_COUNT;
+	proc_lock_spin_count = (ERTS_PROC_LOCK_SPIN_COUNT_BASE
+				* ((int) erts_no_schedulers));
     else if (cpus == 1)
 	proc_lock_spin_count = 0;
     else /* No of cpus unknown. Assume multi proc, but be conservative. */
-	proc_lock_spin_count = ERTS_PROC_LOCK_SPIN_COUNT/10;
+	proc_lock_spin_count = ERTS_PROC_LOCK_SPIN_COUNT_BASE;
+    if (proc_lock_spin_count > ERTS_PROC_LOCK_SPIN_COUNT_MAX)
+	proc_lock_spin_count = ERTS_PROC_LOCK_SPIN_COUNT_MAX;
     proc_lock_trans_spin_cost = proc_lock_spin_count/20;
 }
 
@@ -386,7 +383,7 @@ transfer_locks(Process *p,
 		try_aquire(&p->lock, wtr);
 	    if (!wtr->wait_locks) {
 		/*
-		 * The other tread got all locks it needs;
+		 * The other thread got all locks it needs;
 		 * need to wake it up.
 		 */
 		wtr->next = wake;
@@ -427,168 +424,72 @@ transfer_locks(Process *p,
 }
 
 /*
- * erts_proc_lock_failed() is called when erts_smp_proc_lock()
- * wasn't able to lock all locks. We may need to transfer locks
- * to waiters and wait for our turn on locks.
+ * Determine which locks in 'need_locks' are not currently locked in
+ * 'in_use', but do not return any locks "above" some lock we need,
+ * so we do not attempt to grab locks out of order.
+ *
+ * For example, if we want to lock 10111, and 00100 was already locked, this
+ * would return 00011, indicating we should not try for 10000 yet because
+ * that would be a lock-ordering violation.
  */
-void
-erts_proc_lock_failed(Process *p,
-		      erts_pix_lock_t *pixlck,
-		      ErtsProcLocks locks,
-		      ErtsProcLocks old_lflgs)
+static ERTS_INLINE ErtsProcLocks
+in_order_locks(ErtsProcLocks in_use, ErtsProcLocks need_locks)
 {
-    ErtsProcLocks need_locks, tlocks, got_locks, unlock_locks, olflgs;
+    /* All locks we want that are already locked by someone else. */
+    ErtsProcLocks busy = in_use & need_locks;
+
+    /* Just the lowest numbered lock we want that's in use; 0 if none. */
+    ErtsProcLocks lowest_busy = busy & -busy;
+
+    /* All locks below the lowest one we want that's in use already. */
+    return need_locks & (lowest_busy - 1);
+}
+
+/*
+ * Try to grab locks one at a time in lock order and wait on the lowest
+ * lock we fail to grab, if any.
+ *
+ * If successful, this returns 0 and all locks in 'need_locks' are held.
+ *
+ * On entry, the pix lock is held iff !ERTS_PROC_LOCK_ATOMIC_IMPL.
+ * On exit it is not held.
+ */
+static void
+wait_for_locks(Process *p,
+               erts_pix_lock_t *pixlck,
+	       ErtsProcLocks locks,
+               ErtsProcLocks need_locks,
+               ErtsProcLocks olflgs)
+{
+    erts_pix_lock_t *pix_lock = pixlck ? pixlck : ERTS_PID2PIXLOCK(p->id);
     int tsd;
     erts_proc_lock_waiter_t *wtr;
-    erts_pix_lock_t *pix_lock = pixlck ? pixlck : ERTS_PID2PIXLOCK(p->id);
-    ErtsProcLocks mask = ERTS_PROC_LOCKS_ALL;
-    int lock_no;
-#ifndef ERTS_PROC_LOCK_SPIN_ON_GATE
-    int spin_count = proc_lock_spin_count;
-#endif
 
-    need_locks = locks;
-    got_locks = 0;
-    olflgs = old_lflgs;
-
-#ifndef ERTS_PROC_LOCK_SPIN_ON_GATE
-    while (1) {
-	ErtsProcLocks wflgs;
-#endif
-
-	/*
-	 * Find out locks that need to be transfered, i.e., locks that had
-	 * wait flag but previously wasn't locked.
-	 *
-	 * This situation only appear if someone just unlocked the locks
-	 * and we set the lock flag before the unlocking thread was able
-	 * to transfer the locks. We got the responsibilty to transfer the
-	 * locks.
-	 */
-
-	/* Locks with wait flags ... */
-	tlocks = olflgs >> ERTS_PROC_LOCK_WAITER_SHIFT;
-	/* ... that we locked */
-	tlocks &= need_locks & ~olflgs;
-	
-	/* Locks we got */
-	got_locks |= need_locks & ~tlocks & ~olflgs;
-
-#ifndef ERTS_PROC_LOCK_SPIN_ON_GATE
-	if (spin_count <= 0)
-	    break;
-	
-	if (tlocks) {
-	    int transferred;
-	    /* Transfer locks we had waiters on */
-#if ERTS_PROC_LOCK_ATOMIC_IMPL
-	    erts_pix_lock(pix_lock);
-#endif
-	    /*
-	     * If ERTS_PROC_LOCK_ATOMIC_IMPL, transfer_locks will
-	     * unlock pix_lock; otherwise, not.
-	     */
-	    transferred = transfer_locks(p,
-					 tlocks,
-					 pix_lock,
-					 ERTS_PROC_LOCK_ATOMIC_IMPL);
-	    spin_count -= transferred * proc_lock_trans_spin_cost;
-	}
-
-	need_locks &= ~got_locks;
-
-	ERTS_LC_ASSERT(need_locks);
-
-	wflgs = need_locks << ERTS_PROC_LOCK_WAITER_SHIFT;
-	olflgs = ERTS_PROC_LOCK_FLGS_BOR_(&p->lock, need_locks);
-
-	if ((olflgs & (wflgs | need_locks)) == 0) {
-#if !ERTS_PROC_LOCK_ATOMIC_IMPL
-	    erts_pix_unlock(pix_lock);
-#endif
-	    return; /* got them all */
-	}
-	spin_count--;
-#if !ERTS_PROC_LOCK_ATOMIC_IMPL
-	erts_pix_unlock(pix_lock);
-	erts_pix_lock(pix_lock);
-#endif
-    }
-
-#endif
-
-    /* Wait for locks... */
-
-    /*
-     * Determine which locks to unlock, i.e., locks that we got that
-     * would cause a lock order violation if kept while waiting for
-     * other locks needed.
-     */
-    mask = ERTS_PROC_LOCKS_ALL;
-    for (lock_no = 0; lock_no <= ERTS_PROC_LOCK_MAX_BIT; lock_no++) {
-	ErtsProcLocks lock = ((ErtsProcLocks) 1) << lock_no;
-	if (need_locks & lock)
-	    break;
-	mask &= ~lock;
-    }
-    need_locks = mask & locks;
-    ERTS_LC_ASSERT(need_locks);
-    unlock_locks = need_locks & got_locks;
-
+    /* Acquire a waiter object on which this thread can wait. */
     wtr = erts_tsd_get(waiter_key);
     if (wtr)
 	tsd = 1;
     else {
-#if ERTS_PROC_LOCK_SPINLOCK_IMPL
+#if ERTS_PROC_LOCK_SPINLOCK_IMPL && !ERTS_PROC_LOCK_ATOMIC_IMPL
 	erts_pix_unlock(pix_lock);
 #endif
 	wtr = alloc_wtr();
 	tsd = 0;
-#if ERTS_PROC_LOCK_SPINLOCK_IMPL
+#if ERTS_PROC_LOCK_SPINLOCK_IMPL && !ERTS_PROC_LOCK_ATOMIC_IMPL
 	erts_pix_lock(pix_lock);
 #endif
     }
     
+    /* Record which locks this waiter needs. */
+    wtr->wait_locks = need_locks;
+
 #if ERTS_PROC_LOCK_ATOMIC_IMPL
     erts_pix_lock(pix_lock);
 #endif
 
     ERTS_LC_ASSERT(erts_lc_pix_lock_is_locked(pix_lock));
-	
-    if (unlock_locks) {
-	/*
-	 * More wait flags might have appeared by now. Locks with
-	 * waiters need to be transferred. Locks without waiters
-	 * can be reset since we have the pix lock here (no
-	 * new wait flags can appear until we release the pix
-	 * lock).
-	 */
-	ErtsProcLocks wtd = ERTS_PROC_LOCK_FLGS_READ_(&p->lock);
-	wtd >>= ERTS_PROC_LOCK_WAITER_SHIFT;
-	wtd &= unlock_locks;
-	tlocks |= wtd;
-	unlock_locks &= ~wtd;
-	if (unlock_locks) {
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	    wtd =
-#else
-	    (void)
-#endif
 
-		ERTS_PROC_LOCK_FLGS_BAND_(&p->lock, ~unlock_locks);
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	    wtd >>= ERTS_PROC_LOCK_WAITER_SHIFT;
-	    wtd &= unlock_locks;
-	    ERTS_LC_ASSERT(!wtd);
-#endif
-	}
-    }
-
-    if (tlocks) /* Transfer locks we had waiters on */
-	(void) transfer_locks(p, tlocks, pix_lock, 0);
-
-    wtr->wait_locks = need_locks;
+    /* Provide the process with waiter queues, if it doesn't have one. */
     if (!p->lock.queues) {
 	wtr->queues->next = NULL;
 	p->lock.queues = wtr->queues;
@@ -624,9 +525,9 @@ erts_proc_lock_failed(Process *p,
 #endif
 
 	erts_pix_lock(pix_lock);
-
     }
 
+    /* Recover some queues to store in the waiter. */
     ERTS_LC_ASSERT(p->lock.queues);
     if (p->lock.queues->next) {
 	wtr->queues = p->lock.queues->next;
@@ -637,8 +538,9 @@ erts_proc_lock_failed(Process *p,
 	p->lock.queues = NULL;
     }
 
-    ERTS_LC_ASSERT(locks == (ERTS_PROC_LOCK_FLGS_READ_(&p->lock) & locks));
     erts_pix_unlock(pix_lock);
+
+    ERTS_LC_ASSERT(locks == (ERTS_PROC_LOCK_FLGS_READ_(&p->lock) & locks));
 
     if (tsd)
 	CHECK_UNUSED_WAITER(wtr);
@@ -647,67 +549,77 @@ erts_proc_lock_failed(Process *p,
 }
 
 /*
- * erts_proc_trylock_failed() is called when erts_smp_proc_trylock()
+ * erts_proc_lock_failed() is called when erts_smp_proc_lock()
  * wasn't able to lock all locks. We may need to transfer locks
- * to waiters.
+ * to waiters and wait for our turn on locks.
+ *
+ * Iff !ERTS_PROC_LOCK_ATOMIC_IMPL, the pix lock is locked on entry.
+ *
+ * This always returns with the pix lock unlocked.
  */
 void
-erts_proc_trylock_failed(Process *p,
-			 erts_pix_lock_t *pixlck,
-			 ErtsProcLocks locks,
-			 ErtsProcLocks old_lflgs)
+erts_proc_lock_failed(Process *p,
+		      erts_pix_lock_t *pixlck,
+		      ErtsProcLocks locks,
+		      ErtsProcLocks old_lflgs)
 {
-    ErtsProcLocks tlocks, wlocks, ulocks;
-    erts_pix_lock_t *pix_lock;
-
-    /* Locks with wait flags ... */
-    tlocks = old_lflgs >> ERTS_PROC_LOCK_WAITER_SHIFT;
-    /* ... that we locked */
-    tlocks &= locks & ~old_lflgs;
-
-    ulocks = locks & ~tlocks & ~old_lflgs;
-
-    pix_lock = pixlck ? pixlck : ERTS_PID2PIXLOCK(p->id);
-
-#if ERTS_PROC_LOCK_ATOMIC_IMPL
-    erts_pix_lock(pix_lock);
-#endif
-    
-    ERTS_LC_ASSERT(erts_lc_pix_lock_is_locked(pix_lock));
-
-    /*
-     * More wait flags might have appeard by now. Locks with
-     * waiters need to be transferred. Locks without waiters
-     * can be reset since we have the pix lock here (no new
-     * wait flags can appear until we release the pix lock).
-     */
-
-    wlocks = ERTS_PROC_LOCK_FLGS_READ_(&p->lock);
-    wlocks >>= ERTS_PROC_LOCK_WAITER_SHIFT;
-    wlocks &= ulocks; /* New locks with wait flags ... */
-    tlocks |= wlocks; /* ... to transfer ... */
-    ulocks &= ~wlocks; /* ... not to unlock. */
-
-    if (ulocks) {
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	wlocks =
+#ifdef ERTS_PROC_LOCK_SPIN_ON_GATE
+    int spin_count = 0;
 #else
-	(void)
+    int spin_count = proc_lock_spin_count;
 #endif
 
-	    ERTS_PROC_LOCK_FLGS_BAND_(&p->lock, ~ulocks);
+    ErtsProcLocks need_locks = locks;
+    ErtsProcLocks olflgs = old_lflgs;
 
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	wlocks >>= ERTS_PROC_LOCK_WAITER_SHIFT;
-	wlocks &= ulocks;
-	ASSERT(!wlocks);
+    while (need_locks != 0)
+    {
+        ErtsProcLocks can_grab = in_order_locks(olflgs, need_locks);
+
+        if (can_grab == 0)
+        {
+            /* Someone already has the lowest-numbered lock we want. */
+
+            if (spin_count-- <= 0)
+            {
+                /* Too many retries, give up and sleep for the lock. */
+                wait_for_locks(p, pixlck, locks, need_locks, olflgs);
+                return;
+            }
+
+            olflgs = ERTS_PROC_LOCK_FLGS_READ_(&p->lock);
+        }
+        else
+        {
+            /* Try to grab all of the grabbable locks at once with cmpxchg. */
+            ErtsProcLocks grabbed = olflgs | can_grab;
+            ErtsProcLocks nflgs =
+                ERTS_PROC_LOCK_FLGS_CMPXCHG_(&p->lock, grabbed, olflgs);
+
+            if (nflgs == olflgs)
+            {
+                /* Success! We grabbed the 'can_grab' locks. */
+                olflgs = grabbed;
+                need_locks &= ~can_grab;
+
+#ifndef ERTS_PROC_LOCK_SPIN_ON_GATE
+                /* Since we made progress, reset the spin count. */
+                spin_count = proc_lock_spin_count;
 #endif
+            }
+            else
+            {
+                /* Compare-and-exchange failed, try again. */
+                olflgs = nflgs;
+            }
+        }
     }
 
-    if (tlocks)
-	(void) transfer_locks(p, tlocks, pix_lock, 1); /* unlocks pix_lock */
-    else
-	erts_pix_unlock(pix_lock);
+   /* Now we have all of the locks we wanted. */
+
+#if !ERTS_PROC_LOCK_ATOMIC_IMPL
+    erts_pix_unlock(pixlck);
+#endif
 }
 
 /*
@@ -720,43 +632,13 @@ erts_proc_unlock_failed(Process *p,
 			erts_pix_lock_t *pixlck,
 			ErtsProcLocks wait_locks)
 {
-    ErtsProcLocks lcks = wait_locks, old_lflgs;
-    erts_pix_lock_t *pix_lock = pixlck ? pixlck : ERTS_PID2PIXLOCK(p->id);;
+    erts_pix_lock_t *pix_lock = pixlck ? pixlck : ERTS_PID2PIXLOCK(p->id);
 
 #if ERTS_PROC_LOCK_ATOMIC_IMPL
     erts_pix_lock(pix_lock);
 #endif
 
-    ERTS_LC_ASSERT(erts_lc_pix_lock_is_locked(pix_lock));
-    
-    /*
-     * Try to acquire the locks that we just released that other were
-     * waiting for. If another thread acquires one of these lock flags
-     * before us, it gets the responsibility to do the transfer.
-     */
-    
-    old_lflgs = ERTS_PROC_LOCK_FLGS_BOR_(&p->lock, lcks);
-    lcks &= ~old_lflgs; /* locks we was able to aquire */
-    if (!lcks)
-	erts_pix_unlock(pix_lock);
-    else {
-	ErtsProcLocks no_wtr;
-	/*
-	 * Waiters might have disapeared by now, since we haven't had the
-	 * pix lock all the time.
-	 */
-	no_wtr = lcks & (~old_lflgs >> ERTS_PROC_LOCK_WAITER_SHIFT);
-	if (no_wtr) {
-	    /* No new waiters can appear since we have the pix lock */
-	    (void) ERTS_PROC_LOCK_FLGS_BAND_(&p->lock, ~no_wtr);
-	    lcks &= ~no_wtr;
-	}
-	if (lcks)
-	    (void) transfer_locks(p, lcks, pix_lock, 1); /* unlocks pix_lock */
-	else
-	    erts_pix_unlock(pix_lock);
-    }
-    
+    transfer_locks(p, wait_locks, pix_lock, 1); /* unlocks pix_lock */
 }
 
 /*
@@ -887,7 +769,7 @@ proc_safelock(Process *a_proc,
 	    need_locks1 |= unlock_locks;
 	    if (!have_locks1) {
 		refc1 = 1;
-		erts_inc_proc_lock_refc(p1);
+		erts_smp_proc_inc_refc(p1);
 	    }
 	    erts_smp_proc_unlock__(p1, pix_lck1, unlock_locks);
 	}
@@ -897,7 +779,7 @@ proc_safelock(Process *a_proc,
 	    need_locks2 |= unlock_locks;
 	    if (!have_locks2) {
 		refc2 = 1;
-		erts_inc_proc_lock_refc(p2);
+		erts_smp_proc_inc_refc(p2);
 	    }
 	    erts_smp_proc_unlock__(p2, pix_lck2, unlock_locks);
 	}
@@ -977,9 +859,9 @@ proc_safelock(Process *a_proc,
 #endif
 
     if (refc1)
-	erts_dec_proc_lock_refc(p1);
+	erts_smp_proc_dec_refc(p1);
     if (refc2)
-	erts_dec_proc_lock_refc(p2);
+	erts_smp_proc_dec_refc(p2);
 }
 
 void
@@ -1001,46 +883,6 @@ erts_proc_safelock(Process *a_proc,
 }
 
 /*
- * erts_pid2proc_trylock_failed() is called when erts_pid2proc_opt()
- * has been called with ERTS_P2P_FLG_TRY_LOCK option and
- * erts_pid2proc_opt wasn't able to trylock all locks needed.
- */
-void
-erts_pid2proc_trylock_failed(Process *p,
-			     erts_pix_lock_t *pix_lock,
-			     ErtsProcLocks locks,
-			     ErtsProcLocks wlocks,
-			     ErtsProcLocks old_lflgs)
-{
-    ErtsProcLocks ulocks;
-
-    ERTS_LC_ASSERT(pix_lock);
-    ERTS_LC_ASSERT(erts_lc_pix_lock_is_locked(pix_lock));
-
-    ulocks = locks & ~wlocks & ~old_lflgs;
-
-    if (ulocks) {
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	ErtsProcLocks w =
-#else
-	(void)
-#endif
-	    ERTS_PROC_LOCK_FLGS_BAND_(&p->lock, ~ulocks);
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	w >>= ERTS_PROC_LOCK_WAITER_SHIFT;
-	w &= ulocks;
-	ASSERT(!w);
-#endif
-    }
-
-    if (wlocks)
-	(void) transfer_locks(p, wlocks, pix_lock, 1); /* unlocks pix_lock */
-    else
-	erts_pix_unlock(pix_lock);
-}
-
-/*
  * erts_pid2proc_safelock() is called from erts_pid2proc_opt() when
  * it wasn't possible to trylock all locks needed. 
  *   c_p		- current process
@@ -1048,10 +890,7 @@ erts_pid2proc_trylock_failed(Process *p,
  *   pid                - process id of process we are looking up
  *   proc               - process struct of process we are looking
  *			  up (both in and out argument)
- *   have_locks         - locks we were able to trylock
  *   need_locks         - all locks we need (including have_locks)
- *   wait_locks         - locks with waiters which we got the
- *                        responsibilty to transfer locks to
  *   pix_lock		- pix lock for process we are looking up
  *   flags		- option flags
  */
@@ -1059,9 +898,7 @@ void
 erts_pid2proc_safelock(Process *c_p,
 		       ErtsProcLocks c_p_have_locks,
 		       Process **proc,
-		       ErtsProcLocks have_locks,
 		       ErtsProcLocks need_locks,
-		       ErtsProcLocks wait_locks,
 		       erts_pix_lock_t *pix_lock,
 		       int flags)
 {
@@ -1069,10 +906,7 @@ erts_pid2proc_safelock(Process *c_p,
     ERTS_LC_ASSERT(p->lock.refc > 0);
     ERTS_LC_ASSERT(process_tab[internal_pid_index(p->id)] == p);
     p->lock.refc++;
-    if (wait_locks)
-	(void) transfer_locks(p, wait_locks, pix_lock, 1); /* unlocks pix_lock */
-    else
-	erts_pix_unlock(pix_lock);
+    erts_pix_unlock(pix_lock);
 
     proc_safelock(c_p,
 		  c_p ? ERTS_PID2PIXLOCK(c_p->id) : NULL,
@@ -1080,7 +914,7 @@ erts_pid2proc_safelock(Process *c_p,
 		  c_p_have_locks,
 		  p,
 		  pix_lock,
-		  have_locks,
+		  0,
 		  need_locks);
 
     erts_pix_lock(pix_lock);
@@ -1117,6 +951,11 @@ erts_proc_lock_init(Process *p)
 #endif
     p->lock.queues = NULL;
     p->lock.refc = 1;
+#ifdef ERTS_ENABLE_LOCK_COUNT
+    erts_lcnt_proc_lock_init(p);
+    erts_lcnt_proc_lock(&(p->lock), ERTS_PROC_LOCKS_ALL);
+    erts_lcnt_proc_lock_post_x(&(p->lock), ERTS_PROC_LOCKS_ALL, __FILE__, __LINE__);
+#endif
     
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_proc_lc_trylock(p, ERTS_PROC_LOCKS_ALL, 1);
@@ -1129,6 +968,119 @@ erts_proc_lock_init(Process *p)
     }
 #endif
 }
+
+/* --- Process lock counting ----------------------------------------------- */
+
+#ifdef ERTS_ENABLE_LOCK_COUNT
+void erts_lcnt_proc_lock_init(Process *p) {
+    
+    if (p->id != ERTS_INVALID_PID) {
+	erts_lcnt_init_lock_x(&(p->lock.lcnt_main),   "proc_main",   ERTS_LCNT_LT_PROCLOCK, p->id);
+	erts_lcnt_init_lock_x(&(p->lock.lcnt_msgq),   "proc_msgq",   ERTS_LCNT_LT_PROCLOCK, p->id);
+	erts_lcnt_init_lock_x(&(p->lock.lcnt_link),   "proc_link",   ERTS_LCNT_LT_PROCLOCK, p->id);
+	erts_lcnt_init_lock_x(&(p->lock.lcnt_status), "proc_status", ERTS_LCNT_LT_PROCLOCK, p->id);
+    } else {
+	erts_lcnt_init_lock(&(p->lock.lcnt_main),   "proc_main",   ERTS_LCNT_LT_PROCLOCK);
+	erts_lcnt_init_lock(&(p->lock.lcnt_msgq),   "proc_msgq",   ERTS_LCNT_LT_PROCLOCK);
+	erts_lcnt_init_lock(&(p->lock.lcnt_link),   "proc_link",   ERTS_LCNT_LT_PROCLOCK);
+	erts_lcnt_init_lock(&(p->lock.lcnt_status), "proc_status", ERTS_LCNT_LT_PROCLOCK);
+    }
+}
+	
+
+void erts_lcnt_proc_lock_destroy(Process *p) {
+    erts_lcnt_destroy_lock(&(p->lock.lcnt_main));
+    erts_lcnt_destroy_lock(&(p->lock.lcnt_msgq));
+    erts_lcnt_destroy_lock(&(p->lock.lcnt_link));
+    erts_lcnt_destroy_lock(&(p->lock.lcnt_status));
+}
+
+void erts_lcnt_proc_lock(erts_proc_lock_t *lock, ErtsProcLocks locks) {
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_PROCLOCK) { 
+    if (locks & ERTS_PROC_LOCK_MAIN) {
+	erts_lcnt_lock(&(lock->lcnt_main));
+    }
+    if (locks & ERTS_PROC_LOCK_MSGQ) {
+        erts_lcnt_lock(&(lock->lcnt_msgq));
+    }
+    if (locks & ERTS_PROC_LOCK_LINK) {
+	erts_lcnt_lock(&(lock->lcnt_link));
+    }
+    if (locks & ERTS_PROC_LOCK_STATUS) {
+	erts_lcnt_lock(&(lock->lcnt_status));
+    }
+    }
+}
+
+void erts_lcnt_proc_lock_post_x(erts_proc_lock_t *lock, ErtsProcLocks locks, char *file, unsigned int line) {
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_PROCLOCK) { 
+    if (locks & ERTS_PROC_LOCK_MAIN) {
+	erts_lcnt_lock_post_x(&(lock->lcnt_main), file, line);
+    }
+    if (locks & ERTS_PROC_LOCK_MSGQ) {
+        erts_lcnt_lock_post_x(&(lock->lcnt_msgq), file, line);
+    }
+    if (locks & ERTS_PROC_LOCK_LINK) {
+	erts_lcnt_lock_post_x(&(lock->lcnt_link), file, line);
+    }
+    if (locks & ERTS_PROC_LOCK_STATUS) {
+	erts_lcnt_lock_post_x(&(lock->lcnt_status), file, line);
+    }
+    }
+}
+
+void erts_lcnt_proc_lock_unaquire(erts_proc_lock_t *lock, ErtsProcLocks locks) {
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_PROCLOCK) { 
+    if (locks & ERTS_PROC_LOCK_MAIN) {
+	erts_lcnt_lock_unaquire(&(lock->lcnt_main));
+    }
+    if (locks & ERTS_PROC_LOCK_MSGQ) {
+        erts_lcnt_lock_unaquire(&(lock->lcnt_msgq));
+    }
+    if (locks & ERTS_PROC_LOCK_LINK) {
+	erts_lcnt_lock_unaquire(&(lock->lcnt_link));
+    }
+    if (locks & ERTS_PROC_LOCK_STATUS) {
+	erts_lcnt_lock_unaquire(&(lock->lcnt_status));
+    }
+    }
+}
+
+void erts_lcnt_proc_unlock(erts_proc_lock_t *lock, ErtsProcLocks locks) {
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_PROCLOCK) { 
+    if (locks & ERTS_PROC_LOCK_MAIN) {
+	erts_lcnt_unlock(&(lock->lcnt_main));
+    }
+    if (locks & ERTS_PROC_LOCK_MSGQ) {
+        erts_lcnt_unlock(&(lock->lcnt_msgq));
+    }
+    if (locks & ERTS_PROC_LOCK_LINK) {
+	erts_lcnt_unlock(&(lock->lcnt_link));
+    }
+    if (locks & ERTS_PROC_LOCK_STATUS) {
+	erts_lcnt_unlock(&(lock->lcnt_status));
+    }
+    }
+}
+void erts_lcnt_proc_trylock(erts_proc_lock_t *lock, ErtsProcLocks locks, int res) {
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_PROCLOCK) { 
+    if (locks & ERTS_PROC_LOCK_MAIN) {
+	erts_lcnt_trylock(&(lock->lcnt_main), res);
+    }
+    if (locks & ERTS_PROC_LOCK_MSGQ) {
+        erts_lcnt_trylock(&(lock->lcnt_msgq), res);
+    }
+    if (locks & ERTS_PROC_LOCK_LINK) {
+	erts_lcnt_trylock(&(lock->lcnt_link), res);
+    }
+    if (locks & ERTS_PROC_LOCK_STATUS) {
+	erts_lcnt_trylock(&(lock->lcnt_status), res);
+    }
+    }
+}
+
+#endif /* ifdef ERTS_ENABLE_LOCK_COUNT */
+
 
 /* --- Process lock checking ----------------------------------------------- */
 

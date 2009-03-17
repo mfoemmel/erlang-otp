@@ -1,20 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-%% 
+%% %CopyrightEnd%
 
 %% 
 %% @doc egd_primitives 
@@ -72,11 +72,11 @@ object_info(O) ->
 %% interface functions
 
 line(I, StartPoint, EndPoint, Color) ->
+    Ls = line_ls(StartPoint, EndPoint),
     I#image{objects = [
 	#image_object{ 
 	type = line, 
-	%points = line_points(StartPoint,EndPoint),
-	intervals = line_ls(StartPoint,EndPoint),
+	intervals = ls_list2dict(Ls),
 	span = span([StartPoint, EndPoint]),
 	color = Color} | I#image.objects]}.
 	
@@ -130,7 +130,6 @@ filledTriangle(I, P1, P2, P3, Color) ->
 
 polygon(I, Points, Color) ->
     PLSs = polygon_ls(Points),
-    io:format("PLSs: ~p ~n", [length(PLSs)]),
     I#image{objects = [
 	#image_object{
 	type = polygon,
@@ -166,7 +165,6 @@ text(I, {Xs,Ys} = StartPoint, FontName, Text, Color) ->
 % triangle 
 
 triangle_ls(P1,P2,P3) ->
-    io:format("triangle: ~p ~p ~p ~n", [P1,P2,P3]),
     % Find top point (or left most top point),
     % From that point, two lines will be drawn to the 
     % other points.
@@ -176,7 +174,7 @@ triangle_ls(P1,P2,P3) ->
     % At an end point, a new line to the point already being drawn
     % repeat same procedure as above
     [Sp1, Sp2, Sp3] = tri_pt_ysort([P1,P2,P3]),   
-    triangle_ls_lp(tri_ls_ysort(line_ls(Sp1,Sp2)), Sp2,tri_ls_ysort(line_ls(Sp1,Sp3)), Sp3, []).
+    triangle_ls_lp(tri_ls_ysort(line_ls(Sp1,Sp2)), Sp2, tri_ls_ysort(line_ls(Sp1,Sp3)), Sp3, []).
 
 % There will be Y mismatches between the two lists since bresenham is not perfect.
 % I can be remedied with checking intervals this could however be costly and
@@ -188,7 +186,6 @@ triangle_ls_lp(LSs1, P1, [], P2, Out) ->
     SLSs = tri_ls_ysort(line_ls(P2,P1)),
     N2 = length(SLSs),
     N1 = length(LSs1),
-    io:format("New: LSs1 = ~p, SLSs = ~p~n", [N1,N2]),
     if 
 	N1 > N2 ->
 	    [_|ILSs] = LSs1,
@@ -327,6 +324,12 @@ point_inside_triangle(P, P1, P2, P3) ->
     points_same_side(P, P2, P1, P3) and 
     points_same_side(P, P3, P1, P2).
    
+%% [{Y, Xl, Xr}]
+ls_list2dict(List) -> ls_list2dict(List, dict:new()).
+ls_list2dict([], D) -> D;
+ls_list2dict([{Y, Xl, Xr}|Ls], D) ->
+    ls_list2dict(Ls, dict:store(Y, {Xl, Xr}, D)).
+
 % Bresenham line
 line_points({Xi0,Yi0}, {Xi1,Yi1}) ->
     % swap X with Y if line is steep

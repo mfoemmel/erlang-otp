@@ -1,23 +1,24 @@
-%%% -*- Erlang -*-
-%%%-------------------------------------------------------------------
-%%% Author: Lon Willett <Lon.Willett@sse.ie>
-%%%
-%%% Description: Some minimal support for encoding, decoding, and
-%%% manipulating strings of ISO-10646 characters (i.e. Unicode).
-%%%-------------------------------------------------------------------
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 
-%%% Note:
-%%% - The ucs server must be started before any call to:
-%%%   to_unicode/2, from_unicode/2, getMIB/1, getCharset/1 and all the charset
-%%%   test predicates. The server will currently NOT start automatically even
-%%%   if this is not the case.
-
-
-%% NOTICE: This is just an excerpt of the original ucs application
 -module(xmerl_ucs).
--vsn('0.3').
--author('Lon.Willett@sse.ie').
--modified_by('johan.blom@mobilearts.se').
+
 -compile([verbose,report_warnings,warn_unused_vars]).
 
 

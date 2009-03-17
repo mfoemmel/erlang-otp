@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>2003-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 
 -module(vts).
@@ -504,7 +503,21 @@ case_select(_Dir,all,_,N) ->
     select("NAME=case TITLE=\"Select case\"",
 	   options(["all"],"all",N,"select_case"));
 case_select(Dir,Suite,Case,N) ->
-    case ct_run:make_test_suite(Dir,Suite) of
+    MakeResult =
+	case application:get_env(common_test, auto_compile) of
+	    {ok,false} ->
+		ok;
+	    _ ->	    
+		UserInclude =
+		    case application:get_env(common_test, include) of
+			{ok,UserInclDirs} when length(UserInclDirs) > 0 ->
+			    [{i,UserInclDir} || UserInclDir <- UserInclDirs];
+			_ ->
+			    []
+		    end,
+		ct_run:run_make(Dir,Suite,UserInclude)
+	end,
+    case MakeResult of
 	ok ->
 	    code:add_pathz(Dir),
 	    case catch apply(Suite,all,[]) of
@@ -517,7 +530,7 @@ case_select(Dir,Suite,Case,N) ->
 			   options(["all"],"all",N,"select_case"));
 		AllCasesAtoms ->
 		    AllCases = [atom_to_list(C) || C <- AllCasesAtoms,
-						  is_atom(C)],
+						   is_atom(C)],
 		    select("NAME=case TITLE=\"Select case\"",
 			   options(["all"|AllCases],atom_to_list(Case),
 				   N,"select_case"))

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Core Erlang syntax trees as records.
 
@@ -24,6 +25,8 @@
 %% Thus it is possible to define the macros:
 %% -define(get_ann(X), element(2, X)).
 %% -define(set_ann(X, Y), setelement(2, X, Y)).
+
+-type var_name() :: integer() | atom() | {atom(), integer()}.
 
 -record(c_literal, {anno=[], val}).	% val :: literal()
 
@@ -40,10 +43,7 @@
 
 -record(c_tuple, {anno=[], es}).	% es :: [Tree]
 
--record(c_var, {anno=[], name}).	% name :: integer() | atom()
-
--record(c_fname, {anno=[], id,		% id :: atom(),
-		  arity}).		% arity :: integer()
+-record(c_var, {anno=[], name :: var_name()}).
 
 -record(c_values, {anno=[], es}).	% es :: [Tree]
 

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(rpc).
 
@@ -57,11 +58,6 @@
 %% gen_server exports
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,
 	 terminate/2, code_change/3]).
-
-%%------------------------------------------------------------------------
-
--type(node()    :: atom()).
--type(timeout() :: 'infinity' | non_neg_integer()).
 
 %%------------------------------------------------------------------------
 
@@ -497,7 +493,7 @@ do_yield(Key, Timeout) ->
 parallel_eval(ArgL) ->
     Nodes = [node() | nodes()],
     Keys = map_nodes(ArgL,Nodes,Nodes),
-    lists:map(fun yield/1,Keys).
+    [yield(K) || K <- Keys].
 
 map_nodes([],_,_) -> [];
 map_nodes(ArgL,[],Original) ->

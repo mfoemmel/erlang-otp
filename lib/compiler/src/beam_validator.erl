@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 
 -module(beam_validator).
 
@@ -378,6 +379,7 @@ valfun_1({init,{y,_}=Reg}, Vst) ->
 valfun_1({test_heap,Heap,Live}, Vst) ->
     test_heap(Heap, Live, Vst);
 valfun_1({bif,_Op,nofail,Src,Dst}, Vst) ->
+    %% The 'nofail' atom only occurs in disassembled code.
     validate_src(Src, Vst),
     set_type_reg(term, Dst, Vst);
 valfun_1({bif,Op,{f,_},Src,Dst}=I, Vst) ->
@@ -572,6 +574,12 @@ valfun_4({make_fun,_,_,Live}, Vst) ->
 valfun_4({make_fun2,_,_,_,Live}, Vst) ->
     call(make_fun, Live, Vst);
 %% Other BIFs
+valfun_4({bif,tuple_size,{f,Fail},[Tuple],Dst}, Vst0) ->
+    TupleType0 = get_term_type(Tuple, Vst0),
+    Vst1 = branch_state(Fail, Vst0),
+    TupleType = upgrade_tuple_type({tuple,[0]}, TupleType0),
+    Vst = set_type(TupleType, Tuple, Vst1),
+    set_type_reg({integer,[]}, Dst, Vst);
 valfun_4({bif,element,{f,Fail},[Pos,Tuple],Dst}, Vst0) ->
     TupleType0 = get_term_type(Tuple, Vst0),
     PosType = get_term_type(Pos, Vst0),
@@ -1577,7 +1585,6 @@ bif_type('xor', [_,_], _) -> bool;
 bif_type(is_atom, [_], _) -> bool;
 bif_type(is_boolean, [_], _) -> bool;
 bif_type(is_binary, [_], _) -> bool;
-bif_type(is_constant, [_], _) -> bool;
 bif_type(is_float, [_], _) -> bool;
 bif_type(is_function, [_], _) -> bool;
 bif_type(is_integer, [_], _) -> bool;
@@ -1607,7 +1614,6 @@ is_bif_safe('>=', 2) -> true;
 is_bif_safe(is_atom, 1) -> true;
 is_bif_safe(is_boolean, 1) -> true;
 is_bif_safe(is_binary, 1) -> true;
-is_bif_safe(is_constant, 1) -> true;
 is_bif_safe(is_float, 1) -> true;
 is_bif_safe(is_function, 1) -> true;
 is_bif_safe(is_integer, 1) -> true;
@@ -1618,6 +1624,8 @@ is_bif_safe(is_port, 1) -> true;
 is_bif_safe(is_reference, 1) -> true;
 is_bif_safe(is_tuple, 1) -> true;
 is_bif_safe(get, 1) -> true;
+is_bif_safe(self, 0) -> true;
+is_bif_safe(node, 0) -> true;
 is_bif_safe(_, _) -> false.
 
 arith_type([A,B], Vst) ->

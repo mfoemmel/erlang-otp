@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Expand some source Erlang constructions. This is part of the
 %%           pre-processing phase.
@@ -399,9 +400,6 @@ expr({'receive',Line,Cs0,To0,ToEs0}, St0) ->
     {{'receive',Line,Cs,To,ToEs},St3};
 expr({'fun',Line,Body}, St) ->
     fun_tq(Line, Body, St);
-expr({'cond',Line,Cs}, St0) ->
-    {V,St1} = new_var(Line,St0),
-    expr(cond_clauses(Cs, V), St1);
 expr({call,Line,{atom,La,N},As0}, St0) ->
     {As,St1} = expr_list(As0, St0),
     Ar = length(As),
@@ -442,20 +440,6 @@ expr({match,Line,P0,E0}, St0) ->
     {E,St1} = expr(E0, St0),
     {P,St2} = pattern(P0, St1),
     {{match,Line,P,E},St2};
-expr({op,_,'++',{string,L1,S1},{string,_,S2}}, St) ->
-    {{string,L1,S1 ++ S2},St};
-expr({op,Ll,'++',{string,L1,S1}=Str,R0}, St0) ->
-    {R1,St1} = expr(R0, St0),
-    E = case R1 of
-            {string,_,S2} -> {string,L1,S1 ++ S2};
-            _Other when length(S1) < 8 -> string_to_conses(L1, S1, R1);
-            _Other -> {op,Ll,'++',Str,R1}
-        end,
-    {E,St1};
-expr({op,Ll,'++',{cons,Lc,H,T},L2}, St) ->
-    expr({cons,Ll,H,{op,Lc,'++',T,L2}}, St);
-expr({op,_,'++',{nil,_},L2}, St) ->
-    expr(L2, St);
 expr({op,Line,Op,A0}, St0) ->
     {A,St1} = expr(A0, St0),
     {{op,Line,Op,A},St1};
@@ -675,35 +659,11 @@ expand_package(M, _St) ->
             {atom,element(2,M),list_to_atom(package_to_string(M1))}
     end.
 
-%% Create a case-switch on true/false, generating badarg for all other
-%% values.
-
-make_bool_switch(L, E, V, T, F) ->
-    NegL = -abs(L),
-    {'case',NegL,E,
-     [{clause,NegL,[{atom,NegL,true}],[],T},
-      {clause,NegL,[{atom,NegL,false}],[],F},
-      {clause,NegL,[V],[],
-       [call_error(NegL,{tuple,NegL,[{atom,NegL,badarg},V]})]}]}.
-
-%% Expand a list of cond-clauses to a sequence of case-switches.
-
-cond_clauses([{clause,L,[],[[E]],B}],V) ->
-    make_bool_switch(L,E,V,B,[call_error(L,{atom,L,cond_clause})]);
-cond_clauses([{clause,L,[],[[E]],B} | Cs],V) ->
-    make_bool_switch(L,E,V,B,[cond_clauses(Cs,V)]).
-
-%% call_error(Line, Reason) -> Expr.
-%%  Build a call to erlang:error/1 with reason Reason.
-
-call_error(L, R) ->
-    {call,L,{remote,L,{atom,L,erlang},{atom,L,error}},[R]}.
-
 %% import(Line, Imports, State) ->
 %%      State'
 %% imported(Name, Arity, State) ->
 %%      {yes,Module} | no
-%%  Handle import declarations and est for imported functions. No need to
+%%  Handle import declarations and test for imported functions. No need to
 %%  check when building imports as code is correct.
 
 import({Mod0,Fs}, St) ->

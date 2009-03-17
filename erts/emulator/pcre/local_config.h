@@ -1,3 +1,5 @@
+/* %ExternalCopyright% */
+
 #define HAVE_ZLIB_H 1
 /* The value of LINK_SIZE determines the number of bytes used to store links
    as offsets within the compiled regex. The default is 2, which allows for

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(crashdump_viewer).
 
@@ -61,7 +62,6 @@
 -export([start_page/2,
 	 read_file_frame/2,
 	 read_file/2,
-	 translate/2,
 	 redirect/2,
 	 filename_frame/2,
 	 menu_frame/2,
@@ -167,7 +167,9 @@ stop_debug() ->
 %%% User API
 start() ->
     webtool:start(),
+    receive after 1000 -> ok end,
     webtool:start_tools([],"app=crashdump_viewer"),
+    receive after 1000 -> ok end,
     ok.
 
 stop() ->
@@ -236,12 +238,6 @@ read_file_frame(_Env,_Input) ->
 %%% file name.
 read_file(_Env,Input) ->
     call({read_file,Input}).
-
-%%%-----------------------------------------------------------------
-%%% Called when the 'ok' button is clicked after entering a new
-%%% name for the translated file (R7/R8/R9B)
-translate(_Env,Input) ->
-    call({translate,Input}).
 
 %%%-----------------------------------------------------------------
 %%% The topmost frame of the main page. Called when a crashdump is
@@ -391,12 +387,6 @@ handle_call({read_file,Input}, _From, _State) ->
     Status = background_status(reading,File),
     Reply = crashdump_viewer_html:redirect(Status),
     {reply, Reply, #state{bg_status=Status}};
-handle_call({translate,Input}, _From, State=#state{file=File}) ->
-    {ok,TranslatedFile} = get_value("path",httpd:parse_query(Input)),
-    spawn_link(fun() -> do_translate(File,TranslatedFile) end),
-    Status = background_status(translating,File),
-    Reply = crashdump_viewer_html:redirect(Status),
-    {reply, Reply, State#state{bg_status=Status}};
 handle_call(redirect,_From, State=#state{bg_status={done,Page}}) ->
     {reply, Page, State#state{bg_status=undefined}};   
 handle_call(redirect,_From, State=#state{bg_status=Status}) ->
@@ -708,8 +698,6 @@ background_status(Action,File) ->
     SizeInfo = filesizeinfo(File), 
     background_status(Action,File,SizeInfo).
 
-background_status(translating,File,SizeInfo) ->
-   "Converting "  ++ File ++ SizeInfo ++ " to new crashdump format";
 background_status(processing,File,SizeInfo) ->
     "Processing " ++ File ++ SizeInfo;
 background_status(reading,File,SizeInfo) ->
@@ -753,7 +741,7 @@ read(Fd) ->
 
 put_chunk(Fd,Bin) ->
     {ok,Pos0} = file:position(Fd,cur),
-    Pos = Pos0 - size(Bin),
+    Pos = Pos0 - byte_size(Bin),
     put(chunk,Bin),
     put(pos,Pos).
 
@@ -1099,27 +1087,13 @@ read_file(File) ->
 			    background_done({R,undefined,undefined})
 		    end;
 		{ok,<<"<Erlang crash dump>",_Rest/binary>>} -> 
-		    %% old version - translate
+		    %% old version - no longer supported
+		    R = crashdump_viewer_html:error(
+			  "The crashdump ~s is in the pre-R10B format, "
+			  "which is no longer supported.~n",
+			  [File]),
 		    close(Fd),
-		    case file:read_file_info(filename:dirname(File)) of
-			{ok,#file_info{access=DirA}} when DirA=:=write;
-							  DirA=:=read_write ->
-			    TranslatedFile = File++".translated",
-			    case file:read_file_info(TranslatedFile) of
-				{error,enoent} ->
-				    do_translate(File,TranslatedFile);
-				{ok,#file_info{access=DirA}} 
-				when DirA=:=write;
-				     DirA=:=read_write ->
-				    do_translate(File,TranslatedFile);
-				_ ->
-				    R = get_translated_filename(TranslatedFile),
-				    background_done({R,File,undefined})
-			    end;
-			{ok,_FileInfo} ->
-			    R = get_translated_filename(File),
-			    background_done({R,File,undefined})
-		    end;
+		    background_done({R,undefined,undefined});
 		_Other ->
 		    R = crashdump_viewer_html:error(
 			  "~s is not an Erlang crash dump~n",
@@ -1132,24 +1106,6 @@ read_file(File) ->
 					    [File]),
 	    background_done({R,undefined,undefined})
     end.
-
-%%% Translate an old type crashdump.
-%%% This function is run in a background process - see more info in
-%%% comments for read_file/1 above.
-do_translate(File,TranslatedFile) ->
-    Status = background_status(translating,File),
-    background_status(Status),
-    case crashdump_translate:old2new(File,TranslatedFile) of
-	ok ->
-	    read_file(TranslatedFile);
-	Error ->
-	    R=crashdump_viewer_html:error("Can not translate ~s:~n~p~n",
-					  [File,Error]),
-	    background_done({R,undefined,undefined})
-    end.
-
-get_translated_filename(File) ->
-   crashdump_viewer_html:get_translated_filename_frame(File). 
 
 indexify(Fd,<<"\n=",TagAndRest/binary>>,N) ->
     {Tag,Id,Rest,N1} = tag(Fd,TagAndRest,N+2),

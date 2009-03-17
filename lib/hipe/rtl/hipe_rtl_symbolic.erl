@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%-------------------------------------------------------------------
 %% File        : hipe_rtl_symbolic.erl
 %% Author      : Per Gustafsson <pergu@it.uu.se>
@@ -18,7 +36,7 @@
 expand(Cfg) ->
   Linear = hipe_rtl_cfg:linearize(Cfg),
   Code = hipe_rtl:rtl_code(Linear),
-  NonFlatCode = [expand_instr(Instr)||Instr<-Code],
+  NonFlatCode = [expand_instr(Instr) || Instr <- Code],
   NewCode = lists:flatten(NonFlatCode),
   Linear1 = hipe_rtl:rtl_code_update(Linear, NewCode),
   hipe_rtl_cfg:init(Linear1).
@@ -64,8 +82,7 @@ expand_gctest(Instr) ->
 	GA = hipe_rtl:mk_new_reg_gcsafe(),
 	HA = hipe_rtl:mk_new_reg_gcsafe(),
 	{[hipe_rtl:mk_alu(HA, HeapNeed, sll, 
-			  hipe_rtl:mk_imm(hipe_rtl_arch:
-					  log2_word_size()))|
+			  hipe_rtl:mk_imm(hipe_rtl_arch:log2_word_size()))|
 	  hipe_tagscheme:realtag_fixnum(GA, HeapNeed)], GA, HA};
       false ->
 	WordsNeeded = hipe_rtl:imm_value(HeapNeed),
@@ -73,10 +90,10 @@ expand_gctest(Instr) ->
 	HA = hipe_rtl:mk_imm(WordsNeeded*hipe_rtl_arch:word_size()),
 	{[], GA, HA}
     end,
-  EndCode = 
+  EndCode =
     [hipe_rtl:mk_branch(Tmp, 'lt', HPAmount, GCLabelName, ContLabelName, 0.01),
      GCLabel,
-     hipe_rtl:mk_call([], gc_1, [GCAmount], ContLabelName, [], not_remote),
+     hipe_rtl:mk_call([], 'gc_1', [GCAmount], ContLabelName, [], not_remote),
      ContLabel],
   StartCode ++ SeparateCode ++ EndCode.
 

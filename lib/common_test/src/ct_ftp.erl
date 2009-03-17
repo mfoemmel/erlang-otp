@@ -1,24 +1,23 @@
-%%<copyright>
-%% <year>2003-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 
-%%% @doc Common Test specific layer on top of OTP ftp clinet ftp.erl
+%%% @doc FTP client module (based on the FTP support of the INETS application).
 %%%
 %%% @type connection() = handle() | ct:target_name()
 %%% @type handle() = ct_gen_conn:handle(). Handle for a specific
@@ -43,9 +42,11 @@
 %%% API
 
 %%%-----------------------------------------------------------------
-%%% @spec put(Name,LocalFile,RemoteFile) -> ok | {error,Reason}
-%%%      Name = target_name()
-%%%      LocaFile = string()
+%%% @spec put(KeyOrName,LocalFile,RemoteFile) -> ok | {error,Reason}
+%%%      KeyOrName = Key | Name
+%%%      Key = atom()
+%%%      Name = ct:target_name()
+%%%      LocalFile = string()
 %%%      RemoteFile = string()
 %%%
 %%% @doc Open a ftp connection and send a file to the remote host.
@@ -65,15 +66,17 @@
 %%% {unix,[{ftp,IpAddr},
 %%%        {username,Username},
 %%%        {password,Password}]}.</pre>
-put(Name,LocalFile,RemoteFile) ->
+put(KeyOrName,LocalFile,RemoteFile) ->
     Fun = fun(Ftp) -> send(Ftp,LocalFile,RemoteFile) end,
-    open_and_do(Name,Fun).
+    open_and_do(KeyOrName,Fun).
 
 %%%-----------------------------------------------------------------
-%%% @spec get(Name,RemoteFile,LocalFile) -> ok | {error,Reason}
-%%%      Name = target_name()
+%%% @spec get(KeyOrName,RemoteFile,LocalFile) -> ok | {error,Reason}
+%%%      KeyOrName = Key | Name
+%%%      Key = atom()
+%%%      Name = ct:target_name()
 %%%      RemoteFile = string()
-%%%      LocaFile = string()
+%%%      LocalFile = string()
 %%%
 %%% @doc Open a ftp connection and fetch a file from the remote host.
 %%%
@@ -82,50 +85,64 @@ put(Name,LocalFile,RemoteFile) ->
 %%%
 %%% <p>The config file must be as for put/3.</p>
 %%% @see put/3
-get(Name,RemoteFile,LocalFile) ->
+get(KeyOrName,RemoteFile,LocalFile) ->
     Fun = fun(Ftp) -> recv(Ftp,RemoteFile,LocalFile) end,
-    open_and_do(Name,Fun).
+    open_and_do(KeyOrName,Fun).
 
 
 %%%-----------------------------------------------------------------
-%%% @spec open(Name) -> {ok,Handle} | {error,Reason}
+%%% @spec open(KeyOrName) -> {ok,Handle} | {error,Reason}
+%%%      KeyOrName = Key | Name
+%%%      Key = atom()
 %%%      Name = ct:target_name()
 %%%      Handle = handle()
 %%% 
 %%% @doc Open an FTP connection to the specified node.
-open(Name) ->
-    case ct_util:get_key_from_name(Name) of
+%%% <p>You can open one connection for a particular <code>Name</code> and
+%%% use the same name as reference for all subsequent operations. If you
+%%% want the connection to be associated with <code>Handle</code> instead 
+%%% (in case you need to open multiple connections to a host for example), 
+%%% simply use <code>Key</code>, the configuration variable name, to 
+%%% specify the target. Note that a connection that has no associated target 
+%%% name can only be closed with the handle value.</p>
+open(KeyOrName) ->
+    case ct_util:get_key_from_name(KeyOrName) of
 	{ok,node} ->
-	    open(Name,"erlang","x");
-	{ok,_Key} -> % any other, e.g. unix
-	    case ct:get_config({Name,username}) of
+	    open(KeyOrName,"erlang","x");
+	_ ->
+	    case ct:get_config(KeyOrName) of
 		undefined ->
-		    log(heading(open,Name),"Failed: ~p\n",
-			[{not_available,{Name,username}}]),
-		    {error,{not_available,{Name,username}}};
-		Username ->
-		    case ct:get_config({Name,password}) of
+		    log(heading(open,KeyOrName),"Failed: ~p\n",
+			[{not_available,KeyOrName}]),
+		    {error,{not_available,KeyOrName}};
+		_ ->
+		    case ct:get_config({KeyOrName,username}) of
 			undefined ->
-			    log(heading(open,Name),"Failed: ~p\n",
-				[{not_available,{Name,password}}]),
-			    {error,{not_available,{Name,password}}};
-			Password ->
-			    open(Name,Username,Password)
+			    log(heading(open,KeyOrName),"Failed: ~p\n",
+				[{not_available,{KeyOrName,username}}]),
+			    {error,{not_available,{KeyOrName,username}}};
+			Username ->
+			    case ct:get_config({KeyOrName,password}) of
+				undefined ->
+				    log(heading(open,KeyOrName),"Failed: ~p\n",
+					[{not_available,{KeyOrName,password}}]),
+				    {error,{not_available,{KeyOrName,password}}};
+				Password ->
+				    open(KeyOrName,Username,Password)
+			    end
 		    end
-	    end;
-	Error ->
-	    Error
+	    end
     end.
 
-open(Name,Username,Password) ->
-    log(heading(open,Name),"",[]),
-    case ct:get_config({Name,ftp}) of
+open(KeyOrName,Username,Password) ->
+    log(heading(open,KeyOrName),"",[]),
+    case ct:get_config({KeyOrName,ftp}) of
 	undefined ->
-	    log(heading(open,Name),"Failed: ~p\n",
-		[{not_available,{Name,ftp}}]),
-	    {error,{not_available,{Name,ftp}}};
+	    log(heading(open,KeyOrName),"Failed: ~p\n",
+		[{not_available,{KeyOrName,ftp}}]),
+	    {error,{not_available,{KeyOrName,ftp}}};
 	Addr ->
-	    ct_gen_conn:start(Name,full_addr(Addr),{Username,Password},?MODULE)
+	    ct_gen_conn:start(KeyOrName,full_addr(Addr),{Username,Password},?MODULE)
     end.
 
 
@@ -141,7 +158,7 @@ send(Connection,LocalFile) ->
 %%%-----------------------------------------------------------------
 %%% @spec send(Connection,LocalFile,RemoteFile) -> ok | {error,Reason}
 %%%      Connection = connection()
-%%%      LocaFile = string()
+%%%      LocalFile = string()
 %%%      RemoteFile = string()
 %%%
 %%% @doc Send a file over FTP.
@@ -168,7 +185,7 @@ recv(Connection,RemoteFile) ->
 %%% @spec recv(Connection,RemoteFile,LocalFile) -> ok | {error,Reason}
 %%%      Connection = connection()
 %%%      RemoteFile = string()
-%%%      LocaFile = string()
+%%%      LocalFile = string()
 %%%
 %%% @doc Fetch a file over FTP.
 %%%
@@ -256,20 +273,20 @@ close(Connection) ->
 %%% Callback functions
 
 %% @hidden
-init(Name,{IP,Port},{Username,Password}) ->
+init(KeyOrName,{IP,Port},{Username,Password}) ->
     case ftp_connect(IP,Port,Username,Password) of
 	{ok,FtpPid} ->
-	    log(heading(init,Name), 
+	    log(heading(init,KeyOrName), 
 		"Opened ftp connection:\nIP: ~p\nUsername: ~p\nPassword: ~p\n",
 		[IP,Username,lists:duplicate(length(Password),$*)]),
-	    {ok,FtpPid,#state{ftp_pid=FtpPid,target_name=Name}};
+	    {ok,FtpPid,#state{ftp_pid=FtpPid,target_name=KeyOrName}};
 	Error ->
 	    Error
     end.
 	    
-
 ftp_connect(IP,Port,Username,Password) ->
-    case ftp:open(IP,Port) of
+    inets:start(),
+    case inets:start(ftpc,[{host,IP},{port,Port}]) of
 	{ok,FtpPid} ->
 	    case ftp:user(FtpPid,Username,Password) of
 		ok ->
@@ -317,7 +334,7 @@ reconnect(_Addr,_State) ->
 terminate(FtpPid,State) ->
     log(heading(terminate,State#state.target_name),
 	"Closing FTP connection.\nHandle: ~p\n",[FtpPid]),
-    ftp:close(FtpPid).
+    inets:stop(ftpc,FtpPid).
 
 
 %%%=================================================================
@@ -326,7 +343,7 @@ get_handle(Pid) when pid(Pid) ->
     {ok,Pid};
 get_handle(Name) ->
     case ct_util:get_connections(Name,?MODULE) of
-	{ok,[{Pid,_}]} ->
+	{ok,[{Pid,_}|_]} ->
 	    {ok,Pid};
 	{ok,[]} ->
 	    open(Name);

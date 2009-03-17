@@ -1,31 +1,32 @@
-%%<copyright>
-%% <year>2002-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
 
 -module(snmp_test_lib).
 
 -include_lib("kernel/include/file.hrl").
 
 
--export([hostname/0, hostname/1, localhost/0, os_type/0, sz/1]).
+-export([hostname/0, hostname/1, localhost/0, os_type/0, sz/1,
+	 display_suite_info/1]).
+-export([non_pc_tc_maybe_skip/4, os_based_skip/1]).
 -export([replace_config/3, set_config/3, get_config/2, get_config/3]).
--export([fail/3, skip/1]).
+-export([fail/3, skip/3]).
 -export([millis/0, millis_diff/2, hours/1, minutes/1, seconds/1, sleep/1]).
 -export([flush_mqueue/0, trap_exit/0, trap_exit/1]).
 -export([ping/1, local_nodes/0, nodes_on/1]).
@@ -74,6 +75,114 @@ os_type() ->
 	    OsType
     end.
 
+display_suite_info(SUITE) when is_atom(SUITE) ->
+    (catch do_display_suite_info(SUITE)).
+
+do_display_suite_info(SUITE) ->
+    MI = SUITE:module_info(),
+    case (catch display_version(MI)) of
+	ok ->
+	    ok;
+	_ ->
+	    case (catch display_app_version(MI)) of
+		ok ->
+		    ok;
+		_ ->
+		    io:format("No version info available for test suite ~p~n",
+			      [?MODULE])
+	    end
+    end.
+
+display_version(MI) -> 
+    {value, {compile, CI}} = lists:keysearch(compile, 1, MI),
+    {value, {options, CO}} = lists:keysearch(options, 1, CI),
+    Version = version_of_compiler_options(CO),
+    io:format("~p version info: "
+	      "~n   Version: ~p"
+	      "~n", [?MODULE, Version]),
+    ok.
+
+version_of_compiler_options([{d, version, Version} | _]) ->
+    Version;
+version_of_compiler_options([_ | T]) ->
+    version_of_compiler_options(T).
+
+display_app_version(MI) ->
+    {value, {attributes, Attrs}} = lists:keysearch(attributes, 1, MI),
+    {value, {vsn, Vsn}}          = lists:keysearch(vsn, 1, Attrs),
+    {value, {app_vsn, AppVsn}}   = lists:keysearch(app_vsn, 1, Attrs),
+    io:format("~p version info: "
+	      "~n   VSN:     ~p"
+	      "~n   App vsn: ~s"
+	      "~n", [?MODULE, Vsn, AppVsn]),
+    ok.
+
+
+%% ----------------------------------------------------------------
+%% Conditional skip of testcases
+%%
+
+non_pc_tc_maybe_skip(Config, Condition, File, Line)
+  when is_list(Config) andalso is_function(Condition) ->
+    %% Check if we shall skip the skip
+    case os:getenv("TS_OS_BASED_SKIP") of
+        "false" ->
+            ok;
+        _ ->
+	    case lists:keysearch(ts, 1, Config) of
+		{value, {ts, snmp}} ->
+		    %% Always run the testcase if we are using our own
+		    %% test-server...
+		    ok;
+		_ ->
+		    case Condition() of
+			true ->
+			    skip(non_pc_testcase, File, Line);
+			false ->
+			    ok
+		    end
+	    end
+    end.
+
+
+os_based_skip(any) ->
+    io:format("os_based_skip(any) -> entry"
+	      "~n", []), 
+    true;
+os_based_skip(Skippable) when is_list(Skippable) ->
+    io:format("os_based_skip -> entry with"
+	      "~n   Skippable: ~p"
+	      "~n", [Skippable]), 
+    {OsFam, OsName} =
+        case os:type() of
+            {_Fam, _Name} = FamAndName ->
+                FamAndName;
+            Fam ->
+                {Fam, undefined}
+        end,
+    io:format("os_based_skip -> os-type: "
+	      "~n   OsFam: ~p"
+	      "~n   OsName: ~p"
+	      "~n", [OsFam, OsName]), 
+    case lists:member(OsFam, Skippable) of
+        true ->
+            true;
+        false ->
+            case lists:keysearch(OsFam, 1, Skippable) of
+                {value, {OsFam, OsName}} ->
+                    true;
+                {value, {OsFam, OsNames}} when is_list(OsNames) ->
+                    lists:member(OsName, OsNames);
+                _ ->
+                    false
+            end
+    end;
+os_based_skip(_Crap) ->
+    io:format("os_based_skip -> entry with"
+	      "~n   _Crap: ~p"
+	      "~n", [_Crap]), 
+    false.
+
 
 %% ----------------------------------------------------------------
 %% Test suite utility functions
@@ -105,8 +214,9 @@ get_config(Key,C,Default) ->
 fail(Reason, Mod, Line) ->
     exit({suite_failed, Reason, Mod, Line}).
     
-skip(Reason) ->
-    String = lists:flatten(io_lib:format("Skipping: ~p~n",[Reason])),
+skip(Reason, Module, Line) ->
+    String = lists:flatten(io_lib:format("Skipping ~p(~p): ~p~n", 
+					 [Module, Line, Reason])),
     exit({skipped, String}).
     
 

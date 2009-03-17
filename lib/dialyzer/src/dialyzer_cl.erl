@@ -1,19 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
 %%-------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006-2008, Tobias Lindahl and Kostis Sagonas
-%% 
-%% $Id$
+%% %CopyrightEnd%
 %%
 
 %%%-------------------------------------------------------------------
@@ -36,10 +38,10 @@
 
 -record(cl_state,
 	{backend_pid                            :: pid(),
-	 erlang_mode = false                    :: bool(),
-	 external_calls = []                    :: [mfa()],
+	 erlang_mode     = false                :: bool(),
+	 external_calls  = []                   :: [mfa()],
 	 legal_warnings  = ordsets:new()        :: [dial_warn_tag()],
-	 mod_deps                               :: dict(),
+	 mod_deps        = dict:new()           :: dict(),
 	 output          = standard_io		:: 'standard_io' | io_device(),
 	 output_format   = formatted            :: 'raw' | 'formatted',
 	 output_plt      = none                 :: 'none' | string(),
@@ -53,9 +55,9 @@
 
 -spec start(#options{}) -> dial_ret() | {dial_ret(),[dial_warning()]}.
 
-start(#options{} = Options) ->
+start(#options{analysis_type = AnalysisType} = Options) ->
   process_flag(trap_exit, true),
-  case Options#options.analysis_type of
+  case AnalysisType of
     plt_check  -> check_plt(Options);
     plt_build  -> build_plt(Options);
     plt_add    -> add_to_plt(Options);
@@ -149,7 +151,6 @@ init_opts_for_remove(Opts) ->
 	false -> Opts
       end
   end.
-  
 
 %%--------------------------------------------------------------------
 
@@ -172,7 +173,7 @@ plt_common(Opts, RemoveFiles, AddFiles) ->
       Plt = clean_plt(Opts#options.init_plt, RemovedMods),
       case AnalFiles =:= [] of
 	true ->
-	  %% Only removed stuff. Just write the plt.
+	  %% Only removed stuff. Just write the PLT.
 	  dialyzer_plt:to_file(Opts#options.output_plt, Plt, ModDeps, 
 			       {Md5, ModDeps}),
 	  ?RET_NOTHING_SUSPICIOUS;
@@ -180,11 +181,11 @@ plt_common(Opts, RemoveFiles, AddFiles) ->
 	  do_analysis(AnalFiles, Opts, Plt, {Md5, ModDeps1})
       end;
     {error, no_such_file} ->
-      Msg = io_lib:format("Could not find the plt: ~s\n~s",
+      Msg = io_lib:format("Could not find the PLT: ~s\n~s",
 			  [Opts#options.init_plt, default_plt_error_msg()]),
       error(Msg);
     {error, not_valid} ->
-      Msg = io_lib:format("The file: ~s is not a valid plt file.\n~s",
+      Msg = io_lib:format("The file: ~s is not a valid PLT file\n~s",
 			  [Opts#options.init_plt, default_plt_error_msg()]),
       error(Msg);
     {error, read_error} ->
@@ -200,27 +201,29 @@ plt_common(Opts, RemoveFiles, AddFiles) ->
 default_plt_error_msg() ->
   "Use the options\n"
     "   --build_plt   to build a new one; or\n"
-    "   --add_to_plt  to add to an existing plt.\n"
+    "   --add_to_plt  to add to an existing PLT\n"
     "For example:\n"
-    "    dialyzer --build_plt -r $ERL_TOP/lib/kernel/ebin\\\n"
-    "                            $ERL_TOP/lib/stdlib/ebin\\\n"
-    "                            $ERL_TOP/lib/mnesia/ebin".
-
+    "   dialyzer --build_plt -r $ERL_TOP/lib/kernel/ebin\\\n"
+    "                           $ERL_TOP/lib/stdlib/ebin\\\n"
+    "                           $ERL_TOP/lib/mnesia/ebin\\\n"
+    "                           $ERL_TOP/lib/compiler/ebin\\\n"
+    "                           $ERL_TOP/lib/crypto/ebin\\\n"
+    "Note that building a PLT as the above may take 20 mins or so".
 
 %%--------------------------------------------------------------------
 
 check_plt(Opts, RemoveFiles, AddFiles) ->
   Plt = Opts#options.init_plt,
   case dialyzer_plt:check_plt(Plt, RemoveFiles, AddFiles) of
-    {old_version, MD5} ->
+    {old_version, _MD5} = OldVersion ->
       report_old_version(Opts),
-      {old_version, MD5};
-    {differ, MD5, DiffMd5, ModDeps} -> 
-      {differ, MD5, DiffMd5, ModDeps};
+      OldVersion;
+    {differ, _MD5, _DiffMd5, _ModDeps} = Differ ->
+      Differ;
     ok ->
       ok;
-    {error, Why} -> 
-      {error, Why}
+    {error, _Reason} = Error ->
+      Error
   end.
 
 %%--------------------------------------------------------------------
@@ -328,7 +331,8 @@ do_analysis(Files, Options, Plt, PltInfo) ->
 			   files=Files,
 			   start_from=Options#options.from, 
 			   plt=Plt,
-			   use_contracts=Options#options.use_contracts},
+			   use_contracts=Options#options.use_contracts,
+			   callgraph_file=Options#options.callgraph_file},
   NewState3 = start_analysis(NewState2, InitAnalysis),
   {T1, _} = statistics(wall_clock),
   Return = cl_loop(NewState3),
@@ -457,7 +461,7 @@ hipe_compile_list([]) ->
   ok.
 
 new_state() ->
-  #cl_state{mod_deps=dict:new()}.
+  #cl_state{}.
 
 init_output(State0, DialyzerOptions) ->
   State = State0#cl_state{output_format=DialyzerOptions#options.output_format},
@@ -476,6 +480,7 @@ init_output(State0, DialyzerOptions) ->
   end.
 
 -spec maybe_close_output_file(#cl_state{}) -> 'ok'.
+
 maybe_close_output_file(State) ->
   case State#cl_state.output of
     standard_io -> ok;
@@ -505,9 +510,9 @@ cl_loop(State, LogCache) ->
     {BackendPid, done, NewPlt, _NewDocPlt} ->
       return_value(State, NewPlt);
     {BackendPid, ext_calls, ExtCalls} ->
-      cl_loop(State#cl_state{external_calls=ExtCalls}, LogCache);
+      cl_loop(State#cl_state{external_calls = ExtCalls}, LogCache);
     {BackendPid, mod_deps, ModDeps} ->
-      NewState = State#cl_state{mod_deps=ModDeps},
+      NewState = State#cl_state{mod_deps = ModDeps},
       cl_loop(NewState, LogCache);
     {'EXIT', BackendPid, {error, Reason}} ->
       Msg = failed_anal_msg(Reason, LogCache),
@@ -522,14 +527,20 @@ cl_loop(State, LogCache) ->
 
 -spec failed_anal_msg(string(), [_]) -> string().
 
-failed_anal_msg(Reason, LogCache) when length(Reason) > 0 ->
-  Msg1 = io_lib:format("Analysis failed with error: ~s\n", [Reason]),
+failed_anal_msg(Reason, LogCache) ->
+  Msg = "Analysis failed with error: " ++ Reason ++ "\n",
   case LogCache =:= [] of
-    true -> Msg1;
+    true -> Msg;
     false ->
-      Msg1 ++ io_lib:format("Last messages in log cache: ~p\n", 
-			    [lists:reverse(LogCache)])
+      Msg ++ "Last messages in the log cache:\n  " ++ format_log_cache(LogCache)
   end.
+
+%%
+%% formats the log cache (treating it as a string) for pretty-printing
+%%
+format_log_cache(LogCache) ->
+  Str = lists:append(lists:reverse(LogCache)),
+  string:join(string:tokens(Str, "\n"), "\n  ").
 
 -spec store_warnings(#cl_state{}, [dial_warning()]) -> #cl_state{}.
 
@@ -551,11 +562,11 @@ error(State, Msg) ->
   maybe_close_output_file(State),
   throw({dialyzer_error, Msg}).
 
-return_value(State = #cl_state{erlang_mode=ErlangMode,
-			       mod_deps=ModDeps,
-			       output_plt=OutputPlt,
-			       plt_info=PltInfo,
-			       stored_warnings=StoredWarnings},
+return_value(State = #cl_state{erlang_mode = ErlangMode,
+			       mod_deps = ModDeps,
+			       output_plt = OutputPlt,
+			       plt_info = PltInfo,
+			       stored_warnings = StoredWarnings},
 	     Plt) ->
   case OutputPlt =:= none of
     true -> ok;
@@ -576,11 +587,12 @@ return_value(State = #cl_state{erlang_mode=ErlangMode,
       {RetValue, process_warnings(StoredWarnings)}
   end.
 
-print_ext_calls(#cl_state{report_mode=quiet}) ->
+print_ext_calls(#cl_state{report_mode = quiet}) ->
   ok;
-print_ext_calls(#cl_state{output=Output, external_calls=Calls,
-			  stored_warnings=Warnings,
-			  output_format=Format}) ->
+print_ext_calls(#cl_state{output = Output,
+			  external_calls = Calls,
+			  stored_warnings = Warnings,
+			  output_format = Format}) ->
   case Calls =:= [] of
     true -> ok;
     false ->
@@ -604,12 +616,11 @@ do_print_ext_calls(Output, [{M,F,A}|T], Before) ->
 do_print_ext_calls(_, [], _) ->
   ok.
 
-
-print_warnings(#cl_state{stored_warnings=[]}) ->
+print_warnings(#cl_state{stored_warnings = []}) ->
   ok;
-print_warnings(#cl_state{output=Output,
-			 output_format=Format,
-			 stored_warnings=Warnings}) ->
+print_warnings(#cl_state{output = Output,
+			 output_format = Format,
+			 stored_warnings = Warnings}) ->
   PrWarnings = process_warnings(Warnings),
   case PrWarnings of
     [] -> ok;
@@ -671,6 +682,7 @@ add_file_fun(Extension) ->
   end.
 
 -spec start_analysis(#cl_state{}, #analysis{}) -> #cl_state{}.
+
 start_analysis(State, Analysis) ->
   Self = self(),
   LegalWarnings = State#cl_state.legal_warnings,
@@ -678,5 +690,5 @@ start_analysis(State, Analysis) ->
 	    dialyzer_analysis_callgraph:start(Self, LegalWarnings, Analysis)
 	end,
   BackendPid = spawn_link(Fun),
-  State#cl_state{backend_pid=BackendPid}.
+  State#cl_state{backend_pid = BackendPid}.
 

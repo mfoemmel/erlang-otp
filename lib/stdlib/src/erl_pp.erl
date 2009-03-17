@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(erl_pp).
 
@@ -622,7 +623,7 @@ f({seq,Before,After,Sep,LItems}, I0, ST, WT) ->
     {BCharsL,BSizeL} = unz1([BCharsSize]),
     Sizes = BSizeL ++ SizeL,
     NSepChars = if 
-                    is_list(Sep) -> lists:max([0,length(CharsL)-1]);
+                    is_list(Sep) -> erlang:max(0, length(CharsL)-1);
                     true -> 0
                 end,
     case same_line(I0, Sizes, NSepChars) of
@@ -792,7 +793,7 @@ has_nl([]) ->
 write_a_string(S, I) when I < 0; S =:= [] ->
     leaf(write_string(S));
 write_a_string(S, I) ->
-    Len = lists:max([?MAXLINE-I,?MIN_SUBSTRING]),
+    Len = erlang:max(?MAXLINE-I, ?MIN_SUBSTRING),
     {list,write_a_string(S, Len, Len)}.
 
 write_a_string([], _N, _Len) ->

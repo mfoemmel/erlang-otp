@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %% ====================================================================
 %%  Filename : 	hipe_rtl_inline_bs_ops.erl
 %%  Module   :	hipe_rtl_inline_bs_ops
@@ -7,9 +25,9 @@
 %%  History  :	*2001-06-14 Erik Johansson (happi@it.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: pergu $
-%%              $Date: 2008/05/20 14:16:11 $
-%%              $Revision: 1.12 $
+%%              $Author: mikpe $
+%%              $Date: 2009/03/03 11:45:23 $
+%%              $Revision: 1.15 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -210,6 +228,43 @@ gen_rtl(BsOP, Dst, Args, TrueLblName, FalseLblName, SystemLimitLblName, ConstTab
 		 end
 	     end; 
 	  
+	  bs_utf8_size ->
+	    case Dst of
+	      [_DstVar] ->
+		[_Arg] = Args,
+		[hipe_rtl:mk_call(Dst, bs_utf8_size, Args, TrueLblName, [], not_remote)];
+	      [] ->
+		[hipe_rtl:mk_goto(TrueLblName)]
+	    end;
+
+	  bs_put_utf8 ->
+	    [_Src, _Base, _Offset] = Args,
+	    NewDsts = get_real(Dst),
+	    [hipe_rtl:mk_call(NewDsts, bs_put_utf8, Args, TrueLblName, FalseLblName, not_remote)];
+
+	  bs_utf16_size ->
+	    case Dst of
+	      [_DstVar] ->
+		[_Arg] = Args,
+		[hipe_rtl:mk_call(Dst, bs_utf16_size, Args, TrueLblName, [], not_remote)];
+	      [] ->
+		[hipe_rtl:mk_goto(TrueLblName)]
+	    end;
+
+	  {bs_put_utf16, Flags} ->
+	    [_Src, _Base, _Offset] = Args,
+	    NewDsts = get_real(Dst),
+	    PrimOp =	% workaround for bif/primop arity restrictions
+	      case littleendian(Flags) of
+		false -> bs_put_utf16be;
+		true -> bs_put_utf16le
+	      end,
+	    [hipe_rtl:mk_call(NewDsts, PrimOp, Args, TrueLblName, FalseLblName, not_remote)];
+
+	  bs_validate_unicode ->
+	    [_Arg] = Args,
+	    [hipe_rtl:mk_call([], bs_validate_unicode, Args, TrueLblName, FalseLblName, not_remote)];
+
 	  bs_final -> 
 	    [Src, Offset] = Args, 
 	    [BitSize,ByteSize] = create_regs(2),
@@ -501,10 +556,11 @@ is_illegal_const(Const) ->
   Const >=  (1 bsl (hipe_rtl_arch:word_size() * ?BYTE_SIZE)) orelse
     Const < 0.
 
-get_real([]) ->
-  create_regs(1);
-get_real([NewOffset]) ->
-  [NewOffset].
+get_real(Dst) ->
+  case Dst of
+    [_NewOffset] -> Dst;
+    [] -> create_regs(1)
+  end.
 
 %%-----------------------------------------------------------------------------
 %% Help functions implementing the bs operations in rtl code.

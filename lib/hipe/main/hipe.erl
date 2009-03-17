@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %% ====================================================================
 %% Copyright (c) 1998 by Erik Johansson.  All Rights Reserved 
 %% ====================================================================
@@ -769,31 +787,24 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
 finalize_fun(MfaIcodeList, Exports, Opts) ->
   case proplists:get_value(concurrent_comp, Opts) of
     FalseVal when (FalseVal =:= undefined) or (FalseVal =:= false) ->
-      [finalize_fun_sequential({MFA, Icode}, Opts, #comp_servers{}) || 
-	{MFA, Icode} <- MfaIcodeList];
+      [finalize_fun_sequential(MFAIcode, Opts, #comp_servers{})
+       || {_MFA, _Icode} = MFAIcode <- MfaIcodeList];
     TrueVal when (TrueVal =:= true) or (TrueVal =:= debug) ->
       finalize_fun_concurrent(MfaIcodeList, Exports, Opts)
   end.
 
 finalize_fun_concurrent(MfaIcodeList, Exports, Opts) ->
   Self = self(),
-  NotModInfo =
-    case proplists:get_value(core, Opts) of
-      FalseVal when (FalseVal =:= undefined) or (FalseVal =:= false) ->
-	fun(F,A) -> (F =/= module_info) or (A > 1) end;
-      TrueVal when (TrueVal =:= true) ->
-	fun(_,_) -> true end
-    end,
   case MfaIcodeList of
     [{{M,_,_},_}|_] ->
       CallGraph = hipe_icode_callgraph:construct_callgraph(MfaIcodeList),
       Closures = [{MFA,true} || {MFA, Icode} <- MfaIcodeList,
 				hipe_icode:icode_is_closure(Icode)],
-      Exported = [{{M,F,A},false} || {F,A} <- Exports, NotModInfo(F,A)],
+      Exported = [{{M,F,A},false} || {F,A} <- Exports],
       NonEscaping = [{M,F,A} || {{M,F,A}, Icode} <- MfaIcodeList, 
 				not lists:member({F,A}, Exports),
 				not hipe_icode:icode_is_closure(Icode)],
-      Escaping = Closures++Exported,
+      Escaping = Closures ++ Exported,
       TypeServerFun =
 	fun() ->
 	    hipe_icode_coordinator:coordinate(CallGraph, Escaping,
@@ -825,7 +836,7 @@ finalize_fun_concurrent(MfaIcodeList, Exports, Opts) ->
       Final = [receive Res when element(1,Res) =:= MFA -> Res end ||
 		{MFA,_} <- MfaIcodeList],
       lists:foreach(fun (Pid) -> stop_and_wait(Pid) end,
-		    [PPServer,TypeServer,RangeServer]),
+		    [PPServer, TypeServer,RangeServer]),
       Final;
     [] ->
       []
@@ -834,8 +845,7 @@ finalize_fun_concurrent(MfaIcodeList, Exports, Opts) ->
 stop_and_wait(Pid) ->
   Pid ! {stop,self()},
   receive
-    _ -> 
-      ok
+    _ -> ok
   end.
 
 finalize_fun_sequential({MFA, Icode}, Opts, Servers) ->
@@ -851,9 +861,10 @@ finalize_fun_sequential({MFA, Icode}, Opts, Servers) ->
       {MFA, LinearRtl}
   catch
     error:Error ->
-      ?when_option(verbose, Opts,?debug_untagged_msg("\n", [])),
-      ?error_msg("ERROR: ~p~n", [{Error,erlang:get_stacktrace()}]),
-      ?EXIT({Error,erlang:get_stacktrace()})
+      ?when_option(verbose, Opts, ?debug_untagged_msg("\n", [])),
+      ErrorInfo = {Error, erlang:get_stacktrace()},
+      ?error_msg("ERROR: ~p~n", [ErrorInfo]),
+      ?EXIT(ErrorInfo)
   end.
 
 pp_server_start(Opts) ->
@@ -1443,7 +1454,6 @@ opt_negations() ->
    {no_icode_ssa_const_prop, icode_ssa_const_prop},
    {no_icode_ssa_struct_reuse, icode_ssa_struct_reuse},
    {no_icode_type, icode_type},
-   {no_icode_range, icode_range},
    {no_inline_fp, inline_fp},
    {no_load, load},
    {no_peephole, peephole},

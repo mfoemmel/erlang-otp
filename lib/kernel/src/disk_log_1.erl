@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(disk_log_1).
 
@@ -41,7 +42,6 @@
 -import(lists, [concat/1, reverse/1, sum/1]).
 
 -include("disk_log.hrl").
--include_lib("kernel/include/file.hrl").
 
 %%% At the head of a LOG file we have [?LOGMAGIC, ?OPENED | ?CLOSED].
 %%% Otherwise it's not a LOG file. Following that, the head, come the
@@ -74,7 +74,7 @@ log(FdC, FileName, X) ->
 	    Error
     end.
 
-%% -> {iolist(), Size}
+-spec logl([binary()]) -> {iolist(), non_neg_integer()}.
 logl(X) ->
     logl(X, [], 0).
 
@@ -98,7 +98,7 @@ write_cache(#cache{fd = Fd, c = C}, FName) ->
     write_cache(Fd, FName, C).
   
 %% -> {Reply, NewFdC}; Reply = ok | Error
-sync(FdC, FName) -> 
+sync(FdC, FName) ->
     fsync(FdC, FName).
   
 %% -> {Reply, NewFdC}; Reply = ok | Error
@@ -126,7 +126,7 @@ chunk(FdC, FileName, Pos, B, N) when is_binary(B) ->
 chunk(FdC, FileName, Pos, NoBytes, N) ->
     MaxNoBytes = case NoBytes of
                      [] -> ?MAX_CHUNK_SIZE;
-                     _ -> lists:max([NoBytes, ?MAX_CHUNK_SIZE])
+                     _ -> erlang:max(NoBytes, ?MAX_CHUNK_SIZE)
                  end,
     case read_chunk(FdC, FileName, Pos, MaxNoBytes) of
 	{NewFdC, {ok, Bin}} when byte_size(Bin) < ?HEADERSZ ->
@@ -207,7 +207,7 @@ read_chunk(FdC, FileName, Pos, MaxBytes) ->
 %% Used by wrap_log_reader.
 %% -> {NewFdC, Reply}, 
 %%    Reply = {Cont, Binaries, Bad} (Bad >= 0) | {error, Reason} | eof
-chunk_read_only(FdC, FileName, Pos, B, N) when is_record(FdC, cache) ->
+chunk_read_only(FdC = #cache{}, FileName, Pos, B, N) ->
     do_chunk_read_only(FdC, FileName, Pos, B, N);
 chunk_read_only(Fd, FileName, Pos, B, N) ->
     %% wrap_log_reader calling...
@@ -221,7 +221,7 @@ do_chunk_read_only(FdC, FileName, Pos, B, N) when is_binary(B) ->
 do_chunk_read_only(FdC, FileName, Pos, NoBytes, N) ->
     MaxNoBytes = case NoBytes of
                      [] -> ?MAX_CHUNK_SIZE;
-                     _ -> lists:max([NoBytes, ?MAX_CHUNK_SIZE])
+                     _ -> erlang:max(NoBytes, ?MAX_CHUNK_SIZE)
                  end,
     case read_chunk_ro(FdC, FileName, Pos, MaxNoBytes) of
 	{NewFdC, {ok, Bin}} when byte_size(Bin) < ?HEADERSZ ->
@@ -590,7 +590,7 @@ repair_err(In, Out, OutName, ErrFileName, Error) ->
     file_error(ErrFileName, Error).
 
 %% Used by wrap_log_reader.
-%% -> yes | yes_not_closed | no
+-spec is_head(binary()) -> 'yes' | 'yes_not_closed' | 'no'.
 is_head(<<M:4/binary, S:4/binary>>) when ?LOGMAGIC =:= M, ?CLOSED =:= S ->
     yes;
 is_head(<<M:4/binary, S:4/binary>>) when ?LOGMAGIC =:= M, ?OPENED =:= S ->
@@ -619,17 +619,16 @@ is_head(Bin) when is_binary(Bin) ->
 %%          Reports can be browsed with Report Browser Tool (rb), or
 %%          read with disk_log.
 %%-----------------------------------------------------------------
--spec(mf_int_open/7 ::
-      (FName   :: string(),
-       MaxB    :: integer(),
-       MaxF    :: integer(),
-       Repair  :: dlog_repair(),
-       Mode    :: dlog_mode(),
-       Head    :: dlog_head(),
-       Version :: integer())
+-spec mf_int_open(FName   :: string(),
+		  MaxB    :: integer(),
+		  MaxF    :: integer(),
+		  Repair  :: dlog_repair(),
+		  Mode    :: dlog_mode(),
+		  Head    :: dlog_head(),
+		  Version :: integer())
       -> {'ok', #handle{}, integer()}
        | {'repaired', #handle{},
-	  non_neg_integer(), non_neg_integer(), non_neg_integer()}).
+	  non_neg_integer(), non_neg_integer(), non_neg_integer()}.
 %%     | throw(FileError)
 mf_int_open(FName, MaxB, MaxF, Repair, Mode, Head, Version) -> 
     {First, Sz, TotSz, NFiles} = read_index_file(Repair, FName, MaxF),
@@ -1530,7 +1529,8 @@ write_cache(Fd, FileName, C) ->
         Error -> {catch file_error(FileName, Error), #cache{fd = Fd}}
     end.
 
-%% -> #cache{} | throw(Error)
+-spec write_cache_close(fd(), string(), iodata()) -> #cache{}. % | throw(Error)
+
 write_cache_close(Fd, _FileName, []) ->
     #cache{fd = Fd};
 write_cache_close(Fd, FileName, C) ->
@@ -1539,12 +1539,12 @@ write_cache_close(Fd, FileName, C) ->
         Error -> file_error_close(Fd, FileName, Error)
     end.
 
--spec(file_error/2 :: (string(), {'error',atom()}) -> no_return()).
+-spec file_error(string(), {'error',atom()}) -> no_return().
 
 file_error(FileName, {error, Error}) ->
     throw({error, {file_error, FileName, Error}}).
 
--spec(file_error_close/3 :: (pid(), string(), {'error',atom()}) -> no_return()).
+-spec file_error_close(fd(), string(), {'error',atom()}) -> no_return().
 
 file_error_close(Fd, FileName, {error, Error}) ->
     file:close(Fd),

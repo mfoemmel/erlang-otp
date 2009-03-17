@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>1997-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(httpd_conf).
 
@@ -210,7 +210,7 @@ load("ServerName " ++ ServerName, []) ->
 load("SocketType " ++ SocketType, []) ->
     case check_enum(clean(SocketType),["ssl","ip_comm"]) of
 	{ok, ValidSocketType} ->
-	    {ok, [], {com_type,ValidSocketType}};
+	    {ok, [], {socket_type,ValidSocketType}};
 	{error,_} ->
 	    {error, ?NICE(clean(SocketType) ++ " is an invalid SocketType")}
     end;
@@ -362,6 +362,9 @@ load("SSLPasswordCallbackModule " ++ SSLPasswordCallbackModule, []) ->
 load("SSLPasswordCallbackFunction " ++ SSLPasswordCallbackFunction, []) ->
     {ok, [], {ssl_password_callback_function,
 	      list_to_atom(clean(SSLPasswordCallbackFunction))}};
+load("SSLPasswordCallbackArguments " ++ SSLPasswordCallbackArguments, []) ->
+    {ok, [], {ssl_password_callback_arguments, 
+	                         SSLPasswordCallbackArguments}};
 load("DisableChunkedTransferEncodingSend " ++ TrueOrFalse, []) ->
     case list_to_atom(clean(TrueOrFalse)) of
 	true ->
@@ -516,6 +519,12 @@ validate_config_params([{ssl_password_callback_function, Value} | Rest])
 validate_config_params([{ssl_password_callback_function, Value} | _]) ->
     throw({ssl_password_callback_function, Value});
 
+validate_config_params([{ssl_password_callback_arguments, Value} | Rest]) 
+  when is_list(Value) ->
+    validate_config_params(Rest);
+validate_config_params([{ssl_password_callback_arguments, Value} | _]) ->
+    throw({ssl_password_callback_arguments, Value});
+
 validate_config_params([{disable_chunked_transfer_encoding_send, Value} |
 			Rest])  when Value == true; Value == false ->
     validate_config_params(Rest);
@@ -596,7 +605,7 @@ remove(ConfigDB) ->
     ok.
 
 config(ConfigDB) ->
-    case httpd_util:lookup(ConfigDB,com_type,ip_comm) of
+    case httpd_util:lookup(ConfigDB, socket_type,ip_comm) of
 	ssl ->
 	    case ssl_certificate_file(ConfigDB) of
 		undefined ->
@@ -874,7 +883,15 @@ ssl_password(ConfigDB) ->
 		undefined ->
 		    [];
 		Function ->
-		    case catch apply(Module, Function, []) of
+		    Args = case httpd_util:lookup(ConfigDB, 
+					   ssl_password_callback_arguments) of
+			       undefined ->
+				   [];
+			       Arguments  ->
+				   [Arguments]
+			   end,
+	       
+		    case catch apply(Module, Function, Args) of
 			Password when list(Password) ->
 			    [{password, Password}];
 			Error ->

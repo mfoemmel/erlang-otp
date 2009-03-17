@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>2002</year>
-      <year>2008</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2002</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>Test Structure and Test Specifications</title>
@@ -85,6 +83,11 @@
       <c>{Mod,Func}</c>. Inside a module they can also be just
       <c>Func</c>. See the section named Configuration Cases below for
        more information about this.
+      </item>
+      <tag><c>{conf, Properties, Init, TestSpec, Fin}</c></tag>
+      <item>This is a configuration case as explained above, but
+       which also takes a list of execution properties for its group
+       of test cases and nested sub-groups.
       </item>
       <tag><c>{make, Init, TestSpec, Fin}</c></tag>
       <item>This is a special version of a conf case which is only
@@ -197,6 +200,141 @@
       it must be restored by the cleanup function. Whatever is returned
       by the cleanup function will be given to the next test case called.
       </p>
+    <p>The optional <c>Properties</c> list can be used to specify
+      execution properties for the test cases and possibly nested
+      sub-groups of the configuration case. The available properties are:</p>
+    <pre>
+      Properties = [parallel | sequence | Shuffle | {RepeatType,N}]
+      Shuffle = shuffle | {shuffle,Seed}
+      Seed = {integer(),integer(),integer()}
+      RepeatType = repeat | repeat_until_all_ok | repeat_until_all_fail |
+                   repeat_until_any_ok | repeat_until_any_fail
+      N = integer() | forever</pre>
+
+    <p>If the <c>parallel</c> property is specified, Test Server will execute
+    all test cases in the group in parallel. If <c>sequence</c> is specified,
+    the cases will be executed in a sequence, meaning if one case fails, all
+    following cases will be skipped. If <c>shuffle</c> is specified, the cases
+    in the group will be executed in random order. The <c>repeat</c> property
+    orders Common Test to repeat execution of the cases in the group a given
+    number of times, or until any, or all, cases fail or succeed.</p>
+
+    <p>Properties may be combined so that e.g. if <c>shuffle</c>, 
+    <c>repeat_until_any_fail</c> and <c>sequence</c> are all specified, the test 
+    cases in the group will be executed repeatedly and in random order until
+    a test case fails, when execution is immediately stopped and the rest of 
+    the cases skipped.</p>
+
+    <p>The properties for a group is always printed on the top of the HTML log 
+    for the group's init function. Also, the total execution time for a group
+    can be found at the bottom of the log for the group's end function.</p>
+
+    <p>Configuration cases may be nested so that sets of grouped cases can be 
+    configured with the same init- and end functions.</p>
+  </section>
+
+  <section>
+    <title>The parallel property and nested configuration cases</title>
+    <p>If a conf case has a parallel property, its test cases will be spawned
+    simultaneously and get executed in parallel. A test case is not allowed
+    to execute in parallel with the end function however, which means
+    that the time it takes to execute a set of parallel cases is equal to the
+    execution time of the slowest test case in the group. A negative side
+    effect of running test cases in parallel is that the HTML summary pages
+    are not updated with links to the individual test case logs until the 
+    end function for the conf case has finished.</p>
+
+    <p>A conf case nested under a parallel conf case will start executing in 
+    parallel with previous (parallel) test cases (no matter what properties the 
+    nested conf case has). Since, however, test cases are never executed in 
+    parallel with the init- or the end function of the same conf case, it's 
+    only after a nested group of cases has finished that any remaining parallel 
+    cases in the previous conf case get spawned.</p>
+  </section>
+
+  <section>
+    <title>Repeated execution of test cases</title>
+    <marker id="repeated_cases"></marker>
+    <p>A conf case may be repeated a certain number of times
+    (specified by an integer) or indefinitely (specified by <c>forever</c>).
+    The repetition may also be stopped prematurely if any or all cases
+    fail or succeed, i.e. if the property <c>repeat_until_any_fail</c>,
+    <c>repeat_until_any_ok</c>, <c>repeat_until_all_fail</c>, or 
+    <c>repeat_until_all_ok</c> is used. If the basic <c>repeat</c>
+    property is used, status of test cases is irrelevant for the repeat 
+    operation.</p>
+    
+    <p>It is possible to return the status of a conf case (ok or
+    failed), to affect the execution of the conf case on the level above. 
+    This is accomplished by, in the end function, looking up the value
+    of <c>tc_group_properties</c> in the <c>Config</c> list and checking the
+    result of the finished test cases. If status <c>failed</c> should be
+    returned from the conf case as a result, the end function should return
+    the value <c>{return_group_result,failed}</c>. The status of a nested conf
+    case is taken into account by Test Server when deciding if execution
+    should be repeated or not (unless the basic <c>repeat</c> property is used).</p>
+
+    <p>The <c>tc_group_properties</c> value is a list of status tuples, 
+    each with the key <c>ok</c>, <c>skipped</c> and <c>failed</c>. The
+    value of a status tuple is a list containing names of test cases 
+    that have been executed with the corresponding status as result.</p>
+
+    <p>Here's an example of how to return the status from a conf case:</p>
+    <pre>
+      conf_end_function(Config) ->
+          Status = ?config(tc_group_result, Config),
+          case proplists:get_value(failed, Status) of
+              [] ->                                   % no failed cases 
+	          {return_group_result,ok};
+	      _Failed ->                              % one or more failed
+	          {return_group_result,failed}
+          end.</pre>
+
+    <p>It is also possible in the end function to check the status of
+    a nested conf case (maybe to determine what status the current conf case should
+    return). This is as simple as illustrated in the example above, only the
+    name of the end function of the nested conf case is stored in a tuple 
+    <c>{group_result,EndFunc}</c>, which can be searched for in the status lists. 
+    Example:</p>
+    <pre>
+      conf_end_function_X(Config) ->
+          Status = ?config(tc_group_result, Config),
+          Failed = proplists:get_value(failed, Status),
+          case lists:member({group_result,conf_end_function_Y}, Failed) of
+	        true ->
+		    {return_group_result,failed};
+                false ->                                                    
+	            {return_group_result,ok}
+          end; 
+      ...</pre>
+
+    <note><p>When a conf case is repeated, the init- and end functions
+      are also always called with each repetition.</p></note>
+  </section>
+
+  <section>
+    <title>Shuffled test case order</title>
+    <p>The order that test cases in a conf case are executed, is under normal
+    circumstances the same as the order defined in the test specification.
+    With the <c>shuffle</c> property set, however, Test Server will instead 
+    execute the test cases in random order.</p>
+
+    <p>The user may provide a seed value (a tuple of three integers) with
+    the shuffle property: <c>{shuffle,Seed}</c>. This way, the same shuffling
+    order can be created every time the conf case is executed. If no seed value
+    is given, Test Server creates a "random" seed for the shuffling operation 
+    (using the return value of <c>erlang:now()</c>). The seed value is always
+    printed to the log file of the init function so that it can be used to
+    recreate the same execution order in subsequent test runs.</p>
+
+    <note><p>If execution of a conf case with shuffled test cases is repeated,
+      the seed will not be reset in between turns.</p></note>
+
+    <p>If a nested conf case is specified in a conf case with a <c>shuffle</c> 
+    property, the execution order of the nested cases in relation to the test cases 
+    (and other conf cases) is also random. The order of the test cases in the nested
+    conf case is however not random (unless, of course, this one also has a
+    <c>shuffle</c> property).</p>
   </section>
 
   <section>

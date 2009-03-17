@@ -687,10 +687,10 @@ static int loop(void)
 		    }
 		    cp = new_connection(ESOCK_PASSIVE_LISTENING, listensock);
 		    /* Flags may be an empty string */
-		    if ((length = strlen(flags)) > 0) {
-			cp->flags = esock_malloc(length + 1);
-			strcpy(cp->flags, flags);
-		    }
+		    length = strlen(flags);
+		    cp->flags = esock_malloc(length + 1);
+		    strcpy(cp->flags, flags);
+
 		    cp->origin = ORIG_LISTEN;
 		    if (esock_ssl_listen_init(cp) < 0) {
 			DEBUGF(("esock_ssl_listen_init() failed.\n"));
@@ -1033,7 +1033,7 @@ static int loop(void)
 			} 
 		    } else {
 			/* EOF proxy or error */
-			DEBUGF(("proxy eof or error\n"));
+		       DEBUGF(("proxy eof or error %d\n", errno));
 			cp->proxy->eof = 1;
 			if (cp->wq.len == 0) {
 			    esock_ssl_shutdown(cp);

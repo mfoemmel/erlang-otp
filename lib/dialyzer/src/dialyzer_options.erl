@@ -1,19 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
 %%-----------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
-%% 
-%% $Id$
+%% %CopyrightEnd%
 %%
 
 %%%----------------------------------------------------------------------
@@ -32,7 +34,7 @@
 
 %%-----------------------------------------------------------------------
 
--spec build(dial_options()) -> #options{} | {'error',string()}.
+-spec build(dial_options()) -> #options{} | {'error', string()}.
 
 build(Opts) ->
   DefaultWarns = [?WARN_RETURN_NO_RETURN,
@@ -40,16 +42,18 @@ build(Opts) ->
 		  ?WARN_NON_PROPER_LIST,
 		  ?WARN_FUN_APP,
 		  ?WARN_MATCHING,
+		  ?WARN_OPAQUE,
 		  ?WARN_CALLGRAPH,
 		  ?WARN_FAILING_CALL,
+		  ?WARN_BIN_CONSTRUCTION,
 		  ?WARN_CALLGRAPH,
 		  ?WARN_CONTRACT_TYPES,
 		  ?WARN_CONTRACT_SYNTAX],
   DefaultWarns1 = ordsets:from_list(DefaultWarns),
   InitPlt = dialyzer_plt:get_default_plt(),
   DefaultOpts = #options{},
-  DefaultOpts1 = DefaultOpts#options{legal_warnings=DefaultWarns1,
-				      init_plt=InitPlt},
+  DefaultOpts1 = DefaultOpts#options{legal_warnings = DefaultWarns1,
+				      init_plt = InitPlt},
   try 
     NewOpts = build_options(Opts, DefaultOpts1),
     postprocess_opts(NewOpts)
@@ -61,48 +65,49 @@ postprocess_opts(Opts = #options{}) ->
   Opts1 = check_output_plt(Opts),
   adapt_get_warnings(Opts1).
 
-check_output_plt(Opts = #options{analysis_type=Mode}) ->
+check_output_plt(Opts = #options{analysis_type = Mode, from = From,
+				 output_plt = OutPLT}) ->
   case is_plt_mode(Mode) of
     true ->
-      case Opts#options.from =:= byte_code of
+      case From =:= byte_code of
 	true -> Opts;
-	false -> 
+	false ->
 	  Msg = "Byte code compiled with debug_info is needed to build the PLT",
 	  throw({dialyzer_error, Msg})
       end;
     false ->
-      case Opts#options.output_plt =:= none of
+      case OutPLT =:= none of
 	true -> Opts;
-	false -> 
-	  Msg = io_lib:format("Output plt cannot be specified "
+	false ->
+	  Msg = io_lib:format("Output PLT cannot be specified "
 			      "in analysis mode ~w", [Mode]),
 	  throw({dialyzer_error, lists:flatten(Msg)})
       end
   end.
 
-adapt_get_warnings(Opts = #options{analysis_type=Mode}) ->
+adapt_get_warnings(Opts = #options{analysis_type = Mode,
+				   get_warnings = Warns}) ->
   %% Warnings are off by default in plt mode, and on by default in
   %% success typings mode. User defined warning mode overrides the
   %% default.
   case is_plt_mode(Mode) of
     true ->
-      case Opts#options.get_warnings =:= maybe of
-	true -> Opts#options{get_warnings=false};
+      case Warns =:= maybe of
+	true -> Opts#options{get_warnings = false};
 	false -> Opts
       end;
     false ->
-      case Opts#options.get_warnings =:= maybe of
-	true -> Opts#options{get_warnings=true};
+      case Warns =:= maybe of
+	true -> Opts#options{get_warnings = true};
 	false -> Opts
       end
   end.
 
--spec bad_option(string(), _) -> no_return().
+-spec bad_option(string(), term()) -> no_return().
 
 bad_option(String, Term) ->
-  Msg = io_lib:format("~s: ~P\n", [String,Term,25]),
+  Msg = io_lib:format("~s: ~P", [String, Term, 25]),
   throw({dialyzer_options_error, lists:flatten(Msg)}).
-
 
 build_options([{OptName, undefined}|Rest], Options) when is_atom(OptName) ->
   build_options(Rest, Options);
@@ -152,13 +157,13 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
     old_style ->
       bad_option("Analysis type is no longer supported", old_style);
     output_file ->
-      assert_filenames([Term], [Value]),
+      assert_filename(Value),
       build_options(Rest, Options#options{output_file=Value});
     output_format ->
       assert_output_format(Value),
       build_options(Rest, Options#options{output_format=Value});
     output_plt ->
-      assert_filenames([Term], [Value]),
+      assert_filename(Value),
       build_options(Rest, Options#options{output_plt=Value});
     report_mode ->
       build_options(Rest, Options#options{report_mode=Value});
@@ -167,6 +172,9 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
     warnings ->
       NewWarnings = build_warnings(Value, Options#options.legal_warnings),
       build_options(Rest, Options#options{legal_warnings=NewWarnings});
+    callgraph_file ->
+      assert_filename(Value),
+      build_options(Rest, Options#options{callgraph_file=Value});
     _ ->
       bad_option("Unknown dialyzer command line option", Term)
   end;
@@ -174,11 +182,20 @@ build_options([], Options) ->
   Options.
 
 assert_filenames(Term, [FileName|Left]) when length(FileName) >= 0 ->
+  case filelib:is_file(FileName) or filelib:is_dir(FileName) of
+    true -> ok;
+    false -> bad_option("No such file or directory", FileName)
+  end,
   assert_filenames(Term, Left);
 assert_filenames(_Term, []) ->
   ok;
 assert_filenames(Term, [_|_]) ->
   bad_option("Malformed or non-existing filename", Term).
+
+assert_filename(FileName) when length(FileName) >= 0 ->
+  ok;
+assert_filename(FileName) ->
+  bad_option("Malformed or non-existing filename", FileName).
 
 assert_defines(Term, [{Macro, _Value}|Left]) when is_atom(Macro) ->
   assert_defines(Term, Left);
@@ -221,6 +238,8 @@ build_warnings([Opt|Left], Warnings) ->
 	ordsets:del_element(?WARN_FUN_APP, Warnings);
       no_match ->
 	ordsets:del_element(?WARN_MATCHING, Warnings);
+      no_opaque ->
+	ordsets:del_element(?WARN_OPAQUE, Warnings);
       no_fail_call ->
 	ordsets:del_element(?WARN_FAILING_CALL, Warnings);
       no_contracts ->
@@ -230,8 +249,8 @@ build_warnings([Opt|Left], Warnings) ->
 	ordsets:add_element(?WARN_UNMATCHED_RETURN, Warnings);
       error_handling ->
 	ordsets:add_element(?WARN_RETURN_ONLY_EXIT, Warnings);
-      kostis ->
-	ordsets:add_element(?WARN_TERM_COMP, Warnings);
+      possible_races ->
+	ordsets:add_element(?WARN_POSSIBLE_RACE, Warnings);
       specdiffs ->
 	S = ordsets:from_list([?WARN_CONTRACT_SUBTYPE, 
 			       ?WARN_CONTRACT_SUPERTYPE,

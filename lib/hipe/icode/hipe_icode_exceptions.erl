@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %% ====================================================================
 %%  Filename : 	hipe_icode_exceptions.erl
 %%  Module   :	hipe_icode_exceptions
@@ -364,30 +382,24 @@ get_renaming(C, Map) ->
 %%---------------------------------------------------------------------
 %% State abstraction
 
--record(state, {cfg                    :: #cfg{},
-		changed = false        :: bool(),
-		succ                   :: #cfg{},
-		pred                   :: #cfg{},
-		start_labels           :: [icode_lbl(),...],
-		visited                :: gb_set(),
-		out = gb_trees:empty() :: gb_tree(),
-		in  = gb_trees:empty() :: gb_tree()
+-record(state, {cfg					:: #cfg{},
+		changed = false				:: bool(),
+		succ					:: #cfg{},
+		pred					:: #cfg{},
+		start_labels				:: [icode_lbl(),...],
+		visited = hipe_icode_cfg:none_visited()	:: gb_set(),
+		out     = gb_trees:empty()		:: gb_tree(),
+		in      = gb_trees:empty()		:: gb_tree()
 	       }).
 
 init_state(CFG) ->
-  State = #state{cfg = CFG,
-		 visited = hipe_icode_cfg:none_visited(),
-		 out = gb_trees:empty(),
-		 in = gb_trees:empty()
-		},
+  State = #state{cfg = CFG},
   refresh_state_cache(State).
 
 refresh_state_cache(State) ->
   CFG = State#state.cfg,
-  State#state{succ = CFG,
-	      pred = CFG,
-	      start_labels = [hipe_icode_cfg:start_label(CFG)]
-	     }.
+  SLs = [hipe_icode_cfg:start_label(CFG)],
+  State#state{succ = CFG, pred = CFG, start_labels = SLs}.
 
 get_cfg(State) ->
   State#state.cfg.
@@ -458,6 +470,5 @@ get_new_catches_in([P | Ps], Cs, State) ->
   get_new_catches_in(Ps, Cs1, State);
 get_new_catches_in([], Cs, _) ->
   Cs.
-	  
 
 %%---------------------------------------------------------------------

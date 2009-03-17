@@ -1,20 +1,22 @@
-% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-
+%% %CopyrightEnd%
+%%
+%%
 -module(httpc_manager).
 
 -behaviour(gen_server).
@@ -26,7 +28,7 @@
 -export([start_link/1, start_link/2, request/2, cancel_request/2,
 	 request_canceled/2, retry_request/2, redirect_request/2,
 	 insert_session/2, delete_session/2, set_options/2, store_cookies/3,
-	 cookies/2]).
+	 cookies/2, session_type/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -192,6 +194,18 @@ store_cookies(Cookies, Address, ProfileName) ->
 cookies(Url, ProfileName) ->
     call(ProfileName, {cookies, Url}, infinity).
 
+%%--------------------------------------------------------------------
+%% Function: session_type(Options) -> ok
+%%
+%%	Options = #options{}
+%%
+%% Description: Determines if to use pipelined sessions or not.
+%%--------------------------------------------------------------------
+session_type(#options{pipeline_timeout = 0}) -> 
+    keep_alive;
+session_type(_) ->
+    pipeline.
+
 %%====================================================================
 %% gen_server callback functions
 %%====================================================================
@@ -301,6 +315,15 @@ handle_cast({set_options, Options}, State = #state{options = OldOptions}) ->
 		 max_pipeline_length =
 		 proplists:get_value(max_pipeline_length, Options, 
 				     OldOptions#options.max_pipeline_length),
+		 max_keep_alive_length = 
+		 proplists:get_value(max_keep_alive_length, 
+				     Options, 
+				     OldOptions#options.max_keep_alive_length),
+		 
+		 keep_alive_timeout = 
+		 proplists:get_value(keep_alive_timeout, 
+				     Options, 
+				     OldOptions#options.keep_alive_timeout),
 		 max_sessions = 
 		 proplists:get_value(max_sessions, Options, 
 				     OldOptions#options.max_sessions),
@@ -417,11 +440,12 @@ handle_request(#request{settings =
 
 handle_request(Request, State = #state{options = Options}) ->
     NewRequest = handle_cookies(generate_request_id(Request), State),
+    SessionType = session_type(Options),
     case select_session(Request#request.method, 
 			Request#request.address, 
-			Request#request.scheme, State) of
+			Request#request.scheme, SessionType, State) of
 	{ok, HandlerPid} ->
-	    pipeline(NewRequest, HandlerPid, State);
+	    pipeline_or_keep_alive(NewRequest, HandlerPid, State);
 	no_connection ->
 	    start_handler(NewRequest, State);
 	{no_session,  OpenSessions} when OpenSessions 
@@ -437,30 +461,35 @@ handle_request(Request, State = #state{options = Options}) ->
     end,
     {reply, {ok, NewRequest#request.id}, State}.
 
-select_session(Method, HostPort, Scheme, #state{options = 
-						#options{max_pipeline_length =
-							 Max},
-					       session_db = SessionDb}) ->
-    case httpc_request:is_idempotent(Method) of
+select_session(Method, HostPort, Scheme, SessionTyp, 
+	       #state{options = #options{max_pipeline_length =
+					 MaxPipe,
+					 max_keep_alive_length = MaxKeepAlive},
+		      session_db = SessionDb}) ->
+    case httpc_request:is_idempotent(Method) or (SessionTyp == keep_alive) of
 	true ->
 	    Candidates = ets:match(SessionDb,
 				   {'_', {HostPort, '$1'}, 
-				    false, Scheme, '_', '$2'}),
-	    select_session(Candidates, Max);
+				    false, Scheme, '_', '$2', SessionTyp}),
+	    select_session(Candidates, MaxKeepAlive, MaxPipe, SessionTyp);
 	false ->
 	    no_connection
     end.
     
-select_session(Candidates, MaxPipeline) ->
+select_session(Candidates, Max, _, keep_alive) ->
+    select_session(Candidates, Max);
+select_session(Candidates, _, Max, pipeline) ->
+    select_session(Candidates, Max).
+
+select_session(Candidates, Max) ->
     case Candidates of 
 	[] ->
 	  no_connection; 
 	_ ->
 	    NewCandidates = 
 		lists:foldl(
-		  fun([Pid, PipelineLength], Acc) when 
-			    PipelineLength =< MaxPipeline ->
-			  [{Pid, PipelineLength} | Acc];
+		  fun([Pid, Length], Acc) when Length =< Max ->
+			  [{Pid, Length} | Acc];
 		     (_, Acc) ->
 			  Acc
 		  end, [], Candidates),
@@ -473,7 +502,7 @@ select_session(Candidates, MaxPipeline) ->
 	    end
     end.
 	    
-pipeline(Request, HandlerPid, State) ->
+pipeline_or_keep_alive(Request, HandlerPid, State) ->
     case (catch httpc_handler:send(Request, HandlerPid)) of
 	ok ->
 	    ets:insert(State#state.handler_db, {Request#request.id, 

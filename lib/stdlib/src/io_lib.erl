@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 %% This module is a library of useful i/o functions. It is hoped that the
@@ -62,12 +63,13 @@
 -export([print/1,print/4,indentation/2]).
 
 -export([write/1,write/2,write/3,nl/0,format_prompt/1]).
--export([write_atom/1,write_string/1,write_string/2,write_char/1]).
+-export([write_atom/1,write_string/1,write_string/2,write_unicode_string/1,
+	 write_unicode_string/2,write_char/1, write_unicode_char/1]).
 
 -export([quote_atom/2,char_list/1,deep_char_list/1,printable_list/1]).
 
 %% Utilities for collecting characters.
--export([collect_chars/3,collect_line/2,collect_line/3,get_until/3]).
+-export([collect_chars/3,collect_chars/4,collect_line/2,collect_line/3,collect_line/4,get_until/3,get_until/4]).
 
 %% Interface calls to sub-modules.
 
@@ -243,28 +245,37 @@ write_string(S) ->
     write_string(S, $").   %"
 
 write_string(S, Q) ->
-    [Q|write_string1(S, Q)].
+    [Q|write_string1(latin1, S, Q)].
 
-write_string1([], Q) ->
+write_unicode_string(S) ->
+    write_unicode_string(S, $").   %"
+
+write_unicode_string(S, Q) ->
+    [Q|write_string1(unicode, S, Q)].
+
+write_string1(_,[], Q) ->
     [Q];
-write_string1([C|Cs], Q) ->
-    string_char(C, Q, write_string1(Cs, Q)).
+write_string1(Enc,[C|Cs], Q) ->
+    string_char(Enc,C, Q, write_string1(Enc,Cs, Q)).
 
-string_char(Q, Q, Tail) -> [$\\,Q|Tail];	%Must check these first!
-string_char($\\, _, Tail) -> [$\\,$\\|Tail];
-string_char(C, _, Tail) when C >= $\s, C =< $~ ->
+string_char(_,Q, Q, Tail) -> [$\\,Q|Tail];	%Must check these first!
+string_char(_,$\\, _, Tail) -> [$\\,$\\|Tail];
+string_char(_,C, _, Tail) when C >= $\s, C =< $~ ->
     [C|Tail];
-string_char(C, _, Tail) when C >= $\240, C =< $\377 ->
+string_char(_,C, _, Tail) when C >= $\240, C =< $\377 ->
     [C|Tail];
-string_char($\n, _, Tail) -> [$\\,$n|Tail];	%\n = LF
-string_char($\r, _, Tail) -> [$\\,$r|Tail];	%\r = CR
-string_char($\t, _, Tail) -> [$\\,$t|Tail];	%\t = TAB
-string_char($\v, _, Tail) -> [$\\,$v|Tail];	%\v = VT
-string_char($\b, _, Tail) -> [$\\,$b|Tail];	%\b = BS
-string_char($\f, _, Tail) -> [$\\,$f|Tail];	%\f = FF
-string_char($\e, _, Tail) -> [$\\,$e|Tail];	%\e = ESC
-string_char($\d, _, Tail) -> [$\\,$d|Tail];	%\d = DEL
-string_char(C, _, Tail) ->			%Other control characters.
+string_char(unicode,C, _, Tail) when C >= $\240 ->
+    Txt = lists:flatten(format("\\{~.8B}",[C])),
+    Txt ++ Tail;
+string_char(_,$\n, _, Tail) -> [$\\,$n|Tail];	%\n = LF
+string_char(_,$\r, _, Tail) -> [$\\,$r|Tail];	%\r = CR
+string_char(_,$\t, _, Tail) -> [$\\,$t|Tail];	%\t = TAB
+string_char(_,$\v, _, Tail) -> [$\\,$v|Tail];	%\v = VT
+string_char(_,$\b, _, Tail) -> [$\\,$b|Tail];	%\b = BS
+string_char(_,$\f, _, Tail) -> [$\\,$f|Tail];	%\f = FF
+string_char(_,$\e, _, Tail) -> [$\\,$e|Tail];	%\e = ESC
+string_char(_,$\d, _, Tail) -> [$\\,$d|Tail];	%\d = DEL
+string_char(_,C, _, Tail) ->			%Other control characters.
     C1 = (C bsr 6) + $0,
     C2 = ((C bsr 3) band 7) + $0,
     C3 = (C band 7) + $0,
@@ -276,7 +287,12 @@ string_char(C, _, Tail) ->			%Other control characters.
 
 write_char($\s) -> "$\\s";			%Must special case this.
 write_char(C) when is_integer(C), C >= $\000, C =< $\377 ->
-    [$$|string_char(C, -1, [])].
+    [$$|string_char(latin1,C, -1, [])].
+
+write_unicode_char(Ch) when Ch =< 255 ->
+    write_char(Ch);
+write_unicode_char(Uni) ->
+    [$$|string_char(unicode,Uni, -1, [])].
 
 %% char_list(CharList)
 %% deep_char_list(CharList)
@@ -329,12 +345,41 @@ nl() ->
 %% Utilities for collecting characters in input files
 %%
 
+count_and_find_utf8(Bin,N) ->
+    cafu(Bin,N,0,0,none).
+
+cafu(<<>>,_N,Count,_ByteCount,SavePos) ->
+    {Count,SavePos};
+cafu(<<_/utf8,Rest/binary>>, 0, Count, ByteCount, _SavePos) ->
+    cafu(Rest,-1,Count+1,0,ByteCount);
+cafu(<<_/utf8,Rest/binary>>, N, Count, _ByteCount, SavePos) when N < 0 ->
+    cafu(Rest,-1,Count+1,0,SavePos);
+cafu(<<_/utf8,Rest/binary>> = Whole, N, Count, ByteCount, SavePos) ->
+    Delta = byte_size(Whole) - byte_size(Rest),
+    cafu(Rest,N-1,Count+1,ByteCount+Delta,SavePos);
+cafu(_Other,_N,Count,_ByteCount,SavePos) -> % Non Utf8 character at end
+    {Count,SavePos}.
 
 %% collect_chars(State, Data, Count). New in R9C.
 %%  Returns:
 %%      {stop,Result,RestData}
 %%      NewState
-collect_chars(start, Data, N) when is_binary(Data) ->
+%%% BC (with pre-R13).
+collect_chars(Tag, Data, N) ->
+    collect_chars(Tag, Data, latin1, N).
+
+%% Now we are aware of encoding...    
+collect_chars(start, Data, unicode, N) when is_binary(Data) ->
+    {Size,Npos} = count_and_find_utf8(Data,N),
+    if Size > N ->
+	    {B1,B2} = split_binary(Data, Npos),
+	    {stop,B1,B2};
+       Size < N ->
+	    {binary,[Data],N-Size};
+       true ->
+	    {stop,Data,eof}
+    end;
+collect_chars(start, Data, latin1, N) when is_binary(Data) ->
     Size = byte_size(Data),
     if Size > N ->
 	    {B1,B2} = split_binary(Data, N),
@@ -344,13 +389,23 @@ collect_chars(start, Data, N) when is_binary(Data) ->
        true ->
 	    {stop,Data,eof}
     end;
-collect_chars(start,Data,N) when is_list(Data) ->
+collect_chars(start,Data,_,N) when is_list(Data) ->
     collect_chars_list([], N, Data);
-collect_chars(start, eof, _) ->
+collect_chars(start, eof, _,_) ->
     {stop,eof,eof};
-collect_chars({binary,Stack,_N}, eof, _) ->
+collect_chars({binary,Stack,_N}, eof, _,_) ->
     {stop,binrev(Stack),eof};
-collect_chars({binary,Stack,N}, Data, _) ->
+collect_chars({binary,Stack,N}, Data,unicode, _) ->
+    {Size,Npos} = count_and_find_utf8(Data,N),
+    if Size > N ->
+	    {B1,B2} = split_binary(Data, Npos),
+	    {stop,binrev(Stack, [B1]),B2};
+       Size < N ->
+	    {binary,[Data|Stack],N-Size};
+       true ->
+	    {stop,binrev(Stack, [Data]),eof}
+    end;
+collect_chars({binary,Stack,N}, Data,latin1, _) ->
     Size = byte_size(Data),
     if Size > N ->
 	    {B1,B2} = split_binary(Data, N),
@@ -360,16 +415,16 @@ collect_chars({binary,Stack,N}, Data, _) ->
        true ->
 	    {stop,binrev(Stack, [Data]),eof}
     end;
-collect_chars({list,Stack,N}, Data, _) ->
+collect_chars({list,Stack,N}, Data, _,_) ->
     collect_chars_list(Stack, N, Data);
 %% collect_chars(Continuation, MoreChars, Count)
 %%  Returns:
 %%	{done,Result,RestChars}
 %%	{more,Continuation}
 
-collect_chars([], Chars, N) ->
+collect_chars([], Chars, _, N) ->
     collect_chars1(N, Chars, []);
-collect_chars({Left,Sofar}, Chars, _N) ->
+collect_chars({Left,Sofar}, Chars, _, _N) ->
     collect_chars1(Left, Chars, Sofar).
 
 collect_chars1(N, Chars, Stack) when N =< 0 ->
@@ -422,30 +477,27 @@ collect_line1([], Stack) ->
 %%  Returns:
 %%	{stop,Result,RestData}
 %%	NewState
+%%% BC (with pre-R13).
+collect_line(Tag, Data, Any) -> 
+    collect_line(Tag, Data, latin1, Any).
 
-collect_line(start, Data, _) when is_binary(Data) ->
-%    erlang:display({?MODULE,?LINE,[start,Data]}),
-    collect_line_bin(Data, Data, []);
-collect_line(start, Data, _) when is_list(Data) ->
-%    erlang:display({?MODULE,?LINE,[start,Data]}),
+%% Now we are aware of encoding...    
+collect_line(start, Data, Encoding, _) when is_binary(Data) ->
+    collect_line_bin(Data, Data, [], Encoding);
+collect_line(start, Data, _, _) when is_list(Data) ->
     collect_line_list(Data, []);
-collect_line(start, eof, _) ->
-%    erlang:display({?MODULE,?LINE,[start,eof]}),
+collect_line(start, eof, _, _) ->
     {stop,eof,eof};
-collect_line(Stack, Data, _) when is_binary(Data) ->
-%    erlang:display({?MODULE,?LINE,[Stack,Data]}),
-    collect_line_bin(Data, Data, Stack);
-collect_line(Stack, Data, _) when is_list(Data) ->
-%    erlang:display({?MODULE,?LINE,[Stack,Data]}),
+collect_line(Stack, Data, Encoding, _) when is_binary(Data) ->
+    collect_line_bin(Data, Data, Stack, Encoding);
+collect_line(Stack, Data, _, _) when is_list(Data) ->
     collect_line_list(Data, Stack);
-collect_line([B|_]=Stack, eof, _) when is_binary(B) ->
-%    erlang:display({?MODULE,?LINE,[Stack,eof]}),
+collect_line([B|_]=Stack, eof, _, _) when is_binary(B) ->
     {stop,binrev(Stack),eof};
-collect_line(Stack, eof, _) ->
-%    erlang:display({?MODULE,?LINE,[Stack,eof]}),
+collect_line(Stack, eof, _, _) ->
     {stop,lists:reverse(Stack, []),eof}.
 
-collect_line_bin(<<$\n,T/binary>>, Data, Stack0) ->
+collect_line_bin(<<$\n,T/binary>>, Data, Stack0, _) ->
     N = byte_size(Data) - byte_size(T),
     <<Line:N/binary,_/binary>> = Data,
     case Stack0 of
@@ -456,17 +508,17 @@ collect_line_bin(<<$\n,T/binary>>, Data, Stack0) ->
 	_ ->
 	    {stop,binrev(Stack0, [Line]),T}
     end;
-collect_line_bin(<<$\r,$\n,T/binary>>, Data, Stack) ->
+collect_line_bin(<<$\r,$\n,T/binary>>, Data, Stack, _) ->
     N = byte_size(Data) - byte_size(T) - 2,
     <<Line:N/binary,_/binary>> = Data,
     {stop,binrev(Stack, [Line,$\n]),T};
-collect_line_bin(<<$\r>>, Data0, Stack) ->
+collect_line_bin(<<$\r>>, Data0, Stack, _) ->
     N = byte_size(Data0) - 1,
     <<Data:N/binary,_/binary>> = Data0,
     [<<$\r>>,Data|Stack];
-collect_line_bin(<<_,T/binary>>, Data, Stack) ->
-    collect_line_bin(T, Data, Stack);
-collect_line_bin(<<>>, Data, Stack) ->
+collect_line_bin(<<_,T/binary>>, Data, Stack, Enc) ->
+    collect_line_bin(T, Data, Stack, Enc);
+collect_line_bin(<<>>, Data, Stack, _) ->
     %% Need more data here.
     [Data|Stack].
 
@@ -484,17 +536,41 @@ collect_line_list([], Stack) ->
 %%
 %% Implements a middleman that is get_until server and get_chars client.
 
-get_until(start, Data, XtraArg) ->
-    get_until([], Data, XtraArg);
-get_until(Cont, Data, {Mod, Func, XtraArgs}) ->
-    Chars = if is_binary(Data) ->
+%%% BC (with pre-R13).
+get_until(Any,Data,Arg) ->
+    get_until(Any,Data,latin1,Arg).
+
+%% Now we are aware of encoding...    
+get_until(start, Data, Encoding, XtraArg) ->
+    get_until([], Data, Encoding, XtraArg);
+get_until(Cont, Data, Encoding, {Mod, Func, XtraArgs}) ->
+    Chars = if is_binary(Data), Encoding =:= unicode ->
+		    unicode:characters_to_list(Data,utf8);
+	       is_binary(Data) ->
 		    binary_to_list(Data);
 	       true ->
 		    Data
 	    end,
     case apply(Mod, Func, [Cont,Chars|XtraArgs]) of
 	{done,Result,Buf} ->
-	    {stop,Result,Buf};
+	    {stop,if is_binary(Data), 
+		     is_list(Result), 
+		     Encoding =:= unicode ->
+			  unicode:characters_to_binary(Result,unicode,unicode);
+		     is_binary(Data), 
+		     is_list(Result) ->
+			  erlang:iolist_to_binary(Result);
+%%		     is_list(Data),
+%%		     is_list(Result),
+%% 		     Encoding =:= latin1 ->
+%% 			  % Should check for only latin1, but skip that for
+%% 			  % efficiency reasons.
+%% 			  [ exit({cannot_convert, unicode, latin1}) || 
+%% 			      X <- List, X > 255 ];
+		     true ->
+			  Result
+		  end,
+	     Buf};
 	{more,NewCont} ->
 	    NewCont
     end.

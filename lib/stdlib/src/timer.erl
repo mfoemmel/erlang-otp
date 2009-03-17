@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(timer).
 
@@ -40,7 +41,7 @@
 %%
 %% Time is in milliseconds.
 %%
--type tref()      :: any().  % opaque type
+-opaque tref()    :: any().
 -type time()      :: non_neg_integer().
 -type timestamp() :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}.
 
@@ -51,7 +52,7 @@
 apply_after(Time, M, F, A) ->
     req(apply_after, {Time, {M, F, A}}).
 
--spec send_after(time(), pid() | atom(), _) -> {'ok', tref()} | {'error', _}.
+-spec send_after(time(), pid() | atom(), term()) -> {'ok', tref()} | {'error', _}.
 send_after(Time, Pid, Message) ->
     req(apply_after, {Time, {?MODULE, send, [Pid, Message]}}).
 
@@ -63,11 +64,11 @@ send_after(Time, Message) ->
 exit_after(Time, Pid, Reason) ->
     req(apply_after, {Time, {erlang, exit, [Pid, Reason]}}).
 
--spec exit_after(time(), _) -> {'ok', tref()} | {'error', _}.
+-spec exit_after(time(), term()) -> {'ok', tref()} | {'error', _}.
 exit_after(Time, Reason) ->
     exit_after(Time, self(), Reason).
 
--spec kill_after(time(), _) -> {'ok', tref()} | {'error', _}.
+-spec kill_after(time(), pid() | atom()) -> {'ok', tref()} | {'error', _}.
 kill_after(Time, Pid) ->
     exit_after(Time, Pid, kill).
 
@@ -79,11 +80,11 @@ kill_after(Time) ->
 apply_interval(Time, M, F, A) ->
     req(apply_interval, {Time, self(), {M, F, A}}).
 
--spec send_interval(time(), pid() | atom(), _) -> {'ok', tref()} | {'error', _}.
+-spec send_interval(time(), pid() | atom(), term()) -> {'ok', tref()} | {'error', _}.
 send_interval(Time, Pid, Message) ->
     req(apply_interval, {Time, Pid, {?MODULE, send, [Pid, Message]}}).
 
--spec send_interval(time(), _) -> {'ok', tref()} | {'error', _}.
+-spec send_interval(time(), term()) -> {'ok', tref()} | {'error', _}.
 send_interval(Time, Message) ->
     send_interval(Time, self(), Message).
 
@@ -91,7 +92,6 @@ send_interval(Time, Message) ->
 cancel(BRef) ->
     req(cancel, BRef).
 
--type timeout() :: non_neg_integer() | 'infinity'.
 -spec sleep(timeout()) -> 'ok'.
 sleep(T) ->
     receive
@@ -101,7 +101,7 @@ sleep(T) ->
 %%
 %% Measure the execution time (in microseconds) for an MFA.
 %%
--spec tc(atom(), atom(), [_]) -> {time(), _}.
+-spec tc(atom(), atom(), [_]) -> {time(), term()}.
 tc(M, F, A) ->
     Before = erlang:now(),
     Val = (catch apply(M, F, A)),
@@ -248,7 +248,7 @@ timer_timeout(SysTime) ->
 	{Time, _Ref} when Time > SysTime ->
 	    Timeout = (Time - SysTime) div 1000,
 	    %% Returned timeout must fit in a small int
-	    min(Timeout, ?MAX_TIMEOUT);
+	    erlang:min(Timeout, ?MAX_TIMEOUT);
 	Key ->
 	    case ets:lookup(?TIMER_TAB, Key) of
 		[{Key, timeout, MFA}] ->
@@ -304,7 +304,7 @@ next_timeout() ->
 	'$end_of_table' -> 
 	    infinity;
 	{Time, _} ->
-	    min(positive((Time - system_time()) div 1000), ?MAX_TIMEOUT)
+	    erlang:min(positive((Time - system_time()) div 1000), ?MAX_TIMEOUT)
     end.
 
 %% Help functions
@@ -320,18 +320,8 @@ do_apply({M,F,A}) ->
 	    catch spawn(M,F,A)      
     end.
 
-max(X, Y) when X > Y ->
-    X;
-max(_X, Y) ->
-    Y.
-
-min(X, Y) when X < Y ->
-    X;
-min(_X, Y) ->
-    Y.
-
 positive(X) ->
-    max(X, 0).
+    erlang:max(X, 0).
 
 
 %%
@@ -339,7 +329,7 @@ positive(X) ->
 %%
 system_time() ->    
     {M,S,U} = erlang:now(),
-    1000000*(M*1000000 + S) + U.
+    1000000 * (M*1000000 + S) + U.
 
 
 send([Pid, Msg]) ->
@@ -363,6 +353,9 @@ get_pid(_) ->
 %% between the 2 tables if this call is made when the timer server is 
 %% in the middle of a transaction
  
+-spec get_status() ->
+	{{?TIMER_TAB,non_neg_integer()},{?INTERVAL_TAB,non_neg_integer()}}.
+
 get_status() ->
     Info1 = ets:info(?TIMER_TAB),
     {value,{size,TotalNumTimers}} = lists:keysearch(size, 1, Info1),

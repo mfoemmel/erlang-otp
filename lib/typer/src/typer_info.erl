@@ -1,9 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
-%%--------------------------------------------------------------------
-%% File        : typer_info.erl
-%% Author      : Bingwen He <Bingwen.He@gmail.com>
-%% Description : 
-%%--------------------------------------------------------------------
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 
 -module(typer_info).
 
@@ -16,7 +29,7 @@
 		 module		:: atom(),
 		 funcAcc=[]	:: [func_info()],
 		 incFuncAcc=[]	:: [inc_file_info()],
-		 dialyzerObj=[] :: [{mfa(),{_,_}}]}).
+		 dialyzerObj=[] :: [{mfa(), {_, _}}]}).
 
 -include("typer.hrl").
 
@@ -66,7 +79,7 @@ analyze_core_tree(Core, Records, SpecInfo, Analysis, File) ->
   TmpTree = cerl:from_records(Core),
   CS1 = Analysis#typer_analysis.code_server,
   NextLabel = dialyzer_codeserver:next_core_label(CS1),
-  {Tree,NewLabel} = cerl_trees:label(TmpTree, NextLabel),
+  {Tree, NewLabel} = cerl_trees:label(TmpTree, NextLabel),
   CS2 = dialyzer_codeserver:insert([{Module, Tree}], CS1),
   CS3 = dialyzer_codeserver:update_next_core_label(NewLabel, CS2),
   CS4 = dialyzer_codeserver:store_records(Module, Records, CS3),
@@ -74,24 +87,22 @@ analyze_core_tree(Core, Records, SpecInfo, Analysis, File) ->
   Ex_Funcs = [{0,F,A} || {_,_,{F,A}} <- cerl:module_exports(Tree)],
   TmpCG = Analysis#typer_analysis.callgraph,
   CG = dialyzer_callgraph:scan_core_tree(Tree, TmpCG),
-
   Fun = fun analyze_one_function/2,
   All_Defs = cerl:module_defs(Tree),
-  Acc = lists:foldl(Fun, #tmpAcc{file=File,module=Module}, All_Defs),
+  Acc = lists:foldl(Fun, #tmpAcc{file=File, module=Module}, All_Defs),
   Exported_FuncMap = typer_map:insert({File, Ex_Funcs},
 				      Analysis#typer_analysis.ex_func),
   %% NOTE: we must sort all functions in the file which
   %% originate from this file by *numerical order* of lineNo
   Sorted_Functions = lists:keysort(1, Acc#tmpAcc.funcAcc),
-  FuncMap = typer_map:insert({File,Sorted_Functions},
+  FuncMap = typer_map:insert({File, Sorted_Functions},
 			     Analysis#typer_analysis.func),
   %% NOTE: However we do not need to sort functions
   %% which are imported from included files.
   IncFuncMap = typer_map:insert({File, Acc#tmpAcc.incFuncAcc}, 
 				Analysis#typer_analysis.inc_func),
-  
-  Final_Files = Analysis#typer_analysis.final_files++[{File, Module}],
-  RecordMap = typer_map:insert({File,Records}, Analysis#typer_analysis.record),
+  Final_Files = Analysis#typer_analysis.final_files ++ [{File, Module}],
+  RecordMap = typer_map:insert({File, Records}, Analysis#typer_analysis.record),
   Analysis#typer_analysis{final_files=Final_Files,
 			  callgraph=CG,
 			  code_server=CS5,
@@ -100,19 +111,19 @@ analyze_core_tree(Core, Records, SpecInfo, Analysis, File) ->
 			  record=RecordMap,
 			  func=FuncMap}.
 
-analyze_one_function({Var,FunBody}, Acc) ->
+analyze_one_function({Var, FunBody} = Function, Acc) ->
   F = cerl:fname_id(Var),
   A = cerl:fname_arity(Var),
-  TmpDialyzerObj = {{Acc#tmpAcc.module,F,A},{Var,FunBody}},
-  NewDialyzerObj = Acc#tmpAcc.dialyzerObj++[TmpDialyzerObj],  
-  [_,LineNo,{file,FileName}] = cerl:get_ann(FunBody),
+  TmpDialyzerObj = {{Acc#tmpAcc.module, F, A}, Function},
+  NewDialyzerObj = Acc#tmpAcc.dialyzerObj ++ [TmpDialyzerObj],  
+  [_, LineNo, {file, FileName}] = cerl:get_ann(FunBody),
   BaseName = filename:basename(FileName),
-  FuncInfo = {LineNo,F,A},
+  FuncInfo = {LineNo, F, A},
   OriginalName = Acc#tmpAcc.file,
   case (FileName =:= OriginalName) orelse (BaseName =:= OriginalName) of
     true -> %% Coming from original file
-      %% io:format("Added function ~p\n",[{LineNo,F,A}]),
-      FuncAcc    = Acc#tmpAcc.funcAcc++[FuncInfo], 
+      %% io:format("Added function ~p\n", [{LineNo, F, A}]),
+      FuncAcc    = Acc#tmpAcc.funcAcc ++ [FuncInfo], 
       IncFuncAcc = Acc#tmpAcc.incFuncAcc;
     false ->
       %% Coming from other sourses, including:
@@ -120,13 +131,13 @@ analyze_one_function({Var,FunBody}, Acc) ->
       %%     -- yeccpre.hrl (yecc-generated file)
       %%     -- other cases
       FuncAcc    = Acc#tmpAcc.funcAcc,
-      IncFuncAcc = Acc#tmpAcc.incFuncAcc++[{FileName,FuncInfo}]
+      IncFuncAcc = Acc#tmpAcc.incFuncAcc ++ [{FileName, FuncInfo}]
   end,
-  Acc#tmpAcc{funcAcc=FuncAcc,
-	     incFuncAcc=IncFuncAcc,
-	     dialyzerObj=NewDialyzerObj}.
+  Acc#tmpAcc{funcAcc = FuncAcc,
+	     incFuncAcc = IncFuncAcc,
+	     dialyzerObj = NewDialyzerObj}.
 
-get_dialyzer_plt(#typer_analysis{plt=PltFile0}) ->
+get_dialyzer_plt(#typer_analysis{plt = PltFile0}) ->
   PltFile =
     case PltFile0 =:= none of
       true -> dialyzer_plt:get_default_plt();

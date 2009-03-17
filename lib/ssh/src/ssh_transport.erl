@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2004-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 
 %%% Description: SSH transport protocol
@@ -38,8 +39,6 @@
 	 handle_new_keys/2, handle_kex_dh_gex_request/2,
 	 handle_kexdh_reply/2, 
 	 unpack/3, decompress/2, ssh_packet/2, pack/2, msg_data/1]).
-
--define(DEFAULT_TIMEOUT, 10000).
 
 %% debug flagso
 -define(DBG_ALG,     true).
@@ -144,13 +143,11 @@ kex_dh_gex_messages() ->
 yes_no(Ssh, Prompt)  ->
     (Ssh#ssh.io_cb):yes_no(Prompt).
 
-
 connect(ConnectionSup, Address, Port, SocketOpts, Opts) ->    
-    Timeout = proplists:get_value(timeout, Opts, ?DEFAULT_TIMEOUT),
+    Timeout = proplists:get_value(connect_timeout, Opts, infinity),
     {_, Callback, _} =  
 	proplists:get_value(transport, Opts, {tcp, gen_tcp, tcp_closed}),
-    case Callback:connect(Address, Port, [{active, false} | SocketOpts], 
-			 Timeout) of
+    case do_connect(Callback, Address, Port, SocketOpts, Timeout) of
  	{ok, Socket} ->
 	    {ok, Pid} = 
 		ssh_connection_sup:start_handler_child(ConnectionSup,
@@ -163,6 +160,17 @@ connect(ConnectionSup, Address, Port, SocketOpts, Opts) ->
 	    {ok, Pid};
 	{error, Reason} ->
 	    {error, Reason} 
+    end.
+
+do_connect(Callback, Address, Port, SocketOpts, Timeout) ->
+    Opts = [{active, false} | SocketOpts],
+    case Callback:connect(Address, Port, Opts, Timeout) of
+	{error, nxdomain} -> 
+	    Callback:connect(Address, Port, lists:delete(inet6, Opts), Timeout);
+	{error, eafnosupport}  ->
+	    Callback:connect(Address, Port, lists:delete(inet6, Opts), Timeout);
+	Other ->
+	    Other
     end.
 
 accept(Address, Port, Socket, Options) ->
@@ -272,9 +280,15 @@ handle_kexinit_msg(#ssh_msg_kexinit{} = CounterPart, #ssh_msg_kexinit{} = Own,
     install_messages(Algoritms#alg.kex),
     {ok, Ssh#ssh{algorithms = Algoritms}}.
 
+
+%% TODO: diffie-hellman-group14-sha1 should also be supported.
+%% Maybe check more things ...
+verify_algorithm(#alg{kex = 'diffie-hellman-group1-sha1'}) ->
+    true;
+verify_algorithm(#alg{kex = 'diffie-hellman-group-exchange-sha1'}) ->
+    true;
 verify_algorithm(_) ->
-    %% TODO: Real imp!
-    true.
+    false.
 
 install_messages('diffie-hellman-group1-sha1') ->
     ssh_bits:install_messages(kexdh_messages());
@@ -284,7 +298,7 @@ install_messages('diffie-hellman-group-exchange-sha1') ->
 key_exchange_first_msg('diffie-hellman-group1-sha1', Ssh0) ->
     {G, P} = dh_group1(),
     {Private, Public} = dh_gen_key(G, P, 1024),
-    ?dbg(?DBG_KEX, "public: ~.16B\n", [Public]),
+    %%?dbg(?DBG_KEX, "public: ~p~n", [Public]),
     {SshPacket, Ssh1} = ssh_packet(#ssh_msg_kexdh_init{e = Public}, Ssh0),
     {ok, SshPacket, 
      Ssh1#ssh{keyex_key = {{Private, Public}, {G, P}}}};
@@ -304,7 +318,7 @@ key_exchange_first_msg('diffie-hellman-group-exchange-sha1', Ssh0) ->
 handle_kexdh_init(#ssh_msg_kexdh_init{e = E}, Ssh0) ->
     {G, P} = dh_group1(),
     {Private, Public} = dh_gen_key(G, P, 1024),
-    ?dbg(?DBG_KEX, "public: ~.16B\n", [Public]),
+    %%?dbg(?DBG_KEX, "public: ~p~n", [Public]),
     K = ssh_math:ipow(E, Private, P),
     {Key, K_S} = get_host_key(Ssh0),
     H = kex_h(Ssh0, K_S, E, Public, K),
@@ -313,8 +327,8 @@ handle_kexdh_init(#ssh_msg_kexdh_init{e = E}, Ssh0) ->
 							f = Public,
 							h_sig = H_SIG
 						       }, Ssh0),
-    ?dbg(?DBG_KEX, "shared_secret: ~s\n", [fmt_binary(K, 16, 4)]),
-    ?dbg(?DBG_KEX, "hash: ~s\n", [fmt_binary(H, 16, 4)]),
+    %%?dbg(?DBG_KEX, "shared_secret: ~s ~n", [fmt_binary(K, 16, 4)]),
+    %%?dbg(?DBG_KEX, "hash: ~s ~n", [fmt_binary(H, 16, 4)]),
     {ok, SshPacket, Ssh1#ssh{keyex_key = {{Private, Public}, {G, P}},
 			     shared_secret = K,
 			     exchanged_hash = H,
@@ -322,7 +336,7 @@ handle_kexdh_init(#ssh_msg_kexdh_init{e = E}, Ssh0) ->
 
 handle_kex_dh_gex_group(#ssh_msg_kex_dh_gex_group{p = P, g = G}, Ssh0) ->
     {Private, Public} = dh_gen_key(G,P,1024),
-    ?dbg(?DBG_KEX, "public: ~.16B\n", [Public]),
+    %%?dbg(?DBG_KEX, "public: ~p ~n", [Public]),
     {SshPacket, Ssh1} = 
 	ssh_packet(#ssh_msg_kex_dh_gex_init{e = Public}, Ssh0),
     {ok, SshPacket, 
@@ -346,8 +360,8 @@ handle_kexdh_reply(#ssh_msg_kexdh_reply{public_host_key = HostKey, f = F,
 		   #ssh{keyex_key = {{Private, Public}, {_G, P}}} = Ssh0) ->
     K = ssh_math:ipow(F, Private, P),
     H = kex_h(Ssh0, HostKey, Public, F, K),
-    ?dbg(?DBG_KEX, "shared_secret: ~s\n", [fmt_binary(K, 16, 4)]),
-    ?dbg(?DBG_KEX, "hash: ~s\n", [fmt_binary(H, 16, 4)]),
+    %%?dbg(?DBG_KEX, "shared_secret: ~s ~n", [fmt_binary(K, 16, 4)]),
+    %%?dbg(?DBG_KEX, "hash: ~s ~n", [fmt_binary(H, 16, 4)]),
     case verify_host_key(Ssh0, HostKey, H, H_SIG) of
 	ok ->
 	    {SshPacket, Ssh} = ssh_packet(#ssh_msg_newkeys{}, Ssh0),
@@ -355,10 +369,10 @@ handle_kexdh_reply(#ssh_msg_kexdh_reply{public_host_key = HostKey, f = F,
 				    exchanged_hash = H,
 				    session_id = sid(Ssh, H)}};
 	_Error ->
-		    Disconnect = #ssh_msg_disconnect{
-		      code = ?SSH_DISCONNECT_KEY_EXCHANGE_FAILED,
-		      description = "Key exchange failed",
-		      language = "en"},
+	    Disconnect = #ssh_msg_disconnect{
+	      code = ?SSH_DISCONNECT_KEY_EXCHANGE_FAILED,
+	      description = "Key exchange failed",
+	      language = "en"},
 	    throw(Disconnect)
     end.
 
@@ -380,8 +394,8 @@ handle_kex_dh_gex_reply(#ssh_msg_kex_dh_gex_reply{public_host_key = HostKey,
 		 	Ssh0) ->
     K = ssh_math:ipow(F, Private, P),
     H = kex_h(Ssh0, HostKey, Min, NBits, Max, P, G, Public, F, K),
-    ?dbg(?DBG_KEX, "shared_secret: ~s\n", [fmt_binary(K, 16, 4)]),
-    ?dbg(?DBG_KEX, "hash: ~s\n", [fmt_binary(H, 16, 4)]),
+    %%?dbg(?DBG_KEX, "shared_secret: ~s ~n", [fmt_binary(K, 16, 4)]),
+    %%?dbg(?DBG_KEX, "hash: ~s ~n", [fmt_binary(H, 16, 4)]),
     case verify_host_key(Ssh0, HostKey, H, H_SIG) of
 	ok ->
 	    {SshPacket, Ssh} = ssh_packet(#ssh_msg_newkeys{}, Ssh0),
@@ -412,11 +426,11 @@ get_host_key(SSH) ->
 	'ssh-rsa' ->
 	    case Mod:private_host_rsa_key(Scope, Opts) of
 		{ok,Key=#ssh_key { public={N,E}} } ->
-		    ?dbg(true, "x~n", []),
+		    %%?dbg(true, "x~n", []),
 		    {Key,
 		     ssh_bits:encode(["ssh-rsa",E,N],[string,mpint,mpint])};
 		Error ->
-		    ?dbg(true, "y~n", []),
+		    %%?dbg(true, "y~n", []),
 		    exit(Error)
 	    end;
 	'ssh-dss' ->
@@ -605,7 +619,7 @@ install_alg(SSH) ->
 
 alg_setup(SSH) ->
     ALG = SSH#ssh.algorithms,
-    ?dbg(?DBG_ALG, "ALG: setup ~p\n", [ALG]),
+    %%?dbg(?DBG_ALG, "ALG: setup ~p ~n", [ALG]),
     SSH#ssh{kex = ALG#alg.kex,
 	    hkey = ALG#alg.hkey,
 	    encrypt = ALG#alg.encrypt,
@@ -622,7 +636,7 @@ alg_setup(SSH) ->
 	   }.
 
 alg_init(SSH0) ->
-    ?dbg(?DBG_ALG, "ALG: init\n", []),    
+    %%?dbg(?DBG_ALG, "ALG: init~n", []),    
     {ok,SSH1} = send_mac_init(SSH0),
     {ok,SSH2} = recv_mac_init(SSH1),
     {ok,SSH3} = encrypt_init(SSH2),
@@ -632,7 +646,7 @@ alg_init(SSH0) ->
     SSH6.
 
 alg_final(SSH0) ->
-    ?dbg(?DBG_ALG, "ALG: final\n", []),
+    %%?dbg(?DBG_ALG, "ALG: final ~n", []),
     {ok,SSH1} = send_mac_final(SSH0),
     {ok,SSH2} = recv_mac_final(SSH1),
     {ok,SSH3} = encrypt_final(SSH2),
@@ -653,19 +667,19 @@ select(CL, SL) ->
 	    [] -> undefined;
 	    [ALG|_] -> ALG
 	end,
-    ?dbg(?DBG_ALG, "ALG: select: ~p ~p = ~p\n", [CL, SL, C]),
+    %%?dbg(?DBG_ALG, "ALG: select: ~p ~p = ~p~n", [CL, SL, C]),
     C.
 	    
 ssh_packet(#ssh_msg_kexinit{} = Msg, Ssh0) ->
     BinMsg = ssh_bits:encode(Msg),
     Ssh = key_init(Ssh0#ssh.role, Ssh0, BinMsg),
-    ?dbg(?DBG_MESSAGE, "SEND_MSG: ~70p\n", [Msg]),
+    %%?dbg(?DBG_MESSAGE, "SEND_MSG: ~p~n", [Msg]),
     pack(BinMsg, Ssh);
 
 ssh_packet(Msg, Ssh) ->
     BinMsg = ssh_bits:encode(Msg),
-    ?dbg(?DBG_MESSAGE, "SEND_MSG: ~70p\n", [Msg]),
-    ?dbg(?DBG_BIN_MESSAGE, "Encoded: ~70p\n", [BinMsg]),
+    %%?dbg(?DBG_MESSAGE, "SEND_MSG: ~p~n", [Msg]),
+    %%?dbg(?DBG_BIN_MESSAGE, "Encoded: ~p~n", [BinMsg]),
     pack(BinMsg, Ssh).
 
 pack(Data0, #ssh{encrypt_block_size = BlockSize, 
@@ -800,10 +814,10 @@ encrypt(#ssh{encrypt = none} = Ssh, Data) ->
 encrypt(#ssh{encrypt = '3des-cbc',
 	     encrypt_keys = {K1,K2,K3},
 	     encrypt_ctx = IV0} = Ssh, Data) ->
-    ?dbg(?DBG_CRYPTO, "encrypt: IV=~p K1=~p, K2=~p, K3=~p\n",
-	 [IV0,K1,K2,K3]),
+    %%?dbg(?DBG_CRYPTO, "encrypt: IV=~p K1=~p, K2=~p, K3=~p ~n",
+    %%	 [IV0,K1,K2,K3]),
     Enc = crypto:des3_cbc_encrypt(K1,K2,K3,IV0,Data),
-    ?dbg(?DBG_CRYPTO, "encrypt: ~p -> ~p\n", [Data, Enc]),
+    %%?dbg(?DBG_CRYPTO, "encrypt: ~p -> ~p ~n", [Data, Enc]),
     IV = crypto:des_cbc_ivec(Enc),
     {Ssh#ssh{encrypt_ctx = IV}, Enc}.
   
@@ -839,10 +853,10 @@ decrypt(#ssh{decrypt = none} = Ssh, Data) ->
 decrypt(#ssh{decrypt = '3des-cbc', decrypt_keys = Keys,
 	     decrypt_ctx = IV0} = Ssh, Data) ->
     {K1, K2, K3} = Keys,
-    ?dbg(?DBG_CRYPTO, "decrypt: IV=~p K1=~p, K2=~p, K3=~p\n",
-	 [IV0,K1,K2,K3]),
+    %%?dbg(?DBG_CRYPTO, "decrypt: IV=~p K1=~p, K2=~p, K3=~p ~n",
+    %%[IV0,K1,K2,K3]),
     Dec = crypto:des3_cbc_decrypt(K1,K2,K3,IV0,Data),
-    ?dbg(?DBG_CRYPTO, "decrypt: ~p -> ~p\n", [Data, Dec]),
+    %%?dbg(?DBG_CRYPTO, "decrypt: ~p -> ~p ~n", [Data, Dec]),
     IV = crypto:des_cbc_ivec(Data),
     {Ssh#ssh{decrypt_ctx = IV}, Dec}.
 
@@ -873,7 +887,7 @@ compress(#ssh{compress = none} = Ssh, Data) ->
     {Ssh, Data};
 compress(#ssh{compress = zlib, compress_ctx = Context} = Ssh, Data) ->
     Compressed = zlib:deflate(Context, Data, sync),
-    ?dbg(?DBG_ZLIB, "deflate: ~p -> ~p\n", [Data, Compressed]),
+    %%?dbg(?DBG_ZLIB, "deflate: ~p -> ~p ~n", [Data, Compressed]),
     {Ssh, list_to_binary(Compressed)}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -897,7 +911,7 @@ decompress(#ssh{decompress = none} = Ssh, Data) ->
     {Ssh, Data};
 decompress(#ssh{decompress = zlib, decompress_ctx = Context} = Ssh, Data) ->
     Decompressed = zlib:inflate(Context, Data),
-    ?dbg(?DBG_ZLIB, "inflate: ~p -> ~p\n", [Data, Decompressed]),
+    %%?dbg(?DBG_ZLIB, "inflate: ~p -> ~p ~n", [Data, Decompressed]),
     {Ssh, list_to_binary(Decompressed)}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -976,7 +990,7 @@ hash(SSH, Char, N, HASH) ->
     K1 = HASH([K, H, Char, SessionID]),
     Sz = N div 8,
     <<Key:Sz/binary, _/binary>> = hash(K, H, K1, N-128, HASH),
-    ?dbg(?DBG_KEX, "Key ~s: ~s\n", [Char, fmt_binary(Key, 16, 4)]),
+    %%?dbg(?DBG_KEX, "Key ~s: ~s ~n", [Char, fmt_binary(Key, 16, 4)]),
     Key.
 
 hash(_K, _H, Ki, N, _HASH) when N =< 0 ->
@@ -989,13 +1003,13 @@ kex_h(SSH, K_S, E, F, K) ->
     L = ssh_bits:encode([SSH#ssh.c_version, SSH#ssh.s_version,
 			 SSH#ssh.c_keyinit, SSH#ssh.s_keyinit,
 			 K_S, E,F,K],
-			[string,string,string,string,string,
+			[string,string,binary,binary,binary,
 			 mpint,mpint,mpint]),
     crypto:sha(L).
 
 kex_h(SSH, K_S, Min, NBits, Max, Prime, Gen, E, F, K) ->
     L = if Min==-1; Max==-1 ->
-		Ts = [string,string,string,string,string,
+		Ts = [string,string,binary,binary,binary,
 		      uint32,
 		      mpint,mpint,mpint,mpint,mpint],
 		ssh_bits:encode([SSH#ssh.c_version,SSH#ssh.s_version,
@@ -1003,7 +1017,7 @@ kex_h(SSH, K_S, Min, NBits, Max, Prime, Gen, E, F, K) ->
 				 K_S, NBits, Prime, Gen, E,F,K],
 				Ts);
 	   true ->
-		Ts = [string,string,string,string,string,
+		Ts = [string,string,binary,binary,binary,
 		      uint32,uint32,uint32,
 		      mpint,mpint,mpint,mpint,mpint],
 		ssh_bits:encode([SSH#ssh.c_version,SSH#ssh.s_version,
@@ -1061,40 +1075,40 @@ trim_head(Cs) -> Cs.
 %% DEBUG utils
 %% Format integers and binaries as hex blocks
 %%
--ifdef(debug).
-fmt_binary(B, BlockSize, GroupSize) ->
-    fmt_block(fmt_bin(B), BlockSize, GroupSize).
+%% -ifdef(debug).
+%% fmt_binary(B, BlockSize, GroupSize) ->
+%%     fmt_block(fmt_bin(B), BlockSize, GroupSize).
 
-fmt_block(Bin, BlockSize, GroupSize) ->
-    fmt_block(Bin, BlockSize, 0, GroupSize).
+%% fmt_block(Bin, BlockSize, GroupSize) ->
+%%     fmt_block(Bin, BlockSize, 0, GroupSize).
     
 
-fmt_block(Bin, 0, _I, _G) ->
-    binary_to_list(Bin);
-fmt_block(Bin, Sz, G, G) when G =/= 0 ->
-    ["\n" | fmt_block(Bin, Sz, 0, G)];
-fmt_block(Bin, Sz, I, G) ->
-    case Bin of
-	<<Block:Sz/binary, Tail/binary>> ->
-	    if Tail == <<>> ->
-		    [binary_to_list(Block)];
-	       true ->
-		    [binary_to_list(Block), " " | fmt_block(Tail, Sz, I+1, G)]
-	    end;
-	<<>> ->
-	    [];
-	_ -> 
-	    [binary_to_list(Bin)]
-    end.
+%% fmt_block(Bin, 0, _I, _G) ->
+%%     binary_to_list(Bin);
+%% fmt_block(Bin, Sz, G, G) when G =/= 0 ->
+%%     ["~n#" | fmt_block(Bin, Sz, 0, G)];
+%% fmt_block(Bin, Sz, I, G) ->
+%%     case Bin of
+%% 	<<Block:Sz/binary, Tail/binary>> ->
+%% 	    if Tail == <<>> ->
+%% 		    [binary_to_list(Block)];
+%% 	       true ->
+%% 		    [binary_to_list(Block), " " | fmt_block(Tail, Sz, I+1, G)]
+%% 	    end;
+%% 	<<>> ->
+%% 	    [];
+%% 	_ -> 
+%% 	    [binary_to_list(Bin)]
+%%     end.
 
-%% Format integer or binary as hex
-fmt_bin(X) when integer(X) ->
-    list_to_binary(io_lib:format("~.16B", [X]));
-fmt_bin(X) when binary(X) ->
-    Sz = size(X)*8,
-    <<Y:Sz/unsigned-big>> = X,
-    Fmt = "~"++integer_to_list(size(X)*2)++".16.0B",
-    list_to_binary(io_lib:format(Fmt, [Y])).
+%% %% Format integer or binary as hex
+%% fmt_bin(X) when integer(X) ->
+%%     list_to_binary(io_lib:format("~p", [X]));
+%% fmt_bin(X) when binary(X) ->
+%%     Sz = size(X)*8,
+%%     <<Y:Sz/unsigned-big>> = X,
+%%     %%Fmt = "~"++integer_to_list(size(X)*2)++"~p",
+%%     list_to_binary(io_lib:format("~p", [Y])).
 
--endif.
+%% -endif.
 

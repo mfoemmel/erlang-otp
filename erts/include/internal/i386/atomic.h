@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2005-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson AB.
- * Portions created by Ericsson are Copyright 2006, Ericsson AB.
- * All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 /*
@@ -97,6 +98,17 @@ ethr_native_atomic_add_return(ethr_native_atomic_t *var, long incr)
 #define ethr_native_atomic_dec_return(var) ethr_native_atomic_add_return((var), -1)
 
 static ETHR_INLINE long
+ethr_native_atomic_cmpxchg(ethr_native_atomic_t *var, long new, long old)
+{
+    __asm__ __volatile__(
+      "lock; cmpxchg" LONG_SUFFIX " %2, %3"
+      : "=a"(old), "=m"(var->counter)
+      : "r"(new), "m"(var->counter), "0"(old)
+      : "cc", "memory"); /* full memory clobber to make this a compiler barrier */
+    return old;
+}
+
+static ETHR_INLINE long
 ethr_native_atomic_and_retold(ethr_native_atomic_t *var, long mask)
 {
     long tmp, old;
@@ -104,10 +116,7 @@ ethr_native_atomic_and_retold(ethr_native_atomic_t *var, long mask)
     tmp = var->counter;
     do {
 	old = tmp;
-	__asm__ __volatile__(
-	    "lock; cmpxchg" LONG_SUFFIX " %2, %3"
-	    : "=a"(tmp), "=m"(var->counter)
-	    : "r"(old & mask), "m"(var->counter), "0"(old));
+        tmp = ethr_native_atomic_cmpxchg(var, tmp & mask, tmp);
     } while (__builtin_expect(tmp != old, 0));
     /* now tmp is the atomic's previous value */
     return tmp;
@@ -121,10 +130,7 @@ ethr_native_atomic_or_retold(ethr_native_atomic_t *var, long mask)
     tmp = var->counter;
     do {
 	old = tmp;
-	__asm__ __volatile__(
-	    "lock; cmpxchg" LONG_SUFFIX " %2, %3"
-	    : "=a"(tmp), "=m"(var->counter)
-	    : "r"(old | mask), "m"(var->counter), "0"(old));
+        tmp = ethr_native_atomic_cmpxchg(var, tmp | mask, tmp);
     } while (__builtin_expect(tmp != old, 0));
     /* now tmp is the atomic's previous value */
     return tmp;

@@ -1,4 +1,22 @@
 /*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2001-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved online at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * %CopyrightEnd%
+ */
+/*
  * $Id$
  */
 
@@ -358,7 +376,7 @@ nbif_3_simple_exception:
 nbif_0_trap_exception:
 	xorl	%eax, %eax
 .handle_trap:
-	movl	%eax, P_ARITY(P)
+	movl	%eax, P_NARITY(P)
 	movl	$HIPE_MODE_SWITCH_RES_TRAP, %eax
 	jmp	.nosave_exit
 
@@ -395,3 +413,7 @@ ASYM(nbif_inc_stack_0):
 	LOAD_CALLER_SAVE
 	SWITCH_C_TO_ERLANG_QUICK
 	NSP_RET0
+
+#if defined(__linux__) && defined(__ELF__)
+.section .note.GNU-stack,"",%progbits
+#endif

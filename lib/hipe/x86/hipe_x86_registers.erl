@@ -1,4 +1,21 @@
-%%% $Id$
+%%%
+%%% %CopyrightBegin%
+%%% 
+%%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%%% 
+%%% The contents of this file are subject to the Erlang Public License,
+%%% Version 1.1, (the "License"); you may not use this file except in
+%%% compliance with the License. You should have received a copy of the
+%%% Erlang Public License along with this software. If not, it can be
+%%% retrieved online at http://www.erlang.org/.
+%%% 
+%%% Software distributed under the License is distributed on an "AS IS"
+%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%%% the License for the specific language governing rights and limitations
+%%% under the License.
+%%% 
+%%% %CopyrightEnd%
+%%%
 %%%
 %%% TODO:
 %%% - Do we need a pseudo reg for the condition codes?
@@ -224,14 +241,8 @@ all_x87_pseudos() ->
    {4,double}, {5,double}, {6,double}].
 
 live_at_return() ->
-    [{?EAX,tagged}
-     %% XXX: should the following (fixed) regs be included or not?
-     ,{?ESP,untagged}
+    [{?ESP,untagged}
      ,{?PROC_POINTER,untagged}
-     %% Lets try not!
-     %% If these are included they will interfere with other
-     %% temps during regalloc, but regs FCALLS and HEAP_LIMIT
-     %% don't even exist at regalloc.
      ,{?FCALLS,untagged}
      ,{?HEAP_LIMIT,untagged}
      | ?LIST_HP_LIVE_AT_RETURN

@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2001-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Handle the flex scanner
@@ -161,11 +162,11 @@ terminate(_Reason, _S) ->
 %% Purpose: Called to change the internal state
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change({down, _Vsn}, #state{conf = Conf} = State, downgrade_to_pre_3_9_1) ->
+code_change({down, _Vsn}, #state{conf = Conf} = State, downgrade_to_pre_3_9_3) ->
     Port = update_flex_scanner(Conf),
     {ok, State#state{conf = {flex, Port}}};
 
-code_change(_Vsn, #state{conf = Conf} = State, upgrade_from_pre_3_9_1) ->
+code_change(_Vsn, #state{conf = Conf} = State, upgrade_from_pre_3_9_3) ->
     Port = update_flex_scanner(Conf),
     {ok, State#state{conf = {flex, Port}}};
 

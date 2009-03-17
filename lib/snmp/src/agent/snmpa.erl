@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>2004-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 -module(snmpa).
 
@@ -33,6 +32,7 @@
 	 which_aliasnames/0, 
 	 which_tables/0, 
 	 which_variables/0, 
+	 which_notifications/0, 
 	 name_to_oid/1, name_to_oid/2, 
 	 oid_to_name/1, oid_to_name/2,
 	 int_to_enum/2, int_to_enum/3, 
@@ -55,6 +55,8 @@
 	 send_notification/3, send_notification/4, send_notification/5,
 	 send_notification/6,
 	 send_trap/3, send_trap/4,
+
+	 discovery/3, discovery/4, 
 
  	 sys_up_time/0, system_start_time/0,
 
@@ -162,6 +164,9 @@ which_tables() ->
 
 which_variables() ->
     snmpa_symbolic_store:which_variables().
+
+which_notifications() ->
+    snmpa_symbolic_store:which_notifications().
 
 
 %%-----------------------------------------------------------------
@@ -352,6 +357,23 @@ send_trap(Agent, Trap, Community) ->
 
 send_trap(Agent, Trap, Community, Varbinds) ->
     send_notification(Agent, Trap, no_receiver, Community, "", Varbinds).
+
+
+%%%-----------------------------------------------------------------
+
+discovery(TargetName, Notification, Varbinds) ->
+    ContextName = "",
+    discovery(TargetName, Notification, ContextName, Varbinds).
+
+discovery(TargetName, Notification, ContextName, Varbinds) 
+  when (is_list(TargetName) andalso (length(TargetName) > 0) andalso 
+	is_atom(Notification) andalso 
+	is_list(ContextName) andalso 
+	is_list(Varbinds)) ->
+    snmpa_agent:discovery(TargetName, Notification, ContextName, Varbinds).
+
+
+%%%-----------------------------------------------------------------
 
 register_subagent(Agent, SubTree, SubAgent) ->
     snmpa_agent:register_subagent(Agent, SubTree, SubAgent).

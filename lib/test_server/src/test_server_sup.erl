@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>1998-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1998-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+
 %%%-------------------------------------------------------------------
 %%% Purpose: Test server support functions.
 %%%-------------------------------------------------------------------
@@ -27,7 +27,8 @@
 	 get_username/0, get_os_family/0, 
 	 hostatom/0, hostatom/1, hoststr/0, hoststr/1,
 	 framework_call/2,framework_call/3,
-	 format_loc/1, package_str/1, package_atom/1]).
+	 format_loc/1, package_str/1, package_atom/1,
+	 call_trace/1]).
 -include("test_server_internal.hrl").
 -define(crash_dump_tar,"crash_dumps.tar.gz").
 -define(src_listing_ext, ".src.html").
@@ -566,3 +567,34 @@ package_atom(Mod) when is_list(Mod), is_atom(hd(Mod)) ->
     list_to_atom(package_str(Mod));
 package_atom(Mod) when is_list(Mod) ->
     list_to_atom(Mod).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% call_trace(TraceSpecFile) -> ok
+%%
+%% Read terms on format {m,Mod} | {f,Mod,Func}
+%% from TraceSpecFile and enable call trace for
+%% specified functions.
+call_trace(TraceSpec) ->
+    case file:consult(TraceSpec) of
+	{ok,Terms} ->
+	    dbg:tracer(),
+	    %% dbg:p(self(), [p, m, sos, call]),
+	    dbg:p(self(), [sos, call]),
+	    lists:foreach(fun({m,M}) ->
+				  case dbg:tpl(M,[{'_',[],[{return_trace}]}]) of
+				      {error,What} -> exit({error,{tracing_failed,What}});
+				      _ -> ok
+				  end;			  
+			     ({f,M,F}) ->
+				  case dbg:tpl(M,F,[{'_',[],[{return_trace}]}]) of
+				      {error,What} -> exit({error,{tracing_failed,What}});
+				      _ -> ok
+				  end;			  
+			     (Huh) ->
+				  exit({error,{unrecognized_trace_term,Huh}})
+			  end, Terms),
+	    ok;
+	{_,Error} ->
+	    exit({error,{tracing_failed,TraceSpec,Error}})
+    end.
+    

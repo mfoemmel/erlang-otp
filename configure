@@ -812,9 +812,11 @@ Optional Features:
   --disable-hipe          disable hipe support
   --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno
   --enable-dynamic-ssl-lib        force using dynamic openssl libraries
+  --disable-dynamic-ssl-lib       disable using dynamic openssl libraries
   --disable-erlang-mandir do not install Erlang man pages in a private directory
   --enable-darwin-universal    build universal binaries on darwin i386
   --enable-darwin-64bit    build 64bit binaries on darwin
+  --enable-m64-build    build 64bit binaries using the -m64 flag to (g)cc
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -2657,6 +2659,18 @@ else
   enable_darwin_64bit=no
 fi;
 
+# Check whether --enable-m64-build or --disable-m64-build was given.
+if test "${enable_m64_build+set}" = set; then
+  enableval="$enable_m64_build"
+   case "$enableval" in
+    no) enable_m64_build=no ;;
+    *)  enable_m64_build=yes ;;
+  esac
+
+else
+  enable_m64_build=no
+fi;
+
 TMPSYS=`uname -s`-`uname -m`
 if test X${enable_darwin_universal} = Xyes; then
 	if test X${enable_darwin_64bit} = Xyes; then
@@ -2676,6 +2690,14 @@ if test X${enable_darwin_64bit} = Xyes; then
 echo "$as_me: error: --enable-darwin-64bit only supported on x86 host" >&2;}
    { (exit 1); exit 1; }; }
 	fi
+	enable_hipe=no
+	CFLAGS="-m64 $CFLAGS"
+	export CFLAGS
+	LDFLAGS="-m64 $LDFLAGS"
+	export LDFLAGS
+fi
+
+if test X${enable_m64_build} = Xyes; then
 	enable_hipe=no
 	CFLAGS="-m64 $CFLAGS"
 	export CFLAGS
@@ -3810,6 +3832,20 @@ if test "$files" != "$pattern"; then
   for skipfile in $files; do
     app=`dirname $skipfile`; app=`basename $app`
     printf "%-15s: " $app; cat $skipfile
+  done
+  echo
+  echo '*********************************************************************'
+fi
+pattern="lib/*/CONF_INFO"
+files=`echo $pattern`
+if test "$files" != "$pattern"; then
+  echo '*********************************************************************'
+  echo '**********************  APPLICATIONS INFORMATION  *******************'
+  echo '*********************************************************************'
+  echo
+  for infofile in $files; do
+    app=`dirname $infofile`; app=`basename $app`
+    printf "%-15s: " $app; cat $infofile
   done
   echo
   echo '*********************************************************************'

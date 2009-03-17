@@ -9,6 +9,24 @@ You can find more information about OpenSource Erlang at
   http://www.erlang.org/
 
 
+%CopyrightBegin%
+
+Copyright Ericsson AB 1998-2009. All Rights Reserved.
+
+The contents of this file are subject to the Erlang Public License,
+Version 1.1, (the "License"); you may not use this file except in
+compliance with the License. You should have received a copy of the
+Erlang Public License along with this software. If not, it can be
+retrieved online at http://www.erlang.org/.
+
+Software distributed under the License is distributed on an "AS IS"
+basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+the License for the specific language governing rights and limitations
+under the License.
+
+%CopyrightEnd%
+
+
 Portability
 -----------
 
@@ -23,13 +41,13 @@ At Ericsson we have a "Daily Build and Test" that runs on:
     Operating system        Versions
     -----------------------------------------------------------
     Solaris/Sparc32         8, 9, 10
-    Linux/Suse x86	    9.3, 10.1
-    Linux/Suse Amd64	    9.3, 10.1
-    Linux/Montavista PPC    3.1
-    FreeBSD x86             5.0
-    Mac OS X/Intel          10.4.11 (Tiger)
-    Mac OS X/Intel          10.5.5 (Leopard)
-    Windows x86		    XP SP2, 2003, Vista
+    Solaris/Sparc64         10
+    Solaris/x86             10
+    Linux/Suse x86	    9.4, 10.1
+    Linux/Suse x86_64	    10.0, 10.1, 11.0
+    FreeBSD x86             7.1
+    Mac OS X/Intel          10.4.11 (Tiger), 10.5.5 (Leopard)
+    Windows		    XP SP3, 2003, Vista
 
 
 Versions known *not* to work
@@ -44,7 +62,7 @@ EnterpriSe edition 9 (SLES9) has gcc-3.3.3-43 and is not affected.
 gcc-4.3.0 has a serious optimizer bug. It produces an Erlang emulator
 that will crash immediately. The bug is supposed to be fixed in gcc-4.3.1.
 
-FreeBSD has a bug which cause kqueue/poll/select to fail to detect
+FreeBSD had a bug which caused kqueue/poll/select to fail to detect
 that a writev() on a pipe has been made. This bug should have been fixed
 in FreeBSD 6.3 and FreeBSD 7.0. More information can be found at:
 * http://www.freebsd.org/cgi/cvsweb.cgi/src/sys/kern/sys_pipe.c
@@ -86,8 +104,13 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
 
   Perl 5
 
+  GNU m4		If hipe (native code) support is enabled.
+
   ncurses		(Or termcap or termlib.) The development headers and
                         libraries are needed, often known as ncurses-devel.
+			(Use --without-termcap to build without any of these
+			libraries. Only the old shell (without any line
+			editing) can be used.)
 
   OpenSSL	        Optional, but needed for building the Erlang/OTP
                         applications 'ssl' and 'crypto'. You need the
@@ -98,10 +121,10 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
 
 			At least version 0.9.7 of OpenSSL is required.
 
-  Sun Java jdk-1.2.2    Or higher. Optional but needed for building
+  Sun Java jdk-1.5.0    Or higher. Optional but needed for building
 			the Erlang/OTP application 'jinterface' and parts
-			of 'ic' and 'orber'. In addition to 1.2.2, we have
-			tested jdk-1.3.1 and jdk-1.4.2.
+			of 'ic' and 'orber'. We have also tested
+			IBM's JDK 1.5.0.
 
   X Windows             Optional, but development headers and libraries
                         are needed to build the Erlang/OTP application 'gs'
@@ -115,6 +138,7 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
                         build the flex scanner for the megaco application
                         on Unix/Linux.
 
+
   Installing
   ----------
 
@@ -127,12 +151,12 @@ How to build and install Erlang/OTP
 Start by unpacking the Erlang/OTP distribution file with your
 GNU compatible TAR
 
-  1)    gunzip -c otp_src_R12B-0.tar.gz | tar xf -
-  1)    zcat otp_src_R12B-0.tar.gz | tar xf -
+  1)    gunzip -c otp_src_R13A.tar.gz | tar xf -
+  1)    zcat otp_src_R13A.tar.gz | tar xf -
 
 Now cd into the base directory
 
-  2)    cd otp_src_R12B-0
+  2)    cd otp_src_R13A
 
 On some platforms Perl may behave strangely if certain locales are set,
 so optionally you may need to set the LANG variable:
@@ -232,24 +256,24 @@ Makefile for additional configuration information.
 Support for SMP (Symmetric Multi Processing)
 --------------------------------------------
 
-For platforms that are known by us to support the SMP emulator, the
-SMP emulator will be built automatically.
+An emulator with SMP support will be built by default on most platforms
+if a usable POSIX thread library or native Windows threads is found.
 
-To force building of an SMP emulator, use "./configure --enable-smp-support".
-For more details about this, see the release notes.
+You can force building of an SMP emulator, by using
+"./configure --enable-smp-support". However, if configure doesn't
+automatically enable SMP support, the build is very likely to fail.
 
 Use "./configure --disable-smp-support" if you for some reason don't
-want to have the SMP emulator built.
+want to have the emulator with SMP support built.
 
 If SMP support is enabled, support for threaded I/O will also be turned on
-(even in the standard, non-SMP emulator).
+(also in the emulator without SMP support).
 
-New from the R12B release is that the 'erl' command automatically will
-start the SMP emulator if the computer has more than one core or CPU.
-(Use 'erl -smp disable' to force the non-SMP emulator to be started,
-or 'erl -smp enable' to start the SMP emulator on a computer with only one
-CPU.)
-
+The 'erl' command will automatically start the SMP emulator if the
+computer has more than one logical processor. You can force a start
+of the emulator with SMP support by passing '-smp enable' as
+command line arguments to erl, and you can force a start of the
+emulator without SMP support by passing '-smp disable'.
 
 How to install the Erlang/OTP documentation
 -------------------------------------------
@@ -270,7 +294,7 @@ installed in the same way, i.e.
 GS (Graphic System)
 -------------------
 
-GS now requires Tcl/Tk 8.3. It will be searched for when starting GS.
+GS now Tcl/Tk 8.4. It will be searched for when starting GS.
 
 
 Using HiPE
@@ -363,7 +387,7 @@ Mac OS X (Darwin)
 -----------------
 
 We test Mac OS X 10.4.11 (Tiger) and Mac OS X 10.5.x (Leopard)
-in our daily builds.
+in our daily builds (but only on Intel processors).
 
 Building on Mac OS X 10.3.x (Panther) might also work, but has
 not been tested by us.

@@ -1,21 +1,22 @@
-#<copyright>
-# <year>1996-2007</year>
-# <holder>Ericsson AB, All Rights Reserved</holder>
-#</copyright>
-#<legalnotice>
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2008-2009. All Rights Reserved.
+# 
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
 # retrieved online at http://www.erlang.org/.
-#
+# 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
+# 
+# %CopyrightEnd%
 #
-# The Initial Developer of the Original Code is Ericsson AB.
-#</legalnotice>
+
 #
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
@@ -52,6 +53,14 @@ ERL_FILES = $(MODULES:%=%.erl)
 
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
+APP_FILE= public_key.app
+APPUP_FILE= public_key.appup
+
+APP_SRC= $(APP_FILE).src
+APP_TARGET= $(EBIN)/$(APP_FILE)
+APPUP_SRC= $(APPUP_FILE).src
+APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
+
 INCLUDE = ../include
 # ----------------------------------------------------
 # INETS FLAGS
@@ -72,13 +81,19 @@ ERL_COMPILE_FLAGS += $(PUB_KEY_ERL_FLAGS) \
 # Targets
 # ----------------------------------------------------
 
-debug opt: $(TARGET_FILES) $(HRL_FILES)
+debug opt: $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) $(HRL_FILES)
 
 clean:
-	rm -f $(TARGET_FILES)
+	rm -f $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) 
 	rm -f core
 
 docs:
+
+$(APP_TARGET):	$(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(APPUP_TARGET):	$(APPUP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 # ----------------------------------------------------
 # Release Target
@@ -91,7 +106,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/include
 	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/include
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) $(RELSYSDIR)/ebin
 
 release_docs_spec:
 

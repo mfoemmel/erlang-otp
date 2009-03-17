@@ -7,8 +7,7 @@
  * Copyright (C) 1995-1996 Jean-loup Gailly.
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
-
-/* $Id$ */
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"

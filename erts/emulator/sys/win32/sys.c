@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 /*
  * system-dependent functions
@@ -60,7 +61,7 @@ static int get_and_remove_option(int* argc, char** argv, const char* option);
 static char *get_and_remove_option2(int *argc, char **argv, 
 				    const char *option);
 static int init_async_io(struct async_io* aio, int use_threads);
-static void release_async_io(struct async_io* aio);
+static void release_async_io(struct async_io* aio, ErlDrvPort);
 static void async_read_file(struct async_io* aio, LPVOID buf, DWORD numToRead);
 static int async_write_file(struct async_io* aio, LPVOID buf, DWORD numToWrite);
 static int get_overlapped_result(struct async_io* aio,
@@ -445,6 +446,7 @@ static void stop(ErlDrvData);
 static void output(ErlDrvData, char*, int);
 static void ready_input(ErlDrvData, ErlDrvEvent);
 static void ready_output(ErlDrvData, ErlDrvEvent);
+static void stop_select(ErlDrvEvent, void*);
 
 struct erl_drv_entry spawn_driver_entry = {
     spawn_init,
@@ -456,9 +458,20 @@ struct erl_drv_entry spawn_driver_entry = {
     "spawn",
     NULL, /* finish */
     NULL, /* handle */
+    NULL, /* control */
     NULL, /* timeout */
     NULL, /* outputv */
-    NULL /* ready_async */
+    NULL, /* ready_async */
+    NULL, /* flush */
+    NULL, /* call */
+    NULL, /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0,	/* ERL_DRV_FLAGs */
+    NULL,
+    NULL, /* process_exit */
+    stop_select
 };
 
 #ifdef HARD_POLL_DEBUG
@@ -483,9 +496,20 @@ struct erl_drv_entry fd_driver_entry = {
     "fd",
     NULL, /* finish */
     NULL, /* handle */
+    NULL, /* control */
     NULL, /* timeout */
     NULL, /* outputv */
-    NULL /* ready_async */
+    NULL, /* ready_async */
+    NULL, /* flush */
+    NULL, /* call */
+    NULL, /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0,	/* ERL_DRV_FLAGs */
+    NULL,
+    NULL, /* process_exit */
+    stop_select
 };
 
 struct erl_drv_entry vanilla_driver_entry = {
@@ -498,9 +522,20 @@ struct erl_drv_entry vanilla_driver_entry = {
     "vanilla",
     NULL, /* finish */
     NULL, /* handle */
+    NULL, /* control */
     NULL, /* timeout */
     NULL, /* outputv */
-    NULL /* ready_async */
+    NULL, /* ready_async */
+    NULL, /* flush */
+    NULL, /* call */
+    NULL, /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0,	/* ERL_DRV_FLAGs */
+    NULL,
+    NULL, /* process_exit */
+    stop_select
 };
 
 #if defined(USE_THREADS) && !defined(ERTS_SMP)
@@ -530,9 +565,20 @@ struct erl_drv_entry async_driver_entry = {
     "async",
     NULL, /* finish */
     NULL, /* handle */
+    NULL, /* control */
     NULL, /* timeout */
     NULL, /* outputv */
-    NULL /* ready_async */
+    NULL, /* ready_async */
+    NULL, /* flush */
+    NULL, /* call */
+    NULL, /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0,	/* ERL_DRV_FLAGs */
+    NULL,
+    NULL, /* process_exit */
+    stop_select
 };
 
 #endif
@@ -599,8 +645,8 @@ new_driver_data(port_num, packet_bytes, wait_objs_required, use_threads)
      */
 
     if (dp < driver_data+max_files) {
-	release_async_io(&dp->in);
-	release_async_io(&dp->out);
+	release_async_io(&dp->in, dp->port_num);
+	release_async_io(&dp->out, dp->port_num);
     }
     erts_smp_mtx_unlock(&sys_driver_data_lock);
     return NULL;
@@ -661,8 +707,8 @@ release_driver_data(DriverData* dp)
 	dp->port_pid = INVALID_HANDLE_VALUE;
     }
 
-    release_async_io(&dp->in);
-    release_async_io(&dp->out);
+    release_async_io(&dp->in, dp->port_num);
+    release_async_io(&dp->out, dp->port_num);
 
     /*
      * This must be last, because this function might be executed from
@@ -697,14 +743,14 @@ set_driver_data(dp, ifd, ofd, read_write, report_exit)
 
     if (read_write & DO_READ) {
 	result = driver_select(dp->port_num, (ErlDrvEvent)dp->in.ov.hEvent,
-			       DO_READ, 1);
+			       ERL_DRV_READ|ERL_DRV_USE, 1);
 	ASSERT(result != -1);
 	async_read_file(&dp->in, dp->inbuf, dp->inBufSize);
     }
 
     if (read_write & DO_WRITE) {
 	result = driver_select(dp->port_num, (ErlDrvEvent)dp->out.ov.hEvent,
-			       DO_WRITE, 1);
+			       ERL_DRV_WRITE|ERL_DRV_USE, 1);
 	ASSERT(result != -1);
     }
     return (ErlDrvData)index;
@@ -745,7 +791,7 @@ init_async_io(AsyncIo* aio, int use_threads)
  */  
 
 static void
-release_async_io(AsyncIo* aio)
+release_async_io(AsyncIo* aio, ErlDrvPort port_num)
 {
     aio->flags = 0;
 
@@ -757,8 +803,13 @@ release_async_io(AsyncIo* aio)
 	CloseHandle(aio->fd);
     aio->fd = INVALID_HANDLE_VALUE;
 
-    if (aio->ov.hEvent != NULL)
-	CloseHandle(aio->ov.hEvent);
+    if (aio->ov.hEvent != NULL) {
+	(void) driver_select(port_num,
+			     (ErlDrvEvent)aio->ov.hEvent,
+			     ERL_DRV_USE, 0);
+	/* was CloseHandle(aio->ov.hEvent); */
+    }
+
     aio->ov.hEvent = NULL;
 
     if (aio->ioAllowed != NULL)
@@ -1734,17 +1785,13 @@ static void common_stop(int index)
     if (dp->in.ov.hEvent != NULL) {
 	(void) driver_select(dp->port_num,
 			     (ErlDrvEvent)dp->in.ov.hEvent,
-			     DO_READ,
-			     0);
+			     ERL_DRV_READ, 0);
     }
     if (dp->out.ov.hEvent != NULL) {
 	(void) driver_select(dp->port_num,
 			     (ErlDrvEvent)dp->out.ov.hEvent,
-			     DO_WRITE,
-			     0);
-    }
-
-    
+			     ERL_DRV_WRITE, 0);
+    }    
 
     if (dp->out.thread == (HANDLE) -1 && dp->in.thread == (HANDLE) -1) {
 	release_driver_data(dp);
@@ -2143,7 +2190,7 @@ ready_input(ErlDrvData drv_data, ErlDrvEvent ready_event)
 	    driver_failure_eof(dp->port_num);
 	} else {			/* Report real errors. */
 	    int error = GetLastError();
-	    (void) driver_select(dp->port_num, ready_event, DO_READ, 0);
+	    (void) driver_select(dp->port_num, ready_event, ERL_DRV_READ, 0);
 	    _dosmaperr(error);
 	    driver_failure_posix(dp->port_num, errno);
 	}
@@ -2188,11 +2235,17 @@ ready_output(ErlDrvData drv_data, ErlDrvEvent ready_event)
 	dp->out.ov.Offset += bytesWritten; /* For vanilla driver. */
 	return ; /* 0; */
     }
-    (void) driver_select(dp->port_num, ready_event, DO_WRITE, 0);
+    (void) driver_select(dp->port_num, ready_event, ERL_DRV_WRITE, 0);
     _dosmaperr(error);
     driver_failure_posix(dp->port_num, errno);
     /* return 0; */
 }
+
+static void stop_select(ErlDrvEvent e, void* _)
+{
+    CloseHandle((HANDLE)e);
+}
+
 /* Fills in the systems representation of the beam process identifier.
 ** The Pid is put in STRING representation in the supplied buffer,
 ** no interpretation of this should be done by the rest of the
@@ -2792,7 +2845,7 @@ async_drv_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 	return ERL_DRV_ERROR_GENERAL;
     }
 
-    driver_select(port_num, async_drv_event, DO_READ, 1);
+    driver_select(port_num, async_drv_event, ERL_DRV_READ|ERL_DRV_USE, 1);
     if (init_async(async_drv_event) < 0) {
 	return ERL_DRV_ERROR_GENERAL;
     }
@@ -2803,8 +2856,8 @@ static void
 async_drv_stop(ErlDrvData port_num)
 {
     exit_async();
-    driver_select((ErlDrvPort)port_num, async_drv_event, DO_READ, 0);
-    CloseHandle((HANDLE)async_drv_event);
+    driver_select((ErlDrvPort)port_num, async_drv_event, ERL_DRV_READ|ERL_DRV_USE, 0);
+    /*CloseHandle((HANDLE)async_drv_event);*/
     async_drv_event = (ErlDrvEvent) NULL;
 }
 
@@ -2820,3 +2873,4 @@ async_drv_input(ErlDrvData port_num, ErlDrvEvent e)
 }
 
 #endif
+

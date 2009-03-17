@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2001-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 /* Description: Error checking thread interface to the ethread library.
@@ -32,6 +33,15 @@
 #include "erl_lock_check.h"
 #include "erl_lock_count.h"
 #include "erl_term.h"
+
+#ifdef ERTS_ENABLE_LOCK_COUNT
+#define erts_mtx_lock(L) erts_mtx_lock_x(L, __FILE__, __LINE__)
+#define erts_spin_lock(L) erts_spin_lock_x(L, __FILE__, __LINE__)
+#define erts_rwmtx_rlock(L) erts_rwmtx_rlock_x(L, __FILE__, __LINE__)
+#define erts_rwmtx_rwlock(L) erts_rwmtx_rwlock_x(L, __FILE__, __LINE__)
+#define erts_read_lock(L) erts_read_lock_x(L, __FILE__, __LINE__)
+#define erts_write_lock(L) erts_write_lock_x(L, __FILE__, __LINE__)
+#endif
 
 #define ERTS_THR_OPTS_DEFAULT_INITER ETHR_THR_OPTS_DEFAULT_INITER
 typedef ethr_thr_opts erts_thr_opts_t;
@@ -165,7 +175,11 @@ ERTS_GLB_INLINE void erts_mtx_destroy(erts_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_mtx_set_forksafe(erts_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_mtx_unset_forksafe(erts_mtx_t *mtx);
 ERTS_GLB_INLINE int erts_mtx_trylock(erts_mtx_t *mtx);
+#ifdef ERTS_ENABLE_LOCK_COUNT
+ERTS_GLB_INLINE void erts_mtx_lock_x(erts_mtx_t *mtx, char *file, unsigned int line);
+#else
 ERTS_GLB_INLINE void erts_mtx_lock(erts_mtx_t *mtx);
+#endif
 ERTS_GLB_INLINE void erts_mtx_unlock(erts_mtx_t *mtx);
 ERTS_GLB_INLINE int erts_lc_mtx_is_locked(erts_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_cnd_init(erts_cnd_t *cnd);
@@ -182,10 +196,15 @@ ERTS_GLB_INLINE void erts_rwmtx_init(erts_rwmtx_t *rwmtx,
 					 char *name);
 ERTS_GLB_INLINE void erts_rwmtx_destroy(erts_rwmtx_t *rwmtx);
 ERTS_GLB_INLINE int erts_rwmtx_tryrlock(erts_rwmtx_t *rwmtx);
+#ifdef ERTS_ENABLE_LOCK_COUNT
+ERTS_GLB_INLINE void erts_rwmtx_rlock_x(erts_rwmtx_t *rwmtx, char *file, unsigned int line);
+ERTS_GLB_INLINE void erts_rwmtx_rwlock_x(erts_rwmtx_t *rwmtx, char *file, unsigned int line);
+#else
 ERTS_GLB_INLINE void erts_rwmtx_rlock(erts_rwmtx_t *rwmtx);
+ERTS_GLB_INLINE void erts_rwmtx_rwlock(erts_rwmtx_t *rwmtx);
+#endif
 ERTS_GLB_INLINE void erts_rwmtx_runlock(erts_rwmtx_t *rwmtx);
 ERTS_GLB_INLINE int erts_rwmtx_tryrwlock(erts_rwmtx_t *rwmtx);
-ERTS_GLB_INLINE void erts_rwmtx_rwlock(erts_rwmtx_t *rwmtx);
 ERTS_GLB_INLINE void erts_rwmtx_rwunlock(erts_rwmtx_t *rwmtx);
 ERTS_GLB_INLINE int erts_lc_rwmtx_is_rlocked(erts_rwmtx_t *mtx);
 ERTS_GLB_INLINE int erts_lc_rwmtx_is_rwlocked(erts_rwmtx_t *mtx);
@@ -201,6 +220,9 @@ ERTS_GLB_INLINE long erts_atomic_addtest(erts_atomic_t *addp,
 ERTS_GLB_INLINE void erts_atomic_add(erts_atomic_t *addp, long i);
 ERTS_GLB_INLINE long erts_atomic_xchg(erts_atomic_t *xchgp,
 				      long new);
+ERTS_GLB_INLINE long erts_atomic_cmpxchg(erts_atomic_t *xchgp,
+					 long new,
+					 long expected);
 ERTS_GLB_INLINE long erts_atomic_bor(erts_atomic_t *var, long mask);
 ERTS_GLB_INLINE long erts_atomic_band(erts_atomic_t *var, long mask);
 ERTS_GLB_INLINE void erts_spinlock_init_x(erts_spinlock_t *lock,
@@ -210,7 +232,11 @@ ERTS_GLB_INLINE void erts_spinlock_init(erts_spinlock_t *lock,
 					char *name);
 ERTS_GLB_INLINE void erts_spinlock_destroy(erts_spinlock_t *lock);
 ERTS_GLB_INLINE void erts_spin_unlock(erts_spinlock_t *lock);
+#ifdef ERTS_ENABLE_LOCK_COUNT
+ERTS_GLB_INLINE void erts_spin_lock_x(erts_spinlock_t *lock, char *file, unsigned int line);
+#else
 ERTS_GLB_INLINE void erts_spin_lock(erts_spinlock_t *lock);
+#endif
 ERTS_GLB_INLINE int erts_lc_spinlock_is_locked(erts_spinlock_t *lock);
 ERTS_GLB_INLINE void erts_rwlock_init_x(erts_rwlock_t *lock,
 					char *name,
@@ -219,9 +245,14 @@ ERTS_GLB_INLINE void erts_rwlock_init(erts_rwlock_t *lock,
 				      char *name);
 ERTS_GLB_INLINE void erts_rwlock_destroy(erts_rwlock_t *lock);
 ERTS_GLB_INLINE void erts_read_unlock(erts_rwlock_t *lock);
+#ifdef ERTS_ENABLE_LOCK_COUNT
+ERTS_GLB_INLINE void erts_read_lock_x(erts_rwlock_t *lock, char *file, unsigned int line);
+ERTS_GLB_INLINE void erts_write_lock_x(erts_rwlock_t *lock, char *file, unsigned int line);
+#else
 ERTS_GLB_INLINE void erts_read_lock(erts_rwlock_t *lock);
-ERTS_GLB_INLINE void erts_write_unlock(erts_rwlock_t *lock);
 ERTS_GLB_INLINE void erts_write_lock(erts_rwlock_t *lock);
+#endif
+ERTS_GLB_INLINE void erts_write_unlock(erts_rwlock_t *lock);
 ERTS_GLB_INLINE int erts_lc_rwlock_is_rlocked(erts_rwlock_t *lock);
 ERTS_GLB_INLINE int erts_lc_rwlock_is_rwlocked(erts_rwlock_t *lock);
 ERTS_GLB_INLINE void erts_thr_time_now(erts_thr_timeval_t *time);
@@ -345,6 +376,7 @@ erts_rec_mtx_init(erts_mtx_t *mtx)
 }
 #endif
 
+
 ERTS_GLB_INLINE void
 erts_mtx_init_x(erts_mtx_t *mtx, char *name, Eterm extra)
 {
@@ -356,7 +388,7 @@ erts_mtx_init_x(erts_mtx_t *mtx, char *name, Eterm extra)
     erts_lc_init_lock_x(&mtx->lc, name, ERTS_LC_FLG_LT_MUTEX, extra);
 #endif
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_init_lock_extra(&mtx->lcnt, name, ERTS_LCNT_LT_MUTEX, extra);
+    erts_lcnt_init_lock_x(&mtx->lcnt, name, ERTS_LCNT_LT_MUTEX, extra);
 #endif
 #endif
 }
@@ -372,7 +404,7 @@ erts_mtx_init_locked_x(erts_mtx_t *mtx, char *name, Eterm extra)
     erts_lc_init_lock_x(&mtx->lc, name, ERTS_LC_FLG_LT_MUTEX, extra);
 #endif
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_init_lock_extra(&mtx->lcnt, name, ERTS_LCNT_LT_MUTEX, extra);
+    erts_lcnt_init_lock_x(&mtx->lcnt, name, ERTS_LCNT_LT_MUTEX, extra);
 #endif
     res = ethr_mutex_lock(&mtx->mtx);
     if (res)
@@ -496,7 +528,11 @@ erts_mtx_trylock(erts_mtx_t *mtx)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_mtx_lock_x(erts_mtx_t *mtx, char *file, unsigned int line)
+#else
 erts_mtx_lock(erts_mtx_t *mtx)
+#endif
 {
 #ifdef USE_THREADS
     int res;
@@ -508,7 +544,7 @@ erts_mtx_lock(erts_mtx_t *mtx)
 #endif
     res = ethr_mutex_lock(&mtx->mtx);
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_lock_post(&mtx->lcnt);
+    erts_lcnt_lock_post_x(&mtx->lcnt, file, line);
 #endif
     if (res)
 	erts_thr_fatal_error(res, "lock mutex");
@@ -656,7 +692,7 @@ erts_rwmtx_init_x(erts_rwmtx_t *rwmtx, char *name, Eterm extra)
     erts_lc_init_lock_x(&rwmtx->lc, name, ERTS_LC_FLG_LT_RWMUTEX, extra);
 #endif
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_init_lock_extra(&rwmtx->lcnt, name, ERTS_LCNT_LT_RWMUTEX, extra);
+    erts_lcnt_init_lock_x(&rwmtx->lcnt, name, ERTS_LCNT_LT_RWMUTEX, extra);
 #endif
 #endif
 }
@@ -725,7 +761,11 @@ erts_rwmtx_tryrlock(erts_rwmtx_t *rwmtx)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_rwmtx_rlock_x(erts_rwmtx_t *rwmtx, char *file, unsigned int line)
+#else
 erts_rwmtx_rlock(erts_rwmtx_t *rwmtx)
+#endif
 {
 #ifdef USE_THREADS
     int res;
@@ -737,7 +777,7 @@ erts_rwmtx_rlock(erts_rwmtx_t *rwmtx)
 #endif
     res = ethr_rwmutex_rlock(&rwmtx->rwmtx);
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_lock_post(&rwmtx->lcnt);
+    erts_lcnt_lock_post_x(&rwmtx->lcnt, file, line);
 #endif
     if (res != 0)
 	erts_thr_fatal_error(res, "read lock rwmutex");
@@ -793,7 +833,11 @@ erts_rwmtx_tryrwlock(erts_rwmtx_t *rwmtx)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_rwmtx_rwlock_x(erts_rwmtx_t *rwmtx, char *file, unsigned int line)
+#else
 erts_rwmtx_rwlock(erts_rwmtx_t *rwmtx)
+#endif
 {
 #ifdef USE_THREADS
     int res;
@@ -805,7 +849,7 @@ erts_rwmtx_rwlock(erts_rwmtx_t *rwmtx)
 #endif
     res = ethr_rwmutex_rwlock(&rwmtx->rwmtx);
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_lock_post(&rwmtx->lcnt);
+    erts_lcnt_lock_post_x(&rwmtx->lcnt, file, line);
 #endif
     if (res != 0)
 	erts_thr_fatal_error(res, "write lock rwmutex");
@@ -1015,6 +1059,23 @@ erts_atomic_xchg(erts_atomic_t *xchgp, long new)
 }
 
 ERTS_GLB_INLINE long
+erts_atomic_cmpxchg(erts_atomic_t *xchgp, long new, long expected)
+{
+#ifdef USE_THREADS
+    long old;
+    int res = ethr_atomic_cmpxchg(xchgp, new, expected, &old);
+    if (ERTS_UNLIKELY(res != 0))
+	erts_thr_fatal_error(res, "perform atomic exchange");
+    return old;
+#else
+    long old = *xchgp;
+    if (old == expected)
+        *xchgp = new;
+    return old;
+#endif
+}
+
+ERTS_GLB_INLINE long
 erts_atomic_bor(erts_atomic_t *var, long mask)
 {
     long old;
@@ -1057,7 +1118,7 @@ erts_spinlock_init_x(erts_spinlock_t *lock, char *name, Eterm extra)
     erts_lc_init_lock_x(&lock->lc, name, ERTS_LC_FLG_LT_SPINLOCK, extra);
 #endif
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_init_lock_extra(&lock->lcnt, name, ERTS_LCNT_LT_SPINLOCK, extra);
+    erts_lcnt_init_lock_x(&lock->lcnt, name, ERTS_LCNT_LT_SPINLOCK, extra);
 #endif
 #else
     (void)lock;
@@ -1121,7 +1182,11 @@ erts_spin_unlock(erts_spinlock_t *lock)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_spin_lock_x(erts_spinlock_t *lock, char *file, unsigned int line)
+#else
 erts_spin_lock(erts_spinlock_t *lock)
+#endif
 {
 #ifdef USE_THREADS
     int res;
@@ -1133,7 +1198,7 @@ erts_spin_lock(erts_spinlock_t *lock)
 #endif
     res = ethr_spin_lock(&lock->slck);
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_lock_post(&lock->lcnt);
+    erts_lcnt_lock_post_x(&lock->lcnt, file, line);
 #endif
     if (res)
 	erts_thr_fatal_error(res, "take spin lock");
@@ -1169,7 +1234,7 @@ erts_rwlock_init_x(erts_rwlock_t *lock, char *name, Eterm extra)
     erts_lc_init_lock_x(&lock->lc, name, ERTS_LC_FLG_LT_RWSPINLOCK, extra);
 #endif
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_init_lock_extra(&lock->lcnt, name, ERTS_LCNT_LT_RWSPINLOCK, extra);
+    erts_lcnt_init_lock_x(&lock->lcnt, name, ERTS_LCNT_LT_RWSPINLOCK, extra);
 #endif
 #else
     (void)lock;
@@ -1233,7 +1298,11 @@ erts_read_unlock(erts_rwlock_t *lock)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_read_lock_x(erts_rwlock_t *lock, char *file, unsigned int line)
+#else
 erts_read_lock(erts_rwlock_t *lock)
+#endif
 {
 #ifdef USE_THREADS
     int res;
@@ -1245,7 +1314,7 @@ erts_read_lock(erts_rwlock_t *lock)
 #endif
     res = ethr_read_lock(&lock->rwlck);
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_lock_post(&lock->lcnt);
+    erts_lcnt_lock_post_x(&lock->lcnt, file, line);
 #endif
     if (res)
 	erts_thr_fatal_error(res, "take read lock");
@@ -1274,7 +1343,11 @@ erts_write_unlock(erts_rwlock_t *lock)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_write_lock_x(erts_rwlock_t *lock, char *file, unsigned int line)
+#else
 erts_write_lock(erts_rwlock_t *lock)
+#endif
 {
 #ifdef USE_THREADS
     int res;
@@ -1286,7 +1359,7 @@ erts_write_lock(erts_rwlock_t *lock)
 #endif
     res = ethr_write_lock(&lock->rwlck);
 #ifdef ERTS_ENABLE_LOCK_COUNT
-    erts_lcnt_lock_post(&lock->lcnt);
+    erts_lcnt_lock_post_x(&lock->lcnt, file, line);
 #endif
     if (res)
 	erts_thr_fatal_error(res, "take write lock");

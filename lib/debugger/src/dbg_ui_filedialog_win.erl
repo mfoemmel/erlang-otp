@@ -1,20 +1,22 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
+
 -module(dbg_ui_filedialog_win).
 
 %% External exports
@@ -229,7 +231,7 @@ update_win(Filter, ExtraFilter, Prev) ->
 
     case Res of
 	ok ->
-	    Matching = lists:sort(filelib:wildcard(Filter2)),
+	    Matching = lists:sort(filelib:wildcard(Filter2, erl_prim_loader)),
 	    Files = extra_filter(Matching, Cwd, ExtraFilter),
 	    gs:config('Files', {items, Files});
 	error ->
@@ -256,7 +258,7 @@ check_filter(Filter0, Prev) ->
     case Rest of
 	[] ->
 	    %% Filter = existing file or directory
-	    Res = case filelib:is_dir(Filter) of
+	    Res = case filelib:is_dir(Filter, erl_prim_loader) of
 		      true -> {filename:join(Filter, "*"), Filter, "*"};
 		      false -> {Filter, filename:dirname(Filter),
 				filename:basename(Filter)}
@@ -277,13 +279,13 @@ check_filter(Filter0, Prev) ->
     end.
 
 max_existing([Name | Names]) ->
-    case filelib:is_file(Name) of
+    case filelib:is_file(Name, erl_prim_loader) of
 	true -> max_existing(Name, Names);
 	false -> {[], [Name | Names]}
     end.
 max_existing(Dir, [Name | Names]) ->
     Dir2 = filename:join(Dir, Name),
-    case filelib:is_file(Dir2) of
+    case filelib:is_file(Dir2, erl_prim_loader) of
 	true when Names==[] -> {Dir2, []};
 	true -> max_existing(Dir2, Names);
 	false -> {Dir, [Name | Names]}
@@ -305,15 +307,16 @@ extra_filter([File|Files], Dir, Fun) ->
 extra_filter([], _Dir, _Fun) -> [].
 
 get_subdirs(Dir) ->
-    case file:list_dir(Dir) of
+    case erl_prim_loader:list_dir(Dir) of
 	{ok, FileNames} ->
 	    X = lists:filter(fun(FileName) ->
 				     File = filename:join(Dir, FileName),
-				     filelib:is_dir(File)
+				     filelib:is_dir(File, erl_prim_loader)
 			     end,
 			     FileNames),
 	    lists:sort(X);
-	_Error -> []
+	_Error ->
+	    []
     end.
 
 %% Return the "remainder" of a file name relative a dir name, examples:

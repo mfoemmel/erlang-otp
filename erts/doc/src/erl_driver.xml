@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>2001</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2001</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>erl_driver</title>
@@ -298,7 +296,6 @@
         <v>int scheduler_threads</v>
       </type>
       <desc>
-        <marker id="ErlDrvSysInfo"></marker>
         <p>The <c>ErlDrvSysInfo</c> structure is used for storage of
           information about the Erlang runtime system.
           <seealso marker="#driver_system_info">driver_system_info()</seealso>
@@ -325,11 +322,11 @@
           <tag>erts_version</tag>
           <item>A string containing the version number of the runtime system
            (the same as returned by
-          <seealso marker="kernel:erlang#system_info_version">erlang:system_info(version)</seealso>).</item>
+          <seealso marker="erts:erlang#system_info_version">erlang:system_info(version)</seealso>).</item>
           <tag>otp_release</tag>
           <item>A string containing the OTP release number
            (the same as returned by
-          <seealso marker="kernel:erlang#system_info_otp_release">erlang:system_info(otp_release)</seealso>).</item>
+          <seealso marker="erts:erlang#system_info_otp_release">erlang:system_info(otp_release)</seealso>).</item>
           <tag>thread_support</tag>
           <item>A value <c>!= 0</c> if the runtime system has thread support;
            otherwise, <c>0</c>.</item>
@@ -346,11 +343,11 @@
           <item>The number of async threads in the async thread pool used
            by <seealso marker="#driver_async">driver_async()</seealso>
            (the same as returned by
-          <seealso marker="kernel:erlang#system_info_thread_pool_size">erlang:system_info(thread_pool_size)</seealso>).</item>
+          <seealso marker="erts:erlang#system_info_thread_pool_size">erlang:system_info(thread_pool_size)</seealso>).</item>
           <tag>scheduler_threads</tag>
           <item>The number of scheduler threads used by the runtime system
            (the same as returned by
-          <seealso marker="kernel:erlang#system_info_schedulers">erlang:system_info(schedulers)</seealso>).</item>
+          <seealso marker="erts:erlang#system_info_schedulers">erlang:system_info(schedulers)</seealso>).</item>
         </taglist>
       </desc>
     </func>
@@ -362,7 +359,6 @@
         <v>char orig_bytes[]</v>
       </type>
       <desc>
-        <marker id="ErlDrvBinary"></marker>
         <p>The <c>ErlDrvBinary</c> structure is a binary, as sent
           between the emulator and the driver. All binaries are
           reference counted; when <c>driver_binary_free</c> is called,
@@ -412,7 +408,6 @@
       <name>ErlDrvData</name>
       <fsummary>Driver specific data</fsummary>
       <desc>
-        <marker id="ErlDrvData"></marker>
         <p>The <c>ErlDrvData</c> is a handle to driver-specific data,
           passed to the driver call-backs. It is a pointer, and is
           most often casted to a specific pointer in the driver.</p>
@@ -449,7 +444,6 @@
       <name>ErlDrvMonitor</name>
       <fsummary>A monitor reference</fsummary>
       <desc>
-        <marker id="ErlDrvMonitor"></marker>
         <p>When a driver creates a monitor for a process, a
           <c>ErlDrvMonitor</c> is filled in. This is an opaque
           data-type which can be assigned to but not compared without
@@ -465,7 +459,6 @@
       <name>ErlDrvNowData</name>
       <fsummary>A structure for holding timestamps</fsummary>
       <desc>
-        <marker id="ErlDrvNowData"></marker>
         <p>The <c>ErlDrvNowData</c> structure holds a timestamp
           consisting of three values measured from some arbitrary
           point in the past. The three structure members are:</p>
@@ -486,7 +479,6 @@
       <name>ErlDrvPDL</name>
       <fsummary>Port Data Lock</fsummary>
       <desc>
-        <marker id="ErlDrvPDL"></marker>
         <p>If certain port specific data have to be accessed from other
           threads than those calling the driver call-backs, a port data lock
           can be used in order to synchronize the operations on the data.
@@ -523,7 +515,6 @@
       <name>ErlDrvTid</name>
       <fsummary>Thread identifier</fsummary>
       <desc>
-        <marker id="ErlDrvTid"></marker>
         <p>Thread identifier.</p>
 	<p>See also:
 	   <seealso marker="#erl_drv_thread_create">erl_drv_thread_create()</seealso>,
@@ -542,7 +533,6 @@
 	<v>int suggested_stack_size</v>
       </type>
       <desc>
-        <marker id="ErlDrvThreadOpts"></marker>
         <p>Thread options structure passed to
 	   <seealso marker="#erl_drv_thread_create">erl_drv_thread_create()</seealso>.
 	   Currently the following fields exist:
@@ -565,7 +555,6 @@
       <name>ErlDrvMutex</name>
       <fsummary>Mutex</fsummary>
       <desc>
-        <marker id="ErlDrvMutex"></marker>
         <p>Mutual exclusion lock. Used for synchronizing access to shared data.
 	   Only one thread at a time can lock a mutex.
 	</p>
@@ -583,7 +572,6 @@
       <name>ErlDrvCond</name>
       <fsummary>Condition variable</fsummary>
       <desc>
-        <marker id="ErlDrvCond"></marker>
         <p>Condition variable. Used when threads need to wait for a specific
 	   condition to appear before continuing execution. Condition variables
 	   need to be used with associated mutexes.
@@ -602,7 +590,6 @@
       <name>ErlDrvRWLock</name>
       <fsummary>Rwlock</fsummary>
       <desc>
-        <marker id="ErlDrvRWLock"></marker>
         <p>Read/write lock. Used to allow multiple threads to read shared data
 	   while only allowing one thread to write the same data. Multiple threads
 	   can read lock an rwlock at the same time, while only one thread can
@@ -625,7 +612,6 @@
       <name>ErlDrvTSDKey</name>
       <fsummary>Thread specific data key</fsummary>
       <desc>
-        <marker id="ErlDrvTSDKey"></marker>
         <p>Key which thread specific data can be associated with.</p>
 	<p>See also:
 	   <seealso marker="#erl_drv_tsd_key_create">erl_drv_tsd_key_create()</seealso>,
@@ -807,28 +793,49 @@
       <fsummary>Provide an event for having the emulator call the driver</fsummary>
       <desc>
         <marker id="driver_select"></marker>
-        <p>The <c>driver_select</c> is used by the driver to
-          provide the emulator with an event to check for. This
-          enables the emulator to call the driver when something has
-          happened asynchronously.</p>
-        <p>The <c>event</c> parameter is used in the emulator cycle in
-          a <c>select</c> call. If the event is set then the driver is
-          called. The <c>mode</c> parameter can be either
-          <c>ON_READ</c> or <c>ON_WRITE</c>, and specifies whether
-          <seealso marker="driver_entry#ready_output">ready_output</seealso>
-          or <seealso marker="driver_entry#ready_input">ready_input</seealso>
-          will be called when the event is fired. Note that this is
-          just a convention, they don't have to read or write
-          anything.</p>
-        <p>The <c>on</c> parameter should be <c>1</c> for adding the
-          event and <c>0</c> for removing it.</p>
-        <p>On Unix systems, the function <c>select</c> is used. The
-          <c>event</c> must be a socket or pipe (or other object that
-          <c>select</c> can use).</p>
-        <p>On windows, the Win32 API function
-          <c>WaitForMultipleObjects</c> is used. This places other
-          restriction on the <c>event</c>. Refer to the Win32 SDK
-          documentation.</p>
+        <p>This function is used by drivers to provide the emulator with
+          events to check for. This enables the emulator to call the driver
+          when something has happened asynchronously.</p>
+        <p>The <c>event</c> argument indentifies an OS-specific event object.
+          On Unix systems, the functions <c>select</c>/<c>poll</c> are used. The
+          event object must be a socket or pipe (or other object that
+          <c>select</c>/<c>poll</c> can use).
+          On windows, the Win32 API function <c>WaitForMultipleObjects</c>
+          is used. This places other restriction on the event object.
+          Refer to the Win32 SDK documentation.</p>
+        <p>The <c>on</c> parameter should be <c>1</c> for setting events
+          and <c>0</c> for clearing them.</p>
+        <p>The <c>mode</c> argument is bitwise-or combination of
+          <c>ERL_DRV_READ</c>, <c>ERL_DRV_WRITE</c> and <c>ERL_DRV_USE</c>.
+          The first two specifies whether to wait for read events and/or write
+          events. A fired read event will call
+          <seealso marker="driver_entry#ready_input">ready_input</seealso>
+          while a fired write event will call
+          <seealso marker="driver_entry#ready_output">ready_output</seealso>.
+          </p>
+    <note>
+      <p>Some OS (Windows) does not differ between read and write events.
+         The call-back for a fired event then only depends on the value of <c>mode</c>.</p>
+    </note>
+        <p><c>ERL_DRV_USE</c> specifies if we are using the event object or if we want to close it.
+           On an emulator with SMP support, it is not safe to clear all events
+           and then close the event object after <c>driver_select</c> has
+           returned. Another thread may still be using the event object
+           internally. To safely close an event object call
+           <c>driver_select</c> with <c>ERL_DRV_USE</c> and <c>on==0</c>. That
+           will clear all events and then call 
+           <seealso marker="driver_entry#stop_select">stop_select</seealso>
+           when it is safe to close the event object.
+           <c>ERL_DRV_USE</c> should be set together with the first event
+           for an event object. It is harmless to set <c>ERL_DRV_USE</c>
+           even though it already has been done. Clearing all events but keeping
+           <c>ERL_DRV_USE</c> set will indicate that we are using the event
+           object and probably will set events for it again.</p>
+    <note>
+      <p>ERL_DRV_USE was added in OTP release R13. Old drivers will still work
+         as before. But it is recommended to update them to use <c>ERL_DRV_USE</c> and
+         <c>stop_select</c> to make sure that event objects are closed in a safe way.</p>
+    </note>           
         <p>The return value is 0 (Failure, -1, only if the
           <c>ready_input</c>/<c>ready_output</c> is
           <c>NULL</c>.</p>
@@ -1007,7 +1014,8 @@
         <p>This function dequeues data by moving the head pointer
           forward in the driver queue by <c>size</c> bytes. The data
           in the queue will be dealloced.</p>
-        <p>The return value is 0.</p>
+        <p>The return value is the number of bytes remaining in the queue
+          or -1 on failure.</p>
         <p>This function can be called from an arbitrary thread if a
           <seealso marker="#ErlDrvPDL">port data lock</seealso>
           associated with the <c>port</c> is locked by the calling
@@ -1479,7 +1487,7 @@ ERL_DRV_EXT2TERM     char *buf, ErlDrvUInt len</pre>
 	term encoded with the
 	<seealso marker="erl_ext_dist">external format</seealso>,
 	i.e., a term that has been encoded by
-	<seealso marker="kernel:erlang#term_to_binary/2">erlang:term_to_binary</seealso>,
+	<seealso marker="erts:erlang#term_to_binary/2">erlang:term_to_binary</seealso>,
 	<seealso marker="erl_interface:ei">erl_interface</seealso>, etc.
 	For example, if <c>binp</c> is a pointer to an <c>ErlDrvBinary</c>
 	that contains the term <c>{17, 4711}</c> encoded with the
@@ -1672,7 +1680,7 @@ ERL_DRV_EXT2TERM     char *buf, ErlDrvUInt len</pre>
            The driver defined handle is normally created in the
           <seealso marker="driver_entry#start">driver start call-back</seealso>
            when a port is created via
-          <seealso marker="kernel:erlang#open_port/2">erlang:open_port/2</seealso>. </item>
+          <seealso marker="erts:erlang#open_port/2">erlang:open_port/2</seealso>. </item>
         </taglist>
         <p>The caller of <c>driver_create_port()</c> is allowed to
           manipulate the newly created port when <c>driver_create_port()</c>
@@ -2440,7 +2448,7 @@ ERL_DRV_EXT2TERM     char *buf, ErlDrvUInt len</pre>
     <title>SEE ALSO</title>
     <p><seealso marker="driver_entry">driver_entry(3)</seealso>,
       <seealso marker="kernel:erl_ddll">erl_ddll(3)</seealso>,
-      <seealso marker="kernel:erlang">erlang(3)</seealso></p>
+      <seealso marker="erts:erlang">erlang(3)</seealso></p>
     <p>An Alternative Distribution Driver (ERTS User's
       Guide Ch. 3)</p>
   </section>

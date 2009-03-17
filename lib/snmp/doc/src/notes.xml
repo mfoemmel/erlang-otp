@@ -1,0 +1,517 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE chapter SYSTEM "chapter.dtd">
+
+<chapter>
+  <header>
+    <copyright>
+      <year>1996</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
+    </copyright>
+    <legalnotice>
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
+    </legalnotice>
+
+    <title>SNMP Release Notes</title>
+    <prepared></prepared>
+    <responsible></responsible>
+    <docno></docno>
+    <approved></approved>
+    <checked></checked>
+    <date></date>
+    <rev></rev>
+    <file>notes.xml</file>
+  </header>
+
+  <section>
+    <title>SNMP Development Toolkit 4.13</title>
+<!--
+    <p>Version 4.13 supports code replacement in runtime from/to
+      version 4.12.1.</p>
+-->
+
+    <section>
+      <title>Improvements and new features</title>
+      <!-- 
+      <p>-</p> 
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[agent] Support for the discovery process. </p>
+          <p>The agent can both initiate discovery itself (see the
+            <seealso marker="snmp_agent_funct_descr#discovery">discovery</seealso> chapter
+            for more info) and respond to discovery initiated by a manager.</p>
+          <p>Own Id: OTP-7571</p>
+	  <p>Aux Id: Seq 11053</p>
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[agent] Unnecessary use of math:pow/2 could cause problems
+            on systems without floating point support. </p>
+          <p>Per Hedeland</p>
+          <p>Own Id: OTP-7735</p>
+	  <!-- <p>Aux Id: Seq 10966</p> -->
+        </item>
+
+        <item>
+          <p>[manager] A major flaw was discovered with the agent handling. </p>
+          <p>First, <c>TargetName</c> was never used as intended, as a unique
+            identifier for the target (agent in this case). </p>
+          <p>Second, <c>TargetName</c> had a <em>default value</em>, which meant 
+            that several agents could have the same <c>TargetName</c>, causing
+            unpredictable behaviour in the manager. </p>
+          <p>Third, <c>EngineID</c> was not a mandatory config option and had
+            furthermore also a <em>default value</em>. </p>
+
+          <p>These problems has been solved in the following way: </p>
+          <p>First, a new set of api functions has been introduced (and documented):
+            <seealso marker="snmpm#register_user">register_user/4</seealso>,
+            <seealso marker="snmpm#register_user_monitor">register_user_monitor/4</seealso>,
+            <seealso marker="snmpm#register_agent">register_agent/3</seealso>,
+            <seealso marker="snmpm#unregister_agent">unregister_agent/2</seealso>,
+            <seealso marker="snmpm#agent_info">agent_info/2</seealso>,
+            <seealso marker="snmpm#update_agent_info">update_agent_info/4</seealso>,
+            <seealso marker="snmpm#sync_get">sync_get/3,4,5,6</seealso>,
+            <seealso marker="snmpm#async_get">async_get/3,4,5,6</seealso>,
+            <seealso marker="snmpm#sync_get_next">sync_get_next/3,4,5,6</seealso>,
+            <seealso marker="snmpm#async_get_next">async_get_next/3,4,5,6</seealso>,
+            <seealso marker="snmpm#sync_set">sync_set/3,4,5,6</seealso>,
+            <seealso marker="snmpm#async_set">async_set/3,4,5,6</seealso>,
+            <seealso marker="snmpm#sync_get_bulk">sync_get_bulk/5,6,7,8</seealso> and
+            <seealso marker="snmpm#async_get_bulk">async_get_bulk/5,6,7,8</seealso> 
+            that all use <c>TargetName</c> (and not, as previously, <c>Addr</c>
+            and <c>Port</c>) to identify the agent (also the return value of 
+            <seealso marker="snmpm#which_agents">which_agents</seealso> has 
+            been changed). </p> 
+          <p>Second, for backward compatibillity, the old functions still 
+            exist, but are no longer documented and are now wrappers for the 
+            new functions, including erroneous default value for EngineID and 
+            all. The TargetName is however generated from the provided 
+            <c>Addr</c>, <c>Port</c> and <c>Version</c> config options. </p>
+           <p>Third, the behaviour of the 
+             <seealso marker="snmpm_user">SNMP manager user</seealso> has
+             been changed to reflect this, i.e. 
+             <seealso marker="snmpm_user#handle_pdu">handle_pdu/4</seealso>,
+             <seealso marker="snmpm_user#handle_trap">handle_trap/3</seealso>,
+             <seealso marker="snmpm_user#handle_inform">handle_inform/3</seealso>, 
+             <seealso marker="snmpm_user#handle_report">handle_report/3</seealso> 
+             and the return-value of 
+             <seealso marker="snmpm_user#handle_agent">handle_agent/4</seealso>.
+             The old (non-documented) callback-functions (using Addr and Port) 
+             will still be called if the agent was registered using the old 
+             registration functions. </p>
+          
+          <p>Own Id: OTP-7836</p>
+	  <!-- <p>Aux Id: Seq 10966</p> -->
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.13 -->
+
+  <section>
+    <title>SNMP Development Toolkit 4.12.2</title>
+    <p>Version 4.12.2 supports code replacement in runtime from/to
+      version 4.12.1, 4.12, 4.11.2, 4.11.1 and 4.11.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <p>-</p> 
+      <!-- 
+      <list type="bulleted">
+        <item>
+        <item>
+          <p>[agent] Improvement of the inform reporting.
+            It was previously not certain how many acks an
+            application received, 0, 1 or 2. This has now been
+            fixed, so that only 1 (one) ack is issued. </p> 
+          <p>Per Hedeland</p>
+          <p>Own Id: OTP-7525</p>
+        </item>
+
+      </list>
+      -->
+
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[agent] Bad session cache (usm+camv-info) invalidation 
+            could cause user crash, through call(s) to (a number of) 
+            MIB API function(s) (undefined function). </p>
+          <p>Own Id: OTP-7868</p>
+	  <!-- <p>Aux Id: Seq 11124</p> -->
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.12.2 -->
+
+  <section>
+    <title>SNMP Development Toolkit 4.12.1</title>
+    <p>Version 4.12.1 supports code replacement in runtime from/to
+      version 4.12, 4.11.2, 4.11.1 and 4.11.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <p>-</p> 
+      <!-- 
+      <list type="bulleted">
+        <item>
+        <item>
+          <p>[agent] Improvement of the inform reporting.
+            It was previously not certain how many acks an
+            application received, 0, 1 or 2. This has now been
+            fixed, so that only 1 (one) ack is issued. </p> 
+          <p>Per Hedeland</p>
+          <p>Own Id: OTP-7525</p>
+        </item>
+
+      </list>
+      -->
+
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>Logging of messages with the GetBulk-request PDU
+            incorrectly produced an erroneous entry in the
+            log: "An error occured". </p>
+          <p>The reason for this was that the PDU-fields
+            error_status and error_index is re-used for
+            Non-repeaters and Max-repetitions for
+            GetBulk-request PDUs, but this was not handled
+            by the logging code. </p>
+          <p>Own Id: OTP-7695</p>
+	  <p>Aux Id: Seq 11124</p>
+        </item>
+
+        <item>
+          <p>[agent] An attempt to set the row status to active for an 
+            notReady table row, could result in an "inconsistentValue" 
+            error. </p>
+          <p>The same problem existed when attempting to set row status 
+            to notInService for a row in notReady. </p>
+          <p>Serge Aleynikov</p>
+          <p>Own Id: OTP-7698</p>
+	  <!-- <p>Aux Id: Seq 10966</p> -->
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.12.1 -->
+
+  <section>
+    <title>SNMP Development Toolkit 4.12</title>
+    <p>Version 4.12 supports code replacement in runtime from/to
+      version 4.11.2, 4.11.1 and 4.11.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <!-- 
+      <p>-</p> 
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[agent] A simple lookup cache has been added to improve 
+            the mib server lookup performance. </p>
+          <p>This can be disabled with the mib_server 
+            <seealso marker="snmp_app">cache</seealso> option. </p> 
+          <p>Own Id: OTP-7346</p>
+        </item>
+
+        <item>
+          <p>[agent] Improvement of the inform reporting.
+            It was previously not certain how many acks an
+            application received, 0, 1 or 2. This has now been
+            fixed, so that only 1 (one) ack is issued. </p> 
+          <p>Per Hedeland</p>
+          <p>Own Id: OTP-7525</p>
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <p>-</p>
+      <!-- 
+      <list type="bulleted">
+        <item>
+          <p>[manager] Encryption error when attempting to send
+            version 3 inform-requests. </p>
+          <p>Own Id: OTP-7432</p>
+	  <p>Aux Id: Seq 10966</p>
+        </item>
+
+      </list>
+      -->
+
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.12 -->
+
+  <section>
+    <title>SNMP Development Toolkit 4.11.2</title>
+    <p>Version 4.11.2 supports code replacement in runtime from/to
+      version 4.11.1 and 4.11. </p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <p>-</p> 
+      <!-- 
+      <list type="bulleted">
+        <item>
+	  <p>Added utility functions for transforming DateAndTime
+            as [int()] to strings; 
+            <seealso marker="snmp#dat2s">date_and_time_to_string/2</seealso>
+            and  
+            <seealso marker="snmp#dat2s2">date_and_time_to_string2/1</seealso>. </p>
+          <p>Also added new validation function 
+            <seealso marker="snmp#vdat">validate_date_and_time/2</seealso>. </p>
+	  <p>Own Id: OTP-7412</p>
+	  <p>Aux Id: Seq 10987</p>
+        </item>
+      </list>
+      -->
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[manager] Erroneous engine-id check when receiving version 3 
+            informs. </p>
+          <p>Own Id: OTP-7570</p>
+	  <p>Aux Id: Seq 11060</p>
+        </item>
+
+        <item>
+	  <p>Receiving an snmp message with a very large version
+            number could cause the erlang node to run out of
+            memory and consequently crash. </p>
+          <p>The standard specifies the snmp version as an
+            (unlimited) INTEGER, but today only
+            0 (version 1), 1 (version 2) and 3 (version 3) is
+            actually used. So, when decoding a message, a limit
+            has been put on the snmp version integer in order
+            to not allow this kind of a problem. </p>
+	  <p>Own Id: OTP-7575</p>
+	  <p>Aux Id: Seq 11064</p>
+        </item>
+
+      </list>
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.11.2 -->
+
+
+  <section>
+    <title>SNMP Development Toolkit 4.11.1</title>
+    <p>Version 4.11.1 supports code replacement in runtime from/to
+      version 4.11.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <!-- 
+      <p>-</p> 
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[compiler] The MIB compiler did not retreive the REFERENCE part
+            of a SNMP MIB definition. </p>
+          <p>This problem has been partly solved. For SNMP tables, 
+            the assocList field of the tables mib-entry record now contains 
+            this info (as <c>{reference, string()}</c>), <em>if</em> the 
+            MIB was compiled with the compiler option <em>+reference</em>. </p>
+          <p>This solution is temporary, until such time as a permanent
+            solution (and probably not backward compatible) is devised, which
+            retreives and stores all REFERENCE part(s) of a MIB. </p>
+          <p>See the 
+            <seealso marker="snmpc#compiler_opts">compiler options</seealso> 
+            for more info. </p> 
+
+          <p>Serge Aleynikov</p>
+          <p>Own Id: OTP-7426</p>
+        </item>
+
+        <item>
+	  <p>Added utility functions for transforming DateAndTime
+            as [int()] to strings; 
+            <seealso marker="snmp#dat2s">date_and_time_to_string/2</seealso>
+            and  
+            <seealso marker="snmp#dat2s2">date_and_time_to_string2/1</seealso>. </p>
+          <p>Also added new validation function 
+            <seealso marker="snmp#vdat">validate_date_and_time/2</seealso>. </p>
+	  <p>Own Id: OTP-7412</p>
+	  <p>Aux Id: Seq 10987</p>
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[manager] Encryption error when attempting to send
+            version 3 inform-requests. </p>
+          <p>Own Id: OTP-7432</p>
+	  <p>Aux Id: Seq 10966</p>
+        </item>
+
+      </list>
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.11.1 -->
+
+  <section>
+    <title>SNMP Development Toolkit 4.11</title>
+    <p>Version 4.11 supports code replacement in runtime from/to
+      version 4.10.3, 4.10.2, 4.10.1 and 4.10.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <!-- 
+      <p>-</p> 
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[agent] Performance improvements in the case when an SNMP 
+            manager performs an snmpwalk. </p>
+          <p>Martin Bj&ouml;rklund</p>
+          <p>Own Id: OTP-7201</p>
+        </item>
+
+        <item>
+          <p>The API for sending inform(s) has been improved. Also
+            the documentation has been corrected and updated. See 
+            <seealso marker="snmpa#send_notification">snmpa:send_notification</seealso> and 
+            <seealso marker="snmpa_notification_delivery_info_receiver">snmpa_notification_delivery_info_receiver</seealso> 
+            for more info.</p>
+          <p>Own Id: OTP-7287</p>
+          <p>Aux Id: Seq 10926</p>
+        </item>
+
+        <item>
+	  <p>[agent] Performance of the internal database (local-db) 
+           has been improved.</p>
+	  <p>Own Id: OTP-7319</p>
+	  <p>Aux Id: Seq 10942</p>
+        </item>
+
+        <item>
+	  <p>[agent] Added utility functions,
+            <seealso marker="snmpa#restart_worker">snmpa:restart_worker/0,1</seealso> and 
+            <seealso marker="snmpa#restart_set_worker">snmpa:restart_set_worker/0,1</seealso>, 
+            for restarting the agent worker processes (in case the agent is
+            multi-threaded).</p>
+	  <p>Own Id: OTP-7369</p>
+        </item>
+
+        <item>
+	  <p>Add utility function to 
+            <seealso marker="snmp#read_mib">read</seealso> 
+            a compiled mib. </p>
+	  <p>Own Id: OTP-7371</p>
+        </item>
+
+      </list>
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[manager] Encryption error when attempting to send
+            version 3 inform-requests. </p>
+          <p>Own Id: OTP-7377</p>
+	  <p>Aux Id: Seq 10966</p>
+        </item>
+
+      </list>
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.11 -->
+
+  <section>
+    <title>Release notes history</title>
+    <p>For information about older versions see
+      <url href="part_notes_history_frame.html">release notes history</url>.</p>
+  </section>
+</chapter>
+

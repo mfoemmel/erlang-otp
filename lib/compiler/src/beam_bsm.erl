@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 2002, Ericsson AB.
-%% All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 -module(beam_bsm).
@@ -369,8 +370,6 @@ btb_reaches_match_2([{func_info,_,_,Arity}=I|_], Regs0, D) ->
 	[] -> D;
 	_ -> {binary_used_in,I}
     end;
-btb_reaches_match_2([{'%',_}|Is], Regs, D) ->
-    btb_reaches_match_1(Is, Regs, D);
 btb_reaches_match_2([I|_], Regs, _) ->
     btb_error({btb_context_regs(Regs),I,not_handled}).
 
@@ -464,9 +463,6 @@ btb_reaches_match_block([{set,[Dst]=Ds,[Src],move}|Is], Regs0) ->
 btb_reaches_match_block([{set,Ds,Ss,_}=I|Is], Regs0) ->
     btb_ensure_not_used(Ss, I, Regs0),
     Regs = btb_kill(Ds, Regs0),
-    btb_reaches_match_block(Is, Regs);
-btb_reaches_match_block([{'%live',Live}|Is], Regs0) ->
-    Regs = btb_kill_not_live(Live, Regs0),
     btb_reaches_match_block(Is, Regs);
 btb_reaches_match_block([], Regs) ->
     Regs.

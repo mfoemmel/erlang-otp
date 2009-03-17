@@ -1,32 +1,28 @@
-%%<copyright>
-%% <year>2002-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 -module(test_server_node).
--compile(r10).
+-compile(r11).
 
 %%%
-%%% This code must be possible to load in both R10B and R11B.
-%%% To make that possible:
-%%%
-%%% 1) No arithmetic instructions must be used. Use (id(erlang)):'+'/2
-%%%    etc instead.
-%%% 2) No bit syntax must be used.
+%%% The same compiled code for this module must be possible to load
+%%% in R11B, R12B and later. To make that possible no bit syntax
+%%% must be used.
 %%%
 
 
@@ -54,9 +50,12 @@ is_release_available(Rel) when is_atom(Rel) ->
     is_release_available(atom_to_list(Rel));
 is_release_available(Rel) ->
     case os:type() of
-	{unix,sunos} ->
+	{unix,_} ->
 	    Erl = find_release(Rel),
-	    filelib:is_regular(Erl);
+	    case Erl of
+		none -> false;
+		_ -> filelib:is_regular(Erl)
+	    end;
 	_ ->
 	    false
     end.
@@ -98,7 +97,7 @@ start_remote_main_target(Parameters) ->
 		{ok,Sock} -> 
 		    gen_tcp:close(LSock),
 		    receive 
-			{tcp,Sock,Bin} when binary(Bin) ->
+			{tcp,Sock,Bin} when is_binary(Bin) ->
 			    case unpack(Bin) of
 				error ->
 				    gen_tcp:close(Sock),
@@ -196,7 +195,7 @@ start_tracer_node(TraceFile,TI) ->
 	{ok,Sock} -> 
 	    gen_tcp:close(LSock),
 	    receive 
-		{tcp,Sock,Result} when binary(Result) ->
+		{tcp,Sock,Result} when is_binary(Result) ->
 		    case unpack(Result) of
 			error ->
 			    gen_tcp:close(Sock),
@@ -230,7 +229,7 @@ trace_nodes(Sock,Nodes) ->
 
 receive_ack(Sock) ->
     receive
-	{tcp,Sock,Bin} when binary(Bin) ->
+	{tcp,Sock,Bin} when is_binary(Bin) ->
 	    case unpack(Bin) of
 		error -> receive_ack(Sock);
 		{ok,_} -> ok
@@ -334,7 +333,7 @@ handle_debug(_Out,end_of_trace,_TI,N) ->
     N;
 handle_debug(Out,Trace,_TI,N) ->
     print_trc(Out,Trace,N),
-    (id(erlang)):'+'(N, 1).
+    N+1.
 
 print_trc(Out,{trace_ts,P,call,{M,F,A},C,Ts},N) ->
     io:format(Out,
@@ -379,11 +378,11 @@ ts({_, _, Micro} = Now) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Start slave/peer nodes (initiated by test_server:start_node/5)
 %%%
-start_node(SlaveName, slave, Options, From, TI) when list(SlaveName) ->
+start_node(SlaveName, slave, Options, From, TI) when is_list(SlaveName) ->
     start_node_slave(list_to_atom(SlaveName), Options, From, TI);
 start_node(SlaveName, slave, Options, From, TI) ->
     start_node_slave(SlaveName, Options, From, TI);
-start_node(SlaveName, peer, Options, From, TI) when atom(SlaveName) ->
+start_node(SlaveName, peer, Options, From, TI) when is_atom(SlaveName) ->
     start_node_peer(atom_to_list(SlaveName), Options, From, TI);
 start_node(SlaveName, peer, Options, From, TI) ->
     start_node_peer(SlaveName, Options, From, TI);
@@ -615,7 +614,7 @@ wait_for_node_started(LSock,Timeout,Client,Cleanup,TI,CtrlPid) ->
 	{ok,Sock} -> 
 	    gen_tcp:close(LSock),
 	    receive 
-		{tcp,Sock,Started0} when binary(Started0) ->
+		{tcp,Sock,Started0} when is_binary(Started0) ->
 		    case unpack(Started0) of
 			error ->
 			    gen_tcp:close(Sock),
@@ -860,8 +859,8 @@ get_slave_node_start_command(unix, Prog, MasterNode) ->
 %%% X = list() | atom() | void()
 %%% Returns a string representation of whatever was input
 
-cast_to_list(X) when list(X) -> X;
-cast_to_list(X) when atom(X) -> atom_to_list(X);
+cast_to_list(X) when is_list(X) -> X;
+cast_to_list(X) when is_atom(X) -> atom_to_list(X);
 cast_to_list(X) -> lists:flatten(io_lib:format("~w", [X])).
 
 
@@ -885,32 +884,101 @@ pick_erl_program(L) ->
 
 random_element(L) ->
     {A,B,C} = now(),
-    E = (id(erlang)):'rem'(lists:sum([A,B,C]), length(L)),
-    lists:nth((id(erlang)):'+'(E, 1), L).
+    E = lists:sum([A,B,C]) rem length(L),
+    lists:nth(E+1, L).
 
 find_release(latest) ->
     "/usr/local/otp/releases/latest/bin/erl";
 find_release(previous) ->
     "kaka";
 find_release(Rel) ->
-%% beam only
-    "/usr/local/otp/releases/otp_beam_" ++ os(Rel) ++ "_" ++ Rel ++ "/bin/erl".
+    find_release(os:type(), Rel).
 
-os(Rel) when Rel=="r5b01_patched";
-	     Rel=="r6b_patched";
-	     Rel=="r7b";
-	     Rel=="r7b01";
-	     Rel=="r7b01_patched";
-	     Rel=="r7b_patched";
-	     Rel=="r8b";
-	     Rel=="r8b_hipe";
-	     Rel=="r8b_oldsparc";
-	     Rel=="r8b_patched";
-	     Rel=="r9b";
-	     Rel=="r9b_patched" ->
-    "sunos5";
-os(_Rel) ->
-    "solaris8".
+find_release({unix,sunos}, Rel) ->
+    case os:cmd("uname -p") of
+	"sparc" ++ _ ->
+	    "/usr/local/otp/releases/otp_beam_solaris8_" ++ Rel ++ "/bin/erl";
+	_ ->
+	    none
+    end;
+find_release({unix,linux}, Rel) ->
+    Candidates = find_rel_linux(Rel),
+    case lists:dropwhile(fun(N) ->
+				 not filelib:is_regular(N)
+			 end, Candidates) of
+	[] -> none;
+	[Erl|_] -> Erl
+    end;
+find_release(_, _) -> none.
+
+find_rel_linux(Rel) ->
+    case suse_release() of
+	none -> [];
+	SuseRel -> find_rel_suse(Rel, SuseRel)
+    end.
+
+find_rel_suse(Rel, SuseRel) ->
+    Root = "/usr/local/otp/releases/otp_beam_linux_sles",
+    case SuseRel of
+	"11" ->
+	    %% Try both SuSE 11, SuSE 10 and SuSe 9 in that order.
+	    find_rel_suse_1(Rel, Root++"11") ++
+		find_rel_suse_1(Rel, Root++"10") ++
+		find_rel_suse_1(Rel, Root++"9");
+	"10" ->
+	    %% Try both SuSE 10 and SuSe 9 in that order.
+	    find_rel_suse_1(Rel, Root++"10") ++
+		find_rel_suse_1(Rel, Root++"9");
+	"9" ->
+	    find_rel_suse_1(Rel, Root++"9");
+	_ ->
+	    []
+    end.
+
+find_rel_suse_1(Rel, RootWc) ->
+    case erlang:system_info(wordsize) of
+	4 ->
+	    find_rel_suse_2(Rel, RootWc++"_i386");
+	8 ->
+	    find_rel_suse_2(Rel, RootWc++"_x64") ++
+		find_rel_suse_2(Rel, RootWc++"_i386")
+    end.
+
+find_rel_suse_2(Rel, RootWc) ->
+    Wc = RootWc ++ "_" ++ Rel,
+    case filelib:wildcard(Wc) of
+	[] ->
+	    [];
+	[R|_] ->
+	    [filename:join([R,"bin","erl"])]
+    end.
+
+%% suse_release() -> VersionString | none.
+%%  Return the major SuSE version number for this platform or
+%%  'none' if this is not a SuSE platform.
+suse_release() ->
+    case file:open("/etc/SuSE-release", [read]) of
+	{ok,Fd} ->
+	    try
+		suse_release(Fd)
+	    after
+		file:close(Fd)
+	    end;
+	{error,_} -> none
+    end.
+
+suse_release(Fd) ->
+    case io:get_line(Fd, '') of
+	eof -> none;
+	Line when is_list(Line) ->
+	    case re:run(Line, "^VERSION\\s*=\\s*(\\d+)\s*",
+			[{capture,all_but_first,list}]) of
+		nomatch ->
+		    suse_release(Fd);
+		{match,[Version]} ->
+		    Version
+	    end
+    end.
 
 unpack(Bin) ->
     {One,Term} = split_binary(Bin, 1),

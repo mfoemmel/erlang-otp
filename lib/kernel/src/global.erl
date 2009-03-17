@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%%
+%% retrieved online at http://www.erlang.org/.
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%%
-%%     $Id $
+%% 
+%% %CopyrightEnd%
 %%
 -module(global).
 -behaviour(gen_server).
@@ -72,10 +73,11 @@
 %% Vsn 3 is enhanced with a tag in the synch messages to distinguish
 %%       different synch sessions from each other, see OTP-2766.
 %% Vsn 4 uses a single, permanent, locker process, but works like vsn 3
-%%       when communicating with vsn 3 nodes. Current version of global does
-%%       not support vsn 3 nodes.
+%%       when communicating with vsn 3 nodes. (-R10B)
 %% Vsn 5 uses an ordered list of self() and HisTheLocker when locking
-%%       nodes in the own partition.
+%%       nodes in the own partition. (R11B-)
+
+%% Current version of global does not support vsn 4 or earlier.
 
 -define(vsn, 5).
 
@@ -114,7 +116,7 @@
 %%% (the first position is the key):
 %%%
 %%% global_locks (set): {ResourceId, LockRequesterId, [{Pid,RPid,ref()]}
-%%%   pid() is locking ResourceId, ref() is the monitor ref.
+%%%   Pid is locking ResourceId, ref() is the monitor ref.
 %%%   RPid =/= Pid if there is an extra process calling erlang:monitor().
 %%% global_names (set):  {Name, Pid, Method, RPid, ref()}
 %%%   Registered names. ref() is the monitor ref.
@@ -800,7 +802,7 @@ handle_info({nodeup, Node}, S0) when S0#state.connect_all ->
 	false ->
 	    resend_pre_connect(Node),
 
-	    %% now() is used as a tag to separate different sycnh sessions
+	    %% now() is used as a tag to separate different synch sessions
 	    %% from each others. Global could be confused at bursty nodeups
 	    %% because it couldn't separate the messages between the different
 	    %% synch sessions started by a nodeup.
@@ -810,7 +812,7 @@ handle_info({nodeup, Node}, S0) when S0#state.connect_all ->
 	    S1#state.the_locker ! {nodeup, Node, MyTag},
 
             %% In order to be compatible with unpatched R7 a locker
-            %% process was spawned. Vsn 5 is no longer comptabible with
+            %% process was spawned. Vsn 5 is no longer compatible with
             %% vsn 3 nodes, so the locker process is no longer needed.
             %% The permanent locker takes its place.
             NotAPid = no_longer_a_pid,
@@ -977,13 +979,9 @@ init_connect(Vsn, Node, InitMsg, HisTag, Resolvers, S) ->
         {value, {Node, MyTag, _Resolver}} ->
             MyTag = get({sync_tag_my, Node}), % assertion
             case InitMsg of
-                {locker, HisLocker, HisKnown} -> %% before vsn 5
-                    ?trace({old_init_connect,{histhelocker,HisLocker}}),
-                    HisLocker ! {his_locker_new, S#state.the_locker,
-                                 {HisKnown, S#state.known}};
-                
-                {locker, _NoLongerAPid, HisKnown, HisTheLocker} -> %% vsn 5
+                {locker, _NoLongerAPid, _HisKnown0, HisTheLocker} ->
                     ?trace({init_connect,{histhelocker,HisTheLocker}}),
+                    HisKnown = [],
                     S#state.the_locker ! {his_the_locker, HisTheLocker,
                                           {Vsn,HisKnown}, S#state.known}
             end;
@@ -1366,7 +1364,7 @@ del_name(Ref, S) ->
     ?trace({async_del_name, self(), NameL, Ref}),
     case NameL of
         [{Name, Pid}] ->
-            del_names(Name, Pid, S),
+            _ = del_names(Name, Pid, S),
             delete_global_name2(Name, S);
         [] ->
             S
@@ -1491,8 +1489,8 @@ loop_the_locker(S) ->
                             S#multi.known =:= [] ->
                                 200; % just to get started 
                             true ->
-                                lists:min([1000 + 100*length(S#multi.known), 
-                                           3000])
+                                erlang:min(1000 + 100*length(S#multi.known),
+                                           3000)
                         end
                 end,
             S1 = S#multi{just_synced = false},
@@ -1511,13 +1509,8 @@ loop_the_locker(S) ->
 
 the_locker_message({his_the_locker, HisTheLocker, HisKnown0, _MyKnown}, S) ->
     ?trace({his_the_locker, HisTheLocker, {node,node(HisTheLocker)}}),
-    HisVsn = 
-        case HisKnown0 of
-            {Vsn0, _} when Vsn0 > 4 ->
-                Vsn0;
-            _ when is_list(HisKnown0) ->
-                4
-        end,
+    {HisVsn, _HisKnown} = HisKnown0,
+    true = HisVsn > 4,
     receive
         {nodeup, Node, MyTag} when node(HisTheLocker) =:= Node ->
             ?trace({the_locker_nodeup, {node,Node},{mytag,MyTag}}),
@@ -1618,21 +1611,18 @@ select_node(S) ->
             Him = random_element(Others2),
             #him{locker = HisTheLocker, vsn = HisVsn,
                  node = Node, my_tag = MyTag} = Him,
-            HisNode = if
-                           HisVsn < 5 -> [];
-                           true -> [Node] % prevents deadlock; optimization
-                       end,
+            HisNode = [Node],
             Us = [node() | HisNode],
             LockId = locker_lock_id(HisTheLocker, HisVsn),
             ?trace({select_node, self(), {us, Us}}),
+            %% HisNode = [Node] prevents deadlock:
             {IsLockSet, S2} = lock_nodes_safely(LockId, HisNode, S1),
             case IsLockSet of
                 true -> 
                     Known1 = Us ++ S2#multi.known,
                     ?trace({sending_lock_set, self(), {his,HisTheLocker}}),
                     HisTheLocker ! {lock_set, self(), true, S2#multi.known},
-                    %% OTP-4902
-                    S3 = lock_set_loop(S2, Him, MyTag, Known1, LockId),
+                    S3 = lock_is_set(S2, Him, MyTag, Known1, LockId),
                     loop_the_locker(S3);
                 false ->
                     loop_the_locker(S2)
@@ -1642,12 +1632,7 @@ select_node(S) ->
 %% Version 5: Both sides use the same requester id. Thereby the nodes
 %% common to both sides are locked by both locker processes. This
 %% means that the lock is still there when the 'new_nodes' message is
-%% received even if the other side has deleted the lock. Before R11 it
-%% could be that the lock had been deleted (by the other side) at the
-%% time 'new_nodes' was sent.
-locker_lock_id(Pid, 4) ->
-    %% if node() > Node then Node locks common nodes with {global, Pid}
-    {?GLOBAL_RID, Pid};
+%% received even if the other side has deleted the lock.
 locker_lock_id(Pid, Vsn) when Vsn > 4 ->
     {?GLOBAL_RID, lists:sort([self(), Pid])}.
 
@@ -1668,27 +1653,27 @@ lock_nodes_safely(LockId, Extra, S0) ->
                             Known = S#multi.known,
                             case set_lock(LockId, Known -- First, 0) of
                                 true ->
-                                    locker_trace(S, ok, {First, Known}),
+                                    _ = locker_trace(S, ok, {First, Known}),
                                     {true, S};
                                 false ->
-                                    %% Since the boss is locked we should have
-                                    %% gotten the lock, at least if there are
-                                    %% no version 4 nodes in the partition or
-                                    %% someone else is locking 'global'. 
-                                    %% Calling set_lock with Retries > 0 does
-                                    %% not seem to speed things up.
+                                    %% Since the boss is locked we
+                                    %% should have gotten the lock, at
+                                    %% least if no one else is locking
+                                    %% 'global'. Calling set_lock with
+                                    %% Retries > 0 does not seem to
+                                    %% speed things up.
                                     SoFar = First ++ Second,
                                     del_lock(LockId, SoFar),
-                                    locker_trace(S, not_ok, {Known,SoFar}),
+                                    _ = locker_trace(S, not_ok, {Known,SoFar}),
                                     {false, S}
                             end;
                         false ->
                             del_lock(LockId, First),
-                            locker_trace(S, not_ok, {Second, First}),
+                            _ = locker_trace(S, not_ok, {Second, First}),
                             {false, S}
                     end;
                 false ->
-                    locker_trace(S0, not_ok, {First, []}),
+                    _ = locker_trace(S0, not_ok, {First, []}),
                     {false, S0}
             end;
         false ->
@@ -1736,12 +1721,8 @@ random_element(L) ->
 exclude_known(Others, Known) ->
     [N || N <- Others, not lists:member(N#him.node, Known)].
 
-lock_set_loop(S, Him, MyTag, Known1, LockId) ->
+lock_is_set(S, Him, MyTag, Known1, LockId) ->
     Node = Him#him.node,
-    Timeout = if
-                  Him#him.vsn < 5 -> 5000;
-                  true -> infinity
-              end,
     receive
 	{lock_set, P, true, _} when node(P) =:= Node ->
 	    gen_server:cast(global_name_server, 
@@ -1762,48 +1743,28 @@ lock_set_loop(S, Him, MyTag, Known1, LockId) ->
                     remote = lists:delete(Him, S#multi.remote)};
 	{lock_set, P, false, _} when node(P) =:= Node ->
             ?trace({not_both_set, {node,Node},{p, P},{known1,Known1}}),
-            locker_trace(S, rejected, Known1),
+            _ = locker_trace(S, rejected, Known1),
 	    delete_global_lock(LockId, Known1),
 	    S;
 	{cancel, Node, _, Fun} ->
 	    ?trace({the_locker, cancel2, {node,Node}}),
             call_fun(Fun),
-            locker_trace(S, rejected, Known1),
+            _ = locker_trace(S, rejected, Known1),
 	    delete_global_lock(LockId, Known1),
             remove_node(Node, S);
 	{'EXIT', _, _} ->
 	    ?trace({the_locker, exit, {node,Node}}),
-            locker_trace(S, rejected, Known1),
+            _ = locker_trace(S, rejected, Known1),
 	    delete_global_lock(LockId, Known1),
 	    S
-    after
-	%% OTP-4902
-	%% A cyclic deadlock could occur in rare cases where three or
-	%% more nodes waited for a reply from each other.
-	%% Therefore, reject lock_set attempts in this state from
-	%% nodes < this node (its enough if at least one node in
-	%% the cycle rejects and thus breaks the deadlock)
-        %%
+        %% There used to be an 'after' clause (OTP-4902), but it is 
+        %% no longer needed:
         %% OTP-5770. Version 5 of the protocol. Deadlock can no longer
         %% occur due to the fact that if a partition is locked, one
         %% node in the other partition is also locked with the same
         %% lock-id, which makes it impossible for any node in the
         %% other partition to lock its partition unless it negotiates
-        %% with the first partition. The OTP-4902 code can be removed
-        %% when there is no need to support nodes running R10B.
-        Timeout -> 
-	    reject_lock_set(),
-	    lock_set_loop(S, Him, MyTag, Known1, LockId)
-    end.
-
-reject_lock_set() ->
-    receive
-	{lock_set, P, true, _} when node(P) < node() ->
-	    P ! {lock_set, self(), false, []},
-	    reject_lock_set()
-    after
-	0 ->
-	    true
+        %% with the first partition.
     end.
 
 %% The locker does the {new_nodes, ...} call before removing the lock.

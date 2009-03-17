@@ -1,6 +1,6 @@
 {application, cosEventDomain,
  [{description, "The Erlang CosEventDomain application"},
-  {vsn, "1.1.4"},
+  {vsn, "1.1.5"},
   {modules,
      [
 	'CosEventDomainAdmin_EventDomainFactory_impl',

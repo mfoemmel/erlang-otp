@@ -1,38 +1,41 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
-%%
+%% %CopyrightEnd%
+
 -module(epp).
 
 %% An Erlang code preprocessor.
 
--export([open/2,open/3,close/1,format_error/1]).
+-export([open/2,open/3,open/5,close/1,format_error/1]).
 -export([scan_erl_form/1,parse_erl_form/1,macro_defs/1]).
--export([parse_file/3]).
+-export([parse_file/1, parse_file/3]).
 -export([interpret_file_attribute/1]).
+-export([normalize_typed_record_fields/1]).
 
 %% Epp state record.
 -record(epp, {file,				%Current file
-	      line=1,				%Current line number
+	      line = 1,				%Current line number
 	      name="",				%Current file name
 	      istk=[],				%Ifdef stack
 	      sstk=[],				%State stack
 	      path=[],				%Include-path
 	      macs=dict:new(),			%Macros
-	      uses=dict:new()			%Macro use structure
+	      uses=dict:new(),			%Macro use structure
+	      pre_opened = false
 	     }).
 
 %%% Note on representation: as tokens, both {var, Line, Name} and
@@ -44,17 +47,25 @@
 
 %% open(FileName, IncludePath)
 %% open(FileName, IncludePath, PreDefMacros)
+%% open(FileName, IoDevice, StartLine, IncludePath, PreDefMacros)
 %% close(Epp)
 %% scan_erl_form(Epp)
 %% parse_erl_form(Epp)
+%% parse_file(Epp)
+%% parse_file(FileName, IncludePath, PreDefMacros)
 %% macro_defs(Epp)
 
-open(File, Path) ->
-    open(File, Path, []).
+open(Name, Path) ->
+    open(Name, Path, []).
 
-open(File, Path, Pdm) ->
+open(Name, Path, Pdm) ->
     Self = self(),
-    Epp = spawn(fun() -> server(Self, File, Path, Pdm) end),
+    Epp = spawn(fun() -> server(Self, Name, Path, Pdm) end),
+    epp_request(Epp).
+
+open(Name, File, StartLine, Path, Pdm) ->
+    Self = self(),
+    Epp = spawn(fun() -> server(Self, Name, File, StartLine, Path, Pdm) end),
     epp_request(Epp).
 
 close(Epp) ->
@@ -167,17 +178,25 @@ server(Pid, Name, Path, Pdm) ->
     process_flag(trap_exit, true),
     case file:open(Name, [read]) of
 	{ok,File} ->
-	    Ms0 = predef_macros(Name),
-	    case user_predef(Pdm, Ms0) of
-		{ok,Ms1} ->
-		    epp_reply(Pid, {ok,self()}),
-		    St = #epp{file=File,name=Name,path=Path,macs=Ms1},
-		    From = wait_request(St),
-		    enter_file_reply(From, Name, 1, 1),
-		    wait_req_scan(St);
-		{error,E} ->
-		    epp_reply(Pid, {error,E})
-	    end;
+	    init_server(Pid, Name, File, 1, Path, Pdm, false);
+	{error,E} ->
+	    epp_reply(Pid, {error,E})
+    end.
+
+%% server(StarterPid, FileName, IoDevice, Path, PreDefMacros)
+server(Pid, Name, File, AtLine, Path, Pdm) ->
+    process_flag(trap_exit, true),
+    init_server(Pid, Name, File, AtLine, Path, Pdm, true).
+
+init_server(Pid, Name, File, AtLine, Path, Pdm, Pre) ->
+    Ms0 = predef_macros(Name),
+    case user_predef(Pdm, Ms0) of
+	{ok,Ms1} ->
+	    epp_reply(Pid, {ok,self()}),
+	    St = #epp{file=File,line=AtLine,name=Name,path=Path,macs=Ms1, pre_opened = Pre},
+	    From = wait_request(St),
+	    enter_file_reply(From, Name, AtLine, AtLine),
+	    wait_req_scan(St);
 	{error,E} ->
 	    epp_reply(Pid, {error,E})
     end.
@@ -203,6 +222,9 @@ predef_macros(File) ->
 %%  Add the predefined macros to the macros dictionary. A macro without a
 %%  value gets the value 'true'.
 
+user_predef([{M,Val,redefine}|Pdm], Ms) when is_atom(M) ->
+    Exp = erl_parse:tokens(erl_parse:abstract(Val)),
+    user_predef(Pdm, dict:store({atom,M}, {none,Exp}, Ms));
 user_predef([{M,Val}|Pdm], Ms) when is_atom(M) ->
     case dict:find({atom,M}, Ms) of
 	{ok,_Def} ->
@@ -234,7 +256,7 @@ wait_request(St) ->
 	    epp_reply(From, dict:to_list(St#epp.macs)),
 	    wait_request(St);
 	{epp_request,From,close} ->
-	    ok = file:close(St#epp.file),
+	    close_file(St),
 	    epp_reply(From, ok),
 	    exit(normal);
 	{'EXIT',_,R} ->
@@ -243,6 +265,11 @@ wait_request(St) ->
 	    io:fwrite("Epp: unknown '~w'\n", [Other]),
 	    wait_request(St)
     end.
+
+close_file(#epp{pre_opened = true}) ->
+    ok;
+close_file(#epp{pre_opened = false, file = File}) ->
+    ok = file:close(File).
 
 wait_req_scan(St) ->
     From = wait_request(St),
@@ -309,7 +336,7 @@ leave_file(From, St) ->
 	[] ->
 	    case St#epp.sstk of
 		[OldSt|Sts] ->
-		    ok = file:close(St#epp.file),
+		    close_file(St),
 		    enter_file_reply(From, OldSt#epp.name, 
                                      OldSt#epp.line, OldSt#epp.line),
 		    Ms = dict:store({atom,'FILE'},
@@ -870,7 +897,7 @@ expand_macro([{'?', _}, {'?', _}, {var,_Lv,V}|Ts], L, Rest, Bs) ->
     case dict:find(V, Bs) of
 	{ok,Val} ->
 	    %% lists:append(Val, expand_macro(Ts, L, Rest, Bs));
-	    expand_arg(stringify(Val), Ts, L, Rest, Bs);
+            expand_arg(stringify(Val, L), Ts, L, Rest, Bs);
 	error ->
 	    [{var,L,V}|expand_macro(Ts, L, Rest, Bs)]
     end;
@@ -883,12 +910,12 @@ expand_arg([A|As], Ts, _L, Rest, Bs) ->
 expand_arg([], Ts, L, Rest, Bs) ->
     expand_macro(Ts, L, Rest, Bs).
 
-%%% stringify(L) returns a list of one token: a string which when
-%%% tokenized would yield the token list L.
+%%% stringify(Ts, L) returns a list of one token: a string which when
+%%% tokenized would yield the token list Ts.
 
 %tst(Str) ->
 %    {ok, T, _} = erl_scan:string(Str),
-%    [{string, _, S}] = stringify(T),
+%    [{string, _, S}] = stringify(T, 1),
 %    S.
 
 token_src({dot, _}) ->
@@ -907,9 +934,9 @@ stringify1([]) ->
 stringify1([T | Tokens]) ->
     [io_lib:format(" ~s", [token_src(T)]) | stringify1(Tokens)].
 
-stringify(L) ->
-    [$\s | S] = lists:flatten(stringify1(L)),
-    [{string, 1, S}].
+stringify(Ts, L) ->
+    [$\s | S] = lists:flatten(stringify1(Ts)),
+    [{string, L, S}].
 
 %% epp_request(Epp)
 %% epp_request(Epp, Request)

@@ -393,7 +393,7 @@ parse({S, T1} = T) when is_list(S) ->
 	false ->
 	    bad_test(T)
     end;
-parse(T) when is_tuple(T), size(T) > 2, is_list(element(1, T)) ->
+parse(T) when tuple_size(T) > 2, is_list(element(1, T)) ->
     [S | Es] = tuple_to_list(T),
     parse({S, list_to_tuple(Es)});
 parse(M) when is_atom(M) ->

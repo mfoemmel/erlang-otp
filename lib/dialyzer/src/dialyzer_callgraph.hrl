@@ -1,19 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
 %%--------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%%
+%% retrieved online at http://www.erlang.org/.
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% Copyright 2007 Tobias Lindahl and Kostis Sagonas
-%%
-%% $Id$
+%% 
+%% %CopyrightEnd%
 %%
 
 %%-----------------------------------------------------------------------------
@@ -46,17 +48,17 @@
 %%		   whenever applicable.
 %%-----------------------------------------------------------------------------
 
--type digraph() :: any().
-
 %% in the following type, integers represent labels of funs
 -type mfa_or_funlbl() :: integer() | mfa().
 -type scc()	      :: [mfa_or_funlbl()].
 
--record(dialyzer_callgraph, {digraph        :: digraph(),
-			     esc            :: set(),
-			     name_map       :: dict(),
-			     rev_name_map   :: dict(),
-			     postorder = [] :: [scc()],
-			     rec_var_map    :: dict(),
-			     self_rec       :: set(),
-			     calls          :: dict()}).
+-record(dialyzer_callgraph, {digraph		     :: digraph(),
+			     esc		     :: set(),
+			     name_map		     :: dict(),
+			     rev_name_map	     :: dict(),
+			     postorder = []	     :: [scc()],
+			     rec_var_map	     :: dict(),
+			     self_rec		     :: set(),
+			     calls		     :: dict(),
+			     module_local_calls = [] :: [_],
+			     inter_module_calls	= [] :: [_]}).

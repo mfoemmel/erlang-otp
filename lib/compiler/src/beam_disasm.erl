@@ -1,10 +1,20 @@
-%% -*- erlang-indent-level: 4 -*-
-%%=======================================================================
-%% File        : beam_disasm.erl
-%% Author      : Kostis Sagonas
-%% Description : Disassembles an R5-R12 .beam file into symbolic BEAM code
-%%=======================================================================
-%% $Id$
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2000-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
 %%=======================================================================
 %% Notes:
 %%   1. It does NOT work for .beam files of previous BEAM versions.
@@ -981,11 +991,6 @@ resolve_inst({bs_restore2=I,[Ms,{atom,_}=Atom]},_,_,_) ->
 %%
 %% New instructions for guard BIFs that may GC. Added in Jan 2006 (R11B).
 %%
-resolve_inst({gc_bif0,Args},Imports,_,_) ->
-    [F,Live,Bif,Reg] = resolve_args(Args),
-    {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
-    %% ?NO_DEBUG('gc_bif0(~p, ~p)~n',[BifName,Reg]),
-    {gc_bif,BifName,F,Live,[],Reg};
 resolve_inst({gc_bif1,Args},Imports,_,_) ->
     [F,Live,Bif,A1,Reg] = resolve_args(Args),
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),

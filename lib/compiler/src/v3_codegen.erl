@@ -1,20 +1,20 @@
-%% -*- erlang-indent-level: 4 -*-
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Code generator for Beam.
 
@@ -54,15 +54,15 @@
 %% Main codegen structure.
 -record(cg, {lcount=1,				%Label counter
 	     finfo,				%Function info label
-	     btype,				%Type of bif used.
-	     bfail,				%Fail label of bif
+	     bfail,				%Fail label for BIFs
 	     break,				%Break label
 	     recv,				%Receive label
 	     is_top_block,			%Boolean: top block or not
 	     functable=gb_trees:empty(),	%Gb tree of local functions:
 						% {{Name,Arity},Label}
 	     in_catch=false,			%Inside a catch or not.
-	     need_frame				%Need a stack frame.
+	     need_frame,			%Need a stack frame.
+	     ultimate_failure			%Label for ultimate match failure.
 	    }).			
 
 %% Stack/register state record.
@@ -79,10 +79,9 @@ module({Mod,Exp,Attr,Forms}, Options) ->
 functions(Forms, AtomMod) ->
     mapfoldl(fun (F, St) -> function(F, AtomMod, St) end, #cg{lcount=1}, Forms).
 
-function({function,Name,Arity,As0,Vb,Vdb}, AtomMod, St0) ->
-    %%ok = io:fwrite("cg ~w:~p~n", [?LINE,{Name,Arity}]),
+function({function,Name,Arity,Asm0,Vb,Vdb}, AtomMod, St0) ->
     try
-	{Asm,EntryLabel,St} = cg_fun(Vb, As0, Vdb, AtomMod, {Name,Arity}, St0),
+	{Asm,EntryLabel,St} = cg_fun(Vb, Asm0, Vdb, AtomMod, {Name,Arity}, St0),
 	Func = {function,Name,Arity,EntryLabel,Asm},
 	{Func,St}
     catch
@@ -98,19 +97,41 @@ cg_fun(Les, Hvs, Vdb, AtomMod, NameArity, St0) ->
     {Fi,St1} = new_label(St0),			%FuncInfo label
     {Fl,St2} = local_func_label(NameArity, St1),
 
+    %%
+    %% The pattern matching compiler (in v3_kernel) no longer
+    %% provides its own catch-all clause, because the 
+    %% call to erlang:exit/1 caused problem when cases were
+    %% used in guards. Therefore, there may be tests that
+    %% cannot fail (providing that there is not a bug in a
+    %% previous optimzation pass), but still need to provide
+    %% a label (there are instructions, such as is_tuple/2,
+    %% that do not allow {f,0}).
+    %%
+    %% We will generate an ultimate failure label and put it
+    %% at the end of function, followed by an 'if_end' instruction.
+    %% Note that and 'if_end' instruction does not need any
+    %% live x registers, so it will always be safe to jump to
+    %% it. (We never ever expect the jump to be taken, and in
+    %% must functions there will never be any references to
+    %% the label in the first place.)
+    %%
+
+    {UltimateMatchFail,St3} = new_label(St2),
+
     %% Create initial stack/register state, clear unused arguments.
     Bef = clear_dead(#sr{reg=foldl(fun ({var,V}, Reg) ->
 					   put_reg(V, Reg)
 				   end, [], Hvs),
-			stk=[]}, 0, Vdb),
-    {B2,_Aft,St3} = cg_list(Les, 0, Vdb, Bef, St2#cg{btype=exit,
-						     bfail=Fi,
-						     finfo=Fi,
-						     is_top_block=true}),
+			 stk=[]}, 0, Vdb),
+    {B,_Aft,St} = cg_list(Les, 0, Vdb, Bef,
+			  St3#cg{bfail=0,
+				 finfo=Fi,
+				 ultimate_failure=UltimateMatchFail,
+				 is_top_block=true}),
     {Name,Arity} = NameArity,
-    A = [{label,Fi},{func_info,AtomMod,{atom,Name},Arity},
-	 {label,Fl}|B2],
-    {A,Fl,St3}.
+    Asm = [{label,Fi},{func_info,AtomMod,{atom,Name},Arity},
+	   {label,Fl}|B++[{label,UltimateMatchFail},if_end]],
+    {Asm,Fl,St}.
 
 %% cg(Lkexpr, Vdb, StackReg, State) -> {[Ainstr],StackReg,State}.
 %%  Generate code for a kexpr.
@@ -123,6 +144,8 @@ cg({block,Es}, Le, Vdb, Bef, St) ->
     block_cg(Es, Le, Vdb, Bef, St);
 cg({match,M,Rs}, Le, Vdb, Bef, St) ->
     match_cg(M, Rs, Le, Vdb, Bef, St);
+cg({guard_match,M,Rs}, Le, Vdb, Bef, St) ->
+    guard_match_cg(M, Rs, Le, Vdb, Bef, St);
 cg({match_fail,F}, Le, Vdb, Bef, St) ->
     match_fail_cg(F, Le, Vdb, Bef, St);
 cg({call,Func,As,Rs}, Le, Vdb, Bef, St) ->
@@ -148,6 +171,8 @@ cg({set,Var,Con}, Le, Vdb, Bef, St) ->
     set_cg(Var, Con, Le, Vdb, Bef, St);
 cg({return,Rs}, Le, Vdb, Bef, St) -> return_cg(Rs, Le, Vdb, Bef, St);
 cg({break,Bs}, Le, Vdb, Bef, St) -> break_cg(Bs, Le, Vdb, Bef, St);
+cg({guard_break,Bs,N}, Le, Vdb, Bef, St) ->
+    guard_break_cg(Bs, N, Le, Vdb, Bef, St);
 cg({need_heap,H}, _Le, _Vdb, Bef, St) ->
     {[{test_heap,H,max_reg(Bef#sr.reg)}],Bef,St}.
 
@@ -157,7 +182,7 @@ cg_list(Kes, I, Vdb, Bef, St0) ->
     {Keis,{Aft,St1}} =
 	flatmapfoldl(fun (Ke, {Inta,Sta}) ->
 			     {Keis,Intb,Stb} = cg(Ke, Vdb, Inta, Sta),
-			     {comment(Inta) ++ Keis,{Intb,Stb}}
+			     {Keis,{Intb,Stb}}
 		     end, {Bef,St0}, need_heap(Kes, I)),
     {Keis,Aft,St1}.
 
@@ -211,12 +236,31 @@ match_cg(M, Rs, Le, Vdb, Bef, St0) ->
     I = Le#l.i,
     {Sis,Int0} = adjust_stack(Bef, I, I+1, Vdb),
     {B,St1} = new_label(St0),
-    {Mis,Int1,St2} = match_cg(M, none, Int0, St1#cg{break=B}),
+    {Mis,Int1,St2} = match_cg(M, St0#cg.ultimate_failure,
+			      Int0, St1#cg{break=B}),
     %% Put return values in registers.
     Reg = load_vars(Rs, Int1#sr.reg),
     {Sis ++ Mis ++ [{label,B}],
      clear_dead(Int1#sr{reg=Reg}, I, Vdb),
      St2#cg{break=St1#cg.break}}.
+
+guard_match_cg(M, Rs, Le, Vdb, Bef, St0) ->
+    I = Le#l.i,
+    {B,St1} = new_label(St0),
+    #cg{bfail=Fail} = St1,
+    {Mis,Aft,St2} = match_cg(M, Fail, Bef, St1#cg{break=B}),
+    %% Update the register descriptors for the return registers.
+    Reg = guard_match_regs(Aft#sr.reg, Rs),
+    {Mis ++ [{label,B}],
+     clear_dead(Aft#sr{reg=Reg}, I, Vdb),
+     St2#cg{break=St1#cg.break}}.
+
+guard_match_regs([{I,gbreakvar}|Rs], [{var,V}|Vs]) ->
+    [{I,V}|guard_match_regs(Rs, Vs)];
+guard_match_regs([R|Rs], Vs) ->
+    [R|guard_match_regs(Rs, Vs)];
+guard_match_regs([], []) -> [].
+    
 
 %% match_cg(Match, Fail, StackReg, State) -> {[Ainstr],StackReg,State}.
 %%  Generate code for a match tree.  N.B. there is no need pass Vdb
@@ -303,7 +347,7 @@ bsm_rename_ctx([#l{ke={type_clause,binary,
     Ke = bsm_rename_ctx(Ke0, Old, New, false),
     [L1#l{ke={type_clause,binary,
 	      [L2#l{ke={val_clause,{binary,{var,New}},Ke}}]}}|bsm_rename_ctx(Cs, New)];
-bsm_rename_ctx([C|Cs], New) ->
+bsm_rename_ctx([C|Cs], New) -> 
     [C|bsm_rename_ctx(Cs, New)];
 bsm_rename_ctx([], _) -> [].
 
@@ -311,7 +355,7 @@ bsm_rename_ctx([], _) -> [].
 %%  Rename and clear OldName from life-time information. We must
 %%  recurse into any block contained in a protected, but it would
 %%  only complicatate things to recurse into blocks not in a protected
-%%  (the match context variable will is not live inside them).
+%%  (the match context variable is not live inside them).
 
 bsm_rename_ctx(#l{ke={select,{var,V},Cs0}}=L, Old, New, InProt) ->
     Cs = bsm_rename_ctx_list(Cs0, Old, New, InProt),
@@ -356,6 +400,9 @@ bsm_rename_ctx(#l{ke={protected,Ts0,Rs}}=L, Old, New, _InProt) ->
 bsm_rename_ctx(#l{ke={match,Ms0,Rs}}=L, Old, New, InProt) ->
     Ms = bsm_rename_ctx(Ms0, Old, New, InProt),
     L#l{ke={match,Ms,Rs}};
+bsm_rename_ctx(#l{ke={guard_match,Ms0,Rs}}=L, Old, New, InProt) ->
+    Ms = bsm_rename_ctx(Ms0, Old, New, InProt),
+    L#l{ke={guard_match,Ms,Rs}};
 bsm_rename_ctx(#l{ke={test,_,_}}=L, _, _, _) -> L;
 bsm_rename_ctx(#l{ke={bif,_,_,_}}=L, _, _, _) -> L;
 bsm_rename_ctx(#l{ke={gc_bif,_,_,_}}=L, _, _, _) -> L;
@@ -369,7 +416,9 @@ bsm_rename_ctx(#l{ke={block,Bl0}}=L, Old, New, true) ->
     %% inside the block.
     Bl = bsm_rename_ctx_list(Bl0, Old, New, true),
     bsm_forget_var(L#l{ke={block,Bl}}, Old);
-bsm_rename_ctx(#l{ke={break,_}}=L, Old, _New, _InProt) ->
+bsm_rename_ctx(#l{ke={guard_break,Bs,Locked0}}=L0, Old, _New, _InProt) ->
+    Locked = Locked0 -- [Old],
+    L = L0#l{ke={guard_break,Bs,Locked}},
     bsm_forget_var(L, Old).
 
 bsm_rename_ctx_list([C|Cs], Old, New, InProt) ->
@@ -463,13 +512,13 @@ cg_basic_block(Kes, Fb, Lf, As, Vdb, Bef, St0) ->
 
 cg_basic_block(#l{ke={need_heap,_}}=Ke, {Inta,X0v,Sta}, _Lf, Vdb) ->
     {Keis,Intb,Stb} = cg(Ke, Vdb, Inta, Sta),
-    {comment(Inta) ++ Keis, {Intb,X0v,Stb}};
+    {Keis, {Intb,X0v,Stb}};
 cg_basic_block(Ke, {Inta,X0_v1,Sta}, Lf, Vdb) ->
     {Sis,Intb} = save_carefully(Inta, Ke#l.i, Lf+1, Vdb),
     {X0_v2,Intc} = allocate_x0(X0_v1, Ke#l.i, Intb),
     Intd = reserve(Intc),
     {Keis,Inte,Stb} = cg(Ke, Vdb, Intd, Sta),
-    {comment(Inta) ++ Sis ++ Keis, {Inte,X0_v2,Stb}}.
+    {Sis ++ Keis, {Inte,X0_v2,Stb}}.
 
 make_reservation([], _) -> [];
 make_reservation([{var,V}|As], I) -> [{I,V}|make_reservation(As, I+1)];
@@ -556,8 +605,6 @@ top_level_block(Keis, Bef, MaxRegs, _St) ->
 			    [{call_ext_last,Arity,Func,FrameSz}];
 			({apply_only,Arity}) ->
 			    [{apply_last,Arity,FrameSz}];
-			({break,Fail}) ->
-			    [{deallocate,FrameSz},{jump,Fail}];
 			(return) ->
 			    [{deallocate,FrameSz},return];
 			(Tuple) when is_tuple(Tuple) ->
@@ -906,77 +953,10 @@ select_extract_cons(Src, [{var,Hd}, {var,Tl}], I, Vdb, Bef, St) ->
     {Es,Aft,St}.
     
 
-guard_clause_cg(#l{ke={guard_clause,G,B},vdb=Vdb,i=I}, Fail, Bef, St0) ->
-    case is_matching_guard(G) of
-	false ->
-	    %% The basic case without the complication of matching
-	    %% in the guard.
-
-	    {Gis,Int,St1} = guard_cg(G, Fail, Vdb, Bef, St0),
-	    {Bis,Aft,St} = match_cg(B, Fail, Int, St1),
-	    {Gis ++ Bis,Aft,St};
-	true ->
-	    %% This top-level guard contains code that matches
-	    %% (because the original source code used andalso/orelse).
-	    %%   We must set up a stack frame. Furthermore
-	    %% we must restore all X registers before leaving the guard.
-	    %% This is messy, so we do it in a separate function.
-
-	    saving_guard_cg(G, B, I, Vdb, Fail, Bef, St0)
-    end.
-
-saving_guard_cg(G, B, _I, Vdb, Fail, Bef, St0) ->
-    {RestoreL,St1} = new_label(St0),
-    {Gis,Int,St2} = guard_cg(G, RestoreL, Vdb, Bef,
-			     St1#cg{is_top_block=false}),
-    Hvs = hvs(Bef, Int),
-    {Bis,Aft,St} = match_cg(B, Fail, Int, St2),
-    {RestoreRegsIs,_} = cg_setup_call(Hvs, Int, 1, Vdb),
-    Break = case St0#cg.is_top_block of
-		false -> [{jump,{f,Fail}}];
-		true -> [{break,{f,Fail}}]
-	    end,
-    Is0 = Gis++Bis++[{label,RestoreL}] ++
-	RestoreRegsIs ++ Break,
-    Is = case St0#cg.is_top_block of
-	     false -> Is0;
-	     true -> top_level_block(Is0, Aft, max_reg(Bef#sr.reg), St)
-	 end,
-    {Is,Aft,St#cg{is_top_block=St0#cg.is_top_block}}.
-
-hvs(#sr{reg=Reg}, #sr{stk=Saved0}) ->
-    Saved = ordsets:from_list([V || {V} <- Saved0]),
-    hvs_1(Reg, Saved, []).
-
-hvs_1([{_,V}|Rs], Saved, Acc) ->
-    case ordsets:is_element(V, Saved) of
-	false -> hvs_1(Rs, Saved, [nil|Acc]);
-	true ->  hvs_1(Rs, Saved, [{var,V}|Acc])
-    end;
-hvs_1([_|Rs], Saved, Acc) ->
-    hvs_1(Rs, Saved, [nil|Acc]);
-hvs_1([], _, Acc) -> hvs_2(Acc).
-
-hvs_2([nil|Vs]) -> hvs_2(Vs);
-hvs_2(Vs) -> reverse(Vs).
-
-
-%% is_matching_guard(GuardExpr) -> true|false
-%%  Determine whether a guard expression contains a match expression.
-
-is_matching_guard(#l{ke={protected,T,_}}) -> is_matching_guard_list(T);
-is_matching_guard(#l{ke={test,_,_}}) -> false;
-is_matching_guard(#l{ke={bif,_,_,_}}) -> false;
-is_matching_guard(#l{ke={gc_bif,_,_,_}}) -> false;
-is_matching_guard(#l{ke={set,_,_}}) -> false;
-is_matching_guard(#l{ke={match,_,_}}) -> true.
-
-is_matching_guard_list([T|Ts]) ->
-    case is_matching_guard(T) of
-	false -> is_matching_guard_list(Ts);
-	true -> true
-    end;
-is_matching_guard_list([]) -> false.
+guard_clause_cg(#l{ke={guard_clause,G,B},vdb=Vdb}, Fail, Bef, St0) ->
+    {Gis,Int,St1} = guard_cg(G, Fail, Vdb, Bef, St0),
+    {Bis,Aft,St} = match_cg(B, Fail, Int, St1),
+    {Gis ++ Bis,Aft,St}.
 
 %% guard_cg(Guard, Fail, Vdb, StackReg, State) ->
 %%      {[Ainstr],StackReg,State}.
@@ -1005,39 +985,22 @@ guard_cg(G, _Fail, Vdb, Bef, St) ->
 %%  return values then these must be set to 'false' on failure,
 %%  control always passes to the next instruction.
 
-protected_cg(Ts, Rs, Fail, I, Vdb, Bef, St0) ->
-    case is_matching_guard_list(Ts) of
-	false ->
-	    protected_cg_1(Ts, Rs, Fail, I, Vdb, Bef, St0);
-	true ->
-	    %% A match construct inside a protected means that there was
-	    %% an andalso/orelse in the source code.
-	    %% We must save all variables that are to survive the protected
-	    %% before entering it (i.e. before executing any
-	    %% instruction that could fail, such as a guard BIF).
-
-	    {Sis,Int} = adjust_stack(Bef, I, I+1, Vdb),
-	    {Tis,Aft,St} = protected_cg_1(Ts, Rs, Fail, I, Vdb, Int, St0),
-	    {Sis++Tis,Aft,St}
-    end.
-
-protected_cg_1(Ts, [], Fail, I, Vdb, Bef, St0) ->
+protected_cg(Ts, [], Fail, I, Vdb, Bef, St0) ->
     %% Protect these calls, revert when done.
     {Tis,Aft,St1} = guard_cg_list(Ts, Fail, I, Vdb, Bef,
-				  St0#cg{btype=fail,bfail=Fail}),
-    {Tis,Aft,St1#cg{btype=St0#cg.btype,bfail=St0#cg.bfail}};
-protected_cg_1(Ts, Rs, _Fail, I, Vdb, Bef, St0) ->
+				  St0#cg{bfail=Fail}),
+    {Tis,Aft,St1#cg{bfail=St0#cg.bfail}};
+protected_cg(Ts, Rs, _Fail, I, Vdb, Bef, St0) ->
     {Pfail,St1} = new_label(St0),
     {Psucc,St2} = new_label(St1),
     {Tis,Aft,St3} = guard_cg_list(Ts, Pfail, I, Vdb, Bef,
-				  St2#cg{btype=fail,bfail=Pfail}),
+				  St2#cg{bfail=Pfail}),
     %%ok = io:fwrite("cg ~w: ~p~n", [?LINE,{Rs,I,Vdb,Aft}]),
     %% Set return values to false.
     Mis = map(fun ({var,V}) -> {move,{atom,false},fetch_var(V, Aft)} end, Rs),
-    Live = {'%live',max_reg(Aft#sr.reg)},
-    {Tis ++ [Live,{jump,{f,Psucc}},
-	     {label,Pfail}] ++ Mis ++ [Live,{label,Psucc}],
-     Aft,St3#cg{btype=St0#cg.btype,bfail=St0#cg.bfail}}.    
+    {Tis ++ [{jump,{f,Psucc}},
+	     {label,Pfail}] ++ Mis ++ [{label,Psucc}],
+     Aft,St3#cg{bfail=St0#cg.bfail}}.    
 
 %% test_cg(TestName, Args, Fail, I, Vdb, Bef, St) -> {[Ainstr],Aft,St}.
 %%  Generate test instruction.  Use explicit fail label here.
@@ -1055,7 +1018,7 @@ guard_cg_list(Kes, Fail, I, Vdb, Bef, St0) ->
 	flatmapfoldl(fun (Ke, {Inta,Sta}) ->
 			     {Keis,Intb,Stb} =
 				 guard_cg(Ke, Fail, Vdb, Inta, Sta),
-			     {comment(Inta) ++ Keis,{Intb,Stb}}
+			     {Keis,{Intb,Stb}}
 		     end, {Bef,St0}, need_heap(Kes, I)),
     {Keis,Aft,St1}.
 
@@ -1088,8 +1051,8 @@ call_cg({var,V}, As, Rs, Le, Vdb, Bef, St0) ->
     %% Build complete code and final stack/register state.
     Arity = length(As),
     {Frees,Aft} = free_dead(clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb)),
-    {comment({call_fun,{var,V},As}) ++ Sis ++ Frees ++ [{call_fun,Arity}],
-     Aft,need_stack_frame(St0)};
+    {Sis ++ Frees ++ [{call_fun,Arity}],Aft,
+     need_stack_frame(St0)};
 call_cg({remote,Mod,Name}, As, Rs, Le, Vdb, Bef, St0)
   when element(1, Mod) =:= var;
        element(1, Name) =:= var ->
@@ -1104,14 +1067,36 @@ call_cg({remote,Mod,Name}, As, Rs, Le, Vdb, Bef, St0)
     {Frees,Aft} = free_dead(clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb)),
     {Sis ++ Frees ++ [Call],Aft,St};
 call_cg(Func, As, Rs, Le, Vdb, Bef, St0) ->
-    {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
-    %% Put return values in registers.
-    Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
-    %% Build complete code and final stack/register state.
-    Arity = length(As),
-    {Call,St1} = build_call(Func, Arity, St0),
-    {Frees,Aft} = free_dead(clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb)),
-    {comment({call,Func,As}) ++ Sis ++ Frees ++ Call,Aft,St1}.
+    case St0 of
+	#cg{bfail=Fail} when Fail =/= 0 ->
+	    %% Inside a guard. The only allowed function call is to
+	    %% erlang:error/1,2. We will generate the following code:
+	    %%
+	    %%     jump FailureLabel
+	    %%     move {atom,ok} DestReg
+	    %%
+	    %% The 'move' instruction will never be executed, but we
+	    %% generate it anyway in case the beam_validator is run
+	    %% on unoptimized code.
+	    {remote,{atom,erlang},{atom,error}} = Func,	%Assertion.
+	    [{var,DestVar}] = Rs,
+	    Int0 = clear_dead(Bef, Le#l.i, Vdb),
+	    Reg = put_reg(DestVar, Int0#sr.reg),
+	    Int = Int0#sr{reg=Reg},
+	    Dst = fetch_reg(DestVar, Reg),
+	    {[{jump,{f,Fail}},{move,{atom,ok},Dst}],
+	     clear_dead(Int, Le#l.i, Vdb),St0};
+	#cg{} ->
+	    %% Ordinary function call in a function body.
+	    {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
+	    %% Put return values in registers.
+	    Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
+	    %% Build complete code and final stack/register state.
+	    Arity = length(As),
+	    {Call,St1} = build_call(Func, Arity, St0),
+	    {Frees,Aft} = free_dead(clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb)),
+	    {Sis ++ Frees ++ Call,Aft,St1}
+    end.
 
 build_call({remote,{atom,erlang},{atom,'!'}}, 2, St0) ->
     {[send],need_stack_frame(St0)};
@@ -1137,10 +1122,10 @@ enter_cg({var,V}, As, Le, Vdb, Bef, St0) ->
     {Sis,Int} = cg_setup_call(As++[{var,V}], Bef, Le#l.i, Vdb),
     %% Build complete code and final stack/register state.
     Arity = length(As),
-    {comment({call_fun,{var,V},As}) ++ Sis ++ [{call_fun,Arity},return],
+    {Sis ++ [{call_fun,Arity},return],
      clear_dead(Int#sr{reg=clear_regs(Int#sr.reg)}, Le#l.i, Vdb),
      need_stack_frame(St0)};
-enter_cg({remote,Mod,Name}=Func, As, Le, Vdb, Bef, St0)
+enter_cg({remote,Mod,Name}, As, Le, Vdb, Bef, St0)
   when element(1, Mod) =:= var;
        element(1, Name) =:= var ->
     {Sis,Int} = cg_setup_call(As++[Mod,Name], Bef, Le#l.i, Vdb),
@@ -1148,7 +1133,7 @@ enter_cg({remote,Mod,Name}=Func, As, Le, Vdb, Bef, St0)
     Arity = length(As),
     Call = {apply_only,Arity},
     St = need_stack_frame(St0),
-    {comment({enter,Func,As}) ++ Sis ++ [Call],
+    {Sis ++ [Call],
      clear_dead(Int#sr{reg=clear_regs(Int#sr.reg)}, Le#l.i, Vdb),
      St};
 enter_cg(Func, As, Le, Vdb, Bef, St0) ->
@@ -1156,7 +1141,7 @@ enter_cg(Func, As, Le, Vdb, Bef, St0) ->
     %% Build complete code and final stack/register state.
     Arity = length(As),
     {Call,St1} = build_enter(Func, Arity, St0),
-    {comment({enter,Func,As}) ++ Sis ++ Call,
+    {Sis ++ Call,
      clear_dead(Int#sr{reg=clear_regs(Int#sr.reg)}, Le#l.i, Vdb),
      St1}.
 
@@ -1246,9 +1231,8 @@ bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
     Int1 = clear_dead(Int0, Le#l.i, Vdb),
     Reg = put_reg(V, Int1#sr.reg),
     Int = Int1#sr{reg=Reg},
-    Arity = length(Ars),
     Dst = fetch_reg(V, Reg),
-    BifFail = bif_fail(St0#cg.btype, St0#cg.bfail, Arity),
+    BifFail = {f,St0#cg.bfail},
     {Sis++[{bif,Bif,BifFail,Ars,Dst}],
      clear_dead(Int, Le#l.i, Vdb), St0}.
 
@@ -1275,16 +1259,9 @@ gc_bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
     Reg = put_reg(V, Int1#sr.reg),
     Int = Int1#sr{reg=Reg},
     Dst = fetch_reg(V, Reg),
-    BifFail = case St0#cg.btype of
-		  exit -> {f,0};
-		  fail -> {f,St0#cg.bfail}
-	      end,
+    BifFail = {f,St0#cg.bfail},
     {Sis++[{gc_bif,Bif,BifFail,max_reg(Bef#sr.reg),Ars,Dst}],
      clear_dead(Int, Le#l.i, Vdb), St0}.
-
-bif_fail(_, _, 0) -> nofail;
-bif_fail(exit, _, _) -> {f,0};
-bif_fail(fail, Fail, _) -> {f,Fail}.
 
 %% recv_loop_cg(TimeOut, ReceiveVar, ReceiveMatch, TimeOutExprs,
 %%              [Ret], Le, Vdb, Bef, St) -> {[Ainstr],Aft,St}.
@@ -1313,7 +1290,7 @@ cg_recv_mesg({var,R}, Rm, Tl, Bef, St0) ->
     %% Int1 = clear_dead(Int0, I, Rm#l.vdb),
     Int1 = Int0,
     {Mis,Int2,St1} = match_cg(Rm, none, Int1, St0),
-    {[{'%live',0},{label,St1#cg.recv},{loop_rec,{f,Tl},Ret}|Mis],Int2,St1}.
+    {[{label,St1#cg.recv},{loop_rec,{f,Tl},Ret}|Mis],Int2,St1}.
 
 %% cg_recv_wait(Te, Tes, I, Vdb, Int2, St3) -> {[Ainstr],Aft,St}.
 
@@ -1423,7 +1400,7 @@ set_cg([{var,R}], {cons,Es}, Le, Vdb, Bef, St) ->
 set_cg([{var,R}], {binary,Segs}, Le, Vdb, Bef, #cg{in_catch=InCatch}=St) ->
     Int0 = Bef#sr{reg=put_reg(R, Bef#sr.reg)},
     Target = fetch_reg(R, Int0#sr.reg),
-    Fail = bif_fail(St#cg.btype, St#cg.bfail, 42),
+    Fail = {f,St#cg.bfail},
     Temp = find_scratch_reg(Int0#sr.reg),
     PutCode = cg_bin_put(Segs, Fail, Bef),
     {Sis,Int1} =
@@ -1451,7 +1428,7 @@ set_cg([{var,R}], Con, Le, Vdb, Bef, St) ->
 	  end,
     {Ais,clear_dead(Int, Le#l.i, Vdb),St};
 set_cg([], {binary,Segs}, Le, Vdb, Bef, St) ->
-    Fail = bif_fail(St#cg.btype, St#cg.bfail, 42),
+    Fail = {f,St#cg.bfail},
     Target = find_scratch_reg(Bef#sr.reg),
     Temp = find_scratch_reg(put_reg(Target, Bef#sr.reg)),
     PutCode = cg_bin_put(Segs, Fail, Bef),
@@ -1587,11 +1564,6 @@ cg_gen_binsize([{'*',{bs_utf16_size,Src},B}|T], Target, Temp, Fail, Live, Acc) -
     Add = {bs_add,Fail,[Target,Temp,B],Target},
     cg_gen_binsize(T, Target, Temp, Fail, Live,
 		   [Add,Size|Acc]);
-cg_gen_binsize([{'*',{bs_utf32_size,Src},B}|T], Target, Temp, Fail, Live, Acc) ->
-    Size = {bs_utf32_size,Fail,Src,Temp},
-    Add = {bs_add,Fail,[Target,Temp,B],Target},
-    cg_gen_binsize(T, Target, Temp, Fail, Live,
-		   [Add,Size|Acc]);
 cg_gen_binsize([{'*',A,B}|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize(T, Target, Temp, Fail, Live,
 		   [{bs_add,Fail,[Target,A,B],Target}|Acc]);
@@ -1607,9 +1579,6 @@ cg_gen_binsize([{bs_utf8_size,B}|T], Target, Temp, Fail, Live, Acc) ->
 cg_gen_binsize([{bs_utf16_size,B}|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
 		   [{bs_utf16_size,Fail,B,Temp}|Acc]);
-cg_gen_binsize([{bs_utf32_size,B}|T], Target, Temp, Fail, Live, Acc) ->
-    cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
-		   [{bs_utf32_size,Fail,B,Temp}|Acc]);
 cg_gen_binsize([E0|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize(T, Target, Temp, Fail, Live,
 		   [{bs_add,Fail,[Target,E0,1],Target}|Acc]);
@@ -1681,13 +1650,40 @@ cg_build_args(As, Bef) ->
 
 return_cg(Rs, Le, Vdb, Bef, St) ->
     {Ms,Int} = cg_setup_call(Rs, Bef, Le#l.i, Vdb),
-    {comment({return,Rs}) ++ Ms ++ [return],
-     Int#sr{reg=clear_regs(Int#sr.reg)},St}.
+    {Ms ++ [return],Int#sr{reg=clear_regs(Int#sr.reg)},St}.
 
 break_cg(Bs, Le, Vdb, Bef, St) ->
     {Ms,Int} = cg_setup_call(Bs, Bef, Le#l.i, Vdb),
-    {comment({break,Bs}) ++ Ms ++ [{jump,{f,St#cg.break}}],
+    {Ms ++ [{jump,{f,St#cg.break}}],
      Int#sr{reg=clear_regs(Int#sr.reg)},St}.
+
+guard_break_cg(Bs, Locked, #l{i=I}, Vdb, #sr{reg=Reg0}=Bef, St) ->
+    RegLocked = get_locked_regs(Reg0, Locked),
+    #sr{reg=Reg1} = Int = clear_dead(Bef#sr{reg=RegLocked}, I, Vdb),
+    Reg2 = trim_free(Reg1),
+    NumLocked = length(Reg2),
+    Moves0 = gen_moves(Bs, Bef, NumLocked, []),
+    Moves = order_moves(Moves0, find_scratch_reg(RegLocked)),
+    {BreakVars,_} = mapfoldl(fun(_, RegNum) ->
+				     {{RegNum,gbreakvar},RegNum+1}
+			     end, length(Reg2), Bs),
+    Reg = Reg2 ++ BreakVars,
+    Aft = Int#sr{reg=Reg},
+    {Moves ++ [{jump,{f,St#cg.break}}],Aft,St}.
+
+get_locked_regs([R|Rs0], Preserve) ->
+    case {get_locked_regs(Rs0, Preserve),R} of
+	{[],{_,V}} ->
+	    case lists:member(V, Preserve) of
+		true -> [R];
+		false -> []
+	    end;
+	{[],_} ->
+	    [];
+	{Rs,_} ->
+	    [R|Rs]
+    end;
+get_locked_regs([], _) -> [].
 
 %% cg_reg_arg(Arg0, Info) -> Arg
 %% cg_reg_args([Arg0], Info) -> [Arg]
@@ -1706,7 +1702,7 @@ cg_setup_call(As, Bef, I, Vdb) ->
     %% Have set up arguments, can now clean up, compress and save to stack.
     Int1 = Int0#sr{stk=clear_dead_stk(Int0#sr.stk, I, Vdb),res=[]},
     {Sis,Int2} = adjust_stack(Int1, I, I+1, Vdb),
-    {Ms ++ Sis ++ [{'%live',length(As)}],Int2}.
+    {Ms ++ Sis,Int2}.
 
 %% cg_call_args([Arg], SrState) -> {[Instr],SrState}.
 %%  Setup the arguments to a call/enter/bif. Put the arguments into
@@ -1869,6 +1865,13 @@ longest([free|T1], []) -> [free|T1];
 longest([], [free|T2]) -> [free|T2];
 longest([], []) -> [].
 
+trim_free([R|Rs0]) ->
+    case {trim_free(Rs0),R} of
+	{[],free} -> [];
+	{Rs,R} -> [R|Rs]
+    end;
+trim_free([]) -> [].
+
 %% adjust_stack(Bef, FirstBefore, LastFrom, Vdb) -> {[Ainstr],Aft}.
 %%  Do complete stack adjustment by compressing stack and adding
 %%  variables to be saved.  Try to optimise ordering on stack by
@@ -1904,11 +1907,6 @@ save_stack(Stk0, Fb, Lf, Vdb) ->
 
 saves(Ss, Reg, Stk) ->
     [{move,fetch_reg(V, Reg),fetch_stack(V, Stk)} || V <- Ss].
-
-%% comment(C) -> ['%'{C}].
-
-%comment(C) -> [{'%',C}].
-comment(_) -> [].
 
 %% fetch_var(VarName, StkReg) -> r{R} | sp{Sp}.
 %% find_var(VarName, StkReg) -> ok{r{R} | sp{Sp}} | error.

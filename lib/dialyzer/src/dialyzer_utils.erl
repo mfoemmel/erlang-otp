@@ -1,19 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
 %%-----------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%%
+%% retrieved online at http://www.erlang.org/.
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% Copyright 2006-2008, Tobias Lindahl and Kostis Sagonas
-%%
-%% $Id$
+%% 
+%% %CopyrightEnd%
 %%
 
 %%%-------------------------------------------------------------------
@@ -66,19 +68,21 @@ get_abstract_code_from_src(File, Opts) ->
     {ok, _, AbstrCode} -> {ok, AbstrCode}
   end.
 
--spec get_core_from_src(string()) -> {'ok', core_records()} | {'error', string()}.
+-type get_core_from_src_ret() :: {'ok', core_records()} | {'error', string()}.
+
+-spec get_core_from_src(string()) -> get_core_from_src_ret().
 
 get_core_from_src(File) ->
   get_core_from_src(File, []).
 
--spec get_core_from_src(string(), [_]) -> {'ok', core_records()} | {'error', string()}.
+-spec get_core_from_src(string(), [_]) -> get_core_from_src_ret().
 
 get_core_from_src(File, Opts) ->
   case get_abstract_code_from_src(File, Opts) of
     {error, What} -> {error, What};
     {ok, AbstrCode} ->
       case get_core_from_abstract_code(AbstrCode, Opts) of
-	error -> {error, "  Could not get abstract core"};
+	error -> {error, "  Could not get Core Erlang code from abstract code"};
 	{ok, Core} -> {ok, Core}
       end
   end.
@@ -97,15 +101,17 @@ get_abstract_code_from_beam(File) ->
       error
   end.
 
--spec get_core_from_abstract_code(abstract_code()) -> 'error' | {ok, core_records()}.
+-type get_core_from_abs_ret() :: {'ok', core_records()} | 'error'.
+
+-spec get_core_from_abstract_code(abstract_code()) -> get_core_from_abs_ret().
 
 get_core_from_abstract_code(AbstrCode) ->
   get_core_from_abstract_code(AbstrCode, []).
 
--spec get_core_from_abstract_code(abstract_code(), [_]) -> 'error' | {ok, core_records()}.
+-spec get_core_from_abstract_code(abstract_code(), [_]) -> get_core_from_abs_ret().
 
 get_core_from_abstract_code(AbstrCode, Opts) ->
-  %% We do not want the parse_transorms left since we have already
+  %% We do not want the parse_transforms around since we already
   %% performed them. In some cases we end up in trouble when
   %% performing them again.
   AbstrCode1 = cleanup_parse_transforms(AbstrCode),
@@ -156,18 +162,18 @@ get_record_and_type_info([{attribute, _, type, {{record, Name}, Fields0, []}}
       {error, lists:flatten(io_lib:format("  Error while parsing #~w{}: ~s\n",
 					  [Name, Error]))}
   end;
-get_record_and_type_info([{attribute, _, type, {Name, TypeForm}}|Left], 
-			 RecDict) ->
+get_record_and_type_info([{attribute, _, Attr, {Name, TypeForm}}|Left], 
+			 RecDict) when Attr =:= 'type'; Attr =:= 'opaque' ->
   try
-    NewRecDict = add_new_type(Name, TypeForm, [], RecDict),
+    NewRecDict = add_new_type(Attr, Name, TypeForm, [], RecDict),
     get_record_and_type_info(Left, NewRecDict)
   catch
     throw:{error, What} -> {error, What}
   end;
-get_record_and_type_info([{attribute, _, type, {Name, TypeForm, Args}}|Left], 
-			 RecDict) ->
+get_record_and_type_info([{attribute, _, Attr, {Name, TypeForm, Args}}|Left], 
+			 RecDict) when Attr =:= 'type'; Attr =:= 'opaque' ->
   try
-    NewRecDict = add_new_type(Name, TypeForm, Args, RecDict),
+    NewRecDict = add_new_type(Attr, Name, TypeForm, Args, RecDict),
     get_record_and_type_info(Left, NewRecDict)
   catch
     throw:{error, What} -> {error, What}
@@ -177,8 +183,8 @@ get_record_and_type_info([_Other|Left], RecDict) ->
 get_record_and_type_info([], RecDict) ->
   {ok, RecDict}.
 
-add_new_type(Name, TypeForm, ArgForms, RecDict) ->
-  case erl_types:type_is_defined(Name, RecDict) of 
+add_new_type(TypeOrOpaque, Name, TypeForm, ArgForms, RecDict) ->
+  case erl_types:type_is_defined(TypeOrOpaque, Name, RecDict) of 
     true ->
       throw({error, io_lib:format("Type already defined: ~w\n", [Name])});
     false ->
@@ -187,9 +193,9 @@ add_new_type(Name, TypeForm, ArgForms, RecDict) ->
       case lists:all(fun erl_types:t_is_var/1, ArgTypes) of
 	true ->
 	  ArgNames = [erl_types:t_var_name(X) || X <- ArgTypes],
-	  dict:store({type, Name}, {TypeForm, ArgNames}, RecDict);
+	  dict:store({TypeOrOpaque, Name}, {TypeForm, ArgNames}, RecDict);
 	false ->
-	  throw({error, io_lib:format("Type specification for ~w does not"
+	  throw({error, io_lib:format("Type declaration for ~w does not"
 				      " have variables as parameters", [Name])})
       end
   end.
@@ -245,24 +251,26 @@ get_spec_info([{attribute, Ln, spec, {Id, TypeSpec}}|Left],
       {_, _, _} = MFA -> MFA;
       {F, A} -> {ModName, F, A}
     end,
-  try 
+  try
+    %% io:format("contract from form: ~p\n", [TypeSpec]),
     Contract = dialyzer_contracts:contract_from_form(TypeSpec, RecordsDict),
+    %% io:format("contract: ~p\n", [Contract]),
     Index = {Mod, Fun, Arity},
     case dict:find(Index, SpecDict) of
-      error -> 
+      error ->
 	NewSpecDict = 
 	  dict:store(Index, {{CurrentFile, Ln}, Contract}, SpecDict),
 	get_spec_info(Left, NewSpecDict, RecordsDict, ModName, CurrentFile);
       {ok, {{File, L},_C}} -> 
-	Msg = io_lib:format("  Contract for function ~w:~w/~w " 
+	Msg = io_lib:format("  Contract for function ~w:~w/~w "
 			    "already defined in ~s:~w.\n", 
 			    [ModName, Fun, Arity, File, L]),
 	throw({error, Msg})
     end
   catch
-    throw:{error, Error} -> 
+    throw:{error, Error} ->
       {error, lists:flatten(io_lib:format("  Error while parsing contract "
-					  "in line ~w: ~s\n", [Ln,Error]))}
+					  "in line ~w: ~s\n", [Ln, Error]))}
   end;
 get_spec_info([{attribute, _, file, {File, _}}|Left],
 	      SpecDict, RecordsDict, ModName, _CurrentFile) ->
@@ -313,17 +321,17 @@ format_sig(Type, RecDict) ->
 %% Created     : 5 March 2007
 %%-------------------------------------------------------------------
 
--spec pp_hook() -> fun((core_tree(), _, _) -> any()).
-
 pp_hook() ->
   fun pp_hook/3.
+
+-spec pp_hook() -> fun((core_tree(), _, _) -> any()).
 
 pp_hook(Node, Ctxt, Cont) ->
   case cerl:type(Node) of
     binary ->
-      pp_binary(Node,Ctxt,Cont);
+      pp_binary(Node, Ctxt, Cont);
     bitstr ->
-      pp_segment(Node,Ctxt,Cont);
+      pp_segment(Node, Ctxt, Cont);
     _ ->
       Cont(Node, Ctxt)
   end.
@@ -349,11 +357,11 @@ pp_segment(Node, Ctxt, Cont) ->
   Unit = cerl:bitstr_unit(Node),
   Type = cerl:bitstr_type(Node),
   Flags = cerl:bitstr_flags(Node),
-  prettypr:beside(Cont(Val,Ctxt),
+  prettypr:beside(Cont(Val, Ctxt),
 		  prettypr:beside(pp_size(Size, Ctxt, Cont),
 				  prettypr:beside(pp_opts(Type, Flags),
 						  pp_unit(Unit, Ctxt, Cont)))).
-  
+
 pp_size(Size, Ctxt, Cont) ->
   case cerl:is_c_atom(Size) of
     true ->
@@ -362,12 +370,15 @@ pp_size(Size, Ctxt, Cont) ->
       prettypr:beside(prettypr:text(":"), Cont(Size, Ctxt))
   end.
 
-pp_opts(Type,Flags) ->
+pp_opts(Type, Flags) ->
   FinalFlags = 
     case cerl:atom_val(Type) of
-      integer -> keep_all(cerl:concrete(Flags));
+      binary -> [];
       float -> keep_endian(cerl:concrete(Flags));
-      binary -> []
+      integer -> keep_all(cerl:concrete(Flags));
+      utf8 -> [];
+      utf16 -> [];
+      utf32 -> []
     end,
   prettypr:beside(prettypr:text("/"),
 		  prettypr:beside(pp_atom(Type),
@@ -388,9 +399,14 @@ keep_all(Flags) ->
 		     (X =:= little) or (X =:= native) or (X =:= signed)].
 
 pp_unit(Unit, Ctxt, Cont) ->
-  prettypr:beside(prettypr:text("-"),
-		  prettypr:beside(prettypr:text("unit:"),
-				  Cont(Unit, Ctxt))).
+  case cerl:concrete(Unit) of
+    N when is_integer(N) ->
+      prettypr:beside(prettypr:text("-"),
+		      prettypr:beside(prettypr:text("unit:"),
+				      Cont(Unit, Ctxt)));
+    _ -> % Other value: e.g. 'undefined' when UTF
+      prettypr:text("")
+  end.
 
 pp_atom(Atom) ->
   String = atom_to_list(cerl:atom_val(Atom)),

@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
 %% ====================================================================
@@ -896,6 +914,19 @@ gen_enter_apply(Args=[_M,_F,_AppArgs]) ->
 %%
 
 gen_apply_N(Dst, Arity, [M,F|CallArgs], Cont, Fail) ->
+  MM = hipe_rtl:mk_new_var(),
+  NotModuleLbl = hipe_rtl:mk_new_label(),
+  NotModuleLblName = hipe_rtl:label_name(NotModuleLbl),
+  Tuple = M,
+  TupleInfo = [],
+  Index = hipe_rtl:mk_imm(1),
+  IndexInfo = 1,
+  [hipe_tagscheme:element(MM, Index, Tuple, NotModuleLblName, TupleInfo, IndexInfo),
+   gen_apply_N_common(Dst, Arity+1, MM, F, CallArgs++[M], Cont, Fail),
+   NotModuleLbl,
+   gen_apply_N_common(Dst, Arity, M, F, CallArgs, Cont, Fail)].
+
+gen_apply_N_common(Dst, Arity, M, F, CallArgs, Cont, Fail) ->
   CallLabel = hipe_rtl:mk_new_label(),
   CodeAddress = hipe_rtl:mk_new_reg(),
   [hipe_rtl:mk_call([CodeAddress], find_na_or_make_stub,
@@ -1157,23 +1188,37 @@ gen_fclearerror() ->
     [] ->
       [];
     Offset ->
-      [hipe_rtl_arch:pcb_store(Offset, hipe_rtl:mk_imm(0), int32)]
+      Tmp = hipe_rtl:mk_new_reg(),
+      FailLbl = hipe_rtl:mk_new_label(),
+      ContLbl = hipe_rtl:mk_new_label(),
+      ContLblName = hipe_rtl:label_name(ContLbl),
+      [hipe_rtl_arch:pcb_load(Tmp, Offset),
+       hipe_rtl:mk_branch(Tmp, eq, hipe_rtl:mk_imm(0), ContLblName,
+			  hipe_rtl:label_name(FailLbl), 0.9),
+       FailLbl,
+       hipe_rtl:mk_call([], 'fclearerror_error', [], [], [], not_remote),
+       hipe_rtl:mk_goto(ContLblName),
+       ContLbl]
   end.
 
 gen_fcheckerror(ContLbl, FailLbl) ->
-  Tmp = hipe_rtl:mk_new_reg(),
-  TmpFailLbl0 = hipe_rtl:mk_new_label(),
-  FailCode = fp_fail_code(TmpFailLbl0, FailLbl),
-  hipe_rtl_arch:fwait() ++
-    case ?P_FP_EXCEPTION of
-      [] ->
-	[];
-      Offset ->
-	[hipe_rtl_arch:pcb_load(Tmp, Offset, int32)]
-    end ++
-    [hipe_rtl:mk_branch(Tmp, eq, hipe_rtl:mk_imm(0), 
-			ContLbl, hipe_rtl:label_name(TmpFailLbl0), 0.9)] ++
-    FailCode.
+  case ?P_FP_EXCEPTION of
+    [] ->
+      [];
+    Offset ->
+      Tmp = hipe_rtl:mk_new_reg(),
+      TmpFailLbl0 = hipe_rtl:mk_new_label(),
+      FailCode = fp_fail_code(TmpFailLbl0, FailLbl),
+      PreFailLbl = hipe_rtl:mk_new_label(),
+      hipe_rtl_arch:fwait() ++
+	[hipe_rtl_arch:pcb_load(Tmp, Offset),
+	 hipe_rtl:mk_branch(Tmp, eq, hipe_rtl:mk_imm(0), ContLbl,
+			    hipe_rtl:label_name(PreFailLbl), 0.9),
+	 PreFailLbl,
+	 hipe_rtl_arch:pcb_store(Offset, hipe_rtl:mk_imm(0)),
+	 hipe_rtl:mk_goto(hipe_rtl:label_name(TmpFailLbl0)) |
+	 FailCode]
+  end.
 
 gen_conv_to_float(Dst, [Src], ContLbl, FailLbl) ->
   case hipe_rtl:is_var(Src) of

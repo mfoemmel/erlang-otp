@@ -1,21 +1,22 @@
 # -*-Makefile-*-
 
-# ``The contents of this file are subject to the Erlang Public License,
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2000-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
+# retrieved online at http://www.erlang.org/.
 # 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
-#     $Id$
+# %CopyrightEnd%
 #
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
@@ -88,7 +89,6 @@ JAVADOC = javadoc
 JAVADOC_PKGS = com.ericsson.otp.erlang
 JAVA_PKG_PATH = com/ericsson/otp/erlang
 JAVADOC_TITLE = 'Java-Erlang Interface Library'
-JAVA_TOP_INDEX = $(HTMLDIR)/java/index.html
 JAVADOC_DEST = ../doc/html/java
 JAVA_SRC_PATH = $(ERL_TOP)/lib/jinterface/java_src/$(JAVA_PKG_PATH)
 
@@ -103,7 +103,7 @@ JAVA_DOC_FILES = \
 	index-all.html \
 	deprecated-list.html \
 	allclasses-frame.html \
-	packages.html \
+	index.html \
 	serialized-form.html \
 	package-list \
 	stylesheet.css \
@@ -210,8 +210,7 @@ release_docs_spec: docs
 	$(INSTALL_DATA) $(GIF_FILES) $(EXTRA_FILES) $(HTML_FILES) \
 		$(RELSYSDIR)/doc/html
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html/java/$(JAVA_PKG_PATH)
-	$(INSTALL_DATA) $(JAVA_EXTRA_FILES) $(JAVA_TOP_INDEX) \
-		$(RELSYSDIR)/doc/html/java
+	$(INSTALL_DATA) $(JAVA_EXTRA_FILES) $(RELSYSDIR)/doc/html/java
 	(/bin/cp -rf  ../../doc/html $(RELSYSDIR)/doc)
 	$(INSTALL_DATA) $(TOP_HTML_FILES) $(RELSYSDIR)/doc
 endif

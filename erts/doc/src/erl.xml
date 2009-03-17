@@ -4,23 +4,21 @@
 <comref>
   <header>
     <copyright>
-      <year>1996</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1996</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>erl</title>
@@ -64,7 +62,7 @@
               <seealso marker="#init_flags">flag</seealso> which should
               be passed to the Erlang part of the runtime system, more
               specifically to the <c><![CDATA[init]]></c> system process, see
-              <seealso marker="kernel:init">init(3)</seealso>.</p>
+              <seealso marker="init">init(3)</seealso>.</p>
             <p>The <c><![CDATA[init]]></c> process itself interprets some of these
               flags, the <em>init flags</em>. It also stores any
               remaining flags, the <em>user flags</em>. The latter can
@@ -164,7 +162,7 @@
       <item>
         <p>Specifies the name of the boot file, <c><![CDATA[File.boot]]></c>,
           which is used to start the system. See
-          <seealso marker="kernel:init">init(3)</seealso>. Unless
+          <seealso marker="init">init(3)</seealso>. Unless
           <c><![CDATA[File]]></c> contains an absolute path, the system searches
           for <c><![CDATA[File.boot]]></c> in the current and <c><![CDATA[$ROOT/bin]]></c>
           directories.</p>
@@ -234,7 +232,7 @@
       <tag><c><![CDATA[-eval Expr]]></c>(init flag)</tag>
       <item>
         <p>Makes <c><![CDATA[init]]></c> evaluate the expression <c><![CDATA[Expr]]></c>, see
-          <seealso marker="kernel:init">init(3)</seealso>.</p>
+          <seealso marker="init">init(3)</seealso>.</p>
       </item>
       <tag><c><![CDATA[-extra]]></c>(init flag)</tag>
       <item>
@@ -297,7 +295,7 @@
       <item>
         <p>Specifies the method used by <c><![CDATA[erl_prim_loader]]></c> to load
           Erlang modules into the system. See
-          <seealso marker="kernel:erl_prim_loader">erl_prim_loader(3)</seealso>.
+          <seealso marker="erl_prim_loader">erl_prim_loader(3)</seealso>.
           Two <c><![CDATA[Loader]]></c> methods are supported, <c><![CDATA[efile]]></c> and
           <c><![CDATA[inet]]></c>. <c><![CDATA[efile]]></c> means use the local file system,
           this is the default. <c><![CDATA[inet]]></c> means use a boot server on
@@ -396,7 +394,7 @@
           assumed to be of arity 1, taking the list
           <c><![CDATA[[Arg1,Arg2,...]]]></c> as argument. All arguments are passed
           as strings. See
-          <seealso marker="kernel:init">init(3)</seealso>.</p>
+          <seealso marker="init">init(3)</seealso>.</p>
       </item>
       <tag><c><![CDATA[-s Mod [Func [Arg1, Arg2, ...]]]]></c>(init flag)</tag>
       <item>
@@ -406,12 +404,12 @@
           assumed to be of arity 1, taking the list
           <c><![CDATA[[Arg1,Arg2,...]]]></c> as argument. All arguments are passed
           as atoms. See
-          <seealso marker="kernel:init">init(3)</seealso>.</p>
+          <seealso marker="init">init(3)</seealso>.</p>
       </item>
       <tag><c><![CDATA[-setcookie Cookie]]></c></tag>
       <item>
         <p>Sets the magic cookie of the node to <c><![CDATA[Cookie]]></c>, see
-          <seealso marker="kernel:erlang#erlang:set_cookie/2">erlang:set_cookie/2</seealso>.</p>
+          <seealso marker="erlang#erlang:set_cookie/2">erlang:set_cookie/2</seealso>.</p>
       </item>
       <tag><c><![CDATA[-shutdown_time Time]]></c></tag>
       <item>
@@ -588,14 +586,21 @@
       <item>
         <p>Force ets memory block to be moved on realloc.</p>
       </item>
-      <tag><c><![CDATA[+S Number]]></c></tag>
+      <tag><c><![CDATA[+S Schedulers:SchedulerOnline]]></c></tag>
       <item>
         <marker id="+S"></marker>
-        <p>Sets the number of scheduler threads to use when SMP
-          support has been enabled. Valid range is 1-1024. If the
-          Erlang runtime system is able to determine the number
-          of processor cores available, the default value will equal
-          the this value; otherwise, the default value will be one.</p>
+        <p>Sets the amount of scheduler threads to create and scheduler
+	  threads to set online when SMP support has been enabled.
+	  Valid range for both values are 1-1024. If the
+          Erlang runtime system is able to determine the amount
+          of logical processors configured and logical processors available,
+	  <c>Schedulers</c> will default to logical processors configured,
+	  and <c>SchedulersOnline</c> will default to logical processors
+	  available; otherwise, the default values will be 1. <c>Schedulers</c>
+	  may be omitted if <c>:SchedulerOnline</c> is not and vice versa. The
+	  amount of schedulers online can be changed at run time via
+	  <seealso marker="erlang#system_flag_schedulers_online">erlang:system_flag(schedulers_online, SchedulersOnline)</seealso>.
+	</p>
         <p>This flag will be ignored if the emulator doesn't have
           SMP support enabled (see the <seealso marker="#smp">-smp</seealso>
           flag).</p>
@@ -706,13 +711,21 @@
 	  add to the code path.
   	  See <seealso marker="kernel:code">code(3)</seealso>.</p>
       </item>
+      <tag><c><![CDATA[ERL_EPMD_PORT]]></c></tag>
+      <item>
+        <p>This environment variable can contain the port number to use when
+          communicating with <seealso marker="epmd">epmd</seealso>. The default
+          port will work fine in most cases. A different port can be specified
+          to allow nodes of independant clusters to co-exist on the same host.
+          All nodes in a cluster must use the same epmd port number.</p>
+      </item>
     </taglist>
   </section>
 
   <section>
     <title>SEE ALSO</title>
-    <p><seealso marker="kernel:init">init(3)</seealso>,
-      <seealso marker="kernel:erl_prim_loader">erl_prim_loader(3)</seealso>,
+    <p><seealso marker="init">init(3)</seealso>,
+      <seealso marker="erl_prim_loader">erl_prim_loader(3)</seealso>,
       <seealso marker="kernel:erl_boot_server">erl_boot_server(3)</seealso>,
       <seealso marker="kernel:code">code(3)</seealso>,
       <seealso marker="kernel:application">application(3)</seealso>,

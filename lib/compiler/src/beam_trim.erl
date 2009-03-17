@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 2002, Ericsson AB.
-%% All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 -module(beam_trim).
@@ -224,8 +225,6 @@ remap_block([{set,Ds0,Ss0,Info}|Is], Map, Acc) ->
     Ds = [Map(D) || D <- Ds0],
     Ss = [Map(S) || S <- Ss0],
     remap_block(Is, Map, [{set,Ds,Ss,Info}|Acc]);
-remap_block([{'%live',_}=I|Is], Map, Acc) ->
-    remap_block(Is, Map, [I|Acc]);
 remap_block([], _, Acc) -> reverse(Acc).
     
 safe_labels([{label,L},{badmatch,{Tag,_}}|Is], Acc) when Tag =/= y ->

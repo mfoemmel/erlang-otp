@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2005-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %% Description: a gen_server implementing a simple
 %% terminal (using the group module) for a CLI
@@ -23,23 +24,16 @@
 
 -module(ssh_cli).
 
--behaviour(gen_server).
+-behaviour(ssh_channel).
 
 -include("ssh.hrl").
 -include("ssh_connect.hrl").
 
-%% Internal API
--export([child_spec/1, child_spec/2, child_spec/3, child_spec/4]).
+%% ssh_channel callbacks
+-export([init/1, handle_ssh_msg/2, handle_msg/2, terminate/2]).
 
 %% backwards compatibility
 -export([listen/1, listen/2, listen/3, listen/4, stop/1]).
-
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3]).
-
-%% defines
--define(DBG_IO_REQUEST, true).
 
 %% state
 -record(state, {
@@ -48,257 +42,183 @@
 	  pty,
 	  group,
 	  buf,
-	  shell,
-	  remote_channel,
-	  options,
-	  address,
-	  port
+	  shell
 	 }).
 
 %%====================================================================
-%% API
-%%====================================================================
-child_spec(Shell) ->
-    child_spec(Shell, 22).
-
-child_spec(Shell, Port) ->
-    child_spec(Shell, Port, []).
-
-child_spec(Shell, Port, Opts) ->
-    child_spec(Shell, any, Port, Opts).
-
-child_spec(Shell, Address, Port, Opts) ->
-    Name = make_ref(),
-    StartFunc = {gen_server, 
-		 start_link, [?MODULE, 
-			      [Shell, Address, Port, Opts], []]},
-    Restart = temporary, 
-    Shutdown = 3600,
-    Modules = [ssh_cli],
-    Type = worker,
-    {Name, StartFunc, Restart, Shutdown, Type, Modules}.
-
-%%--------------------------------------------------------------------
-%% Function: listen(...) -> {ok,Pid} | ignore | {error,Error}
-%% Description: Starts a listening server
-%% Note that the pid returned is NOT the pid of this gen_server;
-%% this server is started when an SSH connection is made on the
-%% listening port
-%%--------------------------------------------------------------------
-listen(Shell) ->
-    listen(Shell, 22).
-
-listen(Shell, Port) ->
-    listen(Shell, Port, []).
-
-listen(Shell, Port, Opts) ->
-    listen(Shell, any, Port, Opts).
-
-listen(Shell, HostAddr, Port, Opts) ->
-    ssh:daemon(HostAddr, Port, [{shell, Shell} | Opts]).
-    
-
-%%--------------------------------------------------------------------
-%% Function: stop(Pid) -> ok
-%% Description: Stops the listener
-%%--------------------------------------------------------------------
-stop(Pid) ->
-    ssh:stop_listener(Pid).
-
-%%====================================================================
-%% gen_server callbacks
+%% ssh_channel callbacks
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init(Args) -> {ok, State} |
-%%                         {ok, State, Timeout} |
-%%                         ignore               |
-%%                         {stop, Reason}
-%% Description: Initiates the server
+%% Function: init(Args) -> {ok, State} 
+%%                        
+%% Description: Initiates the CLI
 %%--------------------------------------------------------------------
-init([Shell, Address, Port, Opts]) ->
-    {ok, #state{shell = Shell, 
-		address = Address,
-		port = Port,
-		options = Opts}}.
+init([Shell]) ->
+    {ok, #state{shell = Shell}}.
 
 %%--------------------------------------------------------------------
-%% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
-%%                                      {reply, Reply, State, Timeout} |
-%%                                      {noreply, State} |
-%%                                      {noreply, State, Timeout} |
-%%                                      {stop, Reason, Reply, State} |
-%%                                      {stop, Reason, State}
-%% Description: Handling call messages
+%% Function: handle_ssh_msg(Args) -> {ok, State} | {stop, ChannelId, State}
+%%                        
+%% Description: Handles channel messages received on the ssh-connection.
 %%--------------------------------------------------------------------
-handle_call(stop, _From, State) ->
-    Result = ssh_cm:stop(State#state.cm),
-    {stop, normal, Result, State};
-handle_call(info, _From, State) ->
-    {reply, State, State};
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+handle_ssh_msg({ssh_cm, _ConnectionManager, 
+		{data, _ChannelId, _Type, Data}}, 
+	       #state{group = Group} = State) ->
+    Group ! {self(), {data, binary_to_list(Data)}},
+    {ok, State};
 
-%%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State) -> {noreply, State} |
-%%                                      {noreply, State, Timeout} |
-%%                                      {stop, Reason, State}
-%% Description: Handling cast messages
-%%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-%%--------------------------------------------------------------------
-%% Function: handle_info(Info, State) -> {noreply, State} |
-%%                                       {noreply, State, Timeout} |
-%%                                       {stop, Reason, State}
-%% Description: Handling all non call/cast messages
-%%--------------------------------------------------------------------
-handle_info({ssh_cm, CM, {open, Channel, RemoteChannel, {session}}}, State) ->
-    {noreply,
-     State#state{cm = CM, channel = Channel, remote_channel = RemoteChannel}};
-
-handle_info({ssh_cm, CM, {data, _Channel, _Type, Data}}, 
-	    #state{remote_channel = ChannelId} = State) ->
-    ssh_connection:adjust_window(CM, ChannelId, size(Data)),
-    State#state.group ! {self(), {data, binary_to_list(Data)}},
-    {noreply, State};
-
-handle_info({ssh_cm, CM, {pty, _Channel, WantReply, Pty}}, 
-	    #state{remote_channel = ChannelId} = State0) ->
-    ssh_connection:reply_request(CM, WantReply, success, ChannelId),
-    State = State0#state{pty = Pty},
+handle_ssh_msg({ssh_cm, ConnectionManager, 
+		{pty, ChannelId, WantReply, 
+		 {TermName, Width, Height, PixWidth, PixHeight, Modes}}}, 
+	       State0) ->
+    State = State0#state{pty = 
+			 #ssh_pty{term = TermName,
+				  width =  not_zero(Width, 80),
+				  height = not_zero(Height, 24),
+				  pixel_width = PixWidth,
+				  pixel_height = PixHeight,
+				  modes = Modes}},
     set_echo(State),
-    {noreply, State};
+    ssh_connection:reply_request(ConnectionManager, WantReply, 
+				 success, ChannelId),
+    {ok, State};
 
-handle_info({ssh_cm, _CM,
-	     {window_change, _Channel, Width, Height, PixWidth, PixHeight}},
-	    State) ->
-    #state{buf = Buf, pty = Pty, cm = CM, channel = Channel} = State,
-    NewPty = Pty#ssh_pty{width = Width, height = Height,
-			 pixel_width = PixWidth,
-			 pixel_height = PixHeight},
-    {Chars, NewBuf} = io_request({window_change, Pty}, Buf, NewPty),
-    write_chars(CM, Channel, Chars),
-    {noreply, State#state{pty = NewPty, buf = NewBuf}};
-handle_info({Group, Req}, State) when Group==State#state.group ->
-    ?dbg(?DBG_IO_REQUEST, "io_request: ~w\n", [Req]),
-    #state{buf = Buf, pty = Pty, cm = CM, channel = Channel} = State,
-    {Chars, NewBuf} = io_request(Req, Buf, Pty),
-    write_chars(CM, Channel, Chars),
-    {noreply, State#state{buf = NewBuf}};
-handle_info({ssh_cm, CM, {shell, WantReply}}, 
-	    #state{remote_channel = ChannelId} = State) ->
-    NewState = start_shell(CM, State),
-    process_flag(trap_exit, true),
-    ssh_connection:reply_request(CM, WantReply, success, ChannelId),
-    {noreply, NewState};
-handle_info({ssh_cm, CM, {exec, Cmd}}, #state{channel = ChannelId} = State) ->
-    Reply = case erl_scan:string(Cmd) of
-		{ok, Tokens, _EndList} ->
-		    case erl_parse:parse_exprs(Tokens) of
-			{ok, Expr_list} ->
-			    case (catch erl_eval:exprs(
-					  Expr_list,
-					  erl_eval:new_bindings())) of
-				{value, Value, _NewBindings} ->
-				    Value;
-				{'EXIT', {E, _}} -> E;
-				E -> E
-			    end;
-			E -> E
-		    end;
-		E -> E
-	    end,
-    write_chars(CM, ChannelId, io_lib:format("~p\n", [Reply])),
-    ssh_connection:send_eof(CM, ChannelId),
-    ssh_connection:close(CM, ChannelId),
-    {noreply, State};
-handle_info({get_cm, From}, #state{cm=CM} = State) ->
-    From ! {From, cm, CM},
-    {noreply, State};
-handle_info({ssh_cm, _CM, {eof, _Channel}}, State) ->
-    {stop, normal, State};
-handle_info({ssh_cm, _CM, {closed, _Channel}}, State) ->
-    %% ignore -- we'll get an {eof, Channel} soon??
-    {noreply, State};
-handle_info({ssh_cm, CM, {subsystem, ChannelId, _WantsReply, SsName}} = Msg,
-	    #state{address = Address, port = Port, options = Opts,
-		   remote_channel = RemoteChannel} = State) ->
-    case check_subsystem(SsName, Opts) of
-	none ->
-	    {noreply, State};
-	%% Backwards compatibility
-	Module when is_atom(Module) ->
-	    {ok, SubSystemD} = 
-		gen_server:start_link(Module, [Opts], []),
-	    SubSystemD ! 
-		{ssh_cm, CM, {open, ChannelId, RemoteChannel, {session}}},
-	    SubSystemD ! Msg,
-	    ssh_connection_manager:controlling_process(CM, ChannelId, 
-						       SubSystemD, self()),
-	    {stop, normal, State};
-	Fun when is_function(Fun) ->
-	    SubSystemD = Fun(),
-	    SubSystemD ! 
-		{ssh_cm, CM, {open, ChannelId, RemoteChannel, {session}}},
-	    SubSystemD ! Msg,
-	    ssh_connection_manager:controlling_process(CM, ChannelId, 
-						       SubSystemD, self()),
-	    {stop, normal, State};
-	ChildSpec ->
-	    SystemSup = ssh_system_sup:system_supervisor(Address, Port),
-	    ChannelSup = ssh_system_sup:channel_supervisor(SystemSup),
-	    {ok, SubSystemD} 
-		= ssh_channel_sup:start_child(ChannelSup, ChildSpec),
-	    SubSystemD ! 
-		{ssh_cm, CM, {open, ChannelId, RemoteChannel, {session}}},
-	    SubSystemD ! Msg,
-	    ssh_connection_manager:controlling_process(CM, ChannelId, 
-						       SubSystemD, self()),
-	    empty_mailbox_workaround(SubSystemD),
-	    {stop, normal, State}
+handle_ssh_msg({ssh_cm, ConnectionManager, 
+	    {env, ChannelId, WantReply, _Var, _Value}}, State) ->
+    ssh_connection:reply_request(ConnectionManager, 
+				 WantReply, failure, ChannelId),
+    {ok, State};
+
+handle_ssh_msg({ssh_cm, ConnectionManager,
+	    {window_change, ChannelId, Width, Height, PixWidth, PixHeight}},
+	   #state{buf = Buf, pty = Pty0} = State) ->
+    Pty = Pty0#ssh_pty{width = Width, height = Height,
+		       pixel_width = PixWidth,
+		       pixel_height = PixHeight},
+    {Chars, NewBuf} = io_request({window_change, Pty0}, Buf, Pty),
+    write_chars(ConnectionManager, ChannelId, Chars),
+    {ok, State#state{pty = Pty, buf = NewBuf}};
+
+handle_ssh_msg({ssh_cm, ConnectionManager, 
+	    {shell, ChannelId, WantReply}}, State) ->
+    NewState = start_shell(ConnectionManager, State),
+    ssh_connection:reply_request(ConnectionManager, WantReply, 
+				 success, ChannelId),
+    {ok, NewState#state{channel = ChannelId,
+			cm = ConnectionManager}};
+
+handle_ssh_msg({ssh_cm, ConnectionManager, 
+		{exec, ChannelId, WantReply, Cmd}}, State) ->
+    {Reply, Status} = exec(Cmd),
+    write_chars(ConnectionManager, 
+		ChannelId, io_lib:format("~p\n", [Reply])),
+    ssh_connection:reply_request(ConnectionManager, WantReply, 
+				 success, ChannelId),
+    ssh_connection:exit_status(ConnectionManager, ChannelId, Status),
+    ssh_connection:send_eof(ConnectionManager, ChannelId),
+    {stop, ChannelId, State#state{channel = ChannelId, cm = ConnectionManager}};
+
+handle_ssh_msg({ssh_cm, _ConnectionManager, {eof, _ChannelId}}, State) ->
+    {ok, State};
+
+handle_ssh_msg({ssh_cm, _, {signal, _, _}}, State) ->
+    %% Ignore signals according to RFC 4254 section 6.9.
+    {ok, State};
+
+handle_ssh_msg({ssh_cm, _, {exit_signal, ChannelId, _, Error, _}}, State) ->
+    Report = io_lib:format("Connection closed by peer ~n Error ~p~n",
+			   [Error]),
+    error_logger:error_report(Report),
+    {stop, ChannelId,  State};
+
+handle_ssh_msg({ssh_cm, _, {exit_status, ChannelId, 0}}, State) ->
+    {stop, ChannelId, State};
+
+handle_ssh_msg({ssh_cm, _, {exit_status, ChannelId, Status}}, State) ->
     
-    end;
-handle_info({'EXIT', Group, normal},
-	    #state{cm=CM, channel=Channel, group=Group} = State) ->
-    ssh_connection:close(CM, Channel),
-    ssh_cm:stop(CM),
-    {stop, normal, State};
-handle_info(Info, State) ->
-    ?dbg(true, "~p:handle_info: BAD info ~p\n(State ~p)\n", 
-	 [?MODULE, Info, State]),
-    {stop, {bad_info, Info}, State}.
+    Report = io_lib:format("Connection closed by peer ~n Status ~p~n",
+			   [Status]),
+    error_logger:error_report(Report),
+    {stop, ChannelId, State}.
+
+%%--------------------------------------------------------------------
+%% Function: handle_msg(Args) -> {ok, State} | {stop, ChannelId, State}
+%%                        
+%% Description: Handles other channel messages.
+%%--------------------------------------------------------------------
+handle_msg({ssh_channel_up, ChannelId, ConnectionManager},
+	   #state{channel = ChannelId,
+		  cm = ConnectionManager} = State) ->
+    {ok,  State};
+
+handle_msg({Group, Req}, #state{group = Group, buf = Buf, pty = Pty,
+				 cm = ConnectionManager,
+				 channel = ChannelId} = State) ->
+    {Chars, NewBuf} = io_request(Req, Buf, Pty),
+    write_chars(ConnectionManager, ChannelId, Chars),
+    {ok, State#state{buf = NewBuf}};
+
+handle_msg({'EXIT', Group, _Reason}, #state{group = Group,
+					     channel = ChannelId} = State) ->
+    {stop, ChannelId, State};
+
+handle_msg(_, State) ->
+    {ok, State}.
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> void()
-%% Description: This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any necessary
-%% cleaning up. When it returns, the gen_server terminates with Reason.
-%% The return value is ignored.
+%% Description: Called when the channel process is trminated
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% Func: code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% Description: Convert process state when code is changed
-%%--------------------------------------------------------------------
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
-%%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
 
-%%% io_request, handle io requests from the user process
+exec(Cmd) ->
+    eval(parse(scan(Cmd))).
+
+scan(Cmd) ->
+    erl_scan:string(Cmd). 
+
+parse({ok, Tokens, _}) ->
+    erl_parse:parse_exprs(Tokens);
+parse(Error) ->
+    Error.
+
+eval({ok, Expr_list}) ->
+    case (catch erl_eval:exprs(Expr_list,
+ 			       erl_eval:new_bindings())) of
+ 	{value, Value, _NewBindings} ->
+ 	    {Value, 0};
+ 	{'EXIT', {Error, _}} -> 
+ 	    {Error, -1};
+ 	Error -> 
+ 	    {Error, -1}
+    end;
+eval(Error) ->
+    {Error, -1}.
+
+%%% io_request, handle io requests from the user process,
+%%% Note, this is not the real I/O-protocol, but the mockup version
+%%% used between edlin and a user_driver. The protocol tags are
+%%% similar, but the message set is different. 
+%%% The protocol only exists internally between edlin and a character
+%%% displaying device...
+%%% We are *not* really unicode aware yet, we just filter away characters 
+%%% beyond the latin1 range. We however handle the unicode binaries...
 io_request({window_change, OldTty}, Buf, Tty) ->
     window_change(Tty, OldTty, Buf);
 io_request({put_chars, Cs}, Buf, Tty) ->
     put_chars(bin_to_list(Cs), Buf, Tty);
+io_request({put_chars, unicode, Cs}, Buf, Tty) ->
+    put_chars([Ch || Ch <- unicode:characters_to_list(Cs,unicode), Ch =< 255], Buf, Tty);
 io_request({insert_chars, Cs}, Buf, Tty) ->
     insert_chars(bin_to_list(Cs), Buf, Tty);
+io_request({insert_chars, unicode, Cs}, Buf, Tty) ->
+    insert_chars([Ch || Ch <- unicode:characters_to_list(Cs,unicode), Ch =< 255], Buf, Tty);
 io_request({move_rel, N}, Buf, Tty) ->
     move_rel(N, Buf, Tty);
 io_request({delete_chars,N}, Buf, Tty) ->
@@ -314,7 +234,7 @@ io_request({get_geometry,rows},Buf,Tty) ->
 io_request({requests,Rs}, Buf, Tty) ->
     io_requests(Rs, Buf, Tty, []);
 io_request(tty_geometry, Buf, Tty) ->
-    io_requests([{move_rel, 0}, {put_chars, [10]}], Buf, Tty, []);
+    io_requests([{move_rel, 0}, {put_chars, unicode, [10]}], Buf, Tty, []);
      %{[], Buf};
 io_request(_R, Buf, _Tty) ->
     {[], Buf}.
@@ -354,12 +274,6 @@ conv_buf([13 | Rest], _AccBuf, AccBufTail, AccWrite, _Col) ->
     conv_buf(Rest, [], tl1(AccBufTail), [13 | AccWrite], 0);
 conv_buf([10 | Rest], _AccBuf, AccBufTail, AccWrite, _Col) ->
     conv_buf(Rest, [], tl1(AccBufTail), [10, 13 | AccWrite], 0);
-conv_buf([9 | Rest], AccBuf, AccBufTail, AccWrite, Col) ->
-    NSpaces = (Col + (?TABWIDTH - 1)) rem ?TABWIDTH + 1,
-    AccB = string:chars(?PAD, NSpaces-1) ++ [9 | AccBuf],
-    AccW = string:chars(32, NSpaces) ++ [AccWrite],
-    AccBT = nthtail(NSpaces, AccBufTail),
-    conv_buf(Rest, AccB, AccBT, AccW, Col + NSpaces);
 conv_buf([C | Rest], AccBuf, AccBufTail, AccWrite, Col) ->
     conv_buf(Rest, [C | AccBuf], tl1(AccBufTail), [C | AccWrite], Col + 1).
 
@@ -449,16 +363,18 @@ move_cursor(From, To, #ssh_pty{width=Width, term=Type}) ->
 	   end,
     [Tcol | Trow].
 
-%%% write out characters
-%%% make sure that there is data to send
-%%% before calling ssh_connection:send
-write_chars(_, _, []) ->
-    ok;
-write_chars(_, _, [[]]) ->
-    ok;
-write_chars(CM, Channel, Chars) ->
-    Type = 0,
-    ssh_connection:send(CM, Channel, Type, Chars).
+%% %%% write out characters
+%% %%% make sure that there is data to send
+%% %%% before calling ssh_connection:send
+write_chars(ConnectionManager, ChannelId, Chars) ->
+    case erlang:iolist_size(Chars) of
+	0 ->
+	    ok;
+       _ ->
+	    ssh_connection:send(ConnectionManager, ChannelId, 
+				?SSH_EXTENDED_DATA_DEFAULT, Chars)
+    end.
+
 %%% tail, works with empty lists
 tl1([_|A]) -> A;
 tl1(_) -> [].
@@ -489,19 +405,20 @@ bin_to_list(L) when list(L) ->
 bin_to_list(I) when integer(I) ->
     I.
 
-start_shell(CM, State) ->
+start_shell(ConnectionManager, State) ->
     Shell = State#state.shell,
-    ?dbg(true, "start_shell: self()=~p CM=~p Shell=~p\n",
-	 [self(), CM, Shell]),
     ShellFun = case is_function(Shell) of
 		   true ->
 		       case erlang:fun_info(Shell, arity) of
 			   {arity, 1} ->
-			       {ok, User} = ssh_userreg:lookup_user(CM),
+			       {ok, User} = 
+				   ssh_userreg:lookup_user(ConnectionManager),
 			       fun() -> Shell(User) end;
 			   {arity, 2} ->
-			       {ok, User} = ssh_userreg:lookup_user(CM),
-			       {ok, PeerAddr} = ssh_cm:get_peer_addr(CM),
+			       {ok, User} = 
+				   ssh_userreg:lookup_user(ConnectionManager),
+			       {ok, PeerAddr} = 
+				   ssh_cm:get_peer_addr(ConnectionManager),
 			       fun() -> Shell(User, PeerAddr) end;
 			   _ ->
 			       Shell
@@ -512,14 +429,6 @@ start_shell(CM, State) ->
     Echo = get_echo(State#state.pty),
     Group = group:start(self(), ShellFun, [{echo, Echo}]),
     State#state{group = Group, buf = empty_buf()}.
-
-check_subsystem(SsName, Options) ->
-    Spec = ssh_sftpd:subsystem_spec(Options),
-    DefaultSubSys = [Spec],
-    Subsystems = proplists:get_value(subsystems, 
-				     Options, DefaultSubSys),
-    proplists:get_value(SsName, Subsystems, none).
-
 
 % Pty can be undefined if the client never sets any pty options before
 % starting the shell.
@@ -541,13 +450,36 @@ set_echo(#state{group = Group, pty = Pty}) ->
     Echo = get_echo(Pty),
     Group ! {self(), echo, Echo}.
 
-empty_mailbox_workaround(Pid) ->
-    receive 
-	{ssh_cm, _, _} = Msg ->
- 	    Pid ! Msg,
- 	    empty_mailbox_workaround(Pid)
-    after 0 ->
- 	    ok
-    end.
+not_zero(0, B) -> 
+    B;
+not_zero(A, _) -> 
+    A.
 
+%%% Backwards compatibility
 	    
+%%--------------------------------------------------------------------
+%% Function: listen(...) -> {ok,Pid} | ignore | {error,Error}
+%% Description: Starts a listening server
+%% Note that the pid returned is NOT the pid of this gen_server;
+%% this server is started when an SSH connection is made on the
+%% listening port
+%%--------------------------------------------------------------------
+listen(Shell) ->
+    listen(Shell, 22).
+
+listen(Shell, Port) ->
+    listen(Shell, Port, []).
+
+listen(Shell, Port, Opts) ->
+    listen(Shell, any, Port, Opts).
+
+listen(Shell, HostAddr, Port, Opts) ->
+    ssh:daemon(HostAddr, Port, [{shell, Shell} | Opts]).
+    
+
+%%--------------------------------------------------------------------
+%% Function: stop(Pid) -> ok
+%% Description: Stops the listener
+%%--------------------------------------------------------------------
+stop(Pid) ->
+    ssh:stop_listener(Pid).

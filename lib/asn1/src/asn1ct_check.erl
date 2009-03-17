@@ -1,28 +1,28 @@
-%%<copyright>
-%% <year>1997-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1ct_check).
 
 %% Main Module for ASN.1 compile time functions
 
 %-compile(export_all).
--export([check/2,storeindb/1]).
+-export([check/2,storeindb/2]).
 %-define(debug,1).
 -include("asn1_records.hrl").
 %%% The tag-number for universal types
@@ -3624,6 +3624,7 @@ tablecinf_choose(#'SEQUENCE'{tablecinf=TCI}) ->
 get_innertag(_S,#'ObjectClassFieldType'{type=Type}) ->
     case Type of
 %	#type{tag=Tag} -> Tag;
+%	{fixedtypevaluefield,_,#type{tag=[]}=T} -> get_taglist(S,T);
 	{fixedtypevaluefield,_,#type{tag=Tag}} -> Tag;
 	{TypeFieldName,_} when atom(TypeFieldName) -> [];
 	_ -> []
@@ -6694,7 +6695,7 @@ get_tableconstraint_info(S,Type,[C|Cs],Acc) ->
 					(element(1,SOType#type.def)=='CHOICE') ->
 		CTypeList = element(2,SOType#type.def),
 		NewInnerCList = 
-		    get_tableconstraint_info(S,Type,CTypeList,[]),
+		    get_tableconstraint_info(S,Type,CTypeList),
 		C#'ComponentType'{typespec=
 				  CheckedTs#type{
 				    def={'SEQUENCE OF',
@@ -6704,7 +6705,7 @@ get_tableconstraint_info(S,Type,[C|Cs],Acc) ->
 				   (element(1,SOType#type.def)=='CHOICE') ->
 		CTypeList = element(2,SOType#type.def),
 		NewInnerCList = 
-		    get_tableconstraint_info(S,Type,CTypeList,[]),
+		    get_tableconstraint_info(S,Type,CTypeList),
 		C#'ComponentType'{typespec=
 				  CheckedTs#type{
 				    def={'SET OF',
@@ -6949,13 +6950,13 @@ merge_tags2([], Acc) ->
 
 
 
-storeindb(M) when record(M,module) ->
+storeindb(S,M) when record(M,module) ->
     TVlist = M#module.typeorval,
     NewM = M#module{typeorval=findtypes_and_values(TVlist)},
     asn1_db:dbnew(NewM#module.name),
     asn1_db:dbput(NewM#module.name,'MODULE',  NewM),
     Res = storeindb(NewM#module.name,TVlist,[]),
-    include_default_class(NewM#module.name),
+    include_default_class(S,NewM#module.name),
     include_default_type(NewM#module.name),
     Res.
 
@@ -7268,8 +7269,8 @@ default_type_list() ->
      ].
 
 
-include_default_class(Module) ->
-    NameAbsList = default_class_list(),
+include_default_class(S,Module) ->
+    NameAbsList = default_class_list(S),
     include_default_class1(Module,NameAbsList).
 
 include_default_class1(_,[]) ->
@@ -7284,12 +7285,13 @@ include_default_class1(Module,[{Name,TS}|Rest]) ->
     end,
     include_default_class1(Module,Rest).
 
-default_class_list() ->
+default_class_list(S) ->
     [{'TYPE-IDENTIFIER',
       {objectclass,
        [{fixedtypevaluefield,
 	 id,
-	 #type{def='OBJECT IDENTIFIER'},
+	 #type{tag=?TAG_PRIMITIVE(?N_OBJECT_IDENTIFIER),
+	       def='OBJECT IDENTIFIER'},
 	 'UNIQUE',
 	 'MANDATORY'},
 	{typefield,'Type','MANDATORY'}],
@@ -7302,13 +7304,15 @@ default_class_list() ->
       {objectclass,
        [{fixedtypevaluefield,
 	 id,
-	 #type{def='OBJECT IDENTIFIER'},
+	 #type{tag=?TAG_PRIMITIVE(?N_OBJECT_IDENTIFIER),
+	       def='OBJECT IDENTIFIER'},
 	 'UNIQUE',
 	 'MANDATORY'},
 	{typefield,'Type','MANDATORY'},
 	{fixedtypevaluefield,
 	 property,
-	 #type{def={'BIT STRING',[]}},
+	 #type{tag=?TAG_PRIMITIVE(?N_BIT_STRING),
+	       def={'BIT STRING',[]}},
 	 undefined,
 	 {'DEFAULT',
 	  [0,1,0]}}],

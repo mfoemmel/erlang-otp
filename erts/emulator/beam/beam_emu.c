@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifdef HAVE_CONFIG_H
@@ -60,8 +61,13 @@
 #  ifdef ERTS_SMP
 #    define PROCESS_MAIN_CHK_LOCKS(P)					\
 do {									\
-    if ((P))								\
+    if ((P)) {								\
+	erts_pix_lock_t *pix_lock__ = ERTS_PIX2PIXLOCK(internal_pid_index((P)->id));\
 	erts_proc_lc_chk_only_proc_main((P));				\
+	erts_pix_lock(pix_lock__);					\
+	ASSERT(0 < (P)->lock.refc && (P)->lock.refc < erts_no_schedulers*5);\
+	erts_pix_unlock(pix_lock__);					\
+    }									\
     else								\
 	erts_lc_check_exact(NULL, 0);					\
     ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);				\
@@ -287,6 +293,26 @@ extern int count_instructions;
 #define SWAPOUT            \
     HEAP_TOP(c_p) = HTOP;  \
     c_p->stop = E
+
+/*
+ * Use LIGHT_SWAPOUT when the called function
+ * will call HeapOnlyAlloc() (and never HAlloc()).
+ */
+#ifdef DEBUG
+#  /* The stack pointer is used in an assertion. */
+#  define LIGHT_SWAPOUT SWAPOUT
+#else
+#  define LIGHT_SWAPOUT HEAP_TOP(c_p) = HTOP
+#endif
+
+/*
+ * Use LIGHT_SWAPIN when we know that c_p->stop cannot
+ * have been updated (i.e. if there cannot have been
+ * a garbage-collection).
+ */
+
+#define LIGHT_SWAPIN HTOP = HEAP_TOP(c_p)
+
 #endif
 
 #define PRE_BIF_SWAPOUT(P)						\
@@ -330,8 +356,6 @@ extern int count_instructions;
      }									\
      HTOP = HEAP_TOP((_p))
 #endif
-
-#define SAVE_HTOP HEAP_TOP(c_p) = HTOP
 
 #define db(N) (N)
 #define tb(N) (N)
@@ -531,7 +555,8 @@ extern int count_instructions;
         FCALLS--;						\
         CHECK_ARGS(I);						\
         Goto(dis_next);						\
-     } else if (c_p->ct != NULL && FCALLS > neg_o_reds) {	\
+     } else if (ERTS_PROC_GET_SAVED_CALLS_BUF(c_p)		\
+		&& FCALLS > neg_o_reds) {			\
         goto save_calls1;					\
      } else {							\
         SET_I(((Export *) Arg(0))->address);			\
@@ -712,8 +737,6 @@ extern int count_instructions;
 
 #define IsNumber(X, Fail) if (is_not_integer(X) && is_not_float(X)) { Fail; }
 
-#define IsConstant(X, Fail) if (is_list(X) || is_nil(X) || is_tuple(X)) { Fail; }
-
 #define IsAtom(Src, Fail) if (is_not_atom(Src)) { Fail; }
 
 #define IsIntegerAllocate(Src, Need, Alive, Fail)  \
@@ -818,9 +841,9 @@ extern int count_instructions;
    _size *= ((Flags) >> 3);						\
    TestHeap(FLOAT_SIZE_OBJECT, Live);					\
    _mb = ms_matchbuffer(Ms);						\
-   SWAPOUT;								\
+   LIGHT_SWAPOUT;							\
    _result = erts_bs_get_float_2(c_p, _size, (Flags), _mb);		\
-   HTOP = HEAP_TOP(c_p);						\
+   LIGHT_SWAPIN;							\
    if (is_non_value(_result)) { Fail; }					\
    else { Store(_result, Dst); }					\
  } while (0)
@@ -831,9 +854,9 @@ extern int count_instructions;
     Eterm _result;						\
     TestHeap(heap_bin_size(ERL_ONHEAP_BIN_LIMIT), Live);	\
     _mb = ms_matchbuffer(Ms);					\
-    SWAPOUT;							\
+    LIGHT_SWAPOUT;						\
     _result = erts_bs_get_binary_2(c_p, (Sz), (Flags), _mb);	\
-    HTOP = HEAP_TOP(c_p);					\
+    LIGHT_SWAPIN;						\
     if (is_non_value(_result)) { Fail; }			\
     else { Store(_result, Dst); }				\
   } while (0)
@@ -845,9 +868,9 @@ extern int count_instructions;
     BsGetFieldSize(Sz, ((Flags) >> 3), Fail, _size);		\
     TestHeap(ERL_SUB_BIN_SIZE, Live);				\
     _mb = ms_matchbuffer(Ms);					\
-    SWAPOUT;							\
+    LIGHT_SWAPOUT;						\
     _result = erts_bs_get_binary_2(c_p, _size, (Flags), _mb);	\
-    HTOP = HEAP_TOP(c_p);					\
+    LIGHT_SWAPIN;						\
     if (is_non_value(_result)) { Fail; }			\
     else { Store(_result, Dst); }				\
   } while (0)
@@ -859,9 +882,9 @@ extern int count_instructions;
     TestHeap(ERL_SUB_BIN_SIZE, Live);				\
     _mb = ms_matchbuffer(Ms);					\
     if (((_mb->size - _mb->offset) % Unit) == 0) {		\
-      SWAPOUT;							\
+      LIGHT_SWAPOUT;						\
       _result = erts_bs_get_binary_all_2(c_p, _mb);		\
-      HTOP = HEAP_TOP(c_p);					\
+      LIGHT_SWAPIN;						\
       ASSERT(is_value(_result));				\
       Store(_result, Dst);					\
     } else { Fail; }						\
@@ -1015,6 +1038,9 @@ void process_main(void)
 #endif
     Process* c_p = NULL;
     int reds_used;
+#ifdef DEBUG
+    Eterm pid;
+#endif
 
     /*
      * X register zero; also called r(0)
@@ -1127,6 +1153,9 @@ void process_main(void)
     PROCESS_MAIN_CHK_LOCKS(c_p);
     ERTS_SMP_UNREQ_PROC_MAIN_LOCK(c_p);
     c_p = schedule(c_p, reds_used);
+#ifdef DEBUG
+    pid = c_p->id;
+#endif
     ERTS_SMP_REQ_PROC_MAIN_LOCK(c_p);
     PROCESS_MAIN_CHK_LOCKS(c_p);
 #ifdef ERTS_SMP
@@ -1155,7 +1184,8 @@ void process_main(void)
 	SET_I(c_p->i);
 
 	reds = c_p->fcalls;
-	if (c_p->ct != NULL && (c_p->trace_flags & F_SENSITIVE) == 0) {
+	if (ERTS_PROC_GET_SAVED_CALLS_BUF(c_p)
+	    && (c_p->trace_flags & F_SENSITIVE) == 0) {
 	    neg_o_reds = -reds;
 	    FCALLS = REDS_IN(c_p) = 0;
 	} else {
@@ -1566,7 +1596,7 @@ void process_main(void)
      PreFetch(0, next);
      msgp = PEEK_MESSAGE(c_p);
 
-     if (c_p->ct != NULL) {
+     if (ERTS_PROC_GET_SAVED_CALLS_BUF(c_p)) {
 	 save_calls(c_p, &exp_receive);
      }
      if (ERL_MESSAGE_TOKEN(msgp) == NIL) {
@@ -1734,7 +1764,7 @@ void process_main(void)
      if (IS_TRACED_FL(c_p, F_TRACE_RECEIVE)) {
 	 trace_receive(c_p, am_timeout);
      }
-     if (c_p->ct != NULL) {
+     if (ERTS_PROC_GET_SAVED_CALLS_BUF(c_p)) {
 	 save_calls(c_p, &exp_timeout);
      }
      c_p->flags &= ~F_TIMO;
@@ -1847,7 +1877,6 @@ void process_main(void)
 
 	GetArg1(2, arg);
 	bf = (BifFunction) Arg(1);
-	SAVE_HTOP;
 	c_p->fcalls = FCALLS;
 	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p));
@@ -1876,7 +1905,6 @@ void process_main(void)
 
 	GetArg1(1, arg);
 	bf = (BifFunction) Arg(0);
-	SAVE_HTOP;
 	c_p->fcalls = FCALLS;
 	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p));
@@ -1938,7 +1966,6 @@ void process_main(void)
 	Eterm result;
 
 	bf = (BifFunction) Arg(1);
-	SAVE_HTOP;
 	c_p->fcalls = FCALLS;
 	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p));
@@ -1963,7 +1990,6 @@ void process_main(void)
 	Eterm result;
 
 	bf = (BifFunction) Arg(0);
-	SAVE_HTOP;
 	PROCESS_MAIN_CHK_LOCKS(c_p);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p));
 	result = (*bf)(c_p, tmp_arg1, tmp_arg2);
@@ -2274,10 +2300,19 @@ void process_main(void)
 		 }
 		 goto big_shift;
 	     }
-	 }
+	 } else if (is_big(tmp_arg2)) {
+	     /*
+	      * N bsr NegativeBigNum == N bsl MAX_SMALL
+	      * N bsr PositiveBigNum == N bsl MIN_SMALL
+	      */
+	     tmp_arg2 = make_small(bignum_header_is_neg(*big_val(tmp_arg2)) ?
+				   MAX_SMALL : MIN_SMALL);
+	     goto do_bsl;
+	}
      goto badarith;
      
      OpCase(i_bsl_jId):
+ do_bsl:
 	 if (is_small(tmp_arg2)) {
 	     i = signed_val(tmp_arg2);
 
@@ -2315,23 +2350,29 @@ void process_main(void)
 			 ires -= (-i / D_EXP);
 		 }
 		 {
-		     Uint live = Arg(1);
 		     ires = BIG_NEED_SIZE(ires+1);
-		     SWAPOUT;
-		     reg[0] = r(0);
-		     reg[live] = tmp_arg1;
-		     
-		     PROCESS_MAIN_CHK_LOCKS(c_p);
-		     FCALLS -= erts_garbage_collect(c_p, ires, reg, live+1);
-		     PROCESS_MAIN_CHK_LOCKS(c_p);
-		     r(0) = reg[0];
-		     SWAPIN;
+		     /*
+		      * Slightly conservative check the size to avoid
+		      * allocating huge amounts of memory for bignums that 
+		      * clearly would overflow the arity in the header
+		      * word.
+		      */
+		     if (ires-8 > BIG_ARITY_MAX) {
+			 c_p->freason = SYSTEM_LIMIT;
+			 goto lb_Cl_error;
+		     }
+		     TestHeapPreserve(ires+1, Arg(1), tmp_arg1);
 		     bigp = HTOP;
-		     tmp_arg1 = big_lshift(reg[live], i, bigp);
+		     tmp_arg1 = big_lshift(tmp_arg1, i, bigp);
 		     if (is_big(tmp_arg1)) {
 			 HTOP += bignum_header_arity(*HTOP) + 1;
 		     }
 		     if (is_nil(tmp_arg1)) {
+			 /*
+			  * This result must have been only slight larger
+			  * than allowed since it wasn't caught by the
+			  * previous test.
+			  */
 			 c_p->freason = SYSTEM_LIMIT;
 			 goto lb_Cl_error;
 		     }
@@ -2344,7 +2385,28 @@ void process_main(void)
 		 }
 		 goto big_shift;
 	     }
+	 } else if (is_big(tmp_arg2)) {
+	     if (bignum_header_is_neg(*big_val(tmp_arg2))) {
+		 /*
+		  * N bsl NegativeBigNum is either 0 or -1, depending on
+		  * the sign of N. Since we don't believe this case
+		  * is common, do the calculation with the minimum
+		  * amount of code.
+		  */
+		 tmp_arg2 = make_small(MIN_SMALL);
+		 goto do_bsl;
+	     } else if (is_small(tmp_arg1) || is_big(tmp_arg1)) {
+		 /*
+		  * N bsl PositiveBigNum is too large to represent.
+		  */
+		 c_p->freason = SYSTEM_LIMIT;
+		 goto lb_Cl_error;
+	     }
+	     /* Fall through if the left argument is not an integer. */
 	 }
+     /*
+      * One or more non-integer arguments.
+      */
      goto badarith;
  }
 
@@ -2615,7 +2677,7 @@ void process_main(void)
      c_p->i = I;
      erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_STATUS);
      if (c_p->status != P_SUSPENDED)
-	 add_to_schedule_q(c_p);
+	 erts_add_to_runq(c_p);
      erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_STATUS);
      goto do_schedule1;
  }
@@ -3580,7 +3642,10 @@ void process_main(void)
 	     Uint live = Arg(1);
 	     Uint wordsneeded = ERL_BIN_MATCHSTATE_SIZE(slots);
 	     TestHeapPreserve(wordsneeded, live, tmp_arg1);
-	     SWAPOUT;
+	     HEAP_TOP(c_p) = HTOP;
+#ifdef DEBUG
+	     c_p->stop = E;	/* Needed for checking in HeapOnlyAlloc(). */
+#endif
 	     result = erts_bs_start_match_2(c_p, tmp_arg1, slots);
 	     HTOP = HEAP_TOP(c_p);
 	     if (is_non_value(result)) {
@@ -3837,9 +3902,9 @@ void process_main(void)
      Eterm result;
 
      mb = ms_matchbuffer(tmp_arg1);
-     SWAPOUT;
+     LIGHT_SWAPOUT;
      result = erts_bs_get_integer_2(c_p, tmp_arg2, Arg(1), mb);
-     HTOP = HEAP_TOP(c_p);
+     LIGHT_SWAPIN;
      if (is_non_value(result)) {
 	 ClauseFail();
      }
@@ -3864,9 +3929,9 @@ void process_main(void)
 	 TestHeapPreserve(wordsneeded, Arg(1), tmp_arg1);
      }
      mb = ms_matchbuffer(tmp_arg1);
-     SWAPOUT;
+     LIGHT_SWAPOUT;
      result = erts_bs_get_integer_2(c_p, size, flags, mb);
-     HTOP = HEAP_TOP(c_p);
+     LIGHT_SWAPIN;
      if (is_non_value(result)) {
 	 ClauseFail();
      }
@@ -3890,99 +3955,10 @@ void process_main(void)
   */
 
     do_bs_get_utf8: {
-     ErlBinMatchBuffer* _mb;
-     Eterm result;
-     Uint remaining_bits;
-     byte* pos;
-     byte tmp_buf[4];
-     Eterm a, b, c;
-
-     /*
-      * Number of trailing bytes for each value of the first byte.
-      */
-     static const byte erts_trailing_bytes_for_utf8[256] = {
-	 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-	 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9, 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
-	 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9, 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
-	 9,9,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-	 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 3,3,3,3,3,3,3,3,9,9,9,9,9,9,9,9
-     };
-
-     _mb = ms_matchbuffer(tmp_arg1);
-     if ((remaining_bits = _mb->size - _mb->offset) < 8) {
+     Eterm result = erts_bs_get_utf8(ms_matchbuffer(tmp_arg1));
+     if (is_non_value(result)) {
 	 ClauseFail();
      }
-     if (BIT_OFFSET(_mb->offset) == 0) {
-	 pos = _mb->base + BYTE_OFFSET(_mb->offset);
-     } else {
-	 erts_align_utf8_bytes(_mb, tmp_buf);
-	 pos = tmp_buf;
-     }
-     result = pos[0];
-     switch (erts_trailing_bytes_for_utf8[result]) {
-     case 0:
-	 /* One byte only */
-	 _mb->offset += 8;
-	 break;
-     case 1:
-	 /* Two bytes */
-	 if (remaining_bits < 16) {
-	     ClauseFail();
-	 }
-	 a = pos[1];
-	 if ((a & 0xC0) != 0x80) {
-	     ClauseFail();
-	 }
-	 result = (result << 6) + a - (Eterm) 0x00003080UL;
-	 _mb->offset += 16;
-	 break;
-     case 2:
-	 /* Three bytes */
-
-	 if (remaining_bits < 24) {
-	     ClauseFail();
-	 }
-	 a = pos[1];
-	 b = pos[2];
-	 if ((a & 0xC0) != 0x80 || (b & 0xC0) != 0x80 ||
-	     (result == 0xE0 && a < 0xA0)) {
-	     ClauseFail();
-	 }
-	 result = (((result << 6) + a) << 6) + b - (Eterm) 0x000E2080UL;
-	 if ((0xD800 <= result && result <= 0xDFFF) ||
-	     result == 0xFFFE || result == 0xFFFF) {
-	     ClauseFail();
-	 }
-	 _mb->offset += 24;
-	 break;
-     case 3:
-	 /* Four bytes */
-
-	 if (remaining_bits < 32) {
-	     ClauseFail();
-	 }
-	 a = pos[1];
-	 b = pos[2];
-	 c = pos[3];
-	 if ((a & 0xC0) != 0x80 || (b & 0xC0) != 0x80 ||
-	     (c & 0xC0) != 0x80 ||
-	     (result == 0xF0 && a < 0x90)) {
-	     ClauseFail();
-	 }
-	 result = (((((result << 6) + a) << 6) + b) << 6) +
-	     c - (Eterm) 0x03C82080UL;
-	 if (result > 0x10FFFF) {
-	     ClauseFail();
-	 }
-	 _mb->offset += 32;
-	 break;
-     default:
-	 ClauseFail();
-     }
-     result = make_small(result);
      StoreBifResult(1, result);
  }
 
@@ -4380,36 +4356,6 @@ void process_main(void)
      Goto(*I);
  }
 
-#ifdef HIPE	/* XXX: temporary fix for R12B-5, will go away before R13 */
- /*
-  * Instructions for module_info/0,1.
-  */
-
- OpCase(hipe_module_info_0): {
-     SWAPOUT;
-     r(0) = erts_module_info_0(c_p, I[-3]);
-     HTOP = HEAP_TOP(c_p);
-     SET_I(c_p->cp);
-     Goto(*I);
- }
-
- OpCase(hipe_module_info_1): {
-     Eterm res;
-
-     SWAPOUT;
-     res = erts_module_info_1(c_p, I[-3], r(0));
-     HTOP = HEAP_TOP(c_p);
-     if (is_value(res)) {
-	 r(0) = res;
-	 SET_I(c_p->cp);
-	 Goto(*I);
-     }
-     c_p->freason = EXC_FUNCTION_CLAUSE;
-     c_p->current = I-3;
-     goto lb_error_action_code;
- }
-#endif
-
  /*
   * Instructions for allocating on the message area.
   */
@@ -4748,7 +4694,7 @@ void process_main(void)
      SWAPOUT;
      c_p->i = I + 1; /* Next instruction */
      erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_STATUS);
-     add_to_schedule_q(c_p);
+     erts_add_to_runq(c_p);
      erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_STATUS);
      c_p->current = NULL;
      goto do_schedule;
@@ -4928,6 +4874,7 @@ Eterm error_atom[NUMBER_EXIT_CODES] = {
   am_notalive,		/* 14 */
   am_system_limit,	/* 15 */
   am_try_clause,	/* 16 */
+  am_notsup		/* 17 */
 };
 
 /*
@@ -5225,9 +5172,8 @@ save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf,
      * 'throw', find the bif-table index and save the argument
      * registers by consing up an arglist.
      */
-    if (bf != NULL && bf != error_1 && bf != error_2
-	&& bf != fault_1 && bf != fault_2
-	&& bf != exit_1 && bf != throw_1) {
+    if (bf != NULL && bf != error_1 && bf != error_2 &&
+	bf != exit_1 && bf != throw_1) {
         int i;
 	int a = 0;
 	for (i = 0; i < BIF_SIZE; i++) {
@@ -5501,7 +5447,8 @@ call_error_handler(Process* p, Eterm* fi, Eterm* reg)
     /*
      * Search for the error_handler module.
      */
-    ep = erts_find_function(p->error_handler, am_undefined_function, 3);
+    ep = erts_find_function(erts_proc_get_error_handler(p),
+			    am_undefined_function, 3);
     if (ep == NULL) {		/* No error handler */
 	p->current = fi;
 	p->freason = EXC_UNDEF;
@@ -5548,7 +5495,8 @@ call_breakpoint_handler(Process* p, Eterm* fi, Eterm* reg)
     /*
      * Search for error handler module.
      */
-    ep = erts_find_function(p->error_handler, am_breakpoint, 3);
+    ep = erts_find_function(erts_proc_get_error_handler(p),
+			    am_breakpoint, 3);
     if (ep == NULL) {		/* No error handler */
 	p->current = fi;
 	p->freason = EXC_UNDEF;
@@ -5594,7 +5542,7 @@ apply_setup_error_handler(Process* p, Eterm module, Eterm function, Uint arity, 
      * there is no error handler module.
      */
 
-    if ((ep = erts_find_export_entry(p->error_handler,
+    if ((ep = erts_find_export_entry(erts_proc_get_error_handler(p),
 				     am_undefined_function, 3)) == NULL) {
 	return NULL;
     } else {
@@ -5703,7 +5651,7 @@ apply(Process* p, Eterm module, Eterm function, Eterm args, Eterm* reg)
 
     if ((ep = erts_find_export_entry(module, function, arity)) == NULL) {
 	if ((ep = apply_setup_error_handler(p, module, function, arity, reg)) == NULL) goto error;
-    } else if (p->ct != NULL) {
+    } else if (ERTS_PROC_GET_SAVED_CALLS_BUF(p)) {
 	save_calls(p, ep);
     }
 
@@ -5752,7 +5700,7 @@ fixed_apply(Process* p, Eterm* reg, Uint arity)
     if ((ep = erts_find_export_entry(module, function, arity)) == NULL) {
 	if ((ep = apply_setup_error_handler(p, module, function, arity, reg)) == NULL)
 	    goto error;
-    } else if (p->ct != NULL) {
+    } else if (ERTS_PROC_GET_SAVED_CALLS_BUF(p)) {
 	save_calls(p, ep);
     }
 
@@ -5825,7 +5773,7 @@ hibernate(Process* c_p, Eterm module, Eterm function, Eterm args, Eterm* reg)
     erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS);
     ERTS_SMP_MSGQ_MV_INQ2PRIVQ(c_p);
     if (c_p->msg.len > 0) {
-	add_to_schedule_q(c_p);
+	erts_add_to_runq(c_p);
     } else {
 	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS);
 	c_p->fvalue = NIL;
@@ -5838,7 +5786,7 @@ hibernate(Process* c_p, Eterm module, Eterm function, Eterm args, Eterm* reg)
 #ifdef ERTS_SMP
 	ERTS_SMP_MSGQ_MV_INQ2PRIVQ(c_p);
 	if (c_p->msg.len > 0)
-	    add_to_schedule_q(c_p);
+	    erts_add_to_runq(c_p);
 #endif
     }
     erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS);
@@ -5947,7 +5895,8 @@ call_fun(Process* p,		/* Current process. */
 		 * to attempt loading the module.
 		 */
 
-		ep = erts_find_function(p->error_handler, am_undefined_lambda, 3);
+		ep = erts_find_function(erts_proc_get_error_handler(p),
+					am_undefined_lambda, 3);
 		if (ep == NULL) {	/* No error handler */
 		    p->current = NULL;
 		    p->freason = EXC_UNDEF;
@@ -5995,7 +5944,8 @@ call_fun(Process* p,		/* Current process. */
 	    goto badfun;
 	}
 	if ((ep = erts_find_export_entry(module, function, arity)) == NULL) {
-	    ep = erts_find_export_entry(p->error_handler, am_undefined_function, 3);
+	    ep = erts_find_export_entry(erts_proc_get_error_handler(p),
+					am_undefined_function, 3);
 	    if (ep == NULL) {
 		p->freason = EXC_UNDEF;
 		return 0;
@@ -6135,7 +6085,7 @@ erts_current_reductions(Process *current, Process *p)
 {
     if (current != p) {
 	return 0;
-    } else if (current->fcalls < 0 && current->ct != NULL) {
+    } else if (current->fcalls < 0 && ERTS_PROC_GET_SAVED_CALLS_BUF(current)) {
 	return -current->fcalls;
     } else {
 	return REDS_IN(current) - current->fcalls;

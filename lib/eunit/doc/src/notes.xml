@@ -31,6 +31,21 @@
   </header>
   <p>This document describes the changes made to the EUnit application.</p>
 
+  <section>
+    <title>EUnit 2.0.1</title>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>
+            Corrected the documentation build.
+          </p>
+        </item>
+      </list>
+    </section>
+  </section>
+
 
   <section>
     <title>EUnit 2.0</title>

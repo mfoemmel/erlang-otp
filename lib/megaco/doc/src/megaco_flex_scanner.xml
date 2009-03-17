@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE erlref SYSTEM "erlref.dtd">
+
+<erlref>
+  <header>
+    <copyright>
+      <year>2001</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
+    </copyright>
+    <legalnotice>
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
+    </legalnotice>
+
+    <title>megaco_flex_scanner</title>
+    <prepared>Micael Karlberg</prepared>
+    <responsible>Micael Karlberg</responsible>
+    <docno></docno>
+    <approved>Micael Karlberg</approved>
+    <checked></checked>
+    <date>2007-06-15</date>
+    <rev>%VSN%</rev>
+    <file>megaco_flex_scanner.xml</file>
+  </header>
+  <module>megaco_flex_scanner</module>
+  <modulesummary>Interface module to the flex scanner linked in driver.</modulesummary>
+  <description>
+    <p>This module contains the public interface to the flex scanner 
+      linked in driver. The flex scanner performs the scanning phase
+      of text message decoding.</p>
+    <p>The flex scanner is written using a tool called <em>flex</em>. 
+      In order to be able to compile the flex scanner driver, this
+      tool has to be available. </p>
+    <p>By default the flex scanner reports line-number of an error.
+      But it can be built without line-number reporting. Instead
+      token number is used. This will speed up the scanning some
+      5-10%. Use <c><![CDATA[--disable-megaco-flex-scanner-lineno]]></c> when
+      configuring the application.</p>
+  </description>
+  <funcs>
+    <func>
+      <name>start() -> {ok, Port} | {error, Reason}</name>
+      <fsummary></fsummary>
+      <type>
+        <v>Port = port()</v>
+        <v>Reason = term()</v>
+      </type>
+      <desc>
+        <p>This function is used to start the flex scanner. 
+          It locates the library and loads the linked in driver.</p>
+        <p>Note that the process that calls this function <em>must</em> 
+          be permament. If it dies, the port will exit and the driver unload.</p>
+      </desc>
+    </func>
+  </funcs>
+
+</erlref>
+

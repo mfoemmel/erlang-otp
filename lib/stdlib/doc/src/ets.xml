@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1996</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1996</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>ets</title>
@@ -246,24 +244,6 @@ tid()
           order will be returned. If the table is empty,
           <c>'$end_of_table'</c> will be returned.</p>
         <p>Use <c>next/2</c> to find subsequent keys in the table.</p>
-      </desc>
-    </func>
-    <func>
-      <name>fixtable(Tab, true|false) -> true | false</name>
-      <fsummary>Fix an ETS table for safe traversal (obsolete).</fsummary>
-      <type>
-        <v>Tab = tid() | atom()</v>
-      </type>
-      <desc>
-        <warning>
-          <p>The function is retained for backwards compatibility only.
-            Use <c>safe_fixtable/2</c> instead.</p>
-        </warning>
-        <p>Fixes a table for safe traversal. The function is primarily
-          used by the Mnesia DBMS to implement functions which allow
-          write operations in a table, although the table is in the
-          process of being copied to disk or to another node. It does
-          not keep track of when and how tables are fixed.</p>
       </desc>
     </func>
     <func>
@@ -1252,6 +1232,13 @@ is_integer(X), is_integer(Y), X + Y < 4711]]></code>
           '$2'):</p>
         <code type="none"><![CDATA[
 [{is_integer, '$1'}, {is_integer, '$2'}, {'<', {'+', '$1', '$2'}, 4711}]]]></code>
+        <p>On tables of the <c>ordered_set</c> type, objects are visited
+          in the same order as in a <c>first/next</c>
+          traversal. This means that the match specification will be
+          executed against objects with keys in the <c>first/next</c>
+          order and the corresponding result list will be in the order of that
+          execution.</p>
+
       </desc>
     </func>
     <func>
@@ -1564,7 +1551,7 @@ Returns a QLC (Query List
         <p>The following example uses an explicit match_spec to
           traverse the table:</p>
         <pre>
-9> <input>ets:insert(Tab = ets:new(t, []), [{1,a},{2,b},{3,c},{4,d}]),</input>
+9> <input>true = ets:insert(Tab = ets:new(t, []), [{1,a},{2,b},{3,c},{4,d}]),</input>
 <input>MS = ets:fun2ms(fun({X,Y}) when (X > 1) or (X &lt; 5) -> {Y} end),</input>
 <input>QH1 = ets:table(Tab, [{traverse, {select, MS}}]).</input></pre>
         <p>An example with implicit match_spec:</p>

@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>2003-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 
 %%% @doc Logging functionality for Common Test Framework.
@@ -187,7 +186,7 @@ cast(Msg) ->
 %%%
 %%% <p>This function is called by ct_framework:init_tc/3</p>
 init_tc() ->
-    cast({init_tc,group_leader()}),
+    cast({init_tc,self(),group_leader()}),
     ok.
 
 %%%-----------------------------------------------------------------
@@ -199,7 +198,7 @@ init_tc() ->
 end_tc() ->
     %% use call here so that the TC process will wait and receive
     %% possible exit signals from ct_logs before end_tc returns ok 
-    call(end_tc).
+    call({end_tc,self()}).
 
 %%%-----------------------------------------------------------------
 %%% @spec log(Heading,Format,Args) -> ok
@@ -386,7 +385,14 @@ log_timestamp(Now) ->
 
 %%%-----------------------------------------------------------------
 %%% The logger server
--record(logger_state,{log_dir,start_time,orig_GL,ct_log_fd,current_fd,stylesheet}).
+-record(logger_state,{parent,
+		      log_dir,
+		      start_time,
+		      orig_GL,
+		      ct_log_fd,
+		      tc_groupleaders,
+		      stylesheet}).
+
 logger(Parent,Mode) ->
     register(?MODULE,self()),
 
@@ -423,22 +429,23 @@ logger(Parent,Mode) ->
     io:format(CtLogFd,int_header()++int_footer(),
 	      [log_timestamp(now()),"Common Test Logger started"]),
     Parent ! {started,self(),{Time,Dir}},
-    logger_loop(#logger_state{log_dir=Dir,
+    logger_loop(#logger_state{parent=Parent,
+			      log_dir=Dir,
 			      start_time=Time,
 			      orig_GL=group_leader(),
 			      ct_log_fd=CtLogFd,
-			      current_fd=CtLogFd}).
+			      tc_groupleaders=[]}).
 
 logger_loop(State) ->
     receive
 	{log,TCPid,List} ->
-	    case State#logger_state.current_fd of
-		standard_io ->
-		    case erlang:is_process_alive(group_leader()) of
+	    case get_groupleader(TCPid,State) of
+		{tc_log,GL} ->
+		    case erlang:is_process_alive(GL) of
 			true ->
 			    Fun = 
 				fun({Str,Args}) ->
-					case catch io:format(Str,Args) of
+					case catch io:format(GL,Str,Args) of
 					    {'EXIT',_Reason} ->
 						Fd = State#logger_state.ct_log_fd,
 						io:format(Fd, 
@@ -459,19 +466,16 @@ logger_loop(State) ->
 			    [begin io:format(Fd,Str,Args),io:nl(Fd) end || 
 				{Str,Args} <- List]
 		    end;
-		Fd when State#logger_state.ct_log_fd == Fd -> 
+		{ct_log,Fd} ->
 		    [begin io:format(Fd,Str,Args),io:nl(Fd) end || {Str,Args} <- List]
 	    end,		    
 	    logger_loop(State);
-	{init_tc,GL} ->
-	    group_leader(GL,self()),
-	    print_style(standard_io, State#logger_state.stylesheet),
-	    logger_loop(State#logger_state{current_fd=standard_io});
-	{end_tc,From} ->
-	    group_leader(State#logger_state.orig_GL,self()),
-	    CtLogFd = State#logger_state.ct_log_fd,
+	{init_tc,TCPid,GL} ->
+	    print_style(GL, State#logger_state.stylesheet),
+	    logger_loop(State#logger_state{tc_groupleaders=add_tc_gl(TCPid,GL,State)});
+	{{end_tc,TCPid},From} ->
 	    return(From,ok),
-	    logger_loop(State#logger_state{current_fd=CtLogFd});
+	    logger_loop(State#logger_state{tc_groupleaders=rm_tc_gl(TCPid,State)});
 	{get_log_dir,From} ->
 	    return(From,{ok,State#logger_state.log_dir}),
 	    logger_loop(State);
@@ -496,6 +500,22 @@ logger_loop(State) ->
 	    close_ctlog(State#logger_state.ct_log_fd),
 	    ok
     end.
+
+get_groupleader(TCPid,State) ->
+    case proplists:get_value(TCPid,State#logger_state.tc_groupleaders) of
+	undefined ->
+	    {ct_log,State#logger_state.ct_log_fd};
+	GL ->
+	    {tc_log,GL}
+    end.
+
+add_tc_gl(TCPid,GL,State) ->
+    TCGLs = State#logger_state.tc_groupleaders,
+    [{TCPid,GL} | lists:keydelete(TCPid, 1, TCGLs)].
+
+rm_tc_gl(TCPid,State) ->
+    TCGLs = State#logger_state.tc_groupleaders,
+    lists:keydelete(TCPid, 1, TCGLs).    
     
 open_ctlog() ->
     {ok,Fd} = file:open(?ct_log_name,[write]),

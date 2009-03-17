@@ -1,20 +1,22 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1998-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 /*
  * Common utilities for the different types of db tables.
  * Mostly matching etc.
@@ -232,7 +234,8 @@ typedef enum {
     matchOr,
     matchAnd,
     matchOrElse,
-    matchAndThen,
+    matchAndAlso,
+    matchJump,
     matchSelf,
     matchWaste,
     matchReturn,
@@ -319,7 +322,6 @@ typedef struct dmc_context {
     int current_match;
     int eheap_need;
     Uint cflags;
-    DMC_STACK_TYPE(Uint) *labels;
     int is_guard; /* 1 if in guard, 0 if in body */
     int special; /* 1 if the head in the match was a single expression */ 
     DMCErrInfo *err_info;
@@ -501,12 +503,6 @@ static DMCGuardBif guard_tab[] =
 	1,
 	DBIF_ALL
     },
-    {
-	am_is_constant,
-	&is_constant_1,
-	1,
-	DBIF_ALL
-    },    
     {
 	am_is_float,
 	&is_float_1,
@@ -1250,7 +1246,6 @@ Binary *db_match_compile(Eterm *matchexpr,
     DMCHeap heap;
     DMC_STACK_TYPE(Eterm) stack;
     DMC_STACK_TYPE(Uint) text;
-    DMC_STACK_TYPE(Uint) labels;
     DMCContext context;
     MatchProg *ret = NULL;
     Eterm t;
@@ -1265,7 +1260,6 @@ Binary *db_match_compile(Eterm *matchexpr,
 
     DMC_INIT_STACK(stack);
     DMC_INIT_STACK(text);
-    DMC_INIT_STACK(labels);
 
     context.stack_need = context.stack_used = 0;
     context.save = context.copy = NULL;
@@ -1276,7 +1270,6 @@ Binary *db_match_compile(Eterm *matchexpr,
     context.eheap_need = 0;
     context.err_info = err_info;
     context.cflags = flags;
-    context.labels = &labels;
 
     heap.size = DMC_DEFAULT_SIZE;
     heap.data = heap.def;
@@ -1298,9 +1291,8 @@ restart:
 	structure_checked = 0;
 	if (context.current_match < num_progs - 1) {
 	    DMC_PUSH(text,matchTryMeElse);
-	    DMC_PUSH(text,current_try_label = 
-		     DMC_STACK_NUM(*(context.labels)));
-	    DMC_PUSH(*(context.labels), 0);
+	    current_try_label = DMC_STACK_NUM(text);
+	    DMC_PUSH(text,0);
 	} else {
 	    current_try_label = -1;
 	}
@@ -1461,12 +1453,11 @@ restart:
 
 
 	/* If the matchprogram comes here, the match is 
-	   successfull */
+	   successful */
 	DMC_PUSH(text,matchHalt);
 	/* Fill in try-me-else label if there is one. */ 
 	if (current_try_label >= 0) {
-	    DMC_POKE(*(context.labels), current_try_label, 
-		     DMC_STACK_NUM(text));
+	    DMC_POKE(text, current_try_label, DMC_STACK_NUM(text));
 	}
 	/* So, how much eheap did this part of the match program need? */
 	if (context.eheap_need > max_eheap_need) {
@@ -1483,8 +1474,6 @@ restart:
     ** The "program memory" is allocated like this:
     ** text ----> +-------------+
     **            |             |
-    **              ..........
-    ** labels --> +             + (labels are offset's from text)
     **              ..........
     **            +-------------+
     **
@@ -1503,29 +1492,26 @@ restart:
     ** (i.e '$1'), then the field single_variable is set to 1.
     */
     bp = erts_create_magic_binary(((sizeof(MatchProg) - sizeof(Uint)) +
-				   (DMC_STACK_NUM(text) * sizeof(Uint)) +
-				   (DMC_STACK_NUM(labels) * sizeof(Uint))),
+				   (DMC_STACK_NUM(text) * sizeof(Uint))),
 				  erts_db_match_prog_destructor);
     ret = Binary2MatchProg(bp);
     ret->saved_program_buf = NULL;
     ret->saved_program = NIL;
     ret->term_save = context.save;
     ret->num_bindings = heap.used;
-    ret->labels = (Uint *) (ret->text + DMC_STACK_NUM(text));
     ret->single_variable = context.special;
-#ifdef DMC_DEBUG
-    ret->label_size = DMC_STACK_NUM(labels);
-#endif
     sys_memcpy(ret->text, DMC_STACK_DATA(text), 
 	       DMC_STACK_NUM(text) * sizeof(Uint));
-    sys_memcpy(ret->labels, DMC_STACK_DATA(labels), 
-	       DMC_STACK_NUM(labels) * sizeof(Uint));
     ret->heap_size = ((heap.used * sizeof(Eterm)) +
 		      (max_eheap_need * sizeof(Eterm)) +
 		      (context.stack_need * sizeof(Eterm *)) +
 		      (3 * (FENCE_PATTERN_SIZE * sizeof(Eterm *))));
     ret->eheap_offset = heap.used + FENCE_PATTERN_SIZE;
     ret->stack_offset = ret->eheap_offset + max_eheap_need + FENCE_PATTERN_SIZE;
+#ifdef DMC_DEBUG
+    ret->prog_end = ret->text + DMC_STACK_NUM(text);
+#endif
+
     /* 
      * Fall through to cleanup code, but context.save should not be free'd
      */  
@@ -1538,7 +1524,6 @@ error: /* Here is were we land when compilation failed. */
     }
     DMC_FREE(stack);
     DMC_FREE(text);
-    DMC_FREE(labels);
     if (context.copy != NULL) 
 	free_message_buffer(context.copy);
     if (heap.data != heap.def)
@@ -1717,8 +1702,7 @@ restart:
 #endif
 	switch (*pc++) {
 	case matchTryMeElse:
-	    n = *pc++;
-	    fail_label = prog->labels[n];
+	    fail_label = *pc++;
 	    break;
 	case matchArray: /* only when DCOMP_TRACE, is always first
 			    instruction. */
@@ -1959,29 +1943,33 @@ restart:
 	    n = *pc++;
 	    if (*--esp == am_true) {
 		++esp;
-		pc = (prog->text) + prog->labels[n];
+		pc += n;
 	    } else if (*esp != am_false) {
 		if (do_catch) {
 		    *esp++ = FAIL_TERM;
-		    pc = (prog->text) + prog->labels[n];;
+		    pc += n;
 		} else {
 		    FAIL();
 		}
 	    }
 	    break;
-	case matchAndThen:
+	case matchAndAlso:
 	    n = *pc++;
 	    if (*--esp == am_false) {
 		esp++;
-		pc = (prog->text) + prog->labels[n];
+		pc += n;
 	    } else if (*esp != am_true) {
 		if (do_catch) {
 		    *esp++ = FAIL_TERM;
-		    pc = (prog->text) + prog->labels[n];;
+		    pc += n;
 		} else {
 		    FAIL();
 		}
 	    }
+	    break;
+	case matchJump:
+	    n = *pc++;
+	    pc += n;
 	    break;
 	case matchSelf:
 	    *esp++ = c_p->id;
@@ -2902,14 +2890,12 @@ static DMCRet dmc_tuple(DMCContext *context,
     Uint i;
     int c;
     DMCRet ret;
-    Uint lblpos = DMC_STACK_NUM(*(context->labels));
-
 
     /*
     ** We remember where we started to layout code, 
     ** assume all is constant and back up and restart if not so.
     ** The tuple should be laid out with the last element first,
-    ** so we can memcpy the tuple to the eheap;
+    ** so we can memcpy the tuple to the eheap.
     */
     for (i = nelems; i > 0; --i) {
 	if ((ret = dmc_expr(context, heap, text, p[i], &c)) != retOk)
@@ -2918,9 +2904,11 @@ static DMCRet dmc_tuple(DMCContext *context,
 	    all_constant = 0;
 	    if (i < nelems) {
 		Uint j;
-		Uint txtnum = DMC_STACK_NUM(*text);
-		/* oups, we need to relayout the constantants */
-		/* save the already laid out instructions */
+
+		/*
+		 * Oops, we need to relayout the constants.
+		 * Save the already laid out instructions.
+		 */
 		DMC_INIT_STACK(instr_save);
 		while (DMC_STACK_NUM(*text) > textpos) 
 		    DMC_PUSH(instr_save, DMC_POP(*text));
@@ -2928,20 +2916,6 @@ static DMCRet dmc_tuple(DMCContext *context,
 		    do_emit_constant(context, text, p[j]);
 		while(!DMC_EMPTY(instr_save))
 		    DMC_PUSH(*text, DMC_POP(instr_save));
-		if (DMC_STACK_NUM(*(context->labels)) != lblpos) {
-		    /*
-		    ** This is NOT funny... All labels have to be offset
-		    ** By how many instructions we inserted during 
-		    ** constant emission...
-		    */
-		    int diff = DMC_STACK_NUM(*text) - txtnum;
-		    Uint nlblpos = DMC_STACK_NUM(*(context->labels));
-		    for (j = lblpos; j < nlblpos; ++j) {
-			DMC_POKE(*(context->labels), j, 
-				 (Uint) DMC_PEEK(*(context->labels), j) + 
-				 diff);
-		    }
-		}
 		DMC_FREE(instr_save);
 	    }
 	} else if (c && !all_constant) {
@@ -3114,7 +3088,7 @@ static DMCRet dmc_or(DMCContext *context,
 }
 
 
-static DMCRet dmc_andthen(DMCContext *context,
+static DMCRet dmc_andalso(DMCContext *context,
 			  DMCHeap *heap,
 			  DMC_STACK_TYPE(Uint) *text,
 			  Eterm t,
@@ -3125,28 +3099,39 @@ static DMCRet dmc_andthen(DMCContext *context,
     DMCRet ret;
     int i;
     int c;
-    int lbl;
-    
+    Uint lbl;
+    Uint lbl_next;
+    Uint lbl_val;
+
     if (a < 2) {
-	RETURN_TERM_ERROR("Special form 'andalso/andthen' called without"
+	RETURN_TERM_ERROR("Special form 'andalso' called without"
 			  " arguments "
 			  "in %T.", t, context, *constant);
     }
     *constant = 0;
-    lbl = DMC_STACK_NUM(*(context->labels));
-    DMC_PUSH(*(context->labels), 0);
+    lbl = 0;
     for (i = 2; i <= a; ++i) {
 	if ((ret = dmc_expr(context, heap, text, p[i], &c)) != retOk)
 	    return ret;
 	if (c) 
 	    do_emit_constant(context, text, p[i]);
-	DMC_PUSH(*text, matchAndThen);
-	DMC_PUSH(*text, (Uint) lbl);
+	if (i == a) {
+	    DMC_PUSH(*text, matchJump);
+	} else {
+	    DMC_PUSH(*text, matchAndAlso);
+	}
+	DMC_PUSH(*text, lbl);
+	lbl = DMC_STACK_NUM(*text)-1;
 	--(context->stack_used);
     }
     DMC_PUSH(*text, matchPushC);
     DMC_PUSH(*text, am_true);
-    DMC_POKE(*(context->labels), lbl, DMC_STACK_NUM(*text));
+    lbl_val = DMC_STACK_NUM(*text);
+    while (lbl) {
+	lbl_next = DMC_PEEK(*text, lbl);
+	DMC_POKE(*text, lbl, lbl_val-lbl-1);
+	lbl = lbl_next;
+    }
     if (++context->stack_used > context->stack_need)
 	context->stack_need = context->stack_used;
     return retOk;
@@ -3163,27 +3148,38 @@ static DMCRet dmc_orelse(DMCContext *context,
     DMCRet ret;
     int i;
     int c;
-    int lbl;
+    Uint lbl;
+    Uint lbl_next;
+    Uint lbl_val;
     
     if (a < 2) {
 	RETURN_TERM_ERROR("Special form 'orelse' called without arguments "
 			  "in %T.", t, context, *constant);
     }
     *constant = 0;
-    lbl = DMC_STACK_NUM(*(context->labels));
-    DMC_PUSH(*(context->labels), 0);
+    lbl = 0;
     for (i = 2; i <= a; ++i) {
 	if ((ret = dmc_expr(context, heap, text, p[i], &c)) != retOk)
 	    return ret;
 	if (c) 
 	    do_emit_constant(context, text, p[i]);
-	DMC_PUSH(*text, matchOrElse);
-	DMC_PUSH(*text, (Uint) lbl);
+	if (i == a) {
+	    DMC_PUSH(*text, matchJump);
+	} else {
+	    DMC_PUSH(*text, matchOrElse);
+	}
+	DMC_PUSH(*text, lbl);
+	lbl = DMC_STACK_NUM(*text)-1;
 	--(context->stack_used);
     }
     DMC_PUSH(*text, matchPushC);
     DMC_PUSH(*text, am_false);
-    DMC_POKE(*(context->labels), lbl, DMC_STACK_NUM(*text));
+    lbl_val = DMC_STACK_NUM(*text);
+    while (lbl) {
+	lbl_next = DMC_PEEK(*text, lbl);
+	DMC_POKE(*text, lbl, lbl_val-lbl-1);
+	lbl = lbl_next;
+    }
     if (++context->stack_used > context->stack_need)
 	context->stack_need = context->stack_used;
     return retOk;
@@ -3787,7 +3783,7 @@ static DMCRet dmc_fun(DMCContext *context,
 	return dmc_or(context, heap, text, t, constant);
     case am_andalso:
     case am_andthen:
-	return dmc_andthen(context, heap, text, t, constant);
+	return dmc_andalso(context, heap, text, t, constant);
     case am_orelse:
 	return dmc_orelse(context, heap, text, t, constant);
     case am_self:
@@ -4369,7 +4365,7 @@ static void db_match_dis(Binary *bp)
     int first;
     ErlHeapFragment *tmp;
 
-    while (t < prog->labels) {
+    while (t < prog->prog_end) {
 	switch (*t) {
 	case matchTryMeElse:
 	    ++t;
@@ -4532,11 +4528,11 @@ static void db_match_dis(Binary *bp)
 	    ++t;
 	    erts_printf("OrElse\t%bpu\n", n);
 	    break;
-	case matchAndThen:
+	case matchAndAlso:
 	    ++t;
 	    n = *t;
 	    ++t;
-	    erts_printf("AndThen\t%bpu\n", n);
+	    erts_printf("AndAlso\t%bpu\n", n);
 	    break;
 	case matchCall0:
 	    ++t;
@@ -4680,12 +4676,6 @@ static void db_match_dis(Binary *bp)
     erts_printf("heap_size: %bpu\n", prog->heap_size);
     erts_printf("eheap_offset: %bpu\n", prog->eheap_offset);
     erts_printf("stack_offset: %bpu\n", prog->stack_offset);
-    erts_printf("labels: 0x%08x\n", (unsigned long) prog->labels);
-    t = prog->labels;
-    for (n = 0; n < prog->label_size; ++n) {
-	erts_printf("labels[%d] = %d\n", (int) n, (int) *t);
-	++t;
-    }
     erts_printf("text: 0x%08x\n", (unsigned long) prog->text);
     erts_printf("stack_size: %d (words)\n", prog->heap_size-prog->stack_offset);
     

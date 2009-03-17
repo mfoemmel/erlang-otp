@@ -1,15 +1,20 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2001-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
+# retrieved online at http://www.erlang.org/.
 # 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-#     $Id$
+# %CopyrightEnd%
 #
 
 ifndef EBIN
@@ -42,7 +47,7 @@ HIPE_MODULES = hipe_data_pp hipe_pack_constants hipe_sdi
 else
 HIPE_MODULES =
 endif
-MODULES =  hipe_consttab hipe_gensym $(HIPE_MODULES)
+MODULES = hipe_consttab hipe_gensym $(HIPE_MODULES)
 
 HRL_FILES= hipe_sdi.hrl
 ERL_FILES= $(MODULES:%=%.erl)
@@ -60,7 +65,7 @@ DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += +warn_obsolete_guard +warn_untyped_record
+ERL_COMPILE_FLAGS += +warn_obsolete_guard +warn_untyped_record +warn_missing_spec
 
 # ----------------------------------------------------
 # Targets
@@ -100,4 +105,6 @@ distclean:	clean
 realclean:	clean
 
 $(EBIN)/hipe_consttab.beam: hipe_consttab.hrl
+$(EBIN)/hipe_data_pp.beam: hipe_consttab.hrl
+$(EBIN)/hipe_pack_constants.beam: hipe_consttab.hrl ../../kernel/src/hipe_ext_format.hrl
 $(EBIN)/hipe_sdi.beam: hipe_sdi.hrl

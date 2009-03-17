@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>1999-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Send and process a (sequence of) Megaco/H.248 transactions
@@ -27,7 +28,7 @@
 -export([
          process_received_message/4, process_received_message/5,
          receive_message/4, receive_message/5,
-         connect/4,
+         connect/4, connect/5, 
          disconnect/2,
          encode_actions/3, 
          call/3,
@@ -320,21 +321,24 @@ mk_ch(LM, RM) ->
 %%----------------------------------------------------------------------
 
 %% Returns {ok, ConnHandle} | {error, Reason}
-autoconnect(RH, RemoteMid, SendHandle, ControlPid)
+autoconnect(RH, RemoteMid, SendHandle, ControlPid, Extra)
   when is_record(RH, megaco_receive_handle) ->
     ?rt2("autoconnect", [RH, RemoteMid, SendHandle, ControlPid]),
     case megaco_config:autoconnect(RH, RemoteMid, SendHandle, ControlPid) of
         {ok, ConnData} ->
-            do_connect(ConnData);
+            do_connect(ConnData, Extra);
         {error, Reason} ->
             {error, Reason}
     end;
-autoconnect(BadHandle, _CH, _SendHandle, _ControlPid) ->
+autoconnect(BadHandle, _CH, _SendHandle, _ControlPid, _Extra) ->
     {error, {bad_receive_handle, BadHandle}}.
 
-connect(RH, RemoteMid, SendHandle, ControlPid)
+connect(RH, RemoteMid, SendHandle, ControlPid) ->
+    Extra = ?default_user_callback_extra, 
+    connect(RH, RemoteMid, SendHandle, ControlPid, Extra).
+connect(RH, RemoteMid, SendHandle, ControlPid, Extra)
   when is_record(RH, megaco_receive_handle) ->
-    ?rt2("connect", [RH, RemoteMid, SendHandle, ControlPid]),
+    ?rt2("connect", [RH, RemoteMid, SendHandle, ControlPid, Extra]),
 
     %% The purpose of this is to have a temoporary process, to 
     %% which one can set up a monitor or link and get a 
@@ -350,7 +354,7 @@ connect(RH, RemoteMid, SendHandle, ControlPid)
 		    case megaco_config:connect(RH, RemoteMid, 
 					       SendHandle, ControlPid) of
 			{ok, ConnData} ->
-			    do_connect(ConnData);
+			    do_connect(ConnData, Extra);
 			{error, Reason} ->
 			    {error, Reason}
 		    end,
@@ -371,16 +375,23 @@ connect(RH, RemoteMid, SendHandle, ControlPid)
 	    process_flag(trap_exit, Flag),
 	    {error, OtherReason}
     end;
-connect(BadHandle, _CH, _SendHandle, _ControlPid) ->
+connect(BadHandle, _CH, _SendHandle, _ControlPid, _Extra) ->
     {error, {bad_receive_handle, BadHandle}}.
 
-do_connect(CD) ->
+do_connect(CD, Extra) ->
     CH       = CD#conn_data.conn_handle,
     Version  = CD#conn_data.protocol_version,
     UserMod  = CD#conn_data.user_mod,
     UserArgs = CD#conn_data.user_args,
-    ?report_trace(CD, "callback: connect", []),
-    Res = (catch apply(UserMod, handle_connect, [CH, Version | UserArgs])),
+    Args      = 
+	case Extra of
+	    ?default_user_callback_extra ->
+		[CH, Version | UserArgs];
+	    _ ->
+		[CH, Version, Extra | UserArgs]
+	end,
+    ?report_trace(CD, "callback: connect", [Args]),
+    Res = (catch apply(UserMod, handle_connect, Args)),
     ?report_debug(CD, "return: connect", [{return, Res}]),
     case Res of
         ok ->
@@ -724,7 +735,7 @@ prepare_message(RH, SH, Bin, Pid, Extra)
                 [] ->
                     %% Setup a temporary connection
 		    ?rt3("setup a temporary connection"),
-                    case autoconnect(RH, RemoteMid, SH, Pid) of
+                    case autoconnect(RH, RemoteMid, SH, Pid, Extra) of
                         {ok, _} ->
 			    do_prepare_message(RH, CH, SH, MegaMsg, Pid, Bin);
 			{error, {already_connected, _ConnHandle}} ->

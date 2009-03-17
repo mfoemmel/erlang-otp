@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>2005-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 %%----------------------------------------------------------------------
 %% Purpose: Utility functions for the (snmp manager) user test(s).
 %%----------------------------------------------------------------------
@@ -43,8 +43,10 @@
 	 info/0, 
 	 system_info/0, 
 	 simulate_crash/1,
-	 register_agent/2, register_agent/3, unregister_agent/2, 
-	 agent_info/3, update_agent_info/4, 
+	 register_agent/2, register_agent/3, 
+	 unregister_agent/1, unregister_agent/2, 
+	 agent_info/2, agent_info/3, 
+	 update_agent_info/3, update_agent_info/4, 
 	 which_all_agents/0, which_own_agents/0, 
 	 load_mib/1, unload_mib/1, 
 	 sync_get/1,       sync_get/2,       sync_get/3,
@@ -68,12 +70,18 @@
 	 main/4
         ]).
 
--export([handle_error/3,
+-export([
+	 handle_error/3,
          handle_agent/4,
-         handle_pdu/5,
-         handle_trap/4,
-         handle_inform/4,
-         handle_report/4]).
+         handle_pdu/4,
+         handle_trap/3,
+         handle_inform/3,
+         handle_report/3, 
+         handle_pdu/5,    % For backwards compatibillity 
+         handle_trap/4,   % For backwards compatibillity 
+         handle_inform/4, % For backwards compatibillity 
+         handle_report/4  % For backwards compatibillity 
+	]).
 
 
 -define(SERVER, ?MODULE).
@@ -115,28 +123,27 @@ system_info() ->
 simulate_crash(Reason) ->
     call({simulate_crash, Reason}).
 
+register_agent(TargetName, Config) 
+  when is_list(TargetName) andalso is_list(Config) ->
+    call({register_agent, TargetName, Config});
 register_agent(Addr, Port) ->
-%%     io:format(user,
-%% 	      "register_agent -> entry with"
-%% 	      "~n   Addr: ~p"
-%% 	      "~n   Port: ~p"
-%% 	      "~n", [Addr, Port]),
     register_agent(Addr, Port, []).
 
 register_agent(Addr, Port, Conf) ->
-%%     io:format("register_agent -> entry with"
-%% 	      "~n   Addr: ~p"
-%% 	      "~n   Port: ~p"
-%% 	      "~n   Conf: ~p"
-%% 	      "~n", [Addr, Port, Conf]),
     call({register_agent, Addr, Port, Conf}).
 
+unregister_agent(TargetName) ->
+    call({unregister_agent, TargetName}).
 unregister_agent(Addr, Port) ->
     call({unregister_agent, Addr, Port}).
 
+agent_info(TargetName, Item) ->
+    call({agent_info, TargetName, Item}).
 agent_info(Addr, Port, Item) ->
     call({agent_info, Addr, Port, Item}).
 
+update_agent_info(TargetName, Item, Val) ->
+    call({update_agent_info, TargetName, Item, Val}).
 update_agent_info(Addr, Port, Item, Val) ->
     call({update_agent_info, Addr, Port, Item, Val}).
 
@@ -157,8 +164,8 @@ unload_mib(Mib) ->
 sync_get(Oids) ->
     call({sync_get, Oids}).
 
-sync_get(Addr, Oids) ->
-    call({sync_get, Addr, Oids}).
+sync_get(Addr_or_TargetName, Oids) ->
+    call({sync_get, Addr_or_TargetName, Oids}).
 
 sync_get(Addr, Port, Oids) ->
     call({sync_get, Addr, Port, Oids}).
@@ -168,8 +175,8 @@ sync_get(Addr, Port, Oids) ->
 async_get(Oids) ->
     call({async_get, Oids}).
 
-async_get(Addr, Oids) ->
-    call({async_get, Addr, Oids}).
+async_get(Addr_or_TargetName, Oids) ->
+    call({async_get, Addr_or_TargetName, Oids}).
 
 async_get(Addr, Port, Oids) ->
     call({async_get, Addr, Port, Oids}).
@@ -179,8 +186,8 @@ async_get(Addr, Port, Oids) ->
 sync_get_next(Oids) ->
     call({sync_get_next, Oids}).
 
-sync_get_next(Addr, Oids) ->
-    call({sync_get_next, Addr, Oids}).
+sync_get_next(Addr_or_TargetName, Oids) ->
+    call({sync_get_next, Addr_or_TargetName, Oids}).
 
 sync_get_next(Addr, Port, Oids) ->
     call({sync_get_next, Addr, Port, Oids}).
@@ -190,8 +197,8 @@ sync_get_next(Addr, Port, Oids) ->
 async_get_next(Oids) ->
     call({async_get_next, Oids}).
 
-async_get_next(Addr, Oids) ->
-    call({async_get_next, Addr, Oids}).
+async_get_next(Addr_or_TargetName, Oids) ->
+    call({async_get_next, Addr_or_TargetName, Oids}).
 
 async_get_next(Addr, Port, Oids) ->
     call({async_get_next, Addr, Port, Oids}).
@@ -201,8 +208,8 @@ async_get_next(Addr, Port, Oids) ->
 sync_set(VAV) ->
     call({sync_set, VAV}).
 
-sync_set(Addr, VAV) ->
-    call({sync_set, Addr, VAV}).
+sync_set(Addr_or_TargetName, VAV) ->
+    call({sync_set, Addr_or_TargetName, VAV}).
 
 sync_set(Addr, Port, VAV) ->
     call({sync_set, Addr, Port, VAV}).
@@ -212,8 +219,8 @@ sync_set(Addr, Port, VAV) ->
 async_set(VAV) ->
     call({async_set, VAV}).
 
-async_set(Addr, VAV) ->
-    call({async_set, Addr, VAV}).
+async_set(Addr_or_TargetName, VAV) ->
+    call({async_set, Addr_or_TargetName, VAV}).
 
 async_set(Addr, Port, VAV) ->
     call({async_set, Addr, Port, VAV}).
@@ -223,8 +230,8 @@ async_set(Addr, Port, VAV) ->
 sync_get_bulk(NonRep, MaxRep, Oids) ->
     call({sync_get_bulk, NonRep, MaxRep, Oids}).
 
-sync_get_bulk(Addr, NonRep, MaxRep, Oids) ->
-    call({sync_get_bulk, Addr, NonRep, MaxRep, Oids}).
+sync_get_bulk(Addr_or_TargetName, NonRep, MaxRep, Oids) ->
+    call({sync_get_bulk, Addr_or_TargetName, NonRep, MaxRep, Oids}).
 
 sync_get_bulk(Addr, Port, NonRep, MaxRep, Oids) ->
     call({sync_get_bulk, Addr, Port, NonRep, MaxRep, Oids}).
@@ -234,8 +241,8 @@ sync_get_bulk(Addr, Port, NonRep, MaxRep, Oids) ->
 async_get_bulk(NonRep, MaxRep, Oids) ->
     call({async_get_bulk, NonRep, MaxRep, Oids}).
 
-async_get_bulk(Addr, NonRep, MaxRep, Oids) ->
-    call({async_get_bulk, Addr, NonRep, MaxRep, Oids}).
+async_get_bulk(Addr_or_TargetName, NonRep, MaxRep, Oids) ->
+    call({async_get_bulk, Addr_or_TargetName, NonRep, MaxRep, Oids}).
 
 async_get_bulk(Addr, Port, NonRep, MaxRep, Oids) ->
     call({async_get_bulk, Addr, Port, NonRep, MaxRep, Oids}).
@@ -301,9 +308,21 @@ loop(#state{parent = Parent, id = Id} = S) ->
 	    reply(From, Res, Ref),
 	    loop(S);
 
+	{{register_agent, TargetName, Conf}, From, Ref} ->
+	    d("loop -> received register_agent request"),
+	    Res = snmpm:register_agent(Id, TargetName, Conf),
+	    reply(From, Res, Ref),
+	    loop(S);
+
 	{{register_agent, Addr, Port, Conf}, From, Ref} ->
 	    d("loop -> received register_agent request"),
 	    Res = snmpm:register_agent(Id, Addr, Port, Conf),
+	    reply(From, Res, Ref),
+	    loop(S);
+
+	{{unregister_agent, TargetName}, From, Ref} ->
+	    d("loop -> received unregister_agent request"),
+	    Res = snmpm:unregister_agent(Id, TargetName),
 	    reply(From, Res, Ref),
 	    loop(S);
 
@@ -313,14 +332,40 @@ loop(#state{parent = Parent, id = Id} = S) ->
 	    reply(From, Res, Ref),
 	    loop(S);
 
+	{{agent_info, TargetName, Item}, From, Ref} ->
+	   d("loop -> received agent_info request with"
+	     "~n   TargetName: ~p"
+	     "~n   Item:       ~p", [TargetName, Item]), 
+	    Res = snmpm:agent_info(TargetName, Item),
+	   d("loop -> agent_info for ~p"
+	     "~n   Res: ~p", [Item, Res]), 
+	    reply(From, Res, Ref),
+	    loop(S);
+
 	{{agent_info, Addr, Port, Item}, From, Ref} ->
-	   d("loop -> received agent_info request"), 
+	   d("loop -> received agent_info request with"
+	     "~n   Addr: ~p"
+	     "~n   Port: ~p"
+	     "~n   Item: ~p", [Addr, Port, Item]), 
 	    Res = snmpm:agent_info(Addr, Port, Item),
 	    reply(From, Res, Ref),
 	    loop(S);
 
+	{{update_agent_info, TargetName, Item, Val}, From, Ref} ->
+	   d("loop -> received update_agent_info request with"
+	     "~n   TargetName: ~p"
+	     "~n   Item:       ~p"
+	     "~n   Val:        ~p", [TargetName, Item, Val]), 
+	    Res = snmpm:update_agent_info(Id, TargetName, Item, Val),
+	    reply(From, Res, Ref),
+	    loop(S);
+
 	{{update_agent_info, Addr, Port, Item, Val}, From, Ref} ->
-	   d("loop -> received update_agent_info request"), 
+	   d("loop -> received update_agent_info request with"
+	     "~n   Addr: ~p"
+	     "~n   Port: ~p"
+	     "~n   Item: ~p"
+	     "~n   Val: ~p", [Addr, Port, Item, Val]), 
 	    Res = snmpm:update_agent_info(Id, Addr, Port, Item, Val),
 	    reply(From, Res, Ref),
 	    loop(S);
@@ -356,20 +401,34 @@ loop(#state{parent = Parent, id = Id} = S) ->
 
 	%% No agent specified, so send it to all of them
 	{{sync_get, Oids}, From, Ref} ->
-	    d("loop -> received sync_get request"),
-	    Res = [snmpm:g(Id, Addr, Port, Oids) ||
-		      {Addr, Port} <- snmpm:which_agents(Id)],
+	    d("loop -> received sync_get request "
+	      "(for every agent of this user)"),
+	    Res = [snmpm:sync_get(Id, TargetName, Oids) ||
+		      TargetName <- snmpm:which_agents(Id)],
+	    reply(From, Res, Ref),
+	    loop(S);
+
+	{{sync_get, TargetName, Oids}, From, Ref} when is_list(TargetName) ->
+	    d("loop -> received sync_get request with"
+	      "~n   TargetName: ~p"
+	      "~n   Oids:       ~p", [TargetName, Oids]),
+	    Res = snmpm:sync_get(Id, TargetName, Oids), 
 	    reply(From, Res, Ref),
 	    loop(S);
 
 	{{sync_get, Addr, Oids}, From, Ref} ->
-	    d("loop -> received sync_get request"),
+	    d("loop -> received sync_get request with"
+	      "~n   Addr: ~p"
+	      "~n   Oids: ~p", [Addr, Oids]),
 	    Res = snmpm:g(Id, Addr, Oids), 
 	    reply(From, Res, Ref),
 	    loop(S);
 
 	{{sync_get, Addr, Port, Oids}, From, Ref} ->
-	    d("loop -> received sync_get request"),
+	    d("loop -> received sync_get request with"
+	      "~n   Addr: ~p"
+	      "~n   Port: ~p"
+	      "~n   Oids: ~p", [Addr, Port, Oids]),
 	    Res = snmpm:g(Id, Addr, Port, Oids), 
 	    reply(From, Res, Ref),
 	    loop(S);
@@ -382,8 +441,16 @@ loop(#state{parent = Parent, id = Id} = S) ->
 	%% No agent specified, so send it to all of them
 	{{async_get, Oids}, From, Ref} ->
 	    d("loop -> received async_get request"),
-	    Res = [snmpm:ag(Id, Addr, Port, Oids) ||
-		      {Addr, Port} <- snmpm:which_agents(Id)],
+	    Res = [snmpm:async_get(Id, TargetName, Oids) ||
+		      TargetName <- snmpm:which_agents(Id)],
+	    reply(From, Res, Ref),
+	    loop(S);
+
+	{{async_get, TargetName, Oids}, From, Ref} when is_list(TargetName) ->
+	    d("loop -> received async_get request with"
+	      "~n   TargetName: ~p"
+	      "~n   Oids:       ~p", [TargetName, Oids]),
+	    Res = snmpm:async_get(Id, TargetName, Oids), 
 	    reply(From, Res, Ref),
 	    loop(S);
 
@@ -407,8 +474,16 @@ loop(#state{parent = Parent, id = Id} = S) ->
 	%% No agent specified, so send it to all of them
 	{{sync_get_next, Oids}, From, Ref} ->
 	    d("loop -> received sync_get_next request"),
-	    Res = [snmpm:gn(Id, Addr, Port, Oids) ||
-		      {Addr, Port} <- snmpm:which_agents(Id)],
+	    Res = [snmpm:sync_get_next(Id, TargetName, Oids) ||
+		      TargetName <- snmpm:which_agents(Id)],
+	    reply(From, Res, Ref),
+	    loop(S);
+
+	{{sync_get_next, TargetName, Oids}, From, Ref} when is_list(TargetName) ->
+	    d("loop -> received sync_get_next request with"
+	      "~n   TargetName: ~p"
+	      "~n   Oids:       ~p", [TargetName, Oids]),
+	    Res = snmpm:sync_get_next(Id, TargetName, Oids), 
 	    reply(From, Res, Ref),
 	    loop(S);
 
@@ -432,8 +507,16 @@ loop(#state{parent = Parent, id = Id} = S) ->
 	%% No agent specified, so send it to all of them
 	{{async_get_next, Oids}, From, Ref} ->
 	    d("loop -> received async_get_next request"),
-	    Res = [snmpm:agn(Id, Addr, Port, Oids) ||
-		      {Addr, Port} <- snmpm:which_agents(Id)],
+	    Res = [snmpm:async_get_next(Id, TargetName, Oids) ||
+		      TargetName <- snmpm:which_agents(Id)],
+	    reply(From, Res, Ref),
+	    loop(S);
+
+	{{async_get_next, TargetName, Oids}, From, Ref} when is_list(TargetName) ->
+	    d("loop -> received async_get_next request with"
+	      "~n   TargetName: ~p"
+	      "~n   Oids:       ~p", [TargetName, Oids]),
+	    Res = snmpm:async_get_next(Id, TargetName, Oids), 
 	    reply(From, Res, Ref),
 	    loop(S);
 
@@ -456,8 +539,14 @@ loop(#state{parent = Parent, id = Id} = S) ->
 
 	{{sync_set, VAV}, From, Ref} ->
 	    d("loop -> received sync_set request"),
-	    Res = [snmpm:s(Id, Addr, Port, VAV) ||
-		      {Addr, Port} <- snmpm:which_agents(Id)],
+	    Res = [snmpm:sync_set(Id, TargetName, VAV) ||
+		      TargetName <- snmpm:which_agents(Id)],
+	    reply(From, Res, Ref),
+	    loop(S);
+
+	{{sync_set, TargetName, VAV}, From, Ref} when is_list(TargetName) ->
+	    d("loop -> received sync_set request"),
+	    Res = snmpm:sync_set(Id, TargetName, VAV), 
 	    reply(From, Res, Ref),
 	    loop(S);
 
@@ -480,8 +569,14 @@ loop(#state{parent = Parent, id = Id} = S) ->
 
 	{{async_set, VAV}, From, Ref} ->
 	    d("loop -> received async_set request"),
-	    Res = [snmpm:as(Id, Addr, Port, VAV) ||
-		      {Addr, Port} <- snmpm:which_agents(Id)],
+	    Res = [snmpm:async_set(Id, TargetName, VAV) ||
+		      TargetName <- snmpm:which_agents(Id)],
+	    reply(From, Res, Ref),
+	    loop(S);
+
+	{{async_set, TargetName, VAV}, From, Ref} when is_list(TargetName) ->
+	    d("loop -> received async_set request"),
+	    Res = snmpm:async_set(Id, TargetName, VAV), 
 	    reply(From, Res, Ref),
 	    loop(S);
 
@@ -508,8 +603,18 @@ loop(#state{parent = Parent, id = Id} = S) ->
 	      "~n   NonRep: ~w"
 	      "~n   MaxRep: ~w"
 	      "~n   Oids:   ~p", [NonRep, MaxRep, Oids]),
-	    Res = [snmpm:gb(Id, Addr, Port, NonRep, MaxRep, Oids) ||
-		      {Addr, Port} <- snmpm:which_agents(Id)],
+	    Res = [snmpm:sync_get_bulk(Id, TargetName, NonRep, MaxRep, Oids) ||
+		      TargetName <- snmpm:which_agents(Id)],
+	    reply(From, Res, Ref),
+	    loop(S);
+
+	{{sync_get_bulk, TargetName, NonRep, MaxRep, Oids}, From, Ref} when is_list(TargetName) ->
+	    d("loop -> received sync_get_bulk request with"
+	      "~n   TargetName: ~p"
+	      "~n   NonRep:     ~w"
+	      "~n   MaxRep:     ~w"
+	      "~n   Oids:       ~p", [TargetName, NonRep, MaxRep, Oids]),
+	    Res = snmpm:sync_get_bulk(Id, TargetName, NonRep, MaxRep, Oids), 
 	    reply(From, Res, Ref),
 	    loop(S);
 
@@ -545,8 +650,18 @@ loop(#state{parent = Parent, id = Id} = S) ->
 	      "~n   NonRep: ~w"
 	      "~n   MaxRep: ~w"
 	      "~n   Oids:   ~p", [NonRep, MaxRep, Oids]),
-	    Res = [snmpm:agb(Id, Addr, Port, NonRep, MaxRep, Oids) ||
-		      {Addr, Port} <- snmpm:which_agents(Id)],
+	    Res = [snmpm:async_get_bulk(Id, TargetName, NonRep, MaxRep, Oids) ||
+		      TargetName <- snmpm:which_agents(Id)],
+	    reply(From, Res, Ref),
+	    loop(S);
+
+	{{async_get_bulk, TargetName, NonRep, MaxRep, Oids}, From, Ref} when is_list(TargetName) ->
+	    d("loop -> received async_get_bulk request with"
+	      "~n   TargetName: ~p"
+	      "~n   NonRep:     ~w"
+	      "~n   MaxRep:     ~w"
+	      "~n   Oids:       ~p", [TargetName, NonRep, MaxRep, Oids]),
+	    Res = snmpm:async_get_bulk(Id, TargetName, NonRep, MaxRep, Oids), 
 	    reply(From, Res, Ref),
 	    loop(S);
 
@@ -612,11 +727,26 @@ loop(#state{parent = Parent, id = Id} = S) ->
 	    Parent ! {async_event, {Addr, Port}, {agent, SnmpInfo}},
 	    loop(S);
 
+	{handle_pdu, _Pid, _TargetName, ReqId, SnmpResponse} ->
+	    d("loop -> received pdu callback from manager for ~w", [ReqId]),
+	    Parent ! {async_event, ReqId, {pdu, SnmpResponse}},
+	    loop(S);
+
+	%% For backwards compatibillity 
 	{handle_pdu, _Pid, _Addr, _Port, ReqId, SnmpResponse} ->
 	    d("loop -> received pdu callback from manager for ~w", [ReqId]),
 	    Parent ! {async_event, ReqId, {pdu, SnmpResponse}},
 	    loop(S);
 
+	{handle_trap, _Pid, TargetName, SnmpTrap} ->
+	    d("loop -> received trap callback from manager for "
+	      "~n   ~p", 
+	      "~n   ~p", 
+	      [TargetName, SnmpTrap]),
+	    Parent ! {async_event, TargetName, {trap, SnmpTrap}}, 
+	    loop(S);
+
+	%% For backwards compatibillity 
 	{handle_trap, _Pid, Addr, Port, SnmpTrap} ->
 	    d("loop -> received trap callback from manager for "
 	      "~n   ~p:~w", 
@@ -625,6 +755,15 @@ loop(#state{parent = Parent, id = Id} = S) ->
 	    Parent ! {async_event, {Addr, Port}, {trap, SnmpTrap}}, 
 	    loop(S);
 
+	{handle_inform, Pid, TargetName, SnmpInform} ->
+	    d("loop -> received inform callback from manager for "
+	      "~n   ~p", 
+	      "~n   ~p", 
+	      [TargetName, SnmpInform]),
+	    Parent ! {async_event, TargetName, {inform, Pid, SnmpInform}}, 
+	    loop(S);
+
+	%% For backwards compatibillity 
 	{handle_inform, Pid, Addr, Port, SnmpInform} ->
 	    d("loop -> received inform callback from manager for "
 	      "~n   ~p:~w", 
@@ -633,6 +772,15 @@ loop(#state{parent = Parent, id = Id} = S) ->
 	    Parent ! {async_event, {Addr, Port}, {inform, Pid, SnmpInform}}, 
 	    loop(S);
 
+	{handle_report, _Pid, TargetName, SnmpReport} ->
+	    d("loop -> received report callback from manager for "
+	      "~n   ~p", 
+	      "~n   ~p", 
+	      [TargetName, SnmpReport]),
+	    Parent ! {async_event, TargetName, {report, SnmpReport}}, 
+	    loop(S);
+
+	%% For backwards compatibillity 
 	{handle_report, _Pid, Addr, Port, SnmpReport} ->
 	    d("loop -> received report callback from manager for "
 	      "~n   ~p:~w", 
@@ -720,16 +868,36 @@ handle_agent(Addr, Port, SnmpInfo, UserPid) ->
     ignore.
  
  
+handle_pdu(TargetName, ReqId, SnmpResponse, UserPid) ->
+    UserPid ! {handle_pdu, self(), TargetName, ReqId, SnmpResponse},
+    ignore.
+ 
+%% For backwards compatibillity 
 handle_pdu(Addr, Port, ReqId, SnmpResponse, UserPid) ->
     UserPid ! {handle_pdu, self(), Addr, Port, ReqId, SnmpResponse},
     ignore.
  
  
+handle_trap(TargetName, SnmpTrap, UserPid) ->
+    UserPid ! {handle_trap, self(), TargetName, SnmpTrap},
+    ok.
+ 
+%% For backwards compatibillity 
 handle_trap(Addr, Port, SnmpTrap, UserPid) ->
     UserPid ! {handle_trap, self(), Addr, Port, SnmpTrap},
     ok.
  
  
+handle_inform(TargetName, SnmpInform, UserPid) ->
+    UserPid ! {handle_inform, self(), TargetName, SnmpInform},
+    receive
+	{handle_inform_no_response, TargetName} ->
+	    no_reply;
+	{handle_inform_response, TargetName} ->
+	    ok
+    end.
+
+%% For backwards compatibillity 
 handle_inform(Addr, Port, SnmpInform, UserPid) ->
     UserPid ! {handle_inform, self(), Addr, Port, SnmpInform},
     receive
@@ -740,6 +908,11 @@ handle_inform(Addr, Port, SnmpInform, UserPid) ->
     end.
 
 
+handle_report(TargetName, SnmpReport, UserPid) ->
+    UserPid ! {handle_report, self(), TargetName, SnmpReport},
+    ok.
+
+%% For backwards compatibillity 
 handle_report(Addr, Port, SnmpReport, UserPid) ->
     UserPid ! {handle_report, self(), Addr, Port, SnmpReport},
     ok.

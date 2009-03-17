@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2004-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 
 -module(ssh).
@@ -23,8 +24,9 @@
 -include("ssh.hrl").
 -include("ssh_connect.hrl").
 
--export([start/0, start/1, stop/0, attach/2, attach/3,
-	 connect/3, close/1, daemon/1, daemon/2, daemon/3,
+-export([start/0, start/1, stop/0, connect/3, close/1, connection_info/2,
+	 channel_info/3,
+	 daemon/1, daemon/2, daemon/3,
 	 stop_listener/1, stop_listener/2, stop_daemon/1, stop_daemon/2,
 	 shell/1, shell/2, shell/3]).
 
@@ -51,7 +53,7 @@ stop() ->
     application:stop(ssh).
 
 %%--------------------------------------------------------------------
-%% Function: connect(Host, Port, Options) -> ConnectionRef
+%% Function: connect(Host, Port, Options) -> ConnectionRef | {error, Reason}
 %% 
 %%	Host - string()
 %%	Port - integer()
@@ -61,10 +63,9 @@ stop() ->
 %%--------------------------------------------------------------------
 connect(Host, Port, Options) ->
     {SocketOpts, Opts} = handle_options(Options),
-    Timeout = proplists:get_value(timeout, Opts, ?DEFAULT_TIMEOUT),
     DisableIpv6 =  proplists:get_value(ip_v6_disabled, Opts, false),
-    {Address, Inet} = ip_address_and_inetopt(Host, DisableIpv6),
-    try sshc_sup:start_child([[{address, Address}, {port, Port}, 
+    Inet = inetopt(DisableIpv6),
+    try sshc_sup:start_child([[{address, Host}, {port, Port}, 
 			      {role, client},
 			      {channel_pid, self()},
 			      {socket_opts, [Inet | SocketOpts]}, 
@@ -84,10 +85,6 @@ connect(Host, Port, Options) ->
 		    {error, Reason};
 		{_, not_connected, Other} ->
 		    {error, Other}
-	    after 
-		Timeout -> 
-		    exit(ConnectionSup, shutdown),
-		    {error, timeout}
 	    end
     catch 
 	exit:{noproc, _} ->
@@ -103,8 +100,24 @@ close(ConnectionRef) ->
     ssh_connection_manager:stop(ConnectionRef).
 
 %%--------------------------------------------------------------------
+%% Function: connection_info(ConnectionRef) -> [{Option, Value}]
+%%
+%% Description: Retrieves information about a connection. 
+%%--------------------------------------------------------------------	
+connection_info(ConnectionRef, Options) ->
+    ssh_connection_manager:connection_info(ConnectionRef, Options).
+
+%%--------------------------------------------------------------------
+%% Function: channel_info(ConnectionRef) -> [{Option, Value}]
+%%
+%% Description: Retrieves information about a connection. 
+%%--------------------------------------------------------------------	
+channel_info(ConnectionRef, ChannelId, Options) ->
+    ssh_connection_manager:channel_info(ConnectionRef, ChannelId, Options).
+
+%%--------------------------------------------------------------------
 %% Function: daemon(Port) ->
-%%           daemon(Port, Opts) ->
+%%           daemon(Port, Options) ->
 %%           daemon(Address, Port, Options) -> SshSystemRef
 %%
 %% Description: Starts a server listening for SSH connections 
@@ -113,25 +126,29 @@ close(ConnectionRef) ->
 daemon(Port) ->
     daemon(Port, []).
 
-daemon(Port, Opts) ->
-    daemon(any, Port, Opts).
+daemon(Port, Options) ->
+    daemon(any, Port, Options).
 
-daemon(HostAddr, Port, Opts) ->
-    Shell = proplists:get_value(shell, Opts, {shell, start, []}),
-    DisableIpv6 =  proplists:get_value(ip_v6_disabled, Opts, false),
-    {Address, Inet} = case HostAddr of
-			  any ->
-			      {ok, Host} = inet:gethostname(), 
-			      ip_address_and_inetopt(Host, DisableIpv6);
-			  Str when is_list(Str) ->
-			      ip_address_and_inetopt(Str, DisableIpv6);
-			  {_,_,_,_} ->
-			      {HostAddr, inet};
-			  {_,_,_,_,_,_,_,_} ->
-			      {HostAddr, inet6}
-			  end,
-    start_daemon(Address, Port, [{role, server}, 
-				{shell, Shell} | Opts], Inet).
+daemon(HostAddr, Port, Options0) ->
+    Options1 = case proplists:get_value(shell, Options0) of
+		   undefined ->
+		       [{shell, {shell, start, []}}  | Options0];
+		   _ ->
+		       Options0
+	       end,
+    DisableIpv6 =  proplists:get_value(ip_v6_disabled, Options0, false),
+    {Host, Inet, Options} = case HostAddr of
+				any ->
+				    {ok, Host0} = inet:gethostname(), 
+				    {Host0, inetopt(DisableIpv6), Options1};
+				{_,_,_,_} ->
+				    {HostAddr, inet, 
+				     [{ip, HostAddr} | Options1]};
+				{_,_,_,_,_,_,_,_} ->
+				    {HostAddr, inet6, 
+				     [{ip, HostAddr} | Options1]}
+			    end,
+    start_daemon(Host, Port, [{role, server} | Options], Inet).
 
 %%--------------------------------------------------------------------
 %% Function: stop_listener(SysRef) -> ok
@@ -160,7 +177,8 @@ stop_daemon(Address, Port) ->
     ssh_system_sup:stop_system(Address, Port).
 
 %%--------------------------------------------------------------------
-%% Function: shell(Host [,Port,Options]) -> 
+%% Function: shell(Host [,Port,Options]) -> {ok, ConnectionRef} | 
+%%                                                     {error, Reason}
 %%
 %%   Host = string()
 %%   Port = integer()
@@ -176,25 +194,33 @@ shell(Host) ->
 shell(Host, Options) ->
     shell(Host, ?SSH_DEFAULT_PORT, Options).
 shell(Host, Port, Options) ->
-    ssh_ssh:connect(Host, Port, Options).
-
-%% TODO: Should this be a supported API function, used by
-%% sftp and ssh_ssh. Does it acctually work? Should be better tested
-%% before made public!
-attach(ConnectionRef, Timeout) ->
-    ssh_connection_manager:attach(ConnectionRef, Timeout).
-
-attach(ConnectionRef, ChannelPid, Timeout) ->
-    ssh_connection_manager:attach(ConnectionRef, ChannelPid, Timeout).
+    case connect(Host, Port, Options) of
+	{ok, ConnectionRef} ->
+	    case ssh_connection:session_channel(ConnectionRef, infinity) of
+		{ok,ChannelId}  ->
+		    Args = [{channel_cb, ssh_shell}, 
+			    {init_args,[ConnectionRef, ChannelId]},
+			    {cm, ConnectionRef}, {channel_id, ChannelId}],
+		    {ok, State} = ssh_channel:init([Args]),
+		    ssh_channel:enter_loop(State);
+		Error ->
+		    Error
+	    end;
+	Error ->
+	    Error
+    end.
 
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-start_daemon(Address, Port, Options, Inet) ->
-    {SocketOpts, Opts} = handle_options([{ip, Address} | Options]),
-    case ssh_system_sup:system_supervisor(Address, Port) of
+start_daemon(Host, Port, Options, Inet) ->
+    {SocketOpts, Opts} = handle_options(Options),
+    case ssh_system_sup:system_supervisor(Host, Port) of
 	undefined ->
-	    try sshd_sup:start_child([{address, Address}, 
+	    %% TODO: It would proably make more sense to call the
+	    %% address option host but that is a too big change at the
+	    %% monent. The name is a legacy name!
+	    try sshd_sup:start_child([{address, Host}, 
 				      {port, Port}, {role, server},
 				      {socket_opts, [Inet | SocketOpts]}, 
 				      {ssh_opts, Opts}]) of
@@ -207,7 +233,7 @@ start_daemon(Address, Port, Options, Inet) ->
 		    {error, ssh_not_started}
 	    end;
 	Sup  ->
-	    case ssh_system_sup:restart_acceptor(Address, Port) of
+	    case ssh_system_sup:restart_acceptor(Host, Port) of
 		{ok, _} ->
 		    {ok, Sup};
 		_  ->
@@ -254,8 +280,6 @@ handle_options([{compression, _} = Opt | Rest], SockOpts, Opts) ->
     handle_options(Rest, SockOpts, [Opt | Opts]);
 handle_options([{allow_user_interaction, _} = Opt | Rest], SockOpts, Opts) -> 
     handle_options(Rest, SockOpts, [Opt | Opts]);
-handle_options([{passive_subsys, _} = Opt | Rest], SockOpts, Opts) -> 
-    handle_options(Rest, SockOpts, [Opt | Opts]);
 handle_options([{infofun, _} = Opt | Rest], SockOpts, Opts) -> 
     handle_options(Rest, SockOpts, [Opt | Opts]);
 handle_options([{connectfun, _} = Opt | Rest], SockOpts, Opts) -> 
@@ -277,24 +301,10 @@ handle_options([{nodelay, _} = Opt | Rest], SockOpts, Opts) ->
 handle_options([Opt | Rest], SockOpts, Opts) ->
     handle_options(Rest, SockOpts, [Opt | Opts]).
 
+inetopt(true) ->
+    inet6;
 
-ip_address_and_inetopt(Host, true) ->
-    {ok, Ip} = inet:getaddr(Host, inet),
-    {Ip, inet};
+inetopt(false) ->
+    inet.
 
-ip_address_and_inetopt("localhost", false) ->
-    {ok, Host} = inet:gethostname(), 
-    {_, Inet} = ip_address_and_inetopt(Host, false),
-    {ok, Ip} = inet:getaddr("localhost", Inet),
-    {Ip, Inet};
 
-ip_address_and_inetopt(Host, false) ->
-    {{ok, Ip}, Inet} =  case (catch inet:getaddr(Host,inet6)) of
-			    {ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
-				{inet:getaddr(Host, inet), inet};
-			    {ok, IPAddr} ->
-				{{ok, IPAddr}, inet6};
-			    _ ->
-				{inet:getaddr(Host, inet), inet} 
-			end,
-    {Ip, Inet}.

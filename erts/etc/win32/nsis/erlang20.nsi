@@ -202,59 +202,43 @@ Section "Associations" SecErlangAssoc
   	;File /r "${TESTROOT}\usr\lib\icons"
 
 ; .erl
-  	; back up old value of .erl
-  	ReadRegStr $1 HKCR ".erl" ""
-  	StrCmp $1 "" OwnErl
-    	StrCmp $1 "ErlangSource" OwnErl
-    	WriteRegStr HKCR ".erl" "backup_val" $1
-OwnErl:
+  	DeleteRegKey HKCR ".erl"
+  	DeleteRegKey HKCR "ErlangSource"
   	WriteRegStr HKCR ".erl" "" "ErlangSource"
-  	ReadRegStr $0 HKCR "ErlangSource" ""
-  	StrCmp $0 "" 0 skipErlAssoc
 	WriteRegStr HKCR "ErlangSource" "" "Erlang source file"
-	WriteRegStr HKCR "ErlangSource\shell" "" "open"
 	WriteRegStr HKCR "ErlangSource\shell\compile" "" "Compile"
 	WriteRegStr HKCR "ErlangSource\shell\compile\command" "" \
 		'"$INSTDIR\bin\erlc.exe" "%1"'
 	WriteRegStr HKCR "ErlangSource\DefaultIcon" "" \
 		$INSTDIR\usr\lib\icons\erl_icon.ico
-  	WriteRegStr HKCR "ErlangSource\shell\open\command" \
-		"" 'write.exe "%1"'
-skipErlAssoc:
-
 ; .hrl
-  	; back up old value of .hrl
-  	ReadRegStr $1 HKCR ".hrl" ""
-  	StrCmp $1 "" OwnHrl
-    	StrCmp $1 "ErlangHeader" OwnHrl
-    	WriteRegStr HKCR ".hrl" "backup_val" $1
-OwnHrl:
+  	DeleteRegKey HKCR ".hrl"
+  	DeleteRegKey HKCR "ErlangHeader"
   	WriteRegStr HKCR ".hrl" "" "ErlangHeader"
-  	ReadRegStr $0 HKCR "ErlangHeader" ""
-  	StrCmp $0 "" 0 skipHrlAssoc
 	WriteRegStr HKCR "ErlangHeader" "" "Erlang header file"
-	WriteRegStr HKCR "ErlangHeader\shell" "" "open"
 	WriteRegStr HKCR "ErlangHeader\DefaultIcon" "" \
 		$INSTDIR\usr\lib\icons\hrl_icon.ico
-  	WriteRegStr HKCR "ErlangHeader\shell\open\command" \
-		"" 'write.exe "%1"'
-skipHrlAssoc:
 
 ; .beam
-  	; back up old value of .beam
-  	ReadRegStr $1 HKCR ".beam" ""
-  	StrCmp $1 "" OwnBeam
-    	StrCmp $1 "ErlangBeam" OwnBeam
-    	WriteRegStr HKCR ".beam" "backup_val" $1
-OwnBeam:
+  	DeleteRegKey HKCR ".beam"
+  	DeleteRegKey HKCR "ErlangBeam"
   	WriteRegStr HKCR ".beam" "" "ErlangBeam"
-  	ReadRegStr $0 HKCR "ErlangBeam" ""
-  	StrCmp $0 "" 0 skipBeamAssoc
 	WriteRegStr HKCR "ErlangBeam" "" "Erlang beam code"
 	WriteRegStr HKCR "ErlangBeam\DefaultIcon" "" \
 		$INSTDIR\usr\lib\icons\beam_icon.ico
-skipBeamAssoc:
 
+
+	SearchPath $1 "write.exe"
+	StrCmp $1 "" writeNotFound
+	WriteRegStr HKCR "ErlangSource\shell" "" "Open"
+  	WriteRegStr HKCR "ErlangSource\shell\open\command" "" \
+		'"$1" "%1"'
+	WriteRegStr HKCR "ErlangHeader\shell" "" "Open"
+  	WriteRegStr HKCR "ErlangHeader\shell\open\command" "" \
+		'"$1" "%1"'
+
+
+writeNotFound:
 SectionEnd ; SecErlangAssoc
 SubSectionEnd
 
@@ -414,52 +398,27 @@ noshortcuts:
 ; Now remove shell/file associations we'we made...
 ; .erl
   	ReadRegStr $1 HKCR ".erl" ""
-  	StrCmp $1 "ErlangSource" 0 NoOwnSourceExt 
-    	ReadRegStr $1 HKCR ".erl" "backup_val"
-    	StrCmp $1 "" 0 RestoreBackupSource 
-      	DeleteRegKey HKCR ".erl"
-    	Goto NoOwnSourceExt
-RestoreBackupSource:
-      	WriteRegStr HKCR ".erl" "" $1
-      	DeleteRegValue HKCR ".erl" "backup_val"
-NoOwnSourceExt:
-	
+  	StrCmp $1 "ErlangSource" 0 NoOwnSource 
   	ReadRegStr $1 HKCR "ErlangSource\DefaultIcon" ""
 	StrCmp $1 "$INSTDIR\usr\lib\icons\erl_icon.ico" 0 NoOwnSource 
+  	DeleteRegKey HKCR ".erl"
   	DeleteRegKey HKCR "ErlangSource"
 NoOwnSource:
-
-;.hrl
+; .hrl
   	ReadRegStr $1 HKCR ".hrl" ""
-  	StrCmp $1 "ErlangHeader" 0 NoOwnHeaderExt 
-    	ReadRegStr $1 HKCR ".hrl" "backup_val"
-    	StrCmp $1 "" 0 RestoreBackupHeader 
-      	DeleteRegKey HKCR ".hrl"
-    	Goto NoOwnHeaderExt
-RestoreBackupHeader:
-      	WriteRegStr HKCR ".hrl" "" $1
-      	DeleteRegValue HKCR ".hrl" "backup_val"
-NoOwnHeaderExt:
-	
+  	StrCmp $1 "ErlangHeader" 0 NoOwnHeader 
   	ReadRegStr $1 HKCR "ErlangHeader\DefaultIcon" ""
 	StrCmp $1 "$INSTDIR\usr\lib\icons\hrl_icon.ico" 0 NoOwnHeader 
+  	DeleteRegKey HKCR ".hrl"
   	DeleteRegKey HKCR "ErlangHeader"
 NoOwnHeader:
 
-;.beam
+; .beam
   	ReadRegStr $1 HKCR ".beam" ""
-  	StrCmp $1 "ErlangBeam" 0 NoOwnBeamExt 
-    	ReadRegStr $1 HKCR ".beam" "backup_val"
-    	StrCmp $1 "" 0 RestoreBackupBeam 
-      	DeleteRegKey HKCR ".beam"
-    	Goto NoOwnBeamExt
-RestoreBackupBeam:
-      	WriteRegStr HKCR ".beam" "" $1
-      	DeleteRegValue HKCR ".beam" "backup_val"
-NoOwnBeamExt:
-	
+  	StrCmp $1 "ErlangBeam" 0 NoOwnBeam 
   	ReadRegStr $1 HKCR "ErlangBeam\DefaultIcon" ""
 	StrCmp $1 "$INSTDIR\usr\lib\icons\beam_icon.ico" 0 NoOwnBeam 
+  	DeleteRegKey HKCR ".beam"
   	DeleteRegKey HKCR "ErlangBeam"
 NoOwnBeam:
 

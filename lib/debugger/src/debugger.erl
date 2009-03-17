@@ -1,24 +1,25 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(debugger).
 
 %% External exports
--export([start/0, start/1, start/2, stop/0, quick/3]).
+-export([start/0, start/1, start/2, stop/0, quick/3, auto_attach/1]).
 
 %%==Erlang Debugger===================================================
 %%
@@ -74,18 +75,44 @@
 %%
 %%====================================================================
 start() ->
-    dbg_ui_mon:start(global, default).
+    start(global, default, default).
 start(Mode) when Mode==local; Mode==global ->
-    dbg_ui_mon:start(Mode, default);
-start(SFile) when is_list(SFile) ->
-    dbg_ui_mon:start(global, SFile).
+    start(Mode, default, default);
+start(Gui) when Gui==gs; Gui==wx ->
+    start(global, default, Gui);
+start(SFile) when is_list(SFile), is_integer(hd(SFile)) ->
+    start(global, SFile, default).
+
 start(Mode, SFile) ->
-    dbg_ui_mon:start(Mode, SFile).
+    start(Mode, SFile, default).
+
+start(Mode, SFile, gs) ->
+    dbg_ui_mon:start(Mode, SFile);
+start(Mode, SFile, wx) ->
+    dbg_wx_mon:start(Mode, SFile);
+start(Mode, SFile, default) ->
+    Gui = which_gui(),
+    start(Mode, SFile, Gui).
 
 stop() ->
     dbg_ui_mon:stop().
 
 quick(M, F, A) ->
     int:i(M),
-    int:auto_attach([init], {dbg_ui_trace, start, []}),
+    auto_attach([init]),
     apply(M, F, A).
+
+auto_attach(Flags) ->    
+    case which_gui() of
+	gs -> int:auto_attach(Flags, {dbg_ui_trace, start, []});
+	wx -> int:auto_attach(Flags, {dbg_wx_trace, start, []})
+    end.
+
+which_gui() ->
+    try
+	wx:new(),
+	wx:destroy(),
+	wx
+    catch _:_ ->
+	    gs
+    end.

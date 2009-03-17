@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>2004</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2004</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>asn1 Release Notes</title>
@@ -30,6 +28,134 @@
     <rev>nil</rev>
   </header>
   <p>This document describes the changes made to the asn1 application.</p>
+
+<section><title>Asn1 1.6.8</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            A BIT STRING with a size constraint that has a single
+            value and an extension as in <c> BIT STRING (SIZE
+            (16,...))</c> was erronous encoded/decoded. This is now
+            corrected and follows X.691 Section 15.6.</p>
+          <p>
+            Own Id: OTP-7876 Aux Id: seq11220 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+ <section><title>Asn1 1.6.7</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            Now asn1 starts multiple drivers to enable simultanous
+            encode/decode in different processes for the
+            asn1-backends using linked-in driver.</p>
+          <p>
+            Own Id: OTP-7801</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Asn1 1.6.6</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Decode of an open_type when the value was empty tagged
+	    type encoded with indefinite length failed. This is now
+	    corrected.</p>
+          <p>
+	    Own Id: OTP-7759 Aux Id: seq11166 </p>
+        </item>
+        <item>
+          <p>
+	    Encode of BIT STRING with size of exact length, on
+	    compact_bit_string format in UNALIGNED PER failed when
+	    value had the right size, i.e. no padding needed.</p>
+          <p>
+	    Own Id: OTP-7763 Aux Id: seq11182 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Asn1 1.6.5</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            For a BIT STRING with SIZE constraint higher than 255
+            compiled with <c>[per_bin,optimize,
+            compact_bit_string]</c> an improper io-list was created
+            and sent to the c-driver for complete encoding. This
+            error has been resolved.</p>
+          <p>
+            Own Id: OTP-7734 Aux Id: seq11170 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Asn1 1.6.4</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            A a SEQUENCE OF with a type that is a CHOICE with
+            ellipses occured falsely a compile error. The error
+            causing that is now removed.</p>
+          <p>
+            Own Id: OTP-7708 Aux Id: seq11136 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+ 
+<section><title>Asn1 1.6.3</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            constrained number with a valuerange greater than 512 now
+            has the proper interpretation of the values that causes
+            shift to the next number of units (bits), According to
+            limit condition <c>2^m &lt; "range" =&lt; 2^(m + 1)</c> then the
+            number of bits are m + 1.</p>
+          <p>
+            Own Id: OTP-7681 Aux Id: seq11114 </p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            Can now handle default values of simple types that is
+            provided on its own format, i.e. not just as
+            asn1_DEFAULT.</p>
+          <p>
+            Own Id: OTP-7678 Aux Id: seq11114 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
 
 <section><title>Asn1 1.6.2</title>
 

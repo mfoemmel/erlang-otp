@@ -12,10 +12,11 @@
 book.dvi: absform.tex alt_dist.tex book.tex crash_dump.tex \
 		driver.tex driver_entry.tex epmd.tex erl.tex \
 		erl_dist_protocol.tex erl_driver.tex erl_ext_dist.tex \
-		erl_set_memory_block.tex erlc.tex erlsrv.tex \
-		erts_alloc.tex escript.tex inet_cfg.tex match_spec.tex \
+		erl_prim_loader.tex erl_set_memory_block.tex \
+		erlang.tex erlc.tex erlsrv.tex erts_alloc.tex \
+		escript.tex inet_cfg.tex init.tex match_spec.tex \
 		part.tex ref_man.tex run_erl.tex start.tex \
-		start_erl.tex tty.tex werl.tex
+		start_erl.tex tty.tex werl.tex zlib.tex
 
 # ----------------------------------------------------
 # Source inlined when transforming from source to LaTeX

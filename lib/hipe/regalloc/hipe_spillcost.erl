@@ -1,5 +1,22 @@
-%%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 
 -module(hipe_spillcost).
 
@@ -12,22 +29,25 @@
 -export([nr_of_use/2]).
 -endif.
 
--type(hipe_array() :: integer()).
+%%----------------------------------------------------------------------------
 
--record(spill_cost,
-	{uses	 :: hipe_array(),	% number of uses of each temp
-	 bb_uses :: hipe_array()	% number of basic blocks each temp occurs in
-	}).
+-include("hipe_spillcost.hrl").
+
+%%----------------------------------------------------------------------------
+
+-spec new(non_neg_integer()) -> #spill_cost{}.
 
 new(NrTemps) ->
   #spill_cost{uses = hipe_bifs:array(NrTemps, 0),
 	      bb_uses = hipe_bifs:array(NrTemps, 0)}.
 
-%%----------------------------------------------------------------------
+%%----------------------------------------------------------------------------
 %% Function:    inc_costs
 %%
 %% Description: Registers usage of a list of temporaries (for spill_cost)
-%%----------------------------------------------------------------------
+%%----------------------------------------------------------------------------
+
+-spec inc_costs([non_neg_integer()], #spill_cost{}) -> #spill_cost{}.
 
 inc_costs(Temps, SC) ->
   Uses = SC#spill_cost.uses,
@@ -43,12 +63,14 @@ nr_of_use(Temp, SC) ->
 get_uses(Temp, Uses) ->
   hipe_bifs:array_sub(Uses, Temp).
 
-%%----------------------------------------------------------------------
+%%----------------------------------------------------------------------------
 %% Function:    ref_in_bb
 %%
 %% Description: Registers that a set of temporaries are used in one basic
 %%              block; should be done exactly once per basic block
-%%----------------------------------------------------------------------
+%%----------------------------------------------------------------------------
+
+-spec ref_in_bb([non_neg_integer()], #spill_cost{}) -> #spill_cost{}.
 
 ref_in_bb(Temps, SC) ->
   BBUses = SC#spill_cost.bb_uses,
@@ -64,14 +86,16 @@ bb_use(Temp, SC) ->
 get_bb_uses(Temp, BBUses) ->
   hipe_bifs:array_sub(BBUses, Temp).
 
-%%----------------------------------------------------------------------
+%%----------------------------------------------------------------------------
 %% Function:    spill_cost
 %%
 %% Description: Computes a spill cost for a temporary
 %%   
 %% Returns:
 %%   Spill cost (a real number -- higher means worse to spill)
-%%----------------------------------------------------------------------
+%%----------------------------------------------------------------------------
+
+-spec spill_cost(non_neg_integer(), #spill_cost{}) -> float().
 
 spill_cost(Temp, SC) ->
   nr_of_use(Temp, SC) / bb_use(Temp, SC).

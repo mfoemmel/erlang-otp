@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(gen_server).
 
@@ -273,7 +274,8 @@ enter_loop(Mod, Options, State, ServerName, Timeout) ->
 %%% ---------------------------------------------------
 init_it(Starter, self, Name, Mod, Args, Options) ->
     init_it(Starter, self(), Name, Mod, Args, Options);
-init_it(Starter, Parent, Name, Mod, Args, Options) ->
+init_it(Starter, Parent, Name0, Mod, Args, Options) ->
+    Name = name(Name0),
     Debug = debug_options(Name, Options),
     case catch Mod:init(Args) of
 	{ok, State} ->
@@ -283,12 +285,21 @@ init_it(Starter, Parent, Name, Mod, Args, Options) ->
 	    proc_lib:init_ack(Starter, {ok, self()}), 	    
 	    loop(Parent, Name, State, Mod, Timeout, Debug);
 	{stop, Reason} ->
+	    %% For consistency, we must make sure that the
+	    %% registered name (if any) is unregistered before
+	    %% the parent process is notified about the failure.
+	    %% (Otherwise, the parent process could get
+	    %% an 'already_started' error if it immediately
+	    %% tried starting the process again.)
+	    unregister_name(Name0),
 	    proc_lib:init_ack(Starter, {error, Reason}),
 	    exit(Reason);
 	ignore ->
+	    unregister_name(Name0),
 	    proc_lib:init_ack(Starter, ignore),
 	    exit(normal);
 	{'EXIT', Reason} ->
+	    unregister_name(Name0),
 	    proc_lib:init_ack(Starter, {error, Reason}),
 	    exit(Reason);
 	Else ->
@@ -297,6 +308,17 @@ init_it(Starter, Parent, Name, Mod, Args, Options) ->
 	    exit(Error)
     end.
 
+name({local,Name}) -> Name;
+name({global,Name}) -> Name;
+name(Pid) when is_pid(Pid) -> Pid.
+
+unregister_name({local,Name}) ->
+    _ = (catch unregister(Name));
+unregister_name({global,Name}) ->
+    _ = global:unregister_name(Name);
+unregister_name(Pid) when is_pid(Pid) ->
+    Pid.
+    
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
@@ -680,6 +702,8 @@ terminate(Reason, Name, Msg, Mod, State, Debug) ->
 		    exit(normal);
 		shutdown ->
 		    exit(shutdown);
+		{shutdown,_}=Shutdown ->
+		    exit(Shutdown);
 		_ ->
 		    error_info(Reason, Name, Msg, State, Debug),
 		    exit(Reason)

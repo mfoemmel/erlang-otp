@@ -1,29 +1,21 @@
-%%% The contents of this file are subject to the Erlang Public License,
-%%% Version 1.0, (the "License"); you may not use this file except in
-%%% compliance with the License. You may obtain a copy of the License at
-%%% http://www.erlang.org/license/EPL1_0.txt
-%%%
-%%% Software distributed under the License is distributed on an "AS IS"
-%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%%% the License for the specific language governing rights and limitations
-%%% under the License.
-%%%
-%%%
-%%% The Initial Developer of the Original Code is Ericsson Telecom
-%%% AB. Portions created by Ericsson are Copyright (C), 1998, Ericsson
-%%% Telecom AB. All Rights Reserved.
-%%%
-%%% Contributor(s): ______________________________________.
-%%%
-%%%-------------------------------------------------------------------
-%%% File    : xmerl_xsd.erl
-%%% Author  : Bertil Karlsson <bertil.karlsson@ericsson.com>
-%%% Description : 
-%%%
-%%%
-%%%-------------------------------------------------------------------
-
-%% @author Bertil Karlsson
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 
 %% @doc Interface module for XML Schema vlidation. 
 %% It handles the W3.org 
@@ -2489,6 +2481,25 @@ check_element_type([],[CMEl|CMRest],Env,Block,S,Checked) ->
 	    Err = {error_path(Checked,undefined),?MODULE,
 		   {missing_mandatory_element,CMEl}},
 	    {Checked,[],acc_errs(S,Err)}
+    end;
+check_element_type(XML=[],
+		   #schema_complex_type{name=_Name,base_type=BT,
+					complexity=simple,
+					content=_C} = CT,
+		   Env,Block,S,Checked) ->
+
+    %% maybe check attributes here as well.
+    {ResolvedType,_} = resolve({simple_or_complex_Type,BT},S),
+    case ResolvedType of
+	#schema_simple_type{} ->
+	    {NewVal,S2} = check_type(ResolvedType,[],unapplied,S),
+	    {NewVal,[],S2};
+	{simpleType,_} ->
+	    {NewVal,S2} = check_type(ResolvedType,[],unapplied,S),
+	    {NewVal,[],S2};
+	_ ->
+	    {error,{error_path(Checked,undefined),?MODULE,
+		    {empty_content_not_allowed,CT}}}
     end;
 check_element_type([],#schema_complex_type{name=_Name,block=_Bl,content=C},
 		   _Env,_Block,S,Checked) ->

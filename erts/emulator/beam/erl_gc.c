@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2002-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -30,7 +31,6 @@
 #include "error.h"
 #include "big.h"
 #include "erl_gc.h"
-#include "erl_misc_utils.h"
 #if HIPE
 #include "hipe_stack.h"
 #endif
@@ -52,6 +52,10 @@ static Uint reclaimed;			/* no of words reclaimed in GCs */
 # define STACK_SZ_ON_HEAP(p) ((p)->hend - (p)->stop)
 # define OverRunCheck(P) \
     if ((P)->stop < (P)->htop) { \
+        erts_fprintf(stderr, "hend=%p\n", (p)->hend); \
+        erts_fprintf(stderr, "stop=%p\n", (p)->stop); \
+        erts_fprintf(stderr, "htop=%p\n", (p)->htop); \
+        erts_fprintf(stderr, "heap=%p\n", (p)->heap); \
         erl_exit(ERTS_ABORT_EXIT, "%s, line %d: %T: Overrun stack and heap\n", \
 		 __FILE__,__LINE__,(P)->id); \
     }
@@ -341,7 +345,6 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 {
     Uint reclaimed_now = 0;
     int done = 0;
-    Uint saved_status = p->status;
     Uint ms1, s1, us1;
 
     if (IS_TRACED_FL(p, F_TRACE_GC)) {
@@ -349,6 +352,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     }
 
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
+    p->gcstatus = p->status;
     p->status = P_GARBING;
     if (erts_system_monitor_long_gc != 0) {
 	get_now(&ms1, &s1, &us1);
@@ -384,7 +388,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     ErtsGcQuickSanityCheck(p);
 
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
-    p->status = saved_status;
+    p->status = p->gcstatus;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
     if (IS_TRACED_FL(p, F_TRACE_GC)) {
         trace_gc(p, am_gc_end);
@@ -449,7 +453,6 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 void
 erts_garbage_collect_hibernate(Process* p)
 {
-    Uint saved_status = p->status;
     Uint heap_size;
     Eterm* heap;
     Eterm* htop;
@@ -466,6 +469,7 @@ erts_garbage_collect_hibernate(Process* p)
      * Preliminaries.
      */
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
+    p->gcstatus = p->status;
     p->status = P_GARBING;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
     erts_smp_locked_activity_begin(ERTS_ACTIVITY_GC);
@@ -580,7 +584,7 @@ erts_garbage_collect_hibernate(Process* p)
     ErtsGcQuickSanityCheck(p);
 
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
-    p->status = saved_status;
+    p->status = p->gcstatus;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
     erts_smp_locked_activity_end(ERTS_ACTIVITY_GC);
 }
@@ -589,7 +593,6 @@ erts_garbage_collect_hibernate(Process* p)
 void
 erts_garbage_collect_literals(Process* p, Eterm* literals, Uint lit_size)
 {
-    Uint saved_status = p->status;
     Uint byte_lit_size = sizeof(Eterm)*lit_size;
     Uint old_heap_size;
     Eterm* temp_lit;
@@ -605,6 +608,7 @@ erts_garbage_collect_literals(Process* p, Eterm* literals, Uint lit_size)
      * Set GC state.
      */
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
+    p->gcstatus = p->status;
     p->status = P_GARBING;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
     erts_smp_locked_activity_begin(ERTS_ACTIVITY_GC);
@@ -708,7 +712,7 @@ erts_garbage_collect_literals(Process* p, Eterm* literals, Uint lit_size)
      * Restore status.
      */
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
-    p->status = saved_status;
+    p->status = p->gcstatus;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
     erts_smp_locked_activity_end(ERTS_ACTIVITY_GC);
 }
@@ -759,12 +763,14 @@ minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 	/*
 	 * Copy newly received message onto the end of the new heap.
 	 */
+	ErtsGcQuickSanityCheck(p);
 	for (msgp = p->msg.first; msgp; msgp = msgp->next) {
 	    if (msgp->bp) {
 		erts_move_msg_mbuf_to_heap(&p->htop, &p->off_heap, msgp);
+		ErtsGcQuickSanityCheck(p);
 	    }
 	}
-	OverRunCheck(p);
+	ErtsGcQuickSanityCheck(p);
 
         GEN_GCS(p)++;
         size_after = HEAP_TOP(p) - HEAP_START(p);
@@ -1294,12 +1300,14 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 
     HIGH_WATER(p) = HEAP_TOP(p);
 
+    ErtsGcQuickSanityCheck(p);
     /*
      * Copy newly received message onto the end of the new heap.
      */
     for (msgp = p->msg.first; msgp; msgp = msgp->next) {
 	if (msgp->bp) {
 	    erts_move_msg_mbuf_to_heap(&p->htop, &p->off_heap, msgp);
+	    ErtsGcQuickSanityCheck(p);
 	}
     }
 

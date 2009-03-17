@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2003-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Misc functions used both from the megaco_messenger module
@@ -102,16 +103,16 @@ encode_trans_reply(CD, TR) when is_tuple(TR) and
 
 
 encode_segmented_trans_reply(#conn_data{max_pdu_size = Max} = CD, Rep) ->
-    #megaco_transaction_reply{transactionResult = Res} = Rep,
-    case Res of
-	{actionReplies, AR} when length(AR) >= 1 ->
+    #megaco_transaction_reply{transactionResult = Res1} = Rep,
+    case Res1 of
+	{actionReplies, AR} when is_list(AR) andalso (length(AR) >= 1) ->
 	    case encode_action_replies(CD, AR) of
-		{Size, EncodecARs} when Size =< (Max - ?MSG_HDR_SZ) ->
+		{Size, EncodedARs} when Size =< (Max - ?MSG_HDR_SZ) ->
 		    ?report_debug(CD, "action replies encoded size ok", 
 				  [Size, Max]),
 		    %% No need to segment message: within size limit
-		    Res   = {actionReplies, EncodecARs}, 
-		    TR = Rep#megaco_transaction_reply{transactionResult = Res},
+		    Res2 = {actionReplies, EncodedARs}, 
+		    TR = Rep#megaco_transaction_reply{transactionResult = Res2},
 		    TR2   = transform_transaction_reply(CD, TR), 
 		    Trans = {transactionReply, TR2},
 		    encode_transaction(CD, Trans);
@@ -121,7 +122,7 @@ encode_segmented_trans_reply(#conn_data{max_pdu_size = Max} = CD, Rep) ->
 				  "action replies encoded size to large - "
 				  "segment", 
 				  [Size, Max]),
-		    %% Over size limit, so segment message
+		    %% Over size limit, so go segment the message
 		    encode_segments(CD, Rep, EncodecARs)
 	    end;
 	_ ->

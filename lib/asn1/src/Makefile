@@ -1,21 +1,21 @@
-#<copyright>
-# <year>2002-2008</year>
-# <holder>Ericsson AB, All Rights Reserved</holder>
-#</copyright>
-#<legalnotice>
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 1997-2009. All Rights Reserved.
+# 
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
 # retrieved online at http://www.erlang.org/.
-#
+# 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
+# 
+# %CopyrightEnd%
 #
-# The Initial Developer of the Original Code is Ericsson AB.
-#</legalnotice>
 #
 # Copyright (C) 1997, Ericsson Telecommunications
 # Author: Kenneth Lundin 
@@ -40,10 +40,6 @@ RELSYSDIR = $(RELEASE_PATH)/lib/asn1-$(VSN)
 #
 # Common Macros
 #
-# PARSER_SRC = \
-#	asn1ct_parser.yrl
-
-# PARSER_MODULE=$(PARSER_SRC:%.yrl=%)
 
 EBIN = ../ebin
 CT_MODULES= \
@@ -71,8 +67,11 @@ RT_MODULES= \
 	asn1rt_ber_bin_v2 \
 	asn1rt_per_bin_rt2ct \
 	asn1rt_uper_bin \
-	asn1rt_driver_handler \
-	asn1rt_check
+	asn1rt_check \
+	asn1rt_driver_handler
+#	asn1_sup \
+#	asn1_app \
+#	asn1_server
 
 
 # the rt module to use is defined in asn1_records.hrl
@@ -130,6 +129,9 @@ clean:
 docs:
 
 
+info:
+	@echo "PARSER_SRC: $(PARSER_SRC)"
+	@echo "INSTALL_DATA: $(INSTALL_DATA)"
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
@@ -153,7 +155,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(PARSER_SRC) $(ERL_FILES) $(HRL_FILES) $(APP_SRC) $(APPUP_SRC) $(RELSYSDIR)/src
+	$(INSTALL_DATA)  $(ERL_FILES) $(HRL_FILES) $(APP_SRC) $(APPUP_SRC) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/examples
 	$(INSTALL_DATA) $(EXAMPLES) $(RELSYSDIR)/examples
 

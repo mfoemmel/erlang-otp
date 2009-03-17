@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>2004-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 %%----------------------------------------------------------------------
 %% Purpose: Utility functions for the (snmp manager) user test(s).
 %%----------------------------------------------------------------------
@@ -39,7 +39,9 @@
 -export([
          start_link/0, stop/1,
 	 simulate_crash/2,
-	 register/2, register_monitor/2, unregister/1, unregister/2
+	 register/2, register/3, 
+	 register_monitor/2, register_monitor/3, 
+	 unregister/1, unregister/2
         ]).
 
 %%----------------------------------------------------------------------
@@ -49,12 +51,18 @@
          user/1
         ]).
 
--export([handle_error/3,
+-export([
+	 handle_error/3,
          handle_agent/4,
-         handle_pdu/5,
-         handle_trap/4,
-         handle_inform/4,
-         handle_report/4]).
+         handle_pdu/4,
+         handle_pdu/5,     % For backwards compatibillity 
+         handle_trap/3,
+         handle_trap/4,    % For backwards compatibillity 
+         handle_inform/3,
+         handle_inform/4,  % For backwards compatibillity 
+         handle_report/3, 
+         handle_report/4   % For backwards compatibillity 
+	]).
 
 
 -record(state, {parent, ids = []}).
@@ -74,11 +82,19 @@ stop(Pid) ->
 simulate_crash(Pid, Reason) ->
     call(Pid, {simulate_crash, Reason}).
 
+%% For backwards compatibillity 
 register(Pid, Id) ->
     call(Pid, {register, Id}).
 
+register(Pid, Id, DefaultAgentConfig) ->
+    call(Pid, {register, Id, DefaultAgentConfig}).
+
+%% For backwards compatibillity 
 register_monitor(Pid, Id) ->
     call(Pid, {register_monitor, Id}).
+
+register_monitor(Pid, Id, DefaultAgentConfig) ->
+    call(Pid, {register_monitor, Id, DefaultAgentConfig}).
 
 unregister(Pid) ->
     call(Pid, unregister).
@@ -99,6 +115,7 @@ user_loop(#state{parent = Parent} = S) ->
 	    reply(Parent, ok, Ref),
 	    exit(Reason);
 	
+	%% For backwards compatibillity 
 	{{register, Id}, Parent, Ref} ->
 	    IDs = S#state.ids,
 	    case lists:member(Id, IDs) of
@@ -111,11 +128,38 @@ user_loop(#state{parent = Parent} = S) ->
 		    user_loop(S)
 	    end;
 	
+	{{register, Id, DefaultAgentConf}, Parent, Ref} ->
+	    IDs = S#state.ids,
+	    case lists:member(Id, IDs) of
+		false ->
+		    Res = snmpm:register_user(Id, ?MODULE, self(), 
+					      DefaultAgentConf),
+		    reply(Parent, Res, Ref),
+		    user_loop(S#state{ids = [Id|IDs]});
+		true ->
+		    reply(Parent, {error, already_registered}, Ref),
+		    user_loop(S)
+	    end;
+	
+	%% For backwards compatibillity 
 	{{register_monitor, Id}, Parent, Ref} ->
 	    IDs = S#state.ids,
 	    case lists:member(Id, IDs) of
 		false ->
 		    Res = snmpm:register_user_monitor(Id, ?MODULE, self()),
+		    reply(Parent, Res, Ref),
+		    user_loop(S#state{ids = [Id|IDs]});
+		true ->
+		    reply(Parent, {error, already_registered}, Ref),
+		    user_loop(S)
+	    end;
+	
+	{{register_monitor, Id, DefaultAgentConf}, Parent, Ref} ->
+	    IDs = S#state.ids,
+	    case lists:member(Id, IDs) of
+		false ->
+		    Res = snmpm:register_user_monitor(Id, ?MODULE, self(), 
+						      DefaultAgentConf),
 		    reply(Parent, Res, Ref),
 		    user_loop(S#state{ids = [Id|IDs]});
 		true ->
@@ -153,16 +197,32 @@ user_loop(#state{parent = Parent} = S) ->
 	    do_handle_agent(Pid, Addr, Port, SnmpInfo),
 	    user_loop(S);
 
+	{handle_pdu, Pid, TargetName, ReqId, SnmpResponse} ->
+	    do_handle_pdu(Pid, TargetName, ReqId, SnmpResponse),
+	    user_loop(S);
+
 	{handle_pdu, Pid, Addr, Port, ReqId, SnmpResponse} ->
 	    do_handle_pdu(Pid, Addr, Port, ReqId, SnmpResponse),
+	    user_loop(S);
+
+	{handle_trap, Pid, TargetName, SnmpTrap} ->
+	    do_handle_trap(Pid, TargetName, SnmpTrap),
 	    user_loop(S);
 
 	{handle_trap, Pid, Addr, Port, SnmpTrap} ->
 	    do_handle_trap(Pid, Addr, Port, SnmpTrap),
 	    user_loop(S);
 
+	{handle_inform, Pid, TargetName, SnmpInform} ->
+	    do_handle_inform(Pid, TargetName, SnmpInform),
+	    user_loop(S);
+
 	{handle_inform, Pid, Addr, Port, SnmpInform} ->
 	    do_handle_inform(Pid, Addr, Port, SnmpInform),
+	    user_loop(S);
+
+	{handle_report, Pid, TargetName, SnmpReport} ->
+	    do_handle_report(Pid, TargetName, SnmpReport),
 	    user_loop(S);
 
 	{handle_report, Pid, Addr, Port, SnmpReport} ->
@@ -194,6 +254,15 @@ do_handle_agent(Pid, Addr, Port, SnmpInfo) ->
     ok.
 
 
+do_handle_pdu(Pid, TargetName, ReqId, SnmpResponse) ->
+    info("received pdu callback:"
+         "~n   TargetName:   ~p"
+         "~n   ReqId:        ~p"
+         "~n   SnmpResponse: ~p", [TargetName, ReqId, SnmpResponse]),
+    Pid ! {ignore, self()},
+    ok.
+
+%% For backwards compatibillity 
 do_handle_pdu(Pid, Addr, Port, ReqId, SnmpResponse) ->
     info("received pdu callback:"
          "~n   Addr:         ~p"
@@ -204,6 +273,14 @@ do_handle_pdu(Pid, Addr, Port, ReqId, SnmpResponse) ->
     ok.
 
 
+do_handle_trap(Pid, TargetName, SnmpTrap) ->
+    info("received trap callback:"
+         "~n   TargetName: ~p"
+         "~n   SnmpTrap:   ~p", [TargetName, SnmpTrap]),
+    Pid ! {ignore, self()},
+    ok.
+
+%% For backwards compatibillity 
 do_handle_trap(Pid, Addr, Port, SnmpTrap) ->
     info("received trap callback:"
          "~n   Addr:     ~p"
@@ -213,6 +290,14 @@ do_handle_trap(Pid, Addr, Port, SnmpTrap) ->
     ok.
 
 
+do_handle_inform(Pid, TargetName, SnmpInform) ->
+    info("received inform callback:"
+         "~n   TargetName: ~p"
+         "~n   SnmpInform: ~p", [TargetName, SnmpInform]),
+    Pid ! {ignore, self()},
+    ok.
+
+%% For backwards compatibillity 
 do_handle_inform(Pid, Addr, Port, SnmpInform) ->
     info("received inform callback:"
          "~n   Addr:       ~p"
@@ -222,6 +307,14 @@ do_handle_inform(Pid, Addr, Port, SnmpInform) ->
     ok.
 
 
+do_handle_report(Pid, TargetName, SnmpReport) ->
+    info("received report callback:"
+         "~n   TargetName: ~p"
+         "~n   SnmpReport: ~p", [TargetName, SnmpReport]),
+    Pid ! {ignore, self()},
+    ok.
+
+%% For backwards compatibillity 
 do_handle_report(Pid, Addr, Port, SnmpReport) ->
     info("received report callback:"
          "~n   Addr:       ~p"
@@ -272,21 +365,41 @@ handle_agent(Addr, Port, SnmpInfo, UserPid) ->
     ignore.
  
  
+handle_pdu(TargetName, ReqId, SnmpResponse, UserPid) ->
+    UserPid ! {handle_pdu, self(), TargetName, ReqId, SnmpResponse},
+    ignore.
+
+%% For backwards compatibillity 
 handle_pdu(Addr, Port, ReqId, SnmpResponse, UserPid) ->
     UserPid ! {handle_pdu, self(), Addr, Port, ReqId, SnmpResponse},
     ignore.
  
  
+handle_trap(TargetName, SnmpTrap, UserPid) ->
+    UserPid ! {handle_trap, self(), TargetName, SnmpTrap},
+    ok.
+ 
+%% For backwards compatibillity 
 handle_trap(Addr, Port, SnmpTrap, UserPid) ->
     UserPid ! {handle_trap, self(), Addr, Port, SnmpTrap},
     ok.
  
  
+handle_inform(TargetName, SnmpInform, UserPid) ->
+    UserPid ! {handle_inform, self(), TargetName, SnmpInform},
+    ok.
+
+%% For backwards compatibillity 
 handle_inform(Addr, Port, SnmpInform, UserPid) ->
     UserPid ! {handle_inform, self(), Addr, Port, SnmpInform},
     ok.
 
 
+handle_report(TargetName, SnmpReport, UserPid) ->
+    UserPid ! {handle_report, self(), TargetName, SnmpReport},
+    ok.
+
+%% For backwards compatibillity 
 handle_report(Addr, Port, SnmpReport, UserPid) ->
     UserPid ! {handle_report, self(), Addr, Port, SnmpReport},
     ok.

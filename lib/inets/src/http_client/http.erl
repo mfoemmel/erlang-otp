@@ -1,20 +1,23 @@
-% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
+%%
+
 %% Description:
 %%% This version of the HTTP/1.1 client supports:
 %%%      - RFC 2616 HTTP 1.1 client part
@@ -376,6 +379,15 @@ validate_options([{proxy, {{ProxyHost, ProxyPort}, NoProxy}}| Tail]) when
 		 is_list(NoProxy) ->
     validate_options(Tail);
 validate_options([{pipeline_timeout, Value}| Tail]) when is_integer(Value) ->
+    validate_options(Tail);
+validate_options([{pipeline_timeout, infinity}| Tail]) ->
+    validate_options(Tail);
+validate_options([{keep_alive_timeout, Value}| Tail]) when is_integer(Value) ->
+    validate_options(Tail);
+validate_options([{keep_alive_timeout, infinity}| Tail]) ->
+    validate_options(Tail);
+validate_options([{max_pipeline_length, Value}| Tail]) 
+  when is_integer(Value) ->
     validate_options(Tail);
 validate_options([{max_pipeline_length, Value}| Tail]) 
   when is_integer(Value) ->

@@ -1,4 +1,22 @@
 #!/bin/sh
+
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2007-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved online at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# %CopyrightEnd%
+
 #
 # Skeleton for a script intended to run the mstone1(N) 
 # performance test.
@@ -24,15 +42,17 @@ Options:
                    factor 10 means that 10 processes will be started 
                    for each megaco codec config.
                    The options -s and -f cannot both be present.
- -d <drv-mode>     driver mode for the test:
-                   std - all codec config(s) will be used
-                   nd  - only codec config(s) without drivers will be used
-                   od  - only codec config(s) with drivers will be used
  -s <num sched>    normally the test is run with a fixed factor,
                    but if this option is given, the number of
                    schedulers is fixed (to the value set by this option)
                    and the factor is the variable.
                    The options -s and -f cannot both be present.
+ -d <drv-mode>     driver mode for the test:
+                   std  - all codec config(s) will be used
+                   flex - only the text codec config(s) utilizing the 
+                          flex scanner will be used
+                   nd   - only codec config(s) without drivers will be used
+                   od   - only codec config(s) with drivers will be used
  --                everything after this is just passed on to erl.
 "
 
@@ -44,6 +64,7 @@ PATH=$ERL_HOME/bin:$PATH
 MODULE=megaco_codec_mstone1
 STARTF="start"
 FACTOR=""
+TYPE=undefined
 
 while test $# != 0; do
     # echo "DBG: Value = $1"
@@ -64,6 +85,9 @@ while test $# != 0; do
 	    case $2 in
 		std)
 		    STARTF="start";
+		    shift ; shift ;;
+		flex)
+		    STARTF="start_flex";
 		    shift ; shift ;;
 		nd)
 		    STARTF="start_no_drv";
@@ -112,8 +136,10 @@ if [ $TYPE = factor ]; then
 
     MSTONE="-s $MODULE $STARTF $FACTOR"
 
-    SCHEDS="03 05 06 07"
-    #SCHEDS="no_smp 01 02 04 08 16 32 64"
+    # SCHEDS="no_smp 01 02 04"
+    # SCHEDS="no_smp 01 02 03 04 05 06 07 08"
+    SCHEDS="no_smp 01 02 04 08 16 32"
+    # SCHEDS="no_smp 01 02 04 08 16 32 64"
 
     for i in `echo $SCHEDS`; do
         case $i in
@@ -159,7 +185,10 @@ elif [ $TYPE = sched ]; then
 
     MSTONE="-s $MODULE $STARTF "
 
-    FACTORS="01 02 03 04 05 06 07 08 09 10"
+    FACTORS="01 02 03 04"
+    # FACTORS="01 02 03 04 05 06 07 08 09 10"
+    # FACTORS="01 02 04 08 16"
+    # FACTORS="001 010 100"
 
     case $SCHED in
         no_smp)
@@ -192,5 +221,10 @@ elif [ $TYPE = sched ]; then
         echo $ERL
         $ERL | tee $LOG
     done
+
+else
+
+    echo "neither option -f nor -s was provided" ;
+    echo "$usage" ;
 
 fi

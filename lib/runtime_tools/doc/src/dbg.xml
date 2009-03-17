@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1996</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1996</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>dbg</title>
@@ -186,11 +184,14 @@ Error: fun containing local erlang function calls ('is_atomm' called in guard) c
            corresponding registered name is traced.The process may be a 
            remote process (on another Erlang node). The node must be added 
            with the <c>n/1</c> or <c>tracer/0/2/3</c> function.</item>
-          <item>If the <c>Item</c> is an integer, the process <c><![CDATA[<Item.1>]]></c> is
+          <item>If the <c>Item</c> is an integer, the process <c><![CDATA[<0.Item.0>]]></c> is
            traced.</item>
           <item>If the <c>Item</c> is a tuple <c>{X, Y, Z}</c>, the
            process <c><![CDATA[<X.Y.Z>]]></c> is
            traced. </item>
+	  <item>If the <c>Item</c> is a string <![CDATA["<X.Y.Z>"]]>
+	    as returned from <c>pid_to_list/1</c>, the process
+	   <c><![CDATA[<X.Y.Z>]]></c> is traced. </item>
         </list>
         <p><c>Flags</c> can be a single atom,
           or a list of flags. The available flags are:
@@ -315,7 +316,7 @@ Error: fun containing local erlang function calls ('is_atomm' called in guard) c
         <v>Module = atom() | '_'</v>
         <v>Function = atom() | '_'</v>
         <v>Arity = integer() |'_'</v>
-        <v>MatchSpec = integer() | [] | match_spec()</v>
+        <v>MatchSpec = integer() | atom() | [] | match_spec()</v>
         <v>MatchDesc = [MatchInfo]</v>
         <v>MatchInfo = {saved, integer()} | MatchNum</v>
         <v>MatchNum = {matched, node(), integer()} | {matched, node(), 0, RPCError}</v>
@@ -348,7 +349,8 @@ Error: fun containing local erlang function calls ('is_atomm' called in guard) c
           if the MatchSpec is other
           than []. The integer <c>N</c> may then be used in
           subsequent calls to this function and will stand as an
-          "alias" for the given expression (see also <c>ltp/0</c> below).</p>
+          "alias" for the given expression. There are also built-in
+          aliases named with atoms (see also <c>ltp/0</c> below).</p>
         <p>If an error is returned, it can be due to errors in
           compilation of the match specification. Such errors are
           presented as a list of tuples <c>{error, string()}</c> where
@@ -515,11 +517,12 @@ Error: fun containing local erlang function calls ('is_atomm' called in guard) c
     </func>
     <func>
       <name>ltp() -> ok</name>
-      <fsummary>List saved match specifications on the console.</fsummary>
+      <fsummary>List saved and built-in match specifications on the console.</fsummary>
       <desc>
         <p>Use this function to recall all match specifications previously
           used in the session (i. e. previously saved during calls
-          to <c>tp/2</c>. This is very useful, as a complicated
+          to <c>tp/2</c>, and built-in match specifications.
+          This is very useful, as a complicated
           match_spec can be quite awkward to write. Note that the
           match specifications are lost if <c>stop/0</c> is called.</p>
         <p>Match specifications used can be saved in a file (if a
@@ -551,14 +554,15 @@ Error: fun containing local erlang function calls ('is_atomm' called in guard) c
     </func>
     <func>
       <name>wtp(Name) -> ok | {error, IOError}</name>
-      <fsummary>Write all saved match specifications to a file</fsummary>
+      <fsummary>Write all saved and built-in match specifications to a file</fsummary>
       <type>
         <v>Name = string()</v>
         <v>IOError = term()</v>
       </type>
       <desc>
         <p>This function will save all match specifications saved
-          during the session (during calls to <c>tp/2</c>) in a text
+          during the session (during calls to <c>tp/2</c>)
+          and built-in match specifications in a text
           file with the name designated by <c>Name</c>. The format
           of the file is textual, why it can be edited with an
           ordinary text editor, and then restored with

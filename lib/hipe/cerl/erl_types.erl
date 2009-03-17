@@ -1,31 +1,31 @@
 %% -*- erlang-indent-level: 2 -*-
-%% =====================================================================
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %% Basic representation of Erlang types.
 %%
 %% Copyright (C) 2000-2003 Richard Carlsson
 %%
-%% This library is free software; you can redistribute it and/or modify
-%% it under the terms of the GNU Lesser General Public License as
-%% published by the Free Software Foundation; either version 2 of the
-%% License, or (at your option) any later version.
-%%
-%% This library is distributed in the hope that it will be useful, but
-%% WITHOUT ANY WARRANTY; without even the implied warranty of
-%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-%% Lesser General Public License for more details.
-%%
-%% You should have received a copy of the GNU Lesser General Public
-%% License along with this library; if not, write to the Free Software
-%% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
-%% USA
-%% 
 %% The initial author of this file is Richard Carlsson. However, the
 %% current type representation was written by Tobias Lindahl based on
 %% the original implementation.
 %%
 %% Author contact: tobiasl@it.uu.se, richardc@it.uu.se
-%%
-%% $Id$
 %%=====================================================================
 
 -module(erl_types).
@@ -39,10 +39,11 @@
 %-define(widening_debug, fun(X, Y) -> io:format("widening: ~s ~p~n", [X, Y]) end).
 -define(widening_debug, fun(_, _) -> ok end).
 
--export([
+-export([any_none/1,
+	 any_none_or_unit/1,
 	 lookup_record/3,
-	 type_is_defined/2,
 	 max/2,
+	 module_builtin_opaques/1,
 	 min/2,
 	 number_max/1,
 	 number_min/1,
@@ -71,6 +72,9 @@
 	 t_cons_hd/1,
 	 t_cons_tl/1,
 	 t_constant/0,
+	 t_contains_opaque/1,
+	 t_my_dict/0, % XXX: TAKE ME OUT
+	 t_find_opaque_mismatch/2,
 	 t_fixnum/0,
 	 t_map/2,
 	 t_non_neg_fixnum/0,
@@ -89,16 +93,20 @@
 	 t_fun_args/1,
 	 t_fun_arity/1,
 	 t_fun_range/1,
+	 t_has_opaque_subtype/1,
 	 t_has_var/1,
 	 t_identifier/0,
 	 %% t_improper_list/2,
 	 t_inf/2,
+	 t_inf/3,
 	 t_inf_lists/2,
+	 t_inf_lists/3,
 	 t_integer/0,
 	 t_integer/1,
 	 t_non_neg_integer/0,
 	 t_pos_integer/0,
 	 t_integers/1,
+	 t_iodata/0,
 	 t_iolist/0,
 	 t_is_any/1,
 	 t_is_atom/1,
@@ -122,7 +130,8 @@
 	 t_is_non_neg_integer/1,
 	 t_is_none/1,
 	 t_is_none_or_unit/1,
-	 t_is_number/1,	 
+	 t_is_number/1,
+	 t_is_opaque/1,
 	 t_is_pid/1,
 	 t_is_port/1,
 	 t_is_maybe_improper_list/1,
@@ -155,6 +164,11 @@
 	 t_number/0,
 	 t_number/1,
 	 t_number_vals/1,
+	 t_opaque/4,
+	 t_opaque_from_records/1,
+	 t_opaque_match_record/2,
+	 t_opaque_matching_structure/2,
+	 t_opaque_structure/1,
 	 t_pid/0,
 	 t_port/0,
 	 t_maybe_improper_list/0,
@@ -162,11 +176,13 @@
 	 t_product/1,
 	 t_ref/0,
 	 t_string/0,
+	 t_struct_from_opaque/2,
 	 t_subst/2,
 	 t_subtract/2,
 	 t_subtract_list/2,
 	 t_sup/1,
 	 t_sup/2,
+	 t_tid/0,
 	 t_timeout/0,
 	 t_to_string/1,
 	 t_to_string/2,
@@ -181,8 +197,8 @@
 	 t_var/1,
 	 t_var_name/1,
 	 %% t_assign_variables_to_subtype/2,
+	 type_is_defined/3,
 	 subst_all_vars_to_any/1,
-	 any_none_or_unit/1,
 	 lift_list_to_pos_empty/1
 	]).
 
@@ -198,11 +214,11 @@
 -export([t_is_identifier/1]).
 -endif.
 
-%%============================================================================
-%% 
+%%=============================================================================
+%%
 %% Definition of the type structure
 %%
-%%============================================================================
+%%=============================================================================
 
 %%-----------------------------------------------------------------------------
 %% Limits
@@ -225,9 +241,11 @@
 -define(identifier_tag, identifier).
 -define(int_tag,        int).
 -define(list_tag,       list).
+-define(matchstate_tag, matchstate).
 -define(nil_tag,        nil).
 -define(nonempty_tag,   nonempty).
 -define(number_tag,     number).
+-define(opaque_tag,     opaque).
 -define(pid_tag,        pid).
 -define(port_tag,       port).
 -define(product_tag,    product).
@@ -237,7 +255,6 @@
 -define(record_tag,     record).
 -define(union_tag,      union).
 -define(var_tag,        var).
--define(matchstate_tag, matchstate).
 
 %%-----------------------------------------------------------------------------
 %% Primitive types
@@ -251,6 +268,7 @@
 -record(int_set, {set :: list()}).
 -record(int_range, {from :: 'pos_inf' | 'neg_inf' | integer(),
 		    to   :: 'pos_inf' | 'neg_inf' | integer()}).
+-record(opaque, {mod :: atom(), name :: atom(), args=[], struct}).
 
 -define(atom(Set),                 #c{tag=?atom_tag, elements=Set}).
 -define(bitstr(Unit,Base),         #c{tag=?binary_tag, elements=[Unit,Base]}).
@@ -267,12 +285,14 @@
 -define(nonempty_list(Types, Term),?list(Types, Term, ?nonempty_tag)).
 -define(number(Set, Tag),          #c{tag=?number_tag, elements=Set, 
 				      qualifier=Tag}.
+-define(opaque(Optypes),           #c{tag=?opaque_tag, elements=Optypes}).
 -define(product(Types),            #c{tag=?product_tag, elements=Types}).
 -define(tuple(Types, Arity, Tag),  #c{tag=?tuple_tag, elements=Types, 
 				      qualifier={Arity, Tag}}).
 -define(tuple_set(Tuples),         #c{tag=?tuple_set_tag, elements=Tuples}).
 -define(var(Id),                   #c{tag=?var_tag, elements=Id}).
--define(matchstate(P,Slots),	   #c{tag=?matchstate_tag, elements=[P,Slots]}).
+
+-define(matchstate(P, Slots),	   #c{tag=?matchstate_tag, elements=[P,Slots]}).
 -define(any_matchstate,            ?matchstate(t_bitstr(), ?any)).
 
 -define(byte,                      ?int_range(0, ?MAX_BYTE)).
@@ -286,24 +306,23 @@
 %% Unions
 %%
 
--define(union(List),        #c{tag=?union_tag, elements=[_,_,_,_,_,_,_,_]=List}).
-
--define(atom_union(T),        ?union([T,?none,?none,?none,?none,?none,?none,?none])).
--define(bitstr_union(T),      ?union([?none,T,?none,?none,?none,?none,?none,?none])).
--define(function_union(T),    ?union([?none,?none,T,?none,?none,?none,?none,?none])).
--define(identifier_union(T),  ?union([?none,?none,?none,T,?none,?none,?none,?none])).
--define(list_union(T),        ?union([?none,?none,?none,?none,T,?none,?none,?none])).
--define(number_union(T),      ?union([?none,?none,?none,?none,?none,T,?none,?none])).
--define(tuple_union(T),       ?union([?none,?none,?none,?none,?none,?none,T,?none])).
--define(matchstate_union(T),  ?union([?none,?none,?none,?none,?none,?none,?none,T])).
-
+-define(union(List),        #c{tag=?union_tag, elements=[_,_,_,_,_,_,_,_,_]=List}).
+-define(atom_union(T),        ?union([T,?none,?none,?none,?none,?none,?none,?none,?none])).
+-define(bitstr_union(T),      ?union([?none,T,?none,?none,?none,?none,?none,?none,?none])).
+-define(function_union(T),    ?union([?none,?none,T,?none,?none,?none,?none,?none,?none])).
+-define(identifier_union(T),  ?union([?none,?none,?none,T,?none,?none,?none,?none,?none])).
+-define(list_union(T),        ?union([?none,?none,?none,?none,T,?none,?none,?none,?none])).
+-define(number_union(T),      ?union([?none,?none,?none,?none,?none,T,?none,?none,?none])).
+-define(tuple_union(T),       ?union([?none,?none,?none,?none,?none,?none,T,?none,?none])).
+-define(matchstate_union(T),  ?union([?none,?none,?none,?none,?none,?none,?none,T,?none])).
+-define(opaque_union(T),      ?union([?none,?none,?none,?none,?none,?none,?none,?none,T])).
 -define(integer_union(T),     ?number_union(T)).
 -define(float_union(T),       ?number_union(T)).
 -define(nil_union(T),         ?list_union(T)).
 
 
 %%=============================================================================
-%% 
+%%
 %% Primitive operations such as type construction and type tests.
 %%
 %%=============================================================================
@@ -325,6 +344,200 @@ t_is_none(?none) -> true;
 t_is_none(_) -> false.
 
 %%-----------------------------------------------------------------------------
+%% Opaque types
+%%
+
+t_opaque(Mod, Name, Args, Struct) ->
+  ?opaque(set_singleton(#opaque{mod=Mod, name=Name, args=Args, struct=Struct})).
+
+t_is_opaque(?opaque(_)) -> true;
+t_is_opaque(_) -> false.
+
+t_has_opaque_subtype(?union(Ts)) ->
+  lists:any(fun t_is_opaque/1, Ts);
+t_has_opaque_subtype(T) ->
+  t_is_opaque(T).
+
+t_opaque_structure(?opaque(Elements)) ->
+  case ordsets:size(Elements) of
+    1 ->
+      [#opaque{struct=Struct}] = ordsets:to_list(Elements),
+      Struct;
+    _ -> throw({error, "Unexpected multiple opaque types"})
+  end.
+
+t_opaque_module(?opaque(Elements)) ->
+  case ordsets:size(Elements) of
+    1 ->
+      [#opaque{mod=Module}] = ordsets:to_list(Elements),
+      Module;
+    _ -> throw({error, "Unexpected multiple opaque types"})
+  end.
+
+%% This only makes sense if we know that Type matches Opaque
+t_opaque_matching_structure(Type, Opaque) ->
+  OpaqueStruct = t_opaque_structure(Opaque),
+  case OpaqueStruct of
+    ?union(L1) ->
+      case Type of
+	?union(_L2) -> OpaqueStruct;
+	_OtherType   -> 
+	  t_opaque_matching_structure_list(Type, L1)
+      end;
+    ?tuple_set(_Set1) = TupleSet ->
+      case Type of
+	?tuple_set(_Set2) -> OpaqueStruct;
+	_OtherType ->
+	  t_opaque_matching_structure_list(Type, t_tuple_subtypes(TupleSet))
+      end;
+    _Other -> OpaqueStruct
+  end.
+
+t_opaque_matching_structure_list(Type, List) ->
+  NewList = [t_inf(Element, Type) || Element <- List],
+  Results = [NotNone || NotNone <- NewList, NotNone =/= ?none],
+  case Results of
+    [] -> ?none;
+    [First|_] -> First
+  end.		 
+
+t_contains_opaque(?any)                     -> false;
+t_contains_opaque(?none)                    -> false;
+t_contains_opaque(?unit)                    -> false;
+t_contains_opaque(?atom(_Set))              -> false;
+t_contains_opaque(?bitstr(_Unit, _Base))    -> false;
+t_contains_opaque(?float)                   -> false;
+t_contains_opaque(?function(Domain, Range)) ->
+  t_contains_opaque(Domain) orelse t_contains_opaque(Range);
+t_contains_opaque(?identifier(_Types))      -> false;
+t_contains_opaque(?integer(_Types))         -> false;
+t_contains_opaque(?int_range(_From, _To))   -> false;
+t_contains_opaque(?int_set(_Set))           -> false;
+t_contains_opaque(?list(Types, _, _))       -> t_contains_opaque(Types);
+t_contains_opaque(?matchstate(_P, _Slots))  -> false;
+t_contains_opaque(?nil)                     -> false;
+t_contains_opaque(?number(_Set, _Tag))      -> false;
+t_contains_opaque(?opaque(_))               -> true;
+t_contains_opaque(?product(Types))          -> list_contains_opaque(Types);
+t_contains_opaque(?tuple(?any, _, _))       -> false;
+t_contains_opaque(?tuple(Types, _, _))      -> list_contains_opaque(Types);
+t_contains_opaque(?tuple_set(_Set) = T)     ->
+  list_contains_opaque(t_tuple_subtypes(T));
+t_contains_opaque(?union(List))             -> list_contains_opaque(List);
+t_contains_opaque(?var(_Id))                -> false.
+
+list_contains_opaque(List) ->
+  lists:any(fun t_contains_opaque/1, List).
+
+%% t_find_opaque_mismatch/2 of two types should only be used if their
+%% t_inf is t_none() due to some opaque type violation.
+%%
+%% The first argument of the function is the pattern and its second
+%% argument the type we are matching against the pattern.
+
+t_find_opaque_mismatch(T1, T2) ->
+  t_find_opaque_mismatch(T1, T2, T2).
+
+t_find_opaque_mismatch(?any, _Type, _TopType) -> error;
+t_find_opaque_mismatch(?list(T1, _, _), ?list(T2, _, _), TopType) ->
+  t_find_opaque_mismatch(T1, T2, TopType);
+t_find_opaque_mismatch(_T1, ?opaque(_) = T2, TopType) -> {ok, TopType, T2};
+t_find_opaque_mismatch(?product(T1), ?product(T2), TopType) ->
+  t_find_opaque_mismatch_ordlists(T1, T2, TopType);
+t_find_opaque_mismatch(?tuple(T1, Arity, _), ?tuple(T2, Arity, _), TopType) ->
+  t_find_opaque_mismatch_ordlists(T1, T2, TopType);
+t_find_opaque_mismatch(T1 = ?tuple(_, _, _), T2 = ?tuple_set(_), TopType) ->
+  Tuples1 = t_tuple_subtypes(T1),
+  Tuples2 = t_tuple_subtypes(T2),
+  t_find_opaque_mismatch_lists(Tuples1, Tuples2, TopType);
+t_find_opaque_mismatch(T1, ?union(U2), TopType) ->
+  ?union(U1) = force_union(T1),
+  t_find_opaque_mismatch_ordlists(U1, U2, TopType);
+t_find_opaque_mismatch(_T1, _T2, _TopType) -> error.
+
+t_find_opaque_mismatch_ordlists(L1, L2, TopType) ->
+  List = lists:zipwith(fun(T1, T2) ->
+			   t_find_opaque_mismatch(T1, T2, TopType)
+		       end, L1, L2),
+  t_find_opaque_mismatch_list(List).
+
+t_find_opaque_mismatch_lists(L1, L2, _TopType) ->
+  List = [t_find_opaque_mismatch(T1, T2, T2) || T1 <- L1, T2 <- L2],
+  t_find_opaque_mismatch_list(List).
+
+t_find_opaque_mismatch_list([]) -> error;
+t_find_opaque_mismatch_list([H|T]) ->
+  case H of
+    {ok, _T1, _T2} -> H;
+    error -> t_find_opaque_mismatch_list(T)
+  end.
+
+t_opaque_from_records(RecDict) ->
+  OpaqueRecDict =
+    dict:filter(fun(Key, _Value) ->
+		    case Key of
+		      {opaque, _Name} -> true;
+		      _  -> false
+		    end
+		end, RecDict),
+  OpaqueTypeDict =
+    dict:map(fun({opaque, Name}, {Type, ArgNames}) ->
+		 case ArgNames of
+		   [] ->
+		     t_opaque('UNKNOWN', Name, [], t_from_form(Type, RecDict));
+		   _ ->
+		     throw({error,"Polymorphic opaque types not supported yet"})
+		 end
+	     end, OpaqueRecDict),
+  [OpaqueType || {_Key, OpaqueType} <- dict:to_list(OpaqueTypeDict)].
+
+t_opaque_match_record(?tuple(_, _, _) = Record, Opaques) ->
+  InfList = [t_inf(Record, Opaque, opaque) || Opaque <- Opaques],
+  OpaqueList = [Opaque || Opaque <- InfList, not t_is_none(Opaque)],
+  case t_tuple_args(Record) of
+    [?atom(_) = RecTag|_Fields] ->
+      [O || O <- OpaqueList,
+	    lists:member(RecTag, t_opaque_tuple_tags(t_opaque_structure(O)))];
+    _ -> []
+  end;
+t_opaque_match_record(_, _) -> [].
+
+t_opaque_tuple_tags(OpaqueStruct) ->
+  case OpaqueStruct of
+    ?tuple([?atom(_) = Tag|_Fields], _, _) -> [Tag];
+    ?tuple_set(_) = TupleSet ->
+      Tuples = t_tuple_subtypes(TupleSet),
+      [Tag || Tag <- lists:flatten([t_opaque_tuple_tags(T) || T <- Tuples])];
+    ?union([_,_,_,_,_,_,Tuples,_,_]) -> t_opaque_tuple_tags(Tuples);
+    _ -> []
+  end.
+
+t_struct_from_opaque(?function(Domain, Range), Opaque) ->
+  ?function(t_struct_from_opaque(Domain, Opaque),  
+	    t_struct_from_opaque(Range, Opaque));
+t_struct_from_opaque(?list(Types, Term, Size), Opaque) -> 
+  ?list(t_struct_from_opaque(Types, Opaque), Term, Size);
+t_struct_from_opaque(?opaque(_) = T, Opaque) -> 
+  if T =:= Opaque -> t_opaque_structure(T);
+     true         -> T
+  end;
+t_struct_from_opaque(?product(Types), Opaque) -> 
+  ?product(list_struct_from_opaque(Types, Opaque));
+t_struct_from_opaque(?tuple(?any, _, _) = T, _Opaque) -> T;
+t_struct_from_opaque(?tuple(Types, Arity, Tag), Opaque)  ->
+  ?tuple(list_struct_from_opaque(Types, Opaque), Arity, Tag);
+t_struct_from_opaque(?tuple_set(_Set) = T, Opaque)     ->
+  t_tuple(list_struct_from_opaque(t_tuple_subtypes(T), Opaque));
+t_struct_from_opaque(?union(List), Opaque) -> 
+  ?union(list_struct_from_opaque(List, Opaque)).
+
+list_struct_from_opaque(Types, Opaque) ->
+  [t_struct_from_opaque(Type, Opaque) || Type <- Types].
+
+module_builtin_opaques(Module) ->
+  [O || O <- all_opaque_builtins(), t_opaque_module(O) =:= Module].
+			           
+%%-----------------------------------------------------------------------------
 %% Unit type. Signals non termination.
 %%
 
@@ -332,12 +545,12 @@ t_unit() ->
   ?unit.
 
 t_is_unit(?unit) -> true;
-t_is_unit(_) -> false.  
+t_is_unit(_) -> false.
 
 t_is_none_or_unit(?none) -> true;
 t_is_none_or_unit(?unit) -> true;
 t_is_none_or_unit(_) -> false.
-  
+
 %%-----------------------------------------------------------------------------
 %% Atoms and the derived type bool.
 %%
@@ -351,21 +564,20 @@ t_atom(A) when is_atom(A) ->
 t_atoms(List) when is_list(List) ->
   t_sup([t_atom(A) || A <- List]).
 
-t_atom_vals(?atom(Set)) ->
-  set_to_list(Set);
+t_atom_vals(?atom(?any)) -> ?any;
+t_atom_vals(?atom(Set)) -> set_to_list(Set);
 t_atom_vals(Other) ->
   case t_inf(t_atom(), Other) of
-    ?atom(Set) -> set_to_list(Set);
+    ?atom(_) = Atm -> t_atom_vals(Atm);
     ?none -> ?none
   end.
-      
+
 t_is_atom(?atom(_)) -> true;
 t_is_atom(_) -> false.
 
-t_is_atom(Atom, ?atom(Set)) when is_atom(Atom) ->
-  (set_size(Set) =:= 1) andalso (set_is_element(Atom, Set));
-t_is_atom(Atom, _) when is_atom(Atom) ->
-  false.
+t_is_atom(Atom, ?atom(?any)) when is_atom(Atom) -> false;
+t_is_atom(Atom, ?atom(Set)) when is_atom(Atom) -> set_is_singleton(Atom, Set);
+t_is_atom(Atom, _) when is_atom(Atom) -> false.
 
 %%------------------------------------
 
@@ -386,32 +598,31 @@ t_is_bool(_) -> false.
 %%
 
 t_binary() ->
-  ?bitstr(8,0).
+  ?bitstr(8, 0).
 
-t_is_binary(?bitstr(U,B)) -> 
+t_is_binary(?bitstr(U, B)) -> 
   ((U rem 8) =:= 0) and ((B rem 8) =:= 0);
 t_is_binary(_) -> false.
 
-
 %%-----------------------------------------------------------------------------
-%% Binaries
+%% Bitstrs
 %%
 
 t_bitstr() ->
-  ?bitstr(1,0).
+  ?bitstr(1, 0).
 
-t_bitstr(U,B) ->
+t_bitstr(U, B) ->
   NewB = 
-    if 
+    if
       U =:= 0 -> B;
-      B >= (U * (?UNIT_MULTIPLIER+1)) ->
+      B >= (U * (?UNIT_MULTIPLIER + 1)) ->
 	(B rem U) + U * ?UNIT_MULTIPLIER;
-       true ->
+      true ->
 	B
     end,
-  ?bitstr(U,NewB).
+  ?bitstr(U, NewB).
 
-t_bitstr_base(?bitstr(_,B)) -> B.
+t_bitstr_base(?bitstr(_, B)) -> B.
 
 t_bitstr_concat(List) ->
   t_bitstr_concat_1(List, t_bitstr(0,0)).
@@ -421,72 +632,70 @@ t_bitstr_concat_1([T|Left], Acc) ->
 t_bitstr_concat_1([], Acc) ->
   Acc.
 
-t_bitstr_concat(T1,T2) ->
-  T1p = t_inf(t_bitstr(),T1),
-  T2p = t_inf(t_bitstr(),T2),
-  bitstr_concat(T1p,T2p).
+t_bitstr_concat(T1, T2) ->
+  T1p = t_inf(t_bitstr(), T1),
+  T2p = t_inf(t_bitstr(), T2),
+  bitstr_concat(T1p, T2p).
 
-t_bitstr_match(T1,T2) ->
-  T1p = t_inf(t_bitstr(),T1),
-  T2p = t_inf(t_bitstr(),T2),
-  bitstr_match(T1p,T2p).
+t_bitstr_match(T1, T2) ->
+  T1p = t_inf(t_bitstr(), T1),
+  T2p = t_inf(t_bitstr(), T2),
+  bitstr_match(T1p, T2p).
 
-t_bitstr_unit(?bitstr(U,_)) -> U.
+t_bitstr_unit(?bitstr(U, _)) -> U.
 
-t_is_bitstr(?bitstr(_,_)) -> true;
+t_is_bitstr(?bitstr(_, _)) -> true;
 t_is_bitstr(_) -> false.
-
 
 %%-----------------------------------------------------------------------------
 %% Matchstates
 %%
 
-
 t_matchstate() ->
   ?any_matchstate.
 
-t_matchstate(Init,0) ->
-  ?matchstate(Init,Init);
-t_matchstate(Init,Max) when is_integer(Max) ->
-  Slots = [Init|[?none || _ <- lists:seq(1,Max)]],
-  ?matchstate(Init,t_product(Slots)).
+t_matchstate(Init, 0) ->
+  ?matchstate(Init, Init);
+t_matchstate(Init, Max) when is_integer(Max) ->
+  Slots = [Init|[?none || _ <- lists:seq(1, Max)]],
+  ?matchstate(Init, t_product(Slots)).
 
-t_is_matchstate(?matchstate(_,_)) -> true;
+t_is_matchstate(?matchstate(_, _)) -> true;
 t_is_matchstate(_) -> false.
 
-t_matchstate_present(Type) -> 
+t_matchstate_present(Type) ->
   case t_inf(t_matchstate(),Type) of
-    ?matchstate(P,_) -> P;
+    ?matchstate(P, _) -> P;
     _ -> ?none
   end.
 
 t_matchstate_slot(Type, Slot) ->
-  RealSlot = Slot+1,
-  case t_inf(t_matchstate(),Type) of
-    ?matchstate(_,?any) -> ?any;
-    ?matchstate(_,?product(Vals)) when length(Vals) >= RealSlot ->
-      lists:nth(RealSlot,Vals);
-    ?matchstate(_,?product(_)) ->
+  RealSlot = Slot + 1,
+  case t_inf(t_matchstate(), Type) of
+    ?matchstate(_, ?any) -> ?any;
+    ?matchstate(_, ?product(Vals)) when length(Vals) >= RealSlot ->
+      lists:nth(RealSlot, Vals);
+    ?matchstate(_, ?product(_)) ->
       ?none;
-    ?matchstate(_,SlotType) when RealSlot =:= 1 ->
+    ?matchstate(_, SlotType) when RealSlot =:= 1 ->
       SlotType;
     _ ->
       ?none
   end.
 
-t_matchstate_slots(?matchstate(_,Slots)) ->
+t_matchstate_slots(?matchstate(_, Slots)) ->
   Slots.
 
 t_matchstate_update_present(New, Type) -> 
-  case t_inf(t_matchstate(),Type) of
-    ?matchstate(_,Slots) ->
-      ?matchstate(New,Slots);
+  case t_inf(t_matchstate(), Type) of
+    ?matchstate(_, Slots) ->
+      ?matchstate(New, Slots);
     _ -> ?none
   end.
 t_matchstate_update_slot(New, Type, Slot) -> 
-  RealSlot = Slot+1,
-   case t_inf(t_matchstate(),Type) of
-    ?matchstate(Pres,Slots) ->
+  RealSlot = Slot + 1,
+   case t_inf(t_matchstate(), Type) of
+    ?matchstate(Pres, Slots) ->
        NewSlots = 
 	 case Slots of
 	   ?any ->
@@ -503,7 +712,7 @@ t_matchstate_update_slot(New, Type, Slot) ->
 	   _ ->
 	     ?none
 	 end,
-       ?matchstate(Pres,NewSlots);
+       ?matchstate(Pres, NewSlots);
      _ ->
        ?none
    end.
@@ -556,8 +765,8 @@ t_is_identifier(_) -> false.
 t_port() ->
   ?identifier(set_singleton(?port_tag)).
 
-t_is_port(?identifier(Set)) -> 
-  (set_size(Set) =:= 1) andalso set_is_element(?port_tag, Set);
+t_is_port(?identifier(?any)) -> false;
+t_is_port(?identifier(Set)) -> set_is_singleton(?port_tag, Set);
 t_is_port(_) -> false.
 
 %%------------------------------------
@@ -565,8 +774,8 @@ t_is_port(_) -> false.
 t_pid() ->
   ?identifier(set_singleton(?pid_tag)).
 
-t_is_pid(?identifier(Set)) -> 
-  (set_size(Set) =:= 1) andalso set_is_element(?pid_tag, Set);
+t_is_pid(?identifier(?any)) -> false;
+t_is_pid(?identifier(Set)) -> set_is_singleton(?pid_tag, Set);
 t_is_pid(_) -> false.
 
 %%------------------------------------
@@ -574,8 +783,8 @@ t_is_pid(_) -> false.
 t_ref() ->
   ?identifier(set_singleton(?ref_tag)).
 
-t_is_ref(?identifier(Set)) -> 
-  (set_size(Set) =:= 1) andalso set_is_element(?ref_tag, Set);
+t_is_ref(?identifier(?any)) -> false;
+t_is_ref(?identifier(Set)) -> set_is_singleton(?ref_tag, Set);
 t_is_ref(_) -> false.
 
 %%-----------------------------------------------------------------------------
@@ -591,6 +800,7 @@ t_number(X) when is_integer(X) ->
 t_is_number(?number(_, _)) -> true;
 t_is_number(_) -> false.
 
+t_number_vals(?int_set(?any)) -> ?any;
 t_number_vals(?int_set(Set)) -> set_to_list(Set);
 t_number_vals(?number(_, _)) -> ?any;
 t_number_vals(Other) ->
@@ -657,7 +867,6 @@ t_is_char(_) -> false.
 t_cons() ->
   ?nonempty_list(?any, ?any).
 
-
 %% Note that if the tail argument can be a list, we must collapse the
 %% content of the list to include both the content of the tail list
 %% and the head of the cons. If for example the tail argument is any()
@@ -684,7 +893,7 @@ t_cons(Hd, Tail) ->
     ?none -> ?nonempty_list(Hd, Tail);
     ?unit -> ?none
   end.
-  
+
 t_is_cons(?nonempty_list(_, _)) -> true;
 t_is_cons(_) -> false.  
 
@@ -699,7 +908,7 @@ t_nil() ->
 t_is_nil(?nil) -> true;
 t_is_nil(_) -> false.
 
-t_list() ->  
+t_list() ->
   ?list(?any, ?nil, ?any).
 
 t_list(?none) -> ?none;
@@ -758,7 +967,6 @@ t_is_maybe_improper_list(_) -> false.
 lift_list_to_pos_empty(?nil) -> ?nil;
 lift_list_to_pos_empty(?list(Content, Termination, _)) -> 
   ?list(Content, Termination, ?any).
-  
 
 %%-----------------------------------------------------------------------------
 %% Tuples
@@ -862,17 +1070,67 @@ t_module() ->
 t_node() ->
   t_atom().
 
+t_iodata() ->
+  t_sup(t_iolist(), t_binary()).
+
 t_iolist() ->
   t_iolist(1).
 
 t_iolist(N) when N > 0 ->
-  t_maybe_improper_list(t_sup([t_iolist(N-1),t_binary(),t_byte()]),
-		        t_sup(t_binary(),t_nil()));
+  t_maybe_improper_list(t_sup([t_iolist(N-1), t_binary(), t_byte()]),
+		        t_sup(t_binary(), t_nil()));
 t_iolist(0) ->
-  t_maybe_improper_list(t_any(),t_sup(t_binary(),t_nil())).
+  t_maybe_improper_list(t_any(), t_sup(t_binary(), t_nil())).
 
 t_timeout() ->
   t_sup(t_non_neg_integer(), t_atom('infinity')).
+
+%%-----------------------------------------------------------------------------
+%% Some opaque types -- list is to be revised
+
+t_my_dict() ->
+  t_opaque(my_dict, dict, 0, t_any()).
+
+t_dict() ->
+  t_opaque(dict, dict, 0,
+	   t_tuple([t_atom('dict'),
+		    t_non_neg_integer(), t_non_neg_integer(),
+		    t_non_neg_integer(), t_non_neg_integer(),
+		    t_non_neg_integer(), t_non_neg_integer(),
+		    t_tuple(), t_tuple()])).
+
+t_digraph() ->
+  t_opaque(digraph, digraph, 0,
+	   t_tuple([t_atom('digraph'),
+		    t_sup([t_atom(), t_tid()]),
+		    t_sup([t_atom(), t_tid()]),
+		    t_sup([t_atom(), t_tid()]),
+		    t_bool()])).
+
+t_gb_set() ->
+  t_opaque(gb_sets, gb_set, 0,
+	   t_tuple([t_non_neg_integer(), t_sup([t_atom('nil'), t_tuple(3)])])).
+
+t_gb_tree() ->
+  t_opaque(gb_trees, gb_tree, 0,
+	   t_tuple([t_non_neg_integer(), t_sup([t_atom('nil'), t_tuple(4)])])).
+
+%% t_queue() ->
+%%   t_opaque(queue, queue, 0, t_tuple([t_list(), t_list()])).
+
+t_set() ->
+  t_opaque(sets, set, 0,
+	   t_tuple([t_atom('set'), t_non_neg_integer(), t_non_neg_integer(),
+		    t_pos_integer(), t_non_neg_integer(), t_non_neg_integer(),
+		    t_non_neg_integer(), t_tuple(), t_tuple()])).
+
+t_tid() ->
+  t_opaque(ets, tid, 0, t_integer()).
+
+all_opaque_builtins() ->
+  [t_dict(), t_digraph(), t_gb_set(), t_gb_tree(),
+   %% t_queue(),
+   t_set(), t_tid()].
 
 %%------------------------------------
 
@@ -918,30 +1176,30 @@ t_has_var_list([]) -> false.
 t_collect_vars(T) ->
   t_collect_vars(T, []).
 
-t_collect_vars(Var = ?var(_), Acc) -> 
+t_collect_vars(Var = ?var(_), Acc) ->
   ordsets:add_element(Var, Acc);
-t_collect_vars(?function(Domain, Range), Acc) -> 
+t_collect_vars(?function(Domain, Range), Acc) ->
   ordsets:union(t_collect_vars(Domain, Acc), t_collect_vars(Range, []));
 t_collect_vars(?list(Contents, Termination, _), Acc) ->
   ordsets:union(t_collect_vars(Contents, Acc), t_collect_vars(Termination, []));
-t_collect_vars(?product(Types), Acc) -> 
+t_collect_vars(?product(Types), Acc) ->
   lists:foldl(fun(T, TmpAcc) -> t_collect_vars(T, TmpAcc) end, Acc, Types);
-t_collect_vars(?tuple(?any, ?any, ?any), Acc) -> 
+t_collect_vars(?tuple(?any, ?any, ?any), Acc) ->
   Acc;
 t_collect_vars(?tuple(Types, _, _), Acc) ->
   lists:foldl(fun(T, TmpAcc) -> t_collect_vars(T, TmpAcc) end, Acc, Types);
 t_collect_vars(TS = ?tuple_set(_), Acc) ->
   lists:foldl(fun(T, TmpAcc) -> t_collect_vars(T, TmpAcc) end, Acc, 
 	      t_tuple_subtypes(TS));
-t_collect_vars(_, Acc) -> 
+t_collect_vars(_, Acc) ->
   Acc.
 
 
-%%============================================================================
-%% 
+%%=============================================================================
+%%
 %% Type construction from Erlang terms.
 %%
-%%============================================================================
+%%=============================================================================
 
 %%-----------------------------------------------------------------------------
 %% Make a type from a term. No type depth is enforced.
@@ -970,10 +1228,11 @@ t_from_term(T) when is_tuple(T) ->     t_tuple([t_from_term(E)
 
 -ifdef(USE_UNSAFE_RANGES).
 
-t_from_range(X,Y) ->
-  t_from_range_unsafe(X,Y).
+t_from_range(X, Y) ->
+  t_from_range_unsafe(X, Y).
 
 -else.
+
 t_from_range(neg_inf, pos_inf) -> t_integer();
 t_from_range(neg_inf, Y) when is_integer(Y), Y < 0  -> ?integer_neg;
 t_from_range(neg_inf, Y) when is_integer(Y), Y >= 0 -> t_integer();
@@ -1080,11 +1339,11 @@ expand_range_from_set(Range = ?int_range(From, To), Set) ->
      true -> t_from_range(Min, Max)
   end.
 
-%%============================================================================
-%% 
+%%=============================================================================
+%%
 %% Lattice operations
 %%
-%%============================================================================
+%%=============================================================================
 
 %%-----------------------------------------------------------------------------
 %% Supremum
@@ -1117,6 +1376,11 @@ t_sup(?function(Domain1, Range1), ?function(Domain2, Range2)) ->
   ?function(t_sup(Domain1, Domain2), t_sup(Range1, Range2));
 t_sup(?identifier(Set1), ?identifier(Set2)) ->
   ?identifier(set_union(Set1, Set2));
+t_sup(?opaque(Set1), ?opaque(Set2)) ->
+  ?opaque(set_union_no_limit(Set1, Set2));
+%%Disallow unions with opaque types
+%%t_sup(T1=?opaque(_,_,_), T2) -> io:format("Debug: t_sup executed with args ~w and ~w~n",[T1, T2]),?none;
+%%t_sup(T1, T2=?opaque(_,_,_)) -> io:format("Debug: t_sup executed with args ~w and ~w~n",[T1, T2]),?none;
 t_sup(?matchstate(Pres1,Slots1),
       ?matchstate(Pres2,Slots2)) ->
   ?matchstate(t_sup(Pres1,Pres2),
@@ -1226,7 +1490,6 @@ sup_tuple_sets(L1 = [T1 = {Arity1, _}|Left1],
 sup_tuple_sets([], L2, Acc) -> lists:reverse(Acc, L2);
 sup_tuple_sets(L1, [], Acc) -> lists:reverse(Acc, L1).
 
-
 sup_tuples_in_set([T = ?tuple(_, _, ?any)], L) ->
   [t_tuple(sup_tuple_elements([T|L]))];
 sup_tuples_in_set(L, [T = ?tuple(_, _, ?any)]) ->
@@ -1276,23 +1539,24 @@ sup_union([T1|Left1], [T2|Left2], N, Acc) ->
 sup_union([], [], N, Acc) ->
   if N =:= 0 -> ?none;
      N =:= 1 -> 
-      [Type] = [T || T <- Acc, T=/=?none],
+      [Type] = [T || T <- Acc, T =/= ?none],
       Type;
      N =:= length(Acc)  -> ?any;
      true -> ?union(lists:reverse(Acc))
   end.
 
-force_union(T = ?atom(_)) ->        ?atom_union(T);
-force_union(T = ?bitstr(_,_)) ->    ?bitstr_union(T); 
-force_union(T = ?function(_, _)) -> ?function_union(T);
-force_union(T = ?identifier(_)) ->  ?identifier_union(T);
-force_union(T = ?list(_, _, _)) ->  ?list_union(T);
-force_union(T = ?nil) ->            ?list_union(T);
-force_union(T = ?number(_,_)) ->    ?number_union(T);
-force_union(T = ?tuple(_, _, _)) -> ?tuple_union(T);
-force_union(T = ?tuple_set(_)) ->   ?tuple_union(T);
-force_union(T = ?matchstate(_,_)) -> ?matchstate_union(T);
-force_union(T = ?union(_)) ->       T.
+force_union(T = ?atom(_)) ->          ?atom_union(T);
+force_union(T = ?bitstr(_,_)) ->      ?bitstr_union(T); 
+force_union(T = ?function(_, _)) ->   ?function_union(T);
+force_union(T = ?identifier(_)) ->    ?identifier_union(T);
+force_union(T = ?list(_, _, _)) ->    ?list_union(T);
+force_union(T = ?nil) ->              ?list_union(T);
+force_union(T = ?number(_,_)) ->      ?number_union(T);
+force_union(T = ?opaque(_)) ->        ?opaque_union(T);
+force_union(T = ?tuple(_, _, _)) ->   ?tuple_union(T);
+force_union(T = ?tuple_set(_)) ->     ?tuple_union(T);
+force_union(T = ?matchstate(_, _)) -> ?matchstate_union(T);
+force_union(T = ?union(_)) ->         T.
 
 %%-----------------------------------------------------------------------------
 %% Infimum
@@ -1306,65 +1570,65 @@ t_inf([H1, H2|T]) ->
 t_inf([H]) -> H;
 t_inf([]) -> ?none.
 
-t_inf(?var(_), ?var(_)) -> ?any;
-t_inf(?var(_), T) -> subst_all_vars_to_any(T);
-t_inf(T, ?var(_)) -> subst_all_vars_to_any(T);
-t_inf(?any, T) -> subst_all_vars_to_any(T);
-t_inf(T, ?any) -> subst_all_vars_to_any(T);
-t_inf(?unit, _) -> ?unit;
-t_inf(_, ?unit) -> ?unit;
-t_inf(?none, _) -> ?none;
-t_inf(_, ?none) -> ?none;
-t_inf(T, T) -> subst_all_vars_to_any(T);
-t_inf(?atom(Set1), ?atom(Set2)) ->
+t_inf(T1, T2) ->
+  t_inf(T1, T2, structured).
+
+t_inf(?var(_), ?var(_), _Mode) -> ?any;
+t_inf(?var(_), T, _Mode) -> subst_all_vars_to_any(T);
+t_inf(T, ?var(_), _Mode) -> subst_all_vars_to_any(T);
+t_inf(?any, T, _Mode) -> subst_all_vars_to_any(T);
+t_inf(T, ?any, _Mode) -> subst_all_vars_to_any(T);
+t_inf(?unit, _, _Mode) -> ?unit;
+t_inf(_, ?unit, _Mode) -> ?unit;
+t_inf(?none, _, _Mode) -> ?none;
+t_inf(_, ?none, _Mode) -> ?none;
+t_inf(T, T, _Mode) -> subst_all_vars_to_any(T);
+t_inf(?atom(Set1), ?atom(Set2), _) ->
   case set_intersection(Set1, Set2) of
     ?none ->  ?none;
     NewSet -> ?atom(NewSet)
   end;
-t_inf(?bitstr(U1,B1),?bitstr(0,B2)) ->
-  if B2 >= B1 andalso (B2-B1) rem U1 =:= 0 -> t_bitstr(0,B2);
+t_inf(?bitstr(U1, B1), ?bitstr(0, B2), _Mode) ->
+  if B2 >= B1 andalso (B2-B1) rem U1 =:= 0 -> t_bitstr(0, B2);
      true -> ?none
   end;
-t_inf(?bitstr(0,B1),?bitstr(U2,B2)) ->
-  if B1 >= B2 andalso (B1-B2) rem U2 =:= 0 -> t_bitstr(0,B1);
+t_inf(?bitstr(0, B1), ?bitstr(U2, B2), _Mode) ->
+  if B1 >= B2 andalso (B1-B2) rem U2 =:= 0 -> t_bitstr(0, B1);
      true -> ?none
   end;
-t_inf(?bitstr(U1,B1),?bitstr(U1,B1)) ->
-  t_bitstr(U1,B1);
-t_inf(?bitstr(U1,B1),?bitstr(U2,B2)) when U2 > U1 ->
-  inf_bitstr(U2,B2,U1,B1);
-t_inf(?bitstr(U1,B1),?bitstr(U2,B2)) ->
-  inf_bitstr(U1,B1,U2,B2);
-t_inf(?function(Domain1, Range1), ?function(Domain2, Range2)) ->
-  case t_inf(Domain1, Domain2) of
+t_inf(?bitstr(U1, B1), ?bitstr(U1, B1), _Mode) ->
+  t_bitstr(U1, B1);
+t_inf(?bitstr(U1, B1), ?bitstr(U2, B2), _Mode) when U2 > U1 ->
+  inf_bitstr(U2, B2, U1, B1);
+t_inf(?bitstr(U1, B1), ?bitstr(U2, B2), _Mode) ->
+  inf_bitstr(U1, B1, U2, B2);
+t_inf(?function(Domain1, Range1), ?function(Domain2, Range2), Mode) ->
+  case t_inf(Domain1, Domain2, Mode) of
     ?none -> ?none;
-    Domain ->
-      ?function(Domain, t_inf(Range1, Range2))
+    Domain -> ?function(Domain, t_inf(Range1, Range2, Mode))
   end;
-t_inf(?identifier(Set1), ?identifier(Set2)) ->
+t_inf(?identifier(Set1), ?identifier(Set2), _Mode) ->
   case set_intersection(Set1, Set2) of
     ?none -> ?none;
     Set -> ?identifier(Set)
   end;
-t_inf(?matchstate(Pres1,Slots1),
-      ?matchstate(Pres2,Slots2)) ->
-  ?matchstate(t_inf(Pres1,Pres2),
-	      t_inf(Slots1,Slots2));
-t_inf(?nil, ?nil) -> ?nil;
-t_inf(?nil, ?nonempty_list(_, _)) ->
+t_inf(?matchstate(Pres1, Slots1), ?matchstate(Pres2, Slots2), _Mode) ->
+  ?matchstate(t_inf(Pres1, Pres2), t_inf(Slots1, Slots2));
+t_inf(?nil, ?nil, _Mode) -> ?nil;
+t_inf(?nil, ?nonempty_list(_, _), _Mode) ->
   ?none;
-t_inf(?nonempty_list(_, _), ?nil) ->
+t_inf(?nonempty_list(_, _), ?nil, _Mode) ->
   ?none;
-t_inf(?nil, ?list(_Contents, Termination, _)) ->
-  t_inf(?nil, Termination);
-t_inf(?list(_Contents, Termination, _), ?nil) ->
-  t_inf(?nil, Termination);
-t_inf(?list(Contents1, Termination1, Size1), 
-      ?list(Contents2, Termination2, Size2)) ->  
-  case t_inf(Termination1, Termination2) of
+t_inf(?nil, ?list(_Contents, Termination, _), Mode) ->
+  t_inf(?nil, Termination, Mode);
+t_inf(?list(_Contents, Termination, _), ?nil, Mode) ->
+  t_inf(?nil, Termination, Mode);
+t_inf(?list(Contents1, Termination1, Size1),
+      ?list(Contents2, Termination2, Size2), Mode) ->  
+  case t_inf(Termination1, Termination2, Mode) of
     ?none -> ?none;
     Termination ->
-      case t_inf(Contents1, Contents2) of
+      case t_inf(Contents1, Contents2, Mode) of
 	?none -> 
 	  %% If none of the lists are nonempty, then the infimum is nil.
 	  case (Size1 =:= ?any) andalso (Size2 =:= ?any) of
@@ -1382,7 +1646,7 @@ t_inf(?list(Contents1, Termination1, Size1),
 	  ?list(Contents, Termination, Size)
       end
   end;
-t_inf(T1 = ?number(_, _), T2 = ?number(_, _)) ->
+t_inf(T1 = ?number(_, _), T2 = ?number(_, _), _Mode) ->
   case {T1, T2} of
     {T, T}                           -> T;
     {_, ?number(?any, ?number_tag)}  -> T1;
@@ -1399,13 +1663,13 @@ t_inf(T1 = ?number(_, _), T2 = ?number(_, _)) ->
     {?int_range(From1, To1), ?int_range(From2, To2)} -> 
       t_from_range(max(From1, From2), min(To1, To2));
     {Range = ?int_range(_, _), ?int_set(Set)} ->
-      %%io:format("t_inf range, set args ~p ~p ~n", [T1, T2]),
+      %% io:format("t_inf range, set args ~p ~p ~n", [T1, T2]),
       Ans2 = 
 	case set_filter(fun(X) -> in_range(X, Range) end, Set) of
 	  ?none -> ?none;
 	  NewSet -> ?int_set(NewSet)
 	end,
-      %%io:format("Ans2 ~p ~n", [Ans2]),
+      %% io:format("Ans2 ~p ~n", [Ans2]),
       Ans2;
     {?int_set(Set), Range = ?int_range(_, _)} ->
       case set_filter(fun(X) -> in_range(X, Range) end, Set) of
@@ -1413,121 +1677,141 @@ t_inf(T1 = ?number(_, _), T2 = ?number(_, _)) ->
 	NewSet -> ?int_set(NewSet)
       end
   end;
-t_inf(?product(Types1), ?product(Types2)) ->
+t_inf(?product(Types1), ?product(Types2), Mode) ->
   L1 = length(Types1),
   L2 = length(Types2),
-  if L1 =:= L2 -> ?product(t_inf_lists(Types1, Types2));
+  if L1 =:= L2 -> ?product(t_inf_lists(Types1, Types2, Mode));
      true -> ?none
   end;
-t_inf(?product(_), _) ->
+t_inf(?product(_), _, _Mode) ->
   ?none;
-t_inf(_, ?product(_)) ->
+t_inf(_, ?product(_), _Mode) ->
   ?none;
-t_inf(?tuple(?any, ?any, ?any), T = ?tuple(_, _, _)) -> T;
-t_inf(T = ?tuple(_, _, _), ?tuple(?any, ?any, ?any)) -> T;
-t_inf(?tuple(?any, ?any, ?any), T = ?tuple_set(_)) -> T;
-t_inf(T = ?tuple_set(_), ?tuple(?any, ?any, ?any)) -> T;
-t_inf(?tuple(Elements1, Arity, _Tag1), ?tuple(Elements2, Arity, _Tag2)) ->
-  case t_inf_lists_strict(Elements1, Elements2) of
+t_inf(?tuple(?any, ?any, ?any), T = ?tuple(_, _, _), _Mode) -> T;
+t_inf(T = ?tuple(_, _, _), ?tuple(?any, ?any, ?any), _Mode) -> T;
+t_inf(?tuple(?any, ?any, ?any), T = ?tuple_set(_), _Mode) -> T;
+t_inf(T = ?tuple_set(_), ?tuple(?any, ?any, ?any), _Mode) -> T;
+t_inf(?tuple(Elements1, Arity, _Tag1), ?tuple(Elements2, Arity, _Tag2), Mode) ->
+  case t_inf_lists_strict(Elements1, Elements2, Mode) of
     ?none -> ?none;
     NewElements -> t_tuple(NewElements)
   end;
-t_inf(?tuple_set(List1), ?tuple_set(List2)) ->
-  inf_tuple_sets(List1, List2);
-t_inf(?tuple_set(List), T = ?tuple(_, Arity, _)) ->
-  inf_tuple_sets(List, [{Arity, [T]}]);
-t_inf(T = ?tuple(_, Arity, _), ?tuple_set(List)) ->
-  inf_tuple_sets(List, [{Arity, [T]}]);
-t_inf(?union(U1), T) ->
+t_inf(?tuple_set(List1), ?tuple_set(List2), Mode) ->
+  inf_tuple_sets(List1, List2, Mode);
+t_inf(?tuple_set(List), T = ?tuple(_, Arity, _), Mode) ->
+  inf_tuple_sets(List, [{Arity, [T]}], Mode);
+t_inf(T = ?tuple(_, Arity, _), ?tuple_set(List), Mode) ->
+  inf_tuple_sets(List, [{Arity, [T]}], Mode);
+%% be careful: here and in the next clause T can be ?opaque
+t_inf(?union(U1), T, Mode) ->
   ?union(U2) = force_union(T),
-  inf_union(U1, U2);
-t_inf(T, ?union(U2)) ->
+  inf_union(U1, U2, Mode);
+t_inf(T, ?union(U2), Mode) ->
   ?union(U1) = force_union(T),
-  inf_union(U1, U2);
-t_inf(#c{}, #c{}) ->
+  inf_union(U1, U2, Mode);
+%% and as a result, the cases for ?opaque should appear *after* ?union
+t_inf(?opaque(Set1), ?opaque(Set2), _Mode) ->
+  case set_intersection(Set1, Set2) of
+    ?none -> ?none;
+    NewSet -> ?opaque(NewSet)
+  end;
+t_inf(T1 = ?opaque(_), T2, opaque) ->
+  case t_inf(t_opaque_structure(T1), T2, structured) of
+    ?none -> ?none;
+    _Type -> T1
+  end;
+t_inf(T1, T2 = ?opaque(_), opaque) ->
+  case t_inf(T1, t_opaque_structure(T2), structured) of
+    ?none -> ?none;
+    _Type -> T2
+  end;
+t_inf(#c{}, #c{}, _) ->
   ?none.
 
 t_inf_lists(L1, L2) ->
-  t_inf_lists(L1, L2, []).
+  t_inf_lists(L1, L2, structured).
 
-t_inf_lists([T1|Left1], [T2|Left2], Acc) ->
-  t_inf_lists(Left1, Left2, [t_inf(T1, T2)|Acc]);
-t_inf_lists([], [], Acc) ->
+t_inf_lists(L1, L2, Mode) ->
+  t_inf_lists(L1, L2, [], Mode).
+
+t_inf_lists([T1|Left1], [T2|Left2], Acc, Mode) ->
+  t_inf_lists(Left1, Left2, [t_inf(T1, T2, Mode)|Acc], Mode);
+t_inf_lists([], [], Acc, _Mode) ->
   lists:reverse(Acc).
 
 %% Infimum of lists with strictness. If any element is none, the whole
 %% type is none.
 
-t_inf_lists_strict(L1, L2) ->
-  t_inf_lists_strict(L1, L2, []).
+t_inf_lists_strict(L1, L2, Mode) ->
+  t_inf_lists_strict(L1, L2, [], Mode).
 
-t_inf_lists_strict([T1|Left1], [T2|Left2], Acc) ->
-  case t_inf(T1, T2) of
+t_inf_lists_strict([T1|Left1], [T2|Left2], Acc, Mode) ->
+  case t_inf(T1, T2, Mode) of
     ?none -> ?none;
-    T -> t_inf_lists_strict(Left1, Left2, [T|Acc])
+    T -> t_inf_lists_strict(Left1, Left2, [T|Acc], Mode)
   end;
-t_inf_lists_strict([], [], Acc) ->
+t_inf_lists_strict([], [], Acc, _Mode) ->
   lists:reverse(Acc).
 
-inf_tuple_sets(L1, L2) ->
-  case inf_tuple_sets(L1, L2, []) of
+inf_tuple_sets(L1, L2, Mode) ->
+  case inf_tuple_sets(L1, L2, [], Mode) of
     [] -> ?none;
     [{_Arity, [OneTuple = ?tuple(_, _, _)]}] -> OneTuple;
     List -> ?tuple_set(List)
   end.
 
-inf_tuple_sets([{Arity, Tuples1}|Left1], [{Arity, Tuples2}|Left2], Acc) ->
-  case inf_tuples_in_sets(Tuples1, Tuples2) of
-    [] -> inf_tuple_sets(Left1, Left2, Acc);
-    NewTuples -> inf_tuple_sets(Left1, Left2, [{Arity, NewTuples}|Acc])
+inf_tuple_sets([{Arity, Tuples1}|Left1], [{Arity, Tuples2}|Left2], Acc, Mode) ->
+  case inf_tuples_in_sets(Tuples1, Tuples2, Mode) of
+    [] -> inf_tuple_sets(Left1, Left2, Acc, Mode);
+    NewTuples -> inf_tuple_sets(Left1, Left2, [{Arity, NewTuples}|Acc], Mode)
   end;
-inf_tuple_sets(L1 = [{Arity1, _}|Left1], L2 = [{Arity2, _}|Left2], Acc) ->
-  if Arity1 < Arity2 -> inf_tuple_sets(Left1, L2, Acc);
-     Arity1 > Arity2 -> inf_tuple_sets(L1, Left2, Acc)
+inf_tuple_sets(L1 = [{Arity1, _}|Left1], L2 = [{Arity2, _}|Left2], Acc, Mode) ->
+  if Arity1 < Arity2 -> inf_tuple_sets(Left1, L2, Acc, Mode);
+     Arity1 > Arity2 -> inf_tuple_sets(L1, Left2, Acc, Mode)
   end;
-inf_tuple_sets([], _, Acc) -> lists:reverse(Acc);
-inf_tuple_sets(_, [], Acc) -> lists:reverse(Acc).
+inf_tuple_sets([], _, Acc, _Mode) -> lists:reverse(Acc);
+inf_tuple_sets(_, [], Acc, _Mode) -> lists:reverse(Acc).
       
-inf_tuples_in_sets([?tuple(Elements1, _, ?any)], L2) ->
-  NewList = [t_inf_lists_strict(Elements1, Elements2)
+inf_tuples_in_sets([?tuple(Elements1, _, ?any)], L2, Mode) ->
+  NewList = [t_inf_lists_strict(Elements1, Elements2, Mode)
 	     || ?tuple(Elements2, _, _) <- L2],
   [t_tuple(Es) || Es <- NewList, Es =/= ?none];
-inf_tuples_in_sets(L1, [?tuple(Elements2, _, ?any)]) ->
-  NewList = [t_inf_lists_strict(Elements1, Elements2)
+inf_tuples_in_sets(L1, [?tuple(Elements2, _, ?any)], Mode) ->
+  NewList = [t_inf_lists_strict(Elements1, Elements2, Mode)
 	     || ?tuple(Elements1, _, _) <- L1],
   [t_tuple(Es) || Es <- NewList, Es =/= ?none];
-inf_tuples_in_sets(L1, L2) ->
-  inf_tuples_in_sets(L1, L2, []).
+inf_tuples_in_sets(L1, L2, Mode) ->
+  inf_tuples_in_sets(L1, L2, [], Mode).
 
 inf_tuples_in_sets([?tuple(Elements1, Arity, Tag)|Left1], 
-		   [?tuple(Elements2, Arity, Tag)|Left2], Acc) ->
-  case t_inf_lists_strict(Elements1, Elements2) of
-    ?none -> inf_tuples_in_sets(Left1, Left2, Acc);
+		   [?tuple(Elements2, Arity, Tag)|Left2], Acc, Mode) ->
+  case t_inf_lists_strict(Elements1, Elements2, Mode) of
+    ?none -> inf_tuples_in_sets(Left1, Left2, Acc, Mode);
     NewElements -> 
-      inf_tuples_in_sets(Left1, Left2, [?tuple(NewElements, Arity, Tag)|Acc])
+      inf_tuples_in_sets(Left1, Left2, [?tuple(NewElements, Arity, Tag)|Acc], Mode)
   end;
 inf_tuples_in_sets(L1 = [?tuple(_, _, Tag1)|Left1], 
-		   L2 = [?tuple(_, _, Tag2)|Left2], Acc) ->
-  if Tag1 < Tag2 -> inf_tuples_in_sets(Left1, L2, Acc);
-     Tag1 > Tag2 -> inf_tuples_in_sets(L1, Left2, Acc)
+		   L2 = [?tuple(_, _, Tag2)|Left2], Acc, Mode) ->
+  if Tag1 < Tag2 -> inf_tuples_in_sets(Left1, L2, Acc, Mode);
+     Tag1 > Tag2 -> inf_tuples_in_sets(L1, Left2, Acc, Mode)
   end;
-inf_tuples_in_sets([], _, Acc) -> lists:reverse(Acc);
-inf_tuples_in_sets(_, [], Acc) -> lists:reverse(Acc).
+inf_tuples_in_sets([], _, Acc, _Mode) -> lists:reverse(Acc);
+inf_tuples_in_sets(_, [], Acc, _Mode) -> lists:reverse(Acc).
 
-inf_union(U1, U2) ->
-  inf_union(U1, U2, 0, []).
+inf_union(U1, U2, Mode) ->
+  inf_union(U1, U2, 0, [], Mode).
 
-inf_union([?none|Left1], [?none|Left2], N, Acc) ->
-  inf_union(Left1, Left2, N, [?none|Acc]);
-inf_union([T1|Left1], [T2|Left2], N, Acc) ->
-  case t_inf(T1, T2) of
-    ?none -> inf_union(Left1, Left2, N, [?none|Acc]);
-    T     -> inf_union(Left1, Left2, N+1, [T|Acc])
+inf_union([?none|Left1], [?none|Left2], N, Acc, Mode) ->
+  inf_union(Left1, Left2, N, [?none|Acc], Mode);
+inf_union([T1|Left1], [T2|Left2], N, Acc, Mode) ->
+  case t_inf(T1, T2, Mode) of
+    ?none -> inf_union(Left1, Left2, N, [?none|Acc], Mode);
+    T     -> inf_union(Left1, Left2, N+1, [T|Acc], Mode)
   end;
-inf_union([], [], N, Acc) ->
+inf_union([], [], N, Acc, _Mode) ->
   if N =:= 0 -> ?none;
      N =:= 1 ->
-      [Type] = [T || T <- Acc, T=/=?none],
+      [Type] = [T || T <- Acc, T =/= ?none],
       Type;
      N >= 2  -> ?union(lists:reverse(Acc))
   end.
@@ -1600,7 +1884,6 @@ t_subst(T = ?tuple_set(_), Dict, Fun) ->
   t_sup([t_subst(T, Dict, Fun) || T <- t_tuple_subtypes(T)]);
 t_subst(T, _Dict, _Fun) -> 
   T.
-
 	      
 %%-----------------------------------------------------------------------------
 %% Unification
@@ -1608,7 +1891,7 @@ t_subst(T, _Dict, _Fun) ->
 
 t_unify(T1, T2) ->
   {T, Dict} = t_unify(T1, T2, dict:new()),
-  {t_subst(T, Dict), lists:keysort(1,dict:to_list(Dict))}.
+  {t_subst(T, Dict), lists:keysort(1, dict:to_list(Dict))}.
 
 t_unify(T = ?var(Id), ?var(Id), Dict) ->
   {T, Dict};
@@ -1788,8 +2071,6 @@ unify_lists([], [], Dict, Acc) ->
 %% Example: {a|b,c|d}\{a|b,d} = {a,c}|{a,d}|{b,c}|{b,d} \ {a,d}|{b,d} = 
 %%                            = {a,c}|{b,c} = {a|b,c}
 
-
-
 t_subtract_list(T1, [T2|Left]) ->
   t_subtract_list(t_subtract(T1, T2), Left);
 t_subtract_list(T, []) ->
@@ -1806,8 +2087,8 @@ t_subtract(?atom(Set1), ?atom(Set2)) ->
     ?none -> ?none;
     Set -> ?atom(Set)
   end;
-t_subtract(?bitstr(U1,B1),?bitstr(U2,B2)) ->
-  subtract_bin(t_bitstr(U1,B1),t_inf(t_bitstr(U1,B1),t_bitstr(U2,B2)));
+t_subtract(?bitstr(U1, B1), ?bitstr(U2, B2)) ->
+  subtract_bin(t_bitstr(U1, B1), t_inf(t_bitstr(U1, B1), t_bitstr(U2, B2)));
 t_subtract(T1 = ?function(_, _), T2 = ?function(_, _)) ->
   case t_is_subtype(T1, T2) of
     true -> ?none;
@@ -1818,8 +2099,12 @@ t_subtract(?identifier(Set1), ?identifier(Set2)) ->
     ?none -> ?none;
     Set -> ?identifier(Set)
   end;
-t_subtract(?matchstate(Pres1,Slots1),
-	   ?matchstate(Pres2,_Slots2)) ->
+t_subtract(?opaque(Set1), ?opaque(Set2)) ->
+  case set_subtract(Set1, Set2) of
+    ?none -> ?none;
+    Set -> ?opaque(Set)
+  end;
+t_subtract(?matchstate(Pres1, Slots1), ?matchstate(Pres2, _Slots2)) ->
   Pres = t_subtract(Pres1,Pres2),
   case t_is_none(Pres) of
     true -> ?none;
@@ -1895,7 +2180,7 @@ t_subtract(T1 = ?int_range(From, To), _T2 = ?int_set(Set)) ->
      true -> t_from_range(NewFrom, NewTo)
   end;
 t_subtract(?int_set(Set), ?int_range(From, To)) ->
-  case set_filter(fun(X) -> not ((X =< From) orelse (X >= To))end, Set) of
+  case set_filter(fun(X) -> not ((X =< From) orelse (X >= To)) end, Set) of
     ?none -> ?none;
     NewSet -> ?int_set(NewSet)
   end;
@@ -1987,27 +2272,27 @@ replace_nontrivial_element([T1|Left1], [?none|Left2], Acc) ->
 replace_nontrivial_element([_|Left1], [T2|_], Acc) ->
   lists:reverse(Acc) ++ [T2|Left1].
 
-subtract_bin(?bitstr(U1,B1),?bitstr(U1,B1)) ->
+subtract_bin(?bitstr(U1, B1), ?bitstr(U1, B1)) ->
   ?none;
-subtract_bin(?bitstr(U1,B1),?none) ->
-  t_bitstr(U1,B1);
-subtract_bin(?bitstr(U1,B1),?bitstr(0,B1)) ->
-  t_bitstr(U1,B1+U1);
-subtract_bin(?bitstr(U1,B1),?bitstr(U1,B2)) ->
-  if (B1+U1) =/= B2 -> t_bitstr(0,B1);
-     true -> t_bitstr(U1,B1)
+subtract_bin(?bitstr(U1, B1), ?none) ->
+  t_bitstr(U1, B1);
+subtract_bin(?bitstr(U1, B1), ?bitstr(0, B1)) ->
+  t_bitstr(U1, B1+U1);
+subtract_bin(?bitstr(U1, B1), ?bitstr(U1, B2)) ->
+  if (B1+U1) =/= B2 -> t_bitstr(0, B1);
+     true -> t_bitstr(U1, B1)
   end;
-subtract_bin(?bitstr(U1,B1),?bitstr(U2,B2)) ->
+subtract_bin(?bitstr(U1, B1), ?bitstr(U2, B2)) ->
   if (2 * U1) =:= U2 ->
       if B1 =:= B2 ->
-	  t_bitstr(U2,B1+U1);
+	  t_bitstr(U2, B1+U1);
 	 (B1 + U1) =:= B2 ->
-	  t_bitstr(U2,B1);
+	  t_bitstr(U2, B1);
 	 true ->
-	  t_bitstr(U1,B1)
+	  t_bitstr(U1, B1)
       end;
      true ->
-      t_bitstr(U1,B1)
+      t_bitstr(U1, B1)
   end.
 
 %%-----------------------------------------------------------------------------
@@ -2016,7 +2301,7 @@ subtract_bin(?bitstr(U1,B1),?bitstr(U2,B2)) ->
 
 t_is_equal(T, T)  -> true;
 t_is_equal(_, _) -> false.
-  
+
 t_is_subtype(T1, T2) ->
   Inf = t_inf(T1, T2),
   t_is_equal(T1, Inf).
@@ -2062,7 +2347,6 @@ t_limit_k(?product(Elements), K) ->
 t_limit_k(?union(Elements), K) ->
   ?union([t_limit_k(X, K) || X <- Elements]);
 t_limit_k(T, _K) -> T.
-
 
 %%============================================================================
 %% 
@@ -2124,16 +2408,16 @@ t_map(Fun, Tuples = ?tuple_set(_)) ->
 t_map(Fun, T) ->
   Fun(T).
 
-%%============================================================================
-%% 
+%%=============================================================================
+%%
 %% Prettyprinter
 %%
-%%============================================================================
+%%=============================================================================
 
 t_to_string(T) ->
   t_to_string(T, dict:new()).
 
-t_to_string(?any, _RecDict) -> 
+t_to_string(?any, _RecDict) ->
   "any()";
 t_to_string(?none, _RecDict) ->
   "none()";
@@ -2141,7 +2425,7 @@ t_to_string(?unit, _RecDict) ->
   "no_return()";
 t_to_string(?atom(?any), _RecDict) -> 
   "atom()";
-t_to_string(?atom(Set), _RecDict)  ->
+t_to_string(?atom(Set), _RecDict) ->
   case set_size(Set) of
     2 ->
       case set_is_element(true, Set) andalso set_is_element(false, Set) of
@@ -2151,15 +2435,15 @@ t_to_string(?atom(Set), _RecDict)  ->
     _ ->
       set_to_string(Set)
   end;
-t_to_string(?bitstr(8,0), _RecDict) -> 
+t_to_string(?bitstr(8, 0), _RecDict) ->
   "binary()";
-t_to_string(?bitstr(0,0), _RecDict) -> 
+t_to_string(?bitstr(0, 0), _RecDict) ->
   "<<>>";
-t_to_string(?bitstr(0,B), _RecDict) -> 
+t_to_string(?bitstr(0, B), _RecDict) ->
   io_lib:format("<<_:~w>>",[B]);
-t_to_string(?bitstr(U,0), _RecDict) -> 
+t_to_string(?bitstr(U, 0), _RecDict) ->
   io_lib:format("<<_:_*~w>>",[U]);
-t_to_string(?bitstr(U,B), _RecDict) ->
+t_to_string(?bitstr(U, B), _RecDict) ->
   io_lib:format("<<_:~w,_:_*~w>>",[B,U]);
 t_to_string(?function(?any, ?any), _RecDict) ->
   "fun()";
@@ -2168,14 +2452,20 @@ t_to_string(?function(?any, Range), RecDict) ->
 t_to_string(?function(?product(ArgList), Range), RecDict) ->
   "fun((" ++ comma_sequence(ArgList, RecDict) ++ ") -> "
     ++t_to_string(Range, RecDict) ++ ")";
-t_to_string(?identifier(Set), _RecDict) -> 
+t_to_string(?identifier(Set), _RecDict) ->
   if Set =:= ?any -> "identifier()";
      true -> sequence([io_lib:format("~w()", [T]) 
 		       || T <- set_to_list(Set)], [], " | ")
   end;
-t_to_string(?matchstate(Pres,Slots),RecDict) ->
-  io_lib:format("ms(~s,~s)", [t_to_string(Pres,RecDict),
-				 t_to_string(Slots,RecDict)]);
+t_to_string(?opaque(Set), _RecDict) ->
+  sequence([case Mod of
+	      'UNKNOWN' -> io_lib:format("~w()", [Name]);
+	      _Other -> io_lib:format("~w:~w()", [Mod, Name])
+	    end
+	    || #opaque{name=Name, mod=Mod} <- set_to_list(Set)], [], " | ");
+t_to_string(?matchstate(Pres, Slots), RecDict) ->
+  io_lib:format("ms(~s,~s)", [t_to_string(Pres, RecDict),
+			      t_to_string(Slots,RecDict)]);
 t_to_string(?nil, _RecDict) ->
   "[]";
 t_to_string(?nonempty_list(Contents, Termination), RecDict) ->
@@ -2190,8 +2480,8 @@ t_to_string(?nonempty_list(Contents, Termination), RecDict) ->
       %% Just a safety check.
       case Contents =:= ?any of
 	true -> ok;
-	false -> erlang:error({illegal_list, 
-			       ?nonempty_list(Contents, Termination)})
+	false ->
+	  erlang:error({illegal_list, ?nonempty_list(Contents, Termination)})
       end,
       "nonempty_maybe_improper_list()";
     _ ->
@@ -2216,8 +2506,8 @@ t_to_string(?list(Contents, Termination, ?any), RecDict) ->
       %% Just a safety check.      
       case Contents =:= ?any of
 	true -> ok;
-	false -> erlang:error({illegal_list, 
-			       ?list(Contents, Termination, ?any)})
+	false ->
+	  erlang:error({illegal_list, ?list(Contents, Termination, ?any)})
       end,
       "maybe_improper_list()";
     _ -> 
@@ -2231,7 +2521,7 @@ t_to_string(?list(Contents, Termination, ?any), RecDict) ->
       end
   end;
 t_to_string(?int_set(Set), _RecDict) ->
-  set_to_string(Set);  
+  set_to_string(Set);
 t_to_string(?byte, _RecDict) -> "byte()";
 t_to_string(?char, _RecDict) -> "char()";
 t_to_string(?integer_pos, _RecDict) -> "pos_integer()";
@@ -2254,8 +2544,8 @@ t_to_string(?tuple(Elements, Arity, Tag), RecDict) ->
     {ok, FieldNames} ->
       record_to_string(TagAtom, Elements, FieldNames, RecDict)
   end;
-t_to_string(?tuple_set(List), RecDict) ->
-  union_sequence(lists:append([Tuple || {_Arity, Tuple} <- List]), RecDict);
+t_to_string(?tuple_set(_) = T, RecDict) ->
+  union_sequence(t_tuple_subtypes(T), RecDict);
 t_to_string(?union(Types), RecDict) ->
   union_sequence([T || T <- Types, T =/= ?none], RecDict);
 t_to_string(?var(Id), _RecDict) when is_atom(Id) ->
@@ -2265,7 +2555,7 @@ t_to_string(?var(Id), _RecDict) when is_integer(Id) ->
 
 record_to_string(Tag, [_|Fields], FieldNames, RecDict) ->
   FieldStrings = record_fields_to_string(Fields, FieldNames, RecDict, []),
-  "#" ++ atom_to_list(Tag)++"{" ++ sequence(FieldStrings, [], ",") ++ "}".
+  "#" ++ atom_to_list(Tag) ++ "{" ++ sequence(FieldStrings, [], ",") ++ "}".
 
 record_fields_to_string([Field|Left1], [{FieldName, DeclaredType}|Left2], 
 			RecDict, Acc) ->
@@ -2293,7 +2583,7 @@ comma_sequence(Types, RecDict) ->
   List = [case T =:= ?any of
 	    true -> "_";
 	    false -> t_to_string(T, RecDict)
-	  end || T <- Types], 
+	  end || T <- Types],
   sequence(List, ",").
 
 union_sequence(Types, RecDict) ->
@@ -2310,12 +2600,11 @@ sequence([T], Acc, _Delimiter) ->
 sequence([T|Left], Acc, Delimiter) -> 
   sequence(Left, [T ++ Delimiter|Acc], Delimiter).
 
-  
-%%============================================================================
+%%=============================================================================
 %% 
 %% Build a type from parse forms.
 %%
-%%============================================================================
+%%=============================================================================
 
 t_from_form(Form) ->
   t_from_form(Form, dict:new()).
@@ -2347,6 +2636,8 @@ t_from_form({type, _L, binary, [{integer, _, Base}, {integer, _, Unit}]},
 t_from_form({type, _L, bool, []}, _RecDict, _VarDict) -> t_bool();
 t_from_form({type, _L, byte, []}, _RecDict, _VarDict) -> t_byte();
 t_from_form({type, _L, char, []}, _RecDict, _VarDict) -> t_char();
+t_from_form({type, _L, dict, []}, _RecDict, _VarDict) -> t_dict();
+t_from_form({type, _L, digraph, []}, _RecDict, _VarDict) -> t_digraph();
 t_from_form({type, _L, float, []}, _RecDict, _VarDict) -> t_float();
 t_from_form({type, _L, function, []}, _RecDict, _VarDict) -> t_fun();
 t_from_form({type, _L, 'fun', []}, _RecDict, _VarDict) -> t_fun();
@@ -2356,8 +2647,11 @@ t_from_form({type, _L, 'fun', [{type, _, product, Domain}, Range]},
 	    RecDict, VarDict) -> 
   t_fun([t_from_form(D, RecDict, VarDict) || D <- Domain], 
 	t_from_form(Range, RecDict, VarDict));
+t_from_form({type, _L, gb_set, []}, _RecDict, _VarDict) -> t_gb_set();
+t_from_form({type, _L, gb_tree, []}, _RecDict, _VarDict) -> t_gb_tree();
 t_from_form({type, _L, identifier, []}, _RecDict, _VarDict) -> t_identifier();
 t_from_form({type, _L, integer, []}, _RecDict, _VarDict) -> t_integer();
+t_from_form({type, _L, iodata, []}, _RecDict, _VarDict) -> t_iodata();
 t_from_form({type, _L, iolist, []}, _RecDict, _VarDict) -> t_iolist();
 t_from_form({type, _L, list, []}, _RecDict, _VarDict) -> t_list();
 t_from_form({type, _L, list, [Type]}, RecDict, VarDict) -> 
@@ -2396,7 +2690,7 @@ t_from_form({type, _L, maybe_improper_list, []}, _RecDict, _VarDict) ->
 t_from_form({type, _L, maybe_improper_list, [Content, Termination]}, 
 	    RecDict, VarDict) ->
   t_maybe_improper_list(t_from_form(Content, RecDict, VarDict), 
-		      t_from_form(Termination, RecDict, VarDict));
+			t_from_form(Termination, RecDict, VarDict));
 t_from_form({type, _L, product, Elements}, RecDict, VarDict) ->
   t_product([t_from_form(E, RecDict, VarDict) || E <- Elements]);
 t_from_form({type, _L, range, [{integer, _, From}, {integer, _, To}]}, 
@@ -2405,26 +2699,42 @@ t_from_form({type, _L, range, [{integer, _, From}, {integer, _, To}]},
 t_from_form({type, _L, record, [Name|Fields]}, RecDict, VarDict) -> 
   record_from_form(Name, Fields, RecDict, VarDict);
 t_from_form({type, _L, ref, []}, _RecDict, _VarDict) -> t_ref();
+t_from_form({type, _L, set, []}, _RecDict, _VarDict) -> t_set();
 t_from_form({type, _L, string, []}, _RecDict, _VarDict) -> t_string();
 t_from_form({type, _L, term, []}, _RecDict, _VarDict) -> t_any();
+t_from_form({type, _L, tid, []}, _RecDict, _VarDict) -> t_tid();
 t_from_form({type, _L, timeout, []}, _RecDict, _VarDict) -> t_timeout();
 t_from_form({type, _L, tuple, any}, _RecDict, _VarDict) -> t_tuple();
 t_from_form({type, _L, tuple, Args}, RecDict, VarDict) -> 
   t_tuple([t_from_form(A, RecDict, VarDict) || A <- Args]);
 t_from_form({type, _L, union, Args}, RecDict, VarDict) -> 
   t_sup([t_from_form(A, RecDict, VarDict) || A <- Args]);
-t_from_form({type, _L, Name, Args}, RecDict, VarDict) ->
+t_from_form({type, L, Name, Args}, RecDict, VarDict) ->
   case lookup_type(Name, RecDict) of
-    {ok, {Type, ArgNames}} when length(Args) =:= length(ArgNames) ->
+    {type, {Type, ArgNames}} when length(Args) =:= length(ArgNames) ->
       List = lists:zipwith(fun(ArgName, ArgType) -> 
 			       {ArgName, t_from_form(ArgType, RecDict, VarDict)}
 			   end, ArgNames, Args),
       TmpVardict = dict:from_list(List),
       t_from_form(Type, RecDict, TmpVardict);
-    {ok, _} ->
+    {opaque, {Type, ArgNames}} when length(Args) =:= length(ArgNames) ->
+      List = lists:zipwith(fun(ArgName, ArgType) -> 
+			       {ArgName, t_from_form(ArgType, RecDict, VarDict)}
+			   end, ArgNames, Args),
+      TmpVardict = dict:from_list(List),
+      Rep = t_from_form(Type, RecDict, TmpVardict),
+      t_from_form({opaque, L, Name, {'UNKNOWN', Args, Rep}}, RecDict, VarDict);
+    {type, _} ->
       throw({error, io_lib:format("Unknown type ~w\n", [Name])});
-    error -> 
+    {opaque, _} ->
+      throw({error, io_lib:format("Unknown opaque type ~w\n", [Name])});
+    error ->
       throw({error, io_lib:format("Unknown type ~w\n", [Name])}) 
+  end;
+t_from_form({opaque, _L, Name, {Mod, Args, Rep}}, _RecDict, _VarDict) -> 
+  case Args of
+    [] -> t_opaque(Mod, Name, Args, Rep);
+    _ -> throw({error, "Polymorphic opaque types not supported yet"})
   end.
 
 record_from_form({atom, _, Name}, ModFields, RecDict, VarDict) ->
@@ -2497,6 +2807,8 @@ t_form_to_string({type, _L, 'fun', [{type, _, any, []}, Range]}) ->
 t_form_to_string({type, _L, 'fun', [{type, _, product, Domain}, Range]}) ->
   "fun((" ++ sequence(t_form_to_string_list(Domain), ",") ++ ") -> " 
     ++ t_form_to_string(Range) ++ ")";
+t_form_to_string({type, _L, iodata, []}) -> "iodata()";
+t_form_to_string({type, _L, iolist, []}) -> "iolist()";
 t_form_to_string({type, _L, list, [Type]}) -> 
   "[" ++ t_form_to_string(Type) ++ "]";
 t_form_to_string({type, _L, mfa, []}) -> "mfa()";
@@ -2516,8 +2828,8 @@ t_form_to_string({type, _L, record, [{atom, _, Name}|Fields]}) ->
   io_lib:format("#~w{~s}", [Name, FieldString]);
 t_form_to_string({type, _L, field_type, [{atom, _, Name}, Type]}) ->
   io_lib:format("~w::~s", [Name, t_form_to_string(Type)]);
-t_form_to_string({type, _L, term, any}) -> "term()";
-t_form_to_string({type, _L, timeout, any}) -> "timeout()";
+t_form_to_string({type, _L, term, []}) -> "term()";
+t_form_to_string({type, _L, timeout, []}) -> "timeout()";
 t_form_to_string({type, _L, tuple, any}) -> "tuple()";
 t_form_to_string({type, _L, tuple, Args}) ->
   "{" ++ sequence(t_form_to_string_list(Args), ",") ++ "}";
@@ -2546,15 +2858,15 @@ t_form_to_string_list([H|T], Acc) ->
 t_form_to_string_list([], Acc) ->
   lists:reverse(Acc).  
   
-%%============================================================================
+%%=============================================================================
 %% 
 %% Utilities
 %%
-%%============================================================================
+%%=============================================================================
 
-%% any_none([?none|_Left]) -> true;
-%% any_none([_|Left]) -> any_none(Left);
-%% any_none([]) -> false.
+any_none([?none|_Left]) -> true;
+any_none([_|Left]) -> any_none(Left);
+any_none([]) -> false.
 
 any_none_or_unit([?none|_]) -> true;
 any_none_or_unit([?unit|_]) -> true;
@@ -2572,27 +2884,37 @@ lookup_record(Tag, RecDict) ->
       error
   end.
 
-lookup_record(Tag, Arity, RecDict) ->  
+lookup_record(Tag, Arity, RecDict) ->
   case dict:find(Tag, RecDict) of
     {ok, [{Arity, Fields}]} -> {ok, Fields};
     {ok, OrdDict} -> orddict:find(Arity, OrdDict);
-    error ->
-      error
+    error -> error
   end.
 
 lookup_type(Name, RecDict) ->
-  dict:find({type, Name}, RecDict).
+  case dict:find({type, Name}, RecDict) of
+    error -> 
+      case dict:find({opaque, Name}, RecDict) of
+	error -> error;
+	{ok, Found} -> {opaque, Found}
+      end;
+    {ok, Found} -> {type, Found}
+  end.
 
-type_is_defined(Name, RecDict) ->
-  dict:is_key({type, Name}, RecDict).
+%% -spec type_is_defined('type' | 'opaque', atom(), dict()) -> bool().
+type_is_defined(TypeOrOpaque, Name, RecDict) ->
+  dict:is_key({TypeOrOpaque, Name}, RecDict).
 
 %% -----------------------------------
 %% Set
 %%
 
 set_singleton(Element) ->
-  [Element].
+  ordsets:from_list([Element]).
 
+set_is_singleton(Element, Set) ->
+  set_singleton(Element) =:= Set.
+  
 set_is_element(Element, Set) ->
   ordsets:is_element(Element, Set).
 
@@ -2603,6 +2925,10 @@ set_union(S1, S2)  ->
     S when length(S) =< ?SET_LIMIT -> S;
     _ -> ?any
   end.
+
+set_union_no_limit(?any, _) -> ?any;
+set_union_no_limit(_, ?any) -> ?any;
+set_union_no_limit(S1, S2)  -> ordsets:union(S1, S2).
 
 %% The intersection and subtraction can return ?none. 
 %% This should always be handled right away since ?none is not a valid set.
@@ -2631,82 +2957,76 @@ set_from_list(List) ->
   end.
 
 set_to_list(Set) ->
-  Set.
+  ordsets:to_list(Set).
 
 set_filter(Fun, Set) ->
-  case lists:filter(Fun, Set) of
+  case ordsets:filter(Fun, Set) of
     [] -> ?none;
     NewSet -> NewSet
   end.
 
-set_size(?any) ->
-  ?any;
 set_size(Set) ->
-  length(Set).
+  ordsets:size(Set).
 
 set_to_string(Set) ->
-  List = set_to_list(Set),
-  List1 = 
-    [case is_atom(X) of
-       true -> io_lib:write_string(atom_to_list(X), $'); % This is not a quote '
-       false -> io_lib:format("~w", [X])
-     end|| X <- List],
-  sequence(List1, [], " | ").
+  L = [case is_atom(X) of
+	 true -> io_lib:write_string(atom_to_list(X), $'); % stupid emacs '
+	 false -> io_lib:format("~w", [X])
+       end || X <- set_to_list(Set)],
+  sequence(L, [], " | ").
 
 set_min([H|_]) -> H.
 
 set_max(Set) ->
   hd(lists:reverse(Set)).
 
-
-%%============================================================================
+%%=============================================================================
 %% 
 %% Utilities for the binary type
 %%
-%%============================================================================
+%%=============================================================================
 
-gcd(A,B) when B > A ->
-  gcd1(B,A);
-gcd(A,B) ->
-  gcd1(A,B).
+gcd(A, B) when B > A ->
+  gcd1(B, A);
+gcd(A, B) ->
+  gcd1(A, B).
   
-gcd1(A,0) -> A;
-gcd1(A,B) ->
+gcd1(A, 0) -> A;
+gcd1(A, B) ->
   case A rem B of
     0 -> B;
-    X -> gcd1(B,X)
+    X -> gcd1(B, X)
   end.
 
-bitstr_concat(?none,_) -> ?none;
-bitstr_concat(_,?none) -> ?none;
-bitstr_concat(?bitstr(U1,B1),?bitstr(U2,B2)) ->
-  t_bitstr(gcd(U1,U2),B1+B2).
+bitstr_concat(?none, _) -> ?none;
+bitstr_concat(_, ?none) -> ?none;
+bitstr_concat(?bitstr(U1, B1), ?bitstr(U2, B2)) ->
+  t_bitstr(gcd(U1, U2), B1+B2).
 
-bitstr_match(?none,_) -> ?none;
-bitstr_match(_,?none) -> ?none;
-bitstr_match(?bitstr(0,B1),?bitstr(0,B2)) when B1 =< B2 ->
-  t_bitstr(0,B2-B1);
-bitstr_match(?bitstr(0,_B1),?bitstr(0,_B2)) ->
+bitstr_match(?none, _) -> ?none;
+bitstr_match(_, ?none) -> ?none;
+bitstr_match(?bitstr(0, B1), ?bitstr(0, B2)) when B1 =< B2 ->
+  t_bitstr(0, B2-B1);
+bitstr_match(?bitstr(0, _B1), ?bitstr(0, _B2)) ->
   ?none;
-bitstr_match(?bitstr(0,B1),?bitstr(U2,B2)) when B1 =< B2 ->
-  t_bitstr(U2,B2-B1);
-bitstr_match(?bitstr(0,B1),?bitstr(U2,B2))  ->
-  t_bitstr(U2,handle_base(U2,B2-B1));
-bitstr_match(?bitstr(_,B1),?bitstr(0,B2)) when B1 > B2 ->
+bitstr_match(?bitstr(0, B1), ?bitstr(U2, B2)) when B1 =< B2 ->
+  t_bitstr(U2, B2-B1);
+bitstr_match(?bitstr(0, B1), ?bitstr(U2, B2))  ->
+  t_bitstr(U2, handle_base(U2, B2-B1));
+bitstr_match(?bitstr(_, B1), ?bitstr(0, B2)) when B1 > B2 ->
   ?none;
-bitstr_match(?bitstr(U1,B1),?bitstr(U2,B2)) ->
-  GCD = gcd(U1,U2),
-  t_bitstr(GCD,handle_base(GCD,B2-B1)).
+bitstr_match(?bitstr(U1, B1), ?bitstr(U2, B2)) ->
+  GCD = gcd(U1, U2),
+  t_bitstr(GCD, handle_base(GCD, B2-B1)).
 
 handle_base(Unit, Pos) when Pos >= 0 ->
   Pos rem Unit;
 handle_base(Unit, Neg) ->
   (Unit+(Neg rem Unit)) rem Unit.
-
-      
-%%============================================================================
+  
+%%=============================================================================
 %% Consistency-testing function(s) below
-%%============================================================================
+%%=============================================================================
 
 -ifdef(DO_ERL_TYPES_TEST).		  
 
@@ -2729,16 +3049,16 @@ test() ->
   Bitstr = t_bitstr(),
   true   = t_is_bitstr(Bitstr),
   
-  Bitstr1 = t_bitstr(7,3),
+  Bitstr1 = t_bitstr(7, 3),
   true   = t_is_bitstr(Bitstr1),
   false  = t_is_binary(Bitstr1),
 
-  Bitstr2 = t_bitstr(16,8),
+  Bitstr2 = t_bitstr(16, 8),
   true   = t_is_bitstr(Bitstr2),
   true   = t_is_binary(Bitstr2),
   
-  ?bitstr(8,16) = t_subtract(t_bitstr(4,12),t_bitstr(8,12)),
-  ?bitstr(8,16) = t_subtract(t_bitstr(4,12),t_bitstr(8,12)),
+  ?bitstr(8, 16) = t_subtract(t_bitstr(4, 12), t_bitstr(8, 12)),
+  ?bitstr(8, 16) = t_subtract(t_bitstr(4, 12), t_bitstr(8, 12)),
 
   Int1   = t_integer(),
   Int2   = t_integer(1),

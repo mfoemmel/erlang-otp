@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2000-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 %% We use the dynamic hashing techniques by Per-Åke Larsson as
@@ -54,26 +55,32 @@
 
 %% Define a hashtable.  The default values are the standard ones.
 -record(dict,
-	{size=0			::integer(),   	% Number of elements
-	 n=?seg_size		::integer(),   	% Number of active slots
-	 maxn=?seg_size		::integer(),	% Maximum slots
-	 bso=?seg_size div 2	::integer(),   	% Buddy slot offset
-	 exp_size=?exp_size	::integer(),   	% Size to expand at
-	 con_size=?con_size	::integer(),   	% Size to contract at
-	 empty,					% Empty segment
-	 segs			::tuple()      	% Segments
+	{size=0		      :: non_neg_integer(),   	% Number of elements
+	 n=?seg_size	      :: non_neg_integer(),   	% Number of active slots
+	 maxn=?seg_size	      :: non_neg_integer(),	% Maximum slots
+	 bso=?seg_size div 2  :: non_neg_integer(),   	% Buddy slot offset
+	 exp_size=?exp_size   :: non_neg_integer(),   	% Size to expand at
+	 con_size=?con_size   :: non_neg_integer(),   	% Size to contract at
+	 empty		      :: tuple(),		% Empty segment
+	 segs		      :: tuple()	      	% Segments
 	}).
+%% A declaration equivalent to the following one is hard-coded in erl_types.
+%% That declaration contains hard-coded information about the #dict{}
+%% structure and the types of its fields.  So, please make sure that any
+%% changes to its structure are also propagated to erl_types.erl.
+%%
+%% -opaque dict() :: #dict{}.
 
 -define(kv(K,V), [K|V]).			% Key-Value pair format
 %%-define(kv(K,V), {K,V}).			% Key-Value pair format
 
-%% new() -> Table.
+-spec new() -> dict().
 
 new() ->
     Empty = mk_seg(?seg_size),
     #dict{empty=Empty,segs={Empty}}.
 
-%% is_key(Key, Dictionary) -> bool().
+-spec is_key(term(), dict()) -> bool().
 
 is_key(Key, D) ->
     Slot = get_slot(D, Key),
@@ -84,31 +91,35 @@ find_key(K, [?kv(K,_Val)|_]) -> true;
 find_key(K, [_|Bkt]) -> find_key(K, Bkt);
 find_key(_, []) -> false.
 
-%% to_list(Dictionary) -> [{Key,Value}].
+-spec to_list(dict()) -> [{term(), term()}].
 
 to_list(D) ->
     fold(fun (Key, Val, List) -> [{Key,Val}|List] end, [], D).
 
-%% from_list([{Key,Value}]) -> Dictionary.
+-spec from_list([{term(), term()}]) -> dict().
 
 from_list(L) ->
     lists:foldl(fun ({K,V}, D) -> store(K, V, D) end, new(), L).
 
-%% size(Dictionary) -> integer().
+-spec size(dict()) -> non_neg_integer().
 
 size(#dict{size=N}) when is_integer(N), N >= 0 -> N. 
 
-%% fetch(Key, Dictionary) -> Value.
+-spec fetch(term(), dict()) -> term().
 
 fetch(Key, D) ->
     Slot = get_slot(D, Key),
     Bkt = get_bucket(D, Slot),
-    fetch_val(Key, Bkt).
+    try fetch_val(Key, Bkt)
+    catch
+	badarg -> erlang:error(badarg, [Key, D])
+    end.
 
 fetch_val(K, [?kv(K,Val)|_]) -> Val;
-fetch_val(K, [_|Bkt]) -> fetch_val(K, Bkt).
+fetch_val(K, [_|Bkt]) -> fetch_val(K, Bkt);
+fetch_val(_, []) -> throw(badarg).
 
-%% find(Key, Dictionary) -> {ok,Value} | error.
+-spec find(term(), dict()) -> {'ok', term()} | 'error'.
 
 find(Key, D) ->
     Slot = get_slot(D, Key),
@@ -119,12 +130,12 @@ find_val(K, [?kv(K,Val)|_]) -> {ok,Val};
 find_val(K, [_|Bkt]) -> find_val(K, Bkt);
 find_val(_, []) -> error.
 
-%% fetch_keys(Dictionary) -> [Key].
+-spec fetch_keys(dict()) -> [term()].
 
 fetch_keys(D) ->
     fold(fun (Key, _Val, Keys) -> [Key|Keys] end, [], D).
 
-%% erase(Key, Dictionary) -> NewDictionary.
+-spec erase(term(), dict()) -> dict().
 %%  Erase all elements with key Key.
 
 erase(Key, D0) -> 
@@ -139,7 +150,7 @@ erase_key(Key, [E|Bkt0]) ->
     {[E|Bkt1],Dc};
 erase_key(_, []) -> {[],0}.
 
-%% store(Key, Value, Dictionary) -> Dictionary.
+-spec store(term(), term(), dict()) -> dict().
 
 store(Key, Val, D0) ->
     Slot = get_slot(D0, Key),
@@ -155,7 +166,7 @@ store_bkt_val(Key, New, [Other|Bkt0]) ->
     {[Other|Bkt1],Ic};
 store_bkt_val(Key, New, []) -> {[?kv(Key,New)],1}.
 
-%% append(Key, Value, Dictionary) -> Dictionary.
+-spec append(term(), term(), dict()) -> dict().
 
 append(Key, Val, D0) ->
     Slot = get_slot(D0, Key),
@@ -171,7 +182,7 @@ append_bkt(Key, Val, [Other|Bkt0]) ->
     {[Other|Bkt1],Ic};
 append_bkt(Key, Val, []) -> {[?kv(Key,[Val])],1}.
 
-%% append_list(Key, List, Dictionary) -> Dictionary.
+-spec append_list(term(), [term()], dict()) -> dict().
 
 append_list(Key, L, D0) ->
     Slot = get_slot(D0, Key),
@@ -187,75 +198,80 @@ app_list_bkt(Key, L, [Other|Bkt0]) ->
     {[Other|Bkt1],Ic};
 app_list_bkt(Key, L, []) -> {[?kv(Key,L)],1}.
 
-% %% first_key(Table) -> {ok,Key} | error.
-% %%  Find the "first" key in a Table.
+%% %% first_key(Table) -> {ok,Key} | error.
+%% %%  Find the "first" key in a Table.
 
-% first_key(T) ->
-%     case next_bucket(T, 1) of
-% 	[?kv(K,Val)|Bkt] -> {ok,K};
-% 	[] -> error				%No elements
-%     end.
+%% first_key(T) ->
+%%     case next_bucket(T, 1) of
+%% 	[?kv(K,Val)|Bkt] -> {ok,K};
+%% 	[] -> error				%No elements
+%%     end.
 
-% next_bucket(T, Slot) when Slot > T#dict.n -> [];
-% next_bucket(T, Slot) ->
-%     case get_bucket(T, Slot) of
-% 	[] -> next_bucket(T, Slot+1);		%Empty bucket
-% 	B -> B
-%     end.
+%% next_bucket(T, Slot) when Slot > T#dict.n -> [];
+%% next_bucket(T, Slot) ->
+%%     case get_bucket(T, Slot) of
+%% 	[] -> next_bucket(T, Slot+1);		%Empty bucket
+%% 	B -> B
+%%     end.
 
-%% next_key(Table, Key) -> {ok,NextKey} | error.
+%% %% next_key(Table, Key) -> {ok,NextKey} | error.
 
-% next_key(T, Key) ->
-%     Slot = get_slot(T, Key),
-%     B = get_bucket(T, Slot),
-%     %% Find a bucket with something in it.
-%     Bkt = case bucket_after_key(Key, B) of
-% 	      no_key -> exit(badarg);
-% 	      [] -> next_bucket(T, Slot+1);
-% 	      Rest -> Rest
-% 	  end,
-%     case Bkt of
-% 	[?kv(Next,Val)|_] -> {ok,Next};
-% 	[] -> error				%We have reached the end!
-%     end.
+%% next_key(T, Key) ->
+%%     Slot = get_slot(T, Key),
+%%     B = get_bucket(T, Slot),
+%%     %% Find a bucket with something in it.
+%%     Bkt = case bucket_after_key(Key, B) of
+%% 	      no_key -> exit(badarg);
+%% 	      [] -> next_bucket(T, Slot+1);
+%% 	      Rest -> Rest
+%% 	  end,
+%%     case Bkt of
+%% 	[?kv(Next,Val)|_] -> {ok,Next};
+%% 	[] -> error				%We have reached the end!
+%%     end.
 
-% bucket_after_key(Key, [?kv(Key,Val)|Bkt]) -> Bkt;
-% bucket_after_key(Key, [Other|Bkt]) ->
-%     bucket_after_key(Key, Bkt);
-% bucket_after_key(Key, []) -> no_key.		%Key not found!
+%% bucket_after_key(Key, [?kv(Key,Val)|Bkt]) -> Bkt;
+%% bucket_after_key(Key, [Other|Bkt]) ->
+%%     bucket_after_key(Key, Bkt);
+%% bucket_after_key(Key, []) -> no_key.		%Key not found!
 
-%% on_key(Fun, Key, Dictionary) -> Dictionary.
+%% %% on_key(Fun, Key, Dictionary) -> Dictionary.
 
-% on_key(F, Key, D0) ->
-%     Slot = get_slot(D0, Key),
-%     {D1,Dc} = on_bucket(fun (B0) -> on_key_bkt(Key, F, B0) end,
-% 			D0, Slot),
-%     maybe_contract(D1, Dc).
+%% on_key(F, Key, D0) ->
+%%     Slot = get_slot(D0, Key),
+%%     {D1,Dc} = on_bucket(fun (B0) -> on_key_bkt(Key, F, B0) end,
+%% 			D0, Slot),
+%%     maybe_contract(D1, Dc).
 
-% on_key_bkt(Key, F, [?kv(Key,Val)|Bkt]) ->
-%     case F(Val) of
-% 	{ok,New} -> {[?kv(Key,New)|Bkt],0}; 
-% 	erase -> {Bkt,1}
-%     end;
-% on_key_bkt(Key, F, [Other|Bkt0]) ->
-%     {Bkt1,Dc} = on_key_bkt(Key, F, Bkt0),
-%     {[Other|Bkt1],Dc}.
+%% on_key_bkt(Key, F, [?kv(Key,Val)|Bkt]) ->
+%%     case F(Val) of
+%% 	{ok,New} -> {[?kv(Key,New)|Bkt],0}; 
+%% 	erase -> {Bkt,1}
+%%     end;
+%% on_key_bkt(Key, F, [Other|Bkt0]) ->
+%%     {Bkt1,Dc} = on_key_bkt(Key, F, Bkt0),
+%%     {[Other|Bkt1],Dc}.
 
-%% update(Key, Fun, Dictionary) -> Dictionary.
+-spec update(term(), fun((term()) -> term()), dict()) -> dict().
 
 update(Key, F, D0) ->
     Slot = get_slot(D0, Key),
-    {D1,_Uv} = on_bucket(fun (B0) -> update_bkt(Key, F, B0) end, D0, Slot),
-    D1.
+    try on_bucket(fun (B0) -> update_bkt(Key, F, B0) end, D0, Slot) of
+	{D1,_Uv} -> D1
+    catch
+	badarg -> erlang:error(badarg, [Key, F, D0])
+    end.
 
 update_bkt(Key, F, [?kv(Key,Val)|Bkt]) ->
     Upd = F(Val),
     {[?kv(Key,Upd)|Bkt],Upd};
 update_bkt(Key, F, [Other|Bkt0]) ->
     {Bkt1,Upd} = update_bkt(Key, F, Bkt0),
-    {[Other|Bkt1],Upd}.
+    {[Other|Bkt1],Upd};
+update_bkt(_Key, _F, []) ->
+    throw(badarg).
 
-%% update(Key, Fun, Init, Dictionary) -> Dictionary.
+-spec update(term(), fun((term()) -> term()), term(), dict()) -> dict().
 
 update(Key, F, Init, D0) ->
     Slot = get_slot(D0, Key),
@@ -270,7 +286,7 @@ update_bkt(Key, F, I, [Other|Bkt0]) ->
     {[Other|Bkt1],Ic};
 update_bkt(Key, F, I, []) when is_function(F, 1) -> {[?kv(Key,I)],1}.
 
-%% update_counter(Key, Incr, Dictionary) -> Dictionary.
+-spec update_counter(term(), number(), dict()) -> dict().
 
 update_counter(Key, Incr, D0) when is_number(Incr) ->
     Slot = get_slot(D0, Key),
@@ -285,20 +301,20 @@ counter_bkt(Key, I, [Other|Bkt0]) ->
     {[Other|Bkt1],Ic};
 counter_bkt(Key, I, []) -> {[?kv(Key,I)],1}.
 
-%% fold(FoldFun, Accumulator, Dictionary) -> Accumulator.
+-spec fold(fun((term(), term(), term()) -> term()), term(), dict()) -> term().
 %%  Fold function Fun over all "bags" in Table and return Accumulator.
 
 fold(F, Acc, D) -> fold_dict(F, Acc, D).
 
-%% map(MapFun, Dictionary) -> Dictionary.
+-spec map(fun((term(), term()) -> term()), dict()) -> dict().
 
 map(F, D) -> map_dict(F, D).
 
-%% filter(FilterFun, Dictionary) -> Dictionary.
+-spec filter(fun((term(), term()) -> bool()), dict()) -> dict().
 
 filter(F, D) -> filter_dict(F, D).
 
-%% merge(MergeFun, Dictionary, Dictionary) -> Dictionary.
+-spec merge(fun((term(), term(), term()) -> term()), dict(), dict()) -> dict().
 
 merge(F, D1, D2) when D1#dict.size < D2#dict.size ->
     fold_dict(fun (K, V1, D) ->

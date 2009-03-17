@@ -1,5 +1,22 @@
-%%% -*- erlang-indent-level: 2 -*-
-%%% $Id$
+%% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 
 -module(hipe_rtl_to_sparc).
 -export([translate/1]).
@@ -878,9 +895,8 @@ conv_src_list([], Map) ->
 %%% Convert an RTL destination operand (var/reg).
 
 conv_fpreg(Opnd, Map) ->
-  case hipe_rtl:is_fpreg(Opnd) of
-    true -> conv_dst(Opnd, Map)
-  end.
+  true = hipe_rtl:is_fpreg(Opnd),
+  conv_dst(Opnd, Map).
 
 conv_dst(Opnd, Map) ->
   {Name, Type} =

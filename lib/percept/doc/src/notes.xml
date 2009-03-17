@@ -31,6 +31,41 @@
   </header>
   <p>This document describes the changes made to the Percept application.</p>
 
+<section><title>Percept 0.8</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>A problem with options list to percept causing some
+	    options to be disregarded unintentionally. This has now
+	    been fixed.</p> <p>An error in <c>percept_analyzer</c>
+	    caused calculation of standard deviation to be incorrect.
+	    This has now been corrected.</p>
+          <p>
+	    Own Id: OTP-7693</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Updated css for percept server for enhanced
+	    viewing.</p> <p>Increased performance of egd render.</p>
+	    <p>Several graph errors could occur when compacting data
+	    to decrease graph rendering time causing incorrect
+	    scalability numbers. These errors have now been
+	    fixed.</p> <p>Increased viewing width for graphs. The
+	    viewing width is now dependent on client screen
+	    resolution.</p>
+          <p>
+	    Own Id: OTP-7696</p>
+        </item>
+      </list>
+    </section>
+
+</section>
 <section><title>Percept 0.7.3</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

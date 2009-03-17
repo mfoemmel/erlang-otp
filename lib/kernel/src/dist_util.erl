@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %%%----------------------------------------------------------------------
 %%% Purpose : The handshake of a streamed distribution connection
@@ -112,7 +113,8 @@ make_this_flags(RequestType, OtherNode) ->
 	 ?DFLAG_HIDDEN_ATOM_CACHE bor
 	 ?DFLAG_NEW_FUN_TAGS bor
 	 ?DFLAG_BIT_BINARIES bor
-	 ?DFLAG_NEW_FLOATS).
+	 ?DFLAG_NEW_FLOATS bor
+	 ?DFLAG_UNICODE_IO).
 
 handshake_other_started(#hs_data{request_type=ReqType}=HSData0) ->
     {PreOtherFlags,Node,Version} = recv_name(HSData0),
@@ -278,12 +280,12 @@ is_pending(Kernel, Node) ->
 %% is closed in a controlled way by inet_drv.
 %%
 
--spec(shutdown/3 :: (atom(), non_neg_integer(), _) -> no_return()).
+-spec shutdown(atom(), non_neg_integer(), term()) -> no_return().
 
 shutdown(Module, Line, Data) ->
     shutdown(Module, Line, Data, shutdown).
 
--spec(shutdown/4 :: (atom(), non_neg_integer(), _, _) -> no_return()).
+-spec shutdown(atom(), non_neg_integer(), term(), term()) -> no_return().
 
 shutdown(_Module, _Line, _Data, Reason) ->
     ?shutdown_trace("Net Kernel 2: shutting down connection "

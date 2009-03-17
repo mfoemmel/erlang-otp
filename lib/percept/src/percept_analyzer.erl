@@ -1,20 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-%% 
+%% %CopyrightEnd%
 
 %% @doc Utility functions to operate on percept data. These functions should
 %%	be considered experimental. Behaviour may change in future releases.
@@ -25,6 +25,7 @@
 	waiting_activities/1,
 	activities2count/2,
 	activities2count/3,
+	activities2count2/2,
 	analyze_activities/2,
 	runnable_count/1,
 	runnable_count/2,
@@ -62,14 +63,51 @@ minmax(Data) ->
 %%	N = integer()
 %% @doc Calculates the mean and the standard deviation of a set of
 %%	numbers.
- 
-mean(List) -> mean(List, {0, 0, 0}).
 
-mean([], {Sum, StdDevSquare, N}) -> 
-    Mean = Sum / N,
-    {Mean, math:sqrt((StdDevSquare - Mean*Mean)), N};
-mean([Value | List], {Sum, StdDevSquare, N}) -> 
-    mean(List, {Sum + Value, StdDevSquare + Value*Value, N + 1}).
+mean([])      -> {0, 0, 0}; 
+mean([Value]) -> {Value, 0, 1};
+mean(List)    -> mean(List, {0, 0, 0}).
+
+mean([], {Sum, SumSquare, N}) -> 
+    Mean   = Sum / N,
+    StdDev = math:sqrt((SumSquare - Sum*Sum/N)/(N - 1)),
+    {Mean, StdDev, N};
+mean([Value | List], {Sum, SumSquare, N}) -> 
+    mean(List, {Sum + Value, SumSquare + Value*Value, N + 1}).
+
+
+
+activities2count2(Acts, StartTs) -> 
+    Start = inactive_start_states(Acts),
+    activities2count2(Acts, StartTs, Start, []).
+
+activities2count2([], _, _, Out) -> lists:reverse(Out);
+activities2count2([#activity{ id = Id, timestamp = Ts, state = active} | Acts], StartTs, {Proc,Port}, Out) when is_pid(Id) ->
+    activities2count2(Acts, StartTs, {Proc + 1, Port}, [{?seconds(Ts, StartTs), Proc + 1, Port}|Out]);
+activities2count2([#activity{ id = Id, timestamp = Ts, state = inactive} | Acts], StartTs, {Proc,Port}, Out) when is_pid(Id) ->
+    activities2count2(Acts, StartTs, {Proc - 1, Port}, [{?seconds(Ts, StartTs), Proc - 1, Port}|Out]);
+activities2count2([#activity{ id = Id, timestamp = Ts, state = active} | Acts], StartTs, {Proc,Port}, Out) when is_port(Id) ->
+    activities2count2(Acts, StartTs, {Proc, Port + 1}, [{?seconds(Ts, StartTs), Proc, Port + 1}|Out]);
+activities2count2([#activity{ id = Id, timestamp = Ts, state = inactive} | Acts], StartTs, {Proc,Port}, Out) when is_port(Id) ->
+    activities2count2(Acts, StartTs, {Proc, Port - 1}, [{?seconds(Ts, StartTs), Proc, Port - 1}|Out]).
+
+
+inactive_start_states(Acts) -> 
+    D = activity_start_states(Acts, dict:new()),
+    dict:fold(fun
+        (K, inactive, {Procs, Ports}) when is_pid(K)  -> {Procs + 1, Ports};
+        (K, inactive, {Procs, Ports}) when is_port(K) -> {Procs, Ports + 1};
+        (_, _, {Procs, Ports})                        -> {Procs, Ports}
+    end, {0,0}, D).
+activity_start_states([], D) -> D;
+activity_start_states([#activity{id = Id, state = State}|Acts], D) ->
+    case dict:is_key(Id, D) of
+        true  -> activity_start_states(Acts, D);
+        false -> activity_start_states(Acts, dict:store(Id, State, D))
+    end.
+
+
+
 
 %% @spec activities2count(#activity{}, timestamp()) -> Result
 %%	Result = [{Time, ProcessCount, PortCount}]
@@ -98,8 +136,7 @@ activities2count_loop(
 	Id when is_pid(Id) ->
 	    Entry = {Time, Rc, Ports},
 	    activities2count_loop(Acts, {StartTs, {Rc, Ports}}, separated, [Entry | Out]);
-	Other ->
-	    io:format("activities2count error: case dropped ~p~n", [Other]),
+	_ ->
    	    activities2count_loop(Acts, {StartTs,{Procs, Ports}}, separated, Out)
     end;
 activities2count_loop(
@@ -200,9 +237,7 @@ waiting_activities_mfa_list([Activity|Activities], ListedMfas) ->
 			    put({waiting_mfa, MFA}, {Total + Waited, [Waited | TimedMfa]}),
 			    waiting_activities_mfa_list(Activities, ListedMfas)
 		    end;
-		Unhandled -> 
-		    io:format("waiting activities had unhandled case: ~p ~n", [Unhandled]),
-		    error
+		 _ -> error
 	    end
     end.
 

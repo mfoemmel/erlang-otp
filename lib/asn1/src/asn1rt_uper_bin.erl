@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1rt_uper_bin).
 
@@ -99,6 +99,12 @@ fixoptionals(OptList,OptLength,Val) when tuple(Val) ->
 fixoptionals([],_Val,Acc) ->
     %% Optbits
     Acc;
+fixoptionals([{Pos,DefVal}|Ot],Val,Acc) ->
+    case element(Pos,Val) of
+	asn1_DEFAULT -> fixoptionals(Ot,Val,Acc bsl 1);
+	DefVal -> fixoptionals(Ot,Val,Acc bsl 1);
+	_ -> fixoptionals(Ot,Val,(Acc bsl 1) + 1)
+    end;
 fixoptionals([Pos|Ot],Val,Acc) ->
     case element(Pos,Val) of
 	asn1_NOVALUE -> fixoptionals(Ot,Val,Acc bsl 1);
@@ -794,7 +800,7 @@ bit_list2bitstr(Len,BitListValue) ->
 	    << << <<B:1>> ||B <- BitListValue>>/bitstring ,0:(Len-L)>>
 	end.
 
-adjust_trailing_zeros(Len,Bin) when Len == size(Bin) ->
+adjust_trailing_zeros(Len,Bin) when Len == bit_size(Bin) ->
     Bin;
 adjust_trailing_zeros(Len,Bin) when Len > bit_size(Bin) ->
     <<Bin/bitstring,0:(Len-bit_size(Bin))>>;
@@ -1602,6 +1608,9 @@ complete_NFP(InList) when is_bitstring(InList) ->
     InList.
 
 %% unaligned helpers
+
+%% 10.5.6 NOTE: If "range" satisfies the inequality 2^m < "range" =<
+%% 2^(m+1) then the number of bits = m + 1
 num_bits(1) -> 0;
 num_bits(2) -> 1;
 num_bits(R) when R =< 4 -> 
@@ -1616,11 +1625,11 @@ num_bits(R) when R =< 64 ->
     6;
 num_bits(R) when R =< 128 ->
     7;
-num_bits(R) when R =< 255 ->
+num_bits(R) when R =< 256 ->
     8;
-num_bits(R) when R =< 511 ->
+num_bits(R) when R =< 512 ->
     9;
-num_bits(R) when R =< 1023 ->
+num_bits(R) when R =< 1024 ->
     10;
 num_bits(R) ->
     1+num_bits(R bsr 1).

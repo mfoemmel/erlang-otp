@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>1996-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 -module(snmp_test_mgr).
 
 %%----------------------------------------------------------------------
@@ -33,7 +33,8 @@
 
 %% User interface
 -export([start_link/1, start/1, stop/0, 
-	 d/0, g/1, s/1, gn/1, gn/0, r/0, gb/3, rpl/1,
+	 d/0, discovery/0, 
+	 g/1, s/1, gn/1, gn/0, r/0, gb/3, rpl/1,
 	 send_bytes/1,
 	 expect/2,expect/3,expect/4,expect/6,get_response/2, 
 	 receive_response/0,
@@ -71,6 +72,9 @@ stop() ->
     call(stop).
 
 d() ->
+    discovery().
+
+discovery() ->
     call(discovery).
 
 g(Oids) ->
@@ -189,7 +193,7 @@ init({Options, CallerPid}) ->
     random:seed(A1,A2,A3),
     case (catch is_options_ok(Options)) of
 	true ->
-	    put(debug,get_value(debug,Options,false)),
+	    put(debug, get_value(debug, Options, false)),
 	    d("init -> (~p) extract options",[self()]),
  	    PacksDbg    = get_value(packet_server_debug, Options, false),
 	    io:format("[~w] ~p -> PacksDbg: ~p~n", [?MODULE, self(), PacksDbg]),
@@ -233,7 +237,8 @@ init({Options, CallerPid}) ->
 		{Com, User, EngineId, CtxEngineId, mk_seclevel(SecLevel)},
 	    io:format("[~w] ~p -> VsnHdrD: ~p~n", [?MODULE, self(), VsnHdrD]),
 	    AgIp = case snmp_misc:assq(agent, Options) of
-		       {value, Tuple4} when is_tuple(Tuple4),size(Tuple4)==4 ->
+		       {value, Tuple4} when is_tuple(Tuple4) andalso 
+					    (size(Tuple4) =:= 4) ->
 			   Tuple4;
 		       {value, Host} when is_list(Host) ->
 			   {ok, Ip} = snmp_misc:ip(Host),
@@ -481,8 +486,8 @@ terminate(Reason, State) ->
 %%----------------------------------------------------------------------
 execute_discovery(State) ->
     Pdu   = make_discovery_pdu(),
-    Reply = ?PACK_SERV:send_discovery_pdu(Pdu,State#state.packet_server),
-    {Reply,State#state{last_sent_pdu = Pdu}}.
+    Reply = ?PACK_SERV:send_discovery_pdu(Pdu, State#state.packet_server),
+    {Reply, State#state{last_sent_pdu = Pdu}}.
 
 
 execute_request(Operation, Data, State) ->
@@ -625,7 +630,7 @@ make_pdu_impl(set, Varbinds) ->
 	 varbinds     = Varbinds}.
 
 make_discovery_pdu() ->
-    make_pdu_impl(get, [?sysDescr_instance]).
+    make_pdu_impl(get, []).
 
 var_and_value_to_varbind({Oid, Type, Value}, MiniMIB) ->
     Oid2 = flatten_oid(Oid, MiniMIB), 

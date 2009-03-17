@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(digraph).
 
@@ -35,11 +36,22 @@
 
 -export([get_short_path/3, get_short_cycle/2]).
 
--record(graph, {
-		vtab = notable,
-		etab = notable,
-		ntab = notable,
-	        cyclic = true } ).
+-record(digraph, {vtab = notable :: ets:tab(),
+		  etab = notable :: ets:tab(),
+		  ntab = notable :: ets:tab(),
+	          cyclic = true  :: bool()}).
+%% A declaration equivalent to the following one is hard-coded in erl_types.
+%% That declaration contains hard-coded information about the #digraph{}
+%% record and the types of its fields.  So, please make sure that any
+%% changes to its structure are also propagated to erl_types.erl.
+%%
+%% -opaque digraph() :: #digraph{}.
+
+-type edge()    :: term().
+-type label()   :: term().
+-type vertex()  :: term().
+
+-type add_edge_err_rsn() :: {'bad_edge', [vertex()]} | {'bad_vertex', vertex()}.
 
 %%
 %% Type is a list of
@@ -48,24 +60,34 @@
 %%
 %%  default is [cyclic,protected]
 %%
+-type d_protection() :: 'private' | 'protected'.
+-type d_cyclicity()  :: 'acyclic' | 'cyclic'.
+-type d_type()       :: d_cyclicity() | d_protection().
+
+-spec new() -> digraph().
+
 new() -> new([]).
+
+-spec new([d_type()]) -> digraph().
 
 new(Type) ->
     case check_type(Type, protected, []) of
-	{error, What} -> {error, What};
-	{Access,Ts} -> 
-	    V = ets:new(vertices, [set,Access]),
-	    E = ets:new(edges, [set,Access]),
-	    N = ets:new(neighbours, [bag,Access]),
+	{Access, Ts} ->
+	    V = ets:new(vertices, [set, Access]),
+	    E = ets:new(edges, [set, Access]),
+	    N = ets:new(neighbours, [bag, Access]),
 	    ets:insert(N, [{'$vid', 0}, {'$eid', 0}]),
-	    set_type(Ts, #graph{vtab=V, 
-				etab=E,
-				ntab=N })
+	    set_type(Ts, #digraph{vtab=V, etab=E, ntab=N});
+	error ->
+	    erlang:error(badarg)
     end.
 
 %%
 %% Check type of graph
 %%
+%-spec check_type([d_type()], d_protection(), [{'cyclic', bool()}]) ->
+%       	{d_protection(), [{'cyclic', bool()}]}.
+
 check_type([acyclic|Ts], A, L) ->
     check_type(Ts, A,[{cyclic,false} | L]);
 check_type([cyclic | Ts], A, L) ->
@@ -74,144 +96,201 @@ check_type([protected | Ts], _, L) ->
     check_type(Ts, protected, L);
 check_type([private | Ts], _, L) ->
     check_type(Ts, private, L);
-check_type([T | _], _, _) -> 
-    {error, {unknown_type, T}};
-check_type([], A, L) -> {A,L}.
+check_type([], A, L) -> {A, L};
+check_type(_, _, _) -> error.
 
 %%
 %% Set graph type
 %%
+-spec set_type([{'cyclic', bool()}], digraph()) -> digraph().
+
 set_type([{cyclic,V} | Ks], G) ->
-    set_type(Ks, G#graph{cyclic = V});
+    set_type(Ks, G#digraph{cyclic = V});
 set_type([], G) -> G.
 
 
 %% Data access functions
 
-delete(G) ->
-    ets:delete(G#graph.vtab),
-    ets:delete(G#graph.etab),
-    ets:delete(G#graph.ntab).
+-spec delete(digraph()) -> 'true'.
 
+delete(G) ->
+    ets:delete(G#digraph.vtab),
+    ets:delete(G#digraph.etab),
+    ets:delete(G#digraph.ntab).
+
+-spec info(digraph()) -> [{'cyclicity', d_cyclicity()} |
+			  {'memory', non_neg_integer()} |
+			  {'protection', d_protection()}].
 info(G) ->
-    VT = G#graph.vtab,
-    ET = G#graph.etab,
-    NT = G#graph.ntab,
-    Cyclicity = case G#graph.cyclic of
+    VT = G#digraph.vtab,
+    ET = G#digraph.etab,
+    NT = G#digraph.ntab,
+    Cyclicity = case G#digraph.cyclic of
 		    true  -> cyclic;
 		    false -> acyclic
 		end,
     Protection = ets:info(VT, protection),
-    Memory = ets:info(VT, memory) 
-	+ ets:info(ET, memory)
-	+ ets:info(NT, memory),
-    [{cyclicity, Cyclicity}, 
-     {memory, Memory},
-     {protection, Protection}].
+    Memory = ets:info(VT, memory) + ets:info(ET, memory) + ets:info(NT, memory),
+    [{cyclicity, Cyclicity}, {memory, Memory}, {protection, Protection}].
 
-add_vertex(G) -> 
-    do_add_vertex({new_vertex_id(G),[]}, G).
+-spec add_vertex(digraph()) -> vertex().
 
-add_vertex(G, V) -> 
-    do_add_vertex({V,[]}, G).
+add_vertex(G) ->
+    do_add_vertex({new_vertex_id(G), []}, G).
+
+-spec add_vertex(digraph(), vertex()) -> vertex().
+
+add_vertex(G, V) ->
+    do_add_vertex({V, []}, G).
+
+-spec add_vertex(digraph(), vertex(), label()) -> vertex().
 
 add_vertex(G, V, D) ->
-    do_add_vertex({V,D}, G).
+    do_add_vertex({V, D}, G).
+
+-spec del_vertex(digraph(), vertex()) -> 'true'.
 
 del_vertex(G, V) ->
     do_del_vertex(V, G).
 
+-spec del_vertices(digraph(), [vertex()]) -> 'true'.
+
 del_vertices(G, Vs) -> 
     do_del_vertices(Vs, G).
 
+-spec vertex(digraph(), vertex()) -> {vertex(), label()} | 'false'.
+
 vertex(G, V) ->
-    case ets:lookup(G#graph.vtab, V) of
+    case ets:lookup(G#digraph.vtab, V) of
 	[] -> false;
 	[Vertex] -> Vertex
     end.
 
-no_vertices(G) ->
-    ets:info(G#graph.vtab, size).
+-spec no_vertices(digraph()) -> non_neg_integer().
 
-vertices(G) -> 
-    ets:select(G#graph.vtab, [{{'$1', '_'}, [], ['$1']}]).
+no_vertices(G) ->
+    ets:info(G#digraph.vtab, size).
+
+-spec vertices(digraph()) -> [vertex()].
+
+vertices(G) ->
+    ets:select(G#digraph.vtab, [{{'$1', '_'}, [], ['$1']}]).
+
+-spec source_vertices(digraph()) -> [vertex()].
 
 source_vertices(G) ->
     collect_vertices(G, in).
 
+-spec sink_vertices(digraph()) -> [vertex()].
+
 sink_vertices(G) ->
     collect_vertices(G, out).
 
-in_degree(G, V) ->
-    length(ets:lookup(G#graph.ntab,{in,V})).
+-spec in_degree(digraph(), vertex()) -> non_neg_integer().
 
-in_neighbours(G,V) ->
-    ET = G#graph.etab,
-    NT = G#graph.ntab,
-    collect_elems(ets:lookup(NT,{in,V}), ET, 2).
+in_degree(G, V) ->
+    length(ets:lookup(G#digraph.ntab, {in, V})).
+
+-spec in_neighbours(digraph(), vertex()) -> [vertex()].
+
+in_neighbours(G, V) ->
+    ET = G#digraph.etab,
+    NT = G#digraph.ntab,
+    collect_elems(ets:lookup(NT, {in, V}), ET, 2).
+
+-spec in_edges(digraph(), vertex()) -> [edge()].
 
 in_edges(G, V) ->
-    ets:select(G#graph.ntab, [{{{in,V},'$1'},[],['$1']}]).
+    ets:select(G#digraph.ntab, [{{{in, V}, '$1'}, [], ['$1']}]).
 
-out_degree(G, V) -> 
-    length(ets:lookup(G#graph.ntab,{out,V})).
+-spec out_degree(digraph(), vertex()) -> non_neg_integer().
 
-out_neighbours(G, V) -> 
-    ET = G#graph.etab,
-    NT = G#graph.ntab,
-    collect_elems(ets:lookup(NT,{out,V}), ET, 3).
+out_degree(G, V) ->
+    length(ets:lookup(G#digraph.ntab, {out, V})).
 
-out_edges(G, V) -> 
-    ets:select(G#graph.ntab, [{{{out,V},'$1'},[],['$1']}]).
+-spec out_neighbours(digraph(), vertex()) -> [vertex()].
 
-add_edge(G, V1, V2) -> 
-    do_add_edge({new_edge_id(G),V1,V2,[]}, G).
+out_neighbours(G, V) ->
+    ET = G#digraph.etab,
+    NT = G#digraph.ntab,
+    collect_elems(ets:lookup(NT, {out, V}), ET, 3).
 
-add_edge(G, V1, V2, D) -> 
-    do_add_edge({new_edge_id(G),V1,V2,D}, G).
+-spec out_edges(digraph(), vertex()) -> [edge()].
 
-add_edge(G, E, V1, V2, D) -> 
-    do_add_edge({E,V1,V2,D}, G).
+out_edges(G, V) ->
+    ets:select(G#digraph.ntab, [{{{out, V}, '$1'}, [], ['$1']}]).
 
-del_edge(G, E) -> 
+-spec add_edge(digraph(), vertex(), vertex()) ->
+	 edge() | {'error', add_edge_err_rsn()}.
+
+add_edge(G, V1, V2) ->
+    do_add_edge({new_edge_id(G), V1, V2, []}, G).
+
+-spec add_edge(digraph(), vertex(), vertex(), label()) ->
+	 edge() | {'error', add_edge_err_rsn()}.
+
+add_edge(G, V1, V2, D) ->
+    do_add_edge({new_edge_id(G), V1, V2, D}, G).
+
+-spec add_edge(digraph(), edge(), vertex(), vertex(), label()) ->
+	 edge() | {'error', add_edge_err_rsn()}.
+
+add_edge(G, E, V1, V2, D) ->
+    do_add_edge({E, V1, V2, D}, G).
+
+-spec del_edge(digraph(), edge()) -> 'true'.
+
+del_edge(G, E) ->
     do_del_edges([E], G).
 
-del_edges(G, Es) ->  
+-spec del_edges(digraph(), [edge()]) -> 'true'.
+
+del_edges(G, Es) ->
     do_del_edges(Es, G).
 
+-spec no_edges(digraph()) -> non_neg_integer().
+
 no_edges(G) ->
-    ets:info(G#graph.etab, size).
+    ets:info(G#digraph.etab, size).
+
+-spec edges(digraph()) -> [edge()].
 
 edges(G) ->
-    ets:select(G#graph.etab, [{{'$1', '_', '_', '_'}, [], ['$1']}]).
+    ets:select(G#digraph.etab, [{{'$1', '_', '_', '_'}, [], ['$1']}]).
+
+-spec edges(digraph(), vertex()) -> [edge()].
 
 edges(G, V) ->
-    ets:select(G#graph.ntab, [{{{out,V},'$1'},[],['$1']},
-			      {{{in,V},'$1'},[],['$1']}]).
+    ets:select(G#digraph.ntab, [{{{out, V},'$1'}, [], ['$1']},
+				{{{in, V}, '$1'}, [], ['$1']}]).
+
+-spec edge(digraph(), edge()) -> {edge(),vertex(),vertex(),label()} | 'false'.
 
 edge(G, E) ->
-    case ets:lookup(G#graph.etab,E) of
+    case ets:lookup(G#digraph.etab,E) of
 	[] -> false;
 	[Edge] -> Edge
     end.
 
 %%
-%% Generate a "unique" edge identifier (relative this graph)
-%% ['$e' | N]
+%% Generate a "unique" edge identifier (relative to this graph)
 %%
+-spec new_edge_id(digraph()) -> nonempty_improper_list('$e', non_neg_integer()).
+
 new_edge_id(G) ->
-    NT = G#graph.ntab,
+    NT = G#digraph.ntab,
     [{'$eid', K}] = ets:lookup(NT, '$eid'),
     true = ets:delete(NT, '$eid'),
     true = ets:insert(NT, {'$eid', K+1}),
     ['$e' | K].
 
 %%
-%% Generate a "unique" vertex identifier (relative this graph)
-%% ['$v' | N]
+%% Generate a "unique" vertex identifier (relative to this graph)
 %%
+-spec new_vertex_id(digraph()) -> nonempty_improper_list('$v', non_neg_integer()).
+
 new_vertex_id(G) ->
-    NT = G#graph.ntab,
+    NT = G#digraph.ntab,
     [{'$vid', K}] = ets:lookup(NT, '$vid'),
     true = ets:delete(NT, '$vid'),
     true = ets:insert(NT, {'$vid', K+1}),
@@ -228,17 +307,19 @@ collect_elems([{_,Key}|Keys], Table, Index, Acc) ->
 		  [ets:lookup_element(Table, Key, Index)|Acc]);
 collect_elems([], _, _, Acc) -> Acc.
 
-do_add_vertex({V,Label}, G) ->
-    ets:insert(G#graph.vtab, {V,Label}),
+-spec do_add_vertex({vertex(), label()}, digraph()) -> vertex().
+
+do_add_vertex({V, _Label} = VL, G) ->
+    ets:insert(G#digraph.vtab, VL),
     V.
 
 %%
 %% Collect either source or sink vertices.
 %%
-collect_vertices(#graph{vtab=VT,ntab=NT}, Type) ->
+collect_vertices(#digraph{vtab=VT, ntab=NT}, Type) ->
     Vs = ets:select(VT, [{{'$1', '_'}, [], ['$1']}]),
     lists:foldl(fun(V, A) ->
-			case ets:member(NT, {Type,V}) of
+			case ets:member(NT, {Type, V}) of
 			    true -> A;
 			    false -> [V|A]
 			end
@@ -250,87 +331,98 @@ collect_vertices(#graph{vtab=VT,ntab=NT}, Type) ->
 do_del_vertices([V | Vs], G) ->
     do_del_vertex(V, G),
     do_del_vertices(Vs, G);
-do_del_vertices([], #graph{}) -> true.
+do_del_vertices([], #digraph{}) -> true.
 
 do_del_vertex(V, G) ->
-    do_del_nedges(ets:lookup(G#graph.ntab, {in,V}), G),
-    do_del_nedges(ets:lookup(G#graph.ntab, {out,V}), G),
-    ets:delete(G#graph.vtab, V).
+    do_del_nedges(ets:lookup(G#digraph.ntab, {in, V}), G),
+    do_del_nedges(ets:lookup(G#digraph.ntab, {out, V}), G),
+    ets:delete(G#digraph.vtab, V).
 
-do_del_nedges([{_,E} | Ns], G) ->
-    case ets:lookup(G#graph.etab, E) of
-	[{E,V1,V2,_}] ->
-	    do_del_edge(E,V1,V2,G),
+do_del_nedges([{_, E}|Ns], G) ->
+    case ets:lookup(G#digraph.etab, E) of
+	[{E, V1, V2, _}] ->
+	    do_del_edge(E, V1, V2, G),
 	    do_del_nedges(Ns, G);
 	[] ->
 	    do_del_nedges(Ns, G)
     end;
-do_del_nedges([], #graph{}) -> true.
+do_del_nedges([], #digraph{}) -> true.
 
 %%
 %% Delete edges
 %%
-do_del_edges([E | Es], G) ->
-    case ets:lookup(G#graph.etab, E) of
+do_del_edges([E|Es], G) ->
+    case ets:lookup(G#digraph.etab, E) of
 	[{E,V1,V2,_}] ->
 	    do_del_edge(E,V1,V2,G),
 	    do_del_edges(Es, G);
 	[] ->
 	    do_del_edges(Es, G)
     end;
-do_del_edges([], #graph{}) -> true.
+do_del_edges([], #digraph{}) -> true.
 
-do_del_edge(E,V1,V2,G) ->
-    ets:select_delete(G#graph.ntab, [{{{in,V2},E},[],[true]},
-				     {{{out,V1},E},[],[true]}]),
-    ets:delete(G#graph.etab, E).
+do_del_edge(E, V1, V2, G) ->
+    ets:select_delete(G#digraph.ntab, [{{{in, V2}, E}, [], [true]},
+				       {{{out,V1}, E}, [], [true]}]),
+    ets:delete(G#digraph.etab, E).
 
-rm_edges([V1,V2|Vs], G) ->
-    rm_edge(V1,V2,G),
-    rm_edges([V2|Vs],G);
+-spec rm_edges([vertex(),...], digraph()) -> 'true'.
+
+rm_edges([V1, V2|Vs], G) ->
+    rm_edge(V1, V2, G),
+    rm_edges([V2|Vs], G);
 rm_edges(_, _) -> true.
 
-rm_edge(V1,V2,G) ->
-    Ns = ets:lookup(G#graph.ntab,{out,V1}),
-    rm_edge_0(Ns,V1,V2,G).
+-spec rm_edge(vertex(), vertex(), digraph()) -> 'ok'.
+
+rm_edge(V1, V2, G) ->
+    Ns = ets:lookup(G#digraph.ntab, {out, V1}),
+    rm_edge_0(Ns, V1, V2, G).
     
-rm_edge_0([{_,E}|Es],V1,V2,G) ->
-    case ets:lookup(G#graph.etab,E) of
-	[{E,V1,V2,_}]  ->
-	    ets:delete(G#graph.etab,E),
-	    rm_edge_0(Es,V1,V2,G);
+rm_edge_0([{_, E}|Es], V1, V2, G) ->
+    case ets:lookup(G#digraph.etab, E) of
+	[{E, V1, V2, _}]  ->
+	    ets:delete(G#digraph.etab, E),
+	    rm_edge_0(Es, V1, V2, G);
 	_ ->
-	    rm_edge_0(Es,V1,V2,G)
+	    rm_edge_0(Es, V1, V2, G)
     end;
-rm_edge_0([],_,_,#graph{}) -> ok.
+rm_edge_0([], _, _, #digraph{}) -> ok.
     
 %%
-%% Check that endpoints exists
+%% Check that endpoints exist
 %%
-do_add_edge({E,V1,V2,Label}, G) ->
-    case ets:member(G#graph.vtab, V1) of
+-spec do_add_edge({edge(), vertex(), vertex(), label()}, digraph()) ->
+	edge() | {'error', add_edge_err_rsn()}.
+
+do_add_edge({E, V1, V2, Label}, G) ->
+    case ets:member(G#digraph.vtab, V1) of
 	false -> {error, {bad_vertex, V1}};
 	true  ->
-	    case ets:member(G#graph.vtab, V2) of
-		false -> {error, {bad_vertex,V2}};
-		true when G#graph.cyclic =:= false ->
+	    case ets:member(G#digraph.vtab, V2) of
+		false -> {error, {bad_vertex, V2}};
+		true when G#digraph.cyclic =:= false ->
 		    acyclic_add_edge(E, V1, V2, Label, G);
 		true ->
 		    do_insert_edge(E, V1, V2, Label, G)
 	    end
     end.
 
+-spec do_insert_edge(edge(), vertex(), vertex(), label(), digraph()) -> edge().
 
-do_insert_edge(E, V1, V2, Label, #graph{ntab=NT,etab=ET}) ->
-    ets:insert(NT, [{{out,V1},E},{{in,V2},E}]),
-    ets:insert(ET, {E,V1,V2,Label}),
+do_insert_edge(E, V1, V2, Label, #digraph{ntab=NT, etab=ET}) ->
+    ets:insert(NT, [{{out, V1}, E}, {{in, V2}, E}]),
+    ets:insert(ET, {E, V1, V2, Label}),
     E.
+
+-spec acyclic_add_edge(edge(), vertex(), vertex(), label(), digraph()) ->
+	edge() | {'error', {'bad_edge', [vertex()]}}.
 
 acyclic_add_edge(_E, V1, V2, _L, _G) when V1 =:= V2 ->
     {error, {bad_edge, [V1, V2]}};
-acyclic_add_edge(E,V1,V2,Label,G) ->
-    case get_path(G,V2,V1) of
-	false -> do_insert_edge(E,V1,V2,Label,G);
+acyclic_add_edge(E, V1, V2, Label, G) ->
+    case get_path(G, V2, V1) of
+	false -> do_insert_edge(E, V1, V2, Label, G);
 	Path -> {error, {bad_edge, Path}}
     end.
 
@@ -338,8 +430,10 @@ acyclic_add_edge(E,V1,V2,Label,G) ->
 %% Delete all paths from vertex V1 to vertex V2
 %%
 
-del_path(G,V1,V2) ->
-    case get_path(G,V1,V2) of
+-spec del_path(digraph(), vertex(), vertex()) -> 'true'.
+
+del_path(G, V1, V2) ->
+    case get_path(G, V1, V2) of
 	false -> true;
 	Path ->
 	    rm_edges([V1|Path], G),
@@ -352,11 +446,13 @@ del_path(G,V1,V2) ->
 %% if no cycle exists false is returned
 %% if only a cycle of length one exists it will be
 %% returned as [V] but only after longer cycles have
-%% be searched.
+%% been searched.
 %%
 
+-spec get_cycle(digraph(), vertex()) -> [vertex(),...] | 'false'.
+
 get_cycle(G, V) ->
-    case one_path(out_neighbours(G,V), V, [], [V], [V], 2, G, 1) of
+    case one_path(out_neighbours(G, V), V, [], [V], [V], 2, G, 1) of
 	false ->
 	    case lists:member(V, out_neighbours(G, V)) of
 		true -> [V];
@@ -370,6 +466,8 @@ get_cycle(G, V) ->
 %% return the path as list of vertices [V1 ... V2]
 %% if no path exists false is returned
 %%
+
+-spec get_path(digraph(), vertex(), vertex()) -> [vertex(),...] | 'false'.
 
 get_path(G, V1, V2) ->
     one_path(out_neighbours(G, V1), V2, [], [V1], [V1], 1, G, 1).
@@ -404,6 +502,8 @@ one_path([], _, [], _, _, _, _, _Counter) -> false.
 %% Like get_cycle/2, but a cycle of length one is preferred.
 %%
 
+-spec get_short_cycle(digraph(), vertex()) -> [vertex(),...] | 'false'.
+
 get_short_cycle(G, V) ->
     get_short_path(G, V, V).
 
@@ -411,6 +511,8 @@ get_short_cycle(G, V) ->
 %% Like get_path/3, but using a breadth-first search makes it possible
 %% to find a short path.
 %%
+
+-spec get_short_path(digraph(), vertex(), vertex()) -> [vertex(),...] | 'false'.
 
 get_short_path(G, V1, V2) ->
     T = new(),

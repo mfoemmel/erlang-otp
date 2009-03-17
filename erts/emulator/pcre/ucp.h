@@ -2,11 +2,13 @@
 *          Unicode Property Table handler        *
 *************************************************/
 
+/* %ExternalCopyright% */
+
 #ifndef _UCP_H
 #define _UCP_H
 
 /* This file contains definitions of the property values that are returned by
-the function _pcre_ucp_findprop(). New values that are added for new releases
+the function _erts_pcre_ucp_findprop(). New values that are added for new releases
 of Unicode should always be at the end of each enum, for backwards
 compatibility. */
 

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Richard Carlsson.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 %% =====================================================================
 %% Ordered Sets implemented as General Balanced Trees
@@ -161,7 +162,7 @@
 -export([new/0, is_element/2, add_element/2, del_element/2,
 	 subtract/2]).
 
-%% GB-trees adapted from Sven-Olof Nyströms implementation for
+%% GB-trees adapted from Sven-Olof Nyström's implementation for
 %% representation of sets.
 %%
 %% Data structures:
@@ -178,6 +179,7 @@
 %%
 %% Behaviour is logarithmic (as it should be).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Some macros. 
 
 -define(p, 2). % It seems that p = 2 is optimal for sorted keys
@@ -188,25 +190,50 @@
 
 -define(mul2(X), X bsl 1).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Some types.
+
+-type gb_set_node() :: 'nil' | {term(), _, _}.
+
+%% A declaration equivalent to the following is currently hard-coded
+%% in erl_types.erl
+%%
+%% -opaque gb_set() :: {non_neg_integer(), gb_set_node()}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec empty() -> gb_set().
 
 empty() ->
     {0, nil}.
 
+-spec new() -> gb_set().
+
 new() -> empty().
+
+-spec is_empty(gb_set()) -> bool().
 
 is_empty({0, nil}) ->
     true;
 is_empty(_) ->
     false.
 
+-spec size(gb_set()) -> non_neg_integer().
+
 size({Size, _}) ->
     Size.
+
+-spec singleton(term()) -> gb_set().
 
 singleton(Key) ->
     {1, {Key, nil, nil}}.
 
+-spec is_element(term(), gb_set()) -> bool().
+
 is_element(Key, S) ->
     is_member(Key, S).
+
+-spec is_member(term(), gb_set()) -> bool().
 
 is_member(Key, {_, T}) ->
     is_member_1(Key, T).
@@ -220,6 +247,8 @@ is_member_1(_, {_, _, _}) ->
 is_member_1(_, nil) ->
     false.
 
+-spec insert(term(), gb_set()) -> gb_set().
+
 insert(Key, {S, T}) ->
     S1 = S + 1,
     {S1, insert_1(Key, T, ?pow(S1, ?p))}.
@@ -229,7 +258,7 @@ insert_1(Key, {Key1, Smaller, Bigger}, S) when Key < Key1 ->
 	{T1, H1, S1} when is_integer(H1) ->
 	    T = {Key1, T1, Bigger},
 	    {H2, S2} = count(Bigger),
-	    H = ?mul2(max(H1, H2)),
+	    H = ?mul2(erlang:max(H1, H2)),
 	    SS = S1 + S2 + 1,
 	    P = ?pow(SS, ?p),
 	    if
@@ -246,7 +275,7 @@ insert_1(Key, {Key1, Smaller, Bigger}, S) when Key > Key1 ->
 	{T1, H1, S1} when is_integer(H1) ->
 	    T = {Key1, Smaller, T1},
 	    {H2, S2} = count(Smaller),
-	    H = ?mul2(max(H1, H2)),
+	    H = ?mul2(erlang:max(H1, H2)),
 	    SS = S1 + S2 + 1,
 	    P = ?pow(SS, ?p),
 	    if
@@ -270,14 +299,11 @@ count({_, nil, nil}) ->
 count({_, Sm, Bi}) ->
     {H1, S1} = count(Sm),
     {H2, S2} = count(Bi),
-    {?mul2(max(H1, H2)), S1 + S2 + 1};
+    {?mul2(erlang:max(H1, H2)), S1 + S2 + 1};
 count(nil) ->
     {1, 0}.
 
-max(X, Y) when X < Y ->
-    Y;
-max(X, _Y) ->
-    X.
+-spec balance(gb_set()) -> gb_set().
 
 balance({S, T}) ->
     {S, balance(T, S)}.
@@ -302,8 +328,12 @@ balance_list_1([Key | L], 1) ->
 balance_list_1(L, 0) ->
     {nil, L}.
 
+-spec add_element(term(), gb_set()) -> gb_set().
+
 add_element(X, S) ->
     add(X, S).
+
+-spec add(term(), gb_set()) -> gb_set().
 
 add(X, S) ->
     case is_member(X, S) of
@@ -313,15 +343,23 @@ add(X, S) ->
 	    insert(X, S)
     end.
 
+-spec from_list([term()]) -> gb_set().
+
 from_list(L) ->
     from_ordset(ordsets:from_list(L)).
+
+-spec from_ordset([term()]) -> gb_set().
 
 from_ordset(L) ->
     S = length(L),
     {S, balance_list(L, S)}.
 
+-spec del_element(term(), gb_set()) -> gb_set().
+
 del_element(Key, S) ->
     delete_any(Key, S).
+
+-spec delete_any(term(), gb_set()) -> gb_set().
 
 delete_any(Key, S) ->
     case is_member(Key, S) of
@@ -330,6 +368,8 @@ delete_any(Key, S) ->
  	false ->
  	    S
     end.
+
+-spec delete(term(), gb_set()) -> gb_set().
 
 delete(Key, {S, T}) ->
     {S - 1, delete_1(Key, T)}.
@@ -351,6 +391,8 @@ merge(Smaller, Larger) ->
     {Key, Larger1} = take_smallest1(Larger),
     {Key, Smaller, Larger1}.
 
+-spec take_smallest(gb_set()) -> {term(), gb_set()}.
+
 take_smallest({S, T}) ->
     {Key, Larger} = take_smallest1(T),
     {Key, {S - 1, Larger}}.
@@ -361,6 +403,8 @@ take_smallest1({Key, Smaller, Larger}) ->
     {Key1, Smaller1} = take_smallest1(Smaller),
     {Key1, {Key, Smaller1, Larger}}.
 
+-spec smallest(gb_set()) -> term().
+
 smallest({_, T}) ->
     smallest_1(T).
 
@@ -368,6 +412,8 @@ smallest_1({Key, nil, _Larger}) ->
     Key;
 smallest_1({_Key, Smaller, _Larger}) ->
     smallest_1(Smaller).
+
+-spec take_largest(gb_set()) -> {term(), gb_set()}.
 
 take_largest({S, T}) ->
     {Key, Smaller} = take_largest1(T),
@@ -379,6 +425,8 @@ take_largest1({Key, Smaller, Larger}) ->
     {Key1, Larger1} = take_largest1(Larger),
     {Key1, {Key, Smaller, Larger1}}.
 
+-spec largest(gb_set()) -> term().
+
 largest({_, T}) ->
     largest_1(T).
 
@@ -386,6 +434,8 @@ largest_1({Key, _Smaller, nil}) ->
     Key;
 largest_1({_Key, _Smaller, Larger}) ->
     largest_1(Larger).
+
+-spec to_list(gb_set()) -> [term()].
 
 to_list({_, T}) ->
     to_list(T, []).
@@ -395,6 +445,8 @@ to_list_1(T) -> to_list(T, []).
 to_list({Key, Small, Big}, L) ->
     to_list(Small, [Key | to_list(Big, L)]);
 to_list(nil, L) -> L.
+
+-spec iterator(gb_set()) -> [term()].
 
 iterator({_, T}) ->
     iterator(T, []).
@@ -408,6 +460,8 @@ iterator({_, L, _} = T, As) ->
     iterator(L, [T | As]);
 iterator(nil, As) ->
     As.
+
+-spec next([term()]) -> {term(), [term()]} | 'none'.
 
 next([{X, _, T} | As]) ->
     {X, iterator(T, As)};
@@ -437,6 +491,8 @@ next([]) ->
 %% traversing the elements can be devised, but they all have higher
 %% overhead.
 
+-spec union(gb_set(), gb_set()) -> gb_set().
+
 union({N1, T1}, {N2, T2}) when N2 < N1 ->
     union(to_list_1(T2), N2, T1, N1);
 union({N1, T1}, {N2, T2}) ->
@@ -447,17 +503,20 @@ union({N1, T1}, {N2, T2}) ->
 %% choice of strategy. Recall that N1 < N2 here.
 
 union(L, N1, T2, N2) when N2 < 10 ->
-    %% Break-even is about 7 for N1 = 1 and 10 for
-    %% N1 = 2
+    %% Break even is about 7 for N1 = 1 and 10 for N1 = 2
     union_2(L, to_list_1(T2), N1 + N2);
 union(L, N1, T2, N2) ->
     X = N1 * round(?c * math:log(N2)),
     if N2 < X ->
 	    union_2(L, to_list_1(T2), N1 + N2);
        true ->
-	    union_1(L, {N2, T2})
+	    union_1(L, mk_set(N2, T2))
     end.
 
+-spec mk_set(non_neg_integer(), gb_set_node()) -> gb_set().
+
+mk_set(N, T) ->
+    {N, T}.
 
 %% If the length of the list is in proportion with the size of the
 %% target set, this version spends too much time doing lookups, compared
@@ -534,6 +593,7 @@ balance_revlist_1([Key | L], 1) ->
 balance_revlist_1(L, 0) ->
     {nil, L}.
 
+-spec union([gb_set()]) -> gb_set().
 
 union([S | Ss]) ->
     union_list(S, Ss);
@@ -546,6 +606,7 @@ union_list(S, []) -> S.
 
 %% The rest is modelled on the above.
 
+-spec intersection(gb_set(), gb_set()) -> gb_set().
 
 intersection({N1, T1}, {N2, T2}) when N2 < N1 ->
     intersection(to_list_1(T2), N2, T1, N1);
@@ -562,8 +623,7 @@ intersection(L, N1, T2, N2) ->
 	    intersection_1(L, T2)
     end.
 
-
-%% We collect the intersecting elements in an ackumulator list and count
+%% We collect the intersecting elements in an accumulator list and count
 %% them at the same time so we can balance the list afterwards.
 
 intersection_1(Xs, T) ->
@@ -594,6 +654,7 @@ intersection_2([], _, As, S) ->
 intersection_2(_, [], As, S) ->
     {S, balance_revlist(As, S)}.
 
+-spec intersection([gb_set()]) -> gb_set().
 
 intersection([S | Ss]) ->
     intersection_list(S, Ss).
@@ -609,8 +670,12 @@ intersection_list(S, []) -> S.
 %% the sets. Therefore, we always build a new tree, and thus we need to
 %% traverse the whole element list of the left operand.
 
+-spec subtract(gb_set(), gb_set()) -> gb_set().
+
 subtract(S1, S2) ->
     difference(S1, S2).
+
+-spec difference(gb_set(), gb_set()) -> gb_set().
 
 difference({N1, T1}, {N2, T2}) ->
     difference(to_list_1(T1), N1, T2, N2).
@@ -658,6 +723,8 @@ difference_2(Xs, [], As, S) ->
 %% Subset testing is much the same thing as set difference, but
 %% without the construction of a new set.
 
+-spec is_subset(gb_set(), gb_set()) -> bool().
+
 is_subset({N1, T1}, {N2, T2}) ->
     is_subset(to_list_1(T1), N1, T2, N2).
 
@@ -697,12 +764,18 @@ is_subset_2(_, []) ->
 
 %% For compatibility with `sets':
 
+-spec is_set(term()) -> bool().
+
 is_set({0, nil}) -> true;
 is_set({N, {_, _, _}}) when is_integer(N), N >= 0 -> true;
 is_set(_) -> false.
 
+-spec filter(fun((term()) -> bool()), gb_set()) -> gb_set().
+
 filter(F, S) ->
     from_ordset([X || X <- to_list(S), F(X)]).
+
+-spec fold(fun((term(), term()) -> term()), term(), gb_set()) -> term().
 
 fold(F, A, S) ->
     lists:foldl(F, A, to_list(S)).

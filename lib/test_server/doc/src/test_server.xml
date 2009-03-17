@@ -482,8 +482,8 @@ Only valid for peer nodes. Note that slave nodes always
            or 'latest'. 'this' means using the same emulator as the test
            server. Prog is the name of an emulator executable.  If the
            list has more than one element, one of them is picked
-           randomly.  (Only works on Solaris, and the test server gives
-           warnings when it notices that nodes are not of the same
+           randomly.  (Only works on Solaris and Linux, and the test server 
+           gives warnings when it notices that nodes are not of the same
            version as itself.)
                     <br></br>
           <br></br>
@@ -744,12 +744,16 @@ Only valid for peer nodes. Note that slave nodes always
           </p>
         <p>A <em>conf test case</em> is a group of test cases with an
           init and a cleanup function. The init and cleanup functions
-          are also test cases, but they have spcial rules:</p>
+          are also test cases, but they have special rules:</p>
 	  <list type="bulleted">
 	  <item>They do not need a specification clause.</item>
 	  <item>They must always have the execution clause.</item>
 	  <item>They must return the <c>Config</c> parameter, a modified
           version of it or <c>{skip,Comment}</c> from the execution clause.</item>
+	  <item>The cleanup function may also return a tuple 
+	  <c>{return_group_result,Status}</c>, which is used to return the
+	  status of the conf case to Test Server and/or to a conf case on a
+	  higher level. (<c>Status = ok | skipped | failed</c>).</item>
 	  <item><c>init_per_testcase</c> and <c>end_per_testcase</c> are
           not called before and after these functions.</item>
 	  </list>

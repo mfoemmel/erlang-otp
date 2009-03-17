@@ -1,20 +1,22 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1999-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 /*
  * Support functions for tracing.
  */
@@ -122,7 +124,7 @@ do { \
 } while(0)
 #else
 #define ERTS_ENQ_TRACE_MSG(FPID, TPROC, MSG, BP) \
-  erts_queue_message((TPROC), 0, (BP), (MSG), NIL)
+  erts_queue_message((TPROC), NULL, (BP), (MSG), NIL)
 #endif
 
 /*
@@ -150,6 +152,15 @@ do { \
     } \
 } while (0)
 #endif
+
+static Uint active_sched;
+
+void
+erts_system_profile_setup_active_schedulers(void)
+{
+    ERTS_SMP_LC_ASSERT(erts_is_system_blocked(0));
+    active_sched = erts_active_schedulers();
+}
 
 void
 erts_trace_check_exiting(Eterm exiting)
@@ -558,7 +569,7 @@ profile_send(Eterm message) {
 	hp = erts_alloc_message_heap(sz, &bp, &off_heap, profile_p, 0);
 	msg = copy_struct(message, sz, &hp, &bp->off_heap);
 	
-    	erts_queue_message(profile_p, 0, bp, msg, NIL);
+    	erts_queue_message(profile_p, NULL, bp, msg, NIL);
     }
 }
 
@@ -1124,7 +1135,7 @@ seq_trace_output_generic(Eterm token, Eterm msg, Uint type,
 	enqueue_sys_msg_unlocked(SYS_MSG_TYPE_SEQTRACE, NIL, NIL, mess, bp);
 	erts_smp_mtx_unlock(&smq_mtx);
 #else
-	erts_queue_message(tracer, 0, bp, mess, NIL); /* trace_token must be NIL here */
+	erts_queue_message(tracer, NULL, bp, mess, NIL); /* trace_token must be NIL here */
 #endif
     }
 }
@@ -1960,18 +1971,17 @@ trace_proc_spawn(Process *p, Eterm pid,
 
 void save_calls(Process *p, Export *e)
 {
-   if (p->ct) {
-     Export **ct = &p->ct->ct[0];
-     int len = p->ct->len;
+    struct saved_calls *scb = ERTS_PROC_GET_SAVED_CALLS_BUF(p);
+    if (scb) {
+	Export **ct = &scb->ct[0];
+	int len = scb->len;
 
-     ct[p->ct->cur] = e;
-     if (++p->ct->cur >= len) {
-       p->ct->cur = 0;
-     }
-     if (p->ct->n < len) {
-       p->ct->n++;
-     }
-   }
+	ct[scb->cur] = e;
+	if (++scb->cur >= len)
+	    scb->cur = 0;
+	if (scb->n < len)
+	    scb->n++;
+    }
 }
 
 /* 
@@ -2324,7 +2334,7 @@ monitor_long_gc(Process *p, Uint time) {
 #ifdef ERTS_SMP
     enqueue_sys_msg(SYS_MSG_TYPE_SYSMON, p->id, NIL, msg, bp);
 #else
-    erts_queue_message(monitor_p, 0, bp, msg, NIL);
+    erts_queue_message(monitor_p, NULL, bp, msg, NIL);
 #endif
 }
 
@@ -2396,7 +2406,7 @@ monitor_large_heap(Process *p) {
 #ifdef ERTS_SMP
     enqueue_sys_msg(SYS_MSG_TYPE_SYSMON, p->id, NIL, msg, bp);
 #else
-    erts_queue_message(monitor_p, 0, bp, msg, NIL);
+    erts_queue_message(monitor_p, NULL, bp, msg, NIL);
 #endif
 }
 
@@ -2426,7 +2436,7 @@ monitor_generic(Process *p, Eterm type, Eterm spec) {
 #ifdef ERTS_SMP
     enqueue_sys_msg(SYS_MSG_TYPE_SYSMON, p->id, NIL, msg, bp);
 #else
-    erts_queue_message(monitor_p, 0, bp, msg, NIL);
+    erts_queue_message(monitor_p, NULL, bp, msg, NIL);
 #endif
 
 }
@@ -2436,7 +2446,7 @@ monitor_generic(Process *p, Eterm type, Eterm spec) {
 /* Scheduler profiling */
 
 void
-profile_scheduler(Eterm scheduler_id, Eterm state, Eterm no_schedulers) {
+profile_scheduler(Eterm scheduler_id, Eterm state) {
     Eterm *hp, msg, timestamp;
     Uint Ms, s, us;
 
@@ -2453,15 +2463,31 @@ profile_scheduler(Eterm scheduler_id, Eterm state, Eterm no_schedulers) {
     hp = bp->mem;
 #endif
 
+    erts_smp_mtx_lock(&smq_mtx);
+
+    switch (state) {
+    case am_active:
+	active_sched++;
+	break;
+    case am_inactive:
+	active_sched--;
+	break;
+    default:
+	ASSERT(!"Invalid state");
+	break;
+    }
+
     GET_NOW(&Ms, &s, &us);
     timestamp = TUPLE3(hp, make_small(Ms), make_small(s), make_small(us)); hp += 4;
-    msg = TUPLE6(hp, am_profile, am_scheduler, scheduler_id, state, no_schedulers, timestamp); hp += 7;
+    msg = TUPLE6(hp, am_profile, am_scheduler, scheduler_id, state,
+		 make_small(active_sched), timestamp); hp += 7;
 
 #ifndef ERTS_SMP
     profile_send(msg);
 #else
-    enqueue_sys_msg(SYS_MSG_TYPE_SYSPROF, NIL, NIL, msg, bp);
+    enqueue_sys_msg_unlocked(SYS_MSG_TYPE_SYSPROF, NIL, NIL, msg, bp);
 #endif
+    erts_smp_mtx_unlock(&smq_mtx);
 
 }
 
@@ -3131,7 +3157,7 @@ sys_msg_dispatcher_func(void *unused)
 		}
 		else {
 		queue_proc_msg:
-		    erts_queue_message(proc,proc_locks,smqp->bp,smqp->msg,NIL);
+		    erts_queue_message(proc,&proc_locks,smqp->bp,smqp->msg,NIL);
 #ifdef DEBUG_PRINTOUTS
 		    erts_fprintf(stderr, "delivered\n");
 #endif

@@ -1,6 +1,6 @@
 {application, cosTime,
  [{description, "The Erlang CosTime application"},
-  {vsn, "1.1.4"},
+  {vsn, "1.1.5"},
   {modules,
        [
 	'cosTime',

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 -module(inet_db).
@@ -784,17 +785,17 @@ handle_call(Request, _From, State) ->
 	%% This code will be changed when the hosts-table is reorganized
 	%% to use names as keys
 	{add_host,{127,0,0,1},[TName|TAs]} when is_list(TName), is_list(TAs) ->
-	    [Name|As] = lists:map(fun tolower/1,[TName|TAs]),
+	    [Name|As] = [tolower(N) || N <- [TName|TAs]],
 	    NameList = case ets:lookup(State#state.hosts,{127,0,0,1}) of
 			   [{_IP,_,NList}] -> NList;
 			   _ -> []
 		       end,
-	    Ns = lists:filter(fun(N) -> not(member(N, NameList)) end, [Name|As]),
+	    Ns = [N || N <- [Name|As], not member(N, NameList)],
 	    ets:insert(State#state.hosts, {{127,0,0,1},inet,NameList ++ Ns}),
 	    {reply, ok, State};
 
 	{add_host,IP,[TName|TAs]} when is_tuple(IP), is_list(TName), is_list(TAs) ->
-	    As = lists:map(fun tolower/1,[TName|TAs]),
+	    As = [tolower(N) || N <- [TName|TAs]],
 	    As1 = 
 		case ets:lookup(State#state.hosts, IP) of
 		    [{IP,_,PrevAs}] ->

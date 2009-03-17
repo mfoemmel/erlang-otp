@@ -1,20 +1,22 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 /*
  * This file contains the bif interface functions and
  * the handling of the "meta tables" ie the tables of 
@@ -2352,11 +2354,19 @@ void init_db(void)
 
 #ifdef ERTS_SMP
     for (i=0; i<META_MAIN_TAB_LOCK_CNT; i++) {
+#ifdef ERTS_ENABLE_LOCK_COUNT
+	erts_smp_spinlock_init_x(&meta_main_tab_locks[i].lck, "meta_main_tab_slot", make_small(i));
+#else
 	erts_smp_spinlock_init(&meta_main_tab_locks[i].lck, "meta_main_tab_slot");
+#endif
     }
     erts_smp_spinlock_init(&meta_main_tab_main_lock, "meta_main_tab_main");
     for (i=0; i<META_NAME_TAB_LOCK_CNT; i++) {
+#ifdef ERTS_ENABLE_LOCK_COUNT
+	erts_smp_rwmtx_init_x(&meta_name_tab_rwlocks[i].lck, "meta_name_tab", make_small(i));
+#else
 	erts_smp_rwmtx_init(&meta_name_tab_rwlocks[i].lck, "meta_name_tab");
+#endif
     }
 #endif
 

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%%
+%% retrieved online at http://www.erlang.org/.
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%%
-%%     $Id$
+%% 
+%% %CopyrightEnd%
 %%
 -module(edlin).
 
@@ -53,7 +54,7 @@ init() ->
 %%	{undefined,Char,Rest,Cont,Requests}
 
 start(Pbs) ->
-    {more_chars,{line,Pbs,{[],[]},none},[{put_chars,Pbs}]}.
+    {more_chars,{line,Pbs,{[],[]},none},[{put_chars,unicode,Pbs}]}.
 
 edit_line(Cs, {line,P,L,{blink,N}}) ->
     edit(Cs, P, L, none, [{move_rel,N}]);
@@ -63,7 +64,7 @@ edit_line(Cs, {line,P,L,M}) ->
 edit_line1(Cs, {line,P,L,{blink,N}}) ->
     edit(Cs, P, L, none, [{move_rel,N}]);
 edit_line1(Cs, {line,P,{[],[]},none}) ->
-    {more_chars, {line,P,{lists:reverse(Cs),[]},none},[{put_chars, Cs}]};
+    {more_chars, {line,P,{lists:reverse(Cs),[]},none},[{put_chars, unicode, Cs}]};
 edit_line1(Cs, {line,P,L,M}) ->
     edit(Cs, P, L, M, []).
 
@@ -79,7 +80,7 @@ edit([C|Cs], P, {Bef,Aft}, Prefix, Rs0) ->
 	    edit(Cs, P, {Bef,Aft}, ctlx, Rs0);
 	new_line ->
 	    {done, reverse(Bef, Aft ++ "\n"), Cs,
-	     reverse(Rs0, [{move_rel,length(Aft)},{put_chars,"\n"}])};
+	     reverse(Rs0, [{move_rel,length(Aft)},{put_chars,unicode,"\n"}])};
 	redraw_line ->
 	    Rs1 = erase(P, Bef, Aft, Rs0),
 	    Rs = redraw(P, Bef, Aft, Rs1),
@@ -192,13 +193,13 @@ key_map(C, _) -> {undefined,C}.
 %% do_op(Action, Before, After, Requests)
 
 do_op({insert,C}, Bef, [], Rs) ->
-    {{[C|Bef],[]},[{put_chars,[C]}|Rs]};
+    {{[C|Bef],[]},[{put_chars, unicode,[C]}|Rs]};
 do_op({insert,C}, Bef, Aft, Rs) ->
-    {{[C|Bef],Aft},[{insert_chars, [C]}|Rs]};
+    {{[C|Bef],Aft},[{insert_chars, unicode, [C]}|Rs]};
 %% do blink after $$
 do_op({blink,C,M}, Bef=[$$,$$|_], Aft, Rs) ->
     N = over_paren(Bef, C, M),
-    {blink,N+1,{[C|Bef],Aft},[{move_rel,-(N+1)},{insert_chars,[C]}|Rs]};
+    {blink,N+1,{[C|Bef],Aft},[{move_rel,-(N+1)},{insert_chars, unicode,[C]}|Rs]};
 %% don't blink after a $
 do_op({blink,C,_}, Bef=[$$|_], Aft, Rs) ->
     do_op({insert,C}, Bef, Aft, Rs);
@@ -208,15 +209,15 @@ do_op({blink,C,_}, Bef=[$$|_], Aft, Rs) ->
 do_op({blink,C,M}, Bef, Aft, Rs) ->
     case over_paren(Bef, C, M) of
 	beep ->
-	    {{[C|Bef], Aft}, [beep,{insert_chars, [C]}|Rs]};
+	    {{[C|Bef], Aft}, [beep,{insert_chars, unicode, [C]}|Rs]};
 	N -> {blink,N+1,{[C|Bef],Aft},
-	      [{move_rel,-(N+1)},{insert_chars,[C]}|Rs]}
+	      [{move_rel,-(N+1)},{insert_chars, unicode,[C]}|Rs]}
     end;
 do_op(auto_blink, Bef, Aft, Rs) ->
     case over_paren_auto(Bef) of
 	{N, Paren} ->
 	    {blink,N+1,
-	     {[Paren|Bef], Aft},[{move_rel,-(N+1)},{insert_chars,[Paren]}|Rs]};
+	     {[Paren|Bef], Aft},[{move_rel,-(N+1)},{insert_chars, unicode,[Paren]}|Rs]};
 	% N is likely 0
 	N -> {blink,N+1,{Bef,Aft},
 	      [{move_rel,-(N+1)}|Rs]}
@@ -226,9 +227,9 @@ do_op(forward_delete_char, Bef, [_|Aft], Rs) ->
 do_op(backward_delete_char, [_|Bef], Aft, Rs) ->
     {{Bef,Aft},[{delete_chars,-1}|Rs]};
 do_op(transpose_char, [C1,C2|Bef], [], Rs) ->
-    {{[C2,C1|Bef],[]},[{put_chars,[C1,C2]},{move_rel,-2}|Rs]};
+    {{[C2,C1|Bef],[]},[{put_chars, unicode,[C1,C2]},{move_rel,-2}|Rs]};
 do_op(transpose_char, [C2|Bef], [C1|Aft], Rs) ->
-    {{[C2,C1|Bef],Aft},[{put_chars,[C1,C2]},{move_rel,-1}|Rs]};
+    {{[C2,C1|Bef],Aft},[{put_chars, unicode,[C1,C2]},{move_rel,-1}|Rs]};
 do_op(kill_word, Bef, Aft0, Rs) ->
     {Aft1,Kill0,N0} = over_non_word(Aft0, [], 0),
     {Aft,Kill,N} = over_word(Aft1, Kill0, N0),
@@ -244,10 +245,10 @@ do_op(kill_line, Bef, Aft, Rs) ->
     {{Bef,[]},[{delete_chars,length(Aft)}|Rs]};
 do_op(yank, Bef, [], Rs) ->
     Kill = get(kill_buffer),
-    {{reverse(Kill, Bef),[]},[{put_chars,Kill}|Rs]};
+    {{reverse(Kill, Bef),[]},[{put_chars, unicode,Kill}|Rs]};
 do_op(yank, Bef, Aft, Rs) ->
     Kill = get(kill_buffer),
-    {{reverse(Kill, Bef),Aft},[{insert_chars,Kill}|Rs]};
+    {{reverse(Kill, Bef),Aft},[{insert_chars, unicode,Kill}|Rs]};
 do_op(forward_char, Bef, [C|Aft], Rs) ->
     {{[C|Bef],Aft},[{move_rel,1}|Rs]};
 do_op(backward_char, [C|Bef], Aft, Rs) ->
@@ -417,7 +418,7 @@ redraw_line({line,Pbs,{Bef,Aft},_}) ->
     reverse(redraw(Pbs, Bef, Aft, [])).
 
 redraw(Pbs, Bef, Aft, Rs) ->
-    [{move_rel,-length(Aft)},{put_chars,reverse(Bef, Aft)},{put_chars,Pbs}|Rs].
+    [{move_rel,-length(Aft)},{put_chars, unicode,reverse(Bef, Aft)},{put_chars, unicode,Pbs}|Rs].
 
 length_before({line,Pbs,{Bef,_Aft},_}) ->
     length(Pbs) + length(Bef).

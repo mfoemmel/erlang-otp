@@ -1,19 +1,24 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
+
+%%
+
 -module(ssh_acceptor).
 
 %% Internal application API
@@ -49,7 +54,12 @@ acceptor_init(Parent, Port, Address, SockOpts, Opts, AcceptTimeout) ->
     end.
    
 do_socket_listen(Callback, Port, Opts) ->
-    Callback:listen(Port, Opts).
+    case Callback:listen(Port, Opts) of
+	{error, eafnosupport} ->
+	    Callback:listen(Port, lists:delete(inet6, Opts));
+	Other ->
+	    Other
+    end.
     
 acceptor_loop(Callback, Port, Address, Opts, ListenSocket, AcceptTimeout) ->
     case (catch Callback:accept(ListenSocket, AcceptTimeout)) of
@@ -69,12 +79,7 @@ acceptor_loop(Callback, Port, Address, Opts, ListenSocket, AcceptTimeout) ->
 
 handle_connection(Callback, Address, Port, Options, Socket) ->
     SystemSup = ssh_system_sup:system_supervisor(Address, Port),
-    case ssh_system_sup:subsystem_supervisor(SystemSup) of
-	undefined ->
-	    ssh_system_sup:restart_subsystem(Address, Port);
-	_ ->
-	    ok
-    end,
+    ssh_system_sup:start_subsystem(SystemSup, Options),
     ConnectionSup = ssh_system_sup:connection_supervisor(SystemSup),
     {ok, Pid} = 
 	ssh_connection_sup:start_manager_child(ConnectionSup,

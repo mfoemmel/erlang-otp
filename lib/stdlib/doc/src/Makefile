@@ -96,24 +96,23 @@ XML_REF3_FILES = \
 	supervisor_bridge.xml \
 	sys.xml \
 	timer.xml \
+	unicode.xml \
 	win32reg.xml \
 	zip.xml
 
 XML_REF6_FILES = stdlib_app.xml
 
-XML_PART_FILES = part_notes.xml part_notes_history.xml
-XML_CHAPTER_FILES = notes.xml notes_history.xml
+XML_PART_FILES = part.xml part_notes.xml part_notes_history.xml
+XML_CHAPTER_FILES = io_protocol.xml unicode_usage.xml notes.xml notes_history.xml
+GIF_FILES = ushell1.gif ushell2.gif ushell3.gif
 
 BOOK_FILES = book.xml
-
-GIF_FILES = \
-	warning.gif \
-	note.gif
 
 # ----------------------------------------------------
 
 HTML_FILES = $(XML_APPLICATION_FILES:%.xml=$(HTMLDIR)/%.html) \
-	$(XML_PART_FILES:%.xml=$(HTMLDIR)/%.html)
+	$(XML_PART_FILES:%.xml=$(HTMLDIR)/%.html) \
+	$(GIF_FILES:%.gif=$(HTMLDIR)/%.gif)
 
 INFO_FILE = ../../info
 EXTRA_FILES = \
@@ -132,7 +131,8 @@ TEX_FILES_REF_MAN = $(XML_REF3_FILES:%.xml=%.tex) \
 	$(XML_REF6_FILES:%.xml=%.tex) \
 	$(XML_APPLICATION_FILES:%.xml=%.tex)
 TEX_FILES_USERS_GUIDE = \
-	$(XML_CHAPTER_FILES:%.xml=%.tex)
+	$(XML_CHAPTER_FILES:%.xml=%.tex) \
+	part.tex
 
 TOP_PDF_FILE = stdlib-$(VSN).pdf
 TOP_PS_FILE  = stdlib-$(VSN).ps
@@ -161,7 +161,7 @@ else
 ifeq ($(DOCTYPE),ps)
 docs: ps
 else
-docs: html gifs man
+docs: html man
 endif
 endif
 
@@ -172,8 +172,6 @@ ps: $(TOP_PS_FILE)
 html: $(HTML_FILES)
 
 man: $(MAN3_FILES) $(MAN6_FILES)
-
-gifs: $(GIF_FILES:%=$(HTMLDIR)/%)
 
 debug opt: 
 
@@ -200,7 +198,7 @@ release_docs_spec: ps
 else
 release_docs_spec: docs
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html
-	$(INSTALL_DATA) $(GIF_FILES) $(EXTRA_FILES) $(HTML_FILES) \
+	$(INSTALL_DATA) $(EXTRA_FILES) $(HTML_FILES) \
 		$(RELSYSDIR)/doc/html
 	$(INSTALL_DATA) $(INFO_FILE) $(RELSYSDIR)
 	$(INSTALL_DIR) $(RELEASE_PATH)/man/man3

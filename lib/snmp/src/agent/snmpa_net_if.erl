@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>2004-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 -module(snmpa_net_if).
 
@@ -54,7 +53,7 @@
 -endif.
 
 -define(DEFAULT_FILTER_MODULE, snmpa_net_if_filter).
--define(DEFAULT_FILTER_OPTS,   [{module, snmpa_net_if_filter}]).
+-define(DEFAULT_FILTER_OPTS,   [{module, ?DEFAULT_FILTER_MODULE}]).
 
 
 %%%-----------------------------------------------------------------
@@ -269,7 +268,6 @@ loop(S) ->
     receive
 	{udp, _UdpId, Ip, Port, Packet} ->
 	    ?vlog("got paket from ~w:~w",[Ip,Port]),
-	    %% NewS = handle_recv(S, Ip, Port, Packet),
 	    NewS = maybe_handle_recv(S, Ip, Port, Packet),
 	    loop(NewS);
 
@@ -283,7 +281,6 @@ loop(S) ->
 	    ?vlog("reply pdu: "
 		  "~n   ~s", 
 		  [?vapply(snmp_misc, format, [256, "~w", [RePdu]])]),
-	    %% NewS = handle_reply_pdu(S, Vsn, RePdu, Type, ACMData, Dest),
 	    NewS = maybe_handle_reply_pdu(S, Vsn, RePdu, Type, ACMData, Dest),
 	    loop(NewS);
 
@@ -292,20 +289,38 @@ loop(S) ->
 	    ?vdebug("send pdu: "
 		    "~n   Pdu: ~p"
 		    "~n   To:  ~p", [Pdu, To]),
-	    %% NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, undefined),
 	    NewS = maybe_handle_send_pdu(S, Vsn, Pdu, MsgData, To, undefined),
 	    loop(NewS);
 
 	%% Informs
 	{send_pdu_req, Vsn, Pdu, MsgData, To, From} ->
 	    ?vdebug("send pdu request: "
+		    "~n   Pdu:     ~p"
+		    "~n   To:      ~p"
+		    "~n   From:    ~p", 
+		    [Pdu, To, toname(From)]),
+	    NewS = maybe_handle_send_pdu(S, Vsn, Pdu, MsgData, To, From),
+	    loop(NewS);
+
+	%% Discovery Inform
+	{send_discovery, Pdu, MsgData, To, From} ->
+	    ?vdebug("received send discovery request: "
 		    "~n   Pdu:  ~p"
 		    "~n   To:   ~p"
 		    "~n   From: ~p", 
 		    [Pdu, To, toname(From)]),
-	    %% NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, From),
-	    NewS = maybe_handle_send_pdu(S, Vsn, Pdu, MsgData, To, From),
+	    NewS = handle_send_discovery(S, Pdu, MsgData, To, From),
 	    loop(NewS);
+
+%% 	{send_discovery, Pdu, MsgData, Timeout, To, From} ->
+%% 	    ?vdebug("send pdu request: "
+%% 		    "~n   Pdu:  ~p"
+%% 		    "~n   Timeout: ~p"
+%% 		    "~n   To:   ~p"
+%% 		    "~n   From: ~p", 
+%% 		    [Pdu, Timeout, To, toname(From)]),
+%% 	    NewS = handle_send_discovery(S, Pdu, MsgData, To, From),
+%% 	    loop(NewS);
 
 	{discarded_pdu, _Vsn, ReqId, _ACMData, Variable, _Extra} ->
 	    ?vdebug("discard PDU: ~p", [Variable]),
@@ -462,6 +477,20 @@ maybe_handle_recv(#state{filter = FilterMod} = S,
 	    handle_recv(S, Ip, Port, Packet)
     end.
 
+handle_discovery_response(_Ip, _Port, #pdu{request_id = ReqId} = Pdu, 
+			  ManagerEngineId, 
+			  #state{reqs = Reqs} = S) ->
+    case lists:keysearch(ReqId, 1, S#state.reqs) of
+	{value, {_, Pid}} ->
+	    Pid ! {snmp_discovery_response_received, Pdu, ManagerEngineId},
+	    NReqs = lists:keydelete(ReqId, 1, Reqs),
+	    S#state{reqs = NReqs};
+	_ ->
+	    %% Ouch, timeout? resend?
+	    S
+    end.
+	   
+    
 handle_recv(#state{usock      = Sock, 
 		   mpd_state  = MpdState, 
 		   note_store = NS,
@@ -470,25 +499,45 @@ handle_recv(#state{usock      = Sock,
     LogF = fun(Type, Data) ->
 		   log(Log, Type, Data, Ip, Port)
 	   end,
-    case snmpa_mpd:process_packet(Packet, snmpUDPDomain, {Ip, Port}, 
-				 MpdState, NS, LogF) of
+    case (catch snmpa_mpd:process_packet(Packet, snmpUDPDomain, {Ip, Port}, 
+					 MpdState, NS, LogF)) of
+	{ok, _Vsn, Pdu, _PduMS, {discovery, ManagerEngineId}} ->
+	    handle_discovery_response(Ip, Port, Pdu, ManagerEngineId, S);
+
+	{ok, _Vsn, Pdu, _PduMS, discovery} ->
+	    handle_discovery_response(Ip, Port, Pdu, undefined, S);
+
 	{ok, Vsn, Pdu, PduMS, ACMData} ->
 	    ?vlog("got pdu"
 		"~n   ~s", 
 		[?vapply(snmp_misc, format, [256, "~w", [Pdu]])]),
 	    %% handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S);
 	    maybe_handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S);
+
 	{discarded, Reason} ->
 	    ?vlog("packet discarded for reason: "
 		"~n   ~s",
 		[?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
 	    active_once(Sock),
 	    S;
+
 	{discarded, Reason, ReportPacket} ->
 	    ?vlog("sending report for reason: "
 		"~n   ~s", 
 		[?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
 	    (catch udp_send(S#state.usock, Ip, Port, ReportPacket)),
+	    active_once(Sock),
+	    S;
+	
+	{discovery, ReportPacket} ->
+	    ?vlog("sending discovery report", []),
+	    (catch udp_send(S#state.usock, Ip, Port, ReportPacket)),
+	    active_once(Sock),
+	    S;
+	
+	Error ->
+	    error_msg("processing of received message failed: "
+                      "~n   ~p", [Error]),
 	    active_once(Sock),
 	    S
     end.
@@ -513,9 +562,9 @@ handle_recv_pdu(Ip, Port, Vsn, #pdu{type = 'get-response'} = Pdu,
     S;
 handle_recv_pdu(Ip, Port, Vsn, #pdu{request_id = Rid, type = Type} = Pdu, 
 		PduMS, ACMData, #state{master_agent = Pid} = S) 
-  when Type == 'get-request'; 
-       Type == 'get-next-request'; 
-       Type == 'get-bulk-request' ->
+  when ((Type =:= 'get-request') orelse
+	(Type =:= 'get-next-request') orelse
+	(Type =:= 'get-bulk-request')) ->
     ?vtrace("handle_recv_pdu -> received get (~w)", [Type]),
     Pid ! {snmp_pdu, Vsn, Pdu, PduMS, ACMData, {Ip, Port}, []},
     update_req_counter_incomming(S, Rid);
@@ -656,6 +705,43 @@ handle_send_pdu(#state{note_store = NS} = S, Vsn, Pdu, MsgData, To, From) ->
     end.
 
 
+handle_send_discovery(#state{note_store = NS} = S, 
+		      Pdu, MsgData, 
+		      To, From) ->
+    
+    ?vtrace("handle_send_discovery -> entry with"
+	    "~n   Pdu:     ~p"
+	    "~n   MsgData: ~p"
+	    "~n   To:      ~p"
+	    "~n   From:    ~p", [Pdu, MsgData, To, From]),
+
+    case (catch snmpa_mpd:generate_discovery_msg(NS, Pdu, MsgData, To)) of
+	{ok, {Packet, {Ip, Port}}} ->
+	    handle_send_discovery(S, Pdu, Packet, Ip, Port, From);
+	{discarded, Reason} ->
+	    ?vlog("handle_send_discovery -> "
+		  "~n   Discovery PDU ~p not sent due to ~p", [Pdu, Reason]),
+	    ok;
+        {'EXIT', Reason} ->
+            user_err("failed generating discovery message: "
+                     "~n   PDU:    ~w"
+		     "~n   Reason: ~w", [Pdu, Reason]),
+            ok
+    end.
+
+handle_send_discovery(#state{log   = Log, 
+			     usock = Sock,
+			     reqs  = Reqs} = S, 
+		      #pdu{type       = Type, 
+			   request_id = ReqId}, 
+		      Packet, Ip, Port, From) 
+  when is_binary(Packet) ->
+    log(Log, Type, Packet, Ip, Port),
+    udp_send(Sock, Ip, Port, Packet),
+    NReqs = snmp_misc:keyreplaceadd(From, 2, Reqs, {ReqId, From}),
+    S#state{reqs = NReqs}.
+
+
 handle_send_pdu(S, #pdu{type = Type} = Pdu, Addresses) ->
     handle_send_pdu(S, Type, Pdu, Addresses);
 handle_send_pdu(S, Trap, Addresses) ->
@@ -777,9 +863,9 @@ clear_reqs(Pid, S) ->
     S#state{reqs = NReqs}.
 
 
-toname(P) when pid(P) ->
-    case process_info(P,registered_name) of
-	{registered_name,Name} ->
+toname(P) when is_pid(P) ->
+    case process_info(P, registered_name) of
+	{registered_name, Name} ->
 	    Name;
 	_ ->
 	    P

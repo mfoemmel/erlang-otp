@@ -1,9 +1,33 @@
+#-*-makefile-*-   ; force emacs to enter makefile-mode
 
-SNMP_VSN = 4.12
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 1997-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved online at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# %CopyrightEnd%
+
+SNMP_VSN = 4.13
 PRE_VSN  =
 APP_VSN  = "snmp-$(SNMP_VSN)$(PRE_VSN)"
 
-TICKETS = OTP-7346 OTP-7525
+TICKETS = OTP-7571 OTP-7735 OTP-7836 OTP-7851
+
+TICKETS_4_12_2 = OTP-7868
+
+TICKETS_4_12_1 = OTP-7695 OTP-7698
+
+TICKETS_4_12 = OTP-7346 OTP-7525
 
 TICKETS_4_11_2 = OTP-7570 OTP-7575
 

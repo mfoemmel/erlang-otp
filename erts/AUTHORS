@@ -1,3 +1,23 @@
+
+ %CopyrightBegin%
+ 
+ Copyright Ericsson AB 1999-2009. All Rights Reserved.
+ 
+ The contents of this file are subject to the Erlang Public License,
+ Version 1.1, (the "License"); you may not use this file except in
+ compliance with the License. You should have received a copy of the
+ Erlang Public License along with this software. If not, it can be
+ retrieved online at http://www.erlang.org/.
+ 
+ Software distributed under the License is distributed on an "AS IS"
+ basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ the License for the specific language governing rights and limitations
+ under the License.
+ 
+ %CopyrightEnd%
+
+--------------------------------------------------------------------------------
+
 The original JAM emulator was first implemented by Mike Williams (the
 instruction set was argued out with Joe Armstrong).
 
@@ -110,3 +130,9 @@ Serge Aleynikov <saleyn (at) gmail (dot) com>
 	Wrote the original SCTP implementation, adapted by the OTP team;
 	in inet_drv.c in the emulator, as well as the parts in the
 	kernel application. They continue to provide patches.
+
+Mat Hostetter at Tilera Corporation:
+	Implemented ethr_atomic_cmpxchg() for all, at the time
+	of writing, supported platforms and improved the process lock
+	implementation by using ethr_atomic_cmpxchg() instead of
+	ethr_atomic_or_old() and ethr_atomic_and_old().

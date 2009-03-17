@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>2002-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1ct_gen_ber_bin_v2).
 
@@ -1315,7 +1315,15 @@ gen_inlined_enc_funs(Fields,[{typefield,Name,_}|Rest],
 		M == CurrMod ->
 		    emit([indent(12),"'enc_",T,"'(Val)"]);
 		true ->
-		    emit([indent(12),"'",M,"':'enc_",T,"'(Val)"])
+		    #typedef{typespec=Type} = asn1_db:dbget(M,T),
+		    OTag = Type#type.tag,
+%% 		    Tag = [encode_tag_val((decode_class(X#tag.class) bsl 10) +
+%% 					  X#tag.number) ||
+%% 			      X <- OTag],
+ 		    Tag = [encode_tag_val(decode_class(X#tag.class),
+ 					  X#tag.form,X#tag.number) ||
+ 			      X <- OTag],
+		    emit([indent(12),"'",M,"':'enc_",T,"'(Val, ",{asis,Tag},")"])
 	    end,
 	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,[]);
 	false ->
@@ -1357,7 +1365,12 @@ gen_inlined_enc_funs1(Fields,[{typefield,Name,_}|Rest],ObjSetName,
 		    M == CurrMod ->
 			emit([indent(12),"'enc_",T,"'(Val)"]);
 		    true ->
-			emit([indent(12),"'",M,"':'enc_",T,"'(Val)"])
+			#typedef{typespec=Type} = asn1_db:dbget(M,T),
+			OTag = Type#type.tag,
+			Tag = [encode_tag_val(decode_class(X#tag.class), 
+					      X#tag.form,X#tag.number) ||
+				  X <- OTag],
+			emit([indent(12),"'",M,"':'enc_",T,"'(Val, ",{asis,Tag},")"])
 		end,
 		{Acc,0};
 	    false ->
@@ -1392,10 +1405,10 @@ emit_inner_of_fun(TDef=#typedef{name={ExtMod,Name},typespec=Type},
 	    {[],0};
 	{constructed,bif} ->
 	    emit([indent(12),"'enc_",
-		  InternalDefFunName,"'(Val)"]),
+		  InternalDefFunName,"'(Val, ",{asis,Tag},")"]),
 	    {[TDef#typedef{name=InternalDefFunName}],1};
 	_ ->
-	    emit({indent(12),"'",ExtMod,"':'enc_",Name,"'(Val)"}),
+	    emit({indent(12),"'",ExtMod,"':'enc_",Name,"'(Val",{asis,Tag},")"}),
 	    {[],0}
     end;
 emit_inner_of_fun(#typedef{name=Name},_) ->
@@ -1424,8 +1437,13 @@ emit_inner_of_fun(Type,_) when record(Type,type) ->
 	    emit([indent(9),T," ->",nl,indent(12),"'enc_",T,
 		  "'(Val)"]);
 	#'Externaltypereference'{module=ExtMod,type=T} ->
+	    #typedef{typespec=ExtType} = asn1_db:dbget(ExtMod,T),
+	    OTag = ExtType#type.tag,
+	    Tag = [encode_tag_val(decode_class(X#tag.class),
+				  X#tag.form,X#tag.number) ||
+		      X <- OTag],
 	    emit([indent(9),T," ->",nl,indent(12),ExtMod,":'enc_",
-		  T,"'(Val)"])
+		  T,"'(Val, ",{asis,Tag},")"])
     end,
     {[],0}.
 
@@ -1536,7 +1554,11 @@ gen_inlined_dec_funs(Fields,[{typefield,Name,Prop}|Rest],
 		M == CurrMod ->
 		    emit([indent(12),"'dec_",T,"'(Bytes)"]);
 		true ->
-		    emit([indent(12),"'",M,"':'dec_",T,"'(Bytes)"])
+		    #typedef{typespec=Type} = asn1_db:dbget(M,T),
+		    OTag = Type#type.tag,
+		    Tag = [(decode_class(X#tag.class) bsl 10) + X#tag.number ||
+			      X <- OTag],
+		    emit([indent(12),"'",M,"':'dec_",T,"'(Bytes, ",{asis,Tag},")"])
 	    end,
 	    gen_inlined_dec_funs1(Fields,Rest,ObjSetName,NthObj);
 	false ->
@@ -1578,7 +1600,11 @@ gen_inlined_dec_funs1(Fields,[{typefield,Name,Prop}|Rest],
 		    M == CurrMod ->
 			emit([indent(12),"'dec_",T,"'(Bytes)"]);
 		    true ->
-			emit([indent(12),"'",M,"':'dec_",T,"'(Bytes)"])
+			#typedef{typespec=Type} = asn1_db:dbget(M,T),
+			OTag = Type#type.tag,
+			Tag = [(decode_class(X#tag.class) bsl 10) + 
+			       X#tag.number || X <- OTag],
+			emit([indent(12),"'",M,"':'dec_",T,"'(Bytes, ",{asis,Tag},")"])
 		end,
 		0;
 	    false ->
@@ -1618,7 +1644,8 @@ emit_inner_of_decfun(#typedef{name={ExtName,Name},typespec=Type},Prop,
 		  {asis,Tag},")"]),
 	    1;
 	_ ->
-	    emit([indent(12),"'",ExtName,"':'dec_",Name,"'(Bytes)"]),
+	    emit([indent(12),"'",ExtName,"':'dec_",Name,"'(Bytes, ",
+		  {asis,Tag},")"]),
 	    0
     end;
 emit_inner_of_decfun(#typedef{name=Name},_Prop,_) ->
@@ -1644,7 +1671,7 @@ emit_inner_of_decfun(Type,Prop,_) when record(Type,type) ->
 	#'Externaltypereference'{module=ExtMod,type=T} ->
 	    emit([indent(9),T," ->",nl,indent(12),ExtMod,":'dec_",
 %		  T,"'(Bytes, ",Prop,")"])
-		  T,"'(Bytes)"])
+		  T,"'(Bytes, ",{asis,Tag},")"])
     end,
     0.
 

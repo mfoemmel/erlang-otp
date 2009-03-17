@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%===========================================================================
 %% File        : typer_options.erl
 %% Author      : Bingwen He <Bingwen.He@gmail.com>
@@ -25,7 +43,7 @@ process() ->
   {Args, Analysis} = analyze_args(ArgList, #args{}, #typer_analysis{}),
   %% if the mode has not been set, set it to the default mode (show)
   {Args, case Analysis#typer_analysis.mode of
-	   undefined -> Analysis#typer_analysis{mode=?SHOW};
+	   undefined -> Analysis#typer_analysis{mode = ?SHOW};
 	   Mode when is_atom(Mode) -> Analysis
 	 end}.
 
@@ -51,13 +69,13 @@ cl(["--show-exported"|Opts]) -> {{mode, ?SHOW_EXPORTED}, Opts};
 cl(["--annotate"|Opts]) -> {{mode, ?ANNOTATE}, Opts};
 cl(["--annotate-inc-files"|Opts]) -> {{mode, ?ANNOTATE_INC_FILES}, Opts};
 cl(["--plt",Plt|Opts]) -> {{plt, Plt}, Opts};
-cl(["-D"++Defines|Opts]) ->
-  case Defines of
-    "" -> typer:error("no defines specified after -D");
+cl(["-D"++Def|Opts]) ->
+  case Def of
+    "" -> typer:error("no variable name specified after -D");
     _ ->
-      {ok, Result} = regexp:split(Defines, "="),
-      Elem = collect_defines(Result),
-      {{macros, Elem}, Opts}
+      L = re:split(Def, "=", [{return, list}]),
+      DefPair = process_def_list(L),
+      {{def, DefPair}, Opts}
   end;
 cl(["-I",Dir|Opts]) -> {{inc,Dir}, Opts};
 cl(["-I"++Dir|Opts]) ->
@@ -79,42 +97,42 @@ cl(Opts) ->
   {Args, RestOpts} = dialyzer_cl_parse:collect_args(Opts),
   {{analyze, Args}, RestOpts}.
 
-collect_defines(Result) ->
-  case Result of
-    [Def, Val] ->
-      {ok, Tokens, _} = erl_scan:string(Val++"."),
-      {ok, ErlVal} = erl_parse:parse_term(Tokens),
-      {list_to_atom(Def), ErlVal};
-    [Def] ->
-      {list_to_atom(Def), true}
+process_def_list(L) ->
+  case L of
+    [Name, Value] ->
+      {ok, Tokens, _} = erl_scan:string(Value ++ "."),
+      {ok, ErlValue} = erl_parse:parse_term(Tokens),
+      {list_to_atom(Name), ErlValue};
+    [Name] ->
+      {list_to_atom(Name), true}
   end.
 
 %% Get information about files that the user trusts and wants to analyze
 analyze_result({analyze, Val}, Args, Analysis) -> 
   NewVal = Args#args.analyze ++ Val,
-  {Args#args{analyze=NewVal}, Analysis};
+  {Args#args{analyze = NewVal}, Analysis};
 analyze_result({a_dir_r, Val}, Args, Analysis) -> 
   NewVal = Args#args.analyzed_dir_r ++ Val,
-  {Args#args{analyzed_dir_r=NewVal}, Analysis};
+  {Args#args{analyzed_dir_r = NewVal}, Analysis};
 analyze_result({trust, Val}, Args, Analysis) -> 
   NewVal = Args#args.trust ++ Val,
-  {Args#args{trust=NewVal}, Analysis};
+  {Args#args{trust = NewVal}, Analysis};
 analyze_result(comments, Args, Analysis) ->
-  {Args, Analysis#typer_analysis{contracts=false}};
+  {Args, Analysis#typer_analysis{contracts = false}};
 %% Get useful information for actual analysis
 analyze_result({mode, Val}, Args, Analysis) -> 
   case Analysis#typer_analysis.mode of
-    undefined -> {Args, Analysis#typer_analysis{mode=Val}};
+    undefined -> {Args, Analysis#typer_analysis{mode = Val}};
     _ -> mode_error()
   end;
-analyze_result({macros, Val}, Args, Analysis) ->
+analyze_result({def, Val}, Args, Analysis) ->
   NewVal = Analysis#typer_analysis.macros ++ [Val],
-  {Args, Analysis#typer_analysis{macros=NewVal}};
+  {Args, Analysis#typer_analysis{macros = NewVal}};
 analyze_result({inc, Val}, Args, Analysis) -> 
   NewVal = Analysis#typer_analysis.includes ++ [Val],
-  {Args, Analysis#typer_analysis{includes=NewVal}};
+  {Args, Analysis#typer_analysis{includes = NewVal}};
 analyze_result({plt, Plt}, Args, Analysis) ->
-  {Args, Analysis#typer_analysis{plt=Plt}}.
+  {Args, Analysis#typer_analysis{plt = Plt}}.
 
 %%--------------------------------------------------------------------
 

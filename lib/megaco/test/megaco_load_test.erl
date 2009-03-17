@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2003-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Verify the application specifics of the Megaco application
@@ -35,15 +36,19 @@
 -define(SINGLE_USER_LOAD_NUM_REQUESTS, 1000).
 -define(MULTI_USER_LOAD_NUM_REQUESTS,  1000).
 
--define(MGC_START(Pid, Mid, ET, Verb), 
-        megaco_test_mgc:start(Pid, Mid, ET, Verb)).
+-define(MGC_START(Pid, Mid, ET, Conf, Verb), 
+        megaco_test_mgc:start(Pid, Mid, ET, 
+			      [{megaco_trace, false}] ++ Conf, Verb)).
 -define(MGC_STOP(Pid), megaco_test_mgc:stop(Pid)).
 -define(MGC_USER_INFO(Pid,Tag), megaco_test_mgc:user_info(Pid,Tag)).
 -define(MGC_CONN_INFO(Pid,Tag), megaco_test_mgc:conn_info(Pid,Tag)).
 -define(MGC_SET_VERBOSITY(Pid, V), megaco_test_mgc:verbosity(Pid, V)).
 
 -define(MG_START(Pid, Mid, Enc, Transp, Conf, Verb), 
-        megaco_test_mg:start(Pid, Mid, Enc, Transp, Conf, Verb)).
+        megaco_test_mg:start(Pid, Mid, Enc, Transp, 
+			     [{megaco_trace, false},
+			      {transport_opts, [{serialize, true}]}] ++ Conf, 
+			     Verb)).
 -define(MG_STOP(Pid), megaco_test_mg:stop(Pid)).
 -define(MG_USER_INFO(Pid,Tag), megaco_test_mg:user_info(Pid,Tag)).
 -define(MG_CONN_INFO(Pid,Tag), megaco_test_mg:conn_info(Pid,Tag)).
@@ -329,7 +334,6 @@ load_controller(Config, Fun) when is_list(Config) and is_function(Fun) ->
 	    ?SKIP({timeout, SkipTimeout, TcTimeout})
     end.
 
-    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 single_user_load(NumLoaders) ->
@@ -343,12 +347,13 @@ single_user_load(NumLoaders) ->
     %% Start the MGC and MGs
     i("[MGC] start"),
     MgcMid = {deviceName, "ctrl"},
-    ET     = [{text,tcp}],
-    {ok, Mgc} = ?MGC_START(MgcNode, MgcMid, ET, ?MGC_VERBOSITY),
+    ET     = [{text, tcp, [{serialize, true}]}],
+    DSI = maybe_display_system_info(NumLoaders),
+    {ok, Mgc} = ?MGC_START(MgcNode, MgcMid, ET, DSI, ?MGC_VERBOSITY),
 
     i("[MG] start"),
     MgMid = {deviceName, "mg"},
-    {ok, Mg} = ?MG_START(MgNode, MgMid, text, tcp, [], ?MG_VERBOSITY),
+    {ok, Mg} = ?MG_START(MgNode, MgMid, text, tcp, DSI, ?MG_VERBOSITY),
 
     d("MG user info: ~p", [?MG_USER_INFO(Mg, all)]),
 
@@ -402,8 +407,8 @@ single_user_load(NumLoaders) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 multi_user_load(NumUsers, NumLoaders) 
-  when integer(NumUsers), NumUsers > 1, 
-       integer(NumLoaders), NumLoaders >= 1 ->
+  when (is_integer(NumUsers) andalso (NumUsers > 1) andalso 
+	is_integer(NumLoaders) andalso (NumLoaders >= 1)) ->
     MgcNode = make_node_name(mgc),
     MgNodes = make_node_names(mg, NumUsers),
     d("Nodes: "
@@ -414,8 +419,9 @@ multi_user_load(NumUsers, NumLoaders)
     %% Start the MGC and MGs
     i("[MGC] start"),
     MgcMid = {deviceName, "ctrl"},
-    ET     = [{text,tcp}],
-    {ok, Mgc} = ?MGC_START(MgcNode, MgcMid, ET, ?MGC_VERBOSITY),
+    ET     = [{text, tcp, [{serialize, false}]}],
+    DSI = maybe_display_system_info(2 * NumUsers * NumLoaders),
+    {ok, Mgc} = ?MGC_START(MgcNode, MgcMid, ET, DSI, ?MGC_VERBOSITY),
 
     megaco_test_mgc:update_user_info(Mgc,reply_timer,1000),
     d("MGC user info: ~p", [?MGC_USER_INFO(Mgc, all)]),
@@ -423,7 +429,7 @@ multi_user_load(NumUsers, NumLoaders)
     MgUsers = make_mids(MgNodes),
 
     d("start MGs, apply the load and stop MGs"),
-    ok = multi_load(MgUsers, NumLoaders, ?MULTI_USER_LOAD_NUM_REQUESTS),
+    ok = multi_load(MgUsers, DSI, NumLoaders, ?MULTI_USER_LOAD_NUM_REQUESTS),
 
     i("flush the message queue: ~p", [megaco_test_lib:flush()]),
 
@@ -438,13 +444,14 @@ multi_user_load(NumUsers, NumLoaders)
     ok.
 
 
-multi_load(MGs, NumLoaders, NumReqs) ->
+multi_load(MGs, DSI, NumLoaders, NumReqs) ->
     d("multi_load -> entry with"
       "~n   MGs:        ~p"
+      "~n   DSI:        ~p"
       "~n   NumLoaders: ~p"
-      "~n   NumReqs:    ~p", [MGs, NumLoaders, NumReqs]),
+      "~n   NumReqs:    ~p", [MGs, DSI, NumLoaders, NumReqs]),
 
-    Pids = multi_load_collector_start(MGs, NumLoaders, NumReqs, []),
+    Pids = multi_load_collector_start(MGs, DSI, NumLoaders, NumReqs, []),
     case timer:tc(?MODULE, do_multi_load, [Pids, NumLoaders, NumReqs]) of
 	{Time, {ok, OKs, []}} ->
 	    Sec = Time / 1000000,
@@ -464,13 +471,13 @@ do_multi_load(Pids, _NumLoaders, _NumReqs) ->
     lists:foreach(Fun, Pids),
     await_multi_load_collectors(Pids, [], []).
 
-multi_load_collector_start([], _NumLoaders, _NumReqs, Pids) ->
+multi_load_collector_start([], _DSI, _NumLoaders, _NumReqs, Pids) ->
     Pids;
-multi_load_collector_start([{Mid, Node}|MGs], NumLoaders, NumReqs, Pids) ->
+multi_load_collector_start([{Mid, Node}|MGs], DSI, NumLoaders, NumReqs, Pids) ->
     Env = get(),
     Pid = spawn_link(?MODULE, multi_load_collector, 
-		     [self(), Node, Mid, NumLoaders, NumReqs, Env]),
-    multi_load_collector_start(MGs, NumLoaders, NumReqs, [{Pid,Mid}|Pids]).
+		     [self(), Node, Mid, DSI, NumLoaders, NumReqs, Env]),
+    multi_load_collector_start(MGs, DSI, NumLoaders, NumReqs, [{Pid,Mid}|Pids]).
 
 get_env(Key, Env) ->
     case lists:keysearch(Key, 1, Env) of
@@ -480,11 +487,11 @@ get_env(Key, Env) ->
 	    undefined
     end.
 
-multi_load_collector(Parent, Node, Mid, NumLoaders, NumReqs, Env) ->
+multi_load_collector(Parent, Node, Mid, DSI, NumLoaders, NumReqs, Env) ->
     put(verbosity, get_env(verbosity, Env)),
     put(tc, get_env(tc, Env)),
     put(sname, get_env(sname, Env) ++ "-loader"),
-    case ?MG_START(Node, Mid, text, tcp, [], ?MG_VERBOSITY) of
+    case ?MG_START(Node, Mid, text, tcp, DSI, ?MG_VERBOSITY) of
 	{ok, Pid} ->
 	    d("MG ~p user info: ~n~p", [Mid, ?MG_USER_INFO(Pid,all)]),
 	    ServChRes = ?MG_SERV_CHANGE(Pid),
@@ -625,6 +632,14 @@ tim() ->
 sleep(X) -> receive after X -> ok end.
 
 error_msg(F,A) -> error_logger:error_msg(F ++ "~n",A).
+
+maybe_display_system_info(NumLoaders) when NumLoaders > 50 ->
+    [{display_system_info, timer:seconds(2)}];
+maybe_display_system_info(NumLoaders) when NumLoaders > 10 ->
+    [{display_system_info, timer:seconds(1)}];
+maybe_display_system_info(_) ->
+    [].
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

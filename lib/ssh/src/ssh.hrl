@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2004-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 
 %%
@@ -50,18 +51,8 @@
 -define(uint16(X), << ?UINT16(X) >> ).
 -define(uint32(X), << ?UINT32(X) >> ).
 -define(uint64(X), << ?UINT64(X) >> ).
-
--define(string(X),
-	if list(X) ->
-		(fun(__B) -> (<<?STRING(__B)>>) end)(list_to_binary(X));
-	   atom(X) ->
-		(fun(__B) -> (<<?STRING(__B)>>) end)(list_to_binary(atom_to_list(X)));
-	   binary(X) ->
-		(<<?STRING(X)>>)
-	end).
-
--define(binary(X),
-	<<?STRING(X)>>).
+-define(string(X), << ?STRING(list_to_binary(X)) >> ).
+-define(binary(X), << ?STRING(X) >>).
 
 -ifdef(debug).
 -define(dbg(Debug, Fmt, As),

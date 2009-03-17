@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>2006-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 
 %%% @doc Common Test Framework functions handlig test specifikations.
@@ -239,9 +238,11 @@ collect_tests_from_file1([Spec|Specs],TestSpec,Relaxed) ->
 	{error,Reason} ->
 	    throw({error,{Spec,Reason}})
     end;
-collect_tests_from_file1([],TS=#testspec{config=Cfgs,event_handler=EvHs,tests=Tests},_) ->
+collect_tests_from_file1([],TS=#testspec{config=Cfgs,event_handler=EvHs,
+					 include=Incl,tests=Tests},_) ->
     TS#testspec{config=lists:reverse(Cfgs),
 		event_handler=lists:reverse(EvHs),
+		include=lists:reverse(Incl),
 		tests=lists:flatten(Tests)}.
 
 collect_tests_from_list(Terms,Relaxed) ->
@@ -253,9 +254,10 @@ collect_tests_from_list(Terms,Nodes,Relaxed) when is_list(Nodes) ->
 	E = {error,_} ->
 	    E;
 	TS ->
-	    #testspec{config=Cfgs,event_handler=EvHs,tests=Tests} = TS,
+	    #testspec{config=Cfgs,event_handler=EvHs,include=Incl,tests=Tests} = TS,
 	    TS#testspec{config=lists:reverse(Cfgs),
 			event_handler=lists:reverse(EvHs),
+			include=lists:reverse(Incl),
 			tests=lists:flatten(Tests)}
     end.
     
@@ -438,6 +440,24 @@ add_tests([{event_handler,Node,H,Args}|Ts],Spec) when is_atom(H) ->
     EvHs = Spec#testspec.event_handler,
     Node1 = ref2node(Node,Spec#testspec.nodes),
     add_tests(Ts,Spec#testspec{event_handler=[{Node1,H,Args}|EvHs]});
+
+%% --- include ---
+add_tests([{include,all_nodes,InclDirs}|Ts],Spec) ->
+    Tests = lists:map(fun(N) -> {include,N,InclDirs} end, list_nodes(Spec)),
+    add_tests(Tests++Ts,Spec);
+add_tests([{include,Nodes,InclDirs}|Ts],Spec) when is_list(Nodes) ->
+    Ts1 = separate(Nodes,include,[InclDirs],Ts,Spec#testspec.nodes),
+    add_tests(Ts1,Spec);
+add_tests([{include,Node,[D|Ds]}|Ts],Spec) when is_list(D) ->
+    Dirs = Spec#testspec.include,
+    Node1 = ref2node(Node,Spec#testspec.nodes),
+    add_tests([{include,Node,Ds}|Ts],Spec#testspec{include=[{Node1,D}|Dirs]});
+add_tests([{include,_Node,[]}|Ts],Spec) ->
+    add_tests(Ts,Spec);
+add_tests([{include,Node,D}|Ts],Spec) ->
+    add_tests([{include,Node,[D]}|Ts],Spec);
+add_tests([{include,InclDirs}|Ts],Spec) ->
+    add_tests([{include,all_nodes,InclDirs}|Ts],Spec);
 
 %% --- suites ---
 add_tests([{suites,all_nodes,Dir,Ss}|Ts],Spec) ->
@@ -697,6 +717,8 @@ valid_terms() ->
      {event_handler,2},
      {event_handler,3},
      {event_handler,4},
+     {include,2},
+     {include,3},
 
      {suites,3},
      {suites,4},

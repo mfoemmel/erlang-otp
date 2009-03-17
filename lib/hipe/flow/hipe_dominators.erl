@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%------------------------------------------------------------------------
 %% File    : hipe_dominators.erl
 %% Author  : Christoffer Vikström <chvi3471@student.uu.se>
@@ -19,9 +37,6 @@
 	 domFrontier_create/2,
 	 domFrontier_get/2]).
 
--type dict()	:: tuple().	% XXX: Temporarily
--type gb_tree()	:: tuple().	% XXX: Temporarily
-
 -include("cfg.hrl").
 
 %%========================================================================
@@ -30,17 +45,17 @@
 %%
 %%========================================================================
 
--record(domTree, {root,
+-record(domTree, {root                     :: cfg_lbl(),
 		  size  = 0		   :: non_neg_integer(),
 		  nodes = gb_trees:empty() :: gb_tree()}).
 
--record(workDataCell, {dfnum = 0,
-		       dfparent = none,
-		       semi = none, 
-		       ancestor = none,
-		       best = none,
-		       samedom = none, 
-		       bucket = []}).
+-record(workDataCell, {dfnum = 0       :: non_neg_integer(),
+		       dfparent = none :: 'none' | cfg_lbl(),
+		       semi = none     :: 'none' | cfg_lbl(),
+		       ancestor = none :: 'none' | cfg_lbl(),
+		       best = none     :: 'none' | cfg_lbl(),
+		       samedom = none  :: 'none' | cfg_lbl(), 
+		       bucket = []     :: [cfg_lbl()]}).
 
 %%>----------------------------------------------------------------------<
 %% Procedure : domTree_create/1
@@ -49,13 +64,12 @@
 %% Returns   : A dominator tree
 %%>----------------------------------------------------------------------<
 
--spec domTree_create(#cfg{}) -> #domTree{}.
+-spec domTree_create(cfg()) -> #domTree{}.
 
 domTree_create(CFG) ->
   {WorkData, DFS, N} = dfs(CFG),
-  {DomData, WorkData2} = getIdoms(CFG,
-				  domTree_empty(hipe_gen_cfg:start_label(CFG)),
-				  WorkData, N, DFS),
+  DomTree = domTree_empty(hipe_gen_cfg:start_label(CFG)),
+  {DomData, WorkData2} = getIdoms(CFG, DomTree, WorkData, N, DFS),
   finalize(WorkData2, DomData, 1, N, DFS).
 
 %%>----------------------------------------------------------------------<
@@ -66,9 +80,7 @@ domTree_create(CFG) ->
 %%>----------------------------------------------------------------------<
 
 domTree_empty(Node) ->
-  #domTree{root = Node,
-	   size = 0,
-	   nodes = gb_trees:empty()}.
+  #domTree{root = Node}.
 
 %%>----------------------------------------------------------------------<
 %% Procedure : domTree_createNode/2
@@ -162,6 +174,8 @@ domTree_getIDom(Node, DomTree) ->
 %% Returns   : [children]
 %%>----------------------------------------------------------------------<
 
+-spec domTree_getChildren(cfg_lbl(), #domTree{}) -> [cfg_lbl()].
+
 domTree_getChildren(Node, DomTree) ->
   case domTree_getNode(Node, DomTree) of
     {value, {_, Children}} ->
@@ -203,7 +217,7 @@ domTree_addChild(Node, Child, DomTree) ->
 		       {value, Tuple} ->
 			 Tuple;
 		       none ->
-			 {none,[]}
+			 {none, []}
 		     end,
   Nodes = case lists:member(Child, Children) of 
 	    true ->
@@ -234,7 +248,7 @@ setIDom(Node, IDom, DomTree) ->
   DomTree2 = domTree_addChild(IDom, Node, DomTree1),
   {value, {_, Children}} = domTree_getNode(Node, DomTree2),
   domTree_setNodes(DomTree2,
-		   gb_trees:enter(Node, {IDom,Children},
+		   gb_trees:enter(Node, {IDom, Children},
 				  domTree_getNodes(DomTree2))).
 
 %%>----------------------------------------------------------------------<
@@ -249,29 +263,20 @@ setIDom(Node, IDom, DomTree) ->
 %% Returns   : A value defined in the workDataCell record
 %%>----------------------------------------------------------------------<
 
-lookup({Field, Key}, Table) ->
-  WD = lookup(Key, Table),
-  lookup(Field, WD);
-lookup(Node, DomTree = #domTree{}) ->
-  case gb_trees:lookup(Node, domTree_getNodes(DomTree)) of
-    {value, Data} ->
-      Data;
-    none ->
-      {none, []}
-  end;
-lookup(Field, WD = #workDataCell{}) ->
+lookup({Field, Key}, Table) when is_integer(Key) ->
+  WD = lookup_table(Key, Table),
   case Field of
-    dfnum    -> WD#workDataCell.dfnum; 
-    dfparent -> WD#workDataCell.dfparent; 
-    semi     -> WD#workDataCell.semi;
     ancestor -> WD#workDataCell.ancestor;
     best     -> WD#workDataCell.best;
-    samedom  -> WD#workDataCell.samedom;
     bucket   -> WD#workDataCell.bucket;
-    _Other   -> erlang:error({?MODULE, lookup, 2})
-  end;
-lookup(N, Table) when is_integer(N) ->
-  case gb_trees:lookup(N, Table) of
+    dfnum    -> WD#workDataCell.dfnum; 
+    dfparent -> WD#workDataCell.dfparent; 
+    samedom  -> WD#workDataCell.samedom;
+    semi     -> WD#workDataCell.semi    
+  end.
+
+lookup_table(Key, Table) when is_integer(Key) ->
+  case gb_trees:lookup(Key, Table) of
     {value, Data} ->
       Data;
     none ->
@@ -292,9 +297,9 @@ lookup(N, Table) when is_integer(N) ->
 %%>----------------------------------------------------------------------<
 
 update(Key, {Field, Value}, Table) ->
-  gb_trees:enter(Key, updateCell(Value, Field, lookup(Key, Table)), Table);
+  gb_trees:enter(Key, updateCell(Value, Field, lookup_table(Key, Table)), Table);
 update(Key, List, Table) ->
-  gb_trees:enter(Key, update(List, lookup(Key, Table)), Table).
+  gb_trees:enter(Key, update(List, lookup_table(Key, Table)), Table).
 
 update([{Field, Value} | T], WD) -> 
   update(T, updateCell(Value, Field, WD));
@@ -330,7 +335,7 @@ dfs(CFG, Node, Parent, N, WorkData, DFS) ->
   case lookup({dfnum, Node}, WorkData) of
     0 -> 	  
       WorkData2 = update(Node, [{dfnum, N}, {dfparent, Parent}, 
-			{semi, Node}, {best, Node}], WorkData),
+				{semi, Node}, {best, Node}], WorkData),
       DFS2 = gb_trees:enter(N, Node, DFS),
       dfsTraverse(hipe_gen_cfg:succ(CFG, Node), CFG, Node, 
 		  N + 1, WorkData2, DFS2);
@@ -375,7 +380,7 @@ dfsTraverse([], _, _, N, WorkData, DFS) -> {WorkData, DFS, N}.
 
 getIdoms(CFG, DomData, WorkData, Index, DFS)
      when is_integer(Index), Index > 1 ->
-  Node = lookup(Index, DFS),
+  Node = lookup_table(Index, DFS),
   PredLst = hipe_gen_cfg:pred(CFG, Node),
   Par = lookup({dfparent, Node}, WorkData),
   DfNumN = lookup({dfnum, Node}, WorkData),
@@ -389,14 +394,13 @@ getIdoms(CFG, DomData, WorkData, Index, DFS)
   WorkData7 = update(Par, {bucket, []}, WorkData6),
   getIdoms(CFG, DomData2, WorkData7, Index - 1, DFS);
 getIdoms(_, DomData, WorkData, 1, _) ->
-  {DomData,WorkData}.
+  {DomData, WorkData}.
 
 %%>----------------------------------------------------------------------<
 %% Procedure : getSemiDominator/4
 %% Purpose   : The main purpose of this algorithm is to compute the semi 
 %%             dominator of the node Node based on the Semidominator Theorem
-%% Arguments : Pred     - Predecessor of the node Node
-%%             PredLst  - The remainder of the predecessor list of node Node
+%% Arguments : Preds    - The list of predecessors of the node Node
 %%             Node     - Node in the CFG
 %%             S        - Parent of node Node (depth first parent)
 %%             WorkData - Table consisting of workDataCells
@@ -404,25 +408,23 @@ getIdoms(_, DomData, WorkData, 1, _) ->
 %%             of the table WorkData.
 %%>----------------------------------------------------------------------<
 
-getSemiDominator([Pred | PredLst], DfNumChild, S, WorkData) ->
+getSemiDominator([Pred|Preds], DfNumChild, S, WorkData) ->
   {Sp, WorkData3} = case lookup({dfnum, Pred}, WorkData) =< DfNumChild of
 		      true  -> 
 			{Pred, WorkData};
 		      false ->  
 			{AncLowSemi, WorkData2} = 
-			  getAncestorWithLowestSemi(Pred, WorkData),
-			
+			  getAncestorWithLowestSemi(Pred, WorkData),	
 			{lookup({semi, AncLowSemi}, WorkData2), 
 			 WorkData2}
 		    end,
-  S2 = case lookup({dfnum, Sp}, WorkData3) < 
-	 lookup({dfnum, S}, WorkData3) of
+  S2 = case lookup({dfnum, Sp}, WorkData3) < lookup({dfnum, S}, WorkData3) of
 	 true  -> Sp;
 	 false -> S
        end,
-  getSemiDominator(PredLst, DfNumChild, S2, WorkData3);
+  getSemiDominator(Preds, DfNumChild, S2, WorkData3);
 getSemiDominator([], _, S, WorkData) ->
-  {S,WorkData}.
+  {S, WorkData}.
 
 %%>----------------------------------------------------------------------<
 %% Procedure : getAncestorWithLowestSemi/2
@@ -484,23 +486,21 @@ linkTrees(Parent, Node, WorkData) ->
 %%             Theorem. If the first clause of the theorem doesn't apply 
 %%             then the computation of that particular node is deferred to
 %%             a later stage (see finalize).
-%% Arguments : Node     - Node in the CFG
-%%             Bucket   - The remainder of the list of nodes that need to be 
-%%                        computed.
-%%             Parent   - The parent of the nodes in the list [Node | Bucket]
+%% Arguments : Nodes    - The list of CFG nodes that need to be computed.
+%%             Parent   - The parent of the nodes in the list Nodes
 %%             WorkData - Table consisting of workDataCells
 %%             DomData  - Table consisting of domTree cells.
 %% Returns   : An updated version of the tables WorkData and DomData
 %%>----------------------------------------------------------------------<
 
-filterBucket([Node | Bucket], Parent, WorkData, DomData) ->
+filterBucket([Node|Nodes], Parent, WorkData, DomData) ->
   {Y, WorkData2} = getAncestorWithLowestSemi(Node, WorkData),
   {WorkData3, DomData2} = 
     case lookup({semi, Y}, WorkData2) =:= lookup({semi, Node}, WorkData2) of
       true  -> {WorkData2, setIDom(Node, Parent, DomData)};
       false -> {update(Node, {samedom, Y}, WorkData2), DomData}
     end,
-  filterBucket(Bucket, Parent, WorkData3, DomData2);
+  filterBucket(Nodes, Parent, WorkData3, DomData2);
 filterBucket([], _, WorkData, DomData) ->
   {WorkData, DomData}.	     
 
@@ -519,9 +519,9 @@ filterBucket([], _, WorkData, DomData) ->
 %%>----------------------------------------------------------------------<
 
 finalize(WorkData, DomData, N, Max, DFS) when N =< Max ->
-  Node = lookup(N, DFS),
-  case lookup({samedom,Node}, WorkData) of
-    none     -> 
+  Node = lookup_table(N, DFS),
+  case lookup({samedom, Node}, WorkData) of
+    none ->
       finalize(WorkData, DomData, N + 1, Max, DFS);
     SameDomN -> 
       case domTree_getIDom(SameDomN, DomData) of
@@ -536,17 +536,19 @@ finalize(_, DomData, _, _, _) ->
 %%>----------------------------------------------------------------------<
 %% Procedure : domTree_dominates/3
 %% Purpose   : checks wheter Node1 dominates Node2 with respect to the
-%%             dominatortree DomTree
+%%             dominator tree DomTree
 %% Arguments : Node1 the possible dominator, Node2 which might be dominated 
 %%             and DomTree  - the target dominator tree.
 %% Notes     : Relies on lists:any to return false when the a list is empty
 %%>----------------------------------------------------------------------<     
 
+-spec domTree_dominates(cfg_lbl(), cfg_lbl(), #domTree{}) -> bool().
+
 domTree_dominates(Node1, Node1, _DomTree) ->
   true;
 domTree_dominates(Node1, Node2, DomTree) ->
   Children = domTree_getChildren(Node1, DomTree),
-  lists:any(fun(X) -> domTree_dominates(X,Node2,DomTree) end, Children).
+  lists:any(fun(X) -> domTree_dominates(X, Node2, DomTree) end, Children).
 
 %%>----------------------------------------------------------------------<
 %% Procedure : pp/1
@@ -564,7 +566,7 @@ domTree_pp(DomTree) ->
 
 domTree_pp(N, DomTree) ->
   case domTree_getNode(N, DomTree) of
-    {value,{IDom,Children}} ->
+    {value, {IDom, Children}} ->
       io:format("Node: ~w\n\tIDom: ~w\n\tChildren: ~w\n\n",
 		[N, IDom, Children]),
       domTree_pp_children(Children, DomTree);
@@ -586,14 +588,18 @@ domTree_pp_children([], _) ->
 %%
 %%========================================================================
 
+-type domFrontier() :: gb_tree().
+
 %%>----------------------------------------------------------------------<
-%%  Procedure : domFrontier_create
-%%  Purpose   : This function calculates the Dominance Frontiers given
-%%              a CFG and a Dominator Tree.
-%%  Arguments : SuccMap - The successor map of the CFG we are working with.
-%%              DomTree - The dominance tree of the CFG.
-%%  Notes     : DomTree must actually be the dominance tree of the CFG.
+%% Procedure : domFrontier_create
+%% Purpose   : This function calculates the Dominance Frontiers given
+%%             a CFG and a Dominator Tree.
+%% Arguments : SuccMap - The successor map of the CFG we are working with.
+%%             DomTree - The dominance tree of the CFG.
+%% Notes     : DomTree must actually be the dominance tree of the CFG.
 %%>----------------------------------------------------------------------<
+
+-spec domFrontier_create(cfg(), #domTree{}) -> domFrontier().
 
 domFrontier_create(SuccMap, DomTree) ->
   df_create(domTree_getRoot(DomTree), SuccMap, DomTree, df__empty()).
@@ -605,41 +611,43 @@ df_create(Node, SuccMap, DomTree, DF) ->
   makeDFChildren(Children, Node, SuccMap, DomTree, DF1).
 
 %%>----------------------------------------------------------------------<
-%%  Procedure : domFrontier_get
-%%  Purpose   : This function returns the Dominance Frontier for Node.
-%%  Arguments : Node - The node whose Dominance Frontier we request
-%%              DF   - The Dominance Frontiers structure
-%%  Returns   : 
+%% Procedure : domFrontier_get
+%% Purpose   : This function returns the Dominance Frontier for Node.
+%% Arguments : Node - The node whose Dominance Frontier we request
+%%             DF   - The Dominance Frontier structure
+%% Returns   : 
 %%>----------------------------------------------------------------------<
+
+-spec domFrontier_get(cfg_lbl(), domFrontier()) -> [cfg_lbl()].
 
 domFrontier_get(Node, DF) ->
   case gb_trees:lookup(Node, DF) of
-    {value,List} -> List;
-    none ->  []
+    {value, List} -> List;
+    none -> []
   end.
 
 %%>----------------------------------------------------------------------<
-%%  Procedure : df__empty
-%%  Purpose   : This function creates an empty instance of the Dominance
-%%              Frontiers (DF) structure.
+%% Procedure : df__empty
+%% Purpose   : This function creates an empty instance of the Dominance
+%%             Frontiers (DF) structure.
 %%>----------------------------------------------------------------------<
 
 df__empty() ->
   gb_trees:empty().
 
 %%>----------------------------------------------------------------------<
-%%  Procedure : df__add
-%%  Purpose   : This function adds Node to N in DF.
-%%  Arguments : N    - The value being inserted
-%%              Node - The node getting the value
-%%              DF   - The Dominance Frontiers
-%%  Return    : DF
-%%  Notes     : If Node already exists at position N, it is not added again.
+%% Procedure : df__add
+%% Purpose   : This function adds Node to N in DF.
+%% Arguments : N    - The value being inserted
+%%             Node - The node getting the value
+%%             DF   - The Dominance Frontiers
+%% Returns   : DF
+%% Notes     : If Node already exists at position N, it is not added again.
 %%>----------------------------------------------------------------------<
 
 df__add_to_node(N, Node, DF) ->
   case gb_trees:lookup(N, DF) of
-    {value,DFList} ->
+    {value, DFList} ->
       case lists:member(Node, DFList) of
 	true ->
 	  DF;
@@ -651,16 +659,16 @@ df__add_to_node(N, Node, DF) ->
   end.
 
 %%>----------------------------------------------------------------------<
-%%  Procedure : makeDFChildren
-%%  Purpose   : This function calculates the dominance frontiers of the
-%%              children of the parent and adds the nodes in these
-%%              dominance frontiers who are not immediate dominantors of
-%%              the parent to parents dominance frontier.
-%%  Arguments : ChildList - The list of children that the function traverses
-%%              Parent - The parent of the children
-%%              SuccMap - The successor map of the CFG
-%%              DomTree - The dominantor tree of the CFG
-%%              DF - The dominance frontiers so far
+%% Procedure : makeDFChildren
+%% Purpose   : This function calculates the dominance frontiers of the
+%%             children of the parent and adds the nodes in these
+%%             dominance frontiers who are not immediate dominantors of
+%%             the parent to parents dominance frontier.
+%% Arguments : ChildList - The list of children that the function traverses
+%%             Parent - The parent of the children
+%%             SuccMap - The successor map of the CFG
+%%             DomTree - The dominantor tree of the CFG
+%%             DF - The dominance frontiers so far
 %%>----------------------------------------------------------------------<
 
 makeDFChildren([Child|T], Parent, SuccMap, DomTree, DF) ->
@@ -671,13 +679,13 @@ makeDFChildren([], _, _, _, DF) ->
   DF.
 
 %%>----------------------------------------------------------------------<
-%%  Procedure : checIDomList
-%%  Purpose   : Adds all the nodes in the list to the parents dominance
-%%              frontier who do not have parent as immediate dominator.
-%%  Arguments : NodeList - The list of nodes that the function traverses
-%%              Parent - The parent of the nodes
-%%              DomTree - Our dominator tree
-%%              DF - The dominance frontiers so far
+%% Procedure : checIDomList
+%% Purpose   : Adds all the nodes in the list to the parents dominance
+%%             frontier who do not have parent as immediate dominator.
+%% Arguments : NodeList - The list of nodes that the function traverses
+%%             Parent - The parent of the nodes
+%%             DomTree - Our dominator tree
+%%             DF - The dominance frontiers so far
 %%>----------------------------------------------------------------------<
 
 checkIDomList([Node|T], Parent, DomTree, DF) ->
@@ -687,13 +695,13 @@ checkIDomList([], _, _, DF) ->
   DF.
 
 %%>----------------------------------------------------------------------<
-%%  Procedure : checkIdom
-%%  Purpose   : Adds Node1 to Node2's dominance frontier if Node2 is not
-%%              Node1's immediate dominator.
-%%  Arguments : Node1 - a node
-%%              Node2 - another node
-%%              DomTree - the dominator tree
-%%              DF - the dominance frontier so far
+%% Procedure : checkIdom
+%% Purpose   : Adds Node1 to Node2's dominance frontier if Node2 is not
+%%             Node1's immediate dominator.
+%% Arguments : Node1 - a node
+%%             Node2 - another node
+%%             DomTree - the dominator tree
+%%             DF - the dominance frontier so far
 %%>----------------------------------------------------------------------<
 
 checkIDom(Node1, Node2, DomTree, DF) ->

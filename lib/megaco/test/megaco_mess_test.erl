@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>1999-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Verify the implementation of the ITU-T protocol H.248
@@ -75,7 +76,8 @@
 	 otp_6865_request_and_reply_plain_extra1/1,
 	 otp_6865_request_and_reply_plain_extra2/1, 
 	 otp_7189/1, 
-	 otp_7259/1
+	 otp_7259/1, 
+	 otp_7713/1
 	]).
 
 %% -behaviour(megaco_user).
@@ -380,7 +382,8 @@ tickets(suite) ->
      otp_6442,
      otp_6865,
      otp_7189,
-     otp_7259
+     otp_7259,
+     otp_7713
     ].
 
 otp_6442(suite) ->
@@ -2449,6 +2452,12 @@ single_trans_req_and_reply_sendopts(doc) ->
      "The MGC is a megaco instance (megaco event sequence) and the "
      "MG is emulated (tcp event sequence)"];
 single_trans_req_and_reply_sendopts(Config) when list(Config) ->
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin, linux]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(Config, Condition),
+    %% </CONDITIONAL-SKIP>
+
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        straro),
@@ -4844,6 +4853,12 @@ trans_req_and_reply_and_req(doc) ->
      "The MGC is a megaco instance (megaco event sequence) and the "
      "MG is emulated (tcp event sequence)"];
 trans_req_and_reply_and_req(Config) when list(Config) ->
+    %% <CONDITIONAL-SKIP>
+    Skippable = [{unix, [darwin, linux]}],
+    Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
+    ?NON_PC_TC_MAYBE_SKIP(Config, Condition),
+    %% </CONDITIONAL-SKIP>
+
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        trarar),
@@ -9569,12 +9584,12 @@ otp_6442_rsrq1_verify_scr_msg(
     Pid ! {transport_reply, Reply, self()},
     {ok, Pid};
 otp_6442_rsrq1_verify_scr_msg(
-  {transport_event, {send_message, _SH, BadMsg}, Pid}) ->
+  {transport_event, {send_message, _SH, BadMsg}, _Pid}) ->
     io:format("otp_6442_rsrq1_verify_scr_msg -> error: "
 	      "~n   BadMsg: ~p"
 	      "~n", [BadMsg]),
     {error, {invalid_message, BadMsg}};
-otp_6442_rsrq1_verify_scr_msg({transport_event, BadEvent, Pid}) ->
+otp_6442_rsrq1_verify_scr_msg({transport_event, BadEvent, _Pid}) ->
     io:format("otp_6442_rsrq1_verify_scr_msg -> error: "
 	      "~n   BadEvent: ~p"
 	      "~n", [BadEvent]),
@@ -10922,36 +10937,41 @@ otp_6865_request_and_reply_plain_extra1(suite) ->
 otp_6865_request_and_reply_plain_extra1(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> start test case controller",[]),
+    put(sname,     "TEST"),
+    put(verbosity, debug),
+    put(tc,        otp6865e1),
+    i("starting"),
+
+    d("start test case controller",[]),
     ok = megaco_tc_controller:start_link(),
 
     %% Instruct the transport module to fail all send_message
-    d("otp_6865_request_and_reply_plain_extra1 -> instruct transport module to provide extra info: ",[]),
+    d("instruct transport module to provide extra info: ",[]),
     ExtraInfo = otp_6865_extra_info, 
     ok = megaco_tc_controller:insert(extra_transport_info, ExtraInfo),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> start proxy",[]),
+    d("start proxy",[]),
     megaco_mess_user_test:start_proxy(),
 
     PrelMid = preliminary_mid,
     MgMid   = ipv4_mid(4711),
     MgcMid  = ipv4_mid(),
     UserMod = megaco_mess_user_test,
-    d("otp_6865_request_and_reply_plain_extra1 -> start megaco app",[]),
+    d("start megaco app",[]),
     ?VERIFY(ok, application:start(megaco)),
     UserConfig = [{user_mod, UserMod}, {send_mod, UserMod},
 		  {request_timer, infinity}, {reply_timer, infinity}],
-    d("otp_6865_request_and_reply_plain_extra1 -> start (MG) user ~p",[MgMid]),
+    d("start (MG) user ~p",[MgMid]),
     ?VERIFY(ok,	megaco:start_user(MgMid, UserConfig)),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> start (MGC) user ~p",[MgcMid]),
+    d("start (MGC) user ~p",[MgcMid]),
     ?VERIFY(ok,	megaco:start_user(MgcMid, UserConfig)),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> get receive info for ~p",[MgMid]),
+    d("get receive info for ~p",[MgMid]),
     MgRH = user_info(MgMid, receive_handle),
-    d("otp_6865_request_and_reply_plain_extra1 -> get receive info for ~p",[MgcMid]),
+    d("get receive info for ~p",[MgcMid]),
     MgcRH = user_info(MgcMid, receive_handle), 
-    d("otp_6865_request_and_reply_plain_extra1 -> start transport",[]),
+    d("start transport",[]),
     {ok, MgPid, MgSH} =
 	?VERIFY({ok, _, _}, UserMod:start_transport(MgRH, MgcRH)),
     PrelMgCH = #megaco_conn_handle{local_mid = MgMid,
@@ -10960,51 +10980,51 @@ otp_6865_request_and_reply_plain_extra1(Config) when is_list(Config) ->
 				remote_mid = MgcMid},
     MgcCH = #megaco_conn_handle{local_mid = MgcMid,
 				remote_mid = MgMid},
-    d("otp_6865_request_and_reply_plain_extra1 -> (MG) try connect to MGC",[]),
+    d("(MG) try connect to MGC",[]),
     ?SEND(megaco:connect(MgRH, PrelMid, MgSH, MgPid)), % Mg prel
-    d("otp_6865_request_and_reply_plain_extra1 -> (MGC) await connect from MG",[]),
+    d("await connect from MG",[]),
     ?USER({connect, PrelMgCH, _V, []}, ok),
     ?RECEIVE([{res, _, {ok, PrelMgCH}}]),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> (MG) send service change request",[]),
+    d("(MG) send service change request",[]),
     Req = service_change_request(),
     ?SEND(megaco:call(PrelMgCH, [Req], [])),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> (MGC) send service change reply",[]),
-    ?USER({connect, MgcCH, _V, []}, ok), % Mgc auto
+    d("(MGC) send service change reply",[]),
+    ?USER({connect, MgcCH, _V, [ExtraInfo]}, ok), % Mgc auto
     Rep = service_change_reply(MgcMid),
     ?USER({request, MgcCH, _V, [[Req], ExtraInfo]}, {discard_ack, [Rep]}),
-    ?USER({connect, MgCH, _V, []}, ok), % Mg confirm
+    ?USER({connect, MgCH, _V, [ExtraInfo]}, ok), % Mg confirm
     ?RECEIVE([{res, _, {1, {ok, [Rep], ExtraInfo}}}]),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> get (system info) connections",[]),
+    d("get (system info) connections",[]),
     connections([MgCH, MgcCH]),
-    d("otp_6865_request_and_reply_plain_extra1 -> get (~p) connections",[MgMid]),
+    d("get (~p) connections",[MgMid]),
     ?VERIFY([MgCH], megaco:user_info(MgMid, connections)),
-    d("otp_6865_request_and_reply_plain_extra1 -> get (~p) connections",[MgcMid]),
+    d("get (~p) connections",[MgcMid]),
     ?VERIFY([MgcCH], megaco:user_info(MgcMid, connections)),
 
     Reason = shutdown,
-    d("otp_6865_request_and_reply_plain_extra1 -> (MG) disconnect",[]),
+    d("(MG) disconnect",[]),
     ?SEND(megaco:disconnect(MgCH, Reason)),
     ?USER({disconnect, MgCH, _V, [{user_disconnect, Reason}]}, ok),
     ?RECEIVE([{res, _, ok}]),
     ?VERIFY(ok,	megaco:stop_user(MgMid)),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> (MGC) disconnect",[]),
+    d("(MGC) disconnect",[]),
     ?SEND(megaco:disconnect(MgcCH, Reason)),
     ?USER({disconnect, MgcCH, _V, [{user_disconnect, Reason}]}, ok),
     ?RECEIVE([{res, _, ok}]),
     ?VERIFY(ok,	megaco:stop_user(MgcMid)),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> stop megaco app",[]),
+    d("stop megaco app",[]),
     ?VERIFY(ok, application:stop(megaco)),
     ?RECEIVE([]),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> stop test case controller",[]),
+    d("stop test case controller",[]),
     ok = megaco_tc_controller:stop(),
 
-    d("otp_6865_request_and_reply_plain_extra1 -> done",[]),
+    d("done",[]),
     ok.
 
 
@@ -11086,8 +11106,8 @@ otp_6865_request_and_reply_plain_extra2(Config) when is_list(Config) ->
 %% MGC generator stuff
 %% 
 -ifdef(megaco_hipe_special).
--define(otp6865e2_mgc_verify_handle_connect_fun(), 
-        {?MODULE, otp6865e2_mgc_verify_handle_connect, []}).
+-define(otp6865e2_mgc_verify_handle_connect_fun(ExtraInfo), 
+        {?MODULE, otp6865e2_mgc_verify_handle_connect, [ExtraInfo]}).
 -define(otp6865e2_mgc_verify_service_change_req_fun(Mid, ExtraInfo),
         {?MODULE, otp6865e2_mgc_verify_service_change_req, [Mid, ExtraInfo]}).
 -define(otp6865e2_mgc_verify_notify_req_fun(Cid, ExtraInfo, RequireAck),
@@ -11099,8 +11119,8 @@ otp_6865_request_and_reply_plain_extra2(Config) when is_list(Config) ->
 -define(otp6865e2_mgc_verify_handle_disconnect_fun(),
         {?MODULE, otp6865e2_mgc_verify_handle_disconnect, []}).
 -else.
--define(otp6865e2_mgc_verify_handle_connect_fun(), 
-        fun otp6865e2_mgc_verify_handle_connect/1).
+-define(otp6865e2_mgc_verify_handle_connect_fun(ExtraInfo), 
+        otp6865e2_mgc_verify_handle_connect(ExtraInfo)).
 -define(otp6865e2_mgc_verify_service_change_req_fun(Mid, ExtraInfo),
         otp6865e2_mgc_verify_service_change_req_fun(Mid, ExtraInfo)).
 -define(otp6865e2_mgc_verify_notify_req_fun(Cid, ExtraInfo, RequireAck),
@@ -11121,7 +11141,8 @@ otp6865e2_mgc_event_sequence(ExtraInfo, text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify          = ?otp6865e2_mgc_verify_handle_connect_fun(), 
+    ConnectVerify          = 
+	?otp6865e2_mgc_verify_handle_connect_fun(ExtraInfo), 
     ServiceChangeReqVerify = 
 	?otp6865e2_mgc_verify_service_change_req_fun(Mid, ExtraInfo),
     NotifyReqVerify1       = 
@@ -11156,14 +11177,24 @@ otp6865e2_mgc_event_sequence(ExtraInfo, text, tcp) ->
     EvSeq.
 
 
-otp6865e2_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+-ifndef(megaco_hipe_special).
+otp6865e2_mgc_verify_handle_connect(ExtraInfo) ->
+    fun(Req) ->
+	    otp6865e2_mgc_verify_handle_connect(Req, ExtraInfo)
+    end.
+-endif.
+
+otp6865e2_mgc_verify_handle_connect({handle_connect, CH, ?VERSION, ExtraInfo},
+				    ExtraInfo) -> 
     io:format("otp6865e2_mgc_verify_handle_connect -> ok"
 	      "~n   CH: ~p~n", [CH]),
     {ok, CH, ok};
-otp6865e2_mgc_verify_handle_connect(Else) ->
+otp6865e2_mgc_verify_handle_connect(Else, ExtraInfo) ->
     io:format("otp6865e2_mgc_verify_handle_connect -> unknown"
-	      "~n   Else: ~p~n", [Else]),
-    {error, Else, ok}.
+	      "~n   Else:      ~p"
+	      "~n   ExtraInfo: ~p"
+	      "~n", [Else, ExtraInfo]),
+    {error, {Else, ExtraInfo}, ok}.
 
 -ifndef(megaco_hipe_special).
 otp6865e2_mgc_verify_service_change_req_fun(Mid, ExtraInfo) ->
@@ -12720,6 +12751,96 @@ otp_7259_mg_notify_request_ar(Rid, Tid, Cid) ->
     CMD     = cre_command(NR),
     CR      = cre_cmdReq(CMD),
     cre_actionReq(Cid, [CR]).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_7713(suite) ->
+    [];
+otp_7713(doc) ->
+    [];
+otp_7713(Config) when is_list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+
+    put(verbosity, debug),
+    put(sname,     "TEST"),
+    put(tc,        otp7713),
+    i("starting"),
+
+    d("start proxy",[]),
+    megaco_mess_user_test:start_proxy(),
+
+    Extra = otp7713_extra, 
+    PrelMid = preliminary_mid,
+    MgMid   = ipv4_mid(4711),
+    MgcMid  = ipv4_mid(),
+    UserMod = megaco_mess_user_test,
+    d("start megaco app",[]),
+    ?VERIFY(ok, application:start(megaco)),
+    UserConfig = [{user_mod, UserMod}, {send_mod, UserMod},
+		  {request_timer, infinity}, {reply_timer, infinity}],
+    d("start (MG) user ~p",[MgMid]),
+    ?VERIFY(ok,	megaco:start_user(MgMid, UserConfig)),
+
+    d("start (MGC) user ~p",[MgcMid]),
+    ?VERIFY(ok,	megaco:start_user(MgcMid, UserConfig)),
+
+    d("get receive info for ~p",[MgMid]),
+    MgRH = user_info(MgMid, receive_handle),
+    d("get receive info for ~p",[MgcMid]),
+    MgcRH = user_info(MgcMid, receive_handle), 
+    d("start transport",[]),
+    {ok, MgPid, MgSH} =
+	?VERIFY({ok, _, _}, UserMod:start_transport(MgRH, MgcRH)),
+    PrelMgCH = #megaco_conn_handle{local_mid = MgMid,
+				   remote_mid = preliminary_mid},
+    MgCH  = #megaco_conn_handle{local_mid = MgMid,
+				remote_mid = MgcMid},
+    MgcCH = #megaco_conn_handle{local_mid = MgcMid,
+				remote_mid = MgMid},
+    d("(MG) try connect to MGC",[]),
+    ?SEND(megaco:connect(MgRH, PrelMid, MgSH, MgPid, Extra)), % Mg prel
+    d("await connect from MG", []),
+    ?USER({connect, PrelMgCH, _V, [Extra]}, ok),
+    ?RECEIVE([{res, _, {ok, PrelMgCH}}]),
+
+    d("(MG) send service change request",[]),
+    Req = service_change_request(),
+    ?SEND(megaco:call(PrelMgCH, [Req], [])),
+
+    d("(MGC) send service change reply",[]),
+    ?USER({connect, MgcCH, _V, []}, ok), % Mgc auto
+    Rep = service_change_reply(MgcMid),
+    ?USER({request, MgcCH, _V, [[Req]]}, {discard_ack, [Rep]}),
+    ?USER({connect, MgCH, _V, []}, ok), % Mg confirm
+    ?RECEIVE([{res, _, {1, {ok, [Rep]}}}]),
+
+    d("get (system info) connections",[]),
+    connections([MgCH, MgcCH]),
+    d("get (~p) connections",[MgMid]),
+    ?VERIFY([MgCH], megaco:user_info(MgMid, connections)),
+    d("get (~p) connections",[MgcMid]),
+    ?VERIFY([MgcCH], megaco:user_info(MgcMid, connections)),
+
+    Reason = shutdown,
+    d("(MG) disconnect",[]),
+    ?SEND(megaco:disconnect(MgCH, Reason)),
+    ?USER({disconnect, MgCH, _V, [{user_disconnect, Reason}]}, ok),
+    ?RECEIVE([{res, _, ok}]),
+    ?VERIFY(ok,	megaco:stop_user(MgMid)),
+
+    d("(MGC) disconnect",[]),
+    ?SEND(megaco:disconnect(MgcCH, Reason)),
+    ?USER({disconnect, MgcCH, _V, [{user_disconnect, Reason}]}, ok),
+    ?RECEIVE([{res, _, ok}]),
+    ?VERIFY(ok,	megaco:stop_user(MgcMid)),
+
+    d("stop megaco app",[]),
+    ?VERIFY(ok, application:stop(megaco)),
+    ?RECEIVE([]),
+
+    d("done",[]),
+    ok.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

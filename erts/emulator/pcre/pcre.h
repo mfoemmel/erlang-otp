@@ -36,6 +36,7 @@ POSSIBILITY OF SUCH DAMAGE.
 -----------------------------------------------------------------------------
 */
 
+/* %ExternalCopyright% */
 #ifndef _PCRE_H
 #define _PCRE_H
 
@@ -174,7 +175,7 @@ extern "C" {
 #define PCRE_INFO_JCHANGED          13
 #define PCRE_INFO_HASCRORLF         14
 
-/* Request types for pcre_config(). Do not re-arrange, in order to remain
+/* Request types for erts_pcre_config(). Do not re-arrange, in order to remain
 compatible. */
 
 #define PCRE_CONFIG_UTF8                    0
@@ -261,55 +262,55 @@ that is triggered by the (?) regex item. For Virtual Pascal, these definitions
 have to take another form. */
 
 #ifndef VPCOMPAT
-PCRE_EXP_DECL void *(*pcre_malloc)(size_t);
-PCRE_EXP_DECL void  (*pcre_free)(void *);
-PCRE_EXP_DECL void *(*pcre_stack_malloc)(size_t);
-PCRE_EXP_DECL void  (*pcre_stack_free)(void *);
-PCRE_EXP_DECL int   (*pcre_callout)(pcre_callout_block *);
+PCRE_EXP_DECL void *(*erts_pcre_malloc)(size_t);
+PCRE_EXP_DECL void  (*erts_pcre_free)(void *);
+PCRE_EXP_DECL void *(*erts_pcre_stack_malloc)(size_t);
+PCRE_EXP_DECL void  (*erts_pcre_stack_free)(void *);
+PCRE_EXP_DECL int   (*erts_pcre_callout)(pcre_callout_block *);
 #else   /* VPCOMPAT */
-PCRE_EXP_DECL void *pcre_malloc(size_t);
-PCRE_EXP_DECL void  pcre_free(void *);
-PCRE_EXP_DECL void *pcre_stack_malloc(size_t);
-PCRE_EXP_DECL void  pcre_stack_free(void *);
-PCRE_EXP_DECL int   pcre_callout(pcre_callout_block *);
+PCRE_EXP_DECL void *erts_pcre_malloc(size_t);
+PCRE_EXP_DECL void  erts_pcre_free(void *);
+PCRE_EXP_DECL void *erts_pcre_stack_malloc(size_t);
+PCRE_EXP_DECL void  erts_pcre_stack_free(void *);
+PCRE_EXP_DECL int   erts_pcre_callout(pcre_callout_block *);
 #endif  /* VPCOMPAT */
 
 /* Exported PCRE functions */
 
-PCRE_EXP_DECL pcre *pcre_compile(const char *, int, const char **, int *,
+PCRE_EXP_DECL pcre *erts_pcre_compile(const char *, int, const char **, int *,
                   const unsigned char *);
-PCRE_EXP_DECL pcre *pcre_compile2(const char *, int, int *, const char **,
+PCRE_EXP_DECL pcre *erts_pcre_compile2(const char *, int, int *, const char **,
                   int *, const unsigned char *);
-PCRE_EXP_DECL int  pcre_config(int, void *);
-PCRE_EXP_DECL int  pcre_copy_named_substring(const pcre *, const char *,
+PCRE_EXP_DECL int  erts_pcre_config(int, void *);
+PCRE_EXP_DECL int  erts_pcre_copy_named_substring(const pcre *, const char *,
                   int *, int, const char *, char *, int);
-PCRE_EXP_DECL int  pcre_copy_substring(const char *, int *, int, int, char *,
+PCRE_EXP_DECL int  erts_pcre_copy_substring(const char *, int *, int, int, char *,
                   int);
-PCRE_EXP_DECL int  pcre_dfa_exec(const pcre *, const pcre_extra *,
+PCRE_EXP_DECL int  erts_pcre_dfa_exec(const pcre *, const pcre_extra *,
                   const char *, int, int, int, int *, int , int *, int);
-PCRE_EXP_DECL int  pcre_exec(const pcre *, const pcre_extra *, PCRE_SPTR,
+PCRE_EXP_DECL int  erts_pcre_exec(const pcre *, const pcre_extra *, PCRE_SPTR,
                    int, int, int, int *, int);
-PCRE_EXP_DECL void pcre_free_substring(const char *);
-PCRE_EXP_DECL void pcre_free_substring_list(const char **);
-PCRE_EXP_DECL int  pcre_fullinfo(const pcre *, const pcre_extra *, int,
+PCRE_EXP_DECL void erts_pcre_free_substring(const char *);
+PCRE_EXP_DECL void erts_pcre_free_substring_list(const char **);
+PCRE_EXP_DECL int  erts_pcre_fullinfo(const pcre *, const pcre_extra *, int,
                   void *);
-PCRE_EXP_DECL int  pcre_get_named_substring(const pcre *, const char *,
+PCRE_EXP_DECL int  erts_pcre_get_named_substring(const pcre *, const char *,
                   int *, int, const char *, const char **);
-PCRE_EXP_DECL int  pcre_get_stringnumber(const pcre *, const char *);
-PCRE_EXP_DECL int  pcre_get_stringtable_entries(const pcre *, const char *,
+PCRE_EXP_DECL int  erts_pcre_get_stringnumber(const pcre *, const char *);
+PCRE_EXP_DECL int  erts_pcre_get_stringtable_entries(const pcre *, const char *,
                   char **, char **);
-PCRE_EXP_DECL int  pcre_get_substring(const char *, int *, int, int,
+PCRE_EXP_DECL int  erts_pcre_get_substring(const char *, int *, int, int,
                   const char **);
-PCRE_EXP_DECL int  pcre_get_substring_list(const char *, int *, int,
+PCRE_EXP_DECL int  erts_pcre_get_substring_list(const char *, int *, int,
                   const char ***);
-PCRE_EXP_DECL int  pcre_info(const pcre *, int *, int *);
-PCRE_EXP_DECL const unsigned char *pcre_maketables(void);
-PCRE_EXP_DECL int  pcre_refcount(pcre *, int);
-PCRE_EXP_DECL pcre_extra *pcre_study(const pcre *, int, const char **);
-PCRE_EXP_DECL const char *pcre_version(void);
+PCRE_EXP_DECL int  erts_pcre_info(const pcre *, int *, int *);
+PCRE_EXP_DECL const unsigned char *erts_pcre_maketables(void);
+PCRE_EXP_DECL int  erts_pcre_refcount(pcre *, int);
+PCRE_EXP_DECL pcre_extra *erts_pcre_study(const pcre *, int, const char **);
+PCRE_EXP_DECL const char *erts_pcre_version(void);
 
 #ifdef ERLANG_INTEGRATION
-PCRE_EXP_DECL void  pcre_free_restart_data(void *restart_data);
+PCRE_EXP_DECL void  erts_pcre_free_restart_data(void *restart_data);
 #endif
 #ifdef __cplusplus
 }  /* extern "C" */

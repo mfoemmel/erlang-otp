@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>1997-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1ct_value).
 
@@ -200,7 +200,6 @@ get_type_prim(D,Erule) ->
 		[] ->
 		    asn1_EMPTY;
 		_ ->
-%		    lists:nth(random(length(NN)),NN)
 		    case C of
 			[] ->
 			    lists:nth(random(length(NN)),NN);
@@ -209,14 +208,22 @@ get_type_prim(D,Erule) ->
 		    end
 	    end;
 	{'BIT STRING',NamedNumberList} ->
-%%	    io:format("get_type_prim 1: ~w~n",[NamedNumberList]),
 	    NN = [X||{X,_} <- NamedNumberList],
 	    case NN of
 		[] ->
 		    Bl1 =lists:reverse(adjust_list(size_random(C),[1,0,1,1])),
-		    lists:reverse(lists:dropwhile(fun(0)->true;(1)->false end,Bl1));
+		    Bl2 = lists:reverse(lists:dropwhile(fun(0)->true;(1)->false end,Bl1)),
+		    case {length(Bl2),get_constraint(C,'SizeConstraint')} of
+			{Len,Len} ->
+			    Bl2;
+			{_Len,Int} when is_integer(Int) ->
+			    Bl1;
+			{Len,{Min,_}} when Min > Len ->
+			    Bl1;
+			_ ->
+			    Bl2
+		    end;
 		_ ->
-%%		    io:format("get_type_prim 2: ~w~n",[NN]),
 		    [lists:nth(random(length(NN)),NN)]
 	    end;
 	'ANY' ->

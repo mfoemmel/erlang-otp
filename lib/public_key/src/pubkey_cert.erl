@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the Licensese. You should have received a copy of the
+%% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 
 -module(pubkey_cert).
@@ -183,7 +184,7 @@ validate_unknown_extensions([], AccErr, _Verify) ->
     AccErr;
 validate_unknown_extensions([#'Extension'{critical = true} | _],
 			    AccErr, Verify) ->
-    not_valid({bad_cert, unknown_critical_extension}, AccErr, Verify);
+    not_valid({bad_cert, unknown_critical_extension}, Verify, AccErr);
 validate_unknown_extensions([#'Extension'{critical = false} | Rest], 
 			    AccErr, Verify) ->
     validate_unknown_extensions(Rest, AccErr, Verify).
@@ -347,12 +348,14 @@ is_dir_name2(String, {utf8String, Value1}) ->  %% BUGBUG FIX UTF8 conv
 is_dir_name2(_, _) ->
     false.
 
+cert_auth_key_id(#'AuthorityKeyIdentifier'{authorityCertIssuer 
+					   = asn1_NOVALUE}) ->
+    {error, issuer_not_found};
 cert_auth_key_id(#'AuthorityKeyIdentifier'{authorityCertIssuer = 
 					   AuthCertIssuer,
 					   authorityCertSerialNumber = 
 					   SerialNr}) ->
-    Issuer = decode_general_name(AuthCertIssuer),
-    {ok, {SerialNr, Issuer}}.
+    {ok, {SerialNr, decode_general_name(AuthCertIssuer)}}.
 
 decode_general_name([{directoryName, Issuer}]) ->
     normalize_general_name(Issuer).

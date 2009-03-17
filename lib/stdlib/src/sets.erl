@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2000-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 %% We use the dynamic hashing techniques by Per-Åke Larsson as
@@ -46,51 +47,66 @@
 -define(max_seg, 32).
 -define(expand_load, 5).
 -define(contract_load, 3).
+-define(exp_size, ?seg_size * ?expand_load).
+-define(con_size, ?seg_size * ?contract_load).
+
+%%------------------------------------------------------------------------------
+
+-type seg()  :: tuple().
+-type segs() :: tuple().
 
 %% Define a hash set.  The default values are the standard ones.
--record(sets,
-	{size=0,				%Number of elements
-	 n=?seg_size,				%Number of active slots
-	 maxn=?seg_size,			%Maximum slots
-	 bso=?seg_size div 2,			%Buddy slot offset
-	 exp_size=?seg_size * ?expand_load,	%Size to expand at
-	 con_size=?seg_size * ?contract_load,	%Size to contract at
-	 empty,					%Empty segment
-	 segs					%Segments
+-record(set,
+	{size=0              :: non_neg_integer(),	% Number of elements
+	 n=?seg_size         :: non_neg_integer(),	% Number of active slots
+	 maxn=?seg_size      :: pos_integer(),  	% Maximum slots
+	 bso=?seg_size div 2 :: non_neg_integer(),      % Buddy slot offset
+	 exp_size=?exp_size  :: non_neg_integer(),	% Size to expand at
+	 con_size=?con_size  :: non_neg_integer(),	% Size to contract at
+	 empty               :: seg(),			% Empty segment
+	 segs                :: segs()			% Segments
 	}).
+%% A declaration equivalent to the following one is hard-coded in erl_types.
+%% That declaration contains hard-coded information about the #set{}
+%% record and the types of its fields.  So, please make sure that any
+%% changes to its structure are also propagated to erl_types.erl.
+%%
+%% -opaque set() :: #set{}.
 
-%% new() -> Set.
+%%------------------------------------------------------------------------------
 
+%% new() -> Set
+-spec new() -> set().
 new() ->
     Empty = mk_seg(?seg_size),
-    #sets{empty=Empty,segs={Empty}}.
+    #set{empty = Empty, segs = {Empty}}.
 
 %% is_set(Set) -> bool().
 %%  Return 'true' if Set is a set of elements, else 'false'.
-
-is_set(#sets{}) -> true;
+-spec is_set(term()) -> bool().
+is_set(#set{}) -> true;
 is_set(_) -> false.
 
 %% size(Set) -> int().
 %%  Return the number of elements in Set.
-
-size(S) -> S#sets.size. 
+-spec size(set()) -> non_neg_integer().
+size(S) -> S#set.size. 
 
 %% to_list(Set) -> [Elem].
 %%  Return the elements in Set as a list.
-
+-spec to_list(set()) -> [term()].
 to_list(S) ->
     fold(fun (Elem, List) -> [Elem|List] end, [], S).
 
 %% from_list([Elem]) -> Set.
 %%  Build a set from the elements in List.
-
+-spec from_list([term()]) -> set().
 from_list(L) ->
     lists:foldl(fun (E, S) -> add_element(E, S) end, new(), L).
 
 %% is_element(Element, Set) -> bool().
 %%  Return 'true' if Element is an element of Set, else 'false'.
-
+-spec is_element(term(), set()) -> bool().
 is_element(E, S) ->
     Slot = get_slot(S, E),
     Bkt = get_bucket(S, Slot),
@@ -98,25 +114,27 @@ is_element(E, S) ->
 
 %% add_element(Element, Set) -> Set.
 %%  Return Set with Element inserted in it.
-
+-spec add_element(term(), set()) -> set().
 add_element(E, S0) ->
     Slot = get_slot(S0, E),
     {S1,Ic} = on_bucket(fun (B0) -> add_bkt_el(E, B0, B0) end, S0, Slot),
     maybe_expand(S1, Ic).
 
+-spec add_bkt_el(T, [T], [T]) -> {[T], 0 | 1}.
 add_bkt_el(E, [E|_], Bkt) -> {Bkt,0};
 add_bkt_el(E, [_|B], Bkt) ->
     add_bkt_el(E, B, Bkt);
 add_bkt_el(E, [], Bkt) -> {[E|Bkt],1}.
 
-%% del_element(Element, OrdSet) -> OrdSet.
-%%  Return OrdSet but with Element removed.
-
+%% del_element(Element, Set) -> Set.
+%%  Return Set but with Element removed.
+-spec del_element(term(), set()) -> set().
 del_element(E, S0) ->
     Slot = get_slot(S0, E),
     {S1,Dc} = on_bucket(fun (B0) -> del_bkt_el(E, B0) end, S0, Slot),
     maybe_contract(S1, Dc).
 
+-spec del_bkt_el(T, [T]) -> {[T], 0 | 1}.
 del_bkt_el(E, [E|Bkt]) -> {Bkt,1};
 del_bkt_el(E, [Other|Bkt0]) ->
     {Bkt1,Dc} = del_bkt_el(E, Bkt0),
@@ -125,39 +143,41 @@ del_bkt_el(_, []) -> {[],0}.
 
 %% union(Set1, Set2) -> Set
 %%  Return the union of Set1 and Set2.
-
-union(S1, S2) when S1#sets.size < S2#sets.size ->
+-spec union(set(), set()) -> set().
+union(S1, S2) when S1#set.size < S2#set.size ->
     fold(fun (E, S) -> add_element(E, S) end, S2, S1);
 union(S1, S2) ->
     fold(fun (E, S) -> add_element(E, S) end, S1, S2).
 
 %% union([Set]) -> Set
 %%  Return the union of the list of sets.
-
+-spec union([set()]) -> set().
 union([S1,S2|Ss]) ->
     union1(union(S1, S2), Ss);
 union([S]) -> S;
 union([]) -> new().
 
+-spec union1(set(), [set()]) -> set().
 union1(S1, [S2|Ss]) ->
     union1(union(S1, S2), Ss);
 union1(S1, []) -> S1.
 
 %% intersection(Set1, Set2) -> Set.
 %%  Return the intersection of Set1 and Set2.
-
-intersection(S1, S2) when S1#sets.size < S2#sets.size ->
+-spec intersection(set(), set()) -> set().
+intersection(S1, S2) when S1#set.size < S2#set.size ->
     filter(fun (E) -> is_element(E, S2) end, S1);
 intersection(S1, S2) ->
     filter(fun (E) -> is_element(E, S1) end, S2).
 
 %% intersection([Set]) -> Set.
 %%  Return the intersection of the list of sets.
-
+-spec intersection([set(),...]) -> set().
 intersection([S1,S2|Ss]) ->
     intersection1(intersection(S1, S2), Ss);
 intersection([S]) -> S.
 
+-spec intersection1(set(), [set()]) -> set().
 intersection1(S1, [S2|Ss]) ->
     intersection1(intersection(S1, S2), Ss);
 intersection1(S1, []) -> S1.
@@ -165,54 +185,54 @@ intersection1(S1, []) -> S1.
 %% subtract(Set1, Set2) -> Set.
 %%  Return all and only the elements of Set1 which are not also in
 %%  Set2.
-
+-spec subtract(set(), set()) -> set().
 subtract(S1, S2) ->
     filter(fun (E) -> not is_element(E, S2) end, S1).
 
 %% is_subset(Set1, Set2) -> bool().
 %%  Return 'true' when every element of Set1 is also a member of
 %%  Set2, else 'false'.
-
+-spec is_subset(set(), set()) -> bool().
 is_subset(S1, S2) ->
     fold(fun (E, Sub) -> Sub and is_element(E, S2) end, true, S1).
 
 %% fold(Fun, Accumulator, Set) -> Accumulator.
 %%  Fold function Fun over all elements in Set and return Accumulator.
-
+-spec fold(fun((_,_) -> _), T, set()) -> T.
 fold(F, Acc, D) -> fold_set(F, Acc, D).
 
 %% filter(Fun, Set) -> Set.
 %%  Filter Set with Fun.
-
+-spec filter(fun((_) -> bool()), set()) -> set().
 filter(F, D) -> filter_set(F, D).
 
-
 %% get_slot(Hashdb, Key) -> Slot.
 %%  Get the slot.  First hash on the new range, if we hit a bucket
 %%  which has not been split use the unsplit buddy bucket.
-
+-spec get_slot(set(), term()) -> non_neg_integer().
 get_slot(T, Key) ->
-    H = erlang:phash(Key, T#sets.maxn),
+    H = erlang:phash(Key, T#set.maxn),
     if
-	H > T#sets.n -> H - T#sets.bso;
+	H > T#set.n -> H - T#set.bso;
 	true -> H
     end.
 
 %% get_bucket(Hashdb, Slot) -> Bucket.
-
-get_bucket(T, Slot) -> get_bucket_s(T#sets.segs, Slot).
+-spec get_bucket(set(), non_neg_integer()) -> term().
+get_bucket(T, Slot) -> get_bucket_s(T#set.segs, Slot).
 
 %% on_bucket(Fun, Hashdb, Slot) -> {NewHashDb,Result}.
 %%  Apply Fun to the bucket in Slot and replace the returned bucket.
-
+-spec on_bucket(fun((_) -> {[_], 0 | 1}), set(), non_neg_integer()) ->
+	  {set(), 0 | 1}.
 on_bucket(F, T, Slot) ->
     SegI = ((Slot-1) div ?seg_size) + 1,
     BktI = ((Slot-1) rem ?seg_size) + 1,
-    Segs = T#sets.segs,
+    Segs = T#set.segs,
     Seg = element(SegI, Segs),
     B0 = element(BktI, Seg),
-    {B1,Res} = F(B0),				%Op on the bucket.
-    {T#sets{segs=setelement(SegI, Segs, setelement(BktI, Seg, B1))},Res}.
+    {B1, Res} = F(B0),				%Op on the bucket.
+    {T#set{segs = setelement(SegI, Segs, setelement(BktI, Seg, B1))},Res}.
 
 %% fold_set(Fun, Acc, Dictionary) -> Dictionary.
 %% filter_set(Fun, Dictionary) -> Dictionary.
@@ -222,8 +242,8 @@ on_bucket(F, T, Slot) ->
 %%  implemented map and hash using fold but these should be faster.
 %%  We hope!
 
-fold_set(F, Acc, D) ->
-    Segs = D#sets.segs,
+fold_set(F, Acc, D) when is_function(F, 2) ->
+    Segs = D#set.segs,
     fold_segs(F, Acc, Segs, tuple_size(Segs)).
 
 fold_segs(F, Acc, Segs, I) when I >= 1 ->
@@ -239,10 +259,10 @@ fold_bucket(F, Acc, [E|Bkt]) ->
     fold_bucket(F, F(E, Acc), Bkt);
 fold_bucket(_, Acc, []) -> Acc.
 
-filter_set(F, D) ->
-    Segs0 = tuple_to_list(D#sets.segs),
+filter_set(F, D) when is_function(F, 1) ->
+    Segs0 = tuple_to_list(D#set.segs),
     {Segs1,Fc} = filter_seg_list(F, Segs0, [], 0),
-    maybe_contract(D#sets{segs=list_to_tuple(Segs1)}, Fc).
+    maybe_contract(D#set{segs = list_to_tuple(Segs1)}, Fc).
 
 filter_seg_list(F, [Seg|Segs], Fss, Fc0) ->
     Bkts0 = tuple_to_list(Seg),
@@ -278,66 +298,69 @@ put_bucket_s(Segs, Slot, Bkt) ->
     Seg = setelement(BktI, element(SegI, Segs), Bkt),
     setelement(SegI, Segs, Seg).
 
-maybe_expand(T0, Ic) when T0#sets.size + Ic > T0#sets.exp_size ->
+-spec maybe_expand(set(), 0 | 1) -> set().
+maybe_expand(T0, Ic) when T0#set.size + Ic > T0#set.exp_size ->
     T = maybe_expand_segs(T0),			%Do we need more segments.
-    N = T#sets.n + 1,				%Next slot to expand into
-    Segs0 = T#sets.segs,
-    Slot1 = N - T#sets.bso,
+    N = T#set.n + 1,				%Next slot to expand into
+    Segs0 = T#set.segs,
+    Slot1 = N - T#set.bso,
     B = get_bucket_s(Segs0, Slot1),
     Slot2 = N,
-    [B1|B2] = rehash(B, Slot1, Slot2, T#sets.maxn),
+    {B1,B2} = rehash(B, Slot1, Slot2, T#set.maxn),
     Segs1 = put_bucket_s(Segs0, Slot1, B1),
     Segs2 = put_bucket_s(Segs1, Slot2, B2),
-    T#sets{size=T#sets.size + Ic,
-	   n=N,
-	   exp_size=N * ?expand_load,
-	   con_size=N * ?contract_load,
-	   segs=Segs2};
-maybe_expand(T, Ic) -> T#sets{size=T#sets.size + Ic}.
+    T#set{size = T#set.size + Ic,
+	  n = N,
+	  exp_size = N * ?expand_load,
+	  con_size = N * ?contract_load,
+	  segs = Segs2};
+maybe_expand(T, Ic) -> T#set{size = T#set.size + Ic}.
 
-maybe_expand_segs(T) when T#sets.n =:= T#sets.maxn ->
-    T#sets{maxn=2 * T#sets.maxn,
-	   bso=2 * T#sets.bso,
-	   segs=expand_segs(T#sets.segs, T#sets.empty)};
+-spec maybe_expand_segs(set()) -> set().
+maybe_expand_segs(T) when T#set.n =:= T#set.maxn ->
+    T#set{maxn = 2 * T#set.maxn,
+	  bso  = 2 * T#set.bso,
+	  segs = expand_segs(T#set.segs, T#set.empty)};
 maybe_expand_segs(T) -> T.
 
-maybe_contract(T, Dc) when T#sets.size - Dc < T#sets.con_size,
-			   T#sets.n > ?seg_size ->
-    N = T#sets.n,
-    Slot1 = N - T#sets.bso,
-    Segs0 = T#sets.segs,
+-spec maybe_contract(set(), non_neg_integer()) -> set().
+maybe_contract(T, Dc) when T#set.size - Dc < T#set.con_size,
+			   T#set.n > ?seg_size ->
+    N = T#set.n,
+    Slot1 = N - T#set.bso,
+    Segs0 = T#set.segs,
     B1 = get_bucket_s(Segs0, Slot1),
     Slot2 = N,
     B2 = get_bucket_s(Segs0, Slot2),
     Segs1 = put_bucket_s(Segs0, Slot1, B1 ++ B2),
     Segs2 = put_bucket_s(Segs1, Slot2, []),	%Clear the upper bucket
     N1 = N - 1,
-    maybe_contract_segs(T#sets{size=T#sets.size - Dc,
-			       n=N1,
-			       exp_size=N1 * ?expand_load,
-			       con_size=N1 * ?contract_load,
-			       segs=Segs2});
-maybe_contract(T, Dc) -> T#sets{size=T#sets.size - Dc}.
+    maybe_contract_segs(T#set{size = T#set.size - Dc,
+			      n = N1,
+			      exp_size = N1 * ?expand_load,
+			      con_size = N1 * ?contract_load,
+			      segs = Segs2});
+maybe_contract(T, Dc) -> T#set{size = T#set.size - Dc}.
 
-maybe_contract_segs(T) when T#sets.n =:= T#sets.bso ->
-    T#sets{maxn=T#sets.maxn div 2,
-	   bso=T#sets.bso div 2,
-	   segs=contract_segs(T#sets.segs)};
+-spec maybe_contract_segs(set()) -> set().
+maybe_contract_segs(T) when T#set.n =:= T#set.bso ->
+    T#set{maxn = T#set.maxn div 2,
+	  bso  = T#set.bso div 2,
+	  segs = contract_segs(T#set.segs)};
 maybe_contract_segs(T) -> T.
 
-%% rehash(Bucket, Slot1, Slot2, MaxN) -> [Bucket1|Bucket2].
-%%  Yes, we should return a tuple, but this is more fun.
-
+%% rehash(Bucket, Slot1, Slot2, MaxN) -> {Bucket1,Bucket2}.
+-spec rehash([T], integer(), pos_integer(), pos_integer()) -> {[T],[T]}.
 rehash([E|T], Slot1, Slot2, MaxN) ->
-    [L1|L2] = rehash(T, Slot1, Slot2, MaxN),
+    {L1,L2} = rehash(T, Slot1, Slot2, MaxN),
     case erlang:phash(E, MaxN) of
-	Slot1 -> [[E|L1]|L2];
-	Slot2 -> [L1|[E|L2]]
+	Slot1 -> {[E|L1],L2};
+	Slot2 -> {L1,[E|L2]}
     end;
-rehash([], _, _, _) -> [[]|[]].
+rehash([], _, _, _) -> {[],[]}.
 
 %% mk_seg(Size) -> Segment.
-
+-spec mk_seg(16) -> seg().
 mk_seg(16) -> {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}.
 
 %% expand_segs(Segs, EmptySeg) -> NewSegs.
@@ -346,7 +369,7 @@ mk_seg(16) -> {[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]}.
 %%  of segments.  We special case the powers of 2 upto 32, this should
 %%  catch most case.  N.B. the last element in the segments tuple is
 %%  an extra element containing a default empty segment.
-
+-spec expand_segs(segs(), seg()) -> segs().
 expand_segs({B1}, Empty) ->
     {B1,Empty};
 expand_segs({B1,B2}, Empty) ->
@@ -364,6 +387,7 @@ expand_segs(Segs, Empty) ->
     list_to_tuple(tuple_to_list(Segs) 
     ++ lists:duplicate(tuple_size(Segs), Empty)).
 
+-spec contract_segs(segs()) -> segs().
 contract_segs({B1,_}) ->
     {B1};
 contract_segs({B1,B2,_,_}) ->

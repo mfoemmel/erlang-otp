@@ -1,34 +1,25 @@
-% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-%%% Author  : Johan Blom <Johan.Blom@mobilearts.se>
-%%% Description :
-%%%   Implements various scheme dependent subsets (e.g. HTTP, FTP etc) based on
-%%%   RFC 2396, Uniform Resource Identifiers (URI): Generic Syntax
-%%%   RFC 2732, Format for Literal IPv6 Addresses in URL's
-%%% Supported schemes:
-%%% HTTP - Source RFC 2396, RFC 2616
-%%% FTP  - (Not yet!) Source RFC 2396, RFC 1738, RFC 959
-%%% SIP  - Source RFC 2396, RFC 3261
-%%% SMS  - (Not yet!) Source draft-wilde-sms-uri-03, April 16 2002 and
-%%%               draft-allocchio-gstn-04, August 2002
-%%% H323 - (Not yet!) Source RFC 3508
+%% %CopyrightEnd%
+%%
+
+
 -module(xmerl_uri).
 
--author('johan.blom@mobilearts.se').
 
 -export([parse/1,resolve/2
 %	 scan_abspath/1

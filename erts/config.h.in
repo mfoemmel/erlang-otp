@@ -253,6 +253,12 @@
 /* Define to 1 if you have the `isnan' function. */
 #undef HAVE_ISNAN
 
+/* Define if you have kstat */
+#undef HAVE_KSTAT
+
+/* Define to 1 if you have the <langinfo.h> header file. */
+#undef HAVE_LANGINFO_H
+
 /* Define to 1 if you have the `dl' library (-ldl). */
 #undef HAVE_LIBDL
 
@@ -304,14 +310,26 @@
 /* Define to 1 if you have the <net/errno.h> header file. */
 #undef HAVE_NET_ERRNO_H
 
+/* Define to 1 if you have the `nl_langinfo' function. */
+#undef HAVE_NL_LANGINFO
+
 /* Define if you don't have a definition of INADDR_LOOPBACK */
 #undef HAVE_NO_INADDR_LOOPBACK
 
 /* Define to 1 if you have the `openpty' function. */
 #undef HAVE_OPENPTY
 
+/* Define to 1 if you have the `posix2time' function. */
+#undef HAVE_POSIX2TIME
+
 /* Define to 1 if you have the `pread' function. */
 #undef HAVE_PREAD
+
+/* Define if you have processor_bind functionality */
+#undef HAVE_PROCESSOR_BIND
+
+/* Define if you have pset functionality */
+#undef HAVE_PSET
 
 /* Define to 1 if you have the <pty.h> header file. */
 #undef HAVE_PTY_H
@@ -328,8 +346,14 @@
 /* Define to 1 if you have the `sbrk' function. */
 #undef HAVE_SBRK
 
+/* Define if you have sched_getaffinity/sched_setaffinity */
+#undef HAVE_SCHED_xETAFFINITY
+
 /* Define to 1 if you have the <netinet/sctp.h> header file */
 #undef HAVE_SCTP_H
+
+/* Define to 1 if you have the `setlocale' function. */
+#undef HAVE_SETLOCALE
 
 /* Define to 1 if you have the `setsid' function. */
 #undef HAVE_SETSID
@@ -382,8 +406,8 @@
 /* Define to 1 if `sre_data' is member of `struct sctp_remote_error'. */
 #undef HAVE_STRUCT_SCTP_REMOTE_ERROR_SRE_DATA
 
-/* Define to 1 if `ssh_data' is member of `struct sctp_send_failed'. */
-#undef HAVE_STRUCT_SCTP_SEND_FAILED_SSH_DATA
+/* Define to 1 if `ssf_data' is member of `struct sctp_send_failed'. */
+#undef HAVE_STRUCT_SCTP_SEND_FAILED_SSF_DATA
 
 /* Define to 1 if you have the <syslog.h> header file. */
 #undef HAVE_SYSLOG_H
@@ -461,6 +485,9 @@
 
 /* Define to 1 if `fork' works. */
 #undef HAVE_WORKING_FORK
+
+/* Define if you have a working posix_openpt implementation */
+#undef HAVE_WORKING_POSIX_OPENPT
 
 /* Define to 1 if `vfork' works. */
 #undef HAVE_WORKING_VFORK

@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: The ssh server instance supervisor, an instans of this supervisor
@@ -32,8 +33,7 @@
 	 stop_system/2, system_supervisor/2,
 	 subsystem_supervisor/1, channel_supervisor/1, 
 	 connection_supervisor/1, 
-	 acceptor_supervisor/1, connection_manager/1,
-	 restart_subsystem/2, restart_acceptor/2]).
+	 acceptor_supervisor/1, start_subsystem/2, restart_subsystem/2, restart_acceptor/2]).
 
 %% Supervisor callback
 -export([init/1]).
@@ -68,10 +68,6 @@ system_supervisor(Address, Port) ->
 subsystem_supervisor(SystemSup) ->
     ssh_subsystem_sup(supervisor:which_children(SystemSup)).
 
-connection_manager(SystemSup) ->
-    SubSysSup = ssh_subsystem_sup(supervisor:which_children(SystemSup)),
-    ssh_subsystem_sup:connection_manager(SubSysSup).
-
 channel_supervisor(SystemSup) ->
     SubSysSup = ssh_subsystem_sup(supervisor:which_children(SystemSup)),
     ssh_subsystem_sup:channel_supervisor(SubSysSup).
@@ -82,6 +78,10 @@ connection_supervisor(SystemSup) ->
 
 acceptor_supervisor(SystemSup) ->
     ssh_acceptor_sup(supervisor:which_children(SystemSup)).
+
+start_subsystem(SystemSup, Options) ->
+    Spec = ssh_subsystem_child_spec(Options),
+    supervisor:start_child(SystemSup, Spec).
 
 restart_subsystem(Address, Port) ->
     SysSupName = make_name(Address, Port),
@@ -112,7 +112,7 @@ init([ServerOpts]) ->
 %%%  Internal functions
 %%%=========================================================================
 child_specs(ServerOpts) ->
-    [ssh_acceptor_child_spec(ServerOpts), ssh_subsystem_child_spec(ServerOpts)].
+    [ssh_acceptor_child_spec(ServerOpts)]. 
   
 ssh_acceptor_child_spec(ServerOpts) ->
     Address = proplists:get_value(address, ServerOpts),
@@ -126,11 +126,9 @@ ssh_acceptor_child_spec(ServerOpts) ->
     {Name, StartFunc, Restart, Shutdown, Type, Modules}.
 
 ssh_subsystem_child_spec(ServerOpts) ->
-    Address = proplists:get_value(address, ServerOpts),
-    Port =  proplists:get_value(port, ServerOpts),
-    Name = id(ssh_subsystem_sup, Address, Port),
+    Name = make_ref(),
     StartFunc = {ssh_subsystem_sup, start_link, [ServerOpts]},
-    Restart = permanent, 
+    Restart = temporary, 
     Shutdown = infinity,
     Modules = [ssh_subsystem_sup],
     Type = supervisor,

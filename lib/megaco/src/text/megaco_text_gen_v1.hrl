@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2000-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2000-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Encode Megaco/H.248 text messages from internal form
@@ -1916,23 +1917,68 @@ enc_ModemType(Val, _State) ->
         synchISDN -> ?SynchISDNToken
     end.
 
-enc_DigitMapDescriptor(Val, State)
-  when is_record(Val, 'DigitMapDescriptor') ->
+enc_DigitMapDescriptor(#'DigitMapDescriptor'{digitMapName  = asn1_NOVALUE,
+					     digitMapValue = Value} = Val, 
+		       State) 
+  when (Value =/= asn1_NOVALUE) ->
+    case is_empty_DigitMapValue(Value) of
+	true ->
+	    error({invalid_DigitMapDescriptor, Val});
+	false ->
+	    [
+	     ?DigitMapToken,
+	     ?EQUAL,
+	     ?LBRKT_INDENT(State),
+	     enc_DigitMapValue(Value, ?INC_INDENT(State)),
+	     ?RBRKT_INDENT(State)
+	    ]
+    end;
+enc_DigitMapDescriptor(#'DigitMapDescriptor'{digitMapName  = Name, 
+					     digitMapValue = asn1_NOVALUE}, 
+		       State) 
+  when (Name =/= asn1_NOVALUE) ->
     [
      ?DigitMapToken,
      ?EQUAL,
-     enc_DigitMapName(Val#'DigitMapDescriptor'.digitMapName, State),
-     ?LBRKT_INDENT(State),
-     enc_DigitMapValue(Val#'DigitMapDescriptor'.digitMapValue,
-		       ?INC_INDENT(State)),
-     ?RBRKT_INDENT(State)
-    ].
+     enc_DigitMapName(Name, State)
+    ];
+enc_DigitMapDescriptor(#'DigitMapDescriptor'{digitMapName  = Name,
+					     digitMapValue = Value}, 
+		       State) 
+  when (Name =/= asn1_NOVALUE) andalso (Value =/= asn1_NOVALUE) ->
+    case is_empty_DigitMapValue(Value) of
+	true ->
+	    [
+	     ?DigitMapToken,
+	     ?EQUAL,
+	     enc_DigitMapName(Name, State)
+	    ];
+	false ->
+	    [
+	     ?DigitMapToken,
+	     ?EQUAL,
+	     enc_DigitMapName(Name, State),
+	     ?LBRKT_INDENT(State),
+	     enc_DigitMapValue(Value, ?INC_INDENT(State)),
+	     ?RBRKT_INDENT(State)
+	    ]
+    end;
+enc_DigitMapDescriptor(BadVal, _State) ->
+    error({invalid_DigitMapDescriptor, BadVal}).
 
 enc_DigitMapName({'DigitMapName',Val}, State) ->
     enc_DigitMapName(Val, State);
 enc_DigitMapName(Val, State) ->
     enc_Name(Val, State).
 
+is_empty_DigitMapValue(#'DigitMapValue'{startTimer   = asn1_NOVALUE,
+					shortTimer   = asn1_NOVALUE,
+					longTimer    = asn1_NOVALUE,
+					digitMapBody = []}) ->
+    true;
+is_empty_DigitMapValue(#'DigitMapValue'{}) ->
+    false.
+    
 enc_DigitMapValue(Val, State)
   when is_record(Val, 'DigitMapValue') ->
     [

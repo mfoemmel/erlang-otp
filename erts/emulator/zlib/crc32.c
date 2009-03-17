@@ -12,6 +12,8 @@
  * factor of two increase in speed on a Power PC G4 (PPC7455) using gcc -O3.
  */
 
+/* %ExternalCopyright% */
+
 /* @(#) $Id$ */
 
 /*

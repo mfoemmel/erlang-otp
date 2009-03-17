@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1999-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 /*
@@ -67,17 +68,18 @@ typedef struct {
 #endif
 
 /* Values for mode arg to driver_select() */
+#define ERL_DRV_READ  (1 << 0)
+#define ERL_DRV_WRITE (1 << 1)
+#define ERL_DRV_USE   (1 << 2)
+#define ERL_DRV_USE_NO_CALLBACK (ERL_DRV_USE | (1 << 3))
 
-#define DO_READ	 (1 << 0)
-#define DO_WRITE (1 << 1)
-#ifdef _OSE_
-#define DO_START (1 << 2)
-#define DO_STOP  (1 << 3)
-#endif /* _OSE_ */
+/* Old deprecated */
+#define DO_READ  ERL_DRV_READ
+#define DO_WRITE ERL_DRV_WRITE
 
 #define ERL_DRV_EXTENDED_MARKER		(0xfeeeeeed)
 #define ERL_DRV_EXTENDED_MAJOR_VERSION	1
-#define ERL_DRV_EXTENDED_MINOR_VERSION	2
+#define ERL_DRV_EXTENDED_MINOR_VERSION	3
 
 /*
  * The emulator will refuse to load a driver with different major
@@ -273,6 +275,10 @@ typedef struct erl_drv_entry {
     void *handle2;              /* Reserved -- Used by emulator internally */
     void (*process_exit)(ErlDrvData drv_data, ErlDrvMonitor *monitor);
                                 /* Called when a process monitor fires */
+    void (*stop_select)(ErlDrvEvent event, void* reserved);
+    	                        /* Called on behalf of driver_select when
+				   it is safe to release 'event'. A typical
+				   unix driver would call close(event) */
     /* When adding entries here, dont forget to pad in obsolete/driver.h */
 } ErlDrvEntry;
 
@@ -288,7 +294,7 @@ typedef struct erl_drv_entry {
  *	 ....
  *    }
  *
- * This function well be called by the Erlang I/O system when the driver is loaded.
+ * This function will be called by the Erlang I/O system when the driver is loaded.
  * It must initialize a ErlDrvEntry structure and return a pointer to it.
  */
 

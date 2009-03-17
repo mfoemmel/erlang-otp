@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(shell).
 
@@ -260,6 +261,10 @@ server_loop(N0, Eval_0, Bs0, RT, Ds0, History0, Results0) ->
 	    exit(Eval0, kill),
 	    {_,Eval,_,_} = shell_rep(Eval0, Bs0, RT, Ds0),
 	    server_loop(N0, Eval, Bs0, RT, Ds0, History0, Results0);
+	{error,tokens} ->			%Most probably unicode > 255
+            fwrite_severity(benign, <<"~w: Invalid tokens.">>, 
+                            [N]),
+	    server_loop(N0, Eval0, Bs0, RT, Ds0, History0, Results0);
 	{eof,_EndLine} ->
             fwrite_severity(fatal, <<"Terminating erlang (~w)">>, [node()]),
 	    halt();
@@ -1361,12 +1366,7 @@ check_and_get_history_and_results() ->
 get_history_and_results() ->
     History = get_env(shell_history_length, ?DEF_HISTORY),
     Results = get_env(shell_saved_results, ?DEF_RESULTS),
-    {History, min(Results, History)}.
-
-min(X, Y) when X < Y ->
-    X;
-min(_X, Y) ->
-    Y.
+    {History, erlang:min(Results, History)}.
 
 pp(V, I, RT) ->
     io_lib_pretty:print(V, I, columns(), ?LINEMAX, ?CHAR_MAX,

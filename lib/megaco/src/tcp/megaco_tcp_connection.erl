@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>1999-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%-----------------------------------------------------------------
 %%
@@ -98,6 +99,8 @@ upgrade_receive_handle(Pid, NewHandle) ->
 init(Arg) ->
     %% process_flag(trap_exit, true),
     ?tcp_debug(Arg, "tcp connection handler starting", [self()]),
+%%     info_msg("starting with"
+%% 	     "~n   Arg: ~p", [Arg]),
     {ok, Arg}.
 
 
@@ -185,7 +188,7 @@ process_received_message(Mod, RH, SH, Msg) ->
 receive_message(Mod, RH, SendHandle, Length, Msg) ->
     Opts = [link , {min_heap_size, ?HEAP_SIZE(Length)}],
     spawn_opt(?MODULE, handle_received_message,
-               [Mod, RH, self(), SendHandle, Msg], Opts),
+	      [Mod, RH, self(), SendHandle, Msg], Opts),
     ok.
 
 
@@ -199,8 +202,30 @@ handle_received_message(Mod, RH, Parent, SH, Msg) ->
 %% Func: terminate/2
 %% Description: Termination function for the generic server
 %%-----------------------------------------------------------------
+terminate(shutdown = _Reason, TcpRec) ->
+    ?tcp_debug(TcpRec, "tcp connection handler terminating", [self(),_Reason]),
+    ok;
+
 terminate(Reason, TcpRec) ->
-    ?tcp_debug(TcpRec, "tcp connection handler terminating", [self(),Reason]),
+    ?tcp_debug(TcpRec, "tcp connection handler terminating", [self(), Reason]),
+    SchedId      = erlang:system_info(scheduler_id),
+    SchedNum     = erlang:system_info(schedulers),
+    ProcCount    = erlang:system_info(process_count),
+    ProcLimit    = erlang:system_info(process_limit),
+    ProcMemUsed  = erlang:memory(processes_used),
+    ProcMemAlloc = erlang:memory(processes),
+    MemTot       = erlang:memory(total),
+    error_msg("abormal termination: "
+	      "~n   Scheduler id:                         ~p"
+	      "~n   Num scheduler:                        ~p"
+	      "~n   Process count:                        ~p"
+	      "~n   Process limit:                        ~p"
+	      "~n   Memory used by erlang processes:      ~p"
+	      "~n   Memory allocated by erlang processes: ~p"
+	      "~n   The total amount of memory allocated: ~p"
+	      "~n~p", 
+	      [SchedId, SchedNum, ProcCount, ProcLimit, 
+	       ProcMemUsed, ProcMemAlloc, MemTot, Reason]),
     ok.
 
 
@@ -235,8 +260,8 @@ incCounter(Key, Inc) ->
     ets:update_counter(megaco_tcp_stats, Key, Inc).
 
 
-% info_msg(F, A) ->
-%     ?megaco_info("TCP connection handler " ++ F", A)).
+%% info_msg(F, A) ->
+%%     ?megaco_info("TCP connection handler " ++ F, A).
   
 warning_msg(F, A) ->
     ?megaco_warning("TCP connection handler: " ++ F, A).

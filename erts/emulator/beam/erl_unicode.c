@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2008-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifdef HAVE_CONFIG_H
@@ -71,6 +72,9 @@ static Export characters_to_list_trap_2_exp;
 
 static Export characters_to_list_trap_3_exp;
 static Export characters_to_list_trap_4_exp;
+
+static Export *c_to_b_int_trap_exportp = NULL;
+static Export *c_to_l_int_trap_exportp = NULL;
 
 void erts_init_unicode(void)
 {
@@ -136,6 +140,11 @@ void erts_init_unicode(void)
 	(Eterm) em_apply_bif;
     characters_to_list_trap_4_exp.code[4] = 
 	(Eterm) &characters_to_list_trap_4;
+
+    c_to_b_int_trap_exportp =  erts_export_put(am_unicode,am_characters_to_binary_int,2);
+    c_to_l_int_trap_exportp =  erts_export_put(am_unicode,am_characters_to_list_int,2);
+    
+
 }
 
 
@@ -210,12 +219,6 @@ static ERTS_INLINE int allowed_iterations(Process *p)
 static ERTS_INLINE int cost_to_proc(Process *p, int cost)
 {
     int x = (cost / LOOP_FACTOR);
-    BUMP_REDS(p,x);
-    return x;
-}
-static ERTS_INLINE int simple_cost_to_proc(Process *p, int cost)
-{
-    int x = (cost / LOOP_FACTOR_SIMPLE);
     BUMP_REDS(p,x);
     return x;
 }
@@ -932,7 +935,7 @@ BIF_RETTYPE unicode_characters_to_binary_2(BIF_ALIST_2)
     } else if (BIF_ARG_2 == am_unicode || BIF_ARG_2 == am_utf8) {
 	latin1 = 0;
     } else {
-	BIF_ERROR(BIF_P,BADARG);
+	BIF_TRAP2(c_to_b_int_trap_exportp, BIF_P, BIF_ARG_1, BIF_ARG_2);
     }	
     need = utf8_need(BIF_ARG_1,latin1,&cost_of_utf8_need);
     if (need < 0) {
@@ -1090,7 +1093,7 @@ BIF_RETTYPE unicode_characters_to_list_2(BIF_ALIST_2)
     } else if (BIF_ARG_2 == am_unicode || BIF_ARG_2 == am_utf8) {
 	latin1 = 0;
     } else {
-	BIF_ERROR(BIF_P,BADARG);
+	BIF_TRAP2(c_to_l_int_trap_exportp, BIF_P, BIF_ARG_1, BIF_ARG_2);
     }	
     if (is_binary(BIF_ARG_1) && !latin1) { /* Optimized behaviour for this case */
 	    return utf8_to_list(BIF_P,BIF_ARG_1);
@@ -1562,4 +1565,167 @@ static BIF_RETTYPE utf8_to_list(BIF_ALIST_1)
     }
     return do_bif_utf8_to_list(BIF_P, BIF_ARG_1, 0U, 0U, 0U, 
 			       UTF8_ANALYZE_MORE,NIL);
+}
+
+
+BIF_RETTYPE atom_to_binary_2(BIF_ALIST_2)
+{
+    Atom* ap;
+
+    if (is_not_atom(BIF_ARG_1)) {
+	goto error;
+    }
+
+    ap = atom_tab(atom_val(BIF_ARG_1));
+
+    if (BIF_ARG_2 == am_latin1) {
+	BIF_RET(new_binary(BIF_P, ap->name, ap->len));
+    } else if (BIF_ARG_2 == am_utf8 || BIF_ARG_2 == am_unicode) {
+	int bin_size = 0;
+	int i;
+	Eterm bin_term;
+	byte* bin_p;
+
+	for (i = 0; i < ap->len; i++) {
+	    bin_size += (ap->name[i] >= 0x80) ? 2 : 1;
+	}
+	if (bin_size == ap->len) {
+	    BIF_RET(new_binary(BIF_P, ap->name, ap->len));
+	}
+	bin_term = new_binary(BIF_P, 0, bin_size);
+	bin_p = binary_bytes(bin_term);
+	for (i = 0; i < ap->len; i++) {
+	    byte b = ap->name[i];
+	    if (b < 0x80) {
+		*bin_p++ = b;
+	    } else {
+		*bin_p++ = 0xC0 | (b >> 6);
+		*bin_p++ = 0x80 | (b & 0x3F);
+	    }
+	}
+	BIF_RET(bin_term);
+    } else {
+    error:
+	BIF_ERROR(BIF_P, BADARG);
+    }
+}
+
+static BIF_RETTYPE
+binary_to_atom(Process* p, Eterm bin, Eterm enc, int must_exist)
+{
+    byte* bytes;
+    byte *temp_alloc = NULL;
+    Uint bin_size;
+
+    if ((bytes = erts_get_aligned_binary_bytes(bin, &temp_alloc)) == 0) {
+	goto badarg;
+    }
+    bin_size = binary_size(bin);
+    if (enc == am_latin1) {
+	Eterm a;
+	if (bin_size > MAX_ATOM_LENGTH) {
+	system_limit:
+	    BIF_ERROR(p, SYSTEM_LIMIT);
+	}
+	if (!must_exist) {
+	    BIF_RET(am_atom_put((char *)bytes, bin_size));
+	} else if (erts_atom_get((char *)bytes, bin_size, &a)) {
+	    BIF_RET(a);
+	} else {
+	    goto badarg;
+	}
+    } else if (enc == am_utf8 || enc == am_unicode) {
+	char *buf;
+	char *dst;
+	int i;
+	int num_chars;
+	Eterm res;
+
+	if (bin_size > 2*MAX_ATOM_LENGTH) {
+	    byte* err_pos;
+	    Uint n;
+	    int reds_left = bin_size+1; /* Number of reductions left. */
+
+	    if (analyze_utf8(bytes, bin_size, &err_pos,
+			     &n, &reds_left) == UTF8_OK) {
+		/* 
+		 * Correct UTF-8 encoding, but too many characters to
+		 * fit in an atom.
+		 */
+		goto system_limit;
+	    } else {
+		/*
+		 * Something wrong in the UTF-8 encoding or Unicode code
+		 * points > 255.
+		 */
+		goto badarg;
+	    }
+	}
+
+	/*
+	 * Allocate a temporary buffer the same size as the binary,
+	 * so that we don't need an extra overflow test.
+	 */
+	buf = (char *) erts_alloc(ERTS_ALC_T_TMP, bin_size);
+	dst = buf;
+	for (i = 0; i < bin_size; i++) {
+	    int c = bytes[i];
+	    if (c < 0x80) {
+		*dst++ = c;
+	    } else if (i < bin_size-1) {
+		int c2;
+		if ((c & 0xE0) != 0xC0) {
+		    goto free_badarg;
+		}
+		i++;
+		c = (c & 0x3F) << 6;
+		c2 = bytes[i];
+		if ((c2 & 0xC0) != 0x80) {
+		    goto free_badarg;
+		}
+		c = c | (c2 & 0x3F);
+		if (0x80 <= c && c < 256) {
+		    *dst++ = c;
+		} else {
+		    goto free_badarg;
+		}
+	    } else {
+	    free_badarg:
+		erts_free(ERTS_ALC_T_TMP, (void *) buf);
+		goto badarg;
+	    }
+	}
+	num_chars = dst - buf;
+	if (num_chars > MAX_ATOM_LENGTH) {
+	    erts_free(ERTS_ALC_T_TMP, (void *) buf);
+	    goto system_limit;
+	}
+	if (!must_exist) {
+	    res = am_atom_put(buf, num_chars);
+	    erts_free(ERTS_ALC_T_TMP, (void *) buf);
+	    BIF_RET(res);
+	} else {
+	    int exists = erts_atom_get(buf, num_chars, &res);
+	    erts_free(ERTS_ALC_T_TMP, (void *) buf);
+	    if (exists) {
+		BIF_RET(res);
+	    } else {
+		goto badarg;
+	    }
+	}
+    } else {
+	erts_free_aligned_binary_bytes(temp_alloc);
+    badarg:
+	BIF_ERROR(p, BADARG);
+    }
+}
+
+BIF_RETTYPE binary_to_atom_2(BIF_ALIST_2)
+{
+    return binary_to_atom(BIF_P, BIF_ARG_1, BIF_ARG_2, 0);
+}
+
+BIF_RETTYPE binary_to_existing_atom_2(BIF_ALIST_2)
+{
+    return binary_to_atom(BIF_P, BIF_ARG_1, BIF_ARG_2, 1);
 }

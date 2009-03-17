@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>2001</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2001</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>gb_sets</title>
@@ -309,10 +307,10 @@ gb_set() = a GB set</code>
       </desc>
     </func>
     <func>
-      <name>is_set(Set) -> bool()</name>
+      <name>is_set(Term) -> bool()</name>
       <fsummary>Test for a gb_set</fsummary>
       <type>
-        <v>Set = gb_set()</v>
+        <v>Term = term()</v>
       </type>
       <desc>
         <p>Returns <c>true</c> if <c>Set</c> appears to be a gb_set,
@@ -360,7 +358,7 @@ gb_set() = a GB set</code>
       </desc>
     </func>
     <func>
-      <name>next(Iter1) -> {Element, Iter2 | none}</name>
+      <name>next(Iter1) -> {Element, Iter2} | none</name>
       <fsummary>Traverse a gb_set with an iterator</fsummary>
       <type>
         <v>Iter1 = Iter2 = Element = term()</v>

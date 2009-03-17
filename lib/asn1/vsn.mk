@@ -1,7 +1,28 @@
-#next version number to use is 1.6.2 | 1.7 | 2.0
-ASN1_VSN = 1.6.2
+#next version number to use is 1.6.6 | 1.7 | 2.0
+ASN1_VSN = 1.6.8
 
-TICKETS = OTP-7608
+TICKETS = OTP-7876
+
+TICKETS_1.6.8 = \
+	OTP-7876
+
+TICKETS_1.6.7 = \
+	OTP-7801 \
+	OTP-7806
+
+TICKETS_1.6.6 = \
+	OTP-7759 \
+	OTP-7763
+
+TICKETS_1.6.5 = \
+	OTP-7734
+
+TICKETS_1.6.4 = \
+	OTP-7708
+
+TICKETS_1.6.3 = \
+	OTP-7681 \
+	OTP-7678
 
 TICKETS_1.6.2 = \
 	OTP-7608

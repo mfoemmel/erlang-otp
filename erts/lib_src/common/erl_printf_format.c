@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2005-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 /*
@@ -49,12 +50,10 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
+#include "erl_errno.h"
 #include <limits.h>
+#include "erl_printf.h"
 #include "erl_printf_format.h"
-
-#include "sys.h"
-#undef ASSERT
 
 #ifdef DEBUG
 #include <assert.h>
@@ -334,9 +333,14 @@ static int fmt_double(fmtfn_t fn,void*arg,double val,
     int new_fmt = fmt;
     int fpe_was_unmasked;
 
-    fpe_was_unmasked = erts_block_fpe();
+    fpe_was_unmasked = erts_printf_block_fpe ? (*erts_printf_block_fpe)() : 0;
 
-    dexp = log10(val);
+    if (val < 0.0)
+	dexp = log10(-val);
+    else if (val == 0.0)
+	dexp = 0.0;
+    else
+	dexp = log10(val);
     exp = (int) dexp;
 
     new_fmt &= ~FMTF_sgn;
@@ -438,7 +442,8 @@ static int fmt_double(fmtfn_t fn,void*arg,double val,
 	free((void *) bufp);
 
  out:
-    erts_unblock_fpe_conditional(fpe_was_unmasked);
+    if (erts_printf_unblock_fpe)
+	(*erts_printf_unblock_fpe)(fpe_was_unmasked);
     return res;
 }
 

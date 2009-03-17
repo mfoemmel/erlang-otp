@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2000-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose: Core Erlang abstract syntax functions.
 
@@ -22,12 +23,9 @@
 -export([get_anno/1,set_anno/2]).
 -export([is_literal/1,is_literal_list/1,
 	 is_simple/1,is_simple_list/1,is_simple_top/1]).
--export([literal_value/1,make_literal/1,make_literal_list/1]).
--export([concrete_list/1]).
+-export([literal_value/1]).
 -export([make_values/1]).
--export([map/2, fold/3, mapfold/3]).
 -export([is_var_used/2]).
--export([free_vars/1]).
 
 %% -compile([export_all]).
 
@@ -50,7 +48,6 @@ is_literal(#c_cons{hd=H,tl=T}) ->
     end;
 is_literal(#c_tuple{es=Es}) -> is_literal_list(Es);
 is_literal(#c_binary{segments=Es}) -> is_lit_bin(Es);
-is_literal(#c_fname{}) -> true;
 is_literal(_) -> false.
 
 is_literal_list(Es) -> lists:all(fun is_literal/1, Es).
@@ -71,7 +68,6 @@ is_simple(#c_cons{hd=H,tl=T}) ->
     end;
 is_simple(#c_tuple{es=Es}) -> is_simple_list(Es);
 is_simple(#c_binary{segments=Es}) -> is_simp_bin(Es);
-is_simple(#c_fname{}) -> true;
 is_simple(_) -> false.
 
 is_simple_list(Es) -> lists:all(fun is_simple/1, Es).
@@ -89,7 +85,6 @@ is_simple_top(#c_cons{}) -> true;
 is_simple_top(#c_tuple{}) -> true;
 is_simple_top(#c_binary{}) -> true;
 is_simple_top(#c_literal{}) -> true;
-is_simple_top(#c_fname{}) -> true;
 is_simple_top(_) -> false.
 
 %% literal_value(LitExpr) -> Value.
@@ -115,39 +110,6 @@ literal_value_bin(#c_bitstr{val=Val,size=Sz,unit=U,type=T,flags=Fs}) ->
     [unsigned,big] = literal_value(Fs),
     literal_value(Val).
 
-%% make_literal(Value) -> LitExpr.
-%%  Make a literal expression from an Erlang value. This function
-%%  will fail if the value is not expressable as a literal
-%%  (for instance, a pid).
-
-make_literal([]) -> #c_literal{val=[]};
-make_literal([H0|T0]) ->
-    case {make_literal(H0),make_literal(T0)} of
-	{#c_literal{val=H},#c_literal{val=T}} ->
-	    #c_literal{val=[H|T]};
-	{H,T} ->
-	    #c_cons{hd=H,tl=T}
-    end;
-make_literal(I) when is_integer(I) -> #c_literal{val=I};
-make_literal(F) when is_float(F) -> #c_literal{val=F};
-make_literal(A) when is_atom(A) -> #c_literal{val=A};
-make_literal(T0) when is_tuple(T0) ->
-    T = make_literal_list(tuple_to_list(T0)),
-    case is_literal_list(T) of
-	false -> #c_tuple{es=T};
-	true -> #c_literal{val=list_to_tuple(concrete_list(T))}
-    end;
-make_literal(Bs) when is_binary(Bs) ->
-    case bit_size(Bs) of
-	Bitsize when Bitsize rem 8 =:= 0 ->
-	    #c_literal{val=Bs}
-    end.
-
-make_literal_list(Vals) -> [make_literal(V) || V <- Vals]. 
-
-concrete_list([#c_literal{val=V}|T]) -> [V|concrete_list(T)];
-concrete_list([]) -> [].
-
 %% make_values([CoreExpr] | CoreExpr) -> #c_values{} | CoreExpr.
 %%  Make a suitable values structure, expr or values, depending on
 %%  Expr.
@@ -156,231 +118,6 @@ make_values([E]) -> E;
 make_values([H|_]=Es) -> #c_values{anno=get_anno(H),es=Es};
 make_values([]) -> #c_values{es=[]};
 make_values(E) -> E.
-
-%% map(MapFun, CoreExpr) -> CoreExpr.
-%%  This function traverses the core parse format, at each level
-%%  applying the submited argument function, assumed to do the real
-%%  work.
-%%
-%%  The "eager" style, where each component of a construct are
-%%  descended to before the construct itself, admits that some
-%%  companion functions (the F:s) may be made simpler, since it may be
-%%  safely assumed that no lower illegal instanced will be
-%%  created/uncovered by actions on the current level.
-
-map(F, #c_tuple{es=Es}=R) ->
-    F(R#c_tuple{es=map_list(F, Es)});
-map(F, #c_cons{hd=Hd, tl=Tl}=R) ->
-    F(R#c_cons{hd=map(F, Hd), 
-	       tl=map(F, Tl)});
-map(F, #c_values{es=Es}=R) ->
-    F(R#c_values{es=map_list(F, Es)});
-
-map(F, #c_alias{var=Var, pat=Pat}=R) ->
-    F(R#c_alias{var=map(F, Var),
-		pat=map(F, Pat)});
-
-map(F, #c_module{defs=Defs}=R) ->
-    F(R#c_module{defs=map_def_list(F, Defs)});
-
-map(F, #c_fun{vars=Vars, body=Body}=R) ->
-    F(R#c_fun{vars=map_list(F, Vars),
-	      body=map(F, Body)});
-map(F, #c_let{vars=Vs, arg=Arg, body=Body}=R) ->
-    F(R#c_let{vars=map_list(F, Vs), 
-	      arg=map(F, Arg), 
-	      body=map(F, Body)});
-map(F, #c_letrec{defs=Fs,body=Body}=R) ->
-    F(R#c_letrec{defs=map_def_list(F, Fs),
-		 body=map(F, Body)});
-map(F, #c_seq{arg=Arg, body=Body}=R) ->
-    F(R#c_seq{arg=map(F, Arg),
-	      body=map(F, Body)});
-map(F, #c_case{arg=Arg, clauses=Clauses}=R) ->
-    F(R#c_case{arg=map(F, Arg),
-	       clauses=map_list(F, Clauses)});
-map(F, #c_clause{pats=Ps, guard=Guard, body=Body}=R) ->
-    F(R#c_clause{pats=map_list(F, Ps), 
-		 guard=map(F, Guard), 
-		 body=map(F, Body)});
-map(F, #c_receive{clauses=Cls, timeout=Tout, action=Act}=R) ->
-    F(R#c_receive{clauses=map_list(F, Cls),
-		  timeout=map(F, Tout),
-		  action=map(F, Act)});
-map(F, #c_apply{op=Op,args=Args}=R) ->
-    F(R#c_apply{op=map(F, Op),
-		args=map_list(F, Args)});
-map(F, #c_call{module=M,name=N,args=Args}=R) ->
-    F(R#c_call{module=map(F, M),
-	       name=map(F, N),
-	       args=map_list(F, Args)});
-map(F, #c_primop{name=N,args=Args}=R) ->
-    F(R#c_primop{name=map(F, N),
-		 args=map_list(F, Args)});
-map(F, #c_try{arg=Expr,vars=Vars,body=Body,evars=Evars,handler=Handler}=R) ->
-    F(R#c_try{arg=map(F, Expr), 
-	      vars=map(F, Vars), 
-	      body=map(F, Body),
-	      evars=map(F, Evars),
-	      handler=map(F, Handler)});
-map(F, #c_catch{body=Body}=R) ->
-    F(R#c_catch{body=map(F, Body)});
-map(F, T) -> F(T).				%Atomic nodes.
-
-map_list(F, L) -> [map(F, E) || E <- L].
-
-map_def_list(F, L) ->
-    lists:map(fun ({N,V}) -> {N,map(F, V)} end, L).
-
-
-%% fold(FoldFun, Accumulator, CoreExpr) -> Accumulator.
-%%  This function traverses the core parse format, at each level
-%%  applying the submited argument function, assumed to do the real
-%%  work, and keeping the accumulated result in the A (accumulator)
-%%  argument.
-
-fold(F, Acc, #c_tuple{es=Es}=R) ->
-    F(R, fold_list(F, Acc, Es));
-fold(F, Acc, #c_cons{hd=Hd, tl=Tl}=R) ->
-    F(R, fold(F, fold(F, Acc, Hd), Tl));
-fold(F, Acc, #c_values{es=Es}=R) ->
-    F(R, fold_list(F, Acc, Es));
-
-fold(F, Acc, #c_alias{pat=P,var=V}=R) ->
-    F(R, fold(F, fold(F, Acc, P), V));
-
-fold(F, Acc, #c_module{defs=Defs}=R) ->
-    F(R, fold_def_list(F, Acc, Defs));
-
-fold(F, Acc, #c_fun{vars=Vars, body=Body}=R) ->
-    F(R, fold(F, fold_list(F, Acc, Vars), Body));
-fold(F, Acc, #c_let{vars=Vs, arg=Arg, body=Body}=R) ->
-    F(R, fold(F, fold(F, fold_list(F, Acc, Vs), Arg), Body));
-fold(F, Acc, #c_letrec{defs=Fs,body=Body}=R) ->
-    F(R, fold(F, fold_def_list(F, Acc, Fs), Body));
-fold(F, Acc, #c_seq{arg=Arg, body=Body}=R) ->
-    F(R, fold(F, fold(F, Acc, Arg), Body));
-fold(F, Acc, #c_case{arg=Arg, clauses=Clauses}=R) ->
-    F(R, fold_list(F, fold(F, Acc, Arg), Clauses));
-fold(F, Acc, #c_clause{pats=Ps,guard=G,body=B}=R) ->
-    F(R, fold(F, fold(F, fold_list(F, Acc, Ps), G), B));
-fold(F, Acc, #c_receive{clauses=Cl, timeout=Ti, action=Ac}=R) ->
-    F(R, fold_list(F, fold(F, fold(F, Acc, Ac), Ti), Cl));
-fold(F, Acc, #c_apply{op=Op, args=Args}=R) ->
-    F(R, fold_list(F, fold(F, Acc, Op), Args));
-fold(F, Acc, #c_call{module=Mod,name=Name,args=Args}=R) ->
-    F(R, fold_list(F, fold(F, fold(F, Acc, Mod), Name), Args));
-fold(F, Acc, #c_primop{name=Name,args=Args}=R) ->
-    F(R, fold_list(F, fold(F, Acc, Name), Args));
-fold(F, Acc, #c_try{arg=E,vars=Vs,body=Body,evars=Evs,handler=H}=R) ->
-    NewB = fold(F, fold_list(F, fold(F, Acc, E), Vs), Body),
-    F(R, fold(F, fold_list(F, NewB, Evs), H));
-fold(F, Acc, #c_catch{body=Body}=R) ->
-    F(R, fold(F, Acc, Body));
-fold(F, Acc, T) ->				%Atomic nodes
-    F(T, Acc).
-
-fold_list(F, Acc, L) ->
-    lists:foldl(fun (E, A) -> fold(F, A, E) end, Acc, L).
-
-fold_def_list(F, Acc, L) ->
-    lists:foldl(fun ({_,V}, A) ->
-			fold(F, A, V)
-		end, Acc, L).
-
-
-
-%% mapfold(MapfoldFun, Accumulator, CoreExpr) -> {CoreExpr,Accumulator}.
-%%  This function traverses the core parse format, at each level
-%%  applying the submited argument function, assumed to do the real
-%%  work, and keeping the accumulated result in the A (accumulator)
-%%  argument.
-
-mapfold(F, Acc0, #c_tuple{es=Es0}=R) ->
-    {Es1,Acc1} = mapfold_list(F, Acc0, Es0),
-    F(R#c_tuple{es=Es1}, Acc1);
-mapfold(F, Acc0, #c_cons{hd=H0,tl=T0}=R) ->
-    {H1,Acc1} = mapfold(F, Acc0, H0),
-    {T1,Acc2} = mapfold(F, Acc1, T0),
-    F(R#c_cons{hd=H1,tl=T1}, Acc2);
-mapfold(F, Acc0, #c_values{es=Es0}=R) ->
-    {Es1,Acc1} = mapfold_list(F, Acc0, Es0),
-    F(R#c_values{es=Es1}, Acc1);
-
-mapfold(F, Acc0, #c_alias{pat=P0,var=V0}=R) ->
-    {P1,Acc1} = mapfold(F, Acc0, P0),
-    {V1,Acc2} = mapfold(F, Acc1, V0),
-    F(R#c_alias{pat=P1,var=V1}, Acc2);
-
-mapfold(F, Acc0, #c_module{defs=D0}=R) ->
-    {D1,Acc1} = mapfold_def_list(F, Acc0, D0),
-    F(R#c_module{defs=D1}, Acc1);
-
-mapfold(F, Acc0, #c_fun{vars=Vs0, body=B0}=R) ->
-    {Vs1,Acc1} = mapfold_list(F, Acc0, Vs0),
-    {B1,Acc2} = mapfold(F, Acc1, B0),
-    F(R#c_fun{vars=Vs1,body=B1}, Acc2);
-mapfold(F, Acc0, #c_let{vars=Vs0, arg=A0, body=B0}=R) ->
-    {Vs1,Acc1} = mapfold_list(F, Acc0, Vs0),
-    {A1,Acc2} = mapfold(F, Acc1, A0),
-    {B1,Acc3} = mapfold(F, Acc2, B0),
-    F(R#c_let{vars=Vs1,arg=A1,body=B1}, Acc3);
-mapfold(F, Acc0, #c_letrec{defs=Fs0,body=B0}=R) ->
-    {Fs1,Acc1} = mapfold_def_list(F, Acc0, Fs0),
-    {B1,Acc2} = mapfold(F, Acc1, B0),
-    F(R#c_letrec{defs=Fs1,body=B1}, Acc2);
-mapfold(F, Acc0, #c_seq{arg=A0, body=B0}=R) ->
-    {A1,Acc1} = mapfold(F, Acc0, A0),
-    {B1,Acc2} = mapfold(F, Acc1, B0),
-    F(R#c_seq{arg=A1,body=B1}, Acc2);
-mapfold(F, Acc0, #c_case{arg=A0,clauses=Cs0}=R) ->
-    {A1,Acc1} = mapfold(F, Acc0, A0),
-    {Cs1,Acc2} = mapfold_list(F, Acc1, Cs0),
-    F(R#c_case{arg=A1,clauses=Cs1}, Acc2);
-mapfold(F, Acc0, #c_clause{pats=Ps0,guard=G0,body=B0}=R) ->
-    {Ps1,Acc1} = mapfold_list(F, Acc0, Ps0),
-    {G1,Acc2} = mapfold(F, Acc1, G0),
-    {B1,Acc3} = mapfold(F, Acc2, B0),
-    F(R#c_clause{pats=Ps1,guard=G1,body=B1}, Acc3);
-mapfold(F, Acc0, #c_receive{clauses=Cs0,timeout=T0,action=A0}=R) ->
-    {T1,Acc1} = mapfold(F, Acc0, T0),
-    {Cs1,Acc2} = mapfold_list(F, Acc1, Cs0),
-    {A1,Acc3} = mapfold(F, Acc2, A0),
-    F(R#c_receive{clauses=Cs1,timeout=T1,action=A1}, Acc3);
-mapfold(F, Acc0, #c_apply{op=Op0, args=As0}=R) ->
-    {Op1,Acc1} = mapfold(F, Acc0, Op0),
-    {As1,Acc2} = mapfold_list(F, Acc1, As0),
-    F(R#c_apply{op=Op1,args=As1}, Acc2);
-mapfold(F, Acc0, #c_call{module=M0,name=N0,args=As0}=R) ->
-    {M1,Acc1} = mapfold(F, Acc0, M0),
-    {N1,Acc2} = mapfold(F, Acc1, N0),
-    {As1,Acc3} = mapfold_list(F, Acc2, As0),
-    F(R#c_call{module=M1,name=N1,args=As1}, Acc3);
-mapfold(F, Acc0, #c_primop{name=N0, args=As0}=R) ->
-    {N1,Acc1} = mapfold(F, Acc0, N0),
-    {As1,Acc2} = mapfold_list(F, Acc1, As0),
-    F(R#c_primop{name=N1,args=As1}, Acc2);
-mapfold(F, Acc0, #c_try{arg=E0,vars=Vs0,body=B0,evars=Evs0,handler=H0}=R) ->
-    {E1,Acc1} = mapfold(F, Acc0, E0),
-    {Vs1,Acc2} = mapfold_list(F, Acc1, Vs0),
-    {B1,Acc3} = mapfold(F, Acc2, B0),
-    {Evs1,Acc4} = mapfold_list(F, Acc3, Evs0),
-    {H1,Acc5} = mapfold(F, Acc4, H0),
-    F(R#c_try{arg=E1,vars=Vs1,body=B1,evars=Evs1,handler=H1}, Acc5);
-mapfold(F, Acc0, #c_catch{body=B0}=R) ->
-    {B1,Acc1} = mapfold(F, Acc0, B0),
-    F(R#c_catch{body=B1}, Acc1);
-mapfold(F, Acc, T) ->				%Atomic nodes
-	F(T, Acc).
-
-mapfold_list(F, Acc, L) ->
-    lists:mapfoldl(fun (E, A) -> mapfold(F, A, E) end, Acc, L).
-
-mapfold_def_list(F, Acc, L) ->
-    lists:mapfoldl(fun ({N,V0}, A0) ->
-			   {V1,A1} = mapfold(F, A0, V0),
-			   {{N,V1},A1}
-		   end, Acc, L).
 
 %% is_var_used(VarName, Expr) -> true | false.
 %%  Test if the variable VarName is used in Expr.
@@ -413,7 +150,6 @@ vu_expr(V, #c_fun{vars=Vs,body=B}) ->
 	true -> false;
 	false -> vu_expr(V, B)
     end;
-vu_expr(_, #c_fname{}) -> false;
 vu_expr(V, #c_let{vars=Vs,arg=Arg,body=B}) ->
     case vu_expr(V, Arg) of
 	true -> true;
@@ -549,112 +285,3 @@ vu_pat_seg_list(V, Ss, St) ->
 
 vu_var_list(V, Vs) ->
     lists:any(fun (#c_var{name=V2}) -> V =:= V2 end, Vs).
-
-%% free_vars(Expr) -> [FreeVar].
-%%  Return a list of the variables occurring free in Expr.
-
-free_vars(E) ->
-    Free = free(E, gb_sets:empty(), gb_sets:empty()),
-    gb_sets:to_list(Free).
-
-free(#c_fname{}, _, Free) -> Free;
-free(#c_literal{}, _, Free) -> Free;
-free(#c_tuple{es=Es}, Scope, Free) ->
-    free_list(Es, Scope, Free);
-free(#c_values{es=Es}, Scope, Free) ->
-    free_list(Es, Scope, Free);
-free(#c_cons{hd=Hd,tl=Tl}, Scope, Free0) ->
-    Free = free(Hd, Scope, Free0),
-    free(Tl, Scope, Free);
-free(#c_binary{segments=Ss}, Scope, Free) ->
-    free_segs(Ss, Scope, Free);
-free(#c_var{name=V}, Scope, Free) ->
-    case gb_sets:is_member(V, Scope) of
-	false -> gb_sets:add(V, Free);
-	true -> Free
-    end;
-free(#c_apply{op=Op,args=Args}, Scope, Free0) ->
-    Free = free(Op, Scope, Free0),
-    free_list(Args, Scope, Free);
-free(#c_primop{name=Name,args=Args}, Scope, Free0) ->
-    Free = free(Name, Scope, Free0),
-    free_list(Args, Scope, Free);
-free(#c_call{module=M,name=Name,args=Args}, Scope, Free0) ->
-    Free1 = free(M, Scope, Free0),
-    Free = free(Name, Scope, Free1),
-    free_list(Args, Scope, Free);
-free(#c_case{arg=Arg,clauses=Cs}, Scope, Free0) ->
-    Free = free(Arg, Scope, Free0),
-    free_cs(Cs, Scope, Free);
-free(#c_seq{arg=Arg,body=B}, Scope, Free0) ->
-    Free = free(Arg, Scope, Free0),
-    free(B, Scope, Free);
-free(#c_let{vars=Vs,arg=Arg,body=B}, Scope0, Free0) ->
-    Free = free(Arg, Scope0, Free0),
-    Scope = lists:foldl(fun(#c_var{name=V}, Sc) -> gb_sets:add(V, Sc) end, Scope0, Vs),
-    free(B, Scope, Free);
-free(#c_letrec{defs=Defs,body=B}, Scope0, Free0) ->
-    Free = free_def_list(Defs, Scope0, Free0),
-    free(B, Scope0, Free);
-free({_Name,Val}, Scope0, Free0) ->
-    free(Val, Scope0, Free0);
-free(#c_fun{vars=Vs,body=B}, Scope, Free) ->
-    free(#c_let{arg=#c_literal{val=[]},vars=Vs,body=B}, Scope, Free);
-free(#c_try{arg=Arg,vars=Vs,body=B,evars=Evs,handler=H}, Scope, Free) ->
-    free(#c_let{vars=Vs,arg=Arg,body=#c_let{arg=B,vars=Evs,body=H}}, Scope, Free);
-free(#c_catch{body=B}, Scope, Free) ->
-    free(B, Scope, Free);
-free(#c_receive{clauses=Cs,timeout=To,action=Action}, Scope, Free0) ->
-    Free1 = free_cs(Cs, Scope, Free0),
-    Free = free(To, Scope, Free1),
-    free(Action, Scope, Free).
-
-free_list([E|Es], Scope, Free0) ->
-    Free = free(E, Scope, Free0),
-    free_list(Es, Scope, Free);
-free_list([], _, Free) -> Free.
-
-free_def_list([{_,V}|Es], Scope, Free0) ->
-    Free = free(V, Scope, Free0),
-    free_def_list(Es, Scope, Free);
-free_def_list([], _, Free) -> Free.
-
-free_segs([#c_bitstr{val=Val,size=Size}|Bs], Scope, Free0) ->
-    Free1 = free(Val, Scope, Free0),
-    Free = free(Size, Scope, Free1),
-    free_segs(Bs, Scope, Free);
-free_segs([], _, Free) -> Free.
-
-free_cs([C|Cs], Scope, Free0) ->
-    Free = free_clause(C, Scope, Free0),
-    free_cs(Cs, Scope, Free);
-free_cs([], _, Free) -> Free.
-
-free_clause(#c_clause{pats=Pats,guard=G,body=B}, Scope0, Free0) ->
-    {Scope,Free1} = free_pat_list(Pats, Scope0, Free0),
-    Free = free(G, Scope, Free1),
-    free(B, Scope, Free).
-
-free_pat_list([P|Ps], Scope0, Free0) ->
-    {Scope,Free} = free_pat(P, Scope0, Free0),
-    free_pat_list(Ps, Scope, Free);
-free_pat_list([], Scope, Free) -> {Scope,Free}.
-
-free_pat(#c_var{name=V}, Scope, Free) ->
-    {gb_sets:add(V, Scope),Free};
-free_pat(#c_alias{var=#c_var{name=V},pat=Pat}, Scope, Free) ->
-    free_pat(Pat, gb_sets:add(V, Scope), Free);
-free_pat(#c_literal{}, Scope, Free) -> {Scope,Free};
-free_pat(#c_binary{segments=Ss}, Scope, Free) ->
-    free_seg_pats(Ss, Scope, Free);
-free_pat(#c_cons{hd=Hd,tl=Tl}, Scope0, Free0) ->
-    {Scope,Free} = free_pat(Hd, Scope0, Free0),
-    free_pat(Tl, Scope, Free);
-free_pat(#c_tuple{es=Ps}, Scope, Free) ->
-    free_pat_list(Ps, Scope, Free).
-
-free_seg_pats([#c_bitstr{val=Val,size=Size}|Bs], Scope0, Free0) ->
-    {Scope1,Free1} = free_pat(Val, Scope0, Free0),
-    {Scope,Free} = free_pat(Size, Scope1, Free1),
-    free_seg_pats(Bs, Scope, Free);
-free_seg_pats([], Scope, Free) -> {Scope,Free}.

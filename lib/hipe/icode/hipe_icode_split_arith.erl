@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%-------------------------------------------------------------------
 %% File    : hipe_icode_split_arith.erl
 %% Author  : Tobias Lindahl <tobiasl@it.uu.se>
@@ -332,14 +350,15 @@ make_tests(Cfg, InfoMap, NewToOldMap, OldToNewMap) ->
   end.
 
 make_worklist([Lbl|Left], InfoMap, LabelMap, Cfg, Acc) ->
-  case infomap_get_killed(Lbl, InfoMap) of
-    {0,nil} -> make_worklist(Left, InfoMap, LabelMap, Cfg, Acc);
-    Vars ->
+  Vars = infomap_get_killed(Lbl, InfoMap),
+  case gb_sets:is_empty(Vars) of
+    true -> make_worklist(Left, InfoMap, LabelMap, Cfg, Acc);
+    false ->
       %%io:format("make_worklist 1 ~w\n",[Vars]),
       NewAcc0 =
 	[{Lbl, Succ, gb_trees:get(Succ, LabelMap),
 	  gb_sets:intersection(infomap_get(Succ, InfoMap), Vars)}
-	 || Succ<-hipe_icode_cfg:succ(Cfg, Lbl)],
+	 || Succ <- hipe_icode_cfg:succ(Cfg, Lbl)],
       NewAcc = [{Lbl, Succ, FailLbl, gb_sets:to_list(PrunedVars)}
 		|| {Lbl, Succ, FailLbl, PrunedVars} <- NewAcc0,
 		   gb_sets:is_empty(PrunedVars) =:= false] ++ Acc,

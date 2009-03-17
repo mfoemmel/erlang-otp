@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>2005-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 
 -define(HTTP_REQUEST_TIMEOUT, infinity).
@@ -23,6 +23,8 @@
 -define(HTTP_PIPELINE_LENGTH, 2).
 -define(HTTP_MAX_TCP_SESSIONS, 2).
 -define(HTTP_MAX_REDIRECTS, 4).
+-define(HTTP_KEEP_ALIVE_TIMEOUT, 120000).
+-define(HTTP_KEEP_ALIVE_LENGTH, 5).
 
 %%% HTTP Client per request settings
 -record(http_options,{
@@ -36,11 +38,14 @@
 	  relaxed = false % bool() true if not strictly standard compliant
 	 }).
 
-%%% HTTP Client per profile setting. Currently there is only one profile.
+%%% HTTP Client per profile setting. 
 -record(options, {
 	  proxy =  {undefined, []}, % {{ProxyHost, ProxyPort}, [NoProxy]},
-	  pipeline_timeout = ?HTTP_PIPELINE_TIMEOUT,
+	  %% 0 means persistent connections are used without pipelining
+	  pipeline_timeout = ?HTTP_PIPELINE_TIMEOUT, 
 	  max_pipeline_length = ?HTTP_PIPELINE_LENGTH,
+	  max_keep_alive_length = ?HTTP_KEEP_ALIVE_LENGTH,
+	  keep_alive_timeout = ?HTTP_KEEP_ALIVE_TIMEOUT, % Used when pipeline_timeout = 0
 	  max_sessions =  ?HTTP_MAX_TCP_SESSIONS,
 	  cookies = disabled, % enabled | disabled | verify
 	  ipv6 = enabled, % enabled | disabled
@@ -72,7 +77,8 @@
 	  client_close, % true | false
 	  scheme,       % http (HTTP/TCP) | https (HTTP/SSL/TCP)
 	  socket,       % Open socket, used by connection
-	  pipeline_length = 1 % Current length of pipeline 
+	  queue_length = 1, % Current length of pipeline or keep alive queue  
+	  type         % pipeline | keep_alive (wait for response before sending new request) 
 	 }).
 
 -record(http_cookie,{

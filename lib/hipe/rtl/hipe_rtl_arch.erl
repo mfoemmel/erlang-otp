@@ -1,13 +1,31 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.
 %%=====================================================================
 %%  Filename : 	hipe_rtl_arch.erl
 %%  History  :	* 2001-04-10 Erik Johansson (happi@it.uu.se): Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2008/04/20 13:01:13 $
-%%              $Revision: 1.67 $
+%%              $Author: mikpe $
+%%              $Date: 2009/01/21 20:20:57 $
+%%              $Revision: 1.69 $
 %%=====================================================================
 %% @doc
 %%
@@ -22,9 +40,12 @@
 	 heap_pointer/0,
 	 heap_limit/0,
 	 fcalls/0,
-	 add_ra_reg/1,
 	 reg_name/1,
 	 is_precoloured/1,
+	 call_defined/0,
+	 call_used/0,
+	 tailcall_used/0,
+	 return_used/0,
 	 live_at_return/0,
 	 endianess/0,
 	 load_big_2/4,
@@ -164,22 +185,6 @@ fcalls_from_pcb() ->
   Reg = hipe_rtl:mk_new_reg(),
   {pcb_load(Reg, ?P_FCALLS), Reg, pcb_store(?P_FCALLS, Reg)}.
 
--spec(add_ra_reg/1 :: ([X]) -> [X]).
-
-add_ra_reg(Rest) ->
-  case get(hipe_target_arch) of
-    ultrasparc ->
-      [hipe_rtl:mk_reg(hipe_sparc_registers:return_address()) | Rest];
-    powerpc ->
-      Rest;	% do not include LR: it's not a normal register
-    arm ->
-      [hipe_rtl:mk_reg(hipe_arm_registers:lr()) | Rest];
-    x86 ->
-      Rest;
-    amd64 ->
-      Rest
-  end.
-
 reg_name(Reg) ->
   case get(hipe_target_arch) of
     ultrasparc ->
@@ -224,6 +229,18 @@ is_precolored_regnum(RegNum) ->
     amd64 ->
       hipe_amd64_registers:is_precoloured(RegNum)
   end.
+
+call_defined() ->
+  call_used().
+
+call_used() ->
+  live_at_return().
+
+tailcall_used() ->
+  call_used().
+
+return_used() ->
+  tailcall_used().
 
 live_at_return() ->
   case get(hipe_target_arch) of

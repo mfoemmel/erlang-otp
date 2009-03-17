@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(io_lib_pretty).
 
@@ -223,7 +224,7 @@ pp_element(E, Col, Ll, M, TInd, Ind, LD, W) ->
 
 %% Reuse the list created by io_lib:write_binary()...
 pp_binary([LT,LT,S,GT,GT], Col, Ll, M, Ind, LD, W) ->
-    N = max(8, min(Ll - Col, M - 4 - W) - LD),
+    N = erlang:max(8, erlang:min(Ll - Col, M - 4 - W) - LD),
     [LT,LT,pp_binary(S, N, N, Ind),GT,GT].
 
 pp_binary([BS, $, | S], N, N0, Ind) ->
@@ -428,12 +429,12 @@ printable_list(L, _D) ->
 %     end.
 
 printable_bin(Bin, D) when D >= 0, ?CHARS * D =< byte_size(Bin) ->
-    printable_bin(Bin, min(?CHARS * D, byte_size(Bin)), D);
+    printable_bin(Bin, erlang:min(?CHARS * D, byte_size(Bin)), D);
 printable_bin(Bin, D) ->
     printable_bin(Bin, byte_size(Bin), D).
 
 printable_bin(Bin, Len, D) ->
-    N = min(20, Len),
+    N = erlang:min(20, Len),
     L = binary_to_list(Bin, 1, N),
     case printable_list1(L, N) of
         all when N =:= byte_size(Bin)  ->
@@ -458,7 +459,7 @@ printable_bin(Bin, Len, D) ->
 printable_bin1(_Bin, _Start, 0) ->
     0;
 printable_bin1(Bin, Start, Len) ->
-    N = min(10000, Len),
+    N = erlang:min(10000, Len),
     L = binary_to_list(Bin, Start, Start + N - 1),
     case printable_list1(L, N) of
         all ->
@@ -618,12 +619,6 @@ while_fail([], _F, V) ->
     V;
 while_fail([A | As], F, V) ->
     try F(A) catch _ -> while_fail(As, F, V) end.
-
-min(X, Y) when X =< Y -> X;
-min(_X, Y) -> Y.
-
-max(X, Y) when X >= Y -> X;
-max(_X, Y) -> Y.
 
 indent(N) when is_integer(N), N > 0 ->
     chars($\s, N-1).

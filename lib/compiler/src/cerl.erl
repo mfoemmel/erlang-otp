@@ -1,20 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Richard Carlsson.
-%% Copyright (C) 1999-2002 Richard Carlsson.
-%% Portions created by Ericsson are Copyright 2001, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 
 %% =====================================================================
 %% @doc Core Erlang abstract syntax trees.
@@ -37,6 +37,10 @@
 %% type-correct arguments - if this is not done, the effects are not
 %% defined.</p>
 %%
+%% <p>Currently, the internal data structure used is the same as
+%% the record-based data structures used traditionally in the Beam
+%% compiler.</p>
+%% 
 %% <p>The internal representations of abstract syntax trees are
 %% subject to change without notice, and should not be documented
 %% outside this module. Furthermore, we do not give any guarantees on
@@ -138,11 +142,6 @@
 %% the annotation field only).
 %% =====================================================================
 
-%% This defines the general representation of constant literals:
-
--record(literal, {ann = [], val}).
-
-
 %% @spec type(Node::cerl()) -> atom()
 %%
 %% @doc Returns the type tag of <code>Node</code>. Current node types
@@ -214,8 +213,27 @@
 %% @see subtrees/1
 %% @see meta/1
 
-type(Node) ->
-    element(1, Node).
+type(#c_literal{}) -> literal;
+type(#c_binary{}) -> binary;
+type(#c_bitstr{}) -> bitstr;
+type(#c_cons{}) -> cons;
+type(#c_tuple{}) -> tuple;
+type(#c_var{}) -> var;
+type(#c_values{}) -> values;
+type(#c_fun{}) -> 'fun';
+type(#c_seq{}) -> seq;
+type(#c_let{}) -> 'let';
+type(#c_letrec{}) -> letrec;
+type(#c_case{}) -> 'case';
+type(#c_clause{}) -> clause;
+type(#c_alias{}) ->  alias;
+type(#c_receive{}) -> 'receive';
+type(#c_apply{}) -> apply;
+type(#c_call{}) -> call;
+type(#c_primop{}) -> primop;
+type(#c_try{}) -> 'try';
+type(#c_catch{}) -> 'catch';
+type(#c_module{}) -> module.
 
 
 %% @spec is_leaf(Node::cerl()) -> bool()
@@ -311,14 +329,14 @@ copy_ann(Source, Target) ->
 %% @see is_literal_term/1
 
 abstract(T) ->
-    #literal{val = T}.
+    #c_literal{val = T}.
 
 
 %% @spec ann_abstract(Annotations::[term()], Term::term()) -> cerl()
 %% @see abstract/1
 
 ann_abstract(As, T) ->
-    #literal{val = T, ann = As}.
+    #c_literal{val = T, anno = As}.
 
 
 %% @spec is_literal_term(Term::term()) -> bool()
@@ -344,6 +362,7 @@ is_literal_term([H | T]) ->
     end;
 is_literal_term(T) when is_tuple(T) ->
     is_literal_term_list(tuple_to_list(T));
+is_literal_term(B) when is_bitstring(B) -> true;
 is_literal_term(_) ->
     false.
 
@@ -375,7 +394,7 @@ is_literal_term_list([]) ->
 %% return a literal if the arguments are literals, 'concrete' and
 %% 'is_literal' never need to traverse the structure.
 
-concrete(#literal{val = V}) ->
+concrete(#c_literal{val = V}) ->
     V.
 
 
@@ -392,7 +411,7 @@ concrete(#literal{val = V}) ->
 %% @see concrete/1
 %% @see fold_literal/1
 
-is_literal(#literal{}) ->
+is_literal(#c_literal{}) ->
     true;
 is_literal(_) ->
     false.
@@ -477,9 +496,6 @@ unfold_concrete_list([]) ->
 
 %% ---------------------------------------------------------------------
 
--record(module, {ann = [], name, exports, attrs, defs}).
-
-
 %% @spec c_module(Name::cerl(), Exports, Definitions) -> cerl()
 %%
 %%     Exports = [cerl()]
@@ -488,7 +504,7 @@ unfold_concrete_list([]) ->
 %% @equiv c_module(Name, Exports, [], Definitions)
 
 c_module(Name, Exports, Es) ->
-    #module{name = Name, exports = Exports, attrs = [], defs = Es}.
+    #c_module{name = Name, exports = Exports, attrs = [], defs = Es}.
 
 
 %% @spec c_module(Name::cerl(), Exports, Attributes, Definitions) ->
@@ -534,7 +550,7 @@ c_module(Name, Exports, Es) ->
 %% @see is_literal/1
 
 c_module(Name, Exports, Attrs, Es) ->
-    #module{name = Name, exports = Exports, attrs = Attrs, defs = Es}.
+    #c_module{name = Name, exports = Exports, attrs = Attrs, defs = Es}.
 
 
 %% @spec ann_c_module(As::[term()], Name::cerl(), Exports,
@@ -547,8 +563,8 @@ c_module(Name, Exports, Attrs, Es) ->
 %% @see ann_c_module/5
 
 ann_c_module(As, Name, Exports, Es) ->
-    #module{name = Name, exports = Exports, attrs = [], defs = Es,
-	    ann = As}.
+    #c_module{name = Name, exports = Exports, attrs = [], defs = Es,
+	      anno = As}.
 
 
 %% @spec ann_c_module(As::[term()], Name::cerl(), Exports,
@@ -562,8 +578,8 @@ ann_c_module(As, Name, Exports, Es) ->
 %% @see ann_c_module/4
 
 ann_c_module(As, Name, Exports, Attrs, Es) ->
-    #module{name = Name, exports = Exports, attrs = Attrs, defs = Es,
-	    ann = As}.
+    #c_module{name = Name, exports = Exports, attrs = Attrs, defs = Es,
+	    anno = As}.
 
 
 %% @spec update_c_module(Old::cerl(), Name::cerl(), Exports,
@@ -576,8 +592,8 @@ ann_c_module(As, Name, Exports, Attrs, Es) ->
 %% @see c_module/4
 
 update_c_module(Node, Name, Exports, Attrs, Es) ->
-    #module{name = Name, exports = Exports, attrs = Attrs, defs = Es,
-	    ann = get_ann(Node)}.
+    #c_module{name = Name, exports = Exports, attrs = Attrs, defs = Es,
+	      anno = get_ann(Node)}.
 
 
 %% @spec is_c_module(Node::cerl()) -> bool()
@@ -587,7 +603,7 @@ update_c_module(Node, Name, Exports, Attrs, Es) ->
 %%
 %% @see type/1
 
-is_c_module(#module{}) ->
+is_c_module(#c_module{}) ->
     true;
 is_c_module(_) ->
     false.
@@ -600,7 +616,7 @@ is_c_module(_) ->
 %% @see c_module/4
 
 module_name(Node) ->
-    Node#module.name.
+    Node#c_module.name.
 
 
 %% @spec module_exports(Node::cerl()) -> [cerl()]
@@ -611,7 +627,7 @@ module_name(Node) ->
 %% @see c_module/4
 
 module_exports(Node) ->
-    Node#module.exports.
+    Node#c_module.exports.
 
 
 %% @spec module_attrs(Node::cerl()) -> [{cerl(), cerl()}]
@@ -622,7 +638,7 @@ module_exports(Node) ->
 %% @see c_module/4
 
 module_attrs(Node) ->
-    Node#module.attrs.
+    Node#c_module.attrs.
 
 
 %% @spec module_defs(Node::cerl()) -> [{cerl(), cerl()}]
@@ -633,7 +649,7 @@ module_attrs(Node) ->
 %% @see c_module/4
 
 module_defs(Node) ->
-    Node#module.defs.
+    Node#c_module.defs.
 
 
 %% @spec module_vars(Node::cerl()) -> [cerl()]
@@ -662,14 +678,14 @@ module_vars(Node) ->
 %% @see c_char/1
 
 c_int(Value) ->
-    #literal{val = Value}.
+    #c_literal{val = Value}.
 
 
 %% @spec ann_c_int(As::[term()], Value::integer()) -> cerl()
 %% @see c_int/1
 
 ann_c_int(As, Value) ->
-    #literal{val = Value, ann = As}.
+    #c_literal{val = Value, anno = As}.
 
 
 %% @spec is_c_int(Node::cerl()) -> bool()
@@ -678,7 +694,7 @@ ann_c_int(As, Value) ->
 %% integer literal, otherwise <code>false</code>.
 %% @see c_int/1
 
-is_c_int(#literal{val = V}) when is_integer(V) ->
+is_c_int(#c_literal{val = V}) when is_integer(V) ->
     true;
 is_c_int(_) ->
     false.
@@ -689,9 +705,9 @@ is_c_int(_) ->
 %% @doc Returns the value represented by an integer literal node.
 %% @see c_int/1
 
--spec int_val(#literal{}) -> integer().
+-spec int_val(#c_literal{}) -> integer().
 int_val(Node) ->
-    Node#literal.val.
+    Node#c_literal.val.
 
 
 %% @spec int_lit(cerl()) -> string()
@@ -700,7 +716,7 @@ int_val(Node) ->
 %% node.
 %% @see c_int/1
 
--spec int_lit(#literal{}) -> string().
+-spec int_lit(#c_literal{}) -> string().
 int_lit(Node) ->
     integer_to_list(int_val(Node)).
 
@@ -721,16 +737,16 @@ int_lit(Node) ->
 %% Note that not all floating-point numerals can be represented with
 %% full precision.
 
--spec c_float(float()) -> #literal{}.
+-spec c_float(float()) -> #c_literal{}.
 c_float(Value) ->
-    #literal{val = Value}.
+    #c_literal{val = Value}.
 
 
 %% @spec ann_c_float(As::[term()], Value::float()) -> cerl()
 %% @see c_float/1
 
 ann_c_float(As, Value) ->
-    #literal{val = Value, ann = As}.
+    #c_literal{val = Value, anno = As}.
 
 
 %% @spec is_c_float(Node::cerl()) -> bool()
@@ -739,7 +755,7 @@ ann_c_float(As, Value) ->
 %% floating-point literal, otherwise <code>false</code>.
 %% @see c_float/1
 
-is_c_float(#literal{val = V}) when is_float(V) ->
+is_c_float(#c_literal{val = V}) when is_float(V) ->
     true;
 is_c_float(_) ->
     false.
@@ -751,9 +767,9 @@ is_c_float(_) ->
 %% node.
 %% @see c_float/1
 
--spec float_val(#literal{}) -> float().
+-spec float_val(#c_literal{}) -> float().
 float_val(Node) ->
-    Node#literal.val.
+    Node#c_literal.val.
 
 
 %% @spec float_lit(cerl()) -> string()
@@ -762,7 +778,7 @@ float_val(Node) ->
 %% literal node.
 %% @see c_float/1
 
--spec float_lit(#literal{}) -> string().
+-spec float_lit(#c_literal{}) -> string().
 float_lit(Node) ->
     float_to_list(float_val(Node)).
 
@@ -784,11 +800,11 @@ float_lit(Node) ->
 %% @see atom_name/1
 %% @see atom_lit/1
 
--spec c_atom(atom() | string()) -> #literal{}.
+-spec c_atom(atom() | string()) -> #c_literal{}.
 c_atom(Name) when is_atom(Name) ->
-    #literal{val = Name};
+    #c_literal{val = Name};
 c_atom(Name) ->
-    #literal{val = list_to_atom(Name)}.
+    #c_literal{val = list_to_atom(Name)}.
 
 
 %% @spec ann_c_atom(As::[term()], Name) -> cerl()
@@ -796,9 +812,9 @@ c_atom(Name) ->
 %% @see c_atom/1
 
 ann_c_atom(As, Name) when is_atom(Name) ->
-    #literal{val = Name, ann = As};
+    #c_literal{val = Name, anno = As};
 ann_c_atom(As, Name) ->
-    #literal{val = list_to_atom(Name), ann = As}.
+    #c_literal{val = list_to_atom(Name), anno = As}.
 
 
 %% @spec is_c_atom(Node::cerl()) -> bool()
@@ -808,7 +824,7 @@ ann_c_atom(As, Name) ->
 %%
 %% @see c_atom/1
 
-is_c_atom(#literal{val = V}) when is_atom(V) ->
+is_c_atom(#c_literal{val = V}) when is_atom(V) ->
     true;
 is_c_atom(_) ->
     false.
@@ -819,9 +835,9 @@ is_c_atom(_) ->
 %%
 %% @see c_atom/1
 
--spec atom_val(#literal{}) -> atom().
+-spec atom_val(#c_literal{}) -> atom().
 atom_val(Node) ->
-    Node#literal.val.
+    Node#c_literal.val.
 
 
 %% @spec atom_name(cerl()) -> string()
@@ -830,7 +846,7 @@ atom_val(Node) ->
 %%
 %% @see c_atom/1
 
--spec atom_name(#literal{}) -> string().
+-spec atom_name(#c_literal{}) -> string().
 atom_name(Node) ->
     atom_to_list(atom_val(Node)).
 
@@ -877,16 +893,16 @@ atom_lit(Node) ->
 %% @see char_lit/1
 %% @see is_print_char/1
 
--spec c_char(non_neg_integer()) -> #literal{}.
+-spec c_char(non_neg_integer()) -> #c_literal{}.
 c_char(Value) when is_integer(Value), Value >= 0 ->
-    #literal{val = Value}.
+    #c_literal{val = Value}.
 
 
 %% @spec ann_c_char(As::[term()], Value::char()) -> cerl()
 %% @see c_char/1
 
 ann_c_char(As, Value) ->
-    #literal{val = Value, ann = As}.
+    #c_literal{val = Value, anno = As}.
 
 
 %% @spec is_c_char(Node::cerl()) -> bool()
@@ -902,7 +918,7 @@ ann_c_char(As, Value) ->
 %% @see c_char/1
 %% @see is_print_char/1
 
-is_c_char(#literal{val = V}) when is_integer(V), V >= 0 ->
+is_c_char(#c_literal{val = V}) when is_integer(V), V >= 0 ->
     is_char_value(V);
 is_c_char(_) ->
     false.
@@ -920,7 +936,7 @@ is_c_char(_) ->
 %% @see c_char/1
 %% @see is_c_char/1
 
-is_print_char(#literal{val = V}) when is_integer(V), V >= 0 ->
+is_print_char(#c_literal{val = V}) when is_integer(V), V >= 0 ->
     is_print_char_value(V);
 is_print_char(_) ->
     false.
@@ -932,9 +948,9 @@ is_print_char(_) ->
 %%
 %% @see c_char/1
 
--spec char_val(#literal{}) -> char().
+-spec char_val(#c_literal{}) -> char().
 char_val(Node) ->
-    Node#literal.val.
+    Node#c_literal.val.
 
 
 %% @spec char_lit(cerl()) -> string()
@@ -946,7 +962,7 @@ char_val(Node) ->
 %%
 %% @see c_char/1
 
--spec char_lit(#literal{}) -> string().
+-spec char_lit(#c_literal{}) -> string().
 char_lit(Node) ->
     io_lib:write_char(char_val(Node)).
 
@@ -969,16 +985,16 @@ char_lit(Node) ->
 %% @see string_lit/1
 %% @see is_print_string/1
 
--spec c_string(string()) -> #literal{}.
+-spec c_string(string()) -> #c_literal{}.
 c_string(Value) ->
-    #literal{val = Value}.
+    #c_literal{val = Value}.
 
 
 %% @spec ann_c_string(As::[term()], Value::string()) -> cerl()
 %% @see c_string/1
 
 ann_c_string(As, Value) ->
-    #literal{val = Value, ann = As}.
+    #c_literal{val = Value, anno = As}.
 
 
 %% @spec is_c_string(Node::cerl()) -> bool()
@@ -991,7 +1007,7 @@ ann_c_string(As, Value) ->
 %% @see is_c_char/1
 %% @see is_print_string/1
 
-is_c_string(#literal{val = V}) ->
+is_c_string(#c_literal{val = V}) ->
     is_char_list(V);
 is_c_string(_) ->
     false.
@@ -1009,7 +1025,7 @@ is_c_string(_) ->
 %% @see is_c_string/1
 %% @see is_print_char/1
 
-is_print_string(#literal{val = V}) ->
+is_print_string(#c_literal{val = V}) ->
     is_print_char_list(V);
 is_print_string(_) ->
     false.
@@ -1021,9 +1037,9 @@ is_print_string(_) ->
 %%
 %% @see c_string/1
 
--spec string_val(#literal{}) -> string().
+-spec string_val(#c_literal{}) -> string().
 string_val(Node) ->
-    Node#literal.val.
+    Node#c_literal.val.
 
 
 %% @spec string_lit(cerl()) -> string()
@@ -1036,7 +1052,7 @@ string_val(Node) ->
 %%
 %% @see c_string/1
 
--spec string_lit(#literal{}) -> string().
+-spec string_lit(#c_literal{}) -> string().
 string_lit(Node) ->
     io_lib:write_string(string_val(Node)).
 
@@ -1052,16 +1068,16 @@ string_lit(Node) ->
 %% @see is_c_list/1
 %% @see c_cons/2
 
--spec c_nil() -> #literal{}.
+-spec c_nil() -> #c_literal{}.
 c_nil() ->
-    #literal{val = []}.
+    #c_literal{val = []}.
 
 
 %% @spec ann_c_nil(As::[term()]) -> cerl()
 %% @see c_nil/0
 
 ann_c_nil(As) ->
-    #literal{val = [], ann = As}.
+    #c_literal{val = [], anno = As}.
 
 
 %% @spec is_c_nil(Node::cerl()) -> bool()
@@ -1069,7 +1085,7 @@ ann_c_nil(As) ->
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% empty list, otherwise <code>false</code>.
 
-is_c_nil(#literal{val = []}) ->
+is_c_nil(#c_literal{val = []}) ->
     true;
 is_c_nil(_) ->
     false.
@@ -1101,33 +1117,31 @@ is_c_nil(_) ->
 %% @see list_length/1
 %% @see make_list/2
 
--record(cons, {ann = [], hd, tl}).
-
 %% *Always* collapse literals.
 
-c_cons(#literal{val = Head}, #literal{val = Tail}) ->
-    #literal{val = [Head | Tail]};
+c_cons(#c_literal{val = Head}, #c_literal{val = Tail}) ->
+    #c_literal{val = [Head | Tail]};
 c_cons(Head, Tail) ->
-    #cons{hd = Head, tl = Tail}.
+    #c_cons{hd = Head, tl = Tail}.
 
 
 %% @spec ann_c_cons(As::[term()], Head::cerl(), Tail::cerl()) -> cerl()
 %% @see c_cons/2
 
-ann_c_cons(As, #literal{val = Head}, #literal{val = Tail}) ->
-    #literal{val = [Head | Tail], ann = As};
+ann_c_cons(As, #c_literal{val = Head}, #c_literal{val = Tail}) ->
+    #c_literal{val = [Head | Tail], anno = As};
 ann_c_cons(As, Head, Tail) ->
-    #cons{hd = Head, tl = Tail, ann = As}.
+    #c_cons{hd = Head, tl = Tail, anno = As}.
 
 
 %% @spec update_c_cons(Old::cerl(), Head::cerl(), Tail::cerl()) ->
 %%           cerl()
 %% @see c_cons/2
 
-update_c_cons(Node, #literal{val = Head}, #literal{val = Tail}) ->
-    #literal{val = [Head | Tail], ann = get_ann(Node)};
+update_c_cons(Node, #c_literal{val = Head}, #c_literal{val = Tail}) ->
+    #c_literal{val = [Head | Tail], anno = get_ann(Node)};
 update_c_cons(Node, Head, Tail) ->
-    #cons{hd = Head, tl = Tail, ann = get_ann(Node)}.
+    #c_cons{hd = Head, tl = Tail, anno = get_ann(Node)}.
 
 
 %% @spec c_cons_skel(Head::cerl(), Tail::cerl()) -> cerl()
@@ -1160,7 +1174,7 @@ update_c_cons(Node, Head, Tail) ->
 %% *Never* collapse literals.
 
 c_cons_skel(Head, Tail) ->
-    #cons{hd = Head, tl = Tail}.
+    #c_cons{hd = Head, tl = Tail}.
 
 
 %% @spec ann_c_cons_skel(As::[term()], Head::cerl(), Tail::cerl()) ->
@@ -1168,7 +1182,7 @@ c_cons_skel(Head, Tail) ->
 %% @see c_cons_skel/2
 
 ann_c_cons_skel(As, Head, Tail) ->
-    #cons{hd = Head, tl = Tail, ann = As}.
+    #c_cons{hd = Head, tl = Tail, anno = As}.
 
 
 %% @spec update_c_cons_skel(Old::cerl(), Head::cerl(), Tail::cerl()) ->
@@ -1176,7 +1190,7 @@ ann_c_cons_skel(As, Head, Tail) ->
 %% @see c_cons_skel/2
 
 update_c_cons_skel(Node, Head, Tail) ->
-    #cons{hd = Head, tl = Tail, ann = get_ann(Node)}.
+    #c_cons{hd = Head, tl = Tail, anno = get_ann(Node)}.
 
 
 %% @spec is_c_cons(Node::cerl()) -> bool()
@@ -1184,9 +1198,9 @@ update_c_cons_skel(Node, Head, Tail) ->
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% list constructor, otherwise <code>false</code>.
 
-is_c_cons(#cons{}) ->
+is_c_cons(#c_cons{}) ->
     true;
-is_c_cons(#literal{val = [_ | _]}) ->
+is_c_cons(#c_literal{val = [_ | _]}) ->
     true;
 is_c_cons(_) ->
     false.
@@ -1198,10 +1212,10 @@ is_c_cons(_) ->
 %%
 %% @see c_cons/2
 
-cons_hd(#cons{hd = Head}) ->
+cons_hd(#c_cons{hd = Head}) ->
     Head;
-cons_hd(#literal{val = [Head | _]}) ->
-    #literal{val = Head}.
+cons_hd(#c_literal{val = [Head | _]}) ->
+    #c_literal{val = Head}.
 
 
 %% @spec cons_tl(cerl()) -> cerl()
@@ -1213,10 +1227,10 @@ cons_hd(#literal{val = [Head | _]}) ->
 %%
 %% @see c_cons/2
 
-cons_tl(#cons{tl = Tail}) ->
+cons_tl(#c_cons{tl = Tail}) ->
     Tail;
-cons_tl(#literal{val = [_ | Tail]}) ->
-    #literal{val = Tail}.
+cons_tl(#c_literal{val = [_ | Tail]}) ->
+    #c_literal{val = Tail}.
 
 
 %% @spec is_c_list(Node::cerl()) -> bool()
@@ -1242,9 +1256,9 @@ cons_tl(#literal{val = [_ | Tail]}) ->
 %% @see list_elements/1
 %% @see list_length/1
 
-is_c_list(#cons{tl = Tail}) ->
+is_c_list(#c_cons{tl = Tail}) ->
     is_c_list(Tail);
-is_c_list(#literal{val = V}) ->
+is_c_list(#c_literal{val = V}) ->
     is_proper_list(V);
 is_c_list(_) ->
     false.
@@ -1271,9 +1285,9 @@ is_proper_list(_) ->
 %% @see list_length/1
 %% @see make_list/2
 
-list_elements(#cons{hd = Head, tl = Tail}) ->
+list_elements(#c_cons{hd = Head, tl = Tail}) ->
     [Head | list_elements(Tail)];
-list_elements(#literal{val = V}) ->
+list_elements(#c_literal{val = V}) ->
     abstract_list(V).
 
 abstract_list([X | Xs]) ->
@@ -1299,14 +1313,14 @@ abstract_list([]) ->
 %% @see is_c_list/1
 %% @see list_elements/1
 
--spec list_length(#cons{} | #literal{}) -> non_neg_integer().
+-spec list_length(#c_cons{} | #c_literal{}) -> non_neg_integer().
 list_length(L) ->
     list_length(L, 0).
 
--spec list_length(#cons{} | #literal{}, non_neg_integer()) -> non_neg_integer().
-list_length(#cons{tl = Tail}, A) ->
+-spec list_length(#c_cons{} | #c_literal{}, non_neg_integer()) -> non_neg_integer().
+list_length(#c_cons{tl = Tail}, A) ->
     list_length(Tail, A + 1);
-list_length(#literal{val = V}, A) ->
+list_length(#c_literal{val = V}, A) ->
     A + length(V).
 
 
@@ -1398,16 +1412,14 @@ ann_make_list(_, [], Node) ->
 %% @see tuple_arity/1
 %% @see c_tuple_skel/1
 
--record(tuple, {ann = [], es}).
-
 %% *Always* collapse literals.
 
 c_tuple(Es) ->
     case is_lit_list(Es) of
 	false ->
-	    #tuple{es = Es};
+	    #c_tuple{es = Es};
 	true ->
-	    #literal{val = list_to_tuple(lit_list_vals(Es))}
+	    #c_literal{val = list_to_tuple(lit_list_vals(Es))}
     end.
 
 
@@ -1417,9 +1429,9 @@ c_tuple(Es) ->
 ann_c_tuple(As, Es) ->
     case is_lit_list(Es) of
 	false ->
-	    #tuple{es = Es, ann = As};
+	    #c_tuple{es = Es, anno = As};
 	true ->
-	    #literal{val = list_to_tuple(lit_list_vals(Es)), ann = As}
+	    #c_literal{val = list_to_tuple(lit_list_vals(Es)), anno = As}
     end.
 
 
@@ -1429,10 +1441,10 @@ ann_c_tuple(As, Es) ->
 update_c_tuple(Node, Es) ->
     case is_lit_list(Es) of
 	false ->
-	    #tuple{es = Es, ann = get_ann(Node)};
+	    #c_tuple{es = Es, anno = get_ann(Node)};
 	true ->
-	    #literal{val = list_to_tuple(lit_list_vals(Es)),
-		     ann = get_ann(Node)}
+	    #c_literal{val = list_to_tuple(lit_list_vals(Es)),
+		       anno = get_ann(Node)}
     end.
 
 
@@ -1465,21 +1477,21 @@ update_c_tuple(Node, Es) ->
 %% *Never* collapse literals.
 
 c_tuple_skel(Es) ->
-    #tuple{es = Es}.
+    #c_tuple{es = Es}.
 
 
 %% @spec ann_c_tuple_skel(As::[term()], Elements::[cerl()]) -> cerl()
 %% @see c_tuple_skel/1
 
 ann_c_tuple_skel(As, Es) ->
-    #tuple{es = Es, ann = As}.
+    #c_tuple{es = Es, anno = As}.
 
 
 %% @spec update_c_tuple_skel(Old::cerl(), Elements::[cerl()]) -> cerl()
 %% @see c_tuple_skel/1
 
 update_c_tuple_skel(Old, Es) ->
-    #tuple{es = Es, ann = get_ann(Old)}.
+    #c_tuple{es = Es, anno = get_ann(Old)}.
 
 
 %% @spec is_c_tuple(Node::cerl()) -> bool()
@@ -1489,9 +1501,9 @@ update_c_tuple_skel(Old, Es) ->
 %%
 %% @see c_tuple/1
 
-is_c_tuple(#tuple{}) ->
+is_c_tuple(#c_tuple{}) ->
     true;
-is_c_tuple(#literal{val = V}) when is_tuple(V) ->
+is_c_tuple(#c_literal{val = V}) when is_tuple(V) ->
     true;
 is_c_tuple(_) ->
     false.
@@ -1503,9 +1515,9 @@ is_c_tuple(_) ->
 %%
 %% @see c_tuple/1
 
-tuple_es(#tuple{es = Es}) ->
+tuple_es(#c_tuple{es = Es}) ->
     Es;
-tuple_es(#literal{val = V}) ->
+tuple_es(#c_literal{val = V}) ->
     make_lit_list(tuple_to_list(V)).
 
 
@@ -1519,10 +1531,10 @@ tuple_es(#literal{val = V}) ->
 %% @see tuple_es/1
 %% @see c_tuple/1
 
--spec tuple_arity(#tuple{} | #literal{}) -> non_neg_integer().
-tuple_arity(#tuple{es = Es}) ->
+-spec tuple_arity(#c_tuple{} | #c_literal{}) -> non_neg_integer().
+tuple_arity(#c_tuple{es = Es}) ->
     length(Es);
-tuple_arity(#literal{val = V}) when is_tuple(V) ->
+tuple_arity(#c_literal{val = V}) when is_tuple(V) ->
     tuple_size(V).
 
 
@@ -1567,30 +1579,26 @@ tuple_arity(#literal{val = V}) when is_tuple(V) ->
 %% @see c_module/4
 %% @see c_letrec/2
 
--type var_name() :: integer() | atom() | {atom(), integer()}.
-
--record(var, {ann = [], name :: var_name()}).
-
--spec c_var(var_name()) -> #var{}.
+-spec c_var(var_name()) -> #c_var{}.
 c_var(Name) ->
-    #var{name = Name}.
+    #c_var{name = Name}.
 
 
 %% @spec ann_c_var(As::[term()], Name::var_name()) -> cerl()
 %%
 %% @see c_var/1
 
--spec ann_c_var([_], var_name()) -> #var{}.
+-spec ann_c_var([_], var_name()) -> #c_var{}.
 ann_c_var(As, Name) ->
-    #var{name = Name, ann = As}.
+    #c_var{name = Name, anno = As}.
 
 %% @spec update_c_var(Old::cerl(), Name::var_name()) -> cerl()
 %%
 %% @see c_var/1
 
--spec update_c_var(#var{}, var_name()) -> #var{}.
+-spec update_c_var(#c_var{}, var_name()) -> #c_var{}.
 update_c_var(Node, Name) ->
-    #var{name = Name, ann = get_ann(Node)}.
+    #c_var{name = Name, anno = get_ann(Node)}.
 
 
 %% @spec is_c_var(Node::cerl()) -> bool()
@@ -1600,7 +1608,7 @@ update_c_var(Node, Name) ->
 %%
 %% @see c_var/1
 
-is_c_var(#var{}) ->
+is_c_var(#c_var{}) ->
     true;
 is_c_var(_) ->
     false.
@@ -1614,7 +1622,7 @@ is_c_var(_) ->
 %% @see ann_c_fname/3
 %% @see update_c_fname/3
 
--spec c_fname(atom(), integer()) -> #var{}.
+-spec c_fname(atom(), integer()) -> #c_var{}.
 c_fname(Atom, Arity) ->
     c_var({Atom, Arity}).
 
@@ -1624,7 +1632,7 @@ c_fname(Atom, Arity) ->
 %% @equiv ann_c_var(As, {Atom, Arity})
 %% @see c_fname/2
 
--spec ann_c_fname([_], atom(), integer()) -> #var{}.
+-spec ann_c_fname([_], atom(), integer()) -> #c_var{}.
 ann_c_fname(As, Atom, Arity) ->
     ann_c_var(As, {Atom, Arity}).
 
@@ -1635,9 +1643,9 @@ ann_c_fname(As, Atom, Arity) ->
 %% @see update_c_fname/3
 %% @see c_fname/2
 
--spec update_c_fname(#var{}, atom()) -> #var{}.
-update_c_fname(#var{name = {_, Arity}, ann = As}, Atom) ->
-    #var{name = {Atom, Arity}, ann = As}.
+-spec update_c_fname(#c_var{}, atom()) -> #c_var{}.
+update_c_fname(#c_var{name = {_, Arity}, anno = As}, Atom) ->
+    #c_var{name = {Atom, Arity}, anno = As}.
 
 
 %% @spec update_c_fname(Old::cerl(), Name::atom(), Arity::integer()) ->
@@ -1646,7 +1654,7 @@ update_c_fname(#var{name = {_, Arity}, ann = As}, Atom) ->
 %% @see update_c_fname/2
 %% @see c_fname/2
 
--spec update_c_fname(#var{}, atom(), integer()) -> #var{}.
+-spec update_c_fname(#c_var{}, atom(), integer()) -> #c_var{}.
 update_c_fname(Node, Atom, Arity) ->
     update_c_var(Node, {Atom, Arity}).
 
@@ -1660,7 +1668,7 @@ update_c_fname(Node, Atom, Arity) ->
 %% @see c_var/1
 %% @see c_var_name/1
 
-is_c_fname(#var{name = {A, N}}) when is_atom(A), is_integer(N), N >= 0 ->
+is_c_fname(#c_var{name = {A, N}}) when is_atom(A), is_integer(N), N >= 0 ->
     true;
 is_c_fname(_) ->
     false.
@@ -1672,9 +1680,9 @@ is_c_fname(_) ->
 %%
 %% @see c_var/1
 
--spec var_name(#var{}) -> var_name().
+-spec var_name(#c_var{}) -> var_name().
 var_name(Node) ->
-    Node#var.name.
+    Node#c_var.name.
 
 
 %% @spec fname_id(cerl()) -> atom()
@@ -1685,8 +1693,8 @@ var_name(Node) ->
 %% @see fname_arity/1
 %% @see c_fname/2
 
--spec fname_id(#var{}) -> atom().
-fname_id(#var{name={A,_}}) ->
+-spec fname_id(#c_var{}) -> atom().
+fname_id(#c_var{name={A,_}}) ->
     A.
 
 
@@ -1697,8 +1705,8 @@ fname_id(#var{name={A,_}}) ->
 %% @see fname_id/1
 %% @see c_fname/2
 
--spec fname_arity(#var{}) -> byte().
-fname_arity(#var{name={_,N}}) ->
+-spec fname_arity(#c_var{}) -> byte().
+fname_arity(#c_var{name={_,N}}) ->
     N.
 
 
@@ -1716,24 +1724,22 @@ fname_arity(#var{name={_,N}}) ->
 %% @see values_es/1
 %% @see values_arity/1
 
--record(values, {ann = [], es}).
-
 c_values(Es) ->
-    #values{es = Es}.
+    #c_values{es = Es}.
 
 
 %% @spec ann_c_values(As::[term()], Elements::[cerl()]) -> cerl()
 %% @see c_values/1
 
 ann_c_values(As, Es) ->
-    #values{es = Es, ann = As}.
+    #c_values{es = Es, anno = As}.
 
 
 %% @spec update_c_values(Old::cerl(), Elements::[cerl()]) -> cerl()
 %% @see c_values/1
 
 update_c_values(Node, Es) ->
-    #values{es = Es, ann = get_ann(Node)}.
+    #c_values{es = Es, anno = get_ann(Node)}.
 
 
 %% @spec is_c_values(Node::cerl()) -> bool()
@@ -1743,7 +1749,7 @@ update_c_values(Node, Es) ->
 %%
 %% @see c_values/1
 
-is_c_values(#values{}) ->
+is_c_values(#c_values{}) ->
     true;
 is_c_values(_) ->
     false.
@@ -1758,7 +1764,7 @@ is_c_values(_) ->
 %% @see values_arity/1
 
 values_es(Node) ->
-    Node#values.es.
+    Node#c_values.es.
 
 
 %% @spec values_arity(Node::cerl()) -> integer()
@@ -1773,7 +1779,7 @@ values_es(Node) ->
 %% @see c_values/1
 %% @see values_es/1
 
--spec values_arity(#values{}) -> non_neg_integer().
+-spec values_arity(#c_values{}) -> non_neg_integer().
 values_arity(Node) ->
     length(values_es(Node)).
 
@@ -1796,24 +1802,22 @@ values_arity(Node) ->
 %% @see binary_segments/1
 %% @see c_bitstr/5
 
--record(binary, {ann = [], segments}).
-
 c_binary(Segments) ->
-    #binary{segments = Segments}.
+    #c_binary{segments = Segments}.
 
 
 %% @spec ann_c_binary(As::[term()], Segments::[cerl()]) -> cerl()
 %% @see c_binary/1
 
 ann_c_binary(As, Segments) ->
-    #binary{segments = Segments, ann = As}.
+    #c_binary{segments = Segments, anno = As}.
 
 
 %% @spec update_c_binary(Old::cerl(), Segments::[cerl()]) -> cerl()
 %% @see c_binary/1
 
 update_c_binary(Node, Segments) ->
-    #binary{segments = Segments, ann = get_ann(Node)}.
+    #c_binary{segments = Segments, anno = get_ann(Node)}.
 
 
 %% @spec is_c_binary(Node::cerl()) -> bool()
@@ -1823,7 +1827,7 @@ update_c_binary(Node, Segments) ->
 %%
 %% @see c_binary/1
 
-is_c_binary(#binary{}) ->
+is_c_binary(#c_binary{}) ->
     true;
 is_c_binary(_) ->
     false.
@@ -1838,7 +1842,7 @@ is_c_binary(_) ->
 %% @see c_bitstr/5
 
 binary_segments(Node) ->
-    Node#binary.segments.
+    Node#c_binary.segments.
 
 
 %% @spec c_bitstr(Value::cerl(), Size::cerl(), Unit::cerl(),
@@ -1865,11 +1869,9 @@ binary_segments(Node) ->
 %% @see bitstr_type/1
 %% @see bitstr_flags/1
 
--record(bitstr, {ann = [], val, size, unit, type, flags}).
-
 c_bitstr(Val, Size, Unit, Type, Flags) ->
-    #bitstr{val = Val, size = Size, unit = Unit, type = Type,
-	    flags = Flags}.
+    #c_bitstr{val = Val, size = Size, unit = Unit, type = Type,
+	      flags = Flags}.
 
 
 %% @spec c_bitstr(Value::cerl(), Size::cerl(), Type::cerl(),
@@ -1894,8 +1896,8 @@ c_bitstr(Val, Type, Flags) ->
 %% @see ann_c_bitstr/5
 
 ann_c_bitstr(As, Val, Size, Unit, Type, Flags) ->
-    #bitstr{val = Val, size = Size, unit = Unit, type = Type,
-	     flags = Flags, ann = As}.
+    #c_bitstr{val = Val, size = Size, unit = Unit, type = Type,
+	      flags = Flags, anno = As}.
 
 %% @spec ann_c_bitstr(As::[term()], Value::cerl(), Size::cerl(),
 %%                    Type::cerl(), Flags::cerl()) -> cerl()
@@ -1911,8 +1913,8 @@ ann_c_bitstr(As, Value, Size, Type, Flags) ->
 %% @see update_c_bitstr/5
 
 update_c_bitstr(Node, Val, Size, Unit, Type, Flags) ->
-    #bitstr{val = Val, size = Size, unit = Unit, type = Type,
-	     flags = Flags, ann = get_ann(Node)}.
+    #c_bitstr{val = Val, size = Size, unit = Unit, type = Type,
+	     flags = Flags, anno = get_ann(Node)}.
 
 
 %% @spec update_c_bitstr(Old::cerl(), Value::cerl(), Size::cerl(),
@@ -1929,7 +1931,7 @@ update_c_bitstr(Node, Value, Size, Type, Flags) ->
 %%
 %% @see c_bitstr/5
 
-is_c_bitstr(#bitstr{}) ->
+is_c_bitstr(#c_bitstr{}) ->
     true;
 is_c_bitstr(_) ->
     false.
@@ -1942,7 +1944,7 @@ is_c_bitstr(_) ->
 %% @see c_bitstr/5
 
 bitstr_val(Node) ->
-    Node#bitstr.val.
+    Node#c_bitstr.val.
 
 
 %% @spec bitstr_size(cerl()) -> cerl()
@@ -1952,31 +1954,34 @@ bitstr_val(Node) ->
 %% @see c_bitstr/5
 
 bitstr_size(Node) ->
-    Node#bitstr.size.
+    Node#c_bitstr.size.
 
 
-%% @spec bitstr_bitsize(cerl()) -> integer() | any | all
+%% @spec bitstr_bitsize(cerl()) -> any | all | utf | integer()
 %%
 %% @doc Returns the total size in bits of an abstract bit-string
 %% template. If the size field is an integer literal, the result is the
 %% product of the size and unit values; if the size field is the atom
-%% literal <code>all</code>, the atom <code>all</code> is returned; in
-%% all other cases, the atom <code>any</code> is returned.
+%% literal <code>all</code>, the atom <code>all</code> is returned.
+%% If the size is not a literal, the atom <code>any</code> is returned.
 %%
 %% @see c_bitstr/5
 
--spec bitstr_bitsize(#bitstr{}) -> 'all' | 'any' | integer().
+-spec bitstr_bitsize(#c_bitstr{}) -> 'all' | 'any' | 'utf' | non_neg_integer().
+
 bitstr_bitsize(Node) ->
-    Size = Node#bitstr.size,
+    Size = Node#c_bitstr.size,
     case is_literal(Size) of
 	true ->
 	    case concrete(Size) of
 		all ->
 		    all;
+		undefined ->
+		     %% just an assertion below
+		    "utf" ++ _ = atom_to_list(concrete(Node#c_bitstr.type)),
+		    utf;
 		S when is_integer(S) ->
-		    S*concrete(Node#bitstr.unit);
-		true ->
-		    any
+		    S * concrete(Node#c_bitstr.unit)
 	    end;
 	false ->
 	    any
@@ -1990,7 +1995,7 @@ bitstr_bitsize(Node) ->
 %% @see c_bitstr/5
 
 bitstr_unit(Node) ->
-    Node#bitstr.unit.
+    Node#c_bitstr.unit.
 
 
 %% @spec bitstr_type(cerl()) -> cerl()
@@ -2000,7 +2005,7 @@ bitstr_unit(Node) ->
 %% @see c_bitstr/5
 
 bitstr_type(Node) ->
-    Node#bitstr.type.
+    Node#c_bitstr.type.
 
 
 %% @spec bitstr_flags(cerl()) -> cerl()
@@ -2010,7 +2015,7 @@ bitstr_type(Node) ->
 %% @see c_bitstr/5
 
 bitstr_flags(Node) ->
-    Node#bitstr.flags.
+    Node#c_bitstr.flags.
 
 
 %% ---------------------------------------------------------------------
@@ -2029,10 +2034,8 @@ bitstr_flags(Node) ->
 %% @see fun_body/1
 %% @see fun_arity/1
 
--record('fun', {ann = [], vars, body}).
-
 c_fun(Variables, Body) ->
-    #'fun'{vars = Variables, body = Body}.
+    #c_fun{vars = Variables, body = Body}.
 
 
 %% @spec ann_c_fun(As::[term()], Variables::[cerl()], Body::cerl()) ->
@@ -2040,7 +2043,7 @@ c_fun(Variables, Body) ->
 %% @see c_fun/2
 
 ann_c_fun(As, Variables, Body) ->
-    #'fun'{vars = Variables, body = Body, ann = As}.
+    #c_fun{vars = Variables, body = Body, anno = As}.
 
 
 %% @spec update_c_fun(Old::cerl(), Variables::[cerl()],
@@ -2048,7 +2051,7 @@ ann_c_fun(As, Variables, Body) ->
 %% @see c_fun/2
 
 update_c_fun(Node, Variables, Body) ->
-    #'fun'{vars = Variables, body = Body, ann = get_ann(Node)}.
+    #c_fun{vars = Variables, body = Body, anno = get_ann(Node)}.
 
 
 %% @spec is_c_fun(Node::cerl()) -> bool()
@@ -2058,7 +2061,7 @@ update_c_fun(Node, Variables, Body) ->
 %%
 %% @see c_fun/2
 
-is_c_fun(#'fun'{}) ->
+is_c_fun(#c_fun{}) ->
     true;		% Now this is fun!
 is_c_fun(_) ->
     false.
@@ -2073,7 +2076,7 @@ is_c_fun(_) ->
 %% @see fun_arity/1
 
 fun_vars(Node) ->
-    Node#'fun'.vars.
+    Node#c_fun.vars.
 
 
 %% @spec fun_body(cerl()) -> cerl()
@@ -2083,7 +2086,7 @@ fun_vars(Node) ->
 %% @see c_fun/2
 
 fun_body(Node) ->
-    Node#'fun'.body.
+    Node#c_fun.body.
 
 
 %% @spec fun_arity(Node::cerl()) -> integer()
@@ -2114,10 +2117,8 @@ fun_arity(Node) ->
 %% @see seq_arg/1
 %% @see seq_body/1
 
--record(seq, {ann = [], arg, body}).
-
 c_seq(Argument, Body) ->
-    #seq{arg = Argument, body = Body}.
+    #c_seq{arg = Argument, body = Body}.
 
 
 %% @spec ann_c_seq(As::[term()], Argument::cerl(), Body::cerl()) ->
@@ -2125,7 +2126,7 @@ c_seq(Argument, Body) ->
 %% @see c_seq/2
 
 ann_c_seq(As, Argument, Body) ->
-    #seq{arg = Argument, body = Body, ann = As}.
+    #c_seq{arg = Argument, body = Body, anno = As}.
 
 
 %% @spec update_c_seq(Old::cerl(), Argument::cerl(), Body::cerl()) ->
@@ -2133,7 +2134,7 @@ ann_c_seq(As, Argument, Body) ->
 %% @see c_seq/2
 
 update_c_seq(Node, Argument, Body) ->
-    #seq{arg = Argument, body = Body, ann = get_ann(Node)}.
+    #c_seq{arg = Argument, body = Body, anno = get_ann(Node)}.
 
 
 %% @spec is_c_seq(Node::cerl()) -> bool()
@@ -2143,7 +2144,7 @@ update_c_seq(Node, Argument, Body) ->
 %%
 %% @see c_seq/2
 
-is_c_seq(#seq{}) ->
+is_c_seq(#c_seq{}) ->
     true;
 is_c_seq(_) ->
     false.
@@ -2157,7 +2158,7 @@ is_c_seq(_) ->
 %% @see c_seq/2
 
 seq_arg(Node) ->
-    Node#seq.arg.
+    Node#c_seq.arg.
 
 
 %% @spec seq_body(cerl()) -> cerl()
@@ -2167,7 +2168,7 @@ seq_arg(Node) ->
 %% @see c_seq/2
 
 seq_body(Node) ->
-    Node#seq.body.
+    Node#c_seq.body.
 
 
 %% ---------------------------------------------------------------------
@@ -2189,25 +2190,23 @@ seq_body(Node) ->
 %% @see let_body/1
 %% @see let_arity/1
 
--record('let', {ann = [], vars, arg, body}).
-
 c_let(Variables, Argument, Body) ->
-    #'let'{vars = Variables, arg = Argument, body = Body}.
+    #c_let{vars = Variables, arg = Argument, body = Body}.
 
 
 %% ann_c_let(As, Variables, Argument, Body) -> Node
 %% @see c_let/3
 
 ann_c_let(As, Variables, Argument, Body) ->
-    #'let'{vars = Variables, arg = Argument, body = Body, ann = As}.
+    #c_let{vars = Variables, arg = Argument, body = Body, anno = As}.
 
 
 %% update_c_let(Old, Variables, Argument, Body) -> Node
 %% @see c_let/3
 
 update_c_let(Node, Variables, Argument, Body) ->
-    #'let'{vars = Variables, arg = Argument, body = Body,
-	   ann = get_ann(Node)}.
+    #c_let{vars = Variables, arg = Argument, body = Body,
+	   anno = get_ann(Node)}.
 
 
 %% @spec is_c_let(Node::cerl()) -> bool()
@@ -2217,7 +2216,7 @@ update_c_let(Node, Variables, Argument, Body) ->
 %%
 %% @see c_let/3
 
-is_c_let(#'let'{}) ->
+is_c_let(#c_let{}) ->
     true;
 is_c_let(_) ->
     false.
@@ -2232,7 +2231,7 @@ is_c_let(_) ->
 %% @see let_arity/1
 
 let_vars(Node) ->
-    Node#'let'.vars.
+    Node#c_let.vars.
 
 
 %% @spec let_arg(cerl()) -> cerl()
@@ -2242,7 +2241,7 @@ let_vars(Node) ->
 %% @see c_let/3
 
 let_arg(Node) ->
-    Node#'let'.arg.
+    Node#c_let.arg.
 
 
 %% @spec let_body(cerl()) -> cerl()
@@ -2252,7 +2251,7 @@ let_arg(Node) ->
 %% @see c_let/3
 
 let_body(Node) ->
-    Node#'let'.body.
+    Node#c_let.body.
 
 
 %% @spec let_arity(Node::cerl()) -> integer()
@@ -2290,10 +2289,8 @@ let_arity(Node) ->
 %% @see letrec_body/1
 %% @see letrec_vars/1
 
--record(letrec, {ann = [], defs, body}).
-
 c_letrec(Defs, Body) ->
-    #letrec{defs = Defs, body = Body}.
+    #c_letrec{defs = Defs, body = Body}.
 
 
 %% @spec ann_c_letrec(As::[term()], Definitions::[{cerl(), cerl()}],
@@ -2301,7 +2298,7 @@ c_letrec(Defs, Body) ->
 %% @see c_letrec/2
 
 ann_c_letrec(As, Defs, Body) ->
-    #letrec{defs = Defs, body = Body, ann = As}.
+    #c_letrec{defs = Defs, body = Body, anno = As}.
 
 
 %% @spec update_c_letrec(Old::cerl(),
@@ -2310,7 +2307,7 @@ ann_c_letrec(As, Defs, Body) ->
 %% @see c_letrec/2
 
 update_c_letrec(Node, Defs, Body) ->
-    #letrec{defs = Defs, body = Body, ann = get_ann(Node)}.
+    #c_letrec{defs = Defs, body = Body, anno = get_ann(Node)}.
 
 
 %% @spec is_c_letrec(Node::cerl()) -> bool()
@@ -2320,7 +2317,7 @@ update_c_letrec(Node, Defs, Body) ->
 %%
 %% @see c_letrec/2
 
-is_c_letrec(#letrec{}) ->
+is_c_letrec(#c_letrec{}) ->
     true;
 is_c_letrec(_) ->
     false.
@@ -2337,7 +2334,7 @@ is_c_letrec(_) ->
 %% @see c_letrec/2
 
 letrec_defs(Node) ->
-    Node#letrec.defs.
+    Node#c_letrec.defs.
 
 
 %% @spec letrec_body(cerl()) -> cerl()
@@ -2347,7 +2344,7 @@ letrec_defs(Node) ->
 %% @see c_letrec/2
 
 letrec_body(Node) ->
-    Node#letrec.body.
+    Node#c_letrec.body.
 
 
 %% @spec letrec_vars(cerl()) -> [cerl()]
@@ -2381,10 +2378,8 @@ letrec_vars(Node) ->
 %% @see case_clauses/1
 %% @see case_arity/1
 
--record('case', {ann = [], arg, clauses}).
-
 c_case(Expr, Clauses) ->
-    #'case'{arg = Expr, clauses = Clauses}.
+    #c_case{arg = Expr, clauses = Clauses}.
 
 
 %% @spec ann_c_case(As::[term()], Argument::cerl(),
@@ -2392,7 +2387,7 @@ c_case(Expr, Clauses) ->
 %% @see c_case/2
 
 ann_c_case(As, Expr, Clauses) ->
-    #'case'{arg = Expr, clauses = Clauses, ann = As}.
+    #c_case{arg = Expr, clauses = Clauses, anno = As}.
 
 
 %% @spec update_c_case(Old::cerl(), Argument::cerl(),
@@ -2400,7 +2395,7 @@ ann_c_case(As, Expr, Clauses) ->
 %% @see c_case/2
 
 update_c_case(Node, Expr, Clauses) ->
-    #'case'{arg = Expr, clauses = Clauses, ann = get_ann(Node)}.
+    #c_case{arg = Expr, clauses = Clauses, anno = get_ann(Node)}.
 
 
 %% is_c_case(Node) -> bool()
@@ -2412,7 +2407,7 @@ update_c_case(Node, Expr, Clauses) ->
 %%
 %% @see c_case/2
 
-is_c_case(#'case'{}) ->
+is_c_case(#c_case{}) ->
     true;
 is_c_case(_) ->
     false.
@@ -2425,7 +2420,7 @@ is_c_case(_) ->
 %% @see c_case/2
 
 case_arg(Node) ->
-    Node#'case'.arg.
+    Node#c_case.arg.
 
 
 %% @spec case_clauses(cerl()) -> [cerl()]
@@ -2437,7 +2432,7 @@ case_arg(Node) ->
 %% @see case_arity/1
 
 case_clauses(Node) ->
-    Node#'case'.clauses.
+    Node#c_case.clauses.
 
 
 %% @spec case_arity(Node::cerl()) -> integer()
@@ -2484,10 +2479,8 @@ c_clause(Patterns, Body) ->
 %% @see clause_arity/1
 %% @see clause_vars/1
 
--record(clause, {ann = [], pats, guard, body}).
-
 c_clause(Patterns, Guard, Body) ->
-    #clause{pats = Patterns, guard = Guard, body = Body}.
+    #c_clause{pats = Patterns, guard = Guard, body = Body}.
 
 
 %% @spec ann_c_clause(As::[term()], Patterns::[cerl()],
@@ -2504,7 +2497,7 @@ ann_c_clause(As, Patterns, Body) ->
 %% @see c_clause/3
 
 ann_c_clause(As, Patterns, Guard, Body) ->
-    #clause{pats = Patterns, guard = Guard, body = Body, ann = As}.
+    #c_clause{pats = Patterns, guard = Guard, body = Body, anno = As}.
 
 
 %% @spec update_c_clause(Old::cerl(), Patterns::[cerl()],
@@ -2512,8 +2505,8 @@ ann_c_clause(As, Patterns, Guard, Body) ->
 %% @see c_clause/3
 
 update_c_clause(Node, Patterns, Guard, Body) ->
-    #clause{pats = Patterns, guard = Guard, body = Body,
-	    ann = get_ann(Node)}.
+    #c_clause{pats = Patterns, guard = Guard, body = Body,
+	      anno = get_ann(Node)}.
 
 
 %% @spec is_c_clause(Node::cerl()) -> bool()
@@ -2523,7 +2516,7 @@ update_c_clause(Node, Patterns, Guard, Body) ->
 %%
 %% @see c_clause/3
 
-is_c_clause(#clause{}) ->
+is_c_clause(#c_clause{}) ->
     true;
 is_c_clause(_) ->
     false.
@@ -2537,7 +2530,7 @@ is_c_clause(_) ->
 %% @see clause_arity/1
 
 clause_pats(Node) ->
-    Node#clause.pats.
+    Node#c_clause.pats.
 
 
 %% @spec clause_guard(cerl()) -> cerl()
@@ -2547,7 +2540,7 @@ clause_pats(Node) ->
 %% @see c_clause/3
 
 clause_guard(Node) ->
-    Node#clause.guard.
+    Node#c_clause.guard.
 
 
 %% @spec clause_body(cerl()) -> cerl()
@@ -2557,7 +2550,7 @@ clause_guard(Node) ->
 %% @see c_clause/3
 
 clause_body(Node) ->
-    Node#clause.body.
+    Node#c_clause.body.
 
 
 %% @spec clause_arity(Node::cerl()) -> integer()
@@ -2652,10 +2645,8 @@ pat_list_vars([], Vs) ->
 %% @see alias_pat/1
 %% @see c_clause/3
 
--record(alias, {ann = [], var, pat}).
-
 c_alias(Var, Pattern) ->
-    #alias{var = Var, pat = Pattern}.
+    #c_alias{var = Var, pat = Pattern}.
 
 
 %% @spec ann_c_alias(As::[term()], Variable::cerl(),
@@ -2663,7 +2654,7 @@ c_alias(Var, Pattern) ->
 %% @see c_alias/2
 
 ann_c_alias(As, Var, Pattern) ->
-    #alias{var = Var, pat = Pattern, ann = As}.
+    #c_alias{var = Var, pat = Pattern, anno = As}.
 
 
 %% @spec update_c_alias(Old::cerl(), Variable::cerl(),
@@ -2671,7 +2662,7 @@ ann_c_alias(As, Var, Pattern) ->
 %% @see c_alias/2
 
 update_c_alias(Node, Var, Pattern) ->
-    #alias{var = Var, pat = Pattern, ann = get_ann(Node)}.
+    #c_alias{var = Var, pat = Pattern, anno = get_ann(Node)}.
 
 
 %% @spec is_c_alias(Node::cerl()) -> bool()
@@ -2681,7 +2672,7 @@ update_c_alias(Node, Var, Pattern) ->
 %%
 %% @see c_alias/2
 
-is_c_alias(#alias{}) ->
+is_c_alias(#c_alias{}) ->
     true;
 is_c_alias(_) ->
     false.
@@ -2694,7 +2685,7 @@ is_c_alias(_) ->
 %% @see c_alias/2
 
 alias_var(Node) ->
-    Node#alias.var.
+    Node#c_alias.var.
 
 
 %% @spec alias_pat(cerl()) -> cerl()
@@ -2704,7 +2695,7 @@ alias_var(Node) ->
 %% @see c_alias/2
 
 alias_pat(Node) ->
-    Node#alias.pat.
+    Node#c_alias.pat.
 
 
 %% ---------------------------------------------------------------------
@@ -2733,10 +2724,8 @@ c_receive(Clauses) ->
 %% @see receive_timeout/1
 %% @see receive_action/1
 
--record('receive', {ann = [], clauses, timeout, action}).
-
 c_receive(Clauses, Timeout, Action) ->
-    #'receive'{clauses = Clauses, timeout = Timeout, action = Action}.
+    #c_receive{clauses = Clauses, timeout = Timeout, action = Action}.
 
 
 %% @spec ann_c_receive(As::[term()], Clauses::[cerl()]) -> cerl()
@@ -2754,8 +2743,8 @@ ann_c_receive(As, Clauses) ->
 %% @see c_receive/3
 
 ann_c_receive(As, Clauses, Timeout, Action) ->
-    #'receive'{clauses = Clauses, timeout = Timeout, action = Action,
-	       ann = As}.
+    #c_receive{clauses = Clauses, timeout = Timeout, action = Action,
+	       anno = As}.
 
 
 %% @spec update_c_receive(Old::cerl(), Clauses::[cerl()],
@@ -2763,8 +2752,8 @@ ann_c_receive(As, Clauses, Timeout, Action) ->
 %% @see c_receive/3
 
 update_c_receive(Node, Clauses, Timeout, Action) ->
-    #'receive'{clauses = Clauses, timeout = Timeout, action = Action,
-	       ann = get_ann(Node)}.
+    #c_receive{clauses = Clauses, timeout = Timeout, action = Action,
+	       anno = get_ann(Node)}.
 
 
 %% @spec is_c_receive(Node::cerl()) -> bool()
@@ -2774,7 +2763,7 @@ update_c_receive(Node, Clauses, Timeout, Action) ->
 %%
 %% @see c_receive/3
 
-is_c_receive(#'receive'{}) ->
+is_c_receive(#c_receive{}) ->
     true;
 is_c_receive(_) ->
     false.
@@ -2788,7 +2777,7 @@ is_c_receive(_) ->
 %% @see c_receive/3
 
 receive_clauses(Node) ->
-    Node#'receive'.clauses.
+    Node#c_receive.clauses.
 
 
 %% @spec receive_timeout(cerl()) -> cerl()
@@ -2798,7 +2787,7 @@ receive_clauses(Node) ->
 %% @see c_receive/3
 
 receive_timeout(Node) ->
-    Node#'receive'.timeout.
+    Node#c_receive.timeout.
 
 
 %% @spec receive_action(cerl()) -> cerl()
@@ -2808,7 +2797,7 @@ receive_timeout(Node) ->
 %% @see c_receive/3
 
 receive_action(Node) ->
-    Node#'receive'.action.
+    Node#c_receive.action.
 
 
 %% ---------------------------------------------------------------------
@@ -2829,10 +2818,8 @@ receive_action(Node) ->
 %% @see c_call/3
 %% @see c_primop/2
 
--record(apply, {ann = [], op, args}).
-
 c_apply(Operator, Arguments) ->
-    #apply{op = Operator, args = Arguments}.
+    #c_apply{op = Operator, args = Arguments}.
 
 
 %% @spec ann_c_apply(As::[term()], Operator::cerl(),
@@ -2840,7 +2827,7 @@ c_apply(Operator, Arguments) ->
 %% @see c_apply/2
 
 ann_c_apply(As, Operator, Arguments) ->
-    #apply{op = Operator, args = Arguments, ann = As}.
+    #c_apply{op = Operator, args = Arguments, anno = As}.
 
 
 %% @spec update_c_apply(Old::cerl(), Operator::cerl(),
@@ -2848,7 +2835,7 @@ ann_c_apply(As, Operator, Arguments) ->
 %% @see c_apply/2
 
 update_c_apply(Node, Operator, Arguments) ->
-    #apply{op = Operator, args = Arguments, ann = get_ann(Node)}.
+    #c_apply{op = Operator, args = Arguments, anno = get_ann(Node)}.
 
 
 %% @spec is_c_apply(Node::cerl()) -> bool()
@@ -2858,7 +2845,7 @@ update_c_apply(Node, Operator, Arguments) ->
 %%
 %% @see c_apply/2
 
-is_c_apply(#apply{}) ->
+is_c_apply(#c_apply{}) ->
     true;
 is_c_apply(_) ->
     false.
@@ -2872,7 +2859,7 @@ is_c_apply(_) ->
 %% @see c_apply/2
 
 apply_op(Node) ->
-    Node#apply.op.
+    Node#c_apply.op.
 
 
 %% @spec apply_args(cerl()) -> [cerl()]
@@ -2884,7 +2871,7 @@ apply_op(Node) ->
 %% @see apply_arity/1
 
 apply_args(Node) ->
-    Node#apply.args.
+    Node#c_apply.args.
 
 
 %% @spec apply_arity(Node::cerl()) -> integer()
@@ -2923,10 +2910,8 @@ apply_arity(Node) ->
 %% @see c_apply/2
 %% @see c_primop/2
 
--record(call, {ann = [], module, name, args}).
-
 c_call(Module, Name, Arguments) ->
-    #call{module = Module, name = Name, args = Arguments}.
+    #c_call{module = Module, name = Name, args = Arguments}.
 
 
 %% @spec ann_c_call(As::[term()], Module::cerl(), Name::cerl(),
@@ -2934,7 +2919,7 @@ c_call(Module, Name, Arguments) ->
 %% @see c_call/3
 
 ann_c_call(As, Module, Name, Arguments) ->
-    #call{module = Module, name = Name, args = Arguments, ann = As}.
+    #c_call{module = Module, name = Name, args = Arguments, anno = As}.
 
 
 %% @spec update_c_call(Old::cerl(), Module::cerl(), Name::cerl(),
@@ -2942,8 +2927,8 @@ ann_c_call(As, Module, Name, Arguments) ->
 %% @see c_call/3
 
 update_c_call(Node, Module, Name, Arguments) ->
-    #call{module = Module, name = Name, args = Arguments,
-	  ann = get_ann(Node)}.
+    #c_call{module = Module, name = Name, args = Arguments,
+	    anno = get_ann(Node)}.
 
 
 %% @spec is_c_call(Node::cerl()) -> bool()
@@ -2953,7 +2938,7 @@ update_c_call(Node, Module, Name, Arguments) ->
 %%
 %% @see c_call/3
 
-is_c_call(#call{}) ->
+is_c_call(#c_call{}) ->
     true;
 is_c_call(_) ->
     false.
@@ -2966,7 +2951,7 @@ is_c_call(_) ->
 %% @see c_call/3
 
 call_module(Node) ->
-    Node#call.module.
+    Node#c_call.module.
 
 
 %% @spec call_name(cerl()) -> cerl()
@@ -2976,7 +2961,7 @@ call_module(Node) ->
 %% @see c_call/3
 
 call_name(Node) ->
-    Node#call.name.
+    Node#c_call.name.
 
 
 %% @spec call_args(cerl()) -> [cerl()]
@@ -2988,7 +2973,7 @@ call_name(Node) ->
 %% @see call_arity/1
 
 call_args(Node) ->
-    Node#call.args.
+    Node#c_call.args.
 
 
 %% @spec call_arity(Node::cerl()) -> integer()
@@ -3025,10 +3010,8 @@ call_arity(Node) ->
 %% @see c_apply/2
 %% @see c_call/3
 
--record(primop, {ann = [], name, args}).
-
 c_primop(Name, Arguments) ->
-    #primop{name = Name, args = Arguments}.
+    #c_primop{name = Name, args = Arguments}.
 
 
 %% @spec ann_c_primop(As::[term()], Name::cerl(),
@@ -3036,7 +3019,7 @@ c_primop(Name, Arguments) ->
 %% @see c_primop/2
 
 ann_c_primop(As, Name, Arguments) ->
-    #primop{name = Name, args = Arguments, ann = As}.
+    #c_primop{name = Name, args = Arguments, anno = As}.
 
 
 %% @spec update_c_primop(Old::cerl(), Name::cerl(),
@@ -3044,7 +3027,7 @@ ann_c_primop(As, Name, Arguments) ->
 %% @see c_primop/2
 
 update_c_primop(Node, Name, Arguments) ->
-    #primop{name = Name, args = Arguments, ann = get_ann(Node)}.
+    #c_primop{name = Name, args = Arguments, anno = get_ann(Node)}.
 
 
 %% @spec is_c_primop(Node::cerl()) -> bool()
@@ -3054,7 +3037,7 @@ update_c_primop(Node, Name, Arguments) ->
 %%
 %% @see c_primop/2
 
-is_c_primop(#primop{}) ->
+is_c_primop(#c_primop{}) ->
     true;
 is_c_primop(_) ->
     false.
@@ -3068,7 +3051,7 @@ is_c_primop(_) ->
 %% @see c_primop/2
 
 primop_name(Node) ->
-    Node#primop.name.
+    Node#c_primop.name.
 
 
 %% @spec primop_args(cerl()) -> [cerl()]
@@ -3080,7 +3063,7 @@ primop_name(Node) ->
 %% @see primop_arity/1
 
 primop_args(Node) ->
-    Node#primop.args.
+    Node#c_primop.args.
 
 
 %% @spec primop_arity(Node::cerl()) -> integer()
@@ -3120,10 +3103,8 @@ primop_arity(Node) ->
 %% @see try_body/1
 %% @see c_catch/1
 
--record('try', {ann = [], arg, vars, body, evars, handler}).
-
 c_try(Expr, Vs, Body, Evs, Handler) ->
-    #'try'{arg = Expr, vars = Vs, body = Body,
+    #c_try{arg = Expr, vars = Vs, body = Body,
 	   evars = Evs, handler = Handler}.
 
 
@@ -3133,8 +3114,8 @@ c_try(Expr, Vs, Body, Evs, Handler) ->
 %% @see c_try/3
 
 ann_c_try(As, Expr, Vs, Body, Evs, Handler) ->
-    #'try'{arg = Expr, vars = Vs, body = Body,
-	   evars = Evs, handler = Handler, ann = As}.
+    #c_try{arg = Expr, vars = Vs, body = Body,
+	   evars = Evs, handler = Handler, anno = As}.
 
 
 %% @spec update_c_try(Old::cerl(), Expression::cerl(),
@@ -3143,8 +3124,8 @@ ann_c_try(As, Expr, Vs, Body, Evs, Handler) ->
 %% @see c_try/3
 
 update_c_try(Node, Expr, Vs, Body, Evs, Handler) ->
-    #'try'{arg = Expr, vars = Vs, body = Body,
-	   evars = Evs, handler = Handler, ann = get_ann(Node)}.
+    #c_try{arg = Expr, vars = Vs, body = Body,
+	   evars = Evs, handler = Handler, anno = get_ann(Node)}.
 
 
 %% @spec is_c_try(Node::cerl()) -> bool()
@@ -3154,7 +3135,7 @@ update_c_try(Node, Expr, Vs, Body, Evs, Handler) ->
 %%
 %% @see c_try/3
 
-is_c_try(#'try'{}) ->
+is_c_try(#c_try{}) ->
     true;
 is_c_try(_) ->
     false.
@@ -3167,7 +3148,7 @@ is_c_try(_) ->
 %% @see c_try/3
 
 try_arg(Node) ->
-    Node#'try'.arg.
+    Node#c_try.arg.
 
 
 %% @spec try_vars(cerl()) -> [cerl()]
@@ -3178,7 +3159,7 @@ try_arg(Node) ->
 %% @see c_try/3
 
 try_vars(Node) ->
-    Node#'try'.vars.
+    Node#c_try.vars.
 
 
 %% @spec try_body(cerl()) -> cerl()
@@ -3188,7 +3169,7 @@ try_vars(Node) ->
 %% @see c_try/3
 
 try_body(Node) ->
-    Node#'try'.body.
+    Node#c_try.body.
 
 
 %% @spec try_evars(cerl()) -> [cerl()]
@@ -3199,7 +3180,7 @@ try_body(Node) ->
 %% @see c_try/3
 
 try_evars(Node) ->
-    Node#'try'.evars.
+    Node#c_try.evars.
 
 
 %% @spec try_handler(cerl()) -> cerl()
@@ -3210,7 +3191,7 @@ try_evars(Node) ->
 %% @see c_try/3
 
 try_handler(Node) ->
-    Node#'try'.handler.
+    Node#c_try.handler.
 
 
 %% ---------------------------------------------------------------------
@@ -3229,24 +3210,22 @@ try_handler(Node) ->
 %% @see catch_body/1
 %% @see c_try/3
 
--record('catch', {ann = [], body}).
-
 c_catch(Body) ->
-    #'catch'{body = Body}.
+    #c_catch{body = Body}.
 
 
 %% @spec ann_c_catch(As::[term()], Body::cerl()) -> cerl()
 %% @see c_catch/1
 
 ann_c_catch(As, Body) ->
-    #'catch'{body = Body, ann = As}.
+    #c_catch{body = Body, anno = As}.
 
 
 %% @spec update_c_catch(Old::cerl(), Body::cerl()) -> cerl()
 %% @see c_catch/1
 
 update_c_catch(Node, Body) ->
-    #'catch'{body = Body, ann = get_ann(Node)}.
+    #c_catch{body = Body, anno = get_ann(Node)}.
 
 
 %% @spec is_c_catch(Node::cerl()) -> bool()
@@ -3256,7 +3235,7 @@ update_c_catch(Node, Body) ->
 %%
 %% @see c_catch/1
 
-is_c_catch(#'catch'{}) ->
+is_c_catch(#c_catch{}) ->
     true;
 is_c_catch(_) ->
     false.
@@ -3269,7 +3248,7 @@ is_c_catch(_) ->
 %% @see c_catch/1
 
 catch_body(Node) ->
-    Node#'catch'.body.
+    Node#c_catch.body.
 
 
 %% ---------------------------------------------------------------------
@@ -3280,128 +3259,11 @@ catch_body(Node) ->
 %% record representation. The records are defined in the file
 %% "<code>cerl.hrl</code>".
 %%
-%% <p>Note: Compound constant literals are always unfolded in the
-%% record representation.</p>
-%%
 %% @see type/1
 %% @see from_records/1
 
 to_records(Node) ->
-    A = get_ann(Node),
-    case type(Node) of
-	literal ->
-	    lit_to_records(concrete(Node), A);
-	binary ->
-	    #c_binary{anno = A,
-		      segments =
-		      list_to_records(binary_segments(Node))};
-	bitstr ->
-	    #c_bitstr{anno = A,
-		      val = to_records(bitstr_val(Node)),
-		      size = to_records(bitstr_size(Node)),
-		      unit = to_records(bitstr_unit(Node)),
-		      type = to_records(bitstr_type(Node)),
-		      flags = to_records(bitstr_flags(Node))};
-	cons ->
-	    #c_cons{anno = A,
-		    hd = to_records(cons_hd(Node)),
-		    tl = to_records(cons_tl(Node))};
-	tuple ->
-	    #c_tuple{anno = A,
-		     es = list_to_records(tuple_es(Node))};
-	var ->
-	    case is_c_fname(Node) of
-		true ->
-		    #c_fname{anno = A,
-			     id = fname_id(Node),
-			     arity = fname_arity(Node)};
-		false ->
-		    #c_var{anno = A, name = var_name(Node)}
-	    end;
-	values ->
-	    #c_values{anno = A,
-		      es = list_to_records(values_es(Node))};
-	'fun' ->
-	    #c_fun{anno = A,
-		   vars = list_to_records(fun_vars(Node)),
-		   body = to_records(fun_body(Node))};
-	seq ->
-	    #c_seq{anno = A,
-		   arg = to_records(seq_arg(Node)),
-		   body = to_records(seq_body(Node))};
-	'let' ->
-	    #c_let{anno = A,
-		   vars = list_to_records(let_vars(Node)),
-		   arg = to_records(let_arg(Node)),
-		   body = to_records(let_body(Node))};
-	letrec ->
-	    #c_letrec{anno = A,
-		      defs = [{to_records(N), to_records(F)}
-			      || {N, F} <- letrec_defs(Node)],
-		      body = to_records(letrec_body(Node))};
-	'case' ->
-	    #c_case{anno = A,
-		    arg = to_records(case_arg(Node)),
-		    clauses =
-		    list_to_records(case_clauses(Node))};
-	clause ->
-	    #c_clause{anno = A,
-		      pats = list_to_records(clause_pats(Node)),
-		      guard = to_records(clause_guard(Node)),
-		      body = to_records(clause_body(Node))};
-	alias ->
-	    #c_alias{anno = A,
-		     var = to_records(alias_var(Node)),
-		     pat = to_records(alias_pat(Node))};
-	'receive' ->
-	    #c_receive{anno = A,
-		       clauses = 
-		       list_to_records(receive_clauses(Node)),
-		       timeout =
-		       to_records(receive_timeout(Node)),
-		       action = 
-		       to_records(receive_action(Node))};
-	apply ->
-	    #c_apply{anno = A,
-		     op = to_records(apply_op(Node)),
-		     args = list_to_records(apply_args(Node))};
-	call ->
-	    #c_call{anno = A,
-		    module = to_records(call_module(Node)),
-		    name = to_records(call_name(Node)),
-		    args = list_to_records(call_args(Node))};
-	primop ->
-	    #c_primop{anno = A,
-		      name = to_records(primop_name(Node)),
-		      args = list_to_records(primop_args(Node))};
-	'try' ->
-	    #c_try{anno = A,
-		   arg = to_records(try_arg(Node)),
-		   vars = list_to_records(try_vars(Node)),
-		   body = to_records(try_body(Node)),
-		   evars = list_to_records(try_evars(Node)),
-		   handler = to_records(try_handler(Node))};
-	'catch' ->
-	    #c_catch{anno = A,
-		     body = to_records(catch_body(Node))};
-	module ->
-	    #c_module{anno = A,
-		      name = to_records(module_name(Node)),
-		      exports = list_to_records(
-				  module_exports(Node)),
-		      attrs = [{to_records(K), to_records(V)}
-			       || {K, V} <- module_attrs(Node)],
-		      defs = [{to_records(N), to_records(F)}
-			      || {N, F} <- module_defs(Node)]}
-    end.
-
-list_to_records([T | Ts]) ->
-    [to_records(T) | list_to_records(Ts)];
-list_to_records([]) ->
-    [].
-
-lit_to_records(V, A) ->
-    #c_literal{anno = A, val = V}.
+    Node.
 
 %% @spec from_records(Tree::record(record_types())) -> cerl()
 %%
@@ -3418,72 +3280,8 @@ lit_to_records(V, A) ->
 %% @see type/1
 %% @see to_records/1
 
-from_records(#c_literal{val = V, anno = As}) ->
-    #literal{val = V, ann = As};
-from_records(#c_binary{segments = Ss, anno = As}) ->
-    ann_c_binary(As, from_records_list(Ss));
-from_records(#c_bitstr{val = V, size = S, unit = U, type = T,
-		       flags = Fs, anno = As}) ->
-    ann_c_bitstr(As, from_records(V), from_records(S), from_records(U),
-		 from_records(T), from_records(Fs));
-from_records(#c_cons{hd = H, tl = T, anno = As}) ->
-    ann_c_cons(As, from_records(H), from_records(T));
-from_records(#c_tuple{es = Es, anno = As}) ->
-    ann_c_tuple(As, from_records_list(Es));
-from_records(#c_var{name = Name, anno = As}) ->
-    ann_c_var(As, Name);
-from_records(#c_fname{id = Id, arity = Arity, anno = As}) ->
-    ann_c_fname(As, Id, Arity);
-from_records(#c_values{es = Es, anno = As}) ->
-    ann_c_values(As, from_records_list(Es));
-from_records(#c_fun{vars = Vs, body = B, anno = As}) ->
-    ann_c_fun(As, from_records_list(Vs), from_records(B));
-from_records(#c_seq{arg = A, body = B, anno = As}) ->
-    ann_c_seq(As, from_records(A), from_records(B));
-from_records(#c_let{vars = Vs, arg = A, body = B, anno = As}) ->
-    ann_c_let(As, from_records_list(Vs), from_records(A),
-	      from_records(B));
-from_records(#c_letrec{defs = Fs, body = B, anno = As}) ->
-    ann_c_letrec(As, [{from_records(N), from_records(F)}
-		      || {N, F} <- Fs],
-		 from_records(B));
-from_records(#c_case{arg = A, clauses = Cs, anno = As}) ->
-    ann_c_case(As, from_records(A), from_records_list(Cs));
-from_records(#c_clause{pats = Ps, guard = G, body = B, anno = As}) ->
-    ann_c_clause(As, from_records_list(Ps), from_records(G),
-		 from_records(B));
-from_records(#c_alias{var = V, pat = P, anno = As}) ->
-    ann_c_alias(As, from_records(V), from_records(P));
-from_records(#c_receive{clauses = Cs, timeout = T, action = A,
-			anno = As}) ->
-    ann_c_receive(As, from_records_list(Cs), from_records(T),
-		  from_records(A));
-from_records(#c_apply{op = Op, args = Es, anno = As}) ->
-    ann_c_apply(As, from_records(Op), from_records_list(Es));
-from_records(#c_call{module = M, name = N, args = Es, anno = As}) ->
-    ann_c_call(As, from_records(M), from_records(N),
-	       from_records_list(Es));
-from_records(#c_primop{name = N, args = Es, anno = As}) ->
-    ann_c_primop(As, from_records(N), from_records_list(Es));
-from_records(#c_try{arg = E, vars = Vs, body = B,
-		    evars = Evs, handler = H, anno = As}) ->
-    ann_c_try(As, from_records(E), from_records_list(Vs),
-	      from_records(B), from_records_list(Evs), from_records(H));
-from_records(#c_catch{body = B, anno = As}) ->
-    ann_c_catch(As, from_records(B));
-from_records(#c_module{name = N, exports = Es, attrs = Ds, defs = Fs,
-		       anno = As}) ->
-    ann_c_module(As, from_records(N),
-		 from_records_list(Es),
-		 [{from_records(K), from_records(V)}
-		  || {K, V} <- Ds],
-		 [{from_records(V), from_records(F)}
-		  || {V, F} <- Fs]).
-
-from_records_list([T | Ts]) ->
-    [from_records(T) | from_records_list(Ts)];
-from_records_list([]) ->
-    [].
+from_records(Node) ->
+    Node.
 
 
 %% ---------------------------------------------------------------------
@@ -3498,11 +3296,11 @@ from_records_list([]) ->
 %% @see data_es/1
 %% @see data_arity/1
 
-is_data(#literal{}) ->
+is_data(#c_literal{}) ->
     true;
-is_data(#cons{}) ->
+is_data(#c_cons{}) ->
     true;
-is_data(#tuple{}) ->
+is_data(#c_tuple{}) ->
     true;
 is_data(_) ->
     false.
@@ -3531,7 +3329,7 @@ is_data(_) ->
 %% @see type/1
 %% @see concrete/1
 
-data_type(#literal{val = V}) ->
+data_type(#c_literal{val = V}) ->
     case V of
 	[_ | _] ->
 	    cons;
@@ -3540,9 +3338,9 @@ data_type(#literal{val = V}) ->
 	_ ->
 	    {atomic, V}
     end;
-data_type(#cons{}) ->
+data_type(#c_cons{}) ->
     cons;
-data_type(#tuple{}) ->
+data_type(#c_tuple{}) ->
     tuple.
 
 
@@ -3561,18 +3359,18 @@ data_type(#tuple{}) ->
 %% @see data_arity/1
 %% @see make_data/2
 
-data_es(#literal{val = V}) ->
+data_es(#c_literal{val = V}) ->
     case V of
 	[Head | Tail] ->
-	    [#literal{val = Head}, #literal{val = Tail}];
+	    [#c_literal{val = Head}, #c_literal{val = Tail}];
 	_ when is_tuple(V) ->
 	    make_lit_list(tuple_to_list(V));
 	_ ->
 	    []
     end;
-data_es(#cons{hd = H, tl = T}) ->
+data_es(#c_cons{hd = H, tl = T}) ->
     [H, T];
-data_es(#tuple{es = Es}) ->
+data_es(#c_tuple{es = Es}) ->
     Es.
 
 
@@ -3585,7 +3383,7 @@ data_es(#tuple{es = Es}) ->
 %% @see is_data/1
 %% @see data_es/1
 
-data_arity(#literal{val = V}) ->
+data_arity(#c_literal{val = V}) ->
     case V of
 	[_ | _] ->
 	    2;
@@ -3594,9 +3392,9 @@ data_arity(#literal{val = V}) ->
 	_ ->
 	    0
     end;
-data_arity(#cons{}) ->
+data_arity(#c_cons{}) ->
     2;
-data_arity(#tuple{es = Es}) ->
+data_arity(#c_tuple{es = Es}) ->
     length(Es).
 
 
@@ -3622,7 +3420,7 @@ make_data(CType, Es) ->
 %%                     Elements::[cerl()]) -> cerl()
 %% @see make_data/2
 
-ann_make_data(As, {atomic, V}, []) -> #literal{val = V, ann = As};
+ann_make_data(As, {atomic, V}, []) -> #c_literal{val = V, anno = As};
 ann_make_data(As, cons, [H, T]) -> ann_c_cons(As, H, T);
 ann_make_data(As, tuple, Es) -> ann_c_tuple(As, Es).
 
@@ -3654,7 +3452,7 @@ make_data_skel(CType, Es) ->
 %%                          Elements::[cerl()]) -> cerl()
 %% @see make_data_skel/2
 
-ann_make_data_skel(As, {atomic, V}, []) -> #literal{val = V, ann = As};
+ann_make_data_skel(As, {atomic, V}, []) -> #c_literal{val = V, anno = As};
 ann_make_data_skel(As, cons, [H, T]) -> ann_c_cons_skel(As, H, T);
 ann_make_data_skel(As, tuple, Es) -> ann_c_tuple_skel(As, Es).
 
@@ -4089,21 +3887,22 @@ split_list(Node, L) ->
 
 %% General utilities
 
-is_lit_list([#literal{} | Es]) ->
+is_lit_list([#c_literal{} | Es]) ->
     is_lit_list(Es);
 is_lit_list([_ | _]) ->
     false;
 is_lit_list([]) ->
     true.
 
-lit_list_vals([#literal{val = V} | Es]) ->
+lit_list_vals([#c_literal{val = V} | Es]) ->
     [V | lit_list_vals(Es)];
 lit_list_vals([]) ->
     [].
 
--spec make_lit_list([_]) -> [#literal{}].  % XXX: cerl() instead of _ ?
+-spec make_lit_list([_]) -> [#c_literal{}].  % XXX: cerl() instead of _ ?
+
 make_lit_list([V | Vs]) ->
-    [#literal{val = V} | make_lit_list(Vs)];
+    [#c_literal{val = V} | make_lit_list(Vs)];
 make_lit_list([]) ->
     [].
 

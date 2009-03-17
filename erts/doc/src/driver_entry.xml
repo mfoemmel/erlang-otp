@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>2001</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2001</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>driver_entry</title>
@@ -154,6 +152,8 @@ typedef struct erl_drv_entry {
     void *handle2;\011\011/* Reserved -- Used by emulator internally */
     void (*process_exit)(ErlDrvData drv_data, ErlDrvMonitor *monitor);
                                 /* Called when a process monitor fires */
+    void (*stop_select)(ErlDrvEvent event, void* reserved);
+                                /* Called to close an event object */
  } ErlDrvEntry;
     ]]></code>
   </description>
@@ -277,24 +277,27 @@ typedef struct erl_drv_entry {
           for calling C function to get faster execution, when erlang
           is too slow.</p>
         <p>If the driver wants to return data, it should return it in
-          <c><![CDATA[rbuf]]></c>. Data is returned different depending on
+          <c><![CDATA[rbuf]]></c>. When <c><![CDATA[control]]></c> is called,
+          <c>*<![CDATA[rbuf]]></c> points to a default buffer of <c><![CDATA[rlen]]></c> bytes, which
+          can be used to return data. Data is returned different depending on
           the port control flags (those that are set with
-          <seealso marker="erl_driver#set_port_control_flags">set_port_control_flags</seealso>).</p>
-        <p>If the flag is set to <c><![CDATA[PORT_CONTROL_FLAG_BINARY]]></c>, then
-          <c>*<![CDATA[rbuf]]></c> must point to a binary allocated with
-          <seealso marker="erl_driver#driver_alloc_binary">driver_alloc_binary</seealso> or be NULL.
+          <seealso marker="erl_driver#set_port_control_flags">set_port_control_flags</seealso>).
+          </p>
+        <p>If the flag is set to <c><![CDATA[PORT_CONTROL_FLAG_BINARY]]></c>,
+           a binary will be returned. Small binaries can be returned by writing
+           the raw data into the default buffer. A binary can also be
+           returned by setting <c>*<![CDATA[rbuf]]></c> to point to a binary allocated with
+          <seealso marker="erl_driver#driver_alloc_binary">driver_alloc_binary</seealso>.
           This binary will be freed automatically after <c><![CDATA[control]]></c> has returned.
-          The driver can retain the returned binary for <em>read only</em> access with
+          The driver can retain the binary for <em>read only</em> access with
           <seealso marker="erl_driver#driver_binary_inc_refc">driver_binary_inc_refc</seealso> to be freed later with
           <seealso marker="erl_driver#driver_free_binary">driver_free_binary</seealso>.
           It is never allowed to alter the binary after <c><![CDATA[control]]></c> has returned.
           If <c>*<![CDATA[rbuf]]></c> is set to NULL, an empty list will be returned.
           </p>
-        <p>If the flag is set to <c><![CDATA[0]]></c>,
-          <c><![CDATA[rbuf]]></c> points to a <c><![CDATA[char*]]></c> containing data,
-          that is returned as a list of integers. When <c><![CDATA[control]]></c> is called,
-          <c>*<![CDATA[rbuf]]></c> points to a buffer of <c><![CDATA[rlen]]></c> bytes, which
-          can be used to return data. A larger buffer can be allocated with
+        <p>If the flag is set to <c><![CDATA[0]]></c>, data is returned as a
+          list of integers. Either use the default buffer or set
+          <c>*<![CDATA[rbuf]]></c> to point to a larger buffer allocated with
           <seealso marker="erl_driver#driver_alloc">driver_alloc</seealso>.
           The buffer will be freed automatically after <c><![CDATA[control]]></c> has returned.</p>
         <p>Using binaries is faster if more than a few bytes are returned.</p>
@@ -453,7 +456,32 @@ typedef struct erl_drv_entry {
           in when creating the monitor. The driver interface function
           <seealso marker="erl_driver#driver_get_monitored_process">driver_get_monitored_process</seealso>
           can be used to retrieve the process id of the exiting process as
-          an <c><![CDATA[ErlDrvTermData]]></c></p>
+          an <c><![CDATA[ErlDrvTermData]]></c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>void stop_select(ErlDrvEvent event, void* reserved)</name>
+      <fsummary>Called when it is safe to close an event object</fsummary>
+      <desc>
+        <marker id="stop_select"></marker>
+        <p>This function is called on behalf of
+           <seealso marker="erl_driver#driver_select">driver_select</seealso>
+           when it is safe to close an event object.</p>
+        <p>A typical implementation on Unix is to do
+           <c><![CDATA[close((int)event)]]></c>.</p>
+        <p>Argument <c><![CDATA[reserved]]></c> is intended for future use and should be ignored.</p>
+        <p>In contrast to most of the other call-back functions,
+           <c><![CDATA[stop_select]]></c> is called independant of any port. No
+           <c><![CDATA[ErlDrvData]]></c> argument is passed to the function. No
+           driver lock or port lock is guaranteed to be held. The port that
+           called <c><![CDATA[driver_select]]></c> might even be closed at the
+           time <c><![CDATA[stop_select]]></c> is called. But it could also be
+           the case that <c><![CDATA[stop_select]]></c> is called directly by
+           <c><![CDATA[driver_select]]></c>.</p>
+        <p>It is not allowed to call any functions in the
+           <seealso marker="erl_driver">driver API</seealso> from
+           <c><![CDATA[stop_select]]></c>. This strict limitation is due to the
+           volatile context that <c><![CDATA[stop_select]]></c> may be called.</p>
       </desc>
     </func>
   </funcs>
@@ -462,7 +490,7 @@ typedef struct erl_drv_entry {
     <title>SEE ALSO</title>
     <p><seealso marker="erl_driver">erl_driver(3)</seealso>, 
       <seealso marker="kernel:erl_ddll">erl_ddll(3)</seealso>,
-      <seealso marker="kernel:erlang">erlang(3)</seealso>,
+      <seealso marker="erts:erlang">erlang(3)</seealso>,
       kernel(3)</p>
   </section>
 </erlref>

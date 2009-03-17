@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifdef HAVE_CONFIG_H
@@ -1676,7 +1677,7 @@ load_code(LoaderState* stp)
 	 * Special error message instruction.
 	 */
 	if (stp->genop->op == genop_too_old_compiler_0) {
-	    LoadError0(stp, "please re-compile this module with an R12B compiler");
+	    LoadError0(stp, "please re-compile this module with an R13B compiler");
 	}
 
 	/*
@@ -4976,9 +4977,6 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
     if ((n = list_length(Funcs)) < 0) {
 	goto error;
     }
-#ifdef HIPE	/* XXX: temporary fix for R12B-5, will go away before R13 */
-    n += 2;			/* module_info/0 and module_info/1 */
-#endif
     if ((bytes = erts_get_aligned_binary_bytes(Beam, &temp_alloc)) == NULL) {
 	goto error;
     }
@@ -5110,17 +5108,6 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
 #endif
 	fp = make_stub(fp, Mod, func, arity, (Uint)native_address, op);
     }
-
-#ifdef HIPE	/* XXX: temporary fix for R12B-5, will go away before R13 */
-    /*
-     * Add the module_info/0,1 functions.
-     */
-
-    ptrs[i++] = (Eterm) fp;
-    fp = make_stub(fp, Mod, am_module_info, 0, 0, (Eterm) BeamOp(op_hipe_module_info_0));
-    ptrs[i++] = (Eterm) fp;
-    fp = make_stub(fp, Mod, am_module_info, 1, 0, (Eterm) BeamOp(op_hipe_module_info_1));
-#endif
 
     /*
      * Insert the last pointer and the int_code_end instruction.

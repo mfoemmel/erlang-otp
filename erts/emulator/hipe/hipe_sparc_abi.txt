@@ -1,3 +1,7 @@
+
+ %CopyrightBegin%
+ %CopyrightEnd%
+
 $Id$
 
 HiPE SPARC ABI

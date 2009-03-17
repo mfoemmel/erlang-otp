@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(qlc_pt).
 
@@ -21,11 +22,6 @@
 
 -export([parse_transform/2, transform_from_evaluator/2, 
          transform_expression/2]).
-
-%% Exported to qlc.erl only:
--export([vars/1, aux_name1/3]).
-
--import(lists, [append/1, flatmap/2, flatten/1, keysearch/3, sort/1]).
 
 -include_lib("stdlib/include/ms_transform.hrl").
 
@@ -150,7 +146,7 @@ transform_expression(LC, Bs0, WithLintErrors) ->
 -record(qid, {lcid,no}).
 
 mforms(Tag, L) ->
-    sort([{Tag,M} || {_File,Ms} <- L, M <- Ms]).
+    lists:sort([{Tag,M} || {_File,Ms} <- L, M <- Ms]).
 
 %% Avoid duplicated lint warnings and lint errors. Care has been taken
 %% not to introduce unused variables in the transformed code.
@@ -173,15 +169,15 @@ no_duplicates(Forms, Errors, Warnings0, ExtraWarnings, Options) ->
     {mforms2(error, Es),mforms2(warning, Ws)}.
 
 mforms(L) ->
-    sort([{File,[M]} || {File,Ms} <- L, M <- Ms]).
+    lists:sort([{File,[M]} || {File,Ms} <- L, M <- Ms]).
 
 mforms2(Tag, L) ->
     Line = 0,
-    ML = flatmap(fun({File,Ms}) ->
-                         [[{attribute,Line,file,{File,Line}}, {Tag,M}] || 
-                             M <- Ms]
-                 end, sort(L)),
-    flatten(sort(ML)).
+    ML = lists:flatmap(fun({File,Ms}) ->
+                               [[{attribute,Line,file,{File,Line}}, {Tag,M}] ||
+                                   M <- Ms]
+                       end, lists:sort(L)),
+    lists:flatten(lists:sort(ML)).
 
 is_qlc_q_imported(Forms) ->
     [[] || {attribute,_,import,{?APIMOD,FAs}} <- Forms, {?Q,1} <- FAs] =/= [].
@@ -265,13 +261,13 @@ untag(E) ->
 intro_variables(FormsNoShadows, State) ->
     Fun = fun(QId, {T,_L,P0,_E0}=Q, {GVs,QIds}, Foo) when T =:= b_generate;
                                                           T =:= generate ->
-                  PVs = var_ufold(fun({var,_,V}) -> {QId,V} end, P0),
+                  PVs = qlc:var_ufold(fun({var,_,V}) -> {QId,V} end, P0),
                   {Q,{ordsets:to_list(PVs) ++ GVs,[{QId,[]} | QIds]},Foo};
              (QId, Filter0, {GVs,QIds}, Foo) ->
                   %% The filter F is replaced by begin E, F, E end,
                   %% where E is an LC expression consisting of a
                   %% template mentioning all variables occurring in F.
-                  Vs = ordsets:to_list(vars(Filter0)),
+                  Vs = ordsets:to_list(qlc:vars(Filter0)),
                   Id = QId#qid.lcid,
                   LC1 = embed_vars([{var,{QId,f1},V} || V <- Vs], Id),
                   LC2 = embed_vars([{var,{QId,f2},V} || V <- Vs], Id),
@@ -303,7 +299,7 @@ compile_errors(FormsNoShadows) ->
             [];
         {Errors, _Warnings} ->
             ?DEBUG("got errors ~p~n", [Errors]),
-            flatmap(fun({_File,Es}) -> Es end, Errors)
+            lists:flatmap(fun({_File,Es}) -> Es end, Errors)
     end.
 
 -define(MAX_NUM_OF_LINES, 23). % assume max 1^23 lines (> 8 millions)
@@ -360,7 +356,7 @@ used_genvar_check(FormsNoShadows, State) ->
                             {var, L, OrigVar} = undo_no_shadows(Var),
                             {var, {extra, L, get(?QLC_FILE), OrigVar}, V} 
                     end,
-                Vs = [Var || {var, _, V}=Var <- var_fold(F, [], LE),
+                Vs = [Var || {var, _, V}=Var <- qlc:var_fold(F, [], LE),
                              lists:member(V, IVsSoFar0)],
                 Exprs = case Vs of
                             [] -> Exprs0;
@@ -376,7 +372,7 @@ used_genvar_check(FormsNoShadows, State) ->
     Acc0 = {IntroVars, [{atom, 0, true}]},
     {_, {[], Exprs}} = qual_fold(F, Acc0, [], FormsNoShadows, State),
     FunctionNames = [Name || {function, _, Name, _, _} <- FormsNoShadows],
-    UniqueFName = aux_name(used_genvar, 1, sets:from_list(FunctionNames)),
+    UniqueFName = qlc:aux_name(used_genvar, 1, sets:from_list(FunctionNames)),
     {function,0,UniqueFName,0,[{clause,0,[],[],lists:reverse(Exprs)}]}.
     
 q_intro_vars(QId, [{QId, IVs} | QsIVs], IVsSoFar) -> {QsIVs, IVs ++ IVsSoFar}.
@@ -476,7 +472,7 @@ q_intro_vars(QId, [{QId, IVs} | QsIVs], IVsSoFar) -> {QsIVs, IVs ++ IVsSoFar}.
 
 transform(FormsNoShadows, State) ->
     IntroVars = intro_variables(FormsNoShadows, State),
-    AllVars = sets:from_list(ordsets:to_list(vars(FormsNoShadows))),
+    AllVars = sets:from_list(ordsets:to_list(qlc:vars(FormsNoShadows))),
     ?DEBUG("AllVars = ~p~n", [sets:to_list(AllVars)]),
     F1 = fun(QId, {generate,_,P,LE}, Foo, {GoI,SI}) ->
                  {{QId,GoI,SI,{gen,P,LE}},Foo,{GoI + 3, SI + 2}};
@@ -525,14 +521,16 @@ transform(FormsNoShadows, State) ->
 
                  Dependencies = qualifier_dependencies(Qs, IntroVs),
                  L = no_compiler_warning(LcL),
-                 {ColumnConstants, SizeInfo, ExtraConsts} = 
-                      constants_and_sizes(Qs, E, Dependencies, AllIVs, State),
+                 {EqColumnConstants, EqualColumnConstants,
+                  ExtraConsts, SizeInfo} =
+                     constants_and_sizes(Qs, E, Dependencies, AllIVs, State),
                  {JoinInfo, XWarn} = 
                      join_kind(Qs, LcL, AllIVs, Dependencies, State),
                  %% Not at all sure it is a good idea to try and find 
                  %% failing qualifiers; Dialyzer does it so much better.
                  %% But there are a few cases where qlc finds more... (r12b).
-                 FWarn = warn_failing_qualifiers(Qs, State),
+                 FWarn = warn_failing_qualifiers(Qs, AllIVs, Dependencies, 
+                                                 State),
                  JQs = join_quals(JoinInfo, QCs, L, LcNo, ExtraConsts, AllVars),
                  XQCs = QCs ++ JQs,
                  Cs0 = clauses(XQCs, RL, Fun, Go, NGV, Err, AllIVs, State),
@@ -554,8 +552,8 @@ transform(FormsNoShadows, State) ->
                      template_columns(Qs, E, AllIVs, Dependencies, State),
                  %% ExtraConsts should be used by match_spec_quals.
                  MSQs = match_spec_quals(E, Dependencies, Qs, State),
-                 Opt = opt_info(TemplateInfo, SizeInfo,
-                                JoinInfo, ColumnConstants, MSQs, L),
+                 Opt = opt_info(TemplateInfo, SizeInfo, JoinInfo, MSQs, L,
+                                EqColumnConstants, EqualColumnConstants),
                  LCTuple = 
                      case qlc_kind(OrigE, Qs) of
                          qlc ->
@@ -576,8 +574,9 @@ transform(FormsNoShadows, State) ->
 join_kind(Qs, LcL, AllIVs, Dependencies, State) ->
     {EqualCols2, EqualColsN} = equal_columns(Qs, AllIVs, Dependencies, State),
     {MatchCols2, MatchColsN} = eq_columns(Qs, AllIVs, Dependencies, State),
-    Tables = lists:usort([T || C <- EqualCols2, {T,_} <- C]
-                         ++ [T || C <- EqualCols2, T <- C, is_integer(T)]),
+    Tables = lists:usort
+               ([T || {C,_Skip} <- EqualCols2, {T,_} <- C]
+             ++ [T || {C,_Skip} <- EqualCols2, T <- C, is_integer(T)]),
     if 
         EqualColsN =/= []; MatchColsN =/= [] -> 
             {[], 
@@ -608,21 +607,21 @@ qlc_kind(OrigE, Qs) ->
 %% Finds filters and patterns that cannot match any values at all. 
 %% Nothing but the patterns and the filters themselves is analyzed.
 %% A much weaker analysis than the one of Dialyzer.
-warn_failing_qualifiers(Qualifiers, State) ->
+warn_failing_qualifiers(Qualifiers, AllIVs, Dependencies, State) ->
     {FilterData, GeneratorData} = qual_data(Qualifiers),    
     Anon = 1,
-    Imported = [],
-    BindFun = fun(Value, Op) -> is_bindable(Value, Op, Imported) end,
+    BindFun = fun(_Op, Value) -> is_bindable(Value) end,
     {PFrame, _PatternVars} = 
         pattern_frame(GeneratorData, BindFun, Anon, State),
+    {_, _, Imported} = 
+        filter_info(FilterData, AllIVs, Dependencies, State),
     PFrames = frame2frames(PFrame),
-    SkipFun = fun(Fs) -> Fs end,
     {_, Warnings} = 
         lists:foldl(fun({_QId,{fil,_Filter}}, {[]=Frames,Warnings}) ->
                             {Frames,Warnings};
                        ({_QId,{fil,Filter}}, {Frames,Warnings}) ->
                         case filter(set_line(Filter, 0), Frames, BindFun, 
-                                    SkipFun, State) of
+                                    State, Imported) of
                             [] ->
                                 {[],
                                  [{get(?QLC_FILE),
@@ -647,31 +646,35 @@ warn_failing_qualifiers(Qualifiers, State) ->
 -define(TNO, 0).
 -define(TID, #qid{lcid = template, no = ?TNO}).
 
-opt_info(TemplateInfo, Sizes, JoinInfo, ColumnConstants0, MSQs, L) ->
-    SzCls = [{clause,L,[?I(C)],[],[?I(Sz)]} || {C,Sz} <- sort(Sizes)]
+opt_info(TemplateInfo, Sizes, JoinInfo, MSQs, L, 
+         EqColumnConstants0, EqualColumnConstants0) ->
+    SzCls = [{clause,L,[?I(C)],[],[?I(Sz)]} || {C,Sz} <- lists:sort(Sizes)]
             ++ [{clause,L,[?V('_')],[],[?A(undefined)]}],
     S = [{size, {'fun', L, {clauses, SzCls}}}],
     J = case JoinInfo of [] -> []; _ -> [{join, abstr(JoinInfo, L)}] end,
     %% Superfluous clauses may be emitted:
-    TCls0 = append(
+    TCls0 = lists:append(
               [[{clause,L,[abstr(Col, L),EqType],[],
                  [abstr(TemplCols, L)]} ||
                    {Col,TemplCols} <- TemplateColumns]
                || {EqType, TemplateColumns} <- TemplateInfo]),
-    TCls = sort(TCls0) ++ [{clause,L,[?V('_'),?V('_')],[],[{nil,L}]}],
+    TCls = lists:sort(TCls0) ++ [{clause,L,[?V('_'),?V('_')],[],[{nil,L}]}],
     T = [{template, {'fun', L, {clauses, TCls}}}],
 
     %% The template may also have a constant function (IdNo = 0).
     %% Only constant template columns are interesting.
-    ColumnConstants = [CC || {{IdNo,_Col},Const,_FilNs}=CC <- ColumnConstants0,
-                             (IdNo =/= ?TNO) or (length(Const) =:= 1)],
-    Ns = lists:usort([IdNo || {{IdNo,_Col},_Const,_FilNs} <- ColumnConstants]),
-    CCs = [{clause,L,[?I(IdNo)],[],[column_fun(ColumnConstants, IdNo, L)]}
-           || IdNo <- Ns]
-         ++ [{clause,L,[?V('_')],[],[?A(no_column_fun)]}],
-    C = [{constants,{'fun',L,{clauses,CCs}}}],
+    EqColumnConstants = opt_column_constants(EqColumnConstants0),
+    CCs = opt_constants(L, EqColumnConstants),
+    EqC = {constants,{'fun',L,{clauses,CCs}}},
 
-    ConstCols = [{IdNo,Col} || {{IdNo,Col},[_],_FilNs} <- ColumnConstants],
+    EqualColumnConstants = opt_column_constants(EqualColumnConstants0),
+    ECCs = opt_constants(L, EqualColumnConstants),
+    EqualC = {equal_constants,{'fun',L,{clauses,ECCs}}},
+    C = [EqC | [EqualC || true <- [CCs =/= ECCs]]],
+
+    %% Comparisons yield more constant columns than matchings.
+    ConstCols = [{IdNo,Col} || 
+                    {{IdNo,Col},[_],_FilNs} <- EqualColumnConstants],
     ConstColsFamily = family_list(ConstCols),
     NSortedCols0 = [{IdNo,hd(lists:seq(1, length(Cols)+1)--Cols)} ||
                        {IdNo,Cols} <- ConstColsFamily],
@@ -691,9 +694,19 @@ opt_info(TemplateInfo, Sizes, JoinInfo, ColumnConstants0, MSQs, L) ->
     MS = [{match_specs, {'fun',L,{clauses,MSCls}}}],
 
     Cls = [{clause,L,[?A(Tag)],[],[V]} || 
-              {Tag,V} <- append([J, S, T, C, N, CC, MS])]
+              {Tag,V} <- lists:append([J, S, T, C, N, CC, MS])]
           ++ [{clause,L,[?V('_')],[],[?A(undefined)]}],
     {'fun', L, {clauses, Cls}}.
+
+opt_column_constants(ColumnConstants0) ->
+    [CC || {{IdNo,_Col},Const,_FilNs}=CC <- ColumnConstants0,
+           (IdNo =/= ?TNO) or (length(Const) =:= 1)].
+
+opt_constants(L, ColumnConstants) ->
+    Ns = lists:usort([IdNo || {{IdNo,_Col},_Const,_FilNs} <- ColumnConstants]),
+    [{clause,L,[?I(IdNo)],[],[column_fun(ColumnConstants, IdNo, L)]}
+     || IdNo <- Ns]
+     ++ [{clause,L,[?V('_')],[],[?A(no_column_fun)]}].
 
 abstr(Term, Line) ->
     erl_parse:abstract(Term, Line).
@@ -744,6 +757,7 @@ join_quals(JoinInfo, QCs, L, LcNo, ExtraConstants, AllVars) ->
                 Cs2 = join_handle_constants(QId2, ExtraConstants),
                 H1 = join_handle(AP1, L, Aux, Cs1),
                 H2 = join_handle(AP2, L, Aux, Cs2),
+                %% Op is not used.
                 Join = {join,Op,QId1#qid.no,QId2#qid.no,H1,H2,Cs1,Cs2},
                 G = {NQId=QId#qid{no = QId#qid.no + 1},
                      {QIVs,{{gen,{cons,L,P1,P2},Join,GV1},GoI,SI}}},
@@ -754,11 +768,11 @@ join_quals(JoinInfo, QCs, L, LcNo, ExtraConstants, AllVars) ->
     Qs.
 
 join_qnums(Cols) ->
-    [{Q1, Q2} || [{Q1,_C1}, {Q2,_C2}] <- Cols].
+    lists:usort([{Q1, Q2} || {[{Q1,_C1}, {Q2,_C2}], _Skip} <- Cols]).
 
 %% Variables occurring only once are replaced by '_'.
 anon_pattern(P) ->
-    MoreThanOnce = lists:usort(occ_vars(P) -- vars(P)),
+    MoreThanOnce = lists:usort(occ_vars(P) -- qlc:vars(P)),
     {AP, foo} = var_mapfold(fun({var, L, V}, A) ->
                                     case lists:member(V, MoreThanOnce) of
                                         true -> 
@@ -782,7 +796,7 @@ join_handle(AP, L, [F, H, O, C], Constants) ->
         _ ->
             G0 = [begin
                       Call = {call,0,{atom,0,element},[{integer,0,Col},O]},
-                      list2op([{op,0,'=:=',Con,Call} || Con <- Cs], 'or')
+                      list2op([{op,0,Op,Con,Call} || {Con,Op} <- Cs], 'or')
                   end || {Col,Cs} <- Constants],
             G = if G0 =:= [] -> G0; true -> [G0] end,
             CC1 = {clause,L,[AP],G,[{cons,L,O,closure({call,L,F,[F,C]},L)}]},
@@ -802,8 +816,10 @@ join_handle(AP, L, [F, H, O, C], Constants) ->
 join_handle_constants(QId, ExtraConstants) ->
     IdNo = QId#qid.no,
     case lists:keysearch(IdNo, 1, ExtraConstants) of
-        {value, {IdNo, Consts}} -> Consts;
-        false -> []
+        {value, {IdNo, ConstOps}} -> 
+            ConstOps;
+        false ->
+            []
     end.
 
 %%% By the term "imported variable" is meant a variable that is bound
@@ -825,7 +841,7 @@ column_fun(Columns, QualifierNumber, LcL) ->
                                lists:foldr
                                    (fun(F, A) -> {cons,0,{integer,0,F},A} 
                                     end, {nil,0}, Fils)]},
-             Tag = case ordsets:to_list(vars(Vs1)) of
+             Tag = case ordsets:to_list(qlc:vars(Vs1)) of
                        Imp when length(Imp) > 0, % imported vars
                                 length(Vs0) > 1 ->
                            usort_needed;
@@ -850,8 +866,8 @@ column_fun(Columns, QualifierNumber, LcL) ->
 %% -> [{EqType,Equal | Match}]
 %% Equal = Match = TemplateColumns
 %% EqType = abstract code for {_ | '==' | '=:='}
-%% TemplateColumns = [{Column,Integers}]
-%% Column = {QualifierNumber,ColumnNumber}}
+%% TemplateColumns = [{Column,Integers}]    % integer is position in template
+%% Column = {QualifierNumber,ColumnNumber}} % column is position in pattern
 
 template_columns(Qs0, E0, AllIVs, Dependencies, State) ->
     E = expand_expr_records(pre_expand(E0), State),
@@ -869,12 +885,22 @@ template_columns(Qs0, E0, AllIVs, Dependencies, State) ->
             [{?A('=='), Equal}, {?A('=:='), Match}]
     end.
 
+equal_columns2(Qualifiers, AllIVs, Dependencies, State) ->
+    {JI, _Skip} = 
+        join_info(Qualifiers, AllIVs, Dependencies, State,_JoinOp = '=='),
+    JI.
+
+eq_columns2(Qualifiers, AllIVs, Dependencies, State) ->
+    {JI, _SKip} = 
+        join_info(Qualifiers, AllIVs, Dependencies, State, _JoinOp = '=:='),
+    JI.
+
 template_cols(ColumnClasses) ->
-    sort([{{IdNo,Col}, lists:usort(Cs)} ||
-             Class <- ColumnClasses,
-             {IdNo,Col} <- Class,
-             IdNo =/= ?TNO,
-             [] =/= (Cs = [C || {?TNO,C} <- Class])]).
+    lists:sort([{{IdNo,Col}, lists:usort(Cs)} ||
+                   Class <- ColumnClasses,
+                   {IdNo,Col} <- Class,
+                   IdNo =/= ?TNO,
+                   [] =/= (Cs = [C || {?TNO,C} <- Class])]).
 
 template_as_pattern(E) ->
     P = simple_template(E),
@@ -903,7 +929,7 @@ qualifier_dependencies(Qualifiers, IntroVs) ->
     {FilterData, _} = qual_data(Qualifiers),
     Used = sofs:relation([{QId,UV} ||
                              {QId,{fil,F}} <- FilterData,
-                             UV <- vars(F)]),
+                             UV <- qlc:vars(F)]),
     Depend = sofs:strict_relation(sofs:relative_product(Used, Intro)),
     G = sofs:family_to_digraph(sofs:relation_to_family(Depend)),
     Dep0 = [{V,digraph_utils:reachable_neighbours([V], G)} || 
@@ -994,18 +1020,20 @@ pattern_as_template(E, TemplVar) ->
     L = 0,
     {TemplVar, {match, L, E, TemplVar}}.
 
-%% Tries to find columns which are matched against constant values or
-%% other columns. To that end unification is used. A frame is a list
-%% of bindings created by unification.
+%% Tries to find columns which are compared or matched against
+%% constant values or other columns. To that end unification is used.
+%% A frame is a list of bindings created by unification.
 %% Also tries to find the number of columns of patterns.
 %% Note that the template is handled more or less as a pattern.
-%% -> {ColumnConstants, PatternSizes, ExtraConstants}
+%% -> {ColumnConstants, SizeInfo, ExtraConstants}
 %% ColumnConstants = [{Column,[Constant],[FilterNo]}]
-%% PatternSizes = [{QualifierNumber,NumberOfColumns}]
+%% SizeInfo = [{QualifierNumber,NumberOfColumns}]
 %% Column = {QualifierNumber,ColumnNumber}}
 %% FilterNo is a filter that can be skipped at runtime provided constants
 %% are looked up.
-%% ExtraConstants = [{GeneratorNumber,[{ColumnNumber,AbstractConstants}]}]
+%% ExtraConstants = 
+%%     [{GeneratorNumber,[{ColumnNumber,
+%%                         [{AbstractConstant,AbstractOperator}]}]}]
 %% For every generator such that the unification binds value(s) to
 %% some column(s), extra constants are returned. These constants are
 %% the results of the unification, and do not occur in the pattern of
@@ -1016,46 +1044,111 @@ constants_and_sizes(Qualifiers0, E, Dependencies, AllIVs, State) ->
     {FilterData, GeneratorData} = qual_data(Qualifiers),
     {Filter, Anon1, Imported} = 
         filter_info(FilterData, AllIVs, Dependencies, State),
-    BindFun = fun(Value, Op) -> is_bindable(Value, Op, Imported) end,
+    PatBindFun = fun(_Op, Value) -> is_bindable(Value) end,
     {PatternFrame, PatternVars} = 
-        pattern_frame(GeneratorData, BindFun, Anon1, State),
-    SkipFun = fun(Fs) -> Fs end,
+        pattern_frame(GeneratorData, PatBindFun, Anon1, State),
     PatternFrames = frame2frames(PatternFrame),
-    Fs = filter(Filter, PatternFrames, BindFun, SkipFun, State),
+    FilterFun = 
+        fun(BindFun) -> 
+              filter(Filter, PatternFrames, BindFun, State, Imported)
+        end,
+    SzFs = FilterFun(PatBindFun),
 
-    Selector = fun(Value) -> is_const(Value, Imported) end,
-    ColumnConstants0 = [frames_to_columns(Fs, PV, QId, Selector) || 
-                           {QId,PV} <- PatternVars],
-    ColumnConstants1 = flatten(ColumnConstants0),
-
+    SizeInfo = pattern_sizes(PatternVars, SzFs),
+    SelectorFun = const_selector(Imported),
     PatternConstants = 
-        flatten([frames_to_columns(PatternFrames, PV, QId, Selector) || 
-                    {QId,PV} <- PatternVars]),
-    ExtraConstants = 
-      family_list([{GId, {Col,Vals}} ||
-                      {{GId,Col},Vals} <- ColumnConstants1--PatternConstants,
-                      GId =/= ?TNO]),
+        lists:flatten(frames_to_columns(PatternFrames, PatternVars,
+                                        deref_pattern(Imported),
+                                        SelectorFun, Imported,
+                                        '=:=')),
 
-    ColumnConstants = lu_skip(ColumnConstants1, FilterData, BindFun, Selector,
-                              PatternFrame, PatternVars, Dependencies, State),
-    PatternSizes = [{QId#qid.no, Size} || 
-                       {QId,PV} <- PatternVars,
-                       undefined =/= (Size = pattern_size(Fs, PV))],
-    {ColumnConstants, PatternSizes, ExtraConstants}.
+    {EqColumnConstants, _EqExtraConsts} = 
+        constants(FilterFun, PatternVars, PatternConstants, PatternFrame,
+                  FilterData, Dependencies, _LookupOp1 = '=:=', 
+                  Imported, State),
+    {EqualColumnConstants, EqualExtraConsts} = 
+        constants(FilterFun, PatternVars, PatternConstants, PatternFrame,
+                  FilterData, Dependencies, _LookupOp2 = '==', 
+                  Imported, State),
+
+    %% Use compared extra constants only because:
+    %% - merge join compares terms;
+    %% - the constants from the matching unification is a subset of the
+    %%   constants from the comparing unification.
+    %% Using constants from the matching unification would make it
+    %% possible to skip some (more) objects when joining.
+    ExtraCon1 = 
+        [{{GId,Col},{Val,Op}} ||
+            {Consts,Op} <- [{EqualExtraConsts,'=='}],
+            {{GId,Col},Val} <- Consts],
+    ExtraConstants = 
+      family_list([{GId, {Col,ValOps}} ||
+                      {{GId,Col},ValOps} <- family_list(ExtraCon1)]),
+    {EqColumnConstants, EqualColumnConstants, ExtraConstants, SizeInfo}.
+
+constants(FilterFun, PatternVars, PatternConstants, PatternFrame, 
+          FilterData, Dependencies, LookupOp, Imported, State) ->
+    BindFun = fun(_Op, Value) -> is_bindable(Value) end,
+    Fs = FilterFun(BindFun),
+    SelectorFun = const_selector(Imported),
+    ColumnConstants0 = frames_to_columns(Fs, PatternVars, 
+                                         deref_lookup(Imported, LookupOp),
+                                         SelectorFun, Imported, LookupOp),
+    ColumnConstants1 = lists:flatten(ColumnConstants0),
+    ExtraConstants = 
+       [{{GId,Col},Val} ||
+           {{GId,Col},Vals} <- ColumnConstants1 -- PatternConstants,
+           GId =/= ?TNO,
+           Val <- Vals],
+    ColumnConstants = lu_skip(ColumnConstants1, FilterData, PatternFrame,
+                              PatternVars, Dependencies, State,
+                              Imported, LookupOp),
+    {ColumnConstants, ExtraConstants}.
+
+%%% ** Comparing Terms **
+%%%  When comparing the key against a term where some integer (or float
+%%% comparing equal to an integer) occurs, one has to be careful if the
+%%% table matches keys. One way would be to look up the term both with
+%%% the integer and with the float comparing equal to the integer--then
+%%% all objects that could possibly be answers are filtered (with
+%%% reasonable assumptions). But if integers occur several times in the
+%%% term all combinations have to be looked up, and that could be just
+%%% too many.
+%%%  If imported variables occur in the term one could assume at compile
+%%% time that they are not integers and check that assumption at
+%%% runtime. However, this would probably be bad design since some keys
+%%% can be looked up, but others cannot.
+%%%  However, the current implementation is simple: do not bind a
+%%% variable to a term if imported variables or integers occur in the
+%%% term.
+
+deref_lookup(Imported, '==') ->
+    %% Comparing table. Every value can be looked up.
+    fun(PV, F) -> deref_values(PV, F, Imported) end;
+deref_lookup(Imported, '=:=') ->
+    %% Matching table. Ignore comparisons unless the value is free of
+    %% integers. See also Comparing Terms.
+    BFun = fun(DV, Op) ->
+                   Op =:= '=:=' orelse free_of_integers(DV, Imported)
+           end,
+    fun(PV, F) -> deref_values(PV, F, BFun, Imported) end.
 
 %% Augment ColConstants with filters that do not need to be run
 %% provided that constants are looked up.
-lu_skip(ColConstants, FilterData, BindFun, Selector, PatternFrame, 
-        PatternVars, Dependencies, State) ->
+%% Does not find all filters that can be removed.
+lu_skip(ColConstants, FilterData, PatternFrame, PatternVars, 
+        Dependencies, State, Imported, LookupOp) ->
     %% If there is a test that does not compare or match, then the
     %% filter cannot be skipped.
-    FailSelector = fun(_Value) -> true end,
+    FailSelector = fun(_Frame) -> fun(Value) -> {yes, Value} end end,
     %% In runtime, constants are looked up and matched against a pattern 
     %% (the pattern acts like a filter), then the filters are run.
     PatternFrames = frame2frames(PatternFrame),
     PatternColumns = 
-        flatten([frames_to_columns(PatternFrames, PV, QId, FailSelector) ||
-                    {QId,PV} <- PatternVars]),
+        lists:flatten(frames_to_columns(PatternFrames, PatternVars,
+                                        deref_pattern(Imported), FailSelector,
+                                        Imported, LookupOp)),
+
     %% Note: ColFil can contain filters for columns that cannot be
     %% looked up. Such (possibly bogus) elements are however not used.
     %% Note: one filter at a time is tested; only the pattern is
@@ -1063,17 +1156,25 @@ lu_skip(ColConstants, FilterData, BindFun, Selector, PatternFrame,
     %% would be advantageously to assume some filter(s) occurring
     %% before the filter had been run as well 
     %% (an example: {{X,Y}} <- LE, X =:= 1, Y =:= a).
+    BindFun = fun(_Op, Value) -> is_bindable(Value) end,
     ColFil = [{Column, FId#qid.no} ||
                  {FId,{fil,Fil}} <- 
                      filter_list(FilterData, Dependencies, State),
-                 [] =/= (SFs = safe_filter(set_line(Fil, 0), 
-                                           PatternFrames, BindFun, State)),
+                 [] =/= (SFs = safe_filter(set_line(Fil, 0), PatternFrames,
+                                           BindFun, State, Imported)),
                  {GId,PV} <- PatternVars,
-                 GId#qid.lcid =:= FId#qid.lcid,
-                 [] =/= (F = frames_to_columns(SFs, PV, GId, Selector)),
+                 [] =/= 
+                    (Cols = hd(frames_to_columns(SFs, [{GId, PV}],
+                                                 deref_lu_skip(LookupOp,
+                                                               Imported),
+                                                 const_selector(Imported),
+                                                 Imported, LookupOp))),
                  %% The filter must not test more than one column (unless the
                  %% pattern has already done the test):
-                 length(D = F -- PatternColumns) =:= 1,
+                 %% Note: if the pattern and the filter test the same
+                 %% column, the filter will not be skipped.
+                 %% (an example: {X=1} <- ..., X =:= 1).
+                 length(D = Cols -- PatternColumns) =:= 1,
                  Frame <- SFs,
                  begin
                      %% The column is compared/matched against a constant.
@@ -1081,11 +1182,14 @@ lu_skip(ColConstants, FilterData, BindFun, Selector, PatternFrame,
                      %% the filter can be replaced by the lookup of
                      %% the constant.
                      [{{_,Col} = Column, Constants}] = D,
-                     Value = column_i(Frame, PV, Col),
-                     PVar = {var, 0, PV},
-                     Call = {call,0,{atom,0,element},[{integer,0,Col},PVar]},
-                     {NV, F1} = element_calls(Call, PatternFrame, BindFun),
-                     F2 = unify('=:=', NV, Value, F1, BindFun),
+                     {VarI, FrameI} = unify_column(Frame, PV, Col, BindFun,
+                                                   Imported),
+                     VarValues = deref_skip(VarI, FrameI, LookupOp, Imported),
+
+                     {NV, F1} = unify_column(PatternFrame, PV, Col, BindFun,
+                                             Imported),
+                     F2 = unify_var_bindings(VarValues, '=:=', NV, F1, 
+                                             BindFun, Imported, false),
                      %% F2: the pattern has been matched and the
                      %% constant has been looked up. If Frame has no
                      %% more bindings than F2 (modulo unique
@@ -1101,84 +1205,165 @@ lu_skip(ColConstants, FilterData, BindFun, Selector, PatternFrame,
                              false -> [];
                              {value, {Column,LUCs}} -> LUCs
                          end,
-                     bindings_is_subset(Frame, F2)
-                     and (Constants -- LookedUpConstants =:= [])
+                     %% Don't try to handle filters that compare several
+                     %% values equal. See also frames_to_columns().
+                     length(VarValues) =< 1 andalso
+                     (Constants -- LookedUpConstants =:= []) andalso
+                     bindings_is_subset(Frame, F2, Imported)
                  end],
     ColFils = family_list(ColFil),
-    %% The atom 'all' means that all filters are covered by the lookup.
+    %% The skip tag 'all' means that all filters are covered by the lookup.
     %% It does not imply that there is only one generator as is the case
     %% for match specifications (see match_spec_quals above).
-    [{Col,Constants,case keysearch(Col, 1, ColFils) of
-                        {value, {Col, FilL}} -> 
-                            Tag = if
-                                      length(FilterData) =:= length(FilL) ->
-                                          all;
-                                      true ->
-                                          some
-                                  end,
-                            {Tag, FilL};
-                        false -> 
-                            {some,[]}
-                    end} || {Col,Constants} <- ColConstants].
+    [{Col, Constants, skip_tag(Col, ColFils, FilterData)} ||
+        {Col,Constants} <- ColConstants].
+
+deref_skip(E, F, _LookupOp, Imported) ->
+    deref(E, F, Imported).
+
+deref_lu_skip('==', Imported) ->
+    %% Comparing table. Cannot skip filters that match integers.
+    BFun = fun(DV, Op) ->
+                   Op =:= '==' orelse free_of_integers(DV, Imported)
+           end,
+    fun(PV, F) -> deref_values(PV, F, BFun, Imported) end;
+deref_lu_skip('=:=', Imported) ->
+    %% Matching table. Skip filters regardless of operator.
+    fun(PV, F) -> deref_values(PV, F, Imported) end.
 
 equal_columns(Qualifiers, AllIVs, Dependencies, State) ->
-    Cs = equal_columns2(Qualifiers, AllIVs, Dependencies, State),
-    join_gens(Cs).
+    {Cs, Skip} = 
+        join_info(Qualifiers, AllIVs, Dependencies, State, _JoinOp = '=='),
+    join_gens(Cs, Qualifiers, Skip).
 
 eq_columns(Qualifiers, AllIVs, Dependencies, State) ->
-    Cs = eq_columns2(Qualifiers, AllIVs, Dependencies, State),
-    join_gens(Cs).
+    {Cs, Skip} = 
+        join_info(Qualifiers, AllIVs, Dependencies, State, _JoinOp = '=:='),
+    join_gens(Cs, Qualifiers, Skip).
 
-%% Group columns of the same generator together.
-%% -> {TwoGen, ManyGens}
-join_gens(Cs0) ->
+%% -> {TwoGens, ManyGens}
+join_gens(Cs0, Qs, Skip) ->
     Cs = [family_list(C) || C <- Cs0],
-    {[C || C <- Cs, length(C) =:= 2],
-     [C || C <- Cs, length(C) > 2]}.
+    {FD, _GeneratorData} = qual_data(Qs),
+    {join_gens2(lists:filter(fun(C) -> length(C) =:= 2 end, Cs), FD, Skip),
+     join_gens2(lists:filter(fun(C) -> length(C) > 2 end, Cs), FD, Skip)}.
 
-%% Tries to find columns (possibly in the same table) that are
-%% matched (=:=/2) or compared (==/2). Unification again.
+join_gens2(Cs0, FilterData, Skip) ->
+    [{J, skip_tag(case lists:keysearch(J, 1, Skip) of
+                      {value, {J,FilL}} ->
+                          FilL;
+                      false ->
+                          []
+                  end, FilterData)} ||
+        J <- lists:append([qlc:all_selections(C) || C <- Cs0])].
+
+skip_tag(FilList, FilterData) ->
+    {if
+         length(FilterData) =:= length(FilList) ->
+             all;
+         true ->
+             some
+     end, FilList}.
+
+skip_tag(Col, ColFils, FilterData) ->
+    case lists:keysearch(Col, 1, ColFils) of
+        {value, {Col, FilL}} -> 
+            Tag = if
+                      length(FilterData) =:= length(FilL) ->
+                          all;
+                      true ->
+                          some
+                  end,
+            {Tag, FilL};
+        false -> 
+            {some,[]}
+    end.
+
+%% Tries to find columns (possibly in the same table) that are equal.
+%% If LookupOp is '=:=' then "equal" means that the columns are matched;
+%% if LookupOp is '==' then "equal" means that the columns are matched or
+%% compared.
 %% -> [[{QualifierNumber,ColumnNumber}]] % Eq.classes.
-
-equal_columns2(Qualifiers, AllIVs, Dependencies, State) ->
-    BindFun = fun(Imp) -> fun(V, Op) -> is_no_const(V, Op, Imp) end end,
-    join_info(Qualifiers, AllIVs, Dependencies, BindFun, State).
-
-%% Tries to find columns (possibly in the same table) that are matched
-%% (=:=/2).
-%% -> [[{QualifierNumber,ColumnNumber}]] % Eq.classes.
-
-eq_columns2(Qualifiers, AllIVs, Dependencies, State) ->
-    BindFun = fun(Imp) -> fun(V, Op) -> is_match_no_const(V, Op, Imp) end end,
-    join_info(Qualifiers, AllIVs, Dependencies, BindFun, State).
-
-join_info(Qualifiers, AllIVs, Dependencies, BindFun0, State) ->
+join_info(Qualifiers, AllIVs, Dependencies, State, JoinOp) ->
     {FilterData, GeneratorData} = qual_data(Qualifiers),
     {Filter, Anon1, Imported} = 
         filter_info(FilterData, AllIVs, Dependencies, State),
-    BindFun = BindFun0(Imported),
+    BindFun = fun(_Op, V) -> bind_no_const(V, Imported) end,
     {PatternFrame, PatternVars} = 
         pattern_frame(GeneratorData, BindFun, Anon1, State),
     PatternFrames = frame2frames(PatternFrame),
-    SkipFun = fun(Fs) -> Fs end,
-    Fs = filter(Filter, PatternFrames, BindFun, SkipFun, State),
-    Selector = fun(Value) -> not is_const(Value, Imported) end,
-    join_classes(fun(PV, QId) -> frames_to_columns(Fs, PV, QId, Selector) 
-                 end, PatternVars).
+    Fs = filter(Filter, PatternFrames, BindFun, State, Imported),
+    SelectorFun = no_const_selector(Imported),
+    Cols = frames_to_columns(Fs, PatternVars,
+                             fun(PV1, F) -> deref_join(PV1, F, JoinOp) end,
+                             SelectorFun, Imported, '=:='),
+    JC = join_classes(Cols),
+    Skip = join_skip(JC, FilterData, PatternFrame,
+                     PatternVars, Dependencies, State, Imported, JoinOp),
+    {JC, Skip}.
 
-join_classes(FramesFun, PatternVars) ->
-    Cols0 = [FramesFun(PV, QId) || {QId,PV} <- PatternVars],
-    ColVar = sofs:relation(append(Cols0)),
+deref_join(E, Frame, '==') ->
+    deref_values(E, Frame, _Imp = []);
+deref_join(E, Frame, '=:=') ->
+    %% Matching table. It is possible that some objects read from the
+    %% other table (the one with the objects to look up) contain
+    %% integers. By making all variables imported it is ensured that
+    %% comparisons are kept. See also Comparing Terms.
+    deref_values(E, Frame, fun(_DV, Op) -> Op =:= '=:=' end, all).
+
+join_classes(Cols0) ->
+    ColVar = sofs:relation(lists:append(Cols0)),
     Cols = sofs:partition(2, ColVar),
     [[C || {C,_} <- Cs] || Cs <- sofs:to_external(Cols), length(Cs) > 1].
+
+join_skip(JoinClasses, FilterData, PatternFrame, PatternVars, Dependencies,
+          State, Imported, JoinOp) ->
+    PatternFrames = frame2frames(PatternFrame),
+    ColFil = [{JoinClass,FId#qid.no} ||
+                 [{Q1,C1}, {Q2,C2}]=JoinClass <- JoinClasses,
+                 {GId1, PV1} <- PatternVars,
+                 GId1#qid.no =:= Q1,
+                 {GId2, PV2} <- PatternVars,
+                 GId2#qid.no =:= Q2,
+
+                 %% Select a filter that depends on the two generators:
+                 {FId,{fil,Fil}} <- 
+                     filter_list(FilterData, Dependencies, State),
+                 {value,{_,GIds}} <- 
+                     [lists:keysearch(FId, 1, Dependencies)],
+                 GIds =:= lists:sort([GId1,GId2]),
+
+                 begin
+                     %% Do what the join does: 
+                     %% element(C1, G1) JoinOp element(C2, G2).
+                     %% As for lu_skip: sometimes it would be
+                     %% advantageously to assume some filter(s)
+                     %% occurring before the join filter had been run
+                     %% as well.
+                     BindFun = fun(_Op, V) -> is_bindable(V) end,
+                     {V1, JF1} = 
+                       unify_column(PatternFrame, PV1, C1, BindFun, Imported),
+                     {V2, JF2} = 
+                         unify_column(JF1, PV2, C2, BindFun, Imported),
+                     JF = unify(JoinOp, V1, V2, JF2, BindFun, Imported),
+
+                     %% "Run" the filter:
+                     SFs = safe_filter(set_line(Fil, 0), PatternFrames,
+                                       BindFun, State, Imported),
+                     JImp = qlc:vars([SFs, JF]), % kludge
+                     lists:all(fun(Frame) -> 
+                                       bindings_is_subset(Frame, JF, JImp)
+                               end, SFs) andalso SFs =/= []
+                 end],
+    family_list(ColFil).
 
 filter_info(FilterData, AllIVs, Dependencies, State) ->
     FilterList = filter_list(FilterData, Dependencies, State),
     Filter0 = set_line(filters_as_one(FilterList), 0),
     Anon0 = 0,
     {Filter, Anon1} = anon_var(Filter0, Anon0),
-    Imported = ordsets:subtract(vars(Filter), % anonymous too
-                                sort(AllIVs)), 
+    Imported = ordsets:subtract(qlc:vars(Filter), % anonymous too
+                                ordsets:from_list(AllIVs)), 
     {Filter, Anon1, Imported}.
 
 %% Selects the guard filters. Other filters than guard filters are
@@ -1200,7 +1385,7 @@ sel_gf([], _N, _Deps, _RDs, _Gens, _Gens1) ->
 sel_gf([{#qid{no = N}=Id,{fil,F}}=Fil | FData], N, Deps, RDs, Gens, Gens1) ->
     case erl_lint:is_guard_test(F, RDs) of
         true ->
-            {value, {Id,GIds}} = keysearch(Id, 1, Deps),
+            {value, {Id,GIds}} = lists:keysearch(Id, 1, Deps),
             case length(GIds) =< 1 of
                 true ->
                     case generators_in_scope(GIds, Gens1) of
@@ -1236,42 +1421,40 @@ pattern_frame(GeneratorData, BindFun, Anon1, State) ->
                     end, {Frame0, Anon1, []}, GeneratorData),
     {PatternFrame, PatternVars}.
               
-is_match_no_const(Value, Op, Imported) ->
-    (Op =/= '==') andalso is_no_const(Value, Op, Imported).
+const_selector(Imported) ->
+    selector(Imported, fun is_const/2).
 
-is_no_const(Value, Op, Imported) ->
-    is_bindable(Value, Op, Imported) andalso not is_const(Value, Imported).
+no_const_selector(Imported) ->
+    selector(Imported, fun(V, I) -> not is_const(V, I) end).
+
+selector(Imported, TestFun) ->
+    fun(_Frame) ->
+            fun(Value) -> 
+                    case TestFun(Value, Imported) of
+                        true ->
+                            {yes, Value};
+                        false ->
+                            no
+                    end
+            end
+    end.
+
+bind_no_const(Value, Imported) ->
+    case is_const(Value, Imported) of
+        true ->
+            false;
+        false ->
+            is_bindable(Value)
+    end.
 
 %% Tuple tails are variables, never constants.
 is_const(Value, Imported) ->
     %% is_bindable() has checked that E is normalisable. 
-    [] =:= ordsets:to_list(ordsets:subtract(vars(Value), Imported)).
+    [] =:= ordsets:to_list(ordsets:subtract(qlc:vars(Value), Imported)).
 
-%% If there is an integer (or float comparing equal to an integer) in
-%% the value one has to be careful. One way would be to look up the
-%% value both with the integer and with the float comparing equal to
-%% the integer - then all objects that could possibly be answers are
-%% filtered (with reasonable assumptions). But if integers occur
-%% several times in the value all combinations have to be looked up,
-%% and that could be just too many.
-%%
-%% If there are imported variables in the value one could assume at
-%% compile time that they are not integers and check that assumption
-%% at runtime. However, this implementation is much simpler: do not
-%% bind the variable to the value if imported variables or integers
-%% occur in the value. This will probably do.
-
-is_bindable(Value, Op, Imp) ->
+is_bindable(Value) ->
     case normalise(Value) of
-        {ok, NValue} when Op =:= '==' ->
-            case {ordsets:to_list(ordsets:intersection(vars(Value), Imp)), 
-                  has_integer(NValue)} of
-                {[], false} ->
-                    true;
-                _ ->
-                    false
-            end;
-        {ok, _} when Op =:= '=:=' ->
+        {ok, _C} ->
             true;
         not_ok ->
             false
@@ -1286,9 +1469,9 @@ pattern(P0, AnonI, Frame0, BindFun, State) ->
     P2 = set_line(P1, 0),
     {P3, AnonN} = anon_var(P2, AnonI),
     {P4, F1} = match_in_pattern(tuple2cons(P3), Frame0, BindFun),
-    {P, F2} = element_calls(P4, F1, BindFun), % kludge for templates
+    {P, F2} = element_calls(P4, F1, BindFun, _Imp=[]), % kludge for templates
     {var, _, PatternVar} = UniqueVar = unique_var(),
-    F = unify('=:=', UniqueVar, P, F2, BindFun),
+    F = unify('=:=', UniqueVar, P, F2, BindFun, _Imported = []),
     {F, AnonN, PatternVar}.
 
 frame2frames(failed) ->
@@ -1300,11 +1483,11 @@ match_in_pattern({match, _, E10, E20}, F0, BF) ->
     {E1, F1} = match_in_pattern(E10, F0, BF),
     {E2, F} = match_in_pattern(E20, F1, BF),
     %% This is for join: chosing a constant could "hide" a variable.
-    E = case BF(E1, '=:=') of
+    E = case BF('=:=', E1) of
             true -> E1;
             false -> E2
         end,
-    {E, unify('=:=', E1, E2, F, BF)};
+    {E, unify('=:=', E1, E2, F, BF, _Imported = [])};
 match_in_pattern(T, F0, BF) when is_tuple(T) ->
     {L, F} = match_in_pattern(tuple_to_list(T), F0, BF),
     {list_to_tuple(L), F};
@@ -1326,16 +1509,16 @@ anon_var(E, AnonI) ->
 set_line(T, L) ->
     map_lines(fun(_L) -> L end, T).
 
--record(fstate, {state, bind_fun, skip_fun}).
+-record(fstate, {state, bind_fun, imported}).
 
-filter(_E, []=Frames0, _BF, _SF, _State) ->
+filter(_E, []=Frames0, _BF, _State, _Imported) ->
     Frames0;
-filter(E0, Frames0, BF, SF, State) ->
+filter(E0, Frames0, BF, State, Imported) ->
     E = pre_expand(E0),
-    FState = #fstate{state = State, bind_fun = BF, skip_fun = SF},
+    FState = #fstate{state = State, bind_fun = BF, imported = Imported},
     filter1(E, Frames0, FState).
 
-%% One frame for each path through the and/or formula.
+%% One frame for each path through the and/or expression.
 %%
 %% "A xor B" is equal to "(A and not B) or (not A and B)". 
 %% Ignoring "not B" and "not A" this is the same as "A or B"; 
@@ -1360,17 +1543,17 @@ filter(E0, Frames0, BF, SF, State) ->
 %% all (except in generator patterns).
 
 filter1({op, _, Op, L0, R0}, Fs, FS) when Op =:= '=:='; Op =:= '==' ->
-    #fstate{state = S, bind_fun = BF} = FS,
+    #fstate{state = S, bind_fun = BF, imported = Imported} = FS,
     %% In the transformed code there are no records in lookup values
     %% because records are expanded away in prep_expr.
-    flatmap(fun(F0) ->
-                    {L, F1} = prep_expr(L0, F0, S, BF),
-                    {R, F2} = prep_expr(R0, F1, S, BF),
-                    case unify(Op, L, R, F2, BF) of
-                        failed -> [];
-                        F -> [F]
-                    end
-            end, Fs);
+    lists:flatmap(fun(F0) ->
+                          {L, F1} = prep_expr(L0, F0, S, BF, Imported),
+                          {R, F2} = prep_expr(R0, F1, S, BF, Imported),
+                          case unify(Op, L, R, F2, BF, Imported) of
+                              failed -> [];
+                              F -> [F]
+                          end
+                  end, Fs);
 filter1({op, _, Op, L, R}, Fs, FS) when Op =:= 'and'; Op =:= 'andalso' ->
     filter1(R, filter1(L, Fs, FS), FS);
 filter1({op, _, Op, L, R}, Fs, FS) when Op =:= 'or'; 
@@ -1388,39 +1571,38 @@ filter1({call,L,{remote,_,{atom,_,erlang},{atom,_,is_record}},[T,R]},
 filter1({call,L,{remote,L1,{atom,_,erlang}=M,{atom,L2,is_record}},[T,R,_Sz]},
         Fs, FS) ->
     filter1({call,L,{remote,L1,M,{atom,L2,is_record}},[T,R]}, Fs, FS);
-filter1(_E, Fs, FS) ->
-    (FS#fstate.skip_fun)(Fs).
+filter1(_E, Fs, _FS) ->
+    Fs.
 
 %% filter() tries to extract as much information about constant
 %% columns as possible. It ignores those parts of the filter that are
 %% uninteresting. safe_filter() on the other hand ensures that the
-%% bindings returned capture _all_ aspects of the filter.
-safe_filter(_E, []=Frames0, _BF, _State) ->
+%% bindings returned capture _all_ aspects of the filter (wrt BF).
+safe_filter(_E, []=Frames0, _BF, _State, _Imported) ->
     Frames0;
-safe_filter(E0, Frames0, BF, State) ->
+safe_filter(E0, Frames0, BF, State, Imported) ->
     E = pre_expand(E0),
-    FailFun = fun(_Fs) -> [] end,
-    FState = #fstate{state = State, bind_fun = BF, skip_fun = FailFun},
+    FState = #fstate{state = State, bind_fun = BF, imported = Imported},
     safe_filter1(E, Frames0, FState).
 
 safe_filter1({op, _, Op, L0, R0}, Fs, FS) when Op =:= '=:='; Op =:= '==' ->
-    #fstate{state = S, bind_fun = BF} = FS,
-    flatmap(fun(F0) ->
-                    {L, F1} = prep_expr(L0, F0, S, BF),
-                    {R, F2} = prep_expr(R0, F1, S, BF),
-                    case safe_unify(Op, L, R, F2, BF) of
-                        failed -> [];
-                        F -> [F]
-                    end
-            end, Fs);
+    #fstate{state = S, bind_fun = BF, imported = Imported} = FS,
+    lists:flatmap(fun(F0) ->
+                          {L, F1} = prep_expr(L0, F0, S, BF, Imported),
+                          {R, F2} = prep_expr(R0, F1, S, BF, Imported),
+                          case safe_unify(Op, L, R, F2, BF, Imported) of
+                              failed -> [];
+                              F -> [F]
+                          end
+                  end, Fs);
 safe_filter1({op, _, Op, L, R}, Fs, FS) when Op =:= 'and'; Op =:= 'andalso' ->
     safe_filter1(R, safe_filter1(L, Fs, FS), FS);
 safe_filter1({op, _, Op, L, R}, Fs, FS) when Op =:= 'or'; Op =:= 'orelse' ->
     safe_filter1(L, Fs, FS) ++ safe_filter1(R, Fs, FS);
-safe_filter1({atom,_,Atom}, _Fs, _FS) when Atom =/= true ->
-    [];
-safe_filter1(_E, Fs, FS) ->
-    (FS#fstate.skip_fun)(Fs).
+safe_filter1({atom,_,true}, Fs, _FS) ->
+    Fs;
+safe_filter1(_E, _Fs, _FS) ->
+    [].
 
 %% Substitutions: 
 %% M:F() for {M,F}(); erlang:F() for F(); is_record() for record().
@@ -1437,69 +1619,113 @@ pre_expand([E | Es]) ->
 pre_expand(T) ->
     T.
 
-column_i(Frame, PatternVar, I) ->
-    {cons_tuple, Cs} = deref({var, 0, PatternVar}, Frame),
-    column_i_2(Cs, 1, I).
-
-column_i_2({cons,_,V,_}, I, I) ->
-    V;
-column_i_2({cons,_,_,E}, I, N) ->
-    column_i_2(E, I+1, N).
-
-pattern_size(Fs, PatternVar) ->
-    Szs = [case deref({var, 0, PatternVar}, F) of
-               {cons_tuple, Cs} -> pattern_sz(Cs, 0);
-               _ -> undefined
-           end || F <- Fs],
-    case lists:usort(Szs) of
-        [Sz] when Sz >= 0 -> Sz;
-        _  -> undefined
-    end.
-
-pattern_sz({cons,_,_C,E}, Col) ->
-    pattern_sz(E, Col+1);
-pattern_sz({nil,_}, Sz) ->
-    Sz;
-pattern_sz(_, _Sz) ->
-    undefined.
-
-%% -> [{{QualifierNumber,ColumnNumber}, [Value]}]
-frames_to_columns(Fs, PatternVar, PatternId, Selector) ->
-    F = fun({cons_tuple, Cs}) -> 
-                sel_columns(Cs, 1, PatternId, Selector);
-           (_) -> 
-                []
-        end,
-    all_frames(Fs, PatternVar, F).
-
-sel_columns({cons,_,C,E}, Col, PId, Selector) ->
-    case Selector(C) of
-        true -> 
-            V = {{PId#qid.no,Col},cons2tuple(C)},
-            [V | sel_columns(E, Col+1, PId, Selector)];
-        false ->
-            sel_columns(E, Col+1, PId, Selector)
-    end;
-sel_columns(_, _Col, _PId, _Selector) ->
-    [].
-
-all_frames([], _PatternVar, _DerefFun) ->
+%% -> [ [{{QualifierNumber,ColumnNumber}, [Value]}] ]
+frames_to_columns([], _PatternVars, _DerefFun, _SelectorFun, _Imp, _CompOp) ->
     [];
-all_frames(Fs, PatternVar, DerefFun) ->
-    Rs = [begin
-              Deref = deref({var, 0, PatternVar}, F),
-              RL = DerefFun(Deref),
-              sofs:relation(RL) % possibly empty
-          end || F <- Fs],
+frames_to_columns(Fs, PatternVars, DerefFun, SelectorFun, Imp, CompOp) ->
+    %% It is important that *the same* variables are introduced for
+    %% columns in every frame. (When trying to find constant columns
+    %% it doesn't matter, but when trying to find joined columns, the
+    %% same variables have to be the representatives in every frame.)
+    SizesVarsL =
+        [begin 
+             PatVar = {var,0,PV},
+             PatternSizes = [pattern_size([F], PatVar, false) || 
+                                F <- Fs],
+             MaxPZ = lists:max([0 | PatternSizes -- [undefined]]),
+             Vars = pat_vars(MaxPZ),
+             {PatternId#qid.no, PatVar, PatternSizes, Vars}
+         end || {PatternId, PV} <- PatternVars],
+    BF = fun(_Op, Value) -> is_bindable(Value) end,
+    Fun = fun({_PatN, PatVar, PatSizes, Vars}, Frames) -> 
+                  [unify('=:=', pat_tuple(Sz, Vars), PatVar, Frame, BF, Imp) ||
+                      {Sz, Frame} <- lists:zip(PatSizes, Frames)]
+          end,
+    NFs = lists:foldl(Fun, Fs, SizesVarsL),
+    [frames2cols(NFs, PatN, PatSizes, Vars, DerefFun, SelectorFun, CompOp) ||
+        {PatN, _PatVar, PatSizes, Vars} <- SizesVarsL].
+
+frames2cols(Fs, PatN, PatSizes, Vars, DerefFun, SelectorFun, CompOp) ->
+    Rs = [ begin
+               RL = [{{PatN,Col},cons2tuple(element(2, Const))} ||
+                        {V, Col} <- lists:zip(sublist(Vars, PatSz),
+                                              seq(1, PatSz)),
+                        %% Do not handle the case where several
+                        %% values compare equal, e.g. "X =:= 1
+                        %% andalso X == 1.0". Looking up both
+                        %% values or one of them won't always do
+                        %% because it is more or less undefined
+                        %% whether the table returns the given key
+                        %% or the one stored in the table. Or
+                        %% rather, it would be strange if the table
+                        %% did not return the stored key upon
+                        %% request, but the 'lookup_fun' function
+                        %% may have to add the given key (see also
+                        %% gb_table in qlc(3)). (Not a very strong
+                        %% argument. "X =:= 1" could (should?) be
+                        %% seen as a bug.) Note: matching tables
+                        %% cannot skip the filter, but looking up
+                        %% one of the values should be OK.
+                        tl(Consts = DerefFun(V, F)) =:= [],
+                        (Const = (SelectorFun(F))(hd(Consts))) =/= no],
+               sofs:relation(RL) % possibly empty
+            end || {F,PatSz} <- lists:zip(Fs, PatSizes)],
     Ss = sofs:from_sets(Rs),
     %% D: columns occurring in every frame (path).
     D = sofs:intersection(sofs:projection(fun(S) -> sofs:projection(1, S) end,
                                           Ss)),
     Cs = sofs:restriction(sofs:relation_to_family(sofs:union(Ss)), D),
-    sofs:to_external(Cs).
+    [C || {_,Vs}=C <- sofs:to_external(Cs), not col_ignore(Vs, CompOp)].
 
-prep_expr(E, F, S, BF) ->
-    element_calls(tuple2cons(expand_expr_records(E, S)), F, BF).
+pat_vars(N) ->
+    [unique_var() || _ <- seq(1, N)].
+
+pat_tuple(Sz, Vars) when is_integer(Sz), Sz > 0 ->
+    TupleTail = unique_var(),
+    {cons_tuple, list2cons(sublist(Vars, Sz) ++ TupleTail)};
+pat_tuple(_, _Vars) ->
+    unique_var().
+
+%% Do not handle tests as "X =:= 1.0 orelse X == 1" either.
+%% Similar problems as described above.
+col_ignore(_Vs, '=:=') ->
+    false;
+col_ignore(Vs, '==') ->
+    length(Vs) =/= length(lists:usort([element(2, normalise(V)) || V <- Vs])).
+
+pattern_sizes(PatternVars, Fs) ->
+    [{QId#qid.no, Size} || 
+        {QId,PV} <- PatternVars,
+        undefined =/= (Size = pattern_size(Fs, {var,0,PV}, true))].
+
+pattern_size(Fs, PatternVar, Exact) ->
+    Fun = fun(F) -> (deref_pattern(_Imported = []))(PatternVar, F) end,
+    Derefs = lists:flatmap(Fun, Fs),
+    Szs = [pattern_sz(Cs, 0, Exact) || {cons_tuple, Cs} <- Derefs],
+    case lists:usort(Szs) of
+        [Sz] when is_integer(Sz), Sz >= 0 -> Sz;
+        [] when not Exact -> 0;
+        _  -> undefined
+    end.
+
+pattern_sz({cons,_,_C,E}, Col, Exact) ->
+    pattern_sz(E, Col+1, Exact);
+pattern_sz({nil,_}, Sz, _Exact) ->
+    Sz;
+pattern_sz(_, _Sz, true) ->
+    undefined;
+pattern_sz(_, Sz, false) ->
+    Sz.
+
+deref_pattern(Imported) ->
+    fun(PV, F) -> deref_values(PV, F, Imported) end.
+
+prep_expr(E, F, S, BF, Imported) ->
+    element_calls(tuple2cons(expand_expr_records(E, S)), F, BF, Imported).
+
+unify_column(Frame, Var, Col, BindFun, Imported) ->
+    Call = {call,0,{atom,0,element},[{integer,0,Col}, {var,0,Var}]},
+    element_calls(Call, Frame, BindFun, Imported).
 
 %% cons_tuple is used for representing {V1, ..., Vi | TupleTail}.
 %%
@@ -1507,29 +1733,27 @@ prep_expr(E, F, S, BF) ->
 %% {_, a | _}. The tail may be unified later, when more information
 %% about the size of the tuple is known.
 element_calls({call,_,{remote,_,{atom,_,erlang},{atom,_,element}},
-               [{integer,_,I},Term0]}, F0, BF) when I > 0 ->
-    VarI = unique_var(),
+               [{integer,_,I},Term0]}, F0, BF, Imported) when I > 0 ->
     TupleTail = unique_var(),
-    Tuple = element_tuple(I, [VarI | TupleTail]),
-    {Term, F} = element_calls(Term0, F0, BF),    
-    {VarI, unify('=:=', Tuple, Term, F, BF)};
-element_calls({call,L1,{atom,_,element}=E,As}, F0, BF) ->
+    VarsL = [unique_var() || _ <- lists:seq(1, I)],
+    Vars = VarsL ++ TupleTail,
+    Tuple = {cons_tuple, list2cons(Vars)},
+    VarI = lists:nth(I, VarsL),
+    {Term, F} = element_calls(Term0, F0, BF, Imported),
+    {VarI, unify('=:=', Tuple, Term, F, BF, Imported)};
+element_calls({call,L1,{atom,_,element}=E,As}, F0, BF, Imported) ->
     %% erl_expand_records should add "erlang:"...
-    element_calls({call,L1,{remote,L1,{atom,L1,erlang},E}, As}, F0, BF);
-element_calls(T, F0, BF) when is_tuple(T) ->
-    {L, F} = element_calls(tuple_to_list(T), F0, BF),
+    element_calls({call,L1,{remote,L1,{atom,L1,erlang},E}, As}, F0, BF,
+                  Imported);
+element_calls(T, F0, BF, Imported) when is_tuple(T) ->
+    {L, F} = element_calls(tuple_to_list(T), F0, BF, Imported),
     {list_to_tuple(L), F};
-element_calls([E0 | Es0], F0, BF) ->
-    {E, F1} = element_calls(E0, F0, BF),
-    {Es, F} = element_calls(Es0, F1, BF),
+element_calls([E0 | Es0], F0, BF, Imported) ->
+    {E, F1} = element_calls(E0, F0, BF, Imported),
+    {Es, F} = element_calls(Es0, F1, BF, Imported),
     {[E | Es], F};
-element_calls(E, F, _BF) ->
+element_calls(E, F, _BF, _Imported) ->
     {E, F}.
-
-element_tuple(1, Es) ->
-    {cons_tuple, list2cons(Es)};
-element_tuple(I, Es) ->
-    element_tuple(I-1, [unique_var() | Es]).
 
 unique_var() ->
     {var, 0, make_ref()}.
@@ -1561,26 +1785,26 @@ pe([E | Es]) ->
 pe(E) ->
     E.
 
-unify(Op, E1, E2, F, BF) ->
-    unify(Op, E1, E2, F, BF, false).
+unify(Op, E1, E2, F, BF, Imported) ->
+    unify(Op, E1, E2, F, BF, Imported, false).
 
-safe_unify(Op, E1, E2, F, BF) ->
-    unify(Op, E1, E2, F, BF, true).
+safe_unify(Op, E1, E2, F, BF, Imported) ->
+    unify(Op, E1, E2, F, BF, Imported, true).
 
-unify(_Op, _E1, _E2, failed, _BF, _Safe) -> % contradiction
+unify(_Op, _E1, _E2, failed, _BF, _Imported, _Safe) -> % contradiction
     failed;
-unify(_Op, E, E, F, _BF, _Safe) ->
+unify(_Op, E, E, F, _BF, _Imported, _Safe) ->
     F;
-unify(Op, {var, _, _}=Var, E2, F, BF, Safe) ->
-    extend_frame(Op, Var, E2, F, BF, Safe);
-unify(Op, E1, {var, _, _}=Var, F, BF, Safe) ->
-    extend_frame(Op, Var, E1, F, BF, Safe);
-unify(Op, {cons_tuple, Es1}, {cons_tuple, Es2}, F, BF, Safe) ->
-    unify(Op, Es1, Es2, F, BF, Safe);
-unify(Op, {cons, _, L1, R1}, {cons, _, L2, R2}, F, BF, Safe) ->
-    unify(Op, R1, R2, unify(Op, L1, L2, F, BF, Safe), BF, Safe);
-unify(Op, E1, E2, F, _BF, Safe) ->
-    %% This clause could just return F.
+unify(Op, {var, _, _}=Var, E2, F, BF, Imported, Safe) ->
+    extend_frame(Op, Var, E2, F, BF, Imported, Safe);
+unify(Op, E1, {var, _, _}=Var, F, BF, Imported, Safe) ->
+    extend_frame(Op, Var, E1, F, BF, Imported, Safe);
+unify(Op, {cons_tuple, Es1}, {cons_tuple, Es2}, F, BF, Imported, Safe) ->
+    unify(Op, Es1, Es2, F, BF, Imported, Safe);
+unify(Op, {cons, _, L1, R1}, {cons, _, L2, R2}, F, BF, Imported, Safe) ->
+    E = unify(Op, L1, L2, F, BF, Imported, Safe),
+    unify(Op, R1, R2, E, BF, Imported, Safe);
+unify(Op, E1, E2, F, _BF, _Imported, Safe) ->
     try
       {ok, C1} = normalise(E1),
       {ok, C2} = normalise(E2),
@@ -1595,47 +1819,142 @@ unify(Op, E1, E2, F, _BF, Safe) ->
     catch error:_ when Safe -> failed;
           error:_ when not Safe -> F   % ignored
     end.
-%% Binaries are not handled at all.
+%% Binaries are not handled at all (by unify).
 
--record(bind, {var, value}).
+%% Note that a variable can be bound to several values, for instance:
+%% X =:= 3, X == 3.0. As a consequence, deref() returns a list of
+%% values.
 
-extend_frame(Op, Var, Value, F, BF, Safe) ->
-    case binding(Var, F) of
-        #bind{var = Var, value = VarValue} ->
-            unify(Op, VarValue, Value, F, BF, Safe);
-        false ->
+%% Binding a variable to several values makes the unification and
+%% dereferencing more complicated. An alternative would be not to try
+%% to find lookup values for such QLCs at all. That might have been a
+%% better design decision.
+
+-record(bind, {var, value, op}). 
+
+extend_frame(Op, Var, Value, F, BF, Imported, Safe) ->
+    case var_values(Var, F) of
+        [] ->
             case Value of
                 {var, _, _} ->
-                    case binding(Value, F) of
-                        #bind{var = Value, value = ValueValue} ->
-                            unify(Op, Var, ValueValue, F, BF, Safe);
-                        false ->
-                            add_binding(Op, Var, Value, F, BF)
+                    case var_values(Value, F) of
+                        [] ->
+                            add_binding(Op, Value, Var, F, BF, Imported, Safe);
+                        ValsOps ->
+                            maybe_add_binding(ValsOps, Op, Value, Var, F, 
+                                              BF, Imported, Safe)
                     end;
                 _ ->
-                    add_binding(Op, Var, Value, F, BF)
+                    add_binding(Op, Var, Value, F, BF, Imported, Safe)
+            end;
+        ValsOps ->
+            maybe_add_binding(ValsOps, Op, Var, Value, F, BF, Imported, Safe)
+    end.
+
+maybe_add_binding(ValsOps, Op, Var, Value, F0, BF, Imported, Safe) ->
+    case unify_var_bindings(ValsOps, Op, Value, F0, BF, Imported, Safe) of
+        failed ->
+            failed;
+        F ->
+            case already_bound(Op, Var, Value, F) of
+                true -> 
+                    F;
+                false ->
+                    add_binding(Op, Var, Value, F, BF, Imported, Safe)
             end
     end.
-    
-add_binding(Op, Var, Value, F, BF) ->
-    case BF(Value, Op) of
-        true -> 
-            add_binding(Var, Value, F);
-        false ->
+
+already_bound(Op, Var, Value, F) ->
+    %% Note: all variables are treated as imported. The dereferenced
+    %% values must not depend on Imported.
+    BFun = fun(_DV, BOp) ->  Op =:= BOp end,
+    DerefValue = deref_value(Value, Op, F, BFun, all),
+    DerefVar = deref_var(Var, F, BFun, all),
+    DerefValue -- DerefVar =:= [].
+
+unify_var_bindings([], _Op, _Value, F, _BF, _Imported, _Safe) ->
+    F;
+unify_var_bindings([{VarValue, Op2} | Bindings],
+                   Op1, Value, F0, BF, Imported, Safe) ->
+    Op = deref_op(Op1, Op2),
+    case unify(Op, VarValue, Value, F0, BF, Imported, Safe) of
+        failed ->
+            failed;
+        F ->
+            unify_var_bindings(Bindings, Op1, Value, F, BF, Imported, Safe)
+    end.
+
+deref_op('=:=', '=:=') ->
+    '=:=';
+deref_op(_, _) ->
+    '=='.
+
+%%% Note: usort works; {integer,L,3} does not match {float,L,3.0}.
+
+var_values(Var, Frame) ->
+    [{Value, Op} || 
+        #bind{value = Value, op = Op} <- var_bindings(Var, Frame)].
+
+deref_var(Var, Frame, Imported) ->
+    deref_var(Var, Frame, fun(_DV, _Op) -> true end, Imported).
+
+deref_var(Var, Frame, BFun, Imported) ->
+    lists:usort([ValOp || 
+                    #bind{value = Value, op = Op} <- var_bindings(Var, Frame),
+                    ValOp <- deref_value(Value, Op, Frame, BFun, Imported)]).
+
+deref_value(Value, Op, Frame, BFun, Imported) ->
+    lists:usort([{Val,value_op(ValOp, Op, Imported)} || 
+                    {Val,_Op}=ValOp <- deref(Value, Frame, BFun, Imported)]).
+
+add_binding(Op, Var0, Value0, F, BF, Imported, Safe) ->
+    {Var, Value} = maybe_swap_var_value(Var0, Value0, F, Imported),
+    case BF(Op, Value) of
+        true ->
+            add_binding2(Var, Value, Op, F);
+        false when Safe ->
+            failed;
+        false when not Safe ->
             F
     end.
 
-add_binding(Var, Value, F) ->
-    case {occurs(Var, Value, F), Value} of
-        {true, _} ->
+add_binding2(Var, Value, Op, F) ->
+    case occurs(Var, Value, F) of
+        true ->
             failed;
-        {false, {var, _, Ref}} when is_reference(Ref) ->
-            %% Push imported variables to the end of the binding chain
-            %% in order to make is_const/1 work.
-            [#bind{var = Value, value = Var} | F];
-        {false, _} ->
-            [#bind{var = Var, value = Value} | F]
+        false ->
+            [#bind{var = Var, value = Value, op = Op} | F]
     end.
+
+%% Ensure that imported variables are visible in the dereferenced
+%% value by pushing them to the end of the binding chain. Be careful
+%% not to introduce loops.
+maybe_swap_var_value(Var, Value, Frame, Imported) ->
+    case do_swap_var_value(Var, Value, Frame, Imported) of
+        true ->
+            {Value, Var};
+        false ->
+            {Var, Value}
+    end.
+
+do_swap_var_value({var, _, V1}=Var1, {var, _, V2}=Var2, F, Imported) ->
+    case swap_vv(Var1, Var2, F) of
+        [] ->
+            case swap_vv(Var2, Var1, F) of
+                [] ->
+                    ordsets:is_element(V1, Imported) andalso 
+                        not ordsets:is_element(V2, Imported);
+                _Bs ->
+                    true
+            end;                
+        _Bs ->
+           false
+    end;
+do_swap_var_value(_, _, _F, _Imp) ->
+    false.
+
+swap_vv(V1, V2, F) ->
+    [V || #bind{value = V} <- var_bindings(V1, F), V =:= V2].
 
 normalise(E) ->
     %% Tuple tails are OK.
@@ -1649,45 +1968,108 @@ normalise(E) ->
 occurs(V, V, _F) ->
     true;
 occurs(V, {var, _, _} = Var, F) ->
-    case binding(Var, F) of
-        #bind{value = Value} ->
-            occurs(V, Value, F);
-        false ->
-            false
-    end;
+    lists:any(fun(B) -> occurs(V, B#bind.value, F) end, var_bindings(Var, F));
 occurs(V, T, F) when is_tuple(T) ->
     lists:any(fun(E) -> occurs(V, E, F) end, tuple_to_list(T));
 occurs(V, [E | Es], F) ->
-    occurs(V, E, F) or occurs(V, Es, F);
+    occurs(V, E, F) orelse occurs(V, Es, F);
 occurs(_V, _E, _F) ->
     false.
 
-has_integer(I) when is_integer(I) ->
-    true;
-has_integer(F) when is_float(F) ->
-    round(F) == F;
-has_integer(T) when is_tuple(T) ->
-    has_integer(tuple_to_list(T));
-has_integer([E | Es]) ->
-    has_integer(E) or has_integer(Es);
-has_integer(_) ->
-    false.
+deref_values(E, Frame, Imported) ->
+    deref_values(E, Frame, fun(_DV, _Op) -> true end, Imported).
 
-deref(E, F) ->
-    var_map(fun(V) ->
-                    case binding(V, F) of
-                        #bind{value = Val} ->
-                            deref(Val, F);
-                        false ->
-                            V
-                    end
-            end, E).
+deref_values(E, Frame, BFun, Imported) ->
+    lists:usort([V || 
+                    {V, Op} <- deref(E, Frame, BFun, Imported),
+                    BFun(V, Op)]).
 
-binding(V, [#bind{var = V}=B | _]) ->
-    B;
-binding(V, [_ | F]) ->
-    binding(V, F);
-binding(_V, _F) ->
+deref(E, F, Imp) ->
+    BFun = fun(_DV, _Op) -> true end,
+    deref(E, F, BFun, Imp).
+
+deref({var, _, _}=V, F, BFun, Imp) ->
+    DBs = lists:flatmap(fun(B) -> deref_binding(B, F, BFun, Imp) 
+                        end, var_bindings(V, F)),
+    case DBs of
+        [] ->
+            [{V, '=:='}];
+        _ ->
+            lists:usort(DBs)
+    end;
+deref(T, F, BFun, Imp) when is_tuple(T) ->
+    [{list_to_tuple(DL), Op} || 
+        {DL, Op} <- deref(tuple_to_list(T), F, BFun, Imp)];
+deref(Es, F, BFun, Imp) when is_list(Es) ->
+    L = [deref(C, F, BFun, Imp) || C <- Es],
+    lists:usort([deref_list(S) || S <- all_comb(L)]);
+deref(E, _F, _BFun, _Imp) ->
+    [{E, '=:='}].
+
+var_bindings(Var, F) ->
+    [B || #bind{var = V}=B <- F, V =:= Var].
+
+deref_binding(Bind, Frame, BFun, Imp) ->
+    #bind{value = Value, op = Op0} = Bind,
+    [{Val, Op} ||
+        {Val, _Op}=ValOp <- deref(Value, Frame, BFun, Imp),
+        BFun(Val, Op = value_op(ValOp, Op0, Imp))].
+    
+deref_list(L) ->
+    Op = case lists:usort([Op || {_Val, Op} <- L]) of
+             ['=:='] ->
+                 '=:=';
+             _ ->
+                 '=='
+         end,
+    {[V || {V, _Op} <- L], Op}.
+
+value_op({_V, '=='}, _BindOp, _Imp) ->
+    '==';
+value_op({_V, '=:='}, _BindOp='=:=', _Imp) ->
+    '=:=';
+value_op({V, '=:='}, _BindOp='==', Imp) ->
+    case free_of_integers(V, Imp) of
+        true ->
+            '=:=';
+        false ->
+            '=='
+    end.
+
+all_comb([]) ->
+    [[]];
+all_comb([Cs | ICs]) ->
+    [[C | L] || C <- Cs, L <- all_comb(ICs)].
+
+%% "Free of integers" here means that there are not imported variables
+%% in V (which could take on integer values), but there may be other
+%% variables in V.
+free_of_integers(V, Imported) ->
+    not has_integer(V) andalso not has_imported_vars(V, Imported).
+
+%% Assumes that imported variables are representatives, if Value is a
+%% dereferenced value.
+has_imported_vars(Value, all) ->
+    qlc:vars(Value) =/= [];
+has_imported_vars(Value, Imported) ->
+    [Var || Var <- qlc:vars(Value), lists:member(Var, Imported)] =/= [].
+
+has_integer(Abstr) ->
+    try
+        has_int(Abstr)
+    catch throw:true -> true
+    end.
+
+has_int({integer,_,I}) when float(I) == I ->
+    throw(true);
+has_int({float,_,F}) when round(F) == F ->
+    throw(true);
+has_int(T) when is_tuple(T) ->
+    has_int(tuple_to_list(T));
+has_int([E | Es]) ->
+    has_int(E), 
+    has_int(Es);
+has_int(_) ->
     false.
 
 tuple2cons({tuple, _, Es}) ->
@@ -1724,20 +2106,22 @@ cons2list(E) -> % tuple tail (always a variable)
     [cons2tuple(E)].
 
 %% Returns true if all bindings in F1 also occur in F2.
-%% All unique variables are considered equal after deref.
-bindings_is_subset(F1, F2) ->
-    lists:all(fun(#bind{var = V}) ->
-                      is_unique_var(V) 
-                      orelse deref_ss(V, F1) =:= deref_ss(V, F2)
-              end, F1).
+%% Viewing F1 and F2 as sets, the fact that F1 is a subset of F2 iff
+%% F1 union F2 is equal to F2 is used. (This should take care of 
+%% issues with anonymous variables.)
+bindings_is_subset(F1, F2, Imported) ->
+    BF = fun(_Op, _Value) -> true end, % don't need any test here
+    %% Extend F2 with the bindings in F1:
+    F = lists:foldl(fun(#bind{var = V, value = Value, op = Op}, Frame) ->
+                            unify(Op, V, Value, Frame, BF, Imported)
+                    end, F2, F1),
+    bindings_subset(F, F2, Imported) andalso bindings_subset(F2, F, Imported).
 
-deref_ss(E, F) ->
-    var_map(fun(V) ->
-                    case is_unique_var(V) of
-                        true -> unique_var;
-                        false -> V
-                    end
-            end, deref(E, F)).
+bindings_subset(F1, F2, Imp) ->
+    Vars = lists:usort([V || #bind{var = V} <- F1, not is_unique_var(V)]),
+    lists:all(fun(V) ->
+                      deref_var(V, F1, Imp) =:= deref_var(V, F2, Imp)
+              end, Vars).
 
 %% Recognizes all QLCs on the form [T || P <- LE, F] such that
 %% ets:fun2ms(fun(P) when F -> T end) is a match spec. This is OK with
@@ -1787,7 +2171,9 @@ qdata([{#qid{no = QIdNo},{_QIVs,{{gen,_P,LE,_GV},GoI,SI}}} | QCs], L) ->
                {join, Op, Q1, Q2, H1, H2, Cs1_0, Cs2_0} ->
                    Cs1 = qcon(Cs1_0),
                    Cs2 = qcon(Cs2_0),
-                   Compat = {nil,L}, % meant for redundant match spec
+                   %% -- R12B-3: {nil,L}
+                   %% R12B-4 --: {atom,L,v1}
+                   Compat = {atom,L,v1}, % meant for redundant match spec
                    CF = closure({tuple,L,[Cs1,Cs2,Compat]}, L),
                    {tuple,L,[?A(join),?A(Op),?I(Q1),?I(Q2),H1,H2,CF]};
                _ ->
@@ -1803,7 +2189,11 @@ qdata([], L) ->
     {nil,L}.
 
 qcon(Cs) ->
-    list2cons([{tuple,0,[{integer,0,C},list2cons(Vs)]} || {C,Vs} <- Cs]).
+    list2cons([{tuple,0,[{integer,0,Col},list2cons(qcon1(ConstOps))]} || 
+                  {Col,ConstOps} <- Cs]).
+
+qcon1(ConstOps) ->
+    [{tuple,0,[Const,abstr(Op, 0)]} || {Const,Op} <- ConstOps].
 
 %% The original code (in Source) is used for filters and the template
 %% since the translated code can have QLCs and we don't want them to
@@ -1989,18 +2379,7 @@ aux_vars(Vars, LcN, AllVars) ->
     [aux_var(Name, LcN, 0, 1, AllVars) || Name <- Vars].
 
 aux_var(Name, LcN, QN, N, AllVars) ->
-    aux_name(lists:concat([Name, LcN, '_', QN, '_']), N, AllVars).
-
-aux_name(Name, N, AllNames) ->
-    {VN, _} = aux_name1(Name, N, AllNames),
-    VN.
-
-aux_name1(Name, N, AllNames) ->
-    SN = name_suffix(Name, N),
-    case sets:is_element(SN, AllNames) of
-        true -> aux_name1(Name, N + 1, AllNames);
-        false -> {SN, N}
-    end.
+    qlc:aux_name(lists:concat([Name, LcN, '_', QN, '_']), N, AllVars).
 
 no_compiler_warning(Line) ->
     - abs(Line).
@@ -2065,23 +2444,8 @@ qlcmf(T, F, Imp, A0, No0) when is_tuple(T) ->
 qlcmf(T, _F, _Imp, A, No) ->
     {T, A, No}.
 
-vars(E) ->
-    var_ufold(fun({var,_L,V}) -> V end, E).
-
 occ_vars(E) ->
-    var_fold(fun({var,_L,V}) -> V end, [], E).
-
-var_ufold(F, E) ->
-    ordsets:from_list(var_fold(F, [], E)).
-
-var_fold(F, A, {var,_,V}=Var) when V =/= '_' ->
-    [F(Var) | A];
-var_fold(F, A, T) when is_tuple(T) ->
-    var_fold(F, A, tuple_to_list(T));
-var_fold(F, A, [E | Es]) ->
-    var_fold(F, var_fold(F, A, E), Es);
-var_fold(_F, A, _T) ->
-    A.
+    qlc:var_fold(fun({var,_L,V}) -> V end, [], E).
 
 no_shadows(Forms0, State) ->
     %% Variables that may shadow other variables are introduced in
@@ -2102,7 +2466,7 @@ no_shadows(Forms0, State) ->
     %% The original names of variables are kept in the line number
     %% position of the abstract code: {var, {OriginalName, L},
     %% NewName}. undo_no_shadows/1 re-creates the original code.
-    AllVars = sets:from_list(ordsets:to_list(vars(Forms0))),
+    AllVars = sets:from_list(ordsets:to_list(qlc:vars(Forms0))),
     ?DEBUG("nos AllVars = ~p~n", [sets:to_list(AllVars)]),
     VFun = fun(_Id, LC, Vs) -> nos(LC, Vs) end,
     LI = ets:new(?APIMOD,[]),
@@ -2168,7 +2532,7 @@ nos_pattern([P0 | Ps0], S0, PVs0) ->
     {[P | Ps], S, PVs};
 nos_pattern({var,L,V}, {LI,Vs0,UV,A,Sg}, PVs0) when V =/= '_' ->
     {Name, Vs, PVs} = 
-        case keysearch(V, 1, PVs0) of
+        case lists:keysearch(V, 1, PVs0) of
             {value, {V,VN}} -> 
                 _ = used_var(V, Vs0, UV), 
                 {VN, Vs0, PVs0};
@@ -2190,7 +2554,7 @@ nos_pattern(T, S, PVs) ->
 used_var(V, Vs, UV) ->
     case dict:find(V, Vs) of
         {ok,Value} ->
-            VN = name_suffix(V, Value),
+            VN = qlc:name_suffix(V, Value),
             _ = ets:update_counter(UV, VN, 1),
             {true, VN};
         error -> false
@@ -2202,16 +2566,13 @@ next_var(V, Vs, AllVars, LI, UV) ->
                  [] -> 1
              end,
     true = ets:insert(LI, {V, NValue}),
-    VN = name_suffix(V, NValue),
+    VN = qlc:name_suffix(V, NValue),
     case sets:is_element(VN, AllVars) of
         true -> next_var(V, Vs, AllVars, LI, UV);
         false -> true = ets:insert(UV, {VN, 0}),
                  NVs = dict:store(V, NValue, Vs),
                  {VN, NVs}
     end.
-
-name_suffix(A, Suff) ->
-    list_to_atom(lists:concat([A, Suff])).
 
 undo_no_shadows(E) ->
     var_map(fun undo_no_shadows1/1, E).
@@ -2250,6 +2611,16 @@ sgn(X) when X >= 0 ->
 sgn(X) when X < 0 ->
     -1.
 
+seq(S, E) when S - E =:= 1 ->
+    [];
+seq(S, E) -> 
+    lists:seq(S, E).
+
+sublist(_, 0) ->
+    [];
+sublist(L, N) ->
+    lists:sublist(L, N).
+
 qid(LCId, No) ->
     #qid{no = No, lcid = LCId}.
 
@@ -2269,6 +2640,7 @@ embed_vars(Vars, L) ->
 embed_expr(Expr, L) ->
     {lc,L,Expr,[{generate,L,{var,L,'_'},{nil,L}}]}.
 
+%% Doesn't handle binaries very well, but don't bother for now.
 var2const(E) ->
     var_map(fun({var, L, V}) -> {atom, L, V} end, E).
 

@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>2004-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 %%----------------------------------------------------------------------
 %% Purpose:
 %% 
@@ -830,7 +830,7 @@ start_with_invalid_users_conf_file1(Conf) when list(Conf) ->
 
     %% --
     p("write users config file with invalid user tuple (2)"),
-    write_users_conf2(ConfDir, "{kalle, snmpm_user_default, kalle, olle}."),
+    write_users_conf2(ConfDir, "{kalle, snmpm_user_default, kalle, [], olle}."),
     ?line {error, Reason22} = config_start(Opts),
     p("start failed (as expected): ~p", [Reason22]),
     ?line {failed_check, _, _, _, {bad_user_config, _}} = Reason22,
@@ -852,6 +852,28 @@ start_with_invalid_users_conf_file1(Conf) when list(Conf) ->
     ?line {failed_check, _, _, _, {bad_user_config, _}} = Reason24,
     await_config_not_running(),
 
+    %% --
+    p("write users config file with invalid user agent default config (1)"),
+    write_users_conf2(ConfDir, "{kalle, snmpm_user_default, kalle, olle}."),
+    ?line {error, Reason31} = config_start(Opts),
+    p("start failed (as expected): ~p", [Reason31]),
+    ?line {failed_check, _, _, _, {bad_default_agent_config, _}} = Reason31,
+    await_config_not_running(),
+
+    %% --
+    p("write users config file with invalid user agent default config (2)"),
+    write_users_conf2(ConfDir, "{kalle, snmpm_user_default, kalle, [olle]}."),
+    ?line {error, Reason32} = config_start(Opts),
+    p("start failed (as expected): ~p", [Reason32]),
+    %% ?line {failed_check, _, _, _, {bad_default_agent_config, _}} = Reason32,
+    case Reason32 of
+	{failed_check, _, _, _, {bad_default_agent_config, _}} ->
+	    ok;
+	{A, B, C, D} ->
+	    exit({bad_error, A, B, C, D})
+    end,
+    await_config_not_running(),
+
     p("done"),
     ok.
 
@@ -863,8 +885,8 @@ start_with_invalid_users_conf_file1(Conf) when list(Conf) ->
 start_with_invalid_agents_conf_file1(suite) -> [];
 start_with_invalid_agents_conf_file1(doc) ->
     "Start with invalid agents config file.";
-start_with_invalid_agents_conf_file1(Conf) when list(Conf) -> 
-    put(tname,swiacf),
+start_with_invalid_agents_conf_file1(Conf) when is_list(Conf) -> 
+    put(tname, swiacf),
     p("start"),
     process_flag(trap_exit, true),
     ConfDir = ?config(manager_conf_dir, Conf),
@@ -882,106 +904,150 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
 	      "any", "\"initial\"", "noAuthNoPriv"},
 
     %% --
-    p("write agents config file with invalid user (1)"),
+    p("[test 11] write agents config file with invalid user (1)"),
     Agent11 = setelement(1, Agent0, "kalle-anka"),
     write_agents_conf(ConfDir, [Agent11]),
-    ?line {error, Reason11} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason11]),
-    ?line {failed_reading, _, _, _, {parse_error, _}} = Reason11,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason11} ->
+	    p("start failed (as expected): ~p", [Reason11]),
+	    ?line {failed_reading, _, _, _, {parse_error, _}} = Reason11,
+	    await_config_not_running();
+	OK_11 ->
+	    exit({error, {unexpected_success, "11", OK_11}})
+    end,
 
     %% --
-    p("write agents config file with invalid target name (1)"),
+    p("[test 21] write agents config file with invalid target name (1)"),
     Agent21 = setelement(2, Agent0, "targ-hobbes"),
     write_agents_conf(ConfDir, [Agent21]),
-    ?line {error, Reason21} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason21]),
-    ?line {failed_reading, _, _, _, {parse_error, _}} = Reason21,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason21} ->
+	    p("start failed (as expected): ~p", [Reason21]),
+	    ?line {failed_reading, _, _, _, {parse_error, _}} = Reason21,
+	    await_config_not_running();
+	OK_21 ->
+	    exit({error, {unexpected_success, "21", OK_21}})
+    end,
 
     %% --
-    p("write agents config file with invalid target name (2)"),
+    p("[test 22] write agents config file with invalid target name (2)"),
     Agent22 = setelement(2, Agent0, "targ_hobbes"),
     write_agents_conf(ConfDir, [Agent22]),
-    ?line {error, Reason22} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason22]),
-    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason22,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason22} ->
+	    p("start failed (as expected): ~p", [Reason22]),
+	    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason22,
+	    await_config_not_running();
+	OK_22 ->
+	    exit({error, {unexpected_success, "22", OK_22}})
+    end,
 
     %% --
-    p("write agents config file with invalid target name (3)"),
+    p("[test 23] write agents config file with invalid target name (3)"),
     Agent23 = setelement(2, Agent0, "10101"),
     write_agents_conf(ConfDir, [Agent23]),
-    ?line {error, Reason23} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason23]),
-    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason23,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason23} ->
+	    p("start failed (as expected): ~p", [Reason23]),
+	    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason23,
+	    await_config_not_running();
+	OK_23 ->
+	    exit({error, {unexpected_success, "23", OK_23}})
+    end,
 
     %% --
-    p("write agents config file with invalid community (1)"),
+    p("[test 31] write agents config file with invalid community (1)"),
     Agent31 = setelement(3, Agent0, "targ-hobbes"),
     write_agents_conf(ConfDir, [Agent31]),
-    ?line {error, Reason31} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason31]),
-    ?line {failed_reading, _, _, _, {parse_error, _}} = Reason31,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason31} ->
+	    p("start failed (as expected): ~p", [Reason31]),
+	    ?line {failed_reading, _, _, _, {parse_error, _}} = Reason31,
+	    await_config_not_running();
+	OK_31 ->
+	    exit({error, {unexpected_success, "31", OK_31}})
+    end,
 
     %% --
-    p("write agents config file with invalid community (2)"),
+    p("[test 32] write agents config file with invalid community (2)"),
     Agent32 = setelement(3, Agent0, "targ_hobbes"),
     write_agents_conf(ConfDir, [Agent32]),
-    ?line {error, Reason32} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason32]),
-    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason32,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason32} ->
+	    p("start failed (as expected): ~p", [Reason32]),
+	    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason32,
+	    await_config_not_running();
+	OK_32 ->
+	    exit({error, {unexpected_success, "32", OK_32}})
+    end,
 
     %% --
-    p("write agents config file with invalid community (3)"),
+    p("[test 33] write agents config file with invalid community (3)"),
     Agent33 = setelement(3, Agent0, "10101"),
     write_agents_conf(ConfDir, [Agent33]),
-    ?line {error, Reason43} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason43]),
-    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason43,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason33} ->
+	    p("start failed (as expected): ~p", [Reason33]),
+	    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason33,
+	    await_config_not_running();
+	OK_33 ->
+	    exit({error, {unexpected_success, "33", OK_33}})
+    end,
 
     %% --
-    p("write agents config file with invalid ip (1)"),
+    p("[test 51] write agents config file with invalid ip (1)"),
     Agent51 = setelement(4, Agent0, "kalle_anka"),
     write_agents_conf(ConfDir, [Agent51]),
-    ?line {error, Reason51} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason51]),
-    ?line {failed_check, _, _, _, {bad_address, _}} = Reason51,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason51} ->
+	    p("start failed (as expected): ~p", [Reason51]),
+	    ?line {failed_check, _, _, _, {bad_address, _}} = Reason51,
+	    await_config_not_running();
+	OK_51 ->
+	    exit({error, {unexpected_success, "51", OK_51}})
+    end,
 
     %% --
-    p("write agents config file with invalid ip (2)"),
+    p("[test 52] write agents config file with invalid ip (2)"),
     Agent52 = setelement(4, Agent0, "10101"),
     write_agents_conf(ConfDir, [Agent52]),
-    ?line {error, Reason52} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason52]),
-    ?line {failed_check, _, _, _, {bad_address, _}} = Reason52,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason52} ->
+	    p("start failed (as expected): ~p", [Reason52]),
+	    ?line {failed_check, _, _, _, {bad_address, _}} = Reason52,
+	    await_config_not_running();
+	OK_52 ->
+	    exit({error, {unexpected_success, "52", OK_52}})
+    end,
 
     %% --
-    p("write agents config file with invalid ip (3)"),
+    p("[test 53] write agents config file with invalid ip (3)"),
     Agent53 = setelement(4, Agent0, "[192,168,0]"),
     write_agents_conf(ConfDir, [Agent53]),
-    ?line {error, Reason53} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason53]),
-    ?line {failed_check, _, _, _, {invalid_ip_address, _}} = Reason53,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason53} ->
+	    p("start failed (as expected): ~p", [Reason53]),
+	    ?line {failed_check, _, _, _, {invalid_ip_address, _}} = Reason53,
+	    await_config_not_running();
+	OK_53 ->
+	    exit({error, {unexpected_success, "53", OK_53}})
+    end,
 
     %% --
-    p("write agents config file with invalid ip (4)"),
+    p("[test 54] write agents config file with invalid ip (4)"),
     Agent54 = setelement(4, Agent0, "[192,168,0,100,99]"),
     write_agents_conf(ConfDir, [Agent54]),
-    ?line {error, Reason54} = config_start(Opts),
-    p("start failed (as expected): ~p", [Reason54]),
-    ?line {failed_check, _, _, _, {invalid_ip_address, _}} = Reason54,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, Reason54} ->
+	    p("start failed (as expected): ~p", [Reason54]),
+	    ?line {failed_check, _, _, _, {invalid_ip_address, _}} = Reason54,
+	    await_config_not_running();
+	OK_54 ->
+	    exit({error, {unexpected_success, "54", OK_54}})
+    end,
 
     %% --
-    p("write agents config file with invalid ip (5)"),
+    p("[test 55] write agents config file with invalid ip (5)"),
     Agent55 = setelement(4, Agent0, "[192,168,0,arne]"),
     write_agents_conf(ConfDir, [Agent55]),
     ?line {error, Reason55} = config_start(Opts),
@@ -990,7 +1056,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid port (1)"),
+    p("[test 61] write agents config file with invalid port (1)"),
     Agent61 = setelement(5, Agent0, "kalle_anka"),
     write_agents_conf(ConfDir, [Agent61]),
     ?line {error, Reason61} = config_start(Opts),
@@ -999,7 +1065,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid port (2)"),
+    p("[test 62] write agents config file with invalid port (2)"),
     Agent62 = setelement(5, Agent0, "-1"),
     write_agents_conf(ConfDir, [Agent62]),
     ?line {error, Reason62} = config_start(Opts),
@@ -1008,7 +1074,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid port (3)"),
+    p("[test 63] write agents config file with invalid port (3)"),
     Agent63 = setelement(5, Agent0, "\"100\""),
     write_agents_conf(ConfDir, [Agent63]),
     ?line {error, Reason63} = config_start(Opts),
@@ -1017,7 +1083,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid engine-id (1)"),
+    p("[test 71] write agents config file with invalid engine-id (1)"),
     Agent71 = setelement(6, Agent0, "kalle_anka"),
     write_agents_conf(ConfDir, [Agent71]),
     ?line {error, Reason71} = config_start(Opts),
@@ -1026,7 +1092,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid engine-id (2)"),
+    p("[test 72] write agents config file with invalid engine-id (2)"),
     Agent72 = setelement(6, Agent0, "10101"),
     write_agents_conf(ConfDir, [Agent72]),
     ?line {error, Reason72} = config_start(Opts),
@@ -1035,7 +1101,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid timeout (1)"),
+    p("[test 81] write agents config file with invalid timeout (1)"),
     Agent81 = setelement(7, Agent0, "kalle_anka"),
     write_agents_conf(ConfDir, [Agent81]),
     ?line {error, Reason81} = config_start(Opts),
@@ -1044,7 +1110,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid timeout (2)"),
+    p("[test 82] write agents config file with invalid timeout (2)"),
     Agent82 = setelement(7, Agent0, "-1"),
     write_agents_conf(ConfDir, [Agent82]),
     ?line {error, Reason82} = config_start(Opts),
@@ -1053,7 +1119,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid timeout (3)"),
+    p("[test 83] write agents config file with invalid timeout (3)"),
     Agent83 = setelement(7, Agent0, "{1000, 1, 10, kalle}"),
     write_agents_conf(ConfDir, [Agent83]),
     ?line {error, Reason83} = config_start(Opts),
@@ -1062,7 +1128,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid timeout (4)"),
+    p("[test 84] write agents config file with invalid timeout (4)"),
     Agent84 = setelement(7, Agent0, "{1000, -1, 10, 10}"),
     write_agents_conf(ConfDir, [Agent84]),
     ?line {error, Reason84} = config_start(Opts),
@@ -1071,7 +1137,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid timeout (5)"),
+    p("[test 85] write agents config file with invalid timeout (5)"),
     Agent85 = setelement(7, Agent0, "{1000, 1, -100, 10}"),
     write_agents_conf(ConfDir, [Agent85]),
     ?line {error, Reason85} = config_start(Opts),
@@ -1080,7 +1146,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid timeout (6)"),
+    p("[test 86] write agents config file with invalid timeout (6)"),
     Agent86 = setelement(7, Agent0, "{1000, 1, 100, -1}"),
     write_agents_conf(ConfDir, [Agent86]),
     ?line {error, Reason86} = config_start(Opts),
@@ -1089,7 +1155,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid max-message-size (1)"),
+    p("[test 91] write agents config file with invalid max-message-size (1)"),
     Agent91 = setelement(8, Agent0, "483"),
     write_agents_conf(ConfDir, [Agent91]),
     ?line {error, Reason91} = config_start(Opts),
@@ -1098,7 +1164,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid max-message-size (2)"),
+    p("[test 92] write agents config file with invalid max-message-size (2)"),
     Agent92 = setelement(8, Agent0, "kalle_anka"),
     write_agents_conf(ConfDir, [Agent92]),
     ?line {error, Reason92} = config_start(Opts),
@@ -1107,7 +1173,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid version (1)"),
+    p("[test A1] write agents config file with invalid version (1)"),
     AgentA1 = setelement(9, Agent0, "1"),
     write_agents_conf(ConfDir, [AgentA1]),
     ?line {error, ReasonA1} = config_start(Opts),
@@ -1116,7 +1182,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid version (2)"),
+    p("[test A2] write agents config file with invalid version (2)"),
     AgentA2 = setelement(9, Agent0, "v30"),
     write_agents_conf(ConfDir, [AgentA2]),
     ?line {error, ReasonA2} = config_start(Opts),
@@ -1125,7 +1191,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid sec-model (1)"),
+    p("[test B1] write agents config file with invalid sec-model (1)"),
     AgentB1 = setelement(10, Agent0, "\"any\""),
     write_agents_conf(ConfDir, [AgentB1]),
     ?line {error, ReasonB1} = config_start(Opts),
@@ -1134,7 +1200,7 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid sec-model (2)"),
+    p("[test B2] write agents config file with invalid sec-model (2)"),
     AgentB2 = setelement(10, Agent0, "v3"),
     write_agents_conf(ConfDir, [AgentB2]),
     ?line {error, ReasonB2} = config_start(Opts),
@@ -1143,48 +1209,68 @@ start_with_invalid_agents_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write agents config file with invalid sec-name (1)"),
+    p("[test C1] write agents config file with invalid sec-name (1)"),
     AgentC1 = setelement(11, Agent0, "initial"),
     write_agents_conf(ConfDir, [AgentC1]),
-    ?line {error, ReasonC1} = config_start(Opts),
-    p("start failed (as expected): ~p", [ReasonC1]),
-    ?line {failed_check, _, _, _, {bad_sec_name, _}} = ReasonC1,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, ReasonC1} ->
+	    p("start failed (as expected): ~p", [ReasonC1]),
+	    ?line {failed_check, _, _, _, {bad_sec_name, _}} = ReasonC1,
+	    await_config_not_running();
+	OK_C1 ->
+	    exit({error, {unexpected_success, "C1", OK_C1}})
+    end,
 
     %% --
-    p("write agents config file with invalid sec-name (2)"),
+    p("[test C2] write agents config file with invalid sec-name (2)"),
     AgentC2 = setelement(11, Agent0, "10101"),
     write_agents_conf(ConfDir, [AgentC2]),
-    ?line {error, ReasonC2} = config_start(Opts),
-    p("start failed (as expected): ~p", [ReasonC2]),
-    ?line {failed_check, _, _, _, {bad_sec_name, _}} = ReasonC2,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, ReasonC2} ->
+	    p("start failed (as expected): ~p", [ReasonC2]),
+	    ?line {failed_check, _, _, _, {bad_sec_name, _}} = ReasonC2,
+	    await_config_not_running();
+	OK_C2 ->
+	    exit({error, {unexpected_success, "C2", OK_C2}})
+    end,
 
     %% --
-    p("write agents config file with invalid sec-level (1)"),
+    p("[test D1] write agents config file with invalid sec-level (1)"),
     AgentD1 = setelement(12, Agent0, "\"noAuthNoPriv\""),
     write_agents_conf(ConfDir, [AgentD1]),
-    ?line {error, ReasonD1} = config_start(Opts),
-    p("start failed (as expected): ~p", [ReasonD1]),
-    ?line {failed_check, _, _, _, {invalid_sec_level, _}} = ReasonD1,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, ReasonD1} ->
+	    p("start failed (as expected): ~p", [ReasonD1]),
+	    ?line {failed_check, _, _, _, {invalid_sec_level, _}} = ReasonD1,
+	    await_config_not_running();
+	OK_D1 ->
+	    exit({error, {unexpected_success, "D1", OK_D1}})
+    end,
 
     %% --
-    p("write agents config file with invalid sec-level (2)"),
+    p("[test D2] write agents config file with invalid sec-level (2)"),
     AgentD2 = setelement(12, Agent0, "99"),
     write_agents_conf(ConfDir, [AgentD2]),
-    ?line {error, ReasonD2} = config_start(Opts),
-    p("start failed (as expected): ~p", [ReasonD2]),
-    ?line {failed_check, _, _, _, {invalid_sec_level, _}} = ReasonD2,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, ReasonD2} ->
+	    p("start failed (as expected): ~p", [ReasonD2]),
+	    ?line {failed_check, _, _, _, {invalid_sec_level, _}} = ReasonD2,
+	    await_config_not_running();
+	OK_D2 ->
+	    exit({error, {unexpected_success, "D2", OK_D2}})
+    end,
 
     %% --
-    p("write agents config file with invalid agent (1)"),
+    p("[test E1] write agents config file with invalid agent (1)"),
     write_agents_conf2(ConfDir, "{swiacf, \"targ-hobbes\"}."),
-    ?line {error, ReasonE1} = config_start(Opts),
-    p("start failed (as expected): ~p", [ReasonE1]),
-    ?line {failed_check, _, _, _, {bad_agent_config, _}} = ReasonE1,
-    await_config_not_running(),
+    case config_start(Opts) of
+	{error, ReasonE1} ->
+	    p("start failed (as expected): ~p", [ReasonE1]),
+	    ?line {failed_check, _, _, _, {bad_agent_config, _}} = ReasonE1,
+	    await_config_not_running();
+	OK_E1 ->
+	    exit({error, {unexpected_success, "E1", OK_E1}})
+    end,
 
     p("done"),
     ok.
@@ -1233,7 +1319,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
 	    "usmNoPrivProtocol", "[]"},
 
     %% --
-    p("write usm config file with invalid engine-id (1)"),
+    p("[test 11] write usm config file with invalid engine-id (1)"),
     Usm11 = setelement(1, Usm0, "kalle-anka"),
     write_usm_conf(ConfDir, [Usm11]),
     ?line {error, Reason11} = config_start(Opts),
@@ -1242,7 +1328,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid engine-id (2)"),
+    p("[test 12] write usm config file with invalid engine-id (2)"),
     Usm12 = setelement(1, Usm0, "kalle_anka"),
     write_usm_conf(ConfDir, [Usm12]),
     ?line {error, Reason12} = config_start(Opts),
@@ -1251,7 +1337,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid engine-id (3)"),
+    p("[test 13] write usm config file with invalid engine-id (3)"),
     Usm13 = setelement(1, Usm1, "10101"),
     write_usm_conf(ConfDir, [Usm13]),
     ?line {error, Reason13} = config_start(Opts),
@@ -1260,7 +1346,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid user-name (1)"),
+    p("[test 21] write usm config file with invalid user-name (1)"),
     Usm21 = setelement(2, Usm0, "kalle_anka"),
     write_usm_conf(ConfDir, [Usm21]),
     ?line {error, Reason21} = config_start(Opts),
@@ -1269,7 +1355,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid user-name (1)"),
+    p("[test 22] write usm config file with invalid user-name (1)"),
     Usm22 = setelement(2, Usm1, "10101"),
     write_usm_conf(ConfDir, [Usm22]),
     ?line {error, Reason22} = config_start(Opts),
@@ -1278,7 +1364,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid sec-name (1)"),
+    p("[test 31] write usm config file with invalid sec-name (1)"),
     Usm31 = setelement(3, Usm1, "kalle_anka"),
     write_usm_conf(ConfDir, [Usm31]),
     ?line {error, Reason31} = config_start(Opts),
@@ -1287,7 +1373,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid sec-name (2)"),
+    p("[test 32] write usm config file with invalid sec-name (2)"),
     Usm32 = setelement(3, Usm1, "10101"),
     write_usm_conf(ConfDir, [Usm32]),
     ?line {error, Reason32} = config_start(Opts),
@@ -1296,7 +1382,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-protocol (1)"),
+    p("[test 41] write usm config file with invalid auth-protocol (1)"),
     Usm41 = setelement(3, Usm0, "\"usmNoAuthProtocol\""),
     write_usm_conf(ConfDir, [Usm41]),
     ?line {error, Reason41} = config_start(Opts),
@@ -1305,7 +1391,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-protocol (2)"),
+    p("[test 42] write usm config file with invalid auth-protocol (2)"),
     Usm42 = setelement(3, Usm0, "kalle"),
     write_usm_conf(ConfDir, [Usm42]),
     ?line {error, Reason42} = config_start(Opts),
@@ -1314,7 +1400,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-protocol (3)"),
+    p("[test 43] write usm config file with invalid auth-protocol (3)"),
     Usm43 = setelement(3, Usm0, "10101"),
     write_usm_conf(ConfDir, [Usm43]),
     ?line {error, Reason43} = config_start(Opts),
@@ -1323,7 +1409,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-key (1)"),
+    p("[test 51] write usm config file with invalid auth-key (1)"),
     Usm51 = setelement(3, Usm0, "usmHMACMD5AuthProtocol"),
     write_usm_conf(ConfDir, [Usm51]),
     ?line {error, Reason51} = config_start(Opts),
@@ -1332,7 +1418,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-key (2)"),
+    p("[test 52] write usm config file with invalid auth-key (2)"),
     Usm52 = setelement(4, Usm51, "[1,2,3,4,5,6,7,8,9,0,1,2,3,4,5]"),
     write_usm_conf(ConfDir, [Usm52]),
     ?line {error, Reason52} = config_start(Opts),
@@ -1341,7 +1427,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-key (3)"),
+    p("[test 53] write usm config file with invalid auth-key (3)"),
     Usm53 = setelement(4, Usm51, "[1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7]"),
     write_usm_conf(ConfDir, [Usm53]),
     ?line {error, Reason53} = config_start(Opts),
@@ -1350,7 +1436,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-key (4)"),
+    p("[test 54] write usm config file with invalid auth-key (4)"),
     Usm54 = setelement(4, Usm51, "[1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,kalle]"),
     write_usm_conf(ConfDir, [Usm54]),
     %% ?line ok = crypto:start(),  %% Varför kör den redan?
@@ -1362,7 +1448,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-key (5)"),
+    p("[test 55] write usm config file with invalid auth-key (5)"),
     Usm55 = setelement(4, Usm51, "arne_anka"),
     write_usm_conf(ConfDir, [Usm55]),
     ?line {error, Reason55} = config_start(Opts),
@@ -1371,7 +1457,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-key (6)"),
+    p("[test 56] write usm config file with invalid auth-key (6)"),
     Usm56 = setelement(4, Usm51, "10101"),
     write_usm_conf(ConfDir, [Usm56]),
     ?line {error, Reason56} = config_start(Opts),
@@ -1380,7 +1466,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-key (7)"),
+    p("[test 57] write usm config file with invalid auth-key (7)"),
     Usm57 = setelement(3, Usm0, "usmHMACSHAAuthProtocol"),
     write_usm_conf(ConfDir, [Usm57]),
     ?line {error, Reason57} = config_start(Opts),
@@ -1389,7 +1475,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-key (8)"),
+    p("[test 58] write usm config file with invalid auth-key (8)"),
     Usm58 = setelement(4, Usm57, "[1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6]"),
     write_usm_conf(ConfDir, [Usm58]),
     ?line {error, Reason58} = config_start(Opts),
@@ -1398,7 +1484,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid auth-key (9)"),
+    p("[test 59] write usm config file with invalid auth-key (9)"),
     Usm59 = setelement(4, Usm57, "[1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,ka]"),
     write_usm_conf(ConfDir, [Usm59]),
     ?line ok = crypto:start(),
@@ -1409,7 +1495,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with valid auth-key when crypto not started (10)"),
+    p("[test 5A] write usm config file with valid auth-key when crypto not started (10)"),
     Usm5A = setelement(4, Usm57, "[1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0]"),
     write_usm_conf(ConfDir, [Usm5A]),
     ?line {error, Reason5A} = config_start(Opts),
@@ -1418,7 +1504,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid priv-protocol (1)"),
+    p("[test 61] write usm config file with invalid priv-protocol (1)"),
     Usm61 = setelement(5, Usm0, "\"usmNoPrivProtocol\""),
     write_usm_conf(ConfDir, [Usm61]),
     ?line {error, Reason61} = config_start(Opts),
@@ -1427,7 +1513,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid priv-protocol (2)"),
+    p("[test 62] write usm config file with invalid priv-protocol (2)"),
     Usm62 = setelement(5, Usm0, "kalle"),
     write_usm_conf(ConfDir, [Usm62]),
     ?line {error, Reason62} = config_start(Opts),
@@ -1436,7 +1522,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid priv-protocol (3)"),
+    p("[test 63] write usm config file with invalid priv-protocol (3)"),
     Usm63 = setelement(5, Usm0, "10101"),
     write_usm_conf(ConfDir, [Usm63]),
     ?line {error, Reason63} = config_start(Opts),
@@ -1445,7 +1531,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid priv-key (1)"),
+    p("[test 71] write usm config file with invalid priv-key (1)"),
     Usm71 = setelement(5, Usm0, "usmDESPrivProtocol"),
     write_usm_conf(ConfDir, [Usm71]),
     ?line {error, Reason71} = config_start(Opts),
@@ -1454,7 +1540,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid priv-key (2)"),
+    p("[test 72] write usm config file with invalid priv-key (2)"),
     Usm72 = setelement(6, Usm71, "[1,2,3,4,5,6,7,8,9,0,1,2,3,4,5]"),
     write_usm_conf(ConfDir, [Usm72]),
     ?line {error, Reason72} = config_start(Opts),
@@ -1463,7 +1549,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid priv-key (3)"),
+    p("[test 73] write usm config file with invalid priv-key (3)"),
     Usm73 = setelement(6, Usm71, "[1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7]"),
     write_usm_conf(ConfDir, [Usm73]),
     ?line {error, Reason73} = config_start(Opts),
@@ -1472,7 +1558,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid priv-key (4)"),
+    p("[test 74] write usm config file with invalid priv-key (4)"),
     Usm74 = setelement(6, Usm71, "[1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,kalle]"),
     write_usm_conf(ConfDir, [Usm74]),
     ?line ok = crypto:start(),
@@ -1483,7 +1569,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid priv-key (5)"),
+    p("[test 75] write usm config file with invalid priv-key (5)"),
     Usm75 = setelement(6, Usm71, "arne_anka"),
     write_usm_conf(ConfDir, [Usm75]),
     ?line {error, Reason75} = config_start(Opts),
@@ -1492,7 +1578,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with invalid priv-key (6)"),
+    p("[test 76] write usm config file with invalid priv-key (6)"),
     Usm76 = setelement(6, Usm71, "10101"),
     write_usm_conf(ConfDir, [Usm76]),
     ?line {error, Reason76} = config_start(Opts),
@@ -1501,7 +1587,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
     %% --
-    p("write usm config file with valid priv-key when crypto not started (7)"),
+    p("[test 77] write usm config file with valid priv-key when crypto not started (7)"),
     Usm77 = setelement(6, Usm71, "[1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6]"),
     write_usm_conf(ConfDir, [Usm77]),
     ?line {error, Reason77} = config_start(Opts),
@@ -1510,7 +1596,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     await_config_not_running(),
 
      %% --
-    p("write usm config file with invalid usm (1)"),
+    p("[test 78] write usm config file with invalid usm (1)"),
     write_usm_conf2(ConfDir, "{\"bmkEngine\", \"swiusmcf\"}."),
     ?line {error, Reason81} = config_start(Opts),
     p("start failed (as expected): ~p", [Reason81]),
@@ -1687,7 +1773,7 @@ register_agent_using_file(Conf) when list(Conf) ->
     UserId2 = raufi2,
     UserId2Str = str(UserId2),
     User1 = {UserId1Str, "snmpm_user_default", "dummy1"},
-    User2 = {UserId2Str, "snmpm_user_default", "dummy2"},
+    User2 = {UserId2Str, "snmpm_user_default", "dummy2", "[{version, v1}]"},
     write_users_conf(ConfDir, [User1, User2]),
 
     %% --
@@ -1708,11 +1794,11 @@ register_agent_using_file(Conf) when list(Conf) ->
     EngineID2Str = str(EngineID2),
     MMS2 = 512,
     MMS2Str = str(MMS2),
-    Agent1Str = {UserId1Str, "\"targ-hobbes\"", "\"comm\"", 
+    Agent1Str = {UserId1Str, "\"targ-hobbes1\"", "\"comm\"", 
 		 AgentAddr1Str, AgentPort1Str, EngineID1Str, 
 		 "1000", MMS1Str, "v1",
 		 "any", "\"initial\"", "noAuthNoPriv"},
-    Agent2Str = {UserId2Str, "\"targ-hobbes\"", "\"comm\"", 
+    Agent2Str = {UserId2Str, "\"targ-hobbes2\"", "\"comm\"", 
 		 AgentAddr2Str, AgentPort2Str, EngineID2Str, 
 		 "1500", MMS2Str, "v1",
 		 "any", "\"initial\"", "noAuthNoPriv"},
@@ -2346,10 +2432,14 @@ write_manager_conf(Dir, Str) ->
 
 
 write_users_conf(Dir, Users) ->
-    F = fun({UserId, UserMod, UserData}) -> 
+    F = fun({UserId, UserMod, UserData}) -> %% Old format
 		lists:flatten(
-		  io_lib:format("{~s, ~s, ~s}.~n", 
-				[UserId, UserMod, UserData]))
+		  io_lib:format("{~s, ~s, ~s, ~s}.~n", 
+				[UserId, UserMod, UserData, "[]"]));
+	   ({UserId, UserMod, UserData, DefaultAgentConfig}) -> %% New format
+		lists:flatten(
+		  io_lib:format("{~s, ~s, ~s, ~s}.~n", 
+				[UserId, UserMod, UserData, DefaultAgentConfig]))
 	end,
     Str = lists:flatten([F(User) || User <- Users]),
     write_conf_file(Dir, "users.conf", Str).
@@ -2432,7 +2522,7 @@ p(F, A) ->
 
 p(TName, F, A) ->
     io:format("*** [~s] ***"
-              "~w -> " ++ F ++ "~n", [format_timestamp(now()),TName|A]).
+              " ~w -> " ++ F ++ "~n", [format_timestamp(now()),TName|A]).
 
 format_timestamp({_N1, _N2, N3}   = Now) ->
     {Date, Time}   = calendar:now_to_datetime(Now),

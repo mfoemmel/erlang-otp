@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>1999-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose : Main API for Megaco/H.248 protocol stack
@@ -41,7 +42,7 @@
          update_conn_info/3,
          system_info/0, system_info/1,
 
-         connect/4,
+         connect/4, connect/5, 
          disconnect/2,
 
          call/3,
@@ -252,6 +253,11 @@ system_info(Item) ->
 
 connect(ReceiveHandle, RemoteMid, SendHandle, ControlPid) ->
     megaco_messenger:connect(ReceiveHandle, RemoteMid, SendHandle, ControlPid).
+
+connect(ReceiveHandle, RemoteMid, SendHandle, ControlPid, Extra) 
+  when (Extra =/= ?default_user_callback_extra) ->
+    megaco_messenger:connect(ReceiveHandle, RemoteMid, SendHandle, 
+			     ControlPid, Extra).
 
 
 %%-----------------------------------------------------------------

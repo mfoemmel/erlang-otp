@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2004-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 /*
@@ -30,7 +31,7 @@
 #endif
 
 #include <stdlib.h>
-#include <errno.h>
+#include "erl_errno.h"
 
 /*
  * Extra memory barrier requirements:
@@ -38,6 +39,8 @@
  *   for a lock operation.
  * - ethr_atomic_and_old() needs to enforce a memory barrier sufficient
  *   for an unlock operation.
+ * - ethr_atomic_cmpxchg() needs to enforce a memory barrier sufficient
+ *   for a lock and unlock operation.
  */
 
 
@@ -270,13 +273,6 @@ ETHR_INLINE_FUNC_NAME_(ethr_rwmutex_rwunlock)(ethr_rwmutex *rwmtx)
 #  undef WIN32_LEAN_AND_MEAN
 #endif
 
-#ifndef EWOULDBLOCK
-#  define EWOULDBLOCK (10035) /* WSAEWOULDBLOCK */
-#endif
-#ifndef ETIMEDOUT
-#  define ETIMEDOUT (10060) /* WSAETIMEDOUT */
-#endif
-
 /* Types */
 typedef long ethr_tid; /* thread id type */
 typedef struct {
@@ -505,6 +501,23 @@ ETHR_INLINE_FUNC_NAME_(ethr_atomic_or_old)(ethr_atomic_t *var,
 }
 
 static ETHR_INLINE int
+ETHR_INLINE_FUNC_NAME_(ethr_atomic_cmpxchg)(ethr_atomic_t *var,
+					    long new,
+                                            long expected,
+					    long *old)
+{
+    /*
+     * See "Extra memory barrier requirements" note at the top
+     * of the file.
+     *
+     * According to msdn _InterlockedCompareExchange() provides a full
+     * memory barrier.
+     */
+    *old = _InterlockedCompareExchange(&var->value, (LONG) new, (LONG) expected);
+    return 0;
+}
+
+static ETHR_INLINE int
 ETHR_INLINE_FUNC_NAME_(ethr_atomic_xchg)(ethr_atomic_t *var,
 					 long new,
 					 long *old)
@@ -680,6 +693,8 @@ ETHR_INLINE_FUNC_NAME_(ethr_write_lock)(ethr_rwlock_t *lock)
 #      include "ppc32/ethread.h"
 #    elif defined(__sparc__)
 #      include "sparc32/ethread.h"
+#    elif defined(__tile__)
+#      include "tile/ethread.h"
 #    endif
 #  elif ETHR_SIZEOF_PTR == 8
 #    if defined(__x86_64__)
@@ -702,21 +717,6 @@ ETHR_INLINE_FUNC_NAME_(ethr_write_lock)(ethr_rwlock_t *lock)
 #endif
 #ifdef ETHR_HAVE_NATIVE_LOCKS
 #define ETHR_HAVE_OPTIMIZED_LOCKS 1
-#endif
-
-#ifndef EWOULDBLOCK
-#  define EWOULDBLOCK EAGAIN
-#endif
-#ifndef ETIMEDOUT
-#  define ETIMEDOUT EAGAIN
-#endif
-/* ENOTSUP: same as in sys.h */
-#ifndef ENOTSUP
-#  ifdef EOPNOTSUPP
-#    define ENOTSUP EOPNOTSUPP
-#  else
-#    define ENOTSUP -1738659
-#  endif
 #endif
 
 typedef struct {
@@ -880,6 +880,7 @@ int ethr_atomic_add(ethr_atomic_t *, long);
 int ethr_atomic_and_old(ethr_atomic_t *, long, long *);
 int ethr_atomic_or_old(ethr_atomic_t *, long, long *);
 int ethr_atomic_xchg(ethr_atomic_t *, long, long *);
+int ethr_atomic_cmpxchg(ethr_atomic_t *, long, long, long *);
 #endif
 
 #ifdef ETHR_NEED_SPINLOCK_PROTOTYPES__
@@ -1020,6 +1021,24 @@ ETHR_INLINE_FUNC_NAME_(ethr_atomic_xchg)(ethr_atomic_t *var,
     *old = ethr_native_atomic_xchg(var, new);
     return 0;
 }   
+
+/*
+ * If *var == *old, replace *old with new, else do nothing.
+ * In any case return the original value of *var in *old.
+ */
+static ETHR_INLINE int
+ETHR_INLINE_FUNC_NAME_(ethr_atomic_cmpxchg)(ethr_atomic_t *var,
+					    long new,
+                                            long expected,
+					    long *old)
+{
+    /*
+     * See "Extra memory barrier requirements" note at the top
+     * of the file.
+     */
+    *old = ethr_native_atomic_cmpxchg(var, new, expected);
+    return 0;
+}
 
 #endif /* ETHR_HAVE_NATIVE_ATOMICS */
 
@@ -1243,6 +1262,30 @@ ETHR_INLINE_FUNC_NAME_(ethr_atomic_xchg)(ethr_atomic_t *var,
 {
     ETHR_ATOMIC_OP_FALLBACK_IMPL__(var, *old = *var; *var = new);
 }   
+
+/*
+ * If *var == *old, replace *old with new, else do nothing.
+ * In any case return the original value of *var in *old.
+ */
+static ETHR_INLINE int
+ETHR_INLINE_FUNC_NAME_(ethr_atomic_cmpxchg)(ethr_atomic_t *var,
+					    long new,
+                                            long expected,
+					    long *old)
+{
+    /*
+     * See "Extra memory barrier requirements" note at the top
+     * of the file.
+     */
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(
+      var,
+      long old_val = *var;
+      *old = old_val;
+      if (__builtin_expect(old_val == expected, 1))
+          *var = new;
+      );
+    return 0;
+}
 
 #endif /* #ifdef ETHR_TRY_INLINE_FUNCS */
 #endif /* #ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS */

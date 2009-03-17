@@ -1,19 +1,20 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 1996-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
+# retrieved online at http://www.erlang.org/.
 # 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
-#     $Id$
+# %CopyrightEnd%
 #
 
 ifdef BOOTSTRAP
@@ -49,15 +50,6 @@ RELSYSDIR = $(RELEASE_PATH)/lib/kernel-$(KERNEL_VSN)
 # Target Specs
 # ----------------------------------------------------
 
-PRE_LOADED_MODULES = \
-	erl_prim_loader \
-	init \
-	prim_file \
-	prim_inet \
-	zlib \
-	prim_zip \
-	otp_ring0 \
-	erlang
 
 MODULES = \
 	application \
@@ -119,6 +111,7 @@ MODULES = \
 	ram_file \
 	rpc \
 	seq_trace \
+	standard_error \
 	user \
 	user_drv \
 	user_sup \
@@ -130,12 +123,10 @@ INTERNAL_HRL_FILES= application_master.hrl disk_log.hrl \
         inet_boot.hrl inet_config.hrl inet_int.hrl \
 	dist.hrl dist_util.hrl
 
-ERL_FILES= $(PRE_LOADED_MODULES:%=%.erl) $(MODULES:%=%.erl)
+ERL_FILES= $(MODULES:%=%.erl)
 
-NON_PRECIOUS_TARGETS = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) \
+TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) \
 		       $(APP_TARGET) $(APPUP_TARGET)
-
-TARGET_FILES = $(PRE_LOADED_MODULES:%=$(EBIN)/%.$(EMULATOR)) $(NON_PRECIOUS_TARGETS)
 
 APP_FILE= kernel.app
 
@@ -151,7 +142,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # FLAGS
 # ----------------------------------------------------
 
-ERL_COMPILE_FLAGS += +warn_obsolete_guard -I../include
+ERL_COMPILE_FLAGS += -I../include
 
 # ----------------------------------------------------
 # Targets
@@ -208,9 +199,6 @@ release_spec: opt
 release_docs_spec:
 
 
-list_preloaded:
-	@echo $(PRE_LOADED_MODULES)
-
 # Include dependencies -- list below added by Kostis Sagonas
 $(EBIN)/application_controller.beam: application_master.hrl
 $(EBIN)/application_master.beam: application_master.hrl
@@ -223,7 +211,6 @@ $(EBIN)/disk_log_server.beam: disk_log.hrl
 $(EBIN)/dist_util.beam: dist_util.hrl dist.hrl
 $(EBIN)/erl_boot_server.beam: inet_boot.hrl
 $(EBIN)/erl_epmd.beam: inet_int.hrl erl_epmd.hrl
-$(EBIN)/erl_prim_loader.beam: inet_boot.hrl
 $(EBIN)/file.beam: ../include/file.hrl
 $(EBIN)/gen_tcp.beam: inet_int.hrl
 $(EBIN)/gen_udp.beam: inet_int.hrl
@@ -248,7 +235,5 @@ $(EBIN)/inet_udp.beam: inet_int.hrl
 $(EBIN)/inet_sctp.beam: inet_int.hrl ../include/inet_sctp.hrl
 $(EBIN)/net_kernel.beam: net_address.hrl
 $(EBIN)/os.beam: ../include/file.hrl
-$(EBIN)/prim_file.beam: ../include/file.hrl
-$(EBIN)/prim_inet.beam: inet_int.hrl ../include/inet_sctp.hrl
 $(EBIN)/ram_file.beam: ../include/file.hrl
 $(EBIN)/wrap_log_reader.beam: disk_log.hrl ../include/file.hrl

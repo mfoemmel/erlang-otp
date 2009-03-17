@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>2004</year>
-      <year>2008</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2004</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>Common Test Release Notes</title>
@@ -33,6 +31,207 @@
     <rev>A</rev>
     <file>notes.xml</file>
     </header>
+
+<section><title>Common_Test 1.4</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    A support client module for SSH and SFTP, ct_ssh, has
+	    been introduced in Common Test.</p>
+          <p>
+	    Own Id: OTP-7838</p>
+        </item>
+        <item>
+          <p>
+	    Test case groups have been introduced. With this feature
+	    it's possible to execute groups (possibly nested) of test
+	    cases, each group wrapped with a call to function
+	    init_per_group/2 and end_per_group/2. Group definitions
+	    are done by means of the new call-back function groups/0,
+	    which should return a list of definitions. A group
+	    definition contains a name tag, a list of properties and
+	    a list of test cases (including possible nested group
+	    definitions). The properties make it possible to execute
+	    test cases in parallel, in sequence and in shuffled
+	    order. It is also possible to repeat test cases according
+	    to different criterias. The properties can be combined,
+	    making it possible to e.g. repeat a conf case a certain
+	    number of times and execute the test cases in different
+	    (random) order every time. Available properties are:
+	    parallel, sequence, shuffle, repeat, repeat_until_all_ok,
+	    repeat_until_any_ok, repeat_until_any_fail and
+	    repeat_until_all_fail. Please see the Common Test User's
+	    Guide for details.</p>
+          <p>
+	    Own Id: OTP-7839 Aux Id: OTP-7511 </p>
+        </item>
+        <item>
+          <p>
+	    It is now possible to use DES3 encrypted configuration
+	    files with Common Test.</p>
+          <p>
+	    Own Id: OTP-7842 Aux Id: OTP-7838 </p>
+        </item>
+        <item>
+          <p>
+	    In previous versions of Common Test, only one FTP
+	    connection could be opened per configuration target name.
+	    This has been updated so that multiple connections may be
+	    opened. The possibility to use named connections is still
+	    supported.</p>
+          <p>
+	    Own Id: OTP-7853 Aux Id: OTP-7838 </p>
+        </item>
+        <item>
+          <p>
+	    The Erlang mode for Emacs has been updated with new and
+	    modified skeletons for Common Test and TS. Syntax for
+	    test case groups in Common Test (and conf cases with
+	    properties in TS) has been added and a new minimal Common
+	    Test suite skeleton has been introduced.</p>
+          <p>
+	    Own Id: OTP-7856</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Common_Test 1.3.6</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            When running a test which includes all suites in a test
+            directory, if the auto compilation would fail for one
+            suite, all following suites would be excluded from the
+            test. This was an unwanted behaviour and has been
+            corrected. Now all suites will always be compiled and
+            only the failing ones excluded from the test (and logged
+            as missing).</p>
+          <p>
+            Own Id: OTP-7750 Aux Id: OTP-7803 </p>
+        </item>
+        <item>
+          <p>
+            The step functionality in Common Test (based on
+            interaction with Debugger) was broken. This has been
+            fixed, and some new step features have also been added.
+            Please see the Common Test User's Guide for details.</p>
+          <p>
+            Own Id: OTP-7800 Aux Id: seq11106 </p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            It is now possible for the user to specify include
+            directories that Common Test will pass along to the
+            compiler when suite and help modules are being compiled
+            (which Common Test performs automatically before running
+            tests).</p>
+          <p>
+            Own Id: OTP-7803 Aux Id: OTP-7750 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Common_Test 1.3.5</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            If the Erlang runtime system was started without access
+            to an erlang shell (e.g. -noshell), compilation errors
+            would cause a crash in the Common Test application.
+            Without access to a shell, Common Test can not promt the
+            user to choose to continue or abort the test session, but
+            must assume that the session should proceed.</p>
+          <p>
+            Own Id: OTP-7749 Aux Id: seq11175, seq11180 </p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            It is now possible for the Common Test user to disable
+            the auto-compile feature. This is done by specifying the
+            run_test flag -no_auto_compile, or the ct:run_test/1
+            option {auto_compile,false}.</p>
+          <p>
+            Own Id: OTP-7663</p>
+        </item>
+        <item>
+          <p>
+            A new function, ct:get_config/3, has been added to Common
+            Test that makes it possible to - if a particular config
+            variable has been defined in multiple config files -
+            return all matching values for the variable. The order of
+            the elements in the returned list is the same as the
+            specified order of the config files.</p>
+          <p>
+            Own Id: OTP-7758 Aux Id: seq11158 </p>
+        </item>
+        <item>
+          <p>
+            Because a telnet connection was always identified by a
+            config variable alias, it was impossible to open multiple
+            connections using the same telnet host data entry in the
+            config file. This limitation has been removed by making
+            it possible to associate a connection with handle value
+            only (i.e. multiple connections may be opened using the
+            same config variable). See ct_telnet:open/4 for details.</p>
+          <p>
+            Own Id: OTP-7781</p>
+        </item>
+        <item>
+          <p>
+            A new syntax for defining default config data values has
+            been introduced. In previous versions of Common Test, to
+            define and access a default value for a config variable
+            (in the suite info- or test case info function), an alias
+            name had to be used. With the new syntax you may define
+            default values without reference to aliases, like this:
+            {default_config,VarName,DefaultValue}. Please see the
+            User's Guide for more info.</p>
+          <p>
+            Own Id: OTP-7782</p>
+        </item>
+        <item>
+          <p>
+            In previous versions of Common Test, whenever a config
+            variable got associated with a name (by means of a
+            require statement), the config variable name was replaced
+            with the new name. This introduced unwanted dependencies
+            between test cases (e.g. if one test case would introduce
+            a new name, the following test cases could no longer
+            access the config data by means of the original
+            variable). This functionality has now been updated so
+            that when new names are introduced with require, they
+            become aliases (references) instead of replacements.
+            Hence, config data elements can always, at any time, be
+            accessed by means of the original config variable names.</p>
+          <p>
+            Own Id: OTP-7783</p>
+        </item>
+      </list>
+    </section>
+
+</section>
 
 <section><title>Common_Test 1.3.4</title>
 

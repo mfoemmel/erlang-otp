@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(auth).
 -behaviour(gen_server).
@@ -43,13 +44,6 @@
 
 -include("../include/file.hrl").
 
-
-%%----------------------------------------------------------------------
-%% Contract specifications 
-%%----------------------------------------------------------------------
-
--type(node() :: atom()).
-
 %%----------------------------------------------------------------------
 %% Exported functions
 %%----------------------------------------------------------------------
@@ -59,7 +53,7 @@ start_link() ->
 
 %%--Deprecated interface------------------------------------------------
 
--spec(is_auth/1 :: (Node :: node()) -> 'yes' | 'no').
+-spec is_auth(Node :: node()) -> 'yes' | 'no'.
 
 is_auth(Node) ->
     case net_adm:ping(Node) of
@@ -67,24 +61,24 @@ is_auth(Node) ->
 	pang -> no
     end.
 
--spec(cookie/0 :: () -> atom()).
+-spec cookie() -> atom().
 
 cookie() ->
     get_cookie().
 
--spec(cookie/1 :: (Cookies :: [atom(),...] | atom()) -> 'true').
+-spec cookie(Cookies :: [atom(),...] | atom()) -> 'true'.
 
 cookie([Cookie]) ->
     set_cookie(Cookie);
 cookie(Cookie) ->
     set_cookie(Cookie).
 
--spec(node_cookie/1 :: (Cookies :: [atom(),...]) -> 'yes' | 'no').
+-spec node_cookie(Cookies :: [atom(),...]) -> 'yes' | 'no'.
 
 node_cookie([Node, Cookie]) ->
     node_cookie(Node, Cookie).
 
--spec(node_cookie/2 :: (Node :: node(), Cookie :: atom()) -> 'yes' | 'no').
+-spec node_cookie(Node :: node(), Cookie :: atom()) -> 'yes' | 'no'.
 
 node_cookie(Node, Cookie) ->
     set_cookie(Node, Cookie),
@@ -92,36 +86,36 @@ node_cookie(Node, Cookie) ->
 
 %%--"New" interface-----------------------------------------------------
 
--spec(get_cookie/0 :: () -> atom()).
+-spec get_cookie() -> atom().
 
 get_cookie() ->
     get_cookie(node()).
 
--spec(get_cookie/1 :: (Node :: node()) -> atom()).
+-spec get_cookie(Node :: node()) -> atom().
 
 get_cookie(_Node) when node() =:= nonode@nohost ->
     nocookie;
 get_cookie(Node) ->
     gen_server:call(auth, {get_cookie, Node}).
 
--spec(set_cookie/1 :: (Cookie :: atom()) -> 'true').
+-spec set_cookie(Cookie :: atom()) -> 'true'.
 
 set_cookie(Cookie) ->
     set_cookie(node(), Cookie).
 
--spec(set_cookie/2 :: (Node :: node(), Cookie :: atom()) -> 'true').
+-spec set_cookie(Node :: node(), Cookie :: atom()) -> 'true'.
 
 set_cookie(_Node, _Cookie) when node() =:= nonode@nohost ->
     erlang:error(distribution_not_started);
 set_cookie(Node, Cookie) ->
     gen_server:call(auth, {set_cookie, Node, Cookie}).
 
--spec(sync_cookie/0 :: () -> any()).
+-spec sync_cookie() -> any().
 
 sync_cookie() ->
     gen_server:call(auth, sync_cookie).
 
--spec(print/3 :: (Node :: node(), Format :: string(), Args :: [_]) -> 'ok').
+-spec print(Node :: node(), Format :: string(), Args :: [_]) -> 'ok'.
 
 print(Node,Format,Args) ->
     (catch gen_server:cast({auth,Node},{print,Format,Args})).

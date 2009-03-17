@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2000-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2000-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 
 %% Purpose: Primitive interface to SSL, without broker process (used by 
@@ -60,8 +61,8 @@ transport_accept(ListenSt) when record(ListenSt, st) ->
 	      ListenOpts, infinity, NewSt)).
 
 ssl_accept(ListenSt0, ListenSt1) when is_record(ListenSt0, st) ->
-%%    LOpts = ListenSt0#st.opts,
-    LOpts = [],
+    LOpts = ListenSt0#st.opts,
+    %%    LOpts = [],
     A = ?filter(ssl_broker:ssl_accept_prim(
 		  ssl_server_prim, gen_tcp, self(), LOpts, infinity, ListenSt1)),
     A.
@@ -169,7 +170,7 @@ filter(Result) ->
     case Result of
 	{ok, _Sock,St} ->
 	    {ok, St};
-	{error, Reason, _St} ->
+        {error, Reason, _St} ->
 	    {error,Reason}
     end.
 

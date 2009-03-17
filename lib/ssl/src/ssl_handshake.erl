@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2007-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%----------------------------------------------------------------------
 %% Purpose: Help funtions for handling the SSL-handshake protocol
 %%----------------------------------------------------------------------
@@ -216,7 +217,6 @@ certificate(OwnCert, CertDbRef, client) ->
 		%% certificates. (chapter 7.4.6. rfc 4346) 
 		[]	 
 	end,
-
     #certificate{asn1_certificates = Chain};
 
 certificate(OwnCert, CertDbRef, server) -> 
@@ -229,21 +229,25 @@ certificate(OwnCert, CertDbRef, server) ->
 
 %%--------------------------------------------------------------------
 %% Function: client_certificate_verify(Cert, ConnectionStates) -> 
-%%                                                #certificate_verify{}
+%%                                          #certificate_verify{} | ignore
 %% Cert             = #'OTPcertificate'{}
 %% ConnectionStates = #connection_states{}
 %%
 %% Description: Creates a certificate_verify message, called by the client.
 %%--------------------------------------------------------------------
+client_certificate_verify(undefined, _, _, _, _, _) ->
+    ignore;
+client_certificate_verify(_, _, _, _, undefined, _) ->
+    ignore;
 client_certificate_verify(OwnCert, MasterSecret, Version, Algorithm,
-		   PrivateKey, {Hashes0, _}) ->
+			  PrivateKey, {Hashes0, _}) ->
     case public_key:pkix_is_fixed_dh_cert(OwnCert) of
 	true ->
-	    fixed_diffie_hellman;
-	false ->
+	    ignore;
+	false ->	    
 	    Hashes = 
 		calc_certificate_verify(Version, MasterSecret,
-					      Algorithm, Hashes0), 
+					Algorithm, Hashes0), 
 	    Signed = digitally_signed(Hashes, PrivateKey),
 	    #certificate_verify{signature = Signed}
     end.

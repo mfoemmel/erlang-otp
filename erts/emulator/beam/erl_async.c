@@ -1,6 +1,21 @@
 /*
-** Asyncronous
-*/
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2000-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved online at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * %CopyrightEnd%
+ */
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
@@ -249,7 +264,11 @@ static void* async_main(void* arg)
 				       NULL,
 				       0,
 				       ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP);
-		if (p) {
+		if (!p) {
+		    if (a->async_free)
+			(*a->async_free)(a->async_data);
+		}
+		else {
 		    if (async_ready(p, a->async_data)) {
 			if (a->async_free)
 			    (*a->async_free)(a->async_data);
@@ -283,7 +302,7 @@ static void* async_main(void* arg)
 
 #ifndef ERTS_SMP
 
-int check_async_ready()
+int check_async_ready(void)
 {
     ErlAsync* a;
     int count = 0;
@@ -300,7 +319,11 @@ int check_async_ready()
 				     NULL,
 				     0,
 				     ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP);
-	if (p != NULL) {
+	if (!p) {
+	    if (a->async_free)
+		(*a->async_free)(a->async_data);
+	}
+	else {
 	    count++;
 	    if (async_ready(p, a->async_data)) {
 		if (a->async_free != NULL)

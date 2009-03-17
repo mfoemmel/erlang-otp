@@ -1,42 +1,26 @@
-%%% The contents of this file are subject to the Erlang Public License,
-%%% Version 1.0, (the "License"); you may not use this file except in
-%%% compliance with the License. You may obtain a copy of the License at
-%%% http://www.erlang.org/license/EPL1_0.txt
-%%%
-%%% Software distributed under the License is distributed on an "AS IS"
-%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%%% the License for the specific language governing rights and limitations
-%%% under the License.
-%%%
-%%% The Original Code is xmerl-0.19
-%%%
-%%% The Initial Developer of the Original Code is Ericsson Telecom
-%%% AB. Portions created by Ericsson are Copyright (C), 1998, Ericsson
-%%% Telecom AB. All Rights Reserved.
-%%%
-%%%
-%%%----------------------------------------------------------------------
-%%% #0.    BASIC INFORMATION
-%%%----------------------------------------------------------------------
-%%% @private
-%%% File:       xmerl_validate.erl
-%%% Author       : Sebastien Becuwe <sebastien.becuwe@cellicium.com>
-%%% Description  : XML validation hooks for xmerl
-%%% 
-%%% Modules used : lists, ets, xmerl_lib
-%%% 
-%%%----------------------------------------------------------------------
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 
 -module(xmerl_validate).
 
--vsn('0.1').
--date('27-11-02').
--author('sebastien.becuwe@cellicium.com').
-
 -export([validate/2]).
 
-%%%%%%%%%%%%% TODOO
-%%%% Atributes data type id , idrefs, FIXED, ...
 
 -include("xmerl.hrl").		% record def, macros
 

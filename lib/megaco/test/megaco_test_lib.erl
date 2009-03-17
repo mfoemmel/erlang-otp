@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>1999-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Lightweight test server
@@ -45,6 +46,60 @@ sleep(MSecs) ->
     ok.
 
 
+%% ----------------------------------------------------------------
+%% Conditional skip of testcases
+%%
+
+non_pc_tc_maybe_skip(Config, Condition, File, Line) 
+  when is_list(Config) andalso is_function(Condition) ->
+    %% Check if we shall skip the skip
+    case os:getenv("TS_OS_BASED_SKIP") of
+	"false" ->
+	    ok;
+	_ ->
+	    case lists:keysearch(ts, 1, Config) of
+		{value, {ts, megaco}} ->
+		    %% Always run the testcase if we are using our own 
+		    %% test-server...
+		    ok;
+		_ ->
+		    case (catch Condition()) of
+			true ->
+			    skip(non_pc_testcase, File, Line);
+			_ ->
+			    ok
+		    end
+	    end
+    end.
+
+
+os_based_skip(any) ->
+    true;
+os_based_skip(Skippable) when is_list(Skippable) ->
+    {OsFam, OsName} = 
+	case os:type() of
+	    {_Fam, _Name} = FamAndName ->
+		FamAndName;
+	    Fam ->
+		{Fam, undefined}
+	end,
+    case lists:member(OsFam, Skippable) of
+	true ->
+	    true;
+	false ->
+	    case lists:keysearch(OsFam, 1, Skippable) of
+		{value, {OsFam, OsName}} ->
+		    true;
+		{value, {OsFam, OsNames}} when is_list(OsNames) ->
+		    lists:member(OsName, OsNames);
+		_ ->
+		    false
+	    end
+    end;
+os_based_skip(_) ->
+    false.
+    
+	    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Evaluates a test case or test suite
 %% Returns a list of failing test cases:
@@ -90,9 +145,9 @@ tickets(Mod, Func, Config) ->
 	    case (catch Mod:Init(Config)) of
 		Conf when list(Conf) ->
 		    io:format("Expand: ~p:~p ...~n", [Mod, Func]),
-		    Map = fun({M,_}) when atom(M) -> 
+		    Map = fun({M,_}) when is_atom(M) -> 
 				  tickets(M, tickets, Config);
-			     (F)     when atom(F) -> 
+			     (F)     when is_atom(F) -> 
 				  tickets(Mod, F, Config);
 			     (Case) -> Case
 			  end,
@@ -119,34 +174,118 @@ tickets(Mod, Func, Config) ->
     end.
 	
 
+display_alloc_info() ->
+    io:format("Allocator memory information:~n", []),
+    AllocInfo = alloc_info(),
+    display_alloc_info(AllocInfo).
+
+display_alloc_info([]) ->
+    ok;
+display_alloc_info([{Alloc, Mem}|AllocInfo]) ->
+    io:format("  ~15w: ~10w~n", [Alloc, Mem]),
+    display_alloc_info(AllocInfo).
+    
+alloc_info() ->
+    case erlang:system_info(allocator) of
+	{_Allocator, _Version, Features, _Settings} ->
+	    alloc_info(Features);
+	_ ->
+	    []
+    end.
+
+alloc_info(Allocators) ->
+    Allocs = [temp_alloc, sl_alloc, std_alloc, ll_alloc, eheap_alloc, 
+	      ets_alloc, binary_alloc, driver_alloc], 
+    alloc_info(Allocators, Allocs, []).
+
+alloc_info([], _, Acc) ->
+    lists:reverse(Acc);
+alloc_info([Allocator | Allocators], Allocs, Acc) ->
+    case lists:member(Allocator, Allocs) of
+	true ->
+	    Instances0 = erlang:system_info({allocator, Allocator}),
+	    Instances = 
+		if 
+		    is_list(Instances0) ->
+			[Instance || Instance <- Instances0, 
+				     element(1, Instance) =:= instance];
+		    true ->
+			[]
+		end,
+	    AllocatorMem = alloc_mem_info(Instances),
+	    alloc_info(Allocators, Allocs, [{Allocator, AllocatorMem} | Acc]);
+
+	false ->
+	    alloc_info(Allocators, Allocs, Acc)
+    end.
+    
+alloc_mem_info(Instances) ->
+    alloc_mem_info(Instances, []).
+
+alloc_mem_info([], Acc) ->
+    lists:sum([Mem || {instance, _, Mem} <- Acc]);
+alloc_mem_info([{instance, N, Info}|Instances], Acc) ->
+    InstanceMemInfo = alloc_instance_mem_info(Info),
+    alloc_mem_info(Instances, [{instance, N, InstanceMemInfo} | Acc]).
+
+alloc_instance_mem_info(InstanceInfo) ->
+    MBCS = alloc_instance_mem_info(mbcs, InstanceInfo),
+    SBCS = alloc_instance_mem_info(sbcs, InstanceInfo),
+    MBCS + SBCS.
+
+alloc_instance_mem_info(Key, InstanceInfo) ->
+    case lists:keysearch(Key, 1, InstanceInfo) of
+	{value, {Key, Info}} ->
+	    case lists:keysearch(blocks_size, 1, Info) of
+		{value, {blocks_size, Mem, _, _}} ->
+		    Mem;
+		_ ->
+		    0
+	    end;
+	_ ->
+	    0
+    end.
+		      
+    
 t(Case) ->
     process_flag(trap_exit, true),
-    Res = lists:flatten(t(Case, default_config())),
-    io:format("Res: ~p~n", [Res]),
-    display_result(Res),
+    MEM = fun() -> case (catch erlang:memory()) of
+			{'EXIT', _} ->
+			    [];
+			Res ->
+			    Res
+		    end
+	  end,
+    Alloc1 = alloc_info(),
+    Mem1 = MEM(),
+    Res  = lists:flatten(t(Case, default_config())),
+    Alloc2 = alloc_info(),
+    Mem2 = MEM(),
+    %% io:format("Res: ~p~n", [Res]),
+    display_result(Res, Alloc1, Mem1, Alloc2, Mem2),
     Res.
 
-t({Mod, Fun}, Config) when atom(Mod), atom(Fun) ->
+t({Mod, Fun}, Config) when is_atom(Mod) andalso is_atom(Fun) ->
     case catch apply(Mod, Fun, [suite]) of
 	[] ->
 	    io:format("Eval:   ~p:", [{Mod, Fun}]),
 	    Res = eval(Mod, Fun, Config),
-	    {R, _, _} = Res,
+	    {R, _, _, _} = Res,
 	    io:format(" ~p~n", [R]),
 	    Res;
 
-	Cases when list(Cases) ->
+	Cases when is_list(Cases) ->
 	    io:format("Expand: ~p ...~n", [{Mod, Fun}]),
-	    Map = fun(Case) when atom(Case)-> {Mod, Case};
+	    Map = fun(Case) when is_atom(Case) -> {Mod, Case};
 		     (Case) -> Case
 		  end,
 	    t(lists:map(Map, Cases), Config);
 
         {req, _, {conf, Init, Cases, Finish}} ->
 	    case (catch apply(Mod, Init, [Config])) of
-		Conf when list(Conf) ->
+		Conf when is_list(Conf) ->
 		    io:format("Expand: ~p ...~n", [{Mod, Fun}]),
-		    Map = fun(Case) when atom(Case)-> {Mod, Case};
+		    Map = fun(Case) when is_atom(Case) -> {Mod, Case};
 			     (Case) -> Case
 			  end,
 		    Res = t(lists:map(Map, Cases), Conf),
@@ -155,28 +294,28 @@ t({Mod, Fun}, Config) when atom(Mod), atom(Fun) ->
 		    
 		{'EXIT', {skipped, Reason}} ->
 		    io:format(" => skipping: ~p~n", [Reason]),
-		    [{skipped, {Mod, Fun}, Reason}];
+		    [{skipped, {Mod, Fun}, Reason, 0}];
 		    
 		Error ->
 		    io:format(" => failed: ~p~n", [Error]),
-		    [{failed, {Mod, Fun}, Error}]
+		    [{failed, {Mod, Fun}, Error, 0}]
 	    end;
 		    
         {'EXIT', {undef, _}} ->
 	    io:format("Undefined:   ~p~n", [{Mod, Fun}]),
-	    [{nyi, {Mod, Fun}, ok}];
+	    [{nyi, {Mod, Fun}, ok, 0}];
 		    
         Error ->
 	    io:format("Ignoring:   ~p: ~p~n", [{Mod, Fun}, Error]),
-	    [{failed, {Mod, Fun}, Error}]
+	    [{failed, {Mod, Fun}, Error, 0}]
     end;
-t(Mod, Config) when atom(Mod) ->
+t(Mod, Config) when is_atom(Mod) ->
     Res = t({Mod, all}, Config),
     Res;
-t(Cases, Config) when list(Cases) ->
+t(Cases, Config) when is_list(Cases) ->
     [t(Case, Config) || Case <- Cases];
 t(Bad, _Config) ->
-    [{badarg, Bad, ok}].
+    [{badarg, Bad, ok, 0}].
 
 eval(Mod, Fun, Config) ->
     TestCase = {?MODULE, Mod, Fun},
@@ -198,61 +337,166 @@ eval(Mod, Fun, Config) ->
 -record('REASON', {mod, line, desc}).
 
 wait_for_evaluator(Pid, Mod, Fun, Config, Errors) ->
+    wait_for_evaluator(Pid, Mod, Fun, Config, Errors, 0).
+wait_for_evaluator(Pid, Mod, Fun, Config, Errors, AccTime) ->
     TestCase = {?MODULE, Mod, Fun},
     Label = lists:concat(["TEST CASE: ", Fun]),
     receive
-	{done, Pid, ok} when Errors == [] ->
+	{done, Pid, ok, Time} when Errors == [] ->
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " ok",
 				[TestCase, Config]),
-	    {ok, {Mod, Fun}, Errors};
-	{done, Pid, ok} ->
+	    {ok, {Mod, Fun}, Errors, Time};
+	{done, Pid, ok, Time} ->
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " failed",
 				[TestCase, Config]),
-	    {failed, {Mod, Fun}, Errors};
-	{done, Pid, {ok, _}} when Errors == [] ->
+	    {failed, {Mod, Fun}, Errors, Time};
+	{done, Pid, {ok, _}, Time} when Errors == [] ->
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " ok",
 				[TestCase, Config]),
-	    {ok, {Mod, Fun}, Errors};
-	{done, Pid, {ok, _}} ->
+	    {ok, {Mod, Fun}, Errors, Time};
+	{done, Pid, {ok, _}, Time} ->
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " failed",
 				[TestCase, Config]),
-	    {failed, {Mod, Fun}, Errors};
-	{done, Pid, Fail} ->
+	    {failed, {Mod, Fun}, Errors, Time};
+	{done, Pid, Fail, Time} ->
 	    megaco:report_event(20, Mod, ?MODULE, Label ++ " failed",
 				[TestCase, Config, {return, Fail}, Errors]),
-	    {failed, {Mod,Fun}, Fail};
-	{'EXIT', Pid, {skipped, Reason}} -> 
+	    {failed, {Mod,Fun}, Fail, Time};
+	{'EXIT', Pid, {skipped, Reason}, Time} -> 
 	    megaco:report_event(20, Mod, ?MODULE, Label ++ " skipped",
 				[TestCase, Config, {skipped, Reason}]),
-	    {skipped, {Mod, Fun}, Errors};
-	{'EXIT', Pid, Reason} -> 
+	    {skipped, {Mod, Fun}, Errors, Time};
+	{'EXIT', Pid, Reason, Time} -> 
 	    megaco:report_event(20, Mod, ?MODULE, Label ++ " crashed",
 				[TestCase, Config, {'EXIT', Reason}]),
-	    {crashed, {Mod, Fun}, [{'EXIT', Reason} | Errors]};
-	{fail, Pid, Reason} ->
-	    wait_for_evaluator(Pid, Mod, Fun, Config, Errors ++ [Reason])
+	    {crashed, {Mod, Fun}, [{'EXIT', Reason} | Errors], Time};
+	{fail, Pid, Reason, Time} ->
+	    wait_for_evaluator(Pid, Mod, Fun, Config, 
+			       Errors ++ [Reason], AccTime + Time)
     end.
 
 do_eval(ReplyTo, Mod, Fun, Config) ->
-    case (catch apply(Mod, Fun, [Config])) of
-	{'EXIT', {skipped, Reason}} ->
-	    ReplyTo ! {'EXIT', self(), {skipped, Reason}};
-	Other ->
-	    ReplyTo ! {done, self(), Other}
+    display_system_info("before", Mod, Fun),
+    case timer:tc(Mod, Fun, [Config]) of
+	{Time, {'EXIT', {skipped, Reason}}} ->
+	    display_tc_time(Time),
+	    display_system_info("after (skipped)", Mod, Fun),
+	    ReplyTo ! {'EXIT', self(), {skipped, Reason}, Time};
+	{Time, Other} ->
+	    display_tc_time(Time),
+	    display_system_info("after", Mod, Fun),
+	    ReplyTo ! {done, self(), Other, Time}
     end,
     unlink(ReplyTo),
     exit(shutdown).
 
 
+display_tc_time(Time) ->
+    io:format("~n"
+	      "~n*********************************************"
+	      "~n"
+	      "~nTest case completion time: ~.3f sec (~w)"
+	      "~n", [(Time / 1000000), Time]),
+    ok.
+
+display_system_info(WhenStr) ->
+    display_system_info(WhenStr, undefined, undefined).
+
+display_system_info(WhenStr, undefined, undefined) ->
+    display_system_info(WhenStr, "");
+display_system_info(WhenStr, Mod, Func) ->
+    ModFuncStr = lists:flatten(io_lib:format(" ~w:~w", [Mod, Func])),
+    display_system_info(WhenStr, ModFuncStr).
+
+display_system_info(WhenStr, ModFuncStr) ->
+    Fun = fun(F) -> case (catch F()) of
+			{'EXIT', _} ->
+			    undefined;
+			Res ->
+			    Res
+		    end
+	  end,
+    ProcCount    = Fun(fun() -> erlang:system_info(process_count) end),
+    ProcLimit    = Fun(fun() -> erlang:system_info(process_limit) end),
+    ProcMemAlloc = Fun(fun() -> erlang:memory(processes) end),
+    ProcMemUsed  = Fun(fun() -> erlang:memory(processes_used) end),
+    ProcMemBin   = Fun(fun() -> erlang:memory(binary) end),
+    ProcMemTot   = Fun(fun() -> erlang:memory(total) end),
+    %% error_logger:info_msg(
+    io:format("~n"
+	      "~n*********************************************"
+	      "~n"
+	      "System info ~s~s => "
+	      "~n   Process count:        ~w"
+              "~n   Process limit:        ~w"
+              "~n   Process memory alloc: ~w"
+              "~n   Process memory used:  ~w"
+              "~n   Memory for binaries:  ~w"
+              "~n   Memory total:         ~w"
+	      "~n"
+	      "~n*********************************************"
+	      "~n"
+	      "~n", [WhenStr, ModFuncStr, 
+		     ProcCount, ProcLimit, ProcMemAlloc, ProcMemUsed, 
+		     ProcMemBin, ProcMemTot]),
+    ok.
+
+display_result(Res, Alloc1, Mem1, Alloc2, Mem2) ->
+    io:format("~nAllocator info: ~n", []),
+    display_alloc(Alloc1, Alloc2),
+    io:format("~nMemory info: ~n", []),
+    display_memory(Mem1, Mem2),
+    display_result(Res).
+
+display_alloc([], []) ->
+    io:format("-~n", []),
+    ok;
+display_alloc(A1, A2) ->
+    do_display_alloc(A1, A2).
+
+do_display_alloc([], _) ->
+    ok;
+do_display_alloc([{Alloc, Mem1}|AllocInfo1], AllocInfo2) ->
+    Mem2 = 
+	case lists:keysearch(Alloc, 1, AllocInfo2) of
+	    {value, {_, Val}} ->
+		Val;
+	    false ->
+		undefined
+	end,
+    io:format("~15w: ~10w -> ~w~n", [Alloc, Mem1, Mem2]),
+    do_display_alloc(AllocInfo1, AllocInfo2).
+
+display_memory([], []) ->
+    io:format("-~n", []),
+    ok;
+display_memory(Mem1, Mem2) ->
+    do_display_memory(Mem1, Mem2).
+
+
+do_display_memory([], _) ->
+    ok;
+do_display_memory([{Key, Mem1}|MemInfo1], MemInfo2) ->
+    Mem2 = 
+	case lists:keysearch(Key, 1, MemInfo2) of
+	    {value, {_, Val}} ->
+		Val;
+	    false ->
+		undefined
+	end,
+    io:format("~15w: ~10w -> ~w~n", [Key, Mem1, Mem2]),
+    do_display_memory(MemInfo1, MemInfo2).
+
 display_result([]) ->    
     io:format("OK~n", []);
-display_result(Res) when list(Res) ->
-    Ok      = [MF || {ok, MF, _}  <- Res],
-    Nyi     = [MF || {nyi, MF, _} <- Res],
-    Skipped = [{MF, Reason} || {skipped, MF, Reason} <- Res],
-    Failed  = [{MF, Reason} || {failed, MF, Reason} <- Res],
-    Crashed = [{MF, Reason} || {crashed, MF, Reason} <- Res],
+display_result(Res) when is_list(Res) ->
+    Ok      = [{MF, Time} || {ok,  MF, _, Time}  <- Res],
+    Nyi     = [MF || {nyi, MF, _, _Time} <- Res],
+    Skipped = [{MF, Reason} || {skipped, MF, Reason, _Time} <- Res],
+    Failed  = [{MF, Reason} || {failed,  MF, Reason, _Time} <- Res],
+    Crashed = [{MF, Reason} || {crashed, MF, Reason, _Time} <- Res],
     display_summery(Ok, Nyi, Skipped, Failed, Crashed),
+    display_ok(Ok),
     display_skipped(Skipped),
     display_failed(Failed),
     display_crashed(Crashed).
@@ -269,6 +513,16 @@ display_summery(Ok, Nyi, Skipped, Failed, Crashed) ->
 display_summery(Res, Info) ->
     io:format("  ~w test cases ~s~n", [length(Res), Info]).
     
+display_ok([]) ->
+    ok;
+display_ok(Ok) ->
+    io:format("Ok test cases:~n", []),
+    F = fun({{M, F}, Time}) -> 
+		io:format("  ~w : ~w => ~.2f sec~n", [M, F, Time / 1000000]) 
+	end,
+    lists:foreach(F, Ok),
+    io:format("~n", []).
+
 display_skipped([]) ->
     ok;
 display_skipped(Skipped) ->
@@ -276,7 +530,7 @@ display_skipped(Skipped) ->
     F = fun({MF, Reason}) -> io:format("  ~p => ~p~n", [MF, Reason]) end,
     lists:foreach(F, Skipped),
     io:format("~n", []).
-    
+
 
 display_failed([]) ->
     ok;
@@ -334,6 +588,7 @@ skip(Actual, File, Line) ->
 fatal_skip(Actual, File, Line) ->
     error(Actual, File, Line),
     exit(shutdown).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Flush the message queue and return its messages
@@ -532,7 +787,7 @@ lookup_config(Key,Config) ->
     end.
 
 default_config() ->
-    [{nodes, default_nodes()}].
+    [{nodes, default_nodes()}, {ts, megaco}].
 
 default_nodes() ->    
     mk_nodes(2, []).

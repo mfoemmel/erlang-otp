@@ -1,155 +1,161 @@
-body{ 
-	margin: 0px 0px 0px 0px;
-	padding: 0px 0px 0px 0px;
-	font-family: verdana, sans-serif;
-	color: #000000;
-	background-color: #ffffff;
-	}
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2007-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved online at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * %CopyrightEnd%
+ */
 
-td  {
-	margin: 0px 0px 0px 0px;
-	padding: 2px 2px 4px 4px;
-	font-family: courier;
-	font-size: 12px;
-	color: #000000;
-	background-color: #efefef;
+/* Globals */
+html, body {
+	margin: 0;
+	padding: 0;
+	font: 12px Verdana;
+	background: #7a83a2;
+}
+
+table {
+	border-collapse: collapse;
+	/*width: 100%;*/
+}
+
+tr.even {
+	background-color: #ffffff; color: black;
+}
+
+tr.odd {
+	background-color: #def2ef; color: black;
+}
+
+td {
+	text-valign: top;
+	text-align: right;
+	font: 14px Verdana;
+}
+
+th {
+	letter-spacing: 2px;
+	text-align: right;
+	padding: 4px 4px 4px 8px;
 }
 
 a {
-	font-size: 12px;
+	color: yellow;
 	text-decoration: none;
-	font-weight: none;
-	color:  #000000;
-	outline: none;
 }
-a:visited {
-	color:  #000000;
-	}
-a:active {
-	color:  #000000;
-	}
+
 a:hover {
-	color: #000000;
 	text-decoration: underline;
-	}
-strong, b {
-	font-weight: bold;
-	}
-p {
-	font-size: 10px;
-	line-height: 22px;
-	margin-top: 20px;
-	margin-bottom: 10px; 
-	}
-h1 {
-	font-size: 24px;
-	line-height: 44px;
-	font-weight: bold;
-	margin-top: 0;
-	margin-bottom: 0;
-	}
-h2 {
-	font-size: 18px;
-	line-height: 40px;
-	font-weight: bold;
-	margin-top: 0;
-	margin-bottom: 0;
-	}
-h3 {
-	font-size: 16px;
-	line-height: 22px;
-	font-weight: bold;
-	margin-top: 0;
-	margin-bottom: 0;
-	}
-h4 {
-	font-size: 14px;
-	line-height: 26px;
-	font-weight: bold;
-	margin-top: 0;
-	margin-bottom: 0;
-	}
-h5 {
-	font-size: 12px;
-	line-height: 22px;
-	font-weight: bold;
-	margin-top: 0;
-	margin-bottom: 0;
-	}
-h6 {
-	font-size: 10px;
-	line-height: 18px;
-	font-weight: bold;
-	margin-top: 0;
-	margin-bottom: 0;
-	}
-img {
-	border: 0;
-	}
-.nowrap {
-	white-space: nowrap;
-	font-size: 10px;
-	font-weight: bold;
-	margin-top: 0;
-	margin-bottom: 0;
-	}
-.tiny {
-	font-size: 9px;
-	line-height: 16px;
-	margin-top: 15px;
-	margin-bottom: 5px; 
+}
+
+td a {
+	color: #101010;
 }	
 
-#percept_top {
-	margin: 10px 10px 10px 10px;
-	padding: 10px;
-	border: 1px solid #ccc;
-	background: #efefef;
-	height: 70px;
+img {
+	border: 0;
 }
 
-#percept_navigation {
-	margin: 0px 10px 10px 10px;
-	padding: 10px;
-	border: 1px solid #ccc;
-	float:left;
-	background: #efefef;
-	width: 132px; 
+
+/* Header and footer stuff */
+
+#header {
+	font: bold 24px Verdana;
+	padding-left: 156px;
+	padding-right: 156px;
+	padding-top: 10px;
+	padding-bottom: 10px;
+	height: 74px;
+	text-align: right;
+	background: #7a83a2;
 }
 
-#percept_content {
-	margin: 0px 10px 10px 175px;
-	padding: 10px;
-	border: 1px solid #ccc;
-	background: #efefef;
+#footer {
+	font: 12px Verdana;
+	position: relative;
+	padding: 5px;
+	border-top: 1px solid black;
+	clear:left;
 }
 
-#percept_middle {
-	margin: 0px 275px 10px 175px;
-	padding: 10px;
-	border: 1px solid #ccc;
-	background: #efefef;
+
+/* Content stuff */
+
+#content {
+	background: #fefefe;
+	position: relative;
+	padding: 5px 25px 5px 25px;
+	margin: 0px 60px 0px 60px;
+	border-top: 1px solid #383a32;
+	border-left: 1px solid #383a32;
+	border-right: 1px solid #383a32;
+	border-bottom: 1px solid #383a32;
 }
 
-#percept_right {
-	margin: 0px 10px 10px 10px;
-	padding: 10px;
-	border: 1px solid #ccc;
-	background: #efefef;
-	width:232px;
-	float:right;
-	}
-
-#percept_bottom {
-	margin: 0px 10px 10px 10px;
-	padding: 10px;
-	border: 1px solid #ccc;
-	background: #efefef;
+.table_header {
+	font-decoration: underline;
+	width: 100%;
 }
 
-pre {
-	font-size: 12px;
-	line-height: 22px;
-	margin-top: 20px;
-	margin-bottom: 10px; 
-	}
+/* Menu */
+
+#menu {
+	margin: 0px 60px 0px 60px;
+	height: 30px;
+	padding-right: 0px;
+	background-image: url('../images/nav.png');
+	background-repeat: repeat-x;
+	padding-top: 0px;
+	border-top: 1px solid #383a32;
+	border-left: 1px solid #383a32;
+	border-right: 1px solid #383a32;
+}
+
+.menu_tabs {
+	overflow: hidden;
+}
+
+.menu_tabs ul {
+	margin: 0;
+	padding: 0;
+	font: bold 12px Verdana;
+	list-style-type: none;
+}
+
+.menu_tabs li {
+	display: inline;
+	margin: 0;
+	background-repeat: repeat-x;
+}
+
+.menu_tabs li a {
+	float: right;
+	display: block;
+	text-decoration: none;
+	margin: 0;
+	padding: 8px; 7px 8px; 3px;
+	border-left: 1px solid #777487;
+}
+
+.menu_tabs li a:visited {
+	color: black;
+}
+
+.menu_tabs li a:hover {
+	background: #cae8ea;
+}
+
+.menu_tabs li a:selected .menu_tabs li a:active {
+	background: yellow;
+}

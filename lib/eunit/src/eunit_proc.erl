@@ -531,10 +531,23 @@ io_reply(From, ReplyAs, Reply) ->
     From ! {io_reply, ReplyAs, Reply}.
 
 io_request({put_chars, Chars}, Buf) ->
+    io_request({put_chars, latin1, Chars}, Buf);
+io_request({put_chars, latin1, Chars}, Buf) ->
     {ok, [Chars | Buf]};
+io_request({put_chars, unicode, Chars}, Buf) ->
+    {ok, [to_latin1(Chars) | Buf]};
+
 io_request({put_chars, M, F, As}, Buf) ->
+    io_request({put_chars, latin1, M, F, As}, Buf);
+io_request({put_chars, latin1, M, F, As}, Buf) ->
     try apply(M, F, As) of
 	Chars -> {ok, [Chars | Buf]}
+    catch
+	C:T -> {{error, {C,T,erlang:get_stacktrace()}}, Buf}
+    end;
+io_request({put_chars, unicode, M, F, As}, Buf) ->
+    try apply(M, F, As) of
+	Chars -> {ok, [to_latin1(Chars) | Buf]}
     catch
 	C:T -> {{error, {C,T,erlang:get_stacktrace()}}, Buf}
     end;
@@ -546,8 +559,18 @@ io_request({get_line, _Prompt}, Buf) ->
     {eof, Buf};
 io_request({get_until, _Prompt, _M, _F, _As}, Buf) ->
     {eof, Buf};
+io_request({get_chars, _Enc, _Prompt, _N}, Buf) ->
+    {eof, Buf};
+io_request({get_chars, _Enc, _Prompt, _M, _F, _Xs}, Buf) ->
+    {eof, Buf};
+io_request({get_line, _Enc, _Prompt}, Buf) ->
+    {eof, Buf};
+io_request({get_until, _Enc, _Prompt, _M, _F, _As}, Buf) ->
+    {eof, Buf};
 io_request({setopts, _Opts}, Buf) ->
     {ok, Buf};
+io_request(getopts, Buf) ->
+    {[], Buf};
 io_request({requests, Reqs}, Buf) ->
     io_requests(Reqs, {ok, Buf});
 io_request(_, Buf) ->
@@ -557,3 +580,17 @@ io_requests([R | Rs], {ok, Buf}) ->
     io_requests(Rs, io_request(R, Buf));
 io_requests(_, Result) ->
     Result.
+
+to_latin1(Chars) ->
+    case unicode:characters_to_binary(Chars,unicode,latin1) of
+	{error,_,_} -> 
+	    list_to_binary( 
+	      [ case X of
+		    High when High > 255 ->
+			io_lib:format("\\{~.8B}",[X]);
+		    Low ->
+			Low
+		end || X <- unicode:characters_to_list(Chars,unicode) ]);
+	Bin ->
+	    Bin
+    end.

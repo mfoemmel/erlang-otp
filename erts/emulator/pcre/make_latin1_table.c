@@ -37,6 +37,7 @@ POSSIBILITY OF SUCH DAMAGE.
 -----------------------------------------------------------------------------
 */
 
+/* %ExternalCopyright% */
 
 /* This is a freestanding support program to generate a file containing
 character tables for PCRE. The tables are built according to the current
@@ -115,7 +116,7 @@ fprintf(f,
   "#endif\n\n"
   "#include \"pcre_internal.h\"\n\n");
 fprintf(f,
-  "const unsigned char _pcre_default_tables[] = {\n\n"
+  "const unsigned char _erts_pcre_default_tables[] = {\n\n"
   "/* This table is a lower casing table. */\n\n");
 
 fprintf(f, "  ");

@@ -44,10 +44,10 @@
       of the different terms are application specific.
     </p>
     <p>
-      In Erlang the BIF <seealso marker="kernel:erlang#term_to_binary/1">term_to_binary/1,2</seealso> is used to convert a 
+      In Erlang the BIF <seealso marker="erts:erlang#term_to_binary/1">term_to_binary/1,2</seealso> is used to convert a 
       term into the external format. 
       To convert binary data encoding a term the BIF
-      <seealso marker="kernel:erlang#binary_to_term/1">
+      <seealso marker="erts:erlang#binary_to_term/1">
 	binary_to_term/1
       </seealso> 
       is used.
@@ -434,8 +434,8 @@
 	<tcaption></tcaption></table>
 	<p>
 	  Binaries are generated with bit syntax expression or with
-	  <seealso marker="kernel:erlang#list_to_binary/1">list_to_binary/1</seealso>,
-	  <seealso marker="kernel:erlang#term_to_binary/1">term_to_binary/1</seealso>,
+	  <seealso marker="erts:erlang#list_to_binary/1">list_to_binary/1</seealso>,
+	  <seealso marker="erts:erlang#term_to_binary/1">term_to_binary/1</seealso>,
 	  or as input from binary ports.
 	  The <c>Len</c> length field is an unsigned 4 byte integer 
 	  (big endian).

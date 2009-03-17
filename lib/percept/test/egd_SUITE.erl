@@ -1,20 +1,22 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
+
 -module(egd_SUITE).
 -include("test_server.hrl").
 
@@ -257,24 +259,24 @@ binary_is_png_compliant(PngBin) ->
 
 
 get_rgb() ->
-   R = random:uniform(256), 
-   G = random:uniform(256),   
-   B = random:uniform(256),
+   R = random(255), 
+   G = random(255),   
+   B = random(255),
    {R,G,B}.
 
 get_angle() ->
-   random:uniform(360).
+   random(359).
 
 get_point() ->
     get_point(get(image_size)).
 get_point({W,H}) ->
-   X = random:uniform(W),
-   Y = random:uniform(H),
+   X = random(W - 1),
+   Y = random(H - 1),
    {X,Y}.
 
 get_size(Max) ->
-    W = trunc(random:uniform(Max/2) + Max/2),
-    H = trunc(random:uniform(Max/2) + Max/2),
+    W = trunc(random(Max/2) + Max/2 + 1),
+    H = trunc(random(Max/2) + Max/2 + 1),
     io:format("Image size will be ~p x ~p~n", [W,H]),
     {W,H}.
 
@@ -285,3 +287,4 @@ get_points(0, Out) ->
 get_points(N, Out) ->
     get_points(N - 1, [get_point() | Out]).
 
+random(N) -> trunc(random:uniform(trunc(N + 1)) - 1).

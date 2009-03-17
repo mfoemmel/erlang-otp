@@ -1,9 +1,0 @@
-#!/bin/sh -f 
-
-subdirs=`cat =subdirs`
-for s in $subdirs; do
-  echo $1 in $s ...
-  cd $s
-  $*
-  cd ..
-done

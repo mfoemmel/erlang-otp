@@ -1,0 +1,519 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE chapter SYSTEM "chapter.dtd">
+
+<chapter>
+  <header>
+    <copyright>
+      <year>2004</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
+    </copyright>
+    <legalnotice>
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
+    </legalnotice>
+
+    <title>Xmerl Release Notes</title>
+    <prepared>otp_appnotes</prepared>
+    <docno>nil</docno>
+    <date>nil</date>
+    <rev>nil</rev>
+  </header>
+  <p>This document describes the changes made to the Xmerl application.</p>
+
+<section><title>Xmerl 1.1.12</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            Updated copyright notice in source files</p>
+          <p>
+            Own Id: OTP-7847</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+ 
+<section><title>Xmerl 1.1.11</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            An empty element with a complexType and simpleContent was
+            not properly valildated. This error is now corrected.</p>
+          <p>
+            Own Id: OTP-7736</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+ 
+<section><title>Xmerl 1.1.10</title>
+ 
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+           Changed the examples in Customization Functions Tutorial
+           to correct Erlang code.
+          </p>
+          <p>
+            Own Id: OTP-6053
+          </p>
+        </item>
+        <item>
+          <p>
+            Some XPath errors solved, typo in compare function '!=',
+            error in <c>id()</c> function.</p>
+          <p>
+            Own Id: OTP-6792 Aux Id: seq10570 </p>
+        </item>
+        <item>
+          <p>
+            The XPath function <c>contains()</c> now implemented. See
+            XPath 1.0 section 4.2.</p>
+          <p>
+            Own Id: OTP-6873</p>
+        </item>
+        <item>
+          <p>
+           Fixed that xmerl_xsd:process_schema/2 with {xsdbase, Dirname} failed with enoent 
+           and a number of inor documentation bugs in xmerl_xsd reference manual.
+          </p>
+          <p>
+            Own Id: OTP-7165
+          </p>
+        </item>
+        <item>
+          <p>
+            Fixed xmerl_scan's problem with numeric character references 
+            followed by UTF-8 characters in the contents.
+          </p>
+          <p>
+            Own Id: OTP-7430
+          </p>
+        </item>
+        <item>
+          <p>
+           Fixed an incorrect guard for xmerl_scan:to_ucs/2.
+          </p>
+          <p>
+            Own Id: OTP-7473
+          </p>
+        </item>
+        <item>
+          <p>
+            Some bug corrections of xmerl XPath implementation, most
+            provided by Matthew Dempsky.</p>
+          <p>
+            Own Id: OTP-7496</p>
+        </item>
+        <item>
+          <p>
+            Now with <c>string()</c> and <c>name()</c> all XPath
+            functions are implemented. The string representation of
+            QName by <c>name()</c> is "{Namespace URI}local-name".</p>
+          <p>
+            Own Id: OTP-7510</p>
+        </item>
+
+      </list>
+    </section>
+ 
+</section>
+
+
+<section><title>Xmerl 1.1.9</title>
+ 
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            A number of minor scanner faults have got more clear error messages. 
+          </p>
+          <p>
+            Own Id: OTP-5998, Aux Id: seq9803
+          </p>
+        </item>
+        <item>
+          <p>
+           An example error in the Xmerl Users Guide is corrected.
+          </p>
+          <p>
+            Own Id: OTP-6947
+          </p>
+        </item>
+        <item>
+          <p>
+           When xmerl_xsd:validate was executed the schema table in the state 
+           was deleted and next execution would fail. This is now corrected.
+          </p>
+          <p>
+            Own Id: OTP-7288
+          </p>
+        </item>
+      </list>
+    </section>
+ 
+</section>
+
+
+<section><title>Xmerl 1.1.8</title>
+ 
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            A Kleene Closure child in a sequence consumed all
+            following childs. This problem has been fixed.</p>
+          <p>
+            Own Id: OTP-7211</p>
+        </item>
+        <item>
+          <p>
+            Now validating xhtml1-transitional.dtd. A certain
+            contentspec with a succeding choice, that didn't match
+            all content, followed by other child elements caused a
+            failure. This is now corrected.</p>
+          <p>
+            Own Id: OTP-7214</p>
+        </item>
+      </list>
+    </section>
+ 
+</section>
+
+<section><title>Xmerl 1.1.7</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            xmerl's schema validation now takes default facets into
+            account</p>
+          <p>
+            Own Id: OTP-7190</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Xmerl 1.1.6</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            Parsing XML with option <c>{validation,schema}</c> is now
+            corrected.</p>
+          <p>
+            Own Id: OTP-6773</p>
+        </item>
+        <item>
+          <p>
+            union type is now supported</p>
+          <p>
+            Own Id: OTP-6877 Aux Id: seq10755 </p>
+        </item>
+        <item>
+          <p>
+            Now xmerl validates as expected when a sequence has a
+            present group member and a following element.</p>
+          <p>
+            Own Id: OTP-6910</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+  <section>
+    <title>Xmerl 1.1.5</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>The head of a substitutionGroup may have type anyType and
+            thus allow members of any type. This was an oversight, but is
+            now corrected.</p>
+          <p>Own Id: OTP-6720</p>
+        </item>
+        <item>
+          <p>A recursive group reference in a redefine refers to the
+            definition in the redefined schema. See 4.2.2 in
+            XMLSchema part1 "Schema Representation Constraint:
+            Individual Component Redefinition" bullet 2.</p>
+          <p>Own Id: OTP-6739</p>
+        </item>
+        <item>
+          <p>Solved some content model problems, for instance in some
+            cases failed when more than one choice.</p>
+          <p>Own Id: OTP-6752</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Xmerl 1.1.4</title>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>An additional format is possible for the simple syntax:
+            <c>{Fun, State}</c>. The fun should retrieve the
+            replacement in simple syntax format. The semantics of
+            fun: <c>fun(State) -> code that creates replacement, then returns {SimpleSyntax,NewState} | done </c></p>
+          <p>Own Id: OTP-6679</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Xmerl 1.1.3</title>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>Memory consumption decreased: moved transforming from
+            utf-8 to unicode from an extra pass of the document to
+            the occasion when a character is parsed. Removed use of
+            lists:subtract. Those changes also speeds up parsing in
+            some scenarios.</p>
+          <p>Own Id: OTP-6599 Aux Id: seq10552 </p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Xmerl 1.1.2</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Schema processor reprocessed schemas that already were
+            processed, using process_schemas on a system of schemas
+            with circular dependencies.</p>
+          <p>Own Id: OTP-6460 Aux Id: seq10564 </p>
+        </item>
+      </list>
+    </section>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>Dialyzer warnings now removed, i.e. dead code have been
+            removed.</p>
+          <p>Own Id: OTP-6507</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Xmerl 1.1.1</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Bug in xmerl removed so that simple syntax element
+            content is exported correctly.</p>
+          <p>Own Id: OTP-6402 Aux Id: OTP-6099</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Xmerl 1.1</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Xmerl failed to parse and export with the sax_file
+            front-end. Therefore hook function calls were added in the
+            parser and handling of text content were changed.</p>
+          <p>Own Id: OTP-6043</p>
+        </item>
+        <item>
+          <p>Bug in xmerl removed so that simple syntax element
+            content is exported correctly.</p>
+          <p>Own Id: OTP-6099</p>
+        </item>
+      </list>
+    </section>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>xmerl now supports XMLSchema validation. Documentation in
+            reference manual for xmerl. The release of XMLSchema
+            validation should be considered as a beta release. The
+            user interface may still be adjusted in a coming
+            release. Opinions and evaluations are welcome.</p>
+          <p>Own Id: OTP-6401</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>xmerl 1.0.5</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Code that caused compiler warnings has been reviewed.</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>xmerl 1.0.4</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>xmerl behaved strange parsing a XML-document with a
+            copyright sign in a comment.</p>
+          <p>Own Id: OTP-5599</p>
+        </item>
+        <item>
+          <p>Line count for error messages in DTD improved, still
+            problem because of ENTITY expansions. Didn't delete
+            digraphs after recursion test. Now correctly parsing of
+            declaration separators [28a-b].</p>
+          <p>Own Id: OTP-5718</p>
+        </item>
+        <item>
+          <p>Failed to validate a XML file with a content spec that
+            had a choice of which one element was a sequence with
+            optional elements, and all elements of that sequence were
+            missing</p>
+          <p>Own Id: OTP-5734</p>
+        </item>
+        <item>
+          <p>Location paths for document root and attributes is now
+            working as expected.</p>
+          <p>Own Id: OTP-5895</p>
+        </item>
+        <item>
+          <p>Now has the last() predicate in the XPATH modules the
+            properties specified in ch 2.4 in the XPATH spec, i.e. if
+            last() evaluates to a number other than the context
+            position it is false, otherwise true.</p>
+          <p>Own Id: OTP-5902</p>
+        </item>
+        <item>
+          <p>The location path of a single wildcard now only selects
+            element nodes.</p>
+          <p>Own Id: OTP-5905</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Xmerl 1.0.3</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Removed call of undefined function in xmerl_lib.</p>
+          <p>Own Id: OTP-5587</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Xmerl 1.0.2</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Better identification of errors in xml code.</p>
+          <p>Own Id: OTP-5498 Aux Id: seq9803 </p>
+        </item>
+        <item>
+          <p>Some minor bugs fixed.</p>
+          <p>Own Id: OTP-5500</p>
+        </item>
+        <item>
+          <p>Parser failed on PE reference as EnumeratedType AttType,
+            now corrected.</p>
+          <p>Own Id: OTP-5531</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Xmerl 1.0.1</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Fixed bug in xmerl_xpath. Xpath expressions that select
+            nodes of type text() didn't work, like "contexto/text()",
+            "child::text()", "descendant::text()".</p>
+          <p>Own Id: OTP-5268 Aux Id: seq9656 </p>
+        </item>
+        <item>
+          <p>Minor bugs fixed.</p>
+          <p>Own Id: OTP-5301</p>
+        </item>
+      </list>
+    </section>
+    <p>There are also release notes for <url href="notes_history.html">older versions</url>.</p>
+  </section>
+
+  <section>
+    <title>Xmerl 1.0</title>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>The OTP release of xmerl 1.0 is mainly the same as
+            xmerl-0.20 of http://sowap.sourceforge.net/. It is
+            capable of parsing XML 1.0. There have only been minor
+            improvements: Some bugs that caused an unexpected crash
+            when parsing bad XML. Failure report that also tells
+            which file that caused an error.</p>
+          <p>Own Id: OTP-5174</p>
+        </item>
+      </list>
+    </section>
+  </section>
+</chapter>
+

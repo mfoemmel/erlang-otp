@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Author: Lennart Öhman, lennart.ohman@st.se
 %%
@@ -191,7 +192,7 @@ init_tpm(Pid,Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc) ->
 %% previously have been initialized.
 %% tpm/6 & /9 initializes the function and starts meta tracing.
 tpm(Pid,Mod,Func,Arity,MatchSpec)
-  when atom(Mod),atom(Func),integer(Arity),list(MatchSpec),Mod/='_',Func/='_'->
+  when is_atom(Mod),is_atom(Func),is_integer(Arity),is_list(MatchSpec),Mod/='_',Func/='_'->
     send_wait(Pid,{tpm,{Mod,Func,Arity,MatchSpec}});
 tpm(_,_,_,_,_) ->
     {error,badarg}.
@@ -200,7 +201,7 @@ tpm(Pid,Mod,Func,Arity,MatchSpec,CallFunc) ->
     tpm(Pid,Mod,Func,Arity,MatchSpec,void,CallFunc,void,void).
 
 tpm(Pid,Mod,Func,Arity,MatchSpec,InitFunc,CallFunc,ReturnFunc,RemoveFunc)
-  when atom(Mod),atom(Func),integer(Arity),list(MatchSpec),Mod/='_',Func/='_' ->
+  when is_atom(Mod),is_atom(Func),is_integer(Arity),is_list(MatchSpec),Mod/='_',Func/='_' ->
     send_wait(Pid,{tpm,{Mod,Func,Arity,MatchSpec},InitFunc,CallFunc,ReturnFunc,RemoveFunc});
 tpm(_,_,_,_,_,_,_,_,_) ->
     {error,badarg}.
@@ -209,7 +210,7 @@ tpm(_,_,_,_,_,_,_,_,_) ->
 %% Same as tpm/X but the meta tracer will automatically append {tracer,Tracer}
 %% to the enable list in a {trace,Disable,Enable} match spec action term.
 tpm_tracer(Pid,Mod,Func,Arity,MatchSpec)
-  when atom(Mod),atom(Func),integer(Arity),list(MatchSpec),Mod/='_',Func/='_'->
+  when is_atom(Mod),is_atom(Func),is_integer(Arity),is_list(MatchSpec),Mod/='_',Func/='_'->
     send_wait(Pid,{tpm_tracer,{Mod,Func,Arity,MatchSpec}});
 tpm_tracer(_,_,_,_,_) ->
     {error,badarg}.
@@ -218,7 +219,7 @@ tpm_tracer(Pid,Mod,Func,Arity,MatchSpec,CallFunc) ->
     tpm_tracer(Pid,Mod,Func,Arity,MatchSpec,void,CallFunc,void,void).
 
 tpm_tracer(Pid,Mod,Func,Arity,MatchSpec,InitFunc,CallFunc,ReturnFunc,RemoveFunc)
-  when atom(Mod),atom(Func),integer(Arity),list(MatchSpec),Mod/='_',Func/='_' ->
+  when is_atom(Mod),is_atom(Func),is_integer(Arity),is_list(MatchSpec),Mod/='_',Func/='_' ->
     send_wait(Pid,{tpm_tracer,
 		   {Mod,Func,Arity,MatchSpec},
 		   InitFunc,CallFunc,ReturnFunc,RemoveFunc});
@@ -734,7 +735,7 @@ h_ctpm_ms(Mod,Func,Arity,MSname) ->
 %% for a function.
 %% Returns 'true' or 'false'.
 check_tpm_args(Mod,Func,Arity)
-  when atom(Mod),atom(Func),integer(Arity),Mod/='_',Func/='_' ->
+  when is_atom(Mod),is_atom(Func),is_integer(Arity),Mod/='_',Func/='_' ->
     true;
 check_tpm_args(_,_,_) ->
     false.
@@ -742,7 +743,7 @@ check_tpm_args(_,_,_) ->
 
 %% Help function which calls the actual BIF setting meta-trace-patterns.
 %% Returns 'true' or 'false'.
-set_meta_tracing(Mod,Func,Arity,MS) when atom(Mod) ->
+set_meta_tracing(Mod,Func,Arity,MS) when is_atom(Mod) ->
     case erlang:module_loaded(Mod) of
 	true ->
 	    set_meta_tracing_2(Mod,Func,Arity,MS);
@@ -761,7 +762,7 @@ set_meta_tracing_2(Mod,Func,Arity,MS) ->
     case catch erlang:trace_pattern({Mod,Func,Arity},MS,[meta]) of
 	0 ->                                % Hmm, nothing happend :-)
 	    false;
-	N when integer(N) ->                % The normal case, some functions were hit.
+	N when is_integer(N) ->                % The normal case, some functions were hit.
 	    true;
 	{'EXIT',_Reason} ->
 	    false
@@ -787,7 +788,7 @@ stop_all_meta_tracing([],_,_) ->
 %% something else, and is then ignored.
 handle_meta({M,F},Pid,Arg1,PrivLD) ->
     (catch M:F(Pid,Arg1,PrivLD));
-handle_meta(Fun,Pid,Arg1,PrivLD) when function(Fun) ->
+handle_meta(Fun,Pid,Arg1,PrivLD) when is_function(Fun) ->
     (catch Fun(Pid,Arg1,PrivLD));
 handle_meta(_,_,_,_) ->                     % Don't know how to do this.
     false.
@@ -801,7 +802,7 @@ write_output(TI,[OutPut|Rest]) ->
 write_output({file,FD},Bin) when is_binary(Bin) -> % Plain direct-binary file
     Size=byte_size(Bin),
     file:write(FD,list_to_binary([<<0,Size:32>>,Bin]));
-write_output({relay,ToNode},Bin) when atom(ToNode),binary(Bin) ->
+write_output({relay,ToNode},Bin) when is_atom(ToNode),is_binary(Bin) ->
     {inviso_rt_meta,ToNode} ! {relayed_meta,Bin};
 write_output(_,_) ->                        % Don't understand, just skip.
     true.
@@ -815,7 +816,7 @@ write_output(_,_) ->                        % Don't understand, just skip.
 %% Help function initializing the public loopdata structure. Note that if the
 %% supplied InitPublLDmfa is faulty we let the structure become the error.
 %% The error will most likely turn up in an error report somewhere, eventually.
-do_init_publ_ld({M,F,Args}) when atom(M),atom(F),list(Args) ->
+do_init_publ_ld({M,F,Args}) when is_atom(M),is_atom(F),is_list(Args) ->
     case catch apply(M,F,Args) of
 	{'EXIT',_Reason} ->
 	    {error,init_publ_ld_func};      % Let the struct be this error!
@@ -828,7 +829,7 @@ do_init_publ_ld(_) ->
 
 %% Help function which removes the public loopdata structure. The function does
 %% not necessarily have to exist. Returns nothing significant.
-do_remove_publ_ld({M,F},PublLD) when atom(M),atom(F) ->
+do_remove_publ_ld({M,F},PublLD) when is_atom(M),is_atom(F) ->
     catch M:F(PublLD);
 do_remove_publ_ld(_,_) ->
     true.
@@ -837,14 +838,14 @@ do_remove_publ_ld(_,_) ->
 %% Hlp function initializing a particular meta traced function into the public
 %% loopdata. Note that the function is not mandatory.
 %% Returns {NewPublLD,Output} or 'false'.
-do_initfunc({M,F},Mod,Func,Arity,PublLD) when atom(M),atom(F) ->
+do_initfunc({M,F},Mod,Func,Arity,PublLD) when is_atom(M),is_atom(F) ->
     case catch M:F(Mod,Func,Arity,PublLD) of
 	{ok,NewPublLD,Output} ->
 	    {NewPublLD,Output};
 	_ ->                                % Everything else is an error.
 	    false                           % Act as no initialization function.
     end;
-do_initfunc(Fun,Mod,Func,Arity,PublLD) when function(Fun) ->
+do_initfunc(Fun,Mod,Func,Arity,PublLD) when is_function(Fun) ->
     case catch Fun(Mod,Func,Arity,PublLD) of
 	{ok,NewPublLD,Output} ->
 	    {NewPublLD,Output};
@@ -858,14 +859,14 @@ do_initfunc(_,_,_,_,_) ->                   % Perhaps too generous, should be 'v
 %% Help function removing a particular meta traced function from the public
 %% loopdata. Note that we do not make much noice should the call back function
 %% be faulty.
-do_removefunc({M,F},Mod,Func,Arity,PublLD) when atom(M),atom(F) ->
+do_removefunc({M,F},Mod,Func,Arity,PublLD) when is_atom(M),is_atom(F) ->
     case catch M:F(Mod,Func,Arity,PublLD) of
 	{ok,NewPublLD} ->
 	    NewPublLD;
 	_ ->                                % Everything else is an error.
 	    PublLD                          % Act as no initialization function.
     end;
-do_removefunc(Fun,Mod,Func,Arity,PublLD) when function(Fun) ->
+do_removefunc(Fun,Mod,Func,Arity,PublLD) when is_function(Fun) ->
     case catch Fun(Mod,Func,Arity,PublLD) of
 	{ok,NewPublLD} ->
 	    NewPublLD;
@@ -929,7 +930,7 @@ add_tracer_2({Head,Cond,Body},Tracer) ->
 add_tracer_2(Faulty,_Tracer) ->
     Faulty.
 
-add_tracer_3([{trace,Disable,Enable}|Rest],Tracer) when list(Enable) ->
+add_tracer_3([{trace,Disable,Enable}|Rest],Tracer) when is_list(Enable) ->
     [{trace,Disable,Enable++[{{tracer,Tracer}}]}|Rest];
 add_tracer_3([ActionTerm|Rest],Tracer) ->
     [ActionTerm|add_tracer_3(Rest,Tracer)];
@@ -1203,3 +1204,4 @@ global_unregister_call(_CallingPid,_,PublLD) ->
 %% -----------------------------------------------------------------------------
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+

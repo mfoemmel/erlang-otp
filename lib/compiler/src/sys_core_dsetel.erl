@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Using dsetelement to make multiple-field record updates
 %% faster.
@@ -75,18 +76,29 @@ visit_module(#c_module{defs=Ds0}=R) ->
     R#c_module{defs=Ds}.
 
 visit_module_1([{Name,F0}|Fs], Env, Acc) ->
-    {F,_} = visit(Env, F0),
-    visit_module_1(Fs, Env, [{Name,F}|Acc]);
+    try visit(Env, F0) of
+	{F,_} ->
+	    visit_module_1(Fs, Env, [{Name,F}|Acc])
+    catch
+	Class:Error ->
+	    Stack = erlang:get_stacktrace(),
+	    #c_var{name={Func,Arity}} = Name,
+	    io:fwrite("Function: ~w/~w\n", [Func,Arity]),
+	    erlang:raise(Class, Error, Stack)
+    end;
 visit_module_1([], _, Acc) ->
     lists:reverse(Acc).
 
+visit(Env, #c_var{name={_,_}}=R) ->
+    %% Ignore local function name.
+    {R, Env};
 visit(Env0, #c_var{name=X}=R) ->
-    case dict:find(X, Env0) of
-	{ok, N} ->
-	    {R, dict:store(X, N+1, Env0)};
-	error ->
-	    {R, dict:store(X, 9999, Env0)}    % free variable - unsafe
-    end;
+    %% There should not be any free variables. If there are,
+    %% the next line will cause an exception.
+    {ok, N} = dict:find(X, Env0),
+    {R, dict:store(X, N+1, Env0)};
+visit(Env, #c_literal{}=R) ->
+    {R, Env};
 visit(Env0, #c_tuple{es=Es0}=R) ->
     {Es1,Env1} = visit_list(Env0, Es0),
     {R#c_tuple{es=Es1}, Env1};
@@ -94,6 +106,9 @@ visit(Env0, #c_cons{hd=H0,tl=T0}=R) ->
     {H1,Env1} = visit(Env0, H0),
     {T1,Env2} = visit(Env1, T0),
     {R#c_cons{hd=H1,tl=T1}, Env2};
+visit(Env0, #c_binary{segments=Segs}=R) ->
+    Env = visit_bin_segs(Env0, Segs),
+    {R, Env};
 visit(Env0, #c_values{es=Es0}=R) ->
     {Es1,Env1} = visit_list(Env0, Es0),
     {R#c_values{es=Es1}, Env1};
@@ -152,15 +167,13 @@ visit(Env0, #c_letrec{defs=Ds0,body=B0}=R) ->
     {Xs, Env1} = bind_vars([V || {V,_} <- Ds0], Env0),
     {Ds1,Env2} = visit_def_list(Env1, Ds0),
     {B1,Env3} = visit(Env2, B0),
-    {R#c_letrec{defs=Ds1,body=B1}, restore_vars(Xs, Env0, Env3)};
+    {R#c_letrec{defs=Ds1,body=B1}, restore_vars(Xs, Env0, Env3)}.
 %% The following general code for handling modules is slow if a module
 %% contains very many functions. There is special code in visit_module/1
 %% which is much faster.
 %% visit(Env0, #c_module{defs=D0}=R) ->
 %%     {R1,Env1} = visit(Env0, #c_letrec{defs=D0,body=#c_nil{}}),
 %%     {R#c_module{defs=R1#c_letrec.defs}, Env1};
-visit(Env, T) ->    % constants
-	{T, Env}.
 
 visit_list(Env, L) ->
     lists:mapfoldl(fun (E, A) -> visit(A, E) end, Env, L).
@@ -171,13 +184,17 @@ visit_def_list(Env, L) ->
 			   {{Name,V1}, E1}
 		   end, Env, L).
 
+visit_bin_segs(Env, Segs) ->
+    lists:foldl(fun (#c_bitstr{val=Val,size=Sz}, E0) ->
+			{_, E1} = visit(E0, Val),
+			{_, E2} = visit(E1, Sz),
+			E2
+		end, Env, Segs).
+    
 bind_vars(Vs, Env) ->
     bind_vars(Vs, Env, []).
 
 bind_vars([#c_var{name=X}|Vs], Env0, Xs)->
-    bind_vars(Vs, dict:store(X, 0, Env0), [X|Xs]);
-bind_vars([#c_fname{id=N,arity=A}|Vs], Env0, Xs)->
-    X = {N,A},
     bind_vars(Vs, dict:store(X, 0, Env0), [X|Xs]);
 bind_vars([], Env,Xs) ->
     {Xs, Env}.
@@ -198,9 +215,22 @@ visit_pat(Env0, #c_tuple{es=Es}, Vs) ->
 visit_pat(Env0, #c_cons{hd=H,tl=T}, Vs0) ->
     {Vs1, Env1} = visit_pat(Env0, H, Vs0),
     visit_pat(Env1, T, Vs1);
+visit_pat(Env0, #c_binary{segments=Segs}, Vs) ->
+    visit_pats(Segs, Env0, Vs);
+visit_pat(Env0, #c_bitstr{val=Val,size=Sz}, Vs0) ->
+    {Vs1, Env1} =
+	case Sz of
+	    #c_var{name=V} ->
+		%% We don't tolerate free variables.
+		{ok, N} = dict:find(V, Env0),
+		{Vs0, dict:store(V, N+1, Env0)};
+	    _ ->
+		visit_pat(Env0, Sz, Vs0)
+	end,
+    visit_pat(Env1, Val, Vs1);
 visit_pat(Env0, #c_alias{pat=P,var=#c_var{name=V}}, Vs) ->
     visit_pat(dict:store(V, 0, Env0), P, [V|Vs]);
-visit_pat(Env, _, Vs) ->    % constants
+visit_pat(Env, #c_literal{}, Vs) ->
     {Vs, Env}.
 
 restore_vars([V|Vs], Env0, Env1) ->

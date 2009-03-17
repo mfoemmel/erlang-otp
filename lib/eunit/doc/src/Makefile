@@ -81,7 +81,7 @@ EXTRA_FILES = \
 	$(XML_REF3_FILES:%.xml=$(HTMLDIR)/%.html) \
 	$(XML_REF6_FILES:%.xml=$(HTMLDIR)/%.html) \
 	$(XML_CHAPTER_FILES:%.xml=$(HTMLDIR)/%.html)\
-	$(XML_MOTES_FILES:%.xml=$(HTMLDIR)/%.html)
+	$(XML_NOTES_FILES:%.xml=$(HTMLDIR)/%.html)
 
 MAN3_FILES = $(XML_REF3_FILES:%.xml=$(MAN3DIR)/%.3)
 MAN6_FILES = $(XML_REF6_FILES:%_app.xml=$(MAN6DIR)/%.6)

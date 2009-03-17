@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 -module(public_key_SUITE).
 
@@ -98,7 +99,8 @@ all(doc) ->
     ["Test the public_key rsa functionality"];
 
 all(suite) -> 
-    [pem_to_der, 
+    [app, 
+     pem_to_der, 
      decode_private_key
 %%    encrypt_decrypt, 
 %%     rsa_verify
@@ -110,6 +112,13 @@ all(suite) ->
 
 %% Test cases starts here.
 %%--------------------------------------------------------------------
+
+app(doc) ->
+    "Test that the public_key app file is ok";
+app(suite) ->
+    [];
+app(Config) when list(Config) ->
+    ok = test_server:app_test(public_key).
 
 pem_to_der(doc) -> 
     ["Check that supported PEM files are decoded into the expected entry type"];

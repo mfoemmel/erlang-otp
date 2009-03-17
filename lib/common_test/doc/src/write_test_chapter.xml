@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>2003</year>
-      <year>2008</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2003</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>Writing Test Suites</title>
@@ -46,7 +44,7 @@
       case fails, the last 10 executed line numbers are displayed</item>
     </list>
 
-    <p>Please turn to the reference manual for the <c>ct</c>
+    <p>Please see the reference manual for the <c>ct</c>
       module for details about these functions.</p>
     
     <p>The CT application also includes other modules named 
@@ -69,7 +67,8 @@
     </p>
 
     <p>Each test suite module must export the function <c>all/0</c>
-      which returns the list of all test cases in that module. 
+      which returns the list of all test case groups and test cases 
+      in that module. 
     </p>
 
   </section>
@@ -82,8 +81,8 @@
     </p>    
 
     <p>If it exists, <c>init_per_suite</c> is called as the first
-    testcase of the suite. It typically contains initiation which is
-    common for all test cases in the suite, and which are only to be
+    testcase of the suite. It typically contains initializations that are
+    common for all test cases in the suite, and that are only to be
     performed once.
     </p>
 
@@ -98,16 +97,8 @@
     </p>
 
     <p>If <c>init_per_suite</c> fails, all test cases in the test
-    suite will be skipped, including <c>end_per_suite</c>
+    suite will be skipped, including <c>end_per_suite</c>.
     </p>
-
-    <p>It is possible in <c>end_per_suite</c> to check if the last executed
-      test case was successful or not (which consequently may determine 
-      how cleanup should be performed). This is done by reading the value
-      tagged with <c>tc_status</c> from <c>Config</c>. The value is either
-      <c>ok</c>, <c>{failed,Reason}</c>, or <c>{skipped,Reason}</c>.
-    </p>
-
   </section>
 
   <section>
@@ -138,6 +129,13 @@
        <seealso marker="dependencies_chapter#save_config">save_config</seealso>
        tuple).</p>
 
+    <p>It is possible in <c>end_per_testcase</c> to check if the
+      test case was successful or not (which consequently may determine 
+      how cleanup should be performed). This is done by reading the value
+      tagged with <c>tc_status</c> from <c>Config</c>. The value is either
+      <c>ok</c>, <c>{failed,Reason}</c>, or <c>{skipped,Reason}</c>.
+    </p>
+
     <p>If <c>init_per_testcase</c> crashes, the test case itself is
     skipped and <c>end_per_testcase</c> is never called.
     </p>
@@ -145,6 +143,7 @@
   </section>
 
   <section>
+    <marker id="test_cases"></marker>
     <title>Test cases</title>
     
     <p>The smallest unit that the test server is concerned with is a
@@ -249,24 +248,29 @@
 	  <p>
 	    It is also possible to give a required variable a default value that will 
 	    be used if the variable is not found in any configuration file. To specify 
-	    a default value, start by adding a normal require-tuple to the list for the 
-	    variable in question and then let the key-value definition for the variable 
-	    follow. The definition should have the same form as in the configuration file. 
-	    Example:</p>
+	    a default value, add a tuple on the form: 
+	    <c>{default_config,ConfigVariableName,Value}</c> to the test case info list 
+	    (the position in the list is irrelevant).
+	    Examples:</p>
       
 	  <pre>
-	    my_testcase() -> 
+	    testcase1() -> 
+	        [{require, ftp},
+	         {default_config, ftp, [{ftp, "my_ftp_host"},
+	                                {username, "alladin"},
+	                                {password, "sesame"}]}}].</pre>
+
+	  <pre>
+	    testcase2() -> 
 	        [{require, unix_telnet, {unix, [telnet, username, password]}},
-	         {unix_telnet, {unix, [{telnet, "durin.du.uab"},
-	                               {username, "alladin"},
-	                               {password, "sesame"}]}}]. 
-	  </pre>
+	         {default_config, unix, [{telnet, "my_telnet_host"},
+	                                 {username, "alladin"},
+	                                 {password, "sesame"}]}}].</pre>
 	</item>
       </taglist>
 
-      <note><p>Giving a required variable a default value can result
-	  in that a test case is always run. For many types
-	  of configuration values this is not a desired behavior.</p>
+      <note><p>Specifying a default value for a required variable can result
+	  in a test case always getting executed. This might not be a desired behaviour!</p>
       </note>  
     
       <p>If <c>timetrap</c> and/or <c>require</c> is not set specifically for
@@ -289,14 +293,13 @@
 	     {userdata,
 	         [{description,"System Upgrade: RpuAddition Normal RebootNode"},
 	          {fts,"http://someserver.ericsson.se/test_doc4711.pdf"}]}                  
-            ].
-      </pre>
+            ].</pre>
 
   </section>
 
   <section>
     <marker id="suite"></marker>
-    <title>Test suite default data</title>
+    <title>Test suite info function</title>
 
       <p>The <c>suite/0</c> function can be used in a test suite
 	module to set the default values for the <c>timetrap</c> and
@@ -305,7 +308,7 @@
 	more information.
       </p>
       
-      <p>Other options that may be specified with the suite defaults list are:</p>
+      <p>Other options that may be specified with the suite info list are:</p>
       <list>
 	<item><c>stylesheet</c>, 
 	  see <seealso marker="run_test_chapter#html_stylesheet">HTML Style Sheets</seealso>.</item>
@@ -326,9 +329,247 @@
 	     {userdata,[{info,"This suite tests database transactions."}]},
 	     {silent_connections,[telnet]},
 	     {stylesheet,"db_testing.css"}
-            ].
-      </pre>    
+            ].</pre>    
     
+  </section>
+
+  <section>
+    <marker id="test_case_groups"></marker>
+    <title>Test case groups</title>
+    <p>A test case group is a set of test cases that share configuration 
+    functions and execution properties. Test case groups are defined by
+    means of the <c>groups/0</c> function according to the following syntax:</p>
+    <pre>
+      groups() -> GroupDefs
+
+      Types:
+
+      GroupDefs = [GroupDef]
+      GroupDef = {GroupName,Properties,GroupsAndTestCases}
+      GroupName = atom()
+      GroupsAndTestCases = [GroupDef | {group,GroupName} | TestCase]
+      TestCase = atom()</pre>
+
+    <p><c>GroupName</c> is the name of the group and should be unique within
+    the test suite module. Groups may be nested, and this is accomplished
+    simply by including a group definition within the <c>GroupsAndTestCases</c>
+    list of another group. <c>Properties</c> is the list of execution 
+    properties for the group. The possible values are:</p>
+    <pre>
+      Properties = [parallel | sequence | Shuffle | {RepeatType,N}]
+      Shuffle = shuffle | {shuffle,Seed}
+      Seed = {integer(),integer(),integer()}
+      RepeatType = repeat | repeat_until_all_ok | repeat_until_all_fail |
+                   repeat_until_any_ok | repeat_until_any_fail
+      N = integer() | forever</pre>
+
+    <p>If the <c>parallel</c> property is specified, Common Test will execute
+    all test cases in the group in parallel. If <c>sequence</c> is specified,
+    the cases will be executed in a sequence, as described in the chapter
+    <seealso marker="dependencies_chapter#sequences">Dependencies between 
+    test cases and suites</seealso>. If <c>shuffle</c> is specified, the cases
+    in the group will be executed in random order. The <c>repeat</c> property
+    orders Common Test to repeat execution of the cases in the group a given
+    number of times, or until any, or all, cases fail or succeed.</p>
+
+    <p>Example:</p>
+    <pre>
+      groups() -> [{group1, [parallel], [test1a,test1b]},
+                   {group2, [shuffle,sequence], [test2a,test2b,test2c]}].</pre>
+
+    <p>To specify in which order groups should be executed (also with respect
+    to test cases that are not part of any group), tuples on the form 
+    <c>{group,GroupName}</c> should be added to the <c>all/0</c> list. Example:</p>
+    <pre>
+      all() -> [testcase1, {group,group1}, testcase2, {group,group2}].</pre>
+
+    <p>Properties may be combined so that e.g. if <c>shuffle</c>, 
+    <c>repeat_until_any_fail</c> and <c>sequence</c> are all specified, the test 
+    cases in the group will be executed repeatedly and in random order until
+    a test case fails, when execution is immediately stopped and the rest of 
+    the cases skipped.</p>
+
+    <p>Before execution of a group begins, the configuration function
+    <c>init_per_group(GroupName, Config)</c> is called. The list of tuples 
+    returned from this function is passed to the test cases in the usual 
+    manner by means of the <c>Config</c> argument. <c>init_per_group/2</c>
+    is meant to be used for initializations common for the test cases in the
+    group. After execution of the group is finished, the 
+    <c>end_per_group(GroupName, Config</c> function is called. This function
+    is meant to be used for cleaning up after <c>init_per_group/2</c>.</p>
+
+    <note><p><c>init_per_testcase/2</c> and <c>end_per_testcase/2</c>
+    are always called for each individual test case, no matter if the case 
+    belongs to a group or not.</p></note>
+
+    <p>The properties for a group is always printed on the top of the HTML log 
+    for <c>init_per_group/2</c>. Also, the total execution time for a group
+    can be found at the bottom of the log for <c>end_per_group/2</c>.</p>
+
+    <p>Test case groups may be nested so that sets of groups can be 
+    configured with the same <c>init_per_group/2</c> and <c>end_per_group/2</c>
+    functions. Nested groups may be defined by including a group definition,
+    or a group name reference, in the test case list of another group. Example:</p>
+    <pre>
+      groups() -> [{group1, [shuffle], [test1a,
+                                        {group2, [], [test2a,test2b]},
+                                        test1b]},
+                   {group3, [], [{group,group4},
+                                 {group,group5}]},
+                   {group4, [parallel], [test4a,test4b]},
+                   {group5, [sequence], [test5a,test5b,test5c]}].</pre>
+
+    <p>In the example above, if <c>all/0</c> would return group name references
+    in this order: <c>[{group,group1},{group,group3}]</c>, the order of the 
+    configuration functions and test cases will be the following (note that
+    <c>init_per_testcase/2</c> and <c>end_per_testcase/2:</c> are also
+    always called, but not included in this example for simplification):</p>
+    <pre>
+-      init_per_group(group1, Config) -> Config1  (*)
+
+--          test1a(Config1)
+
+--	    init_per_group(group2, Config1) -> Config2
+
+---              test2a(Config2), test2b(Config2)
+
+--          end_per_group(group2, Config2)
+
+--          test1b(Config1)
+
+-      end_per_group(group1, Config1) 
+
+-      init_per_group(group3, Config) -> Config3
+
+--          init_per_group(group4, Config3) -> Config4
+
+---              test4a(Config4), test4b(Config4)  (**)
+
+--          end_per_group(group4, Config4)
+
+--	    init_per_group(group5, Config3) -> Config5
+
+---              test5a(Config5), test5b(Config5), test5c(Config5)
+
+--          end_per_group(group5, Config5)
+
+-      end_per_group(group3, Config3)
+
+
+    (*) The order of test case test1a, test1b and group2 is not actually
+        defined since group1 has a shuffle property.
+
+    (**) These cases are not executed in order, but in parallel.</pre>
+
+    <p>Properties are not inherited from top level groups to nested 
+    sub-groups. E.g, in the example above, the test cases in <c>group2</c> 
+    will not be executed in random order (which is the property of 
+    <c>group1</c>).</p>
+  </section>
+
+  <section>
+    <title>The parallel property and nested groups</title>
+    <p>If a group has a parallel property, its test cases will be spawned
+    simultaneously and get executed in parallel. A test case is not allowed
+    to execute in parallel with <c>end_per_group/2</c> however, which means
+    that the time it takes to execute a parallel group is equal to the
+    execution time of the slowest test case in the group. A negative side
+    effect of running test cases in parallel is that the HTML summary pages
+    are not updated with links to the individual test case logs until the 
+    <c>end_per_group/2</c> function for the group has finished.</p>
+
+    <p>A group nested under a parallel group will start executing in parallel 
+    with previous (parallel) test cases (no matter what properties the nested 
+    group has). Since, however, test cases are never executed in parallel with 
+    <c>init_per_group/2</c> or <c>end_per_group/2</c> of the same group, it's 
+    only after a nested group has finished that any remaining parallel cases 
+    in the previous group get spawned.</p>
+  </section>
+
+  <section>
+    <title>Repeated groups</title>
+    <marker id="repeated_groups"></marker>
+    <p>A test case group may be repeated a certain number of times
+    (specified by an integer) or indefinitely (specified by <c>forever</c>).
+    The repetition may also be stopped prematurely if any or all cases
+    fail or succeed, i.e. if the property <c>repeat_until_any_fail</c>,
+    <c>repeat_until_any_ok</c>, <c>repeat_until_all_fail</c>, or 
+    <c>repeat_until_all_ok</c> is used. If the basic <c>repeat</c>
+    property is used, status of test cases is irrelevant for the repeat 
+    operation.</p>
+    
+    <p>It is possible to return the status of a sub-group (ok or
+    failed), to affect the execution of the group on the level above. 
+    This is accomplished by, in <c>end_per_group/2</c>, looking up the value
+    of <c>tc_group_properties</c> in the <c>Config</c> list and checking the
+    result of the test cases in the group. If status <c>failed</c> should be
+    returned from the group as a result, <c>end_per_group/2</c> should return
+    the value <c>{return_group_result,failed}</c>. The status of a sub-group
+    is taken into account by Common Test when evaluating if execution of a
+    group should be repeated or not (unless the basic <c>repeat</c>
+    property is used).</p>
+
+    <p>The <c>tc_group_properties</c> value is a list of status tuples, 
+    each with the key <c>ok</c>, <c>skipped</c> and <c>failed</c>. The
+    value of a status tuple is a list containing names of test cases 
+    that have been executed with the corresponding status as result.</p>
+
+    <p>Here's an example of how to return the status from a group:</p>
+    <pre>
+      end_per_group(_Group, Config) ->
+          Status = ?config(tc_group_result, Config),
+          case proplists:get_value(failed, Status) of
+              [] ->                                   % no failed cases 
+	          {return_group_result,ok};
+	      _Failed ->                              % one or more failed
+	          {return_group_result,failed}
+          end.</pre>
+
+    <p>It is also possible in <c>end_per_group/2</c> to check the status of
+    a sub-group (maybe to determine what status the current group should also
+    return). This is as simple as illustrated in the example above, only the
+    name of the group is stored in a tuple <c>{group_result,GroupName}</c>,
+    which can be searched for in the status lists. Example:</p>
+    <pre>
+      end_per_group(group1, Config) ->
+          Status = ?config(tc_group_result, Config),
+          Failed = proplists:get_value(failed, Status),
+          case lists:member({group_result,group2}, Failed) of
+	        true ->
+		    {return_group_result,failed};
+                false ->                                                    
+	            {return_group_result,ok}
+          end; 
+      ...</pre>
+
+    <note><p>When a test case group is repeated, the configuration 
+    functions, <c>init_per_group/2</c> and <c>end_per_group/2</c>, are 
+    also always called with each repetition.</p></note>
+  </section>
+
+  <section>
+    <title>Shuffled test case order</title>
+    <p>The order that test cases in a group are executed, is under normal
+    circumstances the same as the order specified in the test case list 
+    in the group definition. With the <c>shuffle</c> property set, however,
+    Common Test will instead execute the test cases in random order.</p>
+
+    <p>The user may provide a seed value (a tuple of three integers) with
+    the shuffle property: <c>{shuffle,Seed}</c>. This way, the same shuffling
+    order can be created every time the group is executed. If no seed value
+    is given, Common Test creates a "random" seed for the shuffling operation 
+    (using the return value of <c>erlang:now()</c>). The seed value is always
+    printed to the <c>init_per_group/2</c> log file so that it can be used to
+    recreate the same execution order in a subsequent test run.</p>
+
+    <note><p>If a shuffled test case group is repeated, the seed will not
+    be reset in between turns.</p></note>
+
+    <p>If a sub-group is specified in a group with a <c>shuffle</c> property,
+    the execution order of this sub-group in relation to the test cases 
+    (and other sub-groups) in the group, is also random. The order of the
+    test cases in the sub-group is however not random (unless, of course, the 
+    sub-group also has a <c>shuffle</c> property).</p>
   </section>
 
   <section>

@@ -1,32 +1,33 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Record and constant defenitions for the SSH-tansport layer 
 %% protocol see RFC 4253
 %%----------------------------------------------------------------------
 
--ifndef(ssl_transport).
--define(ssl_transport, true).
+-ifndef(ssh_transport).
+-define(ssh_transport, true).
 
 -define(DEFAULT_CLIENT_VERSION, {2, 0}).
--define(DEFAULT_SERVER_VERSION, {1, 99}).
+-define(DEFAULT_SERVER_VERSION, {2, 0}).
 -define(DEFAULT_DH_GROUP_MIN, 512).
 -define(DEFAULT_DH_GROUP_NBITS, 1024).
 -define(DEFAULT_DH_GROUP_MAX,  4096).
@@ -231,4 +232,4 @@
 	  190,037,143,243,036,148,051,040,246,115,041,192,255,255,255,255,
 	  255,255,255,255>>).
 
--endif. % -ifdef(ssl_transport).
+-endif. % -ifdef(ssh_transport).

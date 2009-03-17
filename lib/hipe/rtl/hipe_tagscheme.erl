@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%========================================================================
 %%
 %% Filename : hipe_tagscheme.erl
@@ -117,6 +135,7 @@ mk_nil()	-> ?NIL.
 %% mk_atom(X)	-> (X bsl ?TAG_IMMED2_SIZE) + ?TAG_IMMED2_ATOM.
 mk_non_value()	-> ?THE_NON_VALUE.
 
+-spec is_fixnum(integer()) -> bool().
 is_fixnum(N) when is_integer(N) ->
   Bits = ?bytes_to_bits(hipe_rtl_arch:word_size()) - ?TAG_IMMED1_SIZE,
   (N =< ((1 bsl (Bits - 1)) - 1)) and (N >= -(1 bsl (Bits - 1))).
@@ -951,6 +970,7 @@ get_one_word_pos_bignum(USize, Size, Fail) ->
    hipe_rtl:mk_load(USize, Size, hipe_rtl:mk_imm(1*WordSize
 						 -?TAG_PRIMARY_BOXED))].
 
+-spec bignum_sizeneed(non_neg_integer()) -> non_neg_integer().
 bignum_sizeneed(Size) ->
   WordSizeBits = hipe_rtl_arch:word_size() * 8,
   case is_fixnum(1 bsl Size) of
@@ -1109,7 +1129,6 @@ size_to_atom(Bytes) ->
     %%2 -> int16; So far there are no 2 byte fields
     1 -> byte
   end.
-      
 
 get_field_size1({matchstate, thing_word}) ->
   ?MS_THING_WORD_SIZE;

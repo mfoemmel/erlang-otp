@@ -41,6 +41,7 @@ POSSIBILITY OF SUCH DAMAGE.
 /* This module contains an internal function for validating UTF-8 character
 strings. */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -75,7 +76,7 @@ Returns:       < 0    if the string is a valid UTF-8 string
 */
 
 int
-_pcre_valid_utf8(const uschar *string, int length)
+_erts_pcre_valid_utf8(const uschar *string, int length)
 {
 #ifdef SUPPORT_UTF8
 register const uschar *p;
@@ -92,7 +93,7 @@ for (p = string; length-- > 0; p++)
   register int c = *p;
   if (c < 128) continue;
   if (c < 0xc0) return p - string;
-  ab = _pcre_utf8_table4[c & 0x3f];     /* Number of additional bytes */
+  ab = _erts_pcre_utf8_table4[c & 0x3f];     /* Number of additional bytes */
   if (length < ab || ab > 3) return p - string;
   length -= ab;
 

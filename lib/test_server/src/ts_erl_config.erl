@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>1997-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+
 %%% Purpose : Updates variable list with variables depending on
 %%%	      running Erlang system.
 
@@ -210,8 +210,12 @@ erl_interface(Vars,OsType) ->
 		    % FIXME: FreeBSD uses gcc flag '-pthread' or linking with
 		    % "libc_r". So it has to be last of libs. This is an
 		    % temporary solution, should be configured elsewhere.
+		    
+		    % This temporary solution have now failed!
+		    % A new temporary solution is installed ...
+		    % {unix,freebsd} -> "-lc_r";
 		    {unix,freebsd} ->
-			"-lc_r";
+			"-lpthread";
 		    {unix,_} ->
 			"-lpthread";
 		    _ -> 

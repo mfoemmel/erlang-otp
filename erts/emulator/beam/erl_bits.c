@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1999-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifdef HAVE_CONFIG_H
@@ -1245,8 +1246,10 @@ erts_bs_append(Process* c_p, Eterm* reg, Uint live, Eterm build_size_term,
      * OK, the binary is writable.
      */
 
+    erts_bin_offset = 8*sb->size + sb->bitsize;
+    used_size_in_bits = erts_bin_offset + build_size_in_bits;
     sb->is_writable = 0;	/* Make sure that no one else can write. */
-    pb->size += NBYTES(build_size_in_bits);
+    pb->size = NBYTES(used_size_in_bits);
     pb->flags |= PB_ACTIVE_WRITER;
 
     /*
@@ -1261,8 +1264,6 @@ erts_bs_append(Process* c_p, Eterm* reg, Uint live, Eterm build_size_term,
 	pb->bytes = (byte *) binp->orig_bytes;
     }
     erts_current_bin = pb->bytes;
-    erts_bin_offset = 8*sb->size + sb->bitsize;
-    used_size_in_bits = erts_bin_offset + build_size_in_bits;
 
     /*
      * Allocate heap space and build a new sub binary.
@@ -1403,7 +1404,9 @@ erts_bs_private_append(Process* p, Eterm bin, Eterm sz, Uint unit)
     /*
      * Calculate new size in bytes.
      */
-    pb->size += (build_size_in_bits+7) >> 3;
+    erts_bin_offset = 8*sb->size + sb->bitsize;
+    pos_in_bits_after_build = erts_bin_offset + build_size_in_bits;
+    pb->size = (pos_in_bits_after_build+7) >> 3;
     pb->flags |= PB_ACTIVE_WRITER;
 
     /*
@@ -1419,8 +1422,6 @@ erts_bs_private_append(Process* p, Eterm bin, Eterm sz, Uint unit)
     }
     erts_current_bin = pb->bytes;
 
-    erts_bin_offset = 8*sb->size + sb->bitsize;
-    pos_in_bits_after_build = erts_bin_offset + build_size_in_bits;
     sb->size = pos_in_bits_after_build >> 3;
     sb->bitsize = pos_in_bits_after_build & 7;
     return bin;
@@ -1438,11 +1439,11 @@ erts_bs_init_writable(Process* p, Eterm sz)
     
     if (is_small(sz)) {
 	Sint s = signed_val(sz);
-	if (s > 0) {
+	if (s >= 0) {
 	    bin_size = (Uint) s;
 	}
     }
-    
+
     /*
      * Allocate heap space.
      */
@@ -1557,6 +1558,100 @@ erts_align_utf8_bytes(ErlBinMatchBuffer* mb, byte* buf)
 	bits = 16;
     }
     erts_copy_bits(mb->base, mb->offset, 1, buf, 0, 1, bits);
+}
+
+Eterm
+erts_bs_get_utf8(ErlBinMatchBuffer* mb)
+{
+    Eterm result;
+    Uint remaining_bits;
+    byte* pos;
+    byte tmp_buf[4];
+    Eterm a, b, c;
+
+    /*
+     * Number of trailing bytes for each value of the first byte.
+     */
+    static const byte erts_trailing_bytes_for_utf8[256] = {
+	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9, 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+	9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9, 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+	9,9,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+	2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 3,3,3,3,3,3,3,3,9,9,9,9,9,9,9,9
+    };
+
+    if ((remaining_bits = mb->size - mb->offset) < 8) {
+	return THE_NON_VALUE;
+    }
+    if (BIT_OFFSET(mb->offset) == 0) {
+	pos = mb->base + BYTE_OFFSET(mb->offset);
+    } else {
+	erts_align_utf8_bytes(mb, tmp_buf);
+	pos = tmp_buf;
+    }
+    result = pos[0];
+    switch (erts_trailing_bytes_for_utf8[result]) {
+      case 0:
+	/* One byte only */
+	mb->offset += 8;
+	break;
+      case 1:
+	/* Two bytes */
+	if (remaining_bits < 16) {
+	    return THE_NON_VALUE;
+	}
+	a = pos[1];
+	if ((a & 0xC0) != 0x80) {
+	    return THE_NON_VALUE;
+	}
+	result = (result << 6) + a - (Eterm) 0x00003080UL;
+	mb->offset += 16;
+	break;
+      case 2:
+	/* Three bytes */
+	if (remaining_bits < 24) {
+	    return THE_NON_VALUE;
+	}
+	a = pos[1];
+	b = pos[2];
+	if ((a & 0xC0) != 0x80 || (b & 0xC0) != 0x80 ||
+	    (result == 0xE0 && a < 0xA0)) {
+	    return THE_NON_VALUE;
+	}
+	result = (((result << 6) + a) << 6) + b - (Eterm) 0x000E2080UL;
+	if ((0xD800 <= result && result <= 0xDFFF) ||
+	    result == 0xFFFE || result == 0xFFFF) {
+	    return THE_NON_VALUE;
+	}
+	mb->offset += 24;
+	break;
+      case 3:
+	/* Four bytes */
+	if (remaining_bits < 32) {
+	    return THE_NON_VALUE;
+	}
+	a = pos[1];
+	b = pos[2];
+	c = pos[3];
+	if ((a & 0xC0) != 0x80 || (b & 0xC0) != 0x80 ||
+	    (c & 0xC0) != 0x80 ||
+	    (result == 0xF0 && a < 0x90)) {
+	    return THE_NON_VALUE;
+	}
+	result = (((((result << 6) + a) << 6) + b) << 6) +
+	    c - (Eterm) 0x03C82080UL;
+	if (result > 0x10FFFF) {
+	    return THE_NON_VALUE;
+	}
+	mb->offset += 32;
+	break;
+      default:
+	return THE_NON_VALUE;
+    }
+    return make_small(result);
 }
 
 Eterm

@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%=======================================================================
 %% File        : hipe_beam_to_icode.erl
 %% Author      : Kostis Sagonas
@@ -85,8 +103,7 @@
 
 module(BeamFuns, Options) ->
   BeamCode0 = [beam_disasm:function__code(F) || F <- BeamFuns],
-  BeamCode1 = exclude_module_info_code(BeamCode0, []),
-  {ModCode, ClosureInfo} = preprocess_code(BeamCode1),
+  {ModCode, ClosureInfo} = preprocess_code(BeamCode0),
   pp_beam(ModCode, Options),
   [trans_beam_function_chunk(FunCode, ClosureInfo) || FunCode <- ModCode].
 
@@ -94,26 +111,6 @@ trans_beam_function_chunk(FunBeamCode, ClosureInfo) ->
   {M,F,A} = find_mfa(FunBeamCode),
   Icode = trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo),
   {{M,F,A},Icode}.
-
-%%-----------------------------------------------------------------------
-%% The code chunks of module_info/[0,1] are excluded from the
-%% compilation to native code, since they are just dummy stubs.
-%% It is the BEAM loader that creates their real code, and HiPE relies
-%% on it to generate proper code for module_info/[0,1].
-%%-----------------------------------------------------------------------
-
-exclude_module_info_code([FunCode|FunCodes], Acc) ->
-  case FunCode of
-    [{label,L},{label,_},{func_info,M,F,A}|Insns] ->
-      NewFunCode = [{label,L},{func_info,M,F,A}|Insns],
-      exclude_module_info_code([NewFunCode|FunCodes], Acc);
-    [{label,_},{func_info,_,{atom,module_info},A}|_] when A =:= 0; A =:= 1->
-      exclude_module_info_code(FunCodes, Acc);
-    _Other ->
-      exclude_module_info_code(FunCodes, [FunCode|Acc])
-  end;
-exclude_module_info_code([], Acc) ->
-  lists:reverse(Acc).
 
 %%-----------------------------------------------------------------------
 %% @doc
@@ -129,8 +126,6 @@ exclude_module_info_code([], Acc) ->
 
 -spec mfa(list(), mfa(), comp_options()) -> hipe_beam_to_icode_ret().
 
-mfa(_, {M,module_info,A}, _) when is_atom(M), (A =:= 0 orelse A =:= 1) ->
-  [];  % the module_info/[0,1] functions are just stubs in a BEAM file
 mfa(BeamFuns, {M,F,A} = MFA, Options)
   when is_atom(M), is_atom(F), is_integer(A) ->
   BeamCode0 = [beam_disasm:function__code(F) || F <- BeamFuns],
@@ -193,10 +188,7 @@ trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
        false -> Code3;
        true -> [mk_redtest()|Code3]
      end],
-  IsClosure = case get_closure_info({M,F,A}, ClosureInfo) of
-		not_a_closure -> false;
-		_ -> true
-	      end,
+  IsClosure = get_closure_info({M,F,A}, ClosureInfo) =/= not_a_closure,
   Code5 = hipe_icode:mk_icode({M,F,A}, FunArgs, IsClosure, IsLeaf,
 			      remove_dead_code(Code4),
 			      hipe_gensym:var_range(icode),
@@ -950,19 +942,32 @@ trans_fun([{bs_add, {f,Lbl}, [Old,New,Unit], Res}|Instructions], Env) ->
     end,
   MultIs ++ IsPos ++ [AddI|trans_fun(Instructions, Env)];
 %%--------------------------------------------------------------------
-%% Bit syntax instructions added in R12B-5 (Fall 2008) - PER PLEASE FIX
+%% Bit syntax instructions added in R12B-5 (Fall 2008)
 %%--------------------------------------------------------------------
-%%trans_fun([{test,bs_get_utf8,{f,Lbl},[A1,A2,FF,A4]}|Instructions], Env) ->
-%%trans_fun([{test,bs_skip_utf8,{f,Lbl},[A1,A2,FF]}|Instructions], Env) ->
-%%trans_fun([{test,bs_get_utf16,{f,Lbl},[A1,A2,FF,A4]}|Instructions], Env) ->
-%%trans_fun([{test,bs_skip_utf16,{f,Lbl},[A1,A2,FF]}|Instructions], Env) ->
-%%trans_fun([{test,bs_get_utf32,{f,Lbl},[A1,A2,FF,A4]}|Instructions], Env) ->
-%%trans_fun([{test,bs_skip_utf32,{f,Lbl},[A1,A2,FF]}|Instructions], Env) ->
-%%trans_fun([{bs_utf8_size,{f,Lbl},A2,A3}|Instructions], Env) ->
-%%trans_fun([{bs_put_utf8,{f,Lbl},FF,A3}|Instructions], Env) ->
-%%trans_fun([{bs_utf16_size,{f,Lbl},A2,A3}|Instructions], Env) ->
-%%trans_fun([{bs_put_utf16,{f,Lbl},FF,A3}|Instructions], Env) ->
-%%trans_fun([{bs_put_utf32,{f,Lbl},FF,A3}|Instructions], Env) ->
+trans_fun([{bs_utf8_size,{f,Lbl},A2,A3}|Instructions], Env) ->
+  Bin = trans_arg(A2),
+  Dst = mk_var(A3),
+  trans_op_call({hipe_bs_primop, bs_utf8_size}, Lbl, [Bin], [Dst], Env, Instructions);
+trans_fun([{test,bs_get_utf8,{f,Lbl},[Ms,_Live,{field_flags,_Flags},X]} |
+	   Instructions], Env) ->
+  trans_bs_get_or_skip_utf8(Lbl, Ms, X, Instructions, Env);
+trans_fun([{test,bs_skip_utf8,{f,Lbl},[Ms,_Live,{field_flags,_Flags}]} |
+	   Instructions], Env) ->
+  trans_bs_get_or_skip_utf8(Lbl, Ms, 'new', Instructions, Env);
+trans_fun([{bs_utf16_size,{f,Lbl},A2,A3}|Instructions], Env) ->
+  Bin = trans_arg(A2),
+  Dst = mk_var(A3),
+  trans_op_call({hipe_bs_primop, bs_utf16_size}, Lbl, [Bin], [Dst], Env, Instructions);
+trans_fun([{test,bs_get_utf16,{f,Lbl},[Ms,_Live,{field_flags,Flags0},X]} |
+	   Instructions], Env) ->
+  trans_bs_get_or_skip_utf16(Lbl, Ms, Flags0, X, Instructions, Env);
+trans_fun([{test,bs_skip_utf16,{f,Lbl},[Ms,_Live,{field_flags,Flags0}]} |
+	   Instructions], Env) ->
+  trans_bs_get_or_skip_utf16(Lbl, Ms, Flags0, 'new', Instructions, Env);
+trans_fun([{test,bs_get_utf32,{f,Lbl},[Ms,_Live,{field_flags,Flags0},X]} | Instructions], Env) ->
+  trans_bs_get_or_skip_utf32(Lbl, Ms, Flags0, X, Instructions, Env);
+trans_fun([{test,bs_skip_utf32,{f,Lbl},[Ms,_Live,{field_flags,Flags0}]} | Instructions], Env) ->
+  trans_bs_get_or_skip_utf32(Lbl, Ms, Flags0, 'new', Instructions, Env);
 %%--------------------------------------------------------------------
 %%--- Translation of floating point instructions ---
 %%--------------------------------------------------------------------
@@ -1338,6 +1343,26 @@ trans_bin([{bs_put_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
     end,
   SrcInstrs ++ trans_bin_call({hipe_bs_primop, Name}, 
 			     Lbl, [Src|Args], [Offset], Base, Offset, Env2, Instructions);
+%%----------------------------------------------------------------
+%% New binary construction instructions added in R12B-5 (Fall 2008).
+%%----------------------------------------------------------------
+trans_bin([{bs_put_utf8,{f,Lbl},_FF,A3}|Instructions], Base, Offset, Env) ->
+  Src = trans_arg(A3),
+  Args = [Src, Base, Offset],
+  trans_bin_call({hipe_bs_primop, bs_put_utf8}, Lbl, Args, [Offset], Base, Offset, Env, Instructions);
+trans_bin([{bs_put_utf16,{f,Lbl},{field_flags,Flags0},A3}|Instructions], Base, Offset, Env) ->
+  Src = trans_arg(A3),
+  Args = [Src, Base, Offset],
+  Flags = resolve_native_endianess(Flags0),
+  Name = {bs_put_utf16, Flags},
+  trans_bin_call({hipe_bs_primop, Name}, Lbl, Args, [Offset], Base, Offset, Env, Instructions);
+trans_bin([{bs_put_utf32,F={f,Lbl},FF={field_flags,_Flags0},A3}|Instructions], Base, Offset, Env) ->
+  Src = trans_arg(A3),
+  trans_bin_call({hipe_bs_primop,bs_validate_unicode}, Lbl, [Src], [], Base, Offset, Env,
+		 [{bs_put_integer,F,{integer,32},1,FF,A3} | Instructions]);
+%%----------------------------------------------------------------
+%% Base cases for the end of a binary construction sequence.
+%%----------------------------------------------------------------
 trans_bin([{bs_final2,Src,Dst}|Instructions], _Base, Offset, Env) ->
   [hipe_icode:mk_primop([mk_var(Dst)], {hipe_bs_primop, bs_final}, 
 			[trans_arg(Src),Offset])
@@ -1345,6 +1370,29 @@ trans_bin([{bs_final2,Src,Dst}|Instructions], _Base, Offset, Env) ->
 trans_bin(Instructions, _Base, _Offset, Env) ->
   trans_fun(Instructions, Env).
 
+%% this translates bs_get_utf8 and bs_skip_utf8 (get with new unused dst)
+trans_bs_get_or_skip_utf8(Lbl, Ms, X, Instructions, Env) ->
+  Dst = mk_var(X),
+  MsVar = mk_var(Ms),
+  trans_op_call({hipe_bs_primop,bs_get_utf8}, Lbl, [MsVar], [Dst,MsVar], Env, Instructions).
+
+%% this translates bs_get_utf16 and bs_skip_utf16 (get with new unused dst)
+trans_bs_get_or_skip_utf16(Lbl, Ms, Flags0, X, Instructions, Env) ->
+  Dst = mk_var(X),
+  MsVar = mk_var(Ms),
+  Flags = resolve_native_endianess(Flags0),
+  Name = {bs_get_utf16,Flags},
+  trans_op_call({hipe_bs_primop,Name}, Lbl, [MsVar], [Dst,MsVar], Env, Instructions).
+
+%% this translates bs_get_utf32 and bs_skip_utf32 (get with new unused dst)
+trans_bs_get_or_skip_utf32(Lbl, Ms, Flags0, X, Instructions, Env) ->
+  Dst = mk_var(X),
+  MsVar = mk_var(Ms),
+  Flags = resolve_native_endianess(Flags0),
+  {I1,Env1} = trans_one_op_call({hipe_bs_primop,{bs_get_integer,32,Flags}},
+				Lbl, [MsVar], [Dst,MsVar], Env),
+  I1 ++ trans_op_call({hipe_bs_primop,bs_validate_unicode_retract},
+		      Lbl, [Dst,MsVar], [MsVar], Env1, Instructions).
 
 %%-----------------------------------------------------------------------
 %% trans_arith(Op, SrcVars, Des, Lab, Env) -> { Icode, NewEnv }

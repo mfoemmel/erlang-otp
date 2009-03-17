@@ -20,13 +20,14 @@ and dead code stripping is activated. This leads to link errors. Pulling in the
 header ensures that the array gets flagged as "someone outside this compilation
 unit might reference this" and so it will always be supplied to the linker. */
 
+/* %ExternalCopyright% */
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
 #include "pcre_internal.h"
 
-const unsigned char _pcre_default_tables[] = {
+const unsigned char _erts_pcre_default_tables[] = {
 
 /* This table is a lower casing table. */
 

@@ -1,21 +1,21 @@
-/*<copyright>
- * <year>2002-2008</year>
- * <holder>Ericsson AB, All Rights Reserved</holder>
- *</copyright>
- *<legalnotice>
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2002-2009. All Rights Reserved.
+ * 
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
  * retrieved online at http://www.erlang.org/.
- *
+ * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
+ * 
+ * %CopyrightEnd%
  *
- * The Initial Developer of the Original Code is Ericsson AB.
- *</legalnotice>
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -67,9 +67,10 @@
 
 typedef struct {
   ErlDrvPort port;
+  int buffer_size;
 } asn1_data;
 
-int min_alloc_bytes;
+/* int min_alloc_bytes; */
 
 
 static ErlDrvData asn1_drv_start(ErlDrvPort, char *);
@@ -136,7 +137,18 @@ static ErlDrvEntry asn1_drv_entry = {
   NULL,              /* void * that is not used (BC) */
   asn1_drv_control,  /* control, port_control callback */
   NULL,              /* timeout, called on timeouts */
-  NULL               /* outputv, vector output interface */
+  NULL,              /* outputv, vector output interface */
+  
+  NULL,              /* ready_async */
+  NULL,              /* flush */
+  NULL,              /* call */
+  NULL,              /* event */
+  ERL_DRV_EXTENDED_MARKER,
+  ERL_DRV_EXTENDED_MAJOR_VERSION,
+  ERL_DRV_EXTENDED_MINOR_VERSION,
+  ERL_DRV_FLAG_USE_PORT_LOCKING,
+  NULL,              /* handle2 */
+  NULL               /* process_exit */
 };    
 
 
@@ -148,7 +160,7 @@ DRIVER_INIT(asn1_erl_drv) /* must match name in driver_entry */
 
 static ErlDrvData asn1_drv_start(ErlDrvPort port, char *buff)
 {
-  extern int min_alloc_bytes;
+  /* extern int min_alloc_bytes; */
   char  *ptr;
   asn1_data* d;
 
@@ -157,9 +169,9 @@ static ErlDrvData asn1_drv_start(ErlDrvPort port, char *buff)
   d->port = port;
   
   if ((ptr = getenv("ASN1_MIN_BUF_SIZE")) == NULL)
-    min_alloc_bytes = 1024;
+    d->buffer_size = 1024;
   else
-    min_alloc_bytes = atoi(ptr);
+    d->buffer_size = atoi(ptr);
   return (ErlDrvData)d;
 }
 
@@ -183,13 +195,14 @@ int asn1_drv_control(ErlDrvData   handle,
   ErlDrvBinary *drv_binary;
   ErlDrvBinary **drv_bin_ptr;
   asn1_data* a_data;
-  extern int min_alloc_bytes;
+  int min_alloc_bytes;
   unsigned int err_pos = 0; /* in case of error, return last correct position */
   int ret_err; /* return value in case of error in TLV decode, i.e. length of list in res_buf */
 
   /* In case previous call to asn1_drv_control resulted in a change of
      return value from binary to integer list */
   a_data = (asn1_data *)handle;
+  min_alloc_bytes = a_data->buffer_size; 
   set_port_control_flags(a_data->port, PORT_CONTROL_FLAG_BINARY);
 
   if (command == ASN1_COMPLETE)

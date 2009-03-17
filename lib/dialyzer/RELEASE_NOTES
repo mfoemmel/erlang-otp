@@ -3,14 +3,37 @@
 		(in reversed chronological order)
 ==============================================================================
 
-To be released
---------------
 
+Version 1.9.0 (in Erlang/OTP R13A)
+----------------------------------
+ - The analysis accepts opaque type declarations and detects violations of
+   opaqueness of terms of such types.  Starting with R13, many Erlang/OTP
+   standard libraries (array, dict, digraph, ets, gb_sets, gb_trees, queue,
+   and sets) contain opaque type declarations of their main data types.
+   Dialyzer will spit out warnings in code that explicitly depends on the
+   structure of these terms.
+ - Added support for handling UTF segments in bitstreams and for detecting
+   obvious type errors in these segments.
+   Warning: This code is not terribly tested though since there are very
+   few Erlang programs which use Unicode-based binaries - not surprising
+   since this is a new language feature of R13.
+ - Strengthened the discrepancy identification when testing for equality and
+   matching between terms of different types.  This detects more bugs in code.
+ - Added warning for M:F(...) calls where M is not a module term and F is not
+   an atom.  Previously, such calls where found to fail but the reason for
+   the failure was not reported.
+ - Added a convenient shorthand for the --no_check_plt option (-n).
+ - Added the --dump_callgraph option for dumping the callgraph of all files
+   that are analyzed into a specified file.  The callgraph either be dumped
+   in raw format, in .dot format, or converted to a .ps (postscript) file.
+   Note that in large callgraphs the generated postscript file might not be
+   interpretable by Ghostview.
+   (Thanks to Ilya Khlopotov for the initial version of this functionality.)
 
 Version 1.8.3 (in Erlang/OTP R12B-5)
 ------------------------------------
  - Added the --no_check_plt option that makes the startup time faster
-   when working with stable PLTs that do not change.
+   when working with PLTs that are known not to change.
  - Changed the phrasing of some warnings so that they do not cause confusion
    to some users and correspond better to reality.
 

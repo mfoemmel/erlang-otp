@@ -1,19 +1,22 @@
-% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2002-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
+%%
+%%
 
 -module(httpc_handler).
 
@@ -31,7 +34,7 @@
 	 terminate/2, code_change/3]).
 
 -record(timers, {request_timers = [], % [ref()]
-		 pipeline_timer % ref()
+		 queue_timer % ref()
 	      }).
 
 -record(state, {request,        % #request{}
@@ -41,7 +44,8 @@
                 body,           % binary()
                 mfa,            % {Moduel, Function, Args}
                 pipeline = queue:new(),% queue() 
-		status = new,          % new | pipeline | close | ssl_tunnel
+		keep_alive = queue:new(),% queue() 
+		status = new,          % new | pipeline | keep_alive | close | ssl_tunnel
 		canceled = [],	       % [RequestId]
                 max_header_size = nolimit,   % nolimit | integer() 
                 max_body_size = nolimit,     % nolimit | integer()
@@ -128,15 +132,23 @@ stream(BodyPart, Request = #request{stream = none}, _) ->
     {BodyPart, Request};
 
 %% Stream to caller
-stream(BodyPart, Request = #request{stream = Self}, 200) when Self == self;
-							      Self == {self, once} ->
+stream(BodyPart, Request = #request{stream = Self}, 
+       Code) when ((Code == 200) or (Code == 206)) and 
+		  ((Self == self) or (Self == {self, once})) ->
     
     httpc_response:send(Request#request.from, 
 			{Request#request.id, stream, BodyPart}),
     {<<>>, Request};
 
-stream(BodyPart, Request = #request{stream = Filename}, 200)
-  when is_list(Filename) -> % Stream to file
+stream(BodyPart, Request = #request{stream = Self}, 404) 
+  when Self == self; Self == {self, once} ->
+    httpc_response:send(Request#request.from,
+                       {Request#request.id, stream, BodyPart}),
+    {<<>>, Request};
+
+stream(BodyPart, Request = #request{stream = Filename}, Code)
+  when ((Code == 200) or (Code == 206)) 
+       and is_list(Filename) -> % Stream to file
     case file:open(Filename, [write, raw, append, delayed_write]) of
 	{ok, Fd} ->
 	    stream(BodyPart, Request#request{stream = Fd}, 200);
@@ -144,14 +156,16 @@ stream(BodyPart, Request = #request{stream = Filename}, 200)
 	    exit({stream_to_file_failed, Reason})
     end;
 
-stream(BodyPart, Request = #request{stream = Fd}, 200) -> % Stream to file
+stream(BodyPart, Request = #request{stream = Fd}, Code)  
+  when ((Code == 200) or (Code == 206)) -> % Stream to file
     case file:write(Fd, BodyPart) of
 	ok ->
 	    {<<>>, Request};
 	{error, Reason} ->
 	    exit({stream_to_file_failed, Reason})
     end;
-stream(BodyPart, Request,_) -> % only 200 responses can be streamed
+
+stream(BodyPart, Request,_) -> % only 200 and 206 responses can be streamed
     {BodyPart, Request}.
 
 %%====================================================================
@@ -207,7 +221,8 @@ init([Request, Options, ProfileName]) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 handle_call(Request, _, State = #state{session = Session =
-				       #tcp_session{socket = Socket},
+				       #tcp_session{socket = Socket,
+						    type = pipeline},
 				       timers = Timers,
 				       options = Options,
 				       profile_name = ProfileName}) ->
@@ -227,7 +242,7 @@ handle_call(Request, _, State = #state{session = Session =
 		    NewTimers = NewState#state.timers,
                     NewPipeline = queue:in(Request, State#state.pipeline),
 		    NewSession = 
-			Session#tcp_session{pipeline_length = 
+			Session#tcp_session{queue_length = 
 					    %% Queue + current
 					    queue:len(NewPipeline) + 1,
 					    client_close = ClientClose},
@@ -238,10 +253,10 @@ handle_call(Request, _, State = #state{session = Session =
 		undefined ->
 		    %% Note: tcp-message reciving has already been
 		    %% activated by handle_pipeline/2. 
-		    cancel_timer(Timers#timers.pipeline_timer, 
-				 timeout_pipeline),
+		    cancel_timer(Timers#timers.queue_timer, 
+				 timeout_queue),
 		    NewSession = 
-			Session#tcp_session{pipeline_length = 1,
+			Session#tcp_session{queue_length = 1,
 					    client_close = ClientClose},
 		    httpc_manager:insert_session(NewSession, ProfileName),
 		    Relaxed = 
@@ -253,12 +268,44 @@ handle_call(Request, _, State = #state{session = Session =
 					   [State#state.max_header_size,
 					    Relaxed]},
 				    timers = 
-				    Timers#timers{pipeline_timer =
+				    Timers#timers{queue_timer =
 						  undefined}}}
 	    end;
 	{error, Reason} ->
 	    {reply, {pipline_failed, Reason}, State}
+    end;
+
+handle_call(Request, _, #state{session = Session =
+			       #tcp_session{type = keep_alive,
+					    socket = Socket},
+			       options = Options,
+			       profile_name = ProfileName} = State) ->
+       
+    ClientClose = httpc_request:is_client_closing(Request#request.headers),
+    
+    Address = handle_proxy(Request#request.address, 
+			   Options#options.proxy),
+    case httpc_request:send(Address, Request, Socket) of
+	ok ->
+	    NewState = 
+		activate_request_timeout(State#state{request =
+						     Request}),
+	    NewSession = 
+		Session#tcp_session{queue_length = 1,
+				    client_close = ClientClose},
+	    httpc_manager:insert_session(NewSession, ProfileName),
+	    Relaxed = 
+		(Request#request.settings)#http_options.relaxed,
+	    {reply, ok, 
+	     NewState#state{request = Request,
+			    session = NewSession, 
+			    mfa = {httpc_response, parse,
+				   [State#state.max_header_size,
+				    Relaxed]}}};
+	{error, Reason}    ->
+	    {reply, {request_failed, Reason}, State}
     end.
+
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State) -> {noreply, State} |
 %%          {noreply, State, Timeout} |
@@ -267,13 +314,17 @@ handle_call(Request, _, State = #state{session = Session =
 %%--------------------------------------------------------------------
 
 %% When the request in process has been canceld the handler process is
-%% stopped and the pipelined requests will be reissued. This is is
+%% stopped and the pipelined requests will be reissued or remaining
+%% requests will be sent on a new connection. This is is
 %% based on the assumption that it is proably cheaper to reissue the
 %% requests than to wait for a potentiall large response that we then
 %% only throw away. This of course is not always true maybe we could
 %% do something smarter here?! If the request canceled is not
 %% the one handled right now the same effect will take place in
-%% handle_pipeline/2 when the canceled request is on turn.
+%% handle_pipeline/2 when the canceled request is on turn, 
+%% handle_keep_alive_queue/2 on the other hand will just skip the
+%% request as if it was never issued as in this case the request will
+%% not have been sent. 
 handle_cast({cancel, RequestId}, State = #state{request = Request =
 						#request{id = RequestId},
 						profile_name = ProfileName}) ->
@@ -384,8 +435,13 @@ handle_info({timeout, RequestId}, State = #state{request = Request}) ->
 		       httpc_response:error(Request,timeout)),
     {noreply, State#state{canceled = [RequestId | State#state.canceled]}};
 
-handle_info(timeout_pipeline, State = #state{request = undefined}) ->
+handle_info(timeout_queue, State = #state{request = undefined}) ->
     {stop, normal, State};
+
+%% Timing was such as the pipline_timout was not canceled!
+handle_info(timeout_queue, #state{timers = Timers} = State) ->
+    {noreply, State#state{timers = 
+			  Timers#timers{queue_timer = undefined}}};
 
 %% Setting up the connection to the server somehow failed. 
 handle_info({init_error, _, ClientErrMsg},
@@ -428,7 +484,7 @@ terminate(_, State = #state{session = Session, request = undefined,
 	true ->
 	    ok
     end,
-    cancel_timer(Timers#timers.pipeline_timer, timeout_pipeline),
+    cancel_timer(Timers#timers.queue_timer, timeout_queue),
     http_transport:close(socket_type(Session#tcp_session.scheme),
 			 Session#tcp_session.socket);
 
@@ -486,8 +542,10 @@ new_queue(Queue, Fun) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-send_first_request(Address, Request, State) ->
-    Ipv6 = (State#state.options)#options.ipv6,
+send_first_request(Address, Request, 
+		   #state{options = #options{ipv6 = Ipv6} = Options} 
+		   = State) ->
+    SessionType = httpc_manager:session_type(Options),
     SocketType = socket_type(Request),
     TimeOut = (Request#request.settings)#http_options.timeout,
     case http_transport:connect(SocketType, Address, Ipv6, TimeOut) of
@@ -501,7 +559,8 @@ send_first_request(Address, Request, State) ->
 			#tcp_session{id = {Request#request.address, self()},
 				     scheme = Request#request.scheme,
 				     socket = Socket,
-				     client_close = ClientClose},
+				     client_close = ClientClose,
+				     type = SessionType},
 		    TmpState = State#state{request = Request, 
 					   session = Session, 
 					   mfa = init_mfa(Request, State),
@@ -653,7 +712,7 @@ handle_http_body(Body, State = #state{headers = Headers,
 %%                     {stop, normal, NewState};
 
 handle_response(State = #state{status = new}) ->
-   handle_response(try_to_enable_pipline(State));
+   handle_response(try_to_enable_pipline_or_keep_alive(State));
 
 handle_response(State = 
 		#state{request = Request,
@@ -704,14 +763,14 @@ handle_response(State =
 	%% with the same id as the current.
 	{redirect, NewRequest, Data}->
 	    ok = httpc_manager:redirect_request(NewRequest, ProfileName),
-	    handle_pipeline(State#state{request = undefined}, Data);
+	    handle_queue(State#state{request = undefined}, Data);
 	{retry, TimeNewRequest, Data}->
 	    ok = httpc_manager:retry_request(TimeNewRequest, ProfileName),
-	    handle_pipeline(State#state{request = undefined}, Data);
+	    handle_queue(State#state{request = undefined}, Data);
 	{ok, Msg, Data} ->
 	    end_stream(StatusLine, Request),
 	    NewState = answer_request(Request, Msg, State),
-	    handle_pipeline(NewState, Data); 
+	    handle_queue(NewState, Data); 
 	{stop, Msg} ->
 	    end_stream(StatusLine, Request),
 	    NewState = answer_request(Request, Msg, State),
@@ -731,13 +790,22 @@ handle_cookies(Headers, Request, #options{cookies = enabled}, ProfileName) ->
     httpc_manager:store_cookies(Cookies, Request#request.address,
 				ProfileName).
 
-%% This request could not be pipelined
-handle_pipeline(State = #state{status = close}, _) ->
+%% This request could not be pipelined or used as sequential keept alive
+%% queue
+handle_queue(State = #state{status = close}, _) ->
     {stop, normal, State};
 
-handle_pipeline(State = #state{status = pipeline, session = Session,
-			       profile_name = ProfileName}, 
-		Data) ->
+handle_queue(State = #state{status = keep_alive}, Data) ->
+    handle_keep_alive_queue(State, Data);
+
+handle_queue(State = #state{status = pipeline}, Data) ->
+    handle_pipeline(State, Data).
+
+handle_pipeline(State = 
+		#state{status = pipeline, session = Session,
+		       profile_name = ProfileName,
+		       options = #options{pipeline_timeout = TimeOut}}, 
+			       Data) ->
     case queue:out(State#state.pipeline) of
 	{empty, _} ->
 	    %% The server may choose too teminate an idle pipeline
@@ -749,8 +817,8 @@ handle_pipeline(State = #state{status = pipeline, session = Session,
 				   [{active, once}]),
 	    %% If a pipeline that has been idle for some time is not
 	    %% closed by the server, the client may want to close it.
-	    NewState = activate_pipeline_timeout(State),
-	    NewSession = Session#tcp_session{pipeline_length = 0},
+	    NewState = activate_queue_timeout(TimeOut, State),
+	    NewSession = Session#tcp_session{queue_length = 0},
 	    httpc_manager:insert_session(NewSession, ProfileName),
 	    %% Note mfa will be initilized when a new request 
 	    %% arrives.
@@ -772,7 +840,7 @@ handle_pipeline(State = #state{status = pipeline, session = Session,
 				 NextRequest#request{from = answer_sent}}};
 		false ->
 		    NewSession = 
-			Session#tcp_session{pipeline_length =
+			Session#tcp_session{queue_length =
 					    %% Queue + current
 					    queue:len(Pipeline) + 1},
 		    httpc_manager:insert_session(NewSession, ProfileName),
@@ -803,6 +871,54 @@ handle_pipeline(State = #state{status = pipeline, session = Session,
 	    end
     end.
 
+handle_keep_alive_queue(State = #state{status = keep_alive,
+				       session = Session,
+				       profile_name = ProfileName,
+				       options = #options{keep_alive_timeout 
+							  = TimeOut}
+				      }, 
+			Data) ->
+    case queue:out(State#state.keep_alive) of
+	{empty, _} ->
+	    %% The server may choose too teminate an idle keep_alive session
+	    %% in this case we want to receive the close message
+	    %% at once and not when trying to send the next
+	    %% request.
+	    http_transport:setopts(socket_type(Session#tcp_session.scheme), 
+				   Session#tcp_session.socket, 
+				   [{active, once}]),
+	    %% If a keep_alive session has been idle for some time is not
+	    %% closed by the server, the client may want to close it.
+	    NewState = activate_queue_timeout(TimeOut, State),
+	    NewSession = Session#tcp_session{queue_length = 0},
+	    httpc_manager:insert_session(NewSession, ProfileName),
+	    %% Note mfa will be initilized when a new request 
+	    %% arrives.
+	    {noreply, 
+	     NewState#state{request = undefined, 
+			    mfa = undefined,
+			    status_line = undefined,
+			    headers = undefined,
+			    body = undefined
+			   } 
+	    };
+	{{value, NextRequest}, KeepAlive} ->    
+	    case lists:member(NextRequest#request.id, 
+			      State#state.canceled) of		
+		true ->
+		    handle_keep_alive_queue(State#state{keep_alive = 
+							KeepAlive}, Data);
+		false ->
+		    {reply, ok, NewState} =
+			handle_call(NextRequest, 
+				    dummy, State#state{request = undefined}),
+		    http_transport:setopts(
+		      socket_type(Session#tcp_session.scheme), 
+		      Session#tcp_session.socket, [{active, once}]),
+		    {noreply, NewState}
+	    end
+    end.
+
 call(Msg, Pid, Timeout) ->
     gen_server:call(Pid, Msg, Timeout).
 
@@ -830,43 +946,57 @@ activate_request_timeout(State = #state{request = Request}) ->
 			(State#state.timers)#timers.request_timers]}}
     end.
 
-activate_pipeline_timeout(State = #state{options = 
-					 #options{pipeline_timeout = 
-						  infinity}}) ->
+activate_queue_timeout(infinity, State) ->
     State;
-activate_pipeline_timeout(State = #state{options = 
-					 #options{pipeline_timeout = Time}}) ->
-    Ref = erlang:send_after(Time, self(), timeout_pipeline),
-    State#state{timers = #timers{pipeline_timer = Ref}}.
+activate_queue_timeout(Time, State) ->
+    Ref = erlang:send_after(Time, self(), timeout_queue),
+    State#state{timers = #timers{queue_timer = Ref}}.
 
-is_pipeline_capable_server("HTTP/1." ++ N, _) when hd(N) >= $1 ->
+
+is_pipeline_enabled_client(#tcp_session{type = pipeline}) ->
     true;
-is_pipeline_capable_server("HTTP/1.0", 
+is_pipeline_enabled_client(_) ->
+    false.
+
+is_keep_alive_enabled_server("HTTP/1." ++ N, _) when hd(N) >= $1 ->
+    true;
+is_keep_alive_enabled_server("HTTP/1.0", 
 			   #http_response_h{connection = "keep-alive"}) ->
     true;
-is_pipeline_capable_server(_,_) ->
+is_keep_alive_enabled_server(_,_) ->
     false.
 
 is_keep_alive_connection(Headers, Session) ->
     (not ((Session#tcp_session.client_close) or  
 	  httpc_response:is_server_closing(Headers))).
 
-try_to_enable_pipline(State = #state{session = Session, 
-				     request = #request{method = Method},
-				     status_line = {Version, _, _},
-				     headers = Headers,
-				     profile_name = ProfileName}) ->
-    case (is_pipeline_capable_server(Version, Headers)) andalso  
-	(is_keep_alive_connection(Headers, Session)) andalso 
-	(httpc_request:is_idempotent(Method)) of
+try_to_enable_pipline_or_keep_alive(State = 
+				    #state{session = Session, 
+					   request = #request{method = Method},
+					   status_line = {Version, _, _},
+					   headers = Headers,
+					   profile_name = ProfileName}) ->
+    case (is_keep_alive_enabled_server(Version, Headers) andalso 
+	  is_keep_alive_connection(Headers, Session)) of
 	true ->
-	    httpc_manager:insert_session(Session, ProfileName),
-	    State#state{status = pipeline};
+	    case (is_pipeline_enabled_client(Session) andalso 
+		  httpc_request:is_idempotent(Method)) of
+		true ->
+		    httpc_manager:insert_session(Session, ProfileName),
+		    State#state{status = pipeline};
+		false ->
+		    httpc_manager:insert_session(Session, ProfileName),
+		    %% Make sure type is keep_alive in session
+		    %% as it in this case might be pipeline
+		    State#state{status = keep_alive,
+				session = 
+				Session#tcp_session{type = keep_alive}}
+	    end;
 	false ->
 	    State#state{status = close}
     end.
 
-answer_request(Request, Msg, State = #state{timers = Timers}) ->    
+answer_request(Request, Msg, #state{timers = Timers} = State) ->    
     httpc_response:send(Request#request.from, Msg),
     RequestTimers = Timers#timers.request_timers,
     TimerRef =
@@ -993,10 +1123,13 @@ socket_type(https) ->
 
 start_stream(_, #request{stream = none}) ->
     ok;
-start_stream({{_, 200, _}, Headers}, Request = #request{stream = self}) ->
+start_stream({{_, Code, _}, Headers}, Request = #request{stream = self}) 
+  when Code == 200; Code == 206 ->
     Msg = httpc_response:stream_start(Headers, Request, ignore),
     httpc_response:send(Request#request.from, Msg);
-start_stream({{_, 200, _}, Headers}, Request = #request{stream = {self, once}}) ->
+start_stream({{_, Code, _}, Headers}, Request = #request{stream = 
+							 {self, once}}) 
+  when Code == 200; Code == 206 ->
     Msg = httpc_response:stream_start(Headers, Request, self()),
     httpc_response:send(Request#request.from, Msg);
 start_stream(_, _) ->
@@ -1016,6 +1149,13 @@ end_stream({_,200,_}, #request{stream = Fd}) ->
 	    ok;
 	{error, enospc} -> % Could be due to delayed_write
 	    file:close(Fd)
+    end;
+end_stream({_,206,_}, #request{stream = Fd}) ->
+    case file:close(Fd) of
+       ok ->
+           ok;
+       {error, enospc} -> % Could be due to delayed_write
+           file:close(Fd)
     end;
 end_stream(_, _) ->
     ok.

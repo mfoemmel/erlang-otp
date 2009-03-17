@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>2003-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 
 %%% @doc Common Test specific layer on top of telnet client ct_telnet_client.erl
@@ -95,6 +94,7 @@
 	       reconns=?RECONNS,
 	       reconn_int=?RECONN_TIMEOUT}).
 
+%%%-----------------------------------------------------------------
 %%% @spec open(Name) -> {ok,Handle} | {error,Reason}
 %%% @equiv open(Name,telnet)
 open(Name) ->
@@ -106,7 +106,7 @@ open(Name) ->
 %%%      ConnType = ct_telnet:connection_type()
 %%%      Handle = ct_telnet:handle()
 %%%
-%%% @doc Open a telnet connection to a node.
+%%% @doc Open a telnet connection to the specified target host.
 open(Name,ConnType) ->
     case ct_util:get_key_from_name(Name) of
 	{ok, unix} -> % unix host
@@ -118,50 +118,59 @@ open(Name,ConnType) ->
     end.
 
 %%%-----------------------------------------------------------------
-%%% @spec open(Name,ConnType,TargetMod) -> 
+%%% @spec open(KeyOrName,ConnType,TargetMod) -> 
 %%%                                     {ok,Handle} | {error,Reason}
-%%% @equiv open(Name,ConnType,TargetMod,[])
-open(Name,ConnType,TargetMod) ->
-    open(Name,ConnType,TargetMod,[]).
+%%% @equiv open(KeyOrName,ConnType,TargetMod,[])
+open(KeyOrName,ConnType,TargetMod) ->
+    open(KeyOrName,ConnType,TargetMod,KeyOrName).
 
 %%%-----------------------------------------------------------------
-%%% @spec open(Name,ConnType,TargetMod,Extra) -> 
+%%% @spec open(KeyOrName,ConnType,TargetMod,Extra) -> 
 %%%                                     {ok,Handle} | {error,Reason}
+%%%      KeyOrName = Key | Name
+%%%      Key = atom()
 %%%      Name = ct:target_name()
 %%%      ConnType = connection_type()
 %%%      TargetMod = atom()
 %%%      Extra = term()
 %%%      Handle = handle()
 %%%
-%%% @doc Open a telnet connection to the specified target.
+%%% @doc Open a telnet connection to the specified target host.
 %%%
-%%% <p>The target must exist in a config file, and <code>Name</code>
-%%% is the name allocated to the target - either with
-%%% <code>ct:require/2</code> or with a <code>require</code> statement
-%%% in the test suite default data or the test case info function.</p>
+%%% <p>The target data must exist in a configuration file. The connection 
+%%% may be associated with either <code>Name</code> and/or the returned 
+%%% <code>Handle</code>. To allocate a name for the target,
+%%% use <code>ct:require/2</code> in a test case, or use a 
+%%% <code>require</code> statement in the suite info function 
+%%% (<code>suite/0</code>), or in a test case info function. 
+%%% If you want the connection to be associated with <code>Handle</code> only 
+%%% (in case you need to open multiple connections to a host for example), 
+%%% simply use <code>Key</code>, the configuration variable name, to 
+%%% specify the target. Note that a connection that has no associated target 
+%%% name can only be closed with the handle value.</p>
 %%% 
 %%% <p><code>TargetMod</code> is a module which exports the functions
 %%% <code>connect(Ip,Port,Extra)</code> and <code>get_prompt_regexp()</code>
-%%% for the given <code>TargetType</code>.</p>
-open(Name,ConnType,TargetMod,Extra) ->
-    case ct:get_config({Name,ConnType}) of
+%%% for the given <code>TargetType</code> (e.g. <code>unix_telnet</code>).</p>
+open(KeyOrName,ConnType,TargetMod,Extra) ->
+    case ct:get_config({KeyOrName,ConnType}) of
 	undefined ->
-	    log(heading(open,{Name,ConnType}),"Failed: ~p",
-		[{not_available,Name}]),
-	    {error,{not_available,Name,ConnType}};
+	    log(heading(open,{KeyOrName,ConnType}),"Failed: ~p",
+		[{not_available,KeyOrName}]),
+	    {error,{not_available,KeyOrName,ConnType}};
 	Addr ->
 	    Addr1 =
 		case Addr of
 		    {_IP,_Port} ->
 			Addr;
 		    IP ->
-			case ct:get_config({Name,port}) of
+			case ct:get_config({KeyOrName,port}) of
 			    undefined -> IP;
 			    P -> {IP,P}
 			end
 		end,
-	    log(heading(open,{Name,ConnType}),"Opening connection to: ~p",[Addr1]),
-	    ct_gen_conn:start(Name,full_addr(Addr1,ConnType),
+	    log(heading(open,{KeyOrName,ConnType}),"Opening connection to: ~p",[Addr1]),
+	    ct_gen_conn:start(KeyOrName,full_addr(Addr1,ConnType),
 			      {TargetMod,Extra},?MODULE)
     end.
 
@@ -170,6 +179,11 @@ open(Name,ConnType,TargetMod,Extra) ->
 %%%       Connection = ct_telnet:connection()
 %%%
 %%% @doc Close the telnet connection and stop the process managing it.
+%%% 
+%%% <p>A connection may be associated with a target name and/or a handle.
+%%% If <code>Connection</code> has no associated target name, it may only
+%%% be closed with the handle value (see the <code>open/4</code> 
+%%% function).</p>
 close(Connection) ->
     case get_handle(Connection) of
 	{ok,Pid} ->
@@ -531,7 +545,7 @@ reconnect(Ip,Port,N,State=#state{target_mod=TargetMod,
 %% @hidden
 terminate(TelnPid,State) ->
     log(heading(terminate,State#state.name),
-	"Closing telnet connection.\nHandle: ~p",
+	"Closing telnet connection.\nId: ~p",
 	[TelnPid]),
     ct_telnet_client:close(TelnPid).
 

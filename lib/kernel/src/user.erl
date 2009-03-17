@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(user).
 
@@ -83,6 +84,7 @@ server(PortName,PortSettings) ->
 
 run(P) ->
     put(read_mode,list),
+    put(unicode,false),
     case init:get_argument(noshell) of
 	%% non-empty list -> noshell
 	{ok, [_|_]} -> 
@@ -189,12 +191,60 @@ do_io_request(Req, From, ReplyAs, Port, Q0) ->
 	    exit(What)
     end.
 
-io_request({put_chars,Chars}, Port, Q) -> % Binary new in R9C
-    put_chars(Chars, Port, Q);
-io_request({put_chars,Mod,Func,Args}, Port, Q) ->
-    put_chars(catch apply(Mod,Func,Args), Port, Q);
-io_request({get_chars,Prompt,N}, Port, Q) -> % New in R9C
-    get_chars(Prompt, io_lib, collect_chars, N, Port, Q);
+%% New in R13B
+%% Encoding option (unicode/latin1)
+io_request({put_chars,unicode,Chars}, Port, Q) -> % Binary new in R9C
+    put_chars(wrap_characters_to_binary(Chars,unicode,
+					case get(unicode) of 
+					    true -> unicode;
+					    _ -> latin1
+					end), Port, Q);
+io_request({put_chars,unicode,Mod,Func,Args}, Port, Q) ->
+    Result = case catch apply(Mod,Func,Args) of
+		 Data when is_list(Data); is_binary(Data) ->
+		     wrap_characters_to_binary(Data,unicode,
+					       case get(unicode) of 
+						   true -> unicode;
+						   _ -> latin1
+					       end);
+		 Undef ->
+		     Undef
+	     end,
+    put_chars(Result, Port, Q);
+io_request({put_chars,latin1,Chars}, Port, Q) -> % Binary new in R9C
+    Data = case get(unicode) of
+	       true ->
+		   unicode:characters_to_binary(Chars,latin1,unicode);
+	       false ->
+		   erlang:iolist_to_binary(Chars)
+	   end,
+    put_chars(Data, Port, Q);
+io_request({put_chars,latin1,Mod,Func,Args}, Port, Q) ->
+    Result = case catch apply(Mod,Func,Args) of
+		 Data when is_list(Data); is_binary(Data) ->
+		     unicode:characters_to_binary(Data,latin1,
+						  case get(unicode) of 
+						      true -> unicode;
+						      _ -> latin1
+						  end);
+		 Undef ->
+		     Undef
+	     end,
+    put_chars(Result, Port, Q);
+io_request({get_chars,Enc,Prompt,N}, Port, Q) -> % New in R9C
+    get_chars(Prompt, io_lib, collect_chars, N, Port, Q, Enc);
+io_request({get_line,Enc,Prompt}, Port, Q) ->
+    get_chars(Prompt, io_lib, collect_line, [], Port, Q, Enc);
+io_request({get_until,Enc,Prompt,M,F,As}, Port, Q) ->
+    get_chars(Prompt, io_lib, get_until, {M,F,As}, Port, Q, Enc);
+%%  End New in R13B
+io_request(getopts, Port, Q) ->
+    getopts(Port, Q);
+io_request({setopts,Opts}, Port, Q) when is_list(Opts) ->
+    setopts(Opts, Port, Q);
+io_request({requests,Reqs}, Port, Q) ->
+    io_requests(Reqs, {ok,ok,Q}, Port);
+
 %% New in R12
 io_request({get_geometry,columns},Port,Q) ->
     case get_fd_geometry(Port) of
@@ -210,21 +260,19 @@ io_request({get_geometry,rows},Port,Q) ->
 	_ ->
 	    {error,{error,enotsup},Q}
     end;
-%% These are new in R9C
-io_request({get_chars,Prompt,Mod,Func,XtraArg}, Port, Q) ->
-%    erlang:display({?MODULE,?LINE,Q}),
-    get_chars(Prompt, Mod, Func, XtraArg, Port, Q);
+%% BC with pre-R13 nodes
+io_request({put_chars,Chars}, Port, Q) ->
+    io_request({put_chars,latin1,Chars}, Port, Q);
+io_request({put_chars,Mod,Func,Args}, Port, Q) ->
+    io_request({put_chars,latin1,Mod,Func,Args}, Port, Q);
+io_request({get_chars,Prompt,N}, Port, Q) -> 
+    io_request({get_chars,latin1,Prompt,N}, Port, Q);
 io_request({get_line,Prompt}, Port, Q) ->
-%    erlang:display({?MODULE,?LINE,Q}),
-    get_chars(Prompt, io_lib, collect_line, [], Port, Q);
-io_request({setopts,Opts}, Port, Q) when is_list(Opts) ->
-    setopts(Opts, Port, Q);
-%% End of new in R9C
+    io_request({get_line,latin1,Prompt}, Port, Q);
 io_request({get_until,Prompt,M,F,As}, Port, Q) ->
-    get_chars(Prompt, io_lib, get_until, {M,F,As}, Port, Q);
-io_request({requests,Reqs}, Port, Q) ->
-    io_requests(Reqs, {ok,ok,Q}, Port);
-io_request(R, _Port, Q) ->			%Unknown request
+    io_request({get_until,latin1,Prompt,M,F,As}, Port, Q);
+
+io_request(R, _Port, Q) ->                      %Unknown request
     {error,{error,{request,R}},Q}.		%Ignore but give error (?)
 
 %% Status = io_requests(RequestList, PrevStat, Port)
@@ -268,9 +316,45 @@ put_chars(Chars, Port, Q) ->
 	    {error,{error,put_chars},Q}
     end.
 
+expand_encoding([]) ->
+    [];
+expand_encoding([latin1 | T]) ->
+    [{encoding,latin1} | expand_encoding(T)];
+expand_encoding([unicode | T]) ->
+    [{encoding,unicode} | expand_encoding(T)];
+expand_encoding([H|T]) ->
+    [H|expand_encoding(T)].
+
 %% setopts
-setopts(Opts0, _Port, Q) ->
-    Opts = proplists:substitute_negations([{list,binary}], Opts0),
+setopts(Opts0,Port,Q) ->
+    Opts = proplists:unfold(
+	     proplists:substitute_negations(
+	       [{list,binary}], 
+	       expand_encoding(Opts0))),
+    case check_valid_opts(Opts) of
+	true ->
+	    do_setopts(Opts,Port,Q);
+	false ->
+	    {error,{error,enotsup},Q}
+    end.
+check_valid_opts([]) ->
+    true;
+check_valid_opts([{binary,_}|T]) ->
+    check_valid_opts(T);
+check_valid_opts([{encoding,Valid}|T]) when Valid =:= latin1; Valid =:= utf8; Valid =:= unicode ->
+    check_valid_opts(T);
+check_valid_opts(_) ->
+    false.
+
+do_setopts(Opts, _Port, Q) ->
+    case proplists:get_value(encoding,Opts) of
+	Valid when Valid =:= unicode; Valid =:= utf8 ->
+	    put(unicode,true);
+	latin1 ->
+	    put(unicode,false);
+	undefined ->
+	    ok
+    end,
     case proplists:get_value(binary, Opts) of
 	true ->
 	    put(read_mode,binary),
@@ -279,8 +363,23 @@ setopts(Opts0, _Port, Q) ->
 	    put(read_mode,list),
 	    {ok,ok,Q};
 	_ ->
-	    {error,{error,badarg},Q}
+	    {ok,ok,Q}
     end.
+
+getopts(_Port,Q) ->
+    Bin = {binary, case get(read_mode) of
+		       binary ->
+			   true;
+		       _ ->
+			   false
+		   end},
+    Uni = {encoding, case get(unicode) of
+		       true ->
+			   unicode;
+		       _ ->
+			   latin1
+		   end},
+    {ok,[Bin,Uni],Q}.
 
 %% get_chars(Prompt, Module, Function, XtraArg, Port, Queue)
 %%  Gets characters from the input port until the applied function
@@ -291,22 +390,22 @@ setopts(Opts0, _Port, Q) ->
 %%	{exit,Reason}
 
 %% Entry function.
-get_chars(Prompt, M, F, Xa, Port, Q) ->
+get_chars(Prompt, M, F, Xa, Port, Q, Fmt) ->
     prompt(Port, Prompt),
     case {get(eof),queue:is_empty(Q)} of
 	{true,true} ->
 	    {ok,eof,Q};
 	_ ->
-	    get_chars(Prompt, M, F, Xa, Port, Q, start)
+	    get_chars(Prompt, M, F, Xa, Port, Q, start, Fmt)
     end.
 
 %% First loop. Wait for port data. Respond to output requests.
-get_chars(Prompt, M, F, Xa, Port, Q, State) ->
+get_chars(Prompt, M, F, Xa, Port, Q, State, Fmt) ->
     case queue:is_empty(Q) of
 	true ->
 	    receive
 		{Port,{data,Bytes}} ->
-		    get_chars_bytes(State, M, F, Xa, Port, Q, Bytes);
+		    get_chars_bytes(State, M, F, Xa, Port, Q, Bytes, Fmt);
 		{Port, eof} ->
 		    put(eof, true),
 		    {ok, eof, []};
@@ -317,41 +416,41 @@ get_chars(Prompt, M, F, Xa, Port, Q, State) ->
                     do_io_request(Req, From, ReplyAs, Port, 
                                   queue:new()), %Keep Q over this call
                     %% No prompt.
-                    get_chars(Prompt, M, F, Xa, Port, Q, State);
+                    get_chars(Prompt, M, F, Xa, Port, Q, State, Fmt);
 		{io_request,From,ReplyAs,Request} when is_pid(From) ->
 		    get_chars_req(Prompt, M, F, Xa, Port, Q, State,
-				  Request, From, ReplyAs);
+				  Request, From, ReplyAs, Fmt);
 		{'EXIT',From,What} when node(From) =:= node() ->
 		    {exit,What}
 	    end;
 	false ->
-	    get_chars_apply(State, M, F, Xa, Port, Q)
+	    get_chars_apply(State, M, F, Xa, Port, Q, Fmt)
     end.
 
 get_chars_req(Prompt, M, F, XtraArg, Port, Q, State,
-	      Req, From, ReplyAs) ->
+	      Req, From, ReplyAs, Fmt) ->
     do_io_request(Req, From, ReplyAs, Port, queue:new()), %Keep Q over this call
     prompt(Port, Prompt),
-    get_chars(Prompt, M, F, XtraArg, Port, Q, State).
+    get_chars(Prompt, M, F, XtraArg, Port, Q, State, Fmt).
 
 %% Second loop. Pass data to client as long as it wants more.
 %% A ^G in data interrupts loop if 'noshell' is not undefined.
-get_chars_bytes(State, M, F, Xa, Port, Q, Bytes) ->
+get_chars_bytes(State, M, F, Xa, Port, Q, Bytes, Fmt) ->
     case get(shell) of
 	noshell ->
-	    get_chars_apply(State, M, F, Xa, Port, queue:snoc(Q, Bytes));
+	    get_chars_apply(State, M, F, Xa, Port, queue:snoc(Q, Bytes),Fmt);
 	_ ->
 	    case contains_ctrl_g_or_ctrl_c(Bytes) of
 		false ->
 		    get_chars_apply(State, M, F, Xa, Port, 
-				    queue:snoc(Q, Bytes));
+				    queue:snoc(Q, Bytes),Fmt);
 		_ ->
 		    throw(new_shell)
 	    end
     end.
 
-get_chars_apply(State0, M, F, Xa, Port, Q) ->
-    case catch M:F(State0, cast(queue:head(Q)), Xa) of
+get_chars_apply(State0, M, F, Xa, Port, Q, Fmt) ->
+    case catch M:F(State0, cast(queue:head(Q),Fmt), Fmt, Xa) of
 	{stop,Result,<<>>} ->
 	    {ok,Result,queue:tail(Q)};
 	{stop,Result,[]} ->
@@ -361,31 +460,31 @@ get_chars_apply(State0, M, F, Xa, Port, Q) ->
 	{stop,Result,Buf} ->
 	    {ok,Result,queue:cons(Buf, queue:tail(Q))};
 	{'EXIT',_} ->
-	    {error,{error,err_func(M, F, Xa)},[]};
+	    {error,{error,err_func(M, F, Xa)},queue:new()};
 	State1 ->
-	    get_chars_more(State1, M, F, Xa, Port, queue:tail(Q))
+	    get_chars_more(State1, M, F, Xa, Port, queue:tail(Q), Fmt)
     end.
 
-get_chars_more(State, M, F, Xa, Port, Q) ->
+get_chars_more(State, M, F, Xa, Port, Q, Fmt) ->
     case queue:is_empty(Q) of
 	true ->
 	    case get(eof) of
 		undefined ->
 		    receive
 			{Port,{data,Bytes}} ->
-			    get_chars_bytes(State, M, F, Xa, Port, Q, Bytes);
+			    get_chars_bytes(State, M, F, Xa, Port, Q, Bytes, Fmt);
 			{Port,eof} ->
 			    put(eof, true),
 			    get_chars_apply(State, M, F, Xa, Port, 
-					    queue:snoc(Q, eof));
+					    queue:snoc(Q, eof), Fmt);
 			{'EXIT',From,What} when node(From) =:= node() ->
 			    {exit,What}
 		    end;
 		_ ->
-		    get_chars_apply(State, M, F, Xa, Port, queue:snoc(Q, eof))
+		    get_chars_apply(State, M, F, Xa, Port, queue:snoc(Q, eof), Fmt)
 	    end;
 	false ->
-	    get_chars_apply(State, M, F, Xa, Port, Q)
+	    get_chars_apply(State, M, F, Xa, Port, Q, Fmt)
     end.
 
 
@@ -413,12 +512,65 @@ contains_ctrl_g_or_ctrl_c(BinOrList)->
     end.
 
 %% Convert a buffer between list and binary
-cast(Data) ->
-    cast(Data, get(read_mode)).
+cast(Data, Format) ->
+    cast(Data, get(read_mode), Format, get(unicode)).
 
-cast(List, binary) when is_list(List) ->
-    list_to_binary(List);
-cast(Binary, list) when is_binary(Binary) ->
-    binary_to_list(Binary);
-cast(Data, _) ->
-    Data.
+cast(L, binary, latin1, UniTerm) ->
+    case UniTerm of
+	true -> % Convert input characters to protocol format (i.e latin1)
+	    case unicode:characters_to_binary(
+		   erlang:iolist_to_binary(L),unicode,latin1) of % may fail
+		{error,_,_} -> exit({no_translation, unicode, latin1});
+		Else -> Else
+	    end;
+	_ ->
+	    erlang:iolist_to_binary(L)
+    end;
+cast(L, binary, unicode, UniTerm) ->
+    unicode:characters_to_binary(erlang:iolist_to_binary(L),
+				 case UniTerm of 
+				     true -> unicode; 
+				     _ -> latin1 
+				 end,
+				 unicode);
+cast(L, list, latin1, UniTerm) ->
+    case UniTerm of
+	true -> % Convert input characters to protocol format (i.e latin1)
+	    case unicode:characters_to_list(
+		   erlang:iolist_to_binary(L),unicode) of % may fail
+		{error,_,_} -> exit({no_translation, unicode, latin1});
+		Else -> [ case X of 
+			      High when High > 255 -> 
+				  exit({no_translation, unicode, latin1}); 
+			      Low -> 
+				  Low 
+			  end || X <- Else ]
+	    end;
+	_ ->
+	    binary_to_list(erlang:iolist_to_binary(L))
+    end;
+cast(L, list, unicode, UniTerm)  ->
+    unicode:characters_to_list(erlang:iolist_to_binary(L),
+			       case UniTerm of 
+				   true -> unicode; 
+				   _ -> latin1 
+			       end);
+cast(Other, _, _,_) ->
+    Other.
+
+wrap_characters_to_binary(Chars,unicode,latin1) ->
+    case unicode:characters_to_binary(Chars,unicode,latin1) of
+	{error,_,_} -> 
+	    list_to_binary( 
+	      [ case X of
+		    High when High > 255 ->
+			io_lib:format("\\{~.8B}",[X]);
+		    Low ->
+			Low
+		end || X <- unicode:characters_to_list(Chars,unicode) ]);
+	Bin ->
+	    Bin
+    end;
+		       
+wrap_characters_to_binary(Chars,From,To) ->
+    unicode:characters_to_binary(Chars,From,To).

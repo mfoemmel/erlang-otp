@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2003-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Implements an "MGC" used by the test suite
@@ -72,7 +73,8 @@
 	      ack_info    = undefined,
 	      abort_info  = undefined,
 	      req_info    = undefined,
-	      mg          = []}).
+	      mg          = [],
+	      dsi_timer}).
 
 
 %%% ------------------------------------------------------------------
@@ -95,7 +97,8 @@ mk_recv_info(ET) ->
 
 mk_recv_info([], Acc) ->
     Acc;
-mk_recv_info([{Encoding, Transport}|ET], Acc) ->
+mk_recv_info([{Encoding, Transport}|ET], Acc) 
+  when is_atom(Encoding) andalso is_atom(Transport) ->
     {EMod, Port} = select_encoding(Encoding),
     TMod         = select_transport(Transport),
     RI = [{encoding_module,  EMod},
@@ -103,7 +106,18 @@ mk_recv_info([{Encoding, Transport}|ET], Acc) ->
 	  {transport_module, TMod},
 	  {port,             Port}],
     mk_recv_info(ET, [RI|Acc]);
-mk_recv_info([{Encoding, EC, Transport}|ET], Acc) ->
+mk_recv_info([{Encoding, Transport, TO}|ET], Acc) 
+  when is_atom(Encoding) andalso is_atom(Transport) andalso is_list(TO) ->
+    {EMod, Port} = select_encoding(Encoding),
+    TMod         = select_transport(Transport),
+    RI = [{encoding_module,  EMod},
+	  {encoding_config,  []},
+	  {transport_module, TMod},
+	  {port,             Port},
+          {transport_opts,   TO}],
+    mk_recv_info(ET, [RI|Acc]);
+mk_recv_info([{Encoding, EC, Transport}|ET], Acc) 
+  when is_atom(Encoding) andalso is_list(EC) andalso is_atom(Transport) ->
     {EMod, Port} = select_encoding(Encoding),
     TMod         = select_transport(Transport),
     RI = [{encoding_module,  EMod},
@@ -266,11 +280,15 @@ mgc(Parent, Verbosity, Config) ->
     put(verbosity, Verbosity),
     put(sname,   "MGC"),
     i("mgc -> starting"),
-    {Mid, TcpSup, UdpSup} = init(Config),
+    {Mid, TcpSup, UdpSup, DSITimer} = init(Config),
     notify_started(Parent),
-    S = #mgc{parent = Parent, 
-	     tcp_sup = TcpSup, udp_sup = UdpSup, mid = Mid},
+    S = #mgc{parent    = Parent, 
+	     tcp_sup   = TcpSup, 
+	     udp_sup   = UdpSup, 
+	     mid       = Mid,
+	     dsi_timer = DSITimer},
     i("mgc -> started"),
+    display_system_info("at start "),
     loop(S).
 
 init(Config) ->
@@ -278,6 +296,17 @@ init(Config) ->
     random_init(),
     Mid = get_conf(local_mid, Config),
     RI  = get_conf(receive_info, Config),
+
+    d("init -> maybe start the display system info timer"),
+    DSITimer = 
+	case get_conf(display_system_info, Config, undefined) of
+	    Time when is_integer(Time) ->
+		d("init -> creating display system info timer"),
+		create_timer(Time, display_system_info);
+	    _ ->
+		undefined
+	end,
+    Conf0 = lists:keydelete(display_system_info, 1, Config),
 
     d("init -> start megaco"),
     application:start(megaco),
@@ -293,12 +322,12 @@ init(Config) ->
 	_ ->
 	    ok
     end,
-    Conf0 = lists:keydelete(megaco_trace,    1, Config),
+    Conf1 = lists:keydelete(megaco_trace,    1, Conf0),
 
     d("init -> start megaco user"),
-    Conf1 = lists:keydelete(local_mid,    1, Conf0),
-    Conf2 = lists:keydelete(receive_info, 1, Conf1),
-    ok = megaco:start_user(Mid, Conf2),
+    Conf2 = lists:keydelete(local_mid,    1, Conf1),
+    Conf3 = lists:keydelete(receive_info, 1, Conf2),
+    ok = megaco:start_user(Mid, Conf3),
 
     d("init -> update user info (user_mod)"),
     ok = megaco:update_user_info(Mid, user_mod,  ?MODULE),
@@ -313,14 +342,20 @@ init(Config) ->
 
     d("init -> start transports"),
     {Tcp, Udp} = start_transports(Transports),
-    {Mid, Tcp, Udp}.
+    {Mid, Tcp, Udp, DSITimer}.
     
-
 loop(S) ->
     d("loop -> await request"),
     receive
-	{stop, Parent} when S#mgc.parent == Parent ->
+	{display_system_info, Time} ->
+	    display_system_info(S#mgc.mid),
+	    NewTimer = create_timer(Time, display_system_info),
+	    loop(S#mgc{dsi_timer = NewTimer});
+
+	{stop, Parent} when S#mgc.parent =:= Parent ->
 	    i("loop -> stopping", []),
+	    display_system_info(S#mgc.mid, "at finish "),
+	    cancel_timer(S#mgc.dsi_timer),
   	    Mid = S#mgc.mid,
 	    (catch close_conns(Mid)),
 	    megaco:stop_user(Mid),
@@ -467,10 +502,38 @@ loop(S) ->
 	    loop(S);
 
 
-	{'EXIT', Pid, Reason} ->
-	    error_msg("MGC received unexpected exit signal from ~p:~n~p", 
+	{'EXIT', Pid, Reason} when S#mgc.tcp_sup =:= Pid ->
+	    error_msg("MGC received unexpected exit "
+		      "from TCP transport supervisor (~p):~n~p", 
 		      [Pid, Reason]),
-	    loop(S);
+	    i("loop -> [tcp] exiting", []),
+	    display_system_info(S#mgc.mid, "at bad finish (tcp) "),
+	    cancel_timer(S#mgc.dsi_timer),
+  	    Mid = S#mgc.mid,
+	    (catch close_conns(Mid)),
+	    megaco:stop_user(Mid),
+	    application:stop(megaco),
+	    i("loop -> stopped", []),
+	    StopReason = {error, {tcp_terminated, Pid, Reason}}, 
+	    server_reply(S#mgc.parent, stopped, StopReason),
+	    exit(StopReason);
+
+
+	{'EXIT', Pid, Reason} when S#mgc.udp_sup =:= Pid ->
+	    error_msg("MGC received unexpected exit "
+		      "from UDP transport supervisor (~p):~n~p", 
+		      [Pid, Reason]),
+	    i("loop -> [udp] exiting", []),
+	    display_system_info(S#mgc.mid, "at bad finish (udp) "),
+	    cancel_timer(S#mgc.dsi_timer),
+  	    Mid = S#mgc.mid,
+	    (catch close_conns(Mid)),
+	    megaco:stop_user(Mid),
+	    application:stop(megaco),
+	    i("loop -> stopped", []),
+	    StopReason = {error, {udp_terminated, Pid, Reason}}, 
+	    server_reply(S#mgc.parent, stopped, StopReason),
+	    exit(StopReason);
 
 
 	Invalid ->
@@ -553,13 +616,16 @@ parse_receive_info1(RI, RH) ->
     TM = get_transport_module(RI),
     d("parse_receive_info1 -> get transport port"),
     TP = get_transport_port(RI),
+    d("parse_receive_info1 -> get transport opts"),
+    TO = get_transport_opts(RI),
     RH1 = RH#megaco_receive_handle{send_mod        = TM,
 				   encoding_mod    = EM,
 				   encoding_config = EC},
     d("parse_receive_info1 -> "
+      "~n   Transport Opts: ~p"
       "~n   Port:           ~p"
-      "~n   Receive handle: ~p", [TP, RH1]),
-    {TP, RH1}.
+      "~n   Receive handle: ~p", [TO, TP, RH1]),
+    {TO, TP, RH1}.
 
 
 
@@ -582,7 +648,7 @@ start_transports(Transports) when is_list(Transports) ->
     
 start_transports1([], Tcp, Udp) ->
     {Tcp, Udp};
-start_transports1([{_Port, RH}|Transports], Tcp, Udp) 
+start_transports1([{_TO, _Port, RH}|Transports], Tcp, Udp) 
   when ((RH#megaco_receive_handle.send_mod =:= megaco_tcp) andalso 
 	(not is_pid(Tcp)))  ->
     case megaco_tcp:start_transport() of
@@ -591,7 +657,7 @@ start_transports1([{_Port, RH}|Transports], Tcp, Udp)
 	Else ->
 	    throw({error, {failed_starting_tcp_transport, Else}})
     end;
-start_transports1([{_Port, RH}|Transports], Tcp, Udp) 
+start_transports1([{_TO, _Port, RH}|Transports], Tcp, Udp) 
   when ((RH#megaco_receive_handle.send_mod =:= megaco_udp) andalso 
 	(not is_pid(Udp))) ->
     case megaco_udp:start_transport() of
@@ -605,25 +671,25 @@ start_transports1([_|Transports], Tcp, Udp) ->
 
 start_transports2([], _, _) ->
     ok;
-start_transports2([{Port, RH}|Transports], Tcp, Udp) 
+start_transports2([{TO, Port, RH}|Transports], Tcp, Udp) 
   when RH#megaco_receive_handle.send_mod =:= megaco_tcp ->
-    start_tcp(RH, Port, Tcp),
+    start_tcp(TO, RH, Port, Tcp),
     start_transports2(Transports, Tcp, Udp);
-start_transports2([{Port, RH}|Transports], Tcp, Udp) 
+start_transports2([{TO, Port, RH}|Transports], Tcp, Udp) 
   when RH#megaco_receive_handle.send_mod =:= megaco_udp ->
-    start_udp(RH, Port, Udp),
+    start_udp(TO, RH, Port, Udp),
     start_transports2(Transports, Tcp, Udp).
 
-start_tcp(RH, Port, Sup) ->
+start_tcp(TO, RH, Port, Sup) ->
     d("start tcp transport"),
-    start_tcp(RH, Port, Sup, 250).
+    start_tcp(TO, RH, Port, Sup, 250).
 
-start_tcp(RH, Port, Sup, Timeout) 
+start_tcp(TO, RH, Port, Sup, Timeout) 
   when is_pid(Sup) andalso is_integer(Timeout) andalso (Timeout > 0) ->
     d("tcp listen on ~p", [Port]),
     Opts = [{port,           Port}, 
 	    {receive_handle, RH}, 
-	    {tcp_options,    [{nodelay, true}]}],
+	    {tcp_options,    [{nodelay, true}]}] ++ TO,
     try_start_tcp(Sup, Opts, Timeout, noError).
 
 try_start_tcp(Sup, Opts, Timeout, Error0) when (Timeout < 5000) ->
@@ -647,13 +713,13 @@ try_start_tcp(Sup, _Opts, _Timeout, Error) ->
     throw({error, {failed_starting_tcp_listen, Error}}).
 
 
-start_udp(RH, Port, Sup) ->
+start_udp(TO, RH, Port, Sup) ->
     d("start udp transport"),
-    start_udp(RH, Port, Sup, 250).
+    start_udp(TO, RH, Port, Sup, 250).
 
-start_udp(RH, Port, Sup, Timeout) ->
+start_udp(TO, RH, Port, Sup, Timeout) ->
     d("udp open ~p", [Port]),
-    Opts = [{port, Port}, {receive_handle, RH}],
+    Opts = [{port, Port}, {receive_handle, RH}] ++ TO,
     try_start_udp(Sup, Opts, Timeout, noError).
 
 try_start_udp(Sup, Opts, Timeout, Error0) when (Timeout < 5000) ->
@@ -1049,6 +1115,9 @@ get_transport_module(RI) ->
 get_transport_port(RI) ->
     get_conf(port, RI).
 
+get_transport_opts(RI) ->
+    get_conf(transport_opts, RI, []).
+
 
 get_conf(Key, Config) ->
     case lists:keysearch(Key, 1, Config) of
@@ -1056,6 +1125,14 @@ get_conf(Key, Config) ->
 	    Val;
 	_ ->
 	    exit({error, {not_found, Key, Config}})
+    end.
+
+get_conf(Key, Config, Default) ->
+    case lists:keysearch(Key, 1, Config) of
+	{value, {Key, Val}} ->
+	    Val;
+	_ ->
+	    Default
     end.
 
 
@@ -1067,6 +1144,24 @@ random_init() ->
 
 random(N) ->
     random:uniform(N).
+
+
+display_system_info(Mid) ->
+    display_system_info(Mid, "").
+
+display_system_info(Mid, Pre) ->
+    TimeStr = format_timestamp(now()),
+    MibStr  = lists:flatten(io_lib:format("~p ", [Mid])), 
+    megaco_test_lib:display_system_info(MibStr ++ Pre ++ TimeStr).
+
+
+create_timer(Time, Event) ->
+    erlang:send_after(Time, self(), {Event, Time}).
+
+cancel_timer(undefined) ->
+    ok;
+cancel_timer(Ref) ->
+    erlang:cancel_timer(Ref).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

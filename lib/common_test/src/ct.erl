@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>2003-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 
 %%% @doc Main user interface for the Common Test framework.
@@ -54,12 +53,12 @@
 
 %% Command line user interface for running tests
 -export([install/1, run/1, run/2, run/3,
-	 run_test/1, run_testspec/1, step/3,
+	 run_test/1, run_testspec/1, step/3, step/4,
 	 start_interactive/0, stop_interactive/0]).
 
 %% Test suite API
 -export([require/1, require/2,
-	 get_config/1, get_config/2,
+	 get_config/1, get_config/2, get_config/3,
 	 log/1, log/2, log/3,
 	 print/1, print/2, print/3,
 	 pal/1, pal/2, pal/3,
@@ -67,7 +66,9 @@
 	 testcases/2, userdata/2, userdata/3]).
 
 %% Other interface functions
--export([get_status/0, abort_current_testcase/1]).
+-export([get_status/0, abort_current_testcase/1,
+	 encrypt_config_file/2, encrypt_config_file/3,
+	 decrypt_config_file/2, decrypt_config_file/3]).
 
 
 -export([get_target_name/1]).
@@ -76,10 +77,14 @@
 %%%-----------------------------------------------------------------
 %%% @spec install(Opts) -> ok | {error,Reason}
 %%%    Opts = [Opt]
-%%%    Opt = {config,ConfigFiles} | {event_handler,Modules}
+%%%    Opt = {config,ConfigFiles} | {event_handler,Modules} | 
+%%%          {decrypt,KeyOrFile}
 %%%    ConfigFiles = [ConfigFile]
 %%%    ConfigFile = string()
 %%%    Modules = [atom()]
+%%%    KeyOrFile = {key,Key} | {file,KeyFile}
+%%%    Key = string()
+%%%    KeyFile = string()
 %%% @doc Install config files and event handlers.
 %%%
 %%% <p>Run this function once before first test.</p>
@@ -130,24 +135,33 @@ run(TestDirs) ->
 %%% @spec run_test(Opts) -> Result
 %%%   Opts = [OptTuples]
 %%%   OptTuples = {config,CfgFiles} | {dir,TestDirs} | {suite,Suites} |
-%%%               {testcase,Cases} | {spec,TestSpecs} | {allow_user_terms,Bool} | 
-%%%               {logdir,LogDir} | {silent_connections,Conns} | {cover,CoverSpecFile} | 
-%%%               {event_handler,EventHandlers} | {repeat,N} | {duration,DurTime} |
-%%%               {until,StopTime} | {force_stop,Bool}
+%%%               {testcase,Cases} | {group,Groups} | {spec,TestSpecs} | 
+%%%               {allow_user_terms,Bool} | {logdir,LogDir} | 
+%%%               {silent_connections,Conns} | {cover,CoverSpecFile} | 
+%%%               {step,StepOpts} | {event_handler,EventHandlers} | {include,InclDirs} | 
+%%%               {auto_compile,Bool} | {repeat,N} | {duration,DurTime} | 
+%%%               {until,StopTime} | {force_stop,Bool} | {decrypt,DecryptKeyOrFile}
 %%%   CfgFiles = [string()] | string()
 %%%   TestDirs = [string()] | string()
 %%%   Suites = [string()] | string()
 %%%   Cases = [atom()] | atom()
+%%%   Groups = [atom()] | atom()
 %%%   TestSpecs = [string()] | string()
 %%%   LogDir = string()
-%%%   EventHandlers = EH | [EH]
-%%%   EH = atom() | {atom(),InitArgs} | {[atom()],InitArgs}
-%%%   InitArgs = [term()] 
 %%%   Conns = all | [atom()]
 %%%   CoverSpecFile = string()
+%%%   StepOpts = [StepOpt] | []
+%%%   StepOpt = config | keep_inactive
+%%%   EventHandlers = EH | [EH]
+%%%   EH = atom() | {atom(),InitArgs} | {[atom()],InitArgs}
+%%%   InitArgs = [term()]
+%%%   InclDirs = [string()] | string()
 %%%   N = integer()
 %%%   DurTime = string(HHMMSS)
 %%%   StopTime = string(YYMoMoDDHHMMSS) | string(HHMMSS)
+%%%   DecryptKeyOrFile = {key,DecryptKey} | {file,DecryptFile}
+%%%   DecryptKey = string()
+%%%   DecryptFile = string()
 %%%   Result = [TestResult] | {error,Reason}
 %%% @doc Run tests as specified by the combination of options in <code>Opts</code>.
 %%% The options are the same as those used with the <code>run_test</code> script.
@@ -175,6 +189,19 @@ run_testspec(TestSpec) ->
 %%% @see run/3
 step(TestDir,Suite,Case) ->
     ct_run:step(TestDir,Suite,Case).
+
+%%%-----------------------------------------------------------------
+%%% @spec step(TestDir,Suite,Case,Opts) -> Result
+%%%   Case = atom()
+%%%   Opts = [Opt] | []
+%%%   Opt = config | keep_inactive
+%%%
+%%% @doc Step through a test case with the debugger. If the
+%%% <code>config</code> option has been given, breakpoints will
+%%% be set also on the configuration functions in <code>Suite</code>.
+%%% @see run/3
+step(TestDir,Suite,Case,Opts) ->
+    ct_run:step(TestDir,Suite,Case,Opts).
 
 %%%-----------------------------------------------------------------
 %%% @spec start_interactive() -> ok
@@ -236,6 +263,7 @@ stop_interactive() ->
 %%% @see require/2
 %%% @see get_config/1
 %%% @see get_config/2
+%%% @see get_config/3
 require(Required) ->
     ct_util:require(Required).
 
@@ -251,15 +279,14 @@ require(Required) ->
 %%% a name.
 %%%
 %%% <p>If the requested data is available, the main entry will be
-%%% marked as allocated. An allocated element can only be used if the
-%%% correct name is given. This means that to read the value of the
-%%% element with <code>get_config/1,2</code>, you need to provide the
+%%% associated with <code>Name</code> so that the value of the element
+%%% can be read with <code>get_config/1,2</code> provided
 %%% <code>Name</code> instead of the <code>Key</code>.</p>
 %%%
 %%% <p>Example: Require one node with a telnet connection and an
 %%% ftp connection. Name the node <code>a</code>:<br/> <code>ok =
 %%% ct:require(a,{node,[telnet,ftp]}).</code><br/> All references
-%%% to this node must then use the node name. E.g. you can fetch a
+%%% to this node may then use the node name. E.g. you can fetch a
 %%% file over ftp like this:<br/>
 %%% <code>ok = ct:ftp_get(a,RemoteFile,LocalFile).</code></p>
 %%%
@@ -271,27 +298,38 @@ require(Required) ->
 %%% @see require/1
 %%% @see get_config/1
 %%% @see get_config/2
+%%% @see get_config/3
 require(Name,Required) ->
     ct_util:require(Name,Required).
 
 %%%-----------------------------------------------------------------
 %%% @spec get_config(Required) -> Value
-%%% @equiv get_config(Required,undefined)
+%%% @equiv get_config(Required,undefined,[])
 get_config(Required) ->
-    ct_util:get_config(Required).
+    ct_util:get_config(Required,undefined,[]).
 
 %%%-----------------------------------------------------------------
 %%% @spec get_config(Required,Default) -> Value
+%%% @equiv get_config(Required,Default,[])
+get_config(Required,Default) ->
+    ct_util:get_config(Required,Default,[]).
+
+%%%-----------------------------------------------------------------
+%%% @spec get_config(Required,Default,Opts) -> ValueOrElement
 %%%      Required = KeyOrName | {KeyOrName,SubKey}
 %%%      KeyOrName = atom()
 %%%      SubKey = atom()
 %%%      Default = term()
-%%%      Value = term() | Default
+%%%      Opts = [Opt] | []
+%%%      Opt = element | all
+%%%      ValueOrElement = term() | Default
 %%%
-%%% @doc Get the value of config data.
+%%% @doc Read config data values.
 %%%
-%%% <p>This function returns the value of the requested config
-%%% element.</p>
+%%% <p>This function returns the matching value(s) or config element(s),
+%%% given a config variable key or its associated name
+%%% (if one has been specified with <code>require/2</code> or a 
+%%% require statement).</p>
 %%%
 %%% <p>Example, given the following config file:</p>
 %%% <pre>
@@ -306,9 +344,9 @@ get_config(Required) ->
 %%% <code>get_config({unix,ftp},Default) -> Default</code><br/>
 %%% <code>get_config(unknownkey,Default) -> Default</code></p>
 %%%
-%%% <p>If you want to access a config variable which has been given a
-%%% name by <code>require/2</code>, the name must be used instead of
-%%% the key when reading the value:</p>
+%%% <p>If a config variable key has been associated with a name (by
+%%% means of <code>require/2</code> or a require statement), the name 
+%%% may be used instead of the key to read the value:</p>
 %%%
 %%% <p><code>require(myhost,unix) -> ok</code><br/>
 %%% <code>get_config(myhost,Default) -> 
@@ -316,11 +354,24 @@ get_config(Required) ->
 %%%                           {username,Username},
 %%%                           {password,Password}]</code></p>
 %%%
+%%% <p>If a config variable is defined in multiple files and you want to
+%%% access all possible values, use the <code>all</code> option. The
+%%% values will be returned in a list and the order of the elements
+%%% corresponds to the order that the config files were specified at 
+%%% startup.</p>
+%%%
+%%% <p>If you want config elements (key-value tuples) returned as result 
+%%% instead of values, use the <code>element</code> option. 
+%%% The returned elements will then be on the form <code>{KeyOrName,Value}</code>, 
+%%% or (in case a subkey has been specified)
+%%% <code>{{KeyOrName,SubKey},Value}</code></p>
+%%%
 %%% @see get_config/1
+%%% @see get_config/2
 %%% @see require/1
 %%% @see require/2
-get_config(Required,Default) ->
-    ct_util:get_config(Required,Default).
+get_config(Required,Default,Opts) ->
+    ct_util:get_config(Required,Default,Opts).
 
 %%%-----------------------------------------------------------------
 %%% @spec log(Format) -> ok
@@ -527,7 +578,18 @@ testcases(TestDir, Suite) ->
     end.
 
 make_and_load(Dir, Suite) ->
-    case ct_run:make_test_suite(Dir, Suite) of
+    EnvInclude =
+	case os:getenv("CT_INCLUDE_PATH") of
+	    false -> [];
+	    CtInclPath -> string:tokens(CtInclPath, [$:,$ ,$,])
+	end,
+    StartInclude =
+	case init:get_argument(include) of
+	    {ok,[Dirs]} -> Dirs;
+	    _ -> []
+	end,
+    UserInclude = EnvInclude ++ StartInclude,
+    case ct_run:run_make(Dir, Suite, UserInclude) of
 	MErr = {error,_} ->
 	    MErr;
 	_ ->
@@ -637,3 +699,74 @@ get_testdata(Key) ->
 %%%      in the test case log.</p>
 abort_current_testcase(Reason) ->
     test_server_ctrl:abort_current_testcase(Reason).
+
+%%%-----------------------------------------------------------------
+%%% @spec encrypt_config_file(SrcFileName, EncryptFileName) -> 
+%%%                                                  ok | {error,Reason}
+%%%       SrcFileName = string()
+%%%       EncryptFileName = string()
+%%%       Reason = term()
+%%%
+%%% @doc <p>This function encrypts the source config file with DES3 and 
+%%%      saves the result in file <code>EncryptFileName</code>. The key,
+%%%      a string, must be available in a text file named 
+%%%      <code>.ct_config.crypt</code> in the current directory, or the 
+%%%      home directory of the user (it is searched for in that order).</p>
+%%%      <p>See the Common Test User's Guide for information about using
+%%%      encrypted config files when running tests.</p>
+%%%      <p>See the <code>crypto</code> application for details on DES3
+%%%      encryption/decryption.</p>
+encrypt_config_file(SrcFileName, EncryptFileName) ->
+    ct_util:encrypt_config_file(SrcFileName, EncryptFileName).
+
+%%%-----------------------------------------------------------------
+%%% @spec encrypt_config_file(SrcFileName, EncryptFileName, KeyOrFile) -> 
+%%%                                                  ok | {error,Reason}
+%%%       SrcFileName = string()
+%%%       EncryptFileName = string()
+%%%       KeyOrFile = {key,string()} | {file,string()}
+%%%       Reason = term()
+%%%
+%%% @doc <p>This function encrypts the source config file with DES3 and
+%%%      saves the result in the target file <code>EncryptFileName</code>. 
+%%%      The encryption key to use is either the value in 
+%%%      <code>{key,Key}</code> or the value stored in the file specified 
+%%%      by <code>{file,File}</code>.</p>
+%%%      <p>See the Common Test User's Guide for information about using
+%%%      encrypted config files when running tests.</p>
+%%%      <p>See the <code>crypto</code> application for details on DES3
+%%%      encryption/decryption.</p>
+encrypt_config_file(SrcFileName, EncryptFileName, KeyOrFile) ->
+    ct_util:encrypt_config_file(SrcFileName, EncryptFileName, KeyOrFile).
+
+%%%-----------------------------------------------------------------
+%%% @spec decrypt_config_file(EncryptFileName, TargetFileName) -> 
+%%%                                                   ok | {error,Reason}
+%%%       EncryptFileName = string()
+%%%       TargetFileName = string()
+%%%       Reason = term()
+%%%
+%%% @doc <p>This function decrypts <code>EncryptFileName</code>, previously 
+%%%      generated with <code>encrypt_config_file/2/3</code>. The original
+%%%      file contents is saved in the target file. The encryption key, a
+%%%      string, must be available in a text file named
+%%%      <code>.ct_config.crypt</code> in the current directory, or the
+%%%      home directory of the user (it is searched for in that order).</p>
+decrypt_config_file(EncryptFileName, TargetFileName) ->
+    ct_util:decrypt_config_file(EncryptFileName, TargetFileName).
+
+%%%-----------------------------------------------------------------
+%%% @spec decrypt_config_file(EncryptFileName, TargetFileName, KeyOrFile) -> 
+%%%                                                   ok | {error,Reason}
+%%%       EncryptFileName = string()
+%%%       TargetFileName = string()
+%%%       KeyOrFile = {key,string()} | {file,string()}
+%%%       Reason = term()
+%%%
+%%% @doc <p>This function decrypts <code>EncryptFileName</code>, previously 
+%%%      generated with <code>encrypt_config_file/2/3</code>. The original
+%%%      file contents is saved in the target file. The key must have the
+%%%      the same value as that used for encryption.</p>
+decrypt_config_file(EncryptFileName, TargetFileName, KeyOrFile) ->
+    ct_util:decrypt_config_file(EncryptFileName, TargetFileName, KeyOrFile).
+

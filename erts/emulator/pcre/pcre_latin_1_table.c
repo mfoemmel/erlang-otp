@@ -20,7 +20,7 @@ be supplied to the linker. */
 
 #include "pcre_internal.h"
 
-const unsigned char _pcre_default_tables[] = {
+const unsigned char _erts_pcre_default_tables[] = {
 
 /* This table is a lower casing table. */
 

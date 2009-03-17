@@ -40,9 +40,10 @@ POSSIBILITY OF SUCH DAMAGE.
 
 /* This module contains some fixed tables that are used by more than one of the
 PCRE code modules. The tables are also #included by the pcretest program, which
-uses macros to change their names from _pcre_xxx to xxxx, thereby avoiding name
+uses macros to change their names from _erts_pcre_xxx to xxxx, thereby avoiding name
 clashes with the library. */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -54,7 +55,7 @@ clashes with the library. */
 /* Table of sizes for the fixed-length opcodes. It's defined in a macro so that
 the definition is next to the definition of the opcodes in pcre_internal.h. */
 
-const uschar _pcre_OP_lengths[] = { OP_LENGTHS };
+const uschar _erts_pcre_OP_lengths[] = { OP_LENGTHS };
 
 
 
@@ -67,21 +68,21 @@ character. */
 
 #ifdef SUPPORT_UTF8
 
-const int _pcre_utf8_table1[] =
+const int _erts_pcre_utf8_table1[] =
   { 0x7f, 0x7ff, 0xffff, 0x1fffff, 0x3ffffff, 0x7fffffff};
 
-const int _pcre_utf8_table1_size = sizeof(_pcre_utf8_table1)/sizeof(int);
+const int _erts_pcre_utf8_table1_size = sizeof(_erts_pcre_utf8_table1)/sizeof(int);
 
 /* These are the indicator bits and the mask for the data bits to set in the
 first byte of a character, indexed by the number of additional bytes. */
 
-const int _pcre_utf8_table2[] = { 0,    0xc0, 0xe0, 0xf0, 0xf8, 0xfc};
-const int _pcre_utf8_table3[] = { 0xff, 0x1f, 0x0f, 0x07, 0x03, 0x01};
+const int _erts_pcre_utf8_table2[] = { 0,    0xc0, 0xe0, 0xf0, 0xf8, 0xfc};
+const int _erts_pcre_utf8_table3[] = { 0xff, 0x1f, 0x0f, 0x07, 0x03, 0x01};
 
 /* Table of the number of extra bytes, indexed by the first byte masked with
 0x3f. The highest number for a valid UTF-8 first byte is in fact 0x3d. */
 
-const uschar _pcre_utf8_table4[] = {
+const uschar _erts_pcre_utf8_table4[] = {
   1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
   1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
   2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
@@ -96,7 +97,7 @@ putting all the names into a single, large string and then using offsets in the
 table itself. Maintenance is more error-prone, but frequent changes to this
 data is unlikely. */
 
-const char _pcre_utt_names[] =
+const char _erts_pcre_utt_names[] =
   "Any\0"
   "Arabic\0"
   "Armenian\0"
@@ -203,7 +204,7 @@ const char _pcre_utt_names[] =
   "Zp\0"
   "Zs\0";
 
-const ucp_type_table _pcre_utt[] = {
+const ucp_type_table _erts_pcre_utt[] = {
   { 0,   PT_ANY, 0 },
   { 4,   PT_SC, ucp_Arabic },
   { 11,  PT_SC, ucp_Armenian },
@@ -311,7 +312,7 @@ const ucp_type_table _pcre_utt[] = {
   { 653, PT_PC, ucp_Zs }
 };
 
-const int _pcre_utt_size = sizeof(_pcre_utt)/sizeof(ucp_type_table);
+const int _erts_pcre_utt_size = sizeof(_erts_pcre_utt)/sizeof(ucp_type_table);
 
 #endif  /* SUPPORT_UTF8 */
 

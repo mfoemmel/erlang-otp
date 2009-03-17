@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>2006</year>
-      <year>2008</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2006</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>Dependencies between Test Cases and Suites</title>
@@ -258,28 +256,25 @@
 	case can not run. CT offers a way to declare such dependencies, 
 	called sequences.</p>
 
-      <p>A sequence of test cases is declared by means of the function
-	<c>sequences/0</c>. This function should return a list of
-	tuples on the format: <c>{SeqTag,TestCases}</c>. <c>SeqTag</c>
-	is an atom that identifies one particular sequence. <c>TestCases</c>
-	is a list of test case names. Sequences must be included in the list 
-	that <c>all/0</c> returns. They are declared as: <c>{sequence,SeqTag}</c>.</p>
+      <p>A sequence of test cases is defined as a test case group
+        with a <c>sequence</c> property. Test case groups are defined by 
+	means of the <c>groups/0</c> function in the test suite (see the 
+	<seealso marker="write_test_chapter#test_case_groups">Test case groups</seealso>
+	chapter for details).</p>
 
       <p>For example, if we would like to make sure that if <c>allocate</c>
 	in <c>server_b_SUITE</c> (above) crashes, <c>deallocate</c> is skipped,
-	we may declare the sequence:</p>
+	we may define a sequence like this:</p>
       
       <pre>
-	sequences() -> [{alloc_and_dealloc,[alloc,dealloc]}].
-      </pre>
+	groups() -> [{alloc_and_dealloc, [sequence], [alloc,dealloc]}].</pre>
 
       <p>Let's also assume the suite contains the test case <c>get_resource_status</c>, 
-	which is independent of the other two cases. The <c>all</c> function could look
-	like this:</p>
+	which is independent of the other two cases, then the <c>all</c> function could 
+	look like this:</p>
 
       <pre>
-	all() -> [{sequence,alloc_and_dealloc}, get_resource_status].
-      </pre>
+	all() -> [{group,alloc_and_dealloc}, get_resource_status].</pre>
 
       <p>If <c>alloc</c> succeeds, <c>dealloc</c> is also executed. If <c>alloc</c> fails
 	however, <c>dealloc</c> is not executed but marked as SKIPPED in the html log. 
@@ -289,23 +284,25 @@
       <p>Test cases in a sequence will be executed in order until they have all succeeded or 
 	until one case fails. If one fails, all following cases in the sequence are skipped.
 	The cases in the sequence that have succeeded up to that point are reported as successful
-	in the log. An arbitrary number of sequence tuples may be specified. Example:</p>
+	in the log. An arbitrary number of sequences may be specified. Example:</p>
 
       <pre>
-	sequences() -> [{scenarioA, [testA1, testA2]}, 
-	                {scenarioB, [testB1, testB2, testB3]}].
+	groups() -> [{scenarioA, [sequence], [testA1, testA2]}, 
+	             {scenarioB, [sequence], [testB1, testB2, testB3]}].
 
 	all() -> [test1, 
 	          test2, 
-	          {sequence,scenarioA}, 
+	          {group,scenarioA}, 
 	          test3, 
-	          {sequence,scenarioB}, 
-	          test4].
-	</pre>
+	          {group,scenarioB}, 
+	          test4].</pre>
 
-	<note><p>It is not possible to execute a test case which is part of a sequence as a 
-	regular (stand alone) test case. It is also not possible to use the same test case in
-	multiple sequences. Remember that you can always work around these limitations if
-	necessary by means of help functions common for the test cases in question.</p></note>
+      <p>It is possible to have sub-groups in a sequence group. Such sub-groups can have 
+        any property, i.e. they are not required to also be sequences. If you want the status
+	of the sub-group to affect the sequence on the level above, return 
+	<c>{return_group_result,Status}</c> from <c>end_per_group/2</c>, as described in the
+	<seealso marker="write_test_chapter#repeated_groups">Repeated groups</seealso>
+	chapter. A failed sub-group (<c>Status == failed</c>) will cause the execution of a 
+	sequence to fail in the	same way a test case does.</p>
     </section>
 </chapter>

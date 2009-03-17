@@ -1,22 +1,21 @@
-%%<copyright>
-%% <year>2004-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
 
 -module(snmpm_user_default).
 
@@ -24,10 +23,10 @@
 
 -export([handle_error/3,
 	 handle_agent/4,
-	 handle_pdu/5,
-	 handle_trap/4,
-	 handle_inform/4,
-	 handle_report/4]).
+	 handle_pdu/4,
+	 handle_trap/3,
+	 handle_inform/3,
+	 handle_report/3]).
 
 handle_error(ReqId, Reason, UserData) ->
     info("received handle_error:"
@@ -46,44 +45,40 @@ handle_agent(Addr, Port, SnmpInfo, UserData) ->
     ignore.
 
 
-handle_pdu(Addr, Port, ReqId, SnmpResponse, UserData) ->
+handle_pdu(TargetName, ReqId, SnmpResponse, UserData) ->
     info("received handle_pdu:"
-	 "~n   Addr:         ~p"
-	 "~n   Port:         ~p"
+	 "~n   TargetName:   ~p"
 	 "~n   ReqId:        ~p"
 	 "~n   SnmpResponse: ~p"
 	 "~n   UserData:     ~p", 
-	 [Addr, Port, ReqId, SnmpResponse, UserData]),
+	 [TargetName, ReqId, SnmpResponse, UserData]),
     ignore.
 
 
-handle_trap(Addr, Port, SnmpTrap, UserData) ->
+handle_trap(TargetName, SnmpTrap, UserData) ->
     info("received handle_trap:"
-	 "~n   Addr:     ~p"
-	 "~n   Port:     ~p"
+	 "~n   TargetName:   ~p"
 	 "~n   SnmpTrap: ~p"
 	 "~n   UserData: ~p", 
-	 [Addr, Port, SnmpTrap, UserData]),
+	 [TargetName, SnmpTrap, UserData]),
     ok.
 
 
-handle_inform(Addr, Port, SnmpInform, UserData) ->
+handle_inform(TargetName, SnmpInform, UserData) ->
     info("received handle_inform:"
-	 "~n   Addr:       ~p"
-	 "~n   Port:       ~p"
+	 "~n   TargetName:   ~p"
 	 "~n   SnmpInform: ~p"
 	 "~n   UserData:   ~p", 
-	 [Addr, Port, SnmpInform, UserData]),
+	 [TargetName, SnmpInform, UserData]),
     ok.
 
 
-handle_report(Addr, Port, SnmpReport, UserData) ->
+handle_report(TargetName, SnmpReport, UserData) ->
     info("received handle_inform:"
-	 "~n   Addr:       ~p"
-	 "~n   Port:       ~p"
+	 "~n   TargetName:   ~p"
 	 "~n   SnmpReport: ~p"
 	 "~n   UserData:   ~p", 
-	 [Addr, Port, SnmpReport, UserData]),
+	 [TargetName, SnmpReport, UserData]),
     ok.
 
 

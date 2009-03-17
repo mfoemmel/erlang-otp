@@ -1,21 +1,22 @@
-#<copyright>
-# <year>1999-2008</year>
-# <holder>Ericsson AB, All Rights Reserved</holder>
-#</copyright>
-#<legalnotice>
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 1999-2009. All Rights Reserved.
+# 
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
 # retrieved online at http://www.erlang.org/.
-#
+# 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
+# 
+# %CopyrightEnd%
 #
-# The Initial Developer of the Original Code is Ericsson AB.
-#</legalnotice>
+
 #
 
 include $(ERL_TOP)/make/target.mk
@@ -90,7 +91,7 @@ INCLUDE = ../include
 # FLAGS
 # ----------------------------------------------------
 EXTRA_ERLC_FLAGS = +warn_unused_vars
-ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/kernel/src -pa$(ERL_TOP)/lib/public_key/ebin \
+ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/kernel/src -pa $(ERL_TOP)/lib/public_key/ebin \
 	-I$(INCLUDE) \
 	$(EXTRA_ERLC_FLAGS) -DVSN=\"$(VSN)\"
 

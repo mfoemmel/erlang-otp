@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>1996-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
+%% 
+
 %%
 %% ts:run(snmp, snmp_agent_test, [batch]).
 %% 
@@ -24,7 +25,8 @@
 %% API
 -export([start_link_packet/8, start_link_packet/9, 
 	 stop/1, 
-	 send_discovery_pdu/2, send_pdu/2, send_msg/4, send_bytes/2,
+	 send_discovery_pdu/2, 
+	 send_pdu/2, send_msg/4, send_bytes/2,
 	 error/2,
 	 get_pdu/1, set_pdu/2, format_hdr/1]).
 
@@ -63,23 +65,21 @@ stop(Pid) ->
     end.
 	
 
-send_discovery_pdu(Pdu, PacketPid) when record(Pdu, pdu) ->
+send_discovery_pdu(Pdu, PacketPid) when is_record(Pdu, pdu) ->
     PacketPid ! {send_discovery_pdu, self(), Pdu},
     await_discovery_response_pdu().
 
 await_discovery_response_pdu() ->
     receive
-	{discovery_response,Reply} ->
-	    Reply;
-	_ ->
-	    await_discovery_response_pdu()
+	{discovery_response, Reply} ->
+	    Reply
     end.
     
 
-send_pdu(Pdu, PacketPid) when record(Pdu, pdu) ->
+send_pdu(Pdu, PacketPid) when is_record(Pdu, pdu) ->
     PacketPid ! {send_pdu, Pdu}.
 
-send_msg(Msg, PacketPid, Ip, Udp) when record(Msg, message) ->
+send_msg(Msg, PacketPid, Ip, Udp) when is_record(Msg, message) ->
     PacketPid ! {send_msg, Msg, Ip, Udp}.
 
 send_bytes(Bytes, PacketPid) ->
@@ -128,12 +128,13 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 	    case mk_discovery_msg(Version, Pdu, VsnHdr, "") of
 		error ->
 		    ok;
-		{M, B} when list(B) -> 
-		    put(discovery,{M,From}),
+		{M, B} when is_list(B) -> 
+		    put(discovery, {M, From}),
 		    display_outgoing_message(M),
 		    udp_send(UdpId, AgentIp, UdpPort, B)
 	    end,
-	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
+	    packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, []);
+
 	{send_pdu, Pdu} ->
 	    d("packet_loop -> received send_pdu with"
 	      "~n   Pdu:  ~p", [Pdu]),
@@ -144,6 +145,7 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 		    udp_send(UdpId, AgentIp, UdpPort, B)
 	    end,
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
+
 	{send_msg, Msg, Ip, Udp} ->
 	    d("packet_loop -> received send_msg with"
 	      "~n   Msg:  ~p"
@@ -164,7 +166,7 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 	      "~n   Ip:        ~p"
 	      "~n   UdpPort:   ~p"
 	      "~n   sz(Bytes): ~p", [UdpId, Ip, UdpPort, sz(Bytes)]),	    
-	    MsgData3 = handle_udp_packet(Version,erase(discovery),
+	    MsgData3 = handle_udp_packet(Version, erase(discovery),
 					 UdpId, Ip, UdpPort, Bytes,
 					 SnmpMgr, AgentIp),
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,
@@ -269,45 +271,56 @@ handle_udp_packet(_V, undefined,
 		[]
 	end,
     MsgData3;
-handle_udp_packet(V,{DiscoReqMsg,From},_UdpId,_Ip,_UdpPort,Bytes,_,_AgentIp) ->
+handle_udp_packet(V, {DiscoReqMsg, From}, _UdpId, _Ip, _UdpPort, 
+		  Bytes, _, _AgentIp) ->
     DiscoRspMsg = (catch snmp_pdus:dec_message(Bytes)),
     display_incomming_message(DiscoRspMsg),
-    Reply = (catch check_discovery_result(V,DiscoReqMsg,DiscoRspMsg)),
-    From ! {discovery_response,Reply},
-    [].
+    _Reply = (catch check_discovery_result(V, DiscoReqMsg, DiscoRspMsg)),
+    case (catch check_discovery_result(V, DiscoReqMsg, DiscoRspMsg)) of
+	{ok, AgentEngineID} when is_list(AgentEngineID) ->
+	    %% Ok, step 1 complete, now for step 2
+	    %% Which we skip for now
+	    OK = {ok, AgentEngineID}, 
+	    From ! {discovery_response, OK},
+	    [];
+	Error ->
+	    From ! {discovery_response, Error},
+	    []
+    end.
+
 
 %% This function assumes that the agent and the manager (thats us) 
 %% has the same version.
-check_discovery_result('version-3',DiscoReqMsg,DiscoRspMsg) ->
+check_discovery_result('version-3', DiscoReqMsg, DiscoRspMsg) ->
     ReqMsgID = getMsgID(DiscoReqMsg),
     RspMsgID = getMsgID(DiscoRspMsg),
-    check_msgID(ReqMsgID,RspMsgID),
-    ReqRequestId = getRequestId('version-3',DiscoReqMsg),
-    RspRequestId = getRequestId('version-3',DiscoRspMsg),
-    check_requestId(ReqRequestId,RspRequestId),
-    {ok,getMsgAuthEngineID(DiscoRspMsg)};
-check_discovery_result(Version,DiscoReqMsg,DiscoRspMsg) ->
-    ReqRequestId = getRequestId(Version,DiscoReqMsg),
-    RspRequestId = getRequestId(Version,DiscoRspMsg),
-    check_requestId(ReqRequestId,RspRequestId),
-    {ok,getSysDescr(DiscoRspMsg)}.
+    check_msgID(ReqMsgID, RspMsgID),
+    ReqRequestId = getRequestId('version-3', DiscoReqMsg),
+    RspRequestId = getRequestId('version-3', DiscoRspMsg),
+    check_requestId(ReqRequestId, RspRequestId),
+    {ok, getMsgAuthEngineID(DiscoRspMsg)};
+check_discovery_result(Version, DiscoReqMsg, DiscoRspMsg) ->
+    ReqRequestId = getRequestId(Version, DiscoReqMsg),
+    RspRequestId = getRequestId(Version, DiscoRspMsg),
+    check_requestId(ReqRequestId, RspRequestId),
+    {ok, getSysDescr(DiscoRspMsg)}.
 
-check_msgID(ID,ID) ->
+check_msgID(ID, ID) ->
     ok;
-check_msgID(ReqMsgID,RspMsgID) ->
-    throw({error,{invalid_msgID,ReqMsgID,RspMsgID}}).
+check_msgID(ReqMsgID, RspMsgID) ->
+    throw({error, {invalid_msgID, ReqMsgID, RspMsgID}}).
 
 check_requestId(Id,Id) ->
     ok;
-check_requestId(ReqRequestId,RspRequestId) ->
-    throw({error,{invalid_requestId,ReqRequestId,RspRequestId}}).
+check_requestId(ReqRequestId, RspRequestId) ->
+    throw({error, {invalid_requestId, ReqRequestId, RspRequestId}}).
 
-getMsgID(M) when record(M,message) ->
+getMsgID(M) when is_record(M, message) ->
     (M#message.vsn_hdr)#v3_hdr.msgID.
 
-getRequestId('version-3',M) when record(M,message) ->
+getRequestId('version-3',M) when is_record(M, message) ->
     ((M#message.data)#scopedPdu.data)#pdu.request_id;
-getRequestId(_Version,M) when record(M,message) ->
+getRequestId(_Version,M) when is_record(M, message) ->
     (M#message.data)#pdu.request_id;
 getRequestId(Version,M) ->
     io:format("************* ERROR ****************"
@@ -315,12 +328,12 @@ getRequestId(Version,M) ->
 	      "~n   M:       ~w~n", [Version,M]),
     throw({error, {unknown_request_id, Version, M}}).
     
-getMsgAuthEngineID(M) when record(M,message) ->
+getMsgAuthEngineID(M) when is_record(M, message) ->
     SecParams1 = (M#message.vsn_hdr)#v3_hdr.msgSecurityParameters,
     SecParams2 = snmp_pdus:dec_usm_security_parameters(SecParams1),
     SecParams2#usmSecurityParameters.msgAuthoritativeEngineID.
     
-getSysDescr(M) when record(M,message) ->
+getSysDescr(M) when is_record(M, message) ->
     getSysDescr((M#message.data)#pdu.varbinds);
 getSysDescr([]) ->
     not_found;
@@ -344,14 +357,18 @@ handle_v3_msg(Packet, #message{vsn_hdr = V3Hdr, data = Data}) ->
     IsReportable = snmp_misc:is_reportable(MsgFlags),
     SecRes = (catch SecModule:process_incoming_msg(list_to_binary(Packet), 
 						   Data,SecParams,SecLevel)),
-    {_SecEngineID, SecName, ScopedPDUBytes, SecData} =
+    {_SecEngineID, SecName, ScopedPDUBytes, SecData, _} =
 	check_sec_module_result(SecRes, V3Hdr, Data, IsReportable),
-    case catch snmp_pdus:dec_scoped_pdu(ScopedPDUBytes) of
-	ScopedPDU when record(ScopedPDU, scopedPdu) -> 
+    case (catch snmp_pdus:dec_scoped_pdu(ScopedPDUBytes)) of
+	ScopedPDU when is_record(ScopedPDU, scopedPdu) -> 
 	    {ok, ScopedPDU, {MsgId, SecName, SecData}};
 	{'EXIT', Reason} ->
-	    throw({error, Reason})
-    end.
+	    throw({error, Reason});
+	Error ->
+	    throw({error, {scoped_pdu_decode_failed, Error}})
+    end;
+handle_v3_msg(_Packet, BadMessage) ->
+    throw({error, bad_message, BadMessage}).
 
 get_security_module(?SEC_USM) ->
     snmpa_usm;
@@ -409,11 +426,11 @@ error(Format, Data) ->
 
 mk_discovery_msg('version-3', Pdu, _VsnHdr, UserName) ->
     ScopedPDU = #scopedPdu{contextEngineID = "",
-			   contextName = "",
-			   data = Pdu},
+			   contextName     = "",
+			   data            = Pdu},
     Bytes = snmp_pdus:enc_scoped_pdu(ScopedPDU),
     MsgID = get(msg_id),
-    put(msg_id,MsgID+1),
+    put(msg_id, MsgID+1),
     UsmSecParams = 
 	#usmSecurityParameters{msgAuthoritativeEngineID = "",
 			       msgAuthoritativeEngineBoots = 0,
@@ -423,10 +440,10 @@ mk_discovery_msg('version-3', Pdu, _VsnHdr, UserName) ->
 			       msgAuthenticationParameters = ""},
     SecBytes = snmp_pdus:enc_usm_security_parameters(UsmSecParams),
     PduType = Pdu#pdu.type,
-    Hdr = #v3_hdr{msgID = MsgID, 
-		  msgMaxSize = 1000,
-		  msgFlags = snmp_misc:mk_msg_flags(PduType, 0),
-		  msgSecurityModel = ?SEC_USM,
+    Hdr = #v3_hdr{msgID                 = MsgID, 
+		  msgMaxSize            = 1000,
+		  msgFlags              = snmp_misc:mk_msg_flags(PduType, 0),
+		  msgSecurityModel      = ?SEC_USM,
 		  msgSecurityParameters = SecBytes},
     Msg = #message{version = 'version-3', vsn_hdr = Hdr, data = Bytes},
     case (catch snmp_pdus:enc_message_only(Msg)) of
@@ -435,7 +452,7 @@ mk_discovery_msg('version-3', Pdu, _VsnHdr, UserName) ->
 		  "~n   Pdu:    ~w"
 		  "~n   Reason: ~w",[Pdu, Reason]),
 	    error;
-	L when list(L) ->
+	L when is_list(L) ->
 	    {Msg#message{data = ScopedPDU}, L}
     end;
 mk_discovery_msg(Version, Pdu, {Com, _, _, _, _}, _UserName) ->
@@ -446,7 +463,7 @@ mk_discovery_msg(Version, Pdu, {Com, _, _, _, _}, _UserName) ->
 		  "~n   Pdu:    ~w"
 		  "~n   Reason: ~w",[Pdu, Reason]),
 	    error;
-	L when list(L) -> 
+	L when is_list(L) -> 
 	    {Msg, L}
     end.
 
@@ -464,7 +481,7 @@ mk_msg('version-3', Pdu, {Context, User, EngineID, CtxEngineId, SecLevel},
     %% Code copied from snmp_mpd.erl
     {MsgId, SecName, SecData} =
 	if
-	    tuple(MsgData), Pdu#pdu.type == 'get-response' ->
+	    is_tuple(MsgData) andalso (Pdu#pdu.type =:= 'get-response') ->
 		MsgData;
 	    true -> 
 		Md = get(msg_id),
@@ -569,16 +586,16 @@ display_incomming_message(M) ->
     display_message("Incomming",M).
 
 display_outgoing_message(M) ->
-    display_message("Outgoing",M).
+    display_message("Outgoing", M).
 
-display_message(Direction,M) when record(M,message) ->
-    io:format("~s SNMP message:~n",[Direction]),
+display_message(Direction, M) when is_record(M, message) ->
+    io:format("~s SNMP message:~n", [Direction]),
     V = M#message.version,
     display_version(V),
-    display_hdr(V,M#message.vsn_hdr),
-    display_msg_data(V,Direction,M#message.data);
-display_message(Direction,M) ->
-    io:format("~s message unknown: ~n~p",[Direction,M]).
+    display_hdr(V, M#message.vsn_hdr),
+    display_msg_data(V, Direction, M#message.data);
+display_message(Direction, M) ->
+    io:format("~s message unknown: ~n~p", [Direction, M]).
 
 display_version('version-3') ->
     display_prop("Version",'SNMPv3');
@@ -683,8 +700,8 @@ display_scoped_pdu_data(Direction,D) when record(D,trappdu) ->
 display_scoped_pdu_data(_Direction,D) ->
     display_prop("Unknown scoped pdu data",D).
 
-display_pdu(Direction,P) ->
-    io:format("~s PDU:~n",[Direction]),
+display_pdu(Direction, P) ->
+    io:format("~s PDU:~n", [Direction]),
     display_type(P#pdu.type),
     display_request_id(P#pdu.request_id),
     display_error_status(P#pdu.error_status),

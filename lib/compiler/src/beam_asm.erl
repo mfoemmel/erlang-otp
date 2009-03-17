@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Assembler for threaded Beam.
 
@@ -227,9 +228,8 @@ bif_type(_, 2)      -> bif2.
 
 make_op({'%',_}, Dict) ->
     {[],Dict};
-make_op({'%live',_R}, Dict) ->
-    {[],Dict};
-make_op({bif, Bif, nofail, [], Dest}, Dict) ->
+make_op({bif, Bif, {f,_}, [], Dest}, Dict) ->
+    %% BIFs without arguments cannot fail.
     encode_op(bif0, [{extfunc, erlang, Bif, 0}, Dest], Dict);
 make_op({bif, raise, _Fail, [A1,A2], _Dest}, Dict) ->
     encode_op(raise, [A1,A2], Dict);
@@ -370,10 +370,29 @@ encode1(Tag, Bytes) ->
 	    [2#11111000 bor Tag, encode(?tag_u, Num-9)| Bytes]
     end.
 
-to_bytes(0, [B|_]=Done) when B < 128 -> Done;
-to_bytes(N, Acc) -> to_bytes(N bsr 8, [N band 16#ff|Acc]).
 
-negative_to_bytes(-1, [B1,_B2|_]=Done) when B1 > 127 ->
+to_bytes(N0, Acc) ->
+    Bits = 3*128,
+    case N0 bsr Bits of
+	0 ->
+	    to_bytes_1(N0, Acc);
+	N ->
+	    to_bytes(N, binary_to_list(<<N0:Bits>>) ++ Acc)
+    end.
+    
+to_bytes_1(0, [B|_]=Done) when B < 128 -> Done;
+to_bytes_1(N, Acc) -> to_bytes(N bsr 8, [N band 16#ff|Acc]).
+
+negative_to_bytes(N0, Acc) ->
+    Bits = 3*128,
+    case N0 bsr Bits of
+	-1 ->
+	    negative_to_bytes_1(N0, Acc);
+	N ->
+	    negative_to_bytes_1(N, binary_to_list(<<N0:Bits>>) ++ Acc)
+    end.
+
+negative_to_bytes_1(-1, [B1,_B2|_]=Done) when B1 > 127 ->
     Done;
-negative_to_bytes(N, Acc) ->
-    negative_to_bytes(N bsr 8, [N band 16#ff|Acc]).
+negative_to_bytes_1(N, Acc) ->
+    negative_to_bytes_1(N bsr 8, [N band 16#ff|Acc]).

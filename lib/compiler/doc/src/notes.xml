@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>2004</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2004</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>Compiler Release Notes</title>
@@ -31,6 +29,165 @@
   </header>
   <p>This document describes the changes made to the Compiler
     application.</p>
+
+<section><title>Compiler 4.6</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    For some complex guards which used
+	    <c>andalso</c>/<c>orelse</c>, the compiler would crash.
+	    (Thanks to Hunter Morris.)</p>
+          <p>
+	    Own Id: OTP-7679</p>
+        </item>
+        <item>
+          <p>
+	    Code that (inccorrectly) used the the value of nested
+	    applications of <c>setelement/3</c> in bit syntax
+	    construction could crash the compiler.</p>
+          <p>
+	    Own Id: OTP-7690</p>
+        </item>
+        <item>
+	    <p>Modules containing huge integers (consisting of
+	    several hundreds of thousands of digits or more) could be
+	    slow to compile. This problem has been corrected.</p>
+          <p>
+	    Own Id: OTP-7707 Aux Id: seq11129 </p>
+        </item>
+        <item>
+	    <p>If the generator in a list comprehension is given a
+	    non-list term, there will now be <c>function_clause</c>
+	    exception instead of a <c>case_clause</c> exception (as
+	    it was in all releases before R12B).</p>
+          <p>
+	    Own Id: OTP-7844</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    The compiler could crash if the size for a binary segment
+	    in matching was a complex literal such as binary or
+	    tuple.</p>
+          <p>
+	    Own Id: OTP-7650</p>
+        </item>
+        <item>
+          <p>
+	    The compiler generates more compact and faster code for
+	    matching of complex constants (such as constant lists and
+	    tuples).</p>
+          <p>
+	    Own Id: OTP-7655</p>
+        </item>
+        <item>
+          <p>
+	    The undocumented, unsupported, and deprecated guard BIF
+	    <c>is_constant/1</c> has been removed.</p>
+          <p>
+	    *** INCOMPATIBILITY with R12B ***</p>
+          <p>
+	    Own Id: OTP-7673</p>
+        </item>
+        <item>
+	    <p>The compiler generates better code for many guard
+	    expressions, and especially for guards that use
+	    <c>andalso</c>/<c>orelse</c> or record fields.</p>
+	    <p>(In technical terms, <c>andalso</c>/<c>orelse</c> in a
+	    guard would case the creation of a stack frame and saving
+	    of all x registers that could potentially be alive after
+	    the guard and restoring all x registers before levaing
+	    the guard. For certains guards, far too many x registers
+	    were saved and subsequently restored. In this version of
+	    the compiler, no stack frame is created and no x
+	    registers are saved and restored.)</p>
+          <p>
+	    Own Id: OTP-7718</p>
+        </item>
+        <item>
+	    <p>The default size for the resulting binary created by a
+	    binary comprehension was 64Kb in R12B (it would grow if
+	    needed). This was often far too much. In this release,
+	    the default is changed to 256 bytes. Furthermore, for
+	    most binary comprehensions without filters, the exact
+	    size of the resulting binary can be calculated beforehand
+	    and the compiler now generates code that does that
+	    calculation.</p>
+          <p>
+	    Own Id: OTP-7737</p>
+        </item>
+        <item>
+	    <p>The short-circuit operators <c>andalso</c> and
+	    <c>orelse</c> no longer guarantees that their second
+	    argument is either <c>true</c> or <c>false</c>. As a
+	    consequence, <c>andalso</c>/<c>orelse</c> are now
+	    tail-recursive.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7748</p>
+        </item>
+        <item>
+	    <p>The compiler will refuse to a compile file where the
+	    module name in the file differs from the output file
+	    name.</p>
+	    <p>When compiling using <c>erlc</c>, the current working
+	    directory will no be included in the code path (unless
+	    explicitly added using "-pa .").</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7793</p>
+        </item>
+        <item>
+	    <p>There will no longer be any warnings for list
+	    comprehensions without generators, as such list
+	    comprehension have turned out to be useful.</p>
+          <p>
+	    Own Id: OTP-7846</p>
+        </item>
+        <item>
+	    <p>Warnings for obsolete guard tests are now turned on.
+	    (That is, writing <c>list(L)</c> in a guard instead of
+	    <c>is_list(L)</c> will generate a warning.)</p>
+	    <p>The warnings can be turned off using the
+	    <c>nowarn_obsolete_guard</c> option.</p>
+          <p>
+	    Own Id: OTP-7850</p>
+        </item>
+        <item>
+	    <p>The copyright notices have been updated.</p>
+          <p>
+	    Own Id: OTP-7851</p>
+        </item>
+        <item>
+	    <p>If a module contains an exported function with the
+	    same name as an auto-imported BIF (such as
+	    <c>length/1</c>), any calls to the BIF must have an
+	    explicit <c>erlang:</c> prefix, or there will be a
+	    compilation error (such calls would only generate a
+	    warning in previous releases).</p>
+	    <p>(The reason for the change is to avoid breaking code
+	    in a future major release, R14 or R15, in which we plan
+	    to make calls without a module prefix always call the
+	    local function in the same module even if there is an
+	    auto-imported BIF with the same name.)</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7873</p>
+        </item>
+      </list>
+    </section>
+
+</section>
 
 <section><title>Compiler 4.5.5</title>
 

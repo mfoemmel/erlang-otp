@@ -1,6 +1,22 @@
 %%% -*- erlang-indent-level: 2 -*-
 %%%======================================================================
-%%% $Id$
+%%%
+%%% %CopyrightBegin%
+%%% 
+%%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%%% 
+%%% The contents of this file are subject to the Erlang Public License,
+%%% Version 1.1, (the "License"); you may not use this file except in
+%%% compliance with the License. You should have received a copy of the
+%%% Erlang Public License along with this software. If not, it can be
+%%% retrieved online at http://www.erlang.org/.
+%%% 
+%%% Software distributed under the License is distributed on an "AS IS"
+%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%%% the License for the specific language governing rights and limitations
+%%% under the License.
+%%% 
+%%% %CopyrightEnd%
 %%%
 %%% An implementation of the algorithm described in:
 %%% "Assembling Code for Machines with Span-Dependent Instructions",
@@ -18,7 +34,6 @@
 
 %%------------------------------------------------------------------------
 
--type gb_tree()    :: tuple().   % temporarily until there is a proper datatype
 -type hipe_array() :: integer(). % declare this in hipe.hrl or builtin?
 
 -type label()      :: non_neg_integer().
@@ -33,9 +48,9 @@
 		       label   :: label(),
 		       si      :: #sdi_info{}}).
 
--record(pass1, {prevSdi   :: integer(),
-		preS = [] :: [#pre_sdi_data{}],
-		labelMap  :: gb_tree()}).
+-record(pass1, {prevSdi			    :: integer(),
+		preS	 = []		    :: [#pre_sdi_data{}],
+		labelMap = gb_trees:empty() :: gb_tree()}).
 
 -record(sdi_data, {address       :: address(),
 		   label_address :: address(),
@@ -74,7 +89,7 @@
 
 -spec pass1_init() -> #pass1{}.
 pass1_init() ->
-  #pass1{prevSdi=(-1), preS=[], labelMap=gb_trees:empty()}.
+  #pass1{prevSdi = -1}.
 
 -spec pass1_add_label(#pass1{}, non_neg_integer(), label()) -> #pass1{}.
 pass1_add_label(Pass1, Address, Label) ->

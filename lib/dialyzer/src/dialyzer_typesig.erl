@@ -1,19 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
 %%-----------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 %%%-------------------------------------------------------------------
@@ -23,6 +25,7 @@
 %%%
 %%% Created : 25 Apr 2005 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%-------------------------------------------------------------------
+
 -module(dialyzer_typesig).
 
 -include("dialyzer.hrl").
@@ -33,21 +36,26 @@
 -export([get_safe_underapprox/2]).
 
 -import(erl_types, 
-	[t_any/0, t_atom/0, t_atom_vals/1, t_binary/0, t_bool/0, 
-	 t_bitstr/2, t_bitstr_concat/1, t_collect_vars/1,
-	 t_cons/2, t_cons_hd/1, t_cons_tl/1, t_float/0,
-	 t_has_var/1, t_is_atom/1,
-	 t_is_float/1, t_from_range/2, t_fun/0, t_fun/2, t_fun_args/1,
-	 t_fun_range/1, t_is_fun/1,
-	 t_inf/2, t_integer/0, t_is_integer/1, t_non_neg_integer/0,
-	 t_is_atom/2, t_is_cons/1, t_is_equal/2, t_is_list/1,
-	 t_is_nil/1, t_is_none/1, t_is_number/1,
-	 t_is_any/1, t_is_subtype/2, t_limit/2, t_list/0, t_list/1, 
+	[t_any/0, t_atom/0, t_atom_vals/1,
+	 t_binary/0, t_bitstr/0, t_bitstr/2, t_bitstr_concat/1, t_bool/0,
+	 t_collect_vars/1, t_cons/2, t_cons_hd/1, t_cons_tl/1,
+	 t_float/0, t_from_range/2, t_from_term/1,
+	 t_fun/0, t_fun/2, t_fun_args/1, t_fun_range/1, 
+	 t_has_var/1,
+	 t_inf/2, t_inf/3, t_integer/0,
+	 t_is_any/1, t_is_atom/1, t_is_atom/2, t_is_cons/1, t_is_equal/2,
+	 t_is_float/1, t_is_fun/1,
+	 t_is_integer/1, t_non_neg_integer/0,
+	 t_is_list/1, t_is_nil/1, t_is_none/1, t_is_number/1,
+	 t_is_subtype/2, t_limit/2, t_list/0, t_list/1, 
 	 t_list_elements/1, t_nonempty_list/1, t_maybe_improper_list/0,
-	 t_number/0, t_number_vals/1, t_pid/0, t_port/0,
-	 t_product/1, t_ref/0, t_subst/2, t_subtract/2, t_subtract_list/2,
-	 t_tuple/0, t_tuple/1, t_sup/1, t_sup/2,
-	 t_unify/2, t_is_var/1, t_var/1, t_var_name/1, t_from_term/1, 
+	 t_module/0, t_number/0, t_number_vals/1,
+	 t_opaque_match_record/2, t_opaque_matching_structure/2,
+	 t_opaque_from_records/1,
+	 t_pid/0, t_port/0, t_product/1,
+	 t_ref/0, t_subst/2, t_subtract/2, t_subtract_list/2, t_sup/1, t_sup/2,
+	 t_tuple/0, t_tuple/1,
+	 t_unify/2, t_var/1, t_var_name/1,
 	 t_none/0, t_unit/0]).
 
 -record(fun_var, {'fun'  :: fun((_) -> any()), 
@@ -68,7 +76,7 @@
 
 -type type_var() :: any().
 
--record(constraint_ref, {id    :: type_var(), 
+-record(constraint_ref, {id    :: type_var(),
 			 deps  :: [integer()]}).
 
 -record(state, {callgraph         :: #dialyzer_callgraph{},
@@ -76,35 +84,34 @@
 		                      | #constraint_ref{}],
 		cmap              :: dict(),
 		fun_map           :: [{_, _}], %% Orddict
-		fun_arities       :: dict(), 
-		in_match = false  :: bool(), 
-		in_guard = false  :: bool(), 
-		name_map          :: dict(), 
-		next_label        :: integer(), 
-		non_self_recs     :: [integer()], 
+		fun_arities       :: dict(),
+		in_match = false  :: bool(),
+		in_guard = false  :: bool(),
+		name_map          :: dict(),
+		next_label        :: integer(),
+		non_self_recs     :: [integer()],
 		plt               :: #dialyzer_plt{}, 
 		prop_types        :: dict(),
-		records           :: dict(), 
+		records           :: dict(),
+		opaques           :: [erl_type()],
 		scc = []          :: [type_var()]}).
 		
 
 -define(TYPE_LIMIT, 4).
 -define(INTERNAL_TYPE_LIMIT, 5).
 
-%-define(DEBUG, true).
-%-define(DEBUG_CONSTRAINTS, true).
+%%-define(DEBUG, true).
+%%-define(DEBUG_CONSTRAINTS, true).
 -ifdef(DEBUG).
 -define(DEBUG_NAME_MAP, true).
 -endif.
-%-define(DEBUG_NAME_MAP, true).
+%%-define(DEBUG_NAME_MAP, true).
 
 -ifdef(DEBUG).
 -define(debug(__String, __Args), io:format(__String, __Args)).
 -else.
 -define(debug(__String, __Args), ok).
 -endif.
-
--include("dialyzer_bif_constraints.inc").
 
 %% ============================================================================
 %%
@@ -131,7 +138,7 @@
 %%-----------------------------------------------------------------------------
 
 -type typesig_scc() :: [{mfa(), {_, _}, dict()}].
--type typesig_ret() :: [{mfa(),erl_type()}].
+-type typesig_ret() :: [{mfa(), erl_type()}].
 
 -spec analyze_scc(typesig_scc(), integer(), #dialyzer_callgraph{}, #dialyzer_plt{}) ->
 	 typesig_ret().
@@ -173,10 +180,11 @@ analyze_scc_1(SCC, NextLabel, CallGraph, Plt, PropTypes) ->
 %%
 %% ============================================================================
 
-traverse_scc([{_MFA, Def, Rec}|Left], DefSet, AccState) ->
+traverse_scc([{MFA, Def, Rec}|Left], DefSet, AccState) ->
   TmpState1 = state__set_rec_dict(AccState, Rec),
+  TmpState2 = state__set_opaques(TmpState1, MFA),
   DummyLetrec = cerl:c_letrec([Def], cerl:c_atom(foo)),
-  {NewAccState, _} = traverse(DummyLetrec, DefSet, TmpState1),
+  {NewAccState, _} = traverse(DummyLetrec, DefSet, TmpState2),
   traverse_scc(Left, DefSet, NewAccState);
 traverse_scc([], _DefSet, AccState) ->
   AccState.
@@ -195,7 +203,7 @@ traverse(Tree, DefinedVars, State) ->
       Args = cerl:apply_args(Tree),
       Arity = length(Args),
       Op = cerl:apply_op(Tree),
-      {State0, ArgTypes} = traverse_list(Args, DefinedVars, State),      
+      {State0, ArgTypes} = traverse_list(Args, DefinedVars, State),
       {State1, OpType} = traverse(Op, DefinedVars, State0),
       {State2, FunType} = state__get_fun_prototype(OpType, Arity, State1),
       State3 = state__store_conj(FunType, eq, OpType, State2),
@@ -227,32 +235,33 @@ traverse(Tree, DefinedVars, State) ->
       {State1, [SizeType, ValType]} = 
 	traverse_list([Size, Val], DefinedVars, State),
       {State2, TypeConstr} =
-	case cerl:is_literal(Size) of
-	  true ->
-	    case cerl:concrete(Size) of
-	      all -> {State1, t_bitstr(UnitVal, 0)};
-	      N when is_integer(N) -> {State1, t_bitstr(0, UnitVal * N)}
-	    end;
-	  false ->
+	case cerl:bitstr_bitsize(Tree) of
+	  all -> {State1, t_bitstr(UnitVal, 0)};
+	  utf -> {State1, t_binary()}; % contains an integer number of bytes
+	  N when is_integer(N) -> {State1, t_bitstr(0, N)};
+	  any -> % Size is not a literal
 	    {state__store_conj(SizeType, sub, t_non_neg_integer(), State1),
 	     mk_fun_var(bitstr_constr(SizeType, UnitVal), [SizeType])}
 	end,
       ValTypeConstr =
 	case cerl:concrete(cerl:bitstr_type(Tree)) of
+	  binary -> TypeConstr;
 	  float ->
 	    case state__is_in_match(State1) of
 	      true -> t_float();
 	      false -> t_number()
 	    end;
-	  binary -> TypeConstr;
 	  integer ->
 	    case state__is_in_match(State1) of
-	      false -> t_integer();
 	      true ->
 		Flags = cerl:concrete(cerl:bitstr_flags(Tree)),
 		mk_fun_var(bitstr_val_constr(SizeType, UnitVal, Flags), 
-			   [SizeType])
-	    end
+			   [SizeType]);
+	      false -> t_integer()
+	    end;
+	  utf8 -> t_integer();
+	  utf16 -> t_integer();
+	  utf32 -> t_integer()
 	end,
       State3 = state__store_conj(ValType, sub, ValTypeConstr, State2),
       State4 = state__store_conj(mk_var(Tree), sub, TypeConstr, State3),
@@ -277,26 +286,24 @@ traverse(Tree, DefinedVars, State) ->
 	  {State, t_cons(HdVar, TlVar)};
 	false ->
 	  ConsVar = mk_var(Tree),
-	  ConsType = mk_fun_var(fun(Map)->
+	  ConsType = mk_fun_var(fun(Map) ->
 				    t_cons(lookup_type(HdVar, Map), 
 					   lookup_type(TlVar, Map))
 				end, [HdVar, TlVar]),
-	  
-	  HdType = mk_fun_var(fun(Map)->
+	  HdType = mk_fun_var(fun(Map) ->
 				  Cons = lookup_type(ConsVar, Map),
 				  case t_is_cons(Cons) of
 				    false -> t_any();
 				    true -> t_cons_hd(Cons)
 				  end
 			      end, [ConsVar]),
-	  TlType = mk_fun_var(fun(Map)->
+	  TlType = mk_fun_var(fun(Map) ->
 				  Cons = lookup_type(ConsVar, Map),
 				  case t_is_cons(Cons) of
 				    false -> t_any();
 				    true -> t_cons_tl(Cons)
 				  end
 			      end, [ConsVar]),
-	  
 	  State2 = state__store_conj_lists([HdVar, TlVar, ConsVar], sub, 
 					   [HdType, TlType, ConsType], 
 					   State1),
@@ -308,7 +315,7 @@ traverse(Tree, DefinedVars, State) ->
       DefinedVars1 = add_def_list(Vars, DefinedVars),
       State0 = state__new_constraint_context(State),
       FunFailType =
-	case state__prop_domain(Tree, State0) of
+	case state__prop_domain(cerl_trees:get_label(Tree), State0) of
 	  error -> t_fun(length(Vars), t_none());
 	  {ok, Dom} -> t_fun(Dom, t_none())
 	end,
@@ -423,22 +430,30 @@ traverse(Tree, DefinedVars, State) ->
 	    {NewEvars, TmpState} = lists:mapfoldl(Fun, State1, EVars),
 	    {TmpState, t_tuple(NewEvars)}
 	end,
-      State3 =
-	case Elements of
-	  [Tag|Fields] -> 
-	    case cerl:is_c_atom(Tag) of
-	      true ->
-		Arity = length(Fields),
-		case state__lookup_record(State2, cerl:atom_val(Tag), Arity) of
-		  error -> State2;
-		  {ok, RecType} -> state__store_conj(TupleType, sub, 
-						     RecType, State2)
-		end;
-	      false -> State2
-	    end;
-	  [] -> State2
-	end,
-      {State3, TupleType};
+      case Elements of
+	[Tag|Fields] -> 
+	  case cerl:is_c_atom(Tag) of
+	    true ->
+	      %% Check if an opaque term is constructed.
+	      case t_opaque_match_record(TupleType, State#state.opaques) of
+		[Opaque] ->
+		  OpStruct = t_opaque_matching_structure(TupleType, Opaque),
+		  State3 = state__store_conj(TupleType, sub, OpStruct, State2),
+		  {State3, Opaque};
+		%% Check if a record is constructed.
+		_ ->
+		  Arity = length(Fields),
+		  case state__lookup_record(State2, cerl:atom_val(Tag), Arity) of
+		    error -> {State2, TupleType};
+		    {ok, RecType} ->
+		      State3 = state__store_conj(TupleType, sub, RecType, State2),
+		      {State3, TupleType}
+		  end
+	      end;
+	    false -> {State2, TupleType}
+	  end;
+	[] -> {State2, TupleType}
+      end;
     values ->
       %% We can get into trouble when unifying products that have the
       %% same element appearing several times. Handle these cases by
@@ -461,7 +476,7 @@ traverse(Tree, DefinedVars, State) ->
       case is_def(Tree, DefinedVars) of
 	true -> {State, mk_var(Tree)};
 	false ->
-	  %% If we are analyzing sccs this can be a function variable.
+	  %% If we are analyzing SCCs this can be a function variable.
 	  case state__lookup_undef_var(Tree, State) of
 	    error -> erlang:error({'Undefined variable', Tree});
 	    {ok, Type} ->
@@ -507,8 +522,7 @@ add_def_from_tree_list([], DefinedVars) ->
 is_def(Var, Set) ->
   sets:is_element(cerl_trees:get_label(Var), Set).
 
-%%________________________________________
-%%
+%%----------------------------------------
 %% Try
 %%
 
@@ -585,9 +599,8 @@ handle_try(Tree, DefinedVars, State) ->
       NewState2 = state__store_conj(Conj, NewState1),
       {NewState2, ReturnVar}
   end.
-  
-%%________________________________________
-%%
+
+%%----------------------------------------
 %% Call
 %%
 
@@ -620,7 +633,7 @@ handle_call(Call, DefinedVars, State) ->
       end;
     false ->
       {State1, MF} = traverse_list([Mod, Fun], DefinedVars, State),
-      {state__store_conj_lists(MF, sub, [t_atom(), t_atom()], State1), Dst}
+      {state__store_conj_lists(MF, sub, [t_module(), t_atom()], State1), Dst}
   end.
 
 get_plt_constr(MFA, Dst, ArgVars, State) ->
@@ -648,9 +661,9 @@ get_plt_constr(MFA, Dst, ArgVars, State) ->
 	       fun(Map) ->
 		   ArgTypes = lookup_type_list(ArgVars, Map),
 		   CRet = dialyzer_contracts:get_contract_return(C, ArgTypes),
-		   t_inf(CRet, PltRetType)
+		   t_inf(CRet, PltRetType, opaque)
 	       end, [ArgVars]),
-	     [t_inf(X, Y) || {X, Y} <- lists:zip(GenArgs, PltArgTypes)]}
+	     [t_inf(X, Y, opaque) || {X, Y} <- lists:zip(GenArgs, PltArgTypes)]}
 	end,
       state__store_conj_lists([Dst|ArgVars], sub, [RetType|ArgCs], State)
   end.
@@ -802,12 +815,13 @@ get_underapprox_from_guard(Tree, Map) ->
 	  [Fun, Arity] = cerl:call_args(Tree),
 	  case cerl:is_c_int(Arity) of
 	    false -> throw(dont_know);
-	    true -> 
+	    true ->
 	      {FunType, Map1} = get_underapprox_from_guard(Fun, Map),
 	      Inf = t_inf(FunType, t_fun(cerl:int_val(Arity), t_any())),
 	      case t_is_none(Inf) of
 		true -> throw(dont_know);
-		false -> {True, dict:store(cerl_trees:get_label(Fun), Inf, Map1)}
+		false ->
+		  {True, dict:store(cerl_trees:get_label(Fun), Inf, Map1)}
 	      end
 	  end;
 	MFA ->
@@ -874,9 +888,14 @@ get_underapprox_from_guard(Tree, Map) ->
       throw(dont_know)
   end.
 
+%%
+%% The guard test {erlang, is_function, 2} is handled specially by the
+%% function get_underapprox_from_guard/2
+%%
 get_type_test({erlang, is_atom, 1}) ->      {ok, t_atom()};
 get_type_test({erlang, is_boolean, 1}) ->   {ok, t_bool()};
 get_type_test({erlang, is_binary, 1}) ->    {ok, t_binary()};
+get_type_test({erlang, is_bitstring, 1}) -> {ok, t_bitstr()};
 get_type_test({erlang, is_float, 1}) ->     {ok, t_float()};
 get_type_test({erlang, is_function, 1}) ->  {ok, t_fun()};
 get_type_test({erlang, is_integer, 1}) ->   {ok, t_integer()};
@@ -884,6 +903,8 @@ get_type_test({erlang, is_list, 1}) ->      {ok, t_list()};
 get_type_test({erlang, is_number, 1}) ->    {ok, t_number()};
 get_type_test({erlang, is_pid, 1}) ->       {ok, t_pid()};
 get_type_test({erlang, is_port, 1}) ->      {ok, t_port()};
+%% get_type_test({erlang, is_record, 2}) ->    {ok, t_tuple()};
+%% get_type_test({erlang, is_record, 3}) ->    {ok, t_tuple()};
 get_type_test({erlang, is_reference, 1}) -> {ok, t_ref()};
 get_type_test({erlang, is_tuple, 1}) ->     {ok, t_tuple()};
 get_type_test({M, F, A}) when is_atom(M), is_atom(F), is_integer(A) -> error.
@@ -917,16 +938,17 @@ bitstr_val_constr(SizeType, UnitVal, Flags) ->
 		case lists:member(signed, Flags) of
 		  true -> {-(1 bsl (TotalSizeVal - 1)),
 			   1 bsl (TotalSizeVal - 1) - 1};
-		  false -> {0,1 bsl TotalSizeVal - 1}
+		  false -> {0, 1 bsl TotalSizeVal - 1}
 		end,
 	      t_from_range(RangeMin, RangeMax);
-	    _ -> t_integer()
+	    _ ->
+	      t_integer()
 	  end;
-	_ -> 
+	false ->
 	  t_integer()
       end
   end.
-	
+
 
 get_safe_underapprox_1([Pat|Left], Acc, Map) ->
   case cerl:type(Pat) of
@@ -985,8 +1007,7 @@ get_safe_underapprox_1([Pat|Left], Acc, Map) ->
 get_safe_underapprox_1([], Acc, Map) ->
   {lists:reverse(Acc), Map}.
 
-%%________________________________________
-%%
+%%----------------------------------------
 %% Guards
 %%
 
@@ -1002,6 +1023,582 @@ handle_guard(Guard, DefinedVars, State) ->
   State5 = state__set_in_guard(State4, state__is_in_guard(State)),
   State6 = state__new_constraint_context(State5),
   state__store_conj(mk_conj_constraint_list([OldCs, NewCs]), State6).
+
+
+%%=============================================================================
+%%
+%%  BIF constraints
+%%
+%%=============================================================================
+
+get_bif_constr({erlang, Op, 2}, Dst, Args = [Arg1, Arg2], _State) 
+  when Op =:= '+'; Op =:= '-'; Op =:= '*' ->
+  ReturnType = mk_fun_var(fun(Map) ->
+			      TmpArgTypes = lookup_type_list(Args, Map),
+			      erl_bif_types:type(erlang, Op, 2, TmpArgTypes)
+			  end, Args),
+  ArgFun =
+    fun(A, Pos) ->
+	F = 
+	  fun(Map) ->
+	      DstType = lookup_type(Dst, Map),
+	      AType = lookup_type(A, Map),
+	      case t_is_integer(DstType) of
+		true ->
+		  case t_is_integer(AType) of
+		    true -> 
+		      eval_inv_arith(Op, Pos, DstType, AType);
+		    false  ->
+		      %% This must be temporary.
+		      t_integer()
+		  end;
+		false ->
+		  case t_is_float(DstType) of
+		    true -> 
+		      case t_is_integer(AType) of
+			true -> t_float();
+			false -> t_number()
+		      end;
+		    false ->
+		      t_number()
+		  end
+	      end
+	  end,
+	mk_fun_var(F, [Dst, A])
+    end,
+  Arg1FunVar = ArgFun(Arg2, 2),
+  Arg2FunVar = ArgFun(Arg1, 1),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, ReturnType),
+			   mk_constraint(Arg1, sub, Arg1FunVar),
+			   mk_constraint(Arg2, sub, Arg2FunVar)]);
+get_bif_constr({erlang, Op, 2}, Dst, Args = [Arg1, Arg2], _State) 
+  when Op =:= '<'; Op =:= '=<'; Op =:= '>'; Op =:= '>=' ->
+  ArgFun = 
+    fun(LocalArg1, LocalArg2, LocalOp) ->
+	fun(Map) ->
+	    DstType = lookup_type(Dst, Map),
+	    IsTrue = t_is_atom(true, DstType),
+	    IsFalse = t_is_atom(false, DstType),
+	    case IsTrue orelse IsFalse of
+	      true ->
+		Arg1Type = lookup_type(LocalArg1, Map),
+		Arg2Type = lookup_type(LocalArg2, Map),
+		case t_is_integer(Arg1Type) andalso t_is_integer(Arg2Type) of
+		  true ->
+		    Max1 = erl_types:number_max(Arg1Type),
+		    Min1 = erl_types:number_min(Arg1Type),
+		    Max2 = erl_types:number_max(Arg2Type),
+		    Min2 = erl_types:number_min(Arg2Type),
+		    case LocalOp of
+		      '=<' -> 
+			if IsTrue  -> t_from_range(Min1, Max2);
+			   IsFalse -> t_from_range(range_inc(Min2), Max1)
+			end;
+		      '<'  -> 
+			if IsTrue  -> t_from_range(Min1, range_dec(Max2));
+			   IsFalse -> t_from_range(Min2, Max1)
+			end;
+		      '>=' -> 
+			if IsTrue  -> t_from_range(Min2, Max1);
+			   IsFalse -> t_from_range(Min1, range_dec(Max2))
+			end;
+		      '>'  -> 
+			if IsTrue  -> t_from_range(range_inc(Min2), Max1);
+			   IsFalse -> t_from_range(Min1, Max2)
+			end
+		    end;
+		  false -> t_any()
+		end;
+	      false -> t_any()
+	    end
+	end
+    end,
+  {Arg1Fun, Arg2Fun} =
+    case Op of
+      '<'  -> {ArgFun(Arg1, Arg2, '<'),  ArgFun(Arg2, Arg1, '>=')};
+      '=<' -> {ArgFun(Arg1, Arg2, '=<'), ArgFun(Arg2, Arg1, '>=')};
+      '>'  -> {ArgFun(Arg1, Arg2, '>'),  ArgFun(Arg2, Arg1, '<')};
+      '>=' -> {ArgFun(Arg1, Arg2, '>='), ArgFun(Arg2, Arg1, '=<')}
+    end,
+  Arg1Var = mk_fun_var(Arg1Fun, [Dst, Arg1, Arg2]),
+  Arg2Var = mk_fun_var(Arg2Fun, [Dst, Arg1, Arg2]),
+  DstVar = mk_fun_var(fun(Map) -> 
+			  TmpArgTypes = lookup_type_list(Args, Map),
+			  erl_bif_types:type(erlang, Op, 2, TmpArgTypes)
+		      end, Args),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, DstVar),
+			   mk_constraint(Arg1, sub, Arg1Var),
+			   mk_constraint(Arg2, sub, Arg2Var)]);
+get_bif_constr({erlang, '++', 2}, Dst, Args = [Hd, Tl], _State) ->
+  HdFun = fun(Map) ->
+	      DstType = lookup_type(Dst, Map),
+	      case t_is_cons(DstType) of
+		true -> t_list(t_cons_hd(DstType));
+		false -> 
+		  case t_is_list(DstType) of
+		    true -> 
+		      case t_is_nil(DstType) of
+			true -> DstType;
+			false -> t_list(t_list_elements(DstType))
+		      end;
+		    false -> t_list()
+ 		  end
+	      end
+	  end,
+  TlFun = fun(Map) ->
+	      DstType = lookup_type(Dst, Map),
+	      case t_is_cons(DstType) of
+		true -> t_sup(t_cons_tl(DstType), DstType);
+		false ->
+		  case t_is_list(DstType) of
+		    true -> 
+		      case t_is_nil(DstType) of
+			true -> DstType;
+			false -> t_list(t_list_elements(DstType))
+		      end;
+		    false -> t_any()
+		  end
+	      end
+	  end,
+  HdVar = mk_fun_var(HdFun, [Dst]),  
+  TlVar = mk_fun_var(TlFun, [Dst]),
+  ArgTypes = erl_bif_types:arg_types(erlang, '++', 2),
+  ReturnType = mk_fun_var(fun(Map) -> 
+			      TmpArgTypes = lookup_type_list(Args, Map),
+			      erl_bif_types:type(erlang, '++', 2, TmpArgTypes)
+			  end, Args),
+  Cs = mk_constraints(Args, sub, ArgTypes),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, ReturnType),
+			   mk_constraint(Hd, sub, HdVar),
+			   mk_constraint(Tl, sub, TlVar)
+			   |Cs]);
+get_bif_constr({erlang, is_atom, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_atom());
+get_bif_constr({erlang, is_binary, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_binary());
+get_bif_constr({erlang, is_boolean, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_bool());
+get_bif_constr({erlang, is_float, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_float());
+get_bif_constr({erlang, is_function, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_fun());
+get_bif_constr({erlang, is_function, 2}, Dst, [Fun, Arity], _State) ->
+  ArgFun = fun(Map) ->
+	       DstType = lookup_type(Dst, Map),
+	       case t_is_atom(true, DstType) of
+		 true -> 
+		   ArityType = lookup_type(Arity, Map),
+		   case t_number_vals(ArityType) of
+		     any -> t_fun();
+		     Vals -> t_sup([t_fun(X, t_any()) || X <- Vals])
+		   end;
+		 false -> t_any()
+	       end
+	   end,
+  ArgV = mk_fun_var(ArgFun, [Dst, Arity]),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, t_bool()),
+			   mk_constraint(Arity, sub, t_integer()),
+			   mk_constraint(Fun, sub, ArgV)]);
+get_bif_constr({erlang, is_integer, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_integer());
+get_bif_constr({erlang, is_list, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_maybe_improper_list());
+get_bif_constr({erlang, is_number, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_number());
+get_bif_constr({erlang, is_pid, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_pid());
+get_bif_constr({erlang, is_port, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_port());
+get_bif_constr({erlang, is_reference, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_ref());
+get_bif_constr({erlang, is_record, 2}, Dst, Args = [Var, Tag], _State) ->
+  ArgFun = fun(Map) ->
+	       case t_is_atom(true, lookup_type(Dst, Map)) of
+		 true -> t_tuple();
+		 false -> t_any()
+	       end
+	   end,
+  ArgV = mk_fun_var(ArgFun, [Dst]),
+  DstFun = fun(Map) -> 
+	       TmpArgTypes = lookup_type_list(Args, Map),
+	       erl_bif_types:type(erlang, is_record, 2, TmpArgTypes)
+	   end,
+  DstV = mk_fun_var(DstFun, Args),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, DstV),
+			   mk_constraint(Tag, sub, t_atom()),
+			   mk_constraint(Var, sub, ArgV)]);
+get_bif_constr({erlang, is_record, 3}, Dst, [Var, Tag, Arity] = Args, State) ->
+  %% TODO: Revise this to make it precise for Tag and Arity.
+  ArgFun = 
+    fun(Map) ->
+	case t_is_atom(true, lookup_type(Dst, Map)) of
+	  true ->
+	    ArityType = lookup_type(Arity, Map),
+	    case t_is_integer(ArityType) of
+	      true ->
+		case t_number_vals(ArityType) of
+		  [ArityVal] ->
+		    TagType = lookup_type(Tag, Map),
+		    case t_is_atom(TagType) of
+		      true ->
+			GenRecord = t_tuple([TagType|
+					     duplicate(ArityVal-1, t_any())]),
+			case t_atom_vals(TagType) of
+			  [TagVal] ->
+			    case state__lookup_record(State, TagVal, 
+						      ArityVal - 1) of
+			      {ok, Type} ->
+				AllOpaques = State#state.opaques,
+				case t_opaque_match_record(Type, AllOpaques) of
+				  [Opaque] -> Opaque;
+				  _ -> Type
+				end;			      
+			      error -> GenRecord
+			    end;
+			  _ -> GenRecord
+			end;
+		      false -> t_tuple(ArityVal)
+		    end;
+		  _ -> t_tuple()
+		end;
+	      false -> t_tuple()
+	    end;
+	  false -> t_any()
+	end
+    end,
+  ArgV = mk_fun_var(ArgFun, [Tag, Arity, Dst]),
+  DstFun = fun(Map) -> 
+	       TmpArgTypes = [TmpVar, TmpTag, TmpArity] = lookup_type_list(Args, Map),
+	       TmpArgTypes2 = 
+		 case lists:member(TmpVar, State#state.opaques) of
+		   true ->
+		     case t_is_integer(TmpArity) of
+		       true ->
+			 case t_number_vals(TmpArity) of
+			   [TmpArityVal] ->
+			     case t_is_atom(TmpTag) of
+			       true ->
+				 case t_atom_vals(TmpTag) of
+				   [TmpTagVal] ->
+				     case state__lookup_record(State, TmpTagVal, TmpArityVal - 1) of
+				       {ok, TmpType} -> 
+					 case t_is_none(t_inf(TmpType, TmpVar, opaque)) of
+					   true  -> TmpArgTypes;
+					   false -> [TmpType, TmpTag, TmpArity]
+					 end;
+				       error -> TmpArgTypes
+				     end;
+				   _ -> TmpArgTypes
+				 end;
+			       false -> TmpArgTypes
+			     end;
+			   _ -> TmpArgTypes
+			 end;
+		       false -> TmpArgTypes
+		     end;
+		   false -> TmpArgTypes
+		 end,
+	       erl_bif_types:type(erlang, is_record, 3, TmpArgTypes2)
+	   end,
+  DstV = mk_fun_var(DstFun, Args),  
+  mk_conj_constraint_list([mk_constraint(Dst, sub, DstV),
+			   mk_constraint(Arity, sub, t_integer()),
+			   mk_constraint(Tag, sub, t_atom()),
+			   mk_constraint(Var, sub, ArgV)]);
+get_bif_constr({erlang, is_tuple, 1}, Dst, [Arg], _State) ->
+  get_bif_test_constr(Dst, Arg, t_tuple());
+get_bif_constr({erlang, 'and', 2}, Dst, [Arg1, Arg2], _State) ->
+  True = t_from_term(true),
+  False = t_from_term(false),
+  ArgFun = fun(Var) ->
+	       fun(Map) ->
+		   DstType = lookup_type(Dst, Map),
+		   case t_is_atom(true, DstType) of
+		     true -> True;
+		     false ->
+		       case t_is_atom(false, DstType) of
+			 true ->
+			   case t_is_atom(true, lookup_type(Var, Map)) of
+			     true -> False;
+			     false -> t_bool()
+			   end;
+			 false -> 
+			   t_bool()
+		       end
+		   end
+	       end
+	   end,
+  DstFun = fun(Map) ->
+	       Arg1Type = lookup_type(Arg1, Map),
+	       case t_is_atom(false, Arg1Type) of
+		 true -> False;
+		 false ->
+		   Arg2Type = lookup_type(Arg2, Map),
+		   case t_is_atom(false, Arg2Type) of
+		     true -> False;
+		     false ->
+		       case (t_is_atom(true, Arg1Type) 
+			     andalso t_is_atom(true, Arg2Type)) of
+			 true -> True;
+			 false -> t_bool()
+		       end
+		   end
+	       end
+	   end,
+  ArgV1 = mk_fun_var(ArgFun(Arg2), [Arg2, Dst]),
+  ArgV2 = mk_fun_var(ArgFun(Arg1), [Arg1, Dst]),
+  DstV = mk_fun_var(DstFun, [Arg1, Arg2]),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, DstV),
+			   mk_constraint(Arg1, sub, ArgV1),
+			   mk_constraint(Arg2, sub, ArgV2)]);
+get_bif_constr({erlang, 'or', 2}, Dst, [Arg1, Arg2], _State) ->
+  True = t_from_term(true),
+  False = t_from_term(false),
+  ArgFun = fun(Var) ->
+	       fun(Map) ->
+		   DstType = lookup_type(Dst, Map),
+		   case t_is_atom(false, DstType) of
+		     true -> False;
+		     false ->
+		       case t_is_atom(true, DstType) of
+			 true ->
+			   case t_is_atom(false, lookup_type(Var, Map)) of
+			     true -> True;
+			     false -> t_bool()
+			   end;
+			 false -> 
+			   t_bool()
+		       end
+		   end
+	       end
+	   end,
+  DstFun = fun(Map) ->
+	       Arg1Type = lookup_type(Arg1, Map),
+	       case t_is_atom(true, Arg1Type) of
+		 true -> True;
+		 false ->
+		   Arg2Type = lookup_type(Arg2, Map),
+		   case t_is_atom(true, Arg2Type) of
+		     true -> True;
+		     false ->
+		       case (t_is_atom(false, Arg1Type) 
+			     andalso t_is_atom(false, Arg2Type)) of
+			 true -> False;
+			 false -> t_bool()
+		       end
+		   end
+	       end
+	   end,
+  ArgV1 = mk_fun_var(ArgFun(Arg2), [Arg2, Dst]),
+  ArgV2 = mk_fun_var(ArgFun(Arg1), [Arg1, Dst]),
+  DstV = mk_fun_var(DstFun, [Arg1, Arg2]),
+  Disj = mk_disj_constraint_list([mk_constraint(Arg1, sub, True),
+				  mk_constraint(Arg2, sub, True),
+				  mk_constraint(Dst, sub, False)]),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, DstV),
+			   mk_constraint(Arg1, sub, ArgV1),
+			   mk_constraint(Arg2, sub, ArgV2),
+			   Disj]);
+get_bif_constr({erlang, 'not', 1}, Dst, [Arg], _State) ->
+  True = t_from_term(true),
+  False = t_from_term(false),
+  Fun = fun(Var) -> 
+	    fun(Map) ->
+		Type = lookup_type(Var, Map),
+		case t_is_atom(true, Type) of
+		  true -> False;
+		  false ->
+		    case t_is_atom(false, Type) of
+		      true -> True;
+		      false -> t_bool()
+		    end
+		end
+	    end
+	end,
+  ArgV = mk_fun_var(Fun(Dst), [Dst]),
+  DstV = mk_fun_var(Fun(Arg), [Arg]),
+  mk_conj_constraint_list([mk_constraint(Arg, sub, ArgV),
+			   mk_constraint(Dst, sub, DstV)]);
+get_bif_constr({erlang, '=:=', 2}, Dst, [Arg1, Arg2], _State) ->
+  ArgFun =
+    fun(Self, OtherVar) ->
+	fun(Map) ->
+	    DstType = lookup_type(Dst, Map),
+	    OtherVarType = lookup_type(OtherVar, Map),
+	    case t_is_atom(true, DstType) of
+	      true -> OtherVarType;
+	      false -> 
+		case t_is_atom(false, DstType) of
+		  true ->
+		    case is_singleton_type(OtherVarType) of
+		      true -> t_subtract(lookup_type(Self, Map), OtherVarType);
+		      false -> t_any()
+		    end;
+		  false ->
+		    t_any()
+		end
+	    end
+	end
+    end,
+  DstFun = fun(Map) ->
+	       ArgType1 = lookup_type(Arg1, Map),
+	       ArgType2 = lookup_type(Arg2, Map),
+	       case t_is_none(t_inf(ArgType1, ArgType2)) of
+		 true -> t_from_term(false);
+		 false -> t_bool()
+	       end
+	   end,
+  ArgV1 = mk_fun_var(ArgFun(Arg1, Arg2), [Dst, Arg1, Arg2]),
+  ArgV2 = mk_fun_var(ArgFun(Arg2, Arg1), [Dst, Arg1, Arg2]),
+  DstV = mk_fun_var(DstFun, [Arg1, Arg2]),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, DstV),
+			   mk_constraint(Arg1, sub, ArgV1),
+			   mk_constraint(Arg2, sub, ArgV2)]);
+get_bif_constr({erlang, '==', 2}, Dst, Args = [Arg1, Arg2], _State) ->
+  DstFun = fun(Map) ->
+	       TmpArgTypes = lookup_type_list(Args, Map),
+	       erl_bif_types:type(erlang, '==', 2, TmpArgTypes)
+	   end,
+  ArgFun =
+    fun(Var, Self) ->
+	fun(Map) ->
+	    VarType = lookup_type(Var, Map),
+	    DstType = lookup_type(Dst, Map),
+	    case is_singleton_non_number_type(VarType) of
+	      true ->
+		case t_is_atom(true, DstType) of
+		  true -> VarType;
+		  false ->
+		    case t_is_atom(false, DstType) of
+		      true -> t_subtract(lookup_type(Self, Map), VarType);
+		      false -> t_any()
+		    end
+		end;
+	      false ->
+		case t_is_atom(true, DstType) of
+		  true ->
+		    case t_is_number(VarType) of
+		      true -> t_number();
+		      false -> 
+			case t_is_atom(VarType) of
+			  true -> VarType;
+			  false -> t_any()
+			end
+		    end;
+		  false ->
+		    t_any()
+		end
+	    end
+	end
+    end,
+  DstV = mk_fun_var(DstFun, Args),
+  ArgV1 = mk_fun_var(ArgFun(Arg2, Arg1), [Arg1, Arg2, Dst]),
+  ArgV2 = mk_fun_var(ArgFun(Arg1, Arg2), [Arg1, Arg2, Dst]),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, DstV),
+			   mk_constraint(Arg1, sub, ArgV1),
+			   mk_constraint(Arg2, sub, ArgV2)]);
+get_bif_constr({erlang, 'element', 2}, Dst, Args, State) ->
+  GenType = erl_bif_types:type(erlang, 'element', 2),
+  case t_is_none(GenType) of
+    true -> ?debug("Bif: ~w failed\n", [{erlang, 'element', 2}]), throw(error);
+    false ->
+      ArgTypes = erl_bif_types:arg_types(erlang, 'element', 2),      
+      ReturnType = mk_fun_var(fun(Map) -> 
+				  [TmpElement, TmpType] = TmpArgTypes = lookup_type_list(Args, Map),
+				  TmpArgTypes2 =
+				    case lists:member(TmpType, State#state.opaques) of
+				      true -> [TmpElement, erl_types:t_opaque_structure(TmpType)];
+				      false -> TmpArgTypes
+				    end,
+				  erl_bif_types:type(erlang, 'element', 2, TmpArgTypes2)
+			      end, Args),
+      case ArgTypes =:= any of
+	true -> 
+	  case t_is_any(GenType) of
+	    true -> 
+	      none;
+	    false ->
+	      mk_constraint(Dst, sub, ReturnType)
+	  end;
+	false -> 
+	  Cs = mk_constraints(Args, sub, ArgTypes),
+	  mk_conj_constraint_list([mk_constraint(Dst, sub, ReturnType)|Cs])
+      end
+  end;
+get_bif_constr({M, F, A}, Dst, Args, _State) ->
+  GenType = erl_bif_types:type(M, F, A),
+  case t_is_none(GenType) of
+    true -> ?debug("Bif: ~w failed\n", [{M, F, A}]), throw(error);
+    false ->
+      ArgTypes = erl_bif_types:arg_types(M, F, A),
+      ReturnType = mk_fun_var(fun(Map) -> 
+				  TmpArgTypes = lookup_type_list(Args, Map),
+				  erl_bif_types:type(M, F, A, TmpArgTypes)
+			      end, Args),
+      case ArgTypes =:= any of
+	true -> 
+	  case t_is_any(GenType) of
+	    true -> 
+	      none;
+	    false ->
+	      mk_constraint(Dst, sub, ReturnType)
+	  end;
+	false -> 
+	  Cs = mk_constraints(Args, sub, ArgTypes),
+	  mk_conj_constraint_list([mk_constraint(Dst, sub, ReturnType)|Cs])
+      end
+  end.
+
+eval_inv_arith('+', _Pos, Dst, Arg) -> 
+  erl_bif_types:type(erlang, '-', 2, [Dst, Arg]);
+eval_inv_arith('*', _Pos, Dst, Arg) -> 
+  case t_number_vals(Arg) of
+    [0] -> t_integer();
+    _ -> 
+      TmpRet = erl_bif_types:type(erlang, 'div', 2, [Dst, Arg]),
+      Zero = t_from_term(0),
+      %% If 0 is not part of the result, it cannot be part of the argument.
+      case t_is_subtype(Zero, Dst) of
+	false -> t_subtract(TmpRet, Zero);
+	true -> TmpRet
+      end
+  end;
+eval_inv_arith('-', 1, Dst, Arg) -> 
+  erl_bif_types:type(erlang, '-', 2, [Arg, Dst]);
+eval_inv_arith('-', 2, Dst, Arg) -> 
+  erl_bif_types:type(erlang, '+', 2, [Arg, Dst]).
+
+range_inc(neg_inf) -> neg_inf;
+range_inc(pos_inf) -> pos_inf;
+range_inc(Int) when is_integer(Int) -> Int + 1.
+
+range_dec(neg_inf) -> neg_inf;
+range_dec(pos_inf) -> pos_inf;
+range_dec(Int) when is_integer(Int) -> Int - 1.
+
+get_bif_test_constr(Dst, Arg, Type) ->
+  ArgFun = fun(Map) ->
+	       DstType = lookup_type(Dst, Map),
+	       case t_is_atom(true, DstType) of
+		 true -> Type;
+		 false -> t_any()
+	       end
+	   end,
+  ArgV = mk_fun_var(ArgFun, [Dst]),
+  DstFun = fun(Map) ->
+	       ArgType = lookup_type(Arg, Map),
+	       case t_is_none(t_inf(ArgType, Type)) of
+		 true -> t_from_term(false);
+		 false -> 
+		   case t_is_subtype(ArgType, Type) of
+		     true -> t_from_term(true);
+		     false -> t_bool()
+		   end
+	       end
+	   end,
+  DstV = mk_fun_var(DstFun, [Arg]),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, DstV),
+			   mk_constraint(Arg, sub, ArgV)]).
 
 
 %%=============================================================================
@@ -1026,43 +1623,43 @@ solve_fun(Fun, FunMap, State) ->
   %% Note that functions are always considered to succeed.
   {ok, _MapDict, NewMap} = solve_ref_or_list(Ref, FunMap, dict:new(), State),
   NewType = lookup_type(Fun, NewMap),
-  case state__get_rec_var(Fun, State) of
-    error ->     NewFunMap1 = FunMap;
-    {ok, Var} -> NewFunMap1 = enter_type(Var, NewType, FunMap)
-  end,
+  NewFunMap1 = case state__get_rec_var(Fun, State) of
+		 error -> FunMap;
+		 {ok, Var} -> enter_type(Var, NewType, FunMap)
+	       end,
   enter_type(Fun, NewType, NewFunMap1).
 
-solve_scc(Scc, Map, State) ->
-  State1 = state__mark_as_non_self_rec(Scc, State),
-  Vars0 = [{Fun, state__get_rec_var(Fun, State)}||Fun <- Scc],  
+solve_scc(SCC, Map, State) ->
+  State1 = state__mark_as_non_self_rec(SCC, State),
+  Vars0 = [{Fun, state__get_rec_var(Fun, State)} || Fun <- SCC],  
   Vars = [Var || {_, {ok, Var}} <- Vars0],
   Funs = [Fun || {Fun, {ok, _}} <- Vars0],
   Types = unsafe_lookup_type_list(Funs, Map),
   RecTypes = [t_limit(Type, ?TYPE_LIMIT) || Type <- Types],
-  CleanMap = lists:foldl(fun(Fun, AccFunMap)->
+  CleanMap = lists:foldl(fun(Fun, AccFunMap) ->
 				dict:erase(t_var_name(Fun), AccFunMap)
-			 end, Map, Scc),
+			 end, Map, SCC),
   Map1 = enter_type_lists(Vars, RecTypes, CleanMap),
-  ?debug("Checking scc: ~w\n", [[debug_lookup_name(F) || F <- Scc]]),
+  ?debug("Checking SCC: ~w\n", [[debug_lookup_name(F) || F <- SCC]]),
   SolveFun = fun(X, Y) -> scc_fold_fun(X, Y, State1) end,
-  Map2 = lists:foldl(SolveFun, Map1, Scc),
-  FunSet = ordsets:from_list([t_var_name(F) || F <- Scc]),
+  Map2 = lists:foldl(SolveFun, Map1, SCC),
+  FunSet = ordsets:from_list([t_var_name(F) || F <- SCC]),
   case maps_are_equal(Map2, Map, FunSet) of
     true ->
-      ?debug("SCC ~w reached fixpoint\n", [Scc]),
+      ?debug("SCC ~w reached fixpoint\n", [SCC]),
       NewTypes = unsafe_lookup_type_list(Funs, Map2),
       case lists:all(fun(T) -> t_is_none(t_fun_range(T)) end, NewTypes) of
 	true ->
-	  UnitTypes = [t_fun(state__fun_arity(F, State), t_unit()) 
+	  UnitTypes = [t_fun(state__fun_arity(F, State), t_unit())
 		       || F <- Funs],
 	  Map3 = enter_type_lists(Funs, UnitTypes, Map2),
-	  solve_scc(Scc, Map3, State);
+	  solve_scc(SCC, Map3, State);
 	false ->
 	  Map2
       end;
     false -> 
-      ?debug("SCC ~w did not reach fixpoint\n", [Scc]),
-      solve_scc(Scc, Map2, State)
+      ?debug("SCC ~w did not reach fixpoint\n", [SCC]),
+      solve_scc(SCC, Map2, State)
   end.
 
 scc_fold_fun(F, FunMap, State) ->
@@ -1082,7 +1679,7 @@ scc_fold_fun(F, FunMap, State) ->
 						  format_type(NewType)]),
   NewFunMap.
 
-solve_ref_or_list(#constraint_ref{id=Id, deps=Deps}, 
+solve_ref_or_list(#constraint_ref{id = Id, deps = Deps}, 
 		  Map, MapDict, State) ->
   {OldLocalMap, Check} = 
     case dict:find(Id, MapDict) of
@@ -1108,11 +1705,10 @@ solve_ref_or_list(#constraint_ref{id=Id, deps=Deps},
 	  ?debug("Error solving for function ~p\n", [debug_lookup_name(Id)]),
 	  Arity = state__fun_arity(Id, State),
 	  FunType =
-	    case state__prop_domain(Id, State) of
+	    case state__prop_domain(t_var_name(Id), State) of
 	      error -> t_fun(Arity, t_none());
 	      {ok, Dom} -> t_fun(Dom, t_none())
 	    end,
-
 	  NewMap1 = enter_type(Id, FunType, Map),
 	  NewMap2 =
 	    case state__get_rec_var(Id, State) of
@@ -1132,7 +1728,7 @@ solve_ref_or_list(#constraint_ref{id=Id, deps=Deps},
 	  {ok, dict:store(Id, NewMap2, NewMapDict), NewMap2}
       end
   end;
-solve_ref_or_list(#constraint_list{type=Type, list=Cs, deps = Deps, id=Id}, 
+solve_ref_or_list(#constraint_list{type=Type, list = Cs, deps = Deps, id = Id}, 
 		  Map, MapDict, State) ->
   {OldLocalMap, Check} = 
     case dict:find(Id, MapDict) of
@@ -1154,7 +1750,6 @@ solve_self_recursive(Cs, Map, MapDict, Id, RecType0, State) ->
   {ok, RecVar} = state__get_rec_var(Id, State),
   ?debug("OldRecType ~s\n", [format_type(RecType0)]),
   RecType = t_limit(RecType0, ?TYPE_LIMIT),
-  
   Map1 = enter_type(RecVar, RecType, dict:erase(t_var_name(Id), Map)),
   ?debug("\tMap in: ~p\n",[[{X, format_type(Y)}||{X, Y}<-dict:to_list(Map1)]]),
   case solve_ref_or_list(Cs, Map1, MapDict, State) of
@@ -1169,8 +1764,8 @@ solve_self_recursive(Cs, Map, MapDict, Id, RecType0, State) ->
 	  Error
       end;
     {ok, NewMapDict, NewMap} ->
-      ?debug("\tMap: ~p\n",[[{X, format_type(Y)}
-			     ||{X, Y}<-dict:to_list(NewMap)]]),
+      ?debug("\tMap: ~p\n",
+	     [[{X, format_type(Y)} || {X, Y} <- dict:to_list(NewMap)]]),
       NewRecType = unsafe_lookup_type(Id, NewMap),
       case t_is_equal(NewRecType, RecType0) of
 	true -> 	  
@@ -1236,10 +1831,10 @@ solve_cs([C = #constraint{}|Tail], Map, MapDict, State) ->
 solve_cs([], Map, MapDict, _State) ->
   {ok, MapDict, Map}.
 
-solve_one_c(#constraint{lhs=Lhs, rhs=Rhs, op=Op}, Map) ->
+solve_one_c(#constraint{lhs = Lhs, rhs = Rhs, op = Op}, Map) ->
   LhsType = lookup_type(Lhs, Map),
   RhsType = lookup_type(Rhs, Map),
-  Inf = t_inf(LhsType, RhsType),
+  Inf = t_inf(LhsType, RhsType, opaque),
   ?debug("Solving: ~s :: ~s ~w ~s :: ~s\n\tInf: ~s\n",
 	 [format_type(Lhs), format_type(LhsType), Op,
 	  format_type(Rhs), format_type(RhsType), format_type(Inf)]),
@@ -1295,15 +1890,14 @@ join_maps([Key|Left], Maps = [Map|MapsLeft], AccMap) ->
 join_maps([], _Maps, AccMap) ->
   AccMap.
 
-join_one_key(Key, [Map|Left], Type) ->
+join_one_key(Key, [Map|Maps], Type) ->
   case t_is_any(Type) of
     true -> Type;
     false ->
       NewType = lookup_type(Key, Map),
       case t_is_equal(NewType, Type) of
-	true -> join_one_key(Key, Left, Type);
-	false ->
-	  join_one_key(Key, Left, t_sup(NewType, Type))
+	true  -> join_one_key(Key, Maps, Type);
+	false -> join_one_key(Key, Maps, t_sup(NewType, Type))
       end
   end;
 join_one_key(_Key, [], Type) ->
@@ -1312,7 +1906,7 @@ join_one_key(_Key, [], Type) ->
 maps_are_equal(Map1, Map2, Deps) ->
   NewDeps = prune_keys(Map1, Map2, Deps),
   maps_are_equal_1(Map1, Map2, NewDeps).
-      
+
 maps_are_equal_1(Map1, Map2, [H|Tail]) ->
   T1 = lookup_type(H, Map1),
   T2 = lookup_type(H, Map2),
@@ -1328,7 +1922,7 @@ maps_are_equal_1(_Map1, _Map2, []) ->
 -define(PRUNE_LIMIT, 100).
 
 prune_keys(Map1, Map2, Deps) ->
-  %% This is only worthwhile if the number of deps are reasonably large,
+  %% This is only worthwhile if the number of deps is reasonably large,
   %% and also bigger than the number of elements in the maps.
   NofDeps = length(Deps),
   case NofDeps > ?PRUNE_LIMIT of
@@ -1387,7 +1981,7 @@ enter_type_list([], Map) ->
   Map.
 
 lookup_type_list(List, Map) ->
-  [lookup_type(X, Map)||X<-List].
+  [lookup_type(X, Map) || X <- List].
       
 unsafe_lookup_type(Key, Map) ->
   case dict:find(t_var_name(Key), Map) of
@@ -1396,7 +1990,7 @@ unsafe_lookup_type(Key, Map) ->
   end.
 
 unsafe_lookup_type_list(List, Map) ->
-  [unsafe_lookup_type(X, Map)||X<-List].
+  [unsafe_lookup_type(X, Map) || X <- List].
 
 lookup_type(Key, Map) when is_integer(Key) ->
   case dict:find(Key, Map) of
@@ -1424,7 +2018,7 @@ mk_var(Var) ->
   end.
 
 mk_var_list(List) ->
-  [mk_var(X)||X<-List].
+  [mk_var(X) || X <- List].
 
 mk_var_no_lit(Var) ->
   case cerl:is_literal(Var) of
@@ -1433,16 +2027,7 @@ mk_var_no_lit(Var) ->
   end.
 
 mk_var_no_lit_list(List) ->
-  [mk_var_no_lit(X)||X<-List].
-
-any_none([X | Xs]) ->
-  case t_is_none(X) of
-    true ->
-      true;
-    false ->
-      any_none(Xs)
-  end;
-any_none([]) -> false.
+  [mk_var_no_lit(X) || X <- List].
 
 %% ============================================================================
 %%
@@ -1455,14 +2040,18 @@ new_state(SCC0, NextLabel, CallGraph, Plt, PropTypes) ->
   SCC = [mk_var(Fun) || {_MFA, {_Var, Fun}, _Rec} <- SCC0],
   #state{cs=[], callgraph=CallGraph, cmap=dict:new(), fun_arities=dict:new(),
 	 fun_map=[], in_match=false, in_guard=false,
-	 name_map=NameMap, next_label=NextLabel,
-	 non_self_recs=[],
+	 name_map=NameMap, next_label=NextLabel, non_self_recs=[],
 	 prop_types=PropTypes, plt=Plt, records=dict:new(), scc=SCC}.
 
 state__set_rec_dict(State = #state{}, RecDict) ->
-  State#state{records=RecDict}.
+  State#state{records = RecDict}.
 
-state__lookup_record(#state{records=Records}, Tag, Arity) ->
+state__set_opaques(State = #state{records = RecDict}, {M, _F, _A}) ->
+  Opaques =
+    erl_types:module_builtin_opaques(M) ++ t_opaque_from_records(RecDict),
+  State#state{opaques = Opaques}.
+
+state__lookup_record(#state{records = Records}, Tag, Arity) ->
   case erl_types:lookup_record(Tag, Arity, Records) of
     {ok, Fields} -> 
       {ok, t_tuple([t_from_term(Tag)|
@@ -1472,15 +2061,15 @@ state__lookup_record(#state{records=Records}, Tag, Arity) ->
   end.
 
 state__set_in_match(State, Bool) ->
-  State#state{in_match=Bool}.
+  State#state{in_match = Bool}.
 
-state__is_in_match(#state{in_match=Bool}) ->
+state__is_in_match(#state{in_match = Bool}) ->
   Bool.
 
 state__set_in_guard(State, Bool) ->
   State#state{in_guard=Bool}.
 
-state__is_in_guard(#state{in_guard=Bool}) ->
+state__is_in_guard(#state{in_guard = Bool}) ->
   Bool.
 
 state__get_fun_prototype(Op, Arity, State) ->
@@ -1492,18 +2081,18 @@ state__get_fun_prototype(Op, Arity, State) ->
       {State1, Fun}
   end.
     
-state__lookup_rec_var_in_scope(MFA, #state{name_map=NameMap}) ->
+state__lookup_rec_var_in_scope(MFA, #state{name_map = NameMap}) ->
   dict:find(MFA, NameMap).
 
-state__store_fun_arity(Tree, State=#state{fun_arities=Map}) ->
+state__store_fun_arity(Tree, State = #state{fun_arities = Map}) ->
   Arity = length(cerl:fun_vars(Tree)),
   Id = mk_var(Tree),
-  State#state{fun_arities=dict:store(Id, Arity, Map)}.
+  State#state{fun_arities = dict:store(Id, Arity, Map)}.
 
-state__fun_arity(Id, #state{fun_arities=Map}) ->
+state__fun_arity(Id, #state{fun_arities = Map}) ->
   dict:fetch(Id, Map).
 
-state__lookup_undef_var(Tree, #state{callgraph=CG, plt=Plt}) ->  
+state__lookup_undef_var(Tree, #state{callgraph = CG, plt = Plt}) ->  
   Label = cerl_trees:get_label(Tree),
   case dialyzer_callgraph:lookup_rec_var(Label, CG) of
     error -> error;
@@ -1514,7 +2103,7 @@ state__lookup_undef_var(Tree, #state{callgraph=CG, plt=Plt}) ->
       end
   end.
 
-state__lookup_apply(Tree, #state{callgraph=Callgraph}) ->
+state__lookup_apply(Tree, #state{callgraph = Callgraph}) ->
   Apply = cerl_trees:get_label(Tree),
   case dialyzer_callgraph:lookup_call_site(Apply, Callgraph) of
     error ->
@@ -1526,7 +2115,7 @@ state__lookup_apply(Tree, #state{callgraph=Callgraph}) ->
       end
   end.
 
-get_apply_constr(FunLabels, Dst, ArgTypes, State = #state{callgraph=CG}) ->
+get_apply_constr(FunLabels, Dst, ArgTypes, State = #state{callgraph = CG}) ->
   MFAs = [dialyzer_callgraph:lookup_name(Label, CG) || Label <- FunLabels],
   case lists:member(error, MFAs) of
     true -> error;
@@ -1540,33 +2129,23 @@ get_apply_constr(FunLabels, Dst, ArgTypes, State = #state{callgraph=CG}) ->
       {ok, state__store_conj(ApplyConstr, State)}
   end.
 
-state__scc(#state{scc=SCC}) ->
+state__scc(#state{scc = SCC}) ->
   SCC.
 
-state__plt(#state{plt=Plt}) ->
-  Plt.
+state__plt(#state{plt = PLT}) ->
+  PLT.
 
 state__new_constraint_context(State) ->
-  State#state{cs=[]}.
+  State#state{cs = []}.
 
-state__prop_domain(Fun, #state{prop_types=PropTypes}) ->
-  Label =
-    case t_is_integer(Fun) of
-      true -> Fun;
-      false ->
-	case t_is_var(Fun) of
-	  true -> t_var_name(Fun);
-	  false -> cerl_trees:get_label(Fun)
-	end
-    end,
-  case dict:find(Label, PropTypes) of
+state__prop_domain(FunLabel, #state{prop_types = PropTypes}) ->
+ case dict:find(FunLabel, PropTypes) of
     error -> error;
     {ok, {_Range_Fun, Dom}} -> {ok, Dom};
     {ok, FunType} -> {ok, t_fun_args(FunType)}
   end.
 
-
-state__add_prop_constrs(Tree, State = #state{prop_types=PropTypes}) ->
+state__add_prop_constrs(Tree, State = #state{prop_types = PropTypes}) ->
   Label = cerl_trees:get_label(Tree),
   case dict:find(Label, PropTypes) of
     error -> State;
@@ -1574,7 +2153,7 @@ state__add_prop_constrs(Tree, State = #state{prop_types=PropTypes}) ->
       case t_fun_args(FunType) of
 	any -> State;
 	ArgTypes ->
-	  case any_none(ArgTypes) of
+	  case erl_types:any_none(ArgTypes) of
 	    true -> not_called;
 	    false ->
 	      ?debug("Adding propagated constr: ~s for function ~w\n", 
@@ -1585,11 +2164,11 @@ state__add_prop_constrs(Tree, State = #state{prop_types=PropTypes}) ->
       end
   end.
 
-state__cs(#state{cs=Cs}) ->
+state__cs(#state{cs = Cs}) ->
   mk_conj_constraint_list(Cs).
 
-state__store_conj(C, State = #state{cs=Cs}) ->
-  State#state{cs=[C|Cs]}.
+state__store_conj(C, State = #state{cs = Cs}) ->
+  State#state{cs = [C|Cs]}.
 
 state__store_conj_list([H|T], State) ->
   State1 = state__store_conj(H, State),
@@ -1597,8 +2176,8 @@ state__store_conj_list([H|T], State) ->
 state__store_conj_list([], State) ->
   State.
 
-state__store_conj(Lhs, Op, Rhs, State = #state{cs=Cs}) ->
-  State#state{cs=[mk_constraint(Lhs, Op, Rhs)|Cs]}.
+state__store_conj(Lhs, Op, Rhs, State = #state{cs = Cs}) ->
+  State#state{cs = [mk_constraint(Lhs, Op, Rhs)|Cs]}.
 
 state__store_conj_lists(List1, Op, List2, State) ->
   {NewList1, NewList2} = strip_of_any_constrs(List1, List2),
@@ -1615,48 +2194,47 @@ strip_of_any_constrs([T1|Left1], [T2|Left2], Acc1, Acc2) ->
 strip_of_any_constrs([], [], Acc1, Acc2) ->
   {Acc1, Acc2}.
 
-  
 state__store_conj_lists_1([Arg1|Arg1Tail], Op, [Arg2|Arg2Tail], State) ->
   State1 = state__store_conj(Arg1, Op, Arg2, State),
   state__store_conj_lists_1(Arg1Tail, Op, Arg2Tail, State1);
 state__store_conj_lists_1([], _Op, [], State) ->
   State.
 
-state__mk_var(State = #state{next_label=NL}) ->
-  {State#state{next_label=NL+1}, t_var(NL)}.
+state__mk_var(State = #state{next_label = NL}) ->
+  {State#state{next_label = NL+1}, t_var(NL)}.
   
-state__mk_vars(N, State = #state{next_label=NL}) ->
+state__mk_vars(N, State = #state{next_label = NL}) ->
   NewLabel = NL + N,
   {State#state{next_label=NewLabel}, [t_var(X)||X<-lists:seq(NL, NewLabel-1)]}.
 
-state__store_constrs(Id, Cs, State = #state{cmap=Dict}) ->  
+state__store_constrs(Id, Cs, State = #state{cmap = Dict}) ->  
   NewDict = dict:store(Id, Cs, Dict),
-  State#state{cmap=NewDict}.
+  State#state{cmap = NewDict}.
 
-state__get_cs(Var, #state{cmap=Dict}) ->  
+state__get_cs(Var, #state{cmap = Dict}) ->  
   dict:fetch(Var, Dict).
 
 %% The functions here will not be treated as self recursive.
 %% These functions will need to be handled as such manually.
-state__mark_as_non_self_rec(SCC, State = #state{non_self_recs=NS}) ->
-  State#state{non_self_recs=ordsets:union(NS, ordsets:from_list(SCC))}.
+state__mark_as_non_self_rec(SCC, State = #state{non_self_recs = NS}) ->
+  State#state{non_self_recs = ordsets:union(NS, ordsets:from_list(SCC))}.
 
-state__is_self_rec(Fun, #state{callgraph=CallGraph, non_self_recs=NS}) ->
+state__is_self_rec(Fun, #state{callgraph = CallGraph, non_self_recs = NS}) ->
   case ordsets:is_element(Fun, NS) of
     true -> false;
     false -> dialyzer_callgraph:is_self_rec(t_var_name(Fun), CallGraph)
   end.
 
-state__store_funs(Vars0, Funs0, State = #state{fun_map=Map}) ->
+state__store_funs(Vars0, Funs0, State = #state{fun_map = Map}) ->
   debug_make_name_map(Vars0, Funs0),
   Vars = mk_var_list(Vars0),
   Funs = mk_var_list(Funs0),
   NewMap = 
-    lists:foldl(fun({Var, Fun}, TmpMap) -> orddict:store(Var, Fun, TmpMap)end,
+    lists:foldl(fun({Var, Fun}, TmpMap) -> orddict:store(Var, Fun, TmpMap) end,
 		Map, lists:zip(Vars, Funs)),
-  State#state{fun_map=NewMap}.
+  State#state{fun_map = NewMap}.
 
-state__get_rec_var(Fun, #state{fun_map=Map}) ->
+state__get_rec_var(Fun, #state{fun_map = Map}) ->
   case [X || {X, Y} <- Map, Y =:= Fun] of
     [Var] -> {ok, Var};
     [] -> error
@@ -1677,7 +2255,7 @@ mk_constraint(Lhs, Op, Rhs) ->
     false ->
       Deps = find_constraint_deps([Lhs, Rhs]),
       C0 = mk_constraint_1(Lhs, Op, Rhs),
-      C = C0#constraint{deps=Deps},
+      C = C0#constraint{deps = Deps},
       case Deps =:= [] of
 	true ->
 	  %% This constraint is constant. Solve it immediately.
@@ -1692,22 +2270,22 @@ mk_constraint(Lhs, Op, Rhs) ->
       end;
     true ->
       C = mk_constraint_1(t_any(), Op, t_any()),
-      C#constraint{deps=[]}
+      C#constraint{deps = []}
   end.
 
 mk_fun_var(Fun, Deps0) ->
   Deps1 = [X || X <- Deps0, cerl:is_literal(X) =:= false],
   Deps2 = [t_var_name(D) || D <- t_collect_vars(t_product(Deps1))],
-  #fun_var{'fun'=Fun, deps=ordsets:from_list(Deps2)}.
+  #fun_var{'fun' = Fun, deps = ordsets:from_list(Deps2)}.
 
-get_deps(#constraint{deps=D}) -> D;
-get_deps(#constraint_list{deps=D}) -> D;
-get_deps(#constraint_ref{deps=D}) -> D.
+get_deps(#constraint{deps = D}) -> D;
+get_deps(#constraint_list{deps = D}) -> D;
+get_deps(#constraint_ref{deps = D}) -> D.
 
 find_constraint_deps(List) ->
   ordsets:from_list(find_constraint_deps(List, [])).
 
-find_constraint_deps([#fun_var{deps=Deps}|Tail], Acc) ->
+find_constraint_deps([#fun_var{deps = Deps}|Tail], Acc) ->
   find_constraint_deps(Tail, [Deps|Acc]);
 find_constraint_deps([Type|Tail], Acc) ->
   NewAcc = [[t_var_name(D) || D <- t_collect_vars(Type)]|Acc],
@@ -1716,11 +2294,11 @@ find_constraint_deps([], Acc) ->
   lists:flatten(Acc).
 
 mk_constraint_1(Lhs, eq, Rhs) when Lhs < Rhs ->
-  #constraint{lhs=Lhs, op=eq, rhs=Rhs};
+  #constraint{lhs = Lhs, op = eq, rhs = Rhs};
 mk_constraint_1(Lhs, eq, Rhs) ->
-  #constraint{lhs=Rhs, op=eq, rhs=Lhs};
+  #constraint{lhs = Rhs, op = eq, rhs = Lhs};
 mk_constraint_1(Lhs, Op, Rhs) ->
-  #constraint{lhs=Lhs, op=Op, rhs=Rhs}.  
+  #constraint{lhs = Lhs, op = Op, rhs = Rhs}.  
 
 mk_constraints([Lhs|LhsTail], Op, [Rhs|RhsTail]) ->
   [mk_constraint(Lhs, Op, Rhs)|mk_constraints(LhsTail, Op, RhsTail)];
@@ -1744,7 +2322,7 @@ mk_constraint_list(Type, List) ->
 lift_lists(Type, List) ->
   lift_lists(Type, List, []).
 
-lift_lists(Type, [#constraint_list{type=Type, list=List}|Tail], Acc) ->
+lift_lists(Type, [#constraint_list{type = Type, list = List}|Tail], Acc) ->
   lift_lists(Type, Tail, List++Acc);
 lift_lists(Type, [C|Tail], Acc) ->
   lift_lists(Type, Tail, [C|Acc]);
@@ -1787,7 +2365,7 @@ mk_disj_norm_form(C = #constraint_list{}) ->
     throw:too_many_disj -> C
   end.
 
-expand_to_conjunctions(#constraint_list{type=conj, list=List}) ->
+expand_to_conjunctions(#constraint_list{type = conj, list = List}) ->
   List1 = [C || C <- List, is_simple_constraint(C)],
   List2 = [expand_to_conjunctions(C) || C = #constraint_list{} <- List],
   case List2 =:= [] of
@@ -1800,15 +2378,15 @@ expand_to_conjunctions(#constraint_list{type=conj, list=List}) ->
 	  combine_conj_lists(List2, List1)
       end
   end;
-expand_to_conjunctions(#constraint_list{type=disj, list=List}) ->
+expand_to_conjunctions(#constraint_list{type = disj, list = List}) ->
   if length(List) > ?DISJ_NORM_FORM_LIMIT -> throw(too_many_disj);
      true -> ok
   end,
   List1 = [C || C <- List, is_simple_constraint(C)],
   %% Just an assert.
-  [] = [C || C=#constraint{} <- List1],
+  [] = [C || C = #constraint{} <- List1],
   Expanded = lists:flatten([expand_to_conjunctions(C) 
-			    || C=#constraint_list{} <- List]),
+			    || C = #constraint_list{} <- List]),
   ReturnList = Expanded ++ List1,
   if length(ReturnList) > ?DISJ_NORM_FORM_LIMIT -> throw(too_many_disj);
      true -> ReturnList
@@ -1934,7 +2512,7 @@ order_fun_constraints(State) ->
 	|| Id <- state__scc(State)],
   order_fun_constraints(Cs, State).
 
-order_fun_constraints([#constraint_ref{id=Id}|Tail], State) ->
+order_fun_constraints([#constraint_ref{id = Id}|Tail], State) ->
   Cs = state__get_cs(Id, State),
   {[NewCs], State1} = order_fun_constraints([Cs], [], [], State),
   NewState = state__store_constrs(Id, NewCs, State1),
@@ -1942,11 +2520,12 @@ order_fun_constraints([#constraint_ref{id=Id}|Tail], State) ->
 order_fun_constraints([], State) ->
   State.
 
-order_fun_constraints([C=#constraint_ref{}|Tail], Funs, Acc, State) ->
+order_fun_constraints([C = #constraint_ref{}|Tail], Funs, Acc, State) ->
   order_fun_constraints(Tail, [C|Funs], Acc, State);
-order_fun_constraints([C=#constraint_list{list=List}|Tail], Funs, Acc, State) ->
+order_fun_constraints([C = #constraint_list{list = List, type = Type}|Tail],
+		      Funs, Acc, State) ->
   {NewList, NewState} = 
-    case C#constraint_list.type of
+    case Type of
       conj -> order_fun_constraints(List, [], [], State);
       disj ->
 	FoldFun = fun(X, AccState) -> 
@@ -2015,7 +2594,7 @@ is_singleton_type(Type) ->
 -endif.
 
 -ifdef(DEBUG).
-format_type(#fun_var{deps=Deps}) ->
+format_type(#fun_var{deps = Deps}) ->
   io_lib:format("Fun(~s)", [lists:flatten([format_type(t_var(X))||X<-Deps])]);
 format_type(Type) ->
   case cerl:is_literal(Type) of
@@ -2052,14 +2631,13 @@ debug_make_name_map(_Vars, _Funs) ->
 -endif.
 
 -ifdef(DEBUG_CONSTRAINTS).
-pp_constrs_scc(Scc, State) ->
-  [pp_constrs(Fun, state__get_cs(Fun, State), State)||Fun <- Scc].
+pp_constrs_scc(SCC, State) ->
+  [pp_constrs(Fun, state__get_cs(Fun, State), State) || Fun <- SCC].
 
 pp_constrs(Fun, Cs, State) ->
   io:format("Constraints for fun: ~w\n", [debug_lookup_name(Fun)]),
   MaxDepth = pp_constraints(Cs, State),
   io:format("Depth: ~w\n", [MaxDepth]).
-
 
 pp_constraints(Cs, State) ->
   Res = pp_constraints([Cs], none, 0, 0, State),
@@ -2103,17 +2681,17 @@ pp_constraints([#constraint_list{type=Type, list=List, id=Id}|Tail],Separator,
   io:format(") ~s\n~s ", [Separator, Separator]),
   pp_constraints(Tail, Separator, Level, NewMaxDepth, State).
 -else.
-pp_constrs_scc(_Scc, _State) ->
+pp_constrs_scc(_SCC, _State) ->
   ok.
 -endif.
 
 -ifdef(TO_DOT).
 
-constraints_to_dot_scc(Scc, State) ->
-  io:format("SCC: ~p\n", [Scc]),
+constraints_to_dot_scc(SCC, State) ->
+  io:format("SCC: ~p\n", [SCC]),
   Name = lists:flatten([io_lib:format("'~w'", [debug_lookup_name(Fun)]) 
-			|| Fun <- Scc]),
-  Cs = [state__get_cs(Fun, State)|| Fun <- Scc],
+			|| Fun <- SCC]),
+  Cs = [state__get_cs(Fun, State) || Fun <- SCC],
   constraints_to_dot(Cs, Name, State).
 
 constraints_to_dot(Cs0, Name, State) ->
@@ -2167,6 +2745,6 @@ get_shape(conj) -> box;
 get_shape(disj) -> diamond.  
 
 -else.
-constraints_to_dot_scc(_Scc, _State) ->
+constraints_to_dot_scc(_SCC, _State) ->
   ok.
 -endif.

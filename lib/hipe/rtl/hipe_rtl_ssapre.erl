@@ -1,10 +1,26 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% File        : hipe_rtl_ssapre.erl
 %% Author      : He Bingwen and Frédéric Haziza
 %% Description : Performs Partial Redundancy Elimination on SSA form.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% $Id$
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc
 %%
@@ -203,7 +219,7 @@ find_definition_for_computations_in_block(BlockLabel,[Inst|Rest],Cfg,
  	  ?pp_debug(" Inserting Xsi: ",[]),pp_xsi(Xsi),
 
           Label = Xsi#xsi.label,
-          case BlockLabel == Label of
+          case BlockLabel =:= Label of
             false ->
               %% Insert the Xsi in the appropriate block
               Code = hipe_bb:code(?CFG:bb(Cfg,Label)),
@@ -270,7 +286,7 @@ check_definition(E,[CC|Rest],BlockLabel,Cfg,XsiGraph) ->
       %% C is the previous instruction
       C = CC#pre_candidate.alu,
       DST = ?RTL:alu_dst(C),
-      case DST==SRC1 orelse DST==SRC2 of
+      case DST =:= SRC1 orelse DST =:= SRC2 of
  	false ->
  	  case check_match(E,C) of
  	    true -> %% It's a computation of E!
@@ -347,7 +363,7 @@ check_definition(E,[CC|Rest],BlockLabel,Cfg,XsiGraph) ->
 check_match(E, C) ->
   OpE = ?RTL:alu_op(E),
   OpC = ?RTL:alu_op(C),
-  case OpE == OpC of
+  case OpE =:= OpC of
     false ->
       false;
     true ->
@@ -355,13 +371,13 @@ check_match(E, C) ->
       Src2E = ?RTL:alu_src2(E),
       Src1C = ?RTL:alu_src1(C),
       Src2C = ?RTL:alu_src2(C),
-      case Src1E == Src1C of
+      case Src1E =:= Src1C of
  	true ->
- 	  Src2E == Src2C;
+ 	  Src2E =:= Src2C;
  	false ->
- 	  case Src1E == Src2C of
+ 	  case Src1E =:= Src2C of
  	    true ->
- 	      Src2E == Src1C;
+ 	      Src2E =:= Src1C;
  	    false ->
  	      false
  	  end
@@ -370,7 +386,7 @@ check_match(E, C) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-expr_is_constant(E) ->
+expr_is_const(E) ->
   ?RTL:is_imm(?RTL:alu_src1(E)) andalso ?RTL:is_imm(?RTL:alu_src2(E)).
 %%  is_number(?RTL:alu_src1(E)) andalso is_number(?RTL:alu_src2(E)).
 
@@ -378,12 +394,12 @@ expr_is_constant(E) ->
 %% Must be an arithmetic operation, i.e. #alu{}
 emend(Expr, S, Var) ->
   SRC1 = ?RTL:alu_src1(Expr),
-  NewExpr = case SRC1 == S of
+  NewExpr = case SRC1 =:= S of
 	      true  -> ?RTL:alu_src1_update(Expr,Var);
 	      false -> Expr
 	    end,
   SRC2 = ?RTL:alu_src2(NewExpr),
-  NewExpr2 = case SRC2 == S of
+  NewExpr2 = case SRC2 =:= S of
 	       true  -> ?RTL:alu_src2_update(NewExpr,Var);
 	       false -> NewExpr
 	     end,
@@ -469,7 +485,7 @@ determine_operands(Xsi,[P|Ps],Cfg,K,XsiGraph,ActiveAcc) ->
           ?GRAPH:add_vertex(XsiGraph,K,NewXsi),
           determine_operands(NewXsi,Ps,Cfg,K,XsiGraph,ActiveAcc);
 
- 	{expr_is_constant,Op} ->
+ 	{expr_is_const, Op} ->
           %% We detected that the expression is of the form: 'N op M'
           %% where N and M are constant.
  	  NewXsi = xsi_arg_update(Xsi,P,Op),
@@ -614,31 +630,31 @@ check_one_operand(E, [], BlockLabel, Cfg, XsiKey, XsiGraph) ->
       {def_found,new_bottom()};
     [P] ->
       %% One predecessor only, we just keep looking for a definition in that block
-      case expr_is_constant(E) of
+      case expr_is_const(E) of
         true ->
           ?pp_debug("\n\n############## Wow expr is constant: ~w",[E]),
           Var = ?RTL:mk_new_var(),
           Value = eval_expr(E),
           Op = #const_expr{var=Var,value=Value},
-          {expr_is_constant,Op};
+          {expr_is_const, Op};
         false ->
           VisitedInstructions = lists:reverse(?BB:code(?CFG:bb(Cfg,P))),
           check_one_operand(E,VisitedInstructions,P,Cfg,XsiKey,XsiGraph)
       end;
     _ ->
       %% It's a merge point
-      case expr_is_constant(E) of
+      case expr_is_const(E) of
         true ->
           ?pp_debug("\n\n############## Wow expr is constant at merge point: ~w",[E]),
           Var = ?RTL:mk_new_var(),
           Value = eval_expr(E),
           Op = #const_expr{var=Var,value=Value},
-          {expr_is_constant,Op};
+          {expr_is_const, Op};
         false ->
           Temp = new_temp(),
           OpList = [#xsi_op{pred=X} || X <- Preds],
           Xsi = #xsi{inst=E,def=Temp,label=BlockLabel,opList=OpList},
-          {merge_point,Xsi}
+          {merge_point, Xsi}
       end
   end;
 check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
@@ -655,7 +671,7 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
     #pre_candidate{} ->
       C = CC#pre_candidate.alu,
       DST = ?RTL:alu_dst(C),
-      case DST==SRC1 orelse DST==SRC2 of
+      case DST =:= SRC1 orelse DST =:= SRC2 of
  	true ->
  	  %% Get the definition of C, since C is PRE-candidate AND has
  	  %% been processed before
@@ -686,7 +702,7 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
     #move{} ->
       %% It's a move, we emend E, and continue the definition search
       DST = ?RTL:move_dst(CC),
-      case SRC1==DST orelse SRC2==DST of
+      case SRC1 =:= DST orelse SRC2 =:= DST of
  	true ->
  	  SRC = ?RTL:move_src(CC),
  	  F = emend(E,DST,SRC),
@@ -711,7 +727,7 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
           case ?GRAPH:get_path(XsiGraph,Key,XsiKey) of 
             false ->
               %% Is it a loop back to itself???
-              case Key==XsiKey of 
+              case Key =:= XsiKey of 
                 false ->
                   check_one_operand(E,Rest,BlockLabel,Cfg,XsiKey,XsiGraph);
                 _ ->
@@ -751,12 +767,10 @@ eval_expr(E) ->
   ?pp_debug("~n Evaluating the result of ~w~n", [E]),
   Op1 = ?RTL:alu_src1(E),
   Op2 = ?RTL:alu_src2(E),
-  Val1 = case ?RTL:is_imm(Op1) of
-           true -> ?RTL:imm_value(Op1)
-         end,    
-  Val2 = case ?RTL:is_imm(Op2) of
-           true -> ?RTL:imm_value(Op2)
-         end,    
+  true = ?RTL:is_imm(Op1),
+  Val1 = ?RTL:imm_value(Op1),
+  true = ?RTL:is_imm(Op2),
+  Val2 = ?RTL:imm_value(Op2),    
   {Result, _Sign, _Zero, _Overflow, _Carry} = ?ARCH:eval_alu(?RTL:alu_op(E), Val1, Val2),
   ?pp_debug("~n Result is then ~w~n", [Result]),
   ?RTL:mk_imm(Result).
@@ -1381,11 +1395,11 @@ manufacture_computation(Pred, Expr, [I|Rest]) ->
     #phi{} ->
       DST = ?RTL:phi_dst(I),
       Arg = ?RTL:phi_arg(I,Pred),
-      NewInst = case DST==SRC1 of
+      NewInst = case DST =:= SRC1 of
   	          true -> ?RTL:alu_src1_update(Expr,Arg);
   	          false -> Expr
                 end,
-      NewExpr = case DST==SRC2 of
+      NewExpr = case DST =:= SRC2 of
                   true -> ?RTL:alu_src2_update(NewInst,Arg);
                   false -> NewInst
                 end,

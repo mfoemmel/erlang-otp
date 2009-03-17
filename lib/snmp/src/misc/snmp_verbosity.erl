@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>2000-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2000-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 -module(snmp_verbosity).
 
 -include_lib("stdlib/include/erl_compile.hrl").
@@ -108,6 +108,8 @@ image_of_verbosity(_)     -> "".
 %% ShortName
 image_of_sname(ma)        -> "MASTER-AGENT";
 image_of_sname(maw)       -> io_lib:format("MASTER-AGENT-worker(~p)",[self()]);
+image_of_sname(madis)     -> io_lib:format("MASTER-AGENT-discovery_inform_sender(~p)",
+					   [self()]);
 image_of_sname(mais)      -> io_lib:format("MASTER-AGENT-inform_sender(~p)",
 					   [self()]);
 image_of_sname(mats)      -> io_lib:format("MASTER-AGENT-trap_sender(~p)",

@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Ssh connection supervisor.
@@ -80,35 +81,29 @@ child_specs(handler, Opts) ->
     [handler_spec(Opts)].
 
 manager_spec([server = Role, Socket, Opts]) ->
-    Address =  proplists:get_value(address, Opts),
-    Port = proplists:get_value(port, Opts),
     Name = make_ref(), 
     StartFunc = {ssh_connection_manager, start_link, [[Role, Socket, Opts]]},
-    Restart = temporary, 
+    Restart = permanent, 
     Shutdown = 3600,
     Modules = [ssh_connection_manager],
     Type = worker,
     {Name, StartFunc, Restart, Shutdown, Type, Modules};
 
 manager_spec([client = Role | Opts]) ->
-    Address =  proplists:get_value(address, Opts),
-    Port = proplists:get_value(port, Opts),
     Name = make_ref(), 
     StartFunc = {ssh_connection_manager, start_link, [[Role, Opts]]},
     %%TODO restarttype?
-    Restart = temporary, 
+    Restart = permanent, 
     Shutdown = 3600,
     Modules = [ssh_connection_manager],
     Type = worker,
     {Name, StartFunc, Restart, Shutdown, Type, Modules}.
 
 handler_spec([Role, Socket, Opts]) ->
-    Address =  proplists:get_value(address, Opts),
-    Port = proplists:get_value(port, Opts),
     Name = make_ref(), 
     StartFunc = {ssh_connection_handler, 
 		 start_link, [Role, self(), Socket, Opts]},
-    Restart = temporary, 
+    Restart = permanent, 
     Shutdown = 3600,
     Modules = [ssh_connection_handler],
     Type = worker,

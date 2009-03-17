@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1998-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(int).
 
@@ -39,6 +40,8 @@
 
 %% External export only to be used by error_handler
 -export([eval/3]).
+
+-include_lib("kernel/include/file.hrl").
 
 %%==Erlang Interpreter================================================
 %%
@@ -94,19 +97,23 @@
 %%     Mod = atom()
 %%     Options = term() ignored
 %%--------------------------------------------------------------------
-i(AbsMods) -> i2(AbsMods, local).
-i(AbsMods, _Options) -> i2(AbsMods, local).
-ni(AbsMods) -> i2(AbsMods, distributed).
-ni(AbsMods, _Options) -> i2(AbsMods, distributed).
+i(AbsMods) -> i2(AbsMods, local, ok).
+i(AbsMods, _Options) -> i2(AbsMods, local, ok).
+ni(AbsMods) -> i2(AbsMods, distributed, ok).
+ni(AbsMods, _Options) -> i2(AbsMods, distributed, ok).
     
-i2([AbsMod|AbsMods], Dist) when is_atom(AbsMod); is_list(AbsMod) ->
-    int_mod(AbsMod, Dist),
-    i2(AbsMods, Dist);
-i2([AbsMod], Dist) when is_atom(AbsMod); is_list(AbsMod) ->
-    int_mod(AbsMod, Dist);
-i2([], _Dist) ->
-    ok;
-i2(AbsMod, Dist) when is_atom(AbsMod); is_list(AbsMod) ->
+i2([AbsMod|AbsMods], Dist, Acc)
+  when is_atom(AbsMod); is_list(AbsMod); is_tuple(AbsMod) -> 
+    Res = int_mod(AbsMod, Dist),
+    case Acc of
+	error ->
+	    i2(AbsMods, Dist, Acc);
+	_ ->
+	    i2(AbsMods, Dist, Res)
+    end;
+i2([], _Dist, Acc) ->
+    Acc;
+i2(AbsMod, Dist, _Acc) when is_atom(AbsMod); is_list(AbsMod); is_tuple(AbsMod) ->
     int_mod(AbsMod, Dist).
 
 %%--------------------------------------------------------------------
@@ -254,8 +261,15 @@ del_break_in(Mod, Func, Arity) when is_atom(Mod), is_atom(Func), is_integer(Arit
     end.
 
 first_lines(Clauses) ->
-    lists:map(fun(Clause) -> element(2, hd(element(5, Clause))) end,
-	      Clauses).
+    lists:map(fun(Clause) -> first_line(Clause) end, Clauses).
+
+first_line({clause,_L,_Vars,_,Exprs}) ->
+    first_line(Exprs);
+%% Common Test adaptation
+first_line([{call_remote,0,ct_line,line,_As}|Exprs]) ->
+    first_line(Exprs);
+first_line([Expr|_Exprs]) -> % Expr = {Op, Line, ..varying no of args..}
+    element(2, Expr).
 
 no_break() ->
     dbg_iserver:safe_cast(no_break).
@@ -475,9 +489,29 @@ eval(Mod, Func, Args) ->
 
 %%--Interpreting modules----------------------------------------------
 
-int_mod(AbsMod, Dist) ->
+int_mod({Mod, Src, Beam, BeamBin}, Dist)
+  when is_atom(Mod), is_list(Src), is_list(Beam), is_binary(BeamBin) ->
+    try
+	case is_file(Src) of
+	    true ->
+		check_application(Src),
+		case check_beam(BeamBin) of
+		    {ok, Exp, Abst, _BeamBin} ->
+			load({Mod, Src, Beam, BeamBin, Exp, Abst}, Dist);
+		    error -> 
+			error
+		end;
+	    false ->
+		error
+	end
+    catch
+	throw:Reason ->
+	    Reason
+    end;
+int_mod(AbsMod, Dist) when is_atom(AbsMod); is_list(AbsMod) ->
     case check(AbsMod) of
-	{ok, Res} -> load(Res, Dist);
+	{ok, Res} -> 
+	    load(Res, Dist);
 	{error, {app, App}} ->
 	    io:format("** Cannot interpret ~p module: ~p~n",
 		      [App, AbsMod]),
@@ -491,24 +525,26 @@ int_mod(AbsMod, Dist) ->
 check(Mod) when is_atom(Mod) -> catch check_module(Mod);
 check(File) when is_list(File) -> catch check_file(File).
 
-load({Mod, Src, Beam, Exp, Abst}, Dist) ->
+load({Mod, Src, Beam, BeamBin, Exp, Abst}, Dist) ->
     everywhere(Dist,
 	       fun() ->
 		       code:purge(Mod),
 		       erts_debug:breakpoint({Mod,'_','_'}, false),
-		       {module,Mod} = code:load_abs(filename:rootname(Beam),
-						    Mod)
+		       {module,Mod} = code:load_binary(Mod, Beam, BeamBin)
 	       end),
-    {ok, SrcBin} = file:read_file(Src),
-    {ok, BeamBin} = file:read_file(Beam),
-    MD5 = code:module_md5(BeamBin),
-    Bin = term_to_binary({interpreter_module,Exp,Abst,SrcBin,MD5}),
-    {module, Mod} = dbg_iserver:safe_call({load, Mod, Src, Bin}),
-    everywhere(Dist,
-	       fun() ->
-		       true = erts_debug:breakpoint({Mod,'_','_'}, true) > 0
-	       end),
-    {module, Mod}.
+    case erl_prim_loader:get_file(filename:absname(Src)) of
+	{ok, SrcBin, _} ->
+	    MD5 = code:module_md5(BeamBin),
+	    Bin = term_to_binary({interpreter_module,Exp,Abst,SrcBin,MD5}),
+	    {module, Mod} = dbg_iserver:safe_call({load, Mod, Src, Bin}),
+	    everywhere(Dist,
+		       fun() ->
+			       true = erts_debug:breakpoint({Mod,'_','_'}, true) > 0
+		       end),
+	    {module, Mod};
+	error ->
+	    error
+    end.
 
 check_module(Mod) ->
     case code:which(Mod) of
@@ -517,25 +553,30 @@ check_module(Mod) ->
 		Src when is_list(Src) ->
 		    check_application(Src),
 		    case check_beam(Beam) of
-			{ok, Exp, Abst} ->
-			    {ok, {Mod, Src, Beam, Exp, Abst}};
-			error -> {error, no_debug_info}
+			{ok, Exp, Abst, BeamBin} ->
+			    {ok, {Mod, Src, Beam, BeamBin, Exp, Abst}};
+			error -> 
+			    {error, no_debug_info}
 		    end;
-		error -> {error, no_src}
+		error ->
+		    {error, no_src}
 	    end;
-	_ -> {error, badarg}
+	_ -> 
+	    {error, badarg}
     end.
 
 check_file(Name0) ->
-    Src = case is_file(Name0) of
-	      true -> Name0;
-	      false ->
-		  Name = Name0 ++ ".erl",
-		  case is_file(Name) of
-		      true -> Name;
-		      false -> error
-		  end
-	  end,
+    Src =
+	case is_file(Name0) of
+	    true -> 
+		Name0;
+	    false ->
+		Name = Name0 ++ ".erl",
+		case is_file(Name) of
+		    true -> Name;
+		    false -> error
+		end
+	end,
     if
 	is_list(Src) ->
 	    check_application(Src),
@@ -543,13 +584,16 @@ check_file(Name0) ->
 	    case find_beam(Mod, Src) of
 		Beam when is_list(Beam) ->
 		    case check_beam(Beam) of
-			{ok, Exp, Abst} ->
-			    {ok, {Mod, Src, Beam, Exp, Abst}};
-			error -> {error, no_debug_info}
+			{ok, Exp, Abst, BeamBin} ->
+			    {ok, {Mod, Src, Beam, BeamBin, Exp, Abst}};
+			error ->
+			    {error, no_debug_info}
 		    end;
-		error -> {error, no_beam}
+		error ->
+		    {error, no_beam}
 	    end;
-	true -> {error, badarg}
+	true ->
+	    {error, badarg}
     end.
 
 %% Try to avoid interpreting a kernel, stdlib, gs or debugger module.
@@ -561,6 +605,7 @@ check_application(Src) ->
     end.
 check_application2("kernel-"++_) -> throw({error,{app,kernel}});
 check_application2("stdlib-"++_) -> throw({error,{app,stdlib}});
+check_application2("erts-"++_) -> throw({error,{app,erts}});
 check_application2("gs-"++_) -> throw({error,{app,gs}});
 check_application2("debugger-"++_) -> throw({error,{app,debugger}});
 check_application2(_) -> ok.
@@ -612,22 +657,21 @@ find_root_dir(Dir, [_|Ss]) ->
 find_root_dir(Dir, []) ->
     filename:dirname(Dir).
 
-check_beam(Beam) ->
-    case beam_lib:chunks(Beam, [abstract_code,exports]) of
+check_beam(BeamBin) when is_binary(BeamBin) ->
+    case beam_lib:chunks(BeamBin, [abstract_code,exports]) of
 	{ok,{_Mod,[{abstract_code,no_abstract_code}|_]}} ->
 	    error;
 	{ok,{_Mod,[{abstract_code,Abst},{exports,Exp}]}} ->
-	    {ok,Exp,Abst};
-	_ -> error
-    end.
+	    {ok,Exp,Abst, BeamBin};
+	_ -> 
+	    error
+    end;
+check_beam(Beam) when is_list(Beam) ->
+    {ok, Bin, _FullPath} = erl_prim_loader:get_file(filename:absname(Beam)),
+    check_beam(Bin).
 
 is_file(Name) ->
-    case filelib:is_file(Name) of
-	true ->
-	    not filelib:is_dir(Name);
-	false ->
-	    false
-    end.
+    filelib:is_regular(filename:absname(Name), erl_prim_loader).
 
 everywhere(distributed, Fun) ->
     case is_alive() of
@@ -638,10 +682,10 @@ everywhere(local, Fun) ->
     Fun().
 
 scan_module_name(File) ->
-    case file:open(File, [read]) of
-	{ok, FD} ->
-	    R = (catch {ok, scan_module_name_1(FD)}),
-	    file:close(FD),
+    case erl_prim_loader:get_file(filename:absname(File)) of
+	{ok, Bin, _FullPath} ->
+	    Chars = binary_to_list(Bin),
+	    R = (catch {ok, scan_module_name_1(Chars)}),
 	    case R of
 		{ok, A} when is_atom(A) -> A;
 		_ -> error
@@ -650,18 +694,18 @@ scan_module_name(File) ->
 	    error
     end.
 
-scan_module_name_1(FD) ->
-    case io:scan_erl_form(FD, "") of
-	{ok, Ts, _} ->
-	    scan_module_name_2(Ts, FD);
+scan_module_name_1(Chars) ->
+    case erl_scan:tokens("", Chars, 1) of
+	{done, {ok, Ts, _}, Rest} ->
+	    scan_module_name_2(Ts, Rest);
 	_ ->
 	    error
     end.
 
-scan_module_name_2([{'-',_},{atom,_,module},{'(',_} | _]=Ts, _FD) ->
+scan_module_name_2([{'-',_},{atom,_,module},{'(',_} | _]=Ts, _Chars) ->
     scan_module_name_3(Ts);
-scan_module_name_2([{'-',_},{atom,_,_} | _], FD) ->
-    scan_module_name_1(FD);
+scan_module_name_2([{'-',_},{atom,_,_} | _], Chars) ->
+    scan_module_name_1(Chars);
 scan_module_name_2(_, _) ->
     error.
 

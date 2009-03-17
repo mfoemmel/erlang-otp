@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2005-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 
 %%% Description: SSH file handling
@@ -469,7 +470,7 @@ lookup_user_key_fd(Fd, Alg) ->
 		    %% 			      [HostList, Alg, KeyData]),
 		    decode_public_key_v2(ssh_bits:b64_decode(KeyData), Alg);
 		_Other ->
-		    ?dbg(false, "key_fd Other: ~w ~w\n", [Alg, _Other]),
+		    %%?dbg(false, "key_fd Other: ~w ~w\n", [Alg, _Other]),
 		    lookup_user_key_fd(Fd, Alg)
 	    end
     end.
@@ -494,7 +495,7 @@ ssh_dir({remoteuser, User}, Opts) ->
 	undefined ->
 	    case proplists:get_value(user_dir, Opts) of
 		undefined ->
-		    filename:join(["/", "home",User,".ssh"]);
+		    default_user_dir();
 		Dir ->
 		    Dir
 	    end;
@@ -505,14 +506,19 @@ ssh_dir({remoteuser, User}, Opts) ->
 %% client use this to find client ssh keys
 ssh_dir(user, Opts) ->
     case proplists:get_value(user_dir, Opts, false) of
-	false -> filename:join(os:getenv("HOME"), ".ssh");
+	false -> default_user_dir();
 	D -> D
     end;
+
 %% server use this to find server host keys
 ssh_dir(system, Opts) ->
     proplists:get_value(system_dir, Opts, "/etc/ssh").
 
 file_name(Type, Name, Opts) ->
     FN = filename:join(ssh_dir(Type, Opts), Name),
-    ?dbg(?DBG_PATHS, "file_name: ~p\n", [FN]),
+    %%?dbg(?DBG_PATHS, "file_name: ~p\n", [FN]),
     FN.
+
+default_user_dir()->
+    {ok,[[Home]]} = init:get_argument(home),
+    filename:join(Home, ".ssh").

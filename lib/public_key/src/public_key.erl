@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 
 -module(public_key).
@@ -334,8 +335,7 @@ path_validation([], #path_validation_state{working_public_key_algorithm
 
 path_validation([DerCert | Rest], ValidationState = #path_validation_state{
 				    max_path_length = Len}, 
-		Fun, Verify) when Len >= 0 ->
-    
+		Fun, Verify) when Len >= 0 ->    
     try validate(DerCert, 
 		 ValidationState#path_validation_state{last_cert=Rest=:=[]}, 
 		 Fun, Verify) of 
@@ -346,7 +346,7 @@ path_validation([DerCert | Rest], ValidationState = #path_validation_state{
 	    {error, Reason}
     end;
 
-path_validation(_, _, _, verify_peer) ->
+path_validation(_, _, _, true) ->
     {error, {bad_cert, max_path_length_reached}};
 
 path_validation(_, #path_validation_state{working_public_key_algorithm
@@ -357,8 +357,9 @@ path_validation(_, #path_validation_state{working_public_key_algorithm
 					   = PublicKeyParams,
 					  valid_policy_tree = Tree,
 					  acc_errors = AccErrors
-					}, _, verify_none) ->
-    {ok, {{Algorithm, PublicKey, PublicKeyParams}, Tree, AccErrors}}.
+					 }, _, false) ->
+    {ok, {{Algorithm, PublicKey, PublicKeyParams}, Tree, 
+	  [{bad_cert, max_path_length_reached}|AccErrors]}}.
 
 validate(DerCert, #path_validation_state{working_issuer_name = Issuer,
 					 working_public_key = Key,
@@ -375,20 +376,23 @@ validate(DerCert, #path_validation_state{working_issuer_name = Issuer,
     %% fail and Verify = true if Verify = false errors
     %% will be accumulated in the validationstate 
     AccErr1 = pubkey_cert:validate_time(OtpCert, AccErr0, Verify),
-    AccErr2 = 
-	pubkey_cert:validate_signature(OtpCert, DerCert, Key, KeyParams,
-				       AccErr1, Verify),
-    AccErr3 = pubkey_cert:validate_issuer(OtpCert, Issuer, AccErr2, Verify),
 
-    AccErr4 = pubkey_cert:validate_names(OtpCert, Permit, Exclude, Last,
-					 AccErr3, Verify),
-    AccErr5 = 
-	pubkey_cert:validate_revoked_status(OtpCert, Verify, AccErr4),
+    AccErr2 = pubkey_cert:validate_issuer(OtpCert, Issuer, AccErr1, Verify),
+
+    AccErr3 = pubkey_cert:validate_names(OtpCert, Permit, Exclude, Last,
+					 AccErr2, Verify),
+    AccErr4 = 
+	pubkey_cert:validate_revoked_status(OtpCert, Verify, AccErr3),
     
-    {ValidationState1, UnknownExtensions0, AccErr6} = 
+    {ValidationState1, UnknownExtensions0, AccErr5} = 
 	pubkey_cert:validate_extensions(OtpCert, ValidationState0, Verify,
-					AccErr5),
-    
+					AccErr4),
+    %% We want the key_usage extension to be checked before we validate 
+    %% the signature. 
+    AccErr6 = 
+	pubkey_cert:validate_signature(OtpCert, DerCert, Key, KeyParams,
+				       AccErr5, Verify),
+
     {UnknownExtensions, UserState, AccErr7} = 
 	ValidateExtensionFun(UnknownExtensions0, UserState0, Verify, AccErr6),
    

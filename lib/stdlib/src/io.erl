@@ -1,26 +1,27 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(io).
 
 -export([put_chars/1,put_chars/2,nl/0,nl/1,
 	 get_chars/2,get_chars/3,get_line/1,get_line/2,
 	 get_password/0, get_password/1,
-	 setopts/1, setopts/2]).
+	 setopts/1, setopts/2, getopts/0, getopts/1]).
 -export([write/1,write/2,read/1,read/2,read/3]).
 -export([columns/0,columns/1,rows/0,rows/1]).
 -export([fwrite/1,fwrite/2,fwrite/3,fread/2,fread/3,
@@ -52,30 +53,32 @@ to_tuple(T) -> {T}.
 	    Other
     end).
 
-o_request(Io, Request) ->
+o_request(Io, Request, Func) ->
     case request(Io, Request) of
 	{error, Reason} ->
-	    [Name | Args] = tuple_to_list(to_tuple(Request)),
+	    [_Name | Args] = tuple_to_list(to_tuple(Request)),
 	    {'EXIT',{undef,[_Current|Mfas]}} = (catch erlang:error(undef)),
-	    MFA = {io, Name, [Io | Args]},
-	    exit({conv_reason(Name, Reason),[MFA|Mfas]});
+	    MFA = {io, Func, [Io | Args]},
+	    exit({conv_reason(Func, Reason),[MFA|Mfas]});
 %	    erlang:error(conv_reason(Name, Reason), [Name, Io | Args]);
 	Other ->
 	    Other
     end.
 
+% Put chars takes mixed *unicode* list from R13 onwards.
 put_chars(Chars) ->
     put_chars(default_output(), Chars).
 
 put_chars(Io, Chars) ->
-    o_request(Io, {put_chars,Chars}).
+    o_request(Io, {put_chars,unicode,Chars}, put_chars).
 
+-spec nl() -> 'ok'.
 nl() ->
     nl(default_output()).
 
 nl(Io) ->
 %    o_request(Io, {put_chars,io_lib:nl()}).
-    o_request(Io, nl).
+    o_request(Io, nl, nl).
 
 columns() ->
     columns(default_output()).
@@ -103,19 +106,25 @@ get_chars(Prompt, N) ->
     get_chars(default_input(), Prompt, N).
 
 get_chars(Io, Prompt, N) when is_integer(N), N >= 0 ->
-    request(Io, {get_chars,Prompt,N}).
+    request(Io, {get_chars,unicode,Prompt,N}).
 
 get_line(Prompt) ->
     get_line(default_input(), Prompt).
 
 get_line(Io, Prompt) ->
-    request(Io, {get_line,Prompt}).
+    request(Io, {get_line,unicode,Prompt}).
 
 get_password() ->
     get_password(default_input()).
 
 get_password(Io) ->
-    request(Io, get_password).
+    request(Io, {get_password,unicode}).
+
+getopts() ->
+    getopts(default_input()).
+
+getopts(Io) ->
+    request(Io, getopts).
 
 setopts(Opts) ->
     setopts(default_input(), Opts).
@@ -129,13 +138,16 @@ write(Term) ->
     write(default_output(), Term).
 
 write(Io, Term) ->
-    o_request(Io, {write,Term}).
+    o_request(Io, {write,Term}, write).
 
+
+% Read does not use get_until as erl_scan does not work with unicode
+% XXX:PaN fixme?
 read(Prompt) ->
     read(default_input(), Prompt).
 
 read(Io, Prompt) ->
-    case request(Io, {get_until,Prompt,erl_scan,tokens,[1]}) of
+    case request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[1]}) of
 	{ok,Toks,_EndLine} ->
 	    erl_parse:parse_term(Toks);
 %	{error, Reason} when atom(Reason) ->
@@ -149,7 +161,7 @@ read(Io, Prompt) ->
     end.
 
 read(Io, Prompt, StartLine) when is_integer(StartLine) ->
-    case request(Io, {get_until,Prompt,erl_scan,tokens,[StartLine]}) of
+    case request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[StartLine]}) of
 	{ok,Toks,EndLine} ->
             case erl_parse:parse_term(Toks) of
                 {ok,Term} -> {ok,Term,EndLine};
@@ -166,7 +178,8 @@ read(Io, Prompt, StartLine) when is_integer(StartLine) ->
 %% Formatted writing and reading.
 
 conv_reason(_, arguments) -> badarg;
-conv_reason(_, terminated) -> ebadf;
+conv_reason(_, terminated) -> terminated;
+conv_reason(_, {no_translation,_,_}) -> no_translation;
 conv_reason(_, _Reason) -> badarg.
 
 fwrite(Format) ->
@@ -196,7 +209,7 @@ format(Format, Args) ->
     format(default_output(), Format, Args).
 
 format(Io, Format, Args) ->
-    o_request(Io, {format,Format,Args}).
+    o_request(Io, {format,Format,Args}, format).
 
 %% Scanning Erlang code.
 
@@ -207,7 +220,7 @@ scan_erl_exprs(Io, Prompt) ->
     scan_erl_exprs(Io, Prompt, 1).
 
 scan_erl_exprs(Io, Prompt, Pos0) ->
-    request(Io, {get_until,Prompt,erl_scan,tokens,[Pos0]}).
+    request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[Pos0]}).
 
 scan_erl_form(Prompt) ->
     scan_erl_form(default_input(), Prompt, 1).
@@ -216,7 +229,7 @@ scan_erl_form(Io, Prompt) ->
     scan_erl_form(Io, Prompt, 1).
 
 scan_erl_form(Io, Prompt, Pos0) ->
-    request(Io, {get_until,Prompt,erl_scan,tokens,[Pos0]}).
+    request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[Pos0]}).
 
 %% Parsing Erlang code.
 
@@ -227,7 +240,7 @@ parse_erl_exprs(Io, Prompt) ->
     parse_erl_exprs(Io, Prompt, 1).
 
 parse_erl_exprs(Io, Prompt, Pos0) ->
-    case request(Io, {get_until,Prompt,erl_scan,tokens,[Pos0]}) of
+    case request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[Pos0]}) of
 	{ok,Toks,EndPos} ->
 	    case erl_parse:parse_exprs(Toks) of
 		{ok,Exprs} -> {ok,Exprs,EndPos};
@@ -244,7 +257,7 @@ parse_erl_form(Io, Prompt) ->
     parse_erl_form(Io, Prompt, 1).
 
 parse_erl_form(Io, Prompt, Pos0) ->
-    case request(Io, {get_until,Prompt,erl_scan,tokens,[Pos0]}) of
+    case request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[Pos0]}) of
 	{ok,Toks,EndPos} ->
 	    case erl_parse:parse_form(Toks) of
 		{ok,Exprs} -> {ok,Exprs,EndPos};
@@ -262,9 +275,7 @@ request(Request) ->
 request(standard_io, Request) ->
     request(group_leader(), Request);
 request(Pid, Request) when is_pid(Pid) ->
-    Mref = erlang:monitor(process,Pid),
-    Pid ! {io_request,self(),Pid,io_request(Pid, Request)},
-    wait_io_mon_reply(Pid,Mref);
+    execute_request(Pid, io_request(Pid, Request));
 request(Name, Request) when is_atom(Name) ->
     case whereis(Name) of
 	undefined ->
@@ -273,13 +284,25 @@ request(Name, Request) when is_atom(Name) ->
 	    request(Pid, Request)
     end.
 
+execute_request(Pid,{Convert,Converted}) ->
+    Mref = erlang:monitor(process,Pid),
+    Pid ! {io_request,self(),Pid,Converted},
+    if
+	Convert ->
+	    convert_binaries(wait_io_mon_reply(Pid,Mref));
+	true ->
+	    wait_io_mon_reply(Pid,Mref)
+    end.
+    
+
 requests(Requests) ->				%Requests as atomic action
     requests(default_output(), Requests).
 
 requests(standard_io, Requests) ->              %Requests as atomic action
     requests(group_leader(), Requests);
 requests(Pid, Requests) when is_pid(Pid) ->
-    request(Pid, {requests,io_requests(Pid, Requests)});
+    {Convert, Converted} = io_requests(Pid, Requests),
+    execute_request(Pid,{Convert,{requests,Converted}});
 requests(Name, Requests) when is_atom(Name) ->
     case whereis(Name) of
 	undefined ->
@@ -330,34 +353,106 @@ io_requests(Pid, Rs) ->
 
 io_requests(Pid, [{requests,Rs1}|Rs], Cont, Tail) ->
     io_requests(Pid, Rs1, [Rs|Cont], Tail);
+io_requests(Pid, [R], [], _Tail) ->
+    {Conv,Request} = io_request(Pid, R),
+    {Conv,[Request]};
 io_requests(Pid, [R|Rs], Cont, Tail) ->
-    [io_request(Pid, R)|io_requests(Pid, Rs, Cont, Tail)];
+    {_,Request} = io_request(Pid, R),
+    {Conv,Requests} = io_requests(Pid, Rs, Cont, Tail),
+    {Conv,[Request|Requests]};
 io_requests(Pid, [], [Rs|Cont], Tail) ->
     io_requests(Pid, Rs, Cont, Tail);
 io_requests(_Pid, [], [], _Tail) -> 
-    [].
+    {false,[]}.
 
-io_request(_Pid, {write,Term}) ->
-    {put_chars,io_lib,write,[Term]};
-io_request(_Pid, {format,Format,Args}) ->
-    {put_chars,io_lib,format,[Format,Args]};
-io_request(_Pid, {fwrite,Format,Args}) ->
-    {put_chars,io_lib,fwrite,[Format,Args]};
-io_request(_Pid, nl) ->
-    {put_chars,io_lib:nl()};
-io_request(Pid, {put_chars,Chars}=Request0) 
+
+bc_req(Pid,{Op,Enc,Param},MaybeConvert) ->
+    case net_kernel:dflag_unicode_io(Pid) of
+	true ->
+	    {false,{Op,Enc,Param}};
+	false ->
+	    {MaybeConvert,{Op,Param}}
+    end;
+bc_req(Pid,{Op,Enc,P,F},MaybeConvert) ->
+    case net_kernel:dflag_unicode_io(Pid) of
+	true ->
+	    {false,{Op,Enc,P,F}};
+	false ->
+	    {MaybeConvert,{Op,P,F}}
+    end;
+bc_req(Pid, {Op,Enc,M,F,A},MaybeConvert) ->
+    case net_kernel:dflag_unicode_io(Pid) of
+	true ->
+	    {false,{Op,Enc,M,F,A}};
+	false ->
+	    {MaybeConvert,{Op,M,F,A}}
+    end;
+bc_req(Pid, {Op,Enc,P,M,F,A},MaybeConvert) ->
+    case net_kernel:dflag_unicode_io(Pid) of
+	true ->
+	    {false,{Op,Enc,P,M,F,A}};
+	false ->
+	    {MaybeConvert,{Op,P,M,F,A}}
+    end;
+bc_req(Pid,{Op,Enc},MaybeConvert) ->
+    case net_kernel:dflag_unicode_io(Pid) of
+	true ->
+	    {false,{Op, Enc}};
+	false ->
+	    {MaybeConvert,Op}
+    end.
+io_request(Pid, {write,Term}) ->
+    bc_req(Pid,{put_chars,unicode,io_lib,write,[Term]},false);
+io_request(Pid, {format,Format,Args}) ->
+    bc_req(Pid,{put_chars,unicode,io_lib,format,[Format,Args]},false);
+io_request(Pid, {fwrite,Format,Args}) ->
+    bc_req(Pid,{put_chars,unicode,io_lib,fwrite,[Format,Args]},false);
+io_request(Pid, nl) ->
+    bc_req(Pid,{put_chars,unicode,io_lib:nl()},false);
+io_request(Pid, {put_chars,Enc,Chars}=Request0) 
   when is_list(Chars), node(Pid) =:= node() ->
     %% Convert to binary data if the I/O server is guaranteed to be new
     Request =
-	case catch list_to_binary(Chars) of
+	case catch unicode:characters_to_binary(Chars,Enc) of
 	    Binary when is_binary(Binary) ->
-		{put_chars,Binary};
+		{put_chars,Enc,Binary};
 	    _ ->
 		Request0
 	end,
-    Request;
-io_request(_Pid, {fread,Prompt,Format}) ->
-    {get_until,Prompt,io_lib,fread,[Format]};
+    {false,Request};
+io_request(Pid, {put_chars,Enc,Chars}=Request0) 
+  when is_list(Chars) ->
+    case net_kernel:dflag_unicode_io(Pid) of
+	true ->
+	    case catch unicode:characters_to_binary(Chars,Enc,unicode) of
+		Binary when is_binary(Binary) ->
+		    {false,{put_chars,unicode,Binary}};
+		_ ->
+		    {false,Request0}
+	    end;
+	false ->
+	    %% Convert back to old style put_chars message...
+	    case catch unicode:characters_to_binary(Chars,Enc,latin1) of
+		Binary when is_binary(Binary) ->
+		    {false,{put_chars,Binary}};
+		_ ->
+		    {false,{put_chars,Chars}}
+	    end
+    end;
+io_request(Pid, {fread,Prompt,Format}) ->
+    bc_req(Pid,{get_until,unicode,Prompt,io_lib,fread,[Format]},true);
+io_request(Pid, {get_until,Enc,Prompt,M,F,A}) ->
+    bc_req(Pid,{get_until,Enc,Prompt,M,F,A},true);
+io_request(Pid, {get_chars,Enc,Prompt,N}) ->
+    bc_req(Pid,{get_chars,Enc,Prompt,N},true);
+io_request(Pid, {get_line,Enc,Prompt}) ->
+    bc_req(Pid,{get_line,Enc,Prompt},true);
+io_request(Pid, {get_password,Enc}) ->
+    bc_req(Pid,{get_password, Enc},true);
 io_request(_Pid, R) ->				%Pass this straight through
-    R.
+    {false,R}.
 
+convert_binaries(Bin) when is_binary(Bin) ->
+    unicode:characters_to_binary(Bin,latin1,unicode);
+convert_binaries(Else) ->
+    Else.

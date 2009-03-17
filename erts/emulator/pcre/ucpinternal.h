@@ -2,6 +2,8 @@
 *           Unicode Property Table handler       *
 *************************************************/
 
+/* %ExternalCopyright% */
+
 #ifndef _UCPINTERNAL_H
 #define _UCPINTERNAL_H
 

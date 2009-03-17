@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1996</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1996</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>file</title>
@@ -621,10 +619,8 @@ f.txt:  {person, "kalle", 25}.
           </item>
           <tag><c>binary</c></tag>
           <item>
-            <p>This option can only be used if the <c>raw</c> option
-              is specified as well. When specified, read operations on
-              the file using the <c>read/2</c> function will return
-              binaries rather than lists.</p>
+            <p>When this option has been given, read operations on the file
+	       will return binaries rather than lists.</p>
           </item>
           <tag><c>{delayed_write, Size, Delay}</c></tag>
           <item>
@@ -678,10 +674,48 @@ f.txt:  {person, "kalle", 25}.
           </item>
           <tag><c>compressed</c></tag>
           <item>
-            <p>Makes it possible to read and write gzip compressed
-              files. Note that the file size obtained with
+            <p>Makes it possible to read or write gzip compressed
+              files. The <c>compressesed</c> option must be combined
+	      with either <c>read</c> or <c>write</c>, but not both.
+	      Note that the file size obtained with
               <c>read_file_info/1</c> will most probably not match the
               number of bytes that can be read from a compressed file.</p>
+          </item>
+          <tag><c>{encoding, Encoding}</c></tag>
+          <item>
+            <p>Makes the file perform automatic translation of characters to and from a specific (Unicode) encoding. Note that the data supplied to file:write or returned by file:read still is byte oriented, this option only denotes how data is actually stored in the disk file.</p>
+	    <p>Depending on the encoding, different methods of reading and writing data is preferred. The default encoding of <c>latin1</c> implies using this (the file) module for reading and writing data, as the interfaces provided here work with byte-oriented data, while using other (Unicode) encodings makes the  <seealso marker="stdlib:io">io(3)</seealso> module's <c>get_chars</c>, <c>get_line</c> and <c>put_chars</c> functions more suitable, as they can work with the full Unicode range.</p>
+	    <p>If data is sent to an <c>io_device()</c> in a format that cannot be converted to the specified encoding, or if data is read by a function that returns data in a format that cannot cope with the character range of the data, an error occurs and the file will be closed.</p> 
+	    <p>The allowed values for <c>Encoding</c> are:</p>
+	    <taglist>
+	    <tag><c>latin1</c></tag>
+	    <item>
+	    <p>The default encoding. Bytes supplied to i.e. file:write are written as is on the file, likewise bytes read from the file are returned to i.e. file:read as is. If the <seealso marker="stdlib:io">io(3)</seealso> module is used for writing, the file can only cope with Unicode characters up to codepoint 255 (the ISO-latin-1 range).</p>
+	    </item>
+	    <tag><c>unicode</c> or <c>utf8</c></tag>
+	    <item>
+	    <p>Characters are translated to and from the UTF-8 encoding before being written to or read from the file. A file opened in this way might be readable using the file:read function, as long as no data stored on the file lies beyond the ISO-latin-1 range (0..255), but failure will occur if the data contains Unicode codepoints beyond that range. The file is best read with the functions in the Unicode aware   <seealso marker="stdlib:io">io(3)</seealso> module.</p>
+	    <p>Bytes written to the file by any means are translated to UTF-8 encoding before actually being stored on the disk file.</p>
+	    </item>
+	    <tag><c>utf16</c> or <c>{utf16,big}</c></tag>
+	    <item>
+	    <p>Works like <c>unicode</c>, but translation is done to and from big endian UTF-16 instead of UTF-8.</p>
+	    </item>
+	    <tag><c>{utf16,little}</c></tag>
+	    <item>
+	    <p>Works like <c>unicode</c>, but translation is done to and from little endian UTF-16 instead of UTF-8.</p>
+	    </item>
+	    <tag><c>utf32</c> or <c>{utf32,big}</c></tag>
+	    <item>
+	    <p>Works like <c>unicode</c>, but translation is done to and from big endian UTF-32 instead of UTF-8.</p>
+	    </item>
+	    <tag><c>{utf32,little}</c></tag>
+	    <item>
+	    <p>Works like <c>unicode</c>, but translation is done to and from little endian UTF-32 instead of UTF-8.</p>
+	    </item>
+	    </taglist>
+	    <p>The Encoding can be changed for a file "on the fly" by using the <seealso marker="stdlib:io#setopts/2">io:setopts/2</seealso> function, why a file can be analyzed in latin1 encoding for i.e. a BOM, positioned beyond the BOM and then be set for the right encoding before further reading.See the <seealso marker="stdlib:unicode">unicode(3)</seealso> module for functions identifying BOM's.</p>
+	    <p>This option is not allowed on <c>raw</c> files.</p>
           </item>
         </taglist>
         <p>Returns:</p>
@@ -1007,6 +1041,7 @@ f.txt:  {person, "kalle", 25}.
             <p>The same as above with <c>Offset</c> 0.</p>
           </item>
         </taglist>
+	<p>Note that offsets are counted in bytes, not in characters. If the file is opened using some other <c>encoding</c> than <c>latin1</c>, one byte does not correspond to one character. Positioning in such a file can only be done to known character boundaries, i.e. to a position earlier retrieved by getting a current position, to the beginning/end of the file or to some other position <em>known</em> to be on a correct character boundary by some other means (typically beyond a byte order mark in the file, which has a known byte-size).</p>
         <p>Typical error reasons are:</p>
         <taglist>
           <tag><c>einval</c></tag>
@@ -1039,6 +1074,7 @@ f.txt:  {person, "kalle", 25}.
           <c>pread</c>, is either a list or a binary depending on
           the mode of the file, or <c>eof</c> if the requested position
           was beyond end of file.</p>
+	  <p>As the position is given as a byte-offset, special caution has to be taken when working with files where <c>encoding</c> is set to something else than <c>latin1</c>, as not every byte position will be a valid character boundary on such a file.</p>
       </desc>
     </func>
     <func>
@@ -1058,7 +1094,8 @@ f.txt:  {person, "kalle", 25}.
           restrictions apply: <c>Location</c> is only allowed to be an
           integer; and the current position of the file is undefined
           after the operation.</p>
-      </desc>
+	  <p>As the position is given as a byte-offset, special caution has to be taken when working with files where <c>encoding</c> is set to something else than <c>latin1</c>, as not every byte position will be a valid character boundary on such a file.</p>
+        </desc>
     </func>
     <func>
       <name>pwrite(IoDevice, LocBytes) -> ok | {error, {N, Reason}}</name>
@@ -1077,6 +1114,7 @@ f.txt:  {person, "kalle", 25}.
           Returns <c>ok</c> or <c>{error, {N, Reason}}</c>, where
           <c>N</c> is the number of successful writes that was done
           before the failure.</p>
+	<p>When positioning in a file with other <c>encoding</c> than <c>latin1</c>, caution must be taken to set the position on a correct character boundary, see <seealso marker="#position/2">position/2</seealso> for details.</p>
       </desc>
     </func>
     <func>
@@ -1095,6 +1133,7 @@ f.txt:  {person, "kalle", 25}.
           restrictions apply: <c>Location</c> is only allowed to be an
           integer; and the current position of the file is undefined
           after the operation.</p>
+	<p>When positioning in a file with other <c>encoding</c> than <c>latin1</c>, caution must be taken to set the position on a correct character boundary, see <seealso marker="#position/2">position/2</seealso> for details.</p>
       </desc>
     </func>
     <func>
@@ -1107,10 +1146,13 @@ f.txt:  {person, "kalle", 25}.
         <v>Reason = ext_posix() | terminated</v>
       </type>
       <desc>
-        <p>Reads <c>Number</c> bytes from the file referenced by
+        <p>Reads <c>Number</c> bytes/characters from the file referenced by
           <c>IoDevice</c>. This function is the only way to read from a
           file opened in raw mode (although it works for normally
-          opened files, too). Returns:</p>
+          opened files, too).</p>
+	  <p>For files where <c>encoding</c> is set to something else than <c>latin1</c>, one character might be represented by more than one byte on the file. The parameter <c>Number</c> always denotes the number of <em>characters</em> read from the file, why the position in the file might be moved a lot more than this number when reading a Unicode file.</p>
+	  <p>Also if <c>encoding</c> is set to something else than <c>latin1</c>, the <c>read/3</c> call will fail if the data contains characters larger than 255, why the <seealso marker="stdlib:io">io(3)</seealso> module is to be preferred when reading such a file.</p> 
+	  <p>The function returns:</p>
         <taglist>
           <tag><c>{ok, Data}</c></tag>
           <item>
@@ -1134,6 +1176,10 @@ f.txt:  {person, "kalle", 25}.
           <tag><c>ebadf</c></tag>
           <item>
             <p>The file is not opened for reading.</p>
+          </item>
+          <tag><c>{no_translation, unicode, latin1}</c></tag>
+          <item>
+            <p>The file is was opened with another <c>encoding</c> than <c>latin1</c> and the data on the file can not be translated to the byte-oriented data that this function returns.</p>
           </item>
         </taglist>
       </desc>
@@ -1557,6 +1603,7 @@ f.txt:  {person, "kalle", 25}.
           file opened in raw mode (although it works for normally
           opened files, too). Returns <c>ok</c> if successful, and
           <c>{error, Reason}</c> otherwise.</p>
+	  <p>If the file is opened with <c>encoding</c> set to something else than <c>latin1</c>, each byte written might result in several bytes actually being written to the file, as the byte range 0..255 might represent anything between one and four bytes depending on value and UTF encoding type.</p>
         <p>Typical error reasons are:</p>
         <taglist>
           <tag><c>ebadf</c></tag>

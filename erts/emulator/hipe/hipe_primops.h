@@ -1,3 +1,21 @@
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2005-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved online at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * %CopyrightEnd%
+ */
 /* $Id$
  */
 #ifndef HIPE_PRIMOPS_H
@@ -39,6 +57,15 @@ PRIMOP_LIST(am_bs_reallocate, &nbif_bs_reallocate)
 PRIMOP_LIST(am_bs_put_big_integer, &nbif_bs_put_big_integer)
 PRIMOP_LIST(am_bs_put_small_float, &nbif_bs_put_small_float)
 PRIMOP_LIST(am_bs_put_bits, &nbif_bs_put_bits)
+PRIMOP_LIST(am_bs_utf8_size, &nbif_bs_utf8_size)
+PRIMOP_LIST(am_bs_put_utf8, &nbif_bs_put_utf8)
+PRIMOP_LIST(am_bs_get_utf8, &nbif_bs_get_utf8)
+PRIMOP_LIST(am_bs_utf16_size, &nbif_bs_utf16_size)
+PRIMOP_LIST(am_bs_put_utf16be, &nbif_bs_put_utf16be)
+PRIMOP_LIST(am_bs_put_utf16le, &nbif_bs_put_utf16le)
+PRIMOP_LIST(am_bs_get_utf16, &nbif_bs_get_utf16)
+PRIMOP_LIST(am_bs_validate_unicode, &nbif_bs_validate_unicode)
+PRIMOP_LIST(am_bs_validate_unicode_retract, &nbif_bs_validate_unicode_retract)
 
 PRIMOP_LIST(am_cmp_2, &nbif_cmp_2)
 PRIMOP_LIST(am_op_exact_eqeq_2, &nbif_eq_2)
@@ -48,6 +75,7 @@ PRIMOP_LIST(am_find_na_or_make_stub, &nbif_find_na_or_make_stub)
 PRIMOP_LIST(am_nonclosure_address, &nbif_nonclosure_address)
 
 PRIMOP_LIST(am_conv_big_to_float, &nbif_conv_big_to_float)
+PRIMOP_LIST(am_fclearerror_error, &nbif_fclearerror_error)
 
 #if defined(__sparc__)
 #include "hipe_sparc_primops.h"

@@ -1,3 +1,7 @@
+/*
+ * %ExternalCopyright%
+ */
+
 /* 
  * Original: tclPosixStr.c --
  *

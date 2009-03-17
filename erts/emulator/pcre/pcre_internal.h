@@ -40,7 +40,9 @@ POSSIBILITY OF SUCH DAMAGE.
 
 /* This header contains definitions that are shared between the different
 modules, but which are not relevant to the exported API. This includes some
-functions whose names all begin with "_pcre_". */
+functions whose names all begin with "_erts_pcre_". */
+
+/* %ExternalCopyright% */
 
 #ifndef PCRE_INTERNAL_H
 #define PCRE_INTERNAL_H
@@ -188,7 +190,7 @@ start/end of string field names are. */
 #define IS_NEWLINE(p) \
   ((NLBLOCK->nltype != NLTYPE_FIXED)? \
     ((p) < NLBLOCK->PSEND && \
-     _pcre_is_newline((p), NLBLOCK->nltype, NLBLOCK->PSEND, &(NLBLOCK->nllen),\
+     _erts_pcre_is_newline((p), NLBLOCK->nltype, NLBLOCK->PSEND, &(NLBLOCK->nllen),\
        utf8)) \
     : \
     ((p) <= NLBLOCK->PSEND - NLBLOCK->nllen && \
@@ -202,7 +204,7 @@ start/end of string field names are. */
 #define WAS_NEWLINE(p) \
   ((NLBLOCK->nltype != NLTYPE_FIXED)? \
     ((p) > NLBLOCK->PSSTART && \
-     _pcre_was_newline((p), NLBLOCK->nltype, NLBLOCK->PSSTART, \
+     _erts_pcre_was_newline((p), NLBLOCK->nltype, NLBLOCK->PSSTART, \
        &(NLBLOCK->nllen), utf8)) \
     : \
     ((p) >= NLBLOCK->PSSTART + NLBLOCK->nllen && \
@@ -392,9 +394,9 @@ we know we are in UTF-8 mode. */
   if (c >= 0xc0) \
     { \
     int gcii; \
-    int gcaa = _pcre_utf8_table4[c & 0x3f];  /* Number of additional bytes */ \
+    int gcaa = _erts_pcre_utf8_table4[c & 0x3f];  /* Number of additional bytes */ \
     int gcss = 6*gcaa; \
-    c = (c & _pcre_utf8_table3[gcaa]) << gcss; \
+    c = (c & _erts_pcre_utf8_table3[gcaa]) << gcss; \
     for (gcii = 1; gcii <= gcaa; gcii++) \
       { \
       gcss -= 6; \
@@ -410,9 +412,9 @@ pointer. */
   if (utf8 && c >= 0xc0) \
     { \
     int gcii; \
-    int gcaa = _pcre_utf8_table4[c & 0x3f];  /* Number of additional bytes */ \
+    int gcaa = _erts_pcre_utf8_table4[c & 0x3f];  /* Number of additional bytes */ \
     int gcss = 6*gcaa; \
-    c = (c & _pcre_utf8_table3[gcaa]) << gcss; \
+    c = (c & _erts_pcre_utf8_table3[gcaa]) << gcss; \
     for (gcii = 1; gcii <= gcaa; gcii++) \
       { \
       gcss -= 6; \
@@ -427,9 +429,9 @@ know we are in UTF-8 mode. */
   c = *eptr++; \
   if (c >= 0xc0) \
     { \
-    int gcaa = _pcre_utf8_table4[c & 0x3f];  /* Number of additional bytes */ \
+    int gcaa = _erts_pcre_utf8_table4[c & 0x3f];  /* Number of additional bytes */ \
     int gcss = 6*gcaa; \
-    c = (c & _pcre_utf8_table3[gcaa]) << gcss; \
+    c = (c & _erts_pcre_utf8_table3[gcaa]) << gcss; \
     while (gcaa-- > 0) \
       { \
       gcss -= 6; \
@@ -443,9 +445,9 @@ know we are in UTF-8 mode. */
   c = *eptr++; \
   if (utf8 && c >= 0xc0) \
     { \
-    int gcaa = _pcre_utf8_table4[c & 0x3f];  /* Number of additional bytes */ \
+    int gcaa = _erts_pcre_utf8_table4[c & 0x3f];  /* Number of additional bytes */ \
     int gcss = 6*gcaa; \
-    c = (c & _pcre_utf8_table3[gcaa]) << gcss; \
+    c = (c & _erts_pcre_utf8_table3[gcaa]) << gcss; \
     while (gcaa-- > 0) \
       { \
       gcss -= 6; \
@@ -461,9 +463,9 @@ if there are extra bytes. This is called when we know we are in UTF-8 mode. */
   if (c >= 0xc0) \
     { \
     int gcii; \
-    int gcaa = _pcre_utf8_table4[c & 0x3f];  /* Number of additional bytes */ \
+    int gcaa = _erts_pcre_utf8_table4[c & 0x3f];  /* Number of additional bytes */ \
     int gcss = 6*gcaa; \
-    c = (c & _pcre_utf8_table3[gcaa]) << gcss; \
+    c = (c & _erts_pcre_utf8_table3[gcaa]) << gcss; \
     for (gcii = 1; gcii <= gcaa; gcii++) \
       { \
       gcss -= 6; \
@@ -1097,37 +1099,37 @@ of the exported public functions. They have to be "external" in the C sense,
 but are not part of the PCRE public API. The data for these tables is in the
 pcre_tables.c module. */
 
-extern const int    _pcre_utf8_table1[];
-extern const int    _pcre_utf8_table2[];
-extern const int    _pcre_utf8_table3[];
-extern const uschar _pcre_utf8_table4[];
+extern const int    _erts_pcre_utf8_table1[];
+extern const int    _erts_pcre_utf8_table2[];
+extern const int    _erts_pcre_utf8_table3[];
+extern const uschar _erts_pcre_utf8_table4[];
 
-extern const int    _pcre_utf8_table1_size;
+extern const int    _erts_pcre_utf8_table1_size;
 
-extern const char   _pcre_utt_names[];
-extern const ucp_type_table _pcre_utt[];
-extern const int _pcre_utt_size;
+extern const char   _erts_pcre_utt_names[];
+extern const ucp_type_table _erts_pcre_utt[];
+extern const int _erts_pcre_utt_size;
 
-extern const uschar _pcre_default_tables[];
+extern const uschar _erts_pcre_default_tables[];
 
-extern const uschar _pcre_OP_lengths[];
+extern const uschar _erts_pcre_OP_lengths[];
 
 
 /* Internal shared functions. These are functions that are used by more than
 one of the exported public functions. They have to be "external" in the C
 sense, but are not part of the PCRE public API. */
 
-extern BOOL         _pcre_is_newline(const uschar *, int, const uschar *,
+extern BOOL         _erts_pcre_is_newline(const uschar *, int, const uschar *,
                       int *, BOOL);
-extern int          _pcre_ord2utf8(int, uschar *);
-extern real_pcre   *_pcre_try_flipped(const real_pcre *, real_pcre *,
+extern int          _erts_pcre_ord2utf8(int, uschar *);
+extern real_pcre   *_erts_pcre_try_flipped(const real_pcre *, real_pcre *,
                       const pcre_study_data *, pcre_study_data *);
-extern int          _pcre_ucp_findprop(const unsigned int, int *, int *);
-extern unsigned int _pcre_ucp_othercase(const unsigned int);
-extern int          _pcre_valid_utf8(const uschar *, int);
-extern BOOL         _pcre_was_newline(const uschar *, int, const uschar *,
+extern int          _erts_pcre_ucp_findprop(const unsigned int, int *, int *);
+extern unsigned int _erts_pcre_ucp_othercase(const unsigned int);
+extern int          _erts_pcre_valid_utf8(const uschar *, int);
+extern BOOL         _erts_pcre_was_newline(const uschar *, int, const uschar *,
                       int *, BOOL);
-extern BOOL         _pcre_xclass(int, const uschar *);
+extern BOOL         _erts_pcre_xclass(int, const uschar *);
 
 #endif
 

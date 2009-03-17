@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>2004-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 %%----------------------------------------------------------------------
 %% Purpose: Various (snmp manager) user related tests
 %%----------------------------------------------------------------------
@@ -507,7 +507,7 @@ register_request_and_crash3(Conf) when list(Conf) ->
 simple_register_monitor_and_unregister1(suite) -> [];
 simple_register_monitor_and_unregister1(doc) ->
     "Start a user, register-link and unregister the user.";
-simple_register_monitor_and_unregister1(Conf) when list(Conf) ->
+simple_register_monitor_and_unregister1(Conf) when is_list(Conf) ->
     put(tname,srlau1),
     p("start"),
     process_flag(trap_exit, true),
@@ -529,23 +529,31 @@ simple_register_monitor_and_unregister1(Conf) when list(Conf) ->
 
     Id = make_ref(), 
 
+    p("start user"),
     ?line Pid = start_user(),
 
+    p("get users (=0)"),
     ?line [] = Users1 = which_users(),
     p("Users1: ~p", [Users1]),
     
+    p("register monitored user"),
     ?line ok = register_user_monitor(Pid, Id),
 
+    p("get users (=1)"),
     ?line [Id] = Users2 = which_users(),
     p("Users2: ~p", [Users2]),
     
+    p("unregister monitored user"),
     ?line unregister_user(Pid),
 
+    p("get users (=0)"),
     ?line [] = Users3 = which_users(),
     p("Users3: ~p", [Users3]),
     
+    p("start user"),
     ?line stop_user(Pid),
 
+    p("stop manager"),
     ?line ok = snmpm:stop(),
 
     p("end"),

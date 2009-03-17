@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 /* This File contains functions which are called if a user hits ^C */
 
@@ -102,6 +103,7 @@ process_killer(void)
 		case 'k':
 		    if (rp->status == P_WAITING) {
 			Uint32 rp_locks = ERTS_PROC_LOCKS_XSIG_SEND;
+			erts_smp_proc_inc_refc(rp);
 			erts_smp_proc_lock(rp, rp_locks);
 			(void) erts_send_exit_signal(NULL,
 						     NIL,
@@ -112,6 +114,7 @@ process_killer(void)
 						     NULL,
 						     0);
 			erts_smp_proc_unlock(rp, rp_locks);
+			erts_smp_proc_dec_refc(rp);
 		    }
 		    else
 			erts_printf("Can only kill WAITING processes this way\n");
@@ -182,6 +185,7 @@ print_process_info(int to, void *to_arg, Process *p)
 {
     int garbing = 0;
     int running = 0;
+    struct saved_calls *scb;
 
     /* display the PID */
     erts_print(to, to_arg, "=proc:%T\n", p->id);
@@ -270,26 +274,27 @@ print_process_info(int to, void *to_arg, Process *p)
     }
     erts_print(to, to_arg, "Heap fragment data: %bpu\n", MBUF_SIZE(p));
 
-    if (p->ct != NULL) {
+    scb = ERTS_PROC_GET_SAVED_CALLS_BUF(p);
+    if (scb) {
        int i, j;
 
        erts_print(to, to_arg, "Last calls:");
-       for (i = 0; i < p->ct->n; i++) {
+       for (i = 0; i < scb->n; i++) {
 	     erts_print(to, to_arg, " ");
-	     j = p->ct->cur - i - 1;
+	     j = scb->cur - i - 1;
 	     if (j < 0)
-		j += p->ct->len;
-	     if (p->ct->ct[j] == &exp_send)
+		j += scb->len;
+	     if (scb->ct[j] == &exp_send)
 		erts_print(to, to_arg, "send");
-	     else if (p->ct->ct[j] == &exp_receive)
+	     else if (scb->ct[j] == &exp_receive)
 		erts_print(to, to_arg, "'receive'");
-	     else if (p->ct->ct[j] == &exp_timeout)
+	     else if (scb->ct[j] == &exp_timeout)
 		   erts_print(to, to_arg, "timeout");
 	     else
 		 erts_print(to, to_arg, "%T:%T/%bpu\n",
-			    p->ct->ct[j]->code[0],
-			    p->ct->ct[j]->code[1],
-			    p->ct->ct[j]->code[2]);
+			    scb->ct[j]->code[0],
+			    scb->ct[j]->code[1],
+			    scb->ct[j]->code[2]);
        }
        erts_print(to, to_arg, "\n");
     }
@@ -664,11 +669,8 @@ erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
      * NOTE: We allow gc therefore it is important not to lock *any*
      *       process locks.
      */
-    switch (erts_smp_emergency_block_system(60000, ERTS_BS_FLG_ALLOW_GC)) {
-    case 0:		/* Ok, now we are alone... */		break;
-    case ETIMEDOUT:	/* Hmm, hope for the best... */		break;
-    default:		/* Should not happen; give up... */	abort();
-    }
+    erts_smp_emergency_block_system(60000, ERTS_BS_FLG_ALLOW_GC);
+    /* Either worked or not... */
 
     /* Allow us to pass certain places without locking... */
 #ifdef ERTS_SMP

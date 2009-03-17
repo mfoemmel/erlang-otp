@@ -1,5 +1,0 @@
-regexp is (abc|abcd)(d|)
-reg 0 == (0, 4) abcd
-reg 1 == (0, 3) abc
-reg 2 == (3, 4) d
-### regexec returned a match which is not leftmost longest for subexpression 1

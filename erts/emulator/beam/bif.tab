@@ -1,19 +1,20 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 1996-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
+# retrieved online at http://www.erlang.org/.
 # 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
-#     $Id$
+# %CopyrightEnd%
 #
 
 #
@@ -387,10 +388,8 @@ bif erlang:is_process_alive/1
 bif 'erl.lang.proc':is_alive/1		ebif_proc_is_alive_1 is_process_alive_1
 
 bif erlang:error/1		error_1
-bif erlang:fault/1		fault_1
 bif 'erl.lang':error/1		ebif_error_1 error_1
 bif erlang:error/2		error_2
-bif erlang:fault/2		fault_2
 bif 'erl.lang':error/2		ebif_error_2 error_2
 bif erlang:raise/3		raise_3
 bif 'erl.lang':raise/3		ebif_raise_3 raise_3
@@ -477,8 +476,6 @@ ubif erlang:is_list/1
 ubif 'erl.lang.term':is_list/1		ebif_is_list_1
 ubif erlang:is_tuple/1
 ubif 'erl.lang.term':is_tuple/1		ebif_is_tuple_1
-ubif erlang:is_constant/1
-ubif 'erl.lang.term':is_constant/1	ebif_is_constant_1
 ubif erlang:is_float/1
 ubif 'erl.lang.term':is_float/1		ebif_is_float_1
 ubif erlang:is_integer/1
@@ -630,6 +627,7 @@ bif lists:keymember/3
 bif 'erl.lang.list.keylist':is_element/3 ebif_keylist_is_element_3 lists_keymember_3
 bif lists:keysearch/3
 bif 'erl.lang.list.keylist':search/3	ebif_keylist_search_3 lists_keysearch_3
+bif lists:keyfind/3
 
 #
 # Bifs for debugging.
@@ -724,6 +722,15 @@ bif erlang:decode_packet/3
 #
 bif unicode:characters_to_binary/2
 bif unicode:characters_to_list/2
+
+#
+# New Bifs in R13A.
+#
+bif erlang:atom_to_binary/2
+bif erlang:binary_to_atom/2
+bif erlang:binary_to_existing_atom/2
+bif net_kernel:dflag_unicode_io/1
+
 
 #
 # Obsolete

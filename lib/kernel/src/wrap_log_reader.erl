@@ -1,27 +1,27 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1998-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 %% Read wrap files with internal format
 
 -module(wrap_log_reader).
 
-%-define(debug, true).
-
+%%-define(debug, true).
 -ifdef(debug).
 -define(FORMAT(P, A), io:format(P, A)).
 -else.
@@ -31,15 +31,14 @@
 -export([open/1, open/2, chunk/1, chunk/2, close/1]).
 
 -include("disk_log.hrl").
--include_lib("kernel/include/file.hrl").
 
 -record(wrap_reader, 
-	{ fd,
-	  cont, 	% disk_log's continuation record
-	  file,		% file name without extension
-	  file_no,	% current file number
-	  mod_time,	% modification time of current file
-	  first_no	% first read file number, or 'one'
+	{fd       :: fd(),
+	 cont     :: dlog_cont(), 	% disk_log's continuation record
+	 file     :: string(),		% file name without extension
+	 file_no  :: non_neg_integer(),	% current file number
+	 mod_time :: date_time(),	% modification time of current file
+	 first_no :: non_neg_integer() | 'one' % first read file number
 	}).
 
 %%
@@ -50,6 +49,10 @@
 %% number is one greater than number of files then the max file number
 %% is not yet reached, we are on the first 'round' of filling the wrap
 %% files.
+
+-type open_ret() :: {'ok', #wrap_reader{}} | {'error', tuple()}.
+
+-spec open(atom() | string()) -> open_ret().
 
 open(File) when is_atom(File) ->
     open(atom_to_list(File));
@@ -74,6 +77,8 @@ open(File) when is_list(File) ->
 	    Error
     end.
 
+-spec open(atom() | string(), integer()) -> open_ret().
+
 open(File, FileNo) when is_atom(File), is_integer(FileNo) ->
     open(atom_to_list(File), FileNo);
 open(File, FileNo) when is_list(File), is_integer(FileNo) ->
@@ -95,16 +100,27 @@ open(File, FileNo) when is_list(File), is_integer(FileNo) ->
 	    Error
     end.
 
-close(WR = #wrap_reader{}) ->
-    file:close(WR#wrap_reader.fd).
+-spec close(#wrap_reader{}) -> 'ok' | {'error', atom()}.
+
+close(#wrap_reader{fd = FD}) ->
+    file:close(FD).
+
+-type chunk_ret() :: {#wrap_reader{}, [term()]}
+                   | {#wrap_reader{}, [term()], non_neg_integer()}
+                   | {#wrap_reader{}, 'eof'}
+                   | {'error', term()}.
+
+-spec chunk(#wrap_reader{}) -> chunk_ret().
 
 chunk(WR = #wrap_reader{}) ->
-    chunk(WR, ?MAX_CHUNK_SIZE, 0). 
+    chunk(WR, ?MAX_CHUNK_SIZE, 0).
+
+-spec chunk(#wrap_reader{}, 'infinity' | pos_integer()) -> chunk_ret().
 
 chunk(WR = #wrap_reader{}, infinity) ->
     chunk(WR, ?MAX_CHUNK_SIZE, 0);
 chunk(WR = #wrap_reader{}, N) when is_integer(N), N > 0 ->
-    chunk(WR, N, 0). 
+    chunk(WR, N, 0).
 
 %%
 %%  Local functions
@@ -270,4 +286,3 @@ last_mod_time(File) ->
 
 add_ext(File, Ext) ->
     lists:concat([File, ".", Ext]).
-

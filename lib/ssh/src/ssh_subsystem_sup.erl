@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: The ssh subsystem supervisor 
@@ -25,8 +26,8 @@
 
 -behaviour(supervisor).
 
--export([start_link/1, connection_supervisor/1, channel_supervisor/1,
-	connection_manager/1]).
+-export([start_link/1, connection_supervisor/1, channel_supervisor/1
+	]).
 
 %% Supervisor callback
 -export([init/1]).
@@ -36,10 +37,6 @@
 %%%=========================================================================
 start_link(Opts) ->
     supervisor:start_link(?MODULE, [Opts]).
-
-connection_manager(SubSystemSup) ->
-    ConnectionSup = connection_supervisor(SubSystemSup),
-    ssh_connection_sup:connection_manager(ConnectionSup).
 
 connection_supervisor(SupPid) ->
     Children = supervisor:which_children(SupPid),
@@ -54,7 +51,7 @@ channel_supervisor(SupPid) ->
 %%%=========================================================================
 init([Opts]) ->
     RestartStrategy = one_for_all,
-    MaxR = 10,
+    MaxR = 0,
     MaxT = 3600,
     Children = child_specs(Opts),
     {ok, {{RestartStrategy, MaxR, MaxT}, Children}}.

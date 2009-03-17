@@ -1,3 +1,21 @@
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2001-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved online at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * %CopyrightEnd%
+ */
 /* $Id$
  * hipe_native_bif.c
  */
@@ -26,6 +44,12 @@
 extern Eterm hipe_check_process_code_2(Process*, Eterm, Eterm);
 extern Eterm hipe_garbage_collect_1(Process*, Eterm);
 extern Eterm hipe_show_nstack_1(Process*, Eterm);
+
+/* Used when a BIF can trigger a stack walk. */
+static __inline__ void hipe_set_narity(Process *p, unsigned int arity)
+{
+    p->hipe.narity = arity;
+}
 
 Eterm hipe_check_process_code_2(BIF_ALIST_2)
 {
@@ -157,6 +181,13 @@ void hipe_select_msg(Process *p)
     JOIN_MESSAGE(p);
     CANCEL_TIMER(p);		/* calls erl_cancel_timer() */
     free_message(msgp);
+}
+
+void hipe_fclearerror_error(Process *p)
+{
+#if !defined(NO_FPE_SIGNALS)
+    erts_fp_check_init_error(&p->fp_exception);
+#endif
 }
 
 /* Saving a stacktrace from native mode. Right now, we only create a
@@ -364,6 +395,114 @@ void hipe_bs_put_bits(
 
     ERTS_GET_BINARY_BYTES(arg, Bytep, Bitoffs, Bitsize);
     erts_copy_bits(Bytep, Bitoffs, 1, base, offset, 1, num_bits);
+}
+
+Eterm hipe_bs_utf8_size(Eterm arg)
+{
+    /* See beam_emu.c:OpCase(i_bs_utf8_size_sd): error handling
+       is delayed to the subsequent put_utf8 operation. */
+    if (arg < make_small(0x80UL))
+	return make_small(1);
+    else if (arg < make_small(0x800UL))
+	return make_small(2);
+    else if (arg < make_small(0x10000UL))
+	return make_small(3);
+    else
+	return make_small(4);
+}
+
+Eterm hipe_bs_put_utf8(Process *p, Eterm arg, byte *base, unsigned int offset)
+{
+    byte *save_bin_buf;
+    Uint save_bin_offset;
+    int res;
+    unsigned int new_offset;
+    ERL_BITS_DEFINE_STATEP(p);
+
+    save_bin_buf = erts_current_bin;
+    save_bin_offset = erts_bin_offset;
+    erts_current_bin = base;
+    erts_bin_offset = offset;
+    res = erts_bs_put_utf8(ERL_BITS_ARGS_1(arg));
+    new_offset = erts_bin_offset;
+    erts_current_bin = save_bin_buf;
+    erts_bin_offset = save_bin_offset;
+    if (res == 0)
+	BIF_ERROR(p, BADARG);
+    return new_offset;
+}
+
+Eterm hipe_bs_utf16_size(Eterm arg)
+{
+    /* See beam_emu.c:OpCase(i_bs_utf16_size_sd): error handling
+       is delayed to the subsequent put_utf16 operation. */
+    if (arg >= make_small(0x10000UL))
+	return make_small(4);
+    else
+	return make_small(2);
+}
+
+/* This would have used standard_bif_interface_4, which doesn't exist.
+ * Instead we call it via wrappers for the two relevant cases:
+ * (flags & BSF_LITTLE) != 0 and (flags & BSF_LITTLE) == 0.
+ */
+static
+Eterm hipe_bs_put_utf16(Process *p, Eterm arg, byte *base, unsigned int offset, Uint flags)
+{
+    byte *save_bin_buf;
+    Uint save_bin_offset;
+    int res;
+    unsigned int new_offset;
+    ERL_BITS_DEFINE_STATEP(p);
+
+    save_bin_buf = erts_current_bin;
+    save_bin_offset = erts_bin_offset;
+    erts_current_bin = base;
+    erts_bin_offset = offset;
+    res = erts_bs_put_utf16(ERL_BITS_ARGS_2(arg, flags));
+    new_offset = erts_bin_offset;
+    erts_current_bin = save_bin_buf;
+    erts_bin_offset = save_bin_offset;
+    if (res == 0)
+	BIF_ERROR(p, BADARG);
+    return new_offset;
+}
+
+Eterm hipe_bs_put_utf16be(Process *p, Eterm arg, byte *base, unsigned int offset)
+{
+    return hipe_bs_put_utf16(p, arg, base, offset, 0);
+}
+
+Eterm hipe_bs_put_utf16le(Process *p, Eterm arg, byte *base, unsigned int offset)
+{
+    return hipe_bs_put_utf16(p, arg, base, offset, BSF_LITTLE);
+}
+
+static int validate_unicode(Eterm arg)
+{
+    if (is_not_small(arg) ||
+	arg > make_small(0x10FFFFUL) ||
+	(make_small(0xD800UL) <= arg && arg <= make_small(0xDFFFUL)) ||
+	arg == make_small(0xFFFEUL) ||
+	arg == make_small(0xFFFFUL))
+	return 0;
+    return 1;
+}
+
+Eterm hipe_bs_validate_unicode(Process *p, Eterm arg)
+{
+    if (!validate_unicode(arg))
+	BIF_ERROR(p, BADARG);
+    return NIL;
+}
+
+int hipe_bs_validate_unicode_retract(ErlBinMatchBuffer* mb, Eterm arg)
+{
+    if (!validate_unicode(arg)) {
+	mb->offset -= 32;
+	return 0;
+    }
+    return 1;
 }
 
 /*

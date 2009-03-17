@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2006-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 /*
@@ -47,11 +48,7 @@ typedef enum {
 
 #ifdef ERTS_INCLUDE_SCHEDULER_INTERNALS
 /* NOTE: Do not access any of the exported variables directly */
-extern erts_smp_spinlock_t erts_port_tasks_lock;
-extern long erts_port_run_q_len;
-extern Port *erts_port_run_q;
-extern long erts_port_task_outstanding_io_tasks;
-extern int erts_ports_executing;
+extern erts_smp_atomic_t erts_port_task_outstanding_io_tasks;
 #endif
 
 typedef erts_smp_atomic_t ErtsPortTaskHandle;
@@ -69,10 +66,6 @@ ERTS_GLB_INLINE void erts_port_task_handle_init(ErtsPortTaskHandle *pthp);
 ERTS_GLB_INLINE int erts_port_task_is_scheduled(ErtsPortTaskHandle *pthp);
 ERTS_GLB_INLINE void erts_port_task_init_sched(ErtsPortTaskSched *ptsp);
 #ifdef ERTS_INCLUDE_SCHEDULER_INTERNALS
-ERTS_GLB_INLINE void erts_smp_tasks_lock(void);
-ERTS_GLB_INLINE void erts_smp_tasks_unlock(void);
-ERTS_GLB_INLINE long erts_port_task_port_queue_len(void);
-ERTS_GLB_INLINE long erts_port_task_ports_executing(void);
 ERTS_GLB_INLINE int erts_port_task_have_outstanding_io_tasks(void);
 #endif
 
@@ -101,50 +94,10 @@ erts_port_task_init_sched(ErtsPortTaskSched *ptsp)
 
 #ifdef ERTS_INCLUDE_SCHEDULER_INTERNALS
 
-ERTS_GLB_INLINE void
-erts_smp_tasks_lock(void)
-{
-#ifdef ERTS_SMP
-    erts_smp_spin_lock(&erts_port_tasks_lock);
-#endif
-}
-
-ERTS_GLB_INLINE void
-erts_smp_tasks_unlock(void)
-{
-#ifdef ERTS_SMP
-    erts_smp_spin_unlock(&erts_port_tasks_lock);
-#endif
-}
-
-ERTS_GLB_INLINE long
-erts_port_task_port_queue_len(void)
-{
-    long res;
-    ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
-    erts_smp_spin_lock(&erts_port_tasks_lock);
-    res = erts_port_run_q_len;
-    ASSERT(res >= 0);
-    erts_smp_spin_unlock(&erts_port_tasks_lock);
-    return res;
-}
-
-ERTS_GLB_INLINE long
-erts_port_task_ports_executing(void)
-{
-    ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
-    return (long) erts_ports_executing;
-}
-
 ERTS_GLB_INLINE int
 erts_port_task_have_outstanding_io_tasks(void)
 {
-    int res;
-    ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
-    erts_smp_spin_lock(&erts_port_tasks_lock);
-    res = erts_port_task_outstanding_io_tasks != (long) 0;
-    erts_smp_spin_unlock(&erts_port_tasks_lock);
-    return res;
+    return erts_smp_atomic_read(&erts_port_task_outstanding_io_tasks) != 0;
 }
 
 #endif /* ERTS_INCLUDE_SCHEDULER_INTERNALS */
@@ -152,19 +105,26 @@ erts_port_task_have_outstanding_io_tasks(void)
 #endif
 
 #ifdef ERTS_INCLUDE_SCHEDULER_INTERNALS
-int erts_port_task_execute(Port **);
+int erts_port_task_execute(ErtsRunQueue *, Port **);
 void erts_port_task_init(void);
 #endif
 
-int erts_port_task_abort(ErtsPortTaskHandle *);
+int erts_port_task_abort(Eterm id, ErtsPortTaskHandle *);
 int erts_port_task_schedule(Eterm,
 			    ErtsPortTaskHandle *,
 			    ErtsPortTaskType,
 			    ErlDrvEvent,
 			    ErlDrvEventData);
 void erts_port_task_free_port(Port *);
-int erts_port_is_scheduled(Port *pp);
-
+int erts_port_is_scheduled(Port *);
+#ifdef ERTS_SMP
+ErtsMigrateResult erts_port_migrate(Port *,
+				    int *,
+				    ErtsRunQueue *,
+				    int *,
+				    ErtsRunQueue *,
+				    int *);
+#endif
 #undef ERTS_INCLUDE_SCHEDULER_INTERNALS
 #endif /* ERL_PORT_TASK_H__ */
 

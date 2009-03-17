@@ -198,23 +198,24 @@ name_it(intersection)  -> ' * ';
 name_it(difference)    -> ' - ';
 name_it(Name) -> Name.   
 
--file("/ldisk/daily_build/otp_prebuild_r12b.2008-11-05_12/otp_src_R12B-5/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
-%% ``The contents of this file are subject to the Erlang Public License,
+-file("/net/shelob/ldisk/daily_build/otp_prebuild_r13a.2009-03-16_22/otp_src_R13A/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -250,7 +251,7 @@ format_error(Message) ->
 return_error(Line, Message) ->
     throw({error, {Line, ?MODULE, Message}}).
 
--define(CODE_VERSION, "1.2").
+-define(CODE_VERSION, "1.3").
 
 yeccpars0(Tokens, MFA) ->
     try yeccpars1(Tokens, MFA, 0, [], [])
@@ -260,10 +261,6 @@ yeccpars0(Tokens, MFA) ->
             try yecc_error_type(Error, Stacktrace) of
                 {syntax_error, Token} ->
                     yeccerror(Token);
-                {missing_in_goto_table=Tag, State} ->
-                    Desc = {State, Tag},
-                    erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
-                                Stacktrace);
                 {missing_in_goto_table=Tag, Symbol, State} ->
                     Desc = {Symbol, State, Tag},
                     erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
@@ -274,16 +271,14 @@ yeccpars0(Tokens, MFA) ->
             Error % probably from return_error/2
     end.
 
-yecc_error_type(function_clause, [{?MODULE,F,[_,_,_,_,Token,_,_]} | _]) ->
-    "yeccpars2" ++ _ = atom_to_list(F),
-    {syntax_error, Token};
-yecc_error_type({case_clause,{State}}, [{?MODULE,yeccpars2,_}|_]) ->
-    %% Inlined goto-function
-    {missing_in_goto_table, State};
-yecc_error_type(function_clause, [{?MODULE,F,[State]}|_]) ->
-    "yeccgoto_" ++ SymbolL = atom_to_list(F),
-    {ok,[{atom,_,Symbol}]} = erl_scan:string(SymbolL),
-    {missing_in_goto_table, Symbol, State}.
+yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
+    case atom_to_list(F) of
+        "yeccpars2" ++ _ ->
+            {syntax_error, Token};
+        "yeccgoto_" ++ SymbolL ->
+            {ok,[{atom,_,Symbol}],_} = erl_scan:string(SymbolL),
+            {missing_in_goto_table, Symbol, State}
+    end.
 
 yeccpars1([Token | Tokens], Tokenizer, State, States, Vstack) ->
     yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, 
@@ -325,16 +320,19 @@ yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
 
 % For internal use only.
 yeccerror(Token) ->
-    {error,
-     {element(2, Token), ?MODULE,
-      ["syntax error before: ", yecctoken2string(Token)]}}.
+    Text = case erl_scan:token_info(Token, text) of
+               undefined -> yecctoken2string(Token);
+               {text, Txt} -> Txt
+           end,
+    {location, Location} = erl_scan:token_info(Token, location),
+    {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
 yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
 yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
-yecctoken2string({string,_,S}) -> io_lib:write_string(S);
+yecctoken2string({string,_,S}) -> io_lib:write_unicode_string(S);
 yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
 yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
 yecctoken2string({dot, _}) -> "'.'";
@@ -349,7 +347,7 @@ yecctoken2string(Other) ->
 
 
 
--file("./xref_parser.erl", 352).
+-file("./xref_parser.erl", 350).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);

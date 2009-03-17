@@ -1,19 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
 %%-----------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%%
+%% retrieved online at http://www.erlang.org/.
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% Copyright 2006-2008, Tobias Lindahl and Kostis Sagonas
-%%
-%% $Id$
+%% 
+%% %CopyrightEnd%
 %%
 
 -module(dialyzer_contracts).
@@ -28,7 +30,8 @@
 	 get_contract_return/1,
 	 get_contract_return/2,
 	 %% get_contract_signature/1,
-	 is_overloaded/1]).
+	 is_overloaded/1,
+	 overwrite_succ_typing/3]).
 
 -include("dialyzer.hrl").
 -include("dialyzer_callgraph.hrl").
@@ -62,7 +65,10 @@ get_contract_signature(#contract{contracts=Cs, args=GeneralDomain}) ->
 
 -spec is_overloaded(#contract{}) -> bool().
 is_overloaded(#contract{contracts=Cs}) ->
-  not(Cs =:= []).
+  case Cs of
+    [_] -> true;
+    [_,_|_] -> false
+  end.
 
 -spec contract_to_string(#contract{}) -> string().
 contract_to_string(#contract{forms=Forms}) ->
@@ -102,6 +108,27 @@ sequence([], _Delimiter) -> "";
 sequence([H], _Delimiter) -> H;
 sequence([H|T], Delimiter) -> H ++ Delimiter ++ sequence(T, Delimiter).
 
+-spec overwrite_succ_typing(orddict(), #dialyzer_callgraph{}, dict()) -> {dict(), orddict()}.
+
+overwrite_succ_typing(PltContracts, Callgraph, FunTypes) ->
+  MapFun =
+    fun(Label, Type) ->
+	{ok, MFA} = dialyzer_callgraph:lookup_name(Label, Callgraph),
+ 	case orddict:find(MFA, PltContracts) of
+ 	  {ok, #contract{contracts = [{Contract,_Constraint}|_]}} ->
+	    case erl_types:t_contains_opaque(Contract) of
+	      false -> Type;
+	      true  -> Contract
+	    end;
+ 	  error -> Type		% no contract; keep the success typing
+	end
+    end,
+  NewFunTypes = dict:map(MapFun,FunTypes),
+  if 
+    NewFunTypes =:= FunTypes -> {FunTypes, PltContracts};
+    true -> {NewFunTypes, []}
+  end.
+
 -spec check_contracts(orddict(), #dialyzer_callgraph{}, dict()) -> [{mfa(), #contract{}}].
 
 check_contracts(Contracts, Callgraph, FunTypes) ->
@@ -129,7 +156,7 @@ check_contracts(Contracts, Callgraph, FunTypes) ->
   dict:fold(FoldFun, [], FunTypes).
 
 %% Checks all components of a contract
--spec check_contract(#contract{}, erl_type()) -> 'ok' | 'error' | {'error',_}.
+-spec check_contract(#contract{}, erl_type()) -> 'ok' | 'error' | {'error', term()}.
 
 check_contract(#contract{contracts=Contracts}, SuccType) ->
   try 
@@ -141,8 +168,8 @@ check_contract(#contract{contracts=Contracts}, SuccType) ->
     case check_domains(GenDomains) of
       error ->
 	{error, {overlapping_contract, []}};
-      ok -> 
-	InfList = [erl_types:t_inf(Contract, SuccType) 
+      ok ->
+	InfList = [erl_types:t_inf(Contract, SuccType, opaque) 
 		   || Contract <- Contracts2],
 	check_contract_inf_list(InfList, SuccType)
     end
@@ -152,7 +179,7 @@ check_contract(#contract{contracts=Contracts}, SuccType) ->
 check_domains([_]) -> ok;
 check_domains([Dom1|Left]) ->
   CheckFun = fun(Dom2) ->
-		 erl_types:any_none_or_unit(erl_types:t_inf_lists(Dom1, Dom2))
+		 erl_types:any_none_or_unit(erl_types:t_inf_lists(Dom1, Dom2, opaque))
 	     end,
   case lists:all(CheckFun, Left) of
     true -> check_domains(Left);
@@ -172,7 +199,7 @@ check_contract_inf_list([FunType|Left], SuccType) ->
 	true -> ok;
 	false -> 
 	  Range = erl_types:t_fun_range(FunType),
-	  case erl_types:t_is_none(erl_types:t_inf(STRange, Range)) of
+	  case erl_types:t_is_none(erl_types:t_inf(STRange, Range, opaque)) of
 	    true -> check_contract_inf_list(Left, SuccType);
 	    false -> ok
 	  end
@@ -245,17 +272,16 @@ contracts_without_fun(Contracts, AllFuns0, Callgraph) ->
   [warn_spec_missing_fun(C, Contracts) || C <- ErrorContracts].
 
 warn_spec_missing_fun({M,F,A}, Contracts) ->
-  File = atom_to_list(M) ++ ".erl",
-  {Line, _Contract} = dict:fetch({M,F,A}, Contracts),
-  {?WARN_CONTRACT_SYNTAX, {File, Line}, {spec_missing_fun, [M, F, A]}}.
+  {FileLine, _Contract} = dict:fetch({M,F,A}, Contracts),
+  {?WARN_CONTRACT_SYNTAX, FileLine, {spec_missing_fun, [M, F, A]}}.
 
 %% This treats the "when" constraints. It will be extended
 insert_constraints([{subtype, Type1, Type2}|Left], Dict) ->
   case erl_types:t_is_var(Type1) of
-    true -> 
+    true ->
       Name = erl_types:t_var_name(Type1),
       case dict:find(Name, Dict) of  
-	error -> 
+	error ->
 	  Dict1 = dict:store(Name, Type2, Dict);
   	{ok, VarType} -> 
 	  Dict1 = dict:store(Name, erl_types:t_inf(VarType, Type2), Dict)
@@ -264,7 +290,7 @@ insert_constraints([{subtype, Type1, Type2}|Left], Dict) ->
       %% A lot of things should change to add supertypes 
       Dict1 = Dict,
       throw({error, io_lib:format("First argument of is_subtype constraint "
-				  "must be a type variable\n",[])})
+				  "must be a type variable\n", [])})
   end,
   insert_constraints(Left, Dict1);
 insert_constraints([], Dict) -> Dict.
@@ -298,9 +324,9 @@ constraint_from_form({type, _, constraint, [{atom,_,is_subtype},
 					    [Type1, Type2]]}, RecDict) ->
   {subtype, erl_types:t_from_form(Type1, RecDict), 
    erl_types:t_from_form(Type2, RecDict)};
-constraint_from_form({type, _, constraint, [{atom,_,What}, List]}, _RecDict) ->
-  Arity = length(List),
-  throw({error, io_lib:format("Unsupported type guard ~w/~w\n",[What, Arity])}).
+constraint_from_form({type, _, constraint, [{atom,_,Name}, List]}, _RecDict) ->
+  N = length(List),
+  throw({error, io_lib:format("Unsupported type guard ~w/~w\n", [Name, N])}).
 
 %% Gets the most general domain of a list of domains of all 
 %% the overloaded contracts
@@ -322,46 +348,53 @@ general_domain([], AccSig) ->
 get_invalid_contract_warnings(Modules, CodeServer, Plt) ->
   get_invalid_contract_warnings_modules(Modules, CodeServer, Plt, []).
 
-get_invalid_contract_warnings_modules([Mod|Left], CodeServer, Plt, Acc) ->
+get_invalid_contract_warnings_modules([Mod|Mods], CodeServer, Plt, Acc) ->
   Contracts1 = dialyzer_codeserver:lookup_contracts(Mod, CodeServer),
   Contracts2 = dict:to_list(Contracts1),
   Records = dialyzer_codeserver:lookup_records(Mod, CodeServer),
   NewAcc = get_invalid_contract_warnings_funs(Contracts2, Plt, Records, Acc),
-  get_invalid_contract_warnings_modules(Left, CodeServer, Plt, NewAcc);
+  get_invalid_contract_warnings_modules(Mods, CodeServer, Plt, NewAcc);
 get_invalid_contract_warnings_modules([], _CodeServer, _Plt, Acc) ->
   Acc.
 
 get_invalid_contract_warnings_funs([{MFA, {FileLine, Contract}}|Left], 
 				   Plt, RecDict, Acc) ->
-  {value, {Ret, Args}} = dialyzer_plt:lookup(Plt, MFA),
-  Sig = erl_types:t_fun(Args, Ret),
-  NewAcc =
-    case check_contract(Contract, Sig) of
-      error -> [invalid_contract_warning(MFA, FileLine, Sig, RecDict)|Acc];
-      {error, Msg} -> [{?WARN_CONTRACT_SYNTAX, FileLine, Msg}|Acc];
-      ok ->
-	{M, F, A} = MFA,
-	CSig0 = get_contract_signature(Contract),
-	CSig = erl_types:subst_all_vars_to_any(CSig0),
-	case erl_bif_types:is_known(M, F, A) of
-	  true ->
-	    %% This is strictly for contracts in otp.
-	    BifArgs = erl_bif_types:arg_types(M, F, A),
-	    BifRet = erl_bif_types:type(M, F, A),
-	    BifSig = erl_types:t_fun(BifArgs, BifRet),
-	    case check_contract(Contract, BifSig) of
-	      error -> 
-		[invalid_contract_warning(MFA, FileLine, BifSig, RecDict)|Acc];
-	      ok ->
-		picky_contract_check(CSig, BifSig, MFA, FileLine, 
-				     Contract, RecDict, Acc)
-	    end;
-	  false ->
-	    picky_contract_check(CSig, Sig, MFA, FileLine, Contract, 
-				 RecDict, Acc)
-	end
-    end,
-  get_invalid_contract_warnings_funs(Left, Plt, RecDict, NewAcc);
+  case dialyzer_plt:lookup(Plt, MFA) of
+    none ->
+      %% This must be a contract for a non-available function. Just accept it.
+      get_invalid_contract_warnings_funs(Left, Plt, RecDict, Acc);
+    {value, {Ret, Args}} ->
+      Sig = erl_types:t_fun(Args, Ret),
+      NewAcc =
+	case check_contract(Contract, Sig) of
+	  error -> [invalid_contract_warning(MFA, FileLine, Sig, RecDict)|Acc];
+	  {error, Msg} -> [{?WARN_CONTRACT_SYNTAX, FileLine, Msg}|Acc];
+	  ok ->
+	    {M, F, A} = MFA,
+	    CSig0 = get_contract_signature(Contract),
+	    CSig = erl_types:subst_all_vars_to_any(CSig0),
+	    case erl_bif_types:is_known(M, F, A) of
+	      true ->
+		%% This is strictly for contracts of functions also in
+		%% erl_bif_types
+		BifArgs = erl_bif_types:arg_types(M, F, A),
+		BifRet = erl_bif_types:type(M, F, A),
+		BifSig = erl_types:t_fun(BifArgs, BifRet),
+		case check_contract(Contract, BifSig) of
+		  error -> 
+		    [invalid_contract_warning(MFA, FileLine, BifSig, RecDict)
+		     |Acc];
+		  ok ->
+		    picky_contract_check(CSig, BifSig, MFA, FileLine, 
+					 Contract, RecDict, Acc)
+		end;
+	      false ->
+		picky_contract_check(CSig, Sig, MFA, FileLine, Contract, 
+				     RecDict, Acc)
+	    end
+	end,
+      get_invalid_contract_warnings_funs(Left, Plt, RecDict, NewAcc)
+  end;
 get_invalid_contract_warnings_funs([], _Plt, _RecDict, Acc) ->
   Acc.
 

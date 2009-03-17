@@ -45,8 +45,8 @@ XML_REF3_FILES = application.xml \
 	disk_log.xml \
 	erl_boot_server.xml \
 	erl_ddll.xml \
-	erl_prim_loader.xml \
-	erlang.xml \
+	erl_prim_loader_stub.xml \
+	erlang_stub.xml \
 	error_handler.xml \
 	error_logger.xml \
 	file.xml \
@@ -57,7 +57,7 @@ XML_REF3_FILES = application.xml \
 	global_group.xml \
 	heart.xml \
 	inet.xml \
-	init.xml \
+	init_stub.xml \
 	net_adm.xml \
 	net_kernel.xml \
 	os.xml \
@@ -67,7 +67,7 @@ XML_REF3_FILES = application.xml \
 	seq_trace.xml \
 	wrap_log_reader.xml \
 	user.xml \
-	zlib.xml
+	zlib_stub.xml
 
 XML_REF4_FILES = app.xml config.xml
 
@@ -77,10 +77,6 @@ XML_PART_FILES = part_notes.xml part_notes_history.xml
 XML_CHAPTER_FILES = notes.xml notes_history.xml
 
 BOOK_FILES = book.xml
-
-GIF_FILES = \
-	warning.gif \
-	note.gif
 
 # ----------------------------------------------------
 
@@ -136,7 +132,7 @@ else
 ifeq ($(DOCTYPE),ps)
 docs: ps
 else
-docs: html gifs man
+docs: html man
 endif
 endif
 
@@ -147,8 +143,6 @@ ps: $(TOP_PS_FILE)
 html: $(HTML_FILES)
 
 man: $(MAN3_FILES) $(MAN4_FILES) $(MAN6_FILES)
-
-gifs: $(GIF_FILES:%=$(HTMLDIR)/%)
 
 debug opt: 
 
@@ -175,7 +169,7 @@ release_docs_spec: ps
 else
 release_docs_spec: docs
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html
-	$(INSTALL_DATA) $(GIF_FILES) $(EXTRA_FILES) $(HTML_FILES) \
+	$(INSTALL_DATA) $(EXTRA_FILES) $(HTML_FILES) \
 		$(RELSYSDIR)/doc/html
 	$(INSTALL_DATA) $(INFO_FILE) $(RELSYSDIR)
 	$(INSTALL_DIR) $(RELEASE_PATH)/man/man3

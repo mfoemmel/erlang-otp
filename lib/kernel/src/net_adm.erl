@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(net_adm).
 -export([host_file/0,
@@ -27,14 +28,14 @@
 
 %%------------------------------------------------------------------------
 
--type(verbosity() :: 'silent' | 'verbose').
+-type verbosity() :: 'silent' | 'verbose'.
 
 %%------------------------------------------------------------------------
 
 %% Try to read .hosts.erlang file in 
 %% 1. cwd , 2. $HOME 3. init:root_dir() 
 
--spec(host_file/0 :: () -> [atom()] | {'error',atom() | {integer(),atom(),_}}).
+-spec host_file() -> [atom()] | {'error',atom() | {integer(),atom(),_}}.
 
 host_file() ->
     Home = case init:get_argument(home) of
@@ -49,7 +50,7 @@ host_file() ->
 %% Check whether a node is up or down
 %%  side effect: set up a connection to Node if there not yet is one.
 
--spec(ping/1 :: (atom()) -> 'pang' | 'pong').
+-spec ping(atom()) -> 'pang' | 'pong'.
 
 ping(Node) when is_atom(Node) ->
     case catch gen:call({net_kernel, Node},
@@ -62,7 +63,7 @@ ping(Node) when is_atom(Node) ->
 	    pang
     end.
 
--spec(localhost/0 :: () -> string()).
+-spec localhost() -> string().
 
 localhost() ->
     {ok, Host} = inet:gethostname(),
@@ -72,13 +73,13 @@ localhost() ->
     end.
 
 
--spec(names/0 :: () -> {'ok', [{string(), integer()}]} | {'error', _}).
+-spec names() -> {'ok', [{string(), integer()}]} | {'error', _}.
 
 names() ->
     names(localhost()).
 
--spec(names/1 :: (atom() | string()) ->
-			{'ok', [{string(), integer()}]} | {'error', _}).
+-spec names(atom() | string()) -> {'ok', [{string(), integer()}]} | {'error', _}.
+
 names(Hostname) ->
     case inet:gethostbyname(Hostname) of
 	{ok, {hostent, _Name, _ , _Af, _Size, [Addr | _]}} ->
@@ -87,8 +88,8 @@ names(Hostname) ->
 	    Else
     end.
 
--spec(dns_hostname/1 :: (atom() | string()) -> 
-			{'ok', string()} | {'error', atom() | string()}).
+-spec dns_hostname(atom() | string()) -> 
+			{'ok', string()} | {'error', atom() | string()}.
 
 dns_hostname(Hostname) ->
     case inet:gethostbyname(Hostname) of
@@ -114,7 +115,7 @@ dns_hostname(Hostname) ->
 %% nodes simultaneously and without *any* other already 
 %% running nodes execute this code. :-(
 
--spec(ping_list/1 :: ([atom()]) -> [atom()]).
+-spec ping_list([atom()]) -> [atom()].
 
 ping_list(Nodelist) ->
     net_kernel:monitor_nodes(true),
@@ -157,11 +158,13 @@ collect_new(Sofar, Nodelist) ->
 %% the .hosts.erlang file. 971016 patrik@erix.ericsson.se
 %% e.g. 
 %% net_adm:world_list(['elrond.du.etx.ericsson.se', 'thorin.du.etx.ericsson.se']). 
-%%
+
+-spec world() -> [node()].
+
 world() ->
     world(silent).
 
--spec(world/1 :: (verbosity()) -> [atom()]).
+-spec world(verbosity()) -> [node()].
 
 world(Verbose) ->
     case net_adm:host_file() of
@@ -169,10 +172,12 @@ world(Verbose) ->
         Hosts -> expand_hosts(Hosts, Verbose)
     end.
 
+-spec world_list([atom()]) -> [node()].
+
 world_list(Hosts) when is_list(Hosts) ->
     expand_hosts(Hosts, silent).
 
--spec(world_list/2 :: ([atom() | string()], verbosity()) -> [atom()]).
+-spec world_list([atom()], verbosity()) -> [node()].
 
 world_list(Hosts, Verbose) when is_list(Hosts) ->
     expand_hosts(Hosts, Verbose).

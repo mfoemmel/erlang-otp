@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 2000, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(sofs).
 
@@ -84,12 +85,12 @@
 
 -define(LIST(S), (S)#?TAG.data).
 -define(TYPE(S), (S)#?TAG.type).
-%-define(SET(L, T), 
-%       case is_type(T) of 
-%           true -> #?TAG{data = L, type = T};
-%           false -> erlang:error(badtype, [T])
-%       end
-%       ).
+%%-define(SET(L, T), 
+%%       case is_type(T) of 
+%%           true -> #?TAG{data = L, type = T};
+%%           false -> erlang:error(badtype, [T])
+%%       end
+%%       ).
 -define(SET(L, T), #?TAG{data = L, type = T}).
 -define(IS_SET(S), is_record(S, ?TAG)).
 -define(IS_UNTYPED_SET(S), ?TYPE(S) =:= ?ANYTYPE).
@@ -1190,20 +1191,21 @@ family_to_digraph(F) when ?IS_SET(F) ->
     end.
 
 family_to_digraph(F, Type) when ?IS_SET(F) ->
-    G = case ?TYPE(F) of
-            ?FAMILY(_, _) -> digraph:new(Type);
-            ?ANYTYPE -> digraph:new(Type);
-            _Else  -> erlang:error(badarg, [F, Type])
-        end,
-    case G of
-        {error, _} -> erlang:error(badarg, [F, Type]);
-        _ -> case catch fam2digraph(F, G) of
+    case ?TYPE(F) of
+        ?FAMILY(_, _) -> ok;
+        ?ANYTYPE -> ok;
+        _Else  -> erlang:error(badarg, [F, Type])
+    end,
+    try digraph:new(Type) of
+        G -> case catch fam2digraph(F, G) of
                  {error, Reason} ->
                      true = digraph:delete(G),
                      erlang:error(Reason, [F, Type]);
-                 _ -> 
+                 _ ->
                      G
              end
+    catch
+        error:badarg -> erlang:error(badarg, [F, Type])
     end.
 
 digraph_to_family(G) ->
@@ -1407,11 +1409,9 @@ make_element(C, Atom, ?ANYTYPE) when ?IS_ATOM_TYPE(Atom),
     {Atom, C};
 make_element(C, Atom, Atom) when ?IS_ATOM_TYPE(Atom) ->
     {Atom, C};
-make_element(T, TT, ?ANYTYPE) when is_tuple(T), is_tuple(TT), 
-                                   tuple_size(T) =:= tuple_size(TT) ->
+make_element(T, TT, ?ANYTYPE) when tuple_size(T) =:= tuple_size(TT) ->
     make_tuple(tuple_to_list(T), tuple_to_list(TT), [], [], ?ANYTYPE);
-make_element(T, TT, T0) when is_tuple(T), is_tuple(TT), 
-                             tuple_size(T) =:= tuple_size(TT) ->
+make_element(T, TT, T0) when tuple_size(T) =:= tuple_size(TT) ->
     make_tuple(tuple_to_list(T), tuple_to_list(TT), [], [], tuple_to_list(T0));
 make_element(L, [LT], ?ANYTYPE) when is_list(L) ->
     create(L, LT, ?ANYTYPE, []);
@@ -1448,9 +1448,9 @@ make_oset([], _Szs, L, Type) ->
     ?SET(usort(L), Type).
 
 %% Optimization. Avoid re-building (nested) tuples.
-test_oset({Sz,Args}, T, T0) when is_tuple(T), tuple_size(T) =:= Sz ->
+test_oset({Sz,Args}, T, T0) when tuple_size(T) =:= Sz ->
     test_oset_args(Args, T, T0);
-test_oset(Sz, T, _T0) when is_tuple(T), tuple_size(T) =:= Sz ->
+test_oset(Sz, T, _T0) when tuple_size(T) =:= Sz ->
     true.
 
 test_oset_args([{Arg,Szs} | Ss], T, T0) ->
@@ -2415,7 +2415,7 @@ tuple2list(T) when is_tuple(T) ->
 tuple2list(C) ->
     [C].
 
-has_hole([I | Is], I0) when I =< I0 -> has_hole(Is, max(I+1, I0));
+has_hole([I | Is], I0) when I =< I0 -> has_hole(Is, erlang:max(I+1, I0));
 has_hole(Is, _I) -> Is =/= [].
 
 %% Optimization. Same as check_fun/3, but for integers.
@@ -2425,9 +2425,6 @@ check_for_sort(T, I) when ?IS_RELATION(T), I =< ?REL_ARITY(T), I >= 1 ->
     I > 1;
 check_for_sort(_T, _I) ->
     error. 
-
-max(A, B) when A >= B -> A;
-max(_A, B) -> B.
 
 inverse_substitution(L, Fun, Sort) ->
     %% One easily sees that the inverse of the tuples created by

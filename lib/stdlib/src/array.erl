@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 2007, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 %% @author Richard Carlsson <richardc@it.uu.se>
 %% @author Dan Gudmundsson <dgud@erix.ericsson.se>
@@ -152,16 +153,17 @@
 %% Types
 %%
 
--type(array() :: #array{}).	%% just to abstract the type
--type(array_indx() :: non_neg_integer()).
+-opaque array() :: #array{}.
 
--type(array_opt()  :: 'fixed' | non_neg_integer()
-                    | {'default',_} | {'fixed',bool()}
-                    | {'size',non_neg_integer()}).
--type(array_opts() :: array_opt() | [array_opt()]).
+-type array_indx() :: non_neg_integer().
 
--type(indx_pair()  :: {array_indx(), _}).
--type(indx_pairs() :: [indx_pair()]).
+-type array_opt()  :: 'fixed' | non_neg_integer()
+                    | {'default', term()} | {'fixed', bool()}
+                    | {'size', non_neg_integer()}.
+-type array_opts() :: array_opt() | [array_opt()].
+
+-type indx_pair()  :: {array_indx(), term()}.
+-type indx_pairs() :: [indx_pair()].
 
 %%--------------------------------------------------------------------------
 
@@ -172,7 +174,7 @@
 %% @see new/1
 %% @see new/2
 
--spec(new/0 :: () -> array()).
+-spec new() -> array().
 
 new() ->
     new([]).
@@ -216,7 +218,7 @@ new() ->
 %% @see from_list/2
 %% @see fix/1
 
--spec(new/1 :: (array_opts()) -> array()).
+-spec new(array_opts()) -> array().
 
 new(Options) ->
     new_0(Options, 0, false).
@@ -237,7 +239,7 @@ new(Options) ->
 %%
 %% @see new/1
 
--spec(new/2 :: (non_neg_integer(), array_opts()) -> array()).
+-spec new(non_neg_integer(), array_opts()) -> array().
 
 new(Size, Options) when is_integer(Size), Size >= 0 ->
     new_0(Options, Size, true);
@@ -274,7 +276,7 @@ new(Size, Fixed, Default) ->
 	end,
     #array{size = Size, max = M, default = Default, elements = E}.
 
--spec(find_max/2 :: (integer(), integer()) -> integer()).
+-spec find_max(integer(), integer()) -> integer().
 
 find_max(I, M) when I >= M ->
     find_max(I, ?extend(M));
@@ -288,7 +290,7 @@ find_max(_I, M) ->
 %% is a well-formed array representation even if this function returns
 %% `true'.
 
--spec(is_array/1 :: (_) -> bool()).
+-spec is_array(term()) -> bool().
 
 is_array(#array{size = Size, max = Max})
   when is_integer(Size), is_integer(Max) ->
@@ -304,7 +306,7 @@ is_array(_) ->
 %% @see set/3
 %% @see sparse_size/1
 
--spec(size/1 :: (array()) -> non_neg_integer()).
+-spec size(array()) -> non_neg_integer().
 
 size(#array{size = N}) -> N;
 size(_) -> erlang:error(badarg).
@@ -315,7 +317,7 @@ size(_) -> erlang:error(badarg).
 %%
 %% @see new/2
 
--spec(default/1 :: (array()) -> _).
+-spec default(array()) -> term().
 
 default(#array{default = D}) -> D;
 default(_) -> erlang:error(badarg).
@@ -399,7 +401,7 @@ new_test_() ->
 %% automatically upon insertion; see also {@link set/3}.
 %% @see relax/1
 
--spec(fix/1 :: (array()) -> array()).
+-spec fix(array()) -> array().
 
 fix(#array{}=A) ->
     A#array{max = 0}.
@@ -410,7 +412,7 @@ fix(#array{}=A) ->
 %% Returns `true' if the array is fixed, otherwise `false'.
 %% @see fix/1
 
--spec(is_fix/1 :: (array()) -> bool()).
+-spec is_fix(array()) -> bool().
 
 is_fix(#array{max = 0}) -> true;
 is_fix(#array{}) -> false.
@@ -449,7 +451,7 @@ fix_test_() ->
 %% fix/1}.)
 %% @see fix/1
 
--spec(relax/1 :: (array()) -> array()).
+-spec relax(array()) -> array().
 
 relax(#array{size = N}=A) ->
     A#array{max = find_max(N-1, ?LEAFSIZE)}.
@@ -475,7 +477,7 @@ relax_test_() ->
 %% integer, the call fails with reason `badarg'. If the given array has
 %% fixed size, the resulting array will also have fixed size.
 
--spec(resize/2 :: (non_neg_integer(), array()) -> array()).
+-spec resize(non_neg_integer(), array()) -> array().
 
 resize(Size, #array{size = N, max = M, elements = E}=A)
   when is_integer(Size), Size >= 0 ->
@@ -508,7 +510,7 @@ resize(_Size, _) ->
 %% @see resize/2
 %% @see sparse_size/1
 
--spec(resize/1 :: (array()) -> array()).
+-spec resize(array()) -> array().
 
 resize(Array) ->
     resize(sparse_size(Array), Array).
@@ -559,7 +561,7 @@ resize_test_() ->
 %% @see get/2
 %% @see reset/2
 
--spec(set/3 :: (array_indx(), _, array()) -> array()).
+-spec set(array_indx(), term(), array()) -> array().
 
 set(I, Value, #array{size = N, max = M, default = D, elements = E}=A)
   when is_integer(I), I >= 0 ->
@@ -623,7 +625,7 @@ expand(I, _S, X, D) ->
  
 %% @see set/3
 
--spec(get/2 :: (array_indx(), array()) -> any()).
+-spec get(array_indx(), array()) -> term().
 
 get(I, #array{size = N, max = M, elements = E, default = D})
   when is_integer(I), I >= 0 ->
@@ -664,7 +666,7 @@ get_1(I, E, _D) ->
 
 %% TODO: a reset_range function
 
--spec(reset/2 :: (array_indx(), array()) -> array()).
+-spec reset(array_indx(), array()) -> array().
 
 reset(I, Array) ->
     set(I, Array#array.default, Array).
@@ -722,7 +724,7 @@ set_get_test_() ->
 %% @see from_list/2
 %% @see sparse_to_list/1
 
--spec(to_list/1 :: (array()) -> [_]).
+-spec to_list(array()) -> list().
 
 to_list(#array{size = 0}) ->
     [];
@@ -796,7 +798,7 @@ to_list_test_() ->
 %%
 %% @see to_list/1
 
--spec(sparse_to_list/1 :: (array()) -> [_]).
+-spec sparse_to_list(array()) -> list().
 
 sparse_to_list(#array{size = 0}) ->
     [];
@@ -864,7 +866,7 @@ sparse_to_list_test_() ->
 %% @spec (list()) -> array()
 %% @equiv from_list(List, undefined)
 
--spec(from_list/1 :: ([_]) -> array()).
+-spec from_list(list()) -> array().
 
 from_list(List) ->
     from_list(List, undefined).
@@ -877,7 +879,7 @@ from_list(List) ->
 %% @see new/2
 %% @see to_list/1
 
--spec(from_list/2 :: ([_], _) -> array()).
+-spec from_list(list(), term()) -> array().
 
 from_list([], Default) ->
     new(0, {default,Default});
@@ -975,7 +977,7 @@ from_list_test_() ->
 %% @see from_orddict/2
 %% @see sparse_to_orddict/1
 
--spec(to_orddict/1 :: (array()) -> indx_pairs()).
+-spec to_orddict(array()) -> indx_pairs().
 
 to_orddict(#array{size = 0}) ->
     [];
@@ -1012,16 +1014,16 @@ to_orddict_3(N, R, D, L, E, S) ->
  		 to_orddict_2(element(N, E), R, D, L),
  		 E, S).
 
--spec(push_pairs/4 ::
-      (non_neg_integer(), array_indx(), _, indx_pairs()) -> indx_pairs()).
+-spec push_pairs(non_neg_integer(), array_indx(), term(), indx_pairs()) ->
+	  indx_pairs().
 
 push_pairs(0, _I, _E, L) ->
     L;
 push_pairs(N, I, E, L) ->
     push_pairs(N-1, I-1, E, [{I, E} | L]).
 
--spec(push_tuple_pairs/4 ::
-      (non_neg_integer(), array_indx(), _, indx_pairs()) -> indx_pairs()).
+-spec push_tuple_pairs(non_neg_integer(), array_indx(), term(), indx_pairs()) ->
+	  indx_pairs().
 
 push_tuple_pairs(0, _I, _T, L) ->
     L;
@@ -1068,7 +1070,7 @@ to_orddict_test_() ->
 %% 
 %% @see to_orddict/1
 
--spec(sparse_to_orddict/1 :: (array()) -> indx_pairs()).
+-spec sparse_to_orddict(array()) -> indx_pairs().
 
 sparse_to_orddict(#array{size = 0}) ->
     [];
@@ -1105,8 +1107,8 @@ sparse_to_orddict_3(N, R, D, L, E, S) ->
  		 sparse_to_orddict_2(element(N, E), R, D, L),
  		 E, S).
 
--spec(sparse_push_tuple_pairs/5 ::
-      (non_neg_integer(), array_indx(), _, _, indx_pairs()) -> indx_pairs()).
+-spec sparse_push_tuple_pairs(non_neg_integer(), array_indx(),
+			      _, _, indx_pairs()) -> indx_pairs().
 
 sparse_push_tuple_pairs(0, _I, _D, _T, L) ->
     L;
@@ -1149,7 +1151,7 @@ sparse_to_orddict_test_() ->
 %% @spec (list()) -> array()
 %% @equiv from_orddict(Orddict, undefined)
 
--spec(from_orddict/1 :: (indx_pairs()) -> array()).
+-spec from_orddict(indx_pairs()) -> array().
 
 from_orddict(Orddict) ->
     from_orddict(Orddict, undefined).
@@ -1164,7 +1166,7 @@ from_orddict(Orddict) ->
 %% @see new/2
 %% @see to_orddict/1
 
--spec(from_orddict/2 :: (indx_pairs(), _) -> array()).
+-spec from_orddict(indx_pairs(), term()) -> array().
 
 from_orddict([], Default) ->
     new(0, {default,Default});
@@ -1251,7 +1253,7 @@ from_orddict_test_() ->
 %% @see foldr/3
 %% @see sparse_map/2
 
--spec(map/2 :: (fun((array_indx(), _) -> _), array()) -> array()).
+-spec map(fun((array_indx(), _) -> _), array()) -> array().
 
 map(Function, Array=#array{size = N, elements = E, default = D})
   when is_function(Function, 2) ->
@@ -1289,9 +1291,8 @@ map_2_1(I, E, L) when I =< ?NODESIZE ->
 map_2_1(_I, _E, L) ->
     L.
 
--spec(map_3/7 ::
-      (pos_integer(), _, array_indx(),
-       fun((array_indx(),_) -> _), _, non_neg_integer(), [X]) -> [X]).
+-spec map_3(pos_integer(), _, array_indx(),
+	    fun((array_indx(),_) -> _), _, non_neg_integer(), [X]) -> [X].
 
 map_3(I, E, Ix, F, D, N, L) when I =< N ->
     map_3(I+1, E, Ix+1, F, D, N, [F(Ix, element(I, E)) | L]);
@@ -1344,7 +1345,7 @@ map_test_() ->
 %%
 %% @see map/2
 
--spec(sparse_map/2 :: (fun((array_indx(), _) -> _), array()) -> array()).
+-spec sparse_map(fun((array_indx(), _) -> _), array()) -> array().
 
 sparse_map(Function, Array=#array{size = N, elements = E, default = D})
   when is_function(Function, 2) ->
@@ -1382,9 +1383,8 @@ sparse_map_2_1(I, E, L) when I =< ?NODESIZE ->
 sparse_map_2_1(_I, _E, L) ->
     L.
 
--spec(sparse_map_3/6 ::
-      (pos_integer(), _, array_indx(),
-       fun((array_indx(),_) -> _), _, [X]) -> [X]).
+-spec sparse_map_3(pos_integer(), _, array_indx(),
+		   fun((array_indx(),_) -> _), _, [X]) -> [X].
 
 sparse_map_3(I, T, Ix, F, D, L) when I =< ?LEAFSIZE ->
     case element(I, T) of
@@ -1443,7 +1443,7 @@ sparse_map_test_() ->
 %% @see map/2
 %% @see sparse_foldl/3
 
--spec(foldl/3 :: (fun((array_indx(), _, A) -> B), A, array()) -> B).
+-spec foldl(fun((array_indx(), _, A) -> B), A, array()) -> B.
 
 foldl(Function, A, #array{size = N, elements = E, default = D})
   when is_function(Function, 3) ->
@@ -1468,9 +1468,8 @@ foldl_2(I, E, A, Ix, F, D, N, R, S) ->
     foldl_2(I+1, E, foldl_1(S-1, element(I, E), A, Ix, F, D),
 	    Ix + S, F, D, N, R, S).
 
--spec(foldl_3/6 ::
-      (pos_integer(), _, A, array_indx(),
-       fun((array_indx, _, A) -> B), integer()) -> B).
+-spec foldl_3(pos_integer(), _, A, array_indx(),
+	      fun((array_indx, _, A) -> B), integer()) -> B.
 
 foldl_3(I, E, A, Ix, F, N) when I =< N ->
     foldl_3(I+1, E, F(Ix, element(I, E), A), Ix+1, F, N);
@@ -1519,7 +1518,7 @@ foldl_test_() ->
 %% @see foldl/3
 %% @see sparse_foldr/3
 
--spec(sparse_foldl/3 :: (fun((array_indx(), _, A) -> B), A, array()) -> B).
+-spec sparse_foldl(fun((array_indx(), _, A) -> B), A, array()) -> B.
 
 sparse_foldl(Function, A, #array{size = N, elements = E, default = D})
   when is_function(Function, 3) ->
@@ -1598,7 +1597,7 @@ sparse_foldl_test_() ->
 %% @see foldl/3
 %% @see map/2
 
--spec(foldr/3 :: (fun((array_indx(), _, A) -> B), A, array()) -> B).
+-spec foldr(fun((array_indx(), _, A) -> B), A, array()) -> B.
 
 foldr(Function, A, #array{size = N, elements = E, default = D})
   when is_function(Function, 3) ->
@@ -1628,8 +1627,8 @@ foldr_2(I, E, Ix, A, F, D, R, R0) ->
 	    foldr_1(R, element(I, E), Ix, A, F, D),
 	    F, D, R0, R0).
 
--spec(foldr_3/5 ::
-      (array_indx(), _, integer(), A, fun((array_indx(), _, A) -> B)) -> B).
+-spec foldr_3(array_indx(), term(), integer(), A,
+	      fun((array_indx(), _, A) -> B)) -> B.
 
 foldr_3(0, _E, _Ix, A, _F) ->
     A;
@@ -1679,7 +1678,7 @@ foldr_test_() ->
 %% @see foldr/3
 %% @see sparse_foldl/3
 
--spec(sparse_foldr/3 :: (fun((array_indx(), _, A) -> B), A, array()) -> B).
+-spec sparse_foldr(fun((array_indx(), _, A) -> B), A, array()) -> B.
 
 sparse_foldr(Function, A, #array{size = N, elements = E, default = D})
   when is_function(Function, 3) ->
@@ -1710,9 +1709,8 @@ sparse_foldr_2(I, E, Ix, A, F, D, R, R0) ->
 	    sparse_foldr_1(R, element(I, E), Ix, A, F, D),
 	    F, D, R0, R0).
 
--spec(sparse_foldr_3/6 ::
-      (array_indx(), _, array_indx(), A,
-       fun((array_indx(), _, A) -> B), _) -> B).
+-spec sparse_foldr_3(array_indx(), _, array_indx(), A,
+		     fun((array_indx(), _, A) -> B), _) -> B.
 
 sparse_foldr_3(0, _T, _Ix, A, _F, _D) ->
     A;
@@ -1731,7 +1729,7 @@ sparse_foldr_3(I, T, Ix, A, F, D) ->
 %% @see size/1
 %% @see resize/1
 
--spec(sparse_size/1 :: (array()) -> non_neg_integer()).
+-spec sparse_size(array()) -> non_neg_integer().
 
 sparse_size(A) ->
     F = fun (I, _V, _A) -> throw({value, I}) end,

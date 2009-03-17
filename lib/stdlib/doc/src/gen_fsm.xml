@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1996</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1996</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>gen_fsm</title>
@@ -69,7 +67,7 @@ gen_fsm:sync_send_all_state_event -----> Module:handle_sync_event/4
       the specified gen_fsm does not exist or if bad arguments are
       given.</p>
     <p>The gen_fsm process can go into hibernation 
-    (see <seealso marker="kernel:erlang#erlang:hibernate/3">erlang(3)</seealso>) if a callback
+    (see <seealso marker="erts:erlang#erlang:hibernate/3">erlang(3)</seealso>) if a callback
     function specifies <c>'hibernate'</c> instead of a timeout value. This
     might be useful if the server is expected to be idle for a long
     time. However this feature should be used with care as hibernation
@@ -130,7 +128,7 @@ gen_fsm:sync_send_all_state_event -----> Module:handle_sync_event/4
           <c>SOpts</c> will be passed as option list to
           the <c>spawn_opt</c> BIF which is used to spawn the gen_fsm
           process. See
-          <seealso marker="kernel:erlang#spawn_opt/2">erlang(3)</seealso>.</p>
+          <seealso marker="erts:erlang#spawn_opt/2">erlang(3)</seealso>.</p>
         <note>
           <p>Using the spawn option <c>monitor</c> is currently not
             allowed, but will cause the function to fail with reason
@@ -660,7 +658,7 @@ gen_fsm:sync_send_all_state_event -----> Module:handle_sync_event/4
       <name>Module:terminate(Reason, StateName, StateData)</name>
       <fsummary>Clean up before termination.</fsummary>
       <type>
-        <v>Reason = normal | shutdown | term()</v>
+        <v>Reason = normal | shutdown | {shutdown,term()} | term()</v>
         <v>StateName = atom()</v>
         <v>StateData = term()</v>
       </type>
@@ -687,9 +685,10 @@ gen_fsm:sync_send_all_state_event -----> Module:handle_sync_event/4
           <c>brutal_kill</c>.</item>
         </list>
         <p>Otherwise, the gen_fsm will be immediately terminated.</p>
-        <p>Note that for any other reason than <c>normal</c> or
-          <c>shutdown</c>, the gen_fsm is assumed to terminate due to an
-          error and an error report is issued using
+        <p>Note that for any other reason than <c>normal</c>,
+          <c>shutdown</c>, or <c>{shutdown,Term}</c> the gen_fsm is
+	  assumed to terminate due to an error and
+	  an error report is issued using
           <seealso marker="kernel:error_logger#format/2">error_logger:format/2</seealso>.</p>
       </desc>
     </func>

@@ -1,22 +1,26 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(regexp).
 
+%% This entire module is deprecated and will be removed in a future
+%% release. Use the 're' module instead.
+%%
 %% This module provides a basic set of regular expression functions
 %% for strings. The functions provided are taken from AWK.
 %%
@@ -26,6 +30,9 @@
 
 -export([sh_to_awk/1,parse/1,format_error/1,match/2,first_match/2,matches/2]).
 -export([sub/3,gsub/3,split/2]).
+
+-deprecated([sh_to_awk/1,parse/1,format_error/1,match/2,first_match/2,matches/2]).
+-deprecated([sub/3,gsub/3,split/2]).
 
 -import(string, [substr/2,substr/3]).
 -import(lists, [reverse/1]).

@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(inet).
 
@@ -100,7 +101,7 @@
       {'active',          bool() | 'once'} |
       {'packet',        
        0 | 1 | 2 | 4 | 'raw' | 'sunrm' |  'asn1' |
-       'cdr' | 'fcgi' | 'line' | 'tpkt' | 'http' | 'httph'} |
+       'cdr' | 'fcgi' | 'line' | 'tpkt' | 'http' | 'httph' | 'http_bin' | 'httph_bin' } |
       {'mode',           list() | binary()} |
       {'port',           'port', 'term'} |
       {'exit_on_close',   bool()} |
@@ -108,6 +109,7 @@
       {'high_watermark',  non_neg_integer()} |
       {'bit8',            'clear' | 'set' | 'on' | 'off'} |
       {'send_timeout',    non_neg_integer() | 'infinity'} |
+      {'send_timeout_close', bool()} |
       {'delay_send',      bool()} |
       {'packet_size',     non_neg_integer()} |
       {'read_packets',    non_neg_integer()} |
@@ -138,7 +140,8 @@
       'add_membership' | 'drop_membership' | 
       'header' | 'buffer' | 'active' | 'packet' | 'mode' | 'port' | 
       'exit_on_close' | 'low_watermark' | 'high_watermark' | 'bit8' | 
-      'send_timeout' | 'delay_send' | 'packet_size' | 'read_packets' | 
+      'send_timeout' | 'send_timeout_close' |
+      'delay_send' | 'packet_size' | 'read_packets' | 
       %% SCTP options
       {'sctp_status',                #sctp_status{}} |
       'sctp_get_peer_addr_info' |
@@ -538,7 +541,7 @@ options() ->
      buffer, header, active, packet, deliver, mode,
      multicast_if, multicast_ttl, multicast_loop,
      exit_on_close, high_watermark, low_watermark,
-     bit8, send_timeout
+     bit8, send_timeout, send_timeout_close
     ].
 
 %% Return a list of statistics options
@@ -556,7 +559,7 @@ connect_options() ->
     [tos, priority, reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, packet_size, buffer, mode, deliver,
      exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
-     delay_send,raw].
+     send_timeout_close, delay_send,raw].
     
 connect_options(Opts, Family) ->
     BaseOpts = 
@@ -612,7 +615,7 @@ listen_options() ->
     [tos, priority, reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, buffer, mode, deliver, backlog,
      exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
-     delay_send, packet_size,raw].
+     send_timeout_close, delay_send, packet_size,raw].
 
 listen_options(Opts, Family) ->
     BaseOpts = 

@@ -42,6 +42,7 @@ POSSIBILITY OF SUCH DAMAGE.
 class (one that contains characters whose values are > 255). It is used by both
 pcre_exec() and pcre_def_exec(). */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -65,7 +66,7 @@ Returns:      TRUE if character matches, else FALSE
 */
 
 BOOL
-_pcre_xclass(int c, const uschar *data)
+_erts_pcre_xclass(int c, const uschar *data)
 {
 int t;
 BOOL negated = (*data & XCL_NOT) != 0;
@@ -105,7 +106,7 @@ while ((t = *data++) != XCL_END)
   else  /* XCL_PROP & XCL_NOTPROP */
     {
     int chartype, script;
-    int category = _pcre_ucp_findprop(c, &chartype, &script);
+    int category = _erts_pcre_ucp_findprop(c, &chartype, &script);
 
     switch(*data)
       {

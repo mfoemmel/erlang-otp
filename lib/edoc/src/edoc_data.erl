@@ -161,16 +161,17 @@ callbacks(Es, Module, Env, Opts) ->
 		   end,
 		   Es) of
 	true ->
-	    case catch (Module#module.name):behaviour_info(callbacks) of
-		{'EXIT', _} -> [];
+	    try (Module#module.name):behaviour_info(callbacks) of
 		Fs ->
 		    Fs1 = [{F,A} || {F,A} <- Fs, is_atom(F), is_integer(A)],
-		    if Fs1 == [] ->
+		    if Fs1 =:= [] ->
 			    [];
 		       true ->
 			    [{callbacks,
 			      [callback(F, Env, Opts) || F <- Fs1]}]
 		    end
+	    catch
+		_:_ -> []
 	    end;
 	false -> []
     end.

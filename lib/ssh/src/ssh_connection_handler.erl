@@ -1,19 +1,24 @@
-%%<copyright>
-%% <year>2008-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
+
+%%
+
 %%----------------------------------------------------------------------
 %% Purpose: Handles the setup of an ssh connection, e.i. both the
 %% setup SSH Transport Layer Protocol (RFC 4253) and Authentication
@@ -31,6 +36,7 @@
 -include("ssh_connect.hrl").
 
 -export([start_link/4, send/2, renegotiate/1, send_event/2,
+	 connection_info/3,
 	 peer_address/1]).
 
 %% gen_fsm callbacks
@@ -39,6 +45,9 @@
 
 -export([init/1, state_name/3, handle_event/3,
 	 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
+
+%% spawn export
+-export([ssh_info_handler/3]).
 
 -record(state, {
 	  transport_protocol,      % ex: tcp
@@ -61,7 +70,7 @@
 -define(DBG_MESSAGE, true).
 
 %%====================================================================
-%% API
+%% Internal application API
 %%====================================================================
 %%--------------------------------------------------------------------
 %% Function: start_link() -> ok,Pid} | ignore | {error,Error}
@@ -78,6 +87,11 @@ send(ConnectionHandler, Data) ->
 renegotiate(ConnectionHandler) ->
     send_all_state_event(ConnectionHandler, renegotiate).
  
+connection_info(ConnectionHandler, From, Options) ->
+     send_all_state_event(ConnectionHandler, {info, From, Options}).
+
+%% Replaced with option to connection_info/3. For now keep 
+%% for backwards compatibility
 peer_address(ConnectionHandler) ->
     sync_send_all_state_event(ConnectionHandler, peer_address).
 
@@ -130,20 +144,29 @@ hello(socket_control, #state{socket = Socket, ssh_params = Ssh} = State) ->
     inet:setopts(Socket, [{packet, line}]),
     {next_state, hello, next_packet(State)};
 
-hello({info_line, Line}, State) ->
-    ?dbg(true, "info: ~p\n", [Line]),
+hello({info_line, _Line}, State) ->
     {next_state, hello, next_packet(State)};
 
 hello({version_exchange, Version}, #state{ssh_params = Ssh0,
 					  socket = Socket} = State) ->
     {NumVsn, StrVsn} = ssh_transport:handle_hello_version(Version),
-    Ssh1 = counterpart_versions(NumVsn, StrVsn, Ssh0),
-    inet:setopts(Socket, [{packet,0}, {mode,binary}]),
-    {KeyInitMsg, SshPacket, Ssh} = ssh_transport:key_exchange_init_msg(Ssh1),
-    send_msg(SshPacket, State),
-    {next_state, kexinit, next_packet(State#state{ssh_params = Ssh,
-						  key_exchange_init_msg = 
-						  KeyInitMsg})}.
+    case handle_version(NumVsn, StrVsn, Ssh0) of
+	{ok, Ssh1} ->
+	    inet:setopts(Socket, [{packet,0}, {mode,binary}]),
+	    {KeyInitMsg, SshPacket, Ssh} = ssh_transport:key_exchange_init_msg(Ssh1),
+	    send_msg(SshPacket, State),
+	    {next_state, kexinit, next_packet(State#state{ssh_params = Ssh,
+							  key_exchange_init_msg = 
+							  KeyInitMsg})};
+	not_supported ->
+	   DisconnectMsg =
+		#ssh_msg_disconnect{code = 
+				    ?SSH_DISCONNECT_PROTOCOL_VERSION_NOT_SUPPORTED,
+				    description = "Protocol version " ++  StrVsn 
+				    ++ " not supported",
+				    language = "en"},
+	    handle_disconnect(DisconnectMsg, State)
+    end.
 
 kexinit({#ssh_msg_kexinit{} = Kex, Payload},
 	#state{ssh_params = #ssh{role = Role} = Ssh0,
@@ -317,7 +340,7 @@ userauth(#ssh_msg_userauth_info_response{} = Msg,
 userauth(#ssh_msg_userauth_success{}, #state{ssh_params = #ssh{role = client},
 					     manager = Pid} = State) ->
     Pid ! ssh_connected,
-    {next_state, conncected, next_packet(State)};
+    {next_state, connected, next_packet(State)};
 
 userauth(#ssh_msg_userauth_failure{},  
 	 #state{ssh_params = #ssh{role = client,
@@ -407,8 +430,7 @@ handle_event(#ssh_msg_disconnect{} = Msg, _StateName,
     ssh_connection_manager:event(Pid, Msg),
     {stop, normal, State};
 
-handle_event(#ssh_msg_ignore{} = Msg, StateName, State) ->
-    ?dbg(true, "IGNORE: ~p\n", [Msg]), 
+handle_event(#ssh_msg_ignore{}, StateName, State) ->
     {next_state, StateName, next_packet(State)};
 
 handle_event(#ssh_msg_debug{always_display = true, message = DbgMsg}, 
@@ -416,12 +438,10 @@ handle_event(#ssh_msg_debug{always_display = true, message = DbgMsg},
     io:format("DEBUG: ~p\n", [DbgMsg]),
     {next_state, StateName, next_packet(State)};
 
-handle_event(#ssh_msg_debug{message = DbgMsg}, StateName, State) ->
-    ?dbg(true, "DEBUG: ~p\n", [DbgMsg]),
+handle_event(#ssh_msg_debug{}, StateName, State) ->
     {next_state, StateName, next_packet(State)};
 
-handle_event(#ssh_msg_unimplemented{sequence = Seq}, StateName, State) ->
-    ?dbg(true, "UNIMPLEMENTED: ~p\n", [Seq]), 
+handle_event(#ssh_msg_unimplemented{}, StateName, State) ->
     {next_state, StateName, next_packet(State)};
 
 handle_event(renegotiate, connected, #state{ssh_params = Ssh0} 
@@ -435,6 +455,10 @@ handle_event(renegotiate, connected, #state{ssh_params = Ssh0}
 
 handle_event(renegotiate, StateName, State) ->
     %% Allready in keyexcahange so ignore
+    {next_state, StateName, State};
+
+handle_event({info, From, Options}, StateName,  #state{ssh_params = Ssh} = State) ->
+    spawn(?MODULE, ssh_info_handler, [Options, Ssh, From]), 
     {next_state, StateName, State};
 
 handle_event({unknown, Data}, StateName, State) ->
@@ -456,6 +480,9 @@ handle_event({unknown, Data}, StateName, State) ->
 %% gen_fsm:sync_send_all_state_event/2,3, this function is called to handle
 %% the event.
 %%--------------------------------------------------------------------
+
+%% Replaced with option to connection_info/3. For now keep 
+%% for backwards compatibility
 handle_sync_event(peer_address, _From, StateName, 
 		  #state{ssh_params = #ssh{peer = {_, Address}}} = State) ->
     {reply, {ok, Address}, StateName, State}.
@@ -473,17 +500,12 @@ handle_sync_event(peer_address, _From, StateName,
 handle_info({Protocol, Socket, "SSH-" ++ _ = Version}, hello, 
 	    #state{socket = Socket,
 		   transport_protocol = Protocol} = State ) -> 
-    ?dbg(true, "version ~p ~n",  [Version]),
-    event({version_exchange, Version}),
-    %% next_packet will be called by the version_exchange event function 
-    {next_state, hello, State}; 
+    event({version_exchange, Version}, hello, State);
 
 handle_info({Protocol, Socket, Info}, hello, 
 	    #state{socket = Socket,
 		   transport_protocol = Protocol} = State) -> 
-    event({info_line, Info}),
-    %% next_packet will be called by the info_line event function 
-    {next_state, hello, State}; 
+    event({info_line, Info}, hello, State);
 
 handle_info({Protocol, Socket, Data}, Statename, 
 	    #state{socket = Socket,
@@ -536,8 +558,9 @@ handle_info({Protocol, Socket, Data}, Statename,
 			   Statename, State);
 
 handle_info({CloseTag, _Socket}, _StateName, 
-	    #state{transport_close_tag = CloseTag,
+	    #state{transport_close_tag = CloseTag, %%manager = Pid,
 		   ssh_params = #ssh{role = _Role, opts = _Opts}} = State) ->
+    %%ok = ssh_connection_manager:delivered(Pid),
     {stop, normal, State}.
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, StateName, State) -> void()
@@ -546,8 +569,26 @@ handle_info({CloseTag, _Socket}, _StateName,
 %% necessary cleaning up. When it returns, the gen_fsm terminates with
 %% Reason. The return value is ignored.
 %%--------------------------------------------------------------------
-terminate(_, _, _) ->
-    ok.
+terminate(normal, _, #state{transport_cb = Transport,
+			    socket = Socket}) ->
+    Transport:close(Socket);
+
+terminate(shutdown, _, State) ->
+    DisconnectMsg = 
+	#ssh_msg_disconnect{code = ?SSH_DISCONNECT_BY_APPLICATION,
+			    description = "Application disconnect",
+			    language = "en"},
+    handle_disconnect(DisconnectMsg, State);
+
+terminate(Reason, _, State) ->
+    Desc = io_lib:format("Erlang ssh connection handler failed with reason: "
+			 "~p , please report this to erlang-bugs@erlang.org \n", 
+			 [Reason]),
+    DisconnectMsg = 
+	#ssh_msg_disconnect{code = ?SSH_DISCONNECT_CONNECTION_LOST,
+			    description = Desc,
+			    language = "en"},
+    handle_disconnect(DisconnectMsg, State).
 
 %%--------------------------------------------------------------------
 %% Function:
@@ -604,6 +645,12 @@ init_ssh(server = Role, Vsn, Version, Options, Socket) ->
 send_msg(Msg, #state{socket = Socket, transport_cb = Transport}) ->
     Transport:send(Socket, Msg).
 
+handle_version({2, 0} = NumVsn, StrVsn, Ssh0) -> 
+    Ssh = counterpart_versions(NumVsn, StrVsn, Ssh0),
+    {ok, Ssh};
+handle_version(_,_,_) ->
+    not_supported.
+
 string_version(#ssh{role = client, c_version = Vsn}) ->
     Vsn;
 string_version(#ssh{role = server, s_version = Vsn}) ->
@@ -618,19 +665,21 @@ send_all_state_event(FsmPid, Event) ->
 sync_send_all_state_event(FsmPid, Event) ->
     gen_fsm:sync_send_all_state_event(FsmPid, Event).
 
-event(#ssh_msg_disconnect{} = Event) ->
-    send_all_state_event(self(), Event);
-event(#ssh_msg_ignore{} = Event) ->
-    send_all_state_event(self(), Event);
-event(#ssh_msg_debug{} = Event) ->
-    send_all_state_event(self(), Event);
-event(#ssh_msg_unimplemented{} = Event) ->
-    send_all_state_event(self(), Event);
-event(Event) ->
-    send_event(self(), Event).
+%% simulate send_all_state_event(self(), Event) 
+event(#ssh_msg_disconnect{} = Event, StateName, State) ->
+    handle_event(Event, StateName, State);
+event(#ssh_msg_ignore{} = Event, StateName, State) ->
+    handle_event(Event, StateName, State);
+event(#ssh_msg_debug{} = Event, StateName, State) ->
+    handle_event(Event, StateName, State);
+event(#ssh_msg_unimplemented{} = Event, StateName, State) ->
+    handle_event(Event, StateName, State);
+%% simulate send_event(self(), Event)
+event(Event, StateName, State) ->
+    ?MODULE:StateName(Event, State).
 
-generate_event(<<?BYTE(Byte), _/binary>> = Msg, 
-	       #state{manager = Pid} = State) 
+generate_event(<<?BYTE(Byte), _/binary>> = Msg, StateName,
+	       #state{manager = Pid} = State0, EncData) 
   when  Byte == ?SSH_MSG_GLOBAL_REQUEST;
 	Byte == ?SSH_MSG_REQUEST_SUCCESS;
 	Byte == ?SSH_MSG_REQUEST_FAILURE;
@@ -646,20 +695,30 @@ generate_event(<<?BYTE(Byte), _/binary>> = Msg,
 	Byte == ?SSH_MSG_CHANNEL_SUCCESS;
 	Byte == ?SSH_MSG_CHANNEL_FAILURE ->
     ssh_connection_manager:event(Pid, Msg),
-    next_packet(State);
+    State = generate_event_new_state(State0, EncData),
+    next_packet(State),
+    {next_state, StateName, State};
 
-generate_event(Msg, State) ->
+generate_event(Msg, StateName, State0, EncData) ->
     Event = ssh_bits:decode(Msg),
-    ?dbg(?DBG_MESSAGE, "RECV_MSG: ~p\n", [Event]),
+    State = generate_event_new_state(State0, EncData),
     case Event of
 	#ssh_msg_kexinit{} ->
 	    %% We need payload for verification later.
-	    event({Event, Msg}),
-	    State;
+	    event({Event, Msg}, StateName, State);
 	_ ->
-	    event(Event),
-	    State
+	    event(Event, StateName, State)
     end.
+
+generate_event_new_state(#state{ssh_params = 
+				#ssh{recv_sequence = SeqNum0} 
+				= Ssh} = State, EncData) ->
+    SeqNum = ssh_transport:next_seqnum(SeqNum0),
+    State#state{ssh_params = Ssh#ssh{recv_sequence = SeqNum},
+		decoded_data_buffer = <<>>,
+		encoded_data_buffer = EncData, 
+		undecoded_packet_length = undefined}.
+
 
 next_packet(#state{decoded_data_buffer = <<>>,
 		   encoded_data_buffer = Buff,
@@ -711,9 +770,7 @@ handle_ssh_packet_data(RemainingSshPacketLen, DecData, EncData, StateName,
 
 handle_ssh_packet(Length, StateName, #state{decoded_data_buffer = DecData0,
 					    encoded_data_buffer = EncData0,
-					    ssh_params = 
-					    #ssh{recv_sequence = SeqNum0} 
-					    = Ssh0,
+					    ssh_params = Ssh0,
 					    transport_protocol = _Protocol,
 					    socket = _Socket} = State0) ->
     {Ssh1, DecData, EncData, Mac} = 
@@ -723,36 +780,12 @@ handle_ssh_packet(Length, StateName, #state{decoded_data_buffer = DecData0,
 	true ->
 	    PacketData = ssh_transport:msg_data(SshPacket),
 	    {Ssh1, Msg} = ssh_transport:decompress(Ssh1, PacketData),
-	    State = 
-		generate_event(Msg, 
-			       State0#state{ssh_params = Ssh1,
-					    %% Important to be set for
-					    %% next_packet
-					    decoded_data_buffer = <<>>}),
-	    SeqNum = ssh_transport:next_seqnum(SeqNum0),
-	    Ssh = State#state.ssh_params,
-	    case EncData of
-		<<>> ->
-		    {next_state, StateName, 
-		     State#state{ssh_params 
-				 = Ssh#ssh{recv_sequence = SeqNum},
-				 decoded_data_buffer = <<>>,
-				 encoded_data_buffer = EncData, 
-				 undecoded_packet_length = 
-				 undefined}};
-		_ ->
-		    %% More data from the next packet has been received
-		    %% Fake a socket-recive message.
-		    %%self() ! {Protocol, Socket, EncData},
-		    {next_state, StateName,
-		     State#state{ssh_params 
-				 = Ssh#ssh{recv_sequence = SeqNum},
-				 decoded_data_buffer = <<>>,
-				 encoded_data_buffer = EncData, 
-				 undecoded_packet_length = 
-				 undefined}}
-	    end;
-	false ->
+	    generate_event(Msg, StateName, 
+			   State0#state{ssh_params = Ssh1,
+					%% Important to be set for
+					%% next_packet
+					decoded_data_buffer = <<>>}, EncData);
+	    false ->
 	    DisconnectMsg = 
 		#ssh_msg_disconnect{code = ?SSH_DISCONNECT_PROTOCOL_ERROR,
 				    description = "Bad mac",
@@ -765,6 +798,7 @@ handle_disconnect(#ssh_msg_disconnect{} = Msg,
     {SshPacket, Ssh} = ssh_transport:ssh_packet(Msg, Ssh0),
     send_msg(SshPacket, State),
     ssh_connection_manager:event(Pid, Msg),
+    %%ok = ssh_connection_manager:delivered(Pid),
     {stop, normal, State#state{ssh_params = Ssh}}.
 
 counterpart_versions(NumVsn, StrVsn, #ssh{role = server} = Ssh) ->
@@ -803,3 +837,23 @@ retry_fun(User, Reason, Opts) ->
 	    catch Fun(User, Reason)
     end.
 
+ssh_info_handler(Options, Ssh, From) ->
+    Info = ssh_info(Options, Ssh, []),
+    ssh_connection_manager:send_msg({channel_requst_reply, From, Info}).
+
+ssh_info([], _, Acc) ->
+    Acc;
+
+ssh_info([client_version | Rest], #ssh{c_vsn = IntVsn,
+				       c_version = StringVsn} = SshParams, Acc) ->
+    ssh_info(Rest, SshParams, [{client_version, {IntVsn, StringVsn}} | Acc]);
+
+ssh_info([server_version | Rest], #ssh{s_vsn = IntVsn,
+				       s_version = StringVsn} = SshParams, Acc) ->
+    ssh_info(Rest, SshParams, [{server_version, {IntVsn, StringVsn}} | Acc]);
+
+ssh_info([peer | Rest], #ssh{peer = Peer} = SshParams, Acc) ->
+    ssh_info(Rest, SshParams, [{peer, Peer} | Acc]);
+
+ssh_info([ _ | Rest], SshParams, Acc) ->
+    ssh_info(Rest, SshParams, Acc).

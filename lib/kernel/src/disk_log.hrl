@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 -define(DISK_LOG_NAME_TABLE, disk_log_names).
@@ -43,6 +44,17 @@
 -define(OPENED, <<6,7,8,9>>).
 -define(CLOSED, <<99,88,77,11>>).
 
+%% Needed for the definition of fd()
+%% Must use include_lib() so that we always can be sure to find
+%% file.hrl. A relative path will not work in an installed system.
+-include_lib("kernel/include/file.hrl").
+
+%% Ugly workaround. If we are building the bootstrap compiler,
+%% file.hrl does not define the fd() type.
+-ifndef(FILE_HRL_).
+-type fd() :: pid() | #file_descriptor{}.
+-endif.
+
 %%------------------------------------------------------------------------
 %% Types -- alphabetically
 %%------------------------------------------------------------------------
@@ -51,14 +63,16 @@
 -type dlog_format_type() :: 'halt_ext' | 'halt_int' | 'wrap_ext' | 'wrap_int'.
 -type dlog_head()        :: 'none' | {'ok', binary()} | mfa().
 -type dlog_mode()        :: 'read_only' | 'read_write'.
--type dlog_options()     :: [{atom(), any()}].
+-type dlog_name()        :: atom() | string().
+-type dlog_optattr()     :: 'name' | 'file' | 'linkto' | 'repair' | 'type'
+                          | 'format' | 'size' | 'distributed' | 'notify'
+                          | 'head' | 'head_func' | 'mode'.
+-type dlog_options()     :: [{dlog_optattr(), any()}].
 -type dlog_repair()      :: 'truncate' | bool().
 -type dlog_size()        :: 'infinity' | pos_integer()
                           | {pos_integer(), pos_integer()}.
 -type dlog_status()      :: 'ok' | {'blocked', 'false' | [_]}. %QueueLogRecords
 -type dlog_type()        :: 'halt' | 'wrap'.
-
--type node() :: atom().		%% XXX: to be taken out in the next release
 
 %%------------------------------------------------------------------------
 %% Records
@@ -80,9 +94,9 @@
 	      options = []        :: dlog_options()}).
 
 -record(cache,                %% Cache for logged terms (per file descriptor).
-        {fd,				%% File descriptor.
+        {fd       :: fd(),              %% File descriptor.
          sz = 0   :: non_neg_integer(),	%% Number of bytes in the cache.
-         c = []   :: binary() | iolist()}%% The cache.
+         c = []   :: iodata()}          %% The cache.
         ).
 
 -record(halt,				%% For a halt log.
@@ -122,7 +136,7 @@
 
 -record(log,
 	{status = ok       :: dlog_status(),
-	 name,                %%  the key leading to this structure
+	 name              :: dlog_name(), %% the key leading to this structure
 	 blocked_by = none :: 'none' | pid(),	   %% pid of blocker
 	 users = 0         :: non_neg_integer(),   %% non-linked users
 	 filename          :: string(),		   %% real name of the file
@@ -143,3 +157,5 @@
 	 pos          :: non_neg_integer() | {integer(), non_neg_integer()},
 	 b            :: binary() | [] | pos_integer()}
 	).
+
+-type dlog_cont() :: 'start' | #continuation{}.

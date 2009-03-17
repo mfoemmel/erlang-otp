@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>2006-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 %%----------------------------------------------------------------------
 %% This module examplifies how to write test suites for your SNMP agent.
@@ -27,11 +26,11 @@
 -behaviour(snmpm_user).
 
 -export([start_link/0, start_link/1, stop/0,
-	 agent/2, agent/3,
-         sync_get/2,      sync_get/3,
-         sync_get_next/2, sync_get_next/3,
-         sync_get_bulk/4, sync_get_bulk/5,
-         sync_set/2,      sync_set/3,
+	 agent/2, 
+         sync_get/2, 
+         sync_get_next/2, 
+         sync_get_bulk/4, 
+         sync_set/2, 
 
 	 oid_to_name/1
 	]).
@@ -39,10 +38,10 @@
 %% Manager callback API:
 -export([handle_error/3,
          handle_agent/4,
-         handle_pdu/5,
-         handle_trap/4,
-         handle_inform/4,
-         handle_report/4]).
+         handle_pdu/4,
+         handle_trap/3,
+         handle_inform/3,
+         handle_report/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -74,47 +73,29 @@ stop() ->
 
 %% --- Instruct manager to handle an agent ---
 
-agent(Addr, Conf) ->
-    call({agent, Addr, Conf}).
+agent(TargetName, Conf) ->
+    call({agent, TargetName, Conf}).
 
-agent(Addr, Port, Conf) ->
-    call({agent, Addr, Port, Conf}).
+
+%% --- Various SNMP operations ----
+
+sync_get(TargetName, Oids) ->
+    call({sync_get, TargetName, Oids}).
+
+sync_get_next(TargetName, Oids) ->
+    call({sync_get_next, TargetName, Oids}).
+
+sync_get_bulk(TargetName, NR, MR, Oids) ->
+    call({sync_get_bulk, TargetName, NR, MR, Oids}).
+
+sync_set(TargetName, VarsAndVals) ->
+    call({sync_set, TargetName, VarsAndVals}).
 
 
 %% --- Misc utility functions ---
 
 oid_to_name(Oid) ->
     call({oid_to_name, Oid}).
-
-
-%% --- Various SNMP operations ----
-
-sync_get(Addr, Oids) ->
-    call({sync_get, Addr, Oids}).
-
-sync_get(Addr, Port, Oids) ->
-    call({sync_get, Addr, Port, Oids}).
-
-
-sync_get_next(Addr, Oids) ->
-    call({sync_get_next, Addr, Oids}).
-
-sync_get_next(Addr, Port, Oids) ->
-    call({sync_get_next, Addr, Port, Oids}).
-
-
-sync_get_bulk(Addr, NR, MR, Oids) ->
-    call({sync_get_bulk, Addr, NR, MR, Oids}).
-
-sync_get_bulk(Addr, Port, NR, MR, Oids) ->
-    call({sync_get_bulk, Addr, Port, NR, MR, Oids}).
-
-
-sync_set(Addr, VarsAndVals) ->
-    call({sync_set, Addr, VarsAndVals}).
-
-sync_set(Addr, Port, VarsAndVals) ->
-    call({sync_set, Addr, Port, VarsAndVals}).
 
 
 %%%-------------------------------------------------------------------
@@ -196,48 +177,28 @@ parse_opts(Opts) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 
-handle_call({agent, Addr, Conf}, _From, S) ->
-    Reply = (catch snmpm:register_agent(?USER, Addr, Conf)),
-    {reply, Reply, S};
-
-handle_call({agent, Addr, Port, Conf}, _From, S) ->
-    Reply = (catch snmpm:register_agent(?USER, Addr, Port, Conf)),
+handle_call({agent, TargetName, Conf}, _From, S) ->
+    Reply = (catch snmpm:register_agent(?USER, TargetName, Conf)),
     {reply, Reply, S};
 
 handle_call({oid_to_name, Oid}, _From, S) ->
     Reply = (catch snmpm:oid_to_name(Oid)),
     {reply, Reply, S};
 
-handle_call({sync_get, Addr, Oids}, _From, S) ->
-    Reply = (catch snmpm:g(?USER, Addr, Oids)),
+handle_call({sync_get, TargetName, Oids}, _From, S) ->
+    Reply = (catch snmpm:sync_get(?USER, TargetName, Oids)),
     {reply, Reply, S};
 
-handle_call({sync_get, Addr, Port, Oids}, _From, S) ->
-    Reply = (catch snmpm:g(?USER, Addr, Port, Oids)),
+handle_call({sync_get_next, TargetName, Oids}, _From, S) ->
+    Reply = (catch snmpm:sync_get_next(?USER, TargetName, Oids)),
     {reply, Reply, S};
 
-handle_call({sync_get_next, Addr, Oids}, _From, S) ->
-    Reply = (catch snmpm:gn(?USER, Addr, Oids)),
+handle_call({sync_get_bulk, TargetName, NR, MR, Oids}, _From, S) ->
+    Reply = (catch snmpm:sync_get_bulk(?USER, TargetName, NR, MR, Oids)),
     {reply, Reply, S};
 
-handle_call({sync_get_next, Addr, Port, Oids}, _From, S) ->
-    Reply = (catch snmpm:gn(?USER, Addr, Port, Oids)),
-    {reply, Reply, S};
-
-handle_call({sync_get_bulk, Addr, NR, MR, Oids}, _From, S) ->
-    Reply = (catch snmpm:gb(?USER, Addr, NR, MR, Oids)),
-    {reply, Reply, S};
-
-handle_call({sync_get_bulk, Addr, Port, NR, MR, Oids}, _From, S) ->
-    Reply = (catch snmpm:gb(?USER, Addr, Port, NR, MR, Oids)),
-    {reply, Reply, S};
-
-handle_call({sync_set, Addr, VarsAndVals}, _From, S) ->
-    Reply = (catch snmpm:s(?USER, Addr, VarsAndVals)),
-    {reply, Reply, S};
-
-handle_call({sync_set, Addr, Port, VarsAndVals}, _From, S) ->
-    Reply = (catch snmpm:s(?USER, Addr, Port, VarsAndVals)),
+handle_call({sync_set, TargetName, VarsAndVals}, _From, S) ->
+    Reply = (catch snmpm:sync_set(?USER, TargetName, VarsAndVals)),
     {reply, Reply, S};
 
 handle_call(Req, From, State) ->
@@ -313,19 +274,18 @@ handle_snmp_callback(handle_agent, {Addr, Port, SnmpInfo}) ->
 	      "~n     Varbinds:     ~p"
 	      "~n", [Addr, Port, ES, EI, VBs]),
     ok;
-handle_snmp_callback(handle_pdu, {Addr, Port, ReqId, SnmpResponse}) ->
+handle_snmp_callback(handle_pdu, {TargetName, ReqId, SnmpResponse}) ->
     {ES, EI, VBs} = SnmpResponse, 
     io:format("*** Received PDU ***"
-	      "~n   Address:       ~p"
-	      "~n   Port:          ~p"
-	      "~n   Request Id:    ~p"
+	      "~n   TargetName: ~p"
+	      "~n   Request Id: ~p"
 	      "~n   SNMP response:"
 	      "~n     Error Status: ~w"
 	      "~n     Error Index:  ~w"
 	      "~n     Varbinds:     ~p"
-	      "~n", [Addr, Port, ReqId, ES, EI, VBs]),
+	      "~n", [TargetName, ReqId, ES, EI, VBs]),
     ok;
-handle_snmp_callback(handle_trap, {Addr, Port, SnmpTrap}) ->
+handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
     TrapStr = 
 	case SnmpTrap of
 	    {Enteprise, Generic, Spec, Timestamp, Varbinds} ->
@@ -342,32 +302,29 @@ handle_snmp_callback(handle_trap, {Addr, Port, SnmpTrap}) ->
 			      "~n", [ErrorStatus, ErrorIndex, Varbinds])
 	end,
     io:format("*** Received TRAP ***"
-	      "~n   Address:   ~p"
-	      "~n   Port:      ~p"
-	      "~n   SNMP trap: ~s"
-	      "~n", [Addr, Port, lists:flatten(TrapStr)]),
+	      "~n   TargetName: ~p"
+	      "~n   SNMP trap:  ~s"
+	      "~n", [TargetName, lists:flatten(TrapStr)]),
     ok;
-handle_snmp_callback(handle_inform, {Addr, Port, SnmpInform}) ->
+handle_snmp_callback(handle_inform, {TargetName, SnmpInform}) ->
     {ES, EI, VBs} = SnmpInform, 
     io:format("*** Received INFORM ***"
-	      "~n   Address:     ~p"
-	      "~n   Port:        ~p"
+	      "~n   TargetName: ~p"
 	      "~n   SNMP inform: "
 	      "~n     Error Status: ~w"
 	      "~n     Error Index:  ~w"
 	      "~n     Varbinds:     ~p"
-	      "~n", [Addr, Port, ES, EI, VBs]),
+	      "~n", [TargetName, ES, EI, VBs]),
     ok;
-handle_snmp_callback(handle_report, {Addr, Port, SnmpReport}) ->
+handle_snmp_callback(handle_report, {TargetName, SnmpReport}) ->
     {ES, EI, VBs} = SnmpReport, 
     io:format("*** Received REPORT ***"
-	      "~n   Address:   ~p"
-	      "~n   Port:      ~p"
+	      "~n   TargetName: ~p"
 	      "~n   SNMP report: "
 	      "~n     Error Status: ~w"
 	      "~n     Error Index:  ~w"
 	      "~n     Varbinds:     ~p"
-	      "~n", [Addr, Port, ES, EI, VBs]),
+	      "~n", [TargetName, ES, EI, VBs]),
     ok;
 handle_snmp_callback(BadTag, Crap) ->
     io:format("*** Received crap ***"
@@ -428,22 +385,22 @@ handle_agent(Addr, Port, SnmpInfo, Server) when is_pid(Server) ->
     ignore.
 
 
-handle_pdu(Addr, Port, ReqId, SnmpResponse, Server) when is_pid(Server) ->
-    report_callback(Server, handle_pdu, {Addr, Port, ReqId, SnmpResponse}),
+handle_pdu(TargetName, ReqId, SnmpResponse, Server) when is_pid(Server) ->
+    report_callback(Server, handle_pdu, {TargetName, ReqId, SnmpResponse}),
     ignore.
 
 
-handle_trap(Addr, Port, SnmpTrap, Server) when is_pid(Server) ->
-    report_callback(Server, handle_trap, {Addr, Port, SnmpTrap}),
+handle_trap(TargetName, SnmpTrap, Server) when is_pid(Server) ->
+    report_callback(Server, handle_trap, {TargetName, SnmpTrap}),
     ok.
 
-handle_inform(Addr, Port, SnmpInform, Server) when is_pid(Server) ->
-    report_callback(Server, handle_inform, {Addr, Port, SnmpInform}),
+handle_inform(TargetName, SnmpInform, Server) when is_pid(Server) ->
+    report_callback(Server, handle_inform, {TargetName, SnmpInform}),
     ok.
 
 
-handle_report(Addr, Port, SnmpReport, Server) when is_pid(Server) ->
-    report_callback(Server, handle_inform, {Addr, Port, SnmpReport}),
+handle_report(TargetName, SnmpReport, Server) when is_pid(Server) ->
+    report_callback(Server, handle_inform, {TargetName, SnmpReport}),
     ok.
 
 report_callback(Pid, Tag, Info) ->

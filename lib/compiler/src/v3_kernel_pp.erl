@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Kernel Erlang (naive) prettyprinter
 
@@ -125,6 +126,16 @@ format_1(#k_seq{arg=A,body=B}, Ctxt) ->
 format_1(#k_match{vars=Vs,body=Bs,ret=Rs}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.item_indent),
     ["match ",
+     format_hseq(Vs, ",", ctxt_bump_indent(Ctxt, 6), fun format/2),
+     nl_indent(Ctxt1),
+     format(Bs, Ctxt1),
+     nl_indent(Ctxt),
+     "end",
+     format_ret(Rs, Ctxt1)
+    ];
+format_1(#k_guard_match{vars=Vs,body=Bs,ret=Rs}, Ctxt) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.item_indent),
+    ["guard_match ",
      format_hseq(Vs, ",", ctxt_bump_indent(Ctxt, 6), fun format/2),
      nl_indent(Ctxt1),
      format(Bs, Ctxt1),
@@ -265,6 +276,11 @@ format_1(#k_break{args=As}, Ctxt) ->
      format_hseq(As, ",", ctxt_bump_indent(Ctxt, 1), fun format/2),
      ">"
     ];
+format_1(#k_guard_break{args=As}, Ctxt) ->
+    [":<",
+     format_hseq(As, ",", ctxt_bump_indent(Ctxt, 1), fun format/2),
+     ">:"
+    ];
 format_1(#k_return{args=As}, Ctxt) ->
     ["<<",
      format_hseq(As, ",", ctxt_bump_indent(Ctxt, 1), fun format/2),
@@ -401,7 +417,7 @@ format_bin_seg_1(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg}, Ctxt) ->
     [format(Seg, Ctxt),
      ":",format(S, Ctxt),"*",io_lib:write(U),
      ":",io_lib:write(T),
-     lists:map(fun (F) -> [$-,io_lib:write(F)] end, Fs)
+     [[$-,io_lib:write(F)] || F <- Fs]
     ].
 
 % format_bin_elements(#k_binary_cons{hd=H,tl=T,size=S,info=I}, Ctxt) ->

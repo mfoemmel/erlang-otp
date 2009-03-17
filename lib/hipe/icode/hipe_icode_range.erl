@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%-------------------------------------------------------------------
 %%% File    : hipe_icode_range.erl
 %%% Author  : Per Gustafsson <pergu@it.uu.se>
@@ -51,23 +69,23 @@
 -type call_fun() :: fun((mfa(),[#range{}]) -> #range{}). 		      
 -type final_fun() :: fun((mfa(),[#range{}]) -> ok).
 -type data() :: {mfa(), args_fun(), call_fun(), final_fun()}.
--type label() :: integer().
+-type label() :: non_neg_integer().
 -type info() :: gb_tree().
--type work_list() :: {[label()],[label()],set()}.
+-type work_list() :: {[label()], [label()], set()}.
 -type variable() :: #icode_variable{}.
 -type annotated_variable() :: #icode_variable{}.
 -type argument() :: #icode_const{} | variable().
 -type three_range_fun()   :: fun((#range{},#range{},#range{}) -> #range{}).
--type instr_split_info()  :: {icode_instr(),[{label(),info()}]}.
+-type instr_split_info()  :: {icode_instr(), [{label(),info()}]}.
 -type last_instr_return() :: {instr_split_info(), #range{}}.
 
--record(state, {info_map	   :: gb_tree(), 
-		counter=dict:new() :: dict(), 
-		cfg		   :: cfg(), 
-		liveness	   :: gb_tree(), 
-		ret_type	   :: #range{}, 
-		lookup_fun	   :: call_fun(),
-		result_action	   :: final_fun()}).
+-record(state, {info_map = gb_trees:empty()	:: info(), 
+		counter  = dict:new()		:: dict(), 
+		cfg				:: cfg(), 
+		liveness = gb_trees:empty()	:: gb_tree(), 
+		ret_type			:: #range{}, 
+		lookup_fun			:: call_fun(),
+		result_action			:: final_fun()}).
 
 -define(WIDEN, 1).
 
@@ -209,20 +227,20 @@ analyse_block(Label, Info, State, Rewrite) ->
   state__update_info(State2, InfoList, Rewrite).
 
 -spec analyse_BB([icode_instr()], info(), [icode_instr()], bool(), call_fun()) ->
-	 {[icode_instr()], [info()], #range{}}.
+	 {[icode_instr()], [{label(),info()}], #range{}}.
 
 analyse_BB([Last], Info, Code, Rewrite, LookupFun) ->
-  %% io:format("I: ~w~n",[Last]),
-  {{NewI,InfoList},RetType} = analyse_last_insn(Last, Info, Rewrite, LookupFun),
-  {lists:reverse([NewI|Code]), InfoList, RetType};
+  {{NewI, LabelInfoList}, RetType} =
+    analyse_last_insn(Last, Info, Rewrite, LookupFun),
+  {lists:reverse([NewI|Code]), LabelInfoList, RetType};
 analyse_BB([Insn|InsnList], Info, Code, Rewrite, LookupFun) ->
-  {NewInfo,NewI} = analyse_insn(Insn, Info, LookupFun), 
+  {NewInfo, NewI} = analyse_insn(Insn, Info, LookupFun), 
   analyse_BB(InsnList, NewInfo, [NewI|Code], Rewrite, LookupFun).
 
 -spec analyse_insn(icode_instr(), info(), call_fun()) -> {info(), icode_instr()}.
 
 analyse_insn(I, Info, LookupFun) ->
-  %% io:format("~w Info: ~p~n",[I,Info]),
+  %% io:format("~w Info: ~p~n", [I, Info]),
   NewI = handle_args(I,Info),
   FinalI = 
     case NewI of 
@@ -252,12 +270,12 @@ handle_args(I, Info, WidenFun) ->
 
 -spec join_info(#ann{}, #range{}, three_range_fun()) -> #ann{}.
 
-join_info(Ann = #ann{range=R1,type=Type,count=?WIDEN}, R2, Fun)  ->
+join_info(Ann = #ann{range = R1, type = Type, count = ?WIDEN}, R2, Fun) ->
   Ann#ann{range = Fun(R1, R2, range_from_simple_type(Type))};
-join_info(Ann = #ann{range=R1,type=Type,count=C}, R2, _Fun) when C < ?WIDEN -> 
+join_info(Ann = #ann{range = R1, type = Type, count = C}, R2, _Fun) when C < ?WIDEN ->
   case join_three(R1, R2, range_from_simple_type(Type)) of
     R1 -> Ann;
-    NewR -> Ann#ann{range=NewR, count=C+1}
+    NewR -> Ann#ann{range = NewR, count = C+1}
   end.
 
 -spec join_three(#range{}, #range{}, #range{}) -> #range{}.
@@ -288,12 +306,12 @@ update_info1({range_anno, Ann, _}, R2, Fun) ->
 update_info1({type_anno, Type, _}, R2, Fun) ->
   make_range_anno(update_ann(type_to_ann(Type), R2, Fun)).
 
-update_ann(Ann = #ann{range=R1,type=Type,count=?WIDEN}, R2, Fun)  ->
+update_ann(Ann = #ann{range = R1, type = Type, count = ?WIDEN}, R2, Fun) ->
   Ann#ann{range = Fun(R1,R2,range_from_simple_type(Type))};
-update_ann(Ann = #ann{range=R1,type=Type,count=C}, R2, _Fun) -> 
+update_ann(Ann = #ann{range = R1, type = Type, count = C}, R2, _Fun) ->
   case update_three(R1, R2, range_from_simple_type(Type)) of
     R1 -> Ann;
-    NewR -> Ann#ann{range=NewR, count=C+1}
+    NewR -> Ann#ann{range = NewR, count = C+1}
   end.
 
 -spec type_to_ann(any()) -> #ann{}.
@@ -440,13 +458,13 @@ analyse_last_insn(I, Info, Rewrite, LookupFun) ->
     #icode_begin_try{} -> {analyse_begin_try(NewI, Info), none_type()}
   end.
 
--spec analyse_return(icode_instr(),info()) -> last_instr_return().
+-spec analyse_return(#icode_return{}, info()) -> last_instr_return().
 
 analyse_return(Insn, _Info) ->
   [RetRange] = get_range_from_args(hipe_icode:return_vars(Insn)),
   {{Insn,[]}, RetRange}.
 
--spec analyse_enter(icode_instr(), info(), call_fun()) -> last_instr_return().
+-spec analyse_enter(#icode_enter{}, info(), call_fun()) -> last_instr_return().
   
 analyse_enter(Insn, _Info, LookupFun) ->
   Args = hipe_icode:args(Insn),
@@ -455,7 +473,7 @@ analyse_enter(Insn, _Info, LookupFun) ->
   [RetRange] = analyse_call_or_enter_fun(Fun, Args, CallType, LookupFun),
   {{Insn,[]}, RetRange}.
 
--spec analyse_switch_val(#icode_switch_val{},info(),bool()) -> instr_split_info().
+-spec analyse_switch_val(#icode_switch_val{}, info(), bool()) -> instr_split_info().
 
 analyse_switch_val(Switch, Info, Rewrite) -> 
   Var = hipe_icode:switch_val_term(Switch),
@@ -525,7 +543,7 @@ label_range_list_to_cases([], Acc) ->
   lists:reverse(Acc).
 
 -spec analyse_switch_tuple_arity(#icode_switch_tuple_arity{}, info()) ->
-	 {#icode_switch_tuple_arity{},[{label(),info()}]}.
+	 {#icode_switch_tuple_arity{}, [{label(),info()}]}.
   
 analyse_switch_tuple_arity(Switch, Info) -> 
   Var = hipe_icode:switch_tuple_arity_term(Switch),
@@ -536,7 +554,7 @@ analyse_switch_tuple_arity(Switch, Info) ->
   Labels = [Fail|Case_labels],
   {Switch, [{Label,NewInfo} || Label <- Labels]}.
 
--spec analyse_goto(#icode_goto{},info()) -> {#icode_goto{}, [{label(),info()},...]}.
+-spec analyse_goto(#icode_goto{}, info()) -> {#icode_goto{}, [{label(),info()},...]}.
 
 analyse_goto(Insn, Info) ->
   GotoLabel = hipe_icode:goto_label(Insn),
@@ -836,7 +854,7 @@ pp_ann(#ann{range=#range{range=R, other=true}, type=Type}) ->
 pp_ann(Type) ->
   t_to_string(Type).
 
--spec pp_range(range_rep()) -> string().
+-spec pp_range(range_rep()) -> nonempty_string().
 
 pp_range(empty) ->
   "none";
@@ -863,40 +881,40 @@ range_from_type(Type) ->
 
 range_from_simple_type(Type) ->
   None = t_none(),
-  case t_inf(t_integer(),Type) of
+  case t_inf(t_integer(), Type) of
     None ->
-      #range{range=empty, other=true};
+      #range{range = empty, other = true};
     Type ->
       Range = {number_min(Type), number_max(Type)},
-      #range{range=Range, other=false};
+      #range{range = Range, other = false};
     NewType ->
       Range = {number_min(NewType), number_max(NewType)},
-      #range{range=Range, other=true}
+      #range{range = Range, other = true}
   end.
 
 -spec range_init(range_rep(), bool()) -> #range{}.
 
-range_init({Min,Max}, Other) ->
-  case inf_geq(Max,Min) of
+range_init({Min, Max} = Range, Other) ->
+  case inf_geq(Max, Min) of
     true ->
-      #range{range={Min,Max}, other=Other};
+      #range{range = Range, other = Other};
     false ->
-      #range{range=empty, other=Other}
+      #range{range = empty, other = Other}
   end;
 range_init(empty, Other) ->
-  #range{range=empty, other=Other}.
+  #range{range = empty, other = Other}.
 
 -spec range(#range{}) -> range_rep().
 
-range(#range{range=R}) -> R.
+range(#range{range = R}) -> R.
 
 -spec other(#range{}) -> bool().
 
-other(#range{other=O}) -> O.
+other(#range{other = O}) -> O.
 
 -spec set_other(#range{}, bool()) -> #range{}.
 
-set_other(R, O) -> R#range{other=O}.
+set_other(R, O) -> R#range{other = O}.
 
 -spec range__min(#range{}) -> 'empty' | 'neg_inf' | integer().
 
@@ -957,7 +975,7 @@ none_range() ->
 -spec none_type() -> #range{}.
 
 none_type() ->
-  #range{range=empty, other=false}.
+  #range{range = empty, other = false}.
 
 -spec any_r() -> {'neg_inf','pos_inf'}.
 
@@ -1059,9 +1077,10 @@ analyse_call_or_enter_fun(Fun, Args, CallType, LookupFun) ->
       [Arg_range1,Arg_range2] = get_range_from_args(Args),
       A1_is_empty = range__is_empty(Arg_range1),
       A2_is_empty = range__is_empty(Arg_range2),
-      if A1_is_empty or A2_is_empty ->
+      case A1_is_empty orelse A2_is_empty of
+	true ->
 	  [none_type()];
-	 true ->
+	false ->
 	  [Operation(Arg_range1, Arg_range2)]
       end;
     {unary, Operation} ->
@@ -1359,7 +1378,7 @@ width(neg_inf) -> pos_inf;
 width(X) when is_integer(X), X >= 0 -> poswidth(X, 0);
 width(X) when is_integer(X), X < 0 -> negwidth(X, 0).
 
--spec poswidth(integer(), non_neg_integer()) -> non_neg_integer().
+-spec poswidth(non_neg_integer(), non_neg_integer()) -> non_neg_integer().
 
 poswidth(X, N) ->
   case X < (1 bsl N) of
@@ -1367,7 +1386,7 @@ poswidth(X, N) ->
     false -> poswidth(X, N+1)
   end.
 
--spec negwidth(integer(), non_neg_integer()) -> non_neg_integer().
+-spec negwidth(neg_integer(), non_neg_integer()) -> non_neg_integer().
 
 negwidth(X, N) ->
   case X > (-1 bsl N) of
@@ -1615,7 +1634,7 @@ inf_mult(Number, pos_inf) -> inf_mult(pos_inf, Number);
 inf_mult(Number, neg_inf) -> inf_mult(neg_inf, Number);
 inf_mult(Number1, Number2) -> Number1 * Number2.
 
--spec inf_bsl(inf_integer(), _) -> inf_integer().
+-spec inf_bsl(inf_integer(), inf_integer()) -> inf_integer().
 
 inf_bsl(pos_inf, _) -> pos_inf;
 inf_bsl(neg_inf, _) -> neg_inf;
@@ -1650,7 +1669,7 @@ state__init(Cfg, {MFA, ArgsFun, CallFun, FinalFun}) ->
     false ->
       NewParams = lists:zipwith(fun update_info/2, Params, Ranges),
       NewCfg = hipe_icode_cfg:params_update(Cfg, NewParams),
-      Info = enter_defines(NewParams,gb_trees:empty()),
+      Info = enter_defines(NewParams, gb_trees:empty()),
       InfoMap = gb_trees:insert({Start, in}, Info, gb_trees:empty()),
       #state{info_map=InfoMap, cfg=NewCfg, liveness=Liveness,
 	     ret_type=none_type(),
@@ -1689,7 +1708,7 @@ state__info_in(S, Label) ->
   state__info(S, {Label, in}).
 
 state__info(#state{info_map=IM}, Key) ->
-  gb_trees:get(Key,IM).
+  gb_trees:get(Key, IM).
 
 state__update_info(State, LabelInfo, Rewrite) ->
   update_info(LabelInfo, State, [], Rewrite).
@@ -1784,7 +1803,7 @@ enter_define(PossibleVar, Info) ->
   case hipe_icode:is_var(PossibleVar) of
     true -> 
       case hipe_icode:variable_annotation(PossibleVar) of
-	{range_anno,#ann{range=Range},_} ->
+	{range_anno, #ann{range=Range}, _} ->
 	   gb_trees:enter(hipe_icode:var_name(PossibleVar), Range, Info);
 	_ ->
 	  Info
@@ -1908,7 +1927,7 @@ new__info(NewRanges) ->
 return__info(Ranges) ->
   [Range || #ann{range=Range} <- Ranges].
 
--spec return_none/0 :: () -> [#range{}].
+-spec return_none/0 :: () -> [#range{},...].
 return_none() ->
   [none_type()].
 

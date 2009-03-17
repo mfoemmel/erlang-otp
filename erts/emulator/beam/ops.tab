@@ -1,20 +1,22 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 1997-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
+# retrieved online at http://www.erlang.org/.
 # 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
-#     $Id$
+# %CopyrightEnd%
 #
+
 #
 # The instructions that follows are only known by the loader and the emulator.
 # They can be changed without recompiling old Beam files.
@@ -31,7 +33,8 @@ too_old_compiler/0
 too_old_compiler
 
 #
-# Obsolete instructions follow.
+# Obsolete instruction usage follow. (Nowdays we use f with
+# a zero label instead of p.)
 #
 
 is_list p S => too_old_compiler
@@ -55,6 +58,14 @@ is_eq_exact p S1 S2 => too_old_compiler
 
 func_info M=a a==am_module_info A=u==0 | label L | move n r => too_old_compiler
 func_info M=a a==am_module_info A=u==1 | label L | move n r => too_old_compiler
+
+# The undocumented and unsupported guard BIF is_constant/1 was removed
+# in R13. The is_constant/2 operation is marked as obosolete in genop.tab,
+# so the loader will automatically generate a too_old_compiler message
+# it is used, but we need to handle the is_constant/1 BIF specially here.
+
+bif1 Fail u$func:erlang:is_constant/1 Src Dst => too_old_compiler
+
 
 #
 # All the other instructions.
@@ -219,16 +230,6 @@ is_number f y
 is_number Fail=f i =>
 is_number Fail=f na => jump Fail
 is_number Fail Literal=q => move Literal x | is_number Fail x
-
-%macro: is_constant IsConstant -fail_action
-%cold
-is_constant f x
-is_constant f y
-is_constant f r
-%hot
-is_constant Fail=f ia =>
-is_constant Fail=f n => jump Fail
-is_constant Fail Literal=q => move Literal x | is_constant Fail x
 
 jump f
 
@@ -768,8 +769,7 @@ call_ext_only u==1 Bif=u$bif:erlang:exit/1 => call_bif1 Bif
 call_ext_only u==1 Bif=u$bif:erlang:throw/1 => call_bif1 Bif
 
 #
-# The error/1 and error/2 BIFs (and their old aliases fault/1 and
-# fault/2) never execute the instruction following them;
+# The error/1 and error/2 BIFs never execute the instruction following them;
 # thus there is no need to generate any return instruction.
 # However, they generate stack backtraces, so if the call instruction
 # is call_ext_only/2 instruction, we explicitly do an allocate/2 to store
@@ -777,17 +777,11 @@ call_ext_only u==1 Bif=u$bif:erlang:throw/1 => call_bif1 Bif
 #
 
 call_ext_last u==1 Bif=u$bif:erlang:error/1 D => call_bif1 Bif
-call_ext_last u==1 Bif=u$bif:erlang:fault/1 D => call_bif1 Bif
 call_ext_last u==2 Bif=u$bif:erlang:error/2 D => call_bif2 Bif
-call_ext_last u==2 Bif=u$bif:erlang:fault/2 D => call_bif2 Bif
 
 call_ext_only Ar=u==1 Bif=u$bif:erlang:error/1 => \
   allocate u Ar | call_bif1 Bif
-call_ext_only Ar=u==1 Bif=u$bif:erlang:fault/1 => \
-  allocate u Ar | call_bif1 Bif
 call_ext_only Ar=u==2 Bif=u$bif:erlang:error/2 => \
-  allocate u Ar | call_bif2 Bif
-call_ext_only Ar=u==2 Bif=u$bif:erlang:fault/2 => \
   allocate u Ar | call_bif2 Bif
 
 #

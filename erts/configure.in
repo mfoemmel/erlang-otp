@@ -1,10 +1,25 @@
 dnl Process this file with autoconf to produce a configure script. -*-m4-*-
-dnl
-dnl
+
+dnl %CopyrightBegin%
+dnl 
+dnl Copyright Ericsson AB 1997-2009. All Rights Reserved.
+dnl 
+dnl The contents of this file are subject to the Erlang Public License,
+dnl Version 1.1, (the "License"); you may not use this file except in
+dnl compliance with the License. You should have received a copy of the
+dnl Erlang Public License along with this software. If not, it can be
+dnl retrieved online at http://www.erlang.org/.
+dnl 
+dnl Software distributed under the License is distributed on an "AS IS"
+dnl basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+dnl the License for the specific language governing rights and limitations
+dnl under the License.
+dnl 
+dnl %CopyrightEnd%
+
 dnl The string "FIXME convbreak" means that there is a break of
 dnl autoconf convention that should be cleaned up.
-dnl
-dnl
+
 AC_INIT(vsn.mk)
 AC_PREREQ(2.59)
 
@@ -127,7 +142,6 @@ AC_ARG_ENABLE(lock-counter,
     *)  enable_lock_count=yes ;;
   esac ], enable_lock_count=no)
 
-
 AC_ARG_ENABLE(kernel-poll,
 [  --enable-kernel-poll    enable kernel poll support
   --disable-kernel-poll   disable kernel poll support],
@@ -180,6 +194,13 @@ AC_ARG_ENABLE(darwin-64bit,
   esac
 ],enable_darwin_64bit=no)
 
+AC_ARG_ENABLE(m64-build,
+[  --enable-m64-build    build 64bit binaries using the -m64 flag to (g)cc],
+[ case "$enableval" in
+    no) enable_m64_build=no ;;
+    *)  enable_m64_build=yes ;;
+  esac
+],enable_m64_build=no)
 
 AC_ARG_ENABLE(fixalloc,
 [  --disable-fixalloc      disable the use of fix_alloc])
@@ -262,6 +283,8 @@ if test X${enable_darwin_64bit} = Xyes; then
 	if test X"$TMPSYS" '!=' X"Darwin-i386"; then
 		AC_MSG_ERROR([--enable-darwin-64bit only supported on x86 host])	
 	fi
+fi
+if test X${enable_darwin_64bit} = Xyes -o X${enable_m64_build} = Xyes; then
 	enable_hipe=no
 	case $CFLAGS in
 		*-m64*)
@@ -447,6 +470,7 @@ ppc64)	ARCH=ppc64;;
 armv5b)	ARCH=arm;;
 armv5teb)	ARCH=arm;;
 armv5tel)	ARCH=arm;;
+tile)		ARCH=tile;;
 esac
 
 dnl
@@ -523,6 +547,18 @@ case $ARCH-$OPSYS in
 				*)
 					LDFLAGS="-arch i386 $LDFLAGS"
 					;;
+			esac
+		fi
+		;;
+	*)
+		if test X${enable_m64_build} = Xyes; then
+			AC_MSG_NOTICE([Adjusting LDFLAGS to use -m64])
+			case $LDFLAGS in
+				*-m64*)
+					;;
+				*)
+					LDFLAGS="-m64 $LDFLAGS"
+				;;
 			esac
 		fi
 		;;
@@ -721,40 +757,20 @@ case $ERTS_BUILD_SMP_EMU in
 			gcc_smp=okgcc,
 			gcc_smp=oldornogcc)
 	ERTS_BUILD_SMP_EMU=yes
-	case "$enable_threads-$gcc_smp-$found_threads-$ARCH-$OPSYS-$ac_cv_sizeof_void_p" in
+	case "$enable_threads-$gcc_smp-$found_threads-$host_os" in
 
 	    no-*)
 		AC_MSG_RESULT(no; threads disabled by user)
 		ERTS_BUILD_SMP_EMU=no
 		;;
 
-	    *-okgcc-yes-ultrasparc-sol2-4|*-okgcc-yes-ppc-darwin-4|*-okgcc-yes-x86-darwin-4|*-okgcc-yes-amd64-darwin-8)
-		case $host_os in
-		    solaris2.[[0-7]]|solaris2.[[0-7]].*)
-			ERTS_BUILD_SMP_EMU=no;;
-		    darwin[[0-7]]|darwin[[0-7]].*)
-			ERTS_BUILD_SMP_EMU=no;;
-		    *)
-			;;
-		esac
-		AC_MSG_RESULT($ERTS_BUILD_SMP_EMU; default on this platform)
+	    *-okgcc-yes-*)
+		AC_MSG_RESULT(yes)
+		ERTS_BUILD_SMP_EMU=yes
 		;;
 
-	    *-okgcc-yes-x86-linux-4|*-okgcc-yes-amd64-linux-4|*-okgcc-yes-amd64-linux-8|*-okgcc-yes-ppc-linux-4)
-		linux_kernel_vsn_=`uname -r` # FIXME: for cross compilation.
-		case $linux_kernel_vsn_ in
-		    [[0-1]].*|2.[[0-5]]|2.[[0-5]].*)
-			ERTS_BUILD_SMP_EMU=no;;
-		    *) ;;
-		esac
-		if test "x$ETHR_THR_LIB_BASE_NAME" != "xnptl"; then
-		    ERTS_BUILD_SMP_EMU=no
-		fi
-		AC_MSG_RESULT($ERTS_BUILD_SMP_EMU; default on this platform)
-		;;
-
-	    *-win32-*)
-		AC_MSG_RESULT(yes; default on this platform)
+	    *-win32)
+		AC_MSG_RESULT(yes)
 		ERTS_BUILD_SMP_EMU=yes
 		;;
 
@@ -764,7 +780,7 @@ case $ERTS_BUILD_SMP_EMU in
 		;;
 
 	    *)
-		AC_MSG_RESULT(no; default on this platform)
+		AC_MSG_RESULT(no)
 		ERTS_BUILD_SMP_EMU=no
 		;;
 	esac
@@ -864,11 +880,13 @@ else
 	if test "x$enable_lock_check" != "xno"; then
 	    EMU_THR_DEFS="$EMU_THR_DEFS -DERTS_ENABLE_LOCK_CHECK"
 	fi
+
 	AC_MSG_CHECKING(whether lock counters should be enabled)
 	AC_MSG_RESULT($enable_lock_count)
 	if test "x$enable_lock_count" != "xno"; then
 	    EMU_THR_DEFS="$EMU_THR_DEFS -DERTS_ENABLE_LOCK_COUNT"
 	fi
+	
 	disable_child_waiter_thread=no
 	case $host_os in
 	    solaris*)
@@ -947,6 +965,13 @@ fi
 
 AC_SUBST(EMU_LOCK_CHECKING)
 
+ERTS_INTERNAL_X_LIBS=
+
+AC_CHECK_LIB(kstat, kstat_open,
+[AC_DEFINE(HAVE_KSTAT, 1, [Define if you have kstat])
+ERTS_INTERNAL_X_LIBS="$ERTS_INTERNAL_X_LIBS -lkstat"])
+
+AC_SUBST(ERTS_INTERNAL_X_LIBS)
 
 dnl THR_LIBS and THR_DEFS are only used by odbc
 THR_LIBS=$ETHR_X_LIBS
@@ -1051,6 +1076,29 @@ if test "$have_gethostbyname_r" = yes; then
 		;;
 	esac
 fi
+
+AC_MSG_CHECKING(for working posix_openpt implementation)
+AC_TRY_LINK([
+#define _XOPEN_SOURCE 600 
+#include <stdlib.h>
+#include <fcntl.h>
+],
+[
+    int mfd = posix_openpt(O_RDWR);
+    ptsname(mfd);
+    grantpt(mfd);
+    unlockpt(mfd);
+    return mfd;
+], working_posix_openpt=yes, working_posix_openpt=no)
+
+if test "X$working_posix_openpt" = "Xyes"; then
+    AC_DEFINE(HAVE_WORKING_POSIX_OPENPT, [1],
+	      [Define if you have a working posix_openpt implementation])
+    AC_MSG_RESULT(yes)
+else
+    AC_MSG_RESULT(no)
+fi
+
 dnl Check for usage of sockaddr_in in netdb.h
 dnl somewhat ugly check, I check for presence of the string and that 
 dnl compilation works. If either fails I assume it's not needed.
@@ -1124,7 +1172,7 @@ AC_CHECK_HEADERS(fcntl.h limits.h unistd.h syslog.h dlfcn.h ieeefp.h \
                  sys/ioctl.h sys/time.h sys/uio.h \
                  sys/socket.h sys/sockio.h sys/socketio.h \
                  net/errno.h malloc.h mach-o/dyld.h arpa/nameser.h \
-		 pty.h util.h utmp.h)
+		 pty.h util.h utmp.h langinfo.h)
 
 dnl Check if we have kernel poll support
 have_kernel_poll=no
@@ -1155,7 +1203,7 @@ if test "x$enable_sctp" == "xyes" ; then
                       struct sctp_paddrparams.spp_sackdelay,
                       struct sctp_paddrparams.spp_flags,
                       struct sctp_remote_error.sre_data,
-                      struct sctp_send_failed.ssh_data], [], [],
+                      struct sctp_send_failed.ssf_data], [], [],
         [#if HAVE_SYS_SOCKET_H
          #include <sys/socket.h>
          #endif
@@ -1353,7 +1401,7 @@ int main(int argc, char **argv) {
 	exit(1);
     }
 }
-	],, have_getaddrinfo=no)
+	],, have_getaddrinfo=no, have_getaddrinfo=no)
 	if test $have_getaddrinfo = yes; then
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_GETADDRINFO, [1], 
@@ -1368,7 +1416,7 @@ AC_CHECK_FUNCS([ieee_handler fpsetmask finite isnan isinf res_gethostbyname dlop
 		pread pwrite writev memmove strerror strerror_r strncasecmp \
 		gethrtime localtime_r gmtime_r mremap memcpy mallopt \
 		sbrk _sbrk __sbrk brk _brk __brk \
-		flockfile fstat strlcpy strlcat setsid])
+		flockfile fstat strlcpy strlcat setsid posix2time setlocale nl_langinfo])
 AC_FUNC_SETVBUF_REVERSED
 
 disable_vfork=false
@@ -1430,6 +1478,64 @@ AC_CHECK_FUNCS([openpty])
 dnl ----------------------------------------------------------------------
 dnl Checks for features/quirks in the system that affects Erlang.
 dnl ----------------------------------------------------------------------
+
+AC_MSG_CHECKING([for sched_getaffinity/sched_setaffinity])
+AC_TRY_COMPILE([#include <sched.h>],
+[
+#ifndef CPU_SETSIZE
+#error no CPU_SETSIZE
+#endif
+	int res;
+	cpu_set_t cpuset;
+	CPU_ZERO(&cpuset);
+	CPU_SET(1, &cpuset);
+	res = sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
+	res = sched_getaffinity(0, sizeof(cpu_set_t), &cpuset);
+	res = CPU_ISSET(1, &cpuset);
+	CPU_CLR(1, &cpuset);
+],
+		sched_xetaffinity=yes,
+		sched_xetaffinity=no)
+AC_MSG_RESULT([$sched_xetaffinity])
+if test $sched_xetaffinity = yes; then
+	AC_DEFINE(HAVE_SCHED_xETAFFINITY, 1, [Define if you have sched_getaffinity/sched_setaffinity])
+fi
+
+
+AC_MSG_CHECKING([for pset functionality])
+AC_TRY_COMPILE([#include <sys/pset.h>],
+[
+	int res;
+	psetid_t id = PS_MYID;
+	int type = PS_PRIVATE;
+	uint_t numcpus = 1024;
+	processorid_t cpulist[1024];
+
+	res = pset_info(id, &type, &numcpus, &cpulist[0]);
+],
+		pset_functionality=yes,
+		pset_functionality=no)
+AC_MSG_RESULT([$pset_functionality])
+if test $pset_functionality = yes; then
+	AC_DEFINE(HAVE_PSET, 1, [Define if you have pset functionality])
+fi
+
+AC_MSG_CHECKING([for processor_bind functionality])
+AC_TRY_COMPILE([
+#include <sys/types.h>
+#include <sys/processor.h>
+#include <sys/procset.h>
+],
+[
+	int res = processor_bind(P_LWPID, P_MYID, PBIND_NONE, NULL);
+],
+		processor_bind_functionality=yes,
+		processor_bind_functionality=no)
+AC_MSG_RESULT([$processor_bind_functionality])
+if test $processor_bind_functionality = yes; then
+	AC_DEFINE(HAVE_PROCESSOR_BIND, 1, [Define if you have processor_bind functionality])
+fi
+
 
 AC_CACHE_CHECK([for 'end' symbol],
 		erts_cv_have_end_symbol,
@@ -1854,13 +1960,19 @@ CPPFLAGS=$saved_cppflags
 LM_SYS_IPV6
 LM_SYS_MULTICAST
 ERL_TIME_CORRECTION
+AC_CHECK_PROG(M4, m4, m4)
 dnl check to auto-enable hipe here...
 if test X${enable_hipe} != Xno; then
-  case "$ARCH-$OPSYS" in
-    x86-linux|amd64-linux|ppc-linux|ppc-darwin|arm-linux|amd64-freebsd|x86-freebsd|x86-sol2|amd64-sol2|ultrasparc-linux)
-      enable_hipe=yes
-      ;;
-  esac
+  if test -z "$M4"; then
+	enable_hipe=no
+   	AC_MSG_NOTICE([HiPE disabled as no valid m4 is found in PATH])
+  else
+  	case "$ARCH-$OPSYS" in
+    	    x86-linux|amd64-linux|ppc-linux|ppc-darwin|arm-linux|amd64-freebsd|x86-freebsd|x86-sol2|amd64-sol2|ultrasparc-linux)
+      		enable_hipe=yes
+      		;;	
+  	esac
+  fi
 fi
 if test X${enable_fp_exceptions} = Xauto ; then
    if test X${enable_hipe} = Xyes; then
@@ -2731,6 +2843,9 @@ case $host_os in
 	;;
 	solaris2*|sysv4*)
 		DED_LDFLAGS="-G"
+		if test X${enable_m64_build} = Xyes; then
+			DED_LDFLAGS="-64 $DED_LDFLAGS"
+		fi
 	;;
 	aix4*)
 		DED_LDFLAGS="-G -bnoentry -bexpall"
@@ -2756,9 +2871,20 @@ case $host_os in
 		DED_LD_FLAG_RUNTIME_LIBRARY_PATH=
 		STATIC_CFLAGS="-mdynamic-no-pic"
 	;;
-	linux*|freebsd*)
+	linux*)
 		DED_LD="$CC"
 		DED_LDFLAGS="-shared"
+		DED_LD_FLAG_RUNTIME_LIBRARY_PATH=
+		if test X${enable_m64_build} = Xyes; then
+			DED_LDFLAGS="-m64 $DED_LDFLAGS"
+		fi
+	;;	
+	freebsd*)
+		DED_LD="$CC"
+		DED_LDFLAGS="-shared"
+		if test X${enable_m64_build} = Xyes; then
+			DED_LDFLAGS="-m64 $DED_LDFLAGS"
+		fi
 	;;	
 	osf*)
 		# NOTE! Whitespace after -rpath is important.
@@ -2768,6 +2894,7 @@ case $host_os in
 	*)
 		# assume GNU linker and ELF
 		DED_LDFLAGS="-shared"
+		# GNU linker has no option for 64bit build, should not propagate -m64
 	;;
 esac
 
@@ -2893,11 +3020,12 @@ AC_ARG_WITH(ssl,
   --without-ssl           don't use SSL])
 
 AC_ARG_ENABLE(dynamic-ssl-lib,
-[  --enable-dynamic-ssl-lib        enable using dynamic openssl libraries],
+[  --enable-dynamic-ssl-lib        enable using dynamic openssl libraries
+   --disable-dynamic-ssl-lib       disable using dynamic openssl libraries],
 [ case "$enableval" in
     no) enable_dynamic_ssl=no ;;
     *)  enable_dynamic_ssl=yes ;;
-  esac ], enable_dynamic_ssl=no)
+  esac ], enable_dynamic_ssl=yes)
 
 #----------------------------------------------------------------------
 # We actually might do the SSL tests twice due to late discovery of 
@@ -3265,12 +3393,12 @@ done
 
 AC_CHECK_PROGS(JAVAC, javac.sh javac guavac gcj jikes bock)
 if test -n "$JAVAC"; then
-  dnl Make sure it's at least JDK 1.2
-  AC_CACHE_CHECK(for JDK version 1.2, 
-     ac_cv_prog_javac_ver_1_2,
-     [ERL_TRY_LINK_JAVA([], [java.util.Iterator iter;],
-        ac_cv_prog_javac_ver_1_2=yes, ac_cv_prog_javac_ver_1_2=no)])
-  if test $ac_cv_prog_javac_ver_1_2 = no; then
+  dnl Make sure it's at least JDK 1.5
+  AC_CACHE_CHECK(for JDK version 1.5, 
+     ac_cv_prog_javac_ver_1_5,
+     [ERL_TRY_LINK_JAVA([], [for (String i : args);],
+        ac_cv_prog_javac_ver_1_5=yes, ac_cv_prog_javac_ver_1_5=no)])
+  if test $ac_cv_prog_javac_ver_1_5 = no; then
     unset -v JAVAC
   fi
 fi

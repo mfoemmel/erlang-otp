@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2005-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 /*
  * SMP interface to ethread library.
@@ -24,6 +25,16 @@
 #ifndef ERL_SMP_H
 #define ERL_SMP_H
 #include "erl_threads.h"
+
+#ifdef ERTS_ENABLE_LOCK_COUNT
+#define erts_smp_mtx_lock(L) erts_smp_mtx_lock_x(L, __FILE__, __LINE__)
+#define erts_smp_spin_lock(L) erts_smp_spin_lock_x(L, __FILE__, __LINE__)
+#define erts_smp_rwmtx_rlock(L) erts_smp_rwmtx_rlock_x(L, __FILE__, __LINE__)
+#define erts_smp_rwmtx_rwlock(L) erts_smp_rwmtx_rwlock_x(L, __FILE__, __LINE__)
+#define erts_smp_read_lock(L) erts_smp_read_lock_x(L, __FILE__, __LINE__)
+#define erts_smp_write_lock(L) erts_smp_write_lock_x(L, __FILE__, __LINE__)
+#endif
+
 
 #ifdef ERTS_SMP
 #define ERTS_SMP_THR_OPTS_DEFAULT_INITER ERTS_THR_OPTS_DEFAULT_INITER
@@ -95,7 +106,11 @@ ERTS_GLB_INLINE void erts_smp_mtx_destroy(erts_smp_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_smp_mtx_set_forksafe(erts_smp_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_smp_mtx_unset_forksafe(erts_smp_mtx_t *mtx);
 ERTS_GLB_INLINE int erts_smp_mtx_trylock(erts_smp_mtx_t *mtx);
+#ifdef ERTS_ENABLE_LOCK_COUNT
+ERTS_GLB_INLINE void erts_smp_mtx_lock_x(erts_smp_mtx_t *mtx, char *file, int line);
+#else
 ERTS_GLB_INLINE void erts_smp_mtx_lock(erts_smp_mtx_t *mtx);
+#endif
 ERTS_GLB_INLINE void erts_smp_mtx_unlock(erts_smp_mtx_t *mtx);
 ERTS_GLB_INLINE int erts_smp_lc_mtx_is_locked(erts_smp_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_smp_cnd_init(erts_smp_cnd_t *cnd);
@@ -114,10 +129,15 @@ ERTS_GLB_INLINE void erts_smp_rwmtx_init(erts_smp_rwmtx_t *rwmtx,
 					 char *name);
 ERTS_GLB_INLINE void erts_smp_rwmtx_destroy(erts_smp_rwmtx_t *rwmtx);
 ERTS_GLB_INLINE int erts_smp_rwmtx_tryrlock(erts_smp_rwmtx_t *rwmtx);
+#ifdef ERTS_ENABLE_LOCK_COUNT
+ERTS_GLB_INLINE void erts_smp_rwmtx_rlock_x(erts_smp_rwmtx_t *rwmtx, char *file, unsigned int line);
+ERTS_GLB_INLINE void erts_smp_rwmtx_rwlock_x(erts_smp_rwmtx_t *rwmtx, char *file, unsigned int line);
+#else
 ERTS_GLB_INLINE void erts_smp_rwmtx_rlock(erts_smp_rwmtx_t *rwmtx);
+ERTS_GLB_INLINE void erts_smp_rwmtx_rwlock(erts_smp_rwmtx_t *rwmtx);
+#endif
 ERTS_GLB_INLINE void erts_smp_rwmtx_runlock(erts_smp_rwmtx_t *rwmtx);
 ERTS_GLB_INLINE int erts_smp_rwmtx_tryrwlock(erts_smp_rwmtx_t *rwmtx);
-ERTS_GLB_INLINE void erts_smp_rwmtx_rwlock(erts_smp_rwmtx_t *rwmtx);
 ERTS_GLB_INLINE void erts_smp_rwmtx_rwunlock(erts_smp_rwmtx_t *rwmtx);
 ERTS_GLB_INLINE int erts_smp_lc_rwmtx_is_rlocked(erts_smp_rwmtx_t *mtx);
 ERTS_GLB_INLINE int erts_smp_lc_rwmtx_is_rwlocked(erts_smp_rwmtx_t *mtx);
@@ -133,6 +153,9 @@ ERTS_GLB_INLINE long erts_smp_atomic_addtest(erts_smp_atomic_t *addp,
 ERTS_GLB_INLINE void erts_smp_atomic_add(erts_smp_atomic_t *addp, long i);
 ERTS_GLB_INLINE long erts_smp_atomic_xchg(erts_smp_atomic_t *xchgp,
 					  long new);
+ERTS_GLB_INLINE long erts_smp_atomic_cmpxchg(erts_smp_atomic_t *xchgp,
+					     long new,
+					     long expected);
 ERTS_GLB_INLINE long erts_smp_atomic_bor(erts_smp_atomic_t *var, long mask);
 ERTS_GLB_INLINE long erts_smp_atomic_band(erts_smp_atomic_t *var, long mask);
 ERTS_GLB_INLINE void erts_smp_spinlock_init_x(erts_smp_spinlock_t *lock,
@@ -142,7 +165,11 @@ ERTS_GLB_INLINE void erts_smp_spinlock_init(erts_smp_spinlock_t *lock,
 					    char *name);
 ERTS_GLB_INLINE void erts_smp_spinlock_destroy(erts_smp_spinlock_t *lock);
 ERTS_GLB_INLINE void erts_smp_spin_unlock(erts_smp_spinlock_t *lock);
+#ifdef ERTS_ENABLE_LOCK_COUNT
+ERTS_GLB_INLINE void erts_smp_spin_lock_x(erts_smp_spinlock_t *lock, char *file, unsigned int line);
+#else
 ERTS_GLB_INLINE void erts_smp_spin_lock(erts_smp_spinlock_t *lock);
+#endif
 ERTS_GLB_INLINE int erts_smp_lc_spinlock_is_locked(erts_smp_spinlock_t *lock);
 ERTS_GLB_INLINE void erts_smp_rwlock_init_x(erts_smp_rwlock_t *lock,
 					    char *name,
@@ -151,9 +178,14 @@ ERTS_GLB_INLINE void erts_smp_rwlock_init(erts_smp_rwlock_t *lock,
 					  char *name);
 ERTS_GLB_INLINE void erts_smp_rwlock_destroy(erts_smp_rwlock_t *lock);
 ERTS_GLB_INLINE void erts_smp_read_unlock(erts_smp_rwlock_t *lock);
+#ifdef ERTS_ENABLE_LOCK_COUNT
+ERTS_GLB_INLINE void erts_smp_read_lock_x(erts_smp_rwlock_t *lock, char *file, unsigned int line);
+ERTS_GLB_INLINE void erts_smp_write_lock_x(erts_smp_rwlock_t *lock, char *file, unsigned int line);
+#else
 ERTS_GLB_INLINE void erts_smp_read_lock(erts_smp_rwlock_t *lock);
-ERTS_GLB_INLINE void erts_smp_write_unlock(erts_smp_rwlock_t *lock);
 ERTS_GLB_INLINE void erts_smp_write_lock(erts_smp_rwlock_t *lock);
+#endif
+ERTS_GLB_INLINE void erts_smp_write_unlock(erts_smp_rwlock_t *lock);
 ERTS_GLB_INLINE int erts_smp_lc_rwlock_is_rlocked(erts_smp_rwlock_t *lock);
 ERTS_GLB_INLINE int erts_smp_lc_rwlock_is_rwlocked(erts_smp_rwlock_t *lock);
 ERTS_GLB_INLINE void erts_smp_thr_time_now(erts_smp_thr_timeval_t *time);
@@ -331,9 +363,15 @@ erts_smp_mtx_trylock(erts_smp_mtx_t *mtx)
 
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_smp_mtx_lock_x(erts_smp_mtx_t *mtx, char *file, int line)
+#else
 erts_smp_mtx_lock(erts_smp_mtx_t *mtx)
+#endif
 {
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_COUNT)
+    erts_mtx_lock_x(mtx, file, line);
+#elif defined(ERTS_SMP)
     erts_mtx_lock(mtx);
 #endif
 }
@@ -442,9 +480,15 @@ erts_smp_rwmtx_tryrlock(erts_smp_rwmtx_t *rwmtx)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_smp_rwmtx_rlock_x(erts_smp_rwmtx_t *rwmtx, char *file, unsigned int line)
+#else
 erts_smp_rwmtx_rlock(erts_smp_rwmtx_t *rwmtx)
+#endif
 {
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_COUNT)
+    erts_rwmtx_rlock_x(rwmtx, file, line);
+#elif defined(ERTS_SMP)
     erts_rwmtx_rlock(rwmtx);
 #endif
 }
@@ -469,9 +513,15 @@ erts_smp_rwmtx_tryrwlock(erts_smp_rwmtx_t *rwmtx)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_smp_rwmtx_rwlock_x(erts_smp_rwmtx_t *rwmtx, char *file, unsigned int line)
+#else
 erts_smp_rwmtx_rwlock(erts_smp_rwmtx_t *rwmtx)
+#endif
 {
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_COUNT)
+    erts_rwmtx_rwlock_x(rwmtx, file, line);
+#elif defined(ERTS_SMP)
     erts_rwmtx_rwlock(rwmtx);
 #endif
 }
@@ -634,6 +684,19 @@ erts_smp_atomic_xchg(erts_smp_atomic_t *xchgp, long new)
 }
 
 ERTS_GLB_INLINE long
+erts_smp_atomic_cmpxchg(erts_smp_atomic_t *xchgp, long new, long expected)
+{
+#ifdef ERTS_SMP
+    return erts_atomic_cmpxchg(xchgp, new, expected);
+#else
+    long old = *xchgp;
+    if (old == expected)
+        *xchgp = new;
+    return old;
+#endif
+}
+
+ERTS_GLB_INLINE long
 erts_smp_atomic_bor(erts_smp_atomic_t *var, long mask)
 {
 #ifdef ERTS_SMP
@@ -700,9 +763,15 @@ erts_smp_spin_unlock(erts_smp_spinlock_t *lock)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_smp_spin_lock_x(erts_smp_spinlock_t *lock, char *file, unsigned int line)
+#else
 erts_smp_spin_lock(erts_smp_spinlock_t *lock)
+#endif
 {
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_COUNT)
+    erts_spin_lock_x(lock, file, line);
+#elif defined(ERTS_SMP)
     erts_spin_lock(lock);
 #else
     (void)lock;
@@ -760,9 +829,15 @@ erts_smp_read_unlock(erts_smp_rwlock_t *lock)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_smp_read_lock_x(erts_smp_rwlock_t *lock, char *file, unsigned int line)
+#else
 erts_smp_read_lock(erts_smp_rwlock_t *lock)
+#endif 
 {
-#ifdef ERTS_SMP
+#if defined(ERTS_ENABLE_LOCK_COUNT) && defined(ERTS_SMP)
+    erts_read_lock_x(lock, file, line);
+#elif defined(ERTS_SMP)
     erts_read_lock(lock);
 #else
     (void)lock;
@@ -780,9 +855,15 @@ erts_smp_write_unlock(erts_smp_rwlock_t *lock)
 }
 
 ERTS_GLB_INLINE void
+#ifdef ERTS_ENABLE_LOCK_COUNT
+erts_smp_write_lock_x(erts_smp_rwlock_t *lock, char *file, unsigned int line)
+#else
 erts_smp_write_lock(erts_smp_rwlock_t *lock)
+#endif 
 {
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_COUNT)
+    erts_write_lock_x(lock, file, line);
+#elif defined(ERTS_SMP)
     erts_write_lock(lock);
 #else
     (void)lock;

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Sven-Olof Nyström/Richard Carlsson.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
+%%
 %% =====================================================================
 %% General Balanced Trees - highly efficient dictionaries.
 %%
@@ -104,6 +106,10 @@
 %%   by the iterator S, and S1 is the new iterator to be used for
 %%   traversing the remaining entries, or the atom `none' if no entries
 %%   remain.
+%%
+%% - map(F, T): maps the function F(K, V) -> V' to all key-value pairs
+%%   of the tree T and returns a new tree T' with the same set of keys
+%%   as T and the new set of values V'.
 
 -module(gb_trees).
 
@@ -111,7 +117,7 @@
 	 update/3, enter/3, delete/2, delete_any/2, balance/1,
 	 is_defined/2, keys/1, values/1, to_list/1, from_orddict/1,
 	 smallest/1, largest/1, take_smallest/1, take_largest/1,
-	 iterator/1, next/1]).
+	 iterator/1, next/1, map/2]).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -132,9 +138,8 @@
 %% deletion works for my trees, but not for the book's trees. Behaviour
 %% is logaritmic (as it should be).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%% Some macros. 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Some macros.
 
 -define(p, 2). % It seems that p = 2 is optimal for sorted keys
 
@@ -144,34 +149,38 @@
 
 -define(mul2(X), X bsl 1).
 
-%%-type(gb_tree_node() :: {_,_,_,_}|'nil').
-%%-type(gb_tree() :: {non_neg_integer(),gb_tree_node()}).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Some types.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-type gb_tree_node() :: 'nil' | {_, _, _, _}.
 
-%%-spec(empty/0 :: () -> gb_tree()).
+%% A declaration equivalent to the following is currently hard-coded
+%% in erl_types.erl
+%%
+%% -opaque gb_tree() :: {non_neg_integer(), gb_tree_node()}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec empty() -> gb_tree().
 
 empty() ->
     {0, nil}.
 
-
-%%-spec(is_empty/1 :: (gb_tree()) -> bool()).
+-spec is_empty(gb_tree()) -> bool().
 
 is_empty({0, nil}) ->
     true;
 is_empty(_) ->
     false.
 
-
-%%-spec(size/1 :: (gb_tree()) -> non_neg_integer()).
+-spec size(gb_tree()) -> non_neg_integer().
 
 size({Size, _}) when is_integer(Size), Size >= 0 ->
     Size.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-%%-spec(lookup/2 :: (_, gb_tree()) -> 'none' | {'value',_}).
+-spec lookup(term(), gb_tree()) -> 'none' | {'value', term()}.
 
 lookup(Key, {_, T}) ->
     lookup_1(Key, T).
@@ -196,7 +205,7 @@ lookup_1(_, nil) ->
 
 %% This is a specialized version of `lookup'.
 
-%%-spec(is_defined/2 :: (_,gb_tree()) -> bool()).
+-spec is_defined(term(), gb_tree()) -> bool().
 
 is_defined(Key, {_, T}) ->
     is_defined_1(Key, T).
@@ -214,7 +223,7 @@ is_defined_1(_, nil) ->
 
 %% This is a specialized version of `lookup'.
 
-%%-spec(get/2 :: (_,gb_tree()) -> _).
+-spec get(term(), gb_tree()) -> term().
 
 get(Key, {_, T}) ->
     get_1(Key, T).
@@ -228,9 +237,9 @@ get_1(_, {_, Value, _, _}) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%-spec(update/3 :: (_, _, gb_tree()) -> gb_tree()).
+-spec update(term(), term(), gb_tree()) -> gb_tree().
 
-update(Key,  Val, {S, T}) ->
+update(Key, Val, {S, T}) ->
     T1 = update_1(Key, Val, T),
     {S, T1}.
 
@@ -245,7 +254,7 @@ update_1(Key, Value, {_, _, Smaller, Bigger}) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%-spec(insert/3 :: (_, _, gb_tree()) -> gb_tree()).
+-spec insert(term(), term(), gb_tree()) -> gb_tree().
 
 insert(Key, Val, {S, T}) when is_integer(S) ->
     S1 = S+1,
@@ -256,7 +265,7 @@ insert_1(Key, Value, {Key1, V, Smaller, Bigger}, S) when Key < Key1 ->
 	{T1, H1, S1} ->
 	    T = {Key1, V, T1, Bigger},
 	    {H2, S2} = count(Bigger),
-	    H = ?mul2(max(H1, H2)),
+	    H = ?mul2(erlang:max(H1, H2)),
 	    SS = S1 + S2 + 1,
 	    P = ?pow(SS, ?p),
 	    if
@@ -273,7 +282,7 @@ insert_1(Key, Value, {Key1, V, Smaller, Bigger}, S) when Key > Key1 ->
 	{T1, H1, S1} ->
 	    T = {Key1, V, Smaller, T1},
 	    {H2, S2} = count(Smaller),
-	    H = ?mul2(max(H1, H2)),
+	    H = ?mul2(erlang:max(H1, H2)),
 	    SS = S1 + S2 + 1,
 	    P = ?pow(SS, ?p),
 	    if
@@ -292,14 +301,9 @@ insert_1(Key, Value, nil, _S) ->
 insert_1(Key, _, _, _) ->
     erlang:error({key_exists, Key}).
 
-max(X, Y) when X < Y ->
-    Y;
-max(X, _Y) ->
-    X.
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%-spec(enter/3 :: (_, _, gb_tree()) -> gb_tree()).
+-spec enter(term(), term(), gb_tree()) -> gb_tree().
 
 enter(Key, Val, T) ->
     case is_defined(Key, T) of
@@ -316,11 +320,13 @@ count({_, _, nil, nil}) ->
 count({_, _, Sm, Bi}) ->
     {H1, S1} = count(Sm),
     {H2, S2} = count(Bi),
-    {?mul2(max(H1, H2)), S1 + S2 + 1};
+    {?mul2(erlang:max(H1, H2)), S1 + S2 + 1};
 count(nil) ->
     {1, 0}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec balance(gb_tree()) -> gb_tree().
 
 balance({S, T}) ->
     {S, balance(T, S)}.
@@ -345,7 +351,7 @@ balance_list_1([{Key, Val} | L], 1) ->
 balance_list_1(L, 0) ->
     {nil, L}.
 
-%%-spec(from_orddict/1 :: ([{_,_}]) -> gb_tree()).
+-spec from_orddict([{_,_}]) -> gb_tree().
 
 from_orddict(L) ->
     S = length(L),
@@ -353,7 +359,7 @@ from_orddict(L) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%-spec(delete_any/2 :: (_, gb_tree()) -> gb_tree()).
+-spec delete_any(term(), gb_tree()) -> gb_tree().
 
 delete_any(Key, T) ->
     case is_defined(Key, T) of
@@ -365,7 +371,7 @@ delete_any(Key, T) ->
 
 %%% delete. Assumes that key is present.
 
-%%-spec(delete/2 :: (_, gb_tree()) -> gb_tree()).
+-spec delete(term(), gb_tree()) -> gb_tree().
 
 delete(Key, {S, T}) when is_integer(S), S >= 0 ->
     {S - 1, delete_1(Key, T)}.
@@ -391,7 +397,7 @@ merge(Smaller, Larger) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%-spec(take_smallest/1 :: (gb_tree()) -> {_,_,gb_tree()}).
+-spec take_smallest(gb_tree()) -> {term(), term(), gb_tree()}.
 
 take_smallest({Size, Tree}) when is_integer(Size), Size >= 0 ->
     {Key, Value, Larger} = take_smallest1(Tree),
@@ -403,7 +409,7 @@ take_smallest1({Key, Value, Smaller, Larger}) ->
     {Key1, Value1, Smaller1} = take_smallest1(Smaller),
     {Key1, Value1, {Key, Value, Smaller1, Larger}}.
 
-%%-spec(smallest/1 :: (gb_tree()) -> {_,_}).
+-spec smallest(gb_tree()) -> {term(), term()}.
 
 smallest({_, Tree}) ->
     smallest_1(Tree).
@@ -413,7 +419,7 @@ smallest_1({Key, Value, nil, _Larger}) ->
 smallest_1({_Key, _Value, Smaller, _Larger}) ->
     smallest_1(Smaller).
 
-%%-spec(take_largest/1 :: (gb_tree()) -> {_,_,gb_tree()}).
+-spec take_largest(gb_tree()) -> {term(), term(), gb_tree()}.
 
 take_largest({Size, Tree}) when is_integer(Size), Size >= 0 ->
     {Key, Value, Smaller} = take_largest1(Tree),
@@ -425,7 +431,7 @@ take_largest1({Key, Value, Smaller, Larger}) ->
     {Key1, Value1, Larger1} = take_largest1(Larger),
     {Key1, Value1, {Key, Value, Smaller, Larger1}}.
 
-%%-spec(largest/1 :: (gb_tree()) -> {_,_}).
+-spec largest(gb_tree()) -> {term(), term()}.
 
 largest({_, Tree}) ->
     largest_1(Tree).
@@ -437,7 +443,7 @@ largest_1({_Key, _Value, _Smaller, Larger}) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%-spec(to_list/1 :: (gb_tree()) -> [{_,_}]).
+-spec to_list(gb_tree()) -> [{term(), term()}].
 			   
 to_list({_, T}) ->
     to_list(T, []).
@@ -450,7 +456,7 @@ to_list(nil, L) -> L.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%-spec(keys/1 :: (gb_tree()) -> [_]).
+-spec keys(gb_tree()) -> [term()].
 
 keys({_, T}) ->
     keys(T, []).
@@ -461,7 +467,7 @@ keys(nil, L) -> L.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%-spec(values/1 :: (gb_tree()) -> [_]).
+-spec values(gb_tree()) -> [term()].
 
 values({_, T}) ->
     values(T, []).
@@ -472,7 +478,7 @@ values(nil, L) -> L.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%-spec(iterator/1 :: (gb_tree()) -> [gb_tree_node()]).
+-spec iterator(gb_tree()) -> [gb_tree_node()].
 
 iterator({_, T}) ->
     iterator_1(T).
@@ -490,9 +496,20 @@ iterator({_, _, L, _} = T, As) ->
 iterator(nil, As) ->
     As.
 
-%%-spec(next/1 :: ([gb_tree_node()]) -> 'none' | {_,_,[gb_tree_node()]}).
+-spec next([gb_tree_node()]) -> 'none' | {term(), term(), [gb_tree_node()]}.
 
 next([{X, V, _, T} | As]) ->
     {X, V, iterator(T, As)};
 next([]) ->
     none.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec map(fun((term(), term()) -> term()), gb_tree()) -> gb_tree().
+
+map(F, {Size, Tree}) when is_function(F, 2) ->
+    {Size, map_1(F, Tree)}.
+
+map_1(_, nil) -> nil;
+map_1(F, {K, V, Smaller, Larger}) ->
+    {K, F(K, V), map_1(F, Smaller), map_1(F, Larger)}.

@@ -1,1 +1,1 @@
-PMAN_VSN = 2.6
+PMAN_VSN = 2.7

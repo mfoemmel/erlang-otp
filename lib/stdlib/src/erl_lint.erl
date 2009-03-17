@@ -1,21 +1,21 @@
 %% -*- erlang-indent-level: 4 -*-
-%%=======================================================================
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 %% Do necessary checking of Erlang code.
 
@@ -114,6 +114,8 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 	       types = dict:new()		%Type definitions
               }).
 
+-type lint_state() :: #lint{}.
+
 %% format_error(Error)
 %%  Return a string describing the error.
 
@@ -135,8 +137,6 @@ format_error(invalid_call) ->
 format_error(invalid_record) ->
     "invalid record expression";
 
-format_error(no_generator) ->
-    "list comprehension has no generator (perhaps \"|\" mistyped as \"||\"?)";
 format_error({attribute,A}) ->
     io_lib:format("attribute '~w' after function definitions", [A]);
 format_error({missing_qlc_hrl,A}) ->
@@ -181,7 +181,7 @@ format_error({redefine_bif,{F,A}}) ->
 format_error({call_to_redefined_bif,{F,A}}) ->
     io_lib:format("call to ~w/~w will call erlang:~w/~w; "
 		  "not ~w/~w in this module \n"
-		  "  (add an explicit module name to the call to avoid this warning)",
+		  "  (add an explicit module name to the call to avoid this error)",
 		  [F,A,F,A,F,A]);
 
 format_error({deprecated, MFA, ReplacementMFA, Rel}) ->
@@ -271,7 +271,8 @@ format_error({undefined_behaviour_callbacks,Behaviour}) ->
     io_lib:format("behaviour ~w callback functions are undefined",
                   [Behaviour]);
 format_error({ill_defined_behaviour_callbacks,Behaviour}) ->
-    io_lib:format("behaviour ~w callback functions erroneously defined", [Behaviour]);
+    io_lib:format("behaviour ~w callback functions erroneously defined",
+		  [Behaviour]);
 %% --- types and specs ---
 format_error({singleton_typevar, Name}) ->
     io_lib:format("type variable ~w is only used once (is unbound)", [Name]);
@@ -300,11 +301,12 @@ format_error({missing_spec, {F,A}}) ->
 format_error(spec_wrong_arity) ->
     "spec has the wrong arity";
 format_error({imported_predefined_type, Name}) ->
-    io_lib:format("referring to predefined type ~w as a remote type", [Name]);
+    io_lib:format("referring to built-in type ~w as a remote type; "
+		  "please take out the module name", [Name]);
 %% --- obsolete? unused? ---
-format_error({format_error,{Fmt,Args}}) ->
+format_error({format_error, {Fmt, Args}}) ->
     io_lib:format(Fmt, Args);
-format_error({mnemosyne,What}) ->
+format_error({mnemosyne, What}) ->
     "mnemosyne " ++ What ++ ", missing transformation".
 
 gen_type_paren(Arity) when is_integer(Arity), Arity >= 0 ->
@@ -419,7 +421,7 @@ start(File, Opts) ->
 		      true, Opts)},
          {obsolete_guard,
           bool_option(warn_obsolete_guard, nowarn_obsolete_guard,
-                      false, Opts)},
+                      true, Opts)},
 	 {untyped_record,
 	  bool_option(warn_untyped_record, nowarn_untyped_record,
 		      false, Opts)},
@@ -639,23 +641,27 @@ attribute_state({attribute,La,behaviour,Behaviour}, St) ->
 attribute_state({attribute,La,behavior,Behaviour}, St) ->
     St#lint{behaviour=St#lint.behaviour ++ [{La,Behaviour}]};
 attribute_state({attribute,L,type,{TypeName,TypeDef,Args}}, St) ->
-    type_def(L, TypeName, TypeDef, Args, St);
+    type_def(type, L, TypeName, TypeDef, Args, St);
+attribute_state({attribute,L,opaque,{TypeName,TypeDef,Args}}, St) ->
+    type_def(opaque, L, TypeName, TypeDef, Args, St);
 attribute_state({attribute,L,spec,{Fun,Types}}, St) ->
     spec_decl(L, Fun, Types, St);
-attribute_state({attribute,_L,_Other,_Val}, St) -> %Ignore others
+attribute_state({attribute,_L,_Other,_Val}, St) -> % Ignore others
     St;
 attribute_state(Form, St) ->
     function_state(Form, St#lint{state=function}).
 
 %% function_state(Form, State) ->
 %%      State'
-%%  Allow for record, type definitions and spec declarations
-%%  to be intersperced within function definitions.
+%%  Allow for record, type and opaque type definitions and spec
+%%  declarations to be intersperced within function definitions.
 
 function_state({attribute,L,record,{Name,Fields}}, St) ->
     record_def(L, Name, Fields, St);
 function_state({attribute,L,type,{TypeName,TypeDef,Args}}, St) ->
-    type_def(L, TypeName, TypeDef, Args, St);
+    type_def(type, L, TypeName, TypeDef, Args, St);
+function_state({attribute,L,opaque,{TypeName,TypeDef,Args}}, St) ->
+    type_def(opaque, L, TypeName, TypeDef, Args, St);
 function_state({attribute,L,spec,{Fun,Types}}, St) ->
     spec_decl(L, Fun, Types, St);
 function_state({attribute,La,Attr,_Val}, St) ->
@@ -681,7 +687,7 @@ bif_clashes(Forms, St) ->
     Clashes = ordsets:subtract(ordsets:from_list(Clashes0), Nowarn),
     St#lint{clashes=Clashes}.
 
-%% is_bif_clash(Name, Arity, State) -> false|true.
+-spec is_bif_clash(atom(), byte(), lint_state()) -> bool().
 
 is_bif_clash(_Name, _Arity, #lint{clashes=[]}) ->
     false;
@@ -746,12 +752,7 @@ behaviour_callbacks(Line, B, St0) ->
             {[], St1};
         Funcs when is_list(Funcs) ->
             All = all(fun({FuncName, Arity}) ->
-                              if
-                                  is_atom(FuncName), is_integer(Arity) ->
-                                      true;
-                                  true ->
-                                      false
-                              end;
+                              is_atom(FuncName) andalso is_integer(Arity);
                          (_Other) ->
                               false
                       end,
@@ -1008,7 +1009,7 @@ check_unused_records(Forms, St0) ->
 %% export(Line, Exports, State) -> State.
 %%  Mark functions as exported, also as called from the export line.
 
-export(Line, Es, #lint{exports=Es0}=St0) ->
+export(Line, Es, #lint{exports = Es0, called = Called} = St0) ->
     {Es1,C1,St1} = 
         foldl(fun (NA, {E,C,St2}) ->
                       St = case gb_sets:is_element(NA, E) of
@@ -1017,12 +1018,10 @@ export(Line, Es, #lint{exports=Es0}=St0) ->
                                false ->
                                    St2
                            end,
-                      {gb_sets:add_element(NA, E),
-                       [{NA,Line}|C],
-                       St}
+                      {gb_sets:add_element(NA, E), [{NA,Line}|C], St}
               end,
-              {Es0,St0#lint.called,St0}, Es),
-    St1#lint{exports=Es1,called=C1}.
+              {Es0,Called,St0}, Es),
+    St1#lint{exports = Es1, called = C1}.
 
 %% import(Line, Imports, State) -> State.
 %% imported(Name, Arity, State) -> {yes,Module} | no.
@@ -1703,7 +1702,7 @@ is_guard_test(Expression, Forms) ->
                 end, start(), RecordAttributes),
     is_guard_test2(zip_file_and_line(Expression, "nofile"), St0#lint.records).
 
-%% is_guard_test2(Expression, RecordDefs) -> bool().
+%% is_guard_test2(Expression, RecordDefs :: dict()) -> bool().
 is_guard_test2({call,Line,{atom,Lr,record},[E,A]}, RDs) ->
     is_gexpr({call,Line,{atom,Lr,is_record},[E,A]}, RDs);
 is_guard_test2({call,_Line,{atom,_La,Test},As}=Call, RDs) ->
@@ -1734,10 +1733,7 @@ is_gexpr({tuple,_L,Es}, RDs) -> is_gexpr_list(Es, RDs);
 is_gexpr({record_index,_L,_Name,Field}, RDs) ->
     is_gexpr(Field, RDs);
 is_gexpr({record_field,_L,_,_}=M, _RDs) ->
-    case erl_parse:package_segments(M) of
-        error -> false;
-      _ -> true
-    end;
+    erl_parse:package_segments(M) =/= error;
 is_gexpr({record_field,_L,Rec,_Name,Field}, RDs) ->
     is_gexpr_list([Rec,Field], RDs);
 is_gexpr({record,L,Name,Inits}, RDs) ->
@@ -1775,11 +1771,13 @@ is_gexpr(_Other, _RDs) -> false.
 is_gexpr_op('andalso', 2) -> true;
 is_gexpr_op('orelse', 2) -> true;
 is_gexpr_op(Op, A) ->
-    case catch erl_internal:op_type(Op, A) of
+    try erl_internal:op_type(Op, A) of
         arith -> true;
-        bool -> true;
-        comp -> true;
-        _Other -> false
+        bool  -> true;
+        comp  -> true;
+	list  -> false;
+	send  -> false
+    catch _:_ -> false
     end.
 
 is_gexpr_list(Es, RDs) -> all(fun (E) -> is_gexpr(E, RDs) end, Es).
@@ -1819,11 +1817,11 @@ expr({string,_Line,_S}, _Vt, St) -> {[],St};
 expr({nil,_Line}, _Vt, St) -> {[],St};
 expr({cons,_Line,H,T}, Vt, St) ->
     expr_list([H,T], Vt, St);
-expr({lc,Line,E,Qs}, Vt0, St0) ->
-    {Vt,St} = handle_comprehension(Line, E, Qs, Vt0, St0),
+expr({lc,_Line,E,Qs}, Vt0, St0) ->
+    {Vt,St} = handle_comprehension(E, Qs, Vt0, St0),
     {vtold(Vt, Vt0),St};                      %Don't export local variables
-expr({bc,Line,E,Qs}, Vt0, St0) ->
-    {Vt,St} = handle_comprehension(Line, E, Qs, Vt0, St0),
+expr({bc,_Line,E,Qs}, Vt0, St0) ->
+    {Vt,St} = handle_comprehension(E, Qs, Vt0, St0),
     {vtold(Vt,Vt0),St};			 %Don't export local variables
 expr({tuple,_Line,Es}, Vt, St) ->
     expr_list(Es, Vt, St);
@@ -1934,7 +1932,7 @@ expr({call,Line,{atom,La,F},As}, Vt, St0) ->
 		      false ->
 			  St3;
 		      true ->
-                          add_warning(Line, {call_to_redefined_bif,{F,A}}, St3)
+                          add_error(Line, {call_to_redefined_bif,{F,A}}, St3)
 		  end};
         false ->
             {Asvt,case imported(F, A, St2) of
@@ -2017,14 +2015,6 @@ expr_list(Es, Vt, St) ->
 record_expr(Line, Rec, Vt, St0) ->
     St1 = warn_invalid_record(Line, Rec, St0),
     expr(Rec, Vt, St1).
-
-%% warn_no_generator(Line, Qs, State0) -> State
-%% Adds warning if a list comprehension has no generator.
-
-warn_no_generator(_, [{generate,_,_,_}|_], St) -> St;
-warn_no_generator(_, [{b_generate,_,_,_}|_], St) -> St;
-warn_no_generator(Line, [_|T], St) -> warn_no_generator(Line, T, St);
-warn_no_generator(Line, [], St) -> add_warning(Line, no_generator, St).
 
 %% warn_invalid_record(Line, Record, State0) -> State
 %% Adds warning if the record is invalid.
@@ -2285,15 +2275,16 @@ find_field(_F, [{record_field,_Lf,{atom,_La,_F},Val}|_Fs]) -> {ok,Val};
 find_field(F, [_|Fs]) -> find_field(F, Fs);
 find_field(_F, []) -> error.
 
-%% type_def(Line, TypeName, PatField, Args, State) -> State.
+%% type_def(Attr, Line, TypeName, PatField, Args, State) -> State.
+%%    Attr :: 'type' | 'opaque'
 %% Checks that a type definition is valid.
 
-type_def(_Line, {record, _RecName}, Fields, [], St0) ->
+type_def(_Attr, _Line, {record, _RecName}, Fields, [], St0) ->
     %% The record field names and such are checked in the record format.
     %% We only need to check the types.
     Types = [T || {typed_record_field, _, T} <- Fields],
     check_type({type, -1, product, Types}, St0);
-type_def(Line, TypeName, ProtoType, Args, St0) ->
+type_def(_Attr, Line, TypeName, ProtoType, Args, St0) ->
     TypeDefs = St0#lint.types,
     Arity = length(Args),
     TypePair = {TypeName, Arity},
@@ -2453,20 +2444,27 @@ is_var_arity_type(_) -> false.
 
 default_types() ->
     DefTypes = [{any, 0},
+		{array, 0},
 		{atom, 0},
 		{atom, 1},
 		{binary, 0},
 		{binary, 2},
+		{bitstring, 0},
 		{bool, 0},
 		{byte, 0},
 		{char, 0},
+		{dict, 0},
+		{digraph, 0},
 		{float, 0},
 		{'fun', 0},
 		{'fun', 2},
 		{function, 0},
+		{gb_set, 0},
+		{gb_tree, 0},
 		{identifier, 0},
 		{integer, 0},
 		{integer, 1},
+		{iodata, 0},
 		{iolist, 0},
 		{list, 0},
 		{list, 1},
@@ -2490,30 +2488,45 @@ default_types() ->
 		{pid, 0},
 		{port, 0},
 		{pos_integer, 0},
+		{queue, 0},
 		{range, 2},
 		{ref, 0},
+		{set, 0},
 		{string, 0},
 		{term, 0},
+		{tid, 0},
 		{timeout, 0},
 		{var, 1}],
     dict:from_list([{T, -1} || T <- DefTypes]).
 
+%% R12B-5
 is_newly_introduced_builtin_type({module, 0}) -> true;
 is_newly_introduced_builtin_type({node, 0}) -> true;
 is_newly_introduced_builtin_type({nonempty_string, 0}) -> true;
 is_newly_introduced_builtin_type({term, 0}) -> true;
 is_newly_introduced_builtin_type({timeout, 0}) -> true;
+%% R13
+is_newly_introduced_builtin_type({array, 0}) -> true; % opaque
+is_newly_introduced_builtin_type({bitstring, 0}) -> true;
+is_newly_introduced_builtin_type({dict, 0}) -> true; % opaque
+is_newly_introduced_builtin_type({digraph, 0}) -> true; % opaque
+is_newly_introduced_builtin_type({gb_set, 0}) -> true; % opaque
+is_newly_introduced_builtin_type({gb_tree, 0}) -> true; % opaque
+is_newly_introduced_builtin_type({iodata, 0}) -> true;
+is_newly_introduced_builtin_type({queue, 0}) -> true; % opaque
+is_newly_introduced_builtin_type({set, 0}) -> true; % opaque
+is_newly_introduced_builtin_type({tid, 0}) -> true; % opaque
 is_newly_introduced_builtin_type({Name, _}) when is_atom(Name) -> false.
 
 %% spec_decl(Line, Fun, Types, State) -> State.
 
-spec_decl(Line, MFA0, TypeSpecs, St0 = #lint{specs=AccSpecs}) ->
+spec_decl(Line, MFA0, TypeSpecs, St0 = #lint{specs = Specs, module = Mod}) ->
     MFA = case MFA0 of
-	      {F, Arity} -> {St0#lint.module, F, Arity};
+	      {F, Arity} -> {Mod, F, Arity};
 	      {_M, _F, Arity} -> MFA0
 	  end,
-    St1 = St0#lint{specs=dict:store(MFA, Line, AccSpecs)},
-    case dict:is_key(MFA, AccSpecs) of
+    St1 = St0#lint{specs = dict:store(MFA, Line, Specs)},
+    case dict:is_key(MFA, Specs) of
 	true -> add_error(Line, {redefine_spec, MFA}, St1);
 	false -> check_specs(TypeSpecs, Arity, St1)
     end.
@@ -2521,7 +2534,7 @@ spec_decl(Line, MFA0, TypeSpecs, St0 = #lint{specs=AccSpecs}) ->
 check_specs([FunType|Left], Arity, St0) ->
     {FunType1, CTypes} =
 	case FunType of
-	    {type, _, bounded_fun, [FT = {type, _, 'fun', _},Cs]} -> 
+	    {type, _, bounded_fun, [FT = {type, _, 'fun', _}, Cs]} -> 
 		Types0 = [T || {type, _, constraint, [_, T]} <- Cs],
 		{FT, lists:append(Types0)};
 	    {type, _, 'fun', _} = FT -> {FT, []}
@@ -2681,8 +2694,7 @@ icrt_export(Csvt, Vt, In, St) ->
     Vt2 = vtmerge(Uvt, vtsubtract(Vt1, Uvt)),
     {Vt2,St}.
 
-
-handle_comprehension(Line,E,Qs,Vt0,St0) ->
+handle_comprehension(E, Qs, Vt0, St0) ->
     {Vt1, Uvt, St1} = lc_quals(Qs, Vt0, St0),
     {Evt,St2} = expr(E, Vt1, St1),
     Vt2 = vtupdate(Evt, Vt1),
@@ -2691,9 +2703,8 @@ handle_comprehension(Line,E,Qs,Vt0,St0) ->
     %% There may be local variables in Uvt that are not global.
     {_,St4} = check_unused_vars(Uvt, Vt0, St3),
     %% Local variables that have not been shadowed.
-    {_,St5} = check_unused_vars(Vt2, Vt0, St4),
+    {_,St} = check_unused_vars(Vt2, Vt0, St4),
     Vt3 = vtmerge(vtsubtract(Vt2, Uvt), Uvt),
-    St = warn_no_generator(Line, Qs, St5),
     {Vt3,St}.
 
 %% lc_quals(Qualifiers, ImportVarTable, State) ->
@@ -3302,7 +3313,15 @@ extract_sequence(3, [$.,_|Fmt], Need) ->
     extract_sequence(4, Fmt, Need);
 extract_sequence(3, Fmt, Need) ->
     extract_sequence(4, Fmt, Need);
-extract_sequence(4, [C|Fmt], Need0) ->
+extract_sequence(4, [$t, $c | Fmt], Need) -> 
+    extract_sequence(5, [$c|Fmt], Need);    
+extract_sequence(4, [$t, $s | Fmt], Need) -> 
+    extract_sequence(5, [$s|Fmt], Need);    
+extract_sequence(4, [$t, C | _Fmt], _Need) -> 
+    {error,"invalid control ~t" ++ [C]};
+extract_sequence(4, Fmt, Need) ->
+    extract_sequence(5, Fmt, Need);
+extract_sequence(5, [C|Fmt], Need0) ->
     case control_type(C, Need0) of
         error -> {error,"invalid control ~" ++ [C]};
         Need1 -> {ok,Need1,Fmt}

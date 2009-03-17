@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% HiPE Intermediate Code
 %% ====================================================================
@@ -1192,12 +1210,12 @@ is_label(_) -> false.
 %% comment
 %%---------
 
--spec mk_comment(Txt::any()) -> #icode_comment{}.
+-spec mk_comment(icode_comment_text()) -> #icode_comment{}.
 %% @doc If `Txt' is a list of characters (possibly deep), it will be
 %% printed as a string; otherwise, `Txt' will be printed as a term.
 mk_comment(Txt) -> #icode_comment{text=Txt}.
 
--spec comment_text(#icode_comment{}) -> any().
+-spec comment_text(#icode_comment{}) -> icode_comment_text().
 comment_text(#icode_comment{text=Txt}) -> Txt.
 
 -spec is_comment(icode_instr()) -> bool().

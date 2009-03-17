@@ -38,11 +38,12 @@ POSSIBILITY OF SUCH DAMAGE.
 */
 
 
-/* This module contains the external function pcre_refcount(), which is an
+/* This module contains the external function erts_pcre_refcount(), which is an
 auxiliary function that can be used to maintain a reference count in a compiled
 pattern data block. This might be helpful in applications where the block is
 shared by different users. */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -69,7 +70,7 @@ Returns:        the (possibly updated) count value (a non-negative number), or
 */
 
 PCRE_EXP_DEFN int
-pcre_refcount(pcre *argument_re, int adjust)
+erts_pcre_refcount(pcre *argument_re, int adjust)
 {
 real_pcre *re = (real_pcre *)argument_re;
 if (re == NULL) return PCRE_ERROR_NULL;

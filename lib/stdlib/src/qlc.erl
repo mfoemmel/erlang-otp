@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(qlc).
 
@@ -44,7 +45,8 @@
 -export([format_error/1]).
 
 %% Exported to qlc_pt.erl only:
--export([template_state/0]).
+-export([template_state/0, aux_name/3, name_suffix/2, vars/1,
+         var_ufold/2, var_fold/3, all_selections/1]).
 
 %% When cache=list lists bigger than ?MAX_LIST_SIZE bytes are put on
 %% file. Also used when merge join finds big equivalence classes.
@@ -63,7 +65,7 @@
          format_fun,
          lookup_fun,
          parent_fun,
-         f1,         % unused
+         key_equality, % '==' | '=:=' | undefined (--R12B-5)
          lu_vals,    % undefined | {Position,Values}; values to be looked up
          ms = no_match_spec
                      % match specification; [T || P <- Tab, Fs]
@@ -93,7 +95,8 @@
         }).
 
 -record(qlc_join,        % a prepared join
-        {kind,           % merge | {lookup, LookupFun}
+        {kind,           % {merge, KeyEquality} |
+                         % {lookup, KeyEquality, LookupFun}
          opt,            % #qlc_opt from q/2.
          h1, q1, c1,     % to be traversed by "lookup join"
          h2, q2, c2      % to be looked up by "lookup join"
@@ -449,14 +452,16 @@ table(TraverseFun, Options) when is_function(TraverseFun) ->
             erlang:error(badarg, [TraverseFun, Options]);
         _ ->
             case options(Options, [pre_fun, post_fun, info_fun, format_fun, 
-                                   lookup_fun, parent_fun]) of
-                [PreFun, PostFun, InfoFun, FormatFun, LookupFun, ParentFun] ->
+                                   lookup_fun, parent_fun, key_equality]) of
+                [PreFun, PostFun, InfoFun, FormatFun, LookupFun, ParentFun,
+                 KeyEquality] ->
                     T = #qlc_table{trav_fun = TraverseFun, pre_fun = PreFun,
                                    post_fun = PostFun, info_fun = InfoFun, 
                                    parent_fun = ParentFun,
                                    trav_MS = IsFun1,
                                    format_fun = FormatFun, 
-                                   lookup_fun = LookupFun},
+                                   lookup_fun = LookupFun,
+                                   key_equality = KeyEquality},
                     #qlc_handle{h = T};
                 badarg ->
                     erlang:error(badarg, [TraverseFun, Options])
@@ -468,9 +473,48 @@ table(T1, T2) ->
 transform_from_evaluator(LC, Bs0) ->
     qlc_pt:transform_from_evaluator(LC, Bs0).
 
+-define(TEMPLATE_STATE, 1).
+
+template_state() ->
+    ?TEMPLATE_STATE.
+
+aux_name(Name, N, AllNames) ->
+    {VN, _} = aux_name1(Name, N, AllNames),
+    VN.
+
+name_suffix(A, Suff) ->
+    list_to_atom(lists:concat([A, Suff])).
+
+vars(E) ->
+    var_ufold(fun({var,_L,V}) -> V end, E).
+
+var_ufold(F, E) ->
+    ordsets:from_list(var_fold(F, [], E)).
+
+all_selections([]) ->
+    [[]];
+all_selections([{I,Cs} | ICs]) ->
+    [[{I,C} | L] || C <- Cs, L <- all_selections(ICs)].
+
 %%%
 %%% Local functions
 %%%
+
+aux_name1(Name, N, AllNames) ->
+    SN = name_suffix(Name, N),
+    case sets:is_element(SN, AllNames) of
+        true -> aux_name1(Name, N + 1, AllNames);
+        false -> {SN, N}
+    end.
+
+var_fold(F, A, {var,_,V}=Var) when V =/= '_' ->
+    [F(Var) | A];
+var_fold(F, A, T) when is_tuple(T) ->
+    var_fold(F, A, tuple_to_list(T));
+var_fold(F, A, [E | Es]) ->
+    var_fold(F, var_fold(F, A, E), Es);
+var_fold(_F, A, _T) ->
+    A.
 
 options(Options, Keys) when is_list(Options) ->
     options(Options, Keys, []);
@@ -519,6 +563,10 @@ options(Options0, [Key | Keys], L) when is_list(Options0) ->
             {value, {parent_fun, Fun}} when is_function(Fun),
                                             is_function(Fun, 0) ->
                 {ok, Fun};
+            {value, {key_equality, KE='=='}}->
+                {ok, KE};
+            {value, {key_equality, KE='=:='}}->
+                {ok, KE};
             {value, {join, J=any}} ->
                 {ok, J};
             {value, {join, J=nested_loop}} ->
@@ -622,6 +670,7 @@ default_option(max_lookup) -> -1;
 default_option(join) -> any;
 default_option(lookup) -> any;
 default_option(parent_fun) -> undefined;
+default_option(key_equality) -> '=:=';
 default_option(spawn_options) -> default;
 default_option(flat) -> true;
 default_option(format) -> string;
@@ -713,8 +762,8 @@ listify(T) ->
          sorted = no,  % yes | no | ascending | descending
          sort_info = [], % 
          sort_info2 = [], % 'sort_info' updated with pattern info; qh is LE
-         skip_quals = [], % qualifiers to skip due to lookup
-         join = {[],[]}, % {Lookup, Merge}
+         lu_skip_quals = [], % qualifiers to skip due to lookup
+         join = {[],[]},  % {Lookup, Merge}
          n_objs = undefined,   % for join (not used yet)
          is_unique_objects = false, % bool()
          is_cached = false          % bool() (true means 'ets' or 'list')
@@ -836,7 +885,7 @@ abstract(Info, false=_Flat, NElements, Depth) ->
     abstract(Info, NElements, Depth);
 abstract(Info, true=_Flat, NElements, Depth) ->
     Abstract = abstract(Info, NElements, Depth),
-    Vars = vars(Abstract),
+    Vars = abstract_vars(Abstract),
     {_, Body0, Expr} = flatten_abstr(Abstract, 1, Vars, []),
     case Body0 of
         [] -> 
@@ -901,7 +950,7 @@ abstract({list, L}, NElements, Depth) ->
 depth(List, infinity) ->
     List;
 depth(List, Depth) ->
-    lists:map(fun(E) -> depth1(E, Depth) end, List).
+    [depth1(E, Depth) || E <- List].
 
 depth_fun(infinity = _Depth) ->
     fun(E) -> E end;
@@ -923,8 +972,8 @@ depth1(List, D) when is_list(List) ->
     end;
 depth1(Binary, D) when byte_size(Binary) > D - 1 ->
     D1 = D - 1,
-    <<Bin:D1/binary,_/binary>> = Binary,
-    <<Bin/binary,"...">>;
+    <<Bin:D1/bytes,_/bytes>> = Binary,
+    <<Bin/bytes,"...">>;
 depth1(T, _Depth) ->
     T.
 
@@ -996,7 +1045,7 @@ flatten_abstr(?QLC_Q(L1, L2, L3, L4, LC0, Os), VN0, Vars, Body0) ->
         end,
     {Qs, {VN3,Body}} = lists:mapfoldl(F, {VN0,Body0}, Qs0),
     LC = {lc,L,E,Qs},
-    {V, VN} = qlc_pt:aux_name1('V', VN3, Vars),
+    {V, VN} = aux_name1('V', VN3, Vars),
     Var = {var, L1, V},
     QLC = ?QLC_Q(L1, L2, L3, L4, LC, Os),
     {VN + 1, [{match, L1, Var, QLC} | Body], Var};
@@ -1010,8 +1059,8 @@ flatten_abstr([E0 | Es0], VN0, Vars, Body0) ->
 flatten_abstr(E, VN, _Vars, Body) ->
     {VN, Body, E}.
 
-vars(Abstract) ->
-    sets:from_list(ordsets:to_list(qlc_pt:vars(Abstract))).
+abstract_vars(Abstract) ->
+    sets:from_list(ordsets:to_list(vars(Abstract))).
 
 collect([]=L) ->
     L;
@@ -1083,16 +1132,9 @@ monitor_request(Pid, Req) ->
                 {'DOWN', _, process, Pid, _} -> error
             end;
         {Pid, Reply} ->
-            erlang:demonitor(Ref),
-            receive 
-                {'DOWN', Ref, process, Pid, _Reason} -> Reply
-            after 0 -> Reply end
+            erlang:demonitor(Ref, [flush]),
+            Reply
     end.
-
--define(TEMPLATE_STATE, 1).
-
-template_state() ->
-    ?TEMPLATE_STATE.
 
 %% Marker for skipped filter or unused generator.
 -define(SKIP, (-1)).
@@ -1101,7 +1143,8 @@ template_state() ->
 -define(qual_data(QNum, GoToIndex, State, Qual), 
         {QNum, GoToIndex, State, Qual}).
 
--record(join, {op, q1, q2, wh1, wh2, cs_fun}). % generated by qlc_pt
+-record(join, % generated by qlc_pt
+        {op, q1, q2, wh1, wh2, cs_fun}). % op is unused
 
 %% le_info/1 returns an intermediate information format only used for
 %% testing purposes. Changes will happen without notice.
@@ -1207,30 +1250,35 @@ join_info(Join, QInfo, Qdata, Code) ->
               opt = Opt} = Join,
     {?qual_data(JQNum,_,_,_), Rev, QNum1, QNum2, _WH1, _WH2, CsFun} = 
         find_join_data(Qdata, QNum1a, QNum2a),
-    {Cs1, Cs2, _Compat} = CsFun(),
+    {Cs1_0, Cs2_0, Compat} = CsFun(),
+    [Cs1, Cs2] = case Compat of
+                     [] -> % --R12B-5
+                         [[{C,[{V,'=:='} || V <- Vs]} || {C,Vs} <- CVs] || 
+                             CVs <- [Cs1_0, Cs2_0]];
+                     _ -> % 'v1', R13A --
+                         %% Only compared constants (==).
+                         [Cs1_0, Cs2_0]
+                 end,
     L = 0,
     G1_0 = {var,L,'G1'}, G2_0 = {var,L,'G2'},
     JP = element(JQNum + 1, Code),
     %% Create code for wh1 and wh2 in #join{}:
     {{I1,G1}, {I2,G2}, QInfoL} = 
-        if
-            Kind =:= merge ->
+        case Kind of
+            {merge, _} -> 
                 {JG1,QInfo1} = join_merge_info(QNum1, QInfo, Code, G1_0, Cs1),
                 {JG2,QInfo2} = join_merge_info(QNum2, QInfo, Code, G2_0, Cs2),
                 {JG1, JG2, QInfo1 ++ QInfo2};
-            Rev ->
+            _ when Rev ->
                 {JG2,QInfo2} = join_merge_info(QNum2, QInfo, Code, G2_0, Cs2),
                 {J1, QInfo1} = join_lookup_info(QNum1, QInfo, G1_0),
                 {{J1,G1_0}, JG2, QInfo2 ++ [QInfo1]};
-            true ->
+            _ ->
                 {JG1,QInfo1} = join_merge_info(QNum1, QInfo, Code, G1_0, Cs1),
                 {J2, QInfo2} = join_lookup_info(QNum2, QInfo, G2_0),
                 {JG1, {J2,G2_0}, QInfo1 ++ [QInfo2]}
         end,
-    {JOptVal, JOp} = case Kind of
-                         merge -> {merge, '=='};
-                         {lookup, _} -> {lookup, '=:='}
-              end,
+    {JOptVal, JOp} = kind2op(Kind),
     JOpt = [{join, JOptVal}] ++ opt_info(join_unique_cache(Opt)),
     JFil = term_to_binary({op,L,JOp,
                            {call,L,{atom,L,element},[{integer,L,C1},G1]},
@@ -1239,6 +1287,9 @@ join_info(Join, QInfo, Qdata, Code) ->
     JInfo = {generate, JP, {qlc, P, QInfoL ++ [JFil], JOpt}},
     {Before, [I1 | After]} = lists:split(QNum1 - 1, QInfo),
     Before ++ [JInfo] ++ lists:delete(I2, After).
+
+kind2op({merge, _KE}) -> {merge, '=='};
+kind2op({lookup, KE, _LU_fun}) -> {lookup, KE}.
 
 %% qlc:q(P0 || P0 = Pattern <- H1, ConstFilters), 
 %% where "P0" is a fresh variable and ConstFilters are filters that
@@ -1249,7 +1300,9 @@ join_merge_info(QNum, QInfo, Code, G, ExtraConstants) ->
     case {P, ExtraConstants} of
         {{var, _, _}, []} ->
             %% No need to introduce a QLC.
-            {{I,P}, [I]};
+            TP = term_to_binary(G),
+            I2 = {generate, TP, LEInfo},
+            {{I,G}, [I2]};
         _ -> 
             {EPV, M} = 
                 case P of
@@ -1257,7 +1310,7 @@ join_merge_info(QNum, QInfo, Code, G, ExtraConstants) ->
                         %% No need to introduce a pattern variable.
                         {P, P};
                     _ -> 
-                        {PV, _} = qlc_pt:aux_name1('P', 0, vars(P)),
+                        {PV, _} = aux_name1('P', 0, abstract_vars(P)),
                         L = 0,
                         V = {var, L, PV},
                         {V, {match, L, V, P}}
@@ -1267,11 +1320,11 @@ join_merge_info(QNum, QInfo, Code, G, ExtraConstants) ->
             TP = term_to_binary(G),
             CFs = [begin
                        Call = {call,0,{atom,0,element},[{integer,0,Col},EPV]},
-                       F = list2op([{op,0,'=:=',abstract_term(Con),Call}
-                                      || Con <- Cs], 'or'),
+                       F = list2op([{op,0,Op,abstract_term(Con),Call}
+                                      || {Con,Op} <- ConstOps], 'or'),
                        term_to_binary(F)
                    end ||
-                      {Col,Cs} <- ExtraConstants],
+                      {Col,ConstOps} <- ExtraConstants],
             {{I,G}, [{generate, TP, {qlc, DQP, [LEI | CFs], []}}]}
     end.
 
@@ -1412,24 +1465,25 @@ prep_qlc_lc({qlc_v1, QFun, CodeF, Qdata0, QOpt}, Opt, GOpt, _H) ->
             OnePrep;
         _ -> 
             Prep0 = prep_qlc(QFun, CodeF, Qdata, QOpt, Opt),
-            SkipQuals = 
+            LU_SkipQuals = 
                 lists:flatmap(fun({QNum,_LookUp,Fs,_Prep}) -> [{QNum,Fs}]
                               end, ModGens),        
-            Prep1 = Prep0#prepared{skip_quals = SkipQuals},
+            Prep1 = Prep0#prepared{lu_skip_quals = LU_SkipQuals},
             prep_join(Prep1, QOpt, Opt)
     end;
 prep_qlc_lc(_, _Opt, _GOpt, H) ->
     erlang:error({unsupported_qlc_handle, #qlc_handle{h = H}}).
 
 prep_generator(QNum, Prep0, QOpt, Opt, ModGens) ->
-    PosFun = constants(QOpt, QNum),
+    PosFun = fun(KeyEquality) -> pos_fun(KeyEquality, QOpt, QNum) end,
     MSFs = case match_specs(QOpt, QNum) of
                undefined ->
                    {no_match_spec, []};
                {_, _}=MSFs0 ->
                    MSFs0
          end,
-    case prep_gen(Prep0, PosFun, MSFs, Opt) of
+    #prepared{qh = LE} = Prep0,
+    case prep_gen(LE, Prep0, PosFun, MSFs, Opt) of
         {replace, Fs, LookUp, Prep} ->
             {Prep, [{QNum,LookUp,Fs,Prep} | ModGens]};
         {skip, SkipFils, LookUp, Prep} ->
@@ -1438,14 +1492,26 @@ prep_generator(QNum, Prep0, QOpt, Opt, ModGens) ->
             {Prep, ModGens}
     end.
 
-prep_gen(#prepared{qh = LE0}=Prep0, PosFun, {MS, Fs}, Opt) ->
-    {LuV, {STag,SkipFils}} = find_const_positions(LE0, PosFun, Opt),
+pos_fun(undefined, QOpt, QNum) ->
+    {'=:=', constants(QOpt, QNum)}; %% --R12B-5
+pos_fun('=:=', QOpt, QNum) ->
+    {'=:=', constants(QOpt, QNum)};
+pos_fun('==', QOpt, QNum) ->    
+    try {'==', equal_constants(QOpt, QNum)} % R13A--
+    catch _:_ -> {'=:=', constants(QOpt, QNum)}
+    end.
+
+prep_gen(#qlc_table{lu_vals = LuV0, ms = MS0, trav_MS = TravMS,
+                    info_fun = IF, lookup_fun = LU_fun,
+		    key_equality = KeyEquality}=LE0, 
+         Prep0, PosFun0, {MS, Fs}, Opt) ->
+    PosFun = PosFun0(KeyEquality),
+    {LuV, {STag,SkipFils}} = find_const_positions(IF, LU_fun, PosFun, Opt),
     LU = LuV =/= false,
-    case LE0 of
-        #qlc_table{lu_vals = LuV0, ms = MS0} when LuV0 =/= undefined; 
-                                                  MS0 =/= no_match_spec ->
+    if
+        LuV0 =/= undefined; MS0 =/= no_match_spec ->
             {no, [], false, Prep0};
-        #qlc_table{} when MS =/= no_match_spec, LU ->
+        MS =/= no_match_spec, LU ->
             MS1 = if 
                       Fs =:= SkipFils; STag =:= Fs ->
                           %% The guard of the match specification 
@@ -1461,26 +1527,31 @@ prep_gen(#prepared{qh = LE0}=Prep0, PosFun, {MS, Fs}, Opt) ->
                   end,
             Prep = Prep0#prepared{qh = LE0#qlc_table{lu_vals = LuV,ms = MS1}},
             {replace, Fs, LU, Prep};
-        #qlc_table{} when LU ->
+        LU ->
             Prep = Prep0#prepared{qh = LE0#qlc_table{lu_vals = LuV}},
             {skip, SkipFils, LU, Prep};
-        #qlc_table{trav_MS = true} when MS =/= no_match_spec ->
+        TravMS, MS =/= no_match_spec ->
             Prep = Prep0#prepared{qh = LE0#qlc_table{ms = MS},
                                   is_unique_objects = false},
             {replace, Fs, false, may_create_simple(Opt, Prep)};
-        #qlc_list{l = []} -> % unique and cached
-            {replace, Fs, false, Prep0};
-        #qlc_list{ms = no_match_spec} when MS =/= no_match_spec ->
-            Prep = Prep0#prepared{qh = LE0#qlc_list{ms = MS}, 
-                                  is_cached = false},
-            {replace, Fs, false, may_create_simple(Opt, Prep)};
-        #qlc_list{} when MS =/= no_match_spec ->
-            ListMS = #qlc_list{l = Prep0, ms = MS},
-            LE = #prepared{qh = ListMS, is_cached = false},
-            {replace, Fs, false, may_create_simple(Opt, LE)};
-        _ ->
+        true -> 
             {no, [], false, Prep0}
-    end.
+    end;
+prep_gen(#qlc_list{l = []}, Prep0, _PosFun, {_MS, Fs}, _Opt) ->
+    %% unique and cached
+    {replace, Fs, false, Prep0};
+prep_gen(#qlc_list{ms = no_match_spec}=LE0, Prep0, _PosFun, {MS, Fs}, Opt) 
+                                  when MS =/= no_match_spec ->
+    Prep = Prep0#prepared{qh = LE0#qlc_list{ms = MS}, 
+                          is_cached = false},
+    {replace, Fs, false, may_create_simple(Opt, Prep)};
+prep_gen(#qlc_list{}, Prep0, _PosFun, {MS, Fs}, Opt) 
+                                  when MS =/= no_match_spec ->
+    ListMS = #qlc_list{l = Prep0, ms = MS},
+    LE = #prepared{qh = ListMS, is_cached = false},
+    {replace, Fs, false, may_create_simple(Opt, LE)};
+prep_gen(_LE0, Prep0, _PosFun, _MSFs, _Opt) ->
+    {no, [], false, Prep0}.
 
 -define(SIMPLE_QVAR, 'SQV').
 
@@ -1612,45 +1683,58 @@ short_list(L) ->
     #prepared{qh = #qlc_list{l = L}, sorted = yes, is_unique_objects = true, 
               is_cached = true}.
     
-find_const_positions(#qlc_table{info_fun = IF, lookup_fun = LU_fun}, 
-                     PosFun, #qlc_opt{max_lookup = Max, lookup = Lookup}) 
+find_const_positions(IF, LU_fun, {KeyEquality, PosFun}, 
+                     #qlc_opt{max_lookup = Max, lookup = Lookup}) 
            when is_function(LU_fun), is_function(PosFun), is_function(IF),
                 Lookup =/= false ->
     case call(IF, keypos, undefined, [])  of
         undefined ->
             Indices = call(IF, indices, undefined, []),
-            find_const_position_idx(Indices, PosFun, Max, []);
+            find_const_position_idx(Indices, KeyEquality, PosFun, Max, []);
         KeyPos ->
-            case pos_vals(KeyPos, PosFun(KeyPos), Max) of
+            case pos_vals(KeyPos, KeyEquality, PosFun(KeyPos), Max) of
                 false ->
-                    find_const_position_idx(IF(indices), PosFun, Max, []);
+                    find_const_position_idx(IF(indices), KeyEquality,
+                                            PosFun, Max, []);
                 PosValuesSkip ->
                     PosValuesSkip
             end
     end;
-find_const_positions(_, _PosFun, _Opt0) ->
+find_const_positions(_IF, _LU_fun, _KE_PosFun, _Opt0) ->
     {false, {some,[]}}.
 
-find_const_position_idx([I | Is], PosFun, Max, L0) ->
-    case pos_vals(I, PosFun(I), Max) of
+find_const_position_idx([I | Is], KeyEquality, PosFun, Max, L0) ->
+    case pos_vals(I, KeyEquality, PosFun(I), Max) of
         false ->
-            find_const_position_idx(Is, PosFun, Max, L0);
+            find_const_position_idx(Is, KeyEquality, PosFun, Max, L0);
         {{_Pos, Values}, _SkipFils}=PosValuesFils ->
             L = [{length(Values), PosValuesFils} | L0],
-            find_const_position_idx(Is, PosFun, Max, L)
+            find_const_position_idx(Is, KeyEquality, PosFun, Max, L)
     end;
-find_const_position_idx(_, _PosFun, _Max, []) ->
+find_const_position_idx(_, _KeyEquality, _PosFun, _Max, []) ->
     {false, {some,[]}};
-find_const_position_idx(_, _PosFun, _Max, L) ->
+find_const_position_idx(_, _KeyEquality, _PosFun, _Max, L) ->
     [{_,PVF} | _] = lists:sort(L),
     PVF.
 
-pos_vals(Pos, {usort_needed, Values, SkipFils}, Max) ->
+pos_vals(Pos, '==', {usort_needed, Values, SkipFils}, Max) ->
     pos_vals_max(Pos, lists:usort(Values), SkipFils, Max);
-pos_vals(Pos, {values, Values, SkipFils}, Max) ->
+pos_vals(Pos, '=:=', {usort_needed, Values, SkipFils}, Max) ->
+    pos_vals_max(Pos, lists:sort(nub(Values)), SkipFils, Max);
+pos_vals(Pos, _KeyEquality, {values, Values, SkipFils}, Max) ->
     pos_vals_max(Pos, Values, SkipFils, Max);
-pos_vals(_Pos, _, _Max) ->
+pos_vals(_Pos, _KeyEquality, _T, _Max) ->
     false.
+
+nub([]) ->
+    [];
+nub([E | L]) ->
+    case lists:member(E, Es=nub(L)) of
+        true ->
+            Es;
+        false ->
+            [E | Es]
+    end.
 
 %% length(Values) >= 1
 pos_vals_max(Pos, Values, Skip, Max) when Max =:= -1; Max >= length(Values) ->
@@ -1665,56 +1749,48 @@ prep_join(Prep, QOpt, Opt) ->
             Prep;
         EqualMatch ->
             {Ix, M} = case EqualMatch of
-                          {Equal, Match} ->
-                              {Ix0, _} = pjoin(Match, Prep, QOpt, Opt),
-                              {_, M0} = pjoin(Equal, Prep, QOpt, Opt),
-                              {Ix0, M0};
-                          _ ->
-                              pjoin(EqualMatch, Prep, QOpt, Opt)
+                          {NEqual, NMatch} ->
+                              pref_join(NEqual, NMatch, Prep, QOpt, Opt);
+                          EM ->
+                              pref_join(EM, EM, Prep, QOpt, Opt)
                       end,
             SI = family_union(Prep#prepared.sort_info ++ M),
             Prep#prepared{join = {Ix, M}, sort_info = SI}
     end.
 
 %% The parse transform ensures that only two tables are involved.
-pjoin(QCsL, #prepared{qh = #qlc{qdata = QData}}, QOpt, 
-      #qlc_opt{join = JoinOpt}) ->
-    LuJoin = (JoinOpt =:= any) or (JoinOpt =:= lookup),
-    MJoin = (JoinOpt =:= any) or (JoinOpt =:= merge),
-    lists:foldl(fun(QCs, {Ix0, M0}) -> 
-                        {Ix,M} = pref_join(QCs, QData, QOpt, LuJoin, MJoin),
-                        {Ix0++Ix, M0++M}
-                end, {[],[]}, QCsL).
+pref_join(Equal, Match, Prep, QOpt, #qlc_opt{join = JoinOpt}) ->
+    JQs = [{KeyEquality, QCs} ||
+              {KeyEquality, QCsL} <- [{'==',Equal}, {'=:=',Match}],
+              QCs <- QCsL],
+    IxL = [pref_lookup_join(KE, QCs, Prep, QOpt) || 
+              JoinOpt =:= any orelse JoinOpt =:= lookup,
+              {KE, QCs} <- JQs],
+    ML = [pref_merge_join(KE, QCs, Prep, QOpt) ||
+             JoinOpt =:= any orelse JoinOpt =:= merge,
+             {KE, QCs} <- JQs],
+    {lists:usort(lists:append(IxL)), lists:usort(lists:append(ML))}.
 
-pref_join([{Q1,Cs1},{Q2,Cs2}], QData, QOpt, LuJoin, MJoin) ->
-    {Is1, Sort1} = join_qual_data(QData, Q1),
-    {Is2, Sort2} = join_qual_data(QData, Q2),
-    Lu1 = [pref_lookup(Q1, C1, Q2, C2, QOpt) ||
-              LuJoin, C2 <- Is2, lists:member(C2, Cs2), C1 <- Cs1],
-    Lu2 = [pref_lookup(Q2, C2, Q1, C1, QOpt) ||
-              LuJoin, C1 <- Is1, lists:member(C1, Cs1), C2 <- Cs2],
-    Merge = lists:append([pref_merge(Q1, C1, Q2, C2, Sort1, Sort2, QOpt) ||
-                             MJoin, C1 <- Cs1, C2 <- Cs2]),
-    {family(Lu1 ++ Lu2), family_union(Merge)}.
+pref_lookup_join(KeyEquality, {[{Q1,C1},{Q2,C2}],Skip}, Prep, QOpt) 
+                                       when is_integer(C1), is_integer(C2) ->
+    #prepared{qh = #qlc{qdata = QData}} = Prep,
+    Is1 = lookup_qual_data(QData, Q1, KeyEquality),
+    Lu2 = [pref_lookup_join2(Q2, C2, Q1, C1, Skip, QOpt, KeyEquality) ||
+              IC1 <- Is1, IC1 =:= C1],
+    Is2 = lookup_qual_data(QData, Q2, KeyEquality),
+    Lu1 = [pref_lookup_join2(Q1, C1, Q2, C2, Skip, QOpt, KeyEquality) ||
+              IC2 <- Is2, IC2 =:= C2],
+    family(Lu1 ++ Lu2);
+pref_lookup_join(KE, [{_,Cs1},{_,Cs2}]=L, Prep, QOpt) when is_list(Cs1), 
+                                                           is_list(Cs2) ->
+    %% --R12B-5
+    lists:append([pref_lookup_join(KE, QC,Prep,QOpt) || 
+                     QC <- selections_no_skip(L)]).
 
-pref_lookup(Q1, C1, Q2, C2, QOpt) ->
-    {{Q1,C1,Q2,C2},{lookup,eq_template_columns(QOpt, {Q1,C1})}}.
-
-pref_merge(Q1, C1, Q2, C2, Sort1, Sort2, QOpt) ->
-    Col1 = {Q1,C1},
-    Col2 = {Q2,C2},
-    DoSort = [QC || {{_QNum,Col}=QC,SortL} <- [{Col1,Sort1}, {Col2,Sort2}],
-                    lists:keysearch({Col, ascending}, 1, SortL) =:= false],
-    J = [{{Q1,C1,Q2,C2}, {merge,DoSort}}],
-    %% true = (QOpt(template))(Col1, '==') =:= (QOpt(template))(Col2, '==')
-    [{{Column, ascending}, J} || 
-        Column <- equal_template_columns(QOpt, Col1)] ++ [{other, J}].
-
-join_qual_data(QData, QNum) ->
+lookup_qual_data(QData, QNum, KeyEquality) ->
     case lists:keysearch(QNum, 1, QData) of
         {value, ?qual_data(QNum, _, _, {gen, PrepLE})} ->
-            #prepared{sort_info2 = SortInfo} = PrepLE,
-            {join_indices(PrepLE), SortInfo}
+            join_indices(PrepLE, KeyEquality)
     end.
 
 %% If the table has a match specification (ms =/= no_match_spec) that
@@ -1723,18 +1799,59 @@ join_qual_data(QData, QNum) ->
 %% excluded here but is taken care of in opt_join().
 join_indices(#prepared{qh = #qlc_table{info_fun = IF, 
                                        lookup_fun = LU_fun,
-                                       lu_vals = undefined}}) 
-          when is_function(LU_fun) ->
+                                       key_equality = KeyEquality,
+                                       lu_vals = undefined}},
+             KE) when is_function(LU_fun),
+                      KE =:= KeyEquality orelse
+                      KE =:= '=:=' andalso 
+                            KeyEquality =:= undefined -> % --R12B-5
     KpL = case call(IF, keypos, undefined, []) of
               undefined -> [];
               Kp -> [Kp]
           end,
     case call(IF, indices, undefined, []) of
         undefined -> KpL;
-        Is0 -> KpL ++ Is0
+        Is0 -> lists:usort(KpL ++ Is0)
     end;
-join_indices(_Prep) ->
+join_indices(_Prep, _KeyEquality) ->
     [].
+
+pref_lookup_join2(Q1, C1, Q2, C2, Skip, QOpt, KeyEquality) ->
+    TemplCols = compared_template_columns(QOpt, {Q1,C1}, KeyEquality),
+    {{Q1,C1,Q2,C2},{lookup_join,TemplCols,KeyEquality,Skip}}.
+
+pref_merge_join(KE, {[{Q1,C1},{Q2,C2}],Skip}, Prep, QOpt) 
+                                       when is_integer(C1), is_integer(C2) ->
+    #prepared{qh = #qlc{qdata = QData}} = Prep,
+    Sort1 = merge_qual_data(QData, Q1),
+    Sort2 = merge_qual_data(QData, Q2),
+    Merge = pref_merge(KE, Q1, C1, Q2, C2, Skip, Sort1, Sort2, QOpt),
+    family_union(Merge);
+pref_merge_join(KE, [{_,Cs1},{_,Cs2}]=L, Prep, QOpt) when is_list(Cs1), 
+                                                      is_list(Cs2) ->
+    %% --R12B-5
+    lists:append([pref_merge_join(KE, QC, Prep, QOpt) || 
+                     QC <- selections_no_skip(L)]).
+
+selections_no_skip(L) ->
+    [{C,{some,[]}} || C <- all_selections(L)].
+
+merge_qual_data(QData, QNum) ->
+    case lists:keysearch(QNum, 1, QData) of
+        {value, ?qual_data(QNum, _, _, {gen, PrepLE})} ->
+            #prepared{sort_info2 = SortInfo} = PrepLE,
+            SortInfo
+    end.
+
+pref_merge(KE, Q1, C1, Q2, C2, Skip, Sort1, Sort2, QOpt) ->
+    Col1 = {Q1,C1},
+    Col2 = {Q2,C2},
+    DoSort = [QC || {{_QNum,Col}=QC,SortL} <- [{Col1,Sort1}, {Col2,Sort2}],
+                    lists:keysearch({Col, ascending}, 1, SortL) =:= false],
+    J = [{{Q1,C1,Q2,C2}, {merge_join,DoSort,KE,Skip}}],
+    %% true = (QOpt(template))(Col1, '==') =:= (QOpt(template))(Col2, '==')
+    [{{Column, ascending}, J} || 
+        Column <- equal_template_columns(QOpt, Col1)] ++ [{other, J}].
 
 table_sort_info(#qlc_table{info_fun = IF}) ->
     case call(IF, is_sorted_key, undefined, []) of
@@ -1775,17 +1892,23 @@ check_lookup_option(#qlc_opt{lookup = true}, false) ->
 check_lookup_option(_QOpt, _LuV) ->
     ok.
 
+compared_template_columns(QOpt, QNumColumn, KeyEquality) ->
+    (QOpt(template))(QNumColumn, KeyEquality).
+
 equal_template_columns(QOpt, QNumColumn) ->
     (QOpt(template))(QNumColumn, '==').
 
-eq_template_columns(QOpt, QNumColumn) ->
-    (QOpt(template))(QNumColumn, '=:=').
+%eq_template_columns(QOpt, QNumColumn) ->
+%    (QOpt(template))(QNumColumn, '=:=').
 
 size_of_constant_prefix(QOpt, QNum) ->
     (QOpt(n_leading_constant_columns))(QNum).
 
 constants(QOpt, QNum) ->
     (QOpt(constants))(QNum).
+
+equal_constants(QOpt, QNum) ->
+    (QOpt(equal_constants))(QNum).
 
 join_opt(QOpt) ->
     QOpt(join).
@@ -1833,22 +1956,23 @@ opt_le(#prepared{qh = #simple_qlc{le = LE0, optz = Optz0}=QLC}=Prep0,
                     Prep0#prepared{qh = QLC#simple_qlc{le = LE, optz = Optz1}}
             end
     end;
-opt_le(#prepared{qh = #qlc{}, skip_quals = SkipQuals0} = Prep0, GenNum) ->
+opt_le(#prepared{qh = #qlc{}, lu_skip_quals = LU_SkipQuals0}=Prep0, GenNum) ->
     #prepared{qh = #qlc{qdata = Qdata0, optz = Optz0}=QLC} = Prep0,
     #optz{join_option = JoinOption, opt = Opt} = Optz0,
     JoinOption = Optz0#optz.join_option,
-    {LU_QNum, Join, DoSort} = 
-        opt_join(Prep0#prepared.join, JoinOption, Qdata0, Opt, SkipQuals0),
-    {LU_Skip, SkipQuals} = 
-        lists:partition(fun({QNum,_Fs}) -> QNum =:= LU_QNum end, SkipQuals0),
-    SkipFs = lists:flatmap(fun({_QNum,Fs}) -> Fs end, SkipQuals),
+    {LU_QNum, Join, JoinSkipFs, DoSort} = 
+        opt_join(Prep0#prepared.join, JoinOption, Qdata0, Opt, LU_SkipQuals0),
+    {LU_Skip, LU_SkipQuals} = 
+        lists:partition(fun({QNum,_Fs}) -> QNum =:= LU_QNum end,
+                        LU_SkipQuals0),
+    LU_SkipFs = lists:flatmap(fun({_QNum,Fs}) -> Fs end, LU_SkipQuals),
     %% If LU_QNum has a match spec it must be applied _after_ the
     %% lookup join (the filter must not be skipped!). 
     Qdata1 = if 
                  LU_Skip =:= [] -> Qdata0;
                  true -> activate_join_lookup_filter(LU_QNum, Qdata0)
              end,
-    Qdata2 = skip_lookup_filters(Qdata1, SkipFs),
+    Qdata2 = skip_lookup_filters(Qdata1, LU_SkipFs ++ JoinSkipFs),
     F = fun(?qual_data(QNum, GoI, SI, {gen, #prepared{}=PrepLE}), GenNum1) ->
                 NewPrepLE = maybe_sort(PrepLE, QNum, DoSort, Opt),
                 {?qual_data(QNum, GoI, SI, {gen, opt_le(NewPrepLE, GenNum1)}),
@@ -1889,8 +2013,8 @@ maybe_sort(LE, QNum, DoSort, Opt) ->
 
 skip_lookup_filters(Qdata, []) ->
     Qdata;
-skip_lookup_filters(Qdata0, SkipFs) ->
-    [case lists:member(QNum, SkipFs) of
+skip_lookup_filters(Qdata0, LU_SkipFs) ->
+    [case lists:member(QNum, LU_SkipFs) of
          true ->
              ?qual_data(QNum, GoI, ?SKIP, fil);
          false ->
@@ -1907,38 +2031,69 @@ activate_join_lookup_filter(QNum, Qdata) ->
     %% Table2#qlc_table.ms has been reset; the filter will be run.
     lists:keyreplace(QNum, 1, Qdata, ?qual_data(QNum,GoI2,SI2,{gen,NPrep2})).
 
-opt_join(Join, JoinOption, Qdata, Opt, SkipQuals) ->
+opt_join(Join, JoinOption, Qdata, Opt, LU_SkipQuals) ->
     %% prep_qlc_lc() assures that no unwanted join is carried out
-    case Join of 
-        {[{{Q1,C1,Q2,C2},[{lookup,_} | _]} | LJ], MJ} ->
-            {value, {Q2,_,_,{gen,Prep2}}} = lists:keysearch(Q2, 1, Qdata),
-            #qlc_table{ms = MS, lookup_fun = LU_fun} = Prep2#prepared.qh,
-            %% If there is no filter to skip (the match spec was derived 
-            %% from a query handle) then the lookup join cannot be done.
-            case 
-                (MS =/= no_match_spec) andalso 
-                (lists:keysearch(Q2, 1, SkipQuals) =:= false) 
-            of 
-                true ->
-                    opt_join({LJ, MJ}, JoinOption, Qdata, Opt, SkipQuals);
-                false ->
-                    %% The join is preferred before evaluating the
-                    %% match spec (if there is one).
-                    J = #qlc_join{kind = {lookup, LU_fun}, q1 = Q1, c1 = C1, 
-                                  q2 = Q2, c2 = C2, opt = Opt},
-                    {Q2, J, []}
-            end;
-        {_, [{_KpOrder_or_other,[{{Q1,C1,Q2,C2},{merge,DoSort}}|_]}|_]} ->
-            J = #qlc_join{kind = merge, opt = Opt,
-                          q1 = Q1, c1 = C1, q2 = Q2, c2 = C2},
-            {not_a_qnum, J, DoSort};
-        {[],[]} when JoinOption =:= nested_loop ->
-            {not_a_qnum, no, []};
-        _ when JoinOption =/= any ->
-            erlang:error(cannot_carry_out_join, [JoinOption]);
-        _ ->
-            {not_a_qnum, no, []}
+    {Ix0, M0} = Join,
+    Ix1 = opt_join_lu(Ix0, Qdata, LU_SkipQuals),
+    Ix = lists:reverse(lists:keysort(2, Ix1)), % prefer to skip
+    case Ix of 
+        [{{Q1,C1,Q2,C2},Skip,KE,LU_fun} | _] ->
+            J = #qlc_join{kind = {lookup, KE, LU_fun}, q1 = Q1,
+                          c1 = C1, q2 = Q2, c2 = C2, opt = Opt},
+            {Q2, J, Skip, []};
+        [] ->
+            M = opt_join_merge(M0),
+            case M of
+                [{{Q1,C1,Q2,C2},{merge_join,DoSort,KE,Skip}}|_] ->
+                    J = #qlc_join{kind = {merge, KE}, opt = Opt,
+                                  q1 = Q1, c1 = C1, q2 = Q2, c2 = C2},
+                    {not_a_qnum, J, Skip, DoSort};
+                [] when JoinOption =:= nested_loop ->
+                    {not_a_qnum, no, [], []};
+                _ when JoinOption =/= any ->
+                    erlang:error(cannot_carry_out_join, [JoinOption]);
+                _ ->
+                    {not_a_qnum, no, [], []}
+            end
     end.
+
+opt_join_lu([{{_Q1,_C1,Q2,_C2}=J,[{lookup_join,_KEols,JKE,Skip0} | _]} | LJ], 
+            Qdata, LU_SkipQuals) ->
+    {value, {Q2,_,_,{gen,Prep2}}} = lists:keysearch(Q2, 1, Qdata),
+    #qlc_table{ms = MS, key_equality = KE, 
+               lookup_fun = LU_fun} = Prep2#prepared.qh,
+    %% If there is no filter to skip (the match spec was derived 
+    %% from a query handle) then the lookup join cannot be done.
+    case 
+        MS =/= no_match_spec andalso 
+        lists:keysearch(Q2, 1, LU_SkipQuals) =:= false
+    of 
+        true ->
+            opt_join_lu(LJ, Qdata, LU_SkipQuals);
+        false ->
+            %% The join is preferred before evaluating the match spec
+            %% (if there is one).
+            Skip = skip_if_possible(JKE, KE, Skip0),
+            [{J,Skip,KE,LU_fun} | opt_join_lu(LJ, Qdata, LU_SkipQuals)]
+    end;
+opt_join_lu([], _Qdata, _LU_SkipQuals) ->
+    [].
+
+opt_join_merge(M) ->
+    %% Prefer not to sort arguments. Prefer to skip join filter.
+    L = [{-length(DoSort),length(Skip),
+         {QCs,{merge_join,DoSort,KE,Skip}}} ||
+            {_KpOrder_or_other,MJ} <- M,
+            {QCs,{merge_join,DoSort,KE,Skip0}} <- MJ,
+            Skip <- [skip_if_possible(KE, '==', Skip0)]],
+    lists:reverse([J || {_,_,J} <- lists:sort(L)]).
+
+%% Cannot skip the join filter the join operator is '=:=' and the join
+%% is performed using '=='. Note: the tag 'some'/'all' is not used.
+skip_if_possible('=:=', '==', _) ->
+    [];
+skip_if_possible(_, _, {_SkipTag, Skip}) ->
+    Skip.
 
 %% -> {Objects, Post, LocalPost} | throw()
 %% Post is a list of funs (closures) to run afterwards.
@@ -2025,14 +2180,14 @@ setup_quals(Qdata, Post0, Setup, Optz) ->
     FirstState0 = next_state(Qdata),
     {GoTo2, FirstState, Post, LocalPost1} =
         case Optz#optz.fast_join of
-            #qlc_join{kind = merge, c1 = C1, c2 = C2, opt = Opt} = MJ ->
+            #qlc_join{kind = {merge,_KE}, c1 = C1, c2 = C2, opt = Opt} = MJ ->
                 MF = fun(_Rev, {H1, WH1}, {H2, WH2}) -> 
                              fun() -> 
                                   merge_join(WH1(H1), C1, WH2(H2), C2, Opt) 
                              end
                      end,
                 setup_join(MJ, Qdata, GoTo1, FirstState0, MF, Post1);
-            #qlc_join{kind = {lookup, LuF}, c1 = C1, c2 = C2} = LJ ->
+            #qlc_join{kind = {lookup,_KE,LuF}, c1 = C1, c2 = C2} = LJ ->
                 LF = fun(Rev, {H1, WH1}, {H2, WH2}) ->
                              {H, W} = if 
                                           Rev -> {H2, WH2};
@@ -2253,9 +2408,9 @@ file_loop(Bin0, Fd_FName, Ts0, TF) ->
             error({bad_object, FileName})
         end
     of
-        {terms, <<Size:4/unit:8, B/binary>>=Bin, []} ->
+        {terms, <<Size:4/unit:8, B/bytes>>=Bin, []} ->
             file_loop_read(Bin, Size - byte_size(B) + 4, Fd_FName, TF);
-        {terms, <<Size:4/unit:8, _/binary>>=Bin, Ts} ->
+        {terms, <<Size:4/unit:8, _/bytes>>=Bin, Ts} ->
             C = fun() -> file_loop_read(Bin, Size+4, Fd_FName, TF) end,
             TF(Ts, C);
         {terms, B, Ts} ->
@@ -2265,7 +2420,7 @@ file_loop(Bin0, Fd_FName, Ts0, TF) ->
             Error
     end.
 
-file_loop2(<<Size:4/unit:8, B:Size/binary, Bin/binary>>, Ts) ->
+file_loop2(<<Size:4/unit:8, B:Size/bytes, Bin/bytes>>, Ts) ->
     file_loop2(Bin, [binary_to_term(B) | Ts]);
 file_loop2(Bin, Ts) ->
     {terms, Bin, Ts}.
@@ -2277,13 +2432,13 @@ file_loop2(Bin, Ts) ->
 %% BytesToRead in some way) since temporary files will never be read
 %% after a power failure.
 file_loop_read(B, MinBytesToRead, {Fd, FileName}=Fd_FName, TF) ->
-    BytesToRead = lists:max([?CHUNK_SIZE, MinBytesToRead]),
+    BytesToRead = erlang:max(?CHUNK_SIZE, MinBytesToRead),
     case file:read(Fd, BytesToRead) of
         {ok, Bin} when byte_size(B) =:= 0 ->
             file_loop(Bin, Fd_FName, [], TF);
         {ok, Bin} ->
             case B of 
-                <<Size:4/unit:8, Tl/binary>> 
+                <<Size:4/unit:8, Tl/bytes>> 
                                 when byte_size(Bin) + byte_size(Tl) >= Size ->
                     {B1, B2} = split_binary(Bin, Size - byte_size(Tl)),
                     Foo = fun([T], Fun) -> [T | Fun] end,
@@ -2362,14 +2517,14 @@ tmp_filename(TmpDirOpt) ->
 
 write_terms(FileName, Fd) ->
     fun(close) ->
-            file:close(Fd),
+            _ = file:close(Fd),
             {file, FileName};
        (BTerms) ->
             case file:write(Fd, size_bin(BTerms, [])) of
                 ok ->
                     write_terms(FileName, Fd);
                 Error ->
-                    file:close(Fd),
+                    _ = file:close(Fd),
                     throw_file_error(FileName, Error)
             end
     end.
@@ -2577,7 +2732,7 @@ file_sort_handle(H, Kp, SortOptions, TmpDir, Compressed, Post, LocalPost) ->
             {F, [P | Post], LocalPost};
         {terms, BTerms} ->
             try 
-                {lists:map(fun binary_to_term/1, BTerms), Post, LocalPost}
+                {[binary_to_term(B) || B <- BTerms], Post, LocalPost}
             catch Class:Reason ->
                 post_funs(Post),
                 erlang:raise(Class, Reason, erlang:get_stacktrace())
@@ -2978,8 +3133,9 @@ same_loop1(F1, K1_0, C1, E2_0, L2, C2, M) ->
     end.
 
 %% element(C2, E2_0) == K1, element(C2, E2) == K1_0
-same_keys1(E1_0, _K1_0, [], _C1, E2, _C2, E2_0, _L2, M) ->
-    end_merge_join([?JWRAP(E1_0, E2_0), ?JWRAP(E1_0, E2)], M);
+same_keys1(E1_0, K1_0, []=L1, C1, E2, C2, E2_0, L2, M) ->
+    [?JWRAP(E1_0, E2_0), ?JWRAP(E1_0, E2) |
+     fun() -> same_keys(K1_0, E1_0, L1, C1, L2, C2, M) end];
 same_keys1(E1_0, K1_0, [E1 | _]=L1, C1, E2, C2, E2_0, L2, M) ->
     K1 = element(C1, E1),
     if 
@@ -3301,7 +3457,7 @@ expand_stacktrace() ->
     D = erlang:system_flag(backtrace_depth, 8),
     try
         %% Compensate for a bug in erlang:system_flag/2:
-        expand_stacktrace(lists:max([1, D]))
+        expand_stacktrace(erlang:max(1, D))
     after
         erlang:system_flag(backtrace_depth, D)
     end.
@@ -3365,17 +3521,17 @@ family_union(L) ->
 file_error(File, {error, Reason}) ->
     error({file_error, File, Reason}).
 
--spec(throw_file_error/2 :: (string(), {'error',atom()}) -> no_return()).
+-spec throw_file_error(string(), {'error',atom()}) -> no_return().
 
 throw_file_error(File, {error, Reason}) ->
     throw_reason({file_error, File, Reason}).
 
--spec(throw_reason/1 :: (_) -> no_return()).
+-spec throw_reason(term()) -> no_return().
 
 throw_reason(Reason) ->
     throw_error(error(Reason)).
 
--spec(throw_error/1 :: (_) -> no_return()).
+-spec throw_error(term()) -> no_return().
 
 throw_error(Error) ->
     throw(Error).

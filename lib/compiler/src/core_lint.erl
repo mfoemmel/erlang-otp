@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Do necessary checking of Core Erlang code.
 
@@ -112,7 +113,7 @@ module(#c_module{name=M,exports=Es,attrs=As,defs=Ds}, _Opts) ->
 %% defined_funcs([FuncDef]) -> [Fname].
 
 defined_funcs(Fs) ->
-    foldl(fun ({#c_fname{id=I,arity=A},_}, Def) ->
+    foldl(fun ({#c_var{name={I,A}},_}, Def) ->
 		  add_element({I,A}, Def)
 	  end, [], Fs).
 
@@ -136,7 +137,7 @@ add_error(E, St) -> St#lint{errors=[{?MODULE,E}|St#lint.errors]}.
 %%add_warning(W, St) -> St#lint{warnings=[{none,core_lint,W}|St#lint.warnings]}.
 
 check_exports(Es, St) ->
-    case all(fun (#c_fname{id=Name,arity=Arity})
+    case all(fun (#c_var{name={Name,Arity}})
 		 when is_atom(Name), is_integer(Arity) -> true;
 		 (_) -> false
 	     end, Es) of
@@ -153,7 +154,7 @@ check_attrs(As, St) ->
     end.
 
 check_state(Es, Defined, St) ->
-    foldl(fun (#c_fname{id=N,arity=A}, St1) ->
+    foldl(fun (#c_var{name={N,A}}, St1) ->
 		  F = {N,A},
 		  case is_element(F, Defined) of
 		      true -> St1;
@@ -166,7 +167,7 @@ check_state(Es, Defined, St) ->
 module_defs(B, Def, St) ->
     %% Set top level function name.
     foldl(fun (Func, St0) ->
-		  {#c_fname{id=F,arity=A},_} = Func,
+		  {#c_var{name={F,A}},_} = Func,
 		  St1 = St0#lint{func={F,A}},
 		  function(Func, Def, St1)
 	  end, St, B).
@@ -178,7 +179,7 @@ functions(Fs, Def, St0) ->
 
 %% function(CoreFunc, Defined, State) -> State.
 
-function({#c_fname{},B}, Def, St) ->
+function({#c_var{name={_,_}},B}, Def, St) ->
     %% Body must be a fun!
     case B of
 	#c_fun{} -> expr(B, Def, any, St);
@@ -242,7 +243,11 @@ gexpr(#c_try{arg=E,vars=[#c_var{name=X}],body=#c_var{name=X},
 	     evars=[#c_var{},#c_var{}],handler=#c_literal{val=false}},
       Def, Rt, St) ->
     gbody(E, Def, Rt, St);
-gexpr(Core, _, _, St) ->
+gexpr(#c_case{arg=Arg,clauses=Cs}, Def, Rt, St0) ->
+    PatCount = case_patcount(Cs),
+    St1 = gbody(Arg, Def, PatCount, St0),
+    clauses(Cs, Def, PatCount, Rt, St1);
+gexpr(_Core, _, _, St) ->
     add_error({illegal_guard,St#lint.func}, St).
 
 %% gexpr_list([Expr], Defined, State) -> State.
@@ -255,12 +260,13 @@ gexpr_list(Es, Def, St0) ->
 gbitstr_list(Es, Def, St0) ->
     foldl(fun (E, St) -> gbitstr(E, Def, St) end, St0, Es).
 
-gbitstr(#c_bitstr{val=V,size=S,unit=U,type=T,flags=Fs}, Def, St0) ->
-    St1 = bit_type(U, T, Fs, St0),
-    gexpr_list([V,S], Def, St1).
+gbitstr(#c_bitstr{val=V,size=S}, Def, St) ->
+    gexpr_list([V,S], Def, St).
 
 %% expr(Expr, Defined, RetCount, State) -> State.
 
+expr(#c_var{name={_,_}=FA}, Def, _Rt, St) ->
+    expr_fname(FA, Def, St);
 expr(#c_var{name=N}, Def, _Rt, St) -> expr_var(N, Def, St);
 expr(#c_literal{}, _Def, _Rt, St) -> St;
 expr(#c_cons{hd=H,tl=T}, Def, _Rt, St) ->
@@ -269,8 +275,6 @@ expr(#c_tuple{es=Es}, Def, _Rt, St) ->
     expr_list(Es, Def, St);
 expr(#c_binary{segments=Ss}, Def, _Rt, St) ->
     bitstr_list(Ss, Def, St);
-expr(#c_fname{id=I,arity=A}, Def, _Rt, St) ->
-    expr_fname({I,A}, Def, St);
 expr(#c_fun{vars=Vs,body=B}, Def, Rt, St0) ->
     {Vvs,St1} = variable_list(Vs, St0),
     return_match(Rt, 1, body(B, union(Vvs, Def), any, St1));
@@ -289,6 +293,12 @@ expr(#c_case{arg=Arg,clauses=Cs}, Def, Rt, St0) ->
     Pc = case_patcount(Cs),
     St1 = body(Arg, Def, Pc, St0),
     clauses(Cs, Def, Pc, Rt, St1);
+expr(#c_receive{clauses=Cs,timeout=#c_literal{val=infinity},
+		action=#c_literal{}},
+     Def, Rt, St) ->
+    %% If the timeout is 'infinity', the after code can never
+    %% be reached. We don't care if the return count is wrong.
+    clauses(Cs, Def, 1, Rt, St);
 expr(#c_receive{clauses=Cs,timeout=T,action=A}, Def, Rt, St0) ->
     St1 = expr(T, Def, 1, St0),
     St2 = body(A, Def, Rt, St1),
@@ -314,8 +324,8 @@ expr(#c_try{arg=A,vars=Vs,body=B,evars=Evs,handler=H}, Def, Rt, St0) ->
     St4 = body(B, union(Ns, Def), Rt, St3),
     {Ens,St5} = variable_list(Evs, St4),
     body(H, union(Ens, Def), Rt, St5);
-expr(_, _, _, St) ->
-    %%io:fwrite("clint: ~p~n", [Other]),
+expr(_Other, _, _, St) ->
+    %%io:fwrite("clint: ~p~n", [_Other]),
     add_error({illegal_expr,St#lint.func}, St).
 
 %% expr_list([Expr], Defined, State) -> State.
@@ -328,14 +338,13 @@ expr_list(Es, Def, St0) ->
 bitstr_list(Es, Def, St0) ->
     foldl(fun (E, St) -> bitstr(E, Def, St) end, St0, Es).
 
-bitstr(#c_bitstr{val=V,size=S,unit=U,type=T,flags=Fs}, Def, St0) ->
-    St1 = bit_type(U, T, Fs, St0),
-    expr_list([V,S], Def, St1).
+bitstr(#c_bitstr{val=V,size=S}, Def, St) ->
+    expr_list([V,S], Def, St).
 
 %% apply_op(Op, Defined, ArgCount, State) -> State.
 %%  A apply op is either an fname or an expression.
 
-apply_op(#c_fname{id=I,arity=A}, Def, Ac, St0) ->
+apply_op(#c_var{name={I,A}}, Def, Ac, St0) ->
     St1 = expr_fname({I,A}, Def, St0),
     arg_match(Ac, A, St1);
 apply_op(E, Def, _, St) -> expr(E, Def, 1, St).	%Hard to check
@@ -402,7 +411,7 @@ variable_list(Vs, Ps, St) ->
 %% pattern(Pattern, Defined, State) -> {[PatVar],State}.
 %% pattern(Pattern, Defined, [PatVar], State) -> {[PatVar],State}.
 %%  Patterns are complicated by sizes in binaries.  These are pure
-%%  input variables which create no bindings.  We, therefor, need to
+%%  input variables which create no bindings.  We, therefore, need to
 %%  carry around the original defined variables to get the correct
 %%  handling.
 
@@ -430,34 +439,36 @@ pat_var(N, _Def, Ps, St) ->
 
 %% pat_bin_list([Elem], Defined, [PatVar], State) -> {[PatVar],State}.
 
-pat_bin(Es, Def, Ps0, St0) ->
-    foldl(fun (E, {Ps,St}) -> pat_segment(E, Def, Ps, St) end, {Ps0,St0}, Es).
+pat_bin(Es, Def0, Ps0, St0) ->
+    {Ps,_,St} = foldl(fun (E, {Ps,Def,St}) ->
+			      pat_segment(E, Def, Ps, St)
+		      end, {Ps0,Def0,St0}, Es),
+    {Ps,St}.
 
-pat_segment(#c_bitstr{val=V,size=S,unit=U,type=T,flags=Fs}, Def, Ps, St0) ->
-    St1 = bit_type(U, T, Fs, St0),
-    St2 = pat_bit_expr(S, T, Def, St1),
-    pattern(V, Def, Ps, St2);
-pat_segment(_, _, Ps, St) ->
-    {Ps,add_error({not_bs_pattern,St#lint.func}, St)}.
+pat_segment(#c_bitstr{val=V,size=S,type=T}, Def0, Ps0, St0) ->
+    St1 = pat_bit_expr(S, T, Def0, St0),
+    {Ps,St2} = pattern(V, Def0, Ps0, St1),
+    Def = case V of
+	      #c_var{name=Name} -> add_element(Name, Def0);
+	      _ -> Def0
+	  end,
+    {Ps,Def,St2};
+pat_segment(_, Def, Ps, St) ->
+    {Ps,Def,add_error({not_bs_pattern,St#lint.func}, St)}.
 
 %% pat_bit_expr(SizePat, Type, Defined, State) -> State.
-%%  Check the Size pattern, this is an input!  Be a bit tough here.
+%%  Check the Size pattern, this is an input!  Because of optimizations,
+%%  we must allow any kind of constant and literal here.
 
-pat_bit_expr(#c_literal{val=I}, _, _, St) when is_integer(I), I >= 0 -> St;
-pat_bit_expr(#c_var{name=N}, _, Def, St) ->
-    expr_var(N, Def, St);
-pat_bit_expr(#c_literal{val=all}, #c_literal{val=binary}, _Def, St) -> St;
+pat_bit_expr(#c_var{name=N}, _, Def, St) -> expr_var(N, Def, St);
+pat_bit_expr(#c_literal{}, _, _, St) -> St;
+pat_bit_expr(#c_binary{}, _, _Def, St) ->
+    %% Literal binaries may be expressed as a bit syntax construction
+    %% expression if such expression is more compact than the literal.
+    %% Example: <<0:100000000>>
+    St;
 pat_bit_expr(_, _, _, St) ->
     add_error({illegal_expr,St#lint.func}, St).
-
-bit_type(Unit, Type, Flags, St) ->
-    U = core_lib:literal_value(Unit),
-    T = core_lib:literal_value(Type),
-    Fs = core_lib:literal_value(Flags),
-    case erl_bits:set_bit_type(default, [T,{unit,U}|Fs]) of
-	{ok,_,_} -> St;
-	{error,E} -> add_error({E,St#lint.func}, St)
-    end.
 
 %% pattern_list([Var], Defined, State) -> {[PatVar],State}.
 %% pattern_list([Var], Defined, [PatVar], State) -> {[PatVar],State}.
@@ -484,7 +495,6 @@ return_match(_Req, _Sup, St) ->
 
 %% arg_match(Required, Supplied, State) -> State.
 
-arg_match(_Req, unknown, St) -> St;
 arg_match(N, N, St) -> St;
 arg_match(_Req, _Sup, St) ->
     add_error({arg_mismatch,St#lint.func}, St).

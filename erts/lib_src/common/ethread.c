@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2004-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 /*
@@ -2796,6 +2797,22 @@ ethr_atomic_xchg(ethr_atomic_t *var, long new, long *old)
 #endif
     return ethr_atomic_xchg__(var, new, old);
 }   
+
+int
+ethr_atomic_cmpxchg(ethr_atomic_t *var, long new, long expected, long *old)
+{
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }  
+    if (!var || !old) {
+	ASSERT(0);
+	return EINVAL;
+    }  
+#endif
+    return ethr_atomic_cmpxchg__(var, new, expected, old);
+}
 
 /* Spinlocks and rwspinlocks */
 

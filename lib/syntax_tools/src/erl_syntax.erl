@@ -6852,10 +6852,8 @@ fold_function_names(Ns) ->
 fold_function_name(N) ->
     Name = arity_qualifier_body(N),
     Arity = arity_qualifier_argument(N),
-    case (type(Name) =:= atom) and (type(Arity) =:= integer) of
-	true ->
-	    {concrete(Name), concrete(Arity)}
-    end.
+    true = ((type(Name) =:= atom) and (type(Arity) =:= integer)),
+    {concrete(Name), concrete(Arity)}.
 
 fold_variable_names(Vs) ->
     [variable_name(V) || V <- Vs].

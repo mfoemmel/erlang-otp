@@ -1,19 +1,20 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2003-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
-#
+# retrieved online at http://www.erlang.org/.
+# 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
-#
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-#
-#     $Id$
+# 
+# %CopyrightEnd%
 #
 
 #
@@ -210,6 +211,7 @@ type	TMP_DSBUF	TEMPORARY	SYSTEM		tmp_dsbuf
 type	INFO_DSBUF	SYSTEM		SYSTEM		info_dsbuf
 # INFO_DSBUF have to use the SYSTEM allocator; otherwise, a deadlock might occur
 type	SCHDLR_DATA	LONG_LIVED	PROCESSES	scheduler_data
+type	RUNQS		LONG_LIVED	SYSTEM		run_queues
 type	DDLL_PROCESS	STANDARD	SYSTEM		ddll_processes
 type	DDLL_HANDLE	STANDARD	SYSTEM		ddll_handle
 type	DDLL_ERRCODES	LONG_LIVED	SYSTEM		ddll_errcodes
@@ -235,6 +237,9 @@ type	DRV_MTX		DRIVER		SYSTEM		driver_mutex
 type	DRV_CND		DRIVER		SYSTEM		driver_cond
 type	DRV_RWLCK	DRIVER		SYSTEM		driver_rwlock
 type	DRV_TSD		DRIVER		SYSTEM		driver_tsd
+type	PSD		STANDARD	PROCESSES	process_specific_data
+type	PRTSD		STANDARD	SYSTEM		port_specific_data
+type	CPUDATA		LONG_LIVED	SYSTEM		cpu_data
 
 +if smp
 type	PORT_LOCK	STANDARD	SYSTEM		port_lock
@@ -242,6 +247,7 @@ type	DRIVER_LOCK	STANDARD	SYSTEM		driver_lock
 type	XPORTS_LIST	SHORT_LIVED	SYSTEM		extra_port_list
 type	PROC_LCK_WTR	LONG_LIVED	SYSTEM		proc_lock_waiter
 type	PROC_LCK_QS	LONG_LIVED	SYSTEM		proc_lock_queues
+type	RUNQ_BLNS	LONG_LIVED	SYSTEM		run_queue_balancing
 +endif
 
 #

@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>2003-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 -module(asn1ct_constructed_per).
 
@@ -582,8 +582,8 @@ optionals([{'EXTENSIONMARK',_,_}|Rest],Acc,Pos) ->
     optionals(Rest,Acc,Pos); % optionals in extension are currently not handled
 optionals([#'ComponentType'{prop='OPTIONAL'}|Rest],Acc,Pos) ->
 		 optionals(Rest,[Pos|Acc],Pos+1);
-optionals([#'ComponentType'{prop={'DEFAULT',_}}|Rest],Acc,Pos) ->
-		 optionals(Rest,[Pos|Acc],Pos+1);
+optionals([#'ComponentType'{prop={'DEFAULT',Val}}|Rest],Acc,Pos) ->
+		 optionals(Rest,[{Pos,Val}|Acc],Pos+1);
 optionals([#'ComponentType'{}|Rest],Acc,Pos) ->
 		 optionals(Rest,Acc,Pos+1);
 optionals([],Acc,_) ->
@@ -682,8 +682,8 @@ gen_enc_components_call1(Erule,TopType,
     case Prop of
 	'OPTIONAL' ->
 	    gen_enc_component_optional(Erule,TopType,Cname,Type,TermNo,DynamicEnc,Ext);
-	{'DEFAULT',_DefVal} ->
-	    gen_enc_component_default(Erule,TopType,Cname,Type,TermNo,DynamicEnc,Ext);
+	{'DEFAULT',DefVal} ->
+	    gen_enc_component_default(Erule,TopType,Cname,Type,TermNo,DynamicEnc,Ext,DefVal);
 	_ ->
 	    case Ext of
 		{ext,ExtPos,_} when Tpos >= ExtPos ->
@@ -705,10 +705,11 @@ gen_enc_components_call1(Erule,TopType,
 gen_enc_components_call1(_Erule,_TopType,[],Pos,_,_,_) ->
 	Pos.
 
-gen_enc_component_default(Erule,TopType,Cname,Type,Pos,DynamicEnc,Ext) ->
+gen_enc_component_default(Erule,TopType,Cname,Type,Pos,DynamicEnc,Ext,DefaultVal) ->
     Element = make_element(Pos+1,"Val1",Cname),
     emit({"case ",Element," of",nl}),
-    emit({"asn1_DEFAULT -> [];",nl}),
+%    emit({"asn1_DEFAULT -> [];",nl}),
+    emit({"DFLT when DFLT == asn1_DEFAULT; DFLT == ",{asis,DefaultVal}," -> [];",nl}),
 
     asn1ct_name:new(tmpval),
     emit({{curr,tmpval}," ->",nl}),

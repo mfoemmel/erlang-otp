@@ -1,35 +1,24 @@
-%%% The contents of this file are subject to the Erlang Public License,
-%%% Version 1.0, (the "License"); you may not use this file except in
-%%% compliance with the License. You may obtain a copy of the License at
-%%% http://www.erlang.org/license/EPL1_0.txt
-%%%
-%%% Software distributed under the License is distributed on an "AS IS"
-%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%%% the License for the specific language governing rights and limitations
-%%% under the License.
-%%%
-%%% The Original Code is xmerl-0.15
-%%%
-%%% The Initial Developer of the Original Code is Ericsson Telecom
-%%% AB. Portions created by Ericsson are Copyright (C), 1998, Ericsson
-%%% Telecom AB. All Rights Reserved.
-%%%
-%%% Contributor(s):
-%%%    Mickael Remond <mickael.remond@IDEALX.com>:
-%%%    Johan Blom <johan.blom@mobilearts.se>
-%%%    Richard Carlsson
-%%%    Fredrik Linder
-%%%
-%%%----------------------------------------------------------------------
-%%% #0.    BASIC INFORMATION
-%%%----------------------------------------------------------------------
-%%% File:       xmerl_scan.erl
-%%% Author       : Ulf Wiger <ulf.wiger@ericsson.com>
-%%% Description  : Simgle-pass XML scanner. See xmerl.hrl for data defs.
-%%% 
-%%% Modules used : ets, file, filename, io, lists, xmerl_ucs, xmerl_uri
-%%% 
-%%%----------------------------------------------------------------------
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
+
+%% Description  : Simgle-pass XML scanner. See xmerl.hrl for data defs.
+
 %% @doc This module is the interface to the XML parser, it handles XML 1.0.
 %%     The XML parser is activated through 
 %%     <tt>xmerl_scan:string/[1,2]</tt> or 

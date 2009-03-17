@@ -1,20 +1,21 @@
 %% -*- erlang-indent-level: 4 -*-
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(eval_bits).
 
@@ -51,7 +52,7 @@ expr_grp(Fields, Bindings, EvalFun, ListOfBits, _) ->
     expr_grp(Fields, Bindings, EvalFun, Bin).
 
 convert_list(List) ->
-  << <<X:1>> || X <- List >>.
+    << <<X:1>> || X <- List >>.
 
 expr_grp(Fields, Bindings, EvalFun) ->
     catch expr_grp(Fields, Bindings, EvalFun, <<>>).
@@ -64,6 +65,13 @@ expr_grp([], Bs0, _Lf, Acc) ->
 
 eval_field({bin_element, _, {string, _, S}, default, default}, Bs0, _Fun) ->
     {list_to_binary(S),Bs0};
+eval_field({bin_element, Line, {string, _, S}, Size0, Options0}, Bs, _Fun) ->
+    {_Size,[Type,_Unit,_Sign,Endian]} = 
+        make_bit_type(Line, Size0, Options0),
+    Res = << <<(eval_exp_field1(C, no_size, no_unit,
+				Type, Endian, no_sign))/binary>> ||
+	      C <- S >>,
+    {Res,Bs};
 eval_field({bin_element,Line,E,Size0,Options0}, Bs0, Fun) ->
     {value,V,Bs1} = Fun(E, Bs0),
     {Size1,[Type,{unit,Unit},Sign,Endian]} = 
@@ -90,27 +98,15 @@ eval_exp_field(Val, Size, Unit, integer, big, signed) ->
 eval_exp_field(Val, Size, Unit, integer, big, unsigned) ->
     <<Val:(Size*Unit)>>;
 eval_exp_field(Val, _Size, _Unit, utf8, _, _) ->
-    %% XXX Simplify code in the release following R12B-5.
-    %% <<Val/utf8>>
-    int_to_utf8(Val);
+    <<Val/utf8>>;
 eval_exp_field(Val, _Size, _Unit, utf16, big, _) ->
-    %% XXX Simplify code in the release following R12B-5.
-    %% <<Val/big-utf16>>
-    int_to_utf16_be(Val);
+    <<Val/big-utf16>>;
 eval_exp_field(Val, _Size, _Unit, utf16, little, _) ->
-    %% XXX Simplify code in the release following R12B-5.
-    %% <<Val/little-utf16>>
-    int_to_utf16_le(Val);
+    <<Val/little-utf16>>;
 eval_exp_field(Val, _Size, _Unit, utf32, big, _) ->
-    %% XXX Simplify code in the release following R12B-5.
-    %%<<Val/big-utf32>>
-    int_to_utf16_be(Val),			%Range check.
-    <<Val:32/big>>;
+    <<Val/big-utf32>>;
 eval_exp_field(Val, _Size, _Unit, utf32, little, _) ->
-    %% XXX Simplify code in the release following R12B-5.
-    %% <<Val/little-utf32>>
-    int_to_utf16_le(Val),			%Range check.
-    <<Val:32/little>>;
+    <<Val/little-utf32>>;
 eval_exp_field(Val, Size, Unit, float, little, _) ->
     <<Val:(Size*Unit)/float-little>>;
 eval_exp_field(Val, Size, Unit, float, native, _) ->
@@ -127,60 +123,6 @@ eval_exp_field(Val, all, Unit, binary, _, _) ->
 eval_exp_field(Val, Size, Unit, binary, _, _) ->
     <<Val:(Size*Unit)/binary-unit:1>>.
 
-int_to_utf8(I) when 0 =< I, I =< 16#7F ->
-    <<I>>;
-int_to_utf8(I) when 0 =< I, I =< 16#7FF ->
-    B2 = I,
-    B1 = (I bsr 6),
-    <<1:1,1:1,0:1,B1:5,1:1,0:1,B2:6>>;
-int_to_utf8(I) when 0 =< I, I =< 16#FFFF ->
-    if
-	16#D800 =< I, I =< 16#DFFF;
-	I =:= 16#FFFE; I =:= 16#FFFF -> error(badarg);
-	true -> ok
-    end,
-    B3 = I,
-    B2 = (I bsr 6),
-    B1 = (I bsr 12),
-    <<1:1,1:1,1:1,0:1,B1:4,1:1,0:1,B2:6,1:1,0:1,B3:6>>;
-int_to_utf8(I) when 0 =< I, I =< 16#10FFFF ->
-    B4 = I,
-    B3 = (I bsr 6),
-    B2 = (I bsr 12),
-    B1 = (I bsr 18),
-    <<1:1,1:1,1:1,1:1,0:1,B1:3,1:1,0:1,B2:6,1:1,0:1,B3:6,1:1,0:1,B4:6>>;
-int_to_utf8(_) ->
-    error(badarg).
-
-int_to_utf16_be(I) when 0 =< I, I =< 16#10000 ->
-    if
-	16#D800 =< I, I =< 16#DFFF;
-	I =:= 16#FFFE; I =:= 16#FFFF -> error(badarg);
-	true -> ok
-    end,
-    <<I:16/big>>;
-int_to_utf16_be(I) when 16#10000 =< I, I =< 16#10FFFF ->
-    U = I - 16#10000,
-    W1 = 16#D800 bor (U bsr 10),
-    W2 = 16#DC00 bor (U band 16#3FF),
-    <<W1:16/big,W2:16/big>>;
-int_to_utf16_be(_) ->
-    error(badarg).
-
-int_to_utf16_le(I) when 0 =< I, I =< 16#10000 ->
-    if
-	16#D800 =< I, I =< 16#DFFF;
-	I =:= 16#FFFE; I =:= 16#FFFF -> error(badarg);
-	true -> ok
-    end,
-    <<I:16/little>>;
-int_to_utf16_le(I) when 16#10000 =< I, I =< 16#10FFFF ->
-    U = I - 16#10000,
-    W1 = 16#D800 bor (U bsr 10),
-    W2 = 16#DC00 bor (U band 16#3FF),
-    <<W1:16/little,W2:16/little>>;
-int_to_utf16_le(_) ->
-    error(badarg).
 
 %%% Part 2: matching in binary comprehensions
 %% @spec bin_gen(BinPattern::{bin,integer(),[field()]}, Bin::binary(),
@@ -313,21 +255,20 @@ get_value(Bin, integer, Size, Unit, Sign, Endian) ->
     get_integer(Bin, Size*Unit, Sign, Endian);
 get_value(Bin, float, Size, Unit, _Sign, Endian) ->
     get_float(Bin, Size*Unit, Endian);
-get_value(Bin0, utf8, undefined, _Unit, _Sign, _Endian) ->
-    Size = utf8_size(Bin0),
-    <<Bin:Size/bytes,Rest/bits>> = Bin0,
-    {utf8_to_int(Bin),Rest};
+get_value(Bin, utf8, undefined, _Unit, _Sign, _Endian) ->
+    <<I/utf8,Rest/bits>> = Bin,
+    {I,Rest};
 get_value(Bin, utf16, undefined, _Unit, _Sign, big) ->
-    get_value_utf16_be(Bin);
+    <<I/big-utf16,Rest/bits>> = Bin,
+    {I,Rest};
 get_value(Bin, utf16, undefined, _Unit, _Sign, little) ->
-    get_value_utf16_le(Bin);
+    <<I/little-utf16,Rest/bits>> = Bin,
+    {I,Rest};
 get_value(Bin, utf32, undefined, _Unit, _Sign, big) ->
-    <<Val:32/big,Rest/bits>> = Bin,
-    int_to_utf16_be(Val),			%XXX Range check.
+    <<Val/big-utf32,Rest/bits>> = Bin,
     {Val,Rest};
 get_value(Bin, utf32, undefined, _Unit, _Sign, little) ->
-    <<Val:32/little,Rest/bits>> = Bin,
-    int_to_utf16_le(Val),			%XXX Range check.
+    <<Val/little-utf32,Rest/bits>> = Bin,
     {Val,Rest};
 get_value(Bin, binary, all, Unit, _Sign, _Endian) ->
     0 = (bit_size(Bin) rem Unit),
@@ -336,41 +277,6 @@ get_value(Bin, binary, Size, Unit, _Sign, _Endian) ->
     TotSize = Size*Unit,
     <<Val:TotSize/bitstring,Rest/bits>> = Bin,
     {Val,Rest}.
-
-utf8_size(<<0:1,_:7,_/binary>>) -> 1;
-utf8_size(<<1:1,1:1,0:1,_:5,_/binary>>) -> 2;
-utf8_size(<<1:1,1:1,1:1,0:1,_:4,_/binary>>) -> 3;
-utf8_size(<<1:1,1:1,1:1,1:1,0:1,_:3,_/binary>>) -> 4.
-
-utf8_to_int(<<0:1,B:7>>) ->
-    B;
-utf8_to_int(<<1:1,1:1,0:1,B1:5,1:1,0:1,B2:6>>) ->
-    (B1 bsl 6) bor B2;
-utf8_to_int(<<1:1,1:1,1:1,0:1,B1:4,1:1,0:1,B2:6,1:1,0:1,B3:6>>) ->
-    (B1 bsl 12) bor (B2 bsl 6) bor B3;
-utf8_to_int(<<1:1,1:1,1:1,1:1,0:1,B1:3,1:1,0:1,
-             B2:6,1:1,0:1,B3:6,1:1,0:1,B4:6>>) ->
-    Res = (B1 bsl 18) bor (B2 bsl 12) bor (B3 bsl 6) bor B4,
-    case Res of
-        X when X > 16#10FFFF ->
-            exit(unsupported_utf8);
-        Other ->
-            Other
-    end.
-
-get_value_utf16_be(<<I:16,Rest/bits>>) when I < 16#D800;
-					    I > 16#DFFFF ->
-    {I,Rest};
-get_value_utf16_be(<<W1:16,W2:16,Rest/bits>>) ->
-    {(((W1 band 16#3FF) bsl 10) bor (W2 band 16#3FF)) +
-     16#10000,Rest}.
-
-get_value_utf16_le(<<I:16/little,Rest/bits>>) when I < 16#D800;
-					    I > 16#DFFFF ->
-    {I,Rest};
-get_value_utf16_le(<<W1:16/little,W2:16/little,Rest/bits>>) ->
-    {((W1 band 16#3FF) bsl 10) bor (W2 band 16#3FF) +
-     16#10000,Rest}.
 
 get_integer(Bin, Size, signed, little) ->
     <<Val:Size/little-signed,Rest/binary-unit:1>> = Bin,

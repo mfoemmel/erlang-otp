@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %%% Purpose : Optimise jumps and remove unreachable code.
 
@@ -97,7 +98,7 @@
 %%% effect on the program state.
 %%% 
 
--import(lists, [reverse/1,reverse/2,foldl/3,last/1]).
+-import(lists, [reverse/1,reverse/2,foldl/3,last/1,any/2,dropwhile/2]).
 
 module({Mod,Exp,Attr,Fs0,Lc}, _Opt) ->
     Fs = [function(F) || F <- Fs0],
@@ -110,6 +111,10 @@ function_labels({function,Name,Arity,CLabel,Asm0}) ->
     Asm = remove_unused_labels(Asm0),
     {function,Name,Arity,CLabel,Asm}.    
 
+%% function(Function) -> Function'
+%%  Optimize jumps and branches.
+%%
+%%  NOTE: This function assumes that there are no labels inside blocks.
 function({function,Name,Arity,CLabel,Asm0}) ->
     Asm1 = share(Asm0),
     Asm2 = move(Asm1),
@@ -168,19 +173,27 @@ move_1([], End, Acc) ->
 
 move_2(Exit, Is, End, [{block,_},{label,_},{func_info,_,_,_}|_]=Acc) ->
     move_1(Is, End, [Exit|Acc]);
-move_2(Exit, Is, End, [{block,_}=Blk,{label,_}=Lbl,Dead|More]=Acc) ->
-    case is_unreachable_after(Dead) of
+move_2(Exit, Is, End, [{block,_}=Blk,{label,_}=Lbl,Unreachable|More]=Acc) ->
+    case is_unreachable_after(Unreachable) of
 	false ->
 	    move_1(Is, End, [Exit|Acc]);
 	true ->
-	    move_1([Dead|Is], [Exit,Blk,Lbl|End], More)
+	    move_1([Unreachable|Is], [Exit,Blk,Lbl|End], More)
     end;
-move_2(Exit, Is, End, [{label,_}=Lbl,Dead|More]=Acc) ->
-    case is_unreachable_after(Dead) of
+move_2(Exit, Is, End, [{bs_context_to_binary,_}=Bs,{label,_}=Lbl,
+		       Unreachable|More]=Acc) ->
+    case is_unreachable_after(Unreachable) of
 	false ->
 	    move_1(Is, End, [Exit|Acc]);
 	true ->
-	    move_1([Dead|Is], [Exit,Lbl|End], More)
+	    move_1([Unreachable|Is], [Exit,Bs,Lbl|End], More)
+    end;
+move_2(Exit, Is, End, [{label,_}=Lbl,Unreachable|More]=Acc) ->
+    case is_unreachable_after(Unreachable) of
+	false ->
+	    move_1(Is, End, [Exit|Acc]);
+	true ->
+	    move_1([Unreachable|Is], [Exit,Lbl|End], More)
     end;
 move_2(Exit, Is, End, Acc) ->
     move_1(Is, End, [Exit|Acc]).
@@ -195,31 +208,41 @@ move_2(Exit, Is, End, Acc) ->
 	     labels				%Set of referenced labels.
 	    }).
 
-opt([{label,Fc}|_]=Is, CLabel) ->
-    Lbls = initial_labels(Is),
-    St = #st{fc=Fc,entry=CLabel,mlbl=dict:new(),labels=Lbls},
-    opt(Is, [], St).
+opt([{label,Fc}|_]=Is0, CLabel) ->
+    Lbls = initial_labels(Is0),
+    find_fixpoint(fun(Is) ->
+			  St = #st{fc=Fc,entry=CLabel,mlbl=dict:new(),
+				   labels=Lbls},
+			  opt(Is, [], St)
+		  end, Is0).
+
+find_fixpoint(OptFun, Is0) ->
+    case OptFun(Is0) of
+	Is0 -> Is0;
+	Is -> find_fixpoint(OptFun, Is)
+    end.
 
 opt([{test,Test0,{f,Lnum}=Lbl,Ops}=I|Is0], Acc, St) ->
     case Is0 of
-	[{jump,{f,Lnum}}|[{label,Lnum}|Is2]=Is1] ->
-	    %% The test and jump are redundant. Keep the label if it is used
-	    %% (from some other place).
-	    Is = case is_label_used(Lnum, St) of
-		     true -> Is1;
-		     false -> Is2
-		 end,
-	    opt(Is, Acc, St);
-	[{jump,To}|[{label,Lnum}|Is2]=Is1] ->
-	    case invert_test(Test0) of
-		not_possible ->
+	[{jump,{f,Lnum}}|Is1] ->
+	    case is_label_defined(Is1, Lnum, St) of
+		no ->
 		    opt(Is0, [I|Acc], label_used(Lbl, St));
-		Test ->
-		    Is = case is_label_used(Lnum, St) of
-			     true -> Is1;
-			     false -> Is2
-			 end,
-		    opt([{test,Test,To,Ops}|Is], Acc, label_used(To, St))
+		{yes,Is2} ->
+		    %% The test and jump are redundant.
+		    opt(Is2, Acc, St)
+	    end;
+	[{jump,To}|Is1] ->
+	    case is_label_defined(Is1, Lnum, St) of
+		no ->
+		    opt(Is0, [I|Acc], label_used(Lbl, St));
+		{yes,Is2} ->
+		    case invert_test(Test0) of
+			not_possible ->
+			    opt(Is0, [I|Acc], label_used(Lbl, St));
+			Test ->
+			    opt([{test,Test,To,Ops}|Is2], Acc, St)
+		    end
 	    end;
 	_Other ->
 	    opt(Is0, [I|Acc], label_used(Lbl, St))
@@ -282,6 +305,29 @@ insert_fc_labels([L|Ls], Mlbl, Acc0) ->
     end;
 insert_fc_labels([], _, Acc) -> Acc.
 
+%% label_defined(Is, Label, St) -> {yes,Is} | no
+%%  Test whether the label Label is defined at the start of the instruction
+%%  sequence, possibly preceeded by other label definitions. Returns 'no'
+%%  if no definition was found, and {yes,Is} if found, where the label
+%%  has been retained in the instruction sequence if there are other
+%%  references to it and removed if not.
+%%
+is_label_defined(Is, L, St) ->
+    is_label_defined_1(Is, L, St, []).
+
+is_label_defined_1([{label,L}|Is]=Is0, L, St, Acc) ->
+    case is_label_used(L, St) of
+	true ->
+	    %% Used - keep the label.
+	    {yes,reverse(Acc, Is0)};
+	false ->
+	    %% Not used - remove the label.
+	    {yes,reverse(Acc, Is)}
+    end;
+is_label_defined_1([{label,_}=I|Is], L, St, Acc) ->
+    is_label_defined_1(Is, L, St, [I|Acc]);
+is_label_defined_1(_, _, _, _) -> no.
+
 %% invert_test(Test0) -> not_possible | Test
 
 invert_test(is_ge) ->       is_lt;
@@ -315,7 +361,6 @@ skip_unreachable([], Acc, St) ->
 
 %% Add one or more label to the set of used labels.
 
-label_used({f,0}, St) -> St;
 label_used({f,L}, St) -> St#st{labels=gb_sets:add(L, St#st.labels)};
 label_used([H|T], St0) -> label_used(T, label_used(H, St0));
 label_used([], St) -> St;
@@ -360,11 +405,17 @@ is_exit_instruction({badmatch,_}) -> true;
 is_exit_instruction(_) -> false.
 
 %% is_label_used_in(LabelNumber, [Instruction]) -> true|false
-%%  Check whether the labels is used in the instruction sequence.
+%%  Check whether the label is used in the instruction sequence
+%%  (including inside blocks).
 
 is_label_used_in(Lbl, Is) ->
     is_label_used_in_1(Is, Lbl, gb_sets:empty()).
 
+is_label_used_in_1([{block,Block}|Is], Lbl, Empty) ->
+    case any(fun(I) -> is_label_used_in_2(I, Lbl) end, Block) of
+	true -> true;
+	false -> is_label_used_in_1(Is, Lbl, Empty)
+    end;
 is_label_used_in_1([I|Is], Lbl, Empty) ->
     Used = ulbl(I, Empty),
     case gb_sets:is_member(Lbl, Used) of
@@ -375,18 +426,41 @@ is_label_used_in_1([I|Is], Lbl, Empty) ->
     end;
 is_label_used_in_1([], _, _) -> false.
 
+is_label_used_in_2({set,_,_,Info}, Lbl) ->
+    case Info of
+	{bif,_,{f,F}} -> F =:= Lbl;
+	{alloc,_,{gc_bif,_,{f,F}}} -> F =:= Lbl;
+	{'catch',{f,F}} -> F =:= Lbl;
+	{alloc,_,_} -> false;
+	{put_tuple,_} -> false;
+	{put_string,_,_} -> false;
+	{get_tuple_element,_} -> false;
+	{set_tuple_element,_} -> false;
+	_ when is_atom(Info) -> false
+    end.
+
 %% remove_unused_labels(Instructions0) -> Instructions
-%%  Remove all unused labels.
+%%  Remove all unused labels. Also remove unreachable
+%%  instructions following labels that are removed.
 
 remove_unused_labels(Is) ->
     Used0 = initial_labels(Is),
     Used = foldl(fun ulbl/2, Used0, Is),
     rem_unused(Is, Used, []).
 
-rem_unused([{label,Lbl}=I|Is], Used, Acc) ->
+rem_unused([{label,Lbl}=I|Is0], Used, [Prev|_]=Acc) ->
     case gb_sets:is_member(Lbl, Used) of
-	false -> rem_unused(Is, Used, Acc);
-	true -> rem_unused(Is, Used, [I|Acc])
+	false ->
+	    Is = case is_unreachable_after(Prev) of
+		     true ->
+			 dropwhile(fun({label,_}) -> false;
+				      (_) -> true
+				   end, Is0);
+		     false -> Is0
+		 end,
+	    rem_unused(Is, Used, Acc);
+	true ->
+	    rem_unused(Is0, Used, [I|Acc])
     end;
 rem_unused([I|Is], Used, Acc) ->
     rem_unused(Is, Used, [I|Acc]);
@@ -401,6 +475,11 @@ initial_labels([{func_info,_,_,_},{label,Lbl}|_], Acc) ->
     gb_sets:from_list([Lbl|Acc]).
 
 %% ulbl(Instruction, UsedGbSet) -> UsedGbSet'
+%%  Update the gb_set UsedGbSet with any function-local labels
+%%  (i.e. not with labels in call instructions) referenced by
+%%  the instruction Instruction.
+%%
+%%  NOTE: This function does NOT look for labels inside blocks.
 
 ulbl({test,_,Fail,_}, Used) ->
     mark_used(Fail, Used);
@@ -453,9 +532,10 @@ ulbl({bs_utf16_size,Lbl,_,_}, Used) ->
 ulbl(_, Used) -> Used.
 
 mark_used({f,0}, Used) -> Used;
-mark_used({f,L}, Used) -> gb_sets:add(L, Used);
-mark_used(_, Used) -> Used.
+mark_used({f,L}, Used) -> gb_sets:add(L, Used).
 
-mark_used_list([H|T], Used) ->
-    mark_used_list(T, mark_used(H, Used));
+mark_used_list([{f,L}|T], Used) ->
+    mark_used_list(T, gb_sets:add(L, Used));
+mark_used_list([_|T], Used) ->
+    mark_used_list(T, Used);
 mark_used_list([], Used) -> Used.

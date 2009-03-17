@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%--------------------------------------------------------------------
 %%% File    : hipe_icode_type.erl
 %%% Author  : Tobias Lindahl <Tobias.Lindahl@it.uu.se>
@@ -85,13 +103,13 @@
 		    number_min/1, number_max/1, t_from_range/2, 
 		    min/2, max/2, t_is_bitwidth/1]).
 
--record(state, {info_map              :: gb_tree(),
-		cfg                   :: cfg(),
-		liveness              :: gb_tree(),
-		arg_types             :: [erl_type()],
-		ret_type = [t_none()] :: [erl_type()],
-		lookupfun             :: call_fun(),
-		resultaction          :: final_fun()}).
+-record(state, {info_map  = gb_trees:empty() :: gb_tree(),
+		cfg                          :: cfg(),
+		liveness  = gb_trees:empty() :: gb_tree(),
+		arg_types                    :: [erl_type()],
+		ret_type  = [t_none()]       :: [erl_type()],
+		lookupfun                    :: call_fun(),
+		resultaction                 :: final_fun()}).
 
 %%-----------------------------------------------------------------------
 %% The main exported function
@@ -156,7 +174,7 @@ make_data(Cfg, {_M,_F,A}=MFA) ->
 %%      true -> hipe_icode_cfg:closure_arity(Cfg);
 %%      false -> A
 %%    end,
-%%  Args = lists:duplicate(NoArgs,t_any()), 
+%%  Args = lists:duplicate(NoArgs, t_any()), 
 %%  ArgsFun = fun(MFA,_Cfg) -> io:format("Start:~p~n",[MFA]),Args end,
 %%  CallFun = fun(MFA,Types) -> io:format("Call With:~p~nTo:~p~n",[Types,MFA]), t_any() end,
 %%  FinalFun = fun(MFA,Type) -> io:format("ResType:~p~nFor:~p~n",[Type,MFA]),ok end,
@@ -476,7 +494,7 @@ integer_range_inequality_propagation(Op, A1, A2, TrueLab, FalseLab, Info) ->
  	  {FalseArg2, FalseArg1, TrueArg2, TrueArg1} =
  	    integer_range_less_then_propagator(IntArg2, IntArg1)
 	end,
-      ?ineq_debug("int res", [TrueArg1,TrueArg2, FalseArg1, FalseArg2]),
+      ?ineq_debug("int res", [TrueArg1, TrueArg2, FalseArg1, FalseArg2]),
       False = {FalseLab, enter(A1, t_sup(FalseArg1, NonIntArg1),
 			       enter(A2, t_sup(FalseArg2, NonIntArg2), Info))},
       True = {TrueLab, enter(A1, t_sup(TrueArg1, NonIntArg1),
@@ -512,7 +530,7 @@ do_type2(I, Info, FunVar, ArityVar) -> % function2(Fun,Arity)
   ArityType = lookup(ArityVar, Info),
   TrueLab = hipe_icode:type_true_label(I),
   FalseLab = hipe_icode:type_false_label(I),
-  SuccType1 = t_inf(t_fun(),FunType),
+  SuccType1 = t_inf(t_fun(), FunType),
   case combine_test(test_type(function, FunType), 
 		    test_type(integer, ArityType)) of
     true ->
@@ -1667,7 +1685,7 @@ primop_type(Op, Args) ->
 %%------------------------------------------------------------------
 
 add_arg_types(Args, Types) ->
-  add_arg_types(Args, Types, empty()).
+  add_arg_types(Args, Types, gb_trees:empty()).
 
 add_arg_types([Arg|Args], [Type|Types], Acc) ->
   Type1 =
@@ -1764,15 +1782,12 @@ enter(Key, Value, Tree) ->
     false ->
       Tree
   end.
-   
-empty() ->
-  gb_trees:empty().
 
 join_list(List, Info) ->
   join_list(List, Info, t_none()).
  
 join_list([H|T], Info, Acc) ->
-  Type = t_sup(lookup(H,Info), Acc),
+  Type = t_sup(lookup(H, Info), Acc),
   join_list(T, Info, Type);
 join_list([], _, Acc) ->
   Acc.
@@ -1911,29 +1926,29 @@ new_state(Cfg, {MFA, GetCallFun, GetResFun, FinalAction}) ->
       throw(no_input);
     false ->
       Info = add_arg_types(Params, ParamTypes),
-      InfoMap = gb_trees:insert({Start, in}, Info, empty()),
+      InfoMap = gb_trees:insert({Start, in}, Info, gb_trees:empty()),
       Liveness = hipe_icode_ssa:ssa_liveness__analyze(Cfg),
       #state{info_map=InfoMap, cfg=Cfg, liveness=Liveness, 
 	     arg_types=ParamTypes, lookupfun=GetResFun, 
 	     resultaction=FinalAction}
   end.
 
-state__cfg(#state{cfg=Cfg}) ->
+state__cfg(#state{cfg = Cfg}) ->
   Cfg.
 
-state__succ(#state{cfg=Cfg}, Label) ->
+state__succ(#state{cfg = Cfg}, Label) ->
   hipe_icode_cfg:succ(Cfg, Label).
 
-state__bb(#state{cfg=Cfg}, Label) ->
+state__bb(#state{cfg = Cfg}, Label) ->
   hipe_icode_cfg:bb(Cfg, Label).
   
-state__bb_add(S=#state{cfg=Cfg}, Label, BB) ->
+state__bb_add(S = #state{cfg = Cfg}, Label, BB) ->
   NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, BB),
   S#state{cfg=NewCfg}.
 
-state__params_update(S=#state{cfg=Cfg},NewParams) ->
-  NewCfg = hipe_icode_cfg:params_update(Cfg,NewParams),
-  S#state{cfg=NewCfg}.
+state__params_update(S = #state{cfg = Cfg}, NewParams) ->
+  NewCfg = hipe_icode_cfg:params_update(Cfg, NewParams),
+  S#state{cfg = NewCfg}.
 
 state__ret_type(#state{ret_type = RT}) -> RT.
 
@@ -1947,7 +1962,7 @@ state__info_in(S, Label) ->
 state__info_out(S, Label) ->
   state__info(S, {Label, out}).
 
-state__info(#state{info_map=IM}, Label) ->
+state__info(#state{info_map = IM}, Label) ->
   case gb_trees:lookup(Label, IM) of
     {value, Info} -> Info;
     none -> gb_trees:empty()

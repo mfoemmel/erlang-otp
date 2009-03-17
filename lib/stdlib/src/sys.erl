@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(sys).
 
@@ -26,6 +27,13 @@
 	 install/2, install/3, remove/2, remove/3]).
 -export([handle_system_msg/6, handle_system_msg/7, handle_debug/4,
 	 print_log/1, get_debug/3, debug_options/1, suspend_loop_hib/6]).
+
+%%-----------------------------------------------------------------
+%% Types
+%%-----------------------------------------------------------------
+
+-type name()         :: pid() | atom() | {'global', atom()}.
+-type system_event() :: {'in', _Msg} | {'in', _Msg, _From} | {'out', _Msg, _To}.
 
 %%-----------------------------------------------------------------
 %% System messages
@@ -47,18 +55,32 @@ change_code(Name, Mod, Vsn, Extra, Timeout) ->
 %%-----------------------------------------------------------------
 %% Debug commands
 %%-----------------------------------------------------------------
+
+-type log_flag() :: 'true' | {'true',pos_integer()} | 'false' | 'get' | 'print'.
+
+-spec log(name(), log_flag()) -> 'ok' | {'ok', [system_event()]}.
 log(Name, Flag) ->
     send_system_msg(Name, {debug, {log, Flag}}).
+
+-spec log(name(), log_flag(), timeout()) -> 'ok' | {'ok', [system_event()]}.
 log(Name, Flag, Timeout) ->
     send_system_msg(Name, {debug, {log, Flag}}, Timeout).
 
+-spec trace(name(), bool()) -> 'ok'.
 trace(Name, Flag) ->
     send_system_msg(Name, {debug, {trace, Flag}}).
+
+-spec trace(name(), bool(), timeout()) -> 'ok'.
 trace(Name, Flag, Timeout) ->
     send_system_msg(Name, {debug, {trace, Flag}}, Timeout).
 
+-type l2f_fname() :: string() | 'false'.
+
+-spec log_to_file(name(), l2f_fname()) -> 'ok' | {'error','open_file'}.
 log_to_file(Name, FileName) ->
     send_system_msg(Name, {debug, {log_to_file, FileName}}).
+
+-spec log_to_file(name(), l2f_fname(), timeout()) -> 'ok' | {'error','open_file'}.
 log_to_file(Name, FileName, Timeout) ->
     send_system_msg(Name, {debug, {log_to_file, FileName}}, Timeout).
 
@@ -67,7 +89,10 @@ statistics(Name, Flag) ->
 statistics(Name, Flag, Timeout) ->
     send_system_msg(Name, {debug, {statistics, Flag}}, Timeout).
 
+-spec no_debug(name()) -> 'ok'.
 no_debug(Name) -> send_system_msg(Name, {debug, no_debug}).
+
+-spec no_debug(name(), timeout()) -> 'ok'.
 no_debug(Name, Timeout) -> send_system_msg(Name, {debug, no_debug}, Timeout).
 
 install(Name, {Func, FuncState}) ->
@@ -173,7 +198,6 @@ handle_debug([{Func, FuncState} | T], FormFunc, State, Event) ->
 handle_debug([], _FormFunc, _State, _Event) ->
     [].
 
-
 %%-----------------------------------------------------------------
 %% When a process is suspended, it can only respond to system
 %% messages.
@@ -198,8 +222,8 @@ suspend_loop_hib(SysState, Parent, Mod, Debug, Misc, Hib) ->
 	{'EXIT', Parent, Reason} ->
             Mod:system_terminate(Reason, Parent, Debug, Misc)
     after 0 -> % Not a system message, go back into hibernation
-	 proc_lib:hibernate(?MODULE,suspend_loop_hib,[SysState, Parent, Mod, 
-							      Debug, Misc, Hib])
+	 proc_lib:hibernate(?MODULE, suspend_loop_hib, [SysState, Parent, Mod, 
+							Debug, Misc, Hib])
     end.
 
 

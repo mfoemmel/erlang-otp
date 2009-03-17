@@ -38,11 +38,12 @@ POSSIBILITY OF SUCH DAMAGE.
 */
 
 
-/* This module contains the external function pcre_dfa_exec(), which is an
+/* This module contains the external function erts_pcre_dfa_exec(), which is an
 alternative matching function that uses a sort of DFA algorithm (not a true
 FSM). This is NOT Perl- compatible, but it has advantages in certain
 applications. */
 
+/* %ExternalCopyright% */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -812,7 +813,7 @@ for (;;)
       if (clen > 0)
         {
         BOOL OK;
-        int category = _pcre_ucp_findprop(c, &chartype, &script);
+        int category = _erts_pcre_ucp_findprop(c, &chartype, &script);
         switch(code[1])
           {
           case PT_ANY:
@@ -996,7 +997,7 @@ for (;;)
       if (clen > 0)
         {
         BOOL OK;
-        int category = _pcre_ucp_findprop(c, &chartype, &script);
+        int category = _erts_pcre_ucp_findprop(c, &chartype, &script);
         switch(code[2])
           {
           case PT_ANY:
@@ -1045,7 +1046,7 @@ for (;;)
       case OP_EXTUNI_EXTRA + OP_TYPEPOSPLUS:
       count = current_state->count;  /* Already matched */
       if (count > 0) { ADD_ACTIVE(state_offset + 2, 0); }
-      if (clen > 0 && _pcre_ucp_findprop(c, &chartype, &script) != ucp_M)
+      if (clen > 0 && _erts_pcre_ucp_findprop(c, &chartype, &script) != ucp_M)
         {
         const uschar *nptr = ptr + clen;
         int ncount = 0;
@@ -1059,7 +1060,7 @@ for (;;)
           int nd;
           int ndlen = 1;
           GETCHARLEN(nd, nptr, ndlen);
-          if (_pcre_ucp_findprop(nd, &chartype, &script) != ucp_M) break;
+          if (_erts_pcre_ucp_findprop(nd, &chartype, &script) != ucp_M) break;
           ncount++;
           nptr += ndlen;
           }
@@ -1218,7 +1219,7 @@ for (;;)
       if (clen > 0)
         {
         BOOL OK;
-        int category = _pcre_ucp_findprop(c, &chartype, &script);
+        int category = _erts_pcre_ucp_findprop(c, &chartype, &script);
         switch(code[2])
           {
           case PT_ANY:
@@ -1276,7 +1277,7 @@ for (;;)
       QS2:
 
       ADD_ACTIVE(state_offset + 2, 0);
-      if (clen > 0 && _pcre_ucp_findprop(c, &chartype, &script) != ucp_M)
+      if (clen > 0 && _erts_pcre_ucp_findprop(c, &chartype, &script) != ucp_M)
         {
         const uschar *nptr = ptr + clen;
         int ncount = 0;
@@ -1291,7 +1292,7 @@ for (;;)
           int nd;
           int ndlen = 1;
           GETCHARLEN(nd, nptr, ndlen);
-          if (_pcre_ucp_findprop(nd, &chartype, &script) != ucp_M) break;
+          if (_erts_pcre_ucp_findprop(nd, &chartype, &script) != ucp_M) break;
           ncount++;
           nptr += ndlen;
           }
@@ -1465,7 +1466,7 @@ for (;;)
       if (clen > 0)
         {
         BOOL OK;
-        int category = _pcre_ucp_findprop(c, &chartype, &script);
+        int category = _erts_pcre_ucp_findprop(c, &chartype, &script);
         switch(code[4])
           {
           case PT_ANY:
@@ -1518,7 +1519,7 @@ for (;;)
       if (codevalue != OP_EXTUNI_EXTRA + OP_TYPEEXACT)
         { ADD_ACTIVE(state_offset + 4, 0); }
       count = current_state->count;  /* Number already matched */
-      if (clen > 0 && _pcre_ucp_findprop(c, &chartype, &script) != ucp_M)
+      if (clen > 0 && _erts_pcre_ucp_findprop(c, &chartype, &script) != ucp_M)
         {
         const uschar *nptr = ptr + clen;
         int ncount = 0;
@@ -1532,7 +1533,7 @@ for (;;)
           int nd;
           int ndlen = 1;
           GETCHARLEN(nd, nptr, ndlen);
-          if (_pcre_ucp_findprop(nd, &chartype, &script) != ucp_M) break;
+          if (_erts_pcre_ucp_findprop(nd, &chartype, &script) != ucp_M) break;
           ncount++;
           nptr += ndlen;
           }
@@ -1712,7 +1713,7 @@ for (;;)
           other case of the character. */
 
 #ifdef SUPPORT_UCP
-          othercase = _pcre_ucp_othercase(c);
+          othercase = _erts_pcre_ucp_othercase(c);
 #else
           othercase = NOTACHAR;
 #endif
@@ -1737,7 +1738,7 @@ for (;;)
       to wait for them to pass before continuing. */
 
       case OP_EXTUNI:
-      if (clen > 0 && _pcre_ucp_findprop(c, &chartype, &script) != ucp_M)
+      if (clen > 0 && _erts_pcre_ucp_findprop(c, &chartype, &script) != ucp_M)
         {
         const uschar *nptr = ptr + clen;
         int ncount = 0;
@@ -1745,7 +1746,7 @@ for (;;)
           {
           int nclen = 1;
           GETCHARLEN(c, nptr, nclen);
-          if (_pcre_ucp_findprop(c, &chartype, &script) != ucp_M) break;
+          if (_erts_pcre_ucp_findprop(c, &chartype, &script) != ucp_M) break;
           ncount++;
           nptr += nclen;
           }
@@ -1913,7 +1914,7 @@ for (;;)
           if (utf8 && d >= 128)
             {
 #ifdef SUPPORT_UCP
-            otherd = _pcre_ucp_othercase(d);
+            otherd = _erts_pcre_ucp_othercase(d);
 #endif  /* SUPPORT_UCP */
             }
           else
@@ -1951,7 +1952,7 @@ for (;;)
           if (utf8 && d >= 128)
             {
 #ifdef SUPPORT_UCP
-            otherd = _pcre_ucp_othercase(d);
+            otherd = _erts_pcre_ucp_othercase(d);
 #endif  /* SUPPORT_UCP */
             }
           else
@@ -1987,7 +1988,7 @@ for (;;)
           if (utf8 && d >= 128)
             {
 #ifdef SUPPORT_UCP
-            otherd = _pcre_ucp_othercase(d);
+            otherd = _erts_pcre_ucp_othercase(d);
 #endif  /* SUPPORT_UCP */
             }
           else
@@ -2019,7 +2020,7 @@ for (;;)
           if (utf8 && d >= 128)
             {
 #ifdef SUPPORT_UCP
-            otherd = _pcre_ucp_othercase(d);
+            otherd = _erts_pcre_ucp_othercase(d);
 #endif  /* SUPPORT_UCP */
             }
           else
@@ -2054,7 +2055,7 @@ for (;;)
           if (utf8 && d >= 128)
             {
 #ifdef SUPPORT_UCP
-            otherd = _pcre_ucp_othercase(d);
+            otherd = _erts_pcre_ucp_othercase(d);
 #endif  /* SUPPORT_UCP */
             }
           else
@@ -2108,7 +2109,7 @@ for (;;)
         else
          {
          ecode = code + GET(code, 1);
-         if (clen > 0) isinclass = _pcre_xclass(c, code + 1 + LINK_SIZE);
+         if (clen > 0) isinclass = _erts_pcre_xclass(c, code + 1 + LINK_SIZE);
          }
 
         /* At this point, isinclass is set for all kinds of class, and ecode
@@ -2404,7 +2405,7 @@ for (;;)
       /* Handle callouts */
 
       case OP_CALLOUT:
-      if (pcre_callout != NULL)
+      if (erts_pcre_callout != NULL)
         {
         int rrc;
         pcre_callout_block cb;
@@ -2420,7 +2421,7 @@ for (;;)
         cb.capture_top      = 1;
         cb.capture_last     = -1;
         cb.callout_data     = md->callout_data;
-        if ((rrc = (*pcre_callout)(&cb)) < 0) return rrc;   /* Abandon */
+        if ((rrc = (*erts_pcre_callout)(&cb)) < 0) return rrc;   /* Abandon */
         if (rrc == 0) { ADD_ACTIVE(state_offset + 2 + 2*LINK_SIZE, 0); }
         }
       break;
@@ -2506,7 +2507,7 @@ Returns:          > 0 => number of match offset pairs placed in offsets
 */
 
 PCRE_EXP_DEFN int
-pcre_dfa_exec(const pcre *argument_re, const pcre_extra *extra_data,
+erts_pcre_dfa_exec(const pcre *argument_re, const pcre_extra *extra_data,
   const char *subject, int length, int start_offset, int options, int *offsets,
   int offsetcount, int *workspace, int wscount)
 {
@@ -2566,7 +2567,7 @@ study data too. */
 
 if (re->magic_number != MAGIC_NUMBER)
   {
-  re = _pcre_try_flipped(re, &internal_re, study, &internal_study);
+  re = _erts_pcre_try_flipped(re, &internal_re, study, &internal_study);
   if (re == NULL) return PCRE_ERROR_BADMAGIC;
   if (study != NULL) study = &internal_study;
   }
@@ -2653,7 +2654,7 @@ back the character offset. */
 #ifdef SUPPORT_UTF8
 if (utf8 && (options & PCRE_NO_UTF8_CHECK) == 0)
   {
-  if (_pcre_valid_utf8((uschar *)subject, length) >= 0)
+  if (_erts_pcre_valid_utf8((uschar *)subject, length) >= 0)
     return PCRE_ERROR_BADUTF8;
   if (start_offset > 0 && start_offset < length)
     {
@@ -2671,7 +2672,7 @@ if (utf8 && (options & PCRE_NO_UTF8_CHECK) == 0)
 is a feature that makes it possible to save compiled regex and re-use them
 in other programs later. */
 
-if (md->tables == NULL) md->tables = _pcre_default_tables;
+if (md->tables == NULL) md->tables = _erts_pcre_default_tables;
 
 /* The lower casing table and the "must be at the start of a line" flag are
 used in a loop when finding where to start. */

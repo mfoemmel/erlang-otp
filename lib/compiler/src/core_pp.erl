@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Core Erlang (naive) prettyprinter
 
@@ -76,9 +77,9 @@ format_anno([_|_]=List, Ctxt) ->
 format_anno(Tuple, Ctxt) when is_tuple(Tuple) ->
     [${,format_anno_list(tuple_to_list(Tuple), Ctxt),$}];
 format_anno(Val, Ctxt) when is_atom(Val) ->
-    format_1(core_lib:make_literal(Val), Ctxt);
+    format_1(#c_literal{val=Val}, Ctxt);
 format_anno(Val, Ctxt) when is_integer(Val) ->
-    format_1(core_lib:make_literal(Val), Ctxt).
+    format_1(#c_literal{val=Val}, Ctxt).
 
 format_anno_list([H|[_|_]=T], Ctxt) ->
     [format_anno(H, Ctxt), $, | format_anno_list(T, Ctxt)];
@@ -115,6 +116,8 @@ format_1(#c_literal{val=Tuple}, Ctxt) when is_tuple(Tuple) ->
 format_1(#c_literal{anno=A,val=Bitstring}, Ctxt) when is_bitstring(Bitstring) ->
     Segs = segs_from_bitstring(Bitstring),
     format_1(#c_binary{anno=A,segments=Segs}, Ctxt);
+format_1(#c_var{name={I,A}}, _) ->
+    [core_atom(I),$/,integer_to_list(A)];
 format_1(#c_var{name=V}, _) ->
     %% Internal variable names may be:
     %%     - atoms representing proper Erlang variable names, or
@@ -227,8 +230,6 @@ format_1(#c_receive{clauses=Cs,timeout=T,action=A}, Ctxt) ->
      nl_indent(Ctxt1),
      format(A, Ctxt1)
     ];
-format_1(#c_fname{id=I,arity=A}, _) ->
-    [core_atom(I),$/,integer_to_list(A)];
 format_1(#c_fun{vars=Vs,body=B}, Ctxt) ->
     Ctxt1 = add_indent(Ctxt, Ctxt#ctxt.body_indent),
     ["fun (",
@@ -480,7 +481,6 @@ is_simple_term(#c_tuple{es=Es}) ->
 is_simple_term(#c_var{}) -> true;
 is_simple_term(#c_literal{val=[_|_]}) -> false;
 is_simple_term(#c_literal{val=V}) -> not is_tuple(V);
-is_simple_term(#c_fname{}) -> true;
 is_simple_term(_) -> false.
 
 segs_from_bitstring(<<H,T/bitstring>>) ->

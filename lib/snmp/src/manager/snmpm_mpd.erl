@@ -1,22 +1,22 @@
-%%<copyright>
-%% <year>2004-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 -module(snmpm_mpd).
 
 -export([init/1, 
@@ -550,8 +550,21 @@ generate_v3_msg(NoteStore,
 sec_module(?SEC_USM) ->
     snmpm_usm.
 
-%% This is the implementation dependent target engine id
-%% procedure.
+%% 9) If the PDU is a GetRequest-PDU, GetNextRequest-PDU,
+%%    GetBulkRequest-PDU, SetRequest-PDU, InformRequest-PDU, or or
+%%    SNMPv2-Trap-PDU, then
+%%
+%%    a) If the PDU is an SNMPv2-Trap-PDU, then securityEngineID is set
+%%       to the value of this entity's snmpEngineID.
+%%
+%%       Otherwise, the snmpEngineID of the target entity is determined,
+%%       in an implementation-dependent manner, possibly using
+%%       transportDomain and transportAddress.  The value of
+%%       securityEngineID is set to the value of the target entity's
+%%       snmpEngineID.
+%% 
+%% As we never send traps, the SecEngineID is allways the 
+%% snmpEngineID of the target entity!
 sec_engine_id(TargetName) ->
     case get_agent_engine_id(TargetName) of
 	{ok, EngineId} ->

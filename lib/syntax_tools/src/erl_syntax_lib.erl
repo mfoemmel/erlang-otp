@@ -864,10 +864,10 @@ delete_binding_anns([]) ->
 %% `exit/1', `throw/1',
 %% `erlang:error/1' and `erlang:error/2'.
 %%
-%% @see //kernel/erlang:exit/1
-%% @see //kernel/erlang:throw/1
-%% @see //kernel/erlang:error/1
-%% @see //kernel/erlang:error/2
+%% @see //erts/erlang:exit/1
+%% @see //erts/erlang:throw/1
+%% @see //erts/erlang:error/1
+%% @see //erts/erlang:error/2
 
 is_fail_expr(E) ->          
     case erl_syntax:type(E) of

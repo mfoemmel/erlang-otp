@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(inet_dns).
 
@@ -271,6 +272,7 @@ decode_type(Type) ->
 	?T_TXT -> ?S_TXT;
 	?T_AAAA -> ?S_AAAA;
 	?T_SRV -> ?S_SRV;
+	?T_SPF -> ?S_SPF;
 	%% non standard
 	?T_UINFO -> ?S_UINFO;
 	?T_UID -> ?S_UID;
@@ -307,6 +309,7 @@ encode_type(Type) ->
 	?S_TXT -> ?T_TXT;
 	?S_AAAA -> ?T_AAAA;
 	?S_SRV -> ?T_SRV;
+	?S_SPF -> ?T_SPF;
 	%% non standard
 	?S_UINFO -> ?T_UINFO;
 	?S_UID -> ?T_UID;
@@ -400,7 +403,10 @@ decode_data(?S_MX, _, [P1,P0 | Dom], Buffer) ->
     { ?i16(P1,P0), decode_domain(Dom, Buffer) };
 decode_data(?S_SRV, _, [P1,P0, W1,W0, Po1,Po0 | Dom], Buffer) ->
     { ?i16(P1,P0), ?i16(W1,W0), ?i16(Po1,Po0), decode_domain(Dom, Buffer) };
-decode_data(?S_TXT, _, Data, _Buffer) -> Data;
+decode_data(?S_TXT, _, Data, _Buffer) ->
+    decode_txt(Data);
+decode_data(?S_SPF, _, Data, _Buffer) ->
+    decode_txt(Data);
 %% sofar unknown or non standard
 decode_data(_, _, Data, _Buffer) ->
     Data.
@@ -409,6 +415,16 @@ decode_domain(Data, Buffer) ->
     case dn_expand(Data, Buffer) of
 	error -> error;
 	{Dn, _} -> Dn
+    end.
+
+decode_txt(Data) -> decode_txt(Data, []).
+
+decode_txt([], Acc) -> reverse(Acc);
+decode_txt([Len | Data], Acc) ->
+    case get_data(Len, Data) of
+	error -> error;
+	{Str, Rest} ->
+	    decode_txt(Rest, [Str | Acc])
     end.
 
 %%
@@ -498,10 +514,17 @@ encode_data(?S_MX, in, {Pref, Exch}, Ptrs, L) ->
 encode_data(?S_SRV, in, {Prio, Weight, Port, Target}, Ptrs, L) ->
     {EDom, NPtrs} = dn_compress(Target, Ptrs, [], L),
     {?int16(Prio) ++ ?int16(Weight) ++ ?int16(Port) ++ EDom, NPtrs};
-encode_data(?S_TXT, in, Data, Ptrs, _)     -> {Data, Ptrs};
-%% sofar unknown or non standard
+encode_data(?S_TXT, in, Data, Ptrs, _)     ->
+    encode_txt(Data, Ptrs);
+encode_data(?S_SPF, in, Data, Ptrs, _)     ->
+    encode_txt(Data, Ptrs);
 encode_data(_, _, Data, Ptrs, _)        -> {Data, Ptrs}.
 
+encode_txt(Data, Ptrs) ->
+    {[[Length|Str] || Str <- Data,
+		      (Length = length(Str)) =< 255],
+     Ptrs}.
+    
 %%
 %% Compress a name given list names already compressed
 %% The format of compressed names are

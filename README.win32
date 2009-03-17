@@ -8,6 +8,24 @@ Table of contents
 4. Building and installing
 5. Final words
 
+%CopyrightBegin%
+
+Copyright Ericsson AB 2003-2009. All Rights Reserved.
+
+The contents of this file are subject to the Erlang Public License,
+Version 1.1, (the "License"); you may not use this file except in
+compliance with the License. You should have received a copy of the
+Erlang Public License along with this software. If not, it can be
+retrieved online at http://www.erlang.org/.
+
+Software distributed under the License is distributed on an "AS IS"
+basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+the License for the specific language governing rights and limitations
+under the License.
+
+%CopyrightEnd%
+
+
 
 Introduction
 ------------
@@ -217,6 +235,12 @@ impatient is:
 * Get and install Sun's JDK 1.4.2
 * Get and install NSIS 2.01 or higher (up to 2.30 tried and working)
 * Get and install OpenSSL 0.9.7c or higher
+* Get and unpack wxWidgets-2.8.9 or higher to /opt/local/pgm inside cygwin
+   - open /cygwin/opt/local/pgm/wxWidgets-2.8.9/build/msw/wx.dsw
+   - enable wxUSE_GLCANVAS and wxUSE_POSTSCRIPT in include/wx/msw/setup.h
+   - build all unicode release (and unicode debug) packages
+   - open /cygwin/opt/local/pgm/wxWidgets-2.8.9/contrib/build/stc/stc.dsw 
+   - build the unicode release (and unicode debug) packages
 * Get and unpack the erlang source distribution with Cygwin's tar.
 * Modify PATH and other environment variables so that all these tools
 are runnable from a bash shell
@@ -334,8 +358,8 @@ backslashes in your path environment variable in Cygwin bash, but LIB
 and INCLUDE should contain Windows style paths with semicolon,
 drive letters and backslashes.
 
-* Sun's Java JDK 1.4.2 or higher. Our Java code (jinterface, ic) is
-written for JDK 1.4.2. Get it for Windows and install it, the JRE is
+* Sun's Java JDK 1.5.0 or higher. Our Java code (jinterface, ic) is
+written for JDK 1.5.0. Get it for Windows and install it, the JRE is
 not enough. If you don't care about Java, you can skip this step, the
 result will be that jinterface is not built.
 
@@ -343,7 +367,7 @@ URL: http://java.sun.com
 
 Add javac *LAST* to your path environment in bash, in my case this means:
 --------------------------------------------------------------
-PATH=$PATH:/cygdrive/c/jdk1.4.2/bin
+PATH="$PATH:/cygdrive/c/Program Files/Java/jdk1.4.2/bin"
 --------------------------------------------------------------
 No CLASSPATH or anything is needed. Type "javac" at the bash prompt
 and you should get a list of available Java options. Make sure by

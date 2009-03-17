@@ -1,19 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
 %%-----------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006-2008, Tobias Lindahl and Kostis Sagonas
-%% 
-%% $Id$
+%% %CopyrightEnd%
 %%
 
 %%%-------------------------------------------------------------------
@@ -46,81 +48,78 @@
 
 -spec new() -> #dialyzer_codeserver{}.
 new() ->
-  Table = table__new(),
-  Exports = sets:new(),
-  #dialyzer_codeserver{table=Table, exports=Exports, next_core_label=0,
-		       records=dict:new(), contracts=dict:new()}.
+  #dialyzer_codeserver{table_pid = table__new()}.
 
 -spec delete(#dialyzer_codeserver{}) -> 'ok'.
-delete(#dialyzer_codeserver{table=Table}) ->
-  table__delete(Table).
+delete(#dialyzer_codeserver{table_pid = TablePid}) ->
+  table__delete(TablePid).
 
 -spec insert([_], #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
 insert(List, CS) ->
-  NewTable = table__insert(CS#dialyzer_codeserver.table, List),
-  CS#dialyzer_codeserver{table=NewTable}.
+  NewTablePid = table__insert(CS#dialyzer_codeserver.table_pid, List),
+  CS#dialyzer_codeserver{table_pid = NewTablePid}.
 
 -spec insert_exports([mfa()], #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
-insert_exports(List, CS = #dialyzer_codeserver{exports=Exports}) ->
+insert_exports(List, CS = #dialyzer_codeserver{exports = Exports}) ->
   Set = sets:from_list(List),
   NewExports = sets:union(Exports, Set),
-  CS#dialyzer_codeserver{exports=NewExports}.
+  CS#dialyzer_codeserver{exports = NewExports}.
 
 -spec is_exported(mfa(), #dialyzer_codeserver{}) -> bool().
-is_exported(MFA, #dialyzer_codeserver{exports=Exports}) ->
+is_exported(MFA, #dialyzer_codeserver{exports = Exports}) ->
   sets:is_element(MFA, Exports).
 
 -spec all_exports(#dialyzer_codeserver{}) -> set().
-all_exports(#dialyzer_codeserver{exports=Exports}) ->
+all_exports(#dialyzer_codeserver{exports = Exports}) ->
   Exports.
 
 -spec lookup(_, #dialyzer_codeserver{}) -> any().
 lookup(Id, CS) ->
-  table__lookup(CS#dialyzer_codeserver.table, Id).
+  table__lookup(CS#dialyzer_codeserver.table_pid, Id).
 
 -spec next_core_label(#dialyzer_codeserver{}) -> non_neg_integer().
-next_core_label(#dialyzer_codeserver{next_core_label=NCL}) ->
+next_core_label(#dialyzer_codeserver{next_core_label = NCL}) ->
   NCL.
 
 -spec update_next_core_label(non_neg_integer(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
 update_next_core_label(NCL, CS = #dialyzer_codeserver{}) ->
-  CS#dialyzer_codeserver{next_core_label=NCL}.
+  CS#dialyzer_codeserver{next_core_label = NCL}.
 
 -spec store_records(atom(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
-store_records(Module, Dict, 
-	      CS=#dialyzer_codeserver{records=RecDict}) when is_atom(Module) ->
+store_records(Mod, Dict, 
+	      CS = #dialyzer_codeserver{records = RecDict}) when is_atom(Mod) ->
   case dict:size(Dict) =:= 0 of
     true -> CS;
     false ->
-      CS#dialyzer_codeserver{records=dict:store(Module, Dict, RecDict)}
+      CS#dialyzer_codeserver{records = dict:store(Mod, Dict, RecDict)}
   end.
 
 -spec lookup_records(atom(), #dialyzer_codeserver{}) -> dict(). 
-lookup_records(Module, 
-	       #dialyzer_codeserver{records=RecDict}) when is_atom(Module) ->
-  case dict:find(Module, RecDict) of
+lookup_records(Mod, 
+	       #dialyzer_codeserver{records = RecDict}) when is_atom(Mod) ->
+  case dict:find(Mod, RecDict) of
     error -> dict:new();
     {ok, Dict} -> Dict
   end.
 
 -spec store_contracts(atom(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}. 
-store_contracts(Module, Dict, 
-		CS=#dialyzer_codeserver{contracts=C}) when is_atom(Module) ->
+store_contracts(Mod, Dict, 
+		CS = #dialyzer_codeserver{contracts = C}) when is_atom(Mod) ->
   case dict:size(Dict) =:= 0 of
     true -> CS;
-    false -> CS#dialyzer_codeserver{contracts=dict:store(Module, Dict, C)}
+    false -> CS#dialyzer_codeserver{contracts = dict:store(Mod, Dict, C)}
   end.
 
 -spec lookup_contracts(atom(), #dialyzer_codeserver{}) -> dict(). 
 lookup_contracts(Mod, 
-		 #dialyzer_codeserver{contracts=ContDict}) when is_atom(Mod) ->
+		 #dialyzer_codeserver{contracts = ContDict}) when is_atom(Mod) ->
   case dict:find(Mod, ContDict) of
     error -> dict:new();
     {ok, Dict} -> Dict
   end.
 
 -spec lookup_contract(mfa(), #dialyzer_codeserver{}) -> 'error' | {'ok',_}.
-lookup_contract(MFA={M,_F,_A}, #dialyzer_codeserver{contracts=ContDict}) ->
+lookup_contract(MFA = {M,_F,_A}, #dialyzer_codeserver{contracts = ContDict}) ->
   case dict:find(M, ContDict) of
     error -> error;
     {ok, Dict} -> dict:find(MFA, Dict)
@@ -139,10 +138,10 @@ table__lookup(TablePid, Key) ->
     {TablePid, Key, Ans} -> Ans
   end.
 
-table__insert(Table, List) ->
+table__insert(TablePid, List) ->
   List1 = [{Key, term_to_binary(Val, [compressed])} || {Key, Val} <- List],
-  Table ! {insert, List1},
-  Table.
+  TablePid ! {insert, List1},
+  TablePid.
 
 table__loop(Cached, Map) ->
   receive
@@ -179,5 +178,12 @@ table__loop(Cached, Map) ->
   end.
 
 fetch_and_expand(Key, Map) ->
-  Bin = dict:fetch(Key, Map),
-  binary_to_term(Bin).
+  try
+    Bin = dict:fetch(Key, Map),
+    binary_to_term(Bin)
+  catch
+    _:_ ->
+      Mod = atom_to_list(Key),
+      Msg = "found no module named '" ++ Mod ++ "' in the analyzed files",
+      exit({error, Msg})
+  end.

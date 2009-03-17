@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose : Type-based optimisations.
 
@@ -28,7 +29,9 @@ module({Mod,Exp,Attr,Fs0,Lc}, _Opts) ->
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
 
 function({function,Name,Arity,CLabel,Asm0}) ->
-    Asm = opt(Asm0, [], tdb_new()),
+    Asm1 = beam_utils:live_opt(Asm0),
+    Asm2 = opt(Asm1, [], tdb_new()),
+    Asm = beam_utils:delete_live_annos(Asm2),
     {function,Name,Arity,CLabel,Asm}.
 
 %% opt([Instruction], Accumulator, TypeDb) -> {[Instruction'],TypeDb'}
@@ -36,7 +39,7 @@ function({function,Name,Arity,CLabel,Asm0}) ->
 
 opt([{block,Body1}|Is], [{block,Body0}|Acc], Ts0) ->
     {Body2,Ts} = simplify(Body1, Ts0),
-    Body = beam_block:merge_blocks(Body0, Body2),
+    Body = merge_blocks(Body0, Body2),
     opt(Is, [{block,Body}|Acc], Ts);
 opt([{block,Body0}|Is], Acc, Ts0) ->
     {Body,Ts} = simplify(Body0, Ts0),
@@ -79,8 +82,7 @@ simplify_basic_1([{set,[_],[_],{bif,_,{f,0}}}=I|Is], Ts0, Acc) ->
 simplify_basic_1([{set,[D],[TupleReg],{get_tuple_element,0}}=I|Is0], Ts0, Acc) ->
     case tdb_find(TupleReg, Ts0) of
 	{tuple,_,[Contents]} ->
-	    Ts = tdb_update([{D,Contents}], Ts0),
-	    simplify_basic_1(Is0, Ts, [{set,[D],[Contents],move}|Acc]);
+	    simplify_basic_1([{set,[D],[Contents],move}|Is0], Ts0, Acc);
 	_ ->
 	    Ts = update(I, Ts0),
 	    simplify_basic_1(Is0, Ts, [I|Acc])
@@ -108,6 +110,15 @@ simplify_basic_1([{test,is_eq_exact,Fail,[R,{atom,_}=Atom]}=I|Is0], Ts0, Acc0) -
 	  end,
     Ts = update(I, Ts0),
     simplify_basic_1(Is0, Ts, Acc);
+simplify_basic_1([{test,is_record,_,[R,{atom,_}=Tag,{integer,Arity}]}=I|Is], Ts0, Acc) ->
+    case tdb_find(R, Ts0) of
+	{tuple,Arity,[Tag]} ->
+	    simplify_basic_1(Is, Ts0, Acc);
+	_Other ->
+	    Ts = update(I, Ts0),
+	    simplify_basic_1(Is, Ts, [I|Acc])
+    end;
+
 simplify_basic_1([I|Is], Ts0, Acc) ->
     Ts = update(I, Ts0),
     simplify_basic_1(Is, Ts, [I|Acc]);
@@ -117,20 +128,15 @@ simplify_basic_1([], Ts, Acc) ->
 
 %% simplify_float([Instruction], TypeDatabase) ->
 %%                 {[Instruction],TypeDatabase'} | not_possible
-%%  Simplify floating point operations.
-
+%%  Simplify floating point operations in blocks.
+%%
 simplify_float(Is0, Ts0) ->
-    case beam_block:live_at_entry(Is0) of
-	unknown -> not_possible;
-	Live ->
-	    {Is1,Ts} = simplify_float_1(Is0, Ts0, [], []),
-	    Is2 = flt_need_heap(Is1),
-	    try
-		Is = flt_liveness(Is2, Live),
-		{Is,Ts}
-	    catch
-		throw:not_possible -> not_possible
-	    end
+    {Is1,Ts} = simplify_float_1(Is0, Ts0, [], []),
+    Is2 = flt_need_heap(Is1),
+    try
+	{flt_liveness(Is2),Ts}
+    catch
+	throw:not_possible -> not_possible
     end.
 
 simplify_float_1([{set,[D0],[A],{alloc,_,{gc_bif,'-',{f,0}}}}=I|Is]=Is0, Ts0, Rs0, Acc0) ->
@@ -166,11 +172,6 @@ simplify_float_1([{set,[D0],[A,B],{alloc,_,{gc_bif,Op0,{f,0}}}}=I|Is]=Is0, Ts0, 
 simplify_float_1([{set,_,_,{'catch',_}}=I|Is]=Is0, _Ts, Rs0, Acc0) ->
     Acc = flush_all(Rs0, Is0, Acc0),
     simplify_float_1(Is, tdb_new(), Rs0, [I|Acc]);
-simplify_float_1([{'%live',_}=I|Is]=Is0, Ts0, Rs0, Acc0) ->
-    Acc1 = checkerror(Acc0),
-    Ts = update(I, Ts0),
-    {Rs,Acc} = flush(Rs0, Is0, Acc1),
-    simplify_float_1(Is, Ts, Rs, [I|Acc]);
 simplify_float_1([I|Is]=Is0, Ts0, Rs0, Acc0) ->
     Ts = update(I, Ts0),
     {Rs,Acc} = flush(Rs0, Is0, Acc0),
@@ -199,10 +200,25 @@ clearerror([{set,[],[],fcheckerror}|_], OrigIs) -> [{set,[],[],fclearerror}|Orig
 clearerror([_|Is], OrigIs) -> clearerror(Is, OrigIs);
 clearerror([], OrigIs) -> [{set,[],[],fclearerror}|OrigIs].
 
+%% merge_blocks(Block1, Block2) -> Block.
+%%  Combine two blocks and eliminate any move instructions that assign
+%%  to registers that are killed later in the block.
+%%
+merge_blocks(B1, [{'%live',_}|B2]) ->
+    merge_blocks_1(B1++[{set,[],[],stop_here}|B2]).
+
+merge_blocks_1([{set,[],_,stop_here}|Is]) -> Is;
+merge_blocks_1([{set,[D],_,move}=I|Is]) ->
+    case beam_utils:is_killed_block(D, Is) of
+	true -> merge_blocks_1(Is);
+	false -> [I|merge_blocks_1(Is)]
+    end;
+merge_blocks_1([I|Is]) -> [I|merge_blocks_1(Is)].
+
 %% flt_need_heap([Instruction]) -> [Instruction]
 %%  Insert need heap allocation instructions in the instruction stream
 %%  to properly account for both inserted floating point operations and
-%%  normal term build operations (such a put_list/3).
+%%  normal term build operations (such as put_list/3).
 %%
 %%  Ignore old heap allocation instructions (except if they allocate a stack
 %%  frame too), as they may be in the wrong place (because gc_bif instructions
@@ -246,8 +262,6 @@ flt_need_heap_2({set,[],[],fclearerror}, H, Fl) ->
     {[],H,Fl};
 flt_need_heap_2({set,[],[],fcheckerror}, H, Fl) ->
     {[],H,Fl};
-flt_need_heap_2({set,_,_,{bif,_}}, H, Fl) ->
-    {[],H,Fl};
 flt_need_heap_2({set,_,_,{bif,_,_}}, H, Fl) ->
     {[],H,Fl};
 flt_need_heap_2({set,_,_,move}, H, Fl) ->
@@ -275,7 +289,7 @@ build_alloc(Words, 0) -> Words;
 build_alloc(Words, Floats) -> {alloc,[{words,Words},{floats,Floats}]}.
 
 
-%% flt_liveness([Instruction], LiveAtEntry) -> [Instruction]
+%% flt_liveness([Instruction]) -> [Instruction]
 %%  (Re)calculate the number of live registers for each heap allocation
 %%  function. We base liveness of the number of live registers at
 %%  entry to the instruction sequence.
@@ -284,8 +298,8 @@ build_alloc(Words, Floats) -> {alloc,[{words,Words},{floats,Floats}]}.
 %%  is not continous at an allocation function (e.g. if {x,0} and {x,2}
 %%  are live, but not {x,1}).
 
-flt_liveness(Is, Live) ->
-    flt_liveness_1(Is, init_regs(Live), []).
+flt_liveness([{'%live',Live}=LiveInstr|Is]) ->
+    flt_liveness_1(Is, init_regs(Live), [LiveInstr]).
 
 flt_liveness_1([{set,Ds,Ss,{alloc,_,Alloc}}|Is], Regs0, Acc) ->
     Live = live_regs(Regs0),
@@ -295,7 +309,7 @@ flt_liveness_1([{set,Ds,Ss,{alloc,_,Alloc}}|Is], Regs0, Acc) ->
 flt_liveness_1([{set,Ds,_,_}=I|Is], Regs0, Acc) ->
     Regs = foldl(fun(R, A) -> set_live(R, A) end, Regs0, Ds),
     flt_liveness_1(Is, Regs, [I|Acc]);
-flt_liveness_1([I|Is], Regs, Acc) ->
+flt_liveness_1([{'%live',_}=I|Is], Regs, Acc) ->
     flt_liveness_1(Is, Regs, [I|Acc]);
 flt_liveness_1([], _Regs, Acc) -> reverse(Acc).
 
@@ -319,6 +333,7 @@ set_live(_, Regs) -> Regs.
 %%  Update the type database to account for executing an instruction.
 %%
 %%  First the cases for instructions inside basic blocks.
+update({'%live',_}, Ts) -> Ts;
 update({set,[D],[S],move}, Ts) ->
     tdb_copy(S, D, Ts);
 update({set,[D],[{integer,I},Reg],{bif,element,_}}, Ts0) ->
@@ -327,19 +342,19 @@ update({set,[D],[_Index,Reg],{bif,element,_}}, Ts0) ->
     tdb_update([{Reg,{tuple,0,[]}},{D,kill}], Ts0);
 update({set,[D],[S],{get_tuple_element,0}}, Ts) ->
     tdb_update([{D,{tuple_element,S,0}}], Ts);
-update({set,[D],[S],{bif,float,{f,0}}}, Ts0) ->
+update({set,[D],[S],{alloc,_,{gc_bif,float,{f,0}}}}, Ts0) ->
     %% Make sure we reject non-numeric literal argument.
     case possibly_numeric(S) of
 	true ->  tdb_update([{D,float}], Ts0);
 	false -> Ts0
     end;
-update({set,[D],[S1,S2],{bif,'/',{f,0}}}, Ts0) ->
+update({set,[D],[S1,S2],{alloc,_,{gc_bif,'/',{f,0}}}}, Ts0) ->
     %% Make sure we reject non-numeric literals.
     case possibly_numeric(S1) andalso possibly_numeric(S2) of
 	true ->  tdb_update([{D,float}], Ts0);
 	false -> Ts0
     end;
-update({set,[D],[S1,S2],{bif,Op,{f,0}}}, Ts0) ->
+update({set,[D],[S1,S2],{alloc,_,{gc_bif,Op,{f,0}}}}, Ts0) ->
     case arith_op(Op) of
 	no ->
 	    tdb_update([{D,kill}], Ts0);
@@ -359,7 +374,6 @@ update({init,D}, Ts) ->
     tdb_update([{D,kill}], Ts);
 update({kill,D}, Ts) ->
     tdb_update([{D,kill}], Ts);
-update({'%live',_}, Ts) -> Ts;
 
 %% Instructions outside of blocks.
 update({test,is_float,_Fail,[Src]}, Ts0) ->
@@ -375,7 +389,10 @@ update({test,is_eq_exact,_,[Reg,{atom,_}=Atom]}, Ts) ->
 	_ ->
 	    Ts
     end;
-update({test,_Test,_Fail,_Other}, Ts) -> Ts;
+update({test,is_record,_Fail,[Src,Tag,{integer,Arity}]}, Ts) ->
+    tdb_update([{Src,{tuple,Arity,[Tag]}}], Ts);
+update({test,_Test,_Fail,_Other}, Ts) ->
+    Ts;
 update({call_ext,Ar,{extfunc,math,Math,Ar}}, Ts) ->
     case is_math_bif(Math, Ar) of
 	true -> tdb_update([{{x,0},float}], Ts);
@@ -601,11 +618,12 @@ tdb_find_1(K, Ts) ->
 %%  Update the type information for Dest to have the same type
 %%  as the Source.
 
-tdb_copy(S, D, Ts) ->
+tdb_copy({Tag,_}=S, D, Ts) when Tag =:= x; Tag =:= y ->
     case tdb_find(S, Ts) of
 	error -> orddict:erase(D, Ts);
 	Type -> orddict:store(D, Type, Ts)
-    end.
+    end;
+tdb_copy(Literal, D, Ts) -> orddict:store(D, Literal, Ts).
 
 %% tdb_update([UpdateOp], Db) -> NewDb
 %%        UpdateOp = {Register,kill}|{Register,NewInfo}

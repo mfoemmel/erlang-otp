@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Purpose: Run the Erlang compiler.
 
@@ -139,8 +140,6 @@ expand_opt(report, Os) ->
     [report_errors,report_warnings|Os];
 expand_opt(return, Os) ->
     [return_errors,return_warnings|Os];
-expand_opt(r10, Os) ->
-    [no_stack_trimming,no_topt,no_binaries,no_gc_bifs,no_constant_pool|Os];
 expand_opt(r11, Os) ->
     [no_stack_trimming,no_binaries,no_constant_pool|Os];
 expand_opt({debug_info_key,_}=O, Os) ->
@@ -184,7 +183,10 @@ format_error({core_transform,M,R}) ->
 format_error({crash,Pass,Reason}) ->
     io_lib:format("internal error in ~p;\ncrash reason: ~p", [Pass,Reason]);
 format_error({bad_return,Pass,Reason}) ->
-    io_lib:format("internal error in ~p;\nbad return value: ~p", [Pass,Reason]).
+    io_lib:format("internal error in ~p;\nbad return value: ~p", [Pass,Reason]);
+format_error({module_name,Mod,Filename}) ->
+    io_lib:format("Module name '~s' does not match file name '~s'",
+		  [Mod,Filename]).
 
 %% The compile state record.
 -record(compile, {filename="",
@@ -550,6 +552,8 @@ core_passes() ->
 kernel_passes() ->
     %% Destructive setelement/3 optimization and core lint.
     [{unless,no_constant_pool,?pass(core_dsetel_module)}, %Not safe without constant pool.
+     {iff,dsetel,{listing,"dsetel"}},
+
      {iff,clint,?pass(core_lint_module)},
      {iff,core,?pass(save_core_code)},
 
@@ -577,6 +581,8 @@ asm_passes() ->
 	 {iff,ddead,{listing,"dead"}},
 	 {unless,no_jopt,{pass,beam_jump}},
 	 {iff,djmp,{listing,"jump"}},
+	 {unless,no_peep_opt,{pass,beam_peep}},
+	 {iff,dpeep,{listing,"peep"}},
 	 {pass,beam_clean},
 	 {iff,dclean,{listing,"clean"}},
 	 {unless,no_bsm_opt,{pass,beam_bsm}},
@@ -1065,7 +1071,22 @@ is_informative_option(verbose) -> false;
 is_informative_option(_) -> true.
 
 save_binary(#compile{code=none}=St) -> {ok,St};
-save_binary(St) ->
+save_binary(#compile{module=Mod,ofile=Outfile}=St) ->
+    %% Test that the module name and output file name match.
+    %% We must take care to not completely break a packaged module
+    %% (even though packages still is as an experimental, unsupported
+    %% feature) - so we will extract the last part of a packaged
+    %% module name and compare only that.
+    Base = filename:rootname(filename:basename(Outfile)),
+    case lists:last(packages:split(Mod)) of
+	Base ->
+	    save_binary_1(St);
+	_ ->
+	    Es = [{St#compile.ofile,[{?MODULE,{module_name,Mod,Base}}]}],
+	    {error,St#compile{errors=St#compile.errors ++ Es}}
+    end.
+
+save_binary_1(St) ->
     Tfile = tmpfile(St#compile.ofile),		%Temp working file
     case write_binary(Tfile, St#compile.code, St) of
 	ok ->
@@ -1282,35 +1303,21 @@ shorten_filename(Name0) ->
 %% Converts generic compiler options to specific options.
 
 make_erl_options(Opts) ->
-
-    %% This way of extracting will work even if the record passed
-    %% has more fields than known during compilation.
-
-    Includes = Opts#options.includes,
-    Defines = Opts#options.defines,
-    Outdir = Opts#options.outdir,
-    Warning = Opts#options.warning,
-    Verbose = Opts#options.verbose,
-    Specific = Opts#options.specific,
-    OutputType = Opts#options.output_type,
-    Cwd = Opts#options.cwd,
-
-    Options =
-	case Verbose of
-	    true ->  [verbose];
-	    false -> []
-	end ++
-	case Warning of
-	    0 -> [];
-	    _ -> [report_warnings]
-	end ++
-	map(
-	  fun ({Name, Value}) ->
-		  {d, Name, Value};
-	      (Name) ->
-		  {d, Name}
-	  end,
-	  Defines) ++
+    #options{includes=Includes,
+	     defines=Defines,
+	     outdir=Outdir,
+	     warning=Warning,
+	     verbose=Verbose,
+	     specific=Specific,
+	     output_type=OutputType,
+	     cwd=Cwd} = Opts,
+    Options = [verbose || Verbose] ++
+	[report_warnings || Warning =/= 0] ++
+	map(fun ({Name,Value}) ->
+		    {d,Name,Value};
+		(Name) ->
+		    {d,Name}
+	    end, Defines) ++
 	case OutputType of
 	    undefined -> [];
 	    jam -> [jam];
@@ -1318,5 +1325,5 @@ make_erl_options(Opts) ->
 	    native -> [native]
 	end,
 
-    Options++[report_errors, {cwd, Cwd}, {outdir, Outdir}|
-	      map(fun(Dir) -> {i, Dir} end, Includes)]++Specific.
+    Options ++ [report_errors, {cwd,Cwd},{outdir,Outdir}|
+		map(fun(Dir) -> {i,Dir} end, Includes)]++Specific.

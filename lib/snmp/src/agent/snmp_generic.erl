@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>1996-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 -module(snmp_generic).
 
@@ -380,7 +379,8 @@ table_try_row(NameDb, TryChangeStatusFunc, RowIndex, Cols) ->
 %% If it is notReady, make sure no row has value noinit.
 table_check_status(NameDb, Col, ?'RowStatus_active', RowIndex, Cols) ->
     case table_get_row(NameDb, RowIndex) of
-	Row when tuple(Row), element(Col, Row) == ?'RowStatus_notReady' ->
+	Row when is_tuple(Row) andalso 
+		 (element(Col, Row) =:= ?'RowStatus_notReady') ->
 	    case is_any_noinit(Row, Cols) of
 		false -> {noError, 0};
 		true -> {inconsistentValue, Col}
@@ -392,7 +392,8 @@ table_check_status(NameDb, Col, ?'RowStatus_active', RowIndex, Cols) ->
 %% Try to make the row inactive. Ok if status != notReady
 table_check_status(NameDb, Col, ?'RowStatus_notInService', RowIndex, Cols) ->
     case table_get_row(NameDb, RowIndex) of
-	Row when tuple(Row), element(Col, Row) == ?'RowStatus_notReady' ->
+	Row when is_tuple(Row) andalso 
+		 (element(Col, Row) =:= ?'RowStatus_notReady') ->
 	    case is_any_noinit(Row, Cols) of
 		false -> {noError, 0};
 		true -> {inconsistentValue, Col}
@@ -447,7 +448,7 @@ table_check_status(_NameDb, Col, _, _RowIndex, _Cols) ->
 is_any_noinit(Row, Cols) ->
     is_any_noinit(tuple_to_list(Row), Cols, 1).
 is_any_noinit([noinit | Vals], [{N, _Value} | Cols], N) ->
-    is_any_noinit(Vals, Cols, N);
+    is_any_noinit(Vals, Cols, N+1);
 is_any_noinit([noinit | _Vals], _Cols, _N) ->
     true;
 is_any_noinit([_ | Vals], [{N, _Value} | Cols], N) ->

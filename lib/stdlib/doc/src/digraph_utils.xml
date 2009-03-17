@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>2000</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2000</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>digraph_utils</title>
@@ -369,12 +367,11 @@
       </desc>
     </func>
     <func>
-      <name>subgraph(Digraph, Vertices [, Options]) ->  Subgraph | {error, Reason}</name>
+      <name>subgraph(Digraph, Vertices [, Options]) ->  Subgraph</name>
       <fsummary>Return a subgraph of a digraph.</fsummary>
       <type>
         <v>Digraph = Subgraph = digraph()</v>
         <v>Options = [{type, SubgraphType}, {keep_labels, bool()}]</v>
-        <v>Reason = {invalid_option, term()} | {unknown_type, term()}</v>
         <v>SubgraphType = inherit | type()</v>
         <v>Vertices = [vertex()]</v>
       </type>
@@ -397,6 +394,9 @@
           </p>
         <p><c>subgraph(Digraph, Vertices)</c> is equivalent to
           <c>subgraph(Digraph, Vertices, [])</c>.
+          </p>
+       	<p>There will be a <c>badarg</c> exception if any of the arguments
+	  are invalid.
           </p>
       </desc>
     </func>

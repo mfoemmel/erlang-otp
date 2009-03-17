@@ -1,6 +1,6 @@
 -module(yeccparser).
 -export([parse/1, parse_and_scan/1, format_error/1]).
--file("yeccgramm.yrl", 62).
+-file("yeccgramm.yrl", 63).
 
 -record(symbol, {line, name}).
 
@@ -14,22 +14,23 @@ line_of(Token) ->
     element(2, Token).
 
 -file("./yeccpre.hrl", 0).
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -148,15 +149,15 @@ yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
 yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
-yecctoken2string({var,_,V}) -> io_lib:format('~s', [V]);
+yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
 yecctoken2string({string,_,S}) -> io_lib:write_string(S);
-yecctoken2string({reserved_symbol, _, A}) -> io_lib:format('~w', [A]);
-yecctoken2string({_Cat, _, Val}) -> io_lib:format('~w', [Val]);
-yecctoken2string({'dot', _}) -> io_lib:format('~w', ['.']);
+yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
+yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
+yecctoken2string({dot, _}) -> "'.'";
 yecctoken2string({'$end', _}) ->
     [];
 yecctoken2string({Other, _}) when is_atom(Other) ->
-    io_lib:format('~w', [Other]);
+    io_lib:format("~w", [Other]);
 yecctoken2string(Other) ->
     io_lib:write(Other).
 
@@ -487,7 +488,7 @@ yeccgoto_tokens(17=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_28(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
 -compile({inline,{yeccpars2_6_,1}}).
--file("yeccgramm.yrl", 43).
+-file("yeccgramm.yrl", 44).
 yeccpars2_6_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -495,7 +496,7 @@ yeccpars2_6_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_7_,1}}).
--file("yeccgramm.yrl", 44).
+-file("yeccgramm.yrl", 45).
 yeccpars2_7_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -503,7 +504,7 @@ yeccpars2_7_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_8_,1}}).
--file("yeccgramm.yrl", 45).
+-file("yeccgramm.yrl", 46).
 yeccpars2_8_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -511,7 +512,7 @@ yeccpars2_8_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_9_,1}}).
--file("yeccgramm.yrl", 42).
+-file("yeccgramm.yrl", 43).
 yeccpars2_9_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -519,14 +520,14 @@ yeccpars2_9_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_11_,1}}).
--file("yeccgramm.yrl", 39).
+-file("yeccgramm.yrl", 40).
 yeccpars2_11_(__Stack0) ->
  [begin
    { erlang_code , [ { atom , 0 , '$undefined' } ] }
   end | __Stack0].
 
 -compile({inline,{yeccpars2_12_,1}}).
--file("yeccgramm.yrl", 34).
+-file("yeccgramm.yrl", 35).
 yeccpars2_12_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -534,7 +535,7 @@ yeccpars2_12_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_13_,1}}).
--file("yeccgramm.yrl", 35).
+-file("yeccgramm.yrl", 36).
 yeccpars2_13_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -542,7 +543,7 @@ yeccpars2_13_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_16_,1}}).
--file("yeccgramm.yrl", 38).
+-file("yeccgramm.yrl", 39).
 yeccpars2_16_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -550,7 +551,7 @@ yeccpars2_16_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_17_,1}}).
--file("yeccgramm.yrl", 40).
+-file("yeccgramm.yrl", 41).
 yeccpars2_17_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -558,7 +559,7 @@ yeccpars2_17_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_18_,1}}).
--file("yeccgramm.yrl", 54).
+-file("yeccgramm.yrl", 55).
 yeccpars2_18_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -566,7 +567,7 @@ yeccpars2_18_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_19_,1}}).
--file("yeccgramm.yrl", 55).
+-file("yeccgramm.yrl", 56).
 yeccpars2_19_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -574,7 +575,7 @@ yeccpars2_19_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_24_,1}}).
--file("yeccgramm.yrl", 52).
+-file("yeccgramm.yrl", 53).
 yeccpars2_24_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -582,7 +583,7 @@ yeccpars2_24_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_25_,1}}).
--file("yeccgramm.yrl", 53).
+-file("yeccgramm.yrl", 54).
 yeccpars2_25_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -590,7 +591,7 @@ yeccpars2_25_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_28_,1}}).
--file("yeccgramm.yrl", 41).
+-file("yeccgramm.yrl", 42).
 yeccpars2_28_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -598,7 +599,7 @@ yeccpars2_28_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_29_,1}}).
--file("yeccgramm.yrl", 32).
+-file("yeccgramm.yrl", 33).
 yeccpars2_29_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -606,7 +607,7 @@ yeccpars2_29_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_32_,1}}).
--file("yeccgramm.yrl", 36).
+-file("yeccgramm.yrl", 37).
 yeccpars2_32_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
@@ -614,7 +615,7 @@ yeccpars2_32_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_33_,1}}).
--file("yeccgramm.yrl", 37).
+-file("yeccgramm.yrl", 38).
 yeccpars2_33_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
@@ -622,7 +623,7 @@ yeccpars2_33_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_34_,1}}).
--file("yeccgramm.yrl", 31).
+-file("yeccgramm.yrl", 32).
 yeccpars2_34_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -630,7 +631,7 @@ yeccpars2_34_(__Stack0) ->
   end | __Stack].
 
 -compile({inline,{yeccpars2_35_,1}}).
--file("yeccgramm.yrl", 30).
+-file("yeccgramm.yrl", 31).
 yeccpars2_35_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -638,4 +639,4 @@ yeccpars2_35_(__Stack0) ->
   end | __Stack].
 
 
--file("yeccgramm.yrl", 74).
+-file("yeccgramm.yrl", 75).

@@ -1,21 +1,21 @@
-%%<copyright>
-%% <year>2004-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 
 -module(httpc_response).
 
@@ -84,8 +84,9 @@ whole_body(Body, Length) ->
 %%                                   
 %% Description: Checks the status code ...
 %%-------------------------------------------------------------------------
-result(Response = {{_,200,_}, _, _}, 
-       Request = #request{stream = Stream}) when Stream =/= none ->
+result(Response = {{_, Code,_}, _, _}, 
+       Request = #request{stream = Stream}) 
+  when ((Code == 200) or (Code == 206)) and (Stream =/= none) ->
     stream_end(Response, Request);
 
 result(Response = {{_,100,_}, _, _}, Request) ->
@@ -149,7 +150,8 @@ parse_version(<<?SP, Rest/binary>>, Version,
 	    throw({error, {invalid_version, NewVersion}})
     end;	  
 
-parse_version(<<Octet, Rest/binary>>, Version, MaxHeaderSize, Result, Relaxed) ->
+parse_version(<<Octet, Rest/binary>>, Version, 
+	      MaxHeaderSize, Result, Relaxed) ->
     parse_version(Rest, [Octet | Version], MaxHeaderSize,Result, Relaxed).
 
 parse_status_code(<<>>, StatusCodeStr, MaxHeaderSize, Result, Relaxed) -> 
@@ -231,7 +233,8 @@ parse_reason_phrase(<<?CR>> = Data, Phrase, MaxHeaderSize, Result, Relaxed) ->
      [Data, Phrase, MaxHeaderSize, Result, Relaxed]};
 parse_reason_phrase(<<Octet, Rest/binary>>, Phrase, MaxHeaderSize, Result, 
 		    Relaxed) ->
-    parse_reason_phrase(Rest, [Octet | Phrase], MaxHeaderSize, Result, Relaxed).
+    parse_reason_phrase(Rest, [Octet | Phrase], MaxHeaderSize, 
+			Result, Relaxed).
 
 parse_headers(<<>>, Header, Headers, MaxHeaderSize, Result, Relaxed) -> 
     {?MODULE, parse_headers, [<<>>, Header, Headers, MaxHeaderSize, Result,
@@ -379,10 +382,12 @@ stream_start(Headers, Request, ignore) ->
     {Request#request.id, stream_start, http_response:header_list(Headers)};
 
 stream_start(Headers, Request, Pid) ->
-    {Request#request.id, stream_start, http_response:header_list(Headers), Pid}.
+    {Request#request.id, stream_start, 
+     http_response:header_list(Headers), Pid}.
 
-stream_end(Response, Request = #request{stream = Self}) when Self == self;
-							     Self == {self, once}-> 
+stream_end(Response, Request = #request{stream = Self}) 
+  when Self == self;
+       Self == {self, once}-> 
     {{_, Headers, _}, Data} =  format_response(Response),
     {ok, {Request#request.id, stream_end, Headers}, Data};
 

@@ -1,5 +1,23 @@
 %% -*- erlang-indent-level: 2 -*-
 %%======================================================================
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 
 -module(hipe_icode_cfg).
 
@@ -30,31 +48,31 @@
 
 %%----------------------------------------------------------------------
 
--type io_device() :: any().    % XXX: DOES NOT BELONG HERE
+-type io_device() :: atom() | pid().    % XXX: DOES NOT BELONG HERE
 
 %%----------------------------------------------------------------------
 %% Prototypes for exported functions which are Icode specific
 %%----------------------------------------------------------------------
 
--spec labels(#cfg{}) -> [icode_lbl()].
--spec postorder(#cfg{}) -> [icode_lbl()].
--spec reverse_postorder(#cfg{}) -> [icode_lbl()].
+-spec labels(cfg()) -> [icode_lbl()].
+-spec postorder(cfg()) -> [icode_lbl()].
+-spec reverse_postorder(cfg()) -> [icode_lbl()].
 
--spec is_visited(icode_lbl(), gb_tree()) -> bool().
--spec visit(icode_lbl(), gb_tree()) -> gb_tree().
+-spec is_visited(icode_lbl(), gb_set()) -> bool().
+-spec visit(icode_lbl(), gb_set()) -> gb_set().
 
--spec bb(#cfg{}, icode_lbl()) -> 'not_found' | bb().
--spec bb_add(#cfg{}, icode_lbl(), bb()) -> #cfg{}.
--spec pred(#cfg{}, icode_lbl()) -> [icode_lbl()].
--spec succ(#cfg{}, icode_lbl()) -> [icode_lbl()].
--spec redirect(#cfg{}, icode_lbl(), icode_lbl(), icode_lbl()) -> #cfg{}.
+-spec bb(cfg(), icode_lbl()) -> 'not_found' | bb().
+-spec bb_add(cfg(), icode_lbl(), bb()) -> cfg().
+-spec pred(cfg(), icode_lbl()) -> [icode_lbl()].
+-spec succ(cfg(), icode_lbl()) -> [icode_lbl()].
+-spec redirect(cfg(), icode_lbl(), icode_lbl(), icode_lbl()) -> cfg().
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Interface to Icode
 %%
 
--spec linear_to_cfg(#icode{}) -> #cfg{}.
+-spec linear_to_cfg(#icode{}) -> cfg().
 
 linear_to_cfg(LinearIcode) ->
   %% hipe_icode_pp:pp(Icode),
@@ -158,19 +176,19 @@ redirect_ops(_, CFG, _) -> %% We do not refer to labels in Icode ops.
 
 %%----------------------------------------------------------------------------
 
--spec pp(#cfg{}) -> 'ok'.
+-spec pp(cfg()) -> 'ok'.
 
 pp(CFG) ->
   hipe_icode_pp:pp(cfg_to_linear(CFG)).
 
--spec pp(io_device(), #cfg{}) -> 'ok'.
+-spec pp(io_device(), cfg()) -> 'ok'.
 
 pp(Dev, CFG) ->
   hipe_icode_pp:pp(Dev, cfg_to_linear(CFG)).
 
 %%----------------------------------------------------------------------------
 
--spec cfg_to_linear(#cfg{}) -> #icode{}.
+-spec cfg_to_linear(cfg()) -> #icode{}.
 cfg_to_linear(CFG) ->
   Code = linearize_cfg(CFG),
   IsClosure = is_closure(CFG),

@@ -14,6 +14,7 @@
  * SCCS: @(#) tclPosixStr.c 1.32 96/10/10 10:09:42
  */
 
+/* %ExternalCopyright% */
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
@@ -25,8 +26,8 @@
 #include <windows.h>
 #endif
 
-#include <errno.h>
-#include "sys.h"		/* Needed to define fake ENOTSUP */
+#include "erl_errno.h"
+#include "sys.h"
 #include "erl_driver.h"
 
 /*

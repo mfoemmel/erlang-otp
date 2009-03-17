@@ -1,21 +1,20 @@
-%%<copyright>
-%% <year>1996-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+%% 
+%% %CopyrightEnd%
 %%
 -module(snmpa_local_db).
 
@@ -177,7 +176,9 @@ dets_open(DbDir, DbInitError, Opts) ->
 			    file:rename(Filename, Saved),
 			    case do_dets_open(Name, Filename, Opts) of
 				{ok, Dets} ->
-				    Dets;
+				    Shadow = ets:new(snmp_local_db1_shadow, 
+						     [set, protected]),
+				    #dets{tab = Dets, shadow = Shadow};
 				{error, Reason2} ->
 				    user_err("Could not create local "
 					     "database: ~p"

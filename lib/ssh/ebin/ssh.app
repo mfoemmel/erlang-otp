@@ -2,7 +2,7 @@
 
 {application, ssh,
  [{description, "SSH-2 for Erlang/OTP"},
-  {vsn, "1.0.2"},
+  {vsn, "1.1.1"},
   {modules, ['DSS',
 	     'PKCS-1',
 	     ssh,
@@ -19,6 +19,7 @@
 	     ssh_connection_handler,
 	     ssh_connection_manager,
 	     ssh_connection_sup,
+	     ssh_shell,
 	     sshc_sup,
 	     sshd_sup,
 	     ssh_dsa,

@@ -1,10 +1,37 @@
 #-*-makefile-*-   ; force emacs to enter makefile-mode
 
-MEGACO_VSN = 3.9.1.1
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2001-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved online at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# %CopyrightEnd%
+
+MEGACO_VSN = 3.10.0.1
 PRE_VSN    =
 APP_VSN    = "megaco-$(MEGACO_VSN)$(PRE_VSN)"
 
-TICKETS = OTP-7614
+TICKETS = OTP-7851
+
+TICKETS_3_10 = OTP-7713 OTP-7743
+
+TICKETS_3_9_4 = OTP-7728 OTP-7733
+
+TICKETS_3_9_3 = OTP-7700
+
+TICKETS_3_9_2 = OTP-7671 OTP-7672
+
+TICKETS_3_9_1_1 = OTP-7614
 
 TICKETS_3_9_1 = OTP-7572 OTP-7573 OTP-7576
 

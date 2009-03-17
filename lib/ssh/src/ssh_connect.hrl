@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2005-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 
 %%% Description : SSH connection protocol 
@@ -120,8 +121,8 @@
 %%% #   SSH_EXTENDED_DATA_xxx
 %%% Description: Type codes for SSH_MSG_CHANNEL_EXTENDED_DATA packages
 %%%----------------------------------------------------------------------
-
--define(SSH_EXTENDED_DATA_STDERR,                1).
+-define(SSH_EXTENDED_DATA_DEFAULT, 0).
+-define(SSH_EXTENDED_DATA_STDERR,  1).
 
 -record(ssh_msg_channel_extended_data,
 	{
@@ -235,20 +236,16 @@
 	  sys,           %% "none", "shell", "exec" "subsystem"
 	  user,          %% "user" process id (default to cm user)
 	  flow_control, 
-	  passive_subsys, 
-	  subsys_queue,
 
 	  local_id,           %% local channel id
 
 	  recv_window_size,
 	  recv_packet_size,
-	  %%recv_eof = false,
 	  recv_close = false,
 
 	  remote_id,          %% remote channel id
 	  send_window_size,
 	  send_packet_size,
-	  %%sent_eof = false,
 	  sent_close = false,
 	  send_buf = []
 	 }).
@@ -259,5 +256,8 @@
 	  channel_pids = [],
 	  port_bindings,
 	  channel_id_seed,
-	  passive_subsys
+	  cli_spec,
+	  address, 
+	  port,
+	  options
 	 }).

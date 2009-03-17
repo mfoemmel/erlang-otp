@@ -1,20 +1,22 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 #ifndef __SYS_H__
 #define __SYS_H__
 
@@ -64,6 +66,8 @@
 #endif
 #endif
 
+#include "erl_misc_utils.h"
+
 /*
  * To allow building of Universal Binaries for Mac OS X,
  * we must not depend on the endian detected by the configure script.
@@ -73,17 +77,6 @@
 #    define WORDS_BIGENDIAN 1
 #  elif !defined(__BIG_ENDIAN__) && defined(WORDS_BIGENDIAN)
 #    undef WORDS_BIGENDIAN
-#  endif
-#endif
-
-/*
- * Make sure that ENOTSUP is defined.
- */
-#ifndef ENOTSUP
-#  ifdef EOPNOTSUPP
-#    define ENOTSUP EOPNOTSUPP
-#else
-#    define ENOTSUP -1738659
 #  endif
 #endif
 
@@ -112,6 +105,19 @@ typedef ERTS_SYS_FD_TYPE ErtsSysFdType;
 #    define ERTS_CAN_INLINE 0
 #    define ERTS_INLINE
 #  endif
+#endif
+
+#ifdef __GNUC__
+#  if __GNUC__ < 3 && (__GNUC__ != 2 || __GNUC_MINOR__ < 96)
+#    define ERTS_LIKELY(BOOL)   (BOOL)
+#    define ERTS_UNLIKELY(BOOL) (BOOL)
+#  else
+#    define ERTS_LIKELY(BOOL)   __builtin_expect((BOOL), !0)
+#    define ERTS_UNLIKELY(BOOL) __builtin_expect((BOOL), 0)
+#  endif
+#else
+#  define ERTS_LIKELY(BOOL)   (BOOL)
+#  define ERTS_UNLIKELY(BOOL) (BOOL)
 #endif
 
 #if defined(DEBUG) || defined(ERTS_ENABLE_LOCK_CHECK)
@@ -429,6 +435,7 @@ static const int zero_value = 0, one_value = 1;
 # endif /* _OSE_ */
 #endif /* WANT_NONBLOCKING */
 
+extern erts_cpu_info_t *erts_cpuinfo; /* erl_init.c */
 
 void __noreturn erl_exit(int n, char*, ...);
 
@@ -540,32 +547,18 @@ extern void erts_thread_init_float(void);
 extern void erts_thread_disable_fpe(void);
 
 ERTS_GLB_INLINE int erts_block_fpe(void);
-ERTS_GLB_INLINE void erts_unblock_fpe_conditional(int);
-ERTS_GLB_INLINE void erts_unblock_fpe(void);
+ERTS_GLB_INLINE void erts_unblock_fpe(int);
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 
 ERTS_GLB_INLINE int erts_block_fpe(void)
 {
-#ifndef NO_FPE_SIGNALS
     return erts_sys_block_fpe();
-#else
-    return 0;
-#endif
 }
 
-ERTS_GLB_INLINE void erts_unblock_fpe_conditional(int unmasked)
+ERTS_GLB_INLINE void erts_unblock_fpe(int unmasked)
 {
-#ifndef NO_FPE_SIGNALS
-    erts_sys_unblock_fpe_conditional(unmasked);
-#endif
-}
-
-ERTS_GLB_INLINE void erts_unblock_fpe(void)
-{
-#ifndef NO_FPE_SIGNALS
-    erts_sys_unblock_fpe();
-#endif
+    erts_sys_unblock_fpe(unmasked);
 }
 
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */

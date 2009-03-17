@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 /*
  * Tty driver that reads one character at the time and provides a
@@ -47,6 +48,11 @@ static ErlDrvData ttysl_start(ErlDrvPort, char*);
 #ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
 #endif
+#if !defined(HAVE_SETLOCALE) || !defined(HAVE_NL_LANGINFO) || !defined(HAVE_LANGINFO_H)
+#define PRIMITIVE_UTF8_CHECK 1
+#else
+#include <langinfo.h>
+#endif
 
 #define TRUE 1
 #define FALSE 0
@@ -73,25 +79,36 @@ static volatile int cols_needs_update = FALSE;
 #define OP_BEEP 4
 /* Control op */
 #define CTRL_OP_GET_WINSIZE 100
+#define CTRL_OP_GET_UNICODE_STATE 101
+#define CTRL_OP_SET_UNICODE_STATE 102
+
+
 
 static int lbuf_size = BUFSIZ;
-#define MAXSIZE (1 << 16)
-
-static byte *lbuf;		/* The current line buffer */
+static Uint32 *lbuf;		/* The current line buffer */
 static int llen;		/* The current line length */
-static byte *lc;		/* The current character pointer */
-static int lpos;
+static int lpos;                /* The current "cursor position" in the line buffer */
+
+/* 
+ * Tags used in line buffer to show that these bytes represent special characters,
+ * Max unicode is 0x0010ffff, so we have lots of place for meta tags... 
+ */
+#define CONTROL_TAG 0x10000000U /* Control character, value in first position */
+#define ESCAPED_TAG 0x01000000U /* Escaped character, value in first position */
+#define TAG_MASK    0xFF000000U
+
+#define MAXSIZE (1 << 16)
 
 #define COL(_l) ((_l) % cols)
 #define LINE(_l) ((_l) / cols)
 
-#define PAD '\n'
 #define NL '\n'
 
 /* Main interface functions. */
 static void ttysl_stop(ErlDrvData);
 static void ttysl_from_erlang(ErlDrvData, char*, int);
 static void ttysl_from_tty(ErlDrvData, ErlDrvEvent);
+static void ttysl_stop_select(ErlDrvEvent, void*);
 static Sint16 get_sint16(char*);
 
 static ErlDrvPort ttysl_port;
@@ -103,11 +120,11 @@ static int start_lbuf(void);
 static int stop_lbuf(void);
 static int put_chars(byte*,int);
 static int move_rel(int);
-static int ins_chars(byte*,int);
+static int ins_chars(byte *,int);
 static int del_chars(int);
-static byte *step_over_chars(int);
+static int step_over_chars(int);
 static int insert_buf(byte*,int);
-static int write_buf(byte*,int);
+static int write_buf(Uint32 *,int);
 static int outc(int c);
 static int move_cursor(int,int);
 
@@ -129,6 +146,38 @@ static RETSIGTYPE suspend(int);
 static RETSIGTYPE cont(int);
 static RETSIGTYPE winch(int);
 
+/*#define LOG_DEBUG*/
+
+#ifdef LOG_DEBUG
+FILE *debuglog = NULL;
+
+#define DEBUGLOG(X) 				\
+do {						\
+    if (debuglog != NULL) {			\
+	my_debug_printf X;    			\
+    }						\
+} while (0)
+
+static void my_debug_printf(char *fmt, ...)
+{
+    char buffer[1024];
+    va_list args;
+
+    va_start(args, fmt);
+    erts_vsnprintf(buffer,1024,fmt,args);
+    va_end(args);
+    erts_fprintf(debuglog,"%s\n",buffer);
+    //erts_printf("Debuglog = %s\n",buffer);
+}
+
+#else
+
+#define DEBUGLOG(X)
+
+#endif
+
+
+
 #  define IF_IMPL(x) x
 #else
 #  define IF_IMPL(x) NULL
@@ -145,8 +194,26 @@ struct erl_drv_entry ttsl_driver_entry = {
     "tty_sl",
     NULL,
     NULL,
-    IF_IMPL(ttysl_control)
-  };
+    IF_IMPL(ttysl_control),
+    NULL, /* timeout */
+    NULL, /* outputv */
+    NULL, /* ready_async */
+    NULL, /* flush */
+    NULL, /* call */
+    NULL, /* event */
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    0, /* ERL_DRV_FLAGs */
+    NULL,
+    NULL, /* process_exit */
+    IF_IMPL(ttysl_stop_select)
+};
+
+static int utf8_mode = 0;
+static byte utf8buf[4]; /* for incomplete input */
+static int utf8buf_size; /* size of incomplete input */
+
 
 static int ttysl_init(void)
 {
@@ -156,6 +223,18 @@ static int ttysl_init(void)
     lbuf = NULL;		/* For line buffer handling */
     capbuf = NULL;		/* For termcap handling */
 #endif
+#ifdef LOG_DEBUG
+    {
+	char *dl;
+	if ((dl = getenv("TTYSL_DEBUG_LOG")) != NULL && *dl) {
+	    debuglog = fopen(dl,"w+");
+	    if (debuglog != NULL)
+		setbuf(debuglog,NULL);
+	}
+	DEBUGLOG(("Debuglog = %s(0x%ld)\n",dl,(long) debuglog));
+    }
+#endif
+    DEBUGLOG(("Logging started"));
     return 0;
 }
 
@@ -164,11 +243,12 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
 #ifndef HAVE_TERMCAP
     return ERL_DRV_ERROR_GENERAL;
 #else
-    char *s, *t, c;
+    char *s, *t, c, *l;
     int canon, echo, sig;	/* Terminal characteristics */
     int flag;
     extern int using_oldshell; /* set this to let the rest of erts know */
 
+    utf8buf_size = 0;
     if (ttysl_port != (ErlDrvPort)-1)
       return ERL_DRV_ERROR_GENERAL;
 
@@ -214,11 +294,28 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
     /* Open the terminal and set the terminal */
     ttysl_out = fdopen(ttysl_fd, "w");
 
-    setlocale(LC_CTYPE, "");	/* Set international environment */
+#ifdef PRIMITIVE_UTF8_CHECK
+    setlocale(LC_CTYPE, "");  /* Set international environment, 
+				 ignore result */
+    if (((l = getenv("LC_ALL"))   && *l) ||
+	((l = getenv("LC_CTYPE")) && *l) ||
+	((l = getenv("LANG"))     && *l)) {
+	if (strstr(l, "UTF-8"))
+	    utf8_mode = 1;
+    }
+    
+#else
+    l = setlocale(LC_CTYPE, "");  /* Set international environment */
+    if (l != NULL) {
+	utf8_mode = (strcmp(nl_langinfo(CODESET), "UTF-8") == 0);
+	DEBUGLOG(("setlocale: %s\n",l));
+    }
+#endif
+    DEBUGLOG(("utf8_mode is %s\n",(utf8_mode) ? "on" : "off"));
     sys_sigset(SIGCONT, cont);
     sys_sigset(SIGWINCH, winch);
 
-    driver_select(port, (ErlDrvEvent)(Uint)ttysl_fd, DO_READ, 1);
+    driver_select(port, (ErlDrvEvent)(Uint)ttysl_fd, ERL_DRV_READ|ERL_DRV_USE, 1);
     ttysl_port = port;
 
     /* we need to know this when we enter the break handler */
@@ -256,6 +353,7 @@ static int ttysl_control(ErlDrvData drv_data,
 			 char **rbuf, int rlen)
 {
     char resbuff[2*sizeof(Uint32)];
+    int res_size;
     switch (command) {
     case CTRL_OP_GET_WINSIZE:
 	{
@@ -263,16 +361,31 @@ static int ttysl_control(ErlDrvData drv_data,
 	    ttysl_get_window_size(&w,&h);
 	    memcpy(resbuff,&w,sizeof(Uint32));
 	    memcpy(resbuff+sizeof(Uint32),&h,sizeof(Uint32));
+	    res_size = 2*sizeof(Uint32);
+	}
+	break;
+    case CTRL_OP_GET_UNICODE_STATE:
+	*resbuff = (utf8_mode) ? 1 : 0;
+	res_size = 1;
+	break;
+    case CTRL_OP_SET_UNICODE_STATE:
+	if (len > 0) {
+	    int m = (int) *buf;
+	    *resbuff = (utf8_mode) ? 1 : 0;
+	    res_size = 1;
+	    utf8_mode = (m) ? 1 : 0;
+	} else {
+	    return 0;
 	}
 	break;
     default:
 	return 0;
     }
-    if (rlen < 2*sizeof(Uint32)) {
-	*rbuf = driver_alloc(2*sizeof(Uint32));
+    if (rlen < res_size) {
+	*rbuf = driver_alloc(res_size);
     }
-    memcpy(*rbuf,resbuff,2*sizeof(Uint32));
-    return 2*sizeof(Uint32);
+    memcpy(*rbuf,resbuff,res_size);
+    return res_size;
 }
 
 
@@ -282,9 +395,7 @@ static void ttysl_stop(ErlDrvData ttysl_data)
 	stop_lbuf();
 	stop_termcap();
 	tty_reset(ttysl_fd);
-	if (ttysl_fd != 0)
-	  close(ttysl_fd);
-	driver_select(ttysl_port, (ErlDrvEvent)(Uint)ttysl_fd, DO_READ, 0);
+	driver_select(ttysl_port, (ErlDrvEvent)(Uint)ttysl_fd, ERL_DRV_READ|ERL_DRV_USE, 0);
 	sys_sigset(SIGCONT, SIG_DFL);
 	sys_sigset(SIGWINCH, SIG_DFL);
     }
@@ -293,53 +404,241 @@ static void ttysl_stop(ErlDrvData ttysl_data)
     /* return TRUE; */
 }
 
+static int put_utf8(int ch, byte *target, int sz, int *pos)
+{
+    Uint x = (Uint) ch;
+    if (x < 0x80) {
+    if (*pos >= sz) {
+	return -1;
+    }
+	target[(*pos)++] = (byte) x;
+    }
+    else if (x < 0x800) {
+	if (((*pos) + 1) >= sz) {
+	    return -1;
+	}
+	target[(*pos)++] = (((byte) (x >> 6)) | 
+			    ((byte) 0xC0));
+	target[(*pos)++] = (((byte) (x & 0x3F)) | 
+			    ((byte) 0x80));
+    } else if (x < 0x10000) {
+	if ((x >= 0xD800 && x <= 0xDFFF) ||
+	    (x == 0xFFFE) ||
+	    (x == 0xFFFF)) { /* Invalid unicode range */
+	    return -1;
+	}
+	if (((*pos) + 2) >= sz) {
+	    return -1;
+	}
+
+	target[(*pos)++] = (((byte) (x >> 12)) | 
+			    ((byte) 0xE0));
+	target[(*pos)++] = ((((byte) (x >> 6)) & 0x3F)  | 
+			    ((byte) 0x80));
+	target[(*pos)++] = (((byte) (x & 0x3F)) | 
+			    ((byte) 0x80));
+    } else if (x < 0x110000) { /* Standard imposed max */
+	if (((*pos) + 3) >= sz) {
+	    return -1;
+	}
+	target[(*pos)++] = (((byte) (x >> 18)) | 
+			    ((byte) 0xF0));
+	target[(*pos)++] = ((((byte) (x >> 12)) & 0x3F)  | 
+			    ((byte) 0x80));
+	target[(*pos)++] = ((((byte) (x >> 6)) & 0x3F)  | 
+			    ((byte) 0x80));
+	target[(*pos)++] = (((byte) (x & 0x3F)) | 
+			    ((byte) 0x80));
+    } else {
+	return -1;
+    }
+    return 0;
+}
+    
+
+static int pick_utf8(byte *s, int sz, int *pos) 
+{
+    int size = sz - (*pos);
+    byte *source;
+    Uint unipoint;
+
+    if (size > 0) {
+	source = s + (*pos);
+	if (((*source) & ((byte) 0x80)) == 0) {
+	    unipoint = (int) *source;
+	    ++(*pos);
+	    return (int) unipoint;
+	} else if (((*source) & ((byte) 0xE0)) == 0xC0) {
+	    if (size < 2) {
+		return -2;
+	    }
+	    if (((source[1] & ((byte) 0xC0)) != 0x80) ||
+		((*source) < 0xC2) /* overlong */) {
+		return -1;
+	    }
+	    (*pos) += 2;
+	    unipoint = 
+		(((Uint) ((*source) & ((byte) 0x1F))) << 6) |
+		((Uint) (source[1] & ((byte) 0x3F))); 	
+	    return (int) unipoint;
+	} else if (((*source) & ((byte) 0xF0)) == 0xE0) {
+	    if (size < 3) {
+		return -2;
+	    }
+	    if (((source[1] & ((byte) 0xC0)) != 0x80) ||
+		((source[2] & ((byte) 0xC0)) != 0x80) ||
+		(((*source) == 0xE0) && (source[1] < 0xA0)) /* overlong */ ) {
+		return -1;
+	    }
+	    if ((((*source) & ((byte) 0xF)) == 0xD) && 
+		((source[1] & 0x20) != 0)) {
+		return -1;
+	    }
+	    if (((*source) == 0xEF) && (source[1] == 0xBF) &&
+		((source[2] == 0xBE) || (source[2] == 0xBF))) {
+		return -1;
+	    }
+	    (*pos) += 3;
+	    unipoint = 
+		(((Uint) ((*source) & ((byte) 0xF))) << 12) |
+		(((Uint) (source[1] & ((byte) 0x3F))) << 6) |
+		((Uint) (source[2] & ((byte) 0x3F))); 	 	
+	    return (int) unipoint;
+	} else if (((*source) & ((byte) 0xF8)) == 0xF0) {
+	    if (size < 4) {
+		return -2 ;
+	    }
+	    if (((source[1] & ((byte) 0xC0)) != 0x80) ||
+		((source[2] & ((byte) 0xC0)) != 0x80) ||
+		((source[3] & ((byte) 0xC0)) != 0x80) ||
+		(((*source) == 0xF0) && (source[1] < 0x90)) /* overlong */) {
+		return -1;
+	    }
+	    if ((((*source) & ((byte)0x7)) > 0x4U) ||
+		((((*source) & ((byte)0x7)) == 0x4U) && 
+		 ((source[1] & ((byte)0x3F)) > 0xFU))) {
+		return -1;
+	    }
+	    (*pos) += 4;
+	    unipoint = 
+		(((Uint) ((*source) & ((byte) 0x7))) << 18) |
+		(((Uint) (source[1] & ((byte) 0x3F))) << 12) |
+		(((Uint) (source[2] & ((byte) 0x3F))) << 6) |
+		((Uint) (source[3] & ((byte) 0x3F))); 	 	
+	    return (int) unipoint;
+	} else {
+	    return -1;
+	}
+    } else {
+	return -1;
+    }
+}
+
+static int octal_positions(Uint ch) 
+{
+    int x = 0;
+    if (!ch) {
+	return 1;
+    }
+    while(ch) {
+	++x;
+	ch >>= 3;
+    }
+    return (x > 3) ? x+2 : 3;
+}
+
+static void octal_format(Uint ch, byte *buf, int *pos)
+{
+    int num = octal_positions(ch);
+    int curly = 0;
+    if (num != 3) {
+	buf[(*pos)++] = '{';
+	curly = 1;
+	num -= 2;
+    }
+    while(num--) {
+	buf[(*pos)++] = ((byte) ((ch >> (3*num)) & 0x7U) + '0');
+    }
+    if (curly) {
+	buf[(*pos)++] = '}';
+    }	
+}
+
 /*
  * Check that there is enough room in all buffers to copy all pad chars
  * and stiff we need If not, realloc lbuf.
  */
 static int check_buf_size(byte *s, int n)
 {
-    int size;
-    byte *tmp, *old_lbuf;
-    size = 10;
-    for (tmp = s; n > 0; --n, tmp++) {
-	if (isprint(*tmp)) 
-	    size++;
-	else if (*tmp == '\t') 
-	    size += 8;
-	else if (*tmp >= 128) 
-	    size += 4;
-	else size += 2;
+    int pos = 0;
+    int ch;
+    int size = 10;
+
+    while(pos < n) {
+	/* Indata is always UTF-8 */
+	if ((ch = pick_utf8(s,n,&pos)) < 0) {
+	    /* XXX temporary allow invalid chars */
+	    ch = (int) s[pos];
+	    DEBUGLOG(("Invalid UTF8:%d",ch));
+	    ++pos;
+	} 
+	if (utf8_mode) { /* That is, terminal is UTF8 compliant */
+	    if (ch >= 128 || isprint(ch)) {
+		DEBUGLOG(("Printable(UTF-8:%d):%d",(pos - opos),ch));
+		size++; /* Buffer contains wide characters... */
+	    } else if (ch == '\t') {
+		size += 8;
+	    } else {
+		DEBUGLOG(("Magic(UTF-8:%d):%d",(pos - opos),ch));
+		size += 2;
+	    }
+	} else {
+	    if (ch <= 255 && isprint(ch)) {
+		DEBUGLOG(("Printable:%d",ch));
+		size++;
+	    } else if (ch == '\t') 
+		size += 8;
+	    else if (ch >= 128) {
+		DEBUGLOG(("Non printable:%d",ch));
+		size += (octal_positions(ch) + 1);
+	    }
+	    else {
+		DEBUGLOG(("Magic:%d",ch));
+		size += 2;
+	    }
+	}
     }
+		
     if (size + lpos >= lbuf_size) {
 
 	lbuf_size = size + lpos + BUFSIZ;
-	old_lbuf = lbuf;
-	if ((lbuf = driver_realloc(lbuf, lbuf_size)) == NULL) {
+	if ((lbuf = driver_realloc(lbuf, lbuf_size * sizeof(Uint32))) == NULL) {
 	    driver_failure(ttysl_port, -1);
 	    return(0);
 	}
-	lc = lbuf + (lc - old_lbuf);
     }
     return(1);
 }
+
 
 static void ttysl_from_erlang(ErlDrvData ttysl_data, char* buf, int count)
 {
     if (lpos > MAXSIZE) 
 	put_chars((byte*)"\n", 1);
 
-    if (check_buf_size((byte*)buf+1, count-1) == 0)
-	return; /*(-1); */
-
     switch (buf[0]) {
     case OP_PUTC:
+	DEBUGLOG(("OP: Putc(%d)",count-1));
+	if (check_buf_size((byte*)buf+1, count-1) == 0)
+	    return; 
 	put_chars((byte*)buf+1, count-1);
 	break;
     case OP_MOVE:
 	move_rel(get_sint16(buf+1));
 	break;
     case OP_INSC:
+	if (check_buf_size((byte*)buf+1, count-1) == 0)
+	    return;
 	ins_chars((byte*)buf+1, count-1);
 	break;
     case OP_DELC:
@@ -358,14 +657,60 @@ static void ttysl_from_erlang(ErlDrvData ttysl_data, char* buf, int count)
 
 static void ttysl_from_tty(ErlDrvData ttysl_data, ErlDrvEvent fd)
 {
-    char b[1024];
+    byte b[1024];
     ssize_t i;
+    int ch = 0, pos = 0;
+    int left = 1024;
+    byte *p = b;
+    byte t[1024];
+    int tpos;
 
-    if ((i = read((int)(Sint)fd, b, 1024)) >= 0)
-      driver_output(ttysl_port, b, i);
-    else
-      driver_failure(ttysl_port, -1);
-    /* return TRUE;*/
+    if (utf8buf_size > 0) {
+	memcpy(b,utf8buf,utf8buf_size);
+	left -= utf8buf_size;
+	p += utf8buf_size;
+	utf8buf_size = 0;
+    }
+    
+    if ((i = read((int)(Sint)fd, (char *) p, left)) >= 0) {
+	if (p != b) {
+	    i += (p - b);
+	}
+	if (utf8_mode) { /* Hopefully an UTF8 terminal */
+	    while(pos < i && (ch = pick_utf8(b,i,&pos)) >= 0)
+		;
+	    if (ch == -2 && i - pos <= 4) {
+		/* bytes left to care for */
+		utf8buf_size = i -pos;
+		memcpy(utf8buf,b+pos,utf8buf_size);
+	    } else if (ch == -1) {
+		DEBUGLOG(("Giving up on UTF8 mode, invalid character"));
+		utf8_mode = 0;
+		goto latin_terminal;
+	    }
+	    driver_output(ttysl_port, (char *) b, pos);
+	} else {
+	latin_terminal:
+	    tpos = 0;
+	    while (pos < i) {
+		while (tpos < 1020 && pos < i) { /* Max 4 bytes for UTF8 */
+		    put_utf8((int) b[pos++], t, 1024, &tpos);
+		}
+		driver_output(ttysl_port, (char *) t, tpos);
+		tpos = 0;
+	    }
+	}
+    } else {
+	driver_failure(ttysl_port, -1);
+    }
+}
+
+static void ttysl_stop_select(ErlDrvEvent e, void* _)
+{
+    int fd = (int)(long)e;
+    if (fd != 0) {
+	close(fd);
+    }
 }
 
 /* Procedures for putting and getting integers to/from strings. */
@@ -376,29 +721,30 @@ static Sint16 get_sint16(char *s)
 
 static int start_lbuf(void)
 {
-    if (!lbuf && !(lbuf = (byte*) driver_alloc(lbuf_size)))
+    if (!lbuf && !(lbuf = ( Uint32*) driver_alloc(lbuf_size * sizeof(Uint32))))
       return FALSE;
     llen = 0;
-    lc = lbuf;
     lpos = 0;
     return TRUE;
 }
 
 static int stop_lbuf(void)
 {
-    if (lbuf) driver_free(lbuf);
-    lbuf = NULL;
+    if (lbuf) {
+	driver_free(lbuf);
+	lbuf = NULL;
+    }
     return TRUE;
 }
 
-/* Put l characters from s into the buffer and output them. */
+/* Put l bytes (in UTF8) from s into the buffer and output them. */
 static int put_chars(byte *s, int l)
 {
     int n;
 
     n = insert_buf(s, l);
     if (n > 0)
-      write_buf(lc - n, n);
+      write_buf(lbuf + lpos - n, n);
     if (lpos > llen)
       llen = lpos;
     return TRUE;
@@ -411,15 +757,12 @@ static int put_chars(byte *s, int l)
 static int move_rel(int n)
 {
     int npos;			/* The new position */
-    byte *c;
 
     /* Step forwards or backwards over the buffer. */
-    c = step_over_chars(n);
+    npos = step_over_chars(n);
 
     /* Calculate move, updates pointers and move the cursor. */
-    npos = c > lc ? lpos + (c - lc) : lpos - (lc - c);
     move_cursor(lpos, npos);
-    lc = c;
     lpos = npos;
     return TRUE;
 }
@@ -428,21 +771,21 @@ static int move_rel(int n)
 static int ins_chars(byte *s, int l)
 {
     int n, tl;
-    byte *tbuf = NULL;		/* Suppress warning about use-before-set */
+    Uint32 *tbuf = NULL;    /* Suppress warning about use-before-set */
 
     /* Move tail of buffer to make space. */
     if ((tl = llen - lpos) > 0) {
-	if ((tbuf = driver_alloc(tl)) == NULL)
+	if ((tbuf = driver_alloc(tl * sizeof(Uint32))) == NULL)
 	    return FALSE;
-	memcpy(tbuf, lc, tl);
+	memcpy(tbuf, lbuf + lpos, tl * sizeof(Uint32));
     }
     n = insert_buf(s, l);
     if (tl > 0) {
-	memcpy(lc, tbuf, tl);
+	memcpy(lbuf + lpos, tbuf, tl * sizeof(Uint32));
 	driver_free(tbuf);
     }
     llen += n;
-    write_buf(lc - n, llen - lpos + n);
+    write_buf(lbuf + (lpos - n), llen - (lpos - n));
     move_cursor(llen, lpos);
     return TRUE;
 }
@@ -455,22 +798,22 @@ static int ins_chars(byte *s, int l)
 static int del_chars(int n)
 {
     int i, l, r;
-    byte *c;
+    int pos;
 
     update_cols();
 
     /* Step forward or backwards over n logical characters. */
-    c = step_over_chars(n);
+    pos = step_over_chars(n);
 
-    if (c > lc) {
-	l = c - lc;		/* Buffer characters to delete */
+    if (pos > lpos) {
+	l = pos - lpos;		/* Buffer characters to delete */
 	r = llen - lpos - l;	/* Characters after deleted */
 	/* Fix up buffer and buffer pointers. */
 	if (r > 0)
-	    memcpy(lc, c, r);
+	    memcpy(lbuf + lpos, lbuf + pos, r * sizeof(Uint32));
 	llen -= l;
 	/* Write out characters after, blank the tail and jump back to lpos. */
-	write_buf(lc, r);
+	write_buf(lbuf + lpos, r);
 	for (i = l ; i > 0; --i)
 	  outc(' ');
 	if (COL(llen+l) == 0 && xn)
@@ -480,18 +823,17 @@ static int del_chars(int n)
 	}
 	move_cursor(llen + l, lpos);
     }
-    else if (c < lc) {
-	l = lc - c;		/* Buffer characters */
+    else if (pos < lpos) {
+	l = lpos - pos;		/* Buffer characters */
 	r = llen - lpos;	/* Characters after deleted */
 	move_cursor(lpos, lpos-l);	/* Move back */
 	/* Fix up buffer and buffer pointers. */
 	if (r > 0)
-	    memcpy(c, lc, r);
-	lc = c;
+	    memcpy(lbuf + pos, lbuf + lpos, r * sizeof(Uint32));
 	lpos -= l;
 	llen -= l;
 	/* Write out characters after, blank the tail and jump back to lpos. */
-	write_buf(lc, r);
+	write_buf(lbuf + lpos, r);
 	for (i = l ; i > 0; --i)
 	  outc(' ');
 	if (COL(llen+l) == 0 && xn)
@@ -505,117 +847,176 @@ static int del_chars(int n)
 }
 
 /* Step over n logical characters, check for overflow. */
-static byte *step_over_chars(int n)
+static int step_over_chars(int n)
 {
-    byte *c, *beg, *end;
+    Uint32 *c, *beg, *end;
 
     beg = lbuf;
     end = lbuf + llen;
-    c = lc;
+    c = lbuf + lpos;
     for ( ; n > 0 && c < end; --n) {
 	c++;
-	while (c < end && *c == PAD)
+	while (c < end && (*c & TAG_MASK) && ((*c & ~TAG_MASK) == 0))
 	    c++;
     }
     for ( ; n < 0 && c > beg; n++) {
 	--c;
-	while (c > beg && *c == PAD )
+	while (c > beg && (*c & TAG_MASK) && ((*c & ~TAG_MASK) == 0))
 	    --c;
     }
-    return c;
+    return c - lbuf;
 }
 
 /*
- * Insert n characters into the buffer at lc. Update pointers into buffer.
+ * Insert n characters into the buffer at lpos.
  * Know about pad characters and treat \n specially.
  */
+
 static int insert_buf(byte *s, int n)
 {
-    int pos;
-    byte *start;
+    int pos = 0;
+    int buffpos = lpos;
+    int ch;
 
-    /* Copy the string to lbuf expanding control characters. */
-    for (pos = lpos, start = lc; n > 0; --n, s++) {
-	if (isprint(*s)) {
-	    *lc++ = *s;
-	    pos++;
+    while (pos < n) {
+	if ((ch = pick_utf8(s,n,&pos)) < 0) {
+	    /* XXX temporary allow invalid chars */
+	    ch = (int) s[pos];
+	    DEBUGLOG(("insert_buf: Invalid UTF8:%d",ch));
+	    ++pos;
 	}
-	else if (*s == '\t') {
-	    *lc++ = '\t';
-	    for (pos++; pos % 8; pos++)
-	      *lc++ = PAD;
-	}
-	else if (*s == '\n' || *s == '\r') {
-	    write_buf(start, lc - start);
-	    outc('\r'); 
-	    if (*s == '\n')
+	if ((utf8_mode && (ch >= 128 || isprint(ch))) || (ch <= 255 && isprint(ch))) {
+	    DEBUGLOG(("insert_buf: Printable(UTF-8):%d",ch));
+	    lbuf[lpos++] = (Uint32) ch;
+	} else if (ch >= 128) { /* not utf8 mode */
+	    int nc = octal_positions(ch);
+	    lbuf[lpos++] = ((Uint32) ch) | ESCAPED_TAG;
+	    while (nc--) {
+		lbuf[lpos++] = ESCAPED_TAG;
+	    }
+	} else if (ch == '\t') {
+	    int first = 1;
+	    while ((lpos + 1) % 8) {
+		if (first) {
+		    lbuf[lpos++] = (CONTROL_TAG | ((Uint32) '\t'));
+		    first = 0;
+		} else {
+		    lbuf[lpos++] = CONTROL_TAG;
+		}
+	    }
+	} else if (ch == '\n' || ch == '\r') {
+	    write_buf(lbuf + buffpos, lpos - buffpos);
+	    outc('\r');
+	    if (ch == '\n')
 		outc('\n');
-	    if (llen > pos) 
-		memcpy(lbuf, lc, llen - pos);
-	    lc = start = lbuf;
-	    llen = lpos = pos = 0;
-	}
-	    
-	else if (*s >= 128) {	/* "Meta" characters printed as \nnn */
-	    *lc++ = *s;
-	    *lc++ = PAD;
-	    *lc++ = PAD;
-	    *lc++ = PAD;
-	    pos += 4;
-	}
-	else {
-	    *lc++ = *s;
-	    *lc++ = PAD;
-	    pos += 2;
+	    if (llen > lpos) {
+		memcpy(lbuf, lbuf + lpos, llen - lpos);
+	    }
+	    llen -= lpos;
+	    lpos = buffpos = 0;
+	} else {
+	    DEBUGLOG(("insert_buf: Magic(UTF-8):%d",ch));
+	    lbuf[lpos++] = ch | CONTROL_TAG;
+	    lbuf[lpos++] = CONTROL_TAG;
 	}
     }
-    lpos = pos;
-    return lc - start;		/* Return characters written */
+    return lpos - buffpos; /* characters "written" into 
+			      current buffer (may be less due to newline) */
 }
+	
+
 
 /*
  * Write n characters in line buffer starting at s. Be smart about
  * non-printables. Know about pad characters and that \n can never
  * occur normally.
  */
-static int write_buf(byte *s, int n)
+
+static int write_buf(Uint32 *s, int n)
 {
+    byte ubuf[4];
+    int ubytes = 0, i;
+    byte lastput = ' ';
+
     update_cols();
 
     while (n > 0) {
-	if (isprint(*s)) {
-	    outc(*s);
+	if (!(*s & TAG_MASK) ) {
+	    if (utf8_mode) {
+		ubytes = 0;
+		if (put_utf8((int) *s, ubuf, 4, &ubytes) == 0) {
+		    for (i = 0; i < ubytes; ++i) {
+			outc(ubuf[i]);
+		    }
+		    lastput = 0; /* Means the last written character was multibyte UTF8 */
+		}
+	    } else {
+		outc((byte) *s);
+		lastput = (byte) *s;
+	    }
+	    --n;
+	    ++s;
+	}
+	else if (*s == (CONTROL_TAG | ((Uint32) '\t'))) {
+	    outc(lastput = ' ');
 	    --n; s++;
-	}
-	else if (*s == '\t') {
-	    do {
-		outc(' ');
+	    while (n > 0 && *s == CONTROL_TAG) {
+		outc(lastput = ' ');
 		--n; s++;
-	    } while (*s == PAD);
-	}
-	else if (*s >= 128) {
-	    outc('\\');
-	    outc(((*s >> 6) & 07) + '0');
-	    outc(((*s >> 3) & 07) + '0');
-	    outc(((*s >> 0) & 07) + '0');
-	    n -= 4;
-	    s += 4;
-	}
-	else {
+	    }
+	} else if (*s & CONTROL_TAG) {
 	    outc('^');
-	    outc(*s == 0177 ? '?' : *s | 0x40);
+	    outc(lastput = ((byte) ((*s == 0177) ? '?' : *s | 0x40)));
 	    n -= 2;
 	    s += 2;
+	} else if (*s & ESCAPED_TAG) {
+	    Uint32 ch = *s & ~(TAG_MASK);
+	    byte *octbuff;
+	    byte octtmp[256];
+	    int octbytes;
+	    DEBUGLOG(("Escaped: %d", ch));
+	    octbytes = octal_positions(ch);
+	    if (octbytes > 256) {
+		octbuff = driver_alloc(octbytes);
+	    } else {
+		octbuff = octtmp;
+	    }
+	    octbytes = 0;
+	    octal_format(ch, octbuff, &octbytes);
+	     DEBUGLOG(("octbytes: %d", octbytes));
+	    outc('\\');
+	    for (i = 0; i < octbytes; ++i) {
+		outc(lastput = octbuff[i]);
+		DEBUGLOG(("outc: %d", (int) lastput));
+	    }
+	    n -= octbytes+1;
+	    s += octbytes+1;
+	    if (octbuff != octtmp) {
+		driver_free(octbuff);
+	    }
+	} else {
+	    DEBUGLOG(("Very unexpected character %d",(int) *s));
+	    ++n;
+	    --s;
 	}
     }
     /* Check landed in first column of new line and have 'xn' bug. */
     n = s - lbuf;
     if (COL(n) == 0 && xn && n != 0) {
-	outc(n >= llen ? ' ' : *s);
+	if (n >= llen) {
+	    outc(' ');
+	} else if (lastput == 0) { /* A multibyte UTF8 character */
+	    for (i = 0; i < ubytes; ++i) {
+		outc(ubuf[i]);
+	    }
+	} else {
+	    outc(lastput);
+	}
 	move_left(1);
     }
     return TRUE;
 }
+
 
 /* The basic procedure for outputting one character. */
 static int outc(int c)

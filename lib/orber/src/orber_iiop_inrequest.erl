@@ -1,22 +1,22 @@
 %%--------------------------------------------------------------------
-%%<copyright>
-%% <year>1999-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
 %%
 %%--------------------------------------------------------------------
 %% File: orber_iiop_inrequest.erl
@@ -385,7 +385,7 @@ handle_locate_request(Env, Hdr) ->
 %% Func: invoke_request/2
 %%-----------------------------------------------------------------
 invoke_request(Hdr, Par, normal, TypeCodes, #giop_env{iiop_ssl_port = SSLPort, 
-						      partial_security = _PartialSec}) ->
+						      partial_security = PartialSec}) ->
     Result = 
 	case SSLPort of
 	    -1 ->
@@ -401,13 +401,13 @@ invoke_request(Hdr, Par, normal, TypeCodes, #giop_env{iiop_ssl_port = SSLPort,
 						Par, [], 
 						Hdr#request_header.response_expected,
 						Hdr#request_header.service_context);
-%		    {_,_,_,_,_,Flags} when PartialSec == true, 
-%					   ?ORB_FLAG_TEST(Flags, ?ORB_NO_SECURITY) == true ->
-%			corba:request_from_iiop(Hdr#request_header.object_key,
-%						Hdr#request_header.operation,
-%						Par, [], 
-%						Hdr#request_header.response_expected,
-%						Hdr#request_header.service_context);
+		    {_,_,_,_,_,Flags} when PartialSec == true, 
+					   ?ORB_FLAG_TEST(Flags, ?ORB_NO_SECURITY) == true ->
+			corba:request_from_iiop(Hdr#request_header.object_key,
+						Hdr#request_header.operation,
+						Par, [], 
+						Hdr#request_header.response_expected,
+						Hdr#request_header.service_context);
 		    _ ->
 			orber:dbg("[~p] orber_iiop_inrequest:invoke_request(~p)~n"
 				  "SSL do not permit", 

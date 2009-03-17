@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id $
+%% %CopyrightEnd%
 %%
 -module(disk_log).
 
@@ -43,7 +44,7 @@
 %% To be used for debugging only:
 -export([pid2name/1]).
 
--type(dlog_state_error() :: 'ok' | {'error', _}).
+-type dlog_state_error() :: 'ok' | {'error', _}.
 
 -record(state, {queue = [],
 		messages = [],
@@ -69,8 +70,12 @@
 %%% Contract type specifications
 %%%----------------------------------------------------------------------
 
--type(bytes() :: binary() | [byte()]).
--type(notify_return() :: 'ok' | {'error', 'no_such_log'}).
+-type bytes()          :: binary() | [byte()].
+
+-type log()            :: term().  % XXX: refine
+-type file_error()     :: term().  % XXX: refine
+-type filename()       :: string().
+-type invalid_header() :: term().  % XXX: refine
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -81,147 +86,184 @@
 %% There is one process per log.
 %%-----------------------------------------------------------------      
 
--spec(open/1 :: (Args :: dlog_options()) -> any()).
+-type open_error_rsn() :: 'no_such_log'
+                        | {'badarg', term()}
+                        | {'size_mismatch', dlog_size(), dlog_size()}
+                        | {'arg_mismatch', dlog_optattr(), term(), term()}
+                        | {'name_already_open', log()}
+                        | {'open_read_write', log()}
+                        | {'open_read_only', log()}
+                        | {'need_repair', log()}
+                        | {'not_a_log_file', string()}
+                        | {'invalid_index_file', string()}
+                        | {'invalid_header', invalid_header()}
+                        | {'file_error', filename(), file_error()}
+                        | {'node_already_open', log()}.
+-type dist_error_rsn() :: 'nodedown' | open_error_rsn().
+-type ret()            :: {'ok', log()}
+                        | {'repaired', log(), {'recovered', non_neg_integer()},
+		                              {'badbytes', non_neg_integer()}}.
+-type open_ret()       :: ret() | {'error', open_error_rsn()}.
+-type dist_open_ret()  :: {[{node(), ret()}],
+			   [{node(), {'error', dist_error_rsn()}}]}.
+-type all_open_ret()   :: open_ret() | dist_open_ret().
+
+-spec open(Args :: dlog_options()) -> all_open_ret().
 open(A) ->
     disk_log_server:open(check_arg(A, #arg{options = A})).
 
--spec(log/2 :: (Log :: any(), Term :: any()) -> 
-    'ok' | {'error', any()}). 
+-type log_error_rsn() :: 'no_such_log' | 'nonode' | {'read_only_mode', log()}
+                       | {'format_external', log()} | {'blocked_log', log()}
+                       | {'full', log()} | {'invalid_header', invalid_header()}
+                       | {'file_error', filename(), file_error()}.
+
+-spec log(Log :: any(), Term :: term()) -> 'ok' | {'error', log_error_rsn()}.
 log(Log, Term) -> 
     req(Log, {log, term_to_binary(Term)}).
 
--spec(blog/2 :: (Log :: any(), Bytes :: bytes()) -> 
-    'ok' | {'error', any()}).
+-spec blog(Log :: any(), Bytes :: bytes()) -> 'ok' | {'error', log_error_rsn()}.
 blog(Log, Bytes) ->
     req(Log, {blog, check_bytes(Bytes)}).
 
--spec(log_terms/2 :: (Log :: any(), Terms :: [any()]) ->
-    'ok' | {'error', any()}).
+-spec log_terms(Log :: any(), Terms :: [any()]) -> 'ok' | {'error', any()}.
 log_terms(Log, Terms) ->
     Bs = terms2bins(Terms),
     req(Log, {log, Bs}).
 
--spec(blog_terms/2 :: (Log :: any(), Bytes :: [bytes()]) ->
-    'ok' | {'error', any()}).
+-spec blog_terms(Log :: any(), Bytes :: [bytes()]) -> 'ok' | {'error', any()}.
 blog_terms(Log, Bytess) ->
     Bs = check_bytes_list(Bytess, Bytess),
     req(Log, {blog, Bs}).
 
--spec(alog/2 :: (Log :: any(), Term :: any()) -> notify_return()).
+-type notify_ret() :: 'ok' | {'error', 'no_such_log'}.
+
+-spec alog(Log :: any(), Term :: term()) -> notify_ret().
 alog(Log, Term) -> 
     notify(Log, {alog, term_to_binary(Term)}).
 
--spec(alog_terms/2 :: (Log :: any(), Terms :: [any()]) -> notify_return()).
+-spec alog_terms(Log :: any(), Terms :: [term()]) -> notify_ret().
 alog_terms(Log, Terms) ->
     Bs = terms2bins(Terms),
     notify(Log, {alog, Bs}).
 
--spec(balog/2 :: (Log :: any(), Bytes :: bytes()) -> notify_return()).
-balog(Log, Bytes) -> 
+-spec balog(Log :: any(), Bytes :: bytes()) -> notify_ret().
+balog(Log, Bytes) ->
     notify(Log, {balog, check_bytes(Bytes)}).
 
--spec(balog_terms/2 :: (Log :: any(), Bytes :: [bytes()]) -> notify_return()).
+-spec balog_terms(Log :: any(), Bytes :: [bytes()]) -> notify_ret().
 balog_terms(Log, Bytess) ->
     Bs = check_bytes_list(Bytess, Bytess),
     notify(Log, {balog, Bs}).
 
--spec(close/1 :: (Log :: any()) ->
-    'ok' | {'error', any()}).
+-type close_error_rsn() ::'no_such_log' | 'nonode'
+                         | {'file_error', filename(), file_error()}.
+
+-spec close(Log :: any()) -> 'ok' | {'error', close_error_rsn()}.
 close(Log) -> 
     req(Log, close).
 
--spec(lclose/1 :: (Log :: any()) ->
-    'ok' | {'error', any()}).
+-type lclose_error_rsn() :: 'no_such_log'
+                          | {'file_error', filename(), file_error()}.
+
+-spec lclose(Log :: any()) -> 'ok' | {'error', lclose_error_rsn()}.
 lclose(Log) ->
     lclose(Log, node()).
 
--spec(lclose/2 :: (Log :: any(), Node :: node()) ->
-    'ok' | {'error', any()}).
+-spec lclose(Log :: any(), Node :: node()) -> 'ok' | {'error', lclose_error_rsn()}.
 lclose(Log, Node) ->
     lreq(Log, close, Node).
 
--spec(truncate/1 :: (Log :: any()) ->
-    'ok' | {'error', any()}).
+-type trunc_error_rsn() :: 'no_such_log' | 'nonode'
+                         | {'read_only_mode', log()}
+                         | {'blocked_log', log()}
+                         | {'invalid_header', invalid_header()}
+                         | {'file_error', filename(), file_error()}.
+
+-spec truncate(Log :: any()) -> 'ok' | {'error', trunc_error_rsn()}.
 truncate(Log) -> 
     req(Log, {truncate, none, truncate, 1}).
 
--spec(truncate/2 :: (Log :: any(), Head :: any()) ->
-    'ok' | {'error', any()}).
+-spec truncate(Log :: any(), Head :: any()) -> 'ok' | {'error', trunc_error_rsn()}.
 truncate(Log, Head) ->
     req(Log, {truncate, {ok, term_to_binary(Head)}, truncate, 2}).
 
--spec(btruncate/2 :: (Log :: any(), Head :: bytes()) ->
-    'ok' | {'error', any()}).
+-spec btruncate(Log :: any(), Head :: bytes()) -> 'ok' | {'error', trunc_error_rsn()}.
 btruncate(Log, Head) ->
     req(Log, {truncate, {ok, check_bytes(Head)}, btruncate, 2}).
 
--spec(reopen/2 :: (Log :: any(), Filename :: string()) ->
-    'ok' | {'error', any()}).
+-spec reopen(Log :: any(), Filename :: string()) -> 'ok' | {'error', any()}.
 reopen(Log, NewFile) ->
     req(Log, {reopen, NewFile, none, reopen, 2}).
 
--spec(reopen/3 :: (Log :: any(), Filename :: string(), Head :: any()) ->
-    'ok' | {'error', any()}).
+-spec reopen(Log :: any(), Filename :: string(), Head :: any()) ->
+    'ok' | {'error', any()}.
 reopen(Log, NewFile, NewHead) ->
     req(Log, {reopen, NewFile, {ok, term_to_binary(NewHead)}, reopen, 3}).
 
--spec(breopen/3 :: (Log :: any(), Filename :: string(), Head :: bytes()) ->
-    'ok' | {'error', any()}).
+-spec breopen(Log :: any(), Filename :: string(), Head :: bytes()) ->
+    'ok' | {'error', any()}.
 breopen(Log, NewFile, NewHead) ->
     req(Log, {reopen, NewFile, {ok, check_bytes(NewHead)}, breopen, 3}).
 
--spec(inc_wrap_file/1 :: (Log :: any()) ->
-    'ok' | {'error', any()}).
+-type inc_wrap_error_rsn() :: 'no_such_log' | 'nonode'
+                            | {'read_only_mode', log()}
+                            | {'blocked_log', log()} | {'halt_log', log()}
+                            | {'invalid_header', invalid_header()}
+                            | {'file_error', filename(), file_error()}.
+
+-spec inc_wrap_file(Log :: any()) -> 'ok' | {'error', inc_wrap_error_rsn()}.
 inc_wrap_file(Log) -> 
     req(Log, inc_wrap_file).
 
--spec(change_size/2 :: (Log :: any(), Size :: integer()) ->
-    'ok' | {'error', any()}).
+-spec change_size(Log :: any(), Size :: dlog_size()) -> 'ok' | {'error', any()}.
 change_size(Log, NewSize) -> 
     req(Log, {change_size, NewSize}).
 
--spec(change_notify/3 :: (Log :: any(), Pid :: pid(), Notify :: bool()) ->
-    'ok' | {'error', any()}).
+-spec change_notify(Log :: any(), Pid :: pid(), Notify :: bool()) ->
+    'ok' | {'error', any()}.
 change_notify(Log, Pid, NewNotify) -> 
     req(Log, {change_notify, Pid, NewNotify}).
 
--spec(change_header/2 :: (Log :: any(), Head :: {atom(), any()}) ->
-    'ok' | {'error', any()}).
+-spec change_header(Log :: any(), Head :: {atom(), any()}) ->
+    'ok' | {'error', any()}.
 change_header(Log, NewHead) ->
     req(Log, {change_header, NewHead}).
 
--spec(sync/1 :: (Log :: any()) ->
-    'ok' | {'error', any()}).
+-type sync_error_rsn() :: 'no_such_log' | 'nonode' | {'read_only_mode', log()}
+                        | {'blocked_log', log()}
+                        | {'file_error', filename(), file_error()}.
+
+-spec sync(Log :: any()) -> 'ok' | {'error', sync_error_rsn()}.
 sync(Log) -> 
     req(Log, sync).
 
--spec(block/1 :: (Log :: any()) ->
-    'ok' | {'error', any()}).
+-type block_error_rsn() :: 'no_such_log' | 'nonode' | {'blocked_log', log()}.
+
+-spec block(Log :: any()) -> 'ok' | {'error', block_error_rsn()}.
 block(Log) -> 
     block(Log, true).
 
--spec(block/2 :: (Log :: any(), QueueLogRecords :: bool()) ->
-    'ok' | {'error', any()}).
+-spec block(Log :: any(), QueueLogRecords :: bool()) -> 'ok' | {'error', any()}.
 block(Log, QueueLogRecords) -> 
     req(Log, {block, QueueLogRecords}).
 
--spec(unblock/1 :: (Log :: any()) ->
-    'ok' | {'error', any()}).
-unblock(Log) -> 
+-type unblock_error_rsn() :: 'no_such_log' | 'nonode'
+                           | {'not_blocked', log()}
+                           | {'not_blocked_by_pid', log()}.
+
+-spec unblock(Log :: any()) -> 'ok' | {'error', unblock_error_rsn()}.
+unblock(Log) ->
     req(Log, unblock).
 
--spec(format_error/1 :: (Error :: any()) ->
-    string()).
+-spec format_error(Error :: any()) -> string().
 format_error(Error) ->
     do_format_error(Error).
 
--spec(info/1 :: (Log :: any()) ->
-    [{atom(), any()}] | {'error', any()}).
+-spec info(Log :: any()) -> [{atom(), any()}] | {'error', any()}.
 info(Log) -> 
     sreq(Log, info).
 
--spec(pid2name/1 :: (Pid :: pid()) ->
-    {'ok', any()} | 'undefined').	      
+-spec pid2name(Pid :: pid()) -> {'ok', log()} | 'undefined'.
 pid2name(Pid) ->
     disk_log_server:start(),
     case ets:lookup(?DISK_LOG_PID_TABLE, Pid) of
@@ -233,13 +275,13 @@ pid2name(Pid) ->
 %% It retuns a {Cont2, ObjList} | eof | {error, Reason}
 %% The initial continuation is the atom 'start'
 
--spec(chunk/2 :: (Log :: any(), Cont :: any()) ->
-    {'error', any()} | 'eof' | {any(), [any()]} | {any(), [any()], integer()}).
+-spec chunk(Log :: any(), Cont :: any()) ->
+    {'error', any()} | 'eof' | {any(), [any()]} | {any(), [any()], integer()}.
 chunk(Log, Cont) ->
     chunk(Log, Cont, infinity).
 
--spec(chunk/3 :: (Log :: any(), Cont :: any(), N :: pos_integer() | 'infinity') ->
-    {'error', any()} | 'eof' | {any(), [any()]} | {any(), [any()], integer()}).
+-spec chunk(Log :: any(), Cont :: any(), N :: pos_integer() | 'infinity') ->
+    {'error', any()} | 'eof' | {any(), [any()]} | {any(), [any()], integer()}.
 chunk(Log, Cont, infinity) ->
     %% There cannot be more than ?MAX_CHUNK_SIZE terms in a chunk.
     ichunk(Log, Cont, ?MAX_CHUNK_SIZE);
@@ -299,19 +341,19 @@ ichunk_bad_end([B | Bs], Mode, Log, C, Bad, A) ->
 			 Pos when is_integer(Pos) -> Pos-Reread;
 			 {FileNo, Pos} -> {FileNo, Pos-Reread}
 		     end,
-	    NewBad = Bad + ?HEADERSZ, % the whole header is deemed bad
-	    {C#continuation{pos = NewPos, b = B}, lists:reverse(A), NewBad};
+	    NewBad = Bad + byte_size(B),
+	    {C#continuation{pos = NewPos, b = []}, lists:reverse(A), NewBad};
 	T ->
 	    ichunk_bad_end(Bs, Mode, Log, C, Bad, [T | A])
     end.
 
--spec(bchunk/2 :: (Log :: any(), Cont :: any()) ->
-    {'error', any()} | 'eof' | {any(), [binary()]} | {any(), [binary()], integer()}).
+-spec bchunk(Log :: any(), Cont :: any()) ->
+    {'error', any()} | 'eof' | {any(), [binary()]} | {any(), [binary()], integer()}.
 bchunk(Log, Cont) ->
     bchunk(Log, Cont, infinity).
 
--spec(bchunk/3 :: (Log :: any(), Cont :: any(), N :: 'infinity' | pos_integer()) ->
-    {'error', any()} | 'eof' | {any(), [binary()]} | {any(), [binary()], integer()}).
+-spec bchunk(Log :: any(), Cont :: any(), N :: 'infinity' | pos_integer()) ->
+    {'error', any()} | 'eof' | {any(), [binary()]} | {any(), [binary()], integer()}.
 bchunk(Log, Cont, infinity) ->
     %% There cannot be more than ?MAX_CHUNK_SIZE terms in a chunk.
     bichunk(Log, Cont, ?MAX_CHUNK_SIZE);
@@ -321,22 +363,21 @@ bchunk(Log, Cont, N) when is_integer(N), N > 0 ->
 bichunk(Log, start, N) ->
     R = sreq(Log, {chunk, 0, [], N}),
     bichunk_end(R);
-bichunk(_Log, More, N) when is_record(More, continuation) ->
-    R = req2(More#continuation.pid, 
-	     {chunk, More#continuation.pos, More#continuation.b, N}),
+bichunk(_Log, #continuation{pid = Pid, pos = Pos, b = B}, N) ->
+    R = req2(Pid, {chunk, Pos, B, N}),
     bichunk_end(R);
 bichunk(_Log, _, _) ->
     {error, {badarg, continuation}}.
 
-bichunk_end({C, R}) when is_record(C, continuation) ->
+bichunk_end({C = #continuation{}, R}) ->
     {C, lists:reverse(R)};
-bichunk_end({C, R, Bad}) when is_record(C, continuation) ->
+bichunk_end({C = #continuation{}, R, Bad}) ->
     {C, lists:reverse(R), Bad};
 bichunk_end(R) ->
     R.
 
--spec(chunk_step/3 :: (Log :: any(), Cont :: any(), N :: integer()) ->
-    {'ok', any()} | {'error', any()}).
+-spec chunk_step(Log :: any(), Cont :: any(), N :: integer()) ->
+    {'ok', any()} | {'error', any()}.
 chunk_step(Log, Cont, N) when is_integer(N) ->
     ichunk_step(Log, Cont, N).
 
@@ -347,14 +388,14 @@ ichunk_step(_Log, More, N) when is_record(More, continuation) ->
 ichunk_step(_Log, _, _) ->
     {error, {badarg, continuation}}.
 
--spec(chunk_info/1 :: (More :: any()) ->
-    [{'node', node()},...] | {'error', {'no_continuation', any()}}).
+-spec chunk_info(More :: any()) ->
+    [{'node', node()},...] | {'error', {'no_continuation', any()}}.
 chunk_info(More = #continuation{}) ->
    [{node, node(More#continuation.pid)}];
 chunk_info(BadCont) ->
    {error, {no_continuation, BadCont}}.
 
--spec(accessible_logs/0 :: () -> {[_], [_]}).
+-spec accessible_logs() -> {[_], [_]}.
 accessible_logs() ->
     disk_log_server:accessible_logs().
 
@@ -362,7 +403,7 @@ istart_link(Server) ->
     {ok, proc_lib:spawn_link(disk_log, init, [self(), Server])}.
 
 %% Only for backwards compatibility, could probably be removed.
--spec(start/0 :: () -> 'ok').
+-spec start() -> 'ok'.
 start() ->
     disk_log_server:start().
 
@@ -372,7 +413,7 @@ internal_open(Pid, A) ->
 %%% ll_open() and ll_close() are used by disk_log_h.erl, a module not
 %%% (yet) in Erlang/OTP.
 
-%% -spec(ll_open/1 :: (dlog_options()) -> {'ok', Res :: _, #log{}, Cnt :: _} | Error).
+%% -spec ll_open(dlog_options()) -> {'ok', Res :: _, #log{}, Cnt :: _} | Error.
 ll_open(A) ->
     case check_arg(A, #arg{options = A}) of
 	{ok, L} -> do_open(L);
@@ -383,7 +424,7 @@ ll_open(A) ->
 ll_close(Log) ->
     close_disk_log2(Log).
 
-check_arg([], Res) -> 
+check_arg([], Res) ->
     Ret = case Res#arg.head of
 	      none ->
 		  {ok, Res};
@@ -981,7 +1022,7 @@ do_close2(_L, S) ->
 system_continue(_Parent, _, State) ->
     loop(State).
 
--spec(system_terminate/4 :: (_, _, _, #state{}) -> no_return()).
+-spec system_terminate(_, _, _, #state{}) -> no_return().
 system_terminate(Reason, _Parent, _, State) ->
     _ = do_stop(State),
     exit(Reason).
@@ -996,7 +1037,7 @@ system_code_change(State, _Module, _OldVsn, _Extra) ->
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
--spec(do_exit/4 :: (#state{}, pid(), _, _) -> no_return()).
+-spec do_exit(#state{}, pid(), _, _) -> no_return().
 do_exit(S, From, Message0, Reason) ->
     R = do_stop(S),
     Message = case S#state.cache_error of
@@ -1010,7 +1051,7 @@ do_exit(S, From, Message0, Reason) ->
     ?PROFILE(ep:done()),
     exit(Reason).
 
--spec(do_fast_exit/3 :: (#state{}, pid(), _) -> no_return()).
+-spec do_fast_exit(#state{}, pid(), _) -> no_return().
 do_fast_exit(S, Server, Message) ->
     _ = do_stop(S),
     Server ! {disk_log, self(), Message},
@@ -1085,7 +1126,7 @@ rename_file([Ext|Exts], File, NewFile, Res) ->
 rename_file([], _File, _NewFiles, Res) -> Res.
 
 %% "Old" error messages have been kept, arg_mismatch has been added.
-%%-spec(compare_arg/4 :: (dlog_options(), #arg{}, 
+%%-spec compare_arg(dlog_options(), #arg{}, 
 compare_arg([], _A, none, _OrigHead) ->
     % no header option given
     ok;
@@ -1103,8 +1144,8 @@ compare_arg([{Attr, Val} | Tail], A, Head, OrigHead) ->
 	    Error
     end.
 
--spec(compare_arg/3 :: (atom(), _, #arg{}) ->
-	     'ok' | {'not_ok', _} | {'error', {atom(), _}}).
+-spec compare_arg(atom(), _, #arg{}) ->
+	     'ok' | {'not_ok', _} | {'error', {atom(), _}}.
 compare_arg(file, F, A) when F =/= A#arg.file ->
     {error, {name_already_open, A#arg.name}};
 compare_arg(mode, read_only, A) when A#arg.mode =:= read_write ->
@@ -1130,7 +1171,7 @@ do_open(A) ->
 	     mode = A#arg.mode,
 	     version = A#arg.version},
     do_open2(L, A).
-	    
+
 mk_head({head, Term}, internal) -> {ok, term_to_binary(Term)};
 mk_head({head, Bytes}, external) -> {ok, check_bytes(Bytes)};
 mk_head(H, _) -> H.
@@ -1249,7 +1290,7 @@ do_open2(L, #arg{type = halt, format = internal, name = Name,
 		 file = FName, repair = Repair, size = Size, mode = Mode}) ->
     case catch disk_log_1:int_open(FName, Repair, Mode, L#log.head) of
 	{ok, {_Alloc, FdC, {NoItems, _NoBytes}, FileSize}} ->
-            Halt = #halt{fdc = FdC, curB = FileSize, size =Size},
+            Halt = #halt{fdc = FdC, curB = FileSize, size = Size},
 	    {ok, {ok, Name}, L#log{format_type = halt_int, extra = Halt}, 
 	     NoItems};
 	{repaired, FdC, Rec, Bad, FileSize} ->
@@ -1313,7 +1354,8 @@ close_disk_log(L) ->
     erase(log),
     R.
 
-%% -> closed | throw(Error)
+-spec close_disk_log2(#log{}) -> 'closed'. % | throw(Error)
+
 close_disk_log2(L) ->
     case L of
 	#log{format_type = halt_int, mode = Mode, extra = Halt} ->
@@ -1508,7 +1550,7 @@ do_unblock(L, S) ->
     [] = S#state.messages, % assertion
     S#state{queue = [], messages = lists:reverse(S#state.queue)}.
 
--spec(do_log/2 :: (#log{}, [binary()]) -> integer() | {'error', _, integer()}).
+-spec do_log(#log{}, [binary()]) -> integer() | {'error', _, integer()}.
 
 do_log(L, B) when L#log.type =:= halt ->
     #log{format = Format, extra = Halt} = L,
@@ -1764,7 +1806,7 @@ nearby_pid(Log, Node) ->
 	    get_near_pid(Pids, Node)
     end.
 
--spec(get_near_pid/2 :: ([pid(),...], node()) -> pid()).
+-spec get_near_pid([pid(),...], node()) -> pid().
 
 get_near_pid([Pid | _], Node) when node(Pid) =:= Node -> Pid;
 get_near_pid([Pid], _ ) -> Pid;
@@ -1850,7 +1892,7 @@ cache_error(S, Pids) ->
 state_ok(S) ->
     state_err(S, ok).
 
--spec(state_err/2 :: (#state{}, dlog_state_error()) -> #state{}).
+-spec state_err(#state{}, dlog_state_error()) -> #state{}.
 
 state_err(S, Err) when S#state.error_status =:= Err -> S;
 state_err(S, Err) ->

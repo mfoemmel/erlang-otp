@@ -1,3 +1,21 @@
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2004-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved online at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * %CopyrightEnd%
+ */
 /* $Id$
  *
  * List all non architecture-specific BIFs and primops, and
@@ -181,6 +199,7 @@ standard_bif_interface_1(nbif_conv_big_to_float, hipe_conv_big_to_float)
 standard_bif_interface_2(nbif_rethrow, hipe_rethrow)
 standard_bif_interface_3(nbif_find_na_or_make_stub, hipe_find_na_or_make_stub)
 standard_bif_interface_2(nbif_nonclosure_address, hipe_nonclosure_address)
+nocons_nofail_primop_interface_0(nbif_fclearerror_error, hipe_fclearerror_error)
 
 /*
  * Mbox primops with implicit P parameter.
@@ -202,6 +221,10 @@ noproc_primop_interface_2(nbif_eq_2, eq)
 nofail_primop_interface_3(nbif_bs_get_integer_2, erts_bs_get_integer_2)
 nofail_primop_interface_3(nbif_bs_get_binary_2, erts_bs_get_binary_2)
 nofail_primop_interface_3(nbif_bs_get_float_2, erts_bs_get_float_2)
+standard_bif_interface_3(nbif_bs_put_utf8, hipe_bs_put_utf8)
+standard_bif_interface_3(nbif_bs_put_utf16be, hipe_bs_put_utf16be)
+standard_bif_interface_3(nbif_bs_put_utf16le, hipe_bs_put_utf16le)
+standard_bif_interface_1(nbif_bs_validate_unicode, hipe_bs_validate_unicode)
 
 /*
  * Bit-syntax primops without any P parameter.
@@ -209,6 +232,11 @@ nofail_primop_interface_3(nbif_bs_get_float_2, erts_bs_get_float_2)
  */
 noproc_primop_interface_1(nbif_bs_allocate, hipe_bs_allocate)
 noproc_primop_interface_2(nbif_bs_reallocate, hipe_bs_reallocate)
+noproc_primop_interface_1(nbif_bs_utf8_size, hipe_bs_utf8_size)
+noproc_primop_interface_1(nbif_bs_get_utf8, erts_bs_get_utf8)
+noproc_primop_interface_1(nbif_bs_utf16_size, hipe_bs_utf16_size)
+noproc_primop_interface_2(nbif_bs_get_utf16, erts_bs_get_utf16)
+noproc_primop_interface_2(nbif_bs_validate_unicode_retract, hipe_bs_validate_unicode_retract)
 
 /*
  * Bit-syntax primops. The ERTS_SMP runtime system requires P,

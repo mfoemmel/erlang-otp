@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 %% Author: Lennart Öhman, lennart.ohman@st.se
 %%
@@ -210,7 +211,7 @@ interpret_cmd_files_2(_,_,{eof,_},_,_) ->    % End of file.
 
 interpret_cmd_files_3(Bindings,Exprs,Translations,Dbg) ->
     case catch inviso_rt_lib:transform(Exprs,Translations) of
-	NewExprs when list(NewExprs) ->     % We may have translated the API.
+	NewExprs when is_list(NewExprs) ->     % We may have translated the API.
 	    case catch erl_eval:exprs(NewExprs,Bindings) of
 		{'EXIT',Reason} ->
 		    inviso_rt_lib:debug(Dbg,exprs,[Exprs,Bindings,{'EXIT',Reason}]),
@@ -226,7 +227,7 @@ interpret_cmd_files_3(Bindings,Exprs,Translations,Dbg) ->
 %% Help function adding variables to a bindings structure. If the variable already
 %% is assigned in the structure, it will be overridden. Returns a new
 %% bindings structure.
-join_local_and_global_vars([{Var,Val}|Rest],Bindings) when atom(Var) ->
+join_local_and_global_vars([{Var,Val}|Rest],Bindings) when is_atom(Var) ->
     join_local_and_global_vars(Rest,erl_eval:add_binding(Var,Val,Bindings));
 join_local_and_global_vars([_|Rest],Bindings) ->
     join_local_and_global_vars(Rest,Bindings);

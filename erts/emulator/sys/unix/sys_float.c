@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2001-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifdef HAVE_CONFIG_H
@@ -35,7 +36,7 @@ erts_sys_init_float(void)
 # endif
 }
 
-static ERTS_INLINE void set_current_fp_exception(void)
+static ERTS_INLINE void set_current_fp_exception(unsigned long pc)
 {
     /* nothing to do */
 }
@@ -55,21 +56,21 @@ static void erts_init_fp_exception(void)
 
 void erts_thread_init_fp_exception(void)
 {
-    int *fpe = erts_alloc(ERTS_ALC_T_FP_EXCEPTION, sizeof(*fpe));
+    unsigned long *fpe = erts_alloc(ERTS_ALC_T_FP_EXCEPTION, sizeof(*fpe));
     erts_tsd_set(fpe_key, fpe);
 }
 
-static ERTS_INLINE volatile int *erts_thread_get_fp_exception(void)
+static ERTS_INLINE volatile unsigned long *erts_thread_get_fp_exception(void)
 {
-    return (volatile int*)erts_tsd_get(fpe_key);
+    return (volatile unsigned long*)erts_tsd_get(fpe_key);
 }
 #else /* !SMP */
 #define erts_init_fp_exception()	/*empty*/
-static volatile int fp_exception;
+static volatile unsigned long fp_exception;
 #define erts_thread_get_fp_exception()	(&fp_exception)
 #endif /* SMP */
 
-volatile int *erts_get_current_fp_exception(void)
+volatile unsigned long *erts_get_current_fp_exception(void)
 {
     Process *c_p;
 
@@ -79,11 +80,23 @@ volatile int *erts_get_current_fp_exception(void)
     return erts_thread_get_fp_exception();
 }
 
-static void set_current_fp_exception(void)
+static void set_current_fp_exception(unsigned long pc)
 {
-    volatile int *fpexnp = erts_get_current_fp_exception();
+    volatile unsigned long *fpexnp = erts_get_current_fp_exception();
     ASSERT(fpexnp != NULL);
-    *fpexnp = 1;
+    *fpexnp = pc;
+}
+
+void erts_fp_check_init_error(volatile unsigned long *fpexnp)
+{
+    char buf[64];
+    snprintf(buf, sizeof buf, "ERTS_FP_CHECK_INIT at %p: detected unhandled FPE at %p\r\n",
+	     __builtin_return_address(0), (void*)*fpexnp);
+    write(2, buf, strlen(buf));
+    *fpexnp = 0;
+#if defined(__i386__) || defined(__x86_64__)
+    erts_restore_fpu();
+#endif
 }
 
 /* Is there no standard identifier for Darwin/MacOSX ? */
@@ -260,6 +273,8 @@ void erts_restore_fpu(void)
 {
     __asm__ __volatile__("fninit");
     unmask_x87();
+    if (cpu_has_sse2())
+	unmask_sse2();
 }
 
 #elif defined(__sparc__) && defined(__linux__)
@@ -444,145 +459,6 @@ static int mask_fpe(void)
 
 #endif
 
-#if (defined(__linux__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__x86_64__))) || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
-#if !(defined(__OpenBSD__) && defined(__x86_64__))
-#include <ucontext.h>
-#endif
-
-#if defined(__linux__) && defined(__x86_64__)
-#define mc_pc(mc)	((mc)->gregs[REG_RIP])
-typedef mcontext_t *erts_mcontext_ptr_t;
-#elif defined(__linux__) && defined(__i386__)
-#define mc_pc(mc)	((mc)->gregs[REG_EIP])
-typedef mcontext_t *erts_mcontext_ptr_t;
-#elif defined(__DARWIN__) && defined(__i386__)
-#ifdef DARWIN_MODERN_MCONTEXT
-#define mc_pc(mc)	((mc)->__ss.__eip)
-#else
-#define mc_pc(mc)	((mc)->ss.eip)
-#endif
-typedef mcontext_t erts_mcontext_ptr_t;
-#elif defined(__DARWIN__) && defined(__x86_64__)
-#ifdef DARWIN_MODERN_MCONTEXT
-#define mc_pc(mc)	((mc)->__ss.__rip)
-#else
-#define mc_pc(mc)	((mc)->ss.rip)
-#endif
-typedef mcontext_t erts_mcontext_ptr_t;
-#elif defined(__FreeBSD__) && defined(__x86_64__)
-#define mc_pc(mc)	((mc)->mc_rip)
-typedef mcontext_t *erts_mcontext_ptr_t;
-#elif defined(__FreeBSD__) && defined(__i386__)
-#define mc_pc(mc)	((mc)->mc_eip)
-typedef mcontext_t *erts_mcontext_ptr_t;
-#elif defined(__OpenBSD__) && defined(__x86_64__)
-#define mc_pc(mc)	((mc)->sc_rip)
-typedef struct sigcontext *erts_mcontext_ptr_t;
-#elif defined(__sun__) && defined(__x86_64__)
-#define mc_pc(mc)	((mc)->gregs[REG_RIP])
-typedef mcontext_t *erts_mcontext_ptr_t;
-#endif
-
-static void skip_sse2_insn(erts_mcontext_ptr_t mc)
-{
-    unsigned char *pc0 = (unsigned char*)mc_pc(mc);
-    unsigned char *pc = pc0;
-    unsigned int opcode;
-    unsigned int nr_skip_bytes;
-
-    opcode = *pc++;
-    switch (opcode) {
-    case 0x66: case 0xF2: case 0xF3:
-	opcode = *pc++;
-    }
-#if defined(__x86_64__)
-    if ((opcode & 0xF0) == 0x40)
-	opcode = *pc++;
-#endif
-    do {
-	switch (opcode) {
-	case 0x0F:
-	    opcode = *pc++;
-	    switch (opcode) {
-	    case 0x2A: /* cvtpi2ps,cvtsi2sd,cvtsi2ss /r */
-	    case 0x2C: /* cvttpd2pi,cvttps2pi,cvttsd2si,cvtss2si /r */
-	    case 0x2D: /* cvtpd2pi,cvtps2pi,cvtsd2si,cvtss2si /r */
-	    case 0x2E: /* ucomisd,ucomiss /r */
-	    case 0x2F: /* comisd,comiss /r */
-	    case 0x51: /* sqrtpd,sqrtps,sqrtsd,sqrtss /r */
-	    case 0x58: /* addpd,addps,addsd,addss /r */
-	    case 0x59: /* mulpd,mulps,mulsd,mulss /r */
-	    case 0x5A: /* cvtpd2ps,cvtps2pd,cvtsd2ss,cvtss2sd /r */
-	    case 0x5B: /* cvtdq2ps,cvtps2dq,cvttps2dq /r */
-	    case 0x5C: /* subpd,subps,subsd,subss /r */
-	    case 0x5D: /* minpd,minps,minsd,minss /r */
-	    case 0x5E: /* divpd,divps,divsd,divss /r */
-	    case 0x5F: /* maxpd,maxps,maxsd,maxss /r */
-	    case 0xE6: /* cvtpd2dq,cvttpd2dq /r */
-		nr_skip_bytes = 0;
-		continue;
-	    case 0xC2: /* cmppd,cmpps,cmpsd,cmpss /r /ib */
-		nr_skip_bytes = 1;
-		continue;
-	    }
-	}
-	fprintf(stderr, "%s: unexpected code at %p:", __FUNCTION__, pc0);
-	do {
-	    fprintf(stderr, " %02X", *pc0++);
-	} while (pc0 < pc);
-	fprintf(stderr, "\r\n");
-	abort();
-    } while (0);
-
-    /* Past the opcode. Parse and skip the mod/rm and sib bytes. */
-    opcode = *pc++;
-    switch ((opcode >> 6) & 3) {	/* inspect mod */
-    case 0:
-	switch (opcode & 7) {		/* inspect r/m */
-	case 4:
-	    opcode = *pc++;		/* sib */
-	    switch (opcode & 7) {	/* inspect base */
-	    case 5:
-		nr_skip_bytes += 4;	/* disp32 */
-		break;
-	    }
-	    break;
-	case 5:
-	    nr_skip_bytes += 4;		/* disp32 */
-	    break;
-	}
-	break;
-    case 1:
-	nr_skip_bytes += 1;		/* disp8 */
-	switch (opcode & 7) {		/* inspect r/m */
-	case 4:
-	    pc += 1;			/* sib */
-	    break;
-	}
-	break;
-    case 2:
-	nr_skip_bytes += 4;		/* disp32 */
-	switch (opcode & 7) {		/* inspect r/m */
-	case 4:
-	    pc += 1;			/* sib */
-	    break;
-	}
-	break;
-    case 3:
-	break;
-    }
-
-    /* Past mod/rm and sib. Skip any disp, and /ib for cmp{pd,ps,sd,ss}. */
-    pc += nr_skip_bytes;
-
-    /* The longest instruction handled above is 11 bytes. So there is
-       no need to check the 15-byte instruction length limit here. */
-
-    /* Done. */
-    mc_pc(mc) = (long)pc;
-}
-#endif /* (__linux__ && (__x86_64__ || __i386__)) || (__DARWIN__ && __i386__) || (__FreeBSD__ && (__x86_64__ || __i386__)) || (__OpenBSD__ && __x86_64__) || (__sun__ && __x86_64__) */
-
 #if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__x86_64__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
 
 #if defined(__linux__) && defined(__i386__)
@@ -606,41 +482,67 @@ static void skip_sse2_insn(erts_mcontext_ptr_t mc)
 #endif
 #include <string.h>
 
+#if defined(__linux__) && defined(__x86_64__)
+#define mc_pc(mc)	((mc)->gregs[REG_RIP])
+#elif defined(__linux__) && defined(__i386__)
+#define mc_pc(mc)	((mc)->gregs[REG_EIP])
+#elif defined(__DARWIN__) && defined(__i386__)
+#ifdef DARWIN_MODERN_MCONTEXT
+#define mc_pc(mc)	((mc)->__ss.__eip)
+#else
+#define mc_pc(mc)	((mc)->ss.eip)
+#endif
+#elif defined(__DARWIN__) && defined(__x86_64__)
+#ifdef DARWIN_MODERN_MCONTEXT
+#define mc_pc(mc)	((mc)->__ss.__rip)
+#else
+#define mc_pc(mc)	((mc)->ss.rip)
+#endif
+#elif defined(__FreeBSD__) && defined(__x86_64__)
+#define mc_pc(mc)	((mc)->mc_rip)
+#elif defined(__FreeBSD__) && defined(__i386__)
+#define mc_pc(mc)	((mc)->mc_eip)
+#elif defined(__OpenBSD__) && defined(__x86_64__)
+#define mc_pc(mc)	((mc)->sc_rip)
+#elif defined(__sun__) && defined(__x86_64__)
+#define mc_pc(mc)	((mc)->gregs[REG_RIP])
+#endif
+
 static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 {
     ucontext_t *uc = puc;
+    unsigned long pc;
+
 #if defined(__linux__)
 #if defined(__x86_64__)
     mcontext_t *mc = &uc->uc_mcontext;
     fpregset_t fpstate = mc->fpregs;
+    pc = mc_pc(mc);
     /* A failed SSE2 instruction will restart. To avoid
-       looping, we must update RIP to skip the instruction
-       (leaving garbage in the destination).
-       The alternative is to mask SSE2 exceptions now and
-       unmask them again later in erts_check_fpe(), but that
-       relies too much on other code being cooperative. */
-    if (fpstate->mxcsr & 0x000D) { /* OE|ZE|IE; see unmask_sse2() */
-	fpstate->mxcsr &= ~(0x003F|0x0680);
-	skip_sse2_insn(mc);
-    }
+       looping we mask SSE2 exceptions now and unmask them
+       again later in erts_check_fpe()/erts_restore_fpu().
+       On RISCs we update PC to skip the failed instruction,
+       but the ever increasing complexity of the x86 instruction
+       set encoding makes that a poor solution here. */
+    fpstate->mxcsr = 0x1F80;
     fpstate->swd &= ~0xFF;
 #elif defined(__i386__)
     mcontext_t *mc = &uc->uc_mcontext;
     fpregset_t fpstate = mc->fpregs;
-    if ((fpstate->status >> 16) == X86_FXSR_MAGIC &&
-	((struct _fpstate*)fpstate)->mxcsr & 0x000D) {
-	((struct _fpstate*)fpstate)->mxcsr &= ~(0x003F|0x0680);
-	skip_sse2_insn(mc);
-    }
+    pc = mc_pc(mc);
+    if ((fpstate->status >> 16) == X86_FXSR_MAGIC)
+	((struct _fpstate*)fpstate)->mxcsr = 0x1F80;
     fpstate->sw &= ~0xFF;
 #elif defined(__sparc__) && defined(__arch64__)
     /* on SPARC the 3rd parameter points to a sigcontext not a ucontext */
     struct sigcontext *sc = (struct sigcontext*)puc;
+    pc = sc->sigc_regs.tpc;
     sc->sigc_regs.tpc = sc->sigc_regs.tnpc;
     sc->sigc_regs.tnpc += 4;
 #elif defined(__sparc__)
     /* on SPARC the 3rd parameter points to a sigcontext not a ucontext */
     struct sigcontext *sc = (struct sigcontext*)puc;
+    pc = sc->si_regs.pc;
     sc->si_regs.pc = sc->si_regs.npc;
     sc->si_regs.npc = (unsigned long)sc->si_regs.npc + 4;
 #elif defined(__powerpc__)
@@ -651,47 +553,41 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     mcontext_t *mc = uc->uc_mcontext.uc_regs;
     unsigned long *regs = &mc->gregs[0];
 #endif
+    pc = regs[PT_NIP];
     regs[PT_NIP] += 4;
     regs[PT_FPSCR] = 0x80|0x40|0x10;	/* VE, OE, ZE; not UE or XE */
 #endif
 #elif defined(__DARWIN__) && (defined(__i386__) || defined(__x86_64__))
 #ifdef DARWIN_MODERN_MCONTEXT
     mcontext_t mc = uc->uc_mcontext;
-    if (mc->__fs.__fpu_mxcsr & 0x000D) {
-	mc->__fs.__fpu_mxcsr &= ~(0x003F|0x0680);
-	skip_sse2_insn(mc);
-    }
+    pc = mc_pc(mc);
+    mc->__fs.__fpu_mxcsr = 0x1F80;
     *(unsigned short *)&mc->__fs.__fpu_fsw &= ~0xFF;
 #else
     mcontext_t mc = uc->uc_mcontext;
-    if (mc->fs.fpu_mxcsr & 0x000D) {
-	mc->fs.fpu_mxcsr &= ~(0x003F|0x0680);
-	skip_sse2_insn(mc);
-    }
+    pc = mc_pc(mc);
+    mc->fs.fpu_mxcsr = 0x1F80;
     *(unsigned short *)&mc->fs.fpu_fsw &= ~0xFF;
 #endif /* DARWIN_MODERN_MCONTEXT */
 #elif defined(__DARWIN__) && defined(__ppc__)
     mcontext_t mc = uc->uc_mcontext;
+    pc = mc->ss.srr0;
     mc->ss.srr0 += 4;
     mc->fs.fpscr = 0x80|0x40|0x10;
 #elif defined(__FreeBSD__) && defined(__x86_64__)
     mcontext_t *mc = &uc->uc_mcontext;
     struct savefpu *savefpu = (struct savefpu*)&mc->mc_fpstate;
     struct envxmm *envxmm = &savefpu->sv_env;
-    if (envxmm->en_mxcsr & 0x000D) {
-	envxmm->en_mxcsr &= ~(0x003F|0x0680);
-	skip_sse2_insn(mc);
-    }
+    pc = mc_pc(mc);
+    envxmm->en_mxcsr = 0x1F80;
     envxmm->en_sw &= ~0xFF;
 #elif defined(__FreeBSD__) && defined(__i386__)
     mcontext_t *mc = &uc->uc_mcontext;
     union savefpu *savefpu = (union savefpu*)&mc->mc_fpstate;
+    pc = mc_pc(mc);
     if (mc->mc_fpformat == _MC_FPFMT_XMM) {
 	struct envxmm *envxmm = &savefpu->sv_xmm.sv_env;
-	if (envxmm->en_mxcsr & 0x000D) {
-	    envxmm->en_mxcsr &= ~(0x003F|0x0680);
-	    skip_sse2_insn(mc);
-	}
+	envxmm->en_mxcsr = 0x1F80;
 	envxmm->en_sw &= ~0xFF;
     } else {
 	struct env87 *env87 = &savefpu->sv_87.sv_env;
@@ -699,21 +595,24 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     }
 #elif defined(__OpenBSD__) && defined(__x86_64__)
     struct fxsave64 *fxsave = uc->sc_fpstate;
-    if (fxsave->fx_mxcsr & 0x000D) {
-	fxsave->fx_mxcsr &= ~(0x003F|0x0680);
-	skip_sse2_insn(uc);
-    }
+    pc = mc_pc(uc);
+    fxsave->fx_mxcsr = 0x1F80;
     fxsave->fx_fsw &= ~0xFF;
 #elif defined(__sun__) && defined(__x86_64__)
     mcontext_t *mc = &uc->uc_mcontext;
     struct fpchip_state *fpstate = &mc->fpregs.fp_reg_set.fpchip_state;
-    if (fpstate->mxcsr & 0x000D) {
-	fpstate->mxcsr &= ~(0x003F|0x0680);
-	skip_sse2_insn(mc);
-    }
+    pc = mc_pc(mc);
+    fpstate->mxcsr = 0x1F80;
     fpstate->sw &= ~0xFF;
 #endif
-    set_current_fp_exception();
+#if 0
+    {
+	char buf[64];
+	snprintf(buf, sizeof buf, "%s: FPE at %p\r\n", __FUNCTION__, (void*)pc);
+	write(2, buf, strlen(buf));
+    }
+#endif
+    set_current_fp_exception(pc);
 }
 
 static void erts_thread_catch_fp_exceptions(void)
@@ -730,7 +629,7 @@ static void erts_thread_catch_fp_exceptions(void)
 
 static void fpe_sig_handler(int sig)
 {
-    set_current_fp_exception();
+    set_current_fp_exception(1); /* XXX: convert to sigaction so we can get the trap PC */
 }
 
 static void erts_thread_catch_fp_exceptions(void)
@@ -746,6 +645,8 @@ void erts_sys_init_float(void)
 {
     erts_init_fp_exception();
     erts_thread_catch_fp_exceptions();
+    erts_printf_block_fpe = erts_sys_block_fpe;
+    erts_printf_unblock_fpe = erts_sys_unblock_fpe;
 }
 
 #endif /* NO_FPE_SIGNALS */
@@ -789,14 +690,9 @@ int erts_sys_block_fpe(void)
     return mask_fpe();
 }
 
-void erts_sys_unblock_fpe_conditional(int unmasked)
+void erts_sys_unblock_fpe(int unmasked)
 {
     unmask_fpe_conditional(unmasked);
-}
-
-void erts_sys_unblock_fpe(void)
-{
-    unmask_fpe();
 }
 #endif
 
@@ -836,7 +732,7 @@ int
 sys_chars_to_double(char* buf, double* fp)
 {
 #ifndef NO_FPE_SIGNALS
-    volatile int *fpexnp = erts_get_current_fp_exception();
+    volatile unsigned long *fpexnp = erts_get_current_fp_exception();
 #endif
     char *s = buf, *t, *dp;
 
@@ -896,6 +792,6 @@ sys_chars_to_double(char* buf, double* fp)
 int
 matherr(struct exception *exc)
 {
-    set_current_fp_exception();
+    set_current_fp_exception((unsigned long)__builtin_return_address(0));
     return 1;
 }

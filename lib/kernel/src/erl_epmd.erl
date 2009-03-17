@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1998-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(erl_epmd).
 
@@ -167,20 +168,28 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%----------------------------------------------------------------------
 
+get_epmd_port() ->
+    case init:get_argument(epmd_port) of
+	{ok, [[PortStr|_]|_]} when is_list(PortStr) ->
+	    list_to_integer(PortStr);
+	error ->
+	    ?erlang_daemon_port
+    end.
+	    
 %%
 %% Epmd socket
 %%
 open() -> open({127,0,0,1}).  % The localhost IP address.
 
 open({A,B,C,D}=EpmdAddr) when ?ip(A,B,C,D) ->
-    gen_tcp:connect(EpmdAddr, ?erlang_daemon_port, [inet]);
+    gen_tcp:connect(EpmdAddr, get_epmd_port(), [inet]);
 open({A,B,C,D,E,F,G,H}=EpmdAddr) when ?ip6(A,B,C,D,E,F,G,H) ->
-    gen_tcp:connect(EpmdAddr, ?erlang_daemon_port, [inet6]).
+    gen_tcp:connect(EpmdAddr, get_epmd_port(), [inet6]).
 
 open({A,B,C,D}=EpmdAddr, Timeout) when ?ip(A,B,C,D) ->
-    gen_tcp:connect(EpmdAddr, ?erlang_daemon_port, [inet], Timeout);
+    gen_tcp:connect(EpmdAddr, get_epmd_port(), [inet], Timeout);
 open({A,B,C,D,E,F,G,H}=EpmdAddr, Timeout) when ?ip6(A,B,C,D,E,F,G,H) ->
-    gen_tcp:connect(EpmdAddr, ?erlang_daemon_port, [inet6], Timeout).
+    gen_tcp:connect(EpmdAddr, get_epmd_port(), [inet6], Timeout).
 
 close(Socket) ->
     gen_tcp:close(Socket).
@@ -447,12 +456,7 @@ select_best_version(_L1, H1, L2, _H2) when L2 > H1 ->
 select_best_version(_L1, H1, L2, _H2) when L2 > H1 ->
     0;
 select_best_version(_L1, H1, _L2, H2) ->
-    min(H1, H2).
-
-min(A, B) when A < B ->
-    A;
-min(_A, B) ->
-    B.
+    erlang:min(H1, H2).
 
 wait_for_close(Socket, Reply) ->
     receive
@@ -490,9 +494,10 @@ do_get_names(Socket) ->
     receive
 	{tcp, Socket, [P0,P1,P2,P3|T]} ->
 	    EpmdPort = ?u32(P0,P1,P2,P3),
-	    if EpmdPort =:= ?erlang_daemon_port ->
+	    case get_epmd_port() of
+		EpmdPort ->
 		    names_loop(Socket, T, []);
-	       true ->
+		_ ->
 		    close(Socket),
 		    {error, address}
 	    end;

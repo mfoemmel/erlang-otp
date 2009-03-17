@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2005-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 
 %%% Description: SFTP functions
@@ -27,12 +28,14 @@
 	 rename/5, remove/3, mkdir/4, rmdir/3, realpath/3, extended/4,
 	 stat/4, fstat/4, lstat/4, setstat/4,
 	 readlink/3, fsetstat/4, symlink/4,
+	 protocol_version_request/1,
 	 xf_reply/2,
 	 xf_send_reply/3, xf_send_names/3, xf_send_name/4,
 	 xf_send_status/3, xf_send_status/4, xf_send_status/5,
 	 xf_send_handle/3, xf_send_attr/3, xf_send_data/3,
 	 encode_erlang_status/1,
 	 decode_open_flags/2, encode_open_flags/1,
+	 decode_ace_mask/1, decode_ext/1,
 	 decode_ATTR/2, encode_ATTR/2]).
 
 -include("ssh.hrl").
@@ -45,13 +48,9 @@
 
 -define(XFER_PACKET_SIZE, 32768).
 -define(XFER_WINDOW_SIZE, 4*?XFER_PACKET_SIZE).
--define(DEFAULT_TIMEOUT, 5000).
 
 attach(CM, Opts) ->
-    case ssh:attach(CM, connect_timeout(Opts)) of
-	{ok,CMPid} ->  open_xfer(CMPid, Opts);
-	Error ->  Error
-    end.
+    open_xfer(CM, Opts).
 
 connect(Host, Port, Opts) ->
     case ssh:connect(Host, Port, Opts) of
@@ -59,72 +58,17 @@ connect(Host, Port, Opts) ->
 	Error -> Error
     end.
 
-%% xfer_channel(XF, Channel) ->
-%%     XF#ssh_xfer{channel = Channel}.
-
 open_xfer(CM, Opts) ->
-    TMO = connect_timeout(Opts),
+    TMO = proplists:get_value(timeout, Opts, infinity),
     case ssh_connection:session_channel(CM, ?XFER_WINDOW_SIZE, ?XFER_PACKET_SIZE, TMO) of
-	{ok, Channel} ->
-	    case ssh_connection:subsystem(CM, Channel, "sftp", TMO) of
-		success ->
-		    case init(CM, Channel) of
-			{ok, {Vsn,Ext}, Rest} ->
-			    ?dbg(true, "open_xfer: Vsn=~p Ext=~p\n", [Vsn,Ext]),
-			    {ok, #ssh_xfer{vsn = Vsn,
-					   ext = Ext,
-					   cm  = CM,
-					   channel = Channel}, Rest};
-			Error -> Error
-		    end;
-		Error -> Error
-	    end;
-	Error -> Error
-    end.
-
-
-init(CM, Channel) ->
-    XF = #ssh_xfer { cm = CM, channel = Channel},
-    xf_request(XF, ?SSH_FXP_INIT, <<?UINT32(?SSH_SFTP_PROTOCOL_VERSION)>>),
-    case reply(CM, Channel) of
-	{ok, <<?SSH_FXP_VERSION, ?UINT32(Version), Ext/binary>>, Rest} ->
-	    ?dbg(true, "init: Version=~p\n", [Version]),
-	    {ok, {Version, decode_ext(Ext)}, Rest};
-	Error ->
+	{ok, ChannelId} ->
+	    {ok, ChannelId, CM};
+	Error -> 
 	    Error
     end.
 
-reply(CM,Channel) ->
-    reply(CM,Channel,<<>>).
-
-reply(CM,Channel,RBuf) ->
-    receive
-	{ssh_cm, CM, {data, Channel, 0, Data}} ->
-	    case <<RBuf/binary, Data/binary>> of
-		<<?UINT32(Len),Reply:Len/binary,Rest/binary>> ->
-		    {ok, Reply, Rest};
-		RBuf2 ->
-		    reply(CM,Channel,RBuf2)
-	    end;
-	{ssh_cm, CM, {data, Channel, _, Data}} ->
-	    error_logger:format("ssh: STDERR: ~s\n", [binary_to_list(Data)]),
-	    reply(CM,Channel,RBuf);
-	{ssh_cm, CM, {exit_signal,Channel,_SIG,Err,_Lang}} ->
-	    ssh_connection:close(CM, Channel),
-	    {error, Err};
-	{ssh_cm, CM, {exit_status,Channel,_Status}} ->
-	    ssh_connection:close(CM, Channel),
-	    eof;
-	{ssh_cm, CM, {eof, Channel}} ->
-	    eof;
-	{ssh_cm, CM, {closed, Channel}} ->
-	    {error, closed};
-	{ssh_cm, CM, Msg} ->
-	    error_logger:format("GOT: ssh_cm ~p\n", [Msg]);
-	Msg ->
-	    error_logger:format("GOT: ~p\n", [Msg])
-    end.
-
+protocol_version_request(XF) ->
+    xf_request(XF, ?SSH_FXP_INIT, <<?UINT32(?SSH_SFTP_PROTOCOL_VERSION)>>).
 
 open(XF, ReqID, FileName, Access, Flags, Attrs) -> 
     Vsn = XF#ssh_xfer.vsn,
@@ -329,16 +273,6 @@ xf_send_reply(#ssh_xfer{cm = CM, channel = Channel}, Op, Arg) ->
 xf_send_name(XF, ReqId, Name, Attr) ->
     xf_send_names(XF, ReqId, [{Name, Attr}]).
 					    
-%%     ?dbg(true, "xf_send_name: ReqId=~p Name=~p\n", [ReqId, Name]),
-    
-%%     Count
-%%     NameLen = length(Name),
-%%     EncAttr = encode_ATTR(Vsn, Attr),
-%%     Size = 1 + 4 + 4 + 4 + NameLen + bsize(EncAttr),% op reqid count namelen name attr
-%%     ToSend = [<<?UINT32(Size),
-%% 	       ?SSH_FXP_NAME, ?UINT32(ReqId), ?UINT32(1), ?UINT32(NameLen)>>,
-%% 	      Name, EncAttr],
-%%     ssh_connection:send(CM, Channel, ToSend).
 
 xf_send_handle(#ssh_xfer{cm = CM, channel = Channel},
 	       ReqId, Handle) ->
@@ -355,8 +289,8 @@ xf_send_names(#ssh_xfer{cm = CM, channel = Channel, vsn = Vsn},
     Size = 1 + 4 + 4 + Len,
     ToSend = [<<?UINT32(Size), ?SSH_FXP_NAME, ?UINT32(ReqId), ?UINT32(Count)>>,
 	      Data],
-    ?dbg(true, "xf_send_names: Size=~p size(ToSend)=~p\n",
-	 [Size, size(list_to_binary(ToSend))]),
+    %%?dbg(true, "xf_send_names: Size=~p size(ToSend)=~p\n",
+	%% [Size, size(list_to_binary(ToSend))]),
     ssh_connection:send(CM, Channel, ToSend).
 
 xf_send_status(XF, ReqId, ErrorCode) ->
@@ -392,17 +326,6 @@ xf_send_data(#ssh_xfer{cm = CM, channel = Channel}, ReqId, Data) ->
 	      Data],
     ssh_connection:send(CM, Channel, ToSend).    
 
-
-%% xf_reply_server(XF, <<?SSH_FXP_INIT, ?UINT32(V)>>) ->
-%%     Vers = XF#ssh_xfer.vsn,
-%%     Ver = if Vers > V -> V;
-%% 	     true -> Vers
-%% 	  end,
-%%     xf_send_reply(XF, ?SSH_FXP_VERSION, <<?UINT32(Ver)>>),
-%%     ok;
-%% xf_reply_server(_XF, <<?SSH_FXP_VERSION>> ) ->
-%%     ok.
-
 xf_reply(_XF, << ?SSH_FXP_STATUS, ?UINT32(ReqID), ?UINT32(Status), 
 	      ?UINT32(ELen), Err:ELen/binary,
 	      ?UINT32(LLen), Lang:LLen/binary,
@@ -421,7 +344,7 @@ xf_reply(_XF, <<?SSH_FXP_DATA, ?UINT32(ReqID),
     {data, ReqID, Data};
 xf_reply(XF, <<?SSH_FXP_NAME, ?UINT32(ReqID),
 	      ?UINT32(Count), AData/binary>>) ->
-    ?dbg(true, "xf_reply ?SSH_FXP_NAME: AData=~p\n", [AData]),
+    %%?dbg(true, "xf_reply ?SSH_FXP_NAME: AData=~p\n", [AData]),
     {name, ReqID, decode_names(XF#ssh_xfer.vsn, Count, AData)};
 xf_reply(XF, <<?SSH_FXP_ATTRS, ?UINT32(ReqID),
 	      AData/binary>>) ->
@@ -465,21 +388,6 @@ encode_erlang_status(Status) ->
 	eacces -> ?SSH_FX_PERMISSION_DENIED;
 	_ -> ?SSH_FX_FAILURE
     end.
-%% 	?SSH_FX_FAILURE -> failure;
-%% 	?SSH_FX_BAD_MESSAGE -> bad_message;
-%% 	?SSH_FX_NO_CONNECTION -> no_connection;
-%% 	?SSH_FX_CONNECTION_LOST -> connection_lost;
-%% 	?SSH_FX_OP_UNSUPPORTED -> op_unsupported;
-%% 	?SSH_FX_INVALID_HANDLE -> invalid_handle;
-%% 	?SSH_FX_NO_SUCH_PATH -> no_such_path;
-%% 	?SSH_FX_FILE_ALREADY_EXISTS -> file_already_exists;
-%% 	?SSH_FX_WRITE_PROTECT -> write_protect;
-%% 	?SSH_FX_NO_MEDIA -> no_media;
-%% 	?SSH_FX_NO_SPACE_ON_FILESYSTEM -> no_space_on_filesystem;
-%% 	?SSH_FX_QUOTA_EXCEEDED -> quota_exceeded;
-%% 	?SSH_FX_UNKNOWN_PRINCIPLE -> unknown_principle;
-%% 	?SSH_FX_LOCK_CONFlICT -> lock_conflict
-%%     end.
 
 decode_ext(<<?UINT32(NameLen), Name:NameLen/binary,
 	    ?UINT32(DataLen), Data:DataLen/binary,
@@ -662,7 +570,7 @@ encode_attr_flags(Vsn, Flags) ->
       end, Flags).
 
 encode_file_type(Type) ->
-    ?dbg(true, "encode_file_type(~p)\n", [Type]),
+    %%?dbg(true, "encode_file_type(~p)\n", [Type]),
     case Type of
 	regular -> ?SSH_FILEXFER_TYPE_REGULAR;
 	directory -> ?SSH_FILEXFER_TYPE_DIRECTORY;
@@ -743,8 +651,8 @@ encode_ATTR(Vsn, A) ->
 		   {extended, A#ssh_xfer_attr.extensions}],
 		  0, []),
     Type = encode_file_type(A#ssh_xfer_attr.type),
-    ?dbg(true, "encode_ATTR: Vsn=~p A=~p As=~p Flags=~p Type=~p",
-    	 [Vsn, A, As, Flags, Type]),
+    %%?dbg(true, "encode_ATTR: Vsn=~p A=~p As=~p Flags=~p Type=~p",
+    %% 	 [Vsn, A, As, Flags, Type]),
     Result = list_to_binary([?uint32(Flags),
 			     if Vsn >= 5 ->
 				     ?byte(Type);
@@ -805,7 +713,7 @@ encode_As(_Vsn, [], Flags, Acc) ->
 
 
 decode_ATTR(Vsn, <<?UINT32(Flags), Tail/binary>>) ->
-    ?dbg(true, "decode_ATTR: Vsn=~p Flags=~p Tail=~p\n", [Vsn, Flags, Tail]),
+    %%?dbg(true, "decode_ATTR: Vsn=~p Flags=~p Tail=~p\n", [Vsn, Flags, Tail]),
     {Type,Tail2} =
 	if Vsn =< 3 ->
 		{?SSH_FILEXFER_TYPE_UNKNOWN, Tail};
@@ -834,7 +742,7 @@ decode_ATTR(Vsn, <<?UINT32(Flags), Tail/binary>>) ->
 	      Tail2).
 
 decode_As(Vsn, [{AName, AField}|As], R, Flags, Tail) ->
-    ?dbg(false, "decode_As: Vsn=~p AName=~p AField=~p Flags=~p Tail=~p\n", [Vsn, AName, AField, Flags, Tail]),
+    %%?dbg(false, "decode_As: Vsn=~p AName=~p AField=~p Flags=~p Tail=~p\n", [Vsn, AName, AField, Flags, Tail]),
     case AName of
 	size when ?is_set(?SSH_FILEXFER_ATTR_SIZE, Flags) ->
 	    <<?UINT64(X), Tail2/binary>> = Tail,
@@ -845,7 +753,7 @@ decode_As(Vsn, [{AName, AField}|As], R, Flags, Tail) ->
 	ownergroup when ?is_set(?SSH_FILEXFER_ATTR_OWNERGROUP, Flags),Vsn>=5 ->
 	    <<?UINT32(Len), Bin:Len/binary, Tail2/binary>> = Tail,
 	    X = binary_to_list(Bin),
-	    ?dbg(true, "ownergroup X=~p\n", [X]),
+	    %%?dbg(true, "ownergroup X=~p\n", [X]),
 	    decode_As(Vsn, As, setelement(AField, R, X), Flags, Tail2);
 
 	permissions when ?is_set(?SSH_FILEXFER_ATTR_PERMISSIONS,Flags),Vsn>=5->
@@ -907,13 +815,13 @@ decode_names(Vsn, I, <<?UINT32(Len), FileName:Len/binary,
 		      ?UINT32(LLen), _LongName:LLen/binary,
 		      Tail/binary>>) when Vsn =< 3 ->
     Name = binary_to_list(FileName),
-    ?dbg(true, "decode_names: ~p\n", [Name]),
+    %%?dbg(true, "decode_names: ~p\n", [Name]),
     {A, Tail2} = decode_ATTR(Vsn, Tail),
     [{Name, A} | decode_names(Vsn, I-1, Tail2)];
 decode_names(Vsn, I, <<?UINT32(Len), FileName:Len/binary, 
 		      Tail/binary>>) when Vsn >= 4 ->
     Name = binary_to_list(FileName),
-    ?dbg(true, "decode_names: ~p\n", [Name]),
+    %%?dbg(true, "decode_names: ~p\n", [Name]),
     {A, Tail2} = decode_ATTR(Vsn, Tail),
     [{Name, A} | decode_names(Vsn, I-1, Tail2)].
 
@@ -1006,22 +914,3 @@ decode_bits(F, [{Bit,BitName}|Bits]) ->
     end;
 decode_bits(_F, []) ->
     [].
-
-%% %% iolist size
-%% bsize(B) ->
-%%     bsize(B, 0).
-
-%% bsize(B, S) when binary(B) ->
-%%     case B of
-%% 	<<>> -> S;
-%% 	_ -> S + size(B)
-%%     end;
-%% bsize([], S) ->
-%%     S;
-%% bsize(I, S) when integer(I) ->
-%%     S + 1;
-%% bsize([A|B], S) ->
-%%     bsize(B, S + bsize(A)).
-
-connect_timeout(Opts) ->
-    proplists:get_value(connect_timeout, Opts, ?DEFAULT_TIMEOUT).

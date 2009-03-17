@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2005-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: mstone measurement
@@ -27,6 +28,7 @@
 
 %% API
 -export([start/0,          start/1,
+	 start_flex/0,     start_flex/1, 
 	 start_no_drv/0,   start_no_drv/1, 
 	 start_only_drv/0, start_only_drv/1]).
 
@@ -68,6 +70,13 @@ start(Factor) ->
     do_start(Factor, ignore).
 
 
+start_flex() ->
+    start_flex(1).
+
+start_flex(Factor) ->
+    do_start(Factor, flex).
+
+
 start_only_drv() ->
     start_only_drv(1).
 
@@ -82,7 +91,7 @@ start_no_drv(Factor) ->
     do_start(Factor, no_drv).
 
 
-do_start(Factor, DrvInclude) when is_integer(Factor) and (Factor > 0) ->
+do_start(Factor, DrvInclude) when is_integer(Factor) andalso (Factor > 0) ->
     t(Factor, ?MSTONE_CODECS, DrvInclude);
 do_start([FactorAtom], DrvInclude) when is_atom(FactorAtom) ->
     case (catch list_to_integer(atom_to_list(FactorAtom))) of
@@ -150,7 +159,17 @@ await_runners_ready(Runners) ->
         {ready, Runner} ->
             io:format(".", []),
 	    %% i("runner ~w ready", [Runner]),
-            await_runners_ready(lists:delete(Runner, Runners))
+            await_runners_ready(lists:delete(Runner, Runners));
+	{'EXIT', Pid, Reason} ->
+	    case lists:member(Pid, Runners) of
+		true ->
+		    io:format("~nERROR: "
+			      "received exit signal from from runner ~p:"
+			      "~n~p~n", [Pid, Reason]),
+		    exit(Reason);
+		false ->
+		    await_runners_ready(Runners)
+	    end
     end.
 
 -ifdef(VERBOSE_STATS).
@@ -222,11 +241,9 @@ t2(N, Acc, Runners) ->
 init_runner({Dir, Codec, Conf}) ->
     Conf1 = runner_conf(Conf),
     Conf2 = [{version3,?VERSION3}|Conf1],
-    Pid = spawn_opt(?MODULE, mstone_runner_init, 
-                    [self(), Codec, Conf2, Dir],
-                    ?MSTONE_RUNNER_OPTS),
-%%     i("initiated runner [~w] for"
-%%       "~n   ~w ~p", [Pid, Codec, Conf2]),
+    Pid   = spawn_opt(?MODULE, mstone_runner_init, 
+		      [self(), Codec, Conf2, Dir],
+		      ?MSTONE_RUNNER_OPTS),
     Pid.
 
 runner_conf([flex_scanner]) ->
@@ -236,6 +253,8 @@ runner_conf(Conf) ->
 
 
 
+detect_versions(Codec, _Conf, [], []) ->
+    exit({no_messages_found_for_codec, Codec});
 detect_versions(_Codec, _Conf, [], Acc) ->
     lists:reverse(Acc);
 detect_versions(Codec, Conf, [Bin|Bins], Acc) ->

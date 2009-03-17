@@ -1,20 +1,22 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1998-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 /*
 ** Implementation of unordered ETS tables.
 ** The tables are implemented as linear dynamic hash tables.
@@ -489,7 +491,9 @@ int db_get_element_array(DbTable *tbl,
     int ix;
     HashDbTerm* b1;
     int num = 0;
-    
+
+    ASSERT(!(tbl->common.status & DB_FIXED)); /* no support for fixed tables */
+
     hval = MAKE_HASH(key);
     HASH(tb, hval, ix);
     b1 = BUCKET(tb, ix);
@@ -501,8 +505,7 @@ int db_get_element_array(DbTable *tbl,
 		HashDbTerm* b;
 		HashDbTerm* b2 = b1->next;
 
-		while((b2 != 0) && ((b2->hvalue == hval) || 
-				    (b2->hvalue == INVALID_HASH)) &&
+		while((b2 != 0) && (b2->hvalue == hval) &&
 		      EQ(key, GETKEY(tb, b2->dbterm.tpl))) {
 		    if (ndex > arityval(b2->dbterm.tpl[0]))
 			return DB_ERROR_BADITEM;
@@ -583,22 +586,26 @@ static int db_get_element_hash(Process *p, DbTable *tbl,
 		HashDbTerm* b2 = b1->next;
 		Eterm elem_list = NIL;
 
-		while((b2 != 0) && (b2->hvalue == hval) &&
+		while((b2 != 0) && (b2->hvalue == hval || 
+				    b2->hvalue == INVALID_HASH) &&
 		      EQ(key, GETKEY(tb, b2->dbterm.tpl))) {
-		    if (ndex > arityval(b2->dbterm.tpl[0]))
+		    if (ndex > arityval(b2->dbterm.tpl[0]) &&
+			b2->hvalue != INVALID_HASH)
 			return DB_ERROR_BADITEM;
 		    b2 = b2->next;
 		}
 
 		b = b1;
 		while(b != b2) {
-		    Eterm *hp;
-		    Uint sz = size_object(b->dbterm.tpl[ndex])+2;
-		    
-		    hp = HAlloc(p, sz);
-		    copy = copy_struct(b->dbterm.tpl[ndex], sz-2, &hp, &MSO(p));
-		    elem_list = CONS(hp, copy, elem_list);
-		    hp += 2;
+		    if (b->hvalue != INVALID_HASH) {
+			Eterm *hp;
+			Uint sz = size_object(b->dbterm.tpl[ndex])+2;
+			
+			hp = HAlloc(p, sz);
+			copy = copy_struct(b->dbterm.tpl[ndex], sz-2, &hp, &MSO(p));
+			elem_list = CONS(hp, copy, elem_list);
+			hp += 2;
+		    }
 		    b = b->next;
 		}
 		*ret = elem_list;
@@ -704,7 +711,7 @@ int db_erase_hash(Process *p, DbTable *tbl,
 	    found = 1;
 	}
 	else {
-	    if (found)
+	    if (found && b->hvalue != INVALID_HASH)
 		break;
 	    bp = &b->next;
 	    b = b->next;

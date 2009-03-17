@@ -1,7 +1,24 @@
 %% -*- Erlang -*-
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% $Id$
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %%			 CONTROL FLOW GRAPHS
@@ -121,22 +138,22 @@
 %% Primitives (not all of these are exported)
 %%
 
--spec start_label(#cfg{}) -> non_neg_integer().
+-spec start_label(cfg()) -> cfg_lbl().
 start_label(CFG) -> (CFG#cfg.info)#cfg_info.start_label.
 
 -ifndef(GEN_CFG).
--spec start_label_update(#cfg{}, non_neg_integer()) -> #cfg{}.
+-spec start_label_update(cfg(), cfg_lbl()) -> cfg().
 start_label_update(CFG, NewStartLabel) ->
   Info = CFG#cfg.info,
   CFG#cfg{info=Info#cfg_info{start_label=NewStartLabel}}.
 
--spec function(#cfg{}) -> mfa().
+-spec function(cfg()) -> mfa().
 function(CFG) -> (CFG#cfg.info)#cfg_info.'fun'.
 
--spec is_closure(#cfg{}) -> bool().
+-spec is_closure(cfg()) -> bool().
 is_closure(CFG) -> (CFG#cfg.info)#cfg_info.is_closure.
 
--spec is_leaf(#cfg{}) -> bool().
+-spec is_leaf(cfg()) -> bool().
 is_leaf(CFG) -> (CFG#cfg.info)#cfg_info.is_leaf.
 
 mk_empty_cfg(Fun, StartLbl, Data, Closure, Leaf, Params) ->
@@ -151,7 +168,7 @@ data(CFG) -> CFG#cfg.data.
 -endif.	% GEN_CFG
 
 -ifdef(REMOVE_TRIVIAL_BBS_NEEDED).
--spec update_data(#cfg{}, cfg_data()) -> #cfg{}.
+-spec update_data(cfg(), cfg_data()) -> cfg().
 update_data(CFG, D) ->
   CFG#cfg{data=D}.
 -endif.
@@ -167,12 +184,12 @@ params_update(CFG, NewParams) ->
 -endif.
 
 -ifdef(CLOSURE_ARITY_NEEDED).
--spec closure_arity(#cfg{}) -> byte().
+-spec closure_arity(cfg()) -> byte().
 closure_arity(CFG) ->
   Info = CFG#cfg.info,
   Info#cfg_info.closure_arity.
 
--spec closure_arity_update(#cfg{}, byte()) -> #cfg{}.
+-spec closure_arity_update(cfg(), byte()) -> cfg().
 closure_arity_update(CFG, Arity) ->
   Info = CFG#cfg.info,
   CFG#cfg{info=Info#cfg_info{closure_arity=Arity}}.
@@ -196,7 +213,7 @@ info_update(CFG, I) ->
 %%=====================================================================
 -ifndef(GEN_CFG).
 
-%% @spec other_entrypoints(CFG::cfg()) -> [label()]
+-spec other_entrypoints(cfg()) -> [cfg_lbl()].
 %% @doc	 Returns a list of labels that are refered to from the data section.
 
 other_entrypoints(CFG) ->
@@ -206,7 +223,7 @@ other_entrypoints(CFG) ->
 %%   Lbl =:= start_label(CFG) orelse
 %% 	lists:member(Lbl, other_entrypoints(CFG)).
 
-%% @spec bb(CFG::cfg(), Label::label()) -> basic_block()
+%% @spec bb(CFG::cfg(), Label::cfg_lbl()) -> basic_block()
 %% @doc  Returns the basic block of the CFG which begins at the Label.
 bb(CFG, Label) ->
   HT = CFG#cfg.table,
@@ -240,8 +257,8 @@ remove_duplicates([], Acc) ->
 			%% if Icode also starts using this function
 
 %% @spec bb_insert_between(CFG::cfg(),
-%%                         Label::label(), NewBB::basic_block(),
-%%                         Pred::label(), Succ::label()) -> cfg() 
+%%                         Label::cfg_lbl(), NewBB::basic_block(),
+%%                         Pred::cfg_lbl(), Succ::cfg_lbl()) -> cfg() 
 %%
 %% @doc Insert the new basic block with label Label in the edge from
 %%      Pred to Succ
@@ -293,7 +310,7 @@ redirect_phis([I|Rest], OldPred, NewPred, Acc) ->
 
 -endif.
 
-%% @spec bb_add(CFG::cfg(), Label::label(), NewBB::basic_block()) -> cfg()
+%% @spec bb_add(CFG::cfg(), Label::cfg_lbl(), NewBB::basic_block()) -> cfg()
 %% @doc  Adds a new basic block to a CFG (or updates an existing block).
 bb_add(CFG, Label, NewBB) ->
   %% Asserting that the NewBB is a legal basic block
@@ -656,7 +673,7 @@ find_new_label(Old, Map) ->
 
 -ifdef(REMOVE_TRIVIAL_BBS_NEEDED).
 
--spec remove_trivial_bbs(#cfg{}) -> #cfg{}.
+-spec remove_trivial_bbs(cfg()) -> cfg().
 remove_trivial_bbs(CFG) ->
   ?opt_start_timer("Merge BBs"),
   CFG0 = merge_bbs(rewrite_trivial_branches(CFG)),
@@ -813,7 +830,7 @@ is_empty_bb([]) ->
 
 %% Rewrite all pure branches with one successor to goto:s
 
--spec rewrite_trivial_branches(#cfg{}) -> #cfg{}.
+-spec rewrite_trivial_branches(cfg()) -> cfg().
 rewrite_trivial_branches(CFG) ->
   rewrite_trivial_branches(postorder(CFG), CFG).
 
@@ -920,7 +937,7 @@ merge(BB, BB2, BB2_Label) ->
 
 -ifdef(REMOVE_UNREACHABLE_CODE).
 
--spec remove_unreachable_code(#cfg{}) -> #cfg{}.
+-spec remove_unreachable_code(cfg()) -> cfg().
 
 remove_unreachable_code(CFG) ->
   Start = start_label(CFG),

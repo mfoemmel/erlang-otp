@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%%
+%%% %CopyrightBegin%
+%%% 
+%%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%%% 
+%%% The contents of this file are subject to the Erlang Public License,
+%%% Version 1.1, (the "License"); you may not use this file except in
+%%% compliance with the License. You should have received a copy of the
+%%% Erlang Public License along with this software. If not, it can be
+%%% retrieved online at http://www.erlang.org/.
+%%% 
+%%% Software distributed under the License is distributed on an "AS IS"
+%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%%% the License for the specific language governing rights and limitations
+%%% under the License.
+%%% 
+%%% %CopyrightEnd%
+%%%
 %%%-------------------------------------------------------------------
 %%% File    : hipe_icode_fp.erl
 %%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
@@ -9,8 +27,8 @@
 %%%
 %%% CVS      :
 %%%              $Author: kostis $
-%%%              $Date: 2008/10/27 21:08:15 $
-%%%              $Revision: 1.47 $
+%%%              $Date: 2009/02/06 18:04:26 $
+%%%              $Revision: 1.48 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
@@ -20,9 +38,9 @@
 -include("hipe_icode.hrl").
 -include("../flow/cfg.hrl").
 
--record(state, {edge_map   :: gb_tree(),
-		fp_ebb_map :: gb_tree(),
-		cfg	   :: #cfg{}}).
+-record(state, {edge_map   = gb_trees:empty() :: gb_tree(),
+		fp_ebb_map = gb_trees:empty() :: gb_tree(),
+		cfg	                      :: #cfg{}}).
 
 %%--------------------------------------------------------------------
 
@@ -225,7 +243,7 @@ transform_instrs([I|Left], PhiMap, Map, Acc) ->
 		  %% This is the instruction that untagged the variable.
 		  %% Use old maps.
 		  transform_instrs(Left, NewPhiMap, Map, [I|Acc]);
-		FVar -> 
+		FVar ->
 		  %% The variable was already untagged. 
 		  %% This instruction can be changed to a move.
 		  NewI = hipe_icode:mk_move(Dst, FVar),
@@ -336,7 +354,7 @@ split_code([I|Left], Acc) ->
 
 
 %% When all code is mapped to fp instructions we must make sure that
-%% the fp ebb information goin in to each block is the same as the
+%% the fp ebb information going into each block is the same as the
 %% information coming out of each predecessor. Otherwise, we must add
 %% a block in between.
 
@@ -580,7 +598,7 @@ place_error_1(I, Left, InBlock, Acc) ->
   case InBlock of
     {true, []} ->
       Check = hipe_icode:mk_primop([], fcheckerror, []),
-      place_error(Left, false, [I,Check|Acc]);
+      place_error(Left, false, [I, Check|Acc]);
     {true, _} ->
       exit({"End of control flow in caught fp ebb", I});
     false ->
@@ -597,7 +615,7 @@ handle_unchecked_end(Succ, Code, InBlock) ->
 	{true, []} ->
 	  {TopCode, Last} = split_code(Code),
 	  NewI = hipe_icode:mk_primop([], fcheckerror, []),
-	  TopCode++[NewI, Last];
+	  TopCode ++ [NewI, Last];
 	false ->
 	  Code
       end;
@@ -895,7 +913,7 @@ conv_consts([Const|Left], I, Subst) ->
   conv_consts(Left, I, [{Const, NewConst}|Subst]);
 conv_consts([], I, Subst) ->
   hipe_icode:subst_uses(Subst, I).
-  
+
 
 %% _________________________________________________________________
 %%
@@ -903,32 +921,32 @@ conv_consts([], I, Subst) ->
 %%
 
 new_state(Cfg) ->
-  #state{cfg=Cfg, edge_map=gb_trees:empty(), fp_ebb_map=gb_trees:empty()}.
+  #state{cfg = Cfg}.
 
-state__cfg(#state{cfg=Cfg}) ->
+state__cfg(#state{cfg = Cfg}) ->
   Cfg.
 
-state__succ(#state{cfg=Cfg}, Label) ->
+state__succ(#state{cfg = Cfg}, Label) ->
   hipe_icode_cfg:succ(Cfg, Label).
 
-state__pred(#state{cfg=Cfg}, Label) ->
+state__pred(#state{cfg = Cfg}, Label) ->
   hipe_icode_cfg:pred(Cfg, Label).
 
-state__redirect(S=#state{cfg=Cfg}, From, ToOld, ToNew) ->
+state__redirect(S = #state{cfg = Cfg}, From, ToOld, ToNew) ->
   NewCfg = hipe_icode_cfg:redirect(Cfg, From, ToOld, ToNew),
   S#state{cfg=NewCfg}.
 
-state__bb(#state{cfg=Cfg}, Label) ->
+state__bb(#state{cfg = Cfg}, Label) ->
   hipe_icode_cfg:bb(Cfg, Label).
   
-state__bb_add(S=#state{cfg=Cfg}, Label, BB) ->
+state__bb_add(S = #state{cfg = Cfg}, Label, BB) ->
   NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, BB),
-  S#state{cfg=NewCfg}.
+  S#state{cfg = NewCfg}.
 
-state__map(S=#state{edge_map=EM}, To) ->
+state__map(S = #state{edge_map = EM}, To) ->
   join_maps([{From, To} || From <- state__pred(S, To)], EM).
 
-state__map_update(S=#state{edge_map=EM}, From, To, Map) ->
+state__map_update(S = #state{edge_map = EM}, From, To, Map) ->
   MapChanged = 
     case gb_trees:lookup({From, To}, EM) of
       {value, Map1} -> not match(Map1, Map);
@@ -942,7 +960,7 @@ state__map_update(S=#state{edge_map=EM}, From, To, Map) ->
       fixpoint
   end.
 
-state__join_in_block(S=#state{fp_ebb_map = Map}, Label) ->
+state__join_in_block(S = #state{fp_ebb_map = Map}, Label) ->
   Pred = state__pred(S, Label),
   Edges = [{X, Label} || X <- Pred],
   NewInBlock = join_in_block([gb_trees:lookup(X, Map) || X <- Edges]),
@@ -957,7 +975,7 @@ state__join_in_block(S=#state{fp_ebb_map = Map}, Label) ->
       {S#state{fp_ebb_map = NewMap}, NewInBlock}
   end.
 
-state__in_block_out_update(S=#state{fp_ebb_map = Map}, Label, NewInBlock) ->
+state__in_block_out_update(S = #state{fp_ebb_map = Map}, Label, NewInBlock) ->
   Succ = state__succ(S, Label),
   Edges = [{Label, X} || X <- Succ],
   NewMap = update_edges(Edges, NewInBlock, Map),
@@ -989,14 +1007,14 @@ join_in_block([], Current) ->
   Current.
 	
 
-state__get_in_block_in(#state{fp_ebb_map=Map}, Label) ->
+state__get_in_block_in(#state{fp_ebb_map = Map}, Label) ->
   gb_trees:get({inblock_in, Label}, Map).
 
-state__get_in_block_out(#state{fp_ebb_map=Map}, Label) ->
+state__get_in_block_out(#state{fp_ebb_map = Map}, Label) ->
   gb_trees:get({inblock_out, Label}, Map).
 
 
-new_worklist(#state{cfg=Cfg}) ->
+new_worklist(#state{cfg = Cfg}) ->
   Start = hipe_icode_cfg:start_label(Cfg),
   {[Start], [], gb_sets:insert(Start, gb_sets:empty())}.
 
@@ -1011,8 +1029,8 @@ add_work({List1, List2, Set}, [Label|Left]) ->
   case gb_sets:is_member(Label, Set) of
     true -> 
       add_work({List1, List2, Set}, Left);
-    false -> 
-      %%io:format("Added work: ~w\n", [Label]),
+    false ->
+      %% io:format("Added work: ~w\n", [Label]),
       NewSet = gb_sets:insert(Label, Set),
       add_work({List1, [Label|List2], NewSet}, Left)
   end;

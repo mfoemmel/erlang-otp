@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2005-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifdef HAVE_CONFIG_H
@@ -314,7 +315,7 @@ bif_timer_timeout(ErtsBifTimer* btm)
 #endif
     }
     else {
-	ErtsProcLocks rp_locks = ERTS_PROC_LOCKS_MSG_SEND;
+	ErtsProcLocks rp_locks = 0;
 	Process* rp;
 
 	tab_remove(btm);
@@ -322,63 +323,58 @@ bif_timer_timeout(ErtsBifTimer* btm)
 	ASSERT(!erts_get_current_process());
 
 	if (btm->flags & BTM_FLG_BYNAME)
-	    rp = erts_whereis_process(NULL,0,btm->receiver.name,rp_locks,0);
+	    rp = erts_whereis_process(NULL,0,btm->receiver.name,0,ERTS_P2P_FLG_SMP_INC_REFC);
 	else {
 	    rp = btm->receiver.proc.ess;
-	    erts_smp_proc_lock(rp, rp_locks);
+	    erts_smp_proc_inc_refc(rp);
 	    unlink_proc(btm);
-	    if (ERTS_PROC_IS_EXITING(rp)) {
-		erts_smp_proc_unlock(rp, rp_locks);
-		rp = NULL;
-	    }
 	}
 
 	if (rp) {
-	    if (!ERTS_PROC_PENDING_EXIT(rp)) {
-		Eterm message;
-		ErlHeapFragment *bp;
+	    Eterm message;
+	    ErlHeapFragment *bp;
 
-		bp = btm->bp;
-		btm->bp = NULL; /* Prevent cleanup of message buffer... */
+	    bp = btm->bp;
+	    btm->bp = NULL; /* Prevent cleanup of message buffer... */
 
-		if (!(btm->flags & BTM_FLG_WRAP))
-		    message = btm->message;
-		else {
+	    if (!(btm->flags & BTM_FLG_WRAP))
+		message = btm->message;
+	    else {
 #if ERTS_REF_NUMBERS != 3
 #error "ERTS_REF_NUMBERS changed. Update me..."
 #endif
-		    Eterm ref;
-		    Uint *hp;
-		    Uint wrap_size = REF_THING_SIZE + 4;
-		    message = btm->message;
+		Eterm ref;
+		Uint *hp;
+		Uint wrap_size = REF_THING_SIZE + 4;
+		message = btm->message;
 
-		    if (!bp) {
-			ErlOffHeap *ohp;
-			ASSERT(is_immed(message));
-			hp = erts_alloc_message_heap(wrap_size,
-						     &bp,
-						     &ohp,
-						     rp,
-						     &rp_locks);
-		    } else {
-			Eterm old_size = bp->size;
-			bp = erts_resize_message_buffer(bp, old_size + wrap_size,
-							&message, 1);
-			hp = &bp->mem[0] + old_size;
-		    }
-
-		    write_ref_thing(hp,
-				    btm->ref_numbers[0],
-				    btm->ref_numbers[1],
-				    btm->ref_numbers[2]);
-		    ref = make_internal_ref(hp);
-		    hp += REF_THING_SIZE;
-		    message = TUPLE3(hp, am_timeout, ref, message);
+		if (!bp) {
+		    ErlOffHeap *ohp;
+		    ASSERT(is_immed(message));
+		    hp = erts_alloc_message_heap(wrap_size,
+						 &bp,
+						 &ohp,
+						 rp,
+						 &rp_locks);
+		} else {
+		    Eterm old_size = bp->size;
+		    bp = erts_resize_message_buffer(bp, old_size + wrap_size,
+						    &message, 1);
+		    hp = &bp->mem[0] + old_size;
 		}
 
-		erts_queue_message(rp, rp_locks, bp, message, NIL);
+		write_ref_thing(hp,
+				btm->ref_numbers[0],
+				btm->ref_numbers[1],
+				btm->ref_numbers[2]);
+		ref = make_internal_ref(hp);
+		hp += REF_THING_SIZE;
+		message = TUPLE3(hp, am_timeout, ref, message);
 	    }
+
+	    erts_queue_message(rp, &rp_locks, bp, message, NIL);
 	    erts_smp_proc_unlock(rp, rp_locks);
+	    erts_smp_proc_dec_refc(rp);
 	}
     }
 

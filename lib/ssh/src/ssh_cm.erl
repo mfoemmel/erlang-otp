@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2005-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 
 %%% Description : Backwards compatibility wrapper
@@ -97,9 +98,9 @@ connect(Host, Port, Opts) ->
 listen(ChannelSpec, Port) ->
     listen(ChannelSpec, Port, []).
 listen(ChannelSpec, Port, Opts) ->
-    listen(ChannelSpec, "localhost", Port, Opts).
-listen(ChannelSpec, any, Port, Opts) ->
-    listen(ChannelSpec, "localhost", Port, Opts);
+    listen(ChannelSpec, any, Port, Opts).
+listen(ChannelSpec, "localhost", Port, Opts) ->
+    listen(ChannelSpec, any, Port, Opts);
 listen(_ChannelSpec, Host, Port, Opts) ->
     ssh:daemon(Host, Port, Opts).
 
@@ -130,8 +131,14 @@ subsystem(Cm, Channel, SubSystem, Timeout) ->
     ssh_connection:subsystem(Cm, Channel, SubSystem, Timeout).
 
 %% Not needed for backwards compatibility for now
-detach(Cm, Timeout) ->
-    ssh_connection_manager:detach(Cm, Timeout).
+attach(_Cm, _Timeout) ->
+    ok.
+
+attach(_Cm, _ChannelPid, _Timeout) ->
+    ok.
+
+detach(_Cm, _Timeout) ->
+    ok.
 
 %% Not needed, send_ack is now call! Temp backwardcompability
 set_user_ack(_, _, _, _) ->
@@ -202,12 +209,6 @@ winch(Cm, Channel, Width, Height, PixWidth, PixHeight) ->
 signal(Cm, Channel, Sig) ->
     ssh_connection:signal(Cm, Channel, Sig).
     
-attach(Cm, Timeout) ->
-    ssh:attach(Cm, Timeout).
-
-attach(Cm, ChannelPid, Timeout) ->
-    ssh:attach(Cm, ChannelPid, Timeout).
-
 %% ----------------------------------------------------------------------
 %% These functions replacers are not officially supported and
 %% the format of them will proably change when and

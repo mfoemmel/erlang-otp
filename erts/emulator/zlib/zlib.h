@@ -28,6 +28,8 @@
   (zlib format), rfc1951.txt (deflate format) and rfc1952.txt (gzip format).
 */
 
+/* %ExternalCopyright% */
+
 #ifndef ZLIB_H
 #define ZLIB_H
 

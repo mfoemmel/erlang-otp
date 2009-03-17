@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>2004</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2004</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>STDLIB Release Notes</title>
@@ -30,6 +28,244 @@
     <rev></rev>
   </header>
   <p>This document describes the changes made to the STDLIB application.</p>
+
+<section><title>STDLIB 1.16</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>Fixed a minor race conditions in
+	    <c>gen_server:start*</c>: if one of these functions
+	    returned <c>{error,Reason}</c> or <c>ignore</c>, the name
+	    could still be registered (either locally or in
+	    <c>global</c>).</p>
+	    <p>A process started by <c>proc_lib</c> in some cases
+	    depended on its process dictionary not to be erased, and
+	    would crash when terminating abnormally and not generate
+	    a proper crash report. This has been corrected (but the
+	    initial call will not be shown in the error report if the
+	    process dictionary has been erased). NOTE: There is no
+	    longer any need to erase the process dictionary for
+	    memory conservation reasons, since the actual call
+	    arguments are no longer saved in the process
+	    dictionary.</p>
+          <p>
+	    Own Id: OTP-7669</p>
+        </item>
+        <item>
+	    <p>The Erlang preprocessor used wrong line number when
+	    stringifying macro arguments. (Thanks to John
+	    Hughes.)</p>
+          <p>
+	    Own Id: OTP-7702</p>
+        </item>
+        <item>
+	    <p>A bug in the <c>qlc</c> module has been fixed: merge
+	    join sometimes failed to return all answers. (Thanks to
+	    Bernard Duggan.)</p>
+          <p>
+	    Own Id: OTP-7714</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>A new option, <c>key_equality</c>, has been added to
+	    <c>qlc:table/2</c>. This option makes it possible for
+	    <c>qlc</c> to better handle tables that use <c>==/2</c>
+	    when comparing keys for equality (examples of such tables
+	    are ordered ETS tables and gb_table in qlc(3)).</p>
+          <p>
+	    Own Id: OTP-6674</p>
+        </item>
+        <item>
+	    <p>The functions <c>lists:seq/1,2</c> return the empty
+	    list in a few cases when they used to generate an
+	    exception, for example <c>lists:seq(1, 0)</c>. See
+	    lists(3) for details. (Thanks to Richard O'Keefe.)</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7230</p>
+        </item>
+        <item>
+          <p>
+	    The order of objects visited in select for ordered_set is
+	    now documented.</p>
+          <p>
+	    Own Id: OTP-7339</p>
+        </item>
+        <item>
+          <p>
+	    It is now possible to debug code in escripts and
+	    archives.</p>
+          <p>
+	    Own Id: OTP-7626</p>
+        </item>
+        <item>
+	    <p>Support for Unicode is implemented as described in
+	    EEP10. Formatting and reading of unicode data both from
+	    terminals and files is supported by the io and io_lib
+	    modules. Files can be opened in modes with automatic
+	    translation to and from different unicode formats. The
+	    module 'unicode' contains functions for conversion
+	    between external and internal unicode formats and the re
+	    module has support for unicode data. There is also
+	    language syntax for specifying string and character data
+	    beyond the ISO-latin-1 range.</p>
+	    <p>The interactive shell will support input and output of
+	    unicode characters when the terminal and operating system
+	    supports it.</p>
+	    <p>Please see the EEP and the io/io_lib manual pages as
+	    well as the stdlib users guide for details.</p>
+	    <p><em>I/O-protocol incompatibilities:</em></p>
+	    <p>The io_protocol between io_Server and client is
+	    updated to handle protocol data in unicode formats. The
+	    updated protocol is now documented. The specification
+	    resides in the stdlib <em>users manual</em>, which is a
+	    new part of the manual.</p>
+	    <p><em>io module incompatibilities:</em></p>
+	    <p>The io:put_chars, io:get_chars and io:get_line all
+	    handle and return unicode data. In the case where
+	    binaries can be provided (as to io:put_chars), they shall
+	    be encoded in UTF-8. When binaries are returned (as by
+	    io:get_line/get_chars when the io_server is set in
+	    <em>binary mode</em>) the returned data is also
+	    <em>always</em> encoded as UTF-8. The file module however
+	    still returns byte-oriented data, why file:read can be
+	    used instead of io:get_chars to read binary data in
+	    ISO-latin-1.</p>
+	    <p><em>io_lib module incompatibilities:</em></p>
+	    <p>io_lib:format can, given new format directives (i.e
+	    "~ts" and "~tc"), return lists containing integers larger
+	    than 255. </p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7648 Aux Id: OTP-7580 OTP-7514 OTP-7494
+	    OTP-7443 OTP-7181 EEP10 EEP11 </p>
+        </item>
+        <item>
+          <p>
+	    The function <c>pool:attach/1</c> now returns
+	    <c>already_attached</c> if the node is already attached,
+	    rather than <c>allready_attached</c> (sic!). (Thanks to
+	    Edwin Fine.)</p>
+          <p>
+	    Own Id: OTP-7653 Aux Id: OTP-7603 </p>
+        </item>
+        <item>
+          <p>
+	    Preprocessor directives are now allowed in escripts. This
+	    means that for example macros may be used in escripts.</p>
+          <p>
+	    Own Id: OTP-7662</p>
+        </item>
+        <item>
+	    <p>When a process started with <c>proc_lib</c>,
+	    <c>gen_server</c>, or <c>gen_fsm</c> exits with reason
+	    <c>{shutdown,Term}</c>, a crash report will no longer be
+	    generated (to allow a clean shutdown, but still provide
+	    additional information to process that are linked to the
+	    terminating process).</p>
+          <p>
+	    Own Id: OTP-7740 Aux Id: seq10847 </p>
+        </item>
+        <item>
+          <p>
+	    A new BIF, <c>lists:keyfind/3</c>, has been added. It
+	    works like <c>lists:keysearch/3</c> except that it does
+	    not wrap the returned tuple in a <c>value</c> tuple in
+	    case of success. (Thanks to James Hague for suggesting
+	    this function.)</p>
+          <p>
+	    Own Id: OTP-7752</p>
+        </item>
+        <item>
+	    <p><c>lists:suffix(Suffix, List)</c> used to have a a
+	    complexity of <c>length(Suffix)*length(List)</c> (which
+	    could become quite slow for some inputs). It has now been
+	    re-implemented so that its complexity is
+	    <c>length(Suffix)+length(List)</c>. (Thanks to Richard
+	    O'Keefe for the new implementation.)</p>
+          <p>
+	    Own Id: OTP-7797</p>
+        </item>
+        <item>
+	    <p>The Erlang scanner has been augmented as to return
+	    white spaces, comments, and exact location of tokens. The
+	    functions <c>string/3</c>, <c>tokens/4</c>, and
+	    <c>token_info/1,2</c> are new. See erl_scan(3) for
+	    details.</p>
+	    <p><c>tokens/3,4</c> have been modified as to return a
+	    list of tokens instead of an error when <c>eof</c> is
+	    encountered before the dot.</p>
+          <p>
+	    Own Id: OTP-7810</p>
+        </item>
+        <item>
+          <p>
+	    <c>filelib:fold_files/5</c> now uses the <c>re</c> module
+	    instead of the <c>regexp</c> module for regular
+	    expression matching. In practice, this change will not be
+	    a problem for most regular expressions used for
+	    <c>filelib:fold_files/5</c>. (The major difference in
+	    regular expression is that parenthesis and curly brackets
+	    is treated as literal characters by <c>regexp</c> but as
+	    special characters by <c>re</c>; fortunately, those
+	    characters are rarely used in filenames.)</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7819</p>
+        </item>
+        <item>
+          <p>
+	    <c>digraph:new(Type)</c> will now cause a <c>badarg</c>
+	    exception if <c>Type</c> is not a valid type. Similarly,
+	    <c>digraph_utils:subgraph/2,3</c> will now cause a
+	    <c>badarg</c> if the arguments are invalid. (Those
+	    functions used to return error tuples if something was
+	    wrong.)</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7824</p>
+        </item>
+        <item>
+	    <p>The argument passed to <c>random:uniform/1</c> must
+	    now be an integer (as stated in the documentation). In
+	    previous releases, a floating point number was also
+	    allowed.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7827</p>
+        </item>
+        <item>
+	    <p>The copyright notices have been updated.</p>
+          <p>
+	    Own Id: OTP-7851</p>
+        </item>
+        <item>
+	    <p>A few missing match spec functions was added to
+	    dbg:fun2ms; exception_trace/0 and trace/2,3.</p>
+	    <p>There is a new function queue:member/2.</p>
+	    <p>A bug in io_lib:fread that made it accidentally
+	    concatenate fields separated by newline has been
+	    corrected. Reported and analyzed by Matthew Palmer to
+	    erlang-patches.</p>
+          <p>
+	    Own Id: OTP-7865</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 
 <section><title>STDLIB 1.15.5</title>
 

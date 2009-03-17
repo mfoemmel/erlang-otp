@@ -427,9 +427,9 @@ This option is mandatory for remote targets
           <c>code:lib_dir(Spec)</c>.
           </p>
         <p>The same cover compiled code will be loaded on all slave or
-          peer nodes started with <c>test_server:start_node/3</c>. If
-          the loading fails, e.g. if the node runs an old version of
-          OTP, the node will simply not be a part of the coverage
+          peer nodes started with <c>test_server:start_node/3</c>. The
+          exception is nodes that run an old version of OTP. If the loading 
+          fails, the node will simply not be a part of the coverage
           analysis. Note that slave and peer nodes must be stopped with
           <c>test_server:stop_node/1</c> for the node to be part of the
           coverage analysis, else the test server will not be able to

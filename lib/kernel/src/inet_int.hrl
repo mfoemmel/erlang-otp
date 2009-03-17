@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 %%----------------------------------------------------------------------------
@@ -133,6 +134,7 @@
 -define(INET_LOPT_PACKET_SIZE,   32).
 -define(INET_LOPT_READ_PACKETS,  33).
 -define(INET_OPT_RAW,            34).
+-define(INET_LOPT_TCP_SEND_TIMEOUT_CLOSE, 35).
 % Specific SCTP options: separate range:
 -define(SCTP_OPT_RTOINFO,	 	100).
 -define(SCTP_OPT_ASSOCINFO,	 	101).
@@ -175,6 +177,8 @@
 -define(TCP_PB_HTTP,    10).
 -define(TCP_PB_HTTPH,   11).
 -define(TCP_PB_SSL_TLS, 12).
+-define(TCP_PB_HTTP_BIN,13).
+-define(TCP_PB_HTTPH_BIN,14).
 
 %% bit options, INET_LOPT_BIT8
 -define(INET_BIT8_CLEAR, 0).

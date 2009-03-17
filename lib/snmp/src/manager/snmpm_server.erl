@@ -1,30 +1,26 @@
-%%<copyright>
-%% <year>2004-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
+
 -module(snmpm_server).
 
 %%----------------------------------------------------------------------
 %% This module implements a simple SNMP manager for Erlang.
-%%
-%% Discovery: broadcast a request for: 
-%% 
-%%          sysObjectID, sysDescr and sysUpTime
 %%
 %%----------------------------------------------------------------------
 
@@ -34,19 +30,19 @@
 
 	 load_mib/1, unload_mib/1, 
 
-	 register_user/3, register_user_monitor/3, unregister_user/1, 
+	 register_user/4, register_user_monitor/4, unregister_user/1, 
 
-	 sync_get/5,       sync_get/6,       sync_get/7, 
-	 async_get/5,      async_get/6,      async_get/7, 
-	 sync_get_next/5,  sync_get_next/6,  sync_get_next/7, 
-	 async_get_next/5, async_get_next/6, async_get_next/7, 
-	 sync_get_bulk/7,  sync_get_bulk/8,  sync_get_bulk/9, 
-	 async_get_bulk/7, async_get_bulk/8, async_get_bulk/9, 
-	 sync_set/5,       sync_set/6,       sync_set/7, 
-	 async_set/5,      async_set/6,      async_set/7, 
+	 sync_get/4,       sync_get/5,       sync_get/6, 
+	 async_get/4,      async_get/5,      async_get/6, 
+	 sync_get_next/4,  sync_get_next/5,  sync_get_next/6, 
+	 async_get_next/4, async_get_next/5, async_get_next/6, 
+	 sync_get_bulk/6,  sync_get_bulk/7,  sync_get_bulk/8, 
+	 async_get_bulk/6, async_get_bulk/7, async_get_bulk/8, 
+	 sync_set/4,       sync_set/5,       sync_set/6, 
+	 async_set/4,      async_set/5,      async_set/6, 
 	 cancel_async_request/2,
 
-	 discovery/2, discovery/3, discovery/4, discovery/5, discovery/6, 
+	 %% discovery/2, discovery/3, discovery/4, discovery/5, discovery/6, 
 
 	 %% system_info_updated/2, 
 	 get_log_type/0,      set_log_type/1, 
@@ -124,6 +120,8 @@
 -record(request, 
 	{id, 
 	 user_id,
+	 reg_type,
+	 target, 
 	 addr, 
 	 port, 
 	 type, 
@@ -171,11 +169,11 @@ unload_mib(Mib) when list(Mib) ->
     call({unload_mib, Mib}).
 
 
-register_user(UserId, UserMod, UserData) ->
-    snmpm_config:register_user(UserId, UserMod, UserData).
+register_user(UserId, UserMod, UserData, DefaultAgentConfig) ->
+    snmpm_config:register_user(UserId, UserMod, UserData, DefaultAgentConfig).
 
-register_user_monitor(Id, Module, Data) ->
-    case register_user(Id, Module, Data) of
+register_user_monitor(Id, Module, Data, DefaultAgentConfig) ->
+    case register_user(Id, Module, Data, DefaultAgentConfig) of
 	ok ->
 	    case call({monitor_user, Id, self()}) of
 		ok ->
@@ -194,146 +192,152 @@ unregister_user(UserId) ->
 
 %% -- [sync] get --
 
-sync_get(UserId, Addr, Port, CtxName, Oids) ->
-    sync_get(UserId, Addr, Port, CtxName, Oids, 
-	     ?SYNC_GET_TIMEOUT, ?EXTRA_INFO).
+sync_get(UserId, TargetName, CtxName, Oids) ->
+    sync_get(UserId, TargetName, CtxName, Oids, 
+	     ?SYNC_GET_TIMEOUT).
 
-sync_get(UserId, Addr, Port, CtxName, Oids, Timeout) ->
-    sync_get(UserId, Addr, Port, CtxName, Oids, Timeout, ?EXTRA_INFO).
+sync_get(UserId, TargetName, CtxName, Oids, Timeout) ->
+    sync_get(UserId, TargetName, CtxName, Oids, Timeout, ?EXTRA_INFO).
 
-sync_get(UserId, Addr0, Port, CtxName, Oids, Timeout, ExtraInfo) 
-  when integer(Port), list(CtxName), list(Oids), integer(Timeout) ->
-    {ok, Addr} = inet:getaddr(Addr0, inet),
-    call({sync_get, self(), UserId, Addr, Port, CtxName, Oids, Timeout, 
-	  ExtraInfo}).
+sync_get(UserId, TargetName, CtxName, Oids, Timeout, ExtraInfo) 
+  when is_list(TargetName) andalso 
+       is_list(CtxName) andalso 
+       is_list(Oids) andalso 
+       is_integer(Timeout) ->
+    call({sync_get, self(), UserId, TargetName, CtxName, Oids, Timeout, ExtraInfo}).
 
 %% -- [async] get --
 
-async_get(UserId, Addr, Port, CtxName, Oids) ->
-    async_get(UserId, Addr, Port, CtxName, Oids, 
+async_get(UserId, TargetName, CtxName, Oids) ->
+    async_get(UserId, TargetName, CtxName, Oids, 
 	      ?DEFAULT_ASYNC_EXPIRE, ?EXTRA_INFO).
 
-async_get(UserId, Addr, Port, CtxName, Oids, Expire) ->
-    async_get(UserId, Addr, Port, CtxName, Oids, Expire, ?EXTRA_INFO).
+async_get(UserId, TargetName, CtxName, Oids, Expire) ->
+    async_get(UserId, TargetName, CtxName, Oids, Expire, ?EXTRA_INFO).
 
-async_get(UserId, Addr0, Port, CtxName, Oids, Expire, ExtraInfo) 
-  when integer(Port), 
-       list(CtxName), 
-       list(Oids), 
-       integer(Expire), Expire >= 0 ->
-    {ok, Addr} = inet:getaddr(Addr0, inet),
-    call({async_get, self(), UserId, Addr, Port, CtxName, Oids, Expire, 
+async_get(UserId, TargetName, CtxName, Oids, Expire, ExtraInfo) 
+  when (is_list(TargetName) andalso 
+	is_list(CtxName) andalso 
+	is_list(Oids) andalso 
+	is_integer(Expire) andalso (Expire >= 0)) ->
+    call({async_get, self(), UserId, TargetName, CtxName, Oids, Expire, 
 	  ExtraInfo}).
 
 %% -- [sync] get-next --
 
-sync_get_next(UserId, Addr0, Port, CtxName, Oids) ->
-    sync_get_next(UserId, Addr0, Port, CtxName, Oids, ?SYNC_GET_TIMEOUT, 
+sync_get_next(UserId, TargetName, CtxName, Oids) ->
+    sync_get_next(UserId, TargetName, CtxName, Oids, ?SYNC_GET_TIMEOUT, 
 		  ?EXTRA_INFO).
 
-sync_get_next(UserId, Addr0, Port, CtxName, Oids, Timeout) ->
-    sync_get_next(UserId, Addr0, Port, CtxName, Oids, Timeout, ?EXTRA_INFO).
+sync_get_next(UserId, TargetName, CtxName, Oids, Timeout) ->
+    sync_get_next(UserId, TargetName, CtxName, Oids, Timeout, ?EXTRA_INFO).
 
-sync_get_next(UserId, Addr0, Port, CtxName, Oids, Timeout, ExtraInfo) 
-  when integer(Port), list(CtxName), list(Oids), integer(Timeout) ->
-    {ok, Addr} = inet:getaddr(Addr0, inet),
-    call({sync_get_next, self(), UserId, Addr, Port, CtxName, Oids, Timeout, 
+sync_get_next(UserId, TargetName, CtxName, Oids, Timeout, ExtraInfo) 
+  when is_list(TargetName) andalso 
+       is_list(CtxName) andalso 
+       is_list(Oids) andalso 
+       is_integer(Timeout) ->
+    call({sync_get_next, self(), UserId, TargetName, CtxName, Oids, Timeout, 
 	  ExtraInfo}).
 
 %% -- [async] get-next --
 
-async_get_next(UserId, Addr, Port, CtxName, Oids) ->
-    async_get_next(UserId, Addr, Port, CtxName, Oids, 
+async_get_next(UserId, TargetName, CtxName, Oids) ->
+    async_get_next(UserId, TargetName, CtxName, Oids, 
 		   ?DEFAULT_ASYNC_EXPIRE, ?EXTRA_INFO).
 
-async_get_next(UserId, Addr, Port, CtxName, Oids, Expire) ->
-    async_get_next(UserId, Addr, Port, CtxName, Oids, Expire, ?EXTRA_INFO).
+async_get_next(UserId, TargetName, CtxName, Oids, Expire) ->
+    async_get_next(UserId, TargetName, CtxName, Oids, Expire, ?EXTRA_INFO).
 
-async_get_next(UserId, Addr0, Port, CtxName, Oids, Expire, ExtraInfo) 
-  when integer(Port), 
-       list(CtxName), 
-       list(Oids), 
-       integer(Expire), Expire >= 0 ->
-    {ok, Addr} = inet:getaddr(Addr0, inet),
-    call({async_get_next, self(), UserId, Addr, Port, CtxName, Oids, 
+async_get_next(UserId, TargetName, CtxName, Oids, Expire, ExtraInfo) 
+  when (is_list(TargetName) andalso 
+	is_list(CtxName) andalso 
+	is_list(Oids) andalso 
+	is_integer(Expire) andalso (Expire >= 0)) ->
+    call({async_get_next, self(), UserId, TargetName, CtxName, Oids, 
 	  Expire, ExtraInfo}).
 
 %% -- [sync] get-bulk --
 
-sync_get_bulk(UserId, Addr, Port, NonRep, MaxRep, CtxName, Oids) ->
-    sync_get_bulk(UserId, Addr, Port, 
+sync_get_bulk(UserId, TargetName, NonRep, MaxRep, CtxName, Oids) ->
+    sync_get_bulk(UserId, TargetName, 
 		  NonRep, MaxRep, CtxName, Oids, 
 		  ?SYNC_GET_TIMEOUT, ?EXTRA_INFO).
 
-sync_get_bulk(UserId, Addr, Port, NonRep, MaxRep, CtxName, Oids, Timeout) ->
-    sync_get_bulk(UserId, Addr, Port, 
+sync_get_bulk(UserId, TargetName, NonRep, MaxRep, CtxName, Oids, Timeout) ->
+    sync_get_bulk(UserId, TargetName, 
 		  NonRep, MaxRep, CtxName, Oids, 
 		  Timeout, ?EXTRA_INFO).
 
-sync_get_bulk(UserId, Addr0, Port, NonRep, MaxRep, CtxName, Oids, Timeout, 
+sync_get_bulk(UserId, TargetName, NonRep, MaxRep, CtxName, Oids, Timeout, 
 	      ExtraInfo) 
-  when integer(Port), 
-       integer(NonRep), integer(MaxRep), 
-       list(CtxName), list(Oids), integer(Timeout) ->
-    {ok, Addr} = inet:getaddr(Addr0, inet),
-    call({sync_get_bulk, self(), UserId, Addr, Port, 
+  when is_list(TargetName) andalso 
+       is_integer(NonRep) andalso 
+       is_integer(MaxRep) andalso 
+       is_list(CtxName) andalso 
+       is_list(Oids) andalso 
+       is_integer(Timeout) ->
+    call({sync_get_bulk, self(), UserId, TargetName, 
 	  NonRep, MaxRep, CtxName, Oids, Timeout, ExtraInfo}).
 
 %% -- [async] get-bulk --
 
-async_get_bulk(UserId, Addr, Port, NonRep, MaxRep, CtxName, Oids) ->
-    async_get_bulk(UserId, Addr, Port, 
+async_get_bulk(UserId, TargetName, NonRep, MaxRep, CtxName, Oids) ->
+    async_get_bulk(UserId, TargetName, 
 		   NonRep, MaxRep, CtxName, Oids, 
 		   ?DEFAULT_ASYNC_EXPIRE, ?EXTRA_INFO).
 
-async_get_bulk(UserId, Addr, Port, NonRep, MaxRep, CtxName, Oids, Expire) ->
-    async_get_bulk(UserId, Addr, Port, 
+async_get_bulk(UserId, TargetName, NonRep, MaxRep, CtxName, Oids, Expire) ->
+    async_get_bulk(UserId, TargetName, 
 		   NonRep, MaxRep, CtxName, Oids, 
 		   Expire, ?EXTRA_INFO).
 
-async_get_bulk(UserId, Addr0, Port, NonRep, MaxRep, CtxName, Oids, Expire, 
+async_get_bulk(UserId, TargetName, NonRep, MaxRep, CtxName, Oids, Expire, 
 	       ExtraInfo) 
-  when integer(Port), 
-       integer(NonRep), integer(MaxRep), 
-       list(CtxName), list(Oids), integer(Expire) ->
-    {ok, Addr} = inet:getaddr(Addr0, inet),
-    call({async_get_bulk, self(), UserId, Addr, Port, 
+  when is_list(TargetName) andalso 
+       is_integer(NonRep) andalso 
+       is_integer(MaxRep) andalso 
+       is_list(CtxName) andalso 
+       is_list(Oids) andalso 
+       is_integer(Expire) ->
+    call({async_get_bulk, self(), UserId, TargetName, 
 	  NonRep, MaxRep, CtxName, Oids, Expire, ExtraInfo}).
 
 %% -- [sync] set --
 
 %% VarsAndValues is: {PlainOid, o|s|i, Value} (unknown mibs) | {Oid, Value} 
-sync_set(UserId, Addr0, Port, CtxName, VarsAndVals) ->
-    sync_set(UserId, Addr0, Port, CtxName, VarsAndVals, 
+sync_set(UserId, TargetName, CtxName, VarsAndVals) ->
+    sync_set(UserId, TargetName, CtxName, VarsAndVals, 
 	     ?SYNC_SET_TIMEOUT, ?EXTRA_INFO).
 
-sync_set(UserId, Addr0, Port, CtxName, VarsAndVals, Timeout) ->
-    sync_set(UserId, Addr0, Port, CtxName, VarsAndVals, 
+sync_set(UserId, TargetName, CtxName, VarsAndVals, Timeout) ->
+    sync_set(UserId, TargetName, CtxName, VarsAndVals, 
 	     Timeout, ?EXTRA_INFO).
 
-sync_set(UserId, Addr0, Port, CtxName, VarsAndVals, Timeout, ExtraInfo) 
-  when integer(Port), list(CtxName), list(VarsAndVals), integer(Timeout) ->
-    {ok, Addr} = inet:getaddr(Addr0, inet),
-    call({sync_set, self(), UserId, Addr, Port, 
+sync_set(UserId, TargetName, CtxName, VarsAndVals, Timeout, ExtraInfo) 
+  when is_list(TargetName) andalso 
+       is_list(CtxName) andalso 
+       is_list(VarsAndVals) andalso 
+       is_integer(Timeout) ->
+    call({sync_set, self(), UserId, TargetName, 
 	  CtxName, VarsAndVals, Timeout, ExtraInfo}).
 
 %% -- [async] set --
 
-async_set(UserId, Addr, Port, CtxName, VarsAndVals) ->
-    async_set(UserId, Addr, Port, CtxName, VarsAndVals, 
+async_set(UserId, TargetName, CtxName, VarsAndVals) ->
+    async_set(UserId, TargetName, CtxName, VarsAndVals, 
 	      ?DEFAULT_ASYNC_EXPIRE, ?EXTRA_INFO).
 
-async_set(UserId, Addr, Port, CtxName, VarsAndVals, Expire) ->
-    async_set(UserId, Addr, Port, CtxName, VarsAndVals, 
+async_set(UserId, TargetName, CtxName, VarsAndVals, Expire) ->
+    async_set(UserId, TargetName, CtxName, VarsAndVals, 
 	      Expire, ?EXTRA_INFO).
 
-async_set(UserId, Addr0, Port, CtxName, VarsAndVals, Expire, ExtraInfo) 
-  when integer(Port), 
-       list(CtxName), 
-       list(VarsAndVals), 
-       integer(Expire), Expire >= 0 ->
-    {ok, Addr} = inet:getaddr(Addr0, inet),
-    call({async_set, self(), UserId, Addr, Port, 
+async_set(UserId, TargetName, CtxName, VarsAndVals, Expire, ExtraInfo) 
+  when (is_list(TargetName) andalso 
+	is_list(CtxName) andalso 
+	is_list(VarsAndVals) andalso 
+	is_integer(Expire) andalso (Expire >= 0)) ->
+    call({async_set, self(), UserId, TargetName, 
 	  CtxName, VarsAndVals, Expire, ExtraInfo}).
 
 
@@ -341,25 +345,25 @@ cancel_async_request(UserId, ReqId) ->
     call({cancel_async_request, UserId, ReqId}).
 
 
-discovery(UserId, BAddr) ->
-    discovery(UserId, BAddr, ?SNMP_AGENT_PORT, [], 
-	      ?DEFAULT_ASYNC_EXPIRE, ?EXTRA_INFO).
+%% discovery(UserId, BAddr) ->
+%%     discovery(UserId, BAddr, ?SNMP_AGENT_PORT, [], 
+%% 	      ?DEFAULT_ASYNC_EXPIRE, ?EXTRA_INFO).
 
-discovery(UserId, BAddr, Config) when is_list(Config) ->
-    discovery(UserId, BAddr, ?SNMP_AGENT_PORT, Config, 
-	      ?DEFAULT_ASYNC_EXPIRE, ?EXTRA_INFO);
+%% discovery(UserId, BAddr, Config) when is_list(Config) ->
+%%     discovery(UserId, BAddr, ?SNMP_AGENT_PORT, Config, 
+%% 	      ?DEFAULT_ASYNC_EXPIRE, ?EXTRA_INFO);
 
-discovery(UserId, BAddr, Expire) when is_integer(Expire) ->
-    discovery(UserId, BAddr, ?SNMP_AGENT_PORT, [], Expire, ?EXTRA_INFO).
+%% discovery(UserId, BAddr, Expire) when is_integer(Expire) ->
+%%     discovery(UserId, BAddr, ?SNMP_AGENT_PORT, [], Expire, ?EXTRA_INFO).
 
-discovery(UserId, BAddr, Config, Expire) ->
-    discovery(UserId, BAddr, ?SNMP_AGENT_PORT, Config, Expire, ?EXTRA_INFO).
+%% discovery(UserId, BAddr, Config, Expire) ->
+%%     discovery(UserId, BAddr, ?SNMP_AGENT_PORT, Config, Expire, ?EXTRA_INFO).
 
-discovery(UserId, BAddr, Port, Config, Expire) ->
-    discovery(UserId, BAddr, Port, Config, Expire, ?EXTRA_INFO).
+%% discovery(UserId, BAddr, Port, Config, Expire) ->
+%%     discovery(UserId, BAddr, Port, Config, Expire, ?EXTRA_INFO).
 
-discovery(UserId, BAddr, Port, Config, Expire, ExtraInfo) ->
-    call({discovery, self(), UserId, BAddr, Port, Config, Expire, ExtraInfo}).
+%% discovery(UserId, BAddr, Port, Config, Expire, ExtraInfo) ->
+%%     call({discovery, self(), UserId, BAddr, Port, Config, Expire, ExtraInfo}).
 
     
 verbosity(Verbosity) ->
@@ -522,6 +526,7 @@ handle_call({unregister_user, UserId}, _From, State) ->
     ?vlog("received request to unregister user ~p", [UserId]),
 
     %% 1) If this user is monitored, then demonitor
+    ?vtrace("handle_call(unregister_user) -> maybe demonitor", []),
     case ets:lookup(snmpm_monitor_table, UserId) of
 	[] ->
 	    ok;
@@ -531,9 +536,12 @@ handle_call({unregister_user, UserId}, _From, State) ->
     end,
 
     %% 2) Delete all outstanding requests from this user
+    ?vtrace("handle_call(unregister_user) -> "
+	    "delete all outstanding requests for user", []),
     Pat = #request{user_id = UserId, 
 		   id = '$1', ref = '$2', mon = '$3', _ = '_'},
     Match = ets:match(snmpm_request_table, Pat),
+    ?vtrace("handle_call(unregister_user) -> Match: ~p", [Match]),
     F1 = fun([ReqId, Ref, MonRef]) -> 
 		 ets:delete(snmpm_request_table, ReqId),
 		 cancel_timer(Ref),
@@ -543,23 +551,29 @@ handle_call({unregister_user, UserId}, _From, State) ->
     lists:foreach(F1, Match),
     
     %% 3) Unregister all agents registered by this user
+    ?vdebug("handle_call(unregister_user) -> "
+	    "unregister all agents registered by user", []),
     Agents = snmpm_config:which_agents(UserId),
-    F2 = fun({Addr, Port}) ->
-		 snmpm_config:unregister_agent(UserId, Addr, Port)
+    ?vtrace("handle_call(unregister_user) -> Agents: ~p", [Agents]),
+    F2 = fun(TargetName) ->
+		 snmpm_config:unregister_agent(UserId, TargetName)
 	 end,
     lists:foreach(F2, Agents),
 
     %% 4) Unregister the user
+    ?vdebug("handle_call(unregister_user) -> unregister user", []),
     Reply = snmpm_config:unregister_user(UserId),
+    ?vtrace("handle_call(unregister_user) -> Reply: ~p", [Reply]),
     {reply, Reply, State};
 
 
 %% We will reply to this request later, when the reply comes in from the
 %% agent, or when the timeout hits (unless we get an error now).
-handle_call({sync_get, Pid, UserId, Addr, Port, CtxName, Oids, Timeout, ExtraInfo}, From, State) ->
+handle_call({sync_get, Pid, UserId, TargetName, CtxName, Oids, Timeout, ExtraInfo}, 
+	    From, State) ->
     ?vlog("received sync_get [~p] request", [CtxName]),
     case (catch handle_sync_get(Pid, 
-				UserId, Addr, Port, CtxName, Oids, 
+				UserId, TargetName, CtxName, Oids, 
 				Timeout, ExtraInfo, From, State)) of
 	ok ->
 	    {noreply, State};
@@ -568,10 +582,10 @@ handle_call({sync_get, Pid, UserId, Addr, Port, CtxName, Oids, Timeout, ExtraInf
     end;
 
 
-handle_call({sync_get_next, Pid, UserId, Addr, Port, CtxName, Oids, Timeout, ExtraInfo}, From, State) ->
+handle_call({sync_get_next, Pid, UserId, TargetName, CtxName, Oids, Timeout, ExtraInfo}, From, State) ->
     ?vlog("received sync_get_next [~p] request", [CtxName]),
     case (catch handle_sync_get_next(Pid, 
-				     UserId, Addr, Port, CtxName, Oids, 
+				     UserId, TargetName, CtxName, Oids, 
 				     Timeout, ExtraInfo, From, State)) of
 	ok ->
 	    {noreply, State};
@@ -581,12 +595,12 @@ handle_call({sync_get_next, Pid, UserId, Addr, Port, CtxName, Oids, Timeout, Ext
 
 
 %% Check agent version? This op not in v1
-handle_call({sync_get_bulk, Pid, UserId, Addr, Port, 
+handle_call({sync_get_bulk, Pid, UserId, TargetName, 
 	     NonRep, MaxRep, CtxName, Oids, Timeout, ExtraInfo}, 
 	    From, State) ->
     ?vlog("received sync_get_bulk [~p] request", [CtxName]),
     case (catch handle_sync_get_bulk(Pid, 
-				     UserId, Addr, Port, CtxName, 
+				     UserId, TargetName, CtxName, 
 				     NonRep, MaxRep, Oids, 
 				     Timeout, ExtraInfo, From, State)) of
 	ok ->
@@ -596,12 +610,12 @@ handle_call({sync_get_bulk, Pid, UserId, Addr, Port,
     end;
 
 
-handle_call({sync_set, Pid, UserId, Addr, Port, 
+handle_call({sync_set, Pid, UserId, TargetName, 
 	     CtxName, VarsAndVals, Timeout, ExtraInfo}, 
 	    From, State) ->
     ?vlog("received sync_set [~p] request", [CtxName]),
     case (catch handle_sync_set(Pid, 
-				UserId, Addr, Port, CtxName, VarsAndVals, 
+				UserId, TargetName, CtxName, VarsAndVals, 
 				Timeout, ExtraInfo, From, State)) of
 	ok ->
 	    {noreply, State};
@@ -610,41 +624,41 @@ handle_call({sync_set, Pid, UserId, Addr, Port,
     end;
 
 
-handle_call({async_get, Pid, UserId, Addr, Port, 
+handle_call({async_get, Pid, UserId, TargetName, 
 	     CtxName, Oids, Expire, ExtraInfo}, 
 	    _From, State) ->
     ?vlog("received async_get [~p] request", [CtxName]),
-    Reply = (catch handle_async_get(Pid, UserId, Addr, Port, CtxName, Oids, 
+    Reply = (catch handle_async_get(Pid, UserId, TargetName, CtxName, Oids, 
 				    Expire, ExtraInfo, State)),
     {reply, Reply, State};
 
 
-handle_call({async_get_next, Pid, UserId, Addr, Port, 
+handle_call({async_get_next, Pid, UserId, TargetName, 
 	     CtxName, Oids, Expire, ExtraInfo}, 
 	    _From, State) ->
     ?vlog("received async_get_next [~p] request", [CtxName]),
-    Reply = (catch handle_async_get_next(Pid, UserId, Addr, Port, CtxName, 
+    Reply = (catch handle_async_get_next(Pid, UserId, TargetName, CtxName, 
 					 Oids, Expire, ExtraInfo, State)),
     {reply, Reply, State};
 
 
 %% Check agent version? This op not in v1
-handle_call({async_get_bulk, Pid, UserId, Addr, Port, 
+handle_call({async_get_bulk, Pid, UserId, TargetName, 
 	     NonRep, MaxRep, CtxName, Oids, Expire, ExtraInfo}, 
 	    _From, State) ->
     ?vlog("received async_get_bulk [~p] request", [CtxName]),
     Reply = (catch handle_async_get_bulk(Pid, 
-					 UserId, Addr, Port, CtxName, 
+					 UserId, TargetName, CtxName, 
 					 NonRep, MaxRep, Oids, 
 					 Expire, ExtraInfo, State)),
     {reply, Reply, State};
 
 
-handle_call({async_set, Pid, UserId, Addr, Port, 
+handle_call({async_set, Pid, UserId, TargetName, 
 	     CtxName, VarsAndVals, Expire, ExtraInfo}, 
 	    _From, State) ->
     ?vlog("received async_set [~p] request", [CtxName]),
-    Reply = (catch handle_async_set(Pid, UserId, Addr, Port, CtxName, 
+    Reply = (catch handle_async_set(Pid, UserId, TargetName, CtxName, 
 				    VarsAndVals, Expire, ExtraInfo, State)),
     {reply, Reply, State};
 
@@ -655,12 +669,12 @@ handle_call({cancel_async_request, UserId, ReqId}, _From, State) ->
     {reply, Reply, State};
 
 
-handle_call({discovery, Pid, UserId, BAddr, Port, Config, Expire, ExtraInfo}, 
-	    _From, State) ->
-    ?vlog("received discovery request", []),
-    Reply = (catch handle_discovery(Pid, UserId, BAddr, Port, Config, 
-				    Expire, ExtraInfo, State)),
-    {reply, Reply, State};
+%% handle_call({discovery, Pid, UserId, BAddr, Port, Config, Expire, ExtraInfo}, 
+%% 	    _From, State) ->
+%%     ?vlog("received discovery request", []),
+%%     Reply = (catch handle_discovery(Pid, UserId, BAddr, Port, Config, 
+%% 				    Expire, ExtraInfo, State)),
+%%     {reply, Reply, State};
 
 
 handle_call({load_mib, Mib}, _From, State) ->
@@ -883,20 +897,19 @@ terminate(Reason, #state{gct = GCT}) ->
 %% 
 %%----------------------------------------------------------------------
 
-handle_sync_get(Pid, UserId, Addr, Port, CtxName, Oids, Timeout, ExtraInfo, 
+handle_sync_get(Pid, UserId, TargetName, CtxName, Oids, Timeout, ExtraInfo, 
 		From, State) ->    
     ?vtrace("handle_sync_get -> entry with"
-	    "~n   Pid:     ~p"
-	    "~n   UserId:  ~p"
-	    "~n   Addr:    ~p"
-	    "~n   Port:    ~p"
-	    "~n   CtxName: ~p"
-	    "~n   Oids:    ~p"
-	    "~n   Timeout: ~p"
-	    "~n   From:    ~p", 
-	    [Pid, UserId, Addr, Port, CtxName, Oids, Timeout, From]),
-    case agent_data(Addr, Port, CtxName) of
-	{ok, Vsn, MsgData} ->
+	    "~n   Pid:        ~p"
+	    "~n   UserId:     ~p"
+	    "~n   TargetName: ~p"
+	    "~n   CtxName:    ~p"
+	    "~n   Oids:       ~p"
+	    "~n   Timeout:    ~p"
+	    "~n   From:       ~p", 
+	    [Pid, UserId, TargetName, CtxName, Oids, Timeout, From]),
+    case agent_data(TargetName, CtxName) of
+	{ok, RegType, Addr, Port, Vsn, MsgData} ->
 	    ?vtrace("handle_sync_get -> send a ~p message", [Vsn]),
 	    ReqId  = send_get_request(Oids, Vsn, MsgData, Addr, Port, 
 				      ExtraInfo, State),
@@ -905,40 +918,40 @@ handle_sync_get(Pid, UserId, Addr, Port, CtxName, Oids, Timeout, ExtraInfo,
 	    Ref    = erlang:send_after(Timeout, self(), Msg),
 	    MonRef = erlang:monitor(process, Pid),
 	    ?vtrace("handle_sync_get -> MonRef: ~p", [MonRef]),
-	    Req    = #request{id      = ReqId,
-			      user_id = UserId, 
-			      addr    = Addr,
-			      port    = Port,
-			      type    = get, 
-			      data    = MsgData, 
-			      ref     = Ref, 
-			      mon     = MonRef, 
-			      from    = From},
+	    Req    = #request{id       = ReqId,
+			      user_id  = UserId, 
+			      reg_type = RegType, 
+			      target   = TargetName, 
+			      addr     = Addr,
+			      port     = Port,
+			      type     = get, 
+			      data     = MsgData, 
+			      ref      = Ref, 
+			      mon      = MonRef, 
+			      from     = From},
 	    ets:insert(snmpm_request_table, Req),
 	    ok;
 	Error ->
 	    ?vinfo("failed retrieving agent data for get:"
-		   "~n   Addr:  ~p"
-		   "~n   Port:  ~p"
-		   "~n   Error: ~p", [Addr, Port, Error]),
+		   "~n   TargetName: ~p"
+		   "~n   Error:      ~p", [TargetName, Error]),
 	    Error
     end.
     
 
-handle_sync_get_next(Pid, UserId, Addr, Port, CtxName, Oids, Timeout, 
+handle_sync_get_next(Pid, UserId, TargetName, CtxName, Oids, Timeout, 
 		     ExtraInfo, From, State) ->
     ?vtrace("handle_sync_get_next -> entry with"
-	    "~n   Pid:     ~p"
-	    "~n   UserId:  ~p"
-	    "~n   Addr:    ~p"
-	    "~n   Port:    ~p"
-	    "~n   CtxName: ~p"
-	    "~n   Oids:    ~p"
-	    "~n   Timeout: ~p"
-	    "~n   From:    ~p", 
-	    [Pid, UserId, Addr, Port, CtxName, Oids, Timeout, From]),
-    case agent_data(Addr, Port, CtxName) of
-	{ok, Vsn, MsgData} ->
+	    "~n   Pid:        ~p"
+	    "~n   UserId:     ~p"
+	    "~n   TargetName: ~p"
+	    "~n   CtxName:    ~p"
+	    "~n   Oids:       ~p"
+	    "~n   Timeout:    ~p"
+	    "~n   From:       ~p", 
+	    [Pid, UserId, TargetName, CtxName, Oids, Timeout, From]),
+    case agent_data(TargetName, CtxName) of
+	{ok, RegType, Addr, Port, Vsn, MsgData} ->
 	    ?vtrace("handle_sync_get_next -> send a ~p message", [Vsn]),
 	    ReqId  = send_get_next_request(Oids, Vsn, MsgData, 
 					   Addr, Port, ExtraInfo, State),
@@ -947,45 +960,45 @@ handle_sync_get_next(Pid, UserId, Addr, Port, CtxName, Oids, Timeout,
 	    Ref    = erlang:send_after(Timeout, self(), Msg),
 	    MonRef = erlang:monitor(process, Pid),
 	    ?vtrace("handle_sync_get_next -> MonRef: ~p", [MonRef]),
-	    Req    = #request{id      = ReqId,
-			      user_id = UserId, 
-			      addr    = Addr,
-			      port    = Port,
-			      type    = get_next, 
-			      data    = MsgData, 
-			      ref     = Ref, 
-			      mon     = MonRef, 
-			      from    = From},
+	    Req    = #request{id       = ReqId,
+			      user_id  = UserId, 
+			      reg_type = RegType, 
+			      target   = TargetName, 
+			      addr     = Addr,
+			      port     = Port,
+			      type     = get_next, 
+			      data     = MsgData, 
+			      ref      = Ref, 
+			      mon      = MonRef, 
+			      from     = From},
 	    ets:insert(snmpm_request_table, Req),
 	    ok;
 
 	Error ->
 	    ?vinfo("failed retrieving agent data for get-next:"
-		   "~n   Addr:  ~p"
-		   "~n   Port:  ~p"
-		   "~n   Error: ~p", [Addr, Port, Error]),
+		   "~n   TargetName: ~p"
+		   "~n   Error:      ~p", [TargetName, Error]),
 	    Error
     end.
 
 
-handle_sync_get_bulk(Pid, UserId, Addr, Port, CtxName, 
+handle_sync_get_bulk(Pid, UserId, TargetName, CtxName, 
 		     NonRep, MaxRep, Oids, Timeout, 
 		     ExtraInfo, From, State) ->
     ?vtrace("handle_sync_get_bulk -> entry with"
-	    "~n   Pid:     ~p"
-	    "~n   UserId:  ~p"
-	    "~n   Addr:    ~p"
-	    "~n   Port:    ~p"
-	    "~n   CtxName: ~p"
-	    "~n   NonRep:  ~p"
-	    "~n   MaxRep:  ~p"
-	    "~n   Oids:    ~p"
-	    "~n   Timeout: ~p"
-	    "~n   From:    ~p", 
-	    [Pid, UserId, Addr, Port, CtxName, NonRep, MaxRep, Oids, 
+	    "~n   Pid:        ~p"
+	    "~n   UserId:     ~p"
+	    "~n   TargetName: ~p"
+	    "~n   CtxName:    ~p"
+	    "~n   NonRep:     ~p"
+	    "~n   MaxRep:     ~p"
+	    "~n   Oids:       ~p"
+	    "~n   Timeout:    ~p"
+	    "~n   From:       ~p", 
+	    [Pid, UserId, TargetName, CtxName, NonRep, MaxRep, Oids, 
 	     Timeout, From]),
-    case agent_data(Addr, Port, CtxName) of
-	{ok, Vsn, MsgData} ->
+    case agent_data(TargetName, CtxName) of
+	{ok, RegType, Addr, Port, Vsn, MsgData} ->
 	    ?vtrace("handle_sync_get_bulk -> send a ~p message", [Vsn]),
 	    ReqId  = send_get_bulk_request(Oids, Vsn, MsgData, Addr, Port, 
 					   NonRep, MaxRep, ExtraInfo, State),
@@ -994,41 +1007,41 @@ handle_sync_get_bulk(Pid, UserId, Addr, Port, CtxName,
 	    Ref    = erlang:send_after(Timeout, self(), Msg),
 	    MonRef = erlang:monitor(process, Pid),
 	    ?vtrace("handle_sync_get_bulk -> MonRef: ~p", [MonRef]),
-	    Req    = #request{id      = ReqId,
-			      user_id = UserId, 
-			      addr    = Addr,
-			      port    = Port,
-			      type    = get_bulk, 
-			      data    = MsgData, 
-			      ref     = Ref, 
-			      mon     = MonRef, 
-			      from    = From},
+	    Req    = #request{id       = ReqId,
+			      user_id  = UserId, 
+			      reg_type = RegType, 
+			      target   = TargetName, 
+			      addr     = Addr,
+			      port     = Port,
+			      type     = get_bulk, 
+			      data     = MsgData, 
+			      ref      = Ref, 
+			      mon      = MonRef, 
+			      from     = From},
 	    ets:insert(snmpm_request_table, Req),
 	    ok;
 
 	Error ->
 	    ?vinfo("failed retrieving agent data for get-bulk:"
-		   "~n   Addr:  ~p"
-		   "~n   Port:  ~p"
-		   "~n   Error: ~p", [Addr, Port, Error]),
+		   "~n   TargetName: ~p"
+		   "~n   Error:      ~p", [TargetName, Error]),
 	    Error
     end.
 
 
-handle_sync_set(Pid, UserId, Addr, Port, CtxName, VarsAndVals, Timeout, 
+handle_sync_set(Pid, UserId, TargetName, CtxName, VarsAndVals, Timeout, 
 		ExtraInfo, From, State) ->
     ?vtrace("handle_sync_set -> entry with"
 	    "~n   Pid:         ~p"
 	    "~n   UserId:      ~p"
-	    "~n   Addr:        ~p"
-	    "~n   Port:        ~p"
+	    "~n   TargetName:  ~p"
 	    "~n   CtxName:     ~p"
 	    "~n   VarsAndVals: ~p"
 	    "~n   Timeout:     ~p"
 	    "~n   From:        ~p", 
-	    [Pid, UserId, Addr, Port, CtxName, VarsAndVals, Timeout, From]),
-    case agent_data(Addr, Port, CtxName) of
-	{ok, Vsn, MsgData} ->
+	    [Pid, UserId, TargetName, CtxName, VarsAndVals, Timeout, From]),
+    case agent_data(TargetName, CtxName) of
+	{ok, RegType, Addr, Port, Vsn, MsgData} ->
 	    ?vtrace("handle_sync_set -> send a ~p message", [Vsn]),
 	    ReqId  = send_set_request(VarsAndVals, Vsn, MsgData, 
 				      Addr, Port, ExtraInfo, State),
@@ -1037,51 +1050,53 @@ handle_sync_set(Pid, UserId, Addr, Port, CtxName, VarsAndVals, Timeout,
 	    Ref    = erlang:send_after(Timeout, self(), Msg),
             MonRef = erlang:monitor(process, Pid),
 	    ?vtrace("handle_sync_set -> MonRef: ~p", [MonRef]),
-	    Req    = #request{id      = ReqId,
-			      user_id = UserId, 
-			      addr    = Addr,
-			      port    = Port,
-			      type    = set, 
-			      data    = MsgData, 
-			      ref     = Ref, 
-			      mon     = MonRef, 
-			      from    = From},
+	    Req    = #request{id       = ReqId,
+			      user_id  = UserId, 
+			      reg_type = RegType, 
+			      target   = TargetName, 
+			      addr     = Addr,
+			      port     = Port,
+			      type     = set, 
+			      data     = MsgData, 
+			      ref      = Ref, 
+			      mon      = MonRef, 
+			      from     = From},
 	    ets:insert(snmpm_request_table, Req),
 	    ok;
 
 	Error ->
 	    ?vinfo("failed retrieving agent data for set:"
-		   "~n   Addr:  ~p"
-		   "~n   Port:  ~p"
-		   "~n   Error: ~p", [Addr, Port, Error]),
+		   "~n   TargetName: ~p"
+		   "~n   Error:      ~p", [TargetName, Error]),
 	    Error
     end.
 
  
-handle_async_get(Pid, UserId, Addr, Port, CtxName, Oids, Expire, ExtraInfo, 
+handle_async_get(Pid, UserId, TargetName, CtxName, Oids, Expire, ExtraInfo, 
 		 State) ->
     ?vtrace("handle_async_get -> entry with"
-	    "~n   Pid:     ~p"
-	    "~n   UserId:  ~p"
-	    "~n   Addr:    ~p"
-	    "~n   Port:    ~p"
-	    "~n   CtxName: ~p"
-	    "~n   Oids:    ~p"
-	    "~n   Expire:  ~p",
-	    [Pid, UserId, Addr, Port, CtxName, Oids, Expire]),
-    case agent_data(Addr, Port, CtxName) of
-	{ok, Vsn, MsgData} ->
+	    "~n   Pid:        ~p"
+	    "~n   UserId:     ~p"
+	    "~n   TargetName: ~p"
+	    "~n   CtxName:    ~p"
+	    "~n   Oids:       ~p"
+	    "~n   Expire:     ~p",
+	    [Pid, UserId, TargetName, CtxName, Oids, Expire]),
+    case agent_data(TargetName, CtxName) of
+	{ok, RegType, Addr, Port, Vsn, MsgData} ->
 	    ?vtrace("handle_async_get -> send a ~p message", [Vsn]),
 	    ReqId  = send_get_request(Oids, Vsn, MsgData, Addr, Port, 
 				      ExtraInfo, State),
 	    ?vdebug("handle_async_get -> ReqId: ~p", [ReqId]),
-	    Req    = #request{id      = ReqId,
-			      user_id = UserId, 
-			      addr    = Addr,
-			      port    = Port,
-			      type    = get, 
-			      data    = MsgData, 
-			      expire  = t() + Expire},
+	    Req    = #request{id       = ReqId,
+			      user_id  = UserId, 
+			      reg_type = RegType, 
+			      target   = TargetName, 
+			      addr     = Addr,
+			      port     = Port,
+			      type     = get, 
+			      data     = MsgData, 
+			      expire   = t() + Expire},
 
 	    ets:insert(snmpm_request_table, Req),
 	    gct_activate(State#state.gct),
@@ -1089,37 +1104,37 @@ handle_async_get(Pid, UserId, Addr, Port, CtxName, Oids, Expire, ExtraInfo,
 
 	Error ->
 	    ?vinfo("failed retrieving agent data for get:"
-		   "~n   Addr:  ~p"
-		   "~n   Port:  ~p"
-		   "~n   Error: ~p", [Addr, Port, Error]),
+		   "~n   TargetName: ~p"
+		   "~n   Error:      ~p", [TargetName, Error]),
 	    Error
     end.
 
 
-handle_async_get_next(Pid, UserId, Addr, Port, CtxName, Oids, Expire, 
+handle_async_get_next(Pid, UserId, TargetName, CtxName, Oids, Expire, 
 		      ExtraInfo, State) ->
     ?vtrace("handle_async_get_next -> entry with"
-	    "~n   Pid:     ~p"
-	    "~n   UserId:  ~p"
-	    "~n   Addr:    ~p"
-	    "~n   Port:    ~p"
-	    "~n   CtxName: ~p"
-	    "~n   Oids:    ~p"
-	    "~n   Expire:  ~p",
-	    [Pid, UserId, Addr, Port, CtxName, Oids, Expire]),
-    case agent_data(Addr, Port, CtxName) of
-	{ok, Vsn, MsgData} ->
+	    "~n   Pid:        ~p"
+	    "~n   UserId:     ~p"
+	    "~n   TargetName: ~p"
+	    "~n   CtxName:    ~p"
+	    "~n   Oids:       ~p"
+	    "~n   Expire:     ~p",
+	    [Pid, UserId, TargetName, CtxName, Oids, Expire]),
+    case agent_data(TargetName, CtxName) of
+	{ok, RegType, Addr, Port, Vsn, MsgData} ->
 	    ?vtrace("handle_async_get_next -> send a ~p message", [Vsn]),
 	    ReqId  = send_get_next_request(Oids, Vsn, MsgData, 
 					   Addr, Port, ExtraInfo, State),
 	    ?vdebug("handle_async_get_next -> ReqId: ~p", [ReqId]),
-	    Req    = #request{id      = ReqId,
-			      user_id = UserId, 
-			      addr    = Addr,
-			      port    = Port,
-			      type    = get_next, 
-			      data    = MsgData, 
-			      expire  = t() + Expire},
+	    Req    = #request{id       = ReqId,
+			      user_id  = UserId, 
+			      reg_type = RegType, 
+			      target   = TargetName, 
+			      addr     = Addr,
+			      port     = Port,
+			      type     = get_next, 
+			      data     = MsgData, 
+			      expire   = t() + Expire},
 
 	    ets:insert(snmpm_request_table, Req),
 	    gct_activate(State#state.gct),
@@ -1127,77 +1142,77 @@ handle_async_get_next(Pid, UserId, Addr, Port, CtxName, Oids, Expire,
 
 	Error ->
 	    ?vinfo("failed retrieving agent data for get-next:"
-		   "~n   Addr:  ~p"
-		   "~n   Port:  ~p"
-		   "~n   Error: ~p", [Addr, Port, Error]),
+		   "~n   TargetName: ~p"
+		   "~n   Error:      ~p", [TargetName, Error]),
 	    Error
     end.
 
 
-handle_async_get_bulk(Pid, UserId, Addr, Port, CtxName, 
+handle_async_get_bulk(Pid, UserId, TargetName, CtxName, 
 		      NonRep, MaxRep, Oids, Expire, 
 		      ExtraInfo, State) ->
     ?vtrace("handle_async_get_bulk -> entry with"
-	    "~n   Pid:     ~p"
-	    "~n   UserId:  ~p"
-	    "~n   Addr:    ~p"
-	    "~n   Port:    ~p"
-	    "~n   CtxName: ~p"
-	    "~n   NonRep:  ~p"
-	    "~n   MaxRep:  ~p"
-	    "~n   Oids:    ~p"
-	    "~n   Expire:  ~p", 
-	    [Pid, UserId, Addr, Port, CtxName, NonRep, MaxRep, Oids, Expire]),
-    case agent_data(Addr, Port, CtxName) of
-	{ok, Vsn, MsgData} ->
+	    "~n   Pid:        ~p"
+	    "~n   UserId:     ~p"
+	    "~n   TargetName: ~p"
+	    "~n   CtxName:    ~p"
+	    "~n   NonRep:     ~p"
+	    "~n   MaxRep:     ~p"
+	    "~n   Oids:       ~p"
+	    "~n   Expire:     ~p", 
+	    [Pid, UserId, TargetName, CtxName, NonRep, MaxRep, Oids, Expire]),
+    case agent_data(TargetName, CtxName) of
+	{ok, RegType, Addr, Port, Vsn, MsgData} ->
 	    ?vtrace("handle_async_get_bulk -> send a ~p message", [Vsn]),
 	    ReqId  = send_get_bulk_request(Oids, Vsn, MsgData, Addr, Port, 
 					   NonRep, MaxRep, ExtraInfo, State),
 	    ?vdebug("handle_async_get_bulk -> ReqId: ~p", [ReqId]),
-	    Req    = #request{id      = ReqId,
-			      user_id = UserId, 
-			      addr    = Addr,
-			      port    = Port,
-			      type    = get_bulk, 
-			      data    = MsgData, 
-			      expire  = t() + Expire},
+	    Req    = #request{id       = ReqId,
+			      user_id  = UserId, 
+			      reg_type = RegType, 
+			      target   = TargetName, 
+			      addr     = Addr,
+			      port     = Port,
+			      type     = get_bulk, 
+			      data     = MsgData, 
+			      expire   = t() + Expire},
 	    ets:insert(snmpm_request_table, Req),
 	    gct_activate(State#state.gct),
 	    {ok, ReqId};
 
 	Error ->
 	    ?vinfo("failed retrieving agent data for get-bulk:"
-		   "~n   Addr:  ~p"
-		   "~n   Port:  ~p"
-		   "~n   Error: ~p", [Addr, Port, Error]),
+		   "~n   TargetName: ~p"
+		   "~n   Error:      ~p", [TargetName, Error]),
 	    Error
     end.
 
 
-handle_async_set(Pid, UserId, Addr, Port, CtxName, VarsAndVals, Expire, 
+handle_async_set(Pid, UserId, TargetName, CtxName, VarsAndVals, Expire, 
 		 ExtraInfo, State) ->
     ?vtrace("handle_async_set -> entry with"
 	    "~n   Pid:         ~p"
 	    "~n   UserId:      ~p"
-	    "~n   Addr:        ~p"
-	    "~n   Port:        ~p"
+	    "~n   TargetName:  ~p"
 	    "~n   CtxName:     ~p"
 	    "~n   VarsAndVals: ~p"
 	    "~n   Expire:      ~p",
-	    [Pid, UserId, Addr, Port, CtxName, VarsAndVals, Expire]),
-    case agent_data(Addr, Port, CtxName) of
-	{ok, Vsn, MsgData} ->
+	    [Pid, UserId, TargetName, CtxName, VarsAndVals, Expire]),
+    case agent_data(TargetName, CtxName) of
+	{ok, RegType, Addr, Port, Vsn, MsgData} ->
 	    ?vtrace("handle_async_set -> send a ~p message", [Vsn]),
 	    ReqId  = send_set_request(VarsAndVals, Vsn, MsgData, 
 				      Addr, Port, ExtraInfo, State),
 	    ?vdebug("handle_async_set -> ReqId: ~p", [ReqId]),
-	    Req    = #request{id      = ReqId,
-			      user_id = UserId, 
-			      addr    = Addr,
-			      port    = Port,
-			      type    = set, 
-			      data    = MsgData, 
-			      expire  = t() + Expire},
+	    Req    = #request{id       = ReqId,
+			      user_id  = UserId, 
+			      reg_type = RegType, 
+			      target   = TargetName, 
+			      addr     = Addr,
+			      port     = Port,
+			      type     = set, 
+			      data     = MsgData, 
+			      expire   = t() + Expire},
 
 	    ets:insert(snmpm_request_table, Req),
 	    gct_activate(State#state.gct),
@@ -1205,9 +1220,8 @@ handle_async_set(Pid, UserId, Addr, Port, CtxName, VarsAndVals, Expire,
 
 	Error ->
 	    ?vinfo("failed retrieving agent data for set:"
-		   "~n   Addr:  ~p"
-		   "~n   Port:  ~p"
-		   "~n   Error: ~p", [Addr, Port, Error]),
+		   "~n   TargetName: ~p"
+		   "~n   Error:      ~p", [TargetName, Error]),
 	    Error
     end.
 
@@ -1264,43 +1278,44 @@ handle_set_log_type(#state{net_if = Pid, net_if_mod = Mod}, NewType) ->
     end.
 
 
-handle_discovery(Pid, UserId, BAddr, Port, Config, Expire, ExtraInfo, State) ->
-    ?vtrace("handle_discovery -> entry with"
-	    "~n   Pid:         ~p"
-	    "~n   UserId:      ~p"
-	    "~n   BAddr:       ~p"
-	    "~n   Port:        ~p"
-	    "~n   Config:      ~p"
-	    "~n   Expire:      ~p",
-	    [Pid, UserId, BAddr, Port, Config, Expire]),
-    case agent_data(default, default, "", Config) of
-	{ok, Vsn, MsgData} ->
-	    ?vtrace("handle_discovery -> send a ~p disco message", [Vsn]),
-	    ReqId  = send_discovery(Vsn, MsgData, BAddr, Port, ExtraInfo, 
-				    State),
-	    ?vdebug("handle_discovery -> ReqId: ~p", [ReqId]),
-	    MonRef = erlang:monitor(process, Pid),
-	    ?vtrace("handle_discovery -> MonRef: ~p", [MonRef]),
-	    Req    = #request{id        = ReqId,
-			      user_id   = UserId, 
-			      addr      = BAddr, 
-			      port      = Port,
-			      type      = get, 
-			      data      = MsgData, 
-			      mon       = MonRef,
-			      discovery = true, 
-			      expire    = t() + Expire},
-	    ets:insert(snmpm_request_table, Req),
-	    gct_activate(State#state.gct),
-	    {ok, ReqId};
+%% handle_discovery(Pid, UserId, BAddr, Port, Config, Expire, ExtraInfo, State) ->
+%%     ?vtrace("handle_discovery -> entry with"
+%% 	    "~n   Pid:         ~p"
+%% 	    "~n   UserId:      ~p"
+%% 	    "~n   BAddr:       ~p"
+%% 	    "~n   Port:        ~p"
+%% 	    "~n   Config:      ~p"
+%% 	    "~n   Expire:      ~p",
+%% 	    [Pid, UserId, BAddr, Port, Config, Expire]),
+%%     case agent_data(default, default, "", Config) of
+%% 	{ok, Addr, Port, Vsn, MsgData} ->
+%% 	    ?vtrace("handle_discovery -> send a ~p disco message", [Vsn]),
+%% 	    ReqId  = send_discovery(Vsn, MsgData, BAddr, Port, ExtraInfo, 
+%% 				    State),
+%% 	    ?vdebug("handle_discovery -> ReqId: ~p", [ReqId]),
+%% 	    MonRef = erlang:monitor(process, Pid),
+%% 	    ?vtrace("handle_discovery -> MonRef: ~p", [MonRef]),
+%% 	    Req    = #request{id        = ReqId,
+%% 			      user_id   = UserId, 
+%%			      target    = TargetName, 
+%% 			      addr      = BAddr, 
+%% 			      port      = Port,
+%% 			      type      = get, 
+%% 			      data      = MsgData, 
+%% 			      mon       = MonRef,
+%% 			      discovery = true, 
+%% 			      expire    = t() + Expire},
+%% 	    ets:insert(snmpm_request_table, Req),
+%% 	    gct_activate(State#state.gct),
+%% 	    {ok, ReqId};
 
-	Error ->
-	    ?vinfo("failed retrieving agent data for discovery (get):"
-		   "~n   BAddr: ~p"
-		   "~n   Port:  ~p"
-		   "~n   Error: ~p", [BAddr, Port, Error]),
-	    Error
-    end.
+%% 	Error ->
+%% 	    ?vinfo("failed retrieving agent data for discovery (get):"
+%% 		   "~n   BAddr: ~p"
+%% 		   "~n   Port:  ~p"
+%% 		   "~n   Error: ~p", [BAddr, Port, Error]),
+%% 	    Error
+%%     end.
 
 
 handle_sync_timeout(ReqId, From, State) ->
@@ -1494,6 +1509,8 @@ handle_snmp_pdu(#pdu{type = 'get-response', request_id = ReqId} = Pdu,
 	%% possibly a late reply to a sync request
 	%% (ref is also undefined)
 	[#request{user_id   = UserId, 
+		  reg_type  = RegType, 
+		  target    = Target, 
 		  from      = undefined, 
 		  ref       = undefined, 
 		  mon       = MonRef,
@@ -1513,8 +1530,9 @@ handle_snmp_pdu(#pdu{type = 'get-response', request_id = ReqId} = Pdu,
 	    SnmpResponse = {EStatus, EIndex, Varbinds},
 	    case snmpm_config:user_info(UserId) of
 		{ok, UserMod, UserData} ->
-		    handle_pdu(UserId, UserMod, Addr, Port, ReqId, 
-			       SnmpResponse, UserData, State),
+		    handle_pdu(UserId, UserMod, 
+			       RegType, Target, Addr, Port, 
+			       ReqId, SnmpResponse, UserData, State),
 		    maybe_delete(Disco, ReqId);
 		_Error ->
 		    %% reply to outstanding request, for which there is no
@@ -1522,14 +1540,15 @@ handle_snmp_pdu(#pdu{type = 'get-response', request_id = ReqId} = Pdu,
 		    %% Therefor send it to the default user
 		    case snmpm_config:user_info() of
 			{ok, DefUserId, DefMod, DefData} ->
-			    handle_pdu(DefUserId, DefMod, Addr, Port, ReqId, 
-				       SnmpResponse, DefData, State),
+			    handle_pdu(DefUserId, DefMod, 
+				       RegType, Target, Addr, Port, 
+				       ReqId, SnmpResponse, DefData, State),
 			    maybe_delete(Disco, ReqId);
 			Error ->
 			    error_msg("failed retreiving the default user "
 				      "info handling pdu from "
-				      "<~p,~p>: ~n~w~n~w",
-				      [Addr, Port, Error, Pdu])
+				      "~p <~p,~p>: ~n~w~n~w",
+				      [Target, Addr, Port, Error, Pdu])
 		    end
 	    end;
 
@@ -1547,7 +1566,7 @@ handle_snmp_pdu(#pdu{type = 'get-response', request_id = ReqId} = Pdu,
 
 	    Remaining = 
 		case (catch cancel_timer(Ref)) of
-		    Rem when integer(Rem) ->
+		    Rem when is_integer(Rem) ->
 			Rem;
 		    _ ->
 			0
@@ -1640,8 +1659,18 @@ handle_snmp_pdu(CrapPdu, Addr, Port, _State) ->
 	      "~p", [Addr, Port, CrapPdu]),
     ok.
 
-handle_pdu(_UserId, Mod, Addr, Port, ReqId, SnmpResponse, Data, _State) ->
-    ?vtrace("handle_pdu -> entry when"
+handle_pdu(_UserId, Mod, target_name = _RegType, TargetName, _Addr, _Port, 
+	   ReqId, SnmpResponse, Data, _State) ->
+    ?vtrace("handle_pdu(target_name) -> entry when"
+	    "~n   Mod: ~p", [Mod]),
+    F = fun() ->
+		(catch Mod:handle_pdu(TargetName, ReqId, SnmpResponse, Data))
+	end,
+    handle_callback(F),
+    ok;
+handle_pdu(_UserId, Mod, addr_port = _RegType, _TargetName, Addr, Port, 
+	   ReqId, SnmpResponse, Data, _State) ->
+    ?vtrace("handle_pdu(addr_port) -> entry when"
 	    "~n   Mod: ~p", [Mod]),
     F = fun() ->
 		(catch Mod:handle_pdu(Addr, Port, ReqId, SnmpResponse, Data))
@@ -1668,15 +1697,35 @@ do_handle_agent(UserId, Mod, Addr, Port, SnmpInfo, Data, _State) ->
 	    ?vtrace("do_handle_agent -> register: "
 		    "~n   UserId2: ~p"
 		    "~n   Config:  ~p", [UserId2, Config]),
+	    TargetName = mk_target_name(Addr, Port, Config),
+	    Config2    = [{reg_type, target_name}, 
+			  {address, Addr}, {port, Port} | Config], 
 	    case snmpm_config:register_agent(UserId2, 
-					     Addr, Port, Config) of
+					     TargetName, Config2) of
 		ok ->
 		    ok;
 		{error, Reason} ->
 		    error_msg("failed registering agent "
 			      "handling agent "
-			      "<~p,~p>: ~n~w", 
-			      [Addr, Port, Reason]),
+			      "~p <~p,~p>: ~n~w", 
+			      [TargetName, Addr, Port, Reason]),
+		    ok
+	    end;
+	{register, UserId2, TargetName, Config} ->  
+	    ?vtrace("do_handle_agent -> register: "
+		    "~n   UserId2:    ~p"
+		    "~n   TargetName: ~p"
+		    "~n   Config:     ~p", [UserId2, TargetName, Config]),
+	    Config2 = [{reg_type, target_name} | Config], 
+	    case snmpm_config:register_agent(UserId2, 
+					     TargetName, Config2) of
+		ok ->
+		    ok;
+		{error, Reason} ->
+		    error_msg("failed registering agent "
+			      "handling agent "
+			      "~p <~p,~p>: ~n~w", 
+			      [TargetName, Addr, Port, Reason]),
 		    ok
 	    end;
 	_Ignore ->
@@ -1721,13 +1770,14 @@ handle_snmp_trap(CrapTrap, Addr, Port, _State) ->
     ok.
 
 do_handle_snmp_trap(SnmpTrapInfo, Addr, Port, State) ->
-    case snmpm_config:get_agent_user_id(Addr, Port) of
-	{ok, UserId} ->
+    case snmpm_config:get_agent_user_info(Addr, Port) of
+	{ok, UserId, Target, RegType} ->
 	    ?vtrace("handle_snmp_trap -> found user: ~p",[UserId]), 
 	    case snmpm_config:user_info(UserId) of
 		{ok, Mod, Data} ->
-		    handle_trap(UserId, Mod, Addr, Port, SnmpTrapInfo, 
-				Data, State);
+		    handle_trap(UserId, Mod, 
+				RegType, Target, Addr, Port, 
+				SnmpTrapInfo, Data, State);
 
 		Error ->
 		    %% Oh crap, use the default user
@@ -1735,13 +1785,15 @@ do_handle_snmp_trap(SnmpTrapInfo, Addr, Port, State) ->
 			  "~n   ~p", [UserId, Error]),
 		    case snmpm_config:user_info() of
 			{ok, DefUserId, DefMod, DefData} ->
-			    handle_trap(DefUserId, DefMod, Addr, Port, 
+			    handle_trap(DefUserId, DefMod, 
+					RegType, Target, Addr, Port, 
 					SnmpTrapInfo, DefData, State);
 			Error ->
 			    error_msg("failed retreiving the default user "
 				      "info handling report from "
-				      "<~p,~p>: ~n~w~n~w",
-				      [Addr, Port, Error, SnmpTrapInfo])
+				      "~p <~p,~p>: ~n~w~n~w",
+				      [Target, Addr, Port, 
+				       Error, SnmpTrapInfo])
 		    end
 	    end;
 	Error ->
@@ -1750,40 +1802,57 @@ do_handle_snmp_trap(SnmpTrapInfo, Addr, Port, State) ->
 		  "~n   ~p", [Addr, Port, Error]),
 	    case snmpm_config:user_info() of
 		{ok, DefUserId, DefMod, DefData} ->
-		    handle_trap(DefUserId, DefMod, Addr, Port, 
+		    RegType = target_name,
+		    Target  = 
+			mk_target_name(Addr, Port, default_agent_config()),
+		    handle_trap(DefUserId, DefMod, 
+				RegType, Target, Addr, Port, 
 				SnmpTrapInfo, DefData, State);
-		Error ->
+		Error2 ->
 		    error_msg("failed retreiving "
 			      "the default user info handling trap from "
 			      "<~p,~p>: ~n~w~n~w",
-			      [Addr, Port, Error, SnmpTrapInfo])
+			      [Addr, Port, Error2, SnmpTrapInfo])
 	    end
     end,
     ok.
 
 
-handle_trap(UserId, Mod, Addr, Port, SnmpTrapInfo, Data, State) ->
+handle_trap(UserId, Mod, 
+	    RegType, Target, Addr, Port, SnmpTrapInfo, Data, State) ->
     ?vtrace("handle_trap -> entry with"
 	    "~n   UserId: ~p"
 	    "~n   Mod:    ~p", [UserId, Mod]),
     F = fun() ->
-		do_handle_trap(UserId, Mod, Addr, Port, SnmpTrapInfo, Data, 
-			       State)
+		do_handle_trap(UserId, Mod, 
+			       RegType, Target, Addr, Port, 
+			       SnmpTrapInfo, Data, State)
 	end,
     handle_callback(F),
     ok.
     
 
-do_handle_trap(UserId, Mod, Addr, Port, SnmpTrapInfo, Data, _State) ->
+do_handle_trap(UserId, Mod, 
+	       RegType, Target, Addr, Port, SnmpTrapInfo, Data, _State) ->
     ?vdebug("do_handle_trap -> entry with"
 	    "~n   UserId: ~p", [UserId]),
-    case (catch Mod:handle_trap(Addr, Port, SnmpTrapInfo, Data)) of
+    HandleTrap = 
+	case RegType of
+	    target_name ->
+		fun() -> Mod:handle_trap(Target, SnmpTrapInfo, Data) end;
+	    addr_port ->
+		fun() -> Mod:handle_trap(Addr, Port, SnmpTrapInfo, Data) end
+	end,
+
+    case (catch HandleTrap()) of
 	{register, UserId2, Config} -> 
 	    ?vtrace("do_handle_trap -> register: "
 		    "~n   UserId2: ~p"
 		    "~n   Config:  ~p", [UserId2, Config]),
-	    case snmpm_config:register_agent(UserId2, 
-					     Addr, Port, Config) of
+	    Target2 = mk_target_name(Addr, Port, Config),
+	    Config2 = [{reg_type, target_name}, 
+		       {address, Addr}, {port, Port} | Config], 
+	    case snmpm_config:register_agent(UserId2, Target2, Config2) of
 		ok ->
 		    ok;
 		{error, Reason} ->
@@ -1792,6 +1861,24 @@ do_handle_trap(UserId, Mod, Addr, Port, SnmpTrapInfo, Data, _State) ->
 			      "<~p,~p>: ~n~w", 
 			      [Addr, Port, Reason]),
 		    ok
+	    end;
+	{register, UserId2, Target2, Config} -> 
+	    ?vtrace("do_handle_trap -> register: "
+		    "~n   UserId2: ~p"
+		    "~n   Target2: ~p"
+		    "~n   Config:  ~p", [UserId2, Target2, Config]),
+	    %% The only user which would do this is the
+	    %% default user
+	    Config2 = [{reg_type, target_name} | Config], 
+	    case snmpm_config:register_agent(UserId2, Target2, Config2) of
+		ok ->
+		    reply;
+		{error, Reason} ->
+		    error_msg("failed registering agent "
+			      "handling trap "
+			      "~p <~p,~p>: ~n~w", 
+			      [Target2, Addr, Port, Reason]),
+		    reply
 	    end;
 	unregister ->
 	    ?vtrace("do_handle_trap -> unregister", []),
@@ -1823,29 +1910,31 @@ handle_snmp_inform(Ref,
 	    "~n   Pdu:  ~p", [Addr, Port, Pdu]),
 
     SnmpInform = {EStatus, EIndex, Varbinds},
-    case snmpm_config:get_agent_user_id(Addr, Port) of
-	{ok, UserId} ->
+    case snmpm_config:get_agent_user_info(Addr, Port) of
+	{ok, UserId, Target, RegType} ->
 	    case snmpm_config:user_info(UserId) of
 		{ok, Mod, Data} ->
 		    ?vdebug("[inform] callback handle_inform with: "
 			    "~n   UserId: ~p"
 			    "~n   Mod:    ~p", [UserId, Mod]),
-		    handle_inform(UserId, Mod, Ref, Addr, Port, SnmpInform, 
-				  Data, State);
+		    handle_inform(UserId, Mod, Ref, 
+				  RegType, Target, Addr, Port, 
+				  SnmpInform, Data, State);
 		Error ->
 		    %% Oh crap, use the default user
-		    ?vlog("[inform] failed retreiving user info for user ~p:"
+		    ?vlog("[inform] failed retreiving user "
+			  "info for user ~p:"
 			  "~n   ~p", [UserId, Error]),
 		    case snmpm_config:user_info() of
 			{ok, DefUserId, DefMod, DefData} ->
-			    handle_inform(DefUserId, DefMod, 
-					  Ref, Addr, Port, 
+			    handle_inform(DefUserId, DefMod, Ref, 
+					  RegType, Target, Addr, Port, 
 					  SnmpInform, DefData, State);
 			Error ->
 			    error_msg("failed retreiving the default user "
 				      "info handling inform from "
-				      "<~p,~p>: ~n~w~n~w",
-				      [Addr, Port, Error, Pdu])
+				      "~p <~p,~p>: ~n~w~n~w",
+				      [Target, Addr, Port, Error, Pdu])
 		    end
 	    end;
 	Error ->
@@ -1854,13 +1943,17 @@ handle_snmp_inform(Ref,
 		  "~n   ~p", [Addr, Port, Error]),
 	    case snmpm_config:user_info() of
 		{ok, DefUserId, DefMod, DefData} ->
-		    handle_inform(DefUserId, DefMod, Ref, Addr, Port, 
+		    RegType = target_name,
+		    Target  = 
+			mk_target_name(Addr, Port, default_agent_config()),
+		    handle_inform(DefUserId, DefMod, Ref, 
+				  RegType, Target, Addr, Port, 
 				  SnmpInform, DefData, State);
-		Error ->
+		Error2 ->
 		    error_msg("failed retreiving "
 			      "the default user info handling inform from "
 			      "<~p,~p>: ~n~w~n~w",
-			      [Addr, Port, Error, Pdu])
+			      [Addr, Port, Error2, Pdu])
 	    end
     end,
     ok;
@@ -1870,39 +1963,68 @@ handle_snmp_inform(_Ref, CrapInform, Addr, Port, _State) ->
 	      "~p", [Addr, Port, CrapInform]),
     ok.
 
-handle_inform(UserId, Mod, Ref, Addr, Port, SnmpInform, Data, State) ->
+handle_inform(UserId, Mod, Ref, 
+	      RegType, Target, Addr, Port, SnmpInform, Data, State) ->
     ?vtrace("handle_inform -> entry with"
 	    "~n   UserId: ~p"
 	    "~n   Mod:    ~p", [UserId, Mod]),
     F = fun() ->
-		do_handle_inform(UserId, Mod, Ref, Addr, Port, SnmpInform, 
+		do_handle_inform(UserId, Mod, Ref, 
+				 RegType, Target, Addr, Port, SnmpInform, 
 				 Data, State)
 	end,
     handle_callback(F),
     ok.
 
-do_handle_inform(UserId, Mod, Ref, Addr, Port, SnmpInform, Data, State) ->
+do_handle_inform(UserId, Mod, Ref, 
+		 RegType, Target, Addr, Port, SnmpInform, Data, State) ->
     ?vdebug("do_handle_inform -> entry with"
 	    "~n   UserId: ~p", [UserId]),
+    HandleInform = 
+	case RegType of
+	    target_name ->
+		fun() -> Mod:handle_inform(Target, SnmpInform, Data) end;
+	    addr_port ->
+		fun() -> Mod:handle_inform(Addr, Port, SnmpInform, Data) end
+	end,
+
      Rep = 
-	case (catch Mod:handle_inform(Addr, Port, 
-				      SnmpInform, Data)) of
+	case (catch HandleInform()) of
 	    {register, UserId2, Config} -> 
 		?vtrace("do_handle_inform -> register: "
 			"~n   UserId2: ~p"
 			"~n   Config:  ~p", [UserId2, Config]),
 		%% The only user which would do this is the
 		%% default user
-		case snmpm_config:register_agent(UserId2, 
-						 Addr, Port, 
-						 Config) of
+		Target2 = mk_target_name(Addr, Port, Config),
+		Config2 = [{reg_type, target_name}, 
+			   {address, Addr}, {port, Port} | Config], 
+		case snmpm_config:register_agent(UserId2, Target2, Config2) of
 		    ok ->
 			reply;
 		    {error, Reason} ->
 			error_msg("failed registering agent "
 				  "handling inform "
-				  "<~p,~p>: ~n~w", 
-				  [Addr, Port, Reason]),
+				  "~p <~p,~p>: ~n~w", 
+				  [Target2, Addr, Port, Reason]),
+			reply
+		end;
+	    {register, UserId2, Target2, Config} -> 
+		?vtrace("do_handle_inform -> register: "
+			"~n   UserId2: ~p"
+			"~n   Target2: ~p"
+			"~n   Config:  ~p", [UserId2, Target2, Config]),
+		%% The only user which would do this is the
+		%% default user
+		Config2 = [{reg_type, target_name} | Config], 
+		case snmpm_config:register_agent(UserId2, Target2, Config2) of
+		    ok ->
+			reply;
+		    {error, Reason} ->
+			error_msg("failed registering agent "
+				  "handling inform "
+				  "~p <~p,~p>: ~n~w", 
+				  [Target2, Addr, Port, Reason]),
 			reply
 		end;
 	    unregister ->
@@ -1948,29 +2070,31 @@ handle_snmp_report(#pdu{error_status = EStatus,
 	    "~n   Pdu:  ~p", [Addr, Port, Pdu]),
 
     SnmpReport = {EStatus, EIndex, Varbinds},
-    case snmpm_config:get_agent_user_id(Addr, Port) of
- 	{ok, UserId} ->
+    case snmpm_config:get_agent_user_info(Addr, Port) of
+ 	{ok, UserId, Target, RegType} ->
  	    case snmpm_config:user_info(UserId) of
  		{ok, Mod, Data} ->
  		    ?vdebug("[report] callback handle_report with: "
  			    "~n   ~p"
  			    "~n   ~p"
  			    "~n   ~p", [UserId, Mod, SnmpReport]),
- 		    handle_report(UserId, Mod, Addr, Port, SnmpReport, 
-				  Data, State);
+ 		    handle_report(UserId, Mod, 
+				  RegType, Target, Addr, Port, 
+				  SnmpReport, Data, State);
  		Error ->
  		    %% Oh crap, use the default user
  		    ?vlog("[report] failed retreiving user info for user ~p:"
  			  " ~n   ~p", [UserId, Error]),
 		    case snmpm_config:user_info() of
 			{ok, DefUserId, DefMod, DefData} ->
-			    handle_report(DefUserId, DefMod, Addr, Port, 
+			    handle_report(DefUserId, DefMod, 
+					  RegType, Target, Addr, Port, 
 					  SnmpReport, DefData, State);
 			Error ->
 			    error_msg("failed retreiving the default user "
 				      "info handling report from "
-				      "<~p,~p>: ~n~w~n~w",
-				      [Addr, Port, Error, Pdu])
+				      "~p <~p,~p>: ~n~w~n~w",
+				      [Target, Addr, Port, Error, Pdu])
 		    end
  	    end;
  	Error ->
@@ -1979,13 +2103,17 @@ handle_snmp_report(#pdu{error_status = EStatus,
  		  "~n   ~p", [Addr, Port, Error]),
 	    case snmpm_config:user_info() of
 		{ok, DefUserId, DefMod, DefData} ->
-		    handle_report(DefUserId, DefMod, Addr, Port, 
+		    RegType = target_name,
+		    Target  = 
+			mk_target_name(Addr, Port, default_agent_config()),
+		    handle_report(DefUserId, DefMod, 
+				  RegType, Target, Addr, Port, 
 				  SnmpReport, DefData, State);
-		Error ->
+		Error2 ->
 		    error_msg("failed retreiving "
 			      "the default user info handling report from "
 			      "<~p,~p>: ~n~w~n~w",
-			      [Addr, Port, Error, Pdu])
+			      [Addr, Port, Error2, Pdu])
 	    end
     end,
     ok;
@@ -2006,7 +2134,7 @@ handle_snmp_report(ReqId,
 			varbinds     = Varbinds} = Pdu, 
 		   {ReportReason, Info} = Rep, 
 		   Addr, Port, State) 
-  when integer(ReqId) ->
+  when is_integer(ReqId) ->
 
     ?vtrace("handle_snmp_report -> entry with"
 	    "~n   Addr:   ~p"
@@ -2022,10 +2150,10 @@ handle_snmp_report(ReqId,
 
     case ets:lookup(snmpm_request_table, ReqId) of
 
-	[#request{from = From, 
-		  ref  = Ref, 
-		  mon  = MonRef}] when From /= undefined, 
-				       Ref  /= undefined ->
+	[#request{from     = From, 
+		  ref      = Ref, 
+		  mon      = MonRef}] when From /= undefined, 
+					   Ref  /= undefined ->
 
 	    ?vdebug("handle_snmp_report -> "
 		    "found corresponding request: "
@@ -2111,29 +2239,41 @@ handle_snmp_report(CrapReqId, CrapReport, CrapInfo, Addr, Port, _State) ->
     ok.
    
 
-handle_report(UserId, Mod, Addr, Port, SnmpReport, Data, State) ->
+handle_report(UserId, Mod, RegType, Target, Addr, Port, 
+	      SnmpReport, Data, State) ->
     ?vtrace("handle_report -> entry with"
 	    "~n   UserId: ~p"
 	    "~n   Mod:    ~p", [UserId, Mod]),
     F = fun() ->
-		do_handle_report(UserId, Mod, Addr, Port, SnmpReport, 
-				 Data, State)
+		do_handle_report(UserId, Mod, RegType, Target, Addr, Port, 
+				 SnmpReport, Data, State)
 	end,
     handle_callback(F),
     ok.
 
-do_handle_report(UserId, Mod, Addr, Port, SnmpReport, Data, _State) ->
+do_handle_report(UserId, Mod, 
+		 RegType, Target, Addr, Port, SnmpReport, Data, _State) ->
     ?vdebug("do_handle_report -> entry with"
 	    "~n   UserId: ~p", [UserId]),
-    case (catch Mod:handle_report(Addr, Port, SnmpReport, Data)) of
+    HandleReport = 
+	case RegType of
+	    target_name ->
+		fun() -> Mod:handle_report(Target, SnmpReport, Data) end;
+	    addr_port ->
+		fun() -> Mod:handle_inform(Addr, Port, SnmpReport, Data) end
+	end,
+
+    case (catch HandleReport()) of
 	{register, UserId2, Config} -> 
 	    ?vtrace("do_handle_report -> register: "
 		    "~n   UserId2: ~p"
 		    "~n   Config:  ~p", [UserId2, Config]),
 	    %% The only user which would do this is the
 	    %% default user
-	    case snmpm_config:register_agent(UserId2, 
-					     Addr, Port, Config) of
+	    Target2 = mk_target_name(Addr, Port, Config),
+	    Config2 = [{reg_type, target_name}, 
+		       {address, Addr}, {port, Port} | Config], 
+	    case snmpm_config:register_agent(UserId2, Target2, Config2) of
 		ok ->
 		    ok;
 		{error, Reason} ->
@@ -2142,6 +2282,24 @@ do_handle_report(UserId, Mod, Addr, Port, SnmpReport, Data, _State) ->
 			      "<~p,~p>: ~n~w", 
 			      [Addr, Port, Reason]),
 		    ok
+	    end;
+	{register, UserId2, Target2, Config} -> 
+	    ?vtrace("do_handle_report -> register: "
+		    "~n   UserId2: ~p"
+		    "~n   Target2: ~p"
+		    "~n   Config:  ~p", [UserId2, Target2, Config]),
+	    %% The only user which would do this is the
+	    %% default user
+	    Config2 = [{reg_type, target_name} | Config], 
+	    case snmpm_config:register_agent(UserId2, Target2, Config2) of
+		ok ->
+		    reply;
+		{error, Reason} ->
+		    error_msg("failed registering agent "
+			      "handling report "
+			      "~p <~p,~p>: ~n~w", 
+			      [Target2, Addr, Port, Reason]),
+		    reply
 	    end;
 	unregister ->
 	    ?vtrace("do_handle_trap -> unregister", []),
@@ -2293,12 +2451,12 @@ send_set_request(VarsAndVals, Vsn, MsgData, Addr, Port, ExtraInfo,
     Mod:send_pdu(NetIf, Pdu, Vsn, MsgData, Addr, Port, ExtraInfo),
     Pdu#pdu.request_id.
 
-send_discovery(Vsn, MsgData, Addr, Port, ExtraInfo, 
-	       #state{net_if     = NetIf, 
-		      net_if_mod = Mod}) ->
-    Pdu = make_discovery_pdu(),
-    Mod:send_pdu(NetIf, Pdu, Vsn, MsgData, Addr, Port, ExtraInfo),
-    Pdu#pdu.request_id.
+%% send_discovery(Vsn, MsgData, Addr, Port, ExtraInfo, 
+%% 	       #state{net_if     = NetIf, 
+%% 		      net_if_mod = Mod}) ->
+%%     Pdu = make_discovery_pdu(),
+%%     Mod:send_pdu(NetIf, Pdu, Vsn, MsgData, Addr, Port, ExtraInfo),
+%%     Pdu#pdu.request_id.
 							  
 
 
@@ -2306,9 +2464,9 @@ send_discovery(Vsn, MsgData, Addr, Port, ExtraInfo,
 %% 
 %%----------------------------------------------------------------------
 
-make_discovery_pdu() ->
-    Oids = [?sysObjectID_instance, ?sysDescr_instance, ?sysUpTime_instance],
-    make_pdu_impl(get, Oids).
+%% make_discovery_pdu() ->
+%%     Oids = [?sysObjectID_instance, ?sysDescr_instance, ?sysUpTime_instance],
+%%     make_pdu_impl(get, Oids).
 
 make_pdu(set, VarsAndVals, MiniMIB) ->
     VBs = [var_and_value_to_varbind(VAV, MiniMIB) || VAV <- VarsAndVals],
@@ -2452,37 +2610,30 @@ request_id() ->
 
 %%----------------------------------------------------------------------
 
-agent_data(Addr, Port, CtxName) ->
-    agent_data(Addr, Port, CtxName, []).
+agent_data(TargetName, CtxName) ->
+    agent_data(TargetName, CtxName, []).
 
-agent_data(Addr, Port, CtxName, Config) ->
-    case snmpm_config:agent_info(Addr, Port, all) of
+agent_data(TargetName, CtxName, Config) ->
+    case snmpm_config:agent_info(TargetName, all) of
 	{ok, Info} ->
 	    {value, {_, Version}} = lists:keysearch(version, 1, Info),
 	    MsgData = 
 		case Version of
 		    v3 ->
-			DefTargetName = agent_data_item(target_name, Info),
-			DefEngineId   = agent_data_item(engine_id,   Info),
-			DefSecModel   = agent_data_item(sec_model,   Info),
-			DefSecName    = agent_data_item(sec_name,    Info),
-			DefSecLevel   = agent_data_item(sec_level,   Info),
-
-			TargetName    = agent_data_item(target_name, 
-							Config, 
-							DefTargetName),
-			EngineId      = agent_data_item(engine_id,   
-							Config, 
-							DefEngineId),
-			SecModel      = agent_data_item(sec_model,   
-							Config, 
-							DefSecModel),
-			SecName       = agent_data_item(sec_name,    
-							Config, 
-							DefSecName),
-			SecLevel      = agent_data_item(sec_level,   
-							Config, 
-							DefSecLevel),
+			DefSecModel = agent_data_item(sec_model, Info),
+			DefSecName  = agent_data_item(sec_name,  Info),
+			DefSecLevel = agent_data_item(sec_level, Info),
+				   
+			EngineId    = agent_data_item(engine_id, Config),
+			SecModel    = agent_data_item(sec_model,   
+						      Config, 
+						      DefSecModel),
+			SecName     = agent_data_item(sec_name,    
+						      Config, 
+						      DefSecName),
+			SecLevel    = agent_data_item(sec_level,   
+						      Config, 
+						      DefSecLevel),
 			
 			{SecModel, SecName, mk_sec_level_flag(SecLevel), 
 			 EngineId, CtxName, TargetName};
@@ -2499,7 +2650,10 @@ agent_data(Addr, Port, CtxName, Config) ->
 			
 			{Comm, SecModel}
 		end,
-	    {ok, version(Version), MsgData};
+	    Addr    = agent_data_item(address,  Info),
+	    Port    = agent_data_item(port,     Info),
+	    RegType = agent_data_item(reg_type, Info),
+	    {ok, RegType, Addr, Port, version(Version), MsgData};
 	Error ->
 	    Error
     end.
@@ -2642,6 +2796,17 @@ t() ->
     {A,B,C} = erlang:now(),
     A*1000000000+B*1000+(C div 1000).
     
+mk_target_name(Addr, Port, Config) ->
+    snmpm_config:mk_target_name(Addr, Port, Config).
+
+default_agent_config() ->
+    case snmpm_config:agent_info() of
+	{ok, Config} ->
+	    Config;
+	_ ->
+	    []
+    end.
+
 
 %%----------------------------------------------------------------------
 
@@ -2696,9 +2861,9 @@ server_info(GCT) ->
     [{process_memory, [{server, ProcSize}, {gct, GCTSz}]},
      {db_memory, [{request, RTSz}, {monitor, MTSz}]}].
 
-proc_mem(P) when pid(P) ->
+proc_mem(P) when is_pid(P) ->
     case (catch erlang:process_info(P, memory)) of
-	{memory, Sz} when integer(Sz) ->
+	{memory, Sz} when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined
@@ -2708,7 +2873,7 @@ proc_mem(_) ->
 
 tab_size(T) ->
     case (catch ets:info(T, memory)) of
-	Sz when integer(Sz) ->
+	Sz when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined
@@ -2716,7 +2881,7 @@ tab_size(T) ->
 
 config_info() ->
     case (catch snmpm_config:info()) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	E ->
 	    [{error, E}]
@@ -2728,7 +2893,7 @@ get_stats_counters() ->
 
 net_if_info(Pid, Mod) ->
     case (catch Mod:info(Pid)) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	E ->
 	    [{error, E}]
@@ -2736,7 +2901,7 @@ net_if_info(Pid, Mod) ->
 
 note_store_info(Pid) ->
     case (catch snmp_note_store:info(Pid)) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	E ->
 	    [{error, E}]
@@ -2750,14 +2915,14 @@ note_store_info(Pid) ->
 %% Debug
 %%----------------------------------------------------------------------
 
-% sz(L) when list(L) ->
+% sz(L) when is_list(L) ->
 %     length(lists:flatten(L));
-% sz(B) when binary(B) ->
+% sz(B) when is_binary(B) ->
 %     size(B).
 
-%% i(F) ->
-%%     i(F, []).
+%% p(F) ->
+%%     p(F, []).
 
-%% i(F, A) ->
-%%     io:format(F ++ "~n", A).
+%% p(F, A) ->
+%%     io:format("~w:" ++ F ++ "~n", [?MODULE | A]).
 

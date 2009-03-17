@@ -1,19 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
 %%------------------------------------------------------------------------
-%% ``The contents of this file are subject to the Erlang Public License,
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 %%%-----------------------------------------------------------------------
@@ -31,23 +33,26 @@
 
 -include("dialyzer.hrl").
 
+-define(DIALYZER_ERROR_TITLE,   "Dialyzer Error").
+-define(DIALYZER_MESSAGE_TITLE, "Dialyzer Message").
+
 -type gs_object() :: any().
 
--record(mode, {start_byte_code     :: gs_object(), 
-	       start_src_code      :: gs_object()}).
+-record(mode, {start_byte_code   :: gs_object(), 
+	       start_src_code    :: gs_object()}).
 
--record(menu, {file_save_log       :: gs_object(),
-	       file_save_warn      :: gs_object(),
-	       file_quit           :: gs_object(), 
-	       help_about          :: gs_object(),
-	       help_manual         :: gs_object(),
-	       help_warnings       :: gs_object(),
-	       opts_macros         :: gs_object(),
-	       opts_includes       :: gs_object(),
-	       plt_empty           :: gs_object(),
-	       plt_search_doc      :: gs_object(),
-	       plt_show_doc        :: gs_object(),
-	       warnings            :: gs_object()}).
+-record(menu, {file_save_log     :: gs_object(),
+	       file_save_warn    :: gs_object(),
+	       file_quit         :: gs_object(), 
+	       help_about        :: gs_object(),
+	       help_manual       :: gs_object(),
+	       help_warnings     :: gs_object(),
+	       opts_macros       :: gs_object(),
+	       opts_includes     :: gs_object(),
+	       plt_empty         :: gs_object(),
+	       plt_search_doc    :: gs_object(),
+	       plt_show_doc      :: gs_object(),
+	       warnings          :: gs_object()}).
 
 -record(gui_state, {add_all      :: gs_object(), 
 		    add_file     :: gs_object(), 
@@ -79,7 +84,8 @@
 
 -spec start(#options{}) -> ?RET_NOTHING_SUSPICIOUS.
 
-start(DialyzerOptions = #options{}) ->
+start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
+				 legal_warnings = LegalWarnings}) ->
   process_flag(trap_exit, true),
 
   GS = gs:start(),
@@ -141,19 +147,20 @@ start(DialyzerOptions = #options{}) ->
   %% Bytecode vs. Source code
   gs:label(ModePacker, [{label, {text, "File Type:"}},
 			{height, 20}, {pack_xy, {1,1}}]),
+  {ByteSel, SrcSel} = case From of
+			byte_code -> {[{select, true}], []}; 
+			src_code -> {[], [{select, true}]}
+		      end,
   ModeByteCode = gs:radiobutton(ModePacker,
-				[{group, start_from},
-				 {label, {text,"BeamFiles"}},
-				 {select, true},
-				 {pack_xy, {2,1}}]),
+				ByteSel ++ [{group, start_from},
+					    {label, {text,"BeamFiles"}},
+					    {pack_xy, {2,1}}]),
   ModeSrcCode = gs:radiobutton(ModePacker,
-			       [{group, start_from},
-				{label, {text,"SourceFiles"}},
-				{pack_xy, {2,2}}]),
-
-  Mode = #mode{start_byte_code=ModeByteCode,
-	       start_src_code=ModeSrcCode},
-	      
+			       SrcSel ++ [{group, start_from},
+					  {label, {text,"SourceFiles"}},
+					  {pack_xy, {2,2}}]),
+  Mode = #mode{start_byte_code = ModeByteCode,
+	       start_src_code = ModeSrcCode},
 
   %% --------- Log box --------------
   gs:label(Packer, [{label, {text, "Log"}}, {height, 20}, {pack_xy, {3,2}}]),
@@ -300,55 +307,53 @@ start(DialyzerOptions = #options{}) ->
 	      {?WARN_CONTRACT_SYNTAX, MenuWarnContractSyntax}
 	     ],
 
-  init_warnings(Warnings, DialyzerOptions#options.legal_warnings),
+  init_warnings(Warnings, LegalWarnings),
 
-  Menu = #menu{file_quit=MenuFileQuit,
-	       plt_empty=MenuPLTEmpty,
-	       help_manual=MenuHelpManual,
-	       help_about=MenuHelpAbout,
-	       help_warnings=MenuHelpWarnings,
-	       opts_macros=MenuOptsMacros,
-	       opts_includes=MenuOptsIncludes,
-	       plt_search_doc=MenuPLTSearch,
-	       plt_show_doc=MenuPLTShow,
-	       file_save_log=MenuFileSaveLog,
-	       file_save_warn=MenuFileSaveWarn,
-	       warnings=Warnings},
-
+  Menu = #menu{file_quit = MenuFileQuit,
+	       plt_empty = MenuPLTEmpty,
+	       help_manual = MenuHelpManual,
+	       help_about = MenuHelpAbout,
+	       help_warnings = MenuHelpWarnings,
+	       opts_macros = MenuOptsMacros,
+	       opts_includes = MenuOptsIncludes,
+	       plt_search_doc = MenuPLTSearch,
+	       plt_show_doc = MenuPLTShow,
+	       file_save_log = MenuFileSaveLog,
+	       file_save_warn = MenuFileSaveWarn,
+	       warnings = Warnings},
 
   %% --------- Init --------------
   gs:config(TopWin, {map, true}),
   gs:config(Packer, WH),
   {ok, CWD} = file:get_cwd(),
   
-  InitPlt =
-    try dialyzer_plt:from_file(DialyzerOptions#options.init_plt)
-    catch throw:{dialyzer_error, _} -> dialyzer_plt:new()
-    end,
+  InitPlt = try dialyzer_plt:from_file(InitPltFile)
+	    catch throw:{dialyzer_error, _} -> dialyzer_plt:new()
+	    end,
 
-  State = #gui_state{add_all=AddAll,
-		     add_file=AddFile, 
-		     add_rec=AddRec,
-		     chosen_box=ChosenBox, 
-		     clear_chosen=ClearChosen, 
-		     clear_log=ClearLog, 
-		     clear_warn=ClearWarn, 
-		     del_file=DelFile, 
-		     doc_plt=dialyzer_plt:new(),
-		     dir_entry=DirEntry,
-		     file_box=File, 
-		     file_wd=CWD,
-		     gs=GS, 
-		     init_plt=InitPlt,
-		     log=Log, 
-		     menu=Menu,
-		     mode=Mode,
-		     options=DialyzerOptions,
-		     packer=Packer, 
-		     run=Run,
-		     stop=Stop,
-		     top=TopWin, 
-		     warnings_box=WarningsBox},
+  State = #gui_state{add_all = AddAll,
+		     add_file = AddFile,
+		     add_rec = AddRec,
+		     chosen_box = ChosenBox, 
+		     clear_chosen = ClearChosen, 
+		     clear_log = ClearLog, 
+		     clear_warn = ClearWarn, 
+		     del_file = DelFile, 
+		     doc_plt = dialyzer_plt:new(),
+		     dir_entry = DirEntry,
+		     file_box = File, 
+		     file_wd = CWD,
+		     gs = GS,
+		     init_plt = InitPlt,
+		     log = Log,
+		     menu = Menu,
+		     mode = Mode,
+		     options = DialyzerOptions,
+		     packer = Packer, 
+		     run = Run,
+		     stop = Stop,
+		     top = TopWin, 
+		     warnings_box = WarningsBox},
   NewState = change_dir_or_add_file(State, "."),
   gui_loop(NewState).
 
@@ -477,7 +482,7 @@ gui_loop(State = #gui_state{}) ->
       spawn_link(fun() -> include_dialog(State, Self) end),
       gui_loop(State);
     {new_options, NewOptions} ->
-      NewState = State#gui_state{options=NewOptions},
+      NewState = State#gui_state{options = NewOptions},
       gui_loop(NewState);
     %% ----- Analysis -----
     {BackendPid, ext_calls, ExtCalls} ->
@@ -486,7 +491,7 @@ gui_loop(State = #gui_state{}) ->
 			  "The analysis might get more precise by including "
 			  "the modules containing these functions:\n\n\t~p\n", 
 			  [ExtCalls]),
-      free_editor(State, Msg, "Analysis done"),
+      free_editor(State, "Analysis done", Msg),
       gui_loop(State);
     {BackendPid, log, LogMsg} ->
       update_editor(State#gui_state.log, LogMsg),
@@ -499,13 +504,13 @@ gui_loop(State = #gui_state{}) ->
     {BackendPid, done, _NewPlt, NewDocPlt} ->
       message(State, "Analysis done"),
       config_gui_stop(State),
-      gui_loop(State#gui_state{doc_plt=NewDocPlt});
+      gui_loop(State#gui_state{doc_plt = NewDocPlt});
     {'EXIT', BackendPid, {error, Reason}} ->
-      error(State, Reason),
+      free_editor(State, ?DIALYZER_ERROR_TITLE, Reason),
       config_gui_stop(State),
       gui_loop(State);
     {'EXIT', BackendPid, Reason} when Reason =/= 'normal' ->
-      error(State, io_lib:format("~p", [Reason])),
+      free_editor(State, ?DIALYZER_ERROR_TITLE, io_lib:format("~p", [Reason])),
       config_gui_stop(State),
       gui_loop(State);
     _Other ->
@@ -520,8 +525,8 @@ gui_loop(State = #gui_state{}) ->
 
 %% ---- Adding and deleting files ----
 
-handle_add_all_click(#gui_state{chosen_box=ChosenBox, file_box=File, 
-				file_wd=FWD, mode=Mode}) ->
+handle_add_all_click(#gui_state{chosen_box = ChosenBox, file_box = File, 
+				file_wd = FWD, mode = Mode}) ->
   case gs:read(File, items) of
     [] ->
       ok;
@@ -554,8 +559,8 @@ all_subdirs([Dir|T], Acc) ->
 all_subdirs([], Acc) ->
   Acc.
 
-handle_add_rec_click(#gui_state{chosen_box=ChosenBox, file_box=File, 
-				file_wd=FWD, mode=Mode}) ->
+handle_add_rec_click(#gui_state{chosen_box = ChosenBox, file_box = File, 
+				file_wd = FWD, mode = Mode}) ->
   case gs:read(File, selection) of
     [] ->
       ok;
@@ -566,18 +571,18 @@ handle_add_rec_click(#gui_state{chosen_box=ChosenBox, file_box=File,
       Dirs3 = ordsets:filter(fun(X) -> filelib:is_dir(X) end, Dirs2),
       TargetDirs = ordsets:union(Dirs3, all_subdirs(Dirs3)),
       case gs:read(Mode#mode.start_byte_code, select) of
-      true -> 
-        Code = byte_code,
-        Ext = ".beam";
-      false ->
-        Code = src_code,
-        Ext = ".erl"
+	true -> 
+	  Code = byte_code,
+	  Ext = ".beam";
+	false ->
+	  Code = src_code,
+	  Ext = ".erl"
       end,
       add_files(filter_mods(TargetDirs, Ext), ChosenBox, Code)
   end.
 
-handle_add_files(#gui_state{chosen_box=ChosenBox, file_box=File, 
-			    file_wd=FWD, mode=Mode}) ->
+handle_add_files(#gui_state{chosen_box = ChosenBox, file_box = File, 
+			    file_wd = FWD, mode = Mode}) ->
   case gs:read(File, selection) of
     [] ->
       ok;
@@ -604,7 +609,7 @@ filter_mods(Mods, Extension) ->
 
 contains_files(Dir, Extension) ->
   {ok, Files} = file:list_dir(Dir),
-  lists:any(fun(X) -> filename:extension(X) =:= Extension end,Files).
+  lists:any(fun(X) -> filename:extension(X) =:= Extension end, Files).
 
 add_files(Add, ChosenBox, Type) ->
   Set = gs:read(ChosenBox, items),
@@ -617,14 +622,16 @@ add_files(Add, ChosenBox, Type) ->
   gs:config(ChosenBox, [{items, Files}]),
   ok.
 
-handle_file_delete(#gui_state{chosen_box=ChosenBox}) ->
+handle_file_delete(#gui_state{chosen_box = ChosenBox}) ->
   List = gs:read(ChosenBox, selection),
   lists:foreach(fun(X) -> gs:config(ChosenBox, {del, X}) end,
 		lists:reverse(lists:sort(List))).
 
 %% ---- Other ----
 
-change_dir_or_add_file(S = #gui_state{file_wd=FWD, mode=Mode}, 
+change_dir_or_add_file(S = #gui_state{file_wd = FWD, mode = Mode,
+				      dir_entry = Dir,
+				      chosen_box = CBox, file_box = File},
 		       Text) ->
   NewWDorFile =
     case Text of
@@ -634,23 +641,21 @@ change_dir_or_add_file(S = #gui_state{file_wd=FWD, mode=Mode},
     end,
   case filelib:is_dir(NewWDorFile) of
     true ->
-      gs:config(S#gui_state.dir_entry, [{text, NewWDorFile}]),
+      gs:config(Dir, [{text, NewWDorFile}]),
       {ok, List} = file:list_dir(NewWDorFile),
-      gs:config(S#gui_state.file_box, [{items, [".."|lists:sort(List)]}]),
-      S#gui_state{file_wd=NewWDorFile};
+      gs:config(File, [{items, [".."|lists:sort(List)]}]),
+      S#gui_state{file_wd = NewWDorFile};
     false ->
       case gs:read(Mode#mode.start_byte_code, select) of
 	true -> 
 	  case filter_mods([NewWDorFile], ".beam") of
 	    [] -> ok;
-	    RealFiles ->
-	      add_files(RealFiles, S#gui_state.chosen_box, byte_code)
+	    RealFiles -> add_files(RealFiles, CBox, byte_code)
 	  end;
 	false -> 
 	  case filter_mods([NewWDorFile], ".erl") of
 	    [] -> ok;
-	    RealFiles ->
-	      add_files(RealFiles, S#gui_state.chosen_box, src_code)
+	    RealFiles -> add_files(RealFiles, CBox, src_code)
 	  end
       end,
       S
@@ -663,16 +668,16 @@ butlast([_]) ->
 butlast([]) ->
   ["/"].
 
-change_dir_absolute(S = #gui_state{file_wd=FWD, dir_entry=DirEntry,
-				   file_box=File}, 
+change_dir_absolute(S = #gui_state{file_wd = FWD, dir_entry = Dir,
+				   file_box = File}, 
 		    Text) ->
   case filelib:is_dir(Text) of
     true ->
       WD = filename:join(FWD, Text),
-      gs:config(DirEntry, [{text, WD}]),
+      gs:config(Dir, [{text, WD}]),
       {ok, List} = file:list_dir(WD),
       gs:config(File, [{items, [".."|lists:sort(List)]}]),
-      S#gui_state{file_wd=WD};
+      S#gui_state{file_wd = WD};
     false ->
       S
   end.
@@ -683,7 +688,6 @@ init_warnings([{Tag, GSItem}|Left], LegalWarnings) ->
   init_warnings(Left, LegalWarnings);
 init_warnings([], _LegalWarnings) ->
   ok.
-  
 
 config_gui_start(State) ->
   gs:config(State#gui_state.stop, {enable, true}),
@@ -739,28 +743,33 @@ config_gui_stop(State) ->
 %%
 
 message(State, Message) ->
-  message(State, "Dialyzer Message", Message).  
+  output_sms(State, ?DIALYZER_MESSAGE_TITLE, Message).
 
-error(State, Message) ->
-  message(State, "Dialyzer Error", Message).
+error_sms(State, Message) ->
+  output_sms(State, ?DIALYZER_ERROR_TITLE, Message).
 
-message(#gui_state{gs=GS, top=TopWin}, Title, Message) ->
+%%
+%% This function is to be used *only* for small messages because lines
+%% are not wrapped and the created window has a limited area for text.
+%% For bigger messages, the function free_editor/3 is to be used.
+%%
+output_sms(#gui_state{gs = GS, top = TopWin}, Title, Message) ->
+  %% Lines = string:words(Message, $\n),
+  %% io:format("The message has ~w lines\n", [Lines]),
   WH = [{width, 400}, {height, 100}],
-
   MessageWin = gs:window(GS, [{title, Title},
 			      {default, button, {font, {helvetica, bold, 12}}}
 			      |WH]),
-
   MessagePacker = gs:frame(MessageWin, [{packer_y, [{fixed, 75}, {fixed, 25}]},
 					{packer_x, [{fixed, 175},{fixed, 50},
 						    {fixed, 175}]}]),
   gs:label(MessagePacker, [{pack_x, {1,3}}, {pack_y, 1}, 
 			   {label, {text, Message}}]),
-  Ok = gs:button(MessagePacker, [{label, {text, "Ok"}}, 
+  OK = gs:button(MessagePacker, [{label, {text, "OK"}}, 
 				 {pack_xy, {2,2}}]),
   gs:config(MessageWin, {map, true}),
   gs:config(MessagePacker, WH),
-  message_loop(Ok, MessageWin, TopWin).
+  message_loop(OK, MessageWin, TopWin).
 
 message_loop(Ok, Win, TopWin) ->
   receive
@@ -774,10 +783,9 @@ message_loop(Ok, Win, TopWin) ->
       message_loop(Ok, Win, TopWin)
   end.
 
-dialog(#gui_state{gs=GS, top=TopWin}, Message, OkLabel, CancelLabel) ->
+dialog(#gui_state{gs = GS, top = TopWin}, Message, OkLabel, CancelLabel) ->
   WH = [{width, 400}, {height, 100}],
   WHButton = [{width, 70}, {height, 20}],
-
   DialogWin = gs:window(GS, [{title, "Dialyzer Message"},
 			     {default, button, {font, {helvetica, bold, 12}}}
 			     |WH]),
@@ -811,7 +819,7 @@ dialog_loop(Ok, Cancel, Win, TopWin) ->
       dialog_loop(Ok, Cancel, Win, TopWin)
   end.
 
-maybe_quit(State=#gui_state{top=TopWin}) ->
+maybe_quit(State = #gui_state{top = TopWin}) ->
   case dialog(State, "Do you really want to quit?", "Yes", "No") of
     true ->
       flush(),
@@ -849,9 +857,9 @@ manual(State) ->
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
       gs:destroy(Win),
-      error(State, 
-	    io_lib:format("Could not find doc/manual.txt file!\n\n ~p", 
-			  [Reason]));
+      error_sms(State, 
+		io_lib:format("Could not find doc/manual.txt file!\n\n ~p", 
+			      [Reason]));
     ok ->
       gs:config(Editor, {enable, false}),
       TopWin = State#gui_state.top,
@@ -877,9 +885,9 @@ help_warnings(State) ->
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
       gs:destroy(Win),
-      error(State, 
-	    io_lib:format("Could not find doc/warnings.txt file!\n\n ~p", 
-			  [Reason]));
+      error_sms(State, 
+		io_lib:format("Could not find doc/warnings.txt file!\n\n ~p", 
+			      [Reason]));
     ok ->
       gs:config(Editor, {enable, false}),
       TopWin = State#gui_state.top,
@@ -905,9 +913,9 @@ about(State) ->
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
       gs:destroy(Win),
-      error(State, 
-	    io_lib:format("Could not find doc/about.txt file!\n\n ~p", 
-			  [Reason]));
+      error_sms(State,
+		io_lib:format("Could not find doc/about.txt file!\n\n ~p", 
+			      [Reason]));
     ok ->
       gs:config(Editor, {enable, false}),
       TopWin = State#gui_state.top,
@@ -929,7 +937,7 @@ save_warn(State) ->
     file_box(State, "Save Warnings", CWD),
   save_loop(State, OkButton, CancelButton, Entry, Win, Warn).  
 
-file_box(#gui_state{gs=GS}, Title, Default) ->
+file_box(#gui_state{gs = GS}, Title, Default) ->
   WH = [{width, 400}, {height, 75}],
   Win = gs:window(GS, [{title, Title}|WH]),
   WinPacker = gs:frame(Win, [{packer_y, [{fixed, 25}, {fixed, 25},
@@ -957,7 +965,7 @@ save_loop(State, OkButton, CancelButton, Entry, Save, Editor) ->
       File = gs:read(Entry, text),
       case gs:config(Editor, {save, File}) of
 	{error, _} ->
-	  error(State, "Could not write to file "++File),
+	  error_sms(State, "Could not write to file:\n" ++ File),
 	  save_loop(State, OkButton, CancelButton, Entry, Save, Editor);
 	_ ->
 	  gs:destroy(Save)
@@ -966,7 +974,7 @@ save_loop(State, OkButton, CancelButton, Entry, Save, Editor) ->
       File = gs:read(Entry, text),
       case gs:config(Editor, {save, File}) of
 	{error, _} ->
-	  error(State, "Could not write to file "++File),
+	  error_sms(State, "Could not write to file:\n" ++ File),
 	  save_loop(State, OkButton, CancelButton, Entry, Save, Editor);
 	_ ->
 	  gs:destroy(Save)
@@ -1030,12 +1038,12 @@ search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry,
       A = format_search(gs:read(ArityEntry, text)),
       case dialyzer_plt:to_edoc(State#gui_state.doc_plt, M, F, A) of
 	[] -> 
-	  error(State, "No such function"),
+	  error_sms(State, "No such function"),
 	  search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry, 
 			      FunEntry, ArityEntry, Win, TopWin);
 	String ->
 	  gs:destroy(Win),
-	  free_editor(State, String, "Content of PLT")
+	  free_editor(State, "Content of PLT", String)
       end
   end.
 
@@ -1048,40 +1056,36 @@ format_search(String) ->
 
 show_doc_plt(State) ->
   case State#gui_state.doc_plt of
-    undefined -> error(State, "No analysis has been made yet!\n");
+    undefined -> error_sms(State, "No analysis has been made yet!\n");
     PLT ->
       String = dialyzer_plt:to_edoc(PLT),
-      free_editor(State, String, "Content of PLT")
+      free_editor(State, "Content of PLT", String)
   end.
 
-free_editor(State, Contents0, Title) ->
+free_editor(State, Title, Contents0) ->
   Contents = lists:flatten(Contents0),
   Tokens = string:tokens(Contents, "\n"),
   NofLines = length(Tokens),
   LongestLine = lists:max([length(X) || X <- Tokens]),
-
   Height0 = NofLines * 25 + 80,
   if Height0 > 500 -> Height = 500;
      true -> Height = Height0
   end,
-
   Width0 = LongestLine * 7 + 60,
   if Width0 > 800 -> Width = 800;
      true -> Width = Width0
   end,
-
   GS = State#gui_state.gs,
   WH = [{width, Width}, {height, Height}],
   Win = gs:window(GS, [{title, Title}, {configure, true},
 		       {default, editor, {bg, white}} | WH]),
-  Frame = gs:frame(Win, [{packer_x, [{stretch, 1}, {fixed, 60}, {stretch, 1}]}, 
+  Frame = gs:frame(Win, [{packer_x, [{stretch, 1}, {fixed, 60}, {stretch, 1}]},
 			 {packer_y, [{stretch, 1}, {fixed, 30}]}
 			 | WH]),
   Editor = gs:editor(Frame, [{pack_x, {1,3}}, {pack_y, 1},
 			     {font, {courier, 12}}, {vscroll, right},
 			     {wrap, word}, {enable, true}]),
   Button = gs:button(Frame, [{label, {text, "Ok"}}, {pack_xy, {2,2}}]),
-
   gs:config(Editor, {insert, {insert, Contents}}),
   gs:config(Editor, {enable, false}),
   gs:config(Win, {map, true}),
@@ -1157,7 +1161,7 @@ include_dialog(State, Parent) ->
 	       DirBox, DirEntry, OkButton, CancelButton, Win).
 
 include_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton, 
-	   DirBox, DirEntry, OkButton, CancelButton, Win) ->
+	     DirBox, DirEntry, OkButton, CancelButton, Win) ->
   receive
     {gs, CancelButton, click, _, _} ->
       gs:destroy(Win),
@@ -1177,13 +1181,13 @@ include_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 	  [] -> Dirs;
 	  Add -> [Add|Dirs]
 	end,
-      NewOptions = Options#options{include_dirs=NewDirs},
+      NewOptions = Options#options{include_dirs = NewDirs},
       gs:config(DirBox, [{items, NewDirs}]),
       include_loop(Parent, NewOptions, Frame, AddButton, DeleteAllButton, 
 		   DeleteButton, DirBox, DirEntry, OkButton, CancelButton, Win);
     {gs, DeleteAllButton, click, _, _} ->
       gs:config(DirBox, clear),
-      NewOptions = Options#options{include_dirs=[]},      
+      NewOptions = Options#options{include_dirs = []},      
       include_loop(Parent, NewOptions, Frame, AddButton, DeleteAllButton, 
 		   DeleteButton, DirBox, DirEntry, OkButton, CancelButton, Win);
     {gs, DeleteButton, click, _, _} ->
@@ -1195,14 +1199,14 @@ include_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 	    lists:foreach(fun(X) -> gs:config(DirBox, [{del, X}]) end,
 			  lists:sort(List)),
 	    NewDirs = gs:read(DirBox, items),
-	    Options#options{include_dirs=NewDirs}
+	    Options#options{include_dirs = NewDirs}
 	end,
       include_loop(Parent, NewOptions, Frame, AddButton, DeleteAllButton, 
 		   DeleteButton, DirBox, DirEntry, OkButton, CancelButton, Win);
     {gs, Win, destroy, _, _} ->
       ok
   end.
-  
+
 macro_dialog(State, Parent) ->
   GS = State#gui_state.gs,
   WH = [{width, 300}, {height, 400}],
@@ -1225,7 +1229,7 @@ macro_dialog(State, Parent) ->
   AddButton = gs:button(ButtonPacker1, [{label, {text, "Add"}}, 
 					{pack_xy, {1,1}}]),
   Options = State#gui_state.options,
-  Macros = [io_lib:format("~p = ~p", [X,Y]) || {X,Y}<-Options#options.defines],
+  Macros = [io_lib:format("~p = ~p",[X,Y]) || {X,Y} <- Options#options.defines],
   MacroBox = gs:listbox(Frame, [{pack_x, {1,2}}, {pack_y, 4}, {vscroll, right},
 				{bg, white}, {configure, true},
 				{selectmode, multiple},
@@ -1250,7 +1254,7 @@ macro_dialog(State, Parent) ->
   gs:config(Frame, WH),
   macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton, 
 	     MacroBox, MacroEntry, TermEntry, OkButton, CancelButton, Win).
-  
+
 macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton, 
 	   MacroBox, MacroEntry, TermEntry, OkButton, CancelButton, Win) ->
   receive
@@ -1287,7 +1291,7 @@ macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 		end
 	    end
 	end,
-      NewOptions = Options#options{defines=NewDefines},		 
+      NewOptions = Options#options{defines = NewDefines},		 
       NewEntries = [io_lib:format("~p = ~p", [X, Y]) || {X, Y} <- NewDefines],
       gs:config(MacroBox, [{items, NewEntries}]),
       macro_loop(Parent, NewOptions, Frame, AddButton, DeleteAllButton, 
@@ -1295,7 +1299,7 @@ macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 		 CancelButton, Win);
     {gs, DeleteAllButton, click, _, _} ->
       gs:config(MacroBox, [clear]),
-      NewOptions = Options#options{defines=[]},
+      NewOptions = Options#options{defines = []},
       macro_loop(Parent, NewOptions, Frame, AddButton, DeleteAllButton, 
 		 DeleteButton, MacroBox, MacroEntry, TermEntry, OkButton, 
 		 CancelButton, Win);
@@ -1308,9 +1312,9 @@ macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 	    gs:config(MacroBox, [{selection, clear}]),
 	    Fun = 
 	      fun(X) ->
-		  {ok, [Macro|_]} =
-		    regexp:split(gs:read(MacroBox, {get, X}), " "),
-		  list_to_atom(Macro)
+		  Val = gs:read(MacroBox, {get, X}),
+		  [MacroName|_] = re:split(Val, " ", [{return, list}]),
+		  list_to_atom(MacroName)
 	      end,
 	    Delete = [Fun(X) || X <- List],
 	    lists:foreach(fun(X) -> gs:config(MacroBox, [{del, X}]) end,
@@ -1320,7 +1324,7 @@ macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 					 orddict:erase(X, Acc)
 				     end,
 				     Defines, Delete),
-	    Options#options{defines=NewDefines}
+	    Options#options{defines = NewDefines}
 	end,
       macro_loop(Parent, NewOptions, Frame, AddButton, DeleteAllButton, 
 		 DeleteButton, MacroBox, MacroEntry, TermEntry, OkButton, 
@@ -1345,7 +1349,7 @@ parse(String) ->
   end.
 
 parse_error(E) ->
-  S = io_lib:fwrite("Error parsing expression: ~P.",[E,15]),
+  S = io_lib:fwrite("Error parsing expression: ~P.", [E,15]),
   {error, S}.
 
 %% ----------------------------------------------------------------
@@ -1359,18 +1363,18 @@ start_analysis(State) ->
     error ->
       Msg = "You must choose one or more files or dirs\n"
 	"before starting the analysis!",
-      error(State, Msg),
+      error_sms(State, Msg),
       config_gui_stop(State),      
       State;
     {ok, Files} ->
       Msg = "\n========== Starting Analysis ==========\n\n",
       update_editor(State#gui_state.log, Msg),
-      NewAnalysis = Analysis#analysis{files=Files},
+      NewAnalysis = Analysis#analysis{files = Files},
       run_analysis(State, NewAnalysis)
   end.
 
-build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
-				 init_plt=InitPlt0}) ->
+build_analysis_record(#gui_state{mode = Mode, menu = Menu, options = Options,
+				 init_plt = InitPlt0}) ->
   StartFrom =
     case gs:read(Mode#mode.start_byte_code, select) of
       true -> byte_code;
@@ -1381,13 +1385,12 @@ build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
       true -> dialyzer_plt:new();
       false -> InitPlt0
     end,
-  #analysis{defines=Options#options.defines,
-	    include_dirs=Options#options.include_dirs,
-	    plt=InitPlt,
-	    start_from=StartFrom}.
+  #analysis{defines = Options#options.defines,
+	    include_dirs = Options#options.include_dirs,
+	    plt = InitPlt,
+	    start_from = StartFrom}.
 
-
-get_anal_files(#gui_state{chosen_box=ChosenBox}, StartFrom) ->
+get_anal_files(#gui_state{chosen_box = ChosenBox}, StartFrom) ->
   Files = gs:read(ChosenBox, items),
   FilteredMods =
     case StartFrom of
@@ -1403,20 +1406,18 @@ get_anal_files(#gui_state{chosen_box=ChosenBox}, StartFrom) ->
 run_analysis(State, Analysis) ->
   config_gui_start(State),
   Self = self(),
-  NewAnalysis = Analysis#analysis{doc_plt=dialyzer_plt:new()},
+  NewAnalysis = Analysis#analysis{doc_plt = dialyzer_plt:new()},
   LegalWarnings = find_legal_warnings(State),
   Fun = 
     fun() -> 
 	dialyzer_analysis_callgraph:start(Self, LegalWarnings, NewAnalysis)
     end,
   BackendPid = spawn_link(Fun),
-  State#gui_state{backend_pid=BackendPid}.
+  State#gui_state{backend_pid = BackendPid}.
 
-
-find_legal_warnings(#gui_state{menu=#menu{warnings=Warnings}}) ->
+find_legal_warnings(#gui_state{menu = #menu{warnings = Warnings}}) ->
   ordsets:from_list([Tag || {Tag, GSItem} <- Warnings, 
 			    gs:read(GSItem, select) =:= true]).
-
 
 flush() ->
   receive
@@ -1434,4 +1435,3 @@ update_editor(Editor, Msg) ->
   ScrollPos = gs:read(Editor, vscrollpos),
   gs:config(Editor, {vscrollpos, ScrollPos + NewNofRows - NofRows}),
   gs:config(Editor, {enable, false}).
-

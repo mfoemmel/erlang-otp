@@ -1,5 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
-%% $Id$
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2005-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %% Floating point handling.
 
 -ifdef(HIPE_AMD64).
@@ -99,7 +116,7 @@ do_block([I|Is], LiveOut, Map, BlockMap, Dirty) ->
       {NewCode++NewI, NewMap1, NewBlockMap1, NewDirty1}
   end;
 do_block([], LiveOut, Map, BlockMap, Dirty) ->
-  case lists:filter(fun(X) -> not lists:member(X, LiveOut) end, Map) of
+  case [X || X <- Map, not lists:member(X, LiveOut)] of
     [] ->
       {[], Map, BlockMap, Dirty}; 
     Pop ->
@@ -107,8 +124,8 @@ do_block([], LiveOut, Map, BlockMap, Dirty) ->
       {PopIns, NewMap, BlockMap, true}
   end.
 
-do_shuffle(Pred,Lbl,CFG, OldMap, NewMap) ->
-  %% First make sure both maps has the same members.
+do_shuffle(Pred, Lbl, CFG, OldMap, NewMap) ->
+  %% First make sure both maps have the same members.
   Push = NewMap -- OldMap,
   Pop = OldMap -- NewMap,
   {PopInsn, OldMap0} = pop_dead(Pop, OldMap),
@@ -118,10 +135,10 @@ do_shuffle(Pred,Lbl,CFG, OldMap, NewMap) ->
       _-> push_list(lists:reverse(Push), OldMap0)
     end,
   Code =
-    if OldMap1=:=NewMap ->
+    if OldMap1 =:= NewMap ->
 	%% It was enough to push and pop.
 	PopInsn ++ PushInsn ++ [hipe_x86:mk_jmp_label(Lbl)];
-       true->
+       true ->
 	%% Shuffle the positions so the maps match
 	Cycles = find_swap_cycles(OldMap1, NewMap),
 	SwitchInsns = do_switching(Cycles),
@@ -137,10 +154,9 @@ do_shuffle(Pred,Lbl,CFG, OldMap, NewMap) ->
   NewPredBB = hipe_bb:code_update(OldPred, NewPredCode),
   hipe_x86_cfg:bb_add(NewCFG1, Pred, NewPredBB).
 
-
 find_swap_cycles(OldMap, NewMap) ->
-  Moves = [get_pos(X,NewMap,1) || X <- OldMap],
-  find_swap_cycles(OldMap, Moves, lists:seq(1,length(OldMap)), []).
+  Moves = [get_pos(X, NewMap, 1) || X <- OldMap],
+  find_swap_cycles(OldMap, Moves, lists:seq(1, length(OldMap)), []).
 
 find_swap_cycles(OldMap, Moves, NotHandled, Cycles) ->
   if NotHandled =:= [] -> Cycles;
@@ -148,23 +164,21 @@ find_swap_cycles(OldMap, Moves, NotHandled, Cycles) ->
       Cycle = find_cycle(Moves, [hd(NotHandled)]),
       NewNotHandled = NotHandled -- Cycle,
       case lists:member(1, Cycle) of
-	true->
+	true ->
 	  %% The cycle that contains the first element on the stack
 	  %% must be processed last.
 	  NewCycle = format_cycle(Cycle),
-	  find_swap_cycles(OldMap, Moves, NewNotHandled,
-			   Cycles++[NewCycle]);
+	  find_swap_cycles(OldMap, Moves, NewNotHandled, Cycles ++ [NewCycle]);
 	_ ->
 	  NewCycle = format_cycle(Cycle),
-	  find_swap_cycles(OldMap, Moves, NewNotHandled,
-			   [NewCycle|Cycles])
+	  find_swap_cycles(OldMap, Moves, NewNotHandled, [NewCycle|Cycles])
       end
   end.
 
 find_cycle(Moves, Cycle) ->
-  To = lists:nth(lists:last(Cycle),Moves),
+  To = lists:nth(lists:last(Cycle), Moves),
   if To =:= hd(Cycle) -> Cycle;
-     true -> find_cycle(Moves, Cycle++[To])
+     true -> find_cycle(Moves, Cycle ++ [To])
   end.
 
 format_cycle(C) ->
@@ -181,7 +195,7 @@ format_cycle(C) ->
 format_cycle([H|T], NewCycle) ->
   case H of
     0 -> T ++ NewCycle;
-    _ -> format_cycle(T,NewCycle++[H])
+    _ -> format_cycle(T, NewCycle ++ [H])
   end.
 
 do_switching(Cycles) ->
@@ -195,12 +209,12 @@ do_switching([], Insns) ->
 
 redirect(Insn, OldLbl, NewLbl) ->
   case Insn of
-    #pseudo_call{contlab=ContLab, sdesc=SDesc} ->
-      #x86_sdesc{exnlab=ExnLab} = SDesc,
+    #pseudo_call{contlab = ContLab, sdesc = SDesc} ->
+      #x86_sdesc{exnlab = ExnLab} = SDesc,
       if ContLab =:= OldLbl -> 
-	  Insn#pseudo_call{contlab=NewLbl};
+	  Insn#pseudo_call{contlab = NewLbl};
 	 ExnLab =:= OldLbl ->
-	  Insn#pseudo_call{sdesc=SDesc#x86_sdesc{exnlab=NewLbl}}
+	  Insn#pseudo_call{sdesc = SDesc#x86_sdesc{exnlab = NewLbl}}
       end;
     _ -> 
       hipe_x86_cfg:redirect_jmp(Insn, OldLbl, NewLbl)
@@ -208,7 +222,7 @@ redirect(Insn, OldLbl, NewLbl) ->
 
 do_insn(I, LiveOut, Map, BlockMap) ->
   case I of
-    #pseudo_call{'fun'=Fun, contlab=ContLab}->
+    #pseudo_call{'fun' = Fun, contlab = ContLab} ->
       case Fun of
 	%% We don't want to spill anything if an exception has been thrown.
 	{_, 'handle_fp_exception'} ->
@@ -225,7 +239,7 @@ do_insn(I, LiveOut, Map, BlockMap) ->
 	_ ->
 	  {pop_all(Map)++[I],[],BlockMap}
       end;
-    #fp_unop{op='fwait'} ->
+    #fp_unop{op = 'fwait'} ->
       Store = pseudo_pop(Map),
       {Store ++ [I], Map, BlockMap};
     #fp_unop{} ->
@@ -234,8 +248,8 @@ do_insn(I, LiveOut, Map, BlockMap) ->
     #fp_binop{} ->
       {NewI, NewMap} = do_fp_binop(I, LiveOut, Map),
       {NewI, NewMap, BlockMap};
-    #fmove{src=Src, dst=Dst} ->
-      if Src=:=Dst ->
+    #fmove{src = Src, dst = Dst} ->
+      if Src =:= Dst ->
 	  %% Don't need to keep this instruction!
 	  %% However, we may need to pop from the stack.
 	  case is_liveOut(Src, LiveOut) of
@@ -254,8 +268,8 @@ do_insn(I, LiveOut, Map, BlockMap) ->
       {[I], Map, BlockMap}
   end.
 
-do_fmove(Src, Dst=#x86_mem{},LiveOut, Map) ->
-%%% Storing a float from the stack into memory.
+do_fmove(Src, Dst = #x86_mem{}, LiveOut, Map) ->
+  %% Storing a float from the stack into memory.
   {SwitchInsn, NewMap0} = switch_first(Src, Map),
   case is_liveOut(Src, LiveOut) of
     true ->
@@ -264,8 +278,8 @@ do_fmove(Src, Dst=#x86_mem{},LiveOut, Map) ->
       NewMap1 = pop(NewMap0),
       {SwitchInsn ++ [hipe_x86:mk_fp_unop(fstp, Dst)], NewMap1}
   end;
-do_fmove(Src=#x86_mem{}, Dst, _LiveOut, Map) ->
-%%% Pushing a float into the stack.
+do_fmove(Src = #x86_mem{}, Dst, _LiveOut, Map) ->
+  %% Pushing a float into the stack.
   case in_map(Dst, Map) of
     true -> ?EXIT({loadingExistingFpVariable,{Src,Dst}});
     _ -> ok
@@ -275,26 +289,26 @@ do_fmove(Src=#x86_mem{}, Dst, _LiveOut, Map) ->
   NewMap = [Dst|NewMap0],
   {PushOp, NewMap};
 do_fmove(Src, Dst, LiveOut, Map) ->
-%%% Copying a float that either is spilled or is on the fp stack,
-%%% or converting a fixnum in a temp to a float on the fp stack.
+  %% Copying a float that either is spilled or is on the fp stack,
+  %% or converting a fixnum in a temp to a float on the fp stack.
   case in_map(Dst, Map) of
     true -> ?EXIT({copyingToExistingFpVariable,{Src,Dst}});
     _ -> ok
   end,
   IsConv =
     case Src of
-      #x86_temp{type=Type} -> Type =/= 'double';
+      #x86_temp{type = Type} -> Type =/= 'double';
       _ -> false
     end,
   case IsConv of
     true ->
-      do_conv(Src,Dst,Map);
+      do_conv(Src, Dst, Map);
     _ ->
       %% Copying.
-      case {is_liveOut(Src, LiveOut),in_map(Src, Map)} of
-	{false,true} ->
+      case {is_liveOut(Src, LiveOut), in_map(Src, Map)} of
+	{false, true} ->
 	  %% Just remap Dst to Src
-	  {Head,[_|T]} = lists:splitwith(fun(X) -> X /= Src end, Map),
+	  {Head, [_|T]} = lists:splitwith(fun(X) -> X =/= Src end, Map),
 	  {[], Head ++ [Dst|T]};
 	_ ->
 	  {PushOp, [_|NewMap0]} = push(Src, Map),
@@ -304,7 +318,7 @@ do_fmove(Src, Dst, LiveOut, Map) ->
       end
   end.
 
-do_conv(Src=#x86_temp{reg=Reg}, Dst, Map) ->
+do_conv(Src = #x86_temp{reg = Reg}, Dst, Map) ->
   %% Converting. Src must not be a register, so we 
   %% might have to put it into memory in between.
   {Move, NewSrc} = 
@@ -320,20 +334,19 @@ do_conv(Src=#x86_temp{reg=Reg}, Dst, Map) ->
   NewMap = [Dst|NewMap0],
   case length(PushOp) of
     1 -> %% No popping of memory object on fpstack
-      {Move++[hipe_x86:mk_fp_unop(fild, NewSrc)], NewMap};
+      {Move ++ [hipe_x86:mk_fp_unop(fild, NewSrc)], NewMap};
     _ -> %% H contains pop instructions. Must be kept!
       Head = butlast(PushOp),
       {Move ++ Head ++ [hipe_x86:mk_fp_unop(fild, NewSrc)], NewMap}
   end.
 
-
-do_fp_unop(I = #fp_unop{arg=Arg, op=fchs}, Liveout, Map) ->
+do_fp_unop(I = #fp_unop{arg = Arg, op = fchs}, Liveout, Map) ->
   %% This is fchs, the only operation without a
   %% popping version. Needs special handling.
   case is_liveOut(Arg, Liveout) of
     true ->
       {SwitchIns, NewMap} = switch_first(Arg, Map),
-      {SwitchIns ++ [I#fp_unop{arg=[]}], NewMap};
+      {SwitchIns ++ [I#fp_unop{arg = []}], NewMap};
     false ->
       %% Don't need to keep this instruction!
       %% However, we may need to pop Src from the stack.
@@ -347,8 +360,7 @@ do_fp_unop(I = #fp_unop{arg=Arg, op=fchs}, Liveout, Map) ->
       end
   end.
 
-do_fp_binop(#fp_binop{src=Src, dst=Dst, op=Op},
-       LiveOut, Map) ->
+do_fp_binop(#fp_binop{src = Src, dst = Dst, op = Op}, LiveOut, Map) ->
   case {is_liveOut(Src, LiveOut), is_liveOut(Dst, LiveOut)} of
     {true, true} ->
       keep_both(Op, Src, Dst, Map);
@@ -414,7 +426,7 @@ keep_dst(Op, Src, Dst, Map) ->
     _ ->
       %% Src isn't in the map so it doesn't have to be popped.
       {SwitchInsn, NewMap} = switch_first(Dst, Map),
-      {SwitchInsn ++ [#fp_unop{arg=Src,op=Op}], NewMap}
+      {SwitchInsn ++ [#fp_unop{arg = Src, op = Op}], NewMap}
   end.
 
 keep_none(Op, Src, Dst, Map) ->
@@ -432,17 +444,17 @@ keep_none(Op, Src, Dst, Map) ->
       NewDst = get_new_opnd(Dst,NewMap1),
       NewMap2 = pop(NewMap1),
       %% Then Dst has to be popped.
-      {PopInsn,NewMap} = pop_member(Dst,NewMap2),
+      {PopInsn, NewMap} = pop_member(Dst, NewMap2),
       Insn = format_fp_binop(NewOp, mk_st(0), NewDst),
       {PushInsn ++ SwitchInsn1 ++ Insn ++ PopInsn, NewMap};
     _ ->
       %% Src isn't in the map so it doesn't have to be popped.
       {SwitchInsn, NewMap1} = switch_first(Dst, NewMap0),
       NewMap = pop(NewMap1),
-      {SwitchInsn ++ [#fp_unop{arg=Src,op=Op}] ++ pop_insn(), NewMap}
+      {SwitchInsn ++ [#fp_unop{arg = Src, op = Op}] ++ pop_insn(), NewMap}
   end.
 
-format_fp_binop(Op, Src=#x86_temp{}, Dst=#x86_fpreg{reg=Reg}) ->
+format_fp_binop(Op, Src = #x86_temp{}, Dst = #x86_fpreg{reg = Reg}) ->
   %% Handle that st(0) is sometimes implicit.
   if Reg =:= 0 -> [hipe_x86:mk_fp_unop(Op, Src)];
      true -> [hipe_x86:mk_fp_binop(Op, Src, Dst)]
@@ -497,7 +509,7 @@ pop_all(Map) ->
   Code.
 
 pop_member(Member, Map) ->
-  {Head,[_|T]} = lists:splitwith(fun(X)->X/=Member end,Map),
+  {Head,[_|T]} = lists:splitwith(fun(X)-> X =/= Member end, Map),
   {[hipe_x86:mk_fp_unop('fstp', mk_st(get_pos(Member, Map, 0)))],
    Head++T}.
 
@@ -522,7 +534,7 @@ switch_first(X, Map = [H|_]) ->
     notFound ->
       push(X, Map);
     _ ->	    
-      {[_|Head], [_|Tail]} = lists:splitwith(fun(Y)->Y/=X end, Map),
+      {[_|Head], [_|Tail]} = lists:splitwith(fun(Y)-> Y =/= X end, Map),
       NewMap = [X|Head] ++ [H|Tail],
       Ins = hipe_x86:mk_fp_unop(fxch, mk_st(Pos)),
       {[Ins], NewMap}
@@ -549,9 +561,9 @@ get_new_opnd(X, Map) ->
 
 is_fp(#x86_fpreg{}) ->
   true;
-is_fp(#x86_mem{type=Type}) ->
+is_fp(#x86_mem{type = Type}) ->
   Type =:= 'double';
-is_fp(#x86_temp{type=Type}) ->
+is_fp(#x86_temp{type = Type}) ->
   Type =:= 'double'.
 
 handle_insn(I) ->
@@ -559,8 +571,8 @@ handle_insn(I) ->
     #fmove{} -> true;
     #fp_unop{} -> true;
     #fp_binop{} -> true;
-    #pseudo_call{}->true;
-%%    #ret{}-> true;
+    #pseudo_call{} ->true;
+    %% #ret{} -> true;
     _ -> false
   end.
 
@@ -611,9 +623,9 @@ pseudo_pop(_) ->
   [].
 
 pseudo_pop(Dst, St, Acc) when St > 1 ->
-%% Store all members of the stack to a single temporary to force 
-%% any floating point overflow exceptions to occur even though we
-%% don't have overflow for the extended double precision in the x87.
+  %% Store all members of the stack to a single temporary to force 
+  %% any floating point overflow exceptions to occur even though we
+  %% don't have overflow for the extended double precision in the x87.
   pseudo_pop(Dst, St-1, 
 	     [hipe_x86:mk_fp_unop('fxch', mk_st(St-1)),
 	      hipe_x86:mk_fp_unop('fst', Dst),

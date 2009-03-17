@@ -1,6 +1,24 @@
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1997-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 {application, debugger,
  [{description, "Debugger"},
-  {vsn, "3.1.1.4"},
+  {vsn, "3.2"},
   {modules, [
 	     dbg_debugged,
 	     dbg_icmd,
@@ -22,6 +40,20 @@
 	     dbg_ui_view,
 	     dbg_ui_win,
 	     dbg_ui_winman,
+	     dbg_wx_break,
+	     dbg_wx_break_win,
+	     dbg_wx_code,
+	     dbg_wx_filedialog_win,
+	     dbg_wx_interpret,
+	     dbg_wx_mon,
+	     dbg_wx_mon_win,
+	     dbg_wx_settings,
+	     dbg_wx_src_view,
+	     dbg_wx_trace,
+	     dbg_wx_trace_win,
+	     dbg_wx_view,
+	     dbg_wx_win,
+	     dbg_wx_winman,
 	     debugger,
 	     i,
 	     int

@@ -1,20 +1,22 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 1996-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
+# retrieved online at http://www.erlang.org/.
 # 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
 # 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
-#     $Id$
+# %CopyrightEnd%
 #
+
 include $(ERL_TOP)/make/target.mk
 
 ERTS_LIB_TYPEMARKER=.$(TYPE)
@@ -94,18 +96,14 @@ endif
 
 # On windows we always need reentrant libraries.
 ifeq ($(TARGET),win32)
-ERLEXEC_XLIBS=-L../../lib/internal/$(TARGET) -lerts_internal_r$(ERTS_LIB_TYPEMARKER)
+ERLEXEC_XLIBS=-L../../lib/internal/$(TARGET) -lerts_internal_r$(ERTS_LIB_TYPEMARKER) @ERTS_INTERNAL_X_LIBS@
 else
-ERLEXEC_XLIBS=-L../../lib/internal/$(TARGET) -lerts_internal$(ERTS_LIB_TYPEMARKER)
+ERLEXEC_XLIBS=-L../../lib/internal/$(TARGET) -lerts_internal$(ERTS_LIB_TYPEMARKER) @ERTS_INTERNAL_X_LIBS@
 endif
 
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
-
-ifeq ($(findstring solaris,$(TARGET)),solaris)
-INSTALL_EMBEDDED_PROGS = $(BINDIR)/wd_keeper
-endif
 
 ifeq ($(findstring vxworks,$(TARGET)), vxworks)
 INSTALL_EMBEDDED_PROGS = $(BINDIR)/erl_io $(BINDIR)/rdate $(BINDIR)/vxcall
@@ -277,7 +275,6 @@ endif
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/vxcall.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/werl.o
-	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/wd_keeper.o
 	rm -f *~ core
 
 #
@@ -312,12 +309,6 @@ $(OBJDIR)/to_erl.o: ../unix/to_erl.c
 
 $(OBJDIR)/safe_string.o: ../unix/safe_string.c
 	$(CC) $(CFLAGS) -o $@ -c ../unix/safe_string.c
-
-$(BINDIR)/wd_keeper: $(OBJDIR)/wd_keeper.o
-	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/wd_keeper.o
-
-$(OBJDIR)/wd_keeper.o: ../unix/wd_keeper.c
-	$(CC) $(CFLAGS) -o $@ -c ../unix/wd_keeper.c
 
 ifneq ($(TARGET),win32)
 $(BINDIR)/$(ERLEXEC): $(OBJDIR)/$(ERLEXEC).o

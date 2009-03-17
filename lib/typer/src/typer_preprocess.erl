@@ -1,9 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
-%%============================================================================
-%% File    : typer_preprocess.erl
-%% Author  : Bingwen He <hebingwen@hotmail.com>
-%% Description :
-%%============================================================================
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2006-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 
 -module(typer_preprocess).
 
@@ -30,9 +43,9 @@ get_all_files(Args, trust) ->
 test_erl_file_exclude_ann(File) ->
   case filename:extension(File) of
     ".erl" -> %% Exclude files ending with ".ann.erl"
-      case regexp:matches(File, "[\.](ann)[\.](erl)$") of
-	{match, []} -> true;
-	{match, _ } -> false
+      case re:run(File, "[\.]ann[\.]erl$") of
+	{match, _} -> false;
+	nomatch -> true
       end;
     _ -> false
   end.
@@ -84,16 +97,16 @@ check_dir(Dir, Mode, Acc, Fun) ->
       case Mode of
 	non_recursive ->
 	  FinalFiles = process_file_and_dir(TmpFiles, Fun),
-	  Acc++FinalFiles;
+	  Acc ++ FinalFiles;
 	recursive ->
-	  TmpAcc1 = process_file_and_dir(TmpFiles,Fun),
-	  TmpAcc2 = process_dir_recursively(TmpDirs,Fun),
-	  Acc++TmpAcc1++TmpAcc2
+	  TmpAcc1 = process_file_and_dir(TmpFiles, Fun),
+	  TmpAcc2 = process_dir_recursively(TmpDirs, Fun),
+	  Acc ++ TmpAcc1 ++ TmpAcc2
       end;
     {error, eacces} ->
       typer:error("no access permission to dir \""++Dir++"\"");
     {error, enoent} ->
-      typer:error("\""++Dir++"\" is not a valid file or directory");
+      typer:error("cannot access "++Dir++": No such file or directory");
     {error, _Reason} ->
       typer:error("error involving a use of file:list_dir/1")
   end.
@@ -103,7 +116,7 @@ check_dir(Dir, Mode, Acc, Fun) ->
 
 process_file(File, TestFun, Acc) ->
   case TestFun(File) of
-    true  -> Acc++[File];
+    true  -> Acc ++ [File];
     false -> Acc
   end.
 
@@ -112,7 +125,7 @@ process_file(File, TestFun, Acc) ->
 
 split_dirs_and_files(Elems, Dir) ->
   Test_Fun = 
-    fun (Elem, {DirAcc,FileAcc}) ->
+    fun (Elem, {DirAcc, FileAcc}) ->
 	File = filename:join(Dir, Elem),
 	case filelib:is_regular(File) of
 	  false -> {[File|DirAcc], FileAcc}; 

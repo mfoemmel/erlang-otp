@@ -1,3 +1,21 @@
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2004-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved online at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * %CopyrightEnd%
+ */
 /* $Id$
  */
 #include "hipe_ppc_asm.h"
@@ -520,7 +538,7 @@ CSYM(nbif_0_trap_exception):
 .handle_trap:
 	li	r3, HIPE_MODE_SWITCH_RES_TRAP
 	STORE	NSP, P_NSP(P)
-	STORE	r4, P_ARITY(P)
+	STORE	r4, P_NARITY(P)
 	STORE	TEMP_LR, P_NRA(P)
 	b	.nosave_exit
 
@@ -557,3 +575,7 @@ ASYM(hipe_ppc_inc_stack):
 	LOAD	NSP, P_NSP(P)
 	LOAD_ARG_REGS
 	blr
+
+#if defined(__linux__) && defined(__ELF__)
+.section .note.GNU-stack,"",%progbits
+#endif

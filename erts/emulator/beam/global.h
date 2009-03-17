@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
 #ifndef __GLOBAL_H__
@@ -81,6 +82,20 @@ typedef struct line_buf {  /* Buffer used in line oriented I/O */
 			      The rest is the overflow buffer. */
 } LineBuf;
 
+/*
+ * Port Specific Data.
+ *
+ * Only use PrtSD for very rarely used data.
+ */
+
+#define ERTS_PRTSD_SCHED_ID 0
+
+#define ERTS_PRTSD_SIZE 1
+
+typedef struct {
+    void *data[ERTS_PRTSD_SIZE];
+} ErtsPrtSD;
+
 #ifdef ERTS_SMP
 typedef struct ErtsXPortsList_ ErtsXPortsList;
 #endif
@@ -94,7 +109,7 @@ typedef struct ErtsXPortsList_ ErtsXPortsList;
  * specific locking is used each instance have its own lock.
  *
  * Most fields in the Port structure are protected by the lock
- * referred to by the lock filed. I'v called it the port lock.
+ * referred to by the lock field. I'v called it the port lock.
  * This lock is shared between all ports running the same driver
  * when driver specific locking is used.
  *
@@ -102,15 +117,15 @@ typedef struct ErtsXPortsList_ ErtsXPortsList;
  * (see erl_port_tasks.c)
  *
  * The 'status' field is protected by a combination of the port lock,
- * the port tasks lock, and the port table lock. It may be read if
- * the port table lock, or the port lock is held. It may only be
- * modified if both the port lock and the port table lock is held
+ * the port tasks lock, and the state_lck. It may be read if
+ * the state_lck, or the port lock is held. It may only be
+ * modified if both the port lock and the state_lck is held
  * (with one exception; see below). When changeing status from alive
  * to dead or vice versa, also the port task lock has to be held.
  * This in order to guarantee that tasks are scheduled only for
  * ports that are alive.
  *
- * The status field may be modified with only the port table lock
+ * The status field may be modified with only the state_lck
  * held when status is changed from dead to alive. This since no
  * threads can have any references to the port other than via the
  * port table.
@@ -125,6 +140,8 @@ struct port {
     erts_smp_atomic_t refc;
     erts_smp_mtx_t *lock;
     ErtsXPortsList *xports;
+    erts_smp_atomic_t run_queue;
+    erts_smp_spinlock_t state_lck;  /* protects: id, status, snapshot */
 #endif
     Eterm id;                   /* The Port id of this port */
     Eterm connected;            /* A connected process */
@@ -154,9 +171,67 @@ struct port {
 				    process to get (line oriented I/O)*/
     Uint32 status;		 /* Status and type flags */
     int control_flags;		 /* Flags for port_control()  */
+    Uint32 snapshot;             /* Next snapshot that port should be part of */
     struct reg_proc *reg;
     ErlDrvPDL port_data_lock;
+
+    ErtsPrtSD *psd;		 /* Port specific data */
 };
+
+
+ERTS_GLB_INLINE ErtsRunQueue *erts_port_runq(Port *prt);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE ErtsRunQueue *
+erts_port_runq(Port *prt)
+{
+#ifdef ERTS_SMP
+    ErtsRunQueue *rq1, *rq2;
+    rq1 = (ErtsRunQueue *) erts_smp_atomic_read(&prt->run_queue);
+    while (1) {
+	erts_smp_runq_lock(rq1);
+	rq2 = (ErtsRunQueue *) erts_smp_atomic_read(&prt->run_queue);
+	if (rq1 == rq2)
+	    return rq1;
+	erts_smp_runq_unlock(rq1);
+	rq1 = rq2;
+    }
+#else
+    return erts_common_run_queue;
+#endif
+}
+
+#endif
+
+
+ERTS_GLB_INLINE void *erts_prtsd_get(Port *p, int ix);
+ERTS_GLB_INLINE void *erts_prtsd_set(Port *p, int ix, void *new);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE void *
+erts_prtsd_get(Port *prt, int ix)
+{
+    return prt->psd ? prt->psd->data[ix] : NULL;
+}
+
+ERTS_GLB_INLINE void *
+erts_prtsd_set(Port *prt, int ix, void *data)
+{
+    if (prt->psd) {
+	void *old = prt->psd->data[ix];
+	prt->psd->data[ix] = data;
+	return old;
+    }
+    else {
+	prt->psd = erts_alloc(ERTS_ALC_T_PRTSD, sizeof(ErtsPrtSD));
+	prt->psd->data[ix] = data;
+	return NULL;
+    }
+}
+
+#endif
 
 /* Driver handle (wrapper for old plain handle) */
 #define ERL_DE_OK      0
@@ -254,6 +329,7 @@ struct erts_driver_t_ {
     void (*timeout)(ErlDrvData drv_data);
     void (*ready_async)(ErlDrvData drv_data, ErlDrvThreadData thread_data); /* Might be NULL */ 
     void (*process_exit)(ErlDrvData drv_data, ErlDrvMonitor *monitor);
+    void (*stop_select)(ErlDrvEvent event, void*); /* Might be NULL */
 };
 
 extern erts_driver_t *driver_list;
@@ -400,10 +476,33 @@ erts_mk_magic_binary_term(Eterm **hpp, ErlOffHeap *ohp, Binary *mbp)
 
 /* arrays that get malloced at startup */
 extern Port* erts_port;
-extern long erts_ports_alive;
+extern erts_smp_atomic_t erts_ports_alive;
 
 extern Uint erts_max_ports;
 extern Uint erts_port_tab_index_mask;
+extern erts_smp_atomic_t erts_ports_snapshot;
+extern erts_smp_atomic_t erts_dead_ports_ptr;
+
+ERTS_GLB_INLINE void erts_may_save_closed_port(Port *prt);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE void erts_may_save_closed_port(Port *prt)
+{
+    ERTS_SMP_LC_ASSERT(erts_smp_lc_spinlock_is_locked(&prt->state_lck));
+    if (prt->snapshot != erts_smp_atomic_read(&erts_ports_snapshot)) {
+	/* Dead ports are added from the end of the snapshot buffer */
+	Eterm* tombstone = (Eterm*) erts_smp_atomic_addtest(&erts_dead_ports_ptr,
+							    -(long)sizeof(Eterm));
+	ASSERT(tombstone+1 != NULL);
+	ASSERT(prt->snapshot == (Uint32) erts_smp_atomic_read(&erts_ports_snapshot) - 1);
+	*tombstone = prt->id;
+    }
+    /*else no ongoing snapshot or port was already included or created after snapshot */
+}
+
+#endif
+
 /* controls warning mapping in error_logger */
 
 extern Eterm node_cookie;
@@ -837,6 +936,7 @@ extern ErtsModifiedTimings erts_modified_timings[];
 extern Eterm erts_error_logger_warnings;
 extern int erts_initialized;
 extern int erts_compat_rel;
+extern int erts_use_sender_punish;
 void erts_short_init(void);
 void erl_start(int, char**);
 void erts_usage(void);
@@ -939,10 +1039,8 @@ void erts_smp_xports_unlock(Port *);
 int erts_lc_is_port_locked(Port *);
 #endif
 
-extern erts_smp_spinlock_t erts_port_tab_lock;
-
-ERTS_GLB_INLINE void erts_smp_port_tab_lock(void);
-ERTS_GLB_INLINE void erts_smp_port_tab_unlock(void);
+ERTS_GLB_INLINE void erts_smp_port_state_lock(Port*);
+ERTS_GLB_INLINE void erts_smp_port_state_unlock(Port*);
 
 ERTS_GLB_INLINE int erts_smp_port_trylock(Port *prt);
 ERTS_GLB_INLINE void erts_smp_port_lock(Port *prt);
@@ -951,16 +1049,21 @@ ERTS_GLB_INLINE void erts_smp_port_unlock(Port *prt);
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 
 ERTS_GLB_INLINE void
-erts_smp_port_tab_lock(void)
+erts_smp_port_state_lock(Port* prt)
 {
-    erts_smp_spin_lock(&erts_port_tab_lock);
+#ifdef ERTS_SMP
+    erts_smp_spin_lock(&prt->state_lck);
+#endif
 }
 
 ERTS_GLB_INLINE void
-erts_smp_port_tab_unlock(void)
+erts_smp_port_state_unlock(Port *prt)
 {
-    erts_smp_spin_unlock(&erts_port_tab_lock);
+#ifdef ERTS_SMP
+    erts_smp_spin_unlock(&prt->state_lck);
+#endif
 }
+
 
 ERTS_GLB_INLINE int
 erts_smp_port_trylock(Port *prt)
@@ -1022,6 +1125,9 @@ erts_smp_port_unlock(Port *prt)
 #define INVALID_TRACER_PORT(PP, ID)					\
   ERTS_INVALID_PORT_OPT((PP), (ID), ERTS_PORT_SFLGS_INVALID_TRACER_LOOKUP)
 
+#define ERTS_PORT_SCHED_ID(P, ID) \
+  ((Uint) erts_prtsd_set((P), ERTS_PSD_SCHED_ID, (void *) (ID)))
+
 #ifdef ERTS_SMP
 Port *erts_de2port(DistEntry *, Process *, ErtsProcLocks);
 #endif
@@ -1051,27 +1157,22 @@ erts_id2port_sflgs(Eterm id, Process *c_p, ErtsProcLocks c_p_locks, Uint32 sflgs
     int no_proc_locks = !c_p || !c_p_locks;
 #endif
     Port *prt;
-    int ix;
 
     if (is_not_internal_port(id))
 	return NULL;
 
-    ix = internal_port_index(id);
+    prt = &erts_port[internal_port_index(id)];
 
-    erts_smp_port_tab_lock();
-    if (ERTS_INVALID_PORT_OPT(&erts_port[ix], id, sflgs)) {
+    erts_smp_port_state_lock(prt);
+    if (ERTS_INVALID_PORT_OPT(prt, id, sflgs)) {
+	erts_smp_port_state_unlock(prt);
 	prt = NULL;
     }
+#ifdef ERTS_SMP
     else {
-#ifdef ERTS_SMP
-	erts_smp_atomic_inc(&erts_port[ix].refc);
-#endif
-	prt = &erts_port[ix];
-    }
-    erts_smp_port_tab_unlock();
+	erts_smp_atomic_inc(&prt->refc);
+	erts_smp_port_state_unlock(prt);
 
-#ifdef ERTS_SMP
-    if (prt) {
 	if (no_proc_locks)
 	    erts_smp_mtx_lock(prt->lock);
 	else if (erts_smp_mtx_trylock(prt->lock) == EBUSY) {
@@ -1144,12 +1245,12 @@ erts_portid2status(Eterm id)
 	int ix = internal_port_index(id);
 	if (erts_max_ports <= ix)
 	    return ERTS_PORT_SFLG_INVALID;
-	erts_smp_port_tab_lock();
+	erts_smp_port_state_lock(&erts_port[ix]);
 	if (erts_port[ix].id == id)
 	    status = erts_port[ix].status;
 	else
 	    status = ERTS_PORT_SFLG_INVALID;
-	erts_smp_port_tab_unlock();
+	erts_smp_port_state_unlock(&erts_port[ix]);
 	return status;
     }
 }
@@ -1172,42 +1273,42 @@ ERTS_GLB_INLINE void erts_port_status_bandor_set(Port *prt,
 						 Uint32 bor_status)
 {
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
-    erts_smp_port_tab_lock();
+    erts_smp_port_state_lock(prt);
     prt->status &= band_status;
     prt->status |= bor_status;
-    erts_smp_port_tab_unlock();
+    erts_smp_port_state_unlock(prt);
 }
 
 ERTS_GLB_INLINE void erts_port_status_band_set(Port *prt, Uint32 status)
 {
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
-    erts_smp_port_tab_lock();
+    erts_smp_port_state_lock(prt);
     prt->status &= status;
-    erts_smp_port_tab_unlock();
+    erts_smp_port_state_unlock(prt);
 }
 
 ERTS_GLB_INLINE void erts_port_status_bor_set(Port *prt, Uint32 status)
 {
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
-    erts_smp_port_tab_lock();
+    erts_smp_port_state_lock(prt);
     prt->status |= status;
-    erts_smp_port_tab_unlock();
+    erts_smp_port_state_unlock(prt);
 }
 
 ERTS_GLB_INLINE void erts_port_status_set(Port *prt, Uint32 status)
 {
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
-    erts_smp_port_tab_lock();
+    erts_smp_port_state_lock(prt);
     prt->status = status;
-    erts_smp_port_tab_unlock();
+    erts_smp_port_state_unlock(prt);
 }
 
 ERTS_GLB_INLINE Uint32 erts_port_status_get(Port *prt)
 {
     Uint32 res;
-    erts_smp_port_tab_lock();
+    erts_smp_port_state_lock(prt);
     res = prt->status;
-    erts_smp_port_tab_unlock();
+    erts_smp_port_state_unlock(prt);
     return res;
 }
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
@@ -1325,6 +1426,9 @@ Eterm erts_bld_2tup_list(Uint **hpp, Uint *szp,
 Eterm
 erts_bld_atom_uint_2tup_list(Uint **hpp, Uint *szp,
 			     Sint length, Eterm atoms[], Uint uints[]);
+Eterm
+erts_bld_atom_2uint_3tup_list(Uint **hpp, Uint *szp, Sint length,
+			      Eterm atoms[], Uint uints1[], Uint uints2[]);
 
 Eterm store_external_or_ref_in_proc_(Process *, Eterm);
 Eterm store_external_or_ref_(Uint **, ExternalThing **, Eterm);
@@ -1421,10 +1525,11 @@ void trace_port_open(Port *, Eterm calling_pid, Eterm drv_name);
 /* system_profile */
 void erts_set_system_profile(Eterm profile);
 Eterm erts_get_system_profile(void);
-void profile_scheduler(Eterm scheduler_id, Eterm, Eterm no_schedulers);
+void profile_scheduler(Eterm scheduler_id, Eterm);
 void profile_scheduler_q(Eterm scheduler_id, Eterm state, Eterm no_schedulers, Uint Ms, Uint s, Uint us);
 void profile_runnable_proc(Process* p, Eterm status);
 void profile_runnable_port(Port* p, Eterm status);
+void erts_system_profile_setup_active_schedulers(void);
 
 /* system_monitor */
 void monitor_long_gc(Process *p, Uint time);
@@ -1603,6 +1708,17 @@ erts_alloc_message_heap(Uint size,
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 
+/*
+ * NOTE: erts_alloc_message_heap() releases msg q and status
+ *       lock on receiver without ensuring that other locks are
+ *       held. User is responsible to ensure that the receiver
+ *       pointer cannot become invalid until after message has
+ *       been passed. This is normal done either by increasing
+ *       reference count on process (preferred) or by holding
+ *       main or link lock over the whole message passing
+ *       operation.
+ */
+
 ERTS_GLB_INLINE Eterm *
 erts_alloc_message_heap(Uint size,
 			ErlHeapFragment **bpp,
@@ -1611,6 +1727,13 @@ erts_alloc_message_heap(Uint size,
 			ErtsProcLocks *receiver_locks)
 {
     Eterm *hp;
+#ifdef ERTS_SMP
+    int locked_main = 0;
+    ErtsProcLocks ulocks = *receiver_locks & ERTS_PROC_LOCKS_MSG_SEND;
+#endif
+
+    if (size > (Uint) INT_MAX)
+	erl_exit(ERTS_ABORT_EXIT, "HUGE size (%bpu)\n", size);
 
     if (
 #if defined(ERTS_SMP)
@@ -1622,8 +1745,20 @@ erts_alloc_message_heap(Uint size,
 #ifdef ERTS_SMP
     try_allocate_on_heap:
 #endif
-	if (HEAP_LIMIT(receiver) - HEAP_TOP(receiver) <= size)
+	if (ERTS_PROC_IS_EXITING(receiver)
+	    || HEAP_LIMIT(receiver) - HEAP_TOP(receiver) <= size) {
+#ifdef ERTS_SMP
+	    if (locked_main)
+		ulocks |= ERTS_PROC_LOCK_MAIN;
+#endif
 	    goto allocate_in_mbuf;
+	}
+#ifdef ERTS_SMP
+	if (ulocks) {
+	    erts_smp_proc_unlock(receiver, ulocks);
+	    *receiver_locks &= ~ulocks;
+	}
+#endif
 	hp = HEAP_TOP(receiver);
 	HEAP_TOP(receiver) = hp + size;
 	*bpp = NULL;
@@ -1631,6 +1766,7 @@ erts_alloc_message_heap(Uint size,
     }
 #ifdef ERTS_SMP
     else if (erts_smp_proc_trylock(receiver, ERTS_PROC_LOCK_MAIN) == 0) {
+	locked_main = 1;
 	*receiver_locks |= ERTS_PROC_LOCK_MAIN;
 	goto try_allocate_on_heap;
     }
@@ -1638,6 +1774,12 @@ erts_alloc_message_heap(Uint size,
     else {
 	ErlHeapFragment *bp;
     allocate_in_mbuf:
+#ifdef ERTS_SMP
+	if (ulocks) {
+	    *receiver_locks &= ~ulocks;
+	    erts_smp_proc_unlock(receiver, ulocks);
+	}
+#endif
 	bp = new_message_buffer(size);
 	hp = bp->mem;
 	*bpp = bp;

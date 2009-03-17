@@ -1,19 +1,20 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1998-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 -module(dbg_iload).
 
@@ -91,6 +92,7 @@ store_module(Mod, File, Binary, Db) ->
     dbg_idb:insert(Db, attributes, Attr),
     NewBinary = store_mod_line_no(Mod, Db, binary_to_list(Src)),
     dbg_idb:insert(Db, mod_bin, NewBinary),
+    dbg_idb:insert(Db, mod_raw, <<Src/binary,0:8>>), %% Add eos
     dbg_idb:insert(Db, module, Mod).
 %% Adjust line numbers using the file/2 attribute. 
 %% Also take the absolute value of line numbers.
@@ -279,7 +281,6 @@ map_guard_bif(integer, 1) -> {ok,is_integer};
 map_guard_bif(float, 1) -> {ok,is_float};
 map_guard_bif(number, 1) -> {ok,is_number};
 map_guard_bif(atom, 1) -> {ok,is_atom};
-map_guard_bif(constant, 1) -> {ok,is_constant};
 map_guard_bif(list, 1) -> {ok,is_list};
 map_guard_bif(tuple, 1) -> {ok,is_tuple};
 map_guard_bif(pid, 1) -> {ok,is_pid};

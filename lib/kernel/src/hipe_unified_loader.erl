@@ -97,10 +97,7 @@ load_hipe_modules() ->
 
 load_native_code(Mod, Bin) when is_atom(Mod), is_binary(Bin) ->
   Architecture = erlang:system_info(hipe_architecture),
-  case catch chunk_name(Architecture) of
-    {'EXIT',_} ->
-      %% Unknown HiPE architecture. Can't happen (in principle).
-      no_native;
+  try chunk_name(Architecture) of
     ChunkTag ->
       %% patch_to_emu(Mod),
       case code:get_chunk(Bin, ChunkTag) of
@@ -112,6 +109,10 @@ load_native_code(Mod, Bin) when is_atom(Mod), is_binary(Bin) ->
 	    Result -> Result
 	  end
       end
+  catch
+    _:_ ->
+      %% Unknown HiPE architecture. Can't happen (in principle).
+      no_native
   end.
 
 %%========================================================================
@@ -120,11 +121,8 @@ load_native_code(Mod, Bin) when is_atom(Mod), is_binary(Bin) ->
 
 post_beam_load(Mod) when is_atom(Mod) ->
   Architecture = erlang:system_info(hipe_architecture),
-  case catch chunk_name(Architecture) of
-    {'EXIT',_} ->
-      ok;
-    _ChunkTag ->
-      patch_to_emu(Mod)
+  try chunk_name(Architecture) of _ChunkTag -> patch_to_emu(Mod)
+  catch _:_ -> ok
   end.
 
 %%========================================================================
@@ -134,7 +132,7 @@ version_check(Version, Mod) when is_atom(Mod) ->
   case Version < Ver of
     true -> 
       ?msg("WARNING: Module (~w) has version ~s\n", [Mod, Version]);
-    _ -> true
+    _ -> ok
   end.
 
 %%========================================================================
@@ -302,10 +300,10 @@ trampoline_map_lookup(Primop, Map) ->
 
 %%------------------------------------------------------------------------
 
--record(fundef, {address::integer(),
-		 mfa::mfa(),
-		 is_closure::bool(),
-		 is_exported::bool()}).
+-record(fundef, {address     :: integer(),
+		 mfa         :: mfa(),
+		 is_closure  :: bool(),
+		 is_exported :: bool()}).
 
 exports(ExportMap, BaseAddress) ->
   exports(ExportMap, BaseAddress, [], []).
@@ -321,8 +319,8 @@ exports([], _, MFAs, Addresses) ->
 
 mod({M,_F,_A}) -> M.
 
-%% ____________________________________________________________________
-%% 
+%%------------------------------------------------------------------------
+
 calculate_addresses(PatchOffsets, Base, Addresses) ->
   RemoteOrLocal = local, % closure code refs are local
   [{Data,
@@ -333,8 +331,7 @@ calculate_addresses(PatchOffsets, Base, Addresses) ->
 offsets_to_addresses(Os, Base) ->
   [{O+Base,load_fe} || O <- Os].
 
-%% ____________________________________________________________________
-%% 
+%%------------------------------------------------------------------------
 
 find_closure_patches([{Type,Refs} | Rest]) ->
   case ?EXT2PATCH_TYPE(Type) of 
@@ -355,8 +352,8 @@ find_closure_refs([{Dest,Offsets} | Rest], Refs) ->
 find_closure_refs([], Refs) ->
   find_closure_patches(Refs).
 
-%%----------------------------------------------------------------
-%%
+%%------------------------------------------------------------------------
+
 export_funs([FunDef | Addresses]) ->
   #fundef{address=Address, mfa=MFA, is_closure=IsClosure,
 	  is_exported=IsExported} = FunDef,
@@ -383,7 +380,7 @@ export_funs(Mod, Beam, Addresses, ClosuresToPatch) ->
 %%========================================================================
 %% Patching 
 %%  @spec patch(refs(), BaseAddress::integer(), ConstAndZone::term(),
-%%              Addresses::term(), TrampolineMap::term())-> term()
+%%              Addresses::term(), TrampolineMap::term()) -> term()
 %%   @type refs()=[{RefType::integer(), Reflist::reflist()} | refs()]
 %%
 %%   @type reflist()=   [{Data::term(), Offsets::offests()}|reflist()]
@@ -467,7 +464,7 @@ patch_all_offsets(Type, Data, [Offset|Offsets], BaseAddress,
   patch_offset(Type, Data, Address, ConstAndZone, Addresses),
   ?debug_msg("Patching done\n",[]),
   patch_all_offsets(Type, Data, Offsets, BaseAddress, ConstAndZone, Addresses);
-patch_all_offsets(_,_,[],_,_,_) -> true.
+patch_all_offsets(_, _, [], _, _, _) -> true.
 
 %%----------------------------------------------------------------
 %% Handle any patch type except 'call_local' or 'call_remote'.
@@ -558,8 +555,9 @@ patch_load_mfa(CodeAddress, DestMFA, Addresses, RemoteOrLocal) ->
 %% Patch references to code labels in the data segment.
 %%
 patch_consts(Labels, DataAddress, CodeAddress) ->
-  [patch_label_or_labels(L, DataAddress, CodeAddress) || L <- Labels],
-  ok.
+  lists:foreach(fun (L) ->
+		    patch_label_or_labels(L, DataAddress, CodeAddress)
+		end, Labels).
 
 patch_label_or_labels({Pos,Offset}, DataAddress, CodeAddress) ->
   ?ASSERT(assert_local_patch(CodeAddress+Offset)),
@@ -579,7 +577,7 @@ sort_on_representation(List) ->
   lists:sort([{hipe_bifs:term_to_word(Term), Offset} ||
 	       {Term, Offset} <- List]).
 
-%%----------------------------------------------------------------
+%%--------------------------------------------------------------------
 %% Update an instruction to refer to a value of a given type.
 %%
 %% Type ::= 'call' | 'load_mfa' | 'x86_abs_pcrel' | 'atom'
@@ -590,7 +588,7 @@ sort_on_representation(List) ->
 patch_instr(Address, Value, Type) ->
   hipe_bifs:patch_insn(Address, Value, Type).
 
-%%----------------------------------------------------------------
+%%--------------------------------------------------------------------
 %% Write a data word of the machine's natural word size.
 %% Returns the address of the next word.
 %%
@@ -610,15 +608,14 @@ write_word(DataAddress, DataWord) ->
       DataAddress+4
   end.
 
-%% ____________________________________________________________________
-%% 
+%%--------------------------------------------------------------------
 
 bif_address({M,F,A}) ->
   hipe_bifs:bif_address(M,F,A);
 bif_address(Name) when is_atom(Name) ->
   hipe_bifs:primop_address(Name).
 
-%%----------------------------------------------------------------
+%%--------------------------------------------------------------------
 %% create_data_segment/3 takes an object file ConstMap, as produced by
 %% hipe_pack_constants:slim_constmap/1, loads the constants into
 %% memory, and produces a ConstMap2 mapping each constant's ConstNo to
@@ -762,13 +759,12 @@ patch_to_emu_step2(ReferencesToPatch) ->
   emu_make_stubs(ReferencesToPatch),
   redirect(ReferencesToPatch).
 
-%% @spec is_loaded(Module::atom()) -> bool()
+-spec is_loaded(Module::atom()) -> bool().
 %% @doc Checks whether a module is loaded or not.
 is_loaded(M) when is_atom(M) ->
-  case catch hipe_bifs:fun_to_address({M,module_info,0}) of
-    I when is_integer(I) ->
-      true;
-    _ -> false
+  try hipe_bifs:fun_to_address({M,module_info,0}) of
+    I when is_integer(I) -> true
+  catch _:_ -> false
   end.
 
 -ifdef(notdef).
@@ -786,7 +782,7 @@ make_stub({_,_,A} = MFA) ->
 emu_make_stubs(_) -> [].
 -endif.
 
-%%----------------------------------------------------------------
+%%--------------------------------------------------------------------
 %% Given a list of MFAs, tag them with their referred_from references.
 %% The resulting {MFA,Refs} list is later passed to redirect/1, once
 %% the MFAs have been bound to (possibly new) native-code addresses.
@@ -801,7 +797,7 @@ mark_referred_from([MFA|MFAs]) ->
 mark_referred_from([]) ->
   [].
 
-%%----------------------------------------------------------------
+%%--------------------------------------------------------------------
 %% Given a list of MFAs with referred_from references, update their
 %% callers to refer to their new native-code addresses.
 %%
@@ -813,7 +809,7 @@ redirect([MFA|Rest]) ->
 redirect([]) ->
   ok.
 
-%%----------------------------------------------------------------
+%%--------------------------------------------------------------------
 %% Given a list of MFAs, remove all referred_from references having
 %% any of them as CallerMFA.
 %%
@@ -829,7 +825,7 @@ remove_refs_from([CallerMFA|CallerMFAs]) ->
 remove_refs_from([]) ->
   [].
 
-%%----------------------------------------------------------------
+%%--------------------------------------------------------------------
 
 %% To find the native code of an MFA we need to look in 3 places:
 %%  1. If it is compiled now look in the Addresses data structure.

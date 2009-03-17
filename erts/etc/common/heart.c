@@ -1,19 +1,20 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1996-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 /**
  *
@@ -76,12 +77,10 @@
  *
  *  HARDWARE WATCHDOG
  *
- *  When used with Solaris or VxWorks(with CPU40), the hardware
+ *  When used with VxWorks(with CPU40), the hardware
  *  watchdog is enabled, making sure that the system reboots
  *  even if the heart port program malfunctions or the system
- *  is completely overloaded. The hardware watchdog will not
- *  be started under Solaris if the environment variable
- *  HW_WD_DISABLE is set (debugging feature only).
+ *  is completely overloaded.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -141,20 +140,6 @@
 #  endif
 #endif
 
-#ifdef VXWORKS
-#include "heart_config.h"
-#define USE_WATCHDOG
-#endif
-
-#if defined(__SVR4) && !defined(VXWORKS)  /* Solaris? */
-#  define SOLARIS
-#  define USE_WATCHDOG
-#endif
-
-#ifdef BLADE
-#  define USE_WATCHDOG
-#endif
-
 #define HEART_COMMAND_ENV    "HEART_COMMAND"
 
 #define MSG_HDR_SIZE        2
@@ -186,9 +171,6 @@ struct msg {
 #define  HEART_BEAT_BOOT_DELAY       60  /* 1 minute */
 #define  SELECT_TIMEOUT               5  /* Every 5 seconds we reset the
 					    watchdog timer */
-#define  VXWORKS_WD_PRIORITY          1  /* Task priority for watchdog keeper */
-#define  SOLARIS_RENICE_VALUE         0  /* nice(2) will be called with this
-					    value (if != 0) for wd_keeper */
 
 /* heart_beat_timeout is the maximum gap in seconds between two
    consecutive heart beat messages from Erlang, and HEART_BEAT_BOOT_DELAY
@@ -233,15 +215,6 @@ static void print_error(const char *,...);
 static void debugf(const char *,...);
 static void init_timestamp(void);
 static time_t timestamp(time_t *);
-
-#if defined(SOLARIS) || defined(BLADE)
-pid_t getOldKeeper(void);
-pid_t start_hw_wd(int timeout, int niceval);
-static void wd_reset(void);
-static void wd_arm(void);
-static void wd_disarm(void);
-pid_t wd_pid;
-#endif
 
 #ifdef __WIN32__
 static BOOL enable_privilege(void);
@@ -380,26 +353,9 @@ static void get_arguments(int argc, char** argv) {
     debugf("arguments -ht %d -wt %d -pid %lu\n",h,w,p);
 }
 
-#ifdef VXWORKS
 int
-heart(argc, argv)
-  int   argc;
-  char **argv;
+main(int argc, char **argv)
 {
-    get_arguments(argc,argv);
-    strcpy(program_name, argv[0]);
-    if (is_env_set("HEART_DEBUG"))
-	debug_on=1;
-    notify_ack(erlout_fd);
-#ifdef USE_WATCHDOG
-    wd_init(VW_WD_TIMEOUT, VXWORKS_WD_PRIORITY); /* start hardware watchdog */
-#endif
-    do_terminate(message_loop(erlin_fd,erlout_fd));
-    return 0;
-}
-#else  /* Not VxWorks */
-int
-main(int argc, char **argv){
     get_arguments(argc,argv);
     if (is_env_set("HEART_DEBUG"))
 	debug_on=1;
@@ -421,94 +377,10 @@ main(int argc, char **argv){
 #endif
     strcpy(program_name, argv[0]);
     notify_ack(erlout_fd);
-#ifdef USE_WATCHDOG
-    wd_pid = start_hw_wd(SOL_WD_TIMEOUT, SOLARIS_RENICE_VALUE);
-#endif
     cmd[0] = (unsigned char) NULL;
     do_terminate(message_loop(erlin_fd,erlout_fd));
     return 0;
 }
-#endif
-
-
-#if defined(SOLARIS) || defined(BLADE)
-/*
- * Search for an already running 'wd_keeper' process, and return
- * its pid if present, otherwise 0.
- */
-pid_t
-getOldKeeper(void)
-{
-  char *cmd = "/usr/bin/ps -e | /usr/bin/grep wd_keepe | /usr/bin/awk \'{print $1}\'";
-  char buf[BUFSIZ];
-  FILE *ptr;
-
-  if ((ptr = popen(cmd, "r")) != NULL) {
-    if (fgets(buf, BUFSIZ, ptr) != NULL) {
-      pclose(ptr);
-      return (pid_t)atol(buf);
-    } else {
-      pclose(ptr);
-    }
-  }
-    return (pid_t)0;
-}
-
-pid_t
-start_hw_wd(int timeout,
-	    int niceval)
-{
-  pid_t child_pid;
-  int fds[2], res;
-  char chbuf;
-  
-  if (is_env_set("HW_WD_DISABLE"))
-    return 0;
-
-  /* Is there an already running wd_keeper in the system? */
-  if ((child_pid = getOldKeeper()) > 0)
-    return child_pid;
-
-  /* Create a pipe to allow wd_keeper to ACK/NAK its successful start */
-  if ((res = pipe(fds)) < 0)
-    return 0;
-  
-  if ((child_pid = fork()) == 0)
-    {
-      char cmdline[40];
-
-      /* Redirect stdout to one end of the pipe */
-      close(1);
-      close(fds[0]);
-      if (dup(fds[1]) != 1) {
-	perror("File descriptor duplication error");
-	chbuf = 'X';
-	write(fds[1], &chbuf, 1);
-	_exit(1);
-      }
-
-      sprintf(cmdline, "exec wd_keeper %d %d", timeout, niceval);
-      fflush(stderr);
-      execlp("/bin/sh", "sh", "-c", cmdline, 0);
-      perror("Error calling execlp()");
-      chbuf = 'X';
-      write(fds[1], &chbuf, 1);
-      _exit(1);
-    }
-
-  close(fds[1]);
-
-  res = read(fds[0], &chbuf, 1);
-  if (res <= 0 || chbuf != 'A') {
-    fprintf(stderr, "Error starting wd_keeper. HW watchdog timer will NOT be used.\n");
-    return 0;
-  }
-
-  return child_pid;
-}
-#endif
-
-
 
 /*
  * message loop
@@ -537,13 +409,6 @@ message_loop(erlin_fd, erlout_fd)
   hreader_thread = start_reader_thread();
 #else
   max_fd = erlin_fd;
-#endif
-
-#ifdef USE_WATCHDOG
-#if defined(SOLARIS) || defined(BLADE)
-  wd_arm();			/* This is actually needed only when attaching
-				   to a previously started wd_keeper. */
-#endif
 #endif
 
   while (1) {
@@ -783,20 +648,12 @@ do_terminate(reason)
   
   switch (reason) {
   case R_SHUT_DOWN:
-#if defined(SOLARIS) || defined(BLADE)
-#ifdef USE_WATCHDOG
-    wd_disarm();
-#endif
-#endif
     break;
   case R_TIMEOUT:
   case R_ERROR:
   case R_CLOSED:
   default:
-#ifdef VXWORKS
-    /* call reboot routine in heart config module */
-    heart_reboot();
-#elif defined(__WIN32__) /* Not VxWorks */
+#if defined(__WIN32__) /* Not VxWorks */
     {
       if(!cmd[0]) {
 	char *command = get_env(HEART_COMMAND_ENV);
@@ -1037,37 +894,6 @@ debugf(const char *format,...)
   va_end(args);
   fprintf(stderr, "\r\n");
 }
-
-#if defined(SOLARIS) || defined(BLADE)
-static void
-wd_reset(void)
-  {
-    if (wd_pid > 0)
-      kill(wd_pid, SIGUSR1);
-  }
-
-static void
-wd_arm(void)
-  {
-    if (wd_pid > 0)
-#ifdef BLADE
-      kill(wd_pid, SIGUSR2);
-#else
-      kill(wd_pid, SIGTHAW);
-#endif
-  }
-
-static void
-wd_disarm(void)
-  {
-    if (wd_pid > 0)
-#ifdef BLADE
-      kill(wd_pid, SIGHUP);
-#else
-      kill(wd_pid, SIGFREEZE);
-#endif
-  }
-#endif
 
 #ifdef __WIN32__
 void print_last_error() {

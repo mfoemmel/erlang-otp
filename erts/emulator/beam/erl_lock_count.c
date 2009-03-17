@@ -1,20 +1,22 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 2008-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
+
 /*
  * Description:	Statistics for locks.
  *
@@ -40,11 +42,14 @@
 /* globals, dont access these without locks or blocks */
 
 ethr_mutex lcnt_data_lock;
-
 erts_lcnt_data_t *erts_lcnt_data;
+Uint16 erts_lcnt_rt_options;
+erts_lcnt_time_t timer_start;
+const char *str_undefined = "undefined";
 
 static ethr_tsd_key lcnt_thr_data_key;
 static int lcnt_n_thr;
+static erts_lcnt_thread_data_t *lcnt_thread_data[1024]; 
 
 /* local functions */
 
@@ -57,7 +62,7 @@ static ERTS_INLINE void lcnt_unlock(void) {
 }
 
 
-static char* lock_type(Uint16 flag) {
+static char* lcnt_lock_type(Uint16 flag) {
     switch(flag & ERTS_LCNT_LT_ALL) {
     case ERTS_LCNT_LT_SPINLOCK:	  return "spinlock";
     case ERTS_LCNT_LT_RWSPINLOCK: return "rw_spinlock";
@@ -68,21 +73,73 @@ static char* lock_type(Uint16 flag) {
     }
 }
 
+static void lcnt_clear_stats(erts_lcnt_lock_stats_t *stats) {
+    ethr_atomic_set(&stats->tries, 0);
+    ethr_atomic_set(&stats->colls, 0);
+    stats->timer.s  = 0;
+    stats->timer.ns = 0;
+    stats->timer_n  = 0;
+    stats->file     = (char *)str_undefined;
+    stats->line     = 0;
+}
 
 static void lcnt_time(erts_lcnt_time_t *time) {
+#ifdef HAVE_GETHRTIME
     SysHrTime hr_time;
     hr_time  = sys_gethrtime();
     time->s  = (unsigned long)(hr_time / 1000000000LL);
     time->ns = (unsigned long)(hr_time - 1000000000LL*time->s);
+#else    
+    SysTimeval tv;
+    sys_gettimeofday(&tv);
+    time->s  = tv.tv_sec;
+    time->ns = tv.tv_usec*1000LL;
+#endif
+}
+
+static void lcnt_time_diff(erts_lcnt_time_t *d, erts_lcnt_time_t *t1, erts_lcnt_time_t *t0) {
+    long ds;
+    long dns;
+    
+    ds  = t1->s  - t0->s;
+    dns = t1->ns - t0->ns;
+	
+    /* the difference should not be able to get bigger than 1 sec in ns*/
+    
+    if (dns < 0) {
+	ds  -= 1;
+	dns += 1000000000LL;
+    }
+
+    d->s  = ds;
+    d->ns = dns;
+}
+
+/* difference d must be positive */
+
+static void lcnt_time_add(erts_lcnt_time_t *t, erts_lcnt_time_t *d) {
+    unsigned long ngns = 0;
+    
+    t->s  += d->s;
+    t->ns += d->ns;
+
+    ngns   = t->ns / 1000000000LL;
+    t->ns  = t->ns % 1000000000LL;
+    
+    t->s  += ngns;
 }
 
 static erts_lcnt_thread_data_t *lcnt_thread_data_alloc(void) {
     erts_lcnt_thread_data_t *eltd;
-    
+   
     eltd = (erts_lcnt_thread_data_t*)malloc(sizeof(erts_lcnt_thread_data_t));
     eltd->timer_set = 0;
+    eltd->lock_in_conflict = 0;
+
     eltd->id = lcnt_n_thr++;
-    
+    /* set thread data to array */
+    lcnt_thread_data[eltd->id] = eltd;
+
     return eltd;
 } 
 
@@ -96,47 +153,95 @@ static erts_lcnt_thread_data_t *lcnt_get_thread_data(void) {
 #if 0
 static char* lock_opt(Uint16 flag) {
     if ((flag & ERTS_LCNT_LO_WRITE) && (flag & ERTS_LCNT_LO_READ)) return "rw";
-    if (flag & ERTS_LCNT_LO_READ      )                            return "r ";
-    if (flag & ERTS_LCNT_LO_WRITE     )                            return " w";
+    if  (flag & ERTS_LCNT_LO_READ )                                return "r ";
+    if  (flag & ERTS_LCNT_LO_WRITE)                                return " w";
     return "--";
 }
 
-static void print_colls(erts_lcnt_lock_t *lock, char *action, Uint16 opt) {
-    long r_state, w_state;
-    char buffer[256];
-    erts_lcnt_thread_data_t *eltd = NULL;
-   
+static void print_lock_x(erts_lcnt_lock_t *lock, Uint16 flag, char *action, char *extra) {
+    long int colls, tries, w_state, r_state;
+    erts_lcnt_lock_stats_t *stats = NULL;
+    
+    float rate;
+    char *type;
+    int i;
+    
+    type = lcnt_lock_type(lock->flag);
     ethr_atomic_read(&lock->r_state, &r_state);
     ethr_atomic_read(&lock->w_state, &w_state);
+
+    if (tries > 0) rate = (float)(colls/(float)tries)*100;
+    else rate = 0.0f;
     
-    eltd = lcnt_get_thread_data();
-    
-    if (eltd) {
-        sprintf(buffer, "[%d/%ld] %s %s:", eltd->id, (long)ethr_self(), action, lock_opt(opt));
-        print_lock(lock, buffer);
-    } else {
-	fprintf(stderr, "A null thread =(\r\n");
+    if (lock->flag & flag) {
+        erts_printf("%20s [%30s] [r/w state %4ld/%4ld] id %T %s\r\n", 
+		action, 
+		lock->name, 
+		r_state, 
+		w_state, 
+		lock->id, 
+		extra);
+	
+	for(i = 0; i < lock->n_stats; i++) {
+	    stats = &(lock->stats[i]);
+    	    ethr_atomic_read(&stats->tries, &tries);
+    	    ethr_atomic_read(&stats->colls, &colls);
+	    fprintf(stderr, "%69s:%5d [tries %9ld] [colls %9ld] [timer_n %8ld] [timer %4ld s %6ld us]\r\n",
+		    stats->file,
+		    stats->line,
+		    tries,
+		    colls,
+		    stats->timer_n,
+		    stats->timer.s,
+		    (unsigned long)stats->timer.ns/1000);
+	}
+	fprintf(stderr, "\r\n");
     }
 }
 
 static void print_lock(erts_lcnt_lock_t *lock, char *action) {
-    long int colls, tries, w_state, r_state;
-    float rate;
-    char *type;
-    type = lock_type(lock->flag);
-    ethr_atomic_read(&lock->tries, &tries);
-    ethr_atomic_read(&lock->colls, &colls);
-    ethr_atomic_read(&lock->r_state, &r_state);
-    ethr_atomic_read(&lock->w_state, &w_state);
-    
-    if (tries > 0) rate = (float)(colls/(float)tries)*100;
-    else rate = 0.0f;
-   
-    fprintf(stderr, "%8s [%25s] [type %12s] [r/w state %2ld/%2ld] [tries %9ld] [colls %9ld] [rate %3.3f %%] [acc %ld %ld (%ld)]\r\n", 
-	    action, lock->name, type, r_state, w_state, tries, colls, rate, lock->timer_s, lock->timer_ns, lock->timer_n);
+    print_lock_x(lock, ERTS_LCNT_LT_ALL, action, "");
 }
 
 #endif
+
+static erts_lcnt_lock_stats_t *lcnt_get_lock_stats(erts_lcnt_lock_t *lock, char *file, unsigned int line) {
+    unsigned int i;
+    erts_lcnt_lock_stats_t *stats = NULL;
+    
+    for (i = 0; i < lock->n_stats; i++) {
+	if ((lock->stats[i].file == file) && (lock->stats[i].line == line)) {
+	    return &(lock->stats[i]);
+	}
+    }
+    if (lock->n_stats < ERTS_LCNT_MAX_LOCK_LOCATIONS) {
+	stats = &lock->stats[lock->n_stats];
+	lock->n_stats++;
+
+	stats->file = file;
+	stats->line = line;
+	return stats;
+    }
+    return &lock->stats[0];
+
+}
+
+static void lcnt_update_stats(erts_lcnt_lock_stats_t *stats, int lock_in_conflict, erts_lcnt_time_t *time_wait) {
+    
+    ethr_atomic_inc(&stats->tries);
+
+    /* beware of trylock */
+    if (lock_in_conflict) ethr_atomic_inc(&stats->colls);
+
+    if (time_wait) {
+	lcnt_time_add(&(stats->timer), time_wait);
+	stats->timer_n++;
+    }
+}
+
+/* 
+ * interface 
+ */
 
 void erts_lcnt_init() {
     erts_lcnt_thread_data_t *eltd = NULL;
@@ -145,22 +250,27 @@ void erts_lcnt_init() {
     if (ethr_mutex_init(&lcnt_data_lock) != 0) abort();
 
     /* init tsd */    
-    lcnt_n_thr = 1;    
-    
+    lcnt_n_thr = 0;
+
     ethr_tsd_key_create(&lcnt_thr_data_key);
 
-    eltd = lcnt_thread_data_alloc();
-    
-    ethr_tsd_set(lcnt_thr_data_key, eltd);
-    
     lcnt_lock();
+
+    erts_lcnt_rt_options = ERTS_LCNT_OPT_PROCLOCK;
+    
+    eltd = lcnt_thread_data_alloc();
+
+    ethr_tsd_set(lcnt_thr_data_key, eltd);
     
     /* init lcnt structure */
     erts_lcnt_data = (erts_lcnt_data_t*)malloc(sizeof(erts_lcnt_data_t));
     erts_lcnt_data->current_locks = erts_lcnt_list_init();
     erts_lcnt_data->deleted_locks = erts_lcnt_list_init();
-    
+
     lcnt_unlock();
+
+    /* set start timer and zero statistics */
+    erts_lcnt_clear_counters();
 }
 
 /* list operations */
@@ -202,13 +312,14 @@ void erts_lcnt_list_insert(erts_lcnt_lock_list_t *list, erts_lcnt_lock_t *lock) 
     if (tail) {
 	tail->next = lock;
 	lock->prev = tail;
-	lock->next = NULL;
     } else {
-	/* if the tail is null then head should be null as well. */
 	list->head = lock;
 	lock->prev = NULL;
+	ASSERT(!lock->next);
     }
+    lock->next = NULL;
     list->tail = lock;
+    
     list->n++;
 }
 
@@ -231,34 +342,33 @@ void erts_lcnt_list_delete(erts_lcnt_lock_list_t *list, erts_lcnt_lock_t *lock) 
 /* interface to erl_threads.h */
 /* only lock on init and destroy, all others should use atomics */
 void erts_lcnt_init_lock(erts_lcnt_lock_t *lock, char *name, Uint16 flag ) { 
-    erts_lcnt_init_lock_extra(lock, name, flag, am_undefined);
+    erts_lcnt_init_lock_x(lock, name, flag, am_undefined);
 }
-
-void erts_lcnt_init_lock_extra(erts_lcnt_lock_t *lock, char *name, Uint16 flag, Eterm id) { 
+void erts_lcnt_init_lock_x(erts_lcnt_lock_t *lock, char *name, Uint16 flag, Eterm id) { 
+    int i;
     lcnt_lock();
+    
     lock->next = NULL;
     lock->prev = NULL;
     lock->flag = flag;
     lock->name = name;
-    lock->id = id;
-
-    lcnt_unlock();
+    lock->id   = id;
 
     ethr_atomic_init(&lock->r_state, 0);
     ethr_atomic_init(&lock->w_state, 0);
-    ethr_atomic_init(&lock->tries, 0);
-    ethr_atomic_init(&lock->colls, 0);
+    
+#ifdef DEBUG
+    ethr_atomic_init(&lock->flowstate, 0);
+#endif
+    
+    lock->n_stats = 1;
 
-    lock->timer_n  = 0;
-    lock->timer_s  = 0;
-    lock->timer_ns = 0;
-
-    lcnt_lock();
-  
+    for (i = 0; i < ERTS_LCNT_MAX_LOCK_LOCATIONS; i++) {
+	lcnt_clear_stats(&lock->stats[i]);
+    }
     erts_lcnt_list_insert(erts_lcnt_data->current_locks, lock);
     
     lcnt_unlock();
-    
 }
 
 void erts_lcnt_destroy_lock(erts_lcnt_lock_t *lock) {
@@ -287,9 +397,14 @@ void erts_lcnt_lock_opt(erts_lcnt_lock_t *lock, Uint16 option) {
     long r_state = 0, w_state = 0;
     erts_lcnt_thread_data_t *eltd;
     
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_SUSPEND) return;
+
+    eltd = lcnt_get_thread_data();
+
+    ASSERT(eltd);
     
-    ethr_atomic_inc(&lock->tries);
     ethr_atomic_read(&lock->w_state, &w_state);
+    
     if (option & ERTS_LCNT_LO_WRITE) {
         ethr_atomic_read(&lock->r_state, &r_state);
         ethr_atomic_inc( &lock->w_state);
@@ -297,117 +412,188 @@ void erts_lcnt_lock_opt(erts_lcnt_lock_t *lock, Uint16 option) {
     if (option & ERTS_LCNT_LO_READ) {
         ethr_atomic_inc( &lock->r_state);
     }
+    
     /* we cannot acquire w_lock if either w or r are taken */
     /* we cannot acquire r_lock if w_lock is taken */	
-    if ((w_state > 0) || (r_state > 0)){
-       	ethr_atomic_inc(&lock->colls);
-	eltd = lcnt_get_thread_data();
-	lcnt_time(&eltd->timer);
-	eltd->timer_set++;
-	if (eltd->timer_set > 1) abort();
-    }
     
+    if ((w_state > 0) || (r_state > 0)){
+	eltd->lock_in_conflict = 1;
+	if (eltd->timer_set == 0) lcnt_time(&eltd->timer);
+	eltd->timer_set++;
+    } else {
+	eltd->lock_in_conflict = 0;
+    }
 }
 
 void erts_lcnt_lock(erts_lcnt_lock_t *lock) {
     long w_state;
     erts_lcnt_thread_data_t *eltd;
-    ethr_atomic_inc(&lock->tries);
-    /* perhaps a lock here instead of atomic? */
+    
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_SUSPEND) return;
+
     ethr_atomic_read(&lock->w_state, &w_state);
     ethr_atomic_inc( &lock->w_state);
-    
-    if (w_state > 0) {
-	ethr_atomic_inc(&lock->colls);
-	eltd = lcnt_get_thread_data();
-	lcnt_time(&eltd->timer);
-	eltd->timer_set++;
-	if (eltd->timer_set > 1) abort();
-    }
 
-	
+    eltd = lcnt_get_thread_data();
+
+    ASSERT(eltd);
+
+    if (w_state > 0) {
+	eltd->lock_in_conflict = 1;
+	/* only set the timer if nobody else has it
+	 * This should only happen when proc_locks aquires several locks
+	 * 'atomicly'. All other locks will block the thread if w_state > 0
+	 * i.e. locked.
+	 */
+	if (eltd->timer_set == 0) lcnt_time(&eltd->timer);
+	eltd->timer_set++;
+
+    } else {
+	eltd->lock_in_conflict = 0;
+    }
 }
 
+/* if a lock wasn't really a lock operation, bad bad process locks */
+
+void erts_lcnt_lock_unaquire(erts_lcnt_lock_t *lock) {
+    /* should check if this thread was "waiting" */
+    
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_SUSPEND) return;
+
+    ethr_atomic_dec( &lock->w_state);
+}
+
+/* erts_lcnt_lock_post
+ * used when we get a lock (i.e. directly after a lock operation)
+ * if the timer was set then we had to wait for the lock
+ * lock_post will calculate the wait time.
+ */
 void erts_lcnt_lock_post(erts_lcnt_lock_t *lock) {
+    erts_lcnt_lock_post_x(lock, (char*)str_undefined, 0);
+}
+
+void erts_lcnt_lock_post_x(erts_lcnt_lock_t *lock, char *file, unsigned int line) {
     erts_lcnt_thread_data_t *eltd;
     erts_lcnt_time_t timer;
-    long ds, dns;
+    erts_lcnt_time_t time_wait;
+    erts_lcnt_lock_stats_t *stats;
+#ifdef DEBUG
+    long flowstate;
+#endif
+
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_SUSPEND) return;
+    
+#ifdef DEBUG
+    if (!(lock->flag & (ERTS_LCNT_LT_RWMUTEX | ERTS_LCNT_LT_RWSPINLOCK))) {
+    	ethr_atomic_read(&lock->flowstate, &flowstate);
+	ASSERT(flowstate == 0);
+    	ethr_atomic_inc( &lock->flowstate);
+    }
+#endif
     
     eltd = lcnt_get_thread_data();
+    
+    ASSERT(eltd);
+    
+    /* if lock was in conflict, time it */
+	
+    stats = lcnt_get_lock_stats(lock, file, line);
+    
     if (eltd->timer_set) {
 	lcnt_time(&timer);
-	
-	ds  = timer.s  - eltd->timer.s;
-	dns = timer.ns - eltd->timer.ns;
-	
-	if (dns < 0) {
-	    ds  -= 1;
-	    dns += 1000000000;
-	}
-	
+
 	eltd->timer_set--;
 	
-	/* has lock */
-	lock->timer_n  += 1;
-	lock->timer_s  += ds;
-	lock->timer_ns += dns;
-
-	if (lock->timer_ns >  1000000000) {
-	    lock->timer_s  += 1;
-	    lock->timer_ns -= 1000000000;
-	}
-
-	if (eltd->timer_set < 0) abort();
+	lcnt_time_diff(&time_wait, &timer, &(eltd->timer));
+	lcnt_update_stats(stats, eltd->lock_in_conflict, &time_wait);
+	
+	ASSERT(eltd->timer_set >= 0);
+    } else {
+	lcnt_update_stats(stats, eltd->lock_in_conflict, NULL);
     }
+	
 }
 
 /* unlock */
 
 void erts_lcnt_unlock_opt(erts_lcnt_lock_t *lock, Uint16 option) {
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_SUSPEND) return;
     if (option & ERTS_LCNT_LO_WRITE) ethr_atomic_dec(&lock->w_state);
     if (option & ERTS_LCNT_LO_READ ) ethr_atomic_dec(&lock->r_state);
 }
 
 void erts_lcnt_unlock(erts_lcnt_lock_t *lock) {
+#ifdef DEBUG
+    long w_state;  
+    long flowstate;
+#endif
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_SUSPEND) return;
+#ifdef DEBUG
+    /* flowstate */
+    ethr_atomic_read(&lock->flowstate, &flowstate);
+    ASSERT(flowstate == 1);
+    ethr_atomic_dec( &lock->flowstate);
+    
+    /* write state */
+    ethr_atomic_read(&lock->w_state, &w_state);
+    ASSERT(w_state > 0)
+#endif
     ethr_atomic_dec(&lock->w_state);
 }
 
 /* trylock */
 
 void erts_lcnt_trylock_opt(erts_lcnt_lock_t *lock, int res, Uint16 option) {
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_SUSPEND) return;
     /* Determine lock_state via res instead of state */
-    
-    ethr_atomic_inc(&lock->tries);
-    
     if (res != EBUSY) {
 	if (option & ERTS_LCNT_LO_WRITE) ethr_atomic_inc(&lock->w_state);
 	if (option & ERTS_LCNT_LO_READ ) ethr_atomic_inc(&lock->r_state);
-    } else ethr_atomic_inc(&lock->colls);
+	lcnt_update_stats(&(lock->stats[0]), 0, NULL);
+    } else {
+        ethr_atomic_inc(&lock->stats[0].tries);
+        ethr_atomic_inc(&lock->stats[0].colls);
+    }
 }
 
-    
-
+   
 void erts_lcnt_trylock(erts_lcnt_lock_t *lock, int res) {
     /* Determine lock_state via res instead of state */
-    
-    ethr_atomic_inc(&lock->tries);
-    if (res != EBUSY) ethr_atomic_inc(&lock->w_state);
-    else ethr_atomic_inc(&lock->colls);
+#ifdef DEBUG
+    long flowstate;
+#endif 
+    if (erts_lcnt_rt_options & ERTS_LCNT_OPT_SUSPEND) return;
+    if (res != EBUSY) {
+	
+#ifdef DEBUG
+    	ethr_atomic_read(&lock->flowstate, &flowstate);
+	ASSERT(flowstate == 0);
+    	ethr_atomic_inc( &lock->flowstate);
+#endif
+	ethr_atomic_inc(&lock->w_state);
+	
+	lcnt_update_stats(&(lock->stats[0]), 0, NULL);
+
+    } else {
+        ethr_atomic_inc(&lock->stats[0].tries);
+        ethr_atomic_inc(&lock->stats[0].colls);
+    }
 }
 
 /* thread operations */
 
-static void lcnt_thr_init(erts_lcnt_thread_data_t *eltd) {
-    void * (*function)(void *);
+static void *lcnt_thr_init(erts_lcnt_thread_data_t *eltd) {
+    void *(*function)(void *);
     void *argument;
-    int res;
+    void *res;
     function = eltd->function;
     argument = eltd->argument;
     
-    res = ethr_tsd_set(lcnt_thr_data_key, eltd);
+    ethr_tsd_set(lcnt_thr_data_key, eltd);
     
-    function(argument);
+    res = (void *)function(argument);
     free(eltd);
+    return (void *)res;
 }
 
     
@@ -415,7 +601,10 @@ static void lcnt_thr_init(erts_lcnt_thread_data_t *eltd) {
 int erts_lcnt_thr_create(ethr_tid *tid, void * (*function)(void *), void *arg, ethr_thr_opts *opts) {
     erts_lcnt_thread_data_t *eltd;
     
+    lcnt_lock();
+    /* lock for thread id global update */
     eltd = lcnt_thread_data_alloc();
+    lcnt_unlock();
     
     eltd->function = function;
     eltd->argument = arg;
@@ -425,37 +614,62 @@ int erts_lcnt_thr_create(ethr_tid *tid, void * (*function)(void *), void *arg, e
 
 
 /* bindings for bifs */
-/* to block or not to block or lock perhaps */
 
+Uint16 erts_lcnt_set_rt_opt(Uint16 opt) {
+    Uint16 prev;
+    prev = (erts_lcnt_rt_options & opt);
+    erts_lcnt_rt_options |= opt;
+    return prev;
+}
+
+Uint16 erts_lcnt_clear_rt_opt(Uint16 opt) {			
+    Uint16 prev;
+    prev = (erts_lcnt_rt_options & opt);
+    erts_lcnt_rt_options &= ~opt;
+    return prev;
+}
 
 void erts_lcnt_clear_counters(void) {
     erts_lcnt_lock_t *lock;
     erts_lcnt_lock_list_t *list;
+    erts_lcnt_lock_stats_t *stats;
+    int i;
 
     lcnt_lock();
 
     list = erts_lcnt_data->current_locks;
+    
     for (lock = list->head; lock != NULL; lock = lock->next) {
-        ethr_atomic_set(&lock->tries, 0);
-        ethr_atomic_set(&lock->colls, 0);
-	/* clear timers */
-	lock->timer_n  = 0;
-	lock->timer_s  = 0;
-	lock->timer_ns = 0;
+    	for( i = 0; i < ERTS_LCNT_MAX_LOCK_LOCATIONS; i++) {
+	    stats = &lock->stats[i];
+	    lcnt_clear_stats(stats);
+    	}
+	lock->n_stats = 1;
     }
 
     /* empty deleted locks in lock list */
     erts_lcnt_list_clear(erts_lcnt_data->deleted_locks);
 
+    lcnt_time(&timer_start);
+
     lcnt_unlock();
 }
 
 erts_lcnt_data_t *erts_lcnt_get_data(void) {
+    erts_lcnt_time_t timer_stop;
+    
+    lcnt_lock();
+    
+    lcnt_time(&timer_stop);
+    lcnt_time_diff(&(erts_lcnt_data->duration), &timer_stop, &timer_start);
+    
+    lcnt_unlock();
+    
     return erts_lcnt_data;
 }
 
 char *erts_lcnt_lock_type(Uint16 type) {
-    return lock_type(type);
+    return lcnt_lock_type(type);
 }
 
 #endif /* ifdef ERTS_ENABLE_LOCK_COUNT */

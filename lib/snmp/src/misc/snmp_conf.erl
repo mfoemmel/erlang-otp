@@ -1,22 +1,21 @@
-%%<copyright>
-%% <year>1996-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
+%% 
 %%----------------------------------------------------------------------
 %% Purpose: Basic module for reading and verifying config files
 %%----------------------------------------------------------------------
@@ -52,6 +51,7 @@
 
 -define(SNMP_USE_V3, true).
 -include("snmp_types.hrl").
+-include("SNMP-FRAMEWORK-MIB.hrl").
 
 -define(VMODULE,"CONF").
 -include("snmp_verbosity.hrl").
@@ -59,13 +59,15 @@
 
 %%-----------------------------------------------------------------
 
-read_files(Dir, Files) when list(Dir), list(Files) ->
+read_files(Dir, Files) when is_list(Dir) andalso is_list(Files) ->
     read_files(Dir, Files, []).
 
 read_files(_Dir, [], Res) ->
     lists:reverse(Res);
 read_files(Dir, [{Gen, Filter, Check, FileName}|Files], Res) 
-  when function(Filter), function(Check), list(FileName) ->
+  when is_function(Filter) andalso 
+       is_function(Check)  andalso 
+       is_list(FileName) ->
     ?vdebug("read_files -> entry with"
 	"~n   FileName: ~p", [FileName]),
     File = filename:join(Dir, FileName),
@@ -82,7 +84,7 @@ read_files(Dir, [{Gen, Filter, Check, FileName}|Files], Res)
 
 
 %% Ret. Res | exit(Reason)
-read(File, Check) when function(Check) -> 
+read(File, Check) when is_function(Check) -> 
     ?vdebug("read -> entry with"
 	"~n   File: ~p", [File]),
     Fd = open_file(File),
@@ -175,16 +177,24 @@ check_mandatory(L, []) ->
 
 check_integer(I) -> check_integer(I, any).
 
-check_integer(I, any) when integer(I) -> ok;
-check_integer(I, pos) when integer(I), I > 0 -> ok;
-check_integer(I, neg) when integer(I), I < 0 -> ok;
-check_integer(I1, {gt,  I2}) when integer(I1), integer(I2), I1 > I2 -> ok;
-check_integer(I1, {gte, I2}) when integer(I1), integer(I2), I1 >= I2 -> ok;
-check_integer(I1, {lt,  I2}) when integer(I1), integer(I2), I1 < I2 -> ok;
-check_integer(I1, {lte, I2}) when integer(I1), integer(I2), I1 =< I2 -> ok;
-check_integer(I1, {eq,  I1}) when integer(I1) -> ok;
+check_integer(I, any) when is_integer(I) -> ok;
+check_integer(I, pos) when is_integer(I), I > 0 -> ok;
+check_integer(I, neg) when is_integer(I), I < 0 -> ok;
+check_integer(I1, {gt,  I2}) 
+  when is_integer(I1) andalso is_integer(I2) andalso (I1 > I2) -> ok;
+check_integer(I1, {gte, I2}) 
+  when is_integer(I1) andalso is_integer(I2) andalso (I1 >= I2) -> ok;
+check_integer(I1, {lt,  I2}) 
+  when is_integer(I1) andalso is_integer(I2) andalso (I1 < I2) -> ok;
+check_integer(I1, {lte, I2}) 
+  when is_integer(I1) andalso is_integer(I2) andalso (I1 =< I2) -> ok;
+check_integer(I1, {eq,  I1}) 
+  when is_integer(I1) -> ok;
 check_integer(I,  {range, L, U}) 
-  when integer(I), integer(L), integer(U), I >= L, I =< U -> ok;
+  when (is_integer(I) andalso 
+	is_integer(L) andalso 
+	is_integer(U) andalso 
+	(I >= L) andalso (I =< U)) -> ok;
 check_integer(I, _)  -> error({invalid_integer, I}).
 
 check_packet_size(S) ->
@@ -197,20 +207,30 @@ check_packet_size(S) ->
 
 %% ---------
 
-check_string(X) when list(X) -> ok;
+check_string(X) when is_list(X) -> ok;
 check_string(X) -> error({invalid_string, X}).
 
-check_string(X, any)       when list(X) -> ok;
-check_string(X,{gt,Len})   when list(X), length(X) > Len -> ok;
-check_string(X,{gt,_Len})  when list(X) -> error({invalid_length, X});
-check_string(X,{gte,Len})  when list(X), length(X) >= Len -> ok;
-check_string(X,{gte,_Len}) when list(X) -> error({invalid_length, X});
-check_string(X,{lt,Len})   when list(X), length(X) < Len -> ok;
-check_string(X,{lt,_Len})  when list(X) -> error({invalid_length, X});
-check_string(X,{lte,Len})  when list(X), length(X) =< Len -> ok;
-check_string(X,{lte,_Len}) when list(X) -> error({invalid_length, X});
-check_string(X, Len)       when list(X), integer(Len), length(X) == Len -> ok;
-check_string(X, _Len)      when list(X) -> error({invalid_length, X});
+check_string(X, any) 
+  when is_list(X) -> ok;
+check_string(X, {gt, Len})   
+  when is_list(X) andalso (length(X) > Len) -> ok;
+check_string(X, {gt, _Len})  
+  when is_list(X) -> error({invalid_length, X});
+check_string(X, {gte, Len})  
+  when is_list(X) andalso (length(X) >= Len) -> ok;
+check_string(X, {gte, _Len}) 
+  when is_list(X) -> error({invalid_length, X});
+check_string(X, {lt, Len})   
+  when is_list(X) andalso (length(X) < Len) -> ok;
+check_string(X, {lt, _Len})  
+  when is_list(X) -> error({invalid_length, X});
+check_string(X, {lte, Len})  
+  when is_list(X) andalso (length(X) =< Len) -> ok;
+check_string(X, {lte, _Len}) 
+  when is_list(X) -> error({invalid_length, X});
+check_string(X, Len)       
+  when is_list(X) andalso is_integer(Len) andalso (length(X) =:= Len) -> ok;
+check_string(X, _Len)      when is_list(X) -> error({invalid_length, X});
 check_string(X, _Len)                   -> error({invalid_string, X}).
 
 
@@ -225,7 +245,7 @@ check_atom(X, Atoms) ->
 
 %% ---------
 
-check_mp_model(MPModel) when atom(MPModel) ->
+check_mp_model(MPModel) when is_atom(MPModel) ->
     All = [{v1,  ?MP_V1}, {v2c, ?MP_V2C}, {v3,  ?MP_V3}],
     check_atom(MPModel, All);
 check_mp_model(?MP_V1) ->
@@ -240,7 +260,7 @@ check_mp_model(BadMpModel) ->
 
 %% ---------
 
-check_sec_model(SecModel) when atom(SecModel) ->
+check_sec_model(SecModel) when is_atom(SecModel) ->
     check_sec_model(SecModel, []);
 check_sec_model(?SEC_ANY) ->
     {ok, ?SEC_ANY};
@@ -253,7 +273,7 @@ check_sec_model(?SEC_USM) ->
 check_sec_model(BadSecModel) ->
     error({invalid_sec_model, BadSecModel}).
 
-check_sec_model(SecModel, Exclude) when atom(SecModel) ->
+check_sec_model(SecModel, Exclude) when is_atom(SecModel) ->
     All = [{any, ?SEC_ANY},
            {v1,  ?SEC_V1},
            {v2c, ?SEC_V2C},
@@ -294,27 +314,29 @@ check_sec_model2(SecModel, SM, Exclude) ->
 
 %% ---------
 
-check_sec_level(SecLevel) when atom(SecLevel) ->
-    All = [{noAuthNoPriv, 1}, {authNoPriv, 2}, {authPriv, 3}], 
+check_sec_level(SecLevel) when is_atom(SecLevel) ->
+    All = [{noAuthNoPriv, ?'SnmpSecurityLevel_noAuthNoPriv'}, 
+	   {authNoPriv,   ?'SnmpSecurityLevel_authNoPriv'}, 
+	   {authPriv,     ?'SnmpSecurityLevel_authPriv'}], 
     case (catch check_atom(SecLevel, All)) of
 	{error, _} ->
 	    error({invalid_sec_level, SecLevel});
 	OK ->
 	    OK
     end;
-check_sec_level(1) ->
-    {ok, 1};
-check_sec_level(2) ->
-    {ok, 2};
-check_sec_level(3) ->
-    {ok, 3};
+check_sec_level(?'SnmpSecurityLevel_noAuthNoPriv' = SL) ->
+    {ok, SL};
+check_sec_level(?'SnmpSecurityLevel_authNoPriv' = SL) ->
+    {ok, SL};
+check_sec_level(?'SnmpSecurityLevel_authPriv' = SL) ->
+    {ok, SL};
 check_sec_level(BadSecLevel) ->
     error({invalid_sec_level, BadSecLevel}).
 
 
 %% ---------
 
-check_taddress(X) when list(X), length(X) == 6 ->
+check_taddress(X) when is_list(X) andalso (length(X) =:= 6) ->
     case (catch all_integer(X)) of
 	true  -> 
 	    ok;
@@ -329,7 +351,7 @@ check_taddress(X) ->
 
 check_timer(infinity) ->
     {ok, infinity};
-check_timer(T) when record(T, snmp_incr_timer) ->
+check_timer(T) when is_record(T, snmp_incr_timer) ->
     {ok, T};
 check_timer({WaitFor, Factor, Incr, Retry} = T) ->
     case (catch do_check_timer(WaitFor, Factor, Incr, Retry)) of
@@ -361,7 +383,7 @@ do_check_timer(WaitFor, Factor, Incr, Retry) ->
 
 %% ---------
 
-check_ip(X) when list(X), length(X) == 4 ->
+check_ip(X) when is_list(X) andalso (length(X) =:= 4) ->
     case (catch all_integer(X)) of
 	true  -> 
 	    ok;
@@ -387,7 +409,7 @@ check_oid(X) ->
 
 %% ---------
 
-all_integer([H|T]) when integer(H) -> all_integer(T);
+all_integer([H|T]) when is_integer(H) -> all_integer(T);
 all_integer([_H|_T]) -> false;
 all_integer([]) -> true.
 

@@ -1,20 +1,21 @@
 %% -*- erlang -*-
-%% ``The contents of this file are subject to the Erlang Public License,
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1996-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%% %CopyrightEnd%
 %%
 
 %% Definition of the Erlang grammar.
@@ -87,6 +88,8 @@ type_spec -> '(' spec_fun type_sigs ')' : {'$2', '$3'}.
 
 spec_fun ->                            atom1 : '$1'.
 spec_fun ->                  atom1 ':' atom1 : {'$1', '$3'}.
+%% The following two are retained only for backwards compatibility;
+%% they are not part of the EEP syntax and should be removed.
 spec_fun ->           atom1 '/' integer '::' : {'$1', '$3'}.
 spec_fun -> atom1 ':' atom1 '/' integer '::' : {'$1', '$3', '$5'}.
 
@@ -554,40 +557,42 @@ parse_exprs(Tokens) ->
     case parse([{atom,0,f},{'(',0},{')',0},{'->',0}|Tokens]) of
 	{ok,{function,_Lf,f,0,[{clause,_Lc,[],[],Exprs}]}} ->
 	    {ok,Exprs};
-	{error,E} -> {error,E}
+	{error,_} = Err -> Err
     end.
 
 parse_term(Tokens) ->
     case parse([{atom,0,f},{'(',0},{')',0},{'->',0}|Tokens]) of
 	{ok,{function,_Lf,f,0,[{clause,_Lc,[],[],[Expr]}]}} ->
-	    case catch normalise(Expr) of
-		{'EXIT',_R} ->
-		    {error,{?line(Expr),?MODULE,"bad term"}};
+	    try normalise(Expr) of
 		Term -> {ok,Term}
+	    catch
+		_:_R -> {error,{?line(Expr),?MODULE,"bad term"}}
 	    end;
 	{ok,{function,_Lf,f,0,[{clause,_Lc,[],[],[_E1,E2|_Es]}]}} ->
 	    {error,{?line(E2),?MODULE,"bad term"}};
-	{error,E} -> {error,E}
+	{error,_} = Err -> Err
     end.
 
 -type attributes() :: 'export' | 'file' | 'import' | 'module'
-		    | 'record' | 'spec' | 'type'.
+		    | 'opaque' | 'record' | 'type'.
 
 build_typed_attribute({atom,La,record}, 
 		      {typed_record, {atom,_Ln,RecordName}, RecTuple}) ->
     {attribute,La,record,{RecordName,record_tuple(RecTuple)}};
-build_typed_attribute({atom,La,type},
-                      {type_def, {call,_,{atom,_,TypeName},Args}, Type}) ->
+build_typed_attribute({atom,La,Attr},
+                      {type_def, {call,_,{atom,_,TypeName},Args}, Type})
+  when Attr =:= 'type' ; Attr =:= 'opaque' ->
     case lists:all(fun({var, _, _}) -> true;
                       (_)           -> false
                    end, Args) of
-        true -> {attribute,La,type,{TypeName,Type,Args}};
-        false -> error_bad_decl(La,type)
+        true -> {attribute,La,Attr,{TypeName,Type,Args}};
+        false -> error_bad_decl(La, Attr)
     end;
-build_typed_attribute({atom,La,Atom},_) ->
-    case Atom of
-        record -> error_bad_decl(La,record);
-        type   -> error_bad_decl(La,type);
+build_typed_attribute({atom,La,Attr},_) ->
+    case Attr of
+        record -> error_bad_decl(La, record);
+        type   -> error_bad_decl(La, type);
+	opaque -> error_bad_decl(La, opaque);
         _      -> return_error(La, "bad attribute")
     end.
 
@@ -763,9 +768,8 @@ record_fields([Other|_Fields]) ->
 record_fields([]) -> [].
 
 term(Expr) ->
-    case catch normalise(Expr) of
-	{'EXIT',_R} -> return_error(?line(Expr), "bad attribute");
-	Term -> Term
+    try normalise(Expr)
+    catch _:_R -> return_error(?line(Expr), "bad attribute")
     end.
 
 package_segments(Name) ->
@@ -998,6 +1002,10 @@ inop_prec('#') -> {800,700,800};
 inop_prec(':') -> {900,800,900};
 inop_prec('.') -> {900,900,1000}.
 
+-type pre_op() :: 'catch' | '+' | '-' | 'bnot' | '#'.
+
+-spec preop_prec(pre_op()) -> {0 | 600 | 700, 100 | 700 | 800}.
+
 preop_prec('catch') -> {0,100};
 preop_prec('+') -> {600,700};
 preop_prec('-') -> {600,700};
@@ -1005,6 +1013,10 @@ preop_prec('bnot') -> {600,700};
 preop_prec('not') -> {600,700};
 preop_prec('#') -> {700,800}.
 
+-spec func_prec() -> {800,700}.
+
 func_prec() -> {800,700}.
+
+-spec max_prec() -> 1000.
 
 max_prec() -> 1000.

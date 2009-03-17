@@ -1,21 +1,25 @@
-/* ``The contents of this file are subject to the Erlang Public License,
+/*
+ * %CopyrightBegin%
+ * 
+ * Copyright Ericsson AB 1997-2009. All Rights Reserved.
+ * 
+ * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
- * retrieved via the world wide web at http://www.erlang.org/.
+ * retrieved online at http://www.erlang.org/.
  * 
  * Software distributed under the License is distributed on an "AS IS"
  * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
  * the License for the specific language governing rights and limitations
  * under the License.
  * 
- * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
- * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
- * AB. All Rights Reserved.''
- * 
- *     $Id$
+ * %CopyrightEnd%
  */
 
+#define UNICODE 1
+#define _UNICODE 1
+#include <tchar.h>
 #include <stdio.h>
 #include "sys.h"
 #include <windowsx.h>
@@ -39,7 +43,7 @@
 #define WM_CONBEEP      (0x0402)
 #define WM_SAVE_PREFS   (0x0403)
 
-#define USER_KEY "Software\\Ericsson\\Erlang\\" ERLANG_VERSION
+#define USER_KEY TEXT("Software\\Ericsson\\Erlang\\") TEXT(ERLANG_VERSION)
 
 #define FRAME_HEIGHT ((2*GetSystemMetrics(SM_CYEDGE))+(2*GetSystemMetrics(SM_CYFRAME))+GetSystemMetrics(SM_CYCAPTION))
 #define FRAME_WIDTH  (2*GetSystemMetrics(SM_CXFRAME)+(2*GetSystemMetrics(SM_CXFRAME))+GetSystemMetrics(SM_CXVSCROLL))
@@ -48,12 +52,18 @@
 #define COL(_l) ((_l) % LINE_LENGTH)
 #define LINE(_l) ((_l) / LINE_LENGTH)
 
+#ifdef UNICODE
+/*
+ * We use a character in the invalid unicode range
+ */
+#define SET_CURSOR (0xD8FF) 
+#else
 /*
  * XXX There is no escape to send a character 0x80.  Fortunately, 
  * the ttsl driver currently replaces 0x80 with an octal sequence.
  */
 #define SET_CURSOR (0x80)
-
+#endif
 
 #define SCAN_CODE_BREAK 0x46	/* scan code for Ctrl-Break */
 
@@ -66,12 +76,11 @@ typedef struct ScreenLine_s {
     int allocated;
 #endif
     int newline; /* Ends with hard newline: 1, wrapped at end: 0 */
-    char *text;
+    TCHAR *text;
 } ScreenLine_t;
 
-extern byte *lbuf;		/* The current line buffer */
+extern Uint32 *lbuf;		/* The current line buffer */
 extern int llen;		/* The current line length */
-extern byte *lc;		/* The current character pointer */
 extern int lpos;
 
 HANDLE console_input_event;
@@ -83,18 +92,19 @@ HANDLE console_thread = NULL;
 #define BUFSIZE 4096
 #define MAXBUFSIZE 32768
 typedef struct {
-    unsigned char *data; 
+    TCHAR *data; 
     int size;
     int wrPos;
     int rdPos;
 } buffer_t;
+
 static buffer_t inbuf;
 static buffer_t outbuf;
 
 static CHOOSEFONT cf;
 
-static char szFrameClass[] = "FrameClass";
-static char szClientClass[] = "ClientClass";
+static TCHAR szFrameClass[] = TEXT("FrameClass");
+static TCHAR szClientClass[] = TEXT("ClientClass");
 static HWND hFrameWnd;
 static HWND hClientWnd;
 static HWND hTBWnd;
@@ -128,12 +138,14 @@ static BOOL destroyed = FALSE;
 
 static int lines_to_save = 1000; /* Maximum number of screen lines to save. */
 
+#define TITLE_BUF_SZ 256
+
 struct title_buf {
-    char *name;
-    char buf[256];
+    TCHAR *name;
+    TCHAR buf[TITLE_BUF_SZ];
 };
 
-static char *erlang_window_title = "Erlang";
+static TCHAR *erlang_window_title = TEXT("Erlang");
 
 static unsigned __stdcall ConThreadInit(LPVOID param);
 static LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam);
@@ -157,14 +169,14 @@ static void InvertSelectionArea(HWND hwnd);
 static void OnEditCopy(HWND hwnd);
 static void OnEditPaste(HWND hwnd);
 static void OnEditSelAll(HWND hwnd);
-static void GetFileName(HWND hwnd, char *pFile);
+static void GetFileName(HWND hwnd, TCHAR *pFile);
 static void OpenLogFile(HWND hwnd);
 static void CloseLogFile(HWND hwnd);
-static void LogFileWrite(unsigned char *buf, int n);
-static int write_inbuf(unsigned char *data, int n);
+static void LogFileWrite(TCHAR *buf, int n);
+static int write_inbuf(TCHAR *data, int n);
 static void init_buffers(void);
 static void AddToCmdHistory(void);
-static int write_outbuf(unsigned char *data, int nbytes);
+static int write_outbuf(TCHAR *data, int num_chars);
 static void ConDrawText(HWND hwnd);
 static BOOL (WINAPI *ctrl_handler)(DWORD);
 static HWND InitToolBar(HWND hwndParent); 
@@ -186,7 +198,7 @@ grow_con_vprintf_buf(erts_dsprintf_buf_t *dsbufp, size_t need)
 	size = (((need + CON_VPRINTF_BUF_INC_SIZE - 1)
 		 / CON_VPRINTF_BUF_INC_SIZE)
 		* CON_VPRINTF_BUF_INC_SIZE);
-	buf = (char *) ALLOC(size);
+	buf = (char *) ALLOC(size * sizeof(char));
     }
     else {
 	size_t free_size = dsbufp->size - dsbufp->str_len;
@@ -200,7 +212,7 @@ grow_con_vprintf_buf(erts_dsprintf_buf_t *dsbufp, size_t need)
 		* CON_VPRINTF_BUF_INC_SIZE);
 	size += dsbufp->size;
 	buf = (char *) REALLOC((void *) dsbufp->str,
-			       size);
+			       size * sizeof(char));
     }
     if (!buf)
 	return NULL;
@@ -212,11 +224,17 @@ grow_con_vprintf_buf(erts_dsprintf_buf_t *dsbufp, size_t need)
 
 static int con_vprintf(char *format, va_list arg_list)
 {
-    int res;
+    int res,i;
     erts_dsprintf_buf_t dsbuf = ERTS_DSPRINTF_BUF_INITER(grow_con_vprintf_buf);
     res = erts_vdsprintf(&dsbuf, format, arg_list);
-    if (res >= 0)
-	write_outbuf(dsbuf.str, dsbuf.str_len);
+    if (res >= 0) {
+	TCHAR *tmp = ALLOC(dsbuf.str_len);
+	for (i=0;i<dsbuf.str_len;++i) {
+	    tmp[i] = dsbuf.str[i];
+	}
+	write_outbuf(tmp, dsbuf.str_len);
+	FREE(tmp);
+    }
     if (dsbuf.str)
       FREE((void *) dsbuf.str);
     return res;
@@ -264,19 +282,22 @@ void ConSetCtrlHandler(BOOL (WINAPI *handler)(DWORD))
     ctrl_handler = handler;
 }
 
-int ConPutChar(int c)
+int ConPutChar(Uint32 c)
 {
-    char sbuf[1];
-
+    TCHAR sbuf[1];
+#ifdef HARDDEBUG
+    fprintf(stderr,"ConPutChar: %d\n",(int) c);
+    fflush(stderr);
+#endif
     sbuf[0] = c;
     write_outbuf(sbuf, 1);
     return 1;
 }
 
 void ConSetCursor(int from, int to)
-{   unsigned char cmd[9];
+{   TCHAR cmd[9];
     int *p;
-
+    //DebugBreak();
     cmd[0] = SET_CURSOR;
     /*
      * XXX Expect trouble on CPUs which don't allow misaligned read and writes.
@@ -284,7 +305,7 @@ void ConSetCursor(int from, int to)
     p = (int *)&cmd[1];
     *p++ = from;
     *p = to;
-    write_outbuf(cmd, 9);
+    write_outbuf(cmd, 1 + (2*sizeof(int)/sizeof(TCHAR)));
 }
 
 void ConPrintf(char *format, ...)
@@ -296,22 +317,17 @@ void ConPrintf(char *format, ...)
     va_end(va);
 }
 
-void ConVprintf(char *format, va_list va)
-{
-    (void) con_vprintf(format, va);
-}
-
 void ConBeep(void)
 {
     SendMessage(hClientWnd, WM_CONBEEP, 0L, 0L);
 }
 
-int ConReadInput(unsigned char *data, int nbytes)
+int ConReadInput(Uint32 *data, int num_chars)
 {
-    unsigned char *buf;
+    TCHAR *buf;
     int nread;
     WaitForSingleObject(console_input,INFINITE);
-    nread = nbytes = min(nbytes,inbuf.wrPos-inbuf.rdPos);
+    nread = num_chars = min(num_chars,inbuf.wrPos-inbuf.rdPos);
     buf = &inbuf.data[inbuf.rdPos];
     inbuf.rdPos += nread;
     while (nread--) 
@@ -322,19 +338,19 @@ int ConReadInput(unsigned char *data, int nbytes)
         ResetEvent(console_input_event);
     }
     ReleaseSemaphore(console_input,1,NULL);
-    return nbytes;
+    return num_chars;
 }
 
 int ConGetKey(void)
 {
-    char c;
+    Uint32 c;
     WaitForSingleObject(console_input,INFINITE);
     ResetEvent(console_input_event);
     inbuf.rdPos = inbuf.wrPos = 0;
     ReleaseSemaphore(console_input,1,NULL);
     WaitForSingleObject(console_input_event,INFINITE);
     ConReadInput(&c, 1);
-    return c;
+    return (int) c;
 }
 
 int ConGetColumns(void) 
@@ -383,7 +399,7 @@ ConThreadInit(LPVOID param)
     wndclass.lpszMenuName   = NULL;
     wndclass.lpszClassName  = szFrameClass;
     wndclass.hIconSm	    = LoadIcon (hInstance, MAKEINTRESOURCE(1));
-    RegisterClassEx (&wndclass);
+    RegisterClassExW (&wndclass);
 
     /* client window class */
     wndclass.cbSize	        = sizeof (wndclass);	
@@ -398,7 +414,7 @@ ConThreadInit(LPVOID param)
     wndclass.lpszMenuName   = NULL;
     wndclass.lpszClassName  = szClientClass;
     wndclass.hIconSm	    = LoadIcon (hInstance, MAKEINTRESOURCE(1));
-    RegisterClassEx (&wndclass);
+    RegisterClassExW (&wndclass);
 
     InitCommonControls();
     init_buffers();
@@ -472,9 +488,9 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 {
     RECT r;
     int cy,i,bufsize;
-    unsigned char c;
+    TCHAR c;
     unsigned long l;
-    char buf[128];
+    TCHAR buf[128];
     struct title_buf title;
 
     switch (iMsg) {         
@@ -543,23 +559,23 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 		/* check for combobox handle */
 		if (lpttt->uFlags&TTF_IDISHWND) {
 		    if ((lpttt->hdr.idFrom == (UINT) hComboWnd)) {
-			lstrcpy(lpttt->lpszText,"Command History");
+			lstrcpy(lpttt->lpszText,TEXT("Command History"));
 			break;
 		    }
 		}
 		/* check for toolbar buttons */
 		switch (lpttt->hdr.idFrom) { 
                 case IDMENU_COPY: 
-                    lstrcpy(lpttt->lpszText,"Copy (Ctrl+C)"); 
+                    lstrcpy(lpttt->lpszText,TEXT("Copy (Ctrl+C)")); 
                     break; 
                 case IDMENU_PASTE: 
-                    lstrcpy(lpttt->lpszText,"Paste (Ctrl+V)"); 
+                    lstrcpy(lpttt->lpszText,TEXT("Paste (Ctrl+V)")); 
                     break; 
 		case IDMENU_FONT: 
-                    lstrcpy(lpttt->lpszText,"Fonts"); 
+                    lstrcpy(lpttt->lpszText,TEXT("Fonts")); 
                     break; 
 		case IDMENU_ABOUT: 
-                    lstrcpy(lpttt->lpszText,"Help"); 
+                    lstrcpy(lpttt->lpszText,TEXT("Help")); 
                     break; 
 		} 
 	    }
@@ -609,7 +625,7 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
             PostMessage(hwnd,WM_SIZE,0,MAKELPARAM(r.right,r.bottom));
             return 0;
         case IDMENU_ABOUT:
-            DialogBox(beam_module,"AboutBox",hwnd,AboutDlgProc);
+            DialogBox(beam_module,TEXT("AboutBox"),hwnd,AboutDlgProc);
             return 0;
         case ID_COMBOBOX:
             switch (HIWORD(wParam)) {
@@ -658,7 +674,7 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
         write_inbuf(&c, 1);
 	return 0;
     case WM_CHAR:
-	c = (unsigned char)wParam;
+	c = (TCHAR)wParam;
         write_inbuf(&c,1);
 	return 0;
     case WM_CLOSE :
@@ -1218,15 +1234,15 @@ LoadUserPreferences(void)
     if (res == REG_CREATED_NEW_KEY)
 	return;
     size = sizeof(logfont);
-    res = RegQueryValueEx(key,"Font",NULL,&type,(LPBYTE)&logfont,&size);
+    res = RegQueryValueEx(key,TEXT("Font"),NULL,&type,(LPBYTE)&logfont,&size);
     size = sizeof(fgColor);
-    res = RegQueryValueEx(key,"FgColor",NULL,&type,(LPBYTE)&fgColor,&size);
+    res = RegQueryValueEx(key,TEXT("FgColor"),NULL,&type,(LPBYTE)&fgColor,&size);
     size = sizeof(bkgColor);
-    res = RegQueryValueEx(key,"BkColor",NULL,&type,(LPBYTE)&bkgColor,&size);
+    res = RegQueryValueEx(key,TEXT("BkColor"),NULL,&type,(LPBYTE)&bkgColor,&size);
     size = sizeof(winPos);
-    res = RegQueryValueEx(key,"Pos",NULL,&type,(LPBYTE)&winPos,&size);
+    res = RegQueryValueEx(key,TEXT("Pos"),NULL,&type,(LPBYTE)&winPos,&size);
     size = sizeof(toolbarVisible);
-    res = RegQueryValueEx(key,"Toolbar",NULL,&type,(LPBYTE)&toolbarVisible,&size);
+    res = RegQueryValueEx(key,TEXT("Toolbar"),NULL,&type,(LPBYTE)&toolbarVisible,&size);
 }
 
 static void
@@ -1235,17 +1251,17 @@ SaveUserPreferences(void)
     WINDOWPLACEMENT wndPlace;
 
     if (has_key == TRUE) {
-        RegSetValueEx(key,"Font",0,REG_BINARY,(CONST BYTE *)&logfont,sizeof(LOGFONT));
-        RegSetValueEx(key,"FgColor",0,REG_DWORD,(CONST BYTE *)&fgColor,sizeof(fgColor));
-        RegSetValueEx(key,"BkColor",0,REG_DWORD,(CONST BYTE *)&bkgColor,sizeof(bkgColor));
-        RegSetValueEx(key,"Toolbar",0,REG_DWORD,(CONST BYTE *)&toolbarVisible,sizeof(toolbarVisible));
+        RegSetValueEx(key,TEXT("Font"),0,REG_BINARY,(CONST BYTE *)&logfont,sizeof(LOGFONT));
+        RegSetValueEx(key,TEXT("FgColor"),0,REG_DWORD,(CONST BYTE *)&fgColor,sizeof(fgColor));
+        RegSetValueEx(key,TEXT("BkColor"),0,REG_DWORD,(CONST BYTE *)&bkgColor,sizeof(bkgColor));
+        RegSetValueEx(key,TEXT("Toolbar"),0,REG_DWORD,(CONST BYTE *)&toolbarVisible,sizeof(toolbarVisible));
 
 	wndPlace.length = sizeof(WINDOWPLACEMENT);
 	GetWindowPlacement(hFrameWnd,&wndPlace);
 	/* If wndPlace.showCmd == SW_MINIMIZE, then the window is minimized.
 	   We don't care, wndPlace.rcNormalPosition always holds the last known position. */
 	winPos = wndPlace.rcNormalPosition;
-	RegSetValueEx(key,"Pos",0,REG_BINARY,(CONST BYTE *)&winPos,sizeof(winPos));
+	RegSetValueEx(key,TEXT("Pos"),0,REG_BINARY,(CONST BYTE *)&winPos,sizeof(winPos));
     }
 }
 
@@ -1311,7 +1327,7 @@ ConNewLine(void)
     pLine = (ScreenLine_t *)ALLOC(sizeof(ScreenLine_t));
     if (!pLine)
 	return NULL;
-    pLine->text = (char *) ALLOC(canvasColumns);
+    pLine->text = (TCHAR *) ALLOC(canvasColumns * sizeof(TCHAR));
 #ifdef HARDDEBUG
     pLine->allocated = canvasColumns;
 #endif
@@ -1391,7 +1407,7 @@ static void
 OnEditCopy(HWND hwnd)
 {
     HGLOBAL hMem;
-    char *pMem;
+    TCHAR *pMem;
     ScreenLine_t *pLine;
     RECT rects[3];
     POINT from,to;
@@ -1437,14 +1453,14 @@ OnEditCopy(HWND hwnd)
     fprintf(stderr,"sum = %d\n",sum);
     fflush(stderr);
 #endif
-    hMem = GlobalAlloc(GHND, sum);
+    hMem = GlobalAlloc(GHND, sum * sizeof(TCHAR));
     pMem = GlobalLock(hMem);
     for (i = 0; i < 3; ++i) {
 	if (!EMPTY_RECT(rects[i])) {
 	    pLine = GetLineFromY(rects[i].top);
 	    for (j = rects[i].top; j < rects[i].bottom; ++j) {
 		if (pLine == NULL) {
-		    memcpy(pMem,"\r\n",2);
+		    memcpy(pMem,TEXT("\r\n"),2 * sizeof(TCHAR));
 		    pMem += 2;
 		    break;
 		}
@@ -1452,18 +1468,18 @@ OnEditCopy(HWND hwnd)
 		    len = (pLine->width < rects[i].right) ?
 			pLine->width -  rects[i].left : 
 			rects[i].right - rects[i].left;
-		    memcpy(pMem,pLine->text + rects[i].left,len);
+		    memcpy(pMem,pLine->text + rects[i].left,len * sizeof(TCHAR));
 		    pMem +=len;
 		}
 		if(pLine->newline && rects[i].right >= pLine->width) {
-		    memcpy(pMem,"\r\n",2);
+		    memcpy(pMem,TEXT("\r\n"),2 * sizeof(TCHAR));
 		    pMem += 2;
 		}
 		pLine = pLine->next;
 	    }
 	}
     }
-    *pMem = '\0';
+    *pMem = TEXT('\0');
     /* Flash de selection area to give user feedback about copying */
     InvertSelectionArea(hwnd);
     Sleep(100);
@@ -1472,29 +1488,30 @@ OnEditCopy(HWND hwnd)
     OpenClipboard(hwnd);
     EmptyClipboard();
     GlobalUnlock(hMem);
-    SetClipboardData(CF_TEXT,hMem);
+    SetClipboardData(CF_UNICODETEXT,hMem);
     CloseClipboard();
 }
 
+/* XXX:PaN Tchar or char? */
 static void
 OnEditPaste(HWND hwnd)
 {
     HANDLE hClipMem;
-    char *pClipMem,*pMem,*pMem2;
+    TCHAR *pClipMem,*pMem,*pMem2;
     if (!OpenClipboard(hwnd))
 	return;
-    if ((hClipMem = GetClipboardData(CF_TEXT)) != NULL) {
+    if ((hClipMem = GetClipboardData(CF_UNICODETEXT)) != NULL) {
         pClipMem = GlobalLock(hClipMem);
-        pMem = (char *)ALLOC(GlobalSize(hClipMem));
+        pMem = (TCHAR *)ALLOC(GlobalSize(hClipMem) * sizeof(TCHAR));
         pMem2 = pMem;
-        while ((*pMem2 = *pClipMem) != '\0') {
-            if (*pClipMem == '\r')
-                *pMem2 = '\n';
+        while ((*pMem2 = *pClipMem) != TEXT('\0')) {
+            if (*pClipMem == TEXT('\r'))
+                *pMem2 = TEXT('\n');
             ++pMem2;
 	    ++pClipMem;
         }
         GlobalUnlock(hClipMem);
-        write_inbuf(pMem, strlen(pMem));
+        write_inbuf(pMem, _tcsclen(pMem));
     }
     CloseClipboard();
 }
@@ -1573,6 +1590,7 @@ ConFontInitialize(HWND hwnd)
     SetBkColor(hdc,bkgColor);
     GetTextMetrics(hdc, &tm);
     cxChar = tm.tmAveCharWidth;
+    //cxChar = tm.tmMaxCharWidth;
     cyChar = tm.tmHeight + tm.tmExternalLeading;
     ReleaseDC(hwnd, hdc);
 }
@@ -1585,10 +1603,13 @@ ConSetFont(HWND hwnd)
     HFONT hFontNew;
 	
     hFontNew = CreateFontIndirect(&logfont); 
+    SendMessage(hComboWnd,WM_SETFONT,(WPARAM)hFontNew,
+		MAKELPARAM(1,0));
     hdc = GetDC(hwnd);
     DeleteObject(SelectObject(hdc, hFontNew));
     GetTextMetrics(hdc, &tm);
     cxChar = tm.tmAveCharWidth;
+    //cxChar = tm.tmMaxCharWidth;
     cyChar = tm.tmHeight + tm.tmExternalLeading;
     fgColor = cf.rgbColors;
     SetTextColor(hdc,fgColor);
@@ -1683,20 +1704,19 @@ UINT APIENTRY OFNHookProc(HWND hwndDlg,UINT iMsg,WPARAM wParam,LPARAM lParam)
 }
 
 static void
-GetFileName(HWND hwnd, char *pFile)
+GetFileName(HWND hwnd, TCHAR *pFile)
 {
     /* Open the File Open dialog box and */
     /* retrieve the file name            */
     OPENFILENAME ofn;
-    CHAR szFilterSpec [128] = "logfiles (*.log)\0*.log\0" \
-	"All files (*.*)\0*.*\0\0";
+    TCHAR szFilterSpec [128] = TEXT("logfiles (*.log)\0*.log\0All files (*.*)\0*.*\0\0");
     #define MAXFILENAME 256
-    char szFileName[MAXFILENAME];
-    char szFileTitle[MAXFILENAME];
+    TCHAR szFileName[MAXFILENAME];
+    TCHAR szFileTitle[MAXFILENAME];
 
     /* these need to be filled in */
-    strcpy(szFileName, "erlshell.log");   
-    strcpy(szFileTitle, ""); /* must be NULL */
+    _tcscpy(szFileName, TEXT("erlshell.log"));   
+    _tcscpy(szFileTitle, TEXT("")); /* must be NULL */
 
     ofn.lStructSize       = sizeof(OPENFILENAME);
     ofn.hwndOwner         = NULL;
@@ -1709,27 +1729,27 @@ GetFileName(HWND hwnd, char *pFile)
     ofn.lpstrInitialDir   = NULL;
     ofn.lpstrFileTitle    = szFileTitle;
     ofn.nMaxFileTitle     = MAXFILENAME;
-    ofn.lpstrTitle        = "Open logfile";
-    ofn.lpstrDefExt       = "log";
+    ofn.lpstrTitle        = TEXT("Open logfile");
+    ofn.lpstrDefExt       = TEXT("log");
     ofn.Flags             = OFN_CREATEPROMPT|OFN_HIDEREADONLY|OFN_EXPLORER|OFN_ENABLEHOOK;
     ofn.lpfnHook          = OFNHookProc;
    
     if (!GetOpenFileName ((LPOPENFILENAME)&ofn)){
-        *pFile = '\0';
+        *pFile = TEXT('\0');
     } else {
-        strcpy(pFile, ofn.lpstrFile);
+        _tcscpy(pFile, ofn.lpstrFile);
     }
 }
 
 void OpenLogFile(HWND hwnd)
 {
     /* open a file for logging */
-    char filename[_MAX_PATH];
+    TCHAR filename[_MAX_PATH];
 
     GetFileName(hwnd, filename);
     if (filename[0] == '\0')
         return;
-    if (NULL == (logfile = fopen(filename,"w")))
+    if (NULL == (logfile = _tfopen(filename,TEXT("w,ccs=UNICODE"))))
         return;
 }
 
@@ -1740,11 +1760,11 @@ void CloseLogFile(HWND hwnd)
     logfile = NULL;
 }
 
-void LogFileWrite(unsigned char *buf, int nbytes)
+void LogFileWrite(TCHAR *buf, int num_chars)
 {
     /* write to logfile */
     int from,to;
-    while (nbytes-- > 0) {     
+    while (num_chars-- > 0) {     
         switch (*buf) {
         case SET_CURSOR:
             buf++;
@@ -1752,11 +1772,11 @@ void LogFileWrite(unsigned char *buf, int nbytes)
             buf+=4;
             to = *((int *)buf);
             buf+=3;
-            nbytes-=8;
-            fseek(logfile,to-from,SEEK_CUR);
+            num_chars-=8;
+            fseek(logfile,to-from *sizeof(TCHAR),SEEK_CUR);
             break;
         default:
-            fputc(*buf,logfile);
+            _fputtc(*buf,logfile);
             break;
         }
         buf++;
@@ -1766,8 +1786,8 @@ void LogFileWrite(unsigned char *buf, int nbytes)
 static void
 init_buffers(void)
 {
-    inbuf.data = (unsigned char *) ALLOC(BUFSIZE);
-    outbuf.data = (unsigned char *) ALLOC(BUFSIZE);
+    inbuf.data = (TCHAR *) ALLOC(BUFSIZE * sizeof(TCHAR));
+    outbuf.data = (TCHAR *) ALLOC(BUFSIZE * sizeof(TCHAR));
     inbuf.size = BUFSIZE;
     inbuf.rdPos = inbuf.wrPos = 0;
     outbuf.size = BUFSIZE;
@@ -1775,13 +1795,13 @@ init_buffers(void)
 }
 
 static int
-check_realloc(buffer_t *buf, int nbytes)
+check_realloc(buffer_t *buf, int num_chars)
 {
-    if (buf->wrPos + nbytes >= buf->size) {
+    if (buf->wrPos + num_chars >= buf->size) {
 	if (buf->size > MAXBUFSIZE)
 	    return 0;
-	buf->size += nbytes + BUFSIZE;
-	if (!(buf->data = (unsigned char *)REALLOC(buf->data, buf->size))) {
+	buf->size += num_chars + BUFSIZE;
+	if (!(buf->data = (TCHAR *)REALLOC(buf->data, buf->size * sizeof(TCHAR)))) {
 	    buf->size = buf->rdPos = buf->wrPos = 0;
 	    return 0;
         }
@@ -1790,45 +1810,45 @@ check_realloc(buffer_t *buf, int nbytes)
 }
 
 static int
-write_inbuf(unsigned char *data, int nbytes)
+write_inbuf(TCHAR *data, int num_chars)
 {
-    unsigned char *buf;
+    TCHAR *buf;
     int nwrite;
     WaitForSingleObject(console_input,INFINITE);
-    if (!check_realloc(&inbuf,nbytes)) {
+    if (!check_realloc(&inbuf,num_chars)) {
         ReleaseSemaphore(console_input,1,NULL);
         return -1;
     }
     buf = &inbuf.data[inbuf.wrPos];
-    inbuf.wrPos += nbytes; 
-    nwrite = nbytes;
+    inbuf.wrPos += num_chars; 
+    nwrite = num_chars;
     while (nwrite--) 
         *buf++ = *data++;
     SetEvent(console_input_event);
     ReleaseSemaphore(console_input,1,NULL);
-    return nbytes;
+    return num_chars;
 }
 
 static int 
-write_outbuf(unsigned char *data, int nbytes)
+write_outbuf(TCHAR *data, int num_chars)
 {
-    unsigned char *buf;
+    TCHAR *buf;
     int nwrite;
 
     WaitForSingleObject(console_output,INFINITE);
-    if (!check_realloc(&outbuf, nbytes)) {
+    if (!check_realloc(&outbuf, num_chars)) {
         ReleaseSemaphore(console_output,1,NULL);
         return -1;
     }
     if (outbuf.rdPos == outbuf.wrPos)
         PostMessage(hClientWnd, WM_CONTEXT, 0L, 0L);
     buf = &outbuf.data[outbuf.wrPos];
-    outbuf.wrPos += nbytes; 
-    nwrite = nbytes;
+    outbuf.wrPos += num_chars; 
+    nwrite = num_chars;
     while (nwrite--) 
         *buf++ = *data++;
     ReleaseSemaphore(console_output,1,NULL);
-    return nbytes;
+    return num_chars;
 }
 
 BOOL CALLBACK AboutDlgProc(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
@@ -1850,7 +1870,7 @@ BOOL CALLBACK AboutDlgProc(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
         SetWindowPos(hDlg,HWND_TOP,rcOwner.left + (rc.right / 2), 
 		     rcOwner.top + (rc.bottom / 2),0,0,SWP_NOSIZE); 
         SetDlgItemText(hDlg, ID_VERSIONSTRING,
-		       "Erlang emulator version " ERLANG_VERSION); 
+		       TEXT("Erlang emulator version ") TEXT(ERLANG_VERSION)); 
         return TRUE;
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
@@ -1867,9 +1887,9 @@ BOOL CALLBACK AboutDlgProc(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 static void
 ConDrawText(HWND hwnd)
 {
-    int nbytes;
+    int num_chars;
     int nchars;
-    unsigned char *buf;
+    TCHAR *buf;
     int from, to;
     int dl;
     int dc;
@@ -1877,18 +1897,18 @@ ConDrawText(HWND hwnd)
 
     WaitForSingleObject(console_output, INFINITE);
     nchars = 0;
-    nbytes = outbuf.wrPos - outbuf.rdPos;
+    num_chars = outbuf.wrPos - outbuf.rdPos;
     buf = &outbuf.data[outbuf.rdPos];
     if (logfile != NULL)
-	LogFileWrite(buf, nbytes);
+	LogFileWrite(buf, num_chars);
 
 
 #ifdef HARDDEBUG
     {
-	char *bu = (char *) ALLOC(nbytes+1);
-	memcpy(bu,buf,nbytes);
-	bu[nbytes]='\0';
-	fprintf(stderr,"ConDrawText\"%s\"\n",bu);
+	TCHAR *bu = (TCHAR *) ALLOC((num_chars+1) * sizeof(TCHAR));
+	memcpy(bu,buf,num_chars * sizeof(TCHAR));
+	bu[num_chars]='\0';
+	fprintf(stderr,TEXT("ConDrawText\"%s\"\n"),bu);
 	FREE(bu);
 	fflush(stderr);
     }
@@ -1899,7 +1919,7 @@ ConDrawText(HWND hwnd)
      * will be updated on the next WM_PAINT message.
      */
 
-    while (nbytes-- > 0) {     
+    while (num_chars-- > 0) {     
         switch (*buf) {
         case '\r':
             break;
@@ -1916,6 +1936,7 @@ ConDrawText(HWND hwnd)
             ConScrollScreen();
             break;
         case SET_CURSOR:
+	    //DebugBreak();
             if (nchars > 0) { 
 		rc.left = (cur_x - nchars - iHscrollPos) * cxChar;
 		rc.right = rc.left + cxChar*nchars;
@@ -1926,10 +1947,10 @@ ConDrawText(HWND hwnd)
             }
             buf++;
             from = *((int *)buf);
-            buf += 4;
+            buf += sizeof(int)/sizeof(TCHAR);
             to = *((int *)buf);
-            buf += 4-1;
-            nbytes -= 8;
+            buf += (sizeof(int)/sizeof(TCHAR))-1;
+            num_chars -= 2 * (sizeof(int)/sizeof(TCHAR));
 	    dc = COL(to) - COL(from);
 	    dl = LINE(to) - LINE(from);
 	    cur_x += dc;
@@ -1993,8 +2014,8 @@ AddToCmdHistory(void)
 {
     int i;
     int size;
-    char *buf;
-    char cmdBuf[128];
+    Uint32 *buf;
+    wchar_t cmdBuf[128];
 
     if (llen != 0) {
 	for (i = 0, size = 0; i < llen-1; i++) {
@@ -2008,7 +2029,9 @@ AddToCmdHistory(void)
 	    }
 	}
 	if (size > 0 && size < 128) {
-	    strncpy(cmdBuf, buf, size);
+	    for (i = 0;i < size; ++i) {
+		cmdBuf[i] = (wchar_t) buf[i];
+	    }
 	    cmdBuf[size] = 0;
 	    SendMessage(hComboWnd,CB_INSERTSTRING,0,(LPARAM)cmdBuf);
 	}
@@ -2063,9 +2086,10 @@ InitToolBar(HWND hwndParent)
     HWND hwndTB,hwndTT; 
     RECT r;
     TOOLINFO ti;
+    HFONT hFontNew;
 
     /* Create toolbar window with tooltips */
-    hwndTB = CreateWindowEx(0,TOOLBARCLASSNAME,(LPSTR)NULL,
+    hwndTB = CreateWindowEx(0,TOOLBARCLASSNAME,(TCHAR *)NULL,
 			    WS_CHILD|CCS_TOP|WS_CLIPSIBLINGS|TBSTYLE_TOOLTIPS,
 			    0,0,0,0,hwndParent,
 			    (HMENU)2,hInstance,NULL); 
@@ -2087,11 +2111,14 @@ InitToolBar(HWND hwndParent)
     x = r.left; y = r.top;
     SendMessage(hwndTB,TB_GETITEMRECT,23,(LPARAM)&r);
     cx = r.right - x + 1;
-    hComboWnd = CreateWindow("combobox",NULL,WS_VSCROLL|WS_CHILD|WS_VISIBLE|CBS_DROPDOWNLIST,
+    hComboWnd = CreateWindow(TEXT("combobox"),NULL,WS_VSCROLL|WS_CHILD|WS_VISIBLE|CBS_DROPDOWNLIST,
 			     x,y,cx,100,hwndParent,(HMENU)ID_COMBOBOX, hInstance,NULL);
     SetParent(hComboWnd,hwndTB);
-    SendMessage(hComboWnd,WM_SETFONT,(WPARAM)GetStockObject(ANSI_FIXED_FONT),
+    hFontNew = CreateFontIndirect(&logfont); 
+    SendMessage(hComboWnd,WM_SETFONT,(WPARAM)hFontNew,
 		MAKELPARAM(1,0));
+    /*SendMessage(hComboWnd,WM_SETFONT,(WPARAM)GetStockObject(ANSI_FIXED_FONT),
+      MAKELPARAM(1,0));*/
 
     /* Add tooltip for combo box */
     ZeroMemory(&ti,sizeof(TOOLINFO));
@@ -2109,15 +2136,20 @@ InitToolBar(HWND hwndParent)
 static void
 window_title(struct title_buf *tbuf)
 {
-    int res;
-    size_t bufsz = sizeof(tbuf->buf);
+    int res, i;
+    size_t bufsz = TITLE_BUF_SZ;
+    unsigned char charbuff[TITLE_BUF_SZ];
 
-    res = erl_drv_getenv("ERL_WINDOW_TITLE", &tbuf->buf[0], &bufsz);
+    res = erl_drv_getenv("ERL_WINDOW_TITLE", charbuff, &bufsz);
     if (res < 0)
 	tbuf->name = erlang_window_title;
-    else if (res == 0) 
+    else if (res == 0) { 
+	for (i = 0; i < bufsz; ++i) {
+	    tbuf->buf[i] = charbuff[i];
+	}
+        tbuf->buf[bufsz - 1] = 0;
 	tbuf->name = &tbuf->buf[0];
-    else {
+    } else {
 	char *buf = ALLOC(bufsz);
 	if (!buf)
 	    tbuf->name = erlang_window_title;
@@ -2126,9 +2158,15 @@ window_title(struct title_buf *tbuf)
 		char *newbuf;
 		res = erl_drv_getenv("ERL_WINDOW_TITLE", buf, &bufsz);
 		if (res <= 0) {
-		    if (res == 0)
-			tbuf->name = buf;
-		    else {
+		    if (res == 0) {
+			TCHAR *wbuf = ALLOC(bufsz *sizeof(TCHAR));
+			for (i = 0; i < bufsz ; ++i) {
+			    wbuf[i] = buf[i];
+			}
+			wbuf[bufsz - 1] = 0;
+			FREE(buf);
+			tbuf->name = wbuf;
+		    } else {
 			tbuf->name = erlang_window_title;
 			FREE(buf);
 		    }

@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2008-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%============================================================================
 %% File    : typer_annotator.erl
 %% Author  : Bingwen He <hebingwen@hotmail.com>
@@ -120,7 +138,7 @@ is_yecc_file(File, Inc) ->
 	    true -> {yecc_generated, Inc};
 	    false ->
 	      NewFilter = [Obj|Inc#inc.filter],
-	      NewInc = Inc#inc{filter=NewFilter},
+	      NewInc = Inc#inc{filter = NewFilter},
 	      {yecc_generated, NewInc}
 	  end;
 	_ ->
@@ -131,42 +149,42 @@ is_yecc_file(File, Inc) ->
       end
   end.
 
-check_imported_funcs({File,{Line,F,A}}, Inc, TypeMap) ->
+check_imported_funcs({File, {Line, F, A}}, Inc, TypeMap) ->
   IncMap = Inc#inc.map,
-  Type = get_type_info({F,A}, TypeMap),
+  FA = {F, A},
+  Type = get_type_info(FA, TypeMap),
   case typer_map:lookup(File, IncMap) of
     none -> %% File is not added. Add it
-      Obj = {File,[{{F,A},{Line,Type}}]},
+      Obj = {File,[{FA, {Line, Type}}]},
       NewMap = typer_map:insert(Obj, IncMap),
-      Inc#inc{map=NewMap};
+      Inc#inc{map = NewMap};
     Val -> %% File is already in. Check.
-      case lists:keysearch({F,A}, 1, Val) of
+      case lists:keysearch(FA, 1, Val) of
 	false -> 
 	  %% Function is not in. Good. Add.
-	  Obj = {File,Val++[{{F,A},{Line,Type}}]},
+	  Obj = {File, Val ++ [{FA, {Line, Type}}]},
 	  NewMap = typer_map:insert(Obj, IncMap),
-	  Inc#inc{map=NewMap};
-	{_,Type} -> 
+	  Inc#inc{map = NewMap};
+	{_, Type} -> 
 	  %% Function is in and with same type
 	  Inc;
-	{_,_} ->
+	{_, _} ->
 	  %% Function is in but with diff type
-	  inc_warning({F,A}, File),
-	  Elem = lists:keydelete({F,A}, 1, Val),
+	  inc_warning(FA, File),
+	  Elem = lists:keydelete(FA, 1, Val),
 	  NewMap = case Elem of
 		     [] -> 
 		       typer_map:remove(File, IncMap);
 		     _  ->
-		       Obj = {File,Elem},
-		       typer_map:insert(Obj, IncMap)
+		       typer_map:insert({File, Elem}, IncMap)
 		   end,
-	  Inc#inc{map=NewMap}
+	  Inc#inc{map = NewMap}
       end
   end.
 
-inc_warning({F,A}, File) ->	    
-  io:format("      ***Warning: Skip function ~p/~p ",[F,A]),
-  io:format("in file ~p because of inconsistent type\n",[File]).
+inc_warning({F, A}, File) ->
+  io:format("      ***Warning: Skip function ~p/~p ", [F, A]),
+  io:format("in file ~p because of inconsistent type\n", [File]).
 
 clean_inc(Inc) ->
   Inc1 = remove_yecc_generated_file(Inc),
@@ -279,36 +297,36 @@ write_typed_file(File, Info) ->
 
 write_typed_file(File, Info, NewFileName) ->
   {ok, Binary} = file:read_file(File),
-  List = binary_to_list(Binary),
-  write_typed_file(List, NewFileName, Info, 1, []),
+  Chars = binary_to_list(Binary),
+  write_typed_file(Chars, NewFileName, Info, 1, []),
   io:format("             Saved as: ~p\n", [NewFileName]).
 
-write_typed_file(Rest, File, #info{funcs=[]}, _LNo, _Acc) ->
-  ok = file:write_file(File, list_to_binary(Rest), [append]);
-write_typed_file([First|RestCh], File, Info, LineNo, Acc) ->
+write_typed_file(Chars, File, #info{funcs = []}, _LNo, _Acc) ->
+  ok = file:write_file(File, list_to_binary(Chars), [append]);
+write_typed_file([Ch|Chs] = Chars, File, Info, LineNo, Acc) ->
   [{Line,F,A}|RestFuncs] = Info#info.funcs,
   case Line of
     1 -> %% This will happen only for inc files
       ok = raw_write(F, A, Info, File, []),
-      NewInfo = Info#info{funcs=RestFuncs},
+      NewInfo = Info#info{funcs = RestFuncs},
       NewAcc = [],
-      write_typed_file([First|RestCh], File, NewInfo, Line, NewAcc);
+      write_typed_file(Chars, File, NewInfo, Line, NewAcc);
     _ ->
-      case First of
+      case Ch of
 	10 ->
 	  NewLineNo = LineNo + 1,
 	  case NewLineNo of
 	    Line ->
-	      ok = raw_write(F, A, Info, File, [First|Acc]),
-	      NewInfo = Info#info{funcs=RestFuncs},
+	      ok = raw_write(F, A, Info, File, [Ch|Acc]),
+	      NewInfo = Info#info{funcs = RestFuncs},
 	      NewAcc = [];
 	    _ ->
 	      NewInfo = Info,
-	      NewAcc = [First|Acc]
+	      NewAcc = [Ch|Acc]
 	  end,
-	  write_typed_file(RestCh, File, NewInfo, NewLineNo, NewAcc);
+	  write_typed_file(Chs, File, NewInfo, NewLineNo, NewAcc);
 	_ ->
-	  write_typed_file(RestCh, File, Info, LineNo, [First|Acc])
+	  write_typed_file(Chs, File, Info, LineNo, [Ch|Acc])
       end
   end.
 
@@ -359,6 +377,6 @@ get_type_info(Func, TypeMap) ->
       %% *must* be something wrong with the analysis
       io:format("No type info for function: ~p\n", [Func]),
       halt();
-    {contract, Fun} -> {contract, Fun};
-    {RetType, ArgType} -> {RetType, ArgType} 
+    {contract, _Fun} = C -> C;
+    {_RetType, _ArgType} = RA -> RA 
   end.

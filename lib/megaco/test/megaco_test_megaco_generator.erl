@@ -1,21 +1,22 @@
-%%<copyright>
-%% <year>2007-2008</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2007-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
+%% 
+%% %CopyrightEnd%
 %%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
+
 %%
 %%----------------------------------------------------------------------
 %% Purpose: megaco sequence generator for the megaco test suite
@@ -42,7 +43,7 @@
 
 %% Megaco callback api
 -export([
-         handle_connect/3,
+         handle_connect/3, handle_connect/4,
          handle_disconnect/4,
          handle_syntax_error/4,        handle_syntax_error/5,
          handle_message_error/4,       handle_message_error/5,
@@ -949,6 +950,10 @@ handle_exec_connect_tcp(Host, Opts, Sup, MaybeRetry, Error0) ->
 
 handle_connect(CH, PV, P) ->
     Req = {handle_connect, CH, PV},
+    handle_megaco_callback_call(P, Req).
+
+handle_connect(CH, PV, Extra, P) ->
+    Req = {handle_connect, CH, PV, Extra},
     handle_megaco_callback_call(P, Req).
 
 handle_disconnect(CH, PV, R, P) ->

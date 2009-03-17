@@ -1,4 +1,22 @@
 %% -*- erlang-indent-level: 2 -*-
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
 %%-----------------------------------------------------------------------
 %% File    : hipe_icode_callgraph.erl
 %% Author  : Tobias Lindahl <tobiasl@it.uu.se>
@@ -139,11 +157,9 @@ get_local_calls2(List) ->
 
 get_local_calls([{MFA = {M, _F, _A}, Icode}|Left], RemoveFun, Acc) ->
   CallSet = get_local_calls_1(hipe_icode:icode_code(Icode)),
-  %% Exclude calls to your own module_info and recursive calls.
+  %% Exclude recursive calls.
   CallSet1 = RemoveFun(MFA, CallSet),
-  CallSet2 = ordsets:del_element({M, module_info, 0}, CallSet1),
-  CallSet3 = ordsets:del_element({M, module_info, 1}, CallSet2),
-  get_local_calls(Left, RemoveFun, [{MFA, CallSet3}|Acc]);
+  get_local_calls(Left, RemoveFun, [{MFA, CallSet1}|Acc]);
 get_local_calls([], _RemoveFun, Acc) ->
   Acc.
 
