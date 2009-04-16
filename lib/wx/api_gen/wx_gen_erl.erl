@@ -107,7 +107,7 @@ gen_class1(C=#class{name=Name,parent=Parent,methods=Ms,options=Opts}) ->
 		    EvTypes = [event_type_name(Ev) || Ev <- Evs],
 		    EvStr = args(fun(Ev) -> "<em>"++Ev++"</em>" end, ", ", EvTypes),
 		    
-		    w("%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>~n",[]),
+		    w("%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>~n",[]),
 		    w("%% <dd>~s</dd></dl>~n", [EvStr]),
 		    w("%% See also the message variant {@link wxEvtHandler:~s(). #~s{}} event record type.~n", 
 		      [event_rec_name(Name),event_rec_name(Name)]),
@@ -870,7 +870,7 @@ marshal_opts([], _,_) -> "";     %% No opts skip this!
 marshal_opts(Opts, Align, Args) ->
     w("  MOpts = fun", []), 
     marshal_opts1(Opts,1),
-    w("  end,~n", []),
+    w(";~n          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,~n", []),
     w("  BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),~n", []),
     {Str, _} = align(64, Align, "BinOpt/binary"),
     case Args of
@@ -1107,14 +1107,36 @@ gen_event_recs() ->
     %% close(), closed in gen_enums_ints
     ok.
 
-build_event_rec(#class{name=Name,event=Evs,attributes=Attr0}) ->
+find_inherited_attr(Param = {PName,_}, Name) ->
+    #class{parent=Parent, attributes=Attrs} = get({class, Name}),
+    case lists:keysearch(atom_to_list(PName), #param.name, Attrs) of
+	{value, P=#param{}} ->
+	    P;
+	_ ->
+	    find_inherited_attr(Param, Parent)
+    end.
+
+filter_attrs(#class{name=Name, parent=Parent,attributes=Attrs}) ->
+    Attr1 = lists:foldl(fun(#param{acc=skip},Acc) -> Acc; 
+			   (P=#param{prot=public},Acc) -> [P|Acc];
+			   (#param{acc=undefined},Acc) -> Acc; 
+			   ({inherited, PName},Acc) ->
+				case find_inherited_attr(PName, Parent) of
+				    undefined -> 
+					io:format("~p:~p: Missing Event Attr ~p in ~p~n",
+						  [?MODULE,?LINE, PName, Name]),
+					Acc;
+				    P -> 
+					[P|Acc]
+				end;
+			   (P, Acc) -> [P|Acc]
+			end, [], Attrs),
+    lists:reverse(Attr1).
+   
+build_event_rec(Class=#class{name=Name, event=Evs}) ->
     EvTypes = [event_type_name(Ev) || Ev <- Evs],
     Str  = args(fun(Ev) -> "<em>"++Ev++"</em>" end, ", ", EvTypes),
-    Attr = filter(fun(#param{acc=skip}) -> false; 
-		     (#param{prot=public}) -> true;
-		     (#param{acc=undefined}) -> false; 
-		     (_) -> true
-		  end, Attr0),
+    Attr = filter_attrs(Class),
     Rec = event_rec_name(Name),
     GetName = fun(#param{name=N}) ->event_attr_name(N) end,
     GetType = fun(#param{name=N,type=T}) ->
@@ -1152,7 +1174,8 @@ is_command_event(Name) ->
 event_rec_name(Name0 = "wx" ++ _) ->
     "tnevE" ++ Name1 = reverse(Name0),
     reverse(Name1).
-    
+
+event_type_name({EvN,_,_}) -> event_type_name(EvN);
 event_type_name(EvN) ->
     "wxEVT_" ++ Ev = atom_to_list(EvN),
     lowercase_all(Ev).
@@ -1181,7 +1204,7 @@ gen_funcnames() ->
     [w("-define(~s_~s, ~p).~n", [Class,Name,Id]) || {Class,Name,_,Id} <- Ns],
     close().
 
-get_unique_name(ID) when integer(ID) ->
+get_unique_name(ID) when is_integer(ID) ->
     Tree =  get(unique_names),
     {Class,Name, _,_} = gb_trees:get(ID, Tree),
     Class ++ "_" ++ Name.

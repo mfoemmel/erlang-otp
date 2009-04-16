@@ -34,17 +34,16 @@
 -export([core_transform/2, analyze/1, pp_hook/0]).
 %%-export([analyze/2, analyze/5, annotate/1, annotate/2, annotate/5]).
 
--import(erl_types, [t_any/0, t_atom/0, t_is_atom/1, t_binary/0, t_cons/2,
-		    t_cons_hd/1, t_cons_tl/1, t_maybe_improper_list/0,
-		    t_components/1, t_float/0, t_fun/0, t_fun/2,
-		    t_inf/2, t_integer/0, t_atom_vals/1, t_is_cons/1,
-		    t_is_maybe_improper_list/1, t_is_list/1, t_is_tuple/1,
-		    t_is_none/1, t_is_any/1, t_limit/2,
-		    t_list_elements/1, t_number/0, t_pid/0, t_port/0,
-		    t_product/1, t_ref/0, t_tuple/0, t_tuple/1,
-		    t_tuple_args/1, t_tuple_arity/1, t_tuple_subtypes/1, 
-		    t_sup/2,
-		    t_from_range/2, t_from_term/1, t_none/0]).
+-import(erl_types, [t_any/0, t_atom/0, t_atom_vals/1, t_binary/0,
+		    t_cons/2, t_cons_hd/1, t_cons_tl/1, t_float/0,
+		    t_fun/0, t_fun/2, t_from_range/2, t_from_term/1,
+		    t_inf/2, t_integer/0,
+		    t_is_any/1, t_is_atom/1, t_is_cons/1, t_is_list/1,
+		    t_is_maybe_improper_list/1, t_is_none/1, t_is_tuple/1,
+		    t_limit/2, t_list_elements/1, t_maybe_improper_list/0,
+		    t_none/0, t_number/0, t_pid/0, t_port/0, t_product/1,
+		    t_reference/0, t_sup/2, t_to_tlist/1, t_tuple/0, t_tuple/1,
+		    t_tuple_args/1, t_tuple_size/1, t_tuple_subtypes/1]).
 
 -import(cerl, [ann_c_fun/3, ann_c_var/2, alias_pat/1, alias_var/1,
 	       apply_args/1, apply_op/1, atom_val/1, bitstr_size/1,
@@ -247,13 +246,14 @@ analyze(T, Limit, Esc0, Dep0, Par) ->
     %% Note that we use different name spaces for variable labels and
     %% function/call site labels. We assume that the labeling of T only
     %% uses integers, not atoms.
-    External = ann_c_var([{label, external}], {external, 1}),
-    ExtFun = ann_c_fun([{label, external}], [],
-		       ann_c_var([{label, any}], 'Any')),
+    LabelExtL = [{label, external}],
+    External = ann_c_var(LabelExtL, {external, 1}),
+    ExtFun = ann_c_fun(LabelExtL, [], ann_c_var([{label, any}], 'Any')),
 %%%     io:fwrite("external fun:\n~s.\n",
 %%% 	      [cerl_prettypr:format(ExtFun, [noann, {paper, 80}])]),
-    Top = ann_c_var([{label, top}], {top, 0}),
-    TopFun = ann_c_fun([{label, top}], [], T),
+    LabelTopL = [{label, top}],
+    Top = ann_c_var(LabelTopL, {top, 0}),
+    TopFun = ann_c_fun(LabelTopL, [], T),
 
     %% The "start fun" just makes the initialisation easier. It is not
     %% itself in the call graph.
@@ -389,15 +389,21 @@ visit(T, Env, St) ->
 	    {Xs, St1} = visit_list(values_es(T), Env, St),
 	    {t_product(Xs), St1};
 	cons ->
-	    {[X1, X2], St1} = visit_list([cons_hd(T), cons_tl(T)], Env,
-					 St),
+	    {[X1, X2], St1} = visit_list([cons_hd(T), cons_tl(T)], Env, St),
 	    {t_cons(X1, X2), St1};
 	tuple ->
 	    {Xs, St1} = visit_list(tuple_es(T), Env, St),
 	    {t_tuple(Xs), St1};
 	'let' ->
 	    {X, St1} = visit(let_arg(T), Env, St),
-	    Vars = bind_vars(let_vars(T), t_components(X), St1#state.vars),
+	    LetVars = let_vars(T),
+	    St1Vars = St1#state.vars,
+	    Vars = case t_is_any(X) orelse t_is_none(X) of
+		       true ->
+			   bind_vars_single(LetVars, X, St1Vars);
+		       false ->
+			   bind_vars(LetVars, t_to_tlist(X), St1Vars)
+		   end,
 	    visit(let_body(T), Env, St1#state{vars = Vars});
 	seq ->
 	    {_, St1} = visit(seq_arg(T), Env, St),
@@ -439,8 +445,13 @@ visit(T, Env, St) ->
 	    {X, St1#state{out = dict:store(L, X, St1#state.out)}};
 	'case' ->
 	    {X, St1} = visit(case_arg(T), Env, St),
-	    join_visit_clauses(t_components(X), case_clauses(T), Env,
-			       St1);
+	    Xs = case t_is_any(X) orelse t_is_none(X) of
+		     true ->
+			 lists:duplicate(length(case_clauses(T)), X);
+		     false ->
+			 t_to_tlist(X)
+		 end,
+	    join_visit_clauses(Xs, case_clauses(T), Env, St1);
 	'receive' ->
 	    Any = t_any(),
 	    {X1, St1} = join_visit_clauses([Any], receive_clauses(T),
@@ -457,7 +468,14 @@ visit(T, Env, St) ->
 	    {X, St1} = visit(try_arg(T), Env, St),
 	    Any = t_any(),
 	    Atom = t_atom(),
-	    Vars = bind_vars(try_vars(T), t_components(X), St1#state.vars),
+	    TryVars = try_vars(T),
+	    St1Vars = St1#state.vars,
+	    Vars = case t_is_any(X) orelse t_is_none(X) of
+		       true ->
+			   bind_vars_single(TryVars, X, St1Vars);
+		       false ->
+			   bind_vars(TryVars, t_to_tlist(X), St1Vars)
+		   end,
 	    {X1, St2} = visit(try_body(T), Env, St1#state{vars = Vars}),
 	    EVars = bind_vars(try_evars(T), [Atom, Any, Any], St2#state.vars),
 	    {X2, St3} = visit(try_handler(T), Env, St2#state{vars = EVars}),
@@ -518,15 +536,10 @@ join_visit_clauses(_, [], _Env, St) ->
 bind_defs([{V, F} | Ds], Vars, Out) ->
     Xs = [dict:fetch(get_label(V1), Vars) || V1 <- fun_vars(F)],
     X = dict:fetch(get_label(F), Out),
-    bind_defs(Ds, dict:store(get_label(V), t_fun(Xs, X), Vars),
-	      Out);
+    bind_defs(Ds, dict:store(get_label(V), t_fun(Xs, X), Vars), Out);
 bind_defs([], Vars, _Out) ->
     Vars.
 
-bind_pats(Ps, any, Vars) ->
-    bind_pats_single(Ps, t_any(), Vars);
-bind_pats(Ps, none, Vars) ->
-    bind_pats_single(Ps, t_none(), Vars);
 bind_pats(Ps, Xs, Vars) ->
     if length(Xs) =:= length(Ps) ->
 	    bind_pats_list(Ps, Xs, Vars);
@@ -592,11 +605,11 @@ bind_pat_vars(P, X, Vars) ->
 	    case t_is_tuple(X) of
 		true ->
 		    case t_tuple_subtypes(X) of
-			any -> 
+			unknown -> 
 			    bind_vars_single(pat_vars(P), top_or_bottom(X), 
 					     Vars);
 			[Tuple] ->
-			    case t_tuple_arity(Tuple) =:= tuple_arity(P) of
+			    case t_tuple_size(Tuple) =:= tuple_arity(P) of
 				true ->
 				    bind_pats_list(tuple_es(P), 
 						   t_tuple_args(Tuple), Vars);
@@ -663,10 +676,6 @@ pat_type(P, Vars) ->
 	    pat_type(alias_pat(P), Vars)
     end.
 
-bind_vars(Vs, any, Vars) ->
-    bind_vars_single(Vs, t_any(), Vars);
-bind_vars(Vs, none, Vars) ->
-    bind_vars_single(Vs, t_none(), Vars);
 bind_vars(Vs, Xs, Vars) ->
     if length(Vs) =:= length(Xs) ->
 	    bind_vars_list(Vs, Xs, Vars);
@@ -895,7 +904,7 @@ guard_filters(T, Env, Vars) ->
 			{erlang, is_port, 1} ->
 			    filter(As, t_port(), Env);
 			{erlang, is_reference, 1} ->
-			    filter(As, t_ref(), Env);
+			    filter(As, t_reference(), Env);
 			{erlang, is_tuple, 1} ->
 			    filter(As, t_tuple(), Env);
 			_ ->
@@ -964,20 +973,20 @@ pp_hook(Node, Ctxt, Cont) ->
 		    none -> t_any()
 		end
 	end,
-    D1 =  case erl_types:t_is_any(T) of
-	      true ->
-		  D;
-	      false ->
-		  case cerl:is_literal(Node) of
-		      true ->
-			  D;
-		      false ->
-			  S = erl_types:t_to_string(T),
-			  Q = prettypr:beside(prettypr:text("::"),
-					      prettypr:text(S)),
-			  prettypr:beside(D, Q)
-		  end
-	  end,
+    D1 = case erl_types:t_is_any(T) of
+	     true ->
+		 D;
+	     false ->
+		 case cerl:is_literal(Node) of
+		     true ->
+			 D;
+		     false ->
+			 S = erl_types:t_to_string(T),
+			 Q = prettypr:beside(prettypr:text("::"),
+					     prettypr:text(S)),
+			 prettypr:beside(D, Q)
+		 end
+	 end,
     cerl_prettypr:annotate(D1, As2, Ctxt).
 
 %% =====================================================================

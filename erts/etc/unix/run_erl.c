@@ -864,40 +864,41 @@ static int open_pty_master(char **ptyslave)
 
 /* Use the posix_openpt if working, as this guarantees creation of the 
    slave device properly. */
-#if defined(HAVE_WORKING_POSIX_OPENPT)
+#ifdef HAVE_WORKING_POSIX_OPENPT
   if ((mfd = posix_openpt(O_RDWR)) >= 0) {
-	  if ((*ptyslave = ptsname(mfd)) == NULL ||
-	      grantpt(mfd) < 0 ||
-	      unlockpt(mfd) < 0) {
-		  close(mfd);
-		  return -1;
-	  }
+      if ((*ptyslave = ptsname(mfd)) != NULL &&
+	  grantpt(mfd) == 0 && 
+	  unlockpt(mfd) == 0) {
+
 	  return mfd;
+      }
+      close(mfd);
   }
-  return -1;
-#elif defined(HAVE_OPENPTY)
+  /* fallback to openpty if it exist */
+#endif
+
+#ifdef HAVE_OPENPTY
 #  ifdef PATH_MAX
 #    define SLAVE_SIZE PATH_MAX
 #  else
 #    define SLAVE_SIZE 1024
 #  endif
-    static char slave[SLAVE_SIZE];
-    int sfd;
+  {
+      static char slave[SLAVE_SIZE];
+      int sfd;
 #  undef SLAVE_SIZE
-  /*
-   * The modern way to find the ptys.
-   */
 
-  if (openpty(&mfd, &sfd, slave, NULL, NULL) == 0) {
-      close(sfd);
-      *ptyslave = slave;
-      return mfd;
+      if (openpty(&mfd, &sfd, slave, NULL, NULL) == 0) {
+	  close(sfd);
+	  *ptyslave = slave;
+	  return mfd;
+      }
   }
-  return -1;
-#else /* !HAVE_OPENPTY */
+
+#elif !defined(HAVE_WORKING_POSIX_OPENPT)
   /*
-   * The traditional way to find ptys. We only try it if openpty()
-   * is not available.
+   * The traditional way to find ptys. We only try it if neither
+   * posix_openpt or openpty() are available.
    */
   char *major, *minor;
 
@@ -965,9 +966,8 @@ static int open_pty_master(char **ptyslave)
       }
     }
   }
-
-  return -1;
 #endif /* !HAVE_OPENPTY */
+  return -1;
 }
 
 static int open_pty_slave(char *name)

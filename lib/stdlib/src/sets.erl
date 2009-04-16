@@ -39,6 +39,7 @@
 -export([new/0,is_set/1,size/1,to_list/1,from_list/1]).
 -export([is_element/2,add_element/2,del_element/2]).
 -export([union/2,union/1,intersection/2,intersection/1]).
+-export([is_disjoint/2]).
 -export([subtract/2,is_subset/2]).
 -export([fold/3,filter/2]).
 
@@ -182,6 +183,18 @@ intersection1(S1, [S2|Ss]) ->
     intersection1(intersection(S1, S2), Ss);
 intersection1(S1, []) -> S1.
 
+%% is_disjoint(Set1, Set2) -> true|false.
+%%  Check whether Set1 and Set2 are disjoint.
+-spec is_disjoint(set(), set()) -> bool().
+is_disjoint(S1, S2) when S1#set.size < S2#set.size ->
+    fold(fun (_, false) -> false;
+	     (E, true) -> not is_element(E, S2)
+	 end, true, S1);
+is_disjoint(S1, S2) ->
+    fold(fun (_, false) -> false;
+	     (E, true) -> not is_element(E, S1)
+	 end, true, S2).
+
 %% subtract(Set1, Set2) -> Set.
 %%  Return all and only the elements of Set1 which are not also in
 %%  Set2.
@@ -194,7 +207,7 @@ subtract(S1, S2) ->
 %%  Set2, else 'false'.
 -spec is_subset(set(), set()) -> bool().
 is_subset(S1, S2) ->
-    fold(fun (E, Sub) -> Sub and is_element(E, S2) end, true, S1).
+    fold(fun (E, Sub) -> Sub andalso is_element(E, S2) end, true, S1).
 
 %% fold(Fun, Accumulator, Set) -> Accumulator.
 %%  Fold function Fun over all elements in Set and return Accumulator.

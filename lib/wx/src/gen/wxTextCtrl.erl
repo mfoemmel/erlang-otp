@@ -105,7 +105,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},Id, Options)
           ({pos, {PosX,PosY}}, Acc) -> [<<2:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<3:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc];
-          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<5:32/?UI,ValidatorRef:32/?UI>>|Acc]  end,
+          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<5:32/?UI,ValidatorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxTextCtrl_new_3,
   <<ParentRef:32/?UI,Id:32/?UI, BinOpt/binary>>).
@@ -185,7 +186,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef},Id, O
           ({pos, {PosX,PosY}}, Acc) -> [<<2:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<3:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc];
-          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<5:32/?UI,ValidatorRef:32/?UI>>|Acc]  end,
+          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<5:32/?UI,ValidatorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTextCtrl_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI,Id:32/?UI, 0:32,BinOpt/binary>>).
@@ -335,7 +337,8 @@ loadFile(#wx_ref{type=ThisT,ref=ThisRef},File, Options)
  when is_list(File),is_list(Options) ->
   ?CLASS(ThisT,wxTextCtrl),
   File_UC = unicode:characters_to_binary([File,0]),
-  MOpts = fun({fileType, FileType}, Acc) -> [<<1:32/?UI,FileType:32/?UI>>|Acc]  end,
+  MOpts = fun({fileType, FileType}, Acc) -> [<<1:32/?UI,FileType:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTextCtrl_LoadFile,
   <<ThisRef:32/?UI,(byte_size(File_UC)):32/?UI,(File_UC)/binary, 0:(((8- ((0+byte_size(File_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -399,7 +402,8 @@ saveFile(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTextCtrl),
   MOpts = fun({file, File}, Acc) ->   File_UC = unicode:characters_to_binary([File,0]),[<<1:32/?UI,(byte_size(File_UC)):32/?UI,(File_UC)/binary, 0:(((8- ((0+byte_size(File_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({fileType, FileType}, Acc) -> [<<2:32/?UI,FileType:32/?UI>>|Acc]  end,
+          ({fileType, FileType}, Acc) -> [<<2:32/?UI,FileType:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTextCtrl_SaveFile,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

@@ -824,7 +824,7 @@ lc_tq(Line, E, [{generate,Lg,P,G}|Qs0], Mc, St0) ->
     {Name,St1} = new_fun_name("lc", St0),
     {Head,St2} = new_var(St1),
     {Tname,St3} = new_var_name(St2),
-    LA = lineno_anno(Line, St2),
+    LA = lineno_anno(Line, St3),
     LAnno = #a{anno=LA},
     Tail = #c_var{anno=LA,name=Tname},
     {Arg,St4} = new_var(St3),

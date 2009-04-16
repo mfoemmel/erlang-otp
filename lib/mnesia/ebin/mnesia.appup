@@ -1,6 +1,11 @@
 %% -*- erlang -*-
-{"4.4.8",  
+{"4.4.9",  
  [
+  {"4.4.8", 
+   [
+    {update, mnesia, soft, soft_purge, soft_purge, []},
+   ]
+  },
   {"4.4.7", 
    [
     {update, mnesia, soft, soft_purge, soft_purge, []},
@@ -11,6 +16,11 @@
   }
  ],
  [
+  {"4.4.8", 
+   [
+    {update, mnesia, soft, soft_purge, soft_purge, []},
+   ]
+  },
   {"4.4.7", 
    [
     {update, mnesia, soft, soft_purge, soft_purge, []},

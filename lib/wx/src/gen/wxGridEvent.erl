@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxgridevent.html">wxGridEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>grid_cell_left_click</em>, <em>grid_cell_right_click</em>, <em>grid_cell_left_dclick</em>, <em>grid_cell_right_dclick</em>, <em>grid_label_left_click</em>, <em>grid_label_right_click</em>, <em>grid_label_left_dclick</em>, <em>grid_label_right_dclick</em>, <em>grid_row_size</em>, <em>grid_col_size</em>, <em>grid_range_select</em>, <em>grid_cell_change</em>, <em>grid_select_cell</em>, <em>grid_editor_shown</em>, <em>grid_editor_hidden</em>, <em>grid_editor_created</em>, <em>grid_cell_begin_drag</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxGrid(). #wxGrid{}} event record type.
 %%

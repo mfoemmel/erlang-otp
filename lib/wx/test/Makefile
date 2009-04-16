@@ -30,6 +30,7 @@ ERL_COMPILE_FLAGS = -pa $(APPDIR)/ebin
 Mods =  wxt wx_test_lib \
 	wx_basic_SUITE wx_event_SUITE \
 	wx_class_SUITE \
+	wx_xtra_SUITE \
 	wx_opengl_SUITE
 
 ErlSrc          = $(Mods:%=%.erl)
@@ -59,8 +60,8 @@ release_spec:
 
 release_tests_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)
-	$(INSTALL_DATA) wx.spec wx_test_lib.hrl $(ErlSrc) $(RELSYSDIR)
-	$(INSTALL_PROGRAM) wxt $(ErlTargets) $(RELSYSDIR)
+	$(INSTALL_DATA) wx.spec wx_test_lib.hrl $(ErlSrc) $(ErlTargets) $(RELSYSDIR)
+	$(INSTALL_PROGRAM) wxt $(RELSYSDIR)
 
 release_docs_spec:
 

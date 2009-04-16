@@ -84,7 +84,7 @@ translate_insns(Insns, MFA, ConstMap) ->
   translate_insns(Insns, MFA, ConstMap, gb_trees:empty(), 0, [],
 		  previous_empty(), pending_empty()).
 
-translate_insns([I|Insns], MFA, ConstMap, LabelMap, Address, NewInsns, PrevImms, PendImms) ->
+translate_insns([I|Is] = Insns, MFA, ConstMap, LabelMap, Address, NewInsns, PrevImms, PendImms) ->
   IsNotFallthroughInsn = is_not_fallthrough_insn(I),
   MustFlushPending = must_flush_pending(PendImms, Address),
   {NewIs,Insns1,PendImms1,DoFlushPending} =
@@ -97,10 +97,10 @@ translate_insns([I|Insns], MFA, ConstMap, LabelMap, Address, NewInsns, PrevImms,
 	BranchOffset = N - 1,		% in units of 32-bit words!
 	NewIs0 = [{b, {do_cond('al'),{imm24,BranchOffset}}, #comment{term='skip'}}],
 	%% io:format("~w: forced flush of pending literals in ~w at ~w\n", [?MODULE,MFA,Address]),
-	{NewIs0,[I|Insns],PendImms,true};
+	{NewIs0,Insns,PendImms,true};
       {_,_} ->
 	{NewIs0,PendImms0} = translate_insn(I, MFA, ConstMap, Address, PrevImms, PendImms),
-	{NewIs0,Insns,PendImms0,IsNotFallthroughInsn}
+	{NewIs0,Is,PendImms0,IsNotFallthroughInsn}
     end,
   add_insns(NewIs, Insns1, MFA, ConstMap, LabelMap, Address, NewInsns, PrevImms, PendImms1, DoFlushPending);
 translate_insns([], _MFA, _ConstMap, LabelMap, Address, NewInsns, PrevImms, PendImms) ->
@@ -538,8 +538,8 @@ mk_data_relocs([{MFA,Labels} | Rest], LabelMap, Acc) ->
   mk_data_relocs(Rest, LabelMap, [Map,Acc]);
 mk_data_relocs([],_,Acc) -> Acc.
 
-find({MFA,L},LabelMap) ->
-  gb_trees:get({MFA,L}, LabelMap).
+find({_MFA,_L} = MFAL, LabelMap) ->
+  gb_trees:get(MFAL, LabelMap).
 
 slim_sorted_exportmap([{Addr,M,F,A}|Rest], Closures, Exports) ->
   IsClosure = lists:member({M,F,A}, Closures),

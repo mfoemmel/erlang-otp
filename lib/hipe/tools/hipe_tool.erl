@@ -20,16 +20,10 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2002 by Erik Johansson.  
 %% ====================================================================
-%%  Filename : 	hipe_tool.erl
 %%  Module   :	hipe_tool
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2002-03-13 Erik Johansson (happi@it.uu.se): 
-%%               Created.
-%%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/09/24 10:00:58 $
-%%              $Revision: 1.21 $
+%%  History  :	* 2002-03-13 Erik Johansson (happi@it.uu.se): Created.
 %% ====================================================================
 %%  Exports  :
 %%
@@ -55,16 +49,16 @@
 
 %%---------------------------------------------------------------------
 
--type fa() :: {atom(), byte()}. % {Fun,Arity}
--type fa_address() :: {atom(), byte(), non_neg_integer()}. % {F,A,Address}
+-type fa() :: {atom(), arity()}. % {Fun,Arity}
+-type fa_address() :: {atom(), arity(), non_neg_integer()}. % {F,A,Address}
 
 %%---------------------------------------------------------------------
 
 -record(state, {win_created = false	:: bool(),
 		mindex = 0		:: integer(),
-		mod			:: atom(),
+		mod			:: module(),
 		funs = []		:: [fa()],
-		mods = [] 		:: [atom()],
+		mods = [] 		:: [module()],
 		options = [o2]		:: comp_options(),
 		compiling = false	:: 'false' | pid()
 	       }).
@@ -72,6 +66,7 @@
 %%---------------------------------------------------------------------
 
 -spec start() -> pid().
+
 start() ->
   spawn(fun () -> init() end).
 
@@ -82,6 +77,7 @@ init() ->
   loop(S).
 
 -spec loop(#state{}) -> no_return().
+
 loop(State) ->
     receive
       {gs, code_listbox, click, Data, [Idx, Txt | _]} ->
@@ -98,7 +94,6 @@ loop(State) ->
       {gs, prof, click, [], _} ->
 	hipe_profile:prof_module(State#state.mod),
 	loop(update_module_box(State,State#state.mindex,State#state.mods,""));
-
       {gs, win, configure, _, _} ->
 	gs:config(win, [{width, ?WINDOW_WIDTH}, {height, ?WINDOW_HEIGHT}]),
 	loop(State);
@@ -107,27 +102,27 @@ loop(State) ->
 	gs:config(win, [raise]),
 	loop(State);
       show_window when State#state.win_created =:= false ->
-	loop((init_window(State))#state{win_created=true});
+	loop((init_window(State))#state{win_created = true});
 
       {gs, _Id, click, close_menu, _Args} ->
 	gs:destroy(win),
-	loop(State#state{win_created=false});
+	loop(State#state{win_created = false});
       {gs, _Id, keypress, _Data, [c, _, 0, 1 | _]} ->
 	gs:destroy(win),
-	loop(State#state{win_created=false});
+	loop(State#state{win_created = false});
       {gs, _Id, keypress, _Data, ['C', _, 1, 1 | _]} ->
 	gs:destroy(win),
-	loop(State#state{win_created=false});
+	loop(State#state{win_created = false});
       {gs, _Id, keypress, _Data, _Args} ->
 	loop(State);
       {gs, _, destroy, _, _} ->
-	loop(State#state{win_created=false});
+	loop(State#state{win_created = false});
 
-      {compilation_done,_Res,Sender} ->
+      {compilation_done, _Res, Sender} ->
 	case State#state.compiling of
 	  Sender ->
-	    catch gs:config(compmod,[ {enable, true}]),
-	    update_text(compiling,""),
+	    catch gs:config(compmod, [{enable, true}]),
+	    update_text(compiling, ""),
 	    loop(update_module_box(State,
 				   State#state.mindex,
 				   State#state.mods, ""));
@@ -146,12 +141,14 @@ loop(State) ->
     end.
 
 -spec init_window(#state{}) -> #state{}.
+
 init_window(State) ->
   create_window(State),
   gs:config(win, [{map,true}]),
-  update_code_listbox(State#state{win_created=true}).
+  update_code_listbox(State#state{win_created = true}).
 
 -spec create_window(#state{}) -> 'ok'.
+
 create_window(State) ->
   gs:window(win, gs:start(), [{width, ?WINDOW_WIDTH},
 			      {height, ?WINDOW_HEIGHT},
@@ -226,6 +223,7 @@ create_window(State) ->
   ok.
 
 -spec create_menu() -> 'ok'.
+
 create_menu() ->
   gs:menubar(menubar, win, [{bg, ?DEFAULT_BG_COLOR}]),
   create_sub_menus([{mbutt, fmenu, " File",
@@ -254,13 +252,11 @@ create_menuitems(Parent, [separator|Rest]) ->
 create_menuitems(_, []) -> ok.
 
 create_sub_menus([{Parent, Name, Text, Items}|Rest]) ->
-  gs:menubutton(Parent, menubar, [{bg, ?DEFAULT_BG_COLOR},
-				  {fg, {178, 34, 34}},  % firebrick
-				  {label, {text, Text}},
-				  {underline, 1}
-				 ]),
-  gs:menu(Name, Parent, [{bg, ?DEFAULT_BG_COLOR},
-			 {fg, {178, 34, 34}}]),
+  BG = {bg, ?DEFAULT_BG_COLOR},
+  FG = {fg, {178, 34, 34}},  % firebrick
+  Label = {label, {text, Text}},
+  gs:menubutton(Parent, menubar, [BG, FG, Label, {underline, 1}]),
+  gs:menu(Name, Parent, [BG, FG]),
   create_menuitems(Name, Items),
   create_sub_menus(Rest);
 create_sub_menus([]) -> ok.
@@ -280,6 +276,7 @@ create_labels([{Name,Y,Text}|Rest], Xpos) ->
 create_labels([],_) -> ok.
 
 -spec update_code_listbox(#state{}) -> #state{}.
+
 update_code_listbox(State) ->
   Mods = lists:sort(mods()),
   case State#state.win_created of
@@ -296,11 +293,12 @@ update_code_listbox(State) ->
 					 {items, Mods},
 					 {selection, 0}
 					]),
-	  update_module_box(State#state{mods=Mods}, 0, Mods, "")  
+	  update_module_box(State#state{mods = Mods}, 0, Mods, "")  
       end
   end.
 
 -spec update_fun(#state{}, integer(), [mfa()]) -> #state{}.
+
 update_fun(State, Idx, Data) ->
   case State#state.win_created of
     false ->
@@ -319,14 +317,14 @@ get_selection(Idx, Data, Default) ->
   try lists:nth(Idx+1, Data) catch _:_ -> Default end.
 
 -spec update_module_box(#state{}, integer(), [atom()], string()) -> #state{}.
+
 update_module_box(State, Idx, Data, _Txt) ->
   case State#state.win_created of
     false ->
       State;
     true ->
       Mod = get_selection(Idx, Data, hipe_tool),
-      %% io:format("~w\n", [Mod:module_info()]),
-      
+      %% io:format("~w\n", [Mod:module_info()]),      
       Info = Mod:module_info(),
       Funs = lists:usort(funs(Mod)), 
       MFAs = mfas(Mod, Funs),
@@ -348,17 +346,18 @@ update_module_box(State, Idx, Data, _Txt) ->
       update_text(native, Mode),
       Items = fun_names(Mod, Funs, NativeCode, Prof),
 
+      Selection = {selection, 0},
       catch gs:config(module_listbox, [{data, MFAs},
 				       {items, Items},
-				       {selection, 0}]),
+				       Selection]),
       ProfData = [mfa_to_string(element(1, X)) ++ " " ++
 				integer_to_list(element(2,X))
 		  || X <- hipe_profile:res(), element(2, X) > 0],
       catch gs:config(profile_listbox, [{data, ProfData},
 					{items, ProfData},
-					{selection, 0}]),
+					Selection]),
       get_edoc(Mod),
-      update_fun(State#state{mindex=Idx, mod=Mod, funs=Funs}, 0, MFAs)
+      update_fun(State#state{mindex = Idx, mod = Mod, funs = Funs}, 0, MFAs)
   end.
 
 update_text(Lab, Text) ->
@@ -367,23 +366,29 @@ update_text(Lab, Text) ->
 %%---------------------------------------------------------------------
 %% @doc Returns a list of all loaded modules. 
 %%---------------------------------------------------------------------
--spec mods() -> [atom()].
+
+-spec mods() -> [module()].
+
 mods() ->
   [Mod || {Mod,_File} <- code:all_loaded()].
 
--spec funs(atom()) -> [fa()].
+-spec funs(module()) -> [fa()].
+
 funs(Mod) -> 
   Mod:module_info(functions).
 
--spec native_code(atom()) -> [fa_address()].
+-spec native_code(module()) -> [fa_address()].
+
 native_code(Mod) ->
   Mod:module_info(native_addresses).
 
--spec mfas(atom(), [fa()]) -> [mfa()].
+-spec mfas(module(), [fa()]) -> [mfa()].
+
 mfas(Mod, Funs) ->
   [{Mod,F,A} || {F,A} <- Funs].
 
--spec fun_names(atom(), [fa()], [fa_address()], bool()) -> string().
+-spec fun_names(module(), [fa()], [fa_address()], bool()) -> string().
+
 fun_names(M, Funs, NativeCode, Prof) ->
   [list_to_atom(atom_to_list(F) ++ "/" ++ integer_to_list(A) ++
 		(case in_native(F, A, NativeCode) of
@@ -397,7 +402,8 @@ fun_names(M, Funs, NativeCode, Prof) ->
 		end) ||
       {F,A} <- Funs].
 
--spec in_native(atom(), byte(), [fa_address()]) -> bool().
+-spec in_native(atom(), arity(), [fa_address()]) -> bool().
+
 in_native(F, A, NativeCode) ->
   lists:any(fun({Fun,Arity,_}) ->
 		(Fun =:= F andalso Arity =:= A)
@@ -405,6 +411,7 @@ in_native(F, A, NativeCode) ->
 	    NativeCode).
 
 -spec mfa_to_string(mfa()) -> [char(),...].
+
 mfa_to_string({M,F,A}) ->
   atom_to_list(M) ++ ":" ++ atom_to_list(F) ++ "/" ++ integer_to_list(A).
 
@@ -454,7 +461,8 @@ get_compile(Info) ->
     _ -> []
   end.
 
--spec is_profiled(atom()) -> bool().
+-spec is_profiled(module()) -> bool().
+
 is_profiled(Mod) ->
   case hipe_bifs:call_count_get({Mod,module_info,0}) of
     false -> false;
@@ -462,16 +470,16 @@ is_profiled(Mod) ->
   end.
 
 -spec compile(#state{}) -> #state{}.
+
 compile(State) ->
   catch gs:config(compmod, [{enable, false}]),
   update_text(compiling, "Compiling..."),
   Parent = self(),
-  P = spawn(fun() ->
-		c(Parent, State#state.mod, State#state.options)
-	    end),
-  State#state{compiling=P}.
+  P = spawn(fun() -> c(Parent, State#state.mod, State#state.options) end),
+  State#state{compiling = P}.
 
--spec c(pid(), atom(), comp_options()) -> 'ok'.
+-spec c(pid(), module(), comp_options()) -> 'ok'.
+
 c(Parent, Mod, Options) ->
   Res = hipe:c(Mod, Options),
   Parent ! {compilation_done,Res,self()},

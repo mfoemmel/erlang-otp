@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxstyledtextevent.html">wxStyledTextEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>stc_change</em>, <em>stc_styleneeded</em>, <em>stc_charadded</em>, <em>stc_savepointreached</em>, <em>stc_savepointleft</em>, <em>stc_romodifyattempt</em>, <em>stc_key</em>, <em>stc_doubleclick</em>, <em>stc_updateui</em>, <em>stc_modified</em>, <em>stc_macrorecord</em>, <em>stc_marginclick</em>, <em>stc_needshown</em>, <em>stc_painted</em>, <em>stc_userlistselection</em>, <em>stc_uridropped</em>, <em>stc_dwellstart</em>, <em>stc_dwellend</em>, <em>stc_start_drag</em>, <em>stc_drag_over</em>, <em>stc_do_drop</em>, <em>stc_zoom</em>, <em>stc_hotspot_click</em>, <em>stc_hotspot_dclick</em>, <em>stc_calltip_click</em>, <em>stc_autocomp_selection</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxStyledText(). #wxStyledText{}} event record type.
 %%

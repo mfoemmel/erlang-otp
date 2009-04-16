@@ -405,6 +405,9 @@ typedef union float_def
 #define make_tuple(x)	make_boxed((x))
 #define is_tuple(x)	(is_boxed((x)) && is_arity_value(*boxed_val((x))))
 #define is_not_tuple(x)	(!is_tuple((x)))
+#define is_tuple_arity(x, a) \
+   (is_boxed((x)) && *boxed_val((x)) == make_arityval((a)))
+#define is_not_tuple_arity(x, a) (!is_tuple_arity((x),(a)))
 #define _unchecked_tuple_val(x)	_unchecked_boxed_val(x)
 _ET_DECLARE_CHECKED(Eterm*,tuple_val,Eterm);
 #define tuple_val(x)	_ET_APPLY(tuple_val,(x))

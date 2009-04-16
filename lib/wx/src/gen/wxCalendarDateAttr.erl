@@ -74,7 +74,8 @@ new(ColText)
 %% </p>
 new(Border, Options)
  when is_integer(Border),is_list(Options) ->
-  MOpts = fun({colBorder, ColBorder}, Acc) -> [<<1:32/?UI,(wxe_util:colour_bin(ColBorder)):16/binary,0:32>>|Acc]  end,
+  MOpts = fun({colBorder, ColBorder}, Acc) -> [<<1:32/?UI,(wxe_util:colour_bin(ColBorder)):16/binary,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxCalendarDateAttr_new_2_0,
   <<Border:32/?UI, 0:32,BinOpt/binary>>);
@@ -83,7 +84,8 @@ new(ColText, Options)
   MOpts = fun({colBack, ColBack}, Acc) -> [<<1:32/?UI,(wxe_util:colour_bin(ColBack)):16/binary,0:32>>|Acc];
           ({colBorder, ColBorder}, Acc) -> [<<2:32/?UI,(wxe_util:colour_bin(ColBorder)):16/binary,0:32>>|Acc];
           ({font, #wx_ref{type=FontT,ref=FontRef}}, Acc) ->   ?CLASS(FontT,wxFont),[<<3:32/?UI,FontRef:32/?UI>>|Acc];
-          ({border, Border}, Acc) -> [<<4:32/?UI,Border:32/?UI>>|Acc]  end,
+          ({border, Border}, Acc) -> [<<4:32/?UI,Border:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxCalendarDateAttr_new_2_1,
   <<(wxe_util:colour_bin(ColText)):16/binary, BinOpt/binary>>).

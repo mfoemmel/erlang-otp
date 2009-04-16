@@ -51,7 +51,7 @@ docs:
 
 edocs: docs
 
-all-subdirs: 
+all-subdirs:
 	-for dir in $(SUB_DIRECTORIES); do \
 		(cd $$dir; $(MAKE) $(MAKETARGET) EBIN=../ebin; cd ..); \
 	done
@@ -60,3 +60,4 @@ distclean:
 	$(MAKE) MAKETARGET="distclean" all-subdirs
 realclean:
 	$(MAKE) MAKETARGET="realclean" all-subdirs
+

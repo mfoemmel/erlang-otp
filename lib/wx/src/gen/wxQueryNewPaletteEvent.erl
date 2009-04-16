@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxquerynewpaletteevent.html">wxQueryNewPaletteEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>query_new_palette</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxQueryNewPalette(). #wxQueryNewPalette{}} event record type.
 %%

@@ -40,7 +40,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% analyze(CoreTree) -> {Deps, Esc, Calls}.
-%%                
+%%
 %% Deps =  a dict mapping labels of functions to an ordset of functions
 %%         it calls.
 %%
@@ -49,12 +49,12 @@
 %%         i.e., this analysis is not module-local but rather
 %%         function-local.
 %%
-%% Calls = a dict mapping apply:s to a ordset of function labels to which
-%%         the operation can refer to. If 'external' is part of the
-%%         set the operation can be externally defined.
+%% Calls = a dict mapping apply:s to an ordset of function labels to
+%%         which the operation can refer to. If 'external' is part of
+%%         the set the operation can be externally defined.
 %%
 
--spec analyze(core_module()) -> {dict(), [_], dict()}.
+-spec analyze(core_module()) -> {dict(), ['external' | label()], dict()}.
 
 analyze(Tree) ->
   %% io:format("Handling ~w\n", [cerl:atom_val(cerl:module_name(Tree))]),
@@ -109,14 +109,15 @@ traverse(Tree, Out, State, CurrentFun) ->
       %%io:format("Entering fun: ~w\n", [cerl_trees:get_label(Tree)]),
       Body = cerl:fun_body(Tree),
       Label = cerl_trees:get_label(Tree),
-      if CurrentFun =:= top -> 
-	  State1 = state__add_deps(top, output(set__singleton(Label)), State);
-	 true -> 
-	  O1 = output(set__singleton(CurrentFun)),
-	  O2 = output(set__singleton(Label)),
-	  TmpState = state__add_deps(Label, O1, State),
-	  State1 = state__add_deps(CurrentFun, O2,TmpState)
-      end,
+      State1 =
+	if CurrentFun =:= top -> 
+	    state__add_deps(top, output(set__singleton(Label)), State);
+	   true -> 
+	    O1 = output(set__singleton(CurrentFun)),
+	    O2 = output(set__singleton(Label)),
+	    TmpState = state__add_deps(Label, O1, State),
+	    state__add_deps(CurrentFun, O2,TmpState)
+	end,
       {BodyFuns, State2} = traverse(Body, Out, State1, 
 				    cerl_trees:get_label(Tree)),
       {output(set__singleton(Label)), state__add_esc(BodyFuns, State2)};
@@ -286,88 +287,84 @@ primop(Tree, ArgFuns, State) ->
     false -> {ArgFuns, State1}
   end.
 
-%%____________________________________________________________
-%%
+%%------------------------------------------------------------
 %% Set
 %%
 
 -record(set, {set :: set()}).
 
 set__singleton(Val) ->
-  #set{set=sets:add_element(Val, sets:new())}.
+  #set{set = sets:add_element(Val, sets:new())}.
 
 set__from_list(List) ->
-  #set{set=sets:from_list(List)}.
+  #set{set = sets:from_list(List)}.
 
 set__is_element(_El, none) ->
   false;
-set__is_element(El, #set{set=Set}) ->
+set__is_element(El, #set{set = Set}) ->
   sets:is_element(El, Set).
 
-set__union(none, X) -> X;
-set__union(X, none) -> X;
-set__union(#set{set=X}, #set{set=Y}) -> #set{set=sets:union(X, Y)}.
+set__union(none, Set) -> Set;
+set__union(Set, none) -> Set;
+set__union(#set{set = S1}, #set{set = S2}) -> #set{set = sets:union(S1, S2)}.
 
 set__to_ordsets(none) -> [];
-set__to_ordsets(#set{set=Set}) -> ordsets:from_list(sets:to_list(Set)).
+set__to_ordsets(#set{set = Set}) -> ordsets:from_list(sets:to_list(Set)).
 
 set__size(none) -> 0;
-set__size(#set{set=X}) -> sets:size(X).
+set__size(#set{set = Set}) -> sets:size(Set).
 
-set__filter(#set{set=X}, Fun) -> 
-  NewSet = sets:filter(Fun, X),
+set__filter(#set{set = Set}, Fun) ->
+  NewSet = sets:filter(Fun, Set),
   case sets:size(NewSet) =:= 0 of
     true -> none;
-    false -> #set{set=NewSet}
+    false -> #set{set = NewSet}
   end.
-       
 
-%%____________________________________________________________
-%%
+%%------------------------------------------------------------
 %% Outputs
 %%
 
 -record(output, {type    :: 'single' | 'list', 
 		 content :: 'none' | #set{} | [{output,_,_}]}).
 
-output(none) -> #output{type=single, content=none};
-output(S = #set{}) -> #output{type=single, content=S};
-output(List) when is_list(List) -> #output{type=list, content=List}.
+output(none) -> #output{type = single, content = none};
+output(S = #set{}) -> #output{type = single, content = S};
+output(List) when is_list(List) -> #output{type = list, content = List}.
 
 merge_outs([H|T]) ->
   merge_outs(T, H);
-merge_outs(#output{type=list, content=[H|T]}) ->
+merge_outs(#output{type = list, content = [H|T]}) ->
   merge_outs(T, H);
-merge_outs(#output{type=list, content=[]}) ->
+merge_outs(#output{type = list, content = []}) ->
   output(none).
 
-merge_outs([#output{content=none}|Left], O) ->
+merge_outs([#output{content = none}|Left], O) ->
   merge_outs(Left, O);
-merge_outs([O|Left], #output{content=none}) ->
+merge_outs([O|Left], #output{content = none}) ->
   merge_outs(Left, O);
-merge_outs([#output{type=single, content=S1}|Left], 
-	   #output{type=single, content=S2}) ->
+merge_outs([#output{type = single, content = S1}|Left], 
+	   #output{type = single, content = S2}) ->
   merge_outs(Left, output(set__union(S1, S2)));
-merge_outs([#output{type=list, content=L1}|Left],
-	   #output{type=list, content=L2}) ->
+merge_outs([#output{type = list, content = L1}|Left],
+	   #output{type = list, content = L2}) ->
   NewList = [merge_outs([X, Y]) || {X, Y} <- lists:zip(L1, L2)],
   merge_outs(Left, output(NewList));
 merge_outs([], Res) ->
   Res.
 
-filter_outs(#output{type=single, content=S}, Fun) -> 
+filter_outs(#output{type = single, content = S}, Fun) -> 
   output(set__filter(S, Fun)).
 
-add_external(#output{type=single, content=Set}) ->
+add_external(#output{type = single, content = Set}) ->
   output(set__union(Set, set__singleton(external)));
-add_external(#output{type=list, content=List}) ->
+add_external(#output{type = list, content = List}) ->
   output([add_external(O) || O <- List]).
 
-is_only_external(#output{type=single, content=Set}) ->
+is_only_external(#output{type = single, content = Set}) ->
   set__is_element(external, Set) andalso (set__size(Set) =:= 1).
 
-%%____________________________________________________________
-%%
+%%------------------------------------------------------------
 %% Map
 %%
 
@@ -395,31 +392,31 @@ map__lookup(Label, Map) ->
   end.
 
 map__finalize(Map) ->
-  dict:map(fun(_Key, Set = #set{}) -> set__to_ordsets(Set);
-	      (_Key, #output{type=single, content=Set}) -> set__to_ordsets(Set)
+  dict:map(fun (_Key, #set{} = Set) -> set__to_ordsets(Set);
+	       (_Key, #output{type = single, content = Set}) ->
+	           set__to_ordsets(Set)
 	   end, Map).
 
-%%____________________________________________________________
-%%
+%%------------------------------------------------------------
 %% Binding outs in the map
 %%
 
-bind_pats_list(_Pats, #output{content=none}, Map) ->
+bind_pats_list(_Pats, #output{content = none}, Map) ->
   Map;
-bind_pats_list([Pat], O = #output{type=single}, Map) ->
+bind_pats_list([Pat], #output{type = single} = O, Map) ->
   bind_single(all_vars(Pat), O, Map);
-bind_pats_list(Pats, #output{type=list, content=List}, Map) ->
+bind_pats_list(Pats, #output{type = list, content = List}, Map) ->
   bind_pats_list(Pats, List, Map);
 bind_pats_list([Pat|PatLeft],
-	       [O = #output{type=single}|SetLeft], Map)->
+	       [#output{type = single} = O|SetLeft], Map)->
   Map1 = bind_single(all_vars(Pat), O, Map),
   bind_pats_list(PatLeft, SetLeft, Map1);
 bind_pats_list([Pat|PatLeft],
-	       [#output{type=list, content=List}|SetLeft], Map)->
-  case cerl:is_c_values(Pat) of
-    true -> Map1 = bind_pats_list(cerl:values_es(Pat), List, Map);
-    false -> Map1 = bind_single(all_vars(Pat), merge_outs(List), Map)
-  end,
+	       [#output{type = list, content = List}|SetLeft], Map) ->
+  Map1 = case cerl:is_c_values(Pat) of
+	   true -> bind_pats_list(cerl:values_es(Pat), List, Map);
+	   false -> bind_single(all_vars(Pat), merge_outs(List), Map)
+	 end,
   bind_pats_list(PatLeft, SetLeft, Map1);
 bind_pats_list([], [], Map) ->
   Map.
@@ -429,9 +426,9 @@ bind_single([Var|Left], O, Map) ->
 bind_single([], _O, Map) ->
   Map.
 
-bind_list(List, O = #output{type=single}, Map) ->
+bind_list(List, #output{type = single} = O, Map) ->
   bind_single(List, O, Map);
-bind_list(List1, #output{type=list, content=List2}, Map) ->
+bind_list(List1, #output{type = list, content = List2}, Map) ->
   bind_list1(List1, List2, Map).
 
 bind_list1([Var|VarLeft], [O|OLeft], Map) ->
@@ -457,9 +454,9 @@ all_vars(Tree, AccIn) ->
 		      end
 		  end, AccIn, Tree).
 
-%%____________________________________________________________
-%%
+%%------------------------------------------------------------
 %% The state
+%%
 
 -type local_set() :: 'none' | #set{}.
 
@@ -474,7 +471,7 @@ state__new(Tree) ->
 			    || {Var, Fun} <- cerl:module_defs(Tree),
 			       set__is_element(Var, Exports)]),
   Arities = cerl_trees:fold(fun find_arities/2, dict:new(), Tree),
-  #state{deps=map__new(), esc=InitEsc, call=map__new(), arities=Arities}.
+  #state{deps = map__new(), esc = InitEsc, call = map__new(), arities = Arities}.
 
 find_arities(Tree, AccMap) ->
   case cerl:is_c_fun(Tree) of
@@ -486,54 +483,50 @@ find_arities(Tree, AccMap) ->
       AccMap
   end.
 
-state__add_deps(_From, #output{content=none}, State) ->
+state__add_deps(_From, #output{content = none}, State) ->
   State;
-state__add_deps(From, #output{type=single, content=To}, 
-		State = #state{deps=Map}) ->
-  %%io:format("Adding deps from ~w to ~w\n", [From, set__to_ordsets(To)]),
-  State#state{deps=map__add(From, To, Map)}.
+state__add_deps(From, #output{type = single, content=To}, 
+		#state{deps = Map} = State) ->
+  %% io:format("Adding deps from ~w to ~w\n", [From, set__to_ordsets(To)]),
+  State#state{deps = map__add(From, To, Map)}.
 
-state__deps(#state{deps=Deps}) ->
+state__deps(#state{deps = Deps}) ->
   Deps.
 
-state__add_esc(#output{content=none}, State) ->
+state__add_esc(#output{content = none}, State) ->
   State;
-state__add_esc(#output{type=single, content=Set}, State = #state{esc=Esc}) ->
-  State#state{esc=set__union(Set, Esc)}.
+state__add_esc(#output{type = single, content = Set},
+	       #state{esc = Esc} = State) ->
+  State#state{esc = set__union(Set, Esc)}.
 
-state__esc(#state{esc=Esc}) ->
+state__esc(#state{esc = Esc}) ->
   Esc.
 
-state__store_callsite(_From, #output{content=none}, _CallArity, State) ->
+state__store_callsite(_From, #output{content = none}, _CallArity, State) ->
   State;
 state__store_callsite(From, To, CallArity, 
-		      State = #state{call=Calls, arities=Arities}) ->
+		      #state{call = Calls, arities = Arities} = State) ->
   Filter = fun(external) -> true;
 	      (Fun) -> CallArity =:= dict:fetch(Fun, Arities) 
 	   end,
   case filter_outs(To, Filter) of
-    #output{content=none} -> State;
-    To1 -> State#state{call=map__store(From, To1, Calls)}
+    #output{content = none} -> State;
+    To1 -> State#state{call = map__store(From, To1, Calls)}
   end.
 
-state__calls(#state{call=Calls}) ->
+state__calls(#state{call = Calls}) ->
   Calls.
 
-%%____________________________________________________________
-%%
+%%------------------------------------------------------------
 %% A test function. Not part of the intended interface.
 %%
 
 -ifndef(NO_UNUSED).
 
 test(Mod) ->
-  {ok, _, Code} = compile:file(Mod, [to_core,binary]), 
+  {ok, _, Code} = compile:file(Mod, [to_core, binary]), 
   Tree = cerl:from_records(Code),
   {LabeledTree, _} = cerl_trees:label(Tree),
-
-  %%io:put_chars(cerl_prettypr:format(LabeledTree)),
-  %%io:nl(),
-
   {Deps, Esc, Calls} = analyze(LabeledTree),
   Edges0 = dict:fold(fun(Caller, Set, Acc) ->
 			 [[{Caller, Callee} || Callee <- Set]|Acc]
@@ -574,17 +567,14 @@ test(Mod) ->
   NamedEsc = [dict:fetch(X, NameMap) || X <- Esc],
   %% Color the edges
   ColorEsc = [{X, {color, red}} || X <- NamedEsc],
-
   CallEdges0 = dict:fold(fun(Caller, Set, Acc) ->
 			     [[{Caller, Callee} || Callee <- Set]|Acc]
 			 end, [], Calls),
   CallEdges = lists:flatten(CallEdges0),
   NamedCallEdges = [{X, dict:fetch(Y, NameMap)} || {X, Y} <- CallEdges],
-
-  hipe_dot:translate_list(NamedEdges ++ NamedCallEdges, "/tmp/cg.dot", "CG", 
-			  ColorEsc),
+  AllNamedEdges = NamedEdges ++ NamedCallEdges,
+  hipe_dot:translate_list(AllNamedEdges, "/tmp/cg.dot", "CG", ColorEsc),
   os:cmd("dot -T ps -o /tmp/cg.ps /tmp/cg.dot"),
-
   ok.
 
 -endif.

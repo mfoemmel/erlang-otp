@@ -666,6 +666,8 @@ count_and_find(Bin,N,Encoding) ->
 			   Oth -> Oth
 			end).
 
+cafu(<<>>,0,Count,ByteCount,_SavePos,_) ->
+    {Count,ByteCount};
 cafu(<<>>,_N,Count,_ByteCount,SavePos,_) ->
     {Count,SavePos};
 cafu(<<_/utf8,Rest/binary>>, 0, Count, ByteCount, _SavePos, utf8) ->
@@ -703,12 +705,105 @@ cafu(<<_/utf32-little,Rest/binary>>, N, Count, _ByteCount, SavePos, {utf32,littl
 cafu(<<_/utf32-little,Rest/binary>> = Whole, N, Count, ByteCount, SavePos, {utf32,little}) ->
     Delta = byte_size(Whole) - byte_size(Rest),
     cafu(Rest,N-1,Count+1,ByteCount+Delta,SavePos,{utf32,little});
-cafu(_Other,_N,Count,0,_SavePos,_) -> % Non Unicode character at end
-    {Count,none};
-cafu(_Other,_N,Count,ByteCount,none,_) -> % Non Unicode character at end
+cafu(_Other,0,Count,ByteCount,_,_) -> % Non Unicode character, 
+                                     % but found our point, OK this time
     {Count,ByteCount};
-cafu(_Other,_N,Count,_ByteCount,SavePos,_) -> % Non Unicode character at end
-    {Count,SavePos}.
+cafu(Other,_N,Count,0,_SavePos,Enc) -> % Not enough, but valid chomped unicode
+                                       % at end.
+    case cbv(Enc,Other) of
+	false ->
+	    exit(invalid_unicode);
+	_ ->
+	    {Count,none}
+    end;
+cafu(Other,_N,Count,ByteCount,none,Enc) -> % Return what we'we got this far
+					   % although not complete, 
+					   % it's not (yet) in error
+    case cbv(Enc,Other) of
+	false ->
+	    exit(invalid_unicode);
+	_ ->
+	    {Count,ByteCount}
+    end;
+cafu(Other,_N,Count,_ByteCount,SavePos,Enc) -> % As above but we have 
+					       % found a position
+    case cbv(Enc,Other) of
+	false ->
+	    exit(invalid_unicode);
+	_ ->
+	    {Count,SavePos}
+    end.
+
+%%
+%% Bluntly stolen from stdlib/unicode.erl (cbv means can be valid?)
+%%
+cbv(utf8,<<1:1,1:1,0:1,_:5>>) -> 
+    1;
+cbv(utf8,<<1:1,1:1,1:1,0:1,_:4,R/binary>>) -> 
+    case R of
+	<<>> ->
+	    2;
+	<<1:1,0:1,_:6>> ->
+	    1;
+	_ ->
+	    false
+    end;
+cbv(utf8,<<1:1,1:1,1:1,1:1,0:1,_:3,R/binary>>) ->
+    case R of
+	<<>> ->
+	    3;
+	<<1:1,0:1,_:6>> ->
+	    2;
+	<<1:1,0:1,_:6,1:1,0:1,_:6>> ->
+	    1;
+	_ ->
+	    false
+    end;
+cbv(utf8,_) ->
+    false;
+
+cbv({utf16,big},<<A:8>>) when A =< 215; A >= 224 ->
+    1;
+cbv({utf16,big},<<54:6,_:2>>) ->
+    3;
+cbv({utf16,big},<<54:6,_:10>>) ->
+    2;
+cbv({utf16,big},<<54:6,_:10,55:6,_:2>>) ->
+    1;
+cbv({utf16,big},_) ->
+    false;
+cbv({utf16,little},<<_:8>>) ->
+    1; % or 3, we'll see
+cbv({utf16,little},<<_:8,54:6,_:2>>) ->
+    2;
+cbv({utf16,little},<<_:8,54:6,_:2,_:8>>) ->
+    1;
+cbv({utf16,little},_) ->
+    false;
+
+
+cbv({utf32,big}, <<0:8>>) ->
+    3;
+cbv({utf32,big}, <<0:8,X:8>>) when X =< 16 ->
+    2;
+cbv({utf32,big}, <<0:8,X:8,Y:8>>) 
+  when X =< 16, ((X > 0) or ((Y =< 215) or (Y >= 224))) ->
+    1;
+cbv({utf32,big},_) ->
+    false;
+cbv({utf32,little},<<_:8>>) ->
+    3;
+cbv({utf32,little},<<_:8,_:8>>) -> 
+    2;
+cbv({utf32,little},<<X:8,255:8,0:8>>) when X =:= 254; X =:= 255 ->
+    false;
+cbv({utf32,little},<<_:8,Y:8,X:8>>) 
+  when X =< 16, ((X > 0) or ((Y =< 215) or (Y >= 224))) ->
+    1;
+cbv({utf32,little},_) ->
+    false.
+
+
 %%%-----------------------------------------------------------------
 %%% ?PRIM_FILE helpers
 

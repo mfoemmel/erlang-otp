@@ -53,7 +53,7 @@
 '$test_server_line'(Mod, Func, Line) ->
     {Prev,Next} = 
 	case get('$test_server_line') of
-	    I when integer(I) ->
+	    I when is_integer(I) ->
 		if  1 =< I, I < ?TEST_SERVER_LINE_SIZE -> {I,I+1};
 		    true -> {?TEST_SERVER_LINE_SIZE,1}
 		end;
@@ -69,7 +69,7 @@
 
 test_server_line_get() ->
     case get('$test_server_line') of
-	I when integer(I), 1 =< I, I =< ?TEST_SERVER_LINE_SIZE ->
+	I when is_integer(I), 1 =< I, I =< ?TEST_SERVER_LINE_SIZE ->
 	    test_server_line_get_1(?TEST_SERVER_LINE_SIZE, I, []);
 	_ -> []
     end.
@@ -103,7 +103,7 @@ test_server_line_clear() ->
 
 '$test_server_lineQ'(Mod, Func, Line) ->		
     case get('$test_server_lineQ') of
-	{I,Q} when integer(I), 1 =< I, I =< ?TEST_SERVER_LINE_SIZE -> 
+	{I,Q} when is_integer(I), 1 =< I, I =< ?TEST_SERVER_LINE_SIZE -> 
 	    case queue:head(Q) of
 		{Mod,Func,_} ->
 		    %% Replace queue head
@@ -139,7 +139,7 @@ test_server_lineQ_clear() ->
 
 get_lines() ->
     case get('$test_server_lineQ') of
-	{I,Q} when integer(I), 1 =< I, I =< ?TEST_SERVER_LINE_SIZE -> 
+	{I,Q} when is_integer(I), 1 =< I, I =< ?TEST_SERVER_LINE_SIZE -> 
 	    queue:to_list(Q);
 	_ -> 
 	    test_server_line_get()
@@ -351,7 +351,7 @@ munge_expr(Form, Vars) -> % var|char|integer|float|string|atom|nil|bin|eof
     {Form, Vars}.
 
 munge_exprs([Expr|Exprs], Vars, MungedExprs) when Vars#vars.is_guard==true,
-						  list(Expr) ->
+						  is_list(Expr) ->
     {MungedExpr, _Vars} = munge_exprs(Expr, Vars, []),
     munge_exprs(Exprs, Vars, [MungedExpr|MungedExprs]);
 munge_exprs([Expr|Exprs], Vars, MungedExprs) ->

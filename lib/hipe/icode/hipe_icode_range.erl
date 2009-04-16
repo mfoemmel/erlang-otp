@@ -39,11 +39,10 @@
 %%=====================================================================
 
 -import(erl_types, [t_any/0,
-		    t_components/1,
-		    t_inf/2, t_integer/0,
 		    t_from_range_unsafe/2,
-		    t_to_string/1, t_limit/2,
-		    t_none/0,
+		    t_inf/2, t_integer/0,
+		    t_to_string/1, t_to_tlist/1,
+		    t_limit/2, t_none/0,
 		    number_min/1, number_max/1]).
 
 -include("hipe_icode.hrl").
@@ -314,7 +313,7 @@ update_ann(Ann = #ann{range = R1, type = Type, count = C}, R2, _Fun) ->
     NewR -> Ann#ann{range = NewR, count = C+1}
   end.
 
--spec type_to_ann(any()) -> #ann{}.
+-spec type_to_ann(erl_type()) -> #ann{}.
 
 type_to_ann(Type) ->
   #ann{range = range_from_simple_type(Type), type = t_limit(Type,1), count=1}.
@@ -825,7 +824,7 @@ compare_with_integer(N, OldVarRange) ->
   TempFalseRange = range__remove_constant(OldVarRange, TestRange),
   BetterRange = 
     case range(TempFalseRange) of
-      {Min, Max} ->
+      {Min, Max} = MM ->
 	New_small = inf_geq(Min, N),
 	New_large = inf_geq(N, Max),
 	if New_small and not New_large ->
@@ -833,13 +832,13 @@ compare_with_integer(N, OldVarRange) ->
 	   New_large and not New_small ->
 	    {Min, N - 1};
 	   true -> 
-	    {Min, Max}
+	    MM
 	end;
       Not_tuple ->
 	Not_tuple
     end,
   FalseRange = range_init(BetterRange, other(TempFalseRange)),
-  {TrueRange,FalseRange}.
+  {TrueRange, FalseRange}.
 
 %%== Ranges ==================================================================
 
@@ -867,17 +866,12 @@ val_to_string(pos_inf) -> "inf";
 val_to_string(neg_inf) -> "-inf";
 val_to_string(X) when is_integer(X) -> integer_to_list(X).
 
--spec range_from_type(_) -> [#range{}].
+-spec range_from_type(erl_type()) -> [#range{}].
 
 range_from_type(Type) ->
-  case t_components(Type) of
-    [_|_] = Types ->
-      [range_from_simple_type(T) || T <- Types];
-    _ ->
-      [range_from_simple_type(Type)]
-  end.
+  [range_from_simple_type(T) || T <- t_to_tlist(Type)].
   
--spec range_from_simple_type(_) -> #range{}.
+-spec range_from_simple_type(erl_type()) -> #range{}.
 
 range_from_simple_type(Type) ->
   None = t_none(),
@@ -1159,24 +1153,24 @@ basic_type('extra_unsafe_add') ->
 basic_type('extra_unsafe_sub') ->
   {bin, fun(R1, R2) -> range_sub(R1, R2) end};
 %% Binaries
-basic_type({hipe_bs_primop, Todo}) -> {hipe_bs_primop, Todo};
+basic_type({hipe_bs_primop, _} = Primop) -> Primop;
 %% Unknown, other
 basic_type(call_fun) -> not_analysed;
 basic_type(clear_timeout) -> not_analysed;
 basic_type(redtest) -> not_analysed;
 basic_type(set_timeout) -> not_analysed;
 basic_type(#apply_N{}) -> not_analysed;
-basic_type(#closure_element{}) -> not_analysed; 
+basic_type(#closure_element{}) -> not_analysed;
 basic_type(#gc_test{}) -> not_analysed;
 %% Message handling
-basic_type(check_get_msg) -> not_analysed; 
-basic_type(next_msg) -> not_analysed; 
-basic_type(select_msg) -> not_analysed; 
+basic_type(check_get_msg) -> not_analysed;
+basic_type(next_msg) -> not_analysed;
+basic_type(select_msg) -> not_analysed;
 basic_type(suspend_msg) -> not_analysed;
 %% Functions
 basic_type(enter_fun) -> not_analysed;
 basic_type(#mkfun{}) -> not_int;
-basic_type({M,F,A}) -> {fcall, {M,F,A}}; 
+basic_type({_M,_F,_A} = MFA) -> {fcall, MFA}; 
 %% Floats
 basic_type(conv_to_float) -> not_int;
 basic_type(fclearerror) -> not_analysed;

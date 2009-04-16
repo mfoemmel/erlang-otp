@@ -167,7 +167,7 @@ index_bs_start_match([{function,_,_,Entry,Code}|Fs], Acc0) ->
 index_bs_start_match([], Acc) ->
     gb_trees:from_orddict(lists:sort(Acc)).
 
-index_bs_start_match_1([{test,bs_start_match2,_,_}=I|_], Entry, Acc) ->
+index_bs_start_match_1([{test,bs_start_match2,_,_,_,_}=I|_], Entry, Acc) ->
     [{Entry,[I]}|Acc];
 index_bs_start_match_1([{test,_,{f,F},_},{bs_context_to_binary,_}|Is0], Entry, Acc) ->
     [{label,F}|Is] = dropwhile(fun({label,L}) when L =:= F -> false;
@@ -643,7 +643,7 @@ valfun_4({get_tuple_element,Src,I,Dst}, Vst) ->
     set_type_reg(term, Dst, Vst);
 
 %% New bit syntax matching instructions.
-valfun_4({test,bs_start_match2,{f,Fail},[Ctx,Live,NeedSlots,Ctx]}, Vst0) ->
+valfun_4({test,bs_start_match2,{f,Fail},Live,[Ctx,NeedSlots],Ctx}, Vst0) ->
     %% If source and destination registers are the same, match state
     %% is OK as input.
     _ = get_move_term_type(Ctx, Vst0),
@@ -651,7 +651,7 @@ valfun_4({test,bs_start_match2,{f,Fail},[Ctx,Live,NeedSlots,Ctx]}, Vst0) ->
     Vst1 = prune_x_regs(Live, Vst0),
     Vst = branch_state(Fail, Vst1),
     set_type_reg(bsm_match_state(NeedSlots), Ctx, Vst);
-valfun_4({test,bs_start_match2,{f,Fail},[Src,Live,Slots,Dst]}, Vst0) ->
+valfun_4({test,bs_start_match2,{f,Fail},Live,[Src,Slots],Dst}, Vst0) ->
     assert_term(Src, Vst0),
     verify_live(Live, Vst0),
     Vst1 = prune_x_regs(Live, Vst0),
@@ -676,17 +676,17 @@ valfun_4({test,bs_skip_utf16,{f,Fail},[Ctx,Live,_]}, Vst) ->
     validate_bs_skip_utf(Fail, Ctx, Live, Vst);
 valfun_4({test,bs_skip_utf32,{f,Fail},[Ctx,Live,_]}, Vst) ->
     validate_bs_skip_utf(Fail, Ctx, Live, Vst);
-valfun_4({test,bs_get_integer2,{f,Fail},[Ctx,Live,_,_,_,Dst]}, Vst) ->
+valfun_4({test,bs_get_integer2,{f,Fail},Live,[Ctx,_,_,_],Dst}, Vst) ->
     validate_bs_get(Fail, Ctx, Live, Dst, Vst);
-valfun_4({test,bs_get_float2,{f,Fail},[Ctx,Live,_,_,_,Dst]}, Vst) ->
+valfun_4({test,bs_get_float2,{f,Fail},Live,[Ctx,_,_,_],Dst}, Vst) ->
     validate_bs_get(Fail, Ctx, Live, Dst, Vst);
-valfun_4({test,bs_get_binary2,{f,Fail},[Ctx,Live,_,_,_,Dst]}, Vst) ->
+valfun_4({test,bs_get_binary2,{f,Fail},Live,[Ctx,_,_,_],Dst}, Vst) ->
     validate_bs_get(Fail, Ctx, Live, Dst, Vst);
-valfun_4({test,bs_get_utf8,{f,Fail},[Ctx,Live,_,Dst]}, Vst) ->
+valfun_4({test,bs_get_utf8,{f,Fail},Live,[Ctx,_],Dst}, Vst) ->
     validate_bs_get(Fail, Ctx, Live, Dst, Vst);
-valfun_4({test,bs_get_utf16,{f,Fail},[Ctx,Live,_,Dst]}, Vst) ->
+valfun_4({test,bs_get_utf16,{f,Fail},Live,[Ctx,_],Dst}, Vst) ->
     validate_bs_get(Fail, Ctx, Live, Dst, Vst);
-valfun_4({test,bs_get_utf32,{f,Fail},[Ctx,Live,_,Dst]}, Vst) ->
+valfun_4({test,bs_get_utf32,{f,Fail},Live,[Ctx,_],Dst}, Vst) ->
     validate_bs_get(Fail, Ctx, Live, Dst, Vst);
 valfun_4({bs_save2,Ctx,SavePoint}, Vst) ->
     bsm_save(Ctx, SavePoint, Vst);
@@ -783,15 +783,18 @@ valfun_4({bs_private_append,{f,Fail},Bits,_Unit,Bin,_Flags,Dst}, Vst0) ->
     set_type_reg(binary, Dst, Vst);
 valfun_4({bs_put_string,Sz,_}, Vst) when is_integer(Sz) ->
     Vst;
-valfun_4({bs_put_binary,{f,Fail},_,_,_,Src}=I, Vst0) ->
+valfun_4({bs_put_binary,{f,Fail},Sz,_,_,Src}=I, Vst0) ->
+    assert_term(Sz, Vst0),
     assert_term(Src, Vst0),
     Vst = bs_align_check(I, Vst0),
     branch_state(Fail, Vst);
-valfun_4({bs_put_float,{f,Fail},_,_,_,Src}=I, Vst0) ->
+valfun_4({bs_put_float,{f,Fail},Sz,_,_,Src}=I, Vst0) ->
+    assert_term(Sz, Vst0),
     assert_term(Src, Vst0),
     Vst = bs_align_check(I, Vst0),
     branch_state(Fail, Vst);
-valfun_4({bs_put_integer,{f,Fail},_,_,_,Src}=I, Vst0) ->
+valfun_4({bs_put_integer,{f,Fail},Sz,_,_,Src}=I, Vst0) ->
+    assert_term(Sz, Vst0),
     assert_term(Src, Vst0),
     Vst = bs_align_check(I, Vst0),
     branch_state(Fail, Vst);
@@ -920,9 +923,9 @@ verify_call_match_context(Lbl, #vst{ft=Ft}) ->
     case gb_trees:lookup(Lbl, Ft) of
 	none ->
 	    error(no_bs_start_match2);
-	{value,[{test,bs_start_match2,_,[Ctx,_,_,Ctx]}|_]} ->
+	{value,[{test,bs_start_match2,_,_,[Ctx,_],Ctx}|_]} ->
 	    ok;
-	{value,[{test,bs_start_match2,_,[Bin,_,_,Ctx]}|_]} ->
+	{value,[{test,bs_start_match2,_,_,[Bin,_,_],Ctx}|_]} ->
 	    error({binary_and_context_regs_different,Bin,Ctx})
     end.
 
@@ -1734,6 +1737,20 @@ ndc_1([{arithbif,Op,F,Src,Dst}|Is], D, Acc) ->
     ndc_1(Is, D, [{bif,Op,F,Src,Dst}|Acc]);
 ndc_1([{arithfbif,Op,F,Src,Dst}|Is], D, Acc) ->
     ndc_1(Is, D, [{bif,Op,F,Src,Dst}|Acc]);
+ndc_1([{test,bs_start_match2=Op,F,[A1,Live,A3,Dst]}|Is], D, Acc) ->
+    ndc_1(Is, D, [{test,Op,F,Live,[A1,A3],Dst}|Acc]);
+ndc_1([{test,bs_get_binary2=Op,F,[A1,Live,A3,A4,A5,Dst]}|Is], D, Acc) ->
+    ndc_1(Is, D, [{test,Op,F,Live,[A1,A3,A4,A5],Dst}|Acc]);
+ndc_1([{test,bs_get_float2=Op,F,[A1,Live,A3,A4,A5,Dst]}|Is], D, Acc) ->
+    ndc_1(Is, D, [{test,Op,F,Live,[A1,A3,A4,A5],Dst}|Acc]);
+ndc_1([{test,bs_get_integer2=Op,F,[A1,Live,A3,A4,A5,Dst]}|Is], D, Acc) ->
+    ndc_1(Is, D, [{test,Op,F,Live,[A1,A3,A4,A5],Dst}|Acc]);
+ndc_1([{test,bs_get_utf8=Op,F,[A1,Live,A3,Dst]}|Is], D, Acc) ->
+    ndc_1(Is, D, [{test,Op,F,Live,[A1,A3],Dst}|Acc]);
+ndc_1([{test,bs_get_utf16=Op,F,[A1,Live,A3,Dst]}|Is], D, Acc) ->
+    ndc_1(Is, D, [{test,Op,F,Live,[A1,A3],Dst}|Acc]);
+ndc_1([{test,bs_get_utf32=Op,F,[A1,Live,A3,Dst]}|Is], D, Acc) ->
+    ndc_1(Is, D, [{test,Op,F,Live,[A1,A3],Dst}|Acc]);
 ndc_1([I|Is], D, Acc) ->
     ndc_1(Is, D, [I|Acc]);
 ndc_1([], _, Acc) ->

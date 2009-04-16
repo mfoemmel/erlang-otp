@@ -21,16 +21,10 @@
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
 %% Time-stamp: <2008-04-20 14:53:36 richard>
 %% ====================================================================
-%%  Filename : 	hipe_timer.erl
 %%  Module   :	hipe_timer
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2001-03-15 Erik Johansson (happi@it.uu.se): 
-%%               Created.
-%%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/07/20 19:43:04 $
-%%              $Revision: 1.5 $
+%%  History  :	* 2001-03-15 Erik Johansson (happi@it.uu.se): Created.
 %% ====================================================================
 %%  Exports  :
 %%
@@ -38,7 +32,7 @@
 
 -module(hipe_timer).
 
--export([tr/1,t/1,timer/1,time/1,empty_time/0]).
+-export([tr/1, t/1, timer/1, time/1, empty_time/0]).
 -export([advanced/2]).
 
 t(F) ->
@@ -77,12 +71,12 @@ timer(F) ->
 advanced(_Fun, I) when I < 2 -> false;
 advanced(Fun, Iterations) ->
   R = Fun(),
-  Measurements = [t(Fun) || _ <- lists:seq(1,Iterations)],
+  Measurements = [t(Fun) || _ <- lists:seq(1, Iterations)],
   {Wallclock, RunTime} = split(Measurements),
-  WMin = min(Wallclock),
-  RMin = min(RunTime),
-  WMax = max(Wallclock),
-  RMax = max(RunTime),
+  WMin = lists:min(Wallclock),
+  RMin = lists:min(RunTime),
+  WMax = lists:max(Wallclock),
+  RMax = lists:max(RunTime),
   WMean = mean(Wallclock),
   RMean = mean(RunTime),
   WMedian = median(Wallclock),
@@ -95,59 +89,40 @@ advanced(Fun, Iterations) ->
   RVarCoff = 100 * RStddev / RMean,
   WSum = lists:sum(Wallclock),
   RSum = lists:sum(RunTime),
-  [{wallclock,[{min,WMin},
-	       {max,WMax},
-	       {mean,WMean},
-	       {median,WMedian},
-	       {variance,WVariance},
-	       {stdev,WStddev},
+  [{wallclock,[{min, WMin},
+	       {max, WMax},
+	       {mean, WMean},
+	       {median, WMedian},
+	       {variance, WVariance},
+	       {stdev, WStddev},
 	       {varcoff, WVarCoff},
 	       {sum, WSum},
-	       {values,Wallclock}	       
-	      ]},
-   {runtime,[{min,RMin},
-	     {max,RMax},
-	     {mean,RMean},
-	     {median,RMedian},
-	     {variance,RVariance},
-	     {stdev,RStddev},
+	       {values, Wallclock}]},
+   {runtime,[{min, RMin},
+	     {max, RMax},
+	     {mean, RMean},
+	     {median, RMedian},
+	     {variance, RVariance},
+	     {stdev, RStddev},
 	     {varcoff, RVarCoff},
 	     {sum, RSum},
-	     {values,RunTime}	       
-	    ]},
+	     {values, RunTime}]},
    {iterations, Iterations},
-   {result,R}
-  ].
-
-min([V|Vs]) ->
-  min(Vs,V).
-min([V|Vs], Min) when V >= Min ->
-  min(Vs,Min);
-min([V|Vs], _) ->
-  min(Vs, V);
-min([],Min) -> Min.
-
-max([V|Vs]) ->
-  max(Vs,V).
-max([V|Vs], Max) when V =< Max ->
-  max(Vs,Max);
-max([V|Vs], _) ->
-  max(Vs, V);
-max([],Max) -> Max.
+   {result, R}].
 
 split(M) -> 
-  split(M,[],[]).
+  split(M, [], []).
 
 split([{W,R}|More], AccW, AccR) ->
   split(More, [W|AccW], [R|AccR]);
-split([],AccW, AccR) ->
+split([], AccW, AccR) ->
   {AccW, AccR}.
 
 mean(L) ->
-  mean(L,0,0).
+  mean(L, 0, 0).
 
 mean([V|Vs], No, Sum) ->
-  mean(Vs,No+1,Sum+V);
+  mean(Vs, No+1, Sum+V);
 mean([], No, Sum) when No > 0 ->
   Sum/No;
 mean([], _No, _Sum) ->
@@ -158,10 +133,9 @@ median(L) ->
   SL = lists:sort(L),
   case even(S) of
     true ->
-      (lists:nth((S div 2),SL) +
-       lists:nth((S div 2)+1,SL)) / 2;
+      (lists:nth((S div 2), SL) + lists:nth((S div 2) + 1, SL)) / 2;
     false ->
-       lists:nth((S div 2),SL)
+      lists:nth((S div 2), SL)
   end.
 
 even(S) ->

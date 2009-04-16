@@ -86,14 +86,14 @@ connect(Address, Port, Opts, Timeout) when is_integer(Timeout),
                                            Timeout >= 0 ->
     do_connect(Address, Port, Opts, Timeout).
 
-do_connect({A,B,C,D}, Port, Opts, Time) when ?ip(A,B,C,D), is_integer(Port) ->
+do_connect({A,B,C,D}, Port, Opts, Time) when ?ip(A,B,C,D), ?port(Port) ->
     case inet:connect_options(Opts, inet) of
 	{error, Reason} -> exit(Reason);
-	{ok, R} ->
-	    Fd       = R#connect_opts.fd,
-	    BAddr    = R#connect_opts.ifaddr,
-	    BPort    = R#connect_opts.port,
-	    SockOpts = R#connect_opts.opts,
+	{ok, #connect_opts{fd=Fd,
+			   ifaddr=BAddr={Ab,Bb,Cb,Db},
+			   port=BPort,
+			   opts=SockOpts}}
+	when ?ip(Ab,Bb,Cb,Db), ?port(BPort) ->
 	    case inet:open(Fd,BAddr,BPort,SockOpts,tcp,inet,?MODULE) of
 		{ok, S} ->
 		    case prim_inet:connect(S, {A,B,C,D}, Port, Time) of
@@ -101,20 +101,21 @@ do_connect({A,B,C,D}, Port, Opts, Time) when ?ip(A,B,C,D), is_integer(Port) ->
 			Error ->  prim_inet:close(S), Error
 		    end;
 		Error -> Error
-	    end
+	    end;
+	{ok, _} -> exit(badarg)
     end.
 
 %% 
 %% Listen
 %%
-listen(Port, Opts) when Port >= 0, Port =< 16#ffff ->
+listen(Port, Opts) ->
     case inet:listen_options([{port,Port} | Opts], inet) of
 	{error,Reason} -> exit(Reason);
-	{ok, R} ->
-	    Fd       = R#listen_opts.fd,
-	    BAddr    = R#listen_opts.ifaddr,
-	    BPort    = R#listen_opts.port,
-	    SockOpts = R#listen_opts.opts,
+	{ok, #listen_opts{fd=Fd,
+			  ifaddr=BAddr={A,B,C,D},
+			  port=BPort,
+			  opts=SockOpts}=R}
+	when ?ip(A,B,C,D), ?port(BPort) ->
 	    case inet:open(Fd,BAddr,BPort,SockOpts,tcp,inet,?MODULE) of
 		{ok, S} ->
 		    case prim_inet:listen(S, R#listen_opts.backlog) of
@@ -122,7 +123,8 @@ listen(Port, Opts) when Port >= 0, Port =< 16#ffff ->
 			Error -> prim_inet:close(S), Error
 		    end;
 		Error -> Error
-	    end
+	    end;
+	{ok, _} -> exit(badarg)
     end.
 
 %%

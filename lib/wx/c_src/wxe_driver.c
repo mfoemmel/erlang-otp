@@ -47,6 +47,10 @@ static int wxe_driver_call(ErlDrvData drv_data, unsigned int command, char *buf,
 static void standard_outputv(ErlDrvData drv_data, ErlIOVec *ev);
 static void wxe_process_died(ErlDrvData drv_data, ErlDrvMonitor *monitor);
 
+int wxe_debug;
+
+wxe_data * wxe_master;
+
 /*
 ** The driver struct
 */
@@ -97,6 +101,7 @@ wxe_driver_start(ErlDrvPort port, char *buff)
 {      
    wxe_data *data;
    data = (wxe_data *) malloc(sizeof(wxe_data));
+   wxe_debug = 0;
    
    if (data == NULL) {
       fprintf(stderr, " Couldn't alloc mem\r\n");
@@ -108,6 +113,7 @@ wxe_driver_start(ErlDrvPort port, char *buff)
       data->port = port;
       if(WXE_DRV_PORT == 0) {
 	 WXE_DRV_PORT = port;
+	 wxe_master = data;
 	 if(!(start_native_gui(data) == 1))
 	    return(ERL_DRV_ERROR_GENERAL);  /* ENOMEM */
       } else {
@@ -121,22 +127,22 @@ static void
 wxe_driver_stop(ErlDrvData handle) 
 {  
    wxe_data *sd = ((wxe_data *)handle);
-   if(sd->port == WXE_DRV_PORT) {
-      // fprintf(stderr, "%s:%d: STOP \r\n", __FILE__,__LINE__);
-      meta_command(WXE_SHUTDOWN, sd);
-      stop_native_gui(sd);
-   } else {
+   if(sd->port != WXE_DRV_PORT) {
       // fprintf(stderr, "%s:%d: STOP \r\n", __FILE__,__LINE__);
       meta_command(DELETE_PORT,sd);
+      free(handle);
    }
-   free(handle);
 }
 
 static void
 wxe_driver_unload(void) 
 {
    // fprintf(stderr, "%s:%d: UNLOAD \r\n", __FILE__,__LINE__);
+   meta_command(WXE_SHUTDOWN, wxe_master);
+   stop_native_gui(wxe_master);
    unload_native_gui();
+   free(wxe_master);
+   wxe_master = NULL;
 }
 
 static int
@@ -153,7 +159,14 @@ static int wxe_driver_call(ErlDrvData handle, unsigned int command,
 			   char *buf, int len, char **res, int rlen, unsigned int *flags)
 {
    wxe_data *sd = ((wxe_data *)handle);
-   meta_command(PING_PORT,sd);
+   if(command == WXE_DEBUG_DRIVER) {
+      if(*buf) 
+	 wxe_debug = 1;
+      else
+	 wxe_debug = 0;
+   } else {
+      meta_command(PING_PORT,sd);
+   }
    if (len > rlen)
       *res = driver_alloc(len);
    memcpy((void *) *res, (void *) buf, len);

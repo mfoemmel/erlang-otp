@@ -18,7 +18,7 @@
 %%
 {application, tools,
  [{description, "DEVTOOLS  CXC 138 16"},
-  {vsn, "2.6.3"},
+  {vsn, "2.6.4"},
   {modules, [cover,
 	     cover_web,
 	     eprof,

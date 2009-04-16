@@ -82,9 +82,9 @@ cpu(Vars) ->
     Arch = os:getenv("PROCESSOR_ARCHITECTURE"),
     Level0 = os:getenv("PROCESSOR_Level"),
     Cpu = case {Arch, Level0} of
-	      {"x86", Level} when list(Level) ->
+	      {"x86", Level} when is_list(Level) ->
 		  "i" ++ Level ++ "86";
-	      {Other, _Level} when list(Other) ->
+	      {Other, _Level} when is_list(Other) ->
 		  Other;
 	      {false, _} ->
 		  "i386"
@@ -125,7 +125,7 @@ visual_cxx(Vars) ->
     case os:find_executable("cl") of
 	false ->
 	    {no, Vars};
-	Path when list(Path) ->
+	Path when is_list(Path) ->
 	    {DEFAULT_THR_LIB,
 	     ERTS_THR_LIB,
 	     DLL,
@@ -178,7 +178,7 @@ mingw32(Vars) ->
     case os:find_executable(Gcc) of
 	false ->
 	    {no, Vars};
-	Path when list(Path) ->
+	Path when is_list(Path) ->
 	    {DBG_COMP,
 	     OPT} =
 		case is_debug_build() of
@@ -230,7 +230,7 @@ find_make(MakeCmd, Vars) ->
     case os:find_executable(Make) of
 	false ->
 	    {no, Vars};
-	Path when list(Path) ->
+	Path when is_list(Path) ->
 	    throw({Path, [{make_command, MakeCmd} | Vars]})
     end.
 
@@ -241,13 +241,13 @@ javac(Vars) ->
     case os:find_executable("javac") of
 	false ->
 	    {no, Vars};
-	Path when list(Path) ->
+	Path when is_list(Path) ->
 	    {Path, [{'JAVAC', "javac"} | Vars]}
     end.
 
 is_debug_build() ->
     case catch string:str(erlang:system_info(system_version), "debug") of
-	Int when integer(Int), Int > 0 ->
+	Int when is_integer(Int), Int > 0 ->
 	    true;
 	_ ->
 	    false

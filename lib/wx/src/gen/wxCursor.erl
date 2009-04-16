@@ -75,7 +75,8 @@ new(Bits,Width,Height, Options)
  when is_binary(Bits),is_integer(Width),is_integer(Height),is_list(Options) ->
   wxe_util:send_bin(Bits),
   MOpts = fun({hotSpotX, HotSpotX}, Acc) -> [<<1:32/?UI,HotSpotX:32/?UI>>|Acc];
-          ({hotSpotY, HotSpotY}, Acc) -> [<<2:32/?UI,HotSpotY:32/?UI>>|Acc]  end,
+          ({hotSpotY, HotSpotY}, Acc) -> [<<2:32/?UI,HotSpotY:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxCursor_new_4,
   <<Width:32/?UI,Height:32/?UI, BinOpt/binary>>).

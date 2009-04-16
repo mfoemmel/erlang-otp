@@ -552,7 +552,7 @@ terminate(TelnPid,State) ->
 
 %%%=================================================================
 %%% Internal function
-get_handle(Pid) when pid(Pid) ->
+get_handle(Pid) when is_pid(Pid) ->
     {ok,Pid};
 get_handle({Name,Type}) when Type==telnet;Type==ts1;Type==ts2 ->
     case ct_util:get_connections(Name,?MODULE) of

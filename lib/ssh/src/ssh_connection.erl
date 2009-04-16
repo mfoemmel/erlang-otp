@@ -121,7 +121,7 @@ subsystem(ConnectionManager, ChannelId, SubSystem, TimeOut) ->
 %%--------------------------------------------------------------------
 send(ConnectionManager, ChannelId, Data) ->
     send(ConnectionManager, ChannelId, 0, Data, infinity).
-send(ConnectionManager, ChannelId, Data, TimeOut) when integer(TimeOut) ->
+send(ConnectionManager, ChannelId, Data, TimeOut) when is_integer(TimeOut) ->
     send(ConnectionManager, ChannelId, 0, Data, TimeOut);
 send(ConnectionManager, ChannelId, Type, Data) ->
     send(ConnectionManager, ChannelId, Type, Data, infinity).
@@ -316,13 +316,13 @@ channel_data(ChannelId, DataType, Data,
 	     From) ->
     
     case ssh_channel:cache_lookup(Cache, ChannelId) of
-	#channel{} = Channel0 ->
+	#channel{remote_id = Id} = Channel0 ->
 	    {SendList, Channel} = update_send_window(Channel0, DataType, 
 						     Data, Connection),
 	    Replies = 
 		lists:map(fun({SendDataType, SendData}) -> 
 				      {connection_reply, ConnectionPid, 
-				       channel_data_msg(ChannelId, 
+				       channel_data_msg(Id, 
 							SendDataType, 
 							SendData)}
 			  end, SendList),
@@ -750,9 +750,8 @@ handle_msg(#ssh_msg_disconnect{code = Code,
     {Connection, Replies} = 
 	ssh_channel:cache_foldl(fun(Channel, {Connection1, Acc}) ->
 					{Reply, Connection2} =  
-					    reply_msg(
-					      Channel#channel.local_id,
-					      Connection1, closed),
+					    reply_msg(Channel,
+						      Connection1, {closed, Channel#channel.local_id}),
 					{Connection2, [Reply | Acc]}
 				end, {Connection0, []}, Cache),
     
@@ -1050,7 +1049,7 @@ reply_msg(Channel, Connection, success = Reply) ->
     request_reply_or_data(Channel, Connection, Reply);
 reply_msg(Channel, Connection, failure = Reply) ->
     request_reply_or_data(Channel, Connection, Reply);
-reply_msg(Channel, Connection, closed = Reply) ->
+reply_msg(Channel, Connection, {closed, _} = Reply) ->
     request_reply_or_data(Channel, Connection, Reply);
 reply_msg(#channel{user = ChannelPid}, Connection, Reply) ->
     {{channel_data, ChannelPid, Reply}, Connection}.

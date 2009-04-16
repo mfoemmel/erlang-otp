@@ -100,7 +100,9 @@ int start_native_gui(wxe_data *sd)
     erl_drv_mutex_unlock(wxe_status_m);
     return wxe_status;
   } else {
-    fprintf(stderr, "ERROR: Erlang failed to create wxe-thread %d\r\n", res);
+    wxString msg;
+    msg.Printf(wxT("Erlang failed to create wxe-thread %d\r\n"), res);
+    send_msg("error", &msg);
     return -1;
   }
 }
@@ -248,6 +250,15 @@ void WxeApp::shutdown(wxeMetaCommand& Ecmd) {
   ExitMainLoop();
 }
 
+void send_msg(char * type, wxString * msg) {
+  wxeReturn rt = wxeReturn(WXE_DRV_PORT, init_caller);
+  rt.addAtom((char*)"wxe_driver");
+  rt.addAtom(type);
+  rt.add(msg);  
+  rt.addTupleCount(3);
+  rt.send();
+}
+
 /* ************************************************************
  *  Erlang Command execution  *    
  * ************************************************************/
@@ -361,34 +372,38 @@ void WxeApp::dispatch_cb(wxList * batch, wxList * temp, ErlDrvTermData process) 
 	{
 	  wxeCommand *event = (wxeCommand *)node->GetData();
 	  batch->Erase(node);
-	  if(event->caller == process || event->op == WXE_CB_START) {
-	    switch(event->op) {
-	    case WXE_BATCH_END:
-	    case WXE_BATCH_BEGIN:
-	      break;
-	    case WXE_CB_RETURN:
-	      memcpy(cb_buff, event->buffer, event->len);
-	      callback_returned = 1;
-	      return;
-	    case WXE_CB_START:
-	      // CB start from now accept message from CB process only
-	      process = event->caller;
-	      break;
-	    default:
-	      erl_drv_mutex_unlock(wxe_batch_locker_m);
-	      if(event->op < OPENGL_START) {
-		// fprintf(stderr, "  cb %d \r\n", event->op);
-		wxe_dispatch(*event);
-	      } else {
-		gl_dispatch(event->op,event->buffer,event->caller,event->bin);
-	      }
-	      erl_drv_mutex_lock(wxe_batch_locker_m);
-	      break;
-	      if(callback_returned) 
+	  if(event->caller == process ||  // Callbacks from CB process only 
+	     event->op == WXE_CB_START || // Recursive event callback allow
+	     // Allow connect_cb during CB i.e. msg from wxe_server.
+	     event->caller == driver_connected(event->port)) 
+	    {
+	      switch(event->op) {
+	      case WXE_BATCH_END:
+	      case WXE_BATCH_BEGIN:
+		break;
+	      case WXE_CB_RETURN:
+		memcpy(cb_buff, event->buffer, event->len);
+		callback_returned = 1;
 		return;
-	    }
-	    delete event;
-	  } else {
+	      case WXE_CB_START:
+		// CB start from now accept message from CB process only
+		process = event->caller;
+		break;
+	      default:
+		erl_drv_mutex_unlock(wxe_batch_locker_m);
+		if(event->op < OPENGL_START) {
+		  // fprintf(stderr, "  cb %d \r\n", event->op);
+		  wxe_dispatch(*event);
+		} else {
+		  gl_dispatch(event->op,event->buffer,event->caller,event->bin);
+		}
+		erl_drv_mutex_lock(wxe_batch_locker_m);
+		break;
+		if(callback_returned) 
+		  return;
+	      }
+	      delete event;
+	    } else {
 	    // fprintf(stderr, "  sav %d \r\n", event->op);
 	    temp->Append(event);
 	  }
@@ -529,6 +544,13 @@ int WxeApp::newPtr(void * ptr, int type, wxeMemEnv *memenv) {
       (void **) driver_realloc(memenv->ref2ptr,memenv->max * sizeof(void*));    
   }
   memenv->ref2ptr[ref] = ptr;
+
+  if(wxe_debug) {
+    wxString msg;
+    msg.Printf(wxT("Creating {wx_ref, %d, unknown} at %p "), ref, ptr);
+    send_msg("debug", &msg);
+  }
+
   ptr2ref[ptr] = new wxeRefData(ref, type, true, memenv);
   // fprintf(stderr, "ptr %x id %d\r\n", (int) ptr,ref);
   return ref;
@@ -554,6 +576,7 @@ int WxeApp::getRef(void * ptr, wxeMemEnv *memenv) {
       memenv->ref2ptr = 
 	(void **) driver_realloc(memenv->ref2ptr,memenv->max * sizeof(void*));
     }
+
     memenv->ref2ptr[ref] = ptr;
     ptr2ref[ptr] = new wxeRefData(ref, 0, false, memenv);
     return ref;
@@ -565,11 +588,15 @@ void WxeApp::clearPtr(void * ptr) {
   it = ptr2ref.find(ptr);
   if(it != ptr2ref.end()) {
     wxeRefData *refd = it->second;
-    // fprintf(stderr, "Delete %x %d\r\n", (int) ptr, refd->ref);
     intList free = refd->memenv->free;
-    int ref = refd->ref;
+    int ref = refd->ref;    
     refd->memenv->ref2ptr[ref] = NULL;
     free.Append(ref);
+    if(wxe_debug) {
+      wxString msg;
+      msg.Printf(wxT("Deleting {wx_ref, %d, unknown} at %p "), ref, ptr);
+      send_msg("debug", &msg);
+    }
     if(refd->pid) {  
       // Send terminate pid to owner
       wxeReturn rt = wxeReturn(WXE_DRV_PORT,refd->memenv->owner, false);
@@ -579,6 +606,30 @@ void WxeApp::clearPtr(void * ptr) {
       rt.send();
       delete refd->pid;
     };
+    if(refd->type < 3 &&  ((wxObject*)ptr)->IsKindOf(CLASSINFO(wxSizer))) {
+      wxSizerItemList list = ((wxSizer*)ptr)->GetChildren();
+      for(wxSizerItemList::compatibility_iterator node = list.GetFirst();
+	  node; node = node->GetNext()) { 
+	wxSizerItem *item = node->GetData();
+	wxObject *content=NULL;
+	if((content = item->GetWindow())) 
+	  if(ptr2ref.end() == ptr2ref.find(content)) {
+	    wxString msg;
+	    msg.Printf(wxT("Double usage detected of window at %p in sizer {wx_ref, %d, wxUnknownSizer}"),
+		       content, ref);
+	    send_msg("error", &msg);
+	    ((wxSizer*)ptr)->Detach((wxWindow*)content);	    
+	  }
+	if((content = item->GetSizer())) 
+	  if(ptr2ref.end() == ptr2ref.find(content)) {
+	    wxString msg;
+	    msg.Printf(wxT("Double usage detected of sizer at %p in sizer {wx_ref, %d, wxUnknownSizer}"),
+		       content, ref);
+	    send_msg("error", &msg);
+	    ((wxSizer*)ptr)->Detach((wxSizer*)content);	
+	  }
+      }
+    }
     delete refd;
     ptr2ref.erase(it);
   }

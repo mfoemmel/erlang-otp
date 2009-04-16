@@ -45,7 +45,8 @@ getBitmap(Id, Options)
  when is_list(Id),is_list(Options) ->
   Id_UC = unicode:characters_to_binary([Id,0]),
   MOpts = fun({client, Client}, Acc) ->   Client_UC = unicode:characters_to_binary([Client, $_, $C,0]),[<<1:32/?UI,(byte_size(Client_UC)):32/?UI,(Client_UC)/binary, 0:(((8- ((0+byte_size(Client_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc]  end,
+          ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxArtProvider_GetBitmap,
   <<(byte_size(Id_UC)):32/?UI,(Id_UC)/binary, 0:(((8- ((4+byte_size(Id_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -63,7 +64,8 @@ getIcon(Id, Options)
  when is_list(Id),is_list(Options) ->
   Id_UC = unicode:characters_to_binary([Id,0]),
   MOpts = fun({client, Client}, Acc) ->   Client_UC = unicode:characters_to_binary([Client, $_, $C,0]),[<<1:32/?UI,(byte_size(Client_UC)):32/?UI,(Client_UC)/binary, 0:(((8- ((0+byte_size(Client_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc]  end,
+          ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxArtProvider_GetIcon,
   <<(byte_size(Id_UC)):32/?UI,(Id_UC)/binary, 0:(((8- ((4+byte_size(Id_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

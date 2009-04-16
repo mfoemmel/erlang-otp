@@ -317,7 +317,7 @@ BIF_RETTYPE hipe_bifs_array_2(BIF_ALIST_2)
 	is_not_immed(BIF_ARG_2))
 	BIF_ERROR(BIF_P, BADARG);
     if (nelts == 0)	/* bignums must not be empty */
-	BIF_RET(NIL);
+	BIF_RET(make_small(0));
     hp = HAlloc(BIF_P, 1+nelts);
     hp[0] = make_array_header(nelts);
     for (i = 1; i <= nelts; ++i)
@@ -328,7 +328,7 @@ BIF_RETTYPE hipe_bifs_array_2(BIF_ALIST_2)
 BIF_RETTYPE hipe_bifs_array_length_1(BIF_ALIST_1)
 {
     if (is_not_array(BIF_ARG_1)) {
-	if (is_nil(BIF_ARG_1))	/* NIL represents empty arrays */
+	if (BIF_ARG_1 == make_small(0))	/* fixnum 0 represents empty arrays */
 	    BIF_RET(make_small(0));
 	BIF_ERROR(BIF_P, BADARG);
     }

@@ -115,7 +115,8 @@ addTool(#wx_ref{type=ThisT,ref=ThisRef},Toolid,Label,#wx_ref{type=BitmapT,ref=Bi
   Label_UC = unicode:characters_to_binary([Label,0]),
   ?CLASS(BitmapT,wxBitmap),
   MOpts = fun({shortHelp, ShortHelp}, Acc) ->   ShortHelp_UC = unicode:characters_to_binary([ShortHelp,0]),[<<1:32/?UI,(byte_size(ShortHelp_UC)):32/?UI,(ShortHelp_UC)/binary, 0:(((8- ((0+byte_size(ShortHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({kind, Kind}, Acc) -> [<<2:32/?UI,Kind:32/?UI>>|Acc]  end,
+          ({kind, Kind}, Acc) -> [<<2:32/?UI,Kind:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxToolBar_AddTool,
   <<ThisRef:32/?UI,Toolid:32/?UI,(byte_size(Label_UC)):32/?UI,(Label_UC)/binary, 0:(((8- ((4+byte_size(Label_UC)) band 16#7)) band 16#7))/unit:8,BitmapRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -137,7 +138,8 @@ addCheckTool(#wx_ref{type=ThisT,ref=ThisRef},Toolid,Label,#wx_ref{type=BitmapT,r
   MOpts = fun({bmpDisabled, #wx_ref{type=BmpDisabledT,ref=BmpDisabledRef}}, Acc) ->   ?CLASS(BmpDisabledT,wxBitmap),[<<1:32/?UI,BmpDisabledRef:32/?UI>>|Acc];
           ({shortHelp, ShortHelp}, Acc) ->   ShortHelp_UC = unicode:characters_to_binary([ShortHelp,0]),[<<2:32/?UI,(byte_size(ShortHelp_UC)):32/?UI,(ShortHelp_UC)/binary, 0:(((8- ((0+byte_size(ShortHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({longHelp, LongHelp}, Acc) ->   LongHelp_UC = unicode:characters_to_binary([LongHelp,0]),[<<3:32/?UI,(byte_size(LongHelp_UC)):32/?UI,(LongHelp_UC)/binary, 0:(((8- ((0+byte_size(LongHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wx),[<<4:32/?UI,DataRef:32/?UI>>|Acc]  end,
+          ({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wx),[<<4:32/?UI,DataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxToolBar_AddCheckTool,
   <<ThisRef:32/?UI,Toolid:32/?UI,(byte_size(Label_UC)):32/?UI,(Label_UC)/binary, 0:(((8- ((4+byte_size(Label_UC)) band 16#7)) band 16#7))/unit:8,BitmapRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -159,7 +161,8 @@ addRadioTool(#wx_ref{type=ThisT,ref=ThisRef},Toolid,Label,#wx_ref{type=BitmapT,r
   MOpts = fun({bmpDisabled, #wx_ref{type=BmpDisabledT,ref=BmpDisabledRef}}, Acc) ->   ?CLASS(BmpDisabledT,wxBitmap),[<<1:32/?UI,BmpDisabledRef:32/?UI>>|Acc];
           ({shortHelp, ShortHelp}, Acc) ->   ShortHelp_UC = unicode:characters_to_binary([ShortHelp,0]),[<<2:32/?UI,(byte_size(ShortHelp_UC)):32/?UI,(ShortHelp_UC)/binary, 0:(((8- ((0+byte_size(ShortHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({longHelp, LongHelp}, Acc) ->   LongHelp_UC = unicode:characters_to_binary([LongHelp,0]),[<<3:32/?UI,(byte_size(LongHelp_UC)):32/?UI,(LongHelp_UC)/binary, 0:(((8- ((0+byte_size(LongHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wx),[<<4:32/?UI,DataRef:32/?UI>>|Acc]  end,
+          ({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wx),[<<4:32/?UI,DataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxToolBar_AddRadioTool,
   <<ThisRef:32/?UI,Toolid:32/?UI,(byte_size(Label_UC)):32/?UI,(Label_UC)/binary, 0:(((8- ((4+byte_size(Label_UC)) band 16#7)) band 16#7))/unit:8,BitmapRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -340,7 +343,8 @@ insertTool(#wx_ref{type=ThisT,ref=ThisRef},Pos,Toolid,#wx_ref{type=BitmapT,ref=B
           ({toggle, Toggle}, Acc) -> [<<2:32/?UI,(wxe_util:from_bool(Toggle)):32/?UI>>|Acc];
           ({clientData, #wx_ref{type=ClientDataT,ref=ClientDataRef}}, Acc) ->   ?CLASS(ClientDataT,wx),[<<3:32/?UI,ClientDataRef:32/?UI>>|Acc];
           ({shortHelp, ShortHelp}, Acc) ->   ShortHelp_UC = unicode:characters_to_binary([ShortHelp,0]),[<<4:32/?UI,(byte_size(ShortHelp_UC)):32/?UI,(ShortHelp_UC)/binary, 0:(((8- ((0+byte_size(ShortHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({longHelp, LongHelp}, Acc) ->   LongHelp_UC = unicode:characters_to_binary([LongHelp,0]),[<<5:32/?UI,(byte_size(LongHelp_UC)):32/?UI,(LongHelp_UC)/binary, 0:(((8- ((0+byte_size(LongHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+          ({longHelp, LongHelp}, Acc) ->   LongHelp_UC = unicode:characters_to_binary([LongHelp,0]),[<<5:32/?UI,(byte_size(LongHelp_UC)):32/?UI,(LongHelp_UC)/binary, 0:(((8- ((0+byte_size(LongHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxToolBar_InsertTool_4,
   <<ThisRef:32/?UI,Pos:32/?UI,Toolid:32/?UI,BitmapRef:32/?UI, BinOpt/binary>>).
@@ -359,7 +363,8 @@ insertTool(#wx_ref{type=ThisT,ref=ThisRef},Pos,Toolid,Label,#wx_ref{type=BitmapT
           ({kind, Kind}, Acc) -> [<<2:32/?UI,Kind:32/?UI>>|Acc];
           ({shortHelp, ShortHelp}, Acc) ->   ShortHelp_UC = unicode:characters_to_binary([ShortHelp,0]),[<<3:32/?UI,(byte_size(ShortHelp_UC)):32/?UI,(ShortHelp_UC)/binary, 0:(((8- ((0+byte_size(ShortHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({longHelp, LongHelp}, Acc) ->   LongHelp_UC = unicode:characters_to_binary([LongHelp,0]),[<<4:32/?UI,(byte_size(LongHelp_UC)):32/?UI,(LongHelp_UC)/binary, 0:(((8- ((0+byte_size(LongHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({clientData, #wx_ref{type=ClientDataT,ref=ClientDataRef}}, Acc) ->   ?CLASS(ClientDataT,wx),[<<5:32/?UI,ClientDataRef:32/?UI>>|Acc]  end,
+          ({clientData, #wx_ref{type=ClientDataT,ref=ClientDataRef}}, Acc) ->   ?CLASS(ClientDataT,wx),[<<5:32/?UI,ClientDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxToolBar_InsertTool_5,
   <<ThisRef:32/?UI,Pos:32/?UI,Toolid:32/?UI,(byte_size(Label_UC)):32/?UI,(Label_UC)/binary, 0:(((8- ((0+byte_size(Label_UC)) band 16#7)) band 16#7))/unit:8,BitmapRef:32/?UI, 0:32,BinOpt/binary>>).

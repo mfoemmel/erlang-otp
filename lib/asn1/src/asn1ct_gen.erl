@@ -180,7 +180,7 @@ pgen_partial_inc_dec1(Erules,Module,[P|Ps]) ->
     asn1ct:update_gen_state(active,true),
     asn1ct:update_gen_state(prefix,"dec-inc-"),
     case asn1ct:maybe_saved_sindex(TopTypeName,P) of
-	I when integer(I),I > 0 ->
+	I when is_integer(I),I > 0 ->
 %	    io:format("Index:~p~n",[I]),
 	    asn1ct:set_current_sindex(I);
 	_I ->
@@ -262,7 +262,7 @@ traverse_type_structure(Erules,Type,[],FuncName,TopTypeName) ->
 	end,
     Ctmod:gen_decode_selected(Erules,TypeDef,FuncName); % what if Type is #type{}
 traverse_type_structure(Erules,#type{def=Def},[[N]],FuncName,TopTypeName) 
-  when integer(N) -> % this case a decode of one of the elements in
+  when is_integer(N) -> % this case a decode of one of the elements in
                      % the SEQUENCE OF is required.
     InnerType = asn1ct_gen:get_inner(Def),
     case InnerType of
@@ -273,7 +273,7 @@ traverse_type_structure(Erules,#type{def=Def},[[N]],FuncName,TopTypeName)
 	    exit({error,{configuration_file_error,[N],"only for SEQUENCE OF components",WrongType}})
     end;
 traverse_type_structure(Erules,Type,[[N]|Ts],FuncName,TopTypeName) 
-  when integer(N)  ->
+  when is_integer(N)  ->
     traverse_type_structure(Erules,Type,Ts,FuncName,TopTypeName);
 traverse_type_structure(Erules,#type{def=Def},[T|Ts],FuncName,TopTypeName)  ->
     InnerType = asn1ct_gen:get_inner(Def),
@@ -345,12 +345,12 @@ traverse_type_structure(Erules,#typedef{typespec=Def},[T|Ts],FuncName,
     end.
 	    
 traverse_SO_type_structure(Erules,Type,[N|Rest],FuncName,TopTypeName)
-  when integer(N) ->
+  when is_integer(N) ->
     traverse_type_structure(Erules,Type,Rest,FuncName,TopTypeName);
 traverse_SO_type_structure(Erules,Type,TypeList,FuncName,TopTypeName) ->
     traverse_type_structure(Erules,Type,TypeList,FuncName,TopTypeName).
 
-get_component(Name,{C1,C2}) when list(C1),list(C2) ->
+get_component(Name,{C1,C2}) when is_list(C1),is_list(C2) ->
     get_component(Name,C1++C2);
 get_component(Name,[C=#'ComponentType'{name=Name}|_Cs]) ->
     C;
@@ -405,7 +405,7 @@ gen_dec_part_inner_types(Erules,[ComponentType|Rest],TypeName) ->
     Rtmod:gen_decode(Erules,TypeName,ComponentType),
     gen_dec_part_inner_types(Erules,Rest,TypeName);
 gen_dec_part_inner_types(Erules,{Comps1,Comps2},TypeName)
-  when list(Comps1),list(Comps2) ->
+  when is_list(Comps1),is_list(Comps2) ->
     gen_dec_part_inner_types(Erules,Comps1 ++ Comps2,TypeName);
 gen_dec_part_inner_types(_,[],_) ->
     ok.
@@ -440,7 +440,7 @@ emit_partial_incomplete_decode({FuncName,TopType,Pattern}) ->
 	end,
     TopTypeName =
 	case asn1ct:maybe_saved_sindex(TopType,TPattern) of
-	    I when integer(I),I>0 ->
+	    I when is_integer(I),I>0 ->
 		lists:concat([TopType,"_",I]);
 	    _ ->
 		atom_to_list(TopType)
@@ -492,7 +492,7 @@ gen_part_decode_funcs(#'Externaltypereference'{module=M,type=T},
 gen_part_decode_funcs({constructed,bif},TypeName,
 		      {_Name,parts,Tag,_Type}) ->
     emit(["  case Data of",nl,
-	  "    L when list(L) ->",nl,
+	  "    L when is_list(L) ->",nl,
 	  "      'dec_",TypeName,"'(lists:map(fun(X)->element(1,?RT_BER:decode(X)) end,L),",{asis,Tag},");",nl,
 	  "    _ ->",nl,
 	  "      [Res] = 'dec_",TypeName,"'([Data],",{asis,Tag},"),",nl,
@@ -530,7 +530,7 @@ gen_types(Erules,Tname,[ComponentType|Rest]) ->
     gen_types(Erules,Tname,Rest);
 gen_types(_,_,[]) ->
     true;
-gen_types(Erules,Tname,Type) when record(Type,type) ->
+gen_types(Erules,Tname,Type) when is_record(Type,type) ->
     Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
 				       rt2ct_suffix(Erules)])),
     asn1ct_name:clear(),
@@ -681,7 +681,7 @@ gen_check_func_call(Name,Type,InnerType,DefVal,Val,N) ->
 %% *************************************************
 %%**************************************************
 
-mk_var(X) when atom(X) ->
+mk_var(X) when is_atom(X) ->
     list_to_atom(mk_var(atom_to_list(X)));
 
 mk_var([H|T]) ->
@@ -689,7 +689,7 @@ mk_var([H|T]) ->
 
 %% Since hyphens are allowed in ASN.1 names, it may occur in a
 %% variable to. Turn a hyphen into a under-score sign.
-un_hyphen_var(X) when atom(X) ->
+un_hyphen_var(X) when is_atom(X) ->
     list_to_atom(un_hyphen_var(atom_to_list(X)));
 un_hyphen_var([45|T]) ->
     [95|un_hyphen_var(T)];
@@ -704,13 +704,13 @@ un_hyphen_var([]) ->
 %% the function returns the value in an Erlang representation which can be
 %% used as  input to the runtime encode functions
 
-gen_value(Value) when record(Value,valuedef) ->
+gen_value(Value) when is_record(Value,valuedef) ->
 %%    io:format(" ~w ",[Value#valuedef.name]),
     emit({"'",Value#valuedef.name,"'() ->",nl}),
     V = Value#valuedef.value,
     emit([{asis,V},".",nl,nl]).
 
-gen_encode_constructed(Erules,Typename,InnerType,D) when record(D,type) ->
+gen_encode_constructed(Erules,Typename,InnerType,D) when is_record(D,type) ->
 
     Rtmod = list_to_atom(lists:concat(["asn1ct_constructed_",erule(Erules)])),
     case InnerType of
@@ -740,10 +740,10 @@ gen_encode_constructed(Erules,Typename,InnerType,D) when record(D,type) ->
 	    exit({nyi,InnerType})
     end;
 gen_encode_constructed(Erules,Typename,InnerType,D) 
-  when record(D,typedef) ->
+  when is_record(D,typedef) ->
     gen_encode_constructed(Erules,Typename,InnerType,D#typedef.typespec).
 
-gen_decode_constructed(Erules,Typename,InnerType,D) when record(D,type) ->
+gen_decode_constructed(Erules,Typename,InnerType,D) when is_record(D,type) ->
     Rtmod = list_to_atom(lists:concat(["asn1ct_constructed_",erule(Erules)])),
     asn1ct:step_in_constructed(), %% updates namelist for exclusive decode
     case InnerType of
@@ -762,7 +762,7 @@ gen_decode_constructed(Erules,Typename,InnerType,D) when record(D,type) ->
     end;
 
 
-gen_decode_constructed(Erules,Typename,InnerType,D) when record(D,typedef) ->
+gen_decode_constructed(Erules,Typename,InnerType,D) when is_record(D,typedef) ->
     gen_decode_constructed(Erules,Typename,InnerType,D#typedef.typespec).
 
 
@@ -1127,7 +1127,7 @@ gen_partial_inc_dispatcher([{FuncName,TopType,_Pattern}|Rest],TypePattern) ->
     FuncName2=asn1ct:maybe_rename_function(inc_disp,TopType,TPattern),
     TopTypeName =
 	case asn1ct:maybe_saved_sindex(TopType,TPattern) of
-	    I when integer(I),I>0 ->
+	    I when is_integer(I),I>0 ->
 		lists:concat([TopType,"_",I]);
 	    _ ->
 		atom_to_list(TopType)
@@ -1149,12 +1149,12 @@ driver_parameter() ->
     end.
 
 gen_wrapper() ->
-    emit(["wrap_encode(Bytes) when list(Bytes) ->",nl,
+    emit(["wrap_encode(Bytes) when is_list(Bytes) ->",nl,
 	  "   binary_to_list(list_to_binary(Bytes));",nl,
-	  "wrap_encode(Bytes) when binary(Bytes) ->",nl,
+	  "wrap_encode(Bytes) when is_binary(Bytes) ->",nl,
 	  "   binary_to_list(Bytes);",nl,
 	  "wrap_encode(Bytes) -> Bytes.",nl,nl]),
-    emit(["wrap_decode(Bytes) when list(Bytes) ->",nl,
+    emit(["wrap_decode(Bytes) when is_list(Bytes) ->",nl,
 	  "   list_to_binary(Bytes);",nl,
 	  "wrap_decode(Bytes) -> Bytes.",nl]).
     
@@ -1203,16 +1203,16 @@ demit(Term) ->
 emit({external,_M,T}) ->
     emit(T);
 
-emit({prev,Variable}) when atom(Variable) ->
+emit({prev,Variable}) when is_atom(Variable) ->
     emit({var,asn1ct_name:prev(Variable)});
 
-emit({next,Variable}) when atom(Variable) ->
+emit({next,Variable}) when is_atom(Variable) ->
     emit({var,asn1ct_name:next(Variable)});
 
-emit({curr,Variable}) when atom(Variable) ->
+emit({curr,Variable}) when is_atom(Variable) ->
     emit({var,asn1ct_name:curr(Variable)});
     
-emit({var,Variable}) when atom(Variable) ->
+emit({var,Variable}) when is_atom(Variable) ->
     [Head|V] = atom_to_list(Variable),
     emit([Head-32|V]);
 
@@ -1232,19 +1232,19 @@ emit(com) ->
 emit(tab) ->
     put_chars(get(gen_file_out),"     ");
 
-emit(What) when integer(What) ->
+emit(What) when is_integer(What) ->
     put_chars(get(gen_file_out),integer_to_list(What));
 
-emit(What) when list(What), integer(hd(What)) ->
+emit(What) when is_list(What), is_integer(hd(What)) ->
     put_chars(get(gen_file_out),What);
 
-emit(What) when atom(What) ->
+emit(What) when is_atom(What) ->
     put_chars(get(gen_file_out),atom_to_list(What));
 
-emit(What) when tuple(What) ->
+emit(What) when is_tuple(What) ->
     emit_parts(tuple_to_list(What));
 
-emit(What) when list(What) ->
+emit(What) when is_list(What) ->
     emit_parts(What);
 
 emit(X) ->
@@ -1323,7 +1323,7 @@ pgen_hrltypes(Erules,Module,[H|T],NumRecords) ->
 
 
 %% Generates a macro for value Value defined in the ASN.1 module
-gen_macro(Value) when record(Value,valuedef) ->
+gen_macro(Value) when is_record(Value,valuedef) ->
     emit({"-define('",Value#valuedef.name,"', ",
 	  {asis,Value#valuedef.value},").",nl}).
 
@@ -1332,12 +1332,12 @@ gen_macro(Value) when record(Value,valuedef) ->
 %% module. If no SEQUENCE or SET is found there is no .hrl file generated
 
 
-gen_record(Tdef,NumRecords) when record(Tdef,typedef) ->
+gen_record(Tdef,NumRecords) when is_record(Tdef,typedef) ->
     Name = [Tdef#typedef.name],
     Type = Tdef#typedef.typespec,
     gen_record(type,Name,Type,NumRecords);
 
-gen_record(Tdef,NumRecords) when record(Tdef,ptypedef) ->
+gen_record(Tdef,NumRecords) when is_record(Tdef,ptypedef) ->
     Name = [Tdef#ptypedef.name],
     Type = Tdef#ptypedef.typespec,
     gen_record(ptype,Name,Type,NumRecords).
@@ -1356,10 +1356,10 @@ gen_record(TorPtype,Name,[_|T],Num) -> % skip EXTENSIONMARK
 gen_record(_TorPtype,_Name,[],Num) ->
     Num;
 
-gen_record(TorPtype,Name,Type,Num) when record(Type,type) ->    
+gen_record(TorPtype,Name,Type,Num) when is_record(Type,type) ->    
     Def = Type#type.def,
     Rec = case Def of
-	      Seq when record(Seq,'SEQUENCE') ->
+	      Seq when is_record(Seq,'SEQUENCE') ->
 		  case Seq#'SEQUENCE'.pname of
 		      false ->
 			  {record,Seq#'SEQUENCE'.components};
@@ -1368,7 +1368,7 @@ gen_record(TorPtype,Name,Type,Num) when record(Type,type) ->
 		      _ ->
 			  {record,Seq#'SEQUENCE'.components}
 		  end;
-	      Set when record(Set,'SET') ->
+	      Set when is_record(Set,'SET') ->
 		  case Set#'SET'.pname of
 		      false ->
 			  {record,to_textual_order(Set#'SET'.components)};
@@ -1394,7 +1394,7 @@ gen_record(TorPtype,Name,Type,Num) when record(Type,type) ->
 	    Prefix = get_record_name_prefix(),
 	    emit({"-record('",Prefix,list2name(Name),"',{",nl}),
 	    RootList = case CompList of
-			   _ when list(CompList) ->
+			   _ when is_list(CompList) ->
 			       CompList;
 			   {Rl,_} -> Rl;
 			   {Rl1,_Ext,_Rl2} -> Rl1
@@ -1751,12 +1751,12 @@ unify_if_string(PrimType) ->
 	
 	
 
-get_inner(A) when atom(A) -> A;    
-get_inner(Ext) when record(Ext,'Externaltypereference') -> Ext;    
-get_inner(Tref) when record(Tref,typereference) -> Tref;
+get_inner(A) when is_atom(A) -> A;    
+get_inner(Ext) when is_record(Ext,'Externaltypereference') -> Ext;    
+get_inner(Tref) when is_record(Tref,typereference) -> Tref;
 get_inner({fixedtypevaluefield,_,Type}) ->
     if 
-	record(Type,type) ->
+	is_record(Type,type) ->
 	    get_inner(Type#type.def);
 	true ->
 	    get_inner(Type)
@@ -1766,9 +1766,9 @@ get_inner({typefield,TypeName}) ->
 get_inner(#'ObjectClassFieldType'{type=Type}) ->
 %    get_inner(Type);
     Type;
-get_inner(T) when tuple(T) -> 
+get_inner(T) when is_tuple(T) -> 
     case element(1,T) of
-	Tuple when tuple(Tuple),element(1,Tuple) == objectclass ->
+	Tuple when is_tuple(Tuple),element(1,Tuple) == objectclass ->
 	    case catch(lists:last(element(2,T))) of
 		{valuefieldreference,FieldName} ->
 		    get_fieldtype(element(2,Tuple),FieldName);
@@ -1784,13 +1784,13 @@ get_inner(T) when tuple(T) ->
 
 
 
-type(X) when record(X,'Externaltypereference') ->
+type(X) when is_record(X,'Externaltypereference') ->
     X;
-type(X) when record(X,typereference) ->
+type(X) when is_record(X,typereference) ->
     X;
 type('ASN1_OPEN_TYPE') ->
     'ASN1_OPEN_TYPE';
-type({fixedtypevaluefield,_Name,Type}) when record(Type,type) ->
+type({fixedtypevaluefield,_Name,Type}) when is_record(Type,type) ->
     type(get_inner(Type#type.def));
 type({typefield,_}) ->
     'ASN1_OPEN_TYPE';
@@ -1855,7 +1855,7 @@ def_to_tag(#tag{class=Class,number=Number}) ->
     {Class,Number};
 def_to_tag(#'ObjectClassFieldType'{type=Type}) -> 
    case Type of
-       T when tuple(T),element(1,T)==fixedtypevaluefield ->
+       T when is_tuple(T),element(1,T)==fixedtypevaluefield ->
 	   {'UNIVERSAL',get_inner(Type)};
        _ ->
 	   []
@@ -1900,9 +1900,9 @@ get_fieldcategory([Field|Rest],FieldName) ->
 	    get_fieldcategory(Rest,FieldName)
     end.
 
-get_typefromobject(Type) when record(Type,type) ->
+get_typefromobject(Type) when is_record(Type,type) ->
     case Type#type.def of
-	{{objectclass,_,_},TypeFrObj} when list(TypeFrObj) ->
+	{{objectclass,_,_},TypeFrObj} when is_list(TypeFrObj) ->
 	    {_,FieldName} = lists:last(TypeFrObj),
 	    FieldName;
 	_ ->

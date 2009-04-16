@@ -46,7 +46,8 @@ new() ->
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxtextdataobject.html#wxtextdataobjectwxtextdataobject">external documentation</a>.
 new(Options)
  when is_list(Options) ->
-  MOpts = fun({text, Text}, Acc) ->   Text_UC = unicode:characters_to_binary([Text,0]),[<<1:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({text, Text}, Acc) ->   Text_UC = unicode:characters_to_binary([Text,0]),[<<1:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxTextDataObject_new,
   <<BinOpt/binary>>).

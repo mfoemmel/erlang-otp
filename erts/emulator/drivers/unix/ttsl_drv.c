@@ -176,7 +176,9 @@ static void my_debug_printf(char *fmt, ...)
 
 #endif
 
-
+static int utf8_mode = 0;
+static byte utf8buf[4]; /* for incomplete input */
+static int utf8buf_size; /* size of incomplete input */
 
 #  define IF_IMPL(x) x
 #else
@@ -210,10 +212,6 @@ struct erl_drv_entry ttsl_driver_entry = {
     IF_IMPL(ttysl_stop_select)
 };
 
-static int utf8_mode = 0;
-static byte utf8buf[4]; /* for incomplete input */
-static int utf8buf_size; /* size of incomplete input */
-
 
 static int ttysl_init(void)
 {
@@ -234,7 +232,6 @@ static int ttysl_init(void)
 	DEBUGLOG(("Debuglog = %s(0x%ld)\n",dl,(long) debuglog));
     }
 #endif
-    DEBUGLOG(("Logging started"));
     return 0;
 }
 
@@ -534,9 +531,10 @@ static int pick_utf8(byte *s, int sz, int *pos)
     }
 }
 
-static int octal_positions(Uint ch) 
+static int octal_or_hex_positions(Uint c) 
 {
     int x = 0;
+    Uint ch = c;
     if (!ch) {
 	return 1;
     }
@@ -544,23 +542,36 @@ static int octal_positions(Uint ch)
 	++x;
 	ch >>= 3;
     }
-    return (x > 3) ? x+2 : 3;
+    if (x <= 3) {
+	return 3;
+    }
+    /* \x{H ...} format when larger than \777 */
+    x = 0;
+    ch = c;
+    while(ch) {
+	++x;
+	ch >>= 4;
+    }
+    return x+3;
 }
 
-static void octal_format(Uint ch, byte *buf, int *pos)
+static void octal_or_hex_format(Uint ch, byte *buf, int *pos)
 {
-    int num = octal_positions(ch);
-    int curly = 0;
+    static byte hex_chars[] = { '0','1','2','3','4','5','6','7','8','9',
+				'A','B','C','D','E','F'};
+    int num = octal_or_hex_positions(ch);
     if (num != 3) {
+	buf[(*pos)++] = 'x';
 	buf[(*pos)++] = '{';
-	curly = 1;
-	num -= 2;
-    }
-    while(num--) {
-	buf[(*pos)++] = ((byte) ((ch >> (3*num)) & 0x7U) + '0');
-    }
-    if (curly) {
+	num -= 3;
+	while(num--) {
+	    buf[(*pos)++] = hex_chars[((ch >> (4*num)) & 0xFU)];
+	}
 	buf[(*pos)++] = '}';
+    } else {
+	while(num--) {
+	    buf[(*pos)++] = ((byte) ((ch >> (3*num)) & 0x7U) + '0');
+	}
     }	
 }
 
@@ -600,7 +611,7 @@ static int check_buf_size(byte *s, int n)
 		size += 8;
 	    else if (ch >= 128) {
 		DEBUGLOG(("Non printable:%d",ch));
-		size += (octal_positions(ch) + 1);
+		size += (octal_or_hex_positions(ch) + 1);
 	    }
 	    else {
 		DEBUGLOG(("Magic:%d",ch));
@@ -889,21 +900,16 @@ static int insert_buf(byte *s, int n)
 	    DEBUGLOG(("insert_buf: Printable(UTF-8):%d",ch));
 	    lbuf[lpos++] = (Uint32) ch;
 	} else if (ch >= 128) { /* not utf8 mode */
-	    int nc = octal_positions(ch);
+	    int nc = octal_or_hex_positions(ch);
 	    lbuf[lpos++] = ((Uint32) ch) | ESCAPED_TAG;
 	    while (nc--) {
 		lbuf[lpos++] = ESCAPED_TAG;
 	    }
 	} else if (ch == '\t') {
-	    int first = 1;
-	    while ((lpos + 1) % 8) {
-		if (first) {
-		    lbuf[lpos++] = (CONTROL_TAG | ((Uint32) '\t'));
-		    first = 0;
-		} else {
-		    lbuf[lpos++] = CONTROL_TAG;
-		}
-	    }
+	    do {
+		lbuf[lpos++] = (CONTROL_TAG | ((Uint32) ch));
+		ch = 0;
+	    } while (lpos % 8);
 	} else if (ch == '\n' || ch == '\r') {
 	    write_buf(lbuf + buffpos, lpos - buffpos);
 	    outc('\r');
@@ -975,14 +981,14 @@ static int write_buf(Uint32 *s, int n)
 	    byte octtmp[256];
 	    int octbytes;
 	    DEBUGLOG(("Escaped: %d", ch));
-	    octbytes = octal_positions(ch);
+	    octbytes = octal_or_hex_positions(ch);
 	    if (octbytes > 256) {
 		octbuff = driver_alloc(octbytes);
 	    } else {
 		octbuff = octtmp;
 	    }
 	    octbytes = 0;
-	    octal_format(ch, octbuff, &octbytes);
+	    octal_or_hex_format(ch, octbuff, &octbytes);
 	     DEBUGLOG(("octbytes: %d", octbytes));
 	    outc('\\');
 	    for (i = 0; i < octbytes; ++i) {

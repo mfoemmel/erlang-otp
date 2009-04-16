@@ -127,12 +127,12 @@
 
 encode([Tlv]) ->
     encode(Tlv);
-encode({TlvTag,TlvVal}) when list(TlvVal) ->
+encode({TlvTag,TlvVal}) when is_list(TlvVal) ->
     %% constructed form of value
     encode_tlv(TlvTag,TlvVal,?CONSTRUCTED);
 encode({TlvTag,TlvVal}) ->
     encode_tlv(TlvTag,TlvVal,?PRIMITIVE);
-encode(Bin) when binary(Bin) ->
+encode(Bin) when is_binary(Bin) ->
     Bin.
 
 encode_tlv(TlvTag,TlvVal,Form) ->
@@ -146,7 +146,7 @@ encode_tlv_tag(ClassTagNo,Form) ->
     Class = ClassTagNo bsr 16,
     encode_tag_val({Class bsl 6,Form,(ClassTagNo - (Class bsl 16))}).
 
-encode_tlv_val(TlvL) when list(TlvL) ->
+encode_tlv_val(TlvL) when is_list(TlvL) ->
     encode_tlv_list(TlvL,[]);
 encode_tlv_val(Bin) ->
     {Bin,size(Bin)}.
@@ -158,23 +158,47 @@ encode_tlv_list([],Acc) ->
     Bin=list_to_binary(lists:reverse(Acc)),
     {Bin,size(Bin)}.
 
+%% asn1-1.6.8.1
+%% decode(B,driver) ->
+%%     case catch port_control(asn1_driver_port,2,B) of
+%% 	Bin when is_binary(Bin) ->
+%% 	    binary_to_term(Bin);
+%% 	List when is_list(List) -> handle_error(List,B);
+%% 	{'EXIT',{badarg,Reason}} ->
+%% 	    asn1rt_driver_handler:load_driver(),
+%% 	    receive
+%% 		driver_ready ->
+%% 		    case catch port_control(asn1_driver_port,2,B) of
+%% 			Bin2 when is_binary(Bin2) -> binary_to_term(Bin2);
+%% 			List when is_list(List) -> handle_error(List,B);
+%% 			Error -> exit(Error)
+%% 		    end;
+%% 		{error,Error} -> % error when loading driver
+%% 		    %% the driver could not be loaded
+%% 		    exit(Error);
+%% 		Error={port_error,Reason} ->
+%% 		    exit(Error)
+%% 	    end;
+%% 	{'EXIT',Reason} ->
+%% 	    exit(Reason)
+%%     end.
 
+%% asn1-1.6.9
 decode(B,driver) ->
     case catch control(?TLV_DECODE,B) of
-	Bin when binary(Bin) ->
-	    binary_to_term(Bin);
-	List when list(List) -> handle_error(List,B);
-	{'EXIT',{badarg,_Reason}} ->
-	    case asn1rt:load_driver() of
-		ok ->
-		    case control(?TLV_DECODE,B) of
-			Bin when binary(Bin) -> binary_to_term(Bin);
-			List when list(List) -> handle_error(List,B);
-			Other -> Other
-		    end;
-		Err ->
-		    Err
-	    end
+ 	Bin when is_binary(Bin) ->
+ 	    binary_to_term(Bin);
+ 	List when is_list(List) -> handle_error(List,B);
+ 	{'EXIT',{badarg,_Reason}} ->
+ 	    case asn1rt:load_driver() of
+ 		ok ->
+ 		    case control(?TLV_DECODE,B) of
+ 			Bin when is_binary(Bin) -> binary_to_term(Bin);
+ 			List when is_list(List) -> handle_error(List,B)
+ 		    end;
+ 		Err ->
+ 		    Err
+ 	    end
     end.
 
 
@@ -204,30 +228,30 @@ error_pos([B])->
 error_pos([B|Bs]) ->
     BS = 8 * length(Bs),
     B bsl BS + error_pos(Bs).
-
+%% asn1-1.6.9
 control(Cmd, Data) ->
     Port = asn1rt_driver_handler:client_port(),
     erlang:port_control(Port, Cmd, Data).
 
-decode(Bin) when binary(Bin) ->
+decode(Bin) when is_binary(Bin) ->
     decode_primitive(Bin);
 decode(Tlv) -> % assume it is a tlv
     {Tlv,<<>>}.
 
 
 decode_primitive(Bin) ->
-    {{Form,TagNo,Len,V},Rest} = decode_tlv(Bin),
+    {Form,TagNo,V,Rest} = decode_tag_and_length(Bin),
     case Form of 
-	1 when Len == indefinite -> % constructed
-	    {Vlist,Rest2} = decode_constructed_indefinite(V,[]),
-	    {{TagNo,Vlist},Rest2};
 	1 -> % constructed
 	    {{TagNo,decode_constructed(V)},Rest};
 	0 -> % primitive
-	    {{TagNo,V},Rest}
+	    {{TagNo,V},Rest};
+	2 -> % constructed indefinite
+	    {Vlist,Rest2} = decode_constructed_indefinite(V,[]),
+	    {{TagNo,Vlist},Rest2}
     end.
 
-decode_constructed(<<>>) ->
+decode_constructed(Bin) when byte_size(Bin) =:= 0 ->
     [];
 decode_constructed(Bin) ->
     {Tlv,Rest} = decode_primitive(Bin),
@@ -239,46 +263,36 @@ decode_constructed_indefinite(Bin,Acc) ->
     {Tlv,Rest} = decode_primitive(Bin),
     decode_constructed_indefinite(Rest, [Tlv|Acc]). 
     
-decode_tlv(Bin) ->
-    {Form,TagNo,Len,Bin2} = decode_tag_and_length(Bin),
-    case Len of
-	indefinite -> 
-	    {{Form,TagNo,Len,Bin2},[]};
-	_ ->
-	    <<V:Len/binary,Bin3/binary>> = Bin2,
-	    {{Form,TagNo,Len,V},Bin3}
-    end.
-
 %% decode_primitive_incomplete/2 decodes an encoded message incomplete
 %% by help of the pattern attribute (first argument).
 decode_primitive_incomplete([[default,TagNo]],Bin) -> %default
-    case decode_tlv(Bin) of
-	{{Form,TagNo,Len,V},Rest} ->
-	    decode_incomplete2(Form,TagNo,Len,V,[],Rest);
+    case decode_tag_and_length(Bin) of
+	{Form,TagNo,V,Rest} ->
+	    decode_incomplete2(Form,TagNo,V,[],Rest);
 	_ ->
 	    %{asn1_DEFAULT,Bin}
 	    asn1_NOVALUE
     end;
 decode_primitive_incomplete([[default,TagNo,Directives]],Bin) -> %default, constructed type, Directives points into this type
-    case decode_tlv(Bin) of
-	{{Form,TagNo,Len,V},Rest} ->	    
-	    decode_incomplete2(Form,TagNo,Len,V,Directives,Rest);
+    case decode_tag_and_length(Bin) of
+	{Form,TagNo,V,Rest} ->	    
+	    decode_incomplete2(Form,TagNo,V,Directives,Rest);
 	_ ->
 	    %{asn1_DEFAULT,Bin}
 	    asn1_NOVALUE
     end;
 decode_primitive_incomplete([[opt,TagNo]],Bin) -> %optional
-    case decode_tlv(Bin) of
-	{{Form,TagNo,Len,V},Rest} ->
-	    decode_incomplete2(Form,TagNo,Len,V,[],Rest);
+    case decode_tag_and_length(Bin) of
+	{Form,TagNo,V,Rest} ->
+	    decode_incomplete2(Form,TagNo,V,[],Rest);
 	_ ->
 	    %{{TagNo,asn1_NOVALUE},Bin}
 	    asn1_NOVALUE
     end;
 decode_primitive_incomplete([[opt,TagNo,Directives]],Bin) -> %optional
-    case decode_tlv(Bin) of
-	{{Form,TagNo,Len,V},Rest} ->
-	    decode_incomplete2(Form,TagNo,Len,V,Directives,Rest);
+    case decode_tag_and_length(Bin) of
+	{Form,TagNo,V,Rest} ->
+	    decode_incomplete2(Form,TagNo,V,Directives,Rest);
 	_ ->
 	    %{{TagNo,asn1_NOVALUE},Bin}
 	    asn1_NOVALUE
@@ -303,29 +317,29 @@ decode_primitive_incomplete([[alt_undec,TagNo]|RestAlts],Bin) ->
 	    decode_primitive_incomplete(RestAlts,Bin)
     end;
 decode_primitive_incomplete([[alt,TagNo]|RestAlts],Bin) ->
-    case decode_tlv(Bin) of
-	{{_Form,TagNo,_Len,V},Rest} ->
+    case decode_tag_and_length(Bin) of
+	{_Form,TagNo,V,Rest} ->
 	    {{TagNo,V},Rest};
 	_ ->
 	    decode_primitive_incomplete(RestAlts,Bin)
     end;
 decode_primitive_incomplete([[alt,TagNo,Directives]|RestAlts],Bin) ->
-    case decode_tlv(Bin) of
-	{{Form,TagNo,Len,V},Rest} ->
-	    decode_incomplete2(Form,TagNo,Len,V,Directives,Rest);
+    case decode_tag_and_length(Bin) of
+	{Form,TagNo,V,Rest} ->
+	    decode_incomplete2(Form,TagNo,V,Directives,Rest);
 	_ ->
 	    decode_primitive_incomplete(RestAlts,Bin)
     end;
 decode_primitive_incomplete([[alt_parts,TagNo]],Bin) ->
-    case decode_tlv(Bin) of
-	{{_Form,TagNo,_Len,V},Rest} ->
+    case decode_tag_and_length(Bin) of
+	{_Form,TagNo,V,Rest} ->
 	    {{TagNo,V},Rest};
 	_ ->
 	    asn1_NOVALUE
     end;
 decode_primitive_incomplete([[alt_parts,TagNo]|RestAlts],Bin) ->
-    case decode_tlv(Bin) of
-	{{_Form,TagNo,_Len,V},Rest} ->
+    case decode_tag_and_length(Bin) of
+	{_Form,TagNo,V,Rest} ->
 	    {{TagNo,decode_parts_incomplete(V)},Rest};
 	_ ->
 	    decode_primitive_incomplete(RestAlts,Bin)
@@ -333,20 +347,20 @@ decode_primitive_incomplete([[alt_parts,TagNo]|RestAlts],Bin) ->
 decode_primitive_incomplete([[undec,_TagNo]|_RestTag],Bin) -> %incomlete decode
     decode_incomplete_bin(Bin); 
 decode_primitive_incomplete([[parts,TagNo]|_RestTag],Bin) ->
-    case decode_tlv(Bin) of
-	{{_Form,TagNo,_Len,V},Rest} ->
+    case decode_tag_and_length(Bin) of
+	{_Form,TagNo,V,Rest} ->
 	    {{TagNo,decode_parts_incomplete(V)},Rest};
 	Err ->
 	    {error,{asn1,"tag failure",TagNo,Err}}
     end;
 decode_primitive_incomplete([mandatory|RestTag],Bin) ->
-    {{Form,TagNo,Len,V},Rest} = decode_tlv(Bin),
-    decode_incomplete2(Form,TagNo,Len,V,RestTag,Rest);
+    {Form,TagNo,V,Rest} = decode_tag_and_length(Bin),
+    decode_incomplete2(Form,TagNo,V,RestTag,Rest);
 %% A choice that is a toptype or a mandatory component of a
 %% SEQUENCE or SET.
 decode_primitive_incomplete([[mandatory|Directives]],Bin) ->
-    {{Form,TagNo,Len,V},Rest} = decode_tlv(Bin),
-    decode_incomplete2(Form,TagNo,Len,V,Directives,Rest);
+    {Form,TagNo,V,Rest} = decode_tag_and_length(Bin),
+    decode_incomplete2(Form,TagNo,V,Directives,Rest);
 decode_primitive_incomplete([],Bin) ->
     decode_primitive(Bin).
 
@@ -364,18 +378,18 @@ decode_parts_incomplete(Bin) ->
     
 %% decode_incomplete2 checks if V is a value of a constructed or
 %% primitive type, and continues the decode propeerly.
-decode_incomplete2(1,TagNo,indefinite,V,TagMatch,_) ->
+decode_incomplete2(_Form=2,TagNo,V,TagMatch,_) ->
     %% constructed indefinite length
     {Vlist,Rest2} = decode_constr_indef_incomplete(TagMatch,V,[]),
     {{TagNo,Vlist},Rest2};
-decode_incomplete2(1,TagNo,_Len,V,[TagMatch],Rest) when list(TagMatch) ->
+decode_incomplete2(1,TagNo,V,[TagMatch],Rest) when is_list(TagMatch) ->
     {{TagNo,decode_constructed_incomplete(TagMatch,V)},Rest};
-decode_incomplete2(1,TagNo,_Len,V,TagMatch,Rest) ->
+decode_incomplete2(1,TagNo,V,TagMatch,Rest) ->
     {{TagNo,decode_constructed_incomplete(TagMatch,V)},Rest};
-decode_incomplete2(0,TagNo,_Len,V,_TagMatch,Rest) ->
+decode_incomplete2(0,TagNo,V,_TagMatch,Rest) ->
     {{TagNo,V},Rest}.
 
-decode_constructed_incomplete([Tags=[Ts]],Bin) when list(Ts) ->
+decode_constructed_incomplete([Tags=[Ts]],Bin) when is_list(Ts) ->
     decode_constructed_incomplete(Tags,Bin);
 decode_constructed_incomplete(_TagMatch,<<>>) ->
     [];
@@ -384,7 +398,7 @@ decode_constructed_incomplete([mandatory|RestTag],Bin) ->
     [Tlv|decode_constructed_incomplete(RestTag,Rest)];
 decode_constructed_incomplete(Directives=[[Alt,_]|_],Bin) 
   when Alt == alt_undec; Alt == alt; Alt == alt_parts ->
-    {{_Form,TagNo,_Len,V},Rest} = decode_tlv(Bin),
+    {_Form,TagNo,V,Rest} = decode_tag_and_length(Bin),
     case incomplete_choice_alt(TagNo,Directives) of
 	{alt_undec,_} ->
 	    LenA = size(Bin)-size(Rest),
@@ -434,7 +448,7 @@ decode_incomplete_bin(Bin) ->
 	    
 incomplete_choice_alt(TagNo,[[Alt,TagNo]|Directives]) ->
     {Alt,Directives};
-incomplete_choice_alt(TagNo,[D]) when list(D) ->
+incomplete_choice_alt(TagNo,[D]) when is_list(D) ->
     incomplete_choice_alt(TagNo,D);
 incomplete_choice_alt(TagNo,[_H|Directives]) ->
     incomplete_choice_alt(TagNo,Directives);
@@ -590,7 +604,8 @@ get_indefinite_length_and_value(Binary,Acc) ->
 %% match_tags(Tlv, TagList)
 %%
 
-
+match_tags({T,V},[T]) ->
+    V;
 match_tags({T,V}, [T|Tt]) ->
     match_tags(V,Tt);
 match_tags([{T,V}],[T|Tt]) ->
@@ -632,13 +647,13 @@ skip_ExtensionAdditions(TLV=[{Tag,_}|Rest],Tags) ->
 %%=============================================================================== 
  
 % converts a list to a record if necessary 
-list_to_record(Name,List) when list(List) -> 
+list_to_record(Name,List) when is_list(List) -> 
     list_to_tuple([Name|List]); 
-list_to_record(_Name,Tuple) when tuple(Tuple) -> 
+list_to_record(_Name,Tuple) when is_tuple(Tuple) -> 
     Tuple. 
  
  
-fixoptionals(OptList,Val) when list(Val) -> 
+fixoptionals(OptList,Val) when is_list(Val) -> 
     fixoptionals(OptList,Val,1,[],[]). 
  
 fixoptionals([{Name,Pos}|Ot],[{Name,Val}|Vt],_Opt,Acc1,Acc2) -> 
@@ -671,24 +686,28 @@ encode_tag_val({Class, Form, TagNo}) ->
 %% decode_tag(OctetListBuffer) -> {{Form, (Class bsl 16)+ TagNo}, RestOfBuffer, RemovedBytes} 
 %%=============================================================================== 
 
-decode_tag_and_length(<<Class:2, Form:1, TagNo:5, 0:1, Length:7, RestBuffer/binary>>) when TagNo < 31 -> 
-    {Form, (Class bsl 16) + TagNo, Length, RestBuffer};
-decode_tag_and_length(<<Class:2, Form:1, TagNo:5, 1:1, 0:7, T/binary>>) when TagNo < 31 ->
-    {Form, (Class bsl 16) + TagNo, indefinite, T};
-decode_tag_and_length(<<Class:2, Form:1, TagNo:5, 1:1, LL:7, T/binary>>) when TagNo < 31 ->
-    <<Length:LL/unit:8,RestBuffer/binary>> = T,
-    {Form, (Class bsl 16) + TagNo, Length, RestBuffer};
-decode_tag_and_length(<<Class:2, Form:1, 31:5, 0:1, TagNo:7, 0:1, Length:7, RestBuffer/binary>>) -> 
-    {Form, (Class bsl 16) + TagNo, Length, RestBuffer};
-decode_tag_and_length(<<Class:2, Form:1, 31:5, 0:1, TagNo:7, 1:1, 0:7, T/binary>>)  ->
-    {Form, (Class bsl 16) + TagNo, indefinite, T};
-decode_tag_and_length(<<Class:2, Form:1, 31:5, 0:1, TagNo:7, 1:1, LL:7, T/binary>>)  ->
-    <<Length:LL/unit:8,RestBuffer/binary>> = T,
-    {Form, (Class bsl 16) + TagNo, Length, RestBuffer};
+decode_tag_and_length(<<Class:2, Form:1, TagNo:5, 0:1, Length:7, V:Length/binary, RestBuffer/binary>>) when TagNo < 31 -> 
+    {Form, (Class bsl 16) + TagNo, V, RestBuffer};
+decode_tag_and_length(<<Class:2, 1:1, TagNo:5, 1:1, 0:7, T/binary>>) when TagNo < 31 ->
+    {2, (Class bsl 16) + TagNo, T, <<>>};
+decode_tag_and_length(<<Class:2, Form:1, TagNo:5, 1:1, LL:7, Length:LL/unit:8,V:Length/binary, T/binary>>) when TagNo < 31 ->
+    {Form, (Class bsl 16) + TagNo, V, T};
+decode_tag_and_length(<<Class:2, Form:1, 31:5, 0:1, TagNo:7, 0:1, Length:7, V:Length/binary, RestBuffer/binary>>) -> 
+    {Form, (Class bsl 16) + TagNo, V, RestBuffer};
+decode_tag_and_length(<<Class:2, 1:1, 31:5, 0:1, TagNo:7, 1:1, 0:7, T/binary>>)  ->
+    {2, (Class bsl 16) + TagNo, T, <<>>};
+decode_tag_and_length(<<Class:2, Form:1, 31:5, 0:1, TagNo:7, 1:1, LL:7, Length:LL/unit:8, V:Length/binary, T/binary>>)  ->
+    {Form, (Class bsl 16) + TagNo, V, T};
+decode_tag_and_length(<<Class:2, Form:1, 31:5, 1:1, TagPart1:7, 0:1, TagPartLast, Buffer/binary>>) ->
+    TagNo = (TagPart1 bsl 7) bor TagPartLast,
+    {Length, RestBuffer} = decode_length(Buffer),
+    << V:Length/binary, RestBuffer2/binary>> = RestBuffer,
+    {Form, (Class bsl 16) + TagNo, V, RestBuffer2};
 decode_tag_and_length(<<Class:2, Form:1, 31:5, Buffer/binary>>) ->
     {TagNo, Buffer1} = decode_tag(Buffer, 0),
     {Length, RestBuffer} = decode_length(Buffer1),
-    {Form, (Class bsl 16) + TagNo, Length, RestBuffer}.
+    << V:Length/binary, RestBuffer2/binary>> = RestBuffer,
+    {Form, (Class bsl 16) + TagNo, V, RestBuffer2}.
 
 
      
@@ -755,14 +774,14 @@ encode_tags(TagIn, {BytesSoFar,LenSoFar}) ->
 %%         | binary
 
 %%
-encode_open_type(Val) when list(Val) -> 
+encode_open_type(Val) when is_list(Val) -> 
 %    {Val,length(Val)};
     encode_open_type(list_to_binary(Val));
 encode_open_type(Val) ->
     {Val, size(Val)}. 
 
 %% 
-encode_open_type(Val, T) when list(Val) -> 
+encode_open_type(Val, T) when is_list(Val) -> 
     encode_open_type(list_to_binary(Val),T);
 encode_open_type(Val,[]) ->
     {Val, size(Val)};
@@ -778,7 +797,7 @@ encode_open_type(Val,Tag) ->
 %%
 decode_open_type(Tlv, TagIn) ->
     case match_tags(Tlv,TagIn) of
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {InnerTlv,_} = decode(Bin),
 	    InnerTlv;
 	TlvBytes -> TlvBytes
@@ -787,7 +806,7 @@ decode_open_type(Tlv, TagIn) ->
  
 decode_open_type_as_binary(Tlv,TagIn)->
     case match_tags(Tlv,TagIn) of
-	V when binary(V) ->
+	V when is_binary(V) ->
 	    V;
 	[Tlv2] -> encode(Tlv2);
 	Tlv2 -> encode(Tlv2)
@@ -805,7 +824,7 @@ decode_open_type_as_binary(Tlv,TagIn)->
 %% encode_boolean(Integer, ReversedTagList) -> {[Octet],Len} 
 %%=============================================================================== 
  
-encode_boolean({Name, Val}, TagIn) when atom(Name) -> 
+encode_boolean({Name, Val}, TagIn) when is_atom(Name) -> 
     encode_boolean(Val, TagIn); 
 encode_boolean(true, TagIn) -> 
     encode_tags(TagIn, [16#FF],1);
@@ -840,16 +859,16 @@ decode_boolean(Tlv,TagIn) ->
 %%    Tag = tag | notag 
 %%=========================================================================== 
  
-encode_integer(C, Val, Tag) when integer(Val) -> 
+encode_integer(C, Val, Tag) when is_integer(Val) -> 
     encode_tags(Tag, encode_integer(C, Val));
-encode_integer(C,{Name,Val},Tag) when atom(Name) ->
+encode_integer(C,{Name,Val},Tag) when is_atom(Name) ->
     encode_integer(C,Val,Tag);
 encode_integer(_C, Val, _Tag) -> 
     exit({error,{asn1, {encode_integer, Val}}}). 
  
  
  
-encode_integer(C, Val, NamedNumberList, Tag) when atom(Val) -> 
+encode_integer(C, Val, NamedNumberList, Tag) when is_atom(Val) -> 
     case lists:keysearch(Val, 1, NamedNumberList) of 
 	{value,{_, NewVal}} ->  
 	    encode_tags(Tag, encode_integer(C, NewVal)); 
@@ -924,7 +943,7 @@ range_check_integer(Int,Range) ->
 	    Int;
 	{_,_} -> 
 	    exit({error,{asn1,{integer_range,Range,Int}}});
-	SingleValue when integer(SingleValue) ->
+	SingleValue when is_integer(SingleValue) ->
 	    exit({error,{asn1,{integer_range,Range,Int}}});
 	_ -> % some strange constraint that we don't support yet
 	    Int
@@ -946,22 +965,22 @@ number2name(Int,NamedNumberList) ->
 
 %% encode enumerated value 
 %%============================================================================ 
-encode_enumerated(Val, TagIn) when integer(Val)->
+encode_enumerated(Val, TagIn) when is_integer(Val)->
     encode_tags(TagIn, encode_integer(false,Val));
-encode_enumerated({Name,Val}, TagIn) when atom(Name) ->
+encode_enumerated({Name,Val}, TagIn) when is_atom(Name) ->
     encode_enumerated(Val, TagIn).
 
 %% The encode_enumerated functions below this line can be removed when the
 %% new code generation is stable. (the functions might have to be kept here
 %% a while longer for compatibility reasons)
 
-encode_enumerated(C, Val, {NamedNumberList,ExtList}, TagIn) when atom(Val) ->
+encode_enumerated(C, Val, {NamedNumberList,ExtList}, TagIn) when is_atom(Val) ->
     case catch encode_enumerated(C, Val, NamedNumberList, TagIn) of
 	{'EXIT',_} -> encode_enumerated(C, Val, ExtList, TagIn);
 	Result -> Result
     end;
  
-encode_enumerated(C, Val, NamedNumberList, TagIn) when atom(Val) -> 
+encode_enumerated(C, Val, NamedNumberList, TagIn) when is_atom(Val) -> 
     case lists:keysearch(Val, 1, NamedNumberList) of 
 	{value, {_, NewVal}} -> 
 	    encode_tags(TagIn, encode_integer(C, NewVal)); 
@@ -969,10 +988,10 @@ encode_enumerated(C, Val, NamedNumberList, TagIn) when atom(Val) ->
 	    exit({error,{asn1, {enumerated_not_in_range, Val}}}) 
     end; 
 
-encode_enumerated(C, {asn1_enum, Val}, {_,_}, TagIn) when integer(Val) ->
+encode_enumerated(C, {asn1_enum, Val}, {_,_}, TagIn) when is_integer(Val) ->
     encode_tags(TagIn, encode_integer(C,Val));
 
-encode_enumerated(C, {Name,Val}, NamedNumberList, TagIn) when atom(Name) -> 
+encode_enumerated(C, {Name,Val}, NamedNumberList, TagIn) when is_atom(Name) -> 
     encode_enumerated(C, Val, NamedNumberList, TagIn);
 
 encode_enumerated(_C, Val, _NamedNumberList, _TagIn) -> 
@@ -1141,15 +1160,15 @@ decode_real_notag(Buffer) ->
 %% C is constrint Len, only valid when identifiers 
 %%============================================================================ 
  
-encode_bit_string(C,Bin={Unused,BinBits},NamedBitList,TagIn) when integer(Unused), binary(BinBits) ->
+encode_bit_string(C,Bin={Unused,BinBits},NamedBitList,TagIn) when is_integer(Unused), is_binary(BinBits) ->
     encode_bin_bit_string(C,Bin,NamedBitList,TagIn);
-encode_bit_string(C, [FirstVal | RestVal], NamedBitList, TagIn) when atom(FirstVal) -> 
+encode_bit_string(C, [FirstVal | RestVal], NamedBitList, TagIn) when is_atom(FirstVal) -> 
     encode_bit_string_named(C, [FirstVal | RestVal], NamedBitList, TagIn); 
 
 encode_bit_string(C, [{bit,X} | RestVal], NamedBitList, TagIn) -> 
     encode_bit_string_named(C, [{bit,X} | RestVal], NamedBitList, TagIn); 
  
-encode_bit_string(C, [FirstVal| RestVal], NamedBitList, TagIn) when integer(FirstVal) -> 
+encode_bit_string(C, [FirstVal| RestVal], NamedBitList, TagIn) when is_integer(FirstVal) -> 
     encode_bit_string_bits(C, [FirstVal | RestVal], NamedBitList, TagIn); 
  
 encode_bit_string(_C, 0, _NamedBitList, TagIn) -> 
@@ -1158,18 +1177,18 @@ encode_bit_string(_C, 0, _NamedBitList, TagIn) ->
 encode_bit_string(_C, [], _NamedBitList, TagIn) -> 
     encode_tags(TagIn, <<0>>,1); 
 
-encode_bit_string(C, IntegerVal, NamedBitList, TagIn) when integer(IntegerVal) -> 
+encode_bit_string(C, IntegerVal, NamedBitList, TagIn) when is_integer(IntegerVal) -> 
     BitListVal = int_to_bitlist(IntegerVal),
     encode_bit_string_bits(C, BitListVal, NamedBitList, TagIn);
 
-encode_bit_string(C, {Name,BitList}, NamedBitList, TagIn) when atom(Name) ->
+encode_bit_string(C, {Name,BitList}, NamedBitList, TagIn) when is_atom(Name) ->
     encode_bit_string(C, BitList, NamedBitList, TagIn).
   
  
  
 int_to_bitlist(0) ->
     [];
-int_to_bitlist(Int) when integer(Int), Int >= 0 ->
+int_to_bitlist(Int) when is_integer(Int), Int >= 0 ->
     [Int band 1 | int_to_bitlist(Int bsr 1)].
 
 
@@ -1246,7 +1265,7 @@ encode_bit_string_named(C, [FirstVal | RestVal], NamedBitList, TagIn) ->
 
 get_all_bitposes([{bit,ValPos}|Rest], NamedBitList, Ack) ->
     get_all_bitposes(Rest, NamedBitList, [ValPos | Ack ]);
-get_all_bitposes([Val | Rest], NamedBitList, Ack) when atom(Val) -> 
+get_all_bitposes([Val | Rest], NamedBitList, Ack) when is_atom(Val) -> 
     case lists:keysearch(Val, 1, NamedBitList) of 
 	{value, {_ValName, ValPos}} -> 
 	    get_all_bitposes(Rest, NamedBitList, [ValPos | Ack]); 
@@ -1283,13 +1302,13 @@ make_and_set_list(Len, [], XPos) ->
 %%================================================================= 
 %% Encode bit string for lists of ones and zeroes 
 %%================================================================= 
-encode_bit_string_bits(C, BitListVal, _NamedBitList, TagIn) when list(BitListVal) -> 
+encode_bit_string_bits(C, BitListVal, _NamedBitList, TagIn) when is_list(BitListVal) -> 
     case get_constraint(C,'SizeConstraint') of 
 	no -> 
 	    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
 	    %%add unused byte to the Len 
 	    encode_tags(TagIn, [Unused | OctetList], Len+1);
-	Constr={Min,_Max} when integer(Min) ->
+	Constr={Min,_Max} when is_integer(Min) ->
 	    %% Max may be an integer or 'MAX'
 	    encode_constr_bit_str_bits(Constr,BitListVal,TagIn);
 	{Constr={_,_},[]} ->%Constr={Min,Max}
@@ -1487,11 +1506,11 @@ decode_bitstring_NNL([0|BitList],NamedNumberList,No,Result) ->
 %% The OctetList must be a flat list of integers in the range 0..255
 %% the function does not check this because it takes to much time
 %%============================================================================ 
-encode_octet_string(_C, OctetList, TagIn) when binary(OctetList) -> 
+encode_octet_string(_C, OctetList, TagIn) when is_binary(OctetList) -> 
     encode_tags(TagIn, OctetList, size(OctetList));
-encode_octet_string(_C, OctetList, TagIn) when list(OctetList) -> 
+encode_octet_string(_C, OctetList, TagIn) when is_list(OctetList) -> 
     encode_tags(TagIn, OctetList, length(OctetList));
-encode_octet_string(C, {Name,OctetList}, TagIn) when atom(Name) -> 
+encode_octet_string(C, {Name,OctetList}, TagIn) when is_atom(Name) -> 
     encode_octet_string(C, OctetList, TagIn).
  
 
@@ -1512,7 +1531,7 @@ decode_octet_string(Buffer, Range, Tags) ->
 %% encode NULL value 
 %%============================================================================ 
  
-encode_null({Name, _Val}, TagIn) when atom(Name) -> 
+encode_null({Name, _Val}, TagIn) when is_atom(Name) -> 
     encode_tags(TagIn, [], 0);
 encode_null(_Val, TagIn) -> 
     encode_tags(TagIn, [], 0). 
@@ -1537,18 +1556,18 @@ decode_null(Tlv, Tags) ->
 %% encode Object Identifier value 
 %%============================================================================ 
  
-encode_object_identifier({Name,Val}, TagIn) when atom(Name) -> 
+encode_object_identifier({Name,Val}, TagIn) when is_atom(Name) -> 
     encode_object_identifier(Val, TagIn);
 encode_object_identifier(Val, TagIn) -> 
     encode_tags(TagIn, e_object_identifier(Val)).
  
 e_object_identifier({'OBJECT IDENTIFIER', V}) -> 
     e_object_identifier(V); 
-e_object_identifier({Cname, V}) when atom(Cname), tuple(V) -> 
+e_object_identifier({Cname, V}) when is_atom(Cname), is_tuple(V) -> 
     e_object_identifier(tuple_to_list(V)); 
-e_object_identifier({Cname, V}) when atom(Cname), list(V) -> 
+e_object_identifier({Cname, V}) when is_atom(Cname), is_list(V) -> 
     e_object_identifier(V); 
-e_object_identifier(V) when tuple(V) -> 
+e_object_identifier(V) when is_tuple(V) -> 
     e_object_identifier(tuple_to_list(V)); 
  
 %%%%%%%%%%%%%%% 
@@ -1648,12 +1667,12 @@ decode_relative_oid(Tlv, Tags) ->
 %%============================================================================ 
 %% The StringType arg is kept for future use but might be removed 
 encode_restricted_string(_C, OctetList, _StringType, TagIn) 
-  when binary(OctetList) -> 
+  when is_binary(OctetList) -> 
     encode_tags(TagIn, OctetList, size(OctetList)); 
 encode_restricted_string(_C, OctetList, _StringType, TagIn) 
-  when list(OctetList) -> 
+  when is_list(OctetList) -> 
     encode_tags(TagIn, OctetList, length(OctetList)); 
-encode_restricted_string(C,{Name,OctetL}, StringType, TagIn) when atom(Name)-> 
+encode_restricted_string(C,{Name,OctetL}, StringType, TagIn) when is_atom(Name)-> 
     encode_restricted_string(C, OctetL, StringType, TagIn).
 
 %%============================================================================ 
@@ -1686,9 +1705,9 @@ decode_restricted_string(Tlv, Range, StringType, TagsIn,
 % 	case StringType of
 % 	    ?N_BIT_STRING when BinOrOld == bin ->
 % 		{concat_bit_binaries(AccVal, Val), AccRb+Rb};
-% 	    _ when binary(Val),binary(AccVal) ->
+% 	    _ when is_binary(Val),is_binary(AccVal) ->
 % 		{<<AccVal/binary,Val/binary>>,AccRb+Rb};
-% 	    _ when binary(Val), AccVal==[] ->
+% 	    _ when is_binary(Val), AccVal==[] ->
 % 		{Val,AccRb+Rb};				      
 % 	    _ ->	
 % 		{AccVal++Val, AccRb+Rb}
@@ -1713,13 +1732,13 @@ check_and_convert_restricted_string(Val,StringType,Range,NamedNumberList,_BinOrO
     {StrLen,NewVal} = case StringType of
 			  ?N_BIT_STRING when NamedNumberList /= [] ->
 			      {no_check,Val};
-			  ?N_BIT_STRING when list(Val) ->
+			  ?N_BIT_STRING when is_list(Val) ->
 			      {length(Val),Val};
-			  ?N_BIT_STRING when tuple(Val) -> 
+			  ?N_BIT_STRING when is_tuple(Val) -> 
 			      {(size(element(2,Val))*8) - element(1,Val),Val};
-			  _ when binary(Val) ->
+			  _ when is_binary(Val) ->
 			      {size(Val),binary_to_list(Val)};
-			  _ when list(Val) ->
+			  _ when is_list(Val) ->
 			      {length(Val), Val}
 		      end,
     case Range of
@@ -1740,7 +1759,7 @@ check_and_convert_restricted_string(Val,StringType,Range,NamedNumberList,_BinOrO
 	    NewVal;
 	{_,_} -> 
 	    exit({error,{asn1,{length,Range,Val}}});
-	_Len when integer(_Len) ->
+	_Len when is_integer(_Len) ->
 	    exit({error,{asn1,{length,Range,Val}}});
 	_ -> % some strange constraint that we don't support yet
 	    NewVal
@@ -1751,7 +1770,7 @@ check_and_convert_restricted_string(Val,StringType,Range,NamedNumberList,_BinOrO
 %% encode Universal string 
 %%============================================================================ 
 
-encode_universal_string(C, {Name, Universal}, TagIn) when atom(Name) -> 
+encode_universal_string(C, {Name, Universal}, TagIn) when is_atom(Name) -> 
     encode_universal_string(C, Universal, TagIn);
 encode_universal_string(_C, Universal, TagIn) -> 
     OctetList = mk_uni_list(Universal), 
@@ -1793,7 +1812,7 @@ mk_universal_string([A,B,C,D|T],Acc) ->
 %% encode UTF8 string 
 %%============================================================================
 
-encode_UTF8_string(_C,UTF8String,TagIn) when binary(UTF8String) ->
+encode_UTF8_string(_C,UTF8String,TagIn) when is_binary(UTF8String) ->
     encode_tags(TagIn, UTF8String, size(UTF8String));
 encode_UTF8_string(_C,UTF8String,TagIn) ->
     encode_tags(TagIn, UTF8String, length(UTF8String)).
@@ -1817,7 +1836,7 @@ decode_UTF8_string(Tlv,TagsIn) ->
 %% encode BMP string 
 %%============================================================================ 
 
-encode_BMP_string(C, {Name,BMPString}, TagIn) when atom(Name)-> 
+encode_BMP_string(C, {Name,BMPString}, TagIn) when is_atom(Name)-> 
     encode_BMP_string(C, BMPString, TagIn);
 encode_BMP_string(_C, BMPString, TagIn) -> 
     OctetList = mk_BMP_list(BMPString), 
@@ -1859,7 +1878,7 @@ mk_BMP_string([C,D|T],US) ->
 %% encode Generalized time 
 %%============================================================================ 
 
-encode_generalized_time(C, {Name,OctetList}, TagIn) when atom(Name) -> 
+encode_generalized_time(C, {Name,OctetList}, TagIn) when is_atom(Name) -> 
     encode_generalized_time(C, OctetList, TagIn);
 encode_generalized_time(_C, OctetList, TagIn) -> 
     encode_tags(TagIn, OctetList, length(OctetList)). 
@@ -1885,7 +1904,7 @@ decode_generalized_time(Tlv, _Range, Tags) ->
 %% encode UTC time 
 %%============================================================================ 
 
-encode_utc_time(C, {Name,OctetList}, TagIn) when atom(Name) -> 
+encode_utc_time(C, {Name,OctetList}, TagIn) when is_atom(Name) -> 
     encode_utc_time(C, OctetList, TagIn);
 encode_utc_time(_C, OctetList, TagIn) -> 
     encode_tags(TagIn, OctetList, length(OctetList)).
@@ -1983,7 +2002,7 @@ get_constraint(C,Key) ->
 collect_parts(TlvList) ->
     collect_parts(TlvList,[]).
 
-collect_parts([{_,L}|Rest],Acc) when list(L) ->
+collect_parts([{_,L}|Rest],Acc) when is_list(L) ->
     collect_parts(Rest,[collect_parts(L)|Acc]);
 collect_parts([{?N_BIT_STRING,<<Unused,Bits/binary>>}|Rest],_Acc) ->
     collect_parts_bit(Rest,[Bits],Unused);

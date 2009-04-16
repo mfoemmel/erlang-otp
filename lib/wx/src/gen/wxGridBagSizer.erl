@@ -65,7 +65,8 @@ new() ->
 new(Options)
  when is_list(Options) ->
   MOpts = fun({vgap, Vgap}, Acc) -> [<<1:32/?UI,Vgap:32/?UI>>|Acc];
-          ({hgap, Hgap}, Acc) -> [<<2:32/?UI,Hgap:32/?UI>>|Acc]  end,
+          ({hgap, Hgap}, Acc) -> [<<2:32/?UI,Hgap:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxGridBagSizer_new,
   <<BinOpt/binary>>).
@@ -114,7 +115,8 @@ add(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=WindowT,ref=WindowRef}, Options
   MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc];
           ({flag, Flag}, Acc) -> [<<2:32/?UI,Flag:32/?UI>>|Acc];
           ({border, Border}, Acc) -> [<<3:32/?UI,Border:32/?UI>>|Acc];
-          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc]  end,
+          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(WindowOP,
   <<ThisRef:32/?UI,WindowRef:32/?UI, BinOpt/binary>>).
@@ -142,7 +144,8 @@ add(#wx_ref{type=ThisT,ref=ThisRef},Width,Height, Options)
   MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc];
           ({flag, Flag}, Acc) -> [<<2:32/?UI,Flag:32/?UI>>|Acc];
           ({border, Border}, Acc) -> [<<3:32/?UI,Border:32/?UI>>|Acc];
-          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc]  end,
+          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGridBagSizer_Add_3_0,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>);
@@ -158,7 +161,8 @@ add(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=WindowT,ref=WindowRef},{PosR,Po
   MOpts = fun({span, {SpanRS,SpanCS}}, Acc) -> [<<1:32/?UI,SpanRS:32/?UI,SpanCS:32/?UI,0:32>>|Acc];
           ({flag, Flag}, Acc) -> [<<2:32/?UI,Flag:32/?UI>>|Acc];
           ({border, Border}, Acc) -> [<<3:32/?UI,Border:32/?UI>>|Acc];
-          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc]  end,
+          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(WindowOP,
   <<ThisRef:32/?UI,WindowRef:32/?UI,PosR:32/?UI,PosC:32/?UI, BinOpt/binary>>).
@@ -172,7 +176,8 @@ add(#wx_ref{type=ThisT,ref=ThisRef},Width,Height,{PosR,PosC}, Options)
   MOpts = fun({span, {SpanRS,SpanCS}}, Acc) -> [<<1:32/?UI,SpanRS:32/?UI,SpanCS:32/?UI,0:32>>|Acc];
           ({flag, Flag}, Acc) -> [<<2:32/?UI,Flag:32/?UI>>|Acc];
           ({border, Border}, Acc) -> [<<3:32/?UI,Border:32/?UI>>|Acc];
-          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc]  end,
+          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGridBagSizer_Add_4,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI,PosR:32/?UI,PosC:32/?UI, 0:32,BinOpt/binary>>).
@@ -207,7 +212,8 @@ checkForIntersection(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ItemT,ref=Item
  when is_list(Options) ->
   ?CLASS(ThisT,wxGridBagSizer),
   ?CLASS(ItemT,wxGBSizerItem),
-  MOpts = fun({excludeItem, #wx_ref{type=ExcludeItemT,ref=ExcludeItemRef}}, Acc) ->   ?CLASS(ExcludeItemT,wxGBSizerItem),[<<1:32/?UI,ExcludeItemRef:32/?UI>>|Acc]  end,
+  MOpts = fun({excludeItem, #wx_ref{type=ExcludeItemT,ref=ExcludeItemRef}}, Acc) ->   ?CLASS(ExcludeItemT,wxGBSizerItem),[<<1:32/?UI,ExcludeItemRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGridBagSizer_CheckForIntersection_2,
   <<ThisRef:32/?UI,ItemRef:32/?UI, BinOpt/binary>>).
@@ -218,7 +224,8 @@ checkForIntersection(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ItemT,ref=Item
 checkForIntersection(#wx_ref{type=ThisT,ref=ThisRef},{PosR,PosC},{SpanRS,SpanCS}, Options)
  when is_integer(PosR),is_integer(PosC),is_integer(SpanRS),is_integer(SpanCS),is_list(Options) ->
   ?CLASS(ThisT,wxGridBagSizer),
-  MOpts = fun({excludeItem, #wx_ref{type=ExcludeItemT,ref=ExcludeItemRef}}, Acc) ->   ?CLASS(ExcludeItemT,wxGBSizerItem),[<<1:32/?UI,ExcludeItemRef:32/?UI>>|Acc]  end,
+  MOpts = fun({excludeItem, #wx_ref{type=ExcludeItemT,ref=ExcludeItemRef}}, Acc) ->   ?CLASS(ExcludeItemT,wxGBSizerItem),[<<1:32/?UI,ExcludeItemRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGridBagSizer_CheckForIntersection_3,
   <<ThisRef:32/?UI,PosR:32/?UI,PosC:32/?UI,SpanRS:32/?UI,SpanCS:32/?UI, 0:32,BinOpt/binary>>).

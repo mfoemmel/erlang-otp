@@ -52,7 +52,8 @@ new(Width,Height)
 new(Width,Height, Options)
  when is_integer(Width),is_integer(Height),is_list(Options) ->
   MOpts = fun({mask, Mask}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Mask)):32/?UI>>|Acc];
-          ({initialCount, InitialCount}, Acc) -> [<<2:32/?UI,InitialCount:32/?UI>>|Acc]  end,
+          ({initialCount, InitialCount}, Acc) -> [<<2:32/?UI,InitialCount:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxImageList_new_3,
   <<Width:32/?UI,Height:32/?UI, BinOpt/binary>>).
@@ -100,7 +101,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},Width,Height, Options)
  when is_integer(Width),is_integer(Height),is_list(Options) ->
   ?CLASS(ThisT,wxImageList),
   MOpts = fun({mask, Mask}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Mask)):32/?UI>>|Acc];
-          ({initialCount, InitialCount}, Acc) -> [<<2:32/?UI,InitialCount:32/?UI>>|Acc]  end,
+          ({initialCount, InitialCount}, Acc) -> [<<2:32/?UI,InitialCount:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImageList_Create,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).
@@ -119,7 +121,8 @@ draw(#wx_ref{type=ThisT,ref=ThisRef},Index,#wx_ref{type=DcT,ref=DcRef},X,Y, Opti
   ?CLASS(ThisT,wxImageList),
   ?CLASS(DcT,wxDC),
   MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc];
-          ({solidBackground, SolidBackground}, Acc) -> [<<2:32/?UI,(wxe_util:from_bool(SolidBackground)):32/?UI>>|Acc]  end,
+          ({solidBackground, SolidBackground}, Acc) -> [<<2:32/?UI,(wxe_util:from_bool(SolidBackground)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImageList_Draw,
   <<ThisRef:32/?UI,Index:32/?UI,DcRef:32/?UI,X:32/?UI,Y:32/?UI, 0:32,BinOpt/binary>>).

@@ -25,6 +25,16 @@ else
     host_os=win32
 fi
 
+case $host_os in
+    mingw32)
+	if test "X$host" = "X"; then
+	   host=win32
+	fi
+	;;
+    *)
+	;;
+esac
+
 TARGET=$host
 AC_SUBST(TARGET)
 
@@ -40,7 +50,7 @@ WXERL_CAN_BUILD_DRIVER=true
 AC_MSG_CHECKING(for mixed cygwin and native VC++ environment)
 if test "X$CC" = "Xcc.sh" -a "X$host" = "Xwin32" -a "x$GCC" != x"yes"; then
 	if test -x /usr/bin/cygpath; then
-		CFLAGS="-Owx"
+		CFLAGS="-Owx"		
 		MIXED_CYGWIN=yes
 		AC_MSG_RESULT([yes])
 		MIXED_CYGWIN_VC=yes
@@ -91,11 +101,14 @@ case $host_os in
 	CPPFLAGS="$CPPFLAGS -D_MACOSX $PTHR_CFLAGS"
 	;;
     mingw32)
-	CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0403"
+	CFLAGS="$CFLAGS -DWIN32 -DWINVER=0x0500 -D_WINDOWS -D_UNICODE -DUNICODE"
+	CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0500"	
 	AC_MSG_WARN([Reverting to 32-bit time_t])
 	CPPFLAGS="$CPPFLAGS -D_USE_32BIT_TIME_T"
 	;;
     win32)
+	CFLAGS="$CFLAGS -DWIN32 -DWINVER=0x0500 -D_WINDOWS -D_UNICODE -DUNICODE"
+	CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0500"
 	;;
     *)
 	CPPFLAGS="$CPPFLAGS -D_GNU_SOURCE $PTHR_CFLAGS"
@@ -109,6 +122,9 @@ case $host_os in
 	;;
     win32)
         LDFLAGS="-dll"
+	;;
+    mingw32)
+	LDFLAGS="-shared -fPIC"
 	;;
     *)
 	CFLAGS=
@@ -126,7 +142,7 @@ case $host_os in
 	CFLAGS="-g -Wall -O2 -fomit-frame-pointer -fno-strict-aliasing $CFLAGS"
 	;;
     win32)
-	DEBUG_CFLAGS="-g -DDEBUG $CFLAGS"
+	DEBUG_CFLAGS="-g -Wall -DDEBUG $CFLAGS"
 	CFLAGS="-g -Wall -O2 $CFLAGS"
 	;;
     *)
@@ -137,7 +153,6 @@ esac
 
 CXXFLAGS="$CFLAGS $CPPFLAGS" 
 CFLAGS="$CFLAGS $CPPFLAGS $C_ONLY_FLAGS"
-
 
 DEBUG_CXXFLAGS="$DEBUG_CFLAGS $CPPFLAGS"
 DEBUG_CFLAGS="$DEBUG_CFLAGS $CPPFLAGS $C_ONLY_FLAGS"
@@ -219,7 +234,7 @@ if test X"$MIXED_CYGWIN_VC" != X"yes" ; then
     else 
 	wxWin=1
     fi
-
+    RC_FILE_TYPE=o
 define(wx_warn_text,[
                 wxWidgets must be installed on your system.
  
@@ -233,7 +248,7 @@ define(wx_warn_text,[
         if test X"$WX_BUILDING_INSIDE_ERLSRC" != X"true" ; then
 	   AC_MSG_ERROR([wx_warn_text])
 	else
-	   echo "wxWidgets not found, wx will NOT be useable" >> ./CONF_INFO
+	   echo "wxWidgets not found, wx will NOT be useable" > ./CONF_INFO
 	   WXERL_CAN_BUILD_DRIVER=false
 	   AC_MSG_WARN([wx_warn_text])
 	fi
@@ -250,6 +265,7 @@ else
 	    WX_CXXFLAGS=$WX_CFLAGS
 	    WX_LIBDIR=$dir/lib/vc_lib
 	    WX_RESCOMP="rc.sh -I$WXINCLUDE_PLAIN -D __WIN32__"
+	    RC_FILE_TYPE=res
 	    for lib in $WX_LIBDIR/wxbase*.lib; do
 		maybe=`echo $lib | egrep 'wxbase[[0-9]]*u\.lib'`
 		if test '!' -z "$maybe"; then
@@ -278,7 +294,7 @@ else
         if test X"$WX_BUILDING_INSIDE_ERLSRC" != X"true" ; then
 		AC_MSG_ERROR([Cannot find core lib version for wxWidgets])
 	else
-		echo "No usable wxWidgets not found, wx will not be useable" >> ./CONF_INFO
+		echo "No usable wxWidgets not found, wx will not be useable" > ./CONF_INFO
 		WXERL_CAN_BUILD_DRIVER=false
 		AC_MSG_WARN([Cannot find core lib version for wxWidgets])
 	fi
@@ -291,6 +307,7 @@ else
 fi
 
 AC_SUBST(WX_HAVE_STATIC_LIBS)
+AC_SUBST(RC_FILE_TYPE)
 
 dnl  
 dnl  Opengl tests
@@ -331,7 +348,7 @@ AC_MSG_RESULT($HAVE_GL_SUPPORT)
 AC_SUBST(HAVE_GL_SUPPORT)
 
 if test X"$HAVE_GL_SUPPORT" != X"yes" ; then
-   		echo "wxWidgets don't have gl support, wx will NOT be useable" >> ./CONF_INFO
+   		echo "wxWidgets don't have gl support, wx will NOT be useable" > ./CONF_INFO
 		WXERL_CAN_BUILD_DRIVER=false
 fi
 
@@ -391,7 +408,7 @@ dnl
 AC_CHECK_HEADERS([wx/stc/stc.h],
         [],
     	[WXERL_CAN_BUILD_DRIVER=false
-	 echo "wxWidgets don't have wxStyledTextControl (stc.h), wx will NOT be useable" >> ./CONF_INFO
+	 echo "wxWidgets don't have wxStyledTextControl (stc.h), wx will NOT be useable" > ./CONF_INFO
      	 AC_MSG_WARN([Can not find wx/stc/stc.h])      
      	],
 	[#ifdef WIN32
@@ -447,7 +464,7 @@ AC_LANG_POP(C++)
 AC_MSG_RESULT($CAN_LINK_WX)
 
 if test X"$CAN_LINK_WX" != X"yes" ; then
-   		echo "Can not link the wx driver, wx will NOT be useable" >> ./CONF_INFO
+   		echo "Can not link the wx driver, wx will NOT be useable" > ./CONF_INFO
 		WXERL_CAN_BUILD_DRIVER=false
 		AC_MSG_WARN([Can not link wx program are all developer packages installed?])
 fi

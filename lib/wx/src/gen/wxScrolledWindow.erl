@@ -99,7 +99,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
   MOpts = fun({winid, Winid}, Acc) -> [<<1:32/?UI,Winid:32/?UI>>|Acc];
           ({pos, {PosX,PosY}}, Acc) -> [<<2:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<3:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxScrolledWindow_new_2,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -196,7 +197,8 @@ setScrollbars(#wx_ref{type=ThisT,ref=ThisRef},PixelsPerUnitX,PixelsPerUnitY,NoUn
   ?CLASS(ThisT,wxScrolledWindow),
   MOpts = fun({xPos, XPos}, Acc) -> [<<1:32/?UI,XPos:32/?UI>>|Acc];
           ({yPos, YPos}, Acc) -> [<<2:32/?UI,YPos:32/?UI>>|Acc];
-          ({noRefresh, NoRefresh}, Acc) -> [<<3:32/?UI,(wxe_util:from_bool(NoRefresh)):32/?UI>>|Acc]  end,
+          ({noRefresh, NoRefresh}, Acc) -> [<<3:32/?UI,(wxe_util:from_bool(NoRefresh)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxScrolledWindow_SetScrollbars,
   <<ThisRef:32/?UI,PixelsPerUnitX:32/?UI,PixelsPerUnitY:32/?UI,NoUnitsX:32/?UI,NoUnitsY:32/?UI, 0:32,BinOpt/binary>>).

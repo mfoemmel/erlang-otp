@@ -39,7 +39,7 @@ examin_comp(V) ->
 	V.
 
 
--file("/net/shelob/ldisk/daily_build/otp_prebuild_r13a.2009-03-16_22/otp_src_R13A/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/net/shelob/ldisk/daily_build/otp_prebuild_r13b.2009-04-15_20/otp_src_R13B/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %% 
@@ -161,11 +161,14 @@ yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
 
 % For internal use only.
 yeccerror(Token) ->
-    Text = case erl_scan:token_info(Token, text) of
-               undefined -> yecctoken2string(Token);
-               {text, Txt} -> Txt
+    Text = case catch erl_scan:token_info(Token, text) of
+               {text, Txt} -> Txt;
+               _ -> yecctoken2string(Token)
            end,
-    {location, Location} = erl_scan:token_info(Token, location),
+    Location = case catch erl_scan:token_info(Token, location) of
+                   {location, Loc} -> Loc;
+                   _ -> element(2, Token)
+               end,
     {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);
@@ -188,7 +191,7 @@ yecctoken2string(Other) ->
 
 
 
--file("./cosNotification_Grammar.erl", 191).
+-file("./cosNotification_Grammar.erl", 194).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);

@@ -1689,14 +1689,17 @@ check_balance(ErtsRunQueue *c_rq)
 
 	for (qix = 0; qix < blnc_no_rqs; qix++) {
 
-	    /* Calculate availability compared to other schedulers */
-	    if (!(run_queue_info[qix].flags & ERTS_RUNQ_FLG_OUT_OF_WORK)) {
-		Sint64 tmp = (Sint64) run_queue_info[qix].full_reds * (Sint64) full_scheds;
-		for (pix = 0; pix < ERTS_NO_PRIO_LEVELS; pix++) {
-		    Sint64 avail = run_queue_info[qix].prio[pix].avail;
-		    avail = (avail*tmp)/full_scheds_reds;
-		    ASSERT(avail >= 0);
-		    run_queue_info[qix].prio[pix].avail = (int) avail;
+	    if (full_scheds_reds > 0) {
+		/* Calculate availability compared to other schedulers */
+		if (!(run_queue_info[qix].flags & ERTS_RUNQ_FLG_OUT_OF_WORK)) {
+		    Sint64 tmp = ((Sint64) run_queue_info[qix].full_reds
+				  * (Sint64) full_scheds);
+		    for (pix = 0; pix < ERTS_NO_PRIO_LEVELS; pix++) {
+			Sint64 avail = run_queue_info[qix].prio[pix].avail;
+			avail = (avail*tmp)/full_scheds_reds;
+			ASSERT(avail >= 0);
+			run_queue_info[qix].prio[pix].avail = (int) avail;
+		    }
 		}
 	    }
 
@@ -6579,10 +6582,8 @@ delete_process(Process* p)
     mp = p->msg.first;
     while(mp != NULL) {
 	ErlMessage* next_mp = mp->next;
-#ifdef ERTS_SMP
 	if (mp->bp)
 	    free_message_buffer(mp->bp);
-#endif
 	free_message(mp);
 	mp = next_mp;
     }

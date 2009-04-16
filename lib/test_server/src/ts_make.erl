@@ -24,7 +24,7 @@
 
 %% Functions to be called from make test cases.
 
-make(Config) when list(Config) ->
+make(Config) when is_list(Config) ->
     DataDir = ?config(data_dir, Config),
     Makefile = ?config(makefile, Config),
     Make = ?config(make_command, Config),
@@ -33,7 +33,7 @@ make(Config) when list(Config) ->
 	{error,Reason} -> ?t:fail({make_failed,Reason})
     end.
 
-unmake(Config) when list(Config) ->
+unmake(Config) when is_list(Config) ->
     ok.
 
 %% Runs `make' in the given directory.

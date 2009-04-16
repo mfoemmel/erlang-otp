@@ -716,7 +716,8 @@ ren__map(Key, Ren) ->
 %% ---------------------------------------------------------------------
 %% State
 
--record(state, {module, function :: {atom(), byte()}, names, refs, defs = []}).
+-record(state, {module :: module(), function :: {atom(), arity()},
+		names, refs, defs = []}).
 
 s__new(Module) ->
     #state{module = Module, names = sets:new(), refs = dict:new()}.

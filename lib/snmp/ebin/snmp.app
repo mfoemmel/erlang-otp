@@ -19,7 +19,7 @@
 
 {application, snmp,
  [{description, "SNMP  CXC 138 13"},
-  {vsn, "4.13"},
+  {vsn, "4.13.1"},
   {modules, [
              %% Compiler modules (not in the runtime part of the app)
 %             snmpc,
@@ -94,6 +94,7 @@
              snmpm_supervisor,
              snmpm_user,
              snmpm_user_default,
+             snmpm_user_old,
              snmpm_usm,
 
              %% Misc modules

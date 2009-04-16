@@ -98,7 +98,7 @@
 
 -type object()   :: tuple().
 -type pattern()  :: atom() | tuple().
--type tab_name() :: atom() | ref().
+-type tab_name() :: atom() | reference().
 
 %%% This is the implementation of the mnesia file storage. Each (non
 %%% ram-copy) table is maintained in a corresponding .DAT file. The

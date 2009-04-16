@@ -1187,20 +1187,20 @@ hweight16(W) ->
 initColor(NrNodes) ->
   {colmap, hipe_bifs:array(NrNodes, [])}.
 
-getColor(Node, {colmap,ColMap}) ->
+getColor(Node, {colmap, ColMap}) ->
   hipe_bifs:array_sub(ColMap, Node).
 
-setColor(Node, Colour, {colmap,ColMap}) ->
-  hipe_bifs:array_update(ColMap, Node, Colour),  
-  {colmap,ColMap}.
+setColor(Node, Color, {colmap, ColMap} = C) ->
+  hipe_bifs:array_update(ColMap, Node, Color),  
+  C.
 
 -ifdef(DEBUG_PRINTOUTS).
 printColors(0, _) ->
   true;
-printColors(Node, {colmap, ColMap}) ->
+printColors(Node, {colmap, ColMap} = C) ->
   NextNode = Node - 1,
   ?debug_msg("node ~w  color ~w~n", [NextNode, hipe_bifs:array_sub(ColMap, NextNode)]),
-  printColors(NextNode, {colmap, ColMap}).
+  printColors(NextNode, C).
 -endif.
 
 %%%
@@ -1214,34 +1214,35 @@ initAlias(NrNodes) ->
 %% Note that non-aliased nodes could be represented in
 %% two ways, either not aliased or aliased to itself. 
 %% Including the latter case prevents looping bugs.
-getAlias(Node, {alias,AliasMap}) ->
+getAlias(Node, {alias, AliasMap} = Alias) ->
   case hipe_bifs:array_sub(AliasMap, Node) of
     [] ->
       Node;
     Node ->
       Node;
     AliasNode ->
-      getAlias(AliasNode, {alias,AliasMap})
+      getAlias(AliasNode, Alias)
   end.
 
 -ifdef(DEBUG_PRINTOUTS).
-printAlias({alias, AliasMap}) ->
+printAlias({alias, AliasMap} = Alias) ->
   ?debug_msg("Aliases:\n",[]),
-  printAlias(hipe_bifs:array_length(AliasMap),{alias, AliasMap}).
+  printAlias(hipe_bifs:array_length(AliasMap), Alias).
 
-printAlias(0, {alias,_}) ->
+printAlias(0, {alias, _}) ->
   true ;
-printAlias(Node, {alias,AliasMap}) ->
-  ?debug_msg("alias ~p ~p\n", [Node - 1, getAlias(Node - 1, {alias,AliasMap})]),
-  printAlias(Node - 1, {alias,AliasMap}).
+printAlias(Node, {alias, _AliasMap} = Alias) ->
+  ?debug_msg("alias ~p ~p\n", [Node - 1, getAlias(Node - 1, Alias)]),
+  printAlias(Node - 1, Alias).
 -endif.
 
-setAlias(Node, AliasNode, {alias,AliasMap}) ->
+setAlias(Node, AliasNode, {alias, AliasMap} = Alias) ->
   hipe_bifs:array_update(AliasMap, Node, AliasNode),
-  {alias,AliasMap}.
+  Alias.
 
-aliasToList({alias,AliasMap}) ->
+aliasToList({alias, AliasMap}) ->
   aliasToList(AliasMap, hipe_bifs:array_length(AliasMap), []).
+
 aliasToList(AliasMap, I1, Tail) ->
   I0 = I1 - 1,
   case I0 >= 0 of

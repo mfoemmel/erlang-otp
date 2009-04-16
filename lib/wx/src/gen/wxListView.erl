@@ -134,7 +134,8 @@ select(This,N)
 select(#wx_ref{type=ThisT,ref=ThisRef},N, Options)
  when is_integer(N),is_list(Options) ->
   ?CLASS(ThisT,wxListView),
-  MOpts = fun({on, On}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(On)):32/?UI>>|Acc]  end,
+  MOpts = fun({on, On}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(On)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxListView_Select,
   <<ThisRef:32/?UI,N:32/?UI, BinOpt/binary>>).

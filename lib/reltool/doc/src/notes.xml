@@ -37,9 +37,25 @@
     section is the version number of Reltool.</p>
 
   <section>
+    <title>Reltool 0.2.1</title>
 
+    <section>
+      <title>Improvements and New Features</title>
+
+      <list>
+	<item>
+	  <p>
+	  Minor GUI fixes</p>
+	  <p>
+	  Own Id: OTP-7840</p>
+	</item>
+      </list>
+    </section>
+  
+  </section>
+  
+  <section>
     <title>Reltool 0.2</title>
-    
     <section>
       <title>Improvements and new features</title>
       <p>This is the first (experimental) release of Reltool.</p>

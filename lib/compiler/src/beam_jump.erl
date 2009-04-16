@@ -98,7 +98,7 @@
 %%% effect on the program state.
 %%% 
 
--import(lists, [reverse/1,reverse/2,foldl/3,last/1,any/2,dropwhile/2]).
+-import(lists, [reverse/1,reverse/2,foldl/3,any/2,dropwhile/2]).
 
 module({Mod,Exp,Attr,Fs0,Lc}, _Opt) ->
     Fs = [function(F) || F <- Fs0],
@@ -127,23 +127,20 @@ function({function,Name,Arity,CLabel,Asm0}) ->
 %%% occurrences except the last with jumps to the last occurrence.
 %%%
 
-share(Is) ->
-    share_1(reverse(Is), dict:new(), [], []).
+share(Is0) ->
+    %% We will get more sharing if we never fall through to a label.
+    Is = eliminate_fallthroughs(Is0, []),
+    share_1(Is, dict:new(), [], []).
 
 share_1([{label,_}=Lbl|Is], Dict, [], Acc) ->
     share_1(Is, Dict, [], [Lbl|Acc]);
 share_1([{label,L}=Lbl|Is], Dict0, Seq, Acc) ->
-    case is_unreachable_after(last(Seq)) of
-	false ->
-	    share_1(Is, Dict0, [], [Lbl|Seq ++ Acc]);
-	true ->
-	    case dict:find(Seq, Dict0) of
-		error ->
-		    Dict = dict:store(Seq, L, Dict0),
-		    share_1(Is, Dict, [], [Lbl|Seq ++ Acc]);
-		{ok,Label} ->
-		    share_1(Is, Dict0, [], [Lbl,{jump,{f,Label}}|Acc])
-	    end
+    case dict:find(Seq, Dict0) of
+	error ->
+	    Dict = dict:store(Seq, L, Dict0),
+	    share_1(Is, Dict, [], [Lbl|Seq ++ Acc]);
+	{ok,Label} ->
+	    share_1(Is, Dict0, [], [Lbl,{jump,{f,Label}}|Acc])
     end;
 share_1([{func_info,_,_,_}=I|Is], _, [], Acc) ->
     Is++[I|Acc];
@@ -155,11 +152,31 @@ share_1([I|Is], Dict, Seq, Acc) ->
 	    share_1(Is, Dict, [I], Acc)
     end.
 
+
+%% Eliminate all fallthroughs. Return the result reversed.
+
+eliminate_fallthroughs([I,{label,L}=Lbl|Is], Acc) ->
+    case is_unreachable_after(I) orelse is_label(I) of
+	false ->
+	    %% Eliminate fallthrough.
+	    eliminate_fallthroughs(Is, [Lbl,{jump,{f,L}},I|Acc]);
+	true ->
+	    eliminate_fallthroughs(Is, [Lbl,I|Acc])
+    end;
+eliminate_fallthroughs([I|Is], Acc) ->
+    eliminate_fallthroughs(Is, [I|Acc]);
+eliminate_fallthroughs([], Acc) -> Acc.
+
+is_label({label,_}) -> true;
+is_label(_) -> false.
+    
 %%%
 %%% (2) Move short code sequences ending in an instruction that causes an exit
 %%% to the end of the function.
 %%%
-
+%%% Implementation note: Since share/1 eliminated fallthroughs to labels,
+%%% we don't have to test whether instructions before labels may fail through.
+%%%
 move(Is) ->
     move_1(Is, [], []).
 
@@ -173,28 +190,13 @@ move_1([], End, Acc) ->
 
 move_2(Exit, Is, End, [{block,_},{label,_},{func_info,_,_,_}|_]=Acc) ->
     move_1(Is, End, [Exit|Acc]);
-move_2(Exit, Is, End, [{block,_}=Blk,{label,_}=Lbl,Unreachable|More]=Acc) ->
-    case is_unreachable_after(Unreachable) of
-	false ->
-	    move_1(Is, End, [Exit|Acc]);
-	true ->
-	    move_1([Unreachable|Is], [Exit,Blk,Lbl|End], More)
-    end;
+move_2(Exit, Is, End, [{block,_}=Blk,{label,_}=Lbl,Unreachable|More]) ->
+    move_1([Unreachable|Is], [Exit,Blk,Lbl|End], More);
 move_2(Exit, Is, End, [{bs_context_to_binary,_}=Bs,{label,_}=Lbl,
-		       Unreachable|More]=Acc) ->
-    case is_unreachable_after(Unreachable) of
-	false ->
-	    move_1(Is, End, [Exit|Acc]);
-	true ->
-	    move_1([Unreachable|Is], [Exit,Bs,Lbl|End], More)
-    end;
-move_2(Exit, Is, End, [{label,_}=Lbl,Unreachable|More]=Acc) ->
-    case is_unreachable_after(Unreachable) of
-	false ->
-	    move_1(Is, End, [Exit|Acc]);
-	true ->
-	    move_1([Unreachable|Is], [Exit,Lbl|End], More)
-    end;
+		       Unreachable|More]) ->
+    move_1([Unreachable|Is], [Exit,Bs,Lbl|End], More);
+move_2(Exit, Is, End, [{label,_}=Lbl,Unreachable|More]) ->
+    move_1([Unreachable|Is], [Exit,Lbl|End], More);
 move_2(Exit, Is, End, Acc) ->
     move_1(Is, End, [Exit|Acc]).
 
@@ -247,6 +249,8 @@ opt([{test,Test0,{f,Lnum}=Lbl,Ops}=I|Is0], Acc, St) ->
 	_Other ->
 	    opt(Is0, [I|Acc], label_used(Lbl, St))
     end;
+opt([{test,_,{f,_}=Lbl,_,_,_}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], label_used(Lbl, St));
 opt([{select_val,_R,Fail,{list,Vls}}=I|Is], Acc, St) ->
     skip_unreachable(Is, [I|Acc], label_used([Fail|Vls], St));
 opt([{select_tuple_arity,_R,Fail,{list,Vls}}=I|Is], Acc, St) ->
@@ -482,6 +486,8 @@ initial_labels([{func_info,_,_,_},{label,Lbl}|_], Acc) ->
 %%  NOTE: This function does NOT look for labels inside blocks.
 
 ulbl({test,_,Fail,_}, Used) ->
+    mark_used(Fail, Used);
+ulbl({test,_,Fail,_,_,_}, Used) ->
     mark_used(Fail, Used);
 ulbl({select_val,_,Fail,{list,Vls}}, Used) ->
     mark_used_list(Vls, mark_used(Fail, Used));

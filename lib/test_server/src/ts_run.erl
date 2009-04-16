@@ -227,7 +227,7 @@ init_topcase(Vars, Spec, St) ->
     TestDir = St#state.test_dir,
     TopCase = 
 	case St#state.mod of
-	    Mod when atom(Mod) ->
+	    Mod when is_atom(Mod) ->
 		ModStr = atom_to_list(Mod),
 		case filelib:is_file(filename:join(TestDir,ModStr++".erl")) of
 		    true -> [{Mod,all}];
@@ -362,7 +362,7 @@ generate_make_module(MakeCmd, Name, ModuleString) ->
 		     "\n",
 		     "-export([make/1,unmake/1]).\n",
 		     "\n",
-		     "make(Config) when list(Config) ->\n",
+		     "make(Config) when is_list(Config) ->\n",
 		     "    Mins = " ++ integer_to_list(?DEFAULT_MAKE_TIMETRAP_MINUTES) ++ ",\n"
 		     "    test_server:format(\"=== Setting timetrap to ~p minutes ===~n\", [Mins]),\n"
 		     "    TimeTrap = test_server:timetrap(test_server:minutes(Mins)),\n"
@@ -370,7 +370,7 @@ generate_make_module(MakeCmd, Name, ModuleString) ->
 		     "    test_server:timetrap_cancel(TimeTrap),\n"
 		     "    Res.\n"
 		     "\n",
-		     "unmake(Config) when list(Config) ->\n",
+		     "unmake(Config) when is_list(Config) ->\n",
 		     "    Mins = " ++ integer_to_list(?DEFAULT_UNMAKE_TIMETRAP_MINUTES) ++ ",\n"
 		     "    test_server:format(\"=== Setting timetrap to ~p minutes ===~n\", [Mins]),\n"
 		     "    TimeTrap = test_server:timetrap(test_server:minutes(Mins)),\n"
@@ -637,10 +637,10 @@ make_test_server_args(Args0,Options,Vars) ->
 	end,
     Trace = 
 	case lists:keysearch(trace,1,Options) of
-	    {value,{trace,TI}} when tuple(TI); tuple(hd(TI)) ->
+	    {value,{trace,TI}} when is_tuple(TI); is_tuple(hd(TI)) ->
 		ok = file:write_file(?tracefile,io_lib:format("~p.~n",[TI])),
 		" TRACE " ++ ?tracefile;
-	    {value,{trace,TIFile}} when atom(TIFile) ->
+	    {value,{trace,TIFile}} when is_atom(TIFile) ->
 		" TRACE " ++ atom_to_list(TIFile);
 	    {value,{trace,TIFile}} ->
 		" TRACE " ++ TIFile;
@@ -657,9 +657,9 @@ make_test_server_args(Args0,Options,Vars) ->
 	end,
     Args0 ++ Parameters ++ Trace ++ Cover.
 
-to_list(X) when atom(X) ->
+to_list(X) when is_atom(X) ->
     atom_to_list(X);
-to_list(X) when list(X) ->
+to_list(X) when is_list(X) ->
     X.
 
 write_parameterfile(Type,Vars) ->

@@ -111,22 +111,22 @@ bad_option(String, Term) ->
 
 build_options([{OptName, undefined}|Rest], Options) when is_atom(OptName) ->
   build_options(Rest, Options);
-build_options([Term = {OptionName, Value}|Rest], Options) ->
+build_options([{OptionName, Value} = Term|Rest], Options) ->
   case OptionName of
     files ->
       assert_filenames(Term, Value),
-      build_options(Rest, Options#options{files=Value});
+      build_options(Rest, Options#options{files = Value});
     files_rec ->
       assert_filenames(Term, Value),
-      build_options(Rest, Options#options{files_rec=Value});
+      build_options(Rest, Options#options{files_rec = Value});
     analysis_type ->
       NewOptions =
 	case Value of
-	  succ_typings -> Options#options{analysis_type=Value};
-	  plt_add      -> Options#options{analysis_type=Value};
-	  plt_build    -> Options#options{analysis_type=Value};
-	  plt_check    -> Options#options{analysis_type=Value};
-	  plt_remove   -> Options#options{analysis_type=Value};
+	  succ_typings -> Options#options{analysis_type = Value};
+	  plt_add      -> Options#options{analysis_type = Value};
+	  plt_build    -> Options#options{analysis_type = Value};
+	  plt_check    -> Options#options{analysis_type = Value};
+	  plt_remove   -> Options#options{analysis_type = Value};
 	  dataflow  -> bad_option("Analysis type is no longer supported", Term);
 	  old_style -> bad_option("Analysis type is no longer supported", Term);
 	  Other     -> bad_option("Unknown analysis type", Other)
@@ -134,47 +134,47 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
       assert_plt_op(Options, NewOptions),
       build_options(Rest, NewOptions);
     check_plt when is_boolean(Value) ->
-      build_options(Rest, Options#options{check_plt=Value});
+      build_options(Rest, Options#options{check_plt = Value});
     defines ->
       assert_defines(Term, Value),
       OldVal = Options#options.defines,
       NewVal = ordsets:union(ordsets:from_list(Value), OldVal),
-      build_options(Rest, Options#options{defines=NewVal});
+      build_options(Rest, Options#options{defines = NewVal});
     from when Value =:= byte_code; Value =:= src_code ->
-      build_options(Rest, Options#options{from=Value});
+      build_options(Rest, Options#options{from = Value});
     get_warnings ->
-      build_options(Rest, Options#options{get_warnings=Value});
+      build_options(Rest, Options#options{get_warnings = Value});
     init_plt ->
       assert_filenames([Term], [Value]),
-      build_options(Rest, Options#options{init_plt=Value});
+      build_options(Rest, Options#options{init_plt = Value});
     include_dirs ->
       assert_filenames(Term, Value),
       OldVal = Options#options.include_dirs,
       NewVal = ordsets:union(ordsets:from_list(Value), OldVal),
-      build_options(Rest, Options#options{include_dirs=NewVal});
+      build_options(Rest, Options#options{include_dirs = NewVal});
     use_spec ->
-      build_options(Rest, Options#options{use_contracts=Value});
+      build_options(Rest, Options#options{use_contracts = Value});
     old_style ->
       bad_option("Analysis type is no longer supported", old_style);
     output_file ->
       assert_filename(Value),
-      build_options(Rest, Options#options{output_file=Value});
+      build_options(Rest, Options#options{output_file = Value});
     output_format ->
       assert_output_format(Value),
-      build_options(Rest, Options#options{output_format=Value});
+      build_options(Rest, Options#options{output_format = Value});
     output_plt ->
       assert_filename(Value),
-      build_options(Rest, Options#options{output_plt=Value});
+      build_options(Rest, Options#options{output_plt = Value});
     report_mode ->
-      build_options(Rest, Options#options{report_mode=Value});
+      build_options(Rest, Options#options{report_mode = Value});
     erlang_mode ->
-      build_options(Rest, Options#options{erlang_mode=true});
+      build_options(Rest, Options#options{erlang_mode = true});
     warnings ->
       NewWarnings = build_warnings(Value, Options#options.legal_warnings),
-      build_options(Rest, Options#options{legal_warnings=NewWarnings});
+      build_options(Rest, Options#options{legal_warnings = NewWarnings});
     callgraph_file ->
       assert_filename(Value),
-      build_options(Rest, Options#options{callgraph_file=Value});
+      build_options(Rest, Options#options{callgraph_file = Value});
     _ ->
       bad_option("Unknown dialyzer command line option", Term)
   end;
@@ -182,7 +182,7 @@ build_options([], Options) ->
   Options.
 
 assert_filenames(Term, [FileName|Left]) when length(FileName) >= 0 ->
-  case filelib:is_file(FileName) or filelib:is_dir(FileName) of
+  case filelib:is_file(FileName) orelse filelib:is_dir(FileName) of
     true -> ok;
     false -> bad_option("No such file or directory", FileName)
   end,
@@ -197,8 +197,8 @@ assert_filename(FileName) when length(FileName) >= 0 ->
 assert_filename(FileName) ->
   bad_option("Malformed or non-existing filename", FileName).
 
-assert_defines(Term, [{Macro, _Value}|Left]) when is_atom(Macro) ->
-  assert_defines(Term, Left);
+assert_defines(Term, [{Macro, _Value}|Defs]) when is_atom(Macro) ->
+  assert_defines(Term, Defs);
 assert_defines(_Term, []) ->
   ok;
 assert_defines(Term, [_|_]) ->
@@ -211,8 +211,8 @@ assert_output_format(formatted) ->
 assert_output_format(Term) ->
   bad_option("Illegal value for output_format", Term).
 
-assert_plt_op(#options{analysis_type=OldVal}, 
-	      #options{analysis_type=NewVal}) ->
+assert_plt_op(#options{analysis_type = OldVal}, 
+	      #options{analysis_type = NewVal}) ->
   case is_plt_mode(OldVal) andalso is_plt_mode(NewVal) of
     true -> bad_option("Options cannot be combined", [OldVal, NewVal]);
     false -> ok
@@ -224,7 +224,8 @@ is_plt_mode(plt_remove)   -> true;
 is_plt_mode(plt_check)    -> true;
 is_plt_mode(succ_typings) -> false.
 
-%%-spec build_warnings([atom()], ordset(warning())) -> ordset(warning()).
+-spec build_warnings([atom()], [dial_warning()]) -> [dial_warning()].
+
 build_warnings([Opt|Left], Warnings) ->
   NewWarnings =
     case Opt of

@@ -24,6 +24,7 @@
 -module(snmp_manager_user).
 
 -behaviour(snmpm_user).
+%% -behaviour(snmpm_user_old).
 
 
 %%----------------------------------------------------------------------

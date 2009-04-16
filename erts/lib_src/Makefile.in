@@ -502,12 +502,13 @@ ifeq ($(USING_VC),yes)
 # VC++ used for compiling. We undef __GNUC__ since if __GNUC__ is defined
 # we will include other headers than when compiling which will result in
 # faulty dependencies.
-DEP_CC=@EMU_CC@ -U__GNUC__
+#DEP_CC=@EMU_CC@ -U__GNUC__
+DEP_CC=$(CC)
 else
 DEP_CC=$(CC)
 endif
 
-SED_REPL_WIN_DRIVE=s|\([ 	]\)\([A-Za-z]\):|\1/cygdrive/\2|g;s|^\([A-Za-z]\):|/cygdrive/\1|g
+#SED_REPL_WIN_DRIVE=s|\([ 	]\)\([A-Za-z]\):|\1/cygdrive/\2|g;s|^\([A-Za-z]\):|/cygdrive/\1|g
 SED_REPL_O=s|^\([^:]*\)\.o:|$$(OBJ_DIR)/\1.o:|g
 SED_REPL_r_O=s|^\([^:]*\)\.o:|$$(r_OBJ_DIR)/\1.o:|g
 SED_REPL_MD_O=s|^\([^:]*\)\.o:|$$(MD_OBJ_DIR)/\1.o:|g
@@ -518,7 +519,8 @@ SED_REPL_TT_DIR=s|$(TT_DIR)/|$$(TT_DIR)/|g
 SED_REPL_TARGET=s|$(TARGET)/|$$(TARGET)/|g
 
 ifeq ($(TARGET),win32)
-SED_PREFIX=$(SED_REPL_WIN_DRIVE);
+#SED_PREFIX=$(SED_REPL_WIN_DRIVE);
+SED_PREFIX=
 DEP_FLAGS=$(subst -O3,,$(subst -O2,,$(CFLAGS))) $(INCLUDES)
 else
 SED_PREFIX=

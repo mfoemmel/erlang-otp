@@ -238,6 +238,23 @@ public class OtpErlangRef extends OtpErlangObject implements Serializable,
 	return ids[0] == ref.ids[0];
     }
 
+    /**
+     * Compute the hashCode value for a given ref. This function is compatible
+     * with equal.
+     *
+     * @return the hashCode of the node.
+     **/
+
+    @Override
+    protected int doHashCode() {
+	OtpErlangObject.Hash hash = new OtpErlangObject.Hash(7);
+	hash.combine(creation, ids[0]);
+	if (isNewRef()) {
+	    hash.combine(ids[1], ids[2]);
+	}
+	return hash.valueOf();
+    }
+    
     @Override
     public Object clone() {
 	final OtpErlangRef newRef = (OtpErlangRef) super.clone();

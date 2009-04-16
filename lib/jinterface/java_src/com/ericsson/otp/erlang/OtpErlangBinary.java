@@ -80,36 +80,6 @@ public class OtpErlangBinary extends OtpErlangBitstr implements Serializable,
 	buf.write_binary(bin);
     }
 
-    /**
-     * Determine if two binaries are equal. Binaries are equal if they have the
-     * same length and the array of bytes is identical.
-     * 
-     * @param o
-     *                the binary to compare to.
-     * 
-     * @return true if the byte arrays contain the same bytes, false otherwise.
-     */
-    @Override
-    public boolean equals(final Object o) {
-	if (!(o instanceof OtpErlangBinary)) {
-	    return false;
-	}
-
-	final OtpErlangBinary that = (OtpErlangBinary) o;
-	final int len = bin.length;
-	if (len != that.bin.length) {
-	    return false;
-	}
-
-	for (int i = 0; i < len; i++) {
-	    if (bin[i] != that.bin[i]) {
-		return false; // early exit
-	    }
-	}
-
-	return true;
-    }
-
     @Override
     public Object clone() {
 	final OtpErlangBinary that = (OtpErlangBinary) super.clone();

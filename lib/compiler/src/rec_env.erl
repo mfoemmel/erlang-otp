@@ -32,6 +32,8 @@
 	 get/2, is_defined/2, is_empty/1, keys/1, lookup/2, new_key/1,
 	 new_key/2, new_keys/2, new_keys/3, size/1, to_list/1]).
 
+-import(erlang, [max/2]).
+
 -ifdef(DEBUG).
 -export([test/1, test_custom/1, test_custom/2]).
 -endif.
@@ -559,9 +561,6 @@ new_key(N, R, _T, F, Env) ->
 
 start_range(Env) ->
     max(env_size(Env) * ?START_RANGE_FACTOR, ?MINIMUM_RANGE).
-
-max(X, Y) when X > Y -> X;
-max(_, Y) -> Y.
 
 %% The previous key might or might not be used to compute the next key
 %% to be tried. It is currently not used.

@@ -255,7 +255,7 @@ handle_call({ssh_msg, Pid, Msg}, From,
     gen_server:reply(From, ok), 
 
     ConnectionMsg = decode_ssh_msg(Msg),
-    case ssh_connection:handle_msg(ConnectionMsg, Connection0, Pid, Role) of
+    case catch ssh_connection:handle_msg(ConnectionMsg, Connection0, Pid, Role) of
 	{{replies, Replies}, Connection} ->
 	    lists:foreach(fun send_msg/1, Replies),
 	    {noreply, State#state{connection_state = Connection}};
@@ -270,7 +270,12 @@ handle_call({ssh_msg, Pid, Msg}, From,
 	    lists:foreach(fun send_msg/1, Replies),
 	    SSHOpts = proplists:get_value(ssh_opts, Opts),
 	    disconnect_fun(Reason, SSHOpts),
-	    {stop, normal, State#state{connection_state = Connection}}
+	    {stop, normal, State#state{connection_state = Connection}};
+	{'EXIT', _Reason} = Exit ->
+	    Report = io_lib:format("Connection message caused exit~n~p~n~p~n",
+				   [ConnectionMsg, Exit]),
+	    error_logger:error_report(Report),
+	    {noreply, State}
     end;
 
 handle_call({global_request, Pid, _, _, _} = Request, From, 
@@ -282,17 +287,11 @@ handle_call({global_request, Pid, _, _, _} = Request, From,
     {noreply, State};
 
 handle_call({data, ChannelId, Type, Data}, From, 
-	    #state{connection_state = #connection{channel_cache = Cache} 
+	    #state{connection_state = #connection{channel_cache = _Cache} 
 		   = Connection0, 
 		   connection = ConnectionPid} = State) ->
-   case ssh_channel:cache_lookup(Cache, ChannelId) of			 
-       #channel{remote_id = Id} ->
-	   channel_data(Id, Type, Data, Connection0, ConnectionPid, From,
-			State);
-	undefined -> 
-	    {noreply, State}
-    end;
-
+    channel_data(ChannelId, Type, Data, Connection0, ConnectionPid, From,
+		 State);
 
 handle_call({connection_info, Options}, From, 
 	    #state{connection = Connection} = State) ->

@@ -99,7 +99,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},Id,Title,{PosX,PosY},{SizeW,SizeH},Choic
               ChoicesTemp <- Choices],
   MOpts = fun({majorDim, MajorDim}, Acc) -> [<<1:32/?UI,MajorDim:32/?UI>>|Acc];
           ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc];
-          ({val, #wx_ref{type=ValT,ref=ValRef}}, Acc) ->   ?CLASS(ValT,wx),[<<3:32/?UI,ValRef:32/?UI>>|Acc]  end,
+          ({val, #wx_ref{type=ValT,ref=ValRef}}, Acc) ->   ?CLASS(ValT,wx),[<<3:32/?UI,ValRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxRadioBox_new,
   <<ParentRef:32/?UI,Id:32/?UI,(byte_size(Title_UC)):32/?UI,(Title_UC)/binary, 0:(((8- ((4+byte_size(Title_UC)) band 16#7)) band 16#7))/unit:8,PosX:32/?UI,PosY:32/?UI,SizeW:32/?UI,SizeH:32/?UI,(length(Choices_UCA)):32/?UI, (<< <<(byte_size(UC_Str)):32/?UI, UC_Str/binary>>|| UC_Str <- Choices_UCA>>)/binary, 0:(((8- ((4 + lists:sum([byte_size(S)+4||S<-Choices_UCA])) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -122,7 +123,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef},Id,Ti
               ChoicesTemp <- Choices],
   MOpts = fun({majorDim, MajorDim}, Acc) -> [<<1:32/?UI,MajorDim:32/?UI>>|Acc];
           ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc];
-          ({val, #wx_ref{type=ValT,ref=ValRef}}, Acc) ->   ?CLASS(ValT,wx),[<<3:32/?UI,ValRef:32/?UI>>|Acc]  end,
+          ({val, #wx_ref{type=ValT,ref=ValRef}}, Acc) ->   ?CLASS(ValT,wx),[<<3:32/?UI,ValRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxRadioBox_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI,Id:32/?UI,(byte_size(Title_UC)):32/?UI,(Title_UC)/binary, 0:(((8- ((0+byte_size(Title_UC)) band 16#7)) band 16#7))/unit:8,PosX:32/?UI,PosY:32/?UI,SizeW:32/?UI,SizeH:32/?UI,(length(Choices_UCA)):32/?UI, (<< <<(byte_size(UC_Str)):32/?UI, UC_Str/binary>>|| UC_Str <- Choices_UCA>>)/binary, 0:(((8- ((4 + lists:sum([byte_size(S)+4||S<-Choices_UCA])) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -149,7 +151,8 @@ enable(This,N)
 enable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxRadioBox),
-  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc]  end,
+  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxRadioBox_Enable_1,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -160,7 +163,8 @@ enable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
 enable(#wx_ref{type=ThisT,ref=ThisRef},N, Options)
  when is_integer(N),is_list(Options) ->
   ?CLASS(ThisT,wxRadioBox),
-  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc]  end,
+  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxRadioBox_Enable_2,
   <<ThisRef:32/?UI,N:32/?UI, BinOpt/binary>>).
@@ -210,7 +214,8 @@ show(This,N)
 show(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxRadioBox),
-  MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc]  end,
+  MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxRadioBox_Show_1,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -221,7 +226,8 @@ show(#wx_ref{type=ThisT,ref=ThisRef}, Options)
 show(#wx_ref{type=ThisT,ref=ThisRef},N, Options)
  when is_integer(N),is_list(Options) ->
   ?CLASS(ThisT,wxRadioBox),
-  MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc]  end,
+  MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxRadioBox_Show_2,
   <<ThisRef:32/?UI,N:32/?UI, BinOpt/binary>>).

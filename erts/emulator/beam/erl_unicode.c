@@ -54,6 +54,8 @@ static BIF_RETTYPE finalize_list_to_list(Process *p,
 					 Uint num_resulting_chars, 
 					 int state, int left,
 					 Eterm tail);
+static int analyze_utf8(byte *source, Uint size, 
+			byte **err_pos, Uint *num_chars, int *left);
 #define UTF8_OK 0
 #define UTF8_INCOMPLETE 1
 #define UTF8_ERROR 2
@@ -228,6 +230,18 @@ static ERTS_INLINE int simple_loops_to_common(int cost)
     return (cost / factor);
 }
 
+static Sint aligned_binary_size(Eterm binary)
+{
+    unsigned char *bytes;
+    Uint bitoffs;
+    Uint bitsize;
+    
+    ERTS_GET_BINARY_BYTES(binary, bytes, bitoffs, bitsize);
+    if (bitsize != 0) {
+	return (Sint) -1;
+    }
+    return binary_size(binary);
+}
 
 static Sint latin1_binary_need(Eterm binary)
 {
@@ -405,7 +419,7 @@ static Sint utf8_need(Eterm ioterm, int latin1, Uint *costp)
 	    return x;
 	} else {
 	    *costp = 1;
-	    return binary_size(ioterm);
+	    return aligned_binary_size(ioterm);
 	}
     }
     
@@ -477,7 +491,12 @@ L_Again:   /* Restart with sublist, old listend was pushed on stack */
 			} 
 			cost += x;
 		    } else {
-			x = binary_size(obj);
+			x = aligned_binary_size(obj);
+			if (x < 0) {
+			    DESTROY_ESTACK(stack);
+			    *costp = cost;
+			    return x;
+			} 
 			++cost;
 		    }
 		    need += x;
@@ -512,7 +531,12 @@ L_Again:   /* Restart with sublist, old listend was pushed on stack */
 		    } 
 		    cost += x;
 		} else {
-		    x = binary_size(ioterm);
+		    x = aligned_binary_size(ioterm);
+		    if (x < 0) {
+			DESTROY_ESTACK(stack);
+			*costp = cost;
+			return x;
+		    } 
 		    ++cost;
 		}
 		need += x;
@@ -914,6 +938,45 @@ static BIF_RETTYPE characters_to_utf8_trap(BIF_ALIST_3)
 			      leftover,num_leftovers,BIF_ARG_3);
 }
 
+BIF_RETTYPE unicode_bin_is_7bit_1(BIF_ALIST_1)
+{
+    Sint need;
+    if(!is_binary(BIF_ARG_1)) {
+	BIF_RET(am_false);
+    }
+    need = latin1_binary_need(BIF_ARG_1);
+    if(need >= 0 && aligned_binary_size(BIF_ARG_1) == need) {
+	BIF_RET(am_true);
+    }
+    BIF_RET(am_false);
+}
+
+static int is_valid_utf8(Eterm orig_bin)
+{
+    Uint bitoffs;
+    Uint bitsize;
+    Uint size;
+    byte *temp_alloc = NULL;
+    byte *endpos;
+    Uint numchar;
+    byte *bytes;
+    int ret;
+
+    ERTS_GET_BINARY_BYTES(orig_bin, bytes, bitoffs, bitsize);
+    if (bitsize != 0) {
+	return 0;
+    }
+    if (bitoffs != 0) {
+	bytes = erts_get_aligned_binary_bytes(orig_bin, &temp_alloc);
+    }
+    size = binary_size(orig_bin);
+    ret = analyze_utf8(bytes,
+		       size,
+		       &endpos,&numchar,NULL);
+    erts_free_aligned_binary_bytes(temp_alloc);
+    return (ret == UTF8_OK);
+}
+
 BIF_RETTYPE unicode_characters_to_binary_2(BIF_ALIST_2)
 {
     Sint need;
@@ -924,11 +987,12 @@ BIF_RETTYPE unicode_characters_to_binary_2(BIF_ALIST_2)
     int pos;
     int err;
     int left, sleft;
-    Eterm rest_term;
+    Eterm rest_term, subject;
     byte leftover[4]; /* used for temp buffer too, o
 			 therwise 3 bytes would have been enough */
     int num_leftovers = 0;
     Uint cost_of_utf8_need;
+
 
     if (BIF_ARG_2 == am_latin1) {
 	latin1 = 1;
@@ -937,10 +1001,24 @@ BIF_RETTYPE unicode_characters_to_binary_2(BIF_ALIST_2)
     } else {
 	BIF_TRAP2(c_to_b_int_trap_exportp, BIF_P, BIF_ARG_1, BIF_ARG_2);
     }	
-    need = utf8_need(BIF_ARG_1,latin1,&cost_of_utf8_need);
+    if (is_list(BIF_ARG_1) && is_binary(CAR(list_val(BIF_ARG_1))) && 
+	is_nil(CDR(list_val(BIF_ARG_1)))) {
+	subject = CAR(list_val(BIF_ARG_1));
+    } else {
+	subject = BIF_ARG_1;
+    }
+
+    need = utf8_need(subject,latin1,&cost_of_utf8_need);
     if (need < 0) {
 	BIF_ERROR(BIF_P,BADARG);
     }
+    if (is_binary(subject) && need >= 0 && aligned_binary_size(subject) == need
+	&& (latin1 || is_valid_utf8(subject))) {
+	cost_to_proc(BIF_P, simple_loops_to_common(cost_of_utf8_need)); 
+	    BIF_RET(subject);
+    }
+	
+
     bin = erts_new_mso_binary(BIF_P, (byte *)NULL, need);
     bytes = binary_bytes(bin);
     cost_to_proc(BIF_P, simple_loops_to_common(cost_of_utf8_need)); 
@@ -955,15 +1033,15 @@ BIF_RETTYPE unicode_characters_to_binary_2(BIF_ALIST_2)
     err = 0;
 
 
-    rest_term = do_build_utf8(BIF_P, BIF_ARG_1, &left, latin1,
+    rest_term = do_build_utf8(BIF_P, subject, &left, latin1,
 			      bytes, &pos, &characters, &err, leftover, &num_leftovers); 
 #ifdef HARDDEBUG
     if (left == 0) {
 	Eterm bin;
-	if (is_binary(BIF_ARG_1)) {
-	    bin = BIF_ARG_1;
-	} else if(is_list(BIF_ARG_1) && is_binary(CAR(list_val(BIF_ARG_1)))) {
-	    bin = CAR(list_val(BIF_ARG_1));
+	if (is_binary(subject)) {
+	    bin = subject;
+	} else if(is_list(subject) && is_binary(CAR(list_val(subject)))) {
+	    bin = CAR(list_val(subject));
 	} else {
 	    bin = NIL;
 	}
@@ -1187,7 +1265,7 @@ static int analyze_utf8(byte *source, Uint size,
 	}
 	++(*num_chars);
 	*err_pos = source;
-	if (--(*left) <= 0) {
+	if (left && --(*left) <= 0) {
 	    return UTF8_ANALYZE_MORE;
 	}
     }
@@ -1560,7 +1638,7 @@ static BIF_RETTYPE characters_to_list_trap_4(BIF_ALIST_1)
 
 static BIF_RETTYPE utf8_to_list(BIF_ALIST_1)
 {
-    if (!is_binary(BIF_ARG_1)) {
+    if (!is_binary(BIF_ARG_1) || aligned_binary_size(BIF_ARG_1) < 0) {
 	BIF_ERROR(BIF_P,BADARG);
     }
     return do_bif_utf8_to_list(BIF_P, BIF_ARG_1, 0U, 0U, 0U, 

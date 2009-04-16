@@ -44,7 +44,7 @@
 wildcard(Pattern) when is_list(Pattern) ->
     ?HANDLE_ERROR(do_wildcard(Pattern, file)).
 
--spec wildcard(name(), atom()) -> [string()].
+-spec wildcard(name(), name() | atom()) -> [string()].
 wildcard(Pattern, Cwd) when is_list(Pattern), is_list(Cwd) ->
     ?HANDLE_ERROR(do_wildcard(Pattern, Cwd, file));
 wildcard(Pattern, Mod) when is_list(Pattern), is_atom(Mod) ->

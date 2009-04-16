@@ -59,10 +59,14 @@
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,
 	 terminate/2, code_change/3]).
 
+%% Internals
+-export([proxy_user_flush/0]).
+
 %%------------------------------------------------------------------------
 
 %% Remote execution and broadcasting facility
-
+    
+   
 start() -> gen_server:start({local,?NAME},?MODULE,[],[]).
 start_link() -> gen_server:start_link({local,?NAME},?MODULE,[],[]).
 
@@ -180,11 +184,48 @@ set_group_leader(Gleader) when is_pid(Gleader) ->
     group_leader(Gleader, self());
 set_group_leader(user) -> 
     %% For example, hidden C nodes doesn't want any I/O.
-    case whereis(user) of
-	Pid when is_pid(Pid) -> group_leader(Pid, self());
-	_                    -> true
+    Gleader = case whereis(user) of
+		  Pid when is_pid(Pid) -> Pid;
+		  undefined -> proxy_user()
+	      end,
+    group_leader(Gleader, self()).
+
+
+%% The 'rex_proxy_user' process serve as group leader for early rpc's that
+%% may do IO before the real group leader 'user' has been started (OTP-7903).
+proxy_user() ->
+    case whereis(rex_proxy_user) of
+	Pid when is_pid(Pid) -> Pid;
+	undefined ->
+	    Pid = spawn(fun()-> proxy_user_loop() end),
+	    try register(rex_proxy_user,Pid) of
+		true -> Pid
+	    catch error:_ -> % spawn race, kill and try again
+		exit(Pid,kill),
+		proxy_user()
+	    end
     end.
 
+proxy_user_loop() ->
+    %% Wait for the real 'user' to start
+    timer:sleep(200),
+    case whereis(user) of
+	Pid when is_pid(Pid) -> proxy_user_flush();
+	undefined -> proxy_user_loop()
+    end.
+
+proxy_user_flush() ->
+    %% Forward all received messages to 'user'
+    receive Msg ->
+	    user ! Msg
+    after 10*1000 ->
+	    %% Hibernate but live for ever, as it's not easy to know
+	    %% when no more messages will arrive.
+	    erlang:hibernate(?MODULE, proxy_user_flush, [])
+    end,
+    proxy_user_flush().
+
+    
 
 %% THE rpc client interface
 

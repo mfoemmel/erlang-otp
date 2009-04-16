@@ -2444,6 +2444,7 @@ is_var_arity_type(_) -> false.
 
 default_types() ->
     DefTypes = [{any, 0},
+		{arity, 0},
 		{array, 0},
 		{atom, 0},
 		{atom, 1},
@@ -2490,7 +2491,7 @@ default_types() ->
 		{pos_integer, 0},
 		{queue, 0},
 		{range, 2},
-		{ref, 0},
+		{reference, 0},
 		{set, 0},
 		{string, 0},
 		{term, 0},
@@ -2506,6 +2507,7 @@ is_newly_introduced_builtin_type({nonempty_string, 0}) -> true;
 is_newly_introduced_builtin_type({term, 0}) -> true;
 is_newly_introduced_builtin_type({timeout, 0}) -> true;
 %% R13
+is_newly_introduced_builtin_type({arity, 0}) -> true;
 is_newly_introduced_builtin_type({array, 0}) -> true; % opaque
 is_newly_introduced_builtin_type({bitstring, 0}) -> true;
 is_newly_introduced_builtin_type({dict, 0}) -> true; % opaque

@@ -30,7 +30,7 @@
 -module(wxGauge).
 -include("wxe.hrl").
 -export([create/4,create/5,destroy/1,getBezelFace/1,getRange/1,getShadowWidth/1,
-  getValue/1,isVertical/1,new/0,new/3,new/4,setBezelFace/2,setRange/2,
+  getValue/1,isVertical/1,new/0,new/3,new/4,pulse/1,setBezelFace/2,setRange/2,
   setShadowWidth/2,setValue/2]).
 
 %% inherited exports
@@ -98,7 +98,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},Id,Range, Options)
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
-          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<4:32/?UI,ValidatorRef:32/?UI>>|Acc]  end,
+          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<4:32/?UI,ValidatorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxGauge_new_4,
   <<ParentRef:32/?UI,Id:32/?UI,Range:32/?UI, 0:32,BinOpt/binary>>).
@@ -119,7 +120,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef},Id,Ra
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
-          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<4:32/?UI,ValidatorRef:32/?UI>>|Acc]  end,
+          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<4:32/?UI,ValidatorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGauge_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI,Id:32/?UI,Range:32/?UI, BinOpt/binary>>).
@@ -190,6 +192,13 @@ setValue(#wx_ref{type=ThisT,ref=ThisRef},Pos)
   ?CLASS(ThisT,wxGauge),
   wxe_util:cast(?wxGauge_SetValue,
   <<ThisRef:32/?UI,Pos:32/?UI>>).
+
+%% @spec (This::wxGauge()) -> ok
+%% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxgauge.html#wxgaugepulse">external documentation</a>.
+pulse(#wx_ref{type=ThisT,ref=ThisRef}) ->
+  ?CLASS(ThisT,wxGauge),
+  wxe_util:cast(?wxGauge_Pulse,
+  <<ThisRef:32/?UI>>).
 
 %% @spec (This::wxGauge()) -> ok
 %% @doc Destroys this object, do not use object again

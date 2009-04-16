@@ -61,6 +61,7 @@
 
   <section>
     <title>Requiring and reading configuration data</title>
+    <marker id="require_config_data"></marker>
 
     <p>In a test suite, one must <em>require</em> that a configuration 
     variable exists before attempting to read the associated 

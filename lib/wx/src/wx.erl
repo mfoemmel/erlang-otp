@@ -27,49 +27,50 @@
 %% 
 %% This is the base api of <a href="http://www.wxwidgets.org/">wxWidgets</a>.
 %% This module contains functions for 
-%% starting and stopping the wx-server, and other utility functions.
+%% starting and stopping the wx-server, as well as  other utility functions.
 %%
-%% wxWidgets is object oriented, and not functional.  Where an erlang
+%% wxWidgets is object oriented, and not functional. Thus, in wxErlang a
 %% module represents a class, and the object created by this class
-%% have an own type, wxCLASS().  This module represents the base
+%% has an own type, wxCLASS().  This module represents the base
 %% class, and all other wxMODULE's are sub-classes of this class.
 %% 
 %% Objects of a class are created with wxCLASS:new(...) and destroyed with 
 %% wxCLASS:destroy(). Member functions are called with wxCLASS:member(Object, ...)
 %% instead of as in C++ Object.member(...).
 %% 
-%% Sub class modules inherits (non static) functions from it's parents.
-%% the inherited functions are not documented in the sub-classes.
+%% Sub class modules inherit (non static) functions from their parents.
+%% The inherited functions are not documented in the sub-classes.
 %% 
-%% This erlang port of wxWidgets, tries to be a one-to-one mapping with the
-%% original wxWidgets library. Some things are different though, optional arguments
-%% uses property lists and can be in any order. The main difference is the event
-%% handling which is different from the original library. See {@link wxEvtHandler}.
+%% This erlang port of wxWidgets tries to be a one-to-one mapping with
+%% the original wxWidgets library. Some things are different though,
+%% as the optional arguments use property lists and can be in any
+%% order. The main difference is the event handling which is different
+%% from the original library. See {@link wxEvtHandler}.
 %%
 %% The following classes are implemented directly as erlang types: <br />
 %% wxPoint={x,y},wxSize={w,h},wxRect={x,y,w,h},wxColour={r,g,b [,a]},
 %% wxString={@link //stdlib/unicode:charlist()},
 %% wxGBPosition={r,c},wxGBSpan={rs,cs},wxGridCellCoords={r,c}.
 %%
-%% Where all strings are decoded/encoded as UTF32 in native format.
-%%
-%% wxWidgets uses a process specific environment, which is created by {@link wx:new/0},
-%% to allow usage from other procesess use {@link get_env/1} and {@link set_env/0}.
+%% wxWidgets uses a process specific environment, which is created by
+%% {@link wx:new/0}.  To be able to use the environment from other
+%% processes, call {@link get_env/0} to retrieve the environment and
+%% {@link set_env/1} to assign the environment in the other process.
 %%
 %% Global (classless) functions are located in the wx_misc module.
 
 %% @type wxObject().      Opaque object 
-%% @type wx_env().  Wx process enviroment
+%% @type wx_env().  Wx process environment
 %% @type wx_mem().  Wx memory area
 %% @type colour().  A 3 or 4 tuple: {R,G,B,A} or as argument {R,G,B} is also accepted
-%%                  where each colour channal is a an integer between 0-255. 
+%%                  where each colour channel is a an integer between 0-255. 
 %% @type datetime(). {{Year,Month,Day}, {Hour,Minute,Second}} in local timezone.
 %% @type mouseState().   See #wxMouseState{} defined in wx.hrl
 
 
 -module(wx).
 
--export([parent_class/1, new/0, destroy/0,
+-export([parent_class/1, new/0, new/1, destroy/0,
 	 get_env/0,set_env/1, debug/1,
 	 batch/1,foreach/2,map/2,foldl/3,foldr/3,
 	 getObjectType/1, typeCast/2, 
@@ -83,7 +84,15 @@ parent_class(_) -> true. %% Let the null pointers be sent down.
 %% @spec () -> wxObject()
 %% @doc Starts a wx server.
 new() ->
+    new([]).
+
+%% @spec ([Option]) -> wxObject()
+%% @doc Starts a wx server. 
+%% Option may be {debug, Level}, see debug/1.
+new(Options) when is_list(Options) ->
     wxe_server:start(),
+    Debug = proplists:get_value(debug, Options, 0),
+    debug(Debug),
     null().
 
 %% @spec () -> ok
@@ -94,8 +103,8 @@ destroy() ->
     ok.
 
 %% @spec () -> wx_env()
-%% @doc Get this process current wx environment.
-%% Can be sent to other processes be allow them use wx functionality.
+%% @doc Gets this process's current wx environment.
+%% Can be sent to other processes to allow them use this process wx environment.
 %% @see set_env/1
 get_env() ->
     case get(?WXE_IDENTIFIER) of
@@ -113,7 +122,7 @@ set_env(#wx_env{sv=Pid} = Env) ->
     ok.
 
 %% @spec () -> wxObject()
-%% @doc returns the null object
+%% @doc Returns the null object
 null() ->
     #wx_ref{ref= 0,type=wx}.
 
@@ -129,15 +138,16 @@ getObjectType(#wx_ref{type=Type}) ->
 %% @spec (wxObject(), atom()) -> wxObject()
 %% @doc Casts the object to class NewType.
 %%  It is needed when using functions like wxWindow:findWindow/2, which 
-%%  returns an generic wxObject type.
+%%  returns a generic wxObject type.
 typeCast(Old=#wx_ref{}, NewType) when is_atom(NewType) ->
     Old#wx_ref{type=NewType}.
 
-%% @spec (function()) -> term()
-%% @doc Batches all <c>wx</c> commands used in the fun.
-%% Improves perfomance of the command processing, grabs the wxWidgets thread
-%% so GUI may not be updated directly (and no event processing will be done) 
-%%
+%% @spec (function()) -> term() 
+%% @doc Batches all <c>wx</c> commands
+%% used in the fun.  Improves performance of the command processing by
+%% grabbing the wxWidgets thread so that no event processing will be
+%% done before the complete batch of commands is invoked.
+%% 
 %% @see map/2
 %% @see foreach/2
 %% @see foldl/3
@@ -154,7 +164,7 @@ batch(Fun) ->
     end.
 
 %% @spec (function(), list()) -> ok
-%% @doc Behaves like {@link //stdlib/lists:foreach/2} but batches wx commands see {@link batch/1}. 
+%% @doc Behaves like {@link //stdlib/lists:foreach/2} but batches wx commands. See {@link batch/1}. 
 foreach(Fun, List) ->
     ok = wxe_util:cast(?BATCH_BEGIN, <<>>),
     try lists:foreach(Fun, List)
@@ -167,7 +177,7 @@ foreach(Fun, List) ->
     end.
 
 %% @spec (function(), list()) -> list()
-%% @doc Behaves like {@link //stdlib/lists:map/2} but batches wx commands see {@link batch/1}. 
+%% @doc Behaves like {@link //stdlib/lists:map/2} but batches wx commands. See {@link batch/1}. 
 map(Fun, List) ->
     ok = wxe_util:cast(?BATCH_BEGIN, <<>>),
     try lists:map(Fun, List)
@@ -180,7 +190,7 @@ map(Fun, List) ->
     end.
 
 %% @spec (function(), term(), list()) -> term()
-%% @doc Behaves like {@link //stdlib/lists:foldl/3} but batches wx commands see {@link batch/1}. 
+%% @doc Behaves like {@link //stdlib/lists:foldl/3} but batches wx commands. See {@link batch/1}. 
 foldl(Fun, Acc, List) ->
     ok = wxe_util:cast(?BATCH_BEGIN, <<>>),
     try lists:foldl(Fun, Acc, List)
@@ -193,7 +203,7 @@ foldl(Fun, Acc, List) ->
     end.
 
 %% @spec (function(), term(), list()) -> term()
-%% @doc Behaves like {@link //stdlib/lists:foldr/3} but batches wx commands see {@link batch/1}. 
+%% @doc Behaves like {@link //stdlib/lists:foldr/3} but batches wx commands. See {@link batch/1}. 
 foldr(Fun, Acc, List) ->
     ok = wxe_util:cast(?BATCH_BEGIN, <<>>),
     try lists:foldr(Fun, Acc, List)
@@ -209,12 +219,12 @@ foldr(Fun, Acc, List) ->
 
 %% @spec (integer()) -> wx_memory()
 %% @doc Creates a memory area (of Size in bytes) which can be used by an external library (i.e. opengl).
-%% It is up to the client to keep an reference to this object so it does
+%% It is up to the client to keep a reference to this object so it does
 %% not get garbage collected by erlang while still in use by the external
 %% library.
 %%
-%% This is far from erlang's intentional usage and can crash the erlang emulator,
-%% use it carefully.
+%% This is far from erlang's intentional usage and can crash the erlang emulator.
+%% Use it carefully.
 create_memory(Size) when Size > ?MIN_BIN_SIZE ->
     #wx_mem{bin = <<0:(Size*8)>>, size = Size};
 create_memory(Size) ->
@@ -228,18 +238,40 @@ get_memory_bin(#wx_mem{bin=Bin, size=Size}) ->
     <<WithCorrectSize:Size/binary, _/binary>> = Bin,
     WithCorrectSize.
 
-%% @spec (atom()) -> ok
-%%   Level = none | verbose | trace
-%% @doc Sets debug level, if debug is verbose or trace
-%% each call is printed on console
+%% @spec (Level::term()) -> ok
+%%   Level = none | verbose | trace | driver | [Level]
+%% @doc Sets debug level. If debug level is verbose or trace
+%% each call is printed on console. If Level is driver each allocated 
+%% object and deletion is printed on the console.
 debug(none) -> debug(0);
 debug(verbose) -> debug(1);
 debug(trace) -> debug(2);
+debug(driver) -> debug(16);
+debug([]) -> debug(0);
+
+debug(List) when is_list(List) -> 
+    {Drv,Erl} = 
+	lists:foldl(fun(verbose, {Drv,_Erl}) -> 
+			    {Drv,1};
+		       (trace, {Drv,_Erl}) ->
+			    {Drv,2};
+		       (driver, {_Drv,Erl}) ->
+			    {16, Erl}
+		    end, {0,0}, List),
+    debug(Drv + Erl);
 debug(Level) when is_integer(Level) ->
     case get(?WXE_IDENTIFIER) of
 	undefined -> erlang:error({wxe,unknown_port});
-	Env = #wx_env{} -> 
+	#wx_env{debug=Old} when Old =:= Level -> ok;
+	Env = #wx_env{sv=Server, port=Port, debug=Old} -> 
+	    if 
+		Old > 16, Level > 16 -> ok;
+		Old < 16, Level < 16 -> ok;
+		true ->
+		    erlang:port_call(Port,?WXE_DEBUG_DRIVER, [Level bsr 4])
+	    end,		    
 	    put(?WXE_IDENTIFIER, Env#wx_env{debug=Level}),
+	    wxe_server:set_debug(Server,Level),
 	    ok
     end.
 

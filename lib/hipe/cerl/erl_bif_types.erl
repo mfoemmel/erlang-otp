@@ -33,7 +33,7 @@
 -define(TAG_IMMED1_SIZE, 4).
 
 -export([type/3, type/4, arg_types/3, 
-	 is_known/3, infinity_add/2]).
+	 is_known/3, structure_inspecting_args/3, infinity_add/2]).
 
 -import(erl_types, [number_max/1,
 		    number_min/1,
@@ -67,9 +67,11 @@
 		    t_inf/2,
 		    t_integer/0,
 		    t_integer/1,
+		    t_non_neg_fixnum/0,
 		    t_non_neg_integer/0,
 		    t_pos_integer/0,
 		    t_integers/1,
+		    t_iodata/0,
 		    t_iolist/0,
 		    t_is_any/1,
 		    t_is_atom/1,
@@ -91,7 +93,7 @@
 		    t_is_pid/1,
 		    t_is_port/1,
 		    t_is_maybe_improper_list/1,
-		    t_is_ref/1,
+		    t_is_reference/1,
 		    t_is_string/1,
 		    t_is_subtype/2,
 		    t_is_tuple/1,
@@ -110,7 +112,7 @@
 		    t_pid/0,
 		    t_port/0,
 		    t_maybe_improper_list/0,
-		    t_ref/0,
+		    t_reference/0,
 		    t_string/0,
 		    t_subtract/2,
 		    t_sup/1,
@@ -120,7 +122,7 @@
 		    t_tuple/0,
 		    t_tuple/1,
 		    t_tuple_args/1,
-		    t_tuple_arity/1,
+		    t_tuple_size/1,
 		    t_tuple_subtypes/1
 		   ]).
 
@@ -128,11 +130,21 @@
 -export([test/0]).
 -endif.
 
+%%=============================================================================
+
+-type erl_type() :: 'any' | 'none' | 'unit' | {'c',atom(),_,_}.  % XXX: temporarily
+
+%%=============================================================================
+
+-spec type(atom(), atom(), arity()) -> erl_type().
+
 type(M, F, A) ->
   type(M, F, A, any_list(A)).
 
 %% Arguments should be checked for undefinedness, so we do not make
 %% unnecessary overapproximations.
+
+-spec type(atom(), atom(), arity(), [erl_type()]) -> erl_type().
 
 %%-- code ---------------------------------------------------------------------
 type(code, add_path, 1, Xs) ->
@@ -278,7 +290,8 @@ type(erl_ddll, try_load, 3, Xs) ->
 	 fun (_) ->
 	     t_sup([t_tuple([t_atom('ok'), t_atom('already_loaded')]),
 		    t_tuple([t_atom('ok'), t_atom('loaded')]),
-		    t_tuple([t_atom('ok'), t_atom('pending_driver'), t_ref()]),
+		    t_tuple([t_atom('ok'),
+			     t_atom('pending_driver'), t_reference()]),
 		    t_tuple([t_atom('error'), t_atom('inconsistent')]),
 		    t_tuple([t_atom('error'), t_atom('permanent')])])
 	 end);
@@ -288,7 +301,8 @@ type(erl_ddll, try_unload, 2, Xs) ->
 	     t_sup([t_tuple([t_atom('ok'), t_atom('pending_process')]),
 		    t_tuple([t_atom('ok'), t_atom('unloaded')]),
 		    t_tuple([t_atom('ok'), t_atom('pending_driver')]),
-		    t_tuple([t_atom('ok'), t_atom('pending_driver'), t_ref()]),
+		    t_tuple([t_atom('ok'),
+			     t_atom('pending_driver'), t_reference()]),
 		    t_tuple([t_atom('error'), t_atom('permanent')]),
 		    t_tuple([t_atom('error'), t_atom('not_loaded')]),
 		    t_tuple([t_atom('error'),
@@ -332,14 +346,15 @@ type(erlang, '=:=', 2, Xs = [Lhs, Rhs]) ->
 	case t_is_atom(Lhs) andalso t_is_atom(Rhs) of
 	  true ->
 	    case {t_atom_vals(Lhs), t_atom_vals(Rhs)} of
+	      {unknown, _} -> t_bool();
+	      {_, unknown} -> t_bool();
 	      {[X], [X]} -> t_atom('true');
-	      {LhsVals, RhsVals} when LhsVals =/= any, RhsVals =/= any ->
+	      {LhsVals, RhsVals} ->
 		case lists:all(fun({X, Y}) -> X =/= Y end, 
 			       [{X, Y} || X <- LhsVals, Y <- RhsVals]) of
 		  true -> t_atom('false');
 		  false -> t_bool()
-		end;
-	      _ -> t_bool()
+		end
 	    end;
 	  false ->
 	    case t_is_integer(Lhs) andalso t_is_integer(Rhs) of
@@ -375,10 +390,11 @@ type(erlang, '=/=', 2, Xs = [Lhs, Rhs]) ->
 	case t_is_atom(Lhs) andalso t_is_atom(Rhs) of
 	  true ->
 	    case {t_atom_vals(Lhs), t_atom_vals(Rhs)} of
+	      {unknown, _} -> t_bool();
+	      {_, unknown} -> t_bool();
 	      {[Val], [Val]} -> t_atom('false');
-	      {LhsVals, RhsVals} when LhsVals =/= any, RhsVals =/= any ->
-		t_sup([t_from_term(X =/= Y) || X <- LhsVals, Y <- RhsVals]);
-	      _ -> t_bool()
+	      {LhsVals, RhsVals} ->
+		t_sup([t_from_term(X =/= Y) || X <- LhsVals, Y <- RhsVals])
 	    end;
 	  false ->
 	    case t_is_integer(Lhs) andalso t_is_integer(Rhs) of
@@ -638,7 +654,6 @@ type(erlang, 'bsr', 2, Xs) ->
 %%  strict(arg_types(erlang, 'bsr', 2), Xs,
 %%	 fun ([X, _]) -> t_sup(X, t_byte()) end);
 type(erlang, 'bsl', 2, Xs) ->
-%%  io:format("Xs ~p ~n", [Xs]),
   strict(arg_types(erlang, 'bsl', 2), Xs,
 	 fun ([X1, X2]) ->
 	     case arith('bsl', X1, X2) of
@@ -738,21 +753,20 @@ type(erlang, element, 2, Xs) ->
   strict(arg_types(erlang, element, 2), Xs,
 	 fun ([X1, X2]) ->
 	     case t_tuple_subtypes(X2) of
-	       any -> t_any();
+	       unknown -> t_any();
 	       [_] ->
-		 A = t_tuple_arity(X2),
+		 Sz = t_tuple_size(X2),
 		 As = t_tuple_args(X2),
 		 case t_number_vals(X1) of
+		   unknown -> t_sup(As);
 		   Ns when is_list(Ns) ->
-		     lists:foldl(
-		       fun (N, X) when is_integer(N), N >= 1, N =< A ->
-			   t_sup(X, lists:nth(N, As));
-			   (_, X) ->
-			   X
-		       end,
-		       t_none(), Ns);
-		   _ ->
-		     t_sup(t_tuple_args(X2))
+		     Fun = fun 
+			     (N, X) when is_integer(N), 1 =< N, N =< Sz ->
+			       t_sup(X, lists:nth(N, As));
+			     (_, X) ->
+			       X
+			   end,
+		     lists:foldl(Fun, t_none(), Ns)
 		 end;
 	       Ts when is_list(Ts) ->
 		 t_sup([type(erlang, element, 2, [X1, Y]) || Y <- Ts])
@@ -807,7 +821,7 @@ type(erlang, get_module_info, 2, Xs) ->
 		     t_list(t_tuple([t_atom(), t_arity(), t_integer()]));
 		   List when is_list(List) ->
 		     T_module_info_2_returns;
-		   any ->
+		   unknown ->
 		     T_module_info_2_returns
 		 end;
 	       false ->
@@ -873,11 +887,11 @@ type(erlang, is_function, 1, Xs) ->
 type(erlang, is_function, 2, Xs) ->
   Fun = fun ([FunType, ArityType]) -> 
 	    case t_number_vals(ArityType) of
-	      any -> t_bool();
+	      unknown -> t_bool();
 	      [Val] -> 
 		FunConstr = t_fun(any_list(Val), t_any()),
-		Fun2 = fun (X) -> t_is_subtype(X, FunConstr)
-				    andalso (not t_is_none(X))
+		Fun2 = fun (X) ->
+			   t_is_subtype(X, FunConstr) andalso (not t_is_none(X))
 		       end,
 		check_guard_single(FunType, Fun2, FunConstr);
 	      IntList when is_list(IntList) -> t_bool() %% true?
@@ -890,8 +904,10 @@ type(erlang, is_integer, 1, Xs) ->
 	end,
   strict(arg_types(erlang, is_integer, 1), Xs, Fun);
 type(erlang, is_list, 1, Xs) ->
-  Fun = fun (X) -> check_guard(X, fun (Y) -> t_is_maybe_improper_list(Y) end, 
-			       t_maybe_improper_list())end,
+  Fun = fun (X) ->
+	    Fun2 = fun (Y) -> t_is_maybe_improper_list(Y) end,
+	    check_guard(X, Fun2, t_maybe_improper_list())
+	end,
   strict(arg_types(erlang, is_list, 1), Xs, Fun);
 type(erlang, is_number, 1, Xs) ->
   Fun = fun (X) ->
@@ -917,10 +933,10 @@ type(erlang, is_record, 2, Xs) ->
 		end;
 	      true ->
 		case t_tuple_subtypes(X) of
-		  any -> t_bool();
+		  unknown -> t_bool();
 		  [Tuple] ->
 		    case t_tuple_args(Tuple) of
-		      any -> t_bool();
+		      %% any -> t_bool();
 		      [Tag|_] ->
 			case t_is_atom(Tag) of
 			  false ->
@@ -933,18 +949,15 @@ type(erlang, is_record, 2, Xs) ->
 			    case t_atom_vals(Tag) of
 			      [RealTag] -> 
 				case t_atom_vals(Y) of
-				  [RealTag] ->
-				    t_atom('true');
+				  [RealTag] -> t_atom('true');
 				  _ -> t_bool() 
 				end;
-			      _ -> 
-				t_bool()
+			      _ -> t_bool()
 			    end
 			end
 		    end;
 		  List when length(List) >= 2 ->
-		    t_sup([type(erlang, is_record, 2, [T, Y])
-			   || T <- List])
+		    t_sup([type(erlang, is_record, 2, [T, Y]) || T <- List])
 		end
 	    end
 	end,
@@ -967,10 +980,10 @@ type(erlang, is_record, 3, Xs) ->
 	      true when length(Arity) =:= 1 ->
 		[RealArity] = Arity,
 		case t_tuple_subtypes(X) of
-		  any -> t_bool();
+		  unknown -> t_bool();
 		  [Tuple] ->
 		    case t_tuple_args(Tuple) of
-		      any -> t_bool();
+		      %% any -> t_bool();
 		      Args when length(Args) =:= RealArity ->
 			Tag = hd(Args),
 			case t_is_atom(Tag) of
@@ -984,18 +997,16 @@ type(erlang, is_record, 3, Xs) ->
 			    case t_atom_vals(Tag) of
 			      [RealTag] -> 
 				case t_atom_vals(Y) of
-				  [RealTag] ->
-				    t_atom('true');
+				  [RealTag] -> t_atom('true');
 				  _ -> t_bool()
 				end;
-			      _ -> 
-				t_bool()
+			      _ -> t_bool()
 			    end
 			end;
 		      Args when length(Args) =/= RealArity ->
 			t_atom('false')
 		    end;
-		  List when length(List) >= 2 ->
+		  [_, _|_] ->
 		    t_bool()
 		end;
 	      true ->
@@ -1004,7 +1015,9 @@ type(erlang, is_record, 3, Xs) ->
 	end,
   strict(arg_types(erlang, is_record, 3), Xs, Fun);
 type(erlang, is_reference, 1, Xs) ->
-  Fun = fun (X) -> check_guard(X, fun (Y) -> t_is_ref(Y) end, t_ref()) end,
+  Fun = fun (X) ->
+	    check_guard(X, fun (Y) -> t_is_reference(Y) end, t_reference())
+	end,
   strict(arg_types(erlang, is_reference, 1), Xs, Fun);
 type(erlang, is_tuple, 1, Xs) ->
   Fun = fun (X) ->
@@ -1053,16 +1066,19 @@ type(erlang, make_fun, 3, Xs) ->
   strict(arg_types(erlang, make_fun, 3), Xs, 
 	 fun ([_, _, Arity]) -> 
 	     case t_number_vals(Arity) of
-	       [N] -> t_fun(N, t_any());
-	       _   -> t_fun()
+	       [N] ->
+		 case is_integer(N) andalso 0 =< N andalso N =< 255 of
+		   true -> t_fun(N, t_any());
+		   false -> t_none()
+		 end;
+	       _Other -> t_fun()
 	     end
 	 end);
-type(erlang, make_ref, 0, _) -> t_ref();
+type(erlang, make_ref, 0, _) -> t_reference();
 type(erlang, make_tuple, 2, Xs) ->
   strict(arg_types(erlang, make_tuple, 2), Xs,
 	 fun ([Int,_]) ->
 	     case t_number_vals(Int) of
-	       any -> t_tuple();
 	       [N] when is_integer(N), N >= 0 -> t_tuple(N);
 	       _Other -> t_tuple()
 	     end
@@ -1085,7 +1101,7 @@ type(erlang, md5_update, 2, Xs) ->
 type(erlang, module_loaded, 1, Xs) ->
   strict(arg_types(erlang, module_loaded, 1), Xs, fun (_) -> t_bool() end);
 type(erlang, monitor, 2, Xs) ->
-  strict(arg_types(erlang, monitor, 2), Xs, fun (_) -> t_ref() end);
+  strict(arg_types(erlang, monitor, 2), Xs, fun (_) -> t_reference() end);
 type(erlang, monitor_node, 2, Xs) ->
   strict(arg_types(erlang, monitor_node, 2), Xs,
 	 fun (_) -> t_atom('true') end);
@@ -1146,7 +1162,7 @@ type(erlang, port_info, 2, Xs) ->
 				t_sup([t_atom(), t_integer(),
 				       t_pid(), t_list(t_pid()),
 				       t_string()])]);
-		     any ->
+		     unknown ->
 		       [_, PosItem] = arg_types(erlang, port_info, 2),
 		       t_tuple([PosItem,
 				t_sup([t_atom(), t_integer(),
@@ -1177,7 +1193,7 @@ type(erlang, process_flag, 2, Xs) ->
 		   ['trap_exit'] -> t_bool();
 		   List when is_list(List) ->
 		     T_process_flag_returns;
-		   any ->
+		   unknown ->
 		     T_process_flag_returns
 		 end;
 	       false -> % XXX: over-approximation if Flag is tuple
@@ -1255,7 +1271,7 @@ type(erlang, process_info, 2, Xs) ->
 			   t_tuple([InfoItem, t_bool()]);
 			 List when is_list(List) ->
 			   T_process_info_2_normal_returns;
-			 any ->
+			 unknown ->
 			   T_process_info_2_normal_returns
 		       end;
 		     false ->
@@ -1295,7 +1311,7 @@ type(erlang, send, 3, Xs) ->
   strict(arg_types(erlang, send, 3), Xs,
 	 fun (_) -> t_sup(t_atom('ok'), t_sendoptions()) end);
 type(erlang, send_after, 3, Xs) ->
-  strict(arg_types(erlang, send_after, 3), Xs, fun (_) -> t_ref() end);
+  strict(arg_types(erlang, send_after, 3), Xs, fun (_) -> t_reference() end);
 type(erlang, seq_trace, 2, Xs) ->
   strict(arg_types(erlang, seq_trace, 2), Xs, fun (_) -> t_tuple(5) end);
 type(erlang, seq_trace_info, 1, Xs) ->
@@ -1310,7 +1326,8 @@ type(erlang, seq_trace_info, 1, Xs) ->
 	       ['timestamp'] -> t_tuple([Item, t_bool()]);
 	       List when is_list(List) ->
 		 t_sup(t_tuple([t_seq_trace_info(), t_any()]), t_nil());
-	       any -> t_sup(t_tuple([t_seq_trace_info(), t_any()]), t_nil())
+	       unknown ->
+		 t_sup(t_tuple([t_seq_trace_info(), t_any()]), t_nil())
 	     end
 	 end);
 type(erlang, seq_trace_print, 1, Xs) ->
@@ -1322,34 +1339,31 @@ type(erlang, set_cookie, 2, Xs) ->
 type(erlang, setelement, 3, Xs) ->
   strict(arg_types(erlang, setelement, 3), Xs,
 	 fun ([X1, X2, X3]) ->
-	     Tuple = t_tuple_subtypes(X2),
-	     Ans = 
-	       case Tuple of
-		 any -> t_tuple();
+	     Ans =
+	       case t_tuple_subtypes(X2) of
+		 unknown -> t_tuple();
 		 [_] ->
-		   A = t_tuple_arity(X2),
+		   Sz = t_tuple_size(X2),
 		   As = t_tuple_args(X2),
-		   Numbers = t_number_vals(X1),
-		   case Numbers of
-		     any ->
+		   case t_number_vals(X1) of
+		     unknown ->
 		       t_tuple([t_sup(X, X3) || X <- As]);
-		     [N] when is_integer(N), N >= 1, N =< A ->
+		     [N] when is_integer(N), 1 =< N, N =< Sz ->
 		       t_tuple(list_replace(N, X3, As));
 		     [N] when is_integer(N), N < 1 ->
 		       t_none();
-		     [N] when is_integer(N), N > A ->
+		     [N] when is_integer(N), N > Sz ->
 		       t_none();
 		     Ns ->
-		       t_tuple(
-			 lists:foldl(
-			   fun (N, Xs) when is_integer(N), N >= 1, N =< A ->
-			       X = lists:nth(N, Xs),
-			       Y = t_sup(X, X3),
-			       list_replace(N, Y, Xs);
+		       Fun = fun
+			       (N, Xs) when is_integer(N), 1 =< N, N =< Sz ->
+				 X = lists:nth(N, Xs),
+				 Y = t_sup(X, X3),
+				 list_replace(N, Y, Xs);
 			       (_, Xs) ->
-			       Xs
-			   end,
-			   As, Ns))
+				 Xs
+			     end,
+		       t_tuple(lists:foldl(Fun, As, Ns))
 		   end;
 		 Ts when is_list(Ts) ->
 		   t_sup([type(erlang, setelement, 3, [X1, Y, X3]) || Y <- Ts])
@@ -1396,7 +1410,7 @@ type(erlang, split_binary, 2, Xs) ->
   strict(arg_types(erlang, split_binary, 2), Xs,
 	 fun (_) -> t_tuple([t_binary(), t_binary()]) end);
 type(erlang, start_timer, 3, Xs) ->
-  strict(arg_types(erlang, start_timer, 3), Xs, fun (_) -> t_ref() end);
+  strict(arg_types(erlang, start_timer, 3), Xs, fun (_) -> t_reference() end);
 type(erlang, statistics, 1, Xs) ->
   strict(arg_types(erlang, statistics, 1), Xs,
 	 fun ([Type]) ->
@@ -1433,7 +1447,7 @@ type(erlang, statistics, 1, Xs) ->
 		 t_tuple([t_non_neg_integer(), t_integer(0)]);
 	       List when is_list(List) ->
 		 T_statistics_1;
-	       any ->
+	       unknown ->
 		 T_statistics_1
 	     end
 	 end);
@@ -1449,12 +1463,15 @@ type(erlang, system_flag, 2, Xs) ->
 	     %% this provides an overapproximation of all return values 
 	     T_system_flag_2 = t_sup([t_integer(),
 				      t_bool(),
+				      t_system_cpu_topology(),
 				      t_system_multi_scheduling()]),
 	     case t_is_atom(Flag) of
 	       true ->
 	         case t_atom_vals(Flag) of
 		   ['backtrace_depth'] ->
 		     t_non_neg_fixnum();
+		   ['cpu_topology'] ->
+		     t_system_cpu_topology();
 		   ['debug_flags'] ->
 		     t_atom('true');
 		   ['display_items'] ->
@@ -1465,13 +1482,16 @@ type(erlang, system_flag, 2, Xs) ->
 		     t_non_neg_fixnum();
 		   ['multi_scheduling'] ->
 		     t_system_multi_scheduling();
+		   ['schedulers_online'] ->
+		     t_pos_fixnum();
+		   %% ['scheduler_bind_type'] ->
 		   ['sequential_tracer'] ->
 		     t_atom('false');		% XXX: IS THIS CORRECT?
 		   ['trace_control_word'] ->
 		     t_integer();
 		   List when is_list(List) ->
 		     T_system_flag_2;
-		   any ->
+		   unknown ->
 		     T_system_flag_2
 		 end;
 	       false ->
@@ -1505,6 +1525,8 @@ type(erlang, system_info, 1, Xs) ->
 							      t_any()]))]))]);
 		   ['break_ignored'] ->
 		     t_bool();
+		   ['cpu_topology'] ->
+		     t_system_cpu_topology();
 		   ['compat_rel'] ->
 		     t_non_neg_fixnum();
 		   ['creation'] ->
@@ -1565,7 +1587,12 @@ type(erlang, system_info, 1, Xs) ->
 		     t_non_neg_fixnum();
 		   ['procs'] ->
 		     t_binary();
+		   ['scheduler_bindings'] ->
+		     t_tuple();
+		   %% ['scheduler_bind_type'] ->
 		   ['schedulers'] ->
+		     t_pos_fixnum();
+		   ['schedulers_online'] ->
 		     t_pos_fixnum();
 		   ['sequential_tracer'] ->
 		     t_tuple([t_atom('sequential_tracer'), t_bool()]);
@@ -1587,7 +1614,7 @@ type(erlang, system_info, 1, Xs) ->
 		     t_integers([4,8]);
 		   List when is_list(List) ->
 		     t_any(); %% gross overapproximation
-		   any ->
+		   unknown ->
 		     t_any()
 		 end;
 	       false ->  %% This currently handles only {allocator, Alloc}
@@ -1619,7 +1646,8 @@ type(erlang, tl, 1, Xs) ->
 type(erlang, trace, 3, Xs) ->
   strict(arg_types(erlang, trace, 3), Xs, fun (_) -> t_integer() end);
 type(erlang, trace_delivered, 1, Xs) ->
-  strict(arg_types(erlang, trace_delivered, 1), Xs, fun (_) -> t_ref() end);
+  strict(arg_types(erlang, trace_delivered, 1), Xs,
+	 fun (_) -> t_reference() end);
 type(erlang, trace_info, 2, Xs) ->
   strict(arg_types(erlang, trace_info, 2), Xs,
 	 fun (_) ->
@@ -1649,12 +1677,12 @@ type(erlang, tuple_to_list, 1, Xs) ->
   strict(arg_types(erlang, tuple_to_list, 1), Xs,
 	 fun ([X]) ->
 	     case t_tuple_subtypes(X) of
-	       any -> t_list();
+	       unknown -> t_list();
 	       SubTypes -> 
 		 Args = lists:flatten([t_tuple_args(ST) || ST <- SubTypes]),
 		 %% Can be nil if the tuple can be {}
-		 case lists:any(fun (T) -> 
-				    t_tuple_arity(T) =:= 0
+		 case lists:any(fun (T) ->
+				    t_tuple_size(T) =:= 0
 				end, SubTypes) of
 		   true ->
 		     %% Be careful here. If we had only {} we need to
@@ -2089,12 +2117,12 @@ type(lists, dropwhile, 2, Xs) ->
 		 case check_fun_application(F, [X1]) of
 		   ok ->
 		     case t_atom_vals(t_fun_range(F)) of
-		       [true] ->
+		       ['true'] ->
 			 case t_is_none(t_inf(t_list(), X)) of
 			   true -> t_none();
 			   false -> t_nil()
 			 end;
-		       [false] -> 
+		       ['false'] -> 
 			 case t_is_none(t_inf(t_list(), X)) of
 			   true -> t_none();
 			   false -> X
@@ -2120,10 +2148,10 @@ type(lists, filter, 2, Xs) ->
 		 T = t_list_elements(L),
 		 case check_fun_application(F, [T]) of
 		   ok ->
-		     case t_atom_vals(t_fun_range(F)) =:= [false] of
+		     case t_atom_vals(t_fun_range(F)) =:= ['false'] of
 		       true -> t_nil();
 		       false -> 
-			 case t_atom_vals(t_fun_range(F)) =:= [true] of
+			 case t_atom_vals(t_fun_range(F)) =:= ['true'] of
 			   true -> L;
 			   false -> t_list(T)
 			 end
@@ -2229,7 +2257,7 @@ type(lists, keyfind, 3, Xs) ->
 		   true -> Ret;
 		   false ->
 		     case t_tuple_subtypes(Tuple) of
-		       any -> Ret;
+		       unknown -> Ret;
 		       List ->
 			 Keys = [type(erlang, element, 2, [Y, S])
 				 || S <- List],
@@ -2262,7 +2290,7 @@ type(lists, keymember, 3, Xs) ->
 		   true -> t_bool();
 		   false ->
 		     case t_tuple_subtypes(Tuple) of
-		       any -> t_bool();
+		       unknown -> t_bool();
 		       List ->
 			 Keys = [type(erlang, element, 2, [Y,S]) || S <- List],
 			 Infs = [t_inf(Key, X) || Key <- Keys],
@@ -2294,7 +2322,7 @@ type(lists, keysearch, 3, Xs) ->
 		   true -> Ret;
 		   false ->
 		     case t_tuple_subtypes(Tuple) of
-		       any -> Ret;
+		       unknown -> Ret;
 		       List ->
 			 Keys = [type(erlang, element, 2, [Y, S])
 				 || S <- List],
@@ -2416,9 +2444,9 @@ type(lists, partition, 2, Xs) ->
 		     end;
 		   ok ->
 		     case t_atom_vals(t_fun_range(F)) of
-		       [true] -> t_tuple([L, t_nil()]);
-		       [false] -> t_tuple([t_nil(), L]);
-		       [_,_] -> 
+		       ['true'] -> t_tuple([L, t_nil()]);
+		       ['false'] -> t_tuple([t_nil(), L]);
+		       [_, _] ->
 			 L2 = t_list(El),
 			 t_tuple([L2, L2])
 		     end
@@ -2677,6 +2705,9 @@ type(unicode, characters_to_list, 2, Xs) ->
 		    t_tuple([t_atom('error'), t_string(), t_ML()]),
 		    t_tuple([t_atom('incomplete'), t_string(), t_ML()])])
 	 end);
+type(unicode, bin_is_7bit, 1, Xs) ->
+  strict(arg_types(unicode, bin_is_7bit, 1), Xs, fun (_) -> t_bool() end);
+
 %%-----------------------------------------------------------------------------
 type(M, F, A, Xs) when is_atom(M), is_atom(F),
 		       is_integer(A), 0 =< A, A =< 255 ->
@@ -2744,9 +2775,13 @@ check_guard_single(X, Test, Type) ->
   case Test(X) of
     true -> t_atom('true');
     false ->
-      case t_is_none(t_inf(Type, X)) of
-	true -> t_atom('false');
-	false -> t_bool()
+      case erl_types:t_is_opaque(X) of
+	true -> t_none();
+	false ->
+	  case t_is_none(t_inf(Type, X)) of
+	    true -> t_atom('false');
+	    false -> t_bool()
+	  end
       end
   end.
 
@@ -2762,7 +2797,7 @@ infinity_max([H|T]) ->
       lists:foldl(
 	fun (Elem, Max) ->
 	    Geq = infinity_geq(Elem, Max),
-	    if not Geq or (Elem =:= empty) ->
+	    if not Geq orelse (Elem =:= empty) ->
 		Max;
 	       true ->
 		Elem
@@ -2779,7 +2814,7 @@ infinity_min([H|T]) ->
      true ->
       lists:foldl(fun (Elem, Min) ->
 		      Geq = infinity_geq(Elem, Min),
-		      if Geq or (Elem =:= empty) ->
+		      if Geq orelse (Elem =:= empty) ->
 			  Min;
 			 true ->
 			  Elem
@@ -2789,13 +2824,14 @@ infinity_min([H|T]) ->
 		  T)
   end.
 
+-type inf_integer() :: 'neg_inf' | 'pos_inf' | integer().
+
 -spec infinity_abs('pos_inf' | 'neg_inf') -> 'pos_inf'
 		; (integer()) -> non_neg_integer().
 
 infinity_abs(pos_inf) -> pos_inf;
 infinity_abs(neg_inf) -> pos_inf;
-infinity_abs(Number) when is_integer(Number), Number < 0 -> - Number;
-infinity_abs(Number) when is_integer(Number) -> Number.
+infinity_abs(Number) when is_integer(Number) -> abs(Number).
 
 %% span_zero(Range) ->
 %%   infinity_geq(0, number_min(Range)) and infinity_geq(number_max(Range), 0).
@@ -2805,16 +2841,16 @@ infinity_inv(neg_inf) -> pos_inf;
 infinity_inv(Number) when is_integer(Number) -> -Number.
 
 infinity_band(neg_inf, Type2) -> Type2;
-infinity_band(Type1, neg_inf) -> Type1;
+%% infinity_band(Type1, neg_inf) -> Type1;
 infinity_band(pos_inf, Type2) -> Type2;
-infinity_band(Type1, pos_inf) -> Type1;
+%% infinity_band(Type1, pos_inf) -> Type1;
 infinity_band(Type1, Type2) when is_integer(Type1), is_integer(Type2) ->
   Type1 band Type2.
 
 infinity_bor(neg_inf, _Type2) -> neg_inf;
-infinity_bor(_Type1, neg_inf) -> neg_inf;
+%% infinity_bor(_Type1, neg_inf) -> neg_inf;
 infinity_bor(pos_inf, _Type2) -> pos_inf;
-infinity_bor(_Type1, pos_inf) -> pos_inf;
+%% infinity_bor(_Type1, pos_inf) -> pos_inf;
 infinity_bor(Type1, Type2) when is_integer(Type1), is_integer(Type2) ->
   Type1 bor Type2.
 
@@ -2851,6 +2887,8 @@ infinity_geq(_, pos_inf) -> false;
 infinity_geq(_, neg_inf) -> true;
 infinity_geq(neg_inf, _) -> false;
 infinity_geq(A, B) when is_integer(A), is_integer(B) -> A >= B.
+
+-spec infinity_add(inf_integer(), inf_integer()) -> inf_integer().
 
 infinity_add(pos_inf, _Number) -> pos_inf;
 infinity_add(neg_inf, _Number) -> neg_inf;
@@ -2974,7 +3012,7 @@ arith_band(X1, X2) ->
   Max1 = number_max(X1),
   Min2 = number_min(X2),
   Max2 = number_max(X2),
-  case {t_is_any(L1), t_is_any(L2)} of
+  case {L1 =:= unknown, L2 =:= unknown} of
     {true, false} ->
       arith_band_range_set(arith_band_ranges(Min1, Max1, Min2, Max2), L2);
     {false, true} ->
@@ -2990,7 +3028,7 @@ arith_bor(X1, X2) ->
   Max1 = number_max(X1),
   Min2 = number_min(X2),
   Max2 = number_max(X2),
-  case {t_is_any(L1), t_is_any(L2)} of
+  case {L1 =:= unknown, L2 =:= unknown} of
     {true, false} ->
       arith_bor_range_set(arith_bor_ranges(Min1, Max1, Min2, Max2), L2);
     {false, true} ->
@@ -3002,12 +3040,12 @@ arith_bor(X1, X2) ->
 arith_band_ranges(Min1, Max1, Min2, Max2) ->
   Width = infinity_min([width({Min1, Max1}), width({Min2, Max2})]),
   Min =
-    case infinity_geq(Min1, 0) or infinity_geq(Min2, 0) of
+    case infinity_geq(Min1, 0) orelse infinity_geq(Min2, 0) of
       true -> 0;
       false -> infinity_bsl(-1, Width)
     end,
   Max =
-    case infinity_geq(Max1, 0) or infinity_geq(Max2, 0) of
+    case infinity_geq(Max1, 0) orelse infinity_geq(Max2, 0) of
       true -> infinity_add(infinity_bsl(1, Width), -1);
       false -> 0
     end,
@@ -3016,12 +3054,12 @@ arith_band_ranges(Min1, Max1, Min2, Max2) ->
 arith_bor_ranges(Min1, Max1, Min2, Max2) ->
   Width = infinity_max([width({Min1, Max1}), width({Min2, Max2})]),
   Min =
-    case infinity_geq(Min1, 0) and infinity_geq(Min2, 0) of
+    case infinity_geq(Min1, 0) andalso infinity_geq(Min2, 0) of
       true -> 0;
       false -> infinity_bsl(-1, Width)
     end,	  
   Max =
-    case infinity_geq(Max1, 0) and infinity_geq(Max2, 0) of
+    case infinity_geq(Max1, 0) andalso infinity_geq(Max2, 0) of
       true -> infinity_add(infinity_bsl(1, Width), -1);
       false -> -1
     end,
@@ -3034,7 +3072,7 @@ arith(Op, X1, X2) ->
     true ->
       L1 = t_number_vals(X1), 
       L2 = t_number_vals(X2),
-      case t_is_any(L1) or t_is_any(L2) of
+      case (L1 =:= unknown) orelse (L2 =:= unknown) of
 	true ->
 	  Min1 = number_min(X1),
 	  Max1 = number_max(X1),
@@ -3075,6 +3113,10 @@ arith(Op, X1, X2) ->
 	  {ok, t_integers(ordsets:from_list(AllVals))}
       end
   end.
+
+%%=============================================================================
+
+-spec arg_types(atom(), atom(), arity()) -> [erl_type()] | 'unknown'.
 
 %%------- code ----------------------------------------------------------------
 arg_types(code, add_path, 1) ->
@@ -3294,7 +3336,7 @@ arg_types(erlang, bump_reductions, 1) ->
 arg_types(erlang, byte_size, 1) ->
   [t_binary()];
 arg_types(erlang, cancel_timer, 1) ->
-  [t_ref()];
+  [t_reference()];
 arg_types(erlang, check_process_code, 2) ->
   [t_pid(), t_atom()];
 arg_types(erlang, concat_binary, 1) ->
@@ -3306,7 +3348,7 @@ arg_types(erlang, decode_packet, 3) ->
 arg_types(erlang, delete_module, 1) ->
   [t_atom()];
 arg_types(erlang, demonitor, 1) ->
-  [t_ref()];
+  [t_reference()];
 arg_types(erlang, disconnect_node, 1) ->
   [t_node()];
 arg_types(erlang, display, 1) ->
@@ -3570,9 +3612,9 @@ arg_types(erlang, put, 2) ->
 arg_types(erlang, raise, 3) ->
   [t_raise_errorclass(), t_any(), type(erlang, get_stacktrace, 0, [])];
 arg_types(erlang, read_timer, 1) ->
-  [t_ref()];
+  [t_reference()];
 arg_types(erlang, ref_to_list, 1) ->
-  [t_ref()];
+  [t_reference()];
 arg_types(erlang, register, 2) ->
   [t_atom(), t_sup(t_port(), t_pid())];
 arg_types(erlang, registered, 0) ->
@@ -3651,11 +3693,14 @@ arg_types(erlang, suspend_process, 2) ->
 			  t_atom('asynchronous')]))];
 arg_types(erlang, system_flag, 2) ->
   [t_sup([t_atom('backtrace_depth'),
+	  t_atom('cpu_topology'),
 	  t_atom('debug_flags'),	% undocumented
 	  t_atom('display_items'),	% undocumented
 	  t_atom('fullsweep_after'),
 	  t_atom('min_heap_size'),
 	  t_atom('multi_scheduling'),
+	  t_atom('schedulers_online'),
+	  t_atom('scheduler_bind_type'),
 	  %% Undocumented; used to implement (the documented) seq_trace module.
 	  t_atom('sequential_tracer'),
 	  t_atom('trace_control_word'),
@@ -3950,7 +3995,7 @@ arg_types(hipe_bifs, invalidate_funinfo_native_addresses, 1) ->
 arg_types(hipe_bifs, make_fe, 3) ->
   [t_integer(), t_atom(), t_tuple([t_integer(), t_integer(), t_integer()])];
 %% arg_types(hipe_bifs, make_native_stub, 2) ->
-%%   [t_integer(), t_byte()]; % 2nd arg is arity
+%%   [t_integer(), t_arity()];
 arg_types(hipe_bifs, mark_referred_from, 1) ->
   [t_mfa()];
 arg_types(hipe_bifs, merge_term, 1) ->
@@ -4199,21 +4244,45 @@ arg_types(unicode, characters_to_binary, 2) ->
   [t_ML(), t_encoding()];
 arg_types(unicode, characters_to_list, 2) ->
   [t_ML(), t_encoding()];
+arg_types(unicode, bin_is_7bit, 1) ->
+  [t_binary()];
 %%-----------------------------------------------------------------------------
 arg_types(M, F, A) when is_atom(M), is_atom(F),
 			is_integer(A), 0 =< A, A =< 255 ->
-  any.                     % safe approximation for all functions.
+  unknown.                     % safe approximation for all functions.
 
+
+-spec is_known(atom(), atom(), arity()) -> bool().
 
 is_known(M, F, A) ->
-  arg_types(M, F, A) =/= any.
+  arg_types(M, F, A) =/= unknown.
+
+
+-spec structure_inspecting_args(atom(), atom(), arity()) -> [1..255].
+
+structure_inspecting_args(erlang, element, 2) -> [2];
+structure_inspecting_args(erlang, is_atom, 1) -> [1];
+structure_inspecting_args(erlang, is_boolean, 1) -> [1];
+structure_inspecting_args(erlang, is_binary, 1) -> [1];
+structure_inspecting_args(erlang, is_bitstring, 1) -> [1];
+structure_inspecting_args(erlang, is_float, 1) -> [1];
+structure_inspecting_args(erlang, is_function, 1) -> [1];
+structure_inspecting_args(erlang, is_integer, 1) -> [1];
+structure_inspecting_args(erlang, is_list, 1) -> [1];
+structure_inspecting_args(erlang, is_number, 1) -> [1];
+structure_inspecting_args(erlang, is_pid, 1) -> [1];
+structure_inspecting_args(erlang, is_port, 1) -> [1];
+structure_inspecting_args(erlang, is_reference, 1) -> [1];
+structure_inspecting_args(erlang, is_tuple, 1) -> [1];
+%%structure_inspecting_args(erlang, setelement, 3) -> [2].
+structure_inspecting_args(_, _, _) -> []. % XXX: assume no arg needs inspection
 
 
 check_fun_application(Fun, Args) ->
   case t_is_fun(Fun) of
     true ->
       case t_fun_args(Fun) of
-	any ->
+	unknown ->
 	  case t_is_none_or_unit(t_fun_range(Fun)) of
 	    true -> error;
 	    false -> ok
@@ -4249,9 +4318,6 @@ t_ip_address() ->
 %% =====================================================================
 %% Some basic types used in various parts of the system
 %% =====================================================================
-
-t_iodata() ->
-  t_sup([t_binary(), t_iolist()]).
 
 t_date() ->
   t_tuple([t_pos_fixnum(), t_pos_fixnum(), t_pos_fixnum()]).
@@ -4426,8 +4492,34 @@ t_spawn_options() ->
 t_spawn_opt_return(List) ->
   case t_is_none(t_inf(t_list(t_atom('monitor')), List)) of
     true -> t_pid();
-    false -> t_sup(t_pid(), t_tuple([t_pid(), t_ref()]))
+    false -> t_sup(t_pid(), t_tuple([t_pid(), t_reference()]))
   end.
+
+t_system_cpu_topology() ->
+  t_sup(t_atom('undefined'), t_system_cpu_topology_level_entry_list()).
+
+t_system_cpu_topology_level_entry_list() ->
+  t_list(t_system_cpu_topology_level_entry()).
+
+t_system_cpu_topology_level_entry() ->
+  t_sup(t_tuple([t_system_cpu_topology_level_tag(),
+		 t_system_cpu_topology_sublevel_entry()]),
+	t_tuple([t_system_cpu_topology_level_tag(),
+		 t_system_cpu_topology_info_list(),
+		 t_system_cpu_topology_sublevel_entry()])).
+
+t_system_cpu_topology_sublevel_entry() ->
+  t_sup(t_system_cpu_topology_logical_cpu_id(),
+	t_list(t_tuple())). % approximation
+
+t_system_cpu_topology_level_tag() ->
+  t_atoms(['core', 'node', 'processor', 'thread']).
+
+t_system_cpu_topology_logical_cpu_id() ->
+  t_tuple([t_atom('logical'), t_non_neg_fixnum()]).
+
+t_system_cpu_topology_info_list() ->
+  t_nil().  % it may be extended in the future
 
 t_system_monitor_settings() ->
   t_sup([t_atom('undefined'),
@@ -4801,11 +4893,11 @@ test() ->
   neg_inf = infinity_max([neg_inf]),
 
   io:format("width"),
-  4 = width({7,9}),
+  4 = width({7, 9}),
   pos_inf = width({neg_inf, 100}),
   pos_inf = width({1, pos_inf}),
-  3 = width({-8,7}),
-  0 = width({-1,0}),
+  3 = width({-8, 7}),
+  0 = width({-1, 0}),
 
   io:format("arith * "),
   Mult1 = t_from_range(0, 12),

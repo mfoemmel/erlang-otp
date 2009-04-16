@@ -36,7 +36,7 @@
 -export([subsystem_spec/1,
 	 listen/1, listen/2, listen/3, stop/1]).
 
--export([init/1, handle_ssh_msg/2, handle_msg/2, terminate/2]).
+-export([init/1, handle_ssh_msg/2, handle_msg/2, terminate/2, code_change/3]).
 
 -record(state, {
 	  xf,   			% [{channel,ssh_xfer states}...]
@@ -46,6 +46,7 @@
 	  pending,                      % binary() 
 	  file_handler,			% atom() - callback module 
 	  file_state,                   % state for the file callback module
+	  max_files,                    % integer >= 0 max no files sent during READDIR
 	  handles			% list of open handles
 	  %% handle is either {<int>, directory, {Path, unread|eof}} or
 	  %% {<int>, file, {Path, IoDevice}}
@@ -104,14 +105,36 @@ init(Options) ->
     Root0 = proplists:get_value(root, Options, ""),
     
     %% Get the root of the file system (symlinks must be followed,
-    %% otherwise the realpath call won't work)
-    {{ok, Root}, State} = resolve_symlinks(Root0, 
-					   #state{root = Root0,
-						  file_handler = FileMod, 
-						  file_state = FS1}),
+    %% otherwise the realpath call won't work). But since symbolic links
+    %% isn't supported on all plattforms we have to use the root property
+    %% supplied by the user.
+    {Root, State} = 
+	case resolve_symlinks(Root0, 
+			      #state{root = Root0,
+				     file_handler = FileMod, 
+				     file_state = FS1}) of
+	    {{ok, Root1}, State0} ->
+		{Root1, State0};
+	    {{error, _}, State0} ->
+		{Root0, State0}
+	end,
+    MaxLength = proplists:get_value(max_files, Options, 0),
 
-    {ok,  State#state{cwd = CWD, root = Root, handles = [], pending = <<>>,
-		      xf = #ssh_xfer{vsn = 5, ext = []}}}.
+    Vsn = proplists:get_value(vsn, Options, 5),
+
+    {ok,  State#state{cwd = CWD, root = Root, max_files = MaxLength,
+		      handles = [], pending = <<>>,
+		      xf = #ssh_xfer{vsn = Vsn, ext = []}}}.
+
+
+%%--------------------------------------------------------------------
+%% Function: code_change(OldVsn, State, Extra) -> {ok, NewState}
+%% Description: 
+%%--------------------------------------------------------------------
+code_change(_OldVsn, State, _Extra) -> 
+    {ok, State}.
+
+
 %%--------------------------------------------------------------------
 %% Function: handle_ssh_msg(Args) -> {ok, State} | {stop, ChannelId, State}
 %%                        
@@ -242,8 +265,8 @@ handle_op(?SSH_FXP_READDIR, ReqId,
 	{_Handle, directory, {_RelPath, eof}} ->
 	    ssh_xfer:xf_send_status(XF, ReqId, ?SSH_FX_EOF),
 	    State;
-	{Handle, directory, {RelPath, _}} ->
-	    read_dir(State, XF, ReqId, Handle, RelPath);
+	{Handle, directory, {RelPath, Status}} ->
+	    read_dir(State, XF, ReqId, Handle, RelPath, Status);
 	_ ->
 	    ssh_xfer:xf_send_status(XF, ReqId, ?SSH_FX_INVALID_HANDLE),
 	    State
@@ -422,7 +445,7 @@ add_handle(State, XF, ReqId, Type, DirFileTuple) ->
     
 get_handle(Handles, BinHandle) ->
     case (catch list_to_integer(binary_to_list(BinHandle))) of
-	I when integer(I) ->
+	I when is_integer(I) ->
 	    case lists:keysearch(I, 1, Handles) of
 		{value, T} -> T;
 		false -> error
@@ -432,23 +455,53 @@ get_handle(Handles, BinHandle) ->
     end.
 
 %%% read_dir/5: read directory, send names, and return new state
-read_dir(State0 = #state{file_handler = FileMod, file_state = FS0},
-	 XF, ReqId, Handle, RelPath) ->
+read_dir(State0 = #state{file_handler = FileMod, max_files = MaxLength, file_state = FS0},
+	 XF, ReqId, Handle, RelPath, {cache, Files}) ->
+    AbsPath = relate_file_name(RelPath, State0),
+    ?dbg(true, "read_dir: AbsPath=~p\n", [AbsPath]),
+    if
+	length(Files) > MaxLength ->
+	    {ToSend, NewCache} = lists:split(MaxLength, Files),
+	    {NamesAndAttrs, FS1} = get_attrs(AbsPath, ToSend, FileMod, FS0),
+	    ssh_xfer:xf_send_names(XF, ReqId, NamesAndAttrs),
+	    Handles = lists:keyreplace(Handle, 1,
+				       State0#state.handles,
+				       {Handle, directory, {RelPath,{cache, NewCache}}}),
+	    State0#state{handles = Handles, file_state = FS1};
+	true ->
+	    {NamesAndAttrs, FS1} = get_attrs(AbsPath, Files, FileMod, FS0),
+	    ssh_xfer:xf_send_names(XF, ReqId, NamesAndAttrs),
+	    Handles = lists:keyreplace(Handle, 1,
+				       State0#state.handles,
+				       {Handle, directory, {RelPath,eof}}),
+	    State0#state{handles = Handles, file_state = FS1}
+    end;
+read_dir(State0 = #state{file_handler = FileMod, max_files = MaxLength, file_state = FS0},
+	 XF, ReqId, Handle, RelPath, _Status) ->
     AbsPath = relate_file_name(RelPath, State0),
     ?dbg(true, "read_dir: AbsPath=~p\n", [AbsPath]),
     {Res, FS1} = FileMod:list_dir(AbsPath, FS0),
     case Res of
-	{ok, Files} ->
+	{ok, Files} when MaxLength == 0 orelse MaxLength > length(Files) ->
 	    {NamesAndAttrs, FS2} = get_attrs(AbsPath, Files, FileMod, FS1),
 	    ssh_xfer:xf_send_names(XF, ReqId, NamesAndAttrs),
 	    Handles = lists:keyreplace(Handle, 1,
 				       State0#state.handles,
 				       {Handle, directory, {RelPath,eof}}),
 	    State0#state{handles = Handles, file_state = FS2};
+	{ok, Files} ->
+	    {ToSend, Cache} = lists:split(MaxLength, Files),
+	    {NamesAndAttrs, FS2} = get_attrs(AbsPath, ToSend, FileMod, FS1),
+	    ssh_xfer:xf_send_names(XF, ReqId, NamesAndAttrs),
+	    Handles = lists:keyreplace(Handle, 1,
+				       State0#state.handles,
+				       {Handle, directory, {RelPath,{cache, Cache}}}),
+	    State0#state{handles = Handles, file_state = FS2};
 	{error, Error} ->
 	    State1 = State0#state{file_state = FS1},
 	    send_status({error, Error}, ReqId, State1)
     end.
+
 
 %%% get_attrs: get stat of each file and return
 get_attrs(RelPath, Files, FileMod, FS) ->
@@ -664,7 +717,7 @@ resolve_symlinks_2([], State, _LinkCnt, AccPath) ->
 relate_file_name(File, State) ->
     relate_file_name(File, State, _Canonicalize=true).
 
-relate_file_name(File, State, Canonicalize) when binary(File) ->
+relate_file_name(File, State, Canonicalize) when is_binary(File) ->
     relate_file_name(binary_to_list(File), State, Canonicalize);
 relate_file_name(File, #state{cwd = CWD, root = ""}, Canonicalize) ->
     relate_filename_to_path(File, CWD, Canonicalize);

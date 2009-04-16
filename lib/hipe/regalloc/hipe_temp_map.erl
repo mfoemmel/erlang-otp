@@ -21,25 +21,18 @@
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
 %% Time-stamp: <2008-04-20 14:54:00 richard>
 %% ===========================================================================
-%%  Filename : 	hipe_temp_map.erl
 %%  Module   :	hipe_temp_map
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2001-07-24 Erik Johansson (happi@it.uu.se): 
-%%               Created.
-%%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/09/14 13:01:32 $
-%%              $Revision: 1.15 $
+%%  History  :	* 2001-07-24 Erik Johansson (happi@it.uu.se): Created.
 %% ===========================================================================
 %%  Exports  :
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_temp_map).
--export([cols2tuple/2, is_spilled/2,
-	 %% sorted_cols2tuple/2, in_reg/2, in_fp_reg/2, find/2,
-	 to_substlist/1]).
+
+-export([cols2tuple/2, is_spilled/2, to_substlist/1]).
 
 -include("../main/hipe.hrl").
 

@@ -71,6 +71,9 @@
 #endif
 
 #include <stdlib.h>
+#ifdef HAVE_LIMITS_H
+#include <limits.h>
+#endif
 
 static int read_topology(erts_cpu_info_t *cpuinfo);
 

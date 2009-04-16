@@ -100,54 +100,54 @@ is_safe(#apply_N{}) -> false;
 is_safe(#closure_element{}) -> true;
 is_safe(#element{}) -> false;
 %% is_safe(#gc_test{}) -> ???
-is_safe({hipe_bs_primop, {bs_start_match,_}}) -> false;
-is_safe({hipe_bs_primop, {{bs_start_match, bitstr},_}}) -> true;
-is_safe({hipe_bs_primop, {{bs_start_match, ok_matchstate},_}}) -> false;
-is_safe({hipe_bs_primop, {bs_get_binary,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_get_binary_all,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_get_binary_all_2,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_get_integer,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_get_float,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_skip_bits,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_skip_bits_all,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_test_tail,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_restore,_}}) -> true;
-is_safe({hipe_bs_primop, {bs_save,_}}) -> true;
-is_safe({hipe_bs_primop, {bs_add,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_add,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_start_match, _}}) -> false;
+is_safe({hipe_bs_primop, {{bs_start_match, bitstr}, _}}) -> true;
+is_safe({hipe_bs_primop, {{bs_start_match, ok_matchstate}, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_binary, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_binary_all, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_binary_all_2, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_integer, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_float, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_skip_bits, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_skip_bits_all, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_test_tail, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_restore, _}}) -> true;
+is_safe({hipe_bs_primop, {bs_save, _}}) -> true;
+is_safe({hipe_bs_primop, {bs_add, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_add, _, _}}) -> false;
 is_safe({hipe_bs_primop, bs_bits_to_bytes}) -> false;
 is_safe({hipe_bs_primop, bs_bits_to_bytes2}) -> false;
-is_safe({hipe_bs_primop, {bs_init,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_init,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_init_bits,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_init_bits,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_put_binary,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_put_binary_all,_}}) -> false;  
-is_safe({hipe_bs_primop, {bs_put_float,_,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_put_integer,_,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_put_string,_,_}}) -> false;  
+is_safe({hipe_bs_primop, {bs_init, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_init, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_init_bits, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_init_bits, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_put_binary, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_put_binary_all, _}}) -> false;  
+is_safe({hipe_bs_primop, {bs_put_float, _, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_put_integer, _, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_put_string, _, _}}) -> false;  
 is_safe({hipe_bs_primop, bs_put_utf8}) -> false;
 is_safe({hipe_bs_primop, bs_utf8_size}) -> true;
 is_safe({hipe_bs_primop, bs_get_utf8}) -> false;
 is_safe({hipe_bs_primop, bs_utf16_size}) -> true;
-is_safe({hipe_bs_primop, {bs_put_utf16,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_get_utf16,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_put_utf16, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_utf16, _}}) -> false;
 is_safe({hipe_bs_primop, bs_validate_unicode}) -> false;
 is_safe({hipe_bs_primop, bs_validate_unicode_retract}) -> false;
-is_safe({hipe_bs_primop, {unsafe_bs_put_integer,_,_,_}}) -> false;
+is_safe({hipe_bs_primop, {unsafe_bs_put_integer, _, _, _}}) -> false;
 is_safe({hipe_bs_primop, bs_final}) -> true;
 is_safe({hipe_bs_primop, bs_context_to_binary}) -> true;
-is_safe({hipe_bs_primop, {bs_test_unit,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_match_string,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_append,_,_,_,_}}) -> false;
-is_safe({hipe_bs_primop, {bs_private_append,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_test_unit, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_match_string, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_append, _, _, _, _}}) -> false;
+is_safe({hipe_bs_primop, {bs_private_append, _, _}}) -> false;
 is_safe({hipe_bs_primop, bs_init_writable}) -> true;
 is_safe(#mkfun{}) -> true;
 is_safe(#unsafe_element{}) -> true;
 is_safe(#unsafe_update_element{}) -> true.
 
 
--spec fails(icode_primop() | mfa()) -> bool().
+-spec fails(icode_funcall()) -> bool().
 
 fails('+') -> true;
 fails('-') -> true;
@@ -199,47 +199,47 @@ fails(#apply_N{}) -> true;
 fails(#closure_element{}) -> false;
 fails(#element{}) -> true;
 %% fails(#gc_test{}) -> ???
-fails({hipe_bs_primop, {bs_start_match,_}}) -> true;
-fails({hipe_bs_primop, {{bs_start_match, bitstr},_}}) -> true;
-fails({hipe_bs_primop, {{bs_start_match, ok_matchstate},_}}) -> false;
-fails({hipe_bs_primop, {bs_get_binary,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_get_binary_all,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_get_binary_all_2,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_get_integer,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_get_float,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_skip_bits,_}}) -> true;
-fails({hipe_bs_primop, {bs_skip_bits_all,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_test_tail,_}}) -> true;
-fails({hipe_bs_primop, {bs_restore,_}}) -> false;
-fails({hipe_bs_primop, {bs_save,_}}) -> false;
+fails({hipe_bs_primop, {bs_start_match, _}}) -> true;
+fails({hipe_bs_primop, {{bs_start_match, bitstr}, _}}) -> true;
+fails({hipe_bs_primop, {{bs_start_match, ok_matchstate}, _}}) -> false;
+fails({hipe_bs_primop, {bs_get_binary, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_get_binary_all, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_get_binary_all_2, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_get_integer, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_get_float, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_skip_bits, _}}) -> true;
+fails({hipe_bs_primop, {bs_skip_bits_all, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_test_tail, _}}) -> true;
+fails({hipe_bs_primop, {bs_restore, _}}) -> false;
+fails({hipe_bs_primop, {bs_save, _}}) -> false;
 fails({hipe_bs_primop, bs_context_to_binary}) -> false;
-fails({hipe_bs_primop, {bs_test_unit,_}}) -> true;
-fails({hipe_bs_primop, {bs_match_string,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_add,_}}) -> true;
-fails({hipe_bs_primop, {bs_add,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_test_unit, _}}) -> true;
+fails({hipe_bs_primop, {bs_match_string, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_add, _}}) -> true;
+fails({hipe_bs_primop, {bs_add, _, _}}) -> true;
 fails({hipe_bs_primop, bs_bits_to_bytes}) -> true;
 fails({hipe_bs_primop, bs_bits_to_bytes2}) -> true;
-fails({hipe_bs_primop, {bs_init,_}}) -> true;
-fails({hipe_bs_primop, {bs_init,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_init_bits,_}}) -> true;
-fails({hipe_bs_primop, {bs_init_bits,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_put_binary,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_put_binary_all,_}}) -> true;  
-fails({hipe_bs_primop, {bs_put_float,_,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_put_integer,_,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_put_string,_,_}}) -> true;  
+fails({hipe_bs_primop, {bs_init, _}}) -> true;
+fails({hipe_bs_primop, {bs_init, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_init_bits, _}}) -> true;
+fails({hipe_bs_primop, {bs_init_bits, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_put_binary, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_put_binary_all, _}}) -> true;  
+fails({hipe_bs_primop, {bs_put_float, _, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_put_integer, _, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_put_string, _, _}}) -> true;  
 fails({hipe_bs_primop, bs_put_utf8}) -> true;
 fails({hipe_bs_primop, bs_utf8_size}) -> false;
 fails({hipe_bs_primop, bs_get_utf8}) -> true;
 fails({hipe_bs_primop, bs_utf16_size}) -> false;
-fails({hipe_bs_primop, {bs_put_utf16,_}}) -> true;
-fails({hipe_bs_primop, {bs_get_utf16,_}}) -> true;
+fails({hipe_bs_primop, {bs_put_utf16, _}}) -> true;
+fails({hipe_bs_primop, {bs_get_utf16, _}}) -> true;
 fails({hipe_bs_primop, bs_validate_unicode}) -> true;
 fails({hipe_bs_primop, bs_validate_unicode_retract}) -> true;
-fails({hipe_bs_primop, {unsafe_bs_put_integer,_,_,_}}) -> true;
+fails({hipe_bs_primop, {unsafe_bs_put_integer, _, _, _}}) -> true;
 fails({hipe_bs_primop, bs_final}) -> false;
-fails({hipe_bs_primop, {bs_append,_,_,_,_}}) -> true;
-fails({hipe_bs_primop, {bs_private_append,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_append, _, _, _, _}}) -> true;
+fails({hipe_bs_primop, {bs_private_append, _, _}}) -> true;
 fails({hipe_bs_primop, bs_init_writable}) -> true;
 fails(#mkfun{}) -> false;
 fails(#unsafe_element{}) -> false;
@@ -259,13 +259,13 @@ fails({M, F, A}) when is_atom(M), is_atom(F), is_integer(A), 0 =< A, A =< 255 ->
 
 pp(Dev, Op) ->
   case Op of
-    #apply_N{arity=N} ->
+    #apply_N{arity = N} ->
       io:format(Dev, "apply_N<~w>/", [N]);
-    #closure_element{n=N} ->
+    #closure_element{n = N} ->
       io:format(Dev, "closure_element<~w>", [N]);
     #element{} ->
       io:format(Dev, "element", []);
-    #gc_test{need=N} ->
+    #gc_test{need = N} ->
       io:format(Dev, "gc_test<~w>", [N]);
     {hipe_bs_primop, BsOp}  ->
       case BsOp of
@@ -284,7 +284,7 @@ pp(Dev, Op) ->
 	{unsafe_bs_put_integer, Bits, Flags, _ConstInfo} ->
 	  io:format(Dev, "unsafe_bs_put_integer<~w, ~w>", [Bits, Flags]);
 	{bs_skip_bits_all, Unit, Flags} ->
-	  io:format(Dev, "bs_skip_bits_all<~w,~w>", [Unit,Flags]);
+	  io:format(Dev, "bs_skip_bits_all<~w,~w>", [Unit, Flags]);
 	{bs_skip_bits, Unit} ->
 	  io:format(Dev, "bs_skip_bits<~w>", [Unit]);
 	{bs_start_match, Max} ->
@@ -299,11 +299,11 @@ pp(Dev, Op) ->
 	  io:format(Dev, "bs_get_float<~w, ~w>", [Size, Flags]);
 	{bs_get_binary, Size, Flags} ->
 	  io:format(Dev, "bs_get_binary<~w, ~w>", [Size, Flags]);
-	{bs_get_binary_all,Unit,Flags} ->
-	  io:format(Dev, "bs_get_binary_all<~w,~w>", [Unit,Flags]);
-	{bs_get_binary_all_2,Unit,Flags} ->
-	  io:format(Dev, "bs_get_binary_all<~w,~w>", [Unit,Flags]);
-	{bs_test_tail,NumBits} ->
+	{bs_get_binary_all, Unit, Flags} ->
+	  io:format(Dev, "bs_get_binary_all<~w,~w>", [Unit, Flags]);
+	{bs_get_binary_all_2, Unit, Flags} ->
+	  io:format(Dev, "bs_get_binary_all<~w,~w>", [Unit, Flags]);
+	{bs_test_tail, NumBits} ->
 	  io:format(Dev, "bs_test_tail<~w>", [NumBits]);
 	{bs_test_unit, Unit} ->
 	  io:format(Dev, "bs_test_unit<~w>", [Unit]);
@@ -326,9 +326,9 @@ pp(Dev, Op) ->
 	{bs_add, Const, Unit} ->
 	  io:format(Dev, "bs_add<~w, ~w>", [Const, Unit]);
 	{bs_append, X, Y, Z, W} ->
-	  io:format(Dev, "bs_append<~w, ~w, ~w, ~w>", [X,Y,Z,W]);
+	  io:format(Dev, "bs_append<~w, ~w, ~w, ~w>", [X, Y, Z, W]);
 	{bs_private_append, U, Flags} ->
-	  io:format(Dev, "bs_private_append<~w, ~w>", [U,Flags]);
+	  io:format(Dev, "bs_private_append<~w, ~w>", [U, Flags]);
 	bs_bits_to_bytes ->
 	  io:format(Dev, "bs_bits_to_bytes", []);
 	bs_bits_to_bytes2 ->
@@ -356,11 +356,11 @@ pp(Dev, Op) ->
 	bs_init_writable ->
 	  io:format(Dev, "bs_init_writable", [])
       end;
-    #mkfun{mfa={Mod, Fun, Arity}, magic_num=Unique, index=I} ->
+    #mkfun{mfa = {Mod, Fun, Arity}, magic_num = Unique, index = I} ->
       io:format(Dev, "mkfun<~w,~w,~w,~w,~w>", [Mod, Fun, Arity, Unique, I]);
-    #unsafe_element{index=N} ->
+    #unsafe_element{index = N} ->
       io:format(Dev, "unsafe_element<~w>", [N]);
-    #unsafe_update_element{index=N} ->
+    #unsafe_update_element{index = N} ->
       io:format(Dev, "unsafe_update_element<~w>", [N]);
     Fun when is_atom(Fun) ->
       io:format(Dev, "~w", [Fun])
@@ -370,7 +370,7 @@ pp(Dev, Op) ->
 %% Type handling
 %%=====================================================================
 
--spec type(icode_primop() | mfa(), [erl_type()]) -> erl_type().
+-spec type(icode_funcall(), [erl_type()]) -> erl_type().
 
 type(Primop, Args) ->
   case Primop of
@@ -437,7 +437,7 @@ type(Primop, Args) ->
       erl_types:t_tuple(Args);
     #element{} ->
       erl_bif_types:type(erlang, element, 2, Args);
-    #unsafe_element{index=N} ->
+    #unsafe_element{index = N} ->
       [Type] = Args,
       case erl_types:t_is_tuple(Type) of
 	false ->
@@ -446,7 +446,7 @@ type(Primop, Args) ->
 	  Index = erl_types:t_from_term(N),
 	  erl_bif_types:type(erlang, element, 2, [Index|Args])
       end;
-    #unsafe_update_element{index=N} ->
+    #unsafe_update_element{index = N} ->
       %% Same, same
       erl_bif_types:type(erlang, setelement, 3, [erl_types:t_integer(N)|Args]);
 %%% -----------------------------------------------------
@@ -480,19 +480,19 @@ type(Primop, Args) ->
       Init = 
 	erl_types:t_sup(
 	  erl_types:t_matchstate_present(Type),
-	  erl_types:t_inf(erl_types:t_bitstr(1,0),Type)),
+	  erl_types:t_inf(erl_types:t_bitstr(1, 0), Type)),
       case erl_types:t_is_none(Init) of
 	true -> 
 	  erl_types:t_none();
 	false -> 
 	  erl_types:t_matchstate(Init, Max)
       end;
-    {hipe_bs_primop, {{bs_start_match,_}, Max}} ->
+    {hipe_bs_primop, {{bs_start_match, _}, Max}} ->
       [Type] = Args,
       Init = 
 	erl_types:t_sup(
 	  erl_types:t_matchstate_present(Type),
-	  erl_types:t_inf(erl_types:t_bitstr(1,0),Type)),
+	  erl_types:t_inf(erl_types:t_bitstr(1, 0), Type)),
       case erl_types:t_is_none(Init) of
 	true -> 
 	  erl_types:t_none();
@@ -505,7 +505,7 @@ type(Primop, Args) ->
       BinType = erl_types:t_matchstate_present(MatchState),
       case RestArgs of
 	[] ->
-	  NewBinType = match_bin(erl_types:t_bitstr(0,Size),BinType),
+	  NewBinType = match_bin(erl_types:t_bitstr(0, Size), BinType),
 	  NewMatchState = 
 	    erl_types:t_matchstate_update_present(NewBinType, MatchState),
 	  if Signed =:= 0 ->
@@ -513,16 +513,14 @@ type(Primop, Args) ->
 				   NewMatchState]);
 	     Signed =:= 4 ->
 	      erl_types:t_product([erl_types:t_from_range(- (1 bsl (Size-1)), 
-				      (1 bsl (Size-1)) - 1),
+							  (1 bsl (Size-1)) - 1),
 				   NewMatchState])
 	  end;
 	[_Arg] ->
-	  NewBinType = 
-	    match_bin(erl_types:t_bitstr(Size,0),BinType),
+	  NewBinType = match_bin(erl_types:t_bitstr(Size, 0), BinType),
 	  NewMatchState = 
 	    erl_types:t_matchstate_update_present(NewBinType, MatchState),
-	  erl_types:t_product([erl_types:t_integer(),
-			       NewMatchState])
+	  erl_types:t_product([erl_types:t_integer(), NewMatchState])
       end;	     
     {hipe_bs_primop, {bs_get_float, Size, _Flags}} ->
       [MatchState|RestArgs] = Args,
@@ -532,23 +530,21 @@ type(Primop, Args) ->
 	  [] ->
 	    match_bin(erl_types:t_bitstr(0,Size),BinType);
 	  [_Arg] ->
-	    erl_types:t_sup(match_bin(erl_types:t_bitstr(0,32),BinType),
-			    match_bin(erl_types:t_bitstr(0,64),BinType))
+	    erl_types:t_sup(match_bin(erl_types:t_bitstr(0, 32), BinType),
+			    match_bin(erl_types:t_bitstr(0, 64), BinType))
 	end,
       NewMatchState = erl_types:t_matchstate_update_present(NewBinType, MatchState),
-      erl_types:t_product([erl_types:t_float(),
-			   NewMatchState]);
+      erl_types:t_product([erl_types:t_float(), NewMatchState]);
     {hipe_bs_primop, {bs_get_binary, Size, _Flags}} ->
       [MatchState|RestArgs] = Args,
       BinType = erl_types:t_matchstate_present(MatchState),
       case RestArgs of
 	[] ->
-	  NewBinType = match_bin(erl_types:t_bitstr(0,Size),BinType),
+	  NewBinType = match_bin(erl_types:t_bitstr(0, Size), BinType),
 	  NewMatchState = erl_types:t_matchstate_update_present(NewBinType, MatchState),
-	  erl_types:t_product([erl_types:t_bitstr(0,Size),
-			       NewMatchState]);
+	  erl_types:t_product([erl_types:t_bitstr(0,Size), NewMatchState]);
 	[ArgType] ->
-	  Posint = erl_types:t_inf(erl_types:t_non_neg_integer(),ArgType),
+	  Posint = erl_types:t_inf(erl_types:t_non_neg_integer(), ArgType),
 	  case erl_types:t_is_none(Posint) of
 	    true -> 
 	      erl_types:t_product([erl_types:t_none(),
@@ -559,22 +555,21 @@ type(Primop, Args) ->
 	      OutBinType = 
 		erl_types:t_bitstr(Size,erl_types:number_min(Posint)*Size),
 	      NewBinType = match_bin(OutBinType,BinType),
-	      NewMatchState = erl_types:t_matchstate_update_present(NewBinType,MatchState),
-	      erl_types:t_product([OutBinType,
-				   NewMatchState])
+	      NewMatchState = erl_types:t_matchstate_update_present(NewBinType, MatchState),
+	      erl_types:t_product([OutBinType, NewMatchState])
 	  end
       end;
     {hipe_bs_primop, {bs_get_binary_all, Unit, _Flags}} ->
       [MatchState] = Args,
       BinType = erl_types:t_matchstate_present(MatchState),
-      erl_types:t_inf(BinType,erl_types:t_bitstr(Unit,0));
+      erl_types:t_inf(BinType, erl_types:t_bitstr(Unit, 0));
     {hipe_bs_primop, {bs_get_binary_all_2, Unit, _Flags}} ->
       [MatchState] = Args,
       BinType = erl_types:t_matchstate_present(MatchState),
       erl_types:t_product(
-	[erl_types:t_inf(BinType,erl_types:t_bitstr(Unit,0)),
+	[erl_types:t_inf(BinType,erl_types:t_bitstr(Unit, 0)),
 	 erl_types:t_matchstate_update_present(
-	   erl_types:t_bitstr(0,0),MatchState)]);
+	   erl_types:t_bitstr(0, 0), MatchState)]);
     {hipe_bs_primop, {bs_skip_bits_all, _Unit, _Flags}} ->
       [MatchState] = Args,
       erl_types:t_matchstate_update_present(erl_types:t_bitstr(0,0),MatchState);
@@ -584,9 +579,9 @@ type(Primop, Args) ->
       NewBinType = 
 	case RestArgs of
 	  [] ->
-	    match_bin(erl_types:t_bitstr(0,Size),BinType);
+	    match_bin(erl_types:t_bitstr(0, Size), BinType);
 	  [_Arg] ->
-	    match_bin(erl_types:t_bitstr(Size,0),BinType)
+	    match_bin(erl_types:t_bitstr(Size, 0), BinType)
 	end,
       erl_types:t_matchstate_update_present(NewBinType, MatchState);
     {hipe_bs_primop, {bs_save, Slot}} ->
@@ -600,18 +595,18 @@ type(Primop, Args) ->
     {hipe_bs_primop, bs_context_to_binary} ->
       [Type] = Args,
       erl_types:t_sup(
-	erl_types:t_subtract(Type,erl_types:t_matchstate()),
+	erl_types:t_subtract(Type, erl_types:t_matchstate()),
 	erl_types:t_matchstate_slot(
-	  erl_types:t_inf(Type,erl_types:t_matchstate()),0));
+	  erl_types:t_inf(Type, erl_types:t_matchstate()), 0));
     {hipe_bs_primop, {bs_match_string,_,Bytes}} ->
       [MatchState] = Args,
       BinType = erl_types:t_matchstate_present(MatchState),
-      NewBinType = match_bin(erl_types:t_bitstr(0,Bytes*8),BinType),
+      NewBinType = match_bin(erl_types:t_bitstr(0, Bytes*8), BinType),
       erl_types:t_matchstate_update_present(NewBinType, MatchState);
     {hipe_bs_primop, {bs_test_unit,Unit}} ->
       [MatchState] = Args,
       BinType = erl_types:t_matchstate_present(MatchState),
-      NewBinType = erl_types:t_inf(erl_types:t_bitstr(Unit,0),BinType),
+      NewBinType = erl_types:t_inf(erl_types:t_bitstr(Unit, 0), BinType),
       erl_types:t_matchstate_update_present(NewBinType, MatchState);
     {hipe_bs_primop, {bs_add, _, _}} ->
       erl_types:t_integer();
@@ -626,23 +621,23 @@ type(Primop, Args) ->
 	 Name =:= bs_put_float ->
       case Args of
 	[_SrcType, _Base, Type] ->
-	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(0,Size));
+	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(0, Size));
 	[_SrcType,_BitsType, _Base, Type] ->
-	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(Size,0))
+	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(Size, 0))
       end;
     {hipe_bs_primop, {bs_put_binary, Size, _Flags}} ->
       case Args of
 	[_SrcType, _Base, Type] ->
-	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(0,Size));
+	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(0, Size));
 	[_SrcType, _BitsType, _Base, Type] ->
-	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(Size,0))
+	  erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(Size, 0))
       end;
     {hipe_bs_primop, {bs_put_binary_all, _Flags}} ->
       [SrcType, _Base, Type] = Args,
       erl_types:t_bitstr_concat(SrcType,Type);
     {hipe_bs_primop, {bs_put_string, _, Size}} ->
       [_Base, Type] = Args,
-      erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(0,8*Size));
+      erl_types:t_bitstr_concat(Type, erl_types:t_bitstr(0, 8*Size));
     {hipe_bs_primop, bs_utf8_size} ->
       [_Arg] = Args,
       erl_types:t_from_range(1, 4);
@@ -654,24 +649,24 @@ type(Primop, Args) ->
       Type;
     {hipe_bs_primop, {bs_init, Size, _Flags}} ->  
       erl_types:t_product(
-	[erl_types:t_bitstr(0,Size*8),
+	[erl_types:t_bitstr(0, Size*8),
 	 erl_types:t_any(),
-	 erl_types:t_bitstr(0,0)]);
+	 erl_types:t_bitstr(0, 0)]);
     {hipe_bs_primop, {bs_init, _Flags}} ->
       erl_types:t_product(
 	[erl_types:t_binary(),
 	 erl_types:t_any(),
-	 erl_types:t_bitstr(0,0)]);
+	 erl_types:t_bitstr(0, 0)]);
     {hipe_bs_primop, {bs_init_bits, Size, _Flags}} ->  
       erl_types:t_product(
-	[erl_types:t_bitstr(0,Size),
+	[erl_types:t_bitstr(0, Size),
 	 erl_types:t_any(),
-	 erl_types:t_bitstr(0,0)]);
+	 erl_types:t_bitstr(0, 0)]);
     {hipe_bs_primop, {bs_init_bits, _Flags}} ->
       erl_types:t_product(
 	[erl_types:t_bitstr(),
 	 erl_types:t_any(),
-	 erl_types:t_bitstr(0,0)]);
+	 erl_types:t_bitstr(0, 0)]);
     {hipe_bs_primop, {bs_private_append, _U, _Flags}} ->  
       erl_types:t_product(
 	[erl_types:t_bitstr(),
@@ -683,24 +678,24 @@ type(Primop, Args) ->
 	 erl_types:t_any(),
 	 erl_types:t_bitstr()]);
     {hipe_bs_primop, bs_init_writable} ->
-      erl_types:t_bitstr(0,0);
+      erl_types:t_bitstr(0, 0);
     {hipe_bs_primop, _BsOp} ->
       erl_types:t_any();
 %%% -----------------------------------------------------
 %%% Funs
-    #mkfun{mfa={_M, _F, A}} ->
+    #mkfun{mfa = {_M, _F, A}} ->
       %% Note that the arity includes the bound variables in args
       erl_types:t_fun(A - length(Args), erl_types:t_any());
     #apply_N{} ->
       erl_types:t_any();
-    Op when Op =:= call_fun; Op =:= enter_fun ->
+    Op when Op =:= call_fun orelse Op =:= enter_fun ->
       [Fun0|TailArgs0] = lists:reverse(Args),
       TailArgs = lists:reverse(TailArgs0),
       Fun = erl_types:t_inf(erl_types:t_fun(), Fun0),
       case erl_types:t_is_fun(Fun) of
 	true ->
 	  case erl_types:t_fun_args(Fun) of
-	    any ->
+	    unknown ->
 	      erl_types:t_any();
 	    FunArgs ->
 	      case check_fun_args(FunArgs, TailArgs) of
@@ -738,7 +733,7 @@ type(Primop, Args) ->
   end.
 
 
--spec type(icode_primop() | mfa()) -> erl_type().
+-spec type(icode_funcall()) -> erl_type().
 
 type(Primop) ->
   case Primop of
@@ -841,16 +836,16 @@ type(Primop) ->
     {hipe_bs_primop, bs_final} ->
       erl_types:t_bitstr();
     {hipe_bs_primop, {bs_init, _, _}} ->
-      erl_types:t_product([erl_types:t_binary(),erl_types:t_bitstr(),
-			 erl_types:t_bitstr()]);
+      erl_types:t_product([erl_types:t_binary(), erl_types:t_bitstr(),
+			   erl_types:t_bitstr()]);
     {hipe_bs_primop, {bs_init, _}} ->
-      erl_types:t_product([erl_types:t_binary(),erl_types:t_bitstr(),
-			 erl_types:t_bitstr()]);
+      erl_types:t_product([erl_types:t_binary(), erl_types:t_bitstr(),
+			   erl_types:t_bitstr()]);
     {hipe_bs_primop, {bs_init_bits, Size, _}} ->
-      erl_types:t_product([erl_types:t_bitstr(0,Size),erl_types:t_bitstr(),
+      erl_types:t_product([erl_types:t_bitstr(0, Size), erl_types:t_bitstr(),
 			   erl_types:t_bitstr()]);
     {hipe_bs_primop, {bs_init_bits, _}} ->
-      erl_types:t_product([erl_types:t_bitstr(),erl_types:t_bitstr(),
+      erl_types:t_product([erl_types:t_bitstr(), erl_types:t_bitstr(),
 			   erl_types:t_bitstr()]);
     {hipe_bs_primop, {bs_add, _, _}} ->
       erl_types:t_integer();
@@ -910,13 +905,12 @@ type(Primop) ->
   end.
 
 
-
 %% =====================================================================
 %% @doc
 %% function arg_types returns a list of the demanded argument types for
 %% a bif to succeed.
 
--spec arg_types(atom() | mfa()) -> [erl_type()] | 'any'.
+-spec arg_types(icode_funcall()) -> [erl_type()] | 'unknown'.
 
 arg_types(Primop) ->
   case Primop of
@@ -949,7 +943,7 @@ arg_types(Primop) ->
     'rem' ->
       erl_bif_types:arg_types(erlang, 'rem', 2);
     _ ->
-      any    % safe approximation for all primops.
+      unknown    % safe approximation for all primops.
   end.
 
 %%=====================================================================
@@ -969,10 +963,5 @@ check_fun_args([], []) ->
 check_fun_args(_, _) ->
   error.
 
-match_bin(Pattern,Match) ->
-  erl_types:t_bitstr_match(Pattern,Match).
-  
-
-
-
-
+match_bin(Pattern, Match) ->
+  erl_types:t_bitstr_match(Pattern, Match).

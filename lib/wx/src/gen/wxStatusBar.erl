@@ -95,7 +95,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
  when is_list(Options) ->
   ?CLASS(ParentT,wxWindow),
   MOpts = fun({winid, Winid}, Acc) -> [<<1:32/?UI,Winid:32/?UI>>|Acc];
-          ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxStatusBar_new_2,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -114,7 +115,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef}, Opti
   ?CLASS(ThisT,wxStatusBar),
   ?CLASS(ParentT,wxWindow),
   MOpts = fun({winid, Winid}, Acc) -> [<<1:32/?UI,Winid:32/?UI>>|Acc];
-          ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxStatusBar_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI, BinOpt/binary>>).
@@ -146,7 +148,8 @@ getStatusText(This)
 getStatusText(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxStatusBar),
-  MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc]  end,
+  MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxStatusBar_GetStatusText,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -163,7 +166,8 @@ popStatusText(This)
 popStatusText(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxStatusBar),
-  MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc]  end,
+  MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxStatusBar_PopStatusText,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -181,7 +185,8 @@ pushStatusText(#wx_ref{type=ThisT,ref=ThisRef},Text, Options)
  when is_list(Text),is_list(Options) ->
   ?CLASS(ThisT,wxStatusBar),
   Text_UC = unicode:characters_to_binary([Text,0]),
-  MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc]  end,
+  MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxStatusBar_PushStatusText,
   <<ThisRef:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -199,7 +204,8 @@ setFieldsCount(#wx_ref{type=ThisT,ref=ThisRef},Number, Options)
  when is_integer(Number),is_list(Options) ->
   ?CLASS(ThisT,wxStatusBar),
   MOpts = fun({widths, Widths}, Acc) -> [<<1:32/?UI,(length(Widths)):32/?UI,
-        (<< <<C:32/?I>> || C <- Widths>>)/binary, 0:(((0+length(Widths)) rem 2)*32)>>|Acc]  end,
+        (<< <<C:32/?I>> || C <- Widths>>)/binary, 0:(((0+length(Widths)) rem 2)*32)>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxStatusBar_SetFieldsCount,
   <<ThisRef:32/?UI,Number:32/?UI, BinOpt/binary>>).
@@ -225,7 +231,8 @@ setStatusText(#wx_ref{type=ThisT,ref=ThisRef},Text, Options)
  when is_list(Text),is_list(Options) ->
   ?CLASS(ThisT,wxStatusBar),
   Text_UC = unicode:characters_to_binary([Text,0]),
-  MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc]  end,
+  MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxStatusBar_SetStatusText,
   <<ThisRef:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

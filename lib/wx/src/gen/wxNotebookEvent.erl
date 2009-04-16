@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxnotebookevent.html">wxNotebookEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>command_notebook_page_changed</em>, <em>command_notebook_page_changing</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxNotebook(). #wxNotebook{}} event record type.
 %%

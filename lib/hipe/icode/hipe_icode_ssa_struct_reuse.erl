@@ -617,10 +617,6 @@ create_maps(Nodes) ->
   end, #maps{}, nodes_rev_postorder(Nodes)),
   maps_balance(Maps).
 
-create_elem_expr_key(0, _, Key) -> Key;
-create_elem_expr_key(N, Var, Key) -> 
-  create_elem_expr_key(N - 1, Var, [{Var, N} | Key]).
-
 %%-----------------------------------------------------------------------------
 %% Add all elements in the struct_type list of Node to Maps as expressions
 
@@ -634,6 +630,10 @@ maps_from_node_struct_type(Maps, Node) ->
 		  NewExpr3 = expr_direct_replace_set(NewExpr2, true),
 		  maps_expr_key_enter(NewExpr3, MapsAcc)
 	      end, Maps, node_struct_type(Node)).
+
+create_elem_expr_key(0, _, Key) -> Key;
+create_elem_expr_key(N, Var, Key) -> 
+  create_elem_expr_key(N - 1, Var, [{Var, N} | Key]).
 
 %%-----------------------------------------------------------------------------
 %%maps_from_node_atom_type(Maps, Node) ->
@@ -742,14 +742,14 @@ maps_varinfos_create(Defines, ExprId, Elem, MapsIn) ->
 
 maps_expr_varinfos_create(Instr, RefKey, Maps) ->
   Defines = hipe_icode:defines(Instr),
-  case maps_instr_lookup(RefKey, Maps) of
-    {value, ExprId} -> 
-      Maps2 = Maps;
-    none ->
-      NewExpr = expr_create(RefKey, Defines),
-      ExprId = expr_id(NewExpr),
-      Maps2 = maps_expr_key_enter(NewExpr, Maps)
-  end,
+  {ExprId, Maps2} =
+    case maps_instr_lookup(RefKey, Maps) of
+      {value, EId} -> 
+	{EId, Maps};
+      none ->
+	NewExpr = expr_create(RefKey, Defines),
+	{expr_id(NewExpr), maps_expr_key_enter(NewExpr, Maps)}
+    end,
   Maps3 = maps_varinfos_create(Defines, ExprId, none, Maps2),
   update_maps_var_use(Instr, ExprId, Maps3).
 
@@ -762,7 +762,6 @@ maps_expr_varinfos_create(Instr, RefKey, Maps) ->
 
 replace_call_vars_elems(Maps, Instr) ->
   VarMap = maps_var(Maps),
-
   {HasElems, Vars, Elems} = 
     lists:foldr(fun(Arg, {HasElems, Vars, Elems}) -> 
       case hipe_icode:is_const(Arg) of
@@ -782,7 +781,6 @@ replace_call_vars_elems(Maps, Instr) ->
 	true ->
 	  {HasElems, [Arg | Vars], [Arg | Elems]}
       end end, {false, [], []}, hipe_icode:args(Instr)),
-
   {HasElems, hipe_icode:call_args_update(Instr, Vars), 
   hipe_icode:call_args_update(Instr, Elems)}.
 
@@ -1187,14 +1185,14 @@ rewrite_bb(CFG, Update, Maps, Node) ->
 
       %% check if there exists an identical expression, so that
       %% this expression can be replaced directly.
-      case expr_direct_replace(Expr) of
-	false ->
-	  NewInstr = rewrite_expr(UpdateAcc2, ExprInstr, NewDefs),
-	  CodeAcc2 = [NewInstr | CodeAcc];
-	true ->
-	  CodeAcc2 = mk_defs_moves(CodeAcc, NewDefs, Defs)
-      end,
-
+      CodeAcc2 = 
+	case expr_direct_replace(Expr) of
+	  false ->
+	    NewInstr = rewrite_expr(UpdateAcc2, ExprInstr, NewDefs),
+	    [NewInstr | CodeAcc];
+	  true ->
+	    mk_defs_moves(CodeAcc, NewDefs, Defs)
+	end,
       {CodeAcc2, UpdateAcc2}
     end, {CodeRest, NewUpdate}, NewInserts),
 

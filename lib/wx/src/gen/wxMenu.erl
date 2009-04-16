@@ -54,7 +54,8 @@ new() ->
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxmenu.html#wxmenuwxmenu">external documentation</a>.
 new(Options)
  when is_list(Options) ->
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxMenu_new_1,
   <<BinOpt/binary>>).
@@ -65,7 +66,8 @@ new(Options)
 new(Title, Options)
  when is_list(Title),is_list(Options) ->
   Title_UC = unicode:characters_to_binary([Title,0]),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxMenu_new_2,
   <<(byte_size(Title_UC)):32/?UI,(Title_UC)/binary, 0:(((8- ((4+byte_size(Title_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -104,7 +106,8 @@ append(#wx_ref{type=ThisT,ref=ThisRef},Itemid,Text, Options)
   ?CLASS(ThisT,wxMenu),
   Text_UC = unicode:characters_to_binary([Text,0]),
   MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({kind, Kind}, Acc) -> [<<2:32/?UI,Kind:32/?UI>>|Acc]  end,
+          ({kind, Kind}, Acc) -> [<<2:32/?UI,Kind:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_Append_3,
   <<ThisRef:32/?UI,Itemid:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((4+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -131,7 +134,8 @@ append(#wx_ref{type=ThisT,ref=ThisRef},Itemid,Text,#wx_ref{type=SubmenuT,ref=Sub
   ?CLASS(ThisT,wxMenu),
   Text_UC = unicode:characters_to_binary([Text,0]),
   ?CLASS(SubmenuT,wxMenu),
-  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_Append_4_1,
   <<ThisRef:32/?UI,Itemid:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((4+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8,SubmenuRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -149,7 +153,8 @@ appendCheckItem(#wx_ref{type=ThisT,ref=ThisRef},Itemid,Text, Options)
  when is_integer(Itemid),is_list(Text),is_list(Options) ->
   ?CLASS(ThisT,wxMenu),
   Text_UC = unicode:characters_to_binary([Text,0]),
-  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_AppendCheckItem,
   <<ThisRef:32/?UI,Itemid:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((4+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -167,7 +172,8 @@ appendRadioItem(#wx_ref{type=ThisT,ref=ThisRef},Itemid,Text, Options)
  when is_integer(Itemid),is_list(Text),is_list(Options) ->
   ?CLASS(ThisT,wxMenu),
   Text_UC = unicode:characters_to_binary([Text,0]),
-  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_AppendRadioItem,
   <<ThisRef:32/?UI,Itemid:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((4+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -337,7 +343,8 @@ insert(#wx_ref{type=ThisT,ref=ThisRef},Pos,Itemid, Options)
   ?CLASS(ThisT,wxMenu),
   MOpts = fun({text, Text}, Acc) ->   Text_UC = unicode:characters_to_binary([Text,0]),[<<1:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<2:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({kind, Kind}, Acc) -> [<<3:32/?UI,Kind:32/?UI>>|Acc]  end,
+          ({kind, Kind}, Acc) -> [<<3:32/?UI,Kind:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_Insert_3,
   <<ThisRef:32/?UI,Pos:32/?UI,Itemid:32/?UI, 0:32,BinOpt/binary>>).
@@ -370,7 +377,8 @@ insert(#wx_ref{type=ThisT,ref=ThisRef},Pos,Itemid,Text,#wx_ref{type=SubmenuT,ref
   ?CLASS(ThisT,wxMenu),
   Text_UC = unicode:characters_to_binary([Text,0]),
   ?CLASS(SubmenuT,wxMenu),
-  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_Insert_5_1,
   <<ThisRef:32/?UI,Pos:32/?UI,Itemid:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8,SubmenuRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -388,7 +396,8 @@ insertCheckItem(#wx_ref{type=ThisT,ref=ThisRef},Pos,Itemid,Text, Options)
  when is_integer(Pos),is_integer(Itemid),is_list(Text),is_list(Options) ->
   ?CLASS(ThisT,wxMenu),
   Text_UC = unicode:characters_to_binary([Text,0]),
-  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_InsertCheckItem,
   <<ThisRef:32/?UI,Pos:32/?UI,Itemid:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -406,7 +415,8 @@ insertRadioItem(#wx_ref{type=ThisT,ref=ThisRef},Pos,Itemid,Text, Options)
  when is_integer(Pos),is_integer(Itemid),is_list(Text),is_list(Options) ->
   ?CLASS(ThisT,wxMenu),
   Text_UC = unicode:characters_to_binary([Text,0]),
-  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_InsertRadioItem,
   <<ThisRef:32/?UI,Pos:32/?UI,Itemid:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -463,7 +473,8 @@ prepend(#wx_ref{type=ThisT,ref=ThisRef},Itemid, Options)
   ?CLASS(ThisT,wxMenu),
   MOpts = fun({text, Text}, Acc) ->   Text_UC = unicode:characters_to_binary([Text,0]),[<<1:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<2:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({kind, Kind}, Acc) -> [<<3:32/?UI,Kind:32/?UI>>|Acc]  end,
+          ({kind, Kind}, Acc) -> [<<3:32/?UI,Kind:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_Prepend_2,
   <<ThisRef:32/?UI,Itemid:32/?UI, BinOpt/binary>>).
@@ -496,7 +507,8 @@ prepend(#wx_ref{type=ThisT,ref=ThisRef},Itemid,Text,#wx_ref{type=SubmenuT,ref=Su
   ?CLASS(ThisT,wxMenu),
   Text_UC = unicode:characters_to_binary([Text,0]),
   ?CLASS(SubmenuT,wxMenu),
-  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_Prepend_4_1,
   <<ThisRef:32/?UI,Itemid:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((4+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8,SubmenuRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -514,7 +526,8 @@ prependCheckItem(#wx_ref{type=ThisT,ref=ThisRef},Itemid,Text, Options)
  when is_integer(Itemid),is_list(Text),is_list(Options) ->
   ?CLASS(ThisT,wxMenu),
   Text_UC = unicode:characters_to_binary([Text,0]),
-  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_PrependCheckItem,
   <<ThisRef:32/?UI,Itemid:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((4+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -532,7 +545,8 @@ prependRadioItem(#wx_ref{type=ThisT,ref=ThisRef},Itemid,Text, Options)
  when is_integer(Itemid),is_list(Text),is_list(Options) ->
   ?CLASS(ThisT,wxMenu),
   Text_UC = unicode:characters_to_binary([Text,0]),
-  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<1:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMenu_PrependRadioItem,
   <<ThisRef:32/?UI,Itemid:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((4+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

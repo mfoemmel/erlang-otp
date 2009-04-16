@@ -1022,6 +1022,14 @@ expand_pat_lit_clause(#iclause{pats=[#k_literal{anno=A,val=Val}|Ps]}=C, B) ->
 	    false -> literal(Val, A)
 	end,
     C#iclause{pats=[P|Ps]};
+expand_pat_lit_clause(#iclause{pats=[#k_binary{anno=A,segs=#k_bin_end{}}|Ps]}=C, B) ->
+    case B of
+	true ->
+	    C;
+	false ->
+	    P = #k_literal{anno=A,val = <<>>},
+	    C#iclause{pats=[P|Ps]}
+    end;
 expand_pat_lit_clause(C, _) -> C.
 
 expand_pat_lit([H|T], A) ->
@@ -1172,7 +1180,6 @@ select(T, Cs) -> [ C || C <- Cs, clause_con(C) =:= T ].
 %%  At this point all the clauses have the same constructor, we must
 %%  now separate them according to value.
 
-match_value(_, _, [], _, St) -> {[],St};
 match_value(Us, T, Cs0, Def, St0) ->
     Css = group_value(T, Cs0),
     %%ok = io:format("match_value ~p ~p~n", [T, Css]),
@@ -1180,7 +1187,6 @@ match_value(Us, T, Cs0, Def, St0) ->
 				  match_clause(Us, Cs, Def, St) end,
 			  St0, Css),
     {Css1,St1}.
-    %%{#k_select_val{type=T,var=hd(Us),clauses=Css1},St1}.
 
 %% group_value([Clause]) -> [[Clause]].
 %%  Group clauses according to value.  Here we know that

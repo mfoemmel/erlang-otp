@@ -2004,11 +2004,10 @@ case wxFrame_SetStatusText: { // wxFrame::SetStatusText
 }
 case wxFrame_SetStatusWidths: { // wxFrame::SetStatusWidths 
  wxFrame *This = (wxFrame *) getPtr(bp,memenv); bp += 4;
- int * n = (int *) bp; bp += 4;
  int * widths_fieldLen = (int *) bp; bp += 4;
- int * widths_field = (int *) bp; bp += *widths_fieldLen*4+((1+ *widths_fieldLen)%2 )*4;
+ int * widths_field = (int *) bp; bp += *widths_fieldLen*4+((0+ *widths_fieldLen)%2 )*4;
  if(!This) throw wxe_badarg(0);
- This->SetStatusWidths((int) *n,widths_field);
+ This->SetStatusWidths(*widths_fieldLen,widths_field);
  break; 
 }
 case wxFrame_SetToolBar: { // wxFrame::SetToolBar 
@@ -14194,6 +14193,12 @@ case wxGauge_SetValue: { // wxGauge::SetValue
  This->SetValue((int) *pos);
  break; 
 }
+case wxGauge_Pulse: { // wxGauge::Pulse 
+ wxGauge *This = (wxGauge *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->Pulse();
+ break; 
+}
 case wxGenericDirCtrl_new_0: { // wxGenericDirCtrl::wxGenericDirCtrl 
  wxGenericDirCtrl * Result = new EwxGenericDirCtrl();
  newPtr((void *) Result, 0, memenv);
@@ -21581,6 +21586,8 @@ case wxXmlResource_Unload: { // wxXmlResource::Unload
  rt.addBool(Result);
  break; 
 }
+
+// XRCTRL macro implemented in erlang funcid wxXmlResource_xrcctrl
 case wxHtmlEasyPrinting_new: { // wxHtmlEasyPrinting::wxHtmlEasyPrinting 
  wxString name= wxT("Printing");
  wxWindow * parentWindow=NULL;
@@ -28864,6 +28871,284 @@ case wxClipboard_IsSupported: { // wxClipboard::IsSupported
 case wxClipboard_Get: { // wxClipboard::Get 
  wxClipboard * Result = (wxClipboard*)wxClipboard::Get();
  rt.addRef(getRef((void *)Result,memenv), "wxClipboard");
+ break; 
+}
+case wxSpinEvent_GetPosition: { // wxSpinEvent::GetPosition 
+ wxSpinEvent *This = (wxSpinEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetPosition();
+ rt.addInt(Result);
+ break; 
+}
+case wxSpinEvent_SetPosition: { // wxSpinEvent::SetPosition 
+ wxSpinEvent *This = (wxSpinEvent *) getPtr(bp,memenv); bp += 4;
+ int * pos = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetPosition((int) *pos);
+ break; 
+}
+case wxSplitterWindow_new_0: { // wxSplitterWindow::wxSplitterWindow 
+ wxSplitterWindow * Result = new EwxSplitterWindow();
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxSplitterWindow");
+ break; 
+}
+case wxSplitterWindow_new_2: { // wxSplitterWindow::wxSplitterWindow 
+ wxWindowID id=wxID_ANY;
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=wxSP_3D;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ id = (wxWindowID)*(int *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 4: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ wxSplitterWindow * Result = new EwxSplitterWindow(parent,id,pos,size,style);
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxSplitterWindow");
+ break; 
+}
+case wxSplitterWindow_Create: { // wxSplitterWindow::Create 
+ wxWindowID id=wxID_ANY;
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=wxSP_3D;
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ id = (wxWindowID)*(int *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 4: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->Create(parent,id,pos,size,style);
+ rt.addBool(Result);
+ break; 
+}
+case wxSplitterWindow_GetMinimumPaneSize: { // wxSplitterWindow::GetMinimumPaneSize 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetMinimumPaneSize();
+ rt.addInt(Result);
+ break; 
+}
+case wxSplitterWindow_GetSashGravity: { // wxSplitterWindow::GetSashGravity 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ double Result = This->GetSashGravity();
+ rt.addFloat(Result);
+ break; 
+}
+case wxSplitterWindow_GetSashPosition: { // wxSplitterWindow::GetSashPosition 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetSashPosition();
+ rt.addInt(Result);
+ break; 
+}
+case wxSplitterWindow_GetSplitMode: { // wxSplitterWindow::GetSplitMode 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetSplitMode();
+ rt.addInt(Result);
+ break; 
+}
+case wxSplitterWindow_GetWindow1: { // wxSplitterWindow::GetWindow1 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetWindow1();
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxSplitterWindow_GetWindow2: { // wxSplitterWindow::GetWindow2 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetWindow2();
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxSplitterWindow_Initialize: { // wxSplitterWindow::Initialize 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ wxWindow *window = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->Initialize(window);
+ break; 
+}
+case wxSplitterWindow_IsSplit: { // wxSplitterWindow::IsSplit 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->IsSplit();
+ rt.addBool(Result);
+ break; 
+}
+case wxSplitterWindow_ReplaceWindow: { // wxSplitterWindow::ReplaceWindow 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ wxWindow *winOld = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ wxWindow *winNew = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->ReplaceWindow(winOld,winNew);
+ rt.addBool(Result);
+ break; 
+}
+case wxSplitterWindow_SetSashGravity: { // wxSplitterWindow::SetSashGravity 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ double * gravity = (double *) bp; bp += 8;
+ if(!This) throw wxe_badarg(0);
+ This->SetSashGravity((double) *gravity);
+ break; 
+}
+case wxSplitterWindow_SetSashPosition: { // wxSplitterWindow::SetSashPosition 
+ bool redraw=true;
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ int * position = (int *) bp; bp += 4;
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ redraw = *(bool *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ This->SetSashPosition((int) *position,redraw);
+ break; 
+}
+case wxSplitterWindow_SetSashSize: { // wxSplitterWindow::SetSashSize 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ int * width = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetSashSize((int) *width);
+ break; 
+}
+case wxSplitterWindow_SetMinimumPaneSize: { // wxSplitterWindow::SetMinimumPaneSize 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ int * min = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetMinimumPaneSize((int) *min);
+ break; 
+}
+case wxSplitterWindow_SetSplitMode: { // wxSplitterWindow::SetSplitMode 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ int * mode = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetSplitMode((int) *mode);
+ break; 
+}
+case wxSplitterWindow_SplitHorizontally: { // wxSplitterWindow::SplitHorizontally 
+ int sashPosition=0;
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ wxWindow *window1 = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ wxWindow *window2 = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ sashPosition = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SplitHorizontally(window1,window2,sashPosition);
+ rt.addBool(Result);
+ break; 
+}
+case wxSplitterWindow_SplitVertically: { // wxSplitterWindow::SplitVertically 
+ int sashPosition=0;
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ wxWindow *window1 = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ wxWindow *window2 = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ sashPosition = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SplitVertically(window1,window2,sashPosition);
+ rt.addBool(Result);
+ break; 
+}
+case wxSplitterWindow_Unsplit: { // wxSplitterWindow::Unsplit 
+ wxWindow * toRemove=(wxWindow *) NULL;
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+toRemove = (wxWindow *) getPtr(bp,memenv); bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->Unsplit(toRemove);
+ rt.addBool(Result);
+ break; 
+}
+case wxSplitterWindow_UpdateSize: { // wxSplitterWindow::UpdateSize 
+ wxSplitterWindow *This = (wxSplitterWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->UpdateSize();
+ break; 
+}
+case wxSplitterEvent_GetSashPosition: { // wxSplitterEvent::GetSashPosition 
+ wxSplitterEvent *This = (wxSplitterEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetSashPosition();
+ rt.addInt(Result);
+ break; 
+}
+case wxSplitterEvent_GetX: { // wxSplitterEvent::GetX 
+ wxSplitterEvent *This = (wxSplitterEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetX();
+ rt.addInt(Result);
+ break; 
+}
+case wxSplitterEvent_GetY: { // wxSplitterEvent::GetY 
+ wxSplitterEvent *This = (wxSplitterEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetY();
+ rt.addInt(Result);
+ break; 
+}
+case wxSplitterEvent_GetWindowBeingRemoved: { // wxSplitterEvent::GetWindowBeingRemoved 
+ wxSplitterEvent *This = (wxSplitterEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetWindowBeingRemoved();
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxSplitterEvent_SetSashPosition: { // wxSplitterEvent::SetSashPosition 
+ wxSplitterEvent *This = (wxSplitterEvent *) getPtr(bp,memenv); bp += 4;
+ int * pos = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetSashPosition((int) *pos);
  break; 
 }
   default: {

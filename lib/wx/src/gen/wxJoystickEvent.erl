@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxjoystickevent.html">wxJoystickEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>joy_button_down</em>, <em>joy_button_up</em>, <em>joy_move</em>, <em>joy_zmove</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxJoystick(). #wxJoystick{}} event record type.
 %%
@@ -55,7 +55,8 @@ buttonDown(This)
 buttonDown(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxJoystickEvent),
-  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc]  end,
+  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxJoystickEvent_ButtonDown,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -72,7 +73,8 @@ buttonIsDown(This)
 buttonIsDown(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxJoystickEvent),
-  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc]  end,
+  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxJoystickEvent_ButtonIsDown,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -89,7 +91,8 @@ buttonUp(This)
 buttonUp(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxJoystickEvent),
-  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc]  end,
+  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxJoystickEvent_ButtonUp,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

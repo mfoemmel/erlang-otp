@@ -673,7 +673,7 @@ update_earliest([],_Cycle,Preds,Earl,Ready) ->
     {Ready,Preds,Earl};
 update_earliest([{Lat,N}|Xs],Cycle,Preds,Earl,Ready) ->
     Old_earl = hipe_vectors:get(Earl,N-1),
-    New_earl = max(Old_earl,Cycle+Lat),
+    New_earl = erlang:max(Old_earl,Cycle+Lat),
     NewEarl = hipe_vectors:set(Earl,N-1,New_earl),
     Num_preds = hipe_vectors:get(Preds,N-1),
     NewPreds = hipe_vectors:set(Preds,N-1,Num_preds-1),
@@ -809,7 +809,7 @@ dep_arc(N, Lat, M, {Dag,Preds}) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 add_arc(Lat,To, []) -> {[{Lat, To}], added};
 add_arc(Lat1, To, [{Lat2, To} | Arcs]) ->
-    {[{max(Lat1, Lat2), To} | Arcs], non_added};
+    {[{erlang:max(Lat1, Lat2), To} | Arcs], non_added};
 add_arc(Lat1,To1, [{Lat2, To2} | Arcs]) when To1 < To2 ->
     {[{Lat1, To1}, {Lat2, To2} | Arcs], added};
 add_arc(Lat1 ,To1, [{Lat2, To2} | Arcs]) ->
@@ -1444,23 +1444,12 @@ cd_unsafe_deps({Br,BrTy},N,Ty,DAG) ->
 	    N,DAG).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Function    : max
-%% Description : max(X, Y)
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-max(X,Y) ->
-    if
-	X < Y -> Y;
-	true -> X
-    end.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : def_use
 %% Argument    : Instr 
 %% Description : Returns the registers that Instr defines resp. uses as 2 lists
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 def_use(Instr) ->
-    { hipe_sparc:defines(Instr), hipe_sparc:uses(Instr) }.
-
+    {hipe_sparc:defines(Instr), hipe_sparc:uses(Instr)}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : move_or_alu

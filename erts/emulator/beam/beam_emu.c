@@ -3121,16 +3121,15 @@ void process_main(void)
 	     goto badarg;
 	 }
 	 num_bits = (Uint) size;
-     } else if (is_big(num_bits_term) &&
-		!bignum_header_is_neg(*big_val(num_bits_term))) {
+     } else {
 	 Uint bits;
 
 	 if (!term_to_Uint(num_bits_term, &bits)) {
-	     goto system_limit;
+	     c_p->freason = bits;
+	     goto lb_Cl_error;
+
 	 }
 	 num_bits = (Eterm) bits;
-     } else {
-	 goto badarg;
      }
 
      /* num_bits = Number of bits to build
@@ -3250,22 +3249,18 @@ void process_main(void)
 		 goto badarg;
 	     }
 	     tmp_arg1 = (Eterm) size;
-	 } else if (is_big(tmp_arg1) && !bignum_header_is_neg(*big_val(tmp_arg1))) {
-	     Sint bytes;
-	     if (!term_to_Sint(tmp_arg1, &bytes)) {
-		 goto system_limit;
-	     }
-	     if (bytes < 0) {
-		 goto badarg;
+	 } else {
+	     Uint bytes;
+
+	     if (!term_to_Uint(tmp_arg1, &bytes)) {
+		 c_p->freason = bytes;
+		 goto lb_Cl_error;
 	     }
 	     if ((bytes >> (8*sizeof(Uint)-3)) != 0) {
 		 goto system_limit;
 	     }
 	     tmp_arg1 = (Eterm) bytes;
-	 } else {
-	     goto badarg;
 	 }
-
 	 if (tmp_arg1 <= ERL_ONHEAP_BIN_LIMIT) {
 	     goto do_heap_bin_alloc;
 	 } else {
@@ -3394,9 +3389,6 @@ void process_main(void)
 
 	 if (Arg1 >= 0 && Arg2 >= 0) {
 	     BsSafeMul(Arg2, Unit, goto system_limit, tmp_arg1);
-	     if ((Sint) tmp_arg1 < 0) {
-		 goto system_limit;
-	     }
 	     tmp_arg1 += Arg1;
 
 	 store_bs_add_result:
@@ -3404,11 +3396,13 @@ void process_main(void)
 		 tmp_arg1 = make_small(tmp_arg1);
 	     } else {
 		 /*
-		  * May generate a heap fragment, but in this particular case it is OK,
-		  * since the value will be stored into an x register (the GC will
-		  * scan x registers for references to heap fragments) and there is no
-		  * risk that value can be stored into a location that is not scanned
-		  * for heap-fragment references (such as the heap).
+		  * May generate a heap fragment, but in this
+		  * particular case it is OK, since the value will be
+		  * stored into an x register (the GC will scan x
+		  * registers for references to heap fragments) and
+		  * there is no risk that value can be stored into a
+		  * location that is not scanned for heap-fragment
+		  * references (such as the heap).
 		  */
 		 SWAPOUT;
 		 tmp_arg1 = erts_make_integer(tmp_arg1, c_p);
@@ -3416,23 +3410,58 @@ void process_main(void)
 	     }
 	     StoreBifResult(2, tmp_arg1);
 	 }
+	 goto badarg;
      } else {
 	 Uint a;
 	 Uint b;
-	 if (term_to_Uint(tmp_arg1, &a) && term_to_Uint(tmp_arg2, &b)) {
-	     BsSafeMul(b, Unit, goto system_limit, tmp_arg1);
-	     if ((Sint) tmp_arg1 < 0) {
-		 goto system_limit;
-	     }
-	     tmp_arg1 += a;
-	     goto store_bs_add_result;
-	 }
-     }
+	 Uint c;
 
-     /*
-      * Fall through to here if there were any errors in the arguments.
-      */
-     goto badarg;
+	 /*
+	  * Now we know that one of the arguments is
+	  * not at small. We must convert both arguments
+	  * to Uints and check for errors at the same time.
+	  *
+	  * Error checking is tricky.
+	  *
+	  * If one of the arguments is not numeric or
+	  * not positive, the error reason is BADARG.
+	  *
+	  * Otherwise if both arguments are numeric,
+	  * but at least one argument does not fit in
+	  * an Uint, the reason is SYSTEM_LIMIT.
+	  */
+
+	 if (!term_to_Uint(tmp_arg1, &a)) {
+	     if (a == BADARG) {
+		 goto badarg;
+	     }
+	     if (!term_to_Uint(tmp_arg2, &b)) {
+		 c_p->freason = b;
+		 goto lb_Cl_error;
+	     }
+	     goto system_limit;
+	 } else if (!term_to_Uint(tmp_arg2, &b)) {
+	     c_p->freason = b;
+	     goto lb_Cl_error;
+	 }
+
+	 /*
+	  * The arguments are now correct and stored in a and b.
+	  */
+	 
+	 BsSafeMul(b, Unit, goto system_limit, c);
+	 tmp_arg1 = a + c;
+	 if (tmp_arg1 < a) {
+	     /*
+	      * If the result is less than one of the
+	      * arguments, there must have been an overflow.
+	      */
+	     goto system_limit;
+	 }
+	 goto store_bs_add_result;
+     }
+     /* No fallthrough */
+     ASSERT(0);
  }
 
  OpCase(bs_put_string_II):
@@ -3476,7 +3505,8 @@ void process_main(void)
 
      res = erts_bs_private_append(c_p, tmp_arg2, tmp_arg1, Arg(1));
      if (is_non_value(res)) {
-	 goto system_limit;
+	 /* c_p->freason is already set (may be either BADARG or SYSTEM_LIMIT). */
+	 goto lb_Cl_error;
      }
      StoreBifResult(2, res);
  }

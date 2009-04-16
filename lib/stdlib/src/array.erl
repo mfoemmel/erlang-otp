@@ -148,12 +148,16 @@
 		default,	%% the default value (usually 'undefined')
 		elements	%% the tuple tree
 	       }).
+%% A declaration equivalent to the following one is hard-coded in erl_types.
+%% That declaration contains hard-coded information about the #array{}
+%% structure and the types of its fields.  So, please make sure that any
+%% changes to its structure are also propagated to erl_types.erl.
+%%
+%% -opaque array() :: #array{}.
 
 %%
 %% Types
 %%
-
--opaque array() :: #array{}.
 
 -type array_indx() :: non_neg_integer().
 

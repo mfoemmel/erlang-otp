@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxmouseevent.html">wxMouseEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>left_down</em>, <em>left_up</em>, <em>middle_down</em>, <em>middle_up</em>, <em>right_down</em>, <em>right_up</em>, <em>motion</em>, <em>enter_window</em>, <em>leave_window</em>, <em>left_dclick</em>, <em>middle_dclick</em>, <em>right_dclick</em>, <em>mousewheel</em>, <em>nc_left_down</em>, <em>nc_left_up</em>, <em>nc_middle_down</em>, <em>nc_middle_up</em>, <em>nc_right_down</em>, <em>nc_right_up</em>, <em>nc_motion</em>, <em>nc_enter_window</em>, <em>nc_leave_window</em>, <em>nc_left_dclick</em>, <em>nc_middle_dclick</em>, <em>nc_right_dclick</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxMouse(). #wxMouse{}} event record type.
 %%
@@ -74,7 +74,8 @@ buttonDClick(This)
 buttonDClick(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxMouseEvent),
-  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc]  end,
+  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMouseEvent_ButtonDClick,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -91,7 +92,8 @@ buttonDown(This)
 buttonDown(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxMouseEvent),
-  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc]  end,
+  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMouseEvent_ButtonDown,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -108,7 +110,8 @@ buttonUp(This)
 buttonUp(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxMouseEvent),
-  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc]  end,
+  MOpts = fun({but, But}, Acc) -> [<<1:32/?UI,But:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMouseEvent_ButtonUp,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

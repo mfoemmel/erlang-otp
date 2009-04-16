@@ -44,7 +44,10 @@
 %% that is; the RearList is reversed.
 %%
 
--opaque queue() :: {list(),list()}.
+%% A declaration equivalent to the following is currently hard-coded
+%% in erl_types.erl
+%%
+%% -opaque queue() :: {list(), list()}.
 
 %% Creation, inspection and conversion
 

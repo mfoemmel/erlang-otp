@@ -775,7 +775,7 @@ typedef struct {
     long forced_events;           /* Mask of events that are forcefully signalled 
 				   on windows see winsock_event_select 
 				   for details */
-
+    int send_would_block;       /* Last send attempt failed with "WOULDBLOCK" */
 #endif
     ErlDrvPort  port;           /* the port identifier */
     ErlDrvTermData dport;       /* the port identifier as DriverTermData */
@@ -3665,6 +3665,7 @@ static void desc_close(inet_descriptor* desc)
 	winsock_event_select(desc, FD_READ|FD_WRITE|FD_CLOSE, 0);
 	sock_close(desc->s);
 	desc->forced_events = 0;
+	desc->send_would_block = 0;
 #endif
 	driver_select(desc->port, (ErlDrvEvent)(long)desc->event, ERL_DRV_USE, 0);
 	desc->event = INVALID_EVENT; /* closed by stop_select callback */
@@ -3702,6 +3703,7 @@ static int erl_inet_close(inet_descriptor* desc)
 	desc->event_mask = 0;
 #ifdef __WIN32__
 	desc->forced_events = 0;
+	desc->send_would_block = 0;
 #endif
     }
     return 0;
@@ -6556,6 +6558,7 @@ static ErlDrvData inet_start(ErlDrvPort port, int size, int protocol)
     desc->event_mask = 0;
 #ifdef __WIN32__
     desc->forced_events = 0;
+    desc->send_would_block = 0;
 #endif
     desc->port = port;
     desc->dport = driver_mk_port(port);
@@ -8093,14 +8096,17 @@ static int winsock_event_select(inet_descriptor *desc, int flags, int on)
 	   full to empty or from empty to full; therefore we need an extra test 
 	   to see whether it is writeable, readable or closed... */
 	if ((desc->event_mask & FD_WRITE)) {
-	    TIMEVAL tmo = {0,0};
-	    FD_SET fds;
-	    int ret;
-	
-	    FD_ZERO(&fds);
-	    FD_SET(desc->s,&fds);
-	    ret = select(desc->s+1,0,&fds,0,&tmo);
-	    if (ret > 0) {
+	    int do_force = 1;
+	    if (desc->send_would_block) {
+		TIMEVAL tmo = {0,0};
+		FD_SET fds;
+		int ret;
+		
+		FD_ZERO(&fds);
+		FD_SET(desc->s,&fds);
+		do_force = (select(desc->s+1,0,&fds,0,&tmo) > 0);
+	    }
+	    if (do_force) {
 		SetEvent(desc->event);
 		desc->forced_events |= FD_WRITE;
 	    }
@@ -8194,6 +8200,7 @@ static void tcp_inet_event(ErlDrvData e, ErlDrvEvent event)
 	}
     }
     if (netEv.lNetworkEvents & FD_WRITE) {
+	desc->inet.send_would_block = 0;
 	if (tcp_inet_output(desc, event) < 0)
 	    goto error;
     }
@@ -8507,11 +8514,18 @@ static int tcp_sendv(tcp_descriptor* desc, ErlIOVec* ev)
 			(long)desc->inet.port, desc->inet.s, err));
 		return tcp_send_error(desc, err);
 	    }
+#ifdef __WIN32__
+	    desc->inet.send_would_block = 1;
+#endif
 	    n = 0;
 	}
 	else if (n == ev->size) {
 	    ASSERT(NO_SUBSCRIBERS(&INETP(desc)->empty_out_q_subs));
 	    return 0;
+	}
+	else {
+	    DEBUGF(("tcp_sendv(%ld): s=%d, only sent %d/%d of %d/%d bytes/items\r\n", 
+			(long)desc->inet.port, desc->inet.s, n, vsize, ev->size, ev->vsize));
 	}
 
 	DEBUGF(("tcp_sendv(%ld): s=%d, Send failed, queuing\r\n", 
@@ -8592,6 +8606,9 @@ static int tcp_send(tcp_descriptor* desc, char* ptr, int len)
 			(long)desc->inet.port, desc->inet.s, err));
 		return tcp_send_error(desc, err);
 	    }
+#ifdef __WIN32__
+	    desc->inet.send_would_block = 1;
+#endif
 	    n = 0;
 	}
 	else if (n == len+h_len) {
@@ -8703,6 +8720,9 @@ static int tcp_inet_output(tcp_descriptor* desc, HANDLE event)
 		    ret =  tcp_send_error(desc, sock_errno());
 		    goto done;
 		}
+#ifdef __WIN32__
+		desc->inet.send_would_block = 1;
+#endif
 		goto done;
 	    }
 	    if (driver_deq(ix, n) <= desc->low) {

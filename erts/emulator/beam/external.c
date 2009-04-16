@@ -73,6 +73,7 @@
  */
 
 static byte* enc_term(DistEntry*, Eterm, byte*, Uint32);
+static Uint is_external_string(Eterm obj, int* p_is_string);
 static byte* enc_atom(DistEntry*, Eterm, byte*);
 static byte* enc_pid(DistEntry*, Eterm, byte*);
 static byte* dec_term(DistEntry*, Eterm**, byte*, ErlOffHeap*, Eterm*);
@@ -80,7 +81,6 @@ static byte* dec_atom(DistEntry*, byte*, Eterm*);
 static byte* dec_pid(DistEntry*, Eterm**, byte*, ErlOffHeap*, Eterm*);
 static byte* dec_hashed_atom(DistEntry*, byte*, Eterm*);
 static byte* dec_and_insert_hashed_atom(DistEntry*, byte*, Eterm*);
-static Eterm term_to_binary(Process* p, Eterm Term, int level, Uint flags);
 static Sint decoded_size(byte *ep, byte* endp, int only_heap_bins);
 
 
@@ -92,7 +92,7 @@ static Uint encode_size_struct2(Eterm, unsigned);
 Eterm
 term_to_binary_1(Process* p, Eterm Term)
 {
-    return term_to_binary(p, Term, 0, TERM_TO_BINARY_DFLAGS);
+    return erts_term_to_binary(p, Term, 0, TERM_TO_BINARY_DFLAGS);
 }
 
 Eterm
@@ -119,11 +119,7 @@ term_to_binary_2(Process* p, Eterm Term, Eterm Flags)
 		    goto error;
 		}
 	    } else if (tp[1] == am_compressed && is_small(tp[2])) {
-		Uint level_term = tp[2];
-		if (is_not_small(level_term)) {
-		    goto error;
-		}
-		level = unsigned_val(level_term);
+		level = signed_val(tp[2]);
 		if (!(0 <= level && level < 10)) {
 		    goto error;
 		}
@@ -140,7 +136,7 @@ term_to_binary_2(Process* p, Eterm Term, Eterm Flags)
 	goto error;
     }
 
-    return term_to_binary(p, Term, level, flags);
+    return erts_term_to_binary(p, Term, level, flags);
 }
 
 static ERTS_INLINE Sint
@@ -273,8 +269,8 @@ external_size_1(Process* p, Eterm Term)
     }
 }
 
-static Eterm
-term_to_binary(Process* p, Eterm Term, int level, Uint flags)
+Eterm
+erts_term_to_binary(Process* p, Eterm Term, int level, Uint flags)
 {
     int size;
     Eterm bin;
@@ -544,331 +540,399 @@ dec_pid(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* objp
 }
 
 
+#define ENC_TERM ((Eterm) 0)
+#define ENC_ONE_CONS ((Eterm) 1)
+#define ENC_PATCH_FUN_SIZE ((Eterm) 2)
+#define ENC_LAST_ARRAY_ELEMENT ((Eterm) 3)
+
 static byte*
 enc_term(DistEntry *dep, Eterm obj, byte* ep, Uint32 dflags)
 {
+    DECLARE_ESTACK(s);
     Uint n;
     Uint i;
     Uint j;
     Uint* ptr;
+    Eterm val;
     FloatDef f;
-    byte* back;
 
-    switch(tag_val_def(obj)) {
-    case NIL_DEF:
-	*ep++ = NIL_EXT;   /* soley empty lists */
-	return ep;
+    goto L_jump_start;
 
-    case ATOM_DEF:
-	return enc_atom(dep,obj,ep);
+ outer_loop:
+    while (!ESTACK_ISEMPTY(s)) {
+	obj = ESTACK_POP(s);
+	switch (val = ESTACK_POP(s)) {
+	case ENC_TERM:
+	    break;
+	case ENC_ONE_CONS:
+	encode_one_cons:
+	    {
+		Eterm* cons = list_val(obj);
+		Eterm tl;
 
-    case SMALL_DEF:
-      {
-	  Sint val = signed_val(obj);
+		obj = CAR(cons);
+		tl = CDR(cons);
+		ESTACK_PUSH(s, is_list(tl) ? ENC_ONE_CONS : ENC_TERM);
+		ESTACK_PUSH(s, tl);
+	    }
+	    break;
+	case ENC_PATCH_FUN_SIZE:
+	    {
+		byte* size_p = (byte *) obj;
 
-	  if ((Uint)val < 256) {
-	      *ep++ = SMALL_INTEGER_EXT;
-	      put_int8(val, ep);
-	      return ep + 1;
-	  } else if (sizeof(Sint) == 4 || IS_SSMALL28(val)) {
-	      *ep++ = INTEGER_EXT;
-	      put_int32(val, ep);
-	      return ep + 4;
-	  } else {
-	      Eterm tmp_big[2];
-	      Eterm big = small_to_big(val, tmp_big);
-	      *ep++ = SMALL_BIG_EXT;
-	      n = big_bytes(big);
-	      ASSERT(n < 256);
-	      put_int8(n, ep);
-	      ep += 1;
-	      *ep++ = big_sign(big);
-	      return big_to_bytes(big, ep);
-	  }
-      }
-
-    case BIG_DEF:
-	if ((n = big_bytes(obj)) < 256) {
-	    *ep++ = SMALL_BIG_EXT;
-	    put_int8(n, ep);
-	    ep += 1;
+		put_int32(ep - size_p, size_p);
+	    }
+	    goto outer_loop;
+	case ENC_LAST_ARRAY_ELEMENT:
+	    {
+		Eterm* ptr = (Eterm *) obj;
+		obj = *ptr;
+	    }
+	    break;
+	default:		/* ENC_LAST_ARRAY_ELEMENT+1 and upwards */
+	    {
+		Eterm* ptr = (Eterm *) obj;
+		obj = *ptr++;
+		ESTACK_PUSH(s, val-1);
+		ESTACK_PUSH(s, (Eterm) ptr);
+	    }
+	    break;
 	}
-	else {
-	    *ep++ = LARGE_BIG_EXT;
-	    put_int32(n, ep);
-	    ep += 4;
-	}
-	*ep++ = big_sign(obj);
-	return big_to_bytes(obj, ep);
 
-    case PID_DEF:
-    case EXTERNAL_PID_DEF:
-	return enc_pid(dep, obj, ep);
+    L_jump_start:
+	switch(tag_val_def(obj)) {
+	case NIL_DEF:
+	    *ep++ = NIL_EXT;
+	    break;
 
-    case REF_DEF:
-    case EXTERNAL_REF_DEF: {
-	Uint32 *ref_num;
+	case ATOM_DEF:
+	    ep = enc_atom(dep,obj,ep);
+	    break;
 
-	ASSERT(dflags & DFLAG_EXTENDED_REFERENCES);
-	*ep++ = NEW_REFERENCE_EXT;
-	i = ref_no_of_numbers(obj);
-	put_int16(i, ep);
-	ep += 2;
-	ep = enc_atom(dep,ref_node_name(obj),ep);
-	*ep++ = ref_creation(obj);
-	ref_num = ref_numbers(obj);
-	for (j = 0; j < i; j++) {
-	    put_int32(ref_num[j], ep);
-	    ep += 4;
-	}
-	return ep;
-    }
-    case PORT_DEF:
-    case EXTERNAL_PORT_DEF:
+	case SMALL_DEF:
+	    {
+		Sint val = signed_val(obj);
 
-	*ep++ = PORT_EXT;
-	ep = enc_atom(dep,port_node_name(obj),ep);
-	j = port_number(obj);
-	put_int32(j, ep);
-	ep += 4;
-	*ep++ = port_creation(obj);
-	return ep;
+		if ((Uint)val < 256) {
+		    *ep++ = SMALL_INTEGER_EXT;
+		    put_int8(val, ep);
+		    ep++;
+		} else if (sizeof(Sint) == 4 || IS_SSMALL28(val)) {
+		    *ep++ = INTEGER_EXT;
+		    put_int32(val, ep);
+		    ep += 4;
+		} else {
+		    Eterm tmp_big[2];
+		    Eterm big = small_to_big(val, tmp_big);
+		    *ep++ = SMALL_BIG_EXT;
+		    n = big_bytes(big);
+		    ASSERT(n < 256);
+		    put_int8(n, ep);
+		    ep += 1;
+		    *ep++ = big_sign(big);
+		    ep = big_to_bytes(big, ep);
+		}
+	    }
+	    break;
 
-    case LIST_DEF:
-	if ((i = is_string(obj)) && (i < MAX_STRING_LEN)) {
-	    *ep++ = STRING_EXT;
+	case BIG_DEF:
+	    if ((n = big_bytes(obj)) < 256) {
+		*ep++ = SMALL_BIG_EXT;
+		put_int8(n, ep);
+		ep += 1;
+	    }
+	    else {
+		*ep++ = LARGE_BIG_EXT;
+		put_int32(n, ep);
+		ep += 4;
+	    }
+	    *ep++ = big_sign(obj);
+	    ep = big_to_bytes(obj, ep);
+	    break;
+
+	case PID_DEF:
+	case EXTERNAL_PID_DEF:
+	    ep = enc_pid(dep, obj, ep);
+	    break;
+
+	case REF_DEF:
+	case EXTERNAL_REF_DEF: {
+	    Uint32 *ref_num;
+
+	    ASSERT(dflags & DFLAG_EXTENDED_REFERENCES);
+	    *ep++ = NEW_REFERENCE_EXT;
+	    i = ref_no_of_numbers(obj);
 	    put_int16(i, ep);
 	    ep += 2;
-	    while (is_list(obj)) {
-		Eterm* cons = list_val(obj);
-		*ep++ = unsigned_val(CAR(cons));
-		obj = CDR(cons);
-	    }
-	    return ep;
-	}
-	*ep++ = LIST_EXT;
-	back = ep;  /* leave length space */
-	ep += 4;
-	i = 0;
-	while (is_list(obj)) {
-	    Eterm* cons = list_val(obj);
-	    i++;  /* count number of cons cells */
-	    if ((ep = enc_term(dep, CAR(cons), ep, dflags)) == NULL)
-		return NULL;
-	    obj = CDR(cons);
-	}
-	if ((ep = enc_term(dep, obj, ep, dflags)) == NULL)
-	    return NULL;
-	put_int32(i, back);
-	return ep;
-
-    case TUPLE_DEF:
-	ptr = tuple_val(obj);
-	i = arityval(*ptr);
-	ptr++;
-	if (i <= 0xff) {
-	    *ep++ = SMALL_TUPLE_EXT;
-	    put_int8(i, ep);
-	    ep += 1;
-	}
-	else  {
-	    *ep++ = LARGE_TUPLE_EXT;
-	    put_int32(i, ep);
-	    ep += 4;
-	}
-	while(i--) {
-	    if ((ep = enc_term(dep, *ptr++, ep, dflags)) == NULL)
-		return NULL;
-	}
-	return ep;
-
-    case FLOAT_DEF:
-	GET_DOUBLE(obj, f);
-	if (dflags & DFLAG_NEW_FLOATS) {
-	    *ep++ = NEW_FLOAT_EXT;
-#ifdef WORDS_BIGENDIAN
-	    put_int32(f.fw[0], ep);
-	    ep += 4;
-	    put_int32(f.fw[1], ep);
-#else
-	    put_int32(f.fw[1], ep);
-	    ep += 4;
-	    put_int32(f.fw[0], ep);
-#endif		
-	    return ep+4;
-	} else {
-	    *ep++ = FLOAT_EXT;
-
-	    /* now the sprintf which does the work */
-	    i = sys_double_to_chars(f.fd, (char*) ep);
-
-	    /* Don't leave garbage after the float!  (Bad practice in general,
-	     * and Purify complains.)
-	     */
-	    sys_memset(ep+i, 0, 31-i);
-	    return ep + 31;
-	}
-
-    case BINARY_DEF:
-	{
-	    Uint bitoffs;
-	    Uint bitsize;
-	    byte* bytes;
-
-	    ERTS_GET_BINARY_BYTES(obj, bytes, bitoffs, bitsize);
-	    if (bitsize == 0) {
-		/* Plain old byte-sized binary. */
-		*ep++ = BINARY_EXT;
-		j = binary_size(obj);
-		put_int32(j, ep);
+	    ep = enc_atom(dep,ref_node_name(obj),ep);
+	    *ep++ = ref_creation(obj);
+	    ref_num = ref_numbers(obj);
+	    for (j = 0; j < i; j++) {
+		put_int32(ref_num[j], ep);
 		ep += 4;
-		copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j);
-		return ep + j;
-	    } else if (dflags & DFLAG_BIT_BINARIES) {
-		/* Bit-level binary. */
-		*ep++ = BIT_BINARY_EXT;
-		j = binary_size(obj);
-		put_int32((j+1), ep);
-		ep += 4;
-		*ep++ = bitsize;
-		ep[j] = 0;	/* Zero unused bits at end of binary */
-		copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j+bitsize);
-		return ep + j + 1;
-	    } else {
-		/*
-		 * Bit-level binary, but the receiver doesn't support it.
-		 * Build a tuple instead.
-		 */
-		*ep++ = SMALL_TUPLE_EXT;
-		*ep++ = 2;
-		*ep++ = BINARY_EXT;
-		j = binary_size(obj);
-		put_int32((j+1), ep);
-		ep += 4;
-		ep[j] = 0;	/* Zero unused bits at end of binary */
-		copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j+bitsize);
-		ep += j+1;
-		*ep++ = SMALL_INTEGER_EXT;
-		*ep++ = bitsize;
-		return ep;
 	    }
+	    break;
 	}
-    case EXPORT_DEF:
-	{
-	    Export* exp = (Export *) (export_val(obj))[1];
-	    if ((dflags & DFLAG_EXPORT_PTR_TAG) != 0) {
-		*ep++ = EXPORT_EXT;
-		ep = enc_atom(dep, exp->code[0], ep);
-		ep = enc_atom(dep, exp->code[1], ep);
-		return enc_term(dep, make_small(exp->code[2]), ep, dflags);
-	    } else {
-		/* Tag, arity */
-		*ep++ = SMALL_TUPLE_EXT;
-		put_int8(2, ep);
-		ep += 1;
+	case PORT_DEF:
+	case EXTERNAL_PORT_DEF:
 
-		/* Module name */
-		ep = enc_atom(dep, exp->code[0], ep);
+	    *ep++ = PORT_EXT;
+	    ep = enc_atom(dep,port_node_name(obj),ep);
+	    j = port_number(obj);
+	    put_int32(j, ep);
+	    ep += 4;
+	    *ep++ = port_creation(obj);
+	    break;
 
-		/* Function name */
-		return enc_atom(dep, exp->code[1], ep);
-	    }
-	}
-	break;
-    case FUN_DEF:
-	if ((dflags & DFLAG_NEW_FUN_TAGS) != 0) {
-	    ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
-	    Uint num_free = funp->num_free;
-	    byte* size_p;
+	case LIST_DEF:
+	    {
+		int is_str;
 
-	    *ep++ = NEW_FUN_EXT;
-	    size_p = ep;
-	    ep += 4;
-	    *ep = funp->arity;
-	    ep += 1;
-	    sys_memcpy(ep, funp->fe->uniq, 16);
-	    ep += 16;
-	    put_int32(funp->fe->index, ep);
-	    ep += 4;
-	    put_int32(num_free, ep);
-	    ep += 4;
-	    ep = enc_atom(dep, funp->fe->module, ep);
-	    ep = enc_term(dep, make_small(funp->fe->old_index), ep, dflags);
-	    ep = enc_term(dep, make_small(funp->fe->old_uniq), ep, dflags);
-	    ep = enc_pid(dep, funp->creator, ep);
-	    ptr = funp->env;
-	    while (num_free-- > 0) {
-		if ((ep = enc_term(dep, *ptr++, ep, dflags)) == NULL) {
-		    return NULL;
+		i = is_external_string(obj, &is_str);
+		if (is_str) {
+		    *ep++ = STRING_EXT;
+		    put_int16(i, ep);
+		    ep += 2;
+		    while (is_list(obj)) {
+			Eterm* cons = list_val(obj);
+			*ep++ = unsigned_val(CAR(cons));
+			obj = CDR(cons);
+		    }
+		} else {
+		    *ep++ = LIST_EXT;
+		    put_int32(i, ep);
+		    ep += 4;
+		    goto encode_one_cons;
 		}
 	    }
-	    put_int32(ep-size_p, size_p);
-	} else if ((dflags & DFLAG_FUN_TAGS) != 0) {
-	    ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
-	    Uint num_free = funp->num_free;
+	    break;
 
-	    *ep++ = FUN_EXT;
-	    put_int32(num_free, ep);
-	    ep += 4;
-	    ep = enc_pid(dep, funp->creator, ep);
-	    ep = enc_atom(dep, funp->fe->module, ep);
-	    ep = enc_term(dep, make_small(funp->fe->old_index), ep, dflags);
-	    ep = enc_term(dep, make_small(funp->fe->old_uniq), ep, dflags);
-	    ptr = funp->env;
-	    while (num_free-- > 0) {
-		if ((ep = enc_term(dep, *ptr++, ep, dflags)) == NULL) {
-		    return NULL;
-		}
-	    }
-	} else {
-	    /*
-	     * Communicating with an obsolete erl_interface or jinterface node.
-	     * Convert the fun to a tuple to avoid crasching.
-	     */
-		
-	    ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
-		
-	    /* Tag, arity */
-	    *ep++ = SMALL_TUPLE_EXT;
-	    put_int8(5, ep);
-	    ep += 1;
-		
-	    /* 'fun' */
-	    ep = enc_atom(dep, am_fun, ep);
-		
-	    /* Module name */
-	    ep = enc_atom(dep, funp->fe->module, ep);
-		
-	    /* Index, Uniq */
-	    *ep++ = INTEGER_EXT;
-	    put_int32(funp->fe->old_index, ep);
-	    ep += 4;
-	    *ep++ = INTEGER_EXT;
-	    put_int32(unsigned_val(funp->fe->old_uniq), ep);
-	    ep += 4;
-		
-	    /* Environment sub-tuple arity */
-	    if (funp->num_free <= 0xff) {
+	case TUPLE_DEF:
+	    ptr = tuple_val(obj);
+	    i = arityval(*ptr);
+	    ptr++;
+	    if (i <= 0xff) {
 		*ep++ = SMALL_TUPLE_EXT;
-		put_int8(funp->num_free, ep);
+		put_int8(i, ep);
 		ep += 1;
-	    } else {
+	    } else  {
 		*ep++ = LARGE_TUPLE_EXT;
-		put_int32(funp->num_free, ep);
+		put_int32(i, ep);
 		ep += 4;
 	    }
+	    if (i > 0) {
+		ESTACK_PUSH(s, ENC_LAST_ARRAY_ELEMENT+i-1);
+		ESTACK_PUSH(s, (Eterm) ptr);
+	    }
+	    break;
+
+	case FLOAT_DEF:
+	    GET_DOUBLE(obj, f);
+	    if (dflags & DFLAG_NEW_FLOATS) {
+		*ep++ = NEW_FLOAT_EXT;
+#ifdef WORDS_BIGENDIAN
+		put_int32(f.fw[0], ep);
+		ep += 4;
+		put_int32(f.fw[1], ep);
+#else
+		put_int32(f.fw[1], ep);
+		ep += 4;
+		put_int32(f.fw[0], ep);
+#endif		
+		ep += 4;
+	    } else {
+		*ep++ = FLOAT_EXT;
+
+		/* now the sprintf which does the work */
+		i = sys_double_to_chars(f.fd, (char*) ep);
+
+		/* Don't leave garbage after the float!  (Bad practice in general,
+		 * and Purify complains.)
+		 */
+		sys_memset(ep+i, 0, 31-i);
+		ep += 31;
+	    }
+	    break;
+
+	case BINARY_DEF:
+	    {
+		Uint bitoffs;
+		Uint bitsize;
+		byte* bytes;
+
+		ERTS_GET_BINARY_BYTES(obj, bytes, bitoffs, bitsize);
+		if (bitsize == 0) {
+		    /* Plain old byte-sized binary. */
+		    *ep++ = BINARY_EXT;
+		    j = binary_size(obj);
+		    put_int32(j, ep);
+		    ep += 4;
+		    copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j);
+		    ep += j;
+		} else if (dflags & DFLAG_BIT_BINARIES) {
+		    /* Bit-level binary. */
+		    *ep++ = BIT_BINARY_EXT;
+		    j = binary_size(obj);
+		    put_int32((j+1), ep);
+		    ep += 4;
+		    *ep++ = bitsize;
+		    ep[j] = 0;	/* Zero unused bits at end of binary */
+		    copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j+bitsize);
+		    ep += j + 1;
+		} else {
+		    /*
+		     * Bit-level binary, but the receiver doesn't support it.
+		     * Build a tuple instead.
+		     */
+		    *ep++ = SMALL_TUPLE_EXT;
+		    *ep++ = 2;
+		    *ep++ = BINARY_EXT;
+		    j = binary_size(obj);
+		    put_int32((j+1), ep);
+		    ep += 4;
+		    ep[j] = 0;	/* Zero unused bits at end of binary */
+		    copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j+bitsize);
+		    ep += j+1;
+		    *ep++ = SMALL_INTEGER_EXT;
+		    *ep++ = bitsize;
+		}
+		break;
+	    }
+	case EXPORT_DEF:
+	    {
+		Export* exp = (Export *) (export_val(obj))[1];
+		if ((dflags & DFLAG_EXPORT_PTR_TAG) != 0) {
+		    *ep++ = EXPORT_EXT;
+		    ep = enc_atom(dep, exp->code[0], ep);
+		    ep = enc_atom(dep, exp->code[1], ep);
+		    ep = enc_term(dep, make_small(exp->code[2]), ep, dflags);
+		} else {
+		    /* Tag, arity */
+		    *ep++ = SMALL_TUPLE_EXT;
+		    put_int8(2, ep);
+		    ep += 1;
+
+		    /* Module name */
+		    ep = enc_atom(dep, exp->code[0], ep);
+
+		    /* Function name */
+		    ep = enc_atom(dep, exp->code[1], ep);
+		}
+		break;
+	    }
+	    break;
+	case FUN_DEF:
+	    {
+		ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
+
+		if ((dflags & DFLAG_NEW_FUN_TAGS) != 0) {
+		    int ei;
+
+		    *ep++ = NEW_FUN_EXT;
+		    ESTACK_PUSH(s, ENC_PATCH_FUN_SIZE);
+		    ESTACK_PUSH(s, (Eterm) ep); /* Position for patching in size */
+		    ep += 4;
+		    *ep = funp->arity;
+		    ep += 1;
+		    sys_memcpy(ep, funp->fe->uniq, 16);
+		    ep += 16;
+		    put_int32(funp->fe->index, ep);
+		    ep += 4;
+		    put_int32(funp->num_free, ep);
+		    ep += 4;
+		    ep = enc_atom(dep, funp->fe->module, ep);
+		    ep = enc_term(dep, make_small(funp->fe->old_index), ep, dflags);
+		    ep = enc_term(dep, make_small(funp->fe->old_uniq), ep, dflags);
+		    ep = enc_pid(dep, funp->creator, ep);
+
+		fun_env:
+		    for (ei = funp->num_free-1; ei > 0; ei--) {
+			ESTACK_PUSH(s, ENC_TERM);
+			ESTACK_PUSH(s, funp->env[ei]);
+		    }
+		    if (funp->num_free != 0) {
+			obj = funp->env[0];
+			goto L_jump_start;
+		    }
+		} else {
+		    /*
+		     * Communicating with an obsolete erl_interface or
+		     * jinterface node. Convert the fun to a tuple to
+		     * avoid crasching.
+		     */
 		
-	    /* Environment tuple */
-	    for (i = 0; i < funp->num_free; i++) {
-		if ((ep = enc_term(dep, funp->env[i], ep, dflags)) == NULL) {
-		    return NULL;
+		    /* Tag, arity */
+		    *ep++ = SMALL_TUPLE_EXT;
+		    put_int8(5, ep);
+		    ep += 1;
+		
+		    /* 'fun' */
+		    ep = enc_atom(dep, am_fun, ep);
+		
+		    /* Module name */
+		    ep = enc_atom(dep, funp->fe->module, ep);
+		
+		    /* Index, Uniq */
+		    *ep++ = INTEGER_EXT;
+		    put_int32(funp->fe->old_index, ep);
+		    ep += 4;
+		    *ep++ = INTEGER_EXT;
+		    put_int32(funp->fe->old_uniq, ep);
+		    ep += 4;
+		
+		    /* Environment sub-tuple arity */
+		    ASSERT(funp->num_free < MAX_ARG);
+		    *ep++ = SMALL_TUPLE_EXT;
+		    put_int8(funp->num_free, ep);
+		    ep += 1;
+		    goto fun_env;
 		}
 	    }
-	} 	    
-	return ep;
+	    break;
+	}
     }
-    return NULL;
+    DESTROY_ESTACK(s);
+    return ep;
 }
+
+static Uint
+is_external_string(Eterm list, int* p_is_string)
+{
+    Uint len = 0;
+
+    /*
+     * Calculate the length of the list as long as all characters
+     * are integers from 0 through 255.
+     */
+    while (is_list(list)) {
+	Eterm* consp = list_val(list);
+	Eterm hd = CAR(consp);
+
+	if (!is_byte(hd)) {
+	    break;
+	}
+	len++;
+	list = CDR(consp);
+    }
+
+    /*
+     * If we have reached the end of the list, and we have
+     * not exceeded the maximum length of a string, this
+     * is a string.
+     */
+    *p_is_string = is_nil(list) && len < MAX_STRING_LEN;
+
+    /*
+     * Continue to calculate the length.
+     */
+    while (is_list(list)) {
+	Eterm* consp = list_val(list);
+	len++;
+	list = CDR(consp);
+    }
+    return len;
+}
+
 
 /* This function is written in this strange way because in dist.c
    we call it twice for some messages, First we insert a control message 
@@ -1004,12 +1068,16 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		Sint sn = get_int32(ep);
 
 		ep += 4;
+#if defined(ARCH_64)
+		*objp = make_small(sn);
+#else
 		if (MY_IS_SSMALL(sn)) {
 		    *objp = make_small(sn);
 		} else {
 		    *objp = small_to_big(sn, hp);
 		    hp += BIG_UINT_HEAP_SIZE;
 		}
+#endif
 		break;
 	    }
 	case SMALL_INTEGER_EXT:
@@ -1099,7 +1167,7 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 	    n = get_int32(ep);
 	    ep += 4;
 	    if (n == 0) {
-		*objp = NIL;
+		next = objp;
 		break;
 	    }
 	    *objp = make_list(hp);
@@ -1630,138 +1698,192 @@ encode_size_struct(Eterm obj, unsigned dflags)
 static Uint
 encode_size_struct2(Eterm obj, unsigned dflags)
 {
-    Uint m,i, arity, *nobj, sum;
+    DECLARE_ESTACK(s);
+    Uint m, i, arity;
+    Uint result = 0;
 
-    switch (tag_val_def(obj)) {
-    case NIL_DEF:
-	return 1;
-    case ATOM_DEF:
-	/* Make sure NEW_CACHE ix l1 l0 a1 a2 .. an fits */
-	return (1 + 1 + 2 + atom_tab(atom_val(obj))->len);
-    case SMALL_DEF:
-      {
-	  Sint val = signed_val(obj);
+    goto L_jump_start;
 
-	  if ((Uint)val < 256)
-	      return 1 + 1;		/* SMALL_INTEGER_EXT */
-	  else if (sizeof(Sint) == 4 || IS_SSMALL28(val))
-	      return 1 + 4;		/* INTEGER_EXT */
-	  else {
-	      Eterm tmp_big[2];
-	      i = big_bytes(small_to_big(val, tmp_big));
-	      return 1 + 1 + 1 + i;	/* SMALL_BIG_EXT */
-	  }
-      }
-    case BIG_DEF:
-	if ((i = big_bytes(obj)) < 256)
-	    return 1 + 1 + 1 + i;  /* tag,size,sign,digits */
-	else
-	    return 1 + 4 + 1 + i;  /* tag,size,sign,digits */
-    case PID_DEF:
-    case EXTERNAL_PID_DEF:
-	return (1 + encode_size_struct2(pid_node_name(obj), dflags)
-		+ 4 + 4 + 1);
-    case REF_DEF:
-    case EXTERNAL_REF_DEF:
-	ASSERT(dflags & DFLAG_EXTENDED_REFERENCES);
-	i = ref_no_of_numbers(obj);
-	return (1 + 2 + encode_size_struct2(ref_node_name(obj), dflags)
-		+ 1 + 4*i);
-    case PORT_DEF:
-    case EXTERNAL_PORT_DEF:
-	return (1 + encode_size_struct2(port_node_name(obj), dflags)
-		+ 4 + 1);
-    case LIST_DEF:
-	if ((m = is_string(obj)) && (m < MAX_STRING_LEN))
-	    return m + 2 + 1;
-	nobj = list_val(obj);
-	sum = 5;
-	while (1) {
-	    sum += encode_size_struct2(*nobj++, dflags);
-	    if (is_not_list(*nobj)) {
-		if (is_nil(*nobj))
-		    return sum + 1;
-		return(sum + encode_size_struct2(*nobj, dflags));
-	    }
-	    nobj = list_val(*nobj);
-	}
-    case TUPLE_DEF:
-	arity = arityval(*(tuple_val(obj)));
-	if (arity <= 0xff) 
-	    sum = 1 + 1;
-	else
-	    sum = 1 + 4;
-	for (i = 0; i < arity; i++)
-	    sum += encode_size_struct2(*(tuple_val(obj) + i + 1), dflags);
-	return sum;
-    case FLOAT_DEF:
-	if (dflags & DFLAG_NEW_FLOATS) {
-	    return 9;
-	} else {
-	    return 32;   /* Yes, including the tag */
-	}
-    case BINARY_DEF:
-	return 1 + 4 + binary_size(obj) +
-	    5;			/* For unaligned binary */
-    case FUN_DEF:
-	if ((dflags & DFLAG_NEW_FUN_TAGS) != 0) {
-	    sum = 20+1+1+4;	/* New ID + Tag */
-	    goto fun_size;
-	} else if ((dflags & DFLAG_FUN_TAGS) != 0) {
-	    sum = 1;		/* Tag */
-	    goto fun_size;
-	} else {
-	    /*
-	     * Size when fun is mapped to a tuple (to avoid crashing).
-	     */
+ outer_loop:
+    while (!ESTACK_ISEMPTY(s)) {
+	obj = ESTACK_POP(s);
 
-	    ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
-
-	    sum = 1 + 1;	/* Tuple tag, arity */
-	    sum += 1 + 1 + 2 + atom_tab(atom_val(am_fun))->len; /* 'fun' */
-	    sum += 1 + 1 + 2 +
-		atom_tab(atom_val(funp->fe->module))->len; /* Module name */
-	    sum += 2 * (1 + 4); /* Index + Uniq */
+    handle_popped_obj:
+	if (is_CP(obj)) {
+	    Eterm* ptr = (Eterm *) obj;
 
 	    /*
-	     * The free variables are a encoded as a sub tuple.
+	     * Pointer into a tuple.
 	     */
-	    sum += 1 + (funp->num_free < 0x100 ? 1 : 4);
-	    for (i = 0; i < funp->num_free; i++) {
-		sum += encode_size_struct2(funp->env[i], dflags);
+	    obj = *ptr--;
+	    if (!is_header(obj)) {
+		ESTACK_PUSH(s, (Eterm)ptr);
+	    } else {
+		/* Reached tuple header */
+		ASSERT(header_is_arityval(obj));
+		goto outer_loop;
 	    }
-	    return sum;
+	} else if (is_list(obj)) {
+	    Eterm* cons = list_val(obj);
+	    Eterm tl;
+
+	    tl = CDR(cons);
+	    obj = CAR(cons);
+	    ESTACK_PUSH(s, tl);
+	} else if (is_nil(obj)) {
+	    result++;
+	    goto outer_loop;
+	} else {
+	    /*
+	     * Other term (in the tail of a non-proper list or
+	     * in a fun's environment).
+	     */
 	}
     
-    fun_size:
-	{
-	    ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
-	    sum += 4;		/* Length field (number of free variables */
-	    sum += encode_size_struct2(funp->creator, dflags);
-	    sum += encode_size_struct2(funp->fe->module, dflags);
-	    sum += 2 * (1+4);	/* Index, Uniq */
-	    for (i = 0; i < funp->num_free; i++) {
-		sum += encode_size_struct2(funp->env[i], dflags);
+    L_jump_start:
+	switch (tag_val_def(obj)) {
+	case NIL_DEF:
+	    result++;
+	    break;
+	case ATOM_DEF:
+	    /* Make sure NEW_CACHE ix l1 l0 a1 a2 .. an fits */
+	    result += 1 + 1 + 2 + atom_tab(atom_val(obj))->len;
+	    break;
+	case SMALL_DEF:
+	    {
+		Sint val = signed_val(obj);
+
+		if ((Uint)val < 256)
+		    result += 1 + 1;		/* SMALL_INTEGER_EXT */
+		else if (sizeof(Sint) == 4 || IS_SSMALL28(val))
+		    result += 1 + 4;		/* INTEGER_EXT */
+		else {
+		    Eterm tmp_big[2];
+		    i = big_bytes(small_to_big(val, tmp_big));
+		    result += 1 + 1 + 1 + i;	/* SMALL_BIG_EXT */
+		}
 	    }
-	    return sum;
-	} 
+	    break;
+	case BIG_DEF:
+	    if ((i = big_bytes(obj)) < 256)
+		result += 1 + 1 + 1 + i;  /* tag,size,sign,digits */
+	    else
+		result += 1 + 4 + 1 + i;  /* tag,size,sign,digits */
+	    break;
+	case PID_DEF:
+	case EXTERNAL_PID_DEF:
+	    result += (1 + encode_size_struct2(pid_node_name(obj), dflags) +
+		       4 + 4 + 1);
+	    break;
+	case REF_DEF:
+	case EXTERNAL_REF_DEF:
+	    ASSERT(dflags & DFLAG_EXTENDED_REFERENCES);
+	    i = ref_no_of_numbers(obj);
+	    result += (1 + 2 + encode_size_struct2(ref_node_name(obj), dflags) +
+		       1 + 4*i);
+	    break;
+	case PORT_DEF:
+	case EXTERNAL_PORT_DEF:
+	    result += (1 + encode_size_struct2(port_node_name(obj), dflags) +
+		      4 + 1);
+	    break;
+	case LIST_DEF:
+	    if ((m = is_string(obj)) && (m < MAX_STRING_LEN)) {
+		result += m + 2 + 1;
+	    } else {
+		result += 5;
+		goto handle_popped_obj;
+	    }
+	    break;
+	case TUPLE_DEF:
+	    {
+		Eterm* ptr = tuple_val(obj);
 
-    case EXPORT_DEF:
-	{
-	    Export* ep = (Export *) (export_val(obj))[1];
-	    sum = 1;
-	    sum += encode_size_struct2(ep->code[0], dflags);
-	    sum += encode_size_struct2(ep->code[1], dflags);
-	    sum += encode_size_struct2(make_small(ep->code[2]), dflags);
-	    return sum;
+		arity = arityval(*ptr);
+		if (arity <= 0xff) {
+		    result += 1 + 1;
+		} else {
+		    result += 1 + 4;
+		}
+		ptr += arity;
+		obj = (Eterm) ptr;
+		goto handle_popped_obj;
+	    }
+	    break;
+	case FLOAT_DEF:
+	    if (dflags & DFLAG_NEW_FLOATS) {
+		result += 9;
+	    } else {
+		result += 32;   /* Yes, including the tag */
+	    }
+	    break;
+	case BINARY_DEF:
+	    result += 1 + 4 + binary_size(obj) +
+		5;			/* For unaligned binary */
+	    break;
+	case FUN_DEF:
+	    {
+		ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
+		
+		if ((dflags & DFLAG_NEW_FUN_TAGS) != 0) {
+		    result += 20+1+1+4;	/* New ID + Tag */
+		    result += 4; /* Length field (number of free variables */
+		    result += encode_size_struct2(funp->creator, dflags);
+		    result += encode_size_struct2(funp->fe->module, dflags);
+		    result += 2 * (1+4);	/* Index, Uniq */
+		} else {
+		    /*
+		     * Size when fun is mapped to a tuple.
+		     */
+		    result += 1 + 1; /* Tuple tag, arity */
+		    result += 1 + 1 + 2 +
+			atom_tab(atom_val(am_fun))->len; /* 'fun' */
+		    result += 1 + 1 + 2 +
+			atom_tab(atom_val(funp->fe->module))->len; /* Module name */
+		    result += 2 * (1 + 4); /* Index + Uniq */
+		    result += 1 + (funp->num_free < 0x100 ? 1 : 4);
+		}
+		for (i = 1; i < funp->num_free; i++) {
+		    obj = funp->env[i];
+
+		    if (is_not_list(obj)) {
+			/* Push any non-list terms on the stack */
+			ESTACK_PUSH(s, obj);
+		    } else {
+			/* Lists must be handled specially. */
+			if ((m = is_string(obj)) && (m < MAX_STRING_LEN)) {
+			    result += m + 2 + 1;
+			} else {
+			    result += 5;
+			    ESTACK_PUSH(s, obj);
+			}
+		    }
+		}
+		if (funp->num_free != 0) {
+		    obj = funp->env[0];
+		    goto L_jump_start;
+		}
+		break;
+	    }
+
+	case EXPORT_DEF:
+	    {
+		Export* ep = (Export *) (export_val(obj))[1];
+		result += 1;
+		result += encode_size_struct2(ep->code[0], dflags);
+		result += encode_size_struct2(ep->code[1], dflags);
+		result += encode_size_struct2(make_small(ep->code[2]), dflags);
+	    }
+	    break;
+
+	default:
+	    erl_exit(1,"Internal data structure error (in encode_size_struct2)%x\n",
+		     obj);
 	}
-	return 0;
-
-    default:
-	erl_exit(1,"Internal data structure error (in encode_size_struct2)%x\n",
-		 obj);
     }
-    return -1; /* Pedantic (lint does not know about erl_exit) */
+
+    DESTROY_ESTACK(s);
+    return result;
 }
 
 static Sint
@@ -1771,13 +1893,12 @@ decoded_size(byte *ep, byte* endp, int no_refc_bins)
     int terms = 1;
     int atom_extra_skip = 0;
     Uint n;
-    DECLARE_ESTACK(s);
 
 #define SKIP(sz)				\
     do {					\
 	if ((sz) <= endp-ep) {			\
 	    ep += (sz);				\
-        } else {return -1; };			\
+        } else { return -1; };			\
     } while (0)
 
 #define SKIP2(sz1, sz2)				\
@@ -1785,7 +1906,7 @@ decoded_size(byte *ep, byte* endp, int no_refc_bins)
 	Uint sz = (sz1) + (sz2);		\
 	if (sz1 < sz && (sz) <= endp-ep) {	\
 	    ep += (sz);				\
-        } else {return -1; }			\
+        } else { return -1; }			\
     } while (0)
 
 #define CHKSIZE(sz)				\
@@ -1793,188 +1914,182 @@ decoded_size(byte *ep, byte* endp, int no_refc_bins)
 	 if ((sz) > endp-ep) { return -1; }	\
     } while (0)
 
-    for (;;) {
-	while (terms-- > 0) {
-	    int tag;
+    while (terms-- > 0) {
+	int tag;
 
+	CHKSIZE(1);
+	tag = ep++[0];
+	switch (tag) {
+	case INTEGER_EXT:
+	    SKIP(4);
+	    heap_size += BIG_UINT_HEAP_SIZE;
+	    break;
+	case SMALL_INTEGER_EXT:
+	    SKIP(1);
+	    break;
+	case SMALL_BIG_EXT:
 	    CHKSIZE(1);
-	    tag = ep++[0];
-	    switch (tag) {
-	    case INTEGER_EXT:
-		SKIP(4);
-		heap_size += BIG_UINT_HEAP_SIZE;
-		break;
-	    case SMALL_INTEGER_EXT:
-		SKIP(1);
-		break;
-	    case SMALL_BIG_EXT:
-		CHKSIZE(1);
-		n = ep[0];		/* number of bytes */
-		SKIP2(n, 1+1);		/* skip size,sign,digits */
-		heap_size += 1+(n+sizeof(Eterm)-1)/sizeof(Eterm); /* XXX: 1 too much? */
-		break;
-	    case LARGE_BIG_EXT:
-		CHKSIZE(4);
-		n = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
-		SKIP2(n,4+1);		/* skip, size,sign,digits */
-		heap_size += 1+1+(n+sizeof(Eterm)-1)/sizeof(Eterm); /* XXX: 1 too much? */
-		break;
-	    case ATOM_EXT:
-		CHKSIZE(2);
-		n = (ep[0] << 8) | ep[1];
-		if (n > MAX_ATOM_LENGTH) {
-		    return -1;
-		}
-		SKIP(n+2+atom_extra_skip);
-		atom_extra_skip = 0;
-		break;
-	    case NEW_CACHE:
-		CHKSIZE(3);
-		n = get_int16(ep+1);
-		if (n > MAX_ATOM_LENGTH) {
-		    return -1;
-		}
-		SKIP(n+3+atom_extra_skip);
-		atom_extra_skip = 0;
-		break;
-	    case CACHED_ATOM:
-		SKIP(1+atom_extra_skip);
-		atom_extra_skip = 0;
-		break;
-	    case PID_EXT:
-		atom_extra_skip = 9;
-		 /* In case it is an external pid */
-		heap_size += EXTERNAL_THING_HEAD_SIZE + 1;
-		terms++;
-		break;
-	    case PORT_EXT:
-		atom_extra_skip = 5;
-		 /* In case it is an external port */
-		heap_size += EXTERNAL_THING_HEAD_SIZE + 1;
-		terms++;
-		break;
-	    case NEW_REFERENCE_EXT:
-		{
-		    int id_words;
-
-		    CHKSIZE(2);
-		    id_words = get_int16(ep);
-		    
-		    if (id_words > ERTS_MAX_REF_NUMBERS)
-			return -1;
-
-		    ep += 2;
-		    atom_extra_skip = 1 + 4*id_words;
-		    /* In case it is an external ref */
-#ifdef ARCH_64
-		    heap_size += EXTERNAL_THING_HEAD_SIZE + id_words/2 + 1;
-#else
-		    heap_size += EXTERNAL_THING_HEAD_SIZE + id_words;
-#endif
-		    terms++;
-		    break;
-		}
-	    case REFERENCE_EXT:
-		/* In case it is an external ref */
-		heap_size += EXTERNAL_THING_HEAD_SIZE + 1;
-		atom_extra_skip = 5;
-		terms++;
-		break;
-	    case NIL_EXT:
-		break;
-	    case LIST_EXT:
-		CHKSIZE(4);
-		ESTACK_PUSH(s, terms);
-		terms = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
-		terms++;
-		ep += 4;
-		heap_size += 2 * terms;
-		break;
-	    case SMALL_TUPLE_EXT:
-		CHKSIZE(1);
-		ESTACK_PUSH(s, terms);
-		terms = *ep++;
-		heap_size += terms + 1;
-		break;
-	    case LARGE_TUPLE_EXT:
-		CHKSIZE(4);
-		ESTACK_PUSH(s, terms);
-		terms = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
-		ep += 4;
-		heap_size += terms + 1;
-		break;
-	    case STRING_EXT:
-		CHKSIZE(2);
-		n = (ep[0] << 8) | ep[1];
-		SKIP(n+2);
-		heap_size += 2 * n;
-		break;
-	    case FLOAT_EXT:
-		SKIP(31);
-		heap_size += FLOAT_SIZE_OBJECT;
-		break;
-	    case NEW_FLOAT_EXT:
-		SKIP(8);
-		heap_size += FLOAT_SIZE_OBJECT;
-		break;
-	    case BINARY_EXT:
-		CHKSIZE(4);
-		n = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
-		SKIP2(n, 4);
-		if (n <= ERL_ONHEAP_BIN_LIMIT || no_refc_bins) {
-		    heap_size += heap_bin_size(n);
-		} else {
-		    heap_size += PROC_BIN_SIZE;
-		}
-		break;
-	    case BIT_BINARY_EXT:
-		{
-		    CHKSIZE(5);
-		    n = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
-		    SKIP2(n, 5);
-		    if (n <= ERL_ONHEAP_BIN_LIMIT || no_refc_bins) {
-			heap_size += heap_bin_size(n) + ERL_SUB_BIN_SIZE;
-		    } else {
-			heap_size += PROC_BIN_SIZE + ERL_SUB_BIN_SIZE;
-		    }
-		}
-		break;
-	    case EXPORT_EXT:
-		ESTACK_PUSH(s, terms);
-		terms = 3;
-		heap_size += 2;
-		break;
-	    case NEW_FUN_EXT:
-		{
-		    int num_free;
-		    Uint total_size;
-
-		    CHKSIZE(4);
-		    total_size = get_int32(ep);
-		    CHKSIZE(total_size);
-		    CHKSIZE(20+1+4);
-		    ep += 20+1+4;
-		    /*FALLTHROUGH*/
-
-		case FUN_EXT:
-		    CHKSIZE(4);
-		    num_free = get_int32(ep);
-		    ep += 4;
-		    ESTACK_PUSH(s, terms);
-		    terms = 4 + num_free;
-		    heap_size += ERL_FUN_SIZE + num_free;
-		    break;
-		}
-	    default:
+	    n = ep[0];		/* number of bytes */
+	    SKIP2(n, 1+1);		/* skip size,sign,digits */
+	    heap_size += 1+(n+sizeof(Eterm)-1)/sizeof(Eterm); /* XXX: 1 too much? */
+	    break;
+	case LARGE_BIG_EXT:
+	    CHKSIZE(4);
+	    n = get_int32(ep);
+	    SKIP2(n,4+1);		/* skip, size,sign,digits */
+	    heap_size += 1+1+(n+sizeof(Eterm)-1)/sizeof(Eterm); /* XXX: 1 too much? */
+	    break;
+	case ATOM_EXT:
+	    CHKSIZE(2);
+	    n = get_int16(ep);
+	    if (n > MAX_ATOM_LENGTH) {
 		return -1;
 	    }
+	    SKIP(n+2+atom_extra_skip);
+	    atom_extra_skip = 0;
+	    break;
+	case NEW_CACHE:
+	    CHKSIZE(3);
+	    n = get_int16(ep+1);
+	    if (n > MAX_ATOM_LENGTH) {
+		return -1;
+	    }
+	    SKIP(n+3+atom_extra_skip);
+	    atom_extra_skip = 0;
+	    break;
+	case CACHED_ATOM:
+	    SKIP(1+atom_extra_skip);
+	    atom_extra_skip = 0;
+	    break;
+	case PID_EXT:
+	    atom_extra_skip = 9;
+	    /* In case it is an external pid */
+	    heap_size += EXTERNAL_THING_HEAD_SIZE + 1;
+	    terms++;
+	    break;
+	case PORT_EXT:
+	    atom_extra_skip = 5;
+	    /* In case it is an external port */
+	    heap_size += EXTERNAL_THING_HEAD_SIZE + 1;
+	    terms++;
+	    break;
+	case NEW_REFERENCE_EXT:
+	    {
+		int id_words;
+
+		CHKSIZE(2);
+		id_words = get_int16(ep);
+		    
+		if (id_words > ERTS_MAX_REF_NUMBERS)
+		    return -1;
+
+		ep += 2;
+		atom_extra_skip = 1 + 4*id_words;
+		/* In case it is an external ref */
+#ifdef ARCH_64
+		heap_size += EXTERNAL_THING_HEAD_SIZE + id_words/2 + 1;
+#else
+		heap_size += EXTERNAL_THING_HEAD_SIZE + id_words;
+#endif
+		terms++;
+		break;
+	    }
+	case REFERENCE_EXT:
+	    /* In case it is an external ref */
+	    heap_size += EXTERNAL_THING_HEAD_SIZE + 1;
+	    atom_extra_skip = 5;
+	    terms++;
+	    break;
+	case NIL_EXT:
+	    break;
+	case LIST_EXT:
+	    CHKSIZE(4);
+	    n = get_int32(ep);
+	    ep += 4;
+	    terms += n + 1;
+	    heap_size += 2 * n;
+	    break;
+	case SMALL_TUPLE_EXT:
+	    CHKSIZE(1);
+	    n = *ep++;
+	    terms += n;
+	    heap_size += n + 1;
+	    break;
+	case LARGE_TUPLE_EXT:
+	    CHKSIZE(4);
+	    n = get_int32(ep);
+	    ep += 4;
+	    terms += n;
+	    heap_size += n + 1;
+	    break;
+	case STRING_EXT:
+	    CHKSIZE(2);
+	    n = get_int16(ep);
+	    SKIP(n+2);
+	    heap_size += 2 * n;
+	    break;
+	case FLOAT_EXT:
+	    SKIP(31);
+	    heap_size += FLOAT_SIZE_OBJECT;
+	    break;
+	case NEW_FLOAT_EXT:
+	    SKIP(8);
+	    heap_size += FLOAT_SIZE_OBJECT;
+	    break;
+	case BINARY_EXT:
+	    CHKSIZE(4);
+	    n = get_int32(ep);
+	    SKIP2(n, 4);
+	    if (n <= ERL_ONHEAP_BIN_LIMIT || no_refc_bins) {
+		heap_size += heap_bin_size(n);
+	    } else {
+		heap_size += PROC_BIN_SIZE;
+	    }
+	    break;
+	case BIT_BINARY_EXT:
+	    {
+		CHKSIZE(5);
+		n = get_int32(ep);
+		SKIP2(n, 5);
+		if (n <= ERL_ONHEAP_BIN_LIMIT || no_refc_bins) {
+		    heap_size += heap_bin_size(n) + ERL_SUB_BIN_SIZE;
+		} else {
+		    heap_size += PROC_BIN_SIZE + ERL_SUB_BIN_SIZE;
+		}
+	    }
+	    break;
+	case EXPORT_EXT:
+	    terms += 3;
+	    heap_size += 2;
+	    break;
+	case NEW_FUN_EXT:
+	    {
+		int num_free;
+		Uint total_size;
+
+		CHKSIZE(4);
+		total_size = get_int32(ep);
+		CHKSIZE(total_size);
+		CHKSIZE(1+16+4+4);
+		ep += 1+16+4+4;
+		/*FALLTHROUGH*/
+
+	    case FUN_EXT:
+		CHKSIZE(4);
+		num_free = get_int32(ep);
+		ep += 4;
+		if (num_free > MAX_ARG) {
+		    return -1;
+		}
+		terms += 4 + num_free;
+		heap_size += ERL_FUN_SIZE + num_free;
+		break;
+	    }
+	default:
+	    return -1;
 	}
-	if (ESTACK_ISEMPTY(s)) {
-	    DESTROY_ESTACK(s);
-	    return heap_size;
-	}
-	terms = ESTACK_POP(s);
     }
+    return heap_size;
 #undef SKIP
 #undef SKIP2
 #undef CHKSIZE

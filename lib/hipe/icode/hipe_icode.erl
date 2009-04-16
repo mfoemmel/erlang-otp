@@ -394,7 +394,7 @@
 %%    | binary
 %%    | function
 %%
-%% @type mfa(Mod,Fun,Arity) = {atom(),atom(),byte()}
+%% @type mfa(Mod,Fun,Arity) = {atom(),atom(),arity()}
 
 %% @type arg() = var() | const()
 %% @type farg() = fvar() | float()
@@ -676,10 +676,10 @@ icode_info(#icode{info=Info}) -> Info.
 -spec icode_info_update(#icode{}, [{arg_types, [erl_type()]}]) -> #icode{}.
 icode_info_update(Icode, Info) -> Icode#icode{info=Info}.
 
--spec icode_closure_arity(#icode{}) -> byte().
+-spec icode_closure_arity(#icode{}) -> arity().
 icode_closure_arity(#icode{closure_arity=Arity}) -> Arity.
 
--spec icode_closure_arity_update(#icode{}, byte()) -> #icode{}.
+-spec icode_closure_arity_update(#icode{}, arity()) -> #icode{}.
 icode_closure_arity_update(Icode, Arity) -> Icode#icode{closure_arity=Arity}.
   
 
@@ -985,12 +985,12 @@ phi_redirect_pred(P, OldPred, NewPred) ->
 %% MFA:s, and this way we won't have to rewrite all calls to mk_guardop
 %% to flag whether they are primops or not.
 
--spec mk_primop([#icode_variable{}], icode_primop() | mfa(),
+-spec mk_primop([#icode_variable{}], icode_funcall(),
 	        [icode_argument()]) -> #icode_call{}.
 mk_primop(DstList, Fun, ArgList) ->
   mk_primop(DstList, Fun, ArgList, [], []).
 
--spec mk_primop([#icode_variable{}], icode_primop() | mfa(),
+-spec mk_primop([#icode_variable{}], icode_funcall(),
 	        [icode_argument()], [] | icode_lbl(), [] | icode_lbl()) ->
 	 #icode_call{}.
 mk_primop(DstList, Fun, ArgList, Continuation, Fail) ->
@@ -1000,7 +1000,7 @@ mk_primop(DstList, Fun, ArgList, Continuation, Fail) ->
 %% Note that a 'guardop' is just a call that occurred in a guard. In
 %% this case, we should always have continuation labels True and False.
 
--spec mk_guardop([#icode_variable{}], icode_primop() | mfa(),
+-spec mk_guardop([#icode_variable{}], icode_funcall(),
 	         [icode_argument()], icode_lbl(), icode_lbl()) -> #icode_call{}.
 mk_guardop(DstList, Fun, ArgList, True, False) ->
   Type = op_type(Fun),
@@ -1045,7 +1045,7 @@ mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, InGuard)
 %% Note: If the "guard" flag is `true', it means that if the call fails,
 %% we can simply jump to the Fail label (if it exists) without
 %% generating any additional exception information - it isn't needed.
--spec make_call([#icode_variable{}], icode_primop() | mfa(), [icode_argument()],
+-spec make_call([#icode_variable{}], icode_funcall(), [icode_argument()],
 	        icode_call_type(), [] | icode_lbl(), [] | icode_lbl(), bool()) ->
 	 #icode_call{}.
 make_call(DstList, Fun, ArgList, Type, Continuation, Fail, InGuard) ->
@@ -1070,12 +1070,12 @@ call_args(#icode_call{args=Args}) -> Args.
 -spec call_args_update(#icode_call{}, [icode_argument()]) -> #icode_call{}.
 call_args_update(C, Args) -> C#icode_call{args=Args}.
 
--spec call_fun(#icode_call{}) -> icode_primop() | mfa().
+-spec call_fun(#icode_call{}) -> icode_funcall().
 call_fun(#icode_call{'fun'=Fun}) -> Fun.
 
 %% Note that updating the name field requires recomputing the call type,
 %% in case it changes from a remote/local call to a primop call.
--spec call_fun_update(#icode_call{}, icode_primop() | mfa()) -> #icode_call{}.
+-spec call_fun_update(#icode_call{}, icode_funcall()) -> #icode_call{}.
 call_fun_update(C, Fun) ->
   Type = case is_mfa(Fun) of
 	   true -> call_type(C);
@@ -1122,10 +1122,10 @@ mk_enter(M, F, Args, Type) when is_atom(M), is_atom(F) ->
   end,
   #icode_enter{'fun'={M,F,length(Args)}, args=Args, type=Type}.
 
--spec enter_fun(#icode_enter{}) -> icode_primop() | mfa().
+-spec enter_fun(#icode_enter{}) -> icode_funcall().
 enter_fun(#icode_enter{'fun'=Fun}) -> Fun.
 
--spec enter_fun_update(#icode_enter{}, icode_primop() | mfa()) ->
+-spec enter_fun_update(#icode_enter{}, icode_funcall()) ->
 	 #icode_enter{}.
 enter_fun_update(E, Fun) ->
   Type = case is_mfa(Fun) of

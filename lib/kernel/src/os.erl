@@ -172,8 +172,43 @@ unix_cmd(Cmd) ->
 %%
 %%  start_port() -> Port
 %%
+%% Serializing open_port through a process to avoid smp lock contention
+%% when many concurrent os:cmd() want to do vfork (OTP-7890).
 start_port() ->
-    open_port({spawn, ?SHELL},[stream]).
+    {Ref,Client} = {make_ref(),self()},
+    try (os_cmd_port_creator ! {Ref,Client})
+    catch
+	error:_ -> spawn(fun() -> start_port_srv({Ref,Client}) end)
+    end,
+    receive
+	{Ref,Port} when is_port(Port) -> Port;
+	{Ref,Error} -> exit(Error)
+    end.
+	
+start_port_srv(Request) ->
+    StayAlive = try register(os_cmd_port_creator, self())
+		catch
+		    error:_ -> false
+		end,
+    start_port_srv_loop(Request, StayAlive).
+
+start_port_srv_loop({Ref,Client}, StayAlive) ->
+    Reply = try open_port({spawn, ?SHELL},[stream]) of
+		Port when is_port(Port) ->
+		    port_connect(Port, Client),
+		    unlink(Port),
+		    Port
+	    catch
+		error:Reason ->
+		    {Reason,erlang:get_stacktrace()}	    
+	    end,
+    Client ! {Ref,Reply},
+    case StayAlive of
+	true -> start_port_srv_loop(receive Msg -> Msg end, true);
+	false -> exiting
+    end.
+
+
 
 %%
 %%  unix_get_data(Port) -> Result

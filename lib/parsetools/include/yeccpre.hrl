@@ -119,11 +119,14 @@ yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
 
 % For internal use only.
 yeccerror(Token) ->
-    Text = case erl_scan:token_info(Token, text) of
-               undefined -> yecctoken2string(Token);
-               {text, Txt} -> Txt
+    Text = case catch erl_scan:token_info(Token, text) of
+               {text, Txt} -> Txt;
+               _ -> yecctoken2string(Token)
            end,
-    {location, Location} = erl_scan:token_info(Token, location),
+    Location = case catch erl_scan:token_info(Token, location) of
+                   {location, Loc} -> Loc;
+                   _ -> element(2, Token)
+               end,
     {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);

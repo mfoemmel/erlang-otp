@@ -194,6 +194,9 @@ void handle_event_callback(ErlDrvPort port, ErlDrvTermData process);
 
 void activateGL(ErlDrvTermData caller);
 void setActiveGL(ErlDrvTermData caller, wxGLCanvas *canvas);
+void deleteActiveGL(wxGLCanvas *canvas);
+
+void send_msg(char *, wxString *);   // For debugging and error msgs
 
 extern wxeGLC glc;
 
@@ -237,6 +240,5 @@ class wxEPrintout : public wxPrintout
 
    ErlDrvPort port;
 };
-
 
 #endif  //_WXE_IMPL_H

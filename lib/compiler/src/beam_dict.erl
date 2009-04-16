@@ -28,16 +28,18 @@
 
 -import(lists, [map/2]).
 
--type label() :: integer().
+-type label() :: non_neg_integer().
+
+-type arity() :: 0..255.			%XXX Remove in R13B01.
 
 -record(asm,
-	{atoms = gb_trees:empty(),		%{Atom,Index}
-	 exports = []			:: [{pos_integer(), byte(), label()}],
-	 locals = []			:: [{pos_integer(), byte(), label()}],
-	 imports = gb_trees:empty(),		%{{M,F,A},Index}
+	{atoms = gb_trees:empty()	:: gb_tree(),		%{Atom,Index}
+	 exports = []			:: [{label(), arity(), label()}],
+	 locals = []			:: [{label(), arity(), label()}],
+	 imports = gb_trees:empty()	:: gb_tree(),		%{{M,F,A},Index}
 	 strings = []			:: [string()],	%String pool
 	 lambdas = [],				%[{...}]
-	 literals = dict:new(),			%Format: {Literal,Number}
+	 literals = dict:new()		:: dict(),	%Format: {Literal,Number}
 	 next_atom = 1			:: pos_integer(),
 	 next_import = 0		:: non_neg_integer(),
 	 string_offset = 0		:: non_neg_integer(),
@@ -79,7 +81,7 @@ atom(Atom, #asm{atoms=Atoms0,next_atom=NextIndex}=Dict) when is_atom(Atom) ->
 
 %% Remembers an exported function.
 %%    export(Func, Arity, Label, Dict) -> Dict'
--spec export(atom(), byte(), label(), bdict()) -> bdict().
+-spec export(atom(), arity(), label(), bdict()) -> bdict().
 
 export(Func, Arity, Label, Dict0) when is_atom(Func),
 				       is_integer(Arity),
@@ -89,7 +91,7 @@ export(Func, Arity, Label, Dict0) when is_atom(Func),
 
 %% Remembers a local function.
 %%    local(Func, Arity, Label, Dict) -> Dict'
--spec local(atom(), byte(), label(), bdict()) -> bdict().
+-spec local(atom(), arity(), label(), bdict()) -> bdict().
 
 local(Func, Arity, Label, Dict0) when is_atom(Func),
 				      is_integer(Arity),
@@ -99,7 +101,7 @@ local(Func, Arity, Label, Dict0) when is_atom(Func),
 
 %% Returns the index for an import entry (adding it to the import table if necessary).
 %%    import(Mod, Func, Arity, Dict) -> {Index,Dict'}
--spec import(atom(), atom(), byte(), bdict()) -> {non_neg_integer(), bdict()}.
+-spec import(atom(), atom(), arity(), bdict()) -> {non_neg_integer(), bdict()}.
 
 import(Mod0, Name0, Arity, #asm{imports=Imp0,next_import=NextIndex}=D0)
   when is_atom(Mod0), is_atom(Name0), is_integer(Arity) ->
@@ -168,21 +170,21 @@ atom_table(#asm{atoms=Atoms,next_atom=NumAtoms}) ->
 
 %% Returns the table of local functions.
 %%    local_table(Dict) -> {NumLocals, [{Function, Arity, Label}...]}
--spec local_table(bdict()) -> {non_neg_integer(), [{atom(),byte(),label()}]}.
+-spec local_table(bdict()) -> {non_neg_integer(), [{label(),arity(),label()}]}.
 
 local_table(#asm{locals = Locals}) ->
     {length(Locals),Locals}.
 
 %% Returns the export table.
 %%    export_table(Dict) -> {NumExports, [{Function, Arity, Label}...]}
--spec export_table(bdict()) -> {non_neg_integer(), [{atom(),byte(),label()}]}.
+-spec export_table(bdict()) -> {non_neg_integer(), [{label(),arity(),label()}]}.
 
 export_table(#asm{exports = Exports}) ->
     {length(Exports),Exports}.
 
 %% Returns the import table.
 %%    import_table(Dict) -> {NumImports, [{Module, Function, Arity}...]}
--spec import_table(bdict()) -> {non_neg_integer(), [{mfa()}]}.
+-spec import_table(bdict()) -> {non_neg_integer(), [{label(),label(),arity()}]}.
 
 import_table(#asm{imports=Imp,next_import=NumImports}) ->
     Sorted = lists:keysort(2, gb_trees:to_list(Imp)),

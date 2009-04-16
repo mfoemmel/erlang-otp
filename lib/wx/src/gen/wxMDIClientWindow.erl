@@ -91,7 +91,8 @@ new(Parent)
 new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
  when is_list(Options) ->
   ?CLASS(ParentT,wxMDIParentFrame),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxMDIClientWindow_new_2,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -109,7 +110,8 @@ createClient(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef}
  when is_list(Options) ->
   ?CLASS(ThisT,wxMDIClientWindow),
   ?CLASS(ParentT,wxMDIParentFrame),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxMDIClientWindow_CreateClient,
   <<ThisRef:32/?UI,ParentRef:32/?UI, BinOpt/binary>>).

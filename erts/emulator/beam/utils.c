@@ -2554,28 +2554,6 @@ store_external_or_ref_in_proc_(Process *proc, Eterm ns)
     return store_external_or_ref_(&hp, &MSO(proc).externals, ns);
 }
 
-/* 
- *  member(X,Y)
- *  returns 0 if X is a member of list Y
- *  returns 1 if X is not a member of list Y
- *  returns 2 if Y is not a list or is a badly formed list
- */
-
-int
-member(Eterm x, Eterm y)
-{
-    Eterm* z;
-    if (is_nil(y)) return(1); /* empty list */
-    if (is_not_list(y)) return(2); /* bad argument */
-    z = list_val(y);
-    for (;;) {
-	if (eq(*z, x)) return(0);
-	if (is_nil(*(z + 1))) return(1); /* end of list */
-	if (is_not_list(*(z + 1))) return(2); /* badly formed list */
-	z = list_val(*(z + 1));
-    }
-}
-
 void bin_write(int to, void *to_arg, byte* buf, int sz)
 {
     int i;

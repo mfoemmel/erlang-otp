@@ -500,28 +500,11 @@ rule_body -> ':-' lc_exprs: '$2'.
 
 Erlang code.
 
-%% ``The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-%%
-
 -export([parse_form/1,parse_exprs/1,parse_term/1]).
 -export([normalise/1,abstract/1,tokens/1,tokens/2]).
 -export([abstract/2, package_segments/1]).
 -export([inop_prec/1,preop_prec/1,func_prec/0,max_prec/0]).
+-export([set_line/2,get_attribute/2,get_attributes/1]).
 
 %% The following directive is needed for (significantly) faster compilation
 %% of the generated .erl file by the HiPE compiler.  Please do not remove.
@@ -593,7 +576,7 @@ build_typed_attribute({atom,La,Attr},_) ->
         record -> error_bad_decl(La, record);
         type   -> error_bad_decl(La, type);
 	opaque -> error_bad_decl(La, opaque);
-        _      -> return_error(La, "bad attribute")
+        _      -> ret_err(La, "bad attribute")
     end.
 
 build_type_spec({spec,La}, {SpecFun, TypeSpecs}) ->
@@ -637,7 +620,7 @@ build_bin_type([{var, _, '_'}|Left], Int) ->
 build_bin_type([], Int) ->
     Int;
 build_bin_type([{var, La, _}|_], _) ->
-    return_error(La, "Bad binary type").
+    ret_err(La, "Bad binary type").
 
 %% build_attribute(AttrName, AttrValue) ->
 %%	{attribute,Line,module,Module}
@@ -713,14 +696,14 @@ build_attribute({atom,La,Attr}, Val) ->
 	[Expr0] ->
 	    Expr = attribute_farity(Expr0),
 	    {attribute,La,Attr,term(Expr)};
-	_Other -> return_error(La, "bad attribute")
+	_Other -> ret_err(La, "bad attribute")
     end.
 
 var_list({cons,_Lc,{var,_,V},Tail}) ->
     [V|var_list(Tail)];
 var_list({nil,_Ln}) -> [];
 var_list(Other) ->
-    return_error(?line(Other), "bad variable list").
+    ret_err(?line(Other), "bad variable list").
 
 attribute_farity({cons,L,H,T}) ->
     {cons,L,attribute_farity(H),attribute_farity(T)};
@@ -737,18 +720,18 @@ attribute_farity_list(Args) ->
 -spec error_bad_decl(integer(), attributes()) -> no_return().
 
 error_bad_decl(L, S) ->
-    return_error(L, io_lib:format("bad ~w declaration", [S])).
+    ret_err(L, io_lib:format("bad ~w declaration", [S])).
 
 farity_list({cons,_Lc,{op,_Lo,'/',{atom,_La,A},{integer,_Li,I}},Tail}) ->
     [{A,I}|farity_list(Tail)];
 farity_list({nil,_Ln}) -> [];
 farity_list(Other) ->
-    return_error(?line(Other), "bad function arity").
+    ret_err(?line(Other), "bad function arity").
 
 record_tuple({tuple,_Lt,Fields}) ->
     record_fields(Fields);
 record_tuple(Other) ->
-    return_error(?line(Other), "bad record declaration").
+    ret_err(?line(Other), "bad record declaration").
 
 record_fields([{atom,La,A}|Fields]) ->
     [{record_field,La,{atom,La,A}}|record_fields(Fields)];
@@ -764,12 +747,12 @@ record_fields([{typed,Expr,TypeInfo}|Fields]) ->
 	end, 
     [{typed_record_field,Field,TypeInfo1}|record_fields(Fields)];
 record_fields([Other|_Fields]) ->
-    return_error(?line(Other), "bad record field");
+    ret_err(?line(Other), "bad record field");
 record_fields([]) -> [].
 
 term(Expr) ->
     try normalise(Expr)
-    catch _:_R -> return_error(?line(Expr), "bad attribute")
+    catch _:_R -> ret_err(?line(Expr), "bad attribute")
     end.
 
 package_segments(Name) ->
@@ -808,10 +791,14 @@ check_clauses(Cs, Name, Arity) ->
      mapl(fun ({clause,L,N,As,G,B}) when N =:= Name, length(As) =:= Arity ->
 		 {clause,L,As,G,B};
 	     ({clause,L,_N,_As,_G,_B}) ->
-		 return_error(L, "head mismatch") end, Cs).
+		 ret_err(L, "head mismatch") end, Cs).
 
 build_try(L,Es,Scs,{Ccs,As}) ->
     {'try',L,Es,Scs,Ccs,As}.
+
+ret_err(L, S) ->
+    {location,Location} = get_attribute(L, location),
+    return_error(Location, S).
 
 %% mapl(F,List)
 %% an alternative map which always maps from left to right
@@ -1020,3 +1007,22 @@ func_prec() -> {800,700}.
 -spec max_prec() -> 1000.
 
 max_prec() -> 1000.
+
+%%% [Experimental]. The parser just copies the attributes of the
+%%% scanner tokens to the abstract format. This design decision has
+%%% been hidden to some extent: use set_line() and get_attribute() to
+%%% access the second element of (almost all) of the abstract format
+%%% tuples. A typical use is to negate line numbers to prevent the
+%%% compiler from emitting warnings and errors. The second element can
+%%% (of course) be set to any value, but then these functions no
+%%% longer apply. To get all present attributes as a property list
+%%% get_attributes() should be used.
+
+set_line(L, F) ->
+    erl_scan:set_attribute(line, L, F).
+
+get_attribute(L, Name) ->
+    erl_scan:attributes_info(L, Name).
+
+get_attributes(L) ->
+    erl_scan:attributes_info(L).

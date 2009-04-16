@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxcalendarevent.html">wxCalendarEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>calendar_sel_changed</em>, <em>calendar_day_changed</em>, <em>calendar_month_changed</em>, <em>calendar_year_changed</em>, <em>calendar_doubleclicked</em>, <em>calendar_weekday_clicked</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxCalendar(). #wxCalendar{}} event record type.
 %%

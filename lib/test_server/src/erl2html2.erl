@@ -114,7 +114,7 @@ read_to_char(Line0, [], Res, _Chr) ->
 read_to_char(Line0, [Char|Code], Res, Chr) ->
     case Char of
 	Chr -> {Char, Line0, Code, Res};
-	_ when list(Chr) ->
+	_ when is_list(Chr) ->
 	    case lists:member(Char,Chr) of
 		true -> 
 		    {Char, Line0, Code, Res};

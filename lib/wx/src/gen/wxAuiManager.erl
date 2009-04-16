@@ -52,7 +52,8 @@ new() ->
 new(Options)
  when is_list(Options) ->
   MOpts = fun({managed_wnd, #wx_ref{type=Managed_wndT,ref=Managed_wndRef}}, Acc) ->   ?CLASS(Managed_wndT,wxWindow),[<<1:32/?UI,Managed_wndRef:32/?UI>>|Acc];
-          ({flags, Flags}, Acc) -> [<<2:32/?UI,Flags:32/?UI>>|Acc]  end,
+          ({flags, Flags}, Acc) -> [<<2:32/?UI,Flags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxAuiManager_new,
   <<BinOpt/binary>>).
@@ -78,7 +79,8 @@ addPane(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=WindowT,ref=WindowRef}, Opt
   ?CLASS(ThisT,wxAuiManager),
   ?CLASS(WindowT,wxWindow),
   MOpts = fun({direction, Direction}, Acc) -> [<<1:32/?UI,Direction:32/?UI>>|Acc];
-          ({caption, Caption}, Acc) ->   Caption_UC = unicode:characters_to_binary([Caption,0]),[<<2:32/?UI,(byte_size(Caption_UC)):32/?UI,(Caption_UC)/binary, 0:(((8- ((0+byte_size(Caption_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+          ({caption, Caption}, Acc) ->   Caption_UC = unicode:characters_to_binary([Caption,0]),[<<2:32/?UI,(byte_size(Caption_UC)):32/?UI,(Caption_UC)/binary, 0:(((8- ((0+byte_size(Caption_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiManager_AddPane_2_0,
   <<ThisRef:32/?UI,WindowRef:32/?UI, BinOpt/binary>>);
@@ -191,7 +193,8 @@ insertPane(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=WindowT,ref=WindowRef},#
   ?CLASS(ThisT,wxAuiManager),
   ?CLASS(WindowT,wxWindow),
   ?CLASS(Insert_locationT,wxAuiPaneInfo),
-  MOpts = fun({insert_level, Insert_level}, Acc) -> [<<1:32/?UI,Insert_level:32/?UI>>|Acc]  end,
+  MOpts = fun({insert_level, Insert_level}, Acc) -> [<<1:32/?UI,Insert_level:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiManager_InsertPane,
   <<ThisRef:32/?UI,WindowRef:32/?UI,Insert_locationRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -219,7 +222,8 @@ loadPerspective(#wx_ref{type=ThisT,ref=ThisRef},Perspective, Options)
  when is_list(Perspective),is_list(Options) ->
   ?CLASS(ThisT,wxAuiManager),
   Perspective_UC = unicode:characters_to_binary([Perspective,0]),
-  MOpts = fun({update, Update}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Update)):32/?UI>>|Acc]  end,
+  MOpts = fun({update, Update}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Update)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiManager_LoadPerspective,
   <<ThisRef:32/?UI,(byte_size(Perspective_UC)):32/?UI,(Perspective_UC)/binary, 0:(((8- ((0+byte_size(Perspective_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

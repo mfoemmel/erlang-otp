@@ -255,7 +255,8 @@ union(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=BmpT,ref=BmpRef},Transp, Opti
  when tuple_size(Transp) =:= 3; tuple_size(Transp) =:= 4,is_list(Options) ->
   ?CLASS(ThisT,wxRegion),
   ?CLASS(BmpT,wxBitmap),
-  MOpts = fun({tolerance, Tolerance}, Acc) -> [<<1:32/?UI,Tolerance:32/?UI>>|Acc]  end,
+  MOpts = fun({tolerance, Tolerance}, Acc) -> [<<1:32/?UI,Tolerance:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxRegion_Union_3,
   <<ThisRef:32/?UI,BmpRef:32/?UI,(wxe_util:colour_bin(Transp)):16/binary, BinOpt/binary>>).

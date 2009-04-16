@@ -237,7 +237,7 @@ munge_expr(Form, Vars) -> % var|char|integer|float|string|atom|nil|bin|eof
     {Form, Vars}.
 
 munge_exprs([Expr|Exprs], Vars, MungedExprs) when Vars#vars.is_guard==true,
-						  list(Expr) ->
+						  is_list(Expr) ->
     {MungedExpr, _Vars} = munge_exprs(Expr, Vars, []),
     munge_exprs(Exprs, Vars, [MungedExpr|MungedExprs]);
 munge_exprs([Expr|Exprs], Vars, MungedExprs) ->

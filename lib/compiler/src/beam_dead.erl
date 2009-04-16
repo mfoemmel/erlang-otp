@@ -367,9 +367,9 @@ backward([{jump,{f,To}}=J|[{bif,Op,_,Ops,Reg}|Is]=Is0], D, Acc) ->
     catch
 	throw:not_possible -> backward(Is0, D, [J|Acc])
     end;
-backward([{test,bs_start_match2,{f,To0},[Src|_]=Info}|Is], D, Acc) ->
+backward([{test,bs_start_match2,{f,To0},Live,[Src|_]=Info,Dst}|Is], D, Acc) ->
     To = shortcut_bs_start_match(To0, Src, D),
-    I = {test,bs_start_match2,{f,To},Info},
+    I = {test,bs_start_match2,{f,To},Live,Info,Dst},
     backward(Is, D, [I|Acc]);
 backward([{test,is_eq_exact=Op,{f,To0},[Reg,{atom,Val}]=Ops}|Is], D, Acc) ->
     To1 = shortcut_bs_test(To0, Is, D),
@@ -395,6 +395,26 @@ backward([{test,Op,{f,To0},Ops0}|Is], D, Acc) ->
 		 To2
 	 end,
     I = {test,Op,{f,To},Ops0},
+    backward(Is, D, [I|Acc]);
+backward([{test,Op,{f,To0},Live,Ops0,Dst}|Is], D, Acc) ->
+    To1 = shortcut_bs_test(To0, Is, D),
+    To2 = shortcut_label(To1, D),
+    %% Try to shortcut a repeated test:
+    %%
+    %%        test Op {f,Fail1} _ Ops _ 	test Op {f,Fail2} _ Ops _
+    %%        . . .		          ==>   ...
+    %% Fail1: test Op {f,Fail2} _ Ops _   Fail1: test Op {f,Fail2} _ Ops _
+    %%
+    To = case beam_utils:code_at(To2, D) of
+	     [{test,Op,{f,To3},_,Ops,_}|_] ->
+		 case equal_ops(Ops0, Ops) of
+		     true -> To3;
+		     false -> To2
+		 end;
+	     _Code ->
+		 To2
+	 end,
+    I = {test,Op,{f,To},Live,Ops0,Dst},
     backward(Is, D, [I|Acc]);
 backward([{kill,_}=I|Is], D, [Exit|_]=Acc) ->
     case beam_jump:is_exit_instruction(Exit) of
@@ -534,7 +554,7 @@ shortcut_bs_test_2([{test,bs_test_tail2,{f,To},[_,TailBits]}|_],
     end;
 shortcut_bs_test_2([_|_], _, _, To, _) -> To.
 
-count_bits_matched([{test,_,_,[_,_,Sz,U,{field_flags,_},_]}|Is], SavePoint, Bits) ->
+count_bits_matched([{test,_,_,_,[_,Sz,U,{field_flags,_}],_}|Is], SavePoint, Bits) ->
     case Sz of
 	{integer,N} -> count_bits_matched(Is, SavePoint, Bits+N*U);
 	_ -> count_bits_matched(Is, SavePoint, Bits)
@@ -573,7 +593,7 @@ shortcut_bs_start_match_1(_, _, To) -> To.
 
 shortcut_bs_start_match_2([{jump,{f,To}}|_], _, _) ->
     To;
-shortcut_bs_start_match_2([{test,bs_start_match2,{f,To},[Reg|_]}|_], Reg, _) ->
+shortcut_bs_start_match_2([{test,bs_start_match2,{f,To},_,[Reg|_],_}|_], Reg, _) ->
     To;
 shortcut_bs_start_match_2(_Is, _Reg, To) ->
     To.

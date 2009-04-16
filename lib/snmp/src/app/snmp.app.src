@@ -94,6 +94,7 @@
              snmpm_supervisor,
              snmpm_user,
              snmpm_user_default,
+             snmpm_user_old,
              snmpm_usm,
 
              %% Misc modules

@@ -32,21 +32,35 @@
 -define(default_timeout, 5000).
 
 %%-----------------------------------------------------------------
+
+-type linkage()   :: 'link' | 'nolink'.
+-type emgr_name() :: {'local', atom()} | {'global', atom()}.
+%%-type emgr_ref()  :: atom() | {atom(), atom()} |  {'global', atom()} | pid().
+-type start_ret() :: {'ok', pid()} | {'error', term()}.
+
+-type opts_flag() :: 'trace' | 'log' | 'statistics' | 'debug'
+                   | {'logfile', string()}.
+-type options()   :: [{'timeout', timeout()} | {'debug', [opts_flag()]}].
+
+%%-----------------------------------------------------------------
 %% Starts a generic process.
 %% start(GenMod, LinkP, Mod, Args, Options)
 %% start(GenMod, LinkP, Name, Mod, Args, Options)
-%% start_link(Mod, Args, Options)
-%% start_link(Name, Mod, Args, Options) where:
+%%    GenMod = atom(), callback module implementing the 'real' fsm
+%%    LinkP = link | nolink
 %%    Name = {local, atom()} | {global, atom()}
-%%    Mod  = atom(), callback module implementing the 'real' fsm
 %%    Args = term(), init arguments (to Mod:init/1)
-%%    Options = [{debug, [Flag]}]
+%%    Options = [{timeout, Timeout} | {debug, [Flag]}]
 %%      Flag = trace | log | {logfile, File} | statistics | debug
 %%          (debug == log && statistics)
-%% Returns: {ok, Pid} |
-%%          {error, {already_started, Pid}} |
-%%          {error, Reason}
+%% Returns: {ok, Pid} | {error, Reason} |
+%%          {error, {already_started, Pid}}
+%%    The 'already_started' is returned only if Name is given 
 %%-----------------------------------------------------------------
+
+-spec start(module(), linkage(), emgr_name(), module(), term(), options()) ->
+	start_ret().
+
 start(GenMod, LinkP, Name, Mod, Args, Options) ->
     case where(Name) of
 	undefined ->
@@ -55,38 +69,40 @@ start(GenMod, LinkP, Name, Mod, Args, Options) ->
 	    {error, {already_started, Pid}}
     end.
 
+-spec start(module(), linkage(), module(), term(), options()) -> start_ret().
+
 start(GenMod, LinkP, Mod, Args, Options) ->
     do_spawn(GenMod, LinkP, Mod, Args, Options).
 
 %%-----------------------------------------------------------------
 %% Spawn the process (and link) maybe at another node.
-%% If spawn without link, set parent to our selves "self"!!!
+%% If spawn without link, set parent to ourselves 'self'!!!
 %%-----------------------------------------------------------------
 do_spawn(GenMod, link, Mod, Args, Options) ->
     Time = timeout(Options),
-    proc_lib:start_link(gen, init_it,
+    proc_lib:start_link(?MODULE, init_it,
 			[GenMod, self(), self(), Mod, Args, Options], 
 			Time,
 			spawn_opts(Options));
 do_spawn(GenMod, _, Mod, Args, Options) ->
     Time = timeout(Options),
-    proc_lib:start(gen, init_it,
+    proc_lib:start(?MODULE, init_it,
 		   [GenMod, self(), self, Mod, Args, Options], 
 		   Time,
 		   spawn_opts(Options)).
+
 do_spawn(GenMod, link, Name, Mod, Args, Options) ->
     Time = timeout(Options),
-    proc_lib:start_link(gen, init_it,
+    proc_lib:start_link(?MODULE, init_it,
 			[GenMod, self(), self(), Name, Mod, Args, Options],
 			Time,
 			spawn_opts(Options));
 do_spawn(GenMod, _, Name, Mod, Args, Options) ->
     Time = timeout(Options),
-    proc_lib:start(gen, init_it,
+    proc_lib:start(?MODULE, init_it,
 		   [GenMod, self(), self, Name, Mod, Args, Options], 
 		   Time,
 		   spawn_opts(Options)).
-
 
 %%-----------------------------------------------------------------
 %% Initiate the new process.
@@ -108,7 +124,6 @@ init_it(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
 
 init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
     GenMod:init_it(Starter, Parent, Name, Mod, Args, Options).
-
 
 %%-----------------------------------------------------------------
 %% Makes a synchronous call to a generic process.
@@ -239,7 +254,7 @@ wait_resp(Node, Tag, Timeout) ->
     receive
 	{Tag, Reply} ->
 	    monitor_node(Node, false),
-	    {ok,Reply};
+	    {ok, Reply};
 	{nodedown, Node} ->
 	    monitor_node(Node, false),
 	    exit({nodedown, Node})
@@ -248,9 +263,9 @@ wait_resp(Node, Tag, Timeout) ->
 	    exit(timeout)
     end.
 
-%
-% Send a reply to the client.
-%
+%%
+%% Send a reply to the client.
+%%
 reply({To, Tag}, Reply) ->
     Msg = {Tag, Reply},
     try To ! Msg catch _:_ -> Msg end.
@@ -258,7 +273,7 @@ reply({To, Tag}, Reply) ->
 %%%-----------------------------------------------------------------
 %%%  Misc. functions.
 %%%-----------------------------------------------------------------
-where({global, Name})    -> global:safe_whereis_name(Name);
+where({global, Name}) -> global:safe_whereis_name(Name);
 where({local, Name})  -> whereis(Name).
 
 name_register({local, Name} = LN) ->

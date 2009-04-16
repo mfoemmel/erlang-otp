@@ -159,6 +159,8 @@ parse_options(Opts) ->
 	       mod_cond = ?DEFAULT_MOD_COND,
 	       debug_info = ?DEFAULT_DEBUG_INFO,
 	       app_file = ?DEFAULT_APP_FILE,
+	       emu_name = "beam",
+	       profile = development,
 	       incl_erts_dirs = ?DEFAULT_INCL_ERTS_DIRS,
 	       excl_erts_dirs = ?DEFAULT_EXCL_ERTS_DIRS,
 	       incl_app_dirs = ?DEFAULT_INCL_APP_DIRS,
@@ -995,6 +997,10 @@ decode(#sys{} = Sys, [{Key, Val} | KeyVals], Status) ->
 	    incl_cond when Val =:= include; Val =:= exclude;
 			   Val =:= derived -> 
 		{Sys#sys{incl_cond = Val}, Status};
+	    profile when Val =:= standalone; Val =:= development; Val =:= embedded ->
+		{Sys#sys{profile = Val}, Status};
+            emu_name when is_list(Val) -> 
+		{Sys#sys{emu_name = Val}, Status};
 	    debug_info when Val =:= keep; Val =:= strip -> 
 		{Sys#sys{debug_info = Val}, Status};
 	    app_file when Val =:= keep; Val =:= strip, Val =:= all -> 

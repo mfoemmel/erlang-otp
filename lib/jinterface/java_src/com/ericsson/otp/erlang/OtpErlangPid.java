@@ -159,16 +159,6 @@ public class OtpErlangPid extends OtpErlangObject implements Serializable,
     }
 
     /**
-     * Return the hashCode for this Pid.
-     * 
-     * @return the hashCode for this Pid.
-     */
-    @Override
-    public int hashCode() {
-	return id;
-    }
-
-    /**
      * Determine if two PIDs are equal. PIDs are equal if their components are
      * equal.
      * 
@@ -188,7 +178,15 @@ public class OtpErlangPid extends OtpErlangObject implements Serializable,
 	return creation == pid.creation && serial == pid.serial && id == pid.id
 		&& node.compareTo(pid.node) == 0;
     }
-
+    
+    @Override
+    protected int doHashCode() {
+	OtpErlangObject.Hash hash = new OtpErlangObject.Hash(5);
+	hash.combine(creation, serial);
+	hash.combine(id, node.hashCode());
+	return hash.valueOf();
+    }
+    
     public int compareTo(final Object o) {
 	if (!(o instanceof OtpErlangPid)) {
 	    return -1;

@@ -71,6 +71,12 @@
               server. This option may be used to plug in the use of
               other file servers.</p>
           </item>
+          <tag><c><![CDATA[{max_files, Integer}]]></c></tag>
+          <item>
+            <p>The default value is <c>0</c>, which means that there is no upper limit.
+               If supplied, the number of filenames returned to the sftp client per <c>READDIR</c>
+               request, is limited to at most the given value.</p>
+          </item>
 	  <tag><c><![CDATA[{root, String}]]></c></tag>
 	  <item>
 	    <p>Sets the sftp root directory. The user will then not be

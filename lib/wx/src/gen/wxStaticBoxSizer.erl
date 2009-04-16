@@ -70,7 +70,8 @@ new(#wx_ref{type=BoxT,ref=BoxRef},Orient)
 new(Orient,#wx_ref{type=WinT,ref=WinRef}, Options)
  when is_integer(Orient),is_list(Options) ->
   ?CLASS(WinT,wxWindow),
-  MOpts = fun({label, Label}, Acc) ->   Label_UC = unicode:characters_to_binary([Label,0]),[<<1:32/?UI,(byte_size(Label_UC)):32/?UI,(Label_UC)/binary, 0:(((8- ((0+byte_size(Label_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({label, Label}, Acc) ->   Label_UC = unicode:characters_to_binary([Label,0]),[<<1:32/?UI,(byte_size(Label_UC)):32/?UI,(Label_UC)/binary, 0:(((8- ((0+byte_size(Label_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxStaticBoxSizer_new_3,
   <<Orient:32/?UI,WinRef:32/?UI, BinOpt/binary>>).

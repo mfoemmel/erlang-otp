@@ -60,12 +60,14 @@ void unload_native_gui();
 #define DELETE_PORT  15
 #define PING_PORT    16
 
+
 void push_command(int op,char * buf,int len, wxe_data *);
 void meta_command(int what, wxe_data *sd);
 
 void * wxe_ps_init();
 
 extern ErlDrvPort WXE_DRV_PORT; 
+extern int wxe_debug; 
 
 #define WXE_BATCH_BEGIN     0
 #define WXE_BATCH_END       1
@@ -76,6 +78,7 @@ extern ErlDrvPort WXE_DRV_PORT;
 #define WXE_SHUTDOWN        6
 #define WXE_REGISTER_OBJECT 7
 #define WXE_CB_START        8
+#define WXE_DEBUG_DRIVER    9
 #define OPENGL_START        5000
 
 #endif

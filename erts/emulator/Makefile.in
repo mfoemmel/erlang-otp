@@ -1010,7 +1010,7 @@ $(TARGET)/Makefile: Makefile.in
 	@echo
 	@exit 1
 
-SED_REPL_WIN_DRIVE=s|\([ 	]\)\([A-Za-z]\):|\1/cygdrive/\2|g;s|^\([A-Za-z]\):|/cygdrive/\1|g
+#SED_REPL_WIN_DRIVE=s|\([ 	]\)\([A-Za-z]\):|\1/cygdrive/\2|g;s|^\([A-Za-z]\):|/cygdrive/\1|g
 SED_REPL_O=s|^\([^:]*:\)|$$(OBJDIR)/\1|g
 SED_REPL_ELIB_O=s|^\([^:]*\).o[ 	]*:|$$(OBJDIR)/\1.elib.o:|g
 SED_REPL_TTF_DIR=s|$(TTF_DIR)/|$$(TTF_DIR)/|g
@@ -1019,7 +1019,8 @@ SED_REPL_POLL=s|$$(OBJDIR)/erl_poll.o|$$(OBJDIR)/erl_poll.kp.o $$(OBJDIR)/erl_po
 SED_REPL_CHK_IO=s|$$(OBJDIR)/erl_check_io.o|$$(OBJDIR)/erl_check_io.kp.o $$(OBJDIR)/erl_check_io.nkp.o|g
 
 ifeq ($(TARGET),win32)
-SED_PREFIX=$(SED_REPL_WIN_DRIVE);
+#SED_PREFIX=$(SED_REPL_WIN_DRIVE);
+SED_PREFIX=
 else
 SED_PREFIX=
 endif
@@ -1049,16 +1050,17 @@ TARGET_SRC=$(wildcard $(TARGET)/*.c) $(wildcard $(TTF_DIR)/*.c)
 
 ifeq ($(TARGET),win32)
 
-DEP_CC=$(EMU_CC)
+#DEP_CC=$(EMU_CC)
+DEP_CC=$(CC)
 DEP_FLAGS=-MM  $(subst -O2,,$(CFLAGS)) $(INCLUDES) -I../etc/win32 -Idrivers/common
-ifeq (@MIXED_CYGWIN_VC@,yes)
+# ifeq (@MIXED_CYGWIN_VC@,yes)
 # VC++ used for compiling. If __GNUC__ is defined we will include
 # other headers then when compiling which will result in faulty
 # dependencies.
-DEP_FLAGS += -U__GNUC__
-endif
-# On windows we have the erl_poll implementation in sys/win32
-SYS_SRC=$(subst sys/common/erl_poll.c,,$(ALL_SYS_SRC))
+# DEP_FLAGS += -U__GNUC__
+# endif
+# On windows we have the erl_poll implementation in sys/win32 (no longer...)
+# SYS_SRC=$(subst sys/common/erl_poll.c,,$(ALL_SYS_SRC))
 
 else # !win32
 DEP_CC=$(CC)

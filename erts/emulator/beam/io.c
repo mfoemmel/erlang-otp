@@ -2091,28 +2091,23 @@ void erts_port_command(Process *proc,
     ERTS_SMP_CHK_NO_PROC_LOCKS;
     ASSERT(!INVALID_PORT(port, port->id));
 
-    if (is_tuple(command)) {
+    if (is_tuple_arity(command, 2)) {
 	tp = tuple_val(command);
-	if ((tp[0] == make_arityval(2)) &&
-	    ((pid = port->connected) == tp[1])) {
+	if ((pid = port->connected) == tp[1]) {
 	    /* PID must be connected */
 	    if (tp[2] == am_close) {
 		erts_port_status_bor_set(port, ERTS_PORT_SFLG_SEND_CLOSED);
 		erts_do_exit_port(port, pid, am_normal);
 		goto done;
-	    }
-	    else if (is_tuple(tp[2])) {
+	    } else if (is_tuple_arity(tp[2], 2)) {
 		tp = tuple_val(tp[2]);
-		if (tp[0] == make_arityval(2)) {
-		    if (tp[1] == am_command) {
-			if (erts_write_to_port(caller_id, port, tp[2]) == 0)
-			    goto done;
-		    }
-		    if ((tp[1] == am_connect) && is_internal_pid(tp[2])) {
-			port->connected = tp[2];
-			deliver_result(port->id, pid, am_connected);
+		if (tp[1] == am_command) {
+		    if (erts_write_to_port(caller_id, port, tp[2]) == 0)
 			goto done;
-		    }
+		} else if ((tp[1] == am_connect) && is_internal_pid(tp[2])) {
+		    port->connected = tp[2];
+		    deliver_result(port->id, pid, am_connected);
+		    goto done;
 		}
 	    }
 	}

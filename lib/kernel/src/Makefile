@@ -89,6 +89,7 @@ MODULES = \
 	inet6_tcp \
 	inet6_tcp_dist \
 	inet6_udp \
+	inet6_sctp \
 	inet_config \
 	inet_db \
 	inet_dns \

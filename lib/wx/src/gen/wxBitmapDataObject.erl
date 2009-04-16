@@ -53,7 +53,8 @@ new() ->
 %% </p>
 new(Options)
  when is_list(Options) ->
-  MOpts = fun({bitmap, #wx_ref{type=BitmapT,ref=BitmapRef}}, Acc) ->   ?CLASS(BitmapT,wxBitmap),[<<1:32/?UI,BitmapRef:32/?UI>>|Acc]  end,
+  MOpts = fun({bitmap, #wx_ref{type=BitmapT,ref=BitmapRef}}, Acc) ->   ?CLASS(BitmapT,wxBitmap),[<<1:32/?UI,BitmapRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxBitmapDataObject_new_1_0,
   <<BinOpt/binary>>);

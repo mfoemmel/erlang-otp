@@ -104,7 +104,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},#wx_ref{type=DataT,ref=DataRef},Title, O
   ?CLASS(ParentT,wxWindow),
   ?CLASS(DataT,wxFindReplaceData),
   Title_UC = unicode:characters_to_binary([Title,0]),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxFindReplaceDialog_new_4,
   <<ParentRef:32/?UI,DataRef:32/?UI,(byte_size(Title_UC)):32/?UI,(Title_UC)/binary, 0:(((8- ((4+byte_size(Title_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -124,7 +125,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef},#wx_r
   ?CLASS(ParentT,wxWindow),
   ?CLASS(DataT,wxFindReplaceData),
   Title_UC = unicode:characters_to_binary([Title,0]),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxFindReplaceDialog_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI,DataRef:32/?UI,(byte_size(Title_UC)):32/?UI,(Title_UC)/binary, 0:(((8- ((0+byte_size(Title_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

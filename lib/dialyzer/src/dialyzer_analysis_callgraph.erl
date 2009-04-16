@@ -37,9 +37,9 @@
 	{
 	  codeserver                    :: #dialyzer_codeserver{},
 	  analysis_type  = succ_typings :: anal_type(),
-	  defines        = []           :: [define()],
+	  defines        = []           :: [dial_define()],
 	  doc_plt                       :: #dialyzer_plt{},
-	  include_dirs   = []           :: [string()],
+	  include_dirs   = []           :: [filename()],
 	  no_warn_unused                :: set(),
 	  parent                        :: pid(),
 	  plt                           :: #dialyzer_plt{},
@@ -68,7 +68,7 @@ run_analysis(Analysis) ->
   Fun = fun() -> analysis_start(Self, Analysis) end,
   Analysis#analysis{analysis_pid = spawn_link(Fun)}.
 
-loop(State, Analysis = #analysis{analysis_pid = AnalPid}, ExtCalls) ->
+loop(State, #analysis{analysis_pid = AnalPid} = Analysis, ExtCalls) ->
   Parent = State#server_state.parent,
   receive
     {AnalPid, log, LogMsg} ->
@@ -342,26 +342,51 @@ label_core(Core, CServer) ->
 store_code_and_build_callgraph(Mod, Core, Callgraph, CServer, NoWarn) ->
   CoreTree = cerl:from_records(Core),
   NewCallgraph = dialyzer_callgraph:scan_core_tree(CoreTree, Callgraph),
-  NewCallgraph1 = 
+  NewCallgraph2 = 
     case get(dialyzer_race_analysis) of
-      true -> concat_inter_module_calls(Callgraph, NewCallgraph);
+      true -> 
+        NewCallgraph1 = concat_module_local_calls(Callgraph, NewCallgraph),
+        concat_inter_module_calls(Callgraph, NewCallgraph1);
       _ -> NewCallgraph
     end,
   CServer2 = dialyzer_codeserver:insert([{Mod, CoreTree}], CServer),
-  {ok, NewCallgraph1, NoWarn, CServer2}.
+  {ok, NewCallgraph2, NoWarn, CServer2}.
+
+concat_module_local_calls(#dialyzer_callgraph{module_local_calls=Calls},
+                          NewCallgraph = #dialyzer_callgraph{module_local_calls=NewCalls}) ->
+  NormCalls = normalize_module_local_calls(Calls ++ NewCalls),
+  NewCallgraph#dialyzer_callgraph{module_local_calls = NormCalls}.
 
 concat_inter_module_calls(#dialyzer_callgraph{inter_module_calls = Calls},
                           NewCallgraph = #dialyzer_callgraph{inter_module_calls = NewCalls}) ->
   NormCalls = normalize_inter_module_calls(Calls ++ NewCalls),
   NewCallgraph#dialyzer_callgraph{inter_module_calls = NormCalls}.
 
-normalize_inter_module_calls(Calls) ->
-  [norm_call(C) || C <- Calls].
+normalize_module_local_calls(Calls) ->
+  case Calls of
+    [] -> [];
+    _Other ->
+      [norm_module_local_call(C) || C <- Calls]
+  end.
 
-norm_call(C) ->
+norm_module_local_call(C) ->
   case C of
-    {TupleA, TupleB} -> {TupleA, TupleB, [], [], false, false};
-    {_TupleA, _TupleB, _ListA, _ListB, _BoolA, _BoolB} -> C
+    {TupleA, TupleB} ->
+      {TupleA, empty, TupleB, empty, empty, empty, empty, false};
+    {_TupleA, _IntA, _TupleB, _IntB, _ArgsB, _CodeA, _CodeB, _Bool} -> C
+  end.
+
+normalize_inter_module_calls(Calls) ->
+  case Calls of
+    [] -> [];
+    _Other ->
+      [norm_inter_module_call(C) || C <- Calls]
+  end.
+
+norm_inter_module_call(C) ->
+  case C of
+    {TupleA, TupleB} -> {TupleA, TupleB, empty, [], [], false, false};
+    {_TupleA, _TupleB, _ArgsB, _ListA, _ListB, _BoolA, _BoolB} -> C
   end.
 
 %%--------------------------------------------------------------------
@@ -493,6 +518,9 @@ get_line([]) -> -1.
 
 get_file([{file, File}|_]) -> File;
 get_file([_|Tail]) -> get_file(Tail).
+
+-spec dump_callgraph(#dialyzer_callgraph{}, #analysis_state{}, #analysis{}) ->
+  'ok'.
 
 dump_callgraph(_CallGraph, _State, #analysis{callgraph_file = ""}) -> ok;
 dump_callgraph(CallGraph, State, #analysis{callgraph_file = File} = Analysis) ->

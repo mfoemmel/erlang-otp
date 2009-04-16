@@ -141,7 +141,7 @@ call(Node, Module, Function, Args, TimeOut) ->
 call({Fun, FunArgs}, Module, Function, Args, TimeOut, Cookie) ->
     Node = Fun(FunArgs),
     call(Node, Module, Function, Args, TimeOut, Cookie);
-call(Node, Module, Function, Args, TimeOut, Cookie) when atom(Node) ->
+call(Node, Module, Function, Args, TimeOut, Cookie) when is_atom(Node) ->
     Cookie0 = set_the_cookie(Cookie),
     Result = rpc:call(Node, Module, Function, Args, TimeOut),
     set_the_cookie(Cookie0),
@@ -186,7 +186,7 @@ cast(Node, Module, Function, Args) ->
 cast({Fun, FunArgs}, Module, Function, Args, Cookie) ->
     Node = Fun(FunArgs),
     cast(Node, Module, Function, Args, Cookie);
-cast(Node, Module, Function, Args, Cookie) when atom(Node) ->
+cast(Node, Module, Function, Args, Cookie) when is_atom(Node) ->
     Cookie0 = set_the_cookie(Cookie),
     true = rpc:cast(Node, Module, Function, Args),
     set_the_cookie(Cookie0),

@@ -35,11 +35,17 @@ characters_to_list_int(ML, Encoding) ->
     try
 	do_characters_to_list(ML,Encoding)
     catch
-	error:_AnyError ->
+	error:AnyError ->
+	    TheError = case AnyError of
+			   system_limit ->
+			       system_limit;
+			   _ ->
+			       badarg
+		       end,
 	    {'EXIT',{new_stacktrace,[{Mod,_,L}|Rest]}} = 
 		(catch erlang:error(new_stacktrace,
 				    [ML,Encoding])),
-	    erlang:raise(error,badarg,[{Mod,characters_to_list,L}|Rest])
+	    erlang:raise(error,TheError,[{Mod,characters_to_list,L}|Rest])
     end.
 
 % XXX: Optimize me!
@@ -58,11 +64,17 @@ characters_to_binary(ML) ->
     try
 	unicode:characters_to_binary(ML,unicode)
     catch
-	error:_AnyError ->
+	error:AnyError ->
+	    TheError = case AnyError of
+			   system_limit ->
+			       system_limit;
+			   _ ->
+			       badarg
+		       end,
 	    {'EXIT',{new_stacktrace,[{Mod,_,L}|Rest]}} = 
 		(catch erlang:error(new_stacktrace,
 				    [ML])),
-	    erlang:raise(error,badarg,[{Mod,characters_to_binary,L}|Rest])
+	    erlang:raise(error,TheError,[{Mod,characters_to_binary,L}|Rest])
     end.
 	
 
@@ -70,22 +82,81 @@ characters_to_binary_int(ML,InEncoding) ->
     try
 	characters_to_binary_int(ML,InEncoding,unicode)
     catch
-	error:_AnyError ->
+	error:AnyError ->
+	    TheError = case AnyError of
+			   system_limit ->
+			       system_limit;
+			   _ ->
+			       badarg
+		       end,
 	    {'EXIT',{new_stacktrace,[{Mod,_,L}|Rest]}} = 
 		(catch erlang:error(new_stacktrace,
 				    [ML,InEncoding])),
-	    erlang:raise(error,badarg,[{Mod,characters_to_binary,L}|Rest])
+	    erlang:raise(error,TheError,[{Mod,characters_to_binary,L}|Rest])
     end.
 
+characters_to_binary(ML, latin1, latin1) when is_binary(ML) ->
+    ML;
+characters_to_binary(ML, latin1, Uni) when is_binary(ML) and ((Uni =:= utf8) or   (Uni =:= unicode)) ->
+    case unicode:bin_is_7bit(ML) of
+	true ->
+	    ML;
+	false ->
+	        try
+		    characters_to_binary_int(ML,latin1,utf8)
+		catch
+		    error:AnyError ->	    
+			TheError = case AnyError of
+				       system_limit ->
+					   system_limit;
+				       _ ->
+					   badarg
+				   end,
+			{'EXIT',{new_stacktrace,[{Mod,_,L}|Rest]}} = 
+			    (catch erlang:error(new_stacktrace,
+						[ML,latin1,Uni])),
+			erlang:raise(error,TheError,
+				     [{Mod,characters_to_binary,L}|Rest])
+		end
+    end;
+characters_to_binary(ML,Uni,latin1) when is_binary(ML) and ((Uni =:= utf8) or   (Uni =:= unicode)) ->
+    case unicode:bin_is_7bit(ML) of
+	true ->
+	    ML;
+	false ->
+	        try
+		    characters_to_binary_int(ML,utf8,latin1)
+		catch
+		    error:AnyError ->
+			TheError = case AnyError of
+				       system_limit ->
+					   system_limit;
+				       _ ->
+					   badarg
+				   end,
+			{'EXIT',{new_stacktrace,[{Mod,_,L}|Rest]}} = 
+			    (catch erlang:error(new_stacktrace,
+						[ML,Uni,latin1])),
+			erlang:raise(error,TheError,
+				     [{Mod,characters_to_binary,L}|Rest])
+		end
+    end;
+    
 characters_to_binary(ML, InEncoding, OutEncoding) ->
     try
 	characters_to_binary_int(ML,InEncoding,OutEncoding)
     catch
-	error:_AnyError ->
+	error:AnyError ->
+	    TheError = case AnyError of
+			   system_limit ->
+			       system_limit;
+			   _ ->
+			       badarg
+		       end,
 	    {'EXIT',{new_stacktrace,[{Mod,_,L}|Rest]}} = 
 		(catch erlang:error(new_stacktrace,
 				    [ML,InEncoding,OutEncoding])),
-	    erlang:raise(error,badarg,[{Mod,characters_to_binary,L}|Rest])
+	    erlang:raise(error,TheError,[{Mod,characters_to_binary,L}|Rest])
     end.
 
 characters_to_binary_int(ML, InEncoding, OutEncoding) when 
@@ -137,14 +208,14 @@ characters_to_binary_int(ML, InEncoding, OutEncoding) ->
 
 bom_to_encoding(<<239,187,191,_/binary>>) ->
     {utf8,3};
+bom_to_encoding(<<0,0,254,255,_/binary>>) ->
+    {{utf32,big},4};
+bom_to_encoding(<<255,254,0,0,_/binary>>) ->
+    {{utf32,little},4};
 bom_to_encoding(<<254,255,_/binary>>) ->
     {{utf16,big},2};
 bom_to_encoding(<<255,254,_/binary>>) ->
     {{utf16,little},2};
-bom_to_encoding(<<0,0,254,255,_/binary>>) ->
-    {{utf32,big},4};
-bom_to_encoding(<<0,0,255,254,_/binary>>) ->
-    {{utf32,little},4};
 bom_to_encoding(Bin) when is_binary(Bin) ->
     {latin1,0}.
 
@@ -163,7 +234,7 @@ encoding_to_bom(utf32) ->
 encoding_to_bom({utf32,big}) ->
     <<0,0,254,255>>;
 encoding_to_bom({utf32,little}) ->
-    <<0,0,255,254>>;
+    <<255,254,0,0>>;
 encoding_to_bom(latin1) ->
     <<>>.
 	    
@@ -268,26 +339,15 @@ ml_map([Part|T],Fun,{{Incomplete,Missing}, Accum}) when is_binary(Part) ->
 	    NewMissing = Missing - M,
 	    ml_map(T,Fun,{{NewIncomplete, NewMissing}, Accum})
     end;
+ml_map([Part|T],Fun,Accum) when is_binary(Part), byte_size(Part) > 8192 ->
+    <<Part1:8192/binary,Part2/binary>> = Part,
+    ml_map([Part1,Part2|T],Fun,Accum);
 ml_map([Part|T],Fun,Accum) when is_binary(Part) ->
     case Fun(Part,Accum) of
 	Bin when is_binary(Bin) ->
-	    case ml_map(T,Fun,Bin) of
-		Bin2 when is_binary(Bin2) ->
-		    Bin2;
-		{error, Converted, Rest} ->
-		    {error, Converted, Rest};
-		{incomplete, Converted, Rest,X} ->
-		    {incomplete, Converted, Rest,X}
-	    end;
+	    ml_map(T,Fun,Bin);
 	{incomplete, Converted, Rest, Missing} ->
-	    case ml_map(T,Fun,{{Rest, Missing},Converted}) of
-		Bin2 when is_binary(Bin2) ->
-		    Bin2;
-		{error, Converted2, Rest2} ->
-		    {error, Converted2, Rest2};
-		{incomplete, Converted2, Rest2,X} ->
-		    {incomplete, Converted2, Rest2,X}
-	    end;
+	    ml_map(T,Fun,{{Rest, Missing},Converted});
 	{error, Converted, Rest} ->
 	    {error, Converted, [Rest|T]}
     end;
@@ -307,8 +367,11 @@ ml_map(Bin,Fun,{{Incomplete,Missing},Accum}) when is_binary(Bin) ->
 	M ->
 	    {incomplete, Accum, <<Incomplete/binary, Bin/binary>>, Missing - M}
     end;
+ml_map(Part,Fun,Accum) when is_binary(Part), byte_size(Part) > 8192 ->
+     <<Part1:8192/binary,Part2/binary>> = Part,
+    ml_map([Part1,Part2],Fun,Accum);
 ml_map(Bin,Fun,Accum) when is_binary(Bin) ->
-       Fun(Bin,Accum).
+    Fun(Bin,Accum).
 
  
 

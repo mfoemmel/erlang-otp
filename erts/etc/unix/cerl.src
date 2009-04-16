@@ -222,7 +222,9 @@ EXEC=$BINDIR/erlexec
 
 PROGNAME="$PROGNAME $cargs"
 EMU=$EMU$TYPE$EMU_TYPE
-xargs="$xargs -pz $PRELOADED"
+if [ $run_valgrind != yes ]; then
+    xargs="$xargs -pz $PRELOADED"
+fi
 if [ "x$GDB" = "x" ]; then
     if [ $run_valgrind = yes ]; then
 	emu_xargs=`echo $xargs | sed "s|+|-|g"`
@@ -247,7 +249,7 @@ if [ "x$GDB" = "x" ]; then
 	early_beam_args=`echo $beam_args | sed "s|^\(.*-progname\).*$|\1|g"`
 	late_beam_args=`echo $beam_args | sed "s|^$pre_beam_args.*\(--.*\)$|\1|g"`
 	
-	exec valgrind $valgrind_xml $valgrind_log $valgrind_misc_flags $BINDIR/$EMU $emu_xargs $early_beam_args "$PROGNAME" $late_beam_args
+	exec valgrind $valgrind_xml $valgrind_log $valgrind_misc_flags $BINDIR/$EMU $emu_xargs $early_beam_args "$PROGNAME" $late_beam_args -pz $PRELOADED
     else
 	exec $EXEC $xargs ${1+"$@"}
     fi

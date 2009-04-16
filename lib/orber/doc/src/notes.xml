@@ -32,14 +32,18 @@
   </header>
 
   <section>
-    <title>Orber 3.6.10</title>
+    <title>Orber 3.6.12</title>
 
     <section>
       <title>Improvements and New Features</title>
       <list type="bulleted">
         <item>
-          <p>Documentation source included in open source releases.</p>
-          <p>Own id: OTP-7595</p>
+          <p>Only the source instance of InitialReference.java is now
+             included. Users are adviced to use the Interoperable
+             Naming Service (INS) instead. INS is a part of the OMG
+             standard specification.</p>
+          <p>*** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>Own id: OTP-7906 Aux Id: seq11243</p>
         </item>
       </list>
     </section>
@@ -54,6 +58,20 @@
         <item>
           <p>Updated file headers.</p>
           <p>Own id: OTP-7837</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Orber 3.6.10</title>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>Documentation source included in open source releases.</p>
+          <p>Own id: OTP-7595</p>
         </item>
       </list>
     </section>

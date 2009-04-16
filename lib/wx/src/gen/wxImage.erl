@@ -79,7 +79,8 @@ new(Name, Options)
  when is_list(Name),is_list(Options) ->
   Name_UC = unicode:characters_to_binary([Name,0]),
   MOpts = fun({type, Type}, Acc) -> [<<1:32/?UI,Type:32/?UI>>|Acc];
-          ({index, Index}, Acc) -> [<<2:32/?UI,Index:32/?UI>>|Acc]  end,
+          ({index, Index}, Acc) -> [<<2:32/?UI,Index:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxImage_new_2,
   <<(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((4+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -103,7 +104,8 @@ new(Width,Height,Data)
   new(Width,Height,Data, []);
 new(Width,Height, Options)
  when is_integer(Width),is_integer(Height),is_list(Options) ->
-  MOpts = fun({clear, Clear}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Clear)):32/?UI>>|Acc]  end,
+  MOpts = fun({clear, Clear}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Clear)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxImage_new_3_0,
   <<Width:32/?UI,Height:32/?UI, BinOpt/binary>>);
@@ -111,7 +113,8 @@ new(Name,Mimetype, Options)
  when is_list(Name),is_list(Mimetype),is_list(Options) ->
   Name_UC = unicode:characters_to_binary([Name,0]),
   Mimetype_UC = unicode:characters_to_binary([Mimetype,0]),
-  MOpts = fun({index, Index}, Acc) -> [<<1:32/?UI,Index:32/?UI>>|Acc]  end,
+  MOpts = fun({index, Index}, Acc) -> [<<1:32/?UI,Index:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxImage_new_3_1,
   <<(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((4+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8,(byte_size(Mimetype_UC)):32/?UI,(Mimetype_UC)/binary, 0:(((8- ((4+byte_size(Mimetype_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -132,7 +135,8 @@ new(Width,Height,Data,Alpha)
 new(Width,Height,Data, Options)
  when is_integer(Width),is_integer(Height),is_binary(Data),is_list(Options) ->
   wxe_util:send_bin(Data),
-  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc]  end,
+  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxImage_new_4,
   <<Width:32/?UI,Height:32/?UI, BinOpt/binary>>).
@@ -144,7 +148,8 @@ new(Width,Height,Data,Alpha, Options)
  when is_integer(Width),is_integer(Height),is_binary(Data),is_binary(Alpha),is_list(Options) ->
   wxe_util:send_bin(Data),
   wxe_util:send_bin(Alpha),
-  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc]  end,
+  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxImage_new_5,
   <<Width:32/?UI,Height:32/?UI, BinOpt/binary>>).
@@ -185,7 +190,8 @@ convertAlphaToMask(This)
 convertAlphaToMask(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxImage),
-  MOpts = fun({threshold, Threshold}, Acc) -> [<<1:32/?UI,Threshold:32/?UI>>|Acc]  end,
+  MOpts = fun({threshold, Threshold}, Acc) -> [<<1:32/?UI,Threshold:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_ConvertAlphaToMask,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -204,7 +210,8 @@ convertToGreyscale(#wx_ref{type=ThisT,ref=ThisRef}, Options)
   ?CLASS(ThisT,wxImage),
   MOpts = fun({lr, Lr}, Acc) -> [<<1:32/?UI,0:32,Lr:64/?F>>|Acc];
           ({lg, Lg}, Acc) -> [<<2:32/?UI,0:32,Lg:64/?F>>|Acc];
-          ({lb, Lb}, Acc) -> [<<3:32/?UI,0:32,Lb:64/?F>>|Acc]  end,
+          ({lb, Lb}, Acc) -> [<<3:32/?UI,0:32,Lb:64/?F>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_ConvertToGreyscale,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -246,7 +253,8 @@ create(This,Width,Height,Data)
 create(#wx_ref{type=ThisT,ref=ThisRef},Width,Height, Options)
  when is_integer(Width),is_integer(Height),is_list(Options) ->
   ?CLASS(ThisT,wxImage),
-  MOpts = fun({clear, Clear}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Clear)):32/?UI>>|Acc]  end,
+  MOpts = fun({clear, Clear}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Clear)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_Create_3,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).
@@ -268,7 +276,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},Width,Height,Data, Options)
  when is_integer(Width),is_integer(Height),is_binary(Data),is_list(Options) ->
   ?CLASS(ThisT,wxImage),
   wxe_util:send_bin(Data),
-  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc]  end,
+  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_Create_4,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).
@@ -281,7 +290,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},Width,Height,Data,Alpha, Options)
   ?CLASS(ThisT,wxImage),
   wxe_util:send_bin(Data),
   wxe_util:send_bin(Alpha),
-  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc]  end,
+  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_Create_5,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).
@@ -307,7 +317,8 @@ findFirstUnusedColour(#wx_ref{type=ThisT,ref=ThisRef}, Options)
   ?CLASS(ThisT,wxImage),
   MOpts = fun({startR, StartR}, Acc) -> [<<1:32/?UI,StartR:32/?UI>>|Acc];
           ({startG, StartG}, Acc) -> [<<2:32/?UI,StartG:32/?UI>>|Acc];
-          ({startB, StartB}, Acc) -> [<<3:32/?UI,StartB:32/?UI>>|Acc]  end,
+          ({startB, StartB}, Acc) -> [<<3:32/?UI,StartB:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_FindFirstUnusedColour,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -368,7 +379,8 @@ getImageCount(Name)
 getImageCount(Name, Options)
  when is_list(Name),is_list(Options) ->
   Name_UC = unicode:characters_to_binary([Name,0]),
-  MOpts = fun({type, Type}, Acc) -> [<<1:32/?UI,Type:32/?UI>>|Acc]  end,
+  MOpts = fun({type, Type}, Acc) -> [<<1:32/?UI,Type:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_GetImageCount,
   <<(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((4+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -504,7 +516,8 @@ isTransparent(This,X,Y)
 isTransparent(#wx_ref{type=ThisT,ref=ThisRef},X,Y, Options)
  when is_integer(X),is_integer(Y),is_list(Options) ->
   ?CLASS(ThisT,wxImage),
-  MOpts = fun({threshold, Threshold}, Acc) -> [<<1:32/?UI,Threshold:32/?UI>>|Acc]  end,
+  MOpts = fun({threshold, Threshold}, Acc) -> [<<1:32/?UI,Threshold:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_IsTransparent,
   <<ThisRef:32/?UI,X:32/?UI,Y:32/?UI, 0:32,BinOpt/binary>>).
@@ -523,7 +536,8 @@ loadFile(#wx_ref{type=ThisT,ref=ThisRef},Name, Options)
   ?CLASS(ThisT,wxImage),
   Name_UC = unicode:characters_to_binary([Name,0]),
   MOpts = fun({type, Type}, Acc) -> [<<1:32/?UI,Type:32/?UI>>|Acc];
-          ({index, Index}, Acc) -> [<<2:32/?UI,Index:32/?UI>>|Acc]  end,
+          ({index, Index}, Acc) -> [<<2:32/?UI,Index:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_LoadFile_2,
   <<ThisRef:32/?UI,(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((0+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -536,7 +550,8 @@ loadFile(#wx_ref{type=ThisT,ref=ThisRef},Name,Mimetype, Options)
   ?CLASS(ThisT,wxImage),
   Name_UC = unicode:characters_to_binary([Name,0]),
   Mimetype_UC = unicode:characters_to_binary([Mimetype,0]),
-  MOpts = fun({index, Index}, Acc) -> [<<1:32/?UI,Index:32/?UI>>|Acc]  end,
+  MOpts = fun({index, Index}, Acc) -> [<<1:32/?UI,Index:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_LoadFile_3,
   <<ThisRef:32/?UI,(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((0+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8,(byte_size(Mimetype_UC)):32/?UI,(Mimetype_UC)/binary, 0:(((8- ((4+byte_size(Mimetype_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -568,7 +583,8 @@ mirror(This)
 mirror(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxImage),
-  MOpts = fun({horizontally, Horizontally}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Horizontally)):32/?UI>>|Acc]  end,
+  MOpts = fun({horizontally, Horizontally}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Horizontally)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_Mirror,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -593,7 +609,8 @@ rescale(This,Width,Height)
 rescale(#wx_ref{type=ThisT,ref=ThisRef},Width,Height, Options)
  when is_integer(Width),is_integer(Height),is_list(Options) ->
   ?CLASS(ThisT,wxImage),
-  MOpts = fun({quality, Quality}, Acc) -> [<<1:32/?UI,Quality:32/?UI>>|Acc]  end,
+  MOpts = fun({quality, Quality}, Acc) -> [<<1:32/?UI,Quality:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_Rescale,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).
@@ -612,7 +629,8 @@ resize(#wx_ref{type=ThisT,ref=ThisRef},{SizeW,SizeH},{PosX,PosY}, Options)
   ?CLASS(ThisT,wxImage),
   MOpts = fun({r, R}, Acc) -> [<<1:32/?UI,R:32/?UI>>|Acc];
           ({g, G}, Acc) -> [<<2:32/?UI,G:32/?UI>>|Acc];
-          ({b, B}, Acc) -> [<<3:32/?UI,B:32/?UI>>|Acc]  end,
+          ({b, B}, Acc) -> [<<3:32/?UI,B:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_Resize,
   <<ThisRef:32/?UI,SizeW:32/?UI,SizeH:32/?UI,PosX:32/?UI,PosY:32/?UI, 0:32,BinOpt/binary>>).
@@ -630,7 +648,8 @@ rotate(#wx_ref{type=ThisT,ref=ThisRef},Angle,{Centre_of_rotationX,Centre_of_rota
  when is_float(Angle),is_integer(Centre_of_rotationX),is_integer(Centre_of_rotationY),is_list(Options) ->
   ?CLASS(ThisT,wxImage),
   MOpts = fun({interpolating, Interpolating}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Interpolating)):32/?UI>>|Acc];
-          ({offset_after_rotation, {Offset_after_rotationX,Offset_after_rotationY}}, Acc) -> [<<2:32/?UI,Offset_after_rotationX:32/?UI,Offset_after_rotationY:32/?UI,0:32>>|Acc]  end,
+          ({offset_after_rotation, {Offset_after_rotationX,Offset_after_rotationY}}, Acc) -> [<<2:32/?UI,Offset_after_rotationX:32/?UI,Offset_after_rotationY:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_Rotate,
   <<ThisRef:32/?UI,0:32,Angle:64/?F,Centre_of_rotationX:32/?UI,Centre_of_rotationY:32/?UI, BinOpt/binary>>).
@@ -655,7 +674,8 @@ rotate90(This)
 rotate90(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxImage),
-  MOpts = fun({clockwise, Clockwise}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Clockwise)):32/?UI>>|Acc]  end,
+  MOpts = fun({clockwise, Clockwise}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Clockwise)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_Rotate90,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -704,7 +724,8 @@ scale(This,Width,Height)
 scale(#wx_ref{type=ThisT,ref=ThisRef},Width,Height, Options)
  when is_integer(Width),is_integer(Height),is_list(Options) ->
   ?CLASS(ThisT,wxImage),
-  MOpts = fun({quality, Quality}, Acc) -> [<<1:32/?UI,Quality:32/?UI>>|Acc]  end,
+  MOpts = fun({quality, Quality}, Acc) -> [<<1:32/?UI,Quality:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_Scale,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).
@@ -723,7 +744,8 @@ size(#wx_ref{type=ThisT,ref=ThisRef},{SizeW,SizeH},{PosX,PosY}, Options)
   ?CLASS(ThisT,wxImage),
   MOpts = fun({r, R}, Acc) -> [<<1:32/?UI,R:32/?UI>>|Acc];
           ({g, G}, Acc) -> [<<2:32/?UI,G:32/?UI>>|Acc];
-          ({b, B}, Acc) -> [<<3:32/?UI,B:32/?UI>>|Acc]  end,
+          ({b, B}, Acc) -> [<<3:32/?UI,B:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxImage_Size,
   <<ThisRef:32/?UI,SizeW:32/?UI,SizeH:32/?UI,PosX:32/?UI,PosY:32/?UI, 0:32,BinOpt/binary>>).
@@ -741,7 +763,8 @@ setAlpha(#wx_ref{type=ThisT,ref=ThisRef},Alpha, Options)
  when is_binary(Alpha),is_list(Options) ->
   ?CLASS(ThisT,wxImage),
   wxe_util:send_bin(Alpha),
-  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc]  end,
+  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxImage_SetAlpha_2,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -767,7 +790,8 @@ setData(#wx_ref{type=ThisT,ref=ThisRef},Data, Options)
  when is_binary(Data),is_list(Options) ->
   ?CLASS(ThisT,wxImage),
   wxe_util:send_bin(Data),
-  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc]  end,
+  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxImage_SetData_2,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -785,7 +809,8 @@ setData(#wx_ref{type=ThisT,ref=ThisRef},Data,New_width,New_height, Options)
  when is_binary(Data),is_integer(New_width),is_integer(New_height),is_list(Options) ->
   ?CLASS(ThisT,wxImage),
   wxe_util:send_bin(Data),
-  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc]  end,
+  MOpts = fun({static_data, Static_data}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Static_data)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxImage_SetData_4,
   <<ThisRef:32/?UI,New_width:32/?UI,New_height:32/?UI, 0:32,BinOpt/binary>>).
@@ -802,7 +827,8 @@ setMask(This)
 setMask(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxImage),
-  MOpts = fun({mask, Mask}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Mask)):32/?UI>>|Acc]  end,
+  MOpts = fun({mask, Mask}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Mask)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxImage_SetMask,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

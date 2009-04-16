@@ -55,7 +55,7 @@ inline_bif(I = #icode_call{}) ->
 inline_bif(I) ->
   I.
 
-try_conditional(I = #icode_call{dstlist=[Dst], 'fun' = {erlang, Name, 2},
+try_conditional(I = #icode_call{dstlist = [Dst], 'fun' = {erlang, Name, 2},
 				args = [Arg1, Arg2],
 				continuation = Cont}) ->
   case is_conditional(Name) of
@@ -80,20 +80,19 @@ is_conditional(Name) ->
     _     -> false
   end.
 
-try_bool(I = #icode_call{dstlist=[Dst], 'fun' = Name,
+try_bool(I = #icode_call{dstlist = [Dst], 'fun' = Name,
 			 args = [Arg1, Arg2],
-			 continuation = Cont,
-			 fail_label = Fail}) ->
+			 continuation = Cont, fail_label = Fail}) ->
   case is_binary_bool(Name) of
     {true, Results, ResLbls} ->
       inline_binary_bool(Dst, Results, ResLbls, Arg1, Arg2, Cont, Fail, I); 
     false ->
       try_type_tests(I)
   end;
-try_bool(I = #icode_call{dstlist=[Dst], 'fun' = {erlang, 'not', 1},
-		   args = [Arg1],
-		   continuation = Cont,
-		   fail_label = Fail}) ->
+try_bool(I = #icode_call{dstlist = [Dst], 'fun' = {erlang, 'not', 1},
+			 args = [Arg1],
+			 continuation = Cont,
+			 fail_label = Fail}) ->
   inline_unary_bool(Dst, {false, true}, Arg1, Cont, Fail, I);
 try_bool(I) -> try_type_tests(I).
 
@@ -215,10 +214,11 @@ inline_unary_bool(Dst, {T,F}, Arg1, Cont, Fail, I) ->
   FL = hipe_icode:label_name(FLbl),
   {NewCont, NewEnd} = get_cont_lbl(Cont),
   {NewFail, FailCode} = get_fail_lbl(Fail, I),
-   EndCode = FailCode++NewEnd,
-  [hipe_icode:mk_type([Arg1], {atom, true}, TL, NotTL, 0.5),
+  EndCode = FailCode ++ NewEnd,
+  Arg1L = [Arg1],
+  [hipe_icode:mk_type(Arg1L, {atom, true}, TL, NotTL, 0.5),
    NotTLbl,
-   hipe_icode:mk_type([Arg1], {atom, false}, FL, NewFail, 0.99),
+   hipe_icode:mk_type(Arg1L, {atom, false}, FL, NewFail, 0.99),
    TLbl,
    hipe_icode:mk_move(Dst, hipe_icode:mk_const(T)),
    hipe_icode:mk_goto(NewCont),
@@ -235,6 +235,6 @@ get_cont_lbl(Cont) ->
 
 get_fail_lbl([], I) ->
   NL = hipe_icode:mk_new_label(),
-  {hipe_icode:label_name(NL), [NL,I]};
+  {hipe_icode:label_name(NL), [NL, I]};
 get_fail_lbl(Fail, _) ->
   {Fail, []}.

@@ -113,10 +113,10 @@
 #ifdef BSD4_4
 #include <sys/types.h>
 #include <sys/sysctl.h>
-#if !defined ( __OpenBSD__) && !defined(__NetBSD__) 
+#if !defined (__OpenBSD__) && !defined (__NetBSD__) 
 #include <vm/vm_param.h>
 #endif
-#ifdef __FreeBSD__
+#if defined (__FreeBSD__) || defined(__DragonFly__)
 #include <sys/vmmeter.h>
 #endif
 #endif

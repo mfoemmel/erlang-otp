@@ -66,7 +66,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_obsolete_guard +warn_untyped_record +warn_missing_spec
+ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_missing_spec +warn_untyped_record
 
 # ----------------------------------------------------
 # Targets

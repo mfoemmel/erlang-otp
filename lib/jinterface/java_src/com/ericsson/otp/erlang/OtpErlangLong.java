@@ -387,4 +387,13 @@ public class OtpErlangLong extends OtpErlangObject implements Serializable,
 	}
 	return false;
     }
+    
+    @Override
+    protected int doHashCode() {
+	if (bigVal != null) {
+	    return bigVal.hashCode();
+	} else {
+	    return BigInteger.valueOf(val).hashCode();
+	}
+    }
 }

@@ -436,10 +436,10 @@ get_echo(undefined) ->
     true;
 get_echo(#ssh_pty{modes = Modes}) ->
     case proplists:get_value(echo, Modes, 1) of 
-	1 ->
-	    true;
 	0 ->
-	    false
+	    false;
+	_ ->
+	    true
     end.
 
 % Group is undefined if the pty options are sent between open and

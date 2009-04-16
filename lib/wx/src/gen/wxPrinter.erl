@@ -43,7 +43,8 @@ new() ->
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxprinter.html#wxprinterwxprinter">external documentation</a>.
 new(Options)
  when is_list(Options) ->
-  MOpts = fun({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wxPrintDialogData),[<<1:32/?UI,DataRef:32/?UI>>|Acc]  end,
+  MOpts = fun({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wxPrintDialogData),[<<1:32/?UI,DataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxPrinter_new,
   <<BinOpt/binary>>).
@@ -93,7 +94,8 @@ print(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef},#wx_re
   ?CLASS(ThisT,wxPrinter),
   ?CLASS(ParentT,wxWindow),
   ?CLASS(PrintoutT,wxPrintout),
-  MOpts = fun({prompt, Prompt}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Prompt)):32/?UI>>|Acc]  end,
+  MOpts = fun({prompt, Prompt}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Prompt)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxPrinter_Print,
   <<ThisRef:32/?UI,ParentRef:32/?UI,PrintoutRef:32/?UI, 0:32,BinOpt/binary>>).

@@ -708,7 +708,7 @@ select_binary(#l{ke={val_clause,{binary,{var,V}},B},i=I,vdb=Vdb},
     {Bis,Aft,St1} = match_cg(B, Vf, Int0, St0),
     CtxReg = fetch_var(V, Int0),
     Live = max_reg(Bef#sr.reg),
-    {[{test,bs_start_match2,{f,Tf},[CtxReg,Live,V,CtxReg]},
+    {[{test,bs_start_match2,{f,Tf},Live,[CtxReg,V],CtxReg},
       {bs_save2,CtxReg,{V,V}}|Bis],
      Aft,St1};
 select_binary(#l{ke={val_clause,{binary,{var,Ivar}},B},i=I,vdb=Vdb},
@@ -718,7 +718,7 @@ select_binary(#l{ke={val_clause,{binary,{var,Ivar}},B},i=I,vdb=Vdb},
     {Bis,Aft,St1} = match_cg(B, Vf, Int0, St0),
     CtxReg = fetch_var(Ivar, Int0),
     Live = max_reg(Bef#sr.reg),
-    {[{test,bs_start_match2,{f,Tf},[fetch_var(V, Bef),Live,Ivar,CtxReg]},
+    {[{test,bs_start_match2,{f,Tf},Live,[fetch_var(V, Bef),Ivar],CtxReg},
       {bs_save2,CtxReg,{Ivar,Ivar}}|Bis],
      Aft,St1}.
 
@@ -796,7 +796,7 @@ select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
 		  {bs_save2,CtxReg,{Ctx,Tl}}],Int1}
 	end,
     {Es,clear_dead(Aft, I, Vdb),St};
-select_extract_bin([{var,Hd}], Size0, Unit, Type, Flags, Vf,
+select_extract_bin([{var,Hd}], Size0, Unit, binary, Flags, Vf,
 		   I, Vdb, Bef, Ctx, Body, St) ->
     SizeReg = get_bin_size_reg(Size0, Bef),
     {Es,Aft} =
@@ -819,10 +819,10 @@ select_extract_bin([{var,Hd}], Size0, Unit, Type, Flags, Vf,
 			Int1 = Bef#sr{reg=Reg},
 			Rhd = fetch_reg(Hd, Reg),
 			CtxReg = fetch_reg(Ctx, Reg),
-			Name = get_bits_instr(Type),
+			Name = bs_get_binary2,
 			Live = max_reg(Bef#sr.reg),
-			{[{test,Name,{f,Vf},[CtxReg,Live,SizeReg,Unit,
-					     {field_flags,Flags},Rhd]}],
+			{[{test,Name,{f,Vf},Live,
+			   [CtxReg,SizeReg,Unit,{field_flags,Flags}],Rhd}],
 			 Int1};
 		    true ->
 			%% Since the matching context will not be used again,
@@ -834,10 +834,10 @@ select_extract_bin([{var,Hd}], Size0, Unit, Type, Flags, Vf,
 			CtxReg = fetch_reg(Ctx, Reg0),
 			Reg = replace_reg_contents(Ctx, Hd, Reg0),
 			Int1 = Bef#sr{reg=Reg},
-			Name = get_bits_instr(Type),
+			Name = bs_get_binary2,
 			Live = max_reg(Int1#sr.reg),
-			{[{test,Name,{f,Vf},[CtxReg,Live,SizeReg,Unit,
-					     {field_flags,Flags},CtxReg]}],
+			{[{test,Name,{f,Vf},Live,
+			   [CtxReg,SizeReg,Unit,{field_flags,Flags}],CtxReg}],
 			 Int1}
 		end
 	end,
@@ -860,7 +860,8 @@ select_bin_end(#l{ke={val_clause,{bin_end,Ctx},B}},
 	       Ivar, Tf, Bef, St0) ->
     {Bis,Aft,St2} = match_cg(B, Tf, Bef, St0),
     CtxReg = fetch_var(Ctx, Bef),
-    {[{bs_restore2,CtxReg,{Ctx,Ivar}},{test,bs_test_tail2,{f,Tf},[CtxReg,0]}|Bis],Aft,St2}.
+    {[{bs_restore2,CtxReg,{Ctx,Ivar}},
+      {test,bs_test_tail2,{f,Tf},[CtxReg,0]}|Bis],Aft,St2}.
 
 get_bin_size_reg({var,V}, Bef) ->
     fetch_var(V, Bef);
@@ -878,11 +879,11 @@ build_bs_instr(Type, Vf, CtxReg, Live, SizeReg, Unit, Flags, Rhd) ->
 		   end,
     case Format of
 	plain ->
-	    {test,Name,{f,Vf},
-	     [CtxReg,Live,SizeReg,Unit,{field_flags,Flags},Rhd]};
+	    {test,Name,{f,Vf},Live,
+	     [CtxReg,SizeReg,Unit,{field_flags,Flags}],Rhd};
 	utf ->
-	    {test,Name,{f,Vf},
-	     [CtxReg,Live,{field_flags,Flags},Rhd]}
+	    {test,Name,{f,Vf},Live,
+	     [CtxReg,{field_flags,Flags}],Rhd}
     end.
 
 build_skip_instr(Type, Vf, CtxReg, Live, SizeReg, Unit, Flags) ->
@@ -898,10 +899,6 @@ build_skip_instr(Type, Vf, CtxReg, Live, SizeReg, Unit, Flags) ->
 	utf ->
 	    {test,Name,{f,Vf},[CtxReg,Live,{field_flags,Flags}]}
     end.
-
-%% get_bits_instr(integer) -> bs_get_integer2;
-%% get_bits_instr(float)   -> bs_get_float2;
-get_bits_instr(binary)  -> bs_get_binary2.
 
 select_val(#l{ke={val_clause,{tuple,Es},B},i=I,vdb=Vdb}, V, Vf, Bef, St0) ->
     {Eis,Int,St1} = select_extract_tuple(V, Es, I, Vdb, Bef, St0),
@@ -1217,13 +1214,16 @@ bif_cg(bs_init_writable=I, As, Rs, Le, Vdb, Bef, St) ->
 bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
     Ars = cg_reg_args(As, Bef),
 
-    %% If we are inside a catch, we must save everything that will
-    %% be alive after the catch (because the BIF might fail and there
-    %% will be a jump to the code after the catch).
+    %% If we are inside a catch and in a body (not in guard) and the
+    %% BIF may fail, we must save everything that will be alive after
+    %% the catch (because the code after the code assumes that all
+    %% variables that are live are stored on the stack).
+    %%
     %%   Currently, we are somewhat pessimistic in
     %% that we save any variable that will be live after this BIF call.
 
     {Sis,Int0} = case St0#cg.in_catch andalso
+		     St0#cg.bfail =:= 0 andalso
 		     not erl_bifs:is_safe(erlang, Bif, length(As)) of
 		     true -> adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb);
 		     false -> {[],Bef}

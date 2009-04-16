@@ -38,12 +38,12 @@
 
 -type gs_object() :: any().
 
--record(mode, {start_byte_code   :: gs_object(), 
+-record(mode, {start_byte_code   :: gs_object(),
 	       start_src_code    :: gs_object()}).
 
 -record(menu, {file_save_log     :: gs_object(),
 	       file_save_warn    :: gs_object(),
-	       file_quit         :: gs_object(), 
+	       file_quit         :: gs_object(),
 	       help_about        :: gs_object(),
 	       help_manual       :: gs_object(),
 	       help_warnings     :: gs_object(),
@@ -54,29 +54,29 @@
 	       plt_show_doc      :: gs_object(),
 	       warnings          :: gs_object()}).
 
--record(gui_state, {add_all      :: gs_object(), 
-		    add_file     :: gs_object(), 
+-record(gui_state, {add_all      :: gs_object(),
+		    add_file     :: gs_object(),
 		    add_rec      :: gs_object(),
-		    chosen_box   :: gs_object(), 
-		    analysis_pid :: pid(), 
+		    chosen_box   :: gs_object(),
+		    analysis_pid :: pid(),
 		    del_file     :: gs_object(),
-		    doc_plt      :: #dialyzer_plt{}, 
-		    clear_chosen :: gs_object(), 
-		    clear_log    :: gs_object(), 
-		    clear_warn   :: gs_object(), 
-		    init_plt     :: #dialyzer_plt{}, 
-		    dir_entry    :: gs_object(), 
-		    file_box     :: gs_object(), 
-		    file_wd      :: gs_object(), 
-		    gs           :: gs_object(), 
-		    log          :: gs_object(), 
-		    menu         :: #menu{}, 
+		    doc_plt      :: #dialyzer_plt{},
+		    clear_chosen :: gs_object(),
+		    clear_log    :: gs_object(),
+		    clear_warn   :: gs_object(),
+		    init_plt     :: #dialyzer_plt{},
+		    dir_entry    :: gs_object(),
+		    file_box     :: gs_object(),
+		    file_wd      :: gs_object(),
+		    gs           :: gs_object(),
+		    log          :: gs_object(),
+		    menu         :: #menu{},
 		    mode         :: #mode{},
-		    options      :: #options{}, 
-		    packer       :: gs_object(), 
-		    run          :: gs_object(), 
-		    stop         :: gs_object(), 
-		    top          :: gs_object(), 
+		    options      :: #options{},
+		    packer       :: gs_object(),
+		    run          :: gs_object(),
+		    stop         :: gs_object(),
+		    top          :: gs_object(),
 		    warnings_box :: gs_object(),
 		    backend_pid  :: pid()}).
 	       
@@ -92,7 +92,7 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
   code:add_pathsa(["."]),
   WH = [{width, 1000}, {height, 550}],
 
-  {ok,Host} = inet:gethostname(),
+  {ok, Host} = inet:gethostname(),
   %% --------- Top Window --------------
   TopWin = gs:window(GS, [{title, "Dialyzer "++?VSN++" @ "++Host},
 			  {configure, true},
@@ -112,9 +112,9 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
 
   %% --------- Chosen box --------------
   gs:label(Packer, [{label, {text, "Directories or modules to analyze"}}, 
-		    {height, 20}, {pack_xy, {1,2}}]),
-  ChosenBox = gs:listbox(Packer, [{pack_xy, {1,3}},{vscroll, right},
-				{selectmode, multiple}]),
+		    {height, 20}, {pack_xy, {1, 2}}]),
+  ChosenBox = gs:listbox(Packer, [{pack_xy, {1, 3}}, {vscroll, right},
+				  {selectmode, multiple}]),
 
   %% --------- File box --------------
   gs:label(Packer, [{label, {text, "File"}}, {height, 20}, {pack_xy, {1,5}}]),
@@ -179,50 +179,50 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
   ButtonPackerHighLeft = 
     gs:frame(Packer, [{packer_x, [{fixed, 50},
 				  {fixed, 65},
-				  {stretch,1}]}, % empty space
+				  {stretch, 1}]}, % empty space
 		      {pack_xy, {1,4}}]),
   ButtonPackerHighRight = 
     gs:frame(Packer, [{packer_x, [{fixed, 70},
 				  {fixed, 70},
-				  {stretch,1}]}, % empty space
+				  {stretch, 1}]}, % empty space
 		      {pack_xy, {3,4}}]),
   ButtonPackerLowLeft = 
     gs:frame(Packer, [{packer_x, [{fixed, 50},
 				  {fixed, 60},
 				  {fixed, 110},
-				  {stretch,1}]}, % empty space
+				  {stretch, 1}]}, % empty space
 		      {pack_xy, {1,7}}]),
   ButtonPackerLowRight = 
     gs:frame(Packer, [{packer_x, [{fixed, 70},
 				  {fixed, 70},
-				  {stretch,1},% empty space
+				  {stretch, 1},% empty space
 				  {fixed, 70},
 				  {fixed, 70}]}, 
 		      {pack_x, {2,3}}, {pack_y, 7}]),
 
   WHButton = [{width, 60},{height, 20}],
-  AddFile = gs:button(ButtonPackerLowLeft, [{pack_xy, {1,1}}, 
+  AddFile = gs:button(ButtonPackerLowLeft, [{pack_xy, {1, 1}}, 
 					    {label, {text,"Add"}}|WHButton]),
-  AddAll = gs:button(ButtonPackerLowLeft, [{pack_xy, {2,1}}, 
+  AddAll = gs:button(ButtonPackerLowLeft, [{pack_xy, {2, 1}}, 
 					   {label, {text,"Add All"}}|WHButton]),
-  AddRec = gs:button(ButtonPackerLowLeft, [{pack_xy, {3,1}}, 
+  AddRec = gs:button(ButtonPackerLowLeft, [{pack_xy, {3, 1}}, 
                                            {label, {text,"Add Recursively"}}
                                            |WHButton]),
-  DelFile = gs:button(ButtonPackerHighLeft, [{pack_xy, {1,1}}, 
+  DelFile = gs:button(ButtonPackerHighLeft, [{pack_xy, {1, 1}}, 
 					    {label, {text,"Delete"}}|WHButton]),
-  ClearChosen = gs:button(ButtonPackerHighLeft, [{pack_xy, {2,1}},
+  ClearChosen = gs:button(ButtonPackerHighLeft, [{pack_xy, {2, 1}},
 					         {label, {text,"Delete All"}}
 					         |WHButton]),
-  ClearLog = gs:button(ButtonPackerHighRight, [{pack_xy, {1,1}}, 
+  ClearLog = gs:button(ButtonPackerHighRight, [{pack_xy, {1, 1}}, 
 					       {label, {text,"Clear Log"}}
 					       |WHButton]),
-  ClearWarn = gs:button(ButtonPackerLowRight, [{pack_xy, {1,1}}, 
+  ClearWarn = gs:button(ButtonPackerLowRight, [{pack_xy, {1, 1}}, 
 					       {label, {text,"Clear Warn"}}
 					       |WHButton]),
 
-  Run = gs:button(ButtonPackerLowRight, [{pack_xy, {4,1}},
+  Run = gs:button(ButtonPackerLowRight, [{pack_xy, {4, 1}},
 					 {label, {text,"Run"}}|WHButton]),
-  Stop = gs:button(ButtonPackerLowRight, [{pack_xy, {5,1}}, {enable, false}, 
+  Stop = gs:button(ButtonPackerLowRight, [{pack_xy, {5, 1}}, {enable, false}, 
 					  {label, {text,"Stop"}}|WHButton]),
 
   %% --------- Menu --------------  
@@ -276,10 +276,10 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
   %% PLT Menu
   MenuBarPLT = gs:menubutton(MenuBar, [{label, {text,"PLT"}}]),
   MenuPLT = gs:menu(MenuBarPLT, []),
-  MenuPLTEmpty = gs:menuitem(MenuPLT, [{label,{text,"Init with empty PLT"}},
+  MenuPLTEmpty = gs:menuitem(MenuPLT, [{label, {text,"Init with empty PLT"}},
 				       {itemtype, check}, {select, false}]),
-  MenuPLTShow = gs:menuitem(MenuPLT, [{label,{text,"Show contents"}}]),
-  MenuPLTSearch = gs:menuitem(MenuPLT, [{label,{text,"Search contents"}}]),
+  MenuPLTShow = gs:menuitem(MenuPLT, [{label, {text,"Show contents"}}]),
+  MenuPLTSearch = gs:menuitem(MenuPLT, [{label, {text,"Search contents"}}]),
 
   %% Options Menu
   MenuBarOpts = gs:menubutton(MenuBar, [{label,{text,"Options"}}]),
@@ -288,11 +288,11 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
   MenuOptsIncludes = gs:menuitem(MenuOpts, [{label, {text, "Manage Include Directories"}}]),
   
   %% Help
-  MenuBarHelp = gs:menubutton(MenuBar, [{label,{text,"Help"}}, {side, right}]),
+  MenuBarHelp = gs:menubutton(MenuBar, [{label, {text,"Help"}}, {side, right}]),
   MenuHelp = gs:menu(MenuBarHelp, []),
-  MenuHelpManual = gs:menuitem(MenuHelp, [{label,{text,"Manual"}}]),
-  MenuHelpWarnings = gs:menuitem(MenuHelp, [{label,{text,"Warnings"}}]),
-  MenuHelpAbout = gs:menuitem(MenuHelp, [{label,{text,"About"}}]),
+  MenuHelpManual = gs:menuitem(MenuHelp, [{label, {text,"Manual"}}]),
+  MenuHelpWarnings = gs:menuitem(MenuHelp, [{label, {text,"Warnings"}}]),
+  MenuHelpAbout = gs:menuitem(MenuHelp, [{label, {text,"About"}}]),
   
   Warnings = [{?WARN_RETURN_NO_RETURN, MenuWarnReturnNoReturn},
 	      {?WARN_RETURN_ONLY_EXIT, MenuWarnReturnOnlyExit},
@@ -570,14 +570,10 @@ handle_add_rec_click(#gui_state{chosen_box = ChosenBox, file_box = File,
       Dirs2 = ordsets:from_list([filename:join(FWD, X) || X <- Dirs1]),
       Dirs3 = ordsets:filter(fun(X) -> filelib:is_dir(X) end, Dirs2),
       TargetDirs = ordsets:union(Dirs3, all_subdirs(Dirs3)),
-      case gs:read(Mode#mode.start_byte_code, select) of
-	true -> 
-	  Code = byte_code,
-	  Ext = ".beam";
-	false ->
-	  Code = src_code,
-	  Ext = ".erl"
-      end,
+      {Code, Ext} = case gs:read(Mode#mode.start_byte_code, select) of
+		      true  -> {byte_code, ".beam"};
+		      false -> {src_code, ".erl"}
+		    end,
       add_files(filter_mods(TargetDirs, Ext), ChosenBox, Code)
   end.
 
@@ -690,52 +686,56 @@ init_warnings([], _LegalWarnings) ->
   ok.
 
 config_gui_start(State) ->
-  gs:config(State#gui_state.stop, {enable, true}),
-  gs:config(State#gui_state.run, {enable, false}),
-  gs:config(State#gui_state.del_file, {enable, false}),
-  gs:config(State#gui_state.clear_chosen, {enable, false}),
-  gs:config(State#gui_state.add_file, {enable, false}),
-  gs:config(State#gui_state.add_all, {enable, false}),
-  gs:config(State#gui_state.add_rec, {enable, false}),
-  gs:config(State#gui_state.clear_warn, {enable, false}),
-  gs:config(State#gui_state.clear_log, {enable, false}),
+  Enabled = {enable, true},
+  Disabled = {enable, false},
+  gs:config(State#gui_state.stop, Enabled),
+  gs:config(State#gui_state.run, Disabled),
+  gs:config(State#gui_state.del_file, Disabled),
+  gs:config(State#gui_state.clear_chosen, Disabled),
+  gs:config(State#gui_state.add_file, Disabled),
+  gs:config(State#gui_state.add_all, Disabled),
+  gs:config(State#gui_state.add_rec, Disabled),
+  gs:config(State#gui_state.clear_warn, Disabled),
+  gs:config(State#gui_state.clear_log, Disabled),
 
   Menu = State#gui_state.menu,
-  gs:config(Menu#menu.file_save_warn, {enable, false}),
-  gs:config(Menu#menu.file_save_log, {enable, false}),
-  gs:config(Menu#menu.opts_macros, {enable, false}),
-  gs:config(Menu#menu.opts_includes, {enable, false}),
-  gs:config(Menu#menu.plt_empty, {enable, false}),
-  gs:config(Menu#menu.plt_search_doc, {enable, false}),
-  gs:config(Menu#menu.plt_show_doc, {enable, false}),
+  gs:config(Menu#menu.file_save_warn, Disabled),
+  gs:config(Menu#menu.file_save_log, Disabled),
+  gs:config(Menu#menu.opts_macros, Disabled),
+  gs:config(Menu#menu.opts_includes, Disabled),
+  gs:config(Menu#menu.plt_empty, Disabled),
+  gs:config(Menu#menu.plt_search_doc, Disabled),
+  gs:config(Menu#menu.plt_show_doc, Disabled),
 
   Mode = State#gui_state.mode,
-  gs:config(Mode#mode.start_byte_code, {enable, false}),
-  gs:config(Mode#mode.start_src_code, {enable, false}).
+  gs:config(Mode#mode.start_byte_code, Disabled),
+  gs:config(Mode#mode.start_src_code, Disabled).
 
 config_gui_stop(State) ->
-  gs:config(State#gui_state.stop, {enable, false}),
-  gs:config(State#gui_state.run, {enable, true}),
-  gs:config(State#gui_state.del_file, {enable, true}),
-  gs:config(State#gui_state.clear_chosen, {enable, true}),
-  gs:config(State#gui_state.add_file, {enable, true}),
-  gs:config(State#gui_state.add_all, {enable, true}),
-  gs:config(State#gui_state.add_rec, {enable, true}),
-  gs:config(State#gui_state.clear_warn, {enable, true}),
-  gs:config(State#gui_state.clear_log, {enable, true}),
+  Enabled = {enable, true},
+  Disabled = {enable, false},
+  gs:config(State#gui_state.stop, Disabled),
+  gs:config(State#gui_state.run, Enabled),
+  gs:config(State#gui_state.del_file, Enabled),
+  gs:config(State#gui_state.clear_chosen, Enabled),
+  gs:config(State#gui_state.add_file, Enabled),
+  gs:config(State#gui_state.add_all, Enabled),
+  gs:config(State#gui_state.add_rec, Enabled),
+  gs:config(State#gui_state.clear_warn, Enabled),
+  gs:config(State#gui_state.clear_log, Enabled),
 
   Menu = State#gui_state.menu,
-  gs:config(Menu#menu.file_save_warn, {enable, true}),
-  gs:config(Menu#menu.file_save_log, {enable, true}),
-  gs:config(Menu#menu.opts_macros, {enable, true}),
-  gs:config(Menu#menu.opts_includes, {enable, true}),
-  gs:config(Menu#menu.plt_empty, {enable, true}),
-  gs:config(Menu#menu.plt_search_doc, {enable, true}),
-  gs:config(Menu#menu.plt_show_doc, {enable, true}),
+  gs:config(Menu#menu.file_save_warn, Enabled),
+  gs:config(Menu#menu.file_save_log, Enabled),
+  gs:config(Menu#menu.opts_macros, Enabled),
+  gs:config(Menu#menu.opts_includes, Enabled),
+  gs:config(Menu#menu.plt_empty, Enabled),
+  gs:config(Menu#menu.plt_search_doc, Enabled),
+  gs:config(Menu#menu.plt_show_doc, Enabled),
 
   Mode = State#gui_state.mode,
-  gs:config(Mode#mode.start_byte_code, {enable, true}),
-  gs:config(Mode#mode.start_src_code, {enable, true}).
+  gs:config(Mode#mode.start_byte_code, Enabled),
+  gs:config(Mode#mode.start_src_code, Enabled).
 
 %% ----------------------------------------------------------------
 %%
@@ -790,15 +790,14 @@ dialog(#gui_state{gs = GS, top = TopWin}, Message, OkLabel, CancelLabel) ->
 			     {default, button, {font, {helvetica, bold, 12}}}
 			     |WH]),
   DialogPacker = gs:frame(DialogWin, [{packer_y, [{fixed, 75}, {fixed, 25}]},
-				      {packer_x, [{fixed, 150},{fixed, 50},
-						  {fixed, 50},{fixed, 150}]}]),
+				      {packer_x, [{fixed, 150}, {fixed, 50},
+						  {fixed, 50}, {fixed, 150}]}]),
   gs:label(DialogPacker, [{pack_x, {1,4}}, {pack_y, 1}, 
 			  {label, {text, Message}}]),
   Ok = gs:button(DialogPacker, [{label, {text, OkLabel}}, 
 				{pack_xy, {2,2}}|WHButton]),
   Cancel = gs:button(DialogPacker, [{label, {text, CancelLabel}}, 
 				    {pack_xy, {3,2}}|WHButton]),
-
   gs:config(DialogWin, {map, true}),
   gs:config(DialogPacker, WH),
   dialog_loop(Ok, Cancel, DialogWin, TopWin).
@@ -838,8 +837,7 @@ maybe_quit(State = #gui_state{top = TopWin}) ->
 
 %% ---- Help Menu ----
 
-manual(State) ->
-  GS = State#gui_state.gs,
+manual(#gui_state{gs = GS, top = TopWin} = State) ->
   WH = [{width, 600}, {height, 500}],
   Win = gs:window(GS, [{title, "Dialyzer Manual"}, {configure, true},
 		       {default, editor, {bg, white}} | WH]),
@@ -852,7 +850,6 @@ manual(State) ->
   Button = gs:button(Frame, [{label, {text, "Ok"}}, {pack_xy, {2,2}}]),
   gs:config(Win, {map, true}),
   gs:config(Frame, WH),
-
   AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "manual.txt"]),
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
@@ -862,12 +859,10 @@ manual(State) ->
 			      [Reason]));
     ok ->
       gs:config(Editor, {enable, false}),
-      TopWin = State#gui_state.top,
       show_info_loop(TopWin, Win, Frame, Button)
   end.
 
-help_warnings(State) ->
-  GS = State#gui_state.gs,
+help_warnings(#gui_state{gs = GS, top = TopWin} = State) ->
   WH = [{width, 600}, {height, 500}],
   Win = gs:window(GS, [{title, "Dialyzer Warnings"}, {configure, true},
 		       {default, editor, {bg, white}} | WH]),
@@ -880,7 +875,6 @@ help_warnings(State) ->
   Button = gs:button(Frame, [{label, {text, "Ok"}}, {pack_xy, {2,2}}]),
   gs:config(Win, {map, true}),
   gs:config(Frame, WH),
-
   AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "warnings.txt"]),
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
@@ -890,12 +884,10 @@ help_warnings(State) ->
 			      [Reason]));
     ok ->
       gs:config(Editor, {enable, false}),
-      TopWin = State#gui_state.top,
       show_info_loop(TopWin, Win, Frame, Button)
   end.
 
-about(State) ->
-  GS = State#gui_state.gs,
+about(#gui_state{gs = GS, top = TopWin} = State) ->
   WH = [{width, 600}, {height, 160}],
   Win = gs:window(GS, [{title, "About Dialyzer"}, {configure, true},
 		       {default, editor, {bg, yellow}} | WH]),
@@ -908,7 +900,6 @@ about(State) ->
   Button = gs:button(Frame, [{label, {text, "Ok"}}, {pack_xy, {2,2}}]),
   gs:config(Win, {map, true}),
   gs:config(Frame, WH),
-
   AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "about.txt"]),
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
@@ -918,39 +909,28 @@ about(State) ->
 			      [Reason]));
     ok ->
       gs:config(Editor, {enable, false}),
-      TopWin = State#gui_state.top,
       show_info_loop(TopWin, Win, Frame, Button)
   end.
 
 %% ---- File Menu ----
 
-save_log(State) ->
-  Log = State#gui_state.log,
-  CWD = State#gui_state.file_wd,
+save_log(#gui_state{file_wd = CWD, log = Log} = State) ->
   {Win, Entry, OkButton, CancelButton} = file_box(State, "Save Log", CWD),
   save_loop(State, OkButton, CancelButton, Entry, Win, Log).
 
-save_warn(State) ->
-  Warn = State#gui_state.warnings_box,
-  CWD = State#gui_state.file_wd,
-  {Win, Entry, OkButton, CancelButton} =
-    file_box(State, "Save Warnings", CWD),
-  save_loop(State, OkButton, CancelButton, Entry, Win, Warn).  
+save_warn(#gui_state{file_wd = CWD, warnings_box = WBox} = State) ->
+  {Win, Entry, OkButton, CancelButton} = file_box(State, "Save Warnings", CWD),
+  save_loop(State, OkButton, CancelButton, Entry, Win, WBox).
 
 file_box(#gui_state{gs = GS}, Title, Default) ->
   WH = [{width, 400}, {height, 75}],
   Win = gs:window(GS, [{title, Title}|WH]),
-  WinPacker = gs:frame(Win, [{packer_y, [{fixed, 25}, {fixed, 25},
-					 {fixed, 25}]},
-			     {packer_x, [{fixed, 75},{fixed, 75},
-					 {fixed, 75},
-					 {fixed, 175}]}]),
-  gs:label(WinPacker, [{pack_xy, {1,2}},
-		       {label, {text, "Enter file:"}}]),
-  Entry = gs:entry(WinPacker, [{pack_x, {2,4}}, 
-			       {pack_y, 2}, {keypress, true}]),
-  OkButton = gs:button(WinPacker, [{label, {text, "Ok"}}, 
-				   {pack_xy, {2,3}}]),
+  Fix25 = {fixed, 27}, Fix75 = {fixed, 75},
+  WinPacker = gs:frame(Win, [{packer_y, [Fix25, Fix25, Fix25]},
+			     {packer_x, [Fix75, Fix75, Fix75, {fixed, 175}]}]),
+  gs:label(WinPacker, [{pack_xy, {1,2}}, {label, {text, "Enter file:"}}]),
+  Entry = gs:entry(WinPacker, [{pack_x, {2,4}}, {pack_y, 2}, {keypress, true}]),
+  OkButton = gs:button(WinPacker, [{label, {text, "Ok"}}, {pack_xy, {2,3}}]),
   CancelButton = gs:button(WinPacker, [{label, {text, "Cancel"}}, 
 				       {pack_xy, {3,3}}]),
   gs:config(Entry, {text, Default}),
@@ -993,7 +973,7 @@ save_loop(State, OkButton, CancelButton, Entry, Save, Editor) ->
 
 %% ---- Plt Menu ----
 
-search_doc_plt(State = #gui_state{gs = GS, top=TopWin}) ->
+search_doc_plt(#gui_state{gs = GS, top=TopWin} = State) ->
   WH = [{width, 400}, {height, 100}],
   WHB = [{width, 120}, {height, 30}],
   Title = io_lib:format("Search the PLT", []),
@@ -1009,7 +989,6 @@ search_doc_plt(State = #gui_state{gs = GS, top=TopWin}) ->
   FunEntry = gs:entry(Frame, [{pack_xy, {2,2}}]),
   gs:label(Frame, [{pack_xy, {3,1}}, {label, {text, "Arity"}}]),
   ArityEntry = gs:entry(Frame, [{pack_xy, {3,2}}]),
-
   ButtonPacker = gs:frame(Frame, [{pack_xy, {2,4}}, 
 				  {packer_x, [{fixed, 60}, {fixed, 60}]},
 				  {packer_y, {fixed, 30}}]),
@@ -1017,7 +996,6 @@ search_doc_plt(State = #gui_state{gs = GS, top=TopWin}) ->
 					  {pack_xy, {1,1}}]),
   CancelButton = gs:button(ButtonPacker, [{label, {text, "Cancel"}}, 
 					  {pack_xy, {2,1}}]),
-
   gs:config(Win, {map, true}),
   gs:config(Frame, WH),
   gs:config(ButtonPacker, WHB),
@@ -1036,7 +1014,7 @@ search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry,
       M = format_search(gs:read(ModEntry, text)),
       F = format_search(gs:read(FunEntry, text)),
       A = format_search(gs:read(ArityEntry, text)),
-      case dialyzer_plt:to_edoc(State#gui_state.doc_plt, M, F, A) of
+      case dialyzer_plt:get_specs(State#gui_state.doc_plt, M, F, A) of
 	[] -> 
 	  error_sms(State, "No such function"),
 	  search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry, 
@@ -1058,7 +1036,7 @@ show_doc_plt(State) ->
   case State#gui_state.doc_plt of
     undefined -> error_sms(State, "No analysis has been made yet!\n");
     PLT ->
-      String = dialyzer_plt:to_edoc(PLT),
+      String = dialyzer_plt:get_specs(PLT),
       free_editor(State, "Content of PLT", String)
   end.
 
@@ -1068,13 +1046,9 @@ free_editor(State, Title, Contents0) ->
   NofLines = length(Tokens),
   LongestLine = lists:max([length(X) || X <- Tokens]),
   Height0 = NofLines * 25 + 80,
-  if Height0 > 500 -> Height = 500;
-     true -> Height = Height0
-  end,
+  Height = if Height0 > 500 -> 500; true -> Height0 end,
   Width0 = LongestLine * 7 + 60,
-  if Width0 > 800 -> Width = 800;
-     true -> Width = Width0
-  end,
+  Width = if Width0 > 800 -> 800; true -> Width0 end,
   GS = State#gui_state.gs,
   WH = [{width, Width}, {height, Height}],
   Win = gs:window(GS, [{title, Title}, {configure, true},
@@ -1127,19 +1101,16 @@ include_dialog(State, Parent) ->
 				   {packer_y, {fixed, 30}}]),
   AddButton = gs:button(ButtonPacker1, [{label, {text, "Add"}}, 
 					{pack_xy, {1,1}}]),
-  
   Options = State#gui_state.options,
   Dirs = [io_lib:format("~s", [X]) || X <- Options#options.include_dirs],
   DirBox = gs:listbox(Frame, [{pack_xy, {1,4}}, {vscroll, right},
 				{bg, white}, {configure, true},
 				{selectmode, multiple},
 				{items, Dirs}]),
-  
   ButtonPacker2 = gs:frame(Frame, [{pack_xy, {1,5}},
 				   {packer_x, [{fixed, 60},{fixed, 70},
 					       {stretch,1}]},%Empty space
 				   {packer_y, {fixed, 30}}]),
-  
   DeleteButton = gs:button(ButtonPacker2, [{label, {text, "Delete"}}, 
 					   {pack_xy, {1,1}}]),
   DeleteAllButton = gs:button(ButtonPacker2, [{label, {text, "Delete All"}}, 
@@ -1148,15 +1119,12 @@ include_dialog(State, Parent) ->
 				   {packer_x, [{stretch,1},%Empty space
 					       {fixed, 60},{fixed, 60}]},
 				   {packer_y, {fixed, 30}}]),
-
   OkButton = gs:button(ButtonPacker3, [{label, {text, "Ok"}},
 				       {pack_xy, {2,1}}]),
   CancelButton = gs:button(ButtonPacker3, [{label, {text, "Cancel"}},
 					   {pack_xy, {3,1}}]),
-
   gs:config(Win, {map, true}),
   gs:config(Frame, WH),
-
   include_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 	       DirBox, DirEntry, OkButton, CancelButton, Win).
 
@@ -1207,8 +1175,7 @@ include_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
       ok
   end.
 
-macro_dialog(State, Parent) ->
-  GS = State#gui_state.gs,
+macro_dialog(#gui_state{gs = GS, options = Options}, Parent) ->
   WH = [{width, 300}, {height, 400}],
   Title = io_lib:format("Macro Definitions", []),
   Win = gs:window(GS, [{title, Title}, {configure, true},
@@ -1228,7 +1195,6 @@ macro_dialog(State, Parent) ->
 				   {packer_y, {fixed, 30}}]),
   AddButton = gs:button(ButtonPacker1, [{label, {text, "Add"}}, 
 					{pack_xy, {1,1}}]),
-  Options = State#gui_state.options,
   Macros = [io_lib:format("~p = ~p",[X,Y]) || {X,Y} <- Options#options.defines],
   MacroBox = gs:listbox(Frame, [{pack_x, {1,2}}, {pack_y, 4}, {vscroll, right},
 				{bg, white}, {configure, true},

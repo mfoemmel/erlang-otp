@@ -87,35 +87,42 @@ caller deallocates parameters after return (addl $N,%esp)
 
 Windows 32-bit C Calling Conventions
 ====================================
-See "Description of the calling conventions that the 32-bit
-compiler supports" in msdn.
 
-[the sets of caller-save and callee-save registers are not yet known]
+%esp, %ebp, %ebx, %esi, %edi are preserved by calls (callee-save)
+%eax and %edx receive function call return values
+Parameters not passed in registers are pushed right-to-left on the stack.
 
-Windows supports 3 calling conventions on x86 that differ in
-whether caller or callee pops off stacked parameters,
-whether any parameters are passed in registers, and
-how function names are mangled.
+Windows supports several calling conventions on x86 that differ
+in whether caller or callee pops off stacked parameters, whether
+any parameters are passed in registers, and how function names
+are mangled.
 
-The _cdecl convention (default)
--------------------------------
+The __cdecl convention
+----------------------
+Default for C and C++ application code.
 No parameters are passed in registers.
-Parameters are pushed right-to-left.
 Caller deallocates parameters after return (addl $N, %esp).
 A function name is prefixed by a "_".
 
-The _stdcall convention
------------------------
+The __stdcall convention
+------------------------
+Used for calling Win32 API functions.
 No parameters are passed in registers.
-Parameters are pushed right-to-left.
 Callee deallocates parameters during return (ret $N).
 A function name is prefixed by a "_" and suffixed by "@" and the
 number of bytes of stack space the parameters use in decimal.
+Prototypes are required. Varargs functions are converted to __cdecl.
 
-The _fastcall convention
+The __fastcall convention
 ------------------------
 The first two parameters are passed in %ecx and %edx.
-Remaining parameters are pushed right-to-left.
 Callee deallocates stacked parameters during return (ret $N).
 A function name is prefixed by a "@" and suffixed by "@" and the
 number of bytes of stack space the parameters use in decimal.
+
+The __thiscall convention
+-------------------------
+Used for C++ member functions.
+Similar to __cdecl except for the implicit 'this' parameter
+which is passed in %ecx rather than being pushed on the stack.
+No name mangling occurs.

@@ -72,7 +72,7 @@
   setScrollbar/5,setScrollbar/6,setShape/2,setSize/2,setSize/3,setSize/5,
   setSize/6,setSizeHints/2,setSizeHints/3,setSizeHints/4,setSizer/2,
   setSizer/3,setSizerAndFit/2,setSizerAndFit/3,setStatusBar/2,setStatusBarPane/2,
-  setStatusText/2,setStatusText/3,setStatusWidths/3,setThemeEnabled/2,
+  setStatusText/2,setStatusText/3,setStatusWidths/2,setThemeEnabled/2,
   setTitle/2,setToolBar/2,setToolTip/2,setVirtualSize/2,setVirtualSize/3,
   setVirtualSizeHints/2,setVirtualSizeHints/3,setVirtualSizeHints/4,
   setWindowStyle/2,setWindowStyleFlag/2,setWindowVariant/2,shouldInheritColours/1,
@@ -108,7 +108,8 @@ new(#wx_ref{type=BitmapT,ref=BitmapRef},SplashStyle,Milliseconds,#wx_ref{type=Pa
   ?CLASS(ParentT,wxWindow),
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxSplashScreen_new_6,
   <<BitmapRef:32/?UI,SplashStyle:32/?UI,Milliseconds:32/?UI,ParentRef:32/?UI,Id:32/?UI, 0:32,BinOpt/binary>>).
@@ -137,7 +138,7 @@ destroy(Obj=#wx_ref{type=Type}) ->
 %% @hidden
 setToolBar(This,Toolbar) -> wxFrame:setToolBar(This,Toolbar).
 %% @hidden
-setStatusWidths(This,N,Widths_field) -> wxFrame:setStatusWidths(This,N,Widths_field).
+setStatusWidths(This,Widths_field) -> wxFrame:setStatusWidths(This,Widths_field).
 %% @hidden
 setStatusText(This,Text, Options) -> wxFrame:setStatusText(This,Text, Options).
 %% @hidden

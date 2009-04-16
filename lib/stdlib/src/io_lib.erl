@@ -64,9 +64,9 @@
 
 -export([write/1,write/2,write/3,nl/0,format_prompt/1]).
 -export([write_atom/1,write_string/1,write_string/2,write_unicode_string/1,
-	 write_unicode_string/2,write_char/1, write_unicode_char/1]).
+	 write_unicode_string/2, write_char/1, write_unicode_char/1]).
 
--export([quote_atom/2,char_list/1,deep_char_list/1,printable_list/1]).
+-export([quote_atom/2,char_list/1,unicode_char_list/1,deep_char_list/1,deep_unicode_char_list/1,printable_list/1,printable_unicode_list/1]).
 
 %% Utilities for collecting characters.
 -export([collect_chars/3,collect_chars/4,collect_line/2,collect_line/3,collect_line/4,get_until/3,get_until/4]).
@@ -262,11 +262,10 @@ string_char(_,Q, Q, Tail) -> [$\\,Q|Tail];	%Must check these first!
 string_char(_,$\\, _, Tail) -> [$\\,$\\|Tail];
 string_char(_,C, _, Tail) when C >= $\s, C =< $~ ->
     [C|Tail];
-string_char(_,C, _, Tail) when C >= $\240, C =< $\377 ->
+string_char(latin1,C, _, Tail) when C >= $\240, C =< $\377 ->
     [C|Tail];
 string_char(unicode,C, _, Tail) when C >= $\240 ->
-    Txt = lists:flatten(format("\\{~.8B}",[C])),
-    Txt ++ Tail;
+    "\\x{"++erlang:integer_to_list(C, 16)++"}"++Tail;
 string_char(_,$\n, _, Tail) -> [$\\,$n|Tail];	%\n = LF
 string_char(_,$\r, _, Tail) -> [$\\,$r|Tail];	%\r = CR
 string_char(_,$\t, _, Tail) -> [$\\,$t|Tail];	%\t = TAB
@@ -275,7 +274,7 @@ string_char(_,$\b, _, Tail) -> [$\\,$b|Tail];	%\b = BS
 string_char(_,$\f, _, Tail) -> [$\\,$f|Tail];	%\f = FF
 string_char(_,$\e, _, Tail) -> [$\\,$e|Tail];	%\e = ESC
 string_char(_,$\d, _, Tail) -> [$\\,$d|Tail];	%\d = DEL
-string_char(_,C, _, Tail) ->			%Other control characters.
+string_char(_,C, _, Tail) when C < $\240->	%Other control characters.
     C1 = (C bsr 6) + $0,
     C2 = ((C bsr 3) band 7) + $0,
     C3 = (C band 7) + $0,
@@ -304,6 +303,13 @@ char_list([C|Cs]) when is_integer(C), C >= $\000, C =< $\377 ->
 char_list([]) -> true;
 char_list(_) -> false.			%Everything else is false
 
+unicode_char_list([C|Cs]) when is_integer(C), C >= 0, C < 16#D800; 
+       is_integer(C), C > 16#DFFF, C < 16#FFFE;
+       is_integer(C), C > 16#FFFF, C =< 16#10FFFF ->
+    unicode_char_list(Cs);
+unicode_char_list([]) -> true;
+unicode_char_list(_) -> false.			%Everything else is false
+
 deep_char_list(Cs) ->
     deep_char_list(Cs, []).
 
@@ -315,6 +321,22 @@ deep_char_list([], [Cs|More]) ->
     deep_char_list(Cs, More);
 deep_char_list([], []) -> true;
 deep_char_list(_, _More) ->			%Everything else is false
+    false.
+
+deep_unicode_char_list(Cs) ->
+    deep_unicode_char_list(Cs, []).
+
+deep_unicode_char_list([C|Cs], More) when is_list(C) ->
+    deep_unicode_char_list(C, [Cs|More]);
+deep_unicode_char_list([C|Cs], More) 
+  when is_integer(C), C >= 0, C < 16#D800; 
+       is_integer(C), C > 16#DFFF, C < 16#FFFE;
+       is_integer(C), C > 16#FFFF, C =< 16#10FFFF ->
+    deep_unicode_char_list(Cs, More);
+deep_unicode_char_list([], [Cs|More]) ->
+    deep_unicode_char_list(Cs, More);
+deep_unicode_char_list([], []) -> true;
+deep_unicode_char_list(_, _More) ->		%Everything else is false
     false.
 
 %% printable_list([Char]) -> bool()
@@ -334,6 +356,29 @@ printable_list([$\f|Cs]) -> printable_list(Cs);
 printable_list([$\e|Cs]) -> printable_list(Cs);
 printable_list([]) -> true;
 printable_list(_) -> false.			%Everything else is false
+
+%% printable_unicode_list([Char]) -> bool()
+%%  Return true if CharList is a list of printable characters, else
+%%  false. The notion of printable in Unicode terms is somewhat floating.
+%%  Everything that is not a control character and not invalid unicode 
+%%  will be considered printable.
+
+printable_unicode_list([C|Cs]) when is_integer(C), C >= $\040, C =< $\176 ->
+    printable_unicode_list(Cs);
+printable_unicode_list([C|Cs]) 
+  when is_integer(C), C >= 16#A0, C < 16#D800; 
+       is_integer(C), C > 16#DFFF, C < 16#FFFE;
+       is_integer(C), C > 16#FFFF, C =< 16#10FFFF ->
+    printable_unicode_list(Cs);
+printable_unicode_list([$\n|Cs]) -> printable_unicode_list(Cs);
+printable_unicode_list([$\r|Cs]) -> printable_unicode_list(Cs);
+printable_unicode_list([$\t|Cs]) -> printable_unicode_list(Cs);
+printable_unicode_list([$\v|Cs]) -> printable_unicode_list(Cs);
+printable_unicode_list([$\b|Cs]) -> printable_unicode_list(Cs);
+printable_unicode_list([$\f|Cs]) -> printable_unicode_list(Cs);
+printable_unicode_list([$\e|Cs]) -> printable_unicode_list(Cs);
+printable_unicode_list([]) -> true;
+printable_unicode_list(_) -> false.			%Everything else is false
 
 %% List = nl()
 %%  Return a list of characters to generate a newline.
@@ -496,6 +541,7 @@ collect_line([B|_]=Stack, eof, _, _) when is_binary(B) ->
     {stop,binrev(Stack),eof};
 collect_line(Stack, eof, _, _) ->
     {stop,lists:reverse(Stack, []),eof}.
+
 
 collect_line_bin(<<$\n,T/binary>>, Data, Stack0, _) ->
     N = byte_size(Data) - byte_size(T),

@@ -48,19 +48,20 @@ public class OtpErlangList extends OtpErlangObject implements
     }
 
     /**
-     * Create a list of characters.
+     * Create a list of Erlang integers representing Unicode codePoints.
+     * This method does not check if the string contains valid code points.
      * 
      * @param str
-     *                the characters from which to create the list.
+     *            the characters from which to create the list.
      */
     public OtpErlangList(final String str) {
 	if (str == null || str.length() == 0) {
 	    elems = NO_ELEMENTS;
 	} else {
-	    final int len = str.length();
-	    elems = new OtpErlangObject[len];
-	    for (int i = 0; i < len; i++) {
-		elems[i] = new OtpErlangChar(str.charAt(i));
+	    final int[] codePoints = OtpErlangString.stringToCodePoints(str);
+	    elems = new OtpErlangObject[codePoints.length];
+	    for (int i = 0;  i < elems.length;  i++) {
+		elems[i] = new OtpErlangInt(codePoints[i]);
 	    }
 	}
     }
@@ -69,7 +70,7 @@ public class OtpErlangList extends OtpErlangObject implements
      * Create a list containing one element.
      * 
      * @param elem
-     *                the elememet to make the list from.
+     *            the elememet to make the list from.
      */
     public OtpErlangList(final OtpErlangObject elem) {
 	elems = new OtpErlangObject[] { elem };
@@ -79,7 +80,7 @@ public class OtpErlangList extends OtpErlangObject implements
      * Create a list from an array of arbitrary Erlang terms.
      * 
      * @param elems
-     *                the array of terms from which to create the list.
+     *            the array of terms from which to create the list.
      */
     public OtpErlangList(final OtpErlangObject[] elems) {
 	this(elems, 0, elems.length);
@@ -90,7 +91,7 @@ public class OtpErlangList extends OtpErlangObject implements
      * specified, if not null, the list will not be proper.
      * 
      * @param elems
-     *                array of terms from which to create the list
+     *            array of terms from which to create the list
      * @param lastTail
      * @throws OtpErlangException
      */
@@ -107,11 +108,11 @@ public class OtpErlangList extends OtpErlangObject implements
      * Create a list from an array of arbitrary Erlang terms.
      * 
      * @param elems
-     *                the array of terms from which to create the list.
+     *            the array of terms from which to create the list.
      * @param start
-     *                the offset of the first term to insert.
+     *            the offset of the first term to insert.
      * @param count
-     *                the number of terms to insert.
+     *            the number of terms to insert.
      */
     public OtpErlangList(final OtpErlangObject[] elems, final int start,
 	    final int count) {
@@ -128,11 +129,11 @@ public class OtpErlangList extends OtpErlangObject implements
      * format.
      * 
      * @param buf
-     *                the stream containing the encoded list.
+     *            the stream containing the encoded list.
      * 
      * @exception OtpErlangDecodeException
-     *                    if the buffer does not contain a valid external
-     *                    representation of an Erlang list.
+     *                if the buffer does not contain a valid external
+     *                representation of an Erlang list.
      */
     public OtpErlangList(final OtpInputStream buf)
 	    throws OtpErlangDecodeException {
@@ -143,7 +144,7 @@ public class OtpErlangList extends OtpErlangObject implements
 		elems[i] = buf.read_any();
 	    }
 	    /* discard the terminating nil (empty list) or read tail */
-	    if (buf.peek() == OtpExternal.nilTag) {
+	    if (buf.peek1() == OtpExternal.nilTag) {
 		buf.read_nil();
 	    } else {
 		lastTail = buf.read_any();
@@ -166,8 +167,8 @@ public class OtpErlangList extends OtpErlangObject implements
      * Get the specified element from the list.
      * 
      * @param i
-     *                the index of the requested element. List elements are
-     *                numbered as array elements, starting at 0.
+     *            the index of the requested element. List elements are numbered
+     *            as array elements, starting at 0.
      * 
      * @return the requested element, of null if i is not a valid element index.
      */
@@ -228,8 +229,7 @@ public class OtpErlangList extends OtpErlangObject implements
      * to do so.
      * 
      * @param buf
-     *                An output stream to which the encoded list should be
-     *                written.
+     *            An output stream to which the encoded list should be written.
      * 
      */
 
@@ -260,7 +260,7 @@ public class OtpErlangList extends OtpErlangObject implements
      * arity and all of the elements are equal.
      * 
      * @param o
-     *                the list to compare to.
+     *            the list to compare to.
      * 
      * @return true if the lists have the same arity and all the elements are
      *         equal.
@@ -302,7 +302,25 @@ public class OtpErlangList extends OtpErlangObject implements
     public OtpErlangObject getLastTail() {
 	return lastTail;
     }
-
+    
+    @Override
+    protected int doHashCode() {
+	OtpErlangObject.Hash hash = new OtpErlangObject.Hash(4);
+	final int a = arity();
+	if (a == 0) {
+	    return (int)3468870702L;
+	}
+	for (int i = 0; i < a; i++) {
+	    hash.combine(elementAt(i).hashCode());
+	}
+	final OtpErlangObject t = getLastTail();
+	if (t != null) {
+	    int h = t.hashCode();
+	    hash.combine(h, h);
+	}
+	return hash.valueOf();
+    }
+    
     @Override
     public Object clone() {
 	try {
@@ -349,6 +367,44 @@ public class OtpErlangList extends OtpErlangObject implements
 	}
 	return null;
     }
+
+    /**
+     * Convert a list of integers into a Unicode string,
+     * interpreting each integer as a Unicode code point value.
+     * 
+     * @return A java.lang.String object created through its
+     *         constructor String(int[], int, int).
+     *
+     * @exception OtpErlangException
+     *                    for non-proper and non-integer lists.
+     *
+     * @exception OtpErlangRangeException
+     *                    if any integer does not fit into a Java int.
+     *
+     * @exception java.security.InvalidParameterException
+     *                    if any integer is not within the Unicode range.
+     *
+     * @see String#String(int[], int, int)
+     *
+     */
+
+    public String stringValue() throws OtpErlangException {
+	if (! isProper()) {
+	    throw new OtpErlangException("Non-proper list: " + this);
+	}
+	final int[] values = new int[arity()];
+	for (int i = 0; i < values.length; ++i) {
+	    final OtpErlangObject o = elementAt(i);
+	    if (! (o instanceof OtpErlangLong)) {
+		throw new OtpErlangException("Non-integer term: " + o);
+	    }
+	    final OtpErlangLong l = (OtpErlangLong) o;
+	    values[i] = l.intValue();
+	}
+	return new String(values, 0, values.length);
+    }
+
+
 
     public static class SubList extends OtpErlangList {
 	private static final long serialVersionUID = OtpErlangList.serialVersionUID;

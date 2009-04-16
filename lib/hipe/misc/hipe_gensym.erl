@@ -58,6 +58,7 @@
 %%   ok.
 
 -spec init(gvarname()) -> 'ok'.
+
 init(What) ->
   put({What,var_count}, 0),
   put({What,label_count}, 0),
@@ -73,9 +74,11 @@ init(What) ->
 %%   V.
 
 -spec new_var(gvarname()) -> non_neg_integer().
+
 new_var(What) ->
-  V = get({What,var_count}),
-  put({What,var_count}, V+1),
+  T = {What, var_count},
+  V = get(T),
+  put(T, V+1),
   V.
 
 %% new_label() ->
@@ -84,49 +87,58 @@ new_var(What) ->
 %%   L.
 
 -spec new_label(gvarname()) -> non_neg_integer().
+
 new_label(What) ->
-  L = get({What,label_count}),
-  put({What,label_count}, L+1),
+  T = {What, label_count},
+  L = get(T),
+  put(T, L+1),
   L.
 
 %% update_vrange(V) ->
 %%   Vmax = get(var_max),
 %%   Vmin = get(var_min),
-%%   put(var_min, lists:min([V, Vmin])),
-%%   put(var_max, lists:max([V, Vmax])),
+%%   put(var_min, erlang:min(V, Vmin)),
+%%   put(var_max, erlang:max(V, Vmax)),
 %%   ok.
 
 -spec update_vrange(gvarname(), non_neg_integer()) -> 'ok'.
 update_vrange(What, V) ->
-  Vmax = get({What,var_max}),
-  Vmin = get({What,var_min}),
-  put({What,var_min}, lists:min([V, Vmin])),
-  put({What,var_max}, lists:max([V, Vmax])),
+  Tmin = {What, var_min},
+  Tmax = {What, var_max},
+  Vmax = get(Tmax),
+  Vmin = get(Tmin),
+  put(Tmin, erlang:min(V, Vmin)),
+  put(Tmax, erlang:max(V, Vmax)),
   ok.
 
 %% update_lblrange(L) ->
 %%   Lmax = get(lbl_max),
 %%   Lmin = get(lbl_min),
-%%   put(lbl_min, lists:min([L, Lmin])),
-%%   put(lbl_max, lists:max([L, Lmax])),
+%%   put(lbl_min, erlang:min(L, Lmin)),
+%%   put(lbl_max, erlang:max(L, Lmax)),
 %%   ok.
 
 -spec update_lblrange(gvarname(), non_neg_integer()) -> 'ok'.
+
 update_lblrange(What, L) ->
-  Lmax = get({What,lbl_max}),
-  Lmin = get({What,lbl_min}),
-  put({What,lbl_min}, lists:min([L, Lmin])),
-  put({What,lbl_max}, lists:max([L, Lmax])),
+  Tmin = {What, lbl_min},
+  Tmax = {What, lbl_max},
+  Lmax = get(Tmax),
+  Lmin = get(Tmin),
+  put(Tmin, erlang:min(L, Lmin)),
+  put(Tmax, erlang:max(L, Lmax)),
   ok.
 
 %% var_range() ->
 %%   {get(var_min), get(var_max)}.
 
 -spec var_range(gvarname()) -> {non_neg_integer(), non_neg_integer()}.
+
 var_range(What) ->
   {get({What,var_min}), get({What,var_max})}.
 
 -spec set_var_range(gvarname(), non_neg_integer(), non_neg_integer()) -> 'ok'.
+
 set_var_range(What, Min, Max) ->
   put({What,var_min}, Min),
   put({What,var_max}, Max),
@@ -136,10 +148,12 @@ set_var_range(What, Min, Max) ->
 %%   {get(lbl_min), get(lbl_max)}.
 
 -spec label_range(gvarname()) -> {non_neg_integer(), non_neg_integer()}.
+
 label_range(What) ->
   {get({What,lbl_min}), get({What,lbl_max})}.
  
 -spec set_label_range(gvarname(), non_neg_integer(), non_neg_integer()) -> 'ok'.
+
 set_label_range(What, Min, Max) ->
   put({What,lbl_min}, Min),
   put({What,lbl_max}, Max),
@@ -150,33 +164,40 @@ set_label_range(What, Min, Max) ->
 %%-----------------------------------------------------------------------
 
 -spec set_var(non_neg_integer()) -> 'ok'.
+
 set_var(X) ->
   put(var_max, X),
   ok.
 
 -spec set_var(gvarname(), non_neg_integer()) -> 'ok'.
+
 set_var(What, X) ->
   put({What,var_max}, X),
   ok.
 
 -spec get_var() -> non_neg_integer().
+
 get_var() ->
   get(var_max).
 
 -spec get_var(gvarname()) -> non_neg_integer().
+
 get_var(What) ->
   get({What,var_max}).
 
 -spec get_next_var() -> non_neg_integer().
+
 get_next_var() ->
   C = get(var_max),
   put(var_max, C+1),
   C+1.
 
 -spec get_next_var(gvarname()) -> non_neg_integer().
+
 get_next_var(What) ->
-  C = get({What,var_max}),
-  put({What,var_max}, C+1),
+  T = {What, var_max},
+  C = get(T),
+  put(T, C+1),
   C+1.
 
 %%-----------------------------------------------------------------------
@@ -184,33 +205,40 @@ get_next_var(What) ->
 %%-----------------------------------------------------------------------
 
 -spec set_label(non_neg_integer()) -> 'ok'.
+
 set_label(X) ->
   put(lbl_max, X),
   ok.
 
 -spec set_label(gvarname(), non_neg_integer()) -> 'ok'.
+
 set_label(What, X) ->
   put({What,lbl_max}, X),
   ok.
 
 -spec get_label() -> non_neg_integer().
+
 get_label() ->
   get(lbl_max).
 
 -spec get_label(gvarname()) -> non_neg_integer().
+
 get_label(What) ->
   get({What,lbl_max}).
 
 -spec get_next_label() -> non_neg_integer().
+
 get_next_label() ->
   C = get(lbl_max),
   put(lbl_max, C+1),
   C+1.
 
 -spec get_next_label(gvarname()) -> non_neg_integer().
+
 get_next_label(What) ->
-  C = get({What,lbl_max}),
-  put({What,lbl_max}, C+1),
+  T = {What, lbl_max},
+  C = get(T),
+  put(T, C+1),
   C+1.
 
 %%-----------------------------------------------------------------------

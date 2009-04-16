@@ -76,10 +76,15 @@
 %% Callback event: {@link wxCalendarEvent}
 -record(wxCalendar, {type}). 
 
-%% @type wxScroll() = #wxScroll{type=wxEventType()}.
+%% @type wxSplitter() = #wxSplitter{type=wxEventType()}.
+%% <dl><dt>EventType:</dt> <dd><em>command_splitter_sash_pos_changed</em>, <em>command_splitter_sash_pos_changing</em>, <em>command_splitter_doubleclicked</em>, <em>command_splitter_unsplit</em></dd></dl>
+%% Callback event: {@link wxSplitterEvent}
+-record(wxSplitter, {type}). 
+
+%% @type wxScroll() = #wxScroll{type=wxEventType(),commandInt=integer(),extraLong=integer()}.
 %% <dl><dt>EventType:</dt> <dd><em>scroll_top</em>, <em>scroll_bottom</em>, <em>scroll_lineup</em>, <em>scroll_linedown</em>, <em>scroll_pageup</em>, <em>scroll_pagedown</em>, <em>scroll_thumbtrack</em>, <em>scroll_thumbrelease</em>, <em>scroll_changed</em></dd></dl>
 %% Callback event: {@link wxScrollEvent}
--record(wxScroll, {type}). 
+-record(wxScroll,{type, commandInt,extraLong}). 
 
 %% @type wxMenu() = #wxMenu{type=wxEventType()}.
 %% <dl><dt>EventType:</dt> <dd><em>menu_open</em>, <em>menu_close</em>, <em>menu_highlight</em></dd></dl>
@@ -95,6 +100,11 @@
 %% <dl><dt>EventType:</dt> <dd><em>show</em></dd></dl>
 %% Callback event: {@link wxShowEvent}
 -record(wxShow, {type}). 
+
+%% @type wxSpin() = #wxSpin{type=wxEventType(),commandInt=integer()}.
+%% <dl><dt>EventType:</dt> <dd><em>command_spinctrl_updated</em>, <em>spin_up</em>, <em>spin_down</em>, <em>spin</em></dd></dl>
+%% Callback event: {@link wxSpinEvent}
+-record(wxSpin,{type, commandInt}). 
 
 %% @type wxSetCursor() = #wxSetCursor{type=wxEventType()}.
 %% <dl><dt>EventType:</dt> <dd><em>set_cursor</em></dd></dl>
@@ -117,7 +127,7 @@
 -record(wxPaint, {type}). 
 
 %% @type wxChildFocus() = #wxChildFocus{type=wxEventType()}.
-%% <dl><dt>EventType:</dt> <dd><em>set_focus</em>, <em>kill_focus</em></dd></dl>
+%% <dl><dt>EventType:</dt> <dd><em>child_focus</em></dd></dl>
 %% Callback event: {@link wxChildFocusEvent}
 -record(wxChildFocus, {type}). 
 
@@ -202,7 +212,7 @@
 -record(wxWindowCreate, {type}). 
 
 %% @type wxCommand() = #wxCommand{type=wxEventType(),cmdString=string(),commandInt=integer(),extraLong=integer()}.
-%% <dl><dt>EventType:</dt> <dd><em>command_button_clicked</em>, <em>command_checkbox_clicked</em>, <em>command_choice_selected</em>, <em>command_listbox_selected</em>, <em>command_listbox_doubleclicked</em>, <em>command_text_updated</em>, <em>command_text_enter</em>, <em>command_menu_selected</em>, <em>command_slider_updated</em>, <em>command_radiobox_selected</em>, <em>command_radiobutton_selected</em>, <em>command_scrollbar_updated</em>, <em>command_vlbox_selected</em>, <em>command_combobox_selected</em>, <em>command_togglebutton_clicked</em>, <em>command_notebook_page_changed</em>, <em>command_notebook_page_changing</em></dd></dl>
+%% <dl><dt>EventType:</dt> <dd><em>command_button_clicked</em>, <em>command_checkbox_clicked</em>, <em>command_choice_selected</em>, <em>command_listbox_selected</em>, <em>command_listbox_doubleclicked</em>, <em>command_text_updated</em>, <em>command_text_enter</em>, <em>command_menu_selected</em>, <em>command_slider_updated</em>, <em>command_radiobox_selected</em>, <em>command_radiobutton_selected</em>, <em>command_scrollbar_updated</em>, <em>command_vlbox_selected</em>, <em>command_combobox_selected</em>, <em>command_tool_rclicked</em>, <em>command_tool_enter</em>, <em>command_checklistbox_toggled</em>, <em>command_togglebutton_clicked</em>, <em>command_left_click</em>, <em>command_left_dclick</em>, <em>command_right_click</em>, <em>command_set_focus</em>, <em>command_kill_focus</em>, <em>command_enter</em></dd></dl>
 %% Callback event: {@link wxCommandEvent}
 -record(wxCommand,{type, cmdString,commandInt,extraLong}). 
 
@@ -236,12 +246,12 @@
 %% Callback event: {@link wxColourPickerEvent}
 -record(wxColourPicker,{type, colour}). 
 
-%% @type wxTree() = #wxTree{type=wxEventType(),item=wxTreeItemId(),itemOld=wxTreeItemId()}.
+%% @type wxTree() = #wxTree{type=wxEventType(),item=wxTreeItemId(),itemOld=wxTreeItemId(),pointDrag={X::integer(),Y::integer()}}.
 %% <dl><dt>EventType:</dt> <dd><em>command_tree_begin_drag</em>, <em>command_tree_begin_rdrag</em>, <em>command_tree_begin_label_edit</em>, <em>command_tree_end_label_edit</em>, <em>command_tree_delete_item</em>, <em>command_tree_get_info</em>, <em>command_tree_set_info</em>, <em>command_tree_item_expanded</em>, <em>command_tree_item_expanding</em>, <em>command_tree_item_collapsed</em>, <em>command_tree_item_collapsing</em>, <em>command_tree_sel_changed</em>, <em>command_tree_sel_changing</em>, <em>command_tree_key_down</em>, <em>command_tree_item_activated</em>, <em>command_tree_item_right_click</em>, <em>command_tree_item_middle_click</em>, <em>command_tree_end_drag</em>, <em>command_tree_state_image_click</em>, <em>command_tree_item_gettooltip</em>, <em>command_tree_item_menu</em></dd></dl>
 %% Callback event: {@link wxTreeEvent}
--record(wxTree,{type, item,itemOld}). 
+-record(wxTree,{type, item,itemOld,pointDrag}). 
 
-%% @type wxEventType() = calendar_day_changed | calendar_doubleclicked | calendar_month_changed | calendar_sel_changed | calendar_weekday_clicked | calendar_year_changed | char | char_hook | close_window | command_button_clicked | command_checkbox_clicked | command_choice_selected | command_colourpicker_changed | command_combobox_selected | command_dirpicker_changed | command_filepicker_changed | command_fontpicker_changed | command_list_begin_drag | command_list_begin_label_edit | command_list_begin_rdrag | command_list_cache_hint | command_list_col_begin_drag | command_list_col_click | command_list_col_dragging | command_list_col_end_drag | command_list_col_right_click | command_list_delete_all_items | command_list_delete_item | command_list_end_label_edit | command_list_insert_item | command_list_item_activated | command_list_item_deselected | command_list_item_focused | command_list_item_middle_click | command_list_item_right_click | command_list_item_selected | command_list_key_down | command_listbox_doubleclicked | command_listbox_selected | command_menu_selected | command_notebook_page_changed | command_notebook_page_changed | command_notebook_page_changing | command_notebook_page_changing | command_radiobox_selected | command_radiobutton_selected | command_scrollbar_updated | command_slider_updated | command_text_enter | command_text_updated | command_togglebutton_clicked | command_tree_begin_drag | command_tree_begin_label_edit | command_tree_begin_rdrag | command_tree_delete_item | command_tree_end_drag | command_tree_end_label_edit | command_tree_get_info | command_tree_item_activated | command_tree_item_collapsed | command_tree_item_collapsing | command_tree_item_expanded | command_tree_item_expanding | command_tree_item_gettooltip | command_tree_item_menu | command_tree_item_middle_click | command_tree_item_right_click | command_tree_key_down | command_tree_sel_changed | command_tree_sel_changing | command_tree_set_info | command_tree_state_image_click | command_vlbox_selected | context_menu | create | date_changed | destroy | detailed_help | display_changed | end_session | enter_window | erase_background | grid_cell_begin_drag | grid_cell_change | grid_cell_left_click | grid_cell_left_dclick | grid_cell_right_click | grid_cell_right_dclick | grid_col_size | grid_editor_created | grid_editor_hidden | grid_editor_shown | grid_label_left_click | grid_label_left_dclick | grid_label_right_click | grid_label_right_dclick | grid_range_select | grid_row_size | grid_select_cell | help | iconize | idle | joy_button_down | joy_button_up | joy_move | joy_zmove | key_down | key_up | kill_focus | kill_focus | leave_window | left_dclick | left_down | left_up | maximize | menu_close | menu_highlight | menu_open | middle_dclick | middle_down | middle_up | motion | mouse_capture_changed | mousewheel | move | navigation_key | nc_enter_window | nc_leave_window | nc_left_dclick | nc_left_down | nc_left_up | nc_middle_dclick | nc_middle_down | nc_middle_up | nc_motion | nc_paint | nc_right_dclick | nc_right_down | nc_right_up | paint | paint_icon | palette_changed | query_end_session | query_new_palette | right_dclick | right_down | right_up | sash_dragged | scroll_bottom | scroll_changed | scroll_linedown | scroll_lineup | scroll_pagedown | scroll_pageup | scroll_thumbrelease | scroll_thumbtrack | scroll_top | scrollwin_bottom | scrollwin_linedown | scrollwin_lineup | scrollwin_pagedown | scrollwin_pageup | scrollwin_thumbrelease | scrollwin_thumbtrack | scrollwin_top | set_cursor | set_focus | set_focus | show | size | stc_autocomp_selection | stc_calltip_click | stc_change | stc_charadded | stc_do_drop | stc_doubleclick | stc_drag_over | stc_dwellend | stc_dwellstart | stc_hotspot_click | stc_hotspot_dclick | stc_key | stc_macrorecord | stc_marginclick | stc_modified | stc_needshown | stc_painted | stc_romodifyattempt | stc_savepointleft | stc_savepointreached | stc_start_drag | stc_styleneeded | stc_updateui | stc_uridropped | stc_userlistselection | stc_zoom | sys_colour_changed | update_ui.
+%% @type wxEventType() = calendar_day_changed | calendar_doubleclicked | calendar_month_changed | calendar_sel_changed | calendar_weekday_clicked | calendar_year_changed | char | char_hook | child_focus | close_window | command_button_clicked | command_checkbox_clicked | command_checklistbox_toggled | command_choice_selected | command_colourpicker_changed | command_combobox_selected | command_dirpicker_changed | command_enter | command_filepicker_changed | command_fontpicker_changed | command_kill_focus | command_left_click | command_left_dclick | command_list_begin_drag | command_list_begin_label_edit | command_list_begin_rdrag | command_list_cache_hint | command_list_col_begin_drag | command_list_col_click | command_list_col_dragging | command_list_col_end_drag | command_list_col_right_click | command_list_delete_all_items | command_list_delete_item | command_list_end_label_edit | command_list_insert_item | command_list_item_activated | command_list_item_deselected | command_list_item_focused | command_list_item_middle_click | command_list_item_right_click | command_list_item_selected | command_list_key_down | command_listbox_doubleclicked | command_listbox_selected | command_menu_selected | command_notebook_page_changed | command_notebook_page_changing | command_radiobox_selected | command_radiobutton_selected | command_right_click | command_scrollbar_updated | command_set_focus | command_slider_updated | command_spinctrl_updated | command_splitter_doubleclicked | command_splitter_sash_pos_changed | command_splitter_sash_pos_changing | command_splitter_unsplit | command_text_enter | command_text_updated | command_togglebutton_clicked | command_tool_enter | command_tool_rclicked | command_tree_begin_drag | command_tree_begin_label_edit | command_tree_begin_rdrag | command_tree_delete_item | command_tree_end_drag | command_tree_end_label_edit | command_tree_get_info | command_tree_item_activated | command_tree_item_collapsed | command_tree_item_collapsing | command_tree_item_expanded | command_tree_item_expanding | command_tree_item_gettooltip | command_tree_item_menu | command_tree_item_middle_click | command_tree_item_right_click | command_tree_key_down | command_tree_sel_changed | command_tree_sel_changing | command_tree_set_info | command_tree_state_image_click | command_vlbox_selected | context_menu | create | date_changed | destroy | detailed_help | display_changed | end_session | enter_window | erase_background | grid_cell_begin_drag | grid_cell_change | grid_cell_left_click | grid_cell_left_dclick | grid_cell_right_click | grid_cell_right_dclick | grid_col_size | grid_editor_created | grid_editor_hidden | grid_editor_shown | grid_label_left_click | grid_label_left_dclick | grid_label_right_click | grid_label_right_dclick | grid_range_select | grid_row_size | grid_select_cell | help | iconize | idle | joy_button_down | joy_button_up | joy_move | joy_zmove | key_down | key_up | kill_focus | leave_window | left_dclick | left_down | left_up | maximize | menu_close | menu_highlight | menu_open | middle_dclick | middle_down | middle_up | motion | mouse_capture_changed | mousewheel | move | navigation_key | nc_enter_window | nc_leave_window | nc_left_dclick | nc_left_down | nc_left_up | nc_middle_dclick | nc_middle_down | nc_middle_up | nc_motion | nc_paint | nc_right_dclick | nc_right_down | nc_right_up | paint | paint_icon | palette_changed | query_end_session | query_new_palette | right_dclick | right_down | right_up | sash_dragged | scroll_bottom | scroll_changed | scroll_linedown | scroll_lineup | scroll_pagedown | scroll_pageup | scroll_thumbrelease | scroll_thumbtrack | scroll_top | scrollwin_bottom | scrollwin_linedown | scrollwin_lineup | scrollwin_pagedown | scrollwin_pageup | scrollwin_thumbrelease | scrollwin_thumbtrack | scrollwin_top | set_cursor | set_focus | show | size | spin | spin_down | spin_up | stc_autocomp_selection | stc_calltip_click | stc_change | stc_charadded | stc_do_drop | stc_doubleclick | stc_drag_over | stc_dwellend | stc_dwellstart | stc_hotspot_click | stc_hotspot_dclick | stc_key | stc_macrorecord | stc_marginclick | stc_modified | stc_needshown | stc_painted | stc_romodifyattempt | stc_savepointleft | stc_savepointreached | stc_start_drag | stc_styleneeded | stc_updateui | stc_uridropped | stc_userlistselection | stc_zoom | sys_colour_changed | update_ui.
 
 %% Hardcoded Records 
 -record(wxMouseState, {x, y,  %% integer() 
@@ -524,6 +534,12 @@
 -define(wxSASH_DRAG_LEFT_DOWN, 2).
 -define(wxSASH_DRAG_DRAGGING, 1).
 -define(wxSASH_DRAG_NONE, 0).
+% From define::From generic_2splash.h 
+-define(wxSPLASH_NO_TIMEOUT, 0).
+-define(wxSPLASH_TIMEOUT, 4).
+-define(wxSPLASH_NO_CENTRE, 0).
+-define(wxSPLASH_CENTRE_ON_SCREEN, 2).
+-define(wxSPLASH_CENTRE_ON_PARENT, 1).
 % From define::From hash.h 
 -define(wxHASH_SIZE_DEFAULT, 1000).
 % From define::From imaglist.h 
@@ -640,6 +656,16 @@
 -define(wxSL_TICKS, 16).
 -define(wxSL_VERTICAL, ?wxVERTICAL).
 -define(wxSL_HORIZONTAL, ?wxHORIZONTAL).
+% From define::From splitter.h 
+-define(wxSP_3D, (?wxSP_3DBORDER bor ?wxSP_3DSASH)).
+-define(wxSP_BORDER, ?wxSP_3DBORDER).
+-define(wxSP_NO_XP_THEME, 1024).
+-define(wxSP_3DBORDER, 512).
+-define(wxSP_3DSASH, 256).
+-define(wxSP_LIVE_UPDATE, 128).
+-define(wxSP_PERMIT_UNSPLIT, 64).
+-define(wxSP_NOSASH, 16).
+-define(wxSP_NOBORDER, 0).
 % From define::From statusbr.h 
 -define(wxSB_RAISED, 2).
 -define(wxSB_FLAT, 1).
@@ -2397,6 +2423,9 @@
 -define(wxFONTFLAG_UNDERLINED, 7).
 -define(wxFONTFLAG_STRIKETHROUGH, 8).
 -define(wxFONTFLAG_MASK, (?wxFONTFLAG_ITALIC bor ?wxFONTFLAG_SLANT bor ?wxFONTFLAG_LIGHT bor ?wxFONTFLAG_BOLD bor ?wxFONTFLAG_ANTIALIASED bor ?wxFONTFLAG_NOT_ANTIALIASED bor ?wxFONTFLAG_UNDERLINED bor ?wxFONTFLAG_STRIKETHROUGH)).
+-define(wxSPLIT_DRAG_NONE, 0).
+-define(wxSPLIT_DRAG_DRAGGING, 1).
+-define(wxSPLIT_DRAG_LEFT_DOWN, 2).
 -define(WX_GL_RGBA, 1).
 -define(WX_GL_BUFFER_SIZE, 2).
 -define(WX_GL_LEVEL, 3).
@@ -3454,6 +3483,9 @@
 -define(wxSIGPIPE, (?wxSIGABRT+7)).
 -define(wxSIGALRM, (?wxSIGABRT+8)).
 -define(wxSIGTERM, (?wxSIGABRT+9)).
+% Type wxSplitMode 
+-define(wxSPLIT_HORIZONTAL, 1).
+-define(wxSPLIT_VERTICAL, 2).
 % Type wxStockCursor 
 -define(wxCURSOR_NONE, 0).
 -define(wxCURSOR_ARROW, 1).

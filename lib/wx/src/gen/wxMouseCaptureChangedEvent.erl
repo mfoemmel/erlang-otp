@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxmousecapturechangedevent.html">wxMouseCaptureChangedEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>mouse_capture_changed</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxMouseCaptureChanged(). #wxMouseCaptureChanged{}} event record type.
 %%

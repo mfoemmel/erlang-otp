@@ -73,8 +73,9 @@ timetrap(Timeout0, Pid) ->
 
 timetrap_cancel(Handle) ->
     unlink(Handle),
+    MonRef = erlang:monitor(process, Handle),
     exit(Handle, kill),
-    ok.
+    receive {'DOWN',MonRef,_,_,_} -> ok after 2000 -> ok end.
 
 capture_get(Msgs) ->
     receive
@@ -433,7 +434,7 @@ get_username() ->
     
 getenv_any([Key|Rest]) ->
     case catch os:getenv(Key) of
-	String when list(String) -> String;
+	String when is_list(String) -> String;
 	false -> getenv_any(Rest)
     end;
 getenv_any([]) -> "".
@@ -461,9 +462,9 @@ hostatom(Node) ->
     list_to_atom(hoststr(Node)).
 hoststr() ->
     hoststr(node()).
-hoststr(Node) when atom(Node) ->
+hoststr(Node) when is_atom(Node) ->
     hoststr(atom_to_list(Node));
-hoststr(Node) when list(Node) ->
+hoststr(Node) when is_list(Node) ->
     from($@, Node).
     
 from(H, [H | T]) -> T;

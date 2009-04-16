@@ -51,14 +51,15 @@
 %% ============================================================================
 
 -type abstract_code() :: [_].
+-type comp_options()  :: [atom() | {atom(), _}].
 
--spec get_abstract_code_from_src(atom() | string()) ->
+-spec get_abstract_code_from_src(atom() | filename()) ->
 		{'ok', abstract_code()} | {'error', [string()]}.
 
 get_abstract_code_from_src(File) ->
   get_abstract_code_from_src(File, ?SRC_COMPILE_OPTS).
 
--spec get_abstract_code_from_src(atom() | string(), [_]) ->
+-spec get_abstract_code_from_src(atom() | filename(), comp_options()) ->
 		{'ok', abstract_code()} | {'error', [string()]}.
 
 get_abstract_code_from_src(File, Opts) ->
@@ -70,24 +71,24 @@ get_abstract_code_from_src(File, Opts) ->
 
 -type get_core_from_src_ret() :: {'ok', core_records()} | {'error', string()}.
 
--spec get_core_from_src(string()) -> get_core_from_src_ret().
+-spec get_core_from_src(filename()) -> get_core_from_src_ret().
 
 get_core_from_src(File) ->
   get_core_from_src(File, []).
 
--spec get_core_from_src(string(), [_]) -> get_core_from_src_ret().
+-spec get_core_from_src(filename(), comp_options()) -> get_core_from_src_ret().
 
 get_core_from_src(File, Opts) ->
   case get_abstract_code_from_src(File, Opts) of
-    {error, What} -> {error, What};
+    {error, _} = Error -> Error;
     {ok, AbstrCode} ->
       case get_core_from_abstract_code(AbstrCode, Opts) of
 	error -> {error, "  Could not get Core Erlang code from abstract code"};
-	{ok, Core} -> {ok, Core}
+	{ok, _Core} = C -> C
       end
   end.
 
--spec get_abstract_code_from_beam(string()) -> 'error' | {'ok', abstract_code()}.
+-spec get_abstract_code_from_beam(filename()) -> 'error' | {'ok', abstract_code()}.
 
 get_abstract_code_from_beam(File) ->
   case beam_lib:chunks(File, [abstract_code]) of
@@ -108,7 +109,7 @@ get_abstract_code_from_beam(File) ->
 get_core_from_abstract_code(AbstrCode) ->
   get_core_from_abstract_code(AbstrCode, []).
 
--spec get_core_from_abstract_code(abstract_code(), [_]) -> get_core_from_abs_ret().
+-spec get_core_from_abstract_code(abstract_code(), comp_options()) -> get_core_from_abs_ret().
 
 get_core_from_abstract_code(AbstrCode, Opts) ->
   %% We do not want the parse_transforms around since we already
@@ -168,7 +169,7 @@ get_record_and_type_info([{attribute, _, Attr, {Name, TypeForm}}|Left],
     NewRecDict = add_new_type(Attr, Name, TypeForm, [], RecDict),
     get_record_and_type_info(Left, NewRecDict)
   catch
-    throw:{error, What} -> {error, What}
+    throw:{error, _} = Error -> Error
   end;
 get_record_and_type_info([{attribute, _, Attr, {Name, TypeForm, Args}}|Left], 
 			 RecDict) when Attr =:= 'type'; Attr =:= 'opaque' ->
@@ -176,7 +177,7 @@ get_record_and_type_info([{attribute, _, Attr, {Name, TypeForm, Args}}|Left],
     NewRecDict = add_new_type(Attr, Name, TypeForm, Args, RecDict),
     get_record_and_type_info(Left, NewRecDict)
   catch
-    throw:{error, What} -> {error, What}
+    throw:{error, _} = Error -> Error
   end;
 get_record_and_type_info([_Other|Left], RecDict) ->
   get_record_and_type_info(Left, RecDict);
@@ -214,7 +215,7 @@ get_record_fields([{typed_record_field, OrdRecField, TypeForm}|Left],
     Type = erl_types:t_from_form(TypeForm, RecDict),
     get_record_fields(Left, RecDict, [{Name, Type}|Acc])
   catch
-    throw:{error, What} -> {error, What}
+    throw:{error, _} = Error -> Error
   end;
 get_record_fields([{record_field, _Line, Name}|Left], RecDict, Acc) ->
   NewAcc = [{erl_parse:normalise(Name), erl_types:t_any()}|Acc],
@@ -246,25 +247,23 @@ get_spec_info(AbstractCode, RecordsDict) ->
 get_spec_info([{attribute, Ln, spec, {Id, TypeSpec}}|Left], 
 	      SpecDict, RecordsDict, ModName, 
 	      CurrentFile) when is_list(TypeSpec) ->
-  {Mod, Fun, Arity} =
+  {Mod, Fun, Arity} = MFA =
     case Id of
-      {_, _, _} = MFA -> MFA;
+      {_, _, _} = T -> T;
       {F, A} -> {ModName, F, A}
     end,
   try
     %% io:format("contract from form: ~p\n", [TypeSpec]),
     Contract = dialyzer_contracts:contract_from_form(TypeSpec, RecordsDict),
     %% io:format("contract: ~p\n", [Contract]),
-    Index = {Mod, Fun, Arity},
-    case dict:find(Index, SpecDict) of
+    case dict:find(MFA, SpecDict) of
       error ->
-	NewSpecDict = 
-	  dict:store(Index, {{CurrentFile, Ln}, Contract}, SpecDict),
+	NewSpecDict = dict:store(MFA, {{CurrentFile, Ln}, Contract}, SpecDict),
 	get_spec_info(Left, NewSpecDict, RecordsDict, ModName, CurrentFile);
-      {ok, {{File, L},_C}} -> 
+      {ok, {{File, L},_C}} ->
 	Msg = io_lib:format("  Contract for function ~w:~w/~w "
-			    "already defined in ~s:~w.\n", 
-			    [ModName, Fun, Arity, File, L]),
+			    "already defined in ~s:~w\n", 
+			    [Mod, Fun, Arity, File, L]),
 	throw({error, Msg})
     end
   catch
@@ -293,7 +292,7 @@ cleanup_parse_transforms([Other|Left]) ->
 cleanup_parse_transforms([]) ->
   [].
 
--spec format_errors([{atom(), string()}]) -> [string()].
+-spec format_errors([{module(), string()}]) -> [string()].
 
 format_errors([{Mod, Errors}|Left]) ->
   FormatedError = 

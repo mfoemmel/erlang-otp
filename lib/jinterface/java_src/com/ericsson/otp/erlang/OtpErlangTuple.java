@@ -241,7 +241,17 @@ public class OtpErlangTuple extends OtpErlangObject implements Serializable,
 
 	return true;
     }
-
+    
+    protected int doHashCode() {
+	OtpErlangObject.Hash hash = new OtpErlangObject.Hash(9);
+	final int a = arity();
+	hash.combine(a);
+	for (int i = 0; i < a; i++) {
+	    hash.combine(elems[i].hashCode());
+	}
+	return hash.valueOf();
+    }
+    
     @Override
     public Object clone() {
 	final OtpErlangTuple newTuple = (OtpErlangTuple) super.clone();

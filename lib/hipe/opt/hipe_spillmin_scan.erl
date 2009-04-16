@@ -36,11 +36,6 @@
 %%
 %%  History  :  * 2002-04-01, NA & AL: Created
 %%              * 2002-10-08, Happi: Cleanup and speedup
-%%
-%% CVS:
-%%    $Author: kostis $
-%%    $Date: 2009/02/06 18:00:35 $
-%%    $Revision: 1.10 $
 %% ============================================================================
 %% Exported functions (short description):
 %%   stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) -> 
@@ -63,9 +58,10 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_spillmin_scan).
+
 -export([stackalloc/6]).
 
-%-define(DEBUG,1).
+%%-define(DEBUG, 1).
 -define(HIPE_INSTRUMENT_COMPILER, true).
 
 %%----------------------------------------------------------------------------
@@ -89,7 +85,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec stackalloc(#cfg{}, [_], non_neg_integer(),
-		 comp_options(), atom(), hipe_temp_map()) ->
+		 comp_options(), module(), hipe_temp_map()) ->
                                 {hipe_spill_map(), non_neg_integer()}.
 
 stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) ->
@@ -104,7 +100,6 @@ stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) ->
   ?debug_msg("sort intervals (done) ~w\n", [erlang:statistics(runtime)]),
   ?debug_msg("Intervals ~w\n", [Intervals]),
   ?debug_msg("No intervals: ~w\n", [length(Intervals)]),
-
   ?debug_msg("count intervals (done) ~w\n", [erlang:statistics(runtime)]),
   Allocation = allocate(Intervals, StackSlots, SpillIndex, Target),
   ?debug_msg("allocation (done) ~w\n", [erlang:statistics(runtime)]),
@@ -137,7 +132,7 @@ calculate_intervals(CFG, Liveness, _Options, Target, TempMap) ->
 %%           CFG, Liveness, Target, TempMap)
 %%  WorkList: List of BB-names to handle.
 %%  Intervals: Intervals seen so far (sorted on register names).
-%%  InstructionNr: The number of examined insturctions.
+%%  InstructionNr: The number of examined instructions.
 %%  CFG: The Control-Flow Graph.
 %%  Liveness: A map of live-in and live-out sets for each Basic-Block.
 %%  Target: The backend for which we generate native code.
@@ -149,21 +144,20 @@ calculate_intervals(CFG, Liveness, _Options, Target, TempMap) ->
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 intervals([L|ToDO], Intervals, InstructionNr, CFG, Liveness, Target, 
 	  TempMap) ->
-  ?debug_msg("Block ~w\n",[L]),
+  ?debug_msg("Block ~w\n", [L]),
   %% Add all variables that are live at the entry of this block
   %% to the interval data structure.
 
   %% Only consider spilled temporaries in LiveIn
-  LiveIn = [ X || X <- livein(Liveness, L, Target), 
-		  hipe_temp_map:is_spilled(X, TempMap)],
-
+  LiveIn = [X || X <- livein(Liveness, L, Target), 
+		 hipe_temp_map:is_spilled(X, TempMap)],
   Intervals2 = add_def_point(LiveIn, InstructionNr, Intervals),
 
   %% Only consider spilled temporaries in LiveOut
-  LiveOut = [ X2 || X2 <- liveout(Liveness, L, Target), 
-		    hipe_temp_map:is_spilled(X2, TempMap)],
-  ?debug_msg("In ~w -> Out ~w\n",[LiveIn, LiveOut]),
-
+  LiveOut = [X2 || X2 <- liveout(Liveness, L, Target), 
+		   hipe_temp_map:is_spilled(X2, TempMap)],
+  ?debug_msg("In ~w -> Out ~w\n", [LiveIn, LiveOut]),
+  
   %% Traverse this block instruction by instruction and add all
   %% uses and defines to the intervals.
   Code = hipe_bb:code(bb(CFG, L, Target)),
@@ -191,27 +185,22 @@ intervals([], Intervals, _, _, _, _, _) ->
 %%  all other.
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
-traverse_block([Instruction|Is],InstrNo,Intervals, Target, TempMap) ->
+traverse_block([Instruction|Is], InstrNo, Intervals, Target, TempMap) ->
   %% Get used temps.
   %% Only consider spilled temporaries in the Use set.
-  UsesSet = [ X || X <- uses(Instruction, Target), 
-		   hipe_temp_map:is_spilled(X, TempMap)] ,
-
+  UsesSet = [X || X <- uses(Instruction, Target), 
+		  hipe_temp_map:is_spilled(X, TempMap)],
   %% Get defined temps.
   %% Only consider spilled temporaries in the Def set.
-  DefsSet = [ X2 || X2 <- defines(Instruction, Target), 
-		   hipe_temp_map:is_spilled(X2, TempMap)] ,
-
+  DefsSet = [X2 || X2 <- defines(Instruction, Target), 
+		   hipe_temp_map:is_spilled(X2, TempMap)],
   %% Only consider those temps that starts or ends their lifetime
   %% within the basic block (that is remove all Unchanged temps).
-
   Intervals1 = add_def_point( DefsSet, InstrNo, Intervals),
-
   %% Extend the intervals for these temporaries to include InstrNo.
   Intervals2 = add_use_point(UsesSet, InstrNo, Intervals1),
-
   %% Handle the next instruction.
-  traverse_block(Is,InstrNo+1,Intervals2, Target, TempMap);
+  traverse_block(Is, InstrNo+1, Intervals2, Target, TempMap);
 traverse_block([], InstrNo, Intervals, _, _) -> 
   %% Return the new intervals and the number of the next instruction.
   {Intervals,InstrNo}.
@@ -225,7 +214,7 @@ traverse_block([], InstrNo, Intervals, _, _) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%% allocate(Intervals, PhysicalRegisters,  Target)
+%% allocate(Intervals, PhysicalRegisters, Target)
 %%
 %% This function performs the linear scan algorithm.
 %%  Intervals contains the start and stop position of each spilled temporary,
@@ -234,11 +223,9 @@ traverse_block([], InstrNo, Intervals, _, _) ->
 %%  new stack slot is allocated from an (in theory) infinite domain.
 %%
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-allocate(Intervals, StackSlots, SpillIndex,  Target) ->
-  ActiveTemps =[],
+allocate(Intervals, StackSlots, SpillIndex, Target) ->
   AllocatedSlots = empty_allocation(),
-  allocate(Intervals, StackSlots, ActiveTemps,
-	   AllocatedSlots, SpillIndex, Target).
+  allocate(Intervals, StackSlots, [], AllocatedSlots, SpillIndex, Target).
 
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 %% allocate(Intervals, Free, Active, Allocated, SpillIndex, Target) 
@@ -255,27 +242,23 @@ allocate([TempInt|TIS], Free, Active, Alloc, SpillIndex,  Target) ->
   %% ends before the start of the current interval.
   {NewActive, NewFree} = 
     expire_old_intervals(Active, startpoint(TempInt), Free, Target),
-  
   %% Get the name of the temp in the current interval.
-  Temp = reg(TempInt), 
-
-  case NewFree of 
+  Temp = reg(TempInt),
+  case NewFree of
     [] -> 
       %% There are no free spill slots, so we allocate a new one
       NewSpillIndex = SpillIndex+1,
-      NewAlloc = spillalloc( Temp, SpillIndex, Alloc ),
+      NewAlloc = spillalloc(Temp, SpillIndex, Alloc),
       NewActive2 = add_active(endpoint(TempInt), SpillIndex, NewActive),
- 
       allocate(TIS, NewFree, NewActive2, NewAlloc, NewSpillIndex, Target);
-    
     [FreeSpillslot | Spillslots] ->
       %% The spill slot FreeSpillSlot is available, let's use it.
-      allocate(TIS,Spillslots,
+      allocate(TIS, Spillslots,
 	       add_active(endpoint(TempInt), FreeSpillslot, NewActive),
 	       spillalloc(Temp, FreeSpillslot, Alloc),
 	       SpillIndex, Target)
   end;
-allocate([],_,_,Alloc,SpillIndex, _) -> 
+allocate([], _, _, Alloc, SpillIndex, _) -> 
   %% No more register intervals to handle;
   %% return the result sorted on regnames.
   {lists:sort(Alloc), SpillIndex}.
@@ -308,10 +291,10 @@ expire_old_intervals([Active|Actives], CurrentPos, Free, Target) ->
     false -> 
       %% No -> Then we cannot free any more temporaries.
       %%       (Since they are sorted on endpoints...)    
-      {[Active|Actives],Free}
+      {[Active|Actives], Free}
   end;
-expire_old_intervals([],_,Free,_) ->
-  {[],Free}.
+expire_old_intervals([], _, Free, _) ->
+  {[], Free}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                    %%
@@ -335,24 +318,23 @@ expire_old_intervals([],_,Free,_) ->
 
 empty_allocation() -> [].
 
-spillalloc(Name,N,Allocation) -> [{Name,{spill,N}}|Allocation].
+spillalloc(Name, N, Allocation) -> [{Name,{spill,N}}|Allocation].
 
-%spillalloc(Name,N,[{Name,_}|A]) ->
-%  ?debug_msg("Spilled ~w\n",[Name]),
-%  [{Name,{spill,N}}|A];
-%spillalloc(Name,N,[{Name2,Binding}|Bindings]) when Name > Name2 ->
-%  [{Name2,Binding}|spillalloc(Name,N,Bindings)];
-%spillalloc(Name,N,Bindings) ->
-%  [{Name,{spill,N}}|Bindings].
+%% spillalloc(Name,N,[{Name,_}|A]) ->
+%%   ?debug_msg("Spilled ~w\n",[Name]),
+%%   [{Name,{spill,N}}|A];
+%% spillalloc(Name,N,[{Name2,Binding}|Bindings]) when Name > Name2 ->
+%%   [{Name2,Binding}|spillalloc(Name,N,Bindings)];
+%% spillalloc(Name,N,Bindings) ->
+%%   [{Name,{spill,N}}|Bindings].
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 
 %%  The active datastructure.
 %%   Keeps tracks of currently active (allocated) spill slots.
 %%   It is sorted on end points in the intervals
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 add_active(Endpoint, SpillSlot, [A1={P1,_}|Active]) when P1 < Endpoint ->
   [A1|add_active(Endpoint, SpillSlot, Active)];
@@ -361,30 +343,32 @@ add_active(Endpoint, SpillSlot, Active) ->
 
 active_spillslot({_,SpillSlot}) ->
   SpillSlot.
+
 active_endpoint({EndPoint,_}) ->
   EndPoint.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% The Interval data structure.
 %%
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
-%mk_interval(Name, Start, End) ->
-%  {Name, Start, End}.
+%% mk_interval(Name, Start, End) ->
+%%   {Name, Start, End}.
 
 endpoint({_R,_S,Endpoint}) ->
   Endpoint.
+
 startpoint({_R,Startpoint,_E}) ->
   Startpoint.
+
 reg({RegName,_S,_E}) ->
   RegName.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% The Intervals data structure.
 
-sort_on_start(I)->
- lists:keysort(2,I).
-
+sort_on_start(I) ->
+ lists:keysort(2, I).
 
 -ifdef(gb_intervals).
 empty_interval(_) ->
@@ -405,7 +389,7 @@ interval_to_list(Intervals) ->
       end,
       gb_trees:to_list(Intervals))).
 
-add_use_point([Temp|Temps],Pos,Intervals) ->
+add_use_point([Temp|Temps], Pos, Intervals) ->
   %% Extend the old interval...
   NewInterval =
     case gb_trees:lookup(Temp, Intervals) of
@@ -426,7 +410,7 @@ add_use_point([], _, I) ->
   %% No more to add return the interval.
   I.
 
-add_def_point([Temp|Temps],Pos,Intervals) ->
+add_def_point([Temp|Temps], Pos, Intervals) ->
   %% Extend the old interval...
   NewInterval =
     case gb_trees:lookup(Temp, Intervals) of
@@ -475,38 +459,36 @@ extend_def_interval(Pos, {Beginning, End}) ->
     if Pos > End -> Pos;
        true      -> End
     end,
-  {NewBeginning, NewEnd}; 
-extend_def_interval(Pos, [{Beginning,none}|More]) ->
-  [{Pos,none}, {Beginning,none}|More];
+  {NewBeginning, NewEnd};
+extend_def_interval(Pos, [{Beginning, none}|More]) ->
+  [{Pos,none}, {Beginning, none}|More];
 extend_def_interval(Pos, Intervals) ->
   {Pos, Pos}.
 
-%% ____________________________________________________________________
--else. %% isdef gb_intervals
+-else. %% ifdef gb_intervals
 
 empty_interval(N) ->
   hipe_vectors:new(N, none).
 
 interval_to_list(Intervals) ->
-  add_indices(hipe_vectors:vector_to_list(Intervals),0).
+  add_indices(hipe_vectors:vector_to_list(Intervals), 0).
 
-add_indices([{B,E}|Xs],N) ->
-  [{N,B,E}|add_indices(Xs,N+1)];
-add_indices([List|Xs],N) when is_list(List) ->
-  flatten(List,N,Xs);
-add_indices([none|Xs],N) ->
-  add_indices(Xs,N+1);
-add_indices([],_N) -> [].
+add_indices([{B, E}|Xs], N) ->
+  [{N, B, E}|add_indices(Xs, N+1)];
+add_indices([List|Xs], N) when is_list(List) ->
+  flatten(List, N, Xs);
+add_indices([none|Xs], N) ->
+  add_indices(Xs, N+1);
+add_indices([], _N) -> [].
 
 flatten([{none, End}|Rest], N, More) -> 
   [{N,End,End} | flatten(Rest, N, More)];
 flatten([{Beg, none}|Rest], N ,More) ->
   [{N,Beg,Beg} | flatten(Rest, N, More)];
-flatten([],N,More) ->
-  add_indices(More,N+1).
+flatten([], N, More) ->
+  add_indices(More, N+1).
 
-
-add_use_point([Temp|Temps],Pos,Intervals) ->
+add_use_point([Temp|Temps], Pos, Intervals) ->
   %% Extend the old interval...
   NewInterval =
     case hipe_vectors:get(Intervals, Temp) of
@@ -527,7 +509,7 @@ add_use_point([], _, I) ->
   %% No more to add return the interval.
   I.
 
-add_def_point([Temp|Temps],Pos,Intervals) ->
+add_def_point([Temp|Temps], Pos, Intervals) ->
   %% Extend the old interval...
   NewInterval =
     case hipe_vectors:get(Intervals, Temp) of
@@ -574,18 +556,18 @@ extend_interval(Pos, {Beginning, End})
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 liveness(CFG, Target) ->
-   Target:analyze(CFG).
+  Target:analyze(CFG).
 
 bb(CFG, L, Target) ->
-  Target:bb(CFG,L).
+  Target:bb(CFG, L).
 
-livein(Liveness,L, Target) ->
-  regnames(Target:livein(Liveness,L), Target).
+livein(Liveness, L, Target) ->
+  regnames(Target:livein(Liveness, L), Target).
 
-liveout(Liveness,L, Target)->
-  regnames(Target:liveout(Liveness,L), Target).
+liveout(Liveness, L, Target) ->
+  regnames(Target:liveout(Liveness, L), Target).
 
-uses(I, Target)->
+uses(I, Target) ->
   regnames(Target:uses(I), Target).
 
 defines(I, Target) ->

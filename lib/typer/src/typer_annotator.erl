@@ -38,7 +38,7 @@
 
 -define(TYPER_ANN_DIR, "typer_ann").
 
--type func_info() :: {pos_integer(), atom(), byte()}.
+-type func_info() :: {non_neg_integer(), atom(), arity()}.
 
 -record(info, {recMap = typer_map:new() :: dict(),
 	       funcs = []               :: [func_info()],
@@ -193,7 +193,7 @@ clean_inc(Inc) ->
 remove_yecc_generated_file(TmpInc) ->
   Fun = fun(Key, Inc) ->
 	    NewMap = typer_map:remove(Key, Inc#inc.map),
-	    Inc#inc{map=NewMap}
+	    Inc#inc{map = NewMap}
 	end,
   lists:foldl(Fun, TmpInc, TmpInc#inc.filter).
   
@@ -203,7 +203,7 @@ normalize_obj(TmpInc) ->
 	    typer_map:insert({Key,NewVal},Inc)
 	end,
   NewMap = typer_map:fold(Fun, typer_map:new(), TmpInc#inc.map),
-  TmpInc#inc{map=NewMap}.
+  TmpInc#inc{map = NewMap}.
 
 get_recMap(File, Analysis) ->
   typer_map:lookup(File, Analysis#typer_analysis.record).
@@ -225,21 +225,21 @@ get_type({MFA = {M,F,A}, Range, Arg}, CodeServer, RecMap) ->
       Sig = erl_types:t_fun(Arg, Range),
       case dialyzer_contracts:check_contract(C, Sig) of
 	ok -> {{F, A}, {contract, C}};
-	{error, What} ->
-	  typer:error(
-	    io_lib:format("Error in contract of function ~w:~w/~w: ~s",
-			  [M, F, A, What]));
-	error ->
+	{error, invalid_contract} ->
 	  CString = dialyzer_contracts:contract_to_string(C),
 	  SigString = dialyzer_utils:format_sig(Sig, RecMap),
 	  typer:error(
 	    io_lib:format("Error in contract of function ~w:~w/~w\n" 
 			  "\t The contract is: " ++ CString ++ "\n" ++
 			  "\t but the inferred signature is: ~s",
-			  [M, F, A, SigString]))
+			  [M, F, A, SigString]));
+	{error, Msg} ->
+	  typer:error(
+	    io_lib:format("Error in contract of function ~w:~w/~w: ~s",
+			  [M, F, A, Msg]))
       end;
     error ->
-      {{F,A},{Range,Arg}}
+      {{F, A}, {Range, Arg}}
   end.
 
 get_functions(File, Analysis) ->
@@ -262,6 +262,7 @@ normalize_incFuncs(Funcs) ->
   [FuncInfo || {_FileName,FuncInfo} <- Funcs].
 
 -spec remove_module_info([func_info()]) -> [func_info()].
+
 remove_module_info(FuncInfoList) ->
   F = fun ({_,module_info,0}) -> false;
 	  ({_,module_info,1}) -> false;
@@ -315,15 +316,14 @@ write_typed_file([Ch|Chs] = Chars, File, Info, LineNo, Acc) ->
       case Ch of
 	10 ->
 	  NewLineNo = LineNo + 1,
-	  case NewLineNo of
-	    Line ->
-	      ok = raw_write(F, A, Info, File, [Ch|Acc]),
-	      NewInfo = Info#info{funcs = RestFuncs},
-	      NewAcc = [];
-	    _ ->
-	      NewInfo = Info,
-	      NewAcc = [Ch|Acc]
-	  end,
+	  {NewInfo, NewAcc} =
+	    case NewLineNo of
+	      Line ->
+		ok = raw_write(F, A, Info, File, [Ch|Acc]),
+		{Info#info{funcs = RestFuncs}, []};
+	      _ ->
+		{Info, [Ch|Acc]}
+	    end,
 	  write_typed_file(Chs, File, NewInfo, NewLineNo, NewAcc);
 	_ ->
 	  write_typed_file(Chs, File, Info, LineNo, [Ch|Acc])

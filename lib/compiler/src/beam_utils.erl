@@ -63,13 +63,13 @@ is_killed_block(R, Is) ->
 is_killed(R, Is, D) ->
     St = #live{bl=fun check_killed_block/2,lbl=D,res=gb_trees:empty()},
     case check_liveness(R, Is, St) of
-	killed -> true;
-	used -> false;
-	unknown -> false
+	{killed,_} -> true;
+	{used,_} -> false;
+	{unknown,_} -> false
     end.
 
 %% is_killed_at(Reg, Lbl, State) -> true|false
-%%  Determine wether Reg is killed at label Lbl.
+%%  Determine whether Reg is killed at label Lbl.
 
 is_killed_at(R, Lbl, D) when is_integer(Lbl) ->
     St0 = #live{bl=fun check_killed_block/2,lbl=D,res=gb_trees:empty()},
@@ -89,9 +89,9 @@ is_killed_at(R, Lbl, D) when is_integer(Lbl) ->
 is_not_used(R, Is, D) ->
     St = #live{bl=fun check_used_block/2,lbl=D,res=gb_trees:empty()},
     case check_liveness(R, Is, St) of
-	killed -> true;
-	used -> false;
-	unknown -> false
+	{killed,_} -> true;
+	{used,_} -> false;
+	{unknown,_} -> false
     end.
 
 %% is_not_used(Register, [Instruction], State) -> true|false
@@ -197,7 +197,7 @@ is_pure_test({test,Op,_,Ops}) ->
 %%
 live_opt([{label,Fail}=I1,
 	  {func_info,_,_,Live}=I2|Is]) ->
-    D = gb_trees:insert(Fail, Live, gb_trees:empty()),
+    D = gb_trees:insert(Fail, live_call(Live), gb_trees:empty()),
     [I1,I2|live_opt(reverse(Is), 0, D, [])].
 
 
@@ -233,7 +233,7 @@ combine_heap_needs(H1, H2) when is_integer(H1), is_integer(H2) ->
 
 
 %% check_liveness(Reg, [Instruction], {State,BlockCheckFun}) ->
-%%                                            killed | used | unknown
+%%                      {killed | used | unknown,UpdateState}
 %%  Finds out how Reg is used in the instruction sequence. Returns one of:
 %%    killed - Reg is assigned a new value or killed by an allocation instruction
 %%    used - Reg is used (or possibly referenced by an allocation instruction)
@@ -245,119 +245,116 @@ check_liveness(R, [{set,_,_,_}=I|_], St) ->
 check_liveness(R, [{block,Blk}|Is], #live{bl=BlockCheck}=St) ->
     case BlockCheck(R, Blk) of
 	transparent -> check_liveness(R, Is, St);
-	Other -> Other
+	Other when is_atom(Other) -> {Other,St}
     end;
 check_liveness(R, [{label,_}|Is], St) ->
     check_liveness(R, Is, St);
-check_liveness(R, [{test,bs_start_match2,{f,Fail},[Bin,_,_,Dst]}|Is], St0) ->
-    case R of
-	Bin -> used;
-	Dst -> killed;
-	_ ->
-	    case check_liveness_at(R, Fail, St0) of
-		{killed,St} -> check_liveness(R, Is, St);
-		{Other,_} -> Other
-	    end
-    end;
-check_liveness(R, [{test,Bs,{f,Fail},[Ctx,_,Sz,_,_,Dst]}|Is], St0)
-  when Bs =:= bs_get_integer2; Bs =:= bs_get_binary2; Bs =:= bs_get_float2 ->
-    case R of
-	Ctx -> used;
-	Sz -> used;
-	Dst -> killed;
-	_ ->
-	    case check_liveness_at(R, Fail, St0) of
-		{killed,St} -> check_liveness(R, Is, St);
-		{Other,_} -> Other
-	    end
-    end;
 check_liveness(R, [{test,_,{f,Fail},As}|Is], St0) ->
     case member(R, As) of
-	true -> used;
+	true ->
+	    {used,St0};
 	false ->
 	    case check_liveness_at(R, Fail, St0) of
 		{killed,St} -> check_liveness(R, Is, St);
-		{Other,_} -> Other
+		{_,_}=Other -> Other
 	    end
     end;
-check_liveness(R, [{select_val,R,_,_}|_], _) -> used;
+check_liveness(R, [{test,_,{f,Fail},Live,Ss,_}|Is], St0) ->
+    case R of
+	{x,X} ->
+	    case X < Live orelse member(R, Ss) of
+		true -> {used,St0};
+		false -> check_liveness_at(R, Fail, St0)
+	    end;
+	{y,_} ->
+	    case check_liveness_at(R, Fail, St0) of
+		{killed,St} -> check_liveness(R, Is, St);
+		{_,_}=Other -> Other
+	    end
+    end;
+check_liveness(R, [{select_val,R,_,_}|_], St) ->
+    {used,St};
 check_liveness(R, [{select_val,_,Fail,{list,Branches}}|_], St) ->
     check_liveness_everywhere(R, [Fail|Branches], St);
-check_liveness(R, [{select_tuple_arity,R,_,_}|_], _) -> used;
+check_liveness(R, [{select_tuple_arity,R,_,_}|_], St) ->
+    {used,St};
 check_liveness(R, [{select_tuple_arity,_,Fail,{list,Branches}}|_], St) ->
     check_liveness_everywhere(R, [Fail|Branches], St);
 check_liveness(R, [{jump,{f,F}}|_], St) ->
-    {Res,_} = check_liveness_at(R, F, St),
-    Res;
-check_liveness(R, [{case_end,Used}|_], _St) -> 
-    check_liveness_ret(R, Used);
-check_liveness(R, [{badmatch,Used}|_], _St) ->
-    check_liveness_ret(R, Used);
-check_liveness(_, [if_end|_], _St) -> killed;
-check_liveness(R, [{func_info,_,_,Ar}|_], _St) ->
+    check_liveness_at(R, F, St);
+check_liveness(R, [{case_end,Used}|_], St) -> 
+    check_liveness_ret(R, Used, St);
+check_liveness(R, [{badmatch,Used}|_], St) ->
+    check_liveness_ret(R, Used, St);
+check_liveness(_, [if_end|_], St) ->
+    {killed,St};
+check_liveness(R, [{func_info,_,_,Ar}|_], St) ->
     case R of
-	{x,X} when X < Ar -> used;
-	_ -> killed
+	{x,X} when X < Ar -> {used,St};
+	_ -> {killed,St}
     end;
-check_liveness(R, [{kill,R}|_], _St) -> killed;
+check_liveness(R, [{kill,R}|_], St) ->
+    {killed,St};
 check_liveness(R, [{kill,_}|Is], St) ->
     check_liveness(R, Is, St);
 check_liveness(R, [bs_init_writable|Is], St) ->
     if
-	R =:= {x,0} -> used;
+	R =:= {x,0} -> {used,St};
 	true -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_private_append,_,Bits,_,Bin,_,Dst}|Is], St) ->
     case R of
-	Bits -> used;
-	Bin -> used;
-	Dst -> killed;
+	Bits -> {used,St};
+	Bin -> {used,St};
+	Dst -> {killed,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_append,_,Bits,_,_,_,Bin,_,Dst}|Is], St) ->
     case R of
-	Bits -> used;
-	Bin -> used;
-	Dst -> killed;
+	Bits -> {used,St};
+	Bin -> {used,St};
+	Dst -> {killed,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_init2,_,_,_,_,_,Dst}|Is], St) ->
     if
-	R =:= Dst -> killed;
+	R =:= Dst -> {killed,St};
 	true -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_init_bits,_,_,_,_,_,Dst}|Is], St) ->
     if
-	R =:= Dst -> killed;
+	R =:= Dst -> {killed,St};
 	true -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_put_string,_,_}|Is], St) ->
     check_liveness(R, Is, St);
 check_liveness(R, [{deallocate,_}|Is], St) ->
     case R of
-	{y,_} -> killed;
+	{y,_} -> {killed,St};
 	_ -> check_liveness(R, Is, St)
     end;
-check_liveness(R, [return|_], _St) ->
-    check_liveness_live_ret(R, 1);
-check_liveness(R, [{call_last,Live,_,_}|_], _St) ->
-    check_liveness_live_ret(R, Live);
-check_liveness(R, [{call_only,Live,_}|_], _St) ->
-    check_liveness_live_ret(R, Live);
-check_liveness(R, [{call_ext_last,Live,_,_}|_], _St) ->
-    check_liveness_live_ret(R, Live);
-check_liveness(R, [{call_ext_only,Live,_}|_], _St) ->
-    check_liveness_live_ret(R, Live);
+check_liveness(R, [return|_], St) ->
+    check_liveness_live_ret(R, 1, St);
+check_liveness(R, [{call_last,Live,_,_}|_], St) ->
+    check_liveness_live_ret(R, Live, St);
+check_liveness(R, [{call_only,Live,_}|_], St) ->
+    check_liveness_live_ret(R, Live, St);
+check_liveness(R, [{call_ext_last,Live,_,_}|_], St) ->
+    check_liveness_live_ret(R, Live, St);
+check_liveness(R, [{call_ext_only,Live,_}|_], St) ->
+    check_liveness_live_ret(R, Live, St);
 check_liveness(R, [{call,Live,_}|Is], St) ->
     case R of
-	{x,X} when X < Live -> used;
-	{x,_} -> killed;
+	{x,X} when X < Live -> {used,St};
+	{x,_} -> {killed,St};
 	{y,_} -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{call_ext,Live,Func}|Is], St) ->
     case R of
-	{x,X} when X < Live -> used;
-	{x,_} -> killed;
+	{x,X} when X < Live ->
+	    {used,St};
+	{x,_} ->
+	    {killed,St};
 	{y,_} ->
 	    {extfunc,Mod,Name,Arity} = Func,
 	    case erl_bifs:is_exit_bif(Mod, Name, Arity) of
@@ -371,51 +368,51 @@ check_liveness(R, [{call_ext,Live,Func}|Is], St) ->
 		    %% We don't want to overwrite a 'catch', so consider this
 		    %% register in use.
 		    %% 
-		    used
+		    {used,St}
 	    end
     end;
 check_liveness(R, [{call_fun,Live}|Is], St) ->
     case R of
-	{x,X} when X =< Live -> used;
-	{x,_} -> killed;
+	{x,X} when X =< Live -> {used,St};
+	{x,_} -> {killed,St};
 	{y,_} -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{apply,Args}|Is], St) ->
     case R of
-	{x,X} when X < Args+2 -> used;
-	{x,_} -> killed;
+	{x,X} when X < Args+2 -> {used,St};
+	{x,_} -> {killed,St};
 	{y,_} -> check_liveness(R, Is, St)
     end;
-check_liveness(R, [{apply_last,Args,_}|_], _) ->
-    check_liveness_live_ret(R, Args+2);
+check_liveness(R, [{apply_last,Args,_}|_], St) ->
+    check_liveness_live_ret(R, Args+2, St);
 check_liveness(R, [send|Is], St) ->
     case R of
-	{x,X} when X < 2 -> used;
-	{x,_} -> killed;
+	{x,X} when X < 2 -> {used,St};
+	{x,_} -> {killed,St};
 	{y,_} -> check_liveness(R, Is, St)
     end;
 check_liveness({x,R}, [{'%live',Live}|Is], St) ->
     if
 	R < Live -> check_liveness(R, Is, St);
-	true -> killed
+	true -> {killed,St}
     end;
-check_liveness(R, [{bif,Op,{f,Fail},Ss,D}|Is], St) ->
-    case check_liveness_fail(R, Op, Ss, Fail, St) of
-	killed ->
+check_liveness(R, [{bif,Op,{f,Fail},Ss,D}|Is], St0) ->
+    case check_liveness_fail(R, Op, Ss, Fail, St0) of
+	{killed,St} ->
 	    case member(R, Ss) of
-		true -> used;
-		false when R =:= D -> killed;
+		true -> {used,St};
+		false when R =:= D -> {killed,St};
 		false -> check_liveness(R, Is, St)
 	    end;
 	Other ->
 	    Other
     end;
-check_liveness(R, [{gc_bif,Op,{f,Fail},_,Ss,D}|Is], St) ->
-    case check_liveness_fail(R, Op, Ss, Fail, St) of
-	killed ->
+check_liveness(R, [{gc_bif,Op,{f,Fail},_,Ss,D}|Is], St0) ->
+    case check_liveness_fail(R, Op, Ss, Fail, St0) of
+	{killed,St} ->
 	    case member(R, Ss) of
-		true -> used;
-		false when R =:= D -> killed;
+		true -> {used,St};
+		false when R =:= D -> {killed,St};
 		false -> check_liveness(R, Is, St)
 	    end;
 	Other ->
@@ -423,131 +420,130 @@ check_liveness(R, [{gc_bif,Op,{f,Fail},_,Ss,D}|Is], St) ->
     end;
 check_liveness(R, [{bs_add,{f,0},Ss,D}|Is], St) ->
     case member(R, Ss) of
-	true -> used;
-	false when R =:= D -> killed;
+	true -> {used,St};
+	false when R =:= D -> {killed,St};
 	false -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_bits_to_bytes2,Src,Dst}|Is], St) ->
     case R of
-	Src -> used;
-	Dst -> killed;
+	Src -> {used,St};
+	Dst -> {killed,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_put_binary,{f,0},Sz,_,_,Src}|Is], St) ->
     case member(R, [Sz,Src]) of
-	true -> used;
+	true -> {used,St};
 	false -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_put_integer,{f,0},Sz,_,_,Src}|Is], St) ->
     case member(R, [Sz,Src]) of
-	true -> used;
+	true -> {used,St};
 	false -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_put_float,{f,0},Sz,_,_,Src}|Is], St) ->
     case member(R, [Sz,Src]) of
-	true -> used;
+	true -> {used,St};
 	false -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_restore2,S,_}|Is], St) ->
     case R of
-	S -> used;
+	S -> {used,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_save2,S,_}|Is], St) ->
     case R of
-	S -> used;
+	S -> {used,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{move,S,D}|Is], St) ->
     case R of
-	S -> used;
-	D -> killed;
+	S -> {used,St};
+	D -> {killed,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{make_fun2,_,_,_,NumFree}|Is], St) ->
     case R of
-	{x,X} when X < NumFree -> used;
-	{x,_} -> killed;
+	{x,X} when X < NumFree -> {used,St};
+	{x,_} -> {killed,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{try_end,Y}|Is], St) ->
     case R of
-	Y -> killed;
+	Y -> {killed,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{catch_end,Y}|Is], St) ->
     case R of
-	Y -> killed;
+	Y -> {killed,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{get_tuple_element,S,_,D}|Is], St) ->
     case R of
-	S -> used;
-	D -> killed;
+	S -> {used,St};
+	D -> {killed,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{bs_context_to_binary,S}|Is], St) ->
     case R of
-	S -> used;
+	S -> {used,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{loop_rec,{f,_},{x,0}}|Is], St) ->
     case R of
-	{x,_} -> killed;
+	{x,_} -> {killed,St};
 	_ -> check_liveness(R, Is, St)
     end;
 check_liveness(R, [{loop_rec_end,{f,Fail}}|_], St) ->
-    {Liveness,_} = check_liveness_at(R, Fail, St),
-    Liveness;
-check_liveness(_R, Is, _) when is_list(Is) ->
+    check_liveness_at(R, Fail, St);
+check_liveness(_R, Is, St) when is_list(Is) ->
 %%     case Is of
 %% 	[I|_] ->
 %% 	    io:format("~p ~p\n", [_R,I]);
 %% 	_ -> ok
 %%     end,
-    unknown.
+    {unknown,St}.
     
 check_liveness_everywhere(R, [{f,Lbl}|T], St0) ->
     case check_liveness_at(R, Lbl, St0) of
 	{killed,St} -> check_liveness_everywhere(R, T, St);
-	{Other,_} -> Other
+	{_,_}=Other -> Other
     end;
 check_liveness_everywhere(R, [_|T], St) ->
     check_liveness_everywhere(R, T, St);
-check_liveness_everywhere(_, [], _) -> killed.
+check_liveness_everywhere(_, [], St) ->
+    {killed,St}.
 
-check_liveness_at(R, Lbl, #live{lbl=Ll,res=Res0}=St) ->
-    case gb_trees:lookup(Lbl, Res0) of
+check_liveness_at(R, Lbl, #live{lbl=Ll,res=ResMemorized}=St0) ->
+    case gb_trees:lookup(Lbl, ResMemorized) of
 	{value,Res} ->
-	    {Res,St};
+	    {Res,St0};
 	none ->
-	    Res = case gb_trees:lookup(Lbl, Ll) of
-		      {value,Is} -> check_liveness(R, Is, St);
-		      none -> unknown
-		  end,
-	    {Res,St#live{res=gb_trees:insert(Lbl, Res, Res0)}}
+	    {Res,St} = case gb_trees:lookup(Lbl, Ll) of
+			   {value,Is} -> check_liveness(R, Is, St0);
+			   none -> {unknown,St0}
+		       end,
+	    {Res,St#live{res=gb_trees:insert(Lbl, Res, St#live.res)}}
     end.
 
-check_liveness_ret(R, R) -> used;
-check_liveness_ret(_, _) -> killed.
+check_liveness_ret(R, R, St) -> {used,St};
+check_liveness_ret(_, _, St) -> {killed,St}.
 
-check_liveness_live_ret({x,R}, Live) ->
+check_liveness_live_ret({x,R}, Live, St) ->
     if
-	R < Live -> used;
-	true -> killed
+	R < Live -> {used,St};
+	true -> {killed,St}
     end;
-check_liveness_live_ret({y,_}, _) -> killed.
+check_liveness_live_ret({y,_}, _, St) ->
+    {killed,St}.
 
-check_liveness_fail(_, _, _, 0, _) -> killed;
-check_liveness_fail(R, Op, Args, Fail, St0) ->
+check_liveness_fail(_, _, _, 0, St) ->
+    {killed,St};
+check_liveness_fail(R, Op, Args, Fail, St) ->
     Arity = length(Args),
     case erl_internal:comp_op(Op, Arity) orelse
 	erl_internal:new_type_test(Op, Arity) of
-	true ->
-	    killed;
-	false ->
-	    {Res,_} = check_liveness_at(R, Fail, St0),
-	    Res
+	true -> {killed,St};
+	false -> check_liveness_at(R, Fail, St)
     end.
 
 %% check_killed_block(Reg, [Instruction], State) -> killed | transparent | used
@@ -700,7 +696,7 @@ live_opt([{bs_utf16_size,Fail,Src,Dst}=I|Is], Regs0, D, Acc) ->
     Regs1 = x_live([Src], x_dead([Dst], Regs0)),
     Regs = live_join_label(Fail, D, Regs1),
     live_opt(Is, Regs, D, [I|Acc]);
-live_opt([{test,bs_start_match2,Fail,[Src,Live,_,_]}=I|Is], _, D, Acc) ->
+live_opt([{test,bs_start_match2,Fail,Live,[Src,_],_}=I|Is], _, D, Acc) ->
     Regs0 = live_call(Live),
     Regs1 = x_live([Src], Regs0),
     Regs = live_join_label(Fail, D, Regs1),
@@ -756,6 +752,11 @@ live_opt([{make_fun2,_,_,_,Arity}=I|Is], _, D, Acc) ->
 live_opt([send=I|Is], _, D, Acc) ->
     live_opt(Is, live_call(2), D, [I|Acc]);
 live_opt([{test,_,Fail,Ss}=I|Is], Regs0, D, Acc) ->
+    Regs1 = x_live(Ss, Regs0),
+    Regs = live_join_label(Fail, D, Regs1),
+    live_opt(Is, Regs, D, [I|Acc]);
+live_opt([{test,_,Fail,Live,Ss,_}=I|Is], _, D, Acc) ->
+    Regs0 = live_call(Live),
     Regs1 = x_live(Ss, Regs0),
     Regs = live_join_label(Fail, D, Regs1),
     live_opt(Is, Regs, D, [I|Acc]);

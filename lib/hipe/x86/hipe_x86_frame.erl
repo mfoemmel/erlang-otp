@@ -243,7 +243,7 @@ do_pseudo_call(I, LiveOut, Context, FPoff0) ->
   CallCode = [hipe_x86:mk_pseudo_call(Fun1, SDesc, ContLab, Linkage)],
   %% +word_size() for our RA and +word_size() for callee's RA should
   %% it need to call inc_stack
-  StkArity = max(0, OrigArity - ?HIPE_X86_REGISTERS:nr_args()),
+  StkArity = erlang:max(0, OrigArity - ?HIPE_X86_REGISTERS:nr_args()),
   context_need_stack(Context, stack_need(FPoff0 + 2*word_size(), StkArity, Fun1)),
   ArgsBytes = word_size() * StkArity,
   {CallCode, FPoff0 - ArgsBytes}.
@@ -261,7 +261,7 @@ stack_need(FPoff, StkArity, Fun) ->
   end.
 
 stack_need_general(FPoff, StkArity) ->
-  max(FPoff, FPoff + (?LEAF_WORDS - 2 - StkArity) * word_size()).
+  erlang:max(FPoff, FPoff + (?LEAF_WORDS - 2 - StkArity) * word_size()).
 
 %%%
 %%% Create stack descriptors for call sites.
@@ -520,7 +520,7 @@ do_alloc_frame(CFG, Context) ->
 do_check_stack(CFG, Context) ->
   MaxStack = context_maxstack(Context),
   Arity = context_arity(Context),
-  Guaranteed = max(0, (?LEAF_WORDS - 1 - Arity) * word_size()),
+  Guaranteed = erlang:max(0, (?LEAF_WORDS - 1 - Arity) * word_size()),
   if MaxStack =< Guaranteed ->
       %% io:format("~w: MaxStack ~w =< Guaranteed ~w :-)\n", [?MODULE,MaxStack,Guaranteed]),
       CFG;
@@ -651,7 +651,7 @@ tset_to_list(S) ->
 defun_minframe(Defun) ->
   MaxTailArity = body_mta(hipe_x86:defun_code(Defun), 0),
   MyArity = length(fix_formals(hipe_x86:defun_formals(Defun))),
-  max(MaxTailArity - MyArity, 0).
+  erlang:max(MaxTailArity - MyArity, 0).
 
 body_mta([I|Code], MTA) ->
   body_mta(Code, insn_mta(I, MTA));
@@ -661,12 +661,9 @@ body_mta([], MTA) ->
 insn_mta(I, MTA) ->
   case I of
     #pseudo_tailcall{arity=Arity} ->
-      max(MTA, Arity - ?HIPE_X86_REGISTERS:nr_args());
+      erlang:max(MTA, Arity - ?HIPE_X86_REGISTERS:nr_args());
     _ -> MTA
   end.
-
-max(X, Y) -> % why isn't max/2 a standard BIF?
-  if X > Y -> X; true -> Y end.
 
 %%%
 %%% Ensure that we have enough temps to satisfy the minimum frame size,

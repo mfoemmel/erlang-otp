@@ -102,7 +102,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
           ({name, Name}, Acc) ->   Name_UC = unicode:characters_to_binary([Name,0]),[<<5:32/?UI,(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((0+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({attribList, AttribList}, Acc) -> [<<6:32/?UI,(length(AttribList)):32/?UI,
         (<< <<C:32/?I>> || C <- AttribList>>)/binary, 0:(((0+length(AttribList)) rem 2)*32)>>|Acc];
-          ({palette, #wx_ref{type=PaletteT,ref=PaletteRef}}, Acc) ->   ?CLASS(PaletteT,wxPalette),[<<7:32/?UI,PaletteRef:32/?UI>>|Acc]  end,
+          ({palette, #wx_ref{type=PaletteT,ref=PaletteRef}}, Acc) ->   ?CLASS(PaletteT,wxPalette),[<<7:32/?UI,PaletteRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxGLCanvas_new_2,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -126,7 +127,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},#wx_ref{type=SharedT,ref=SharedRef}, Opt
           ({name, Name}, Acc) ->   Name_UC = unicode:characters_to_binary([Name,0]),[<<5:32/?UI,(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((0+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({attribList, AttribList}, Acc) -> [<<6:32/?UI,(length(AttribList)):32/?UI,
         (<< <<C:32/?I>> || C <- AttribList>>)/binary, 0:(((0+length(AttribList)) rem 2)*32)>>|Acc];
-          ({palette, #wx_ref{type=PaletteT,ref=PaletteRef}}, Acc) ->   ?CLASS(PaletteT,wxPalette),[<<7:32/?UI,PaletteRef:32/?UI>>|Acc]  end,
+          ({palette, #wx_ref{type=PaletteT,ref=PaletteRef}}, Acc) ->   ?CLASS(PaletteT,wxPalette),[<<7:32/?UI,PaletteRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(SharedOP,
   <<ParentRef:32/?UI,SharedRef:32/?UI, BinOpt/binary>>).

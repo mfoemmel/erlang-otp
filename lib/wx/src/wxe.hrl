@@ -48,5 +48,6 @@
 %%-define(WXE_SHUTDOWN, 6).  %% Not used in erlang
 -define(WXE_REGISTER_OBJECT,  7).  %% Used for object monitoring
 -define(WXE_CB_START,   8).  %% Used for event-callback start
+-define(WXE_DEBUG_DRIVER,  9).    %% Set debug
 
 -include("gen/wxe_funcs.hrl").

@@ -106,7 +106,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},Id, Options)
           ({size, {SizeW,SizeH}}, Acc) -> [<<3:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({choices, Choices}, Acc) ->   Choices_UCA = [unicode:characters_to_binary([ChoicesTemp,0]) ||               ChoicesTemp <- Choices],[<<4:32/?UI,(length(Choices_UCA)):32/?UI, (<< <<(byte_size(UC_Str)):32/?UI, UC_Str/binary>>|| UC_Str <- Choices_UCA>>)/binary, 0:(((8- ((0 + lists:sum([byte_size(S)+4||S<-Choices_UCA])) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({style, Style}, Acc) -> [<<5:32/?UI,Style:32/?UI>>|Acc];
-          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<6:32/?UI,ValidatorRef:32/?UI>>|Acc]  end,
+          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<6:32/?UI,ValidatorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxComboBox_new_3,
   <<ParentRef:32/?UI,Id:32/?UI, BinOpt/binary>>).
@@ -128,7 +129,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef},Id,Va
   Choices_UCA = [unicode:characters_to_binary([ChoicesTemp,0]) || 
               ChoicesTemp <- Choices],
   MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
-          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<2:32/?UI,ValidatorRef:32/?UI>>|Acc]  end,
+          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<2:32/?UI,ValidatorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxComboBox_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI,Id:32/?UI,(byte_size(Value_UC)):32/?UI,(Value_UC)/binary, 0:(((8- ((0+byte_size(Value_UC)) band 16#7)) band 16#7))/unit:8,PosX:32/?UI,PosY:32/?UI,SizeW:32/?UI,SizeH:32/?UI,(length(Choices_UCA)):32/?UI, (<< <<(byte_size(UC_Str)):32/?UI, UC_Str/binary>>|| UC_Str <- Choices_UCA>>)/binary, 0:(((8- ((4 + lists:sum([byte_size(S)+4||S<-Choices_UCA])) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

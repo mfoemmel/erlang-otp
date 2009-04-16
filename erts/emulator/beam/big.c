@@ -1756,8 +1756,12 @@ byte* big_to_bytes(Eterm x, byte *p)
  * Converts a positive term (small or bignum) to an Uint.
  *
  * Fails returning 0 if the term is neither a small nor a bignum,
- * if it's negative, or the big number does not fit in an Uint.
- * Otherwise returns a non-zero value.
+ * if it's negative, or the big number does not fit in an Uint;
+ * in addition the error reason, BADARG or SYSTEM_LIMIT, will be
+ * stored in *up.
+ *
+ * Otherwise returns a non-zero value and the converted number
+ * in *up.
  */
 
 int
@@ -1766,6 +1770,7 @@ term_to_Uint(Eterm term, Uint *up)
     if (is_small(term)) {
 	Sint i = signed_val(term);
 	if (i < 0) {
+	    *up = BADARG;
 	    return 0;
 	}
 	*up = (Uint) i;
@@ -1776,7 +1781,11 @@ term_to_Uint(Eterm term, Uint *up)
 	Uint uval = 0;
 	int n = 0;
 	
-	if (big_sign(term) || xl*D_EXP > sizeof(Uint)*8) {
+	if (big_sign(term)) {
+	    *up = BADARG;
+	    return 0;
+	} else if (xl*D_EXP > sizeof(Uint)*8) {
+	    *up = SYSTEM_LIMIT;
 	    return 0;
 	}
 	while (xl-- > 0) {
@@ -1786,6 +1795,7 @@ term_to_Uint(Eterm term, Uint *up)
 	*up = uval;
 	return 1;
     } else {
+	*up = BADARG;
 	return 0;
     }
 }

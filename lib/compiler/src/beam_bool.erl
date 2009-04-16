@@ -147,6 +147,16 @@ bopt_block(Reg, Fail, OldIs, [{block,Bl0}|Acc0], St0) ->
 		  throw:all_registers_not_killed ->
 		    failed;
 		  throw:registers_used ->
+		    failed;
+
+		  %% A protected block refered to the value
+		  %% returned by another protected block,
+		  %% probably because the Core Erlang code
+		  %% used nested try/catches in the guard.
+		  %% (v3_core never produces nested try/catches
+		  %% in guards, so it must have been another
+		  %% Core Erlang translator.)
+		  throw:protected_violation ->
 		    failed
 	    end
     end.
@@ -316,8 +326,8 @@ bopt_tree_cg(Block0, Fail, St) ->
     Free = free_variables(Block0),
     Block = ssa_block(Block0),
 %%     io:format("~p\n", [Block0]),
-%%     io:format("~p\n", [Block]),
-%%     io:format("~p\n", [gb_trees:to_list(Free)]),
+%%    io:format("~p\n", [Block]),
+%%    io:format("~p\n", [gb_trees:to_list(Free)]),
     case bopt_tree(Block, Free, []) of
 	{Pre0,[{_,Tree}]} ->
 	    Pre1 = update_fail_label(Pre0, Fail, []),
@@ -614,16 +624,21 @@ live_regs(Regs) ->
 %%%
 
 -record(ssa,
-	{live,
-	 sub}).
+	{live=0,				%Variable counter.
+	 sub=gb_trees:empty(),			%Substitution table.
+	 prot=gb_sets:empty(),			%Targets assigned by protecteds.
+	 in_prot=false				%Inside a protected.
+	}).
 	 
 ssa_block(Is0) ->
-    {Is,_} = ssa_block_1(Is0, #ssa{live=0,sub=gb_trees:empty()}, []),
+    {Is,_} = ssa_block_1(Is0, #ssa{}, []),
     Is.
 
 ssa_block_1([{protected,[_],Pa0,Pb}|Is], Sub0, Acc) ->
-    {Pa,Sub} = ssa_block_1(Pa0, Sub0, []),
+    {Pa,Sub1} = ssa_block_1(Pa0, Sub0#ssa{in_prot=true}, []),
     Dst = ssa_last_target(Pa),
+    Sub = Sub1#ssa{prot=gb_sets:insert(Dst, Sub1#ssa.prot),
+		   in_prot=Sub0#ssa.in_prot},
     ssa_block_1(Is, Sub, [{protected,[Dst],Pa,Pb}|Acc]);
 ssa_block_1([{set,[Dst],As,Bif}|Is], Sub0, Acc0) ->
     Sub1 = ssa_in_use_list(As, Sub0),
@@ -660,10 +675,16 @@ ssa_assign(_, Ssa) -> Ssa.
 ssa_sub_list(List, Sub) ->
     [ssa_sub(E, Sub) || E <- List].
 
-ssa_sub(R0, #ssa{sub=Sub}) ->
+ssa_sub(R0, #ssa{sub=Sub,prot=Prot,in_prot=InProt}) ->
     case gb_trees:lookup(R0, Sub) of
 	none -> R0;
-	{value,R} -> R
+	{value,R} ->
+	    case InProt andalso gb_sets:is_element(R, Prot) of
+		true ->
+		    throw(protected_violation);
+		false ->
+		    R
+	    end
     end.
 
 ssa_new_reg(#ssa{live=Reg}=Ssa) ->

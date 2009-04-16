@@ -269,6 +269,11 @@
 	</item>
       </taglist>
 
+	<p>See the <seealso marker="config_file_chapter#require_config_data">Config files</seealso>
+	  chapter and the <c>ct:require/[1,2]</c> function in the
+	   <seealso marker="ct">ct</seealso> reference manual for more information about
+	   <c>require</c>.</p>
+
       <note><p>Specifying a default value for a required variable can result
 	  in a test case always getting executed. This might not be a desired behaviour!</p>
       </note>  

@@ -1,3 +1,20 @@
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% File    : bench.hrl
 %%% Author  : Hakan Mattsson <hakan@cslab.ericsson.se>
@@ -19,8 +36,24 @@
 	 
 	 args_to_config/1, verify_config/2,
 	 start/0, start/1,
-	 stop_slave_nodes/1
+	 stop_slave_nodes/1,
+	 bind_schedulers/0
         ]).
+
+bind_schedulers() ->
+    try
+        %% Avoid first core and bind schedules to the remaining ones
+	Topo = erlang:system_info(cpu_topology),
+	erlang:system_flag(cpu_topology,lists:reverse(Topo)),
+	%% N = erlang:system_info(schedulers),
+	%% erlang:system_flag(schedulers_online, lists:max([N - 1, 1])),
+	erlang:system_flag(scheduler_bind_type, default_bind),
+	timer:sleep(timer:seconds(1)), % Wait for Rickard
+	erlang:system_info(scheduler_bindings)
+    catch _:_ ->
+        %% Ancient systems
+        ignore
+    end.
 
 %% Run the benchmark:
 %% 
@@ -30,7 +63,7 @@
 %%   - Calculate benchmark statistics
 %%   - Stop the temporary Erlang nodes
 run() ->
-    FileName = 'bench.config',
+    FileName = "bench.config",
     run([FileName]).
 
 run(Args) ->
@@ -122,7 +155,7 @@ start_all(Args) ->
 	    exit({mnesia_start, Bad})
     end.
 
-do_start_all([Node | Nodes], Acc, Cookie) when atom(Node) ->    
+do_start_all([Node | Nodes], Acc, Cookie) when is_atom(Node) ->    
     case string:tokens(atom_to_list(Node), [$@]) of
 	[Name, Host] ->
 	    Arg = lists:concat(["-setcookie ", Cookie]),
@@ -130,9 +163,11 @@ do_start_all([Node | Nodes], Acc, Cookie) when atom(Node) ->
 	    case slave:start_link(Host, Name, Arg) of
 		{ok, Node} ->
 		    load_modules(Node),
+		    rpc:call(Node, ?MODULE, bind_schedulers, []),
 		    io:format(" started~n", []),
 		    do_start_all(Nodes, [Node | Acc], Cookie);
 		{error, {already_running, Node}} ->
+		    rpc:call(Node, ?MODULE, bind_schedulers, []),
 		    io:format(" already started~n", []),
 		    do_start_all(Nodes, Acc, Cookie);
 		{error, Reason} ->
@@ -182,14 +217,14 @@ do_stop_slave_nodes([]) ->
 %% The configuration
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-args_to_config(C) when record(C, config) ->
+args_to_config(C) when is_record(C, config) ->
     C;
-args_to_config(Args) when list(Args) ->
+args_to_config(Args) when is_list(Args) ->
     do_args_to_config(Args, []).
 
-do_args_to_config([{Key, Val} | Rest], Acc) when list(Acc) ->
+do_args_to_config([{Key, Val} | Rest], Acc) when is_list(Acc) ->
     do_args_to_config(Rest,  Acc ++ [{Key, Val}]);
-do_args_to_config([FileName | Rest], Acc) when list(Acc) ->
+do_args_to_config([FileName | Rest], Acc) when is_list(Acc) ->
     io:nl(),
     ?d("Reading configuration file ~p...", [FileName]),
     case file:consult(FileName) of
@@ -201,12 +236,12 @@ do_args_to_config([FileName | Rest], Acc) when list(Acc) ->
                [[lists:flatten(file:format_error( Reason))]]),
             {error, {args_to_config, FileName, Reason}}
     end;
-do_args_to_config([], Acc) when list(Acc) ->
+do_args_to_config([], Acc) when is_list(Acc) ->
     verify_config(Acc, #config{}).
 
 verify_config([{Tag, Val} | T], C) ->
     case Tag of
-        cookie when atom(Val) ->
+        cookie when is_atom(Val) ->
             verify_config(T, C#config{cookie = Val});
         generator_profile when Val == random ->
             verify_config(T, C#config{generator_profile = Val});
@@ -222,15 +257,15 @@ verify_config([{Tag, Val} | T], C) ->
             verify_config(T, C#config{generator_profile = Val});
         generator_profile when Val == ping ->
             verify_config(T, C#config{generator_profile = Val});
-        generator_nodes when list(Val) ->
+        generator_nodes when is_list(Val) ->
             verify_config(T, C#config{generator_nodes = Val});
-        n_generators_per_node when integer(Val), Val >= 0 ->
+        n_generators_per_node when is_integer(Val), Val >= 0 ->
             verify_config(T, C#config{n_generators_per_node = Val});
-        generator_warmup when integer(Val), Val >= 0 ->
+        generator_warmup when is_integer(Val), Val >= 0 ->
             verify_config(T, C#config{generator_warmup = Val});
-        generator_duration when integer(Val), Val >= 0 ->
+        generator_duration when is_integer(Val), Val >= 0 ->
             verify_config(T, C#config{generator_duration = Val});
-        generator_cooldown when integer(Val), Val >= 0 ->
+        generator_cooldown when is_integer(Val), Val >= 0 ->
             verify_config(T, C#config{generator_cooldown = Val});
         statistics_detail when Val == debug ->
             verify_config(T, C#config{statistics_detail = Val});
@@ -238,28 +273,30 @@ verify_config([{Tag, Val} | T], C) ->
             verify_config(T, C#config{statistics_detail = Val});
         statistics_detail when Val == normal ->
             verify_config(T, C#config{statistics_detail = Val});
-        table_nodes when list(Val) ->
+        table_nodes when is_list(Val) ->
             verify_config(T, C#config{table_nodes = Val});
         use_binary_subscriber_key when Val == true ->
             verify_config(T, C#config{use_binary_subscriber_key = Val});
         use_binary_subscriber_key when Val == false ->
             verify_config(T, C#config{use_binary_subscriber_key = Val});
-        storage_type when atom(Val) ->
+        storage_type when is_atom(Val) ->
             verify_config(T, C#config{storage_type = Val});
         write_lock_type when Val == sticky_write ->
             verify_config(T, C#config{write_lock_type = Val});
         write_lock_type when Val == write ->
             verify_config(T, C#config{write_lock_type = Val});
-        n_replicas when integer(Val), Val >= 0 ->
+        n_replicas when is_integer(Val), Val >= 0 ->
             verify_config(T, C#config{n_replicas = Val});
-        n_fragments when integer(Val), Val >= 0 ->
+        n_fragments when is_integer(Val), Val >= 0 ->
             verify_config(T, C#config{n_fragments = Val});
-        n_subscribers when integer(Val), Val >= 0 ->
+        n_subscribers when is_integer(Val), Val >= 0 ->
             verify_config(T, C#config{n_subscribers = Val});
-        n_groups when integer(Val), Val >= 0 ->
+        n_groups when is_integer(Val), Val >= 0 ->
             verify_config(T, C#config{n_groups = Val});
-        n_servers when integer(Val), Val >= 0 ->
+        n_servers when is_integer(Val), Val >= 0 ->
             verify_config(T, C#config{n_servers = Val});
+        always_try_nearest_node when Val == true; Val == false ->
+            verify_config(T, C#config{always_try_nearest_node = Val});
         _ ->
 	    ?e("Bad config value:  ~p~n", [Tag, Val]),
 	    exit({bad_config_value, {Tag, Val}})
@@ -271,7 +308,7 @@ verify_config(Config, _) ->
     ?e("Bad config:  ~p~n", [Config]),
     exit({bad_config, Config}).
 
-display_config(C) when record(C, config) ->
+display_config(C) when is_record(C, config) ->
     ?d("~n", []),
     ?d("Actual configuration...~n", []),
     ?d("~n", []),

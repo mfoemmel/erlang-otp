@@ -262,9 +262,10 @@ do_pseudo_li(I, MFA, ConstMap) ->
 	{load_address, {c_const,Label}}
     end,
   NewDst = do_reg(Dst),
+  Simm0 = {simm,0},
   [{'.reloc', RelocData, #comment{term=reloc}},
-   {addi, {NewDst,{r,0},{simm,0}}, I},
-   {addis, {NewDst,NewDst,{simm,0}}, I}].
+   {addi, {NewDst,{r,0},Simm0}, I},
+   {addis, {NewDst,NewDst,Simm0}, I}].
 
 do_store(I) ->
   #store{stop=StOp,src=Src,disp=Disp,base=Base} = I,
@@ -453,7 +454,8 @@ untag_mfa_or_prim(#ppc_prim{prim=Prim}) -> Prim.
 
 fix_bc_sdi(I, Insns, InsnAddress, FunAddress, LabelMap) ->
   {bc_sdi,Opnds,OrigI} = I,
-  {{bcond,BCond},{label,L},{pred,Pred}} = Opnds,
+  {{bcond,BCond},Label,{pred,Pred}} = Opnds,
+  {label,L} = Label,
   LabelAddress = gb_trees:get(L, LabelMap) + FunAddress,
   BD = (LabelAddress - InsnAddress) div 4,
   if BD >= -(16#2000), BD =< 16#1FFF ->
@@ -464,7 +466,7 @@ fix_bc_sdi(I, Insns, InsnAddress, FunAddress, LabelMap) ->
       [{bc,
 	{{bcond,NewBCond},'.+8',{pred,NewPred}},
 	#bc{bcond=NewBCond,label='.+8',pred=NewPred}}, %% pp will be ugly
-       {b, {label,L}, #b_label{label=L}} |
+       {b, Label, #b_label{label=L}} |
        Insns]
   end.
 
@@ -537,8 +539,8 @@ mk_data_relocs([{MFA,Labels} | Rest], LabelMap, Acc) ->
   mk_data_relocs(Rest, LabelMap, [Map,Acc]);
 mk_data_relocs([],_,Acc) -> Acc.
 
-find({MFA,L},LabelMap) ->
-  gb_trees:get({MFA,L}, LabelMap).
+find({_MFA,_L} = MFAL,LabelMap) ->
+  gb_trees:get(MFAL, LabelMap).
 
 slim_sorted_exportmap([{Addr,M,F,A}|Rest], Closures, Exports) ->
   IsClosure = lists:member({M,F,A}, Closures),
@@ -590,9 +592,9 @@ fill_spaces(0) ->
 %%% Lookup a constant in a ConstMap.
 %%%
 
-find_const({MFA,Label},[{pcm_entry,MFA,Label,ConstNo,_,_,_}|_]) ->
+find_const({MFA,Label}, [{pcm_entry,MFA,Label,ConstNo,_,_,_}|_]) ->
   ConstNo;
-find_const(N,[_|R]) ->
-  find_const(N,R);
-find_const(C,[]) ->
+find_const(N, [_|R]) ->
+  find_const(N, R);
+find_const(C, []) ->
   ?EXIT({constant_not_found,C}).

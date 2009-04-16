@@ -65,9 +65,9 @@
 -record(x86_imm, {value}).
 -record(x86_mem, {base, off, type}).
 -record(x86_fpreg, {reg, pseudo}).
--record(x86_mfa, {m::atom(), f::atom(), a::byte()}).
+-record(x86_mfa, {m::atom(), f::atom(), a::arity()}).
 -record(x86_prim, {prim}).
--record(x86_sdesc, {exnlab, fsize, arity, live::tuple()}).
+-record(x86_sdesc, {exnlab, fsize, arity::arity(), live::tuple()}).
 
 %%% Basic instructions.
 %%% These follow the AT&T convention, i.e. op src,dst (dst := dst op src)

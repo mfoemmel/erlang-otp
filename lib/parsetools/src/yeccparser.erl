@@ -13,7 +13,7 @@ value_of(Token) ->
 line_of(Token) ->
     element(2, Token).
 
--file("./yeccpre.hrl", 0).
+-file("/clearcase/otp/erts/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %% 
@@ -66,7 +66,7 @@ format_error(Message) ->
 return_error(Line, Message) ->
     throw({error, {Line, ?MODULE, Message}}).
 
--define(CODE_VERSION, "1.2").
+-define(CODE_VERSION, "1.3").
 
 yeccpars0(Tokens, MFA) ->
     try yeccpars1(Tokens, MFA, 0, [], [])
@@ -76,10 +76,6 @@ yeccpars0(Tokens, MFA) ->
             try yecc_error_type(Error, Stacktrace) of
                 {syntax_error, Token} ->
                     yeccerror(Token);
-                {missing_in_goto_table=Tag, State} ->
-                    Desc = {State, Tag},
-                    erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
-                                Stacktrace);
                 {missing_in_goto_table=Tag, Symbol, State} ->
                     Desc = {Symbol, State, Tag},
                     erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
@@ -90,16 +86,14 @@ yeccpars0(Tokens, MFA) ->
             Error % probably from return_error/2
     end.
 
-yecc_error_type(function_clause, [{?MODULE,F,[_,_,_,_,Token,_,_]} | _]) ->
-    "yeccpars2" ++ _ = atom_to_list(F),
-    {syntax_error, Token};
-yecc_error_type({case_clause,{State}}, [{?MODULE,yeccpars2,_}|_]) ->
-    %% Inlined goto-function
-    {missing_in_goto_table, State};
-yecc_error_type(function_clause, [{?MODULE,F,[State]}|_]) ->
-    "yeccgoto_" ++ SymbolL = atom_to_list(F),
-    {ok,[{atom,_,Symbol}]} = erl_scan:string(SymbolL),
-    {missing_in_goto_table, Symbol, State}.
+yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
+    case atom_to_list(F) of
+        "yeccpars2" ++ _ ->
+            {syntax_error, Token};
+        "yeccgoto_" ++ SymbolL ->
+            {ok,[{atom,_,Symbol}],_} = erl_scan:string(SymbolL),
+            {missing_in_goto_table, Symbol, State}
+    end.
 
 yeccpars1([Token | Tokens], Tokenizer, State, States, Vstack) ->
     yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, 
@@ -141,16 +135,22 @@ yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
 
 % For internal use only.
 yeccerror(Token) ->
-    {error,
-     {element(2, Token), ?MODULE,
-      ["syntax error before: ", yecctoken2string(Token)]}}.
+    Text = case catch erl_scan:token_info(Token, text) of
+               {text, Txt} -> Txt;
+               _ -> yecctoken2string(Token)
+           end,
+    Location = case catch erl_scan:token_info(Token, location) of
+                   {location, Loc} -> Loc;
+                   _ -> element(2, Token)
+               end,
+    {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
 yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
 yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
-yecctoken2string({string,_,S}) -> io_lib:write_string(S);
+yecctoken2string({string,_,S}) -> io_lib:write_unicode_string(S);
 yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
 yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
 yecctoken2string({dot, _}) -> "'.'";
@@ -165,7 +165,7 @@ yecctoken2string(Other) ->
 
 
 
--file("yeccparser.erl", 167).
+-file("yeccparser.erl", 168).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);

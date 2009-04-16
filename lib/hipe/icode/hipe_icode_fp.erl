@@ -1,35 +1,30 @@
 %% -*- erlang-indent-level: 2 -*-
-%%%
-%%% %CopyrightBegin%
-%%% 
-%%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
-%%% 
-%%% The contents of this file are subject to the Erlang Public License,
-%%% Version 1.1, (the "License"); you may not use this file except in
-%%% compliance with the License. You should have received a copy of the
-%%% Erlang Public License along with this software. If not, it can be
-%%% retrieved online at http://www.erlang.org/.
-%%% 
-%%% Software distributed under the License is distributed on an "AS IS"
-%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%%% the License for the specific language governing rights and limitations
-%%% under the License.
-%%% 
-%%% %CopyrightEnd%
-%%%
-%%%-------------------------------------------------------------------
-%%% File    : hipe_icode_fp.erl
-%%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
-%%% Description : One pass analysis to find floating point values. 
-%%%               Mapping to FP variables and creation of FP EBBs.
-%%%
-%%% Created : 23 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
-%%%
-%%% CVS      :
-%%%              $Author: kostis $
-%%%              $Date: 2009/02/06 18:04:26 $
-%%%              $Revision: 1.48 $
-%%%-------------------------------------------------------------------
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2003-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
+%%--------------------------------------------------------------------
+%% File    : hipe_icode_fp.erl
+%% Author  : Tobias Lindahl <tobiasl@it.uu.se>
+%% Description : One pass analysis to find floating point values. 
+%%               Mapping to FP variables and creation of FP EBBs.
+%%
+%% Created : 23 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
+%%--------------------------------------------------------------------
 
 -module(hipe_icode_fp).
 
@@ -423,13 +418,13 @@ add_fp_ebb_fixup(From, To, State) ->
 redirect_phis(Code, OldFrom, NewFrom) ->
   redirect_phis(Code, OldFrom, NewFrom, []).
 
-redirect_phis([I|Left], OldFrom, NewFrom, Acc) ->
+redirect_phis([I|Is] = Code, OldFrom, NewFrom, Acc) ->
   case I of
     #icode_phi{} ->
       NewI = hipe_icode:phi_redirect_pred(I, OldFrom, NewFrom),
-      redirect_phis(Left, OldFrom, NewFrom, [NewI|Acc]);
+      redirect_phis(Is, OldFrom, NewFrom, [NewI|Acc]);
     _ ->
-      lists:reverse(Acc)++[I|Left]
+      lists:reverse(Acc) ++ Code
   end;
 redirect_phis([], _OldFrom, _NewFrom, Acc) ->
   lists:reverse(Acc).
@@ -947,14 +942,15 @@ state__map(S = #state{edge_map = EM}, To) ->
   join_maps([{From, To} || From <- state__pred(S, To)], EM).
 
 state__map_update(S = #state{edge_map = EM}, From, To, Map) ->
+  FromTo = {From, To},
   MapChanged = 
-    case gb_trees:lookup({From, To}, EM) of
+    case gb_trees:lookup(FromTo, EM) of
       {value, Map1} -> not match(Map1, Map);
       none -> true
     end,
   case MapChanged of
     true ->
-      NewEM = gb_trees:enter({From, To}, Map, EM),
+      NewEM = gb_trees:enter(FromTo, Map, EM),
       S#state{edge_map = NewEM};
     false ->
       fixpoint
@@ -964,14 +960,15 @@ state__join_in_block(S = #state{fp_ebb_map = Map}, Label) ->
   Pred = state__pred(S, Label),
   Edges = [{X, Label} || X <- Pred],
   NewInBlock = join_in_block([gb_trees:lookup(X, Map) || X <- Edges]),
-  case gb_trees:lookup({inblock_in, Label}, Map) of
+  InBlockLabel = {inblock_in, Label},
+  case gb_trees:lookup(InBlockLabel, Map) of
     none ->
-      NewMap = gb_trees:insert({inblock_in, Label}, NewInBlock, Map),
+      NewMap = gb_trees:insert(InBlockLabel, NewInBlock, Map),
       {S#state{fp_ebb_map = NewMap}, NewInBlock};
     {value, NewInBlock} ->
       fixpoint;
     _Other ->
-      NewMap = gb_trees:update({inblock_in, Label}, NewInBlock, Map),
+      NewMap = gb_trees:update(InBlockLabel, NewInBlock, Map),
       {S#state{fp_ebb_map = NewMap}, NewInBlock}
   end.
 
@@ -1025,10 +1022,10 @@ get_work({[], [], _Set}) ->
 get_work({[], List, Set}) ->
   get_work({lists:reverse(List), [], Set}).
 
-add_work({List1, List2, Set}, [Label|Left]) ->
+add_work({List1, List2, Set} = Work, [Label|Left]) ->
   case gb_sets:is_member(Label, Set) of
     true -> 
-      add_work({List1, List2, Set}, Left);
+      add_work(Work, Left);
     false ->
       %% io:format("Added work: ~w\n", [Label]),
       NewSet = gb_sets:insert(Label, Set),
@@ -1036,7 +1033,6 @@ add_work({List1, List2, Set}, [Label|Left]) ->
   end;
 add_work(WorkList, []) ->
   WorkList.
-
 
 match(Tree1, Tree2) ->
   match_1(gb_trees:to_list(Tree1), Tree2) andalso 

@@ -94,7 +94,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
   MOpts = fun({winid, Winid}, Acc) -> [<<1:32/?UI,Winid:32/?UI>>|Acc];
           ({pos, {PosX,PosY}}, Acc) -> [<<2:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<3:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxPanel_new_2,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -111,7 +112,8 @@ new(Parent,X,Y,Width,Height)
 new(#wx_ref{type=ParentT,ref=ParentRef},X,Y,Width,Height, Options)
  when is_integer(X),is_integer(Y),is_integer(Width),is_integer(Height),is_list(Options) ->
   ?CLASS(ParentT,wxWindow),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxPanel_new_6,
   <<ParentRef:32/?UI,X:32/?UI,Y:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).

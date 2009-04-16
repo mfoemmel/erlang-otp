@@ -82,7 +82,8 @@ bottomDockable(This)
 bottomDockable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc]  end,
+  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_BottomDockable,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -108,7 +109,8 @@ captionVisible(This)
 captionVisible(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc]  end,
+  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_CaptionVisible,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -139,7 +141,8 @@ closeButton(This)
 closeButton(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc]  end,
+  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_CloseButton,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -163,7 +166,8 @@ destroyOnClose(This)
 destroyOnClose(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc]  end,
+  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_DestroyOnClose,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -195,7 +199,8 @@ dockable(This)
 dockable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc]  end,
+  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_Dockable,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -226,7 +231,8 @@ floatable(This)
 floatable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc]  end,
+  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_Floatable,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -275,7 +281,8 @@ gripper(This)
 gripper(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc]  end,
+  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_Gripper,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -292,7 +299,8 @@ gripperTop(This)
 gripperTop(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({attop, Attop}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Attop)):32/?UI>>|Acc]  end,
+  MOpts = fun({attop, Attop}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Attop)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_GripperTop,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -486,7 +494,8 @@ leftDockable(This)
 leftDockable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc]  end,
+  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_LeftDockable,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -519,7 +528,8 @@ maximizeButton(This)
 maximizeButton(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc]  end,
+  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_MaximizeButton,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -552,7 +562,8 @@ minimizeButton(This)
 minimizeButton(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc]  end,
+  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_MinimizeButton,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -569,7 +580,8 @@ movable(This)
 movable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc]  end,
+  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_Movable,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -595,7 +607,8 @@ paneBorder(This)
 paneBorder(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc]  end,
+  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_PaneBorder,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -612,7 +625,8 @@ pinButton(This)
 pinButton(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc]  end,
+  MOpts = fun({visible, Visible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Visible)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_PinButton,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -637,7 +651,8 @@ resizable(This)
 resizable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({resizable, Resizable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Resizable)):32/?UI>>|Acc]  end,
+  MOpts = fun({resizable, Resizable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Resizable)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_Resizable,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -661,7 +676,8 @@ rightDockable(This)
 rightDockable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc]  end,
+  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_RightDockable,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -702,7 +718,8 @@ show(This)
 show(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc]  end,
+  MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_Show,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -733,7 +750,8 @@ topDockable(This)
 topDockable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxAuiPaneInfo),
-  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc]  end,
+  MOpts = fun({b, B}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(B)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxAuiPaneInfo_TopDockable,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

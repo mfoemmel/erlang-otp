@@ -95,6 +95,9 @@
 %% - intersection(Ss): returns a new set that contains each element that
 %%   is in all of the sets in the list Ss, and no other elements.
 %%
+%% - is_disjoint(S1, S2): returns `true' if none of the elements in S1
+%%   occurs in S2.
+%%
 %% - difference(S1, S2): returns a new set that contains each element in
 %%   S1 that is not also in S2, and no other elements.
 %%
@@ -152,7 +155,7 @@
 
 -export([empty/0, is_empty/1, size/1, singleton/1, is_member/2,
 	 insert/2, add/2, delete/2, delete_any/2, balance/1, union/2,
-	 union/1, intersection/2, intersection/1, difference/2,
+	 union/1, intersection/2, intersection/1, is_disjoint/2, difference/2,
 	 is_subset/2, to_list/1, from_list/1, from_ordset/1, smallest/1,
 	 largest/1, take_smallest/1, take_largest/1, iterator/1, next/1,
 	 filter/2, fold/3, is_set/1]).
@@ -663,6 +666,27 @@ intersection_list(S, [S1 | Ss]) ->
     intersection_list(intersection(S, S1), Ss);
 intersection_list(S, []) -> S.
 
+-spec is_disjoint(gb_set(), gb_set()) -> bool().
+
+is_disjoint({N1, T1}, {N2, T2}) when N1 < N2 ->
+    is_disjoint_1(T1, T2);
+is_disjoint({_, T1}, {_, T2}) ->
+    is_disjoint_1(T2, T1).
+
+is_disjoint_1({K1, Smaller1, Bigger}, {K2, Smaller2, _}=Tree) when K1 < K2 ->
+    not is_member_1(K1, Smaller2) andalso
+	is_disjoint_1(Smaller1, Smaller2) andalso
+	is_disjoint_1(Bigger, Tree);
+is_disjoint_1({K1, Smaller, Bigger1}, {K2, _, Bigger2}=Tree) when K1 > K2 ->
+    not is_member_1(K1, Bigger2) andalso
+	is_disjoint_1(Bigger1, Bigger2) andalso
+	is_disjoint_1(Smaller, Tree);
+is_disjoint_1({_K1, _, _}, {_K2, _, _}) ->	%K1 == K2
+    false;
+is_disjoint_1(nil, _) ->
+    true;
+is_disjoint_1(_, nil) ->
+    true.
 
 %% Note that difference is not symmetric. We don't use `delete' here,
 %% since the GB-trees implementation does not rebalance after deletion

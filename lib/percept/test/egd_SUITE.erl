@@ -118,6 +118,8 @@ image_shape(Config) when is_list(Config) ->
     ?line ok = egd:line(Im, get_point(), get_point(), Fgc), 
     ?line ok = egd:rectangle(Im, get_point(), get_point(), Fgc),
     ?line ok = egd:filledEllipse(Im, get_point(), get_point(), Fgc),
+    ?line ok = egd:arc(Im, get_point(), get_point(), Fgc),
+    ?line ok = egd:arc(Im, get_point(), get_point(), 100, Fgc),
     
     Pt1 = get_point(),
     Pt2 = get_point(), 

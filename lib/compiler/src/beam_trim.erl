@@ -212,6 +212,9 @@ remap([{deallocate,N}|Is], Map, Acc) ->
 remap([{test,Name,Fail,Ss}|Is], Map, Acc) ->
     I = {test,Name,Fail,[Map(S) || S <- Ss]},
     remap(Is, Map, [I|Acc]);
+remap([{test,Name,Fail,Live,Ss,Dst}|Is], Map, Acc) ->
+    I = {test,Name,Fail,Live,[Map(S) || S <- Ss],Map(Dst)},
+    remap(Is, Map, [I|Acc]);
 remap([return|_]=Is, _, Acc) ->
     reverse(Acc, Is);
 remap([{call_last,Ar,Name,N}|Is], Map, Acc) ->
@@ -286,6 +289,8 @@ frame_size([{bif,_,{f,L},_,_}|Is], Safe) ->
 frame_size([{gc_bif,_,{f,L},_,_,_}|Is], Safe) ->
     frame_size_branch(L, Is, Safe);
 frame_size([{test,_,{f,L},_}|Is], Safe) ->
+    frame_size_branch(L, Is, Safe);
+frame_size([{test,_,{f,L},_,_,_}|Is], Safe) ->
     frame_size_branch(L, Is, Safe);
 frame_size([{bs_add,{f,L},_,_}|Is], Safe) ->
     frame_size_branch(L, Is, Safe);

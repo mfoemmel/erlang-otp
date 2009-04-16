@@ -117,7 +117,8 @@ iconize(This)
 iconize(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTopLevelWindow),
-  MOpts = fun({iconize, Iconize}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Iconize)):32/?UI>>|Acc]  end,
+  MOpts = fun({iconize, Iconize}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Iconize)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTopLevelWindow_Iconize,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -155,7 +156,8 @@ maximize(This)
 maximize(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTopLevelWindow),
-  MOpts = fun({maximize, Maximize}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Maximize)):32/?UI>>|Acc]  end,
+  MOpts = fun({maximize, Maximize}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Maximize)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTopLevelWindow_Maximize,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -172,7 +174,8 @@ requestUserAttention(This)
 requestUserAttention(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTopLevelWindow),
-  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc]  end,
+  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTopLevelWindow_RequestUserAttention,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -205,7 +208,8 @@ centerOnScreen(This)
 centerOnScreen(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTopLevelWindow),
-  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc]  end,
+  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTopLevelWindow_CenterOnScreen,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -222,7 +226,8 @@ centreOnScreen(This)
 centreOnScreen(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTopLevelWindow),
-  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc]  end,
+  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTopLevelWindow_CentreOnScreen,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -256,7 +261,8 @@ showFullScreen(This,Show)
 showFullScreen(#wx_ref{type=ThisT,ref=ThisRef},Show, Options)
  when is_boolean(Show),is_list(Options) ->
   ?CLASS(ThisT,wxTopLevelWindow),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTopLevelWindow_ShowFullScreen,
   <<ThisRef:32/?UI,(wxe_util:from_bool(Show)):32/?UI, BinOpt/binary>>).

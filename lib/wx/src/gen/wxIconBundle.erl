@@ -94,7 +94,8 @@ getIcon(This)
 getIcon(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxIconBundle),
-  MOpts = fun({size, Size}, Acc) -> [<<1:32/?UI,Size:32/?UI>>|Acc]  end,
+  MOpts = fun({size, Size}, Acc) -> [<<1:32/?UI,Size:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxIconBundle_GetIcon_1_0,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>);

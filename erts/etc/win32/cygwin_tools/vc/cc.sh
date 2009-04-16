@@ -37,6 +37,8 @@ ERR_FILE=/tmp/cl.exe.$$.2
 MD_FORCED=false
 # If we're preprocession (only) i.e. -E
 PREPROCESSING=false
+# If we're generating dependencies (implies preprocesing)
+DEPENDENCIES=false
 # If this is supposed to be a debug build
 DEBUG_BUILD=false
 # If this is supposed to be an optimized build (there can only be one...)
@@ -74,6 +76,10 @@ while test -n "$1" ; do
 	-c) 
 	    LINKING=false;;
 	    #CMD="$CMD -c";;
+	-MM)
+	    PREPROCESSING=true;
+	    LINKING=false;
+	    DEPENDENCIES=true;;
 	-E)
 	    PREPROCESSING=true;
 	    LINKING=false;; # Obviously...
@@ -184,6 +190,7 @@ mkdir $TMPOBJDIR
 
 # Compile
 for x in $SOURCES; do
+    start_time=`date '+%s'` 
     # Compile each source
     if [ $LINKING = false ]; then
 	# We should have an output defined, which is a directory 
@@ -245,7 +252,22 @@ for x in $SOURCES; do
 	tail +2 $MSG_FILE
     else
 	tail +2 $ERR_FILE >&2
-	cat $MSG_FILE
+	if test $DEPENDENCIES = true; then
+	    #after_pp=`date '+%s'`
+	    #echo Preprocessed $x':' `expr $after_pp '-' $start_time` >&2
+	    if test `grep -v $x $MSG_FILE | grep -c '#line'` != "0"; then
+		o=`echo $x | sed 's,.*/,,' | sed 's,\.cp*$,.o,'`
+		echo -n $o':'
+		#cat $MSG_FILE | grep '#line' | grep -v $x | awk -F\" '{printf("\"%s\"\n",$2)}' | sort -u | xargs -n1 cygpath -m -s | xargs -n1 cygpath | awk '{printf("\\\n %s ",$1)}'
+		cat $MSG_FILE | grep '#line' | grep -v $x | awk -F\" '{printf("%s\n",$2)}' | sort -u | tee nisse.txt | cygpath -f - -m -s | cygpath -f - | tee kalle.txt | awk '{printf("\\\n %s ",$0)}' 
+		echo
+		echo 
+		after_sed=`date '+%s'`
+		echo Made dependencises for $x':' `expr $after_sed '-' $start_time` 's' >&2
+	    fi 
+	else
+	    cat $MSG_FILE
+	fi
     fi
     rm -f $ERR_FILE $MSG_FILE
     if [ $RES != 0 ]; then

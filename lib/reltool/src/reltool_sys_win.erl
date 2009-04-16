@@ -393,17 +393,17 @@ create_app_list_ctrl(Panel, OuterSz, Title, Tick, Cross) ->
     %% Subscribe on events
     wxEvtHandler:connect(ListCtrl, size, [{skip, true}, {userData, app_list_ctrl}]),
     wxEvtHandler:connect(ListCtrl, command_list_item_activated),
+    wxWindow:connect(ListCtrl, enter_window),        
+
     ListCtrl.
 
 %% create_button(_Panel, Sizer, _ListCtrl, _BitMapName, _Tag, undefined) ->
 %%     wxSizer:addStretchSpacer(Sizer);
 create_button(Panel, Sizer, ListCtrl, Title, BitMapName, Action) ->
-    InnerSz = wxBoxSizer:new(?wxVERTICAL),
     BitMap = wxArtProvider:getBitmap(BitMapName),
     Button = wxBitmapButton:new(Panel, ?wxID_ANY, BitMap, []),
     ToolTip = action_to_tool_tip(Title, Action),
     wxBitmapButton:setToolTip(Button, ToolTip),
-    wxSizer:add(InnerSz, Button, [{flag, ?wxALIGN_CENTER_HORIZONTAL}]),
     Options = [{userData, {app_button, Action, ListCtrl}}],
     wxEvtHandler:connect(Button, command_button_clicked, Options),
     wxSizer:add(Sizer, 
@@ -912,6 +912,9 @@ handle_app_event(S, #wxList{type = command_list_item_activated, itemIndex = Pos}
 handle_app_event(S, #wxCommand{type = command_button_clicked}, _ObjRef, {app_button, Action, ListCtrl}) ->
     Items = reltool_utils:get_items(ListCtrl),
     handle_app_button(S, Items, Action);
+handle_app_event(S, #wxMouse{type = enter_window}, ObjRef, _UserData) ->
+    wxWindow:setFocus(ObjRef),
+    S;
 handle_app_event(S, Event, ObjRef, UserData) ->
     error_logger:format("~p~p got unexpected wx app event to ~p with user data: ~p\n\t ~p\n",
                         [?MODULE, self(), ObjRef, UserData, Event]),

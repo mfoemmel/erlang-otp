@@ -2465,6 +2465,12 @@ bsm_an_1(Vs, #c_case{clauses=Cs}=Case) ->
     end.
 
 bsm_an_2(Vs, Cs, Case, Pos) ->
+    case bsm_nonempty(Cs, Pos) of
+	true -> bsm_an_3(Vs, Cs, Case, Pos);
+	false -> Case
+    end.
+
+bsm_an_3(Vs, Cs, Case, Pos) ->
     try
 	bsm_ensure_no_partition(Cs, Pos),
 	bsm_do_an(Vs, Pos, Cs, Case)
@@ -2570,6 +2576,19 @@ bsm_leftmost_2([_|Ps], Cs, N, Pos) ->
     bsm_leftmost_2(Ps, Cs, N+1, Pos);
 bsm_leftmost_2([], Cs, _, Pos) ->
     bsm_leftmost_1(Cs, Pos).
+
+%% bsm_notempty(Cs, Pos) -> true|false
+%%  Check if at least one of the clauses matches a non-empty
+%%  binary in the given argumet position.
+%%
+bsm_nonempty([#c_clause{pats=Ps}|Cs], Pos) ->
+    case nth(Pos, Ps) of
+	#c_binary{segments=[_|_]} ->
+	    true;
+	_ ->
+	    bsm_nonempty(Cs, Pos)
+    end;
+bsm_nonempty([], _ ) -> false.
 
 %% bsm_ensure_no_partition(Cs, Pos) -> ok     (exception if problem)
 %%  We must make sure that binary matching is not partitioned between

@@ -52,7 +52,8 @@ new(Options)
   MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc];
           ({keyCode, KeyCode}, Acc) -> [<<2:32/?UI,KeyCode:32/?UI>>|Acc];
           ({cmd, Cmd}, Acc) -> [<<3:32/?UI,Cmd:32/?UI>>|Acc];
-          ({item, #wx_ref{type=ItemT,ref=ItemRef}}, Acc) ->   ?CLASS(ItemT,wxMenuItem),[<<4:32/?UI,ItemRef:32/?UI>>|Acc]  end,
+          ({item, #wx_ref{type=ItemT,ref=ItemRef}}, Acc) ->   ?CLASS(ItemT,wxMenuItem),[<<4:32/?UI,ItemRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxAcceleratorEntry_new_1_0,
   <<BinOpt/binary>>);
@@ -94,7 +95,8 @@ set(This,Flags,KeyCode,Cmd)
 set(#wx_ref{type=ThisT,ref=ThisRef},Flags,KeyCode,Cmd, Options)
  when is_integer(Flags),is_integer(KeyCode),is_integer(Cmd),is_list(Options) ->
   ?CLASS(ThisT,wxAcceleratorEntry),
-  MOpts = fun({item, #wx_ref{type=ItemT,ref=ItemRef}}, Acc) ->   ?CLASS(ItemT,wxMenuItem),[<<1:32/?UI,ItemRef:32/?UI>>|Acc]  end,
+  MOpts = fun({item, #wx_ref{type=ItemT,ref=ItemRef}}, Acc) ->   ?CLASS(ItemT,wxMenuItem),[<<1:32/?UI,ItemRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxAcceleratorEntry_Set,
   <<ThisRef:32/?UI,Flags:32/?UI,KeyCode:32/?UI,Cmd:32/?UI, BinOpt/binary>>).

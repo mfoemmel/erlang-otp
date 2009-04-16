@@ -354,6 +354,8 @@
 	(((A) bor (B) bor (C) bor (D) bor (E) bor (F)) 
 	 band (bnot 16#ff)) =:= 0).
 
+-define(port(P), (((P) band bnot 16#ffff) =:= 0)).
+
 %% default options (when inet_drv port is started)
 %%
 %% bufsz   = INET_MIN_BUFFER (8K)

@@ -894,7 +894,7 @@ ets:select(Table,MatchSpec),</code>
       </desc>
     </func>
     <func>
-      <name>new(Name, Options) -> tid()</name>
+      <name>new(Name, Options) -> tid() | atom()</name>
       <fsummary>Create a new ETS table.</fsummary>
       <type>
         <v>Name = atom()</v>

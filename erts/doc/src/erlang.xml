@@ -2006,6 +2006,28 @@ os_prompt%</pre>
       </desc>
     </func>
     <func>
+      <name>erlang:make_tuple(Arity, Default, InitList) -> tuple()</name>
+      <fsummary>Create a new tuple with given arity and contents</fsummary>
+      <type>
+        <v>Arity = int()</v>
+        <v>Default = term()</v>
+        <v>InitList = [{Position,term()}]</v>
+        <v>Position = integer()</v>
+      </type>
+      <desc>
+        <p><c>erlang:make_tuple</c> first creates a tuple of size <c>Arity</c>
+	  where each element has the value <c>Default</c>. It then fills
+	  in values from <c>InitList</c>. Each list element in <c>InitList</c>
+	  must be a two-tuple where the first element is a position in the
+	  newly created tuple and the second element is any term. If a position
+	  occurs more than once in the list, the term corresponding to
+	  last occurrence will be used.</p>
+        <pre>
+> <input>erlang:make_tuple(5, [], [{2,ignored},{5,zz},{2,aa}]).</input>
+{{[],aa,[],[],zz}</pre>
+      </desc>
+    </func>
+    <func>
       <name>erlang:max(Term1, Term2) -> Maximum</name>
       <fsummary>Return the largest of two term</fsummary>
       <type>
@@ -4607,6 +4629,90 @@ true</pre>
             <p>Sets the maximum depth of call stack back-traces in the
               exit reason element of <c>'EXIT'</c> tuples.</p>
           </item>
+          <tag><c>erlang:system_flag(cpu_topology, CpuTopology)</c></tag>
+          <item>
+            <marker id="system_flag_cpu_topology"></marker>
+            <p>Sets the user defined <c>CpuTopology</c>. The user defined
+	       CPU topology will override any automatically detected
+	       CPU topology. By passing <c>undefined</c> as <c>CpuTopology</c>
+	       the system will revert back to the CPU topology automatically
+	       detected. The returned value equals the value returned
+	       from <c>erlang:system_info(cpu_topology)</c> before the
+	       change was made.
+	    </p>
+	    <p>The CPU topology is used when binding schedulers to logical
+	       processors. If schedulers are already bound when the CPU
+	       topology is changed, the schedulers will be sent a request
+	       to rebind according to the new CPU topology.
+	    </p>
+	    <p>For information on the <c>CpuTopology</c> type
+	       and more, see the documentation of
+	       <seealso marker="#system_info_cpu_topology">erlang:system_info(cpu_topology)</seealso>,
+	       and
+	       <seealso marker="#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, How)</seealso>.
+	    </p>
+          </item>
+          <tag><c>erlang:system_flag(fullsweep_after, Number)</c></tag>
+          <item>
+            <p><c>Number</c> is a non-negative integer which indicates
+              how many times generational garbages collections can be
+              done without forcing a fullsweep collection. The value
+              applies to new processes; processes already running are
+              not affected.</p>
+            <p>In low-memory systems (especially without virtual
+              memory), setting the value to 0 can help to conserve
+              memory.</p>
+            <p>An alternative way to set this value is through the
+              (operating system) environment variable
+              <c>ERL_FULLSWEEP_AFTER</c>.</p>
+          </item>
+          <tag><c>erlang:system_flag(min_heap_size, MinHeapSize)</c></tag>
+          <item>
+            <p>Sets the default minimum heap size for processes. The
+              size is given in words. The new <c>min_heap_size</c> only
+              effects processes spawned after the change of
+              <c>min_heap_size</c> has been made.
+              The <c>min_heap_size</c> can be set for individual
+              processes by use of
+              <seealso marker="#spawn_opt/4">spawn_opt/N</seealso> or
+              <seealso marker="#process_flag/2">process_flag/2</seealso>. </p>
+          </item>
+          <tag><c>erlang:system_flag(multi_scheduling, BlockState)</c></tag>
+          <item>
+            <marker id="system_flag_multi_scheduling"></marker>
+            <p><c>BlockState = block | unblock</c></p>
+            <p>If multi-scheduling is enabled, more than one scheduler
+              thread is used by the emulator. Multi-scheduling can be
+              blocked. When multi-scheduling has been blocked, only
+              one scheduler thread will schedule Erlang processes.</p>
+            <p>If <c>BlockState =:= block</c>, multi-scheduling will
+              be blocked. If <c>BlockState =:= unblock</c> and no-one
+              else is blocking multi-scheduling and this process has
+              only blocked one time, multi-scheduling will be unblocked.
+              One process can block multi-scheduling multiple times.
+              If a process has blocked multiple times, it has to
+              unblock exactly as many times as it has blocked before it
+              has released its multi-scheduling block. If a process that
+              has blocked multi-scheduling exits, it will release its
+              blocking of multi-scheduling.</p>
+            <p>The return values are <c>disabled</c>, <c>blocked</c>,
+              or <c>enabled</c>. The returned value describes the
+              state just after the call to
+              <c>erlang:system_flag(multi_scheduling, BlockState)</c>
+              has been made. The return values are described in the
+              documentation of <seealso marker="#system_info_multi_scheduling">erlang:system_info(multi_scheduling)</seealso>.</p>
+            <p><em>NOTE</em>: Blocking of multi-scheduling should normally
+              not be needed. If you feel that you need to
+              block multi-scheduling, think through the
+              problem at least a couple of times again.
+              Blocking multi-scheduling should only be used
+              as a last resort since it will most likely be
+              a <em>very inefficient</em> way to solve the
+              problem.</p>
+            <p>See also <seealso marker="#system_info_multi_scheduling">erlang:system_info(multi_scheduling)</seealso>,
+              <seealso marker="#system_info_multi_scheduling_blockers">erlang:system_info(multi_scheduling_blockers)</seealso>, and
+              <seealso marker="#system_info_schedulers">erlang:system_info(schedulers)</seealso>.</p>
+          </item>
           <tag><c>erlang:system_flag(scheduler_bind_type, How)</c></tag>
           <item>
             <marker id="system_flag_scheduler_bind_type"></marker>
@@ -4695,12 +4801,13 @@ true</pre>
 		in the future).</p>
               </item>
 	    </taglist>
-            <p>How schedulers are bound matters. For example, in low load
-	       situations, the runtime system tries to migrate processes to
-	       schedulers with low scheduler identifiers. The more the
-	       schedulers are spread over the hardware, the more resources
-	       will be available to the runtime system in low load
-	       situations.
+            <p>How schedulers are bound matters. For example, in
+	       situations when there are fewer running processes than
+	       schedulers online, the runtime system tries to migrate
+	       processes to schedulers with low scheduler identifiers.
+	       The more the schedulers are spread over the hardware,
+	       the more resources will be available to the runtime
+	       system in such situations.
 	    </p>
 	    <p>The value returned equals <c>How</c> before the
 	       <c>scheduler_bind_type</c> flag was changed.</p>
@@ -4725,90 +4832,6 @@ true</pre>
 	       and
 	       <seealso marker="#system_flag_cpu_topology">erlang:system_flag(cpu_topology, CpuTopology)</seealso>.
 	    </p>
-          </item>
-          <tag><c>erlang:system_flag(cpu_topology, CpuTopology)</c></tag>
-          <item>
-            <marker id="system_flag_cpu_topology"></marker>
-            <p>Sets the user defined <c>CpuTopology</c>. The user defined
-	       CPU topology will override any automatically detected
-	       CPU topology. By passing <c>undefined</c> as <c>CpuTopology</c>
-	       the system will revert back to the CPU topology automatically
-	       detected. The returned value equals the value returned
-	       from <c>erlang:system_info(cpu_topology)</c> before the
-	       change was made.
-	    </p>
-	    <p>The CPU topology is used when binding schedulers to logical
-	       processors. If schedulers are already bound when the CPU
-	       topology is changed, the schedulers will be sent a request
-	       to rebind according to the new CPU topology.
-	    </p>
-	    <p>For information on the <c>CpuTopology</c> type
-	       and more, see the documentation of
-	       <seealso marker="#system_info_cpu_topology">erlang:system_info(cpu_topology)</seealso>,
-	       and
-	       <seealso marker="#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, How)</seealso>.
-	    </p>
-          </item>
-          <tag><c>erlang:system_flag(fullsweep_after, Number)</c></tag>
-          <item>
-            <p><c>Number</c> is a non-negative integer which indicates
-              how many times generational garbages collections can be
-              done without forcing a fullsweep collection. The value
-              applies to new processes; processes already running are
-              not affected.</p>
-            <p>In low-memory systems (especially without virtual
-              memory), setting the value to 0 can help to conserve
-              memory.</p>
-            <p>An alternative way to set this value is through the
-              (operating system) environment variable
-              <c>ERL_FULLSWEEP_AFTER</c>.</p>
-          </item>
-          <tag><c>erlang:system_flag(min_heap_size, MinHeapSize)</c></tag>
-          <item>
-            <p>Sets the default minimum heap size for processes. The
-              size is given in words. The new <c>min_heap_size</c> only
-              effects processes spawned after the change of
-              <c>min_heap_size</c> has been made.
-              The <c>min_heap_size</c> can be set for individual
-              processes by use of
-              <seealso marker="#spawn_opt/4">spawn_opt/N</seealso> or
-              <seealso marker="#process_flag/2">process_flag/2</seealso>. </p>
-          </item>
-          <tag><c>erlang:system_flag(multi_scheduling, BlockState)</c></tag>
-          <item>
-            <marker id="system_flag_multi_scheduling"></marker>
-            <p><c>BlockState = block | unblock</c></p>
-            <p>If multi-scheduling is enabled, more than one scheduler
-              thread is used by the emulator. Multi-scheduling can be
-              blocked. When multi-scheduling has been blocked, only
-              one scheduler thread will schedule Erlang processes.</p>
-            <p>If <c>BlockState =:= block</c>, multi-scheduling will
-              be blocked. If <c>BlockState =:= unblock</c> and no-one
-              else is blocking multi-scheduling and this process has
-              only blocked one time, multi-scheduling will be unblocked.
-              One process can block multi-scheduling multiple times.
-              If a process has blocked multiple times, it has to
-              unblock exactly as many times as it has blocked before it
-              has released its multi-scheduling block. If a process that
-              has blocked multi-scheduling exits, it will release its
-              blocking of multi-scheduling.</p>
-            <p>The return values are <c>disabled</c>, <c>blocked</c>,
-              or <c>enabled</c>. The returned value describes the
-              state just after the call to
-              <c>erlang:system_flag(multi_scheduling, BlockState)</c>
-              has been made. The return values are described in the
-              documentation of <seealso marker="#system_info_multi_scheduling">erlang:system_info(multi_scheduling)</seealso>.</p>
-            <p><em>NOTE</em>: Blocking of multi-scheduling should normally
-              not be needed. If you feel that you need to
-              block multi-scheduling, think through the
-              problem at least a couple of times again.
-              Blocking multi-scheduling should only be used
-              as a last resort since it will most likely be
-              a <em>very inefficient</em> way to solve the
-              problem.</p>
-            <p>See also <seealso marker="#system_info_multi_scheduling">erlang:system_info(multi_scheduling)</seealso>,
-              <seealso marker="#system_info_multi_scheduling_blockers">erlang:system_info(multi_scheduling_blockers)</seealso>, and
-              <seealso marker="#system_info_schedulers">erlang:system_info(schedulers)</seealso>.</p>
           </item>
           <tag><c>erlang:system_flag(schedulers_online, SchedulersOnline)</c></tag>
           <item>
@@ -4971,23 +4994,6 @@ true</pre>
 	    allocator. The information returned is a subset of the
 	    information returned by
 	    <seealso marker="#system_info_allocator_tuple">erlang:system_info({allocator, Alloc})</seealso>.
-	    </p>
-          </item>
-          <tag><c>scheduler_bind_type</c></tag>
-          <item>
-            <marker id="system_info_scheduler_bind_type"></marker>
-	    <p>Returns information on how user has requested
-	       schedulers to be bound or not bound.</p>
-	    <p><em>NOTE:</em> Even though user has requested
-	       schedulers to be bound via
-	       <seealso marker="#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, How)</seealso>,
-	       they might have silently failed to bind. In order to
-	       inspect actual scheduler bindings call
-	       <seealso marker="#system_info_scheduler_bindings">erlang:system_info(scheduler_bindings)</seealso>.
-	    </p>
-	    <p>For more information, see
-	       <seealso marker="#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, How)</seealso>, and
-	       <seealso marker="#system_info_scheduler_bindings">erlang:system_info(scheduler_bindings)</seealso>.
 	    </p>
           </item>
           <tag><c>c_compiler_used</c></tag>
@@ -5341,6 +5347,47 @@ true</pre>
               information see the <seealso marker="erts:crash_dump">"How to interpret the Erlang crash dumps"</seealso> chapter
               in the ERTS User's Guide.</p>
           </item>
+          <tag><c>scheduler_bind_type</c></tag>
+          <item>
+            <marker id="system_info_scheduler_bind_type"></marker>
+	    <p>Returns information on how user has requested
+	       schedulers to be bound or not bound.</p>
+	    <p><em>NOTE:</em> Even though user has requested
+	       schedulers to be bound via
+	       <seealso marker="#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, How)</seealso>,
+	       they might have silently failed to bind. In order to
+	       inspect actual scheduler bindings call
+	       <seealso marker="#system_info_scheduler_bindings">erlang:system_info(scheduler_bindings)</seealso>.
+	    </p>
+	    <p>For more information, see
+	       <seealso marker="#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, How)</seealso>, and
+	       <seealso marker="#system_info_scheduler_bindings">erlang:system_info(scheduler_bindings)</seealso>.
+	    </p>
+          </item>
+          <tag><c>scheduler_bindings</c></tag>
+          <item>
+            <marker id="system_info_scheduler_bindings"></marker>
+	    <p>Returns information on currently used scheduler
+	       bindings.</p>
+	    <p>A tuple of a size equal to
+	       <seealso marker="#system_info_schedulers">erlang:system_info(schedulers)</seealso> is returned. The elements of the tuple are integers
+	       or the atom <c>unbound</c>. Logical processor identifers
+	       are represented as integers. The <c>N</c>th
+	       element of the tuple equals the current binding for
+	       the scheduler with the scheduler identifier equal to
+	       <c>N</c>. E.g., if the schedulers have been bound,
+	       <c>element(erlang:system_info(scheduler_id),
+	       erlang:system_info(scheduler_bindings))</c> will return
+	       the identifier of the logical processor that the calling
+	       process is executing on.
+	    </p>
+	    <p>Note that only schedulers online can be bound to logical
+	       processors.</p>
+	    <p>For more information, see
+	       <seealso marker="#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, How)</seealso>,
+	       <seealso marker="#system_info_schedulers_online">erlang:system_info(schedulers_online)</seealso>.
+	    </p>
+          </item>
           <tag><c>scheduler_id</c></tag>
           <item>
             <marker id="system_info_scheduler_id"></marker>
@@ -5367,30 +5414,6 @@ true</pre>
               <seealso marker="#system_flag_multi_scheduling">erlang:system_flag(multi_scheduling, BlockState)</seealso>,
               <seealso marker="#system_info_multi_scheduling">erlang:system_info(multi_scheduling)</seealso>, and
               and <seealso marker="#system_info_multi_scheduling_blockers">erlang:system_info(multi_scheduling_blockers)</seealso>.</p>
-          </item>
-          <tag><c>scheduler_bindings</c></tag>
-          <item>
-            <marker id="system_info_scheduler_bindings"></marker>
-	    <p>Returns information on currently used scheduler
-	       bindings.</p>
-	    <p>A tuple of a size equal to
-	       <seealso marker="#system_info_schedulers">erlang:system_info(schedulers)</seealso> is returned. The elements of the tuple are integers
-	       or the atom <c>unbound</c>. Logical processor identifers
-	       are represented as integers. The <c>N</c>th
-	       element of the tuple equals the current binding for
-	       the scheduler with the scheduler identifier equal to
-	       <c>N</c>. E.g., <c>element(erlang:system_info(scheduler_id),
-	       erlang:system_info(scheduler_bindings))</c> will return
-	       the logical processor identifier of the logical processor,
-	       the calling process is executing on if the schedulers
-	       have been bound; otherwise, <c>unbound</c> is returned.
-	    </p>
-	    <p>Note that only schedulers online can be bound to logical
-	       processors.</p>
-	    <p>For more information, see
-	       <seealso marker="#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, How)</seealso>,
-	       <seealso marker="#system_info_schedulers_online">erlang:system_info(schedulers_online)</seealso>.
-	    </p>
           </item>
           <tag><c>schedulers_online</c></tag>
           <item>

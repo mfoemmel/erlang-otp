@@ -212,14 +212,14 @@ reset_stats(ConnHandleOrCounter) ->
 %%----------------------------------------------------------------------
 
 cleanup(#megaco_conn_handle{local_mid = LocalMid}, Force) 
-  when (Force == true) orelse (Force == false) ->
+  when (Force =:= true) orelse (Force =:= false) ->
     Pat = #reply{trans_id  = '$1', 
 		 local_mid = LocalMid, 
 		 state     = '$2',
 		 _         = '_'},
     do_cleanup(Pat, Force);
 cleanup(LocalMid, Force) 
-  when (Force == true) orelse (Force == false) ->
+  when (Force =:= true) orelse (Force =:= false) ->
     Pat = #reply{trans_id  = '$1', 
 		 local_mid = LocalMid, 
 		 state     = '$2',
@@ -4717,6 +4717,10 @@ missing_to_str2([X]) ->
 missing_to_str2([H|T]) ->
     [integer_to_list(H) , "," | missing_to_str2(T)].
 
+return_unexpected_trans_reply(CD, TransId, {error, Reason}, Extra) ->
+    ?report_important(CD, "unexpected trans reply with error", 
+		      [TransId, Reason, Extra]),
+    ok;
 return_unexpected_trans_reply(ConnData, TransId, UserReply, Extra) ->
     Trans = make_transaction_reply(ConnData, TransId, UserReply),
     return_unexpected_trans(ConnData, Trans, Extra).

@@ -2138,6 +2138,56 @@ BIF_RETTYPE make_tuple_2(BIF_ALIST_2)
     BIF_RET(res);
 }
 
+BIF_RETTYPE make_tuple_3(BIF_ALIST_3)
+{
+    Sint n;
+    Uint limit;
+    Eterm* hp;
+    Eterm res;
+    Eterm list = BIF_ARG_3;
+    Eterm* tup;
+
+    if (is_not_small(BIF_ARG_1) || (n = signed_val(BIF_ARG_1)) < 0) {
+    error:
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    limit = (Uint) n;
+    hp = HAlloc(BIF_P, n+1);
+    res = make_tuple(hp);
+    *hp++ = make_arityval(n);
+    tup = hp;
+    while (n--) {
+	*hp++ = BIF_ARG_2;
+    }
+    while(is_list(list)) {
+	Eterm* cons;
+	Eterm hd;
+	Eterm* tp;
+	Eterm index;
+	Uint index_val;
+
+	cons = list_val(list);
+	hd = CAR(cons);
+	list = CDR(cons);
+	if (is_not_tuple_arity(hd, 2)) {
+	    goto error;
+	}
+	tp = tuple_val(hd);
+	if (is_not_small(index = tp[1])) {
+	    goto error;
+	}
+	if ((index_val = unsigned_val(index) - 1) < limit) {
+	    tup[index_val] = tp[2];
+	} else {
+	    goto error;
+	}
+    }
+    if (is_not_nil(list)) {
+	goto error;
+    }
+    BIF_RET(res);
+}
+
 
 /**********************************************************************/
 

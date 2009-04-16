@@ -182,18 +182,19 @@ visit_move(Instruction, [SourceValue], Environment) ->
 %%-----------------------------------------------------------------------------
 
 visit_if(Instruction, Arguments, Environment) ->
-  case evaluate_if(hipe_icode:if_op(Instruction), Arguments) of
-    true ->
-      TrueLabel  = hipe_icode:if_true_label(Instruction),
-      FlowWork   = [TrueLabel];
-    false ->
-      FalseLabel = hipe_icode:if_false_label(Instruction),
-      FlowWork   = [FalseLabel];
-    bottom ->
-      TrueLabel  = hipe_icode:if_true_label(Instruction),
-      FalseLabel = hipe_icode:if_false_label(Instruction),
-      FlowWork   = [TrueLabel, FalseLabel]
-  end,
+  FlowWork =
+    case evaluate_if(hipe_icode:if_op(Instruction), Arguments) of
+      true ->
+	TrueLabel  = hipe_icode:if_true_label(Instruction),
+	[TrueLabel];
+      false ->
+	FalseLabel = hipe_icode:if_false_label(Instruction),
+	[FalseLabel];
+      bottom ->
+	TrueLabel  = hipe_icode:if_true_label(Instruction),
+	FalseLabel = hipe_icode:if_false_label(Instruction),
+	[TrueLabel, FalseLabel]
+    end,
   {FlowWork, [], Environment}.
 
 %%-----------------------------------------------------------------------------
@@ -212,18 +213,19 @@ visit_fail(Instruction, _Arguments, Environment) ->
 %%-----------------------------------------------------------------------------
 
 visit_type(Instruction, Values, Environment) ->
-  case evaluate_type(hipe_icode:type_test(Instruction), Values) of
-    true ->
-      TrueLabel  = hipe_icode:type_true_label(Instruction),
-      FlowWork   = [TrueLabel];
+  FlowWork =
+    case evaluate_type(hipe_icode:type_test(Instruction), Values) of
+      true ->
+	TrueLabel  = hipe_icode:type_true_label(Instruction),
+	[TrueLabel];
     false ->
-      FalseLabel = hipe_icode:type_false_label(Instruction),
-      FlowWork   = [FalseLabel];
-    bottom ->
-      TrueLabel  = hipe_icode:type_true_label(Instruction),
-      FalseLabel = hipe_icode:type_false_label(Instruction),
-      FlowWork   = [TrueLabel, FalseLabel]
-  end,
+	FalseLabel = hipe_icode:type_false_label(Instruction),
+	[FalseLabel];
+      bottom ->
+	TrueLabel  = hipe_icode:type_true_label(Instruction),
+	FalseLabel = hipe_icode:type_false_label(Instruction),
+	[TrueLabel, FalseLabel]
+    end,
   {FlowWork, [], Environment}.
 
 %%-----------------------------------------------------------------------------

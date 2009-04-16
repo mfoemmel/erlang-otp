@@ -42,10 +42,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = cerl_lib cerl_to_icode cerl_cconv cerl_hipeify cerl_pmatch \
-	cerl_messagean \
-	erl_types erl_bif_types cerl_closurean cerl_typean \
-	cerl_hybrid_transform cerl_prettypr
+MODULES = cerl_cconv cerl_closurean cerl_hipeify cerl_hybrid_transform \
+	  cerl_lib cerl_messagean cerl_pmatch cerl_prettypr cerl_to_icode \
+	  cerl_typean erl_bif_types erl_types 
 
 HRL_FILES= cerl_hipe_primops.hrl
 ERL_FILES= $(MODULES:%=%.erl)
@@ -63,7 +62,7 @@ DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_unused_import +warn_obsolete_guard +inline
+ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_exported_vars +warn_unused_import +warn_missing_spec +inline
 
 # ----------------------------------------------------
 # Targets

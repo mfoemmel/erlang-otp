@@ -384,9 +384,6 @@ int my_spawnvp(char **argv)
     siStartInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     siStartInfo.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
     siStartInfo.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-    siStartInfo.wShowWindow = SW_HIDE;
-    siStartInfo.dwFlags |= STARTF_USESHOWWINDOW;
-
 
     if (!CreateProcess(NULL, 
 		       make_commandline(argv),

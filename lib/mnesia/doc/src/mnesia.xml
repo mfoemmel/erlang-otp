@@ -1592,7 +1592,7 @@ mnesia:create_table(person,
           supported by this particular function:
           </p>
         <taglist>
-          <tag><c>stick_write</c></tag>
+          <tag><c>sticky_write</c></tag>
           <item>
             <p>Sticky write locks are a mechanism which can be used
               to optimize write lock acquisition. If your application

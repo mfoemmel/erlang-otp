@@ -65,6 +65,7 @@
 	       try_evars/1, try_handler/1, tuple_es/1, tuple_arity/1,
 	       type/1, values_es/1, var_name/1]).
 
+-import(erlang, [max/2]).
 -import(lists, [foldl/3, foldr/3, mapfoldl/3, reverse/1]).
 
 %%
@@ -2393,9 +2394,6 @@ kill_id_anns([]) ->
 
 %% =====================================================================
 %% General utilities
-
-max(X, Y) when X > Y -> X;
-max(_, Y) -> Y.
 
 %% The atom `ok', is widely used in Erlang for "void" values.
 

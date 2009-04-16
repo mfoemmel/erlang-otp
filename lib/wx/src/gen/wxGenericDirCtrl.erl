@@ -102,7 +102,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
           ({size, {SizeW,SizeH}}, Acc) -> [<<4:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({style, Style}, Acc) -> [<<5:32/?UI,Style:32/?UI>>|Acc];
           ({filter, Filter}, Acc) ->   Filter_UC = unicode:characters_to_binary([Filter,0]),[<<6:32/?UI,(byte_size(Filter_UC)):32/?UI,(Filter_UC)/binary, 0:(((8- ((0+byte_size(Filter_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({defaultFilter, DefaultFilter}, Acc) -> [<<7:32/?UI,DefaultFilter:32/?UI>>|Acc]  end,
+          ({defaultFilter, DefaultFilter}, Acc) -> [<<7:32/?UI,DefaultFilter:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxGenericDirCtrl_new_2,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -126,7 +127,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef}, Opti
           ({size, {SizeW,SizeH}}, Acc) -> [<<4:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({style, Style}, Acc) -> [<<5:32/?UI,Style:32/?UI>>|Acc];
           ({filter, Filter}, Acc) ->   Filter_UC = unicode:characters_to_binary([Filter,0]),[<<6:32/?UI,(byte_size(Filter_UC)):32/?UI,(Filter_UC)/binary, 0:(((8- ((0+byte_size(Filter_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({defaultFilter, DefaultFilter}, Acc) -> [<<7:32/?UI,DefaultFilter:32/?UI>>|Acc]  end,
+          ({defaultFilter, DefaultFilter}, Acc) -> [<<7:32/?UI,DefaultFilter:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGenericDirCtrl_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI, BinOpt/binary>>).

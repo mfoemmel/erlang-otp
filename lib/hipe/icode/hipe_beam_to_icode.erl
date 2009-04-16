@@ -86,7 +86,7 @@
 
 -record(beam_const, {value :: simple_const()}). % defined in hipe_icode.hrl
 
--record(closure_info, {mfa :: mfa(), arity :: byte(), fv_arity :: byte()}).
+-record(closure_info, {mfa :: mfa(), arity :: arity(), fv_arity :: arity()}).
 
 -record(environment, {mfa :: mfa(), entry :: non_neg_integer()}).
 
@@ -108,9 +108,9 @@ module(BeamFuns, Options) ->
   [trans_beam_function_chunk(FunCode, ClosureInfo) || FunCode <- ModCode].
 
 trans_beam_function_chunk(FunBeamCode, ClosureInfo) ->
-  {M,F,A} = find_mfa(FunBeamCode),
+  {M,F,A} = MFA = find_mfa(FunBeamCode),
   Icode = trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo),
-  {{M,F,A},Icode}.
+  {MFA,Icode}.
 
 %%-----------------------------------------------------------------------
 %% @doc
@@ -175,9 +175,10 @@ trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
   Env1 = env__mk_env(M, F, A, hipe_icode:label_name(FunLbl)),
   Code1 = lists:flatten(trans_fun(FunBeamCode,Env1)),
   Code2 = fix_fallthroughs(fix_catches(Code1)),
+  MFA = {M,F,A},
   %% Debug code
   ?IF_DEBUG_LEVEL(5,
-		  {Code3,_Env3} = ?mk_debugcode({M,F,A}, Env2, Code2),
+		  {Code3,_Env3} = ?mk_debugcode(MFA, Env2, Code2),
 		  {Code3,_Env3} = {Code2,Env1}),
   %% For stack optimization
   Leafness = leafness(Code3),
@@ -188,13 +189,13 @@ trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
        false -> Code3;
        true -> [mk_redtest()|Code3]
      end],
-  IsClosure = get_closure_info({M,F,A}, ClosureInfo) =/= not_a_closure,
-  Code5 = hipe_icode:mk_icode({M,F,A}, FunArgs, IsClosure, IsLeaf,
+  IsClosure = get_closure_info(MFA, ClosureInfo) =/= not_a_closure,
+  Code5 = hipe_icode:mk_icode(MFA, FunArgs, IsClosure, IsLeaf,
 			      remove_dead_code(Code4),
 			      hipe_gensym:var_range(icode),
 			      hipe_gensym:label_range(icode)),
   Icode = %% If this function is the code for a closure ...
-    case get_closure_info({M,F,A}, ClosureInfo) of
+    case get_closure_info(MFA, ClosureInfo) of
       not_a_closure -> Code5;
       CI -> %% ... then patch the code to 
 	%% get the free_vars from the closure
@@ -297,7 +298,7 @@ trans_fun([{label,B},
   Goto = hipe_icode:mk_goto(hipe_icode:label_name(EntryPt)),
   Mov = hipe_icode:mk_move(V, hipe_icode:mk_const(function_clause)),
   Fail = hipe_icode:mk_fail([V],error),
-  [Goto,Begin,Mov,Fail,EntryPt | trans_fun(Instructions,Env)];
+  [Goto, Begin, Mov, Fail, EntryPt | trans_fun(Instructions, Env)];
 %%--- label ---
 trans_fun([{label,L1},{label,L2}|Instructions], Env) ->
   %% Old BEAM code can have two consecutive labels.
@@ -309,31 +310,31 @@ trans_fun([{label,L}|Instructions], Env) ->
   [mk_label(L) | trans_fun(Instructions, Env)];
 %%--- int_code_end --- SHOULD NEVER OCCUR HERE
 %%--- call ---
-trans_fun([{call,_N,MFA={_M,_F,A}}|Instructions], Env) ->
+trans_fun([{call,_N,{_M,_F,A}=MFA}|Instructions], Env) ->
   Args = extract_fun_args(A),
   Dst = [mk_var({r,0})],
-  I = trans_call(MFA,Dst,Args,local),
-  [I | trans_fun(Instructions,Env)];
+  I = trans_call(MFA, Dst, Args, local),
+  [I | trans_fun(Instructions, Env)];
 %%--- call_last ---
 %% Differs from call_only in that it deallocates the environment
-trans_fun([{call_last,_N,MFA={M,F,A},_}|Instructions], Env) ->
+trans_fun([{call_last,_N,{_M,_F,A}=MFA,_}|Instructions], Env) ->
   %% IS IT OK TO IGNORE LAST ARG ??
   ?no_debug_msg("  translating call_last: ~p ...~n", [Env]),
   case env__get_mfa(Env) of
-    {M,F,A} ->
+    MFA ->
       %% Does this case really happen, or is it covered by call_only?
       Entry = env__get_entry(Env),
       [hipe_icode:mk_comment('tail_recursive'), % needed by leafness/2
        hipe_icode:mk_goto(Entry) | trans_fun(Instructions,Env)];
     _ ->
       Args = extract_fun_args(A),
-      I = trans_enter(MFA,Args,local),
-      [I | trans_fun(Instructions,Env)]
+      I = trans_enter(MFA, Args, local),
+      [I | trans_fun(Instructions, Env)]
   end;
 %%--- call_only ---
 %% Used when the body contains only one call in which case 
 %% an environment is not needed/created.
-trans_fun([{call_only,_N,MFA={_M,_F,A}}|Instructions], Env) ->
+trans_fun([{call_only,_N,{_M,_F,A}=MFA}|Instructions], Env) ->
   ?no_debug_msg("  translating call_only: ~p ...~n", [Env]),
   case env__get_mfa(Env) of
     MFA ->
@@ -424,8 +425,8 @@ trans_fun([{wait,{_,Lbl}}|Instructions], Env) ->
   [Susp, Loop | trans_fun(Instructions,Env)];
 %%--- wait_timeout ---
 trans_fun([{wait_timeout,{_,Lbl},Reg}|Instructions], Env) ->
-  {Movs,[Temp],Env1} = get_constants_in_temps([Reg],Env),
-  SetTmout = hipe_icode:mk_primop([],set_timeout,[Temp]),
+  {Movs,[_]=Temps,Env1} = get_constants_in_temps([Reg],Env),
+  SetTmout = hipe_icode:mk_primop([],set_timeout,Temps),
   DoneLbl = mk_label(new),
   SuspTmout = hipe_icode:mk_if(suspend_msg_timeout,[],
 			       map_label(Lbl),hipe_icode:label_name(DoneLbl)),
@@ -515,9 +516,9 @@ trans_fun([{test,is_nonempty_list,{f,Lbl},[Arg]}|Instructions], Env) ->
   {Code,Env1} = trans_type_test(cons,Lbl,Arg,Env),
   [Code | trans_fun(Instructions,Env1)];
 %%--- is_tuple ---
-trans_fun([{test,is_tuple,{f,Lbl},[Xreg]},
-	   {test,test_arity,{f,Lbl},[Xreg,_]=Args}|Instructions], Env) ->
-  trans_fun([{test,test_arity,{f,Lbl},Args}|Instructions],Env);
+trans_fun([{test,is_tuple,{f,_Lbl}=FLbl,[Xreg]},
+	   {test,test_arity,FLbl,[Xreg,_]=Args}|Instructions], Env) ->
+  trans_fun([{test,test_arity,FLbl,Args}|Instructions],Env);
 trans_fun([{test,is_tuple,{_,Lbl},[Arg]}|Instructions], Env) ->
   {Code,Env1} = trans_type_test(tuple,Lbl,Arg,Env),
   [Code | trans_fun(Instructions,Env1)];
@@ -557,8 +558,8 @@ trans_fun([{'catch',N,{_,EndLabel}}|Instructions], Env) ->
   NewContLbl = mk_label(new),
   [{'catch',N,EndLabel},NewContLbl | trans_fun(Instructions,Env)];
 %%--- catch_end --- ITS PROCESSING IS POSTPONED
-trans_fun([{catch_end,N}|Instructions], Env) ->
-  [{catch_end,N} | trans_fun(Instructions,Env)];
+trans_fun([{catch_end,_N}=I|Instructions], Env) ->
+  [I | trans_fun(Instructions,Env)];
 %%--- try --- ITS PROCESSING IS POSTPONED
 trans_fun([{'try',N,{_,EndLabel}}|Instructions], Env) ->
   NewContLbl = mk_label(new),
@@ -567,16 +568,16 @@ trans_fun([{'try',N,{_,EndLabel}}|Instructions], Env) ->
 trans_fun([{try_end,_N}|Instructions], Env) ->
   [hipe_icode:mk_end_try() | trans_fun(Instructions,Env)];
 %%--- try_case --- ITS PROCESSING IS POSTPONED
-trans_fun([{try_case,N}|Instructions], Env) ->
-  [{try_case,N} | trans_fun(Instructions,Env)];
+trans_fun([{try_case,_N}=I|Instructions], Env) ->
+  [I | trans_fun(Instructions,Env)];
 %%--- try_case_end ---
 trans_fun([{try_case_end,Arg}|Instructions], Env) ->
   BadArg = trans_arg(Arg),
   ErrVar = mk_var(new),
-  V = mk_var(new),
+  Vs = [mk_var(new)],
   Atom = hipe_icode:mk_move(ErrVar,hipe_icode:mk_const(try_clause)),
-  Tuple = hipe_icode:mk_primop([V],mktuple,[ErrVar,BadArg]),
-  Fail = hipe_icode:mk_fail([V],error),
+  Tuple = hipe_icode:mk_primop(Vs,mktuple,[ErrVar,BadArg]),
+  Fail = hipe_icode:mk_fail(Vs,error),
   [Atom,Tuple,Fail | trans_fun(Instructions,Env)];
 %%--- raise ---
 trans_fun([{raise,{f,0},[Reg1,Reg2],{x,0}}|Instructions], Env) ->
@@ -586,13 +587,14 @@ trans_fun([{raise,{f,0},[Reg1,Reg2],{x,0}}|Instructions], Env) ->
   [Fail | trans_fun(Instructions,Env)];
 %%--- get_list ---
 trans_fun([{get_list,List,Head,Tail}|Instructions], Env) ->
-  I1 = hipe_icode:mk_primop([mk_var(Head)],unsafe_hd,[trans_arg(List)]),
-  I2 = hipe_icode:mk_primop([mk_var(Tail)],unsafe_tl,[trans_arg(List)]),
+  TransList = [trans_arg(List)],
+  I1 = hipe_icode:mk_primop([mk_var(Head)],unsafe_hd,TransList),
+  I2 = hipe_icode:mk_primop([mk_var(Tail)],unsafe_tl,TransList),
   %% Handle the cases where the dest overwrites the src!!
   if 
-    Head /= List ->
+    Head =/= List ->
       [I1, I2 | trans_fun(Instructions,Env)];
-    Tail /= List ->
+    Tail =/= List ->
       [I2, I1 | trans_fun(Instructions,Env)];
     true ->
       %% XXX: We should take care of this case!!!!!
@@ -635,10 +637,10 @@ trans_fun([{put_tuple,_Size,Reg}|Instructions], Env) ->
 trans_fun([{badmatch,Arg}|Instructions], Env) ->
   BadVar = trans_arg(Arg),
   ErrVar = mk_var(new),
-  V = mk_var(new),
+  Vs = [mk_var(new)],
   Atom = hipe_icode:mk_move(ErrVar,hipe_icode:mk_const(badmatch)),
-  Tuple = hipe_icode:mk_primop([V],mktuple,[ErrVar,BadVar]),
-  Fail = hipe_icode:mk_fail([V],error),
+  Tuple = hipe_icode:mk_primop(Vs,mktuple,[ErrVar,BadVar]),
+  Fail = hipe_icode:mk_fail(Vs,error),
   [Atom,Tuple,Fail | trans_fun(Instructions,Env)];
 %%--- if_end ---
 trans_fun([if_end|Instructions], Env) ->
@@ -650,10 +652,10 @@ trans_fun([if_end|Instructions], Env) ->
 trans_fun([{case_end,Arg}|Instructions], Env) ->
   BadArg = trans_arg(Arg),
   ErrVar = mk_var(new),
-  V = mk_var(new),
+  Vs = [mk_var(new)],
   Atom = hipe_icode:mk_move(ErrVar,hipe_icode:mk_const(case_clause)),
-  Tuple = hipe_icode:mk_primop([V],mktuple,[ErrVar,BadArg]),
-  Fail = hipe_icode:mk_fail([V],error),
+  Tuple = hipe_icode:mk_primop(Vs,mktuple,[ErrVar,BadArg]),
+  Fail = hipe_icode:mk_fail(Vs,error),
   [Atom,Tuple,Fail | trans_fun(Instructions,Env)];
 %%--- enter_fun ---
 trans_fun([{call_fun,N},{deallocate,_},return|Instructions], Env) ->
@@ -803,8 +805,8 @@ trans_fun([{test,bs_match_string,{f,Lbl},[Ms,BitSize,Bin]}|
   end;
 trans_fun([{bs_context_to_binary,Var}|Instructions], Env) -> 
   %% the current match buffer
-  IcodeVar = trans_arg(Var),
-  [hipe_icode:mk_primop([IcodeVar],{hipe_bs_primop,bs_context_to_binary},[IcodeVar])|
+  IVars = [trans_arg(Var)],
+  [hipe_icode:mk_primop(IVars,{hipe_bs_primop,bs_context_to_binary},IVars)|
    trans_fun(Instructions, Env)];
 trans_fun([{bs_append,{f,Lbl},Size,W,R,U,Binary,{field_flags,F},Dst}| 
 	   Instructions], Env) -> 
@@ -830,17 +832,17 @@ trans_fun([{bs_private_append,{f,Lbl},Size,U,Binary,{field_flags,F},Dst}|
 		 [IcodeDst,Base,Offset],
 		 Base, Offset, Env, Instructions);
 trans_fun([bs_init_writable|Instructions], Env) -> 
-  Var = mk_var({x,0}), %{x,0} is implict arg and dst
-  [hipe_icode:mk_primop([Var],{hipe_bs_primop,bs_init_writable},[Var]),
+  Vars = [mk_var({x,0})], %{x,0} is implict arg and dst
+  [hipe_icode:mk_primop(Vars,{hipe_bs_primop,bs_init_writable},Vars),
    trans_fun(Instructions, Env)];
-trans_fun([{bs_save2,Ms,IndexName}| Instructions], Env) ->
+trans_fun([{bs_save2,Ms,IndexName}|Instructions], Env) ->
   Index =
     case IndexName of
       {atom, start} -> 0;
       _ -> IndexName+1
     end,
-  MsVar = mk_var(Ms),
-  [hipe_icode:mk_primop([MsVar],{hipe_bs_primop,{bs_save,Index}},[MsVar]) |
+  MsVars = [mk_var(Ms)],
+  [hipe_icode:mk_primop(MsVars,{hipe_bs_primop,{bs_save,Index}},MsVars) |
    trans_fun(Instructions, Env)];
 trans_fun([{bs_restore2,Ms,IndexName}|Instructions], Env) ->
   Index =
@@ -848,8 +850,8 @@ trans_fun([{bs_restore2,Ms,IndexName}|Instructions], Env) ->
       {atom, start} -> 0;
       _ -> IndexName+1
     end,
-  MsVar = mk_var(Ms),
-  [hipe_icode:mk_primop([MsVar],{hipe_bs_primop,{bs_restore,Index}},[MsVar]) |
+  MsVars = [mk_var(Ms)],
+  [hipe_icode:mk_primop(MsVars,{hipe_bs_primop,{bs_restore,Index}},MsVars) |
    trans_fun(Instructions, Env)];
 trans_fun([{test,bs_test_tail2,{f,Lbl},[Ms,Numbits]}| Instructions], Env) ->
   MsVar = mk_var(Ms),
@@ -891,7 +893,7 @@ trans_fun([{bs_init_bits,{f,Lbl},Size,_Words,_LiveRegs,{field_flags,Flags0},X}|
   trans_bin_call({hipe_bs_primop,Name}, Lbl, Args, [Dst, Base, Offset],
 		 Base, Offset, Env, Instructions);
 trans_fun([{bs_bits_to_bytes2, Bits, Bytes}|Instructions], Env) ->
-  Src = trans_arg(Bits), 
+  Src = trans_arg(Bits),
   Dst = mk_var(Bytes),
   [hipe_icode:mk_primop([Dst], 'bsl', [Src, hipe_icode:mk_const(3)])|
    trans_fun(Instructions,Env)];
@@ -2110,8 +2112,9 @@ fix_catches([Instr|Code], HandledCatchLbls) ->
 fix_catches([], _HandledCatchLbls) ->
   [].
 
-fix_catch(Type,Lbl,ContLbl,Code,HandledCatchLbls,Instr) ->
-  case gb_trees:lookup({Type,Lbl}, HandledCatchLbls) of
+fix_catch(Type, Lbl, ContLbl, Code, HandledCatchLbls, Instr) ->
+  TLbl = {Type, Lbl},
+  case gb_trees:lookup(TLbl, HandledCatchLbls) of
     {value, Catch} when is_integer(Catch) ->
       NewCode = fix_catches(Code, HandledCatchLbls),
       Cont = hipe_icode:label_name(ContLbl),
@@ -2125,8 +2128,7 @@ fix_catch(Type,Lbl,ContLbl,Code,HandledCatchLbls,Instr) ->
       %% The rest of the code cannot contain catches with the same label.
       RestOfCode1 = fix_catches(RestOfCode, HandledCatchLbls),
       %% The catched code *can* contain more catches with the same label.
-      NewHandledCatchLbls = gb_trees:insert({Type,Lbl}, NewCatch,
-					    HandledCatchLbls),
+      NewHandledCatchLbls = gb_trees:insert(TLbl, NewCatch, HandledCatchLbls),
       CatchedCode = fix_catches(CodeToCatch, NewHandledCatchLbls),
       %% The variables which will get the tag, value, and trace.
       Vars = [mk_var({r,0}), mk_var({x,1}), mk_var({x,2})],
@@ -2246,9 +2248,9 @@ remove_dead_code([]) ->
 
 %% returns the instructions from the closest label
 -spec skip_to_label(icode_instrs()) -> icode_instrs().
-skip_to_label([I|Is]) ->
+skip_to_label([I|Is] = Instrs) ->
   case I of
-    #icode_label{} -> [I|Is];
+    #icode_label{} -> Instrs;
     _ -> skip_to_label(Is)
   end;
 skip_to_label([]) ->

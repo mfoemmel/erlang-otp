@@ -284,6 +284,7 @@ create_apps_list_ctrl(Panel, Sizer, Text) ->
                  {proportion, 1}]),
     wxEvtHandler:connect(ListCtrl, size, [{skip, true}, {userData, apps_list_ctrl}]),
     wxListCtrl:connect(ListCtrl, command_list_item_activated, [{userData, open_app}]),
+    wxWindow:connect(ListCtrl, enter_window),
     ListCtrl.
 
 create_deps_page(S, Derived) ->
@@ -357,6 +358,7 @@ create_mods_list_ctrl(Panel, OuterSz, Title, AppText, Tick, Cross) ->
     create_button(Panel, ButtonSz, ListCtrl, Title, "wxART_CROSS_MARK", Cross),
     wxEvtHandler:connect(ListCtrl, size, [{skip, true}, {userData, mods_list_ctrl}]),
     wxListCtrl:connect(ListCtrl, command_list_item_activated, [{userData, open_mod}]),
+    wxWindow:connect(ListCtrl, enter_window),        
     InnerSz = wxBoxSizer:new(?wxVERTICAL),
     wxSizer:add(InnerSz, ListCtrl,
                 [{border, 2},
@@ -502,6 +504,9 @@ create_double_box(Panel, Sizer, TopLabel,
 handle_event(#state{sys = Sys, app = App} = S, Wx) ->
     %% io:format("wx: ~p\n", [Wx]),
     case Wx of
+	#wx{obj = ObjRef, event = #wxMouse{type = enter_window}} ->
+	    wxWindow:setFocus(ObjRef),
+	    S;
 	#wx{obj= ListCtrl, userData = mods_list_ctrl, event = #wxSize{type = size, size = {W, _H}}} ->
 	    HasApps = (wxListCtrl:getColumnCount(ListCtrl) > 1),
 	    case HasApps of

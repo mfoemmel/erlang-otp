@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxkeyevent.html">wxKeyEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>char</em>, <em>char_hook</em>, <em>key_down</em>, <em>key_up</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxKey(). #wxKey{}} event record type.
 %%

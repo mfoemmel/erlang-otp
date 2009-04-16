@@ -36,6 +36,7 @@
 
 -export([nslookup/3, nslookup/4]).
 -export([nnslookup/4, nnslookup/5]).
+-export([lookup/3, lookup/4, lookup/5]).
 
 -import(inet_db, [res_option/1]).
 
@@ -99,6 +100,32 @@ nslookup1(Name, Class, Type, Ns, Timer) ->
     end.
 
 		
+%% --------------------------------------------------------------------------
+%% lookup:
+%%
+%% Conveniance wrapper to (n)nslookup that filters out all answer data
+%% fields of the class and type asked for.
+
+lookup(Name, Class, Type) ->
+    lookup_filter_anlist(nslookup(Name, Class, Type), Class, Type).
+
+lookup(Name, Class, Type, Timeout)
+  when is_integer(Timeout), Timeout >= 0 ->
+    lookup_filter_anlist(nslookup(Name, Class, Type, Timeout), Class, Type);
+lookup(Name, Class, Type, Ns) ->
+    lookup_filter_anlist(nnslookup(Name, Class, Type, Ns), Class, Type).
+    
+lookup(Name, Class, Type, Ns, Timeout)
+ when is_integer(Timeout), Timeout >= 0 ->
+    lookup_filter_anlist(nnslookup(Name, Class, Type, Ns, Timeout),
+			 Class, Type).
+
+lookup_filter_anlist({ok,#dns_rec{anlist=Answers}}, Class, Type) ->
+    [A#dns_rr.data || A <- Answers,
+		      A#dns_rr.class =:= Class,
+		      A#dns_rr.type =:= Type];
+lookup_filter_anlist({error,_}, _, _) -> [].
+
 %% --------------------------------------------------------------------------
 %%
 %% gethostbyaddr(ip_address()) => {ok, hostent()} | {error, Reason}

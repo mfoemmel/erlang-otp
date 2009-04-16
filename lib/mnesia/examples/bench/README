@@ -35,7 +35,7 @@ either be started manually or automatically by the benchmark program.
 In its the most automated usage you only need to provide one or more
 configuration files and run the
 
-	bench.sh <ConfigFiles>
+        bench.sh <ConfigFiles>
 
 script to start all Erlang nodes, populate the database and run the
 actual benchmark for each one of the configuration files. The
@@ -185,7 +185,7 @@ n_servers
 
 write_lock_type 
 
-  Defines whether the transactions should use plain
+  Defines whether the transactions should use ordinary
   write locks or if they utilize sticky write locks.
   Must be one of the following atoms: write, sticky_write.
   Default is write.
@@ -194,6 +194,16 @@ use_binary_subscriber_key
 
   Defines whether the subscriber key should be represented
   as a string (binary) or as an integer. Default is false.
+
+always_try_nearest_node
+
+  The benchmark was initially written to test scalability
+  when more nodes were added to the database and when the
+  (fragmented) tables were distributed over all nodes. In
+  such a system the transactions should be evenly distributed
+  over all nodes. When this option is set to true it is possible
+  to make fair measurements of master/slave configurations, when
+  all transactions are performed on on one node. Default is false.
 
 cookie
 

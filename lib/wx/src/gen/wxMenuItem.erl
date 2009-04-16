@@ -52,7 +52,8 @@ new(Options)
           ({text, Text}, Acc) ->   Text_UC = unicode:characters_to_binary([Text,0]),[<<3:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({help, Help}, Acc) ->   Help_UC = unicode:characters_to_binary([Help,0]),[<<4:32/?UI,(byte_size(Help_UC)):32/?UI,(Help_UC)/binary, 0:(((8- ((0+byte_size(Help_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({kind, Kind}, Acc) -> [<<5:32/?UI,Kind:32/?UI>>|Acc];
-          ({subMenu, #wx_ref{type=SubMenuT,ref=SubMenuRef}}, Acc) ->   ?CLASS(SubMenuT,wxMenu),[<<6:32/?UI,SubMenuRef:32/?UI>>|Acc]  end,
+          ({subMenu, #wx_ref{type=SubMenuT,ref=SubMenuRef}}, Acc) ->   ?CLASS(SubMenuT,wxMenu),[<<6:32/?UI,SubMenuRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxMenuItem_new,
   <<BinOpt/binary>>).
@@ -69,7 +70,8 @@ check(This)
 check(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxMenuItem),
-  MOpts = fun({check, Check}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Check)):32/?UI>>|Acc]  end,
+  MOpts = fun({check, Check}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Check)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxMenuItem_Check,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -86,7 +88,8 @@ enable(This)
 enable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxMenuItem),
-  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc]  end,
+  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxMenuItem_Enable,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

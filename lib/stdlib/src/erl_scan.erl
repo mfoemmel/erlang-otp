@@ -52,39 +52,42 @@
 
 -export([string/1,string/2,string/3,tokens/3,tokens/4,
          format_error/1,reserved_word/1,
-         token_info/1,token_info/2]).
+         token_info/1,token_info/2,
+         attributes_info/1,attributes_info/2,set_attribute/3]).
 
 %%% Local record.
 -record(erl_scan,
         {resword_fun=fun reserved_word/1,
          ws=false,
-         comment=false}).
+         comment=false,
+         text=false}).
 
 %%%
 %%% Exported functions
 %%%
 
 -define(COLUMN(C), is_integer(C), C >= 1).
+%% Line numbers less than zero have always been allowed:
 -define(ALINE(L), is_integer(L)).
 -define(STRING(S), is_list(S)).
--define(RESWORDFUN(F), is_function(F, 1), is_function(F)).
+-define(RESWORDFUN(F), is_function(F, 1)).
+-define(SETATTRFUN(F), is_function(F, 1)).
 
 -type category() :: atom().
 -type column() :: pos_integer().
 -type line() :: integer().
 -type location() :: line() | {line(),column()}.
+-type resword_fun() :: fun((atom()) -> bool()).
 -type option() :: 'return' | 'return_white_spaces' | 'return_comments'
-                | {'reserved_word_fun', fun((atom()) -> bool())}.
+                | 'text' | {'reserved_word_fun', resword_fun()}.
 -type options() :: option() | [option()].
 -type symbol() :: atom() | float() | integer() | string().
-%% XXX Change in R13B. (erl_scan is built with R12B-5 when updating
-%% the checked-in bootstrap.)
-%%-opaque token_info() :: tuple().
--type token_info() :: tuple().
-
--type token_data() :: line() | token_info().
--type token() :: {category(), token_data(), symbol()}
-               | {category(), token_data()}.
+-opaque attributes_data() :: list() | tuple().
+%% The fact that {line(),column()} is a possible attributes() type
+%% is hidden.
+-type attributes() :: line() | attributes_data().
+-type token() :: {category(), attributes(), symbol()}
+               | {category(), attributes()}.
 -type tokens() :: [token()].
 -type error_description() :: term().
 -type error_info() :: {location(), module(), error_description()}.
@@ -109,12 +112,13 @@ format_error(Other) ->
 string(String) ->
     string(String, 1, []).
 
+-spec string(String :: string(), StartLocation :: location()) -> 
+                   string_return().
 string(String, StartLocation) ->
     string(String, StartLocation, []).
 
--spec string(CharSpec :: string(), StartLocation :: location(), 
+-spec string(String :: string(), StartLocation :: location(), 
              Options :: options()) -> string_return().
-%% Line numbers less than zero have always been allowed:
 string(String, Line, Options) when ?STRING(String), ?ALINE(Line) ->
     string1(String, options(Options), Line, no_col, []);
 string(String, {Line,Column}, Options) when ?STRING(String),
@@ -123,10 +127,7 @@ string(String, {Line,Column}, Options) when ?STRING(String),
     string1(String, options(Options), Line, Column, []).
 
 -type char_spec() :: string() | 'eof'.
-%% XXX Change in R13B.
-%%-opaque return_cont() :: tuple().
--type return_cont() :: tuple().
-
+-opaque return_cont() :: tuple().
 -type cont() :: return_cont() | [].
 -type tokens_result() :: {'ok', tokens(), location()}
                        | {'eof', location()}
@@ -150,21 +151,25 @@ tokens([], CharSpec, {Line,Column}, Options) when ?ALINE(Line),
 tokens({Cs,Col,Toks,Line,St,Any,Fun}, CharSpec, _Loc, _Opts) ->
     tokens1(Cs++CharSpec, St, Line, Col, Toks, Fun, Any).
 
--type item() :: 'category' | 'column' | 'length' | 'line' 
-              | 'location' | 'symbol' | 'text'.
--type info_tuple() :: {'category', category()} | {'column', column()}
-                    | {'length', pos_integer()} | {'line', integer()}
-                    | {'location', location()} | {'symbol', symbol()} 
-                    | {'text', string()}.
+-type attribute_item() :: 'column' | 'length' | 'line' 
+                        | 'location' | 'text'.
+-type info_line() :: integer() | term().
+-type info_location() :: location() | term().
+-type attribute_info() :: {'column', column()}| {'length', pos_integer()} 
+                        | {'line', info_line()} 
+                        | {'location', info_location()}
+                        | {'text', string()}.
+-type token_item() :: 'category' | 'symbol' | attribute_item().
+-type token_info() :: {'category', category()} | {'symbol', symbol()} 
+                    | attribute_info().
 
--spec token_info(Token :: token()) -> [info_tuple()].
+-spec token_info(token()) -> [token_info()].
 token_info(Token) ->
-    Items = [category,column,length,line,symbol,text], % sorted
+    Items = [category,column,length,line,symbol,text], % undefined order
     token_info(Token, Items).
 
--spec token_info(Token :: token(), Item :: item()) -> 
-                    info_tuple() | 'undefined';
-                (Token :: token(), Items :: [item()]) -> [info_tuple()].
+-spec token_info(token(), token_item()) -> token_info() | 'undefined';
+                (token(), [token_item()]) -> [token_info()].
 token_info(_Token, []) ->
     [];
 token_info(Token, [Item|Items]) when is_atom(Item) ->
@@ -172,7 +177,7 @@ token_info(Token, [Item|Items]) when is_atom(Item) ->
         undefined ->
             token_info(Token, Items);
         TokenInfo when is_tuple(TokenInfo) ->
-            [token_info(Token, Item)| token_info(Token, Items)]
+            [TokenInfo|token_info(Token, Items)]
     end;
 token_info({Category,_Attrs}, category=Item) ->
     {Item,Category};
@@ -183,9 +188,79 @@ token_info({Category,_Attrs}, symbol=Item) ->
 token_info({_Category,_Attrs,Symbol}, symbol=Item) ->
     {Item,Symbol};
 token_info({_Category,Attrs}, Item) ->
-    token_info1(Attrs, Item);
+    attributes_info(Attrs, Item);
 token_info({_Category,Attrs,_Symbol}, Item) ->
-    token_info1(Attrs, Item).
+    attributes_info(Attrs, Item).
+
+-spec attributes_info(attributes()) -> [attribute_info()].
+attributes_info(Attributes) ->
+    Items = [column,length,line,text], % undefined order
+    attributes_info(Attributes, Items).
+
+-spec attributes_info(attributes(), attribute_item()) ->
+                        attribute_info() | 'undefined';
+                     (attributes(), [attribute_item()]) -> [attribute_info()].
+attributes_info(_Attrs, []) ->
+    [];
+attributes_info(Attrs, [A|As]) when is_atom(A) ->
+    case attributes_info(Attrs, A) of
+        undefined ->
+            attributes_info(Attrs, As);
+        AttributeInfo when is_tuple(AttributeInfo) ->
+            [AttributeInfo|attributes_info(Attrs, As)]
+    end;
+attributes_info({Line,Column}, column=Item) when ?ALINE(Line), 
+                                                 ?COLUMN(Column) ->
+    {Item,Column};
+attributes_info(Line, column) when ?ALINE(Line) ->
+    undefined;
+attributes_info(Attrs, column=Item) ->
+    attr_info(Attrs, Item);
+attributes_info(Attrs, length=Item) ->
+    case attributes_info(Attrs, text) of
+        undefined ->
+            undefined;
+        {text,Text} ->
+            {Item,length(Text)}
+    end;
+attributes_info(Line, line=Item) when ?ALINE(Line) ->
+    {Item,Line};
+attributes_info({Line,Column}, line=Item) when ?ALINE(Line), 
+                                               ?COLUMN(Column) ->
+    {Item,Line};
+attributes_info(Attrs, line=Item) ->
+    attr_info(Attrs, Item);
+attributes_info({Line,Column}=Location, location=Item) when ?ALINE(Line), 
+                                                            ?COLUMN(Column) ->
+    {Item,Location};
+attributes_info(Line, location=Item) when ?ALINE(Line) ->
+    {Item,Line};
+attributes_info(Attrs, location=Item) ->
+    {line,Line} = attributes_info(Attrs, line), % assume line is present
+    case attributes_info(Attrs, column) of
+        undefined ->
+            %% If set_attribute() has assigned a term such as {17,42}
+            %% to 'line', then Line will look like {Line,Column}. One
+            %% should not use 'location' but 'line' and 'column' in
+            %% such special cases.
+            {Item,Line};
+        {column,Column} ->
+            {Item,{Line,Column}}
+    end;
+attributes_info({Line,Column}, text) when ?ALINE(Line), ?COLUMN(Column) ->
+    undefined;
+attributes_info(Line, text) when ?ALINE(Line) ->
+    undefined;
+attributes_info(Attrs, text=Item) ->
+    attr_info(Attrs, Item);
+attributes_info(T1, T2) ->
+    erlang:error(badarg, [T1,T2]).
+
+-type setlineattr_fun() :: fun((info_line()) -> info_line()).
+
+-spec set_attribute('line', attributes(), setlineattr_fun()) -> attributes().
+set_attribute(Tag, Attributes, Fun) when ?SETATTRFUN(Fun) ->
+    set_attr(Tag, Attributes, Fun).
 
 %%%
 %%% Local functions
@@ -194,7 +269,9 @@ token_info({_Category,Attrs,_Symbol}, Item) ->
 string_thing($') -> "atom";   %' Stupid Emacs
 string_thing(_) -> "string".
 
--define(WHITE_SPACE(C), C >= $\000, C =< $\s; C >= $\200, C =< $\240).
+-define(WHITE_SPACE(C),
+        is_integer(C) andalso
+         (C >= $\000 andalso C =< $\s orelse C >= $\200 andalso C =< $\240)).
 -define(DIGIT(C), C >= $0, C =< $9).
 -define(CHAR(C), is_integer(C), C >= 0).
 
@@ -218,9 +295,11 @@ options(Opts0) when is_list(Opts0) ->
         end,
     Comment = proplists:get_bool(return_comments, Opts),
     WS = proplists:get_bool(return_white_spaces, Opts),
+    Txt = proplists:get_bool(text, Opts),
     #erl_scan{resword_fun = RW_fun,
               comment     = Comment,
-              ws          = WS};
+              ws          = WS,
+              text        = Txt};
 options(Opt) ->
     options([Opt]).
 
@@ -250,28 +329,37 @@ expand_opt(return, Os) ->
 expand_opt(O, Os) ->
     [O|Os].
 
-token_info1(Attrs, column=Item) when tuple_size(Attrs) >= 2 ->
-    {Item,element(2, Attrs)};
-token_info1(_Attrs, column) ->
-    undefined;
-token_info1(Attrs, length=Item) when tuple_size(Attrs) >= 3 ->
-    {Item,element(3, Attrs)};
-token_info1(_Attrs, length) ->
-    undefined;
-token_info1(Line, line=Item) when ?ALINE(Line) ->
-    {Item,Line};
-token_info1(Attrs, line=Item) when tuple_size(Attrs) >= 1 ->
-    {Item,element(1, Attrs)};
-token_info1(Attrs, location=Item) when tuple_size(Attrs) >= 2 ->
-    {Item,{element(1, Attrs),element(2, Attrs)}};
-token_info1(Line, location=Item) when ?ALINE(Line) ->
-    {Item,Line};
-token_info1(Attrs, text=Item) when tuple_size(Attrs) >= 4 ->
-    {Item,element(4, Attrs)};
-token_info1(_Attrs, text) ->
-    undefined;
-token_info1(Term1, Term2) ->
-    erlang:error(badarg, [Term1,Term2]).
+attr_info(Attrs, Item) ->
+    case catch lists:keysearch(Item, 1, Attrs) of
+        {value,{Item,Value}} ->
+            {Item,Value};
+        false -> 
+            undefined;
+        _ ->
+            erlang:error(badarg, [Attrs, Item])
+    end.
+
+set_attr(line, Line, Fun) when ?ALINE(Line) ->
+    Ln = Fun(Line),
+    if
+        ?ALINE(Ln) ->
+            Ln;
+        true ->
+            [{line,Ln}]
+    end;
+set_attr(line, {Line,Column}, Fun) when ?ALINE(Line), ?COLUMN(Column) ->
+    Ln = Fun(Line),
+    if
+        ?ALINE(Ln) ->
+            {Ln,Column};
+        true ->
+            [{line,Ln},{column,Column}]
+    end;
+set_attr(line=Tag, Attrs, Fun) when is_list(Attrs) ->
+    {line,Line} = lists:keyfind(Tag, 1, Attrs),
+    lists:keyreplace(Tag, 1, Attrs, {line,Fun(Line)});
+set_attr(T1, T2, T3) ->
+    erlang:error(badarg, [T1,T2,T3]).
 
 tokens1(Cs, St, Line, Col, Toks, Fun, Any) when ?STRING(Cs); Cs =:= eof ->
     case Fun(Cs, St, Line, Col, Toks, Any) of
@@ -542,19 +630,19 @@ scan_name([], Ncs) ->
 scan_name(Cs, Ncs) ->
     {lists:reverse(Ncs),Cs}.
 
-scan_dot([$%|_]=Cs, _St, Line, Col, Toks, Ncs) ->
-    Attrs = attributes(Line, Col, Ncs),
+scan_dot([$%|_]=Cs, St, Line, Col, Toks, Ncs) ->
+    Attrs = attributes(Line, Col, St, Ncs),
     {ok,[{dot,Attrs}|Toks],Cs,Line,incr_column(Col, 1)};
-scan_dot([$\n=C|Cs], _St, Line, Col, Toks, Ncs) ->
-    Attrs = attributes(Line, Col, Ncs++[C]),
+scan_dot([$\n=C|Cs], St, Line, Col, Toks, Ncs) ->
+    Attrs = attributes(Line, Col, St, ?STR(Col, Ncs++[C])),
     {ok,[{dot,Attrs}|Toks],Cs,Line+1,new_column(Col, 1)};
-scan_dot([C|Cs], _St, Line, Col, Toks, Ncs) when ?WHITE_SPACE(C) ->
-    Attrs = attributes(Line, Col, Ncs++[C]),
+scan_dot([C|Cs], St, Line, Col, Toks, Ncs) when ?WHITE_SPACE(C) ->
+    Attrs = attributes(Line, Col, St, ?STR(Col, Ncs++[C])),
     {ok,[{dot,Attrs}|Toks],Cs,Line,incr_column(Col, 2)};
 scan_dot([]=Cs, _St, Line, Col, Toks, Ncs) ->
     {more,{Cs,Col,Toks,Line,Ncs,fun scan_dot/6}};
-scan_dot(eof=Cs, _St, Line, Col, Toks, Ncs) ->
-    Attrs = attributes(Line, Col, Ncs),
+scan_dot(eof=Cs, St, Line, Col, Toks, Ncs) ->
+    Attrs = attributes(Line, Col, St, Ncs),
     {ok,[{dot,Attrs}|Toks],Cs,Line,incr_column(Col, 1)};
 scan_dot(Cs, St, Line, Col, Toks, Ncs) ->
     tok2(Cs, St, Line, Col, Toks, Ncs, '.', 1).
@@ -608,31 +696,34 @@ scan_nl_tabs(Cs, St, Line, Col, Toks, N) ->
 %% Note: returning {more,Cont} is meaningless here; one could just as
 %% well return several tokens. But since tokens() scans up to a full
 %% stop anyway, nothing is gained by not collecting all white spaces.
-scan_nl_white_space([$\n|Cs], St, Line, no_col=Col, Toks0, Ncs) ->
+scan_nl_white_space([$\n|Cs], #erl_scan{text = false}=St, Line, no_col=Col, 
+                    Toks0, Ncs) ->
     Toks = [{white_space,Line,lists:reverse(Ncs)}|Toks0],
     scan_newline(Cs, St, Line+1, Col, Toks);
 scan_nl_white_space([$\n|Cs], St, Line, Col, Toks, Ncs0) ->
     Ncs = lists:reverse(Ncs0),
-    N = length(Ncs),
-    Attrs = {Line,Col,N,Ncs},
-    scan_newline(Cs, St, Line+1, N, [{white_space,Attrs,Ncs}|Toks]);
+    Attrs = attributes(Line, Col, St, Ncs),
+    Token = {white_space,Attrs,Ncs},
+    scan_newline(Cs, St, Line+1, new_column(Col, length(Ncs)), [Token|Toks]);
 scan_nl_white_space([C|Cs], St, Line, Col, Toks, Ncs) when ?WHITE_SPACE(C) ->
     scan_nl_white_space(Cs, St, Line, Col, Toks, [C|Ncs]);
 scan_nl_white_space([]=Cs, _St, Line, Col, Toks, Ncs) ->
     {more,{Cs,Col,Toks,Line,Ncs,fun scan_nl_white_space/6}};
-scan_nl_white_space(Cs, St, Line, no_col=Col, Toks, Ncs) ->
+scan_nl_white_space(Cs, #erl_scan{text = false}=St, Line, no_col=Col, 
+                    Toks, Ncs) ->
     scan1(Cs, St, Line+1, Col, [{white_space,Line,lists:reverse(Ncs)}|Toks]);
 scan_nl_white_space(Cs, St, Line, Col, Toks, Ncs0) ->
     Ncs = lists:reverse(Ncs0),
-    N = length(Ncs),
-    Attrs = {Line,Col,N,Ncs},
-    scan1(Cs, St, Line+1, N, [{white_space,Attrs,Ncs}|Toks]).
+    Attrs = attributes(Line, Col, St, Ncs),
+    Token = {white_space,Attrs,Ncs},
+    scan1(Cs, St, Line+1, new_column(Col, length(Ncs)), [Token|Toks]).
 
-newline_end(Cs, St, Line, no_col=Col, Toks, _N, Ncs) ->
+newline_end(Cs, #erl_scan{text = false}=St, Line, no_col=Col, 
+            Toks, _N, Ncs) ->
     scan1(Cs, St, Line+1, Col, [{white_space,Line,Ncs}|Toks]);
 newline_end(Cs, St, Line, Col, Toks, N, Ncs) ->
-    Attrs = {Line,Col,N,Ncs},
-    scan1(Cs, St, Line+1, N, [{white_space,Attrs,Ncs}|Toks]).
+    Attrs = attributes(Line, Col, St, Ncs),
+    scan1(Cs, St, Line+1, new_column(Col, N), [{white_space,Attrs,Ncs}|Toks]).
 
 scan_spcs([$\s|Cs], St, Line, Col, Toks, N) when N < 16 ->
     scan_spcs(Cs, St, Line, Col, Toks, N+1);
@@ -681,24 +772,24 @@ scan_char([$\\|Cs]=Cs0, St, Line, Col, Toks) ->
         {eof,Ncol} ->
             scan_error(char, Line, Col, Line, Ncol);
         {nl,Val,Str,Ncs,Ncol} ->
-            Attrs = attributes(Line, Col, ?STR(Ncol, "$\\"++Str)),
+            Attrs = attributes(Line, Col, St, ?STR(Ncol, "$\\"++Str)),
             Ntoks = [{char,Attrs,Val}|Toks],
             scan1(Ncs, St, Line+1, Ncol, Ntoks);
         {unicode,Val,Str,Ncs,Ncol} ->
-            Attrs = attributes(Line, Col, ?STR(Ncol, "$\\"++Str)),
+            Attrs = attributes(Line, Col, St, ?STR(Ncol, "$\\"++Str)),
             Ntoks = [{integer,Attrs,Val}|Toks], % UNI
             scan1(Ncs, St, Line, Ncol, Ntoks);
         {Val,Str,Ncs,Ncol} ->
-            Attrs = attributes(Line, Col, ?STR(Ncol, "$\\"++Str)),
+            Attrs = attributes(Line, Col, St, ?STR(Ncol, "$\\"++Str)),
             Ntoks = [{char,Attrs,Val}|Toks],
             scan1(Ncs, St, Line, Ncol, Ntoks)
     end;
 scan_char([$\n=C|Cs], St, Line, Col, Toks) ->    
-    Attrs = attributes(Line, Col, ?STR(Col, [$$,C]), 2),
+    Attrs = attributes(Line, Col, St, ?STR(Col, [$$,C])),
     scan1(Cs, St, Line+1, new_column(Col, 1), [{char,Attrs,C}|Toks]);
 scan_char([C|Cs], St, Line, Col, Toks) when ?CHAR(C) ->
     Tag = if ?UNI255(C) -> char; true -> integer end, % UNI
-    Attrs = attributes(Line, Col, ?STR(Col, [$$,C]), 2),
+    Attrs = attributes(Line, Col, St, ?STR(Col, [$$,C])),
     scan1(Cs, St, Line, incr_column(Col, 2), [{Tag,Attrs,C}|Toks]);
 scan_char([], _St, Line, Col, Toks) ->
     {more,{[$$],Col,Toks,Line,[],fun scan/6}};
@@ -716,55 +807,55 @@ scan_string(Cs, St, Line, Col, Toks, {Wcs,Str,Line0,Col0,Uni0}) ->
             Estr = string:substr(Nwcs, 1, 16), % Expanded escape chars.
             scan_error({string,$\",Estr}, Line0, Col0, Nline, Ncol);
         {Ncs,Nline,Ncol,Nstr,Nwcs,?NO_UNICODE} ->
-            Attrs = attributes(Line0, Col0, Nstr),
+            Attrs = attributes(Line0, Col0, St, Nstr),
             scan1(Ncs, St, Nline, Ncol, [{string,Attrs,Nwcs}|Toks]);
         {Ncs,Nline,Ncol,Nstr,_Nwcs,_Uni} ->
-            Ntoks = unicode_string_to_list(Line0, Col0, Nstr, Toks),
+            Ntoks = unicode_string_to_list(Line0, Col0, St, Nstr, Toks),
             scan1(Ncs, St, Nline, Ncol, Ntoks)
     end.
 
 %% UNI
-unicode_string_to_list(Line, Col, [$"=C|Nstr], Toks) -> %" Emacs
-    Paren = {'[',attributes(Line, Col, ?STR(Col, [C]))},
-    u2l(Nstr, Line, incr_column(Col, 1), [Paren|Toks]).
+unicode_string_to_list(Line, Col, St, [$"=C|Nstr], Toks) -> %" Emacs
+    Paren = {'[',attributes(Line, Col, St, ?STR(Col, [C]))},
+    u2l(Nstr, Line, incr_column(Col, 1), St, [Paren|Toks]).
 
-u2l([$"]=Cs, Line, Col, Toks) -> %" Emacs
-    [{']',attributes(Line, Col, ?STR(Col, Cs))}|Toks];
-u2l([$\n=C|Cs], Line, Col, Toks) ->
-    Ntoks = unicode_nl_tokens(Line, Col, ?STR(Col, [C]), C, Toks, Cs),
-    u2l(Cs, Line+1, new_column(Col, 1), Ntoks);
-u2l([$\\|Cs], Line, Col, Toks) ->
+u2l([$"]=Cs, Line, Col, St, Toks) -> %" Emacs
+    [{']',attributes(Line, Col, St, ?STR(Col, Cs))}|Toks];
+u2l([$\n=C|Cs], Line, Col, St, Toks) ->
+    Ntoks = unicode_nl_tokens(Line, Col, ?STR(Col, [C]), C, St, Toks, Cs),
+    u2l(Cs, Line+1, new_column(Col, 1), St, Ntoks);
+u2l([$\\|Cs], Line, Col, St, Toks) ->
     case scan_escape(Cs, Col) of
         {nl,Val,ValStr,Ncs,Ncol} ->
             Nstr = ?STR(Ncol, [$\\|ValStr]),
-            Ntoks = unicode_nl_tokens(Line, Col, Nstr, Val, Toks, Ncs),
-            u2l(Ncs, Line+1, Ncol, Ntoks);
+            Ntoks = unicode_nl_tokens(Line, Col, Nstr, Val, St, Toks, Ncs),
+            u2l(Ncs, Line+1, Ncol, St, Ntoks);
         {unicode,Val,ValStr,Ncs,Ncol} ->
             Nstr = ?STR(Ncol, [$\\|ValStr]),
-            Ntoks = unicode_tokens(Line, Col, Nstr, Val, Toks, Ncs),
-            u2l(Ncs, Line, incr_column(Ncol, 1), Ntoks);
+            Ntoks = unicode_tokens(Line, Col, Nstr, Val, St, Toks, Ncs),
+            u2l(Ncs, Line, incr_column(Ncol, 1), St, Ntoks);
         {Val,ValStr,Ncs,Ncol} ->
             Nstr = ?STR(Ncol, [$\\|ValStr]),
-            Ntoks = unicode_tokens(Line, Col, Nstr, Val, Toks, Ncs),
-            u2l(Ncs, Line, incr_column(Ncol, 1), Ntoks)
+            Ntoks = unicode_tokens(Line, Col, Nstr, Val, St, Toks, Ncs),
+            u2l(Ncs, Line, incr_column(Ncol, 1), St, Ntoks)
     end;
-u2l([C|Cs], Line, Col, Toks) ->
-    Ntoks = unicode_tokens(Line, Col, ?STR(Col, [C]), C, Toks, Cs),
-    u2l(Cs, Line, incr_column(Col, 1), Ntoks).
+u2l([C|Cs], Line, Col, St, Toks) ->
+    Ntoks = unicode_tokens(Line, Col, ?STR(Col, [C]), C, St, Toks, Cs),
+    u2l(Cs, Line, incr_column(Col, 1), St, Ntoks).
 
-unicode_nl_tokens(Line, Col, Str, Val, Toks, Cs) ->
+unicode_nl_tokens(Line, Col, Str, Val, St, Toks, Cs) ->
     Ccol = new_column(Col, 1),
-    unicode_tokens(Line, Col, Str, Val, Toks, Cs, Line+1, Ccol).
+    unicode_tokens(Line, Col, Str, Val, St, Toks, Cs, Line+1, Ccol).
 
-unicode_tokens(Line, Col, Str, Val, Toks, Cs) ->
+unicode_tokens(Line, Col, Str, Val, St, Toks, Cs) ->
     Ccol = incr_column(Col, length(Str)),
-    unicode_tokens(Line, Col, Str, Val, Toks, Cs, Line, Ccol).
+    unicode_tokens(Line, Col, Str, Val, St, Toks, Cs, Line, Ccol).
 
-unicode_tokens(Line, Col, Str, Val, Toks, Cs, Cline, Ccol) ->
-    Attrs = attributes(Line, Col, Str),
+unicode_tokens(Line, Col, Str, Val, St, Toks, Cs, Cline, Ccol) ->
+    Attrs = attributes(Line, Col, St, Str),
     Tag = if ?UNI255(Val) -> char; true -> integer end,
     Token = {Tag,Attrs,Val},
-    [{',',attributes(Cline, Ccol, "")} || Cs =/= "\""] ++ [Token|Toks].
+    [{',',attributes(Cline, Ccol, St, "")} || Cs =/= "\""] ++ [Token|Toks].
 
 scan_qatom(Cs, St, Line, Col, Toks, {Wcs,Str,Line0,Col0,Uni0}) ->
     case scan_string0(Cs, Line, Col, $\', Str, Wcs, Uni0) of
@@ -779,7 +870,7 @@ scan_qatom(Cs, St, Line, Col, Toks, {Wcs,Str,Line0,Col0,Uni0}) ->
         {Ncs,Nline,Ncol,Nstr,Nwcs,?NO_UNICODE} ->
             case catch list_to_atom(Nwcs) of
                 A when is_atom(A) ->
-                    Attrs = attributes(Line0, Col0, Nstr),
+                    Attrs = attributes(Line0, Col0, St, Nstr),
                     scan1(Ncs, St, Nline, Ncol, [{atom,Attrs,A}|Toks]);
                 _ ->
                     scan_error({illegal,atom}, Line0, Col0, Nline, Ncol)
@@ -884,9 +975,6 @@ scan_escape([O1], _Col) when ?OCT(O1) ->
     more;
 scan_escape([O1|Cs], Col) when ?OCT(O1) ->
     {O1 - $0,?UNI_STR(Col, [O1]),Cs,incr_column(Col, 1)};
-%% \{<octal digits>}
-scan_escape([${|Cs], Col) ->
-    scan_oct(Cs, incr_column(Col, 1), []);
 %% \x{<hex digits>}
 scan_escape([$x,${|Cs], Col) ->
     scan_hex(Cs, incr_column(Col, 2), []);
@@ -894,15 +982,12 @@ scan_escape([$x], _Col) ->
     more;
 scan_escape([$x|eof], Col) ->
     {eof,incr_column(Col, 1)};
-%% \x<1-2> hexadecimal digits
+%% \x<2> hexadecimal digits
 scan_escape([$x,H1,H2|Cs], Col) when ?HEX(H1), ?HEX(H2) ->
     Val = erlang:list_to_integer([H1,H2], 16),
     {Val,?UNI_STR(Col, [$x,H1,H2]),Cs,incr_column(Col, 3)};
 scan_escape([$x,H1], _Col) when ?HEX(H1) ->
     more;
-scan_escape([$x,H1|Cs], Col) when ?HEX(H1) ->
-    Val = erlang:list_to_integer([H1], 16),
-    {Val,?UNI_STR(Col, [$x,H1]),Cs,incr_column(Col, 2)};
 scan_escape([$x|_], Col) ->
     {error,{illegal,character},incr_column(Col, 1)};
 %% \^X -> CTL-X
@@ -926,13 +1011,6 @@ scan_escape([], _Col) ->
     more;
 scan_escape(eof, Col) ->
     {eof,Col}.
-
-scan_oct([C|Cs], no_col=Col, Wcs) when ?OCT(C) ->
-    scan_oct(Cs, Col, [C|Wcs]);
-scan_oct([C|Cs], Col, Wcs) when ?OCT(C) ->
-    scan_oct(Cs, Col+1, [C|Wcs]);
-scan_oct(Cs, Col, Wcs) ->
-    scan_esc_end(Cs, Col, Wcs, 8, "{").
 
 scan_hex([C|Cs], no_col=Col, Wcs) when ?HEX(C) ->
     scan_hex(Cs, Col, [C|Wcs]);
@@ -1067,31 +1145,30 @@ scan_comment(Cs, St, Line, Col, Toks, Ncs0) ->
     Ncs = lists:reverse(Ncs0),
     tok3(Cs, St, Line, Col, Toks, comment, Ncs, Ncs).
 
-tok2(Cs, St, Line, no_col=Col, Toks, _Wcs, P) ->
+tok2(Cs, #erl_scan{text = false}=St, Line, no_col=Col, Toks, _Wcs, P) ->
     scan1(Cs, St, Line, Col, [{P,Line}|Toks]);
 tok2(Cs, St, Line, Col, Toks, Wcs, P) ->
-    Length = length(Wcs),
-    Attrs = {Line,Col,Length,Wcs},
-    scan1(Cs, St, Line, Col+Length, [{P,Attrs}|Toks]).
+    Attrs = attributes(Line, Col, St, Wcs),
+    scan1(Cs, St, Line, incr_column(Col, length(Wcs)), [{P,Attrs}|Toks]).
 
-tok2(Cs, St, Line, no_col=Col, Toks, _Wcs, P, _N) ->
+tok2(Cs, #erl_scan{text = false}=St, Line, no_col=Col, Toks, _Wcs, P, _N) ->
     scan1(Cs, St, Line, Col, [{P,Line}|Toks]);
 tok2(Cs, St, Line, Col, Toks, Wcs, P, N) ->
-    Attrs = {Line,Col,N,Wcs},
-    scan1(Cs, St, Line, Col+N, [{P,Attrs}|Toks]).
+    Attrs = attributes(Line, Col, St, Wcs),
+    scan1(Cs, St, Line, incr_column(Col, N), [{P,Attrs}|Toks]).
 
-tok3(Cs, St, Line, no_col=Col, Toks, Item, _String, Term) ->
-    scan1(Cs, St, Line, Col, [{Item,Line,Term}|Toks]);
-tok3(Cs, St, Line, Col, Toks, Item, String, Term) ->
-    Length = length(String),
-    Attrs = {Line,Col,Length,String},
-    scan1(Cs, St, Line, Col+Length, [{Item,Attrs,Term}|Toks]).
+tok3(Cs, #erl_scan{text = false}=St, Line, no_col=Col, Toks, Item, _S, Sym) ->
+    scan1(Cs, St, Line, Col, [{Item,Line,Sym}|Toks]);
+tok3(Cs, St, Line, Col, Toks, Item, String, Sym) ->
+    Token = {Item,attributes(Line, Col, St, String),Sym},
+    scan1(Cs, St, Line, incr_column(Col, length(String)), [Token|Toks]).
 
-tok3(Cs, St, Line, no_col=Col, Toks, Item, _String, Term, _Length) ->
-    scan1(Cs, St, Line, Col, [{Item,Line,Term}|Toks]);
-tok3(Cs, St, Line, Col, Toks, Item, String, Term, Length) ->
-    Attrs = {Line,Col,Length,String},
-    scan1(Cs, St, Line, Col+Length, [{Item,Attrs,Term}|Toks]).
+tok3(Cs, #erl_scan{text = false}=St, Line, no_col=Col, Toks, Item,
+     _String, Sym, _Length) ->
+    scan1(Cs, St, Line, Col, [{Item,Line,Sym}|Toks]);
+tok3(Cs, St, Line, Col, Toks, Item, String, Sym, Length) ->
+    Token = {Item,attributes(Line, Col, St, String),Sym},
+    scan1(Cs, St, Line, incr_column(Col, Length), [Token|Toks]).
 
 scan_error(Error, Line, Col, EndLine, EndCol) ->
     Loc = location(Line, Col),
@@ -1101,17 +1178,16 @@ scan_error(Error, Line, Col, EndLine, EndCol) ->
 scan_error(Error, ErrorLoc, EndLoc) ->
     {error,{ErrorLoc,?MODULE,Error},EndLoc}.
 
--compile({inline,[attributes/3,attributes/4]}).
+-compile({inline,[attributes/4]}).
 
-attributes(Line, no_col, _String) ->
+attributes(Line, no_col, #erl_scan{text = false}, _String) ->
     Line;
-attributes(Line, Col, String) when is_integer(Col) ->
-    {Line,Col,length(String),String}.
-
-attributes(Line, no_col, _String, _Length) ->
-    Line;
-attributes(Line, Col, String, Length) when is_integer(Col) ->
-    {Line,Col,Length,String}.
+attributes(Line, no_col, #erl_scan{text = true}, String) ->
+    [{line,Line},{text,String}];
+attributes(Line, Col, #erl_scan{text = false}, _String) ->
+    {Line,Col};
+attributes(Line, Col, #erl_scan{text = true}, String) ->
+    [{line,Line},{column,Col},{text,String}].
 
 location(Line, no_col) ->
     Line;
@@ -1184,7 +1260,7 @@ tabs(6)  ->  "\t\t\t\t\t\t";
 tabs(7)  ->  "\t\t\t\t\t\t\t";
 tabs(8)  ->  "\t\t\t\t\t\t\t\t";
 tabs(9)  ->  "\t\t\t\t\t\t\t\t\t";
-tabs(10) -> "\t\t\t\t\t\t\t\t\t\t".
+tabs(10) ->  "\t\t\t\t\t\t\t\t\t\t".
 
 -spec reserved_word(atom()) -> bool().
 reserved_word('after') -> true;

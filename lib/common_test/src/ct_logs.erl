@@ -103,7 +103,7 @@ close(How) ->
     ct_event:notify(#event{name=stop_logging,node=node(),data=[]}),
 
     case whereis(?MODULE) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    MRef = erlang:monitor(process,Pid),
 	    ?MODULE ! stop,
 	    receive

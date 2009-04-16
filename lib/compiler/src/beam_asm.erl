@@ -253,6 +253,8 @@ make_op({bs_add=Op,Fail,[Src1,Src2,Unit],Dest}, Dict) ->
     encode_op(Op, [Fail,Src1,Src2,Unit,Dest], Dict);
 make_op({test,Cond,Fail,Ops}, Dict) when is_list(Ops) ->
     encode_op(Cond, [Fail|Ops], Dict);
+make_op({test,Cond,Fail,Live,[Op|Ops],Dst}, Dict) when is_list(Ops) ->
+    encode_op(Cond, [Fail,Op,Live|Ops++[Dst]], Dict);
 make_op({make_fun2,{f,Lbl},Index,OldUniq,NumFree}, Dict0) ->
     {Fun,Dict} = beam_dict:lambda(Lbl, Index, OldUniq, NumFree, Dict0),
     make_op({make_fun2,Fun}, Dict);

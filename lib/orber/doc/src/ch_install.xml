@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>1997</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1997</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>Installing Orber</title>
@@ -131,12 +129,6 @@ erl> orber:start().
       <p>If you do not need to change Orber's configuration you can skip
         <seealso marker="corba">orb_init/1</seealso>. 
         But, you <em>should</em> at least set the IIOP timeout parameters.</p>
-      <note>
-        <p>When starting Orber as lightweight, mnesia and <c>orber:install/*</c> are
-          not required. You must, however, use the
-          <seealso marker="ch_install#config">configuration</seealso>
-          parameter <c>lightweight</c>.</p>
-      </note>
     </section>
 
     <section>
@@ -203,17 +195,6 @@ nodeB@hostB> orber:start().
       </code>
     </section>
 
-    <section>
-      <title>Running Java clients against Orber.</title>
-      <p>If you intend to run Java clients and your Java ORB does not support
-        the Interoperable Naming Service (INS), a specific</p>
-      <code type="none"><![CDATA[
-\011  <OTP_INSTALLPATH>/lib/orber-<current-version>/priv
-      ]]></code>
-      <p>must be added to your <em>CLASSPATH</em> variable to allow Orber
-        support for the initial references. For more information about INS,
-        see the Name Service chapter in this User's Guide.</p>
-    </section>
   </section>
 
   <section>
@@ -340,11 +321,6 @@ nodeB@hostB> orber:start().
         <cell align="left" valign="middle">local_interceptors</cell>
         <cell align="left" valign="middle">{native, [atom()]}</cell>
         <cell align="left" valign="middle">-</cell>
-      </row>
-      <row>
-        <cell align="left" valign="middle">lightweight</cell>
-        <cell align="left" valign="middle">[string()] | false</cell>
-        <cell align="left" valign="middle">false</cell>
       </row>
       <row>
         <cell align="left" valign="middle">orbInitRef</cell>
@@ -616,12 +592,6 @@ nodeB@hostB> orber:start().
       <seealso marker="ch_install#flags">Orber Environment Flags</seealso>.
        If not defined, but the flag is set, Orber will use the value of
        the <c>interceptors</c> parameter.</item>
-      <tag><em>lightweight</em></tag>
-      <item>This option must be set if Orber is supposed to be started
-       as lightweight. The value is a list of RemoteModifiers, equal to the 
-      <c>orber:resolve_initial_references_remote/2</c> argument. The list must 
-       contain Orber nodes addresses, to which we have access and are not started 
-       as lightweight.</item>
       <tag><em>orbInitRef</em></tag>
       <item>Setting this option, e.g., 
       <c>erl -orber orbInitRef [\\"NameService=corbaloc::host.com/NameService\\"]</c>, 

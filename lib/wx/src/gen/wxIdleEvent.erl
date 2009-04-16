@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxidleevent.html">wxIdleEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>idle</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxIdle(). #wxIdle{}} event record type.
 %%
@@ -68,7 +68,8 @@ requestMore(This)
 requestMore(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxIdleEvent),
-  MOpts = fun({needMore, NeedMore}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(NeedMore)):32/?UI>>|Acc]  end,
+  MOpts = fun({needMore, NeedMore}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(NeedMore)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxIdleEvent_RequestMore,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

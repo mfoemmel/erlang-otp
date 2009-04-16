@@ -99,6 +99,7 @@ init([]) ->
 		{unix, Flavor} when Flavor==sunos4;
 				    Flavor==solaris;
 				    Flavor==freebsd;
+				    Flavor==dragonfly;
 				    Flavor==darwin;
 				    Flavor==linux;
 				    Flavor==openbsd;
@@ -256,6 +257,9 @@ check_disk_space({unix, irix}, Port, Threshold) ->
     check_disks_irix(skip_to_eol(Result), Threshold);
 check_disk_space({unix, linux}, Port, Threshold) ->
     Result = my_cmd("/bin/df -lk", Port),
+    check_disks_solaris(skip_to_eol(Result), Threshold);
+check_disk_space({unix, dragonfly}, Port, Threshold) ->
+    Result = my_cmd("/bin/df -k -t ufs,hammer", Port),
     check_disks_solaris(skip_to_eol(Result), Threshold);
 check_disk_space({unix, freebsd}, Port, Threshold) ->
     Result = my_cmd("/bin/df -k -t ufs", Port),

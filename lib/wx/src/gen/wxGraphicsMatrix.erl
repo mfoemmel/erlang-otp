@@ -122,7 +122,8 @@ set(#wx_ref{type=ThisT,ref=ThisRef}, Options)
           ({c, C}, Acc) -> [<<3:32/?UI,0:32,C:64/?F>>|Acc];
           ({d, D}, Acc) -> [<<4:32/?UI,0:32,D:64/?F>>|Acc];
           ({tx, Tx}, Acc) -> [<<5:32/?UI,0:32,Tx:64/?F>>|Acc];
-          ({ty, Ty}, Acc) -> [<<6:32/?UI,0:32,Ty:64/?F>>|Acc]  end,
+          ({ty, Ty}, Acc) -> [<<6:32/?UI,0:32,Ty:64/?F>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGraphicsMatrix_Set,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

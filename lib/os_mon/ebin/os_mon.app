@@ -19,7 +19,7 @@
 
 {application, os_mon,
    [{description, "CPO  CXC 138 46"},
-    {vsn, "2.2"},
+    {vsn, "2.2.1"},
     {modules, [os_mon, os_mon_mib, os_sup,
                disksup, memsup, cpu_sup, os_mon_sysinfo, nteventlog]},
     {registered, [os_mon_sup, os_mon_sysinfo, disksup, memsup, cpu_sup, 

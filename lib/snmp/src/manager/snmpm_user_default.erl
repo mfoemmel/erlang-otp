@@ -20,6 +20,7 @@
 -module(snmpm_user_default).
 
 -behaviour(snmpm_user).
+%% -behaviour(snmpm_user_old).
 
 -export([handle_error/3,
 	 handle_agent/4,

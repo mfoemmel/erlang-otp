@@ -25,7 +25,7 @@
 -export([load_driver/0,unload_driver/0,client_port/0]).
 
 %% Internal exports
--export([init/1]).
+-export([init/2]).
 
 %% Macros
 -define(port_names,
@@ -37,107 +37,96 @@
 %%% --------------------------------------------------------
 %%% Interface Functions. 
 %%% --------------------------------------------------------
-
 load_driver() ->
-    case is_driver_owner_registered() of %to prevent unecessary spawn
-	false ->
-	    Self = self(),
-	    spawn(asn1rt_driver_handler, init, [Self]);
-	_ ->
-	    asn1_driver_owner ! {are_you_ready,self()},
-	    ok
-    end,
-    receive
-	driver_ready ->
-	    ok;
-	Error ->
-	    Error
-    after 10000 -> %% 10 seconds
-	    {error,{timeout,waiting_for_drivers}}
-    end.
+    load_driver(noreason).
 
-init(From) ->
-    case is_driver_owner_registered() of
-	false ->
-	    case catch register(asn1_driver_owner,self()) of
-		true -> 
-		    Dir = filename:join([code:priv_dir(asn1),"lib"]),
-		    case catch erl_ddll:load_driver(Dir,asn1_erl_drv) of
-			ok ->
-			    open_named_ports(From),
-			    asn1_driver_owner ! {are_you_ready,From};
-			{error,_} -> % if erl_ddll:load_driver fails
-			    OSDir = filename:join(Dir,erlang:system_info(system_architecture)),
-			    case catch erl_ddll:load_driver(OSDir,asn1_erl_drv) of
-				ok ->
-				    open_named_ports(From),
-				    asn1_driver_owner ! {are_you_ready,From};
-				Error2 ->
-				    asn1_driver_owner ! unload,
-				    From ! Error2
-			    end
-		    end,
-		    loop();
-		{'EXIT',{badarg,_}} ->
-		    asn1_driver_owner ! {are_you_ready,From},
+load_driver(Reason) ->
+    Ref = make_ref(),
+    case whereis(asn1_driver_owner) of % to prevent unnecessary spawn
+	Pid when is_pid(Pid) ->
+	    asn1_driver_owner ! {self(),Ref,are_you_ready},
+	    receive
+		{Ref,driver_ready} ->
 		    ok
+	    after 10000 ->
+		    {error,{timeout,waiting_for_drivers}}
 	    end;
 	_ ->
-	    asn1_driver_owner ! {are_you_ready,From},
-	    ok
+	    {_,Mref} = spawn_monitor(asn1rt_driver_handler, init, [self(),Ref]),
+	    receive
+		{'DOWN', Mref, _, _, NewReason} ->
+		    case NewReason of
+			Reason -> {error,Reason};
+			_ -> load_driver(NewReason)
+		    end;
+		{Ref,driver_ready} ->
+		    erlang:demonitor(Mref),
+		    ok;
+		{Ref,Error = {error,_Reason}} ->
+		    erlang:demonitor(Mref),
+		    Error
+	    after 10000 -> %% 10 seconds
+		    {error,{timeout,waiting_for_drivers}}
+	    end
+    end.
+
+init(FromPid,FromRef) ->
+    register(asn1_driver_owner,self()),
+    Dir = filename:join([code:priv_dir(asn1),"lib"]),
+    case catch erl_ddll:load_driver(Dir,asn1_erl_drv) of
+	ok ->
+	    Result = open_named_ports(),
+	    catch (FromPid ! {FromRef,Result}),
+	    loop(Result);
+	{error,_Err} -> % if erl_ddll:load_driver fails
+	    OSDir = filename:join(Dir,erlang:system_info(system_architecture)),
+	    case catch erl_ddll:load_driver(OSDir,asn1_erl_drv) of
+		ok ->
+		    Result = open_named_ports(),
+		    catch (FromPid ! {FromRef,Result}),
+		    loop(Result);
+		Error ->
+		    catch (FromPid ! {FromRef,Error})
+	    end
     end.
 
     
-open_named_ports(From) ->
-    open_named_ports(From,size(?port_names)).
+open_named_ports() ->
+    open_named_ports(size(?port_names)).
 
-open_named_ports(From,0) ->
-    From ! driver_ready;
-open_named_ports(From,N) ->
+open_named_ports(0) ->
+    driver_ready;
+open_named_ports(N) ->
     case catch open_port({spawn,"asn1_erl_drv"},[]) of
 	{'EXIT',Reason} ->
-	    From ! {port_error,Reason};
+	    {error,{port_error,Reason}};
 	Port ->
 	    register(element(N,?port_names),Port),
-	    open_named_ports(From,N-1)
+	    open_named_ports(N-1)
     end.
 
-is_driver_owner_registered() ->
-    case whereis(asn1_driver_owner) of
-	Pid when pid(Pid) ->
-	    true;
-	_ ->
-	    false
-    end.
-
-%% is_port_open(Name) ->
-%%     case whereis(Name) of
-%% 	Port when port(Port) ->
-%% 	    true;
-%% 	_ -> false
-%%     end.
-
-loop() ->
+loop(Result) ->
     receive
-	unload ->
+	{_FromPid,_FromRef,unload} ->
 	    close_ports(size(?port_names)),
 	    erl_ddll:unload_driver(asn1_erl_drv),
 	    ok;
-	{are_you_ready,From} ->
-	    From ! driver_ready,
-	    loop();
+	{FromPid,FromRef,are_you_ready} ->
+	    catch (FromPid ! {FromRef,driver_ready}),
+	    loop(Result);
 	_ ->
-	    loop()
+	    loop(Result)
     end.
 
 unload_driver() ->
     case whereis(asn1_driver_owner) of
-	Pid when pid(Pid) ->
-	    Pid ! unload,
+	Pid when is_pid(Pid) ->
+	    Pid ! {self(),make_ref(),unload},
 	    ok;
 	_ -> 
 	    ok
     end.
+
 close_ports(0) ->
     ok;
 close_ports(N) ->   

@@ -17,16 +17,28 @@
 %% %CopyrightEnd%
 %%
 
-{"4.13",
+{"4.13.1",
 
 %% ----- U p g r a d e -------------------------------------------------------
 
  [
+  {"4.13",   
+   [
+    {update, snmpm_config, soft, soft_purge, soft_purge, [snmpm_user_old]},
+    {add_module, snmpm_user_old}
+   ]
+  }
  ], 
 
 %% ------D o w n g r a d e ---------------------------------------------------
 
  [
+  {"4.13",   
+   [
+    {update, snmpm_config, soft, soft_purge, soft_purge, []},
+    {delete_module, snmpm_user_old}
+   ]
+  }
  ]
 }.
 

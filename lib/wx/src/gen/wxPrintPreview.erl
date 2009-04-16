@@ -48,7 +48,8 @@ new(#wx_ref{type=PrintoutT,ref=PrintoutRef}, Options)
  when is_list(Options) ->
   ?CLASS(PrintoutT,wxPrintout),
   MOpts = fun({printoutForPrinting, #wx_ref{type=PrintoutForPrintingT,ref=PrintoutForPrintingRef}}, Acc) ->   ?CLASS(PrintoutForPrintingT,wxPrintout),[<<1:32/?UI,PrintoutForPrintingRef:32/?UI>>|Acc];
-          ({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wxPrintDialogData),[<<2:32/?UI,DataRef:32/?UI>>|Acc]  end,
+          ({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wxPrintDialogData),[<<2:32/?UI,DataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxPrintPreview_new_2,
   <<PrintoutRef:32/?UI, 0:32,BinOpt/binary>>).

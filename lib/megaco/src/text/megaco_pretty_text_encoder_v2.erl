@@ -33,6 +33,7 @@
 
 -export([token_tag2string/1]).
 
+-export([test/1]).
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_v2.hrl").
@@ -416,4 +417,14 @@ token_tag2string(_) -> [].
 %%----------------------------------------------------------------------
 
 -include("megaco_text_gen_v2.hrl").
+
+%% start() ->
+%%     Fun = fun() ->
+%% 		  PP = {'PropertyParm',"ipdc/realm",["ericsson"],asn1_NOVALUE},
+%% 		  enc_PropertyParm(PP, [])
+%% 	  end,
+%%     test(Fun).
+
+test(Fun) when is_function(Fun) ->
+    Fun().
 

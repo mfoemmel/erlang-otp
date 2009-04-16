@@ -158,4 +158,12 @@ public class OtpErlangPort extends OtpErlangObject implements Serializable,
 	return creation == port.creation && id == port.id
 		&& node.compareTo(port.node) == 0;
     }
+    
+    @Override
+    protected int doHashCode() {
+	OtpErlangObject.Hash hash = new OtpErlangObject.Hash(6);
+	hash.combine(creation);
+	hash.combine(id, node.hashCode());
+	return hash.valueOf();
+    }
 }

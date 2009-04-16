@@ -97,7 +97,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},Id, Options)
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
-          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<4:32/?UI,ValidatorRef:32/?UI>>|Acc]  end,
+          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<4:32/?UI,ValidatorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxScrollBar_new_3,
   <<ParentRef:32/?UI,Id:32/?UI, BinOpt/binary>>).
@@ -118,7 +119,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef},Id, O
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
-          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<4:32/?UI,ValidatorRef:32/?UI>>|Acc]  end,
+          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<4:32/?UI,ValidatorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxScrollBar_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI,Id:32/?UI, 0:32,BinOpt/binary>>).
@@ -171,7 +173,8 @@ setScrollbar(This,Position,ThumbSize,Range,PageSize)
 setScrollbar(#wx_ref{type=ThisT,ref=ThisRef},Position,ThumbSize,Range,PageSize, Options)
  when is_integer(Position),is_integer(ThumbSize),is_integer(Range),is_integer(PageSize),is_list(Options) ->
   ?CLASS(ThisT,wxScrollBar),
-  MOpts = fun({refresh, Refresh}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Refresh)):32/?UI>>|Acc]  end,
+  MOpts = fun({refresh, Refresh}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Refresh)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxScrollBar_SetScrollbar,
   <<ThisRef:32/?UI,Position:32/?UI,ThumbSize:32/?UI,Range:32/?UI,PageSize:32/?UI, 0:32,BinOpt/binary>>).

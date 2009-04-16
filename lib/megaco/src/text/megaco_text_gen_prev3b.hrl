@@ -1691,7 +1691,7 @@ enc_TerminationID(Tid, State)
     List = [{Tid#megaco_term_id.id, fun enc_tid_component/2 }],
     enc_list(List, State, fun(_S) -> ?SLASH end, false).    
 
-enc_tid_component(Component, State) when list(Component) ->
+enc_tid_component(Component, State) when is_list(Component) ->
     [enc_tid_sub_component(Sub, State) || Sub <- Component];
 enc_tid_component(Invalid, _State) ->
     error({invalid_id_list_component, Invalid}).
@@ -2744,25 +2744,33 @@ enc_TimeNotation(Val, State)
 enc_Value({'Value',Val}, State) ->
     enc_Value(Val, State);
 enc_Value(String, _State) ->
-    case quoted_string_count(String, 0, true) of
-	{_, 0} ->
+    case quoted_string_count(String, 0, true, false) of
+	{_, 0, _} ->
 	    [?DQUOTE, String, ?DQUOTE];
-	{false, _} ->
+	{false, _, _} ->
 	    [?DQUOTE, String, ?DQUOTE];
-	{true, _} ->
+	{true, _, _} ->
 	    [String]
     end.
  
-quoted_string_count([H | T], Count, IsSafe) ->
+quoted_string_count([?DoubleQuoteToken | T], 0 = Count, _IsSafe, _MaybeQuoted) ->
+    %% Already a quoted string. Make sure it ends
+    quoted_string_count(T, Count + 1, true, true);
+quoted_string_count([?DoubleQuoteToken], Count, IsSafe, true = MaybeQuoted) ->
+    %% An explicitly quoted string
+    {IsSafe, Count, MaybeQuoted};
+quoted_string_count([H | T], Count, IsSafe, MaybeQuoted) ->
     case ?classify_char(H) of
-	safe_char_upper -> quoted_string_count(T, Count + 1, IsSafe);
-	safe_char       -> quoted_string_count(T, Count + 1, IsSafe);
-	rest_char       -> quoted_string_count(T, Count + 1, false);
-	white_space     -> quoted_string_count(T, Count + 1, false);
+	safe_char_upper -> quoted_string_count(T, Count + 1, IsSafe, MaybeQuoted);
+	safe_char       -> quoted_string_count(T, Count + 1, IsSafe, MaybeQuoted);
+	rest_char       -> quoted_string_count(T, Count + 1, false, MaybeQuoted);
+	white_space     -> quoted_string_count(T, Count + 1, false, MaybeQuoted);
 	_               -> error({illegal_char, H})
     end;
-quoted_string_count([], Count, IsSafe) ->
-    {IsSafe, Count}.
+quoted_string_count([], _Count, _IsSafe, true = _MaybeQuoted) ->
+    error({illegal_char, ?DoubleQuoteToken});
+quoted_string_count([], Count, IsSafe, MaybeQuoted) ->
+    {IsSafe, Count, MaybeQuoted}.
 
 enc_DigitString(String, _State) when is_list(String) ->
     [?DQUOTE, String, ?DQUOTE].
@@ -2786,9 +2794,14 @@ do_enc_OCTET_STRING([], _State, Min, Max, Count) ->
     [].
 
 enc_QUOTED_STRING(String, _State) when is_list(String) ->
-    {_IsSafe, Count} = quoted_string_count(String, 0, true),
-    verify_count(Count, 1, infinity),
-    [?DQUOTE, String, ?DQUOTE].
+    case quoted_string_count(String, 0, true, false) of
+	{_IsSafe, Count, false = _QuotedString} ->
+	    verify_count(Count, 1, infinity),
+	    [?DQUOTE, String, ?DQUOTE];
+	{_IsSafe, Count, true = _QuotedString} ->
+	    verify_count(Count, 3, infinity), % quotes not included in the count
+	    [String]
+    end.
 
 %% The internal format of hex digits is a list of octets
 %% Min and Max means #hexDigits

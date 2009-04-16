@@ -16,4 +16,4 @@
 ## 
 ## %CopyrightEnd%
 
-JINTERFACE_VSN = 1.5
+JINTERFACE_VSN = 1.5.1

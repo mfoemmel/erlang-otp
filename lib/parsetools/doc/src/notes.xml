@@ -29,6 +29,21 @@
   </header>
   <p>This document describes the changes made to the Parsetools application.</p>
 
+<section><title>Parsetools 1.4.7</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>A bug in yeccpre.hrl introduced in R13A has been
+	    fixed.</p>
+          <p>
+	    Own Id: OTP-7945</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Parsetools 1.4.6</title>
 
     <section><title>Improvements and New Features</title>

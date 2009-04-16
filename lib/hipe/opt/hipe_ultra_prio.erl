@@ -296,14 +296,9 @@ cpath_succ(SuccL, DAG, Prio) ->
 cpath_succ([], _DAG, Prio, NodePrio) -> {NodePrio,Prio};
 cpath_succ([{Lat,Succ}|Xs], DAG, Prio, NodePrio) ->
     NewPrio = cpath(Succ, DAG, Prio),
-    NewNodePrio = max(hipe_vectors:get(NewPrio, Succ - 1) + Lat, NodePrio),
+    NewNodePrio = erlang:max(hipe_vectors:get(NewPrio, Succ - 1) + Lat, NodePrio),
     cpath_succ(Xs, DAG, NewPrio, NewNodePrio).
 
 dag_succ(DAG, N) when is_integer(N) ->
     hipe_vectors:get(DAG, N-1).
 
-max(X, Y) ->
-    if
-	X < Y -> Y;
-	true -> X
-    end.

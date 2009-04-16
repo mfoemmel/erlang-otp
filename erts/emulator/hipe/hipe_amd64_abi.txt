@@ -141,8 +141,9 @@ Leaf functions may leave (%rsp & 15) != 0.
 The first four integer parameters are passed in %rcx, %rdx, %r8, and %r9.
 Remaining integer parameters are pushed right-to-left on the stack,
 starting at the fifth slot above the caller's stack pointer.
-The bottom of the caller's frame contains 4 slots in which the callee may
-save the four integer parameter registers.
+The bottom of the caller's frame must contain 4 slots where the callee
+can save the four integer parameter registers, even if fewer than 4
+parameters are passed in registers.
 An integer return value is put in %rax. Large integers (_m128), floats,
 and doubles are returned in %xmm0. Larger return values cause the caller
 to pass a pointer to a result buffer in %rcx as a hidden first parameter.

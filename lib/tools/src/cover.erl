@@ -1793,7 +1793,7 @@ print_lines(Module, InFd, OutFd, L, HTML) ->
 	eof ->
 	    ignore;
  	"%"++_=Line ->				%Comment line - not executed.
- 	    io:put_chars(OutFd, [tab(),Line]),
+ 	    io:put_chars(OutFd, [tab(),escape_lt_and_gt(Line, HTML)]),
 	    print_lines(Module, InFd, OutFd, L+1, HTML);
 	RawLine ->
 	    Line = escape_lt_and_gt(RawLine,HTML),

@@ -40,7 +40,9 @@
 	 which_mibs/0, 
 	 name_to_oid/1, oid_to_name/1, 
 
-	 register_user/3, register_user_monitor/3, unregister_user/1, 
+	 register_user/3, register_user/4, 
+	 register_user_monitor/3, register_user_monitor/4, 
+	 unregister_user/1, 
 	 which_users/0, 
 
 	 register_agent/2, register_agent/3, register_agent/4, 

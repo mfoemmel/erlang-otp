@@ -96,7 +96,7 @@ visited(L, Visited) ->
 
 add_gc_tests([[]|EBBCodes]) -> add_gc_tests(EBBCodes);
 add_gc_tests([EBBCode|EBBCodes]) ->
-  case need(EBBCode,0, []) of
+  case need(EBBCode, 0, []) of
     {Need, RestCode, [Lbl|Code]}  ->
       if Need > 0 ->
 	  [Lbl] ++ gc_test(Need) ++ Code ++ add_gc_tests([RestCode|EBBCodes]);
@@ -118,12 +118,12 @@ need([I|Is] , Need, Code) ->
 	      NewLab = hipe_icode:mk_new_label(),
 	      LabName = hipe_icode:label_name(NewLab),
 	      NewCall = hipe_icode:call_set_continuation(I,LabName),
-	      {Need + need(I), [NewLab|Is],  lists:reverse([NewCall|Code])};
+	      {Need + need(I), [NewLab|Is], lists:reverse([NewCall|Code])};
 	    _ ->
-	      {Need + need(I), Is,  lists:reverse([I|Code])}
+	      {Need + need(I), Is, lists:reverse([I|Code])}
 	    end;
 	_ ->
-	  {Need + need(I), Is,  lists:reverse([I|Code])}
+	  {Need + need(I), Is, lists:reverse([I|Code])}
       end;
     false ->
       need(Is, Need + need(I), [I|Code])

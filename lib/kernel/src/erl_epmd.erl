@@ -57,7 +57,7 @@ start_link() ->
 
 
 stop() ->
-    gen_server:call(erl_epmd, stop, infinity).
+    gen_server:call(?MODULE, stop, infinity).
 
 
 %% Lookup a node "Name" at Host
@@ -201,7 +201,7 @@ do_register_node_v0(NodeName, TcpPort) ->
 	    Name = cstring(NodeName),
 	    Len = 1+2+length(Name),
 	    gen_tcp:send(Socket, [?int16(Len), ?EPMD_ALIVE,
-				   ?int16(TcpPort), Name]),
+				  ?int16(TcpPort), Name]),
 	    wait_for_reg_reply_v0(Socket, []);
 	Error ->
 	    Error

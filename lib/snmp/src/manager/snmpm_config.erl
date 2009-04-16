@@ -209,7 +209,13 @@ verify_user_behaviour(UserMod) ->
 	ok ->
 	    ok;
 	Error ->
-	    throw(Error)
+	    %% This user may implement the old behaviour, check it
+	    case snmp_misc:verify_behaviour(snmpm_user_old, UserMod) of
+		ok ->
+		    ok;
+		_ ->
+		    throw(Error)
+	    end
     end.
 
 

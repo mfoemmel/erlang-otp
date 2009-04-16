@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxscrollwinevent.html">wxScrollWinEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>scrollwin_top</em>, <em>scrollwin_bottom</em>, <em>scrollwin_lineup</em>, <em>scrollwin_linedown</em>, <em>scrollwin_pageup</em>, <em>scrollwin_pagedown</em>, <em>scrollwin_thumbtrack</em>, <em>scrollwin_thumbrelease</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxScrollWin(). #wxScrollWin{}} event record type.
 %%

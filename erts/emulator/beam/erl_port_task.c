@@ -1017,7 +1017,7 @@ handle_remaining_tasks(ErtsRunQueue *runq, Port *pp)
 	}
     }
 
-    ASSERT(!pp->sched.taskq);
+    ASSERT(!pp->sched.taskq || !pp->sched.taskq->first);
 }
 
 int

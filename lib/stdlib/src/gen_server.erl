@@ -111,7 +111,7 @@
 %%%  API
 %%%=========================================================================
 
--spec behaviour_info(atom()) -> 'undefined' | [{atom(), byte()}].
+-spec behaviour_info(atom()) -> 'undefined' | [{atom(), arity()}].
 
 behaviour_info(callbacks) ->
     [{init,1},{handle_call,3},{handle_cast,2},{handle_info,2},

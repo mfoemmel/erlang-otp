@@ -224,13 +224,12 @@ init() ->
   put(dialyzer_options_files_rec, []),
   put(dialyzer_options_report_mode, normal),
   put(dialyzer_warnings, []),
-
   DefaultOpts = #options{},
-  put(dialyzer_include,                 DefaultOpts#options.include_dirs),
-  put(dialyzer_options_defines,         DefaultOpts#options.defines),
-  put(dialyzer_options_files,           DefaultOpts#options.files),
-  put(dialyzer_output_format,           formatted),
-  put(dialyzer_options_check_plt,       DefaultOpts#options.check_plt),
+  put(dialyzer_include,           DefaultOpts#options.include_dirs),
+  put(dialyzer_options_defines,   DefaultOpts#options.defines),
+  put(dialyzer_options_files,     DefaultOpts#options.files),
+  put(dialyzer_output_format,     formatted),
+  put(dialyzer_options_check_plt, DefaultOpts#options.check_plt),
   ok.
 
 append_defines([Def, Val]) ->
@@ -238,7 +237,7 @@ append_defines([Def, Val]) ->
   {ok, ErlVal} = erl_parse:parse_term(Tokens),
   append_var(dialyzer_options_defines, [{list_to_atom(Def), ErlVal}]);
 append_defines([Def]) ->
-  append_var(dialyzer_options_defines, [list_to_atom(Def)]).
+  append_var(dialyzer_options_defines, [{list_to_atom(Def), true}]).
 
 append_include(Dir) ->
   append_var(dialyzer_include, [Dir]).
@@ -254,7 +253,7 @@ append_var(Var, List) when is_list(List) ->
 collect_args(List) ->
   collect_args_1(List, []).
 
-collect_args_1(["-"++_|_]=L, Acc) ->
+collect_args_1(["-"++_|_] = L, Acc) ->
   {lists:reverse(Acc), L};
 collect_args_1([Arg|T], Acc) ->
   collect_args_1(T, [Arg|Acc]);

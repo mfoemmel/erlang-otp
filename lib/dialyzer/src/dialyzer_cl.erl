@@ -44,7 +44,7 @@
 	 mod_deps        = dict:new()           :: dict(),
 	 output          = standard_io		:: 'standard_io' | io_device(),
 	 output_format   = formatted            :: 'raw' | 'formatted',
-	 output_plt      = none                 :: 'none' | string(),
+	 output_plt      = none                 :: 'none' | filename(),
 	 plt_info        = none                 :: 'none' | {md5(), dict()},
 	 report_mode     = normal               :: rep_mode(),
 	 return_status= ?RET_NOTHING_SUSPICIOUS	:: dial_ret(),
@@ -79,9 +79,9 @@ init_opts_for_build(Opts) ->
     true ->
       case Opts#options.init_plt of
 	none -> Opts#options{init_plt = none, output_plt = get_default_plt()};
-	Plt -> Opts#options{init_plt = none, output_plt = Plt}
+	Plt  -> Opts#options{init_plt = none, output_plt = Plt}
       end;
-      false -> Opts#options{init_plt = none}
+    false -> Opts#options{init_plt = none}
   end.
 
 %%--------------------------------------------------------------------
@@ -97,11 +97,11 @@ init_opts_for_add(Opts) ->
       case Opts#options.init_plt of
 	none -> Opts#options{output_plt = get_default_plt(),
 			     init_plt = get_default_plt()};
-	Plt -> Opts#options{output_plt = Plt}
+	Plt  -> Opts#options{output_plt = Plt}
       end;
     false ->
       case Opts#options.init_plt =:= none of
-	true -> Opts#options{init_plt = get_default_plt()};
+	true  -> Opts#options{init_plt = get_default_plt()};
 	false -> Opts
       end
   end.
@@ -119,15 +119,15 @@ init_opts_for_check(Opts) ->
       none -> get_default_plt();
       Plt0 -> Plt0
     end,
-  Opts#options{files           = [],
-	       files_rec       = [],
-	       analysis_type   = plt_check,
-	       defines         = [],
-	       from            = byte_code,
-	       init_plt        = Plt,
-	       include_dirs    = [],
-	       output_plt      = Plt,
-	       use_contracts   = true
+  Opts#options{files         = [],
+	       files_rec     = [],
+	       analysis_type = plt_check,
+	       defines       = [],
+	       from          = byte_code,
+	       init_plt      = Plt,
+	       include_dirs  = [],
+	       output_plt    = Plt,
+	       use_contracts = true
 	      }.
 
 %%--------------------------------------------------------------------
@@ -143,11 +143,11 @@ init_opts_for_remove(Opts) ->
       case Opts#options.init_plt of
 	none -> Opts#options{output_plt = get_default_plt(),
 			     init_plt = get_default_plt()};
-	Plt -> Opts#options{output_plt = Plt}
+	Plt  -> Opts#options{output_plt = Plt}
       end;
     false ->
       case Opts#options.init_plt =:= none of
-	true -> Opts#options{init_plt = get_default_plt()};
+	true  -> Opts#options{init_plt = get_default_plt()};
 	false -> Opts
       end
   end.
@@ -199,16 +199,17 @@ plt_common(Opts, RemoveFiles, AddFiles) ->
   end.
 
 default_plt_error_msg() ->
-  "Use the options\n"
+  "Use the options:\n"
     "   --build_plt   to build a new one; or\n"
     "   --add_to_plt  to add to an existing PLT\n"
-    "For example:\n"
-    "   dialyzer --build_plt -r $ERL_TOP/lib/kernel/ebin\\\n"
+    ""
+    "For example (in an installed Erlang/OTP system):\n"
+    "   dialyzer --build_plt -r $ERL_TOP/lib/erts-5.7/ebin\\\n"
+    "                           $ERL_TOP/lib/kernel/ebin\\\n"
     "                           $ERL_TOP/lib/stdlib/ebin\\\n"
     "                           $ERL_TOP/lib/mnesia/ebin\\\n"
-    "                           $ERL_TOP/lib/compiler/ebin\\\n"
-    "                           $ERL_TOP/lib/crypto/ebin\\\n"
-    "Note that building a PLT as the above may take 20 mins or so".
+    "                           $ERL_TOP/lib/crypto/ebin\n"
+    "Note that building a PLT such as the above may take 20 mins or so".
 
 %%--------------------------------------------------------------------
 
@@ -228,15 +229,14 @@ check_plt(Opts, RemoveFiles, AddFiles) ->
 
 %%--------------------------------------------------------------------
 
-report_check(#options{report_mode=ReportMode, init_plt=InitPlt}) ->
+report_check(#options{report_mode = ReportMode, init_plt = InitPlt}) ->
   case ReportMode of
     quiet -> ok;
-    _ -> 
-      io:format("  Checking whether the PLT ~s is up-to-date...",
-		[InitPlt])
+    _ ->
+      io:format("  Checking whether the PLT ~s is up-to-date...", [InitPlt])
   end.
 
-report_old_version(#options{report_mode=ReportMode, init_plt=InitPlt}) ->
+report_old_version(#options{report_mode = ReportMode, init_plt = InitPlt}) ->
   case ReportMode of
     quiet -> ok;
     _ ->
@@ -245,49 +245,64 @@ report_old_version(#options{report_mode=ReportMode, init_plt=InitPlt}) ->
 		[InitPlt])
   end.
 
-report_failed_plt_check(#options{analysis_type=plt_check, 
-				 report_mode=ReportMode}, DiffMd5) ->
-  case ReportMode of
-    quiet -> ok;
-    normal -> io:format(" no\n", []);
-    verbose -> print_md5_diff(DiffMd5)
-  end;
-report_failed_plt_check(#options{}, _DiffMd5) ->
-  ok.
-
-report_analysis_start(#options{report_mode=quiet}) -> 
-  ok;
-report_analysis_start(#options{analysis_type=Type, 
-			       init_plt=InitPlt, 
-			       output_plt=OutputPlt}) ->
-  io:format("  "),
-  case Type of
-    plt_add ->
-      case InitPlt =:= OutputPlt of
-	true -> io:format("Adding information to ~s...", [OutputPlt]);
-	false -> io:format("Adding information from ~s to ~s...", 
-			   [InitPlt, OutputPlt])
+report_failed_plt_check(#options{analysis_type = AnalType, 
+				 report_mode = ReportMode}, DiffMd5) ->
+  case AnalType =:= plt_check of
+    true ->
+      case ReportMode of
+	quiet -> ok;
+	normal -> io:format(" no\n", []);
+	verbose -> report_md5_diff(DiffMd5)
       end;
-    plt_build -> io:format("Creating PLT ~s ...", [OutputPlt]);
-    plt_check -> io:format("Rebuilding the information in ~s...", [OutputPlt]);
-    plt_remove ->
-      case InitPlt =:= OutputPlt of
-	true -> io:format("Removing information from ~s...", [OutputPlt]);
-	false -> io:format("Removing information from ~s to ~s...", 
-			   [InitPlt, OutputPlt])
-      end;
-    succ_typings -> io:format("Proceeding with analysis...")
+    false -> ok
   end.
 
-print_elapsed_time(_T1, _T2, #options{report_mode=quiet}) ->
-  ok;
-print_elapsed_time(T1, T2, #options{}) ->
-  ElapsedTime = T2 - T1,
-  Mins = ElapsedTime div 60000,
-  Secs = (ElapsedTime rem 60000) / 1000,
-  io:format(" done in ~wm~.2fs\n", [Mins, Secs]).
+report_analysis_start(#options{analysis_type = Type,
+			       report_mode = ReportMode,
+			       init_plt = InitPlt, 
+			       output_plt = OutputPlt}) ->
+  case ReportMode of
+    quiet -> ok;
+    _ ->
+      io:format("  "),
+      case Type of
+	plt_add ->
+	  case InitPlt =:= OutputPlt of
+	    true -> io:format("Adding information to ~s...", [OutputPlt]);
+	    false -> io:format("Adding information from ~s to ~s...", 
+			       [InitPlt, OutputPlt])
+	  end;
+	plt_build ->
+	  io:format("Creating PLT ~s ...", [OutputPlt]);
+	plt_check ->
+	  io:format("Rebuilding the information in ~s...", [OutputPlt]);
+	plt_remove ->
+	  case InitPlt =:= OutputPlt of
+	    true -> io:format("Removing information from ~s...", [OutputPlt]);
+	    false -> io:format("Removing information from ~s to ~s...", 
+			       [InitPlt, OutputPlt])
+	  end;
+	succ_typings -> io:format("Proceeding with analysis...")
+      end
+  end.
 
-print_md5_diff(List) ->
+report_native_comp(#options{report_mode = ReportMode}) ->
+  case ReportMode of
+    quiet -> ok;
+    _ -> io:format("  Compiling some key modules to native code...")
+  end.
+
+report_elapsed_time(T1, T2, #options{report_mode = ReportMode}) ->
+  case ReportMode of
+    quiet -> ok;
+    _ ->
+      ElapsedTime = T2 - T1,
+      Mins = ElapsedTime div 60000,
+      Secs = (ElapsedTime rem 60000) / 1000,
+      io:format(" done in ~wm~.2fs\n", [Mins, Secs])
+  end.
+
+report_md5_diff(List) ->
   io:format("    The PLT information is not up to date:\n", []),
   case [Mod || {removed, Mod} <- List] of
     [] -> ok;
@@ -314,30 +329,30 @@ do_analysis(Options) ->
   
 do_analysis(Files, Options, Plt, PltInfo) ->
   assert_writable(Options#options.output_plt),
-  report_analysis_start(Options),
   hipe_compile(Files, Options),
-  State = new_state(),
-  NewState1 = init_output(State, Options),  
-  NewState2 = NewState1#cl_state{legal_warnings=Options#options.legal_warnings,
-				 output_plt=Options#options.output_plt,
-				 plt_info=PltInfo,
-				 erlang_mode=Options#options.erlang_mode,
-				 report_mode=Options#options.report_mode},
+  report_analysis_start(Options),
+  State0 = new_state(),
+  State1 = init_output(State0, Options),
+  State2 = State1#cl_state{legal_warnings = Options#options.legal_warnings,
+			   output_plt = Options#options.output_plt,
+			   plt_info = PltInfo,
+			   erlang_mode = Options#options.erlang_mode,
+			   report_mode = Options#options.report_mode},
   AnalysisType = convert_analysis_type(Options#options.analysis_type,
 				       Options#options.get_warnings),
-  InitAnalysis = #analysis{type=AnalysisType,
-			   defines=Options#options.defines,
-			   include_dirs=Options#options.include_dirs,
-			   files=Files,
-			   start_from=Options#options.from, 
-			   plt=Plt,
-			   use_contracts=Options#options.use_contracts,
-			   callgraph_file=Options#options.callgraph_file},
-  NewState3 = start_analysis(NewState2, InitAnalysis),
+  InitAnalysis = #analysis{type = AnalysisType,
+			   defines = Options#options.defines,
+			   include_dirs = Options#options.include_dirs,
+			   files = Files,
+			   start_from = Options#options.from, 
+			   plt = Plt,
+			   use_contracts = Options#options.use_contracts,
+			   callgraph_file = Options#options.callgraph_file},
+  State3 = start_analysis(State2, InitAnalysis),
   {T1, _} = statistics(wall_clock),
-  Return = cl_loop(NewState3),
+  Return = cl_loop(State3),
   {T2, _} = statistics(wall_clock),
-  print_elapsed_time(T1, T2, Options),
+  report_elapsed_time(T1, T2, Options),
   Return.
 
 convert_analysis_type(plt_check, true)   -> succ_typings;
@@ -376,7 +391,7 @@ check_if_writable(PltFile) ->
 
 is_writable_file_or_dir(PltFile) ->
   case file:read_file_info(PltFile) of
-    {ok, #file_info{access=A}} ->
+    {ok, #file_info{access = A}} ->
       (A =:= write) orelse (A =:= read_write);
     {error, _} ->
       false
@@ -397,51 +412,65 @@ expand_dependent_modules(Md5, DiffMd5, ModDeps) ->
   BigList = sets:to_list(BigSet),
   ExpandedSet = expand_dependent_modules_1(BigList, BigSet, ModDeps),
   NewModDeps = dialyzer_callgraph:strip_module_deps(ModDeps, BigSet),
-  AnalyzeMods = sets:subtract(ExpandedSet, RemovedMods),
-  
+  AnalyzeMods = sets:subtract(ExpandedSet, RemovedMods),  
   FilterFun = fun(File) ->
 		  Mod = list_to_atom(filename:basename(File, ".beam")),
 		  sets:is_element(Mod, AnalyzeMods)
 	      end,
   {[F || {F, _} <- Md5, FilterFun(F)], RemovedMods, NewModDeps}.
 
-expand_dependent_modules_1([Mod|Left], Included, ModDeps) ->
+expand_dependent_modules_1([Mod|Mods], Included, ModDeps) ->
   case dict:find(Mod, ModDeps) of
     {ok, Deps} ->
       NewDeps = sets:subtract(sets:from_list(Deps), Included), 
       case sets:size(NewDeps) =:= 0 of
-	true -> expand_dependent_modules_1(Left, Included, ModDeps);
+	true -> expand_dependent_modules_1(Mods, Included, ModDeps);
 	false -> 
 	  NewIncluded = sets:union(Included, NewDeps),
-	  expand_dependent_modules_1(sets:to_list(NewDeps) ++ Left, 
+	  expand_dependent_modules_1(sets:to_list(NewDeps) ++ Mods, 
 				     NewIncluded, ModDeps)
       end;
     error ->
-      expand_dependent_modules_1(Left, Included, ModDeps)
+      expand_dependent_modules_1(Mods, Included, ModDeps)
   end;
 expand_dependent_modules_1([], Included, _ModDeps) ->
   Included.
 
 -define(MIN_FILES_FOR_NATIVE_COMPILE, 20).
 
--spec hipe_compile([string()], #options{}) -> 'ok'.
+-spec hipe_compile([filename()], #options{}) -> 'ok'.
 
-hipe_compile(Files, #options{erlang_mode=ErlangMode}) ->
+hipe_compile(Files, #options{erlang_mode = ErlangMode} = Options) ->
   case (length(Files) < ?MIN_FILES_FOR_NATIVE_COMPILE) orelse ErlangMode of
     true -> ok;
     false ->
       case erlang:system_info(hipe_architecture) of
 	undefined -> ok;
 	_ ->
-	  Mods = [lists, dict, gb_trees, dialyzer_succ_typings, 
-		  dialyzer_analysis_callgraph, dialyzer_typesig, 
-		  dialyzer_dataflow, dialyzer_codeserver, erl_types, 
-		  erl_bif_types, cerl],
-	  hipe_compile_list(Mods)
+	  Mods = [lists, dict, gb_sets, gb_trees, ordsets, sets,
+		  cerl, cerl_trees, erl_types, erl_bif_types,
+		  dialyzer_analysis_callgraph, dialyzer_codeserver,
+		  dialyzer_dataflow, dialyzer_dep, dialyzer_plt,
+		  dialyzer_succ_typings, dialyzer_typesig],
+	  report_native_comp(Options),
+	  {T1, _} = statistics(wall_clock),
+	  native_compile(Mods),
+	  {T2, _} = statistics(wall_clock),
+	  report_elapsed_time(T1, T2, Options)
       end
   end.
 
-hipe_compile_list([Mod|Mods]) ->
+native_compile(Mods) ->
+  case erlang:system_info(schedulers) of
+    %% N when N > 1 ->
+    %%   Parent = self(),
+    %%   Pids = [spawn(fun () -> Parent ! {self(), hc(M)} end) || M <- Mods],
+    %%   lists:foreach(fun (Pid) -> receive {Pid, Res} -> Res end end, Pids);
+    _ -> % 1 ->
+      lists:foreach(fun (Mod) -> hc(Mod) end, Mods)
+  end.
+
+hc(Mod) ->
   case code:ensure_loaded(Mod) of
     {module, Mod} -> ok;
     {error, sticky_directory} -> ok
@@ -449,32 +478,25 @@ hipe_compile_list([Mod|Mods]) ->
   case code:is_module_native(Mod) of
     true -> ok;
     false ->
-      {ok, Mod} =
-	case Mod =:= cerl of
-	  true  -> hipe:c(Mod, [no_concurrent_comp]);
-	  false -> hipe:c(Mod)
-	end,
+      {ok, Mod} = hipe:c(Mod),
       ok
-  end,
-  hipe_compile_list(Mods);
-hipe_compile_list([]) ->
-  ok.
+  end.
 
 new_state() ->
   #cl_state{}.
 
-init_output(State0, DialyzerOptions) ->
-  State = State0#cl_state{output_format=DialyzerOptions#options.output_format},
-  case DialyzerOptions#options.output_file of
-    none ->
+init_output(State0, #options{output_file = OutFile, output_format = OutFormat}) ->
+  State = State0#cl_state{output_format = OutFormat},
+  case OutFile =:= none of
+    true ->
       State;
-    OutputFile ->
-      case file:open(OutputFile, [write]) of
+    false ->
+      case file:open(OutFile, [write]) of
 	{ok, File} ->
-	  State#cl_state{output=File};
+	  State#cl_state{output = File};
 	{error, Reason} ->
 	  Msg = io_lib:format("Could not open output file ~p, Reason: ~p\n",
-			      [OutputFile, Reason]),
+			      [OutFile, Reason]),
 	  error(State, lists:flatten(Msg))
       end
   end.
@@ -544,8 +566,8 @@ format_log_cache(LogCache) ->
 
 -spec store_warnings(#cl_state{}, [dial_warning()]) -> #cl_state{}.
 
-store_warnings(State = #cl_state{stored_warnings=StoredWarnings}, Warnings) ->
-  State#cl_state{stored_warnings=StoredWarnings ++ Warnings}.
+store_warnings(#cl_state{stored_warnings = StoredWarnings} = St, Warnings) ->
+  St#cl_state{stored_warnings = StoredWarnings ++ Warnings}.
 
 -spec error(string()) -> no_return().
 

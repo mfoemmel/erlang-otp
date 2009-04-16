@@ -26,6 +26,7 @@
 -export([create/2, destroy/1, information/1]).
 -export([text/5, line/4, color/1, color/2]).
 -export([rectangle/4, filledRectangle/4, filledEllipse/4]).
+-export([arc/4, arc/5]).
 -export([render/1, render/2, render/3]).
 
 -export([filledTriangle/5, polygon/3]).
@@ -95,7 +96,7 @@ render(Image, Type) ->
 
 -spec(render/3 :: (
 	Image :: egd_image(), 
-	Type :: 'png' | 'raw_bitmap',
+	Type :: 'png' | 'raw_bitmap' | 'eps',
 	Options :: [render_option()]) -> binary()).
 
 render(Image, Type, Options) ->
@@ -182,6 +183,21 @@ polygon(Image, Pts, Color) ->
     cast(Image, {polygon, Pts, Color}),
     ok.
 
+%% @spec arc(egd_image(), point(), point(), integer(), color()) -> ok
+%% @hidden
+%% @doc Creates an arc with radius of bbx corner.
+
+arc(Image, P1, P2, Color) ->
+    cast(Image, {arc, P1, P2, Color}),
+    ok.
+
+%% @spec arc(egd_image(), point(), point(), integer(), color()) -> ok
+%% @hidden
+%% @doc Creates an arc.
+
+arc(Image, P1, P2, D, Color) ->
+    cast(Image, {arc, P1, P2, D, Color}),
+    ok.
 
 %% @spec save(binary(), string()) -> ok
 %% @doc Saves the binary to file. 
@@ -220,6 +236,10 @@ loop(Image) ->
 		    Bitmap = egd_render:binary(Image, RenderType),
 		    Pid ! {egd, self(), Bitmap},
 		    loop(Image);
+		eps ->
+		    Eps = egd_render:eps(Image),
+		    Pid ! {egd, self(), Eps},
+		    loop(Image);
 		png ->
 		    Bitmap = egd_render:binary(Image, RenderType),
 		    Png = egd_png:binary(
@@ -246,10 +266,15 @@ loop(Image) ->
 	    loop(egd_primitives:filledTriangle(Image, P1, P2, P3, C));
 	{egd, _Pid, {polygon, Pts, C}} ->
 	    loop(egd_primitives:polygon(Image, Pts, C));
+	{egd, _Pid, {arc, P1, P2, C}} ->
+	    loop(egd_primitives:arc(Image, P1, P2, C));
+	{egd, _Pid, {arc, P1, P2, D, C}} ->
+	    loop(egd_primitives:arc(Image, P1, P2, D, C));
 	{egd, _Pid, {rectangle, P1, P2, C}} ->
 	    loop(egd_primitives:rectangle(Image, P1, P2, C));
 	{egd, _Pid, information} ->
 	    egd_primitives:info(Image),
+	    loop(Image);
+	 _ ->
 	    loop(Image)
-
     end.

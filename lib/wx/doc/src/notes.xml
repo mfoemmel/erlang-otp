@@ -29,7 +29,29 @@
   </header>
   <p>This document describes the changes made to the wxErlang
     application.</p>
-  
+  <section><title>Wx 0.98.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+            <p>Added <c>xrcctrl/3</c> to wxXmlResource and added a
+            resource example.</p> <p>Added several event types and
+            events records and fixed a couple of event related
+            bugs.</p> <p>Event callbacks can now use
+            <c>wxEvtHandler:connect/2</c>.</p> <p>Error handling and
+            debugging aid have been improved.</p> <p>Added
+            wxSplitterWindow and wxGauge:pulse and a couple of
+            missing macros in <c>wx.hrl</c>.</p> <p>Thanks to Steve
+            Davis for feedback and bug reports.</p>
+          <p>
+            Own Id: OTP-7875</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+
   <section><title>Wx 0.98</title>
     
     <section><title>Improvements and New Features</title>

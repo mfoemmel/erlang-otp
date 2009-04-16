@@ -27,7 +27,7 @@
 
 %%-----------------------------------------------------------------------------
 
--type raw_data() :: binary() | float() | list() | tuple().
+-type raw_data() :: binary() | number() | list() | tuple().
 -type tbl_ref()  :: {hipe_constlbl(), non_neg_integer()}.
 
 -record(pcm_entry, {mfa       :: mfa(),

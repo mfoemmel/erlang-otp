@@ -50,7 +50,7 @@
 -module(hipe_spillmin).
 -export([stackalloc/6, mapmerge/2]).
 
-%-define(DEBUG,1).
+%%-define(DEBUG, 1).
 -define(HIPE_INSTRUMENT_COMPILER, true).
 
 %%---------------------------------------------------------------------------
@@ -67,7 +67,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -spec stackalloc(#cfg{}, [_], non_neg_integer(),
-		 comp_options(), atom(), hipe_temp_map()) ->
+		 comp_options(), module(), hipe_temp_map()) ->
                                 {hipe_spill_map(), non_neg_integer()}.
  
 stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) ->

@@ -195,6 +195,8 @@ replace([{test,bs_match_string=Op,{f,Lbl},[Ctx,Bin0]}|Is], Acc, D) ->
     replace(Is, [I|Acc], D);
 replace([{test,Test,{f,Lbl},Ops}|Is], Acc, D) ->
     replace(Is, [{test,Test,{f,label(Lbl, D)},Ops}|Acc], D);
+replace([{test,Test,{f,Lbl},Live,Ops,Dst}|Is], Acc, D) ->
+    replace(Is, [{test,Test,{f,label(Lbl, D)},Live,Ops,Dst}|Acc], D);
 replace([{select_val,R,{f,Fail0},{list,Vls0}}|Is], Acc, D) ->
     Vls1 = map(fun ({f,L}) -> {f,label(L, D)};
 		   (Other) -> Other end, Vls0),
@@ -334,12 +336,12 @@ bs_restores([_|Is], Dict) ->
 bs_restores([], Dict) -> Dict.
     
 %% Pass 2.
-bs_replace([{test,bs_start_match2,F,[Src,Live,Ctx,CtxR]}|T], Dict, Acc) when is_atom(Ctx) ->
+bs_replace([{test,bs_start_match2,F,Live,[Src,Ctx],CtxR}|T], Dict, Acc) when is_atom(Ctx) ->
     Slots = case gb_trees:lookup(Ctx, Dict) of
 		{value,Slots0} -> Slots0;
 		none -> 0
 	    end,
-    I = {test,bs_start_match2,F,[Src,Live,Slots,CtxR]},
+    I = {test,bs_start_match2,F,Live,[Src,Slots],CtxR},
     bs_replace(T, Dict, [I|Acc]);
 bs_replace([{bs_save2,CtxR,{_,_}=SavePoint}|T], Dict, Acc) ->
     case gb_trees:lookup(SavePoint, Dict) of

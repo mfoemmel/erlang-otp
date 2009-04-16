@@ -36,13 +36,11 @@
 
 %%--------------------------------------------------------------------
 
--spec cfg(#cfg{}) -> #cfg{}.
+-spec cfg(cfg()) -> cfg().
 
 cfg(Cfg1) ->
-  Start = hipe_icode_cfg:start_label(Cfg1),
-  Cfg2 = find_bs_get_integer(ordsets:from_list([Start]), Cfg1,
-			     ordsets:from_list([Start])),
-  Cfg2.
+  StartLbls = ordsets:from_list([hipe_icode_cfg:start_label(Cfg1)]),
+  find_bs_get_integer(StartLbls, Cfg1, StartLbls).
 
 find_bs_get_integer([Lbl|Rest], Cfg, Visited) ->
   BB = hipe_icode_cfg:bb(Cfg, Lbl),
@@ -56,11 +54,11 @@ find_bs_get_integer([Lbl|Rest], Cfg, Visited) ->
        not_ok ->
 	 Cfg
      end,
-  Succs = ordsets:from_list(hipe_icode_cfg:succ(NewCfg,Lbl)),
-  NewSuccs = ordsets:subtract(Succs,Visited),
-  NewLbls = ordsets:union(NewSuccs,Rest),
-  NewVisited = ordsets:union(NewSuccs,Visited),
-  find_bs_get_integer(NewLbls,NewCfg,NewVisited);
+  Succs = ordsets:from_list(hipe_icode_cfg:succ(NewCfg, Lbl)),
+  NewSuccs = ordsets:subtract(Succs, Visited),
+  NewLbls = ordsets:union(NewSuccs, Rest),
+  NewVisited = ordsets:union(NewSuccs, Visited),
+  find_bs_get_integer(NewLbls, NewCfg, NewVisited);
 find_bs_get_integer([], Cfg, _) ->
   Cfg.
 
@@ -70,13 +68,13 @@ ok(I, Cfg) ->
       case hipe_icode:call_fun(I) of
 	{hipe_bs_primop, {bs_get_integer, Size, Flags}} when (Flags band 6) =:= 0 ->
 	  case {hipe_icode:call_dstlist(I), hipe_icode:call_args(I)} of
-	    {[Dst,MsOut], [MsIn]} ->
+	    {[Dst, MsOut] = DstList, [MsIn]} ->
 	      Cont = hipe_icode:call_continuation(I),
 	      FirstFail = hipe_icode:call_fail_label(I),
 	      FirstFailBB = hipe_icode_cfg:bb(Cfg, FirstFail),
-	      case check_for_restore_block(FirstFailBB, [Dst, MsOut]) of
+	      case check_for_restore_block(FirstFailBB, DstList) of
 		{restore_block, RealFail} ->
-		  {ok, {{Dst,Size},FirstFail,RealFail,Cont,MsIn,MsOut}};
+		  {ok, {{Dst, Size}, FirstFail, RealFail, Cont, MsIn, MsOut}};
 		not_restore_block ->
 		  not_ok
 	      end;
@@ -107,7 +105,7 @@ check_for_restore_block(FirstFailBB, DefVars) ->
 
 is_badinstr(Instr, DefVars) ->
   not(hipe_icode:is_move(Instr) andalso
-      lists:member(hipe_icode:move_dst(Instr),DefVars)).
+      lists:member(hipe_icode:move_dst(Instr), DefVars)).
 
 collect_info(Lbl, Cfg, Acc, OldLbl, FailLbl, MsOut) ->
   case do_collect_info(Lbl, Cfg, Acc, FailLbl, MsOut) of

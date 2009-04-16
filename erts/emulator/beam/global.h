@@ -958,6 +958,7 @@ int erts_to_external_format(DistEntry*, Eterm, byte**, byte**, Uint *);
 Eterm erts_from_external_format(DistEntry*, Eterm**, byte**, ErlOffHeap*);
 Eterm encode_size_struct(Eterm, unsigned);
 Sint erts_decoded_size(byte* t, Uint size, int no_refc_bins);
+Eterm erts_term_to_binary(Process* p, Eterm Term, int level, Uint flags);
 
 typedef struct {
     byte *extp;
@@ -1552,7 +1553,6 @@ do {									\
 #define ERTS_SMP_CHK_PEND_TRACE_MSGS(ESDP)
 #endif
 
-int member(Eterm, Eterm);
 void bin_write(int, void*, byte*, int);
 int intlist_to_buf(Eterm, char*, int); /* most callers pass plain char*'s */
 

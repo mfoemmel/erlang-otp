@@ -17,6 +17,7 @@
 %% %CopyrightEnd%
 %%
 -module(user).
+-compile( [ inline, { inline_size, 100 } ] ).
 
 %% Basic standard i/o server for user interface port.
 
@@ -131,6 +132,8 @@ start_new_shell() ->
 
 server_loop(Port, Q) ->
     receive
+	{io_request,From,ReplyAs,Request} when is_pid(From) ->
+	    server_loop(Port, do_io_request(Request, From, ReplyAs, Port, Q));
 	{Port,{data,Bytes}} ->
 	    case get(shell) of
 		noshell ->
@@ -143,8 +146,6 @@ server_loop(Port, Q) ->
 			    throw(new_shell)
 		    end
 	    end;
-	{io_request,From,ReplyAs,Request} when is_pid(From) ->
-	    server_loop(Port, do_io_request(Request, From, ReplyAs, Port, Q));
 	{Port, eof} ->
 	    put(eof, true),
 	    server_loop(Port, Q);
@@ -234,7 +235,12 @@ io_request({put_chars,latin1,Mod,Func,Args}, Port, Q) ->
 io_request({get_chars,Enc,Prompt,N}, Port, Q) -> % New in R9C
     get_chars(Prompt, io_lib, collect_chars, N, Port, Q, Enc);
 io_request({get_line,Enc,Prompt}, Port, Q) ->
-    get_chars(Prompt, io_lib, collect_line, [], Port, Q, Enc);
+    case get(read_mode) of
+	binary ->
+	    get_line_bin(Prompt,Port,Q,Enc);
+	_ ->
+	    get_chars(Prompt, io_lib, collect_line, [], Port, Q, Enc)
+    end;
 io_request({get_until,Enc,Prompt,M,F,As}, Port, Q) ->
     get_chars(Prompt, io_lib, get_until, {M,F,As}, Port, Q, Enc);
 %%  End New in R13B
@@ -381,6 +387,203 @@ getopts(_Port,Q) ->
 		   end},
     {ok,[Bin,Uni],Q}.
 
+
+get_line_bin(Prompt,Port,Q, Enc) ->
+    prompt(Port, Prompt),
+    case {get(eof),queue:is_empty(Q)} of
+	{true,true} ->
+	    {ok,eof,Q};
+	_ ->
+	    get_line(Prompt,Port, Q, [], Enc)
+    end.
+get_line(Prompt, Port, Q, Acc, Enc) ->
+    case queue:is_empty(Q) of
+	true ->
+	    receive
+		{Port,{data,Bytes}} ->
+		    get_line_bytes(Prompt, Port, Q, Acc, Bytes, Enc);
+		{Port, eof} ->
+		    put(eof, true),
+		    {ok, eof, []};
+                {io_request,From,ReplyAs,{get_geometry,_}=Req} when is_pid(From) ->
+                    do_io_request(Req, From, ReplyAs, Port, 
+                                  queue:new()), 
+                    %% No prompt.
+                    get_line(Prompt, Port, Q, Acc, Enc);
+		{io_request,From,ReplyAs,Request} when is_pid(From) ->
+		    do_io_request(Request, From, ReplyAs, Port, queue:new()), 
+		    prompt(Port, Prompt),
+		    get_line(Prompt, Port, Q, Acc, Enc);
+		{'EXIT',From,What} when node(From) =:= node() ->
+		    {exit,What}
+	    end;
+	false ->
+	    get_line_doit(Prompt, Port, Q, Acc, Enc)
+    end.
+
+get_line_bytes(Prompt, Port, Q, Acc, Bytes, Enc) ->
+    case get(shell) of
+	noshell ->
+	    get_line_doit(Prompt, Port, queue:snoc(Q, Bytes),Acc,Enc);
+	_ ->
+	    case contains_ctrl_g_or_ctrl_c(Bytes) of
+		false ->
+		    get_line_doit(Prompt, Port, queue:snoc(Q, Bytes), Acc, Enc);
+		_ ->
+		    throw(new_shell)
+	    end
+    end.
+is_cr_at(Pos,Bin) ->
+    case Bin of
+  	<<_:Pos/binary,$\r,_/binary>> ->
+  	    true;
+  	_ ->
+  	    false
+    end.
+srch(<<>>,_,_) ->
+    nomatch;
+srch(<<X:8,_/binary>>,X,N) ->
+    {match,[{N,1}]};
+srch(<<_:8,T/binary>>,X,N) ->
+    srch(T,X,N+1).
+get_line_doit(Prompt, Port, Q, Accu, Enc) -> 
+    case queue:is_empty(Q) of
+	true ->
+	    case get(eof) of
+		true ->
+		   case Accu of
+		       [] ->
+			   {ok,eof,Q};
+		       _ ->
+			   {ok,binrev(Accu,[]),Q}
+		   end;
+		_ ->
+		    get_line(Prompt, Port, Q, Accu, Enc)
+	    end;
+	false ->
+	    Bin = queue:head(Q),
+	    case srch(Bin,$\n,0) of
+		nomatch ->
+		    X = byte_size(Bin)-1,
+		    case is_cr_at(X,Bin) of
+			true ->
+			    <<D:X/binary,_/binary>> = Bin,
+			    get_line_doit(Prompt, Port, queue:tail(Q), 
+					  [<<$\r>>,D|Accu], Enc); 
+			false ->
+			    get_line_doit(Prompt, Port, queue:tail(Q), 
+					  [Bin|Accu], Enc)
+		    end;
+		{match,[{Pos,1}]} ->
+		    %% We are done
+		    PosPlus = Pos + 1,
+		    case Accu of
+			[] ->
+			    {Head,Tail} = 
+				case is_cr_at(Pos - 1,Bin) of
+				    false ->
+					<<H:PosPlus/binary,
+					 T/binary>> = Bin,
+					{H,T};
+				    true ->
+					PosMinus = Pos - 1,
+					<<H:PosMinus/binary,
+					 _,_,T/binary>> = Bin,
+					{binrev([],[H,$\n]),T}
+				end,
+			    case Tail of
+				<<>> ->
+				    {ok, cast(Head,Enc), queue:tail(Q)};
+				_ ->
+				    {ok, cast(Head,Enc), 
+				     queue:cons(Tail, queue:tail(Q))}
+			    end;
+			[<<$\r>>|Stack1] when Pos =:= 0 ->
+			    <<_:PosPlus/binary,Tail/binary>> = Bin, 
+			    case Tail of
+				<<>> ->
+				    {ok, cast(binrev(Stack1, [$\n]),Enc), 
+				     queue:tail(Q)};
+				_ ->
+				    {ok, cast(binrev(Stack1, [$\n]),Enc), 
+				     queue:cons(Tail, queue:tail(Q))}
+			    end;
+			_ ->
+			    {Head,Tail} = 
+				case is_cr_at(Pos - 1,Bin) of
+				    false ->
+					<<H:PosPlus/binary,
+					 T/binary>> = Bin,
+					{H,T};
+				    true ->
+					PosMinus = Pos - 1,
+					<<H:PosMinus/binary,
+					 _,_,T/binary>> = Bin,
+					{[H,$\n],T}
+				end,
+			    case Tail of
+				<<>> ->
+				    {ok, cast(binrev(Accu,[Head]),Enc), 
+				     queue:tail(Q)};
+				_ ->
+				    {ok, cast(binrev(Accu,[Head]),Enc), 
+				     queue:cons(Tail, queue:tail(Q))}
+			    end
+		    end
+	    end
+    end.
+
+binrev(L, T) ->
+    list_to_binary(lists:reverse(L, T)).
+
+%%  is_cr_at(Pos,Bin) ->
+%%      case Bin of
+%%  	<<_:Pos/binary,$\r,_/binary>> ->
+%%  	    true;
+%%  	_ ->
+%%  	    false
+%%      end.
+
+%%  collect_line_bin_re(Bin,_Data,Stack,_) ->
+%%      case re:run(Bin,<<"\n">>) of
+%%  	nomatch ->
+%%  	    X = byte_size(Bin)-1,
+%%  	    case is_cr_at(X,Bin) of
+%%  		true ->
+%%  		    <<D:X/binary,_/binary>> = Bin,
+%%  		    [<<$\r>>,D|Stack]; 
+%%  		false ->
+%%  		    [Bin|Stack]
+%%  	    end;
+%%  	{match,[{Pos,1}]} ->
+%%  	    PosPlus = Pos + 1,
+%%  	    case Stack of
+%%  		[] ->
+%%  		    case is_cr_at(Pos - 1,Bin) of
+%%  			false ->
+%%  			    <<Head:PosPlus/binary,Tail/binary>> = Bin, 
+%%  			    {stop, Head, Tail};
+%%  			true ->
+%%  			    PosMinus = Pos - 1,
+%%  			    <<Head:PosMinus/binary,_,_,Tail/binary>> = Bin,
+%%  			    {stop, binrev([],[Head,$\n]),Tail}
+%%  		    end;
+%%  		[<<$\r>>|Stack1] when Pos =:= 0 ->
+
+%%  		    <<_:PosPlus/binary,Tail/binary>> = Bin, 
+%%  		    {stop,binrev(Stack1, [$\n]),Tail};
+%%  		_ ->
+%%  		    case is_cr_at(Pos - 1,Bin) of
+%%  			false ->
+%%  			    <<Head:PosPlus/binary,Tail/binary>> = Bin, 
+%%  			    {stop,binrev(Stack, [Head]),Tail};
+%%  			true ->
+%%  			    PosMinus = Pos - 1,
+%%  			    <<Head:PosMinus/binary,_,_,Tail/binary>> = Bin,
+%%  			    {stop, binrev(Stack,[Head,$\n]),Tail}
+%%  		    end
+%%  	    end
+%%      end.
 %% get_chars(Prompt, Module, Function, XtraArg, Port, Queue)
 %%  Gets characters from the input port until the applied function
 %%  returns {stop,Result,RestBuf}. Does not block output until input 
@@ -388,7 +591,7 @@ getopts(_Port,Q) ->
 %%  Returns:
 %%	{Status,Result,NewQueue}
 %%	{exit,Reason}
-
+    
 %% Entry function.
 get_chars(Prompt, M, F, Xa, Port, Q, Fmt) ->
     prompt(Port, Prompt),
@@ -512,27 +715,32 @@ contains_ctrl_g_or_ctrl_c(BinOrList)->
     end.
 
 %% Convert a buffer between list and binary
+cast(Data, _Format) when is_atom(Data) ->
+    Data;
 cast(Data, Format) ->
     cast(Data, get(read_mode), Format, get(unicode)).
 
-cast(L, binary, latin1, UniTerm) ->
-    case UniTerm of
-	true -> % Convert input characters to protocol format (i.e latin1)
-	    case unicode:characters_to_binary(
-		   erlang:iolist_to_binary(L),unicode,latin1) of % may fail
-		{error,_,_} -> exit({no_translation, unicode, latin1});
-		Else -> Else
-	    end;
-	_ ->
-	    erlang:iolist_to_binary(L)
+cast(B, binary, latin1, false) when is_binary(B) ->
+    B;
+cast(B, binary, latin1, true) when is_binary(B) ->
+    unicode:characters_to_binary(B, unicode, latin1);
+cast(L, binary, latin1, false) ->
+    erlang:iolist_to_binary(L);
+cast(L, binary, latin1, true) ->
+    case unicode:characters_to_binary(
+	   erlang:iolist_to_binary(L),unicode,latin1) of % may fail
+	{error,_,_} -> exit({no_translation, unicode, latin1});
+	Else -> Else
     end;
-cast(L, binary, unicode, UniTerm) ->
-    unicode:characters_to_binary(erlang:iolist_to_binary(L),
-				 case UniTerm of 
-				     true -> unicode; 
-				     _ -> latin1 
-				 end,
-				 unicode);
+cast(B, binary, unicode, true) when is_binary(B) ->
+    B;
+cast(B, binary, unicode, false) when is_binary(B) ->
+    unicode:characters_to_binary(B,latin1,unicode);
+cast(L, binary, unicode, true) ->
+    % possibly a list containing UTF-8 encoded characters
+    unicode:characters_to_binary(erlang:iolist_to_binary(L));
+cast(L, binary, unicode, false) ->
+    unicode:characters_to_binary(L, latin1, unicode);
 cast(L, list, latin1, UniTerm) ->
     case UniTerm of
 	true -> % Convert input characters to protocol format (i.e latin1)
@@ -564,7 +772,7 @@ wrap_characters_to_binary(Chars,unicode,latin1) ->
 	    list_to_binary( 
 	      [ case X of
 		    High when High > 255 ->
-			io_lib:format("\\{~.8B}",[X]);
+			["\\x{",erlang:integer_to_list(X, 16),$}];
 		    Low ->
 			Low
 		end || X <- unicode:characters_to_list(Chars,unicode) ]);
@@ -572,5 +780,7 @@ wrap_characters_to_binary(Chars,unicode,latin1) ->
 	    Bin
     end;
 		       
+wrap_characters_to_binary(Bin,From,From) when is_binary(Bin) ->
+    Bin;
 wrap_characters_to_binary(Chars,From,To) ->
     unicode:characters_to_binary(Chars,From,To).

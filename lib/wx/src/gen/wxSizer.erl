@@ -73,7 +73,8 @@ add(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=WindowT,ref=WindowRef}, Options
   MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc];
           ({flag, Flag}, Acc) -> [<<2:32/?UI,Flag:32/?UI>>|Acc];
           ({border, Border}, Acc) -> [<<3:32/?UI,Border:32/?UI>>|Acc];
-          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc]  end,
+          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(WindowOP,
   <<ThisRef:32/?UI,WindowRef:32/?UI, BinOpt/binary>>);
@@ -99,7 +100,8 @@ add(#wx_ref{type=ThisT,ref=ThisRef},Width,Height, Options)
   MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc];
           ({flag, Flag}, Acc) -> [<<2:32/?UI,Flag:32/?UI>>|Acc];
           ({border, Border}, Acc) -> [<<3:32/?UI,Border:32/?UI>>|Acc];
-          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc]  end,
+          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxSizer_Add_3,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).
@@ -124,7 +126,8 @@ addStretchSpacer(This)
 addStretchSpacer(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxSizer),
-  MOpts = fun({prop, Prop}, Acc) -> [<<1:32/?UI,Prop:32/?UI>>|Acc]  end,
+  MOpts = fun({prop, Prop}, Acc) -> [<<1:32/?UI,Prop:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxSizer_AddStretchSpacer,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -148,7 +151,8 @@ clear(This)
 clear(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxSizer),
-  MOpts = fun({delete_windows, Delete_windows}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Delete_windows)):32/?UI>>|Acc]  end,
+  MOpts = fun({delete_windows, Delete_windows}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Delete_windows)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxSizer_Clear,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -231,7 +235,8 @@ getItem(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=WindowT,ref=WindowRef}, Opt
      _ -> ?CLASS(WindowT,wxSizer),
        ?wxSizer_GetItem_2_0
      end,
-  MOpts = fun({recursive, Recursive}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Recursive)):32/?UI>>|Acc]  end,
+  MOpts = fun({recursive, Recursive}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Recursive)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(WindowOP,
   <<ThisRef:32/?UI,WindowRef:32/?UI, BinOpt/binary>>).
@@ -287,7 +292,8 @@ hide(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=WindowT,ref=WindowRef}, Option
      _ -> ?CLASS(WindowT,wxSizer),
        ?wxSizer_Hide_2_0
      end,
-  MOpts = fun({recursive, Recursive}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Recursive)):32/?UI>>|Acc]  end,
+  MOpts = fun({recursive, Recursive}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Recursive)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(WindowOP,
   <<ThisRef:32/?UI,WindowRef:32/?UI, BinOpt/binary>>).
@@ -339,7 +345,8 @@ insert(#wx_ref{type=ThisT,ref=ThisRef},Index,#wx_ref{type=WindowT,ref=WindowRef}
   MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc];
           ({flag, Flag}, Acc) -> [<<2:32/?UI,Flag:32/?UI>>|Acc];
           ({border, Border}, Acc) -> [<<3:32/?UI,Border:32/?UI>>|Acc];
-          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc]  end,
+          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(WindowOP,
   <<ThisRef:32/?UI,Index:32/?UI,WindowRef:32/?UI, 0:32,BinOpt/binary>>);
@@ -366,7 +373,8 @@ insert(#wx_ref{type=ThisT,ref=ThisRef},Index,Width,Height, Options)
   MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc];
           ({flag, Flag}, Acc) -> [<<2:32/?UI,Flag:32/?UI>>|Acc];
           ({border, Border}, Acc) -> [<<3:32/?UI,Border:32/?UI>>|Acc];
-          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc]  end,
+          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxSizer_Insert_4,
   <<ThisRef:32/?UI,Index:32/?UI,Width:32/?UI,Height:32/?UI, BinOpt/binary>>).
@@ -391,7 +399,8 @@ insertStretchSpacer(This,Index)
 insertStretchSpacer(#wx_ref{type=ThisT,ref=ThisRef},Index, Options)
  when is_integer(Index),is_list(Options) ->
   ?CLASS(ThisT,wxSizer),
-  MOpts = fun({prop, Prop}, Acc) -> [<<1:32/?UI,Prop:32/?UI>>|Acc]  end,
+  MOpts = fun({prop, Prop}, Acc) -> [<<1:32/?UI,Prop:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxSizer_InsertStretchSpacer,
   <<ThisRef:32/?UI,Index:32/?UI, BinOpt/binary>>).
@@ -474,7 +483,8 @@ prepend(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=WindowT,ref=WindowRef}, Opt
   MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc];
           ({flag, Flag}, Acc) -> [<<2:32/?UI,Flag:32/?UI>>|Acc];
           ({border, Border}, Acc) -> [<<3:32/?UI,Border:32/?UI>>|Acc];
-          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc]  end,
+          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(WindowOP,
   <<ThisRef:32/?UI,WindowRef:32/?UI, BinOpt/binary>>);
@@ -500,7 +510,8 @@ prepend(#wx_ref{type=ThisT,ref=ThisRef},Width,Height, Options)
   MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc];
           ({flag, Flag}, Acc) -> [<<2:32/?UI,Flag:32/?UI>>|Acc];
           ({border, Border}, Acc) -> [<<3:32/?UI,Border:32/?UI>>|Acc];
-          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc]  end,
+          ({userData, #wx_ref{type=UserDataT,ref=UserDataRef}}, Acc) ->   ?CLASS(UserDataT,wx),[<<4:32/?UI,UserDataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxSizer_Prepend_3,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).
@@ -525,7 +536,8 @@ prependStretchSpacer(This)
 prependStretchSpacer(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxSizer),
-  MOpts = fun({prop, Prop}, Acc) -> [<<1:32/?UI,Prop:32/?UI>>|Acc]  end,
+  MOpts = fun({prop, Prop}, Acc) -> [<<1:32/?UI,Prop:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxSizer_PrependStretchSpacer,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -590,7 +602,8 @@ replace(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=OldwinT,ref=OldwinRef},#wx_
          ?CLASS(NewwinT,wxSizer),
        ?wxSizer_Replace_3_0
      end,
-  MOpts = fun({recursive, Recursive}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Recursive)):32/?UI>>|Acc]  end,
+  MOpts = fun({recursive, Recursive}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Recursive)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(OldwinOP,
   <<ThisRef:32/?UI,OldwinRef:32/?UI,NewwinRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -725,7 +738,8 @@ show(#wx_ref{type=ThisT,ref=ThisRef},Show)
 show(#wx_ref{type=ThisT,ref=ThisRef},Index, Options)
  when is_integer(Index),is_list(Options) ->
   ?CLASS(ThisT,wxSizer),
-  MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc]  end,
+  MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxSizer_Show_2_0,
   <<ThisRef:32/?UI,Index:32/?UI, BinOpt/binary>>);
@@ -739,7 +753,8 @@ show(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=WindowT,ref=WindowRef}, Option
        ?wxSizer_Show_2_1
      end,
   MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc];
-          ({recursive, Recursive}, Acc) -> [<<2:32/?UI,(wxe_util:from_bool(Recursive)):32/?UI>>|Acc]  end,
+          ({recursive, Recursive}, Acc) -> [<<2:32/?UI,(wxe_util:from_bool(Recursive)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(WindowOP,
   <<ThisRef:32/?UI,WindowRef:32/?UI, BinOpt/binary>>).

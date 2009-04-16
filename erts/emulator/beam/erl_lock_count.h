@@ -56,9 +56,10 @@
 #define ERTS_LCNT_LT_MUTEX      (((Uint16) 1) << 2)
 #define ERTS_LCNT_LT_RWMUTEX    (((Uint16) 1) << 3)
 #define ERTS_LCNT_LT_PROCLOCK   (((Uint16) 1) << 4)
+#define ERTS_LCNT_LT_ALLOC      (((Uint16) 1) << 5)
 
-#define ERTS_LCNT_LO_READ       (((Uint16) 1) << 5)
-#define ERTS_LCNT_LO_WRITE      (((Uint16) 1) << 6)
+#define ERTS_LCNT_LO_READ       (((Uint16) 1) << 6)
+#define ERTS_LCNT_LO_WRITE      (((Uint16) 1) << 7)
 
 #define ERTS_LCNT_LO_READ_WRITE ( ERTS_LCNT_LO_READ  \
 				| ERTS_LCNT_LO_WRITE )

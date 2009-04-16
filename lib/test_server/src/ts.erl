@@ -190,9 +190,9 @@ install() ->
 install({Architecture, Target_name})  ->
     ts_install:install({ts_lib:maybe_atom_to_list(Architecture), 
 			ts_lib:maybe_atom_to_list(Target_name)}, []);
-install(Options) when list(Options) ->
+install(Options) when is_list(Options) ->
     ts_install:install(install_local,Options).
-install({Architecture, Target_name}, Options) when list(Options)->
+install({Architecture, Target_name}, Options) when is_list(Options)->
     ts_install:install({ts_lib:maybe_atom_to_list(Architecture), 
 			ts_lib:maybe_atom_to_list(Target_name)}, Options).
 
@@ -246,7 +246,7 @@ run_some([Spec|Specs], Opts) ->
     run_some(Specs, Opts).
 
 %% Runs one test spec (interactive).
-run(Testspec) when atom(Testspec) ->
+run(Testspec) when is_atom(Testspec) ->
     Options=check_test_get_opts(Testspec, []),
     File = atom_to_list(Testspec),
     run_test(File, ["SPEC current.spec NAME ",File], Options);
@@ -282,41 +282,41 @@ run([all_tests|Config0]) ->
     R;
 
 %% ts:run(ListOfTests)
-run(List) when list(List) ->
+run(List) when is_list(List) ->
     run(List, [batch]).
 
-run(List, Opts) when list(List), list(Opts) ->
+run(List, Opts) when is_list(List), is_list(Opts) ->
     run_some(List, Opts);
 
 %% run/2
 %% Runs one test spec with Options
-run(Testspec, Config) when atom(Testspec), list(Config) ->
+run(Testspec, Config) when is_atom(Testspec), is_list(Config) ->
     Options=check_test_get_opts(Testspec, Config),
     File=atom_to_list(Testspec),
     run_test(File, ["SPEC current.spec NAME ", File], Options);
 %% Runs one module in a spec (interactive)
-run(Testspec, Mod) when atom(Testspec), atom(Mod) ->
+run(Testspec, Mod) when is_atom(Testspec), is_atom(Mod) ->
     run_test({atom_to_list(Testspec), Mod}, 
 	     ["SPEC current.spec NAME ", atom_to_list(Mod)], 
 	     [interactive]).
 
 %% run/3
 %% Run one module in a spec with Config
-run(Testspec,Mod,Config) when atom(Testspec), atom(Mod), list(Config) ->
+run(Testspec,Mod,Config) when is_atom(Testspec), is_atom(Mod), is_list(Config) ->
     Options=check_test_get_opts(Testspec, Config),
     run_test({atom_to_list(Testspec), Mod},
 	     ["SPEC current.spec NAME ", atom_to_list(Mod)], 
 	     Options);
 
 %% Runs one testcase in a module.
-run(Testspec, Mod, Case) when atom(Testspec), atom(Mod), atom(Case) ->
+run(Testspec, Mod, Case) when is_atom(Testspec), is_atom(Mod), is_atom(Case) ->
     Options=check_test_get_opts(Testspec, []),
     Args = ["CASE ",atom_to_list(Mod)," ",atom_to_list(Case)],
     run_test(atom_to_list(Testspec), Args, Options).
 
 %% run/4
 %% Run one testcase in a module with Options.
-run(Testspec, Mod, Case, Config) when atom(Testspec), atom(Mod), atom(Case), list(Config) ->
+run(Testspec, Mod, Case, Config) when is_atom(Testspec), is_atom(Mod), is_atom(Case), is_list(Config) ->
     Options=check_test_get_opts(Testspec, Config),
     Args = ["CASE ",atom_to_list(Mod), " ",atom_to_list(Case)],
     run_test(atom_to_list(Testspec), Args, Options).
@@ -457,7 +457,7 @@ tests(Spec) ->
 %% e.g. [batch]
 %% 
 estone() -> run(emulator,estone_SUITE).
-estone(Opts) when list(Opts) -> run(emulator,estone_SUITE,Opts).
+estone(Opts) when is_list(Opts) -> run(emulator,estone_SUITE,Opts).
 
 %% 
 %% cross_cover_analyse/1
@@ -478,7 +478,7 @@ check_and_run(Fun) ->
     case file:consult(?variables) of
 	{ok, Vars} ->
 	    check_and_run(Fun, Vars);
-	{error, Error} when atom(Error) ->
+	{error, Error} when is_atom(Error) ->
 	    {error, not_installed};
 	{error, Reason} ->
 	    {error, {bad_installation, file:format_error(Reason)}}
@@ -575,7 +575,7 @@ delete_files([Item|Rest]) ->
 
 r() ->
     r([]).
-r(Opts) when list(Opts), atom(hd(Opts)) ->
+r(Opts) when is_list(Opts), is_atom(hd(Opts)) ->
     ensure_ts_started(Opts),
     test_server_ctrl:add_dir("current_dir", ".");
 
@@ -586,7 +586,7 @@ r(Opts) when list(Opts), atom(hd(Opts)) ->
 
 r(SpecOrMod) ->
     r(SpecOrMod,[]).
-r(SpecOrMod,Opts) when list(Opts) ->
+r(SpecOrMod,Opts) when is_list(Opts) ->
     ensure_ts_started(Opts),
     case filename:extension(SpecOrMod) of
 	[] ->
@@ -621,7 +621,7 @@ i() ->
     hformat("Job", "Current", "Total", "Success", "Failed", "Skipped"),
     i(test_server_ctrl:jobs()).
  
-i([{Name, Pid}|Rest]) when pid(Pid) ->
+i([{Name, Pid}|Rest]) when is_pid(Pid) ->
     {dictionary, PI} = process_info(Pid, dictionary),
     {value, {_, CaseNum}} = lists:keysearch(test_server_case_num, 1, PI),
     {value, {_, Cases}} = lists:keysearch(test_server_cases, 1, PI),
@@ -657,7 +657,7 @@ ensure_ts_started(Opts) ->
     Pid = case whereis(test_server_ctrl) of
 	      undefined ->
 		  test_server_ctrl:start();
-	      P when pid(P) ->
+	      P when is_pid(P) ->
 		  P
 	  end,
     case Opts of

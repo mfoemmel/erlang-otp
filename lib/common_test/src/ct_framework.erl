@@ -742,7 +742,7 @@ get_seq(Mod, Func) ->
 			    []
 		    end
 	    end;
-	TCs when list(TCs) ->
+	TCs when is_list(TCs) ->
 	    TCs;
 	_ ->
 	    []

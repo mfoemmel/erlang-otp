@@ -104,7 +104,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
           ({wildCard, WildCard}, Acc) ->   WildCard_UC = unicode:characters_to_binary([WildCard,0]),[<<4:32/?UI,(byte_size(WildCard_UC)):32/?UI,(WildCard_UC)/binary, 0:(((8- ((0+byte_size(WildCard_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({style, Style}, Acc) -> [<<5:32/?UI,Style:32/?UI>>|Acc];
           ({pos, {PosX,PosY}}, Acc) -> [<<6:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
-          ({sz, {SzW,SzH}}, Acc) -> [<<7:32/?UI,SzW:32/?UI,SzH:32/?UI,0:32>>|Acc]  end,
+          ({sz, {SzW,SzH}}, Acc) -> [<<7:32/?UI,SzW:32/?UI,SzH:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxFileDialog_new,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).

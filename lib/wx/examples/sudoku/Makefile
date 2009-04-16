@@ -54,7 +54,7 @@ docs:
 release_spec: 
 	$(INSTALL_DIR) $(EXRELSYSDIR)
 	$(INSTALL_DATA) $(TESTSRC) sudoku.hrl $(EXRELSYSDIR)
-	$(INSTALL_PROGRAM) $(TESTTARGETS) $(EXRELSYSDIR)
+	$(INSTALL_DATA) $(TESTTARGETS) $(EXRELSYSDIR)
 
 release_tests_spec:
 

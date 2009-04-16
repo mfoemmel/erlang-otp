@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxwindowcreateevent.html">wxWindowCreateEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>create</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxWindowCreate(). #wxWindowCreate{}} event record type.
 %%

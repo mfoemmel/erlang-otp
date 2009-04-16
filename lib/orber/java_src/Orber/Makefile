@@ -19,9 +19,6 @@
 #
 include $(ERL_TOP)/make/target.mk
 
-JAVA_DEST_ROOT = ../../priv/
-JAVA_CLASS_SUBDIR = Orber/
-
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 # ----------------------------------------------------
@@ -41,7 +38,6 @@ RELSYSDIR = $(RELEASE_PATH)/lib/orber-$(VSN)
 JAVA_CLASSES = \
 	InitialReference
 
-TARGET_FILES= $(JAVA_CLASSES:%=$(JAVA_DEST_ROOT)$(JAVA_CLASS_SUBDIR)%.class)
 JAVA_FILES= $(JAVA_CLASSES:%=%.java)
 
 CLASSPATH = ../..
@@ -55,10 +51,9 @@ JAVA_OPTIONS =
 # Make Rules
 # ----------------------------------------------------
 
-debug opt: $(TARGET_FILES)
+debug opt:
 
 clean:
-	rm -f $(TARGET_FILES) *~
 
 docs:
 
@@ -70,8 +65,6 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/java_src/Orber
 	$(INSTALL_DATA) $(JAVA_FILES) $(RELSYSDIR)/java_src/Orber
-	$(INSTALL_DIR) $(RELSYSDIR)/priv/Orber
-	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/priv/Orber
 
 release_docs_spec:
 

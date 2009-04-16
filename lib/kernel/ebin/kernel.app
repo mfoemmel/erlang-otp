@@ -21,7 +21,7 @@
 {application, kernel,
  [
   {description, "ERTS  CXC 138 10"},
-  {vsn, "2.13"},
+  {vsn, "2.13.1"},
   {modules, [application,
 	     application_controller,
 	     application_master,
@@ -48,6 +48,7 @@
 	     inet6_tcp,
 	     inet6_tcp_dist,
 	     inet6_udp,
+	     inet6_sctp,
 	     inet_config,
 	     inet_hosts,
 	     inet_gethost_native,

@@ -39,6 +39,7 @@
          all/1,
          init_per_testcase/2, fin_per_testcase/2,
 	 
+	 register_user/1, 
 	 simple_register_and_unregister1/1,
 	 simple_register_and_unregister2/1,
 	 simple_register_and_unregister3/1,
@@ -58,8 +59,11 @@
 	 register_monitor_request_and_crash1/1,
 	 register_monitor_request_and_crash2/1,
 	 register_monitor_request_and_crash3/1,
-	 register_monitor_request_and_crash4/1
-	 
+	 register_monitor_request_and_crash4/1, 
+
+	 tickets/1,
+	 otp7902/1
+
 	]).
 	 
 %%----------------------------------------------------------------------
@@ -83,7 +87,7 @@
 %% External functions
 %%======================================================================
 
-init_per_testcase(Case, Config) when list(Config) ->
+init_per_testcase(Case, Config) when is_list(Config) ->
     p("init_per_testcase -> Case: ~p", [Case]),
     SnmpPrivDir = ?config(priv_dir, Config),
     p("init_per_testcase -> SnmpPrivDir: ~p", [SnmpPrivDir]),
@@ -118,7 +122,7 @@ init_per_testcase(Case, Config) when list(Config) ->
      {manager_log_dir,  MgrLogDir} | Config].
 
 
-fin_per_testcase(Case, Config) when list(Config) ->
+fin_per_testcase(Case, Config) when is_list(Config) ->
     p("fin_per_testcase -> Case: ~p", [Case]),
 %     MgrTopDir = ?config(manager_dir, Config),
 %     ?DEL_DIR(MgrTopDir),
@@ -130,6 +134,12 @@ fin_per_testcase(Case, Config) when list(Config) ->
 %%======================================================================
 
 all(suite) ->
+    [
+     register_user,
+     tickets
+    ].
+
+register_user(suite) ->
     [
      simple_register_and_unregister1,
      simple_register_and_unregister2,
@@ -154,6 +164,12 @@ all(suite) ->
     ].
 
 
+tickets(suite) ->
+    [
+     otp7902
+    ].
+
+
 %%======================================================================
 %% Test functions
 %%======================================================================
@@ -161,7 +177,7 @@ all(suite) ->
 simple_register_and_unregister1(suite) -> [];
 simple_register_and_unregister1(doc) ->
     "Start a user, register and unregister the user.";
-simple_register_and_unregister1(Conf) when list(Conf) ->
+simple_register_and_unregister1(Conf) when is_list(Conf) ->
     put(tname,srar1),
     p("start"),
     process_flag(trap_exit, true),
@@ -212,7 +228,7 @@ simple_register_and_unregister2(suite) -> [];
 simple_register_and_unregister2(doc) ->
     "Start a single user process, "
 	"register 2 users (per that process) and unregister the 2 users.";
-simple_register_and_unregister2(Conf) when list(Conf) ->
+simple_register_and_unregister2(Conf) when is_list(Conf) ->
     put(tname,srar2),
     p("start"),
     process_flag(trap_exit, true),
@@ -274,7 +290,7 @@ simple_register_and_unregister3(suite) -> [];
 simple_register_and_unregister3(doc) ->
     "Start 2 user processes, "
 	"register one users per process and unregister the 2 users.";
-simple_register_and_unregister3(Conf) when list(Conf) ->
+simple_register_and_unregister3(Conf) when is_list(Conf) ->
     put(tname,srar2),
     p("start"),
     process_flag(trap_exit, true),
@@ -337,7 +353,7 @@ simple_register_and_unregister3(Conf) when list(Conf) ->
 register_and_crash1(suite) -> [];
 register_and_crash1(doc) ->
     "Start a user, register and crash user.";
-register_and_crash1(Conf) when list(Conf) ->
+register_and_crash1(Conf) when is_list(Conf) ->
     put(tname,racau1),
     p("start"),
     process_flag(trap_exit, true),
@@ -387,7 +403,7 @@ register_and_crash2(suite) -> [];
 register_and_crash2(doc) ->
     "Start a single user process, "
 	"register 2 users (per that process) and crash the process.";
-register_and_crash2(Conf) when list(Conf) ->
+register_and_crash2(Conf) when is_list(Conf) ->
     put(tname,racau2),
     p("start"),
     process_flag(trap_exit, true),
@@ -454,7 +470,7 @@ register_and_crash3(doc) ->
     "Start 2 user processes, "
 	"register one user per process and "
 	"crash the first user process.";
-register_and_crash3(Conf) when list(Conf) ->
+register_and_crash3(Conf) when is_list(Conf) ->
     %%     put(tname,rac3),
     %%     p("start"),
     %%     process_flag(trap_exit, true),
@@ -467,7 +483,7 @@ register_request_and_crash1(suite) -> [];
 register_request_and_crash1(doc) ->
     "Start a single user process, "
 	"register user, send request and crash user.";
-register_request_and_crash1(Conf) when list(Conf) ->
+register_request_and_crash1(Conf) when is_list(Conf) ->
     %%     put(tname,rrac1),
     %%     p("start"),
     %%     process_flag(trap_exit, true),
@@ -481,7 +497,7 @@ register_request_and_crash2(doc) ->
     "Start a single user process, "
 	"register 2 users (per that single user process), "
 	"send a request for each user and crash the single user process.";
-register_request_and_crash2(Conf) when list(Conf) ->
+register_request_and_crash2(Conf) when is_list(Conf) ->
     %%     put(tname,rrac2),
     %%     p("start"),
     %%     process_flag(trap_exit, true),
@@ -495,7 +511,7 @@ register_request_and_crash3(doc) ->
     "Start 2 user processes, "
 	"register one user per process, "
 	"send a request for each user and crash the first user process.";
-register_request_and_crash3(Conf) when list(Conf) ->
+register_request_and_crash3(Conf) when is_list(Conf) ->
     %%     put(tname,rrac3),
     %%     p("start"),
     %%     process_flag(trap_exit, true),
@@ -567,7 +583,7 @@ simple_register_monitor_and_unregister2(doc) ->
     "Start a single user process, "
 	"register-link 2 users (per that process) and "
 	"unregister the 2 users.";
-simple_register_monitor_and_unregister2(Conf) when list(Conf) ->
+simple_register_monitor_and_unregister2(Conf) when is_list(Conf) ->
     put(tname,srlau2),
     p("start"),
     process_flag(trap_exit, true),
@@ -630,7 +646,7 @@ simple_register_monitor_and_unregister3(doc) ->
 	"register one user and register-monitor one user "
 	"(per that process) and "
 	"unregister the 2 users.";
-simple_register_monitor_and_unregister3(Conf) when list(Conf) ->
+simple_register_monitor_and_unregister3(Conf) when is_list(Conf) ->
     put(tname,srlau3),
     p("start"),
     process_flag(trap_exit, true),
@@ -689,7 +705,7 @@ simple_register_monitor_and_unregister3(Conf) when list(Conf) ->
 register_monitor_and_crash1(suite) -> [];
 register_monitor_and_crash1(doc) ->
     "Start a user, register-monitor and crash the user.";
-register_monitor_and_crash1(Conf) when list(Conf) ->
+register_monitor_and_crash1(Conf) when is_list(Conf) ->
     put(tname,rlac1),
     p("start"),
     process_flag(trap_exit, true),
@@ -742,7 +758,7 @@ register_monitor_and_crash2(doc) ->
     "Start a single user process, "
 	"register-monitor 2 users (per that process) "
 	"and crash the single user process.";
-register_monitor_and_crash2(Conf) when list(Conf) ->
+register_monitor_and_crash2(Conf) when is_list(Conf) ->
     put(tname,rlac2),
     p("start"),
     process_flag(trap_exit, true),
@@ -804,7 +820,7 @@ register_monitor_and_crash3(doc) ->
     "Start a single user process, "
 	"register-monitor one user and register one user, "
 	"crash the single user process.";
-register_monitor_and_crash3(Conf) when list(Conf) ->
+register_monitor_and_crash3(Conf) when is_list(Conf) ->
     put(tname,rlac3),
     p("start"),
     process_flag(trap_exit, true),
@@ -866,7 +882,7 @@ register_monitor_and_crash4(doc) ->
     "Start 2 user processes, "
 	"register-monitor one user per process "
 	"and crash the first user process.";
-register_monitor_and_crash4(Conf) when list(Conf) ->
+register_monitor_and_crash4(Conf) when is_list(Conf) ->
     put(tname,rlac4),
     p("start"),
     process_flag(trap_exit, true),
@@ -932,7 +948,7 @@ register_monitor_request_and_crash1(doc) ->
     "Start a single user process, "
 	"register-monitor one user, "
 	"send request and crash the user.";
-register_monitor_request_and_crash1(Conf) when list(Conf) ->
+register_monitor_request_and_crash1(Conf) when is_list(Conf) ->
     %% put(tname,rlrac1),
     %% p("start"),
     %% process_flag(trap_exit, true),
@@ -946,7 +962,7 @@ register_monitor_request_and_crash2(doc) ->
     "Start a single user process, "
 	"register-monitor 2 user (per that one process), "
 	"send a request for each user and crash the single user process.";
-register_monitor_request_and_crash2(Conf) when list(Conf) ->
+register_monitor_request_and_crash2(Conf) when is_list(Conf) ->
     %% put(tname,rlrac2),
     %% p("start"),
     %% process_flag(trap_exit, true),
@@ -960,7 +976,7 @@ register_monitor_request_and_crash3(doc) ->
     "Start a single user process, "
 	"register-monitor one user and register one user, "
 	"send a request for each user and crash the single user process.";
-register_monitor_request_and_crash3(Conf) when list(Conf) ->
+register_monitor_request_and_crash3(Conf) when is_list(Conf) ->
     %% put(tname,rlrac3),
     %% p("start"),
     %% process_flag(trap_exit, true),
@@ -976,11 +992,56 @@ register_monitor_request_and_crash4(doc) ->
 	"first user process and do the same for the other user process, "
 	"then for each user, send a request and "
 	"crash the first user process.";
-register_monitor_request_and_crash4(Conf) when list(Conf) ->
+register_monitor_request_and_crash4(Conf) when is_list(Conf) ->
     %% put(tname,rlrac4),
     %% p("start"),
     %% process_flag(trap_exit, true),
     ?SKIP(not_yet_implemented).
+
+
+
+%% ------------------------------------------------------------------
+
+otp7902(suite) -> [];
+otp7902(doc) ->
+    "OTP-7902 - Start old user and make sure it wors.";
+otp7902(Conf) when is_list(Conf) ->
+    put(tname, otp7902),
+    p("start"),
+    process_flag(trap_exit, true),
+
+    ConfDir = ?config(manager_conf_dir, Conf),
+    DbDir = ?config(manager_db_dir, Conf),
+
+    write_manager_conf(ConfDir),
+
+    Opts = [{server, [{verbosity, trace}]},
+            {net_if, [{verbosity, trace}]},
+            {note_store, [{verbosity, trace}]},
+            {config, [{verbosity, trace}, {dir, ConfDir}, {db_dir, DbDir}]}],
+ 
+    p("try starting manager"),
+    ok = snmpm:start_link(Opts),
+ 
+    ?SLEEP(1000),
+
+    ?line [] = Users1 = which_users(),
+    p("Users1: ~p", [Users1]),
+    
+    ?line ok = snmp_manager_user_old:start(),
+
+    ?line [_] = Users2 = which_users(),
+    p("Users2: ~p", [Users2]),
+    
+    ?line ok = snmp_manager_user_old:stop(),
+
+    ?line [] = Users3 = which_users(),
+    p("Users3: ~p", [Users3]),
+    
+    ?line ok = snmpm:stop(),
+
+    p("end"),
+    ok.
 
 
 %% ------------------------------------------------------------------

@@ -80,7 +80,8 @@ setReadOnly(This)
 setReadOnly(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxGridCellAttr),
-  MOpts = fun({isReadOnly, IsReadOnly}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(IsReadOnly)):32/?UI>>|Acc]  end,
+  MOpts = fun({isReadOnly, IsReadOnly}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(IsReadOnly)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGridCellAttr_SetReadOnly,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

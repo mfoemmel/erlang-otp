@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>1997</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1997</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>Orber Examples</title>
@@ -167,63 +165,5 @@ fingolfin 39>
     </section>
   </section>
 
-  <section>
-    <title>A Tutorial on How to Start Orber as Lightweight</title>
-
-    <section>
-      <title>Preparation</title>
-      <p>When starting Erlang the configuration parameter <c>lightweight</c> must be used.
-        The value is set to a list of remote modifiers, equal to the
-        <c>orber:resolve_initial_references_remote/2</c> argument, i.e., "iiop://host:port".
-        On these given nodes, all necessary <c>oe_X:oe_register()</c> calls must be done 
-        before running a Orber lightweight.        </p>
-      <p>Lightweight Orber do not allow us to:</p>
-      <list type="bulleted">
-        <item>Create objects locally</item>
-        <item>Accept incoming requests</item>
-        <item>Access local NameService</item>
-        <item>Register data in the IFR</item>
-      </list>
-      <p>With lightweight Orber we do not:</p>
-      <list type="bulleted">
-        <item>Start Mnesia</item>
-        <item>Run <c>orber:install/1</c></item>
-      </list>
-      <p>To be able to start objects we must supply a factory on a non-lightweight
-        node(s) which can start necessary objects. One way to accomplish this is:</p>
-      <code type="none">
-smaug 125> erl -orber domain "ORBER_MAIN"
-Erlang (BEAM) emulator version 4.9
- 
-Eshell V4.9    (abort with ^G)
-1> mnesia:create_schema([]).
-2> orber:install([]). 
-3> orber:start().             
-4> oe_MyFactory:oe_register().
-5> oe_MyObjects:oe_register().  %% Do this for all objects necessary.
-6> Factory=MyFactory_Creater:oe_create().
-7> NS=orber:resolve_initial_references("NameService").
-8> NC=lname_component:set_id(lname_component:create(), "myFactory").
-9> N =lname:insert_component(lname:create(), 1, NC).
-10> 'CosNaming_NamingContext':bind(NS, N, Factory)).
-      </code>
-      <p>Now we have a factory we can access from, hence, we can now start a 
-        lightweight Orber:</p>
-      <code type="none">
-fingolfin 14> erl -orber lightweight [\\"iiop://host1:port\\", 
-\011                              \\"iiop://host2:port\\"]
-                  -orber domain \\"ORBER_LIGHT\\"
-Erlang (BEAM) emulator version 4.9
- 
-Eshell V4.9    (abort with ^G)
-1> orber:start_lightweight().             
-2> Fac=corba:string_to_object("corbaname::Host:Port/NameService#myFactory"), 
-3> Obj=MyFactory_Creater:MyObject(Fac, Args).
-4> MyObject:myFunction(Obj,Args2).
-      </code>
-      <p>It is not necessary to start both Orber types using the configuration 
-        parameter <c>domain</c>, but at least one of them.</p>
-    </section>
-  </section>
 </chapter>
 

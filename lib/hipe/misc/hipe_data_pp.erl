@@ -21,16 +21,10 @@
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
 %% Time-stamp: <2008-04-20 14:57:08 richard>
 %% ====================================================================
-%%  Filename : 	hipe_data_pp.erl
 %%  Module   :	hipe_data_pp
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2001-02-25 Erik Johansson (happi@it.uu.se): 
-%%               Created.
-%%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2009/01/20 10:16:43 $
-%%              $Revision: 1.11 $
+%%  History  :	* 2001-02-25 Erik Johansson (happi@it.uu.se): Created.
 %% ====================================================================
 %%  Exports  :
 %%

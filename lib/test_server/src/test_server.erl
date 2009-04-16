@@ -903,6 +903,7 @@ run_test_case_eval1(Mod, Func, Args, Name, Run_init) ->
     case Run_init of
 	run_init ->
 	    put(test_server_loc, {Mod,{init_per_testcase,Func}}),
+	    ensure_timetrap(Args),
 	    case init_per_testcase(Mod,Func,Args) of
 		{skip,Reason} ->
 		    Line = get_loc(),
@@ -915,7 +916,6 @@ run_test_case_eval1(Mod, Func, Args, Name, Run_init) ->
 		    test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,[Conf]]),
 		    {{0,{skip,Reason}},Line,[]};
 		{ok,New_conf} ->
-		    ensure_timetrap(New_conf),
 		    %% init_per_testcase defined,
 		    %% returns new configuration
 		    put(test_server_loc, {Mod,Func}),
@@ -1503,8 +1503,12 @@ cancel_default_timetrap() ->
 time_ms({hours,N}) -> hours(N);
 time_ms({minutes,N}) -> minutes(N);
 time_ms({seconds,N}) -> seconds(N);
-time_ms(Ms) -> Ms.
-
+time_ms({Other,_N}) -> 
+    format("=== ERROR: Invalid time specification: ~p. "
+	   "Should be seconds, minutes, or hours.~n", [Other]),
+    exit({invalid_time_spec,Other});
+time_ms(Ms) when is_integer(Ms) -> Ms;
+time_ms(Other) -> exit({invalid_time_spec,Other}).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

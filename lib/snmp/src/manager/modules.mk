@@ -19,6 +19,7 @@
 
 BEHAVIOUR_MODULES = \
 	snmpm_user \
+	snmpm_user_old \
 	snmpm_network_interface
 
 MODULES = \

@@ -29,7 +29,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start/0, stop/0, register_me/1, invoke_callback/1]).
+-export([start/0, stop/0, register_me/1, set_debug/2, invoke_callback/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -80,6 +80,9 @@ stop() ->
 
 register_me(Pid) ->
     ok = gen_server:call(Pid, register_me).
+
+set_debug(Pid, Level) ->
+    gen_server:cast(Pid, {debug, Level}).
 
 %%====================================================================
 %% gen_server callbacks
@@ -138,6 +141,12 @@ handle_cast({cleaned, From}, State=#state{users=Users,cleaners=Cs0}) ->
 	true  -> {stop, normal, State#state{cleaners=Cs}};
 	false -> {noreply,State#state{cleaners=Cs}}
     end;
+
+handle_cast({debug, Level}, State) ->
+    Env = get(?WXE_IDENTIFIER),
+    put(?WXE_IDENTIFIER, Env#wx_env{debug=Level}),
+    {noreply, State};
+
 handle_cast(_Msg, State) ->    
     ?log("Unknown message ~p sent to ~p~n",[_Msg, ?MODULE]),
     {noreply, State}.
@@ -235,12 +244,6 @@ invoke_cb({{Ev=#wx{}, Ref=#wx_ref{}}, FunId,_}, _S) ->
 			       Fun(Ev, Ref),
 			       <<>>
 		       end);
-%% 	    try Fun(Ev, Ref)
-%% 	    catch error:Reason ->
-%% 		    ?log("Event Callback crashed with {'EXIT, ~p, ~p}~n",
-%% 			 [Reason, erlang:get_stacktrace()])
-%% 	    end,
-%% 	    wxe_util:cast(?WXE_CB_RETURN, <<>>);
 	Err -> 
 	    ?log("Internal Error ~p~n",[Err])
     end;
@@ -256,7 +259,7 @@ invoke_cb({FunId, Args, _}, _S) when is_list(Args), is_integer(FunId) ->
 invoke_callback(Fun) ->
     Env = get(?WXE_IDENTIFIER),
     CB = fun() ->
-		 put(?WXE_IDENTIFIER, Env),
+		 wx:set_env(Env),
 		 Res = try Return = Fun(),
 			   true = is_binary(Return),
 			   Return

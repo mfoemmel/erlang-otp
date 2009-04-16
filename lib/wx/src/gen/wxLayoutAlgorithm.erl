@@ -52,7 +52,8 @@ layoutFrame(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=FrameT,ref=FrameRef}, O
  when is_list(Options) ->
   ?CLASS(ThisT,wxLayoutAlgorithm),
   ?CLASS(FrameT,wxFrame),
-  MOpts = fun({mainWindow, #wx_ref{type=MainWindowT,ref=MainWindowRef}}, Acc) ->   ?CLASS(MainWindowT,wxWindow),[<<1:32/?UI,MainWindowRef:32/?UI>>|Acc]  end,
+  MOpts = fun({mainWindow, #wx_ref{type=MainWindowT,ref=MainWindowRef}}, Acc) ->   ?CLASS(MainWindowT,wxWindow),[<<1:32/?UI,MainWindowRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxLayoutAlgorithm_LayoutFrame,
   <<ThisRef:32/?UI,FrameRef:32/?UI, BinOpt/binary>>).
@@ -70,7 +71,8 @@ layoutMDIFrame(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=FrameT,ref=FrameRef}
  when is_list(Options) ->
   ?CLASS(ThisT,wxLayoutAlgorithm),
   ?CLASS(FrameT,wxMDIParentFrame),
-  MOpts = fun({rect, {RectX,RectY,RectW,RectH}}, Acc) -> [<<1:32/?UI,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI,0:32>>|Acc]  end,
+  MOpts = fun({rect, {RectX,RectY,RectW,RectH}}, Acc) -> [<<1:32/?UI,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxLayoutAlgorithm_LayoutMDIFrame,
   <<ThisRef:32/?UI,FrameRef:32/?UI, BinOpt/binary>>).
@@ -88,7 +90,8 @@ layoutWindow(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=FrameT,ref=FrameRef}, 
  when is_list(Options) ->
   ?CLASS(ThisT,wxLayoutAlgorithm),
   ?CLASS(FrameT,wxWindow),
-  MOpts = fun({mainWindow, #wx_ref{type=MainWindowT,ref=MainWindowRef}}, Acc) ->   ?CLASS(MainWindowT,wxWindow),[<<1:32/?UI,MainWindowRef:32/?UI>>|Acc]  end,
+  MOpts = fun({mainWindow, #wx_ref{type=MainWindowT,ref=MainWindowRef}}, Acc) ->   ?CLASS(MainWindowT,wxWindow),[<<1:32/?UI,MainWindowRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxLayoutAlgorithm_LayoutWindow,
   <<ThisRef:32/?UI,FrameRef:32/?UI, BinOpt/binary>>).

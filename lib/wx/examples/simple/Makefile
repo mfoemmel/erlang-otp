@@ -46,7 +46,7 @@ ifneq ($(INSIDE_ERLSRC),true)
 	$(ERLC) -W -I$(ERLINC)  -bbeam -o$(BIN) $<
 
 else
-EXRELSYSDIR = $(RELSYSDIR)/examples/minimal
+EXRELSYSDIR = $(RELSYSDIR)/examples/simple
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 docs: 
@@ -54,7 +54,7 @@ docs:
 release_spec: 
 	$(INSTALL_DIR) $(EXRELSYSDIR)
 	$(INSTALL_DATA) $(TESTSRC) $(EXRELSYSDIR)
-	$(INSTALL_PROGRAM) copy.xpm sample.xpm $(TESTTARGETS) $(EXRELSYSDIR)
+	$(INSTALL_DATA) copy.xpm sample.xpm $(TESTTARGETS) $(EXRELSYSDIR)
 
 release_tests_spec:
 

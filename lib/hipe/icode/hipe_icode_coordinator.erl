@@ -82,10 +82,10 @@ coordinate(MFALists, CG, PM, Restart, LastAction, ServerPid) ->
 		 LastAction, ServerPid)
   end.
 
-handle_restart_call(MFA, {Queue, Busy}) ->
+handle_restart_call(MFA, {Queue, Busy} = QB) ->
   case lists:member(MFA, Queue) of
     true ->
-      {Queue, Busy};
+      QB;
     false ->
       {[MFA|Queue], Busy}
   end.
@@ -108,7 +108,7 @@ last_action(PM, ServerPid, Mod, All) ->
 		end, All),
   ok.
 
-restart_funs({Queue, Busy}, PM, All, ServerPid) ->
+restart_funs({Queue, Busy} = QB, PM, All, ServerPid) ->
   case ?MAX_CONCURRENT - length(Busy) of
     X when is_integer(X), X > 0 ->
       Possible = [Pos || Pos <- Queue, (not lists:member(Pos, Busy))],
@@ -118,7 +118,7 @@ restart_funs({Queue, Busy}, PM, All, ServerPid) ->
 		    end, Restarts),
       {Queue -- Restarts, Busy ++ Restarts};
     X when is_integer(X) ->
-      {Queue, Busy}
+      QB
   end.
 
 initialize_server(Escaping, Mod) ->
@@ -250,24 +250,26 @@ info_server_loop(CallInfo, ReturnInfo, Mod) ->
   end.
 
 handle_update(MFA, Tree, NewInfo, Pid, Ref, Mod) ->
-  case gb_trees:lookup(MFA,Tree) of
-    none ->
-      %% io:format("First Type: ~w ~w~n", [NewType, MFA]),
-      Pid ! {Ref, do_restart},
-      ResType = Mod:new__info(NewInfo);
-    {value, escaping} ->
-      Pid ! {Ref, no_change},
-      ResType = escaping;
-    {value, OldInfoComp} ->
-      OldInfo = (OldInfoComp),
-      %% io:format("New Type: ~w ~w~n", [NewType,MFA]),
-      %% io:format("Old Type: ~w ~w~n", [OldType,MFA]),
-      case Mod:update__info(NewInfo, OldInfo) of
-	{true, ResType} ->
-	  Pid ! {Ref, no_change};
-	{false, ResType} ->
-	  Pid ! {Ref, do_restart}
-      end 
-  end,
-  %% ResType = binary_to_term(term_to_binary(ResType)),
+  ResType = 
+    case gb_trees:lookup(MFA,Tree) of
+      none ->
+	%% io:format("First Type: ~w ~w~n", [NewType, MFA]),
+	Pid ! {Ref, do_restart},
+	Mod:new__info(NewInfo);
+      {value, escaping} ->
+	Pid ! {Ref, no_change},
+	escaping;
+      {value, OldInfoComp} ->
+	OldInfo = (OldInfoComp),
+	%% io:format("New Type: ~w ~w~n", [NewType, MFA]),
+	%% io:format("Old Type: ~w ~w~n", [OldType, MFA]),
+	case Mod:update__info(NewInfo, OldInfo) of
+	  {true, Type} ->
+	    Pid ! {Ref, no_change},
+	    Type;
+	  {false, Type} ->
+	    Pid ! {Ref, do_restart},
+	    Type
+	end
+    end,
   gb_trees:enter(MFA, ResType, Tree).

@@ -17,8 +17,8 @@
 # %CopyrightEnd%
 # 
 
-VSN = 5.7
-SYSTEM_VSN = R13A
+VSN = 5.7.1
+SYSTEM_VSN = R13B
 
 # Port number 4365 in 4.2
 # Port number 4366 in 4.3

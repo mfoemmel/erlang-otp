@@ -57,7 +57,7 @@
 %%===============================================================================
 %%===============================================================================
 
-gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
+gen_encode_sequence(Erules,Typename,D) when is_record(D,type) ->
     asn1ct_name:start(),
     asn1ct_name:new(term),
     asn1ct_name:new(bytes),
@@ -179,7 +179,7 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
     emit(["?RT_BER:encode_tags(TagIn, BytesSoFar, LenSoFar)."
 	  ,nl]).
 
-gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
+gen_decode_sequence(Erules,Typename,D) when is_record(D,type) ->
     asn1ct_name:start(),
     asn1ct_name:clear(),
     asn1ct_name:new(tag),
@@ -337,10 +337,10 @@ emit_opt_or_mand_check(Value,TmpTerm) ->
 %%
 %%============================================================================
 
-gen_encode_set(Erules,Typename,D) when record(D,type) ->
+gen_encode_set(Erules,Typename,D) when is_record(D,type) ->
     gen_encode_sequence(Erules,Typename,D).
 
-gen_decode_set(Erules,Typename,D) when record(D,type) ->
+gen_decode_set(Erules,Typename,D) when is_record(D,type) ->
     asn1ct_name:start(),
     asn1ct_name:clear(),
 %%    asn1ct_name:new(term),
@@ -472,7 +472,7 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 %%===============================================================================
 %%===============================================================================
 
-gen_encode_sof(Erules,Typename,_InnerTypename,D) when record(D,type) ->
+gen_encode_sof(Erules,Typename,_InnerTypename,D) when is_record(D,type) ->
     asn1ct_name:start(),
     {SeqOrSetOf, Cont} = D#type.def,
 
@@ -491,7 +491,7 @@ gen_encode_sof(Erules,Typename,_InnerTypename,D) when record(D,type) ->
     gen_encode_sof_components(Erules,Typename,SeqOrSetOf,Cont).
     
 
-gen_decode_sof(Erules,TypeName,_InnerTypeName,D) when record(D,type) ->
+gen_decode_sof(Erules,TypeName,_InnerTypeName,D) when is_record(D,type) ->
     asn1ct_name:start(),
     asn1ct_name:clear(),
     {SeqOrSetOf, _TypeTag, Cont} = 
@@ -514,7 +514,7 @@ gen_decode_sof(Erules,TypeName,_InnerTypeName,D) when record(D,type) ->
 
     InnerType = asn1ct_gen:get_inner(Cont#type.def),
     ContName = case asn1ct_gen:type(InnerType) of
-		   Atom when atom(Atom) -> Atom;
+		   Atom when is_atom(Atom) -> Atom;
 		   _ -> TypeNameSuffix
 	       end,
 %% fix me
@@ -531,7 +531,7 @@ gen_decode_sof(Erules,TypeName,_InnerTypeName,D) when record(D,type) ->
     
 
 gen_encode_sof_components(Erules,Typename,SeqOrSetOf,Cont) 
-  when record(Cont,type)->
+  when is_record(Cont,type)->
 
     {Objfun,Objfun_novar,EncObj} = 
 	case Cont#type.tablecinf of
@@ -566,7 +566,7 @@ gen_encode_sof_components(Erules,Typename,SeqOrSetOf,Cont)
 %%
 %%============================================================================
 
-gen_encode_choice(Erules,Typename,D) when record(D,type) ->
+gen_encode_choice(Erules,Typename,D) when is_record(D,type) ->
     ChoiceTag = D#type.tag,
     {'CHOICE',CompList} = D#type.def,
     Ext = extensible(CompList),
@@ -578,7 +578,7 @@ gen_encode_choice(Erules,Typename,D) when record(D,type) ->
     gen_enc_choice(Erules,Typename,ChoiceTag,CompList1,Ext),
     emit([nl,nl]).
 
-gen_decode_choice(Erules,Typename,D) when record(D,type) ->
+gen_decode_choice(Erules,Typename,D) when is_record(D,type) ->
     asn1ct_name:start(),
     asn1ct_name:new(bytes),
     ChoiceTag = D#type.tag,
@@ -803,7 +803,7 @@ gen_enc_choice1(Erules,TopType,_Tag,CompList,_Ext) ->
     emit(["?RT_BER:encode_tags(TagIn, EncBytes, EncLen).",nl]).
 
 
-gen_enc_choice2(Erules,TopType,[H1|T]) when record(H1,'ComponentType') ->
+gen_enc_choice2(Erules,TopType,[H1|T]) when is_record(H1,'ComponentType') ->
     Cname = H1#'ComponentType'.name,
     Type = H1#'ComponentType'.typespec,
     emit(["      ",{asis,Cname}," ->",nl]),
@@ -931,7 +931,7 @@ gen_enc_line(Erules,TopType,Cname,
 	     Type=#type{constraint=C,
 			def=#'ObjectClassFieldType'{type={typefield,_}}},
 	     Element,Indent,OptOrMand=mandatory,EncObj) 
-  when list(Element) ->
+  when is_list(Element) ->
     case asn1ct_gen:get_constraint(C,componentrelation) of
 	{componentrelation,_,_} ->
 	    asn1ct_name:new(tmpBytes),
@@ -946,17 +946,17 @@ gen_enc_line(Erules,TopType,Cname,
 % 	     Type=#type{constraint=[{componentrelation,_,_}],
 % 			def=#'ObjectClassFieldType'{type={typefield,_}}},
 % 	     Element,Indent,OptOrMand=mandatory,EncObj) 
-%   when list(Element) ->
+%   when is_list(Element) ->
 %     asn1ct_name:new(tmpBytes),
 %     gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,
 % 		 ["{",{curr,tmpBytes},",_} = "],EncObj);
 gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,EncObj) 
-  when list(Element) ->
+  when is_list(Element) ->
     gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,
 		 ["{",{curr,encBytes},",",{curr,encLen},"} = "],EncObj).
 
 gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
-  when list(Element) ->
+  when is_list(Element) ->
     IndDeep = indent(Indent),
     Tag = lists:reverse([?ASN1CT_GEN_BER:encode_tag_val(
 			    ?ASN1CT_GEN_BER:decode_class(X#tag.class),
@@ -980,7 +980,7 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 	    case RefedFieldName of
 %% 		{notype,T} ->
 %% 		    throw({error,{notype,type_from_object,T}});
-		{Name,RestFieldNames} when atom(Name), Name =/= notype ->
+		{Name,RestFieldNames} when is_atom(Name), Name =/= notype ->
 		    case OptOrMand of
 			mandatory -> ok;
 			_ ->
@@ -1326,7 +1326,7 @@ gen_dec_call1(WhatKind,_,_Erules,TopType,Cname,Type,BytesVar,
 			end
 		end,
 	    case asn1ct:get_gen_state_field(namelist) of
-		[{Cname,List}|Rest] when list(List) ->
+		[{Cname,List}|Rest] when is_list(List) ->
 		    Sindex =
 			case WhatKind of
 			    #'Externaltypereference'{} ->
@@ -1349,7 +1349,7 @@ gen_dec_call1(WhatKind,_,_Erules,TopType,Cname,Type,BytesVar,
 %			lists:concat(["_",asn1ct:latest_sindex()]),
 		    Suffix =
 			case Sindex of
-			    I when integer(I),I>0 -> lists:concat(["_",I]);
+			    I when is_integer(I),I>0 -> lists:concat(["_",I]);
 			    _ -> ""
 			end,
 		    {DecFunName,_,_}=
@@ -1420,7 +1420,7 @@ mkvlist(L) ->
 mkvplus(L) ->
     mkvlist(L," + ").
 
-extensible(CompList) when list(CompList) ->
+extensible(CompList) when is_list(CompList) ->
     noext;
 extensible({RootList,ExtList}) ->
     {ext,length(RootList)+1,length(ExtList)};
@@ -1474,7 +1474,7 @@ empty_lb(ber_bin) ->
 empty_lb(ber_bin_v2) ->
     "<<>>".
 
-value_match(Index,Value) when atom(Value) ->
+value_match(Index,Value) when is_atom(Value) ->
     value_match(Index,atom_to_list(Value));
 value_match([],Value) ->
     Value;

@@ -62,7 +62,8 @@ new(Cols)
 new(Cols, Options)
  when is_integer(Cols),is_list(Options) ->
   MOpts = fun({vgap, Vgap}, Acc) -> [<<1:32/?UI,Vgap:32/?UI>>|Acc];
-          ({hgap, Hgap}, Acc) -> [<<2:32/?UI,Hgap:32/?UI>>|Acc]  end,
+          ({hgap, Hgap}, Acc) -> [<<2:32/?UI,Hgap:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxFlexGridSizer_new_2,
   <<Cols:32/?UI, 0:32,BinOpt/binary>>).
@@ -86,7 +87,8 @@ addGrowableCol(This,Idx)
 addGrowableCol(#wx_ref{type=ThisT,ref=ThisRef},Idx, Options)
  when is_integer(Idx),is_list(Options) ->
   ?CLASS(ThisT,wxFlexGridSizer),
-  MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc]  end,
+  MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxFlexGridSizer_AddGrowableCol,
   <<ThisRef:32/?UI,Idx:32/?UI, BinOpt/binary>>).
@@ -103,7 +105,8 @@ addGrowableRow(This,Idx)
 addGrowableRow(#wx_ref{type=ThisT,ref=ThisRef},Idx, Options)
  when is_integer(Idx),is_list(Options) ->
   ?CLASS(ThisT,wxFlexGridSizer),
-  MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc]  end,
+  MOpts = fun({proportion, Proportion}, Acc) -> [<<1:32/?UI,Proportion:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxFlexGridSizer_AddGrowableRow,
   <<ThisRef:32/?UI,Idx:32/?UI, BinOpt/binary>>).

@@ -3664,7 +3664,7 @@ progress(failed, CaseNum, Mod, Func, unknown, Reason, Time,
 	  [get_info_str(Func, CaseNum, get(test_server_cases))]),
     test_server_sup:framework_call(report, [tc_done,{?pl2a(Mod),Func,
 						     {failed,Reason}}]),
-    TimeStr = io_lib:format(if float(Time) -> "~.3fs";
+    TimeStr = io_lib:format(if is_float(Time) -> "~.3fs";
 			       true -> "~w"	     
 			    end, [Time]),
     ErrorReason = lists:flatten(io_lib:format("~p", [Reason])),
@@ -3699,7 +3699,7 @@ progress(failed, CaseNum, Mod, Func, Loc, Reason, Time,
 	  [get_info_str(Func, CaseNum, get(test_server_cases))]),
     test_server_sup:framework_call(report, [tc_done,{?pl2a(Mod),Func,
 						     {failed,Reason}}]),
-    TimeStr = io_lib:format(if float(Time) -> "~.3fs";
+    TimeStr = io_lib:format(if is_float(Time) -> "~.3fs";
 			       true -> "~w"	     
 			    end, [Time]),
     Comment = 
@@ -3985,7 +3985,7 @@ format(major, Format) ->
     format(major, Format, []);
 format(minor, Format) ->
     format(minor, Format, []);
-format(Detail, Format) when integer(Detail) ->
+format(Detail, Format) when is_integer(Detail) ->
     format(Detail, Format, []);
 format(Format, Args) ->
     format(minor, Format, Args).
@@ -4018,7 +4018,7 @@ format(Detail, Format, Args) ->
 %% the message is prefixed with "=== ", so that it will be apparent that
 %% the message comes from the test server and not the test suite itself.
 
-output({Level,Msg}, Sender) when integer(Level) ->
+output({Level,Msg}, Sender) when is_integer(Level) ->
     SumLev = get(test_server_summary_level),
     if  Level =< SumLev ->
 	    output_to_fd(stdout, Msg, Sender);
@@ -4041,9 +4041,9 @@ output({minor,Bytes}, Sender) when is_list(Bytes) ->
     output_to_fd(get(test_server_minor_fd), Bytes, Sender);
 output({major,Bytes}, Sender) when is_list(Bytes) ->
     output_to_fd(get(test_server_major_fd), Bytes, Sender);
-output({minor,Bytes}, Sender) when binary(Bytes) ->
+output({minor,Bytes}, Sender) when is_binary(Bytes) ->
     output_to_fd(get(test_server_minor_fd),binary_to_list(Bytes), Sender);
-output({major,Bytes}, Sender) when binary(Bytes) ->
+output({major,Bytes}, Sender) when is_binary(Bytes) ->
     output_to_fd(get(test_server_major_fd),binary_to_list(Bytes), Sender);
 output({html,Msg}, _Sender) ->
     case get(test_server_html_fd) of
@@ -4643,7 +4643,7 @@ pi(Item,A,B,C) ->
     lists:keysearch(Item,1,p(A,B,C)).
 
 %% c:pid/3
-ts_pid(X,Y,Z) when integer(X), integer(Y), integer(Z) ->
+ts_pid(X,Y,Z) when is_integer(X), is_integer(Y), is_integer(Z) ->
     list_to_pid("<" ++ integer_to_list(X) ++ "." ++
 		integer_to_list(Y) ++ "." ++
 		integer_to_list(Z) ++ ">").

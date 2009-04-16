@@ -269,21 +269,21 @@ do_pseudo_fload(I) ->
   #pseudo_fload{base=Base,disp=Disp,dst=Dst,is_single=IsSingle} = I,
   NewBase = do_reg(Base),
   #sparc_simm13{value=RawDisp} = Disp,
-  {fr,RawDst} = do_fpreg(Dst),
+  {fr,RawDst} = FrRawDst = do_fpreg(Dst),
   case IsSingle of
     true ->
-      [{'ldf', {NewBase,{simm13,RawDisp},{fr,RawDst}}, I}];
+      [{'ldf', {NewBase,{simm13,RawDisp},FrRawDst}, I}];
     _ ->
-      [{'ldf', {NewBase,{simm13,RawDisp},{fr,RawDst}}, I},
+      [{'ldf', {NewBase,{simm13,RawDisp},FrRawDst}, I},
        {'ldf', {NewBase,{simm13,RawDisp+4},{fr,RawDst+1}}, I}]
   end.
 
 do_pseudo_fstore(I) ->
   #pseudo_fstore{src=Src,base=Base,disp=Disp} = I,
-  {fr,RawSrc} = do_fpreg(Src),
+  {fr,RawSrc} = FrRawSrc = do_fpreg(Src),
   NewBase = do_reg(Base),
   #sparc_simm13{value=RawDisp} = Disp,
-  [{'stf', {{fr,RawSrc},NewBase,{simm13,RawDisp}}, I},
+  [{'stf', {FrRawSrc,NewBase,{simm13,RawDisp}}, I},
    {'stf', {{fr,RawSrc+1},NewBase,{simm13,RawDisp+4}}, I}].
 
 %% map a virtual double-precision fp reg in [0,15] to its
@@ -415,7 +415,8 @@ untag_mfa_or_prim(#sparc_prim{prim=Prim}) -> Prim.
 
 fix_bp_sdi(I, Insns, InsnAddress, FunAddress, LabelMap) ->
   {bp_sdi,Opnds,OrigI} = I,
-  {{'cond',Cond},{pred,Pred},{label,L}} = Opnds,
+  {{'cond',Cond},{pred,Pred},Label} = Opnds,
+  {label,L} = Label,
   LabelAddress = gb_trees:get(L, LabelMap) + FunAddress,
   BD = (LabelAddress - InsnAddress) div 4,
   if BD >= -16#40000, BD =< 16#3FFFF ->
@@ -431,7 +432,7 @@ fix_bp_sdi(I, Insns, InsnAddress, FunAddress, LabelMap) ->
 	{{'cond',NewCond},{pred,NewPred},'.+16'},
 	#bp{'cond'=NewCond,pred=NewPred,label='.+16'}}, % pp will be ugly
        Delay,	% should be a NOP
-       {ba, {label,L}, #bp{'cond'='a',pred=1.0,label=L}},
+       {ba, Label, #bp{'cond'='a',pred=1.0,label=L}},
        {sethi, {{uimm22,0},{r,0}}, #comment{term=nop}} |
        Rest]
   end.
@@ -526,8 +527,8 @@ mk_data_relocs([{MFA,Labels} | Rest], LabelMap, Acc) ->
   mk_data_relocs(Rest, LabelMap, [Map,Acc]);
 mk_data_relocs([],_,Acc) -> Acc.
 
-find({MFA,L},LabelMap) ->
-  gb_trees:get({MFA,L}, LabelMap).
+find({_MFA,_L} = MFAL, LabelMap) ->
+  gb_trees:get(MFAL, LabelMap).
 
 slim_sorted_exportmap([{Addr,M,F,A}|Rest], Closures, Exports) ->
   IsClosure = lists:member({M,F,A}, Closures),

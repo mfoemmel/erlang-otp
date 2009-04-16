@@ -20,7 +20,6 @@
 %% =====================================================================
 %% @doc
 %% <pre>
-%%  Filename : 	hipe_ls_regalloc.erl
 %%  Module   :	hipe_ls_regalloc
 %%  Purpose  :  Perform a register allocation based on the 
 %%              "linear-scan algorithm".
@@ -37,11 +36,7 @@
 %% @end
 %%              
 %%  History  :	* 2000-04-07 Erik Johansson (happi@it.uu.se): Created.
-%%              * 2001-07-16 EJ: Made less sparc-specific.
-%% CVS:
-%%    $Author: richardc $
-%%    $Date: 2008/04/20 13:01:13 $
-%%    $Revision: 1.35 $
+%%              * 2001-07-16 Erik Johansson: Made less sparc-specific.
 %% =====================================================================
 %% Exported functions (short description):
 %%   regalloc(CFG,PhysRegs,Entrypoints, Options) -> 

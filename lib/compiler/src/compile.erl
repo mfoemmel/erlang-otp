@@ -174,8 +174,12 @@ format_error({epp,E}) ->
     epp:format_error(E);
 format_error(write_error) ->
     "error writing file";
-format_error({rename,S}) ->
-    io_lib:format("error renaming ~s", [S]);
+format_error({rename,From,To,Error}) ->
+    io_lib:format("failed to rename ~s to ~s: ~s",
+		  [From,To,file:format_error(Error)]);
+format_error({delete_temp,File,Error}) ->
+    io_lib:format("failed to delete temporary file ~s: ~s",
+		  [File,file:format_error(Error)]);
 format_error({parse_transform,M,R}) ->
     io_lib:format("error in parse transform '~s': ~p", [M, R]);
 format_error({core_transform,M,R}) ->
@@ -1071,31 +1075,47 @@ is_informative_option(verbose) -> false;
 is_informative_option(_) -> true.
 
 save_binary(#compile{code=none}=St) -> {ok,St};
-save_binary(#compile{module=Mod,ofile=Outfile}=St) ->
+save_binary(#compile{module=Mod,ofile=Outfile,
+		     options=Opts}=St) ->
     %% Test that the module name and output file name match.
     %% We must take care to not completely break a packaged module
     %% (even though packages still is as an experimental, unsupported
     %% feature) - so we will extract the last part of a packaged
     %% module name and compare only that.
-    Base = filename:rootname(filename:basename(Outfile)),
-    case lists:last(packages:split(Mod)) of
-	Base ->
+    case member(no_error_module_mismatch, Opts) of
+	true ->
 	    save_binary_1(St);
-	_ ->
-	    Es = [{St#compile.ofile,[{?MODULE,{module_name,Mod,Base}}]}],
-	    {error,St#compile{errors=St#compile.errors ++ Es}}
+	false ->
+	    Base = filename:rootname(filename:basename(Outfile)),
+	    case lists:last(packages:split(Mod)) of
+		Base ->
+		    save_binary_1(St);
+		_ ->
+		    Es = [{St#compile.ofile,
+			   [{?MODULE,{module_name,Mod,Base}}]}],
+		    {error,St#compile{errors=St#compile.errors ++ Es}}
+	    end
     end.
 
 save_binary_1(St) ->
-    Tfile = tmpfile(St#compile.ofile),		%Temp working file
+    Ofile = St#compile.ofile,
+    Tfile = tmpfile(Ofile),		%Temp working file
     case write_binary(Tfile, St#compile.code, St) of
 	ok ->
-	    case file:rename(Tfile, St#compile.ofile) of
+	    case file:rename(Tfile, Ofile) of
 		ok ->
 		    {ok,St};
-		{error,_Error} ->
-		    ok = file:delete(Tfile),
-		    Es = [{St#compile.ofile,[{none,?MODULE,{rename,Tfile}}]}],
+		{error,RenameError} ->
+		    Es0 = [{Ofile,[{?MODULE,{rename,Tfile,Ofile,
+					     RenameError}}]}],
+		    Es = case file:delete(Tfile) of
+			     ok -> Es0;
+			     {error,DeleteError} ->
+				 Es0 ++
+				     [{Ofile,
+				       [{?MODULE,{delete_temp,Tfile,
+						  DeleteError}}]}]
+			 end,
 		    {error,St#compile{errors=St#compile.errors ++ Es}}
 	    end;
 	{error,_Error} ->
@@ -1244,7 +1264,7 @@ help([{unless,Flag,{pass,Pass}}|T]) ->
     io:fwrite("~p - Skip the ~s pass\n", [Flag,Pass]),
     help(T);
 help([{unless,no_postopt=Flag,List}|T]) when is_list(List) ->
-    %% Hard-coded knowledgde here.
+    %% Hard-coded knowledge here.
     io:fwrite("~p - Skip all post optimisation\n", [Flag]),
     help(List),
     help(T);

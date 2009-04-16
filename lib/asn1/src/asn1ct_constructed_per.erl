@@ -42,7 +42,7 @@ gen_encode_set(Erules,TypeName,D) ->
 gen_encode_sequence(Erules,TypeName,D) ->
     gen_encode_constructed(Erules,TypeName,D).
 
-gen_encode_constructed(Erule,Typename,D) when record(D,type) ->
+gen_encode_constructed(Erule,Typename,D) when is_record(D,type) ->
     asn1ct_name:start(),
     asn1ct_name:new(term),
     asn1ct_name:new(bytes),
@@ -180,7 +180,7 @@ gen_decode_set(Erules,Typename,D) ->
 gen_decode_sequence(Erules,Typename,D) ->
     gen_decode_constructed(Erules,Typename,D).
 
-gen_decode_constructed(Erules,Typename,D) when record(D,type) ->
+gen_decode_constructed(Erules,Typename,D) when is_record(D,type) ->
     asn1ct_name:start(),
     asn1ct_name:clear(),
     {CompList,TableConsInfo} = 
@@ -376,14 +376,14 @@ emit_opt_or_mand_check(Val,Term) ->
 %%end
 %%].
 
-gen_encode_choice(Erule,Typename,D) when record(D,type) ->
+gen_encode_choice(Erule,Typename,D) when is_record(D,type) ->
     {'CHOICE',CompList} = D#type.def,
     emit({"[",nl}),
     Ext = extensible(CompList),
     gen_enc_choice(Erule,Typename,CompList,Ext),
     emit({nl,"].",nl}).
 
-gen_decode_choice(Erules,Typename,D) when record(D,type) ->
+gen_decode_choice(Erules,Typename,D) when is_record(D,type) ->
     asn1ct_name:start(),
     asn1ct_name:clear(),
     asn1ct_name:new(bytes),
@@ -396,7 +396,7 @@ gen_decode_choice(Erules,Typename,D) when record(D,type) ->
 % Encode generator for SEQUENCE OF type
 
 
-gen_encode_sof(Erule,Typename,SeqOrSetOf,D) when record(D,type) ->
+gen_encode_sof(Erule,Typename,SeqOrSetOf,D) when is_record(D,type) ->
     asn1ct_name:start(),
     {_SeqOrSetOf,ComponentType} = D#type.def,
     emit({"[",nl}),
@@ -427,7 +427,7 @@ gen_encode_sof(Erule,Typename,SeqOrSetOf,D) when record(D,type) ->
 	end,
     gen_encode_sof_components(Erule,Typename,SeqOrSetOf,NewComponentType).
 
-gen_decode_sof(Erules,Typename,SeqOrSetOf,D) when record(D,type) ->
+gen_decode_sof(Erules,Typename,SeqOrSetOf,D) when is_record(D,type) ->
     asn1ct_name:start(),
     {_SeqOrSetOf,ComponentType} = D#type.def,
     SizeConstraint =
@@ -558,7 +558,7 @@ mkvlist2([H|T]) ->
 mkvlist2([]) ->
     true.
 
-extensible(CompList) when list(CompList) ->
+extensible(CompList) when is_list(CompList) ->
     noext;
 extensible({RootList,ExtList}) ->
     {ext,length(RootList)+1,length(ExtList)};
@@ -765,7 +765,7 @@ gen_enc_line(Erule,TopType,Cname,Type,Element, _Pos,DynamicEnc,Ext) ->
 		    case (Type#type.def)#'ObjectClassFieldType'.fieldname of
 			{notype,T} ->
 			    throw({error,{notype,type_from_object,T}});
-			{Name,RestFieldNames} when atom(Name) ->
+			{Name,RestFieldNames} when is_atom(Name) ->
 			    emit({"?RT_PER:encode_open_type([],?RT_PER:complete(",nl}),
 			    emit({"   ",Fun,"(",{asis,Name},", ",
 				  Element,", ",{asis,RestFieldNames},")))"});
@@ -911,7 +911,7 @@ gen_dec_components_call1(Erule,TopType,
 	#'Externaltypereference'{type=T} ->
 	    emit({nl,"%%  attribute number ",TextPos," with type ",
 		  T,nl});
-	IT when tuple(IT) ->
+	IT when is_tuple(IT) ->
 	    emit({nl,"%%  attribute number ",TextPos," with type ",
 		  element(2,IT),nl});
 	_ ->
@@ -1212,7 +1212,7 @@ gen_enc_choice2(Erule,TopType, L, Ext) ->
     gen_enc_choice2(Erule,TopType, L, 0, Ext).
 
 gen_enc_choice2(Erule,TopType,[H1,H2|T], Pos, Ext) 
-when record(H1,'ComponentType'), record(H2,'ComponentType') ->
+when is_record(H1,'ComponentType'), is_record(H2,'ComponentType') ->
     Cname = H1#'ComponentType'.name,
     Type = H1#'ComponentType'.typespec,
     EncObj =
@@ -1236,7 +1236,7 @@ when record(H1,'ComponentType'), record(H2,'ComponentType') ->
     emit({";",nl}),
     gen_enc_choice2(Erule,TopType,[H2|T], Pos+1, Ext);
 gen_enc_choice2(Erule,TopType,[H1|T], Pos, Ext) 
-  when record(H1,'ComponentType') ->
+  when is_record(H1,'ComponentType') ->
     Cname = H1#'ComponentType'.name,
     Type = H1#'ComponentType'.typespec,
     EncObj =
@@ -1305,7 +1305,7 @@ gen_dec_choice2(Erule,TopType,L,Ext) ->
     gen_dec_choice2(Erule,TopType,L,0,Ext).
 
 gen_dec_choice2(Erule,TopType,[H1,H2|T],Pos,Ext) 
-when record(H1,'ComponentType'), record(H2,'ComponentType') ->
+when is_record(H1,'ComponentType'), is_record(H2,'ComponentType') ->
     Cname = H1#'ComponentType'.name,
     Type = H1#'ComponentType'.typespec,
     case Type#type.def of
@@ -1319,9 +1319,9 @@ when record(H1,'ComponentType'), record(H2,'ComponentType') ->
 	    emit({"};",nl})
     end,
     gen_dec_choice2(Erule,TopType,[H2|T],Pos+1,Ext);
-gen_dec_choice2(Erule,TopType,[H1,_H2|T],Pos,Ext) when record(H1,'ComponentType') ->
+gen_dec_choice2(Erule,TopType,[H1,_H2|T],Pos,Ext) when is_record(H1,'ComponentType') ->
     gen_dec_choice2(Erule,TopType,[H1|T],Pos,Ext); % skip extensionmark
-gen_dec_choice2(Erule,TopType,[H1|T],Pos,Ext) when record(H1,'ComponentType') ->
+gen_dec_choice2(Erule,TopType,[H1|T],Pos,Ext) when is_record(H1,'ComponentType') ->
     Cname = H1#'ComponentType'.name,
     Type = H1#'ComponentType'.typespec,
     case Type#type.def of
@@ -1372,7 +1372,7 @@ get_components_prop() ->
     end.
 
 			  
-value_match(Index,Value) when atom(Value) ->
+value_match(Index,Value) when is_atom(Value) ->
     value_match(Index,atom_to_list(Value));
 value_match([],Value) ->
     Value;

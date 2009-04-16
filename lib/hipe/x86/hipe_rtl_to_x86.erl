@@ -829,12 +829,12 @@ mk_load_word(Src, Off, Dst) ->
 
 -ifdef(HIPE_AMD64).
 mk_store(RtlStoreSize, Src, Ptr, Off) ->
-  case RtlStoreSize of
-    word ->
-      Type = typeof_src(Src);
-    Type ->
-      ok
-  end,
+  Type = case RtlStoreSize of
+	   word ->
+	     typeof_src(Src);
+	   OtherType ->
+	     OtherType
+	 end,
   [hipe_x86:mk_move(Src, hipe_x86:mk_mem(Ptr, Off, Type))].
 -else.
 mk_store(RtlStoreSize, Src, Ptr, Off) ->

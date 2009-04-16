@@ -328,8 +328,8 @@ print_data(Port) ->
 	    end
     end.
 
-maybe_atom_to_list(To_list) when list(To_list) ->
+maybe_atom_to_list(To_list) when is_list(To_list) ->
     To_list;
-maybe_atom_to_list(To_list) when atom(To_list)->
+maybe_atom_to_list(To_list) when is_atom(To_list)->
     atom_to_list(To_list).
     

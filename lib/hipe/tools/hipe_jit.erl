@@ -20,15 +20,10 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2002 by Erik Johansson.  
 %% ====================================================================
-%%  Filename : 	hipe_jit.erl
 %%  Module   :	hipe_jit
 %%  Purpose  :  
 %%  Notes    : 
 %%  History  :	* 2002-03-14 Erik Johansson (happi@it.uu.se): Created.
-%%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2008/09/14 11:36:25 $
-%%              $Revision: 1.6 $
 %% ====================================================================
 %% @doc
 %%    A tool to enable using the HiPE compiler as an automatic JIT

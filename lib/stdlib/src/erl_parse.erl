@@ -2,28 +2,11 @@
 -export([parse/1, parse_and_scan/1, format_error/1]).
 -file("erl_parse.yrl", 501).
 
-%% ``The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
-%% compliance with the License. You should have received a copy of the
-%% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
-%% Software distributed under the License is distributed on an "AS IS"
-%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%% the License for the specific language governing rights and limitations
-%% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
-%%
-
 -export([parse_form/1,parse_exprs/1,parse_term/1]).
 -export([normalise/1,abstract/1,tokens/1,tokens/2]).
 -export([abstract/2, package_segments/1]).
 -export([inop_prec/1,preop_prec/1,func_prec/0,max_prec/0]).
+-export([set_line/2,get_attribute/2,get_attributes/1]).
 
 %% The following directive is needed for (significantly) faster compilation
 %% of the generated .erl file by the HiPE compiler.  Please do not remove.
@@ -95,7 +78,7 @@ build_typed_attribute({atom,La,Attr},_) ->
         record -> error_bad_decl(La, record);
         type   -> error_bad_decl(La, type);
 	opaque -> error_bad_decl(La, opaque);
-        _      -> return_error(La, "bad attribute")
+        _      -> ret_err(La, "bad attribute")
     end.
 
 build_type_spec({spec,La}, {SpecFun, TypeSpecs}) ->
@@ -139,7 +122,7 @@ build_bin_type([{var, _, '_'}|Left], Int) ->
 build_bin_type([], Int) ->
     Int;
 build_bin_type([{var, La, _}|_], _) ->
-    return_error(La, "Bad binary type").
+    ret_err(La, "Bad binary type").
 
 %% build_attribute(AttrName, AttrValue) ->
 %%	{attribute,Line,module,Module}
@@ -215,14 +198,14 @@ build_attribute({atom,La,Attr}, Val) ->
 	[Expr0] ->
 	    Expr = attribute_farity(Expr0),
 	    {attribute,La,Attr,term(Expr)};
-	_Other -> return_error(La, "bad attribute")
+	_Other -> ret_err(La, "bad attribute")
     end.
 
 var_list({cons,_Lc,{var,_,V},Tail}) ->
     [V|var_list(Tail)];
 var_list({nil,_Ln}) -> [];
 var_list(Other) ->
-    return_error(?line(Other), "bad variable list").
+    ret_err(?line(Other), "bad variable list").
 
 attribute_farity({cons,L,H,T}) ->
     {cons,L,attribute_farity(H),attribute_farity(T)};
@@ -239,18 +222,18 @@ attribute_farity_list(Args) ->
 -spec error_bad_decl(integer(), attributes()) -> no_return().
 
 error_bad_decl(L, S) ->
-    return_error(L, io_lib:format("bad ~w declaration", [S])).
+    ret_err(L, io_lib:format("bad ~w declaration", [S])).
 
 farity_list({cons,_Lc,{op,_Lo,'/',{atom,_La,A},{integer,_Li,I}},Tail}) ->
     [{A,I}|farity_list(Tail)];
 farity_list({nil,_Ln}) -> [];
 farity_list(Other) ->
-    return_error(?line(Other), "bad function arity").
+    ret_err(?line(Other), "bad function arity").
 
 record_tuple({tuple,_Lt,Fields}) ->
     record_fields(Fields);
 record_tuple(Other) ->
-    return_error(?line(Other), "bad record declaration").
+    ret_err(?line(Other), "bad record declaration").
 
 record_fields([{atom,La,A}|Fields]) ->
     [{record_field,La,{atom,La,A}}|record_fields(Fields)];
@@ -266,12 +249,12 @@ record_fields([{typed,Expr,TypeInfo}|Fields]) ->
 	end, 
     [{typed_record_field,Field,TypeInfo1}|record_fields(Fields)];
 record_fields([Other|_Fields]) ->
-    return_error(?line(Other), "bad record field");
+    ret_err(?line(Other), "bad record field");
 record_fields([]) -> [].
 
 term(Expr) ->
     try normalise(Expr)
-    catch _:_R -> return_error(?line(Expr), "bad attribute")
+    catch _:_R -> ret_err(?line(Expr), "bad attribute")
     end.
 
 package_segments(Name) ->
@@ -310,10 +293,14 @@ check_clauses(Cs, Name, Arity) ->
      mapl(fun ({clause,L,N,As,G,B}) when N =:= Name, length(As) =:= Arity ->
 		 {clause,L,As,G,B};
 	     ({clause,L,_N,_As,_G,_B}) ->
-		 return_error(L, "head mismatch") end, Cs).
+		 ret_err(L, "head mismatch") end, Cs).
 
 build_try(L,Es,Scs,{Ccs,As}) ->
     {'try',L,Es,Scs,Ccs,As}.
+
+ret_err(L, S) ->
+    {location,Location} = get_attribute(L, location),
+    return_error(Location, S).
 
 %% mapl(F,List)
 %% an alternative map which always maps from left to right
@@ -523,7 +510,26 @@ func_prec() -> {800,700}.
 
 max_prec() -> 1000.
 
--file("/net/shelob/ldisk/daily_build/otp_prebuild_r13a.2009-03-16_22/otp_src_R13A/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+%%% [Experimental]. The parser just copies the attributes of the
+%%% scanner tokens to the abstract format. This design decision has
+%%% been hidden to some extent: use set_line() and get_attribute() to
+%%% access the second element of (almost all) of the abstract format
+%%% tuples. A typical use is to negate line numbers to prevent the
+%%% compiler from emitting warnings and errors. The second element can
+%%% (of course) be set to any value, but then these functions no
+%%% longer apply. To get all present attributes as a property list
+%%% get_attributes() should be used.
+
+set_line(L, F) ->
+    erl_scan:set_attribute(line, L, F).
+
+get_attribute(L, Name) ->
+    erl_scan:attributes_info(L, Name).
+
+get_attributes(L) ->
+    erl_scan:attributes_info(L).
+
+-file("/net/shelob/ldisk/daily_build/otp_prebuild_r13b.2009-04-15_20/otp_src_R13B/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %% 
@@ -645,11 +651,14 @@ yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
 
 % For internal use only.
 yeccerror(Token) ->
-    Text = case erl_scan:token_info(Token, text) of
-               undefined -> yecctoken2string(Token);
-               {text, Txt} -> Txt
+    Text = case catch erl_scan:token_info(Token, text) of
+               {text, Txt} -> Txt;
+               _ -> yecctoken2string(Token)
            end,
-    {location, Location} = erl_scan:token_info(Token, location),
+    Location = case catch erl_scan:token_info(Token, location) of
+                   {location, Loc} -> Loc;
+                   _ -> element(2, Token)
+               end,
     {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);
@@ -672,7 +681,7 @@ yecctoken2string(Other) ->
 
 
 
--file("./erl_parse.erl", 675).
+-file("./erl_parse.erl", 684).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);
@@ -7777,7 +7786,7 @@ yeccpars2_5_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--file("./erl_parse.erl", 7780).
+-file("./erl_parse.erl", 7789).
 -compile({inline,{yeccpars2_12_,1}}).
 -file("erl_parse.yrl", 79).
 yeccpars2_12_(__Stack0) ->
@@ -7810,7 +7819,7 @@ yeccpars2_27_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--file("./erl_parse.erl", 7813).
+-file("./erl_parse.erl", 7822).
 -compile({inline,{yeccpars2_42_,1}}).
 -file("erl_parse.yrl", 140).
 yeccpars2_42_(__Stack0) ->
@@ -7819,7 +7828,7 @@ yeccpars2_42_(__Stack0) ->
    { type , ? line ( __1 ) , tuple , [ ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7822).
+-file("./erl_parse.erl", 7831).
 -compile({inline,{yeccpars2_43_,1}}).
 -file("erl_parse.yrl", 141).
 yeccpars2_43_(__Stack0) ->
@@ -7828,7 +7837,7 @@ yeccpars2_43_(__Stack0) ->
    { type , ? line ( __1 ) , tuple , __2 }
   end | __Stack].
 
--file("./erl_parse.erl", 7831).
+-file("./erl_parse.erl", 7840).
 -compile({inline,{yeccpars2_45_,1}}).
 -file("erl_parse.yrl", 120).
 yeccpars2_45_(__Stack0) ->
@@ -7837,7 +7846,7 @@ yeccpars2_45_(__Stack0) ->
    { ann_type , ? line ( __1 ) , [ __1 , __3 ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7840).
+-file("./erl_parse.erl", 7849).
 -compile({inline,{yeccpars2_51_,1}}).
 -file("erl_parse.yrl", 149).
 yeccpars2_51_(__Stack0) ->
@@ -7846,7 +7855,7 @@ yeccpars2_51_(__Stack0) ->
    { type , ? line ( __1 ) , 'fun' , [ ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7849).
+-file("./erl_parse.erl", 7858).
 -compile({inline,{yeccpars2_57_,1}}).
 -file("erl_parse.yrl", 157).
 yeccpars2_57_(__Stack0) ->
@@ -7864,7 +7873,7 @@ yeccpars2_58_(__Stack0) ->
    __3
   end | __Stack].
 
--file("./erl_parse.erl", 7867).
+-file("./erl_parse.erl", 7876).
 -compile({inline,{yeccpars2_60_,1}}).
 -file("erl_parse.yrl", 136).
 yeccpars2_60_(__Stack0) ->
@@ -7873,7 +7882,7 @@ yeccpars2_60_(__Stack0) ->
    { type , ? line ( __1 ) , nil , [ ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7876).
+-file("./erl_parse.erl", 7885).
 -compile({inline,{yeccpars2_62_,1}}).
 -file("erl_parse.yrl", 137).
 yeccpars2_62_(__Stack0) ->
@@ -7882,7 +7891,7 @@ yeccpars2_62_(__Stack0) ->
    { type , ? line ( __1 ) , list , [ __2 ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7885).
+-file("./erl_parse.erl", 7894).
 -compile({inline,{yeccpars2_66_,1}}).
 -file("erl_parse.yrl", 138).
 yeccpars2_66_(__Stack0) ->
@@ -7892,7 +7901,7 @@ yeccpars2_66_(__Stack0) ->
     nonempty_list , [ __2 ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7895).
+-file("./erl_parse.erl", 7904).
 -compile({inline,{yeccpars2_69_,1}}).
 -file("erl_parse.yrl", 173).
 yeccpars2_69_(__Stack0) ->
@@ -7919,7 +7928,7 @@ yeccpars2_75_(__Stack0) ->
    build_bin_type ( [ __1 , __3 ] , __5 )
   end | __Stack].
 
--file("./erl_parse.erl", 7922).
+-file("./erl_parse.erl", 7931).
 -compile({inline,{yeccpars2_77_,1}}).
 -file("erl_parse.yrl", 176).
 yeccpars2_77_(__Stack0) ->
@@ -7929,7 +7938,7 @@ yeccpars2_77_(__Stack0) ->
     [ __2 , abstract ( 0 , ? line ( __1 ) ) ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7932).
+-file("./erl_parse.erl", 7941).
 -compile({inline,{yeccpars2_81_,1}}).
 -file("erl_parse.yrl", 181).
 yeccpars2_81_(__Stack0) ->
@@ -7938,7 +7947,7 @@ yeccpars2_81_(__Stack0) ->
    { type , ? line ( __1 ) , binary , [ __2 , __4 ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7941).
+-file("./erl_parse.erl", 7950).
 -compile({inline,{yeccpars2_82_,1}}).
 -file("erl_parse.yrl", 178).
 yeccpars2_82_(__Stack0) ->
@@ -7948,7 +7957,7 @@ yeccpars2_82_(__Stack0) ->
     [ abstract ( 0 , ? line ( __1 ) ) , __2 ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7951).
+-file("./erl_parse.erl", 7960).
 -compile({inline,{yeccpars2_83_,1}}).
 -file("erl_parse.yrl", 153).
 yeccpars2_83_(__Stack0) ->
@@ -7958,7 +7967,7 @@ yeccpars2_83_(__Stack0) ->
     ? line ( __2 ) )
   end | __Stack].
 
--file("./erl_parse.erl", 7961).
+-file("./erl_parse.erl", 7970).
 -compile({inline,{yeccpars2_85_,1}}).
 -file("erl_parse.yrl", 161).
 yeccpars2_85_(__Stack0) ->
@@ -7968,7 +7977,7 @@ yeccpars2_85_(__Stack0) ->
     [ { type , ? line ( __1 ) , product , [ ] } , __4 ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7971).
+-file("./erl_parse.erl", 7980).
 -compile({inline,{yeccpars2_87_,1}}).
 -file("erl_parse.yrl", 126).
 yeccpars2_87_(__Stack0) ->
@@ -7985,7 +7994,7 @@ yeccpars2_91_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--file("./erl_parse.erl", 7988).
+-file("./erl_parse.erl", 7997).
 -compile({inline,{yeccpars2_93_,1}}).
 -file("erl_parse.yrl", 142).
 yeccpars2_93_(__Stack0) ->
@@ -7994,7 +8003,7 @@ yeccpars2_93_(__Stack0) ->
    { type , ? line ( __1 ) , record , [ __2 ] }
   end | __Stack].
 
--file("./erl_parse.erl", 7997).
+-file("./erl_parse.erl", 8006).
 -compile({inline,{yeccpars2_95_,1}}).
 -file("erl_parse.yrl", 170).
 yeccpars2_95_(__Stack0) ->
@@ -8012,7 +8021,7 @@ yeccpars2_97_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8015).
+-file("./erl_parse.erl", 8024).
 -compile({inline,{yeccpars2_98_,1}}).
 -file("erl_parse.yrl", 143).
 yeccpars2_98_(__Stack0) ->
@@ -8022,7 +8031,7 @@ yeccpars2_98_(__Stack0) ->
     record , [ __2 | __4 ] }
   end | __Stack].
 
--file("./erl_parse.erl", 8025).
+-file("./erl_parse.erl", 8034).
 -compile({inline,{yeccpars2_104_,1}}).
 -file("erl_parse.yrl", 132).
 yeccpars2_104_(__Stack0) ->
@@ -8032,7 +8041,7 @@ yeccpars2_104_(__Stack0) ->
     [ __1 , __3 , [ ] ] }
   end | __Stack].
 
--file("./erl_parse.erl", 8035).
+-file("./erl_parse.erl", 8044).
 -compile({inline,{yeccpars2_105_,1}}).
 -file("erl_parse.yrl", 134).
 yeccpars2_105_(__Stack0) ->
@@ -8050,7 +8059,7 @@ yeccpars2_107_(__Stack0) ->
    build_gen_type ( __1 )
   end | __Stack].
 
--file("./erl_parse.erl", 8053).
+-file("./erl_parse.erl", 8062).
 -compile({inline,{yeccpars2_108_,1}}).
 -file("erl_parse.yrl", 130).
 yeccpars2_108_(__Stack0) ->
@@ -8060,7 +8069,7 @@ yeccpars2_108_(__Stack0) ->
     normalise ( __1 ) , __3 }
   end | __Stack].
 
--file("./erl_parse.erl", 8063).
+-file("./erl_parse.erl", 8072).
 -compile({inline,{yeccpars2_111_,1}}).
 -file("erl_parse.yrl", 147).
 yeccpars2_111_(__Stack0) ->
@@ -8078,7 +8087,7 @@ yeccpars2_113_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8081).
+-file("./erl_parse.erl", 8090).
 -compile({inline,{yeccpars2_116_,1}}).
 -file("erl_parse.yrl", 164).
 yeccpars2_116_(__Stack0) ->
@@ -8096,7 +8105,7 @@ yeccpars2_118_(__Stack0) ->
    lift_unions ( __1 , __3 )
   end | __Stack].
 
--file("./erl_parse.erl", 8099).
+-file("./erl_parse.erl", 8108).
 -compile({inline,{yeccpars2_120_,1}}).
 -file("erl_parse.yrl", 108).
 yeccpars2_120_(__Stack0) ->
@@ -8114,7 +8123,7 @@ yeccpars2_121_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8117).
+-file("./erl_parse.erl", 8126).
 -compile({inline,{yeccpars2_125_,1}}).
 -file("erl_parse.yrl", 114).
 yeccpars2_125_(__Stack0) ->
@@ -8212,7 +8221,7 @@ yeccpars2_196_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8215).
+-file("./erl_parse.erl", 8224).
 -compile({inline,{yeccpars2_198_,1}}).
 -file("erl_parse.yrl", 320).
 yeccpars2_198_(__Stack0) ->
@@ -8237,7 +8246,7 @@ yeccpars2_202_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8240).
+-file("./erl_parse.erl", 8249).
 -compile({inline,{yeccpars2_203_,1}}).
 -file("erl_parse.yrl", 321).
 yeccpars2_203_(__Stack0) ->
@@ -8246,7 +8255,7 @@ yeccpars2_203_(__Stack0) ->
    { tuple , ? line ( __1 ) , __2 }
   end | __Stack].
 
--file("./erl_parse.erl", 8249).
+-file("./erl_parse.erl", 8258).
 -compile({inline,{yeccpars2_205_,1}}).
 -file("erl_parse.yrl", 399).
 yeccpars2_205_(__Stack0) ->
@@ -8278,7 +8287,7 @@ yeccpars2_213_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8281).
+-file("./erl_parse.erl", 8290).
 -compile({inline,{yeccpars2_214_,1}}).
 -file("erl_parse.yrl", 397).
 yeccpars2_214_(__Stack0) ->
@@ -8311,7 +8320,7 @@ yeccpars2_220_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8314).
+-file("./erl_parse.erl", 8323).
 -compile({inline,{yeccpars2_221_,1}}).
 -file("erl_parse.yrl", 372).
 yeccpars2_221_(__Stack0) ->
@@ -8350,7 +8359,7 @@ yeccpars2_230_(__Stack0) ->
    [ ]
   end | __Stack0].
 
--file("./erl_parse.erl", 8353).
+-file("./erl_parse.erl", 8362).
 -compile({inline,{yeccpars2_232_,1}}).
 -file("erl_parse.yrl", 418).
 yeccpars2_232_(__Stack0) ->
@@ -8367,7 +8376,7 @@ yeccpars2_234_(__Stack0) ->
    [ ]
   end | __Stack0].
 
--file("./erl_parse.erl", 8370).
+-file("./erl_parse.erl", 8379).
 -compile({inline,{yeccpars2_236_,1}}).
 -file("erl_parse.yrl", 415).
 yeccpars2_236_(__Stack0) ->
@@ -8377,7 +8386,7 @@ yeccpars2_236_(__Stack0) ->
     { clause , L , [ { tuple , L , [ __1 , __3 , { var , L , '_' } ] } ] , __4 , __5 }
   end | __Stack].
 
--file("./erl_parse.erl", 8380).
+-file("./erl_parse.erl", 8389).
 -compile({inline,{yeccpars2_238_,1}}).
 -file("erl_parse.yrl", 412).
 yeccpars2_238_(__Stack0) ->
@@ -8419,7 +8428,7 @@ yeccpars2_246_(__Stack0) ->
    { [ ] , __2 }
   end | __Stack].
 
--file("./erl_parse.erl", 8422).
+-file("./erl_parse.erl", 8431).
 -compile({inline,{yeccpars2_247_,1}}).
 -file("erl_parse.yrl", 451).
 yeccpars2_247_(__Stack0) ->
@@ -8428,7 +8437,7 @@ yeccpars2_247_(__Stack0) ->
    { string , ? line ( __1 ) , element ( 3 , __1 ) ++ element ( 3 , __2 ) }
   end | __Stack].
 
--file("./erl_parse.erl", 8431).
+-file("./erl_parse.erl", 8440).
 -compile({inline,{yeccpars2_252_,1}}).
 -file("erl_parse.yrl", 377).
 yeccpars2_252_(__Stack0) ->
@@ -8437,7 +8446,7 @@ yeccpars2_252_(__Stack0) ->
    { 'receive' , ? line ( __1 ) , [ ] , __3 , __4 }
   end | __Stack].
 
--file("./erl_parse.erl", 8440).
+-file("./erl_parse.erl", 8449).
 -compile({inline,{yeccpars2_254_,1}}).
 -file("erl_parse.yrl", 375).
 yeccpars2_254_(__Stack0) ->
@@ -8446,7 +8455,7 @@ yeccpars2_254_(__Stack0) ->
    { 'receive' , ? line ( __1 ) , __2 }
   end | __Stack].
 
--file("./erl_parse.erl", 8449).
+-file("./erl_parse.erl", 8458).
 -compile({inline,{yeccpars2_257_,1}}).
 -file("erl_parse.yrl", 379).
 yeccpars2_257_(__Stack0) ->
@@ -8463,7 +8472,7 @@ yeccpars2_263_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8466).
+-file("./erl_parse.erl", 8475).
 -compile({inline,{yeccpars2_267_,1}}).
 -file("erl_parse.yrl", 318).
 yeccpars2_267_(__Stack0) ->
@@ -8472,7 +8481,7 @@ yeccpars2_267_(__Stack0) ->
    { b_generate , ? line ( __2 ) , __1 , __3 }
   end | __Stack].
 
--file("./erl_parse.erl", 8475).
+-file("./erl_parse.erl", 8484).
 -compile({inline,{yeccpars2_269_,1}}).
 -file("erl_parse.yrl", 317).
 yeccpars2_269_(__Stack0) ->
@@ -8489,7 +8498,7 @@ yeccpars2_271_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8492).
+-file("./erl_parse.erl", 8501).
 -compile({inline,{yeccpars2_272_,1}}).
 -file("erl_parse.yrl", 310).
 yeccpars2_272_(__Stack0) ->
@@ -8498,7 +8507,7 @@ yeccpars2_272_(__Stack0) ->
    { lc , ? line ( __1 ) , __2 , __4 }
   end | __Stack].
 
--file("./erl_parse.erl", 8501).
+-file("./erl_parse.erl", 8510).
 -compile({inline,{yeccpars2_273_,1}}).
 -file("erl_parse.yrl", 430).
 yeccpars2_273_(__Stack0) ->
@@ -8515,7 +8524,7 @@ yeccpars2_275_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8518).
+-file("./erl_parse.erl", 8527).
 -compile({inline,{yeccpars2_277_,1}}).
 -file("erl_parse.yrl", 362).
 yeccpars2_277_(__Stack0) ->
@@ -8532,7 +8541,7 @@ yeccpars2_279_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8535).
+-file("./erl_parse.erl", 8544).
 -compile({inline,{yeccpars2_280_,1}}).
 -file("erl_parse.yrl", 356).
 yeccpars2_280_(__Stack0) ->
@@ -8556,7 +8565,7 @@ yeccpars2_284_(__Stack0) ->
    [ ]
   end | __Stack0].
 
--file("./erl_parse.erl", 8559).
+-file("./erl_parse.erl", 8568).
 -compile({inline,{yeccpars2_287_,1}}).
 -file("erl_parse.yrl", 433).
 yeccpars2_287_(__Stack0) ->
@@ -8565,7 +8574,7 @@ yeccpars2_287_(__Stack0) ->
    { [ ] , ? line ( __1 ) }
   end | __Stack].
 
--file("./erl_parse.erl", 8568).
+-file("./erl_parse.erl", 8577).
 -compile({inline,{yeccpars2_288_,1}}).
 -file("erl_parse.yrl", 434).
 yeccpars2_288_(__Stack0) ->
@@ -8583,7 +8592,7 @@ yeccpars2_290_(__Stack0) ->
     { clause , Pos , 'fun' , Args , __2 , __3 }
   end | __Stack].
 
--file("./erl_parse.erl", 8586).
+-file("./erl_parse.erl", 8595).
 -compile({inline,{yeccpars2_295_,1}}).
 -file("erl_parse.yrl", 385).
 yeccpars2_295_(__Stack0) ->
@@ -8592,7 +8601,7 @@ yeccpars2_295_(__Stack0) ->
    { 'fun' , ? line ( __1 ) , { function , element ( 3 , __2 ) , element ( 3 , __4 ) , element ( 3 , __6 ) } }
   end | __Stack].
 
--file("./erl_parse.erl", 8595).
+-file("./erl_parse.erl", 8604).
 -compile({inline,{yeccpars2_296_,1}}).
 -file("erl_parse.yrl", 383).
 yeccpars2_296_(__Stack0) ->
@@ -8609,7 +8618,7 @@ yeccpars2_298_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8612).
+-file("./erl_parse.erl", 8621).
 -compile({inline,{yeccpars2_299_,1}}).
 -file("erl_parse.yrl", 387).
 yeccpars2_299_(__Stack0) ->
@@ -8618,7 +8627,7 @@ yeccpars2_299_(__Stack0) ->
    build_fun ( ? line ( __1 ) , __2 )
   end | __Stack].
 
--file("./erl_parse.erl", 8621).
+-file("./erl_parse.erl", 8630).
 -compile({inline,{yeccpars2_300_,1}}).
 -file("erl_parse.yrl", 208).
 yeccpars2_300_(__Stack0) ->
@@ -8627,7 +8636,7 @@ yeccpars2_300_(__Stack0) ->
    { 'catch' , ? line ( __1 ) , __2 }
   end | __Stack].
 
--file("./erl_parse.erl", 8630).
+-file("./erl_parse.erl", 8639).
 -compile({inline,{yeccpars2_304_,1}}).
 -file("erl_parse.yrl", 366).
 yeccpars2_304_(__Stack0) ->
@@ -8636,7 +8645,7 @@ yeccpars2_304_(__Stack0) ->
    { 'case' , ? line ( __1 ) , __2 , __4 }
   end | __Stack].
 
--file("./erl_parse.erl", 8639).
+-file("./erl_parse.erl", 8648).
 -compile({inline,{yeccpars2_306_,1}}).
 -file("erl_parse.yrl", 264).
 yeccpars2_306_(__Stack0) ->
@@ -8645,7 +8654,7 @@ yeccpars2_306_(__Stack0) ->
    { block , ? line ( __1 ) , __2 }
   end | __Stack].
 
--file("./erl_parse.erl", 8648).
+-file("./erl_parse.erl", 8657).
 -compile({inline,{yeccpars2_308_,1}}).
 -file("erl_parse.yrl", 274).
 yeccpars2_308_(__Stack0) ->
@@ -8654,7 +8663,7 @@ yeccpars2_308_(__Stack0) ->
    { nil , ? line ( __1 ) }
   end | __Stack].
 
--file("./erl_parse.erl", 8657).
+-file("./erl_parse.erl", 8666).
 -compile({inline,{yeccpars2_309_,1}}).
 -file("erl_parse.yrl", 275).
 yeccpars2_309_(__Stack0) ->
@@ -8663,7 +8672,7 @@ yeccpars2_309_(__Stack0) ->
    { cons , ? line ( __1 ) , __2 , __3 }
   end | __Stack].
 
--file("./erl_parse.erl", 8666).
+-file("./erl_parse.erl", 8675).
 -compile({inline,{yeccpars2_311_,1}}).
 -file("erl_parse.yrl", 277).
 yeccpars2_311_(__Stack0) ->
@@ -8680,7 +8689,7 @@ yeccpars2_314_(__Stack0) ->
    __2
   end | __Stack].
 
--file("./erl_parse.erl", 8683).
+-file("./erl_parse.erl", 8692).
 -compile({inline,{yeccpars2_316_,1}}).
 -file("erl_parse.yrl", 279).
 yeccpars2_316_(__Stack0) ->
@@ -8704,7 +8713,7 @@ yeccpars2_322_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8707).
+-file("./erl_parse.erl", 8716).
 -compile({inline,{yeccpars2_323_,1}}).
 -file("erl_parse.yrl", 282).
 yeccpars2_323_(__Stack0) ->
@@ -8721,7 +8730,7 @@ yeccpars2_325_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8724).
+-file("./erl_parse.erl", 8733).
 -compile({inline,{yeccpars2_326_,1}}).
 -file("erl_parse.yrl", 283).
 yeccpars2_326_(__Stack0) ->
@@ -8730,7 +8739,7 @@ yeccpars2_326_(__Stack0) ->
    { bin , ? line ( __1 ) , __2 }
   end | __Stack].
 
--file("./erl_parse.erl", 8733).
+-file("./erl_parse.erl", 8742).
 -compile({inline,{yeccpars2_329_,1}}).
 -file("erl_parse.yrl", 312).
 yeccpars2_329_(__Stack0) ->
@@ -8754,7 +8763,7 @@ yeccpars2_333_(__Stack0) ->
    __2
   end | __Stack].
 
--file("./erl_parse.erl", 8757).
+-file("./erl_parse.erl", 8766).
 -compile({inline,{yeccpars2_334_,1}}).
 -file("erl_parse.yrl", 289).
 yeccpars2_334_(__Stack0) ->
@@ -8803,7 +8812,7 @@ yeccpars2_342_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8806).
+-file("./erl_parse.erl", 8815).
 -compile({inline,{yeccpars2_343_,1}}).
 -file("erl_parse.yrl", 291).
 yeccpars2_343_(__Stack0) ->
@@ -8812,7 +8821,7 @@ yeccpars2_343_(__Stack0) ->
    ? mkop1 ( __1 , __2 )
   end | __Stack].
 
--file("./erl_parse.erl", 8815).
+-file("./erl_parse.erl", 8824).
 -compile({inline,{yeccpars2_344_,1}}).
 -file("erl_parse.yrl", 250).
 yeccpars2_344_(__Stack0) ->
@@ -8885,7 +8894,7 @@ yeccpars2_362_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8888).
+-file("./erl_parse.erl", 8897).
 -compile({inline,{yeccpars2_363_,1}}).
 -file("erl_parse.yrl", 95).
 yeccpars2_363_(__Stack0) ->
@@ -8910,7 +8919,7 @@ yeccpars2_365_(__Stack0) ->
    build_typed_attribute ( __2 , __4 )
   end | __Stack].
 
--file("./erl_parse.erl", 8913).
+-file("./erl_parse.erl", 8922).
 -compile({inline,{yeccpars2_367_,1}}).
 -file("erl_parse.yrl", 335).
 yeccpars2_367_(__Stack0) ->
@@ -8935,7 +8944,7 @@ yeccpars2_374_(__Stack0) ->
    [ ]
   end | __Stack].
 
--file("./erl_parse.erl", 8938).
+-file("./erl_parse.erl", 8947).
 -compile({inline,{yeccpars2_376_,1}}).
 -file("erl_parse.yrl", 347).
 yeccpars2_376_(__Stack0) ->
@@ -8944,7 +8953,7 @@ yeccpars2_376_(__Stack0) ->
    { record_field , ? line ( __1 ) , __1 , __3 }
   end | __Stack].
 
--file("./erl_parse.erl", 8947).
+-file("./erl_parse.erl", 8956).
 -compile({inline,{yeccpars2_378_,1}}).
 -file("erl_parse.yrl", 348).
 yeccpars2_378_(__Stack0) ->
@@ -8969,7 +8978,7 @@ yeccpars2_381_(__Stack0) ->
    __2
   end | __Stack].
 
--file("./erl_parse.erl", 8972).
+-file("./erl_parse.erl", 8981).
 -compile({inline,{yeccpars2_382_,1}}).
 -file("erl_parse.yrl", 333).
 yeccpars2_382_(__Stack0) ->
@@ -8986,7 +8995,7 @@ yeccpars2_384_(__Stack0) ->
    [ __1 | __3 ]
   end | __Stack].
 
--file("./erl_parse.erl", 8989).
+-file("./erl_parse.erl", 8998).
 -compile({inline,{yeccpars2_387_,1}}).
 -file("erl_parse.yrl", 211).
 yeccpars2_387_(__Stack0) ->
@@ -8995,7 +9004,7 @@ yeccpars2_387_(__Stack0) ->
    { match , ? line ( __2 ) , __1 , __3 }
   end | __Stack].
 
--file("./erl_parse.erl", 8998).
+-file("./erl_parse.erl", 9007).
 -compile({inline,{yeccpars2_388_,1}}).
 -file("erl_parse.yrl", 212).
 yeccpars2_388_(__Stack0) ->
@@ -9004,7 +9013,7 @@ yeccpars2_388_(__Stack0) ->
    ? mkop2 ( __1 , __2 , __3 )
   end | __Stack].
 
--file("./erl_parse.erl", 9007).
+-file("./erl_parse.erl", 9016).
 -compile({inline,{yeccpars2_390_,1}}).
 -file("erl_parse.yrl", 215).
 yeccpars2_390_(__Stack0) ->
@@ -9013,7 +9022,7 @@ yeccpars2_390_(__Stack0) ->
    ? mkop2 ( __1 , __2 , __3 )
   end | __Stack].
 
--file("./erl_parse.erl", 9016).
+-file("./erl_parse.erl", 9025).
 -compile({inline,{yeccpars2_392_,1}}).
 -file("erl_parse.yrl", 218).
 yeccpars2_392_(__Stack0) ->
@@ -9022,7 +9031,7 @@ yeccpars2_392_(__Stack0) ->
    ? mkop2 ( __1 , __2 , __3 )
   end | __Stack].
 
--file("./erl_parse.erl", 9025).
+-file("./erl_parse.erl", 9034).
 -compile({inline,{yeccpars2_402_,1}}).
 -file("erl_parse.yrl", 222).
 yeccpars2_402_(__Stack0) ->
@@ -9031,7 +9040,7 @@ yeccpars2_402_(__Stack0) ->
    ? mkop2 ( __1 , __2 , __3 )
   end | __Stack].
 
--file("./erl_parse.erl", 9034).
+-file("./erl_parse.erl", 9043).
 -compile({inline,{yeccpars2_415_,1}}).
 -file("erl_parse.yrl", 230).
 yeccpars2_415_(__Stack0) ->
@@ -9040,7 +9049,7 @@ yeccpars2_415_(__Stack0) ->
    ? mkop2 ( __1 , __2 , __3 )
   end | __Stack].
 
--file("./erl_parse.erl", 9043).
+-file("./erl_parse.erl", 9052).
 -compile({inline,{yeccpars2_423_,1}}).
 -file("erl_parse.yrl", 234).
 yeccpars2_423_(__Stack0) ->
@@ -9049,7 +9058,7 @@ yeccpars2_423_(__Stack0) ->
    ? mkop2 ( __1 , __2 , __3 )
   end | __Stack].
 
--file("./erl_parse.erl", 9052).
+-file("./erl_parse.erl", 9061).
 -compile({inline,{yeccpars2_424_,1}}).
 -file("erl_parse.yrl", 226).
 yeccpars2_424_(__Stack0) ->
@@ -9058,7 +9067,7 @@ yeccpars2_424_(__Stack0) ->
    ? mkop2 ( __1 , __2 , __3 )
   end | __Stack].
 
--file("./erl_parse.erl", 9061).
+-file("./erl_parse.erl", 9070).
 -compile({inline,{yeccpars2_425_,1}}).
 -file("erl_parse.yrl", 353).
 yeccpars2_425_(__Stack0) ->
@@ -9067,7 +9076,7 @@ yeccpars2_425_(__Stack0) ->
    { call , ? line ( __1 ) , __1 , element ( 1 , __2 ) }
   end | __Stack].
 
--file("./erl_parse.erl", 9070).
+-file("./erl_parse.erl", 9079).
 -compile({inline,{yeccpars2_428_,1}}).
 -file("erl_parse.yrl", 246).
 yeccpars2_428_(__Stack0) ->
@@ -9076,7 +9085,7 @@ yeccpars2_428_(__Stack0) ->
    { remote , ? line ( __2 ) , __1 , __3 }
   end | __Stack].
 
--file("./erl_parse.erl", 9079).
+-file("./erl_parse.erl", 9088).
 -compile({inline,{yeccpars2_429_,1}}).
 -file("erl_parse.yrl", 252).
 yeccpars2_429_(__Stack0) ->
@@ -9085,7 +9094,7 @@ yeccpars2_429_(__Stack0) ->
    { record_field , ? line ( __2 ) , __1 , __3 }
   end | __Stack].
 
--file("./erl_parse.erl", 9088).
+-file("./erl_parse.erl", 9097).
 -compile({inline,{yeccpars2_432_,1}}).
 -file("erl_parse.yrl", 339).
 yeccpars2_432_(__Stack0) ->
@@ -9094,7 +9103,7 @@ yeccpars2_432_(__Stack0) ->
    { record , ? line ( __2 ) , __1 , element ( 3 , __3 ) , __4 }
   end | __Stack].
 
--file("./erl_parse.erl", 9097).
+-file("./erl_parse.erl", 9106).
 -compile({inline,{yeccpars2_434_,1}}).
 -file("erl_parse.yrl", 337).
 yeccpars2_434_(__Stack0) ->
@@ -9103,7 +9112,7 @@ yeccpars2_434_(__Stack0) ->
    { record_field , ? line ( __2 ) , __1 , element ( 3 , __3 ) , __5 }
   end | __Stack].
 
--file("./erl_parse.erl", 9106).
+-file("./erl_parse.erl", 9115).
 -compile({inline,{yeccpars2_435_,1}}).
 -file("erl_parse.yrl", 238).
 yeccpars2_435_(__Stack0) ->
@@ -9127,7 +9136,7 @@ yeccpars2_437_(__Stack0) ->
    element ( 1 , __1 )
   end | __Stack].
 
--file("./erl_parse.erl", 9130).
+-file("./erl_parse.erl", 9139).
 -compile({inline,{yeccpars2_439_,1}}).
 -file("erl_parse.yrl", 492).
 yeccpars2_439_(__Stack0) ->
@@ -9136,7 +9145,7 @@ yeccpars2_439_(__Stack0) ->
    { clause , ? line ( __1 ) , element ( 3 , __1 ) , __2 , __3 , __4 }
   end | __Stack].
 
--file("./erl_parse.erl", 9139).
+-file("./erl_parse.erl", 9148).
 -compile({inline,{yeccpars2_440_,1}}).
 -file("erl_parse.yrl", 197).
 yeccpars2_440_(__Stack0) ->
@@ -9208,4 +9217,4 @@ yeccpars2_454_(__Stack0) ->
   end | __Stack0].
 
 
--file("erl_parse.yrl", 1023).
+-file("erl_parse.yrl", 1029).

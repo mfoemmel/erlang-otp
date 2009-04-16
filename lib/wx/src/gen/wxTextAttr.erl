@@ -58,7 +58,8 @@ new(ColText, Options)
  when tuple_size(ColText) =:= 3; tuple_size(ColText) =:= 4,is_list(Options) ->
   MOpts = fun({colBack, ColBack}, Acc) -> [<<1:32/?UI,(wxe_util:colour_bin(ColBack)):16/binary,0:32>>|Acc];
           ({font, #wx_ref{type=FontT,ref=FontRef}}, Acc) ->   ?CLASS(FontT,wxFont),[<<2:32/?UI,FontRef:32/?UI>>|Acc];
-          ({alignment, Alignment}, Acc) -> [<<3:32/?UI,Alignment:32/?UI>>|Acc]  end,
+          ({alignment, Alignment}, Acc) -> [<<3:32/?UI,Alignment:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxTextAttr_new_2,
   <<(wxe_util:colour_bin(ColText)):16/binary, BinOpt/binary>>).
@@ -195,7 +196,8 @@ setFont(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=FontT,ref=FontRef}, Options
  when is_list(Options) ->
   ?CLASS(ThisT,wxTextAttr),
   ?CLASS(FontT,wxFont),
-  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc]  end,
+  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTextAttr_SetFont,
   <<ThisRef:32/?UI,FontRef:32/?UI, BinOpt/binary>>).
@@ -212,7 +214,8 @@ setLeftIndent(This,Indent)
 setLeftIndent(#wx_ref{type=ThisT,ref=ThisRef},Indent, Options)
  when is_integer(Indent),is_list(Options) ->
   ?CLASS(ThisT,wxTextAttr),
-  MOpts = fun({subIndent, SubIndent}, Acc) -> [<<1:32/?UI,SubIndent:32/?UI>>|Acc]  end,
+  MOpts = fun({subIndent, SubIndent}, Acc) -> [<<1:32/?UI,SubIndent:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTextAttr_SetLeftIndent,
   <<ThisRef:32/?UI,Indent:32/?UI, BinOpt/binary>>).

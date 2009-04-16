@@ -33,10 +33,14 @@
 	 is_overloaded/1,
 	 overwrite_succ_typing/3]).
 
+%%-----------------------------------------------------------------------
+
 -include("dialyzer.hrl").
 -include("dialyzer_callgraph.hrl").
 
-%-define(DEBUG, true).
+%%-----------------------------------------------------------------------
+
+%%-define(DEBUG, true).
 
 -ifdef(DEBUG).
 -define(debug(X__, Y__), io:format(X__, Y__)).
@@ -47,31 +51,37 @@
 %%-----------------------------------------------------------------------
 
 -spec get_contract_return(#contract{}) -> erl_type().
-get_contract_return(#contract{contracts=Cs, args=GenArgs}) ->
+
+get_contract_return(#contract{contracts = Cs, args = GenArgs}) ->
   process_contracts(Cs, GenArgs).
 
 -spec get_contract_return(#contract{}, [erl_type()]) -> erl_type().
-get_contract_return(#contract{contracts=Cs}, Args) ->
+
+get_contract_return(#contract{contracts = Cs}, Args) ->
   process_contracts(Cs, Args).
 
 -spec get_contract_args(#contract{}) -> [erl_type()].
-get_contract_args(#contract{args=Args}) ->
+
+get_contract_args(#contract{args = Args}) ->
   Args.
 
 -spec get_contract_signature(#contract{}) -> erl_type().
-get_contract_signature(#contract{contracts=Cs, args=GeneralDomain}) ->
+
+get_contract_signature(#contract{contracts = Cs, args = GeneralDomain}) ->
   Range = process_contracts(Cs, GeneralDomain),
   erl_types:t_fun(GeneralDomain, Range).
 
 -spec is_overloaded(#contract{}) -> bool().
-is_overloaded(#contract{contracts=Cs}) ->
+
+is_overloaded(#contract{contracts = Cs}) ->
   case Cs of
     [_] -> true;
     [_,_|_] -> false
   end.
 
 -spec contract_to_string(#contract{}) -> string().
-contract_to_string(#contract{forms=Forms}) ->
+
+contract_to_string(#contract{forms = Forms}) ->
   contract_to_string_1(Forms).
 
 contract_to_string_1([{Contract, []}]) ->
@@ -108,7 +118,7 @@ sequence([], _Delimiter) -> "";
 sequence([H], _Delimiter) -> H;
 sequence([H|T], Delimiter) -> H ++ Delimiter ++ sequence(T, Delimiter).
 
--spec overwrite_succ_typing(orddict(), #dialyzer_callgraph{}, dict()) -> {dict(), orddict()}.
+-spec overwrite_succ_typing(plt_contracts(), #dialyzer_callgraph{}, dict()) -> {dict(), plt_contracts()}.
 
 overwrite_succ_typing(PltContracts, Callgraph, FunTypes) ->
   MapFun =
@@ -123,24 +133,21 @@ overwrite_succ_typing(PltContracts, Callgraph, FunTypes) ->
  	  error -> Type		% no contract; keep the success typing
 	end
     end,
-  NewFunTypes = dict:map(MapFun,FunTypes),
-  if 
-    NewFunTypes =:= FunTypes -> {FunTypes, PltContracts};
-    true -> {NewFunTypes, []}
+  NewFunTypes = dict:map(MapFun, FunTypes),
+  case NewFunTypes =:= FunTypes of
+    true  -> {FunTypes, PltContracts};
+    false -> {NewFunTypes, []}
   end.
 
--spec check_contracts(orddict(), #dialyzer_callgraph{}, dict()) -> [{mfa(), #contract{}}].
+-spec check_contracts([{mfa(), {file_line(), #contract{}}}], #dialyzer_callgraph{}, dict()) -> plt_contracts().
 
 check_contracts(Contracts, Callgraph, FunTypes) ->
   FoldFun =
     fun(Label, Type, NewContracts) -> 
-	{ok, MFA = {M,F,A}} = dialyzer_callgraph:lookup_name(Label, Callgraph),
+	{ok, {M,F,A} = MFA} = dialyzer_callgraph:lookup_name(Label, Callgraph),
 	case orddict:find(MFA, Contracts) of
-	  error -> NewContracts;
-	  {ok, {_Line, Contract}} -> 
+	  {ok, {_FileLine, Contract}} -> 
 	    case check_contract(Contract, Type) of
-	      error -> NewContracts;
-	      {error, _Error} -> NewContracts;
 	      ok ->
 		case erl_bif_types:is_known(M, F, A) of
 		  true ->
@@ -149,16 +156,18 @@ check_contracts(Contracts, Callgraph, FunTypes) ->
 		    NewContracts;
 		  false ->
 		    [{MFA, Contract}|NewContracts]
-		end
-	    end
+		end;
+	      {error, _Error} -> NewContracts
+	    end;
+	  error -> NewContracts
 	end
-    end, 
+    end,
   dict:fold(FoldFun, [], FunTypes).
 
 %% Checks all components of a contract
--spec check_contract(#contract{}, erl_type()) -> 'ok' | 'error' | {'error', term()}.
+-spec check_contract(#contract{}, erl_type()) -> 'ok' | {'error', term()}.
 
-check_contract(#contract{contracts=Contracts}, SuccType) ->
+check_contract(#contract{contracts = Contracts}, SuccType) ->
   try 
     Contracts1 = [{Contract, insert_constraints(Constraints, dict:new())} 
 		  || {Contract, Constraints} <- Contracts],
@@ -173,16 +182,16 @@ check_contract(#contract{contracts=Contracts}, SuccType) ->
 		   || Contract <- Contracts2],
 	check_contract_inf_list(InfList, SuccType)
     end
-  catch throw:{error, Error} -> {error, Error}
+  catch throw:{error, _} = Error -> Error
   end.
 
 check_domains([_]) -> ok;
-check_domains([Dom1|Left]) ->
-  CheckFun = fun(Dom2) ->
-		 erl_types:any_none_or_unit(erl_types:t_inf_lists(Dom1, Dom2, opaque))
-	     end,
-  case lists:all(CheckFun, Left) of
-    true -> check_domains(Left);
+check_domains([Dom|Doms]) ->
+  Fun = fun(D) ->
+	    erl_types:any_none_or_unit(erl_types:t_inf_lists(Dom, D, opaque))
+	end,
+  case lists:all(Fun, Doms) of
+    true -> check_domains(Doms);
     false -> error
   end.
 
@@ -190,8 +199,8 @@ check_domains([Dom1|Left]) ->
 %% We used to be more strict, e.g., all overloaded contracts had to be
 %% possible.
 check_contract_inf_list([FunType|Left], SuccType) ->
-  case lists:any(fun erl_types:t_is_none_or_unit/1, 
-		 erl_types:t_fun_args(FunType)) of
+  FunArgs = erl_types:t_fun_args(FunType),
+  case lists:any(fun erl_types:t_is_none_or_unit/1, FunArgs) of
     true -> check_contract_inf_list(Left, SuccType);
     false ->
       STRange = erl_types:t_fun_range(SuccType),
@@ -206,10 +215,10 @@ check_contract_inf_list([FunType|Left], SuccType) ->
       end
   end;
 check_contract_inf_list([], _SuccType) ->
-  error.
+  {error, invalid_contract}.
 
 %% This is the heart of the "range function"
--spec process_contracts([{_,_}], [erl_type()]) -> erl_type().
+-spec process_contracts([contract()], [erl_type()]) -> erl_type().
 
 process_contracts(OverContracts, Args) ->
   process_contracts(OverContracts, Args, erl_types:t_none()).
@@ -224,7 +233,7 @@ process_contracts([OverContract|Left], Args, AccRange) ->
 process_contracts([], _Args, AccRange) ->
   AccRange.
 
--spec process_contract({_,_}, [erl_type()]) -> 'error' | {'ok',erl_type()}.
+-spec process_contract(contract(), [erl_type()]) -> 'error' | {'ok', erl_type()}.
 
 process_contract({Contract, Constraints}, CallTypes0) ->
   CallTypesFun = erl_types:t_fun(CallTypes0, erl_types:t_any()),
@@ -266,13 +275,13 @@ solve_constraints(Contract, Call, Constraints) ->
 contracts_without_fun(Contracts, AllFuns0, Callgraph) ->
   AllFuns1 = [{dialyzer_callgraph:lookup_name(Label, Callgraph), Arity} 
 	      || {Label, Arity} <- AllFuns0],
-  AllFuns2 = [{M, F, A} || {{ok,{M,F,_}}, A} <- AllFuns1],
-  AllContracts = dict:fetch_keys(Contracts),
-  ErrorContracts = AllContracts -- AllFuns2,
-  [warn_spec_missing_fun(C, Contracts) || C <- ErrorContracts].
+  AllFuns2 = [{M, F, A} || {{ok, {M, F, _}}, A} <- AllFuns1],
+  AllContractMFAs = dict:fetch_keys(Contracts),
+  ErrorContractMFAs = AllContractMFAs -- AllFuns2,
+  [warn_spec_missing_fun(MFA, Contracts) || MFA <- ErrorContractMFAs].
 
-warn_spec_missing_fun({M,F,A}, Contracts) ->
-  {FileLine, _Contract} = dict:fetch({M,F,A}, Contracts),
+warn_spec_missing_fun({M, F, A} = MFA, Contracts) ->
+  {FileLine, _Contract} = dict:fetch(MFA, Contracts),
   {?WARN_CONTRACT_SYNTAX, FileLine, {spec_missing_fun, [M, F, A]}}.
 
 %% This treats the "when" constraints. It will be extended
@@ -280,36 +289,33 @@ insert_constraints([{subtype, Type1, Type2}|Left], Dict) ->
   case erl_types:t_is_var(Type1) of
     true ->
       Name = erl_types:t_var_name(Type1),
-      case dict:find(Name, Dict) of  
-	error ->
-	  Dict1 = dict:store(Name, Type2, Dict);
-  	{ok, VarType} -> 
-	  Dict1 = dict:store(Name, erl_types:t_inf(VarType, Type2), Dict)
-      end;
+      Dict1 = case dict:find(Name, Dict) of
+		error ->
+		  dict:store(Name, Type2, Dict);
+		{ok, VarType} ->
+		  dict:store(Name, erl_types:t_inf(VarType, Type2), Dict)
+	      end,
+      insert_constraints(Left, Dict1);
     false ->
-      %% A lot of things should change to add supertypes 
-      Dict1 = Dict,
+      %% A lot of things should change to add supertypes
       throw({error, io_lib:format("First argument of is_subtype constraint "
 				  "must be a type variable\n", [])})
-  end,
-  insert_constraints(Left, Dict1);
+  end;
 insert_constraints([], Dict) -> Dict.
 
 -spec contract_from_form([_], dict()) -> #contract{}.
 
 contract_from_form(Forms, RecDict) ->
   {Cs, Forms1} = contract_from_form(Forms, RecDict, [], []),
-  #contract{contracts=Cs, 
-	    args=general_domain(Cs),
-	    forms=Forms1}.
+  #contract{contracts = Cs, args = general_domain(Cs), forms = Forms1}.
 
-contract_from_form([Form = {type, _, 'fun', [_, _]} | Left], RecDict, 
+contract_from_form([{type, _, 'fun', [_, _]} = Form | Left], RecDict, 
 		   TypeAcc, FormAcc) ->
   NewTypeAcc = [{erl_types:t_from_form(Form, RecDict), []} | TypeAcc],
   NewFormAcc = [{Form, []}|FormAcc],
   contract_from_form(Left, RecDict, NewTypeAcc, NewFormAcc);
 contract_from_form([{type, _L1, bounded_fun, 
-		     [Form = {type, _L2, 'fun', [_, _]}, Constr]}| Left],
+		     [{type, _L2, 'fun', [_, _]} = Form, Constr]}| Left],
 		   RecDict, TypeAcc, FormAcc) ->
   Constr1 = [constraint_from_form(C, RecDict) || C <- Constr],
   VarDict = insert_constraints(Constr1, dict:new()),
@@ -320,7 +326,7 @@ contract_from_form([{type, _L1, bounded_fun,
 contract_from_form([], _RecDict, TypeAcc, FormAcc) -> 
   {lists:reverse(TypeAcc), lists:reverse(FormAcc)}.
 
-constraint_from_form({type, _, constraint, [{atom,_,is_subtype}, 
+constraint_from_form({type, _, constraint, [{atom, _, is_subtype}, 
 					    [Type1, Type2]]}, RecDict) ->
   {subtype, erl_types:t_from_form(Type1, RecDict), 
    erl_types:t_from_form(Type2, RecDict)};
@@ -343,7 +349,7 @@ general_domain([], AccSig) ->
   AccSig1 = erl_types:subst_all_vars_to_any(AccSig),
   erl_types:t_fun_args(AccSig1).
 
--spec get_invalid_contract_warnings([atom()], #dialyzer_codeserver{}, #dialyzer_plt{}) -> [dial_warning()].
+-spec get_invalid_contract_warnings([module()], #dialyzer_codeserver{}, #dialyzer_plt{}) -> [dial_warning()].
 
 get_invalid_contract_warnings(Modules, CodeServer, Plt) ->
   get_invalid_contract_warnings_modules(Modules, CodeServer, Plt, []).
@@ -367,8 +373,10 @@ get_invalid_contract_warnings_funs([{MFA, {FileLine, Contract}}|Left],
       Sig = erl_types:t_fun(Args, Ret),
       NewAcc =
 	case check_contract(Contract, Sig) of
-	  error -> [invalid_contract_warning(MFA, FileLine, Sig, RecDict)|Acc];
-	  {error, Msg} -> [{?WARN_CONTRACT_SYNTAX, FileLine, Msg}|Acc];
+	  {error, invalid_contract} ->
+	    [invalid_contract_warning(MFA, FileLine, Sig, RecDict)|Acc];
+	  {error, Msg} ->
+	    [{?WARN_CONTRACT_SYNTAX, FileLine, Msg}|Acc];
 	  ok ->
 	    {M, F, A} = MFA,
 	    CSig0 = get_contract_signature(Contract),
@@ -381,7 +389,7 @@ get_invalid_contract_warnings_funs([{MFA, {FileLine, Contract}}|Left],
 		BifRet = erl_bif_types:type(M, F, A),
 		BifSig = erl_types:t_fun(BifArgs, BifRet),
 		case check_contract(Contract, BifSig) of
-		  error -> 
+		  {error, _} -> 
 		    [invalid_contract_warning(MFA, FileLine, BifSig, RecDict)
 		     |Acc];
 		  ok ->

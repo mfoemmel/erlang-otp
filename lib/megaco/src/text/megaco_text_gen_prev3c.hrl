@@ -2234,6 +2234,8 @@ enc_PropertyGroupParm(Val, State)
 %% 			  LSBRKT VALUE DOT DOT VALUE RSBRKT )
 enc_PropertyParm(Val, State)
   when is_record(Val, 'PropertyParm') ->
+%%     d("enc_PropertyParm -> entry with"
+%%       "~n   Val: ~p", [Val]),
     PkgdName = ?META_ENC(property, Val#'PropertyParm'.name),
     [
      enc_PkgdName(PkgdName, State),
@@ -2243,11 +2245,16 @@ enc_PropertyParm(Val, State)
     ].
      
 enc_propertyParmValues([Single], asn1_NOVALUE, State) ->
+%%     d("enc_PropertyParmValues -> entry with"
+%%       "~n   Single: ~p", [Single]),
     [
      ?EqualToken,
      enc_Value(Single, State)
     ];
 enc_propertyParmValues([Single], {relation, Rel}, State) ->
+%%     d("enc_PropertyParmValues -> entry with"
+%%       "~n   Single: ~p"
+%%       "~n   Rel:    ~p", [Single, Rel]),
     case Rel of
 	greaterThan -> [$>, enc_Value(Single, State)];
 	smallerThan -> [$<, enc_Value(Single, State)];
@@ -3184,31 +3191,59 @@ enc_TimeNotation(Val, State)
      enc_STRING(Val#'TimeNotation'.time, State, 8, 8)  % "hhmmssss"
     ].
 
-%% BUGBUG: Does not verify that string must contain at least one char
-%% BUGBUG: This violation of the is required in order to comply with
+%% BUGBUG: Does not verify that the string must contain at least one 
+%% BUGBUG: char. This violation of is required in order to comply with
 %% BUGBUG: the dd/ce ds parameter that may possibly be empty.
 enc_Value({'Value',Val}, State) ->
     enc_Value(Val, State);
 enc_Value(String, _State) ->
-    case quoted_string_count(String, 0, true) of
-	{_, 0} ->
+%%     d("enc_Value -> entry with"
+%%       "~n   String: ~p", [String]),
+    case quoted_string_count(String, 0, true, false) of
+	{_, 0, _} ->
+%% 	    d("enc_Value -> 0"),
 	    [?DQUOTE, String, ?DQUOTE];
-	{false, _} ->
+	{false, _, _} ->
+%% 	    d("enc_Value -> false"),
 	    [?DQUOTE, String, ?DQUOTE];
-	{true, _} ->
+	{true, _, _} ->
+%% 	    d("enc_Value -> true"),
 	    [String]
     end.
- 
-quoted_string_count([H | T], Count, IsSafe) ->
+
+%% needs_quoting(String) -> 
+%%     case quoted_string_count(String, 0, true) of
+%% 	{_, 0} ->
+%% 	    true;
+%% 	{false, _} ->
+%% 	    true;
+%% 	{true, _} ->
+%% 	    false
+%%     end.
+
+quoted_string_count([?DoubleQuoteToken | T], 0 = Count, _IsSafe, _MaybeQuoted) ->
+    %% Already a quoted string. Make sure it ends
+    quoted_string_count(T, Count + 1, true, true);
+quoted_string_count([?DoubleQuoteToken], Count, IsSafe, true = MaybeQuoted) ->
+    %% An explicitly quoted string
+    {IsSafe, Count, MaybeQuoted};
+quoted_string_count([H | T], Count, IsSafe, MaybeQuoted) ->
+%%     d("quoted_string_count -> entry with"
+%%       "~n   H:            ~p"
+%%       "~n   Classified H: ~p"
+%%       "~n   Count:        ~p"
+%%       "~n   IsSafe:       ~p", [H, ?classify_char(H), Count, IsSafe]),
     case ?classify_char(H) of
-	safe_char_upper -> quoted_string_count(T, Count + 1, IsSafe);
-	safe_char       -> quoted_string_count(T, Count + 1, IsSafe);
-	rest_char       -> quoted_string_count(T, Count + 1, false);
-	white_space     -> quoted_string_count(T, Count + 1, false);
+	safe_char_upper -> quoted_string_count(T, Count + 1, IsSafe, MaybeQuoted);
+	safe_char       -> quoted_string_count(T, Count + 1, IsSafe, MaybeQuoted);
+	rest_char       -> quoted_string_count(T, Count + 1, false, MaybeQuoted);
+	white_space     -> quoted_string_count(T, Count + 1, false, MaybeQuoted);
 	_               -> error({illegal_char, H})
     end;
-quoted_string_count([], Count, IsSafe) ->
-    {IsSafe, Count}.
+quoted_string_count([], _Count, _IsSafe, true = _MaybeQuoted) ->
+    error({illegal_char, ?DoubleQuoteToken});
+quoted_string_count([], Count, IsSafe, MaybeQuoted) ->
+    {IsSafe, Count, MaybeQuoted}.
 
 enc_DigitString(String, _State) when is_list(String) ->
     [?DQUOTE, String, ?DQUOTE].
@@ -3232,9 +3267,14 @@ do_enc_OCTET_STRING([], _State, Min, Max, Count) ->
     [].
 
 enc_QUOTED_STRING(String, _State) when is_list(String) ->
-    {_IsSafe, Count} = quoted_string_count(String, 0, true),
-    verify_count(Count, 1, infinity),
-    [?DQUOTE, String, ?DQUOTE].
+    case quoted_string_count(String, 0, true, false) of
+	{_IsSafe, Count, false = _QuotedString} ->
+	    verify_count(Count, 1, infinity),
+	    [?DQUOTE, String, ?DQUOTE];
+	{_IsSafe, Count, true = _QuotedString} ->
+	    verify_count(Count, 3, infinity), % quotes not included in the count
+	    [String]
+    end.
 
 %% The internal format of hex digits is a list of octets
 %% Min and Max means #hexDigits
@@ -3383,7 +3423,8 @@ error(Reason) ->
 %% d(F) ->
 %%     d(F,[]).
 %% d(F, A) ->
-%%     d(get(dbg), F, A).
+%%     %% d(get(dbg), F, A).
+%%     d(true, F, A).
 
 %% d(true, F, A) ->
 %%     io:format("~p:" ++ F ++ "~n", [?MODULE | A]);

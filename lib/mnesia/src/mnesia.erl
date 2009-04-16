@@ -2390,7 +2390,7 @@ clear_table(Tab) ->
 	    transaction(State, fun() -> do_clear_table(Tab) end, [], infinity, Mod, sync);
 	undefined -> 
 	    transaction(undefined, fun() -> do_clear_table(Tab) end, [], infinity, ?DEFAULT_ACCESS, sync);
-	true -> %% Not allowed for clear_table
+	_ -> %% Not allowed for clear_table
 	    mnesia:abort({aborted, nested_transaction})
     end.
 	    

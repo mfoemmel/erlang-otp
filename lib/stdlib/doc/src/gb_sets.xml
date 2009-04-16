@@ -283,6 +283,18 @@ gb_set() = a GB set</code>
       </desc>
     </func>
     <func>
+      <name>is_disjoint(Set1, Set2) -> bool()</name>
+      <fsummary>Check whether two gb_sets are disjoint</fsummary>
+      <type>
+        <v>Set1 = Set2 = gb_set()</v>
+      </type>
+      <desc>
+        <p>Returns <c>true</c> if <c>Set1</c> and
+          <c>Set2</c> are disjoint (have no elements in common),
+	  and <c>false</c> otherwise.</p>
+      </desc>
+    </func>
+    <func>
       <name>is_empty(Set) -> bool()</name>
       <fsummary>Test for empty gb_set</fsummary>
       <type>

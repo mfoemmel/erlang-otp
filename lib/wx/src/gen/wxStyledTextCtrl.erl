@@ -198,7 +198,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
   MOpts = fun({id, Id}, Acc) -> [<<1:32/?UI,Id:32/?UI>>|Acc];
           ({pos, {PosX,PosY}}, Acc) -> [<<2:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<3:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxStyledTextCtrl_new_2,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -219,7 +220,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef}, Opti
   MOpts = fun({id, Id}, Acc) -> [<<1:32/?UI,Id:32/?UI>>|Acc];
           ({pos, {PosX,PosY}}, Acc) -> [<<2:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<3:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxStyledTextCtrl_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI, BinOpt/binary>>).
@@ -527,7 +529,8 @@ markerDefine(#wx_ref{type=ThisT,ref=ThisRef},MarkerNumber,MarkerSymbol, Options)
  when is_integer(MarkerNumber),is_integer(MarkerSymbol),is_list(Options) ->
   ?CLASS(ThisT,wxStyledTextCtrl),
   MOpts = fun({foreground, Foreground}, Acc) -> [<<1:32/?UI,(wxe_util:colour_bin(Foreground)):16/binary,0:32>>|Acc];
-          ({background, Background}, Acc) -> [<<2:32/?UI,(wxe_util:colour_bin(Background)):16/binary,0:32>>|Acc]  end,
+          ({background, Background}, Acc) -> [<<2:32/?UI,(wxe_util:colour_bin(Background)):16/binary,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxStyledTextCtrl_MarkerDefine,
   <<ThisRef:32/?UI,MarkerNumber:32/?UI,MarkerSymbol:32/?UI, 0:32,BinOpt/binary>>).
@@ -1445,7 +1448,8 @@ findText(#wx_ref{type=ThisT,ref=ThisRef},MinPos,MaxPos,Text, Options)
  when is_integer(MinPos),is_integer(MaxPos),is_list(Text),is_list(Options) ->
   ?CLASS(ThisT,wxStyledTextCtrl),
   Text_UC = unicode:characters_to_binary([Text,0]),
-  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc]  end,
+  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxStyledTextCtrl_FindText,
   <<ThisRef:32/?UI,MinPos:32/?UI,MaxPos:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -3373,7 +3377,8 @@ styleSetFontAttr(#wx_ref{type=ThisT,ref=ThisRef},StyleNum,Size,FaceName,Bold,Ita
  when is_integer(StyleNum),is_integer(Size),is_list(FaceName),is_boolean(Bold),is_boolean(Italic),is_boolean(Underline),is_list(Options) ->
   ?CLASS(ThisT,wxStyledTextCtrl),
   FaceName_UC = unicode:characters_to_binary([FaceName,0]),
-  MOpts = fun({encoding, Encoding}, Acc) -> [<<1:32/?UI,Encoding:32/?UI>>|Acc]  end,
+  MOpts = fun({encoding, Encoding}, Acc) -> [<<1:32/?UI,Encoding:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxStyledTextCtrl_StyleSetFontAttr,
   <<ThisRef:32/?UI,StyleNum:32/?UI,Size:32/?UI,(byte_size(FaceName_UC)):32/?UI,(FaceName_UC)/binary, 0:(((8- ((0+byte_size(FaceName_UC)) band 16#7)) band 16#7))/unit:8,(wxe_util:from_bool(Bold)):32/?UI,(wxe_util:from_bool(Italic)):32/?UI,(wxe_util:from_bool(Underline)):32/?UI, 0:32,BinOpt/binary>>).
@@ -3456,7 +3461,8 @@ sendMsg(#wx_ref{type=ThisT,ref=ThisRef},Msg, Options)
  when is_integer(Msg),is_list(Options) ->
   ?CLASS(ThisT,wxStyledTextCtrl),
   MOpts = fun({wp, Wp}, Acc) -> [<<1:32/?UI,Wp:32/?UI>>|Acc];
-          ({lp, Lp}, Acc) -> [<<2:32/?UI,Lp:32/?UI>>|Acc]  end,
+          ({lp, Lp}, Acc) -> [<<2:32/?UI,Lp:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxStyledTextCtrl_SendMsg,
   <<ThisRef:32/?UI,Msg:32/?UI, BinOpt/binary>>).

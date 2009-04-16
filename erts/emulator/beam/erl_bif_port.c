@@ -594,12 +594,9 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
     if (is_not_nil(settings)) {
 	nargs = list_val(settings);
 	while (1) {
-	    if (is_tuple(*nargs)) {
+	    if (is_tuple_arity(*nargs, 2)) {
 		tp = tuple_val(*nargs);
 		arity = *tp++;
-		if (arity != make_arityval(2)) {
-		    goto badarg;
-		}
 		option = *tp++;
 		if (option == am_packet) {
 		    if (is_not_small(*tp)) {
@@ -852,13 +849,10 @@ static byte* convert_environment(Process* p, Eterm env)
 	Eterm* tp;
 
 	tmp = CAR(list_val(env));
-	if (is_not_tuple(tmp)) {
+	if (is_not_tuple_arity(tmp, 2)) {
 	    goto done;
 	}
 	tp = tuple_val(tmp);
-	if (tp[0] != make_arityval(2)) {
-	    goto done;
-	}
 	tmp = CONS(hp, make_small(0), NIL);
 	hp += 2;
 	if (tp[2] != am_false) {

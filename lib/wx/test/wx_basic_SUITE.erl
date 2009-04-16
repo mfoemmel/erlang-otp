@@ -53,9 +53,7 @@ all(suite) ->
      several_apps,
      wx_api,
      wx_misc,
-     data_types,
-     destroy_app,
-     app_dies
+     data_types
     ].
   
 %% The test cases
@@ -193,8 +191,9 @@ create_menus(Frame) ->
 
 %% Test the wx_misc.erl api functionality.
 wx_misc(TestInfo) when is_atom(TestInfo) -> wx_test_lib:tc_info(TestInfo);
-wx_misc(Config) ->
-    wx:new(),
+wx_misc(Config) ->    
+    wx:new([{debug, trace}]),
+    put(wx_test_verbose, true),
     ?m(ok, wx_misc:bell()),
     ?m(true, length(wx_misc:getUserId()) > 0),
     ?m(true, is_list(wx_misc:getEmailAddress())),
@@ -224,11 +223,16 @@ wx_misc(Config) ->
     end,
     
     %% wx:shutdown()  %% How do you test this?
-    
-    ?m(false, wx_misc:isBusy()),
-    ?m(ok, wx_misc:beginBusyCursor([])),
-    ?m(true, wx_misc:isBusy()),
-    ?m(ok, wx_misc:endBusyCursor()),
+
+    case os:type() of 
+	{win32, _} -> %% These hangs when running automatic tests
+	    skip;     %% through ssh on windows. Works otherwise
+	_ -> 
+	    ?m(false, wx_misc:isBusy()),
+	    ?m(ok, wx_misc:beginBusyCursor([])),
+	    ?m(true, wx_misc:isBusy()),
+	    ?m(ok, wx_misc:endBusyCursor())
+    end,
     
     %%?m(true, is_boolean(wx_misc:setDetectableAutoRepeat(true)),
     Curr  = wx_misc:getCurrentId(),
@@ -288,77 +292,3 @@ data_types(_Config) ->
     wxClientDC:destroy(CDC),
     %%wx_test_lib:wx_destroy(Frame,Config).
     wx:destroy().
-
-%%  Verify that everything is handled on the queue first
-%%  before wx:destroy is called.
-destroy_app(TestInfo) when is_atom(TestInfo) -> wx_test_lib:tc_info(TestInfo);
-destroy_app(_Config) ->
-    %% This is timing releated but we test a couple of times
-    wx_test_lib:flush(),
-    ?m(ok, destroy_app_test(15)).
-
-destroy_app_test(N) when N > 0 ->
-    Wx = ?mr(wx_ref, wx:new()),    
-    Frame = wxFrame:new(Wx, 1, "Data Types"),
-    ?m(ok, wxFrame:destroy(Frame)),
-    wx:destroy(),
-    receive 
-	Msg -> Msg
-    after 150 -> destroy_app_test(N-1)
-    end;
-destroy_app_test(_) -> 
-    receive 
-	Msg -> Msg
-    after 1000 ->  ok
-    end.
-    
-
-app_dies(TestInfo) when is_atom(TestInfo) -> wx_test_lib:tc_info(TestInfo);
-app_dies(_Config) ->
-    Tester = fun(Die0) ->
-		     Die = (Die0*2) + ?LINE,
-		     Wx = wx:new(),
-		     oops(Die,?LINE),
-		     Frame = wxFrame:new(Wx, 1, ?MODULE_STRING ++ integer_to_list(?LINE)),
-		     oops(Die,?LINE),
-		     wxFrame:createStatusBar(Frame, []),
-		     oops(Die,?LINE),
-		     Win=wxWindow:new(Frame, ?wxID_ANY),
-		     oops(Die,?LINE),
-		     _Pen  = wxPen:new({0,0,0}, [{width, 3}]),
-		     oops(Die,?LINE),
-		     _Font = wxFont:new(10, ?wxSWISS, ?wxNORMAL, ?wxNORMAL,[]),
-		     oops(Die,?LINE), 
-		     wxWindow:connect(Win, key_up),  
-		     oops(Die,?LINE),
-		     wxWindow:connect(Win, key_up, [{callback, fun(_,_) -> callback end}]),
-		     oops(Die,?LINE),
-		     wxFrame:show(Frame),
-		     oops(Die,?LINE),
-		     DC0  = wxClientDC:new(Win),
-		     oops(Die,?LINE),
-		     DC   = wxBufferedDC:new(DC0),
-		     oops(Die,?LINE),
-		     _Size = wxWindow:getSize(Win),
-		     oops(Die,?LINE),		    %% redraw(DC, Size, G),
-		     wxBufferedDC:destroy(DC),
-		     oops(Die,?LINE),
-		     wxClientDC:destroy(DC0),
-		     oops(last,?LINE)
-	     end,
-    process_flag(trap_exit,true),
-    app_dies2(Tester, 1),
-    ok.
-
-app_dies2(Test, N) ->
-    spawn_link(fun() -> Test(N) end),
-    receive 
-	{'EXIT', _, {oops, last}} -> ok;
-	{'EXIT', _, {oops, _}} -> app_dies2(Test, N+1)
-    end.
-        
-oops(Die, Line) when (Die =:= last) orelse (Die =< Line) ->
-    timer:sleep(500),
-    ?log(" Exits at line ~p~n",[Line]),
-    exit({oops, Die});
-oops(_,_) -> ok.

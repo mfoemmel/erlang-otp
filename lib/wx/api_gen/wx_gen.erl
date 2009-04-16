@@ -243,38 +243,46 @@ parse_members(MemberName, Members, Defs, Class, Opts) ->
     end.
 	    
 
-parse_attr(Defs, Class, Ev, Info) ->
+parse_attr(Defs, Class, Ev, Info = #hs{acc=AccList0}) ->
 %    io:format("Parsing Class ~p~n", [Class#class.name]),
-    Attrs = parse_attr1(Defs, Info),
-    Class#class{attributes = Attrs, event=Ev}.
+    {Attrs, AccList} = parse_attr1(Defs, AccList0, Info, []),
+    case AccList of 
+	[] -> 
+	    Class#class{attributes=Attrs, event=Ev};
+	_ ->
+	    Inherited = [{inherited, Inherit} || Inherit <- AccList],
+	    Class#class{attributes=Attrs++Inherited, event=Ev}
+    end.
     
-parse_attr1([{{attr,_}, #xmlElement{content=C, attributes=Attrs}}|R], Opts) ->    
+parse_attr1([{{attr,_}, #xmlElement{content=C, attributes=Attrs}}|R], AttrList0, Opts, Res) ->    
     Parse  = fun(Con, Ac) -> parse_param(Con, Opts, Ac) end,
     Param0 = foldl(Parse, #param{}, drop_empty(C)),
     case keysearch(prot, #xmlAttribute.name, Attrs) of
 	{value, #xmlAttribute{value = "public"}} ->
-%	    io:format("Public ~p ~n", [Param0]),
-	    [Param0#param{in=false,prot=public,acc=attr_acc(Param0,Opts)}
-	     | parse_attr1(R,Opts)];
+	    {Acc,AttrList} = attr_acc(Param0, AttrList0),	    
+	    parse_attr1(R,AttrList,Opts,
+			[Param0#param{in=false,prot=public,acc=Acc}|Res]);
 	{value, #xmlAttribute{value = "protected"}} ->
-%	    io:format("Protected ~p ~n", [Param0]),	    
-%	    parse_attr1(R,Opts);
-	    [Param0#param{in=false,prot=protected,acc=attr_acc(Param0,Opts)}
-	     | parse_attr1(R,Opts)];
+	    {Acc,AttrList} = attr_acc(Param0, AttrList0),	    
+	    parse_attr1(R,AttrList,Opts,
+			[Param0#param{in=false,prot=protected,acc=Acc}|Res]);
 	{value, #xmlAttribute{value = "private"}} ->
-%	    io:format("Private ~p ~n", [Param0]),
-%	    parse_attr1(R,Opts)
-	    [Param0#param{in=false,prot=private,acc=attr_acc(Param0,Opts)} 
-	     | parse_attr1(R,Opts)]
+	    {Acc,AttrList} = attr_acc(Param0, AttrList0),
+	    parse_attr1(R,AttrList,Opts, 
+			[Param0#param{in=false,prot=private,acc=Acc}|Res])
     end;
-parse_attr1([{_Id,_}|R],Info) ->
-    parse_attr1(R,Info);
-parse_attr1([],_) ->
-    [].
+parse_attr1([{_Id,_}|R],AttrList,Info, Res) ->
+    parse_attr1(R,AttrList,Info, Res);
+parse_attr1([],Left,_, Res) ->
+    {lists:reverse(Res), Left}.
 
-attr_acc(#param{name=N}, #hs{acc=List}) ->
-    get_value(list_to_atom(N), List, undefined).
-   
+attr_acc(#param{name=N}, List) ->
+    Name = list_to_atom(N),
+    case get_value(Name, List, undefined) of
+	undefined -> {undefined, List};
+	Val -> {Val, lists:keydelete(Name,1,List)}
+    end.
+	        
 load_members(FileName, Class, Defs, Tab, Type,Opts) ->
     File = filename:join(["wx_xml",FileName ++ ".xml"]),
     put({loaded, FileName}, true),
@@ -1114,7 +1122,9 @@ translate_enums2(Ms,Class) when is_list(Ms) ->
 
 translate_enums3(P=#param{type=Type0},InClass) ->
     Type = translate_enums_type(Type0,InClass),
-    P#param{type=Type}.
+    P#param{type=Type};
+translate_enums3(InHer = {inherited, _},_InClass) ->
+    InHer.
 
 translate_enums_type(T=#type{base={class,C}},Class) ->
     case get_enum(C,Class) of
@@ -1209,7 +1219,7 @@ parse_enums(Files) ->
     DontSearch = ["wxchar","filefn", "platform", "strconv", 
 		  "buffer", "string", "debug", "platinfo"],
     %% Arg need to patch some specials, atleast for wx-2.6
-    ExtraSearch = ["gtk_2glcanvas"],
+    ExtraSearch = ["gtk_2glcanvas", "generic_2splash"],
     parse_enums(Files ++ ExtraSearch,gb_sets:from_list(DontSearch)).
 
 parse_enums([File|Files], Parsed) ->

@@ -141,9 +141,10 @@ rtl_ssapre(RtlSSACfg, Options) ->
 %% ######################## XSI INSERTION ###################################
 %% ##########################################################################
 
-perform_Xsi_insertion(Cfg, Options)->
+perform_Xsi_insertion(Cfg, Options) ->
   init_counters(), %% Init counters for Bottoms and Temps
-  XsiGraph = digraph:new([cyclic,private]),
+  DigraphOpts = [cyclic, private],
+  XsiGraph = digraph:new(DigraphOpts),
   %% Be carefull, the digraph component is NOT garbage collected,
   %% so don't create 20 millions of instances!
   %% finds the longest depth
@@ -163,10 +164,10 @@ perform_Xsi_insertion(Cfg, Options)->
   %% Creating the CFGGraph
   ?pp_debug("~n~n############# Creating CFG Graph",[]),
   ?pp_debug("~n############# Labels = ~w",[Labels]),
-  CFGGraph = digraph:new([cyclic,private]),
+  CFGGraph = digraph:new(DigraphOpts),
   [StartLabel|Others] = Labels,   % adding the start label as a leaf
   ?pp_debug("~nAdding a vertex for the start label: ~w",[StartLabel]),
-  ?GRAPH:add_vertex(CFGGraph,StartLabel,#block{type=top}),
+  ?GRAPH:add_vertex(CFGGraph, StartLabel, #block{type = top}),
                                                 % Doing the others
   ?option_time(MPs=create_cfggraph(Others,Cfg3,CFGGraph,[],[],[],XsiGraph),"RTL A-SSAPRE Xsi Insertion, creating intermediate 'SSAPRE Graph'",Options),
 
@@ -408,17 +409,15 @@ emend(Expr, S, Var) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 split_for_xsi([], Acc) ->
-  {[],Acc};  %  no_xsi_no_phi_found;
-split_for_xsi([I|Rest], Acc) -> %% [I|Rest] in backward order, Acc in order
+  {[], Acc};  %  no_xsi_no_phi_found;
+split_for_xsi([I|Is] = Code, Acc) -> %% [I|Is] in backward order, Acc in order
   case I of
     #xsi_link{} ->
-      BeforeCode = [I|Rest],
-      {lists:reverse(BeforeCode), Acc};
+      {lists:reverse(Code), Acc};
     #phi{} ->
-      BeforeCode = [I|Rest],
-      {lists:reverse(BeforeCode), Acc};
+      {lists:reverse(Code), Acc};
     _ ->
-      split_for_xsi(Rest,[I|Acc])
+      split_for_xsi(Is, [I|Acc])
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -455,7 +454,6 @@ determine_operands(Xsi,[P|Ps],Cfg,K,XsiGraph,ActiveAcc) ->
   ReverseCode = lists:reverse(hipe_bb:code(?CFG:bb(Cfg,Label))),
   VisitedInstructions = get_visited_instructions(Xsi,ReverseCode),
   Res = determine_e_prime(Xsi#xsi.inst,VisitedInstructions,P,XsiGraph),
-
   case Res of
     operand_is_bottom ->
       NewXsi = xsi_arg_update(Xsi,P,new_bottom()),
@@ -505,7 +503,7 @@ determine_operands(Xsi,[P|Ps],Cfg,K,XsiGraph,ActiveAcc) ->
 
  	  %% Should not be the same block !!!!!!!
  	  RCode = lists:reverse(hipe_bb:code(?CFG:bb(Cfg,XsiChild#xsi.label))),
- 	  {BCode,ACode}=split_code_for_xsi(RCode,[]),
+ 	  {BCode,ACode} = split_code_for_xsi(RCode,[]),
 
  	  NewCode = BCode++[XsiChildLink|ACode],
  	  NewBB = hipe_bb:mk_bb(NewCode),
@@ -523,7 +521,7 @@ determine_operands(Xsi,[P|Ps],Cfg,K,XsiGraph,ActiveAcc) ->
 
 determine_e_prime(Expr,VisitedInstructions,Pred,XsiGraph) ->
   %% MUST FETCH FROM THE XSI TREE, since Xsis are not updated yet in the CFG
-  NewExpr=emend_with_phis(Expr,VisitedInstructions,Pred),
+  NewExpr = emend_with_phis(Expr,VisitedInstructions,Pred),
   emend_with_processed_xsis(NewExpr,VisitedInstructions,Pred,XsiGraph).
 
 emend_with_phis(EmendedE, [], _) ->
@@ -568,7 +566,7 @@ emend_with_processed_xsis(E, [I|Rest], Pred, XsiGraph) ->
  	      emend_with_processed_xsis(E,Rest,Pred,XsiGraph)
  	  end;
   	true ->
- 	  A=xsi_arg(Xsi,Pred),
+ 	  A = xsi_arg(Xsi,Pred),
  	  %% ?pp_debug(" ######### xsi_arg(I:~w,Pred:~w) = ~w~n",[I,Pred,A]),
  	  case A of
  	    #bottom{} ->
@@ -592,31 +590,31 @@ emend_with_processed_xsis(E, [I|Rest], Pred, XsiGraph) ->
 %% get_visited_instructions(Xsi,[]) ->
 %%   ?pp_debug("~nWe don't find this xsi with def ",[]),pp_arg(Xsi#xsi.def),?pp_debug(" in L~w : ",[Xsi#xsi.label]),
 %%   exit({?MODULE,no_such_xsi_in_block,"We didn't find that Xsi in the block"});
-get_visited_instructions(Xsi,[I|Rest]) ->
+get_visited_instructions(Xsi, [I|Is]) ->
   case I of
     #xsi_link{} ->
       XsiDef = Xsi#xsi.def,
       Key = XsiDef#temp.key,
       case I#xsi_link.num =:= Key of
  	true ->
- 	  Rest;
+ 	  Is;
  	false ->
- 	  get_visited_instructions(Xsi,Rest)
+ 	  get_visited_instructions(Xsi, Is)
       end;
     _ ->
-      get_visited_instructions(Xsi,Rest)
+      get_visited_instructions(Xsi, Is)
   end.
 
 split_code_for_xsi([], Acc) ->
   {[],Acc};
-split_code_for_xsi([I|Rest], Acc) ->
+split_code_for_xsi([I|Is] = Code, Acc) ->
   case I of
     #xsi_link{} ->
-      {lists:reverse([I|Rest]),Acc};
+      {lists:reverse(Code), Acc};
     #phi{} ->
-      {lists:reverse([I|Rest]),Acc};
+      {lists:reverse(Code), Acc};
     _ ->
-      split_code_for_xsi(Rest,[I|Acc])
+      split_code_for_xsi(Is, [I|Acc])
   end.
 
 check_one_operand(E, [], BlockLabel, Cfg, XsiKey, XsiGraph) ->
@@ -635,11 +633,11 @@ check_one_operand(E, [], BlockLabel, Cfg, XsiKey, XsiGraph) ->
           ?pp_debug("\n\n############## Wow expr is constant: ~w",[E]),
           Var = ?RTL:mk_new_var(),
           Value = eval_expr(E),
-          Op = #const_expr{var=Var,value=Value},
+          Op = #const_expr{var = Var, value = Value},
           {expr_is_const, Op};
         false ->
           VisitedInstructions = lists:reverse(?BB:code(?CFG:bb(Cfg,P))),
-          check_one_operand(E,VisitedInstructions,P,Cfg,XsiKey,XsiGraph)
+          check_one_operand(E, VisitedInstructions, P, Cfg, XsiKey, XsiGraph)
       end;
     _ ->
       %% It's a merge point
@@ -648,16 +646,16 @@ check_one_operand(E, [], BlockLabel, Cfg, XsiKey, XsiGraph) ->
           ?pp_debug("\n\n############## Wow expr is constant at merge point: ~w",[E]),
           Var = ?RTL:mk_new_var(),
           Value = eval_expr(E),
-          Op = #const_expr{var=Var,value=Value},
+          Op = #const_expr{var = Var, value = Value},
           {expr_is_const, Op};
         false ->
           Temp = new_temp(),
-          OpList = [#xsi_op{pred=X} || X <- Preds],
-          Xsi = #xsi{inst=E,def=Temp,label=BlockLabel,opList=OpList},
+          OpList = [#xsi_op{pred = X} || X <- Preds],
+          Xsi = #xsi{inst = E, def = Temp, label = BlockLabel, opList = OpList},
           {merge_point, Xsi}
       end
   end;
-check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
+check_one_operand(E, [CC|Rest], BlockLabel, Cfg, XsiKey, XsiGraph) ->
   SRC1 = ?RTL:alu_src1(E),
   SRC2 = ?RTL:alu_src2(E),
   %% C is the previous instruction
@@ -747,7 +745,6 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
 
       %%RegisterTest = ?RTL:is_reg(?RTL:alu_dst(E)) orelse ?RTL:is_reg(SRC1) orelse ?RTL:is_reg(SRC2),
       RegisterTest = ?RTL:is_reg(?RTL:alu_dst(E)),
-
       case PreColouredTest orelse RegisterTest of
  	true ->
  	  {def_found,new_bottom()};
@@ -797,7 +794,7 @@ create_cfggraph([Label|Ls],Cfg,CFGGraph,ToBeFactorizedAcc,MPAcc,LateEdges,XsiGra
       Succs = ?CFG:succ(Cfg, Label),
       case Succs of
         [] -> %% Exit point
-          ?GRAPH:add_vertex(CFGGraph, Label, #block{type=exit}),
+          ?GRAPH:add_vertex(CFGGraph, Label, #block{type = exit}),
           NewToBeFactorizedAcc = ToBeFactorizedAcc;
         _ -> %% Split point
           ?GRAPH:add_vertex(CFGGraph,Label,#block{type=not_mp,attributes={P,Succs}}),
@@ -830,15 +827,15 @@ get_defs_in_non_merge_block([Inst|Rest], Acc) ->
     #pre_candidate{} ->
       Def = Inst#pre_candidate.def,
       case Def of
-        #temp{}->
-          %%        {temp,Key,_Var}->
+        #temp{} ->
+          %%        {temp,Key,_Var} ->
           %%          get_defs_in_non_merge_block(Rest,[Key|Acc]);
-          get_defs_in_non_merge_block(Rest,[Def#temp.key|Acc]);
+          get_defs_in_non_merge_block(Rest, [Def#temp.key|Acc]);
  	_-> %% Real variables or bottom
- 	  get_defs_in_non_merge_block(Rest,Acc)
+ 	  get_defs_in_non_merge_block(Rest, Acc)
       end;
     _  ->
-      get_defs_in_non_merge_block(Rest,Acc)
+      get_defs_in_non_merge_block(Rest, Acc)
   end.
 
 get_info_in_merge_block([],_XsiGraph,Defs,Xsis,Maps,Uses) ->
@@ -875,7 +872,7 @@ add_map_and_uses([XsiOp|Ops], Key, Maps, Uses) ->
   case XsiOp#xsi_op.op of
     #bottom{} ->
       Set = case gb_trees:lookup(XsiOp,Maps) of
-              {value,V} ->
+              {value, V} ->
                 ?SETS:add_element(Key,V);
               none ->
                 ?SETS:from_list([Key])
@@ -884,7 +881,7 @@ add_map_and_uses([XsiOp|Ops], Key, Maps, Uses) ->
       NewUses = Uses;
     #temp{} ->
       Set = case gb_trees:lookup(XsiOp,Maps) of
-              {value,V}->
+              {value, V} ->
                 ?SETS:add_element(Key,V);
               none ->
                 ?SETS:from_list([Key])
@@ -893,7 +890,7 @@ add_map_and_uses([XsiOp|Ops], Key, Maps, Uses) ->
       Pred = XsiOp#xsi_op.pred,
       OOP = XsiOp#xsi_op.op,
       SSet = case gb_trees:lookup(Pred,Uses) of
-	       {value,VV} ->
+	       {value, VV} ->
 		 ?SETS:add_element(OOP#temp.key,VV);
 	       none ->
 		 ?SETS:from_list([OOP#temp.key])
@@ -901,7 +898,7 @@ add_map_and_uses([XsiOp|Ops], Key, Maps, Uses) ->
       NewUses = gb_trees:enter(Pred,SSet,Uses);
     #eop{} ->
       Set = case gb_trees:lookup(XsiOp,Maps) of
-              {value,V} ->
+              {value, V} ->
                 ?SETS:add_element(Key,V);
               none ->
                 ?SETS:from_list([Key])
@@ -910,7 +907,7 @@ add_map_and_uses([XsiOp|Ops], Key, Maps, Uses) ->
       Pred = XsiOp#xsi_op.pred,
       Op = XsiOp#xsi_op.op,
       SSet = case gb_trees:lookup(Pred,Uses) of
-	       {value,VV}->
+	       {value, VV} ->
 		 ?SETS:add_element(Op#eop.stopped_by,VV);
 	       none ->
 		 ?SETS:from_list([Op#eop.stopped_by])
@@ -929,7 +926,7 @@ post_process([E|Es], CFGGraph) ->
   Att = Block#block.attributes,
   Uses = Att#mp.uses,
   SetToAdd = case gb_trees:lookup(Pred,Uses) of
-               {value,Set}->
+               {value, Set} ->
                  Set;
                none ->
                  ?SETS:new()
@@ -963,22 +960,22 @@ shoot_info_upwards([E|Es], Acc, CFGGraph) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  DOWNSAFETY   %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-perform_downsafety([],_G,_XsiG) ->
+perform_downsafety([], _G, _XsiG) ->
   ok;
-perform_downsafety([MP|MPs],G,XG) ->
-  {V,Block} = ?GRAPH:vertex(G,MP),
+perform_downsafety([MP|MPs], G, XG) ->
+  {V,Block} = ?GRAPH:vertex(G, MP),
   NDS = ?SETS:new(),
   Att = Block#block.attributes,
   Maps = Att#mp.maps,
   Defs = Att#mp.defs,
-  OutEdges = ?GRAPH:out_edges(G,MP),
+  OutEdges = ?GRAPH:out_edges(G, MP),
   %% ?pp_debug("~n Inspection Maps : ~w",[Maps]),
   NewNDS = parse_keys(gb_trees:keys(Maps),Maps,OutEdges,G,Defs,NDS,XG),
-  NewAtt = Att#mp{ndsSet=NewNDS},
-  ?GRAPH:add_vertex(G,V,Block#block{attributes=NewAtt}),
-  ?pp_debug("~n Not Downsafe at L~w: ~w",[V,NewNDS]),
+  NewAtt = Att#mp{ndsSet = NewNDS},
+  ?GRAPH:add_vertex(G, V, Block#block{attributes = NewAtt}),
+  ?pp_debug("~n Not Downsafe at L~w: ~w", [V, NewNDS]),
   %%io:format(standard_io,"~n Not Downsafe at L~w: ~w",[V,NewNDS]),
-  perform_downsafety(MPs,G,XG).
+  perform_downsafety(MPs, G, XG).
 
 parse_keys([], _Maps, _OutEdges, _G, _Defs, NDS, _XsiG) ->
   NDS;
@@ -996,20 +993,20 @@ parse_keys([M|Ms], Maps, OutEdges, G, Defs, NDS, XsiG) ->
 	   end,
   parse_keys(Ms, Maps, OutEdges, G, Defs, NewNDS, XsiG).
 
-getNDS(_M,_KillerSet,NDS,[],_G,_XsiG) ->
+getNDS(_M, _KillerSet, NDS, [], _G, _XsiG) ->
   NDS;
-getNDS(M,KillerSet,NDS,[E|Es],G,XsiG) ->
-  {_EE,_V1,_V2,Label} = ?GRAPH:edge(G,E),
-  Set = ?SETS:intersection(KillerSet,Label),
+getNDS(M, KillerSet, NDS, [E|Es], G, XsiG) ->
+  {_EE,_V1,_V2,Label} = ?GRAPH:edge(G, E),
+  Set = ?SETS:intersection(KillerSet, Label),
   %% ?pp_debug("~n ######## Intersection between KillerSet: ~w and Label: ~w",[KillerSet,Label]),
   %% ?pp_debug("~n ######## ~w",[Set]),
   case ?SETS:size(Set) of
     0 ->
       %% M is not downsafe
-      ?SETS:add_element(M,NDS);
+      ?SETS:add_element(M, NDS);
     _ ->
       %% Try the other edges
-      getNDS(M,KillerSet,NDS,Es,G,XsiG)
+      getNDS(M, KillerSet, NDS, Es, G, XsiG)
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1035,22 +1032,22 @@ perform_can_be_available([Key|Keys],XsiGraph,CFGGraph) ->
       Set = ?SETS:intersection(NDS,OpList),
       case ?SETS:size(Set) of
         0 ->
-          ?GRAPH:add_vertex(XsiGraph,V,Xsi#xsi{cba=true}),
-          perform_can_be_available(Keys,XsiGraph,CFGGraph);
+          ?GRAPH:add_vertex(XsiGraph, V, Xsi#xsi{cba = true}),
+          perform_can_be_available(Keys, XsiGraph, CFGGraph);
         _ ->
           LIST = [X || #temp{key=X} <- ?SETS:to_list(Set)],
           case LIST of
             [] ->
-              ?GRAPH:add_vertex(XsiGraph,V,Xsi#xsi{cba=false}),
-              ImmediateParents = ?GRAPH:in_neighbours(XsiGraph,Key),
+              ?GRAPH:add_vertex(XsiGraph, V, Xsi#xsi{cba = false}),
+              ImmediateParents = ?GRAPH:in_neighbours(XsiGraph, Key),
               propagate_cba(ImmediateParents,XsiGraph,Xsi#xsi.def,CFGGraph);
             _ ->
               ok
           end,
-          perform_can_be_available(Keys,XsiGraph,CFGGraph)
+          perform_can_be_available(Keys, XsiGraph, CFGGraph)
       end;
     _ -> %% True or False => recurse
-      perform_can_be_available(Keys,XsiGraph,CFGGraph)
+      perform_can_be_available(Keys, XsiGraph, CFGGraph)
   end.
 
 propagate_cba([],_XG,_Def,_CFGG) -> ok;
@@ -1063,10 +1060,10 @@ propagate_cba([IPX|IPXs],XsiGraph,XsiDef,CFGGraph) ->
   case IPXsi#xsi.cba of
     false -> ok;
     _ ->
-      case lists:keymember(XsiDef,#xsi_op.op,List) of
+      case lists:keymember(XsiDef, #xsi_op.op, List) of
         true ->
-          ?GRAPH:add_vertex(XsiGraph,V,IPXsi#xsi{cba=false}),
-          ImmediateParents = ?GRAPH:in_neighbours(XsiGraph,IPX),
+          ?GRAPH:add_vertex(XsiGraph, V, IPXsi#xsi{cba = false}),
+          ImmediateParents = ?GRAPH:in_neighbours(XsiGraph, IPX),
           propagate_cba(ImmediateParents,XsiGraph,IPXsi#xsi.def,CFGGraph);
         _ ->
           ok
@@ -1076,7 +1073,7 @@ propagate_cba([IPX|IPXs],XsiGraph,XsiDef,CFGGraph) ->
 
 perform_later([], _XsiGraph) -> ok;
 perform_later([Key|Keys], XsiGraph) ->
-  {V,Xsi} = ?GRAPH:vertex(XsiGraph,Key),
+  {V, Xsi} = ?GRAPH:vertex(XsiGraph, Key),
   %% ?pp_debug("~n DEBUG : inspecting later of ~w (~w)~n",[Key,Xsi#xsi.later]),
   case Xsi#xsi.later of
     undefined ->
@@ -1093,7 +1090,7 @@ perform_later([Key|Keys], XsiGraph) ->
             _ ->
               ?GRAPH:add_vertex(XsiGraph,V,Xsi#xsi{later=false,wba=false})
           end,
-          AllParents = digraph_utils:reaching([Key],XsiGraph),
+          AllParents = digraph_utils:reaching([Key], XsiGraph),
           ?pp_debug("~nPropagating to all parents of t~w: ~w",[Key,AllParents]),
           propagate_later(AllParents,XsiGraph),
           perform_later(Keys,XsiGraph);
@@ -1129,7 +1126,7 @@ parse_ops([], Res) ->
   Res;
 parse_ops([Op|Ops], Res) ->
   case Op#xsi_op.op of
-    #temp{}->
+    #temp{} ->
       NewRes = has_temp,
       parse_ops(Ops,NewRes);
     #bottom{} ->
@@ -1664,26 +1661,26 @@ init_counters() ->
   put({ssapre_index,index_count}, 0).
 
 new_bottom() ->
-  V = get({ssapre_index,index_count}),
-  put({ssapre_index,index_count}, V+1),
-  #bottom{key=V,var=?RTL:mk_new_var()}.
+  IndxCountPair = {ssapre_index, index_count},
+  V = get(IndxCountPair),
+  put(IndxCountPair, V+1),
+  #bottom{key = V, var = ?RTL:mk_new_var()}.
 
 new_temp() ->
-  V = get({ssapre_temp,temp_count}),
-  put({ssapre_temp,temp_count}, V+1),
-  #temp{key=V,var=?RTL:mk_new_var()}.
+  TmpCountPair = {ssapre_temp, temp_count},
+  V = get(TmpCountPair),
+  put(TmpCountPair, V+1),
+  #temp{key = V, var = ?RTL:mk_new_var()}.
 
 init_redundancy_count() ->
   put({ssapre_redundancy,redundancy_count}, 0).
 
 redundancy_add() ->
-  V = get({ssapre_redundancy,redundancy_count}),
-  put({ssapre_redundancy,redundancy_count}, V+1).
+  RedCountPair = {ssapre_redundancy, redundancy_count},
+  V = get(RedCountPair),
+  put(RedCountPair, V+1).
 
 -ifdef(SSAPRE_DEBUG).
 get_redundancy_count() ->
   get({ssapre_redundancy,redundancy_count}).
 -endif.
-
-%% //////////////////
-%% // End of the file

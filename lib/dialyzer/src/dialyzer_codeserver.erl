@@ -47,54 +47,64 @@
 %%--------------------------------------------------------------------
 
 -spec new() -> #dialyzer_codeserver{}.
+
 new() ->
   #dialyzer_codeserver{table_pid = table__new()}.
 
 -spec delete(#dialyzer_codeserver{}) -> 'ok'.
+
 delete(#dialyzer_codeserver{table_pid = TablePid}) ->
   table__delete(TablePid).
 
 -spec insert([_], #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
+
 insert(List, CS) ->
   NewTablePid = table__insert(CS#dialyzer_codeserver.table_pid, List),
   CS#dialyzer_codeserver{table_pid = NewTablePid}.
 
 -spec insert_exports([mfa()], #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
-insert_exports(List, CS = #dialyzer_codeserver{exports = Exports}) ->
+
+insert_exports(List, #dialyzer_codeserver{exports = Exports} = CS) ->
   Set = sets:from_list(List),
   NewExports = sets:union(Exports, Set),
   CS#dialyzer_codeserver{exports = NewExports}.
 
 -spec is_exported(mfa(), #dialyzer_codeserver{}) -> bool().
+
 is_exported(MFA, #dialyzer_codeserver{exports = Exports}) ->
   sets:is_element(MFA, Exports).
 
 -spec all_exports(#dialyzer_codeserver{}) -> set().
+
 all_exports(#dialyzer_codeserver{exports = Exports}) ->
   Exports.
 
--spec lookup(_, #dialyzer_codeserver{}) -> any().
+-spec lookup(_, #dialyzer_codeserver{}) -> {'ok', any()}.
+
 lookup(Id, CS) ->
   table__lookup(CS#dialyzer_codeserver.table_pid, Id).
 
--spec next_core_label(#dialyzer_codeserver{}) -> non_neg_integer().
+-spec next_core_label(#dialyzer_codeserver{}) -> label().
+
 next_core_label(#dialyzer_codeserver{next_core_label = NCL}) ->
   NCL.
 
--spec update_next_core_label(non_neg_integer(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
-update_next_core_label(NCL, CS = #dialyzer_codeserver{}) ->
+-spec update_next_core_label(label(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
+
+update_next_core_label(NCL, CS) ->
   CS#dialyzer_codeserver{next_core_label = NCL}.
 
--spec store_records(atom(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
+-spec store_records(module(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}.
+
 store_records(Mod, Dict, 
 	      CS = #dialyzer_codeserver{records = RecDict}) when is_atom(Mod) ->
   case dict:size(Dict) =:= 0 of
     true -> CS;
-    false ->
-      CS#dialyzer_codeserver{records = dict:store(Mod, Dict, RecDict)}
+    false -> CS#dialyzer_codeserver{records = dict:store(Mod, Dict, RecDict)}
   end.
 
--spec lookup_records(atom(), #dialyzer_codeserver{}) -> dict(). 
+-spec lookup_records(module(), #dialyzer_codeserver{}) -> dict(). 
+
 lookup_records(Mod, 
 	       #dialyzer_codeserver{records = RecDict}) when is_atom(Mod) ->
   case dict:find(Mod, RecDict) of
@@ -102,7 +112,8 @@ lookup_records(Mod,
     {ok, Dict} -> Dict
   end.
 
--spec store_contracts(atom(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}. 
+-spec store_contracts(module(), dict(), #dialyzer_codeserver{}) -> #dialyzer_codeserver{}. 
+
 store_contracts(Mod, Dict, 
 		CS = #dialyzer_codeserver{contracts = C}) when is_atom(Mod) ->
   case dict:size(Dict) =:= 0 of
@@ -110,7 +121,8 @@ store_contracts(Mod, Dict,
     false -> CS#dialyzer_codeserver{contracts = dict:store(Mod, Dict, C)}
   end.
 
--spec lookup_contracts(atom(), #dialyzer_codeserver{}) -> dict(). 
+-spec lookup_contracts(module(), #dialyzer_codeserver{}) -> dict(). 
+
 lookup_contracts(Mod, 
 		 #dialyzer_codeserver{contracts = ContDict}) when is_atom(Mod) ->
   case dict:find(Mod, ContDict) of
@@ -118,8 +130,9 @@ lookup_contracts(Mod,
     {ok, Dict} -> Dict
   end.
 
--spec lookup_contract(mfa(), #dialyzer_codeserver{}) -> 'error' | {'ok',_}.
-lookup_contract(MFA = {M,_F,_A}, #dialyzer_codeserver{contracts = ContDict}) ->
+-spec lookup_contract(mfa(), #dialyzer_codeserver{}) -> 'error' | {'ok', _}.
+
+lookup_contract({M,_F,_A} = MFA, #dialyzer_codeserver{contracts = ContDict}) ->
   case dict:find(M, ContDict) of
     error -> error;
     {ok, Dict} -> dict:find(MFA, Dict)
@@ -146,30 +159,30 @@ table__insert(TablePid, List) ->
 table__loop(Cached, Map) ->
   receive
     stop -> ok;
-    {Pid, lookup, Key = {M, F, A}} ->
+    {Pid, lookup, {M, F, A} = MFA} ->
       {NewCached, Ans} =
 	case Cached of
 	  {M, Tree} ->
-	    [Val] = [{Var, Fun} || {Var, Fun} <- cerl:module_defs(Tree),
-				   cerl:fname_id(Var) =:= F,
-				   cerl:fname_arity(Var) =:= A],
+	    [Val] = [VarFun || {Var, _Fun} = VarFun <- cerl:module_defs(Tree),
+			       cerl:fname_id(Var) =:= F,
+			       cerl:fname_arity(Var) =:= A],
 	    {Cached, Val};
 	  _ ->
 	    Tree = fetch_and_expand(M, Map),
-	    [Val] = [{Var, Fun} || {Var, Fun} <- cerl:module_defs(Tree),
-				   cerl:fname_id(Var) =:= F,
-				   cerl:fname_arity(Var) =:= A],
+	    [Val] = [VarFun || {Var, _Fun} = VarFun <- cerl:module_defs(Tree),
+			       cerl:fname_id(Var) =:= F,
+			       cerl:fname_arity(Var) =:= A],
 	    {{M, Tree}, Val}
 	end,
-      Pid ! {self(), Key, {ok, Ans}},
+      Pid ! {self(), MFA, {ok, Ans}},
       table__loop(NewCached, Map);
-    {Pid, lookup, Key} ->
+    {Pid, lookup, Mod} when is_atom(Mod) ->
       Ans = case Cached of
-	      {Key, Tree} -> Tree;
-	      _ -> fetch_and_expand(Key, Map)
+	      {Mod, Tree} -> Tree;
+	      _ -> fetch_and_expand(Mod, Map)
 	    end,
-      Pid ! {self(), Key, {ok, Ans}},
-      table__loop({Key, Ans}, Map);
+      Pid ! {self(), Mod, {ok, Ans}},
+      table__loop({Mod, Ans}, Map);
     {insert, List} ->
       NewMap = lists:foldl(fun({Key, Val}, AccMap) -> 
 			       dict:store(Key, Val, AccMap)
@@ -177,13 +190,13 @@ table__loop(Cached, Map) ->
       table__loop(Cached, NewMap)
   end.
 
-fetch_and_expand(Key, Map) ->
+fetch_and_expand(Mod, Map) ->
   try
-    Bin = dict:fetch(Key, Map),
+    Bin = dict:fetch(Mod, Map),
     binary_to_term(Bin)
   catch
     _:_ ->
-      Mod = atom_to_list(Key),
-      Msg = "found no module named '" ++ Mod ++ "' in the analyzed files",
+      S = atom_to_list(Mod),
+      Msg = "found no module named '" ++ S ++ "' in the analyzed files",
       exit({error, Msg})
   end.

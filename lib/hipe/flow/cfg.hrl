@@ -34,7 +34,7 @@
 -record(cfg_info, {'fun'         :: mfa(),
                    start_label   :: cfg_lbl(),
                    is_closure    :: bool(),
-                   closure_arity :: byte(),
+                   closure_arity :: arity(),
                    is_leaf       :: bool(),
                    params,     % :: list()
                    info = []}).  %% this field seems not needed; take out??

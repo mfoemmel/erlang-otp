@@ -85,7 +85,7 @@ find_gcc({Arch, _Target_host}, Vars) ->
     case os:find_executable(Gcc) of
 	false ->
 	    {no, Vars};
-	Path when list(Path) ->
+	Path when is_list(Path) ->
 	    Cflags = cflags(Arch),
 	    {Path, [{'CC', Gcc},
 		    {'CFLAGS', Cflags},
@@ -103,7 +103,7 @@ find_ld({Arch, _Target_host}, Vars) ->
     case os:find_executable(Linker) of
 	false ->
 	    {no, Vars};
-	Path when list(Path) ->
+	Path when is_list(Path) ->
 	    {Path, [{'LD', Linker},
 		    {'CROSSLDFLAGS', ldflags(Arch)},
 		    {'SHLIB_EXTRACT_ALL', ""},

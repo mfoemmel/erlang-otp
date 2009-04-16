@@ -61,7 +61,8 @@ new(#wx_ref{type=StippleBitmapT,ref=StippleBitmapRef}) ->
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxbrush.html#wxbrushwxbrush">external documentation</a>.
 new(Colour, Options)
  when tuple_size(Colour) =:= 3; tuple_size(Colour) =:= 4,is_list(Options) ->
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxBrush_new_2,
   <<(wxe_util:colour_bin(Colour)):16/binary, BinOpt/binary>>).

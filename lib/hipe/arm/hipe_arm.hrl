@@ -35,9 +35,9 @@
 %%% mfa		::= #arm_mfa{atom, atom, arity}
 %%% prim	::= #arm_prim{atom}
 
--record(arm_mfa, {m::atom(), f::atom(), a::byte()}).
+-record(arm_mfa, {m::atom(), f::atom(), a::arity()}).
 -record(arm_prim, {prim}).
--record(arm_sdesc, {exnlab, fsize, arity, live}).
+-record(arm_sdesc, {exnlab, fsize, arity::arity(), live}).
 -record(arm_temp, {reg, type, allocatable}).
 
 %%% Instruction Operands:

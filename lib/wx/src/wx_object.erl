@@ -143,11 +143,9 @@ behaviour_info(_Other) ->
 %% @doc Starts a generic wx_object server and invokes Mod:init(Args) in the
 %% new process.
 start(Mod, Args, Options) ->
-    case gen:start(?MODULE, nolink, Mod, Args, [get(?WXE_IDENTIFIER)|Options]) of
-	Ref = #wx_ref{} -> Ref;
-	Else ->            erlang:error(Else)
-    end.
-
+    {ok, Pid} = gen:start(?MODULE, nolink, Mod, Args, [get(?WXE_IDENTIFIER)|Options]),
+    receive {ack, Pid, Ref = #wx_ref{}} -> Ref end. 
+	    
 %% @spec (Name, Mod, Args, Options) -> wxWindow:wxWindow() 
 %%   Name = {local, atom()}
 %%   Mod = atom() 
@@ -157,10 +155,9 @@ start(Mod, Args, Options) ->
 %% @doc Starts a generic wx_object server and invokes Mod:init(Args) in the
 %% new process.
 start(Name, Mod, Args, Options) ->
-    case gen:start(?MODULE, nolink, Name, Mod, Args, [get(?WXE_IDENTIFIER)|Options]) of
-	Ref = #wx_ref{} -> Ref;
-	Else ->	           erlang:error(Else)
-    end.
+    {ok, Pid} = gen:start(?MODULE, nolink, Name, Mod, Args, [get(?WXE_IDENTIFIER)|Options]),
+    receive {ack, Pid, Ref = #wx_ref{}} -> Ref end. 
+
 %% @spec (Mod, Args, Options) -> wxWindow:wxWindow() 
 %%   Mod = atom() 
 %%   Args = term()
@@ -169,10 +166,9 @@ start(Name, Mod, Args, Options) ->
 %% @doc Starts a generic wx_object server and invokes Mod:init(Args) in the
 %% new process.
 start_link(Mod, Args, Options) ->
-    case gen:start(?MODULE, link, Mod, Args, [get(?WXE_IDENTIFIER)|Options]) of
-	Ref = #wx_ref{} -> Ref;
-	Else ->	           erlang:error(Else)
-    end.
+    {ok, Pid} = gen:start(?MODULE, link, Mod, Args, [get(?WXE_IDENTIFIER)|Options]),
+    receive {ack, Pid, Ref = #wx_ref{}} -> Ref end. 
+
 %% @spec (Name, Mod, Args, Options) -> wxWindow:wxWindow() 
 %%   Name = {local, atom()}
 %%   Mod = atom() 
@@ -182,10 +178,8 @@ start_link(Mod, Args, Options) ->
 %% @doc Starts a generic wx_object server and invokes Mod:init(Args) in the
 %% new process.
 start_link(Name, Mod, Args, Options) ->
-    case gen:start(?MODULE, link, Name, Mod, Args, [get(?WXE_IDENTIFIER)|Options]) of
-	Ref = #wx_ref{} -> Ref;
-	Else ->            erlang:error(Else)
-    end.
+    {ok, Pid} = gen:start(?MODULE, link, Name, Mod, Args, [get(?WXE_IDENTIFIER)|Options]),
+    receive {ack, Pid, Ref = #wx_ref{}} -> Ref end. 
 
 %% @spec(wxObject(), Request) -> term()
 %% @doc Make a call to a wx_object server. 
@@ -261,6 +255,7 @@ init_it2(Ref, Starter, Parent, Name, State, Mod, Timeout, Debug) ->
 	    proc_lib:init_ack(Starter, {error, Reason}),
 	    exit(Reason);
 	true ->
+	    proc_lib:init_ack(Starter, {ok, self()}),
 	    proc_lib:init_ack(Starter, Ref#wx_ref{state=self()}),
 	    loop(Parent, Name, State, Mod, Timeout, Debug)
     end.    

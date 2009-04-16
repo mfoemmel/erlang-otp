@@ -73,6 +73,8 @@
 -define(T_AAAA,         28).            %% ipv6 address
 %% SRV (RFC 2052)
 -define(T_SRV,          33).            %% services
+%% NAPTR (RFC 2915)
+-define(T_NAPTR,        35).            %% naming authority pointer
 %% SPF (RFC 4408)
 -define(T_SPF,          99).            %% server policy framework
 %%      non standard
@@ -108,8 +110,10 @@
 -define(S_AAAA,         aaaa).          %% ipv6 address
 %% SRV (RFC 2052)
 -define(S_SRV,          srv).           %% services
+%% NAPTR (RFC 2915)
+-define(S_NAPTR,        naptr).         %% naming authority pointer
 %% SPF (RFC 4408)
--define(S_SPF,          spf).            %% server policy framework
+-define(S_SPF,          spf).           %% server policy framework
 %%      non standard
 -define(S_UINFO,	uinfo).		%% user (finger) information
 -define(S_UID,		uid).		%% user ID

@@ -99,7 +99,8 @@ new(Title,Message, Options)
   Message_UC = unicode:characters_to_binary([Message,0]),
   MOpts = fun({maximum, Maximum}, Acc) -> [<<1:32/?UI,Maximum:32/?UI>>|Acc];
           ({parent, #wx_ref{type=ParentT,ref=ParentRef}}, Acc) ->   ?CLASS(ParentT,wxWindow),[<<2:32/?UI,ParentRef:32/?UI>>|Acc];
-          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxProgressDialog_new,
   <<(byte_size(Title_UC)):32/?UI,(Title_UC)/binary, 0:(((8- ((4+byte_size(Title_UC)) band 16#7)) band 16#7))/unit:8,(byte_size(Message_UC)):32/?UI,(Message_UC)/binary, 0:(((8- ((4+byte_size(Message_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -130,7 +131,8 @@ update(This,Value)
 update(#wx_ref{type=ThisT,ref=ThisRef},Value, Options)
  when is_integer(Value),is_list(Options) ->
   ?CLASS(ThisT,wxProgressDialog),
-  MOpts = fun({newmsg, Newmsg}, Acc) ->   Newmsg_UC = unicode:characters_to_binary([Newmsg,0]),[<<1:32/?UI,(byte_size(Newmsg_UC)):32/?UI,(Newmsg_UC)/binary, 0:(((8- ((0+byte_size(Newmsg_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({newmsg, Newmsg}, Acc) ->   Newmsg_UC = unicode:characters_to_binary([Newmsg,0]),[<<1:32/?UI,(byte_size(Newmsg_UC)):32/?UI,(Newmsg_UC)/binary, 0:(((8- ((0+byte_size(Newmsg_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxProgressDialog_Update_2,
   <<ThisRef:32/?UI,Value:32/?UI, BinOpt/binary>>).

@@ -22,6 +22,7 @@ package com.ericsson.otp.erlang;
 class Link {
     private final OtpErlangPid local;
     private final OtpErlangPid remote;
+    private int hashCodeValue = 0;
 
     public Link(final OtpErlangPid local, final OtpErlangPid remote) {
 	this.local = local;
@@ -43,5 +44,14 @@ class Link {
     public boolean equals(final OtpErlangPid local, final OtpErlangPid remote) {
 	return this.local.equals(local) && this.remote.equals(remote)
 		|| this.local.equals(remote) && this.remote.equals(local);
+    }
+    
+    public int hashCode() {
+	if (hashCodeValue == 0) {
+	    OtpErlangObject.Hash hash = new OtpErlangObject.Hash(5);
+	    hash.combine(local.hashCode() + remote.hashCode());
+	    hashCodeValue = hash.valueOf();
+	}
+	return hashCodeValue;
     }
 }

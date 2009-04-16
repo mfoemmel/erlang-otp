@@ -93,7 +93,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},Id, Options)
   ?CLASS(ParentT,wxWindow),
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxWindow_new_3,
   <<ParentRef:32/?UI,Id:32/?UI, BinOpt/binary>>).
@@ -125,7 +126,8 @@ center(This)
 center(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc]  end,
+  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_Center,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -142,7 +144,8 @@ centerOnParent(This)
 centerOnParent(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc]  end,
+  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_CenterOnParent,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -159,7 +162,8 @@ centre(This)
 centre(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc]  end,
+  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_Centre,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -176,7 +180,8 @@ centreOnParent(This)
 centreOnParent(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc]  end,
+  MOpts = fun({dir, Dir}, Acc) -> [<<1:32/?UI,Dir:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_CentreOnParent,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -216,7 +221,8 @@ close(This)
 close(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({force, Force}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Force)):32/?UI>>|Acc]  end,
+  MOpts = fun({force, Force}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Force)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxWindow_Close,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -270,7 +276,8 @@ enable(This)
 enable(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc]  end,
+  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxWindow_Enable,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -313,7 +320,8 @@ findWindowById(Winid)
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxwindow.html#wxwindowfindwindowbyid">external documentation</a>.
 findWindowById(Winid, Options)
  when is_integer(Winid),is_list(Options) ->
-  MOpts = fun({parent, #wx_ref{type=ParentT,ref=ParentRef}}, Acc) ->   ?CLASS(ParentT,wxWindow),[<<1:32/?UI,ParentRef:32/?UI>>|Acc]  end,
+  MOpts = fun({parent, #wx_ref{type=ParentT,ref=ParentRef}}, Acc) ->   ?CLASS(ParentT,wxWindow),[<<1:32/?UI,ParentRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxWindow_FindWindowById,
   <<Winid:32/?UI, 0:32,BinOpt/binary>>).
@@ -330,7 +338,8 @@ findWindowByName(Name)
 findWindowByName(Name, Options)
  when is_list(Name),is_list(Options) ->
   Name_UC = unicode:characters_to_binary([Name,0]),
-  MOpts = fun({parent, #wx_ref{type=ParentT,ref=ParentRef}}, Acc) ->   ?CLASS(ParentT,wxWindow),[<<1:32/?UI,ParentRef:32/?UI>>|Acc]  end,
+  MOpts = fun({parent, #wx_ref{type=ParentT,ref=ParentRef}}, Acc) ->   ?CLASS(ParentT,wxWindow),[<<1:32/?UI,ParentRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxWindow_FindWindowByName,
   <<(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((4+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -347,7 +356,8 @@ findWindowByLabel(Label)
 findWindowByLabel(Label, Options)
  when is_list(Label),is_list(Options) ->
   Label_UC = unicode:characters_to_binary([Label,0]),
-  MOpts = fun({parent, #wx_ref{type=ParentT,ref=ParentRef}}, Acc) ->   ?CLASS(ParentT,wxWindow),[<<1:32/?UI,ParentRef:32/?UI>>|Acc]  end,
+  MOpts = fun({parent, #wx_ref{type=ParentT,ref=ParentRef}}, Acc) ->   ?CLASS(ParentT,wxWindow),[<<1:32/?UI,ParentRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxWindow_FindWindowByLabel,
   <<(byte_size(Label_UC)):32/?UI,(Label_UC)/binary, 0:(((8- ((4+byte_size(Label_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -635,7 +645,8 @@ getTextExtent(#wx_ref{type=ThisT,ref=ThisRef},String, Options)
  when is_list(String),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
   String_UC = unicode:characters_to_binary([String,0]),
-  MOpts = fun({theFont, #wx_ref{type=TheFontT,ref=TheFontRef}}, Acc) ->   ?CLASS(TheFontT,wxFont),[<<1:32/?UI,TheFontRef:32/?UI>>|Acc]  end,
+  MOpts = fun({theFont, #wx_ref{type=TheFontT,ref=TheFontRef}}, Acc) ->   ?CLASS(TheFontT,wxFont),[<<1:32/?UI,TheFontRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxWindow_GetTextExtent,
   <<ThisRef:32/?UI,(byte_size(String_UC)):32/?UI,(String_UC)/binary, 0:(((8- ((0+byte_size(String_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -831,7 +842,8 @@ makeModal(This)
 makeModal(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({modal, Modal}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Modal)):32/?UI>>|Acc]  end,
+  MOpts = fun({modal, Modal}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Modal)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_MakeModal,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -858,7 +870,8 @@ move(This,X,Y)
 move(#wx_ref{type=ThisT,ref=ThisRef},{PtX,PtY}, Options)
  when is_integer(PtX),is_integer(PtY),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc]  end,
+  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_Move_2,
   <<ThisRef:32/?UI,PtX:32/?UI,PtY:32/?UI, 0:32,BinOpt/binary>>).
@@ -869,7 +882,8 @@ move(#wx_ref{type=ThisT,ref=ThisRef},{PtX,PtY}, Options)
 move(#wx_ref{type=ThisT,ref=ThisRef},X,Y, Options)
  when is_integer(X),is_integer(Y),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc]  end,
+  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_Move_3,
   <<ThisRef:32/?UI,X:32/?UI,Y:32/?UI, 0:32,BinOpt/binary>>).
@@ -902,7 +916,8 @@ navigate(This)
 navigate(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc]  end,
+  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxWindow_Navigate,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -933,7 +948,8 @@ popEventHandler(This)
 popEventHandler(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({deleteHandler, DeleteHandler}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(DeleteHandler)):32/?UI>>|Acc]  end,
+  MOpts = fun({deleteHandler, DeleteHandler}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(DeleteHandler)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxWindow_PopEventHandler,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -951,7 +967,8 @@ popupMenu(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=MenuT,ref=MenuRef}, Optio
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
   ?CLASS(MenuT,wxMenu),
-  MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc]  end,
+  MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxWindow_PopupMenu_2,
   <<ThisRef:32/?UI,MenuRef:32/?UI, BinOpt/binary>>).
@@ -985,7 +1002,8 @@ refresh(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
   MOpts = fun({eraseBackground, EraseBackground}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(EraseBackground)):32/?UI>>|Acc];
-          ({rect, {RectX,RectY,RectW,RectH}}, Acc) -> [<<2:32/?UI,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI,0:32>>|Acc]  end,
+          ({rect, {RectX,RectY,RectW,RectH}}, Acc) -> [<<2:32/?UI,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_Refresh,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -1002,7 +1020,8 @@ refreshRect(This,Rect={RectX,RectY,RectW,RectH})
 refreshRect(#wx_ref{type=ThisT,ref=ThisRef},{RectX,RectY,RectW,RectH}, Options)
  when is_integer(RectX),is_integer(RectY),is_integer(RectW),is_integer(RectH),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({eraseBackground, EraseBackground}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(EraseBackground)):32/?UI>>|Acc]  end,
+  MOpts = fun({eraseBackground, EraseBackground}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(EraseBackground)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_RefreshRect,
   <<ThisRef:32/?UI,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI, 0:32,BinOpt/binary>>).
@@ -1073,7 +1092,8 @@ scrollWindow(This,Dx,Dy)
 scrollWindow(#wx_ref{type=ThisT,ref=ThisRef},Dx,Dy, Options)
  when is_integer(Dx),is_integer(Dy),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({rect, {RectX,RectY,RectW,RectH}}, Acc) -> [<<1:32/?UI,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI,0:32>>|Acc]  end,
+  MOpts = fun({rect, {RectX,RectY,RectW,RectH}}, Acc) -> [<<1:32/?UI,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_ScrollWindow,
   <<ThisRef:32/?UI,Dx:32/?UI,Dy:32/?UI, 0:32,BinOpt/binary>>).
@@ -1305,7 +1325,8 @@ setScrollbar(This,Orient,Pos,ThumbVisible,Range)
 setScrollbar(#wx_ref{type=ThisT,ref=ThisRef},Orient,Pos,ThumbVisible,Range, Options)
  when is_integer(Orient),is_integer(Pos),is_integer(ThumbVisible),is_integer(Range),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({refresh, Refresh}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Refresh)):32/?UI>>|Acc]  end,
+  MOpts = fun({refresh, Refresh}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Refresh)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_SetScrollbar,
   <<ThisRef:32/?UI,Orient:32/?UI,Pos:32/?UI,ThumbVisible:32/?UI,Range:32/?UI, 0:32,BinOpt/binary>>).
@@ -1322,7 +1343,8 @@ setScrollPos(This,Orient,Pos)
 setScrollPos(#wx_ref{type=ThisT,ref=ThisRef},Orient,Pos, Options)
  when is_integer(Orient),is_integer(Pos),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({refresh, Refresh}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Refresh)):32/?UI>>|Acc]  end,
+  MOpts = fun({refresh, Refresh}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Refresh)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_SetScrollPos,
   <<ThisRef:32/?UI,Orient:32/?UI,Pos:32/?UI, 0:32,BinOpt/binary>>).
@@ -1363,7 +1385,8 @@ setSize(#wx_ref{type=ThisT,ref=ThisRef},Width,Height)
 setSize(#wx_ref{type=ThisT,ref=ThisRef},{RectX,RectY,RectW,RectH}, Options)
  when is_integer(RectX),is_integer(RectY),is_integer(RectW),is_integer(RectH),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({sizeFlags, SizeFlags}, Acc) -> [<<1:32/?UI,SizeFlags:32/?UI>>|Acc]  end,
+  MOpts = fun({sizeFlags, SizeFlags}, Acc) -> [<<1:32/?UI,SizeFlags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_SetSize_2_1,
   <<ThisRef:32/?UI,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI, 0:32,BinOpt/binary>>).
@@ -1380,7 +1403,8 @@ setSize(This,X,Y,Width,Height)
 setSize(#wx_ref{type=ThisT,ref=ThisRef},X,Y,Width,Height, Options)
  when is_integer(X),is_integer(Y),is_integer(Width),is_integer(Height),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({sizeFlags, SizeFlags}, Acc) -> [<<1:32/?UI,SizeFlags:32/?UI>>|Acc]  end,
+  MOpts = fun({sizeFlags, SizeFlags}, Acc) -> [<<1:32/?UI,SizeFlags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_SetSize_5,
   <<ThisRef:32/?UI,X:32/?UI,Y:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).
@@ -1408,7 +1432,8 @@ setSizeHints(#wx_ref{type=ThisT,ref=ThisRef},{MinSizeW,MinSizeH}, Options)
  when is_integer(MinSizeW),is_integer(MinSizeH),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
   MOpts = fun({maxSize, {MaxSizeW,MaxSizeH}}, Acc) -> [<<1:32/?UI,MaxSizeW:32/?UI,MaxSizeH:32/?UI,0:32>>|Acc];
-          ({incSize, {IncSizeW,IncSizeH}}, Acc) -> [<<2:32/?UI,IncSizeW:32/?UI,IncSizeH:32/?UI,0:32>>|Acc]  end,
+          ({incSize, {IncSizeW,IncSizeH}}, Acc) -> [<<2:32/?UI,IncSizeW:32/?UI,IncSizeH:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_SetSizeHints_2,
   <<ThisRef:32/?UI,MinSizeW:32/?UI,MinSizeH:32/?UI, 0:32,BinOpt/binary>>).
@@ -1422,7 +1447,8 @@ setSizeHints(#wx_ref{type=ThisT,ref=ThisRef},MinW,MinH, Options)
   MOpts = fun({maxW, MaxW}, Acc) -> [<<1:32/?UI,MaxW:32/?UI>>|Acc];
           ({maxH, MaxH}, Acc) -> [<<2:32/?UI,MaxH:32/?UI>>|Acc];
           ({incW, IncW}, Acc) -> [<<3:32/?UI,IncW:32/?UI>>|Acc];
-          ({incH, IncH}, Acc) -> [<<4:32/?UI,IncH:32/?UI>>|Acc]  end,
+          ({incH, IncH}, Acc) -> [<<4:32/?UI,IncH:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_SetSizeHints_3,
   <<ThisRef:32/?UI,MinW:32/?UI,MinH:32/?UI, 0:32,BinOpt/binary>>).
@@ -1440,7 +1466,8 @@ setSizer(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=SizerT,ref=SizerRef}, Opti
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
   ?CLASS(SizerT,wxSizer),
-  MOpts = fun({deleteOld, DeleteOld}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(DeleteOld)):32/?UI>>|Acc]  end,
+  MOpts = fun({deleteOld, DeleteOld}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(DeleteOld)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_SetSizer,
   <<ThisRef:32/?UI,SizerRef:32/?UI, BinOpt/binary>>).
@@ -1458,7 +1485,8 @@ setSizerAndFit(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=SizerT,ref=SizerRef}
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
   ?CLASS(SizerT,wxSizer),
-  MOpts = fun({deleteOld, DeleteOld}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(DeleteOld)):32/?UI>>|Acc]  end,
+  MOpts = fun({deleteOld, DeleteOld}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(DeleteOld)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_SetSizerAndFit,
   <<ThisRef:32/?UI,SizerRef:32/?UI, BinOpt/binary>>).
@@ -1530,7 +1558,8 @@ setVirtualSizeHints(This,MinW,MinH)
 setVirtualSizeHints(#wx_ref{type=ThisT,ref=ThisRef},{MinSizeW,MinSizeH}, Options)
  when is_integer(MinSizeW),is_integer(MinSizeH),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({maxSize, {MaxSizeW,MaxSizeH}}, Acc) -> [<<1:32/?UI,MaxSizeW:32/?UI,MaxSizeH:32/?UI,0:32>>|Acc]  end,
+  MOpts = fun({maxSize, {MaxSizeW,MaxSizeH}}, Acc) -> [<<1:32/?UI,MaxSizeW:32/?UI,MaxSizeH:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_SetVirtualSizeHints_2,
   <<ThisRef:32/?UI,MinSizeW:32/?UI,MinSizeH:32/?UI, 0:32,BinOpt/binary>>).
@@ -1542,7 +1571,8 @@ setVirtualSizeHints(#wx_ref{type=ThisT,ref=ThisRef},MinW,MinH, Options)
  when is_integer(MinW),is_integer(MinH),is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
   MOpts = fun({maxW, MaxW}, Acc) -> [<<1:32/?UI,MaxW:32/?UI>>|Acc];
-          ({maxH, MaxH}, Acc) -> [<<2:32/?UI,MaxH:32/?UI>>|Acc]  end,
+          ({maxH, MaxH}, Acc) -> [<<2:32/?UI,MaxH:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_SetVirtualSizeHints_3,
   <<ThisRef:32/?UI,MinW:32/?UI,MinH:32/?UI, 0:32,BinOpt/binary>>).
@@ -1592,7 +1622,8 @@ show(This)
 show(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc]  end,
+  MOpts = fun({show, Show}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Show)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxWindow_Show,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -1637,7 +1668,8 @@ updateWindowUI(This)
 updateWindowUI(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxWindow),
-  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc]  end,
+  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxWindow_UpdateWindowUI,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

@@ -57,7 +57,8 @@ new(Cols)
 new(Cols, Options)
  when is_integer(Cols),is_list(Options) ->
   MOpts = fun({vgap, Vgap}, Acc) -> [<<1:32/?UI,Vgap:32/?UI>>|Acc];
-          ({hgap, Hgap}, Acc) -> [<<2:32/?UI,Hgap:32/?UI>>|Acc]  end,
+          ({hgap, Hgap}, Acc) -> [<<2:32/?UI,Hgap:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxGridSizer_new_2,
   <<Cols:32/?UI, 0:32,BinOpt/binary>>).

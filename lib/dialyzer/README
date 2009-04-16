@@ -3,21 +3,12 @@
 ## Author(s): Tobias Lindahl <tobias.lindahl@it.uu.se>
 ##	      Kostis Sagonas <kostis@it.uu.se>
 ##
-## Copyright: Held by the authors; all rights reserved (2004 - 2007).
+## Copyright: Held by the authors; all rights reserved (2004 - 2009).
 ##
 ## $Id$
 ##----------------------------------------------------------------------------
 
 The DIALYZER, a DIscrepany AnaLYZer for ERlang programs.
-
-
-======================================================================
-| NOTE: The Dialyzer is distributed with its complete source and its |
-|	USE IS FREE FOR OPEN-SOURCE PROJECTS OR NON-COMMERCIAL USES. |
-|								     |
-|	For use in commercial projects, AN EXPLICIT PERMISSION FROM  |
-|	ITS AUTHORS AND COPYRIGHT OWNERS IS REQUIRED.		     |
-======================================================================
 
 
 -----------------------------------------------

@@ -98,7 +98,8 @@ beginBusyCursor() ->
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_miscellany.html#wxbeginbusycursor">external documentation</a>.
 beginBusyCursor(Options)
  when is_list(Options) ->
-  MOpts = fun({cursor, #wx_ref{type=CursorT,ref=CursorRef}}, Acc) ->   ?CLASS(CursorT,wxCursor),[<<1:32/?UI,CursorRef:32/?UI>>|Acc]  end,
+  MOpts = fun({cursor, #wx_ref{type=CursorT,ref=CursorRef}}, Acc) ->   ?CLASS(CursorT,wxCursor),[<<1:32/?UI,CursorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?utils_wxBeginBusyCursor,
   <<BinOpt/binary>>).
@@ -134,7 +135,8 @@ shell() ->
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_miscellany.html#wxshell">external documentation</a>.
 shell(Options)
  when is_list(Options) ->
-  MOpts = fun({command, Command}, Acc) ->   Command_UC = unicode:characters_to_binary([Command,0]),[<<1:32/?UI,(byte_size(Command_UC)):32/?UI,(Command_UC)/binary, 0:(((8- ((0+byte_size(Command_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({command, Command}, Acc) ->   Command_UC = unicode:characters_to_binary([Command,0]),[<<1:32/?UI,(byte_size(Command_UC)):32/?UI,(Command_UC)/binary, 0:(((8- ((0+byte_size(Command_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?utils_wxShell,
   <<BinOpt/binary>>).
@@ -151,7 +153,8 @@ launchDefaultBrowser(Url)
 launchDefaultBrowser(Url, Options)
  when is_list(Url),is_list(Options) ->
   Url_UC = unicode:characters_to_binary([Url,0]),
-  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc]  end,
+  MOpts = fun({flags, Flags}, Acc) -> [<<1:32/?UI,Flags:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?utils_wxLaunchDefaultBrowser,
   <<(byte_size(Url_UC)):32/?UI,(Url_UC)/binary, 0:(((8- ((4+byte_size(Url_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

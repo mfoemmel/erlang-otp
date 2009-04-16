@@ -48,17 +48,54 @@
 %%		   whenever applicable.
 %%-----------------------------------------------------------------------------
 
-%% in the following type, integers represent labels of funs
--type mfa_or_funlbl() :: integer() | mfa().
+%%-----------------------------------------------------------------------
+
+-type mfa_or_funlbl() :: label() | mfa().
 -type scc()	      :: [mfa_or_funlbl()].
 
--record(dialyzer_callgraph, {digraph		     :: digraph(),
-			     esc		     :: set(),
-			     name_map		     :: dict(),
-			     rev_name_map	     :: dict(),
-			     postorder = []	     :: [scc()],
-			     rec_var_map	     :: dict(),
-			     self_rec		     :: set(),
-			     calls		     :: dict(),
-			     module_local_calls = [] :: [_],
-			     inter_module_calls	= [] :: [_]}).
+%%-----------------------------------------------------------------------
+
+%%-----------------------------------------------------------------------
+%% Basic types used in the race analysis
+%%-----------------------------------------------------------------------
+
+-type args()       :: 'empty' | [_]. %TO FIX [atom()]
+-type case_tags()  :: 'beg_case' | 'beg_clause' | 'end_clause' | 'end_case'.
+-type core_type()  :: core_var() | core_literal() | core_cons() | core_tuple().
+-type core_args()  :: [core_type()] |'empty'.
+-type curr_fun()   :: {'curr', mfa_or_funlbl(), label(), args()}.
+-type mfa_calls()  :: [{mfa_or_funlbl(), mfa_or_funlbl()}].
+-type race_tag()   :: 'whereis_register' | 'ets_lookup_insert'.
+
+-type fun_calls()  :: {mfa_or_funlbl(), mfa_or_funlbl(), [erl_type()]}.
+-type dep_calls()  :: {'whereis', args(), [erl_type()], [core_type()], _,
+                       file_line()}
+                    | {'ets_lookup', args(), [erl_type()], [core_type()], _,
+                       file_line()}.
+-type warn_calls() :: {'register', args()} | {'ets_insert', args()}.
+-type code()       :: [dep_calls() | warn_calls() | fun_calls() |
+                       curr_fun() | case_tags() | race_tag()]
+                    | 'empty'.
+
+-type inter_module_calls() :: [{mfa_or_funlbl(), mfa_or_funlbl(),
+                                core_args(), code(), code(), bool(), bool()}]
+                            | mfa_calls().
+-type module_local_calls() :: [{mfa_or_funlbl(), label(),
+                                mfa_or_funlbl(), label(),
+                                core_args(), code(), code(), bool()}]
+                            | mfa_calls().
+
+%%----------------------------------------------------------------------
+%% Record declarations used in various files
+%%----------------------------------------------------------------------
+
+-record(dialyzer_callgraph, {digraph      = digraph:new() :: digraph(),
+			     esc	  = sets:new()	  :: set(),
+			     name_map	  = dict:new()	  :: dict(),
+			     rev_name_map = dict:new()	  :: dict(),
+			     postorder    = []	          :: [scc()],
+			     rec_var_map  = dict:new()	  :: dict(),
+			     self_rec	  = sets:new()	  :: set(),
+			     calls        = dict:new()	  :: dict(),
+			     module_local_calls = []	  :: module_local_calls(),
+			     inter_module_calls	= []      :: inter_module_calls()}).

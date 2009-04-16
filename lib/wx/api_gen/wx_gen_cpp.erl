@@ -92,7 +92,13 @@ gen_derived_dest_2(C=#class{name=Class}) ->
 	true -> 
 	    ?WTC("gen_derived_dest_2"),
 	    w("class E~s : public ~s { ~n",[Class,Class]),
-	    w(" public: ~~E~s() {((WxeApp *)wxTheApp)->clearPtr(this);}; ~n", [Class]),
+	    case Class of
+		"wxGLCanvas" ->  %% Special for cleaning up gl context
+		    w(" public: ~~E~s() {deleteActiveGL(this);"
+		      "((WxeApp *)wxTheApp)->clearPtr(this);}; ~n", [Class]);
+		_ ->
+		    w(" public: ~~E~s() {((WxeApp *)wxTheApp)->clearPtr(this);}; ~n", [Class])
+	    end,
 	    gen_constructors(C),
 	    w("}; ~n~n", []);
 	false ->
@@ -982,6 +988,7 @@ gen_macros() ->
     w("#include <wx/clrpicker.h>~n"), 
     w("#include <wx/statline.h>~n"), 
     w("#include <wx/clipbrd.h>~n"), 
+    w("#include <wx/splitter.h>~n"),
 
     w("~n~n", []),
     [w("#define ~s_~s ~p~n", [Class,Name,Id]) || 
@@ -1009,7 +1016,11 @@ build_events() ->
   for(it = etmap.begin(); it != etmap.end(); ++it) {
        wxeEtype * value = it->second;
        if(strcmp(value->eName, etype_atom) == 0) { 
-	   return it->first;
+	 if(it->first > wxEVT_USER_FIRST) {	   
+	       return it->first - wxEVT_USER_FIRST;
+	    } else {
+	       return it->first;
+	    }
        }
   }   
   return -1; 
@@ -1017,21 +1028,51 @@ build_events() ->
 
 "), 
 
-    Evs = [C || {_,C=#class{event=Evs}} <- get(), Evs =/= false],
+    Evs0 = [C || {_,C=#class{event=Evs}} <- get(), Evs =/= false],
+    Evs = lists:keysort(#class.id, Evs0),
     initEventTable(Evs),
     encode_events(Evs),
     close().
 
 initEventTable(Evs) ->
     w("void initEventTable() ~n{~n"),
-    foldl(fun init_event_classes/2, 0, [#class{event=[wxEVT_NULL]}|Evs]),
+    w("  struct { ",[]),
+    w("int ev_type;  int class_id; char * ev_name;} event_types[] = ~n  {~n",[]),
+
+    lists:foreach(fun(Ev) -> init_event_classes(Ev) end, 
+		  [#class{id=0,event=[wxEVT_NULL]}|Evs]),
+    w("   {-1, 0, ""}~n  };~n",[]),
+    w("  for(int i=0; event_types[i].ev_type != -1; i++) {~n",[]),
+    w("     if(NULL == etmap[event_types[i].ev_type]) {~n",[]),
+    w("       etmap[event_types[i].ev_type] = ~n"
+      "        new wxeEtype(event_types[i].ev_name, event_types[i].class_id);~n"),
+    w("     } else {~n",[]),
+    w("       wxeEtype *prev = etmap[event_types[i].ev_type];~n"
+      "       wxString msg(wxT(\"Duplicate event defs: \"));~n"
+      "       msg += wxString::FromAscii(event_types[i].ev_name);~n"
+      "       msg += wxString::Format(wxT(\" %d \"), event_types[i].class_id);~n"
+      "       msg += wxString::FromAscii(prev->eName);~n"
+      "       msg += wxString::Format(wxT(\" %d\"), prev->cID);~n"
+      "       send_msg(\"internal_error\", &msg);~n"
+      "     }~n"
+      "  }~n", []),
     w("}~n~n").
     
-init_event_classes(#class{event=ETs}, Id) ->
-    [w(" etmap[~w] = new wxeEtype(~p, ~w);~n",[ET, wx_gen_erl:event_type_name(ET),Id])
-     || ET <- ETs],
-    Id+1.
+init_event_classes(#class{event=ETs, id=Id}) ->
+    F = fun({Eev, Cev, OtherClass}) ->
+		w("   {~w + wxEVT_USER_FIRST, ~w, ~p},~n",
+		  [Cev, find_id(OtherClass), wx_gen_erl:event_type_name(Eev)]);
+	   (Ev) ->
+		w("   {~w, ~w, ~p},~n",
+		  [Ev, Id, wx_gen_erl:event_type_name(Ev)])
+	end,
+    [F(ET) || ET <- ETs].
 
+find_id(OtherClass) ->
+    Class = get({class,atom_to_list(OtherClass)}),
+    %%{value, Class} = lists:keysearch(atom_to_list(OtherClass), #class.name, All),
+    Class#class.id.
+    
 encode_events(Evs) ->
     ?WTC("encode_events"),
     w("void wxeEvtListener::forward(wxEvent& event) ~n"
@@ -1065,7 +1106,7 @@ encode_events(Evs) ->
 
     w(" if(!memenv) return 0;~n~n"),
     w(" switch(Etype->cID) {~n"),
-    foldl(fun encode_event/2, 1, Evs),
+    lists:foreach(fun(Ev) -> encode_event(Ev) end, Evs),
     w(" }~n~n"),
 
     w(" rt.addTupleCount(5);~n"),
@@ -1086,27 +1127,38 @@ encode_events(Evs) ->
     w(" return send_res;~n"),
     w(" }~n").
 
-encode_event(#class{name=Class,attributes=Att0}, Id) ->
+encode_event(C = #class{name=Class, id=Id, options=Opts}) ->
     ?WTC("encode_event"),
-    w("case ~p: {// ~s~n", [Id,Class]),
-    Attrs = build_event_attrs(Class, Att0),
-    w("  evClass = (char*)\"~s\";~n",[Class]),
-    w("  rt.addAtom((char*)\"~s\");~n", [wx_gen_erl:event_rec_name(Class)]),
-    w("  rt.addAtom(Etype->eName);~n"),
+    case proplists:get_value("mixed_event", Opts) of 
+	undefined -> 
+	    w("case ~p: {// ~s~n", [Id,Class]),
+	    encode_event2(C),
+	    ok;
+	Mixed ->
+	    w("case ~p: {// ~s or ~s~n", [Id,Class,Mixed]),
+	    w("  if(event->IsKindOf(CLASSINFO(~s))) {~n",[Class]),
+	    encode_event2(C),
+	    w("  } else {~n",[]),
+	    w("    Etype = etmap[event->GetEventType() + wxEVT_USER_FIRST];~n",[]),
+	    encode_event2(get({class,atom_to_list(Mixed)})),
+	    w("  }~n",[]),
+	    ok
+    end,
+    w("  break;~n}~n").
+
+encode_event2(Class = #class{name=Name}) ->
+    Attrs = build_event_attrs(Class),
+    w("    evClass = (char*)\"~s\";~n",[Name]),
+    w("    rt.addAtom((char*)\"~s\");~n", [wx_gen_erl:event_rec_name(Name)]),
+    w("    rt.addAtom(Etype->eName);~n"),
     build_ret_types(void, Attrs),
-    w("  rt.addTupleCount(~p);~n",[length(Attrs) + 2]),
-    w("  break;~n}~n"),
-    Id + 1.
+    w("    rt.addTupleCount(~p);~n",[length(Attrs) + 2]).
 
-
-build_event_attrs(Class, Attrs0) ->
+build_event_attrs(ClassRec = #class{name=Class}) ->
+    Attrs0 = wx_gen_erl:filter_attrs(ClassRec),
     Rename = 
-	fun(#param{prot=_,acc=skip}, All) -> 
-		All;
-	   (Att = #param{name=Name,prot=public,acc=undefined}, {All,Use}) -> 
+	fun(Att = #param{name=Name,prot=public,acc=undefined}, {All,Use}) -> 
 		{[Att#param{name= "ev->" ++ Name}|All],Use};
-	   (#param{prot=_,acc=undefined}, All) -> 
-		All;
 	   (Att = #param{acc=Acc}, {All,_}) -> 
 		{[Att#param{name= "ev->" ++ Acc}|All], true}
 	end,

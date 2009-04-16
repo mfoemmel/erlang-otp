@@ -47,6 +47,10 @@
 #include "erl_mseg.h"
 #include "erl_threads.h"
 
+#ifdef ERTS_ENABLE_LOCK_COUNT
+#include "erl_lock_count.h"
+#endif
+
 #if defined(ERTS_ALLOC_UTIL_HARD_DEBUG) && defined(__GNUC__)
 #warning "* * * * * * * * * *"
 #warning "* * * * * * * * * *"
@@ -3144,9 +3148,18 @@ erts_alcu_start(Allctr_t *allctr, AllctrInit_t *init)
 #ifdef USE_THREADS
     if (init->ts) {
 	allctr->thread_safe = 1;
+	
+#ifdef ERTS_ENABLE_LOCK_COUNT
+	erts_mtx_init_x_opt(&allctr->mutex,
+			"alcu_allocator",
+			make_small(allctr->alloc_no),
+			ERTS_LCNT_LT_ALLOC);
+#else
 	erts_mtx_init_x(&allctr->mutex,
 			"alcu_allocator",
 			make_small(allctr->alloc_no));
+#endif /*ERTS_ENABLE_LOCK_COUNT*/
+	
 #ifdef DEBUG
 	allctr->debug.saved_tid = 0;
 #endif

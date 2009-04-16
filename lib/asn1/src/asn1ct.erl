@@ -1204,7 +1204,7 @@ compile(File, _OutFile, Options) ->
 	ok -> 
 	    io:format("ok~n"),
 	    ok;
-	ParseRes when tuple(ParseRes) ->
+	ParseRes when is_tuple(ParseRes) ->
 	    io:format("~p~n",[ParseRes]),
 	    ok;
 	ScanRes when is_list(ScanRes) ->
@@ -1497,7 +1497,7 @@ specialized_decode_prepare(Erule,M,TsAndVs,Options) ->
     end.
 %% Reads the configuration file if it exists and stores information
 %% about partial decode and incomplete decode
-partial_decode_prepare(ber_bin_v2,M,TsAndVs,Options) when tuple(TsAndVs) ->
+partial_decode_prepare(ber_bin_v2,M,TsAndVs,Options) when is_tuple(TsAndVs) ->
     %% read configure file
 
     ModName =

@@ -135,7 +135,8 @@ findString(#wx_ref{type=ThisT,ref=ThisRef},S, Options)
  when is_list(S),is_list(Options) ->
   ?CLASS(ThisT,wxControlWithItems),
   S_UC = unicode:characters_to_binary([S,0]),
-  MOpts = fun({bCase, BCase}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(BCase)):32/?UI>>|Acc]  end,
+  MOpts = fun({bCase, BCase}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(BCase)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxControlWithItems_FindString,
   <<ThisRef:32/?UI,(byte_size(S_UC)):32/?UI,(S_UC)/binary, 0:(((8- ((0+byte_size(S_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

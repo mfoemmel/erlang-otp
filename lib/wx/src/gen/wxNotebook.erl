@@ -100,7 +100,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},Winid, Options)
   ?CLASS(ParentT,wxWindow),
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxNotebook_new_3,
   <<ParentRef:32/?UI,Winid:32/?UI, BinOpt/binary>>).
@@ -120,7 +121,8 @@ addPage(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=PageT,ref=PageRef},Text, Op
   ?CLASS(PageT,wxWindow),
   Text_UC = unicode:characters_to_binary([Text,0]),
   MOpts = fun({bSelect, BSelect}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(BSelect)):32/?UI>>|Acc];
-          ({imageId, ImageId}, Acc) -> [<<2:32/?UI,ImageId:32/?UI>>|Acc]  end,
+          ({imageId, ImageId}, Acc) -> [<<2:32/?UI,ImageId:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxNotebook_AddPage,
   <<ThisRef:32/?UI,PageRef:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((4+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -137,7 +139,8 @@ advanceSelection(This)
 advanceSelection(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxNotebook),
-  MOpts = fun({forward, Forward}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Forward)):32/?UI>>|Acc]  end,
+  MOpts = fun({forward, Forward}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Forward)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxNotebook_AdvanceSelection,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -165,7 +168,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef},Id, O
   ?CLASS(ParentT,wxWindow),
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxNotebook_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI,Id:32/?UI, 0:32,BinOpt/binary>>).
@@ -282,7 +286,8 @@ insertPage(#wx_ref{type=ThisT,ref=ThisRef},Position,#wx_ref{type=WinT,ref=WinRef
   ?CLASS(WinT,wxWindow),
   StrText_UC = unicode:characters_to_binary([StrText,0]),
   MOpts = fun({bSelect, BSelect}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(BSelect)):32/?UI>>|Acc];
-          ({imageId, ImageId}, Acc) -> [<<2:32/?UI,ImageId:32/?UI>>|Acc]  end,
+          ({imageId, ImageId}, Acc) -> [<<2:32/?UI,ImageId:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxNotebook_InsertPage,
   <<ThisRef:32/?UI,Position:32/?UI,WinRef:32/?UI,(byte_size(StrText_UC)):32/?UI,(StrText_UC)/binary, 0:(((8- ((0+byte_size(StrText_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

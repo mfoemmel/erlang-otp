@@ -59,7 +59,7 @@ cast(Op,Args) ->
     #wx_env{port=Port,debug=Dbg} = wx:get_env(),
     erlang:port_control(Port,Op,Args),
     case Dbg > 0 of
-	true ->  debug_cast(Dbg,Op,Args,Port);
+	true ->  debug_cast(Dbg band 15, Op,Args,Port);
 	false -> ok
     end,
     ok.
@@ -71,7 +71,7 @@ call(Op, Args) ->
 	    erlang:port_control(Port,Op,Args),
 	    rec(Op);
 	true ->
-	    debug_call(Dbg, Op, Args, Port)
+	    debug_call(Dbg band 15, Op, Args, Port)
     end.
 	    
 rec(Op) ->
@@ -140,7 +140,10 @@ debug_cast(2, Op, Args, Port) ->
 	[] ->
 	    io:format("WX ~p(~p): unknown(~p) (~p) -> ok~n", 
 		      [self(),Port,Op,Args])
-    end.
+    end;
+debug_cast(_, _Op, _Args, _Port) ->
+    check_previous(),
+    ok.
 
 debug_call(1, Op, Args, Port) ->
     check_previous(),
@@ -164,7 +167,13 @@ debug_call(2, Op, Args, Port) ->
 		      [self(), Port, Op, Args])
     end,
     erlang:port_control(Port,Op,Args),
-    debug_rec(2).
+    debug_rec(2);
+debug_call(_, Op, Args, Port) ->
+    check_previous(),
+    erlang:port_control(Port,Op,Args),
+    rec(Op).
+
+    
 
 debug_rec(1) ->
     receive 

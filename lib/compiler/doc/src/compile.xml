@@ -292,6 +292,18 @@
 	      <c>record_tag</c>. Use this option to omit
 	      the verification code.</p>
           </item>
+
+          <tag><c>no_error_module_mismatch</c></tag>
+          <item>
+            <p>Normally the compiler verifies that the module name
+	    given in the source code is the same as the base name
+	    of the output file and refuses to generate an output file
+	    if there is a mismatch. If you have a good reason (or
+	    other reason) for having a module name unrelated to the
+	    name of the output file, this option disables that verification
+	    (there will not even be a warning if there is a mismatch).</p>
+          </item>
+
         </taglist>
 
         <p>If warnings are turned on (the <c>report_warnings</c> option

@@ -32,13 +32,14 @@
 %%  where Location is {spill,M}.
 %% {spill,M} denotes the Mth spilled node
 %%
-%% This version uses ets tables
+%% This version uses ETS tables
 %%
 %% Deficiencies:
 %% - pessimistic coloring
 %%
 
 -module(hipe_spillmin_color).
+
 -export([stackalloc/6]).
 
 %%-ifndef(DO_ASSERT).
@@ -65,20 +66,20 @@
 %% {spill,M} denotes the Mth spilled node
 
 -spec stackalloc(#cfg{}, [_], non_neg_integer(),
-		 comp_options(), atom(), hipe_temp_map()) ->
+		 comp_options(), module(), hipe_temp_map()) ->
                                 {hipe_spill_map(), non_neg_integer()}.
 
 stackalloc(CFG, _StackSlots, SpillIndex, _Options, Target, TempMap) ->
   ?report2("building IG~n", []),
   {IG, NumNodes} = build_ig(CFG, Target, TempMap),
   {Cols, MaxColors} = 
-    color_heuristic_rec(IG, 0, NumNodes, NumNodes, NumNodes, Target, 1),
+    color_heuristic(IG, 0, NumNodes, NumNodes, NumNodes, Target, 1),
   SortedCols = lists:sort(Cols),
   {remap_temp_map(SortedCols, TempMap, SpillIndex), SpillIndex+MaxColors}.
 
 %% Rounds a floating point value upwards
 ceiling(X) ->
-  T = erlang:trunc(X),
+  T = trunc(X),
   case (X - T) of
     Neg when Neg < 0.0 -> T;
     Pos when Pos > 0.0 -> T + 1;
@@ -106,7 +107,7 @@ ceiling(X) ->
 %%   MaxNodes: The number of nodes in IG.
 %%   Target: Target specific information.
 %%   MaxDepth: The maximum recursion depth.
-color_heuristic_rec(IG, Min, Max, Safe, MaxNodes, Target, MaxDepth) ->
+color_heuristic(IG, Min, Max, Safe, MaxNodes, Target, MaxDepth) ->
   case MaxDepth of
     0 ->
       case color(IG, ordsets:from_list(init_stackslots(Max)),
@@ -136,15 +137,14 @@ color_heuristic_rec(IG, Min, Max, Safe, MaxNodes, Target, MaxDepth) ->
 	  case color(IG, ordsets:from_list(init_stackslots(NumSlots)),
 		     MaxNodes, Target) of
 	    not_easily_colorable ->
-	      color_heuristic_rec(IG, NumSlots, Max,
-				  Safe, MaxNodes, Target, MaxDepth - 1);
+	      color_heuristic(IG, NumSlots, Max,
+			      Safe, MaxNodes, Target, MaxDepth - 1);
 	    {_TmpCols, TmpMaxColors} ->
-	      color_heuristic_rec(IG, Min, TmpMaxColors,
-				  NumSlots, MaxNodes, Target, MaxDepth - 1)
+	      color_heuristic(IG, Min, TmpMaxColors,
+			      NumSlots, MaxNodes, Target, MaxDepth - 1)
 	  end
       end
   end.
-
 
 %% Returns a new temp map with the spilled temporaries mapped to stack slots,
 %% located after SpillIndex, according to Cols.
@@ -153,8 +153,8 @@ remap_temp_map(Cols, TempMap, SpillIndex) ->
 
 remap_temp_map0([], _TempMap, _SpillIndex) ->
   [];
-remap_temp_map0([{_M, {spill, N}}|Xs], [{TempNr, {spill, _}}|Ys], SpillIndex) ->
-  [{TempNr, {spill, SpillIndex + N-1}}|remap_temp_map0(Xs,Ys,SpillIndex)];
+remap_temp_map0([{_M, {spill, N}}|Xs], [{TempNr, {spill,_}}|Ys], SpillIndex) ->
+  [{TempNr, {spill, SpillIndex + N-1}}|remap_temp_map0(Xs, Ys, SpillIndex)];
 remap_temp_map0(Cols, [_Y|Ys], SpillIndex) ->
   remap_temp_map0(Cols, Ys, SpillIndex).
 
@@ -171,12 +171,12 @@ build_ig(CFG, Target, TempMap) ->
   catch error:Rsn -> exit({regalloc, build_ig, Rsn})
   end.
 
-%% Creates an ets-table consisting of the keys given in List, with the values
+%% Creates an ETS table consisting of the keys given in List, with the values
 %% being an integer which is the position of the key in List.
 %% [1,5,7] -> {1,0} {5,1} {7,2}
 %% etc.
 setup_ets(List) ->
-  setup_ets0(List, ets:new(tempMappingTable,[]), 0).
+  setup_ets0(List, ets:new(tempMappingTable, []), 0).
 
 setup_ets0([], Table, _N) ->
   Table;
@@ -217,13 +217,10 @@ build_ig_bb([X|Xs], LiveOut, IG, Target, TempMap, TempMapping) ->
 build_ig_instr(X, Live, IG, Target, TempMap, TempMapping) ->
   {Def, Use} = def_use(X, Target, TempMap),
   ?report3("Live ~w\n~w : Def: ~w Use ~w\n",[Live, X, Def,Use]),
-  
   DefListMapped = list_map(Def, TempMapping, []),
   UseListMapped = list_map(Use, TempMapping, []),
-
   DefSetMapped = ordsets:from_list(DefListMapped),
   UseSetMapped = ordsets:from_list(UseListMapped),
-
   NewIG = interference_arcs(DefListMapped, ordsets:to_list(Live), IG),
   NewLive = ordsets:union(UseSetMapped, ordsets:subtract(Live, DefSetMapped)),
   {NewLive, NewIG}.
@@ -364,8 +361,7 @@ decrement_each([N|Ns], OldLow, IG, Vis, K) ->
 
 %%%%%%%%%%%%%%%%%%%%
 %%
-%% Returns a list of {Name,Location}, where Location is
-%% {spill,M}
+%% Returns a list of {Name,Location}, where Location is {spill,M}
 %%
 %% Note: we use pessimistic coloring here.
 %% - we could use optimistic coloring: for spilled node, check if there is
@@ -382,13 +378,7 @@ select_colors([{X,colorable}|Xs], IG, Cols, PhysRegs) ->
   {Slot,NewCols} = select_color(X, IG, Cols, PhysRegs),
   ?report("~p~n", [Slot]),
   {Tail, MaxColor} = select_colors(Xs, IG, NewCols, PhysRegs),
-  NewMaxColor = 
-    case Slot > MaxColor of
-      true ->
-	Slot;
-      false ->
-	MaxColor
-    end,
+  NewMaxColor = erlang:max(Slot, MaxColor),
   %% Since we are dealing with spills we label all our temporaries accordingly.
   {[{X,{spill,Slot}} | Tail], NewMaxColor}.
 
@@ -468,10 +458,10 @@ init_stackslots(NumSlots, Acc) ->
 %%
 %% Note: later on, we may wish to add 'move-related' support.
 
--record(ig_info, {neighbors=[]::list(), degree=0::non_neg_integer()}).
+-record(ig_info, {neighbors = [] :: [_], degree = 0 :: non_neg_integer()}).
 
 empty_ig(NumNodes) ->
-  hipe_vectors:new(NumNodes, #ig_info{neighbors=[],degree=0}).
+  hipe_vectors:new(NumNodes, #ig_info{}).
 
 degree(Info) ->
   Info#ig_info.degree.
@@ -486,7 +476,7 @@ add_edge(X, Y, IG) ->
 add_arc(X, Y, IG) ->
   Info = hipe_vectors:get(IG, X),
   Old = neighbors(Info),
-  New = Info#ig_info{neighbors=[Y|Old]},
+  New = Info#ig_info{neighbors = [Y|Old]},
   hipe_vectors:set(IG,X,New).
 
 normalize_ig(IG) ->
@@ -498,8 +488,8 @@ normalize_ig(-1, IG) ->
 normalize_ig(I, IG) ->
   Info = hipe_vectors:get(IG, I),
   N = ordsets:from_list(neighbors(Info)),
-  NewIG = hipe_vectors:set(IG, I, Info#ig_info{neighbors=N,
-					       degree=length(N)}),
+  NewInfo = Info#ig_info{neighbors = N, degree = length(N)},
+  NewIG = hipe_vectors:set(IG, I, NewInfo),
   normalize_ig(I-1, NewIG).
 
 neighbors(X, IG) ->
@@ -510,7 +500,7 @@ decrement_degree(X, IG) ->
   Info = hipe_vectors:get(IG, X),
   Degree = degree(Info),
   NewDegree = Degree-1,
-  NewInfo = Info#ig_info{degree=NewDegree},
+  NewInfo = Info#ig_info{degree = NewDegree},
   {NewDegree, hipe_vectors:set(IG, X, NewInfo)}.
 
 list_ig(IG) ->

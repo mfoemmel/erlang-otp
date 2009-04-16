@@ -763,9 +763,9 @@ ok
       </type>
       <desc>
         <p>Opens an existing table. If the table has not been properly
-          closed, the error <c>{error, need_repair}</c> is returned. The
-          returned reference is to be used as the name of the table.
-          This function is most useful for debugging purposes.</p>
+          closed, it will be repaired. The returned reference is to be
+          used as the name of the table. This function is most useful
+          for debugging purposes.</p>
       </desc>
     </func>
     <func>
@@ -853,8 +853,9 @@ ok
               specifies whether the Dets server should invoke the
               automatic file reparation algorithm. The default is
               <c>true</c>. If <c>false</c> is specified, there is no
-              attempt to repair the file and <c>{error, need_repair}</c>
-              is returned if the table needs to be repaired.</p>
+              attempt to repair the file and <c>{error, {needs_repair,
+              FileName}}</c> is returned if the table needs to be
+              repaired.</p>
             <p>The value <c>force</c> means that a reparation will
               take place even if the table has been properly closed.
               This is how to convert tables created by older versions of

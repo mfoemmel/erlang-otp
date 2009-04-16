@@ -214,31 +214,31 @@ void get_disk_info_all(){
     }
 }
 
-void get_avail_mem() {
+void get_avail_mem_ext() {
     char answer[512];
-    MEMORYSTATUS ms;
-    ms.dwLength=sizeof(MEMORYSTATUS);
-    GlobalMemoryStatus(&ms);
-    sprintf(answer,"%d %d %d %d %d %d %d\n",
+    MEMORYSTATUSEX ms;
+    ms.dwLength=sizeof(MEMORYSTATUSEX);
+    GlobalMemoryStatusEx(&ms);
+    sprintf(answer,"%d %I64d %I64d %I64d %I64d %I64d %I64d\n",
 	    ms.dwMemoryLoad,
-	    ms.dwTotalPhys,
-	    ms.dwAvailPhys,
-	    ms.dwTotalPageFile,
-	    ms.dwAvailPageFile,
-	    ms.dwTotalVirtual,
-	    ms.dwAvailVirtual
+	    ms.ullTotalPhys,
+	    ms.ullAvailPhys,
+	    ms.ullTotalPageFile,
+	    ms.ullAvailPageFile,
+	    ms.ullTotalVirtual,
+	    ms.ullAvailVirtual
 	    );
     return_answer(answer);
     /*    
-       MemoryLoad;    percent of memory in use 
-       TotalPhys;     // bytes of physical memory
-       AvailPhys;     // free physical memory bytes
-       TotalPageFile; // bytes of paging file
-       AvailPageFile; // free bytes of paging file
-       TotalVirtual;  // user bytes of address space
-       AvailVirtual;  // free user bytes
-       
-       */
+	DWORD     dwLength;
+	DWORD     dwMemoryLoad;
+	DWORDLONG ullTotalPhys;
+	DWORDLONG ullAvailPhys;
+	DWORDLONG ullTotalPageFile;
+	DWORDLONG ullAvailPageFile;
+	DWORDLONG ullTotalVirtual;
+	DWORDLONG ullAvailVirtual;
+    */
 }
 
 static void
@@ -269,7 +269,7 @@ message_loop()
 	    if (cmdLen == 1) {
 		switch (cmd[0]) {
 		case MEM_INFO:
-		    get_avail_mem();
+		    get_avail_mem_ext();
 		    return_answer(OK);
 		    break;
 		case DISK_INFO:

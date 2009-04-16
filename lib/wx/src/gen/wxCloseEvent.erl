@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxcloseevent.html">wxCloseEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>close_window</em>, <em>end_session</em>, <em>query_end_session</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxClose(). #wxClose{}} event record type.
 %%
@@ -83,7 +83,8 @@ veto(This)
 veto(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxCloseEvent),
-  MOpts = fun({veto, Veto}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Veto)):32/?UI>>|Acc]  end,
+  MOpts = fun({veto, Veto}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Veto)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxCloseEvent_Veto,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

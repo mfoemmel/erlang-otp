@@ -41,26 +41,26 @@ getaddr(Address,Timer) -> inet:getaddr_tm(Address, inet, Timer).
 
 open(Port) -> open(Port, []).
 
-open(Port, Opts) when Port >= 0, Port =< 16#ffff ->
+open(Port, Opts) ->
     case inet:udp_options(
 	   [{port,Port}, {recbuf, ?RECBUF} | Opts], 
 	   inet) of
 	{error, Reason} -> exit(Reason);
-	{ok, R} ->
-	    Fd       = R#udp_opts.fd,
-	    BAddr    = R#udp_opts.ifaddr,
-	    BPort    = R#udp_opts.port,
-	    SockOpts = R#udp_opts.opts,
-	    inet:open(Fd,BAddr,BPort,SockOpts,udp,inet,?MODULE)
+	{ok, #udp_opts{fd=Fd,
+		       ifaddr=BAddr={A,B,C,D},
+		       port=BPort,
+		       opts=SockOpts}} when ?ip(A,B,C,D), ?port(BPort) ->
+	    inet:open(Fd,BAddr,BPort,SockOpts,udp,inet,?MODULE);
+	{ok, _} -> exit(badarg)
     end.
 
-send(S,{A,B,C,D},P,Data) when ?ip(A,B,C,D), P>=0,P=<16#ffff ->
+send(S,{A,B,C,D},P,Data) when ?ip(A,B,C,D), ?port(P) ->
     prim_inet:sendto(S, {A,B,C,D}, P, Data).
 
 send(S, Data) ->
     prim_inet:sendto(S, {0,0,0,0}, 0, Data).
     
-connect(S, {A,B,C,D}, P) when ?ip(A,B,C,D), P>=0, P=<16#ffff->
+connect(S, {A,B,C,D}, P) when ?ip(A,B,C,D), ?port(P) ->
     prim_inet:connect(S, {A,B,C,D}, P).
 
 recv(S,Len) ->

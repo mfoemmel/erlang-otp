@@ -45,9 +45,10 @@ column() = integer() > 0
 line() = integer()
 location() = line() | {line(), column()}
 reserved_word_fun() -> fun(atom()) -> bool()
+set_attribute_fun() -> fun(term()) -> term()
 symbol() = atom() | float() | integer() | string()
-token() = {category(), token_data()} | {category(), token_data(), symbol()}
-token_data() = line() | tuple()</code>
+token() = {category(), attributes()} | {category(), attributes(), symbol()}
+attributes() = line() | list() | tuple()</code>
   </section>
   <funcs>
     <func>
@@ -63,7 +64,8 @@ token_data() = line() | tuple()</code>
         <v>StartLocation = EndLocation = location()</v>
         <v>Options = Option | [Option]</v>
         <v>Option = {reserved_word_fun,reserved_word_fun()}
-                  | return_comments | return_white_spaces | return</v>
+                  | return_comments | return_white_spaces | return
+                  | text</v>
       </type>
       <desc>
         <p>Takes the list of characters <c>String</c> and tries to
@@ -74,26 +76,31 @@ token_data() = line() | tuple()</code>
         <p><c>{error, ErrorInfo, EndLocation}</c> is returned if an
           error occurs. <c>EndLocation</c> is the first location after
           the erroneous token.</p>
-        <p> <c>string(String)</c> is equivalent to
-          <c>string(String, 1)</c>. </p>
+        <p><c>string(String)</c> is equivalent to
+          <c>string(String, 1)</c>, and <c>string(String,
+          StartLocation)</c> is equivalent to <c>string(String,
+          StartLocation, [])</c>.</p>
         <p><c>StartLocation</c> indicates the initial location when
-          scanning starts. If <c>StartLocation</c> is a line,
-          <c>token_data()</c> as well as <c>EndLocation</c> and
+          scanning starts. If <c>StartLocation</c> is a line
+          <c>attributes()</c> as well as <c>EndLocation</c> and
           <c>ErrorLocation</c> will be lines. If
-          <c>StartLocation</c> is a pair of a line and a column,
-          <c>token_data()</c> takes the form of a tuple, and
-          <c>EndLocation</c> and <c>ErrorLocation</c> will be pairs of
-          a line and a column. The token data tuple contains
-          information about the column and the line where the token
-          begins, as well as the text of the token, all of which can
+          <c>StartLocation</c> is a pair of a line and a column
+          <c>attributes()</c> takes the form of an opaque compound
+          data type, and <c>EndLocation</c> and <c>ErrorLocation</c>
+          will be pairs of a line and a column. The <em>token
+          attributes</em> contain information about the column and the
+          line where the token begins, as well as the text of the
+          token (if the <c>text</c> option is given), all of which can
           be accessed by calling <seealso
-          marker="#token_info/1">token_info/1,2</seealso>.</p>
+          marker="#token_info/1">token_info/1,2</seealso> or <seealso
+          marker="#attributes_info/1">attributes_info/1,2</seealso>.</p>
         <p>A <em>token</em> is a tuple containing information about
-          syntactic category, the token data, and the actual terminal
-          symbol. For punctuation characters (e.g. <c>;</c>, <c>|</c>)
-          and reserved words, the category and the symbol coincide,
-          and the token is represented by a two-tuple. Three-tuples
-          have one of the following forms: <c>{atom, Info, atom()}</c>,
+          syntactic category, the token attributes, and the actual
+          terminal symbol. For punctuation characters (e.g. <c>;</c>,
+          <c>|</c>) and reserved words, the category and the symbol
+          coincide, and the token is represented by a two-tuple.
+          Three-tuples have one of the following forms: <c>{atom,
+          Info, atom()}</c>,
           <c>{char, Info, integer()}</c>, <c>{comment, Info,
           string()}</c>, <c>{float, Info, float()}</c>, <c>{integer,
           Info, integer()}</c>, <c>{var, Info, atom()}</c>, 
@@ -118,6 +125,10 @@ token_data() = line() | tuple()</code>
         </item>
         <tag><c>return</c></tag>
         <item><p>Short for <c>[return_comments, return_white_spaces]</c>.</p>
+        </item>
+        <tag><c>text</c></tag>
+        <item><p>Include the token's text in the token attributes. The
+          text is the part of the input corresponding to the token.</p>
         </item>
         </taglist>
       </desc>
@@ -175,6 +186,9 @@ token_data() = line() | tuple()</code>
         <p>The <c>CharSpec</c> <c>eof</c> signals end of file.
         <c>LeftoverChars</c> will then take the value <c>eof</c> as
           well.</p>
+        <p><c>tokens(Continuation, CharSpec, StartLocation)</c> is
+          equivalent to <c>tokens(Continuation, CharSpec,
+          StartLocation, [])</c>.</p>
         <p>See <seealso marker="#string/3">string/3</seealso> for a
           description of the various options.</p>
       </desc>
@@ -191,53 +205,56 @@ token_data() = line() | tuple()</code>
       </desc>
     </func>
     <func>
-      <name>token_info(Token) -> InfoResult</name>
+      <name>token_info(Token) -> TokenInfo</name>
       <fsummary>Return information about a token</fsummary>
       <type>
         <v>Token = token()</v>
-        <v>InfoResult = [InfoTuple]</v>
-        <v>InfoTuple = {Item, Info}</v>
-        <v>Item = atom()</v>
+        <v>TokenInfo = [TokenInfoTuple]</v>
+        <v>TokenInfoTuple = {TokenItem, Info}</v>
+        <v>TokenItem = atom()</v>
         <v>Info = term()</v>
       </type>
       <desc>
-        <p>Returns a list containing information about the Erlang
-          token <c>Token</c>. The order of the <c>InfoTuple</c>s is
-          not defined. Currently the following <c>Item</c>s are
-          returned: <c>category</c>, <c>column</c>, <c>length</c>,
+        <p>Returns a list containing information about the token
+          <c>Token</c>. The order of the <c>TokenInfoTuple</c>s is not
+          defined. The following <c>TokenItem</c>s are returned:
+          <c>category</c>, <c>column</c>, <c>length</c>,
           <c>line</c>, <c>symbol</c>, and <c>text</c>. See <seealso
-          marker="#token_info/2"> token_info/2</seealso> for
+          marker="#token_info/2">token_info/2</seealso> for
           information about specific
-          <c>InfoTuple</c>s.</p>
-        <p>Note that if <c>token_info(Token, Item)</c> returns
-          <c>undefined</c> for some <c>Item</c> in the list above, the
-          item is not included in <c>InfoResult</c>.</p>
+          <c>TokenInfoTuple</c>s.</p>
+        <p>Note that if <c>token_info(Token, TokenItem)</c> returns
+          <c>undefined</c> for some <c>TokenItem</c> in the list above, the
+          item is not included in <c>TokenInfo</c>.</p>
       </desc>
     </func>
     <func>
-      <name>token_info(Token, ItemSpec) -> InfoResult</name>
+      <name>token_info(Token, TokenItemSpec) -> TokenInfo</name>
       <fsummary>Return information about a token</fsummary>
       <type>
         <v>Token = token()</v>
-        <v>ItemSpec = Item | [Item]</v>
-        <v>InfoResult = InfoTuple | undefined | [InfoTuple]</v>
-        <v>InfoTuple = {Item, Info}</v>
-        <v>Item = atom()</v>
+        <v>TokenItemSpec = TokenItem | [TokenItem]</v>
+        <v>TokenInfo = TokenInfoTuple | undefined | [TokenInfoTuple]</v>
+        <v>TokenInfoTuple = {TokenItem, Info}</v>
+        <v>TokenItem = atom()</v>
         <v>Info = term()</v>
       </type>
       <desc>
-        <p>Returns a list containing information about the Erlang
-          token <c>Token</c>. If <c>ItemSpec</c> is a single
-          <c>Item</c>, the returned value is the corresponding
-          <c>InfoTuple</c>, or <c>undefined</c> if the <c>Item</c> has
-          no value. If <c>ItemSpec</c> is a list of
-          <c>ItemSpec</c>, the result is a list of <c>InfoTuple</c>.
-          The <c>InfoTuple</c>s will appear with the corresponding
-	  <c>Item</c>s in the same order as the <c>Item</c>s appeared
-	  in the list of <c>Item</c>s. <c>Item</c>s with no value are
-	  not included in the list of <c>InfoTuple</c>.</p>
-	<p>Currently the following <c>InfoTuple</c>s with corresponding
-	   <c>Item</c>s are valid:</p>
+        <p>Returns a list containing information about the token
+          <c>Token</c>. If <c>TokenItemSpec</c> is a single
+          <c>TokenItem</c>, the returned value is the corresponding
+          <c>TokenInfoTuple</c>, or <c>undefined</c> if the
+          <c>TokenItem</c> has no value. If <c>TokenItemSpec</c> is a
+          list of
+          <c>TokenItem</c>, the result is a list of
+          <c>TokenInfoTuple</c>. The <c>TokenInfoTuple</c>s will
+          appear with the corresponding
+	  <c>TokenItem</c>s in the same order as the <c>TokenItem</c>s
+	  appeared in the list of <c>TokenItem</c>s. <c>TokenItem</c>s
+	  with no value are not included in the list of
+	  <c>TokenInfoTuple</c>.</p>
+	<p>The following <c>TokenInfoTuple</c>s with corresponding
+	   <c>TokenItem</c>s are valid:</p>
         <taglist>
           <tag><c>{category, category()}</c></tag>
           <item><p>The category of the token.</p>
@@ -259,12 +276,99 @@ token_data() = line() | tuple()</code>
           <item><p>The token's symbol.</p>
           </item>
           <tag><c>{text, string()}</c></tag>
-          <item><p>The token's text. The text is the part of the input
-            corresponding to the token.</p>
+          <item><p>The token's text..</p>
           </item>
         </taglist>
-        <note><p>The <c>token_info/1,2</c> functions may change 
-            in the R13B release.</p></note>
+      </desc>
+    </func>
+    <func>
+      <name>attributes_info(Attributes) -> AttributesInfo</name>
+      <fsummary>Return information about token attributes</fsummary>
+      <type>
+        <v>Attributes = attributes()</v>
+        <v>AttributesInfo = [AttributeInfoTuple]</v>
+        <v>AttributeInfoTuple = {AttributeItem, Info}</v>
+        <v>AttributeItem = atom()</v>
+        <v>Info = term()</v>
+      </type>
+      <desc>
+        <p>Returns a list containing information about the token
+          attributes <c>Attributes</c>. The order of the
+          <c>AttributeInfoTuple</c>s is not defined. The following
+          <c>AttributeItem</c>s are returned:
+          <c>column</c>, <c>length</c>, <c>line</c>, and <c>text</c>.
+          See <seealso
+          marker="#attributes_info/2">attributes_info/2</seealso> for
+          information about specific
+          <c>AttributeInfoTuple</c>s.</p>
+        <p>Note that if <c>attributes_info(Token, AttributeItem)</c>
+          returns <c>undefined</c> for some <c>AttributeItem</c> in
+          the list above, the item is not included in
+          <c>AttributesInfo</c>.</p>
+      </desc>
+    </func>
+    <func>
+      <name>attributes_info(Attributes, AttributeItemSpec) -> AttributesInfo</name>
+      <fsummary>Return information about a token attributes</fsummary>
+      <type>
+        <v>Attributes = attributes()</v>
+        <v>AttributeItemSpec = AttributeItem | [AttributeItem]</v>
+        <v>AttributesInfo = AttributeInfoTuple | undefined 
+                          | [AttributeInfoTuple]</v>
+        <v>AttributeInfoTuple = {AttributeItem, Info}</v>
+        <v>AttributeItem = atom()</v>
+        <v>Info = term()</v>
+      </type>
+      <desc>
+        <p>Returns a list containing information about the token
+          attributes <c>Attributes</c>. If <c>AttributeItemSpec</c> is
+          a single <c>AttributeItem</c>, the returned value is the
+          corresponding <c>AttributeInfoTuple</c>, or <c>undefined</c>
+          if the <c>AttributeItem</c> has no value. If
+          <c>AttributeItemSpec</c> is a list of
+          <c>AttributeItem</c>, the result is a list of
+          <c>AttributeInfoTuple</c>. The <c>AttributeInfoTuple</c>s
+          will appear with the corresponding <c>AttributeItem</c>s in
+          the same order as the <c>AttributeItem</c>s appeared in the
+          list of <c>AttributeItem</c>s. <c>AttributeItem</c>s with no
+          value are not included in the list of
+	  <c>AttributeInfoTuple</c>.</p>
+	<p>The following <c>AttributeInfoTuple</c>s with corresponding
+	   <c>AttributeItem</c>s are valid:</p>
+        <taglist>
+          <tag><c>{column, column()}</c></tag>
+          <item><p>The column where the token begins.</p>
+          </item>
+          <tag><c>{length, integer() > 0}</c></tag>
+          <item><p>The length of the token's text.</p>
+          </item>
+          <tag><c>{line, line()}</c></tag>
+          <item><p>The line where the token begins.</p>
+          </item>
+          <tag><c>{location, location()}</c></tag>
+          <item><p>The line and column where the token begins, or
+            just the line if the column unknown.</p>
+          </item>
+          <tag><c>{text, string()}</c></tag>
+          <item><p>The token's text..</p>
+          </item>
+        </taglist>
+      </desc>
+    </func>
+    <func>
+      <name>set_attribute(AttributeItem, Attributes, SetAttributeFun) -> AttributesInfo</name>
+      <fsummary>Set a token attribute value</fsummary>
+      <type>
+        <v>AttributeItem = line</v>
+        <v>Attributes = attributes()</v>
+        <v>SetAttributeFun = set_attribute_fun()</v>
+      </type>
+      <desc>
+        <p>Sets the value of the <c>line</c> attribute of the token
+          attributes <c>Attributes</c>.</p>
+        <p>The <c>SetAttributeFun</c> is called with the value of
+          the <c>line</c> attribute, and is to return the new value of
+          the <c>line</c> attribute.</p>
       </desc>
     </func>
     <func>

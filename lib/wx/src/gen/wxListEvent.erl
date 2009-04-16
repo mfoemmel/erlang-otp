@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxlistevent.html">wxListEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>command_list_begin_drag</em>, <em>command_list_begin_rdrag</em>, <em>command_list_begin_label_edit</em>, <em>command_list_end_label_edit</em>, <em>command_list_delete_item</em>, <em>command_list_delete_all_items</em>, <em>command_list_key_down</em>, <em>command_list_insert_item</em>, <em>command_list_col_click</em>, <em>command_list_col_right_click</em>, <em>command_list_col_begin_drag</em>, <em>command_list_col_dragging</em>, <em>command_list_col_end_drag</em>, <em>command_list_item_selected</em>, <em>command_list_item_deselected</em>, <em>command_list_item_right_click</em>, <em>command_list_item_middle_click</em>, <em>command_list_item_activated</em>, <em>command_list_item_focused</em>, <em>command_list_cache_hint</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxList(). #wxList{}} event record type.
 %%

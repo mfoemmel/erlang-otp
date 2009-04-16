@@ -1090,6 +1090,7 @@
 ./lib/kernel/ebin/heart.beam
 ./lib/kernel/ebin/hipe_unified_loader.beam
 ./lib/kernel/ebin/inet.beam
+./lib/kernel/ebin/inet6_sctp.beam
 ./lib/kernel/ebin/inet6_tcp.beam
 ./lib/kernel/ebin/inet6_tcp_dist.beam
 ./lib/kernel/ebin/inet6_udp.beam
@@ -1715,6 +1716,7 @@
 ./lib/snmp/ebin/snmpm_supervisor.beam
 ./lib/snmp/ebin/snmpm_user.beam
 ./lib/snmp/ebin/snmpm_user_default.beam
+./lib/snmp/ebin/snmpm_user_old.beam
 ./lib/snmp/ebin/snmpm_usm.beam
 ./lib/snmp/examples/ex1/EX1-MIB.bin
 ./lib/snmp/examples/ex1/ex1.beam
@@ -2216,7 +2218,10 @@
 ./lib/wx/ebin/wxSlider.beam
 ./lib/wx/ebin/wxSpinButton.beam
 ./lib/wx/ebin/wxSpinCtrl.beam
+./lib/wx/ebin/wxSpinEvent.beam
 ./lib/wx/ebin/wxSplashScreen.beam
+./lib/wx/ebin/wxSplitterEvent.beam
+./lib/wx/ebin/wxSplitterWindow.beam
 ./lib/wx/ebin/wxStaticBitmap.beam
 ./lib/wx/ebin/wxStaticBox.beam
 ./lib/wx/ebin/wxStaticBoxSizer.beam
@@ -2256,6 +2261,7 @@
 ./lib/wx/examples/sudoku/sudoku_board.beam
 ./lib/wx/examples/sudoku/sudoku_game.beam
 ./lib/wx/examples/sudoku/sudoku_gui.beam
+./lib/wx/examples/xrc/xrc.beam
 ./lib/xmerl/ebin/xmerl.app
 ./lib/xmerl/ebin/xmerl.appup
 ./lib/xmerl/ebin/xmerl.beam

@@ -43,7 +43,7 @@ process(eof, Stream,Lno,R) ->
     lists:flatten(lists:reverse([{'$end',Lno}|R]));
 
 
-process(L, Stream,Lno,R) when list(L) ->
+process(L, Stream,Lno,R) when is_list(L) ->
     %%io:format('read:~s',[L]),
     case catch tokenise(L,Lno) of
 	{'ERR',Reason} ->

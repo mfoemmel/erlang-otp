@@ -308,7 +308,7 @@ ac_includes_default="\
 # include <unistd.h>
 #endif"
 
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os TARGET CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT CXX CXXFLAGS ac_ct_CXX RANLIB ac_ct_RANLIB CPP MIXED_CYGWIN_VC MIXED_CYGWIN_MINGW MIXED_CYGWIN DEBUG_CFLAGS DEBUG_CXXFLAGS ERLC WX_BUILDING_INSIDE_ERLSRC ERLANG_ROOT_DIR WX_CONFIG_PATH WX_CPPFLAGS WX_CFLAGS WX_CXXFLAGS WX_CFLAGS_ONLY WX_CXXFLAGS_ONLY WX_LIBS WX_LIBS_STATIC WX_VERSION WX_RESCOMP DEBUG_WX_CFLAGS DEBUG_WX_CXXFLAGS DEBUG_WX_LIBS DEBUG_WX_LIBS_STATIC WX_HAVE_STATIC_LIBS EGREP HAVE_GL_SUPPORT TESS_CB_TIGER_STYLE WXERL_CAN_BUILD_DRIVER SO_EXT RUN_ERL WXERL_SYS_TYPE LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os TARGET CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT CXX CXXFLAGS ac_ct_CXX RANLIB ac_ct_RANLIB CPP MIXED_CYGWIN_VC MIXED_CYGWIN_MINGW MIXED_CYGWIN DEBUG_CFLAGS DEBUG_CXXFLAGS ERLC WX_BUILDING_INSIDE_ERLSRC ERLANG_ROOT_DIR WX_CONFIG_PATH WX_CPPFLAGS WX_CFLAGS WX_CXXFLAGS WX_CFLAGS_ONLY WX_CXXFLAGS_ONLY WX_LIBS WX_LIBS_STATIC WX_VERSION WX_RESCOMP DEBUG_WX_CFLAGS DEBUG_WX_CXXFLAGS DEBUG_WX_LIBS DEBUG_WX_LIBS_STATIC WX_HAVE_STATIC_LIBS RC_FILE_TYPE EGREP HAVE_GL_SUPPORT TESS_CB_TIGER_STYLE WXERL_CAN_BUILD_DRIVER SO_EXT RUN_ERL WXERL_SYS_TYPE LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -1479,6 +1479,16 @@ host_os=`echo $ac_cv_host | sed 's/^\([^-]*\)-\([^-]*\)-\(.*\)$/\3/'`
 else
     host_os=win32
 fi
+
+case $host_os in
+    mingw32)
+	if test "X$host" = "X"; then
+	   host=win32
+	fi
+	;;
+    *)
+	;;
+esac
 
 TARGET=$host
 
@@ -3156,12 +3166,15 @@ case $host_os in
 	CPPFLAGS="$CPPFLAGS -D_MACOSX $PTHR_CFLAGS"
 	;;
     mingw32)
-	CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0403"
+	CFLAGS="$CFLAGS -DWIN32 -DWINVER=0x0500 -D_WINDOWS -D_UNICODE -DUNICODE"
+	CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0500"
 	{ echo "$as_me:$LINENO: WARNING: Reverting to 32-bit time_t" >&5
 echo "$as_me: WARNING: Reverting to 32-bit time_t" >&2;}
 	CPPFLAGS="$CPPFLAGS -D_USE_32BIT_TIME_T"
 	;;
     win32)
+	CFLAGS="$CFLAGS -DWIN32 -DWINVER=0x0500 -D_WINDOWS -D_UNICODE -DUNICODE"
+	CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0500"
 	;;
     *)
 	CPPFLAGS="$CPPFLAGS -D_GNU_SOURCE $PTHR_CFLAGS"
@@ -3176,6 +3189,9 @@ case $host_os in
     win32)
         LDFLAGS="-dll"
 	;;
+    mingw32)
+	LDFLAGS="-shared -fPIC"
+	;;
     *)
 	CFLAGS=
 	LDFLAGS="-shared -fPIC"
@@ -3189,7 +3205,7 @@ case $host_os in
 	CFLAGS="-g -Wall -O2 -fomit-frame-pointer -fno-strict-aliasing $CFLAGS"
 	;;
     win32)
-	DEBUG_CFLAGS="-g -DDEBUG $CFLAGS"
+	DEBUG_CFLAGS="-g -Wall -DDEBUG $CFLAGS"
 	CFLAGS="-g -Wall -O2 $CFLAGS"
 	;;
     *)
@@ -3200,7 +3216,6 @@ esac
 
 CXXFLAGS="$CFLAGS $CPPFLAGS"
 CFLAGS="$CFLAGS $CPPFLAGS $C_ONLY_FLAGS"
-
 
 DEBUG_CXXFLAGS="$DEBUG_CFLAGS $CPPFLAGS"
 DEBUG_CFLAGS="$DEBUG_CFLAGS $CPPFLAGS $C_ONLY_FLAGS"
@@ -4026,7 +4041,7 @@ echo "${ECHO_T}no (version $WX_VERSION is not new enough)" >&6
     else
 	wxWin=1
     fi
-
+    RC_FILE_TYPE=o
 
 
     if test "$wxWin" != 1; then
@@ -4049,7 +4064,7 @@ echo "$as_me: error:
 		wxWidgets version is $reqwx or above." >&2;}
    { (exit 1); exit 1; }; }
 	else
-	   echo "wxWidgets not found, wx will NOT be useable" >> ./CONF_INFO
+	   echo "wxWidgets not found, wx will NOT be useable" > ./CONF_INFO
 	   WXERL_CAN_BUILD_DRIVER=false
 	   { echo "$as_me:$LINENO: WARNING:
                 wxWidgets must be installed on your system.
@@ -4082,6 +4097,7 @@ echo $ECHO_N "checking for WxWidgets in standard locations... $ECHO_C" >&6
 	    WX_CXXFLAGS=$WX_CFLAGS
 	    WX_LIBDIR=$dir/lib/vc_lib
 	    WX_RESCOMP="rc.sh -I$WXINCLUDE_PLAIN -D __WIN32__"
+	    RC_FILE_TYPE=res
 	    for lib in $WX_LIBDIR/wxbase*.lib; do
 		maybe=`echo $lib | egrep 'wxbase[0-9]*u\.lib'`
 		if test '!' -z "$maybe"; then
@@ -4114,7 +4130,7 @@ echo "${ECHO_T}failed" >&6
 echo "$as_me: error: Cannot find core lib version for wxWidgets" >&2;}
    { (exit 1); exit 1; }; }
 	else
-		echo "No usable wxWidgets not found, wx will not be useable" >> ./CONF_INFO
+		echo "No usable wxWidgets not found, wx will not be useable" > ./CONF_INFO
 		WXERL_CAN_BUILD_DRIVER=false
 		{ echo "$as_me:$LINENO: WARNING: Cannot find core lib version for wxWidgets" >&5
 echo "$as_me: WARNING: Cannot find core lib version for wxWidgets" >&2;}
@@ -4126,6 +4142,7 @@ echo "$as_me: WARNING: Cannot find core lib version for wxWidgets" >&2;}
 
 
 fi
+
 
 
 
@@ -4836,7 +4853,7 @@ echo "${ECHO_T}$HAVE_GL_SUPPORT" >&6
 
 
 if test X"$HAVE_GL_SUPPORT" != X"yes" ; then
-   		echo "wxWidgets don't have gl support, wx will NOT be useable" >> ./CONF_INFO
+   		echo "wxWidgets don't have gl support, wx will NOT be useable" > ./CONF_INFO
 		WXERL_CAN_BUILD_DRIVER=false
 fi
 
@@ -5426,7 +5443,7 @@ _ACEOF
 
 else
   WXERL_CAN_BUILD_DRIVER=false
-	 echo "wxWidgets don't have wxStyledTextControl (stc.h), wx will NOT be useable" >> ./CONF_INFO
+	 echo "wxWidgets don't have wxStyledTextControl (stc.h), wx will NOT be useable" > ./CONF_INFO
      	 { echo "$as_me:$LINENO: WARNING: Can not find wx/stc/stc.h" >&5
 echo "$as_me: WARNING: Can not find wx/stc/stc.h" >&2;}
 
@@ -5518,7 +5535,7 @@ echo "$as_me:$LINENO: result: $CAN_LINK_WX" >&5
 echo "${ECHO_T}$CAN_LINK_WX" >&6
 
 if test X"$CAN_LINK_WX" != X"yes" ; then
-   		echo "Can not link the wx driver, wx will NOT be useable" >> ./CONF_INFO
+   		echo "Can not link the wx driver, wx will NOT be useable" > ./CONF_INFO
 		WXERL_CAN_BUILD_DRIVER=false
 		{ echo "$as_me:$LINENO: WARNING: Can not link wx program are all developer packages installed?" >&5
 echo "$as_me: WARNING: Can not link wx program are all developer packages installed?" >&2;}
@@ -6245,6 +6262,7 @@ s,@DEBUG_WX_CXXFLAGS@,$DEBUG_WX_CXXFLAGS,;t t
 s,@DEBUG_WX_LIBS@,$DEBUG_WX_LIBS,;t t
 s,@DEBUG_WX_LIBS_STATIC@,$DEBUG_WX_LIBS_STATIC,;t t
 s,@WX_HAVE_STATIC_LIBS@,$WX_HAVE_STATIC_LIBS,;t t
+s,@RC_FILE_TYPE@,$RC_FILE_TYPE,;t t
 s,@EGREP@,$EGREP,;t t
 s,@HAVE_GL_SUPPORT@,$HAVE_GL_SUPPORT,;t t
 s,@TESS_CB_TIGER_STYLE@,$TESS_CB_TIGER_STYLE,;t t

@@ -277,7 +277,7 @@ recompile(File, NoExec, Load, Opts) ->
 	Other -> Other
     end.
 
-do_recompile(File, true, _Load, _Opts) ->
+do_recompile(_File, true, _Load, _Opts) ->
     out_of_date;
 do_recompile(File, false, noload, Opts) ->
     io:format("Recompile: ~s\n",[File]),

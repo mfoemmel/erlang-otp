@@ -162,7 +162,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},Id, Options)
   ?CLASS(ParentT,wxWindow),
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxGrid_new_3,
   <<ParentRef:32/?UI,Id:32/?UI, BinOpt/binary>>).
@@ -175,7 +176,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},X,Y, Options)
   ?CLASS(ParentT,wxWindow),
   MOpts = fun({w, W}, Acc) -> [<<1:32/?UI,W:32/?UI>>|Acc];
           ({h, H}, Acc) -> [<<2:32/?UI,H:32/?UI>>|Acc];
-          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxGrid_new_4,
   <<ParentRef:32/?UI,X:32/?UI,Y:32/?UI, 0:32,BinOpt/binary>>).
@@ -193,7 +195,8 @@ appendCols(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
   MOpts = fun({numCols, NumCols}, Acc) -> [<<1:32/?UI,NumCols:32/?UI>>|Acc];
-          ({updateLabels, UpdateLabels}, Acc) -> [<<2:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc]  end,
+          ({updateLabels, UpdateLabels}, Acc) -> [<<2:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGrid_AppendCols,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -211,7 +214,8 @@ appendRows(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
   MOpts = fun({numRows, NumRows}, Acc) -> [<<1:32/?UI,NumRows:32/?UI>>|Acc];
-          ({updateLabels, UpdateLabels}, Acc) -> [<<2:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc]  end,
+          ({updateLabels, UpdateLabels}, Acc) -> [<<2:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGrid_AppendRows,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -235,7 +239,8 @@ autoSizeColumn(This,Col)
 autoSizeColumn(#wx_ref{type=ThisT,ref=ThisRef},Col, Options)
  when is_integer(Col),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({setAsMin, SetAsMin}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(SetAsMin)):32/?UI>>|Acc]  end,
+  MOpts = fun({setAsMin, SetAsMin}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(SetAsMin)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_AutoSizeColumn,
   <<ThisRef:32/?UI,Col:32/?UI, BinOpt/binary>>).
@@ -252,7 +257,8 @@ autoSizeColumns(This)
 autoSizeColumns(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({setAsMin, SetAsMin}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(SetAsMin)):32/?UI>>|Acc]  end,
+  MOpts = fun({setAsMin, SetAsMin}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(SetAsMin)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_AutoSizeColumns,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -269,7 +275,8 @@ autoSizeRow(This,Row)
 autoSizeRow(#wx_ref{type=ThisT,ref=ThisRef},Row, Options)
  when is_integer(Row),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({setAsMin, SetAsMin}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(SetAsMin)):32/?UI>>|Acc]  end,
+  MOpts = fun({setAsMin, SetAsMin}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(SetAsMin)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_AutoSizeRow,
   <<ThisRef:32/?UI,Row:32/?UI, BinOpt/binary>>).
@@ -286,7 +293,8 @@ autoSizeRows(This)
 autoSizeRows(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({setAsMin, SetAsMin}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(SetAsMin)):32/?UI>>|Acc]  end,
+  MOpts = fun({setAsMin, SetAsMin}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(SetAsMin)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_AutoSizeRows,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -378,7 +386,8 @@ createGrid(This,NumRows,NumCols)
 createGrid(#wx_ref{type=ThisT,ref=ThisRef},NumRows,NumCols, Options)
  when is_integer(NumRows),is_integer(NumCols),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({selmode, Selmode}, Acc) -> [<<1:32/?UI,Selmode:32/?UI>>|Acc]  end,
+  MOpts = fun({selmode, Selmode}, Acc) -> [<<1:32/?UI,Selmode:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGrid_CreateGrid,
   <<ThisRef:32/?UI,NumRows:32/?UI,NumCols:32/?UI, 0:32,BinOpt/binary>>).
@@ -397,7 +406,8 @@ deleteCols(#wx_ref{type=ThisT,ref=ThisRef}, Options)
   ?CLASS(ThisT,wxGrid),
   MOpts = fun({pos, Pos}, Acc) -> [<<1:32/?UI,Pos:32/?UI>>|Acc];
           ({numCols, NumCols}, Acc) -> [<<2:32/?UI,NumCols:32/?UI>>|Acc];
-          ({updateLabels, UpdateLabels}, Acc) -> [<<3:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc]  end,
+          ({updateLabels, UpdateLabels}, Acc) -> [<<3:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGrid_DeleteCols,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -416,7 +426,8 @@ deleteRows(#wx_ref{type=ThisT,ref=ThisRef}, Options)
   ?CLASS(ThisT,wxGrid),
   MOpts = fun({pos, Pos}, Acc) -> [<<1:32/?UI,Pos:32/?UI>>|Acc];
           ({numRows, NumRows}, Acc) -> [<<2:32/?UI,NumRows:32/?UI>>|Acc];
-          ({updateLabels, UpdateLabels}, Acc) -> [<<3:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc]  end,
+          ({updateLabels, UpdateLabels}, Acc) -> [<<3:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGrid_DeleteRows,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -461,7 +472,8 @@ enableCellEditControl(This)
 enableCellEditControl(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc]  end,
+  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_EnableCellEditControl,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -478,7 +490,8 @@ enableDragColSize(This)
 enableDragColSize(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc]  end,
+  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_EnableDragColSize,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -495,7 +508,8 @@ enableDragGridSize(This)
 enableDragGridSize(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc]  end,
+  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_EnableDragGridSize,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -512,7 +526,8 @@ enableDragRowSize(This)
 enableDragRowSize(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc]  end,
+  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_EnableDragRowSize,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -537,7 +552,8 @@ enableGridLines(This)
 enableGridLines(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc]  end,
+  MOpts = fun({enable, Enable}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Enable)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_EnableGridLines,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -1002,7 +1018,8 @@ insertCols(#wx_ref{type=ThisT,ref=ThisRef}, Options)
   ?CLASS(ThisT,wxGrid),
   MOpts = fun({pos, Pos}, Acc) -> [<<1:32/?UI,Pos:32/?UI>>|Acc];
           ({numCols, NumCols}, Acc) -> [<<2:32/?UI,NumCols:32/?UI>>|Acc];
-          ({updateLabels, UpdateLabels}, Acc) -> [<<3:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc]  end,
+          ({updateLabels, UpdateLabels}, Acc) -> [<<3:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGrid_InsertCols,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -1021,7 +1038,8 @@ insertRows(#wx_ref{type=ThisT,ref=ThisRef}, Options)
   ?CLASS(ThisT,wxGrid),
   MOpts = fun({pos, Pos}, Acc) -> [<<1:32/?UI,Pos:32/?UI>>|Acc];
           ({numRows, NumRows}, Acc) -> [<<2:32/?UI,NumRows:32/?UI>>|Acc];
-          ({updateLabels, UpdateLabels}, Acc) -> [<<3:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc]  end,
+          ({updateLabels, UpdateLabels}, Acc) -> [<<3:32/?UI,(wxe_util:from_bool(UpdateLabels)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGrid_InsertRows,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -1100,7 +1118,8 @@ isVisible(This,Row,Col)
 isVisible(#wx_ref{type=ThisT,ref=ThisRef},{CoordsR,CoordsC}, Options)
  when is_integer(CoordsR),is_integer(CoordsC),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({wholeCellVisible, WholeCellVisible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(WholeCellVisible)):32/?UI>>|Acc]  end,
+  MOpts = fun({wholeCellVisible, WholeCellVisible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(WholeCellVisible)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGrid_IsVisible_2,
   <<ThisRef:32/?UI,CoordsR:32/?UI,CoordsC:32/?UI, 0:32,BinOpt/binary>>).
@@ -1111,7 +1130,8 @@ isVisible(#wx_ref{type=ThisT,ref=ThisRef},{CoordsR,CoordsC}, Options)
 isVisible(#wx_ref{type=ThisT,ref=ThisRef},Row,Col, Options)
  when is_integer(Row),is_integer(Col),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({wholeCellVisible, WholeCellVisible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(WholeCellVisible)):32/?UI>>|Acc]  end,
+  MOpts = fun({wholeCellVisible, WholeCellVisible}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(WholeCellVisible)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGrid_IsVisible_3,
   <<ThisRef:32/?UI,Row:32/?UI,Col:32/?UI, 0:32,BinOpt/binary>>).
@@ -1247,7 +1267,8 @@ selectBlock(This,TopLeft={TopLeftR,TopLeftC},BottomRight={BottomRightR,BottomRig
 selectBlock(#wx_ref{type=ThisT,ref=ThisRef},{TopLeftR,TopLeftC},{BottomRightR,BottomRightC}, Options)
  when is_integer(TopLeftR),is_integer(TopLeftC),is_integer(BottomRightR),is_integer(BottomRightC),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({addToSelected, AddToSelected}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(AddToSelected)):32/?UI>>|Acc]  end,
+  MOpts = fun({addToSelected, AddToSelected}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(AddToSelected)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_SelectBlock_3,
   <<ThisRef:32/?UI,TopLeftR:32/?UI,TopLeftC:32/?UI,BottomRightR:32/?UI,BottomRightC:32/?UI, 0:32,BinOpt/binary>>).
@@ -1264,7 +1285,8 @@ selectBlock(This,TopRow,LeftCol,BottomRow,RightCol)
 selectBlock(#wx_ref{type=ThisT,ref=ThisRef},TopRow,LeftCol,BottomRow,RightCol, Options)
  when is_integer(TopRow),is_integer(LeftCol),is_integer(BottomRow),is_integer(RightCol),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({addToSelected, AddToSelected}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(AddToSelected)):32/?UI>>|Acc]  end,
+  MOpts = fun({addToSelected, AddToSelected}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(AddToSelected)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_SelectBlock_5,
   <<ThisRef:32/?UI,TopRow:32/?UI,LeftCol:32/?UI,BottomRow:32/?UI,RightCol:32/?UI, 0:32,BinOpt/binary>>).
@@ -1281,7 +1303,8 @@ selectCol(This,Col)
 selectCol(#wx_ref{type=ThisT,ref=ThisRef},Col, Options)
  when is_integer(Col),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({addToSelected, AddToSelected}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(AddToSelected)):32/?UI>>|Acc]  end,
+  MOpts = fun({addToSelected, AddToSelected}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(AddToSelected)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_SelectCol,
   <<ThisRef:32/?UI,Col:32/?UI, BinOpt/binary>>).
@@ -1298,7 +1321,8 @@ selectRow(This,Row)
 selectRow(#wx_ref{type=ThisT,ref=ThisRef},Row, Options)
  when is_integer(Row),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({addToSelected, AddToSelected}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(AddToSelected)):32/?UI>>|Acc]  end,
+  MOpts = fun({addToSelected, AddToSelected}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(AddToSelected)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_SelectRow,
   <<ThisRef:32/?UI,Row:32/?UI, BinOpt/binary>>).
@@ -1479,7 +1503,8 @@ setColFormatFloat(#wx_ref{type=ThisT,ref=ThisRef},Col, Options)
  when is_integer(Col),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
   MOpts = fun({width, Width}, Acc) -> [<<1:32/?UI,Width:32/?UI>>|Acc];
-          ({precision, Precision}, Acc) -> [<<2:32/?UI,Precision:32/?UI>>|Acc]  end,
+          ({precision, Precision}, Acc) -> [<<2:32/?UI,Precision:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_SetColFormatFloat,
   <<ThisRef:32/?UI,Col:32/?UI, BinOpt/binary>>).
@@ -1602,7 +1627,8 @@ setDefaultColSize(This,Width)
 setDefaultColSize(#wx_ref{type=ThisT,ref=ThisRef},Width, Options)
  when is_integer(Width),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({resizeExistingCols, ResizeExistingCols}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(ResizeExistingCols)):32/?UI>>|Acc]  end,
+  MOpts = fun({resizeExistingCols, ResizeExistingCols}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(ResizeExistingCols)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_SetDefaultColSize,
   <<ThisRef:32/?UI,Width:32/?UI, BinOpt/binary>>).
@@ -1619,7 +1645,8 @@ setDefaultRowSize(This,Height)
 setDefaultRowSize(#wx_ref{type=ThisT,ref=ThisRef},Height, Options)
  when is_integer(Height),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({resizeExistingRows, ResizeExistingRows}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(ResizeExistingRows)):32/?UI>>|Acc]  end,
+  MOpts = fun({resizeExistingRows, ResizeExistingRows}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(ResizeExistingRows)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_SetDefaultRowSize,
   <<ThisRef:32/?UI,Height:32/?UI, BinOpt/binary>>).
@@ -1684,7 +1711,8 @@ setReadOnly(This,Row,Col)
 setReadOnly(#wx_ref{type=ThisT,ref=ThisRef},Row,Col, Options)
  when is_integer(Row),is_integer(Col),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({isReadOnly, IsReadOnly}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(IsReadOnly)):32/?UI>>|Acc]  end,
+  MOpts = fun({isReadOnly, IsReadOnly}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(IsReadOnly)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGrid_SetReadOnly,
   <<ThisRef:32/?UI,Row:32/?UI,Col:32/?UI, 0:32,BinOpt/binary>>).
@@ -1808,7 +1836,8 @@ xToCol(This,X)
 xToCol(#wx_ref{type=ThisT,ref=ThisRef},X, Options)
  when is_integer(X),is_list(Options) ->
   ?CLASS(ThisT,wxGrid),
-  MOpts = fun({clipToMinMax, ClipToMinMax}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(ClipToMinMax)):32/?UI>>|Acc]  end,
+  MOpts = fun({clipToMinMax, ClipToMinMax}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(ClipToMinMax)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGrid_XToCol,
   <<ThisRef:32/?UI,X:32/?UI, BinOpt/binary>>).

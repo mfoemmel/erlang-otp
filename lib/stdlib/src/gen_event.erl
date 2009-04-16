@@ -49,10 +49,16 @@
 
 -define(reply(X), From ! {element(2,Tag), X}).
 
--record(handler, {module,
+-record(handler, {module             :: atom(),
 		  id = false,
 		  state,
-		  supervised = false}).
+		  supervised = false :: 'false' | pid()}).
+
+%%%=========================================================================
+%%%  API
+%%%=========================================================================
+
+-spec behaviour_info(atom()) -> 'undefined' | [{atom(), arity()}].
 
 behaviour_info(callbacks) ->
     [{init,1},{handle_event,2},{handle_call,2},{handle_info,2},
@@ -60,15 +66,15 @@ behaviour_info(callbacks) ->
 behaviour_info(_Other) ->
     undefined.
 
-%% gen_event:start(Handler) -> ok | {error, What}
+%% gen_event:start(Handler) -> {ok, Pid} | {error, What}
 %%   gen_event:add_handler(Handler, Mod, Args) -> ok | Other
 %%      gen_event:notify(Handler, Event) -> ok
 %%      gen_event:call(Handler, Mod, Query) -> {ok, Val} | {error, Why}
 %%      gen_event:call(Handler, Mod, Query, Timeout) -> {ok, Val} | {error, Why}
 %%   gen_event:delete_handler(Handler, Mod, Args) -> Val
 %%   gen_event:swap_handler(Handler, {OldMod, Args1}, {NewMod, Args2}) -> ok
-%%   gen_event:which_handler(Handler) ->  [Mod]
-%% gen_event:stop(Handler)  -> ok 
+%%   gen_event:which_handler(Handler) -> [Mod]
+%% gen_event:stop(Handler) -> ok 
 
 
 %% handlers must export
@@ -106,19 +112,34 @@ behaviour_info(_Other) ->
 %% call(H, Mod, Query, Timeout) -> Val
 %%      Mod:handle_call(Query, State) -> as above
 
+%%---------------------------------------------------------------------------
 
+-type handler()   :: atom() | {atom(), term()}.
+-type emgr_name() :: {'local', atom()} | {'global', atom()}.
+-type emgr_ref()  :: atom() | {atom(), atom()} |  {'global', atom()} | pid().
+-type start_ret() :: {'ok', pid()} | {'error', term()}.
+
+%%---------------------------------------------------------------------------
+
+-define(NO_CALLBACK, 'no callback module').
+
+-spec start() -> start_ret().
 start() ->
-    gen:start(gen_event, nolink, [], [], []).
+    gen:start(?MODULE, nolink, ?NO_CALLBACK, [], []).
 
+-spec start(emgr_name()) -> start_ret().
 start(Name) ->
-    gen:start(gen_event, nolink, Name, [], [], []).
+    gen:start(?MODULE, nolink, Name, ?NO_CALLBACK, [], []).
 
+-spec start_link() -> start_ret().
 start_link() ->
-    gen:start(gen_event, link, [], [], []).
+    gen:start(?MODULE, link, ?NO_CALLBACK, [], []).
 
+-spec start_link(emgr_name()) -> start_ret().
 start_link(Name) ->
-    gen:start(gen_event, link, Name, [], [], []).
+    gen:start(?MODULE, link, Name, ?NO_CALLBACK, [], []).
 
+%% -spec init_it(pid(), 'self' | pid(), emgr_name(), module(), [term()], [_]) -> 
 init_it(Starter, self, Name, Mod, Args, Options) ->
     init_it(Starter, self(), Name, Mod, Args, Options);
 init_it(Starter, Parent, Name0, _, _, Options) ->
@@ -132,40 +153,65 @@ name({local,Name}) -> Name;
 name({global,Name}) -> Name;
 name(Pid) when is_pid(Pid) -> Pid.
 
-add_handler(M, Handler, Args)      -> rpc (M, {add_handler, Handler, Args}).
+-spec add_handler(emgr_ref(), handler(), term()) -> term().
+add_handler(M, Handler, Args) -> rpc(M, {add_handler, Handler, Args}).
+
+-spec add_sup_handler(emgr_ref(), handler(), term()) -> term().
 add_sup_handler(M, Handler, Args)  ->
-    rpc (M, {add_sup_handler, Handler, Args, self()}).
-notify(M, Event)                   -> send(M, {notify, Event}). 
-sync_notify(M, Event)              -> rpc (M, {sync_notify, Event}).
-call(M, Handler, Query)            -> call1(M, Handler, Query).
-call(M, Handler, Query, Timeout)   -> call1(M, Handler, Query, Timeout).
-delete_handler(M, Handler, Args)   -> rpc (M, {delete_handler, Handler, Args}).
-swap_handler(M, {H1, A1},{H2, A2}) -> rpc (M, {swap_handler, H1, A1, H2, A2}).
-swap_sup_handler(M, {H1, A1},{H2, A2}) ->
-    rpc (M, {swap_sup_handler, H1, A1, H2, A2, self()}).
-which_handlers(M)                  -> rpc (M, which_handlers).
-stop(M)                            -> rpc (M, stop).
+    rpc(M, {add_sup_handler, Handler, Args, self()}).
+
+-spec notify(emgr_ref(), term()) -> 'ok'.
+notify(M, Event) -> send(M, {notify, Event}). 
+
+-spec sync_notify(emgr_ref(), term()) -> 'ok'.
+sync_notify(M, Event) -> rpc(M, {sync_notify, Event}).
+
+-spec call(emgr_ref(), handler(), term()) -> term().
+call(M, Handler, Query) -> call1(M, Handler, Query).
+
+-spec call(emgr_ref(), handler(), term(), timeout()) -> term().
+call(M, Handler, Query, Timeout) -> call1(M, Handler, Query, Timeout).
+
+-spec delete_handler(emgr_ref(), handler(), term()) -> term().
+delete_handler(M, Handler, Args) -> rpc(M, {delete_handler, Handler, Args}).
+
+-spec swap_handler(emgr_ref(), {handler(), term()}, {handler(), term()}) ->
+	    'ok' | {'error', term()}.
+swap_handler(M, {H1, A1}, {H2, A2}) -> rpc(M, {swap_handler, H1, A1, H2, A2}).
+
+-spec swap_sup_handler(emgr_ref(), {handler(), term()}, {handler(), term()}) ->
+	    'ok' | {'error', term()}.
+swap_sup_handler(M, {H1, A1}, {H2, A2}) ->
+    rpc(M, {swap_sup_handler, H1, A1, H2, A2, self()}).
+
+-spec which_handlers(emgr_ref()) -> [handler()].
+which_handlers(M) -> rpc(M, which_handlers).
+
+-spec stop(emgr_ref()) -> 'ok'.
+stop(M) -> rpc(M, stop).
 
 rpc(M, Cmd) -> 
-    {ok,Reply} = gen:call(M, self(), Cmd, infinity),
+    {ok, Reply} = gen:call(M, self(), Cmd, infinity),
     Reply.
 
 call1(M, Handler, Query) ->
     Cmd = {call, Handler, Query},
-    case catch gen:call(M, self(), Cmd) of
-	{ok,Res} ->
-	    Res;
-	{'EXIT', Reason} ->
-	    exit({Reason, {gen_event, call, [M, Handler, Query]}})
+    try gen:call(M, self(), Cmd) of
+	{ok, Res} ->
+	    Res
+    catch
+	exit:Reason ->
+	    exit({Reason, {?MODULE, call, [M, Handler, Query]}})
     end.
 
 call1(M, Handler, Query, Timeout) ->
     Cmd = {call, Handler, Query},
-    case catch gen:call(M, self(), Cmd, Timeout) of
-	{ok,Res} ->
-	    Res;
-	{'EXIT', Reason} ->
-	    exit({Reason, {gen_event, call, [M, Handler, Query, Timeout]}})
+    try gen:call(M, self(), Cmd, Timeout) of
+	{ok, Res} ->
+	    Res
+    catch
+	exit:Reason ->
+	    exit({Reason, {?MODULE, call, [M, Handler, Query, Timeout]}})
     end.
 
 send({global, Name}, Cmd) ->
@@ -174,8 +220,9 @@ send({global, Name}, Cmd) ->
 send(M, Cmd) ->
     M ! Cmd,
     ok.
+
 loop(Parent, ServerName, MSL, Debug, true) ->
-     proc_lib:hibernate(?MODULE,wake_hib,[Parent, ServerName, MSL, Debug]);
+     proc_lib:hibernate(?MODULE, wake_hib, [Parent, ServerName, MSL, Debug]);
 loop(Parent, ServerName, MSL, Debug, _) ->
     fetch_msg(Parent, ServerName, MSL, Debug, false).
 
@@ -185,14 +232,14 @@ wake_hib(Parent, ServerName, MSL, Debug) ->
 fetch_msg(Parent, ServerName, MSL, Debug, Hib) ->
     receive
 	{system, From, Req} ->
-	    sys:handle_system_msg(Req, From, Parent, gen_event, Debug,
+	    sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
 				  [ServerName, MSL, Hib],Hib);
 	{'EXIT', Parent, Reason} ->
 	    terminate_server(Reason, Parent, MSL, ServerName);
 	Msg when Debug =:= [] ->
 	    handle_msg(Msg, Parent, ServerName, MSL, []);
 	Msg ->
-	    Debug1 = sys:handle_debug(Debug, {gen_event, print_event}, 
+	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, 
 				      ServerName, {in, Msg}),
 	    handle_msg(Msg, Parent, ServerName, MSL, Debug1)
     end.
@@ -228,7 +275,7 @@ handle_msg(Msg, Parent, ServerName, MSL, Debug) ->
 	    loop(Parent, ServerName, MSL1, Debug, false);
 	{From, Tag, {swap_handler, Handler1, Args1, Handler2, Args2}} ->
 	    {Hib, Reply, MSL1} = server_swap_handler(Handler1, Args1, Handler2,
-						Args2, MSL, ServerName),
+						     Args2, MSL, ServerName),
 	    ?reply(Reply),
 	    loop(Parent, ServerName, MSL1, Debug, Hib);
 	{From, Tag, {swap_sup_handler, Handler1, Args1, Handler2, Args2,
@@ -301,8 +348,7 @@ terminate_supervised(Pid, Reason, MSL, SName) ->
 system_continue(Parent, Debug, [ServerName, MSL, Hib]) ->
     loop(Parent, ServerName, MSL, Debug, Hib).
 
--spec(system_terminate/4 :: (_, _, _, [_]) -> no_return()).
-
+-spec system_terminate(_, _, _, [_]) -> no_return().
 system_terminate(Reason, Parent, _Debug, [ServerName, MSL, _Hib]) ->
     terminate_server(Reason, Parent, MSL, ServerName).
 
@@ -340,7 +386,7 @@ print_event(Dev, Dbg, Name) ->
 
 
 %% server_add_handler(Handler, Args, MSL) -> {Ret, MSL'}.
-%%   where MSL = [#handler]
+%%   where MSL = [#handler{}]
 %%   Ret goes to the top level MSL' is the new internal state of the
 %%   event handler
 
@@ -391,8 +437,8 @@ server_delete_handler(HandlerId, Args, MSL, SName) ->
 	    {{error, module_not_found}, MSL}
     end.
 
-%% server_swap_handler(Handler1, Args1, Handler2, Args2, MSL, SN)= -> MSL'
-%% server_swap_handler(Handler1, Args1, Handler2, Args2, MSL, Sup, SN)= -> MSL'
+%% server_swap_handler(Handler1, Args1, Handler2, Args2, MSL, SN) -> MSL'
+%% server_swap_handler(Handler1, Args1, Handler2, Args2, MSL, Sup, SN) -> MSL'
 
 server_swap_handler(Handler1, Args1, Handler2, Args2, MSL, SName) ->
     {State2, Sup, MSL1} = split_and_terminate(Handler1, Args1, MSL,
@@ -442,15 +488,15 @@ server_notify(Event, Func, [Handler|T], SName) ->
     case server_update(Handler, Func, Event, SName) of
 	{ok, Handler1} ->
 	    {Hib, NewHandlers} = server_notify(Event, Func, T, SName),
-	    {Hib,[Handler1|NewHandlers]};
+	    {Hib, [Handler1|NewHandlers]};
 	{hibernate, Handler1} ->
 	    {_Hib, NewHandlers} = server_notify(Event, Func, T, SName),
-	    {true,[Handler1|NewHandlers]};
+	    {true, [Handler1|NewHandlers]};
 	no ->
 	    server_notify(Event, Func, T, SName)
     end;
 server_notify(_, _, [], _) ->
-    {false,[]}.
+    {false, []}.
 
 %% server_update(Handler, Func, Event, ServerName) -> Handler1 | no
 
@@ -463,7 +509,7 @@ server_update(Handler1, Func, Event, SName) ->
 	{ok, State1, hibernate} -> 
 	    {hibernate, Handler1#handler{state = State1}};
 	{swap_handler, Args1, State1, Handler2, Args2} ->
-	    do_swap(Mod1,Handler1,Args1,State1,Handler2,Args2,SName);
+	    do_swap(Mod1, Handler1, Args1, State1, Handler2, Args2, SName);
 	remove_handler ->
 	    do_terminate(Mod1, Handler1, remove_handler, State,
 			 remove, SName, normal),
@@ -474,31 +520,31 @@ server_update(Handler1, Func, Event, SName) ->
 	    no
     end.
 
-do_swap(Mod1,Handler1,Args1,State1,Handler2,Args2,SName) ->
+do_swap(Mod1, Handler1, Args1, State1, Handler2, Args2, SName) ->
     %% finalise the existing handler
     State2 = do_terminate(Mod1, Handler1, Args1, State1,
 			  swapped, SName,
 			  {swapped, Handler2, Handler1#handler.supervised}),
-    {Mod2,Handler} = new_handler(Handler2, Handler1),
+    {Mod2, Handler} = new_handler(Handler2, Handler1),
     case catch Mod2:init({Args2, State2}) of
 	{ok, State2a} ->
 	    {ok, Handler#handler{state = State2a}};
 	Other ->
-	    report_terminate(Handler2, crash, {error, Other}, SName, false),
+	    report_terminate(Handler, crash, {error, Other}, SName, false),
 	    no
     end.
 
 new_handler({Mod,Id}, Handler1) ->
-    {Mod,#handler{module = Mod,
-		  id = Id,
-		  supervised = Handler1#handler.supervised}};
+    {Mod, #handler{module = Mod,
+		   id = Id,
+		   supervised = Handler1#handler.supervised}};
 new_handler(Mod, Handler1) ->
-    {Mod,#handler{module = Mod,
-		  supervised = Handler1#handler.supervised}}.
+    {Mod, #handler{module = Mod,
+		   supervised = Handler1#handler.supervised}}.
 
 
-%% split(Handler, [#handler]) ->
-%%   {Mod, #handler, [#handler]} | error
+-spec split(handler(), [#handler{}]) ->
+	{atom(), #handler{}, [#handler{}]} | 'error'.
 
 split(Ha, MSL) -> split(Ha, MSL, []).
 
@@ -565,7 +611,7 @@ replace(_, [], NewHa) ->
     [NewHa].
 
 %% server_call_update(Handler, Query, ServerName) ->
-%%    {{Handler1, State1} | no, Reply}
+%%    {{Handler1, State1} | 'no', Reply}
 
 server_call_update(Handler1, Query, SName) ->
     Mod1 = Handler1#handler.module,
@@ -586,7 +632,7 @@ server_call_update(Handler1, Query, SName) ->
 	    do_terminate(Mod1, Handler1, {error, Other}, State,
 			 Query, SName, crash),
 	    {no, {error, Other}}
-end.
+    end.
 
 do_terminate(Mod, Handler, Args, State, LastIn, SName, Reason) ->
     Res = (catch Mod:terminate(Args, State)),
@@ -609,10 +655,10 @@ report_terminate(Handler, Reason, State, LastIn, SName) ->
 	    ok
     end.
 
-report_error(_Handler, normal, _, _, _)               -> ok;
-report_error(_Handler, shutdown, _, _, _)             -> ok;
-report_error(_Handler, {swapped,_,_}, _, _, _)        -> ok;
-report_error(Handler, Reason, State, LastIn, SName)   ->
+report_error(_Handler, normal, _, _, _)             -> ok;
+report_error(_Handler, shutdown, _, _, _)           -> ok;
+report_error(_Handler, {swapped,_,_}, _, _, _)      -> ok;
+report_error(Handler, Reason, State, LastIn, SName) ->
     Reason1 = 
 	case Reason of
 	    {'EXIT',{undef,[{M,F,A}|MFAs]}} ->
@@ -627,9 +673,9 @@ report_error(Handler, Reason, State, LastIn, SName)   ->
 				{'function not exported',[{M,F,A}|MFAs]}
 			end
 		end;
-	    {'EXIT',Why} -> 
+	    {'EXIT',Why} ->
 		Why;
-	    _ ->            
+	    _ ->
 		Reason
 	end,
     error_msg("** gen_event handler ~p crashed.~n"
@@ -644,6 +690,9 @@ handler(Handler) when not Handler#handler.id ->
 handler(Handler) ->
     {Handler#handler.module, Handler#handler.id}.
 
+the_handlers(MSL) ->
+    [handler(Handler) || Handler <- MSL].
+
 %% stop_handlers(MSL, ServerName) -> []
 
 stop_handlers([Handler|T], SName) ->
@@ -654,19 +703,10 @@ stop_handlers([Handler|T], SName) ->
 stop_handlers([], _) ->
     [].
 
-the_handlers(MSL) ->
-    lists:map(fun(Handler) when not Handler#handler.id ->
-		      Handler#handler.module;
-		 (Handler) ->
-		      {Handler#handler.module, Handler#handler.id}
-	      end,
-	      MSL).
-
 %% Message from the release_handler.
 %% The list of modules got to be a set !
 get_modules(MSL) ->
-    Mods = lists:map(fun(Handler) -> Handler#handler.module end,
-		     MSL),
+    Mods = [Handler#handler.module || Handler <- MSL],
     ordsets:to_list(ordsets:from_list(Mods)).
 
 %%-----------------------------------------------------------------
@@ -679,9 +719,3 @@ format_status(_Opt, StatusData) ->
      {data, [{"Status", SysState},
 	     {"Parent", Parent}]},
      {items, {"Installed handlers", MSL}}].
-
-
-
-
-
-

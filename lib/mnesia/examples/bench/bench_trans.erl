@@ -1,8 +1,24 @@
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% File    : bench_trans.hrl
 %%% Author  : Hakan Mattsson <hakan@cslab.ericsson.se>
 %%% Purpose : Implement the transactions in Canadian database benchmark (LMC/UU-01:025)
-%%% Purpose : Implement Populate the database
 %%% Created : 21 Jun 2001 by Hakan Mattsson <hakan@cslab.ericsson.se>
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -153,12 +169,12 @@ delete_session_from_server(Wlock, SubscrId, ServerBit, ServerId, DoRollback) ->
             {do_commit, ExecuteBranch, []}
     end.
 
-number_to_suffix(SubscrId) when integer(SubscrId) ->
+number_to_suffix(SubscrId) when is_integer(SubscrId) ->
     SubscrId rem 100;
 number_to_suffix(<<_:8/binary, TimesTen:8/integer, TimesOne:8/integer>>) ->
     ((TimesTen - $0) * 10) + (TimesOne - $0).
 
-number_to_key(Id, C) when integer(Id) ->
+number_to_key(Id, C) when is_integer(Id) ->
     case C#config.use_binary_subscriber_key of
 	true ->
 	    list_to_binary(string:right(integer_to_list(Id), 10, $0));

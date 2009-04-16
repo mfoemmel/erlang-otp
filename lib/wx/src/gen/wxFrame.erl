@@ -33,7 +33,7 @@
   createToolBar/2,destroy/1,getClientAreaOrigin/1,getMenuBar/1,getStatusBar/1,
   getStatusBarPane/1,getToolBar/1,new/0,new/3,new/4,processCommand/2,
   sendSizeEvent/1,setMenuBar/2,setStatusBar/2,setStatusBarPane/2,setStatusText/2,
-  setStatusText/3,setStatusWidths/3,setToolBar/2]).
+  setStatusText/3,setStatusWidths/2,setToolBar/2]).
 
 %% inherited exports
 -export([cacheBestSize/2,captureMouse/1,center/1,center/2,centerOnParent/1,
@@ -105,7 +105,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef},Id,Title, Options)
   Title_UC = unicode:characters_to_binary([Title,0]),
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxFrame_new_4,
   <<ParentRef:32/?UI,Id:32/?UI,(byte_size(Title_UC)):32/?UI,(Title_UC)/binary, 0:(((8- ((4+byte_size(Title_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -126,7 +127,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef},Id,Ti
   Title_UC = unicode:characters_to_binary([Title,0]),
   MOpts = fun({pos, {PosX,PosY}}, Acc) -> [<<1:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<2:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
-          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxFrame_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI,Id:32/?UI,(byte_size(Title_UC)):32/?UI,(Title_UC)/binary, 0:(((8- ((0+byte_size(Title_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -145,7 +147,8 @@ createStatusBar(#wx_ref{type=ThisT,ref=ThisRef}, Options)
   ?CLASS(ThisT,wxFrame),
   MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc];
           ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc];
-          ({id, Id}, Acc) -> [<<3:32/?UI,Id:32/?UI>>|Acc]  end,
+          ({id, Id}, Acc) -> [<<3:32/?UI,Id:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxFrame_CreateStatusBar,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -163,7 +166,8 @@ createToolBar(#wx_ref{type=ThisT,ref=ThisRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxFrame),
   MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
-          ({id, Id}, Acc) -> [<<2:32/?UI,Id:32/?UI>>|Acc]  end,
+          ({id, Id}, Acc) -> [<<2:32/?UI,Id:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxFrame_CreateToolBar,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -255,19 +259,20 @@ setStatusText(#wx_ref{type=ThisT,ref=ThisRef},Text, Options)
  when is_list(Text),is_list(Options) ->
   ?CLASS(ThisT,wxFrame),
   Text_UC = unicode:characters_to_binary([Text,0]),
-  MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc]  end,
+  MOpts = fun({number, Number}, Acc) -> [<<1:32/?UI,Number:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxFrame_SetStatusText,
   <<ThisRef:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
 
-%% @spec (This::wxFrame(), N::integer(), Widths_field::[integer()]) -> ok
+%% @spec (This::wxFrame(), Widths_field::[integer()]) -> ok
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxframe.html#wxframesetstatuswidths">external documentation</a>.
-setStatusWidths(#wx_ref{type=ThisT,ref=ThisRef},N,Widths_field)
- when is_integer(N),is_list(Widths_field) ->
+setStatusWidths(#wx_ref{type=ThisT,ref=ThisRef},Widths_field)
+ when is_list(Widths_field) ->
   ?CLASS(ThisT,wxFrame),
   wxe_util:cast(?wxFrame_SetStatusWidths,
-  <<ThisRef:32/?UI,N:32/?UI,(length(Widths_field)):32/?UI,
-        (<< <<C:32/?I>> || C <- Widths_field>>)/binary, 0:(((1+length(Widths_field)) rem 2)*32)>>).
+  <<ThisRef:32/?UI,(length(Widths_field)):32/?UI,
+        (<< <<C:32/?I>> || C <- Widths_field>>)/binary, 0:(((0+length(Widths_field)) rem 2)*32)>>).
 
 %% @spec (This::wxFrame(), Toolbar::wxToolBar:wxToolBar()) -> ok
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxframe.html#wxframesettoolbar">external documentation</a>.

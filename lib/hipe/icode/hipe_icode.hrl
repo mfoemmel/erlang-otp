@@ -27,8 +27,8 @@
 %%---------------------------------------------------------------------
 
 -type ordset(T)	 :: [T].
--type erl_type() :: any().    %% XXX: belongs to 'erl_types'
-%%-type erl_type() :: 'any' | 'none' | 'unit' | {'c',_,_,_}.
+%%-type erl_type() :: any().    %% XXX: belongs to 'erl_types'
+-type erl_type() :: 'any' | 'none' | 'unit' | {'c',atom(),_,_}.
 
 %%---------------------------------------------------------------------
 %% Include files needed for the compilation of this header file
@@ -73,9 +73,11 @@
                          | 'function' | 'function2' | 'integer' | 'list' | 'nil'
                          | 'number' | 'pid' | 'port' | 'reference' | 'tuple'
                          | {'atom', atom()} | {'integer', integer()}
-                         | {'record', atom(), byte()} | {'tuple', byte()}.
+                         | {'record', atom(), non_neg_integer()}
+			 | {'tuple', non_neg_integer()}.
  
 -type icode_primop()	:: atom() | tuple(). % XXX: temporarily, I hope
+-type icode_funcall()   :: mfa() | icode_primop().
 
 -type icode_var()	:: #icode_variable{kind::'var'}.
 -type icode_reg()	:: #icode_variable{kind::'reg'}.
@@ -129,14 +131,14 @@
 		    arglist :: [{icode_lbl(), #icode_variable{}}]}).
 
 -record(icode_call, {dstlist            :: [#icode_variable{}],
-		     'fun'              :: icode_primop() | mfa(),
+		     'fun'              :: icode_funcall(),
 		     args               :: [icode_argument()],
 		     type               :: icode_call_type(),
 		     continuation       :: [] | icode_lbl(),
 		     fail_label = []    :: [] | icode_lbl(),
 		     in_guard   = false :: bool()}).
 
--record(icode_enter, {'fun' :: icode_primop() | mfa(), 
+-record(icode_enter, {'fun' :: icode_funcall(),
 		      args  :: [icode_term_arg()],
 		      type  :: icode_call_type()}).
 
@@ -175,7 +177,7 @@
 -record(icode, {'fun'		:: mfa(),
 		params		:: [icode_var()],
 		is_closure	:: bool(),
-		closure_arity	:: byte(),
+		closure_arity	:: arity(),
 		is_leaf 	:: bool(),
 		code = []	:: icode_instrs(),
 		data		:: hipe_consttab(),

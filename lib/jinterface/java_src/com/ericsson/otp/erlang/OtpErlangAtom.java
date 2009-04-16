@@ -142,6 +142,11 @@ public class OtpErlangAtom extends OtpErlangObject implements Serializable,
 	final OtpErlangAtom atom = (OtpErlangAtom) o;
 	return this.atom.compareTo(atom.atom) == 0;
     }
+    
+    @Override
+    protected int doHashCode() {
+	return atom.hashCode();
+    }
 
     /**
      * Convert this atom to the equivalent Erlang external representation.

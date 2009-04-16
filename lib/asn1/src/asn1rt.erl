@@ -46,17 +46,28 @@ decode(Module,Type,Bytes) ->
 	    Result
     end.
 
-	
+%% asn1-1.6.8.1	
+%% load_driver() ->
+%%     asn1rt_driver_handler:load_driver(),
+%%     receive
+%% 	driver_ready ->
+%% 	    ok;
+%% 	Err={error,_Reason} ->
+%% 	    Err;
+%% 	Error ->
+%% 	    {error,Error}
+%%     end.
 
-load_driver() ->
-    case catch asn1rt_driver_handler:load_driver() of
-	ok ->
-	    ok;
-	{error,{already_started,asn1}} ->
-	    ok;
-	Err ->
-	    {error,Err}
-    end.
+%% asn1-1.6.9
+ load_driver() ->
+     case catch asn1rt_driver_handler:load_driver() of
+ 	ok ->
+ 	    ok;
+ 	{error,{already_started,asn1}} ->
+ 	    ok;
+ 	Err ->
+ 	    {error,Err}
+     end.
 
 
 unload_driver() ->
@@ -82,7 +93,7 @@ info(Module) ->
 %% Bin is a utf8 encoded value. The return value is either {ok,Val} or
 %% {error,Reason}. Val is a list of integers, where each integer is a
 %% unicode character value.
-utf8_binary_to_list(Bin) when binary(Bin) ->
+utf8_binary_to_list(Bin) when is_binary(Bin) ->
     utf8_binary_to_list(Bin,[]).
 
 utf8_binary_to_list(<<>>,Acc) ->
@@ -92,7 +103,7 @@ utf8_binary_to_list(Bin,Acc) ->
     case catch split_binary(Bin,Len) of
 	{CharBin,RestBin} -> 
 	    case utf8_binary_char(CharBin) of
-		C when integer(C) -> 
+		C when is_integer(C) -> 
 		    utf8_binary_to_list(RestBin,[C|Acc]);
 		Err -> Err
 	    end;
@@ -153,13 +164,13 @@ utf8_binary_char(Err) ->
 utf8_list_to_binary(List) ->
     utf8_list_to_binary(List,[]).
 
-utf8_list_to_binary([],Acc) when list(Acc) ->
+utf8_list_to_binary([],Acc) when is_list(Acc) ->
     {ok,list_to_binary(lists:reverse(Acc))};
 utf8_list_to_binary([],Acc) ->
     {error,{asn1,Acc}};
 utf8_list_to_binary([H|T],Acc) ->
     case catch utf8_encode(H,Acc) of
-	NewAcc when list(NewAcc) -> 
+	NewAcc when is_list(NewAcc) -> 
 	    utf8_list_to_binary(T,NewAcc);
 	Err -> Err
     end.

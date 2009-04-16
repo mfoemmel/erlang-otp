@@ -44,7 +44,8 @@ new(Parent)
 new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
  when is_list(Options) ->
   ?CLASS(ParentT,wxWindow),
-  MOpts = fun({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wxPageSetupDialogData),[<<1:32/?UI,DataRef:32/?UI>>|Acc]  end,
+  MOpts = fun({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wxPageSetupDialogData),[<<1:32/?UI,DataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxPageSetupDialog_new,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).

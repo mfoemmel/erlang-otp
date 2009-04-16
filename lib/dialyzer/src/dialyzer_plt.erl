@@ -47,8 +47,8 @@
 	 merge_plts/1,
 	 new/0,
 	 plt_and_info_from_file/1,
-	 to_edoc/1,
-	 to_edoc/4,
+	 get_specs/1,
+	 get_specs/4,
 	 to_file/4
 	]).
 
@@ -57,68 +57,75 @@
 
 -include("dialyzer.hrl").
 
+%%----------------------------------------------------------------------
+
 -type mod_deps() :: dict().
 
--record(dialyzer_file_plt, {version=""            :: string(), 
-			    md5=[]                :: md5(),
-			    info=dict:new()       :: dict(),
-			    contracts=dict:new()  :: dict(),
-			    mod_deps              :: mod_deps(),
-			    implementation_md5=[] :: [{atom(), _}]
+%% The following are used for searching the PLT when using the GUI
+%% (e.g. in show or search PLT contents). The user might be searching
+%% with a partial specification, in which case the missing items
+%% default to '_'
+-type arity_patt() :: '_' | arity().
+-type mfa_patt()   :: {atom(), atom(), arity_patt()}.
+
+-record(dialyzer_file_plt, {version = ""            :: string(), 
+			    md5 = []                :: md5(),
+			    info = dict:new()       :: dict(),
+			    contracts = dict:new()  :: dict(),
+			    mod_deps                :: mod_deps(),
+			    implementation_md5 = [] :: [{atom(), _}]
 			   }).
+
+%%----------------------------------------------------------------------
 
 -spec new() -> #dialyzer_plt{}.
 
 new() ->
-  #dialyzer_plt{info=table_new(), contracts=table_new()}.
+  #dialyzer_plt{info = table_new(), contracts = table_new()}.
 
--spec delete_module(#dialyzer_plt{}, atom()) -> #dialyzer_plt{}.
+-spec delete_module(#dialyzer_plt{}, module()) -> #dialyzer_plt{}.
 
-delete_module(#dialyzer_plt{info=Info, contracts=Contracts}, Mod) ->
-  #dialyzer_plt{info=table_delete_module(Info, Mod),
-		contracts=table_delete_module(Contracts, Mod)}.
+delete_module(#dialyzer_plt{info = Info, contracts = Contracts}, Mod) ->
+  #dialyzer_plt{info = table_delete_module(Info, Mod),
+		contracts = table_delete_module(Contracts, Mod)}.
 
 -spec delete_list(#dialyzer_plt{}, [_]) -> #dialyzer_plt{}.
 
-delete_list(#dialyzer_plt{info=Info, contracts=Contracts}, List) ->
-  #dialyzer_plt{info=table_delete_list(Info, List),
-		contracts=table_delete_list(Contracts, List)}.
+delete_list(#dialyzer_plt{info = Info, contracts = Contracts}, List) ->
+  #dialyzer_plt{info = table_delete_list(Info, List),
+		contracts = table_delete_list(Contracts, List)}.
 
--spec insert_contract_list(#dialyzer_plt{}, [{mfa(), #contract{}}]) -> #dialyzer_plt{}.
+-spec insert_contract_list(#dialyzer_plt{}, plt_contracts()) -> #dialyzer_plt{}.
 
-insert_contract_list(Plt = #dialyzer_plt{contracts = Contracts}, List) ->
-  Plt#dialyzer_plt{contracts = table_insert_list(Contracts, List)}.
+insert_contract_list(#dialyzer_plt{contracts = Contracts} = PLT, List) ->
+  PLT#dialyzer_plt{contracts = table_insert_list(Contracts, List)}.
 
--spec lookup_contract(#dialyzer_plt{}, mfa()) -> 'none' | {'value',#contract{}}.
+-spec lookup_contract(#dialyzer_plt{}, mfa_patt()) -> 'none' | {'value', #contract{}}.
 
-lookup_contract(#dialyzer_plt{contracts = Contracts}, 
-		MFA={M, F, A}) when is_atom(M), is_atom(F), is_integer(A), 
-				    0 =< A, A =< 255 ->
+lookup_contract(#dialyzer_plt{contracts = Contracts},
+		{M, F, _} = MFA) when is_atom(M), is_atom(F) ->
   table_lookup(Contracts, MFA).
 
 -spec delete_contract_list(#dialyzer_plt{}, [mfa()]) -> #dialyzer_plt{}.
 
-delete_contract_list(Plt = #dialyzer_plt{contracts = Contracts}, List) ->
-  Plt#dialyzer_plt{contracts = table_delete_list(Contracts, List)}.
+delete_contract_list(#dialyzer_plt{contracts = Contracts} = PLT, List) ->
+  PLT#dialyzer_plt{contracts = table_delete_list(Contracts, List)}.
 
 %% -spec insert(#dialyzer_plt{}, mfa() | integer(), {_, _}) -> #dialyzer_plt{}.
 %% 
-%% insert(Plt = #dialyzer_plt{info = Info}, Id, Types) ->
-%%   Plt#dialyzer_plt{info = table_insert(Info, Id, Types)}.
+%% insert(#dialyzer_plt{info = Info} = PLT, Id, Types) ->
+%%   PLT#dialyzer_plt{info = table_insert(Info, Id, Types)}.
 
 -spec insert_list(#dialyzer_plt{}, [{mfa() | integer(), {_, _}}]) -> #dialyzer_plt{}.
 
-insert_list(Plt = #dialyzer_plt{info = Info}, List) ->
-  Plt#dialyzer_plt{info = table_insert_list(Info, List)}.
+insert_list(#dialyzer_plt{info = Info} = PLT, List) ->
+  PLT#dialyzer_plt{info = table_insert_list(Info, List)}.
 
--spec lookup(#dialyzer_plt{}, integer() | mfa()) -> 'none' | {'value', {_, _}}.
+-spec lookup(#dialyzer_plt{}, integer() | mfa_patt()) -> 'none' | {'value', {_, _}}.
 
-lookup(#dialyzer_plt{info=Info}, MFA={M, F, A}) when is_atom(M), 
-						     is_atom(F),
-						     is_integer(A), 
-						     0 =< A, A =< 255 ->
+lookup(#dialyzer_plt{info = Info}, {M, F, _} = MFA) when is_atom(M), is_atom(F) ->
   table_lookup(Info, MFA);
-lookup(#dialyzer_plt{info=Info}, Label) when is_integer(Label) ->
+lookup(#dialyzer_plt{info = Info}, Label) when is_integer(Label) ->
   table_lookup(Info, Label).
 
 -spec lookup_module(#dialyzer_plt{}, atom()) -> 'none' | {'value', [{mfa(), _, _}]}.
@@ -137,7 +144,7 @@ contains_mfa(#dialyzer_plt{info = Info, contracts = Contracts}, MFA) ->
   (table_lookup(Info, MFA) =/= none) 
     orelse (table_lookup(Contracts, MFA) =/= none).
 
--spec get_default_plt() -> string().
+-spec get_default_plt() -> filename().
 
 get_default_plt() ->
   case os:getenv("DIALYZER_PLT") of
@@ -151,13 +158,13 @@ get_default_plt() ->
     UserSpecPlt -> UserSpecPlt
   end.
 
--spec plt_and_info_from_file(string()) -> {#dialyzer_plt{}, {_, _}}.
-  
+-spec plt_and_info_from_file(filename()) -> {#dialyzer_plt{}, {_, _}}.
+
 plt_and_info_from_file(FileName) ->
   from_file(FileName, true).
 
--spec from_file(string()) -> #dialyzer_plt{}.
-	 
+-spec from_file(filename()) -> #dialyzer_plt{}.
+
 from_file(FileName) ->
   from_file(FileName, false).
 
@@ -184,8 +191,8 @@ from_file(FileName, ReturnInfo) ->
 			  [FileName, Reason]))
   end.
 
--spec included_files(string()) -> {'ok', [string()]} 
-                               |  {'error', 'no_such_file' | 'read_error'}.
+-spec included_files(filename()) -> {'ok', [filename()]} 
+				 |  {'error', 'no_such_file' | 'read_error'}.
 
 included_files(FileName) ->
   case get_record_from_file(FileName) of
@@ -221,26 +228,26 @@ get_record_from_file(FileName) ->
 -spec merge_plts([#dialyzer_plt{}]) -> #dialyzer_plt{}.
 
 merge_plts(List) ->
-  InfoList = [Info || #dialyzer_plt{info=Info} <- List],
+  InfoList = [Info || #dialyzer_plt{info = Info} <- List],
   ContractsList = [Contracts || #dialyzer_plt{contracts=Contracts} <- List],
   #dialyzer_plt{info=table_merge(InfoList),
 		contracts=table_merge(ContractsList)}.
 
--spec to_file(string(), #dialyzer_plt{}, dict(), {md5(), dict()}) -> 'ok'.
+-spec to_file(filename(), #dialyzer_plt{}, dict(), {md5(), dict()}) -> 'ok'.
 
-to_file(FileName, #dialyzer_plt{info=Info, contracts=Contracts}, 
+to_file(FileName, #dialyzer_plt{info = Info, contracts = Contracts}, 
 	ModDeps, {MD5, OldModDeps}) ->
   NewModDeps = dict:merge(fun(_Key, OldVal, NewVal) -> 
 			      ordsets:union(OldVal, NewVal)
 			  end, 
 			  OldModDeps, ModDeps),
   ImplMd5 = compute_implementation_md5(),
-  Record = #dialyzer_file_plt{version=?VSN, 
-			      md5=MD5, 
-			      info=Info,
-			      contracts=Contracts,
-			      mod_deps=NewModDeps,
-			      implementation_md5=ImplMd5},
+  Record = #dialyzer_file_plt{version = ?VSN, 
+			      md5 = MD5,
+			      info = Info,
+			      contracts = Contracts,
+			      mod_deps = NewModDeps,
+			      implementation_md5 = ImplMd5},
   Bin = term_to_binary(Record, [compressed]),
   case file:write_file(FileName, Bin) of
     ok -> ok;
@@ -252,9 +259,9 @@ to_file(FileName, #dialyzer_plt{info=Info, contracts=Contracts},
 
 -type md5_diff()    :: [{'differ', atom()} | {'removed', atom()}].
 -type check_error() :: 'not_valid' | 'no_such_file' | 'read_error'
-                     | {'no_file_to_remove', string()}.
+                     | {'no_file_to_remove', filename()}.
       
--spec check_plt(string(), [string()], [string()]) -> 
+-spec check_plt(filename(), [filename()], [filename()]) -> 
 	 'ok'
        | {'error', check_error()}
        | {'differ', md5(), md5_diff(), mod_deps()}
@@ -268,13 +275,13 @@ check_plt(FileName, RemoveFiles, AddFiles) ->
 	  case compute_new_md5(Md5, RemoveFiles, AddFiles) of
 	    ok -> ok;
 	    {differ, NewMd5, DiffMd5} -> {differ, NewMd5, DiffMd5, ModDeps};
-	    {error, What} -> {error, What}
+	    {error, _What} = Err -> Err
 	  end;
 	error ->
 	  case compute_new_md5(Md5, RemoveFiles, AddFiles) of
 	    ok -> {old_version, Md5};
 	    {differ, NewMd5, _DiffMd5} -> {old_version, NewMd5};
-	    {error, What} -> {error, What}
+	    {error, _What} = Err -> Err
 	  end
       end;
     Error -> Error
@@ -291,15 +298,15 @@ compute_new_md5(Md5, RemoveFiles0, AddFiles0) ->
   InitDiffList = init_diff_list(RemoveFiles, AddFiles),
   case init_md5_list(Md5, RemoveFiles, AddFiles) of
     {ok, NewMd5} -> compute_new_md5_1(NewMd5, [], InitDiffList);
-    {error, What} -> {error, What}
+    {error, _What} = Error -> Error
   end.
 
-compute_new_md5_1([{File, Md5}|Left], NewList, Diff) ->
+compute_new_md5_1([{File, Md5} = Entry|Entries], NewList, Diff) ->
   case compute_md5_from_file(File) of
-    Md5 -> compute_new_md5_1(Left, [{File, Md5}|NewList], Diff);
+    Md5 -> compute_new_md5_1(Entries, [Entry|NewList], Diff);
     NewMd5 ->
       ModName = beam_file_to_module(File),
-      compute_new_md5_1(Left, [{File, NewMd5}|NewList], [{differ, ModName}|Diff])
+      compute_new_md5_1(Entries, [{File, NewMd5}|NewList], [{differ, ModName}|Diff])
   end;
 compute_new_md5_1([], _NewList, []) ->
   ok;
@@ -312,7 +319,7 @@ compute_implementation_md5() ->
   Files2 = [filename:join([Dir, "ebin", F]) || F <- Files1],
   compute_md5_from_files(Files2).
 
--spec compute_md5_from_files([string()]) -> [{string(), binary()}].
+-spec compute_md5_from_files([filename()]) -> [{filename(), binary()}].
 
 compute_md5_from_files(Files) ->
   lists:keysort(1, [{F, compute_md5_from_file(F)} || F <- Files]).
@@ -348,12 +355,12 @@ init_md5_list(Md5, RemoveFiles, AddFiles) ->
 
 init_md5_list_1([{File, _Md5}|Md5Left], [{remove, File}|DiffLeft], Acc) ->
   init_md5_list_1(Md5Left, DiffLeft, Acc);
-init_md5_list_1([{File, Md5}|Md5Left], [{add, File}|DiffLeft], Acc) ->
-  init_md5_list_1(Md5Left, DiffLeft, [{File, Md5}|Acc]);
-init_md5_list_1(Md5List = [{File1, Md5}|Md5Left], 
-	      DiffList = [{Tag, File2}|DiffLeft], Acc) ->
+init_md5_list_1([{File, _Md5} = Entry|Md5Left], [{add, File}|DiffLeft], Acc) ->
+  init_md5_list_1(Md5Left, DiffLeft, [Entry|Acc]);
+init_md5_list_1([{File1, _Md5} = Entry|Md5Left] = Md5List, 
+		[{Tag, File2}|DiffLeft] = DiffList, Acc) ->
   case File1 < File2 of
-    true -> init_md5_list_1(Md5Left, DiffList, [{File1, Md5}|Acc]);
+    true -> init_md5_list_1(Md5Left, DiffList, [Entry|Acc]);
     false ->
       %% Just an assert.
       true = File1 > File2,
@@ -371,48 +378,33 @@ init_md5_list_1(Md5List, [], Acc) ->
 %%---------------------------------------------------------------------------
 %% Edoc
 
--spec to_edoc(#dialyzer_plt{}) -> string().
+-spec get_specs(#dialyzer_plt{}) -> string().
 
-to_edoc(#dialyzer_plt{info = Info}) ->
+get_specs(#dialyzer_plt{info = Info}) ->
   %% TODO: Should print contracts as well.
   List = 
     lists:sort([{MFA, Val} || {MFA = {_,_,_}, Val} <- table_to_list(Info)]),
-  lists:flatten(expand_edoc(List, [])).
+  lists:flatten(create_specs(List, [])).
 
 beam_file_to_module(Filename) ->
   list_to_atom(filename:basename(Filename, ".beam")).
 
--spec to_edoc(#dialyzer_plt{}, atom(), atom(), byte()) -> string().
+-spec get_specs(#dialyzer_plt{}, atom(), atom(), arity_patt()) -> string().
 
-to_edoc(PLT, M, F, A) when is_atom(M), is_atom(F) ->
-  {value, Val} = lookup(PLT, {M, F, A}),
-  lists:flatten(expand_edoc([{{M, F, A}, Val}], [])).
+get_specs(#dialyzer_plt{info = Info}, M, F, A) when is_atom(M), is_atom(F) ->
+  MFA = {M, F, A},
+  {value, Val} = table_lookup(Info, MFA),
+  lists:flatten(create_specs([{MFA, Val}], [])).
 
-expand_edoc([{{M, F, A}, {ReturnType, ArgTypes}}|Left], M) ->
-  case erl_types:t_is_any(ArgTypes) of
-    true ->
-      [io_lib:format("%% @spec ~w(~s) -> ~s\n", 
-		     [F, expand_args_any(A),
-		      erl_types:t_to_string(ReturnType)])
-       | expand_edoc(Left, M)];
-    false ->
-      [io_lib:format("%% @spec ~w(~s) -> ~s\n", 
-		     [F, expand_args(ArgTypes), 
-		      erl_types:t_to_string(ReturnType)])
-       | expand_edoc(Left, M)]
-  end;
-expand_edoc(List = [{{M1, _F, _A}, {_ReturnType, _ArgTypes}}| _], _M) ->
-  [io_lib:format("\n\n%% -------  Module: ~w -------\n\n", [M1]) | 
-   expand_edoc(List, M1)];
-expand_edoc([], _) ->
+create_specs([{{M, F, _A}, {Ret, Args}}|Left], M) ->
+  [io_lib:format("-spec ~w(~s) -> ~s\n", 
+		 [F, expand_args(Args), erl_types:t_to_string(Ret)])
+   | create_specs(Left, M)];
+create_specs(List = [{{M, _F, _A}, {_Ret, _Args}}| _], _M) ->
+  [io_lib:format("\n\n%% ------- Module: ~w -------\n\n", [M])
+   | create_specs(List, M)];
+create_specs([], _) ->
   [].
-
-expand_args_any(0) ->
-  [];
-expand_args_any(1) ->
-  ["_"];
-expand_args_any(X) ->
-  ["_,"|expand_args_any(X-1)].
 
 expand_args([]) ->
   [];
@@ -455,9 +447,9 @@ table_insert_list(Plt, [{Key, Val}|Left]) ->
 table_insert_list(Plt, []) ->
   Plt.
 
-table_insert(Plt, Key, {Ret, Arg}) -> 
-  dict:store(Key, {Ret, Arg}, Plt);
-table_insert(Plt, Key, C = #contract{}) ->
+table_insert(Plt, Key, {_Ret, _Arg} = Obj) -> 
+  dict:store(Key, Obj, Plt);
+table_insert(Plt, Key, #contract{} = C) ->
   dict:store(Key, C, Plt).
 
 table_lookup(Plt, Obj) ->
@@ -502,38 +494,38 @@ pp_non_returning() ->
   PltFile = get_default_plt(),
   Plt = from_file(PltFile),
   List = table_to_list(Plt#dialyzer_plt.info),
-  Unit = [{MFA, erl_types:t_fun(Dom, Range)} || {MFA, {Range, Dom}} <- List,
-						erl_types:t_is_unit(Range)],
-  None = [{MFA, erl_types:t_fun(Dom, Range)} || {MFA, {Range, Dom}} <- List,
-						erl_types:t_is_none(Range)],
+  Unit = [{MFA, erl_types:t_fun(Args, Ret)} || {MFA, {Ret, Args}} <- List,
+						erl_types:t_is_unit(Ret)],
+  None = [{MFA, erl_types:t_fun(Args, Ret)} || {MFA, {Ret, Args}} <- List,
+						erl_types:t_is_none(Ret)],
   io:format("=========================================\n"),
   io:format("=                Loops                  =\n"),
   io:format("=========================================\n\n"),
-  lists:foreach(fun({{M,F,A}, Type}) ->
-		    io:format("~w:~w/~p :: ~s\n",
-			      [M, F, A, erl_types:t_to_string(Type)])
+  lists:foreach(fun({{M, F, _}, Type}) ->
+		    io:format("~w:~w~s.\n",
+			      [M, F, dialyzer_utils:format_sig(Type)])
 		end, lists:sort(Unit)),
-  io:format("\n\n"),
+  io:format("\n"),
   io:format("=========================================\n"),
   io:format("=                Errors                 =\n"),
   io:format("=========================================\n\n"),
-  lists:foreach(fun({{M,F,A}, Type}) ->
-		    io:format("~w:~w/~p :: ~s\n",
-			      [M, F, A, erl_types:t_to_string(Type)])
-		end, lists:sort(None)),
-  ok.
+  lists:foreach(fun({{M, F, _}, Type}) ->
+		    io:format("~w:~w~s.\n",
+			      [M, F, dialyzer_utils:format_sig(Type)])
+		end, lists:sort(None)).
 
--spec pp_mod(atom()) -> 'ok'.
+-spec pp_mod(module()) -> 'ok'.
 
 pp_mod(Mod) when is_atom(Mod) ->
   PltFile = get_default_plt(),
   Plt = from_file(PltFile),
   case lookup_module(Plt, Mod) of
     {value, List} ->
-      lists:foreach(fun({{M,F,A}, Ret, Args}) ->
-			T = erl_types:t_to_string(erl_types:t_fun(Args, Ret)),
-			io:format("~w:~w/~p :: ~s\n", [M, F, A, T])
+      lists:foreach(fun({{_, F, _}, Ret, Args}) ->
+			T = erl_types:t_fun(Args, Ret),
+			S = dialyzer_utils:format_sig(T),
+			io:format("-spec ~w~s.\n", [F, S])
 		    end, lists:sort(List));
-    none -> io:format("No module named '~s' in the PLT\n", [Mod])
-  end,
-  ok.
+    none ->
+      io:format("dialyzer: Found no module named '~s' in the PLT\n", [Mod])
+  end.

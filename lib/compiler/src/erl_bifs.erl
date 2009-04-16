@@ -22,6 +22,8 @@
 
 -export([is_pure/3, is_safe/3, is_exit_bif/3]).
 
+-type arity() :: 0..255.			%XXX Remove in R13B01.
+
 %% =====================================================================
 %% is_pure(Module, Name, Arity) -> bool()
 %%
@@ -32,7 +34,7 @@
 %%	affect the state, nor depend on the state, although its
 %%	evaluation is not guaranteed to complete normally for all input.
 
--spec is_pure(atom(), atom(), byte()) -> bool().
+-spec is_pure(atom(), atom(), arity()) -> bool().
 
 is_pure(erlang, '*', 2) -> true;
 is_pure(erlang, '+', 1) -> true;    % (even for non-numbers)
@@ -89,6 +91,7 @@ is_pure(erlang, is_list, 1) -> true;
 is_pure(erlang, is_number, 1) -> true;
 is_pure(erlang, is_pid, 1) -> true;
 is_pure(erlang, is_port, 1) -> true;
+is_pure(erlang, is_record, 2) -> true;
 is_pure(erlang, is_record, 3) -> true;
 is_pure(erlang, is_reference, 1) -> true;
 is_pure(erlang, is_tuple, 1) -> true;
@@ -151,7 +154,7 @@ is_pure(_, _, _) -> false.
 %%      Note: is_function/2 and is_record/3 are NOT safe: is_function(X, foo)
 %%      and is_record(X, foo, bar) will fail.
 
--spec is_safe(atom(), atom(), byte()) -> bool().
+-spec is_safe(atom(), atom(), arity()) -> bool().
 
 is_safe(erlang, '/=', 2) -> true;
 is_safe(erlang, '<', 2) -> true;
@@ -207,7 +210,7 @@ is_safe(_, _, _) -> false.
 %%	normally, i.e., if it always causes an exception regardless of
 %%	its arguments.
 
--spec is_exit_bif(atom(), atom(), byte()) -> bool().
+-spec is_exit_bif(atom(), atom(), arity()) -> bool().
 
 is_exit_bif(erlang, exit, 1) -> true;
 is_exit_bif(erlang, throw, 1) -> true;

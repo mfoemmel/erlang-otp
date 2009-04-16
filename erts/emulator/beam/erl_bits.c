@@ -559,12 +559,8 @@ fmt_int(byte *buf, Uint sz, Eterm val, Uint size, Uint flags)
 {
     unsigned long offs;
 
-    if (size == 0) {
-	return 0;
-    }
-
+    ASSERT(size != 0);
     offs = BIT_OFFSET(size);
-
     if (is_small(val)) {
 	Sint v = signed_val(val);
 	if (flags & BSF_LITTLE) { /* Little endian */
@@ -757,11 +753,11 @@ erts_new_bs_put_integer(ERL_BITS_PROTO_3(Eterm arg, Uint num_bits, unsigned flag
 	    /*
 	     * More than one bit, starting at a byte boundary.
 	     * That will be quite efficiently handled by fmt_int().
+	     *
+	     * (We know that fmt_int() can't fail here.)
 	     */
-	    if (fmt_int(erts_current_bin+BYTE_OFFSET(bin_offset),
-			NBYTES(num_bits), arg, num_bits, flags) < 0) {
-		return 0;
-	    }
+	    (void) fmt_int(erts_current_bin+BYTE_OFFSET(bin_offset),
+			   NBYTES(num_bits), arg, num_bits, flags);
 	} else if (flags & BSF_LITTLE) {
 	    /*
 	     * Can't handle unaligned little-endian in a simple way.
@@ -792,10 +788,10 @@ erts_new_bs_put_integer(ERL_BITS_PROTO_3(Eterm arg, Uint num_bits, unsigned flag
 		b |= (-1) & ((1 << rbits) - 1);
 	    }
 	    *iptr++ = b;
-	    if (fmt_int(iptr, NBYTES(num_bits-rbits), arg,
-			num_bits-rbits, flags) < 0) {
-		return 0;
-	    }
+
+	    /* fmt_int() can't fail here. */
+	    (void) fmt_int(iptr, NBYTES(num_bits-rbits), arg,
+			   num_bits-rbits, flags);
 	}
     } else if (bit_offset == 0) {
 	/*
@@ -809,7 +805,9 @@ erts_new_bs_put_integer(ERL_BITS_PROTO_3(Eterm arg, Uint num_bits, unsigned flag
     } else {
     unaligned:
 	/*
-	 * Big number or small little-endian number, not byte-aligned.
+	 * Big number or small little-endian number, not byte-aligned,
+	 * or not a number at all.
+	 *
 	 * We must format the number into a temporary buffer, and then
 	 * copy that into the binary.
 	 */
@@ -976,9 +974,18 @@ erts_new_bs_put_binary_all(ERL_BITS_PROTO_2(Eterm arg, Uint unit))
    Uint bitsize;
    Uint num_bits;
 
+   /*
+    * This type test is not needed if the code was compiled with
+    * an R12B or later compiler, since there would have been a
+    * call to bit_size/1 or byte_size/1 that would have failed if
+    * 'arg' was not a binary. However, in R11B and earlier releases,
+    * size/1 was use for calculating the size of the binary, and
+    * therefore 'arg' could be a tuple.
+    */
    if (!is_binary(arg)) {
        return 0;
    }
+
    ERTS_GET_BINARY_BYTES(arg, bptr, bitoffs, bitsize);
    num_bits = 8*binary_size(arg)+bitsize;
    if (unit == 8) {
@@ -1191,28 +1198,23 @@ erts_bs_append(Process* c_p, Eterm* reg, Uint live, Eterm build_size_term,
     Uint heap_need;
     Uint build_size_in_bits;
     Uint used_size_in_bits;
+    Uint unsigned_bits;
     ERL_BITS_DEFINE_STATEP(c_p);
 
     /*
-     * Check and untag the request build size.
+     * Check and untag the requested build size.
      */
     if (is_small(build_size_term)) {
-	Sint bits = signed_val(build_size_term);
-	if (bits < 0) {
+	Sint signed_bits = signed_val(build_size_term);
+	if (signed_bits < 0) {
 	    goto badarg;
 	}
-	build_size_in_bits = (Uint) bits;
-    } else if is_big(build_size_term) {
-	/* XXX For the moment */
-	c_p->freason = SYSTEM_LIMIT;
-	return THE_NON_VALUE;
+	build_size_in_bits = (Uint) signed_bits;
+    } else if (term_to_Uint(build_size_term, &unsigned_bits)) {
+	build_size_in_bits = unsigned_bits;
     } else {
-	/*
-	 * We don't expect the compiler to generate code so that the type
-	 * would be wrong, so this error handling code is just here as an
-	 * extra insurance.
-	 */
-	goto badarg;
+	c_p->freason = unsigned_bits;
+	return THE_NON_VALUE;
     }
 
     /*
@@ -1376,7 +1378,7 @@ erts_bs_append(Process* c_p, Eterm* reg, Uint live, Eterm build_size_term,
 }
 
 Eterm
-erts_bs_private_append(Process* p, Eterm bin, Eterm sz, Uint unit)
+erts_bs_private_append(Process* p, Eterm bin, Eterm build_size_term, Uint unit)
 {
     Eterm* ptr;
     ErlSubBin* sb;
@@ -1384,12 +1386,25 @@ erts_bs_private_append(Process* p, Eterm bin, Eterm sz, Uint unit)
     Binary* binp;
     Uint build_size_in_bits;
     Uint pos_in_bits_after_build;
+    Uint unsigned_bits;
     ERL_BITS_DEFINE_STATEP(p);
 
-    if (is_not_small(sz) || signed_val(sz) < 0) {
+    /*
+     * Check and untag the requested build size.
+     */
+    if (is_small(build_size_term)) {
+	Sint signed_bits = signed_val(build_size_term);
+	if (signed_bits < 0) {
+	    p->freason = BADARG;
+	    return THE_NON_VALUE;
+	}
+	build_size_in_bits = (Uint) signed_bits;
+    } else if (term_to_Uint(build_size_term, &unsigned_bits)) {
+	build_size_in_bits = unsigned_bits;
+    } else {
+	p->freason = unsigned_bits;
 	return THE_NON_VALUE;
     }
-    build_size_in_bits = (Uint) signed_val(sz);
 
     ptr = boxed_val(bin);
     ASSERT(*ptr == HEADER_SUB_BIN);

@@ -185,6 +185,18 @@ ordered_set()
       </desc>
     </func>
     <func>
+      <name>is_disjoint(Ordset1, Ordset2) -> bool()</name>
+      <fsummary>Check whether two <c>Ordsets</c> are disjoint</fsummary>
+      <type>
+        <v>Ordset1 = Ordset2 = ordered_set()</v>
+      </type>
+      <desc>
+        <p>Returns <c>true</c> if <c>Ordset1</c> and
+          <c>Ordset2</c> are disjoint (have no elements in common),
+	  and <c>false</c> otherwise.</p>
+      </desc>
+    </func>
+    <func>
       <name>subtract(Ordset1, Ordset2) -> Ordset3</name>
       <fsummary>Return the difference of two <c>Ordsets</c></fsummary>
       <type>

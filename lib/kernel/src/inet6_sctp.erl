@@ -27,17 +27,49 @@
 %% the OS kernel supports SCTP providing user-level SCTP Socket API:
 %%     http://tools.ietf.org/html/draft-ietf-tsvwg-sctpsocket-13
 
+-include("inet_sctp.hrl").
 -include("inet_int.hrl").
 
--export([open/1,sendmsg/3]).
+-define(FAMILY, inet6).
+-export([getserv/1,getaddr/1,getaddr/2,translate_ip/1]).
+-export([open/1,close/1,listen/2,connect/5,sendmsg/3,recv/2]).
 
+
+
+getserv(Port) when is_integer(Port) -> {ok, Port};
+getserv(Name) when is_atom(Name) ->
+    inet:getservbyname(Name, sctp);
+getserv(_) ->
+    {error,einval}.
+
+getaddr(Address) ->
+    inet:getaddr(Address, ?FAMILY).
+getaddr(Address, Timer) ->
+    inet:getaddr_tm(Address, ?FAMILY, Timer).
+
+translate_ip(IP) ->
+    inet:translate_ip(IP, ?FAMILY).
+
+
+    
 open(Opts) ->
-    catch inet:sctp_options(Opts, inet) of
-	{ok,#sctp_opts{fd=Fd, ifaddr=Addr, port=Port, opts=Opts}} ->
-	    inet:open(Fd, Addr, Port, Opts, sctp, inet, ?MODULE);
+    case inet:sctp_options(Opts, ?MODULE) of
+	{ok,#sctp_opts{fd=Fd,ifaddr=Addr,port=Port,opts=SOs}} ->
+	    inet:open(Fd, Addr, Port, SOs, sctp, ?FAMILY, ?MODULE);
 	Error -> Error
     end.
+
+close(S) ->
+    prim_inet:close(S).
+
+listen(S, Flag) ->
+    prim_inet:listen(S, Flag).
+
+connect(S, Addr, Port, Opts, Timer) ->
+    inet_sctp:connect(S, Addr, Port, Opts, Timer).
 
 sendmsg(S, SRI, Data) ->
     prim_inet:sendmsg(S, SRI, Data).
 
+recv(S, Timeout) ->
+    prim_inet:recvfrom(S, 0, Timeout).

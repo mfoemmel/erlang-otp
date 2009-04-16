@@ -20,7 +20,7 @@
 include ../vsn.mk
 include ../config.mk
 
-SUBDIRS = sudoku simple
+SUBDIRS = sudoku simple xrc
 
 ifeq ($(INSIDE_ERLSRC),true)
 SUB_DIRECTORIES=$(SUBDIRS)

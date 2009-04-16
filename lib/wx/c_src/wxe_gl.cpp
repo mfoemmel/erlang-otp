@@ -47,6 +47,17 @@ void setActiveGL(ErlDrvTermData caller, wxGLCanvas *canvas)
   glc[caller] = canvas;
 }
 
+void deleteActiveGL(wxGLCanvas *canvas)
+{
+  gl_active = 0;
+  wxeGLC::iterator it;
+  for(it = glc.begin(); it != glc.end(); ++it) {
+    if(it->second == canvas) { 
+      it->second = (wxGLCanvas *) 0;
+    }
+  }
+}
+
 /* **************************************************************************** 
  * OPENGL INITIALIZATION 
  *****************************************************************************/
@@ -104,7 +115,14 @@ int initOpenGL()
 #endif
     // fprintf(stderr, "OPENGL library is loaded\r\n");
   } else {
-    fprintf(stderr, "Couldn't load opengl library\r\n");
+    wxString msg;
+    msg.Printf(wxT("Could NOT load OpenGL library: "));
+#ifdef _WIN32
+    msg += DLName;
+#else
+    msg += wxString::FromAscii((char *)DLName);
+#endif
+    send_msg("error", &msg);
   };
 
 #ifdef _MACOSX
@@ -145,7 +163,14 @@ int initOpenGL()
 #endif
     // fprintf(stderr, "GLU library is loaded\r\n");
   } else {
-    fprintf(stderr, "Couldn't load GLU library\r\n");
+    wxString msg;
+    msg.Printf(wxT("Could NOT load OpenGL GLU library: "));
+#ifdef _WIN32
+    msg += DLName;
+#else
+    msg += wxString::FromAscii((char *)DLName);
+#endif
+    send_msg("error", &msg);
   };
   return 0;
 }
@@ -186,7 +211,10 @@ wxe_ogla_error(GLenum errorCode)
 {
   const GLubyte *err;
   err = gluErrorString(errorCode);
-  fprintf(stderr, "Tesselation error: %d: %s\r\n", (int)errorCode, err);
+  wxString msg;
+  msg.Printf(wxT("Tesselation error:  %d: "), (int)errorCode);
+  msg += wxString::FromAscii((char *) err);
+  send_msg("error", &msg);
 }
 
 void CALLBACK

@@ -72,7 +72,8 @@ new(Filename, Options)
   Filename_UC = unicode:characters_to_binary([Filename,0]),
   MOpts = fun({type, Type}, Acc) -> [<<1:32/?UI,Type:32/?UI>>|Acc];
           ({desiredWidth, DesiredWidth}, Acc) -> [<<2:32/?UI,DesiredWidth:32/?UI>>|Acc];
-          ({desiredHeight, DesiredHeight}, Acc) -> [<<3:32/?UI,DesiredHeight:32/?UI>>|Acc]  end,
+          ({desiredHeight, DesiredHeight}, Acc) -> [<<3:32/?UI,DesiredHeight:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxIcon_new_2,
   <<(byte_size(Filename_UC)):32/?UI,(Filename_UC)/binary, 0:(((8- ((4+byte_size(Filename_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

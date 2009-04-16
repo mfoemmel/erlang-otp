@@ -87,7 +87,8 @@ new(#wx_ref{type=DcT,ref=DcRef}, Options)
  when is_list(Options) ->
   ?CLASS(DcT,wxDC),
   MOpts = fun({buffer, #wx_ref{type=BufferT,ref=BufferRef}}, Acc) ->   ?CLASS(BufferT,wxBitmap),[<<1:32/?UI,BufferRef:32/?UI>>|Acc];
-          ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxBufferedDC_new_2,
   <<DcRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -98,7 +99,8 @@ new(#wx_ref{type=DcT,ref=DcRef}, Options)
 new(#wx_ref{type=DcT,ref=DcRef},{AreaW,AreaH}, Options)
  when is_integer(AreaW),is_integer(AreaH),is_list(Options) ->
   ?CLASS(DcT,wxDC),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxBufferedDC_new_3,
   <<DcRef:32/?UI,AreaW:32/?UI,AreaH:32/?UI, 0:32,BinOpt/binary>>).
@@ -127,7 +129,8 @@ init(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=DcT,ref=DcRef}, Options)
   ?CLASS(ThisT,wxBufferedDC),
   ?CLASS(DcT,wxDC),
   MOpts = fun({buffer, #wx_ref{type=BufferT,ref=BufferRef}}, Acc) ->   ?CLASS(BufferT,wxBitmap),[<<1:32/?UI,BufferRef:32/?UI>>|Acc];
-          ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxBufferedDC_Init_2,
   <<ThisRef:32/?UI,DcRef:32/?UI, BinOpt/binary>>).
@@ -139,7 +142,8 @@ init(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=DcT,ref=DcRef},{AreaW,AreaH}, 
  when is_integer(AreaW),is_integer(AreaH),is_list(Options) ->
   ?CLASS(ThisT,wxBufferedDC),
   ?CLASS(DcT,wxDC),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxBufferedDC_Init_3,
   <<ThisRef:32/?UI,DcRef:32/?UI,AreaW:32/?UI,AreaH:32/?UI, BinOpt/binary>>).

@@ -70,7 +70,7 @@ DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += +warn_obsolete_guard
+ERL_COMPILE_FLAGS += +warn_exported_vars
 
 # ----------------------------------------------------
 # Targets

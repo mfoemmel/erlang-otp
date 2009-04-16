@@ -22,12 +22,72 @@
     </legalnotice>
 
     <title>SSH Release Notes</title>
-    <prepared>Jakob Cederlund</prepared>
+    <prepared></prepared>
     <docno></docno>
     <date></date>
     <rev>%VSN%</rev>
     <file>notes.xml</file>
   </header>
+
+ <section><title>Ssh 1.1.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            Ssh confused local and remote channel id's, which in some
+            cases resulted in that messages were discarded.</p>
+          <p>
+            Own Id: OTP-7914 Aux Id: seq11234</p>
+        </item>
+        <item>
+          <p>
+            Ssh could not handle echo values other than 0 and 1.</p>
+          <p>
+            Own Id: OTP-7917 Aux Id: seq11238</p>
+        </item>
+        <item>
+          <p>
+            A crash occured if a non-valid channel reference were recieved.</p>
+          <p>
+            Own Id: OTP-7918 Aux Id: seq11238</p>
+        </item>
+        <item>
+          <p>
+            Sftpd connections was not closed after receiving eof from a client.</p>
+          <p>
+            Own Id: OTP-7921 Aux Id: seq11222</p>
+        </item>
+        <item>
+          <p>
+            It was not posssible to start a SFTP subsystem on certain plattforms, 
+            i.e. those who do not support symbolic links.</p>
+          <p>
+            Own Id: OTP-7930 Aux Id: </p>
+        </item>
+        <item>
+          <p>
+            In some cases the message {ssh_cm, ssh_connection_ref(), {closed, ssh_channel_id()}}
+            was not passed to the registered callback module.</p>
+          <p>
+            Own Id: OTP-7957 Aux Id: </p>
+        </item>
+      </list>
+    </section>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            By using the sftpd option {max_files, Integer}, the message
+            size for READDIR commands can be reduced.</p>
+          <p>
+            Own Id: OTP-7919 Aux Id: seq11230</p>
+        </item>
+      </list>
+    </section>
+
+ </section>
 
  <section><title>Ssh 1.1.1</title>
 
@@ -45,6 +105,14 @@
             as ssh-2.0.</p>
           <p>
             Own Id: OTP-7795</p>
+        </item>
+        <item>
+          <p>
+            An internal function call used an incorrect parameter, which
+            caused problem when the old listen API was used. This was
+            introduced in Ssh-1.1.</p>
+          <p>
+            Own Id: OTP-7920 Aux Id: seq11211</p>
         </item>
       </list>
     </section>

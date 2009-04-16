@@ -34,6 +34,18 @@
   <module>packages</module>
   <modulesummary>Packages in Erlang</modulesummary>
   <description>
+    <warning><p>
+      Packages has since it was introduced more than 5 years ago been an 
+      experimental feature. Use it at your own risk, we do not
+      actively maintain and develop this feature. It might however be 
+      supported some 
+      day.
+      </p>
+      <p>
+	In spite of this packages work quite well, but there are some 
+	known issues in tools and other parts where packages don't work well.
+    </p>
+    </warning>
     <p><em>Introduction</em></p>
     <p>Packages are simply namespaces for modules. 
       All old Erlang modules automatically belong to the top level 

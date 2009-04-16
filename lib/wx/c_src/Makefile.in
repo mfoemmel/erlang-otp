@@ -62,8 +62,9 @@ else
 	OPENGL_O = 
 endif
 
+RC_FILE_EXT = @RC_FILE_TYPE@
 ifeq ($(SYS_TYPE),win32)
-RC_FILE     = $(SYS_TYPE)/wxe_win32.res
+RC_FILE     = $(SYS_TYPE)/wxe_win32.$(RC_FILE_EXT)
 else 
 RC_FILE     = 
 endif
@@ -145,7 +146,7 @@ $(SYS_TYPE)/%.o: gen/%.c $(GENERATED_H) $(GENERAL_H)
 	mkdir -p $(SYS_TYPE)
 	$(CC_O) $< -o $@
 
-$(SYS_TYPE)/%.res: %.rc
+$(SYS_TYPE)/wxe_win32.$(RC_FILE_EXT): wxe_win32.rc
 	mkdir -p $(SYS_TYPE)
 	$(RESCOMP) -o $@ $< 
 

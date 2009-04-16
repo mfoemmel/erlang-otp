@@ -30,17 +30,19 @@
 -include("inet_int.hrl").
 
 -define(FAMILY, inet).
--export([getserv/1,getaddr/2,translate_ip/1]).
+-export([getserv/1,getaddr/1,getaddr/2,translate_ip/1]).
 -export([open/1,close/1,listen/2,connect/5,sendmsg/3,recv/2]).
 
 
 
-getserv(Port) when Port band 16#ffff =:= Port -> {ok, Port};
+getserv(Port) when is_integer(Port) -> {ok, Port};
 getserv(Name) when is_atom(Name) ->
     inet:getservbyname(Name, sctp);
 getserv(_) ->
     {error,einval}.
 
+getaddr(Address) ->
+    inet:getaddr(Address, ?FAMILY).
 getaddr(Address, Timer) ->
     inet:getaddr_tm(Address, ?FAMILY, Timer).
 

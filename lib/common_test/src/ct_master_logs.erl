@@ -64,7 +64,7 @@ nodedir(Node,RunDir) ->
 
 stop() ->
     case whereis(?MODULE) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    MRef = erlang:monitor(process,Pid),
 	    ?MODULE ! stop,
 	    receive

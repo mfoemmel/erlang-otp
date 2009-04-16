@@ -264,6 +264,7 @@ create_mods_list_ctrl(Panel, Sizer, ModText, AppText) ->
 
     wxEvtHandler:connect(ListCtrl, size, [{skip, true}, {userData, mods_list_ctrl}]),
     wxListCtrl:connect(ListCtrl, command_list_item_activated, [{userData, open_app}]),
+    wxWindow:connect(ListCtrl, enter_window),
 
     wxSizer:add(Sizer, ListCtrl,
                 [{border, 2},
@@ -442,7 +443,7 @@ handle_event(#state{xref_pid = Xref} = S, Wx) ->
 	#wx{id = ?GOTO_ENTRY,
             event = #wxCommand{type = command_text_enter, cmdString = Str}} ->
 	    goto_line(S, Str);
-        #wx{event = #wxCommand{type = command_notebook_page_changed}} ->
+        #wx{event = #wxNotebook{type = command_notebook_page_changed}} ->
 	    case wxNotebook:getSelection(S#state.book) of
 		0 -> % Deps page
 		    S;
@@ -452,6 +453,9 @@ handle_event(#state{xref_pid = Xref} = S, Wx) ->
 	    end;
 	#wx{event = #wxCommand{type = command_button_clicked}, userData = history_back} ->
 	    goto_back(S);
+	#wx{obj = ObjRef, event = #wxMouse{type = enter_window}} ->
+	    wxWindow:setFocus(ObjRef),
+	    S;
 	_ ->
             error_logger:format("~p~p got unexpected mod event from wx:\n\t~p\n",
                                 [?MODULE, self(), Wx]),
@@ -723,6 +727,8 @@ create_editor(Parent) ->
     wxStyledTextCtrl:setVisiblePolicy(Ed, Policy, 3),
 
     wxStyledTextCtrl:connect(Ed, stc_doubleclick),
+    wxWindow:connect(Ed, enter_window),
+
     wxStyledTextCtrl:setReadOnly(Ed, true),
     Ed.
 

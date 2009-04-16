@@ -260,14 +260,13 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab) ->
 	    [gen_unsafe_update_element(Tuple, hipe_rtl:mk_imm(N), Value),
 	     hipe_rtl:mk_move(Dst1, Tuple),
 	     GotoCont];
-	  {element, TypeInfo} ->
+	  {element, [TupleInfo, IndexInfo]} ->
 	    Dst1 =
 	      case Dst of
 		[] -> %% The result is not used.
 		  hipe_rtl:mk_new_var();
 		[Dst0] -> Dst0
 	      end,
-	    [TupleInfo, IndexInfo] = TypeInfo,	    
 	    [Index, Tuple] = Args,	    
 	    [gen_element_1(Dst1, Index, Tuple, IsGuard, Cont, Fail,
 			   TupleInfo, IndexInfo)];
@@ -275,13 +274,13 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab) ->
 	  %%---------------------------------------------
 	  %% Apply-fixarity
 	  %%---------------------------------------------
-	  #apply_N{arity=Arity} ->
+	  #apply_N{arity = Arity} ->
 	    gen_apply_N(Dst, Arity, Args, Cont, Fail);
 
 	  %%---------------------------------------------
 	  %% GC test
 	  %%---------------------------------------------
-	  #gc_test{need=Need} ->
+	  #gc_test{need = Need} ->
 	    [hipe_rtl:mk_gctest(Need), GotoCont];
 
 	  %%---------------------------------------------
@@ -900,7 +899,7 @@ check_arity(ArityReg, Arity, BadArityLab) ->
 %%
 %% The tail call case is not handled here.
 
-gen_apply(Dst, Args=[_M,_F,_AppArgs], Cont, Fail) ->
+gen_apply(Dst, Args = [_M,_F,_AppArgs], Cont, Fail) ->
   %% Dst can be [Res] or [].
   [hipe_rtl:mk_call(Dst, hipe_apply, Args, Cont, Fail, not_remote)].
 
@@ -918,11 +917,10 @@ gen_apply_N(Dst, Arity, [M,F|CallArgs], Cont, Fail) ->
   NotModuleLbl = hipe_rtl:mk_new_label(),
   NotModuleLblName = hipe_rtl:label_name(NotModuleLbl),
   Tuple = M,
-  TupleInfo = [],
   Index = hipe_rtl:mk_imm(1),
   IndexInfo = 1,
-  [hipe_tagscheme:element(MM, Index, Tuple, NotModuleLblName, TupleInfo, IndexInfo),
-   gen_apply_N_common(Dst, Arity+1, MM, F, CallArgs++[M], Cont, Fail),
+  [hipe_tagscheme:element(MM, Index, Tuple, NotModuleLblName, unknown, IndexInfo),
+   gen_apply_N_common(Dst, Arity+1, MM, F, CallArgs ++ [M], Cont, Fail),
    NotModuleLbl,
    gen_apply_N_common(Dst, Arity, M, F, CallArgs, Cont, Fail)].
 
@@ -1036,10 +1034,9 @@ gen_element(Dst, Args, IsGuard, Cont, Fail) ->
       [Dst0] -> Dst0
     end,
   [Index, Tuple] = Args,
-  gen_element_1(Dst1, Index, Tuple, IsGuard, Cont, Fail, [], []).
+  gen_element_1(Dst1, Index, Tuple, IsGuard, Cont, Fail, unknown, unknown).
 
-gen_element_1(Dst, Index, Tuple, IsGuard, Cont, Fail, TupleInfo,
-	      IndexInfo) ->
+gen_element_1(Dst, Index, Tuple, IsGuard, Cont, Fail, TupleInfo, IndexInfo) ->
   {FailLblName, FailCode} = gen_fail_code(Fail, badarg, IsGuard),
   [hipe_tagscheme:element(Dst, Index, Tuple, FailLblName, TupleInfo, IndexInfo),
    hipe_rtl:mk_goto(Cont),

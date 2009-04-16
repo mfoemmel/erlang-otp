@@ -100,7 +100,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
           ({defaultPath, DefaultPath}, Acc) ->   DefaultPath_UC = unicode:characters_to_binary([DefaultPath,0]),[<<2:32/?UI,(byte_size(DefaultPath_UC)):32/?UI,(DefaultPath_UC)/binary, 0:(((8- ((0+byte_size(DefaultPath_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
           ({style, Style}, Acc) -> [<<3:32/?UI,Style:32/?UI>>|Acc];
           ({pos, {PosX,PosY}}, Acc) -> [<<4:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
-          ({sz, {SzW,SzH}}, Acc) -> [<<5:32/?UI,SzW:32/?UI,SzH:32/?UI,0:32>>|Acc]  end,
+          ({sz, {SzW,SzH}}, Acc) -> [<<5:32/?UI,SzW:32/?UI,SzH:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxDirDialog_new,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).

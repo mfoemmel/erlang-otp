@@ -33,6 +33,65 @@
   </header>
 
   <section>
+    <title>SNMP Development Toolkit 4.13.1</title>
+
+    <p>Version 4.13.1 supports code replacement in runtime from/to
+      version 4.13.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <p>-</p> 
+
+      <!-- 
+      <list type="bulleted">
+        <item>
+          <p>[agent] Support for the discovery process. </p>
+          <p>The agent can both initiate discovery itself (see the
+            <seealso marker="snmp_agent_funct_descr#discovery">discovery</seealso> chapter
+            for more info) and respond to discovery initiated by a manager.</p>
+          <p>Own Id: OTP-7571</p>
+	  <p>Aux Id: Seq 11053</p>
+        </item>
+
+      </list>
+      -->
+
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[manager] Registration of users had some issues. </p>
+          <p>Not all of the registration functions where actually exported
+            (<seealso marker="snmpm#register_user">register_user/4</seealso> 
+            and
+            <seealso marker="snmpm#register_user_monitor">register_user_monitor/4</seealso>). 
+            This has now been fixed. </p>
+          <p>Also, the registration did not succeed unless
+            user implemented the *new* behaviour. This has now
+            also been fixed (registration succeeds if the user
+            implements either the new (i.e. updated 
+            <seealso marker="snmpm_user">snmpm_user</seealso>) 
+            or the old user behaviour (<c>snmpm_user_old</c>)). </p>
+          <p>Own Id: OTP-7902</p>
+	  <p>Aux Id: Seq 11240</p>
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.13.1 -->
+
+  <section>
     <title>SNMP Development Toolkit 4.13</title>
 <!--
     <p>Version 4.13 supports code replacement in runtime from/to

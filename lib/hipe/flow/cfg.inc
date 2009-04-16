@@ -100,7 +100,7 @@
 -export([breadthorder/1]).
 -endif.
 
--compile(inline). 
+-compile(inline).
 
 %%=====================================================================
 %%
@@ -145,7 +145,7 @@ start_label(CFG) -> (CFG#cfg.info)#cfg_info.start_label.
 -spec start_label_update(cfg(), cfg_lbl()) -> cfg().
 start_label_update(CFG, NewStartLabel) ->
   Info = CFG#cfg.info,
-  CFG#cfg{info=Info#cfg_info{start_label=NewStartLabel}}.
+  CFG#cfg{info = Info#cfg_info{start_label = NewStartLabel}}.
 
 -spec function(cfg()) -> mfa().
 function(CFG) -> (CFG#cfg.info)#cfg_info.'fun'.
@@ -158,11 +158,11 @@ is_leaf(CFG) -> (CFG#cfg.info)#cfg_info.is_leaf.
 
 mk_empty_cfg(Fun, StartLbl, Data, Closure, Leaf, Params) ->
   Info = #cfg_info{'fun' = Fun,
-		   start_label=StartLbl,
-		   is_closure=Closure,
-		   is_leaf=Leaf,
-		   params=Params},
-  #cfg{table=gb_trees:empty(), data=Data, info=Info}.
+		   start_label = StartLbl,
+		   is_closure = Closure,
+		   is_leaf = Leaf,
+		   params = Params},
+  #cfg{table = gb_trees:empty(), data = Data, info = Info}.
 
 data(CFG) -> CFG#cfg.data.
 -endif.	% GEN_CFG
@@ -170,7 +170,7 @@ data(CFG) -> CFG#cfg.data.
 -ifdef(REMOVE_TRIVIAL_BBS_NEEDED).
 -spec update_data(cfg(), cfg_data()) -> cfg().
 update_data(CFG, D) ->
-  CFG#cfg{data=D}.
+  CFG#cfg{data = D}.
 -endif.
 
 -ifdef(PARAMS_NEEDED).
@@ -180,22 +180,22 @@ params(CFG) -> (CFG#cfg.info)#cfg_info.params.
 -ifdef(PARAMS_UPDATE_NEEDED).
 params_update(CFG, NewParams) ->
   Info = CFG#cfg.info,
-  CFG#cfg{info=Info#cfg_info{params=NewParams}}.
+  CFG#cfg{info = Info#cfg_info{params = NewParams}}.
 -endif.
 
 -ifdef(CLOSURE_ARITY_NEEDED).
--spec closure_arity(cfg()) -> byte().
+-spec closure_arity(cfg()) -> arity().
 closure_arity(CFG) ->
   Info = CFG#cfg.info,
   Info#cfg_info.closure_arity.
 
--spec closure_arity_update(cfg(), byte()) -> cfg().
+-spec closure_arity_update(cfg(), arity()) -> cfg().
 closure_arity_update(CFG, Arity) ->
   Info = CFG#cfg.info,
-  CFG#cfg{info=Info#cfg_info{closure_arity=Arity}}.
+  CFG#cfg{info = Info#cfg_info{closure_arity = Arity}}.
 -endif.
 
-%% %% Don't forget to do a start_label_update if neccessary.
+%% %% Don't forget to do a start_label_update if necessary.
 %% update_code(CFG, NewCode) ->
 %%   take_bbs(NewCode, CFG).
 
@@ -204,17 +204,17 @@ info(CFG) -> (CFG#cfg.info)#cfg_info.info.
 %% info_add(CFG, A) ->
 %%    As = info(CFG),
 %%    Info = CFG#cfg.info,
-%%    CFG#cfg{info=Info#cfg_info{info=[A|As]}}.
+%%    CFG#cfg{info = Info#cfg_info{info = [A|As]}}.
 info_update(CFG, I) ->
   Info = CFG#cfg.info,
-  CFG#cfg{info=Info#cfg_info{info=I}}.
+  CFG#cfg{info = Info#cfg_info{info = I}}.
 -endif.
 
 %%=====================================================================
 -ifndef(GEN_CFG).
 
 -spec other_entrypoints(cfg()) -> [cfg_lbl()].
-%% @doc	 Returns a list of labels that are refered to from the data section.
+%% @doc Returns a list of labels that are refered to from the data section.
 
 other_entrypoints(CFG) ->
   hipe_consttab:referred_labels(data(CFG)).
@@ -234,14 +234,13 @@ bb(CFG, Label) ->
       not_found
   end.
 
-%% Remove duplicates from a list. The first instance
-%% (in left-to-right order) of an element is kept,
-%% remaining instances are removed.
--spec remove_duplicates([Elem]) -> [Elem].
+%% Remove duplicates from a list. The first instance (in left-to-right
+%% order) of an element is kept, remaining instances are removed.
+-spec remove_duplicates([cfg_lbl()]) -> [cfg_lbl()].
 remove_duplicates(List) ->
   remove_duplicates(List, []).
 
--spec remove_duplicates([Elem], [Elem]) -> [Elem].
+-spec remove_duplicates([cfg_lbl()], [cfg_lbl()]) -> [cfg_lbl()].
 remove_duplicates([H|T], Acc) ->
   NewAcc =
     case lists:member(H, Acc) of
@@ -265,18 +264,13 @@ remove_duplicates([], Acc) ->
 
 bb_insert_between(CFG, Label, NewBB, Pred, Succ) ->
   Last = hipe_bb:last(NewBB),
-  
   %% Asserts that NewBB ends in a label
   true = is_branch(Last),
-
   %% Asserts that the only Successor of NewBB is Succ
   [Succ] = remove_duplicates(branch_successors(Last)),
-
   HT = CFG#cfg.table,
- 
   %% Asserts that Label does not exist in the CFG
   none = gb_trees:lookup(Label, HT),
-
   %% Updates the predecessor of NewBB
   {value, {PBB, PSucc, PPred}} = gb_trees:lookup(Pred, HT),
   NewPSucc = [Label|lists:delete(Succ, PSucc)],
@@ -284,7 +278,6 @@ bb_insert_between(CFG, Label, NewBB, Pred, Succ) ->
   PButLast = hipe_bb:butlast(PBB),
   NewPBB = hipe_bb:code_update(PBB, PButLast++[redirect_jmp(PLast, Succ, Label)]),
   HT1 = gb_trees:update(Pred, {NewPBB,NewPSucc,PPred}, HT),
- 
   %% Updates the successor of NewBB
   {value, {SBB, SSucc, SPred}} = gb_trees:lookup(Succ, HT1),
   NewSPred = [Label|lists:delete(Pred, SPred)],
@@ -292,7 +285,6 @@ bb_insert_between(CFG, Label, NewBB, Pred, Succ) ->
   NewSCode = redirect_phis(SCode, Pred, Label, []),
   NewSBB = hipe_bb:code_update(SBB, NewSCode),
   HT2 = gb_trees:update(Succ, {NewSBB,SSucc,NewSPred}, HT1),
-  
   %% Enters NewBB into the CFG
   HT3 = gb_trees:insert(Label, {NewBB,[Succ],[Pred]}, HT2), 
   CFG#cfg{table = HT3}.
@@ -317,12 +309,12 @@ bb_add(CFG, Label, NewBB) ->
   Last = hipe_bb:last(NewBB),
   case is_branch(Last) of
     true  -> ok;
-    false -> throw({?MODULE,{"Basic block ends without branch",Last}})
+    false -> throw({?MODULE, {"Basic block ends without branch", Last}})
   end,
   %% The order of the elements from branch_successors/1 is
-  %% significant. It determines the basic block order when
-  %% the CFG is converted to linear form, and the order may
-  %% have been tuned for branch prediction purposes.
+  %% significant. It determines the basic block order when the CFG is
+  %% converted to linear form. That order may have been tuned for
+  %% branch prediction purposes.
   Succ = remove_duplicates(branch_successors(Last)),
   HT = CFG#cfg.table,
   {OldSucc, OldPred} = case gb_trees:lookup(Label, HT) of
@@ -331,21 +323,20 @@ bb_add(CFG, Label, NewBB) ->
 			 none ->
 		           {[], []}
 		       end,
-  %% Change this block to contain new BB and new successors, but keep the
-  %% old predecessors which will be updated in the following steps
+  %% Change this block to contain new BB and new successors, but keep
+  %% the old predecessors which will be updated in the following steps
   HT1 = gb_trees:enter(Label, {NewBB, Succ, OldPred}, HT),
   %% Add this block as predecessor to its new successors
-  HT2 = lists:foldl(fun (P,HTAcc) ->
+  HT2 = lists:foldl(fun (P, HTAcc) ->
 		      add_pred(HTAcc, P, Label)
 		    end,
 		    HT1, Succ -- OldSucc),
   %% Remove this block as predecessor of its former successors
-  HT3 = lists:foldl(fun (S,HTAcc) ->
+  HT3 = lists:foldl(fun (S, HTAcc) ->
 		      remove_pred(HTAcc, S, Label)
 		    end,
 		    HT2, OldSucc -- Succ),
   CFG#cfg{table = HT3}.
-
 
 remove_pred(HT, FromL, PredL) ->
   case gb_trees:lookup(FromL, HT) of
@@ -368,22 +359,16 @@ add_pred(HT, ToL, PredL) ->
 
 %% find_highest_label(CFG) ->
 %%   Labels = labels(CFG),
-%%   lists:foldl(fun(X, Acc) -> max(X, Acc) end, 0, Labels).
+%%   lists:foldl(fun(X, Acc) -> erlang:max(X, Acc) end, 0, Labels).
 %% 
 %% find_highest_var(CFG) ->
 %%   Labels = labels(CFG),
 %%   Fun = fun(X, Max) ->
 %% 	    Code = hipe_bb:code(bb(CFG, X)),
 %% 	    NewMax = highest_var(Code),
-%% 	    max(Max, NewMax)
+%% 	    erlang:max(Max, NewMax)
 %% 	end,
 %%   lists:foldl(Fun, 0, Labels).
-%% 
-%% max(X, Y) ->
-%%   case X > Y of
-%%     true -> X;
-%%     false -> Y
-%%   end.
 
 -ifdef(CFG_CAN_HAVE_PHI_NODES).
 %% phi-instructions in a removed block's successors must be aware of
@@ -748,7 +733,7 @@ bb_remove(CFG, Label) ->
 			    remove_pred(HTAcc, S, Label)
 			end,
 			HT, Succ),
-      CFG#cfg{table=gb_trees:delete(Label, HT1)};
+      CFG#cfg{table = gb_trees:delete(Label, HT1)};
     none -> 
       CFG
   end.

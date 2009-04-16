@@ -22,7 +22,7 @@
 
 -export([collect/1]).
 
--type func_info() :: {non_neg_integer(), atom(), byte()}.
+-type func_info() :: {non_neg_integer(), atom(), arity()}.
 -type inc_file_info() :: {string(), func_info()}.
 
 -record(tmpAcc, {file		:: string(),
@@ -120,19 +120,18 @@ analyze_one_function({Var, FunBody} = Function, Acc) ->
   BaseName = filename:basename(FileName),
   FuncInfo = {LineNo, F, A},
   OriginalName = Acc#tmpAcc.file,
-  case (FileName =:= OriginalName) orelse (BaseName =:= OriginalName) of
-    true -> %% Coming from original file
-      %% io:format("Added function ~p\n", [{LineNo, F, A}]),
-      FuncAcc    = Acc#tmpAcc.funcAcc ++ [FuncInfo], 
-      IncFuncAcc = Acc#tmpAcc.incFuncAcc;
-    false ->
-      %% Coming from other sourses, including:
-      %%     -- .yrl (yecc-generated file)
-      %%     -- yeccpre.hrl (yecc-generated file)
-      %%     -- other cases
-      FuncAcc    = Acc#tmpAcc.funcAcc,
-      IncFuncAcc = Acc#tmpAcc.incFuncAcc ++ [{FileName, FuncInfo}]
-  end,
+  {FuncAcc, IncFuncAcc} =
+    case (FileName =:= OriginalName) orelse (BaseName =:= OriginalName) of
+      true -> %% Coming from original file
+	%% io:format("Added function ~p\n", [{LineNo, F, A}]),
+	{Acc#tmpAcc.funcAcc ++ [FuncInfo], Acc#tmpAcc.incFuncAcc};
+      false ->
+	%% Coming from other sourses, including:
+	%%     -- .yrl (yecc-generated file)
+	%%     -- yeccpre.hrl (yecc-generated file)
+	%%     -- other cases
+	{Acc#tmpAcc.funcAcc, Acc#tmpAcc.incFuncAcc ++ [{FileName, FuncInfo}]}
+    end,
   Acc#tmpAcc{funcAcc = FuncAcc,
 	     incFuncAcc = IncFuncAcc,
 	     dialyzerObj = NewDialyzerObj}.

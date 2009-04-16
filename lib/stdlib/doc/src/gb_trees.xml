@@ -242,6 +242,18 @@ gb_tree() = a GB tree</code>
       </desc>
     </func>
     <func>
+      <name>map(Function, Tree1) -> Tree2</name>
+      <fsummary>Return largest key and value</fsummary>
+      <type>
+        <v>Function = fun(K, V1) -> V2</v>
+        <v>Tree1 = Tree2 = gb_tree()</v>
+      </type>
+         <desc><p>maps the function F(K, V1) -> V2 to all key-value pairs
+	    of the tree Tree1 and returns a new tree Tree2 with the same set of keys
+	    as Tree1 and the new set of values V2.</p>
+         </desc>
+    </func>
+    <func>
       <name>next(Iter1) -> {Key, Val, Iter2} | none</name>
       <fsummary>Traverse a tree with an iterator</fsummary>
       <type>

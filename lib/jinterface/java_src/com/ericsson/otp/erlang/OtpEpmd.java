@@ -38,17 +38,37 @@ import java.net.Socket;
  * <p>
  * The methods {@link #publishPort(OtpLocalNode) publishPort()} and
  * {@link #unPublishPort(OtpLocalNode) unPublishPort()} will fail if an Epmd
- * process is not running on the localhost. Additionally {@link
- * #lookupPort(AbstractNode) lookupPort()} will fail if there is no Epmd process
- * running on the host where the specified node is running. See the Erlang
- * documentation for information about starting Epmd.
+ * process is not running on the localhost. Additionally
+ * {@link #lookupPort(AbstractNode) lookupPort()} will fail if there is no Epmd
+ * process running on the host where the specified node is running. See the
+ * Erlang documentation for information about starting Epmd.
  * 
  * <p>
  * This class contains only static methods, there are no constructors.
  */
 public class OtpEpmd {
+
+    private static class EpmdPort {
+	private static int epmdPort = 0;
+	
+	public static int get() {
+	    if (epmdPort == 0) {
+		String env;
+		try {
+		    env = System.getenv("ERL_EPMD_PORT");
+		} 
+		catch (java.lang.SecurityException e) {
+		    env = null;
+		}
+		epmdPort = (env != null) ? Integer.parseInt(env) : 4369;
+	    }
+	    return epmdPort;
+	}	
+	public static void set(int port) {
+	    epmdPort = port;
+	}
+    }
     // common values
-    private static final int epmdPort = 4369;
     private static final byte stopReq = (byte) 115;
 
     // version specific value
@@ -83,6 +103,16 @@ public class OtpEpmd {
     private OtpEpmd() {
     }
 
+
+    /**
+     * Set the port number to be used to contact the epmd process.
+     * Only needed when the default port is not desired and system environment
+     * variable ERL_EPMD_PORT can not be read (applet).
+     */
+    public static void useEpmdPort(int port) {
+	EpmdPort.set(port);
+    }
+
     /**
      * Determine what port a node listens for incoming connections on.
      * 
@@ -90,7 +120,7 @@ public class OtpEpmd {
      *         registered with Epmd.
      * 
      * @exception java.io.IOException
-     *                    if there was no response from the name server.
+     *                if there was no response from the name server.
      */
     public static int lookupPort(final AbstractNode node) throws IOException {
 	try {
@@ -105,13 +135,13 @@ public class OtpEpmd {
      * it.
      * 
      * @param node
-     *                the server node that should be registered with Epmd.
+     *            the server node that should be registered with Epmd.
      * 
      * @return true if the operation was successful. False if the node was
      *         already registered.
      * 
      * @exception java.io.IOException
-     *                    if there was no response from the name server.
+     *                if there was no response from the name server.
      */
     public static boolean publishPort(final OtpLocalNode node)
 	    throws IOException {
@@ -142,7 +172,7 @@ public class OtpEpmd {
 	Socket s = null;
 
 	try {
-	    s = new Socket((String) null, epmdPort);
+	    s = new Socket((String) null, EpmdPort.get());
 	    final OtpOutputStream obuf = new OtpOutputStream();
 	    obuf.write2BE(node.alive().length() + 1);
 	    obuf.write1(stopReq);
@@ -173,7 +203,7 @@ public class OtpEpmd {
 
 	try {
 	    final OtpOutputStream obuf = new OtpOutputStream();
-	    s = new Socket(node.host(), epmdPort);
+	    s = new Socket(node.host(), EpmdPort.get());
 
 	    // build and send epmd request
 	    // length[2], tag[1], alivename[n] (length = n+1)
@@ -192,7 +222,7 @@ public class OtpEpmd {
 	    final byte[] tmpbuf = new byte[100];
 
 	    s.getInputStream().read(tmpbuf);
-	    final OtpInputStream ibuf = new OtpInputStream(tmpbuf);
+	    final OtpInputStream ibuf = new OtpInputStream(tmpbuf, 0);
 
 	    port = ibuf.read2BE();
 	} catch (final IOException e) {
@@ -234,7 +264,7 @@ public class OtpEpmd {
 
 	try {
 	    final OtpOutputStream obuf = new OtpOutputStream();
-	    s = new Socket(node.host(), epmdPort);
+	    s = new Socket(node.host(), EpmdPort.get());
 
 	    // build and send epmd request
 	    // length[2], tag[1], alivename[n] (length = n+1)
@@ -265,7 +295,7 @@ public class OtpEpmd {
 			+ node.host() + " when looking up " + node.alive());
 	    }
 
-	    final OtpInputStream ibuf = new OtpInputStream(tmpbuf);
+	    final OtpInputStream ibuf = new OtpInputStream(tmpbuf, 0);
 
 	    final int response = ibuf.read1();
 	    if (response == port4resp) {
@@ -318,7 +348,7 @@ public class OtpEpmd {
 
 	try {
 	    final OtpOutputStream obuf = new OtpOutputStream();
-	    s = new Socket((String) null, epmdPort);
+	    s = new Socket((String) null, EpmdPort.get());
 
 	    obuf.write2BE(node.alive().length() + 3);
 
@@ -345,7 +375,7 @@ public class OtpEpmd {
 		return null;
 	    }
 
-	    final OtpInputStream ibuf = new OtpInputStream(tmpbuf);
+	    final OtpInputStream ibuf = new OtpInputStream(tmpbuf, 0);
 
 	    if (ibuf.read1() == publish3ok) {
 		node.creation = ibuf.read2BE();
@@ -394,7 +424,7 @@ public class OtpEpmd {
 
 	try {
 	    final OtpOutputStream obuf = new OtpOutputStream();
-	    s = new Socket((String) null, epmdPort);
+	    s = new Socket((String) null, EpmdPort.get());
 
 	    obuf.write2BE(node.alive().length() + 13);
 
@@ -432,7 +462,7 @@ public class OtpEpmd {
 			+ node.host() + " when publishing " + node.alive());
 	    }
 
-	    final OtpInputStream ibuf = new OtpInputStream(tmpbuf);
+	    final OtpInputStream ibuf = new OtpInputStream(tmpbuf, 0);
 
 	    final int response = ibuf.read1();
 	    if (response == publish4resp) {
@@ -483,7 +513,7 @@ public class OtpEpmd {
 	try {
 	    final OtpOutputStream obuf = new OtpOutputStream();
 	    try {
-		s = new Socket(address, epmdPort);
+		s = new Socket(address, EpmdPort.get());
 
 		obuf.write2BE(1);
 		obuf.write1(names4req);
@@ -505,7 +535,7 @@ public class OtpEpmd {
 		    out.write(buffer, 0, bytesRead);
 		}
 		final byte[] tmpbuf = out.toByteArray();
-		final OtpInputStream ibuf = new OtpInputStream(tmpbuf);
+		final OtpInputStream ibuf = new OtpInputStream(tmpbuf, 0);
 		ibuf.read4BE(); // read port int
 		// final int port = ibuf.read4BE();
 		// check if port = epmdPort
@@ -513,7 +543,7 @@ public class OtpEpmd {
 		final int n = tmpbuf.length;
 		final byte[] buf = new byte[n - 4];
 		System.arraycopy(tmpbuf, 4, buf, 0, n - 4);
-		final String all = new String(buf);
+		final String all = OtpErlangString.newString(buf);
 		return all.split("\n");
 	    } finally {
 		if (s != null) {

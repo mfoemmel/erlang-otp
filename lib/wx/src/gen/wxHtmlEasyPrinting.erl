@@ -46,7 +46,8 @@ new() ->
 new(Options)
  when is_list(Options) ->
   MOpts = fun({name, Name}, Acc) ->   Name_UC = unicode:characters_to_binary([Name,0]),[<<1:32/?UI,(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((0+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({parentWindow, #wx_ref{type=ParentWindowT,ref=ParentWindowRef}}, Acc) ->   ?CLASS(ParentWindowT,wxWindow),[<<2:32/?UI,ParentWindowRef:32/?UI>>|Acc]  end,
+          ({parentWindow, #wx_ref{type=ParentWindowT,ref=ParentWindowRef}}, Acc) ->   ?CLASS(ParentWindowT,wxWindow),[<<2:32/?UI,ParentWindowRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxHtmlEasyPrinting_new,
   <<BinOpt/binary>>).
@@ -87,7 +88,8 @@ previewText(#wx_ref{type=ThisT,ref=ThisRef},Htmltext, Options)
  when is_list(Htmltext),is_list(Options) ->
   ?CLASS(ThisT,wxHtmlEasyPrinting),
   Htmltext_UC = unicode:characters_to_binary([Htmltext,0]),
-  MOpts = fun({basepath, Basepath}, Acc) ->   Basepath_UC = unicode:characters_to_binary([Basepath,0]),[<<1:32/?UI,(byte_size(Basepath_UC)):32/?UI,(Basepath_UC)/binary, 0:(((8- ((0+byte_size(Basepath_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({basepath, Basepath}, Acc) ->   Basepath_UC = unicode:characters_to_binary([Basepath,0]),[<<1:32/?UI,(byte_size(Basepath_UC)):32/?UI,(Basepath_UC)/binary, 0:(((8- ((0+byte_size(Basepath_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxHtmlEasyPrinting_PreviewText,
   <<ThisRef:32/?UI,(byte_size(Htmltext_UC)):32/?UI,(Htmltext_UC)/binary, 0:(((8- ((0+byte_size(Htmltext_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -114,7 +116,8 @@ printText(#wx_ref{type=ThisT,ref=ThisRef},Htmltext, Options)
  when is_list(Htmltext),is_list(Options) ->
   ?CLASS(ThisT,wxHtmlEasyPrinting),
   Htmltext_UC = unicode:characters_to_binary([Htmltext,0]),
-  MOpts = fun({basepath, Basepath}, Acc) ->   Basepath_UC = unicode:characters_to_binary([Basepath,0]),[<<1:32/?UI,(byte_size(Basepath_UC)):32/?UI,(Basepath_UC)/binary, 0:(((8- ((0+byte_size(Basepath_UC)) band 16#7)) band 16#7))/unit:8>>|Acc]  end,
+  MOpts = fun({basepath, Basepath}, Acc) ->   Basepath_UC = unicode:characters_to_binary([Basepath,0]),[<<1:32/?UI,(byte_size(Basepath_UC)):32/?UI,(Basepath_UC)/binary, 0:(((8- ((0+byte_size(Basepath_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxHtmlEasyPrinting_PrintText,
   <<ThisRef:32/?UI,(byte_size(Htmltext_UC)):32/?UI,(Htmltext_UC)/binary, 0:(((8- ((0+byte_size(Htmltext_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -141,7 +144,8 @@ setFonts(#wx_ref{type=ThisT,ref=ThisRef},Normal_face,Fixed_face, Options)
   Normal_face_UC = unicode:characters_to_binary([Normal_face,0]),
   Fixed_face_UC = unicode:characters_to_binary([Fixed_face,0]),
   MOpts = fun({sizes, Sizes}, Acc) -> [<<1:32/?UI,(length(Sizes)):32/?UI,
-        (<< <<C:32/?I>> || C <- Sizes>>)/binary, 0:(((0+length(Sizes)) rem 2)*32)>>|Acc]  end,
+        (<< <<C:32/?I>> || C <- Sizes>>)/binary, 0:(((0+length(Sizes)) rem 2)*32)>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxHtmlEasyPrinting_SetFonts,
   <<ThisRef:32/?UI,(byte_size(Normal_face_UC)):32/?UI,(Normal_face_UC)/binary, 0:(((8- ((0+byte_size(Normal_face_UC)) band 16#7)) band 16#7))/unit:8,(byte_size(Fixed_face_UC)):32/?UI,(Fixed_face_UC)/binary, 0:(((8- ((4+byte_size(Fixed_face_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -159,7 +163,8 @@ setHeader(#wx_ref{type=ThisT,ref=ThisRef},Header, Options)
  when is_list(Header),is_list(Options) ->
   ?CLASS(ThisT,wxHtmlEasyPrinting),
   Header_UC = unicode:characters_to_binary([Header,0]),
-  MOpts = fun({pg, Pg}, Acc) -> [<<1:32/?UI,Pg:32/?UI>>|Acc]  end,
+  MOpts = fun({pg, Pg}, Acc) -> [<<1:32/?UI,Pg:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxHtmlEasyPrinting_SetHeader,
   <<ThisRef:32/?UI,(byte_size(Header_UC)):32/?UI,(Header_UC)/binary, 0:(((8- ((0+byte_size(Header_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -177,7 +182,8 @@ setFooter(#wx_ref{type=ThisT,ref=ThisRef},Footer, Options)
  when is_list(Footer),is_list(Options) ->
   ?CLASS(ThisT,wxHtmlEasyPrinting),
   Footer_UC = unicode:characters_to_binary([Footer,0]),
-  MOpts = fun({pg, Pg}, Acc) -> [<<1:32/?UI,Pg:32/?UI>>|Acc]  end,
+  MOpts = fun({pg, Pg}, Acc) -> [<<1:32/?UI,Pg:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxHtmlEasyPrinting_SetFooter,
   <<ThisRef:32/?UI,(byte_size(Footer_UC)):32/?UI,(Footer_UC)/binary, 0:(((8- ((0+byte_size(Footer_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).

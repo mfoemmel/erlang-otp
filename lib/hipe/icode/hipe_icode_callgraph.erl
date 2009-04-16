@@ -66,7 +66,7 @@ construct(List) ->
   Nodes = ordsets:from_list([MFA || {MFA, _} <- List]),
   DiGraph1 = hipe_digraph:add_node_list(Nodes, DiGraph),
   SCCs = hipe_digraph:reverse_preorder_sccs(DiGraph1),
-  #icode_callgraph{codedict=dict:from_list(List), ordered_sccs=SCCs}.
+  #icode_callgraph{codedict = dict:from_list(List), ordered_sccs = SCCs}.
 
 -spec construct_callgraph([mfa_icode()]) -> #hipe_digraph{}.
 
@@ -77,7 +77,7 @@ construct_callgraph(List) ->
 
 -spec to_list(#icode_callgraph{}) -> [mfa_icode()].
 
-to_list(#icode_callgraph{codedict=Dict, ordered_sccs=SCCs}) ->
+to_list(#icode_callgraph{codedict = Dict, ordered_sccs = SCCs}) ->
   FlatList = lists:flatten(SCCs),
   [{Mod, dict:fetch(Mod, Dict)} || Mod <- FlatList].
 
@@ -87,20 +87,20 @@ to_list(#icode_callgraph{codedict=Dict, ordered_sccs=SCCs}) ->
 
 -spec is_empty(#icode_callgraph{}) -> bool().
 
-is_empty(#icode_callgraph{ordered_sccs=SCCs}) ->
+is_empty(#icode_callgraph{ordered_sccs = SCCs}) ->
   length(SCCs) =:= 0.
 
 -spec take_first(#icode_callgraph{}) -> {[mfa_icode()], #icode_callgraph{}}.
 
-take_first(CG=#icode_callgraph{codedict=Dict, ordered_sccs=SCCs})
+take_first(#icode_callgraph{codedict = Dict, ordered_sccs = SCCs} = CG)
   when length(SCCs) > 0 ->
   [H|T] = SCCs,
   SCCCode = [{Mod, dict:fetch(Mod, Dict)} || Mod <- H],
-  {SCCCode, CG#icode_callgraph{ordered_sccs=T}}.
+  {SCCCode, CG#icode_callgraph{ordered_sccs = T}}.
 
 -spec pp(#icode_callgraph{}) -> 'ok'.
 
-pp(#icode_callgraph{ordered_sccs=SCCs}) ->
+pp(#icode_callgraph{ordered_sccs = SCCs}) ->
   io:format("Callgraph ~p\n", [SCCs]).
 -endif.
 
@@ -155,7 +155,7 @@ get_local_calls2(List) ->
   RemoveFun = fun(_,Set) -> Set end,
   get_local_calls(List, RemoveFun, []).
 
-get_local_calls([{MFA = {M, _F, _A}, Icode}|Left], RemoveFun, Acc) ->
+get_local_calls([{{_M, _F, _A} = MFA, Icode}|Left], RemoveFun, Acc) ->
   CallSet = get_local_calls_1(hipe_icode:icode_code(Icode)),
   %% Exclude recursive calls.
   CallSet1 = RemoveFun(MFA, CallSet),
@@ -176,7 +176,7 @@ get_local_calls_1([I|Left], Set) ->
 	    ordsets:add_element(Fun, Set);
 	  primop ->
 	    case hipe_icode:call_fun(I) of
-	      #mkfun{mfa=Fun} ->
+	      #mkfun{mfa = Fun} ->
 		ordsets:add_element(Fun, Set);
 	      _ ->
 		Set
@@ -191,7 +191,7 @@ get_local_calls_1([I|Left], Set) ->
 	    ordsets:add_element(Fun, Set);
 	  primop ->
 	    case hipe_icode:enter_fun(I) of
-	      #mkfun{mfa=Fun} ->
+	      #mkfun{mfa = Fun} ->
 		ordsets:add_element(Fun, Set);
 	      _ ->
 		Set

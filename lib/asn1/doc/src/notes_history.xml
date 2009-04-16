@@ -4,23 +4,21 @@
 <chapter>
   <header>
     <copyright>
-      <year>2006</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>2006</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>ASN1 Release Notes</title>
@@ -39,6 +37,437 @@
     bugfixes for every release of the asn1 application. Each release of asn1
     thus constitutes one section in this document. The title of each
     section is the version number of asn1.</p>
+
+
+  <section>
+    <title>Asn1 1.4.4.14</title>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>Data in info/0 in generated code is moved to attribute
+            asn1_info, thus vsn value remains the same if compiler
+            options for asn1-spec differs but the generated code is
+            the same.</p>
+          <p>Own Id: OTP-6462</p>
+        </item>
+        <item>
+          <p>Dialyzer warnings on asn1 are removed, i.e. dead code
+            removed.</p>
+          <p>Own Id: OTP-6506</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.13</title>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>Now it is possible to use 'asn1config' and 'inline'
+            options together. It is also possible to use 'inline' on
+            a single file like:
+            <c>asn1ct:compile("MyASN1spec.asn",[inline])</c>.</p>
+          <p>Own Id: OTP-6405</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.12</title>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>As a complement to the option "{inline,OutputFile}" it is
+            now possible to use the option "inline". Then asn1 creats
+            an output file with the name of the source .set file.</p>
+          <p>Own Id: OTP-6314</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.11</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>When copiling an asn1 source that reference a type in
+            another source the compiler uses the asn1db file of the
+            other source to resolve the reference. It also tests
+            whether the other source has been updated since the
+            asn1db file was generated. This last test was to brutal
+            in that it exits compilation when no source was found,
+            even though a asn1db file existed. Changed behaviour from
+            a brutal exit to a warning.</p>
+          <p>Own Id: OTP-6143</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.10</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>asn1 encoding failed on BIT STRING with constraint
+            <c>(SIZE (32..MAX))</c>.</p>
+          <p>Own Id: OTP-5932</p>
+        </item>
+        <item>
+          <p>Race condition removed in server for variable names for
+            generated code.</p>
+          <p>Own Id: OTP-6111</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.9</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Now exists a default function clause for table lookup of
+            a table constraint. This causes a nice error instead of a
+            crash. Did also remove some obsolete funs ({Mod,Fun}) in
+            generated code.</p>
+          <p>Own Id: OTP-5783</p>
+        </item>
+        <item>
+          <p>ASN1-compiler faild to derive a value out of an external
+            reference in some certain cases, when compiling specs so
+            that the spec with the reference was compiled before the
+            spec with the defined value.</p>
+          <p>Own Id: OTP-5812 Aux Id: seq10133 </p>
+        </item>
+        <item>
+          <p>The documentation of how records of embedded types are
+            named is extended and made clearer by examples and rules.
+            The section "Naming of Records in .hrl Files" in the
+            User's Guide is added.</p>
+          <p>Own Id: OTP-5831 Aux Id: seq10133 </p>
+        </item>
+        <item>
+          <p>The compiler failed to give right name to record/function
+            of a parametrized type that was referenced through
+            another instance of a parameterized type in another
+            module. The fault occured when modules were compiled in a
+            certain order. Now the compiler resolves the name
+            correctly.</p>
+          <p>Own Id: OTP-5832 Aux Id: seq10133 </p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.8</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>The dynamic sort of SET OF values now correctly handles
+            values encoded in the "ber_bin, der, optimize" mode, the
+            value of a SET OF is a list of binaries.</p>
+          <p>Own Id: OTP-5687</p>
+        </item>
+        <item>
+          <p>Bad code was generated for an INTEGER with valuerange. If
+            the value that was encoded had a lower bound with
+            negative value it caused a crash. This bug is now
+            removed.</p>
+          <p>Own Id: OTP-5688 Aux Id: seq10049 </p>
+        </item>
+        <item>
+          <p>Compiler now handles wrong include paths by returning an
+            error if a referenced module is not available.</p>
+          <p>Own Id: OTP-5689</p>
+        </item>
+        <item>
+          <p>The bug causing a runtime error when encoding a type
+            defined by: <c>BIT STRING {a(1),b(2)}</c> with the value
+            [] in <c>per_bin</c> mode is now removed.</p>
+          <p>Own Id: OTP-5710 Aux Id: seq10066 </p>
+        </item>
+      </list>
+    </section>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>Better handling of filename paths</p>
+          <p>Own Id: OTP-5701</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.7</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Effective constraint for <c>per</c> now corrected. For
+            instance <c>INTEGER (0|15..269)</c> didn't work properly.</p>
+          <p>Own Id: OTP-5477 Aux Id: OTP-5511 </p>
+        </item>
+        <item>
+          <p>Adjusted compiler so that functions in generated code
+            only are exported once.</p>
+          <p>Own Id: OTP-5509</p>
+        </item>
+        <item>
+          <p>Fixed the compiler failure when handling a value range
+            constraint with an extension mark that had the Lower
+            bound and/or Upper bound values as an external reference
+            to a defined value.</p>
+          <p>Own Id: OTP-5511 Aux Id: OTP-5466 </p>
+        </item>
+        <item>
+          <p>Removed sorting of elements for SEQUENCE OF. It shall
+            only be done in SET OF.</p>
+          <p>Own Id: OTP-5602</p>
+        </item>
+        <item>
+          <p>Corrected code that generated code causing badarith
+            warning.</p>
+          <p>Own Id: OTP-5616</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.6</title>
+
+    <section>
+      <title>Known Bugs and Problems</title>
+      <list type="bulleted">
+        <item>
+          <p>Compiler now correctly crashes when compiling bad values.
+            Failed for instance on INTEGER value that was a reference
+            to a defined value. Also solved problem with a union
+            constraint on an INTEGER.</p>
+          <p>Own Id: OTP-5457</p>
+        </item>
+        <item>
+          <p>Additional coverage of object set syntax.</p>
+          <p>Own Id: OTP-5466</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.5</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>A bug due to representation of open_type values is now
+            fixed. It could cause problem if one used the EXTERNAL
+            type.</p>
+          <p>Own Id: OTP-5302</p>
+        </item>
+        <item>
+          <p>Due to an internal error the same code could have been
+            generated more than one time. This happened for the
+            exclusive deocode functionality.</p>
+          <p>Own Id: OTP-5378</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.4</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Empty objects caused problems. There was trouble when an
+            object set referenced imported objects that in turn
+            referenced imported types. Lacked support of
+            SelectionType in object. All these have been attended.</p>
+          <p>Own Id: OTP-5240</p>
+        </item>
+      </list>
+    </section>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>Now it is possible to inline asn1 run-time functionality
+            in the module generated by the asn1 compiler. Thus, it
+            will be only one module doing all encoding/decoding.</p>
+          <p>Own Id: OTP-5243</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.3</title>
+
+    <section>
+      <title>Fixed errors and malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>A class that was referenced in two steps caused a
+            compiler failure.  It is now corrected.</p>
+          <p>Own Id: OTP-5103</p>
+        </item>
+      </list>
+    </section>
+
+    <section>
+      <title>Improvements and new features</title>
+      <list type="bulleted">
+        <item>
+          <p>Optionally make it possible to get the undecoded rest along with 
+            the return value. Compile with option <em>undec_rest</em>.</p>
+          <p>Own Id: OTP-5104</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.2</title>
+
+    <section>
+      <title>Fixed errors and malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>An error due to unchecked referenced imported type resulted
+            in missing tag in some table constraint cases. This error is
+            now corrected. Error occured during decode in 
+            <c>ber_bin optimized</c> version.</p>
+          <p>Own Id: OTP-5022</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4.1</title>
+
+    <section>
+      <title>Fixed errors and malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>When a referenced value in another module in turn referenced a
+            defined value the compilation crashed. This is due to the new
+            rutines for compilation, that external referencies are resolved
+            during compilation, and not by the order in which modules are
+            compiled. This error is now corrected.</p>
+          <p>Own Id: OTP-4970</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Asn1 1.4.4</title>
+
+    <section>
+      <title>Fixed errors and malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Functionality for parameterized class is added. Parsing failures on
+            WithSyntax spec is corrected.</p>
+          <p>Own Id: OTP-4893</p>
+        </item>
+        <item>
+          <p>The failure due to Parameterized Type when parameter is an object
+            set is corrected.</p>
+          <p>Own Id: OTP-4894</p>
+          <p>Aux Id: OTP-4893</p>
+        </item>
+        <item>
+          <p>Object Identifier values with two components and teh first was a
+            value reference failed due to parsing conflicts. Now it is
+            corrected.</p>
+          <p>Own Id: OTP-4895</p>
+        </item>
+        <item>
+          <p>The errorounus comparison of file name and asn1 module name could
+            cause compilation failure. The situation for this failure is rare,
+            it requires that other processes modifies the compiled file during
+            the compilation procedure. It is now fixed.</p>
+          <p>Own Id: OTP-4944</p>
+          <p>Aux Id: seq8429</p>
+        </item>
+        <item>
+          <p>Selective decode was ignored when exclusive decode spec in asn1
+            configfile was missing. Selective decode failed when the selected
+            type was the top type. These bugs are now removed.</p>
+          <p>Own Id: OTP-4953</p>
+          <p>Aux Id: seq8436</p>
+        </item>
+        <item>
+          <p>The test interface asn1ct:test/1,2,3 and asn1ct:value/2 failed for
+            open type and EXTERNAL. The bug is now removed.</p>
+          <p>Own Id: OTP-4955</p>
+          <p>Aux Id: seq8438)</p>
+        </item>
+        <item>
+          <p>Two equal functions were generated for two components referencing
+            the same type when they were picked by the action "parts". The bug
+            is now fixed.</p>
+          <p>Own Id: OTP-4957</p>
+          <p>Aux Id: seq8434</p>
+        </item>
+      </list>
+    </section>
+
+    <section>
+      <title>Improvements and new features</title>
+      <list type="bulleted">
+        <item>
+          <p>INTEGER with named number list and ENUMERATED can now be sub
+            constrained with names from the names list.</p>
+          <p>Own Id: OTP-4917</p>
+        </item>
+        <item>
+          <p>Now there is support for SelectionType (X 680 section 29)</p>
+          <p>Own Id: OTP-4918</p>
+        </item>
+        <item>
+          <p>The compiler now resolves circular dependencies. When asn1 specs
+            IMPORTS from each other so that there are circular dependencies.</p>
+          <p>Own Id: OTP-4919</p>
+        </item>
+        <item>
+          <p>Now is the asn1 type UTF8String supported. For user instructions
+            see documentation.</p>
+          <p>Own Id: OTP-4965</p>
+        </item>
+      </list>
+    </section>
+  </section>
 
   <section>
     <title>Asn1 1.4.3.1</title>

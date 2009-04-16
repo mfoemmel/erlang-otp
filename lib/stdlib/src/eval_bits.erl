@@ -80,9 +80,13 @@ eval_field({bin_element,Line,E,Size0,Options0}, Bs0, Fun) ->
     {eval_exp_field1(V, Size, Unit, Type, Endian, Sign),Bs}.
 
 eval_exp_field1(V, Size, Unit, Type, Endian, Sign) ->
-    case catch eval_exp_field(V, Size, Unit, Type, Endian, Sign) of
-        <<Val/bitstring>> -> Val;
-        _ -> error(badarg)
+    try
+	eval_exp_field(V, Size, Unit, Type, Endian, Sign)
+    catch
+	error:system_limit ->
+	    error(system_limit);
+	error:_ ->
+	    error(badarg)
     end.
 
 eval_exp_field(Val, Size, Unit, integer, little, signed) ->

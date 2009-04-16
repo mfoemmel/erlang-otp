@@ -519,8 +519,11 @@ dnl On ofs1 the '-pthread' switch should be used
 		ETHR_DEFS="$ETHR_DEFS -D_POSIX_PTHREAD_SEMANTICS" ;;
 	    linux*)
 		ETHR_DEFS="$ETHR_DEFS -D_POSIX_THREAD_SAFE_FUNCTIONS -D_GNU_SOURCE"
-		linux_kernel_vsn_=`uname -r` # FIXME: for cross compilation.
-
+		if test "x$erl_xcomp_linux_kernel" != "x"; then
+		    linux_kernel_vsn_=$erl_xcomp_linux_kernel
+		else
+		    linux_kernel_vsn_=`uname -r`
+		fi
 		usable_sigusrx=no
 		usable_sigaltstack=no
 

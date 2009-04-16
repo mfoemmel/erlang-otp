@@ -69,7 +69,7 @@ DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += -DHIPE_AMD64 +warn_obsolete_guard
+ERL_COMPILE_FLAGS += -DHIPE_AMD64 +warn_exported_vars
 
 # ----------------------------------------------------
 # Targets

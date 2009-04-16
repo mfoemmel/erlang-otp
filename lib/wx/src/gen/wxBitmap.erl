@@ -79,14 +79,16 @@ new(Width,Height)
 new(Filename, Options)
  when is_list(Filename),is_list(Options) ->
   Filename_UC = unicode:characters_to_binary([Filename,0]),
-  MOpts = fun({type, Type}, Acc) -> [<<1:32/?UI,Type:32/?UI>>|Acc]  end,
+  MOpts = fun({type, Type}, Acc) -> [<<1:32/?UI,Type:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxBitmap_new_2_0,
   <<(byte_size(Filename_UC)):32/?UI,(Filename_UC)/binary, 0:(((8- ((4+byte_size(Filename_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>);
 new(#wx_ref{type=ImageT,ref=ImageRef}, Options)
  when is_list(Options) ->
   ?CLASS(ImageT,wxImage),
-  MOpts = fun({depth, Depth}, Acc) -> [<<1:32/?UI,Depth:32/?UI>>|Acc]  end,
+  MOpts = fun({depth, Depth}, Acc) -> [<<1:32/?UI,Depth:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxBitmap_new_2_1,
   <<ImageRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -106,7 +108,8 @@ new(Bits,Width,Height)
   new(Bits,Width,Height, []);
 new(Width,Height, Options)
  when is_integer(Width),is_integer(Height),is_list(Options) ->
-  MOpts = fun({depth, Depth}, Acc) -> [<<1:32/?UI,Depth:32/?UI>>|Acc]  end,
+  MOpts = fun({depth, Depth}, Acc) -> [<<1:32/?UI,Depth:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxBitmap_new_3,
   <<Width:32/?UI,Height:32/?UI, BinOpt/binary>>).
@@ -117,7 +120,8 @@ new(Width,Height, Options)
 new(Bits,Width,Height, Options)
  when is_binary(Bits),is_integer(Width),is_integer(Height),is_list(Options) ->
   wxe_util:send_bin(Bits),
-  MOpts = fun({depth, Depth}, Acc) -> [<<1:32/?UI,Depth:32/?UI>>|Acc]  end,
+  MOpts = fun({depth, Depth}, Acc) -> [<<1:32/?UI,Depth:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxBitmap_new_4,
   <<Width:32/?UI,Height:32/?UI, BinOpt/binary>>).
@@ -149,7 +153,8 @@ create(This,Width,Height)
 create(#wx_ref{type=ThisT,ref=ThisRef},Width,Height, Options)
  when is_integer(Width),is_integer(Height),is_list(Options) ->
   ?CLASS(ThisT,wxBitmap),
-  MOpts = fun({depth, Depth}, Acc) -> [<<1:32/?UI,Depth:32/?UI>>|Acc]  end,
+  MOpts = fun({depth, Depth}, Acc) -> [<<1:32/?UI,Depth:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxBitmap_Create,
   <<ThisRef:32/?UI,Width:32/?UI,Height:32/?UI, 0:32,BinOpt/binary>>).
@@ -212,7 +217,8 @@ loadFile(#wx_ref{type=ThisT,ref=ThisRef},Name, Options)
  when is_list(Name),is_list(Options) ->
   ?CLASS(ThisT,wxBitmap),
   Name_UC = unicode:characters_to_binary([Name,0]),
-  MOpts = fun({type, Type}, Acc) -> [<<1:32/?UI,Type:32/?UI>>|Acc]  end,
+  MOpts = fun({type, Type}, Acc) -> [<<1:32/?UI,Type:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxBitmap_LoadFile,
   <<ThisRef:32/?UI,(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((0+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -239,7 +245,8 @@ saveFile(#wx_ref{type=ThisT,ref=ThisRef},Name,Type, Options)
  when is_list(Name),is_integer(Type),is_list(Options) ->
   ?CLASS(ThisT,wxBitmap),
   Name_UC = unicode:characters_to_binary([Name,0]),
-  MOpts = fun({palette, #wx_ref{type=PaletteT,ref=PaletteRef}}, Acc) ->   ?CLASS(PaletteT,wxPalette),[<<1:32/?UI,PaletteRef:32/?UI>>|Acc]  end,
+  MOpts = fun({palette, #wx_ref{type=PaletteT,ref=PaletteRef}}, Acc) ->   ?CLASS(PaletteT,wxPalette),[<<1:32/?UI,PaletteRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxBitmap_SaveFile,
   <<ThisRef:32/?UI,(byte_size(Name_UC)):32/?UI,(Name_UC)/binary, 0:(((8- ((0+byte_size(Name_UC)) band 16#7)) band 16#7))/unit:8,Type:32/?UI, 0:32,BinOpt/binary>>).

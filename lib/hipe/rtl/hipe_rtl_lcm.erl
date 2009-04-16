@@ -296,7 +296,8 @@ insert_expr_first(CFG0, Label, Instr) ->
 %%      same successor. Since the new bb usually contains very few instructions
 %%      this should not be a problem.
 insert_expr_between(CFG0, BetweenMap, Pred, Succ, Instr) ->
-  case edge_bb_map_lookup(BetweenMap, {Pred, Succ}) of
+  PredSucc = {Pred, Succ},
+  case edge_bb_map_lookup(BetweenMap, PredSucc) of
     none ->
       NewLabel = hipe_rtl:mk_new_label(),
       NewLabelName = hipe_rtl:label_name(NewLabel),
@@ -304,8 +305,7 @@ insert_expr_between(CFG0, BetweenMap, Pred, Succ, Instr) ->
       Code = [Instr, hipe_rtl:mk_goto(Succ)],
       CFG1 = hipe_rtl_cfg:bb_add(CFG0, NewLabelName, hipe_bb:mk_bb(Code)),
       CFG2 = hipe_rtl_cfg:redirect(CFG1, Pred, Succ, NewLabelName),
-      NewBetweenMap = edge_bb_map_insert(BetweenMap, {Pred, Succ}, 
-					 NewLabelName),
+      NewBetweenMap = edge_bb_map_insert(BetweenMap, PredSucc, NewLabelName),
       pp_debug("    Mapping edge (~w,~w) to label ~w~n", 
 	       [Pred, Succ, NewLabelName]),
       {CFG2, NewBetweenMap};
@@ -688,28 +688,25 @@ calc_later_node(Label, CFG) ->
   Succs = hipe_rtl_cfg:succ(CFG, Label),
   [{edge, Label, Succ} || Succ <- Succs].
 
-calc_later_edge(From, To, _CFG, NodeInfo, EdgeInfo) ->  
-  Earliest = earliest(EdgeInfo, {From, To}),
+calc_later_edge(From, To, _CFG, NodeInfo, EdgeInfo) ->
+  FromTo = {From, To},
+  Earliest = earliest(EdgeInfo, FromTo),
   LaterIn = later_in(NodeInfo, From),
   UpExp = up_exp(NodeInfo, From),
   Later = ?SETS:union(Earliest, ?SETS:subtract(LaterIn, UpExp)),
-
   {Changed, EdgeInfo2} =
-    case lookup_later(EdgeInfo, {From, To}) of 
-      none ->  {true, set_later(EdgeInfo, {From, To}, Later)};
+    case lookup_later(EdgeInfo, FromTo) of
+      none ->  {true, set_later(EdgeInfo, FromTo, Later)};
       Later -> {false, EdgeInfo};
-      _Old ->  {true, set_later(EdgeInfo, {From, To}, Later)}
+      _Old ->  {true, set_later(EdgeInfo, FromTo, Later)}
     end,
-  
   case Changed of 
     true ->
       %% Update later in set of To-node
       case lookup_later_in(NodeInfo, To) of
 	%% If the data isn't set initialize to all expressions
 	none ->
- 	  {set_later_in(NodeInfo, To, Later),
-	   EdgeInfo2, [{node, To}]};
-
+ 	  {set_later_in(NodeInfo, To, Later), EdgeInfo2, [{node, To}]};
 	OldLaterIn ->
 	  NewLaterIn = ?SETS:intersection(OldLaterIn, Later),
 	  %% Check if something changed
@@ -722,7 +719,6 @@ calc_later_edge(From, To, _CFG, NodeInfo, EdgeInfo) ->
 	       EdgeInfo2, [{node, To}]}
 	  end
       end;
-
     false ->
       {NodeInfo, EdgeInfo2, []}
   end.
@@ -1492,8 +1488,9 @@ init_expr_id() ->
 
 -spec new_expr_id() -> non_neg_integer().
 new_expr_id() ->
-  V = get({rtl_lcm, expr_id_count}),
-  put({rtl_lcm,expr_id_count}, V+1),
+  Obj = {rtl_lcm, expr_id_count},
+  V = get(Obj),
+  put(Obj, V+1),
   V.
 
 %%%%%%%%%%%%%%%%%% EDGE BB (INSERT BETWEEN) MAP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

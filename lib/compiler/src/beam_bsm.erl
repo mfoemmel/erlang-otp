@@ -101,7 +101,7 @@ function({function,Name,Arity,Entry,Is}, D0) ->
 	    erlang:raise(Class, Error, Stack)
     end.
 
-btb_opt_1([{test,bs_get_binary2,F,[Reg,_,{atom,all},U,Fs,Reg]}=I0|Is], D, Acc0) ->
+btb_opt_1([{test,bs_get_binary2,F,_,[Reg,{atom,all},U,Fs],Reg}=I0|Is], D, Acc0) ->
     case btb_reaches_match(Is, [Reg], D) of
 	{error,Reason} ->
 	    Comment = btb_comment_no_opt(Reason, Fs),
@@ -115,7 +115,7 @@ btb_opt_1([{test,bs_get_binary2,F,[Reg,_,{atom,all},U,Fs,Reg]}=I0|Is], D, Acc0) 
 		  end,
 	    btb_opt_1(Is, D, Acc)
     end;
-btb_opt_1([{test,bs_get_binary2,F,[Ctx,_,{atom,all},U,Fs,Dst]}=I0|Is], D, Acc0) ->
+btb_opt_1([{test,bs_get_binary2,F,_,[Ctx,{atom,all},U,Fs],Dst}=I0|Is], D, Acc0) ->
     case btb_reaches_match(Is, [Ctx,Dst], D) of
 	{error,Reason} ->
 	    Comment = btb_comment_no_opt(Reason, Fs),
@@ -252,7 +252,7 @@ btb_reaches_match_2([{bif,_,{f,F},Ss,Dst}=I|Is], Regs0, D0) ->
     Regs = btb_kill([Dst], Regs0),
     D = btb_follow_branch(F, Regs, D0),
     btb_reaches_match_1(Is, Regs, D);
-btb_reaches_match_2([{test,bs_start_match2,_,[Ctx,_,_,Ctx]}|Is], Regs, D) ->
+btb_reaches_match_2([{test,bs_start_match2,_,_,[Ctx,_],Ctx}|Is], Regs, D) ->
     case btb_context_regs(Regs) of
 	[Ctx] ->
 	    D;
@@ -262,13 +262,17 @@ btb_reaches_match_2([{test,bs_start_match2,_,[Ctx,_,_,Ctx]}|Is], Regs, D) ->
 		true -> btb_error(unsuitable_bs_start_match)
 	    end
     end;
-btb_reaches_match_2([{test,bs_start_match2,_,[Bin,_,_,Ctx]}|Is], Regs, D) ->
+btb_reaches_match_2([{test,bs_start_match2,_,_,[Bin,_],Ctx}|Is], Regs, D) ->
     CtxRegs = btb_context_regs(Regs),
     case member(Bin, CtxRegs) orelse member(Ctx, CtxRegs) of
 	false -> btb_reaches_match_2(Is, Regs, D);
 	true -> btb_error(unsuitable_bs_start_match)
     end;
 btb_reaches_match_2([{test,_,{f,F},Ss}=I|Is], Regs, D0) ->
+    btb_ensure_not_used(Ss, I, Regs),
+    D = btb_follow_branch(F, Regs, D0),
+    btb_reaches_match_1(Is, Regs, D);
+btb_reaches_match_2([{test,_,{f,F},_,Ss,_}=I|Is], Regs, D0) ->
     btb_ensure_not_used(Ss, I, Regs),
     D = btb_follow_branch(F, Regs, D0),
     btb_reaches_match_1(Is, Regs, D);
@@ -502,7 +506,7 @@ btb_set_context({y,N}, {Xregs,Yregs}) ->
 
 %% btb_ensure_not_used([Register], Instruction, RegisterSet) -> ok
 %%  If any register in RegisterSet (the register(s) known to contain
-%%  the match context) is used in the list of register, generate an error.
+%%  the match context) is used in the list of registers, generate an error.
 
 btb_ensure_not_used(Rs, I, Regs) ->
     case lists:any(fun(R) -> btb_contains_context(R, Regs) end, Rs) of
@@ -579,7 +583,7 @@ btb_index_1([{function,_,_,Entry,Is0}|Fs], Acc0) ->
     btb_index_1(Fs, Acc);
 btb_index_1([], Acc) -> gb_trees:from_orddict(sort(Acc)).
 
-btb_index_2([{test,bs_start_match2,{f,_},[Reg,_,_,Reg]}|_],
+btb_index_2([{test,bs_start_match2,{f,_},_,[Reg,_],Reg}|_],
 	    Entry, MustSave, Acc) ->
     [{Entry,{Reg,MustSave}}|Acc];
 btb_index_2(Is0, Entry, _, Acc) ->

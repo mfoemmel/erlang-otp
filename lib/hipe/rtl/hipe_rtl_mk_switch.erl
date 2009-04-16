@@ -29,16 +29,12 @@
 %%              Should be extended to handle bignums and floats.
 %%
 %%  History  :	* 2001-02-28 Erik Johansson (happi@it.uu.se): 
-%%               Created.
+%%                Created.
 %%              * 2001-04-01 Erik Trulsson (ertr1013@csd.uu.se):
 %%                           Stefan Lindström (stli3993@csd.uu.se):
-%%               Added clustering and inlined binary search trees.
+%%                Added clustering and inlined binary search trees.
 %%              * 2001-07-30 EJ (happi@it.uu.se):
-%%               Fixed some bugs and started cleanup.
-%%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2008/04/20 13:01:14 $
-%%              $Revision: 1.25 $
+%%                Fixed some bugs and started cleanup.
 %% ====================================================================
 %%  Exports  :
 %%    gen_switch_val(I, VarMap, ConstTab, Options)
@@ -46,7 +42,8 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_rtl_mk_switch).
--export([gen_switch_val/4,gen_switch_tuple/4]).
+
+-export([gen_switch_val/4, gen_switch_tuple/4]).
 
 %%-------------------------------------------------------------------------
 

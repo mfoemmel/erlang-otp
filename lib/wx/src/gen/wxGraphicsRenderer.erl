@@ -98,7 +98,8 @@ createFont(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=FontT,ref=FontRef}, Opti
  when is_list(Options) ->
   ?CLASS(ThisT,wxGraphicsRenderer),
   ?CLASS(FontT,wxFont),
-  MOpts = fun({col, Col}, Acc) -> [<<1:32/?UI,(wxe_util:colour_bin(Col)):16/binary,0:32>>|Acc]  end,
+  MOpts = fun({col, Col}, Acc) -> [<<1:32/?UI,(wxe_util:colour_bin(Col)):16/binary,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGraphicsRenderer_CreateFont,
   <<ThisRef:32/?UI,FontRef:32/?UI, BinOpt/binary>>).
@@ -120,7 +121,8 @@ createMatrix(#wx_ref{type=ThisT,ref=ThisRef}, Options)
           ({c, C}, Acc) -> [<<3:32/?UI,0:32,C:64/?F>>|Acc];
           ({d, D}, Acc) -> [<<4:32/?UI,0:32,D:64/?F>>|Acc];
           ({tx, Tx}, Acc) -> [<<5:32/?UI,0:32,Tx:64/?F>>|Acc];
-          ({ty, Ty}, Acc) -> [<<6:32/?UI,0:32,Ty:64/?F>>|Acc]  end,
+          ({ty, Ty}, Acc) -> [<<6:32/?UI,0:32,Ty:64/?F>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGraphicsRenderer_CreateMatrix,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).

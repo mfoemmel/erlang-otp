@@ -41,8 +41,8 @@
 -spec new() -> #hipe_digraph{}.
 
 new() ->
-  #hipe_digraph{edges=dict:new(), rev_edges=dict:new(), 
-		leaves=ordsets:new(), nodes=sets:new()}.
+  #hipe_digraph{edges = dict:new(), rev_edges = dict:new(), 
+		leaves = ordsets:new(), nodes = sets:new()}.
 
 -spec from_list([_]) -> #hipe_digraph{}.
 
@@ -63,11 +63,12 @@ from_list(List) ->
   Keys1 = sets:from_list(dict:fetch_keys(Edges)),
   Keys2 = sets:from_list(dict:fetch_keys(RevEdges)),
   Nodes = sets:union(Keys1, Keys2),
-  #hipe_digraph{edges=Edges, leaves=[], rev_edges=RevEdges, nodes=Nodes}.
+  #hipe_digraph{edges = Edges, rev_edges = RevEdges,
+		leaves = [], nodes = Nodes}.
 
 -spec to_list(#hipe_digraph{}) -> [_].
 
-to_list(#hipe_digraph{edges=Edges}) ->
+to_list(#hipe_digraph{edges = Edges}) ->
   List1 = dict:to_list(Edges),
   List2 = lists:foldl(fun({From, ToList}, Acc) ->
 			  [[{From, To} || To <- ToList]|Acc]
@@ -77,34 +78,34 @@ to_list(#hipe_digraph{edges=Edges}) ->
 -spec add_node(_, #hipe_digraph{}) -> #hipe_digraph{}.
 
 add_node(NewNode, DG = #hipe_digraph{nodes=Nodes}) ->
-  DG#hipe_digraph{nodes=sets:add_element(NewNode, Nodes)}.
+  DG#hipe_digraph{nodes = sets:add_element(NewNode, Nodes)}.
 
 -spec add_node_list([_], #hipe_digraph{}) -> #hipe_digraph{}.
 
 add_node_list(NewNodes, DG = #hipe_digraph{nodes=Nodes}) ->
   Set = sets:from_list(NewNodes),
-  DG#hipe_digraph{nodes=sets:union(Set, Nodes)}.
+  DG#hipe_digraph{nodes = sets:union(Set, Nodes)}.
 
 -spec add_edge(_, _, #hipe_digraph{}) -> #hipe_digraph{}.
 
-add_edge(From, To, #hipe_digraph{edges=Edges, rev_edges=RevEdges, 
-				 leaves=Leaves, nodes=Nodes}) ->
+add_edge(From, To, #hipe_digraph{edges = Edges, rev_edges = RevEdges, 
+				 leaves = Leaves, nodes = Nodes}) ->
   Fun1 = fun(Set) -> ordsets:add_element(To, Set) end,
   NewEdges = dict:update(From, Fun1, [To], Edges),
   Fun2 = fun(Set) -> ordsets:add_element(From, Set) end,
   NewRevEdges = dict:update(To, Fun2, [From], RevEdges),
   NewLeaves = ordsets:del_element(From, Leaves),
-  #hipe_digraph{edges=NewEdges,
-		rev_edges=NewRevEdges,
-		leaves=NewLeaves,
-		nodes=sets:add_element(From, sets:add_element(To, Nodes))}.
+  #hipe_digraph{edges = NewEdges,
+		rev_edges = NewRevEdges,
+		leaves = NewLeaves,
+		nodes = sets:add_element(From, sets:add_element(To, Nodes))}.
 
 %%-------------------------------------------------------------------------
 
 -spec take_indep_scc(#hipe_digraph{}) -> 'none' | {'ok', [_], #hipe_digraph{}}.
 
-take_indep_scc(DG = #hipe_digraph{edges=Edges, rev_edges=RevEdges, 
-				  leaves=Leaves, nodes=Nodes}) ->
+take_indep_scc(DG = #hipe_digraph{edges = Edges, rev_edges = RevEdges, 
+				  leaves = Leaves, nodes = Nodes}) ->
   case sets:size(Nodes) =:= 0 of
     true -> none;
     false ->
@@ -126,8 +127,8 @@ take_indep_scc(DG = #hipe_digraph{edges=Edges, rev_edges=RevEdges,
       NewRevEdges = remove_edges(SCC, RevEdges, Edges),
       NewNodes = sets:subtract(Nodes, sets:from_list(SCC)),
       {ok, reverse_preorder(SCC, Edges),
-       DG#hipe_digraph{edges=NewEdges, rev_edges=NewRevEdges, 
-		       leaves=NewLeaves, nodes=NewNodes}}
+       DG#hipe_digraph{edges = NewEdges, rev_edges = NewRevEdges, 
+		       leaves = NewLeaves, nodes = NewNodes}}
   end.
 
 find_all_leaves(Edges) ->
@@ -142,34 +143,35 @@ remove_edges(Nodes0, Edges, RevEdges) ->
   Edges1 = lists:foldl(Fun, Edges, Nodes),
   remove_edges_in(Nodes, Edges1, RevEdges).
 
-remove_edges_in([Node|Left], Edges, RevEdges) ->
-  case dict:find(Node, RevEdges) of
-    error ->
-      remove_edges_in(Left, Edges, RevEdges);
-    {ok, Set} ->
-      Fun = fun(Key, Dict) ->
-		case dict:find(Key, Dict) of
-		  error -> 
-		    Dict;
-		  {ok, OldTo} ->
-		    case ordsets:del_element(Node, OldTo) of
-		      [] -> dict:store(Key, [Key], Dict);
-		      NewSet -> dict:store(Key, NewSet, Dict)
-		    end
-		end
-	    end,
-      NewEdges = lists:foldl(Fun, Edges, Set),
-      remove_edges_in(Left, NewEdges, RevEdges)
-  end;
+remove_edges_in([Node|Nodes], Edges, RevEdges) ->
+  NewEdges = 
+    case dict:find(Node, RevEdges) of
+      error ->
+	Edges;
+      {ok, Set} ->
+	Fun = fun(Key, Dict) ->
+		  case dict:find(Key, Dict) of
+		    error -> 
+		      Dict;
+		    {ok, OldTo} ->
+		      case ordsets:del_element(Node, OldTo) of
+			[] -> dict:store(Key, [Key], Dict);
+			NewSet -> dict:store(Key, NewSet, Dict)
+		      end
+		  end
+	      end,
+	lists:foldl(Fun, Edges, Set)    
+  end,
+  remove_edges_in(Nodes, NewEdges, RevEdges);
 remove_edges_in([], Edges, _RevEdges) ->
   Edges.
 
-reverse_preorder([Node], _Edges) ->
-  [Node];
-reverse_preorder(Nodes0 = [H|_], Edges) ->
-  Nodes = sets:from_list(Nodes0),
-  {PreOrder, _} = dfs(H, Edges),
-  DFS = [X || X <- PreOrder, sets:is_element(X, Nodes)],
+reverse_preorder([_] = Nodes, _Edges) ->
+  Nodes;
+reverse_preorder([N|_] = Nodes, Edges) ->
+  NodeSet = sets:from_list(Nodes),
+  {PreOrder, _} = dfs(N, Edges),
+  DFS = [X || X <- PreOrder, sets:is_element(X, NodeSet)],
   lists:reverse(DFS).
 
 %%---------------------------------------------------------------------
@@ -189,7 +191,7 @@ reverse_preorder_sccs(DG, Acc) ->
 
 -spec get_parents(_, #hipe_digraph{}) -> [_].
 
-get_parents(Node, #hipe_digraph{rev_edges=RevEdges}) ->
+get_parents(Node, #hipe_digraph{rev_edges = RevEdges}) ->
   case dict:is_key(Node, RevEdges) of
     true -> dict:fetch(Node, RevEdges);
     false -> []
@@ -197,7 +199,7 @@ get_parents(Node, #hipe_digraph{rev_edges=RevEdges}) ->
 
 -spec get_children(_, #hipe_digraph{}) -> [_].
 
-get_children(Node, #hipe_digraph{edges=Edges}) ->
+get_children(Node, #hipe_digraph{edges = Edges}) ->
   case dict:is_key(Node, Edges) of
     true -> dict:fetch(Node, Edges);
     false -> []

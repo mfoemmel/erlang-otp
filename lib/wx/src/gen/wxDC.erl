@@ -67,7 +67,8 @@ blit(#wx_ref{type=ThisT,ref=ThisRef},{DestPtX,DestPtY},{SzW,SzH},#wx_ref{type=So
   ?CLASS(SourceT,wxDC),
   MOpts = fun({rop, Rop}, Acc) -> [<<1:32/?UI,Rop:32/?UI>>|Acc];
           ({useMask, UseMask}, Acc) -> [<<2:32/?UI,(wxe_util:from_bool(UseMask)):32/?UI>>|Acc];
-          ({srcPtMask, {SrcPtMaskX,SrcPtMaskY}}, Acc) -> [<<3:32/?UI,SrcPtMaskX:32/?UI,SrcPtMaskY:32/?UI,0:32>>|Acc]  end,
+          ({srcPtMask, {SrcPtMaskX,SrcPtMaskY}}, Acc) -> [<<3:32/?UI,SrcPtMaskX:32/?UI,SrcPtMaskY:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxDC_Blit,
   <<ThisRef:32/?UI,DestPtX:32/?UI,DestPtY:32/?UI,SzW:32/?UI,SzH:32/?UI,SourceRef:32/?UI,SrcPtX:32/?UI,SrcPtY:32/?UI, BinOpt/binary>>).
@@ -162,7 +163,8 @@ drawBitmap(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=BmpT,ref=BmpRef},{PtX,Pt
  when is_integer(PtX),is_integer(PtY),is_list(Options) ->
   ?CLASS(ThisT,wxDC),
   ?CLASS(BmpT,wxBitmap),
-  MOpts = fun({useMask, UseMask}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(UseMask)):32/?UI>>|Acc]  end,
+  MOpts = fun({useMask, UseMask}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(UseMask)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxDC_DrawBitmap,
   <<ThisRef:32/?UI,BmpRef:32/?UI,PtX:32/?UI,PtY:32/?UI, BinOpt/binary>>).
@@ -230,7 +232,8 @@ drawLabel(#wx_ref{type=ThisT,ref=ThisRef},Text,{RectX,RectY,RectW,RectH}, Option
   ?CLASS(ThisT,wxDC),
   Text_UC = unicode:characters_to_binary([Text,0]),
   MOpts = fun({alignment, Alignment}, Acc) -> [<<1:32/?UI,Alignment:32/?UI>>|Acc];
-          ({indexAccel, IndexAccel}, Acc) -> [<<2:32/?UI,IndexAccel:32/?UI>>|Acc]  end,
+          ({indexAccel, IndexAccel}, Acc) -> [<<2:32/?UI,IndexAccel:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxDC_DrawLabel,
   <<ThisRef:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI, BinOpt/binary>>).
@@ -256,7 +259,8 @@ drawLines(#wx_ref{type=ThisT,ref=ThisRef},Points, Options)
  when is_list(Points),is_list(Options) ->
   ?CLASS(ThisT,wxDC),
   MOpts = fun({xoffset, Xoffset}, Acc) -> [<<1:32/?UI,Xoffset:32/?UI>>|Acc];
-          ({yoffset, Yoffset}, Acc) -> [<<2:32/?UI,Yoffset:32/?UI>>|Acc]  end,
+          ({yoffset, Yoffset}, Acc) -> [<<2:32/?UI,Yoffset:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxDC_DrawLines,
   <<ThisRef:32/?UI,(length(Points)):32/?UI,
@@ -276,7 +280,8 @@ drawPolygon(#wx_ref{type=ThisT,ref=ThisRef},Points, Options)
   ?CLASS(ThisT,wxDC),
   MOpts = fun({xoffset, Xoffset}, Acc) -> [<<1:32/?UI,Xoffset:32/?UI>>|Acc];
           ({yoffset, Yoffset}, Acc) -> [<<2:32/?UI,Yoffset:32/?UI>>|Acc];
-          ({fillStyle, FillStyle}, Acc) -> [<<3:32/?UI,FillStyle:32/?UI>>|Acc]  end,
+          ({fillStyle, FillStyle}, Acc) -> [<<3:32/?UI,FillStyle:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxDC_DrawPolygon,
   <<ThisRef:32/?UI,(length(Points)):32/?UI,
@@ -366,7 +371,8 @@ floodFill(This,Pt={PtX,PtY},Col)
 floodFill(#wx_ref{type=ThisT,ref=ThisRef},{PtX,PtY},Col, Options)
  when is_integer(PtX),is_integer(PtY),tuple_size(Col) =:= 3; tuple_size(Col) =:= 4,is_list(Options) ->
   ?CLASS(ThisT,wxDC),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxDC_FloodFill,
   <<ThisRef:32/?UI,PtX:32/?UI,PtY:32/?UI,(wxe_util:colour_bin(Col)):16/binary, 0:32,BinOpt/binary>>).
@@ -460,7 +466,8 @@ getMultiLineTextExtent(#wx_ref{type=ThisT,ref=ThisRef},String, Options)
  when is_list(String),is_list(Options) ->
   ?CLASS(ThisT,wxDC),
   String_UC = unicode:characters_to_binary([String,0]),
-  MOpts = fun({font, #wx_ref{type=FontT,ref=FontRef}}, Acc) ->   ?CLASS(FontT,wxFont),[<<1:32/?UI,FontRef:32/?UI>>|Acc]  end,
+  MOpts = fun({font, #wx_ref{type=FontT,ref=FontRef}}, Acc) ->   ?CLASS(FontT,wxFont),[<<1:32/?UI,FontRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxDC_GetMultiLineTextExtent_4,
   <<ThisRef:32/?UI,(byte_size(String_UC)):32/?UI,(String_UC)/binary, 0:(((8- ((0+byte_size(String_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -534,7 +541,8 @@ getTextExtent(#wx_ref{type=ThisT,ref=ThisRef},String, Options)
  when is_list(String),is_list(Options) ->
   ?CLASS(ThisT,wxDC),
   String_UC = unicode:characters_to_binary([String,0]),
-  MOpts = fun({theFont, #wx_ref{type=TheFontT,ref=TheFontRef}}, Acc) ->   ?CLASS(TheFontT,wxFont),[<<1:32/?UI,TheFontRef:32/?UI>>|Acc]  end,
+  MOpts = fun({theFont, #wx_ref{type=TheFontT,ref=TheFontRef}}, Acc) ->   ?CLASS(TheFontT,wxFont),[<<1:32/?UI,TheFontRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxDC_GetTextExtent_4,
   <<ThisRef:32/?UI,(byte_size(String_UC)):32/?UI,(String_UC)/binary, 0:(((8- ((0+byte_size(String_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -583,7 +591,8 @@ gradientFillLinear(This,Rect={RectX,RectY,RectW,RectH},InitialColour,DestColour)
 gradientFillLinear(#wx_ref{type=ThisT,ref=ThisRef},{RectX,RectY,RectW,RectH},InitialColour,DestColour, Options)
  when is_integer(RectX),is_integer(RectY),is_integer(RectW),is_integer(RectH),tuple_size(InitialColour) =:= 3; tuple_size(InitialColour) =:= 4,tuple_size(DestColour) =:= 3; tuple_size(DestColour) =:= 4,is_list(Options) ->
   ?CLASS(ThisT,wxDC),
-  MOpts = fun({nDirection, NDirection}, Acc) -> [<<1:32/?UI,NDirection:32/?UI>>|Acc]  end,
+  MOpts = fun({nDirection, NDirection}, Acc) -> [<<1:32/?UI,NDirection:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxDC_GradientFillLinear,
   <<ThisRef:32/?UI,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI,(wxe_util:colour_bin(InitialColour)):16/binary,(wxe_util:colour_bin(DestColour)):16/binary, 0:32,BinOpt/binary>>).

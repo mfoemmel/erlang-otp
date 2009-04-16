@@ -21,22 +21,17 @@
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
 %% Time-stamp: <2008-04-20 14:55:35 richard>
 %% ====================================================================
-%%  Filename : 	hipe_rtl_varmap.erl
 %%  Module   :	hipe_rtl_varmap
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 2001-04-10 Erik Johansson (happi@it.uu.se): 
-%%               Created.
-%%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2009/02/06 18:09:54 $
-%%              $Revision: 1.20 $
+%%  History  :	* 2001-04-10 Erik Johansson (happi@it.uu.se): Created.
 %% ====================================================================
 %%  Exports  :
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_rtl_varmap).
+
 -export([init/1,
 	 ivs2rvs/2,
 	 icode_var2rtl_var/2,

@@ -216,7 +216,7 @@
     the cases will be executed in a sequence, meaning if one case fails, all
     following cases will be skipped. If <c>shuffle</c> is specified, the cases
     in the group will be executed in random order. The <c>repeat</c> property
-    orders Common Test to repeat execution of the cases in the group a given
+    orders Test Server to repeat execution of the cases in the group a given
     number of times, or until any, or all, cases fail or succeed.</p>
 
     <p>Properties may be combined so that e.g. if <c>shuffle</c>, 
@@ -225,8 +225,8 @@
     a test case fails, when execution is immediately stopped and the rest of 
     the cases skipped.</p>
 
-    <p>The properties for a group is always printed on the top of the HTML log 
-    for the group's init function. Also, the total execution time for a group
+    <p>The properties for a conf case is always printed on the top of the HTML log 
+    for the group's init function. Also, the total execution time for a conf case
     can be found at the bottom of the log for the group's end function.</p>
 
     <p>Configuration cases may be nested so that sets of grouped cases can be 

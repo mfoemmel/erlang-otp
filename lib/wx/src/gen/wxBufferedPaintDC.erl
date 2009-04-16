@@ -83,7 +83,8 @@ new(Window,Buffer)
 new(#wx_ref{type=WindowT,ref=WindowRef}, Options)
  when is_list(Options) ->
   ?CLASS(WindowT,wxWindow),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxBufferedPaintDC_new_2,
   <<WindowRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -95,7 +96,8 @@ new(#wx_ref{type=WindowT,ref=WindowRef},#wx_ref{type=BufferT,ref=BufferRef}, Opt
  when is_list(Options) ->
   ?CLASS(WindowT,wxWindow),
   ?CLASS(BufferT,wxBitmap),
-  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc]  end,
+  MOpts = fun({style, Style}, Acc) -> [<<1:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxBufferedPaintDC_new_3,
   <<WindowRef:32/?UI,BufferRef:32/?UI, BinOpt/binary>>).

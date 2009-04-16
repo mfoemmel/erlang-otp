@@ -33,6 +33,8 @@
          incl_cond,        % include | exclude | derived
          debug_info,       % keep | strip
          app_file,         % keep | strip | all
+	 profile,          % standalone | development | embedded
+	 emu_name,         % string()
          incl_erts_dirs,   % all | [directory()] | {add, [directory()]} | {del, [directory()]}
          excl_erts_dirs,   % all | [directory()] | {add, [directory()]} | {del, [directory()]}
          incl_app_dirs,    % all | [directory()] | {add, [directory()]} | {del, [directory()]}

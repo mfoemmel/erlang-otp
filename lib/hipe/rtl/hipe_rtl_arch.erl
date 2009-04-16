@@ -22,10 +22,6 @@
 %%=====================================================================
 %%  Filename : 	hipe_rtl_arch.erl
 %%  History  :	* 2001-04-10 Erik Johansson (happi@it.uu.se): Created.
-%%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2009/01/21 20:20:57 $
-%%              $Revision: 1.69 $
 %%=====================================================================
 %% @doc
 %%
@@ -36,6 +32,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_rtl_arch).
+
 -export([first_virtual_reg/0,
 	 heap_pointer/0,
 	 heap_limit/0,

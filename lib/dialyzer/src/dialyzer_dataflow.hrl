@@ -1,4 +1,3 @@
-%%
 %% -*- erlang-indent-level: 2 -*-
 %%-----------------------------------------------------------------------
 %% %CopyrightBegin%
@@ -41,29 +40,28 @@
 %% Basic types used in the race analysis
 %%-----------------------------------------------------------------------
 
--type fun_type() :: non_neg_integer() | mfa().
+-type rcommand() :: dep_calls() | warn_calls() | fun_calls() | case_tags().
+-type dep_list() :: [dep_calls()].
 
 %%----------------------------------------------------------------------
 %% Record declarations used by dialyzer_dataflow and dialyzer_races
 %%----------------------------------------------------------------------
 
--record(dialyzer_races, {curr_fun = {}         :: tuple(),
-                         curr_fun_label        :: non_neg_integer(),
-                         local_calls = []      :: [_], % module local calls
-			 race_list = []        :: [_],
-			 race_warnings = []    :: [dial_warning()],
-                         prev_fun_call         :: non_neg_integer(),
-                         prev_fun_label = []   :: [non_neg_integer()]}).
+-record(dialyzer_races, {curr_fun           :: mfa_or_funlbl(),
+                         curr_fun_label     :: label(),
+                         local_calls   = [] :: [_], % TO FIX
+                         public_tables = [] :: [atom()],
+			 race_list     = [] :: code(),
+			 race_warnings = [] :: [dial_warning()]}).
 
--record(state, {callgraph                      :: #dialyzer_callgraph{},
-		envs                           :: dict(),
-		fun_tab		               :: dict(),
-		plt		               :: #dialyzer_plt{},
-		opaques                        :: [erl_type()],
-		races                          :: #dialyzer_races{},
-		records                        :: dict(),
-		tree_map	               :: dict(),
-		warning_mode = 'false'         :: bool(),
-		warnings = []                  :: [dial_warning()],
-		work                           :: {[_], [_], set()}}).
-
+-record(state, {callgraph                   :: #dialyzer_callgraph{},
+		envs                        :: dict(),
+		fun_tab		            :: dict(),
+		plt		            :: #dialyzer_plt{},
+		opaques                     :: [erl_type()],
+		races                       :: #dialyzer_races{},
+		records                     :: dict(),
+		tree_map	            :: dict(),
+		warning_mode = false	    :: bool(),
+		warnings = []               :: [dial_warning()],
+		work                        :: {[_], [_], set()}}).

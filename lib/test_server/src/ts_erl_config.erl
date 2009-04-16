@@ -49,7 +49,7 @@ variables(Base0, OsType) ->
 
 get_app_vars(AppFun, Vars, OsType) ->
     case catch AppFun(Vars,OsType) of
-	Res when list(Res) ->
+	Res when is_list(Res) ->
 	    Res;
 	{cannot_find_app, App} ->
 	    io:format("* WARNING: Cannot find ~p!~n", [App]),
@@ -376,7 +376,7 @@ is_source_build() ->
 
 is_debug_build() ->
     case catch string:str(erlang:system_info(system_version), "debug") of
-	Int when integer(Int), Int > 0 ->
+	Int when is_integer(Int), Int > 0 ->
 	    true;
 	_ ->
 	    false

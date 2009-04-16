@@ -65,7 +65,9 @@ int wxeReturn::send() {
     driver_free(rtData);
 
     if(res == -1) {
-      fprintf(stderr, "WX send failed %d \r\n", res);
+      wxString msg;
+      msg.Printf(wxT("Failed to send return or event msg"));
+      send_msg("internal_error", &msg);
     }
     reset();
     return res;

@@ -352,6 +352,7 @@ bif erlang:make_tuple/2
 bif 'erl.lang.tuple':make/2		ebif_make_tuple_2
 bif erlang:append_element/2
 bif 'erl.lang.tuple':append_element/2	ebif_append_element_2
+bif erlang:make_tuple/3
 
 bif erlang:system_flag/2
 bif 'erl.system':set_flag/2	ebif_system_flag_2
@@ -722,7 +723,7 @@ bif erlang:decode_packet/3
 #
 bif unicode:characters_to_binary/2
 bif unicode:characters_to_list/2
-
+bif unicode:bin_is_7bit/1
 #
 # New Bifs in R13A.
 #

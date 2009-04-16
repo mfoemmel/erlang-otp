@@ -98,33 +98,84 @@
 %%    3.10
 %%      |
 %%      v
-%%   3.10.0.1
+%%  3.10.0.1
+%%      |
+%%      v
+%%   3.10.1
 %%
 %%
-{"3.10.0.1",
+{"3.10.1",
  [
+  {"3.10.0.1",
+   [
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3a, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3c, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v3, soft_purge, soft_purge, []}
+   ]
+  },
   {"3.10",
    [
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3a, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3c, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v3, soft_purge, soft_purge, []}
    ]
   },
   {"3.9.4",
    [
     {load_module, megaco, soft_purge, soft_purge, [megaco_messenger]},
     {load_module, megaco_user_default, soft_purge, soft_purge, []},
-    {load_module, megaco_messenger, soft_purge, soft_purge, []}
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3a, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3c, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v3, soft_purge, soft_purge, []}
    ]
   }
  ],
  [
+  {"3.10.0.1",
+   [
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3a, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3c, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v3, soft_purge, soft_purge, []}
+   ]
+  },
   {"3.10",
    [
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3a, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3c, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v3, soft_purge, soft_purge, []}
    ]
   },
   {"3.9.4",
    [
     {load_module, megaco, soft_purge, soft_purge, [megaco_messenger]},
     {load_module, megaco_user_default, soft_purge, soft_purge, []},
-    {load_module, megaco_messenger, soft_purge, soft_purge, []}
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3a, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3c, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v3, soft_purge, soft_purge, []}
    ]
   }
  ]

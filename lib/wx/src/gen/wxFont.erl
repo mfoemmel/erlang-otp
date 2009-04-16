@@ -69,7 +69,8 @@ new(Size,Family,Style,Weight, Options)
  when is_integer(Size),is_integer(Family),is_integer(Style),is_integer(Weight),is_list(Options) ->
   MOpts = fun({underlined, Underlined}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Underlined)):32/?UI>>|Acc];
           ({face, Face}, Acc) ->   Face_UC = unicode:characters_to_binary([Face,0]),[<<2:32/?UI,(byte_size(Face_UC)):32/?UI,(Face_UC)/binary, 0:(((8- ((0+byte_size(Face_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
-          ({encoding, Encoding}, Acc) -> [<<3:32/?UI,Encoding:32/?UI>>|Acc]  end,
+          ({encoding, Encoding}, Acc) -> [<<3:32/?UI,Encoding:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxFont_new_5,
   <<Size:32/?UI,Family:32/?UI,Style:32/?UI,Weight:32/?UI, BinOpt/binary>>).

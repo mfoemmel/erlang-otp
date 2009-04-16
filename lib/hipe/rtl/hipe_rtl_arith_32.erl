@@ -31,15 +31,11 @@
 %%                   Look here for strange bugs appearing when
 %%                   turning on rtl_prop.
 %%
-%%  History  :	* 2002-10-23 Erik Stenman (happi@it.uu.se): 
-%%               Created.
-%%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2008/04/20 13:01:13 $
-%%              $Revision: 1.7 $
+%%  History  :	* 2002-10-23 Erik Stenman (happi@it.uu.se): Created.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_rtl_arith_32).
+
 -export([eval_alu/3, eval_alub/4, eval_cond/3, eval_cond_bits/5]).
 
 -define(BITS, 32).

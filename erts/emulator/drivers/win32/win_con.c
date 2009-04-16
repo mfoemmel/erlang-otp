@@ -111,7 +111,7 @@ static HWND hTBWnd;
 static HWND hComboWnd;
 static HANDLE console_input;
 static HANDLE console_output;
-static int cxChar,cyChar;
+static int cxChar,cyChar, cxCharMax;
 static int cxClient,cyClient;
 static int cyToolBar;
 static int iVscrollPos,iHscrollPos;
@@ -228,7 +228,7 @@ static int con_vprintf(char *format, va_list arg_list)
     erts_dsprintf_buf_t dsbuf = ERTS_DSPRINTF_BUF_INITER(grow_con_vprintf_buf);
     res = erts_vdsprintf(&dsbuf, format, arg_list);
     if (res >= 0) {
-	TCHAR *tmp = ALLOC(dsbuf.str_len);
+	TCHAR *tmp = ALLOC(dsbuf.str_len*sizeof(TCHAR));
 	for (i=0;i<dsbuf.str_len;++i) {
 	    tmp[i] = dsbuf.str[i];
 	}
@@ -292,6 +292,37 @@ int ConPutChar(Uint32 c)
     sbuf[0] = c;
     write_outbuf(sbuf, 1);
     return 1;
+}
+
+static int GetXFromLine(HDC hdc, int hscroll, int xpos,ScreenLine_t *pLine)
+{
+   SIZE size;
+   int hscrollPix = hscroll * cxChar; 
+
+   if (pLine == NULL) {
+       return 0;
+   }
+
+   if (pLine->width < xpos) {
+       return (canvasColumns-hscroll)*cxChar;
+   }
+   /* Not needed (?): SelectObject(hdc,CreateFontIndirect(&logfont)); */
+   if (GetTextExtentPoint32(hdc,pLine->text,xpos,&size)) {
+#ifdef HARDDEBUG
+       fprintf(stderr,"size.cx:%d\n",(int)size.cx);
+       fflush(stderr);
+#endif
+       if (hscrollPix >= size.cx) {
+	   return 0;
+       }
+       return ((int) size.cx) - hscrollPix;
+   } else {
+       return (xpos-hscroll)*cxChar;
+   }
+}
+
+static int GetXFromCurrentY(HDC hdc, int hscroll, int xpos) {
+    return GetXFromLine(hdc, hscroll, xpos, GetLineFromY(cur_y));
 }
 
 void ConSetCursor(int from, int to)
@@ -518,7 +549,7 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
         return 1;
     case WM_SETFOCUS :
         CreateCaret(hClientWnd, NULL, cxChar, cyChar);
-        SetCaretPos((cur_x)*cxChar, (cur_y-iVscrollPos)*cyChar);
+        SetCaretPos(GetXFromCurrentY(GetDC(hwnd),0,cur_x), (cur_y-iVscrollPos)*cyChar);
         ShowCaret(hClientWnd);
         return 0;
     case WM_KILLFOCUS:
@@ -699,7 +730,7 @@ Client_OnCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
     iVscrollPos = 0;
     iHscrollPos = 0;
     return TRUE;
-}
+}       
 
 static void
 Client_OnPaint(HWND hwnd)
@@ -725,10 +756,9 @@ Client_OnPaint(HWND hwnd)
     if (fTextSelected || fSelecting) {
 	InvertSelectionArea(hwnd);
     }
-    SetCaretPos((cur_x-iHscrollPos)*cxChar, (cur_y-iVscrollPos)*cyChar);
+    SetCaretPos(GetXFromCurrentY(hdc,iHscrollPos,cur_x), (cur_y-iVscrollPos)*cyChar);
     EndPaint(hwnd, &ps);
 }
-
 #ifdef HARDDEBUG
 static void dump_linebufs(void) {
     char *buff;
@@ -751,7 +781,7 @@ static void dump_linebufs(void) {
 }
 #endif	    
 
-static void reorganize_linebufs(void) {
+static void reorganize_linebufs(HWND hwnd) {
     ScreenLine_t *otop = buffer_top;
     ScreenLine_t *obot = buffer_bottom;
     ScreenLine_t *next;
@@ -787,7 +817,8 @@ static void reorganize_linebufs(void) {
 	    cur_x++;
             if (cur_x > cur_line->width)
 		cur_line->width = cur_x; 
-            if (cur_x  >= LINE_LENGTH) {
+	    if (GetXFromCurrentY(GetDC(hwnd),0,cur_x) + cxChar > 
+		(LINE_LENGTH * cxChar)) {
                 ConCarriageFeed(0);
 	    }
 	}
@@ -800,18 +831,16 @@ static void reorganize_linebufs(void) {
 	FREE(otop);
 	otop = next;
     }
-    i = cpos / canvasColumns;
-    cur_x -= (cpos % canvasColumns); 
-    if (cur_x < 0) {
-	++i;
-	cur_x += canvasColumns;
+    while (cpos) {
+	cur_x--;
+	if (cur_x < 0) {
+	    cur_y--;
+	    cur_line = cur_line->prev;
+	    cur_x = cur_line->width-1;
+	}
+	cpos--;
     }
-    ConScrollScreen();
-    cur_y -= i;
-    while(i--) {
-	cur_line = cur_line->prev;
-    }
-    SetCaretPos((cur_x-iHscrollPos)*cxChar, (cur_y-iVscrollPos)*cyChar);
+    SetCaretPos(GetXFromCurrentY(GetDC(hwnd),iHscrollPos,cur_x), (cur_y-iVscrollPos)*cyChar);
 #ifdef HARDDEBUG
     fprintf(stderr,"canvasColumns = %d,nBufLines = %d, cur_x = %d, cur_y = %d\n",
 	    canvasColumns,nBufLines,cur_x,cur_y);
@@ -850,7 +879,7 @@ Client_OnSize(HWND hwnd, UINT state, int cx, int cy)
     if (columns != canvasColumns) {
 	canvasColumns = columns;
 	/*dump_linebufs();*/
-	reorganize_linebufs();
+	reorganize_linebufs(hwnd);
 	fSelecting = fTextSelected = FALSE;
 	InvalidateRect(hwnd, NULL, TRUE);
 #ifdef HARDDEBUG
@@ -859,12 +888,45 @@ Client_OnSize(HWND hwnd, UINT state, int cx, int cy)
 #endif
     }
     
-    SetCaretPos((cur_x-iHscrollPos)*cxChar, (cur_y-iVscrollPos)*cyChar);
+    SetCaretPos(GetXFromCurrentY(GetDC(hwnd),iHscrollPos,cur_x), (cur_y-iVscrollPos)*cyChar);
 }
+
+static void calc_charpoint_from_point(HDC dc, int x, int y, int y_offset, POINT *pt) 
+{
+    int r;
+    int hscrollPix = iHscrollPos * cxChar;
+
+    pt->y = y/cyChar + iVscrollPos + y_offset;
+
+    if (x > (LINE_LENGTH-iHscrollPos) * cxChar) {
+	x =  (LINE_LENGTH-iHscrollPos) * cxChar;
+    }
+    if (pt->y - y_offset > 0 && GetLineFromY(pt->y - y_offset) == NULL) {
+	pt->y = nBufLines - 1 + y_offset;
+	pt->x = GetLineFromY(pt->y - y_offset)->width;
+    } else {
+	for (pt->x = 1; 
+	     (r = GetXFromLine(dc, 0, pt->x, GetLineFromY(pt->y - y_offset))) != 0 && 
+		 (r - hscrollPix) < x; 
+	     ++(pt->x))
+	    ;
+	if ((r - hscrollPix) > x)
+	    --(pt->x);
+#ifdef HARD_SEL_DEBUG
+	fprintf(stderr,"pt->x = %d, iHscrollPos = %d\n",(int) pt->x, iHscrollPos);
+	fflush(stderr);
+#endif
+	if (pt->x <= 0) {
+	    pt->x = x/cxChar + iHscrollPos;
+	}
+    }
+}
+
 
 static void
 Client_OnLButtonDown(HWND hwnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
 {
+    int r;
     SetFocus(GetParent(hwnd));	/* In case combobox steals the focus */
 #ifdef HARD_SEL_DEBUG
     fprintf(stderr,"OnLButtonDown fSelecting = %d, fTextSelected = %d:\n",
@@ -875,8 +937,9 @@ Client_OnLButtonDown(HWND hwnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
 	InvertSelectionArea(hwnd);
     }
     fTextSelected = FALSE;
-    editEnd.x = editBeg.x = x/cxChar + iHscrollPos;
-    editEnd.y = editBeg.y = y/cyChar + iVscrollPos;
+
+    calc_charpoint_from_point(GetDC(hwnd), x, y, 0, &editBeg);
+
     editEnd.x = editBeg.x;
     editEnd.y = editBeg.y + 1;
     fSelecting = TRUE;
@@ -1092,12 +1155,11 @@ Client_OnMouseMove(HWND hwnd, int x, int y, UINT keyFlags)
 {
     if (fSelecting) {
 	RECT rold[3], rnew[3], rupdate[6];
-	int num_updates,i;
+	int num_updates,i,r;
 	POINT from,to;
 	calc_sel_area_turned(rold,editBeg,editEnd);
 
-	editEnd.x = x/cxChar + iHscrollPos;
-	editEnd.y = y/cyChar + iVscrollPos + 1;
+	calc_charpoint_from_point(GetDC(hwnd), x, y, 1, &editEnd);
 
 	calc_sel_area_turned(rnew,editBeg,editEnd);
 	num_updates = diff_sel_area(rold,rnew,rupdate);
@@ -1388,14 +1450,21 @@ DrawSelection(HWND hwnd, POINT pt1, POINT pt2)
 {
     HDC hdc;
     int width,height;
+#ifdef HARD_SEL_DEBUG
+    fprintf(stderr,"pt1.x = %d, pt1.y = %d, pt2.x = %d, pt2.y = %d\n",
+	    (int) pt1.x, (int) pt1.y, (int) pt2.x, (int) pt2.y);
+#endif
+    pt1.x = GetXFromLine(GetDC(hwnd),iHscrollPos,pt1.x,GetLineFromY(pt1.y));
+    pt2.x = GetXFromLine(GetDC(hwnd),iHscrollPos,pt2.x,GetLineFromY(pt2.y-1));
     pt1.y -= iVscrollPos;
     pt2.y -= iVscrollPos;
-    pt1.x -= iHscrollPos;
-    pt2.x -= iHscrollPos;
-    pt1.x *= cxChar;
-    pt2.x *= cxChar;
     pt1.y *= cyChar;
     pt2.y *= cyChar;
+#ifdef HARD_SEL_DEBUG
+    fprintf(stderr,"pt1.x = %d, pt1.y = %d, pt2.x = %d, pt2.y = %d\n",
+	    (int) pt1.x, (int) pt1.y, (int) pt2.x, (int) pt2.y);
+    fflush(stderr);
+#endif
     width = pt2.x-pt1.x;
     height = pt2.y - pt1.y;
     hdc = GetDC(hwnd);
@@ -1590,7 +1659,7 @@ ConFontInitialize(HWND hwnd)
     SetBkColor(hdc,bkgColor);
     GetTextMetrics(hdc, &tm);
     cxChar = tm.tmAveCharWidth;
-    //cxChar = tm.tmMaxCharWidth;
+    cxCharMax = tm.tmMaxCharWidth;
     cyChar = tm.tmHeight + tm.tmExternalLeading;
     ReleaseDC(hwnd, hdc);
 }
@@ -1609,7 +1678,7 @@ ConSetFont(HWND hwnd)
     DeleteObject(SelectObject(hdc, hFontNew));
     GetTextMetrics(hdc, &tm);
     cxChar = tm.tmAveCharWidth;
-    //cxChar = tm.tmMaxCharWidth;
+    cxCharMax = tm.tmMaxCharWidth;
     cyChar = tm.tmHeight + tm.tmExternalLeading;
     fgColor = cf.rgbColors;
     SetTextColor(hdc,fgColor);
@@ -1618,7 +1687,7 @@ ConSetFont(HWND hwnd)
     HideCaret(hwnd);
     if (DestroyCaret()) {
         CreateCaret(hwnd, NULL, cxChar, cyChar);
-        SetCaretPos((cur_x-iHscrollPos)*cxChar, (cur_y-iVscrollPos)*cyChar); 
+        SetCaretPos(GetXFromCurrentY(hdc,iHscrollPos,cur_x), (cur_y-iVscrollPos)*cyChar); 
     }
     ShowCaret(hwnd);
     InvalidateRect(hwnd, NULL, TRUE);
@@ -1769,11 +1838,12 @@ void LogFileWrite(TCHAR *buf, int num_chars)
         case SET_CURSOR:
             buf++;
             from = *((int *)buf);
-            buf+=4;
+            buf += sizeof(int)/sizeof(TCHAR);
             to = *((int *)buf);
-            buf+=3;
-            num_chars-=8;
-            fseek(logfile,to-from *sizeof(TCHAR),SEEK_CUR);
+            buf += (sizeof(int)/sizeof(TCHAR))-1;
+            num_chars -= 2 * (sizeof(int)/sizeof(TCHAR));
+	    // Wont seek in Unicode file, sorry...
+            // fseek(logfile,to-from *sizeof(TCHAR),SEEK_CUR);
             break;
         default:
             _fputtc(*buf,logfile);
@@ -1925,8 +1995,8 @@ ConDrawText(HWND hwnd)
             break;
         case '\n':
             if (nchars > 0) {
-		rc.left = (cur_x - nchars - iHscrollPos) * cxChar;
-		rc.right = rc.left + cxChar*nchars;
+		rc.left = GetXFromCurrentY(GetDC(hwnd),iHscrollPos,cur_x - nchars);
+		rc.right = rc.left + cxCharMax*nchars;
 		rc.top = cyChar * (cur_y-iVscrollPos);
 		rc.bottom = rc.top + cyChar;
 		InvalidateRect(hwnd, &rc, TRUE);
@@ -1936,10 +2006,9 @@ ConDrawText(HWND hwnd)
             ConScrollScreen();
             break;
         case SET_CURSOR:
-	    //DebugBreak();
             if (nchars > 0) { 
-		rc.left = (cur_x - nchars - iHscrollPos) * cxChar;
-		rc.right = rc.left + cxChar*nchars;
+		rc.left = GetXFromCurrentY(GetDC(hwnd),iHscrollPos,cur_x - nchars);
+		rc.right = rc.left + cxCharMax*nchars;
 		rc.top = cyChar * (cur_y-iVscrollPos);
 		rc.bottom = rc.top + cyChar;
 		InvalidateRect(hwnd, &rc, TRUE);
@@ -1951,30 +2020,27 @@ ConDrawText(HWND hwnd)
             to = *((int *)buf);
             buf += (sizeof(int)/sizeof(TCHAR))-1;
             num_chars -= 2 * (sizeof(int)/sizeof(TCHAR));
-	    dc = COL(to) - COL(from);
-	    dl = LINE(to) - LINE(from);
-	    cur_x += dc;
-	    if (cur_x >= LINE_LENGTH) {
-		cur_y++;
-		ensure_line_below();
-		cur_line = cur_line->next;
-		cur_x -= LINE_LENGTH;
-	    } else if (cur_x < 0) {
-		cur_y--;
-		cur_line = cur_line->prev;
-		cur_x += LINE_LENGTH;
-	    }
-	    cur_y += dl;
-	    if (dl > 0) {
-		while (dl--) {
+	    while (to > from) {
+		cur_x++;
+		if (GetXFromCurrentY(GetDC(hwnd),0,cur_x)+cxChar > 
+		    (LINE_LENGTH * cxChar)) {
+		    cur_x = 0;
+		    cur_y++;
 		    ensure_line_below();
 		    cur_line = cur_line->next;
 		}
-	    } else {
-		while (dl++) {
-		    cur_line = cur_line->prev;
-		}
+		from++;
 	    }
+	    while (to < from) {
+		cur_x--;
+		if (cur_x < 0) {
+		    cur_y--;
+		    cur_line = cur_line->prev;
+		    cur_x = cur_line->width-1;
+		}
+		from--;
+	    }
+		
             break;
         default:
             nchars++;
@@ -1982,10 +2048,11 @@ ConDrawText(HWND hwnd)
 	    cur_x++;
             if (cur_x > cur_line->width)
 		cur_line->width = cur_x; 
-            if (cur_x  >= LINE_LENGTH) {
+	    if (GetXFromCurrentY(GetDC(hwnd),0,cur_x)+cxChar > 
+		(LINE_LENGTH * cxChar)) {
                 if (nchars > 0) { 
-                    rc.left = (cur_x - nchars - iHscrollPos) * cxChar;
-                    rc.right = rc.left + cxChar*nchars;
+		    rc.left = GetXFromCurrentY(GetDC(hwnd),iHscrollPos,cur_x - nchars);
+                    rc.right = rc.left + cxCharMax*nchars;
                     rc.top = cyChar * (cur_y-iVscrollPos);
                     rc.bottom = rc.top + cyChar;
 		    InvalidateRect(hwnd, &rc, TRUE);
@@ -1997,14 +2064,14 @@ ConDrawText(HWND hwnd)
         buf++;
     }
     if (nchars > 0) {
-	rc.left = (cur_x - nchars - iHscrollPos) * cxChar;
-	rc.right = rc.left + cxChar*nchars;
+	rc.left = GetXFromCurrentY(GetDC(hwnd),iHscrollPos,cur_x - nchars);
+	rc.right = rc.left + cxCharMax*nchars;
 	rc.top = cyChar * (cur_y-iVscrollPos);
 	rc.bottom = rc.top + cyChar;
 	InvalidateRect(hwnd, &rc, TRUE);
     }
     ConScrollScreen();
-    SetCaretPos((cur_x-iHscrollPos)*cxChar, (cur_y-iVscrollPos)*cyChar);
+    SetCaretPos(GetXFromCurrentY(GetDC(hwnd),iHscrollPos,cur_x), (cur_y-iVscrollPos)*cyChar);
     outbuf.wrPos = outbuf.rdPos = 0;
     ReleaseSemaphore(console_output, 1, NULL);
 }
@@ -2065,12 +2132,10 @@ static TBBUTTON tbb[] =
     0,          0,              TBSTATE_ENABLED, TBSTYLE_SEP,    0, 0, 0, 0,
     0,          0,              TBSTATE_ENABLED, TBSTYLE_SEP,    0, 0, 0, 0,
     0,          0,              TBSTATE_ENABLED, TBSTYLE_SEP,    0, 0, 0, 0,
-    0,          IDMENU_COPY,	TBSTATE_ENABLED, TBSTYLE_BUTTON, 0, 0, 0, 0,
-    1,	        IDMENU_PASTE,	TBSTATE_ENABLED, TBSTYLE_BUTTON, 0, 0, 0, 0,
-    0,          0,              TBSTATE_ENABLED, TBSTYLE_SEP,    0, 0, 0, 0,
-    2,	        IDMENU_FONT,	TBSTATE_ENABLED, TBSTYLE_BUTTON, 0, 0, 0, 0,
-    0,          0,              TBSTATE_ENABLED, TBSTYLE_SEP,    0, 0, 0, 0,
-    3,	        IDMENU_ABOUT,	TBSTATE_ENABLED, TBSTYLE_BUTTON, 0, 0, 0, 0,
+    0,          IDMENU_COPY,	TBSTATE_ENABLED, TBSTYLE_AUTOSIZE, 0, 0, 0, 0,
+    1,	        IDMENU_PASTE,	TBSTATE_ENABLED, TBSTYLE_AUTOSIZE, 0, 0, 0, 0,
+    2,	        IDMENU_FONT,	TBSTATE_ENABLED, TBSTYLE_AUTOSIZE, 0, 0, 0, 0,
+    3,	        IDMENU_ABOUT,	TBSTATE_ENABLED, TBSTYLE_AUTOSIZE, 0, 0, 0, 0,
     0,          0,              TBSTATE_ENABLED, TBSTYLE_SEP,    0, 0, 0, 0,
 };
 
@@ -2078,6 +2143,7 @@ static TBADDBITMAP tbbitmap =
 {
     HINST_COMMCTRL, IDB_STD_SMALL_COLOR,
 };
+
 
 static HWND
 InitToolBar(HWND hwndParent) 
@@ -2087,6 +2153,10 @@ InitToolBar(HWND hwndParent)
     RECT r;
     TOOLINFO ti;
     HFONT hFontNew;
+    DWORD backgroundColor = GetSysColor(COLOR_BTNFACE);
+    COLORMAP colorMap;
+    colorMap.from = RGB(192, 192, 192);
+    colorMap.to = backgroundColor;
 
     /* Create toolbar window with tooltips */
     hwndTB = CreateWindowEx(0,TOOLBARCLASSNAME,(TCHAR *)NULL,
@@ -2095,13 +2165,11 @@ InitToolBar(HWND hwndParent)
 			    (HMENU)2,hInstance,NULL); 
     SendMessage(hwndTB,TB_BUTTONSTRUCTSIZE,
 		(WPARAM) sizeof(TBBUTTON),0); 
-    /*tbbitmap.hInst = beam_module; 
-    tbbitmap.nID   = 1;*/
     tbbitmap.hInst = NULL;
-    tbbitmap.nID   = (UINT) LoadBitmap(beam_module, MAKEINTRESOURCE(1));
+    tbbitmap.nID   = (UINT) CreateMappedBitmap(beam_module, 1,0, &colorMap, 1);
     SendMessage(hwndTB, TB_ADDBITMAP, (WPARAM) 4, 
 		(WPARAM) &tbbitmap); 
-    SendMessage(hwndTB,TB_ADDBUTTONS, (WPARAM) 32,
+    SendMessage(hwndTB,TB_ADDBUTTONS, (WPARAM) 30,
 		(LPARAM) (LPTBBUTTON) tbb); 
     if (toolbarVisible)
 	ShowWindow(hwndTB, SW_SHOW); 
@@ -2117,8 +2185,6 @@ InitToolBar(HWND hwndParent)
     hFontNew = CreateFontIndirect(&logfont); 
     SendMessage(hComboWnd,WM_SETFONT,(WPARAM)hFontNew,
 		MAKELPARAM(1,0));
-    /*SendMessage(hComboWnd,WM_SETFONT,(WPARAM)GetStockObject(ANSI_FIXED_FONT),
-      MAKELPARAM(1,0));*/
 
     /* Add tooltip for combo box */
     ZeroMemory(&ti,sizeof(TOOLINFO));

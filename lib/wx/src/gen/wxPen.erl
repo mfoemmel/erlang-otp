@@ -52,7 +52,8 @@ new(Colour)
 new(Colour, Options)
  when tuple_size(Colour) =:= 3; tuple_size(Colour) =:= 4,is_list(Options) ->
   MOpts = fun({width, Width}, Acc) -> [<<1:32/?UI,Width:32/?UI>>|Acc];
-          ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc]  end,
+          ({style, Style}, Acc) -> [<<2:32/?UI,Style:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxPen_new_2,
   <<(wxe_util:colour_bin(Colour)):16/binary, BinOpt/binary>>).

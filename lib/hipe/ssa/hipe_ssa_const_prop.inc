@@ -226,18 +226,19 @@ update_cfg(Environment) ->
 update_nodes([], Environment) ->
   env__cfg(Environment);
 update_nodes([Node | NodeList], Environment) ->
-  case reachable(Node, Environment) of
-    true ->
-      Instructions    = extract_code(Node, Environment),
-      Updater         = fun(Instruction) ->
-                            update_instruction(Instruction, Environment)
-			end,
-      NewInstructions = lists:flatmap(Updater, Instructions),
-      Environment1    = update_code(Node, NewInstructions, Environment);
-    false -> 
-      Environment1    = Environment
-  end,      
-  update_nodes(NodeList, Environment1).
+  NewEnvironment =
+    case reachable(Node, Environment) of
+      true ->
+	Instructions = extract_code(Node, Environment),
+	Updater = fun(Instruction) ->
+		      update_instruction(Instruction, Environment)
+		  end,
+	NewInstructions = lists:flatmap(Updater, Instructions),
+	update_code(Node, NewInstructions, Environment);
+      false -> 
+	Environment
+    end,
+  update_nodes(NodeList, NewEnvironment).
 
 %%-----------------------------------------------------------------------------
 %% Procedure : update_code/3
@@ -430,17 +431,17 @@ update_lattice_value({Names, NewValue}, Environment) when is_list(Names) ->
 %%   ?EXIT({"inserting dumt grejs", {Name, {Res, N, Z, C, V} } });
 update_lattice_value({Name, NewValue}, Environment) ->
   LatticeValues = env__lattice_values(Environment),
-  case gb_trees:lookup(Name, LatticeValues) of
-    none ->
-      LatticeValues1 = gb_trees:insert(Name, NewValue, LatticeValues),
-      SSAWork = lookup_ssa_edges(Name, Environment);
-    {value, NewValue} ->
-      LatticeValues1 = LatticeValues,
-      SSAWork = [];
-    {value, _} ->
-      LatticeValues1 = gb_trees:update(Name, NewValue, LatticeValues),
-      SSAWork = lookup_ssa_edges(Name, Environment)
-  end,
+  {LatticeValues1, SSAWork} = 
+    case gb_trees:lookup(Name, LatticeValues) of
+      none ->
+        {gb_trees:insert(Name, NewValue, LatticeValues),
+	 lookup_ssa_edges(Name, Environment)};
+      {value, NewValue} ->
+	{LatticeValues, []};
+      {value, _} ->
+        {gb_trees:update(Name, NewValue, LatticeValues),
+	 lookup_ssa_edges(Name, Environment)}
+    end,
   {Environment#env{lattice_values = LatticeValues1}, SSAWork}.
 
 %%-----------------------------------------------------------------------------

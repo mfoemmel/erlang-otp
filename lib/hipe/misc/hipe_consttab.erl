@@ -215,26 +215,26 @@ insert_sorted_block({ConstTab, RefToLabels, NextLabel},
 			     {ElementType, InitList, SortOrder}),
   {insert_backrefs(NewTa, Id, ReferredLabels), Id}.
 
-
 insert_backrefs(Tbl, From, ToLabels) ->
   lists:foldl(fun(To, Tab) ->
 		  insert_ref(Tab, From, To)
 	      end, Tbl, ToLabels).
 
 insert_ref({Table, RefToLabels, NextLblNr}, From, To) ->
-  case tree_lookup({To,ref}, Table) of
+  Ref = {To, ref},
+  case tree_lookup(Ref, Table) of
     none ->
-      {tree_insert({To,ref}, [From], Table), RefToLabels, NextLblNr};
+      {tree_insert(Ref, [From], Table), RefToLabels, NextLblNr};
     {value, RefList} ->
-      {tree_update({To,ref}, [From|RefList], Table), RefToLabels, NextLblNr}
+      {tree_update(Ref, [From|RefList], Table), RefToLabels, NextLblNr}
   end.
 
 find_refs(To, {Table,_,_}) ->
   %% returns 'none' or {value, V}
-  tree_lookup({To,ref}, Table).
+  tree_lookup({To, ref}, Table).
 
 delete_ref(To, {ConstTab, RefToLabels, NextLabel}) ->
-  {tree_delete({To,ref}, ConstTab), RefToLabels, NextLabel}.
+  {tree_delete({To, ref}, ConstTab), RefToLabels, NextLabel}.
 
 %% TODO: handle refs to labels.
 %% insert_global_block(ConstTab, Align, ElementType, InitList) ->

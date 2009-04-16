@@ -247,7 +247,7 @@ wrap_characters_to_binary(Chars,From,To) ->
 			$\n
 		end;
 	    High when High > Limit ->
-		io_lib:format("\\{~.8B}",[X]);
+		["\\x{",erlang:integer_to_list(X, 16),$}];
 	    Ordinary ->
 		Ordinary
 	end || X <- unicode:characters_to_list(Chars,From) ],unicode,To).

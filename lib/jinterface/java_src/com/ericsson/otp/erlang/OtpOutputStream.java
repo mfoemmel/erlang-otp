@@ -21,6 +21,7 @@ package com.ericsson.otp.erlang;
 // import java.io.OutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.text.DecimalFormat;
@@ -81,7 +82,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * @return an input stream containing the same raw data.
      */
     OtpInputStream getOtpInputStream(final int offset) {
-	return new OtpInputStream(super.buf, offset, super.count - offset);
+	return new OtpInputStream(super.buf, offset, super.count - offset, 0);
     }
 
     /**
@@ -97,7 +98,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write one byte to the stream.
      * 
      * @param b
-     *                the byte to write.
+     *            the byte to write.
      * 
      */
     public void write(final byte b) {
@@ -115,9 +116,10 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write an array of bytes to the stream.
      * 
      * @param buf
-     *                the array of bytes to write.
+     *            the array of bytes to write.
      * 
      */
+
     @Override
     public void write(final byte[] buf) {
 	if (super.count + buf.length > super.buf.length) {
@@ -136,7 +138,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write the low byte of a value to the stream.
      * 
      * @param n
-     *                the value to use.
+     *            the value to use.
      * 
      */
     public void write1(final long n) {
@@ -147,7 +149,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write an array of bytes to the stream.
      * 
      * @param buf
-     *                the array of bytes to write.
+     *            the array of bytes to write.
      * 
      */
     public void writeN(final byte[] bytes) {
@@ -173,6 +175,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * @deprecated As of Jinterface 1.4, replaced by super.size().
      * @see #size()
      */
+
     @Deprecated
     public int count() {
 	return count;
@@ -182,7 +185,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write the low two bytes of a value to the stream in big endian order.
      * 
      * @param n
-     *                the value to use.
+     *            the value to use.
      */
     public void write2BE(final long n) {
 	write((byte) ((n & 0xff00) >> 8));
@@ -193,7 +196,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write the low four bytes of a value to the stream in big endian order.
      * 
      * @param n
-     *                the value to use.
+     *            the value to use.
      */
     public void write4BE(final long n) {
 	write((byte) ((n & 0xff000000) >> 24));
@@ -207,7 +210,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * order.
      * 
      * @param n
-     *                the value to use.
+     *            the value to use.
      */
     public void write8BE(final long n) {
 	write((byte) (n >> 56 & 0xff));
@@ -224,9 +227,9 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write any number of bytes in little endian format.
      * 
      * @param n
-     *                the value to use.
+     *            the value to use.
      * @param b
-     *                the number of bytes to write from the little end.
+     *            the number of bytes to write from the little end.
      */
     public void writeLE(long n, final int b) {
 	for (int i = 0; i < b; i++) {
@@ -239,7 +242,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write the low two bytes of a value to the stream in little endian order.
      * 
      * @param n
-     *                the value to use.
+     *            the value to use.
      */
     public void write2LE(final long n) {
 	write((byte) (n & 0xff));
@@ -250,7 +253,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write the low four bytes of a value to the stream in little endian order.
      * 
      * @param n
-     *                the value to use.
+     *            the value to use.
      */
     public void write4LE(final long n) {
 	write((byte) (n & 0xff));
@@ -264,7 +267,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * order.
      * 
      * @param n
-     *                the value to use.
+     *            the value to use.
      */
     public void write8LE(final long n) {
 	write((byte) (n & 0xff));
@@ -287,21 +290,19 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * known what the actual value should be. For example:
      * 
      * <pre>
-     *      int pos = s.size();
-     *      s.write4BE(0); // make space for length data,
-     *      // but final value is not yet known
-     * 
-     *      [ ...more write statements...]
-     * 
-     *      // later... when we know the length value
-     *      s.poke4BE(pos, length);
+     * int pos = s.size();
+     *    s.write4BE(0); // make space for length data,
+     *                   // but final value is not yet known
+     *     [ ...more write statements...]
+     *    // later... when we know the length value
+     *    s.poke4BE(pos, length);
      * </pre>
      * 
      * 
      * @param offset
-     *                the position in the stream.
+     *            the position in the stream.
      * @param n
-     *                the value to use.
+     *            the value to use.
      */
     public void poke4BE(final int offset, final long n) {
 	if (offset < super.count) {
@@ -316,7 +317,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write a string to the stream as an Erlang atom.
      * 
      * @param atom
-     *                the string to write.
+     *            the string to write.
      */
     public void write_atom(final String atom) {
 	write1(OtpExternal.atomTag);
@@ -328,7 +329,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write an array of bytes to the stream as an Erlang binary.
      * 
      * @param bin
-     *                the array of bytes to write.
+     *            the array of bytes to write.
      */
     public void write_binary(final byte[] bin) {
 	write1(OtpExternal.binTag);
@@ -340,10 +341,9 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write an array of bytes to the stream as an Erlang bitstr.
      * 
      * @param bin
-     *                the array of bytes to write.
+     *            the array of bytes to write.
      * @param pad_bits
-     *                the number of zero pad bits at the low end of the last
-     *                byte
+     *            the number of zero pad bits at the low end of the last byte
      */
     public void write_bitstr(final byte[] bin, final int pad_bits) {
 	if (pad_bits == 0) {
@@ -360,7 +360,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write a boolean value to the stream as the Erlang atom 'true' or 'false'.
      * 
      * @param b
-     *                the boolean value to write.
+     *            the boolean value to write.
      */
     public void write_boolean(final boolean b) {
 	write_atom(String.valueOf(b));
@@ -371,7 +371,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * really an IDL 'octet', that is, unsigned.
      * 
      * @param b
-     *                the byte to use.
+     *            the byte to use.
      */
     public void write_byte(final byte b) {
 	this.write_long(b & 0xffL, true);
@@ -383,7 +383,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * to take care of souch, if they should be used.
      * 
      * @param c
-     *                the character to use.
+     *            the character to use.
      */
     public void write_char(final char c) {
 	this.write_long(c & 0xffffL, true);
@@ -393,7 +393,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write a double value to the stream.
      * 
      * @param d
-     *                the double to use.
+     *            the double to use.
      */
     public void write_double(final double d) {
 	write1(OtpExternal.newFloatTag);
@@ -404,7 +404,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write a float value to the stream.
      * 
      * @param f
-     *                the float to use.
+     *            the float to use.
      */
     public void write_float(final float f) {
 	write_double(f);
@@ -440,7 +440,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
 	writeN(magnitude);
     }
 
-    void write_long(long v, final boolean unsigned) {
+    void write_long(final long v, final boolean unsigned) {
 	/*
 	 * If v<0 and unsigned==true the value
 	 * java.lang.Long.MAX_VALUE-java.lang.Long.MIN_VALUE+1+v is written, i.e
@@ -477,7 +477,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write a long to the stream.
      * 
      * @param l
-     *                the long to use.
+     *            the long to use.
      */
     public void write_long(final long l) {
 	this.write_long(l, false);
@@ -488,7 +488,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * complement unsigned long even if it is negative.
      * 
      * @param ul
-     *                the long to use.
+     *            the long to use.
      */
     public void write_ulong(final long ul) {
 	this.write_long(ul, true);
@@ -498,7 +498,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write an integer to the stream.
      * 
      * @param i
-     *                the integer to use.
+     *            the integer to use.
      */
     public void write_int(final int i) {
 	this.write_long(i, false);
@@ -509,7 +509,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * two's complement unsigned integer even if it is negative.
      * 
      * @param ui
-     *                the integer to use.
+     *            the integer to use.
      */
     public void write_uint(final int ui) {
 	this.write_long(ui & 0xFFFFffffL, true);
@@ -519,7 +519,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write a short to the stream.
      * 
      * @param s
-     *                the short to use.
+     *            the short to use.
      */
     public void write_short(final short s) {
 	this.write_long(s, false);
@@ -530,7 +530,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * complement unsigned short even if it is negative.
      * 
      * @param s
-     *                the short to use.
+     *            the short to use.
      */
     public void write_ushort(final short us) {
 	this.write_long(us & 0xffffL, true);
@@ -542,7 +542,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * be possible to decode it later.
      * 
      * @param arity
-     *                the number of elements in the list.
+     *            the number of elements in the list.
      */
     public void write_list_head(final int arity) {
 	if (arity == 0) {
@@ -566,7 +566,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * to decode it later.
      * 
      * @param arity
-     *                the number of elements in the tuple.
+     *            the number of elements in the tuple.
      */
     public void write_tuple_head(final int arity) {
 	if (arity < 0xff) {
@@ -582,19 +582,18 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write an Erlang PID to the stream.
      * 
      * @param node
-     *                the nodename.
+     *            the nodename.
      * 
      * @param id
-     *                an arbitrary number. Only the low order 15 bits will be
-     *                used.
+     *            an arbitrary number. Only the low order 15 bits will be used.
      * 
      * @param serial
-     *                another arbitrary number. Only the low order 13 bits will
-     *                be used.
+     *            another arbitrary number. Only the low order 13 bits will be
+     *            used.
      * 
      * @param creation
-     *                yet another arbitrary number. Only the low order 2 bits
-     *                will be used.
+     *            yet another arbitrary number. Only the low order 2 bits will
+     *            be used.
      * 
      */
     public void write_pid(final String node, final int id, final int serial,
@@ -610,15 +609,14 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write an Erlang port to the stream.
      * 
      * @param node
-     *                the nodename.
+     *            the nodename.
      * 
      * @param id
-     *                an arbitrary number. Only the low order 28 bits will be
-     *                used.
+     *            an arbitrary number. Only the low order 28 bits will be used.
      * 
      * @param creation
-     *                another arbitrary number. Only the low order 2 bits will
-     *                be used.
+     *            another arbitrary number. Only the low order 2 bits will be
+     *            used.
      * 
      */
     public void write_port(final String node, final int id, final int creation) {
@@ -632,15 +630,14 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write an old style Erlang ref to the stream.
      * 
      * @param node
-     *                the nodename.
+     *            the nodename.
      * 
      * @param id
-     *                an arbitrary number. Only the low order 18 bits will be
-     *                used.
+     *            an arbitrary number. Only the low order 18 bits will be used.
      * 
      * @param creation
-     *                another arbitrary number. Only the low order 2 bits will
-     *                be used.
+     *            another arbitrary number. Only the low order 2 bits will be
+     *            used.
      * 
      */
     public void write_ref(final String node, final int id, final int creation) {
@@ -654,17 +651,17 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write a new style (R6 and later) Erlang ref to the stream.
      * 
      * @param node
-     *                the nodename.
+     *            the nodename.
      * 
      * @param ids
-     *                an array of arbitrary numbers. Only the low order 18 bits
-     *                of the first number will be used. If the array contains
-     *                only one number, an old style ref will be written instead.
-     *                At most three numbers will be read from the array.
+     *            an array of arbitrary numbers. Only the low order 18 bits of
+     *            the first number will be used. If the array contains only one
+     *            number, an old style ref will be written instead. At most
+     *            three numbers will be read from the array.
      * 
      * @param creation
-     *                another arbitrary number. Only the low order 2 bits will
-     *                be used.
+     *            another arbitrary number. Only the low order 2 bits will be
+     *            used.
      * 
      */
     public void write_ref(final String node, final int[] ids, final int creation) {
@@ -702,7 +699,7 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write a string to the stream.
      * 
      * @param s
-     *                the string to write.
+     *            the string to write.
      */
     public void write_string(final String s) {
 	final int len = s.length();
@@ -712,42 +709,42 @@ public class OtpOutputStream extends ByteArrayOutputStream {
 	    write_nil();
 	    break;
 	default:
-	    final byte[] bytebuf = s.getBytes();
-
-	    /*
-	     * switch to se if the length of the byte array is equal to the
-	     * length of the list, or if the string is too long for the stream
-	     * protocol
-	     */
-	    if (bytebuf.length == len && len <= 65535) { /* Usual */
-		write1(OtpExternal.stringTag);
-		write2BE(len);
-		writeN(bytebuf);
-	    } else { /* Unicode */
-		final char[] charbuf = s.toCharArray();
-
-		write_list_head(len);
-
-		for (int i = 0; i < len; i++) {
-		    write_char(charbuf[i]);
+	    if (len <= 65535 && is8bitString(s)) { // 8-bit string
+		try {
+		    final byte[] bytebuf = s.getBytes("ISO-8859-1");
+		    write1(OtpExternal.stringTag);
+		    write2BE(len);
+		    writeN(bytebuf);
+		} catch (final UnsupportedEncodingException e) {
+		    write_nil(); // it should never ever get here...
 		}
-
+	    } else { // unicode or longer, must code as list
+		final char[] charbuf = s.toCharArray();
+		final int[] codePoints = OtpErlangString.stringToCodePoints(s);
+		write_list_head(codePoints.length);
+		for (final int codePoint : codePoints) {
+		    write_int(codePoint);
+		}
 		write_nil();
 	    }
 	}
     }
 
-    /*
-     * This does not work when char > 1 byte Unicode is used
-     * 
-     * public void write_string(String s) { this.write1(OtpExternal.stringTag);
-     * this.write2BE(s.length()); this.writeN(s.getBytes()); }
-     */
+    private boolean is8bitString(final String s) {
+	for (int i = 0; i < s.length(); ++i) {
+	    final char c = s.charAt(i);
+	    if (c < 0 || c > 255) {
+		return false;
+	    }
+	}
+	return true;
+    }
+
     /**
      * Write an arbitrary Erlang term to the stream in compressed format.
      * 
      * @param o
-     *                the Erlang tem to write.
+     *            the Erlang tem to write.
      */
     public void write_compressed(final OtpErlangObject o) {
 	final OtpOutputStream oos = new OtpOutputStream(o);
@@ -770,10 +767,50 @@ public class OtpOutputStream extends ByteArrayOutputStream {
      * Write an arbitrary Erlang term to the stream.
      * 
      * @param o
-     *                the Erlang term to write.
+     *            the Erlang term to write.
      */
     public void write_any(final OtpErlangObject o) {
 	// calls one of the above functions, depending on o
 	o.encode(this);
+    }
+
+    public void write_fun(final OtpErlangPid pid, final String module,
+	    final long old_index, final int arity, final byte[] md5,
+	    final long index, final long uniq, final OtpErlangObject[] freeVars) {
+	if (arity == -1) {
+	    write1(OtpExternal.funTag);
+	    write4BE(freeVars.length);
+	    pid.encode(this);
+	    write_atom(module);
+	    write_long(index);
+	    write_long(uniq);
+	    for (final OtpErlangObject fv : freeVars) {
+		fv.encode(this);
+	    }
+	} else {
+	    write1(OtpExternal.newFunTag);
+	    final int saveSizePos = getPos();
+	    write4BE(0); // this is where we patch in the size
+	    write1(arity);
+	    writeN(md5);
+	    write4BE(index);
+	    write4BE(freeVars.length);
+	    write_atom(module);
+	    write_long(old_index);
+	    write_long(uniq);
+	    pid.encode(this);
+	    for (final OtpErlangObject fv : freeVars) {
+		fv.encode(this);
+	    }
+	    poke4BE(saveSizePos, getPos() - saveSizePos);
+	}
+    }
+
+    public void write_external_fun(final String module, final String function,
+	    final int arity) {
+	write1(OtpExternal.externalFunTag);
+	write_atom(module);
+	write_atom(function);
+	write_long(arity);
     }
 }

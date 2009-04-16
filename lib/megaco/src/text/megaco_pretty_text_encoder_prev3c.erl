@@ -33,9 +33,12 @@
 
 -export([token_tag2string/1]).
 
+-export([test/1]).
+
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_prev3c.hrl").
 -include("megaco_text_tokens.hrl").
+
 
 
 %%----------------------------------------------------------------------
@@ -458,4 +461,23 @@ token_tag2string(_) -> [].
 %%----------------------------------------------------------------------
 
 -include("megaco_text_gen_prev3c.hrl").
+
+%% start() ->
+%%     Fun = fun() ->
+%% 		  Val = lists:flatten([$", $e, $r, $i, $c, $s, $s, $o, $n, $"]), 
+%% 		  %% Val = [$e, $r, $i, $c, $s, $s, $o, $n], 
+%% 		  PP = {'PropertyParm',"ipdc/realm",[Val],asn1_NOVALUE},
+%% 		  enc_PropertyParm(PP, [])
+%% 	  end,
+%%     test(Fun).
+
+%% start() ->
+%%     Fun = fun() ->
+%% 		  PP = {'PropertyParm',"ipdc/realm",["ericsson"],asn1_NOVALUE},
+%% 		  enc_PropertyParm(PP, [])
+%% 	  end,
+%%     test(Fun).
+
+test(Fun) when is_function(Fun) ->
+    Fun().
 

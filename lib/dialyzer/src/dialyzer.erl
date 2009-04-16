@@ -65,9 +65,9 @@ plain_cl() ->
       end,
       case Opts#options.check_plt of
 	true ->
-	  case cl_check_init(Opts#options{get_warnings=false}) of
-	    {error, _} = Error -> cl_halt(Error, Opts);
-	    {ok, _} -> gui_halt(internal_gui(Opts), Opts)
+	  case cl_check_init(Opts#options{get_warnings = false}) of
+	    {ok, _} -> gui_halt(internal_gui(Opts), Opts);
+	    {error, _} = Error -> cl_halt(Error, Opts)
 	  end;
 	false ->
 	  gui_halt(internal_gui(Opts), Opts)
@@ -75,7 +75,7 @@ plain_cl() ->
     {cl, Opts} -> 
       case Opts#options.check_plt of
 	true ->
-	  case cl_check_init(Opts#options{get_warnings=false}) of
+	  case cl_check_init(Opts#options{get_warnings = false}) of
 	    {error, _} = Error -> cl_halt(Error, Opts);
 	    {ok, _} -> cl_halt(cl(Opts), Opts)
 	  end;
@@ -93,7 +93,7 @@ cl_check_init(Opts) ->
     plt_remove -> {ok, ?RET_NOTHING_SUSPICIOUS};
     Other when Other =:= succ_typings; Other =:= plt_check ->
       F = fun() ->
-	      dialyzer_cl:start(Opts#options{analysis_type=plt_check})
+	      dialyzer_cl:start(Opts#options{analysis_type = plt_check})
 	  end,
       doit(F)
   end.
@@ -104,25 +104,24 @@ cl_print_plt_info(Opts) ->
       end,
   doit(F).
 
-print_plt_info(Opts) ->
-  Plt = Opts#options.init_plt,
+print_plt_info(#options{init_plt = PLT, output_file = OutputFile}) ->
   String =
-    case dialyzer_plt:included_files(Plt) of
+    case dialyzer_plt:included_files(PLT) of
       {ok, Files} ->
-	io_lib:format("The plt ~s includes the following files:\n~p\n",
-		      [Plt, Files]);
+	io_lib:format("The PLT ~s includes the following files:\n~p\n",
+		      [PLT, Files]);
       {error, read_error} ->
-	Msg = io_lib:format("Could not read the plt file ~p\n", [Plt]),
+	Msg = io_lib:format("Could not read the PLT file ~p\n", [PLT]),
 	throw({dialyzer_error, Msg});
       {error, no_such_file} ->
-	Msg = io_lib:format("The plt file ~p does not exist\n", [Plt]),
+	Msg = io_lib:format("The PLT file ~p does not exist\n", [PLT]),
 	throw({dialyzer_error, Msg})
     end,
-  case Opts#options.output_file of
-    none -> 
+  case OutputFile =:= none of
+    true ->
       io:format("~s", [String]),
       ?RET_NOTHING_SUSPICIOUS;
-    OutputFile ->
+    false ->
       case file:open(OutputFile, [write]) of
 	{ok, FileDesc} ->
 	  io:format(FileDesc, "~s", [String]),
@@ -202,13 +201,13 @@ gui(Opts) ->
       erlang:error({dialyzer_error, lists:flatten(ErrorMsg)})
   end.
 
-check_gui_options(#options{analysis_type=succ_typings}) ->
+check_gui_options(#options{analysis_type = succ_typings}) ->
   ok;
-check_gui_options(#options{analysis_type=Mode}) ->
-  Msg = io_lib:format("Analysis mode ~w is illegal in gui mode", [Mode]),
+check_gui_options(#options{analysis_type = Mode}) ->
+  Msg = io_lib:format("Analysis mode ~w is illegal in GUI mode", [Mode]),
   throw({dialyzer_error, Msg}).
 
--spec plt_info(string()) -> {'ok', [{'files', [string()]}]} | {'error', atom()}.
+-spec plt_info(filename()) -> {'ok', [{'files', [filename()]}]} | {'error', atom()}.
 
 plt_info(Plt) ->
   case dialyzer_plt:included_files(Plt) of
@@ -233,28 +232,28 @@ cl_error(Msg) ->
   cl_halt({error, Msg}, #options{}).
 
 gui_halt(R, Opts) ->
-  cl_halt(R, Opts#options{report_mode=quiet}).
+  cl_halt(R, Opts#options{report_mode = quiet}).
 
 -spec cl_halt({'ok',dial_ret()} | {'error',string()}, #options{}) -> no_return().
 
-cl_halt({ok, R = ?RET_NOTHING_SUSPICIOUS}, #options{report_mode=quiet}) -> 
+cl_halt({ok, R = ?RET_NOTHING_SUSPICIOUS}, #options{report_mode = quiet}) -> 
   halt(R);
-cl_halt({ok, R = ?RET_DISCREPANCIES}, #options{report_mode=quiet}) -> 
+cl_halt({ok, R = ?RET_DISCREPANCIES}, #options{report_mode = quiet}) -> 
   halt(R);
 cl_halt({ok, R = ?RET_NOTHING_SUSPICIOUS}, #options{}) ->
   io:put_chars("done (passed successfully)\n"),
   halt(R);
-cl_halt({ok, R = ?RET_DISCREPANCIES}, #options{output_file=Output}) ->
+cl_halt({ok, R = ?RET_DISCREPANCIES}, #options{output_file = Output}) ->
   io:put_chars("done (warnings were emitted)\n"),
   cl_check_log(Output),
   halt(R);
-cl_halt({error, Msg1}, #options{output_file=Output}) ->
+cl_halt({error, Msg1}, #options{output_file = Output}) ->
   %% Msg2 = "dialyzer: Internal problems were encountered in the analysis",
   io:format("\ndialyzer: ~s\n", [Msg1]),
   cl_check_log(Output),
   halt(?RET_INTERNAL_ERROR).
 
--spec cl_check_log(string()) -> 'ok'.
+-spec cl_check_log('none' | filename()) -> 'ok'.
 
 cl_check_log(none) ->
   ok;

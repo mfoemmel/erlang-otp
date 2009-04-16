@@ -174,7 +174,7 @@ connect_impl(#wx_ref{type=wxeEvtListener,ref=EvtList},
 %% @hidden
 disconnect_impl(Listener, Object) ->
     disconnect_impl(Listener, Object, #evh{}).
-
+%% @hidden
 disconnect_impl(#wx_ref{type=wxeEvtListener,ref=EvtList}, 
 		#wx_ref{type=_ThisT,ref=ThisRef}, 
 		#evh{id=Winid, lastId=LastId, et=EventType}) ->

@@ -35,9 +35,9 @@
 %%% mfa		::= #sparc_mfa{atom, atom, arity}
 %%% prim	::= #sparc_prim{atom}
 
--record(sparc_mfa, {m::atom(), f::atom(), a::byte()}).
+-record(sparc_mfa, {m::atom(), f::atom(), a::arity()}).
 -record(sparc_prim, {prim}).
--record(sparc_sdesc, {exnlab, fsize, arity, live}).
+-record(sparc_sdesc, {exnlab, fsize, arity::arity(), live}).
 -record(sparc_temp, {reg, type, allocatable}).
 -record(sparc_simm13, {value}).
 -record(sparc_uimm5, {value}).

@@ -250,6 +250,20 @@ get_uint32_measurement(Request, #internal{os_type = {unix, freebsd}}) ->
 	    {ok, [N], _} = io_lib:fread("~d", Ps),
 	    N-1
     end;
+get_uint32_measurement(Request, #internal{os_type = {unix, dragonfly}}) ->
+    D = os:cmd("/sbin/sysctl -n vm.loadavg") -- "\n",
+    {ok,[Load1,Load5,Load15],_} = io_lib:fread("{ ~f ~f ~f }", D),
+    %% We could count the lines from the ps command as well
+    case Request of
+	?avg1  -> sunify(Load1);
+	?avg5  -> sunify(Load5);
+	?avg15 -> sunify(Load15);
+	?ping -> 4711;
+	?nprocs ->
+	    Ps = os:cmd("/bin/ps -ax | /usr/bin/wc -l"),
+	    {ok, [N], _} = io_lib:fread("~d", Ps),
+	    N-1
+    end;
 get_uint32_measurement(Request, #internal{os_type = {unix, openbsd}}) ->
     D = os:cmd("/sbin/sysctl -n vm.loadavg") -- "\n",
     {ok, [L1, L5, L15], _} = io_lib:fread("~f ~f ~f", D),
@@ -537,6 +551,7 @@ measurement_server_init() ->
 	    port_server_start();
 	{unix, Flavor} when Flavor==darwin;
 			    Flavor==freebsd;
+			    Flavor==dragonfly;
 			    Flavor==openbsd;
 			    Flavor==irix64;
 			    Flavor==irix ->
@@ -621,36 +636,42 @@ port_server_loop(Port, Timeout) ->
         {Pid, ?nprocs} ->
 	    port_command(Port, ?nprocs),
 	    Result = port_receive_uint32(Port, Timeout),
-	    port_server_handle_reply(Port, Pid, Result, Timeout);
+	    Pid ! {self(), {data, Result}},
+	    port_server_loop(Port, Timeout);
 
 	% Average load for the past minute
         {Pid, ?avg1} ->
 	    port_command(Port, ?avg1),
 	    Result = port_receive_uint32(Port, Timeout),
-	    port_server_handle_reply(Port, Pid, Result, Timeout);
+	    Pid ! {self(), {data, Result}},
+	    port_server_loop(Port, Timeout);
 
 	% Average load for the past five minutes
         {Pid, ?avg5} ->
 	    port_command(Port, ?avg5),
 	    Result = port_receive_uint32(Port, Timeout),
-	    port_server_handle_reply(Port, Pid, Result, Timeout);
+	    Pid ! {self(), {data, Result}},
+	    port_server_loop(Port, Timeout);
 	
 	% Average load for the past 15 minutes
         {Pid, ?avg15} ->
 	    port_command(Port, ?avg15),
 	    Result = port_receive_uint32(Port, Timeout),
-	    port_server_handle_reply(Port, Pid, Result, Timeout);
+	    Pid ! {self(), {data, Result}},
+	    port_server_loop(Port, Timeout);
 
 	{Pid, ?util} ->
 	    port_command(Port, ?util),
 	    Result = port_receive_util(Port, Timeout),
-	    port_server_handle_reply(Port, Pid, Result, Timeout);
+	    Pid ! {self(), {data, Result}},
+	    port_server_loop(Port, Timeout);
 
 	% Port ping
 	{Pid, ?ping} ->
 	    port_command(Port, ?ping),
 	    Result = port_receive_uint32(Port, Timeout),
-	    port_server_handle_reply(Port, Pid, Result, Timeout);
+	    Pid ! {self(), {data, Result}},
+	    port_server_loop(Port, Timeout);
 
 	% Close port and this server
 	{Pid, ?quit} ->
@@ -660,32 +681,8 @@ port_server_loop(Port, Timeout) ->
 	    ok;
 
 	% Ignore other commands
-	_Other -> port_server_loop(Port, Timeout)
+	_ -> port_server_loop(Port, Timeout)
     end.	
-
-port_server_handle_reply(Port, Pid, Reply, Timeout) ->
-    case Reply of
-	{error, Reason} ->
-	    %%% FIXME: Could this happen?
-
-	    % Explain error for the client
-	    Pid ! {self(), {error, Reason}},
-	    % Kill and clean the port and its messages
-	    port_command(Port, ?quit),
-	    port_close(Port),
-	    port_server_flush_messages(Port),
-	    % Reboot port
-	    exit(timeout); 
-	Result -> 
-	   % All is fine, send result to client
-	   Pid ! {self(), {data, Result}},
-	   port_server_loop(Port, Timeout)
-    end.
-   
-%% Necessary?
-port_server_flush_messages(Port) ->
-    receive {'EXIT', Port, _} -> ok after 0 -> ok end,
-    receive {Port, {data, _}} -> ok after 0 -> ok end.
 
 port_receive_uint32( Port,  Timeout) -> port_receive_uint32(Port, Timeout, []).
 port_receive_uint32(_Port, _Timeout, [D3,D2,D1,D0]) -> ?INT32(D3,D2,D1,D0);

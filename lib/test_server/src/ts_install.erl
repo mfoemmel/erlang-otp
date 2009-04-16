@@ -234,7 +234,7 @@ linux_dist_suse() ->
 
 hostname() ->
     case catch inet:gethostname() of
-	{ok, Hostname} when list(Hostname) ->
+	{ok, Hostname} when is_list(Hostname) ->
 	    "/" ++ lists:takewhile(fun (C) -> C /= $. end, Hostname);
 	_ ->
 	    "/localhost"
@@ -272,7 +272,7 @@ lock_checking() ->
 
 modified_timing() ->
     case catch erlang:system_info(modified_timing_level) of
-	N when integer(N) ->
+	N when is_integer(N) ->
 	    "/T" ++ integer_to_list(N);
 	_ -> ""
     end.

@@ -189,7 +189,8 @@ contains(This,X,Y)
 contains(#wx_ref{type=ThisT,ref=ThisRef},{CX,CY}, Options)
  when is_number(CX),is_number(CY),is_list(Options) ->
   ?CLASS(ThisT,wxGraphicsPath),
-  MOpts = fun({fillStyle, FillStyle}, Acc) -> [<<1:32/?UI,FillStyle:32/?UI>>|Acc]  end,
+  MOpts = fun({fillStyle, FillStyle}, Acc) -> [<<1:32/?UI,FillStyle:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGraphicsPath_Contains_2,
   <<ThisRef:32/?UI,0:32,CX:64/float,CY:64/float, BinOpt/binary>>).
@@ -200,7 +201,8 @@ contains(#wx_ref{type=ThisT,ref=ThisRef},{CX,CY}, Options)
 contains(#wx_ref{type=ThisT,ref=ThisRef},X,Y, Options)
  when is_float(X),is_float(Y),is_list(Options) ->
   ?CLASS(ThisT,wxGraphicsPath),
-  MOpts = fun({fillStyle, FillStyle}, Acc) -> [<<1:32/?UI,FillStyle:32/?UI>>|Acc]  end,
+  MOpts = fun({fillStyle, FillStyle}, Acc) -> [<<1:32/?UI,FillStyle:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGraphicsPath_Contains_3,
   <<ThisRef:32/?UI,0:32,X:64/?F,Y:64/?F, BinOpt/binary>>).

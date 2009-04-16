@@ -24,6 +24,7 @@
 #include "sys.h"
 #include "erl_vm.h"
 #include "global.h"
+#include "erl_version.h"
 #include "erl_process.h"
 #include "error.h"
 #include "erl_driver.h"
@@ -833,21 +834,6 @@ scan_iff_file(LoaderState* stp, Uint* chunk_types, Uint num_types, Uint num_mand
     int i;
 
     /*
-     * The old magic identifier for Beam files.
-     */
-
-    static char beam_magic[6] = {0x7F, 'B', 'E', 'A', 'M', '!'};
-
-    /*
-     * Be kind to old Beam files.
-     */
-
-    if (stp->file_left >= sizeof(beam_magic) &&
-	memcmp(stp->file_p, beam_magic, sizeof(beam_magic)) == 0) {
-	LoadError0(stp, "can't load Beam files for OTP R4 or earlier (sorry)");
-    }
-
-    /*
      * The binary must start with an IFF 'FOR1' chunk.
      */
 
@@ -1591,12 +1577,6 @@ load_code(LoaderState* stp)
 				case 1:
 				    words += FLOAT_SIZE_OBJECT*val;
 				    break;
-				case 2:
-				    LoadError0(stp, "the code was compiled with an "
-					       "unofficial compiler (R11B with "
-					       "+constant_pool or a development version "
-					       "of R12B).");
-				    break;
 				default:
 				    LoadError1(stp, "alloc list: bad allocation "
 					       "descriptor %d", type);
@@ -1677,7 +1657,8 @@ load_code(LoaderState* stp)
 	 * Special error message instruction.
 	 */
 	if (stp->genop->op == genop_too_old_compiler_0) {
-	    LoadError0(stp, "please re-compile this module with an R13B compiler");
+	    LoadError0(stp, "please re-compile this module with an " 
+		       ERLANG_OTP_RELEASE " compiler");
 	}
 
 	/*
@@ -1728,7 +1709,7 @@ load_code(LoaderState* stp)
 		 */
 		if (num_specific == 0 && gen_opc[tmp_op->op].transform == -1) {
 		    LoadError0(stp, "please re-compile this module with an "
-			       "R12B compiler ");
+			       ERLANG_OTP_RELEASE " compiler ");
 		}
 
 		LoadError0(stp, "no specific operation found");
@@ -2039,7 +2020,7 @@ load_code(LoaderState* stp)
 		code[offset] = stp->labels[last_label].patches;
 		stp->labels[last_label].patches = offset;
 		function_number++;
-		if (stp->arity >= MAX_ARG) {
+		if (stp->arity > MAX_ARG) {
 		    LoadError1(stp, "too many arguments: %d", stp->arity);
 		}
 #ifdef DEBUG

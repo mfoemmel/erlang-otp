@@ -1,3 +1,20 @@
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2001-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% File    : bench_generate.hrl
 %%% Author  : Hakan Mattsson <hakan@cslab.ericsson.se>
@@ -28,7 +45,7 @@
 %% Start request generators
 %% -------------------------------------------------------------------
 
-start(C) when record(C, config) ->
+start(C) when is_record(C, config) ->
     MonPid = spawn_link(?MODULE, monitor_init, [C, self()]),
     receive
 	{'EXIT', MonPid, Reason} ->
@@ -37,7 +54,7 @@ start(C) when record(C, config) ->
 	    Res
     end.
 
-monitor_init(C, Parent) when record(C, config) ->
+monitor_init(C, Parent) when is_record(C, config) ->
     process_flag(trap_exit, true),
     %% net_kernel:monitor_nodes(true), %% BUGBUG: Needed in order to re-start generators
     Nodes     = C#config.generator_nodes,
@@ -184,7 +201,7 @@ call_worker([Node | _], Activity, Fun, Wlock, Mod) when Node == node() ->
 call_worker([Node | _] = Nodes, Activity, Fun, Wlock, Mod) ->
     Key = {worker,Node},
     case get(Key) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Args = [Activity, Fun, [Wlock], Mod],
 	    Pid ! {activity, self(), Args},
 	    receive
@@ -328,7 +345,7 @@ incr(Tab, Counter, Incr) ->
 
 commit_session(no_fun) ->
     ignore;
-commit_session(Fun) when function(Fun) ->
+commit_session(Fun) when is_function(Fun, 0) ->
     Fun().
 
 %% Randlomly choose a transaction type according to benchmar spec
@@ -460,21 +477,21 @@ nearest_node(SubscrId, Activity, C) ->
 	    {[Node], Activity, write};
 	Nodes ->
 	    Wlock = C#config.write_lock_type,
-	    case Wlock of
-		sticky_write ->
-		    Node = pick_node(Suffix, C, Nodes),
-		    {[Node | Nodes], Activity, Wlock};
-		write ->
+	    if
+		C#config.always_try_nearest_node; Wlock =:= write ->
 		    case lists:member(node(), Nodes) of
 			true ->
 			    {[node() | Nodes], Activity, Wlock};
 			false ->
 			    Node = pick_node(Suffix, C, Nodes),
 			    {[Node | Nodes], Activity, Wlock}
-		    end
+		    end;
+		Wlock == sticky_write ->
+		    Node = pick_node(Suffix, C, Nodes),
+		    {[Node | Nodes], Activity, Wlock}
 	    end
     end.
-  
+
 pick_node(Suffix, C, Nodes) ->
     Ordered = lists:sort(Nodes),
     NumberOfActive = length(Ordered),
@@ -489,7 +506,7 @@ pick_node(Suffix, C, Nodes) ->
 
 display_statistics(Stats, C) ->
     GoodStats = [{node(GenPid), GenStats} || {GenPid, GenStats} <- Stats,
-					     list(GenStats)],
+					     is_list(GenStats)],
     FlatStats = [{Type, Name, EvalNode, GenNode, Count} ||
                     {GenNode, GenStats} <- GoodStats,
                     {{Type, Name, EvalNode}, Count} <- GenStats],

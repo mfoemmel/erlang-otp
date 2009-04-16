@@ -25,16 +25,16 @@
 %% $Id$
 %%=======================================================================
 
--record(apply_N, {arity::byte()}).
+-record(apply_N, {arity :: arity()}).
 
--record(closure_element, {n::byte()}).
+-record(closure_element, {n :: arity()}).
 
--record(element, {typeinfo::list()}).
+-record(element, {typeinfo :: list()}). %% XXX: refine?
 
--record(gc_test, {need::integer()}).
+-record(gc_test, {need :: non_neg_integer()}).
 
--record(mkfun, {mfa::mfa(), magic_num::integer(), index::integer()}).
+-record(mkfun, {mfa :: mfa(), magic_num :: integer(), index :: integer()}).
 
--record(unsafe_element, {index::integer()}).
+-record(unsafe_element, {index :: non_neg_integer()}).
 
--record(unsafe_update_element, {index::integer()}).
+-record(unsafe_update_element, {index :: non_neg_integer()}).

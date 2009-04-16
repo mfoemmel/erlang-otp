@@ -272,6 +272,7 @@ decode_type(Type) ->
 	?T_TXT -> ?S_TXT;
 	?T_AAAA -> ?S_AAAA;
 	?T_SRV -> ?S_SRV;
+	?T_NAPTR -> ?S_NAPTR;
 	?T_SPF -> ?S_SPF;
 	%% non standard
 	?T_UINFO -> ?S_UINFO;
@@ -309,6 +310,7 @@ encode_type(Type) ->
 	?S_TXT -> ?T_TXT;
 	?S_AAAA -> ?T_AAAA;
 	?S_SRV -> ?T_SRV;
+	?S_NAPTR -> ?T_NAPTR;
 	?S_SPF -> ?T_SPF;
 	%% non standard
 	?S_UINFO -> ?T_UINFO;
@@ -400,9 +402,46 @@ decode_data(?S_MINFO, _, Data, Buffer) ->
 	    end
     end;
 decode_data(?S_MX, _, [P1,P0 | Dom], Buffer) ->
-    { ?i16(P1,P0), decode_domain(Dom, Buffer) };
+    case decode_domain(Dom, Buffer) of
+	error -> error;
+	Domain ->
+	    {?i16(P1,P0), Domain}
+    end;
 decode_data(?S_SRV, _, [P1,P0, W1,W0, Po1,Po0 | Dom], Buffer) ->
-    { ?i16(P1,P0), ?i16(W1,W0), ?i16(Po1,Po0), decode_domain(Dom, Buffer) };
+    case decode_domain(Dom, Buffer) of
+	error -> error;
+	Domain ->
+	    {?i16(P1,P0), ?i16(W1,W0), ?i16(Po1,Po0), Domain}
+    end;
+decode_data(?S_NAPTR, _, [O0,O1, P0,P1 | S0], Buffer) ->
+    Order = ?u16(O0, O1),
+    Preference = ?u16(P0, P1),
+    case decode_string(S0) of
+	error -> error;
+	{Flags,S1} ->
+	    case decode_string(S1) of
+		error -> error;
+		{Services,S2} ->
+		    case decode_string(S2) of
+			error -> error;
+			{Re,Dom} ->
+			    case utf8_to_unicode(Re) of
+				error -> error;
+				Regexp ->
+				    case decode_domain(Dom, Buffer) of
+					error -> error;
+					Replacement ->
+					    {Order,
+					     Preference,
+					     string:to_lower(Flags),
+					     string:to_lower(Services),
+					     Regexp,
+					     Replacement}
+				    end
+			    end
+		    end
+	    end
+    end;
 decode_data(?S_TXT, _, Data, _Buffer) ->
     decode_txt(Data);
 decode_data(?S_SPF, _, Data, _Buffer) ->
@@ -420,12 +459,16 @@ decode_domain(Data, Buffer) ->
 decode_txt(Data) -> decode_txt(Data, []).
 
 decode_txt([], Acc) -> reverse(Acc);
-decode_txt([Len | Data], Acc) ->
-    case get_data(Len, Data) of
+decode_txt(Data, Acc) ->
+    case decode_string(Data) of
 	error -> error;
 	{Str, Rest} ->
 	    decode_txt(Rest, [Str | Acc])
     end.
+
+decode_string([]) -> error;
+decode_string([Len | Data]) ->
+    get_data(Len, Data).
 
 %%
 %% Get N bytes from Ptr
@@ -514,17 +557,23 @@ encode_data(?S_MX, in, {Pref, Exch}, Ptrs, L) ->
 encode_data(?S_SRV, in, {Prio, Weight, Port, Target}, Ptrs, L) ->
     {EDom, NPtrs} = dn_compress(Target, Ptrs, [], L),
     {?int16(Prio) ++ ?int16(Weight) ++ ?int16(Port) ++ EDom, NPtrs};
-encode_data(?S_TXT, in, Data, Ptrs, _)     ->
-    encode_txt(Data, Ptrs);
-encode_data(?S_SPF, in, Data, Ptrs, _)     ->
-    encode_txt(Data, Ptrs);
-encode_data(_, _, Data, Ptrs, _)        -> {Data, Ptrs}.
+encode_data(?S_NAPTR, in, 
+	    {Order, Preference, Flags, Services, Regexp, Replacement},
+	    Ptrs, _) ->
+    {?int16(Order) ++ ?int16(Preference) ++
+     encode_txt([Flags,Services,unicode_to_utf8(Regexp)]) ++
+     dn_labels(Replacement),
+     Ptrs};
+encode_data(?S_TXT, in, Data, Ptrs, _) ->
+    {encode_txt(Data), Ptrs};
+encode_data(?S_SPF, in, Data, Ptrs, _) ->
+    {encode_txt(Data), Ptrs};
+encode_data(_, _, Data, Ptrs, _) -> {Data, Ptrs}.
 
-encode_txt(Data, Ptrs) ->
-    {[[Length|Str] || Str <- Data,
-		      (Length = length(Str)) =< 255],
-     Ptrs}.
-    
+encode_txt(Data) ->
+    lists:flatten([[Length|Str] || Str <- Data,
+				   (Length = length(Str)) =< 255]).
+
 %%
 %% Compress a name given list names already compressed
 %% The format of compressed names are
@@ -551,22 +600,25 @@ dn_comp(Name, Ns0, Buf, Offset) ->
 	    Ptr = [(Offs bsr 8) bor ?INDIR_MASK, Offs band 16#ff],
 	    { Buf ++ Ptr, Ns0 };
 	false ->
-	    { Buf ++ dn_comp_labels(Name, []), [{Name, Offset} | Ns0] }
+	    { Buf ++ dn_labels(Name), [{Name, Offset} | Ns0] }
     end.
 
-dn_comp_labels([$\\, 0 | _Garbage], Cn) ->
-    dn_comp_labels([], Cn);
-dn_comp_labels([$.], Cn) ->
-    dn_comp_labels([], Cn);
-dn_comp_labels([$. | Name], Cn) ->
-    [length(Cn) | reverse(Cn, dn_comp_labels(Name, []))];
-dn_comp_labels([$\\, C | Name], Cn) ->
-    dn_comp_labels(Name, [C, $\\ | Cn]);
-dn_comp_labels([C | Name], Cn) ->
-    dn_comp_labels(Name, [C | Cn]);
-dn_comp_labels([], Cn) ->
+dn_labels(Name) ->
+    dn_labels(Name, []).
+
+dn_labels([$\\, 0 | _Garbage], Cn) ->
+    dn_labels([], Cn);
+dn_labels([$.], Cn) ->
+    dn_labels([], Cn);
+dn_labels([$. | Name], Cn) ->
+    [length(Cn) | reverse(Cn, dn_labels(Name))];
+dn_labels([$\\, C | Name], Cn) ->
+    dn_labels(Name, [C, $\\ | Cn]);
+dn_labels([C | Name], Cn) ->
+    dn_labels(Name, [C | Cn]);
+dn_labels([], Cn) ->
     [length(Cn) | reverse(Cn, [0])].
-    
+
 %%
 %% Skip over a compressed domain name
 %%
@@ -605,3 +657,12 @@ cmp_lower([H0|T0], [H1|T1]) ->
     end;
 cmp_lower([], []) -> true.
 
+utf8_to_unicode(Utf8) ->
+    case unicode:characters_to_list(list_to_binary(Utf8), utf8) of
+	Unicode when is_list(Unicode) ->
+	    Unicode;
+	_ -> error
+    end.
+
+unicode_to_utf8(Unicode) ->
+    binary_to_list(unicode:characters_to_binary(Unicode, unicode, utf8)).

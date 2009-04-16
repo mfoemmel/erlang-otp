@@ -234,14 +234,15 @@ do_move64(I, TempMap, Strategy) ->
 %%% Fix a movx op.
 
 do_movx(I, TempMap, Strategy) ->
-  {FixSrc, Src, DidSpill1} =
+  {{FixSrc, Src, DidSpill1}, {FixDst, Dst, DidSpill2}} =
     case I of
       #movsx{src=Src0,dst=Dst0} ->
-	fix_src_operand(Src0, TempMap, Strategy);
+	{fix_src_operand(Src0, TempMap, Strategy),
+	 fix_dst_operand(Dst0, TempMap, Strategy)};
       #movzx{src=Src0,dst=Dst0} ->
-	fix_src_operand(Src0, TempMap, Strategy)
+	{fix_src_operand(Src0, TempMap, Strategy),
+	 fix_dst_operand(Dst0, TempMap, Strategy)}
     end,
-  {FixDst, Dst, DidSpill2} = fix_dst_operand(Dst0, TempMap, Strategy),
   {I3, DidSpill3} =
     case is_spilled(Dst, TempMap) of
       false ->

@@ -51,10 +51,10 @@ import java.util.Random;
  * <p>
  * The System property OtpConnection.trace can be used to change the initial
  * trace level setting for all connections. Normally the initial trace level is
- * 0 and connections are not traced unless
- * {@link #setTraceLevel setTraceLevel()} is used to change the setting for a
- * particular connection. OtpConnection.trace can be used to turn on tracing by
- * default for all connections.
+ * 0 and connections are not traced unless {@link #setTraceLevel
+ * setTraceLevel()} is used to change the setting for a particular connection.
+ * OtpConnection.trace can be used to turn on tracing by default for all
+ * connections.
  * </p>
  */
 public abstract class AbstractConnection extends Thread {
@@ -105,6 +105,8 @@ public abstract class AbstractConnection extends Thread {
 
     protected static Random random = null;
 
+    private int flags = 0;
+
     static {
 	// trace this connection?
 	final String trace = System.getProperties().getProperty(
@@ -122,7 +124,7 @@ public abstract class AbstractConnection extends Thread {
     // private AbstractConnection() {
     // }
 
-    /*
+    /**
      * Accept an incoming connection from a remote node. Used by {@link
      * OtpSelf#accept() OtpSelf.accept()} to create a connection based on data
      * received when handshaking with the peer node, when the remote node is the
@@ -168,7 +170,7 @@ public abstract class AbstractConnection extends Thread {
 	name = peer.node();
     }
 
-    /*
+    /**
      * Intiate and open a connection to a remote node.
      * 
      * @exception java.io.IOException if it was not possible to connect to the
@@ -220,13 +222,13 @@ public abstract class AbstractConnection extends Thread {
      * Send a pre-encoded message to a named process on a remote node.
      * 
      * @param dest
-     *                the name of the remote process.
+     *            the name of the remote process.
      * @param payload
-     *                the encoded message to send.
+     *            the encoded message to send.
      * 
      * @exception java.io.IOException
-     *                    if the connection is not active or a communication
-     *                    error occurs.
+     *                if the connection is not active or a communication error
+     *                occurs.
      */
     protected void sendBuf(final OtpErlangPid from, final String dest,
 	    final OtpOutputStream payload) throws IOException {
@@ -264,13 +266,13 @@ public abstract class AbstractConnection extends Thread {
      * Send a pre-encoded message to a process on a remote node.
      * 
      * @param dest
-     *                the Erlang PID of the remote process.
+     *            the Erlang PID of the remote process.
      * @param msg
-     *                the encoded message to send.
+     *            the encoded message to send.
      * 
      * @exception java.io.IOException
-     *                    if the connection is not active or a communication
-     *                    error occurs.
+     *                if the connection is not active or a communication error
+     *                occurs.
      */
     protected void sendBuf(final OtpErlangPid from, final OtpErlangPid dest,
 	    final OtpOutputStream payload) throws IOException {
@@ -372,11 +374,11 @@ public abstract class AbstractConnection extends Thread {
      * {@link #sendUnlink unlink()} to remove the link.
      * 
      * @param dest
-     *                the Erlang PID of the remote process.
+     *            the Erlang PID of the remote process.
      * 
      * @exception java.io.IOException
-     *                    if the connection is not active or a communication
-     *                    error occurs.
+     *                if the connection is not active or a communication error
+     *                occurs.
      */
     protected void sendLink(final OtpErlangPid from, final OtpErlangPid dest)
 	    throws IOException {
@@ -404,15 +406,15 @@ public abstract class AbstractConnection extends Thread {
 
     /**
      * Remove a link between the local node and the specified process on the
-     * remote node. This method deactivates links created with
-     * {@link #sendLink link()}.
+     * remote node. This method deactivates links created with {@link #sendLink
+     * link()}.
      * 
      * @param dest
-     *                the Erlang PID of the remote process.
+     *            the Erlang PID of the remote process.
      * 
      * @exception java.io.IOException
-     *                    if the connection is not active or a communication
-     *                    error occurs.
+     *                if the connection is not active or a communication error
+     *                occurs.
      */
     protected void sendUnlink(final OtpErlangPid from, final OtpErlangPid dest)
 	    throws IOException {
@@ -448,13 +450,13 @@ public abstract class AbstractConnection extends Thread {
      * Send an exit signal to a remote process.
      * 
      * @param dest
-     *                the Erlang PID of the remote process.
+     *            the Erlang PID of the remote process.
      * @param reason
-     *                an Erlang term describing the exit reason.
+     *            an Erlang term describing the exit reason.
      * 
      * @exception java.io.IOException
-     *                    if the connection is not active or a communication
-     *                    error occurs.
+     *                if the connection is not active or a communication error
+     *                occurs.
      */
     protected void sendExit2(final OtpErlangPid from, final OtpErlangPid dest,
 	    final OtpErlangObject reason) throws IOException {
@@ -509,7 +511,7 @@ public abstract class AbstractConnection extends Thread {
 		    // read 4 bytes - get length of incoming packet
 		    // socket.getInputStream().read(lbuf);
 		    readSock(socket, lbuf);
-		    ibuf = new OtpInputStream(lbuf);
+		    ibuf = new OtpInputStream(lbuf, flags);
 		    len = ibuf.read4BE();
 
 		    // received tick? send tock!
@@ -525,7 +527,7 @@ public abstract class AbstractConnection extends Thread {
 		final byte[] tmpbuf = new byte[len];
 		// i = socket.getInputStream().read(tmpbuf);
 		readSock(socket, tmpbuf);
-		ibuf = new OtpInputStream(tmpbuf);
+		ibuf = new OtpInputStream(tmpbuf, flags);
 
 		if (ibuf.read1() != passThrough) {
 		    break receive_loop;
@@ -661,7 +663,8 @@ public abstract class AbstractConnection extends Thread {
 
 		case exitTTTag: // { EXIT, FromPid, ToPid, TraceToken, Reason }
 		case exit2TTTag: // { EXIT2, FromPid, ToPid, TraceToken,
-		    // Reason }
+		    // Reason
+		    // }
 		    // as above, but bifferent element number
 		    if (head.elementAt(4) == null) {
 			break receive_loop;
@@ -740,7 +743,7 @@ public abstract class AbstractConnection extends Thread {
      * </p>
      * 
      * @param level
-     *                the level to set.
+     *            the level to set.
      * 
      * @return the previous trace level.
      */
@@ -1098,7 +1101,7 @@ public abstract class AbstractConnection extends Thread {
 	byte[] tmpbuf;
 
 	readSock(socket, lbuf);
-	final OtpInputStream ibuf = new OtpInputStream(lbuf);
+	final OtpInputStream ibuf = new OtpInputStream(lbuf, 0);
 	final int len = ibuf.read2BE();
 	tmpbuf = new byte[len];
 	readSock(socket, tmpbuf);
@@ -1111,7 +1114,7 @@ public abstract class AbstractConnection extends Thread {
 
 	try {
 	    final byte[] tmpbuf = read2BytePackage();
-	    final OtpInputStream ibuf = new OtpInputStream(tmpbuf);
+	    final OtpInputStream ibuf = new OtpInputStream(tmpbuf, 0);
 	    byte[] tmpname;
 	    final int len = tmpbuf.length;
 	    peer.ntype = ibuf.read1();
@@ -1125,7 +1128,7 @@ public abstract class AbstractConnection extends Thread {
 	    peer.flags = ibuf.read4BE();
 	    tmpname = new byte[len - 7];
 	    ibuf.readN(tmpname);
-	    hisname = new String(tmpname);
+	    hisname = OtpErlangString.newString(tmpname);
 	    // Set the old nodetype parameter to indicate hidden/normal status
 	    // When the old handshake is removed, the ntype should also be.
 	    if ((peer.flags & AbstractNode.dFlagPublished) != 0) {
@@ -1165,7 +1168,7 @@ public abstract class AbstractConnection extends Thread {
 
 	try {
 	    final byte[] buf = read2BytePackage();
-	    final OtpInputStream ibuf = new OtpInputStream(buf);
+	    final OtpInputStream ibuf = new OtpInputStream(buf, 0);
 	    peer.ntype = ibuf.read1();
 	    if (peer.ntype != AbstractNode.NTYPE_R6) {
 		throw new IOException("Unexpected peer type");
@@ -1175,7 +1178,7 @@ public abstract class AbstractConnection extends Thread {
 	    challenge = ibuf.read4BE();
 	    final byte[] tmpname = new byte[buf.length - 11];
 	    ibuf.readN(tmpname);
-	    final String hisname = new String(tmpname);
+	    final String hisname = OtpErlangString.newString(tmpname);
 	    if (!hisname.equals(peer.node)) {
 		throw new IOException(
 			"Handshake failed - peer has wrong name: " + hisname);
@@ -1239,7 +1242,7 @@ public abstract class AbstractConnection extends Thread {
 
 	try {
 	    final byte[] buf = read2BytePackage();
-	    final OtpInputStream ibuf = new OtpInputStream(buf);
+	    final OtpInputStream ibuf = new OtpInputStream(buf, 0);
 	    final int tag = ibuf.read1();
 	    if (tag != ChallengeReply) {
 		throw new IOException("Handshake protocol error");
@@ -1284,7 +1287,7 @@ public abstract class AbstractConnection extends Thread {
 	final byte[] her_digest = new byte[16];
 	try {
 	    final byte[] buf = read2BytePackage();
-	    final OtpInputStream ibuf = new OtpInputStream(buf);
+	    final OtpInputStream ibuf = new OtpInputStream(buf, 0);
 	    final int tag = ibuf.read1();
 	    if (tag != ChallengeAck) {
 		throw new IOException("Handshake protocol error");
@@ -1326,14 +1329,14 @@ public abstract class AbstractConnection extends Thread {
 
 	try {
 	    final byte[] buf = read2BytePackage();
-	    final OtpInputStream ibuf = new OtpInputStream(buf);
+	    final OtpInputStream ibuf = new OtpInputStream(buf, 0);
 	    final int tag = ibuf.read1();
 	    if (tag != ChallengeStatus) {
 		throw new IOException("Handshake protocol error");
 	    }
 	    final byte[] tmpbuf = new byte[buf.length - 1];
 	    ibuf.readN(tmpbuf);
-	    final String status = new String(tmpbuf);
+	    final String status = OtpErlangString.newString(tmpbuf);
 
 	    if (status.compareTo("ok") != 0) {
 		throw new IOException("Peer replied with status '" + status
@@ -1346,5 +1349,13 @@ public abstract class AbstractConnection extends Thread {
 	    System.out.println("<- " + "HANDSHAKE recvStatus (ok)" + " local="
 		    + self);
 	}
+    }
+
+    public void setFlags(final int flags) {
+	this.flags = flags;
+    }
+
+    public int getFlags() {
+	return flags;
     }
 }

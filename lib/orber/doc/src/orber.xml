@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1997</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1997</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>orber</title>
@@ -52,45 +50,6 @@
           Which <c>Type</c> parameter is supplied determines the behavior. If not
           supplied Orber is started as <c>temporary</c>. 
           See the Reference Manual <em>application(3)</em> for further information. </p>
-      </desc>
-    </func>
-    <func>
-      <name>start_lightweight() -> ok</name>
-      <fsummary>Start the Orber application as lightweight</fsummary>
-      <desc>
-        <p>Starts the Orber application as lightweight.</p>
-        <p>Preconditions:</p>
-        <list type="bulleted">
-          <item>Erlang started on the node using the option -orber lightweight, 
-           e.g., erl -orber lightweight Addresses. </item>
-          <item>The <c>Addresses</c> must be a list of <c>RemoteModifiers</c>, equal to the
-          <c>orber:resolve_initial_references_remote/2</c> argument. The list must
-           contain Orber nodes addresses, to which we have access and are not started
-           as lightweight.</item>
-        </list>
-      </desc>
-    </func>
-    <func>
-      <name>start_lightweight(Addresses) -> ok</name>
-      <fsummary>Start the Orber application as lightweight</fsummary>
-      <type>
-        <v>Addresses = [Address]</v>
-        <v>Address = </v>
-        <v>RetVal = ok | exit()</v>
-      </type>
-      <desc>
-        <p>Starts the Orber application as lightweight.</p>
-        <p>Preconditions:</p>
-        <list type="bulleted">
-          <item>If Erlang is started using the configuration parameter -orber lightweight, 
-           e.g., erl -orber lightweight Address, the argument supplied to this
-           function will override the configuration parameter. Hence, this function
-           must be used carefully.</item>
-          <item>The <c>Addresses</c> must be a list of <c>RemoteModifiers</c>, equal to the
-          <c>orber:resolve_initial_references_remote/2</c> argument. The list must
-           contain Orber nodes addresses, to which we have access and are not started
-           as lightweight.</item>
-        </list>
       </desc>
     </func>
     <func>
@@ -151,22 +110,6 @@
       <desc>
         <p>Returns true if the supplied exception is a system defined 
           exception, otherwise false.</p>
-      </desc>
-    </func>
-    <func>
-      <name>is_lightweight() -> boolean()</name>
-      <fsummary>Is the application started as lightweight?</fsummary>
-      <desc>
-        <p>This function returns the true if Orber is started as lightweight, 
-          false otherwise.</p>
-      </desc>
-    </func>
-    <func>
-      <name>get_lightweight_nodes() -> RemoteModifierList | false</name>
-      <fsummary>Get the Remote Modifier list.</fsummary>
-      <desc>
-        <p>This function returns false if Orber is not started as lightweight, 
-          otherwise a list of Remote Modifiers.</p>
       </desc>
     </func>
     <func>

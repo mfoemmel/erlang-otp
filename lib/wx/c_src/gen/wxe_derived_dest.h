@@ -629,7 +629,7 @@ class EwxHtmlEasyPrinting : public wxHtmlEasyPrinting {
 }; 
 
 class EwxGLCanvas : public wxGLCanvas { 
- public: ~EwxGLCanvas() {((WxeApp *)wxTheApp)->clearPtr(this);}; 
+ public: ~EwxGLCanvas() {deleteActiveGL(this);((WxeApp *)wxTheApp)->clearPtr(this);}; 
  EwxGLCanvas(wxWindow * parent,const wxGLContext * shared,wxWindowID id,const wxPoint& pos,const wxSize& size,long style,const wxString& name,int * attribList,const wxPalette& palette) : wxGLCanvas(parent,shared,id,pos,size,style,name,attribList,palette) {};
  EwxGLCanvas(wxWindow * parent,const wxGLCanvas * shared,wxWindowID id,const wxPoint& pos,const wxSize& size,long style,const wxString& name,int * attribList,const wxPalette& palette) : wxGLCanvas(parent,shared,id,pos,size,style,name,attribList,palette) {};
  EwxGLCanvas(wxWindow * parent,wxWindowID id,const wxPoint& pos,const wxSize& size,long style,const wxString& name,int * attribList,const wxPalette& palette) : wxGLCanvas(parent,id,pos,size,style,name,attribList,palette) {};
@@ -677,6 +677,12 @@ class EwxPrintout : public wxPrintout {
 class EwxClipboard : public wxClipboard { 
  public: ~EwxClipboard() {((WxeApp *)wxTheApp)->clearPtr(this);}; 
  EwxClipboard() : wxClipboard() {};
+}; 
+
+class EwxSplitterWindow : public wxSplitterWindow { 
+ public: ~EwxSplitterWindow() {((WxeApp *)wxTheApp)->clearPtr(this);}; 
+ EwxSplitterWindow(wxWindow * parent,wxWindowID id,const wxPoint& pos,const wxSize& size,long style) : wxSplitterWindow(parent,id,pos,size,style) {};
+ EwxSplitterWindow() : wxSplitterWindow() {};
 }; 
 
 void WxeApp::delete_object(void *ptr, wxeRefData *refd) {

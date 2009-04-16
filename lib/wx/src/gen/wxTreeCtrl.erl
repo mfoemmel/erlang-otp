@@ -113,7 +113,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
           ({pos, {PosX,PosY}}, Acc) -> [<<2:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<3:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc];
-          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<5:32/?UI,ValidatorRef:32/?UI>>|Acc]  end,
+          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<5:32/?UI,ValidatorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxTreeCtrl_new_2,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -133,7 +134,8 @@ addRoot(#wx_ref{type=ThisT,ref=ThisRef},Text, Options)
   Text_UC = unicode:characters_to_binary([Text,0]),
   MOpts = fun({image, Image}, Acc) -> [<<1:32/?UI,Image:32/?UI>>|Acc];
           ({selectedImage, SelectedImage}, Acc) -> [<<2:32/?UI,SelectedImage:32/?UI>>|Acc];
-          ({data, Data}, Acc) ->   wxe_util:send_bin(term_to_binary(Data)),[<<3:32/?UI,0:32>>|Acc]  end,
+          ({data, Data}, Acc) ->   wxe_util:send_bin(term_to_binary(Data)),[<<3:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTreeCtrl_AddRoot,
   <<ThisRef:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -153,7 +155,8 @@ appendItem(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ParentR
   Text_UC = unicode:characters_to_binary([Text,0]),
   MOpts = fun({image, Image}, Acc) -> [<<1:32/?UI,Image:32/?UI>>|Acc];
           ({selectedImage, SelectedImage}, Acc) -> [<<2:32/?UI,SelectedImage:32/?UI>>|Acc];
-          ({data, Data}, Acc) ->   wxe_util:send_bin(term_to_binary(Data)),[<<3:32/?UI,0:32>>|Acc]  end,
+          ({data, Data}, Acc) ->   wxe_util:send_bin(term_to_binary(Data)),[<<3:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTreeCtrl_AppendItem,
   <<ThisRef:32/?UI,ParentRef:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((4+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -205,7 +208,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef}, Opti
           ({pos, {PosX,PosY}}, Acc) -> [<<2:32/?UI,PosX:32/?UI,PosY:32/?UI,0:32>>|Acc];
           ({size, {SizeW,SizeH}}, Acc) -> [<<3:32/?UI,SizeW:32/?UI,SizeH:32/?UI,0:32>>|Acc];
           ({style, Style}, Acc) -> [<<4:32/?UI,Style:32/?UI>>|Acc];
-          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<5:32/?UI,ValidatorRef:32/?UI>>|Acc]  end,
+          ({validator, #wx_ref{type=ValidatorT,ref=ValidatorRef}}, Acc) ->   ?CLASS(ValidatorT,wx),[<<5:32/?UI,ValidatorRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTreeCtrl_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI, BinOpt/binary>>).
@@ -257,7 +261,8 @@ getBoundingRect(This,Item,Rect={RectX,RectY,RectW,RectH})
 getBoundingRect(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemRef},{RectX,RectY,RectW,RectH}, Options)
  when is_integer(RectX),is_integer(RectY),is_integer(RectW),is_integer(RectH),is_list(Options) ->
   ?CLASS(ThisT,wxTreeCtrl),
-  MOpts = fun({textOnly, TextOnly}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(TextOnly)):32/?UI>>|Acc]  end,
+  MOpts = fun({textOnly, TextOnly}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(TextOnly)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTreeCtrl_GetBoundingRect,
   <<ThisRef:32/?UI,ItemRef:32/?UI,RectX:32/?UI,RectY:32/?UI,RectW:32/?UI,RectH:32/?UI, BinOpt/binary>>).
@@ -274,7 +279,8 @@ getChildrenCount(This,Item)
 getChildrenCount(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTreeCtrl),
-  MOpts = fun({recursively, Recursively}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Recursively)):32/?UI>>|Acc]  end,
+  MOpts = fun({recursively, Recursively}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Recursively)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTreeCtrl_GetChildrenCount,
   <<ThisRef:32/?UI,ItemRef:32/?UI, BinOpt/binary>>).
@@ -350,7 +356,8 @@ getItemImage(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemR
 getItemImage(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTreeCtrl),
-  MOpts = fun({which, Which}, Acc) -> [<<1:32/?UI,Which:32/?UI>>|Acc]  end,
+  MOpts = fun({which, Which}, Acc) -> [<<1:32/?UI,Which:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTreeCtrl_GetItemImage_2,
   <<ThisRef:32/?UI,ItemRef:32/?UI, BinOpt/binary>>).
@@ -480,7 +487,8 @@ insertItem(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ParentR
   Text_UC = unicode:characters_to_binary([Text,0]),
   MOpts = fun({image, Image}, Acc) -> [<<1:32/?UI,Image:32/?UI>>|Acc];
           ({selImage, SelImage}, Acc) -> [<<2:32/?UI,SelImage:32/?UI>>|Acc];
-          ({data, Data}, Acc) ->   wxe_util:send_bin(term_to_binary(Data)),[<<3:32/?UI,0:32>>|Acc]  end,
+          ({data, Data}, Acc) ->   wxe_util:send_bin(term_to_binary(Data)),[<<3:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTreeCtrl_InsertItem_4_0,
   <<ThisRef:32/?UI,ParentRef:32/?UI,Pos:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>);
@@ -490,7 +498,8 @@ insertItem(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ParentR
   Text_UC = unicode:characters_to_binary([Text,0]),
   MOpts = fun({image, Image}, Acc) -> [<<1:32/?UI,Image:32/?UI>>|Acc];
           ({selectedImage, SelectedImage}, Acc) -> [<<2:32/?UI,SelectedImage:32/?UI>>|Acc];
-          ({data, Data}, Acc) ->   wxe_util:send_bin(term_to_binary(Data)),[<<3:32/?UI,0:32>>|Acc]  end,
+          ({data, Data}, Acc) ->   wxe_util:send_bin(term_to_binary(Data)),[<<3:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTreeCtrl_InsertItem_4_1,
   <<ThisRef:32/?UI,ParentRef:32/?UI,IdPreviousRef:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((0+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -545,7 +554,8 @@ prependItem(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=Parent
   Text_UC = unicode:characters_to_binary([Text,0]),
   MOpts = fun({image, Image}, Acc) -> [<<1:32/?UI,Image:32/?UI>>|Acc];
           ({selectedImage, SelectedImage}, Acc) -> [<<2:32/?UI,SelectedImage:32/?UI>>|Acc];
-          ({data, Data}, Acc) ->   wxe_util:send_bin(term_to_binary(Data)),[<<3:32/?UI,0:32>>|Acc]  end,
+          ({data, Data}, Acc) ->   wxe_util:send_bin(term_to_binary(Data)),[<<3:32/?UI,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxTreeCtrl_PrependItem,
   <<ThisRef:32/?UI,ParentRef:32/?UI,(byte_size(Text_UC)):32/?UI,(Text_UC)/binary, 0:(((8- ((4+byte_size(Text_UC)) band 16#7)) band 16#7))/unit:8, BinOpt/binary>>).
@@ -570,7 +580,8 @@ selectItem(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemRef
 selectItem(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTreeCtrl),
-  MOpts = fun({select, Select}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Select)):32/?UI>>|Acc]  end,
+  MOpts = fun({select, Select}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Select)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTreeCtrl_SelectItem_2,
   <<ThisRef:32/?UI,ItemRef:32/?UI, BinOpt/binary>>).
@@ -611,7 +622,8 @@ setItemBold(This,Item)
 setItemBold(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTreeCtrl),
-  MOpts = fun({bold, Bold}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Bold)):32/?UI>>|Acc]  end,
+  MOpts = fun({bold, Bold}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Bold)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTreeCtrl_SetItemBold,
   <<ThisRef:32/?UI,ItemRef:32/?UI, BinOpt/binary>>).
@@ -636,7 +648,8 @@ setItemDropHighlight(This,Item)
 setItemDropHighlight(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTreeCtrl),
-  MOpts = fun({highlight, Highlight}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Highlight)):32/?UI>>|Acc]  end,
+  MOpts = fun({highlight, Highlight}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Highlight)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTreeCtrl_SetItemDropHighlight,
   <<ThisRef:32/?UI,ItemRef:32/?UI, BinOpt/binary>>).
@@ -661,7 +674,8 @@ setItemHasChildren(This,Item)
 setItemHasChildren(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemRef}, Options)
  when is_list(Options) ->
   ?CLASS(ThisT,wxTreeCtrl),
-  MOpts = fun({has, Has}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Has)):32/?UI>>|Acc]  end,
+  MOpts = fun({has, Has}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Has)):32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTreeCtrl_SetItemHasChildren,
   <<ThisRef:32/?UI,ItemRef:32/?UI, BinOpt/binary>>).
@@ -682,7 +696,8 @@ setItemImage(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemR
 setItemImage(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=wxTreeItemId,ref=ItemRef},Image, Options)
  when is_integer(Image),is_list(Options) ->
   ?CLASS(ThisT,wxTreeCtrl),
-  MOpts = fun({which, Which}, Acc) -> [<<1:32/?UI,Which:32/?UI>>|Acc]  end,
+  MOpts = fun({which, Which}, Acc) -> [<<1:32/?UI,Which:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxTreeCtrl_SetItemImage_3,
   <<ThisRef:32/?UI,ItemRef:32/?UI,Image:32/?UI, 0:32,BinOpt/binary>>).

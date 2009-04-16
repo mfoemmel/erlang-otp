@@ -569,6 +569,12 @@ bsm_reroute([{test,TestOp,F0,TestArgs}=I|Is], D, {_,Save}=S, Acc0) ->
 	    %% remembered Save position.
 	    bsm_reroute(Is, D, none, Acc)
     end;
+bsm_reroute([{test,TestOp,F0,Live,TestArgs,Dst}|Is], D, {_,Save}, Acc0) ->
+    F = bsm_subst_label(F0, Save, D),
+    Acc = [{test,TestOp,F,Live,TestArgs,Dst}|Acc0],
+    %% The test instruction will update the bit offset. Kill our
+    %% remembered Save position.
+    bsm_reroute(Is, D, none, Acc);
 bsm_reroute([{block,[{set,[],[],{alloc,_,_}}]}=Bl,
 	     {bs_context_to_binary,_}=I|Is], D, S, Acc) ->
     %% To help further bit syntax optimizations.

@@ -370,8 +370,6 @@ update({set,[D],_Src,_Op}, Ts0) ->
     tdb_update([{D,kill}], Ts0);
 update({set,[D1,D2],_Src,_Op}, Ts0) ->
     tdb_update([{D1,kill},{D2,kill}], Ts0);
-update({init,D}, Ts) ->
-    tdb_update([{D,kill}], Ts);
 update({kill,D}, Ts) ->
     tdb_update([{D,kill}], Ts);
 
@@ -690,5 +688,4 @@ merge_type_info(NewType, _) ->
 verify_type({tuple,Sz,[]}) when is_integer(Sz) -> ok;
 verify_type({tuple,Sz,[_]}) when is_integer(Sz) -> ok;
 verify_type({tuple_element,_,_}) -> ok;
-verify_type(float) -> ok;
-verify_type({atom,_}) -> ok.
+verify_type(float) -> ok.

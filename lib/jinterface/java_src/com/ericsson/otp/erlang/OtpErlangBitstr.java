@@ -266,7 +266,15 @@ public class OtpErlangBitstr extends OtpErlangObject implements Serializable,
 
 	return true;
     }
-
+    
+    @Override
+    protected int doHashCode() {
+	OtpErlangObject.Hash hash = new OtpErlangObject.Hash(15);
+	hash.combine(bin);
+	hash.combine(pad_bits);
+	return hash.valueOf();
+    }
+    
     @Override
     public Object clone() {
 	final OtpErlangBitstr that = (OtpErlangBitstr) super.clone();

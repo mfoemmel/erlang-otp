@@ -18,7 +18,7 @@
 %% This file is generated DO NOT EDIT
 
 %% @doc See external documentation: <a href="http://www.wxwidgets.org/manuals/stable/wx_wxscrollevent.html">wxScrollEvent</a>.
-%% <dl><dt>Use {@link wxEvtHandler:connect/5.} with EventType:</dt>
+%% <dl><dt>Use {@link wxEvtHandler:connect/3.} with EventType:</dt>
 %% <dd><em>scroll_top</em>, <em>scroll_bottom</em>, <em>scroll_lineup</em>, <em>scroll_linedown</em>, <em>scroll_pageup</em>, <em>scroll_pagedown</em>, <em>scroll_thumbtrack</em>, <em>scroll_thumbrelease</em>, <em>scroll_changed</em></dd></dl>
 %% See also the message variant {@link wxEvtHandler:wxScroll(). #wxScroll{}} event record type.
 %%

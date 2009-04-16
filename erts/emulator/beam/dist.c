@@ -2004,11 +2004,8 @@ BIF_RETTYPE dist_exit_3(BIF_ALIST_3)
 	    /*
 	     * We may have exited current process and may have to take action.
 	     */
-#ifdef ERTS_SMP
-	    ERTS_SMP_BIF_CHK_PENDING_EXIT(BIF_P, lp_locks);
-#else
 	    ERTS_BIF_CHK_EXITED(BIF_P);
-#endif
+	    ERTS_SMP_BIF_CHK_PENDING_EXIT(BIF_P, ERTS_PROC_LOCK_MAIN);
 	}
     }
     else if (is_external_pid(local)

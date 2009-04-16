@@ -95,9 +95,9 @@ cindex(Ix,Val,Cname) ->
     end.
 
 %% converts a list to a record if necessary
-list_to_record(_,Tuple) when tuple(Tuple) ->
+list_to_record(_,Tuple) when is_tuple(Tuple) ->
     Tuple;
-list_to_record(Name,List) when list(List) ->
+list_to_record(Name,List) when is_list(List) ->
     list_to_tuple([Name|List]).
 
 %%--------------------------------------------------------
@@ -121,7 +121,7 @@ setext(true) ->
 %    [{debug,ext},{bits,1,1}];
     [1].
 
-fixoptionals(OptList,_OptLength,Val) when tuple(Val) ->
+fixoptionals(OptList,_OptLength,Val) when is_tuple(Val) ->
 %    Bits = fixoptionals(OptList,Val,0),
 %    {Val,{bits,OptLength,Bits}};
 %    {Val,[10,OptLength,Bits]};
@@ -272,19 +272,19 @@ getoctets_as_list(Buffer,Num) ->
 %%
 set_choice(Alt,{L1,L2},{Len1,_Len2}) ->
     case set_choice_tag(Alt,L1) of
-	N when integer(N), Len1 > 1 ->
+	N when is_integer(N), Len1 > 1 ->
 %	    [{bits,1,0}, % the value is in the root set
 %	     encode_constrained_number({0,Len1-1},N)];
 	    [0, % the value is in the root set
 	     encode_constrained_number({0,Len1-1},N)];
-	N when integer(N) ->
+	N when is_integer(N) ->
 %	    [{bits,1,0}]; % no encoding if only 0 or 1 alternative
 	    [0]; % no encoding if only 0 or 1 alternative
 	false ->
 %	    [{bits,1,1}, % extension value
 	    [1, % extension value
 	     case set_choice_tag(Alt,L2) of
-		 N2 when integer(N2) ->
+		 N2 when is_integer(N2) ->
 		     encode_small_number(N2);
 		 false ->
 		     unknown_choice_alt
@@ -292,9 +292,9 @@ set_choice(Alt,{L1,L2},{Len1,_Len2}) ->
     end;
 set_choice(Alt,L,Len) ->
     case set_choice_tag(Alt,L) of
-	N when integer(N), Len > 1 ->
+	N when is_integer(N), Len > 1 ->
 	    encode_constrained_number({0,Len-1},N);
-	N when integer(N) ->
+	N when is_integer(N) ->
 	    []; % no encoding if only 0 or 1 alternative
 	false ->
 	    [unknown_choice_alt]
@@ -330,18 +330,18 @@ decode_fragmented_bits(<<3:2,Len:6,Bin/binary>>,C,Acc) ->
 decode_fragmented_bits(<<0:1,0:7,Bin/binary>>,C,Acc) ->
     BinBits = erlang:list_to_bitstring(lists:reverse(Acc)),
     case C of
-	Int when integer(Int),C == bit_size(BinBits) ->
+	Int when is_integer(Int),C == bit_size(BinBits) ->
 	    {BinBits,Bin};
-	Int when integer(Int) ->
+	Int when is_integer(Int) ->
 	    exit({error,{asn1,{illegal_value,C,BinBits}}})
     end;
 decode_fragmented_bits(<<0:1,Len:7,Bin/binary>>,C,Acc) ->
     <<Value:Len/bitstring,Rest/bitstring>> = Bin,
     BinBits = erlang:list_to_bitstring([Value|Acc]),
     case C of
-	Int when integer(Int),C == bit_size(BinBits) ->
+	Int when is_integer(Int),C == bit_size(BinBits) ->
 	    {BinBits,Rest};
-	Int when integer(Int) ->
+	Int when is_integer(Int) ->
 	    exit({error,{asn1,{illegal_value,C,BinBits}}})
     end.
 
@@ -355,18 +355,18 @@ decode_fragmented_octets(<<3:2,Len:6,Bin/binary>>,C,Acc) ->
 decode_fragmented_octets(<<0:1,0:7,Bin/binary>>,C,Acc) ->
     Octets = list_to_binary(lists:reverse(Acc)),
     case C of
-	Int when integer(Int), C == size(Octets) ->
+	Int when is_integer(Int), C == size(Octets) ->
 	    {Octets,Bin};
-	Int when integer(Int) ->
+	Int when is_integer(Int) ->
 	    exit({error,{asn1,{illegal_value,C,Octets}}})
     end;
 decode_fragmented_octets(<<0:1,Len:7,Bin/binary>>,C,Acc) ->
     <<Value:Len/binary-unit:8,Bin2/binary>> = Bin,
     BinOctets = list_to_binary(lists:reverse([Value|Acc])),
     case C of
-	Int when integer(Int),size(BinOctets) == Int ->
+	Int when is_integer(Int),size(BinOctets) == Int ->
 	    {BinOctets,Bin2};
-	Int when integer(Int) ->
+	Int when is_integer(Int) ->
 	    exit({error,{asn1,{illegal_value,C,BinOctets}}})
     end.
 
@@ -378,7 +378,7 @@ decode_fragmented_octets(<<0:1,Len:7,Bin/binary>>,C,Acc) ->
 %%         | binary
 %% Contraint = not used in this version
 %%
-encode_open_type(_Constraint, Val) when list(Val) ->
+encode_open_type(_Constraint, Val) when is_list(Val) ->
     Bin = list_to_binary(Val),
     case size(Bin) of 
 	Size when Size>255 ->
@@ -386,7 +386,7 @@ encode_open_type(_Constraint, Val) when list(Val) ->
 	Size ->
 	    [encode_length(undefined,Size),[20,Size,Bin]]
     end;
-encode_open_type(_Constraint, Val) when binary(Val) ->
+encode_open_type(_Constraint, Val) when is_binary(Val) ->
     case size(Val) of
 	Size when Size>255 ->
 	    [encode_length(undefined,size(Val)),[21,<<Size:16>>,Val]]; % octets implies align
@@ -411,22 +411,22 @@ decode_open_type(Bytes, _Constraint) ->
 %% encode_integer(Constraint,{Name,Value}) -> CompleteList
 %% 
 %%
-encode_integer(C,V,NamedNumberList) when atom(V) ->
+encode_integer(C,V,NamedNumberList) when is_atom(V) ->
     case lists:keysearch(V,1,NamedNumberList) of
 	{value,{_,NewV}} -> 
 	    encode_integer(C,NewV);
 	_ -> 
 	    exit({error,{asn1,{namednumber,V}}})
     end;
-encode_integer(C,V,_NamedNumberList) when integer(V) ->
+encode_integer(C,V,_NamedNumberList) when is_integer(V) ->
     encode_integer(C,V);
-encode_integer(C,{Name,V},NamedNumberList) when atom(Name) ->
+encode_integer(C,{Name,V},NamedNumberList) when is_atom(Name) ->
     encode_integer(C,V,NamedNumberList).
 
-encode_integer(C,{Name,Val}) when atom(Name) ->
+encode_integer(C,{Name,Val}) when is_atom(Name) ->
     encode_integer(C,Val);
 
-encode_integer([{Rc,_Ec}],Val) when tuple(Rc) -> % XXX when is this invoked? First argument most often a list,...Ok this is the extension case...but it doesn't work.
+encode_integer([{Rc,_Ec}],Val) when is_tuple(Rc) -> % XXX when is this invoked? First argument most often a list,...Ok this is the extension case...but it doesn't work.
     case (catch encode_integer([Rc],Val)) of
 	{'EXIT',{error,{asn1,_}}} ->
 %	    [{bits,1,1},encode_unconstrained_number(Val)];
@@ -463,7 +463,7 @@ decode_integer(Buffer,Range,NamedNumberList) ->
 	_ -> {Val,Buffer2}
     end.
 
-decode_integer(Buffer,[{Rc,_Ec}]) when tuple(Rc) ->
+decode_integer(Buffer,[{Rc,_Ec}]) when is_tuple(Rc) ->
     {Ext,Buffer2} = getext(Buffer),
     case Ext of
 	0 -> decode_integer(Buffer2,[Rc]);
@@ -473,7 +473,7 @@ decode_integer(Buffer,undefined) ->
     decode_unconstrained_number(Buffer);
 decode_integer(Buffer,C) ->
     case get_constraint(C,'SingleValue') of
-	V when integer(V) ->
+	V when is_integer(V) ->
 	    {V,Buffer};
 	_ ->
 	    decode_integer1(Buffer,C)
@@ -492,7 +492,7 @@ decode_integer1(Buffer,C) ->
 %% X.691:10.6 Encoding of a normally small non-negative whole number
 %% Use this for encoding of CHOICE index if there is an extension marker in 
 %% the CHOICE
-encode_small_number({Name,Val}) when atom(Name) ->
+encode_small_number({Name,Val}) when is_atom(Name) ->
     encode_small_number(Val);
 encode_small_number(Val) when Val =< 63 ->
 %    [{bits,1,0},{bits,6,Val}];
@@ -513,7 +513,7 @@ decode_small_number(Bytes) ->
 
 %% X.691:10.7 Encoding of a semi-constrained whole number
 %% might be an optimization encode_semi_constrained_number(0,Val) ->
-encode_semi_constrained_number(C,{Name,Val}) when atom(Name) ->
+encode_semi_constrained_number(C,{Name,Val}) when is_atom(Name) ->
     encode_semi_constrained_number(C,Val);
 encode_semi_constrained_number({Lb,'MAX'},Val) ->
     encode_semi_constrained_number(Lb,Val);
@@ -574,7 +574,7 @@ encode_constrained_number({Lb,_Ub},Range,_,Val) ->
 	    exit({not_supported,{integer_range,Range}})
     end.
 
-encode_constrained_number(Range,{Name,Val}) when atom(Name) ->
+encode_constrained_number(Range,{Name,Val}) when is_atom(Name) ->
     encode_constrained_number(Range,Val);
 encode_constrained_number({Lb,Ub},Val) when Val >= Lb, Ub >= Val -> 
     Range = Ub - Lb + 1,
@@ -775,7 +775,7 @@ encode_length({0,'MAX'},Len) ->
     encode_length(undefined,Len);
 encode_length(Vr={Lb,Ub},Len) when Ub =< 65535 ,Lb >= 0 -> % constrained
     encode_constrained_number(Vr,Len);
-encode_length({Lb,_Ub},Len) when integer(Lb), Lb >= 0 -> % Ub > 65535
+encode_length({Lb,_Ub},Len) when is_integer(Lb), Lb >= 0 -> % Ub > 65535
     encode_length(undefined,Len);
 encode_length({Vr={Lb,Ub},Ext},Len) 
   when Ub =< 65535 ,Lb >= 0,Len=<Ub, is_list(Ext) -> 
@@ -783,7 +783,7 @@ encode_length({Vr={Lb,Ub},Ext},Len)
     [0,encode_constrained_number(Vr,Len)];
 encode_length({{Lb,_},Ext},Len) when is_list(Ext) -> 
     [1,encode_semi_constrained_number(Lb,Len)];
-encode_length(SingleValue,_Len) when integer(SingleValue) ->
+encode_length(SingleValue,_Len) when is_integer(SingleValue) ->
     [].
 
 %% X.691 10.9.3.4 (only used for length of bitmap that prefixes extension 
@@ -822,7 +822,7 @@ decode_length(Buffer,undefined)  -> % un-constrained
 
 decode_length(Buffer,{Lb,Ub}) when Ub =< 65535 ,Lb >= 0 -> % constrained
     decode_constrained_number(Buffer,{Lb,Ub});
-decode_length(Buffer,{Lb,_Ub}) when integer(Lb), Lb >= 0 -> % Ub > 65535
+decode_length(Buffer,{Lb,_Ub}) when is_integer(Lb), Lb >= 0 -> % Ub > 65535
     decode_length(Buffer,undefined);
 decode_length(Buffer,{{Lb,Ub},Ext}) when is_list(Ext) -> 
     case getbit(Buffer) of
@@ -847,7 +847,7 @@ decode_length(Bin,{_,_Lb,_Ub}) -> % Unconstrained or large Ub NOTE! this case do
 		    exit({error,{asn1,{decode_length,{nyi,length_above_64K}}}})
 	    end
     end;
-decode_length(Buffer,SingleValue) when integer(SingleValue) ->
+decode_length(Buffer,SingleValue) when is_integer(SingleValue) ->
     {SingleValue,Buffer}.
 
 
@@ -860,27 +860,27 @@ decode_boolean(Buffer) -> %when record(Buffer,buffer)
 
 
 %% ENUMERATED with extension marker
-decode_enumerated(Buffer,C,{Ntup1,Ntup2}) when tuple(Ntup1), tuple(Ntup2) ->
+decode_enumerated(Buffer,C,{Ntup1,Ntup2}) when is_tuple(Ntup1), is_tuple(Ntup2) ->
     {Ext,Buffer2} = getext(Buffer),
     case Ext of
 	0 -> % not an extension value
 	    {Val,Buffer3} = decode_integer(Buffer2,C),
 	    case catch (element(Val+1,Ntup1)) of
-		NewVal when atom(NewVal) -> {NewVal,Buffer3};
+		NewVal when is_atom(NewVal) -> {NewVal,Buffer3};
 		_Error -> exit({error,{asn1,{decode_enumerated,{Val,[Ntup1,Ntup2]}}}})
 	    end;
 	1 -> % this an extension value
 	    {Val,Buffer3} = decode_small_number(Buffer2),
 	    case catch (element(Val+1,Ntup2)) of
-		NewVal when atom(NewVal) -> {NewVal,Buffer3};
+		NewVal when is_atom(NewVal) -> {NewVal,Buffer3};
 		_ -> {{asn1_enum,Val},Buffer3}
 	    end
     end;
 
-decode_enumerated(Buffer,C,NamedNumberTup) when tuple(NamedNumberTup) ->
+decode_enumerated(Buffer,C,NamedNumberTup) when is_tuple(NamedNumberTup) ->
     {Val,Buffer2} = decode_integer(Buffer,C),
     case catch (element(Val+1,NamedNumberTup)) of
-	NewVal when atom(NewVal) -> {NewVal,Buffer2};
+	NewVal when is_atom(NewVal) -> {NewVal,Buffer2};
 	_Error -> exit({error,{asn1,{decode_enumerated,{Val,NamedNumberTup}}}})
     end.
 
@@ -913,13 +913,13 @@ decode_enumerated(Buffer,C,NamedNumberTup) when tuple(NamedNumberTup) ->
 %% Unused = integer(),
 %% BinBits = binary().
 
-encode_bit_string(C,Bin={Unused,BinBits},NamedBitList) when integer(Unused),
-							    binary(BinBits) ->
+encode_bit_string(C,Bin={Unused,BinBits},NamedBitList) when is_integer(Unused),
+							    is_binary(BinBits) ->
     encode_bin_bit_string(C,Bin,NamedBitList);
 
 %% when the value is a list of named bits
 
-encode_bit_string(C, LoNB=[FirstVal | _RestVal], NamedBitList) when atom(FirstVal) ->
+encode_bit_string(C, LoNB=[FirstVal | _RestVal], NamedBitList) when is_atom(FirstVal) ->
     ToSetPos = get_all_bitposes(LoNB, NamedBitList, []),
     BitList = make_and_set_list(ToSetPos,0),
     encode_bit_string(C,BitList,NamedBitList);% consider the constraint
@@ -931,15 +931,15 @@ encode_bit_string(C, BL=[{bit,_} | _RestVal], NamedBitList) ->
 
 %% when the value is a list of ones and zeroes
 encode_bit_string(Int, BitListValue, _) 
-  when list(BitListValue),integer(Int),Int =< 16 ->
+  when is_list(BitListValue),is_integer(Int),Int =< 16 ->
     %% The type is constrained by a single value size constraint
     [40,Int,length(BitListValue),BitListValue];
 encode_bit_string(Int, BitListValue, _) 
-  when list(BitListValue),integer(Int), Int =< 255 ->
+  when is_list(BitListValue),is_integer(Int), Int =< 255 ->
     %% The type is constrained by a single value size constraint
     [2,40,Int,length(BitListValue),BitListValue];
 encode_bit_string(Int, BitListValue, _) 
-  when list(BitListValue),integer(Int), Int < ?'64K' ->
+  when is_list(BitListValue),is_integer(Int), Int < ?'64K' ->
     {Code,DesiredLength,Length} = 
 	case length(BitListValue) of
 	    B1 when B1 > Int ->
@@ -955,7 +955,7 @@ encode_bit_string(Int, BitListValue, _)
     %% The type is constrained by a single value size constraint
     [2,Code,DesiredLength,Length,BitListValue];
 encode_bit_string(no, BitListValue,[]) 
-  when list(BitListValue) ->
+  when is_list(BitListValue) ->
     [encode_length(undefined,length(BitListValue)),
      2,BitListValue];
 encode_bit_string({{Fix,Fix},Ext}, BitListValue,[]) 
@@ -967,11 +967,11 @@ encode_bit_string({{Fix,Fix},Ext}, BitListValue,[])
 	    [1,encode_bit_string(no,BitListValue,[])]
     end;
 encode_bit_string(C, BitListValue,[]) 
-  when list(BitListValue) ->
+  when is_list(BitListValue) ->
     [encode_length(C,length(BitListValue)),
      2,BitListValue];
 encode_bit_string(no, BitListValue,_NamedBitList) 
-  when list(BitListValue) ->
+  when is_list(BitListValue) ->
     %% this case with an unconstrained BIT STRING can be made more efficient
     %% if the complete driver can take a special code so the length field
     %% is encoded there.
@@ -988,7 +988,7 @@ encode_bit_string({{Fix,Fix},Ext}, BitListValue,_NamedBitList)
 	    [1,encode_bit_string(no,BitListValue,_NamedBitList)]
     end;
 encode_bit_string(C,BitListValue,_NamedBitList) 
-  when list(BitListValue) ->% C = {_,'MAX'}
+  when is_list(BitListValue) ->% C = {_,'MAX'}
 %     NewBitLVal = lists:reverse(lists:dropwhile(fun(0)->true;(1)->false end,
 % 					    lists:reverse(BitListValue))),
     NewBitLVal = bit_string_trailing_zeros(BitListValue,C),
@@ -997,19 +997,19 @@ encode_bit_string(C,BitListValue,_NamedBitList)
 
 
 %% when the value is an integer
-encode_bit_string(C, IntegerVal, NamedBitList) when integer(IntegerVal)->
+encode_bit_string(C, IntegerVal, NamedBitList) when is_integer(IntegerVal)->
     BitList = int_to_bitlist(IntegerVal),
     encode_bit_string(C,BitList,NamedBitList);
 
 %% when the value is a tuple
-encode_bit_string(C,{Name,Val}, NamedBitList) when atom(Name) ->
+encode_bit_string(C,{Name,Val}, NamedBitList) when is_atom(Name) ->
     encode_bit_string(C,Val,NamedBitList).
 
-bit_string_trailing_zeros(BitList,C) when integer(C) ->
+bit_string_trailing_zeros(BitList,C) when is_integer(C) ->
     bit_string_trailing_zeros1(BitList,C,C);
-bit_string_trailing_zeros(BitList,{Lb,Ub}) when integer(Lb) ->
+bit_string_trailing_zeros(BitList,{Lb,Ub}) when is_integer(Lb) ->
     bit_string_trailing_zeros1(BitList,Lb,Ub);
-bit_string_trailing_zeros(BitList,{{Lb,Ub},_}) when integer(Lb) ->
+bit_string_trailing_zeros(BitList,{{Lb,Ub},_}) when is_integer(Lb) ->
     bit_string_trailing_zeros1(BitList,Lb,Ub);
 bit_string_trailing_zeros(BitList,_) ->
     BitList.
@@ -1030,13 +1030,13 @@ bit_string_trailing_zeros1(BitList,Lb,Ub) ->
 %% Unused = integer(),i.e. number unused bits in least sign. byte of
 %% BinBits = binary().
 encode_bin_bit_string(C,{_,BinBits},_NamedBitList)
-  when integer(C),C=<16 ->
+  when is_integer(C),C=<16 ->
     [45,C,size(BinBits),BinBits];
 encode_bin_bit_string(C,{_Unused,BinBits},_NamedBitList)
-  when integer(C), C =< 255 ->
+  when is_integer(C), C =< 255 ->
     [2,45,C,size(BinBits),BinBits];
 encode_bin_bit_string(C,{_Unused,BinBits},_NamedBitList)
-  when integer(C), C =< 65535 ->
+  when is_integer(C), C =< 65535 ->
     case size(BinBits) of
 	Size when Size =< 255 ->
 	    [2,46,<<C:16>>,Size,BinBits];
@@ -1044,7 +1044,7 @@ encode_bin_bit_string(C,{_Unused,BinBits},_NamedBitList)
 	    [2,47,<<C:16>>,<<Size:16>>,BinBits]
     end;
 %% encode_bin_bit_string(C,{_Unused,BinBits},_NamedBitList)
-%%   when integer(C) ->
+%%   when is_integer(C) ->
 %%     exit({error,{asn1, {bitstring_size, not_supported, C}}});
 encode_bin_bit_string(C,UnusedAndBin={_,_},NamedBitList) ->
 %    UnusedAndBin1 = {Unused1,Bin1} = 
@@ -1052,7 +1052,7 @@ encode_bin_bit_string(C,UnusedAndBin={_,_},NamedBitList) ->
 	%% removes all trailing bits if NamedBitList is not empty
 	remove_trailing_bin(NamedBitList,UnusedAndBin),
     case C of
-	{Lb,Ub} when integer(Lb),integer(Ub) ->
+	{Lb,Ub} when is_integer(Lb),is_integer(Ub) ->
 %	    [encode_length({Lb,Ub},size(Bin1)*8 - Unused1),
 %	     align,UnusedAndBin1];
 	    Size=size(Bin1),
@@ -1143,18 +1143,18 @@ decode_compact_bit_string(Buffer, C, NamedNumberList) ->
     case get_constraint(C,'SizeConstraint') of
 	0 -> % fixed length
 	    {{8,0},Buffer};
-	V when integer(V),V=<16 -> %fixed length 16 bits or less
+	V when is_integer(V),V=<16 -> %fixed length 16 bits or less
 	    compact_bit_string(Buffer,V,NamedNumberList);
-	V when integer(V),V=<65536 -> %fixed length > 16 bits
+	V when is_integer(V),V=<65536 -> %fixed length > 16 bits
 	    Bytes2 = align(Buffer),
 	    compact_bit_string(Bytes2,V,NamedNumberList);
-	V when integer(V) -> % V > 65536 => fragmented value
+	V when is_integer(V) -> % V > 65536 => fragmented value
 	    {BitStr,Buffer2} = decode_fragmented_bits(Buffer,V),
 	    case bit_size(BitStr) band 7 of
 		0 -> {{0,BitStr},Buffer2};
 		N -> {{8-N,<<BitStr/bitstring,0:(8-N)>>},Buffer2}
 	    end;
-	{Lb,Ub} when integer(Lb),integer(Ub) ->
+	{Lb,Ub} when is_integer(Lb),is_integer(Ub) ->
 	    %% This case may demand decoding of fragmented length/value
 	    {Len,Bytes2} = decode_length(Buffer,{Lb,Ub}),
 	    Bytes3 = align(Bytes2),
@@ -1188,7 +1188,7 @@ decode_compact_bit_string(Buffer, C, NamedNumberList) ->
 %% 
 decode_bit_string(Buffer, C, NamedNumberList) ->
     case get_constraint(C,'SizeConstraint') of
-	{Lb,Ub} when integer(Lb),integer(Ub) ->
+	{Lb,Ub} when is_integer(Lb),is_integer(Ub) ->
 	    {Len,Bytes2} = decode_length(Buffer,{Lb,Ub}),
 	    Bytes3 = align(Bytes2),
 	    bit_list_or_named(Bytes3,Len,NamedNumberList);
@@ -1198,12 +1198,12 @@ decode_bit_string(Buffer, C, NamedNumberList) ->
 	    bit_list_or_named(Bytes3,Len,NamedNumberList);
 	0 -> % fixed length
 	    {[],Buffer}; % nothing to encode
-	V when integer(V),V=<16 -> % fixed length 16 bits or less
+	V when is_integer(V),V=<16 -> % fixed length 16 bits or less
 	    bit_list_or_named(Buffer,V,NamedNumberList);
-	V when integer(V),V=<65536 ->
+	V when is_integer(V),V=<65536 ->
 	    Bytes2 = align(Buffer),
 	    bit_list_or_named(Bytes2,V,NamedNumberList);
-	V when integer(V) ->
+	V when is_integer(V) ->
 	    Bytes2 = align(Buffer),
 	    {BinBits,_Bytes3} = decode_fragmented_bits(Bytes2,V),
 	    bit_list_or_named(BinBits,V,NamedNumberList);
@@ -1269,7 +1269,7 @@ bit_list_or_named1(_Pos,[],_Names,Acc) ->
 %%%%%%%%%%%%%%%
 %% 
 
-int_to_bitlist(Int) when integer(Int), Int > 0 ->
+int_to_bitlist(Int) when is_integer(Int), Int > 0 ->
     [Int band 1 | int_to_bitlist(Int bsr 1)];
 int_to_bitlist(0) ->
     [].
@@ -1325,7 +1325,7 @@ encode_octet_string(SZ={_,_},false,Val) ->
     Len = length(Val),
     [encode_length(SZ,Len),2,
      octets_to_complete(Len,Val)];
-encode_octet_string(SZ,false,Val) when list(SZ) ->
+encode_octet_string(SZ,false,Val) when is_list(SZ) ->
     Len = length(Val),
     [encode_length({hd(SZ),lists:max(SZ)},Len),2,
      octets_to_complete(Len,Val)];
@@ -1347,18 +1347,18 @@ decode_octet_string(<<B1,B2,Bytes/bitstring>>,2,false) ->
 %%    {Bs,Bytes2}= getbits(Bytes,16),
 %%    {binary_to_list(<<Bs:16>>),Bytes2};
     {[B1,B2],Bytes};
-decode_octet_string(Bytes,Sv,false) when integer(Sv),Sv=<65535 ->
+decode_octet_string(Bytes,Sv,false) when is_integer(Sv),Sv=<65535 ->
     %%    Bytes2 = align(Bytes),
     %% getoctets_as_list aligns buffer before it picks octets
     getoctets_as_list(Bytes,Sv);
-decode_octet_string(Bytes,Sv,false) when integer(Sv) ->
+decode_octet_string(Bytes,Sv,false) when is_integer(Sv) ->
     Bytes2 = align(Bytes),
     decode_fragmented_octets(Bytes2,Sv);
 decode_octet_string(Bytes,{Lb,Ub},false) ->
     {Len,Bytes2} = decode_length(Bytes,{Lb,Ub}),
 %%    Bytes3 = align(Bytes2),
     getoctets_as_list(Bytes2,Len);
-decode_octet_string(Bytes,Sv,false) when list(Sv) ->
+decode_octet_string(Bytes,Sv,false) when is_list(Sv) ->
     {Len,Bytes2} = decode_length(Bytes,{hd(Sv),lists:max(Sv)}),
 %%    Bytes3 = align(Bytes2),
     getoctets_as_list(Bytes2,Len);
@@ -1375,22 +1375,22 @@ decode_octet_string(Bytes,no,false) ->
 %%encode_restricted_string(aligned,'BMPString',Constraints,Extension,Val)
 
 
-encode_restricted_string(aligned,{Name,Val}) when atom(Name) ->
+encode_restricted_string(aligned,{Name,Val}) when is_atom(Name) ->
     encode_restricted_string(aligned,Val);
 
-encode_restricted_string(aligned,Val) when list(Val)->
+encode_restricted_string(aligned,Val) when is_list(Val)->
     Len = length(Val),
     [encode_length(undefined,Len),octets_to_complete(Len,Val)].
 
 
-encode_known_multiplier_string(StringType,SizeC,NumBits,CharOutTab,{Name,Val}) when atom(Name) ->
+encode_known_multiplier_string(StringType,SizeC,NumBits,CharOutTab,{Name,Val}) when is_atom(Name) ->
     encode_known_multiplier_string(StringType,SizeC,NumBits,CharOutTab,Val);
 encode_known_multiplier_string(_StringType,SizeC,NumBits,CharOutTab,Val) ->
     Result = chars_encode2(Val,NumBits,CharOutTab),
     case SizeC of
-	Ub when integer(Ub), Ub*NumBits =< 16  ->
+	Ub when is_integer(Ub), Ub*NumBits =< 16  ->
 	    Result;
-	Ub when integer(Ub),Ub =<65535 -> % fixed length
+	Ub when is_integer(Ub),Ub =<65535 -> % fixed length
 	    [2,Result];
 	{Ub,Lb} ->
 	    [encode_length({Ub,Lb},length(Val)),2,Result];
@@ -1404,12 +1404,12 @@ decode_restricted_string(Bytes,aligned) ->
 
 decode_known_multiplier_string(StringType,SizeC,NumBits,CharInTab,Bytes) ->
     case SizeC of
-	Ub when integer(Ub), Ub*NumBits =< 16  ->
+	Ub when is_integer(Ub), Ub*NumBits =< 16  ->
 	    chars_decode(Bytes,NumBits,StringType,CharInTab,Ub);
-	Ub when integer(Ub),Ub =<65535 -> % fixed length
+	Ub when is_integer(Ub),Ub =<65535 -> % fixed length
 	    Bytes1 = align(Bytes),
 	    chars_decode(Bytes1,NumBits,StringType,CharInTab,Ub);
-	Vl when list(Vl) ->
+	Vl when is_list(Vl) ->
 	    {Len,Bytes1} = decode_length(Bytes,{hd(Vl),lists:max(Vl)}),
 	    Bytes2 = align(Bytes1),
 	    chars_decode(Bytes2,NumBits,StringType,CharInTab,Len);
@@ -1555,7 +1555,7 @@ chars_decode2(Bytes,{Min,Max,CharInTab},NumBits,Len,Acc) ->
 
 						% X.691:17 
 encode_null(_Val) -> []. % encodes to nothing
-%encode_null({Name,Val}) when atom(Name) ->
+%encode_null({Name,Val}) when is_atom(Name) ->
 %    encode_null(Val).
 
 decode_null(Bytes) ->
@@ -1568,7 +1568,7 @@ decode_null(Bytes) ->
 %% Val -> <<utf8encoded binary>>
 %% CompleteList -> [apropriate codes and values for driver complete]
 %%
-encode_UTF8String(Val) when binary(Val) ->
+encode_UTF8String(Val) when is_binary(Val) ->
     [encode_length(undefined,size(Val)),
      octets_to_complete(size(Val),Val)];
 encode_UTF8String(Val) ->
@@ -1596,7 +1596,7 @@ decode_UTF8String(Bytes) ->
 %% Int3-N -> integer()
 %% CompleteList -> [{bits,8,Val}|{octets,Ol}|align|...]
 %%
-encode_object_identifier({Name,Val}) when atom(Name) ->
+encode_object_identifier({Name,Val}) when is_atom(Name) ->
     encode_object_identifier(Val);
 encode_object_identifier(Val) ->
     OctetList = e_object_identifier(Val),
@@ -1606,11 +1606,11 @@ encode_object_identifier(Val) ->
 
 e_object_identifier({'OBJECT IDENTIFIER',V}) ->
     e_object_identifier(V);
-e_object_identifier({Cname,V}) when atom(Cname),tuple(V) ->
+e_object_identifier({Cname,V}) when is_atom(Cname),is_tuple(V) ->
     e_object_identifier(tuple_to_list(V));
-e_object_identifier({Cname,V}) when atom(Cname),list(V) ->
+e_object_identifier({Cname,V}) when is_atom(Cname),is_list(V) ->
     e_object_identifier(V);
-e_object_identifier(V) when tuple(V) ->
+e_object_identifier(V) when is_tuple(V) ->
     e_object_identifier(tuple_to_list(V));
 
 %% E1 = 0|1|2 and (E2 < 40 when E1 = 0|1) 
@@ -1737,14 +1737,14 @@ complete(L) ->
 % this function builds the ugly form of lists [E1|E2] to avoid having to reverse it at the end.
 % this is done because it is efficient and that the result always will be sent on a port or
 % converted by means of list_to_binary/1
- complete1(InList) when list(InList) ->
+ complete1(InList) when is_list(InList) ->
      complete1(InList,[],[]);
  complete1(InList) ->
      complete1([InList],[],[]).
 
  complete1([],Acc,Bacc) ->
      {Acc,Bacc};
- complete1([H|T],Acc,Bacc) when list(H) ->
+ complete1([H|T],Acc,Bacc) when is_list(H) ->
      {NewH,NewBacc} = complete1(H,Acc,Bacc),
      complete1(T,NewH,NewBacc);
 
@@ -1767,14 +1767,14 @@ complete(L) ->
      complete1(T,Acc,[]);
  complete1([align|T],Acc,Bacc) ->
      complete1(T,[Acc|complete_bytes(Bacc)],[]);
- complete1([{0,Bin}|T],Acc,[]) when binary(Bin) ->
+ complete1([{0,Bin}|T],Acc,[]) when is_binary(Bin) ->
      complete1(T,[Acc|Bin],[]);
- complete1([{Unused,Bin}|T],Acc,[]) when integer(Unused),binary(Bin) ->
+ complete1([{Unused,Bin}|T],Acc,[]) when is_integer(Unused),is_binary(Bin) ->
      Size = size(Bin)-1,
      <<Bs:Size/binary,B>> = Bin,
      NumBits = 8-Unused,
      complete1(T,[Acc|Bs],[[B bsr Unused]|NumBits]);
- complete1([{Unused,Bin}|T],Acc,Bacc) when integer(Unused),binary(Bin) ->
+ complete1([{Unused,Bin}|T],Acc,Bacc) when is_integer(Unused),is_binary(Bin) ->
      Size = size(Bin)-1,
      <<Bs:Size/binary,B>> = Bin,
      NumBits = 8 - Unused,
@@ -1803,22 +1803,49 @@ complete(L) ->
 
 -else.
 
+%% asn1-1.6.8.1_dev
+%% complete(L) ->
+%%     case catch port_control(asn1_driver_port,1,L) of
+%% 	Bin when is_binary(Bin) ->
+%% 	    Bin;
+%% 	List when is_list(List) -> handle_error(List,L);
+%% 	{'EXIT',{badarg,Reason}} ->
+%% 	    asn1rt_driver_handler:load_driver(),
+%% 	    receive
+%% 		driver_ready ->
+%% 		    case catch port_control(asn1_driver_port,1,L) of
+%% 			Bin2 when is_binary(Bin2) -> Bin2;
+%% 			List when is_list(List) -> handle_error(List,L);
+%% 			{'EXIT',Reason2={badarg,_R}} -> 
+%% 			    exit({"failed to call driver probably due to bad asn1 value",Reason2});
+%% 			Reason2 -> exit(Reason2)
+%% 		    end;
+%% 		{error,Error} -> % error when loading driver
+%% 		    %% the driver could not be loaded
+%% 		    exit(Error);
+%% 		Error={port_error,Reason} ->
+%% 		    exit(Error)
+%% 	    end;
+%% 	{'EXIT',Reason} ->
+%% 	    exit(Reason)
+%%     end.
+
+%% asn1-1.6.9
 complete(L) ->
     case catch control(?COMPLETE_ENCODE,L) of
-	Bin when binary(Bin) ->
-	    Bin;
-	List when list(List) -> handle_error(List,L);
-	{'EXIT',{badarg,_Reason}} ->
-	    case asn1rt:load_driver() of
-		ok ->
-		    case control(?COMPLETE_ENCODE,L) of
-			Bin when binary(Bin) ->Bin;
-			List when list(List) -> handle_error(List,L);
-			Other -> Other
-		    end;
-		Err ->
-		    Err
-	    end
+ 	Bin when is_binary(Bin) ->
+ 	    Bin;
+ 	List when is_list(List) -> handle_error(List,L);
+ 	{'EXIT',{badarg,_Reason}} ->
+ 	    case asn1rt:load_driver() of
+ 		ok ->
+ 		    case control(?COMPLETE_ENCODE,L) of
+ 			Bin when is_binary(Bin) ->Bin;
+ 			List when is_list(List) -> handle_error(List,L)
+ 		    end;
+ 		Err ->
+ 		    Err
+ 	    end
     end.
 
 
@@ -1829,9 +1856,11 @@ handle_error("1",L) -> % error in complete in driver
 handle_error(ErrL,L) ->
     exit({error,{asn1,ErrL,L}}).
 
+%% asn1-1.6.9
 control(Cmd, Data) ->
     Port = asn1rt_driver_handler:client_port(),
     erlang:port_control(Port, Cmd, Data).
+
 -endif.
 
 

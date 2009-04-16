@@ -425,7 +425,7 @@ addToTable(MFA, Optimizable, CallList, {FunLst, CallLst}) ->
 filterTable({FunLst, CallLst}, MaxRets, Exports) -> 
   filterTable(FunLst, CallLst, MaxRets, Exports, {[],[]}).
 
-filterTable([Fun|FunLst], CallLst, MaxRets, Exports, {Funs,Calls}) ->
+filterTable([Fun|FunLst], CallLst, MaxRets, Exports, {Funs, Calls} = FCs) ->
   {MFA, {ReturnOpt, Rets}} = Fun,
   {CallOpt, CallsToKeep} = checkCalls(CallLst, MFA, Rets),
   CallsToKeep2 = removeDuplicateCalls(CallsToKeep),
@@ -436,8 +436,7 @@ filterTable([Fun|FunLst], CallLst, MaxRets, Exports, {Funs,Calls}) ->
       filterTable(FunLst, CallLst, MaxRets, Exports, 
 		  {[Fun|Funs], CallsToKeep2 ++ Calls});
     false ->
-      filterTable(FunLst, CallLst, MaxRets, Exports, 
-		  {Funs, Calls})
+      filterTable(FunLst, CallLst, MaxRets, Exports, FCs)
   end;
 filterTable([], _, _, _, Res) -> Res.
 

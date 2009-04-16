@@ -817,9 +817,9 @@ getaddrs_tm({A,B,C,D} = IP, Fam, _)  ->
 	?ip(A,B,C,D) ->
 	    if
 		Fam =:= inet -> {ok,[IP]};
-		true -> {error,nxdomain}
+		true -> {error,eafnosupport}
 	    end;
-	true ->         {error,einval}
+	true -> {error,einval}
     end;
 getaddrs_tm({A,B,C,D,E,F,G,H} = IP, Fam, _) ->
     %% Only "syntactic" validation; we assume that the address was
@@ -828,7 +828,7 @@ getaddrs_tm({A,B,C,D,E,F,G,H} = IP, Fam, _) ->
 	?ip6(A,B,C,D,E,F,G,H) ->
 	    if
 		Fam =:= inet6 -> {ok,[IP]};
-		true -> {error,nxdomain}
+		true -> {error,eafnosupport}
 	    end;
 	true -> {error,einval}
     end;
@@ -865,23 +865,22 @@ gethostbyname_tm(Name, Type, Timer, [file | Opts]) ->
 	Result -> Result
     end;
 gethostbyname_tm(Name, Type, Timer, [yp | Opts]) ->
-    gethostbyname_tm(Name, Type, Timer, [native|Opts]);
+    gethostbyname_tm_native(Name, Type, Timer, Opts);
 gethostbyname_tm(Name, Type, Timer, [nis | Opts]) ->
-    gethostbyname_tm(Name, Type, Timer, [native|Opts]);
+    gethostbyname_tm_native(Name, Type, Timer, Opts);
 gethostbyname_tm(Name, Type, Timer, [nisplus | Opts]) ->
-    gethostbyname_tm(Name, Type, Timer, [native|Opts]);
+    gethostbyname_tm_native(Name, Type, Timer, Opts);
 gethostbyname_tm(Name, Type, Timer, [wins | Opts]) ->
-    gethostbyname_tm(Name, Type, Timer, [native|Opts]);
+    gethostbyname_tm_native(Name, Type, Timer, Opts);
 gethostbyname_tm(Name, Type, Timer, [native | Opts]) ->
-    %% Fixme: add (global) timeout to gethost_native
-    case inet_gethost_native:gethostbyname(Name, Type) of
-	{error,formerr} -> {error,einval};
-	{error,timeout} -> {error,timeout};
-	{error,_} -> gethostbyname_tm(Name, Type, Timer, Opts++no_default);
-	Result -> Result
-    end;
+    gethostbyname_tm_native(Name, Type, Timer, Opts);
+gethostbyname_tm(_, _, _, [no_default|_]) ->
+    %% If the native resolver has failed, we should not bother
+    %% to try to be smarter and parse the IP address here.
+    {error,nxdomain};
 gethostbyname_tm(Name, Type, Timer, [_ | Opts]) ->
     gethostbyname_tm(Name, Type, Timer, Opts);
+%% Last resort - parse the hostname as address
 gethostbyname_tm(Name, inet, _Timer, []) ->
     case inet_parse:ipv4_address(Name) of
 	{ok,IP4} ->
@@ -893,10 +892,7 @@ gethostbyname_tm(Name, inet, _Timer, []) ->
 	       h_length = 4,
 	       h_addr_list = [IP4]}};
 	_ ->
-	    case inet_parse:ipv6_address(Name) of
-		{ok,_} -> {error,einval};
-		_ ->      {error,nxdomain}
-	    end
+	    {error,nxdomain}
     end;
 gethostbyname_tm(Name, inet6, _Timer, []) ->
     case inet_parse:ipv6_address(Name) of
@@ -914,18 +910,18 @@ gethostbyname_tm(Name, inet6, _Timer, []) ->
 	    %% format ( {0,0,0,0,0,16#ffff,?u16(A,B),?u16(C,D)} ).
 	    %% This host might not support IPv6.
 	    {error,nxdomain}
-    end;
-gethostbyname_tm(Name, inet, _, no_default) ->
-    %% If the native resolver has failed, we should not bother
-    %% to try to be smarter and parse the IP address here.
-    case inet_parse:ipv6_address(Name) of
-	{ok,_} -> {error,einval};
-	_ ->      {error,nxdomain}
-    end;
-gethostbyname_tm(_Name, inet6, _, no_default) ->
-    %% If the native resolver has failed, we should not bother
-    %% to try to be smarter and parse the IP address here.
-    {error,nxdomain}.
+    end.
+
+gethostbyname_tm_native(Name, Type, Timer, Opts) ->
+    %% Fixme: add (global) timeout to gethost_native
+    case inet_gethost_native:gethostbyname(Name, Type) of
+	{error,formerr} -> {error,einval};
+	{error,timeout} -> {error,timeout};
+	{error,_} -> gethostbyname_tm(Name, Type, Timer, Opts++[no_default]);
+	Result -> Result
+    end.
+
+
 
 %%
 %% gethostbyaddr with option search
@@ -945,24 +941,27 @@ gethostbyaddr_tm(Addr, Timer, [file | Opts]) ->
 	Result -> Result
     end;
 gethostbyaddr_tm(Addr, Timer, [yp | Opts]) ->
-    gethostbyaddr_tm(Addr, Timer, [native | Opts]);
+    gethostbyaddr_tm_native(Addr, Timer, Opts);
 gethostbyaddr_tm(Addr, Timer, [nis | Opts]) ->
-    gethostbyaddr_tm(Addr, Timer, [native | Opts]);
+    gethostbyaddr_tm_native(Addr, Timer, Opts);
 gethostbyaddr_tm(Addr, Timer,  [nisplus | Opts]) ->
-    gethostbyaddr_tm(Addr, Timer, [native | Opts]);
+    gethostbyaddr_tm_native(Addr, Timer, Opts);
 gethostbyaddr_tm(Addr, Timer, [wins | Opts]) ->
-    gethostbyaddr_tm(Addr, Timer, [native | Opts]);
+    gethostbyaddr_tm_native(Addr, Timer, Opts);
 gethostbyaddr_tm(Addr, Timer, [native | Opts]) ->
+    gethostbyaddr_tm_native(Addr, Timer, Opts);
+gethostbyaddr_tm(Addr, Timer, [_ | Opts]) ->
+    gethostbyaddr_tm(Addr, Timer, Opts);
+gethostbyaddr_tm(_Addr, _Timer, []) ->
+    {error, nxdomain}.
+
+gethostbyaddr_tm_native(Addr, Timer, Opts) ->
     %% Fixme: user timer for timeoutvalue
     case inet_gethost_native:gethostbyaddr(Addr) of
 	{error,formerr} -> {error, einval};
 	{error,_} -> gethostbyaddr_tm(Addr,Timer,Opts);
 	Result -> Result
-    end;    
-gethostbyaddr_tm(Addr, Timer, [_ | Opts]) ->
-    gethostbyaddr_tm(Addr, Timer, Opts);
-gethostbyaddr_tm(_Addr, _Timer, []) ->
-    {error, nxdomain}.
+    end.
 
 -spec open(Fd :: integer(),
 	   Addr :: ip_address(),

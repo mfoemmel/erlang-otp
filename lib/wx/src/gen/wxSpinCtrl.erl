@@ -101,7 +101,8 @@ new(#wx_ref{type=ParentT,ref=ParentRef}, Options)
           ({style, Style}, Acc) -> [<<5:32/?UI,Style:32/?UI>>|Acc];
           ({min, Min}, Acc) -> [<<6:32/?UI,Min:32/?UI>>|Acc];
           ({max, Max}, Acc) -> [<<7:32/?UI,Max:32/?UI>>|Acc];
-          ({initial, Initial}, Acc) -> [<<8:32/?UI,Initial:32/?UI>>|Acc]  end,
+          ({initial, Initial}, Acc) -> [<<8:32/?UI,Initial:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:construct(?wxSpinCtrl_new_2,
   <<ParentRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -126,7 +127,8 @@ create(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ParentT,ref=ParentRef}, Opti
           ({style, Style}, Acc) -> [<<5:32/?UI,Style:32/?UI>>|Acc];
           ({min, Min}, Acc) -> [<<6:32/?UI,Min:32/?UI>>|Acc];
           ({max, Max}, Acc) -> [<<7:32/?UI,Max:32/?UI>>|Acc];
-          ({initial, Initial}, Acc) -> [<<8:32/?UI,Initial:32/?UI>>|Acc]  end,
+          ({initial, Initial}, Acc) -> [<<8:32/?UI,Initial:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxSpinCtrl_Create,
   <<ThisRef:32/?UI,ParentRef:32/?UI, BinOpt/binary>>).

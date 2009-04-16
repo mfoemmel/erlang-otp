@@ -3060,6 +3060,11 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 		    }
 		    BIF_RET(res);
 		}
+	    } else if (ERTS_IS_ATOM_STR("term_to_binary_no_funs", tp[1])) {
+		Uint dflags = (DFLAG_EXTENDED_REFERENCES |
+			       DFLAG_EXTENDED_PIDS_PORTS |
+			       DFLAG_BIT_BINARIES);
+		BIF_RET(erts_term_to_binary(BIF_P, tp[2], 0, dflags));
 	    }
 
 	    break;
@@ -3332,22 +3337,40 @@ static Eterm lcnt_build_lock_stats_term(Eterm **hpp, Uint *szp, erts_lcnt_lock_s
 
 static Eterm lcnt_build_lock_term(Eterm **hpp, Uint *szp, erts_lcnt_lock_t *lock, Eterm res) {
     Eterm name, type, id, stats = NIL, t;
+    Process *proc = NULL;
     char *ltype;
     int i;
     
     /* term:
      * [{name, id, type, stats()}] 
-     * [{{name, id}, {type, stats()}}] ?
      */
 	
-    ASSERT(ltype);
     ASSERT(lock->name);
     
     ltype = erts_lcnt_lock_type(lock->flag);
+    
+    ASSERT(ltype);
+    
     type  = am_atom_put(ltype, strlen(ltype));           
 
     name  = am_atom_put(lock->name, strlen(lock->name)); 
-    id    = lock->id;                                    
+
+    if (lock->flag & ERTS_LCNT_LT_ALLOC) {
+	/* use allocator types names as id's for allocator locks */
+	ltype = ERTS_ALC_A2AD(signed_val(lock->id));
+	id    = am_atom_put(ltype, strlen(ltype));
+    } else if (lock->flag & ERTS_LCNT_LT_PROCLOCK) {
+	/* use registered names as id's for process locks if available */
+	proc  = erts_pid2proc_unlocked(lock->id);
+	if (proc && proc->reg) {
+	    id = proc->reg->name;
+	} else {
+	    /* otherwise use process id */
+	    id = lock->id;
+	}
+    } else {
+	id    = lock->id;                                    
+    }
     
     for (i = 0; i < lock->n_stats; i++) {
 	stats = lcnt_build_lock_stats_term(hpp, szp, &(lock->stats[i]), stats);

@@ -107,7 +107,8 @@ createFont(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=FontT,ref=FontRef}, Opti
  when is_list(Options) ->
   ?CLASS(ThisT,wxGraphicsContext),
   ?CLASS(FontT,wxFont),
-  MOpts = fun({col, Col}, Acc) -> [<<1:32/?UI,(wxe_util:colour_bin(Col)):16/binary,0:32>>|Acc]  end,
+  MOpts = fun({col, Col}, Acc) -> [<<1:32/?UI,(wxe_util:colour_bin(Col)):16/binary,0:32>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGraphicsContext_CreateFont,
   <<ThisRef:32/?UI,FontRef:32/?UI, BinOpt/binary>>).
@@ -129,7 +130,8 @@ createMatrix(#wx_ref{type=ThisT,ref=ThisRef}, Options)
           ({c, C}, Acc) -> [<<3:32/?UI,0:32,C:64/?F>>|Acc];
           ({d, D}, Acc) -> [<<4:32/?UI,0:32,D:64/?F>>|Acc];
           ({tx, Tx}, Acc) -> [<<5:32/?UI,0:32,Tx:64/?F>>|Acc];
-          ({ty, Ty}, Acc) -> [<<6:32/?UI,0:32,Ty:64/?F>>|Acc]  end,
+          ({ty, Ty}, Acc) -> [<<6:32/?UI,0:32,Ty:64/?F>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:call(?wxGraphicsContext_CreateMatrix,
   <<ThisRef:32/?UI, 0:32,BinOpt/binary>>).
@@ -202,7 +204,8 @@ drawLines(This,N,Points={PointsX,PointsY})
 drawLines(#wx_ref{type=ThisT,ref=ThisRef},N,{PointsX,PointsY}, Options)
  when is_integer(N),is_number(PointsX),is_number(PointsY),is_list(Options) ->
   ?CLASS(ThisT,wxGraphicsContext),
-  MOpts = fun({fillStyle, FillStyle}, Acc) -> [<<1:32/?UI,FillStyle:32/?UI>>|Acc]  end,
+  MOpts = fun({fillStyle, FillStyle}, Acc) -> [<<1:32/?UI,FillStyle:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGraphicsContext_DrawLines,
   <<ThisRef:32/?UI,N:32/?UI,PointsX:64/float,PointsY:64/float, BinOpt/binary>>).
@@ -220,7 +223,8 @@ drawPath(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=PathT,ref=PathRef}, Option
  when is_list(Options) ->
   ?CLASS(ThisT,wxGraphicsContext),
   ?CLASS(PathT,wxGraphicsPath),
-  MOpts = fun({fillStyle, FillStyle}, Acc) -> [<<1:32/?UI,FillStyle:32/?UI>>|Acc]  end,
+  MOpts = fun({fillStyle, FillStyle}, Acc) -> [<<1:32/?UI,FillStyle:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGraphicsContext_DrawPath,
   <<ThisRef:32/?UI,PathRef:32/?UI, BinOpt/binary>>).
@@ -296,7 +300,8 @@ fillPath(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=PathT,ref=PathRef}, Option
  when is_list(Options) ->
   ?CLASS(ThisT,wxGraphicsContext),
   ?CLASS(PathT,wxGraphicsPath),
-  MOpts = fun({fillStyle, FillStyle}, Acc) -> [<<1:32/?UI,FillStyle:32/?UI>>|Acc]  end,
+  MOpts = fun({fillStyle, FillStyle}, Acc) -> [<<1:32/?UI,FillStyle:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
   wxe_util:cast(?wxGraphicsContext_FillPath,
   <<ThisRef:32/?UI,PathRef:32/?UI, BinOpt/binary>>).

@@ -194,21 +194,27 @@ read_public_key_v1(File) ->
 	    Error
     end.
 
-pem_type("ssh-dss") -> "DSA";
-pem_type("ssh-rsa") -> "RSA".
+%% pem_type("ssh-dss") -> "DSA";
+%% pem_type("ssh-rsa") -> "RSA".
 
 read_private_key_v2(File, Type) ->
-    case file:read_file(File) of
-	{ok,Bin} ->
-	    case read_pem(binary_to_list(Bin), pem_type(Type)) of
-		{ok,Bin1} ->
-		    decode_private_key_v2(Bin1, Type);
-		Error ->
-		    Error
-	    end;
-	Error ->
-	    Error
-    end.
+     case catch (public_key:pem_to_der(File)) of
+	 {ok, [{_, Bin, not_encrypted}]} ->
+	     decode_private_key_v2(Bin, Type);
+	 Error -> %% Note we do not handle password encrypted keys at the moment
+	     {error, Error}
+     end.
+%%  case file:read_file(File) of
+%% 	{ok,Bin} ->
+%% 	    case read_pem(binary_to_list(Bin), pem_type(Type)) of
+%% 		{ok,Bin1} ->
+%% 		    decode_private_key_v2(Bin1, Type);
+%% 		Error ->
+%% 		    Error
+%% 	    end;
+%% 	Error ->
+%% 	    Error
+%%     end.
 
 decode_private_key_v2(Private,"ssh-rsa") ->
     case 'PKCS-1':decode( 'RSAPrivateKey', Private) of
@@ -397,43 +403,43 @@ add_key_fd(Fd, Host, Key) ->
     end.
 
 
-read_pem(Cs, Type) ->
-    case read_line(Cs) of
-	{"-----BEGIN "++Rest,Cs1} ->
-	    case string:tokens(Rest, " ") of
-		[Type, "PRIVATE", "KEY-----"] ->
-		    read_pem64(Cs1, [], Type);
-		_ ->
-		    {error, bad_format}
-	    end;
-	{"",Cs1} when Cs1 =/= "" ->
-	    read_pem(Cs1,Type);
-	{_,""} ->
-	    {error, bad_format}
-    end.
+%% read_pem(Cs, Type) ->
+%%     case read_line(Cs) of
+%% 	{"-----BEGIN "++Rest,Cs1} ->
+%% 	    case string:tokens(Rest, " ") of
+%% 		[Type, "PRIVATE", "KEY-----"] ->
+%% 		    read_pem64(Cs1, [], Type);
+%% 		_ ->
+%% 		    {error, bad_format}
+%% 	    end;
+%% 	{"",Cs1} when Cs1 =/= "" ->
+%% 	    read_pem(Cs1,Type);
+%% 	{_,""} ->
+%% 	    {error, bad_format}
+%%     end.
 
-read_pem64(Cs, Acc, Type) ->
-    case read_line(Cs) of
-	{"-----END "++Rest,_Cs1} ->
-	    case string:tokens(Rest, " ") of
-		[Type, "PRIVATE", "KEY-----"] ->
-		    {ok,ssh_bits:b64_decode(append(reverse(Acc)))};
-		Toks ->
-		    error_logger:format("ssh: TOKENS=~p\n", [Toks]),
-		    {error, bad_format}
-	    end;
-	{B64, Cs1} when Cs1 =/= "" ->
-	    read_pem64(Cs1, [B64|Acc], Type);
-	_What ->
-	    {error, bad_format}
-    end.
+%% read_pem64(Cs, Acc, Type) ->
+%%     case read_line(Cs) of
+%% 	{"-----END "++Rest,_Cs1} ->
+%% 	    case string:tokens(Rest, " ") of
+%% 		[Type, "PRIVATE", "KEY-----"] ->
+%% 		    {ok,ssh_bits:b64_decode(append(reverse(Acc)))};
+%% 		Toks ->
+%% 		    error_logger:format("ssh: TOKENS=~p\n", [Toks]),
+%% 		    {error, bad_format}
+%% 	    end;
+%% 	{B64, Cs1} when Cs1 =/= "" ->
+%% 	    read_pem64(Cs1, [B64|Acc], Type);
+%% 	_What ->
+%% 	    {error, bad_format}
+%%     end.
 
 
-read_line(Cs) -> read_line(Cs,[]).
-read_line([$\r,$\n|T], Acc) -> {reverse(Acc), T};
-read_line([$\n|T], Acc) -> {reverse(Acc), T};
-read_line([C|T], Acc) -> read_line(T,[C|Acc]);
-read_line([], Acc) -> {reverse(Acc),[]}.
+%% read_line(Cs) -> read_line(Cs,[]).
+%% read_line([$\r,$\n|T], Acc) -> {reverse(Acc), T};
+%% read_line([$\n|T], Acc) -> {reverse(Acc), T};
+%% read_line([C|T], Acc) -> read_line(T,[C|Acc]);
+%% read_line([], Acc) -> {reverse(Acc),[]}.
 
 lookup_user_key(User, Alg, Opts) ->
     SshDir = ssh_dir({remoteuser,User}, Opts),

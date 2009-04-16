@@ -52,7 +52,9 @@ all(suite) ->
      disconnect,
      connect_msg_20,
      connect_cb_20,
-     mouse_on_grid
+     mouse_on_grid,
+     spin_event,
+     connect_in_callback
     ].
   
 %% The test cases
@@ -240,5 +242,90 @@ mouse_on_grid(Config) ->
 
     wxWindow:setSizerAndFit(Panel, Sizer),
     wxFrame:show(Frame),
+    
+    wx_test_lib:wx_destroy(Frame, Config).
+
+
+spin_event(TestInfo) 
+  when is_atom(TestInfo) -> wx_test_lib:tc_info(TestInfo);
+spin_event(Config) ->
+    Wx = ?mr(wx_ref, wx:new()),
+
+    %% Spin events and scrollEvent share some events id's
+    %% test that they work
+
+    Frame = wxFrame:new(Wx, ?wxID_ANY, "Spin Events"),
+    Panel = wxPanel:new(Frame, []),
+    Sizer = wxBoxSizer:new(?wxVERTICAL),
+    HSz = wxBoxSizer:new(?wxHORIZONTAL),
+
+    SB = wxSpinButton:new(Panel, [{id, 100}]),
+    wxSizer:add(HSz, SB, []),
+    wxSpinButton:connect(SB, spin),
+    wxSpinButton:connect(SB, spin_up),
+    wxSpinButton:connect(SB, spin_down),
+
+    SC = wxSpinCtrl:new(Panel, [{id, 101}, {min, -12}, {max, 12}, 
+				{value, "-3"}, {initial, 3}, 
+				{style, ?wxSP_ARROW_KEYS bor ?wxSP_WRAP}]),
+    wxSpinCtrl:connect(SC, command_spinctrl_updated),
+    wxSizer:add(HSz, SC, [{proportion, 1}, {flag, ?wxEXPAND}]),
+    wxSizer:add(Sizer, HSz, [{proportion, 0},{flag, ?wxEXPAND}]),
+    
+    SL = wxSlider:new(Panel, 102, 57, 22, 99),
+    wxSlider:connect(SL, scroll_thumbtrack),
+    wxSlider:connect(SL, scroll_lineup),
+    wxSlider:connect(SL, scroll_linedown),
+    wxSizer:add(Sizer, SL, [{proportion, 0},{flag, ?wxEXPAND}]),
+       
+    wxWindow:setSizerAndFit(Panel, Sizer),
+    wxFrame:show(Frame),
+    wx_test_lib:flush(),
+
+%% Set value does not generate a spin event...
+%%     wxSpinButton:setValue(SB, 7),
+%%     ?m_receive(#wx{id=100, event=#wxSpin{type=spin}}),
+%%     wxSpinCtrl:setValue(SC, 8),
+%%     ?m_receive(#wx{id=101, event=#wxSpin{type=command_spinctrl_updated}}),
+%%     wxSlider:setValue(SL, 29),
+%%     ?m_receive(#wx{id=102, event=#wxScroll{}}),
+
+    wx_test_lib:wx_destroy(Frame, Config).
+
+
+%% Test that we can connect to events from inside a callback fun
+%% This is needed for example inside a callback that does a wxWindow:popupMenu/2
+connect_in_callback(TestInfo) 
+  when is_atom(TestInfo) -> wx_test_lib:tc_info(TestInfo);
+connect_in_callback(Config) ->
+    Wx = ?mr(wx_ref, wx:new()),
+    Frame = wxFrame:new(Wx, ?wxID_ANY, "Connect in callback"),
+    Panel = wxPanel:new(Frame, []),
+    
+    wxFrame:connect(Frame,size,
+		    [{callback, 
+		      fun(#wx{event=#wxSize{}},_SizeEv) -> 
+			      io:format("Frame got size~n",[]),		 
+			      F1 = wxFrame:new(Frame, ?wxID_ANY, "Frame size event"),
+			      CBPid = self(),
+			      wxFrame:connect(F1,size,[{callback,
+							fun(_,_) ->
+								io:format("CB2 got size~n",[]),
+								CBPid ! continue
+							end}]),
+			      wxWindow:show(F1),
+			      receive continue -> wxFrame:destroy(F1) end
+		      end}]),
+    wxPanel:connect(Panel,size,
+		    [{callback, 
+		      fun(#wx{event=#wxSize{}},_SizeEv) -> 
+			      io:format("Panel got size~n",[]),
+			      F1 = wxFrame:new(Frame, ?wxID_ANY, "Panel size event"),
+			      wxFrame:connect(F1,size),
+			      wxWindow:show(F1),
+			      receive #wx{event=#wxSize{}} -> wxFrame:destroy(F1) end
+		      end}]),   
+    wxFrame:show(Frame),
+    wx_test_lib:flush(),
     
     wx_test_lib:wx_destroy(Frame, Config).

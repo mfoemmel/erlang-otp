@@ -78,7 +78,8 @@
 %% This is the representation of each warning as they will be returned
 %% to dialyzer's callers
 %%
--type file_line()    :: {string(), non_neg_integer()}.
+-type filename()     :: string().
+-type file_line()    :: {filename(), non_neg_integer()}.
 -type dial_warning() :: {dial_warn_tag(), file_line(), {atom(), [term()]}}.
 
 %%
@@ -90,12 +91,16 @@
 %% THESE TYPES SHOULD ONE DAY DISAPPEAR -- THEY DO NOT BELONG HERE
 %%--------------------------------------------------------------------
  
--type orddict()      :: [{_, _}] . %% XXX: temporarily
 -type ordset(T)      :: [T] .      %% XXX: temporarily
--type core_module()  :: {'c_module',_,_,_,_,_} . % XXX: belongs in 'cerl*'
--type core_tree()    :: tuple() .  %% XXX: belongs in 'cerl*'
--type core_records() :: tuple() .  %% XXX: belongs in 'cerl*'
--type erl_type()     :: any() .    %% XXX: belongs to 'erl_types'
+-type core_fun()     :: {'c_fun',_,_,_}.        %% XXX: belongs in 'cerl*'
+-type core_module()  :: {'c_module',_,_,_,_,_}. %% XXX: belongs in 'cerl*'
+-type core_tree()    :: tuple().                %% XXX: belongs in 'cerl*'
+-type core_records() :: tuple().                %% XXX: belongs in 'cerl*'
+-type core_var()     :: {'c_var',_,_}.          %% XXX: belongs in 'cerl*'
+-type core_literal() :: {'c_literal',_,_}.      %% XXX: belongs in 'cerl*'
+-type core_cons()    :: {'c_cons',_,_,_}.         %% XXX: belongs in 'cerl*'
+-type core_tuple()   :: {'c_tuple',_,_}.        %% XXX: belongs in 'cerl*'
+-type erl_type()     :: 'any' | 'none' | 'unit' | {'c',atom(),_,_}.    %% XXX: belongs to 'erl_types'
 
 %%--------------------------------------------------------------------
 %% Basic types used either in the record definitions below or in other
@@ -104,12 +109,15 @@
 
 -type anal_type()    :: 'succ_typings' | 'plt_build'.
 -type anal_type1()   :: anal_type() | 'plt_add' | 'plt_check' | 'plt_remove'.
--type start_from()   :: 'byte_code' | 'src_code'.
--type define()       :: {atom(), term()}.
--type md5()          :: [{string(), binary()}].
--type rep_mode()     :: 'quiet' | 'normal' | 'verbose'.
+-type contr_constr() :: {'subtype', erl_type(), erl_type()}.
+-type contract()     :: {erl_type(), [contr_constr()]}.
+-type dial_define()  :: {atom(), term()}.
 -type dial_option()  :: {atom(), any()}.
 -type dial_options() :: [dial_option()].
+-type label()	     :: non_neg_integer().
+-type md5()          :: [{filename(), binary()}].
+-type rep_mode()     :: 'quiet' | 'normal' | 'verbose'.
+-type start_from()   :: 'byte_code' | 'src_code'.
 
 %%--------------------------------------------------------------------
 %% Record declarations used by various files
@@ -118,45 +126,49 @@
 -record(dialyzer_plt, {info       = dict:new()      :: dict(),
 		       contracts  = dict:new()      :: dict()}).
 
--record(dialyzer_codeserver, {table_pid       :: pid(),
+-record(dialyzer_codeserver, {table_pid		     :: pid(),
                               exports   = sets:new() :: set(), % set(mfa())
-                              next_core_label = 0    :: non_neg_integer(),
+                              next_core_label = 0    :: label(),
                               records   = dict:new() :: dict(),
                               contracts = dict:new() :: dict()}).
 
 -record(analysis, {analysis_pid			    :: pid(),
 		   type		  = succ_typings    :: anal_type(),
-		   defines	  = []		    :: [define()],
+		   defines	  = []		    :: [dial_define()],
 		   doc_plt                          :: #dialyzer_plt{},
-		   files          = []		    :: [string()],
-		   include_dirs	  = []		    :: [string()],
+		   files          = []		    :: [filename()],
+		   include_dirs	  = []		    :: [filename()],
 		   start_from     = byte_code	    :: start_from(),
 		   plt                              :: #dialyzer_plt{},
 		   use_contracts  = true            :: bool(),
 		   race_detection = false	    :: bool(),
-		   callgraph_file = ""              :: string()}).
+		   callgraph_file = ""              :: filename()}).
 
--record(options, {files           = []		    :: [string()],
-		  files_rec       = []		    :: [string()],
+-record(options, {files           = []		    :: [filename()],
+		  files_rec       = []		    :: [filename()],
 		  analysis_type   = succ_typings    :: anal_type1(),
-		  defines         = []		    :: [define()],
+		  defines         = []		    :: [dial_define()],
 		  from            = byte_code	    :: start_from(),
 		  get_warnings    = maybe           :: bool() | 'maybe',
-		  init_plt        = none	    :: 'none' | string(),
-		  include_dirs    = []		    :: [string()],
-		  output_plt      = none            :: 'none' | string(),
+		  init_plt        = none	    :: 'none' | filename(),
+		  include_dirs    = []		    :: [filename()],
+		  output_plt      = none            :: 'none' | filename(),
 		  legal_warnings  = ordsets:new()   :: ordset(dial_warn_tag()),
 		  report_mode     = normal	    :: rep_mode(),
 		  erlang_mode     = false	    :: bool(),
 		  use_contracts   = true            :: bool(),
-		  output_file     = none	    :: 'none' | string(),
+		  output_file     = none	    :: 'none' | filename(),
 		  output_format   = formatted       :: 'raw' | 'formatted',
-		  callgraph_file  = ""              :: string(),
+		  callgraph_file  = ""              :: filename(),
 		  check_plt       = true            :: bool()
 		 }).
 
--record(contract, {contracts	  = []		    :: [{erl_type(), [_]}], % ??
+-record(contract, {contracts	  = []		    :: [contract()],
 		   args		  = []		    :: [erl_type()],
 		   forms	  = []		    :: [{_, _}]}).
+
+%%--------------------------------------------------------------------
+
+-type plt_contracts() :: [{mfa(), #contract{}}]. % actually, an orddict()
 
 %%--------------------------------------------------------------------

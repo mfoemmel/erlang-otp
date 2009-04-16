@@ -167,8 +167,17 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
+handle_info({wxe_driver, error, Msg}, State) ->
+    error_logger:format("WX ERROR: ~s~n", [Msg]),
+    {noreply, State};
+handle_info({wxe_driver, internal_error, Msg}, State) ->
+    error_logger:format("WX INTERNAL ERROR: ~s~n", [Msg]),
+    {noreply, State};
+handle_info({wxe_driver, debug, Msg}, State) ->
+    io:format("WX DBG: ~s~n", [Msg]),
+    {noreply, State};
 handle_info(_Info, State) ->
-    %%io:format("Unknown message ~p sent to ~p~n",[_Info, ?MODULE]),
+    io:format("Unknown message ~p sent to ~p~n",[_Info, ?MODULE]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
