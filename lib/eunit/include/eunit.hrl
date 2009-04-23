@@ -13,7 +13,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id$
+%% $Id: eunit.hrl 337 2009-03-09 08:38:28Z rcarlsson $
 %%
 %% Copyright (C) 2004-2006 Mickaël Rémond, Richard Carlsson
 
@@ -21,11 +21,17 @@
 %% is defined before the file is included. If both NOTEST and TEST are
 %% already defined, then TEST takes precedence, and NOTEST will become
 %% undefined.
+%% 
+%% If NODEBUG is defined before this file is included, the debug macros
+%% are disabled, unless DEBUG is also defined, in which case NODEBUG
+%% will become undefined. NODEBUG also implies NOASSERT, unless testing
+%% is enabled.
 %%
 %% If including this file causes TEST to be defined, then NOASSERT will
-%% be undefined, even if it was previously defined. If both ASSERT and
-%% NOASSERT are defined before the file is included, then ASSERT takes
-%% precedence, and NOASSERT will become undefined regardless of TEST.
+%% be undefined, even if it was previously defined and even if NODEBUG
+%% is defined. If both ASSERT and NOASSERT are defined before the file
+%% is included, then ASSERT takes precedence, and NOASSERT will become
+%% undefined regardless of TEST.
 %% 
 %% After including this file, EUNIT will be defined if and only if TEST
 %% is defined.
@@ -36,6 +42,11 @@
 %% allow defining TEST to override NOTEST
 -ifdef(TEST).
 -undef(NOTEST).
+-endif.
+
+%% allow defining DEBUG to override NODEBUG
+-ifdef(DEBUG).
+-undef(NODEBUG).
 -endif.
 
 %% allow NODEBUG to imply NOASSERT, unless overridden below
@@ -99,6 +110,22 @@
 %%     and:  ?IF(f(X), g(Y), h(Z))
 -ifndef(IF).
 -define(IF(B,T,F), (case (B) of true->(T); false->(F) end)).
+-endif.
+
+%% This macro yields 'true' if the value of E matches the guarded
+%% pattern G, otherwise 'false'.
+-ifndef(MATCHES).
+-define(MATCHES(G,E), (case (E) of G -> true; _ -> false end)).
+-endif.
+
+%% This macro can be used at any time to check whether or not the code
+%% is currently running directly under eunit. Note that it does not work
+%% in secondary processes if they have been assigned a new group leader.
+-ifndef(UNDER_EUNIT).
+-define(UNDER_EUNIT,
+	(?MATCHES({current_function,{eunit_proc,_,_}},
+		  .erlang:process_info(.erlang:group_leader(),
+				       current_function)))).
 -endif.
 
 -ifdef(NOASSERT).
@@ -200,7 +227,8 @@
 				     "{ "++(??Class)++" , "++(??Term)
 				     ++" , [...] }"},
 				    {unexpected_exception,
-				     {__C, __T, erlang:get_stacktrace()}}]})
+				     {__C, __T,
+				      .erlang:get_stacktrace()}}]})
 	    end
 	  end)())).
 -endif.
@@ -289,12 +317,11 @@
 -else.
 -define(debugMsg(S),
 	(begin
-	     io:fwrite(user, <<"~s:~w: ~s\n">>,
-		       [?FILE, ?LINE, S]),
+	     .io:fwrite(user, <<"~s:~w: ~s\n">>, [?FILE, ?LINE, S]),
 	     ok
 	 end)).
 -define(debugHere, (?debugMsg("<-"))).
--define(debugFmt(S, As), (?debugMsg(io_lib:format((S), (As))))).
+-define(debugFmt(S, As), (?debugMsg(.io_lib:format((S), (As))))).
 -define(debugVal(E),
 	((fun (__V) ->
 		  ?debugFmt(<<"~s = ~P">>, [(??E), __V, 15]),

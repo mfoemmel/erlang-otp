@@ -29,6 +29,68 @@
   </header>
   <p>This document describes the changes made to the STDLIB application.</p>
 
+<section><title>STDLIB 1.16.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>The documentation of <c>dets:open_file/1</c> now
+	    states that the file is repaired if it has not been
+	    properly closed. (Thanks to Ulf Wiger.)</p>
+          <p>
+	    Own Id: OTP-7895</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>The Erlang scanner no longer returns the text of
+	    tokens when the start location is a pair of a line and
+	    column unless the new option <c>text</c> is supplied
+	    (incompatibility with R13A).</p> <p>There are new
+	    functions to access the attributes of tokens:
+	    <c>attributes_info/1,2</c> and
+	    <c>set_attribute/3</c>.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7892 Aux Id: OTP-7810 </p>
+        </item>
+        <item>
+          <p>
+	    Several glitches and performance issues in the Unicode
+	    and I/O-system implementation of R13A have been
+	    corrected.</p>
+          <p>
+	    Own Id: OTP-7896 Aux Id: OTP-7648 OTP-7887 </p>
+        </item>
+        <item>
+          <p>
+	    The type spec of filelib:wildcard/2 has been corrected.</p>
+          <p>
+	    Own Id: OTP-7915</p>
+        </item>
+        <item>
+	    <p>New functions: <c>gb_sets:is_disjoint/2</c>,
+	    <c>ordsets:is_disjoint/2</c>, and
+	    <c>gb_sets:is_disjoint/2</c>.</p>
+          <p>
+	    Own Id: OTP-7947</p>
+        </item>
+        <item>
+	    <p>The function <c>gb_trees:map/2</c> which was added in
+	    R13A is now documented.</p>
+          <p>
+	    Own Id: OTP-7948</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>STDLIB 1.16</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

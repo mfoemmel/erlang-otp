@@ -37,7 +37,9 @@ SOURCES= \
 	eunit_test.erl \
 	eunit_lib.erl \
 	eunit_data.erl \
-	eunit_tty.erl
+	eunit_tty.erl \
+	eunit_surefire.erl \
+	eunit_listener.erl
 
 INCLUDE_FILES = eunit.hrl
 

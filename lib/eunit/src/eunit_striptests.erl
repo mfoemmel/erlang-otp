@@ -13,7 +13,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id$ 
+%% $Id: eunit_striptests.erl 329 2009-03-01 11:23:32Z rcarlsson $ 
 %%
 %% @author Richard Carlsson <richardc@it.uu.se>
 %% @author Eric Merritt <cyberlync@gmail.com>
@@ -60,5 +60,8 @@ form({function, _L, Name, 0, _Cs}=Form, Acc, Exports, TestSuffix,
 	false ->
 	    [Form | Acc]
     end;
+form({function, _L, ?DEFAULT_MODULE_WRAPPER_NAME, 1, _Cs}, Acc, _, _, _,
+     _) ->
+    Acc;
 form(Form, Acc, _, _, _, _) ->
     [Form | Acc].

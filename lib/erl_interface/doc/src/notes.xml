@@ -29,6 +29,47 @@
   </header>
   <p>This document describes the changes made to the Erl_interface application.</p>
 
+<section><title>Erl_Interface 3.6.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>A faulty validation in <c>ei_reg_getpval</c> caused it
+	    to never return the key-value. This has now been fixed.
+	    (Thanks to Matt Stancliff)</p>
+          <p>
+	    Own Id: OTP-7960</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Minor update to the <c>configure</c> script.</p>
+          <p>
+	    Own Id: OTP-7959</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Erl_Interface 3.6.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Minor update to the <c>configure</c> script.</p>
+          <p>
+	    Own Id: OTP-7959</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Erl_Interface 3.6</title>
 
     <section><title>Improvements and New Features</title>

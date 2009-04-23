@@ -29,6 +29,71 @@
   </header>
   <p>This document describes the changes made to the Kernel application.</p>
 
+<section><title>Kernel 2.13.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Many concurrent calls to <c>os:cmd/1</c> will only block
+	    one scheduler thread at a time, making an smp emulator
+	    more responsive if the OS is slow forking processes.</p>
+          <p>
+	    Own Id: OTP-7890 Aux Id: seq11219 </p>
+        </item>
+        <item>
+          <p>
+	    Fixed hanging early RPC that did IO operation during node
+	    start.</p>
+          <p>
+	    Own Id: OTP-7903 Aux Id: seq11224 </p>
+        </item>
+        <item>
+          <p>
+	    The error behavior of gen_tcp and gen_udp has been
+	    corrected. gen_tcp:connect/3,4 and gen_udp:send/4 now
+	    returns {error,eafnosupport} for conflicting destination
+	    address versus socket address family. Other corner cases
+	    for IP address string host names combined with not using
+	    the native (OS) resolver (which is not default) has also
+	    been changed to return {error,nxdomain} instead of
+	    {error,einval}. Those changes just may surprise old
+	    existing code. gen_tcp:listen/2 and gen_udp:open/2 now
+	    fails for conflicting local address versus socket address
+	    family instead of trying to use an erroneous address.
+	    Problem reported by Per Hedeland.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7929</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Several glitches and performance issues in the Unicode
+	    and I/O-system implementation of R13A have been
+	    corrected.</p>
+          <p>
+	    Own Id: OTP-7896 Aux Id: OTP-7648 OTP-7887 </p>
+        </item>
+        <item>
+          <p>
+	    The unsupported DNS resolver client inet_res has now been
+	    improved to handle NAPTR queries.</p>
+          <p>
+	    Own Id: OTP-7925 Aux Id: seq11231 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+
 <section><title>Kernel 2.13</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

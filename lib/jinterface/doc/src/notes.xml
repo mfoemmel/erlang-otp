@@ -29,6 +29,39 @@
   </header>
   <p>This document describes the changes made to the Jinterface application.</p>
 
+<section><title>Jinterface 1.5.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Many Erlang classes, e.g. OtpErlangRef, was missing an
+	    implementation of the hashCode() method, making it futile
+	    to put them in hash structures such as HashMap. Bug and
+	    patch provided by Paul Guyot. We extended the patch to
+	    all classes and improved (?) on the hash algorithm.</p>
+          <p>
+	    Own Id: OTP-7899</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    jinterface uses the new environment variable
+	    ERL_EPMD_PORT the same way that erl, epmd and
+	    erl_interface do since R13A.</p>
+          <p>
+	    Own Id: OTP-7885</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Jinterface 1.5</title>
 
     <section><title>Improvements and New Features</title>

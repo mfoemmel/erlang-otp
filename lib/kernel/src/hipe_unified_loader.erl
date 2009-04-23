@@ -131,7 +131,8 @@ version_check(Version, Mod) when is_atom(Mod) ->
   Ver = ?VERSION_STRING(),
   case Version < Ver of
     true -> 
-      ?msg("WARNING: Module (~w) has version ~s\n", [Mod, Version]);
+      ?msg("WARNING: Module ~w was compiled with HiPE version ~s\n",
+	   [Mod, Version]);
     _ -> ok
   end.
 

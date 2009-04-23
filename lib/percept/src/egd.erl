@@ -183,7 +183,7 @@ polygon(Image, Pts, Color) ->
     cast(Image, {polygon, Pts, Color}),
     ok.
 
-%% @spec arc(egd_image(), point(), point(), integer(), color()) -> ok
+%% @spec arc(egd_image(), point(), point(), color()) -> ok
 %% @hidden
 %% @doc Creates an arc with radius of bbx corner.
 

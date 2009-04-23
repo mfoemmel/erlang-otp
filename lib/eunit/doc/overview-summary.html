@@ -10,14 +10,14 @@
 <h1>EUnit - a Lightweight Unit Testing Framework for Erlang
 </h1>
 <p>Copyright © 2004-2007 Mickaël Rémond, Richard Carlsson</p>
-<p><b>Version:</b> 2.0-beta, Oct 19 2008 18:26:30
+<p><b>Version:</b> 2.1, Apr 19 2009 22:38:34
 </p>
 <p><b>Authors:</b> Richard Carlsson (<a href="mailto:richardc@it.uu.se"><tt>richardc@it.uu.se</tt></a>) [<em>web site:</em> <tt><a href="http://user.it.uu.se/~richardc/" target="_top">http://user.it.uu.se/~richardc/</a></tt>], Mickaël Rémond (<a href="mailto:mickael.remond@process-one.net"><tt>mickael.remond@process-one.net</tt></a>) [<em>web site:</em> <tt><a href="http://www.process-one.net/" target="_top">http://www.process-one.net/</a></tt>].</p>
 <p>EUnit is a unit testing framework for Erlang. It is very powerful
 and flexible, is easy to use, and has small syntactical overhead.</p>
 
 <ul>
-<li><a href="#Unit_Testing">Unit Testing</a></li>
+<li><a href="#Unit_testing">Unit testing</a></li>
 <li><a href="#Terminology">Terminology</a></li>
 <li><a href="#Getting_started">Getting started</a></li>
 <li><a href="#EUnit_macros">EUnit macros</a></li>
@@ -37,7 +37,7 @@ require changing existing code. Furthermore, tests that only exercise
 the exported functions of a module can always be placed in a completely
 separate module, avoiding any conflicts entirely.</p>
 
-<h3><a name="Unit_Testing">Unit Testing</a></h3>
+<h3><a name="Unit_testing">Unit testing</a></h3>
 
 <p>Unit Testing is testing of individual program "units" in relative
 isolation. There is no particular size requirement: a unit can be a
@@ -232,7 +232,7 @@ causes a crash if the result is not what it should be.)</p>
 
 If you want to use Boolean operators for your tests, the <code>assert</code>
 macro comes in handy (see <a href="#EUnit_macros">EUnit macros</a> for details):
-<pre>   length_test() -&gt; ?assert(length([1,2,3]) == 3).</pre><p>
+<pre>   length_test() -&gt; ?assert(length([1,2,3]) =:= 3).</pre><p>
 The <code>?assert(Expression)</code> macro will evaluate <code>Expression</code>, and if that
 does not evaluate to <code>true</code>, it will throw an exception; otherwise it
 just returns <code>ok</code>. In the above example, the test will thus fail if the
@@ -274,7 +274,7 @@ generator functions), so that it can be included in the test report if
 errors occur. To bypass EUnit and print text directly to the console
 while testing, you can write to the <code>user</code> output stream, as in
 <code>io:format(user, "~w", [Term])</code>. The recommended way of doing this is to
-use the EUnit <a href="#Debugging_Macros">Debugging Macros</a>, which make it much simpler.</p>
+use the EUnit <a href="#Debugging_macros">Debugging macros</a>, which make it much simpler.</p>
 
 <h4><a name="Writing_test_generating_functions">Writing test generating functions</a></h4>
 
@@ -293,10 +293,10 @@ of tests</em> to be executed by EUnit.</p>
 The most basic representation of a test is a single fun-expression that
 takes no arguments. For example, the following test generator:
 <pre>   basic_test_() -&gt;
-       fun () -&gt; ?assert(1 + 1 == 2) end.</pre>
+       fun () -&gt; ?assert(1 + 1 =:= 2) end.</pre>
 will have the same effect as the following simple test:
 <pre>   simple_test() -&gt;
-       ?assert(1 + 1 == 2).</pre><p>
+       ?assert(1 + 1 =:= 2).</pre><p>
 (in fact, EUnit will handle all simple tests just like it handles
 fun-expressions: it will put them in a list, and run them one by one).</p>
 
@@ -308,7 +308,7 @@ occurred (and reduce the number of characters you have to type), you can
 use the <code>_test</code> macro (note the initial underscore character), like
 this:
 <pre>   basic_test_() -&gt;
-       ?_test(?assert(1 + 1 == 2)).</pre><p>
+       ?_test(?assert(1 + 1 =:= 2)).</pre><p>
 The <code>_test</code> macro takes any expression (the "body") as argument, and
 places it within a fun-expression (along with some extra information).
 The body can be any kind of test expression, just like the body of a
@@ -321,7 +321,7 @@ family of <code>assert</code> macros, have a corresponding form with an initial
 underscore character, which automatically adds a <code>?_test(...)</code> wrapper.
 The above example can then simply be written:
 <pre>   basic_test_() -&gt;
-       ?_assert(1 + 1 == 2).</pre><p>
+       ?_assert(1 + 1 =:= 2).</pre><p>
 which has exactly the same meaning (note the <code>_assert</code> instead of
 <code>assert</code>). You can think of the initial underscore as signalling
 <em>test object</em>.</p>
@@ -339,14 +339,14 @@ small Erlang module shows how EUnit can be used in practice.
    fib(N) when N &gt; 1 -&gt; fib(N-1) + fib(N-2).
 
    fib_test_() -&gt;
-       [?_assert(fib(0) == 1),
-	?_assert(fib(1) == 1),
-	?_assert(fib(2) == 2),
-	?_assert(fib(3) == 3),
-	?_assert(fib(4) == 5),
-	?_assert(fib(5) == 8),
+       [?_assert(fib(0) =:= 1),
+	?_assert(fib(1) =:= 1),
+	?_assert(fib(2) =:= 2),
+	?_assert(fib(3) =:= 3),
+	?_assert(fib(4) =:= 5),
+	?_assert(fib(5) =:= 8),
 	?_assertException(error, function_clause, fib(-1)),
-	?_assert(fib(31) == 2178309)
+	?_assert(fib(31) =:= 2178309)
        ].</pre>
 
 <p>(Author's note: When I first wrote this example, I happened to write a
@@ -415,7 +415,7 @@ your code is compiled with testing enabled or disabled.</p>
 <li><a href="#Utility_macros">Utility macros</a></li>
 <li><a href="#Assert_macros">Assert macros</a></li>
 <li><a href="#Macros_for_running_external_commands">Macros for running external commands</a></li>
-<li><a href="#Debugging_Macros">Debugging Macros</a></li>
+<li><a href="#Debugging_macros">Debugging macros</a></li>
 </ul>
 
 <h4><a name="Basic_macros">Basic macros</a></h4>
@@ -443,6 +443,12 @@ e.g., to ensure that the code can be compiled without including the
 EUnit header file, when testing is disabled. See also the macros <code>TEST</code>
 and <code>NOTEST</code>.
 </dd>
+
+<dt><code>EUNIT_NOAUTO</code></dt>
+<dd>If this macro is defined, the automatic exporting or stripping of
+test functions will be disabled.
+</dd>
+
 <dt><code>TEST</code></dt>
 <dd><p>This macro is always defined (to <code>true</code>, unless previously defined
 by the user to have another value) whenever EUnit is enabled at compile
@@ -459,6 +465,7 @@ The <code>TEST</code> macro can also be used to override the <code>NOTEST</code>
 included (even if <code>NOTEST</code> is also defined), then the code will be
 compiled with EUnit enabled.
 </dd>
+
 <dt><code>NOTEST</code></dt>
 <dd><p>This macro is always defined (to <code>true</code>, unless previously defined
 by the user to have another value) whenever EUnit is <em>disabled</em>
@@ -471,9 +478,27 @@ is <em>not</em> defined, then the code will be compiled with EUnit
 disabled. See also <a href="#Disabling_testing">Disabling testing</a>.
 </dd>
 
-<dt><code>EUNIT_NOAUTO</code></dt>
-<dd>If this macro is defined, the automatic exporting or stripping of
-test functions will be disabled.
+<dt><code>NOASSERT</code></dt>
+<dd>If this macro is defined, the assert macros will have no effect,
+when testing is also disabled. See <a href="#Assert_macros">Assert macros</a>. When
+testing is enabled, the assert macros are always enabled automatically
+and cannot be disabled.
+</dd>
+
+<dt><code>ASSERT</code></dt>
+<dd>If this macro is defined, it overrides the NOASSERT macro, forcing
+the assert macros to always be enabled regardless of other settings.
+</dd>
+
+<dt><code>NODEBUG</code></dt>
+<dd>If this macro is defined, the debugging macros will have no effect.
+See <a href="#Debugging_macros">Debugging macros</a>. <code>NODEBUG</code> also implies <code>NOASSERT</code>,
+unless testing is enabled.
+</dd>
+
+<dt><code>DEBUG</code></dt>
+<dd>If this macro is defined, it overrides the NODEBUG macro, forcing
+the debugging macros to be enabled.
 </dd>
 </dl>
 
@@ -503,6 +528,10 @@ an "<code>_</code>" (underscore) character, as in <code>?_assert(BoolExpr)</code
 a "test object" instead of performing the test immediately. This is
 equivalent to writing <code>?_test(assert(BoolExpr))</code>, etc.)</p>
 
+<p>If the macro <code>NOASSERT</code> is defined before the EUnit header file is
+included, these macros have no effect when testing is also disabled; see
+<a href="#Compilation_control_macros">Compilation control macros</a> for details.</p>
+
 <dl>
 <dt><code>assert(BoolExpr)</code></dt>
 <dd><p>Evaluates the expression <code>BoolExpr</code>, if testing is enabled. Unless
@@ -513,7 +542,7 @@ the macro will not generate any code except the atom <code>ok</code>, and
 <code>BoolExpr</code> will not be evaluated.</p>
 
 Typical usage:
-<pre>   ?assert(f(X, Y) == [])</pre>
+<pre>   ?assert(f(X, Y) =:= [])</pre>
 
 The <code>assert</code> macro can be used anywhere in a program, not just in unit
 tests, to check pre/postconditions and invariants. For example:
@@ -627,7 +656,7 @@ A Unix-specific example:
 </dd>
 </dl>
 
-<h4><a name="Debugging_Macros">Debugging Macros</a></h4>
+<h4><a name="Debugging_macros">Debugging macros</a></h4>
 
 <p>To help with debugging, EUnit defines several useful macros for printing
 messages directly to the console (rather than to the standard output).
@@ -638,7 +667,8 @@ to simply click on the message and jump directly to the corresponding
 line in the code.</p>
 
 <p>If the macro <code>NODEBUG</code> is defined before the EUnit header file is
-included, these macros have no effect.</p>
+included, these macros have no effect; see
+<a href="#Compilation_control_macros">Compilation control macros</a> for details.</p>
 
 <dl>
 <dt><code>debugHere</code></dt>
@@ -997,6 +1027,6 @@ function namespace and are comfortable with writing that kind of code.
 
 <hr>
 <div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
-<p><i>Generated by EDoc, Oct 19 2008, 18:26:30.</i></p>
+<p><i>Generated by EDoc, Apr 19 2009, 22:38:35.</i></p>
 </body>
 </html>

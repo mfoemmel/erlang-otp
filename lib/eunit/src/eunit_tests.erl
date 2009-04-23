@@ -13,7 +13,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id$ 
+%% $Id: eunit_tests.erl 238 2007-11-15 10:23:54Z mremond $ 
 %%
 %% @author Richard Carlsson <richard@it.uu.se>
 %% @copyright 2007 Richard Carlsson

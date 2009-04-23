@@ -30,6 +30,60 @@
   <p>This document describes the changes made to the Compiler
     application.</p>
 
+<section><title>Compiler 4.6.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Miscellaneous minor bugs fixed.</p>
+          <p>
+	    Own Id: OTP-7937</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    There will be more efficient code if there is a clause
+	    that matches the empty binary and no other clauses that
+	    matches non-empty binaries.</p>
+          <p>
+	    Own Id: OTP-7924</p>
+        </item>
+        <item>
+	    <p>There is new option to allow a module to have a module
+	    name other than the filename. Do not use it unless you
+	    know what you are doing.</p>
+          <p>
+	    Own Id: OTP-7927</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Compiler 4.6.0.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+            <p>Using <c>andalso</c>/<c>orelse</c> or record access in
+            a <c>try</c>...<c>catch</c> could cause a compiler
+            crash.</p>
+            <p>Som large and complex functions could require
+            extremely long compilation times (hours or days).</p>
+          <p>
+            Own Id: OTP-7905</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Compiler 4.6</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

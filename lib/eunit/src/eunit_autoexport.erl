@@ -13,7 +13,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id$ 
+%% $Id: eunit_autoexport.erl 329 2009-03-01 11:23:32Z rcarlsson $ 
 %%
 %% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 2006 Richard Carlsson
@@ -62,6 +62,8 @@ form({function, _L, Name, 0, _Cs}, S, TestSuffix, GeneratorSuffix,
 		    end
 	    end
     end;
+form({function, _L, ?DEFAULT_MODULE_WRAPPER_NAME, 1, _Cs}, S, _, _, _) ->
+    sets:add_element({?DEFAULT_MODULE_WRAPPER_NAME,1}, S);
 form(_, S, _, _, _) ->
     S.
 

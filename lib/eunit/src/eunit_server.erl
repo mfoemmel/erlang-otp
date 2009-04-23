@@ -13,7 +13,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id$
+%% $Id: eunit_server.erl 267 2008-10-19 18:48:03Z rcarlsson $
 %%
 %% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 2006 Richard Carlsson
@@ -216,8 +216,7 @@ server_command(From, Cmd, St) ->
     server(St).
 
 server_command_reply(From, Result) ->
-    From ! {self(), Result},
-    ok.
+    From ! {self(), Result}.
 
 enqueue(Job, From, Reference, St) ->
     case dict:size(St#state.jobs) of
@@ -313,8 +312,7 @@ auto_test_done(St) ->
     St#state{auto_test = Queue}.
 
 start_auto_test(Server, M) ->
-    spawn(fun () -> auto_super(Server, M) end),
-    ok.
+    spawn(fun () -> auto_super(Server, M) end).
 
 auto_super(Server, M) ->
     process_flag(trap_exit, true),

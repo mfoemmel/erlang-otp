@@ -1396,7 +1396,7 @@ o1_opts() ->
   end.
 
 o2_opts() ->
-  Common = [icode_ssa_const_prop, icode_ssa_copy_prop, icode_ssa_struct_reuse,
+  Common = [icode_ssa_const_prop, icode_ssa_copy_prop, % icode_ssa_struct_reuse,
 	    icode_type, icode_inline_bifs, rtl_lcm,
 	    rtl_ssa, rtl_ssa_const_prop,
 	    spillmin_color, use_indexing, remove_comments, 

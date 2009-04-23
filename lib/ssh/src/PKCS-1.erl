@@ -7,7 +7,7 @@
 %% 		`asn1rt_check'
 %% 		`asn1rt_driver_handler'
 %% 
-%% Created by Igor 2009-04-15, 21:03:39.
+%% Created by Igor 2009-04-20, 20:53:23.
 %% 
 
 -module('PKCS-1').
@@ -68,15 +68,15 @@
 %%<<<              [ber_bin_v2, report_errors,
 %%<<<               {cwd,
 %%<<<                "/net/shelob/ldisk/daily_build/otp_prebuild_r1"
-%%<<<                "3b.2009-04-15_20/otp_src_R13B/lib/ssh/src"},
+%%<<<                "3b.2009-04-20_20/otp_src_R13B/lib/ssh/src"},
 %%<<<               {outdir,
 %%<<<                "/net/shelob/ldisk/daily_build/otp_prebuild_r1"
-%%<<<                "3b.2009-04-15_20/otp_src_R13B/lib/ssh/src"},
+%%<<<                "3b.2009-04-20_20/otp_src_R13B/lib/ssh/src"},
 %%<<<               inline, noobj, optimize, compact_bit_string, der,
 %%<<<               {i, "."},
 %%<<<               {i,
 %%<<<                "/net/shelob/ldisk/daily_build/otp_prebuild_r1"
-%%<<<                "3b.2009-04-15_20/otp_src_R13B/lib/ssh/src"}]}]).
+%%<<<                "3b.2009-04-20_20/otp_src_R13B/lib/ssh/src"}]}]).
 
 encoding_rule() -> ber_bin_v2.
 

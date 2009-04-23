@@ -13,7 +13,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id$ 
+%% $Id: eunit_data.erl 339 2009-04-05 14:10:47Z rcarlsson $ 
 %%
 %% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 2006 Richard Carlsson
@@ -28,8 +28,8 @@
 
 -include_lib("kernel/include/file.hrl").
 
--export([list/1, iter_init/2, iter_next/2, iter_prev/2, iter_id/1, 
-	 list_size/1, enter_context/3]).
+-export([iter_init/2, iter_next/1, iter_prev/1, iter_id/1,
+	 enter_context/3, get_module_tests/1]).
 
 -import(lists, [foldr/3]).
 
@@ -97,8 +97,13 @@
 %%
 %% @type moduleName() = atom()
 %% @type functionName() = atom()
+%% @type arity() = integer()
 %% @type appName() = atom()
 %% @type fileName() = string()
+
+%% TODO: Can we mark up tests as known-failures?
+%% TODO: Is it possible to handle known timout/setup failures?
+%% TODO: Add diagnostic tests which never fail, but may cause warnings?
 
 %% ---------------------------------------------------------------------
 %% Abstract test set iterator
@@ -121,17 +126,7 @@ iter_init(Tests, ParentID) ->
 iter_id(#iter{pos = N, parent = Ns}) ->
     lists:reverse(Ns, [N]).
 
-%% @spec (testIterator(), Handler) -> none | {testItem(), testIterator()}
-%%    Handler = (term()) -> term()
-
-iter_next(I, H) ->
-    iter_do(fun iter_next/1, I, H).
-
-iter_do(F, I, H) ->
-    try F(I)
-    catch
-	throw:R -> H(R)
-    end.
+%% @spec (testIterator()) -> none | {testItem(), testIterator()}
 
 iter_next(I = #iter{next = []}) ->
     case next(I#iter.tests) of
@@ -147,11 +142,7 @@ iter_next(I = #iter{next = [T | Ts]}) ->
 	       prev = [T | I#iter.prev],
 	       pos = I#iter.pos + 1}}.
 
-%% @spec (testIterator(), Handler) -> none | {testItem(), testIterator()}
-%%    Handler = (term()) -> term()
-
-iter_prev(I, H) ->
-    iter_do(fun iter_prev/1, I, H).
+%% @spec (testIterator()) -> none | {testItem(), testIterator()}
 
 iter_prev(#iter{prev = []}) ->
     none;
@@ -382,18 +373,24 @@ parse({with, X, As}=T) when is_list(As) ->
     case As of
 	[A | As1] ->
 	    check_arity(A, 1, T),
-	    {data, [fun () -> A(X) end, {with, X, As1}]};
+	    {data, [{eunit_lib:fun_parent(A), fun () -> A(X) end},
+		    {with, X, As1}]};
 	[] ->
 	    {data, []}
     end;
 parse({S, T1} = T) when is_list(S) ->
     case eunit_lib:is_string(S) of
 	true ->
-	    group(#group{tests = T1, desc = S});
+	    group(#group{tests = T1, desc = list_to_binary(S)});
 	false ->
 	    bad_test(T)
     end;
-parse(T) when tuple_size(T) > 2, is_list(element(1, T)) ->
+parse({S, T1}) when is_binary(S) ->
+    group(#group{tests = T1, desc = S});
+parse(T) when is_tuple(T), size(T) > 2, is_list(element(1, T)) ->
+    [S | Es] = tuple_to_list(T),
+    parse({S, list_to_tuple(Es)});
+parse(T) when is_tuple(T), size(T) > 2, is_binary(element(1, T)) ->
     [S | Es] = tuple_to_list(T),
     parse({S, list_to_tuple(Es)});
 parse(M) when is_atom(M) ->
@@ -417,15 +414,16 @@ parse(T) ->
 
 parse_simple({L, F}) when is_integer(L), L >= 0 ->
     (parse_simple(F))#test{line = L};
+parse_simple({{M,N,A}=Loc, F}) when is_atom(M), is_atom(N), is_integer(A) ->
+    (parse_simple(F))#test{location = Loc};
 parse_simple(F) ->
     parse_function(F).
 
 parse_function(F) when is_function(F) ->
     check_arity(F, 0, F),
-    {module, M} = erlang:fun_info(F, module),
-    #test{f = F, module = M, name = eunit_lib:fun_parent(F)};
+    #test{f = F, location = eunit_lib:fun_parent(F)};
 parse_function({M,F}) when is_atom(M), is_atom(F) ->
-    #test{f = eunit_test:function_wrapper(M, F), module = M, name = F};
+    #test{f = eunit_test:function_wrapper(M, F), location = {M, F, 0}};
 parse_function(F) ->
     bad_test(F).
 
@@ -546,29 +544,36 @@ push_order(_, _, G) ->
 %% @throws {module_not_found, moduleName()}
 
 get_module_tests(M) ->
-    TestSuffix = ?DEFAULT_TEST_SUFFIX,
-    GeneratorSuffix = ?DEFAULT_GENERATOR_SUFFIX,
     try M:module_info(exports) of
 	Es ->
-	    Fs = testfuns(Es, M, TestSuffix, GeneratorSuffix),
-	    Name = atom_to_list(M),
-	    case lists:suffix(?DEFAULT_TESTMODULE_SUFFIX, Name) of
-		false ->
-		    Name1 = Name ++ ?DEFAULT_TESTMODULE_SUFFIX,
-		    M1 = list_to_atom(Name1),
-		    try get_module_tests(M1) of
-			Fs1 ->
-			    Fs ++ [{"module '" ++ Name1 ++ "'", Fs1}]
-		    catch
-			{module_not_found, M1} ->
-			    Fs
-		    end;
-		true ->
-		    Fs
+	    Fs = get_module_tests_1(M, Es),
+	    W = ?DEFAULT_MODULE_WRAPPER_NAME,
+	    case lists:member({W,1}, Es) of
+		false -> Fs;
+		true -> {generator, fun () -> M:W(Fs) end}
 	    end
     catch
 	error:undef -> 
 	    throw({module_not_found, M})
+    end.
+
+get_module_tests_1(M, Es) ->
+    Fs = testfuns(Es, M, ?DEFAULT_TEST_SUFFIX,
+		  ?DEFAULT_GENERATOR_SUFFIX),
+    Name = atom_to_list(M),
+    case lists:suffix(?DEFAULT_TESTMODULE_SUFFIX, Name) of
+	false ->
+	    Name1 = Name ++ ?DEFAULT_TESTMODULE_SUFFIX,
+	    M1 = list_to_atom(Name1),
+	    try get_module_tests(M1) of
+		Fs1 ->
+		    Fs ++ [{"module '" ++ Name1 ++ "'", Fs1}]
+	    catch
+		{module_not_found, M1} ->
+		    Fs
+	    end;
+	true ->
+	    Fs
     end.
 
 testfuns(Es, M, TestSuffix, GeneratorSuffix) ->
@@ -672,74 +677,6 @@ enter_context(#context{setup = S, cleanup = C, process = P}, I, F) ->
 	 end,
     eunit_test:enter_context(S, C, I, F1).
 
-
-%% ---------------------------------------------------------------------
-%% Returns a symbolic listing of a set of tests
-%%
-%% @type testInfoList() = [Entry]
-%%   Entry = {item, testId(), Description, testName()}
-%%         | {group, testId(), Description, testInfoList}
-%%   Description = string()
-%% @type testId() = [integer()]
-%% @type testName() = {moduleName(), functionName()}
-%%		    | {moduleName(), functionName(), lineNumber()}
-%% @type lineNumber() = integer().  Proper line numbers are always >= 1.
-%%
-%% @throws {bad_test, term()}
-%%       | {generator_failed, exception()}
-%%       | {no_such_function, eunit_lib:mfa()}
-%%       | {module_not_found, moduleName()}
-%%       | {application_not_found, appName()}
-%%       | {file_read_error, {Reason::atom(), Message::string(),
-%%                            fileName()}}
-%%       | {context_error, instantiation_failed, eunit_lib:exception()}
-
-list(T) ->
-    list(T, []).
-
-list(T, ParentID) ->
-    list_loop(iter_init(T, ParentID)).
-
-list_loop(I) ->
-    case iter_next(I, fun (R) -> throw({error, R}) end) of
- 	{T, I1} ->
-	    Id = iter_id(I1),
- 	    case T of
-		#test{} ->
-		    Name = case T#test.line of
-			       0 -> {T#test.module, T#test.name};
-			       Line -> {T#test.module, T#test.name, Line}
-			   end,
-		    [{item, Id, desc_string(T#test.desc), Name}
-		     | list_loop(I1)];
-		#group{context = Context} ->
-		    [{group, Id, desc_string(T#group.desc),
-		      list_context(Context, T#group.tests, Id)}
-		     | list_loop(I1)]
-	    end;
- 	none ->
- 	    []
-    end.
-
-desc_string(undefined) -> "";
-desc_string(S) -> S.
-
-list_context(undefined, T, ParentId) ->
-    list(T, ParentId);
-list_context(#context{process = local}, T, ParentId) ->
-    browse_context(T, fun (T) -> list(T, ParentId) end);
-list_context(#context{process = spawn}, T, ParentId) ->
-    browse_context(T, fun (T) -> list({spawn, T}, ParentId) end);
-list_context(#context{process = {spawn, N}}, T, ParentId) ->
-    browse_context(T, fun (T) -> list({spawn, N, T}, ParentId) end).
-
-browse_context(T, F) ->
-    eunit_test:browse_context(T, F).
-
-list_size({item, _, _, _}) -> 1;
-list_size({group, _, _, Es}) -> list_size(Es);    
-list_size(Es) when is_list(Es) ->
-    lists:foldl(fun (E, N) -> N + list_size(E) end, 0, Es).
 
 -ifdef(TEST).
 generator_exported_() ->

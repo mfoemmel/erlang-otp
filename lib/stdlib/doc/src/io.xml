@@ -427,7 +427,7 @@ ok</pre>
 	    less than or equal to 255, otherwise it is masked with 16#FF:</p>
 <pre>
 1> <input>io:fwrite("~tc~n",[1024]).</input>
-\{2000}
+\x{400}
 ok
 2> <input>io:fwrite("~c~n",[1024]).</input>
 ^@
@@ -479,7 +479,7 @@ ok</pre>
           <p>A list with integers larger than 255 is considered an error if the Unicode translation modifier is not given:</p>
 <pre>
 1> <input>io:fwrite("~ts~n",[[1024]]).</input>
-\{2000}
+\x{400}
 ok
 2> io:fwrite("~s~n",[[1024]]).
 ** exception exit: {badarg,[{io,format,[&lt;0.26.0&gt;,"~s~n",[[1024]]]},

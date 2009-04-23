@@ -13,7 +13,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id$ 
+%% $Id: eunit_test.erl 336 2009-03-06 14:43:21Z rcarlsson $ 
 %%
 %% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 2006 Richard Carlsson
@@ -24,7 +24,7 @@
 -module(eunit_test).
 
 -export([run_testfun/1, function_wrapper/2, enter_context/4,
-	 browse_context/2, multi_setup/1]).
+	 multi_setup/1]).
 
 
 -include("eunit.hrl").
@@ -43,6 +43,8 @@ get_stacktrace() ->
 get_stacktrace(Ts) ->
     eunit_lib:uniq(prune_trace(erlang:get_stacktrace(), Ts)).
 
+prune_trace([{eunit_data, _, _} | Rest], Tail) ->
+    prune_trace(Rest, Tail);
 prune_trace([{?MODULE, _, _} | _Rest], Tail) ->
     Tail;
 prune_trace([T | Ts], Tail) ->
@@ -179,6 +181,8 @@ macro_test_() ->
 		     = run_testfun(F)
  	     end)
      ]}.
+
+under_eunit_test() -> ?assert(?UNDER_EUNIT).
 -endif.
 
 
@@ -276,24 +280,6 @@ enter_context(Setup, Cleanup, Instantiate, Callback) ->
 context_error(Type, Class, Term) ->
     throw({context_error, Type, {Class, Term, get_stacktrace()}}).
 
-%% Instantiates a context with dummy values to make browsing possible
-%% @throws {context_error, instantiation_failed, eunit_lib:exception()}
-
-browse_context(I, F) ->
-    %% Browse: dummy setup/cleanup and a wrapper for the instantiator
-    I1 = fun (_) ->
-		try eunit_lib:browse_fun(I) of
-		    {_, T} -> T
-		catch
-		    Class:Term ->
-			context_error(instantiation_failed, Class, Term)
-		end
-	 end,
-    enter_context(fun ok/0, fun ok/1, I1, F).
-
-ok() -> ok.
-ok(_) -> ok.
-
 %% This generates single setup/cleanup functions from a list of tuples
 %% on the form {Tag, Setup, Cleanup}, where the setup function always
 %% backs out correctly from partial completion.
@@ -330,3 +316,5 @@ multi_setup([{Tag, S} | Es], CleanupPrev) ->
     multi_setup([{Tag, S, fun ok/1} | Es], CleanupPrev);
 multi_setup([], CleanupAll) ->
     {fun (Rs) -> Rs end, CleanupAll}.
+
+ok(_) -> ok.

@@ -264,7 +264,7 @@ span(Points) ->
 
 rgb_float2byte({R,G,B}) -> rgb_float2byte({R,G,B,1.0});
 rgb_float2byte({R,G,B,A}) -> 
-    {trunc(R*255), trunc(G*255), trunc(G*255), trunc(A*255)}.
+    {trunc(R*255), trunc(G*255), trunc(B*255), trunc(A*255)}.
 
 rgba_byte2float({R,G,B,A}) ->
     {R/255,G/255,B/255,A/255}.

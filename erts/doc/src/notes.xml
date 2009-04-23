@@ -29,6 +29,133 @@
   </header>
   <p>This document describes the changes made to the ERTS application.</p>
 
+<section><title>Erts 5.7.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Fixed a bug on Windows that could make
+	    <c>gen_tcp:send</c> hang trying to send an iolist of more
+	    than 16 binaries.</p>
+          <p>
+	    Own Id: OTP-7816</p>
+        </item>
+        <item>
+          <p>
+	    The runtime system could under rare circumstances crash
+	    during load balancing.</p>
+          <p>
+	    Own Id: OTP-7908 Aux Id: otp-7500 </p>
+        </item>
+        <item>
+          <p>
+	    <c>run_erl</c> uses fallback if Unix98 pseudo-terminal is
+	    not present on host.</p>
+          <p>
+	    Own Id: OTP-7916 Aux Id: seq11249 </p>
+        </item>
+        <item>
+          <p>
+	    A message buffer memory leak in the runtime system
+	    without smp support has been fixed.</p>
+          <p>
+	    Own Id: OTP-7941</p>
+        </item>
+        <item>
+	    <p>Attempting to append a binary of 16Mb or greater to
+	    another binary using the bit syntax would cause a
+	    <c>system_limit</c> exception. There was also several
+	    cases when constructing binaries when a <c>badarg</c>
+	    exception was generated when it should have been
+	    <c>system_limit</c>.</p>
+          <p>
+	    Own Id: OTP-7942</p>
+        </item>
+        <item>
+          <p>
+	    The runtime system with SMP support failed to terminate
+	    the caller of <c>link(RemotePid)</c> properly, if
+	    <c>RemotePid</c> was the pid of a process on an
+	    unreachable node. The calling process was in this case
+	    marked as exiting, but never terminated.</p>
+          <p>
+	    Own Id: OTP-7946</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Rudimentary support for cross compiling is added to the
+	    source release. The support is still in its infancy and
+	    has only been used to cross compile on Linux for a
+	    different cpu architecture and a different Linux version,
+	    but should be extendable to support other platforms as
+	    well. The cross configuration files with examples are
+	    placed in $ERL_TOP/xcomp/. View README.xcomp and run
+	    $ERL_TOP/otp_build -help for further information.</p>
+          <p>
+	    Own Id: OTP-7854</p>
+        </item>
+        <item>
+	    <p>The escape sequence <c>\{</c> which was given a new
+	    interpretation in R13A has retained its old meaning (the
+	    ASCII code for <c>{</c>), which means that codes greater
+	    than 255 have to be stated using hexadecimal characters
+	    (for example, <c>\x{AAA}</c>). The escape sequence
+	    <c>\xH</c> where H is a hexadecimal character followed by
+	    something else but a hexadecimal character is no longer
+	    valid (incompatibility with R13A). Character codes less
+	    than 256 can be stated using two hexadecimal characters
+	    (for example, <c>\x0D</c>).</p>
+          <p>
+	    Own Id: OTP-7891 Aux Id: OTP-7855 </p>
+        </item>
+        <item>
+	    <p>The <c>term_to_binary/1</c> BIF used to be implemented
+	    with recursive C code, which could cause the Erlang
+	    emulator to terminate because of a stack overflow.</p>
+	    <p>Also fixed some minor issues in
+	    <c>term_to_binary/1</c> and <c>binary_to_term/1</c>
+	    pointed out by Matthew Dempsky.</p>
+          <p>
+	    Own Id: OTP-7894</p>
+        </item>
+        <item>
+          <p>
+	    Several glitches and performance issues in the Unicode
+	    and I/O-system implementation of R13A have been
+	    corrected.</p>
+          <p>
+	    Own Id: OTP-7896 Aux Id: OTP-7648 OTP-7887 </p>
+        </item>
+        <item>
+          <p>
+	    Minor documentation improvements of the
+	    <c>scheduler_bind_type</c> argument of
+	    <c>erlang:system_flag/2</c>, and the
+	    <c>scheduler_bind_type</c>, and the
+	    <c>scheduler_bindings</c> arguments of
+	    <c>erlang:system_info/1</c>.</p>
+          <p>
+	    Own Id: OTP-7901 Aux Id: OTP-7777 </p>
+        </item>
+        <item>
+          <p>
+	    There is a new BIF <c>erlang:make_tuple/3</c>.</p>
+          <p>
+	    Own Id: OTP-7913</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+
 <section><title>Erts 5.7</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

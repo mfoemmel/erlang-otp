@@ -839,10 +839,12 @@
 ./lib/eunit/ebin/eunit_autoexport.beam
 ./lib/eunit/ebin/eunit_data.beam
 ./lib/eunit/ebin/eunit_lib.beam
+./lib/eunit/ebin/eunit_listener.beam
 ./lib/eunit/ebin/eunit_proc.beam
 ./lib/eunit/ebin/eunit_serial.beam
 ./lib/eunit/ebin/eunit_server.beam
 ./lib/eunit/ebin/eunit_striptests.beam
+./lib/eunit/ebin/eunit_surefire.beam
 ./lib/eunit/ebin/eunit_test.beam
 ./lib/eunit/ebin/eunit_tests.beam
 ./lib/eunit/ebin/eunit_tty.beam

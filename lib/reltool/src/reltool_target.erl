@@ -742,30 +742,40 @@ create_bin(Sys, ErtsDir, RelVsnDir, TargetDir) ->
     ErtsBinDir = filename:join([ErtsDir, "bin"]),
     BootFile = Sys#sys.boot_rel ++ ".boot",
     {ok, Files} = file:list_dir(RelVsnDir),
-    [copy_file(RelVsnDir, F, SystemBinDir, F) || F <- Files],
-    copy_file(RelVsnDir, BootFile, SystemBinDir, "start.boot"),
-    [copy_file(ErtsBinDir, F, SystemBinDir, F) || F <- execs(Sys)],
-    [copy_file(F, filename:join([SystemBinDir, filename:basename(F)])) || F <- escripts(Sys)],
+    [copy_file(filename:join([RelVsnDir,    F]),
+               filename:join([SystemBinDir, F])) || F <- Files],
+    copy_file(filename:join([RelVsnDir,    BootFile]),
+              filename:join([SystemBinDir, "start.boot"])),
+    copy_file(filename:join([ErtsBinDir,   "epmd"]),
+              filename:join([SystemBinDir, "epmd"])),
+    copy_file(filename:join([ErtsBinDir,   "run_erl"]),
+              filename:join([SystemBinDir, "run_erl"])),
+    copy_file(filename:join([ErtsBinDir,   "to_erl"]),
+              filename:join([SystemBinDir, "to_erl"])),
+    %% [copy_file(RelVsnDir, F, SystemBinDir, F) || F <- Files],
+    %% copy_file(RelVsnDir, BootFile, SystemBinDir, "start.boot"),
+    %% [copy_file(ErtsBinDir, F, SystemBinDir, F) || F <- execs(Sys)],
+    %% [copy_file(F, filename:join([SystemBinDir, filename:basename(F)])) || F <- escripts(Sys)],
     ok.
 
-execs(Sys) ->
-    Execs = 
-	case Sys#sys.profile of
-	    standalone  -> [];
-	    development -> ["dialyzer", "erl", "erlc", "escript", "typer"];
-	    embedded    -> ["erl", "escript"]
-	end,
-    case os:type() of
-	{win32, _} -> [Exec ++ ".exe" || Exec <- Execs];
-	_          -> Execs
-    end.
-
-escripts(Sys) ->
-    case Sys#sys.profile of
-	standalone  -> Sys#sys.escripts;
-	development -> [];
-	embedded    -> []
-    end.
+%% execs(Sys) ->
+%%     Execs = 
+%% 	case Sys#sys.profile of
+%% 	    standalone  -> [];
+%% 	    development -> ["dialyzer", "erl", "erlc", "escript", "typer"];
+%% 	    embedded    -> ["erl", "escript"]
+%% 	end,
+%%     case os:type() of
+%% 	{win32, _} -> [Exec ++ ".exe" || Exec <- Execs];
+%% 	_          -> Execs
+%%     end.
+%% 
+%% escripts(Sys) ->
+%%     case Sys#sys.profile of
+%% 	standalone  -> Sys#sys.escripts;
+%% 	development -> [];
+%% 	embedded    -> []
+%%     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -916,9 +926,9 @@ do_delete(File, regular) ->
 do_delete(Dir, directory) ->
     file:del_dir(Dir).
 
-copy_file(FromDir, FromBase, ToDir, ToBase) ->
-    copy_file(filename:join([FromDir, FromBase]),
-	      filename:join([ToDir, ToBase])).
+%% copy_file(FromDir, FromBase, ToDir, ToBase) ->
+%%     copy_file(filename:join([FromDir, FromBase]),
+%% 	      filename:join([ToDir, ToBase])).
 
 copy_file(From, To) ->
     case file:list_dir(From) of

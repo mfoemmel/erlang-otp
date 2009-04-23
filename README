@@ -46,7 +46,7 @@ At Ericsson we have a "Daily Build and Test" that runs on:
     Linux/Suse x86	    9.4, 10.1
     Linux/Suse x86_64	    10.0, 10.1, 11.0
     FreeBSD x86             7.1
-    Mac OS X/Intel          10.4.11 (Tiger), 10.5.5 (Leopard)
+    Mac OS X/Intel          10.4.11 (Tiger), 10.5.6 (Leopard)
     Windows		    XP SP3, 2003, Vista
 
 

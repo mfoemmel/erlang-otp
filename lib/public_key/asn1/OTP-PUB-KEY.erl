@@ -7,7 +7,7 @@
 %% 		`asn1rt_check'
 %% 		`asn1rt_driver_handler'
 %% 
-%% Created by Igor 2009-04-15, 20:57:43.
+%% Created by Igor 2009-04-20, 20:47:35.
 %% 
 
 -module('OTP-PUB-KEY').
@@ -760,17 +760,17 @@
 %%<<<              [ber_bin_v2, report_errors,
 %%<<<               {cwd,
 %%<<<                "/net/shelob/ldisk/daily_build/otp_prebuild_r1"
-%%<<<                "3b.2009-04-15_20/otp_src_R13B/lib/public_key/"
+%%<<<                "3b.2009-04-20_20/otp_src_R13B/lib/public_key/"
 %%<<<                "asn1"},
 %%<<<               {outdir,
 %%<<<                "/net/shelob/ldisk/daily_build/otp_prebuild_r1"
-%%<<<                "3b.2009-04-15_20/otp_src_R13B/lib/public_key/"
+%%<<<                "3b.2009-04-20_20/otp_src_R13B/lib/public_key/"
 %%<<<                "asn1"},
 %%<<<               inline, asn1config, noobj, optimize, compact_bit_string,
 %%<<<               der, {i, "."},
 %%<<<               {i,
 %%<<<                "/net/shelob/ldisk/daily_build/otp_prebuild_r1"
-%%<<<                "3b.2009-04-15_20/otp_src_R13B/lib/public_key/"
+%%<<<                "3b.2009-04-20_20/otp_src_R13B/lib/public_key/"
 %%<<<                "asn1"}]}]).
 
 encoding_rule() -> ber_bin_v2.

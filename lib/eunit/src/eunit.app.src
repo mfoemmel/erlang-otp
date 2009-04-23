@@ -10,9 +10,12 @@
 	     eunit_proc,
 	     eunit_serial,
 	     eunit_test,
+	     eunit_tests,
 	     eunit_lib,
+	     eunit_listener,
 	     eunit_data,
-	     eunit_tty]},
+	     eunit_tty,
+	     eunit_surefire]},
   {registered,[]},
   {applications, [stdlib]},
   {env, []}]}.

@@ -31,7 +31,22 @@
   </header>
   <p>This document describes the changes made to the Percept application.</p>
 
-<section><title>Percept 0.8</title>
+<section><title>Percept 0.8.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p><c>egd</c> now supports encapsulated postscript output
+	    format.</p>
+          <p>
+	    Own Id: OTP-7923</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+    <section><title>Percept 0.8</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>
       <list>

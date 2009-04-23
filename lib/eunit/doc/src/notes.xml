@@ -31,6 +31,30 @@
   </header>
   <p>This document describes the changes made to the EUnit application.</p>
 
+<section><title>Eunit 2.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Mostly internal changes, in particular to the event
+	    protocol; fixes problems with timeouts that could cause
+	    eunit to hang, and makes it much easier to write new
+	    reporting back-ends.</p>
+	    <p>New "surefire" report backend for Maven and
+	    Bamboo.</p>
+	    <p>The test representation is no longer traversed twice
+	    (the first pass was for enumeration only). This
+	    eliminates some strange restrictions on how generators
+	    can be written, but it also means that reports cannot be
+	    quite as complete as before in the event of skipped
+	    tests.</p>
+          <p>
+	    Own Id: OTP-7964</p>
+        </item>
+      </list>
+    </section>
+
+</section>
   <section>
     <title>EUnit 2.0.1</title>
 

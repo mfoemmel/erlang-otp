@@ -31,7 +31,7 @@ const void *ei_reg_getpval(ei_reg *reg, const char *key, int *size)
   
   if ((!(obj=ei_hash_lookup(tab,key))) || /* return (const void *)EI_NOTFOUND; */
       (obj->attr & EI_DELET)  || /* return (const void *)EI_NOTFOUND; */
-      (ei_reg_typeof(obj) != EI_STR)) /* return (const void *)EI_TYPE; */
+      (ei_reg_typeof(obj) != EI_BIN)) /* return (const void *)EI_TYPE; */
     return NULL;
 
   if (size) *size=obj->size;

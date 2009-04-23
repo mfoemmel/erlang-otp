@@ -17,5 +17,3 @@
 # %CopyrightEnd%
 
 TOOLS_VSN = 2.6.4
-
-TICKETS = OTP-7831

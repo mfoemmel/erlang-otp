@@ -29,6 +29,33 @@
   </header>
   <p>This document describes the changes made to the OS_Mon application.</p>
 
+<section><title>Os_Mon 2.2.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>An error in <c>memsup</c> could cause <c>os_mon</c> to
+	    report erroneous memory values on windows for ranges of
+	    memory between 2GB and 4GB. This have now been fixed.</p>
+          <p>
+	    Own Id: OTP-7944</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Added support for dragonfly OS.</p>
+          <p>
+	    Own Id: OTP-7938</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Os_Mon 2.2</title>
 
     <section><title>Improvements and New Features</title>

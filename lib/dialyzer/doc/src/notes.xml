@@ -21,7 +21,7 @@
     
     </legalnotice>
 
-    <title>Dilayzer Release Notes</title>
+    <title>Dialyzer Release Notes</title>
     <prepared>otp_appnotes</prepared>
     <docno>nil</docno>
     <date>nil</date>
@@ -30,6 +30,22 @@
   <p>This document describes the changes made to the Dialyzer
     application.</p>
 
+<section><title>Dialyzer 1.9.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Has better handling of opaque types.</p>
+	    <p>The handling of UTF segments of bitstreams has been
+	    significantly strengthened and revised. In all
+	    probability, now it is correct.</p>
+          <p>
+	    Own Id: OTP-7958</p>
+        </item>
+      </list>
+    </section>
+
+</section>
 <section><title>Dialyzer 1.9.0</title>
 
     <section><title>Improvements and New Features</title>

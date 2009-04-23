@@ -4,6 +4,13 @@
 ==============================================================================
 
 
+Version 1.9.1 (in Erlang/OTP R13A)
+----------------------------------
+ - Contains the changes described below (R13A) but also:
+    - Has better handling of opaque types
+    - The handling of UFT segments of bitstreams has been significantly
+      strengthened and revised.  In all probability, now it is correct.
+
 Version 1.9.0 (in Erlang/OTP R13A)
 ----------------------------------
  - The analysis accepts opaque type declarations and detects violations of
@@ -14,9 +21,8 @@ Version 1.9.0 (in Erlang/OTP R13A)
    structure of these terms.
  - Added support for handling UTF segments in bitstreams and for detecting
    obvious type errors in these segments.
-   Warning: This code is not terribly tested though since there are very
-   few Erlang programs which use Unicode-based binaries - not surprising
-   since this is a new language feature of R13.
+   Warning: This code is not terribly tested -- not surprising since this is
+   a new language feature of R13.
  - Strengthened the discrepancy identification when testing for equality and
    matching between terms of different types.  This detects more bugs in code.
  - Added warning for M:F(...) calls where M is not a module term and F is not

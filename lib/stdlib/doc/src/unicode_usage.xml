@@ -106,19 +106,15 @@ Bin4 = &lt;&lt;"Hello"/utf16&gt;&gt;,</code>
 <p>It is convenient to be able to write a list of Unicode characters in the string syntax. However, the language specifies strings as being in the ISO-latin-1 character set which the compiler tool chain as well as many other tools expect.</p>
 <p>Also the source code is (for now) still expected to be written using the ISO-latin-1 character set, why Unicode characters beyond that range cannot be entered in string literals.</p>
 <p>To make it easier to enter Unicode characters in the shell, it allows strings with Unicode characters on input, immediately converting them to regular lists of integers. They will, by the evaluator etc be viewed as if they were input using the regular list syntax, which is - in the end - how the language actually treats them. They will in the same way not be output as strings by i.e <c>io:write/2</c> or <c>io:format/3</c> unless the format string supplied to <c>io:format</c> uses the Unicode translation modifier (which we will talk about later).</p>
-<p>For source code, there is an extension to the \OOO (backslash followed by three octal numbers), namely \{O ...} (a backslash followed by a left curly bracket, any number of octal digits and a terminating right curly bracket). This allows for entering characters of any codepoint literally in a string. The string is immediately converted into a list by the scanner however, which is obvious when calling it directly:</p>
+<p>For source code, there is an extension to the \OOO (backslash followed by three octal numbers) and \xHH (backslash followed by 'x', followed by two hexadecimal characters) syntax, namely \x{H ...} (a backslash followed by an 'x', followed by left curly bracket, any number of hexadecimal digits and a terminating right curly bracket). This allows for entering characters of any codepoint literally in a string. The string is immediately converted into a list by the scanner however, which is obvious when calling it directly:</p>
 <pre>
 1> <input>erl_scan:string("\"X\".").</input>
 {ok,[{string,1,"X"},{dot,1}],1}
-2> <input>erl_scan:string("\"\{2000}\".").</input>
+2> <input>erl_scan:string("\"\x{400}\".").</input>
 {ok,[{'[',1},{integer,1,1024},{']',1},{dot,1}],1}</pre>
-<p>With a similar syntax, hexadecimal constants can be entered with the syntax \x{H ...}:</p>
+<p>Character literals, or rather integers representing Unicode codepoints can be expressed in a similar way using $\x{H ...}:</p>
 <pre>
-3> <input>erl_scan:string("\"\x{400}\".").</input>
-{ok,[{'[',1},{integer,1,1024},{']',1},{dot,1}],1}</pre>
-<p>Character literals, or rather integers representing Unicode codepoints can be expressed in a similar way using $\{O ...} or $\x{H ...}:</p>
-<pre>
-4> <input>$\{2000}.</input>
+4> <input>$\x{400}.</input>
 1024</pre>
 <p>This also is a translation by the scanner:</p>
 <pre>
@@ -240,7 +236,7 @@ ok</pre>
 <p>As long as the data is always lists, the "t" modifier can be used for any string, but when binary data is involved, care must be taken to make the tight choice of formatting characters.</p>
 <p>The function <c>format</c> in <c>io_lib</c> behaves similarly. This function is defined to return a deep list of characters and the output could easily be converted to binary data for outputting on a device of any kind by a simple <c>erlang:list_to_binary</c>. When the translation modifier is used, the list can however contain characters that cannot be stored in one byte. The call to <c>erlang:list_to_binary</c> will in that case fail. However, if the io_server you want to communicate with is Unicode-aware, the list returned can still be used directly:</p>
 <image file="ushell3"><icaption>io_lib:format with Unicode translation</icaption></image>
-<p>The Unicode string is returned as a Unicode list, why the return value of <c>io_lib:format</c> no longer qualifies as a regular Erlang string (the function <seealso marker="stdlib:io_lib#deep_char_list/1">io_lib:deep_char_list</seealso> will, as an example, return <c>false</c>). The Unicode list is however valid input to the <seealso marker="stdlib:io#put_chars/2">io:put_chars</seealso> function, so data can be output on any Unicode capable device anyway. If the device is a terminal, characters will be output in the \{O ...} format if encoding is <c>latin1</c> otherwise in UTF-8 (for the non-interactive terminal - "oldshell" or "noshell") or whatever is suitable to show the character properly (for an interactive terminal - the regular shell). The bottom line is that you can always send Unicode data to the <c>standard_io</c> device. Files will however only accept Unicode codepoints beyond ISO-latin-1 if <c>encoding</c> is set to something else than <c>latin1</c>.</p>
+<p>The Unicode string is returned as a Unicode list, why the return value of <c>io_lib:format</c> no longer qualifies as a regular Erlang string (the function <seealso marker="stdlib:io_lib#deep_char_list/1">io_lib:deep_char_list</seealso> will, as an example, return <c>false</c>). The Unicode list is however valid input to the <seealso marker="stdlib:io#put_chars/2">io:put_chars</seealso> function, so data can be output on any Unicode capable device anyway. If the device is a terminal, characters will be output in the \x{H ...} format if encoding is <c>latin1</c> otherwise in UTF-8 (for the non-interactive terminal - "oldshell" or "noshell") or whatever is suitable to show the character properly (for an interactive terminal - the regular shell). The bottom line is that you can always send Unicode data to the <c>standard_io</c> device. Files will however only accept Unicode codepoints beyond ISO-latin-1 if <c>encoding</c> is set to something else than <c>latin1</c>.</p>
 </section>
 <section>
 <title>Heuristic identification of UTF-8</title>

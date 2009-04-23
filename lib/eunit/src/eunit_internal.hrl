@@ -1,7 +1,7 @@
-%%%-------------------------------------------------------------------
+%% -------------------------------------------------------------------
 %% File: eunit_internal.hrl
 %%
-%% $Id$ 
+%% $Id: eunit_internal.hrl 329 2009-03-01 11:23:32Z rcarlsson $ 
 %%
 %% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 2006 Richard Carlsson
@@ -15,6 +15,7 @@
 -define(DEFAULT_GROUP_TIMEOUT, infinity).
 -define(DEFAULT_TEST_TIMEOUT, 5000).
 -define(DEFAULT_SETUP_PROCESS, spawn).
+-define(DEFAULT_MODULE_WRAPPER_NAME, eunit_wrapper_).
 
 -ifdef(DEBUG).
 -define(debugmsg(S),io:fwrite("\n* ~s: ~s\n", [?MODULE,S])).
@@ -31,8 +32,7 @@
 -record(test, {f = undefined,
 	       desc = undefined,
 	       timeout = undefined,
-	       module = undefined,
-	       name = undefined,
+	       location = undefined,
 	       line = 0
 	      }).
 

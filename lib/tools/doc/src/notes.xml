@@ -29,6 +29,22 @@
   </header>
   <p>This document describes the changes made to the Tools application.</p>
 
+<section><title>Tools 2.6.4</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p><c>cover</c> now properly escapes greater-than and
+	    less-than characters in comments in HTML reports. (Thanks
+	    to Magnus Henoch.)</p>
+          <p>
+	    Own Id: OTP-7939</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Tools 2.6.3</title>
 
     <section><title>Improvements and New Features</title>
